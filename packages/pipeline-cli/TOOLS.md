@@ -694,6 +694,49 @@ writes or releases one. An empty scan (zero open issues *and* zero open PRs) is 
 not an idle factory, so it exits non-zero rather than printing a vacuous zero (ADR
 [0092](../../.decisions/0092-gates-fail-closed-on-zero-scope.md)).
 
+### `vocabulary-seed` — put the pipeline label taxonomy into an adopting repo (#4341)
+
+`vocabulary-preflight` tells a fresh repo which labels and roadmap surface it lacks, and `doctor`
+prints the create commands. Neither runs them, so the taxonomy got hand-copied at setup. This runs
+them.
+
+```bash
+# preview against the resolved target — writes nothing (start here)
+node packages/pipeline-cli/src/bin.ts vocabulary-seed plan
+
+# create the missing labels and scaffold ROADMAP.md if absent
+node packages/pipeline-cli/src/bin.ts vocabulary-seed apply --repo owner/name
+```
+
+**The done-test is another tool's green:** after `apply`, `vocabulary-preflight check` passes.
+That crossing is exercised as a test rather than asserted (`gate.behavior.test.ts`).
+
+**Target resolution is explicit and ordered:** `--repo owner/name` first, then
+`CLAUDE_PIPELINE_REPO` / `GITHUB_REPOSITORY`, then `gh repo view`. With none of them resolvable it
+fails — a seeder that guesses a repo is the bad failure this ordering removes. `plan` is the
+read-only preview and the recommended first run.
+
+**One home for colour and wording.** Everything it creates comes from `LABEL_SPECS` in
+`src/tools/vocabulary-preflight/vocabulary.ts`, the same rows `doctor.sh` reads through
+`vocabulary-preflight specs`. The seeder carries no list of its own, and the enforced set
+(`REQUIRED_LABELS`, assembled from the guards' own constants) is asserted to be totally creatable
+from that table — a gap there is a refusal, not a partial seed.
+
+**Idempotent in both directions.** It creates only what the pre-read found missing, *and* reads
+GitHub's `already_exists` 422 as success — so a label that appears between the read and the create
+is a quiet no-op rather than a failure. `POST .../labels` genuinely 422s on an existing name (unlike
+`POST .../issues/{n}/labels`, which auto-creates), and a malformed-colour 422 is still an error.
+
+**It creates no GitHub milestones — deliberately.** ADR
+[0072](../../.decisions/0072-milestones-encode-strategic-sequencing.md) §3 makes creating or
+restructuring a milestone an explicitly human roadmap decision and closes categorically: *"no skill
+may create or delete them."* Re-reading that narrowly to permit an install-time bootstrap is the
+quiet reinterpretation an ADR exists to prevent, so the seeder does not. The scaffolded `ROADMAP.md`
+ships one `queued`, unpinned arc — the legal shape for an arc whose milestone does not exist yet —
+and names the two steps a **maintainer of the adopting repo** takes to activate it: create the
+milestone in GitHub, then pin it by number and set the row to `active`. An existing `ROADMAP.md` is
+never overwritten.
+
 ## Building and testing
 
 ```bash

@@ -63,18 +63,27 @@ else
 	fix "gh auth refresh -s project"
 fi
 
-# 1c. the label vocabulary exists in the target repo, as NAME|TIER|HEX|DESCRIPTION rows fed
-#     to the loop from a heredoc (a `|`-delimited heredoc, not $(cat <<…) — the latter
-#     mis-parses under bash 3.2, the macOS default). TIER 1 rows are required and fail the
-#     run; TIER 3 rows are ideation-layer and only ever WARN, reported down in Tier 3.
+# 1c. the label vocabulary exists in the target repo.
 #
-#     This table is a PRESENTATION mirror (it carries the colour + description the create
-#     commands need, which the source has no room for), NOT a second required-set: check 1d
-#     asserts it covers the shared vocabulary in `packages/pipeline-cli/src/tools/
-#     vocabulary-preflight/vocabulary.ts`, which assembles the set from the constants the
-#     guards themselves scope on. Add a Tier-1 row here only alongside that source (#4272);
-#     the homing labels it must cover are ruled in ../triage/SKILL.md Step 6.
+#     The required rows are READ FROM THE SOURCE, not retyped here: `vocabulary-preflight
+#     specs` emits the create-ready taxonomy as NAME|HEX|DESCRIPTION, the one home for a
+#     label's colour and wording (#4341). Doctor's printed fixes and the seeder that runs
+#     them therefore cannot disagree — there is nothing here to fall behind. Only the
+#     TIER-3 ideation rows stay local, because they are doctor's own optional check and
+#     the enforced vocabulary does not carry them; they never fail the run (see Tier 3).
 #
+#     Resolve the CLI shim first — with it unresolved this check is UNDETERMINED, never a
+#     pass: doctor would otherwise have no rows to compare and would green a repo it never
+#     looked at, the vacuous scope of ADR 0092.
+PCLI="$(cd "$(dirname "$0")/../../bin" 2>/dev/null && pwd)/pipeline-cli"
+SPECS=""
+specs_read=unresolved
+if [ -x "$PCLI" ]; then
+	if SPECS=$("$PCLI" vocabulary-preflight specs 2>/dev/null) && [ -n "$SPECS" ]; then
+		specs_read=ok
+	fi
+fi
+
 #     Read the universe with the outcome SEPARATED from the content: a failed read leaves
 #     the same empty string a genuinely label-less repo does, and scoring absence off it
 #     would name every required label "missing" on what is really an auth or network fault.
@@ -90,52 +99,40 @@ fi
 
 required_total=0
 missing_required=0
-required_fixes=""
-REQUIRED_NAMES=""
+missing_names=""
+if [ "$specs_read" = "ok" ]; then
+	while IFS='|' read -r name color desc; do
+		[ -z "$name" ] && continue
+		required_total=$((required_total + 1))
+		[ "$labels_read" = "ok" ] || continue # UNDETERMINED: never score absence off a failed read
+		printf '%s\n' "$EXISTING" | grep -Fxq "$name" && continue
+		missing_required=$((missing_required + 1))
+		missing_names="$missing_names $name"
+	done <<SPEC_ROWS
+$SPECS
+SPEC_ROWS
+fi
+
+# The tier-3 ideation rows: doctor's own optional surface, a `|`-delimited heredoc (not
+# $(cat <<…), which mis-parses under bash 3.2, the macOS default). WARN-only, reported in Tier 3.
 optional_missing=0
 optional_fixes=""
-while IFS='|' read -r name tier color desc; do
+while IFS='|' read -r name color desc; do
 	[ -z "$name" ] && continue
-	if [ "$tier" = "1" ]; then
-		required_total=$((required_total + 1))
-		REQUIRED_NAMES="$REQUIRED_NAMES$name
-"
-	fi
-	[ "$labels_read" = "ok" ] || continue # UNDETERMINED: never score absence off a read that failed
+	[ "$labels_read" = "ok" ] || continue
 	printf '%s\n' "$EXISTING" | grep -Fxq "$name" && continue
-	CREATE="gh label create \"$name\" --repo \"$REPO\" --color \"$color\" --description \"$desc\""
-	if [ "$tier" = "1" ]; then
-		missing_required=$((missing_required + 1))
-		required_fixes="$required_fixes$CREATE
+	optional_missing=$((optional_missing + 1))
+	optional_fixes="$optional_fixes""gh label create \"$name\" --repo \"$REPO\" --color \"$color\" --description \"$desc\"
 "
-	else
-		optional_missing=$((optional_missing + 1))
-		optional_fixes="$optional_fixes$CREATE
-"
-	fi
-done <<'LABELS'
-status:needs-triage|1|fbca04|Filed, awaiting triage classification
-status:needs-info|1|fbca04|Human-filed; awaiting answers before triage
-status:planned|1|fbca04|plan-epic child: planned, not yet verified by review-plan, not pickable
-status:triaged|1|fbca04|Triage signed off; ready for write-code to pick
-status:planning|1|fbca04|Epic-lock held: a plan-epic/review-plan run is mutating this epic's children (ADR 0059)
-status:awaiting-release|1|5319e7|Post-merge release-queue marker: deployed dark, awaiting a human flag flip (ADR 0083).
-type:bug|1|1d76db|Behavior diverges from intent
-type:chore|1|1d76db|No behavior change
-type:decision|1|1d76db|One question; output is a recorded choice
-type:epic|1|1d76db|Too big for one PR; spawns children
-type:feature|1|1d76db|New capability, directly implementable
-type:investigation|1|1d76db|Unknown; output is knowledge
-p0|1|b60205|Highest priority
-p1|1|d93f0b|Medium priority
-p2|1|e99695|Lowest priority
-wayfinder:backlog|1|8250df|Standing lane: a destination queued for a wayfinding chart (triage's standing-lane exemption)
-axis:pipeline-hardening|1|5319e7|Standing lane: the cross-cutting pipeline-hardening axis (triage's standing-lane exemption)
-area:infra|1|0e8a16|Platform/infra discriminator the lane tool scopes on
-wayfinder:map|3|8250df|Ideation-layer map issue — the wayfinder chart front door (issue-shape marker, not a type)
-LABELS
+done <<'OPTIONAL_LABELS'
+wayfinder:map|8250df|Ideation-layer map issue — the wayfinder chart front door (issue-shape marker, not a type)
+OPTIONAL_LABELS
 
-if [ "$labels_read" = "no-repo" ]; then
+if [ "$specs_read" != "ok" ]; then
+	say "$FAIL" "required labels UNDETERMINED — the required set could not be resolved, so nothing was compared (unknown, NOT absent)"
+	fix "run from a checkout with packages/pipeline-cli, or make \`pipeline-cli vocabulary-preflight specs\` resolvable"
+	fails=$((fails + 1))
+elif [ "$labels_read" = "no-repo" ]; then
 	say "$FAIL" "required labels UNDETERMINED — the target repo never resolved, so the label universe was never read (unknown, NOT absent)"
 	fix "set CLAUDE_PIPELINE_REPO=owner/name, or run inside the target git repo, then re-run"
 	fails=$((fails + 1))
@@ -146,19 +143,20 @@ elif [ "$labels_read" = "failed" ]; then
 elif [ "$missing_required" -eq 0 ]; then
 	say "$PASS" "all $required_total required pipeline labels exist"
 else
-	say "$FAIL" "$missing_required of $required_total required pipeline label(s) absent"
-	printf '%s' "$required_fixes" | while IFS= read -r line; do
-		[ -n "$line" ] && fix "$line"
-	done
+	say "$FAIL" "$missing_required of $required_total required pipeline label(s) absent —$missing_names"
+	# ONE command creates every missing label, idempotently, from the same rows this check read.
+	# Printing it instead of N hand-copied `gh label create` lines is the whole point of #4341:
+	# the create commands existed as strings a human pasted, and nobody ran them.
+	fix "pipeline-cli vocabulary-seed plan --repo \"$REPO\"   # preview, writes nothing"
+	fix "pipeline-cli vocabulary-seed apply --repo \"$REPO\"  # create them"
 	fails=$((fails + 1))
 fi
 
-# 1d. doctor's Tier-1 rows still cover the shared vocabulary. The set the guards scope on
-#     lives in ONE place and is assembled from their own constants; this asserts the table
-#     above has not fallen behind it — the drift that let doctor green a repo where triage
-#     had no non-kill home (#4300). Reads it through the CLI shim, the only seam a bash
-#     preflight has onto a TS constant.
-PCLI="$(cd "$(dirname "$0")/../../bin" 2>/dev/null && pwd)/pipeline-cli"
+# 1d. every ENFORCED label is creatable from the rows 1c just read. `vocabulary-preflight
+#     labels` is the set the guards scope on (assembled from their own constants);
+#     `vocabulary-preflight specs` is the create-ready table doctor prints and the seeder
+#     runs. A name in the first with no row in the second is a label the pipeline demands
+#     and no tool can create — the drift class of #4300, now one file over.
 SHARED=""
 shared_read=unresolved
 if [ -x "$PCLI" ]; then
@@ -167,30 +165,35 @@ if [ -x "$PCLI" ]; then
 	fi
 fi
 
+SPEC_NAMES=""
+if [ "$specs_read" = "ok" ]; then
+	SPEC_NAMES=$(printf '%s\n' "$SPECS" | cut -d'|' -f1)
+fi
+
 shared_total=0
 drifted=""
-if [ "$shared_read" = "ok" ]; then
+if [ "$shared_read" = "ok" ] && [ "$specs_read" = "ok" ]; then
 	while IFS= read -r want; do
 		[ -z "$want" ] && continue
 		shared_total=$((shared_total + 1))
-		printf '%s\n' "$REQUIRED_NAMES" | grep -Fxq "$want" && continue
+		printf '%s\n' "$SPEC_NAMES" | grep -Fxq "$want" && continue
 		drifted="$drifted $want"
 	done <<SHARED_SET
 $SHARED
 SHARED_SET
 fi
 
-if [ "$shared_read" != "ok" ]; then
-	# WARN, not FAIL: an adopter without the CLI resolved still gets every check above. What is
-	# lost is only the confirmation, and saying so beats claiming a verification that never ran.
-	say "$WARN" "doctor's required set is UNVERIFIED against the shared vocabulary — could not resolve it (unknown, NOT confirmed)"
+if [ "$shared_read" != "ok" ] || [ "$specs_read" != "ok" ]; then
+	# WARN, not FAIL: 1c already failed loudly on an unresolved CLI. What is lost here is only
+	# the confirmation, and saying so beats claiming a verification that never ran.
+	say "$WARN" "the create-ready table is UNVERIFIED against the enforced set — could not resolve both (unknown, NOT confirmed)"
 	fix "run from a checkout with packages/pipeline-cli, or make \`pipeline-cli vocabulary-preflight labels\` resolvable"
 elif [ -n "$drifted" ]; then
-	say "$FAIL" "doctor's required set has DRIFTED from the shared vocabulary — absent from the table above:$drifted"
-	fix "add each label above to the LABELS table in this file as a tier-1 row (name|1|hex|description)"
+	say "$FAIL" "the enforced vocabulary has DRIFTED from the create-ready table — no create row for:$drifted"
+	fix "add each label above to LABEL_SPECS in packages/pipeline-cli/src/tools/vocabulary-preflight/vocabulary.ts"
 	fails=$((fails + 1))
 else
-	say "$PASS" "doctor's required set covers all $shared_total labels of the shared vocabulary"
+	say "$PASS" "every one of the $shared_total enforced labels is creatable from the shared table"
 fi
 
 hdr "Tier 2 — gating (a stage fails deep without these)"

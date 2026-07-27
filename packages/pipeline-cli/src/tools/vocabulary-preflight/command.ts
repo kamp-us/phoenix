@@ -22,7 +22,13 @@ import {Command, Flag} from "effect/unstable/cli";
 import {onCheckFailed} from "../../gate-fail.ts";
 import {checkVocabulary} from "./gate.ts";
 import {RepoLabelsLive} from "./github.ts";
-import {REQUIRED_LABELS, renderLabelList} from "./vocabulary.ts";
+import {
+	LABEL_SPECS,
+	REQUIRED_LABELS,
+	renderLabelList,
+	renderLabelSpecs,
+	unspecifiedRequiredLabels,
+} from "./vocabulary.ts";
 
 // Repo-root markers, in priority order: a pnpm workspace, then a VCS dir.
 const ROOT_MARKERS = ["pnpm-workspace.yaml", ".git"] as const;
@@ -84,8 +90,32 @@ const labels = Command.make(
 	),
 );
 
+// The create-ready half of the same seam: `labels` answers "which labels", `specs` answers "with
+// which colour and wording". Also read-only, also answerable in a repo that has none of them.
+const specs = Command.make(
+	"specs",
+	{},
+	Effect.fn(function* () {
+		const unspecified = unspecifiedRequiredLabels();
+		if (unspecified.length > 0) {
+			yield* onCheckFailed({
+				reason:
+					`vocabulary-preflight specs: ${unspecified.length} required label(s) have no ` +
+					`create-ready row in LABEL_SPECS — ${unspecified.join(", ")}. Refusing to emit a ` +
+					"table that cannot create the set the preflight enforces.",
+			});
+			return;
+		}
+		yield* Console.log(renderLabelSpecs(LABEL_SPECS));
+	}),
+).pipe(
+	Command.withDescription(
+		"Print the create-ready label taxonomy as NAME|HEX|DESCRIPTION lines (the one colour/description home — #4341)",
+	),
+);
+
 export const vocabularyPreflightCommand = Command.make("vocabulary-preflight").pipe(
-	Command.withSubcommands([check, labels]),
+	Command.withSubcommands([check, labels, specs]),
 	Command.withDescription(
 		"Fail-closed preflight: the required label vocabulary + ROADMAP.md exist in the target repo (#4272)",
 	),

@@ -12,10 +12,14 @@ import {PRESENT, resolvePresence} from "./presence.ts";
 import {
 	judge,
 	judgeRoadmap,
+	LABEL_SPECS,
 	REQUIRED_LABELS,
 	type RoadmapSurface,
 	renderLabelList,
+	renderLabelSpecs,
 	renderReport,
+	SPECIFIED_LABELS,
+	unspecifiedRequiredLabels,
 } from "./vocabulary.ts";
 
 const ROADMAP_OK: RoadmapSurface = {
@@ -148,5 +152,25 @@ describe("renderLabelList — the seam doctor.sh reads (#4300)", () => {
 		const lines = renderLabelList(REQUIRED_LABELS).split("\n");
 		expect(lines.length).toBeGreaterThan(0);
 		for (const lane of EXEMPT_LABELS) expect(lines).toContain(lane);
+	});
+});
+
+describe("LABEL_SPECS — the ONE colour/description home (#4341)", () => {
+	it("can create every label the preflight enforces — the property that keeps the two aligned", () => {
+		expect(unspecifiedRequiredLabels()).toEqual([]);
+	});
+
+	it("renders NAME|HEX|DESCRIPTION lines a bash `while IFS='|' read` consumes with no parser", () => {
+		const lines = renderLabelSpecs(LABEL_SPECS).split("\n");
+		expect(lines).toHaveLength(LABEL_SPECS.length);
+		for (const line of lines) expect(line.split("|")).toHaveLength(3);
+		expect(lines[0]).toBe(
+			`${LABEL_SPECS[0]?.name}|${LABEL_SPECS[0]?.color}|${LABEL_SPECS[0]?.description}`,
+		);
+	});
+
+	it("is non-empty — an empty table would let doctor print zero fixes and call it clean", () => {
+		expect(LABEL_SPECS.length).toBeGreaterThan(0);
+		expect(SPECIFIED_LABELS.length).toBeGreaterThanOrEqual(REQUIRED_LABELS.length);
 	});
 });

@@ -274,6 +274,13 @@ export const registeredTools: ReadonlyArray<ToolRegistration> = [
 	tool("vocabulary-preflight", () =>
 		import("./tools/vocabulary-preflight/command.ts").then((m) => m.vocabularyPreflightCommand),
 	),
+	// #4341 — the write counterpart of the preflight above. The preflight names what a fresh repo
+	// lacks and doctor prints the creates; nobody ran them, so the taxonomy got hand-copied. Seeds
+	// the labels + a ROADMAP.md scaffold from the one create-ready home, idempotently. Creates NO
+	// milestones: ADR 0072 keeps that an explicitly human act, and the scaffold says who does it.
+	tool("vocabulary-seed", () =>
+		import("./tools/vocabulary-seed/command.ts").then((m) => m.vocabularySeedCommand),
+	),
 	// #3980 — the mechanical half of the ADR contradiction sweep: rank the live-accepted ADRs a
 	// new ADR touches the decision domain of but never cites, so a same-question conflict with an
 	// unsuperseded ADR (0208-vs-0072, 0210-vs-0202) is a list to clear rather than a memory test.

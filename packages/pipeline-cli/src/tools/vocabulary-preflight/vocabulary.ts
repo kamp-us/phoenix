@@ -57,6 +57,114 @@ export const REQUIRED_LABELS: ReadonlyArray<string> = [
  */
 export const renderLabelList = (labels: ReadonlyArray<string>): string => labels.join("\n");
 
+/** A label in create-ready form: the name a guard scopes on plus the two fields a create needs. */
+export interface LabelSpec {
+	readonly name: string;
+	readonly color: string;
+	readonly description: string;
+}
+
+/**
+ * The create-ready taxonomy — the ONE home for every pipeline label's colour and description
+ * (#4341). The two facts split across files before this: `REQUIRED_LABELS` carried names and
+ * `doctor.sh` carried `NAME|HEX|DESCRIPTION` in a heredoc, so the seeder would have been a third
+ * copy. Both consumers — this package's seeder and `doctor.sh`'s printed `gh label create` fixes —
+ * now read these rows, so a colour or wording change lands in one place.
+ *
+ * It is deliberately a SUPERSET of `REQUIRED_LABELS`, not a mirror of it: `status:planning` (the
+ * ADR-0059 epic lock) and `status:awaiting-release` (the ADR-0083 release queue) are labels the
+ * pipeline writes but the preflight does not yet enforce, and an adopting repo needs them created
+ * all the same. `unspecifiedRequiredLabels` is the fail-closed direction that matters — every
+ * enforced label must be creatable from here, or the seeder cannot clear the preflight it seeds
+ * for.
+ *
+ * Colour is the 6-hex GitHub wants with no leading `#`. Descriptions carry no `|`, because the
+ * rendered form below is pipe-delimited for the bash consumer.
+ */
+export const LABEL_SPECS: ReadonlyArray<LabelSpec> = [
+	{
+		name: "status:needs-triage",
+		color: "fbca04",
+		description: "Filed, awaiting triage classification",
+	},
+	{
+		name: "status:needs-info",
+		color: "fbca04",
+		description: "Human-filed; awaiting answers before triage",
+	},
+	{
+		name: "status:planned",
+		color: "fbca04",
+		description: "plan-epic child: planned, not yet verified by review-plan, not pickable",
+	},
+	{
+		name: "status:triaged",
+		color: "fbca04",
+		description: "Triage signed off; ready for write-code to pick",
+	},
+	{
+		name: "status:planning",
+		color: "fbca04",
+		description: "Epic-lock held: a plan-epic/review-plan run is mutating this epic's children",
+	},
+	{
+		name: "status:awaiting-release",
+		color: "5319e7",
+		description: "Post-merge release queue: deployed dark, awaiting a human flag flip",
+	},
+	{name: "p0", color: "b60205", description: "Highest priority"},
+	{name: "p1", color: "d93f0b", description: "Medium priority"},
+	{name: "p2", color: "e99695", description: "Lowest priority"},
+	{name: "type:bug", color: "1d76db", description: "Behavior diverges from intent"},
+	{name: "type:chore", color: "1d76db", description: "No behavior change"},
+	{
+		name: "type:decision",
+		color: "1d76db",
+		description: "One question; output is a recorded choice",
+	},
+	{name: "type:epic", color: "1d76db", description: "Too big for one PR; spawns children"},
+	{
+		name: "type:feature",
+		color: "1d76db",
+		description: "New capability, directly implementable",
+	},
+	{name: "type:investigation", color: "1d76db", description: "Unknown; output is knowledge"},
+	{
+		name: "wayfinder:backlog",
+		color: "8250df",
+		description: "Standing lane: a destination queued for a wayfinding chart",
+	},
+	{
+		name: "axis:pipeline-hardening",
+		color: "5319e7",
+		description: "Standing lane: the cross-cutting pipeline-hardening axis",
+	},
+	{
+		name: "area:infra",
+		color: "0e8a16",
+		description: "Platform/infra discriminator the lane tool scopes on",
+	},
+];
+
+/** Every name `LABEL_SPECS` can create, in table order. */
+export const SPECIFIED_LABELS: ReadonlyArray<string> = LABEL_SPECS.map((spec) => spec.name);
+
+/**
+ * Required labels with no create-ready row — non-empty means the seeder could never clear the
+ * preflight, because the enforced set names something it cannot create. Callers refuse on a
+ * non-empty result rather than seeding a partial taxonomy (ADR 0092).
+ */
+export const unspecifiedRequiredLabels = (): ReadonlyArray<string> =>
+	REQUIRED_LABELS.filter((label) => !SPECIFIED_LABELS.includes(label));
+
+/**
+ * The create-ready rows as `NAME|HEX|DESCRIPTION` lines — the seam `doctor.sh` reads, for the same
+ * reason `renderLabelList` exists: a bash preflight cannot import a TS constant, and retyping the
+ * rows is the drift this consolidation removes.
+ */
+export const renderLabelSpecs = (specs: ReadonlyArray<LabelSpec>): string =>
+	specs.map((spec) => `${spec.name}|${spec.color}|${spec.description}`).join("\n");
+
 /** `ROADMAP.md` as the preflight finds it: absent, or present with the rows it parsed. */
 export type RoadmapSurface =
 	| {readonly _tag: "absent"; readonly path: string}

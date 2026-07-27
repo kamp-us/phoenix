@@ -81,10 +81,18 @@ and still fails closed on it.
   a different fact. `gh api` prints its error body to stdout **without** applying `--jq`, so
   every read keeps gh's exit status and admits only the literal values it expects (§ZS /
   ADR [0092](https://github.com/kamp-us/phoenix/blob/main/.decisions/0092-gates-fail-closed-on-zero-scope.md); the defect class of #4223).
-- **`doctor.sh`'s `LABELS` table is a presentation mirror, not the source.** The required
-  set is single-sourced in `packages/pipeline-cli/src/tools/vocabulary-preflight/vocabulary.ts`,
-  which assembles it from the constants the guards themselves scope on; the table only adds the
-  colour + description a `gh label create` needs. Doctor reads the source through
-  `pipeline-cli vocabulary-preflight labels` and **reds if the table has fallen behind it**, so
-  the two cannot silently diverge — the drift that shipped as #4300. Change the vocabulary at
-  the source, then add the matching row here.
+- **`doctor.sh` carries no label table of its own.** It reads the required rows from the
+  source through `pipeline-cli vocabulary-preflight specs` (`NAME|HEX|DESCRIPTION`), which is
+  the one home for a label's colour and wording — shared with the seeder that creates them, so
+  the printed fix and the tool that runs it cannot diverge (#4341). The names in it are
+  assembled from the constants the guards themselves scope on, and check 1d reds if the
+  enforced set ever names a label the create-ready table cannot create (the drift that shipped
+  as #4300). Change the vocabulary in
+  `packages/pipeline-cli/src/tools/vocabulary-preflight/vocabulary.ts`; there is nothing to
+  mirror here. Only the tier-3 ideation row stays local — it is doctor's own optional check,
+  outside the enforced vocabulary, and never fails the run.
+- **The label fix is now one command, not N pasted lines.** A repo missing labels gets
+  `pipeline-cli vocabulary-seed plan --repo <owner/name>` (preview) and `… apply` (create) —
+  the strings doctor used to print for a human to copy, run by a tool. The seeder creates **no
+  GitHub milestones**; that stays an explicitly human roadmap act (ADR 0072), and the
+  `ROADMAP.md` it scaffolds says so.
