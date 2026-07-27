@@ -1371,8 +1371,11 @@ GATING_RED=$(jq -r '[.failing[]
   | select(. != "deploy (web)" and (startswith("cleanup (web,") | not))] | join(", ")' <<<"$CI_JSON")
 ```
 
-Not every red check blocks a merge. **`main` carries no required-status-check branch
-protection**, so GitHub itself blocks on nothing; the SHA-bound merge gate is the
+Not every red check blocks a merge, and **this classification is ship-it's own** — it is
+deliberately *not* the base branch's required-context set, and must never be derived from it.
+(Whatever the platform requires is live, mutable state: read it off the base branch's ruleset
+`required_status_checks` at the moment you need it, the same way the queue-regime reads below
+do — never recall it from prose.) What ship-it binds is the SHA-bound merge gate: the
 run-evidence bundle (Step 3.5) plus the review verdicts (Step 2), neither of which depends
 on a preview deploy. So a check is **gating by default** and **informational only** when it
 is on the explicit known-informational list below. Fail safe: an *unrecognized* red check
