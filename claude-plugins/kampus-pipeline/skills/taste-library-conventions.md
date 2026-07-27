@@ -59,6 +59,7 @@ claude-plugins/kampus-pipeline/skills/
   taste-<aspect>/SKILL.md             one skill per aspect (color, layout, iconography, …)
   taste-<aspect>/STANDARDS.md         optional, values-only (§4)
   taste-<aspect>-<mode>/SKILL.md      when one aspect needs several modes
+  taste-<aspect>-<mode>/STANDARDS.md  a mode-split aspect's one values file, on its owner (§4)
 ```
 
 - **`taste-<aspect>`** is the default: one skill per design aspect. `taste-color`,
@@ -109,8 +110,22 @@ git diff --name-only origin/main... | "$PCLI" cp-classify classify
 
   Anything longer than that is a rule, and a rule lives in `SKILL.md`.
 
-**One `STANDARDS.md` per aspect, owned by the aspect's primary skill.** Sibling modes link to it;
-they never copy values into their own file. A duplicated value is a value that drifts.
+**One `STANDARDS.md` per aspect, and exactly one file owns it.** Sibling skills link to it; they
+never copy values into their own file. A duplicated value is a value that drifts.
+
+**Which file owns it follows the aspect's shape (§3), and both shapes are legitimate:**
+
+- **A single-skill aspect** owns its values at `taste-<aspect>/STANDARDS.md` — the aspect has one
+  skill, so there is nothing to disambiguate.
+- **A mode-split aspect** has no `taste-<aspect>/` directory to hold the file, so the owner is the
+  **mode that grades against the figures** — the review mode where one exists, otherwise the mode
+  whose procedure cites the most rows. The file lives in that mode's own directory and the sibling
+  modes link across into it. The animation cluster is the worked example:
+  [`taste-animation-review/STANDARDS.md`](taste-animation-review/STANDARDS.md) is the animation
+  aspect's single values file, and `taste-animation-improve` and `taste-animation-opportunities`
+  cite it there. **Never mint a `taste-<aspect>/` directory just to home the file** — a directory
+  holding a `STANDARDS.md` and no `SKILL.md` is a shape the library does not have and
+  [`validate-skills.sh`](validate-skills.sh) has never been checked against.
 
 A `STANDARDS.md` is optional — add one when the aspect has enough concrete figures that a skill
 would otherwise guess at them.
@@ -194,8 +209,14 @@ Before you open the PR:
       `claude-plugins/kampus-pipeline/skills/`, and frontmatter `name` matches the dir.
 - [ ] `description` states what the skill is **and** the situations it fires on — it is the
       routing surface, not a summary.
-- [ ] The SKILL.md opens with a **Grounding and firewall** section naming all three artifacts
-      (§1) and stating the advise-never-author rule (§2).
+- [ ] The SKILL.md opens with a **Grounding and firewall** section that names all three artifacts
+      (§1) in full, each as an absolute `blob/main` URL — a skill loads standalone into a spawn
+      that may never open this contract, and the three artifacts live outside this plugin, so a
+      repo-relative path to them does not resolve.
+- [ ] That section **cites §2 for the firewall — it does not restate it.** Restating it is what
+      forked the rule across the first four skills, each in its own wording. Point at §2 (a
+      sibling of your dir, so a relative link resolves) and add at most one skill-specific
+      sentence saying what LAW/CRAFT means for *this* skill's own output shape.
 - [ ] Every rule is tagged **LAW** (with its manifest section), **CRAFT**, or the compound
       **CRAFT, serving LAW — `<section>`** (§5); a standard bundling clauses of different tiers
       tags each clause inline rather than flattening to one; no CRAFT rule is written as a
