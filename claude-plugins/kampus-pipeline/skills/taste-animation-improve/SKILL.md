@@ -22,15 +22,15 @@ Grounded exclusively in three artifacts, and there is no fourth:
 - [`design-system-inventory.md`](https://github.com/kamp-us/phoenix/blob/main/design-system-inventory.md) — which primitives exist and when to use them (ADR [0194](https://github.com/kamp-us/phoenix/blob/main/.decisions/0194-design-law-jsdoc-firewall.md)).
 - The blessed goldens — the visual reference a surface is measured against (ADR [0183](https://github.com/kamp-us/phoenix/blob/main/.decisions/0183-golden-screen-storage-depo-git-pointer.md)).
 
-**This skill advises creation; it never authors law** (the ADR 0194 firewall). Findings tagged
-**LAW** cite the design law and are binding; findings tagged **CRAFT** are advisory defaults that
-yield to LAW. Where the law is silent, say so rather than filling the gap, and route a
-load-bearing gap through the [`report`](../report/SKILL.md) skill.
+**This skill advises creation; it never authors law.** The firewall itself — the two-tier LAW /
+CRAFT provenance rule and the obligation to say so and surface the gap where the law is silent — is
+stated once, in [§2 of the library conventions](../taste-library-conventions.md#2-the-firewall--skills-advise-creation-they-never-author-law).
+For this skill's output that means every brief carries its finding's tag, and a **CRAFT** finding
+is written as a default the executor may decline, never as a blocking requirement.
 
 Values come from [`taste-animation-review/STANDARDS.md`](../taste-animation-review/STANDARDS.md) —
-the single values file for this aspect. Cite it; never copy figures into a brief's own vocabulary
-or approximate them. Library conventions:
-[`taste-library-conventions.md`](../taste-library-conventions.md).
+the animation aspect's single values file, owned by the review mode (§4). Cite it; never copy
+figures into a brief's own vocabulary or approximate them.
 
 ## Hard rules
 

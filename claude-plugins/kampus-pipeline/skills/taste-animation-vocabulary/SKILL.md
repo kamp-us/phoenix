@@ -20,18 +20,17 @@ Grounded exclusively in three artifacts, and there is no fourth:
 - [`design-system-inventory.md`](https://github.com/kamp-us/phoenix/blob/main/design-system-inventory.md) — which primitives exist and when to use them (ADR [0194](https://github.com/kamp-us/phoenix/blob/main/.decisions/0194-design-law-jsdoc-firewall.md)).
 - The blessed goldens — the visual reference a surface is measured against (ADR [0183](https://github.com/kamp-us/phoenix/blob/main/.decisions/0183-golden-screen-storage-depo-git-pointer.md)).
 
-**This skill advises creation; it never authors law** (the ADR 0194 firewall). The glossary below
-is **CRAFT** vocabulary — the industry names for effects, adopted so a brief can be precise. It is
-not design law: naming an effect never licenses it, and every named effect is still subject to the
-manifest's prohibitions and to the gates in
-[`taste-animation-review`](../taste-animation-review/SKILL.md).
+**This skill advises creation; it never authors law.** The firewall itself — the two-tier LAW /
+CRAFT provenance rule and the obligation to say so and surface the gap where the law is silent — is
+stated once, in [§2 of the library conventions](../taste-library-conventions.md#2-the-firewall--skills-advise-creation-they-never-author-law).
+For this skill's output that means the glossary below is **CRAFT** vocabulary: naming an effect
+never licenses it, and every named effect stays subject to the manifest's prohibitions and to the
+gates in [`taste-animation-review`](../taste-animation-review/SKILL.md).
 
 **It is also not the repo's term register.** Where a word also names a phoenix concept, the
 repo's [`.glossary/TERMS.md`](https://github.com/kamp-us/phoenix/blob/main/.glossary/TERMS.md) and
 [`.glossary/LANGUAGE.md`](https://github.com/kamp-us/phoenix/blob/main/.glossary/LANGUAGE.md) win.
 These terms are English technical vocabulary; product and brand copy stays Turkish.
-
-Library conventions: [`taste-library-conventions.md`](../taste-library-conventions.md).
 
 ## How to answer
 

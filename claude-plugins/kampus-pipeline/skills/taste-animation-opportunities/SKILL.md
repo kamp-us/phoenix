@@ -22,13 +22,14 @@ Grounded exclusively in three artifacts, and there is no fourth:
 - [`design-system-inventory.md`](https://github.com/kamp-us/phoenix/blob/main/design-system-inventory.md) — which primitives exist and when to use them (ADR [0194](https://github.com/kamp-us/phoenix/blob/main/.decisions/0194-design-law-jsdoc-firewall.md)).
 - The blessed goldens — the visual reference a surface is measured against (ADR [0183](https://github.com/kamp-us/phoenix/blob/main/.decisions/0183-golden-screen-storage-depo-git-pointer.md)).
 
-**This skill advises creation; it never authors law** (the ADR 0194 firewall). A suggestion tagged
-**LAW** cites the design law; everything else is **CRAFT** and yields to LAW. Where the law is
-silent, say so rather than filling the gap. A suggestion may never propose a new token, a new
-easing scale, or a new design rule — it composes what exists, or it is not a suggestion.
+**This skill advises creation; it never authors law.** The firewall itself — the two-tier LAW /
+CRAFT provenance rule and the obligation to say so and surface the gap where the law is silent — is
+stated once, in [§2 of the library conventions](../taste-library-conventions.md#2-the-firewall--skills-advise-creation-they-never-author-law).
+For this skill's output that means a suggestion may never propose a new token, a new easing scale,
+or a new design rule — it composes what exists, or it is not a suggestion.
 
-Values come from [`taste-animation-review/STANDARDS.md`](../taste-animation-review/STANDARDS.md).
-Library conventions: [`taste-library-conventions.md`](../taste-library-conventions.md).
+Values come from [`taste-animation-review/STANDARDS.md`](../taste-animation-review/STANDARDS.md) —
+the animation aspect's single values file, owned by the review mode (§4).
 
 ## Operating posture
 

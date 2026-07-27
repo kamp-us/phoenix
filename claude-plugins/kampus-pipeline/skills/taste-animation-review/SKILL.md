@@ -23,15 +23,14 @@ Grounded exclusively in three artifacts, and there is no fourth:
 - [`design-system-inventory.md`](https://github.com/kamp-us/phoenix/blob/main/design-system-inventory.md) — which primitives exist and when to use them (ADR [0194](https://github.com/kamp-us/phoenix/blob/main/.decisions/0194-design-law-jsdoc-firewall.md)).
 - The blessed goldens — the visual reference a surface is measured against (ADR [0183](https://github.com/kamp-us/phoenix/blob/main/.decisions/0183-golden-screen-storage-depo-git-pointer.md)).
 
-**This skill advises creation; it never authors law** (the ADR 0194 firewall). Findings tagged
-**LAW** cite the design law and are binding. Findings tagged **CRAFT** are advisory defaults for
-questions the law does not answer — they yield to LAW, and they are never written up as
-prohibitions. Where the law is silent, say so; where the gap is load-bearing, tell the author to
-file it via the [`report`](../report/SKILL.md) skill. Never edit `design-system-manifest.md`.
+**This skill advises creation; it never authors law.** The firewall itself — the two-tier LAW /
+CRAFT provenance rule and the obligation to say so and surface the gap where the law is silent — is
+stated once, in [§2 of the library conventions](../taste-library-conventions.md#2-the-firewall--skills-advise-creation-they-never-author-law).
+For this skill's output that means a **CRAFT** finding is written up as an advisory default in the
+findings table and the verdict, never as a prohibition and never as a Block criterion.
 
-Exact values live in [`STANDARDS.md`](STANDARDS.md) — cite them, never approximate. The
-library-wide conventions live in
-[`taste-library-conventions.md`](../taste-library-conventions.md).
+Exact values live in [`STANDARDS.md`](STANDARDS.md) — this aspect's single values file, owned here
+because this is the mode that grades against the figures (§4). Cite them, never approximate.
 
 ## Operating posture
 
