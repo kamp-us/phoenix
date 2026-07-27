@@ -291,16 +291,28 @@ Verify **all** of the following over the head diff. Each is conjunctive; **one m
    Treat any hit as a finding to confirm by eye (a variable *named* `token` referencing a binding
    is fine; a literal secret value is a **FAIL**).
 
-3. **No leaked machine-local / home / absolute / sibling-repo path.** No `~/`, `/Users/…`,
-   `/home/…`, a vault path, an absolute machine path, or a sibling-clone path in the added lines
-   — committed files, like PR bodies and comments, cite **repo-relative** paths only (the
-   standing no-local-paths invariant). Scan the added hunks:
+3. **No leaked machine-local / home / absolute / sibling-repo path.** The added lines carry no
+   machine-local path — a home directory, an absolute machine path, a scratch/temp root, or a
+   sibling-repo clone. Committed files, like PR bodies and comments, cite **repo-relative** paths
+   only (the standing no-local-paths invariant).
+
+   Scan the added hunks with the shared matcher, and **do not restate the forbidden shapes** —
+   not here, not in a character class, not in your evidence row. The pattern set is
+   single-sourced in `packages/pipeline-cli/src/tools/leak-guard/path-matcher.ts` (a gap belongs
+   there, never in an inline copy that drifts from it), and a restated token in this row lands in
+   a verdict comment that `leak-guard scan-pr` then reads as a real leak, fail-closing the shipper
+   on a clean PR (#4220):
 
    ```bash
-   git show "$PR_REF" | grep -nE '^\+' | grep -nE '(~/|/Users/|/home/|/private/var/folders/|[A-Za-z]:\\\\)' || echo "no local/home/absolute paths in added lines"
+   # §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
+   PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
+   # added lines only ('+'), scanned by the shared matcher: exit 0 = clean, 2 = leak found
+   git show "$PR_REF" | grep '^+' | "$PCLI" leak-guard scan-comment
    ```
-   A repo-relative path (`apps/web/…`, `.decisions/…`) is fine; a machine-local/home/absolute/
-   sibling-repo path is a **FAIL**.
+   A repo-relative path (`apps/web/…`, `.decisions/…`) is fine; a hit is a **FAIL** — cite it by
+   the class the scan names, never by quoting the matched token. A hit you suspect is a documented
+   pattern rather than a real path is exactly the ambiguity this lighter gate refuses to resolve:
+   FAIL, and let the PR take the full review path.
 
 A clean pass on **all three** (plus the Step 0 triviality re-affirm) is a PASS. Any miss, **or
 any ambiguity you can't resolve from the diff**, is a FAIL — default-deny, never an
