@@ -229,9 +229,9 @@ it adds no engine→engine and no human-facing edge.
   Four properties of that record are load-bearing, and none is optional:
 
   - **It carries the derived watch set, not merely that a tick happened.** `$TICK_NOTES` is one
-    `<pr>=<disposition>` line per PR in the set this tick re-derived from the board. A record saying
-    only "a tick ran" would leave the derivation-defect hypothesis exactly as untestable as no record
-    at all.
+    `;`-separated `<pr>=<disposition>` entry per PR in the set this tick re-derived from the board. A
+    record saying only "a tick ran" would leave the derivation-defect hypothesis exactly as untestable
+    as no record at all.
   - **An empty derived set is recorded AS an empty set.** `--watch ""` is a tick that looked and found
     no banked §CP PR — a different fact from no record, which is the only thing that means no tick ran.
     The flag is required by the verb precisely so an omitted one cannot pose as an empty set.
@@ -292,7 +292,12 @@ it adds no engine→engine and no human-facing edge.
   # Each branch's disposition for THIS PR, accumulated into the tick's one durable record (#4292).
   # `note` is the only writer of $TICK_NOTES, so no branch can reach its log line without also
   # reaching the record — that is what makes the two rules one rule rather than two.
-  note() { TICK_NOTES="${TICK_NOTES:+$TICK_NOTES$'\n'}$PR=$1"; }
+  # The separator is `;`, NOT `$'\n'`: ANSI-C quoting is not performed inside a double-quoted
+  # ${var:+word} expansion in zsh (only in bash), and this harness runs zsh — so `$'\n'` lands as
+  # six literal characters, welding the whole set onto one structurally-valid-looking entry.
+  # `parseWatchSpec` splits on `[\n;]` and no disposition below contains a `;`, so `;` is a
+  # separator both shells actually produce. Verified byte-for-byte under bash and zsh (#4292).
+  note() { TICK_NOTES="${TICK_NOTES:+$TICK_NOTES;}$PR=$1"; }
   # The non-firing exit that is NOT a definite answer: it names the read that could not execute.
   unknown() { note "unknown:$1"; echo "approval-watcher #$PR: $1 READ FAILED ($2) — UNKNOWN, re-arming; NOT 'no approval'"; }
   # `gh api --paginate` emits one JSON value per page, so slurp and assert EVERY page is an array —

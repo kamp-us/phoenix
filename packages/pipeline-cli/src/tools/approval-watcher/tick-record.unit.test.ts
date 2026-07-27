@@ -55,6 +55,22 @@ describe("parseWatchSpec — the derived watch set, empty included", () => {
 		]);
 	});
 
+	// The watcher shell accumulates with `;` because zsh does not perform ANSI-C `$'…'` quoting
+	// inside a double-quoted `${var:+word}` expansion, so a newline separator welded a whole
+	// multi-PR set onto one structurally-valid entry — a wrong set cardinality asserted as
+	// definite. A set of 0 or 1 hid it, so the >= 2 case is pinned here (#4292).
+	it("parses a `;`-separated set of three, keeping each PR's own disposition", () => {
+		const {entries, malformed} = parseWatchSpec(
+			"4224=fired;4231=unknown:reviews;4250=definite-stop:machine gates not green",
+		);
+		expect(malformed).toEqual([]);
+		expect(entries).toEqual([
+			{pr: 4224, disposition: {_tag: "fired"}},
+			{pr: 4231, disposition: {_tag: "unknown", input: "reviews"}},
+			{pr: 4250, disposition: {_tag: "definite-stop", reason: "machine gates not green"}},
+		]);
+	});
+
 	it("parses an EMPTY spec as an empty derived set, not as an error", () => {
 		expect(parseWatchSpec("")).toEqual({entries: [], malformed: []});
 		expect(parseWatchSpec("\n  \n")).toEqual({entries: [], malformed: []});
