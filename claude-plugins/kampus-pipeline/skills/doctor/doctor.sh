@@ -107,12 +107,23 @@ else
 	fails=$((fails + 1))
 fi
 
-# 2b. a CI signal exists for ship-it to gate on (Step 3 reads check-runs green)
-WORKFLOWS=0
+# 2b. a CI signal exists for ship-it to gate on (Step 3 reads check-runs green).
+#     Three outcomes, per the read discipline the Tier-2 governance checks below state in full:
+#     the retired `|| echo 0` APPENDED to gh's un-`--jq`'d error body rather than replacing it, so
+#     an unreadable repo produced `{"message":"Not Found",…}0`, tripped `[: integer expression
+#     expected`, and landed on "no CI workflows defined" — a failed read reported as the negative
+#     answer (#4347).
+WORKFLOWS=""
+WF_RC=1
 if [ -n "${REPO:-}" ]; then
-	WORKFLOWS=$(gh api "repos/$REPO/actions/workflows" --jq '.total_count' 2>/dev/null || echo 0)
+	WORKFLOWS=$(gh api "repos/$REPO/actions/workflows" --jq '.total_count' 2>/dev/null)
+	WF_RC=$?
 fi
-if [ "${WORKFLOWS:-0}" -gt 0 ]; then
+if [ "$WF_RC" -ne 0 ] || ! printf '%s' "$WORKFLOWS" | grep -Eq '^[0-9]+$'; then
+	say "$FAIL" "READ FAILED: could not read the workflows of ${REPO:-<unresolved repo>} (gh exit $WF_RC, returned: $(brief "${WORKFLOWS:-<empty>}")) — the workflow count is UNKNOWN, which is neither a pass nor 'no CI workflows'"
+	fix "resolve the repo and re-run once \`gh auth status\` shows a token that can read it — this line says NOTHING about whether CI exists, so do not add a workflow on the strength of it"
+	fails=$((fails + 1))
+elif [ "$WORKFLOWS" -gt 0 ]; then
 	say "$PASS" "CI workflows defined ($WORKFLOWS) — ship-it has a checks-green signal to gate on"
 else
 	say "$FAIL" "no CI workflows defined — ship-it's checks-green gate (Step 3) passes vacuously"
@@ -204,16 +215,23 @@ for pkg in @kampus/pipeline-cli; do
 	fi
 done
 
-# 3b. the run-evidence producer (ship-it degrades gracefully without it — ADR 0086)
-RUNEV=0
+# 3b. the run-evidence producer (ship-it degrades gracefully without it — ADR 0086).
+#     Same three-outcome read discipline as 2b/2c/2d; WARN-only in all three arms, so the
+#     undetermined arm still never touches `fails` (#4347).
+RUNEV=""
+RE_RC=1
 if [ -n "${REPO:-}" ]; then
 	# No --paginate: with --paginate, gh feeds each page to --jq separately, so `| length`
 	# prints one integer PER PAGE (a multi-line "0\n0" that breaks the -gt test). per_page=100
 	# fits any realistic repo's workflow set in one page → a single integer.
 	RUNEV=$(gh api "repos/$REPO/actions/workflows?per_page=100" \
-		--jq '[.workflows[] | select(.name=="run-evidence")] | length' 2>/dev/null || echo 0)
+		--jq '[.workflows[] | select(.name=="run-evidence")] | length' 2>/dev/null)
+	RE_RC=$?
 fi
-if [ "${RUNEV:-0}" -gt 0 ]; then
+if [ "$RE_RC" -ne 0 ] || ! printf '%s' "$RUNEV" | grep -Eq '^[0-9]+$'; then
+	say "$WARN" "READ FAILED: could not read the workflows of ${REPO:-<unresolved repo>} (gh exit $RE_RC, returned: $(brief "${RUNEV:-<empty>}")) — whether a run-evidence producer exists is UNKNOWN, which is neither a pass nor 'no run-evidence producer'"
+	fix "resolve the repo and re-run once \`gh auth status\` shows a token that can read it — ship-it guard 2's mode stays undetermined until this read succeeds"
+elif [ "$RUNEV" -gt 0 ]; then
 	say "$PASS" "run-evidence producer present — ship-it guard 2 runs in strict mode"
 else
 	say "$WARN" "no run-evidence producer — ship-it guard 2 degrades to checks-green (ADR 0086)"
