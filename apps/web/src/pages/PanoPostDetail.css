@@ -60,20 +60,24 @@
 	border: 1px solid var(--border);
 	border-radius: var(--r-sm);
 }
-.kp-pano-comment-composer__textarea {
+.kp-pano-comment-composer__textarea[data-scope="field"][data-part="root"] {
 	width: 100%;
-	min-height: 80px;
-	resize: vertical;
+}
+.kp-pano-comment-composer__textarea[data-scope="field"] [data-part="control"] {
+	width: 100%;
 	background: var(--surface);
 	border: 1px solid var(--border);
 	border-radius: var(--r-sm);
+	box-sizing: border-box;
+}
+.kp-pano-comment-composer__textarea[data-scope="field"] [data-part="input"] {
+	min-height: 80px;
 	padding: 6px 8px;
 	font: var(--t-mono);
 	color: var(--text-primary);
-	outline: none;
 	box-sizing: border-box;
 }
-.kp-pano-comment-composer__textarea:focus {
+.kp-pano-comment-composer__textarea[data-scope="field"]:focus-within [data-part="control"] {
 	border-color: var(--accent);
 }
 .kp-pano-comment-composer__foot {
@@ -100,29 +104,29 @@
 	flex-direction: column;
 	gap: var(--s-2);
 }
-.kp-pano-edit-post__title,
-.kp-pano-edit-post__body {
+.kp-pano-edit-post__title[data-scope="field"][data-part="root"],
+.kp-pano-edit-post__body[data-scope="field"][data-part="root"] {
 	width: 100%;
+}
+.kp-pano-edit-post__title[data-scope="field"] [data-part="control"],
+.kp-pano-edit-post__body[data-scope="field"] [data-part="control"] {
 	background: var(--surface);
 	border: 1px solid var(--border);
 	border-radius: var(--r-sm);
-	padding: 6px 8px;
 	color: var(--text-primary);
-	outline: none;
 	box-sizing: border-box;
 }
-.kp-pano-edit-post__title {
+.kp-pano-edit-post__title[data-scope="field"] [data-part="input"] {
 	font: var(--t-h-page);
 	font-weight: 600;
 	letter-spacing: -0.005em;
 }
-.kp-pano-edit-post__body {
+.kp-pano-edit-post__body[data-scope="field"] [data-part="input"] {
 	min-height: 120px;
-	resize: vertical;
 	font: var(--t-mono);
 }
-.kp-pano-edit-post__title:focus,
-.kp-pano-edit-post__body:focus {
+.kp-pano-edit-post__title[data-scope="field"]:focus-within [data-part="control"],
+.kp-pano-edit-post__body[data-scope="field"]:focus-within [data-part="control"] {
 	border-color: var(--accent);
 }
 

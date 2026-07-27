@@ -8,6 +8,7 @@
  * may enter, mirroring `DivanPage`.
  */
 import {FunnelSummary} from "../components/funnel/FunnelSummary";
+import {Alert} from "../components/ui/Alert";
 import {Screen} from "../fate/Screen";
 import "../components/funnel/Funnel.css";
 
@@ -39,8 +40,12 @@ export function FunnelPage() {
 function AccessError({code}: {readonly code: string}) {
 	const denied = code === "UNAUTHORIZED" || code === "FORBIDDEN";
 	return (
-		<p className="kp-funnel__error" role="alert" data-testid="funnel-access-error">
+		<Alert
+			variant="danger"
+			className="kp-alert--inline kp-funnel__error"
+			data-testid="funnel-access-error"
+		>
 			{denied ? "bu alanı görme yetkin yok." : "dönüşüm verisi yüklenemedi, tekrar dene."}
-		</p>
+		</Alert>
 	);
 }

@@ -32,7 +32,7 @@ export function Avatar({
 }) {
 	return (
 		<MantiAvatar
-			src={src}
+			src={src || undefined}
 			alt={name}
 			size={size}
 			shape="square"

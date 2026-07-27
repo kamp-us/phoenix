@@ -12,6 +12,7 @@ import {renderMarkdownInline} from "../../lib/markdown";
 import {actorLabel} from "../moderation/actor-identity";
 import {CommentReactionBar} from "../reaction/CommentReactionBar";
 import {ReactionBarSlot} from "../reaction/ReactionBarSlot";
+import {Button} from "../ui/Button";
 import {CopyLinkButton} from "../ui/CopyLinkButton";
 import {EditedIndicator} from "../ui/EditedIndicator";
 import {Menu} from "../ui/Menu";
@@ -124,10 +125,12 @@ export function CommentTreeNode(props: CommentTreeNodeProps) {
 				<span>{formatAgoTR(toIso(data.createdAt))}</span>
 				<EditedIndicator createdAt={toIso(data.createdAt)} updatedAt={toIso(data.updatedAt)} />
 				{!isDeleted ? (
-					<button
+					<Button
 						type="button"
+						variant="tertiary"
+						size="sm"
 						className={`kp-comment__upvote ${voted ? "kp-comment__upvote--active" : ""}`}
-						aria-pressed={voted}
+						pressed={voted}
 						aria-label={voted ? "Oyunu geri al" : "Yukarı oy"}
 						onClick={onUpvote}
 						data-testid={`comment-vote-${localId}`}
@@ -140,16 +143,18 @@ export function CommentTreeNode(props: CommentTreeNodeProps) {
 						>
 							{score}
 						</span>
-					</button>
+					</Button>
 				) : null}
-				<button
+				<Button
 					type="button"
+					variant="link"
+					size="sm"
 					className="kp-comment__collapser"
 					onClick={() => setOpen(!open)}
 					aria-label={open ? "Daralt" : "Genişlet"}
 				>
 					[ {open ? "—" : "+"} ]
-				</button>
+				</Button>
 			</header>
 			{open ? (
 				<>
@@ -166,13 +171,15 @@ export function CommentTreeNode(props: CommentTreeNodeProps) {
 					)}
 					{!isDeleted && !editing ? (
 						<footer className="kp-comment__foot">
-							<button
+							<Button
 								type="button"
+								variant="link"
+								size="sm"
 								onClick={() => props.onReply?.(data.id)}
 								data-testid={`pano-comment-reply-trigger-${localId}`}
 							>
 								yanıtla
-							</button>
+							</Button>
 							<CopyLinkButton
 								path={`${props.postPath}#comment-${data.id}`}
 								testId={`pano-comment-share-${localId}`}
@@ -187,14 +194,17 @@ export function CommentTreeNode(props: CommentTreeNodeProps) {
 								<Menu
 									placement="bottom-start"
 									trigger={
-										<button
+										<Button
 											type="button"
+											variant="tertiary"
+											size="sm"
+											iconOnly
 											className="kp-comment__menu-trigger"
 											aria-label="Daha fazla"
 											data-testid={`pano-comment-menu-${localId}`}
 										>
 											⋯
-										</button>
+										</Button>
 									}
 									items={[
 										{

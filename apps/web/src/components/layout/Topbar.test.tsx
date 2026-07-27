@@ -139,6 +139,25 @@ describe("Topbar accent-scarcity containment law (#2614)", () => {
 		expect(temaHover?.body).toMatch(/color:\s*var\(--text-primary\)/);
 		expect(temaHover?.body).not.toMatch(/var\(--accent(-11)?\)/);
 	});
+
+	it("arama odağını yalnızca dış kabuk çizer; Manti kontrolü ikinci halka üretmez", () => {
+		const searchControlFocus = rules.find(
+			(r) =>
+				/kp-topbar__search-field/.test(r.selector) &&
+				/:focus-within/.test(r.selector) &&
+				/\[data-part="control"\]/.test(r.selector),
+		);
+		expect(searchControlFocus).toBeDefined();
+		expect(searchControlFocus?.body).toMatch(/border-color:\s*transparent/);
+		expect(searchControlFocus?.body).toMatch(/box-shadow:\s*none/);
+	});
+
+	it("kompakt üst çubuk butonu Manti'nin ortak min-height değerine esnemez", () => {
+		const compactButton = rules.find((r) => r.selector === ".kp-topbar__btn");
+		expect(compactButton).toBeDefined();
+		expect(compactButton?.body).toMatch(/--manti-button-height:\s*24px/);
+		expect(compactButton?.body).toMatch(/--manti-button-padding-x:\s*8px/);
+	});
 });
 
 describe("Topbar status/signal zone (#2613)", () => {

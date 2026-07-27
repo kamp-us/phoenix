@@ -1,5 +1,6 @@
 import {useId} from "react";
 import {Input} from "../../components/ui/Form";
+import {NumberInput} from "../../components/ui/NumberInput";
 import {Switch} from "../../components/ui/Switch";
 import {ToggleGroup} from "../../components/ui/ToggleGroup";
 import type {AnyKnob, AnyKnobSchema, KnobValue, KnobValues} from "./knob";
@@ -92,16 +93,16 @@ function KnobControl({
 			);
 		case "number":
 			return (
-				<Input
-					type="number"
-					aria-labelledby={labelId}
-					data-knob={name}
-					min={knob.min}
-					max={knob.max}
-					step={knob.step}
-					value={String(value)}
-					onChange={(event) => onChange(event.target.valueAsNumber)}
-				/>
+				<div className="kp-knobs__control" data-knob={name}>
+					<NumberInput
+						label={<span className="kp-visually-hidden">{knob.label ?? name}</span>}
+						min={knob.min}
+						max={knob.max}
+						step={knob.step}
+						value={String(value)}
+						onValueChange={(_next, valueAsNumber) => onChange(valueAsNumber)}
+					/>
+				</div>
 			);
 		case "boolean":
 			return (

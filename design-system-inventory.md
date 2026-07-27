@@ -9,6 +9,15 @@ prohibitions, and the role-token values — is founder-authored in
 [`design-system-manifest.md`](design-system-manifest.md) and is never written here. A
 when-to-use references that law; it never restates or mints it.
 
+## Alert
+
+_Source: apps/web/src/components/ui/Alert.tsx_
+
+**When to use:** A Manti-backed inline semantic message. Use `danger` for errors and another semantic variant for non-error outcomes; add `kp-alert--inline` when preserving a feature's existing text-only geometry.
+
+**Slots:**
+- `children` — The message description.
+
 ## Avatar
 
 _Source: apps/web/src/components/ui/Avatar.tsx_
@@ -17,6 +26,15 @@ _Source: apps/web/src/components/ui/Avatar.tsx_
 
 **Slots:**
 - `fallback` — Rendered internally from the first two initials of `name`.
+
+## Badge
+
+_Source: apps/web/src/components/ui/Badge.tsx_
+
+**When to use:** A Manti-backed compact status or category chip. Keep state in text, not color alone, and use a feature class only to preserve an established Phoenix category palette.
+
+**Slots:**
+- `children` — The badge label.
 
 ## Button
 
@@ -174,6 +192,15 @@ _Source: apps/web/src/components/ui/MetaRow.tsx_
 **Slots:**
 - `children` — The metadata items; separate them with `MetaRow.Dot`.
 
+## NumberInput
+
+_Source: apps/web/src/components/ui/NumberInput.tsx_
+
+**When to use:** A Manti-backed numeric field with bounds and step controls. Prefer this over a generic Input with `type="number"` when numeric stepping is the interaction.
+
+**Slots:**
+- `label` — Optional visible field label.
+
 ## Popover
 
 _Source: apps/web/src/components/ui/Popover.tsx_
@@ -201,6 +228,15 @@ _Source: apps/web/src/components/ui/ReviewBadge.tsx_
 
 **Slots:**
 - `none` — Fixed copy; no children slot.
+
+## ScrollArea
+
+_Source: apps/web/src/components/ui/ScrollArea.tsx_
+
+**When to use:** A bounded Manti-backed scroll viewport that needs keyboard focus and draggable scrollbars while its surrounding header/footer stay fixed.
+
+**Slots:**
+- `children` — Scrollable content.
 
 ## Skeleton
 

@@ -13,6 +13,7 @@
  */
 import {useListView, useRequest, useView, type ViewRef, view} from "react-fate";
 import type {OpenReport} from "../../../worker/features/fate/views";
+import {Badge} from "../ui/Badge";
 import {itemKindLabel} from "./divanGating";
 import {
 	reasonLabel,
@@ -75,7 +76,9 @@ function ReportRow({node}: {readonly node: ViewRef<"OpenReport">}) {
 		>
 			<span className="kp-divan__item-meta">
 				<span className="kp-divan__kind">{itemKindLabel(data.targetKind)}</span>
-				<span className="kp-divan__badge">{data.reportCount} rapor</span>
+				<Badge variant="danger" className="kp-divan__badge">
+					{data.reportCount} rapor
+				</Badge>
 				{age !== null && <span className="kp-divan__rapor-age">{age}</span>}
 			</span>
 			<p className="kp-divan__rapor-target">

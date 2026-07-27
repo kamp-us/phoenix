@@ -19,6 +19,7 @@ import {useMe} from "../../auth/useMe";
 import {useImperativeView} from "../../fate/useImperativeView";
 import {MECMUA_FEED} from "../../flags/keys";
 import {useFlag} from "../../flags/useFlag";
+import {Alert} from "../ui/Alert";
 import {Button} from "../ui/Button";
 import "./MecmuaSubscribeButton.css";
 
@@ -107,9 +108,13 @@ function MecmuaSubscribeToggle({authorId}: {authorId: string}) {
 				{mecmuaSubscribeLabel(subscribed, hovering)}
 			</Button>
 			{error ? (
-				<p className="kp-mecmua-subscribe__error" role="alert" data-testid="mecmua-subscribe-error">
+				<Alert
+					variant="danger"
+					className="kp-alert--inline kp-mecmua-subscribe__error"
+					data-testid="mecmua-subscribe-error"
+				>
 					{error}
-				</p>
+				</Alert>
 			) : null}
 		</div>
 	);

@@ -17,7 +17,10 @@
 import {useCallback, useEffect, useState} from "react";
 import {useFateClient, useListView, useRequest, useView, type ViewRef, view} from "react-fate";
 import type {OpenReport, ResolveReceipt} from "../../../worker/features/report/views";
+import {Alert} from "../ui/Alert";
 import {Kbd} from "../ui/atoms";
+import {Badge} from "../ui/Badge";
+import {Button} from "../ui/Button";
 import {Surface} from "../ui/Card";
 import {ActorDrawer} from "./ActorDrawer";
 import {type Chamber, drawerDefaultOpen, drawerKeyToAction, hopTarget} from "./actor-drawer";
@@ -420,33 +423,42 @@ export function TriageLoop({onExit}: {readonly onExit: () => void}) {
 			</div>
 
 			{error && (
-				<p className="kp-triage__error" role="alert" data-testid="triage-error">
+				<Alert
+					variant="danger"
+					className="kp-alert--inline kp-triage__error"
+					data-testid="triage-error"
+				>
 					{error}
-				</p>
+				</Alert>
 			)}
 
 			{pending === "remove" && focusedTarget && (
 				<div className="kp-triage__confirm" role="alertdialog" data-testid="triage-confirm">
 					<p className="kp-triage__confirm-line">içeriği kaldır? (R onayla · Esc vazgeç)</p>
 					<div className="kp-triage__confirm-actions">
-						<button
+						<Button
 							type="button"
+							variant="danger"
+							size="sm"
 							className="kp-triage__confirm-yes"
 							disabled={busy}
+							loading={busy}
 							onClick={() => void resolve(focusedTarget, "remove")}
 							data-testid="triage-confirm-yes"
 						>
 							kaldır
-						</button>
-						<button
+						</Button>
+						<Button
 							type="button"
+							variant="secondary"
+							size="sm"
 							className="kp-triage__confirm-no"
 							disabled={busy}
 							onClick={() => setPending(null)}
 							data-testid="triage-confirm-no"
 						>
 							vazgeç
-						</button>
+						</Button>
 					</div>
 				</div>
 			)}
@@ -647,9 +659,13 @@ function WaveManifest({
 			</ul>
 
 			{error && (
-				<p className="kp-wave__error" role="alert" data-testid="wave-error">
+				<Alert
+					variant="danger"
+					className="kp-alert--inline kp-wave__error"
+					data-testid="wave-error"
+				>
 					{error}
-				</p>
+				</Alert>
 			)}
 
 			{pending === "remove" && (
@@ -658,24 +674,29 @@ function WaveManifest({
 						{blastRadiusLabel(manifest, selected)}
 					</p>
 					<div className="kp-wave__confirm-actions">
-						<button
+						<Button
 							type="button"
+							variant="danger"
+							size="sm"
 							className="kp-wave__confirm-yes"
 							disabled={busy}
+							loading={busy}
 							onClick={() => void apply("remove")}
 							data-testid="wave-confirm-yes"
 						>
 							kaldır (Enter)
-						</button>
-						<button
+						</Button>
+						<Button
 							type="button"
+							variant="secondary"
+							size="sm"
 							className="kp-wave__confirm-no"
 							disabled={busy}
 							onClick={() => setPending(null)}
 							data-testid="wave-confirm-no"
 						>
 							vazgeç (Esc)
-						</button>
+						</Button>
 					</div>
 				</div>
 			)}
@@ -764,9 +785,9 @@ function TriageCard({
 		>
 			<header className="kp-triage__card-head">
 				<span className="kp-triage__kind">{itemKindLabel(data.targetKind)}</span>
-				<span className="kp-triage__diversity" data-testid="triage-diversity">
+				<Badge variant="secondary" className="kp-triage__diversity" data-testid="triage-diversity">
 					{diversity}
-				</span>
+				</Badge>
 				{age !== null && <span className="kp-triage__age">{age}</span>}
 			</header>
 

@@ -1,5 +1,5 @@
 /* Phoenix visual contract over Manti's public Button anatomy. */
-.kp-btn[data-scope="button"][data-part="root"] {
+.kp-btn:where([data-scope="button"][data-part="root"]) {
 	--manti-button-radius: var(--r-sm);
 	--manti-button-gap: 6px;
 	--manti-button-height: var(--tap-min);
@@ -14,58 +14,89 @@
 		border-color 80ms;
 }
 
-.kp-btn[data-variant="primary"] {
+.kp-btn:where([data-variant="primary"]) {
 	background: var(--accent-9);
 	color: var(--accent-fg);
 	border-color: var(--accent-9);
 	font-weight: 600;
 }
-.kp-btn[data-variant="primary"]:hover:not(:disabled) {
+.kp-btn:where([data-variant="primary"]):hover:not(:disabled) {
 	filter: brightness(1.06);
 }
 
-.kp-btn[data-variant="secondary"] {
+.kp-btn:where([data-variant="secondary"]) {
 	background: var(--surface-raised);
 	color: var(--text-primary);
 	border-color: var(--border);
 }
-.kp-btn[data-variant="secondary"]:hover:not(:disabled) {
+.kp-btn:where([data-variant="secondary"]):hover:not(:disabled) {
 	background: var(--accent-faint);
 	border-color: var(--accent-soft);
 }
 
-.kp-btn[data-variant="tertiary"] {
+.kp-btn:where([data-variant="tertiary"]) {
 	background: transparent;
 	color: var(--text-secondary);
 }
-.kp-btn[data-variant="tertiary"]:hover:not(:disabled) {
+.kp-btn:where([data-variant="tertiary"]):hover:not(:disabled) {
 	background: var(--surface-raised);
 	color: var(--text-primary);
 }
 
-.kp-btn[data-variant="danger"] {
+.kp-btn:where([data-variant="outline"]) {
+	background: transparent;
+	color: var(--text-secondary);
+	border-color: var(--border);
+	box-shadow: none;
+}
+.kp-btn:where([data-variant="outline"]):hover:not(:disabled) {
+	background: var(--accent-faint);
+	color: var(--accent);
+	border-color: var(--accent);
+}
+
+.kp-btn:where([data-variant="danger"]) {
 	background: transparent;
 	color: var(--danger);
 	border-color: transparent;
 	box-shadow: none;
 }
-.kp-btn[data-variant="danger"]:hover:not(:disabled) {
+.kp-btn:where([data-variant="danger"]):hover:not(:disabled) {
 	background: var(--danger);
 	color: var(--accent-fg);
 }
 
-.kp-btn[data-size="sm"] {
-	--manti-button-padding-x: var(--s-2);
-	font: var(--t-meta);
+.kp-btn:where([data-variant="link"]) {
+	--manti-button-height: auto;
+	--manti-button-padding-x: 0px;
+	min-width: 0;
+	background: transparent;
+	border-color: transparent;
+	box-shadow: none;
+	color: var(--accent);
+	font: inherit;
+}
+.kp-btn:where([data-variant="link"]):hover:not(:disabled) {
+	background: transparent;
+	text-decoration: underline;
+}
+
+.kp-btn:where([data-size="sm"]) {
+	--manti-button-height: 30px;
+	--manti-button-padding-x: var(--s-3);
+	font: var(--t-body-sm);
 	font-weight: 500;
 }
-.kp-btn[data-size="lg"] {
+.kp-btn:where([data-size="sm"][data-variant="link"]) {
+	--manti-button-padding-x: 0px;
+}
+.kp-btn:where([data-size="lg"]) {
 	--manti-button-padding-x: var(--s-4);
 	font: var(--t-body);
 	font-weight: 600;
 }
 
-.kp-btn[aria-pressed="true"] {
+.kp-btn:where([aria-pressed="true"]) {
 	border-color: var(--accent);
 	background: var(--accent-faint);
 	color: var(--accent);

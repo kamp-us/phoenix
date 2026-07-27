@@ -59,6 +59,7 @@ export function SozlukSubnavCta() {
 				<Input
 					name="term"
 					label="Terim"
+					className="kp-field--semantic-required"
 					value={term}
 					onChange={(event) => {
 						setTerm(event.currentTarget.value);

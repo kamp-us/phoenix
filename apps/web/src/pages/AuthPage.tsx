@@ -2,6 +2,7 @@ import {useState} from "react";
 import {useFateClient, view} from "react-fate";
 import type {User} from "../../worker/features/fate/views";
 import {authClient} from "../auth/client";
+import {Alert, Button, Form, Input} from "../components/ui";
 import {codeOf} from "../fate/wire";
 import {validateEmail, validateName, validatePassword, validateSignIn} from "./authValidation";
 import {beginUsernameResolution, endUsernameResolution} from "./signupUsernameGate";
@@ -184,21 +185,28 @@ export function AuthPage() {
 						hesabın açıldı, ama seçtiğin <strong>{stuckUsername}</strong> adı ayarlanamadı.
 						kullanıcı adı sonradan değişmez, o yüzden devam etmeden önce tekrar dene.
 					</p>
-					{error ? <p className="kp-auth__error">{error}</p> : null}
+					{error ? (
+						<Alert variant="danger" className="kp-alert--inline kp-auth__error">
+							{error}
+						</Alert>
+					) : null}
 					<div className="kp-auth__form">
-						<button
+						<Button
 							type="button"
+							variant="primary"
+							block
 							className="kp-auth__submit"
 							disabled={pending}
+							loading={pending}
 							onClick={retryStuckUsername}
 						>
 							{pending ? "ayarlanıyor…" : "tekrar dene"}
-						</button>
+						</Button>
 					</div>
 					<div className="kp-auth__alt">
-						<button type="button" onClick={abandonStuckUsername} disabled={pending}>
+						<Button type="button" variant="link" onClick={abandonStuckUsername} disabled={pending}>
 							bu adı bırak, sonra seçerim
-						</button>
+						</Button>
 					</div>
 				</div>
 			</div>
@@ -222,72 +230,97 @@ export function AuthPage() {
 						girer.
 					</p>
 				) : null}
-				<form className="kp-auth__form" onSubmit={onSubmit} noValidate>
+				<Form className="kp-auth__form" onSubmit={onSubmit} noValidate>
 					{!isSignIn ? (
-						<div className="kp-auth__field">
-							<label htmlFor="auth-name">görünen ad</label>
-							<input
-								id="auth-name"
-								name="name"
-								type="text"
-								autoComplete="name"
-								required
-								placeholder="elif kaya"
-							/>
-						</div>
-					) : null}
-					<div className="kp-auth__field">
-						<label htmlFor="auth-email">e-posta</label>
-						<input
-							id="auth-email"
-							name="email"
-							type="email"
-							autoComplete="email"
+						<Input
+							className="kp-auth__field"
+							id="auth-name"
+							name="name"
+							type="text"
+							label="görünen ad"
+							aria-label="görünen ad"
+							autoComplete="name"
 							required
-							placeholder="elif@kamp.us"
+							fullWidth
+							variant="fill"
+							placeholder="elif kaya"
 						/>
-					</div>
+					) : null}
+					<Input
+						className="kp-auth__field"
+						id="auth-email"
+						name="email"
+						type="email"
+						label="e-posta"
+						aria-label="e-posta"
+						autoComplete="email"
+						required
+						fullWidth
+						variant="fill"
+						placeholder="elif@kamp.us"
+					/>
 					{!isSignIn ? (
-						<div className="kp-auth__field">
-							<label htmlFor="auth-username">
-								kullanıcı adı <span className="kp-auth__optional">(isteğe bağlı)</span>
-							</label>
-							<input
-								id="auth-username"
-								name="username"
-								type="text"
-								autoComplete="off"
-								minLength={3}
-								maxLength={30}
-								placeholder="elif-kaya"
-							/>
-							<p className="kp-auth__hint">
-								profilin /u/&lt;ad&gt; üzerinden açılır. sonradan değişmez.
-							</p>
-						</div>
-					) : null}
-					<div className="kp-auth__field">
-						<label htmlFor="auth-pw">parola</label>
-						<input
-							id="auth-pw"
-							name="password"
-							type="password"
-							autoComplete={isSignIn ? "current-password" : "new-password"}
-							required
-							minLength={8}
-							placeholder={isSignIn ? "••••••••" : "en az 8 karakter"}
+						<Input
+							className="kp-auth__field"
+							id="auth-username"
+							name="username"
+							type="text"
+							label={
+								<>
+									kullanıcı adı <span className="kp-auth__optional">(isteğe bağlı)</span>
+								</>
+							}
+							hint="profilin /u/<ad> üzerinden açılır. sonradan değişmez."
+							autoComplete="off"
+							minLength={3}
+							maxLength={30}
+							fullWidth
+							variant="fill"
+							placeholder="elif-kaya"
 						/>
-					</div>
-					{error ? <p className="kp-auth__error">{error}</p> : null}
-					<button type="submit" className="kp-auth__submit" disabled={pending}>
+					) : null}
+					<Input
+						className="kp-auth__field"
+						id="auth-pw"
+						name="password"
+						type="password"
+						label="parola"
+						aria-label="parola"
+						autoComplete={isSignIn ? "current-password" : "new-password"}
+						required
+						minLength={8}
+						fullWidth
+						variant="fill"
+						capsLockLabel="Caps Lock açık"
+						showPasswordLabel="parolayı göster"
+						hidePasswordLabel="parolayı gizle"
+						placeholder={isSignIn ? "••••••••" : "en az 8 karakter"}
+					/>
+					{error ? (
+						<Alert variant="danger" className="kp-alert--inline kp-auth__error">
+							{error}
+						</Alert>
+					) : null}
+					<Button
+						type="submit"
+						variant="primary"
+						block
+						className="kp-auth__submit"
+						disabled={pending}
+						loading={pending}
+					>
 						{pending ? (isSignIn ? "giriliyor…" : "açılıyor…") : isSignIn ? "devam et" : "hesap aç"}
-					</button>
-				</form>
+					</Button>
+				</Form>
 				<div className="kp-auth__alt">
 					{isSignIn ? "hesabın yok mu? " : "zaten hesabın var mı? "}
-					<button type="button" onClick={() => setMode(isSignIn ? "sign-up" : "sign-in")}>
+					<Button
+						type="button"
+						variant="link"
+						onClick={() => setMode(isSignIn ? "sign-up" : "sign-in")}
+					>
 						{isSignIn ? "kayıt ol" : "giriş yap"}
-					</button>
+					</Button>
 				</div>
 			</div>
 		</div>

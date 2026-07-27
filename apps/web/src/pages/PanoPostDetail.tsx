@@ -27,9 +27,11 @@ import {
 	PanoPostHeaderVote,
 } from "../components/pano/PanoPostHeader";
 import {PanoPostSkeleton} from "../components/pano/PanoSkeleton";
+import {Alert} from "../components/ui/Alert";
 import {Button} from "../components/ui/Button";
 import {Dialog} from "../components/ui/Dialog";
 import {EmptyState} from "../components/ui/EmptyState";
+import {Input, Textarea} from "../components/ui/Form";
 import type {ReportOutcome} from "../components/ui/ReportButton";
 import {
 	beginOptimisticCommentMembership,
@@ -326,31 +328,36 @@ function PostContentInner({post, idOrSlug}: {post: ViewRef<"Post">; idOrSlug: st
 				<PanoPostHeaderVote post={post} isAuthor={isAuthor} />
 				{editing ? (
 					<form className="kp-pano-edit-post" onSubmit={onEditSubmit}>
-						<input
+						<Input
 							className="kp-pano-edit-post__title"
+							aria-label="başlık"
 							value={editTitle}
 							onChange={(e) => setEditTitle(e.target.value)}
 							disabled={editInFlight}
 							data-testid="post-edit-title"
 							maxLength={TITLE_MAX + 50}
+							fullWidth
 						/>
-						<textarea
+						<Textarea
 							className="kp-pano-edit-post__body"
+							aria-label="içerik"
 							value={editBody}
 							onChange={(e) => setEditBody(e.target.value)}
 							disabled={editInFlight}
 							data-testid="post-edit-body"
 							maxLength={BODY_MAX + 100}
+							fullWidth
+							resize="vertical"
 						/>
 						{editError ? (
-							<p
-								className="kp-pano-edit-post__error"
-								role="alert"
+							<Alert
+								variant="danger"
+								className="kp-alert--inline kp-pano-edit-post__error"
 								data-testid="post-edit-error"
 								style={{color: "var(--danger)", font: "var(--t-meta)"}}
 							>
 								{editError}
-							</p>
+							</Alert>
 						) : null}
 						<div style={{display: "flex", gap: 6}}>
 							<Button
@@ -411,9 +418,13 @@ function PostContentInner({post, idOrSlug}: {post: ViewRef<"Post">; idOrSlug: st
 					)}
 				>
 					{deleteError ? (
-						<p role="alert" style={{color: "var(--danger)", font: "var(--t-meta)"}}>
+						<Alert
+							variant="danger"
+							className="kp-alert--inline"
+							style={{color: "var(--danger)", font: "var(--t-meta)"}}
+						>
 							{deleteError}
-						</p>
+						</Alert>
 					) : null}
 				</Dialog>
 			) : null}
@@ -762,9 +773,13 @@ function Comments(props: CommentsProps) {
 				)}
 			>
 				{deleteError ? (
-					<p role="alert" style={{color: "var(--danger)", font: "var(--t-meta)"}}>
+					<Alert
+						variant="danger"
+						className="kp-alert--inline"
+						style={{color: "var(--danger)", font: "var(--t-meta)"}}
+					>
 						{deleteError}
-					</p>
+					</Alert>
 				) : null}
 			</Dialog>
 		</>
@@ -894,9 +909,10 @@ function CommentComposer({
 
 	return (
 		<form className="kp-pano-comment-composer" onSubmit={onSubmit} data-testid={testId}>
-			<textarea
+			<Textarea
 				ref={textareaRef}
 				className="kp-pano-comment-composer__textarea"
+				aria-label={parentId ? "yanıt" : "yorum"}
 				placeholder={
 					signedIn
 						? "yorum yaz. markdown çalışır, ``` ``` kod bloğu çalışır."
@@ -908,15 +924,18 @@ function CommentComposer({
 				disabled={inFlight || !signedIn}
 				data-testid={parentId ? `pano-comment-reply-input-${parentId}` : "pano-comment-input"}
 				maxLength={COMMENT_BODY_MAX + 100}
+				fullWidth
+				resize="vertical"
 			/>
 			{error ? (
-				<p
-					role="alert"
+				<Alert
+					variant="danger"
+					className="kp-alert--inline"
 					data-testid="pano-comment-error"
 					style={{color: "var(--danger)", font: "var(--t-meta)"}}
 				>
 					{error}
-				</p>
+				</Alert>
 			) : null}
 			<div className="kp-pano-comment-composer__foot">
 				<span className="kp-pano-comment-composer__hint">
@@ -992,23 +1011,27 @@ function CommentEditComposer({
 			onSubmit={submit}
 			data-testid={`pano-comment-edit-form-${localId}`}
 		>
-			<textarea
+			<Textarea
 				className="kp-pano-comment-composer__textarea"
+				aria-label="yorumu düzenle"
 				value={body}
 				onChange={(e) => setBody(e.target.value)}
 				onKeyDown={submitOnCmdEnter}
 				disabled={inFlight}
 				data-testid={`pano-comment-edit-input-${localId}`}
 				maxLength={COMMENT_BODY_MAX + 100}
+				fullWidth
+				resize="vertical"
 			/>
 			{error ? (
-				<p
-					role="alert"
+				<Alert
+					variant="danger"
+					className="kp-alert--inline"
 					data-testid={`pano-comment-edit-error-${localId}`}
 					style={{color: "var(--danger)", font: "var(--t-meta)"}}
 				>
 					{error}
-				</p>
+				</Alert>
 			) : null}
 			<div className="kp-pano-comment-composer__foot">
 				<span className="kp-pano-comment-composer__hint">

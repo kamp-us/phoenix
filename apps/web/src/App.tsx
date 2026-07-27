@@ -25,6 +25,7 @@ import {PanoSubnavLayout} from "./components/pano/PanoSubnavLayout";
 import {EagerProfileContributionSkeleton} from "./components/profile/ProfileContributionSignal";
 import {SozlukCreateDialogProvider} from "./components/sozluk/SozlukCreateDialogState";
 import {SozlukSubnavLayout} from "./components/sozluk/SozlukSubnavLayout";
+import {Button} from "./components/ui/Button";
 import {ToastProvider} from "./components/ui/Toast";
 import {Provider as TooltipProvider} from "./components/ui/Tooltip";
 import {FateProvider, PublicFateProvider} from "./fate/FateProvider";
@@ -216,13 +217,15 @@ function Layout() {
 								// signed-in user from the first frame, so it never flashes then swaps out
 								// (#2933, ADR 0185). Absent `__BOOT__` ⇒ this reduces to `isSignedIn`, today's split.
 								!signedInAtFirstPaint ? (
-									<button
+									<Button
 										type="button"
+										variant="secondary"
+										size="sm"
 										className="kp-topbar__btn"
 										onClick={() => navigate("/auth")}
 									>
 										giriş yap
-									</button>
+									</Button>
 								) : null
 								// Signed in ⇒ no topbar action: pano's `+ gönderi` primary action lives in
 								// the pano Subnav CTA zone (placement law #2587), not the topbar.

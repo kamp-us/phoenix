@@ -17,7 +17,11 @@ import {useState} from "react";
 import {Link} from "react-router";
 import {Screen} from "../../fate/Screen";
 import {Icon} from "../Icon";
+import {Alert} from "../ui/Alert";
+import {Badge} from "../ui/Badge";
+import {Button} from "../ui/Button";
 import {Popover} from "../ui/Popover";
+import {ScrollArea} from "../ui/ScrollArea";
 import {BildirimList} from "./BildirimList";
 import {formatUnreadBadge} from "./bildirim";
 import "./Bildirim.css";
@@ -41,33 +45,46 @@ export function BildirimPopover({to, unread}: {to: string; unread: number}) {
 				className="kp-bildirim-pop__popup"
 				title={<span className="kp-bildirim-pop__title">bildirimler</span>}
 				trigger={
-					<button
+					<Button
 						type="button"
+						variant="tertiary"
+						size="sm"
+						iconOnly
 						className="kp-bildirim-pop__trigger"
 						data-testid="topbar-bildirim-badge"
 						aria-label={label}
 					>
 						<Icon icon={Bell} size={16} />
-						<span className="kp-bildirim-pop__count" aria-hidden="true">
+						<Badge
+							variant="secondary"
+							size="sm"
+							className="kp-bildirim-pop__count"
+							aria-hidden="true"
+						>
 							{formatUnreadBadge(unread)}
-						</span>
-					</button>
+						</Badge>
+					</Button>
 				}
 			>
-				<div className="kp-bildirim-pop__body" data-testid="topbar-bildirim-popover">
+				<ScrollArea
+					orientation="vertical"
+					type="auto"
+					className="kp-bildirim-pop__body"
+					data-testid="topbar-bildirim-popover"
+				>
 					<Screen
 						fallback={<p className="kp-bildirim__loading">yükleniyor…</p>}
 						error={({code}) => (
-							<p className="kp-bildirim__error" role="alert">
+							<Alert variant="danger" className="kp-alert--inline kp-bildirim__error">
 								{code === "UNAUTHORIZED" || code === "FORBIDDEN"
 									? "bildirimlerini görmek için giriş yapmalısın."
 									: "bildirimler yüklenemedi, tekrar dene."}
-							</p>
+							</Alert>
 						)}
 					>
 						<BildirimList />
 					</Screen>
-				</div>
+				</ScrollArea>
 				<footer className="kp-bildirim-pop__foot">
 					<Link
 						to={to}

@@ -15,12 +15,16 @@
 
 import fc from "fast-check";
 import type {ReactElement} from "react";
+import {Alert} from "../Alert";
 import {Avatar} from "../Avatar";
 import {Code, Kbd, Mark, Skeleton, Tag} from "../atoms";
+import {Badge} from "../Badge";
 import {Button} from "../Button";
 import {Card, Surface} from "../Card";
 import {CountToggle} from "../CountToggle";
 import {MetaRow} from "../MetaRow";
+import {NumberInput} from "../NumberInput";
+import {ScrollArea} from "../ScrollArea";
 
 /** An interactive control: name/focus invariants apply to its `selector` element. */
 export interface InteractiveSpec {
@@ -147,6 +151,34 @@ const skeletonArb: fc.Arbitrary<ReactElement> = fc
 	.record({width: fc.integer({min: 8, max: 320}), height: fc.integer({min: 8, max: 64})})
 	.map((props) => <Skeleton {...props} />);
 
+const numberInputArb: fc.Arbitrary<ReactElement> = fc
+	.record({
+		label,
+		value: fc.integer({min: -100, max: 100}),
+		disabled: fc.boolean(),
+	})
+	.map(({label: inputLabel, value, disabled}) => (
+		<NumberInput label={inputLabel} value={String(value)} disabled={disabled} />
+	));
+
+const alertArb: fc.Arbitrary<ReactElement> = fc
+	.record({
+		variant: fc.constantFrom(...(["secondary", "success", "info", "danger"] as const)),
+		children: text,
+	})
+	.map(({children, ...props}) => <Alert {...props}>{children}</Alert>);
+
+const badgeArb: fc.Arbitrary<ReactElement> = fc
+	.record({
+		variant: fc.constantFrom(...(["primary", "secondary", "success", "info", "danger"] as const)),
+		children: text,
+	})
+	.map(({children, ...props}) => <Badge {...props}>{children}</Badge>);
+
+const scrollAreaArb: fc.Arbitrary<ReactElement> = text.map((children) => (
+	<ScrollArea orientation="vertical">{children}</ScrollArea>
+));
+
 /** Reason shared by Manti primitives parked out of the bare-prop harness. */
 const COMPOUND_REASON =
 	"Manti machine primitive — needs required items/trigger/content props or a portal interaction to render a representative surface; covered by composed-usage tests.";
@@ -160,12 +192,16 @@ export const REGISTRY: Readonly<Record<string, PrimitiveSpec>> = {
 	// Interactive controls — the full name/focus/ARIA invariant set applies.
 	Button: {kind: "interactive", selector: "button", arb: buttonArb},
 	CountToggle: {kind: "interactive", selector: "button", arb: countToggleArb},
+	NumberInput: {kind: "interactive", selector: "input", arb: numberInputArb},
 
 	// Presentational primitives — structural ARIA invariants only.
 	Surface: {kind: "presentational", arb: surfaceArb},
 	Card: {kind: "presentational", arb: cardArb},
 	MetaRow: {kind: "presentational", arb: metaRowArb},
+	Alert: {kind: "presentational", arb: alertArb},
 	Avatar: {kind: "presentational", arb: avatarArb},
+	Badge: {kind: "presentational", arb: badgeArb},
+	ScrollArea: {kind: "presentational", arb: scrollAreaArb},
 	Tag: {kind: "presentational", arb: tagArb},
 	Code: {kind: "presentational", arb: inlineAtomArb(Code)},
 	Kbd: {kind: "presentational", arb: inlineAtomArb(Kbd)},

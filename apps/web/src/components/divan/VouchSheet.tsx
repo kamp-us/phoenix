@@ -22,6 +22,7 @@ import {useState} from "react";
 import {useFateClient, view} from "react-fate";
 import type {PromotionReceipt} from "../../../worker/features/fate/views";
 import {codeOf} from "../../fate/wire";
+import {Alert} from "../ui/Alert";
 import {Button} from "../ui/Button";
 import {Dialog} from "../ui/Dialog";
 import {type VouchOutcome, vouchOutcome, vouchOutcomeMessage} from "./divanGating";
@@ -109,9 +110,14 @@ export function VouchSheet({
 				dilediğinde kefilliğini geri çekebilirsin.
 			</p>
 			{message ? (
-				<p className="kp-divan__status" role="status" aria-live="polite" data-testid="vouch-status">
+				<Alert
+					variant="secondary"
+					className="kp-alert--inline kp-divan__status"
+					aria-live="polite"
+					data-testid="vouch-status"
+				>
 					{message}
-				</p>
+				</Alert>
 			) : null}
 		</Dialog>
 	);

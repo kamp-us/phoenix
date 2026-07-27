@@ -12,7 +12,7 @@
  * a receipt; the up-vote is the affordance, the count is the confirmation.
  *
  * a11y: a labelled region per çaylak; the backlog is a real `<ul>`; each item is a
- * group with a real `<button>` upvote (full keyboard path, visible focus, AA
+ * group with a Manti Button upvote (full keyboard path, visible focus, AA
  * contrast) whose pressed state is `aria-pressed` (not color); the "incelemede"
  * status is text, never color; copy is lowercase Turkish; mutation outcomes are
  * `role="status"` live regions.
@@ -28,6 +28,8 @@ import type {
 import type {Tier} from "../../../worker/features/kunye/standing";
 import {Screen} from "../../fate/Screen";
 import {codeOf} from "../../fate/wire";
+import {Alert} from "../ui/Alert";
+import {Badge} from "../ui/Badge";
 import {Button} from "../ui/Button";
 import {ReportButton, type ReportOutcome} from "../ui/ReportButton";
 import {VoteTriangle} from "../VoteTriangle";
@@ -190,14 +192,14 @@ function ReviewerActions({
 				) : null}
 			</div>
 			{message ? (
-				<p
-					className="kp-divan__status"
-					role="status"
+				<Alert
+					variant="secondary"
+					className="kp-alert--inline kp-divan__status"
 					aria-live="polite"
 					data-testid="promote-status"
 				>
 					{message}
-				</p>
+				</Alert>
 			) : null}
 			{showVouch ? (
 				<VouchSheet open={vouchOpen} onOpenChange={setVouchOpen} candidateId={authorId} />
@@ -254,17 +256,19 @@ function BacklogItemRow({node}: {readonly node: ViewRef<"DivanBacklogItem">}) {
 	return (
 		<li className="kp-divan__item" data-testid={`divan-item-${data.id}`}>
 			<div className="kp-divan__item-vote">
-				<button
+				<Button
 					type="button"
+					variant="tertiary"
+					size="sm"
 					className="kp-divan__upvote"
 					onClick={onVote}
 					disabled={voteBusy}
-					aria-pressed={mine}
+					pressed={mine}
 					aria-label={mine ? "oyu geri çek" : "oy ver"}
 					data-testid={`divan-upvote-${data.id}`}
 				>
 					<VoteTriangle />
-				</button>
+				</Button>
 				{score !== null ? (
 					<span className="kp-divan__score" data-testid={`divan-score-${data.id}`}>
 						{score}
@@ -274,9 +278,9 @@ function BacklogItemRow({node}: {readonly node: ViewRef<"DivanBacklogItem">}) {
 			<div className="kp-divan__item-body">
 				<div className="kp-divan__item-meta">
 					<span className="kp-divan__kind">{itemKindLabel(data.kind)}</span>
-					<span className="kp-divan__badge" data-testid="incelemede-badge">
+					<Badge variant="info" className="kp-divan__badge" data-testid="incelemede-badge">
 						incelemede
-					</span>
+					</Badge>
 				</div>
 				<p className="kp-divan__preview">{data.preview || "(boş)"}</p>
 			</div>

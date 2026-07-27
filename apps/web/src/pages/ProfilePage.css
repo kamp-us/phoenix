@@ -55,18 +55,21 @@
 	font: var(--t-body-sm);
 	color: var(--text-primary);
 }
-.kp-profile__row .value input {
+.kp-profile__name-input[data-scope="field"][data-part="root"] {
 	width: 100%;
 	max-width: 280px;
+}
+.kp-profile__name-input[data-scope="field"] [data-part="control"] {
+	--manti-field-height: 32px;
 	background: var(--surface-sunken);
 	border: 1px solid var(--border);
 	border-radius: var(--r-sm);
-	padding: 6px 8px;
+}
+.kp-profile__name-input[data-scope="field"] [data-part="input"] {
 	font: 13px var(--font-body);
 	color: var(--text-primary);
-	outline: none;
 }
-.kp-profile__row .value input:focus {
+.kp-profile__name-input[data-scope="field"]:focus-within [data-part="control"] {
 	border-color: var(--accent);
 }
 .kp-profile__row.readonly .value {
@@ -91,7 +94,7 @@
 	color: var(--text-muted);
 }
 
-.kp-profile__row .value input[aria-invalid="true"] {
+.kp-profile__name-input[data-scope="field"][data-invalid="true"] [data-part="control"] {
 	border-color: var(--accent);
 }
 .kp-profile__feedback {
@@ -106,56 +109,11 @@
 	color: var(--accent);
 }
 
-.kp-profile__theme-toggle {
-	display: inline-flex;
-	gap: 0;
-	border: 1px solid var(--border);
-	border-radius: var(--r-sm);
-	overflow: hidden;
-}
-.kp-profile__theme-toggle button {
-	padding: 6px 12px;
-	font: var(--t-body-sm);
-	background: transparent;
-	border: none;
-	color: var(--text-muted);
-	cursor: pointer;
-}
-.kp-profile__theme-toggle button[aria-pressed="true"] {
-	background: var(--surface);
-	color: var(--accent-11);
-	font-weight: 600;
-}
-
 .kp-profile__danger {
 	display: flex;
 	gap: var(--s-2);
 	align-items: baseline;
 	flex-wrap: wrap;
-}
-.kp-profile__danger button {
-	background: var(--surface-raised);
-	border: none;
-	color: var(--text-secondary);
-	padding: 6px 12px;
-	font: var(--t-body-sm);
-	border-radius: var(--r-sm);
-	cursor: pointer;
-}
-.kp-profile__danger button:hover {
-	background: var(--surface);
-	color: var(--accent-11);
-}
-.kp-profile__danger button.danger {
-	background: var(--accent);
-	color: var(--accent-fg);
-}
-.kp-profile__danger button.danger:hover {
-	filter: brightness(1.08);
-}
-.kp-profile__danger button:disabled {
-	opacity: 0.6;
-	cursor: not-allowed;
 }
 .kp-profile__error {
 	font: var(--t-meta);

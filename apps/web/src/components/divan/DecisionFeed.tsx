@@ -20,6 +20,8 @@
 import {useCallback, useEffect, useMemo, useState} from "react";
 import {useFateClient, useListView, useRequest, useView, type ViewRef, view} from "react-fate";
 import type {ResolvedReport, ResolveReceipt} from "../../../worker/features/report/views";
+import {Alert} from "../ui/Alert";
+import {Button} from "../ui/Button";
 import {
 	decisionLabel,
 	groupDecisionFeed,
@@ -161,9 +163,13 @@ export function DecisionFeed() {
 				<DecisionProbe key={String(node.id)} node={node} onProbe={onProbe} />
 			))}
 			{error && (
-				<p className="kp-divan__decisions-error" role="alert" data-testid="divan-decisions-error">
+				<Alert
+					variant="danger"
+					className="kp-alert--inline kp-divan__decisions-error"
+					data-testid="divan-decisions-error"
+				>
 					{error}
-				</p>
+				</Alert>
 			)}
 			<ul className="kp-divan__decisions" aria-label="son kararlar" data-testid="divan-decisions">
 				{entries.map((entry) => {
@@ -254,17 +260,20 @@ function DecisionRow({
 				{author !== null && <span className="kp-divan__decision-author">{author}</span>}
 			</p>
 			{restorable && (
-				<button
+				<Button
 					type="button"
+					variant="secondary"
+					size="sm"
 					className="kp-divan__decision-restore"
 					disabled={busy}
+					loading={busy}
 					onClick={() =>
 						onRestore({id: String(data.id), targetKind: data.targetKind, targetId: data.targetId})
 					}
 					data-testid="divan-decision-restore"
 				>
 					geri getir
-				</button>
+				</Button>
 			)}
 		</li>
 	);
@@ -303,15 +312,18 @@ function WaveDecisionRow({
 				{age !== null && <span className="kp-divan__decision-age">{age}</span>}
 			</span>
 			{restorable && (
-				<button
+				<Button
 					type="button"
+					variant="secondary"
+					size="sm"
 					className="kp-divan__decision-restore"
 					disabled={busy}
+					loading={busy}
 					onClick={onRestore}
 					data-testid="divan-decision-restore-wave"
 				>
 					geri getir
-				</button>
+				</Button>
 			)}
 		</li>
 	);

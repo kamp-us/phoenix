@@ -65,7 +65,6 @@
 .kp-bildirim-pop__body {
 	flex: 1;
 	min-height: 0;
-	overflow-y: auto;
 	padding: var(--s-1) var(--s-3);
 }
 

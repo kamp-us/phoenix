@@ -8,7 +8,7 @@ import type * as React from "react";
 import "./Button.css";
 
 export type {ButtonSize};
-export type ButtonVariant = MantiBuiltinVariant;
+export type ButtonVariant = MantiBuiltinVariant | "link";
 
 export interface ButtonProps
 	extends Omit<MantiButtonProps, "variant" | "fullWidth" | "leadingIcon" | "aria-pressed"> {

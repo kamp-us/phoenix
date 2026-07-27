@@ -23,6 +23,7 @@ import {Suspense, useState} from "react";
 import {useListView, useRequest, useView, type ViewRef, view} from "react-fate";
 import type {UserAdmin} from "../../../worker/features/fate/views";
 import {Button} from "../../components/ui/Button";
+import {Input} from "../../components/ui/Form";
 import {FlagGate} from "../../flags/FlagGate";
 import {PHOENIX_USER_ADMIN, PHOENIX_USER_ROLE_ASSIGN} from "../../flags/keys";
 import {useFlag} from "../../flags/useFlag";
@@ -71,16 +72,14 @@ function KullanicilarRoster() {
 	return (
 		<section className="kp-kullanicilar" aria-label="kullanıcılar" data-testid="kullanicilar-panel">
 			<form className="kp-kullanicilar__search" onSubmit={onSubmit} aria-label="kullanıcı ara">
-				<label className="kp-kullanicilar__field">
-					ara
-					<input
-						className="kp-kullanicilar__search-input"
-						value={draft}
-						onChange={(e) => setDraft(e.target.value)}
-						placeholder="kullanıcı adı, e-posta…"
-						data-testid="kullanicilar-search-input"
-					/>
-				</label>
+				<Input
+					className="kp-kullanicilar__field kp-kullanicilar__search-input"
+					label="ara"
+					value={draft}
+					onChange={(e) => setDraft(e.target.value)}
+					placeholder="kullanıcı adı, e-posta…"
+					data-testid="kullanicilar-search-input"
+				/>
 				<Button
 					variant="secondary"
 					size="sm"

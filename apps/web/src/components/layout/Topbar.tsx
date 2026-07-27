@@ -1,6 +1,6 @@
 import {Gavel} from "lucide-react";
 import type * as React from "react";
-import {useEffect, useRef} from "react";
+import {useEffect} from "react";
 import {Link, NavLink, useNavigate} from "react-router";
 import {isSearchShortcut} from "../../lib/searchShortcut";
 import type {ThemeChoice} from "../../lib/theme";
@@ -9,6 +9,8 @@ import {showUnreadBadge} from "../bildirim/bildirim";
 import {Icon} from "../Icon";
 import {Karma} from "../karma/Karma";
 import {Avatar} from "../ui/Avatar";
+import {Button} from "../ui/Button";
+import {Input} from "../ui/Form";
 import {Menu} from "../ui/Menu";
 import {THEME_LABELS, ThemeChoicePicker} from "./ThemeChoicePicker";
 import "./Topbar.css";
@@ -85,7 +87,6 @@ export function Topbar({
 	reserveSignedInSlots?: boolean;
 }) {
 	const navigate = useNavigate();
-	const searchInputRef = useRef<HTMLInputElement>(null);
 
 	// ⌘K (mac) / Ctrl+K (other) focuses search, backing the <kbd>⌘K</kbd> hint below.
 	// preventDefault overrides the browser's own ⌘/Ctrl+K (address-bar) binding.
@@ -93,7 +94,7 @@ export function Topbar({
 		const onKeyDown = (e: KeyboardEvent) => {
 			if (!isSearchShortcut(e)) return;
 			e.preventDefault();
-			searchInputRef.current?.focus();
+			document.querySelector<HTMLInputElement>("#topbar-search")?.focus();
 		};
 		document.addEventListener("keydown", onKeyDown);
 		return () => document.removeEventListener("keydown", onKeyDown);
@@ -158,9 +159,10 @@ export function Topbar({
 			</svg>
 			{/* key + defaultValue: uncontrolled so it stays editable, yet a query→query
 			    navigation re-seeds the echoed value by remounting with the new default. */}
-			<input
+			<Input
 				key={searchQuery}
-				ref={searchInputRef}
+				id="topbar-search"
+				className="kp-topbar__search-field"
 				name="q"
 				defaultValue={searchQuery}
 				placeholder="ara…"
@@ -198,12 +200,12 @@ export function Topbar({
 		<Menu
 			placement="bottom-end"
 			trigger={
-				<button type="button" className="kp-topbar__user">
+				<Button type="button" variant="tertiary" size="sm" className="kp-topbar__user">
 					<Avatar name={user.name} src={user.src} />
 					<span>{user.name}</span>
 					{/* No unread badge on the trigger: the count lives on the status-zone bell
 					    (`bildirimSignal`), its one lawful zone (#2613). */}
-				</button>
+				</Button>
 			}
 			items={[
 				{

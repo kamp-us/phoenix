@@ -83,6 +83,8 @@ describe("SozlukSubnavLayout — sözlük product Subnav zone through SubnavShel
 		expect(screen.getByTestId("term-leaf").textContent).toContain("term:mevcut-terim");
 		fireEvent.click(screen.getByRole("button", {name: /yeni tanım/i}));
 		const field = await screen.findByLabelText(/Terim/);
+		expect((field as HTMLInputElement).required).toBe(true);
+		expect(field.closest('[data-part="root"]')?.classList).toContain("kp-field--semantic-required");
 		fireEvent.change(field, {target: {value: "yeni terim"}});
 		const form = field.closest("form");
 		if (!form) throw new Error("the create field is not inside a form");

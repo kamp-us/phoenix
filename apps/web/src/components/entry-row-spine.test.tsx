@@ -33,6 +33,9 @@ const readSource = (rel: string): string =>
 
 const GLOBAL_CSS = readSource("./../styles/global.css");
 const BUTTON_CSS = readSource("./ui/Button.css");
+const FORM_CSS = readSource("./ui/Form.css");
+const ICON_CSS = readSource("./icon.css");
+const TOGGLE_GROUP_CSS = readSource("./ui/ToggleGroup.css");
 
 describe("entry-row spine — focus-ring presence", () => {
 	// The ring is painted once, globally, by the single `:focus-visible` rule over
@@ -42,6 +45,38 @@ describe("entry-row spine — focus-ring presence", () => {
 	it("global.css defines the shared focus-ring token and a single :focus-visible outline rule", () => {
 		expect(GLOBAL_CSS).toMatch(/--focus-ring:/);
 		expect(GLOBAL_CSS).toMatch(/:focus-visible\s*\{[^}]*outline:\s*var\(--focus-ring\)/s);
+	});
+
+	it("Manti Field inputs delegate focus paint to their outer control — no double ring", () => {
+		expect(GLOBAL_CSS).toMatch(
+			/:where\(\[data-scope="field"\]\[data-part="input"\]\):focus-visible\s*\{[^}]*outline:\s*none/s,
+		);
+	});
+
+	it("the native button reset leaves every Manti anatomy button under component control", () => {
+		expect(GLOBAL_CSS).toMatch(/button:not\(\[data-scope\]\[data-part\]\)\s*\{[^}]*padding:\s*0/s);
+		expect(GLOBAL_CSS).not.toMatch(/button\s*\{[^}]*padding:\s*0/s);
+	});
+
+	it("the shared Icon restores inline flow after Manti's block-level svg reset", () => {
+		expect(ICON_CSS).toMatch(/\.kp-icon\s*\{[^}]*display:\s*inline-block/s);
+	});
+
+	it("ToggleGroup root variants match the base anatomy specificity", () => {
+		for (const variant of ["segmented", "outline", "square", "swatch"]) {
+			expect(TOGGLE_GROUP_CSS).toMatch(
+				new RegExp(
+					`\\.kp-toggle-group--${variant}\\[data-scope="toggle-group"\\]\\[data-part="root"\\]`,
+				),
+			);
+		}
+	});
+
+	it("Manti Field height stays on its mapped control token, never an undefined Phoenix variable", () => {
+		expect(FORM_CSS).not.toMatch(/--manti-field-height:\s*var\(--control-height\)/);
+		expect(FORM_CSS).toMatch(
+			/\.kp-field--semantic-required\s+\[data-part="required"\]\s*\{[^}]*display:\s*none/s,
+		);
 	});
 
 	it("Button renders a native <button> the shared ring paints, with no hand-rolled outline", () => {
