@@ -75,7 +75,7 @@ only** section (its `Surface roles`, `Border roles`, `Text roles`, `Accent / lin
 | Link text | `--link` | Accent / link roles |
 | Text or an icon sitting on a solid `--accent` fill | `--accent-fg` | Accent / link roles |
 | A focus indicator on any interactive control | `--focus-ring` + `--focus-ring-offset`, painted by the single `:focus-visible` rule in `global.css` | Focus role |
-| A status or category colour (success, warning, danger, per-kind chips) | **Nothing — the law is silent.** See [Where the law is silent](#where-the-law-is-silent-surface-the-gap-never-fill-it) | — (no annotated role) |
+| A status or category colour (success, warning, danger, per-kind chips) | **Nothing — the law is silent.** See [Where the law is silent](#where-the-law-is-silent-surface-the-gap--never-fill-it) | — (no annotated role) |
 
 The last row is what makes this table fail-closed rather than a lookup that quietly runs out: the
 manifest annotates six role families and no seventh, so a colour question outside them has no
@@ -93,11 +93,12 @@ answer here by construction.
    `Text roles` table) `--text-muted` is the lowest rung meaning-carrying text may use; `--text-faint`
    clears 3:1 only and is decorative.
    *Counterexample: a `MetaRow` timestamp dropped to `--text-faint` so the row "reads calmer".*
-3. **Never mint a colour by mixing, fading, or filtering a role token.** (LAW — v1 design value 7,
-   Contrast floors: AA 4.5:1 for any meaning-carrying text, 3:1 for large text and non-text UI) A
-   token's annotated floor is a property of that exact token; a hand-mix or an `opacity` fade leaves
-   the value with no stated floor at all.
-   *Counterexample: `color: color-mix(in oklab, var(--text-muted), transparent 30%)` on a byline instead of stepping the ladder.*
+3. **Never drop meaning-carrying text or a border below its contrast floor by mixing, fading, or
+   filtering a role token.** (LAW — v1 design value 7, Contrast floors: AA 4.5:1 for any
+   meaning-carrying text, 3:1 for large text and non-text UI) A token's annotated floor is a
+   property of that exact token; a hand-mix or an `opacity` fade carries none of it forward, so the
+   derived value stands or falls on its own measured ratio.
+   *Counterexample: `color: color-mix(in oklab, var(--text-muted), transparent 30%)` on a byline, landing under 4.5:1 instead of stepping the ladder.*
 4. **Never signal state or meaning by colour alone.** (LAW — Pillar 4, "Never signal state or
    meaning by color alone") Colour is the one channel a colour-blind user, a high-contrast mode, or
    a monochrome render does not deliver.
@@ -165,8 +166,9 @@ guess. Stop at the first gate you fail, fix it, and restart from gate 1.
 
 1. **Is every colour in the diff a role token taken from the decision table?** No → replace it with
    the table's row. If no row fits, go to gate 5. **Stop.**
-2. **Does any meaning-carrying text sit on `--text-faint`, a mix, a fade, or a filter?** Yes → step
-   it up to `--text-muted` or higher, unmixed. **Stop.**
+2. **Does any meaning-carrying text sit on `--text-faint`, or on a mix, fade, or filter you have
+   not measured against the 4.5:1 floor?** Yes → step it up to `--text-muted` or higher, unmixed.
+   **Stop.**
 3. **Does any state or meaning read through colour alone?** Yes → add the second channel (rule 5).
    **Stop.**
 4. **Does any control paint its own focus indicator?** Yes → delete it and let the shared
