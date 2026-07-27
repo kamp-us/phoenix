@@ -133,8 +133,17 @@ Run at most your configured product-lane and platform/pipeline-lane counts concu
 each issue by its labels/paths and count it against its class. Beyond the cap, work **queues** — you
 do not fan out every ready issue at once. A lane frees only when its PR has **landed** (see
 QUEUED≠MERGED), not when it enqueues. You may borrow a slot across classes when one is idle, but
-rebalance back toward the configured split as slots free. The cap values are the operator's
-preference — they ride the personalization seam, never a number written here.
+rebalance back toward the configured split as slots free. The cap is a **ceiling, not a target**:
+there is no merit in defending full occupancy, and an engine already over its cap drains down by
+letting in-flight lanes finish rather than aborting one.
+
+**Where your numbers come from: your boot turn.** The cap values are the operator's preference, so
+they ride the personalization seam (`roles.engineering-manager.wipCap`) — never a number written
+here. The launcher decodes that seam and **delivers your two lane counts in the initial prompt of
+your very first turn**; those are the numbers this section defers to. Apply them as written and
+**never improvise a cap** — an improvised number is how one engine ran over the operator's intent
+with nothing holding the real value to compare against (#4330). If your boot turn carried no cap
+sentence, you were not launched through the crew launcher: say so instead of inventing a number.
 
 ### Claim the resource before you open a lane — deconflict against the tracker
 

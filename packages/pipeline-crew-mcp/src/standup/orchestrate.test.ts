@@ -18,7 +18,7 @@ import {
 	kindOf,
 	REQUIRED_SEAT_CHANNEL_TOOLS,
 } from "../crew/index.ts";
-import {CREW_PLUGIN_CHANNEL_REF, CREW_SESSION_INSTANCE_FLAG} from "./bind.ts";
+import {CREW_PLUGIN_CHANNEL_REF, CREW_SESSION_INSTANCE_FLAG, wipCapClause} from "./bind.ts";
 import {
 	DEFAULT_CONFIG_PATH,
 	decodeLaunchConfig,
@@ -77,8 +77,9 @@ const standUp = (input: Parameters<typeof runStandUp>[0]) =>
 
 /**
  * A post-#3236 one-role-map crew config (raw, on-disk shape): the engine count lives at
- * `roles["engineering-manager"].count`; bridge entries + per-role tier/wipCap are excess seam keys;
- * there is NO tmux key. Decoded through `decodeLaunchConfig` so the boot exercises the real
+ * `roles["engineering-manager"].count`, its lane cap at `.wipCap` (#4330), each role's model tier at
+ * `.tier`; the operator/notification blocks are the excess seam keys and there is NO tmux key.
+ * Decoded through `decodeLaunchConfig` so the boot exercises the real
  * new-template decode end to end (the dogfood: stand up from a config regenerated from the template).
  */
 const rawConfigAt = (cliVersion: string, engineCount: number): unknown => ({
@@ -799,6 +800,32 @@ describe("standup/orchestrate — the one stand-up command (issue #3299)", () =>
 				const err = yield* Effect.flip(standUp(input));
 				assert.instanceOf(err, StandUpLaunchError);
 			}),
+	);
+});
+
+/**
+ * The operator's configured lane cap reaches the engine sessions it bounds (#4330) — the end-to-end
+ * half of promoting `wipCap` from ignored excess: decoded off the seam AND delivered, so a launched
+ * engine holds the number instead of improvising one.
+ */
+describe("standup/orchestrate — the configured WIP cap reaches every engine (#4330)", () => {
+	it.effect("every engine's boot turn carries the configured cap; no bridge's does", () =>
+		Effect.gen(function* () {
+			const {input, launched} = baseInput({engineCount: 2});
+			yield* standUp(input);
+			// rawConfigAt's cap — the value an operator wrote, now delivered verbatim.
+			const clause = wipCapClause({productLanes: 1, platformLanes: 1});
+			const engines = launched.filter((plan) => plan.session.kind === "engine");
+			const bridges = launched.filter((plan) => plan.session.kind !== "engine");
+			assert.strictEqual(engines.length, 2);
+			for (const plan of engines) {
+				assert.include(plan.bind.bootPromptArg[0] ?? "", clause);
+			}
+			// A bridge holds no lanes, so a cap sentence in its boot turn would be noise it might act on.
+			for (const plan of bridges) {
+				assert.notInclude(plan.bind.bootPromptArg[0] ?? "", "WIP cap");
+			}
+		}),
 	);
 });
 
