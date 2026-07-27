@@ -156,7 +156,7 @@ describe("Topbar accent-scarcity containment law (#2614)", () => {
 		const compactButton = rules.find((r) => r.selector === ".kp-topbar__btn");
 		expect(compactButton).toBeDefined();
 		expect(compactButton?.body).toMatch(/--manti-button-height:\s*24px/);
-		expect(compactButton?.body).toMatch(/--manti-button-padding-x:\s*8px/);
+		expect(compactButton?.body).toMatch(/--manti-button-padding-x:\s*var\(--s-2\)/);
 	});
 });
 

@@ -114,7 +114,7 @@
 	min-width: 0;
 }
 .kp-topbar__search-field[data-scope="field"] [data-part="control"] {
-	--manti-field-height: 22px;
+	--manti-field-height: var(--letter-size);
 	width: 100%;
 	border: 0;
 	background: transparent;
@@ -142,7 +142,7 @@
 
 .kp-topbar__btn {
 	--manti-button-height: 24px;
-	--manti-button-padding-x: 8px;
+	--manti-button-padding-x: var(--s-2);
 	font: var(--t-body-sm);
 	font-weight: 500;
 	border: none;
@@ -249,7 +249,7 @@
 	color: var(--text-secondary);
 }
 .kp-topbar__theme-choice--active {
-	font-weight: var(--font-weight-semibold);
+	font-weight: 600;
 }
 
 /* The desktop row cannot preserve nav, search, the three-way Manti theme control and

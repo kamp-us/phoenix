@@ -72,9 +72,9 @@
 	align-items: center;
 }
 .kp-sozluk-definition__vote-btn {
-	--manti-button-height: 26px;
+	--manti-button-height: var(--vote-w);
 	--manti-button-padding-x: 0px;
-	min-width: 26px;
+	min-width: var(--vote-w);
 	width: 26px;
 	height: 26px;
 	display: inline-flex;
