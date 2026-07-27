@@ -16,6 +16,14 @@
  * prose. The resolved verdict is printed as JSON on stdout for a caller that wants
  * the detail (the resolved owner, the outcome reason).
  *
+ * `assign` writes the OTHER layer (#4298). The claim is two layers (§7): this one is the coarse,
+ * login-blind availability gate the write-code Step-1 picker reads, and it is the only thing
+ * standing between a finished lane and an idle picker while the PR is in review. On the delegated
+ * (orchestrated) path nobody the contract named was writing it, so an issue could sit
+ * `status:triaged` + unassigned with the implementation already open as a PR. The verb is
+ * default-deny on the same resolution as `is-mine`, additive, and idempotent — it never unassigns,
+ * so re-running it is free and no run can strip an incumbent's slot (§7, #4015).
+ *
  * `release` is the other end of the same claim's life (#3780): a finished run retracts its
  * **own** marker so the lane stops reading `lost` forever. It is affirmative — the owner gives
  * the claim up — never inferred from staleness, so it can retract only markers carrying the
@@ -41,6 +49,7 @@
  */
 import {Console, Effect, Option} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
+import type {AssignPlan} from "./claim-assign.ts";
 import {DEFAULT_MIN_AGE_HOURS, type LockedLane, STAMPING_CUTOFF} from "./claim-audit.ts";
 import type {ClaimVerdict} from "./claim-is-mine.ts";
 import {Github, GithubLive} from "./github.ts";
@@ -141,6 +150,45 @@ const release = Command.make(
 	),
 );
 
+/** The stderr reason line for a refused assign — why layer one was not written. */
+const refusalLine = (issue: number, plan: Extract<AssignPlan, {_tag: "refuse"}>): string =>
+	plan.reason === "no-login"
+		? `#${issue}: could not resolve the authenticated login to assign — refusing to write an unnamed availability gate.`
+		: `#${issue}: the claim did not resolve as mine (${plan.reason}${
+				plan.owner === null ? "" : `, owner ${plan.owner}`
+			}) — refusing to write layer one on a lane we cannot prove is ours (default-deny).`;
+
+const assign = Command.make(
+	"assign",
+	{issue: issueFlag, session: sessionFlag},
+	Effect.fn(function* ({issue, session}) {
+		const sessionId = resolveSession(session);
+		const {plan, assignees} = yield* (yield* Github).assign(issue, sessionId).pipe(
+			// A gate that did not land is loud, never a false "layer one is set" (#4298).
+			Effect.catchTag("@kampus/claim/ClaimVerifyError", (error) => {
+				process.stderr.write(`claim: ${error.message}\n`);
+				process.exit(REFUSE_EXIT_CODE);
+				return Effect.never;
+			}),
+		);
+		yield* Console.log(JSON.stringify({issue, plan, assignees}));
+		if (plan._tag === "refuse") {
+			process.stderr.write(`claim: ${refusalLine(issue, plan)}\n`);
+			process.exit(REFUSE_EXIT_CODE);
+			return;
+		}
+		process.stderr.write(
+			`claim: #${issue}: availability gate ${
+				plan._tag === "already-set" ? "already carried" : "now carries"
+			} ${plan.login} — the Step-1 picker skips this lane until the issue closes.\n`,
+		);
+	}),
+).pipe(
+	Command.withDescription(
+		"Set the coarse availability gate (§7 layer one, the assignee) on a lane whose claim is ours — additive and idempotent; never unassigns, and refuses on a lane we cannot prove is ours",
+	),
+);
+
 const status = Command.make(
 	"status",
 	{issue: issueFlag},
@@ -230,9 +278,9 @@ const audit = Command.make(
 );
 
 export const claimCommand = Command.make("claim").pipe(
-	Command.withSubcommands([isMine, release, status, audit]),
+	Command.withSubcommands([isMine, assign, release, status, audit]),
 	Command.withDescription(
-		"Resolve, release, and inspect issue claims (ADR 0115 earliest-authorized-claim): default-deny 'is this mine', affirmative self-release, the stale-claim inventory, and the pre-stamping legacy audit",
+		"Resolve, gate, release, and inspect issue claims (ADR 0115 earliest-authorized-claim): default-deny 'is this mine', the layer-one availability gate, affirmative self-release, the stale-claim inventory, and the pre-stamping legacy audit",
 	),
 	Command.provide(GithubLive),
 );

@@ -3254,6 +3254,9 @@ The claim is **two layers** (ADR 0115 §1):
   cheap, list-visible "is this taken at all?" signal the Step-1 picker reads (`skip on any
   non-null assignee`). It is **login-blind by design** and decides nothing about *which*
   agent owns the work — it only narrows the field and tolerates a transient double-assign.
+  It is also the **only** layer the picker reads, so it is what keeps a finished lane out of an
+  idle picker's pool while the PR is in review — see
+  [Who writes layer one](#who-writes-layer-one-the-claim-winner-on-both-paths).
 - **Fine, agent-distinguishable resolution — the claim comment (the resolver).** A
   structured issue comment carrying the claiming agent's `CLAUDE_CODE_SESSION_ID` — the
   per-session UUID Claude Code exposes in every (sub)agent's environment (read today by
@@ -3396,6 +3399,58 @@ unrepresentable rather than merely handled: a deferring agent never assigned, so
 undo and mutates nothing. The rule for every writer, stated once here: **never unassign a slot you
 did not fill.**
 
+<a id="who-writes-layer-one-the-claim-winner-on-both-paths"></a>
+### Who writes layer one — the claim winner, on BOTH paths (#4298)
+
+Layer two has a named writer on every path; layer one did not, and the gap fell exactly on the
+**delegated (orchestrated) path**. `write-code` Step 3's orchestrated branch skips the direct-path
+block — which carries *both* the claim comment and the self-assign — and the contract never
+re-assigned the second half to anybody. The obligation survived only inside one orchestrator's
+inline claim-agent prompt, so any other dispatcher (a crew engine threading a token by hand)
+satisfied the delegated-claim contract in full while leaving the gate unset. The result was an
+issue sitting `status:triaged` **and unassigned** with a finished implementation already open as a
+PR — precisely the shape the Step-1 picker selects (observed on #4283 / PR #4295).
+
+**The rule, stated once for every dispatcher: whoever wins the claim writes layer one, immediately
+after the win, before it hands the lane on.**
+
+- **Delegated path** — the dispatcher wins the claim pre-spawn, so the **dispatcher** owes layer
+  one before it spawns the coder. This binds *every* dispatcher — the orchestrator
+  (`.claude/workflows/drive-issue.js`) and any crew engine that claims a lane and threads the
+  token — not just the one whose prompt happens to say so.
+- **Direct path** — `write-code` wins its own claim at Step 3, so the **coder** owes it there.
+- **Either way the coder re-asserts it**, idempotently, once it has confirmed the claim is its own
+  (`write-code` Step 3). That re-assert is what makes the gate true **for the whole build**
+  whatever the dispatcher did, so Step 8's release can cite it instead of assuming it.
+
+The write goes through **one verb** — never a hand-rolled `gh api … /assignees`:
+
+```bash
+# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
+PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
+"$PCLI" claim assign --issue <N>                    # layer one under our own session
+"$PCLI" claim assign --issue <N> --session <token>  # …or under the threaded delegated token
+```
+
+The verb is the enforcement, not the prose: it resolves ownership through the same **default-deny**
+resolution `claim is-mine` uses and **refuses (non-zero, no write) on any lane it cannot prove is
+ours** — an absent claim, a foreign owner, and a missing session each refuse. On a proven-own lane
+it is **additive and idempotent**: a gate already carrying our login is a no-op, otherwise ours is
+added, and the landed gate is read back (a write that did not land fails loud rather than reporting
+a gate that isn't there). **It cannot unassign** — there is no removal arm — so "never unassign a
+slot you did not fill" holds by construction, and re-running it is always free.
+
+**This is not an inference from absence, and must never become one.** The verb writes the gate
+because the run holds the lane, never because a missing assignee was read as evidence that some
+other party failed. Nothing here evicts a claim, keys on age, or acts on a marker's absence — the
+shapes ADR
+[0215](https://github.com/kamp-us/phoenix/blob/main/.decisions/0215-claim-identity-continuity-proof.md)
+§5 forbids. **Picker semantics are unchanged**: Step 1 still skips on any non-null assignee and
+still does not read claim comments.
+
+**Out of scope here:** *who may release layer two* on the delegated path is a separate, still-open
+question (#4145) — this rule settles the other layer and pre-empts none of it.
+
 ### Fail-closed on a missing token
 
 If `CLAUDE_CODE_SESSION_ID` is **absent** from the agent's environment, the claim **cannot
@@ -3413,9 +3468,13 @@ so closing it means claiming before any branch, build, or spawn:
   claim in a pre-step **before** the `agent(coder, …)` dispatch (delegated to a thin
   claim-only agent that runs this §7 primitive verbatim): `pipeline-cli tracker claim <N>`
   (the write surface above — defer, post the stamped marker, tiebreak, retract on loss), then
-  **self-assign only on a win**, and **only on a win spawn the coder**, threading the winning
-  claim **token** into the coder's prompt. On a lost claim it aborts the dispatch — no coder
-  spawns, and it leaves the assignee untouched (see [Claim before you assign](#claim-before-you-assign-a-defer-must-not-strip-the-incumbent)).
+  **write layer one only on a win** (`pipeline-cli claim assign --issue <N>`), and **only on a win
+  spawn the coder**, threading the winning claim **token** into the coder's prompt. On a lost claim
+  it aborts the dispatch — no coder spawns, and it leaves the assignee untouched (see
+  [Claim before you assign](#claim-before-you-assign-a-defer-must-not-strip-the-incumbent)).
+  **This binds every dispatcher, not only `drive-issue.js`** — a crew engine that claims a lane and
+  threads the token owes layer one on exactly the same terms
+  ([Who writes layer one](#who-writes-layer-one-the-claim-winner-on-both-paths)).
 - **Delegated ownership.** The orchestrator and the coder are distinct sessions (the spawned
   coder carries `CLAUDE_CODE_CHILD_SESSION=1` and its own id), so the claim token is
   **whoever posted the claim** — the orchestrator. The orchestrator threads its token to the
@@ -3447,7 +3506,11 @@ own token, leaves every other claim standing (and names them), is idempotent (re
 retracts nothing and succeeds), and fails closed with a non-zero exit when there is no token to
 prove ownership under. It does **not** touch the **assignee**: the coarse availability gate stays
 set while the PR is open, so the Step-1 picker still skips the issue and no second lane picks up
-work already in review. What release frees is the *fine* resolver — so a **directed** re-dispatch
+work already in review. That backstop holds because the gate was actually **written** — by the
+claim winner on both paths, re-asserted by the coder
+([Who writes layer one](#who-writes-layer-one-the-claim-winner-on-both-paths)). Before #4298 the
+delegated path wrote no gate at all, so this sentence promised a backstop that was not there.
+What release frees is the *fine* resolver — so a **directed** re-dispatch
 (a repair, a follow-up round, a stalled lane re-driven) claims the lane cleanly instead of
 resolving `lost` against a marker whose run finished hours ago (#3780).
 
