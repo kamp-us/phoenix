@@ -1744,7 +1744,18 @@ GUARD_ADR_RE='guard|invariant|fail-closed|fail-open|fail closed|fail open|contai
 # only resolution, and it already fails closed when it can't be made.
 GA_LIVE="$(gh api "repos/$REPO/contents/claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md?ref=main" -H 'Accept: application/vnd.github.raw' 2>/dev/null | grep '^GUARD_ADR_RE=' | head -n1 || true)"
 # accept_re (§CLASS) is the NON-TRIVIALITY ASSERT: a stripped value that is empty, or that still
-# carries the assignment prefix, is refused here rather than gated on (#4401).
+# carries the assignment prefix, is refused here rather than gated on (#4401). Single-sourced in
+# §CLASS and copied down here — as ship-it's Step 0 copies it — because a fenced recipe must run
+# standalone when pasted; a cross-block call resolves to `command not found`, an empty pattern,
+# and every touched ADR classified §CP (#4413).
+accept_re() {   # $1=name, $2=resolved value, $3=fail-closed default
+  case "$2" in
+    *"$1='"*) : ;;
+    *) if [ "${#2}" -ge 4 ]; then printf '%s' "$2"; return 0; fi ;;
+  esac
+  printf 'TRIVIAL-GATE-BOUNDARY: %s did not resolve to a usable pattern — failing closed.\n' "$1" >&2
+  printf '%s' "$3"
+}
 if [ -n "$GA_LIVE" ]; then GUARD_ADR_RE="$(accept_re GUARD_ADR_RE "$(printf '%s' "$GA_LIVE" | sed "s/^GUARD_ADR_RE='//; s/'$//")" '.')"; else GUARD_ADR_RE='.'; fi   # FAIL CLOSED: '.' ⇒ every ADR word matches ⇒ every touched ADR is §CP
 # The ref and the file list are fallible reads too — both come from §CPREAD (below), so an
 # unreadable head SHA leaves HEAD_SHA EMPTY (payload discarded) rather than holding gh's error body.
