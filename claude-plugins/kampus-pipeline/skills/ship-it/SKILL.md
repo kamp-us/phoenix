@@ -532,29 +532,77 @@ echo "$FILES" | grep -Ev "$UI_EXCLUDE_RE" | grep -Eq "$UI_RE" && echo "has-ui"  
   source ship-it runs, so the verdict cannot drift across shippers (the class-probe/control-plane-paths
   precedent). Resolve the roster + the two signals over REST, never GraphQL, then decide:
 
+  **Every input to this gate is a fallible READ, and an unresolved one is UNKNOWN — never a
+  cardinality, never "the team is empty", never `awaiting control-plane approval` (#4223).** All four
+  — roster, author, head, per-approver membership — come from **§CPREAD** / **§CPREAD-APPROVAL** of
+  [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md); copy those helpers verbatim from
+  there (single source; the why, and the measurement behind it, live there, not here). Each failure
+  branch stops under a message that names the read that failed.
+
   ```bash
   # §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
   PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
   # ADR 0175: DETERMINISTIC §CP discharge keyed on control-plane team cardinality, not judgment.
   ORG="${REPO%%/*}"                                            # owner half of owner/repo
-  # N = present, active, human control-plane members (REST, never GraphQL — ADR 0135/0175)
-  MEMBERS="$(gh api --paginate "orgs/$ORG/teams/control-plane/members?per_page=100" --jq '.[].login')"
-  AUTHOR="$(gh api "repos/$REPO/pulls/$PR" --jq '.user.login')"
-  HEAD="$(gh api "repos/$REPO/pulls/$PR" --jq '.head.sha')"    # every signal binds THIS head (ADR 0058)
-  sha_binds_head() { [ -n "$1" ] || return 1; case "$HEAD" in "$1"*) return 0;; esac; case "$1" in "$HEAD"*) return 0;; esac; return 1; }
+  # The one non-firing exit that is NOT a definite answer: it names the read that could not execute,
+  # so a broken read is never reported as a human-approval wait (#4223).
+  cp_unknown() { echo "§CP approval: STOP — $1 UNKNOWN (read failed); the discharge is UNRESOLVED, NOT 'awaiting control-plane approval' (ADR 0175, #4223)" >&2; }
+
+  # N = present, active, human control-plane members (REST, never GraphQL — ADR 0135/0175).
+  # A SUCCESSFUL read of an empty team still flows through to cp-cardinality's honest N==0 STOP; only
+  # an UNREADABLE roster stops here, because those are different facts with the same outcome.
+  cp_team_roster "$ORG" || { cp_unknown "the @$ORG/control-plane roster"; exit 1; }
+  MEMBERS="$CP_MEMBERS"
+  cp_pr_author "$REPO" "$PR" || { cp_unknown "the PR author"; exit 1; }
+  AUTHOR="$CP_PR_AUTHOR"
+  cp_head_sha "$REPO" "$PR" || { cp_unknown "the PR head SHA"; exit 1; }
+  HEAD="$CP_HEAD_SHA"                                          # every signal binds THIS head (ADR 0058)
+
+  # Bidirectional prefix match so a 7-hex short SHA binds a 40-hex head — but ONLY once BOTH sides
+  # are proven hex. With $HEAD empty the second pattern degenerates to `*` and binds ANY candidate,
+  # so a self-approval marker on a superseded head counts as current (#4223). Asserting $HEAD is
+  # duplicated work given cp_head_sha above, and it stays: this matcher is the last thing between a
+  # stale marker and a discharge, so it proves its own precondition rather than inheriting it.
+  # The reverse direction is unreachable while that 40-hex assertion holds (a candidate can only be
+  # a prefix OF a full head, never the other way round); kept so the matcher's shape is unchanged and
+  # the assertion is the only thing this fix takes away from its reach.
+  sha_binds_head() {
+    case "$HEAD" in *[!0-9a-f]*|"") return 1;; esac
+    [ "${#HEAD}" -eq 40 ] || return 1
+    case "$1" in *[!0-9a-f]*|"") return 1;; esac
+    [ "${#1}" -ge 7 ] || return 1
+    case "$HEAD" in "$1"*) return 0;; esac
+    case "$1" in "$HEAD"*) return 0;; esac
+    return 1
+  }
 
   # Signal 1 — a current-head APPROVED review by a control-plane member who is NOT the author
   # (the N>=2 and N==1-sole!=author discharge). Latest review per author, APPROVED, commit_id == HEAD.
   NON_AUTHOR_APPROVAL_AT_HEAD=false
+  MEMBERSHIP_UNKNOWN=false
   CURRENT_APPROVERS="$(gh api --paginate "repos/$REPO/pulls/$PR/reviews?per_page=100" \
     --jq "group_by(.user.login) | map(max_by(.submitted_at))
-          | map(select(.state == \"APPROVED\" and .commit_id == \"$HEAD\") | .user.login) | .[]")"
+          | map(select(.state == \"APPROVED\" and .commit_id == \"$HEAD\") | .user.login) | .[]")" \
+    || { cp_unknown "the PR's review list"; exit 1; }
   while IFS= read -r u; do
     [ -z "$u" ] && continue
+    # cp_pr_author proved $AUTHOR is a bare login, so this skip cannot silently stop skipping. The
+    # assertion is kept at the skip itself because THAT is where an unresolved author would let a
+    # self-approval count as a non-author approval — the one direction that is not safe (#4223).
+    : "${AUTHOR:?§CP approval: author unresolved at the approver walk — refusing to count approvals}"
     [ "$u" = "$AUTHOR" ] && continue                          # self-approval never counts here (ADR 0175)
-    st="$(gh api "orgs/$ORG/teams/control-plane/memberships/$u" --jq '.state' 2>/dev/null)"
-    [ "$st" = "active" ] && { NON_AUTHOR_APPROVAL_AT_HEAD=true; break; }
+    # THREE outcomes: active member, definite non-member (404), or UNKNOWN. An UNKNOWN probe must not
+    # silently under-count into a `stop` that reads as "awaiting approval" — record it and keep
+    # scanning, since a LATER approver proving `active` still discharges honestly.
+    if cp_team_membership "$ORG" "$u"; then
+      [ "$CP_MEMBERSHIP" = "active" ] && { NON_AUTHOR_APPROVAL_AT_HEAD=true; break; }
+    else
+      MEMBERSHIP_UNKNOWN=true
+    fi
   done <<<"$CURRENT_APPROVERS"
+  if [ "$NON_AUTHOR_APPROVAL_AT_HEAD" = false ] && [ "$MEMBERSHIP_UNKNOWN" = true ]; then
+    cp_unknown "at least one approver's control-plane membership"; exit 1
+  fi
 
   # Signal 2 — a deliberate current-head self-approval MARKER by the sole owner (the ONLY N==1
   # sole-owner discharge). GitHub records no native self-approval, so the signal is a marker comment:
@@ -562,13 +610,19 @@ echo "$FILES" | grep -Ev "$UI_EXCLUDE_RE" | grep -Eq "$UI_RE" && echo "has-ui"  
   # it can never leak a §CP PR into the auto-merge namespace (ADR 0111) — authored by the sole owner
   # and SHA-bound to the current head. The sole owner posts it to consciously self-approve their own
   # §CP PR; it is inert unless N==1 and they are the author (cp-cardinality ignores it otherwise).
+  # Capture, CHECK, then pipe the variable: `pipefail` is off in the agent shell, so piping `gh`
+  # straight into `grep` reports grep's status and discards the read's (§CPREAD #1).
   SELF_APPROVAL_AT_HEAD=false
-  SELF_SHA="$(gh api --paginate "repos/$REPO/issues/$PR/comments?per_page=100" \
+  SELF_MARKERS="$(gh api --paginate "repos/$REPO/issues/$PR/comments?per_page=100" \
     --jq "[.[] | select(.user.login == \"$AUTHOR\")
                | select(.body | test(\"(?i)^\\\\s*\\\\**\\\\s*control-plane-self-approval\\\\b\"))]
-          | last | .body // \"\"" \
+          | last | .body // \"\"")" \
+    || { cp_unknown "the PR's comment list"; exit 1; }
+  # `tail -n1`, not `head`: --paginate runs this aggregate --jq PER PAGE and emits one body each, in
+  # page order, so the LAST match is the latest marker — `head` would pin page 1's older one (#725).
+  SELF_SHA="$(printf '%s\n' "$SELF_MARKERS" \
     | grep -ioE 'control-plane-self-approval[[:space:]]*@?[[:space:]]*[0-9a-f]{7,40}' \
-    | grep -ioE '[0-9a-f]{7,40}' | head -n1)"
+    | grep -ioE '[0-9a-f]{7,40}' | tail -n1)"
   sha_binds_head "$SELF_SHA" && SELF_APPROVAL_AT_HEAD=true
 
   # The DETERMINISTIC decision — the whole ADR-0175 `case "$N"` branch lives in the tested pure core.
@@ -584,6 +638,8 @@ echo "$FILES" | grep -Ev "$UI_EXCLUDE_RE" | grep -Eq "$UI_RE" && echo "has-ui"  
        $([ "$SELF_APPROVAL_AT_HEAD" = true ] && printf -- '--self-approval-at-head'); then
     echo "§CP approval: discharged deterministically (ADR 0175) → carry on to machine gates"
   else
+    # Reachable ONLY with every input proven readable, so this message states a fact: the branch's
+    # required human signal is genuinely absent.
     echo "§CP approval: STOP (awaiting control-plane approval) — cardinality branch not satisfied (ADR 0175)"
   fi
   ```
