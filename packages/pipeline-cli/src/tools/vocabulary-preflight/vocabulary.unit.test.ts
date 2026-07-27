@@ -14,6 +14,7 @@ import {
 	judgeRoadmap,
 	REQUIRED_LABELS,
 	type RoadmapSurface,
+	renderLabelList,
 	renderReport,
 } from "./vocabulary.ts";
 
@@ -132,5 +133,20 @@ describe("renderReport", () => {
 		const report = renderReport(judge([], ROADMAP_OK));
 		expect(report).toContain("gh label create");
 		expect(report).toContain("not\nconfiguration");
+	});
+});
+
+describe("renderLabelList — the seam doctor.sh reads (#4300)", () => {
+	it("emits one label per line and nothing else, so a `while read` consumer needs no parser", () => {
+		const lines = renderLabelList(REQUIRED_LABELS).split("\n");
+		expect(lines).toEqual([...REQUIRED_LABELS]);
+	});
+
+	// The list is doctor's Tier-1 floor, so an empty render would let doctor's drift check pass
+	// against nothing — the vacuous-scope shape of ADR 0092, one surface over.
+	it("is non-empty and carries the standing lanes doctor was missing", () => {
+		const lines = renderLabelList(REQUIRED_LABELS).split("\n");
+		expect(lines.length).toBeGreaterThan(0);
+		for (const lane of EXEMPT_LABELS) expect(lines).toContain(lane);
 	});
 });
