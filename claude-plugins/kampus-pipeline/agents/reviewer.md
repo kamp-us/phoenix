@@ -179,7 +179,10 @@ These hold on every run regardless of what the spawn prompt remembered to say:
   HAS_CODE_RE='^(apps|packages|\.glossary|infra)/'; HAS_SKILLS_RE='^claude-plugins/[^/]+/(skills|agents)/|^\.claude-plugin/'   # fail-closed reference; §CLASS is authoritative
   HAS_DOCS_EXCLUDE_RE='^(claude-plugins|apps|packages|\.glossary|infra)/'; HAS_DOCS_RE='^(\.decisions|\.patterns)/|\.md$'
   CLASS_RAW="$(gh api "repos/$REPO/contents/claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md?ref=main" -H 'Accept: application/vnd.github.raw' 2>/dev/null || true)"
-  reresolve_re() { live="$(printf '%s\n' "$CLASS_RAW" | grep "^$1=" | head -n1 || true)"; if [ -n "$live" ]; then printf '%s' "$live" | sed "s/^$1='//; s/'\$//"; else printf '%s' "$2"; fi; }
+  # accept_re is §CLASS's NON-TRIVIALITY ASSERT (#4401): an empty or prefix-carrying strip still
+  # compiles, and `grep -Ev ""` then excludes nothing — a silent fail-OPEN on the docs carve-out.
+  accept_re() { case "$2" in *"$1='"*) : ;; *) if [ "${#2}" -ge 4 ]; then printf '%s' "$2"; return 0; fi ;; esac; printf 'TRIVIAL-GATE-BOUNDARY: %s did not resolve to a usable pattern — failing closed.\n' "$1" >&2; printf '%s' "$3"; }
+  reresolve_re() { live="$(printf '%s\n' "$CLASS_RAW" | grep "^$1=" | head -n1 || true)"; if [ -z "$live" ]; then printf '%s' "$2"; else accept_re "$1" "$(printf '%s' "$live" | sed "s/^$1='//; s/'\$//")" "$2"; fi; }
   HAS_CODE_RE="$(reresolve_re HAS_CODE_RE '.')"; HAS_SKILLS_RE="$(reresolve_re HAS_SKILLS_RE '.')"
   HAS_DOCS_EXCLUDE_RE="$(reresolve_re HAS_DOCS_EXCLUDE_RE '\$^')"; HAS_DOCS_RE="$(reresolve_re HAS_DOCS_RE '.')"   # unreadable ⇒ exclude nothing / every path a doc ⇒ dispatch review-doc
   CHANGED="$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename')"
@@ -215,8 +218,9 @@ These hold on every run regardless of what the spawn prompt remembered to say:
   UI_EXCLUDE_RE='\.(test|spec)\.tsx?$'   # #3071: a src-colocated *.test.tsx/*.spec.ts renders no surface — carve it out (mirrors §CLASS has-docs carve-then-test; ERE has no lookahead, hence the exclude pair)
   UI_RAW="$(gh api "repos/$REPO/contents/claude-plugins/kampus-pipeline/skills/ship-it/SKILL.md?ref=main" -H 'Accept: application/vnd.github.raw' 2>/dev/null || true)"
   UI_LIVE="$(printf '%s\n' "$UI_RAW" | grep '^UI_RE=' | head -n1 || true)"; UX_LIVE="$(printf '%s\n' "$UI_RAW" | grep '^UI_EXCLUDE_RE=' | head -n1 || true)"
-  if [ -n "$UI_LIVE" ]; then UI_RE="$(printf '%s' "$UI_LIVE" | sed "s/^UI_RE='//; s/'$//")"; else UI_RE='.'; fi   # unreadable ⇒ '.' ⇒ every path is UI-affecting ⇒ dispatch review-design (never silently drop it)
-  if [ -n "$UX_LIVE" ]; then UI_EXCLUDE_RE="$(printf '%s' "$UX_LIVE" | sed "s/^UI_EXCLUDE_RE='//; s/'$//")"; else UI_EXCLUDE_RE='$^'; fi   # unreadable ⇒ '$^' never-match ⇒ carve nothing ⇒ dispatch review-design for every src path (fail-closed)
+  accept_re() { case "$2" in *"$1='"*) : ;; *) if [ "${#2}" -ge 4 ]; then printf '%s' "$2"; return 0; fi ;; esac; printf 'TRIVIAL-GATE-BOUNDARY: %s did not resolve to a usable pattern — failing closed.\n' "$1" >&2; printf '%s' "$3"; }   # §CLASS non-triviality assert (#4401)
+  if [ -n "$UI_LIVE" ]; then UI_RE="$(accept_re UI_RE "$(printf '%s' "$UI_LIVE" | sed "s/^UI_RE='//; s/'$//")" '.')"; else UI_RE='.'; fi   # unreadable or trivial ⇒ '.' ⇒ every path is UI-affecting ⇒ dispatch review-design (never silently drop it)
+  if [ -n "$UX_LIVE" ]; then UI_EXCLUDE_RE="$(accept_re UI_EXCLUDE_RE "$(printf '%s' "$UX_LIVE" | sed "s/^UI_EXCLUDE_RE='//; s/'$//")" '$^')"; else UI_EXCLUDE_RE='$^'; fi   # unreadable or trivial ⇒ '$^' never-match ⇒ carve nothing ⇒ dispatch review-design for every src path (fail-closed)
   CHANGED="$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename')"
   echo "$CHANGED" | grep -Ev "$UI_EXCLUDE_RE" | grep -Eq "$UI_RE" && echo "UI-affecting → dispatch review-design alongside the class gate"
   ```

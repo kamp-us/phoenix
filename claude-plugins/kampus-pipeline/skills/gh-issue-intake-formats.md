@@ -1719,9 +1719,15 @@ guard-*relaxer* (which would auto-ship a weakened gate) — "you cannot relax a 
 it," so a content probe over guard vocabulary catches the class an author tag would let slip. This
 is the same fail-closed stance as §ZS / ADR 0092.
 
-The predicate is **single-sourced here** as one canonical regex — the same discipline that keeps
-`CONTROL_PLANE_RE` from drifting (ADR 0073 §6). Cite this line; do **not** re-hard-code the
-vocabulary. `validate-gate-path-drift.sh` locks `ship-it`'s copy byte-identical to this canonical.
+The predicate is **single-sourced** in the `GUARD_ADR_RE` const at
+[`packages/pipeline-cli/src/gate-boundaries.ts`](https://github.com/kamp-us/phoenix/blob/main/packages/pipeline-cli/src/gate-boundaries.ts)
+(issue #4401) — run `pipeline-cli control-plane-paths --boundary GUARD_ADR_RE` to print it. The one
+canonical copy below is kept byte-in-sync with that const by `validate-gate-path-drift.sh`, which
+also fails if a **second** `GUARD_ADR_RE=` line reappears: there used to be two, byte-identical, and
+every consumer resolves first-occurrence-wins, so a corrective edit could land on the shadow and
+appear to work. Cite this line; do **not** re-hard-code the vocabulary. The line is retained (rather
+than replaced by an import) for the same reason `CONTROL_PLANE_RE`'s is — the live gates re-resolve
+it from THIS file on `origin/main`, which is the anti-self-authorization property (#981).
 
 ```
 GUARD_ADR_RE='guard|invariant|fail-closed|fail-open|fail closed|fail open|containment|control-plane|control plane|§cp|self-weakening|blocking set|adversarial review|must never|hard-gate|hard gate|enforcement|\bgat(e|es|ing|ed)\b|relax|loosen|weaken|soften|widen|broaden|waive|bypass|exempt|carve[ -]?out|opt[ -]?out'
@@ -1732,9 +1738,14 @@ GUARD_ADR_RE='guard|invariant|fail-closed|fail-open|fail closed|fail open|contai
 # §CP. Resolve GUARD_ADR_RE from origin/main at run time (like CONTROL_PLANE_RE, #981); read each
 # ADR's body at the PR head. FAIL CLOSED: an unreadable boundary ⇒ match-everything; an unreadable
 # ADR (delete/404) ⇒ §CP — never auto-ship an ADR that could not be read and proven guard-free.
-GUARD_ADR_RE='guard|invariant|fail-closed|fail-open|fail closed|fail open|containment|control-plane|control plane|§cp|self-weakening|blocking set|adversarial review|must never|hard-gate|hard gate|enforcement|\bgat(e|es|ing|ed)\b|relax|loosen|weaken|soften|widen|broaden|waive|bypass|exempt|carve[ -]?out|opt[ -]?out'
+# This recipe carries NO seed copy of GUARD_ADR_RE: it used to, byte-identical to the canonical
+# above, and since every consumer resolves first-occurrence-wins that second line was an unguarded
+# shadow a corrective edit could land on and appear to work (#4401). The live read below is the
+# only resolution, and it already fails closed when it can't be made.
 GA_LIVE="$(gh api "repos/$REPO/contents/claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md?ref=main" -H 'Accept: application/vnd.github.raw' 2>/dev/null | grep '^GUARD_ADR_RE=' | head -n1 || true)"
-if [ -n "$GA_LIVE" ]; then GUARD_ADR_RE="$(printf '%s' "$GA_LIVE" | sed "s/^GUARD_ADR_RE='//; s/'$//")"; else GUARD_ADR_RE='.'; fi   # FAIL CLOSED: '.' ⇒ every ADR word matches ⇒ every touched ADR is §CP
+# accept_re (§CLASS) is the NON-TRIVIALITY ASSERT: a stripped value that is empty, or that still
+# carries the assignment prefix, is refused here rather than gated on (#4401).
+if [ -n "$GA_LIVE" ]; then GUARD_ADR_RE="$(accept_re GUARD_ADR_RE "$(printf '%s' "$GA_LIVE" | sed "s/^GUARD_ADR_RE='//; s/'$//")" '.')"; else GUARD_ADR_RE='.'; fi   # FAIL CLOSED: '.' ⇒ every ADR word matches ⇒ every touched ADR is §CP
 # The ref and the file list are fallible reads too — both come from §CPREAD (below), so an
 # unreadable head SHA leaves HEAD_SHA EMPTY (payload discarded) rather than holding gh's error body.
 cp_head_sha "$REPO" "$PR"; HEAD_SHA="$CP_HEAD_SHA"
@@ -2109,11 +2120,15 @@ gap where a PR carrying one class's PASS reaches `ship-it` and fail-closes on an
 sibling class, a late stall (#2383; PR #2378 touched docs+skills+code, reached `ship-it` with
 only `review-doc: PASS`).
 
-So these probes are **single-sourced here** as canonical named `_RE=` lines — the same
-discipline that single-sources `CONTROL_PLANE_RE`/`GUARD_ADR_RE` (§CP) and `UI_RE`
-(`ship-it/SKILL.md`). A third inline copy in `reviewer.md` is the exact drift `#375`/`#981`/`#2341`
-fought — the class probes were previously inline grep literals in `ship-it` Step 0 *only*, with
-no reusable line for the reviewer to consume:
+So these probes are **single-sourced** in
+[`packages/pipeline-cli/src/gate-boundaries.ts`](https://github.com/kamp-us/phoenix/blob/main/packages/pipeline-cli/src/gate-boundaries.ts)
+(issue #4401), with the canonical named `_RE=` lines below kept byte-in-sync with those consts by
+`validate-gate-path-drift.sh` — the same arrangement `CONTROL_PLANE_RE`/`GUARD_ADR_RE` (§CP) and
+`UI_RE` (`ship-it/SKILL.md`) use, and for the same reason: the lines stay because the live consumers
+re-resolve them from `origin/main` (#981), the consts exist so a reflowed or emptied line is a red
+test rather than a changed gate decision. A third inline copy in `reviewer.md` is the exact drift
+`#375`/`#981`/`#2341` fought — the class probes were previously inline grep literals in `ship-it`
+Step 0 *only*, with no reusable line for the reviewer to consume:
 
 ```bash
 HAS_CODE_RE='^(apps|packages|\.glossary|infra)/'
@@ -2156,11 +2171,25 @@ and every path falls through to the doc test). This is the same stance as §CP's
 
 ```bash
 # Re-resolve a canonical _RE= line from gh-issue-intake-formats.md@main (#981 ?ref=main idiom).
-# Prints the live value, or the fail-closed default $2 when the line is unreadable.
+# Prints the live value, or the fail-closed default $2 when the line is unreadable OR TRIVIAL.
 FORMATS_RAW="$(gh api "repos/$REPO/contents/claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md?ref=main" -H 'Accept: application/vnd.github.raw' 2>/dev/null || true)"
+# NON-TRIVIALITY ASSERT (#4401) — the guard every resolution site below runs before it gates on a
+# freshly-stripped pattern. A strip that silently did NOT strip (a surviving `grep -n` line-number
+# prefix broke the `^NAME='` anchor) or that yielded nothing still COMPILES: `grep -E ""` matches
+# every path and `grep -Ev ""` matches none, BOTH at exit 0 — so the polarity, not the error, decides
+# whether the miss is loud or silent. Absence was already handled; triviality was not.
+accept_re() {   # $1=name, $2=resolved value, $3=fail-closed default
+  case "$2" in
+    *"$1='"*) : ;;   # the assignment prefix survived the strip ⇒ not a pattern, a whole line
+    *) if [ "${#2}" -ge 4 ]; then printf '%s' "$2"; return 0; fi ;;
+  esac
+  printf 'TRIVIAL-GATE-BOUNDARY: %s did not resolve to a usable pattern — failing closed.\n' "$1" >&2
+  printf '%s' "$3"
+}
 reresolve_re() {   # $1=var name, $2=fail-closed default
   live="$(printf '%s\n' "$FORMATS_RAW" | grep "^$1=" | head -n1 || true)"
-  if [ -n "$live" ]; then printf '%s' "$live" | sed "s/^$1='//; s/'\$//"; else printf '%s' "$2"; fi
+  if [ -z "$live" ]; then printf '%s' "$2"; return 0; fi
+  accept_re "$1" "$(printf '%s' "$live" | sed "s/^$1='//; s/'\$//")" "$2"
 }
 HAS_CODE_RE="$(reresolve_re HAS_CODE_RE '.')"
 HAS_SKILLS_RE="$(reresolve_re HAS_SKILLS_RE '.')"
@@ -2182,8 +2211,9 @@ Keying the issueless allowance on the *class* therefore false-refuses that PR �
 divergence, where `review-doc` Step 1 hard-stopped a shape `ship-it` Step 1 and `review-code`
 Step 1 both bless by name.
 
-So the allowance keys on the **surface**, single-sourced here as its own carve-then-test pair —
-adjacent to the class probes, deliberately **not** one of them:
+So the allowance keys on the **surface**, its own carve-then-test pair — adjacent to the class
+probes, deliberately **not** one of them, and single-sourced in `gate-boundaries.ts` alongside them
+(`pipeline-cli control-plane-paths --boundary DOC_VOCAB_SURFACE_RE`):
 
 ```bash
 DOC_VOCAB_EXCLUDE_RE='^(apps|packages|infra|claude-plugins)/'
@@ -3342,7 +3372,9 @@ claim: <CLAUDE_CODE_SESSION_ID> · <ISO-8601-UTC> · presence <machine-fingerpri
   re-derives this write instead of citing the verb.
 - **Read surface — the canonical `CLAIM_RE`.** A claim comment is matched by this **one**
   anchored, case-insensitive, emphasis-tolerant regex; every consumer cites it and **none
-  re-hard-codes the grammar** (it pairs with §5/§6's marker-matcher discipline):
+  re-hard-codes the grammar** (it pairs with §5/§6's marker-matcher discipline). The executable
+  matcher is the `RegExp` in `tools/epic-lock/claim-resolution.ts`; the jq/PCRE rendering below is
+  single-sourced in `gate-boundaries.ts` and drift-locked to both (#4401):
 
   ```
   CLAIM_RE='(?i)^\s*\**\s*claim:\s*[0-9a-f-]{36}\b'

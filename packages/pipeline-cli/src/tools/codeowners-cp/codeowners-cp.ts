@@ -22,6 +22,7 @@
  * merge is actually decided. See the classification-site register in `gh-issue-intake-formats.md`
  * §CP.
  */
+import {isNonTrivialBoundary} from "../../gate-boundaries.ts";
 
 /**
  * One §CP path the regex marks control-plane: a path + its shape.
@@ -51,10 +52,14 @@ export interface OwnedPattern {
  * from THAT line, not the fenced prose copy, so we track the exact string the gates
  * run against. Returns `null` when no such assignment is found — the caller fails
  * closed on a `null` (ADR 0092: can't parse the source ⇒ refuse, never pass).
+ *
+ * A TRIVIAL match is `null` too, not a boundary (#4401). `m?.[1] ?? null` passed an empty capture
+ * straight through, and an empty ERE is not an absent one: it compiles, matches every path under
+ * `grep -E`, and matches none under `grep -Ev` — a 757-char line one reflow away from either.
  */
 export const extractControlPlaneRe = (formatsText: string): string | null => {
-	const m = formatsText.match(/CONTROL_PLANE_RE='([^']*)'/);
-	return m?.[1] ?? null;
+	const captured = formatsText.match(/CONTROL_PLANE_RE='([^']*)'/)?.[1];
+	return isNonTrivialBoundary(captured) ? captured : null;
 };
 
 /**

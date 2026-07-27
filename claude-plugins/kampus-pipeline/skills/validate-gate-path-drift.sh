@@ -73,80 +73,106 @@ else
   formats: $FORMATS_RE"
 fi
 
-# Invariant 1b: the §CP canonical GUARD_ADR_RE is present (ADR 0164, #3645).
+# Invariants 1b / 1c / 1d: every OTHER single-sourced gate boundary (issue #4401).
 #
-# The guard-touching-ADR content predicate (ADR 0164, #2191) is single-sourced in §CP as one
-# canonical GUARD_ADR_RE= line in gh-issue-intake-formats.md. Since #3645 there is NO
-# hand-copied consumer literal to drift-lock: ship-it Step 0, the review gate, and the driver
-# (via trivial-diff) all run the SHARED `pipeline-cli guard-content-probe` verb, whose core
-# parses this canonical line directly (like class-probe parses HAS_*_RE) — so the byte-compare
-# of a consumer copy is obsolete. This invariant now only asserts the canonical still EXISTS
-# (the single source the verb reads); a drift would be a same-file edit, not a copy skew.
-GA_CANONICAL=$(grep "^GUARD_ADR_RE=" "$FORMATS_MD" | head -n1 | sed 's/^GUARD_ADR_RE=//' || true)
-if [ -z "$GA_CANONICAL" ]; then
-	fail "§CP canonical GUARD_ADR_RE= not found in $FORMATS_MD — line must start with GUARD_ADR_RE= (ADR 0164; the guard-content-probe verb reads this single source)"
-else
-	ok "§CP canonical GUARD_ADR_RE present in gh-issue-intake-formats.md (read by pipeline-cli guard-content-probe)"
-fi
-
-# Invariant 1c: HAS_*_RE class-fan copies match §CP (issue #2488).
+# Until #4401 only CONTROL_PLANE_RE had a typed source. The other ten — GUARD_ADR_RE (ADR 0164),
+# the four HAS_*_RE class probes (#2488), the two DOC_VOCAB_*_RE surface probes, CLAIM_RE (ADR
+# 0115) and the UI_RE/UI_EXCLUDE_RE pair (#2341/#3071) — lived ONLY as prose lines, so invariant
+# 1b could assert no more than "a GUARD_ADR_RE= line exists" and DOC_VOCAB/CLAIM/UI were locked
+# by nothing at all. They now have consts in packages/pipeline-cli/src/gate-boundaries.ts, emitted
+# by `pipeline-cli control-plane-paths --boundary <NAME>` — so all three checks below are the SAME
+# const-vs-copy compare invariant 1 already runs for CONTROL_PLANE_RE, generalized:
 #
-# The four class-classification probes — HAS_CODE_RE / HAS_SKILLS_RE /
-# HAS_DOCS_EXCLUDE_RE / HAS_DOCS_RE — are single-sourced as canonical HAS_*_RE='…'
-# lines in §CP exactly like CONTROL_PLANE_RE, then copied verbatim into ship-it Step
-# 0's class fan. A stale copy mis-classes a PR's changed-path fan (the #2434
-# `.glossary/**→has-code` miss that emptied a review namespace and stalled ship-it),
-# and that drift was caught only by hand during #2434/#2486 — the exact gap this
-# invariant closes. Kept as a pure-bash grep-extract-then-diff (the HAS_*_RE regexes
-# are not part of #2761's CONTROL_PLANE_RE single-sourcing) rather than routed through
-# `pipeline-cli class-probe`, even though Invariant 1 now makes `node` available in the job.
-HAS_NAMES="HAS_CODE_RE HAS_SKILLS_RE HAS_DOCS_EXCLUDE_RE HAS_DOCS_RE"
-# Surfaces carrying a copy of the §CP block, enumerated like Invariant 1's CONSUMERS.
-# ship-it's copies are one-per-line; reviewer.md's `class_reresolve` fail-closed reference
-# packs two per COMPOUND line (`HAS_A='x'; HAS_B='y'   # c`), which the per-assignment
-# extraction below handles. Both copy sites must track §CP or the class fan silently drifts
-# (issue #2488: reviewer.md's copy was unguarded — drifting it left this gate GREEN). Paths
-# are relative to skills_dir, so the sibling agents/ dir is reached with `../agents/…`.
-HAS_CONSUMERS="ship-it/SKILL.md ../agents/reviewer.md"
+#   1b — the canonical prose line equals the const (a VALUE compare, not a presence check).
+#   1c — every other copy of the name in the corpus equals it too (ship-it's class fan,
+#        reviewer.md's compound fail-closed reference, the doc's own illustrative fenced copies).
+#   1d — the canonical appears EXACTLY ONCE in its source file. GUARD_ADR_RE appeared twice,
+#        byte-identical, and every consumer resolves first-occurrence-wins — so a corrective edit
+#        could land on the shadow copy and appear to work (#4401).
+#
+# The canonical is the COLUMN-0 assignment, because that is what every live consumer resolves
+# (`grep '^NAME='` in shell, `/^NAME='…'/m` in TypeScript). An indented occurrence is prose
+# illustration, not a machine surface — 1c still value-locks it, 1d does not count it.
+BOUNDARY_NAMES="GUARD_ADR_RE HAS_CODE_RE HAS_SKILLS_RE HAS_DOCS_EXCLUDE_RE HAS_DOCS_RE DOC_VOCAB_EXCLUDE_RE DOC_VOCAB_SURFACE_RE CLAIM_RE UI_RE UI_EXCLUDE_RE"
+SHIPIT_MD="$skills_dir/ship-it/SKILL.md"
+REVIEWER_MD="$skills_dir/../agents/reviewer.md"
+# Every corpus file that may carry an assignment copy of a boundary name.
+COPY_FILES="$FORMATS_MD $SHIPIT_MD $REVIEWER_MD"
 
-for name in $HAS_NAMES; do
-	# Canonical: the single-quoted §CP assignment (NAME='…'). Anchor on the opening
-	# quote so this never grabs the double-quoted `NAME="$(reresolve_re …)"` line below it.
-	HAS_CANONICAL=$(grep "^$name='" "$FORMATS_MD" | head -n1 | sed "s/^$name=//" || true)
-	if [ -z "$HAS_CANONICAL" ]; then
-		fail "§CP canonical $name= not found in $FORMATS_MD — line must start with $name='…' (issue #2488)"
+# An ASSIGNMENT occurrence: the name preceded by start-of-line, whitespace, or `; ` (reviewer.md
+# packs two per compound line). Deliberately NOT a bare substring match — `grep '^NAME='` and
+# `sed "s/^NAME='//"` recipe lines also contain `NAME='`, and treating those as copies extracts
+# the substitution expression and false-FAILs.
+assignment_lines() { grep -nE "(^|[[:space:]]|;)$1='" "$2" 2>/dev/null || true; }
+# Pull ONLY this name's own single-quoted value off a line. A single-quoted bash string cannot
+# contain a `'`, so `[^']*` up to the next quote is exactly the value (issue #2488).
+assignment_value() { printf '%s\n' "$2" | sed "s/.*$1='\([^']*\)'.*/\1/"; }
+
+for name in $BOUNDARY_NAMES; do
+	# The single source: the const the emitter prints. `|| true` so a failed run yields empty and
+	# hits the explicit empty-check below instead of aborting under set -e.
+	CONST_VAL=$(node "$repo_root/packages/pipeline-cli/src/bin.ts" control-plane-paths --boundary "$name" 2>/dev/null || true)
+	if [ -z "$CONST_VAL" ]; then
+		fail "could not read the $name const via \`pipeline-cli control-plane-paths --boundary $name\` (single source: packages/pipeline-cli/src/gate-boundaries.ts) — issue #4401"
 		continue
 	fi
-	ok "§CP canonical $name extracted from gh-issue-intake-formats.md"
 
-	for rel in $HAS_CONSUMERS; do
-		md="$skills_dir/$rel"
+	# UI_RE/UI_EXCLUDE_RE are single-sourced in ship-it/SKILL.md, not §CP (§CLASS keeps them there
+	# deliberately, and every consumer re-resolves that file from origin/main).
+	case "$name" in
+		UI_RE|UI_EXCLUDE_RE) SRC_MD="$SHIPIT_MD" ;;
+		*) SRC_MD="$FORMATS_MD" ;;
+	esac
+
+	# 1d — exactly one column-0 canonical in the source file.
+	CANON_COUNT=$(grep -c "^$name='" "$SRC_MD" 2>/dev/null || true)
+	[ -n "$CANON_COUNT" ] || CANON_COUNT=0
+	if [ "$CANON_COUNT" -eq 0 ]; then
+		fail "canonical $name='…' not found at column 0 in $SRC_MD — the live consumers resolve it with ^$name= (issue #4401)"
+		continue
+	elif [ "$CANON_COUNT" -gt 1 ]; then
+		fail "canonical $name='…' appears $CANON_COUNT times at column 0 in $SRC_MD — every consumer resolves first-occurrence-wins, so the later copies are unguarded shadows a corrective edit can land on (issue #4401)"
+		continue
+	fi
+	ok "canonical $name appears exactly once in $(basename "$SRC_MD")"
+
+	# 1b — the canonical equals the const.
+	CANON_VAL=$(assignment_value "$name" "$(grep "^$name='" "$SRC_MD" | head -n1)")
+	if [ "$CANON_VAL" = "$CONST_VAL" ]; then
+		ok "canonical $name matches the single-source const"
+	else
+		fail "canonical $name has drifted from the single-source const
+  const: $CONST_VAL
+  prose: $CANON_VAL"
+	fi
+
+	# 1c — every other assignment copy in the corpus equals it too.
+	for md in $COPY_FILES; do
 		if [ ! -f "$md" ]; then
-			fail "$rel: file not found — cannot verify $name copy"
+			fail "$md: file not found — cannot verify $name copies"
 			continue
 		fi
-		# The single-quoted copy (tolerant of leading whitespace); the `'` in the
-		# pattern excludes the `NAME="$(reresolve_re …)"` re-assignment line.
-		LINE=$(grep "$name='" "$md" | head -n1 || true)   # || true: no-match hits the fail below, not a set -e abort
-		if [ -z "$LINE" ]; then
-			fail "$rel: no $name='…' line found — consumer must carry a copy matching §CP (issue #2488)"
-			continue
-		fi
-		# Per-assignment extraction (compound-line-aware): pull ONLY this NAME's own
-		# single-quoted value, whether it sits alone (ship-it, one per line) or shares a
-		# compound line with a sibling assignment + trailing comment (reviewer.md,
-		# `HAS_A='x'; HAS_B='y'   # c`). A single-quoted bash string cannot contain a `'`,
-		# so `[^']*` up to the next quote is the exact value — the old whole-line strip
-		# swallowed the sibling assignment on a compound line and false-FAILed (issue #2488).
-		VAL_CLEAN=$(printf '%s\n' "$LINE" | sed "s/.*$name='\([^']*\)'.*/'\1'/")
-		if [ "$VAL_CLEAN" = "$HAS_CANONICAL" ]; then
-			ok "$rel $name matches §CP canonical"
-		else
-			fail "$rel $name has drifted from §CP canonical
-  §CP:  $HAS_CANONICAL
-  copy: $VAL_CLEAN"
-		fi
+		COPIES=$(assignment_lines "$name" "$md")
+		[ -n "$COPIES" ] || continue
+		while IFS= read -r hit; do
+			[ -z "$hit" ] && continue
+			LINE_NO=${hit%%:*}
+			COPY_VAL=$(assignment_value "$name" "${hit#*:}")
+			# A FAIL-CLOSED SENTINEL (`.`, `$^`) is not a copy of the boundary — it is the value a
+			# recipe assigns when the live read fails, and locking it to the const would demand the
+			# recipe carry the 300-char pattern as its fallback. Every real boundary is far longer
+			# than any sentinel, so the length bound separates them without enumerating either.
+			[ "${#COPY_VAL}" -lt 4 ] && continue
+			if [ "$COPY_VAL" != "$CONST_VAL" ]; then
+				fail "$(basename "$md"):$LINE_NO $name has drifted from the single-source const
+  const: $CONST_VAL
+  copy:  $COPY_VAL"
+			fi
+		done <<EOF
+$COPIES
+EOF
 	done
+	ok "$name copies across the corpus match the single-source const"
 done
 
 # Invariant 2: .claude/skills symlink agrees with marketplace source.
