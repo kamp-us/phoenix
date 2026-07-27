@@ -13,11 +13,13 @@
  * pid-bearing reason (`claude agent <id> (pid <N> start <date>)`) that `worktree-reap` already parses
  * as a presence signal. So the lock gate is real and does protect some live lanes. What it is not is
  * *reliable*: coverage is partial (most registered trees carry no lock at a given moment, and a lock
- * can outlive its session), and the `$TMPDIR`-rooted `review-head-*` class is never locked at all —
- * `review-head materialize` runs `git worktree add --detach` with no `--lock` — so the
- * `review-head-idle` removal path had no lock protection for a live reviewer's tree. The root cause
- * of the two observed agent-tree removals is NOT established; this gate is justified as the missing
- * *presence* signal, not as a replacement for a defeated lock.
+ * can outlive its session). The `$TMPDIR`-rooted `review-head-*` class was not locked at all when
+ * this gate was written, leaving the `review-head-idle` removal path with no lock protection for a
+ * live reviewer's tree; `review-head materialize` now locks its tree with the owning session's pid
+ * (#4004), which adds a fence but does not make this gate redundant — the lock is one owner signal,
+ * this module is the other, and both fail toward KEEP. The root cause of the two observed agent-tree
+ * removals is NOT established; this gate is justified as the missing *presence* signal, not as a
+ * replacement for a defeated lock.
  *
  * ADR 0191 is the rule the sweep was missing: a resource claim's liveness rides its HOLDER's
  * presence, never an age window.
@@ -40,7 +42,9 @@
  *      rather than a considered spare. Do not build a decision on stamp coverage until #4180
  *      lands a producer that actually fires.
  *   2. **liveness** — the harness's session registry: one `<config>/sessions/<pid>.json` per
- *      RUNNING session, carrying `{pid, sessionId}` and deleted when the session exits.
+ *      RUNNING session, carrying `{pid, sessionId}` and deleted when the session exits. Where those
+ *      files live and how one is read is `../../session-registry.ts` — shared with the lock-writer
+ *      on the other side of the §CP boundary, owned by neither (ADR 0218).
  *
  * **The owner is the LAUNCHER, never the occupant (#4001).** Both owner sources above resolve the
  * session that *spawned* the tree, not the ephemeral subagent that *occupies* it: the hook runs in
@@ -69,6 +73,7 @@
  * work. So "cannot prove dead" and "dead" must never collapse into one verdict — a missing stamp,
  * an unreadable registry, or a probe that could not execute is not evidence of death.
  */
+import {SESSION_UUID} from "../../session-registry.ts";
 
 /**
  * `"dead"` is the only verdict that lets a removal proceed outright. `"unknown"` is a distinct
@@ -93,9 +98,6 @@ export interface OwnerStamp {
 	readonly sessionId: string;
 	readonly kind: OwnerKind;
 }
-
-/** A bare session-UUID path segment (the shape both the registry and the sidecar layout use). */
-const SESSION_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const asString = (v: unknown): string => (typeof v === "string" ? v.trim() : "");
 
@@ -126,21 +128,6 @@ export const parseOwnerStamp = (raw: string): OwnerStamp | null => {
 	if (!SESSION_UUID.test(sessionId)) return null;
 	const kind = asString(objectField(parsed, "ownerKind"));
 	return {sessionId, kind: kind === "occupant" ? "occupant" : "launcher"};
-};
-
-/** One `<config>/sessions/<pid>.json` entry — a session the harness records as running. */
-export interface SessionRegistryEntry {
-	readonly pid: number;
-	readonly sessionId: string;
-}
-
-/** Parse one registry file; `null` unless it yields BOTH a positive pid and a session id. */
-export const parseSessionRegistryEntry = (raw: string): SessionRegistryEntry | null => {
-	const parsed = parseJson(raw);
-	const pid = objectField(parsed, "pid");
-	const sessionId = asString(objectField(parsed, "sessionId"));
-	if (typeof pid !== "number" || !Number.isInteger(pid) || pid <= 0) return null;
-	return SESSION_UUID.test(sessionId) ? {pid, sessionId} : null;
 };
 
 /**

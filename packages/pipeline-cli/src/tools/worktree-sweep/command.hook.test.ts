@@ -192,6 +192,89 @@ describe("worktree-sweep --execute — SessionStart cadence against a REAL git r
 		);
 	});
 
+	it("reads a review-head tree's OWN pid-bearing lock as presence: live pid KEPT, dead pid reclaimed — #4004", async () => {
+		const reviewRoot = mkdtempSync(join(tmpdir(), "wts-lock-"));
+		reviewRoots.push(reviewRoot);
+		const lockReason = (pid: number) => `claude agent review-head-x (pid ${pid} start now)`;
+		// A pid that is provably GONE: the shell prints its own pid and exits before the sweep runs.
+		const deadPid = Number.parseInt(execFileSync("sh", ["-c", "echo $$"], {encoding: "utf8"}), 10);
+
+		// Locked with THIS process's pid — a live reviewer. Otherwise fully reclaimable (clean, idle,
+		// no stamp), so only the lock's presence signal can save it.
+		const liveWt = join(reviewRoot, "review-head-9001");
+		git(
+			mainRepo,
+			"worktree",
+			"add",
+			"-q",
+			"--detach",
+			"--lock",
+			"--reason",
+			lockReason(process.pid),
+			liveWt,
+			"HEAD",
+		);
+		backdate(liveWt);
+
+		// Same shape, locked with a dead pid — a stale pin, so the lock must not keep it forever.
+		const orphanWt = join(reviewRoot, "review-head-9002");
+		git(
+			mainRepo,
+			"worktree",
+			"add",
+			"-q",
+			"--detach",
+			"--lock",
+			"--reason",
+			lockReason(deadPid),
+			orphanWt,
+			"HEAD",
+		);
+		backdate(orphanWt);
+
+		const {stdout, code} = await runSweep(mainRepo, ["--execute"], sweepEnv);
+		assert.strictEqual(code, 0, stdout);
+		assert.isTrue(existsSync(liveWt), "a live reviewer's locked tree must be KEPT");
+		assert.isFalse(
+			existsSync(orphanWt),
+			"a stale-locked orphan must be reclaimed, not pinned forever",
+		);
+
+		git(mainRepo, "worktree", "unlock", liveWt);
+	});
+
+	it("prunes a torn-down review tree's LOCKED metadata — plain `git worktree prune` skips it — #4004", async () => {
+		const reviewRoot = mkdtempSync(join(tmpdir(), "wts-gone-"));
+		reviewRoots.push(reviewRoot);
+		const goneWt = join(reviewRoot, "review-head-9003");
+		git(
+			mainRepo,
+			"worktree",
+			"add",
+			"-q",
+			"--detach",
+			"--lock",
+			"--reason",
+			"claude agent review-head-x (pid 4242 start now)",
+			goneWt,
+			"HEAD",
+		);
+		// Exactly what the review gates' teardown does: `rm -rf "$REVIEW_WT" && git worktree prune`.
+		rmSync(goneWt, {recursive: true, force: true});
+		git(mainRepo, "worktree", "prune");
+		assert.isTrue(
+			git(mainRepo, "worktree", "list", "--porcelain").includes(goneWt),
+			"precondition: git's own prune leaves a LOCKED gone-dir entry behind",
+		);
+
+		const {stdout, code} = await runSweep(mainRepo, ["--execute"], sweepEnv);
+		assert.strictEqual(code, 0, stdout);
+		assert.isFalse(
+			git(mainRepo, "worktree", "list", "--porcelain").includes(goneWt),
+			"the sweep must unlock the stale crew-agent lock and prune the metadata",
+		);
+	});
+
 	it("dry-run (no --execute) touches nothing — even a clean+idle+unlocked orphan", async () => {
 		const keepWt = join(mainRepo, ".claude", "worktrees", "wf_dryrun");
 		git(mainRepo, "worktree", "add", "-q", "--detach", keepWt, "HEAD");

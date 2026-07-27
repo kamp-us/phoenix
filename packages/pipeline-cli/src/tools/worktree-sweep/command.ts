@@ -42,12 +42,13 @@ import {execFileSync} from "node:child_process";
 import {homedir} from "node:os";
 import {Console, Effect, FileSystem, Option, Path} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
+import {parseSessionRegistryEntry, sessionRegistryDir} from "../../session-registry.ts";
+import {parseAgentLockOwner} from "../worktree-reap/worktree-reap.ts";
 import {
 	liveSessionIds,
 	type OwnerLiveness,
 	type OwnerStamp,
 	parseOwnerStamp,
-	parseSessionRegistryEntry,
 	resolveOwnerLiveness,
 	sessionIdFromPath,
 } from "./owner-liveness.ts";
@@ -195,14 +196,6 @@ const worktreeIdleFacts = (
 	});
 
 /**
- * The harness's live-session registry directory — one `<pid>.json` per RUNNING session, deleted
- * when the session exits. `$CLAUDE_CONFIG_DIR` is the harness's own override for the config root;
- * absent it, the tool's default config home under the user's home dir.
- */
-const sessionRegistryDir = (path: Path.Path): string =>
-	path.join(process.env.CLAUDE_CONFIG_DIR?.trim() || path.join(homedir(), ".claude"), "sessions");
-
-/**
  * Is `pid` running? Fails toward TRUE, which is what keeps a tree: `ESRCH` is the only positive
  * evidence of absence, `EPERM` proves the process EXISTS under another uid, and any other error
  * means the probe could not execute — never that the process is gone (#3943, and the #787 class
@@ -230,7 +223,11 @@ const probeLiveSessions = (): Effect.Effect<
 	Effect.gen(function* () {
 		const fs = yield* FileSystem.FileSystem;
 		const pathSvc = yield* Path.Path;
-		const dir = sessionRegistryDir(pathSvc);
+		const dir = sessionRegistryDir({
+			configDir: process.env.CLAUDE_CONFIG_DIR,
+			home: homedir(),
+			join: (...segments) => pathSvc.join(...segments),
+		});
 		const names = yield* fs
 			.readDirectory(dir)
 			.pipe(Effect.orElseSucceed((): ReadonlyArray<string> | null => null));
@@ -364,11 +361,38 @@ const worktreeSweep = Command.make(
 			parsed.filter((p) => !p.bare),
 			(p) =>
 				Effect.gen(function* () {
+					const managed = isManagedWorktree(p.path);
+					// A review-head tree is a swept candidate too (#2785), so its liveness (idle mtime)
+					// must be probed. Its detached HEAD carries no branch, so the open-PR probe below
+					// (branch-keyed) is N/A for it — the dirty/locked/idle triple carries its liveness.
+					const reviewHead = isReviewHeadWorktree(p.path);
+					const swept = managed || reviewHead;
+					// A `review-head-*` tree's lock is written by this repo (`review-head materialize`,
+					// #4004) with the owning REVIEWER session's pid, so for that class the lock reason is
+					// the exact presence signal — strictly better than the stamp/path heuristic below,
+					// which a multi-UUID temp root cannot resolve. Scoped to the class we write: a build
+					// tree's lock is an opaque pin whose keep-behavior stays untouched.
+					const lockOwner = reviewHead ? parseAgentLockOwner(p.lockReason) : null;
+					const lockOwnerLiveness: OwnerLiveness =
+						lockOwner === null ? "unknown" : pidIsAlive(lockOwner.pid) ? "alive" : "dead";
+					// git withholds the `prunable` flag from a LOCKED worktree — including one whose
+					// directory is already gone, which is exactly what a review gate's teardown leaves
+					// behind (`rm -rf "$REVIEW_WT" && git worktree prune`) now that the tree is born
+					// locked (#4004). Recover the fact ourselves for the class we lock: dir missing ⇒
+					// gone-dir, the same #3654 case, reaped by unlock+prune below. An unresolvable
+					// existence check reads "present" (fail-safe KEEP).
+					const dirGone =
+						lockOwner !== null &&
+						!(yield* (yield* FileSystem.FileSystem)
+							.exists(p.path)
+							.pipe(Effect.orElseSucceed(() => true)));
+					const prunable = p.prunable || dirGone;
+
 					// A gone-dir tree's working directory is missing, so every probe below is either
 					// meaningless or actively errors (`git -C <gone> status` fails → fail-safe dirty,
 					// which would mis-KEEP it). Short-circuit to the safe-to-prune record: the classifier
 					// checks `prunable` first, so the other facts are never consulted for it (#3654).
-					if (p.prunable) {
+					if (prunable) {
 						return {
 							path: p.path,
 							branch: p.branch,
@@ -377,6 +401,12 @@ const worktreeSweep = Command.make(
 							reachableFromOriginMain: false,
 							squashMergedToOriginMain: false,
 							locked: p.locked,
+							// A gone-dir tree's crew-agent lock is stale WHATEVER its pid says — the reviewer
+							// tore the directory down (`rm -rf $REVIEW_WT`) and only admin metadata is left.
+							// It must be recorded, because `git worktree prune` SKIPS a locked entry: without
+							// the unlock this flag drives, every torn-down review tree would leave a permanent
+							// `.git/worktrees/<id>` stub — the #3654 pile, re-created by the #4004 lock.
+							staleAgentLock: lockOwner !== null,
 							recentlyActive: false,
 							hasOpenPr: false,
 							// Moot for a gone-dir tree — `prunable` short-circuits the classifier before any
@@ -386,11 +416,6 @@ const worktreeSweep = Command.make(
 							idleBeyondLauncherGrace: false,
 						};
 					}
-					const managed = isManagedWorktree(p.path);
-					// A review-head tree is a swept candidate too (#2785), so its liveness (idle mtime)
-					// must be probed. Its detached HEAD carries no branch, so the open-PR probe below
-					// (branch-keyed) is N/A for it — the dirty/locked/idle triple carries its liveness.
-					const swept = managed || isReviewHeadWorktree(p.path);
 					const isDirty = worktreeIsDirty(p.path);
 					const reachable = reachableFromOriginMain(p.head);
 					// Only probe the costlier squash signal when ancestry already missed.
@@ -400,9 +425,16 @@ const worktreeSweep = Command.make(
 						: {recentlyActive: false, idleBeyondLauncherGrace: false};
 					// Presence beats recency (#3943): a live shipper lane is mtime-idle, so `recentlyActive`
 					// cannot see it. Probed only for a swept tree — an unswept one is already KEEP.
-					const ownerLiveness: OwnerLiveness = swept
-						? resolveOwnerLiveness({owner: yield* ownerOf(p.path), liveSessionIds: live})
-						: "unknown";
+					// The lock-derived presence wins where it exists (#4004): it names the session that
+					// materialized THIS tree, where the stamp/path fallback below only ever names a
+					// launcher (#4001). It is computed for the review-head class alone, so a build tree
+					// still resolves exactly as before.
+					const ownerLiveness: OwnerLiveness =
+						lockOwnerLiveness !== "unknown"
+							? lockOwnerLiveness
+							: swept
+								? resolveOwnerLiveness({owner: yield* ownerOf(p.path), liveSessionIds: live})
+								: "unknown";
 					// Mirrors the classifier's owner gates so the probe below fires for exactly the trees
 					// that can reach the open-PR branch — including a launcher-owned one past its grace
 					// window (#4001), which would otherwise skip the probe and be reaped with a PR open.
@@ -429,6 +461,7 @@ const worktreeSweep = Command.make(
 						reachableFromOriginMain: reachable,
 						squashMergedToOriginMain: squashMerged,
 						locked: p.locked,
+						staleAgentLock: lockOwnerLiveness === "dead",
 						recentlyActive,
 						hasOpenPr,
 						ownerLiveness,
@@ -497,6 +530,12 @@ const worktreeSweep = Command.make(
 		/** Branches whose tree this run actually reclaimed — the ref pass's default scope (#4190). */
 		const reclaimedBranches: Array<string> = [];
 		if (goneDir.length > 0) {
+			// `git worktree prune` SKIPS a locked entry, so a torn-down review tree's stale crew-agent
+			// lock (#4004) would keep its metadata forever. Free it first — the directory is already
+			// gone, so there is no working surface to pull out from under anyone.
+			for (const r of goneDir) {
+				if (r.worktree.staleAgentLock) runGit(["worktree", "unlock", r.worktree.path]);
+			}
 			const res = runGit(["worktree", "prune", "--verbose"]);
 			if (res.ok) {
 				pruned = goneDir.length;
@@ -512,6 +551,10 @@ const worktreeSweep = Command.make(
 		let removed = 0;
 		let refused = 0;
 		for (const r of toRemovePaths) {
+			// A stale crew-agent lock (#4004) makes the non-forced remove refuse, so free it first —
+			// scoped to a tree the classifier already proved dead+clean+idle, never a live lane's lock.
+			// Unlock, never `--force`: the dirty-work refusal below stays git's to make.
+			if (r.worktree.staleAgentLock) runGit(["worktree", "unlock", r.worktree.path]);
 			// NEVER --force: git refuses a tree it judges unsafe, and we KEEP it (report, don't escalate).
 			const res = runGit(["worktree", "remove", r.worktree.path]);
 			if (res.ok) {

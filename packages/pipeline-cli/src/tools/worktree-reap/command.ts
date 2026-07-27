@@ -5,7 +5,9 @@
  * sessions leave their `isolation:worktree` trees (and checked-out branches) behind under
  * `.claude/worktrees/`, where they accumulate and block their branches from being
  * re-checked-out elsewhere. This verb identifies trees whose owning SESSION is provably
- * dead, and reclaims only the ones that hold nothing recoverable.
+ * dead, and reclaims only the ones that hold nothing recoverable. The `$TMPDIR`-rooted
+ * `review-head-*` review checkouts are in scope too, since they now carry the same pid-bearing
+ * crew-agent lock (#4004) — see `worktree-reap.ts` for what that changes for them.
  *
  * Eligibility is session-presence-based, never age-based (ADR 0191), read from two owner
  * signals gathered here and folded by the pure classifier:
@@ -50,13 +52,14 @@ import {homedir} from "node:os";
 import {join} from "node:path";
 import {Console, Effect} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
+import {parseSessionRegistryEntry, sessionRegistryDir} from "../../session-registry.ts";
 import {
 	liveSessionIds,
 	parseOwnerStamp,
-	parseSessionRegistryEntry,
 	resolveOwnerLiveness,
 } from "../worktree-sweep/owner-liveness.ts";
 import {runRefReclaim} from "../worktree-sweep/ref-reclaim-io.ts";
+import {isReviewHeadWorktree} from "../worktree-sweep/worktree-sweep.ts";
 import {
 	computeWorktreeReapPlan,
 	isManagedAgentWorktree,
@@ -110,13 +113,9 @@ const pidAlive = (pid: number): boolean => {
 	}
 };
 
-/**
- * The harness's live-session registry directory — one `<pid>.json` per RUNNING session, deleted
- * when the session exits. `$CLAUDE_CONFIG_DIR` is the harness's own override for the config root;
- * absent it, the default config home under the user's home dir.
- */
-const sessionRegistryDir = (): string =>
-	join(process.env.CLAUDE_CONFIG_DIR?.trim() || join(homedir(), ".claude"), "sessions");
+/** This verb's `node:path` binding of the shared registry-location rule (`session-registry.ts`). */
+const registryDir = (): string =>
+	sessionRegistryDir({configDir: process.env.CLAUDE_CONFIG_DIR, home: homedir(), join});
 
 /** Read a file, or `null` on ANY failure — an unreadable input is never evidence about a session. */
 const readTextOrNull = (path: string): string | null => {
@@ -135,7 +134,7 @@ const readTextOrNull = (path: string): string | null => {
  * running") lives in `liveSessionIds`; this is only its IO.
  */
 const probeLiveSessions = (): ReadonlySet<string> | null => {
-	const dir = sessionRegistryDir();
+	const dir = registryDir();
 	let names: ReadonlyArray<string>;
 	// biome-ignore lint/plugin: best-effort enumeration — an unreadable registry dir is reported as `readable: false`, the fail-closed input `liveSessionIds` turns into "trust nothing", never the E channel.
 	try {
@@ -160,9 +159,10 @@ const OWNER_STAMP_FILE = "kampus-owner.json";
 
 /**
  * Signal 2 for one tree: its owner stamp resolved against the live-session registry. Unlike the
- * sweep, this takes NO session-id-from-path fallback — that fallback exists for `$TMPDIR`-rooted
- * `review-head-*` trees, which are not `.claude/worktrees/` managed trees and so never reach this
- * verb. An unresolvable gitdir, an absent stamp, a malformed stamp, or an untrusted registry all
+ * sweep, this takes NO session-id-from-path fallback — that fallback guesses an owner from a
+ * `$TMPDIR` path, and a review-head tree is not called here at all (#4004): it carries its own
+ * `review-head materialize` lock, which is signal 1 and a far better fact than a path guess. An
+ * unresolvable gitdir, an absent stamp, a malformed stamp, or an untrusted registry all
  * read `"unknown"` (⇒ the tree is spared unless the lock signal independently proves death).
  */
 const stampPresenceOf = (worktreePath: string, live: ReadonlySet<string> | null): OwnerPresence => {
@@ -255,8 +255,9 @@ const worktreeReap = Command.make(
 			.map((p) => {
 				// The primary checkout and any foreign tree short-circuit to a SPARE record — the
 				// classifier never consults the other fields for them, so no stamp read, pid probe,
-				// `git status`, or ancestry walk ever fires outside `.claude/worktrees/`.
-				if (!isManagedAgentWorktree(p.path)) {
+				// `git status`, or ancestry walk ever fires outside the two in-scope classes.
+				const reviewHead = isReviewHeadWorktree(p.path);
+				if (!isManagedAgentWorktree(p.path) && !reviewHead) {
 					return {
 						path: p.path,
 						branch: p.branch,
@@ -275,8 +276,11 @@ const worktreeReap = Command.make(
 					lockOwner:
 						parsedLock === null ? null : {pid: parsedLock.pid, alive: pidAlive(parsedLock.pid)},
 					foreignLock,
-					// An operator-pinned tree is spared whatever its owner says, so don't read its stamp.
-					stampPresence: foreignLock ? ("unknown" as const) : stampPresenceOf(p.path, live),
+					// An operator-pinned tree is spared whatever its owner says, so don't read its stamp —
+					// nor is there one to read for a `$TMPDIR`-rooted review-head tree, which no hook
+					// provisions: signal 1, its own `review-head materialize` lock, is all it ever carries.
+					stampPresence:
+						foreignLock || reviewHead ? ("unknown" as const) : stampPresenceOf(p.path, live),
 				};
 				// Only a tree whose owner is PROVEN dead needs its recoverable-work facts gathered; a
 				// live or unprovable owner is spared before those checks are ever consulted, so the
@@ -288,7 +292,9 @@ const worktreeReap = Command.make(
 				return {
 					...facts,
 					hasUncommitted: worktreeHasUncommitted(p.path),
-					hasUnpushed: hasUnpushed(p.head),
+					// The ancestry probe is meaningless for a review-head tree — its detached head came
+					// off the remote, so the classifier does not consult this fact for it (#4004).
+					hasUnpushed: reviewHead ? false : hasUnpushed(p.head),
 				};
 			});
 

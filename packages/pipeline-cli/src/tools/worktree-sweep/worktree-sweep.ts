@@ -53,8 +53,8 @@
  * Session-presence liveness (#3943): the three signals above are all the sweep had, and none of
  * them is presence — so a live SHIPPER lane read as an orphan (clean, its PR just squash-merged, and
  * mtime-idle because a ship touches no file in the tree) and had its worktree removed mid-run, twice.
- * The `locked` gate is real presence-ish signal but only partially covers the pile (and never covers
- * `review-head-*`); see `owner-liveness.ts`. Removal now additionally requires the owning session to be **provably
+ * The `locked` gate is real presence-ish signal but only partially covers the pile; see
+ * `owner-liveness.ts`. Removal now additionally requires the owning session to be **provably
  * dead**: `ownerLiveness` must be `"dead"`, resolved from holder presence per ADR 0191, never from
  * age. `"alive"` and `"unknown"` both KEEP — see `owner-liveness.ts` for the resolution and for why
  * "cannot prove dead" must never collapse into "dead".
@@ -132,6 +132,14 @@ export interface WorktreeRecord {
 	 * removed only when all three are false.
 	 */
 	readonly locked: boolean;
+	/**
+	 * The lock is a crew-agent lock (`claude agent … (pid <N> …)`) whose pid is provably GONE — a
+	 * stale pin, not a live claim, so it must not keep the tree. Resolved at the boundary for the
+	 * `review-head-*` class only, whose locks this repo writes (`review-head materialize`, #4004); a
+	 * build tree's lock stays opaque, so its keep-on-`locked` behavior is unchanged. Without this,
+	 * locking review-head trees would pin every one of them forever and re-open the #2785 leak.
+	 */
+	readonly staleAgentLock: boolean;
 	readonly recentlyActive: boolean;
 	readonly hasOpenPr: boolean;
 	/**
@@ -158,7 +166,7 @@ export type KeepReason =
 	| "not-managed"
 	/** Uncommitted/untracked changes present — keep, never `--force` (unpushed work is sacred). */
 	| "dirty"
-	/** `git worktree lock` is set — an operator/agent pinned it as in-use (#2240). */
+	/** `git worktree lock` is set by a live/unattributable holder — pinned as in-use (#2240). */
 	| "locked"
 	/** The owning agent session is still running — a LIVE lane; kept whatever its other facts say (#3943). */
 	| "live-session"
@@ -194,7 +202,8 @@ export type RemoveReason =
 	/** Clean; tip not an ancestor, but the branch's content squash-merged to `origin/main` (#1328). */
 	| "squash-merged-clean"
 	/**
-	 * A `review-head-*` throwaway detached checkout that is clean + unlocked + idle (#2785). No
+	 * A `review-head-*` throwaway detached checkout that is clean + idle + not pinned by a LIVE lock
+	 * (its own crew-agent lock counts as a pin only while that session runs — #4004). No
 	 * merge gate: it holds a detached, already-pushed PR head and no branch/unpushed work, so once
 	 * it is clean, unlocked, and idle it is a pure leak — nothing to strand. Requiring merge here
 	 * would strand it for the PR's entire open life (a review is a bounded one-shot event, not tied
@@ -234,13 +243,13 @@ export interface WorktreeSweepPlan {
  *      tree with a LIVE directory are never candidates, regardless of their other facts.
  *   2. Dirty → KEEP (`dirty`). Wins over every other signal for BOTH classes: a worktree
  *      with working-tree changes is never removed, even when its branch has merged.
- *   3. Liveness gates — locked (#2240) / owner alive-or-unprovable (#3943) / launcher-alive within
- *      grace (#4001) / recently-active (#2240) → KEEP, for BOTH classes. A clean tree may still
- *      belong to a LIVE lane (a build tree just committed+pushed; a review still running against
- *      its head). These run BEFORE any remove branch, so each is a necessary condition on REMOVE.
- *      The presence gate subsumes the mtime one it sits above — an idle-but-live shipper is exactly
- *      what mtime could not see — and `recently-active` is retained below it because it can only
- *      ever KEEP more.
+ *   3. Liveness gates — locked (#2240; a STALE crew-agent lock, its session proven dead, does not
+ *      keep — #4004) / owner alive-or-unprovable (#3943) / launcher-alive within grace (#4001) /
+ *      recently-active (#2240) → KEEP, for BOTH classes. A clean tree may still belong to a LIVE
+ *      lane (a build tree just committed+pushed; a review still running against its head). These
+ *      run BEFORE any remove branch, so each is a necessary condition on REMOVE. The presence gate
+ *      subsumes the mtime one it sits above — an idle-but-live shipper is exactly what mtime could
+ *      not see — and `recently-active` is retained below it because it can only ever KEEP more.
  *
  *      The `locked` gate is what makes step 3's launcher branch safe, and its position is load-
  *      bearing: the harness holds a `git worktree lock` on an agent tree for its occupant's
@@ -248,6 +257,15 @@ export interface WorktreeSweepPlan {
  *      already had its occupancy released by the harness. That is the occupant-keyed presence
  *      signal a launcher stamp cannot be (#4001) — hence a `"launcher-alive"` owner is held only
  *      for the grace window, not forever. Never reorder `locked` below the owner gates.
+ *
+ *      `staleAgentLock` is a carve-out INSIDE that rule, not an exception to it: the gate keeps its
+ *      position, and the carve-out is scoped at the boundary to the one class the harness does NOT
+ *      lock — the `$TMPDIR`-rooted `review-head-*` trees, whose lock this repo writes itself with
+ *      the owning session's pid (#4004). A build tree's lock stays opaque and absolute, so the
+ *      occupancy premise above is untouched; and the carve-out fires only on POSITIVE proof that
+ *      the locking session's process is gone, which for that class also proves no occupant remains
+ *      (a subagent runs inside its session's process).
+
  *   4. Review-head tree → REMOVE (`review-head-idle`). Past the dirty+locked+recently-active
  *      guards, a detached throwaway review checkout holds no branch and no unpushed work, so
  *      it is a pure leak — no merge/open-PR gate applies (see `review-head-idle`). Returns here
@@ -272,7 +290,7 @@ export const classifyWorktree = (wt: WorktreeRecord): SweepDecision => {
 	if (wt.isDirty) {
 		return {kind: "keep", reason: "dirty"};
 	}
-	if (wt.locked) {
+	if (wt.locked && !wt.staleAgentLock) {
 		return {kind: "keep", reason: "locked"};
 	}
 	if (wt.ownerLiveness === "alive") {
@@ -329,6 +347,12 @@ export interface ParsedWorktree {
 	readonly branch: string | null;
 	readonly bare: boolean;
 	readonly locked: boolean;
+	/**
+	 * The lock reason: `null` when the tree is NOT locked, `""` when locked with no reason, else the
+	 * reason string. Kept alongside `locked` because a crew-agent lock's reason carries the owning
+	 * session's pid — the presence fact that tells a live pin from a stale one (#4004).
+	 */
+	readonly lockReason: string | null;
 	/** `git worktree list --porcelain` flagged the tree `prunable` — its working dir is gone (#3654). */
 	readonly prunable: boolean;
 }
@@ -346,17 +370,19 @@ export const parseWorktreeList = (porcelain: string): ReadonlyArray<ParsedWorktr
 	let branch: string | null = null;
 	let bare = false;
 	let locked = false;
+	let lockReason: string | null = null;
 	let prunable = false;
 
 	const flush = () => {
 		if (path !== null) {
-			out.push({path, head, branch, bare, locked, prunable});
+			out.push({path, head, branch, bare, locked, lockReason, prunable});
 		}
 		path = null;
 		head = null;
 		branch = null;
 		bare = false;
 		locked = false;
+		lockReason = null;
 		prunable = false;
 	};
 
@@ -378,8 +404,12 @@ export const parseWorktreeList = (porcelain: string): ReadonlyArray<ParsedWorktr
 			branch = null;
 		} else if (line === "bare") {
 			bare = true;
-		} else if (line.startsWith("locked")) {
+		} else if (line === "locked") {
 			locked = true;
+			lockReason = "";
+		} else if (line.startsWith("locked ")) {
+			locked = true;
+			lockReason = line.slice("locked ".length);
 		} else if (line.startsWith("prunable")) {
 			prunable = true;
 		}

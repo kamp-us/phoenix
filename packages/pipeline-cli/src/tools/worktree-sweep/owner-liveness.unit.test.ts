@@ -2,7 +2,6 @@ import {assert, describe, it} from "@effect/vitest";
 import {
 	liveSessionIds,
 	parseOwnerStamp,
-	parseSessionRegistryEntry,
 	resolveOwnerLiveness,
 	sessionIdFromPath,
 } from "./owner-liveness.ts";
@@ -41,21 +40,6 @@ describe("parseOwnerStamp", () => {
 		assert.isNull(parseOwnerStamp('{"worktreeName":"agent-abc"}'));
 		assert.isNull(parseOwnerStamp('{"sessionId":"pending"}'));
 		assert.isNull(parseOwnerStamp('{"sessionId":""}'));
-	});
-});
-
-describe("parseSessionRegistryEntry", () => {
-	it("reads pid + sessionId off a registry file", () => {
-		const raw = `{"pid":58920,"sessionId":"${SID_A}","cwd":"/repo","status":"busy"}`;
-		assert.deepStrictEqual(parseSessionRegistryEntry(raw), {pid: 58920, sessionId: SID_A});
-	});
-
-	it("rejects an entry with no usable pid or no session id", () => {
-		assert.isNull(parseSessionRegistryEntry(`{"sessionId":"${SID_A}"}`));
-		assert.isNull(parseSessionRegistryEntry(`{"pid":0,"sessionId":"${SID_A}"}`));
-		assert.isNull(parseSessionRegistryEntry(`{"pid":-1,"sessionId":"${SID_A}"}`));
-		assert.isNull(parseSessionRegistryEntry('{"pid":42,"sessionId":"nope"}'));
-		assert.isNull(parseSessionRegistryEntry("garbage"));
 	});
 });
 
