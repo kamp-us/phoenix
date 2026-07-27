@@ -39,6 +39,35 @@ describe("CONTROL_PLANE_RE classifies the ADR-0174 boundary broadenings (#2761)"
 		expect(isControlPlane("biome-plugins/no-type-assertions.grit")).toBe(true);
 	});
 
+	it("classifies the local hook-wiring config as control-plane (founder ruling on #3402)", () => {
+		// `lefthook.yml` wires the ref-guard (#2143) and the #2778 primary-index guards, which have
+		// no CI backstop — an edit that unwires them must not auto-ship. The clause is a SHAPE, so
+		// every filename lefthook discovers is covered without enumerating any of them (#2393).
+		expect(isControlPlane("lefthook.yml")).toBe(true);
+		expect(isControlPlane(".lefthookrc")).toBe(true);
+		for (const ext of ["yml", "yaml", "toml", "json"]) {
+			expect(isControlPlane(`lefthook.${ext}`)).toBe(true);
+			expect(isControlPlane(`lefthook-local.${ext}`)).toBe(true);
+			expect(isControlPlane(`.lefthook.${ext}`)).toBe(true);
+		}
+		// depth-agnostic, like the skill-`.sh` clause: a nested package's own config is §CP too.
+		expect(isControlPlane("apps/web/lefthook.yml")).toBe(true);
+		expect(isControlPlane("packages/pipeline-cli/nested/lefthook.yml")).toBe(true);
+	});
+
+	it("does NOT over-widen: the lefthook clause matches lefthook-named LEAVES only", () => {
+		// The negative half of the #3402 clause — a clause that matched everything would pass a
+		// positive-only test. The stem anchors the leaf, so neither a sibling root config nor an
+		// ordinary file that merely MENTIONS lefthook is swept in.
+		expect(isControlPlane("package.json")).toBe(false);
+		expect(isControlPlane(".decisions/0068-adopt-lefthook-at-second-git-hook.md")).toBe(false);
+		expect(isControlPlane("apps/web/src/hooks/use-lefthook.ts")).toBe(false);
+		// the stem must START the leaf — a name that merely CONTAINS it stays out
+		expect(isControlPlane("docs/my-lefthook-notes.md")).toBe(false);
+		// `[^/]+` demands a leaf after the stem, so a bare `lefthook` DIRECTORY prefix is not §CP
+		expect(isControlPlane("lefthook/README.md")).toBe(false);
+	});
+
 	it("classifies the root marketplace manifest as control-plane (ADR 0212, #3933)", () => {
 		// The file declaring what the `kampus` marketplace serves — including kampus-pipeline's
 		// `source` tree, which validate-gate-path-drift.sh resolves .claude/skills against. It gets
