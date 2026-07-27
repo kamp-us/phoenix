@@ -41,7 +41,7 @@ import {
 	driveOf,
 	isCrewRole,
 } from "../crew/index.ts";
-import {type ChannelConfig, type Tier, tierModel} from "./config.ts";
+import {type ChannelConfig, type Tier, tierModel, type WipCap} from "./config.ts";
 
 /**
  * The absolute path to this package's `bin.ts` entry, resolved from THIS module's own location so it
@@ -104,6 +104,19 @@ export const AGENT_FLAG = "--agent";
  */
 export const BOOT_PROMPT =
 	"Begin now. Run your role's on-boot cold-start behavior as defined by your agent instructions: announce your presence on the channel, then start your standing work loop under your own power. Do not wait to be pinged, relayed to, or told to start.";
+/**
+ * The engine's configured WIP cap, rendered as the sentence appended to its boot turn (#4330).
+ *
+ * The boot turn is the delivery vehicle because it is the one launch surface the SESSION itself
+ * reads: the pane env and the server argv reach the crew MCP server process, not the model, and the
+ * def deliberately carries no number ("your configured cap"). Without this the operator's value was
+ * decoded and then reached nobody, so each engine improvised a cap — silently, with nothing holding
+ * the number to compare against (#4330). Only the numbers ride here; the doctrine they are read
+ * under (ceiling-not-target, borrow/rebalance, a lane frees on landing) lives in the def.
+ */
+export const wipCapClause = (cap: WipCap): string =>
+	`Your WIP cap is the operator's configured value, delivered at launch: ${cap.productLanes} concurrent product ${cap.productLanes === 1 ? "lane" : "lanes"} + ${cap.platformLanes} concurrent platform/pipeline ${cap.platformLanes === 1 ? "lane" : "lanes"}, ${cap.productLanes + cap.platformLanes} in total. These are the numbers your definition's WIP-cap section defers to — apply them as written and never improvise a cap; state them verbatim whenever you report your occupancy.`;
+
 /** The pipeline-crew plugin root segment `--plugin-dir` joins onto a project root to load agent-defs from. */
 export const CREW_PLUGIN_SUBDIR = "claude-plugins/pipeline-crew";
 /** Allowlist mode: only servers named here load, gated by `allowedChannelPlugins` for plugin refs. */
@@ -211,7 +224,8 @@ export interface SessionBind {
 	/** `["--agent", "crew-<role>"]` — boots the session AS its role persona (collision-free name, see AGENT_FLAG). */
 	readonly agentArg: readonly [flag: string, agentName: string];
 	/**
-	 * A self-driving role's boot turn: `[BOOT_PROMPT]` — the single positional initial prompt that hands
+	 * A self-driving role's boot turn: `[BOOT_PROMPT]`, plus the `wipCapClause` sentence when the role
+	 * carries a configured lane cap (#4330) — the single positional initial prompt that hands
 	 * the spawned session its first turn so its def's on-boot cold-start fires from launch, not on a
 	 * hand-kick (#3516; see BOOT_PROMPT). It rides the argv TAIL, after the non-variadic `--name <name>`,
 	 * so it lands as the CLI's `[prompt]` positional rather than being swallowed by the variadic
@@ -253,6 +267,12 @@ export interface SessionBindInput {
 	 * set no tier keeps today's default-model boot rather than being forced onto a guessed one.
 	 */
 	readonly tier?: Tier | undefined;
+	/**
+	 * The engine's configured concurrent-lane cap (#4330) — appended to the boot turn as
+	 * `wipCapClause`, which is how the operator's value actually reaches the session. Omitted for a
+	 * role that holds no lanes (every bridge), whose boot turn then carries no cap sentence.
+	 */
+	readonly wipCap?: WipCap | undefined;
 	/** The resolved channels dimension of the crew `LaunchConfig` (#3293), consumed read-only. */
 	readonly channels: ChannelConfig;
 }
@@ -330,7 +350,7 @@ export const buildSessionBind = (
 		// and `Path` builds the plugin dir. Both discharge from the crew-mcp bin's existing NodeServices.layer.
 		const fs = yield* FileSystem.FileSystem;
 		const path = yield* Path.Path;
-		const {role, projectRoot, serverName, instance, tier, channels} = input;
+		const {role, projectRoot, serverName, instance, tier, wipCap, channels} = input;
 		const servers = channels.servers;
 
 		// Resolvability before anything else: the bin the server command runs must exist on disk, else
@@ -425,8 +445,13 @@ export const buildSessionBind = (
 		// roster law, derived here (not a per-launch input like tier), so a HITL role can never be handed
 		// the self-driving prompt on any launch path — autoboot or the on-demand spawn. A non-roster role
 		// (never expected) defaults self-driving, preserving today's boot-turn behavior.
+		// A configured cap rides the boot turn as one appended sentence (#4330) — the session-facing
+		// delivery of the value the def defers to. Still exactly one positional, so the argv shape is
+		// unchanged. A HITL role takes no boot turn at all, and so takes no cap with it.
 		const selfDriving = !isCrewRole(role) || driveOf(role) === "self-driving";
-		const bootPromptArg: readonly [] | readonly [string] = selfDriving ? [BOOT_PROMPT] : [];
+		const bootTurn =
+			wipCap !== undefined ? `${BOOT_PROMPT}\n\n${wipCapClause(wipCap)}` : BOOT_PROMPT;
+		const bootPromptArg: readonly [] | readonly [string] = selfDriving ? [bootTurn] : [];
 
 		return {
 			role,

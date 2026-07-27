@@ -17,9 +17,10 @@
  * every frequent Claude Code auto-update; pin ONLY to deliberately lock a version. A pin that
  * IS present must still be a valid `CLI_VERSION_RE` version — a malformed present pin fails closed.
  * `LaunchConfig` extracts the launch dimensions from the one-role-map seam shape (ADR 0189): the
- * engine count is folded into `roles["engineering-manager"].count`, and each role's optional `tier`
- * — the session model, #3423 — is folded into `roleTiers`. Remaining seam keys
- * (operator/notification/wipCap/…) are ignored. There is no config-read tmux dimension —
+ * engine count is folded into `roles["engineering-manager"].count`, each role's optional `tier`
+ * — the session model, #3423 — is folded into `roleTiers`, and the engine's `wipCap` — its
+ * concurrent-lane cap, #4330 — is folded into `wipCap`. Remaining seam keys
+ * (operator/notification/…) are ignored. There is no config-read tmux dimension —
  * tmux window placement now derives from role identity at launch (tmux-placement.ts), not config.
  */
 import {Effect, FileSystem, Schema} from "effect";
@@ -88,6 +89,36 @@ export const EngineCount = Schema.Int.check(
 	}),
 );
 export type EngineCount = typeof EngineCount.Type;
+
+/**
+ * One class's concurrent-lane count within an engine's WIP cap. Zero is meaningful, not a
+ * degenerate value: it is the quiesce state (#4119) — an engine configured with no lanes of a class
+ * opens none of that class. Negative is not representable.
+ */
+export const LaneCount = Schema.Int.check(
+	Schema.isGreaterThanOrEqualTo(0, {
+		title: "LaneCount",
+		description: "an engine's concurrent-lane count for one work class (>= 0)",
+	}),
+);
+export type LaneCount = typeof LaneCount.Type;
+
+/**
+ * A conductor engine's concurrent-lane cap, lane-partitioned by work class (#4330). The overall cap
+ * is the split's sum; borrow/rebalance across the two classes is doctrine shipped in the
+ * engineering-manager def, so only the per-install numbers ride this seam.
+ *
+ * It is a DECLARED launch dimension, not ignored excess, because the value has to reach the engine:
+ * the def defers to "your configured cap", and until this decode existed the launcher dropped the
+ * operator's value on the floor, leaving each engine to improvise its own number with no error to
+ * diagnose from (#4330). A missing or malformed cap therefore fails closed like every other
+ * dimension rather than silently defaulting.
+ */
+export const WipCap = Schema.Struct({
+	productLanes: LaneCount,
+	platformLanes: LaneCount,
+});
+export type WipCap = typeof WipCap.Type;
 
 /**
  * A role's model tier — the operator's per-role cost/capability control (#3423), decoded so the
@@ -161,6 +192,11 @@ export type ChannelConfig = typeof ChannelConfig.Type;
 export const LaunchConfig = Schema.Struct({
 	cliVersion: Schema.optionalKey(CliVersion),
 	engineCount: EngineCount,
+	/**
+	 * The per-engine concurrent-lane cap, folded out of the engine's role entry so every launcher
+	 * child reads it flat (#4330). Every engine session in a stand-up boots under this same cap.
+	 */
+	wipCap: WipCap,
 	channels: ChannelConfig,
 	/**
 	 * The per-role model tiers (#3423), folded out of the role map into a flat lookup the bind
@@ -176,12 +212,12 @@ const RoleTierEntry = Schema.Struct({tier: Schema.optionalKey(Tier)});
 
 /**
  * The one-role-map seam shape on disk (ADR 0189): a `roles` map keyed by the crew role slugs. The
- * launch reader takes the engine pool size at `roles["engineering-manager"].count` AND — as of
- * #3423 — each role's optional `tier` (its session's `--model`), no longer an ignored excess key.
- * The bridge entries are `optionalKey` (a role may omit its tier → no `--model`, the CLI default);
- * `engineering-manager` is required for its `count`, its `tier` optional. Remaining entry keys
- * (`wipCap`, the operator/notification blocks) stay ignored excess. `cliVersion` mirrors
- * `LaunchConfig`'s exact-optional shape (issue #3417): omit ⇒ unpinned.
+ * launch reader takes the engine pool size at `roles["engineering-manager"].count`, each role's
+ * optional `tier` (its session's `--model`, #3423), and the engine's `wipCap` (#4330) — none of
+ * them ignored excess any more. The bridge entries are `optionalKey` (a role may omit its tier → no
+ * `--model`, the CLI default); `engineering-manager` is required for its `count` and its `wipCap`,
+ * its `tier` optional. Remaining entry keys (the operator/notification blocks) stay ignored excess.
+ * `cliVersion` mirrors `LaunchConfig`'s exact-optional shape (issue #3417): omit ⇒ unpinned.
  */
 const RawLaunchConfig = Schema.Struct({
 	cliVersion: Schema.optionalKey(CliVersion),
@@ -189,7 +225,11 @@ const RawLaunchConfig = Schema.Struct({
 		"chief-of-staff": Schema.optionalKey(RoleTierEntry),
 		cartographer: Schema.optionalKey(RoleTierEntry),
 		"intake-desk": Schema.optionalKey(RoleTierEntry),
-		"engineering-manager": Schema.Struct({count: EngineCount, tier: Schema.optionalKey(Tier)}),
+		"engineering-manager": Schema.Struct({
+			count: EngineCount,
+			tier: Schema.optionalKey(Tier),
+			wipCap: WipCap,
+		}),
 	}),
 	channels: ChannelConfig,
 });
@@ -279,9 +319,10 @@ export const parseJsonc = (text: string): unknown => JSON.parse(stripJsonc(text)
 /**
  * Decode an already-parsed value into `LaunchConfig`, failing closed with a `LaunchConfigError`
  * whose `reason` names the offending dimension (the schema issue tree carries the field path).
- * The engine count is folded out of the role map — `roles["engineering-manager"].count` (ADR 0189)
- * — into the flat `engineCount` every launcher child consumes, so `LaunchConfig`'s shape is stable
- * across the seam move; a missing/blank/non-positive count fails closed naming that path. An
+ * The engine count and its lane cap are folded out of the role map — `roles["engineering-manager"]`
+ * `.count` / `.wipCap` (ADR 0189) — into the flat `engineCount` / `wipCap` every launcher child
+ * consumes, so `LaunchConfig`'s shape is stable across the seam move; a missing/blank/non-positive
+ * count, or a missing/malformed cap, fails closed naming that path. An
  * omitted `cliVersion` stays omitted through the fold (exact-optional, issue #3417) — the
  * "unpinned" launch — so the key is spread only when the operator supplied a pin.
  */
@@ -301,6 +342,7 @@ export const decodeLaunchConfig = (
 			return {
 				...(raw.cliVersion !== undefined ? {cliVersion: raw.cliVersion} : {}),
 				engineCount: raw.roles["engineering-manager"].count,
+				wipCap: raw.roles["engineering-manager"].wipCap,
 				channels: raw.channels,
 				roleTiers,
 			};

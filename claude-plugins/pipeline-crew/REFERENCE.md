@@ -84,7 +84,10 @@ runtime's `crew/roles.ts` — not a per-install count. Three bridges + one engin
 | engineering-manager | engine | N | none — pulls ready work off the board and drives coder → reviewer → shipper under WIP caps | [`agents/crew-engineering-manager.md`](agents/crew-engineering-manager.md) |
 
 Only the engine takes a `count` and a `wipCap`; a bridge takes neither (its cardinality is
-fixed at 1). See [`README.md`](README.md) for the topology diagram and the comms graph.
+fixed at 1). The launcher decodes `wipCap` and delivers the two lane counts in each engine
+session's boot turn, so an engine states the cap it is bound by from the operator's value rather
+than improvising one (#4330); the borrow/rebalance doctrine those numbers are applied under stays
+in the engine def. See [`README.md`](README.md) for the topology diagram and the comms graph.
 
 ## Config keys — `crew.config.jsonc`
 
@@ -104,8 +107,8 @@ with `<placeholder>` values only; an operator copies it to an operator-owned, gi
 | `roles.intake-desk.tier` | tier | yes | `<intake-desk-model-tier>` |
 | `roles.engineering-manager.tier` | tier | yes | `<engineering-manager-model-tier>` |
 | `roles.engineering-manager.count` | integer > 0 | yes (engine only) | `<engine-count>` |
-| `roles.engineering-manager.wipCap.productLanes` | integer | yes (engine only) | `<wip-cap-product-lanes>` |
-| `roles.engineering-manager.wipCap.platformLanes` | integer | yes (engine only) | `<wip-cap-platform-lanes>` |
+| `roles.engineering-manager.wipCap.productLanes` | integer >= 0 | yes (engine only) | `<wip-cap-product-lanes>` |
+| `roles.engineering-manager.wipCap.platformLanes` | integer >= 0 | yes (engine only) | `<wip-cap-platform-lanes>` |
 | `notification.operator.command` | string | yes | `<operator-notification-command>` |
 | `notification.operator.handle` | string | yes | `<operator-notification-handle>` |
 | `notification.controlPlaneApprover.command` | string | yes | `<control-plane-approver-notification-command>` |

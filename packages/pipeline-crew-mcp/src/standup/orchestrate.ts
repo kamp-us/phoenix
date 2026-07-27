@@ -362,6 +362,10 @@ export const buildLaunchPlan = (
 			// The role's configured model tier → the session's `--model` (#3423); undefined for a role that
 			// set none, so bind emits no `--model` and it boots on the CLI default.
 			tier: ctx.config.roleTiers[session.role],
+			// The operator's configured lane cap reaches the ENGINE's boot turn (#4330); a bridge holds
+			// no lanes, so it gets none. This is the only path the decoded value travels — before it
+			// existed the cap was read off the config and delivered nowhere, and each engine improvised.
+			wipCap: session.kind === "engine" ? ctx.config.wipCap : undefined,
 			channels: ctx.config.channels,
 		});
 		// The pane's distinct launch cwd — where its leaf `.mcp.json` lands (#3444). Resolved here so an
