@@ -606,6 +606,7 @@ Run each, scoped to the files the PR touches:
    # §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
    PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
    # added lines only ('+'), scanned by the shared matcher: exit 0 = clean, 2 = leak found
+   # any OTHER non-zero (4 = the fail-closed stdin read, #4010) is an UNRESOLVED scan, never a pass
    gh pr diff "$PR" | grep '^+' | "$PCLI" leak-guard scan-comment
    ```
 
@@ -1102,7 +1103,7 @@ Verified PR #<PR> against #<ISSUE>'s acceptance criteria + the doc-hygiene check
 
 **Doc hygiene**
 - [PASS] House-format — <evidence>
-- [FAIL] No leaked local/home paths — `<the leaked /Users/… or ~/… line>` at <file:line>
+- [FAIL] No leaked local/home paths — added-lines scan hit <the class the matcher named> at <file:line>; cite the class, never the matched token
 - [FAIL] Single Diátaxis mode — host <mode> intrudes into <mode> at <file:line>; split <what> to <surface>
 - [PASS] Clear, concise prose (Strunk, no AI-tell density) — <evidence>
 - [UNVERIFIABLE] <check> — <why; what'd make it checkable>
