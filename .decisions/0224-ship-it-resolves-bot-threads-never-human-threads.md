@@ -157,9 +157,18 @@ the same file.
   `--auto` bypass is not in fact fixed, the pipeline-native read is still there as the second
   layer — but the ADR-0158 precondition for trusting the flag was waived, not met, and a
   future reader should know that.
-- **This ADR is not §CP; the follow-up is.** This PR adds one file under `.decisions/` and
-  nothing else — no skill, agent, code, `.github/`, or `.claude/` change, and no CODEOWNERS
-  row. The mechanism PR is where the control-plane approval is owed.
+- **Not §CP by path; §CP by content — and this PR was routed as the latter.** `.decisions/**`
+  carries no control-plane path clause, so on the path axis (ADR
+  [0053](0053-control-plane-boundary.md)) this ADR is not §CP. On the content axis it is:
+  `pipeline-cli guard-content-probe classify` over this file at this PR's head returns
+  `guard-touching (§CP, ADR 0164)`. That content axis — ADR
+  [0164](0164-guard-relaxing-adr-cp-gate.md) — is the one the gates probe today, whichever way
+  0164's own `status:` settles; it reads `proposed` as this lands, and nothing here ratifies
+  it. Recorded as an observation about this PR rather than as a ruling: it banked for a
+  control-plane approval instead of auto-merging on a `review-doc: PASS`. Its diff is one added
+  file under `.decisions/` plus a one-line status change to 0158 — no skill, agent, code,
+  `.github/`, or `.claude/` change, and no CODEOWNERS row. The mechanism PR owes a
+  control-plane approval on the path axis as well, through its CODEOWNERS row.
 - **Stale text in ADR 0158 is corrected here, not there.** 0158 records the flag as
   `false (OFF)` and founder-gated; that is stale against the live `true` read above. An
   accepted ADR's body is immutable, so the correction lives in this ADR and 0158 carries only
