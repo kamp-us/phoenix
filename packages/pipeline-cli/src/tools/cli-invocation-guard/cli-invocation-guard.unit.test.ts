@@ -1,5 +1,12 @@
 import {assert, describe, it} from "@effect/vitest";
-import {isZeroScope, scanCorpus, scanFile} from "./cli-invocation-guard.ts";
+import {
+	attribute,
+	isUsableBaseline,
+	isZeroScope,
+	parseBaseline,
+	scanCorpus,
+	scanFile,
+} from "./cli-invocation-guard.ts";
 
 const TICKS = "```";
 const fence = (lang: string, ...lines: ReadonlyArray<string>): string =>
@@ -239,5 +246,132 @@ describe("cli-invocation-guard core", () => {
 		assert.isTrue(isZeroScope(scanCorpus([{file: "a.md", content: fence("bash", "true")}])));
 		// …and the mirror: shell files present, markdown surface collapsed.
 		assert.isTrue(isZeroScope(scanCorpus([{file: "a.sh", content: "true\n"}])));
+	});
+});
+
+describe("cli-invocation-guard attribution (#4250)", () => {
+	const OFFENDER = "pipeline-cli claim status --issue 1";
+
+	it("reproduces the #4229 shape — base carries the violation, head introduces none", () => {
+		// The `main` tree that PR #4229 was merged against already carried the offender; the PR's own
+		// files were clean. The corpus scan (the `push: main` leg) must still red, and the attributed
+		// verdict (the `pull_request` leg) must be green.
+		const offenderFile = {file: "crew/em.md", content: fence("bash", OFFENDER)};
+		const base = scanCorpus([offenderFile, {file: "skills/a.md", content: fence("bash", "true")}]);
+		const head = scanCorpus([
+			offenderFile,
+			{file: "skills/a.md", content: fence("bash", "echo edited-by-this-pr")},
+		]);
+
+		assert.strictEqual(head.findings.length, 1, "the main leg still reds on the dirty corpus");
+		const attributed = attribute(head.findings, base.findings);
+		assert.deepStrictEqual(
+			attributed.map((f) => f.attribution),
+			["pre-existing"],
+			"the PR leg attributes the sole violation to the base, not to this head",
+		);
+	});
+
+	it("still catches a violation this head introduced, in a file the base never had", () => {
+		const base = scanCorpus([{file: "skills/a.md", content: fence("bash", "true")}]);
+		const head = scanCorpus([
+			{file: "skills/a.md", content: fence("bash", "true")},
+			{file: "skills/new.md", content: fence("bash", OFFENDER)},
+		]);
+		const attributed = attribute(head.findings, base.findings);
+		assert.deepStrictEqual(
+			attributed.map((f) => f.attribution),
+			["new"],
+		);
+	});
+
+	it("still catches a violation added to a file that was ALREADY dirty (multiset, not set)", () => {
+		// The loosening that would make the guard useless: exempting a file because it was dirty at
+		// the base. A second offending line in the same file is this head's, and must red.
+		const base = scanCorpus([{file: "skills/a.md", content: fence("bash", OFFENDER)}]);
+		const head = scanCorpus([
+			{file: "skills/a.md", content: fence("bash", OFFENDER, "pipeline-cli verdict read --pr 1")},
+		]);
+		const attributed = attribute(head.findings, base.findings);
+		assert.deepStrictEqual(
+			attributed.map((f) => f.attribution),
+			["pre-existing", "new"],
+		);
+	});
+
+	it("still catches a duplicated offending line — two copies of what the base had once", () => {
+		const base = scanCorpus([{file: "skills/a.md", content: fence("bash", OFFENDER)}]);
+		const head = scanCorpus([{file: "skills/a.md", content: fence("bash", OFFENDER, OFFENDER)}]);
+		assert.strictEqual(
+			attribute(head.findings, base.findings).filter((f) => f.attribution === "new").length,
+			1,
+		);
+	});
+
+	it("ignores a line-number shift — an unrelated edit above is not a new violation", () => {
+		const base = scanCorpus([{file: "skills/a.md", content: fence("bash", OFFENDER)}]);
+		const head = scanCorpus([
+			{file: "skills/a.md", content: `prose added above\n\n${fence("bash", OFFENDER)}`},
+		]);
+		assert.notStrictEqual(head.findings[0]?.line, base.findings[0]?.line);
+		assert.deepStrictEqual(
+			attribute(head.findings, base.findings).map((f) => f.attribution),
+			["pre-existing"],
+		);
+	});
+
+	it("attributes a violation MOVED into another file — the strict direction", () => {
+		const base = scanCorpus([{file: "skills/a.md", content: fence("bash", OFFENDER)}]);
+		const head = scanCorpus([{file: "skills/b.md", content: fence("bash", OFFENDER)}]);
+		assert.deepStrictEqual(
+			attribute(head.findings, base.findings).map((f) => f.attribution),
+			["new"],
+		);
+	});
+
+	it("with an empty baseline every violation is attributable (the push: main leg)", () => {
+		const head = scanCorpus([{file: "skills/a.md", content: fence("bash", OFFENDER)}]);
+		assert.deepStrictEqual(
+			attribute(head.findings, []).map((f) => f.attribution),
+			["new"],
+		);
+	});
+
+	it("rejects a zero-scope baseline — a broken base scan is never 'nothing pre-existing'", () => {
+		const shellFile = {file: "a.sh", content: "true\n"};
+		assert.isFalse(isUsableBaseline(scanCorpus([])));
+		assert.isFalse(isUsableBaseline(scanCorpus([{file: "a.md", content: "prose, no fence"}])));
+		// Per surface (#4486): a base enumerated over `.md` only is a NARROWER corpus than the head
+		// scan, so its silent-on-shell manifest must not read as "nothing pre-existing there".
+		assert.isFalse(isUsableBaseline(scanCorpus([{file: "a.md", content: fence("bash", "true")}])));
+		assert.isFalse(isUsableBaseline(scanCorpus([shellFile])));
+		assert.isTrue(
+			isUsableBaseline(scanCorpus([{file: "a.md", content: fence("bash", "true")}, shellFile])),
+		);
+	});
+
+	describe("parseBaseline — a manifest missing a scope axis is unusable, not zero", () => {
+		const wellFormed = {findings: [], scanned: ["a.md"], fenceCount: 1, shellFileCount: 1};
+
+		it("round-trips a well-formed manifest", () => {
+			assert.deepStrictEqual(parseBaseline(JSON.stringify(wellFormed)), wellFormed);
+		});
+
+		it("rejects a manifest with no `shellFileCount` — the fail-OPEN direction (#4486)", () => {
+			// A base-side `baseline` from a build predating the `.sh` surface omits the field. Absent,
+			// it reads back `undefined`, and `undefined === 0` is false — so `isZeroScope` would call a
+			// zero-shell-scope baseline USABLE. Only reachable under version skew between the two
+			// steps, but it is the wrong direction to fail in, so the parser refuses it outright.
+			const {shellFileCount: _dropped, ...legacy} = wellFormed;
+			assert.isNull(parseBaseline(JSON.stringify(legacy)));
+		});
+
+		it("rejects unparseable JSON, a non-object, and a wrong-shaped manifest", () => {
+			assert.isNull(parseBaseline("{not json"));
+			assert.isNull(parseBaseline("[]"));
+			assert.isNull(parseBaseline(JSON.stringify({...wellFormed, findings: undefined})));
+			assert.isNull(parseBaseline(JSON.stringify({...wellFormed, scanned: [1]})));
+			assert.isNull(parseBaseline(JSON.stringify({...wellFormed, fenceCount: "1"})));
+		});
 	});
 });
