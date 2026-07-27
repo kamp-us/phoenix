@@ -246,6 +246,70 @@ describe("route — -R still reaches real `gh` untouched on the non-edit routes 
 	});
 });
 
+describe("route — the edit target is positional, not the first bare integer (#4339)", () => {
+	it("targets the positional 5, not the `--milestone 3` value that precedes it", () => {
+		const out = r(["pr", "edit", "--milestone", "3", "5", "--title", "x"]);
+		assert.strictEqual(out.kind, "rewrite");
+		if (out.kind === "rewrite") {
+			assert.include(out.argv, `repos/${REPO}/issues/5`);
+			assert.notInclude(out.argv, `repos/${REPO}/issues/3`);
+			assert.include(out.argv, "milestone=3");
+			assert.include(out.argv, "title=x");
+		}
+	});
+
+	it("does not consume the token after a `--milestone=3` attached value", () => {
+		const out = r(["issue", "edit", "--milestone=3", "5", "--body", "b"]);
+		assert.strictEqual(out.kind, "rewrite");
+		if (out.kind === "rewrite") {
+			assert.include(out.argv, `repos/${REPO}/issues/5`);
+			assert.include(out.argv, "milestone=3");
+			assert.include(out.argv, "body=b");
+		}
+	});
+
+	it("skips a value-taking flag the rewrite itself does not model", () => {
+		const out = r(["issue", "edit", "--add-label", "bug", "7", "--body", "y"]);
+		assert.strictEqual(out.kind, "rewrite");
+		if (out.kind === "rewrite") assert.include(out.argv, `repos/${REPO}/issues/7`);
+	});
+
+	it("blocks when every integer in the argv is a flag value and no positional follows", () => {
+		const out = r(["pr", "edit", "--milestone", "3", "--title", "x"]);
+		assert.strictEqual(out.kind, "block");
+		if (out.kind === "block") assert.include(out.hint, "-X PATCH");
+	});
+
+	it("blocks a `--body 5` whose only integer is the body text", () => {
+		const out = r(["pr", "edit", "--body", "5"]);
+		assert.strictEqual(out.kind, "block");
+	});
+
+	it("blocks a non-numeric positional (a PR branch selector) with the REST hint", () => {
+		const out = r(["pr", "edit", "my-branch", "--title", "x"]);
+		assert.strictEqual(out.kind, "block");
+		if (out.kind === "block") {
+			assert.include(out.reason, "numeric");
+			assert.include(out.hint, `repos/${REPO}/pulls/<N>`);
+		}
+	});
+
+	it("keeps the target-first orderings working", () => {
+		const pr = r(["pr", "edit", "5", "--title", "x"]);
+		assert.strictEqual(pr.kind, "rewrite");
+		if (pr.kind === "rewrite") assert.include(pr.argv, `repos/${REPO}/issues/5`);
+		const issue = r(["issue", "edit", "7", "--body", "y"]);
+		assert.strictEqual(issue.kind, "rewrite");
+		if (issue.kind === "rewrite") assert.include(issue.argv, `repos/${REPO}/issues/7`);
+	});
+
+	it("reads the target after an `--` end-of-flags separator", () => {
+		const out = r(["pr", "edit", "--title", "x", "--", "5"]);
+		assert.strictEqual(out.kind, "rewrite");
+		if (out.kind === "rewrite") assert.include(out.argv, `repos/${REPO}/issues/5`);
+	});
+});
+
 describe("isMilestoneTitle", () => {
 	it("treats a bare integer as a number (not a title)", () => {
 		assert.isFalse(isMilestoneTitle("12"));
