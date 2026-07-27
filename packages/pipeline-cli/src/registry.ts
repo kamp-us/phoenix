@@ -101,6 +101,12 @@ export const registeredTools: ReadonlyArray<ToolRegistration> = [
 	tool("cp-cardinality", () =>
 		import("./tools/cp-cardinality/command.ts").then((m) => m.cpCardinalityCommand),
 	),
+	// #4292 — the §CP approval-watcher's durable tick record: the loop's only trace outside the
+	// running agent's transcript, so "the loop never ticked" and "it ticked and found nothing"
+	// stop being the same observation.
+	tool("approval-watcher", () =>
+		import("./tools/approval-watcher/command.ts").then((m) => m.approvalWatcherCommand),
+	),
 	tool("token-spend", () =>
 		import("./tools/token-spend/command.ts").then((m) => m.tokenSpendCommand),
 	),
