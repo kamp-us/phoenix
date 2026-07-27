@@ -35,6 +35,8 @@ const FULL_CODEOWNERS = [
 	"/packages/pipeline-cli/ @usirin",
 	"/biome.jsonc @usirin",
 	"/biome-plugins/ @usirin",
+	"**/lefthook* @usirin",
+	"**/.lefthook* @usirin",
 ].join("\n");
 
 /** A throwaway repo carrying just the two source files the gate reads. */

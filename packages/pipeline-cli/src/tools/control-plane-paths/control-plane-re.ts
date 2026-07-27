@@ -32,6 +32,17 @@
  * test of ADR 0187 — merging it unreviewed CAN weaken a gate. Same class of decision as
  * ADR 0187's enforcement-surface test; recorded in ADR 0193.
  *
+ * The lefthook clause (`^([^/]+/)*(lefthook|\\.lefthook)[^/]+$`) is §CP because that config is
+ * what WIRES the local git hooks — the ADR-0160 ref-guard (#2143) and the #2778 primary-index
+ * guards, which have no CI backstop and are the only defense of the shared local checkout against
+ * a proven-real corruption class. An edit that silently unwires them must not auto-ship (founder
+ * ruling on #3402). It is a SHAPE, not a named list (#2393): a depth-agnostic `([^/]+/)*` prefix
+ * (the same idiom as the skill-`.sh` clause above) over the `lefthook` / `.lefthook` stem, so every
+ * config filename lefthook itself discovers — `lefthook.yml`, the `.yaml`/`.toml`/`.json` forms, the
+ * `lefthook-local.*` override, and the `.lefthookrc` the generated wrappers source — is covered
+ * without enumerating any of them. The stem-plus-`[^/]+` leaf is what keeps it narrow: it matches
+ * lefthook-named LEAVES only, so nothing else at the repo root is swept in.
+ *
  * The marketplace-manifest clause (`^\.claude-plugin/`) needs its OWN branch because the
  * `^(\.claude|\.github)/` branch requires a literal `/` after `.claude` — the character after
  * `.claude` in `.claude-plugin/` is a hyphen, so that branch never matched it. Anchored to the
@@ -72,4 +83,4 @@
  * runtime resolution off the origin/main read.
  */
 export const CONTROL_PLANE_RE =
-	"^(\\.claude|\\.github)/|^\\.claude-plugin/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-design|review-plan|triage|write-code|plan-epic|release|review-trivial)/|^claude-plugins/kampus-pipeline/skills/([^/]+/)*[^/]+\\.sh$|^claude-plugins/kampus-pipeline/agents/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\\.md$|^claude-plugins/kampus-pipeline/hooks(/|\\.json$)|^packages/ci-required/|^packages/pipeline-cli/src/[^/]+$|^packages/pipeline-cli/src/tools/(ci-required|codeowners-cp|control-plane-paths|cp-cardinality|cp-classify|review-head|trivial-diff|verdict)/|^packages/pipeline-cli/src/tools/tracker/gh-io\\.ts$|^biome\\.jsonc$|^biome-plugins/";
+	"^(\\.claude|\\.github)/|^\\.claude-plugin/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-design|review-plan|triage|write-code|plan-epic|release|review-trivial)/|^claude-plugins/kampus-pipeline/skills/([^/]+/)*[^/]+\\.sh$|^claude-plugins/kampus-pipeline/agents/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\\.md$|^claude-plugins/kampus-pipeline/hooks(/|\\.json$)|^packages/ci-required/|^packages/pipeline-cli/src/[^/]+$|^packages/pipeline-cli/src/tools/(ci-required|codeowners-cp|control-plane-paths|cp-cardinality|cp-classify|review-head|trivial-diff|verdict)/|^packages/pipeline-cli/src/tools/tracker/gh-io\\.ts$|^biome\\.jsonc$|^biome-plugins/|^([^/]+/)*(lefthook|\\.lefthook)[^/]+$";

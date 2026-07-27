@@ -1591,6 +1591,17 @@ closing the #375 drift class).
     §CP** — they are CI-enforced, not human-approval-enforced. ADR 0218 records that trade, the
     three modules the core imports without retaining, and why `codeowners-cp` cannot catch a
     stale over-broad CODEOWNERS row.
+- the **local hook-wiring config** — `lefthook.yml` and its siblings, matched by the
+  `^([^/]+/)*(lefthook|\.lefthook)[^/]+$` branch. This config is what *wires* the local git hooks:
+  the ADR-0160 ref-guard (#2143) and the #2778 primary-index guards, which have **no CI backstop**
+  and are the only defense the shared local checkout has against a proven-real corruption class. An
+  edit that silently unwires them is self-weakening in exactly ADR 0187's sense, so it must not
+  auto-ship (founder ruling on #3402). The branch is a **shape, not a named list** (#2393): the same
+  depth-agnostic `([^/]+/)*` prefix the skill-`.sh` clause uses, over the `lefthook` / `.lefthook`
+  stem, so every config filename lefthook itself discovers — `lefthook.yml`, the `.yaml`/`.toml`/
+  `.json` forms, a `lefthook-local.*` override, and the `.lefthookrc` every generated hook wrapper
+  sources — is covered without enumerating one of them. The `[^/]+` leaf keeps it narrow: it matches
+  lefthook-named **leaves** only, so no other root config is swept in.
 
 A PR touching **any** path in this set is **control plane**: `ship-it` never auto-merges it off a
 gate verdict alone — it merges only once a `@kamp-us/control-plane` member approves at head, and
@@ -1621,7 +1632,10 @@ were escaping the boundary; the **lint/GritQL governance config** — `biome.jso
 since an ungated path to weaken a lint rule is a guard-relaxing vector; the **root marketplace
 manifest** — `.claude-plugin/**` — added by ADR
 [0212](https://github.com/kamp-us/phoenix/blob/main/.decisions/0212-marketplace-manifest-is-control-plane.md),
-since the file that decides what the control-plane plugin *delivers* is itself control plane).
+since the file that decides what the control-plane plugin *delivers* is itself control plane; the
+**local hook-wiring config** — `lefthook.yml` and its siblings — added on the founder ruling on
+[#3402](https://github.com/kamp-us/phoenix/issues/3402), since the config that wires the
+CI-unbacked local-integrity guards can unwire them).
 Everything else — `apps/**`,
 **non**-guard `packages/**`, `.decisions/**` (**except a guard-touching ADR** — see the content
 clause below), `.patterns/**`, every prose doc `*.md` (the
@@ -1652,7 +1666,7 @@ against MAIN's boundary, not its own edit) and must not move to an in-tree impor
 # the single probe ship-it Step 0, review-code Step 2, review-doc Step 0, and review-skill
 # Step 0 all use — kept byte-in-sync with the pipeline-cli const (issue #2761); the live gates
 # re-resolve THIS line from origin/main (#981), so it stays here as the one un-importable copy:
-CONTROL_PLANE_RE='^(\.claude|\.github)/|^\.claude-plugin/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-design|review-plan|triage|write-code|plan-epic|release|review-trivial)/|^claude-plugins/kampus-pipeline/skills/([^/]+/)*[^/]+\.sh$|^claude-plugins/kampus-pipeline/agents/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\.md$|^claude-plugins/kampus-pipeline/hooks(/|\.json$)|^packages/ci-required/|^packages/pipeline-cli/src/[^/]+$|^packages/pipeline-cli/src/tools/(ci-required|codeowners-cp|control-plane-paths|cp-cardinality|cp-classify|review-head|trivial-diff|verdict)/|^packages/pipeline-cli/src/tools/tracker/gh-io\.ts$|^biome\.jsonc$|^biome-plugins/'
+CONTROL_PLANE_RE='^(\.claude|\.github)/|^\.claude-plugin/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-design|review-plan|triage|write-code|plan-epic|release|review-trivial)/|^claude-plugins/kampus-pipeline/skills/([^/]+/)*[^/]+\.sh$|^claude-plugins/kampus-pipeline/agents/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\.md$|^claude-plugins/kampus-pipeline/hooks(/|\.json$)|^packages/ci-required/|^packages/pipeline-cli/src/[^/]+$|^packages/pipeline-cli/src/tools/(ci-required|codeowners-cp|control-plane-paths|cp-cardinality|cp-classify|review-head|trivial-diff|verdict)/|^packages/pipeline-cli/src/tools/tracker/gh-io\.ts$|^biome\.jsonc$|^biome-plugins/|^([^/]+/)*(lefthook|\.lefthook)[^/]+$'
 # The list this regex is matched against is a fallible READ, so it comes from §CPREAD's
 # `cp_changed_files` (defined below) — never a bare `gh api … | grep` pipe. With pipefail off that
 # pipe reports grep's status and discards gh's, so a failed read matches nothing and reads as "no §CP

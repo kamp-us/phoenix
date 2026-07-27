@@ -72,3 +72,9 @@
 # guard-relaxing vector. The §CP `biome\.jsonc$` + `biome-plugins/` branches (ADR 0193).
 /biome.jsonc                    @kamp-us/control-plane
 /biome-plugins/                 @kamp-us/control-plane
+# Control-plane: the local hook-wiring config — `lefthook.yml` wires the CI-unbacked ref-guard
+# (#2143) and #2778 primary-index guards, and `.lefthookrc` is sourced by every generated wrapper.
+# The §CP `([^/]+/)*(lefthook|\.lefthook)[^/]+$` branch (founder ruling on #3402); `**/` is the
+# any-depth prefix (same idiom as the `**/*.sh` row above), the `*` suffix the config-name shape.
+**/lefthook*                    @kamp-us/control-plane
+**/.lefthook*                   @kamp-us/control-plane
