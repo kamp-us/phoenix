@@ -145,7 +145,9 @@ point** for the human path: a UI/hand-filed issue never ran `report`'s pre-file 
 keywords, excluding itself so it never flags itself:
 
 ```bash
-node packages/pipeline-cli/src/bin.ts intake-dedup check \
+# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
+PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
+"$PCLI" intake-dedup check \
   --query "<this issue's title + a few distinguishing keywords>" \
   --exclude <N>
 ```
@@ -248,7 +250,9 @@ How to split:
    new unit's title + keywords:
 
    ```bash
-   node packages/pipeline-cli/src/bin.ts intake-dedup check \
+   # §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
+   PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
+   "$PCLI" intake-dedup check \
      --query "<the new unit's title + a few distinguishing keywords>"
    ```
 
@@ -271,7 +275,9 @@ How to split:
    body byte-equality, so a twin re-emitted with a slightly different body is still caught:
 
    ```bash
-   EXISTING=$(node packages/pipeline-cli/src/bin.ts split-guard check \
+   # §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
+   PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
+   EXISTING=$("$PCLI" split-guard check \
      --parent <original #N> --title "<the split-child title>")
    ```
 
@@ -303,7 +309,7 @@ How to split:
 # §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
 PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
 # 1. Create-once guard: skip the POST if a child already covers this (parent, title) unit (#3464).
-EXISTING=$(node packages/pipeline-cli/src/bin.ts split-guard check \
+EXISTING=$("$PCLI" split-guard check \
   --parent "$N" --title "<single-unit title>")
 if [ -n "$EXISTING" ]; then
   echo "split-guard: $EXISTING already covers this unit — reusing, not creating a twin"

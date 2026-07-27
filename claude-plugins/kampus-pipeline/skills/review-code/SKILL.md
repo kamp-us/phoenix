@@ -358,7 +358,7 @@ WT_FILE="$(mktemp /tmp/review-code-wt.XXXXXX)"
 # clean NOW, before the denylist `rm --cached` below deliberately dirties it. A dirty materialization
 # means a corrupted head checkout, and reviewing a contaminated tree is a false signal. Fail-closed
 # LOUD via the single-sourced, tested helper (packages/pipeline-cli/src/tools/worktree-guard).
-node packages/pipeline-cli/src/bin.ts worktree-guard assert-clean --path "$REVIEW_WT" || {
+"$PCLI" worktree-guard assert-clean --path "$REVIEW_WT" || {
   echo "FATAL: review worktree came up dirty at materialization — aborting (never review a contaminated tree; #2666)." >&2
   exit 1
 }

@@ -100,7 +100,9 @@ REPO="${CLAUDE_PIPELINE_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOw
    fed your title plus a few keywords:
 
    ```bash
-   node packages/pipeline-cli/src/bin.ts intake-dedup check \
+   # §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
+   PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
+   "$PCLI" intake-dedup check \
      --query "<the title + a few distinguishing keywords>"
    ```
 
