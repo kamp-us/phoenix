@@ -30,6 +30,7 @@
 import {execFileSync} from "node:child_process";
 import {Console, Effect, FileSystem, Option} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
+import {isNonTrivialBoundary} from "../../gate-boundaries.ts";
 import {readStdinTextOrExit} from "../../read-stdin.ts";
 import {extractControlPlaneRe} from "../codeowners-cp/codeowners-cp.ts";
 import {FORMATS_PATH} from "../codeowners-cp/gate.ts";
@@ -127,6 +128,23 @@ const classifyCmd = Command.make(
 		const formatsRaw = fetchFormatsRaw(resolveRepo(repo));
 		const controlPlaneRe = formatsRaw === null ? null : extractControlPlaneRe(formatsRaw);
 		const guardAdrRe = formatsRaw === null ? null : parseGuardAdrRe(formatsRaw);
+		// Name the boundary that failed to resolve. Both parsers now demote a TRIVIAL extraction to
+		// their fail-closed value (#4401), so the classification is already safe — what was missing
+		// is any trace of WHICH boundary went empty, the gap that made the live incident look like a
+		// confident answer instead of an unresolved one.
+		if (formatsRaw !== null) {
+			for (const [name, resolved] of [
+				["CONTROL_PLANE_RE", controlPlaneRe],
+				["GUARD_ADR_RE", guardAdrRe],
+			] as const) {
+				if (isNonTrivialBoundary(resolved)) continue;
+				yield* Effect.sync(() =>
+					process.stderr.write(
+						`trivial-diff: TRIVIAL-GATE-BOUNDARY: ${name} did not resolve to a usable pattern from origin/main — failing closed.\n`,
+					),
+				);
+			}
+		}
 		const diff = yield* readDiff(diffFile);
 		if (diff === null) {
 			// Unreadable diff is itself fail-closed: classify as non-trivial.

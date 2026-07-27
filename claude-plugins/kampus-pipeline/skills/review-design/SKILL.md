@@ -715,7 +715,7 @@ auto-merge this PR on machine gates alone — it enqueues only once a `@kamp-us/
 approval is present at head (ADR 0135).
 
 ```markdown
-review-design: advisory — blocking-set PR (manual merge)
+review-design: advisory — blocking-set PR (§CP — approval-gated)
 
 PR #<PR> touches the control plane (§CP) — the agent control plane / pipeline gates (ADR
 0053/0065/0165). My verdict is **advisory only**: it does **not** authorize a merge. Under the §CP

@@ -358,7 +358,7 @@ WT_FILE="$(mktemp /tmp/review-code-wt.XXXXXX)"
 # clean NOW, before the denylist `rm --cached` below deliberately dirties it. A dirty materialization
 # means a corrupted head checkout, and reviewing a contaminated tree is a false signal. Fail-closed
 # LOUD via the single-sourced, tested helper (packages/pipeline-cli/src/tools/worktree-guard).
-node packages/pipeline-cli/src/bin.ts worktree-guard assert-clean --path "$REVIEW_WT" || {
+"$PCLI" worktree-guard assert-clean --path "$REVIEW_WT" || {
   echo "FATAL: review worktree came up dirty at materialization — aborting (never review a contaminated tree; #2666)." >&2
   exit 1
 }
@@ -1068,13 +1068,25 @@ NEW_SURFACE="$(printf '%s %s %s' "$NEW_FEATURE_DIRS" "$NEW_PACKAGES" "$PUBLIC_EN
 
 # does the PR touch the glossary's domain-noun file? (added OR modified — any touch counts)
 GLOSSARY_TOUCHED="$(printf '%s\n' "$FILES_STATUS" | awk -F'\t' '$2==".glossary/TERMS.md"{print}')"
+
+# POSITIVE EVIDENCE OF SCOPE (§ZS / ADR 0092's "default FAIL, pass on positive evidence"): can the
+# three detectors above express ANYTHING in this repo at all? An empty $NEW_SURFACE has two causes —
+# "this PR added no surface" (a fact about the PR) and "this repo has no surface of the kind I know
+# how to look for" (a fact about the DETECTOR) — and until this probe they produced the identical
+# not-applicable line (#4299). Read-only, against fresh base, same as every probe above.
+DETECTOR_SURFACES="$(
+  git ls-tree --name-only "origin/$BASE_REF:apps/web/worker/features" 2>/dev/null
+  git ls-tree -r --name-only "origin/$BASE_REF:packages" 2>/dev/null | grep -E '^[^/]+/package\.json$'
+)"
+DETECTOR_SURFACES_N="$(printf '%s\n' "$DETECTOR_SURFACES" | grep -c . || true)"
 ```
 
-**The self-asserting / fail-closed verdict (formats §ZS, ADR 0092) — three outcomes, never a
+**The self-asserting / fail-closed verdict (formats §ZS, ADR 0092) — four outcomes, never a
 silent PASS.** This gate's signature failure mode is *scanning nothing and reading green*, so it
 follows §ZS exactly: it **emits what it scanned** every run, **FAILs on the relevant-but-zero-match**
-case, and expresses a legitimately-empty scope as an **explicit not-applicable skip** — distinct
-from a FAIL:
+case, expresses a legitimately-empty scope as an **explicit not-applicable skip** — distinct from a
+FAIL — and, since an empty scope has **two** causes, refuses to let the detector's own blindness wear
+the skip's clothes:
 
 - **New surface present, `.glossary/TERMS.md` NOT touched ⇒ FAIL** (the relevant-but-zero-match
   case). Emit the new surface you found and that the glossary went untouched. The remedy is in
@@ -1085,14 +1097,30 @@ from a FAIL:
   `[FAIL]` row `write-code` drains next round. Either way the conjunctive verdict reflects it.
 - **New surface present, `.glossary/TERMS.md` touched ⇒ PASS** for this facet — the surface and its
   term shipped together. Cite the new surface + the glossary touch as evidence.
-- **No new surface ⇒ explicit not-applicable skip** (the §ZS #3 out-of-surface case): emit
+- **No new surface, and the detector can express surfaces here (`DETECTOR_SURFACES_N > 0`) ⇒
+  explicit not-applicable skip** (the §ZS #3 out-of-surface case): emit
   `glossary-freshness: not applicable — no new feature folder / public package / export in this PR`
   and **omit the row from the conjunctive table** (a skip, *not* an `UNVERIFIABLE` soft-fail, exactly
   as Step 3b omits its row when the containment marker doesn't fire). The emitted line is the
-  self-assertion that the gate *fired and found nothing in its surface* — never a silent green.
+  self-assertion that the gate *fired and found nothing in its surface* — never a silent green. The
+  `DETECTOR_SURFACES_N > 0` conjunct is what earns the word *skip*: at least one surface of each kind
+  the detector knows exists on base, so "found nothing" is a fact about **this PR**.
+- **No new surface, and the detector can express NOTHING here (`DETECTOR_SURFACES_N == 0`) while
+  `.glossary/TERMS.md` IS on base ⇒ `UNVERIFIABLE` — the gate could not evaluate.** Emit a distinct
+  line naming the detector's inability to match, and fold an **`[UNVERIFIABLE]` row into the
+  conjunctive table** — a soft fail that blocks, not an omitted row. The empty scan is a property of
+  the *detector*, not of the PR, so reporting it as a skip is the accidental zero-match ADR 0092's
+  Consequences ban from wearing the sanctioned skip's clothes (#4299). The remedy belongs to the repo,
+  not the PR author: adopt a layout the detector expresses, drop `.glossary/TERMS.md` (which routes to
+  the honest graceful-absence skip below), or make surface detection declarable.
 
 ```bash
-if [ -n "$(printf '%s' "$NEW_SURFACE" | tr -d ' ')" ]; then
+# The graceful-absence probe LEADS the chain, EXECUTED — never asserted in prose. Every branch below
+# claims the glossary is on base, so a repo that never adopted it must be excluded by a real test or
+# the final `else` states a fact it never checked — the gate's own sin, one branch over (#4299).
+if ! git cat-file -e "origin/$BASE_REF:.glossary/TERMS.md" 2>/dev/null; then
+  echo "glossary-freshness: not applicable — no .glossary/TERMS.md on base"   # graceful absence: no row
+elif [ -n "$(printf '%s' "$NEW_SURFACE" | tr -d ' ')" ]; then
   echo "glossary-freshness: scanned new surfaces ⇒$NEW_SURFACE"   # §ZS #1: emit what it scanned
   if [ -n "$GLOSSARY_TOUCHED" ]; then
     echo "glossary-freshness: PASS — new surface ships with a .glossary/TERMS.md touch"
@@ -1100,8 +1128,11 @@ if [ -n "$(printf '%s' "$NEW_SURFACE" | tr -d ' ')" ]; then
     echo "glossary-freshness: FAIL — new surface added but .glossary/TERMS.md untouched (§ZS relevant-but-zero-match)"
     # fold as a FAIL facet in the verdict table (and/or append the in-scope AC per the §2 surface)
   fi
+elif [ "$DETECTOR_SURFACES_N" -gt 0 ]; then
+  echo "glossary-freshness: not applicable — no new feature folder / public package / export in this PR (detector expressible here: $DETECTOR_SURFACES_N candidate surface(s) on base)"   # §ZS #3 skip
 else
-  echo "glossary-freshness: not applicable — no new feature folder / public package / export in this PR"   # §ZS #3 skip
+  echo "glossary-freshness: UNVERIFIABLE — detector blind: .glossary/TERMS.md is on origin/$BASE_REF, but this repo has ZERO surfaces the detector can express (no apps/web/worker/features/* dir, no packages/*/package.json on base). The empty scan is a fact about the DETECTOR, not this PR — it is NOT evidence the PR added no surface."
+  # fold as an [UNVERIFIABLE] facet in the verdict table — a blocking soft fail, never an omitted row
 fi
 ```
 
@@ -1111,12 +1142,18 @@ so the conjunctive verdict (Step 3) accounts for it like any other criterion:
 ```
 - [PASS] glossary-freshness — new feature folder apps/web/worker/features/<x> ships with a .glossary/TERMS.md touch (TERMS.md modified)
 - [FAIL] glossary-freshness — new feature folder apps/web/worker/features/<x> added, but .glossary/TERMS.md untouched; name the surface's concept in TERMS.md (or it is appended as an AC)
+- [UNVERIFIABLE] glossary-freshness — the gate could not evaluate: .glossary/TERMS.md is on base, but this repo contains 0 surfaces the detector's patterns can express, so the empty scan says nothing about this PR
 ```
 
-When there is **no** new surface, **omit this row entirely** (the not-applicable skip), exactly as
-Step 3b omits its flag-gating row when the containment marker doesn't fire — a skip contributes
-nothing to the conjunctive verdict, by design, and is **never** a silent PASS because the emitted
-`not applicable` line above is its self-assertion.
+When there is no new surface **and the detector is expressible here**, **omit this row entirely**
+(the not-applicable skip), exactly as Step 3b omits its flag-gating row when the containment marker
+doesn't fire — a skip contributes nothing to the conjunctive verdict, by design, and is **never** a
+silent PASS because the emitted `not applicable` line above is its self-assertion. The
+detector-blind case is the one empty scan that **does** get a row: it is written into the table as
+`[UNVERIFIABLE]`, so a reader of the verdict artifact can tell "this PR added no new surface" from
+"this gate could not see any surface of the kind it knows how to look for" without opening this
+skill — and, one `UNVERIFIABLE` being a gate failure, the vacuous case stops the line instead of
+reading green.
 
 > **Graceful absence — no `.glossary/TERMS.md` on the base ⇒ no glossary to enforce against.** If
 > the repo has not yet adopted the glossary (`.glossary/TERMS.md` absent on fresh `origin/$BASE_REF`
@@ -1125,6 +1162,14 @@ nothing to the conjunctive verdict, by design, and is **never** a silent PASS be
 > `glossary-freshness: not applicable — no .glossary/TERMS.md on base` and contributes no row. This
 > is the same portability / graceful-absence contract the cycle-doc probe (Step 3b, formats §1) and
 > the milestone default follow — absence is a first-class state, not a defect.
+>
+> **This probe is the executed guard that LEADS the verdict chain above** — it is the chain's first
+> `if`, so the detector-blind `UNVERIFIABLE` branch is structurally unreachable when the glossary is
+> absent, rather than merely documented as coming second. A repo that never adopted the glossary has
+> nothing to enforce and gets this honest skip; only a repo that adopted the
+> vocabulary while keeping a layout the detector cannot express reaches the `UNVERIFIABLE` branch.
+> That intersection is the whole defect surface (#4299) — the two states are separate outcomes with
+> separate lines, never one line covering both.
 
 ### Step 3d — Comment-discipline gate: the fresh-eyes judge of comment slop (ADR 0119)
 
@@ -1370,8 +1415,8 @@ flag from Step 2 — **or** a non-empty `GUARD_TOUCHING`, a guard-touching `.dec
 §CP by content, ADR 0164 / #3645): a **blocking-set** PR (it touches `.claude/**`, `.github/**`, a
 gate-critical skill, or a guard-touching ADR — §CP) does **not** get a binding `PASS @ <sha> —
 merge-ready` marker. It
-gets the **canonical advisory line** instead — `review-code: advisory — blocking-set PR (manual
-merge)`, no `@ <sha>` — the one advisory shape all three gates converge on (ADR
+gets the **canonical advisory line** instead — `review-code: advisory — blocking-set PR (§CP —
+approval-gated)`, no `@ <sha>` — the one advisory shape all three gates converge on (ADR
 [0073](https://github.com/kamp-us/phoenix/blob/main/.decisions/0073-review-skill-gate.md) §5;
 [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §6.6). It carries the same
 per-criterion evidence table, but it authorizes nothing on its first line — it stays *out* of
@@ -1605,7 +1650,7 @@ code review namespace via its `commit_id`, defeating the advisory's purpose).
 > would drop the §CP verdict into `ship-it`'s auto-merge namespace, the ADR 0111 hazard).
 
 ```markdown
-review-code: advisory — blocking-set PR (manual merge)
+review-code: advisory — blocking-set PR (§CP — approval-gated)
 
 PR #<PR> is §CP — it touches the control plane (`.claude/**`, `.github/**`, or a gate-critical
 skill — ADR 0053/0065), OR a guard-touching `.decisions/**` ADR (§CP by content, ADR 0164 — the

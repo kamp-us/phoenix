@@ -42,6 +42,9 @@
 		// Engine — fungible throughput; `count` engines boot, each holds its own `wipCap`.
 		// The overall cap is the lane split's sum and the borrow/rebalance rule is doctrine
 		// shipped in the engineering-manager def — only the per-install lane values seam here.
+		// `wipCap` is required and its two lane counts must be integers >= 0: the launcher
+		// delivers them into each engine's boot turn, so a missing or malformed cap fails the
+		// launch closed instead of leaving the engine to improvise a number (#4330).
 		"engineering-manager": {
 			"tier": "<engineering-manager-model-tier>",
 			"count": "<engine-count>",

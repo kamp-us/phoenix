@@ -1,14 +1,16 @@
 /**
  * The `cli-invocation-guard` tool — `pipeline-cli cli-invocation-guard check <file>…`.
  *
- * Reds on any bare `pipeline-cli <verb>` inside a runnable bash/sh fence in the pipeline
- * corpus (#3314). See the formats contract's §CLI for the canonical resolution this enforces
- * and the exit-code taxonomy it protects. Follows the `adoption-lint` / `gh-phoenix
+ * Reds on any non-canonical `pipeline-cli` invocation inside a runnable bash/sh fence in the
+ * pipeline corpus — a bare `pipeline-cli <verb>` (#3314) or a cwd-relative
+ * `node …/pipeline-cli/src/bin.ts <verb>` (#4236). See the formats contract's §CLI for the
+ * canonical resolution this enforces and the exit-code taxonomy it protects. Follows the
+ * `adoption-lint` / `gh-phoenix
  * lint-skills` shape — an IO-free core over handed-in file contents, with a thin CLI that maps
  * the verdict to a fail-closed exit contract (ADR 0092):
  *
- *   exit 0 — clean (no bare invocation in any runnable fence)
- *   exit 2 — one or more bare invocations
+ *   exit 0 — clean (no non-canonical invocation in any runnable fence)
+ *   exit 2 — one or more non-canonical invocations
  *   exit 3 — zero scope (no file scanned, or no runnable fence found)
  */
 import {readFileSync} from "node:fs";
@@ -34,7 +36,7 @@ const readFileOrSkip = (file: string): string | null =>
 const fileArg = Argument.string("file").pipe(
 	Argument.atLeast(1),
 	Argument.withDescription(
-		"one or more corpus file paths (SKILL.md / agent defs / plugin docs) to scan for bare `pipeline-cli` invocations",
+		"one or more corpus file paths (SKILL.md / agent defs / plugin docs) to scan for non-canonical `pipeline-cli` invocations",
 	),
 );
 
@@ -55,7 +57,7 @@ const judge = (result: GuardResult): Effect.Effect<void, ZeroScope | FindingsFou
 		}
 
 		yield* Console.error(
-			`cli-invocation-guard: FAIL — ${result.findings.length} bare \`pipeline-cli\` invocation(s) in runnable fences. \`pipeline-cli\` is NOT on PATH where agents spawn (ADR 0207 retired PATH-shadowing), so these die \`command not found\` at a gate — and a fail-closed wrapper turns that miss into a wrong verdict (#3314):`,
+			`cli-invocation-guard: FAIL — ${result.findings.length} non-canonical \`pipeline-cli\` invocation(s) in runnable fences. A bare name is NOT on PATH where agents spawn (ADR 0207 retired PATH-shadowing) and dies \`command not found\` (exit 127); a cwd-relative \`node …/src/bin.ts\` dies \`Cannot find module\` (exit 1, empty stdout) from any dir but the repo root. Either way a fail-closed wrapper turns the miss into a wrong verdict (#3314, #4236):`,
 		);
 		for (const f of result.findings) {
 			yield* Console.error(`  ${f.file}:${f.line}: ${f.text}`);
@@ -94,7 +96,7 @@ const check = Command.make(
 	}),
 ).pipe(
 	Command.withDescription(
-		"Red on any bare `pipeline-cli` invocation in a runnable bash/sh fence (fails closed on zero scope)",
+		"Red on any bare or `node …/src/bin.ts` `pipeline-cli` invocation in a runnable bash/sh fence (fails closed on zero scope)",
 	),
 );
 

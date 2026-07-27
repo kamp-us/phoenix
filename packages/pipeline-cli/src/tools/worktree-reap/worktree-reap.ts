@@ -1,8 +1,9 @@
 /**
- * `worktree-reap` pure core — classify each managed agent worktree into REAP /
- * KEEP-DIRTY / SPARE with a reason, for the safe reaping of worktrees orphaned by
- * DEAD crew sessions (issue #3754). IO-free and total: every decision is a
- * deterministic transform over already-gathered facts. The git + process boundary
+ * `worktree-reap` pure core — classify each agent worktree (a managed build tree, or a
+ * `review-head-*` throwaway review checkout) into REAP / KEEP-DIRTY / SPARE with a
+ * reason, for the safe reaping of worktrees orphaned by DEAD crew sessions (issue
+ * #3754). IO-free and total: every decision is a deterministic transform over
+ * already-gathered facts. The git + process boundary
  * (enumerate / status / ancestry / pid-liveness / unlock+remove) lives in
  * `command.ts`; this module never runs a command and never removes anything.
  *
@@ -52,6 +53,7 @@
  * this core only chooses WHETHER to attempt the remove, and never escalates to a forced one.
  */
 import type {OwnerLiveness} from "../worktree-sweep/owner-liveness.ts";
+import {isReviewHeadWorktree} from "../worktree-sweep/worktree-sweep.ts";
 
 /** The segment that marks a harness-managed agent worktree: `<main>/.claude/worktrees/<id>`. */
 const MANAGED_SEGMENT = "/.claude/worktrees/";
@@ -170,8 +172,11 @@ export type ReapDecision =
 /**
  * Classify a single worktree. The order of checks IS the safety policy:
  *
- *   1. Not a managed agent worktree → SPARE (`not-managed`). The primary checkout and any
- *      foreign tree are never candidates, regardless of their other facts.
+ *   1. Neither a managed agent worktree nor a `review-head-*` throwaway review checkout → SPARE
+ *      (`not-managed`). The primary checkout and any foreign tree are never candidates, regardless
+ *      of their other facts. Review-head trees are in scope since they too carry a pid-bearing
+ *      crew-agent lock (#4004) — signal 1, the only one that resolves for that class (they are not
+ *      `.claude/worktrees/` trees, so no hook ever stamps them).
  *   2. Locked by someone else → SPARE (`foreign-lock`). An operator pin outranks both owner
  *      signals, because reclaiming would mean unlocking what a human deliberately locked.
  *   3. Some signal says ALIVE → SPARE (`live-session`). The ADR 0191 presence gate, and the
@@ -179,12 +184,14 @@ export type ReapDecision =
  *   4. No signal proves DEATH → SPARE (`owner-unknown`). Orphanhood unprovable — never reap
  *      what we cannot prove dead. This is where the unstamped, unlocked historical pile sits.
  *   5. (Dead session) uncommitted → KEEP-DIRTY (`uncommitted`). Recoverable working-tree work.
- *   6. (Dead session) unpushed → KEEP-DIRTY (`unpushed`). Committed work not on `origin/main`.
+ *   6. (Dead session, BUILD tree) unpushed → KEEP-DIRTY (`unpushed`). Committed work not on
+ *      `origin/main`. Not applied to a review-head tree, whose detached head came off the remote.
  *   7. Otherwise → REAP (`orphan-clean`). Dead session, clean tree, all commits landed —
  *      nothing recoverable to strand.
  */
 export const classifyCandidate = (c: ReapCandidate): ReapDecision => {
-	if (!isManagedAgentWorktree(c.path)) {
+	const reviewHead = isReviewHeadWorktree(c.path);
+	if (!isManagedAgentWorktree(c.path) && !reviewHead) {
 		return {kind: "spare", reason: "not-managed"};
 	}
 	if (c.foreignLock) {
@@ -200,7 +207,11 @@ export const classifyCandidate = (c: ReapCandidate): ReapDecision => {
 	if (c.hasUncommitted) {
 		return {kind: "keep-dirty", reason: "uncommitted"};
 	}
-	if (c.hasUnpushed) {
+	// N/A for a review-head tree: it is DETACHED at a head fetched from the remote
+	// (`pull/<pr>/head`), so its HEAD is on origin by construction and "not reachable from
+	// origin/main" is its normal state for an open PR, not unpushed work. Applying the build-tree
+	// gate to it would keep every such orphan forever (#4004). The uncommitted gate above still runs.
+	if (c.hasUnpushed && !reviewHead) {
 		return {kind: "keep-dirty", reason: "unpushed"};
 	}
 	return {kind: "reap", reason: "orphan-clean"};

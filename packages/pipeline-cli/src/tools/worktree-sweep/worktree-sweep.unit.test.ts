@@ -24,6 +24,7 @@ const reviewRecord = (over: Partial<WorktreeRecord> = {}): WorktreeRecord => ({
 	reachableFromOriginMain: false,
 	squashMergedToOriginMain: false,
 	locked: false,
+	staleAgentLock: false,
 	recentlyActive: false,
 	hasOpenPr: false,
 	// The fixtures default to a PROVABLY-DEAD owner so each pre-#3943 case still exercises the
@@ -41,6 +42,7 @@ const record = (over: Partial<WorktreeRecord> = {}): WorktreeRecord => ({
 	reachableFromOriginMain: true,
 	squashMergedToOriginMain: false,
 	locked: false,
+	staleAgentLock: false,
 	recentlyActive: false,
 	hasOpenPr: false,
 	ownerLiveness: "dead",
@@ -62,6 +64,7 @@ const shipperShaped = (over: Partial<WorktreeRecord> = {}): WorktreeRecord =>
 		reachableFromOriginMain: false,
 		squashMergedToOriginMain: true,
 		locked: false,
+		staleAgentLock: false,
 		recentlyActive: false,
 		hasOpenPr: false,
 		...over,
@@ -124,6 +127,26 @@ describe("classifyWorktree — review-head trees (#2785)", () => {
 	it("keeps a LOCKED review-head tree (an operator/agent pinned it — #2240 liveness preserved)", () => {
 		const d = classifyWorktree(reviewRecord({locked: true}));
 		assert.deepStrictEqual(d, {kind: "keep", reason: "locked"});
+	});
+
+	it("RECLAIMS one whose lock is a STALE crew-agent lock — a dead session's pin never pins forever", () => {
+		// `review-head materialize` now locks every tree it creates (#4004). Were `locked` alone a
+		// keep, that lock would pin each of them past its reviewer's death and re-open the #2785
+		// unbounded leak — so a lock whose owning session is PROVEN dead does not keep.
+		const d = classifyWorktree(reviewRecord({locked: true, staleAgentLock: true}));
+		assert.deepStrictEqual(d, {kind: "remove", reason: "review-head-idle"});
+	});
+
+	it("keeps a stale-locked tree that is still RECENTLY ACTIVE — the idle gate outlives the lock gate", () => {
+		const d = classifyWorktree(
+			reviewRecord({locked: true, staleAgentLock: true, recentlyActive: true}),
+		);
+		assert.deepStrictEqual(d, {kind: "keep", reason: "recently-active"});
+	});
+
+	it("keeps a stale-locked tree that is DIRTY — recoverable work outranks every liveness signal", () => {
+		const d = classifyWorktree(reviewRecord({locked: true, staleAgentLock: true, isDirty: true}));
+		assert.deepStrictEqual(d, {kind: "keep", reason: "dirty"});
 	});
 
 	it("keeps a RECENTLY-ACTIVE review-head tree (a review still running against the head — #2240)", () => {
@@ -540,6 +563,7 @@ describe("parseWorktreeList", () => {
 			branch: "main",
 			bare: false,
 			locked: false,
+			lockReason: null,
 			prunable: false,
 		});
 		assert.strictEqual(parsed[1]?.branch, "umut/1234-thing");
@@ -559,6 +583,29 @@ describe("parseWorktreeList", () => {
 		const parsed = parseWorktreeList(porcelain);
 		assert.strictEqual(parsed.length, 1);
 		assert.isTrue(parsed[0]?.locked);
+		assert.strictEqual(parsed[0]?.lockReason, "some reason");
+	});
+
+	it("keeps the lock REASON — it carries the owning session's pid (#4004)", () => {
+		const reason = "claude agent review-head-4004 (pid 58975 start 2026-07-25T23:48:53.000Z)";
+		const parsed = parseWorktreeList(
+			[
+				`worktree /var/folders/8f/tmp.x/review-head-4004-aBc`,
+				"HEAD dddd4444",
+				"detached",
+				`locked ${reason}`,
+				"",
+			].join("\n"),
+		);
+		assert.strictEqual(parsed[0]?.lockReason, reason);
+	});
+
+	it("distinguishes locked-with-no-reason ('') from unlocked (null)", () => {
+		const parsed = parseWorktreeList(
+			[`worktree ${wtPath("agent-z")}`, "HEAD dddd4444", "detached", "locked", ""].join("\n"),
+		);
+		assert.isTrue(parsed[0]?.locked);
+		assert.strictEqual(parsed[0]?.lockReason, "");
 	});
 
 	it("captures a prunable (gone-dir) worktree — #3654", () => {

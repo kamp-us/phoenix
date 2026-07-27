@@ -18,7 +18,7 @@ import {
 	kindOf,
 	REQUIRED_SEAT_CHANNEL_TOOLS,
 } from "../crew/index.ts";
-import {CREW_PLUGIN_CHANNEL_REF, CREW_SESSION_INSTANCE_FLAG} from "./bind.ts";
+import {CREW_PLUGIN_CHANNEL_REF, CREW_SESSION_INSTANCE_FLAG, wipCapClause} from "./bind.ts";
 import {
 	DEFAULT_CONFIG_PATH,
 	decodeLaunchConfig,
@@ -27,6 +27,9 @@ import {
 } from "./config.ts";
 import {type TrackerHandle, TrackerNotServingError} from "./ensure-tracker.ts";
 import {
+	ChannelAllowlistBlockedError,
+	type ChannelAllowlistProbe,
+	type ChannelAllowlistStatus,
 	CliVersionAssertError,
 	CREW_WINDOW,
 	type CrewMcpEntry,
@@ -74,8 +77,9 @@ const standUp = (input: Parameters<typeof runStandUp>[0]) =>
 
 /**
  * A post-#3236 one-role-map crew config (raw, on-disk shape): the engine count lives at
- * `roles["engineering-manager"].count`; bridge entries + per-role tier/wipCap are excess seam keys;
- * there is NO tmux key. Decoded through `decodeLaunchConfig` so the boot exercises the real
+ * `roles["engineering-manager"].count`, its lane cap at `.wipCap` (#4330), each role's model tier at
+ * `.tier`; the operator/notification blocks are the excess seam keys and there is NO tmux key.
+ * Decoded through `decodeLaunchConfig` so the boot exercises the real
  * new-template decode end to end (the dogfood: stand up from a config regenerated from the template).
  */
 const rawConfigAt = (cliVersion: string, engineCount: number): unknown => ({
@@ -226,6 +230,15 @@ const recordingProjectScope = (order: string[]) => {
 	return {registrar, reaped, registered, registeredCtx, cwdCalls};
 };
 
+/** A channel-allowlist probe pinned to one verdict, so the composition tests never touch a real policy file. */
+const stubbedAllowlistProbe = (status: ChannelAllowlistStatus): ChannelAllowlistProbe =>
+	Effect.succeed({
+		status,
+		ref: CREW_PLUGIN_CHANNEL_REF,
+		reason: `stubbed ${status}`,
+		consulted: [],
+	});
+
 const trackerHandle: TrackerHandle = {pid: 4242, socketPath: "/tmp/crew.sock"};
 
 /** A recording tracker-ensurer: counts calls so "was the tracker reached before the abort?" is checkable. */
@@ -295,6 +308,9 @@ const baseInput = (
 			instanceId: counter(),
 			runId: () => RUN_ID,
 			localScope: registrar,
+			// Stub the CLI-side channel-allowlist probe (#4297) so these composition tests never read the
+			// host's real org managed settings — a machine-dependent read would make them non-deterministic.
+			probeChannelAllowlist: stubbedAllowlistProbe("allowed"),
 			ensureTracker,
 			resolveTargetSession,
 			launch,
@@ -548,6 +564,58 @@ describe("standup/orchestrate — the one stand-up command (issue #3299)", () =>
 	);
 
 	it.effect(
+		"allowlist mode: a BLOCKED CLI-side channel allowlist aborts with zero panes launched (#4297)",
+		() =>
+			Effect.gen(function* () {
+				const {input, launched, order, trackerCalls} = baseInput({
+					engineCount: 2,
+					config: allowlistConfigAt(2),
+					probeChannelAllowlist: stubbedAllowlistProbe("blocked"),
+				});
+				const error = yield* Effect.flip(standUp(input));
+				assert.instanceOf(error, ChannelAllowlistBlockedError);
+				// The abort names the remedy, and names it as a managed-settings KEY the operator can act on.
+				assert.include(error.remedy, "allowedChannelPlugins");
+				assert.include(renderStandUpError(error), CREW_PLUGIN_CHANNEL_REF);
+				// No partial crew, and the abort lands before the tracker is even started.
+				assert.strictEqual(launched.length, 0);
+				assert.strictEqual(trackerCalls(), 0);
+				assert.notInclude(order, "reap");
+			}),
+	);
+
+	it.effect(
+		"allowlist mode: an UNKNOWN channel allowlist launches but the result reports the unverified verdict (#4297)",
+		() =>
+			Effect.gen(function* () {
+				const {input, launched} = baseInput({
+					engineCount: 1,
+					config: allowlistConfigAt(1),
+					probeChannelAllowlist: stubbedAllowlistProbe("unknown"),
+				});
+				const result = yield* standUp(input);
+				// PROBES.md: a check that could not run never gates — the crew still comes up.
+				assert.strictEqual(result.launched.length, launched.length);
+				assert.isAbove(result.launched.length, 0);
+				// …but the verdict rides out on the result, so "could not verify" is not "verified".
+				assert.strictEqual(result.channelAllowlist.status, "unknown");
+			}),
+	);
+
+	it.effect(
+		"development mode: the CLI-side allowlist gate is not applicable and is never probed (#4297)",
+		() =>
+			Effect.gen(function* () {
+				// A probe that would fail proves it is never run: dev mode bypasses the CLI's `!dev`-guarded
+				// allowlist check outright, so there is no policy surface to read.
+				const probeNeverRuns = Effect.die("the allowlist probe must not run in development mode");
+				const {input} = baseInput({engineCount: 1, probeChannelAllowlist: probeNeverRuns});
+				const result = yield* standUp(input);
+				assert.strictEqual(result.channelAllowlist.status, "not-applicable");
+			}),
+	);
+
+	it.effect(
 		"allowlist mode: the project-scope register is GATED OFF, and every pane carries its role env (#3920)",
 		() =>
 			Effect.gen(function* () {
@@ -732,6 +800,32 @@ describe("standup/orchestrate — the one stand-up command (issue #3299)", () =>
 				const err = yield* Effect.flip(standUp(input));
 				assert.instanceOf(err, StandUpLaunchError);
 			}),
+	);
+});
+
+/**
+ * The operator's configured lane cap reaches the engine sessions it bounds (#4330) — the end-to-end
+ * half of promoting `wipCap` from ignored excess: decoded off the seam AND delivered, so a launched
+ * engine holds the number instead of improvising one.
+ */
+describe("standup/orchestrate — the configured WIP cap reaches every engine (#4330)", () => {
+	it.effect("every engine's boot turn carries the configured cap; no bridge's does", () =>
+		Effect.gen(function* () {
+			const {input, launched} = baseInput({engineCount: 2});
+			yield* standUp(input);
+			// rawConfigAt's cap — the value an operator wrote, now delivered verbatim.
+			const clause = wipCapClause({productLanes: 1, platformLanes: 1});
+			const engines = launched.filter((plan) => plan.session.kind === "engine");
+			const bridges = launched.filter((plan) => plan.session.kind !== "engine");
+			assert.strictEqual(engines.length, 2);
+			for (const plan of engines) {
+				assert.include(plan.bind.bootPromptArg[0] ?? "", clause);
+			}
+			// A bridge holds no lanes, so a cap sentence in its boot turn would be noise it might act on.
+			for (const plan of bridges) {
+				assert.notInclude(plan.bind.bootPromptArg[0] ?? "", "WIP cap");
+			}
+		}),
 	);
 });
 

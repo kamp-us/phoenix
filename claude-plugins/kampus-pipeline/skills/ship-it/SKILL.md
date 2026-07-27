@@ -356,13 +356,25 @@ FILES="$CP_FILES"   # proven-arrived, scope already emitted ($CP_FILES_N files) 
 # §CP boundary is single-sourced in pipeline-cli (control-plane-paths/control-plane-re.ts, #2761);
 # run `pipeline-cli control-plane-paths` to print it. It is re-resolved from origin/main right below
 # (the #981 anti-self-authorization read), so this is only a fail-closed sentinel, never the live source.
+# NON-TRIVIALITY ASSERT (#4401) — single-sourced in §CLASS of gh-issue-intake-formats.md; copied
+# here verbatim because Step 0 runs as one shell block. EVERY boundary this step strips out of a
+# network read goes through it before anything gates on it: an empty or prefix-carrying value still
+# COMPILES, and `grep -E ""` matches every path while `grep -Ev ""` matches none, both at exit 0.
+accept_re() {   # $1=name, $2=resolved value, $3=fail-closed default
+  case "$2" in
+    *"$1='"*) : ;;   # the assignment prefix survived the strip ⇒ not a pattern, a whole line
+    *) if [ "${#2}" -ge 4 ]; then printf '%s' "$2"; return 0; fi ;;
+  esac
+  printf 'TRIVIAL-GATE-BOUNDARY: %s did not resolve to a usable pattern — failing closed.\n' "$1" >&2
+  printf '%s' "$3"
+}
 CONTROL_PLANE_RE='.'   # fail-closed default: every path is control-plane until origin/main resolves
 # Re-resolve §CP from origin/main at run time so a stale snapshot can't mis-classify a now-control-plane
 # PR as auto-mergeable (#981). ADR 0073 §6 names gh-issue-intake-formats.md the single source; read it
 # freshly via REST raw (never GraphQL, top-of-skill rule). origin/main's line wins over the snapshot.
 CP_LIVE="$(gh api "repos/$REPO/contents/claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md?ref=main" -H 'Accept: application/vnd.github.raw' 2>/dev/null | grep '^CONTROL_PLANE_RE=' | head -n1 || true)"
 if [ -n "$CP_LIVE" ]; then
-  CONTROL_PLANE_RE="$(printf '%s' "$CP_LIVE" | sed "s/^CONTROL_PLANE_RE='//; s/'$//")"   # classification tracks origin/main, not the snapshot's age (AC1/AC2)
+  CONTROL_PLANE_RE="$(accept_re CONTROL_PLANE_RE "$(printf '%s' "$CP_LIVE" | sed "s/^CONTROL_PLANE_RE='//; s/'$//")" '.')"   # classification tracks origin/main, not the snapshot's age (AC1/AC2); a trivial strip fails closed to '.'
 else
   CONTROL_PLANE_RE='.'   # FAIL CLOSED: can't read origin/main's boundary ⇒ treat EVERY path as control-plane (refuse), never trust the possibly-stale snapshot
 fi
@@ -423,7 +435,7 @@ HAS_SKILLS_RE='^claude-plugins/[^/]+/(skills|agents)/|^\.claude-plugin/'
 HAS_DOCS_EXCLUDE_RE='^(claude-plugins|apps|packages|\.glossary|infra)/'
 HAS_DOCS_RE='^(\.decisions|\.patterns)/|\.md$'
 CLASS_RAW="$(gh api "repos/$REPO/contents/claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md?ref=main" -H 'Accept: application/vnd.github.raw' 2>/dev/null || true)"
-reresolve_re() { live="$(printf '%s\n' "$CLASS_RAW" | grep "^$1=" | head -n1 || true)"; if [ -n "$live" ]; then printf '%s' "$live" | sed "s/^$1='//; s/'\$//"; else printf '%s' "$2"; fi; }
+reresolve_re() { live="$(printf '%s\n' "$CLASS_RAW" | grep "^$1=" | head -n1 || true)"; if [ -z "$live" ]; then printf '%s' "$2"; else accept_re "$1" "$(printf '%s' "$live" | sed "s/^$1='//; s/'\$//")" "$2"; fi; }
 HAS_CODE_RE="$(reresolve_re HAS_CODE_RE '.')"
 HAS_SKILLS_RE="$(reresolve_re HAS_SKILLS_RE '.')"
 HAS_DOCS_EXCLUDE_RE="$(reresolve_re HAS_DOCS_EXCLUDE_RE '\$^')"   # fail-closed: exclude NOTHING ⇒ every path reaches the doc test
@@ -468,8 +480,8 @@ UI_EXCLUDE_RE='\.(test|spec)\.tsx?$'
 UI_RAW="$(gh api "repos/$REPO/contents/claude-plugins/kampus-pipeline/skills/ship-it/SKILL.md?ref=main" -H 'Accept: application/vnd.github.raw' 2>/dev/null || true)"
 UI_LIVE="$(printf '%s\n' "$UI_RAW" | grep '^UI_RE=' | head -n1 || true)"
 UX_LIVE="$(printf '%s\n' "$UI_RAW" | grep '^UI_EXCLUDE_RE=' | head -n1 || true)"
-if [ -n "$UI_LIVE" ]; then UI_RE="$(printf '%s' "$UI_LIVE" | sed "s/^UI_RE='//; s/'$//")"; else UI_RE='.'; fi   # FAIL CLOSED: can't read origin/main's UI_RE ⇒ '.' ⇒ every path UI-affecting ⇒ REQUIRE review-design, never silently skip (#2341)
-if [ -n "$UX_LIVE" ]; then UI_EXCLUDE_RE="$(printf '%s' "$UX_LIVE" | sed "s/^UI_EXCLUDE_RE='//; s/'$//")"; else UI_EXCLUDE_RE='$^'; fi   # FAIL CLOSED: unreadable ⇒ '$^' never-match ⇒ carve out NOTHING ⇒ every apps/web/src path (incl. tests) gates review-design
+if [ -n "$UI_LIVE" ]; then UI_RE="$(accept_re UI_RE "$(printf '%s' "$UI_LIVE" | sed "s/^UI_RE='//; s/'$//")" '.')"; else UI_RE='.'; fi   # FAIL CLOSED: can't read origin/main's UI_RE — or it resolves TRIVIAL — ⇒ '.' ⇒ every path UI-affecting ⇒ REQUIRE review-design, never silently skip (#2341/#4401)
+if [ -n "$UX_LIVE" ]; then UI_EXCLUDE_RE="$(accept_re UI_EXCLUDE_RE "$(printf '%s' "$UX_LIVE" | sed "s/^UI_EXCLUDE_RE='//; s/'$//")" '$^')"; else UI_EXCLUDE_RE='$^'; fi   # FAIL CLOSED: unreadable or trivial ⇒ '$^' never-match ⇒ carve out NOTHING ⇒ every apps/web/src path (incl. tests) gates review-design
 echo "$FILES" | grep -Ev "$UI_EXCLUDE_RE" | grep -Eq "$UI_RE" && echo "has-ui"   # carve test/spec first, THEN require review-design ALONGSIDE the class gate(s)
 ```
 
@@ -532,29 +544,77 @@ echo "$FILES" | grep -Ev "$UI_EXCLUDE_RE" | grep -Eq "$UI_RE" && echo "has-ui"  
   source ship-it runs, so the verdict cannot drift across shippers (the class-probe/control-plane-paths
   precedent). Resolve the roster + the two signals over REST, never GraphQL, then decide:
 
+  **Every input to this gate is a fallible READ, and an unresolved one is UNKNOWN — never a
+  cardinality, never "the team is empty", never `awaiting control-plane approval` (#4223).** All four
+  — roster, author, head, per-approver membership — come from **§CPREAD** / **§CPREAD-APPROVAL** of
+  [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md); copy those helpers verbatim from
+  there (single source; the why, and the measurement behind it, live there, not here). Each failure
+  branch stops under a message that names the read that failed.
+
   ```bash
   # §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
   PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
   # ADR 0175: DETERMINISTIC §CP discharge keyed on control-plane team cardinality, not judgment.
   ORG="${REPO%%/*}"                                            # owner half of owner/repo
-  # N = present, active, human control-plane members (REST, never GraphQL — ADR 0135/0175)
-  MEMBERS="$(gh api --paginate "orgs/$ORG/teams/control-plane/members?per_page=100" --jq '.[].login')"
-  AUTHOR="$(gh api "repos/$REPO/pulls/$PR" --jq '.user.login')"
-  HEAD="$(gh api "repos/$REPO/pulls/$PR" --jq '.head.sha')"    # every signal binds THIS head (ADR 0058)
-  sha_binds_head() { [ -n "$1" ] || return 1; case "$HEAD" in "$1"*) return 0;; esac; case "$1" in "$HEAD"*) return 0;; esac; return 1; }
+  # The one non-firing exit that is NOT a definite answer: it names the read that could not execute,
+  # so a broken read is never reported as a human-approval wait (#4223).
+  cp_unknown() { echo "§CP approval: STOP — $1 UNKNOWN (read failed); the discharge is UNRESOLVED, NOT 'awaiting control-plane approval' (ADR 0175, #4223)" >&2; }
+
+  # N = present, active, human control-plane members (REST, never GraphQL — ADR 0135/0175).
+  # A SUCCESSFUL read of an empty team still flows through to cp-cardinality's honest N==0 STOP; only
+  # an UNREADABLE roster stops here, because those are different facts with the same outcome.
+  cp_team_roster "$ORG" || { cp_unknown "the @$ORG/control-plane roster"; exit 1; }
+  MEMBERS="$CP_MEMBERS"
+  cp_pr_author "$REPO" "$PR" || { cp_unknown "the PR author"; exit 1; }
+  AUTHOR="$CP_PR_AUTHOR"
+  cp_head_sha "$REPO" "$PR" || { cp_unknown "the PR head SHA"; exit 1; }
+  HEAD="$CP_HEAD_SHA"                                          # every signal binds THIS head (ADR 0058)
+
+  # Bidirectional prefix match so a 7-hex short SHA binds a 40-hex head — but ONLY once BOTH sides
+  # are proven hex. With $HEAD empty the second pattern degenerates to `*` and binds ANY candidate,
+  # so a self-approval marker on a superseded head counts as current (#4223). Asserting $HEAD is
+  # duplicated work given cp_head_sha above, and it stays: this matcher is the last thing between a
+  # stale marker and a discharge, so it proves its own precondition rather than inheriting it.
+  # The reverse direction is unreachable while that 40-hex assertion holds (a candidate can only be
+  # a prefix OF a full head, never the other way round); kept so the matcher's shape is unchanged and
+  # the assertion is the only thing this fix takes away from its reach.
+  sha_binds_head() {
+    case "$HEAD" in *[!0-9a-f]*|"") return 1;; esac
+    [ "${#HEAD}" -eq 40 ] || return 1
+    case "$1" in *[!0-9a-f]*|"") return 1;; esac
+    [ "${#1}" -ge 7 ] || return 1
+    case "$HEAD" in "$1"*) return 0;; esac
+    case "$1" in "$HEAD"*) return 0;; esac
+    return 1
+  }
 
   # Signal 1 — a current-head APPROVED review by a control-plane member who is NOT the author
   # (the N>=2 and N==1-sole!=author discharge). Latest review per author, APPROVED, commit_id == HEAD.
   NON_AUTHOR_APPROVAL_AT_HEAD=false
+  MEMBERSHIP_UNKNOWN=false
   CURRENT_APPROVERS="$(gh api --paginate "repos/$REPO/pulls/$PR/reviews?per_page=100" \
     --jq "group_by(.user.login) | map(max_by(.submitted_at))
-          | map(select(.state == \"APPROVED\" and .commit_id == \"$HEAD\") | .user.login) | .[]")"
+          | map(select(.state == \"APPROVED\" and .commit_id == \"$HEAD\") | .user.login) | .[]")" \
+    || { cp_unknown "the PR's review list"; exit 1; }
   while IFS= read -r u; do
     [ -z "$u" ] && continue
+    # cp_pr_author proved $AUTHOR is a bare login, so this skip cannot silently stop skipping. The
+    # assertion is kept at the skip itself because THAT is where an unresolved author would let a
+    # self-approval count as a non-author approval — the one direction that is not safe (#4223).
+    : "${AUTHOR:?§CP approval: author unresolved at the approver walk — refusing to count approvals}"
     [ "$u" = "$AUTHOR" ] && continue                          # self-approval never counts here (ADR 0175)
-    st="$(gh api "orgs/$ORG/teams/control-plane/memberships/$u" --jq '.state' 2>/dev/null)"
-    [ "$st" = "active" ] && { NON_AUTHOR_APPROVAL_AT_HEAD=true; break; }
+    # THREE outcomes: active member, definite non-member (404), or UNKNOWN. An UNKNOWN probe must not
+    # silently under-count into a `stop` that reads as "awaiting approval" — record it and keep
+    # scanning, since a LATER approver proving `active` still discharges honestly.
+    if cp_team_membership "$ORG" "$u"; then
+      [ "$CP_MEMBERSHIP" = "active" ] && { NON_AUTHOR_APPROVAL_AT_HEAD=true; break; }
+    else
+      MEMBERSHIP_UNKNOWN=true
+    fi
   done <<<"$CURRENT_APPROVERS"
+  if [ "$NON_AUTHOR_APPROVAL_AT_HEAD" = false ] && [ "$MEMBERSHIP_UNKNOWN" = true ]; then
+    cp_unknown "at least one approver's control-plane membership"; exit 1
+  fi
 
   # Signal 2 — a deliberate current-head self-approval MARKER by the sole owner (the ONLY N==1
   # sole-owner discharge). GitHub records no native self-approval, so the signal is a marker comment:
@@ -562,13 +622,19 @@ echo "$FILES" | grep -Ev "$UI_EXCLUDE_RE" | grep -Eq "$UI_RE" && echo "has-ui"  
   # it can never leak a §CP PR into the auto-merge namespace (ADR 0111) — authored by the sole owner
   # and SHA-bound to the current head. The sole owner posts it to consciously self-approve their own
   # §CP PR; it is inert unless N==1 and they are the author (cp-cardinality ignores it otherwise).
+  # Capture, CHECK, then pipe the variable: `pipefail` is off in the agent shell, so piping `gh`
+  # straight into `grep` reports grep's status and discards the read's (§CPREAD #1).
   SELF_APPROVAL_AT_HEAD=false
-  SELF_SHA="$(gh api --paginate "repos/$REPO/issues/$PR/comments?per_page=100" \
+  SELF_MARKERS="$(gh api --paginate "repos/$REPO/issues/$PR/comments?per_page=100" \
     --jq "[.[] | select(.user.login == \"$AUTHOR\")
                | select(.body | test(\"(?i)^\\\\s*\\\\**\\\\s*control-plane-self-approval\\\\b\"))]
-          | last | .body // \"\"" \
+          | last | .body // \"\"")" \
+    || { cp_unknown "the PR's comment list"; exit 1; }
+  # `tail -n1`, not `head`: --paginate runs this aggregate --jq PER PAGE and emits one body each, in
+  # page order, so the LAST match is the latest marker — `head` would pin page 1's older one (#725).
+  SELF_SHA="$(printf '%s\n' "$SELF_MARKERS" \
     | grep -ioE 'control-plane-self-approval[[:space:]]*@?[[:space:]]*[0-9a-f]{7,40}' \
-    | grep -ioE '[0-9a-f]{7,40}' | head -n1)"
+    | grep -ioE '[0-9a-f]{7,40}' | tail -n1)"
   sha_binds_head "$SELF_SHA" && SELF_APPROVAL_AT_HEAD=true
 
   # The DETERMINISTIC decision — the whole ADR-0175 `case "$N"` branch lives in the tested pure core.
@@ -584,6 +650,8 @@ echo "$FILES" | grep -Ev "$UI_EXCLUDE_RE" | grep -Eq "$UI_RE" && echo "has-ui"  
        $([ "$SELF_APPROVAL_AT_HEAD" = true ] && printf -- '--self-approval-at-head'); then
     echo "§CP approval: discharged deterministically (ADR 0175) → carry on to machine gates"
   else
+    # Reachable ONLY with every input proven readable, so this message states a fact: the branch's
+    # required human signal is genuinely absent.
     echo "§CP approval: STOP (awaiting control-plane approval) — cardinality branch not satisfied (ADR 0175)"
   fi
   ```
@@ -1315,8 +1383,11 @@ GATING_RED=$(jq -r '[.failing[]
   | select(. != "deploy (web)" and (startswith("cleanup (web,") | not))] | join(", ")' <<<"$CI_JSON")
 ```
 
-Not every red check blocks a merge. **`main` carries no required-status-check branch
-protection**, so GitHub itself blocks on nothing; the SHA-bound merge gate is the
+Not every red check blocks a merge, and **this classification is ship-it's own** — it is
+deliberately *not* the base branch's required-context set, and must never be derived from it.
+(Whatever the platform requires is live, mutable state: read it off the base branch's ruleset
+`required_status_checks` at the moment you need it, the same way the queue-regime reads below
+do — never recall it from prose.) What ship-it binds is the SHA-bound merge gate: the
 run-evidence bundle (Step 3.5) plus the review verdicts (Step 2), neither of which depends
 on a preview deploy. So a check is **gating by default** and **informational only** when it
 is on the explicit known-informational list below. Fail safe: an *unrecognized* red check

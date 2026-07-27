@@ -133,8 +133,17 @@ Run at most your configured product-lane and platform/pipeline-lane counts concu
 each issue by its labels/paths and count it against its class. Beyond the cap, work **queues** — you
 do not fan out every ready issue at once. A lane frees only when its PR has **landed** (see
 QUEUED≠MERGED), not when it enqueues. You may borrow a slot across classes when one is idle, but
-rebalance back toward the configured split as slots free. The cap values are the operator's
-preference — they ride the personalization seam, never a number written here.
+rebalance back toward the configured split as slots free. The cap is a **ceiling, not a target**:
+there is no merit in defending full occupancy, and an engine already over its cap drains down by
+letting in-flight lanes finish rather than aborting one.
+
+**Where your numbers come from: your boot turn.** The cap values are the operator's preference, so
+they ride the personalization seam (`roles.engineering-manager.wipCap`) — never a number written
+here. The launcher decodes that seam and **delivers your two lane counts in the initial prompt of
+your very first turn**; those are the numbers this section defers to. Apply them as written and
+**never improvise a cap** — an improvised number is how one engine ran over the operator's intent
+with nothing holding the real value to compare against (#4330). If your boot turn carried no cap
+sentence, you were not launched through the crew launcher: say so instead of inventing a number.
 
 ### Claim the resource before you open a lane — deconflict against the tracker
 
@@ -215,6 +224,42 @@ it adds no engine→engine and no human-facing edge.
   approval), never from an in-memory list a restarted engine would lose. A fresh engine that boots
   into a live board picks the watch back up with no handoff, the same fungible-capacity property the
   lane loop has.
+- **Every tick leaves a durable record — the trace the transcript cannot be.** A tick's log lines go
+  to *your* transcript, which is session-local, so from outside a loop that never ticked and a loop
+  that ticked and found nothing were the same observation: silence. Worse, the asymmetry ran the wrong
+  way — a tick that *fires* is inferrable afterwards from the enqueue it causes, while the
+  non-firing ticks you need in order to diagnose a watcher that is **not** firing recorded nothing at
+  all (#4292, the prerequisite #4290 was stuck on). So each tick also writes one durable record:
+
+  ```bash
+  "$PCLI" approval-watcher record --watch "$TICK_NOTES"
+  ```
+
+  Four properties of that record are load-bearing, and none is optional:
+
+  - **It carries the derived watch set, not merely that a tick happened.** `$TICK_NOTES` is one
+    `;`-separated `<pr>=<disposition>` entry per PR in the set this tick re-derived from the board. A
+    record saying only "a tick ran" would leave the derivation-defect hypothesis exactly as untestable
+    as no record at all.
+  - **An empty derived set is recorded AS an empty set.** `--watch ""` is a tick that looked and found
+    no banked §CP PR — a different fact from no record, which is the only thing that means no tick ran.
+    The flag is required by the verb precisely so an omitted one cannot pose as an empty set.
+  - **A set that could NOT be derived is recorded as UNRESOLVED, never as an empty set.**
+    `--watch-unresolved "<the read that failed>"` is the set-level analog of a per-PR
+    `unknown:<input>`, and the guard below the tick frame is what reaches it. Without this state a
+    GitHub outage writes the same record as a genuinely empty board — and since a sustained EMPTY
+    span is the sharpest *derivation-defect* signal a reader has (#4290), the outage would forge the
+    investigation's strongest evidence.
+  - **The per-PR disposition keeps the three-way distinction the guards draw** — `fired`,
+    `definite-stop:<reason>`, `unknown:<input>` — instead of collapsing to fired/not-fired. It is a
+    *transcription* of the branch each PR reached, never a second copy of the discharge decision.
+
+  The record lands on a dedicated ledger issue (labelled `crew-ledger:approval-watcher`), **never as a
+  comment on a watched §CP PR** — that thread is where a human reads an approval decision, and the tick
+  cadence would flood it. Consecutive ticks with an identical outcome coalesce into one ledger comment
+  carrying a tick count and a first→last span, so an idle watcher costs one comment, not one per tick.
+  Read them back from any later session with `pipeline-cli approval-watcher ticks` (or plain `gh api`
+  on the ledger issue's comments).
 - **The poll predicate is the ship-it §CP approval gate, re-used, never re-derived.** Each tick, for
   each banked PR, evaluate the **same** deterministic current-head discharge the `shipper` will run —
   the ADR-0175 cardinality check via `pipeline-cli cp-cardinality`, keyed on `@kamp-us/control-plane`
@@ -253,8 +298,17 @@ it adds no engine→engine and no human-facing edge.
   ```bash
   # §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
   PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
+  # Each branch's disposition for THIS PR, accumulated into the tick's one durable record (#4292).
+  # `note` is the only writer of $TICK_NOTES, so no branch can reach its log line without also
+  # reaching the record — that is what makes the two rules one rule rather than two.
+  # The separator is `;`, NOT `$'\n'`: ANSI-C quoting is not performed inside a double-quoted
+  # ${var:+word} expansion in zsh (only in bash), and this harness runs zsh — so `$'\n'` lands as
+  # six literal characters, welding the whole set onto one structurally-valid-looking entry.
+  # `parseWatchSpec` splits on `[\n;]` and no disposition below contains a `;`, so `;` is a
+  # separator both shells actually produce. Verified byte-for-byte under bash and zsh (#4292).
+  note() { TICK_NOTES="${TICK_NOTES:+$TICK_NOTES;}$PR=$1"; }
   # The non-firing exit that is NOT a definite answer: it names the read that could not execute.
-  unknown() { echo "approval-watcher #$PR: $1 READ FAILED ($2) — UNKNOWN, re-arming; NOT 'no approval'"; }
+  unknown() { note "unknown:$1"; echo "approval-watcher #$PR: $1 READ FAILED ($2) — UNKNOWN, re-arming; NOT 'no approval'"; }
   # `gh api --paginate` emits one JSON value per page, so slurp and assert EVERY page is an array —
   # a per-page `jq -e` reports only the last page's type and waves an early error body through.
   all_pages_are_arrays() { jq -e -s 'length > 0 and all(.[]; type == "array")' >/dev/null 2>&1; }
@@ -291,7 +345,8 @@ it adds no engine→engine and no human-facing edge.
   "$PCLI" checks read --pr "$PR" --expect green >/dev/null 2>&1; rc=$?
   case "$rc" in
     0) : ;;                                                       # proven green — the only continuing branch
-    1) echo "approval-watcher #$PR: machine gates not green (read OK, definite)"; return 0 ;;
+    1) note "definite-stop:machine gates not green"
+       echo "approval-watcher #$PR: machine gates not green (read OK, definite)"; return 0 ;;
     *) unknown "machine gates" "checks exit $rc"; return 0 ;;     # 2, 127, crash — the read never ran
   esac
 
@@ -304,6 +359,36 @@ it adds no engine→engine and no human-facing edge.
   #   every other non-zero means the decision never ran (e.g. exit 4, the unread-stdin code) and is
   #   this tick's UNKNOWN — never read a stop off "non-zero" (the collision #4204 fixed in
   #   cp-classify).
+  #
+  #   Transcribe that verdict into the tick record with the SAME three-way vocabulary the guards
+  #   use — `note fired` on 0, `note "definite-stop:no approval at current head"` on 1, and
+  #   `note "unknown:cp-cardinality exit $rc"` on anything else. It is a transcription of the
+  #   branch taken, never a second copy of the decision (#4292).
+  ```
+
+  The block above is one PR's guards. The **tick** frames it: re-derive the watch set from the board,
+  run the guards + discharge per PR, then write the tick's one durable record — including when the
+  derived set is empty, which is the case that most needs recording, and when the derivation itself
+  could not be read, which must not land as that same empty.
+
+  ```bash
+  TICK_NOTES=""                        # every branch appends through `note`; empty ⇒ empty derived set
+  # 0. THE SET — the board re-derivation is a `gh api` read like every input inside `tick_one_pr`, so
+  #    it gets the same SHAPE-FIRST proof. Unguarded it has no failure branch at all: a 503 expands to
+  #    nothing, the loop never runs, and the tick records an empty set — a definite claim about the
+  #    board from a read that never executed, which is #3715's collapse one level up from the guards
+  #    that prevent it. `--watch-unresolved` is the set-level `unknown:`: it names the failed read
+  #    instead of asserting an empty board.
+  BANKED_JSON="$(banked_cp_prs_awaiting_approval_json)" \
+    && printf '%s' "$BANKED_JSON" | all_pages_are_arrays \
+    || { "$PCLI" approval-watcher record --watch "" --watch-unresolved "board: unreadable payload"
+         echo "approval-watcher: board read FAILED — UNKNOWN watch set, re-arming; NOT 'no banked §CP PR'"
+         return 0; }
+
+  for PR in $(printf '%s' "$BANKED_JSON" | jq -r '.[].number'); do
+    tick_one_pr "$PR"                  # the guards block above, then the cp-cardinality discharge
+  done
+  "$PCLI" approval-watcher record --watch "$TICK_NOTES"   # one write per tick, ALWAYS — never per PR
   ```
 
   The exit-code idiom is the shipped one, not a new invention: `STDIN_READ_FAILED_EXIT_CODE = 4`
@@ -313,11 +398,16 @@ it adds no engine→engine and no human-facing edge.
 
   **Log "read failed" distinctly from a definite non-firing answer, and name which read failed.**
   They are different facts with the same non-firing outcome, and collapsing them makes a GitHub
-  outage look like a human who simply hasn't approved yet — a silent stall nobody can see. So a tick
-  ends on exactly one line, and every branch above reaches one: the discharge; a **definite**
-  non-firing line that says which condition held — `machine gates not green (read OK, definite)` from
-  the guard, `no approval at current head (read OK, definite)` from the discharge's stop; or the
-  `unknown` line naming the input that could not be read. The durable authority is still
+  outage look like a human who simply hasn't approved yet — a silent stall nobody can see. So a
+  watched PR ends on exactly one line **and exactly one recorded disposition**, and every branch above
+  reaches both: the discharge; a **definite** non-firing line that says which condition held —
+  `machine gates not green (read OK, definite)` from the guard, `no approval at current head (read OK,
+  definite)` from the discharge's stop; or the `unknown` line naming the input that could not be read.
+  The two are one rule, not two, because `note` is folded **into** each line-emitting branch (the
+  `unknown()` helper notes and then echoes; the definite branch does both) — a branch cannot reach its
+  line without also reaching the record. The line is the running agent's; the record is what outlives
+  it, and the tick writes exactly one of those (`approval-watcher record`), carrying every PR's
+  disposition, whatever the set's size — zero included. The durable authority is still
   `cp-cardinality` and the shipper's own re-check at enqueue; this rule is defense in depth on the
   trigger, so a hiccup can never *start* a §CP enqueue — nor hide a stall behind a
   confident-sounding non-firing line.

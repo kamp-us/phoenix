@@ -434,6 +434,12 @@ availability gate the Step-1 picker reads (`skip on any non-null assignee`), and
 **session-id claim comment** is the fine, agent-distinguishable resolver. You self-assign
 *and* post the claim comment; the comment, not the assignee, decides who owns the work.
 
+**Both layers get written on both paths.** Layer one is owed by whoever wins the claim — the
+dispatcher on the delegated path, you on the direct path — and **you re-assert it, idempotently,
+once your claim is confirmed**, so the gate is set for the whole build whatever dispatched you
+(§7 [Who writes layer one](../gh-issue-intake-formats.md#who-writes-layer-one-the-claim-winner-on-both-paths),
+#4298). Both branches below end with the same one-line ensure.
+
 ### Delegated claim — the orchestrated path (recognize, don't re-race)
 
 If the orchestrator (`.claude/workflows/drive-issue.js`) claimed pre-spawn and **threaded a
@@ -444,11 +450,23 @@ delegation by resolving §7's tiebreak once — the **earliest authorized claim*
 session id must equal the threaded token — then proceed straight to implementing:
 
 ```bash
+# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
+PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
 # Orchestrated path: confirm the delegated claim is the earliest authorized claim, then proceed.
-# WINSID is resolved by the §7 CLAIM_RE + write+ ACL + min(created_at, comment id) resolver — do
-# NOT re-derive that grammar here; run §7's canonical resolution snippet against issue <N>.
-[ "$WINSID" = "$DELEGATED_TOKEN" ] || { echo "delegated token is not the earliest authorized claim — abort, do not implement." >&2; exit 1; }
-# delegation confirmed — skip the direct-path claim below and go implement
+# The §7 CLAIM_RE + write+ ACL + min(created_at, comment id) resolution is owned by the shared verb
+# — run it, never re-derive the grammar. Exit 0 = the threaded token owns #N; non-zero = it does
+# not (absent, foreign, or superseded) ⇒ abort, do not implement.
+"$PCLI" claim is-mine --issue <N> --session "$DELEGATED_TOKEN" \
+  || { echo "delegated token is not the earliest authorized claim — abort, do not implement." >&2; exit 1; }
+# Ensure §7 LAYER ONE for the whole build (#4298). The dispatcher owes this pre-spawn, but the
+# obligation lived in ONE orchestrator's prompt, so a lane dispatched by anything else reached here
+# with no assignee — and Step 8's release then freed the resolver on top of a gate that was never
+# written, leaving the issue `status:triaged` + unassigned with its PR in review. Idempotent and
+# additive: a gate already carrying us is a no-op, and the verb REFUSES on any lane whose claim is
+# not ours, so this asserts nothing about the dispatcher and evicts nothing (ADR 0215 §5).
+"$PCLI" claim assign --issue <N> --session "$DELEGATED_TOKEN" \
+  || { echo "could not set the availability gate on #<N> — routed blocker, do not implement." >&2; exit 1; }
+# delegation confirmed + layer one held — skip the direct-path claim below and go implement
 ```
 
 ### Direct path — claim it yourself (no orchestrator)
@@ -482,14 +500,14 @@ if ! "$PCLI" tracker claim <N>; then
   exit 0   # → re-run Step 1
 fi
 
-# 2. ONLY NOW self-assign — the coarse availability gate the Step-1 picker reads (§7 layer one).
-#    Defer-then-assign is load-bearing, not stylistic: every agent authenticates as the SAME login,
-#    so the assignee is ONE shared slot. Assigning first would make the back-off above a cleanup
-#    unassign that strips the LIVE incumbent's assignment — clearing the coarse gate on an issue
-#    someone else legitimately holds. Claiming first removes the cleanup entirely: we only ever
-#    assign on a won claim, so there is no assignment of ours to undo (#4015).
-ME=$(gh api user --jq '.login')
-gh api -X POST repos/$REPO/issues/<N>/assignees -f "assignees[]=$ME" >/dev/null
+# 2. ONLY NOW write layer one — the coarse availability gate the Step-1 picker reads (§7). One verb
+#    owns this write on every path (#4298); never hand-roll the assignees POST. Defer-then-assign is
+#    load-bearing, not stylistic: every agent authenticates as the SAME login, so the assignee is ONE
+#    shared slot. Assigning first would make the back-off above a cleanup unassign that strips the
+#    LIVE incumbent's assignment — clearing the coarse gate on an issue someone else legitimately
+#    holds. Claiming first removes the cleanup entirely: the verb only ever writes on a claim it
+#    proved is ours, and it has no removal path at all, so there is nothing to undo (#4015).
+"$PCLI" claim assign --issue <N> || { echo "could not set the availability gate on #<N> — routed blocker." >&2; exit 1; }
 # claim won and confirmed (earliest authorized claim is mine) — proceed to implement
 ```
 
@@ -1831,6 +1849,16 @@ again.
 **It frees the resolver, not the lane.** Release retracts the claim comment and **leaves the
 assignee set**, so Step 1's picker still skips the issue while your PR is in review — a
 re-dispatch can claim it, an idle picker cannot pick it up and re-implement it.
+
+That backstop is only real because **Step 3 wrote layer one on the path you came in on** — the
+claim winner sets it and you re-assert it idempotently, on the orchestrated path as much as the
+direct one (§7
+[Who writes layer one](../gh-issue-intake-formats.md#who-writes-layer-one-the-claim-winner-on-both-paths)).
+It used to be asserted unconditionally while the orchestrated branch skipped the block that set it,
+so on a delegated build this release freed the resolver over a gate that was never written and the
+issue went back to fully unowned — `status:triaged`, unassigned, implementation already in review
+(#4298). If you ever find yourself here without a gate, that is a **routed blocker**, not something
+to reason past: do not release on an assumed backstop.
 
 **Never route around a claim you cannot release.** Release retracts only markers carrying the
 token you present; it cannot and must not evict another session's claim, whatever that claim's

@@ -48,6 +48,7 @@ describe("splitTopLevelBranches", () => {
 			"packages/pipeline-cli/src/tools/tracker/gh-io\\.ts$",
 			"biome\\.jsonc$",
 			"biome-plugins/",
+			"([^/]+/)*(lefthook|\\.lefthook)[^/]+$",
 		]);
 	});
 });
@@ -127,6 +128,15 @@ describe("expandBranch", () => {
 		expect(expandBranch("biome\\.jsonc$")).toEqual([{path: "biome.jsonc", kind: "file"}]);
 		expect(expandBranch("biome-plugins/")).toEqual([{path: "biome-plugins/", kind: "dir"}]);
 	});
+
+	it("expands the lefthook branch to two any-depth globs (founder ruling on #3402)", () => {
+		// Both translations at once: `([^/]+/)*` → `**/` (any depth) and `[^/]+` → `*` (the leaf),
+		// so the shape resolves to two ownable CODEOWNERS globs rather than a named path list.
+		expect(expandBranch("([^/]+/)*(lefthook|\\.lefthook)[^/]+$")).toEqual([
+			{path: "**/lefthook*", kind: "glob"},
+			{path: "**/.lefthook*", kind: "glob"},
+		]);
+	});
 });
 
 describe("cpPaths over the live regex", () => {
@@ -164,6 +174,8 @@ describe("cpPaths over the live regex", () => {
 			"packages/pipeline-cli/src/tools/tracker/gh-io.ts",
 			"biome.jsonc",
 			"biome-plugins/",
+			"**/lefthook*",
+			"**/.lefthook*",
 		]);
 	});
 
@@ -260,6 +272,8 @@ describe("findUncovered — the drift check", () => {
 		"/packages/pipeline-cli/src/tools/tracker/gh-io.ts @usirin",
 		"/biome.jsonc @usirin",
 		"/biome-plugins/ @usirin",
+		"**/lefthook* @usirin",
+		"**/.lefthook* @usirin",
 	].join("\n");
 
 	// The ADR-0218 narrowed rows cover every §CP path exactly — in particular the `src/*` glob row
@@ -293,6 +307,8 @@ describe("findUncovered — the drift check", () => {
 			"/packages/pipeline-cli/ @usirin",
 			"/biome.jsonc @usirin",
 			"/biome-plugins/ @usirin",
+			"**/lefthook* @usirin",
+			"**/.lefthook* @usirin",
 		].join("\n");
 		expect(findUncovered(paths, parseCodeownersPatterns(codeowners))).toEqual([]);
 	});
@@ -335,6 +351,8 @@ describe("findUncovered — the drift check", () => {
 			"packages/pipeline-cli/src/tools/trivial-diff/",
 			"packages/pipeline-cli/src/tools/verdict/",
 			"packages/pipeline-cli/src/tools/tracker/gh-io.ts",
+			"**/lefthook*",
+			"**/.lefthook*",
 		]);
 	});
 

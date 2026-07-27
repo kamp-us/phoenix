@@ -33,6 +33,7 @@ import {
 	NAME_FLAG,
 	PLUGIN_DIR_FLAG,
 	type SessionBind,
+	wipCapClause,
 } from "./bind.ts";
 import type {ChannelConfig} from "./config.ts";
 
@@ -659,6 +660,73 @@ describe("standup/bind — per-session bind constructor", () => {
 				assert.notInclude(bind.argv, "--print");
 				assert.deepStrictEqual([...bind.argv].slice(-2), [...bind.nameArg]);
 			}),
+	);
+
+	it.effect("a configured WIP cap rides the engine's boot turn, still one positional (#4330)", () =>
+		Effect.gen(function* () {
+			const channels: ChannelConfig = {
+				mode: "development",
+				servers: ["server:pipeline-crew"],
+				allowedChannelPlugins: [],
+			};
+			const bind = yield* build({
+				role: ROLE,
+				projectRoot: PROJECT_ROOT,
+				serverName: SERVER_NAME,
+				instance: "e-1",
+				wipCap: {productLanes: 2, platformLanes: 2},
+				channels,
+			});
+
+			// One positional still — the cap is appended to the boot turn, not a second argument the CLI
+			// would read as a stray positional.
+			assert.strictEqual(bind.bootPromptArg.length, 1);
+			const bootTurn = bind.bootPromptArg[0] ?? "";
+			assert.include(bootTurn, BOOT_PROMPT);
+			// The operator's actual numbers arrive — this is the delivery the def defers to.
+			assert.include(bootTurn, wipCapClause({productLanes: 2, platformLanes: 2}));
+			assert.include(bootTurn, "2 concurrent product lanes");
+			assert.include(bootTurn, "2 concurrent platform/pipeline lanes");
+			assert.include(bootTurn, "4 in total");
+			assert.strictEqual(bind.argv[bind.argv.length - 1], bootTurn);
+		}),
+	);
+
+	it.effect("a zero-lane cap is delivered too — quiesce is a value, not an absence", () =>
+		Effect.gen(function* () {
+			const channels: ChannelConfig = {
+				mode: "development",
+				servers: ["server:pipeline-crew"],
+				allowedChannelPlugins: [],
+			};
+			const bind = yield* build({
+				role: ROLE,
+				projectRoot: PROJECT_ROOT,
+				serverName: SERVER_NAME,
+				wipCap: {productLanes: 0, platformLanes: 0},
+				channels,
+			});
+			// An engine told "zero lanes" must hear it; falling back to the bare boot turn would read as
+			// "no cap configured" and put it straight back to improvising (#4119 rides on this).
+			assert.include(bind.bootPromptArg[0] ?? "", "0 in total");
+		}),
+	);
+
+	it.effect("a role with no cap keeps the bare boot turn (no invented cap sentence)", () =>
+		Effect.gen(function* () {
+			const channels: ChannelConfig = {
+				mode: "development",
+				servers: ["server:pipeline-crew"],
+				allowedChannelPlugins: [],
+			};
+			const bind = yield* build({
+				role: "chief-of-staff",
+				projectRoot: PROJECT_ROOT,
+				serverName: SERVER_NAME,
+				channels,
+			});
+			assert.deepStrictEqual([...bind.bootPromptArg], [BOOT_PROMPT]);
+		}),
 	);
 
 	it.effect(

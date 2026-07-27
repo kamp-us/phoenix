@@ -6,14 +6,22 @@
  * (#3297), bind (#3296), tmux-placement (#3298).
  *
  * The one non-obvious thing: the orchestration is FAIL-LOUD with NO PARTIAL CREW. The steps run in
- * the mandated order — read config → assert the pinned CLI version → derive the roster session set →
+ * the mandated order — read config → assert the pinned CLI version → probe the CLI-side channel
+ * allowlist → derive the roster session set →
  * assert every seat's declared toolset resolves → ensure the tracker → build EVERY per-session bind +
  * compute ALL tmux placements → launch. Every
  * bind and every placement is resolved (and validated) BEFORE the first session launches, so any
  * precondition failure — a drifted CLI pin, a seat that would boot without a tool its def declares
  * (#3764), a missing config dimension, an inert channel, a colliding
  * pane label — aborts with a named error while zero sessions are up, never a half-launched
- * crew. No session is hand-launched: the launch of each `claude` session, bound to its role lease, is
+ * crew.
+ *
+ * "Inert channel" covers two distinct gates, and only one of them can abort. `bind.ts` refuses a
+ * launch whose crew ref is unregistered or whose foreign plugin is not launcher-allowlisted. The
+ * CLI's own org-managed-settings allowlist (channel-allowlist.ts, #4297) is a surface the launcher
+ * can only read, never satisfy — so it aborts when it READ a policy surface that blocks the channel,
+ * and otherwise returns an `unknown` that rides out on `StandUpResult` for the caller to report. A
+ * completed stand-up therefore does not imply a verified channel; it implies a REPORTED verdict. No session is hand-launched: the launch of each `claude` session, bound to its role lease, is
  * the injected `launch` step the orchestration drives for the whole derived set (all panes of one
  * tiled crew window, founder ruling #3424).
  *
@@ -39,6 +47,12 @@ import {
 	type CrewSessionBinUnresolvableError,
 	type SessionBind,
 } from "./bind.ts";
+import {
+	assertChannelAllowlist,
+	type ChannelAllowlistBlockedError,
+	type ChannelAllowlistOutcome,
+	type ChannelAllowlistProbe,
+} from "./channel-allowlist.ts";
 import {type LaunchConfig, type LaunchConfigError, readLaunchConfig} from "./config.ts";
 import {
 	ensureTrackerRunning,
@@ -180,6 +194,7 @@ export type StandUpError =
 	| CrewSessionBinUnresolvableError
 	| CrewServerNotRegisteredError
 	| ChannelPluginNotAllowedError
+	| ChannelAllowlistBlockedError
 	| ProjectScopeWriteError
 	| TmuxPaneCollisionError
 	| TmuxSessionEnsureError
@@ -262,6 +277,8 @@ export interface StandUpInput {
 	readonly config?: Effect.Effect<LaunchConfig, LaunchConfigError>;
 	/** The installed-CLI-version reader the pin is asserted against. Default: the real `claude --version`. */
 	readonly readVersionOutput?: Effect.Effect<string, unknown>;
+	/** Probes the CLI-side channel allowlist (#4297). Default: the real org-managed-settings read. */
+	readonly probeChannelAllowlist?: ChannelAllowlistProbe;
 	/** Reads a seat's declared toolset for the declared-vs-actual assert (#3764). Default: the real agent def under `projectRoot`. */
 	readonly readSeatToolset?: SeatToolsetReader;
 	/** Start-or-reuse the repo's tracker at its canonical rendezvous. Default: `ensureTrackerRunning` (detached standing process). */
@@ -292,6 +309,13 @@ export interface StandUpInput {
 export interface StandUpResult {
 	readonly tracker: TrackerHandle;
 	readonly launched: readonly LaunchedSession[];
+	/**
+	 * What the pre-launch probe concluded about the CLI-side channel allowlist (#4297). A completed
+	 * stand-up is NOT the same as a verified channel, so the verdict rides out on the result and the
+	 * caller must report it — an `unknown` here is the "we could not check" state that used to be
+	 * indistinguishable from success.
+	 */
+	readonly channelAllowlist: ChannelAllowlistOutcome;
 }
 
 /**
@@ -338,6 +362,10 @@ export const buildLaunchPlan = (
 			// The role's configured model tier → the session's `--model` (#3423); undefined for a role that
 			// set none, so bind emits no `--model` and it boots on the CLI default.
 			tier: ctx.config.roleTiers[session.role],
+			// The operator's configured lane cap reaches the ENGINE's boot turn (#4330); a bridge holds
+			// no lanes, so it gets none. This is the only path the decoded value travels — before it
+			// existed the cap was read off the config and delivered nowhere, and each engine improvised.
+			wipCap: session.kind === "engine" ? ctx.config.wipCap : undefined,
 			channels: ctx.config.channels,
 		});
 		// The pane's distinct launch cwd — where its leaf `.mcp.json` lands (#3444). Resolved here so an
@@ -579,6 +607,16 @@ export const runStandUp = (
 		// Fail fast on a version drift before starting the tracker or any session — channels vary
 		// across CLI versions, so a mismatch is a stand-up to refuse (version-assert.ts / #3295).
 		yield* assertPinnedCliVersion(config, input.readVersionOutput ?? readInstalledCliVersionOutput);
+		// The CLI-side channel allowlist (#4297) — the one channel gate no launcher-owned config can
+		// satisfy, and the one whose failure is a SKIP rather than an error. A proven-blocked allowlist
+		// aborts here, with zero sessions up, which is the "inert channel" abort commands/stand-up.md
+		// already promises; an unresolvable one returns `unknown` and rides out on the result for the
+		// caller to report, because refusing on a surface we could not read is exactly the fail-closed
+		// probe PROBES.md forbids.
+		const channelAllowlist = yield* assertChannelAllowlist(
+			config.channels,
+			input.probeChannelAllowlist,
+		);
 
 		// The roster set is derived here — ahead of the tracker — only so the next assert can name the
 		// exact seats this stand-up launches. `deriveSessionSet` is pure; nothing observable moved.
@@ -673,7 +711,7 @@ export const runStandUp = (
 			launched.push(session);
 			crewWindow ??= session.window;
 		}
-		return {tracker, launched};
+		return {tracker, launched, channelAllowlist};
 	});
 
 /** What a stand-down consumes: the project whose crew `.mcp.json` files + crew-run dirs + server approval to tear down. */

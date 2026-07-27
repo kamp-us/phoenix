@@ -10,19 +10,25 @@
  *    review-design needs (it reviews a preview URL, not a checked-out tree).
  *  - `materialize(pr, {worktree})` — the §HEAD read path: resolve, then fetch `pull/<pr>/head` into a
  *    per-run ref (never the launched tree), assert the fetched ref IS the resolved head SHA, and —
- *    with `--worktree` — add a throwaway DETACHED worktree on that ref (never a branch switch, §RO).
+ *    with `--worktree` — add a throwaway DETACHED worktree on that ref (never a branch switch, §RO),
+ *    locked with its owning session's pid so the tree joins the presence system (see `agent-lock.ts`).
  *
  * REST only (GraphQL is broken on the kamp-us org); every infra failure is a typed error. The caller
  * is responsible for the §RO-iso primary-checkout preflight BEFORE calling `materialize` — this verb
  * is the deterministic mechanism, not the isolation gate.
  */
 import {randomUUID} from "node:crypto";
-import {mkdtempSync} from "node:fs";
-import {tmpdir} from "node:os";
+import {mkdtempSync, readdirSync, readFileSync} from "node:fs";
+import {homedir, tmpdir} from "node:os";
 import {join} from "node:path";
 import {Context, Effect, Layer} from "effect";
 import * as Schema from "effect/Schema";
 import {ChildProcessSpawner} from "effect/unstable/process";
+import {
+	parseSessionRegistryEntry,
+	type SessionRegistryEntry,
+	sessionRegistryDir,
+} from "../../session-registry.ts";
 import {
 	type GhCommandError,
 	type GhParseError,
@@ -30,6 +36,7 @@ import {
 	type RepoResolutionError,
 	resolveRepo,
 } from "../tracker/gh-io.ts";
+import {formatAgentLockReason, sessionPid} from "./agent-lock.ts";
 import {type GitCommandError, runGit} from "./git-io.ts";
 import {
 	type MaterializePlan,
@@ -62,6 +69,12 @@ export interface MaterializeResult {
 	readonly prRef: string;
 	/** The throwaway detached worktree path, or `null` for a ref-only materialization. */
 	readonly worktreeDir: string | null;
+	/**
+	 * The pid-bearing lock reason the tree was created with, or `null` when it was left unlocked —
+	 * a ref-only materialization, or an unresolvable owning session (#4004). Reported so the caller
+	 * can SEE whether the tree carries the removal fence, rather than assume it.
+	 */
+	readonly lockReason: string | null;
 }
 
 // Only the fields review-head reads; head/head.repo are NullOr for a deleted head / deleted fork.
@@ -98,6 +111,44 @@ const pullArgs = (repo: string, pr: number): ReadonlyArray<string> => [
 	`repos/${repo}/pulls/${pr}`,
 ];
 
+/**
+ * The harness's live-session registry as this process can read it — one entry per RUNNING session.
+ * A best-effort read: an absent, unreadable, or unparseable registry yields an empty list, which
+ * resolves to no owning pid and so to an UNLOCKED tree (today's behavior), never to a guessed one.
+ */
+const readSessionRegistry = (): ReadonlyArray<SessionRegistryEntry> => {
+	const dir = sessionRegistryDir({
+		configDir: process.env.CLAUDE_CONFIG_DIR,
+		home: homedir(),
+		join,
+	});
+	const entries: Array<SessionRegistryEntry> = [];
+	// biome-ignore lint/plugin: best-effort registry read — an absent/unreadable registry is absorbed into an empty list the caller branches on (⇒ no lock), never the E channel; a total helper, not Effect-cosplay.
+	try {
+		for (const name of readdirSync(dir)) {
+			if (!name.endsWith(".json")) continue;
+			// biome-ignore lint/plugin: a single unreadable entry must not lose the rest of the registry — absorbed to a skip, never the E channel.
+			try {
+				const entry = parseSessionRegistryEntry(readFileSync(join(dir, name), "utf8"));
+				if (entry !== null) entries.push(entry);
+			} catch {}
+		}
+	} catch {}
+	return entries;
+};
+
+/**
+ * The lock reason for this materialization's tree, or `null` to leave it unlocked. The pid is the
+ * OWNING SESSION's, resolved from the harness registry by `$CLAUDE_CODE_SESSION_ID` — never this
+ * CLI process's pid, which dies seconds later and would present a live reviewer's tree as an
+ * orphan. Unresolvable ⇒ no lock: a lock nobody can attribute is worse than none (it would pin the
+ * tree past its reviewer without ever proving an owner).
+ */
+const lockReasonFor = (pr: number): string | null => {
+	const pid = sessionPid(readSessionRegistry(), process.env.CLAUDE_CODE_SESSION_ID);
+	return pid === null ? null : formatAgentLockReason({pr, pid, startedAt: new Date()});
+};
+
 /** REST-resolve the PR's current head, decode it, and run the pure `resolveHead` — the shared front half of both verbs. */
 const resolve = Effect.fn("ReviewHead.resolve")(function* (repo: string, pr: number) {
 	const raw = yield* decodePull(yield* json(pullArgs(repo, pr)));
@@ -112,8 +163,9 @@ const resolve = Effect.fn("ReviewHead.resolve")(function* (repo: string, pr: num
  * Materialize the head per the plan: fetch `pull/<pr>/head` into the per-run ref (the head reaches a
  * ref, never the launched working tree — §RO), assert the fetched ref IS the resolved head SHA (a
  * moved head between resolve and fetch aborts rather than reviewing a stale tree — §HEAD #2), then —
- * when `worktree` — `git worktree add --detach` a throwaway tree on that ref. Detached by construction
- * (the `resolve-head` plan's `detach: true`): never `git checkout <headRef>`, safe for cross-fork heads.
+ * when `worktree` — `git worktree add --detach` a throwaway tree on that ref, LOCKED with the owning
+ * session's pid (#4004). Detached by construction (the `resolve-head` plan's `detach: true`): never
+ * `git checkout <headRef>`, safe for cross-fork heads.
  */
 const materialize = Effect.fn("ReviewHead.materialize")(function* (
 	repo: string,
@@ -132,9 +184,15 @@ const materialize = Effect.fn("ReviewHead.materialize")(function* (
 	}
 
 	let worktreeDir: string | null = null;
+	let lockReason: string | null = null;
 	if (worktree) {
 		worktreeDir = mkdtempSync(join(tmpdir(), `review-head-${pr}-`));
-		yield* runGit(["worktree", "add", "--detach", worktreeDir, plan.prRef]);
+		// Born LOCKED, with the owning reviewer session's pid (#4004): the lock is both the git-level
+		// fence that makes a `worktree remove` refuse while the review is live, and the presence
+		// signal the reclaimers read an owner from once it is not.
+		lockReason = lockReasonFor(pr);
+		const lock = lockReason === null ? [] : ["--lock", "--reason", lockReason];
+		yield* runGit(["worktree", "add", "--detach", ...lock, worktreeDir, plan.prRef]);
 	}
 
 	return {
@@ -144,6 +202,7 @@ const materialize = Effect.fn("ReviewHead.materialize")(function* (
 		crossFork: plan.crossFork,
 		prRef: plan.prRef,
 		worktreeDir,
+		lockReason,
 	} satisfies MaterializeResult;
 });
 

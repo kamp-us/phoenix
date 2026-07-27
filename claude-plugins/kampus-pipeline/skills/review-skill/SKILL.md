@@ -736,7 +736,7 @@ bind), keeping your verdict out of `ship-it`'s PASS namespace.
 > into `ship-it`'s auto-merge namespace, the ADR 0111 hazard).
 
 ```markdown
-review-skill: advisory — blocking-set PR (manual merge)
+review-skill: advisory — blocking-set PR (§CP — approval-gated)
 
 PR #<PR> touches the control plane (a gate-critical skill or a `.claude`/`.github` path — §CP) —
 the agent control plane / pipeline gates (ADR 0053/0065/0073). My verdict is **advisory only**:
@@ -770,7 +770,7 @@ canonical `Reviewed-head: @ <HEAD_SHA>` line (ADR 0151), which `ship-it`'s §CP 
 
 ```bash
 VERDICT_FILE="$(mktemp /tmp/review-skill-verdict.XXXXXX)"
-# write your composed advisory verdict into "$VERDICT_FILE" (first line: review-skill: advisory — blocking-set PR (manual merge))
+# write your composed advisory verdict into "$VERDICT_FILE" (first line: review-skill: advisory — blocking-set PR (§CP — approval-gated))
 # The guarded tool also validates the §CP advisory's `Reviewed-head: @ <sha>` anchor line is a clean
 # full 40-hex head SHA — the exact field the #2680 mktemp path leaked into (#2683).
 $VERDICT post --pr "$PR" --gate skill --body-file "$VERDICT_FILE"

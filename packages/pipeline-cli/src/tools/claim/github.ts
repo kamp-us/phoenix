@@ -8,10 +8,11 @@
  * every infra failure a typed error in the `E` channel (`.patterns/effect-errors.md`)
  * — a non-zero `gh` exit is `GhCommandError`, malformed output is `GhParseError`, an
  * unresolvable repo is `RepoResolutionError` — and Schema-decoded untrusted REST JSON
- * at the boundary. `isMine` and `status` only read; `release` is the one mutation, and
- * it deletes **only** comment ids the pure `releasePlan` proved carry our own token.
- * No label, no claim write — posting a claim stays `pipeline-cli tracker claim`'s job,
- * so this tool never becomes a second claim writer.
+ * at the boundary. `isMine` and `status` only read; `release` deletes **only** comment ids the
+ * pure `releasePlan` proved carry our own token, and `assign` writes **only** the coarse
+ * availability gate (§7 layer one) on a lane whose claim resolved as ours. No claim write —
+ * posting a claim stays `pipeline-cli tracker claim`'s job, so this tool never becomes a second
+ * claim writer; layer one is a different layer, not a second claim.
  */
 import {Context, Effect, Layer, Stream} from "effect";
 import * as Schema from "effect/Schema";
@@ -20,6 +21,7 @@ import {livenessByComment} from "../epic-lock/claim-presence.ts";
 import type {ClaimComment} from "../epic-lock/claim-resolution.ts";
 import {localPresence} from "../epic-lock/presence-io.ts";
 import {deleteCommentArgs} from "../tracker/gh-io.ts";
+import {type AssignPlan, assignPlan} from "./claim-assign.ts";
 import {
 	type AuditPolicy,
 	type AuditReport,
@@ -46,6 +48,18 @@ export class GhParseError extends Schema.TaggedErrorClass<GhParseError>()(
 	"@kampus/claim/GhParseError",
 	{
 		args: Schema.Array(Schema.String),
+		message: Schema.String,
+	},
+) {}
+
+/**
+ * An `assign` wrote layer one and the read-back did not carry our login. The read-back folds INTO
+ * the write so a caller can never report the availability gate set when it is not — that false
+ * report is the whole failure this verb exists to end (#4298), so it fails loud instead.
+ */
+export class ClaimVerifyError extends Schema.TaggedErrorClass<ClaimVerifyError>()(
+	"@kampus/claim/ClaimVerifyError",
+	{
 		message: Schema.String,
 	},
 ) {}
@@ -146,6 +160,25 @@ const listCommentsArgs = (repo: string, issue: number): ReadonlyArray<string> =>
 	`repos/${repo}/issues/${issue}/comments?per_page=100`,
 ];
 
+const issueArgs = (repo: string, issue: number): ReadonlyArray<string> => [
+	"api",
+	`repos/${repo}/issues/${issue}`,
+];
+
+// Layer one is written with the additive assignees endpoint — it co-assigns and never displaces,
+// which is precisely why it is a coarse availability gate and not a claim (§7). There is no
+// DELETE counterpart anywhere in this tool.
+const addAssigneeArgs = (repo: string, issue: number, login: string): ReadonlyArray<string> => [
+	"api",
+	"-X",
+	"POST",
+	`repos/${repo}/issues/${issue}/assignees`,
+	"-f",
+	`assignees[]=${login}`,
+];
+
+const whoAmIArgs: ReadonlyArray<string> = ["api", "user", "--jq", ".login"];
+
 const permissionArgs = (repo: string, login: string): ReadonlyArray<string> => [
 	"api",
 	`repos/${repo}/collaborators/${login}/permission`,
@@ -226,6 +259,62 @@ const isMine = Effect.fn("Github.isMine")(function* (
 	// mine. Every indeterminate claimant (unstamped, another host, unprobeable pid) still counts.
 	const liveness = livenessByComment(comments, localPresence());
 	return claimIsMine({comments, authorizedAuthors: authorized, sessionId, liveness});
+});
+
+/** An issue as the issues endpoint returns it; only the availability gate is read. */
+const RawAssignedIssue = Schema.Struct({
+	assignees: Schema.optionalKey(Schema.NullOr(Schema.Array(Schema.Struct({login: Schema.String})))),
+});
+const decodeAssignedIssue = Schema.decodeUnknownEffect(RawAssignedIssue);
+
+const assigneeLogins = Effect.fn("Github.assigneeLogins")(function* (args: ReadonlyArray<string>) {
+	const issue = yield* decodeAssignedIssue(yield* json(args));
+	return (issue.assignees ?? []).map((a) => a.login);
+});
+
+/** What an assign resolved to, and the availability gate as it stands after the verb ran. */
+export interface AssignResult {
+	readonly plan: AssignPlan;
+	readonly assignees: ReadonlyArray<string>;
+}
+
+/**
+ * Write §7 layer one — the coarse availability gate — on a lane whose claim is ours (#4298).
+ *
+ * Ownership is resolved through the same default-deny `isMine` the mis-attribution guard uses, and
+ * a refusal short-circuits **before any read of the gate**: an un-owned lane is never even measured,
+ * let alone written. On a proven-own lane the write is additive and idempotent (the pure
+ * `assignPlan` decides), and the POST's response is decoded as the read-back — a landed gate that
+ * does not carry our login raises `ClaimVerifyError` rather than reporting a gate that isn't there.
+ */
+const assign = Effect.fn("Github.assign")(function* (
+	repo: string,
+	issue: number,
+	sessionId: string | null,
+) {
+	const verdict = yield* isMine(repo, issue, sessionId);
+	if (!verdict.mine) {
+		return {
+			plan: assignPlan({verdict, login: "", assignees: []}),
+			assignees: [],
+		} satisfies AssignResult;
+	}
+	const login = yield* runGh(whoAmIArgs).pipe(
+		Effect.map((out) => out.trim()),
+		Effect.catchTag("@kampus/claim/GhCommandError", () => Effect.succeed("")),
+	);
+	const before = yield* assigneeLogins(issueArgs(repo, issue));
+	const plan = assignPlan({verdict, login, assignees: before});
+	if (plan._tag !== "assign") {
+		return {plan, assignees: before} satisfies AssignResult;
+	}
+	const landed = yield* assigneeLogins(addAssigneeArgs(repo, issue, plan.login));
+	if (!landed.some((a) => a.toLowerCase() === plan.login.toLowerCase())) {
+		return yield* new ClaimVerifyError({
+			message: `assigned #${issue} to ${plan.login} but the gate read back as [${landed.join(", ") || "empty"}] — refusing to report layer one set when it is not (#4298)`,
+		});
+	}
+	return {plan, assignees: landed} satisfies AssignResult;
 });
 
 /** A clean 404 — the only `gh` failure that means "the comment is already gone". */
@@ -382,6 +471,13 @@ export class Github extends Context.Service<
 			ReleasePlan,
 			RepoResolutionError | GhCommandError | GhParseError | Schema.SchemaError
 		>;
+		readonly assign: (
+			issue: number,
+			sessionId: string | null,
+		) => Effect.Effect<
+			AssignResult,
+			RepoResolutionError | GhCommandError | GhParseError | Schema.SchemaError | ClaimVerifyError
+		>;
 		readonly status: (
 			issue: number,
 		) => Effect.Effect<
@@ -419,6 +515,8 @@ export const GithubLive: Layer.Layer<Github, never, ChildProcessSpawner.ChildPro
 					repo.pipe(Effect.flatMap((r) => withSpawner(isMine(r, issue, sessionId)))),
 				release: (issue: number, sessionId: string) =>
 					repo.pipe(Effect.flatMap((r) => withSpawner(release(r, issue, sessionId)))),
+				assign: (issue: number, sessionId: string | null) =>
+					repo.pipe(Effect.flatMap((r) => withSpawner(assign(r, issue, sessionId)))),
 				status: (issue: number) => repo.pipe(Effect.flatMap((r) => withSpawner(status(r, issue)))),
 				audit: (options) => repo.pipe(Effect.flatMap((r) => withSpawner(audit(r, options)))),
 			};

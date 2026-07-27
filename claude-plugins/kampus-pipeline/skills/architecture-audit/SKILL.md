@@ -96,8 +96,10 @@ committed index (ADR 0126); the `NNNN-slug` filenames are the map, and each file
 carries `id`/`title`/`status`:
 
 ```bash
-ls .decisions/                                      # the map — one NNNN-slug.md per ADR
-node packages/pipeline-cli/src/bin.ts decisions-index compact   # or: the compact id · title · status map
+# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
+PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
+ls .decisions/                          # the map — one NNNN-slug.md per ADR
+"$PCLI" decisions-index compact         # or: the compact id · title · status map
 ```
 
 Treat a recorded decision as decided ground: don't surface a finding that contradicts a

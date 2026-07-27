@@ -2,7 +2,8 @@
  * standup/config — the launch-dimension reader (issue #3293), reconciled to the one-role-map seam
  * shape (ADR 0189 / #3236). Covers path resolution, the JSONC strip (comments + trailing commas,
  * string-literal aware), the happy decode against a FULL one-role-map crew config (excess seam keys
- * — bridge role entries, per-role tier/wipCap, operator/notification, and no tmux key — ignored),
+ * — bridge role entries, operator/notification, and no tmux key — ignored; the engine's
+ * `tier` and `wipCap` are DECODED dimensions, not excess),
  * and — the load-bearing part — fail-closed decoding: each required launch dimension absent or
  * malformed yields a `LaunchConfigError` whose reason names that dimension. The engine count now
  * lives at `roles["engineering-manager"].count`, so its fail-closed cases exercise that path.
@@ -32,7 +33,7 @@ import {
 const validLaunch = {
 	cliVersion: "2.1.207",
 	roles: {
-		"engineering-manager": {count: 2},
+		"engineering-manager": {count: 2, wipCap: {productLanes: 2, platformLanes: 2}},
 	},
 	channels: {
 		mode: "allowlist",
@@ -43,9 +44,10 @@ const validLaunch = {
 
 /**
  * The launch dimensions never arrive alone — they sit inside the full one-role-map personalization
- * config (ADR 0189): every bridge role entry, each role's `tier`/`wipCap`, the operator +
- * notification + controlPlaneApprover blocks, and — post-#3236 — NO tmux key. All of it is excess
- * to the launch reader, which extracts only cliVersion + the engine count + channels.
+ * config (ADR 0189): every bridge role entry, each role's `tier`, the engine's `wipCap`, the
+ * operator + notification + controlPlaneApprover blocks, and — post-#3236 — NO tmux key. The
+ * launch reader extracts cliVersion + the engine count + its lane cap + the role tiers + channels;
+ * the operator/notification blocks are the excess it ignores.
  */
 const fullCrewConfig = {
 	operator: {name: "op", handle: "op"},
@@ -66,7 +68,13 @@ const decodeErr = (input: unknown) =>
 /** A `validLaunch` variant carrying an arbitrary `roles["engineering-manager"].count` value. */
 const withCount = (count: unknown) => ({
 	...validLaunch,
-	roles: {"engineering-manager": {count}},
+	roles: {"engineering-manager": {count, wipCap: {productLanes: 2, platformLanes: 2}}},
+});
+
+/** A `validLaunch` variant carrying an arbitrary `roles["engineering-manager"].wipCap` value. */
+const withWipCap = (wipCap: unknown) => ({
+	...validLaunch,
+	roles: {"engineering-manager": {count: 2, wipCap}},
 });
 
 describe("standup/config — resolveConfigPath", () => {
@@ -128,6 +136,23 @@ describe("standup/config — decodeLaunchConfig (happy path, one-role-map shape)
 					"engineering-manager": "opus",
 				});
 			}),
+	);
+	it.effect("folds the engine's wipCap into a flat launch dimension (#4330)", () =>
+		Effect.gen(function* () {
+			// The cap the operator wrote is now a READ value on the decoded config — the seam key that
+			// used to be dropped on the floor, leaving each engine to improvise its own number.
+			const cfg = yield* decodeLaunchConfig(fullCrewConfig, DEFAULT_CONFIG_PATH);
+			assert.deepStrictEqual(cfg.wipCap, {productLanes: 1, platformLanes: 1});
+		}),
+	);
+	it.effect("a zero lane count decodes — it is the quiesce state, not a malformed cap", () =>
+		Effect.gen(function* () {
+			const cfg = yield* decodeLaunchConfig(
+				withWipCap({productLanes: 0, platformLanes: 3}),
+				DEFAULT_CONFIG_PATH,
+			);
+			assert.deepStrictEqual(cfg.wipCap, {productLanes: 0, platformLanes: 3});
+		}),
 	);
 	it.effect("a role that omits its tier is simply absent from roleTiers (no guessed default)", () =>
 		Effect.gen(function* () {
@@ -247,7 +272,10 @@ describe("standup/config — engine count reads off roles['engineering-manager']
 	);
 	it.effect("count missing → fails closed naming count", () =>
 		Effect.gen(function* () {
-			const err = yield* decodeErr({...validLaunch, roles: {"engineering-manager": {}}});
+			const err = yield* decodeErr({
+				...validLaunch,
+				roles: {"engineering-manager": {wipCap: {productLanes: 2, platformLanes: 2}}},
+			});
 			assert.include(err.reason, "count");
 		}),
 	);
@@ -277,6 +305,49 @@ describe("standup/config — engine count reads off roles['engineering-manager']
 	);
 });
 
+describe("standup/config — engine wipCap fails closed (#4330)", () => {
+	// The whole point of promoting wipCap from ignored excess: a cap that never arrives is what the
+	// engine cannot distinguish from a cap of its own invention, so every way of not arriving has to
+	// be an error naming the dimension — never a decode that quietly proceeds capless.
+	it.effect("wipCap missing → fails closed naming wipCap", () =>
+		Effect.gen(function* () {
+			const err = yield* decodeErr({...validLaunch, roles: {"engineering-manager": {count: 2}}});
+			assert.instanceOf(err, LaunchConfigError);
+			assert.include(err.reason, "wipCap");
+		}),
+	);
+	it.effect("an unreplaced template placeholder fails closed naming the lane", () =>
+		Effect.gen(function* () {
+			// The exact shape the shipped template carries until the operator fills it in.
+			const err = yield* decodeErr(
+				withWipCap({
+					productLanes: "<wip-cap-product-lanes>",
+					platformLanes: "<wip-cap-platform-lanes>",
+				}),
+			);
+			assert.include(err.reason, "productLanes");
+		}),
+	);
+	it.effect("a missing lane half → fails closed naming that lane", () =>
+		Effect.gen(function* () {
+			const err = yield* decodeErr(withWipCap({productLanes: 2}));
+			assert.include(err.reason, "platformLanes");
+		}),
+	);
+	it.effect("a negative lane count → fails closed naming that lane", () =>
+		Effect.gen(function* () {
+			const err = yield* decodeErr(withWipCap({productLanes: -1, platformLanes: 2}));
+			assert.include(err.reason, "productLanes");
+		}),
+	);
+	it.effect("a non-integer lane count → fails closed naming that lane", () =>
+		Effect.gen(function* () {
+			const err = yield* decodeErr(withWipCap({productLanes: 2, platformLanes: 1.5}));
+			assert.include(err.reason, "platformLanes");
+		}),
+	);
+});
+
 describe("standup/config — role tier fails closed (#3423)", () => {
 	it.effect(
 		"an unknown tier is a LaunchConfigError naming the tier path, not a silent default",
@@ -284,7 +355,13 @@ describe("standup/config — role tier fails closed (#3423)", () => {
 			Effect.gen(function* () {
 				const err = yield* decodeErr({
 					...validLaunch,
-					roles: {"engineering-manager": {count: 2, tier: "turbo"}},
+					roles: {
+						"engineering-manager": {
+							count: 2,
+							tier: "turbo",
+							wipCap: {productLanes: 2, platformLanes: 2},
+						},
+					},
 				});
 				assert.instanceOf(err, LaunchConfigError);
 				assert.include(err.reason, "tier");
@@ -296,7 +373,7 @@ describe("standup/config — role tier fails closed (#3423)", () => {
 				...validLaunch,
 				roles: {
 					"chief-of-staff": {tier: "gpt"},
-					"engineering-manager": {count: 1},
+					"engineering-manager": {count: 1, wipCap: {productLanes: 1, platformLanes: 1}},
 				},
 			});
 			assert.include(err.reason, "tier");

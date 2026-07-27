@@ -1013,7 +1013,7 @@ unchanged (it is still doc-class), only the merge-authority moves (ADR 0164 / #3
 > into `ship-it`'s auto-merge namespace, the ADR 0111 hazard).
 
 ```markdown
-review-doc: advisory — blocking-set PR (manual merge)
+review-doc: advisory — blocking-set PR (§CP — approval-gated)
 
 PR #<PR> is §CP — it touches the control plane (`.claude/`/`.github/` or a gate-critical skill), OR
 it touches a **guard-touching `.decisions/**` ADR** (§CP by content, ADR 0164 — the shared
@@ -1051,7 +1051,7 @@ else `POST`):
 # opens with `review-doc:` too, so `verdict post`'s namespace guard accepts it and upserts it the
 # same way — one comment per gate, PATCH own prior marker else POST.
 VERDICT_FILE="$(mktemp /tmp/review-doc-verdict.XXXXXX)"
-# write your composed advisory verdict into "$VERDICT_FILE" (first line: review-doc: advisory — blocking-set PR (manual merge))
+# write your composed advisory verdict into "$VERDICT_FILE" (first line: review-doc: advisory — blocking-set PR (§CP — approval-gated))
 $VERDICT post --pr "$PR" --gate doc --body-file "$VERDICT_FILE"
 ```
 

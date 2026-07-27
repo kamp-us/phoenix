@@ -78,8 +78,8 @@ live crew:
 - **`controlPlaneApprover`** — who approves/merges control-plane (§CP) PRs; the engine banks §CP
   work on the board and the chief-of-staff relays it to this identity.
 - **`roles`** — one model tier per bridge, plus the engine pool's `tier`, `count` (how many
-  engines boot), and `wipCap` (the per-engine concurrent-lane caps). A three-engine crew that
-  drains steadily is a fine first `count`.
+  engines boot), and `wipCap` (the per-engine concurrent-lane caps, delivered into each engine's
+  boot turn). A three-engine crew that drains steadily is a fine first `count`.
 - **`notification`** — the transport `command` the chief-of-staff invokes to ping the operator
   and the §CP approver. Any local script path lives **only** here, never in the repo.
 - **`channels`** — how each launched session registers the crew channel MCP (the `mode` and the

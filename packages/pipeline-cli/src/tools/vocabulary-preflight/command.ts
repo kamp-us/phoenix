@@ -8,6 +8,7 @@
  *
  *   pipeline-cli vocabulary-preflight check              # the resolved target repo (ADR 0062 §1)
  *   pipeline-cli vocabulary-preflight check --root <d>   # point at a specific repo root
+ *   pipeline-cli vocabulary-preflight labels             # print the required set, one per line
  *
  * The pure decision lives in `vocabulary.ts` (unit-tested); the `gh api` label read and the
  * `ROADMAP.md` read in `github.ts`/`gate.ts`. `RepoLabelsLive` is baked in with
@@ -16,11 +17,12 @@
  *
  * Exit-code contract: 0 = every prerequisite met, any non-zero = failure.
  */
-import {Effect, FileSystem, Option, Path} from "effect";
+import {Console, Effect, FileSystem, Option, Path} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
 import {onCheckFailed} from "../../gate-fail.ts";
 import {checkVocabulary} from "./gate.ts";
 import {RepoLabelsLive} from "./github.ts";
+import {REQUIRED_LABELS, renderLabelList} from "./vocabulary.ts";
 
 // Repo-root markers, in priority order: a pnpm workspace, then a VCS dir.
 const ROOT_MARKERS = ["pnpm-workspace.yaml", ".git"] as const;
@@ -68,8 +70,22 @@ const check = Command.make(
 	),
 );
 
+// Reads no repo state, so it is the one subcommand that answers in a repo the labels are missing
+// from — which is the only situation its caller runs in.
+const labels = Command.make(
+	"labels",
+	{},
+	Effect.fn(function* () {
+		yield* Console.log(renderLabelList(REQUIRED_LABELS));
+	}),
+).pipe(
+	Command.withDescription(
+		"Print the required label vocabulary, one per line (the seam `doctor.sh` reads — #4300)",
+	),
+);
+
 export const vocabularyPreflightCommand = Command.make("vocabulary-preflight").pipe(
-	Command.withSubcommands([check]),
+	Command.withSubcommands([check, labels]),
 	Command.withDescription(
 		"Fail-closed preflight: the required label vocabulary + ROADMAP.md exist in the target repo (#4272)",
 	),
