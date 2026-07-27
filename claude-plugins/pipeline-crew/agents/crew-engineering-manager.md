@@ -226,7 +226,7 @@ it adds no engine→engine and no human-facing edge.
   "$PCLI" approval-watcher record --watch "$TICK_NOTES"
   ```
 
-  Three properties of that record are load-bearing, and none is optional:
+  Four properties of that record are load-bearing, and none is optional:
 
   - **It carries the derived watch set, not merely that a tick happened.** `$TICK_NOTES` is one
     `<pr>=<disposition>` line per PR in the set this tick re-derived from the board. A record saying
@@ -235,6 +235,12 @@ it adds no engine→engine and no human-facing edge.
   - **An empty derived set is recorded AS an empty set.** `--watch ""` is a tick that looked and found
     no banked §CP PR — a different fact from no record, which is the only thing that means no tick ran.
     The flag is required by the verb precisely so an omitted one cannot pose as an empty set.
+  - **A set that could NOT be derived is recorded as UNRESOLVED, never as an empty set.**
+    `--watch-unresolved "<the read that failed>"` is the set-level analog of a per-PR
+    `unknown:<input>`, and the guard below the tick frame is what reaches it. Without this state a
+    GitHub outage writes the same record as a genuinely empty board — and since a sustained EMPTY
+    span is the sharpest *derivation-defect* signal a reader has (#4290), the outage would forge the
+    investigation's strongest evidence.
   - **The per-PR disposition keeps the three-way distinction the guards draw** — `fired`,
     `definite-stop:<reason>`, `unknown:<input>` — instead of collapsing to fired/not-fired. It is a
     *transcription* of the branch each PR reached, never a second copy of the discharge decision.
@@ -348,11 +354,24 @@ it adds no engine→engine and no human-facing edge.
 
   The block above is one PR's guards. The **tick** frames it: re-derive the watch set from the board,
   run the guards + discharge per PR, then write the tick's one durable record — including when the
-  derived set is empty, which is the case that most needs recording.
+  derived set is empty, which is the case that most needs recording, and when the derivation itself
+  could not be read, which must not land as that same empty.
 
   ```bash
   TICK_NOTES=""                        # every branch appends through `note`; empty ⇒ empty derived set
-  for PR in $(banked_cp_prs_awaiting_approval); do
+  # 0. THE SET — the board re-derivation is a `gh api` read like every input inside `tick_one_pr`, so
+  #    it gets the same SHAPE-FIRST proof. Unguarded it has no failure branch at all: a 503 expands to
+  #    nothing, the loop never runs, and the tick records an empty set — a definite claim about the
+  #    board from a read that never executed, which is #3715's collapse one level up from the guards
+  #    that prevent it. `--watch-unresolved` is the set-level `unknown:`: it names the failed read
+  #    instead of asserting an empty board.
+  BANKED_JSON="$(banked_cp_prs_awaiting_approval_json)" \
+    && printf '%s' "$BANKED_JSON" | all_pages_are_arrays \
+    || { "$PCLI" approval-watcher record --watch "" --watch-unresolved "board: unreadable payload"
+         echo "approval-watcher: board read FAILED — UNKNOWN watch set, re-arming; NOT 'no banked §CP PR'"
+         return 0; }
+
+  for PR in $(printf '%s' "$BANKED_JSON" | jq -r '.[].number'); do
     tick_one_pr "$PR"                  # the guards block above, then the cp-cardinality discharge
   done
   "$PCLI" approval-watcher record --watch "$TICK_NOTES"   # one write per tick, ALWAYS — never per PR

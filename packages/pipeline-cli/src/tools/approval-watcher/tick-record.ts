@@ -17,6 +17,8 @@
  *  - **fired / definite-stop / unknown never collapse.** The watcher's own spec draws that
  *    three-way distinction (a read that could not execute is UNKNOWN, never "no approval") and the
  *    record preserves it per PR — see `parseDisposition` for how that survives a token it cannot read.
+ *
+ * The same distinction holds one level up, over the *cardinality* of the set: see `Derivation`.
  */
 
 /** One PR's outcome in a tick — the three-way distinction the watcher spec draws, preserved. */
@@ -24,6 +26,18 @@ export type Disposition =
 	| {readonly _tag: "fired"}
 	| {readonly _tag: "definite-stop"; readonly reason: string}
 	| {readonly _tag: "unknown"; readonly input: string};
+
+/**
+ * How the tick's watch set came to be — the SET-LEVEL analog of `Disposition`'s `unknown`, and the
+ * reason a record can say "I could not derive the set" rather than asserting a board it never read.
+ *
+ * The board re-derivation is a `gh api` read like every input inside the guards, and an unproven one
+ * expands to nothing: without this state an outage and a genuinely empty board write the identical
+ * record, so the strongest derivation-defect signal a reader has would be forgeable by a 503.
+ */
+export type Derivation =
+	| {readonly _tag: "derived"}
+	| {readonly _tag: "unresolved"; readonly input: string};
 
 /** One member of the tick's derived watch set, with the disposition that tick reached for it. */
 export interface WatchEntry {
@@ -44,6 +58,8 @@ export interface TickRecord {
 	readonly watch: ReadonlyArray<WatchEntry>;
 	/** Watch-set entries that did not parse, kept verbatim — never silently dropped. */
 	readonly malformed: ReadonlyArray<string>;
+	/** Whether the set above IS the board, or the board read never executed. */
+	readonly derivation: Derivation;
 }
 
 export const formatDisposition = (d: Disposition): string => {
@@ -76,6 +92,24 @@ export const parseDisposition = (raw: string): Disposition => {
 		return {_tag: "unknown", input: input === "" ? "unnamed input" : input};
 	}
 	return {_tag: "unknown", input: `unrecognized disposition ${JSON.stringify(token)}`};
+};
+
+export const formatDerivation = (d: Derivation): string =>
+	d._tag === "derived" ? "derived" : `unresolved:${d.input}`;
+
+/**
+ * Total, and biased toward `unresolved` for the same reason `parseDisposition` is biased toward
+ * `unknown`: a token this cannot read never established that the board WAS read, and only a proven
+ * read may claim the set is the board's.
+ */
+export const parseDerivation = (raw: string): Derivation => {
+	const token = raw.trim();
+	if (token === "derived") return {_tag: "derived"};
+	if (token.startsWith("unresolved:")) {
+		const input = token.slice("unresolved:".length).trim();
+		return {_tag: "unresolved", input: input === "" ? "unnamed input" : input};
+	}
+	return {_tag: "unresolved", input: `unrecognized derivation ${JSON.stringify(token)}`};
 };
 
 /** What a watch-set spec parsed to: the entries it named, and the lines it could not read. */
@@ -114,7 +148,9 @@ export const parseWatchSpec = (spec: string): WatchSpec => {
 };
 
 /**
- * The coalescing key: the derived set and its dispositions, and nothing time- or session-varying.
+ * The coalescing key: the derivation state, the derived set and its dispositions — and nothing
+ * time- or session-varying. Keying on the derivation too is what stops a run of failed board reads
+ * from folding into a healthy record's "empty board" span.
  * Two consecutive ticks with the same digest say the same thing, so they fold into one record
  * with a bumped count instead of two comments — the noise budget that lets a per-tick record ride
  * a self-drain loop at all.
@@ -122,8 +158,10 @@ export const parseWatchSpec = (spec: string): WatchSpec => {
 export const digestOf = (
 	watch: ReadonlyArray<WatchEntry>,
 	malformed: ReadonlyArray<string>,
+	derivation: Derivation,
 ): string =>
 	[
+		`@${formatDerivation(derivation)}`,
 		...[...watch]
 			.sort((a, b) => a.pr - b.pr)
 			.map((e) => `${e.pr}=${formatDisposition(e.disposition)}`),
@@ -139,10 +177,14 @@ const headline = (record: TickRecord): string => {
 		record.ticks === 1
 			? `1 tick · ${record.firstAt}`
 			: `${record.ticks} ticks · ${record.firstAt} → ${record.lastAt}`;
+	const seen =
+		record.watch.length === 0 ? "" : ` (${record.watch.length} PR(s) reached before it failed)`;
 	const set =
-		record.watch.length === 0
-			? "derived watch set EMPTY (no banked §CP PR awaiting approval) — a tick ran and found nothing"
-			: `${record.watch.length} PR(s) in the derived watch set`;
+		record.derivation._tag === "unresolved"
+			? `derived watch set UNRESOLVED: ${record.derivation.input}${seen} — the board read did not execute, so this is NOT an empty board`
+			: record.watch.length === 0
+				? "derived watch set EMPTY (no banked §CP PR awaiting approval) — a tick ran and found nothing"
+				: `${record.watch.length} PR(s) in the derived watch set`;
 	return `${MARKER}: ${span} · ${set}`;
 };
 
@@ -150,7 +192,11 @@ const headline = (record: TickRecord): string => {
 export const renderTick = (record: TickRecord): string => {
 	const rows =
 		record.watch.length === 0
-			? ["_(empty set — recorded as an empty set, which is not the same as no tick)_"]
+			? [
+					record.derivation._tag === "unresolved"
+						? "_(the watch set could not be derived — recorded as UNRESOLVED, which is neither an empty set nor a missing record)_"
+						: "_(empty set — recorded as an empty set, which is not the same as no tick)_",
+				]
 			: [
 					"| PR | disposition |",
 					"| --- | --- |",
@@ -167,12 +213,18 @@ export const renderTick = (record: TickRecord): string => {
 		...malformed,
 		"",
 		"```json",
-		JSON.stringify({...record, digest: digestOf(record.watch, record.malformed)}),
+		JSON.stringify({
+			...record,
+			derivation: formatDerivation(record.derivation),
+			digest: digestOf(record.watch, record.malformed, record.derivation),
+		}),
 		"```",
 	].join("\n");
 };
 
-const isRecordShape = (value: unknown): value is TickRecord => {
+type RawRecord = Omit<TickRecord, "derivation"> & {readonly derivation?: unknown};
+
+const isRecordShape = (value: unknown): value is RawRecord => {
 	if (typeof value !== "object" || value === null) return false;
 	const v = value as Record<string, unknown>;
 	return (
@@ -185,7 +237,12 @@ const isRecordShape = (value: unknown): value is TickRecord => {
 	);
 };
 
-/** Read a tick record back out of a comment body; `null` for any comment that is not one. */
+/**
+ * Read a tick record back out of a comment body; `null` for any comment that is not one.
+ *
+ * A payload carrying no derivation state reads `unresolved`, never `derived` — a record whose writer
+ * had no way to say "the board read failed" cannot be taken to have proven it succeeded.
+ */
 export const parseTick = (body: string): TickRecord | null => {
 	if (!body.includes(MARKER)) return null;
 	const fenced = FENCE_RE.exec(body);
@@ -193,8 +250,19 @@ export const parseTick = (body: string): TickRecord | null => {
 	try {
 		const parsed: unknown = JSON.parse(fenced[1]);
 		if (!isRecordShape(parsed)) return null;
-		const {firstAt, lastAt, ticks, sessions, watch, malformed} = parsed;
-		return {firstAt, lastAt, ticks, sessions, watch, malformed};
+		const {firstAt, lastAt, ticks, sessions, watch, malformed, derivation} = parsed;
+		return {
+			firstAt,
+			lastAt,
+			ticks,
+			sessions,
+			watch,
+			malformed,
+			derivation:
+				typeof derivation === "string"
+					? parseDerivation(derivation)
+					: {_tag: "unresolved", input: "no derivation state in the record"},
+		};
 	} catch {
 		return null;
 	}
@@ -206,6 +274,7 @@ export interface TickInput {
 	readonly session: string;
 	readonly watch: ReadonlyArray<WatchEntry>;
 	readonly malformed: ReadonlyArray<string>;
+	readonly derivation: Derivation;
 }
 
 /** Post a new record, or fold this tick into the newest one because it says the same thing. */
@@ -230,8 +299,11 @@ export interface LatestTick {
  * rather than rewriting history out of order.
  */
 export const planTickWrite = (latest: LatestTick | null, tick: TickInput): TickWrite => {
-	const digest = digestOf(tick.watch, tick.malformed);
-	if (latest !== null && digestOf(latest.record.watch, latest.record.malformed) === digest) {
+	const digest = digestOf(tick.watch, tick.malformed, tick.derivation);
+	if (
+		latest !== null &&
+		digestOf(latest.record.watch, latest.record.malformed, latest.record.derivation) === digest
+	) {
 		const record: TickRecord = {
 			firstAt: latest.record.firstAt,
 			lastAt: tick.at,
@@ -239,6 +311,7 @@ export const planTickWrite = (latest: LatestTick | null, tick: TickInput): TickW
 			sessions: [...new Set([...latest.record.sessions, tick.session])],
 			watch: tick.watch,
 			malformed: tick.malformed,
+			derivation: tick.derivation,
 		};
 		return {_tag: "coalesce", commentId: latest.commentId, record, body: renderTick(record)};
 	}
@@ -249,6 +322,7 @@ export const planTickWrite = (latest: LatestTick | null, tick: TickInput): TickW
 		sessions: [tick.session],
 		watch: tick.watch,
 		malformed: tick.malformed,
+		derivation: tick.derivation,
 	};
 	return {_tag: "post", record, body: renderTick(record)};
 };

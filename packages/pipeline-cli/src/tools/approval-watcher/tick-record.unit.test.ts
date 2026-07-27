@@ -1,7 +1,10 @@
 import {describe, expect, it} from "vitest";
 import {
+	type Derivation,
 	digestOf,
+	formatDerivation,
 	formatDisposition,
+	parseDerivation,
 	parseDisposition,
 	parseTick,
 	parseWatchSpec,
@@ -11,6 +14,8 @@ import {
 } from "./tick-record.ts";
 
 const at = (s: string) => `2026-07-26T${s}Z`;
+const DERIVED: Derivation = {_tag: "derived"};
+const unresolved = (input: string): Derivation => ({_tag: "unresolved", input});
 
 describe("parseDisposition — the three-way distinction never collapses", () => {
 	it("reads the three sanctioned tokens", () => {
@@ -70,25 +75,52 @@ describe("parseWatchSpec — the derived watch set, empty included", () => {
 	});
 });
 
+describe("parseDerivation — the SET-level read is unknown-biased too", () => {
+	it("reads the two sanctioned tokens", () => {
+		expect(parseDerivation("derived")).toEqual({_tag: "derived"});
+		expect(parseDerivation("unresolved:board: unreadable payload")).toEqual(
+			unresolved("board: unreadable payload"),
+		);
+	});
+
+	it("reads an unrecognized or empty token as UNRESOLVED, never as a proven derivation", () => {
+		expect(parseDerivation("")._tag).toBe("unresolved");
+		expect(parseDerivation("ok")._tag).toBe("unresolved");
+		expect(parseDerivation("unresolved:")).toEqual(unresolved("unnamed input"));
+	});
+
+	it("round-trips through formatDerivation", () => {
+		for (const token of ["derived", "unresolved:board"]) {
+			expect(formatDerivation(parseDerivation(token))).toBe(token);
+		}
+	});
+});
+
 describe("digestOf — coalescing key over the set, not the clock", () => {
 	it("ignores entry order and timestamps", () => {
 		const a = parseWatchSpec("4224=fired\n4231=unknown:reviews");
 		const b = parseWatchSpec("4231=unknown:reviews\n4224=fired");
-		expect(digestOf(a.entries, a.malformed)).toBe(digestOf(b.entries, b.malformed));
+		expect(digestOf(a.entries, a.malformed, DERIVED)).toBe(
+			digestOf(b.entries, b.malformed, DERIVED),
+		);
 	});
 
 	it("separates an empty set from any non-empty one", () => {
-		const empty = digestOf([], []);
+		const empty = digestOf([], [], DERIVED);
 		const one = parseWatchSpec("4224=fired");
-		expect(empty).not.toBe(digestOf(one.entries, one.malformed));
+		expect(empty).not.toBe(digestOf(one.entries, one.malformed, DERIVED));
 	});
 
 	it("separates two sets that differ only in one PR's disposition", () => {
 		const stop = parseWatchSpec("4224=definite-stop:no approval at current head");
 		const unknown = parseWatchSpec("4224=unknown:reviews");
-		expect(digestOf(stop.entries, stop.malformed)).not.toBe(
-			digestOf(unknown.entries, unknown.malformed),
+		expect(digestOf(stop.entries, stop.malformed, DERIVED)).not.toBe(
+			digestOf(unknown.entries, unknown.malformed, DERIVED),
 		);
+	});
+
+	it("separates a FAILED derivation from a genuinely empty one", () => {
+		expect(digestOf([], [], DERIVED)).not.toBe(digestOf([], [], unresolved("board")));
 	});
 });
 
@@ -102,6 +134,7 @@ describe("renderTick / parseTick — the record survives the round trip through 
 			{pr: 4224, disposition: {_tag: "definite-stop", reason: "no approval at current head"}},
 		],
 		malformed: [],
+		derivation: DERIVED,
 	};
 
 	it("round-trips", () => {
@@ -115,6 +148,22 @@ describe("renderTick / parseTick — the record survives the round trip through 
 		expect(parseTick(body)?.watch).toEqual([]);
 	});
 
+	it("says UNRESOLVED — never EMPTY — when the board read did not execute", () => {
+		const body = renderTick({
+			...record,
+			watch: [],
+			derivation: unresolved("board: unreadable payload"),
+		});
+		expect(body).toContain("derived watch set UNRESOLVED: board: unreadable payload");
+		expect(body).not.toContain("derived watch set EMPTY");
+		expect(parseTick(body)?.derivation).toEqual(unresolved("board: unreadable payload"));
+	});
+
+	it("reads a payload with NO derivation state as unresolved, not as a proven empty board", () => {
+		const legacy = renderTick({...record, watch: []}).replace('"derivation":"derived",', "");
+		expect(parseTick(legacy)?.derivation).toEqual(unresolved("no derivation state in the record"));
+	});
+
 	it("returns null for a comment that is not a tick record", () => {
 		expect(parseTick("claim: abc · 2026-07-26T00:00:00Z")).toBeNull();
 		expect(parseTick("approval-watcher-tick: but no payload")).toBeNull();
@@ -122,9 +171,14 @@ describe("renderTick / parseTick — the record survives the round trip through 
 });
 
 describe("planTickWrite — one record per distinct outcome, not one per tick", () => {
-	const tick = (time: string, spec: string, session = "session-a") => {
+	const tick = (
+		time: string,
+		spec: string,
+		session = "session-a",
+		derivation: Derivation = DERIVED,
+	) => {
 		const {entries, malformed} = parseWatchSpec(spec);
-		return {at: at(time), session, watch: entries, malformed};
+		return {at: at(time), session, watch: entries, malformed, derivation};
 	};
 
 	it("posts a new record when the ledger has none", () => {
@@ -157,6 +211,17 @@ describe("planTickWrite — one record per distinct outcome, not one per tick", 
 		);
 		expect(changed._tag).toBe("post");
 		expect(changed.record.ticks).toBe(1);
+	});
+
+	it("does not coalesce a FAILED board read into a genuinely-empty record", () => {
+		const empty = planTickWrite(null, tick("08:00:00", ""));
+		const outage = planTickWrite(
+			{commentId: 99, record: empty.record},
+			tick("08:05:00", "", "session-a", unresolved("board: unreadable payload")),
+		);
+		expect(outage._tag).toBe("post");
+		expect(outage.record.ticks).toBe(1);
+		expect(outage.body).toContain("derived watch set UNRESOLVED");
 	});
 
 	it("does not coalesce an empty set into a non-empty one (the distinction #4290 needs)", () => {
