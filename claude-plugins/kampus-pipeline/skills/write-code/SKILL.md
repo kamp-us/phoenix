@@ -878,11 +878,13 @@ is intentionally left untouched here so the two changes can't double-implement o
 > }
 > wt_preflight() {   # MANDATED before every git commit/push/branch op — fail-closed, re-correcting cwd
 >   : "${CLAUDE_CODE_SESSION_ID:?wt_preflight FAILED (fail-closed): no session id — no lane identity to verify a worktree against}"
->   # CLASSIFY THE AMBIENT TREE FIRST — every assertion lives here, because this is the only place
->   # the operands can differ. `$AMB_STAMP` is a file some lane wrote when its worktree was proven;
->   # `$CLAUDE_CODE_SESSION_ID` is the process env. After the corrective `cd` below they agree BY
->   # CONSTRUCTION, so a check down there would be checking a value against its own derivation —
->   # which is exactly what shipped, and why the sibling-tree refusal never printed (#4398).
+>   # CLASSIFY THE AMBIENT TREE FIRST — the lane-identity assertions live here, because this is the
+>   # only place THESE operands can differ. `$AMB_STAMP` is a file some lane wrote when its worktree
+>   # was proven; `$CLAUDE_CODE_SESSION_ID` is the process env. After the corrective `cd` below these
+>   # two agree BY CONSTRUCTION, so re-checking THEM down there would be checking a value against its
+>   # own derivation — which is exactly what shipped, and why the sibling-tree refusal never printed
+>   # (#4398). That is a fact about these operands, not about position: the post-`cd` refusal below
+>   # reads independent operands and does fire.
 >   AMB_GITDIR="$(git rev-parse --absolute-git-dir 2>/dev/null)"
 >   AMB_COMMON="$(git rev-parse --git-common-dir 2>/dev/null)"
 >   case "$AMB_COMMON" in ""|/*) ;; *) AMB_COMMON="$(pwd -P)/$AMB_COMMON" ;; esac
@@ -901,7 +903,18 @@ is intentionally left untouched here so the two changes can't double-implement o
 >   # down, or a foreign session), or several are (ambiguous).
 >   WT="$(lane_worktree)" || { echo "wt_preflight FAILED (fail-closed): no single worktree carries this lane's stamp ($CLAUDE_CODE_SESSION_ID) — the opening preflight never ran, or its tree is gone. Refusing to mutate." >&2; return 1; }
 >   cd "$WT" || { echo "wt_preflight FAILED: cannot cd to worktree root $WT" >&2; return 1; }
->   echo "wt_preflight OK: mutating my lane at $WT (git-dir $(git rev-parse --absolute-git-dir))"
+>   # DEFENCE IN DEPTH — the resolved lane must not BE the primary checkout. This sits after the
+>   # `cd` and is still a genuine assertion, because its operands do not come from the cwd: it
+>   # tests `lane_worktree`'s ANSWER with two DIFFERENT plumbing queries whose results coincide
+>   # only on the primary. `lane_worktree` returns whatever `worktrees/<name>/gitdir` names, so an
+>   # entry naming the primary root, stamped with this lane, resolves here — and this refuses.
+>   # Demonstrated firing in PR #4419's review; do not delete it as "true by construction" (#4398).
+>   RES_GITDIR="$(git rev-parse --absolute-git-dir 2>/dev/null)" || { echo "wt_preflight FAILED (fail-closed): resolved lane $WT is not inside a git repository — refusing to mutate." >&2; return 1; }
+>   RES_COMMON="$(git rev-parse --git-common-dir 2>/dev/null)"
+>   case "$RES_COMMON" in /*) ;; *) RES_COMMON="$(pwd -P)/$RES_COMMON" ;; esac
+>   RES_COMMON="$(cd "$RES_COMMON" && pwd -P)"
+>   [ "$RES_GITDIR" != "$RES_COMMON" ] || { echo "wt_preflight FAILED (fail-closed): this lane's stamp resolved to the PRIMARY checkout ($WT) — git-dir == common-dir. Refusing to mutate." >&2; return 1; }
+>   echo "wt_preflight OK: mutating my lane at $WT (git-dir $RES_GITDIR)"
 > }
 > wt_preflight && git <commit|push|switch …>   # the guard gates the mutation; never run the mutation without it
 > ```
@@ -911,9 +924,16 @@ is intentionally left untouched here so the two changes can't double-implement o
 > **process env**. Put cwd in a sibling lane's tree and they differ, so the refusal prints. The
 > assertion this replaces compared `git rev-parse --show-toplevel` against `git rev-parse
 > --show-toplevel` run in the same directory after a `cd` to it — always equal, so its failure
-> message could never print, and the `git-dir != common-dir` check beside it caught only the primary
-> checkout. Note where the assertions sit: **before** the corrective `cd`, never after it. Anything
-> asserted after the `cd` is true by construction and is not a guard.
+> message could never print.
+>
+> **The rule is about where the operands come from, not about where the line sits.** An assertion
+> that re-derives the value the `cd` just set — asking the cwd where the cwd is — is true by
+> construction and is not a guard; that, specifically, is the defect above. An assertion whose
+> operands come from somewhere else is a real guard wherever it sits, **including after the `cd`**:
+> the primary-checkout refusal above tests `lane_worktree`'s *answer* with two different plumbing
+> queries (`--absolute-git-dir` vs `--git-common-dir`) that coincide only on the primary, and it
+> fires on a `worktrees/<name>/gitdir` naming the primary root. So never delete a later assertion
+> merely because it follows the `cd` — check its operands first.
 
 <a id="anchor-edits-to-wt"></a>
 > **Anchor EVERY `Edit`/`Write` to `$WT` — the raw-write path no git guard covers (#3458).**
