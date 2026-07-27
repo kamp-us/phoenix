@@ -122,6 +122,44 @@ const readRepoFlag = (argv: ReadonlyArray<string>): RepoFlag => {
 	return {kind: "absent"};
 };
 
+/**
+ * Long flags on `gh <pr|issue> edit` that are booleans — they carry no value, so a positional
+ * scan must NOT swallow the token after them. Every other `--flag` is assumed to take a value:
+ * over-skipping ends in a refusal (no positional found → block), while under-skipping revives
+ * the defect the positional scan exists to remove — a flag's value posing as the target (#4339).
+ */
+const BOOLEAN_EDIT_FLAGS = new Set(["--help", "-h"]);
+
+/**
+ * Locate the positional `<N>` of `gh <pr|issue> edit` BY POSITION — walking left to right and
+ * skipping each flag together with its value — never by scanning for the first bare integer.
+ * The content scan let a flag value steal the target: `gh pr edit --milestone 3 5` PATCHed
+ * issue 3, silently and successfully, because `3` came first (#4339). Returns the first
+ * non-flag token, or `undefined` when the invocation carries none; the caller still requires
+ * it to be numeric, so an ambiguous argv refuses rather than guesses.
+ */
+const findPositionalTarget = (rest: ReadonlyArray<string>): string | undefined => {
+	for (let i = 0; i < rest.length; i++) {
+		const a = rest[i];
+		if (a === undefined) continue;
+		if (a === "--") return rest[i + 1]; // the end-of-flags separator: the rest is positional
+		if (a.startsWith("--")) {
+			if (a.includes("=")) continue; // `--flag=value` carries its own value
+			if (BOOLEAN_EDIT_FLAGS.has(a)) continue;
+			i++; // `--flag value`
+			continue;
+		}
+		if (a.startsWith("-") && a.length > 1) {
+			if (a.length > 2) continue; // attached shorthand value, e.g. `-Rowner/name`, `-m3`
+			if (BOOLEAN_EDIT_FLAGS.has(a)) continue;
+			i++;
+			continue;
+		}
+		return a;
+	}
+	return undefined;
+};
+
 /** Split a comma-separated `--json` field list, trimming blanks. */
 const splitFields = (raw: string): ReadonlyArray<string> =>
 	raw
@@ -211,8 +249,8 @@ const routeEdit = (
 		};
 	}
 
-	const target = rest.find((a) => /^\d+$/.test(a));
-	if (target === undefined) {
+	const target = findPositionalTarget(rest);
+	if (target === undefined || /^\d+$/.test(target) === false) {
 		return {
 			kind: "block",
 			reason: `\`gh ${verb} edit\` without a numeric #N target can't be rewritten to a REST PATCH.`,
