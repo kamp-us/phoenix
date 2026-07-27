@@ -380,7 +380,7 @@ accept_re() {   # $1=name, $2=resolved value, $3=fail-closed default
 PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
 # Could-not-run is UNKNOWN, never a discharge (§CLI, #3314). The catch-all below would hold an
 # unresolvable shim anyway; refusing here names the cause instead of reporting an empty state word.
-[ -x "$PCLI" ] || { echo "BLOCKING (pipeline-cli UNRESOLVED at '$PCLI' ⇒ §CP UNKNOWN, held)"; echo "STOP: classification unresolved — refuse to enqueue."; exit 1; }
+[ -x "$PCLI" ] || { echo "BLOCKING (CLI shim UNRESOLVED at '$PCLI' ⇒ §CP UNKNOWN, held)"; echo "STOP: classification unresolved — refuse to enqueue."; exit 1; }
 # The §CP derivation — the shared verb, not a hand-rolled boundary grep (#4405); the prose above is
 # the why. Four states on stdout, only `not-control-plane` an answer: assert on the STATE WORD, never
 # the exit status (formats §CP; #4161/#4219).
