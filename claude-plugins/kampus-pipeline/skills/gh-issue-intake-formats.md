@@ -2030,7 +2030,7 @@ table or it does not ship.
 
 | site | sources | note |
 | --- | --- | --- |
-| `ship-it` Step 0 | path + content | the merge-deciding gate; both re-resolved from `origin/main` |
+| `ship-it` Step 0 | `cp-classify` (path + content) | the merge-deciding gate; was ~500 lines of hand-rolled boundary bash — the last merge-deciding site to migrate (#4405). The verb re-resolves the boundary from `origin/main` itself, so the #981 run-time re-derivation is preserved, not traded for a compile-time import |
 | `review-code` Step 2 | path + content | |
 | `review-doc` Step 0 | path + content | |
 | `review-design` | `cp-classify` (path + content) | was path-only |
