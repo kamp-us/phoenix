@@ -1,7 +1,7 @@
 ---
 id: 0158
 title: An unresolved inline review thread (human or bot) is a merge gate — ship-it reads it and routes back by default, never auto-dismisses
-status: accepted
+status: amended-in-part by [0224](0224-ship-it-resolves-bot-threads-never-human-threads.md)
 date: 2026-07-05
 tags: [pipeline, ship-it, review-code, control-plane]
 ---
