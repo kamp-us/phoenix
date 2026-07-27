@@ -1415,8 +1415,8 @@ flag from Step 2 — **or** a non-empty `GUARD_TOUCHING`, a guard-touching `.dec
 §CP by content, ADR 0164 / #3645): a **blocking-set** PR (it touches `.claude/**`, `.github/**`, a
 gate-critical skill, or a guard-touching ADR — §CP) does **not** get a binding `PASS @ <sha> —
 merge-ready` marker. It
-gets the **canonical advisory line** instead — `review-code: advisory — blocking-set PR (manual
-merge)`, no `@ <sha>` — the one advisory shape all three gates converge on (ADR
+gets the **canonical advisory line** instead — `review-code: advisory — blocking-set PR (§CP —
+approval-gated)`, no `@ <sha>` — the one advisory shape all three gates converge on (ADR
 [0073](https://github.com/kamp-us/phoenix/blob/main/.decisions/0073-review-skill-gate.md) §5;
 [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §6.6). It carries the same
 per-criterion evidence table, but it authorizes nothing on its first line — it stays *out* of
@@ -1650,7 +1650,7 @@ code review namespace via its `commit_id`, defeating the advisory's purpose).
 > would drop the §CP verdict into `ship-it`'s auto-merge namespace, the ADR 0111 hazard).
 
 ```markdown
-review-code: advisory — blocking-set PR (manual merge)
+review-code: advisory — blocking-set PR (§CP — approval-gated)
 
 PR #<PR> is §CP — it touches the control plane (`.claude/**`, `.github/**`, or a gate-critical
 skill — ADR 0053/0065), OR a guard-touching `.decisions/**` ADR (§CP by content, ADR 0164 — the
