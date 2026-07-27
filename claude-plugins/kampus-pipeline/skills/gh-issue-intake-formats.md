@@ -1592,8 +1592,11 @@ closing the #375 drift class).
     three modules the core imports without retaining, and why `codeowners-cp` cannot catch a
     stale over-broad CODEOWNERS row.
 
-A PR touching **any** path in this set is **control plane**: `ship-it` refuses to auto-merge
-it and a human merges it by hand (ADR
+A PR touching **any** path in this set is **control plane**: `ship-it` never auto-merges it off a
+gate verdict alone — it merges only once a `@kamp-us/control-plane` member approves at head, and
+`ship-it` then enqueues it (ADR
+[0135](https://github.com/kamp-us/phoenix/blob/main/.decisions/0135-hard-gate-control-plane-team-codeowners-approve-then-enqueue.md)
+amending ADR
 [0053](https://github.com/kamp-us/phoenix/blob/main/.decisions/0053-control-plane-boundary.md),
 widened to the gate-critical skills by ADR
 [0065](https://github.com/kamp-us/phoenix/blob/main/.decisions/0065-gate-critical-skills-are-blocking.md);
@@ -1658,7 +1661,7 @@ CONTROL_PLANE_RE='^(\.claude|\.github)/|^\.claude-plugin/|^claude-plugins/kampus
 if ! cp_changed_files "$REPO" "$PR"; then
   echo "BLOCKING — §CP UNKNOWN (changed-file list unreadable; never 'no control-plane path')"
 elif printf '%s\n' "$CP_FILES" | grep -Eq "$CONTROL_PLANE_RE"; then
-  echo "BLOCKING — control plane (manual merge)"
+  echo "BLOCKING — control plane (§CP — approval-gated)"
 fi
 ```
 
@@ -1666,7 +1669,7 @@ fi
 copy embedded in their own skill body.** A skill runs against the **snapshot injected into the
 agent's context at invoke time**, which can lag `origin/main` even when the on-disk copy in the
 same worktree is current — so an agent on a pre-amendment snapshot once auto-merged a
-now-control-plane PR the *current* boundary marks human-merge-only (#981). The fix makes the
+now-control-plane PR the *current* boundary marks approval-gated (#981). The fix makes the
 single source authoritative **at run time**: `ship-it` Step 0 and `review-code` Step 2 read the
 `CONTROL_PLANE_RE` line from this file on `origin/main` (REST raw, `?ref=main`) and classify
 against *that*, **failing closed** — every path treated as control-plane, so the gate refuses —
@@ -2864,8 +2867,12 @@ review-doc: FAIL @ <sha> — changes-requested
 
 For a PR in the **control-plane / blocking set** (§CP), `review-doc` is advisory only and
 instead leads with the **canonical advisory line** (§6.6 — `review-doc: advisory — blocking-set
-PR (manual merge)`) so its verdict stays *out* of `ship-it`'s PASS namespace — a human merges
-those (ADR [0053](https://github.com/kamp-us/phoenix/blob/main/.decisions/0053-control-plane-boundary.md)). The advisory line
+PR (§CP — approval-gated)`) so its verdict stays *out* of `ship-it`'s PASS namespace — a §CP PR
+merges only once a `@kamp-us/control-plane` member approves at head and `ship-it` enqueues it
+(ADR [0135](https://github.com/kamp-us/phoenix/blob/main/.decisions/0135-hard-gate-control-plane-team-codeowners-approve-then-enqueue.md)
+amending [0053](https://github.com/kamp-us/phoenix/blob/main/.decisions/0053-control-plane-boundary.md);
+`ship-it` is the single merge actor, ADR
+[0048](https://github.com/kamp-us/phoenix/blob/main/.decisions/0048-ship-it-merge-actor.md)). The advisory line
 carries **no `@ <sha>`** by design: it authorizes nothing, so there is nothing to bind.
 
 The rest of the body carries the per-criterion + per-hygiene-check evidence table. What's
@@ -2911,8 +2918,9 @@ fresh `@ <sha>` rather than appending a new comment (ADR 0058 rule 2; same mecha
   hygiene check unmet) is read by `write-code`'s fix round-trip as "my doc PR came back failed";
   `ship-it` reads it as "do not merge."
 - **Advisory for the blocking set.** A PR in the §CP set gets the canonical advisory line
-  (§6.6), not a PASS marker — `review-doc`'s verdict does not authorize that merge; a human
-  does (ADR 0053). This keeps the control-plane manual-merge invariant intact.
+  (§6.6), not a PASS marker — `review-doc`'s verdict does not authorize that merge; a
+  `@kamp-us/control-plane` approval at head does, and `ship-it` enqueues on it (ADR 0135
+  amending 0053). This keeps the control-plane approval gate intact.
 - **Signals, never merges.** The PASS marker is an approval signal `ship-it` acts on;
   `review-doc` writing it does **not** merge (see review-doc/SKILL.md §"Authority limit").
 
@@ -2948,10 +2956,12 @@ so most skill PRs that touch a gate land here), `review-skill` is **advisory onl
 instead leads with the **canonical advisory line** (§6.6):
 
 ```markdown
-review-skill: advisory — blocking-set PR (manual merge)
+review-skill: advisory — blocking-set PR (§CP — approval-gated)
 ```
 
-so its verdict stays *out* of `ship-it`'s PASS namespace — a human merges those (ADR 0053).
+so its verdict stays *out* of `ship-it`'s PASS namespace — a §CP PR merges only once a
+`@kamp-us/control-plane` member approves at head and `ship-it` enqueues it (ADR 0135 amending
+0053; `ship-it` is the single merge actor, ADR 0048).
 The advisory line carries **no `@ <sha>`** by design: it authorizes nothing, so there is
 nothing to bind.
 
@@ -3008,9 +3018,9 @@ this one rule so they can't diverge (the same discipline §5 pins for code/doc).
   `ship-it` reads it as "do not merge."
 - **Advisory for the blocking set.** A skill PR touching a gate-critical skill (or any §CP
   path) gets the **canonical advisory line** (§6.6), not a PASS marker — its verdict does not
-  authorize that merge; a human does (ADR 0053/0065). This keeps the control-plane manual-merge
-  invariant intact, and is exactly the common case for a skill PR (every gate skill is
-  gate-critical).
+  authorize that merge; a `@kamp-us/control-plane` approval at head does, and `ship-it` enqueues
+  on it (ADR 0135 amending 0053/0065). This keeps the control-plane approval gate intact, and is
+  exactly the common case for a skill PR (every gate skill is gate-critical).
 - **Signals, never merges.** The PASS marker is an approval signal `ship-it` acts on;
   `review-skill` writing it does **not** merge (see review-skill/SKILL.md §"Authority limit").
 
@@ -3029,18 +3039,19 @@ For a PR in the **control-plane / blocking set** (§CP), the gate emits a commen
 line is the **no-`@ <sha>`** advisory marker in its own namespace:
 
 ```markdown
-review-code:   advisory — blocking-set PR (manual merge)
-review-doc:    advisory — blocking-set PR (manual merge)
-review-skill:  advisory — blocking-set PR (manual merge)
-review-design: advisory — blocking-set PR (manual merge)
+review-code:   advisory — blocking-set PR (§CP — approval-gated)
+review-doc:    advisory — blocking-set PR (§CP — approval-gated)
+review-skill:  advisory — blocking-set PR (§CP — approval-gated)
+review-design: advisory — blocking-set PR (§CP — approval-gated)
 ```
 
 The rest of the body carries the same per-check evidence table the PASS/FAIL paths carry —
 the verdict is *recorded* (for the human or delegated merge actor to read), it just **authorizes
 nothing on its first line**. The advisory **first line** **carries no `@ <sha>`** on purpose: it
 does not enter any `ship-it` `PASS @ <sha> — merge-ready` namespace, so a §CP PR is never
-auto-mergeable off it (ADR 0053). A human merges it, **or** — under ADR 0135's approve-then-enqueue —
-`ship-it` enqueues it once a `@kamp-us/control-plane` approval is present at head (ADR 0053/0065/0135).
+auto-mergeable off it (ADR 0053). Under ADR 0135's approve-then-enqueue, `ship-it` enqueues it once a
+`@kamp-us/control-plane` approval is present at head (ADR 0053/0065/0135) — that approval, not a gate
+verdict, is what authorizes the merge.
 
 **The advisory body MUST carry the canonical `Reviewed-head` line (ADR 0151).** Immediately after
 the advisory's first-line marker + framing prose, the body carries **exactly one** line recording
@@ -3129,10 +3140,12 @@ For a PR in the **control-plane / blocking set** (§CP), `review-design` is **ad
 and instead leads with the **canonical advisory line** (§6.6):
 
 ```markdown
-review-design: advisory — blocking-set PR (manual merge)
+review-design: advisory — blocking-set PR (§CP — approval-gated)
 ```
 
-so its verdict stays *out* of `ship-it`'s PASS namespace — a human merges those (ADR 0053).
+so its verdict stays *out* of `ship-it`'s PASS namespace — a §CP PR merges only once a
+`@kamp-us/control-plane` member approves at head and `ship-it` enqueues it (ADR 0135 amending
+0053; `ship-it` is the single merge actor, ADR 0048).
 The advisory line carries **no `@ <sha>`** by design: it authorizes nothing, so there is
 nothing to bind.
 
@@ -3203,10 +3216,11 @@ actor (and `ship-it`'s ADR-0135 approval-aware enqueue) resolves the reviewed he
   by `write-code`'s fix round-trip as "my UI PR came back failed"; `ship-it` reads it as "do
   not merge."
 - **Advisory for the blocking set.** A UI PR in the §CP set gets the **canonical advisory
-  line** (§6.6), not a PASS marker — its verdict does not authorize that merge; a human does
-  (ADR 0053/0065). Because a design verdict is calibrated to FAIL conservatively (a borderline
-  call is downgraded to advisory), an advisory here can also mean "no objective prohibition
-  hard-failed" — but on a §CP PR the first-line advisory is always the manual-merge shape.
+  line** (§6.6), not a PASS marker — its verdict does not authorize that merge; a
+  `@kamp-us/control-plane` approval at head does, and `ship-it` enqueues on it (ADR 0135 amending
+  0053/0065). Because a design verdict is calibrated to FAIL conservatively (a borderline call is
+  downgraded to advisory), an advisory here can also mean "no objective prohibition hard-failed" —
+  but on a §CP PR the first-line advisory is always the approval-gated shape.
 - **Signals, never merges.** The PASS marker is an approval signal `ship-it` acts on;
   `review-design` writing it does **not** merge (see review-design/SKILL.md §"Authority
   limit").
