@@ -13,18 +13,33 @@ tags: [pipeline, control-plane, review-gates]
 ## Context
 
 On a §CP PR, a reviewer advisory bound to the current head whose body carries a `[FAIL]` criterion
-resolves to the `advisory-not-all-pass` variant of `VerdictOutcome` in
-`packages/pipeline-cli/src/tools/verdict/verdict-match.ts`. `verdictState` projects that variant —
-with `sha-less` and `stale` — onto `"unverified"`. Two consequences follow, both deliberate:
+is a state the pipeline already produces and already refuses. On the merge target, the §CP arm of
+`decideNamespace` in `packages/pipeline-cli/src/tools/verdict/gate-decision.ts` tests the advisory
+body against `failCheckboxRe` (line 46) and returns `state: "unverified"` with the reason
+`unverified (§CP <namespace> advisory not all-PASS — a body checkbox is [FAIL])` (lines 176–184).
+Two consequences follow, both deliberate:
 
-- **Not shippable.** `decideGate` in `packages/pipeline-cli/src/tools/verdict/gate-decision.ts`
-  refuses any namespace whose state is not `pass`, so `enqueueable: false`.
-- **Not pickable for repair.** `isReviewed` is `verdictState(outcome) === (expect === "PASS" ?
-  "pass" : "fail")`, so `verdict read --expect FAIL` can never match an `unverified` namespace.
+- **Not shippable.** `decideGate`, in the same file, blocks on the first namespace whose state is
+  not `pass` (line 275), so `enqueueable: false`.
+- **Not pickable for repair.** `unverified` is neither `pass` nor `fail`, and a repair scan keys on
+  a namespace's *polarity* (`verdict read --expect FAIL`). A state that carries no polarity can
+  never match one, so the PR is never routed into the author's repair round.
 
 The design names a **re-review** as that state's remedy, and nothing in the repo arms one: no skill
 step, no crew agent branch, no CI workflow, no CLI verb fires a re-review off the state. A §CP PR
 that reaches it waits until a human notices it waiting.
+
+**Naming — read this before the ruling below.** A read-side refactor was in flight when this was
+ruled: PR #4372, open and unmerged at the time of writing. At **that PR's head, and only there**,
+this state has a name of its own — an `advisory-not-all-pass` variant of `VerdictOutcome` in
+`packages/pipeline-cli/src/tools/verdict/verdict-match.ts`, a `verdictState` helper projecting it
+(with the SHA-less and stale outcomes) onto `"unverified"`, and a docblock spelling out that the
+variant is deliberately not a FAIL. **None of those symbols exist on the merge target**, where the
+state is produced inline by the `gate-decision.ts` branch cited above and carries no name at all.
+The rest of this ADR refers to the state by the in-flight name, because that is the vocabulary the
+ruling was made in; if that refactor never lands, read every such mention as the inline branch cited
+here. The ruling is about which side *emits* the state, so it holds under either spelling. Source
+issue #4400 carried this same qualifier and it belongs in the durable record.
 
 One question was open, with two mutually exclusive answers: **which side owns the signal.**
 *Emit-side* — make an advisory structurally unable to carry a failing criterion, so the state cannot
@@ -33,8 +48,9 @@ re-review the design already names. Triage recorded both and ranked neither; a f
 emit-side.
 
 The gates that emit the canonical §CP advisory form are `review-code`, `review-doc`,
-`review-design` and `review-skill`, each under a section titled *"Pass path — blocking-set PR
-(advisory only)"*, against the one shared advisory shape in
+`review-design` and `review-skill`, each under its own *"Pass path — blocking-set PR (advisory
+only…)"* section (`review-code` and `review-skill` extend that heading with *", the canonical
+advisory form"*), against the one shared advisory shape in §6.6 of
 `claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md`. That convergence on a single
 advisory shape is ADR [0073](0073-review-skill-gate.md) §5; the form itself is ADR
 [0111](0111-blocking-set-verdicts-sha-less-by-design.md) (SHA-less first line, so it never enters
@@ -127,12 +143,22 @@ five-surface edit and a drift risk if one gate is missed. The mitigation is that
 converge on one canonical advisory shape (ADR [0073](0073-review-skill-gate.md)), and that the
 surviving variant fails closed if a gate does drift.
 
+**The FAIL marker's tail is per-gate — do not propagate the one written above.** `## Decision`
+writes the marker generically with `review-code`'s tail (`— not merge-ready`, §5 of the shared
+format doc); `review-doc` (§6), `review-skill` (§6.5) and `review-design` (§6.7) each use
+`— changes-requested`. Since this ruling names five files to be edited by hand, the implementer
+keeps **each gate's own existing tail** and changes only which path is taken. Nothing here alters
+any marker's shape: no matcher under `packages/pipeline-cli/src/tools/verdict/` reads the tail at
+all — ADR [0058](0058-sha-bound-verdict-contract.md) binds the namespace, the polarity and the SHA,
+and the tail is prose for a human reader.
+
 **Scope fences, recorded and not crossed:**
 
 - **PR #4372 is not widened by this.** The engine holding it declined to widen it deliberately —
   it is a `p0` with clean gate rounds and a §CP approval cost per head move, and this is a distinct
   decision about which side owns the signal. That decline is recorded as **considered, not an
-  omission.**
+  omission.** It is also why the naming note in `## Context` exists: the vocabulary this ruling uses
+  lands with that PR, not with this one.
 - **#4105** (read-side observability) and **#4390** (repair-mode entry condition) are **not
   absorbed.** They are adjacent seams on the same machinery and remain separately open; this ruling
   covers the **dispatch** seam only — which side owns the `advisory-not-all-pass` signal.
