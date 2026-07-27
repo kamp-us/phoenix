@@ -356,13 +356,25 @@ FILES="$CP_FILES"   # proven-arrived, scope already emitted ($CP_FILES_N files) 
 # §CP boundary is single-sourced in pipeline-cli (control-plane-paths/control-plane-re.ts, #2761);
 # run `pipeline-cli control-plane-paths` to print it. It is re-resolved from origin/main right below
 # (the #981 anti-self-authorization read), so this is only a fail-closed sentinel, never the live source.
+# NON-TRIVIALITY ASSERT (#4401) — single-sourced in §CLASS of gh-issue-intake-formats.md; copied
+# here verbatim because Step 0 runs as one shell block. EVERY boundary this step strips out of a
+# network read goes through it before anything gates on it: an empty or prefix-carrying value still
+# COMPILES, and `grep -E ""` matches every path while `grep -Ev ""` matches none, both at exit 0.
+accept_re() {   # $1=name, $2=resolved value, $3=fail-closed default
+  case "$2" in
+    *"$1='"*) : ;;   # the assignment prefix survived the strip ⇒ not a pattern, a whole line
+    *) if [ "${#2}" -ge 4 ]; then printf '%s' "$2"; return 0; fi ;;
+  esac
+  printf 'TRIVIAL-GATE-BOUNDARY: %s did not resolve to a usable pattern — failing closed.\n' "$1" >&2
+  printf '%s' "$3"
+}
 CONTROL_PLANE_RE='.'   # fail-closed default: every path is control-plane until origin/main resolves
 # Re-resolve §CP from origin/main at run time so a stale snapshot can't mis-classify a now-control-plane
 # PR as auto-mergeable (#981). ADR 0073 §6 names gh-issue-intake-formats.md the single source; read it
 # freshly via REST raw (never GraphQL, top-of-skill rule). origin/main's line wins over the snapshot.
 CP_LIVE="$(gh api "repos/$REPO/contents/claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md?ref=main" -H 'Accept: application/vnd.github.raw' 2>/dev/null | grep '^CONTROL_PLANE_RE=' | head -n1 || true)"
 if [ -n "$CP_LIVE" ]; then
-  CONTROL_PLANE_RE="$(printf '%s' "$CP_LIVE" | sed "s/^CONTROL_PLANE_RE='//; s/'$//")"   # classification tracks origin/main, not the snapshot's age (AC1/AC2)
+  CONTROL_PLANE_RE="$(accept_re CONTROL_PLANE_RE "$(printf '%s' "$CP_LIVE" | sed "s/^CONTROL_PLANE_RE='//; s/'$//")" '.')"   # classification tracks origin/main, not the snapshot's age (AC1/AC2); a trivial strip fails closed to '.'
 else
   CONTROL_PLANE_RE='.'   # FAIL CLOSED: can't read origin/main's boundary ⇒ treat EVERY path as control-plane (refuse), never trust the possibly-stale snapshot
 fi
@@ -423,7 +435,7 @@ HAS_SKILLS_RE='^claude-plugins/[^/]+/(skills|agents)/|^\.claude-plugin/'
 HAS_DOCS_EXCLUDE_RE='^(claude-plugins|apps|packages|\.glossary|infra)/'
 HAS_DOCS_RE='^(\.decisions|\.patterns)/|\.md$'
 CLASS_RAW="$(gh api "repos/$REPO/contents/claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md?ref=main" -H 'Accept: application/vnd.github.raw' 2>/dev/null || true)"
-reresolve_re() { live="$(printf '%s\n' "$CLASS_RAW" | grep "^$1=" | head -n1 || true)"; if [ -n "$live" ]; then printf '%s' "$live" | sed "s/^$1='//; s/'\$//"; else printf '%s' "$2"; fi; }
+reresolve_re() { live="$(printf '%s\n' "$CLASS_RAW" | grep "^$1=" | head -n1 || true)"; if [ -z "$live" ]; then printf '%s' "$2"; else accept_re "$1" "$(printf '%s' "$live" | sed "s/^$1='//; s/'\$//")" "$2"; fi; }
 HAS_CODE_RE="$(reresolve_re HAS_CODE_RE '.')"
 HAS_SKILLS_RE="$(reresolve_re HAS_SKILLS_RE '.')"
 HAS_DOCS_EXCLUDE_RE="$(reresolve_re HAS_DOCS_EXCLUDE_RE '\$^')"   # fail-closed: exclude NOTHING ⇒ every path reaches the doc test
@@ -468,8 +480,8 @@ UI_EXCLUDE_RE='\.(test|spec)\.tsx?$'
 UI_RAW="$(gh api "repos/$REPO/contents/claude-plugins/kampus-pipeline/skills/ship-it/SKILL.md?ref=main" -H 'Accept: application/vnd.github.raw' 2>/dev/null || true)"
 UI_LIVE="$(printf '%s\n' "$UI_RAW" | grep '^UI_RE=' | head -n1 || true)"
 UX_LIVE="$(printf '%s\n' "$UI_RAW" | grep '^UI_EXCLUDE_RE=' | head -n1 || true)"
-if [ -n "$UI_LIVE" ]; then UI_RE="$(printf '%s' "$UI_LIVE" | sed "s/^UI_RE='//; s/'$//")"; else UI_RE='.'; fi   # FAIL CLOSED: can't read origin/main's UI_RE ⇒ '.' ⇒ every path UI-affecting ⇒ REQUIRE review-design, never silently skip (#2341)
-if [ -n "$UX_LIVE" ]; then UI_EXCLUDE_RE="$(printf '%s' "$UX_LIVE" | sed "s/^UI_EXCLUDE_RE='//; s/'$//")"; else UI_EXCLUDE_RE='$^'; fi   # FAIL CLOSED: unreadable ⇒ '$^' never-match ⇒ carve out NOTHING ⇒ every apps/web/src path (incl. tests) gates review-design
+if [ -n "$UI_LIVE" ]; then UI_RE="$(accept_re UI_RE "$(printf '%s' "$UI_LIVE" | sed "s/^UI_RE='//; s/'$//")" '.')"; else UI_RE='.'; fi   # FAIL CLOSED: can't read origin/main's UI_RE — or it resolves TRIVIAL — ⇒ '.' ⇒ every path UI-affecting ⇒ REQUIRE review-design, never silently skip (#2341/#4401)
+if [ -n "$UX_LIVE" ]; then UI_EXCLUDE_RE="$(accept_re UI_EXCLUDE_RE "$(printf '%s' "$UX_LIVE" | sed "s/^UI_EXCLUDE_RE='//; s/'$//")" '$^')"; else UI_EXCLUDE_RE='$^'; fi   # FAIL CLOSED: unreadable or trivial ⇒ '$^' never-match ⇒ carve out NOTHING ⇒ every apps/web/src path (incl. tests) gates review-design
 echo "$FILES" | grep -Ev "$UI_EXCLUDE_RE" | grep -Eq "$UI_RE" && echo "has-ui"   # carve test/spec first, THEN require review-design ALONGSIDE the class gate(s)
 ```
 

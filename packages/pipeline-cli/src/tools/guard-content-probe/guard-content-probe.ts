@@ -27,6 +27,7 @@
  * merely-guard-*citing* ADR to a cheap human approval rather than risk missing a
  * guard-*relaxer* that would auto-ship a weakened gate.
  */
+import {boundaryOrFailClosed} from "../../gate-boundaries.ts";
 
 /**
  * Fail-closed default: `.` matches every ADR word ⇒ every touched `.decisions/**` file is
@@ -38,11 +39,12 @@ export const FAILCLOSED_GUARD_ADR_RE = ".";
 /**
  * Parse the canonical `GUARD_ADR_RE='…'` line out of `gh-issue-intake-formats.md` §CP.
  * Matches only the single-quoted canonical assignment (`GUARD_ADR_RE='…'`), never a
- * double-quoted re-assignment. A missing line falls back to the fail-closed default — the
- * source is single, so this only bites on a truncated read.
+ * double-quoted re-assignment. A missing OR trivial line falls back to the fail-closed default —
+ * a `??` would accept the empty string a truncated extraction yields, and `new RegExp("")` matches
+ * every ADR body, which looks like the fail-closed answer while proving nothing (#4401).
  */
 export const parseGuardAdrRe = (formatsText: string): string =>
-	formatsText.match(/^GUARD_ADR_RE='([^']*)'/m)?.[1] ?? FAILCLOSED_GUARD_ADR_RE;
+	boundaryOrFailClosed(formatsText.match(/^GUARD_ADR_RE='([^']*)'/m)?.[1], FAILCLOSED_GUARD_ADR_RE);
 
 /** Why the probe decided as it did — surfaced for the human reason line. */
 export type GuardProbeReason =

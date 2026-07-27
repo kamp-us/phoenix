@@ -17,7 +17,13 @@
  * own single source, `ship-it/SKILL.md` (§CLASS keeps it there deliberately, never in
  * §CLASS itself) — folding it in here is what makes review-design a deterministic probe
  * output the reviewer fan dispatches rather than an eyeball it can skip (#2485/#2483).
+ *
+ * Every parse below routes the extracted value through `boundaryOrFailClosed` rather than `??`:
+ * a `??` accepts the empty string a truncated extraction produces, and an empty ERE inverts the
+ * gate silently — `grep -Ev ""` excludes nothing, so the docs carve-out fails OPEN (#4401).
  */
+
+import {boundaryOrFailClosed} from "../../gate-boundaries.ts";
 
 /** The three artifact classes a PR diff can span — each maps to one `review-*` gate. */
 export type ArtifactClass = "has-code" | "has-docs" | "has-skills";
@@ -64,13 +70,13 @@ export const FAILCLOSED_PROBES: ClassProbes = {
 /**
  * Parse the canonical `HAS_*_RE='…'` lines out of `gh-issue-intake-formats.md` §CLASS.
  * Matches only the single-quoted canonical assignment (`NAME='…'`), never the
- * double-quoted `reresolve_re` re-assignment lines below it. A missing line falls back to
- * its fail-closed default — the source is single, so this only bites on a truncated read.
+ * double-quoted `reresolve_re` re-assignment lines below it. A missing OR trivial line falls back
+ * to its fail-closed default — the source is single, so this only bites on a truncated read.
  */
 export const parseClassProbes = (formatsText: string): ClassProbes => {
 	const read = (name: string, fallback: string): string => {
 		const m = formatsText.match(new RegExp(`^${name}='([^']*)'`, "m"));
-		return m?.[1] ?? fallback;
+		return boundaryOrFailClosed(m?.[1], fallback);
 	};
 	return {
 		hasCode: read("HAS_CODE_RE", FAILCLOSED_PROBES.hasCode),
@@ -174,7 +180,7 @@ export const FAILCLOSED_DOC_VOCAB_PROBE: DocVocabProbe = {
 /** Parse the canonical `DOC_VOCAB_*_RE='…'` lines out of §CLASS (single-quoted assignment only). */
 export const parseDocVocabProbe = (formatsText: string): DocVocabProbe => {
 	const read = (name: string, fallback: string): string =>
-		formatsText.match(new RegExp(`^${name}='([^']*)'`, "m"))?.[1] ?? fallback;
+		boundaryOrFailClosed(formatsText.match(new RegExp(`^${name}='([^']*)'`, "m"))?.[1], fallback);
 	return {
 		exclude: read("DOC_VOCAB_EXCLUDE_RE", FAILCLOSED_DOC_VOCAB_PROBE.exclude),
 		surface: read("DOC_VOCAB_SURFACE_RE", FAILCLOSED_DOC_VOCAB_PROBE.surface),
@@ -233,10 +239,13 @@ export const FAILCLOSED_UI_EXCLUDE_RE = "$^";
  * fourth char diverges — so the two never cross-capture.)
  */
 export const parseUiProbe = (shipItText: string): string =>
-	shipItText.match(/^UI_RE='([^']*)'/m)?.[1] ?? FAILCLOSED_UI_RE;
+	boundaryOrFailClosed(shipItText.match(/^UI_RE='([^']*)'/m)?.[1], FAILCLOSED_UI_RE);
 
 export const parseUiExclude = (shipItText: string): string =>
-	shipItText.match(/^UI_EXCLUDE_RE='([^']*)'/m)?.[1] ?? FAILCLOSED_UI_EXCLUDE_RE;
+	boundaryOrFailClosed(
+		shipItText.match(/^UI_EXCLUDE_RE='([^']*)'/m)?.[1],
+		FAILCLOSED_UI_EXCLUDE_RE,
+	);
 
 /**
  * Is the diff UI-affecting (has-ui)? Carve-then-test, mirroring §CLASS's has-docs probe: a file
