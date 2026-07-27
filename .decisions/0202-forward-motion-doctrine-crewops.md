@@ -1,7 +1,7 @@
 ---
 id: 0202
 title: Forward-motion doctrine — p0 freely minted for arc-homed ship-work; CrewOps state
-status: amended-in-part by [0210](0210-direction-binds-at-intake.md), [0214](0214-active-campaign-confers-p1.md), [0219](0219-priority-decoupled-from-campaign-membership.md)
+status: amended-in-part by [0210](0210-direction-binds-at-intake.md), [0214](0214-active-campaign-confers-p1.md), [0219](0219-priority-decoupled-from-campaign-membership.md), [0222](0222-p0-is-the-arc-pullable-frontier.md)
 date: 2026-07-24
 tags: [process, prioritization, pipeline]
 ---
