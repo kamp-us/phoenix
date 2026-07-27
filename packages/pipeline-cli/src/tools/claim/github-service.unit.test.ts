@@ -46,7 +46,9 @@ const mockSpawner = (
 				let cmd = command;
 				while (cmd._tag === "PipedCommand") cmd = cmd.left;
 				const args = cmd._tag === "StandardCommand" ? cmd.args : [];
-				const rawPath = args.find((a) => a.startsWith("repos/")) ?? "";
+				// `user` is a path too — the authenticated-login probe `assign` runs before it writes
+				// layer one — so the fixture key covers it alongside the `repos/…` routes.
+				const rawPath = args.find((a) => a.startsWith("repos/") || a === "user") ?? "";
 				const path = rawPath.replace(/\?.*$/, "");
 				const key = `${methodOf(args)} ${path}`;
 				const canned =
@@ -238,6 +240,94 @@ describe("Github.release — the affirmative end of our own claim (#3780)", () =
 					[`DELETE ${P}/issues/comments/800`]: foreignDeleteIsForbidden,
 				}),
 			),
+	);
+});
+
+describe("Github.assign — the layer-one availability gate on a proven-own lane (#4298)", () => {
+	// A write the verb must NOT issue is mapped to a hard 403: were it ever reached, the fault
+	// surfaces as a test failure instead of passing silently.
+	const writeIsForbidden = {stdout: "", exitCode: 1, stderr: "HTTP 403: Forbidden"};
+	const ownClaim = JSON.stringify([claimComment({id: 700, login: "usirin", session: SID_MINE})]);
+	const issueWith = (...logins: ReadonlyArray<string>) =>
+		JSON.stringify({assignees: logins.map((login) => ({login}))});
+
+	it.effect("our claim + an unassigned lane → writes the gate and reads it back", () =>
+		Effect.gen(function* () {
+			const result = yield* (yield* Github).assign(ISSUE, SID_MINE);
+			assert.deepStrictEqual(result.plan, {_tag: "assign", login: "usirin"});
+			assert.deepStrictEqual(result.assignees, ["usirin"]);
+		}).pipe((effect) =>
+			provide(effect, {
+				[`GET ${P}/issues/${ISSUE}/comments`]: ownClaim,
+				[`GET ${P}/collaborators/usirin/permission`]: "write",
+				"GET user": "usirin\n",
+				[`GET ${P}/issues/${ISSUE}`]: issueWith(),
+				[`POST ${P}/issues/${ISSUE}/assignees`]: issueWith("usirin"),
+			}),
+		),
+	);
+
+	it.effect("idempotent — a gate already carrying us issues no write", () =>
+		Effect.gen(function* () {
+			const result = yield* (yield* Github).assign(ISSUE, SID_MINE);
+			assert.deepStrictEqual(result.plan, {_tag: "already-set", login: "usirin"});
+		}).pipe((effect) =>
+			provide(effect, {
+				[`GET ${P}/issues/${ISSUE}/comments`]: ownClaim,
+				[`GET ${P}/collaborators/usirin/permission`]: "write",
+				"GET user": "usirin\n",
+				[`GET ${P}/issues/${ISSUE}`]: issueWith("usirin"),
+				[`POST ${P}/issues/${ISSUE}/assignees`]: writeIsForbidden,
+			}),
+		),
+	);
+
+	it.effect("DEFAULT-DENY: a foreign claim → refuses without reading or writing the gate", () =>
+		Effect.gen(function* () {
+			const result = yield* (yield* Github).assign(ISSUE, SID_MINE);
+			assert.deepStrictEqual(result.plan, {_tag: "refuse", reason: "lost", owner: SID_OTHER});
+			assert.deepStrictEqual(result.assignees, []);
+		}).pipe((effect) =>
+			provide(effect, {
+				[`GET ${P}/issues/${ISSUE}/comments`]: JSON.stringify([
+					claimComment({id: 500, login: "usirin", session: SID_OTHER, at: "2026-07-08T00:00:01Z"}),
+					claimComment({id: 800, login: "usirin", session: SID_MINE, at: "2026-07-08T00:00:02Z"}),
+				]),
+				[`GET ${P}/collaborators/usirin/permission`]: "write",
+				// Both the gate read and the gate write are faults: the refusal must short-circuit first.
+				[`GET ${P}/issues/${ISSUE}`]: writeIsForbidden,
+				[`POST ${P}/issues/${ISSUE}/assignees`]: writeIsForbidden,
+			}),
+		),
+	);
+
+	it.effect("DEFAULT-DENY: an unclaimed lane → refuses, never assigns off an empty claim set", () =>
+		Effect.gen(function* () {
+			const result = yield* (yield* Github).assign(ISSUE, SID_MINE);
+			assert.deepStrictEqual(result.plan, {_tag: "refuse", reason: "no-winner", owner: null});
+		}).pipe((effect) =>
+			provide(effect, {
+				[`GET ${P}/issues/${ISSUE}/comments`]: JSON.stringify([]),
+				[`GET ${P}/issues/${ISSUE}`]: writeIsForbidden,
+				[`POST ${P}/issues/${ISSUE}/assignees`]: writeIsForbidden,
+			}),
+		),
+	);
+
+	it.effect("a write that does not land fails LOUD rather than reporting the gate set", () =>
+		Effect.gen(function* () {
+			const error = yield* Effect.flip((yield* Github).assign(ISSUE, SID_MINE));
+			assert.strictEqual(error._tag, "@kampus/claim/ClaimVerifyError");
+		}).pipe((effect) =>
+			provide(effect, {
+				[`GET ${P}/issues/${ISSUE}/comments`]: ownClaim,
+				[`GET ${P}/collaborators/usirin/permission`]: "write",
+				"GET user": "usirin\n",
+				[`GET ${P}/issues/${ISSUE}`]: issueWith(),
+				// the POST "succeeds" but the gate reads back empty — the class the read-back exists for
+				[`POST ${P}/issues/${ISSUE}/assignees`]: issueWith(),
+			}),
+		),
 	);
 });
 

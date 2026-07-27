@@ -342,8 +342,10 @@ async function drive() {
 			`(3) on a NON-ZERO exit, mutate NOTHING — you never assigned, so there is nothing to undo, and you must NEVER unassign ` +
 			`a slot you did not fill: every agent authenticates as the SAME login, so a cleanup unassign here would strip the LIVE ` +
 			`incumbent's assignment (#4015) — return { won: false, token: "", reason: "<the verb's stderr back-off reason>" }; ` +
-			`(4) ONLY on exit 0, self-assign (the coarse availability gate, §7 layer one) via ` +
-			`\`gh api -X POST repos/$REPO/issues/${issue}/assignees\`. ` +
+			`(4) ONLY on exit 0, write §7 LAYER ONE — the coarse availability gate the write-code Step-1 picker reads — through the ` +
+			`SHARED VERB: \`pipeline-cli claim assign --issue ${issue}\`. Never hand-roll the assignees POST: the verb refuses on any ` +
+			`lane whose claim is not ours, is additive/idempotent, and reads the landed gate back, so an unwritten gate is loud ` +
+			`rather than a lane that silently re-enters the claimable pool the moment the PR opens (#4298). ` +
 			`Do NOT hand-roll the claim POST or re-derive the tiebreak jq. On a confirmed win (exit 0) return { won: true, token: "<TOKEN>", reason: "" }.`,
 		{
 			schema: {
