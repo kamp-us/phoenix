@@ -804,6 +804,8 @@ loudly** if `deps.md` was not regenerated since the base it splices onto was rea
 "re-derive" from a comment you might skip into a precondition the script enforces.
 
 ```bash
+# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
+PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
 # §SP: re-derive the per-run scratch namespace — this is a LATER Bash call, so Step 1's
 # $RUN_SCRATCH variable is gone. Same recipe ⇒ same directory ⇒ Step 1's files are still there.
 # NO `rm -rf` here (that is the OPEN step's job only): clearing it would delete exactly the
@@ -894,7 +896,7 @@ for attempt in 1 2 3; do
   #    by hand rather than blind-write. The recheck/freshness/round-trip orchestration around it
   #    stays here (it is live-issue IO, not a text transform).
   PLAN_ARG=(); [ "${REPLAN:-0}" = 1 ] && PLAN_ARG=(--plan-file "$RUN_SCRATCH/plan.md")
-  if ! node packages/pipeline-cli/src/bin.ts epic-splice apply \
+  if ! "$PCLI" epic-splice apply \
         --body-file "$RUN_SCRATCH/live.md" \
         --deps-file "$RUN_SCRATCH/deps.md" \
         "${PLAN_ARG[@]}" > "$RUN_SCRATCH/body.md"; then

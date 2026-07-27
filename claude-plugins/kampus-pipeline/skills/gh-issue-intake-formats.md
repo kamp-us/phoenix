@@ -2402,6 +2402,15 @@ whose own three-tier ladder (in-repo dev source → SessionStart-installed data-
 PATH, is not there, and dies `command not found` — at a gate step, inside a fail-closed wrapper
 that converts the miss into a *wrong verdict* rather than a clean error.
 
+**Never write `node …/pipeline-cli/src/bin.ts <verb>` either.** Running the entrypoint through
+`node` at a cwd-relative path resolves only from the repo root and only in this repo, so from a
+nested app dir — the dir sessions launch in — it dies `Cannot find module` with **exit 1 and
+empty stdout**. That is the more dangerous of the two failures, because it is *byte-identical to
+a clean verdict* at several live call sites: `guard-content-probe classify` signals
+not-guard-touching with exit 1, and `intake-dedup check` / `split-guard check` signal
+nothing-found with empty stdout. A resolution failure therefore reads as a permissive answer and
+the gate silently never fires (#4236). Use `"$PCLI"`.
+
 ### The canonical preamble — paste it once per bash block that invokes the CLI
 
 ```bash
@@ -2424,6 +2433,7 @@ verb result** at the call site. Read the two apart this way, and never collapse 
 | Signal | Meaning | How a caller must resolve it |
 |---|---|---|
 | `"$PCLI" …` exits **127**, or the message names a *path* that does not exist | The CLI **never ran** — resolution failure | **UNKNOWN.** Never clean, never a negative verdict. Re-resolve or route the blocker up. |
+| Exit **1** with `Cannot find module` / `MODULE_NOT_FOUND` naming a `…/pipeline-cli/src/bin.ts` path, and **empty stdout** | The CLI **never ran** — a cwd-relative `node …/src/bin.ts` invocation from a dir that is not the repo root | **UNKNOWN**, exactly as for 127 — even though the exit code collides with several verbs' ordinary "negative" result. This is the collision the ban above exists to remove; if you see it, the call site is non-canonical, not the answer negative (#4236). |
 | Any other non-zero exit | The verb **ran** and returned its own documented contract (e.g. `2` findings / `3` zero scope) | Read it as that verb's result. |
 | Exit 0 | The verb ran and passed | Read it as that verb's result. |
 
@@ -2454,9 +2464,13 @@ mid-run, and **#4185** owns legibility when the shim resolved but the CLI's modu
 failed. Both reserve the same "could not run ⇒ UNKNOWN" contract this taxonomy states, so a fix
 there extends this table rather than forking it.
 
-`pipeline-cli cli-invocation-guard check` enforces the ban mechanically over the plugin corpus —
-it reds on any bare `pipeline-cli` invocation inside a runnable `bash`/`sh` fence, and fails
-closed on zero scope (§ZS / ADR 0092).
+`pipeline-cli cli-invocation-guard check` enforces both bans mechanically over the plugin corpus
+(`claude-plugins/**/*.md`) — it reds on a bare `pipeline-cli` invocation *and* on a
+`node …/pipeline-cli/src/bin.ts` one inside a runnable `bash`/`sh` fence, and fails closed on zero
+scope (§ZS / ADR 0092). Its corpus is markdown under `claude-plugins/` only, so `.github/workflows/`
+— which legitimately runs the entrypoint through `node`, having no shim-resolution context — is out
+of scope and needs no carve-out. Should the corpus ever widen past `claude-plugins/**/*.md`, the
+carve-out mechanism for such a context gets documented **here**, in this section.
 
 ---
 

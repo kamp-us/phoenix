@@ -39,15 +39,61 @@ describe("cli-invocation-guard core", () => {
 		assert.deepStrictEqual(findings, []);
 	});
 
-	it("accepts an explicit path form and the pinned package spec", () => {
+	it("accepts an explicit shim path and the pinned package spec", () => {
 		const {findings} = scanFile(
 			"s.md",
 			fence(
 				"bash",
-				"node packages/pipeline-cli/src/bin.ts verdict read --pr 1",
 				"claude-plugins/kampus-pipeline/bin/pipeline-cli claim status --issue 1",
 				"pnpm dlx @kampus/pipeline-cli@0.1.0 version",
 			),
+		);
+		assert.deepStrictEqual(findings, []);
+	});
+
+	// #4236: the cwd-relative entrypoint form resolves only from the repo root. Everywhere else it
+	// exits 1 with empty stdout — indistinguishable from the clean answer `guard-content-probe`,
+	// `intake-dedup` and `split-guard` call sites consume, so the miss reads as a permissive verdict.
+	it("flags the cwd-relative `node …/src/bin.ts` entrypoint form", () => {
+		const {findings} = scanFile(
+			"s.md",
+			fence("bash", "node packages/pipeline-cli/src/bin.ts verdict read --pr 1"),
+		);
+		assert.strictEqual(findings.length, 1);
+		assert.strictEqual(findings[0]?.line, 2);
+		assert.include(findings[0]?.text ?? "", "verdict read");
+	});
+
+	it("flags the entrypoint form in a pipe, a substitution, and a conditional", () => {
+		const {findings} = scanFile(
+			"s.md",
+			fence(
+				"bash",
+				"git diff --name-only origin/main... | node packages/pipeline-cli/src/bin.ts cp-classify classify",
+				'EXISTING=$(node packages/pipeline-cli/src/bin.ts split-guard check --parent 1 --title "t")',
+				"if ! node packages/pipeline-cli/src/bin.ts epic-splice apply; then break; fi",
+			),
+		);
+		assert.strictEqual(findings.length, 3);
+	});
+
+	it("flags the entrypoint form at any leading path prefix, absolute or nested", () => {
+		const {findings} = scanFile(
+			"s.md",
+			fence(
+				"bash",
+				"node ../../packages/pipeline-cli/src/bin.ts version",
+				'node "$REPO_ROOT"/packages/pipeline-cli/src/bin.ts version',
+			),
+		);
+		assert.strictEqual(findings.length, 2);
+	});
+
+	it("does not flag the entrypoint form in prose or a comment-only line", () => {
+		const {findings} = scanFile(
+			"s.md",
+			"Historically skills ran `node packages/pipeline-cli/src/bin.ts <verb>`.\n" +
+				fence("bash", "# was: node packages/pipeline-cli/src/bin.ts intake-dedup check", "true"),
 		);
 		assert.deepStrictEqual(findings, []);
 	});

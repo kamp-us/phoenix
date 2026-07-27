@@ -2,11 +2,14 @@
  * `cli-invocation-guard` core — the pure, IO-free matcher behind
  * `pipeline-cli cli-invocation-guard check <file>…` (#3314).
  *
- * `pipeline-cli` is not on PATH where pipeline agents spawn and never will be (ADR 0207
- * retired PATH-shadowing), so a bare `pipeline-cli <verb>` in a skill dies `command not
- * found` — at a gate step, inside a fail-closed wrapper that converts the miss into a wrong
- * verdict. The canonical resolution and its exit-code taxonomy live once in the formats
- * contract's §CLI; this core is the mechanical enforcement of its one ban.
+ * Two non-canonical forms are banned, for the same reason: neither's failure is
+ * distinguishable from a verb result at the call site. A bare `pipeline-cli <verb>` is not on
+ * PATH where pipeline agents spawn and never will be (ADR 0207 retired PATH-shadowing), so it
+ * dies `command not found`; a cwd-relative `node …/pipeline-cli/src/bin.ts <verb>` resolves
+ * only from the repo root, so it dies `Cannot find module` anywhere else. Both land at a gate
+ * step, inside a fail-closed wrapper that converts the miss into a wrong verdict. The canonical
+ * resolution and its exit-code taxonomy live once in the formats contract's §CLI; this core is
+ * the mechanical enforcement of its bans (#3314, #4236).
  *
  * Scoped to what an agent actually RUNS: a `bash`/`sh` fenced block, minus comment-only
  * lines. Prose that merely names a verb ("the `pipeline-cli claim is-mine` verb") is not an
@@ -53,6 +56,17 @@ const unquote = (line: string): string => line.replace(/^(\s*>)+\s?/, "");
  */
 const BARE_INVOCATION = /(^|[^\w./@-])pipeline-cli(\s|$)/;
 
+/**
+ * The second non-canonical form: running the CLI's entrypoint directly through `node` at a
+ * **cwd-relative** path. It resolves only from the repo root and only in this repo, so from a
+ * nested app dir — the dir sessions launch in — it dies `Cannot find module` with **exit 1 and
+ * empty stdout**. That is byte-identical to the clean answer several call sites consume
+ * (`guard-content-probe`'s not-guard-touching exit 1; `intake-dedup` / `split-guard`'s empty
+ * stdout = "nothing found"), so a resolution failure launders into a permissive verdict —
+ * a fail-open on a gate, not a style nit (#4236). §CLI's exit-code taxonomy covers it.
+ */
+const NODE_ENTRYPOINT_INVOCATION = /\bnode\s+\S*pipeline-cli\/src\/bin\.ts(\s|$)/;
+
 /** A line that is only a shell comment carries no invocation to run. */
 const COMMENT_ONLY = /^\s*#/;
 
@@ -85,7 +99,7 @@ export const scanFile = (
 		}
 		if (openLang === null || !RUNNABLE_LANGS.has(openLang)) continue;
 		if (COMMENT_ONLY.test(lineText)) continue;
-		if (!BARE_INVOCATION.test(lineText)) continue;
+		if (!BARE_INVOCATION.test(lineText) && !NODE_ENTRYPOINT_INVOCATION.test(lineText)) continue;
 		findings.push({file, line: i + 1, text: lineText.trim()});
 	}
 	return {findings, fences};
