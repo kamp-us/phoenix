@@ -2295,6 +2295,9 @@ PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-
 # the trailing sleep after the last poll burned 30s observing nothing. 16x30s puts the horizon at
 # 7m30s, past both the median and the mean; it is NOT set past the 9m25s max because one shipper
 # invocation has a ~10-minute wall-clock ceiling and the 16 polls' own `gh` latency eats into it.
+# That ceiling is what makes over-widening WORSE than standing down: a run killed against it
+# mid-loop never reaches the ledger at all, so it emits no `merge:` line — silence, where a
+# stand-down would at least have stated the bound of what it watched.
 # So even the widened horizon can expire mid-dwell — which is exactly why the widening is the
 # secondary fix and the honest stand-down wording below is the primary one.
 RECONCILE_TRIES=${SHIP_RECONCILE_TRIES:-16}
@@ -2324,6 +2327,11 @@ case "$MERGE_OUTCOME" in
     MERGE_DISPOSITION="UNRESOLVED — still queued at my last read, ~${RECONCILE_HORIZON}s after enqueue; the merge may still land. Bounded observation, not a failure and not a landing — an independent later read closes the lane." ;;
   ejected)
     MERGE_DISPOSITION="EJECTED (routed to repair/re-queue)" ;;
+  *)
+    # Unreachable while the classifier prints one of its four words — which is exactly why it is
+    # here: without it an unrecognized $MERGE_OUTCOME leaves MERGE_DISPOSITION unset and the
+    # ledger's `merge:` line renders BLANK — a could-not-determine posing as nothing at all.
+    MERGE_DISPOSITION="UNKNOWN — the reconcile produced no recognized outcome word; the merge state was never determined. Not a landing, not a failure, not an ejection — re-read the PR before acting on it." ;;
 esac
 
 # Guard 6 (ADR 0198) — the reconcile's terminal read is the LAST place this run can leave an arm
