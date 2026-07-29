@@ -50,12 +50,19 @@ export type BridgeName = (typeof BRIDGE_NAMES)[number];
  * seat, carrying the file-follow-ups-in-the-moment obligation — delegates capture to `reporter`
  * (write-scoped to issue creation only, so it is context-hygiene fanout, not an execution edge —
  * ADR 0196, #3888); the intake-desk owns the planning/canon seam (planner/canon/adr) plus its
- * report→triage loop (triager/reporter). See `claude-plugins/pipeline-crew/agents/`.
+ * report→triage loop (triager/reporter) and, since the 2026-07-29 founder directive, the
+ * `reviewer` that closes planning by running `review-plan` over the ledger it just planned.
+ * See `claude-plugins/pipeline-crew/agents/`.
+ *
+ * This table is agent-granular, so it cannot express the intake-desk's `review-plan`-only
+ * scoping — that half lives in the seat's charter prose, per
+ * `claude-plugins/pipeline-crew/SPAWN-SCOPE.md`. Widening the table entry to the whole
+ * agent-type is the honest encoding of what the guard can check, not a widening of the charter.
  */
 export const BRIDGE_ALLOWLIST: Record<BridgeName, ReadonlyArray<string>> = {
 	"crew-cartographer": ["coder", "planner", "canon", "adr", "triager", "reporter"],
 	"crew-chief-of-staff": ["reporter"],
-	"crew-intake-desk": ["planner", "canon", "adr", "triager", "reporter"],
+	"crew-intake-desk": ["planner", "reviewer", "canon", "adr", "triager", "reporter"],
 };
 
 /**
@@ -89,7 +96,6 @@ export const BRIDGE_OUT_OF_SCOPE: Record<BridgeName, ReadonlyArray<string>> = {
 	],
 	"crew-intake-desk": [
 		"coder",
-		"reviewer",
 		"shipper",
 		"crew-cartographer",
 		"crew-chief-of-staff",
