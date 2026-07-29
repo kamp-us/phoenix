@@ -330,7 +330,9 @@ that **already exists and is open**; a skill assigns to one, never **creates** o
 the set. Creating/curating milestones is a **roadmap (human / CPO) act**, deliberately *not*
 autonomous — fragmenting the set would destroy its single-source-of-truth value, so there is no
 autonomous "create-milestones" skill (ADR 0072 §3). A skill that finds no clear match to an
-existing open milestone leaves the issue **unmilestoned**; it does not invent a home.
+existing open milestone still does not invent a home — it reaches for a **standing-lane label
+or a kill**, per the fallback rule immediately below (ADR 0202/0208). "Leave it unmilestoned"
+is **not** an outcome.
 
 **Freeze-by-absence moved from an absence to a label (ADR 0208).** The signal ADR 0072 §4 carried
 — *this work is parked by design; don't force-fit it* — is not retired, but it no longer rides on
@@ -1093,9 +1095,10 @@ temp path (`@/var/folders/…`), so no SHA-bound verdict existed for `ship-it` /
 bind to (a **missing** gate verdict), **and** it leaked a machine-local path into a public comment.
 The source idiom alone can't see it; only a **post-write read-back** can.
 
-So every gate that posts a verdict marker — `review-code`, `review-doc`, `review-skill` — closes the
-loop with **one** canonical read-back guard: after the post/upsert lands, **re-read the comment you
-just wrote** and assert three invariants, failing **loud** (fail-closed, ADR
+So every gate that posts a verdict marker — `review-code`, `review-doc`, `review-skill`,
+`review-design` — closes the loop with **one** canonical read-back guard: after the post/upsert
+lands, **re-read the comment you just wrote** and assert three invariants, failing **loud**
+(fail-closed, ADR
 [0092](https://github.com/kamp-us/phoenix/blob/main/.decisions/0092-gates-fail-closed-on-zero-scope.md) §ZS)
 on any miss — never a silent pass. This is the single source; each review skill **references it**
 (it does not re-derive its own copy — the three-copy drift is exactly what this contract exists to
@@ -1105,7 +1108,8 @@ prevent):
 # verdict_readback_guard <comment-id> <gate> <head-sha>: re-read the just-posted verdict comment
 # and PROVE it is a well-formed, leak-free, current-head-bound marker. FAIL LOUD (non-zero) on any
 # miss — a broken marker reads to consumers as "no verdict", or worse a human skims it as posted.
-# <gate> is one of: review-code | review-doc | review-skill.
+# <gate> is one of: review-code | review-doc | review-skill | review-design — ALL FOUR PR gates, the
+# same set the emit mandate below scopes and the same set the verdict lib enumerates (VerdictGate).
 verdict_readback_guard() {
   local cid="$1" gate="$2" sha="$3"
   local got; got="$(gh api "repos/$REPO/issues/comments/$cid" --jq .body)" || {
@@ -1212,7 +1216,8 @@ or path-leaking marker is a **fatal** error the gate cannot silently pass:
 # verdict post/upsert (native APPROVE, comment PATCH-upsert, comment POST, advisory). It does NOT
 # rely on a $MINE/$CID captured on one posting branch — it RE-SCANS the PR's live state to resolve
 # whatever landed, then proves it well-formed + leak-free. Returns 0 ONLY on a proven-clean landed
-# verdict; non-zero (FATAL) on absent / malformed / leaking. <gate> ∈ review-code|review-doc|review-skill.
+# verdict; non-zero (FATAL) on absent / malformed / leaking.
+# <gate> ∈ review-code|review-doc|review-skill|review-design — all four PR gates, same set as above.
 verdict_post_verify() {
   local PR="$1" gate="$2" sha="$3" me cid approved rbody
   me="$(gh api user --jq .login)"
@@ -1512,7 +1517,12 @@ closing the #375 drift class).
   `heal-ci`, `what-shipped`, `doctor`, and `wayfinder` skills are operational diagnostics /
   reporting / orientation — they neither gate a merge nor hold release authority nor sit on a
   gate-critical path, so they auto-merge on a `review-skill` PASS like any ordinary skill. Do
-  **not** add them to the boundary (ADR 0174).
+  **not** add them to the boundary (ADR 0174). **The one exception is per-file, not per-dir:**
+  `doctor/doctor.sh` — like every other `skills/**/*.sh` helper — **is** §CP via the `.sh` clause
+  above, because it is executable enforcement; the rest of the `doctor` skill dir (its `SKILL.md`
+  and any non-`.sh` file) is out. Same for any future `.sh` under `heal-ci`, `what-shipped`, or
+  `wayfinder`. The two bullets do not disagree: the `.sh` clause scopes to `.sh` **files** at any
+  depth, this exclusion scopes to skill **dirs**.
 - the **pipeline agent definitions** — `claude-plugins/kampus-pipeline/agents/**`: the behavior
   instructions for the very agents that run the pipeline, including `shipper.md` (the merge
   authority) and `reviewer.md` (the verdict gate). An agents-only PR matched **no** §CP clause
@@ -2821,12 +2831,19 @@ with no `@ <sha>` is a *pre-0058 legacy* shape and resolves to `unverified`, not
 
 ### Upsert, not append — one verdict per (PR, gate-namespace) (ADR 0058)
 
-`review-code` writes **exactly one** marker comment per PR in its namespace: before posting
-it scans the PR's comments for **its own** prior `review-code:` marker and, if one exists,
-`PATCH`es it (`gh api -X PATCH repos/$REPO/issues/comments/<id>`) with the fresh
-verdict + fresh `@ <sha>` instead of `POST`-ing a new comment. A re-review of a new head
-overwrites the same record; the PR thread never accumulates a stale verdict stream a
-millisecond decides. See ADR 0058 rule 2.
+`review-code` writes **exactly one** marker comment per PR in its namespace. That upsert is
+**`pipeline-cli verdict post`'s own behavior, not something a reviewer hand-rolls**: the verb
+scans the PR for **its own** prior `review-code:` marker keyed on `(namespace, head, runId)`
+and, if one exists, replaces that comment in place with the fresh verdict + fresh `@ <sha>`
+instead of appending a new one. A re-review of a new head overwrites the same record; the PR
+thread never accumulates a stale verdict stream a millisecond decides. See ADR 0058 rule 2.
+
+**Do not translate this into a raw `gh api` comment `PATCH`.** A hand-rolled patch of a verdict
+body is a marker hand-post — it skips `emissionDefect` and the post-write `verifyLanded` re-scan,
+which is exactly the emit-side bypass [The guarded emit path is
+MANDATORY](#the-guarded-emit-path-is-mandatory--never-hand-post-a-verdict-marker-off-the-guard)
+forbids (#2789 / #2816 / #2818). If a raw post is genuinely unavoidable, take that section's one
+escape hatch — `pipeline-cli leak-guard scan-comment` on the body **first**.
 
 ### The matcher contract: emphasis-tolerant + SHA-capturing (canonical shape)
 
@@ -2970,9 +2987,11 @@ review's `commit_id` for the staleness test; `review-doc` does not.)
 
 ### Upsert, not append (ADR 0058)
 
-`review-doc` writes **exactly one** `review-doc:` marker comment per PR: before posting it
-scans for **its own** prior `review-doc:` marker and `PATCH`es it with the fresh verdict +
-fresh `@ <sha>` rather than appending a new comment (ADR 0058 rule 2; same mechanism as §5).
+`review-doc` writes **exactly one** `review-doc:` marker comment per PR. As in §5 this is
+`pipeline-cli verdict post`'s own behavior — the verb finds **its own** prior `review-doc:`
+marker and replaces it in place with the fresh verdict + fresh `@ <sha>` rather than appending
+(ADR 0058 rule 2; same mechanism as §5, including §5's "never hand-roll this as a raw
+`gh api` `PATCH`").
 
 ### Field notes
 
@@ -3056,9 +3075,11 @@ comparable record type per lane keeps the lane resolvable.
 
 ### Upsert, not append (ADR 0058)
 
-`review-skill` writes **exactly one** `review-skill:` marker comment per PR: before posting
-it scans for **its own** prior `review-skill:` marker and `PATCH`es it with the fresh verdict
-+ fresh `@ <sha>` rather than appending (ADR 0058 rule 2; same mechanism as §5/§6).
+`review-skill` writes **exactly one** `review-skill:` marker comment per PR. As in §5 this is
+`pipeline-cli verdict post`'s own behavior — the verb finds **its own** prior `review-skill:`
+marker and replaces it in place with the fresh verdict + fresh `@ <sha>` rather than appending
+(ADR 0058 rule 2; same mechanism as §5/§6, including §5's "never hand-roll this as a raw
+`gh api` `PATCH`").
 
 ### The matcher contract — anchored, never cross-matching (canonical shape)
 
@@ -3160,8 +3181,7 @@ invariant is preserved; the reviewer marker contract is not widened).
 This is why the advisory form is namespace-uniform but binding-free: it keeps each gate's
 verdict **out** of `ship-it`'s merge path for the control plane while still leaving a
 visible, evidence-bearing verdict on the PR. (`review-code`'s historical binding-PASS +
-caveat shape is the one being retired in favor of this; the reconciliation is part of #424's
-build.)
+caveat shape was retired in favor of this; the reconciliation landed with #424.)
 
 **The first-line `@ <sha>` is omitted by design — the SHA is bound in the body's canonical
 `Reviewed-head` line, and both a delegated merge actor AND `ship-it`'s §CP enqueue confirm from
@@ -3243,9 +3263,11 @@ resolvable.
 
 ### Upsert, not append (ADR 0058)
 
-`review-design` writes **exactly one** `review-design:` marker comment per PR: before posting
-it scans for **its own** prior `review-design:` marker and `PATCH`es it with the fresh verdict
-+ fresh `@ <sha>` rather than appending (ADR 0058 rule 2; same mechanism as §5/§6/§6.5).
+`review-design` writes **exactly one** `review-design:` marker comment per PR. As in §5 this is
+`pipeline-cli verdict post`'s own behavior — the verb finds **its own** prior `review-design:`
+marker and replaces it in place with the fresh verdict + fresh `@ <sha>` rather than appending
+(ADR 0058 rule 2; same mechanism as §5/§6/§6.5, including §5's "never hand-roll this as a raw
+`gh api` `PATCH`").
 
 ### The matcher contract — anchored, never cross-matching (canonical shape)
 
@@ -3286,11 +3308,13 @@ actor (and `ship-it`'s ADR-0135 approval-aware enqueue) resolves the reviewed he
   dashes — but the `@ <sha>` is required.
 - **Two markers, two consumers.** `PASS @ <sha> — merge-ready` (every applicable prohibition
   passed or N/A, bound to that head) is the go-ahead signal `ship-it` acts on to merge a
-  **non-blocking** UI PR **iff `<sha>` is the current head** — once `review-design`'s
-  required-gate wiring lands as part of the ADR-0165 rollout (`ship-it` / `reviewer.md`
-  consumption). `FAIL @ <sha> — changes-requested` (≥1 objective prohibition violated) is read
-  by `write-code`'s fix round-trip as "my UI PR came back failed"; `ship-it` reads it as "do
-  not merge."
+  **non-blocking** UI PR **iff `<sha>` is the current head**. `review-design`'s required-gate
+  wiring **has landed** as part of the ADR-0165 rollout: `ship-it` runs the `UI_RE` probe and
+  refuses a `has-ui` PR with an empty `review-design` namespace, and §CLASS's
+  `pipeline-cli class-probe classify` folds the additive gate in.
+  `FAIL @ <sha> — changes-requested` (≥1 objective prohibition violated) is read by
+  `write-code`'s fix round-trip as "my UI PR came back failed"; `ship-it` reads it as "do not
+  merge."
 - **Advisory for the blocking set.** A UI PR in the §CP set gets the **canonical advisory
   line** (§6.6), not a PASS marker — its verdict does not authorize that merge; a
   `@kamp-us/control-plane` approval at head does, and `ship-it` enqueues on it (ADR 0135 amending
