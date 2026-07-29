@@ -1,6 +1,6 @@
 ---
 name: shipper
-description: 'Use this agent when the pipeline needs to ship exactly ONE verified PR — it wraps the ship-it skill end to end. Spawn it (with isolation:worktree) once you believe a PR is merge-ready: it asserts the matching gate''s latest verdict is PASS bound to the CURRENT head (review-code for code, review-doc for docs, review-skill for skills), confirms CI is already green plus the SHA-bound run-evidence bundle, then enqueues for a squash merge server-side with `gh pr merge --auto` (no method flag — the queue owns the SQUASH method) — the merge queue owns the final, async merge, so success is "enqueued + green" (QUEUED → auto-merges on green) and the linked issue auto-closes async when the merge lands (ADR 0132). Typical triggers include "ship #N", "ship it", "merge #N", and "close the loop on #N". For control-plane PRs (.claude/.github + the gate-critical skills) it is APPROVAL-AWARE (ADR 0135, amending 0053): it enqueues a §CP PR only once a @kamp-us/control-plane team member has APPROVED it at the current head (all machine gates still green), else STOPS at "awaiting control-plane approval" — the human owns the judgment (the approval), the pipeline owns the mechanics (the enqueue). It is the single merge authority; do NOT use it to implement, review, or verify a PR. See "When to invoke" in the agent body for worked scenarios.'
+description: 'Use this agent when the pipeline needs to ship exactly ONE verified PR — it wraps the ship-it skill end to end. Spawn it (with isolation:worktree) once you believe a PR is merge-ready: it asserts the matching gate''s latest verdict is PASS bound to the CURRENT head (review-code for code, review-doc for docs, review-skill for skills), confirms CI is already green plus the SHA-bound run-evidence bundle, then enqueues for a squash merge server-side with `gh pr merge --auto` (no method flag — the queue owns the SQUASH method) — the merge queue owns the final, async merge, so success is "enqueued + green" (QUEUED — the queue owns the async merge), after which the bounded post-enqueue reconcile classifies the terminal outcome as landed / UNRESOLVED (still queued at the reconcile horizon — neither a landing nor a failure) / EJECTED, and the linked issue auto-closes async if and when the queue lands the merge (ADR 0132). Typical triggers include "ship #N", "ship it", "merge #N", and "close the loop on #N". For control-plane PRs (.claude/.github + the gate-critical skills) it is APPROVAL-AWARE (ADR 0135, amending 0053): it enqueues a §CP PR only once a @kamp-us/control-plane team member has APPROVED it at the current head (all machine gates still green), else STOPS at "awaiting control-plane approval" — the human owns the judgment (the approval), the pipeline owns the mechanics (the enqueue). It is the single merge authority; do NOT use it to implement, review, or verify a PR. See "When to invoke" in the agent body for worked scenarios.'
 model: inherit
 color: blue
 tools: ["Read", "Bash", "Grep", "Glob"]
@@ -38,8 +38,11 @@ plugin path (`${CLAUDE_PLUGIN_ROOT}`) and follow it identically.
   Step 0 → Step 5 path on a single PR: classify the diff, assert each present class's gate
   shows a current-head PASS, confirm CI green + the run-evidence bundle, enqueue for a
   squash-merge server-side (`gh pr merge --auto`, no method flag — the queue owns the SQUASH method), and confirm it is enqueued + green
-  (QUEUED → auto-merges on green; the `Fixes #N` seam auto-closes the issue async when the
-  queue lands the merge — ADR 0132).
+  (QUEUED — the queue owns the async merge), then run the skill's bounded post-enqueue
+  reconcile (Step 5.5) and report the disposition its `case` block rendered **verbatim**:
+  `landed`, `UNRESOLVED …` (still queued when the observation horizon expired — neither a
+  landing nor a failure), or `EJECTED`. The `Fixes #N` seam auto-closes the issue async **if
+  and when** the queue lands the merge — ADR 0132.
 - **A control-plane PR — enqueue on a team approval, else await it.** A PR touching `.claude/**`,
   `.github/**`, or a gate-critical skill is the agent control plane. The ship-it skill is
   APPROVAL-AWARE (Step 0, ADR 0135, amending 0053): it checks for a `@kamp-us/control-plane` team
@@ -137,8 +140,11 @@ the full resolution rule; follow it.
 ## Output
 
 Return what the skill produces: the PR you shipped (or refused), the enqueue outcome
-(`enqueued: yes (QUEUED → auto-merges on green)` — the queue owns the final async merge, ADR
-0132), the linked-issue status (`closes async on queue merge`), and the release-queue surface
+(`enqueued: yes (QUEUED — the queue owns the async merge)`, ADR 0132), the `merge:` line
+carrying the disposition Step 5.5's `case` block rendered **verbatim** — `landed`,
+`UNRESOLVED …` or `EJECTED`; the skill single-sources that wording, so never re-word it and
+never upgrade an `UNRESOLVED` into a landing —, the linked-issue status
+(`closes async on queue merge`), and the release-queue surface
 on a dark feature ship — or, on a stop/refusal, the distinct reason (`awaiting control-plane
 approval` for a §CP PR with no current-head team approval — ADR 0135, `latest verdict is FAIL`,
 `unverified (verdict not bound to current head)`, `checks pending`, a run-evidence refusal, …). A

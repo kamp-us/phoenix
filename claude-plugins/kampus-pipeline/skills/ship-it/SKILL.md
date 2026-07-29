@@ -2288,18 +2288,51 @@ PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-
 # (gh api …/commits?sha=<base>, the read that stayed fresh while the other two lagged — #4057), and
 # prints merged/ejected/queued/pending. It is fail-closed away from a false ship: any unreadable
 # signal ⇒ pending (keep polling), never a false merged/ejected.
-RECONCILE_TRIES=${SHIP_RECONCILE_TRIES:-10}   # ~10 polls
-RECONCILE_SLEEP=${SHIP_RECONCILE_SLEEP:-30}   # ~30s apart ⇒ ~5 min batch window
+# The budget, and the ONE number the stand-down must report: the OBSERVATION HORIZON. Poll k fires
+# at (k-1)*SLEEP, so what the run actually watched is (TRIES-1)*SLEEP — not TRIES*SLEEP. The old
+# 10x30s pair observed to 4m30s while every sampled merge-queue dwell on this repo ran 5m17s–9m25s
+# (n=10, median 6m27s, mean 6m37s — #4403), so the budget expired mid-dwell on 10 of 10 merges, and
+# the trailing sleep after the last poll burned 30s observing nothing. 16x30s puts the horizon at
+# 7m30s, past both the median and the mean; it is NOT set past the 9m25s max because one shipper
+# invocation has a ~10-minute wall-clock ceiling and the 16 polls' own `gh` latency eats into it.
+# That ceiling is what makes over-widening WORSE than standing down: a run killed against it
+# mid-loop never reaches the ledger at all, so it emits no `merge:` line — silence, where a
+# stand-down would at least have stated the bound of what it watched.
+# So even the widened horizon can expire mid-dwell — which is exactly why the widening is the
+# secondary fix and the honest stand-down wording below is the primary one.
+RECONCILE_TRIES=${SHIP_RECONCILE_TRIES:-16}
+RECONCILE_SLEEP=${SHIP_RECONCILE_SLEEP:-30}
+RECONCILE_HORIZON=$(( (RECONCILE_TRIES - 1) * RECONCILE_SLEEP ))   # seconds ACTUALLY observed
 MERGE_OUTCOME=pending
 for i in $(seq 1 "$RECONCILE_TRIES"); do
   MERGE_OUTCOME=$("$PCLI" merge-queue-classify classify --pr "$PR" --repo "$REPO")
   [ "$MERGE_OUTCOME" = merged ] && break   # terminal success
   [ "$MERGE_OUTCOME" = ejected ] && break  # a genuine dequeue (removed_from_merge_queue) — act below
-  # queued (still in the queue) or pending (enqueue-settle window) ⇒ keep polling within the budget
-  sleep "$RECONCILE_SLEEP"
+  # queued (still in the queue) or pending (enqueue-settle window) ⇒ keep polling within the budget.
+  # Sleep only BETWEEN polls: a trailing sleep after the last poll observes nothing, and only makes
+  # the reported horizon overstate the reach of the observation.
+  if [ "$i" -lt "$RECONCILE_TRIES" ]; then sleep "$RECONCILE_SLEEP"; fi
 done
 # At the budget's end a still-`pending` PR (never a merge-queue event) is reported as a well-formed
 # pending, NOT ejected — the settle window is not an ejection (#1921).
+
+# The run's merge disposition, single-sourced HERE and emitted verbatim as the ledger's `merge:`
+# line. Budget exhaustion while the PR is still in the queue is UNRESOLVED — genuinely unknown, and
+# neither a landing nor a failure — so it is worded as the bounded observation it is, carrying the
+# horizon it watched. The three renderings stay textually distinct (#4403).
+case "$MERGE_OUTCOME" in
+  merged)
+    MERGE_DISPOSITION="landed (queue merged the batch)" ;;
+  queued|pending)
+    MERGE_DISPOSITION="UNRESOLVED — still queued at my last read, ~${RECONCILE_HORIZON}s after enqueue; the merge may still land. Bounded observation, not a failure and not a landing — an independent later read closes the lane." ;;
+  ejected)
+    MERGE_DISPOSITION="EJECTED (routed to repair/re-queue)" ;;
+  *)
+    # Unreachable while the classifier prints one of its four words — which is exactly why it is
+    # here: without it an unrecognized $MERGE_OUTCOME leaves MERGE_DISPOSITION unset and the
+    # ledger's `merge:` line renders BLANK — a could-not-determine posing as nothing at all.
+    MERGE_DISPOSITION="UNKNOWN — the reconcile produced no recognized outcome word; the merge state was never determined. Not a landing, not a failure, not an ejection — re-read the PR before acting on it." ;;
+esac
 
 # Guard 6 (ADR 0198) — the reconcile's terminal read is the LAST place this run can leave an arm
 # behind, so it is also sites 3 and 4. `merged` and `queued` keep the intent (a live queue entry is
@@ -2385,10 +2418,16 @@ merge disposition:
   is confirmed in the queue (last event `added_to_merge_queue`, or `mergeStateStatus == QUEUED`);
   `pending` is the **enqueue-settle window** (OPEN, not merged, no merge-queue event yet — incl.
   OPEN + CLEAN before the CLEAN → QUEUED flip). **Both are a well-formed pending, not a failure**
-  (ADR 0132: the actor does not block to the final merge). Report `enqueued: yes (→ auto-merges on
-  green)` exactly as before — the reconcile confirmed it was **still in-flight as far as the
-  timeline can tell** within the window, which is not the same as "never ejected" (the accepted
-  staleness bound above). A `pending` PR at the budget's end is reported this way too — the settle window
+  (ADR 0132: the actor does not block to the final merge). But it is also **not a settled outcome**:
+  the run watched a bounded slice of a dwell it did not see the end of, so the merge is **UNRESOLVED
+  — genuinely unknown, and it may well land seconds later**. Report the disposition the `case` block
+  above rendered, verbatim, **carrying `$RECONCILE_HORIZON`** — the run states how long it watched
+  and that landing is unconfirmed, never a settled disposition. Two words are banned here because
+  each asserts more than any expired reconcile observed: **"reconciled"** (the window closed on an
+  answer — it did not) and **"auto-merges on green"** (a future stated as fact). The distinction
+  they erased is the one this bullet turns on: still-queued at the horizon means **still in-flight
+  as far as the timeline can tell**, which is not "never ejected" (the accepted staleness bound
+  above) and is not "it will merge". A `pending` PR at the budget's end is reported this way too — the settle window
   is **never** an ejection (#1921). **One carve-out** (guard 6): on a base branch a **merge queue
   governs** — every PR in this repo — a `pending` PR never entered the queue at all, so what it
   carries is a parked intent, not an in-flight enqueue; the guard-6 block above clears it and the
@@ -2621,7 +2660,8 @@ exists / is schema-readable / is commit-bound / is all-`pass` (Step 3.5, guard 2
 squash-merge with `--auto` (Step 4), confirm enqueued + green (Step 5), **bounded-reconcile the
 enqueue to catch a queue ejection** before reporting shipped (Step 5.5), and surface the release
 queue on a dark merge (Step 5b). The queue owns the final merge — success is **enqueued + green,
-reconciled to landed-or-still-queued** (never a silent ejection), and the issue-close is async
+observed to `landed` or left UNRESOLVED at the reconcile's horizon** (never a silent ejection, and
+never a bounded observation dressed as a settled one — #4403), and the issue-close is async
 (ADR 0132).
 
 Report back a tight terminal ledger — nothing else, because the merge itself is the
@@ -2631,20 +2671,24 @@ durable record:
 PR #<PR> — issue #<ISSUE>
 branch: <head ref>
 PR url: <html_url>
-enqueued: yes (QUEUED → auto-merges on green) | no (<reason if no>)
-merge: landed (queue merged the batch) | still queued (pending, reconciled) | EJECTED (routed to repair/re-queue)
+enqueued: yes (QUEUED — the queue owns the async merge) | no (<reason if no>)
+merge: <the MERGE_DISPOSITION Step 5.5's case block rendered — landed | UNRESOLVED … ~<N>s … may still land | EJECTED>
 issue: closes async on queue merge | n/a (doc/vocab-surface-only, no linked issue) | #<PART_OF> left open (partial split)
 release: queued (awaiting human flip) | n/a (not a dark ship)
 ```
 
-The `enqueued:` line is the enqueue success condition: `yes (QUEUED → auto-merges on green)` once
-`--auto` armed the merge (Step 4). The `merge:` line is the **reconciled terminal outcome** (Step
+The `enqueued:` line is the enqueue success condition: `yes (QUEUED — the queue owns the async
+merge)` once `--auto` armed the merge (Step 4). It reports that the PR entered the queue, never
+that it will come out of it merged. The `merge:` line is the reconcile's terminal outcome (Step
 5.5) — the queue owns the final, async merge, so the issue-close also lands async (ADR 0132),
 reported as `issue: closes async on queue merge`. There is no in-run `merged: yes` / `issue closed:
 yes` **assertion** any more — asserting an immediate merge would false-fail every enqueued PR — but
-the bounded reconcile **does** distinguish `landed` from `still queued` from `EJECTED`, so `QUEUED`
-never masks a silent stall. An `EJECTED` outcome is **not** a shipped state: it routes back to
-repair/re-queue (Step 5.5), never reported as success.
+the bounded reconcile **does** distinguish `landed` from `UNRESOLVED (still queued)` from
+`EJECTED`, so `QUEUED` never masks a silent stall. An `EJECTED` outcome is **not** a shipped state:
+it routes back to repair/re-queue (Step 5.5), never reported as success. An **UNRESOLVED** outcome
+is not a shipped state either — but it is equally **not a failure**: it says the observation ended
+at its horizon with the PR still queued, and the merge may still land. Never read it as "it did not
+merge" (#4403).
 
 The `release:` line is the deployment/release boundary made visible (ADR 0083): `queued
 (awaiting human flip)` when Step 5b's ground-truth signal fired (the PR introduced a default-off
