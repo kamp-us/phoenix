@@ -286,14 +286,27 @@ disarm_intent preflight || exit 1
 gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename'   # --paginate + streaming --jq: full set past file #100 (the API caps per_page at 100; #725)
 ```
 
-Classify each path. The **control-plane / blocking set** is defined **once** in
-[`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §CP — cite that regex, don't
-re-hard-code the path list (the three independent copies are the #375 drift class §CP closes,
-ADR 0073 §6). And **resolve it from `origin/main` at run time, not from the copy embedded in
-this skill body** — that embedded copy travels in the *injected snapshot*, which can lag
-`origin/main` even when the on-disk file is current, so a pre-amendment snapshot once
-auto-merged a now-control-plane PR (#981). The bash below reads §CP freshly from `origin/main`
-and **fails closed** (treats every path as control-plane → refuses) if that read can't be made:
+Classify each path. The classification is **derived by the shared verb `pipeline-cli cp-classify`**,
+never by a boundary grep hand-rolled here — the same entry point the other gates run, so the answer
+that decides a merge cannot drift from the answer that decided the review (formats §CP, #4161/#4405).
+
+Two properties of that verb are what make it a legitimate substitute for the derivation this step
+used to carry, and neither may be traded away. It **re-resolves `CONTROL_PLANE_RE` from `origin/main`
+at run time** (`?ref=main`): the boundary is defined **once** in
+[`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §CP (ADR 0073 §6; the three
+independent copies are the #375 drift class §CP closes), and the *embedded* copy travels in the
+injected snapshot, which can lag `origin/main` even when the on-disk file is current — a
+pre-amendment snapshot once auto-merged a now-control-plane PR (#981). Re-deriving at merge time,
+against **main's** boundary rather than the PR's own edit of it, is the anti-self-authorization
+property; it moved **into** the verb, it did not become a compile-time import. And it answers on
+**both** §CP axes — path *and* the ADR-0164 content clause — so a guard-touching `.decisions/**` ADR,
+which is §CP with **zero** path matches, cannot read as ordinary product work (#4134).
+
+The verb returns **four** states, and only one of them is a non-§CP answer. Assert on the **stdout
+state word**, never on a bare non-zero exit: `not-control-plane` exits **3**, and the exit code
+discriminates the states only *once the verb has run* — a usage error prints help and exits 1, a
+missing binary exits 127, and neither is a classification. Everything that is not a positive
+`not-control-plane` is **held**:
 
 - **control plane (blocking):** matches the §CP set — `.claude/**`, `.github/**`, or a
   **gate-critical skill** (`claude-plugins/kampus-pipeline/skills/ship-it/**`, `claude-plugins/kampus-pipeline/skills/review-code/**`,
@@ -351,11 +364,6 @@ if ! cp_changed_files "$REPO" "$PR"; then
   exit 1
 fi
 FILES="$CP_FILES"   # proven-arrived, scope already emitted ($CP_FILES_N files) per §ZS #1
-# §CP travels in the INJECTED skill snapshot, which can lag origin/main even when the on-disk file
-# is current — a pre-amendment snapshot once auto-merged a now-control-plane PR (#981).
-# §CP boundary is single-sourced in pipeline-cli (control-plane-paths/control-plane-re.ts, #2761);
-# run `pipeline-cli control-plane-paths` to print it. It is re-resolved from origin/main right below
-# (the #981 anti-self-authorization read), so this is only a fail-closed sentinel, never the live source.
 # NON-TRIVIALITY ASSERT (#4401) — single-sourced in §CLASS of gh-issue-intake-formats.md; copied
 # here verbatim because Step 0 runs as one shell block. EVERY boundary this step strips out of a
 # network read goes through it before anything gates on it: an empty or prefix-carrying value still
@@ -368,61 +376,60 @@ accept_re() {   # $1=name, $2=resolved value, $3=fail-closed default
   printf 'TRIVIAL-GATE-BOUNDARY: %s did not resolve to a usable pattern — failing closed.\n' "$1" >&2
   printf '%s' "$3"
 }
-CONTROL_PLANE_RE='.'   # fail-closed default: every path is control-plane until origin/main resolves
-# Re-resolve §CP from origin/main at run time so a stale snapshot can't mis-classify a now-control-plane
-# PR as auto-mergeable (#981). ADR 0073 §6 names gh-issue-intake-formats.md the single source; read it
-# freshly via REST raw (never GraphQL, top-of-skill rule). origin/main's line wins over the snapshot.
-CP_LIVE="$(gh api "repos/$REPO/contents/claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md?ref=main" -H 'Accept: application/vnd.github.raw' 2>/dev/null | grep '^CONTROL_PLANE_RE=' | head -n1 || true)"
-if [ -n "$CP_LIVE" ]; then
-  CONTROL_PLANE_RE="$(accept_re CONTROL_PLANE_RE "$(printf '%s' "$CP_LIVE" | sed "s/^CONTROL_PLANE_RE='//; s/'$//")" '.')"   # classification tracks origin/main, not the snapshot's age (AC1/AC2); a trivial strip fails closed to '.'
-else
-  CONTROL_PLANE_RE='.'   # FAIL CLOSED: can't read origin/main's boundary ⇒ treat EVERY path as control-plane (refuse), never trust the possibly-stale snapshot
-fi
-echo "$FILES" | grep -Eq "$CONTROL_PLANE_RE" && echo "BLOCKING"   # control plane: .claude/.github + the gate-critical skills (ADR 0065) + the enforcement-guard packages (ADR 0100/0103); other skills/** auto-merge on a review-skill PASS (ADR 0073)
-# §CP CONTENT clause (ADR 0164/#2191): a .decisions/** ADR is §CP by PATH only if it also matches
-# CONTROL_PLANE_RE (it doesn't) — but a guard-RELAXING ADR is control-plane by NATURE and path can't
-# tell it from an ordinary one. So classify a touched .decisions/** ADR §CP when its CONTENT cites or
-# amends a documented guard. This probe is the SHARED verb `pipeline-cli guard-content-probe` (issue
-# #3645, founder ruling #3416) — the ONE content probe the review gate and the driver (via
-# trivial-diff) ALSO call, so a guard-touching ADR classifies §CP consistently at every stage, not
-# only here. The GUARD_ADR_RE vocabulary stays single-sourced in gh-issue-intake-formats.md §CP; the
-# verb reads it from the local checkout (immune to the #981 injected-snapshot staleness — it reads
-# disk, not this skill's prompt copy). FAIL CLOSED: an unreadable ADR body (delete/404) ⇒ §CP —
-# never auto-ship an ADR that couldn't be read and proven guard-free. That resolution is made HERE,
-# in the shell: the verb never sees a failed read, because a straight pipe would hand it `gh`'s error
-# document as the ADR body and it would classify THAT (§CPREAD #2, #4216).
-# The ref is a fallible read too — `cp_head_sha` is §CPREAD's companion to `cp_changed_files` (copy
-# it verbatim from there). It DISCARDS gh's payload on failure, which is what makes the emptiness
-# test below a live guard: with a bare `|| true` the error document lands in HEAD_SHA, non-empty.
-# Assert on the probe's STATE WORD, never on its exit status — the exit code discriminates the two
-# verdicts only once the verb has RUN, so the old `>/dev/null && echo BLOCKING` shape emitted NOTHING
-# when it never ran (bad flag / nested-cwd module-not-found / missing shim) and recorded an unprobed
-# ADR as ordinary. The `*)` arm holds could-not-determine, exactly as an unreadable body is (#4219).
 # §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
 PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
-cp_head_sha "$REPO" "$PR"; HEAD_SHA="$CP_HEAD_SHA"
-if [ -z "$HEAD_SHA" ]; then
-  echo "BLOCKING (head SHA unreadable ⇒ no ref to probe ADR content at ⇒ §CP UNKNOWN, held)"   # fail closed: an unprobeable content clause is not an absent one
-else
-  echo "$FILES" | grep -E '^\.decisions/.*\.md$' | while IFS= read -r adr; do
-    [ -z "$adr" ] && continue
-    # Capture and CHECK before classifying, never a straight pipe — §CPREAD #2.
-    adr_body="$(gh api "repos/$REPO/contents/$adr?ref=$HEAD_SHA" -H 'Accept: application/vnd.github.raw' 2>/dev/null)" || adr_body=""
-    if [ -z "$adr_body" ]; then
-      echo "BLOCKING ($adr — ADR body unreadable ⇒ §CP UNKNOWN, held)"
-    else
-      GC_STATE="$(printf '%s' "$adr_body" | "$PCLI" guard-content-probe classify --path "$adr" 2>/dev/null)"
-      case "$GC_STATE" in
-        not-guard-touching) : ;;   # proven ordinary — the ONLY value that may skip the §CP hold
-        guard-touching) echo "BLOCKING ($adr — guard-touching ADR ⇒ §CP, ADR 0164)" ;;
-        *) echo "BLOCKING ($adr — probe UNDETERMINED (state '$GC_STATE') ⇒ §CP, fail-closed)" ;;
-      esac
-    fi
-  done
+# Could-not-run is UNKNOWN, never a discharge (§CLI, #3314). The catch-all below would hold an
+# unresolvable shim anyway; refusing here names the cause instead of reporting an empty state word.
+[ -x "$PCLI" ] || { echo "BLOCKING (CLI shim UNRESOLVED at '$PCLI' ⇒ §CP UNKNOWN, held)"; echo "STOP: classification unresolved — refuse to enqueue."; exit 1; }
+# The §CP derivation — the shared verb, not a hand-rolled boundary grep (#4405); the prose above is
+# the why. Four states on stdout, only `not-control-plane` an answer: assert on the STATE WORD, never
+# the exit status (formats §CP; #4161/#4219).
+CP_STATE="$(printf '%s\n' "$FILES" | "$PCLI" cp-classify classify --repo "$REPO")"
+if [ "$CP_STATE" = "control-plane" ]; then
+  echo "BLOCKING"   # a path matched the live boundary: .claude/.github + the gate-critical skills (ADR 0065) + the enforcement-guard packages (ADR 0100/0103); other skills/** auto-merge on a review-skill PASS (ADR 0073)
+elif [ "$CP_STATE" = "content-undetermined" ]; then
+  # Discharge the ADR-0164 obligation with the SAME shared `guard-content-probe` the review gates and
+  # the driver (via trivial-diff) run (#3645, founder ruling #3416) — so a guard-touching ADR
+  # classifies §CP identically at every stage, not just here. The GUARD_ADR_RE vocabulary stays
+  # single-sourced in gh-issue-intake-formats.md §CP.
+  # The ref is a fallible read — `cp_head_sha` is §CPREAD's companion to `cp_changed_files` (copy it
+  # verbatim from there). It DISCARDS gh's payload on failure, which is what makes the emptiness
+  # test below a live guard: with a bare `|| true` the error document lands in HEAD_SHA, non-empty.
+  cp_head_sha "$REPO" "$PR"; HEAD_SHA="$CP_HEAD_SHA"
+  if [ -z "$HEAD_SHA" ]; then
+    echo "BLOCKING (head SHA unreadable ⇒ no ref to probe ADR content at ⇒ §CP UNKNOWN, held)"   # fail closed: an unprobeable content clause is not an absent one
+  else
+    printf '%s\n' "$FILES" | grep -E '^\.decisions/.*\.md$' | while IFS= read -r adr; do
+      [ -z "$adr" ] && continue
+      # Capture and CHECK before classifying, never a straight pipe — gh writes its error document to
+      # STDOUT, so a pipe would hand the probe an ERROR BODY as the ADR body (§CPREAD #2, #4216).
+      adr_body="$(gh api "repos/$REPO/contents/$adr?ref=$HEAD_SHA" -H 'Accept: application/vnd.github.raw' 2>/dev/null)" || adr_body=""
+      # A classification is only as good as the bytes it was derived from: a truncated or near-empty
+      # body classifies `not-guard-touching` just as cleanly as a real one, so an unread ADR would
+      # pose as a proven-ordinary one. A real ADR's frontmatter alone clears this floor, so the
+      # assert can only move an outcome TOWARD §CP.
+      if [ "${#adr_body}" -lt 64 ]; then
+        echo "BLOCKING ($adr — ADR body unreadable or trivially short (${#adr_body} bytes) ⇒ §CP UNKNOWN, held)"
+      else
+        # Same state-word rule as cp-classify above. Note `guard-content-probe` takes --body-file /
+        # --path and NOT --repo: an unrecognized flag prints HELP TEXT and exits non-zero, which is
+        # not a classification. The `*)` arm holds it, exactly as it holds an unreadable body (#4219).
+        GC_STATE="$(printf '%s' "$adr_body" | "$PCLI" guard-content-probe classify --path "$adr" 2>/dev/null)"
+        case "$GC_STATE" in
+          not-guard-touching) : ;;   # proven ordinary — the ONLY value that may skip the §CP hold
+          guard-touching) echo "BLOCKING ($adr — guard-touching ADR ⇒ §CP, ADR 0164)" ;;
+          *) echo "BLOCKING ($adr — probe UNDETERMINED (state '$GC_STATE') ⇒ §CP, fail-closed)" ;;
+        esac
+      fi
+    done
+  fi
+elif [ "$CP_STATE" != "not-control-plane" ]; then
+  echo "BLOCKING (§CP state '$CP_STATE' ⇒ not proven ordinary, held)"   # `unknown`, anything unenumerated, and the EMPTY STRING a failed invocation yields
 fi
 # The has-code/has-docs/has-skills probes are single-sourced as canonical HAS_*_RE= lines in
-# gh-issue-intake-formats.md §CLASS and re-resolved from origin/main here (like CONTROL_PLANE_RE/
-# UI_RE, #981) so this snapshot can't mis-classify — and so the reviewer (which consumes the SAME
+# gh-issue-intake-formats.md §CLASS and re-resolved from origin/main here (the #981 idiom, same as
+# UI_RE below and as the §CP boundary cp-classify re-resolves internally) so this snapshot can't
+# mis-classify — and so the reviewer (which consumes the SAME
 # lines) fans across every present class in lockstep with what ship-it requires (#2383). The reviewer
 # and this step both run `pipeline-cli class-probe classify` (which parses these SAME §CLASS lines —
 # no third copy) as the deterministic class set, so `required == dispatched` can't diverge by an
@@ -440,7 +447,7 @@ HAS_CODE_RE="$(reresolve_re HAS_CODE_RE '.')"
 HAS_SKILLS_RE="$(reresolve_re HAS_SKILLS_RE '.')"
 HAS_DOCS_EXCLUDE_RE="$(reresolve_re HAS_DOCS_EXCLUDE_RE '\$^')"   # fail-closed: exclude NOTHING ⇒ every path reaches the doc test
 HAS_DOCS_RE="$(reresolve_re HAS_DOCS_RE '.')"                     # fail-closed: every path is a doc
-echo "$FILES" | grep -Eq "$HAS_SKILLS_RE" && echo "has-skills"   # → review-skill (ADR 0073/0150); §CP-blocking for merge via CONTROL_PLANE_RE above
+echo "$FILES" | grep -Eq "$HAS_SKILLS_RE" && echo "has-skills"   # → review-skill (ADR 0073/0150); §CP-blocking for merge via the cp-classify derivation above
 echo "$FILES" | grep -Eq "$HAS_CODE_RE" && echo "has-code"       # → review-code; the has-code roots agree with the docs-exclusion below in lockstep (§CLASS/§DOC, #663/#919/#1987)
 echo "$FILES" | grep -Ev "$HAS_DOCS_EXCLUDE_RE" | grep -Eq "$HAS_DOCS_RE" && echo "has-docs"   # → review-doc; carve out code roots/skills/.glossary first, then test for a doc path (§DOC contract)
 # No-class fail-closed (#2765): a NON-EMPTY diff whose files match NONE of the three classes above
@@ -453,8 +460,9 @@ echo "$FILES" | grep -Ev "$HAS_DOCS_EXCLUDE_RE" | grep -Eq "$HAS_DOCS_RE" && ech
 # classify` above ALSO emits `has-ui` (it parses this same UI_RE from its single source,
 # ship-it/SKILL.md) — so the reviewer fan dispatches review-design off the SAME deterministic probe
 # it fans the class gates from, rather than eyeballing the files and skipping it (the #2483 deadlock;
-# #2485). Like CONTROL_PLANE_RE/GUARD_ADR_RE above, the literal below is the fail-closed REFERENCE +
-# the validate-gate-path-drift lockstep target, NOT the live decision source: it is re-resolved from
+# #2485). Like the §CP boundary and GUARD_ADR_RE (both re-resolved inside their shared verbs above),
+# the literal below is the fail-closed REFERENCE + the validate-gate-path-drift lockstep target, NOT
+# the live decision source: it is re-resolved from
 # origin/main right after, so an injected skill snapshot that predates the review-design gate can't
 # silently DROP the UI probe and slip a UI PR past the gate (#2341 — the #981 idiom, previously only
 # on §CP/GUARD, now extended to UI_RE). ship-it/SKILL.md@main's `UI_RE=` line is the ONE live source;
@@ -971,38 +979,20 @@ author cannot widen it via a file in their own diff. The solo operator `usirin` 
 ADR 0048) holds `admin` and passes; any future operator or review-bot earns standing by being
 a `write+` collaborator, with no edit to this skill.
 
-For the **marker namespaces** that author-gate is applied *inside* `pipeline-cli verdict read`
-(Step 2) — it is the verb's own ADR-0055 trust root, not re-derived here. The set below is still
-resolved explicitly because the **§CP advisory** resolution (Step 2.§CP) needs it: an advisory is
-SHA-less in its first line by design (ADR 0111), so `verdict read` resolves that namespace to
-`none` and cannot author-gate it — the advisory's own latest-wins/author-gated pick is ship-it's.
+**ship-it resolves no authorized-author set of its own — the verb owns that lookup for every
+namespace, advisory included.** This step used to rebuild the ACL set here, on the stated ground that
+the §CP advisory resolution (Step 2.§CP) needed a set `verdict read` could not supply. That ground no
+longer holds, and the set it built had no consumer left: `pipeline-cli verdict gate` resolves
+`authorizedAuthors` itself from the same GitHub ACL, and `gate-decision` applies it to the **advisory**
+pick exactly as it does to a marker — the author-gate's scope covers PASS / FAIL / advisory alike. So
+the §CP advisory *is* author-gated; it is gated one layer down. Rebuilding the set here bought a
+comments fetch plus one collaborator-permission call per marker author, per ship, for a value nothing
+read (#4405).
 
-Resolve the authorized-author set from the ACL — every distinct marker author whose repo
-permission is `write` / `maintain` / `admin`. This fails closed: a lookup error or a
-`read`/`triage` author never enters the set, so their marker is ignored exactly as an
-off-list author was under 0051. When *no* author clears the bar, `authorized` stays `[]`
-and no advisory resolves — `unverified` → refuse — so the empty set is the safe terminal
-state, not an open door (the same fail-closed terminal `verdict read` applies to markers).
-
-```bash
-comments_file=$(mktemp)
-gh api "repos/$REPO/issues/$PR/comments?per_page=100" > "$comments_file"
-
-# distinct logins that posted any review-code/review-doc/review-skill/review-design marker
-markerAuthors=$(jq -r '[.[]
-    | select(.body | test("^\\s*\\**\\s*review-(code|doc|skill|design):\\s*(PASS|FAIL)"; "i"))
-    | .user.login] | unique | .[]' "$comments_file")
-
-# keep only those holding write+ on the repo (GitHub's ACL is the trust root, ADR 0055)
-authorized='[]'
-while IFS= read -r a; do
-  [ -z "$a" ] && continue
-  perm=$(gh api "repos/$REPO/collaborators/$a/permission" --jq .permission 2>/dev/null)
-  case "$perm" in
-    admin|maintain|write) authorized=$(jq -c --arg a "$a" '. + [$a]' <<<"$authorized") ;;
-  esac
-done <<<"$markerAuthors"
-```
+The fail-closed direction is unchanged and now lives in one place: a lookup error or a `read`/`triage`
+author never enters the set, so their marker is ignored exactly as an off-list author was under 0051,
+and when *no* author clears the bar the set is empty, nothing resolves, and the gate refuses
+`unverified`. An empty authorized set is the safe terminal state, not an open door.
 
 Resolve the **in-force** verdict per namespace **through `pipeline-cli verdict read`**: the verb folds
 the ADR-0055 write+ author-gate (a forged newer marker from an unauthorized author can't shadow a real
@@ -1028,7 +1018,7 @@ SLOT was opened, not when the verdict it now carries was written — gets both w
 The same trap catches a human skimming the PR, since the GitHub UI orders by creation time too — read
 the `@ <sha>` / `Reviewed-head:` binding and the `Verdict-written:` stamp, never the position.
 The native decisive review folds into the code namespace separately (the verb reads marker comments,
-not reviews); Step 2b keeps `is_current` for it and for the §CP advisory body-SHA:
+not reviews), and that fold applies the ADR-0058 staleness test inline, at the fold itself:
 
 ```bash
 # the PR's CURRENT head SHA — the head every verdict must be bound to (ADR 0058)
@@ -1049,22 +1039,19 @@ REVIEW=$(gh api "repos/$REPO/pulls/$PR/reviews?per_page=100" \
 # (#3653; ADR 0062/0064; epic #994)
 VERDICT="${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/bin/pipeline-cli verdict"
 
-# per present namespace (Step 0), resolve the marker verdict against the current head via the verb:
-# <g>_PASS=1 iff a current-head PASS marker in that gate; <g>_FAIL=1 iff a current-head FAIL (the
-# veto). A stale / SHA-less / none verdict exits non-zero on BOTH, so it is neither a PASS nor a FAIL
-# — Step 2b's `unverified (verdict not bound to current head)` refusal, now owned by the verb. (A §CP
-# advisory namespace is SHA-less by design and resolves `none` here — Step 2.§CP handles it from the
-# body's Reviewed-head instead.)
-# the code namespace keeps the verb's stdout JSON: it carries `writtenAt`, the resolving verdict's
-# WRITE time, which is what the newest-wins fold below compares (#4200).
+# Resolve the CODE namespace only — it is the one namespace with work left to do here, because it is
+# the only one a native GitHub review can decide, and `verdict gate` reads marker/advisory COMMENTS,
+# not reviews. The per-namespace PASS/FAIL conjunction across doc / skill / design was already
+# decided by the `verdict gate` call above, which runs FIRST and refuses on non-zero; re-resolving
+# those three here set six variables nothing read, at six subprocess spawns per ship (#4405).
+# CODE_PASS=1 iff a current-head PASS marker; CODE_FAIL=1 iff a current-head FAIL (the veto). A
+# stale / SHA-less / none verdict exits non-zero on BOTH, so it is neither — Step 2b's `unverified
+# (verdict not bound to current head)` refusal, owned by the verb. (A §CP advisory namespace is
+# SHA-less by design and resolves `none` here; `verdict gate --cp` reads its body Reviewed-head.)
+# The stdout JSON is kept because it carries `writtenAt`, the resolving verdict's WRITE time, which
+# is what the newest-wins fold below compares (#4200).
 CODE_JSON="$($VERDICT read --pr "$PR" --gate code --expect PASS 2>/dev/null)" && CODE_PASS=1 || CODE_PASS=0
 $VERDICT read --pr "$PR" --gate code   --expect FAIL >/dev/null 2>&1 && CODE_FAIL=1   || CODE_FAIL=0
-$VERDICT read --pr "$PR" --gate doc    --expect PASS >/dev/null 2>&1 && DOC_PASS=1    || DOC_PASS=0
-$VERDICT read --pr "$PR" --gate doc    --expect FAIL >/dev/null 2>&1 && DOC_FAIL=1    || DOC_FAIL=0
-$VERDICT read --pr "$PR" --gate skill  --expect PASS >/dev/null 2>&1 && SKILL_PASS=1  || SKILL_PASS=0
-$VERDICT read --pr "$PR" --gate skill  --expect FAIL >/dev/null 2>&1 && SKILL_FAIL=1  || SKILL_FAIL=0
-$VERDICT read --pr "$PR" --gate design --expect PASS >/dev/null 2>&1 && DESIGN_PASS=1 || DESIGN_PASS=0
-$VERDICT read --pr "$PR" --gate design --expect FAIL >/dev/null 2>&1 && DESIGN_FAIL=1 || DESIGN_FAIL=0
 
 # fold the native decisive review into the code namespace (the verb reads only marker comments). Only
 # a review bound to the current head counts (same ADR-0058 staleness as a marker's @ <sha>).
@@ -1172,23 +1159,18 @@ Every `unverified …` here is a stop path, so it runs `disarm_intent refuse` be
 enqueue behind your back — ADR 0058's staleness rule and ADR 0198's are one rule applied to two
 artifacts.
 
-Two signals `verdict read` does **not** resolve still need the test applied explicitly, so the
-helper stays: the **native review**'s `commit_id` (folded into the code namespace in Step 2) and the
-**§CP advisory**'s body `Reviewed-head` SHA (Step 2.§CP).
-
-```bash
-# is a bound SHA $1 the current head? (prefix-match, either side may be abbreviated) — applied to the
-# native review's commit_id and the §CP advisory's body Reviewed-head SHA; the marker namespaces are
-# already head-bound by `verdict read`. Empty/absent $1 MUST short-circuit to refuse FIRST: an
-# unguarded `case "$CURRENT_HEAD" in ""*)` reduces to the glob `*` — which matches any head and would
-# falsely report a SHA-less marker as current (ADR 0058 rule 3).
-is_current () { [ -n "$1" ] || return 1; case "$CURRENT_HEAD" in "$1"*) return 0;; esac; case "$1" in "$CURRENT_HEAD"*) return 0;; esac; return 1; }
-```
+Two signals `verdict read` does not resolve carry the test elsewhere, and **neither is applied
+here**: the **native review**'s `commit_id` is tested inline at the Step-2 fold (the `[ -n "$RSHA" ]`
+emptiness short-circuit followed by the `case "$CURRENT_HEAD" in "$RSHA"*` prefix-match), and the
+**§CP advisory**'s body `Reviewed-head` SHA is tested inside `verdict gate --cp`. The empty-SHA
+short-circuit is the load-bearing half in both: an unguarded `case "$CURRENT_HEAD" in ""*)` reduces
+to the glob `*`, which matches any head and would falsely report a SHA-less verdict as current (ADR
+0058 rule 3).
 
 <a id="step-2cp--cp-advisory-namespace-resolution-adr-01350151"></a>
 ### Step 2.§CP — resolve a §CP advisory namespace from the body's `Reviewed-head` line (ADR 0135/0151)
 
-> **Owned by the verb — the bash below is the reference explanation, not a second implementation.**
+> **Owned by the verb — this section is the reference explanation, and carries no runnable code.**
 > This resolution now runs inside `pipeline-cli verdict gate --cp` ([Step 2 gate](#step-2-gate)):
 > author-gate the advisory the same way as a marker, take latest-wins across marker *and* advisory,
 > read the head from the body's `Reviewed-head` anchor, and require every body checkbox `[PASS]`. Read
@@ -1223,27 +1205,25 @@ named reason**. `review-code` is in this set: a §CP code PR's approved verdict 
 advisory (§6.6/ADR 0151 converges **all four** gates on one advisory form), so its body
 `Reviewed-head` line resolves the enqueue exactly like the doc/skill/design namespaces — without it,
 a canonical review-code §CP advisory had no written resolution path and read as `sha: null` → refused
-on a legitimately-approved PR (#2329):
+on a legitimately-approved PR (#2329).
 
-```bash
-# $ADV_BODY = the IN-FORCE §CP advisory comment body for this namespace (review-code/skill/doc/design),
-# author-gated (write+, ADR 0055) and resolved head-first exactly like the markers above — an advisory
-# is upserted in place too, so its `created_at` does not order it; its `Verdict-written:` stamp does
-# (`pipeline-cli verdict gate --cp` computes this; do not hand-roll a newest-comment read here).
-# (a) body's canonical Reviewed-head SHA (ADR 0151 §6.6) must prefix-match the PR's current head.
-#     Anchored to the `Reviewed-head:` line — a DISTINCT token from the first-line advisory marker,
-#     so this never mistakes a first-line marker for the body binding, and the advisory stays out of
-#     the PASS namespace. Optional `@`, 7–40 hex, ADR 0058 prefix-match either side.
-BODY_SHA="$(printf '%s' "$ADV_BODY" | grep -ioE '^[[:space:]]*Reviewed-head:[[:space:]]*@?[[:space:]]*[0-9a-f]{7,40}' \
-              | grep -ioE '[0-9a-f]{7,40}' | head -n1)"
-is_current "$BODY_SHA" || { echo "unverified (§CP advisory reviewed-head stale — body @ ${BODY_SHA:-none} ≠ current head) → refuse"; }
-# (b) every checkbox in the body is PASS — a clean recorded verdict, no [FAIL] anywhere.
-if printf '%s' "$ADV_BODY" | grep -qiE '^\s*[-*]?\s*\[[[:space:]]*FAIL[[:space:]]*\]'; then
-  echo "unverified (§CP advisory not all-PASS — a body checkbox is [FAIL]) → refuse"
-fi
-# (c) Step 0's current-head @kamp-us/control-plane approval — already asserted before reaching here.
-#     All three ⇒ this §CP namespace is a current-head PASS-equivalent for the class-gate below.
-```
+The three conditions below **describe `gate-decision`'s branches; they are not a procedure to run.**
+This section used to carry them as a fenced bash block that read an `$ADV_BODY` variable **nothing
+ever assigned** — so it could not execute even if followed literally, while looking exactly like the
+authoritative §CP resolution to anyone auditing the merge gate (#4405). The in-force advisory those
+conditions apply to is picked by the verb: author-gated write+ (ADR 0055) and ordered by its
+`Verdict-written:` stamp, never by `created_at`, because an advisory is upserted in place too.
+
+- **(a) The body's canonical `Reviewed-head: @ <sha>` line (ADR 0151 §6.6) must prefix-match the PR's
+  current head.** The verb anchors on the `Reviewed-head:` token — deliberately *distinct* from the
+  first-line advisory marker — so the body binding is never confused with a first-line marker and the
+  advisory stays out of the PASS namespace. Two separate refusals fall out: an advisory carrying **no**
+  `Reviewed-head` body binding at all, and one whose binding is **stale** against the current head.
+- **(b) Every checkbox in the body is `[PASS]`** — a single recorded `[FAIL]` anywhere refuses
+  `§CP <namespace> advisory not all-PASS`.
+- **(c) Step 0's current-head `@kamp-us/control-plane` approval** — already asserted before you reach
+  here. All three together make this §CP namespace a current-head PASS-equivalent for the class gate
+  below.
 
 A §CP namespace with **no** advisory comment at all (nor any PASS/FAIL marker) is still
 `unverified (no review-<code|skill|doc> PASS)` — the resolution needs a current-head advisory to read.
