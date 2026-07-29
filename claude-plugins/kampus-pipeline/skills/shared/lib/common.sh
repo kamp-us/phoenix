@@ -22,6 +22,28 @@
 # script in a per-skill scripts/ directory:
 #   . "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../shared/lib" && pwd)/common.sh"
 
+# Every file a skill's shell can live in, one absolute path per line: its SKILL.md plus every
+# `*.sh` under the skill's own directory — the destination the convention above sends extracted
+# blocks to. A validator that greps SKILL.md alone stops guarding the moment a block moves out of
+# it, staying green while guarding nothing (#4470); resolving the surface HERE, next to the
+# convention that defines it, is what keeps the two in step.
+#
+# Scoped to the skill's OWN directory on purpose. shared/lib/*.sh is cross-skill, so folding it
+# into every skill's surface would let one skill's marker satisfy another skill's per-skill check
+# — the same guard-in-text/absent-in-effect defect, reintroduced from the other side. A skill that
+# extracts its cycle wiring into the shared lib therefore FAILS these validators, loudly, which is
+# the correct direction: per-skill wiring stays per-skill, or the validator is updated deliberately.
+kp_skill_shell_surfaces() {
+	local skills_dir="$1" skill="$2"
+	if [ -f "$skills_dir/$skill/SKILL.md" ]; then
+		printf '%s\n' "$skills_dir/$skill/SKILL.md"
+	fi
+	if [ -d "$skills_dir/$skill" ]; then
+		find "$skills_dir/$skill" -type f -name '*.sh' | LC_ALL=C sort
+	fi
+	return 0
+}
+
 # The target repo as `owner/name`. Fails closed rather than yielding an empty string, which
 # would silently address `gh api repos//…` (§Target repo resolution, ADR 0062 §1).
 kp_repo() {

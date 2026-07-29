@@ -9,7 +9,8 @@
 #
 # This asserts the inverse, hermetically:
 #   1. STATIC wiring — each cycle-aware skill carries a PRESENT branch (CYCLE_DOC=present)
-#      paired with its present-path action, not just the absent no-op:
+#      paired with its present-path action, not just the absent no-op. Scanned across the
+#      skill's whole shell surface — SKILL.md AND its extracted scripts/*.sh (#4470):
 #        plan-epic   stamps a containment marker (flag|exempt) from the cycle policy
 #        write-code  ships dark behind a default-off flag (defaultVariation)
 #        review-code verifies the flag-gating before PASS
@@ -31,6 +32,18 @@ skills_dir="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # script lives in the tree); fall back to the physical plugin path
 # (<root>/claude-plugins/kampus-pipeline/skills) when git is unavailable.
 repo_root="$(git -C "$skills_dir" rev-parse --show-toplevel 2>/dev/null || (cd "$skills_dir/../../.." && pwd))"
+
+# kp_skill_shell_surfaces resolves each skill's scan surface — SKILL.md PLUS its extracted
+# scripts/*.sh (#4470). Sourced, not re-derived: the surface convention and its resolver live
+# together in the lib. A missing lib is a FAIL, never a narrowed scan (ADR 0092).
+COMMON_LIB="$skills_dir/shared/lib/common.sh"
+if [ ! -f "$COMMON_LIB" ]; then
+	echo "FAIL: shared lib not found at $COMMON_LIB — cannot resolve each skill's shell surface; refusing to scan a narrowed surface (ADR 0092)"
+	echo "validate-cycle-presence: FAILED — 1 error(s); the scan surface could not be resolved"
+	exit 1
+fi
+# shellcheck source=shared/lib/common.sh
+. "$COMMON_LIB"
 
 # The one well-known cycle-doc path every consumer probes (formats §1, single source).
 CYCLE_DOC_PATH="product-development-cycle.md"
@@ -75,22 +88,30 @@ for entry in "${CYCLE_SKILLS[@]}"; do
 		fail "$skill: SKILL.md not found at $md"
 		continue
 	fi
-	scanned_skills=$((scanned_skills + 1))
-	scanned_paths+=("$skill/SKILL.md")
 
-	if ! grep -qF "$PROBE_NEEDLE" "$md"; then
+	surfaces=()
+	while IFS= read -r surface; do
+		[ -n "$surface" ] && surfaces+=("$surface")
+	done < <(kp_skill_shell_surfaces "$skills_dir" "$skill")
+
+	scanned_skills=$((scanned_skills + 1))
+	for surface in "${surfaces[@]}"; do
+		scanned_paths+=("${surface#"$skills_dir/"}")
+	done
+
+	if ! grep -qF "$PROBE_NEEDLE" "${surfaces[@]}"; then
 		fail "$skill: does not cite the canonical cycle-doc probe ('$PROBE_NEEDLE') — the present branch must key off the one well-known path (formats §1)"
 	else
 		ok "$skill cites the canonical cycle-doc probe"
 	fi
 
-	if ! grep -qiE "$PRESENT_GATE_RE" "$md"; then
+	if ! grep -qiE "$PRESENT_GATE_RE" "${surfaces[@]}"; then
 		fail "$skill: no present-resolution of the cycle probe found (expected /$PRESENT_GATE_RE/i) — the present-path action must be gated on the doc being present"
 	else
 		ok "$skill resolves the probe to present"
 	fi
 
-	if ! grep -qiE "$action_re" "$md"; then
+	if ! grep -qiE "$action_re" "${surfaces[@]}"; then
 		fail "$skill: no present-path action found (expected /$action_re/i) — the cycle's present branch must DO something (ADR 0091/0092), not just no-op"
 	else
 		ok "$skill carries its present-path action (/$action_re/i)"
