@@ -1467,186 +1467,35 @@ source of the set**, so every consumer cites *one* definition and the copies can
 again (ADR [0073](https://github.com/kamp-us/phoenix/blob/main/.decisions/0073-review-skill-gate.md) §6,
 closing the #375 drift class).
 
-**The control-plane / blocking set is, exactly:**
+**What the set governs — and where to read it.** It decides **merge authority**: who may merge a
+PR that touches it. That is the only axis it governs; which gate *verifies* the PR is a separate
+question (the callout below). The membership list is single-sourced in the `CONTROL_PLANE_RE`
+const and printed, expanded, by **`pipeline-cli control-plane-paths --paths`** — run that rather
+than read a copy, and never re-hard-code the list here or in a consumer. The regex those members
+amount to is the canonical `CONTROL_PLANE_RE=` line in the next subsection.
 
-- `.claude/**` — the agent control plane (instructions, tools, hooks).
-- `.github/**` — CI enforcement.
-- `.claude-plugin/**` — the **root marketplace manifest** (`marketplace.json`), which declares
-  what the `kampus` marketplace serves and where each plugin's `source` tree is. It governs
-  **delivery of the control plane itself**: the `kampus-pipeline` entry is how the gate-critical
-  skills and the pipeline agents reach a session, and `validate-gate-path-drift.sh` Invariant 2
-  resolves the `.claude/skills` symlink against this file's `source` field. An unreviewed edit
-  here can redirect which tree the gates are loaded from — a self-weakening surface by ADR 0187's
-  enforcement-surface test, even though nothing under it is itself a guard (ADR
-  [0212](https://github.com/kamp-us/phoenix/blob/main/.decisions/0212-marketplace-manifest-is-control-plane.md), #3933).
-  It needs its **own** `^\.claude-plugin/` branch: the `^(\.claude|\.github)/` branch requires a
-  literal `/` after `.claude`, and the next character here is a hyphen, so it never matched.
-
-  **Deliberately OUT — every NESTED `.claude-plugin/` dir** (`claude-plugins/*/.claude-plugin/plugin.json`).
-  The branch is root-anchored: an un-anchored form would also sweep in `claude-plugins/pipeline-crew/`,
-  whose corpus a live founder ruling keeps out of §CP (#3765). `kampus-pipeline`'s own `plugin.json`
-  is a genuine sibling gap — file it, don't widen the anchor by hand (ADR 0212 Consequences).
-- the **gate-critical skills** — the verification/merge machinery plus the shared marker
-  contract they all depend on:
-  - `claude-plugins/kampus-pipeline/skills/ship-it/**`
-  - `claude-plugins/kampus-pipeline/skills/review-code/**`
-  - `claude-plugins/kampus-pipeline/skills/review-doc/**`
-  - `claude-plugins/kampus-pipeline/skills/review-skill/**`
-  - `claude-plugins/kampus-pipeline/skills/review-design/**`
-  - `claude-plugins/kampus-pipeline/skills/review-plan/**`
-  - `claude-plugins/kampus-pipeline/skills/review-trivial/**` — the trivial-diff gate emits
-    SHA-bound, merge-consumed verdicts, so it is gate-critical exactly like the other reviewers;
-    its omission was a live fail-**open** §CP-bypass (ADR
-    [0174](https://github.com/kamp-us/phoenix/blob/main/.decisions/0174-bare-sh-guards-control-plane-gate.md), #2679).
-  - `claude-plugins/kampus-pipeline/skills/triage/**`
-  - `claude-plugins/kampus-pipeline/skills/write-code/**`
-  - `claude-plugins/kampus-pipeline/skills/plan-epic/**`
-  - `claude-plugins/kampus-pipeline/skills/release/**` — the release machinery (ADR 0174, #2679).
-  - `claude-plugins/kampus-pipeline/skills/**/*.sh` — every skill shell helper, at **any depth**
-    under `skills/`: the bare gate-critical guard scripts directly under `skills/`
-    (`validate-gate-path-drift.sh`, `validate-skills.sh`, `validate-cycle-*.sh`) **and** a helper
-    nested in a skill subdir (`report/footer.sh` — its `Filed by an agent` provenance marker feeds
-    triage's ADR-0159 auto-close eligibility; `doctor/doctor.sh`): executable enforcement that
-    feeds or runs the gates, control-plane *by nature* like the guard packages. The
-    `^claude-plugins/kampus-pipeline/skills/([^/]+/)*[^/]+\.sh$` branch classifies them (ADR
-    [0174](https://github.com/kamp-us/phoenix/blob/main/.decisions/0174-bare-sh-guards-control-plane-gate.md), #2576/#2950);
-    the leaf `[^/]+\.sh$` matches a `.sh` filename and `([^/]+/)*` the intervening dirs, so it owns
-    a shell helper wherever it sits without reaching the non-`.sh` files in the skill *dirs* above.
-  - `claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md` (this file)
-
-  **Deliberately OUT of §CP** (recorded so their absence is a decision, not an oversight): the
-  `heal-ci`, `what-shipped`, `doctor`, and `wayfinder` skills are operational diagnostics /
-  reporting / orientation — they neither gate a merge nor hold release authority nor sit on a
-  gate-critical path, so they auto-merge on a `review-skill` PASS like any ordinary skill. Do
-  **not** add them to the boundary (ADR 0174). **The one exception is per-file, not per-dir:**
-  `doctor/doctor.sh` — like every other `skills/**/*.sh` helper — **is** §CP via the `.sh` clause
-  above, because it is executable enforcement; the rest of the `doctor` skill dir (its `SKILL.md`
-  and any non-`.sh` file) is out. Same for any future `.sh` under `heal-ci`, `what-shipped`, or
-  `wayfinder`. The two bullets do not disagree: the `.sh` clause scopes to `.sh` **files** at any
-  depth, this exclusion scopes to skill **dirs**.
-- the **pipeline agent definitions** — `claude-plugins/kampus-pipeline/agents/**`: the behavior
-  instructions for the very agents that run the pipeline, including `shipper.md` (the merge
-  authority) and `reviewer.md` (the verdict gate). An agents-only PR matched **no** §CP clause
-  and **no** routing probe, so `ship-it` would have enqueued it with no human merge and no gate —
-  a gate/merge agent auto-shipping a weakening of its own instructions, the exact
-  self-modification-of-guardrails risk §CP exists to prevent (ADR
-  [0150](https://github.com/kamp-us/phoenix/blob/main/.decisions/0150-control-plane-covers-pipeline-agent-defs.md),
-  #2003; same ADR 0065 rationale that makes the gate-critical skills blocking). Agent defs are
-  behavioral artifacts like skills → **`review-skill`-routed for the verdict**, **blocking for merge**.
-
-  **Deliberately OUT of §CP — the crew engine defs** (`claude-plugins/pipeline-crew/agents/**`, the
-  sibling `pipeline-crew` plugin, `crew-engineering-manager.md` et al.): scoped **only** to the
-  `kampus-pipeline` plugin above, the crew defs class **has-skills** (they ride a `review-skill` gate,
-  #2387) but are **NOT** §CP — they auto-ship on a `review-skill` PASS. This exclusion is a **live
-  founder ruling, re-affirmed 2026-07-24** (recorded on #3765), re-affirming #2342 ("extras don't
-  block") for the crew defs on a **stated containment basis, threat-modeled** for the one path that
-  matters: a weakened crew engine def cannot produce an **un-approved merge** through any path *other
-  than the shipper*, because the actual merge authority lives in the `ship-it` skill and `shipper.md`
-  — both §CP, both re-verifying the §CP approval **independently** of whatever a crew engine def
-  believes. The crew defs orchestrate (claim, spawn, bank, watch); they never gate a verdict nor
-  perform the merge. So the worst a weakened crew def can do is **fail to bank** — which surfaces as a
-  visible unshipped §CP PR a human notices — never drive a merge past the approval §CP requires. The
-  self-modification-of-guardrails risk that pulls `kampus-pipeline/agents/**` into §CP (ADR 0150) is
-  therefore contained short of the crew corpus. Do **not** add `pipeline-crew/agents/**` to
-  `CONTROL_PLANE_RE` on this ruling — it narrows nothing and widens nothing (#3765). Re-examine if a
-  crew def ever gains independent merge/gate authority, or per the #3766 direction of travel (moving
-  N-engine lane exclusion into the tracker/tool layer makes this exclusion even less load-bearing).
-- the **plugin hook surface** — `claude-plugins/kampus-pipeline/hooks/**` (the `install.sh`
-  that drops the installed `pipeline-cli` and the `guard.sh` fail-open dispatch wrapper) plus
-  `claude-plugins/kampus-pipeline/hooks.json` (the foreign-repo hook manifest). These are
-  self-weakening by nature — they wire the guard dispatch + the CLI install the `.claude/settings.json`
-  hooks depend on (ADR [0103](https://github.com/kamp-us/phoenix/blob/main/.decisions/0103-consolidate-pipeline-cli-package.md),
-  #1003). The `^claude-plugins/kampus-pipeline/hooks(/|\.json$)` clause covers the dir + the manifest.
-- the **enforcement-guard packages** — the executable guardrails that gate agent tooling,
-  control-plane *by nature* the same way the gate-critical skills are (ADR
-  [0065](https://github.com/kamp-us/phoenix/blob/main/.decisions/0065-gate-critical-skills-are-blocking.md)),
-  even though they live under `packages/` rather than `.claude`/skills (ADR
-  [0100](https://github.com/kamp-us/phoenix/blob/main/.decisions/0100-control-plane-covers-enforcement-guard-packages.md)):
-  - `packages/ci-required/**` — the zero-dep aggregator of the gating CI checks. Its sources were
-    inlined into pipeline-cli at `packages/pipeline-cli/src/tools/ci-required/` (#3802), and its CI
-    job now runs `node packages/pipeline-cli/src/tools/ci-required/bin.ts`; the aggregator's
-    CP coverage now flows through the pipeline-cli enforcement-core clauses below (its sources sit
-    at `src/tools/ci-required/`, a retained core path). The `^packages/ci-required/`
-    clause below is retained deliberately (ADR 0100) as defense-in-depth against a re-created package
-    at that path, even though it no longer carries tracked sources.
-  - `packages/pipeline-cli/` — **an enforcement core, not the whole package** (ADR
-    [0218](https://github.com/kamp-us/phoenix/blob/main/.decisions/0218-pipeline-cli-cp-enforcement-core.md),
-    amending ADR 0100, which had rejected exactly this sub-path split). The package is the
-    consolidated home for every guard the standalone `*-guard` packages used to carry (ADR
-    [0103](https://github.com/kamp-us/phoenix/blob/main/.decisions/0103-consolidate-pipeline-cli-package.md),
-    #1003), but ~68 tools live there and most gate nothing — so ADR
-    [0187](https://github.com/kamp-us/phoenix/blob/main/.decisions/0187-crew-mcp-is-not-control-plane.md)'s
-    enforcement-surface test is applied **per path** rather than to the package as a whole. Three
-    clauses carry it:
-    - `^packages/pipeline-cli/src/[^/]+$` — the `src/` **root, non-recursive**: the shared
-      dispatch + process plumbing every tool including every gate runs through (`registry.ts`'s
-      `registeredTools[]` can disable any guard without touching that guard's own directory;
-      plus `router.ts`/`bin.ts`/`gate-fail.ts`/`read-stdin*.ts`/`run.ts`/`tool-registration.ts`/…).
-      A non-recursive pattern, not a file list, so it cannot rot as root modules are added.
-    - `^packages/pipeline-cli/src/tools/(…)/` — the **eight** tools that are themselves the
-      enforcement surface: `ci-required` (a branch-protection-required check), `verdict` (the
-      enqueue gate, ADR 0058), `cp-cardinality` (§CP approval discharge, ADR 0175),
-      `control-plane-paths` (this boundary), `cp-classify` (the §CP verdict, #4161),
-      `codeowners-cp` (the regex↔CODEOWNERS drift gate), `trivial-diff` (routes a PR to the
-      lighter gate, ADR 0120), `review-head` (resolves the head every verdict binds to).
-    - `^packages/pipeline-cli/src/tools/tracker/gh-io\.ts$` — **one file, not its directory.**
-      `gh-io.ts` exports `authorizedAuthors`, the ADR 0055 write+ ACL, and `verdict/github.ts`
-      feeds its result straight into `resolveVerdict`: widening it to return every author would
-      let a **forged verdict from a non-collaborator count as a PASS**. Retaining `verdict` while
-      leaving its authorization source ungated is an incoherent line. The rest of `tools/tracker/`
-      is claim/coordination tooling and stays out — hence the file-level anchor.
-
-    The legacy `^packages/[^/]*-guard/` clause is retired with those packages. Note what the
-    narrowing means concretely: the Tier-3 guards ADR 0100 named **by name** (`leak-guard`,
-    `spawn-guard`, `structured-output-guard`, `worktree-guard`, `read-guard`) are **no longer
-    §CP** — they are CI-enforced, not human-approval-enforced. ADR 0218 records that trade, the
-    three modules the core imports without retaining, and why `codeowners-cp` cannot catch a
-    stale over-broad CODEOWNERS row.
-- the **local hook-wiring config** — `lefthook.yml` and its siblings, matched by the
-  `^([^/]+/)*(lefthook|\.lefthook)[^/]+$` branch. This config is what *wires* the local git hooks:
-  the ADR-0160 ref-guard (#2143) and the #2778 primary-index guards, which have **no CI backstop**
-  and are the only defense the shared local checkout has against a proven-real corruption class. An
-  edit that silently unwires them is self-weakening in exactly ADR 0187's sense, so it must not
-  auto-ship (founder ruling on #3402). The branch is a **shape, not a named list** (#2393): the same
-  depth-agnostic `([^/]+/)*` prefix the skill-`.sh` clause uses, over the `lefthook` / `.lefthook`
-  stem, so every config filename lefthook itself discovers — `lefthook.yml`, the `.yaml`/`.toml`/
-  `.json` forms, a `lefthook-local.*` override, and the `.lefthookrc` every generated hook wrapper
-  sources — is covered without enumerating one of them. The `[^/]+` leaf keeps it narrow: it matches
-  lefthook-named **leaves** only, so no other root config is swept in.
+**Deliberately OUT, recorded so each absence reads as a decision and not an oversight:** every
+**nested** `.claude-plugin/` dir — the branch is root-anchored, and `kampus-pipeline`'s own
+`plugin.json` is a genuine sibling gap to file rather than patch by hand (ADR
+[0212](https://github.com/kamp-us/phoenix/blob/main/.decisions/0212-marketplace-manifest-is-control-plane.md)
+Consequences); the `heal-ci`, `what-shipped`, `doctor`, and `wayfinder` skills, which gate no merge
+and hold no release authority (ADR
+[0174](https://github.com/kamp-us/phoenix/blob/main/.decisions/0174-bare-sh-guards-control-plane-gate.md))
+— that exclusion scopes to skill **dirs**, so `doctor/doctor.sh` (and any future `.sh` under those
+four) is still §CP by the `.sh` clause, which scopes to `.sh` **files** at any depth;
+and the crew engine defs under `claude-plugins/pipeline-crew/agents/**`, which class **has-skills**
+yet auto-ship on a `review-skill` PASS, because merge authority lives in `ship-it` and `shipper.md`
+— both §CP, both re-verifying the §CP approval independently — so the worst a weakened crew def can
+do is fail to bank (live founder ruling, re-affirmed 2026-07-24 on
+[#3765](https://github.com/kamp-us/phoenix/issues/3765)). Do **not** widen `CONTROL_PLANE_RE` by
+hand to cover any of them.
 
 A PR touching **any** path in this set is **control plane**: `ship-it` never auto-merges it off a
 gate verdict alone — it merges only once a `@kamp-us/control-plane` member approves at head, and
-`ship-it` then enqueues it (ADR
-[0135](https://github.com/kamp-us/phoenix/blob/main/.decisions/0135-hard-gate-control-plane-team-codeowners-approve-then-enqueue.md)
-amending ADR
-[0053](https://github.com/kamp-us/phoenix/blob/main/.decisions/0053-control-plane-boundary.md),
-widened to the gate-critical skills by ADR
-[0065](https://github.com/kamp-us/phoenix/blob/main/.decisions/0065-gate-critical-skills-are-blocking.md);
-`review-skill/**` added to the gate-critical set by ADR
-[0073](https://github.com/kamp-us/phoenix/blob/main/.decisions/0073-review-skill-gate.md), since the gate
-that reviews the gates is itself a gate; the enforcement-guard packages added by ADR
-[0100](https://github.com/kamp-us/phoenix/blob/main/.decisions/0100-control-plane-covers-enforcement-guard-packages.md),
-since a guard is a self-weakening surface wherever it lives; that coverage flowed
-through the consolidated `packages/pipeline-cli/` package per ADR
-[0103](https://github.com/kamp-us/phoenix/blob/main/.decisions/0103-consolidate-pipeline-cli-package.md)
-and is now scoped to that package's **enforcement core** per ADR
-[0218](https://github.com/kamp-us/phoenix/blob/main/.decisions/0218-pipeline-cli-cp-enforcement-core.md);
-the **pipeline agent definitions** (`claude-plugins/kampus-pipeline/agents/**`) added by ADR
-[0150](https://github.com/kamp-us/phoenix/blob/main/.decisions/0150-control-plane-covers-pipeline-agent-defs.md),
-since a gate/merge agent's own instructions are a self-weakening surface; the **bare gate-critical
-`.sh` guards** under `skills/` and the **`release`/`review-trivial` skill dirs** added by ADR
-[0174](https://github.com/kamp-us/phoenix/blob/main/.decisions/0174-bare-sh-guards-control-plane-gate.md)
-(#2576/#2679), since a guard script and a SHA-bound-verdict gate are self-weakening surfaces that
-were escaping the boundary; the **lint/GritQL governance config** — `biome.jsonc` and
-`biome-plugins/**` — added by ADR
-[0193](https://github.com/kamp-us/phoenix/blob/main/.decisions/0193-lint-governance-config-is-control-plane.md),
-since an ungated path to weaken a lint rule is a guard-relaxing vector; the **root marketplace
-manifest** — `.claude-plugin/**` — added by ADR
-[0212](https://github.com/kamp-us/phoenix/blob/main/.decisions/0212-marketplace-manifest-is-control-plane.md),
-since the file that decides what the control-plane plugin *delivers* is itself control plane; the
-**local hook-wiring config** — `lefthook.yml` and its siblings — added on the founder ruling on
-[#3402](https://github.com/kamp-us/phoenix/issues/3402), since the config that wires the
-CI-unbacked local-integrity guards can unwire them).
+`ship-it` then enqueues it. Every widening of the boundary, and the reason for each, is an ADR —
+0053, 0065, 0073, 0100, 0103, 0135, 0150, 0174, 0193, 0212, 0218 — plus the founder ruling on
+[#3402](https://github.com/kamp-us/phoenix/issues/3402). Read them in `.decisions/`, where ADR
+discovery is the CLAUDE.md contract; they are not restated here.
 Everything else — `apps/**`,
 **non**-guard `packages/**`, `.decisions/**` (**except a guard-touching ADR** — see the content
 clause below), `.patterns/**`, every prose doc `*.md` (the
@@ -2186,7 +2035,7 @@ as the artifacts it manifests — no new class or gate is invented. This is **on
 axis: `CONTROL_PLANE_RE` (§CP, who-merges) is a **separate** regex and is **untouched**, so a crew
 plugin's `agents/**` gains a `review-skill` gate yet still **auto-ships** on PASS (the founder #2342
 ruling — extras don't block — **re-affirmed 2026-07-24 on #3765** on the threat-modeled containment
-basis recorded in the §CP "Deliberately OUT — the crew engine defs" note above; the class fix and the
+basis recorded in the crew-engine-defs clause of the §CP **Deliberately OUT** paragraph above; the class fix and the
 §CP ruling compose).
 
 **Both consumers re-resolve these lines from `origin/main` at run time** (REST raw, `?ref=main`
@@ -3446,63 +3295,34 @@ won  ==  earliest-authorized-claim.session  ==  $CLAUDE_CODE_SESSION_ID
 trust root — the same write+ collaborator gate `ship-it` Step 2 and the `write-code` repair
 scan apply: keep only claim markers **authored by an account holding `write+` on the repo**.
 A forged claim from a non-collaborator is **ignored**; an **empty authorized set resolves no
-winner — fail-closed**, never a false win. The canonical resolution (read tolerantly per the
-§Reading stance):
+winner — fail-closed**, never a false win. The matcher that resolution scans with is the one
+machine-readable copy in this file (read tolerantly per the §Reading stance):
 
 ```bash
-cf=$(mktemp); gh api "repos/$REPO/issues/<N>/comments?per_page=100" --paginate > "$cf"
+# The canonical CLAIM_RE stays here at column 0 for the same reason §CP's CONTROL_PLANE_RE line
+# does: `validate-gate-path-drift.sh` and the live gates re-resolve it from THIS file on
+# origin/main (#981, #4401), so it must remain present, byte-identical, exactly once.
 CLAIM_RE='(?i)^\s*\**\s*claim:\s*[0-9a-f-]{36}\b'
-# authors of any claim marker on the issue
-claimAuthors=$(jq -r --arg re "$CLAIM_RE" '[.[] | select(.body | test($re)) | .user.login] | unique | .[]' "$cf")
-# keep only write+ collaborators (the ADR 0055 trust root) — a forged claim is ignored, empty ⇒ no winner
-authorized='[]'
-while IFS= read -r a; do
-  [ -z "$a" ] && continue
-  perm=$(gh api "repos/$REPO/collaborators/$a/permission" --jq .permission 2>/dev/null)
-  case "$perm" in admin|maintain|write) authorized=$(jq -c --arg a "$a" '. + [$a]' <<<"$authorized") ;; esac
-done <<<"$claimAuthors"
-# the EARLIEST authorized claim — min (created_at, comment id) — is the canonical winner; read its session.
-WINSID=$(jq -r --argjson authorized "$authorized" '
-  [.[] | select(.user.login | IN($authorized[]))
-       | select(.body | test("(?i)^\\s*\\**\\s*claim:\\s*[0-9a-f-]{36}\\b"))
-       | {sid: (.body | capture("(?i)^\\s*\\**\\s*claim:\\s*(?<s>[0-9a-f-]{36})").s), at: .created_at, id: .id}]
-  | sort_by([.at, .id]) | first | .sid // ""' "$cf")
-# you won iff the earliest authorized claim is yours
-[ -n "$WINSID" ] && [ "$WINSID" = "$CLAUDE_CODE_SESSION_ID" ] && echo "claim is mine" || echo "not mine — back off"
 ```
 
-This swaps the degenerate `lexicographic-min(login)` for `earliest(authorized claim)`,
-resolved by the same **checkpoint GET against canonical issue state, fail-closed** shape the
-old design used. The race-case derivation transfers and is *strengthened* (ADR 0115 §2):
+**Do not hand-roll the resolution around it.** `pipeline-cli claim is-mine --issue <N> --session
+<token>` owns the whole read — the `CLAIM_RE` scan, the ADR 0055 write+ filter, the earliest
+`(created_at, comment id)` tiebreak, and the default-deny outcome — and `pipeline-cli adoption-lint
+check` reds a corpus file that re-derives it instead of citing the verb.
 
-- **Staggered co-racers.** Each posts a claim comment; the server stamps each a unique,
-  monotonic `id`. The checkpoint GET re-reads the same canonical comment set, so exactly one
-  finds the earliest authorized claim's session equals its own and proceeds; every other
-  recomputes the same earliest claim, sees it is not theirs, **retracts its own claim
-  comment** (`DELETE` the comment it posted), and re-picks. The comment-post detects, the GET
-  resolves — same shape as the old assignee race, but the key is now agent-distinguishable.
-- **Straggler / Rule-0 defer collapses into the tiebreak.** A late arrival's comment has a
-  strictly larger `id`, so it is **never** the earliest authorized claim — it loses by
-  construction, **and** Rule 0 (defer to a pre-existing owner — re-read before posting and
-  back off if an authorized claim from a *different* session already owns it) tells it to
-  back off before posting at all. Because **earliest-claim-wins, Rule 0 and the tiebreak are
-  the same fact**: the pre-existing owner *is* the minimum. This removes the
-  straggler-evicts-owner tension the old `min(login)` needed a separate non-revocability
-  argument to close — a lower login could belong to a later arrival; a lower comment id
-  cannot.
-- **Transient window.** The comments may transiently carry two claims before a loser retracts,
-  and — because the assignment lands only *after* a won claim (below) — a won-but-not-yet-assigned
-  issue is briefly still unassigned. Both degrade safely: the picker skips on **any non-null
-  assignee**, so a transiently double-claimed issue is passed over rather than double-picked, and
-  an agent that picks the still-unassigned issue in the other window runs the claim verb and
-  defers to the earlier claim.
+The race-case derivation this tiebreak rests on — staggered co-racers, where the comment POST
+detects and the checkpoint GET resolves; the straggler whose Rule-0 defer collapses *into* the
+tiebreak, because earliest-claim-wins makes the pre-existing owner and the minimum the same fact;
+and the transient double-claimed and won-but-not-yet-assigned windows the picker's
+skip-on-any-assignee absorbs — is ADR
+[0115](https://github.com/kamp-us/phoenix/blob/main/.decisions/0115-agent-distinguishable-claim-marker.md)
+§2. Read it there; it is not restated here.
 
-This remains **detect-and-tiebreak, not a kernel mutex** (the epic's honest non-goal): the
-comment/assignee APIs offer no conditional write, so true single-writer exclusion is off the
-table. The guarantee is the one that matters — of any set of co-window racers, exactly one
-proceeds, deterministically, and every loser self-retracts its claim comment and re-picks.
-Don't reintroduce the "it's the lock" framing, and **never fall back to the bare assignee login
-as an ownership signal** — that is the degeneracy ADR 0115 removes.
+Two consequences of that derivation are standing rules, because they get re-litigated: this is
+**detect-and-tiebreak, not a kernel mutex** — the comment and assignee APIs offer no conditional
+write, so the guarantee is that exactly one of any co-window racer set proceeds and every loser
+self-retracts, not single-writer exclusion. And **never fall back to the bare assignee login as an
+ownership signal** — that is the degeneracy ADR 0115 removes.
 
 <a id="claim-before-you-assign-a-defer-must-not-strip-the-incumbent"></a>
 ### Claim before you assign — a defer must not strip the incumbent
