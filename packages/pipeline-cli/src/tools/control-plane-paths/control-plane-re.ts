@@ -17,14 +17,19 @@
  * escapes, so `\\.` is the value `\.` and `([^/]+/)*[^/]+\\.sh$` is the value
  * `([^/]+/)*[^/]+\.sh$`.
  *
- * The skill-`.sh` clause is depth-agnostic on purpose (#2950): `([^/]+/)*[^/]+\.sh$`
- * matches a shell helper at ANY depth under `skills/` — a top-level `skills/<name>.sh`
- * (the `validate-*.sh` gate guards, zero dir segments) AND a subdir helper
- * `skills/<skill>/<helper>.sh` (e.g. `report/footer.sh`, whose provenance marker feeds
- * triage's ADR-0159 auto-close eligibility). The prior `[^/]+\.sh$` matched top-level
- * only, so a subdir helper escaped §CP and could auto-merge without control-plane
- * sign-off. Anchoring to one depth was an accident, not a "subdir helpers are safe"
- * carve-out — a skill's shell helper is control-plane wherever it sits.
+ * The skills clause is the WHOLE TREE — `^claude-plugins/kampus-pipeline/skills/`, every file
+ * at any depth regardless of extension (founder ruling on #4446, implemented by #4458). It
+ * replaces three narrower branches that between them left a proven zero-approval hole: an
+ * ENUMERATED list of gate-skill dirs, a `([^/]+/)*[^/]+\.sh$` any-depth `.sh` clause, and an
+ * exact-file clause for `gh-issue-intake-formats.md`. Because `.github/CODEOWNERS` has no `*`
+ * catch-all and the `main` ruleset pairs `required_approving_review_count: 0` with
+ * `require_code_owner_review: true`, a path matching NO row merges with ZERO approvals — so a
+ * non-`.sh` file beside a gated script (a `README.md`, a `.env`, an extensionless helper, a
+ * relocated `.md`) was proven-ordinary and auto-mergeable. The DIRECTORY is now the unit of
+ * coverage, not the file type: the enumeration cannot rot as skills are added, and no naming
+ * convention has to hold for the tree to stay gated. The approval-load cost — the four
+ * previously-excluded operational skill dirs (`heal-ci`, `what-shipped`, `doctor`, `wayfinder`)
+ * are now §CP too — was stated to the founder and accepted.
  *
  * The biome-governance clauses (`^biome\.jsonc$`, `^biome-plugins/`) are §CP because
  * lint/GritQL governance config is a guard-relaxing vector: an ungated path to weaken a
@@ -37,7 +42,7 @@
  * guards, which have no CI backstop and are the only defense of the shared local checkout against
  * a proven-real corruption class. An edit that silently unwires them must not auto-ship (founder
  * ruling on #3402). It is a SHAPE, not a named list (#2393): a depth-agnostic `([^/]+/)*` prefix
- * (the same idiom as the skill-`.sh` clause above) over the `lefthook` / `.lefthook` stem, so every
+ * over the `lefthook` / `.lefthook` stem, so every
  * config filename lefthook itself discovers — `lefthook.yml`, the `.yaml`/`.toml`/`.json` forms, the
  * `lefthook-local.*` override, and the `.lefthookrc` the generated wrappers source — is covered
  * without enumerating any of them. The stem-plus-`[^/]+` leaf is what keeps it narrow: it matches
@@ -83,4 +88,4 @@
  * runtime resolution off the origin/main read.
  */
 export const CONTROL_PLANE_RE =
-	"^(\\.claude|\\.github)/|^\\.claude-plugin/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-design|review-plan|triage|write-code|plan-epic|release|review-trivial)/|^claude-plugins/kampus-pipeline/skills/([^/]+/)*[^/]+\\.sh$|^claude-plugins/kampus-pipeline/agents/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\\.md$|^claude-plugins/kampus-pipeline/hooks(/|\\.json$)|^packages/ci-required/|^packages/pipeline-cli/src/[^/]+$|^packages/pipeline-cli/src/tools/(ci-required|codeowners-cp|control-plane-paths|cp-cardinality|cp-classify|review-head|trivial-diff|verdict)/|^packages/pipeline-cli/src/tools/tracker/gh-io\\.ts$|^biome\\.jsonc$|^biome-plugins/|^([^/]+/)*(lefthook|\\.lefthook)[^/]+$";
+	"^(\\.claude|\\.github)/|^\\.claude-plugin/|^claude-plugins/kampus-pipeline/skills/|^claude-plugins/kampus-pipeline/agents/|^claude-plugins/kampus-pipeline/hooks(/|\\.json$)|^packages/ci-required/|^packages/pipeline-cli/src/[^/]+$|^packages/pipeline-cli/src/tools/(ci-required|codeowners-cp|control-plane-paths|cp-cardinality|cp-classify|review-head|trivial-diff|verdict)/|^packages/pipeline-cli/src/tools/tracker/gh-io\\.ts$|^biome\\.jsonc$|^biome-plugins/|^([^/]+/)*(lefthook|\\.lefthook)[^/]+$";

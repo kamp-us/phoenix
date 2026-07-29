@@ -85,12 +85,6 @@ describe("CONTROL_PLANE_RE classifies the ADR-0174 boundary broadenings (#2761)"
 		expect(isControlPlane(".claude-plugins/marketplace.json")).toBe(false);
 	});
 
-	it("does NOT classify the four deliberately-OUT skill dirs (operational, not gate-critical)", () => {
-		for (const skill of ["heal-ci", "what-shipped", "doctor", "wayfinder"]) {
-			expect(isControlPlane(`claude-plugins/kampus-pipeline/skills/${skill}/SKILL.md`)).toBe(false);
-		}
-	});
-
 	it("does NOT classify known non-§CP paths", () => {
 		expect(isControlPlane("apps/web/src/main.tsx")).toBe(false);
 		expect(isControlPlane("packages/some-other-pkg/src/index.ts")).toBe(false);
@@ -99,13 +93,6 @@ describe("CONTROL_PLANE_RE classifies the ADR-0174 boundary broadenings (#2761)"
 		// surfaces that perform/enforce merges & reviews stay §CP.
 		expect(isControlPlane("packages/pipeline-crew-mcp/src/index.ts")).toBe(false);
 		expect(isControlPlane("packages/pipeline-crew-mcp/package.json")).toBe(false);
-		// Over-broadening guard (#2950): the any-depth clause matches `.sh` LEAVES only — a
-		// NON-`.sh` file in a non-gate skill's subdir stays non-§CP, so the broadening didn't
-		// silently swallow whole non-gate skill dirs (only their shell helpers).
-		expect(isControlPlane("claude-plugins/kampus-pipeline/skills/heal-ci/helper.md")).toBe(false);
-		expect(isControlPlane("claude-plugins/kampus-pipeline/skills/doctor/notes.txt")).toBe(false);
-		// a `.sh`-suffixed name that is NOT a `.sh` file (no such extension boundary) also stays out
-		expect(isControlPlane("claude-plugins/kampus-pipeline/skills/doctor/doctor.shell")).toBe(false);
 		// biome-governance §CP (ADR 0193) is tightly anchored: some OTHER root config/file stays
 		// non-§CP (a NEGATIVE), and `biome\.jsonc$` end-anchors so a look-alike suffix is not §CP.
 		expect(isControlPlane("turbo.json")).toBe(false);
@@ -137,6 +124,59 @@ describe("CONTROL_PLANE_RE classifies the ADR-0174 boundary broadenings (#2761)"
 		]) {
 			expect(isControlPlane(path)).toBe(true);
 		}
+	});
+});
+
+// The whole `kampus-pipeline` skills tree is §CP — founder ruling on #4446, built by #4458.
+// The DIRECTORY is the unit of coverage, not the file type. Every case in the first two tests
+// below classified NOT-control-plane before the widening (`cp-classify` exit 3 = proven-ordinary,
+// which under a CODEOWNERS with no `*` catch-all and a ruleset at
+// `required_approving_review_count: 0` means a ZERO-approval merge) — they are the regression
+// suite, not decoration, and they go red on any future narrowing of the branch.
+describe("CONTROL_PLANE_RE covers the kampus-pipeline skills tree whole (#4458)", () => {
+	const skills = "claude-plugins/kampus-pipeline/skills";
+
+	it("classifies a NON-`.sh` file beside a gated script — the proven zero-approval hole", () => {
+		for (const path of [
+			`${skills}/shared/lib/common.env`, // exit 3 before
+			`${skills}/shared/lib/common`, // extensionless — exit 3 before
+			`${skills}/shared/lib/README.md`, // exit 3 before
+			`${skills}/shared/specialist-fan-out.md`, // the #4440 relocation destination
+			`${skills}/shared/lib/common.sh`, // the one case that was already covered
+		]) {
+			expect(isControlPlane(path)).toBe(true);
+		}
+	});
+
+	it("classifies the four skill dirs ADR 0174 deliberately excluded — the accepted approval cost", () => {
+		// Superseded by the founder ruling: operational skills gate nothing, but the directory —
+		// not gate-criticality, and not the extension — is now what decides §CP membership. The
+		// non-`.sh` half of each of these classified not-control-plane before the widening.
+		for (const skill of ["heal-ci", "what-shipped", "doctor", "wayfinder"]) {
+			expect(isControlPlane(`${skills}/${skill}/SKILL.md`)).toBe(true);
+		}
+		expect(isControlPlane(`${skills}/heal-ci/helper.md`)).toBe(true);
+		expect(isControlPlane(`${skills}/doctor/notes.txt`)).toBe(true);
+		expect(isControlPlane(`${skills}/doctor/doctor.shell`)).toBe(true);
+		// a future skill dir nobody has enumerated anywhere is covered by construction
+		expect(isControlPlane(`${skills}/some-skill-added-tomorrow/SKILL.md`)).toBe(true);
+		expect(isControlPlane(`${skills}/some-skill/deeply/nested/fixture.json`)).toBe(true);
+	});
+
+	it("does NOT over-widen: the branch is anchored to that ONE directory", () => {
+		// A directory-scoped row is broad by design, so the boundary of the breadth is the
+		// assertion that matters. The trailing `/` is load-bearing — a sibling whose name merely
+		// STARTS with `skills` is not swept in.
+		expect(isControlPlane("claude-plugins/kampus-pipeline/skills-notes/draft.md")).toBe(false);
+		expect(isControlPlane("claude-plugins/kampus-pipeline/README.md")).toBe(false);
+		expect(isControlPlane("claude-plugins/kampus-pipeline/.claude-plugin/plugin.json")).toBe(false);
+		// and it stays scoped to kampus-pipeline: pipeline-crew's corpus is OUT of §CP on a live
+		// founder ruling re-affirmed 2026-07-24 (#3765), which this widening does not touch.
+		expect(isControlPlane("claude-plugins/pipeline-crew/agents/crew-engineering-manager.md")).toBe(
+			false,
+		);
+		expect(isControlPlane("claude-plugins/pipeline-crew/skills/some-skill/SKILL.md")).toBe(false);
+		expect(isControlPlane("claude-plugins/pipeline-crew/skills/lib/helper.sh")).toBe(false);
 	});
 });
 
