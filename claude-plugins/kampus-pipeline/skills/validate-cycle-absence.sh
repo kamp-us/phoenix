@@ -37,7 +37,7 @@ if [ ! -f "$COMMON_LIB" ]; then
 	echo "validate-cycle-absence: FAILED — 1 error(s); the scan surface could not be resolved"
 	exit 1
 fi
-# shellcheck source=shared/lib/common.sh
+# shellcheck source-path=SCRIPTDIR source=shared/lib/common.sh
 . "$COMMON_LIB"
 
 # The one well-known cycle-doc path every consumer probes (formats §1, single source).
