@@ -102,7 +102,29 @@ those skills were hardened against). Their prose weight is load-bearing.
 So: when you author a **new, non-gate** skill, keep it lean. When you edit a **gate** skill,
 match its existing register — do not "deslop" its invariant prose, do not compress a
 fail-closed rationale to a one-liner, do not trim an incident pointer that anchors a guard.
-The rigor check #4 above is the enforcement; this exemption is why the prose looks heavy.
+This exemption is why the prose looks heavy.
+
+### Removing an invariant ≠ relocating one
+
+The exemption bounds **removal and weakening**. It does **not** forbid **relocating** an
+invariant to one canonical home and citing it from the sites that used to restate it — that
+operation preserves the invariant *and* removes the drift duplicate copies accumulate (the
+#375-class drift §RO names; `CONTROL_PLANE_RE` was single-sourced this way under #2761, with a
+drift-lock replacing the copies). Read as a ban on relocation, the exemption protects copies —
+and copies drift.
+
+The permission carries its own bound, so it is never license to gut a gate: the citing skill
+must **state the rule's operative teeth inline** — what the executing agent must actually do,
+in enough words to act on without following the link — and the cite carries only the
+*rationale* (the ADR, the incident, the derivation). A cite that replaces the teeth with a
+pointer is a removal, not a relocation, and stays forbidden exactly as before.
+
+**What enforces which half.** `review-skill` rigor check #4 enforces the *no-weakening* half,
+and only that half: it is scoped to a diff that "**removes or softens** an invariant, not one
+that respects it" — check #4's own out-of-scope boundary. It encodes **no** prose-register
+rule, so a relocation that keeps the teeth inline is not a check-#4 finding. The register rule
+above is an authoring convention with no gate hook: follow it because that prose is
+load-bearing, not because a gate will fail you for compressing it.
 
 ## Destination and §CP — re-check before you open the PR
 
