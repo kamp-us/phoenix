@@ -2035,7 +2035,7 @@ as the artifacts it manifests — no new class or gate is invented. This is **on
 axis: `CONTROL_PLANE_RE` (§CP, who-merges) is a **separate** regex and is **untouched**, so a crew
 plugin's `agents/**` gains a `review-skill` gate yet still **auto-ships** on PASS (the founder #2342
 ruling — extras don't block — **re-affirmed 2026-07-24 on #3765** on the threat-modeled containment
-basis recorded in the §CP "Deliberately OUT — the crew engine defs" note above; the class fix and the
+basis recorded in the crew-engine-defs clause of the §CP **Deliberately OUT** paragraph above; the class fix and the
 §CP ruling compose).
 
 **Both consumers re-resolve these lines from `origin/main` at run time** (REST raw, `?ref=main`
