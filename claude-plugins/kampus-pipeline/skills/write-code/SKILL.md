@@ -162,12 +162,20 @@ namespaces) is an unaddressed FAIL:
 
 ```bash
 ME=$(gh api user --jq '.login')
-# resolve the verdict CLI once via the `bin/pipeline-cli` shim — in-repo bin, else the installed
-# bin, else the pinned `pnpm dlx` fallback reading the one pin (hooks/pin.sh); no version pinned
-# here (#3653; ADR 0062/0064; epic #994). Each per-(PR, gate) FAIL-bound-to-head resolution below
-# delegates to `pipeline-cli verdict read` (ACL author-gate + latest-wins + SHA-staleness, ADR
-# 0055/0058; its unit tests are the contract).
-VERDICT="${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/bin/pipeline-cli verdict"
+# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314). The shim's own
+# three-tier ladder (in-repo bin → installed bin → the pinned `pnpm dlx`, hooks/pin.sh) decides WHICH
+# build runs, so no version is pinned here (#3653; ADR 0062/0064; epic #994). Each per-(PR, gate)
+# FAIL-bound-to-head resolution below delegates to `pipeline-cli verdict read` (ACL author-gate +
+# latest-wins + SHA-staleness, ADR 0055/0058; its unit tests are the contract).
+PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
+# GATE-CRITICAL (§CLI): this scan's wrapper turns non-zero into "nothing to repair", so an
+# unresolved CLI would read as a clean scan and the run would fall through to new work while an
+# unaddressed FAIL sits open. Refuse up front — "could not run" is never a verdict.
+[ -x "$PCLI" ] || {
+  echo "pipeline-cli: UNRESOLVED at '$PCLI' — the repairable-PR scan has NO result." >&2
+  echo "  Resolve to UNKNOWN, never to 'no FAIL'. This is a resolution gap, NOT worktree teardown (§CLI)." >&2
+  exit 127
+}
 # open PRs you authored; print each one whose latest verdict in EITHER namespace is FAIL,
 # UNLESS it has already hit the N=3 repair cap (then it's a human's, not yours to re-pick)
 gh api "repos/$REPO/pulls?state=open&per_page=100" \
@@ -203,9 +211,17 @@ gh api "repos/$REPO/pulls?state=open&per_page=100" \
   [ "$ROUNDS" -ge 3 ] && continue   # at the cap → already escalated to a human, excluded from the scan
   # resolve each namespace's latest current-head verdict through the shared verb — exit 0 iff HEAD
   # carries a current FAIL in that gate (a stale / SHA-less / PASS / none verdict exits non-zero).
-  $VERDICT read --pr "$PR" --gate code  --expect FAIL >/dev/null 2>&1 && echo "#$PR review-code FAIL"
-  $VERDICT read --pr "$PR" --gate doc   --expect FAIL >/dev/null 2>&1 && echo "#$PR review-doc FAIL"
-  $VERDICT read --pr "$PR" --gate skill --expect FAIL >/dev/null 2>&1 && echo "#$PR review-skill FAIL"
+  # stderr is NOT discarded and 127 is read apart from an ordinary negative: with `2>&1` swallowing
+  # it, a `command not found` was byte-identical to "no FAIL verdict" and the PR dropped out of the
+  # scan silently (§CLI exit-code taxonomy — "could not run" is never a verdict; #4398, #4236).
+  for G in code doc skill; do
+    "$PCLI" verdict read --pr "$PR" --gate "$G" --expect FAIL >/dev/null
+    RC=$?
+    case $RC in
+      0)   echo "#$PR review-$G FAIL" ;;
+      127) echo "verdict read could not run (127) for #$PR/$G — UNKNOWN, not 'no FAIL'. Stop and route the blocker (§CLI)." >&2; exit 127 ;;
+    esac
+  done
 done
 ```
 
@@ -757,7 +773,16 @@ else
   # every edit under this $WT (see "Anchor every Edit/Write to $WT" below). Establishing $WT loudly
   # here is what makes that anchoring actionable from the first file touch.
   WT="$(git rev-parse --show-toplevel)"
-  echo "write-code preflight CONFIRMED (LOUD): in a LINKED worktree at $WT (git-dir != common-dir) — worktree identity established from git plumbing, INDEPENDENT of \$WORKTREE_ROOT (${WORKTREE_ROOT:+set}${WORKTREE_ROOT:-unset}) and \$CLAUDE_CODE_AGENT (${CLAUDE_CODE_AGENT:-unset}), both of which may misreport. Anchor EVERY Edit/Write and git op to this \$WT (absolute) — never a primary-checkout path."
+  # STAMP THE LANE — this is the one moment $WT is trustworthy, so pin an identity to it (#4398).
+  # Every LATER Bash call re-derives the toplevel from a cwd the harness may have reset, so a
+  # cwd-derived "$WT" answers "where am I" and not "which tree is mine" — and a check that compares
+  # that answer against itself is tautological. $CLAUDE_CODE_SESSION_ID is the per-lane fact that
+  # DOES survive between calls (the same anchor §SP keys $RUN_SCRATCH on); write it into this
+  # worktree's PRIVATE per-worktree git dir, which is outside the working tree (never committed,
+  # never in `git status`) and unique per worktree. That stamp is the independently-derived operand
+  # wt_preflight compares the ambient cwd's answer against.
+  printf '%s\n' "${CLAUDE_CODE_SESSION_ID:?write-code preflight FAILED: no session id — no durable lane identity to stamp, so no later git mutation could be verified as mine}" > "$GITDIR/kampus-lane"
+  echo "write-code preflight CONFIRMED (LOUD): in a LINKED worktree at $WT (git-dir != common-dir), stamped for lane $CLAUDE_CODE_SESSION_ID — worktree identity established from git plumbing, INDEPENDENT of \$WORKTREE_ROOT (${WORKTREE_ROOT:+set}${WORKTREE_ROOT:-unset}) and \$CLAUDE_CODE_AGENT (${CLAUDE_CODE_AGENT:-unset}), both of which may misreport. Anchor EVERY Edit/Write and git op to this \$WT (absolute) — never a primary-checkout path."
 fi
 ```
 
@@ -823,29 +848,92 @@ is intentionally left untouched here so the two changes can't double-implement o
 > cross-contaminating each other's PRs (#832). One pass at Step-4 start does **not** hold for
 > the whole run.
 >
-> Capture your worktree root once, then run this **mandatory per-mutation preflight** —
-> `wt_preflight` — *immediately before* every `git commit`, `git push`, and branch
-> create/switch (Steps 4, 5, R2, R3). It re-`cd`s to your own worktree root first (correcting
-> a between-calls reset), then re-runs the same fail-closed check **and** asserts the toplevel
-> is your worktree. A green `wt_preflight` is the **only** sanctioned path to a mutation — no
-> bypass, same construction as the opening preflight:
+> Run this **mandatory per-mutation preflight** — `wt_preflight` — *immediately before* every
+> `git commit`, `git push`, and branch create/switch (Steps 4, 5, R2, R3). It first asserts that
+> the tree the cwd is *currently* in is not another lane's, then resolves **your** worktree from
+> the lane stamp the opening preflight wrote and `cd`s there, correcting a between-calls reset to
+> the primary checkout. A green `wt_preflight` is the **only** sanctioned path to a mutation — no
+> bypass, same fail-closed construction as the opening preflight:
 >
 > ```bash
-> WT="$(git rev-parse --show-toplevel)"   # same $WT the opening preflight CONFIRMED; re-derive per Bash call (shell state doesn't survive), never from a file
+> # Resolve MY worktree by IDENTITY, never from cwd (#4398). `git rev-parse --show-toplevel` answers
+> # "where is the cwd" — which a between-calls reset makes a different question from "which tree is
+> # mine". Deriving $WT from it and then re-deriving the toplevel to compare against is one answer
+> # checked against itself: always equal, so its failure branch could never print. The stamp is
+> # CONTENT written once when $WT was trustworthy, so these two operands can genuinely differ.
+> lane_worktree() {   # print the absolute root of the worktree stamped with THIS lane's session id
+>   common="$(git rev-parse --git-common-dir 2>/dev/null)" || return 1
+>   case "$common" in /*) ;; *) common="$(pwd -P)/$common" ;; esac
+>   common="$(cd "$common" && pwd -P)" || return 1   # -P: git answers in PHYSICAL paths, so must we
+>   hits=""
+>   for st in "$common"/worktrees/*/kampus-lane; do
+>     [ -f "$st" ] || continue
+>     [ "$(cat "$st")" = "$CLAUDE_CODE_SESSION_ID" ] || continue
+>     gd="$(cat "${st%/kampus-lane}/gitdir")" || return 1   # "<worktree-root>/.git"
+>     hits="$hits $(cd "${gd%/.git}" && pwd -P)"
+>   done
+>   set -- $hits
+>   [ "$#" -eq 1 ] || return 1   # 0 ⇒ no tree is mine; >1 ⇒ ambiguous. Both REFUSE (fail-closed).
+>   printf '%s\n' "$1"
+> }
 > wt_preflight() {   # MANDATED before every git commit/push/branch op — fail-closed, re-correcting cwd
+>   : "${CLAUDE_CODE_SESSION_ID:?wt_preflight FAILED (fail-closed): no session id — no lane identity to verify a worktree against}"
+>   # CLASSIFY THE AMBIENT TREE FIRST — the lane-identity assertions live here, because this is the
+>   # only place THESE operands can differ. `$AMB_STAMP` is a file some lane wrote when its worktree
+>   # was proven; `$CLAUDE_CODE_SESSION_ID` is the process env. After the corrective `cd` below these
+>   # two agree BY CONSTRUCTION, so re-checking THEM down there would be checking a value against its
+>   # own derivation — which is exactly what shipped, and why the sibling-tree refusal never printed
+>   # (#4398). That is a fact about these operands, not about position: the post-`cd` refusal below
+>   # reads independent operands and does fire.
+>   AMB_GITDIR="$(git rev-parse --absolute-git-dir 2>/dev/null)"
+>   AMB_COMMON="$(git rev-parse --git-common-dir 2>/dev/null)"
+>   case "$AMB_COMMON" in ""|/*) ;; *) AMB_COMMON="$(pwd -P)/$AMB_COMMON" ;; esac
+>   [ -n "$AMB_COMMON" ] && AMB_COMMON="$(cd "$AMB_COMMON" && pwd -P)"   # -P: compare like for like with git's physical answer
+>   AMB_STAMP="$(cat "$AMB_GITDIR/kampus-lane" 2>/dev/null)"
+>   echo "wt_preflight: ambient=$(git rev-parse --show-toplevel 2>/dev/null || echo '<not a repo>') ambient-git-dir=${AMB_GITDIR:-<none>} ambient-stamp=${AMB_STAMP:-<none>} lane=$CLAUDE_CODE_SESSION_ID"
+>   # THE SIBLING-TREE REFUSAL: cwd sits in a LINKED worktree that is not mine. The primary checkout
+>   # is the harness's documented reset target and is corrected below; a sibling lane's tree is NOT
+>   # explained by anything, so stop rather than mutate next to a live lane (#832, #3458/#3580).
+>   if [ -n "$AMB_GITDIR" ] && [ "$AMB_GITDIR" != "$AMB_COMMON" ] && [ "$AMB_STAMP" != "$CLAUDE_CODE_SESSION_ID" ]; then
+>     echo "wt_preflight FAILED (fail-closed): cwd is inside worktree $(git rev-parse --show-toplevel), stamped '${AMB_STAMP:-<none>}' — a SIBLING lane's tree, not my lane ($CLAUDE_CODE_SESSION_ID). Refusing to mutate." >&2
+>     return 1
+>   fi
+>   # cwd is my own tree or the PRIMARY checkout (the between-calls reset). Resolve my lane by
+>   # identity and cd there — the correction. A miss REFUSES: no tree is mine (unprovisioned, torn
+>   # down, or a foreign session), or several are (ambiguous).
+>   WT="$(lane_worktree)" || { echo "wt_preflight FAILED (fail-closed): no single worktree carries this lane's stamp ($CLAUDE_CODE_SESSION_ID) — the opening preflight never ran, or its tree is gone. Refusing to mutate." >&2; return 1; }
 >   cd "$WT" || { echo "wt_preflight FAILED: cannot cd to worktree root $WT" >&2; return 1; }
->   GITDIR="$(git rev-parse --absolute-git-dir 2>/dev/null)" || {
->     echo "wt_preflight FAILED: not in a git repo at $WT" >&2; return 1; }
->   COMMON="$(git rev-parse --git-common-dir 2>/dev/null)"
->   case "$COMMON" in /*) ;; *) COMMON="$(pwd)/$COMMON" ;; esac
->   COMMON="$(cd "$COMMON" && pwd)"
->   TOP="$(git rev-parse --show-toplevel)"
->   echo "wt_preflight: git-dir=$GITDIR common-dir=$COMMON toplevel=$TOP wt=$WT"
->   [ "$GITDIR" != "$COMMON" ] || { echo "wt_preflight FAILED (fail-closed): on the PRIMARY checkout, not the worktree — refusing to mutate." >&2; return 1; }
->   [ "$TOP" = "$WT" ]        || { echo "wt_preflight FAILED (fail-closed): toplevel ($TOP) != my worktree ($WT) — cwd reset landed me in a sibling/primary tree." >&2; return 1; }
+>   # DEFENCE IN DEPTH — the resolved lane must not BE the primary checkout. This sits after the
+>   # `cd` and is still a genuine assertion, because its operands do not come from the cwd: it
+>   # tests `lane_worktree`'s ANSWER with two DIFFERENT plumbing queries whose results coincide
+>   # only on the primary. `lane_worktree` returns whatever `worktrees/<name>/gitdir` names, so an
+>   # entry naming the primary root, stamped with this lane, resolves here — and this refuses.
+>   # Demonstrated firing in PR #4419's review; do not delete it as "true by construction" (#4398).
+>   RES_GITDIR="$(git rev-parse --absolute-git-dir 2>/dev/null)" || { echo "wt_preflight FAILED (fail-closed): resolved lane $WT is not inside a git repository — refusing to mutate." >&2; return 1; }
+>   RES_COMMON="$(git rev-parse --git-common-dir 2>/dev/null)"
+>   case "$RES_COMMON" in /*) ;; *) RES_COMMON="$(pwd -P)/$RES_COMMON" ;; esac
+>   RES_COMMON="$(cd "$RES_COMMON" && pwd -P)"
+>   [ "$RES_GITDIR" != "$RES_COMMON" ] || { echo "wt_preflight FAILED (fail-closed): this lane's stamp resolved to the PRIMARY checkout ($WT) — git-dir == common-dir. Refusing to mutate." >&2; return 1; }
+>   echo "wt_preflight OK: mutating my lane at $WT (git-dir $RES_GITDIR)"
 > }
 > wt_preflight && git <commit|push|switch …>   # the guard gates the mutation; never run the mutation without it
 > ```
+>
+> **What makes it able to fail, stated so a future editor can check it.** Both refusals compare
+> operands from different origins: a **stamp file** written when a worktree was proven, against the
+> **process env**. Put cwd in a sibling lane's tree and they differ, so the refusal prints. The
+> assertion this replaces compared `git rev-parse --show-toplevel` against `git rev-parse
+> --show-toplevel` run in the same directory after a `cd` to it — always equal, so its failure
+> message could never print.
+>
+> **The rule is about where the operands come from, not about where the line sits.** An assertion
+> that re-derives the value the `cd` just set — asking the cwd where the cwd is — is true by
+> construction and is not a guard; that, specifically, is the defect above. An assertion whose
+> operands come from somewhere else is a real guard wherever it sits, **including after the `cd`**:
+> the primary-checkout refusal above tests `lane_worktree`'s *answer* with two different plumbing
+> queries (`--absolute-git-dir` vs `--git-common-dir`) that coincide only on the primary, and it
+> fires on a `worktrees/<name>/gitdir` naming the primary root. So never delete a later assertion
+> merely because it follows the `cd` — check its operands first.
 
 <a id="anchor-edits-to-wt"></a>
 > **Anchor EVERY `Edit`/`Write` to `$WT` — the raw-write path no git guard covers (#3458).**
@@ -1162,7 +1250,11 @@ The change gates behind a default-off flag, which is **one of two shapes** that 
   shape: a feature gated behind the prior-PR #1204 authorship flag.
 
 Whichever shape applies, **capture the exact kebab-case flag key as `FLAG_KEY`** — it is the single
-fact that flows out of this step. The load-bearing invariant the patterns own is **default =
+fact that flows out of this step — and it flows as **text you carry into Step 5's body**, not as a
+shell variable. `$FLAG_KEY` is gone by the next Bash call, so no later step may branch on it (#4398);
+Step 5's dark-ship check re-derives whether this step fired from the issue's `Containment:` marker.
+
+The load-bearing invariant the patterns own is **default =
 safe-state**, the three facets `review-code` Step 3b will verify, so build to make each checkable
 from the outside:
 
@@ -1658,12 +1750,23 @@ STRAY=$(gh api repos/$REPO/pulls/<PR> --jq '.body' \
   || echo "STRAY CLOSE DIRECTIVE(S) on $(printf '#%s ' $STRAY)— rewrite these sibling refs to a non-closing form (addresses/relates to/see #M) before opening/patching the PR"
 # (d) DARK-SHIP GUARD, REST-only: IF Step 4b fired, the body MUST carry a `Flag:` line that
 #     matches ship-it Step 5b's FLAG_IN_BODY grep verbatim — else the prior-PR dark ship is dropped
-#     from the release queue (#1282). Run this check ONLY when Step 4b fired (FLAG_KEY is set).
-if [ -n "$FLAG_KEY" ]; then
+#     from the release queue (#1282). Whether Step 4b fired is RE-DERIVED HERE from durable state —
+#     the child's `Containment:` marker and the cycle-doc probe, Step 4b's own two inputs, read in
+#     THIS Bash call. It used to key on `[ -n "$FLAG_KEY" ]`, a shell variable Step 4b assigns in a
+#     DIFFERENT Bash call: shell state does not survive between calls, so it was empty here and the
+#     check silently skipped itself in exactly the case it exists for (#4398).
+CONTAINMENT=$(gh api repos/$REPO/issues/<N> --jq '.body' \
+  | grep -ioE '\**\s*Containment:\**\s*(flag|exempt|none)' | head -n1 \
+  | grep -ioE '(flag|exempt|none)' || echo none)
+gh api "repos/$REPO/contents/product-development-cycle.md" --jq '.path' >/dev/null 2>&1 \
+  && CYCLE_DOC=present || CYCLE_DOC=absent
+if [ "$CONTAINMENT" = flag ] && [ "$CYCLE_DOC" = present ]; then
   gh api repos/$REPO/pulls/<PR> --jq '.body' \
     | grep -Eiq '^[[:space:]]*\**[[:space:]]*flag([[:space:]]*key)?:[[:space:]]*\**[[:space:]]*[a-z0-9]+(-[a-z0-9]+)+' \
     && echo "dark-ship Flag: line present and matches ship-it Step 5b — release queue will fire" \
     || echo "MISSING/MALFORMED Flag: line — Step 4b fired but the body has no matching plain 'Flag: <key>' line; patch it in before stopping (#1282)"
+else
+  echo "no dark ship (containment=$CONTAINMENT, cycle-doc=$CYCLE_DOC) — no Flag: line expected"
 fi
 # (e) DISCLOSURE PRESENCE, REST-only: the body carries a `## Deviations` heading. This is the
 #     PRESENCE floor only — it cannot tell an honest `None.` from a false one, and it sees none of
@@ -1978,13 +2081,17 @@ systematically over-ranked against a marker rewritten after it (#4200).
 
 ```bash
 PR=<the PR number you were handed>
-# resolve the verdict CLI once via the `bin/pipeline-cli` shim — in-repo bin, else the installed
-# bin, else the pinned `pnpm dlx` fallback reading the one pin (hooks/pin.sh); no version pinned
-# here (#3653; ADR 0062/0064; epic #994). The per-(PR, gate) FAIL-bound-to-head resolution
-# delegates to `pipeline-cli verdict read`: the ADR-0055 write+ author-gate, the latest-wins pick,
-# and the ADR-0058 SHA-staleness test folded into one exit code (its unit tests are the contract,
-# #2102) — the same resolution ship-it Step 2 reads.
-VERDICT="${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/bin/pipeline-cli verdict"
+# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314). The per-(PR,
+# gate) FAIL-bound-to-head resolution delegates to `pipeline-cli verdict read`: the ADR-0055 write+
+# author-gate, the latest-wins pick, and the ADR-0058 SHA-staleness test folded into one exit code
+# (its unit tests are the contract, #2102) — the same resolution ship-it Step 2 reads.
+PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
+# GATE-CRITICAL (§CLI): an unresolved CLI here would print no outcome JSON, which the UNKNOWN test
+# below already defers on — refuse up front anyway, so the reason is legible instead of inferred.
+[ -x "$PCLI" ] || {
+  echo "pipeline-cli: UNRESOLVED at '$PCLI' — this repair has NO verdict; resolve to UNKNOWN, never to 'nothing to repair' (§CLI)." >&2
+  exit 127
+}
 
 # The write+ author-set (ADR 0055) — `verdict read` computes it internally for the marker resolution,
 # but two DOWNSTREAM steps that are genuinely more than a single (PR, gate) resolution reuse it: the
@@ -2007,9 +2114,9 @@ done <<<"$markerAuthors"
 # — exit 0 from `verdict read … --expect FAIL`. The verb's JSON (stdout) carries the resolving comment
 # id, which Step R2 uses to read the FAIL body. A stale / SHA-less / PASS / none verdict exits non-zero,
 # so it is correctly NOT repaired (idempotent no-op), needing no separate staleness test here.
-CODE_FAIL_JSON="$($VERDICT read --pr "$PR" --gate code  --expect FAIL 2>/dev/null)"  && CODE_FAIL=1  || CODE_FAIL=0
-DOC_FAIL_JSON="$($VERDICT  read --pr "$PR" --gate doc   --expect FAIL 2>/dev/null)"  && DOC_FAIL=1   || DOC_FAIL=0
-SKILL_FAIL_JSON="$($VERDICT read --pr "$PR" --gate skill --expect FAIL 2>/dev/null)" && SKILL_FAIL=1 || SKILL_FAIL=0
+CODE_FAIL_JSON="$("$PCLI" verdict read --pr "$PR" --gate code  --expect FAIL 2>/dev/null)"  && CODE_FAIL=1  || CODE_FAIL=0
+DOC_FAIL_JSON="$("$PCLI"  verdict read --pr "$PR" --gate doc   --expect FAIL 2>/dev/null)"  && DOC_FAIL=1   || DOC_FAIL=0
+SKILL_FAIL_JSON="$("$PCLI" verdict read --pr "$PR" --gate skill --expect FAIL 2>/dev/null)" && SKILL_FAIL=1 || SKILL_FAIL=0
 
 # UNRESOLVED ≠ "no FAIL". `verdict read` prints its outcome JSON on BOTH exit paths, so absent JSON
 # means the namespace never resolved at all (a transport/5xx error, not a verdict). Under a flaky
