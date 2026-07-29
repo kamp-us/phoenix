@@ -329,10 +329,11 @@ the surface kind (ADR 0072 §2).
 that **already exists and is open**; a skill assigns to one, never **creates** or restructures
 the set. Creating/curating milestones is a **roadmap (human / CPO) act**, deliberately *not*
 autonomous — fragmenting the set would destroy its single-source-of-truth value, so there is no
-autonomous "create-milestones" skill (ADR 0072 §3). A skill that finds no clear match to an
-existing open milestone still does not invent a home — it reaches for a **standing-lane label
-or a kill**, per the fallback rule immediately below (ADR 0202/0208). "Leave it unmilestoned"
-is **not** an outcome.
+autonomous "create-milestones" skill (ADR 0072 §3). **At the triage seam**, a skill that finds no
+clear match to an existing open milestone still does not invent a home — it reaches for a
+**standing-lane label or a kill**, per the fallback rule immediately below (ADR 0202/0208).
+"Leave it unmilestoned" is **not** a triage outcome. (`plan-epic`'s inheritance is a different
+act — children of an unmilestoned epic stay unmilestoned; see the write side below.)
 
 **Freeze-by-absence moved from an absence to a label (ADR 0208).** The signal ADR 0072 §4 carried
 — *this work is parked by design; don't force-fit it* — is not retired, but it no longer rides on
@@ -2835,8 +2836,10 @@ with no `@ <sha>` is a *pre-0058 legacy* shape and resolves to `unverified`, not
 **`pipeline-cli verdict post`'s own behavior, not something a reviewer hand-rolls**: the verb
 scans the PR for **its own** prior `review-code:` marker keyed on `(namespace, head, runId)`
 and, if one exists, replaces that comment in place with the fresh verdict + fresh `@ <sha>`
-instead of appending a new one. A re-review of a new head overwrites the same record; the PR
-thread never accumulates a stale verdict stream a millisecond decides. See ADR 0058 rule 2.
+instead of appending a new one. A re-review at a **new** head appends a fresh record and leaves
+the prior head's verdict standing (that is what the `head` dimension of the key buys — #4007,
+ADR 0213); a re-post at the **same** head upserts, so no head's slot ever accumulates a stale
+verdict stream a millisecond decides. See ADR 0058 rule 2.
 
 **Do not translate this into a raw `gh api` comment `PATCH`.** A hand-rolled patch of a verdict
 body is a marker hand-post — it skips `emissionDefect` and the post-write `verifyLanded` re-scan,
