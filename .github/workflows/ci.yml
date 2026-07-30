@@ -594,6 +594,12 @@ jobs:
       # Same script runs locally: `bash .claude/skills/validate-cycle-presence.sh`.
       - run: bash .claude/skills/validate-cycle-presence.sh
 
+      # Executable pin for the shared surface resolver both cycle validators consume: a
+      # partially-failing `find` must not hand them a silently narrowed — but non-empty —
+      # surface that their zero-scope guard reads as complete (#4487).
+      # Same script runs locally: `bash .claude/skills/shared/lib/common-test.sh`.
+      - run: bash .claude/skills/shared/lib/common-test.sh
+
       # Gate-path drift guard (issue #720): assert the five CONTROL_PLANE_RE= copies
       # in ship-it/review-code/review-doc/review-skill/gh-issue-intake-formats are
       # byte-identical to the §CP canonical line, and that .claude/skills resolves to

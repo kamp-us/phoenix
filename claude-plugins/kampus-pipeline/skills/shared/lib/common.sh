@@ -40,14 +40,31 @@
 # it: under `set -u` on bash 3.2 `"${arr[@]}"`/`"${arr[*]}"` on an empty array aborts the script,
 # and with a cleanup `trap … EXIT` installed the trap's own exit status becomes the script's — so
 # a fail-closed validator exits 0 having printed its FAIL lines. Fail OPEN, invisibly (#4470).
+#
+# A FAILED scan emits NOTHING on stdout, a diagnostic on stderr, and returns non-zero (#4487).
+# `find` exits non-zero on a PARTIAL failure (unreadable subdirectory, a race with a writer)
+# while still printing what it could read, so emitting that output would hand the caller a
+# silently narrowed — but non-empty — surface, which its `-eq 0` zero-scope guard cannot tell
+# from a complete one. Both callers consume this through process substitution, where the return
+# status is unobservable even in principle; withholding the output is therefore what makes the
+# failure reach them, via the zero-scope guard they already have. Absent ⇒ UNKNOWN, never "no".
 kp_skill_shell_surfaces() {
-	local skills_dir="$1" skill="$2"
+	local skills_dir="$1" skill="$2" md="" found="" sorted=""
 	if [ -f "$skills_dir/$skill/SKILL.md" ]; then
-		printf '%s\n' "$skills_dir/$skill/SKILL.md"
+		md="$skills_dir/$skill/SKILL.md"
 	fi
 	if [ -d "$skills_dir/$skill" ]; then
-		find "$skills_dir/$skill" -type f -name '*.sh' | LC_ALL=C sort
+		if ! found="$(find "$skills_dir/$skill" -type f -name '*.sh')"; then
+			printf 'kp_skill_shell_surfaces: find failed under %s — the surface is UNKNOWN, not empty; emitting nothing (#4487).\n' "$skills_dir/$skill" >&2
+			return 1
+		fi
+		if [ -n "$found" ] && ! sorted="$(printf '%s\n' "$found" | LC_ALL=C sort)"; then
+			printf 'kp_skill_shell_surfaces: sort failed for %s — the surface is UNKNOWN, not empty; emitting nothing (#4487).\n' "$skills_dir/$skill" >&2
+			return 1
+		fi
 	fi
+	[ -n "$md" ] && printf '%s\n' "$md"
+	[ -n "$sorted" ] && printf '%s\n' "$sorted"
 	return 0
 }
 
