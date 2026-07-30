@@ -205,8 +205,59 @@ repo-agnostic — every `gh api` call targets `$REPO`, not a hardcoded repo) per
 0062 §1); in phoenix this defaults to `kamp-us/phoenix` with no config.
 
 ```bash
-REPO="${CLAUDE_PIPELINE_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}"
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-design/scripts/resolve-repo.sh"
 ```
+
+Every script below resolves the repo the same way, through the shared lib's `kp_repo` — so the
+resolution is one rule in one place and it survives across steps, which a shell variable set in one
+fenced block does not (each agent shell invocation is a fresh process).
+
+## The extracted scripts
+
+This skill's shell lives in [`scripts/`](scripts/), one script per step, and each fenced block below
+is an **invocation** of one. The prose keeps the *why*; the scripts hold the *how* (epic #4435 phase
+1 — the shell moved as-is, and turning its `gh`/`jq` glue into tested `pipeline-cli` verbs is #1929).
+Two properties are load-bearing when you read or edit them:
+
+- **They set `set -uo pipefail`, deliberately not `-e`.** The moved glue decides its own control flow
+  through the guards written into it — `|| true` on a read that may legitimately match nothing, a
+  state-word assertion instead of an exit-status test (§CP), a `grep` whose empty result is an
+  answer. `errexit` would abort those paths mid-classification and turn a fail-closed branch into no
+  branch at all.
+- **A script whose stdout answers a safety question makes every failure path speak (the error-channel
+  rule).** Moving glue behind a script boundary invents a channel the inline block never had: a
+  non-zero exit with **0 bytes on stdout**. Where a caller reads the *absence* of a fail-closed line
+  as a *positive* answer — `not-control-plane` in Step 0's §CP classification, "no rendered surface" in
+  its off-ramp predicate — a silent guard exit is indistinguishable from "proven safe", so a classifier
+  that *could not run* would resolve to the permissive branch. So each such script prints its **own**
+  fail-closed line on stdout (`BLOCKING (…)` / `CANNOT-CLASSIFY (…)`) before every early `exit`, **and** exits non-zero,
+  and the prose reads the status before the stdout. An absent or empty result is UNKNOWN, and UNKNOWN
+  is not "no" (§ZS / ADR
+  [0092](https://github.com/kamp-us/phoenix/blob/main/.decisions/0092-gates-fail-closed-on-zero-scope.md);
+  #4231, #4010, #4219). **The five sibling extractions inherit this rule** — check each moved block for
+  an empty-means-yes caller before you move it. The `exit` sites are not the whole surface: a fallible
+  read swallowed with `|| true` (or any capture whose failure yields the empty string) reaches the
+  caller as **exit 0 with empty stdout**, which no status check can catch, so audit the reads too.
+  `classify-ui-surface.sh`'s own `gh api … || true` is exactly that shape — preserved byte-identical
+  from the inline block, so out of scope for a byte-faithful move and tracked as
+  [#4493](https://github.com/kamp-us/phoenix/issues/4493), but a sibling writing *new* glue must not
+  reproduce it.
+- **The shared-contract helpers are SOURCED from their canonical home — there is no skill-local
+  copy.** The blocks that call §CPREAD's `cp_changed_files` / `cp_head_sha` and the
+  `verdict_readback_guard` told you to copy those functions verbatim out of
+  [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) before calling them, so a script
+  boundary would have needed the same copy on disk — but
+  [#4489](https://github.com/kamp-us/phoenix/pull/4489) extracted both out of that contract into
+  [`../shared/scripts/cp-read.sh`](../shared/scripts/cp-read.sh) and
+  [`../shared/scripts/verdict-readback.sh`](../shared/scripts/verdict-readback.sh), which are
+  sourced-never-executed exactly as this skill's scripts need. So
+  [`scripts/classify-control-plane.sh`](scripts/classify-control-plane.sh) and
+  [`scripts/verdict-readback.sh`](scripts/verdict-readback.sh) **source those two directly**. This is
+  what makes the drift question moot rather than documented: with no second copy there is nothing to
+  keep in step, nothing for
+  [`../validate-gate-path-drift.sh`](../validate-gate-path-drift.sh)'s value-lock to register, and no
+  byte-identity claim to state (a claim that had gone stale the moment #4489 moved the referent).
+  **The five sibling extractions inherit this**: source the shared script, never re-copy the fence.
 
 ## Read-only on git working state
 
@@ -256,26 +307,25 @@ never silently off-ramp, which is the failure that mints the phantom gate.
 
 ```bash
 PR=<pr number>
-# UI-affecting = the ONE live source (ship-it/SKILL.md@main's `UI_RE=` line) — the SAME predicate
-# ship-it requires on and reviewer.md dispatches on, so require == dispatch == off-ramp by
-# construction (#2470). The literal is the fail-closed REFERENCE, not the live decision source.
-UI_RE='^apps/web/src/'
-UI_EXCLUDE_RE='\.(test|spec)\.tsx?$'   # #3071: carve src-colocated test/spec out (no rendered surface); mirrors §CLASS has-docs carve-then-test — ERE has no lookahead, hence the exclude pair
-UI_RAW="$(gh api "repos/$REPO/contents/claude-plugins/kampus-pipeline/skills/ship-it/SKILL.md?ref=main" -H 'Accept: application/vnd.github.raw' 2>/dev/null || true)"
-UI_LIVE="$(printf '%s\n' "$UI_RAW" | grep '^UI_RE=' | head -n1 || true)"; UX_LIVE="$(printf '%s\n' "$UI_RAW" | grep '^UI_EXCLUDE_RE=' | head -n1 || true)"
-if [ -n "$UI_LIVE" ]; then UI_RE="$(printf '%s' "$UI_LIVE" | sed "s/^UI_RE='//; s/'$//")"; else UI_RE='.'; fi   # unreadable ⇒ '.' ⇒ every path is UI-affecting ⇒ proceed & verdict (never silently off-ramp)
-if [ -n "$UX_LIVE" ]; then UI_EXCLUDE_RE="$(printf '%s' "$UX_LIVE" | sed "s/^UI_EXCLUDE_RE='//; s/'$//")"; else UI_EXCLUDE_RE='$^'; fi   # unreadable ⇒ '$^' never-match ⇒ carve nothing ⇒ proceed & verdict (fail-closed)
-UI_TOUCHED="$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" \
-  --jq '.[].filename' | grep -Ev "$UI_EXCLUDE_RE" | grep -E "$UI_RE" || true)"
+UI_TOUCHED="$("${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-design/scripts/classify-ui-surface.sh" "$PR")"
 ```
 
-- **Empty** (the diff changes no `apps/web/src/**` surface — a pure backend / infra / docs / skill
-  PR) → **mis-route off-ramp.** Post a **plain note** (no `review-design:` marker — there is no
+Read **three** outcomes off the script, never two — and read its **exit status before its stdout**:
+
+- **Non-zero exit** (a usage error, an unresolvable target repo, an unsourceable lib) → **UNKNOWN,
+  which is NOT an off-ramp.** The script prints a `CANNOT-CLASSIFY (…)` sentinel on stdout on every
+  such path, so `$UI_TOUCHED` is non-empty and the off-ramp branch below is unreachable — but assert
+  on the status too, and on non-zero **fail closed to has-ui: proceed and verdict.** A classifier that
+  could not run must never be read as "no rendered surface"; that is the silent off-ramp the paragraph
+  above says must never happen, and it is the §ZS / ADR 0092 rule the repo has ruled on repeatedly
+  (#4231, #4010, #4219): an absent or empty result is UNKNOWN, and UNKNOWN is not "no."
+- **Empty** *and* **exit 0** (the diff changes no `apps/web/src/**` surface — a pure backend / infra /
+  docs / skill PR) → **mis-route off-ramp.** Post a **plain note** (no `review-design:` marker — there is no
   rendered UI to verdict) saying `not a UI-affecting PR — no rendered surface to gate; route to
   review-code / review-doc / review-skill by class` and **stop**. Never emit a `review-design` marker
   on a non-UI PR, and never emit a foreign gate's marker — routing to the right gate is the sibling's
   Step 0, not yours to stamp.
-- **Non-empty** → this is a UI PR; proceed. (A **mixed** PR — UI *and* code/docs — is gated by the
+- **Non-empty** *and* **exit 0** → this is a UI PR; proceed. (A **mixed** PR — UI *and* code/docs — is gated by the
   matching gate per class: you verdict the design surface and emit `review-design`; `review-code` /
   `review-doc` verdict their classes. `ship-it` requires the latest PASS in **each** namespace
   present before it merges.)
@@ -287,48 +337,20 @@ with zero path matches, so a path-only test here would classify it non-blocking 
 this verb removes (#4161, formats §CP):
 
 ```bash
-# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
-PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
-# Four states on stdout. Assert on the STATE WORD, never on the exit status — the exit code
-# discriminates the four states only once the verb has RUN, so `… || ordinary` fail-opens on a
-# usage error (1) or a missing binary (127). The `else` below is the catch-all (formats §CP; #4161).
-# The verb's INPUT is a fallible read, so it comes from §CPREAD's `cp_changed_files` (copy it and
-# `cp_head_sha` verbatim from ../gh-issue-intake-formats.md) — never a bare `gh api … |` pipe: with
-# pipefail off, a failed read pipes gh's stdout ERROR BODY into the verb, which matches no §CP clause
-# and answers `not-control-plane` (#4216).
-if ! cp_changed_files "$REPO" "$PR"; then
-  CP_STATE=unknown   # the input never arrived ⇒ UNKNOWN ⇒ held as §CP by the catch-all below
-else
-  CP_STATE="$(printf '%s\n' "$CP_FILES" | "$PCLI" cp-classify classify --repo "$REPO")"
-fi
-# `content-undetermined` is an OBLIGATION, not an answer: probe each listed ADR at head before
-# calling this PR non-blocking (the same ADR-0164 verb ship-it Step 0 and review-code/doc run).
-if [ "$CP_STATE" = "content-undetermined" ]; then
-  cp_head_sha "$REPO" "$PR"; HEAD_SHA="$CP_HEAD_SHA"   # EMPTY on failure (payload discarded) — §CPREAD
-  [ -n "$HEAD_SHA" ] || echo "BLOCKING (head SHA unreadable — ADR content unprobeable ⇒ §CP, fail-closed)"
-  [ -z "$HEAD_SHA" ] || printf '%s\n' "$CP_FILES" \
-    | grep -E '^\.decisions/.*\.md$' | while IFS= read -r adr; do
-        # Capture and CHECK, never a straight pipe — gh writes its error document to STDOUT, so a
-        # pipe hands the probe an ERROR BODY as the ADR body (§CPREAD #2).
-        adr_body="$(gh api "repos/$REPO/contents/$adr?ref=$HEAD_SHA" -H 'Accept: application/vnd.github.raw' 2>/dev/null)" || adr_body=""
-        if [ -z "$adr_body" ]; then echo "BLOCKING ($adr — body unreadable at head ⇒ §CP, fail-closed)"
-        else
-          # Same rule as the cp-classify call above: assert on the probe's STATE WORD, never on its
-          # exit status — an invocation that never ran would otherwise read as proven ordinary (#4219).
-          GC_STATE="$(printf '%s' "$adr_body" | "$PCLI" guard-content-probe classify --path "$adr" 2>/dev/null)"
-          case "$GC_STATE" in
-            not-guard-touching) : ;;   # proven ordinary — the ONLY value that may skip the §CP hold
-            guard-touching) echo "BLOCKING ($adr — guard-touching ADR ⇒ §CP, ADR 0164)" ;;
-            *) echo "BLOCKING ($adr — probe UNDETERMINED (state '$GC_STATE') ⇒ §CP, fail-closed)" ;;
-          esac
-        fi
-      done
-elif [ "$CP_STATE" != "not-control-plane" ]; then
-  # The catch-all: control-plane, unknown, AND anything unenumerated — the empty string a failed
-  # invocation yields included. Only a positive `not-control-plane` may skip the hold.
-  echo "BLOCKING (§CP state '$CP_STATE')"
-fi
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-design/scripts/classify-control-plane.sh" "$PR"
 ```
+
+Read its **exit status before its stdout**, exactly as the off-ramp above does: a **non-zero exit**
+holds the PR as §CP *regardless of what stdout says*. On exit 0, any `BLOCKING (…)` line the script
+prints is the §CP hold and its reason; **no `BLOCKING (…)` line** is the one positive
+`not-control-plane` answer. Read the absence of that line, not empty stdout: §CPREAD's
+`cp_changed_files` emits its scope line (`§CP scope: … read OK — N file(s) scanned`) on **stdout**, so
+a completed run's stdout is never empty. That contract puts the whole weight of the hold on the script
+never returning silently, so **every one of its own guard paths prints its own `BLOCKING (…)` line
+before exiting** — a missing `<pr>` argument and an unresolvable target repo both hold the PR as §CP
+rather than returning the 0 bytes that would read as "proven ordinary" (§ZS / ADR 0092; #4231, #4010,
+#4219). Inside the classifier the script asserts on the verb's **state word**, never on an exit status,
+so a bad flag or an unresolved CLI leaves an empty `CP_STATE` that the catch-all holds — never ordinary.
 
 - **`not-control-plane`** (an ordinary product-UI PR — the common case for this gate) →
   **non-blocking**: your PASS marker binds `ship-it`.
@@ -347,25 +369,15 @@ fi
 ## Step 1 — Resolve the PR, its head SHA, the preview URL, and the changed surfaces
 
 ```bash
-# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
-PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
-gh api repos/$REPO/pulls/$PR \
-  --jq '{number, state, draft, merged, head: .head.ref, base: .base.ref, body}'
-# Resolve the current head SHA the verdict binds to (ADR 0058) via the shared
-# `pipeline-cli review-head` verb (#3690 / #793 / #1807) — `resolve` is REST-only (this gate
-# reviews the preview URL, not a checked-out tree), fail-safe on a missing/closed/partial head:
-HEAD_SHA="$("$PCLI" review-head resolve --pr "$PR" | jq -r .headSha)"
+HEAD_SHA="$("${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-design/scripts/resolve-head.sh" "$PR")"
 ```
 
 Find the linked issue from the PR body's `Fixes #N` / `Closes #N` (the seam `write-code` writes) —
 cross-check via the timeline if it's not obvious — for context on *what* the UI change is and which
-surfaces it targets:
+surfaces it targets. The script prints the PR summary first, then the numbers its timeline links:
 
 ```bash
-# --paginate + a STREAMING --jq: per_page caps at 100, so a link event past event 100 is
-# invisible without it on a long-lived PR's timeline (#4193)
-gh api --paginate "repos/$REPO/issues/$PR/timeline?per_page=100" \
-  --jq '.[] | select(.event=="connected" or .event=="cross-referenced") | .source.issue.number // .issue.number' 2>/dev/null
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-design/scripts/pr-context.sh" "$PR"
 ```
 
 ### Resolve the preview URL from the sticky preview-deploy comment
@@ -377,10 +389,7 @@ CI posts a **sticky comment keyed by `<!-- preview-deploy -->`**, with a per-app
 your own app server**:
 
 ```bash
-PREVIEW_COMMENT="$(gh api "repos/$REPO/issues/$PR/comments?per_page=100" \
-  --jq '[.[] | select(.body | test("<!-- preview-deploy -->"))] | last | .body // ""')"
-# parse the `web` sub-line: `- **web** — Stage `pr-<n>` → <url>`
-PREVIEW_URL="$(printf '%s' "$PREVIEW_COMMENT" | grep -oE 'https://[^ )]*workers\.dev' | head -n1)"
+PREVIEW_URL="$("${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-design/scripts/resolve-preview-url.sh" "$PR")"
 ```
 
 If **no preview URL** can be resolved (the preview-deploy comment is absent or the deploy failed),
@@ -394,7 +403,7 @@ Derive the **routes/surfaces** the diff affects from the changed frontend files 
 maps to the page(s) that render it. Read the diff for surface selection:
 
 ```bash
-gh pr diff $PR || gh api repos/$REPO/pulls/$PR -H "Accept: application/vnd.github.v3.diff"
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-design/scripts/pr-diff.sh" "$PR"
 ```
 
 Map each changed `apps/web/src/**` surface to the route(s) that render it (a changed
@@ -413,12 +422,11 @@ render-exception still apply to it). The pointer is the committed source of trut
 surface-ids are the same `<route>[:state]` capture spec:
 
 ```bash
-# blessed surface-ids: the keys of the committed pointer's `surfaces` map (ADR 0183)
-POINTER=packages/design-capture/golden-pointer.json
-BLESSED_SURFACES="$(jq -r '.surfaces | keys[]' "$POINTER" 2>/dev/null || true)"
-# the changed BLESSED surfaces = the capture surface-ids (Step 1) ∩ $BLESSED_SURFACES.
-# Empty ∩ ⇒ no blessed surface changed ⇒ the golden-deviation class is N/A this run (skip Step 2b).
+BLESSED_SURFACES="$("${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-design/scripts/blessed-surfaces.sh")"
 ```
+
+The changed BLESSED surfaces are the capture surface-ids (Step 1) ∩ `$BLESSED_SURFACES`. An empty
+intersection ⇒ no blessed surface changed ⇒ the golden-deviation class is N/A this run (skip Step 2b).
 
 Capture those blessed surfaces in the **same** capture run as the rest (Step 2) so their `localPath`
 bytes are ready to diff against the golden in Step 2b.
@@ -449,14 +457,9 @@ implementation legs land to match):
   deterministic #2594 crash signal (a `pageerror` is the hard-FAIL; a `console.error` is advisory).
 
 ```bash
-# Drive the helper (the seam; #2247 owns the Playwright + upload mechanics):
-OUT="$(mktemp -d)"
-CAPTURES="$(node packages/design-capture/src/bin.ts capture \
-  --preview-url "$PREVIEW_URL" \
-  --surface "<route>[:state]" [--surface "<route>[:state]" ...] \
-  --out "$OUT" \
-  --repo-id "$(gh api repos/$REPO --jq .id)")"
-# CAPTURES is the stdout JSON array of { surface, route, state, localPath, hostedUrl, uploadError }
+# one <route>[:state] argument per surface; CAPTURES is the helper's stdout JSON array of
+# { surface, route, state, localPath, hostedUrl, uploadError, pageErrors }
+CAPTURES="$("${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-design/scripts/capture-surfaces.sh" "$PREVIEW_URL" "<route>[:state]" ...)"
 ```
 
 **Now judge the LOCAL bytes.** For each captured surface, **read the local PNG** (`localPath`) as
@@ -472,12 +475,8 @@ hard-FAILs the gate regardless of how its screenshot looks; a bare `console.erro
 
 ```bash
 # uncaught exceptions → hard-FAIL rows (surface + message); console.error → advisory
-RENDER_CRASHES="$(printf '%s' "$CAPTURES" | jq -r '
-  [ .[] | . as $r | $r.pageErrors[]? | select(.kind=="pageerror")
-    | "\($r.surface): \(.text)" ] | .[]')"
-RENDER_ADVISORIES="$(printf '%s' "$CAPTURES" | jq -r '
-  [ .[] | . as $r | $r.pageErrors[]? | select(.kind=="console.error")
-    | "\($r.surface): \(.text)" ] | .[]')"
+RENDER_CRASHES="$(printf '%s' "$CAPTURES" | "${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-design/scripts/render-errors.sh" pageerror)"
+RENDER_ADVISORIES="$(printf '%s' "$CAPTURES" | "${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-design/scripts/render-errors.sh" console.error)"
 ```
 
 A non-empty `RENDER_CRASHES` is a **FAIL** (Step 3), naming each thrown error + its surface so a
@@ -623,8 +622,8 @@ if the head advanced *during* review, the preview you captured is stale, so re-c
 new head before posting (never bind a verdict to a head whose UI you didn't see):
 
 ```bash
-HEAD_NOW="$(gh api repos/$REPO/pulls/$PR --jq .head.sha)"
-[ "$HEAD_NOW" = "$HEAD_SHA" ] || { echo "head moved ($HEAD_SHA → $HEAD_NOW) during review — re-capture against $HEAD_NOW before posting"; HEAD_SHA="$HEAD_NOW"; }
+# prints the CURRENT head; warns on stderr when it moved off the head you reviewed
+HEAD_SHA="$("${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-design/scripts/current-head.sh" "$PR" "$HEAD_SHA")"
 ```
 
 Write the verdict to a per-run temp file so multi-line markdown + backticks survive the shell, then
@@ -638,8 +637,9 @@ closing the mktemp-path leak where a scratch path bled into the `@ <sha>` field 
 a comment, never a native review** (ADR 0058 rule 4): a native review can't carry the `@ <sha>` in
 the shape this contract controls, so the comment is the single carrier.
 
-**MANDATE (hard invariant, not a suggestion):** `$VERDICT post` (here via the `upsert` wrapper
-below) is the **only** permitted way to emit this verdict marker. A bare `gh api …/comments` /
+**MANDATE (hard invariant, not a suggestion):** `pipeline-cli verdict post` (here via
+[`scripts/verdict-upsert.sh`](scripts/verdict-upsert.sh)) is the **only** permitted way to emit this
+verdict marker. A bare `gh api …/comments` /
 `gh pr comment` hand-post of the marker that skips the guard is **FORBIDDEN** (it is the emit-side
 hole #2789 / #2816 / #2818 rode: hand-posting off the verdict lib means `emissionDefect` never
 runs). If a raw post is ever genuinely unavoidable, the body **MUST** first pass
@@ -657,17 +657,8 @@ Every verdict body carries the canonical **`Reviewed-head: @ <HEAD_SHA>`** ancho
 from exactly that line. Every body also carries an **Evidence** section embedding the helper's
 GitHub-hosted screenshot URLs so a human can see what you judged.
 
-```bash
-# resolve the verdict CLI via the `bin/pipeline-cli` shim — in-repo bin, else the installed bin,
-# else the pinned `pnpm dlx` fallback reading the one pin (hooks/pin.sh); no version pinned here
-# (#3653; ADR 0062/0064; epic #994)
-VERDICT="${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/bin/pipeline-cli verdict"
-upsert() {   # $1 = path to the composed verdict body → prints the upserted comment id; fails loud on a malformed marker
-  local out
-  out="$($VERDICT post --pr "$PR" --gate design --body-file "$1")" || return 1   # namespace-anchored upsert (PATCH own prior marker, else POST), fail-closed on a bad @ <sha>
-  printf '%s\n' "$out" | awk '{print $2}'   # `posted <id>` / `patched <id>` → the comment id
-}
-```
+[`scripts/verdict-upsert.sh`](scripts/verdict-upsert.sh) is that upsert — it takes the PR and the
+composed verdict body file and prints the comment id. The read-back step below is where you call it.
 
 ### Pass path — non-blocking PR (the binding signal)
 
@@ -800,14 +791,20 @@ After **any** of the three upserts returns its comment id, close the loop: call 
 canonical** [`verdict_readback_guard`](../gh-issue-intake-formats.md#the-verdict-read-back-guard--after-posting-a-gate-marker-re-read-it-and-fail-loud-verdict_readback_guard)
 from the shared contract with the **`review-design`** gate token — it re-reads the comment you just
 wrote and asserts the canonical `review-design:` marker, the anchored `Reviewed-head: @ <sha>` line,
-and **no leaked local filesystem path** (the #2148 marker-as-path leak). Do **not** re-derive a local
-copy:
+and **no leaked local filesystem path** (the #2148 marker-as-path leak).
+[`scripts/verdict-readback.sh`](scripts/verdict-readback.sh) runs exactly that guard by **sourcing**
+it from [`../shared/scripts/verdict-readback.sh`](../shared/scripts/verdict-readback.sh), the file
+#4489 extracted it into — the one implementation, not a mirror of it. Never write a *different*
+implementation of it:
 
 ```bash
-CID="$(upsert "$VERDICT_FILE")"
-verdict_readback_guard "$CID" review-design "$HEAD_SHA" \
-  || { echo "read-back failed — re-post the real verdict and re-assert; if it still can't land clean, surface a posting failure (the PR is genuinely ungated) — never swallow it (fail-closed, ADR 0092 §ZS)"; }
+CID="$("${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-design/scripts/verdict-upsert.sh" "$PR" "$VERDICT_FILE")"
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-design/scripts/verdict-readback.sh" "$CID" "$HEAD_SHA"
 ```
+
+A non-zero exit is the read-back failing: re-post the real verdict and re-assert; if it still can't
+land clean, surface a posting failure (the PR is genuinely ungated) — never swallow it (fail-closed,
+ADR 0092 §ZS).
 
 On non-zero, re-post the real verdict and re-assert; if it still cannot land clean, surface it as a
 **posting failure** in the run ledger — the PR is genuinely ungated and a consumer must not read it
