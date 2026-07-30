@@ -6,16 +6,25 @@
  * This is the write-time enforcement of the repo's no-local-paths rule that used
  * to live only in per-skill prose (the failure mode that shipped a vault path to
  * main — see #158). `findLeaks(filePath, text)` returns every leak in `text` when
- * `filePath` is a shared-artifact doc surface and not self-exempt; otherwise an
- * empty list. No regex over arbitrary source — the match is scoped to doc surfaces
- * exactly as the AC requires.
+ * `filePath` is a shared-artifact surface and not self-exempt; otherwise an empty
+ * list. Still no regex over arbitrary source — the match is scoped to the surfaces
+ * `surfaceOf` names, nothing wider.
+ *
+ * There are **two** such surfaces, `"doc"` and `"shell"`. Shell was added because the
+ * doc-only scoping's premise expired: it was written when all pipeline shell lived
+ * inside markdown fences, and epic #4435 is extracting that shell into standalone
+ * `.sh` files — so the exact bytes this guard used to scan walked off its surface,
+ * one merge at a time, while the required CI check kept exiting 0 (#4496, the #4470
+ * class). A `.sh` is scanned **whole**, comments included: unlike an *invocation*
+ * guard, a machine-local path is a leak wherever it sits in a committed file, and a
+ * shell comment is the likeliest place for one to land.
  *
  * The machine-local-path shapes themselves — the generic deny-list design and the
  * `~/.claude` config-file carve-out (#3475/#3505); the `/tmp` arm carries no carve-out,
  * so it fail-closes on any bare `/tmp/…` (#3492 Option 1) — live in the single shared
  * `path-matcher.ts` module that both this doc/comment scanner and `crew-leak.ts` import,
  * so the two detectors can never
- * drift (the #3506 root bug). This module owns only the doc-surface scoping (which
+ * drift (the #3506 root bug). This module owns only the surface scoping (which
  * files get scanned) and the self-exempt list; the path shapes are imported, not
  * re-declared. See `path-matcher.ts` for the pattern rationale.
  */
@@ -30,6 +39,13 @@ export interface Leak {
 
 const DOC_SUFFIXES = [".md", ".mdx", ".markdown"] as const;
 const DOC_DIRS = ["/.decisions/", "/.patterns/"] as const;
+
+// Extension-scoped like DOC_SUFFIXES, and deliberately NOT directory-scoped: confining the
+// shell surface to `claude-plugins/` would rebuild the same narrow surface one level down, so
+// the next script extracted anywhere else would walk off it exactly as these did. `.sh` is the
+// whole tracked shell corpus today — no `.bash`/`.zsh` file exists — so this list is the corpus,
+// not a guess at it.
+const SHELL_SUFFIXES = [".sh"] as const;
 
 // Files whose subject IS path hygiene: they must spell the forbidden tokens out as
 // patterns, so they are exempt by path suffix. Includes the leak-guard's own source
@@ -81,14 +97,26 @@ const scanPatterns = (text: string, patterns: ReadonlyArray<PathPattern>): Reado
 	return leaks;
 };
 
-export const isSharedArtifact = (path: string): boolean => {
+/** Which shared-artifact surface a path belongs to — the scan scope's one classification axis. */
+export type Surface = "doc" | "shell";
+
+/**
+ * The surface `path` belongs to, or `null` when it is out of scope entirely. Every scoping
+ * decision resolves here: `isSharedArtifact` is this function's nullness, and the scan's
+ * per-surface scope tally is this function's answer counted. One classifier, so a surface
+ * cannot be scanned by one caller and skipped by another (the #3506 drift shape).
+ */
+export const surfaceOf = (path: string): Surface | null => {
 	const p = normalize(path);
-	if (DOC_SUFFIXES.some((s) => p.endsWith(s))) return true;
+	if (SHELL_SUFFIXES.some((s) => p.endsWith(s))) return "shell";
+	if (DOC_SUFFIXES.some((s) => p.endsWith(s))) return "doc";
 	// Leading-slash the path so a relative `.decisions/x` matches the same `/.decisions/`
 	// token as an absolute one (Write passes absolute; be robust to relative targets).
 	const rooted = `/${p.replace(/^\/+/, "")}`;
-	return DOC_DIRS.some((d) => rooted.includes(d));
+	return DOC_DIRS.some((d) => rooted.includes(d)) ? "doc" : null;
 };
+
+export const isSharedArtifact = (path: string): boolean => surfaceOf(path) !== null;
 
 export const isSelfExempt = (path: string): boolean => {
 	// Normalize to a leading slash so a relative `.claude/...` target matches the same

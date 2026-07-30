@@ -4,13 +4,18 @@
  * The CI-callable scan for issue #173, moved into the pipeline-cli registry (epic
  * #994, Phase 2 / #999):
  *
- *   pipeline-cli leak-guard scan <file>...        # report user-local path leaks in doc files; exit 2 on a leak
+ *   pipeline-cli leak-guard scan <file>...        # report user-local path leaks in shared artifacts; exit 2 on a leak
  *   pipeline-cli leak-guard scan-comment          # scan a PR/issue comment body (stdin) before posting; exit 2 on a leak
  *
  * Reads each file, runs the pure `findLeaks` core, and reports
  * `<file>: <matched> — <reason>` lines on stderr. A missing/unreadable file is
- * skipped, never a crash. `findLeaks` already scopes to doc surfaces, so CI may
- * hand it every changed file — only doc-surface leaks are flagged.
+ * skipped, never a crash. `findLeaks` self-scopes (doc surfaces and `.sh`), so CI
+ * may hand it every changed file.
+ *
+ * `scan` prints its **per-surface scope** on stdout before the verdict (ADR 0092 §1).
+ * That is the fix for how #4496 stayed invisible: an unscanned file reported exactly
+ * like a clean one, so the shell surface could leave the scan without a trace. It also
+ * guarantees a non-zero exit carries non-empty stdout.
  *
  * Exit-code contract (preserved from the former package's `bin.run.ts`): 2 on a
  * confirmed leak, 0 when clean, and any OTHER non-zero means the scan could not
@@ -31,7 +36,14 @@ import {onCheckFailed} from "../../gate-fail.ts";
 import {readStdinTextOrExit} from "../../read-stdin.ts";
 import {CREW_DIR, sweepCrew} from "./crew-gate.ts";
 import {PrComments, PrCommentsLive, type UpstreamUnavailableError} from "./github.ts";
-import {findCommentLeaks, findLeaks, type Leak} from "./leak-guard.ts";
+import {
+	findCommentLeaks,
+	findLeaks,
+	isSelfExempt,
+	type Leak,
+	type Surface,
+	surfaceOf,
+} from "./leak-guard.ts";
 import {scanPrComments} from "./scan-pr.ts";
 
 // 2 = a confirmed leak; any OTHER non-zero from this process means the scan
@@ -49,7 +61,36 @@ const UPSTREAM_UNAVAILABLE_EXIT_CODE = 3;
 interface FileLeaks {
 	readonly file: string;
 	readonly leaks: ReadonlyArray<Leak>;
+	/** Which surface the file was scanned as — `null` when it is out of scope entirely. */
+	readonly surface: Surface | null;
+	readonly exempt: boolean;
 }
+
+/**
+ * How many handed files landed in each outcome — the scanned scope, emitted before the verdict
+ * (ADR 0092 §1). Per surface, not as one total: the defect this closes was a silently narrowing
+ * surface (`.sh` left the scan when shell was extracted out of markdown fences, #4496), and a
+ * single "N files scanned" cannot tell a healthy markdown surface from one carrying the whole
+ * count while the shell surface contributes nothing.
+ */
+interface ScanScope {
+	readonly doc: number;
+	readonly shell: number;
+	readonly exempt: number;
+	readonly outOfScope: number;
+}
+
+const tallyScope = (results: ReadonlyArray<FileLeaks>): ScanScope => ({
+	doc: results.filter((r) => !r.exempt && r.surface === "doc").length,
+	shell: results.filter((r) => !r.exempt && r.surface === "shell").length,
+	exempt: results.filter((r) => r.exempt).length,
+	outOfScope: results.filter((r) => !r.exempt && r.surface === null).length,
+});
+
+const scopeLine = (results: ReadonlyArray<FileLeaks>): string => {
+	const {doc, shell, exempt, outOfScope} = tallyScope(results);
+	return `leak-guard: scope — ${results.length} file(s) handed: ${doc} doc surface, ${shell} shell surface, ${exempt} self-exempt, ${outOfScope} out of scope`;
+};
 
 // Carries a non-zero process exit (the report is already on stderr).
 class LeakFound extends Schema.TaggedErrorClass<LeakFound>()("LeakFound", {
@@ -67,6 +108,8 @@ const scanFile = (file: string): Effect.Effect<FileLeaks, never, FileSystem.File
 		Effect.map((content) => ({
 			file,
 			leaks: content === null ? [] : findLeaks(file, content),
+			surface: surfaceOf(file),
+			exempt: isSelfExempt(file),
 		})),
 	);
 
@@ -89,13 +132,18 @@ const scan = Command.make(
 			const results = yield* Effect.forEach(files, scanFile, {concurrency: 1});
 			const flagged = results.filter((r) => r.leaks.length > 0);
 
+			// Emitted on stdout ahead of the verdict on BOTH paths, so a non-zero exit always
+			// carries non-empty stdout — a caller that reads an empty stdout as a positive answer
+			// has nothing to misread (#4485's twice-FAIL'd class).
+			yield* Console.log(scopeLine(results));
+
 			if (flagged.length === 0) {
-				yield* Console.log("leak-guard: clean — no user-local paths in any scanned doc surface");
+				yield* Console.log("leak-guard: clean — no user-local paths in any scanned surface");
 				return;
 			}
 
 			yield* Console.error(
-				"leak-guard: blocked — user-local path(s) in shared doc surface(s) (issue #173):",
+				"leak-guard: blocked — user-local path(s) in shared artifact surface(s) (issues #173, #4496):",
 			);
 			for (const {file, leaks} of flagged) {
 				for (const leak of leaks) {
