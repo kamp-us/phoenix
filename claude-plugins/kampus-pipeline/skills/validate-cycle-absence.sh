@@ -13,6 +13,8 @@
 #   1. STATIC wiring — each of the four skills cites THE single canonical absence-probe
 #      (the well-known repo path `product-development-cycle.md`, formats §1) and pairs it
 #      with an absent⇒no-op branch. No skill hardcodes a flag or assumes the doc exists.
+#      Scanned across the skill's whole shell surface — SKILL.md AND its extracted
+#      scripts/*.sh (#4470) — so moving a block out of SKILL.md cannot disarm this.
 #   2. HERMETIC runtime — run the canonical working-tree probe against a temp repo root
 #      with no cycle doc, assert it resolves `absent` and the no-op default holds. This is
 #      the executable scenario walkthrough of the doc-absent branch (issue #605, epic #595).
@@ -25,6 +27,18 @@ set -euo pipefail
 # Same self-locating idiom as validate-skills.sh: this script lives in .claude/skills/, so
 # its own dir IS the skills root — resolve from BASH_SOURCE so it works from any cwd.
 skills_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# kp_skill_shell_surfaces resolves each skill's scan surface — SKILL.md PLUS its extracted
+# scripts/*.sh (#4470). Sourced, not re-derived: the surface convention and its resolver live
+# together in the lib. A missing lib is a FAIL, never a narrowed scan (ADR 0092).
+COMMON_LIB="$skills_dir/shared/lib/common.sh"
+if [ ! -f "$COMMON_LIB" ]; then
+	echo "FAIL: shared lib not found at $COMMON_LIB — cannot resolve each skill's shell surface; refusing to scan a narrowed surface (ADR 0092)"
+	echo "validate-cycle-absence: FAILED — 1 error(s); the scan surface could not be resolved"
+	exit 1
+fi
+# shellcheck source-path=SCRIPTDIR source=shared/lib/common.sh
+. "$COMMON_LIB"
 
 # The one well-known cycle-doc path every consumer probes (formats §1, single source).
 CYCLE_DOC_PATH="product-development-cycle.md"
@@ -44,6 +58,8 @@ declare -a CYCLE_SKILLS=(
 
 errors=0
 checks=0
+scanned_skills=0
+declare -a scanned_paths=()
 
 fail() { echo "FAIL: $*"; errors=$((errors + 1)); }
 ok() { echo "ok: $*"; checks=$((checks + 1)); }
@@ -62,13 +78,31 @@ for entry in "${CYCLE_SKILLS[@]}"; do
 		continue
 	fi
 
-	if ! grep -qF "$PROBE_NEEDLE" "$md"; then
+	surfaces=()
+	while IFS= read -r surface; do
+		[ -n "$surface" ] && surfaces+=("$surface")
+	done < <(kp_skill_shell_surfaces "$skills_dir" "$skill")
+
+	# Guard before expanding: an empty `surfaces` aborts every "${surfaces[@]}" below under
+	# `set -u`, and the EXIT trap then launders that abort into exit 0 (see the resolver's
+	# docblock in shared/lib/common.sh, #4470). Refuse the skill instead of scanning nothing.
+	if [ "${#surfaces[@]}" -eq 0 ]; then
+		fail "$skill: no shell surface resolved (no SKILL.md, no *.sh) — refusing to scan an empty surface (ADR 0092)"
+		continue
+	fi
+
+	scanned_skills=$((scanned_skills + 1))
+	for surface in "${surfaces[@]}"; do
+		scanned_paths+=("${surface#"$skills_dir/"}")
+	done
+
+	if ! grep -qF "$PROBE_NEEDLE" "${surfaces[@]}"; then
 		fail "$skill: does not cite the canonical cycle-doc probe ('$PROBE_NEEDLE') — every cycle-step must branch on the one well-known path (formats §1)"
 	else
 		ok "$skill cites the canonical absence-probe"
 	fi
 
-	if ! grep -qiE "$noop_re" "$md"; then
+	if ! grep -qiE "$noop_re" "${surfaces[@]}"; then
 		fail "$skill: no absent⇒no-op branch found (expected /$noop_re/i) — an absent cycle doc must no-op gracefully (ADR 0062)"
 	else
 		ok "$skill has an absent⇒no-op branch"
@@ -81,9 +115,16 @@ done
 # is present without the probe that establishes it.)
 for entry in "${CYCLE_SKILLS[@]}"; do
 	skill="${entry%% *}"
-	md="$skills_dir/$skill/SKILL.md"
-	[ -f "$md" ] || continue
-	if grep -qiE 'cycle (doc|step) (is )?(always|unconditionally)' "$md"; then
+	[ -f "$skills_dir/$skill/SKILL.md" ] || continue
+	surfaces=()
+	while IFS= read -r surface; do
+		[ -n "$surface" ] && surfaces+=("$surface")
+	done < <(kp_skill_shell_surfaces "$skills_dir" "$skill")
+	if [ "${#surfaces[@]}" -eq 0 ]; then
+		fail "$skill: no shell surface resolved (no SKILL.md, no *.sh) — refusing to scan an empty surface (ADR 0092)"
+		continue
+	fi
+	if grep -qiE 'cycle (doc|step) (is )?(always|unconditionally)' "${surfaces[@]}"; then
 		fail "$skill: appears to assume the cycle doc is always present — graceful absence requires the probe to gate it"
 	fi
 done
@@ -165,6 +206,16 @@ if [ "$RELEASE_QUEUE" = "n/a (not a dark ship)" ]; then
 else
 	fail "ship-it surfaced a release queue on an absent cycle doc"
 fi
+
+# Zero-scope guard (ADR 0092): a run that matched zero cycle-aware skills — a moved or renamed
+# skills dir — would sail through layer 2's hermetic walkthrough (which touches no skill) and
+# print OK having asserted nothing about the corpus. Fail closed instead.
+if [ "$scanned_skills" -eq 0 ]; then
+	fail "zero scope: no cycle-aware skills were scanned (skills dir moved?) — a zero-scope run is a FAIL, never a silent pass (ADR 0092)"
+fi
+
+# Emitted scope (ADR 0092): every run states what it looked at.
+echo "scanned scope: ${scanned_skills} cycle-aware skill(s) [${scanned_paths[*]-}]"
 
 if [ "$errors" -gt 0 ]; then
 	echo "validate-cycle-absence: FAILED — $errors error(s); the graceful-absence guarantee (ADR 0062 / 0083) is broken"
