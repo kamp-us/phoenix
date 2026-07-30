@@ -10,13 +10,18 @@
 # and leaves its variables and functions in the sourcing shell, which is how the step's later
 # blocks still see them.
 . "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../shared/lib" && pwd)/common.sh"
+# §CPREAD's `cp_changed_files` / `cp_head_sha`, sourced IN-CHAIN from their canonical home — the
+# extraction dropped this line and left both calls below command-not-found (#4547). Same idiom as
+# review-code's `classify-control-plane.sh`; never a re-copy of the helpers.
+# shellcheck source=../../shared/scripts/cp-read.sh
+. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../shared/scripts" && pwd)/cp-read.sh"
 
 # The changed-file list is a fallible network READ, and EVERY probe in this step — §CP, the ADR
 # content clause, has-code/has-docs/has-skills, has-ui — is a `grep` over it. So a failed read used
 # to answer "no §CP path, no classes present" in one stroke: the capture's exit status was never
 # checked, and an empty $FILES made every `grep -q … && echo …` silent (#4216). `cp_changed_files` is
-# §CPREAD of ../gh-issue-intake-formats.md — copy it (and its `cp_head_sha` companion, used by the
-# content clause below) verbatim from there (single source; the why lives there, not here). --paginate + streaming --jq inside it gets the full set past file #100 (the
+# §CPREAD of ../gh-issue-intake-formats.md (and `cp_head_sha`, used by the content clause below, is
+# its companion), both sourced in-chain above (single source; the why lives there, not here). --paginate + streaming --jq inside it gets the full set past file #100 (the
 # API caps per_page at 100; the grep probes below aggregate the concatenated lines) (#725).
 if ! cp_changed_files "$REPO" "$PR"; then
   # FAIL CLOSED, and STOP — with no file list there is no classification to make: not §CP, not the
@@ -56,8 +61,8 @@ elif [ "$CP_STATE" = "content-undetermined" ]; then
   # the driver (via trivial-diff) run (#3645, founder ruling #3416) — so a guard-touching ADR
   # classifies §CP identically at every stage, not just here. The GUARD_ADR_RE vocabulary stays
   # single-sourced in gh-issue-intake-formats.md §CP.
-  # The ref is a fallible read — `cp_head_sha` is §CPREAD's companion to `cp_changed_files` (copy it
-  # verbatim from there). It DISCARDS gh's payload on failure, which is what makes the emptiness
+  # The ref is a fallible read — `cp_head_sha` is §CPREAD's companion to `cp_changed_files` (same
+  # in-chain source). It DISCARDS gh's payload on failure, which is what makes the emptiness
   # test below a live guard: with a bare `|| true` the error document lands in HEAD_SHA, non-empty.
   cp_head_sha "$REPO" "$PR"; HEAD_SHA="$CP_HEAD_SHA"
   if [ -z "$HEAD_SHA" ]; then

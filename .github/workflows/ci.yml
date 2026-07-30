@@ -600,6 +600,15 @@ jobs:
       # Same script runs locally: `bash .claude/skills/shared/lib/common-test.sh`.
       - run: bash .claude/skills/shared/lib/common-test.sh
 
+      # Executable pin for ship-it's sourced chain (#4547): every function a step script
+      # calls must be defined in-chain, and Step 2's §CP seam must pass the caller's
+      # $CP_FLAG through to `verdict gate`. The extraction dropped three source lines and
+      # hardcoded the seam empty, and nothing in the repo noticed for a week — ship-it is
+      # the single merge authority (ADR 0048/0135), so its chain not running as written
+      # is a merge-path defect. Hermetic: gh and the CLI shim are stubbed, no network.
+      # Same script runs locally: `bash .claude/skills/ship-it/scripts/verify-chain-resolves.sh`.
+      - run: bash .claude/skills/ship-it/scripts/verify-chain-resolves.sh
+
       # Gate-path drift guard (issue #720): assert the five CONTROL_PLANE_RE= copies
       # in ship-it/review-code/review-doc/review-skill/gh-issue-intake-formats are
       # byte-identical to the §CP canonical line, and that .claude/skills resolves to

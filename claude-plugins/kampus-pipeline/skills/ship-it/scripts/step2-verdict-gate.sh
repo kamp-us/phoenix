@@ -38,7 +38,24 @@ echo "ship-it guard 1: PR $PR requires $(printf '%s\n' "$REQUIRED_NS" | grep -c 
 # `Reviewed-head` line (ADR 0111/0151) — pass --cp so that form counts, and ONLY then. Set this from
 # Step 0's own classification (it printed `BLOCKING (…)` for a §CP path/content hit) AND only after
 # Step 0's approval gate discharged; leave it empty for every non-§CP PR.
-CP_FLAG=""   # → "--cp" iff Step 0 classified this PR §CP and its control-plane approval discharged
+#
+# THE SEAM (#4547). $CP_FLAG arrives from the CALLER's shell — Step 0 sets `CP_FLAG=--cp` on the §CP
+# discharge branch and nothing sets it otherwise. A caller-set variable rather than a positional,
+# because this value is DERIVED by an earlier step of the same sourced chain (like $PR and $REPO,
+# which already reach here that way), whereas step0-preflight.sh's `$1` is the run's ENTRY value that
+# no earlier step could have set. A positional here would put the §CP/non-§CP choice back at the
+# source site as something the shipper types by hand — the hand-substitution this seam removes.
+# Unset ⇒ empty ⇒ the non-§CP branch, which is the STRICTER one (the SHA-less advisory does not
+# count), so an omitted seam can only refuse a §CP PR, never pass one.
+CP_FLAG="${CP_FLAG:-}"
+case "$CP_FLAG" in
+  ""|"--cp") ;;
+  # A third value is not a classification. It would reach `verdict gate` as an unrecognized flag —
+  # help text plus a non-zero exit, refused below with the wrong reason named. Refuse here instead,
+  # naming the real one (§ZS: an uninterpretable input is UNKNOWN, never the permissive branch).
+  *) disarm_intent refuse || INTENT_UNCLEARED=1
+     echo "ship-it: refused at guard 1 — CP_FLAG is '$CP_FLAG'; the only values this seam accepts are '' (non-§CP) and '--cp'. An unrecognized value is UNKNOWN, not a classification. NOT enqueued." >&2; exit 1 ;;
+esac
 "$PCLI" verdict gate --pr "$PR" --require "$REQUIRED" $CP_FLAG || {
   disarm_intent refuse || INTENT_UNCLEARED=1
   echo "ship-it: refused at guard 1 — see the named reason above; NOT enqueued."; exit 1; }

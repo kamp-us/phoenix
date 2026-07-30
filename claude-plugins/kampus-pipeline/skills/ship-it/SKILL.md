@@ -344,8 +344,18 @@ UI_EXCLUDE_RE='\.(test|spec)\.tsx?$'
   [0135](https://github.com/kamp-us/phoenix/blob/main/.decisions/0135-hard-gate-control-plane-team-codeowners-approve-then-enqueue.md),
   amending 0053's merge model). Run the **deterministic §CP cardinality check** (the
   [§CP approval gate](#step-0-cp-approval-gate) below, ADR 0175):
-  - **discharge** → the human-judgment gate is satisfied; **carry on** into Step 2's normal machine
-    gates (matching-gate SHA-bound PASS, CI green, run-evidence). Once those pass, ENQUEUE exactly
+  - **discharge** → the human-judgment gate is satisfied; **set the Step-2 §CP seam**, then **carry
+    on** into Step 2's normal machine
+    gates (matching-gate SHA-bound PASS, CI green, run-evidence). The seam is one assignment in this
+    same shell, and this is its **only** sanctioned site — a §CP PR's pass path is the SHA-less
+    advisory, which `verdict gate` counts only under `--cp` (Step 2), and the discharge is exactly
+    the condition that licenses it:
+
+    ```bash
+    CP_FLAG=--cp   # §CP classified AND approval discharged — the ONLY state that sets this (#4547)
+    ```
+
+    Once those pass, ENQUEUE exactly
     like a non-§CP PR (`gh pr merge --auto`, no method flag — the queue owns the SQUASH method;
     QUEUED → auto-merges on green; §CP PRs now
     enter the ADR 0132 queue too). §CP carries **one extra** gate — the team approval — layered on
@@ -395,9 +405,10 @@ UI_EXCLUDE_RE='\.(test|spec)\.tsx?$'
   **Every input to this gate is a fallible READ, and an unresolved one is UNKNOWN — never a
   cardinality, never "the team is empty", never `awaiting control-plane approval` (#4223).** All four
   — roster, author, head, per-approver membership — come from **§CPREAD** / **§CPREAD-APPROVAL** of
-  [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md); copy those helpers verbatim from
-  there (single source; the why, and the measurement behind it, live there, not here). Each failure
-  branch stops under a message that names the read that failed.
+  [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md), which the step script sources
+  in-chain from their extracted home, `../shared/scripts/cp-read.sh` (single source; the why, and the
+  measurement behind it, live there, not here — and no paste step for the shipper to forget, #4547).
+  Each failure branch stops under a message that names the read that failed.
 
   ```bash
   . "$SHIPIT_SCRIPTS/step0-cp-approval.sh"
@@ -617,8 +628,15 @@ The required set is **derived, never eyeballed** — the same `class-probe` outp
 dispatches off, so `dispatched-gate == required-gate` holds by construction:
 
 ```bash
-. "$SHIPIT_SCRIPTS/step2-verdict-gate.sh"
+. "$SHIPIT_SCRIPTS/step2-verdict-gate.sh"   # reads $CP_FLAG from this shell — set ONLY by Step 0's §CP discharge
 ```
+
+**The one input this step takes is `$CP_FLAG`, and it is already set (or deliberately unset) by the
+time you get here.** Step 0's §CP discharge branch is its only writer; every other path leaves it
+unset, which the script reads as the non-§CP branch. So this source line takes no argument and needs
+no hand-substituted value — run it as written. Setting `CP_FLAG` here, from your own reading of the
+diff, is the [defect this seam replaced](https://github.com/kamp-us/phoenix/issues/4547): it puts the
+§CP decision back where an eyeball makes it, next to the verb that is supposed to be handed it.
 
 **Why a verb and not a careful read.** The rule below was already correct in prose ("docs present
 but the review-doc namespace is empty → `unverified (no review-doc PASS)`"), but nothing *computed*
