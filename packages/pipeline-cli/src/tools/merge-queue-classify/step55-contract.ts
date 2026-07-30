@@ -7,11 +7,22 @@
  * relocated here — the poll verdict remains `merge-queue-classify`'s, the disposition wording
  * remains the skill's.
  *
- * Fail-closed in one direction only: a renamed Step 5.5, a budget the block never binds, or a
- * missing `case` arm all resolve to a ZERO horizon and NO dispositions — which makes the consuming
- * assertions red (a zero horizon covers no dwell, an absent disposition matches no contract), never
- * quietly green.
+ * Fail-closed in one direction only: a renamed Step 5.5, an unreadable sourced script, a budget the
+ * block never binds, or a missing `case` arm all resolve to a ZERO horizon and NO dispositions —
+ * which makes the consuming assertions red (a zero horizon covers no dwell, an absent disposition
+ * matches no contract), never quietly green.
+ *
+ * The parse is **extraction-invariant**: the block lives in `scripts/step5_5-reconcile.sh`, and the
+ * section's `. "$SHIPIT_SCRIPTS/…"` line is followed into it (`skill-shell-surface.ts`, #4498). It
+ * reads the budget and the case arms wherever they sit — inline in the markdown or in the sourced
+ * script — so a pure relocation neither reds this nor, worse, quietly empties it.
  */
+
+import {
+	type ResolvedSection,
+	resolveSection,
+	type SkillSurface,
+} from "../../skill-shell-surface.ts";
 
 /** The reconcile's poll budget as Step 5.5 states it, plus the horizon it actually observes. */
 export interface ReconcileBudget {
@@ -56,13 +67,23 @@ export const extractStep55Section = (shipItText: string): string => {
 	return end < 0 ? section : section.slice(0, bodyAt + end);
 };
 
+/**
+ * Step 5.5's full shell surface: the heading slice plus every `scripts/*.sh` it sources. The returned
+ * `scanned` is the emitted scope (ADR 0092) — a caller asserts what was read rather than trusting a
+ * green, since ZERO scanned files is what a renamed heading looks like.
+ */
+export const resolveStep55Section = (surface: SkillSurface): ResolvedSection =>
+	resolveSection(surface, extractStep55Section);
+
 const shellDefault = (section: string, name: string): number => {
 	const m = section.match(new RegExp(`^${name}=\\$\\{[A-Z_]+:-(\\d+)\\}`, "m"));
 	return m?.[1] === undefined ? 0 : Number.parseInt(m[1], 10);
 };
 
-export const parseReconcileBudget = (shipItText: string): ReconcileBudget => {
-	const section = extractStep55Section(shipItText);
+export const parseReconcileBudget = (surface: SkillSurface): ReconcileBudget => {
+	const {section, scanned, unresolved} = resolveStep55Section(surface);
+	// ZERO SCOPE and UNRESOLVED are both UNKNOWN, never "the budget is absent" (ADR 0092 / §ZS).
+	if (scanned.length === 0 || unresolved.length > 0) return FAILCLOSED_RECONCILE_BUDGET;
 	const tries = shellDefault(section, "RECONCILE_TRIES");
 	const sleepSeconds = shellDefault(section, "RECONCILE_SLEEP");
 	if (tries === 0 || sleepSeconds === 0) return FAILCLOSED_RECONCILE_BUDGET;
@@ -78,9 +99,16 @@ export const parseReconcileBudget = (shipItText: string): ReconcileBudget => {
 /**
  * The `MERGE_DISPOSITION` the skill renders per outcome, keyed by every outcome word its `case`
  * arm lists (`queued|pending` yields two entries pointing at the one shared rendering).
+ *
+ * This population is **derived from the text**, so it is the one place a relocation could have gone
+ * quiet rather than red: a section that reaches no `case` arm yields an EMPTY map, and a consumer
+ * that only asserts *properties of* a rendering (`notInclude`, or two renderings differing) passes
+ * vacuously on `""`. That is the silent-dropout shape #4509 names. The remedy is not here — a parser
+ * cannot know which outcomes exist — it is in the consumer, which pins the expected membership
+ * against `MergeOutcome`'s four words so a missing arm reds.
  */
-export const parseMergeDispositions = (shipItText: string): ReadonlyMap<string, string> => {
-	const section = extractStep55Section(shipItText);
+export const parseMergeDispositions = (surface: SkillSurface): ReadonlyMap<string, string> => {
+	const {section} = resolveStep55Section(surface);
 	const dispositions = new Map<string, string>();
 	for (const m of section.matchAll(/^\s*([a-z|]+)\)\s*\n?\s*MERGE_DISPOSITION="([^"]*)"\s*;;/gm)) {
 		const [, outcomes, rendering] = m;
