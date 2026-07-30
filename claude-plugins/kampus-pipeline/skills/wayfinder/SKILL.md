@@ -75,6 +75,17 @@ transport, session gh-identity routing, and similar. The rule targets the operat
 - It is **not part of the linear execution flow** — it is the pre-triage ideation stage that
   runs *before* the pipeline picks anything up.
 
+## The extracted scripts
+
+This skill's shell lives in [`scripts/`](scripts/), and each fenced `bash` block is an **invocation**
+of one; the prose keeps the *why* (epic #4435 phase 1 — the shell moved as-is, and turning its glue
+into tested `pipeline-cli` verbs is #1929). They set `set -uo pipefail`, deliberately not `-e`: the
+moved glue steers its own control flow, and `errexit` would abort a fail-closed branch before it
+printed its refusal. The **emission** step deliberately calls `report`'s own
+[`file-report.sh`](../report/scripts/file-report.sh) rather than a wayfinder copy — the emitted epic
+is agent-filed intake through the *same* footer and create envelope, so the two cannot drift (the
+same reason this skill already sourced `report`'s footer).
+
 ## CHART mode — name the destination, map the frontier (plan-don't-do)
 
 CHART is invoked with **no map yet** (a fresh foggy idea) or **a named destination against an
@@ -482,15 +493,16 @@ rather than a hand-typed, human-owned issue, so triage's auto-close-eligibility 
 correctly (§the report footer in the formats contract). Stream the composed brief straight into the
 create over stdin (no shared temp file to collide on, per the report skill's filing rule):
 
+One emitted epic per coherent buildable unit. The brief is composed from map `#<MAP>`'s
+`## Destination` + the relevant `## Decisions-so-far` slice (read via the wayfinder CLI, never ad-hoc
+markdown slicing), and arrives on the filing script's **stdin** as a quoted heredoc. It files into
+the SAME `status:needs-triage` entry `report` uses — literally the same script, `report`'s own
+[`file-report.sh`](../report/scripts/file-report.sh), so the footer and the create envelope cannot
+drift from the report skill's:
+
 ```bash
-# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
-PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
-REPO="${CLAUDE_PIPELINE_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}"
-# One emitted epic per coherent buildable unit. The brief is composed from map #$MAP's
-# ## Destination + the relevant ## Decisions-so-far slice (read via the wayfinder CLI, never
-# ad-hoc markdown slicing). Files into the SAME status:needs-triage entry `report` uses.
-{
-  cat <<'EOF'
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/report/scripts/file-report.sh" \
+  "<the epic, as one concrete deliverable>" <<'EOF'
 ## Destination
 <the epic's end-state, from the map's ## Destination>
 
@@ -500,12 +512,9 @@ REPO="${CLAUDE_PIPELINE_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOw
 ## Emitted from wayfinder map
 Charted and cleared on wayfinder:map #<MAP>. Downstream is the existing pipeline: triage → plan-epic → write-code.
 EOF
-  echo   # blank line before the footer block
-  claude-plugins/kampus-pipeline/skills/report/footer.sh   # emits its own `---` + <sub>… line
-} | "$PCLI" tracker create-issue --title "<the epic, as one concrete deliverable>"
 ```
 
-The `tracker create-issue` verb owns this intake-create envelope (ADR 0190;
+The `tracker create-issue` verb the script calls owns this intake-create envelope (ADR 0190;
 `packages/pipeline-cli/src/tools/tracker/`): it files a `status:needs-triage` issue, reading the
 body from stdin so the composed heredoc streams straight in. Don't hand-roll the
 `gh api repos/$REPO/issues` create — that inline envelope is what the adoption lint (#3254) flags.
@@ -539,18 +548,11 @@ Make the ideation→execution handoff traceable from both ends, then close:
   stay as they are.
 
 ```bash
-# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
-PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
 # Name every artifact the map graduated into (epics and/or ADR and/or roadmap), then close it
 # IFF the destination is FULLY graduated. A partial graduation is annotated but stays open.
-# The `tracker graduate` verb owns this graduation-close envelope (ADR 0190, #3266): it posts
-# the `Graduated into <artifact>` source → artifact provenance record and closes the source as
-# completed. Don't hand-roll the comment + `state_reason=completed` PATCH — that inline
-# re-derivation is what the adoption lint (#3254) flags.
-"$PCLI" tracker graduate "$MAP" \
-  --artifact "#$E1, #$E2 → triage → plan-epic → write-code; ADR 0176; ROADMAP.md v1" \
-  --note "Frontier cleared — closing this map as the durable record of how the plan was discovered."
-# fully-graduated only; a partial graduation is annotated (a plain comment) but stays open.
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/wayfinder/scripts/graduate-map.sh" "$MAP" \
+  "#$E1, #$E2 → triage → plan-epic → write-code; ADR 0176; ROADMAP.md v1" \
+  "Frontier cleared — closing this map as the durable record of how the plan was discovered."
 ```
 
 ### What emission is not

@@ -92,11 +92,32 @@ You need two things before the ritual:
 Resolve `$REPO` the same way the rest of the pipeline does (it is repo-agnostic; ADR 0062):
 
 ```bash
-REPO="${CLAUDE_PIPELINE_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}"
+REPO="$("${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/release/scripts/resolve-repo.sh")" || exit 1
 ```
 
 All GitHub reads/writes below go through **`gh api` REST** — never GraphQL (the org's
 Projects-classic integration errors GraphQL issue/PR queries, the standing pipeline constraint).
+
+## The extracted scripts
+
+This ritual's shell lives in [`scripts/`](scripts/), one script per step, and each fenced block
+below is an **invocation** of one. The prose keeps the *why*; the scripts hold the *how* (epic #4435
+phase 1 — the shell moved as-is, and turning its `gh`/`jq` glue into tested `pipeline-cli` verbs is
+#1929). Four properties are load-bearing when you read or edit them:
+
+- **They set `set -uo pipefail`, deliberately not `-e`.** The moved glue steers its own control
+  flow — the reachability refusal, a delete that may legitimately 404, a search whose zero-match
+  result is an answer. `errexit` would abort a fail-closed branch before it printed its refusal.
+- **The dry-run and the apply are two separate scripts.** The two-step is the whole safety of the
+  flip, so `--execute` lives only in [`scripts/flag-open-execute.sh`](scripts/flag-open-execute.sh)
+  and can never arrive as a defaulted flag on the script that prints the diff.
+- **Zero matches is its own exit code.** [`scripts/find-linked-issue.sh`](scripts/find-linked-issue.sh)
+  exits **4** on a *proven* empty release queue and 1/2 when it could not run, so a failed read can
+  never be read as "no queue entry to clear" and silently skip Step 4.
+- **`packages/anka-ops` is resolved from the repo root, not the caller's cwd.** The moved blocks
+  each opened with a bare `cd packages/anka-ops`; [`scripts/lib.sh`](scripts/lib.sh) resolves it
+  from the git root and fails closed when the package is absent, so the flag lever can never run in
+  the wrong tree.
 
 ---
 
@@ -108,8 +129,7 @@ anything. `flag get` reports it in the canonical form (`off (default)` for an un
 `on@100% (split)` for a released one, `on@N% (ramping)` for a partial):
 
 ```bash
-cd packages/anka-ops
-node src/bin.ts flag get "$FLAG_KEY" --env "$ENV"
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/release/scripts/flag-get.sh" "$FLAG_KEY" "$ENV"
 ```
 
 - **Currently `off (default)` (dark) →** this is a release you can perform: proceed to Step 2.
@@ -130,29 +150,17 @@ key rides the PR body's `Flag: <key>` line (ship-it Step 5b). Find the awaiting-
 whose closing PR dark-shipped **this** flag key:
 
 ```bash
-# candidate issues on the release queue (the label persists on the closed, linked issue; #602)
-for ISSUE in $(gh api "repos/$REPO/issues?state=all&labels=status:awaiting-release&per_page=100" \
-    --jq '.[] | select(.pull_request | not) | .number'); do
-  # find the PR(s) that closed this issue and check each body for a `Flag: <key>` line naming THIS key
-  # (the grammar write-code Step 5 writes and ship-it Step 5b reads)
-  # --paginate + a STREAMING --jq: per_page caps at 100, so the closing PR of an issue with a
-  # long timeline would otherwise fall off the read and drop the flag from the release queue (#4193)
-  for PR in $(gh api --paginate "repos/$REPO/issues/$ISSUE/timeline?per_page=100" \
-      --jq '.[] | select(.event=="cross-referenced" or .event=="closed")
-                | .source.issue.number? // empty' 2>/dev/null | sort -u); do
-    body=$(gh api "repos/$REPO/pulls/$PR" --jq '.body // ""' 2>/dev/null)
-    printf '%s' "$body" \
-      | grep -Eiq "^[[:space:]]*(#{1,6}[[:space:]]*)?\**[[:space:]]*flag([[:space:]]*key)?:[[:space:]]*\**[[:space:]]*${FLAG_KEY}([[:space:]]|$)" \
-      && echo "match: issue #$ISSUE ← PR #$PR declares Flag: $FLAG_KEY"
-  done
-done
+# prints one `match: issue #<I> ← PR #<P> declares Flag: <key>` line per match
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/release/scripts/find-linked-issue.sh" "$FLAG_KEY"
 # LINKED_ISSUE is the awaiting-release issue whose closing PR body carried `Flag: $FLAG_KEY`.
 LINKED_ISSUE="<that issue number>"
 ```
 
-If no `status:awaiting-release` issue names this flag, or the match is ambiguous, **ask the human
-to confirm the issue number** (or confirm there is no queue entry to clear) rather than guessing —
-a wrong dequeue clears another feature's queue entry. Never silently skip Step 4.
+If no `status:awaiting-release` issue names this flag (**exit 4** — a proven-empty queue), or the
+match is ambiguous (more than one `match:` line), **ask the human to confirm the issue number** (or
+confirm there is no queue entry to clear) rather than guessing — a wrong dequeue clears another
+feature's queue entry. Never silently skip Step 4. Any **other** non-zero exit means the search
+never ran: that is UNKNOWN, not an empty queue, and it also goes to the human.
 
 ---
 
@@ -174,24 +182,10 @@ spec under `apps/web/tests/e2e/`, and **fails closed** (non-zero exit) naming ex
 missing. Run it for the resolved key **before the dry-run flip**:
 
 ```bash
-# the `bin/pipeline-cli` shim resolves in-repo bin, else the installed bin, else the pinned
-# `pnpm dlx` fallback reading the ONE pin (hooks/pin.sh) — no version pinned here (#3653)
-REACH="${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/bin/pipeline-cli reachability-guard check"
-
-# HARD-REFUSE the flip on a non-zero exit — the report (on stderr) names which assertion failed
-# (no consuming UI / no journey e2e for $FLAG_KEY, or an unknown/unclassified flag). The flag
-# stays dark; do NOT proceed to Step 2.
-if ! $REACH "$FLAG_KEY"; then
-  cat >&2 <<EOF
-release: REFUSED — reachability gate. \`$FLAG_KEY\` is UNREACHABLE (see the reachability-guard
-report above): its vertical's user-facing slice is unbuilt, so it must not graduate to 100%
-(ADR 0173, epic #1943). The flag stays DARK. Build + wire the missing slice — the consuming
-.tsx and/or the @journey:$FLAG_KEY-tagged e2e the report named — then re-run /release. If this
-flag is UI-less by design (an infra/containment flag), mark it @reachability-exempt: <reason>
-at its apps/web/src/flags/keys.ts definition; the gate then passes it.
-EOF
-  exit 1
-fi
+# HARD-REFUSE the flip on a non-zero exit — the script relays the guard's report (on stderr), which
+# names which assertion failed, then prints the refusal. The flag stays dark; do NOT proceed to
+# Step 2.
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/release/scripts/reachability-gate.sh" "$FLAG_KEY" || exit 1
 ```
 
 - **Non-zero exit → hard-refuse the flip.** This is the identical fail-closed refusal shape as
@@ -226,21 +220,20 @@ confirm it flips *this* flag in *this* env from the dark state you saw in Step 1
 live state:
 
 ```bash
-cd packages/anka-ops
-# Full release (100% — the default release act):
-node src/bin.ts flag open "$FLAG_KEY" --env "$ENV"                   # DRY-RUN: prints current → target, writes nothing
+# Full release (100% — the default release act). DRY-RUN: prints current → target, writes nothing.
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/release/scripts/flag-open-dryrun.sh" "$FLAG_KEY" "$ENV"
 
-# Ramped release (--percent N — serve `on` to N% of traffic; the remainder falls to the safe default):
-node src/bin.ts flag open "$FLAG_KEY" --percent "$N" --env "$ENV"    # DRY-RUN
+# Ramped release (serve `on` to N% of traffic; the remainder falls to the safe default). DRY-RUN.
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/release/scripts/flag-open-dryrun.sh" "$FLAG_KEY" "$ENV" "$N"
 ```
 
 Once the dry-run diff is exactly the release you intend, **execute it** by re-running the same
 command with `--execute`:
 
 ```bash
-node src/bin.ts flag open "$FLAG_KEY" --env "$ENV" --execute              # APPLY the full release
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/release/scripts/flag-open-execute.sh" "$FLAG_KEY" "$ENV"        # APPLY the full release
 # or, for a ramp:
-node src/bin.ts flag open "$FLAG_KEY" --percent "$N" --env "$ENV" --execute
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/release/scripts/flag-open-execute.sh" "$FLAG_KEY" "$ENV" "$N"
 ```
 
 **`--percent <n>` — the ramped-release form.** `/release <flag-key> --percent 50` runs the
@@ -264,8 +257,8 @@ A flip you didn't verify is a flip you can't trust. Re-read the **effective serv
 it now reports the live state — the dark → live transition actually landed:
 
 ```bash
-cd packages/anka-ops
-node src/bin.ts flag get "$FLAG_KEY" --env "$ENV"   # expect: on@100% (split)  — or  on@N% (ramping) for a ramp
+# expect: on@100% (split)  — or  on@N% (ramping) for a ramp
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/release/scripts/flag-get.sh" "$FLAG_KEY" "$ENV"
 ```
 
 Assert the transition:
@@ -294,7 +287,7 @@ hand-cleared the night this skill was proposed):
 
 ```bash
 # remove the release-queue label from the (closed) linked issue — the consume half of #602
-gh api -X DELETE "repos/$REPO/issues/$LINKED_ISSUE/labels/status:awaiting-release"
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/release/scripts/clear-queue-label.sh" "$LINKED_ISSUE"
 ```
 
 The label lives on a **closed** issue (the dark ship's PR closed it on merge); removing a label
@@ -314,20 +307,8 @@ linked issue so it is durable and discoverable next to the work it releases (and
 text to the human running the command):
 
 ```bash
-NOW="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-BODY="$(cat <<EOF
-## Released 🚀 — \`$FLAG_KEY\`
-
-- **Flag:** \`$FLAG_KEY\` (env: \`$ENV\`)
-- **Serving:** dark (\`off (default)\`) → live (\`$SERVING_NOW\`)
-- **Released:** $NOW by <human releaser>
-- **Closes the release queue for:** #$LINKED_ISSUE
-
-The feature is now visible to users. The dark deploy (agent-merged) is now a release (human flip)
-— the ADR 0083 boundary, closed.
-EOF
-)"
-gh api "repos/$REPO/issues/$LINKED_ISSUE/comments" -f body="$BODY"
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/release/scripts/post-release-note.sh" \
+  "$LINKED_ISSUE" "$FLAG_KEY" "$ENV" "$SERVING_NOW" "<human releaser>"
 ```
 
 `$SERVING_NOW` is the exact effective-serving string Step 3 confirmed (`on@100% (split)` or
