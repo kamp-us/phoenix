@@ -2125,13 +2125,35 @@ mid-run, and **#4185** owns legibility when the shim resolved but the CLI's modu
 failed. Both reserve the same "could not run ⇒ UNKNOWN" contract this taxonomy states, so a fix
 there extends this table rather than forking it.
 
-`pipeline-cli cli-invocation-guard check` enforces both bans mechanically over the plugin corpus
-(`claude-plugins/**/*.md`) — it reds on a bare `pipeline-cli` invocation *and* on a
-`node …/pipeline-cli/src/bin.ts` one inside a runnable `bash`/`sh` fence, and fails closed on zero
-scope (§ZS / ADR 0092). Its corpus is markdown under `claude-plugins/` only, so `.github/workflows/`
-— which legitimately runs the entrypoint through `node`, having no shim-resolution context — is out
-of scope and needs no carve-out. Should the corpus ever widen past `claude-plugins/**/*.md`, the
-carve-out mechanism for such a context gets documented **here**, in this section.
+`pipeline-cli cli-invocation-guard check` enforces both bans mechanically over the plugin corpus —
+it reds on a bare `pipeline-cli` invocation *and* on a `node …/pipeline-cli/src/bin.ts` one, and
+fails closed on zero scope (§ZS / ADR 0092). The corpus is **two surfaces** under
+`claude-plugins/`, both scanned by one job:
+
+- `claude-plugins/**/*.md` — runnable `bash`/`sh`/`shell`/`zsh` fences only; prose that merely
+  names a verb is not an invocation.
+- `claude-plugins/**/*.sh` — **the whole file, as one implicit runnable fence**. A shell file has
+  no delimiters to scope by, and fence delimiters are deliberately *not* interpreted inside one,
+  so a heredoc that emits markdown cannot close the implicit fence and blind the rest of the file.
+  This surface is why extracting a skill's fenced shell into `scripts/*.sh` (epic #4435) does not
+  take its call sites off the scan (#4486; the unit-of-scan answer matches the `class-probe`
+  consumer scan's, #4448).
+
+On **both** surfaces the scanned unit is what an agent actually *runs*, so a **comment-only line
+is skipped** — a `#`-leading line inside a runnable fence, or anywhere in a `.sh` file, names a
+verb without invoking it, exactly like prose. Every other line inside the unit is treated as a
+live invocation.
+
+Zero scope is fail-closed **per surface**: no file scanned, no runnable `.md` fence, *or* no `.sh`
+file all exit 3. A single total would let markdown's hundreds of fences satisfy the floor while the
+`.sh` leg of the corpus `find` silently contributed nothing.
+
+**The one carve-out, and why it needs no mechanism.** `.github/workflows/` legitimately runs the
+entrypoint through `node` — a workflow step has no shim-resolution context — and it is out of
+corpus, so it is exempt by scope rather than by an exception list. That is the whole carve-out
+today: the corpus is `claude-plugins/**` and nothing else, on either surface. Should it ever widen
+beyond `claude-plugins/`, the carve-out mechanism for such a context gets documented **here**, in
+this section.
 
 ---
 

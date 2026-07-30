@@ -54,11 +54,11 @@ fi
 # under set -e.
 CONST_RE=$(node "$repo_root/packages/pipeline-cli/src/bin.ts" control-plane-paths 2>/dev/null || true)
 if [ -z "$CONST_RE" ]; then
-	fail "could not read the §CP CONTROL_PLANE_RE const via \`pipeline-cli control-plane-paths\` (single source: packages/pipeline-cli/src/tools/control-plane-paths/control-plane-re.ts) — is pipeline-cli installed?"
+	fail "could not read the §CP CONTROL_PLANE_RE const via the CLI's \`control-plane-paths\` verb (single source: packages/pipeline-cli/src/tools/control-plane-paths/control-plane-re.ts) — is the CLI shim installed?"
 	echo "validate-gate-path-drift: FAILED — $errors error(s)"
 	exit 1
 fi
-ok "§CP CONTROL_PLANE_RE read from the single-source const (pipeline-cli control-plane-paths)"
+ok "§CP CONTROL_PLANE_RE read from the single-source const (the CLI's control-plane-paths verb)"
 
 # The one remaining copy: the origin/main-read line in gh-issue-intake-formats.md. Strip the
 # CONTROL_PLANE_RE=' … ' wrapper to compare the raw regex against the const.
@@ -120,7 +120,7 @@ for name in $BOUNDARY_NAMES; do
 	# hits the explicit empty-check below instead of aborting under set -e.
 	CONST_VAL=$(node "$repo_root/packages/pipeline-cli/src/bin.ts" control-plane-paths --boundary "$name" 2>/dev/null || true)
 	if [ -z "$CONST_VAL" ]; then
-		fail "could not read the $name const via \`pipeline-cli control-plane-paths --boundary $name\` (single source: packages/pipeline-cli/src/gate-boundaries.ts) — issue #4401"
+		fail "could not read the $name const via the CLI's \`control-plane-paths --boundary $name\` verb (single source: packages/pipeline-cli/src/gate-boundaries.ts) — issue #4401"
 		continue
 	fi
 
