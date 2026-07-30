@@ -1,18 +1,23 @@
 #!/usr/bin/env bash
 # Classify the PR blocking (§CP) vs non-blocking. Prints one or more `BLOCKING (…)` lines when the
-# PR is held as §CP; prints NOTHING when the canonical verb answered a positive `not-control-plane`.
+# PR is held as §CP; prints NO `BLOCKING (…)` line when the canonical verb answered a positive
+# `not-control-plane`. Note stdout is NOT empty on that path — `cp_changed_files` emits its §ZS scope
+# line there — so the absent BLOCKING line, not empty output, is the discriminator.
 # Extracted from review-design/SKILL.md (#4453, epic #4435 phase 1). Extraction contract +
 # shell-option rationale: ../SKILL.md § The extracted scripts.
 #
-# BECAUSE the caller reads EMPTY STDOUT as the one positive `not-control-plane` answer, every path
-# that returns before the classifier runs MUST print its own `BLOCKING (…)` line first. A guard that
-# could not run is UNKNOWN, and UNKNOWN is not "no" (§ZS / ADR 0092; #4231, #4010, #4219) — a bare
-# `exit` here would let a usage error or a failed `kp_repo` read pose as "proven ordinary".
+# BECAUSE the caller reads the ABSENCE of a `BLOCKING (…)` line as the one positive
+# `not-control-plane` answer, every path that returns before the classifier runs MUST print its own
+# `BLOCKING (…)` line first. A guard that could not run is UNKNOWN, and UNKNOWN is not "no" (§ZS /
+# ADR 0092; #4231, #4010, #4219) — a bare `exit` here would let a usage error or a failed `kp_repo`
+# read pose as "proven ordinary".
 set -uo pipefail
 # shellcheck source=../../shared/lib/common.sh disable=SC1007,SC1091
 . "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../shared/lib" && pwd)/common.sh"
-# shellcheck source=./contract-helpers.sh disable=SC1007,SC1091
-. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/contract-helpers.sh"
+# §CPREAD's `cp_changed_files` + `cp_head_sha`, sourced from their canonical home — no skill-local
+# copy to drift (#4489 extracted them out of `../../gh-issue-intake-formats.md`).
+# shellcheck source=../../shared/scripts/cp-read.sh disable=SC1007,SC1091
+. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../shared/scripts" && pwd)/cp-read.sh"
 
 [ "$#" -ge 1 ] || {
 	echo "BLOCKING (classifier could not run — no <pr> argument ⇒ §CP, fail-closed)"
@@ -35,10 +40,10 @@ PCLI="$(kp_pcli)" || PCLI=""
 # Four states on stdout. Assert on the STATE WORD, never on the exit status — the exit code
 # discriminates the four states only once the verb has RUN, so `… || ordinary` fail-opens on a
 # usage error (1) or a missing binary (127). The `else` below is the catch-all (formats §CP; #4161).
-# The verb's INPUT is a fallible read, so it comes from §CPREAD's `cp_changed_files` (sourced from
-# contract-helpers.sh alongside `cp_head_sha`) — never a bare `gh api … |` pipe: with pipefail off, a
-# failed read pipes gh's stdout ERROR BODY into the verb, which matches no §CP clause and answers
-# `not-control-plane` (#4216).
+# The verb's INPUT is a fallible read, so it comes from §CPREAD's `cp_changed_files` (sourced above
+# from `../../shared/scripts/cp-read.sh` alongside `cp_head_sha`) — never a bare `gh api … |` pipe:
+# with pipefail off, a failed read pipes gh's stdout ERROR BODY into the verb, which matches no §CP
+# clause and answers `not-control-plane` (#4216).
 if ! cp_changed_files "$REPO" "$PR"; then
   CP_STATE=unknown   # the input never arrived ⇒ UNKNOWN ⇒ held as §CP by the catch-all below
 else

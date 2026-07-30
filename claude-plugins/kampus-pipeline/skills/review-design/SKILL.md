@@ -226,11 +226,11 @@ Two properties are load-bearing when you read or edit them:
   branch at all.
 - **A script whose stdout answers a safety question makes every failure path speak (the error-channel
   rule).** Moving glue behind a script boundary invents a channel the inline block never had: a
-  non-zero exit with **0 bytes on stdout**. Where a caller reads *empty* stdout as a *positive* answer
-  — `not-control-plane` in Step 0's §CP classification, "no rendered surface" in its off-ramp
-  predicate — a silent guard exit is byte-identical to "proven safe", so a classifier that *could not
-  run* would resolve to the permissive branch. So each such script prints its **own** fail-closed line
-  on stdout (`BLOCKING (…)` / `CANNOT-CLASSIFY (…)`) before every early `exit`, **and** exits non-zero,
+  non-zero exit with **0 bytes on stdout**. Where a caller reads the *absence* of a fail-closed line
+  as a *positive* answer — `not-control-plane` in Step 0's §CP classification, "no rendered surface" in
+  its off-ramp predicate — a silent guard exit is indistinguishable from "proven safe", so a classifier
+  that *could not run* would resolve to the permissive branch. So each such script prints its **own**
+  fail-closed line on stdout (`BLOCKING (…)` / `CANNOT-CLASSIFY (…)`) before every early `exit`, **and** exits non-zero,
   and the prose reads the status before the stdout. An absent or empty result is UNKNOWN, and UNKNOWN
   is not "no" (§ZS / ADR
   [0092](https://github.com/kamp-us/phoenix/blob/main/.decisions/0092-gates-fail-closed-on-zero-scope.md);
@@ -242,22 +242,22 @@ Two properties are load-bearing when you read or edit them:
   from the inline block, so out of scope for a byte-faithful move and tracked as
   [#4493](https://github.com/kamp-us/phoenix/issues/4493), but a sibling writing *new* glue must not
   reproduce it.
-- **[`scripts/contract-helpers.sh`](scripts/contract-helpers.sh) is a relocated copy, not a source.**
-  The blocks that call §CPREAD's `cp_changed_files` / `cp_head_sha` and the
+- **The shared-contract helpers are SOURCED from their canonical home — there is no skill-local
+  copy.** The blocks that call §CPREAD's `cp_changed_files` / `cp_head_sha` and the
   `verdict_readback_guard` told you to copy those functions verbatim out of
-  [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) before calling them; the script
-  boundary needs the same copy on disk. That file is still the single source — if it changes, the
-  copy follows. **Nothing mechanical detects that drift today:**
-  [`../validate-gate-path-drift.sh`](../validate-gate-path-drift.sh)'s value-lock scans only its three `COPY_FILES`
-  (the formats contract, `ship-it`, `reviewer.md`), and this copy is in none of them — so keeping it in
-  step is a human obligation until it is registered. The copy is also **not byte-identical**: §CPREAD's
-  two functions are, but `verdict_readback_guard` carries two cosmetic deltas (a comment that says
-  "this file" where the contract says "this doc", now that it *is* a file; and one `echo` + `return 1`
-  split over two lines), so a naive byte-diff guard would red on day one. Registering the copy in the
-  drift validator — and deciding whether these helpers belong in
-  [`../shared/lib/common.sh`](../shared/lib/common.sh) once for all six extraction children instead of
-  six skill-local copies — is #4488, and belongs in the next child of #4453 rather than replicated
-  five more times.
+  [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) before calling them, so a script
+  boundary would have needed the same copy on disk — but
+  [#4489](https://github.com/kamp-us/phoenix/pull/4489) extracted both out of that contract into
+  [`../shared/scripts/cp-read.sh`](../shared/scripts/cp-read.sh) and
+  [`../shared/scripts/verdict-readback.sh`](../shared/scripts/verdict-readback.sh), which are
+  sourced-never-executed exactly as this skill's scripts need. So
+  [`scripts/classify-control-plane.sh`](scripts/classify-control-plane.sh) and
+  [`scripts/verdict-readback.sh`](scripts/verdict-readback.sh) **source those two directly**. This is
+  what makes the drift question moot rather than documented: with no second copy there is nothing to
+  keep in step, nothing for
+  [`../validate-gate-path-drift.sh`](../validate-gate-path-drift.sh)'s value-lock to register, and no
+  byte-identity claim to state (a claim that had gone stale the moment #4489 moved the referent).
+  **The five sibling extractions inherit this**: source the shared script, never re-copy the fence.
 
 ## Read-only on git working state
 
@@ -342,8 +342,10 @@ this verb removes (#4161, formats §CP):
 
 Read its **exit status before its stdout**, exactly as the off-ramp above does: a **non-zero exit**
 holds the PR as §CP *regardless of what stdout says*. On exit 0, any `BLOCKING (…)` line the script
-prints is the §CP hold and its reason; **no output** is the one positive `not-control-plane` answer.
-That contract puts the whole weight of the hold on the script
+prints is the §CP hold and its reason; **no `BLOCKING (…)` line** is the one positive
+`not-control-plane` answer. Read the absence of that line, not empty stdout: §CPREAD's
+`cp_changed_files` emits its scope line (`§CP scope: … read OK — N file(s) scanned`) on **stdout**, so
+a completed run's stdout is never empty. That contract puts the whole weight of the hold on the script
 never returning silently, so **every one of its own guard paths prints its own `BLOCKING (…)` line
 before exiting** — a missing `<pr>` argument and an unresolvable target repo both hold the PR as §CP
 rather than returning the 0 bytes that would read as "proven ordinary" (§ZS / ADR 0092; #4231, #4010,
@@ -790,11 +792,10 @@ canonical** [`verdict_readback_guard`](../gh-issue-intake-formats.md#the-verdict
 from the shared contract with the **`review-design`** gate token — it re-reads the comment you just
 wrote and asserts the canonical `review-design:` marker, the anchored `Reviewed-head: @ <sha>` line,
 and **no leaked local filesystem path** (the #2148 marker-as-path leak).
-[`scripts/verdict-readback.sh`](scripts/verdict-readback.sh) runs exactly that guard, off the
-relocated copy in [`scripts/contract-helpers.sh`](scripts/contract-helpers.sh) — the same guard
-semantically, but **not** a byte-for-byte mirror of the contract, and nothing detects that drift
-mechanically yet; the copy's own header records exactly which functions are byte-identical and which
-cosmetic deltas the guard carries. Never write a *different* implementation of it:
+[`scripts/verdict-readback.sh`](scripts/verdict-readback.sh) runs exactly that guard by **sourcing**
+it from [`../shared/scripts/verdict-readback.sh`](../shared/scripts/verdict-readback.sh), the file
+#4489 extracted it into — the one implementation, not a mirror of it. Never write a *different*
+implementation of it:
 
 ```bash
 CID="$("${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-design/scripts/verdict-upsert.sh" "$PR" "$VERDICT_FILE")"

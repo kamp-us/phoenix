@@ -10,8 +10,10 @@
 set -uo pipefail
 # shellcheck source=../../shared/lib/common.sh disable=SC1007,SC1091
 . "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../shared/lib" && pwd)/common.sh"
-# shellcheck source=./contract-helpers.sh disable=SC1007,SC1091
-. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/contract-helpers.sh"
+# `verdict_readback_guard` itself, sourced from its canonical home — no skill-local copy to drift
+# (#4489 extracted it out of `../../gh-issue-intake-formats.md`).
+# shellcheck source=../../shared/scripts/verdict-readback.sh disable=SC1007,SC1091
+. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../shared/scripts" && pwd)/verdict-readback.sh"
 
 [ "$#" -ge 2 ] || { echo "usage: verdict-readback.sh <comment-id> <head-sha>" >&2; exit 2; }
 CID="$1"; HEAD_SHA="$2"
