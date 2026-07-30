@@ -37,10 +37,8 @@ describe("splitTopLevelBranches", () => {
 		expect(branches).toEqual([
 			"(\\.claude|\\.github)/",
 			"\\.claude-plugin/",
-			"claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-design|review-plan|triage|write-code|plan-epic|release|review-trivial)/",
-			"claude-plugins/kampus-pipeline/skills/([^/]+/)*[^/]+\\.sh$",
+			"claude-plugins/kampus-pipeline/skills/",
 			"claude-plugins/kampus-pipeline/agents/",
-			"claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\\.md$",
 			"claude-plugins/kampus-pipeline/hooks(/|\\.json$)",
 			"packages/ci-required/",
 			"packages/pipeline-cli/src/[^/]+$",
@@ -65,43 +63,17 @@ describe("expandBranch", () => {
 		expect(expandBranch("\\.claude-plugin/")).toEqual([{path: ".claude-plugin/", kind: "dir"}]);
 	});
 
-	it("expands the eleven skill dirs", () => {
-		const out = expandBranch(
-			"claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-design|review-plan|triage|write-code|plan-epic|release|review-trivial)/",
-		);
-		expect(out.map((p) => p.path)).toEqual([
-			"claude-plugins/kampus-pipeline/skills/ship-it/",
-			"claude-plugins/kampus-pipeline/skills/review-code/",
-			"claude-plugins/kampus-pipeline/skills/review-doc/",
-			"claude-plugins/kampus-pipeline/skills/review-skill/",
-			"claude-plugins/kampus-pipeline/skills/review-design/",
-			"claude-plugins/kampus-pipeline/skills/review-plan/",
-			"claude-plugins/kampus-pipeline/skills/triage/",
-			"claude-plugins/kampus-pipeline/skills/write-code/",
-			"claude-plugins/kampus-pipeline/skills/plan-epic/",
-			"claude-plugins/kampus-pipeline/skills/release/",
-			"claude-plugins/kampus-pipeline/skills/review-trivial/",
-		]);
-		expect(out.every((p) => p.kind === "dir")).toBe(true);
-	});
-
-	it("expands the any-depth `([^/]+/)*[^/]+\\.sh$` skill-`.sh` branch to a `**/*.sh` glob path (#2950)", () => {
-		expect(expandBranch("claude-plugins/kampus-pipeline/skills/([^/]+/)*[^/]+\\.sh$")).toEqual([
-			{path: "claude-plugins/kampus-pipeline/skills/**/*.sh", kind: "glob"},
+	it("expands the whole-tree skills branch to ONE dir prefix (#4458)", () => {
+		// The eleven enumerated skill dirs, the `**/*.sh` glob and the formats-doc file collapsed
+		// into a single directory — so the ownable CODEOWNERS surface is one row, not thirteen.
+		expect(expandBranch("claude-plugins/kampus-pipeline/skills/")).toEqual([
+			{path: "claude-plugins/kampus-pipeline/skills/", kind: "dir"},
 		]);
 	});
 
 	it("passes the group-free agents dir branch through as a single dir (ADR 0150)", () => {
 		expect(expandBranch("claude-plugins/kampus-pipeline/agents/")).toEqual([
 			{path: "claude-plugins/kampus-pipeline/agents/", kind: "dir"},
-		]);
-	});
-
-	it("strips the $ end-anchor and unescapes a single exact-file branch", () => {
-		expect(
-			expandBranch("claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\\.md$"),
-		).toEqual([
-			{path: "claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md", kind: "file"},
 		]);
 	});
 
@@ -140,25 +112,13 @@ describe("expandBranch", () => {
 });
 
 describe("cpPaths over the live regex", () => {
-	it("resolves the full §CP path set (dirs, the exact files, the **/*.sh glob, + the biome-governance surfaces)", () => {
+	it("resolves the full §CP path set (dirs, the exact files, + the biome-governance surfaces)", () => {
 		expect(cpPaths(LIVE_RE).map((p) => p.path)).toEqual([
 			".claude/",
 			".github/",
 			".claude-plugin/",
-			"claude-plugins/kampus-pipeline/skills/ship-it/",
-			"claude-plugins/kampus-pipeline/skills/review-code/",
-			"claude-plugins/kampus-pipeline/skills/review-doc/",
-			"claude-plugins/kampus-pipeline/skills/review-skill/",
-			"claude-plugins/kampus-pipeline/skills/review-design/",
-			"claude-plugins/kampus-pipeline/skills/review-plan/",
-			"claude-plugins/kampus-pipeline/skills/triage/",
-			"claude-plugins/kampus-pipeline/skills/write-code/",
-			"claude-plugins/kampus-pipeline/skills/plan-epic/",
-			"claude-plugins/kampus-pipeline/skills/release/",
-			"claude-plugins/kampus-pipeline/skills/review-trivial/",
-			"claude-plugins/kampus-pipeline/skills/**/*.sh",
+			"claude-plugins/kampus-pipeline/skills/",
 			"claude-plugins/kampus-pipeline/agents/",
-			"claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md",
 			"claude-plugins/kampus-pipeline/hooks/",
 			"claude-plugins/kampus-pipeline/hooks.json",
 			"packages/ci-required/",
@@ -243,20 +203,8 @@ describe("findUncovered — the drift check", () => {
 		"/.claude/ @usirin",
 		"/.github/ @usirin",
 		"/.claude-plugin/ @usirin",
-		"/claude-plugins/kampus-pipeline/skills/ship-it/ @usirin",
-		"/claude-plugins/kampus-pipeline/skills/review-code/ @usirin",
-		"/claude-plugins/kampus-pipeline/skills/review-doc/ @usirin",
-		"/claude-plugins/kampus-pipeline/skills/review-skill/ @usirin",
-		"/claude-plugins/kampus-pipeline/skills/review-design/ @usirin",
-		"/claude-plugins/kampus-pipeline/skills/review-plan/ @usirin",
-		"/claude-plugins/kampus-pipeline/skills/triage/ @usirin",
-		"/claude-plugins/kampus-pipeline/skills/write-code/ @usirin",
-		"/claude-plugins/kampus-pipeline/skills/plan-epic/ @usirin",
-		"/claude-plugins/kampus-pipeline/skills/release/ @usirin",
-		"/claude-plugins/kampus-pipeline/skills/review-trivial/ @usirin",
-		"/claude-plugins/kampus-pipeline/skills/**/*.sh @usirin",
+		"/claude-plugins/kampus-pipeline/skills/ @usirin",
 		"/claude-plugins/kampus-pipeline/agents/ @usirin",
-		"/claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md @usirin",
 		"/claude-plugins/kampus-pipeline/hooks/ @usirin",
 		"/claude-plugins/kampus-pipeline/hooks.json @usirin",
 		"/packages/ci-required/ @usirin",
@@ -287,20 +235,8 @@ describe("findUncovered — the drift check", () => {
 			"/.claude/ @usirin",
 			"/.github/ @usirin",
 			"/.claude-plugin/ @usirin",
-			"/claude-plugins/kampus-pipeline/skills/ship-it/ @usirin",
-			"/claude-plugins/kampus-pipeline/skills/review-code/ @usirin",
-			"/claude-plugins/kampus-pipeline/skills/review-doc/ @usirin",
-			"/claude-plugins/kampus-pipeline/skills/review-skill/ @usirin",
-			"/claude-plugins/kampus-pipeline/skills/review-design/ @usirin",
-			"/claude-plugins/kampus-pipeline/skills/review-plan/ @usirin",
-			"/claude-plugins/kampus-pipeline/skills/triage/ @usirin",
-			"/claude-plugins/kampus-pipeline/skills/write-code/ @usirin",
-			"/claude-plugins/kampus-pipeline/skills/plan-epic/ @usirin",
-			"/claude-plugins/kampus-pipeline/skills/release/ @usirin",
-			"/claude-plugins/kampus-pipeline/skills/review-trivial/ @usirin",
-			"/claude-plugins/kampus-pipeline/skills/**/*.sh @usirin",
+			"/claude-plugins/kampus-pipeline/skills/ @usirin",
 			"/claude-plugins/kampus-pipeline/agents/ @usirin",
-			"/claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md @usirin",
 			"/claude-plugins/kampus-pipeline/hooks/ @usirin",
 			"/claude-plugins/kampus-pipeline/hooks.json @usirin",
 			"/packages/ci-required/ @usirin",
@@ -319,20 +255,8 @@ describe("findUncovered — the drift check", () => {
 			"/.claude/ @usirin",
 			"/.github/ @usirin",
 			"/.claude-plugin/ @usirin",
-			"/claude-plugins/kampus-pipeline/skills/ship-it/ @usirin",
-			"/claude-plugins/kampus-pipeline/skills/review-code/ @usirin",
-			"/claude-plugins/kampus-pipeline/skills/review-doc/ @usirin",
-			"/claude-plugins/kampus-pipeline/skills/review-skill/ @usirin",
-			"/claude-plugins/kampus-pipeline/skills/review-design/ @usirin",
-			"/claude-plugins/kampus-pipeline/skills/review-plan/ @usirin",
-			"/claude-plugins/kampus-pipeline/skills/triage/ @usirin",
-			"/claude-plugins/kampus-pipeline/skills/write-code/ @usirin",
-			"/claude-plugins/kampus-pipeline/skills/plan-epic/ @usirin",
-			"/claude-plugins/kampus-pipeline/skills/release/ @usirin",
-			"/claude-plugins/kampus-pipeline/skills/review-trivial/ @usirin",
-			"/claude-plugins/kampus-pipeline/skills/**/*.sh @usirin",
+			"/claude-plugins/kampus-pipeline/skills/ @usirin",
 			"/claude-plugins/kampus-pipeline/agents/ @usirin",
-			"/claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md @usirin",
 			"/packages/ci-required/ @usirin",
 			"/biome.jsonc @usirin",
 			"/biome-plugins/ @usirin",

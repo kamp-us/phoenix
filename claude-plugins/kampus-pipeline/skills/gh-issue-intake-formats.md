@@ -1478,28 +1478,27 @@ amount to is the canonical `CONTROL_PLANE_RE=` line in the next subsection.
 **nested** `.claude-plugin/` dir — the branch is root-anchored, and `kampus-pipeline`'s own
 `plugin.json` is a genuine sibling gap to file rather than patch by hand (ADR
 [0212](https://github.com/kamp-us/phoenix/blob/main/.decisions/0212-marketplace-manifest-is-control-plane.md)
-Consequences); the `heal-ci`, `what-shipped`, `doctor`, and `wayfinder` skills, which gate no merge
-and hold no release authority (ADR
-[0174](https://github.com/kamp-us/phoenix/blob/main/.decisions/0174-bare-sh-guards-control-plane-gate.md))
-— that exclusion scopes to skill **dirs**, so `doctor/doctor.sh` (and any future `.sh` under those
-four) is still §CP by the `.sh` clause, which scopes to `.sh` **files** at any depth;
-and the crew engine defs under `claude-plugins/pipeline-crew/agents/**`, which class **has-skills**
-yet auto-ship on a `review-skill` PASS, because merge authority lives in `ship-it` and `shipper.md`
+Consequences); and the crew engine defs under `claude-plugins/pipeline-crew/agents/**`, which class
+**has-skills** yet auto-ship on a `review-skill` PASS, because merge authority lives in `ship-it` and `shipper.md`
 — both §CP, both re-verifying the §CP approval independently — so the worst a weakened crew def can
 do is fail to bank (live founder ruling, re-affirmed 2026-07-24 on
 [#3765](https://github.com/kamp-us/phoenix/issues/3765)). Do **not** widen `CONTROL_PLANE_RE` by
-hand to cover any of them.
+hand to cover either of them. ADR 0174's four operational skill dirs — `heal-ci`, `what-shipped`,
+`doctor`, `wayfinder` — are **no longer** out: the whole `kampus-pipeline` skills tree is §CP, the
+**directory** being the unit of coverage rather than the file type, so no naming convention has to
+hold and the boundary cannot rot as skills are added (ADR 0227).
 
 A PR touching **any** path in this set is **control plane**: `ship-it` never auto-merges it off a
 gate verdict alone — it merges only once a `@kamp-us/control-plane` member approves at head, and
 `ship-it` then enqueues it. Every widening of the boundary, and the reason for each, is an ADR —
-0053, 0065, 0073, 0100, 0103, 0135, 0150, 0174, 0193, 0212, 0218 — plus the founder ruling on
-[#3402](https://github.com/kamp-us/phoenix/issues/3402). Read them in `.decisions/`, where ADR
+0053, 0065, 0073, 0100, 0103, 0135, 0150, 0174, 0193, 0212, 0218, 0227 — plus the founder rulings on
+[#3402](https://github.com/kamp-us/phoenix/issues/3402) and
+[#4446](https://github.com/kamp-us/phoenix/issues/4446). Read them in `.decisions/`, where ADR
 discovery is the CLAUDE.md contract; they are not restated here.
 Everything else — `apps/**`,
 **non**-guard `packages/**`, `.decisions/**` (**except a guard-touching ADR** — see the content
 clause below), `.patterns/**`, every prose doc `*.md` (the
-§DOC class), and every **non**-gate-critical `skills/**` — is **non-blocking** and
+§DOC class), and every **non**-`kampus-pipeline` plugin's `skills/**` — is **non-blocking** and
 auto-merges through its matching gate on a PASS. (This set governs *who merges*, not *which gate verifies* — a
 code-root `*.md` is non-blocking here yet rides `review-code`, not `review-doc`, per §DOC.)
 
@@ -1526,7 +1525,7 @@ against MAIN's boundary, not its own edit) and must not move to an in-tree impor
 # the single probe ship-it Step 0, review-code Step 2, review-doc Step 0, and review-skill
 # Step 0 all use — kept byte-in-sync with the pipeline-cli const (issue #2761); the live gates
 # re-resolve THIS line from origin/main (#981), so it stays here as the one un-importable copy:
-CONTROL_PLANE_RE='^(\.claude|\.github)/|^\.claude-plugin/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-design|review-plan|triage|write-code|plan-epic|release|review-trivial)/|^claude-plugins/kampus-pipeline/skills/([^/]+/)*[^/]+\.sh$|^claude-plugins/kampus-pipeline/agents/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\.md$|^claude-plugins/kampus-pipeline/hooks(/|\.json$)|^packages/ci-required/|^packages/pipeline-cli/src/[^/]+$|^packages/pipeline-cli/src/tools/(ci-required|codeowners-cp|control-plane-paths|cp-cardinality|cp-classify|review-head|trivial-diff|verdict)/|^packages/pipeline-cli/src/tools/tracker/gh-io\.ts$|^biome\.jsonc$|^biome-plugins/|^([^/]+/)*(lefthook|\.lefthook)[^/]+$'
+CONTROL_PLANE_RE='^(\.claude|\.github)/|^\.claude-plugin/|^claude-plugins/kampus-pipeline/skills/|^claude-plugins/kampus-pipeline/agents/|^claude-plugins/kampus-pipeline/hooks(/|\.json$)|^packages/ci-required/|^packages/pipeline-cli/src/[^/]+$|^packages/pipeline-cli/src/tools/(ci-required|codeowners-cp|control-plane-paths|cp-cardinality|cp-classify|review-head|trivial-diff|verdict)/|^packages/pipeline-cli/src/tools/tracker/gh-io\.ts$|^biome\.jsonc$|^biome-plugins/|^([^/]+/)*(lefthook|\.lefthook)[^/]+$'
 # The list this regex is matched against is a fallible READ, so it comes from §CPREAD's
 # `cp_changed_files` (defined below) — never a bare `gh api … | grep` pipe. With pipefail off that
 # pipe reports grep's status and discards gh's, so a failed read matches nothing and reads as "no §CP
