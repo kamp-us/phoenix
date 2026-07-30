@@ -25,8 +25,9 @@ case it deliberately did not resolve — *"a script that reads **two** verbs' ou
 them into a conclusion neither verb reached is arguably deriving."*
 
 Since then phase 1 of epic #4435 has largely landed: `claude-plugins/` went from roughly a dozen
-shell files to **169**, extracted across the epic's children over a handful of merged PRs. The test
-now has a corpus. Two findings from reading it:
+shell files to **208** (measured 2026-07-30 at this ADR's merge base; the figure keeps moving),
+extracted across the epic's children over a handful of merged PRs. The test now has a corpus. Two
+findings from reading it:
 
 **The test discriminates.** [`skills/ship-it/scripts/step2-verdict-gate.sh`](../claude-plugins/kampus-pipeline/skills/ship-it/scripts/step2-verdict-gate.sh)
 is an unambiguous relay: it calls `class-probe classify --namespaces`, checks that call's status,
@@ -50,8 +51,13 @@ extraction relocated the content they scoped on). That is what "derive" costs wh
 not one wrong answer, but two authorities that can disagree with nothing to force the disagreement
 into the open.
 
-0228 stands unamended. This ADR fills the hole 0228 itself marked, and adds the same-question test
-and the enforcement ruling that #4447 asked for.
+**This ADR amends 0228 in part.** It fills the case 0228 marked open — and in doing so it makes one
+of 0228's own binding constraints false (*"the two-verbs-combined edge is unresolved; do not treat
+this ADR as ruling it either way"*) and sharpens `derive-vs-relay`, the term 0228 coined. So the
+cross-link goes both ways: 0228's **status line** carries `amended-in-part by [0229]`, its body
+untouched (ADR immutability), and this ADR is where the qualifier lives. A reader arriving at 0228
+alone must not walk away with the unqualified definition. Beyond that, this ADR adds the
+same-question test, and records the enforcement question as **deferred** rather than ruling it.
 
 ## Decision
 
@@ -77,22 +83,50 @@ Three properties, all readable off one script, all falsifiable without knowing t
 
 **The mechanical floor for (3), stated so a script author cannot get it half-right.** Every refusal
 path must exit **non-zero AND print a non-empty line**. Non-zero with silent stdout is fail-open
-here, not fail-closed: these scripts are sourced into an agent's shell, and an agent reading a
-status with no message has nothing to report and no reason to stop. Relatedly, on bash 3.2 a `set
+here, not fail-closed: most of these scripts are sourced into an agent's shell, and an agent
+reading a status with no message has nothing to report and no reason to stop. Relatedly, on bash 3.2 a `set
 -u` abort that reaches an `EXIT` trap exits **0** — a fail-closed script exiting clean having
-printed its FAIL (#4476). Extracted scripts therefore use `set -uo pipefail` with no `EXIT` trap,
-and `trap-status-guard` enforces it (ADR [0092](0092-gates-fail-closed-on-zero-scope.md)).
+printed its FAIL (#4476).
+
+**Executed** extracted scripts therefore use `set -uo pipefail` and install no `EXIT` trap. The
+scoping to *executed* is load-bearing, not a hedge: a script **sourced into the agent's shell** sets
+options in *that* shell, so a sourced script may deliberately set none — and the corpus does exactly
+this. Of the 208 `.sh` files under `claude-plugins/`, 61 set no options at all, and 60 of those 61
+say why in their own headers. Two of them matter here:
+[`step2-verdict-gate.sh`](../claude-plugins/kampus-pipeline/skills/ship-it/scripts/step2-verdict-gate.sh),
+this ADR's relay exemplar above, records that several of its guards depend on `pipefail` being
+**off**; [`shared/scripts/cp-guard-adr.sh`](../claude-plugins/kampus-pipeline/skills/shared/scripts/cp-guard-adr.sh)
+records the same. Stated universally the constraint would condemn its own good example, so it is
+stated with its scope.
+
+Enforcement of the two halves lives in **two different places**, and neither is a general
+`set -uo pipefail` check.
+[`trap-status-guard`](../packages/pipeline-cli/src/tools/trap-status-guard/trap-status-guard.ts)
+reds on exactly one banned co-occurrence — `errexit` enabled together with an `EXIT` trap inside one
+runnable unit; `set -uo pipefail` *with* a cleanup trap is measured fail-closed and therefore
+permitted ([`.patterns/skill-script-shell-shape.md`](../.patterns/skill-script-shell-shape.md)'s
+matrix). The no-`EXIT`-trap norm for extracted scripts is enforced by
+[`verify-extraction.sh`](../claude-plugins/kampus-pipeline/skills/plan-epic/scripts/verify-extraction.sh)
+check 6. Both are the fail-closed-on-zero-scope shape of ADR
+[0092](0092-gates-fail-closed-on-zero-scope.md).
 
 **The same-question test — when two implementations are duplication and when they are not.** "Two
 implementations of the same logic" is the derive violation restated, so it needs a check that is not
 a matter of taste. Write each implementation as *input domain → answer*. They answer the **same**
 question if there exists an input both accept on which they could disagree; then one must call the
-other, or one must go — *unless* the second derivation is a deliberate, recorded independent
-re-derivation whose every divergence path is proven to fail safe (the ADR
+other, or one must go — *unless* the second derivation is a deliberate, **recorded second
+derivation** whose every divergence path is proven to fail safe (the ADR
 [0225](0225-verdict-bodies-carry-no-cp-classification.md) shape: `ship-it` re-derives §CP rather
 than reading a reviewer's answer, and all six divergence paths were traced to a bank or a stall).
 If the input domains do not overlap, they answer **different** questions and two implementations are
 correct, no proof needed.
+
+Two precisions on that hatch, because it borrows 0225's authority. It is a *second* derivation, not
+an *independent* one: 0225 §1 denies independence in terms — "two invocations of one recipe … not
+two implementations" — and its reversal condition reserves "a genuinely independent second
+derivation" for a **future** state that would make its argument lapse. And 0225's *deciding* reason
+was cost plus near-zero detection power; the six-path fail-safe trace was the enabling condition,
+not the ratio. What this hatch licenses is therefore the trace, not the duplication.
 
 The worked boundary case, already ruled by a review gate:
 [`packages/pipeline-cli/src/skill-shell-surface.ts`](../packages/pipeline-cli/src/skill-shell-surface.ts)
@@ -105,21 +139,31 @@ positive case: `sourcedScriptNames` is deliberately the *same* matcher `adoption
 use, because "which script does this text source?" **is** one question, and three consumers
 answering it three ways would be its own defect.
 
-**The enforcement question (#4447's third criterion), settled: norm, not a new guard.** A guard that
-reds on fenced shell re-entering `SKILL.md` cannot be written honestly — the sanctioned *invocation*
-is itself a fenced shell block, so any such guard needs an arbitrary size or content threshold and
-would assert far less than its name implies. That is the #4509 family, and adding a member of it to
-police the extraction programme would be self-defeating. Enforcement is therefore the norm plus the
-existing review gates for the judgement half, and the existing mechanical guards
-(`trap-status-guard`, `cli-invocation-guard`, `skill-gh-lint`) for the parts that *are* mechanically
-checkable. If re-embedding recurs at scale after phase 2, revisit with evidence — this ruling is
-revisitable on that observable, not on preference.
+**The enforcement question (#4447's third criterion): DEFERRED, follow-up filed as #4527.** This ADR
+does **not** rule guard-vs-norm for keeping new decision-deriving shell out of skill markdown, in
+either direction. The founder ruling on #4447 held that question open deliberately: a new guard is a
+guard-reshaping act, and the standing practice — ruled on #4505 the same night — is that guard
+changes get an **adversarial threat-model review**, not a ride-along in a decision record. #4527
+owns the question and is where it gets answered.
+
+What this ADR contributes to that review is **input, not a finding**: a guard whose subject
+population is "fenced shell in `SKILL.md`" has no honest population to scope on, because the
+sanctioned *invocation* is itself a fenced shell block — so such a guard needs an arbitrary size or
+content threshold and would assert far less than its name implies, which is the #4509 shape. Whether
+that objection is fatal, or answerable by a differently-scoped guard the threat model surfaces, is
+#4527's call and not this ADR's.
+
+Until #4527 lands, the **operative state** — the status quo, not a ruling that the status quo is the
+end state — is the norm plus the existing review gates for the judgement half, and the existing
+mechanical guards (`trap-status-guard`, `cli-invocation-guard`, `skill-gh-lint`) for the parts that
+*are* mechanically checkable. Evidence of re-embedding at scale after phase 2 is input to #4527 too.
 
 **Binding constraints.**
 - A combination of verb answers is relay only if it is total, mechanical, and UNKNOWN-propagating;
   failing any one of the three makes it a derive, and that logic becomes a verb by end of #1929.
 - Every refusal path in an extracted script exits non-zero **and** prints a non-empty line.
-- Extracted scripts set `set -uo pipefail` and install no `EXIT` trap.
+- **Executed** extracted scripts set `set -uo pipefail` and install no `EXIT` trap. A script sourced
+  into the agent's shell is out of this constraint's scope and may deliberately set no options.
 - Before adding a second implementation of anything, state both as input → answer; if they share an
   input they answer one question — collapse it, or carry a recorded 0225-shape fail-safe proof.
 
@@ -127,7 +171,6 @@ revisitable on that observable, not on preference.
 - A combination that introduces a threshold, a precedence between disagreeing verbs, a tie-break, or
   a regex that reinterprets a verb's output into a different category.
 - Turning a verb's refusal into an empty set, a zero count, or a pass.
-- A new guard whose subject population is "fenced shell in `SKILL.md`" under an arbitrary threshold.
 
 ## Consequences
 
@@ -140,13 +183,17 @@ revisitable on that observable, not on preference.
   whole corpus into verbs, which is the trap 0228 already rejected the candidate test for.
 - It buys nothing against a *wrong verb*. The test says who decided, never whether the decision was
   right — the gates remain the check on correctness.
-- The enforcement ruling accepts a real residual: nothing mechanically stops new glue landing in
-  skill markdown. That is a deliberate trade against a guard that would assert less than its name.
+- Enforcement stays open until #4527 rules it, so a real residual stands in the meantime: nothing
+  mechanically stops new glue landing in skill markdown. That residual is the cost of routing a
+  guard change through a threat-model review instead of deciding it here.
 
 ## Records
 
-- Records the remaining rulings on #4447 (the combination case, the same-question test, and the
-  enforcement question 0228 left explicitly deferred).
+- Records two of the remaining rulings on #4447 — the combination case and the same-question test.
+  The third, enforcement shape, is recorded as **deferred to #4527**, not ruled.
+- **Amends ADR [0228](0228-scripts-relay-never-derive.md) in part**: closes its enumerated
+  "two-verbs-combined edge is unresolved" constraint and qualifies the term it coined. 0228's status
+  line carries the forward pointer.
 - Vocabulary impact: **redefines `derive-vs-relay`** (coined by ADR
   [0228](0228-scripts-relay-never-derive.md)) by adding the three-property combination qualifier.
   0228's routing of that term to [`.glossary/TERMS.md`](../.glossary/TERMS.md) never landed; the
