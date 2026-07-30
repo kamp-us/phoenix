@@ -1504,24 +1504,14 @@ re-derive them here. Two operational points that are yours, not the contract's:
   `for the reviewer to judge`).
 
 ```bash
-# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
-PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
-# RE-DERIVE the branch LIVE from the worktree — never a cached/shared-file value (see the
-# live-derivation rule in Step 4). $BRANCH from Step 4 is GONE across Bash calls; wt_preflight
-# just re-cd'd to $WT, so the checked-out branch IS the work branch. Read it, never guess it.
-wt_preflight && BRANCH="$(git -C "$WT" branch --show-current)"
-: "${BRANCH:?could not re-derive branch from worktree $WT — refusing to push to a guessed/cached ref}"
-# The SANCTIONED push path — see [Pushing: the verdict is the ref, not the exit code]. It pushes
-# AND independently confirms the remote ref, printing its verdict LAST on stdout. Exit 0 = MOVED,
-# 1 = NOT-MOVED, 3 = UNKNOWN; STOP on either non-zero — never open a PR against a branch you
-# cannot prove exists (an UNKNOWN is not a success).
-wt_preflight && "$PCLI" verified-push --cwd "$WT" --remote origin --branch "$BRANCH" --set-upstream \
-  || { echo "write-code: the push was NOT confirmed on the remote (see the PUSH-VERDICT line above) — refusing to open a PR against an unproven branch." >&2; exit 1; }
-# The PR opens AGAINST issue #N (Fixes #N) — gate it on the mis-attribution guard (Step 3.5): open a
-# PR closing only an issue whose claim is mine, never one mis-attributed to another agent's #N.
-claim_is_mine "<N>" || { echo "refusing to open a PR against #<N> — not my claim (Step 3.5)"; exit 1; }
-# The body carries `Fixes #N` and `## Deviations` ALWAYS; ADD the `Flag: <FLAG_KEY>` line ONLY when
-# Step 4b fired (a dark ship behind a flag — newly-declared OR prior-PR). Omit it for an ungated PR.
+. "$WRITECODE_SCRIPTS/step5-push.sh" <N> || exit 1   # push CONFIRMED on the remote + #N proven mine, or nothing happened
+```
+
+Then open the PR. The body is a **template you author**, so it stays here rather than in a script:
+it carries `Fixes #N` and `## Deviations` ALWAYS, and adds the `Flag: <FLAG_KEY>` line **only** when
+Step 4b fired (a dark ship behind a flag — newly-declared OR prior-PR); omit it for an ungated PR.
+
+```bash
 gh pr create \
   --base main \
   --title "<concise PR title>" \
@@ -1552,61 +1542,7 @@ itself**: read the PR body back and assert it matches a recognized closing keywo
 `#N` — that is exactly the token GitHub auto-closes on and that `ship-it` Step 1 resolves:
 
 ```bash
-# (a) the cross-reference landed (a closing OR non-closing mention both show here — necessary, not sufficient)
-#     --paginate + a STREAMING --jq, per the contract's pagination rule: the timeline endpoint
-#     defaults to 30 events/page, so an un-paginated read calls a cross-reference past event 30
-#     absent — a false alarm on any issue with a bit of history (#4193).
-gh api --paginate "repos/$REPO/issues/<N>/timeline?per_page=100" \
-  --jq '.[] | select(.event == "cross-referenced") | .event'
-# (b) the SUFFICIENT check, REST-only: the seam is armed iff the body carries EITHER a real
-#     CLOSING keyword for #N (full-close PR — the same set ship-it Step 1 resolves:
-#     fix(es|ed)/close[sd]?/resolve[sd]?) OR a `Part of #N` partial-split marker (the §9
-#     non-closing link that keeps #N OPEN by design). Only NEITHER is a truly broken seam.
-BODY=$(gh api repos/$REPO/pulls/<PR> --jq '.body')
-if printf '%s' "$BODY" | grep -qiE '\b(fix(e[sd])?|close[sd]?|resolve[sd]?)\s+#<N>\b'; then
-  echo "closing seam armed"
-elif printf '%s' "$BODY" | grep -qiE '\bpart of\s+#<N>\b'; then
-  echo "partial-split seam armed — Part of #<N>, no closing keyword by design (§9; #<N> stays open)"
-else
-  echo "BROKEN SEAM — body links #<N> with neither a closing keyword nor a 'Part of #<N>' marker"
-fi
-# (c) the INVERSE GUARD, REST-only: NO closing keyword targets any issue OTHER than #N.
-#     The set {issue numbers preceded by a closing keyword in the body} must be exactly {N};
-#     a stray member is a sibling-ref directive that auto-closes an issue this PR never fixed (#1259).
-STRAY=$(gh api repos/$REPO/pulls/<PR> --jq '.body' \
-  | grep -ioE '\b(fix(e[sd])?|close[sd]?|resolve[sd]?)\s+#[0-9]+' \
-  | grep -oE '[0-9]+' | sort -u | grep -vx '<N>')
-[ -z "$STRAY" ] \
-  && echo "no stray close directives — closing-keyword set is exactly {#<N>}" \
-  || echo "STRAY CLOSE DIRECTIVE(S) on $(printf '#%s ' $STRAY)— rewrite these sibling refs to a non-closing form (addresses/relates to/see #M) before opening/patching the PR"
-# (d) DARK-SHIP GUARD, REST-only: IF Step 4b fired, the body MUST carry a `Flag:` line that
-#     matches ship-it Step 5b's FLAG_IN_BODY grep verbatim — else the prior-PR dark ship is dropped
-#     from the release queue (#1282). Whether Step 4b fired is RE-DERIVED HERE from durable state —
-#     the child's `Containment:` marker and the cycle-doc probe, Step 4b's own two inputs, read in
-#     THIS Bash call. It used to key on `[ -n "$FLAG_KEY" ]`, a shell variable Step 4b assigns in a
-#     DIFFERENT Bash call: shell state does not survive between calls, so it was empty here and the
-#     check silently skipped itself in exactly the case it exists for (#4398).
-CONTAINMENT=$(gh api repos/$REPO/issues/<N> --jq '.body' \
-  | grep -ioE '\**\s*Containment:\**\s*(flag|exempt|none)' | head -n1 \
-  | grep -ioE '(flag|exempt|none)' || echo none)
-gh api "repos/$REPO/contents/product-development-cycle.md" --jq '.path' >/dev/null 2>&1 \
-  && CYCLE_DOC=present || CYCLE_DOC=absent
-if [ "$CONTAINMENT" = flag ] && [ "$CYCLE_DOC" = present ]; then
-  gh api repos/$REPO/pulls/<PR> --jq '.body' \
-    | grep -Eiq '^[[:space:]]*\**[[:space:]]*flag([[:space:]]*key)?:[[:space:]]*\**[[:space:]]*[a-z0-9]+(-[a-z0-9]+)+' \
-    && echo "dark-ship Flag: line present and matches ship-it Step 5b — release queue will fire" \
-    || echo "MISSING/MALFORMED Flag: line — Step 4b fired but the body has no matching plain 'Flag: <key>' line; patch it in before stopping (#1282)"
-else
-  echo "no dark ship (containment=$CONTAINMENT, cycle-doc=$CYCLE_DOC) — no Flag: line expected"
-fi
-# (e) DISCLOSURE PRESENCE, REST-only: the body carries a `## Deviations` heading. This is the
-#     PRESENCE floor only — it cannot tell an honest `None.` from a false one, and it sees none of
-#     the seven classes (§DEV's detection tiers). It exists so the one failure mode that is purely
-#     mechanical — forgetting the heading — never reaches a gate as a malformed body.
-gh api repos/$REPO/pulls/<PR> --jq '.body' \
-  | grep -Eiq '^[[:space:]]*#{2,3}[[:space:]]*Deviations[[:space:]]*$' \
-  && echo "## Deviations section present" \
-  || echo "MISSING ## Deviations section — an ABSENT section is a gate FAIL (§DEV: absent is not None.); patch the body before stopping"
+. "$WRITECODE_SCRIPTS/step5-seam-checks.sh" <N> <PR> || exit 1   # stdout IS the five verdicts — silence is UNKNOWN, never "armed"
 ```
 
 If (b) reports a broken seam, the body links `#N` with **neither** a closing keyword **nor**
