@@ -1085,36 +1085,20 @@ fields, not `reviewThreads`; ADR
 [0158](https://github.com/kamp-us/phoenix/blob/main/.decisions/0158-unresolved-review-thread-is-a-merge-gate.md)).
 Every other read/write in this skill stays REST.
 
-> **This is the one block that did NOT move into [`scripts/`](scripts/) (#4451).** The
-> `skill-gh-lint` job runs `gh-phoenix lint-skills` over the corpus and FAILs on any `gh api graphql`
-> in a runnable block — **including a whole `.sh`**. The lint's `SELF_EXEMPT_SUFFIXES` exempts
-> `/skills/review-code/SKILL.md` as a whole file, so the read is lawful *here* and would be flagged
-> the moment it landed in a script. The idiom that would cover an extracted script already exists:
-> [#4491](https://github.com/kamp-us/phoenix/pull/4491) **landed** (`15263296`) two **per-script**
-> entries in that same array, annotated there as deliberately *not* a `scripts/`-wide exemption. But
-> adding a `review-code/scripts/*.sh` entry edits
-> `packages/pipeline-cli/src/tools/gh-phoenix/lint.ts` — a **code-class** file outside a skills-only
-> extraction child. The operative rule: a block a guard parses out of the markdown cannot move until
-> the guard follows. It stays inline until that lands, and the remainder is tracked on
-> [#4451](https://github.com/kamp-us/phoenix/issues/4451).
+The read lives in [`scripts/unresolved-threads-read.sh`](scripts/unresolved-threads-read.sh), and the
+guard followed it there: `gh-phoenix lint-skills` FAILs on any `gh api graphql` in a runnable
+surface — **including a whole `.sh`** — so that script carries its own **per-script** entry in the
+lint's self-exempt array, the shape [#4491](https://github.com/kamp-us/phoenix/pull/4491) set for
+`ship-it`'s two halves. Per-script, deliberately never a `scripts/`-wide exemption: the sanctioned
+query is one file's licence, not the directory's.
 
 ```bash
-ORG="${REPO%%/*}"; NAME="${REPO#*/}"
-# The ONE GraphQL read in review-code (ADR 0158): REST exposes no isResolved.
-gh api graphql -f query='
-  query($o:String!,$n:String!,$pr:Int!) {
-    repository(owner:$o, name:$n) {
-      pullRequest(number:$pr) {
-        reviewThreads(first:100) {
-          nodes { isResolved path line comments(first:1){ nodes { author { login } body } } }
-        }
-      }
-    }
-  }' -F o="$ORG" -F n="$NAME" -F pr="$PR" \
-  --jq '.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved==false)
-        | {path, line, author: .comments.nodes[0].author.login, body: (.comments.nodes[0].body[0:200])}'
-echo "unresolved-threads: scanned the PR's review threads (§ZS: this read ran)"
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-code/scripts/unresolved-threads-read.sh" "$PR"
 ```
+
+Read the script's **exit status before its stdout**: an unreadable `reviewThreads` response prints
+its own `UNREADABLE` line and exits non-zero, because at a script boundary an empty stdout would
+otherwise read as the permissive answer — no unresolved threads. UNKNOWN is never "no" (§ZS).
 
 Fold the result into the conjunctive table exactly like Step 3b/3c/3d:
 
