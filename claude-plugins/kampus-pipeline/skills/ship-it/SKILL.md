@@ -89,6 +89,11 @@ behavior is unchanged with no config (ADR 0062 §1).
 
 ```bash
 REPO="${CLAUDE_PIPELINE_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}"
+# This skill's steps are SOURCED scripts under `scripts/` (epic #4435 phase 1, #4448) — resolved the
+# same way §CLI resolves the `pipeline-cli` shim, because neither is on PATH. Source each step's
+# script where the step says to; sourcing (not executing) is what keeps a step's variables and
+# functions visible to the steps after it, exactly as the inline fenced blocks did.
+SHIPIT_SCRIPTS="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/skills/ship-it/scripts"
 ```
 
 ## The hard guards
@@ -156,25 +161,7 @@ rule with **four mandated sites** — run start, every stop/refusal, an ejection
 bounded reconcile:
 
 ```bash
-# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
-PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
-# `merge-intent` owns the branch (ADR 0198): a live merge-queue entry is NEVER disturbed; the
-# pre-queue regime — read off the BASE BRANCH's ruleset, not this PR's queue history — is exempt at
-# `post-enqueue` only; and both reads fail closed toward a clear. It verifies by re-reading
-# `auto_merge` — never trust
-# `--disable-auto`'s exit code, which is non-zero both when the disable failed and when nothing
-# was armed. Exit 1 = the intent may STILL be armed: surface it, never report a clean stop over it.
-INTENT_UNCLEARED=0   # set by any failed disarm; the run's outcome line MUST carry it (see Running it)
-disarm_intent() {   # $1 = preflight | refuse | post-enqueue | ejected
-  "$PCLI" merge-intent disarm --pr "$PR" --repo "$REPO" --site "$1" || {
-    echo "ship-it: FAILED to clear the merge intent on #$PR (site $1) — a later approval could enqueue it ungated (ADR 0198). Disable auto-merge by hand before this PR is approved again." >&2
-    return 1
-  }
-}
-
-# Site 1 — run start. This function is DEFINED here; the call itself is WIRED at Step 0, on the
-# line after `PR=` — the first point at which both $PR and $REPO exist (see "Step 0 — Classify the
-# diff"). Do not call it here: this block is preamble and runs before Step 0 resolves $PR.
+. "$SHIPIT_SCRIPTS/disarm-intent.sh"
 ```
 
 **Site 1 is Step 0's `disarm_intent preflight || exit 1`, and it is the one that catches the
@@ -266,29 +253,7 @@ it. The fix round-trip is `write-code`'s (code) / the doc author's job, not your
 Before anything else, read the PR's changed files and split them by class. This is one read:
 
 ```bash
-PR=<pr number>
-# Isolation preflight FIRST. ship-it is §RO — it ships entirely over `gh api` / `gh pr merge`
-# (server-side) and materializes NO head via local git — so it should never touch the primary
-# checkout's git state. This is the defense-in-depth belt: if this ship-it spawn expected worktree
-# isolation (shipper agent-type) but the #2440 harness no-op dropped it onto the shared PRIMARY
-# checkout ($WORKTREE_ROOT unset — the #2452/#2453 condition), fail closed LOUD and route up rather
-# than run any git op there. Single-sourced in gh-issue-intake-formats.md §RO-iso (ADR 0172; the
-# write-code wt_preflight sibling). A genuine standalone `/ship-it` on the owner's checkout still proceeds.
-# This iso_preflight is ship-it's whole stake in the #2690 worktree-hardening consolidation: LAYER 1
-# (prevention) lives here, while LAYER 2 (the clean-tree assertion + the stage-all `git add -A` ban)
-# has NO surface in ship-it — it stages/commits nothing — so it is enforced upstream in the pre-bash
-# hook + write-code/review-code, not duplicated here.
-iso_preflight ship-it || exit 1   # ../gh-issue-intake-formats.md §RO-iso — define it there, cite here
-
-# Guard 6, SITE 1 (ADR 0198) — the first thing after $PR is known and BEFORE any gate branch, so a
-# `--auto` armed by an earlier or INTERRUPTED run (#3700's mechanism — the run that reaches no exit
-# path of its own, so no `refuse` site ever fires for it) cannot enqueue behind this run's back.
-# $REPO was resolved at the top of the skill; $PR one line up. `disarm_intent` is defined in
-# "The no-parked-merge-intent invariant" above. Abort on failure: a run that cannot establish the
-# intent state cannot honor the invariant at any later site.
-disarm_intent preflight || exit 1
-
-gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename'   # --paginate + streaming --jq: full set past file #100 (the API caps per_page at 100; #725)
+. "$SHIPIT_SCRIPTS/step0-preflight.sh"
 ```
 
 Classify each path. The classification is **derived by the shared verb `pipeline-cli cp-classify`**,
@@ -351,151 +316,21 @@ missing binary exits 127, and neither is a classification. Everything that is no
   match. The docs class is thus the surface a `review-doc` PASS can actually gate — see the
   scope-consistency note after the routing.
 
+**The two immovable canonical assignments — they stay in this file, at column 0.** `UI_RE`
+and `UI_EXCLUDE_RE` are single-sourced *here*, and every live consumer re-resolves these exact
+lines from the default branch at run time (the #981 anti-self-authorization design):
+`pipeline-cli class-probe` parses them, `reviewer.md` and `review-design`'s Step 0 off-ramp
+re-read them, and `validate-gate-path-drift.sh` asserts each appears exactly once at column 0
+in this file. The classification shell that consumes them moved into a sourced script; these
+two lines cannot (#4448).
+
 ```bash
-# The changed-file list is a fallible network READ, and EVERY probe in this step — §CP, the ADR
-# content clause, has-code/has-docs/has-skills, has-ui — is a `grep` over it. So a failed read used
-# to answer "no §CP path, no classes present" in one stroke: the capture's exit status was never
-# checked, and an empty $FILES made every `grep -q … && echo …` silent (#4216). `cp_changed_files` is
-# §CPREAD of ../gh-issue-intake-formats.md — copy it (and its `cp_head_sha` companion, used by the
-# content clause below) verbatim from there (single source; the why lives there, not here). --paginate + streaming --jq inside it gets the full set past file #100 (the
-# API caps per_page at 100; the grep probes below aggregate the concatenated lines) (#725).
-if ! cp_changed_files "$REPO" "$PR"; then
-  # FAIL CLOSED, and STOP — with no file list there is no classification to make: not §CP, not the
-  # class set, not has-ui. Emitting BLOCKING is the safe resolution of the §CP axis (this step's
-  # output is what the Routing below refuses on), but the class axis is UNRESOLVED, not empty, so
-  # ship-it must not proceed to require zero gates.
-  echo "BLOCKING (changed-file list unreadable ⇒ §CP UNKNOWN, held — ADR 0092 §ZS, #4216)"
-  echo "STOP: classification unresolved — refuse to enqueue and report the failed read; do NOT read this as 'no gates required'."
-  exit 1
-fi
-FILES="$CP_FILES"   # proven-arrived, scope already emitted ($CP_FILES_N files) per §ZS #1
-# NON-TRIVIALITY ASSERT (#4401) — single-sourced in §CLASS of gh-issue-intake-formats.md; copied
-# here verbatim because Step 0 runs as one shell block. EVERY boundary this step strips out of a
-# network read goes through it before anything gates on it: an empty or prefix-carrying value still
-# COMPILES, and `grep -E ""` matches every path while `grep -Ev ""` matches none, both at exit 0.
-accept_re() {   # $1=name, $2=resolved value, $3=fail-closed default
-  case "$2" in
-    *"$1='"*) : ;;   # the assignment prefix survived the strip ⇒ not a pattern, a whole line
-    *) if [ "${#2}" -ge 4 ]; then printf '%s' "$2"; return 0; fi ;;
-  esac
-  printf 'TRIVIAL-GATE-BOUNDARY: %s did not resolve to a usable pattern — failing closed.\n' "$1" >&2
-  printf '%s' "$3"
-}
-# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
-PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
-# Could-not-run is UNKNOWN, never a discharge (§CLI, #3314). The catch-all below would hold an
-# unresolvable shim anyway; refusing here names the cause instead of reporting an empty state word.
-[ -x "$PCLI" ] || { echo "BLOCKING (CLI shim UNRESOLVED at '$PCLI' ⇒ §CP UNKNOWN, held)"; echo "STOP: classification unresolved — refuse to enqueue."; exit 1; }
-# The §CP derivation — the shared verb, not a hand-rolled boundary grep (#4405); the prose above is
-# the why. Four states on stdout, only `not-control-plane` an answer: assert on the STATE WORD, never
-# the exit status (formats §CP; #4161/#4219).
-CP_STATE="$(printf '%s\n' "$FILES" | "$PCLI" cp-classify classify --repo "$REPO")"
-if [ "$CP_STATE" = "control-plane" ]; then
-  echo "BLOCKING"   # a path matched the live boundary: .claude/.github + the gate-critical skills (ADR 0065) + the enforcement-guard packages (ADR 0100/0103); other skills/** auto-merge on a review-skill PASS (ADR 0073)
-elif [ "$CP_STATE" = "content-undetermined" ]; then
-  # Discharge the ADR-0164 obligation with the SAME shared `guard-content-probe` the review gates and
-  # the driver (via trivial-diff) run (#3645, founder ruling #3416) — so a guard-touching ADR
-  # classifies §CP identically at every stage, not just here. The GUARD_ADR_RE vocabulary stays
-  # single-sourced in gh-issue-intake-formats.md §CP.
-  # The ref is a fallible read — `cp_head_sha` is §CPREAD's companion to `cp_changed_files` (copy it
-  # verbatim from there). It DISCARDS gh's payload on failure, which is what makes the emptiness
-  # test below a live guard: with a bare `|| true` the error document lands in HEAD_SHA, non-empty.
-  cp_head_sha "$REPO" "$PR"; HEAD_SHA="$CP_HEAD_SHA"
-  if [ -z "$HEAD_SHA" ]; then
-    echo "BLOCKING (head SHA unreadable ⇒ no ref to probe ADR content at ⇒ §CP UNKNOWN, held)"   # fail closed: an unprobeable content clause is not an absent one
-  else
-    printf '%s\n' "$FILES" | grep -E '^\.decisions/.*\.md$' | while IFS= read -r adr; do
-      [ -z "$adr" ] && continue
-      # Capture and CHECK before classifying, never a straight pipe — gh writes its error document to
-      # STDOUT, so a pipe would hand the probe an ERROR BODY as the ADR body (§CPREAD #2, #4216).
-      adr_body="$(gh api "repos/$REPO/contents/$adr?ref=$HEAD_SHA" -H 'Accept: application/vnd.github.raw' 2>/dev/null)" || adr_body=""
-      # A classification is only as good as the bytes it was derived from: a truncated or near-empty
-      # body classifies `not-guard-touching` just as cleanly as a real one, so an unread ADR would
-      # pose as a proven-ordinary one. A real ADR's frontmatter alone clears this floor, so the
-      # assert can only move an outcome TOWARD §CP.
-      if [ "${#adr_body}" -lt 64 ]; then
-        echo "BLOCKING ($adr — ADR body unreadable or trivially short (${#adr_body} bytes) ⇒ §CP UNKNOWN, held)"
-      else
-        # Same state-word rule as cp-classify above. Note `guard-content-probe` takes --body-file /
-        # --path and NOT --repo: an unrecognized flag prints HELP TEXT and exits non-zero, which is
-        # not a classification. The `*)` arm holds it, exactly as it holds an unreadable body (#4219).
-        GC_STATE="$(printf '%s' "$adr_body" | "$PCLI" guard-content-probe classify --path "$adr" 2>/dev/null)"
-        case "$GC_STATE" in
-          not-guard-touching) : ;;   # proven ordinary — the ONLY value that may skip the §CP hold
-          guard-touching) echo "BLOCKING ($adr — guard-touching ADR ⇒ §CP, ADR 0164)" ;;
-          *) echo "BLOCKING ($adr — probe UNDETERMINED (state '$GC_STATE') ⇒ §CP, fail-closed)" ;;
-        esac
-      fi
-    done
-  fi
-elif [ "$CP_STATE" != "not-control-plane" ]; then
-  echo "BLOCKING (§CP state '$CP_STATE' ⇒ not proven ordinary, held)"   # `unknown`, anything unenumerated, and the EMPTY STRING a failed invocation yields
-fi
-# The has-code/has-docs/has-skills probes are single-sourced as canonical HAS_*_RE= lines in
-# gh-issue-intake-formats.md §CLASS and re-resolved from origin/main here (the #981 idiom, same as
-# UI_RE below and as the §CP boundary cp-classify re-resolves internally) so this snapshot can't
-# mis-classify — and so the reviewer (which consumes the SAME
-# lines) fans across every present class in lockstep with what ship-it requires (#2383). The reviewer
-# and this step both run `pipeline-cli class-probe classify` (which parses these SAME §CLASS lines —
-# no third copy) as the deterministic class set, so `required == dispatched` can't diverge by an
-# eyeball miss the way `.glossary/**` did on PR #2430 (#2434). FAIL CLOSED: an unreadable source ⇒
-# dispatch/require the gate. The literals below are the fail-closed reference, NOT the live decision
-# source — §CLASS is the source:
-#   gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename' | pipeline-cli class-probe classify
-HAS_CODE_RE='^(apps|packages|\.glossary|infra)/'
-HAS_SKILLS_RE='^claude-plugins/[^/]+/(skills|agents)/|^\.claude-plugin/'
-HAS_DOCS_EXCLUDE_RE='^(claude-plugins|apps|packages|\.glossary|infra)/'
-HAS_DOCS_RE='^(\.decisions|\.patterns)/|\.md$'
-CLASS_RAW="$(gh api "repos/$REPO/contents/claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md?ref=main" -H 'Accept: application/vnd.github.raw' 2>/dev/null || true)"
-reresolve_re() { live="$(printf '%s\n' "$CLASS_RAW" | grep "^$1=" | head -n1 || true)"; if [ -z "$live" ]; then printf '%s' "$2"; else accept_re "$1" "$(printf '%s' "$live" | sed "s/^$1='//; s/'\$//")" "$2"; fi; }
-HAS_CODE_RE="$(reresolve_re HAS_CODE_RE '.')"
-HAS_SKILLS_RE="$(reresolve_re HAS_SKILLS_RE '.')"
-HAS_DOCS_EXCLUDE_RE="$(reresolve_re HAS_DOCS_EXCLUDE_RE '\$^')"   # fail-closed: exclude NOTHING ⇒ every path reaches the doc test
-HAS_DOCS_RE="$(reresolve_re HAS_DOCS_RE '.')"                     # fail-closed: every path is a doc
-echo "$FILES" | grep -Eq "$HAS_SKILLS_RE" && echo "has-skills"   # → review-skill (ADR 0073/0150); §CP-blocking for merge via the cp-classify derivation above
-echo "$FILES" | grep -Eq "$HAS_CODE_RE" && echo "has-code"       # → review-code; the has-code roots agree with the docs-exclusion below in lockstep (§CLASS/§DOC, #663/#919/#1987)
-echo "$FILES" | grep -Ev "$HAS_DOCS_EXCLUDE_RE" | grep -Eq "$HAS_DOCS_RE" && echo "has-docs"   # → review-doc; carve out code roots/skills/.glossary first, then test for a doc path (§DOC contract)
-# No-class fail-closed (#2765): a NON-EMPTY diff whose files match NONE of the three classes above
-# — root tooling outside the code roots (biome-plugins/**, biome.jsonc, turbo.json) — must NOT ship
-# un-gated. `pipeline-cli class-probe classify` (the live decision source above) folds this in: any
-# unclassified changed file rides has-code → review-code, so a non-empty diff never requires zero
-# gates. This is the §CLASS "no-class fail-closed" rule, NOT a widened HAS_CODE_RE (that is #2761).
-# UI probe → review-design (ADDITIVE, not a class): a changed path under apps/web/src — the
-# rendered frontend surface (React components, styles, tokens, routes). `pipeline-cli class-probe
-# classify` above ALSO emits `has-ui` (it parses this same UI_RE from its single source,
-# ship-it/SKILL.md) — so the reviewer fan dispatches review-design off the SAME deterministic probe
-# it fans the class gates from, rather than eyeballing the files and skipping it (the #2483 deadlock;
-# #2485). Like the §CP boundary and GUARD_ADR_RE (both re-resolved inside their shared verbs above),
-# the literal below is the fail-closed REFERENCE + the validate-gate-path-drift lockstep target, NOT
-# the live decision source: it is re-resolved from
-# origin/main right after, so an injected skill snapshot that predates the review-design gate can't
-# silently DROP the UI probe and slip a UI PR past the gate (#2341 — the #981 idiom, previously only
-# on §CP/GUARD, now extended to UI_RE). ship-it/SKILL.md@main's `UI_RE=` line is the ONE live source;
-# reviewer.md, class-probe, AND review-design's Step 0 off-ramp all re-resolve the SAME line from the
-# same ref, so required-gate == dispatched-gate == satisfiable-gate holds by construction — all sides
-# read live main, not independently-aging snapshots. When a second app worker is added, generalize
-# this one live UI_RE to apps/**/src and every side tracks it.
-# SCOPE (#2470): UI_RE is `^apps/web/src/` ONLY — a `.tsx`/`.css` OUTSIDE apps/web/src (a Hono
-# server-JSX file, a `.tsx` test fixture, a non-web `.css`) has no rendered surface, so it is NOT
-# design-gate work and must NOT mint a required review-design. The earlier `|\.tsx$|\.css$` branches
-# made the *require* predicate a superset of review-design's own dispatch/off-ramp predicate
-# (`^apps/web/src/`): a non-web `.tsx` was required-but-unroutable — the dispatched review-design run
-# off-ramped with no marker and ship-it deadlocked on a review-design PASS no run could produce.
-# IN-SRC TEST CARVE-OUT (#3071): a change whose apps/web/src paths are ALL test/spec files renders no
-# surface, so it must NOT mint a required review-design either — the src-colocated `*.test.tsx` next to
-# a component (the established sibling-colocation convention) stalled #3046/#3047 at ship on a gate no
-# run could satisfy. ERE (grep -E) has no negative lookahead, so a single UI_RE can't express "under
-# src, but not a test" — mirror §CLASS's has-docs carve-then-test: strip test/spec files FIRST, THEN
-# test for a UI path. A real component (apps/web/src/**/*.tsx non-test) or a mixed component+test diff
-# survives the carve and STILL gates; only an all-test/spec src diff is exempted.
 UI_RE='^apps/web/src/'
 UI_EXCLUDE_RE='\.(test|spec)\.tsx?$'
-UI_RAW="$(gh api "repos/$REPO/contents/claude-plugins/kampus-pipeline/skills/ship-it/SKILL.md?ref=main" -H 'Accept: application/vnd.github.raw' 2>/dev/null || true)"
-UI_LIVE="$(printf '%s\n' "$UI_RAW" | grep '^UI_RE=' | head -n1 || true)"
-UX_LIVE="$(printf '%s\n' "$UI_RAW" | grep '^UI_EXCLUDE_RE=' | head -n1 || true)"
-if [ -n "$UI_LIVE" ]; then UI_RE="$(accept_re UI_RE "$(printf '%s' "$UI_LIVE" | sed "s/^UI_RE='//; s/'$//")" '.')"; else UI_RE='.'; fi   # FAIL CLOSED: can't read origin/main's UI_RE — or it resolves TRIVIAL — ⇒ '.' ⇒ every path UI-affecting ⇒ REQUIRE review-design, never silently skip (#2341/#4401)
-if [ -n "$UX_LIVE" ]; then UI_EXCLUDE_RE="$(accept_re UI_EXCLUDE_RE "$(printf '%s' "$UX_LIVE" | sed "s/^UI_EXCLUDE_RE='//; s/'$//")" '$^')"; else UI_EXCLUDE_RE='$^'; fi   # FAIL CLOSED: unreadable or trivial ⇒ '$^' never-match ⇒ carve out NOTHING ⇒ every apps/web/src path (incl. tests) gates review-design
-echo "$FILES" | grep -Ev "$UI_EXCLUDE_RE" | grep -Eq "$UI_RE" && echo "has-ui"   # carve test/spec first, THEN require review-design ALONGSIDE the class gate(s)
+```
+
+```bash
+. "$SHIPIT_SCRIPTS/step0-classify.sh"
 ```
 
 **Routing:**
@@ -565,108 +400,7 @@ echo "$FILES" | grep -Ev "$UI_EXCLUDE_RE" | grep -Eq "$UI_RE" && echo "has-ui"  
   branch stops under a message that names the read that failed.
 
   ```bash
-  # §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
-  PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
-  # ADR 0175: DETERMINISTIC §CP discharge keyed on control-plane team cardinality, not judgment.
-  ORG="${REPO%%/*}"                                            # owner half of owner/repo
-  # The one non-firing exit that is NOT a definite answer: it names the read that could not execute,
-  # so a broken read is never reported as a human-approval wait (#4223).
-  cp_unknown() { echo "§CP approval: STOP — $1 UNKNOWN (read failed); the discharge is UNRESOLVED, NOT 'awaiting control-plane approval' (ADR 0175, #4223)" >&2; }
-
-  # N = present, active, human control-plane members (REST, never GraphQL — ADR 0135/0175).
-  # A SUCCESSFUL read of an empty team still flows through to cp-cardinality's honest N==0 STOP; only
-  # an UNREADABLE roster stops here, because those are different facts with the same outcome.
-  cp_team_roster "$ORG" || { cp_unknown "the @$ORG/control-plane roster"; exit 1; }
-  MEMBERS="$CP_MEMBERS"
-  cp_pr_author "$REPO" "$PR" || { cp_unknown "the PR author"; exit 1; }
-  AUTHOR="$CP_PR_AUTHOR"
-  cp_head_sha "$REPO" "$PR" || { cp_unknown "the PR head SHA"; exit 1; }
-  HEAD="$CP_HEAD_SHA"                                          # every signal binds THIS head (ADR 0058)
-
-  # Bidirectional prefix match so a 7-hex short SHA binds a 40-hex head — but ONLY once BOTH sides
-  # are proven hex. With $HEAD empty the second pattern degenerates to `*` and binds ANY candidate,
-  # so a self-approval marker on a superseded head counts as current (#4223). Asserting $HEAD is
-  # duplicated work given cp_head_sha above, and it stays: this matcher is the last thing between a
-  # stale marker and a discharge, so it proves its own precondition rather than inheriting it.
-  # The reverse direction is unreachable while that 40-hex assertion holds (a candidate can only be
-  # a prefix OF a full head, never the other way round); kept so the matcher's shape is unchanged and
-  # the assertion is the only thing this fix takes away from its reach.
-  sha_binds_head() {
-    case "$HEAD" in *[!0-9a-f]*|"") return 1;; esac
-    [ "${#HEAD}" -eq 40 ] || return 1
-    case "$1" in *[!0-9a-f]*|"") return 1;; esac
-    [ "${#1}" -ge 7 ] || return 1
-    case "$HEAD" in "$1"*) return 0;; esac
-    case "$1" in "$HEAD"*) return 0;; esac
-    return 1
-  }
-
-  # Signal 1 — a current-head APPROVED review by a control-plane member who is NOT the author
-  # (the N>=2 and N==1-sole!=author discharge). Latest review per author, APPROVED, commit_id == HEAD.
-  NON_AUTHOR_APPROVAL_AT_HEAD=false
-  MEMBERSHIP_UNKNOWN=false
-  CURRENT_APPROVERS="$(gh api --paginate "repos/$REPO/pulls/$PR/reviews?per_page=100" \
-    --jq "group_by(.user.login) | map(max_by(.submitted_at))
-          | map(select(.state == \"APPROVED\" and .commit_id == \"$HEAD\") | .user.login) | .[]")" \
-    || { cp_unknown "the PR's review list"; exit 1; }
-  while IFS= read -r u; do
-    [ -z "$u" ] && continue
-    # cp_pr_author proved $AUTHOR is a bare login, so this skip cannot silently stop skipping. The
-    # assertion is kept at the skip itself because THAT is where an unresolved author would let a
-    # self-approval count as a non-author approval — the one direction that is not safe (#4223).
-    : "${AUTHOR:?§CP approval: author unresolved at the approver walk — refusing to count approvals}"
-    [ "$u" = "$AUTHOR" ] && continue                          # self-approval never counts here (ADR 0175)
-    # THREE outcomes: active member, definite non-member (404), or UNKNOWN. An UNKNOWN probe must not
-    # silently under-count into a `stop` that reads as "awaiting approval" — record it and keep
-    # scanning, since a LATER approver proving `active` still discharges honestly.
-    if cp_team_membership "$ORG" "$u"; then
-      [ "$CP_MEMBERSHIP" = "active" ] && { NON_AUTHOR_APPROVAL_AT_HEAD=true; break; }
-    else
-      MEMBERSHIP_UNKNOWN=true
-    fi
-  done <<<"$CURRENT_APPROVERS"
-  if [ "$NON_AUTHOR_APPROVAL_AT_HEAD" = false ] && [ "$MEMBERSHIP_UNKNOWN" = true ]; then
-    cp_unknown "at least one approver's control-plane membership"; exit 1
-  fi
-
-  # Signal 2 — a deliberate current-head self-approval MARKER by the sole owner (the ONLY N==1
-  # sole-owner discharge). GitHub records no native self-approval, so the signal is a marker comment:
-  # first line `control-plane-self-approval @ <sha>` — a DISTINCT token from the review-* markers, so
-  # it can never leak a §CP PR into the auto-merge namespace (ADR 0111) — authored by the sole owner
-  # and SHA-bound to the current head. The sole owner posts it to consciously self-approve their own
-  # §CP PR; it is inert unless N==1 and they are the author (cp-cardinality ignores it otherwise).
-  # Capture, CHECK, then pipe the variable: `pipefail` is off in the agent shell, so piping `gh`
-  # straight into `grep` reports grep's status and discards the read's (§CPREAD #1).
-  SELF_APPROVAL_AT_HEAD=false
-  SELF_MARKERS="$(gh api --paginate "repos/$REPO/issues/$PR/comments?per_page=100" \
-    --jq "[.[] | select(.user.login == \"$AUTHOR\")
-               | select(.body | test(\"(?i)^\\\\s*\\\\**\\\\s*control-plane-self-approval\\\\b\"))]
-          | last | .body // \"\"")" \
-    || { cp_unknown "the PR's comment list"; exit 1; }
-  # `tail -n1`, not `head`: --paginate runs this aggregate --jq PER PAGE and emits one body each, in
-  # page order, so the LAST match is the latest marker — `head` would pin page 1's older one (#725).
-  SELF_SHA="$(printf '%s\n' "$SELF_MARKERS" \
-    | grep -ioE 'control-plane-self-approval[[:space:]]*@?[[:space:]]*[0-9a-f]{7,40}' \
-    | grep -ioE '[0-9a-f]{7,40}' | tail -n1)"
-  sha_binds_head "$SELF_SHA" && SELF_APPROVAL_AT_HEAD=true
-
-  # The DETERMINISTIC decision — the whole ADR-0175 `case "$N"` branch lives in the tested pure core.
-  # discharge → carry on to the machine gates; stop → STOP (fail closed). Pass a signal flag only when
-  # that signal is present at head; cp-cardinality selects which signal the branch actually requires.
-  # The §CP discharge branches on this exit status, so an unresolved CLI would read as "stop" or
-  # "discharge" depending on the pipe's last status — a resolution gap deciding a merge gate.
-  # Refuse first (§CLI: could-not-run is UNKNOWN, never a discharge; #3314).
-  [ -x "$PCLI" ] || { echo "ship-it: cp-cardinality is UNRESOLVED at '$PCLI' — the §CP discharge is UNKNOWN, NOT discharged. STOP." >&2; exit 1; }
-  if printf '%s\n' "$MEMBERS" | "$PCLI" cp-cardinality decide \
-       --author "$AUTHOR" \
-       $([ "$NON_AUTHOR_APPROVAL_AT_HEAD" = true ] && printf -- '--non-author-approval-at-head') \
-       $([ "$SELF_APPROVAL_AT_HEAD" = true ] && printf -- '--self-approval-at-head'); then
-    echo "§CP approval: discharged deterministically (ADR 0175) → carry on to machine gates"
-  else
-    # Reachable ONLY with every input proven readable, so this message states a fact: the branch's
-    # required human signal is genuinely absent.
-    echo "§CP approval: STOP (awaiting control-plane approval) — cardinality branch not satisfied (ADR 0175)"
-  fi
+  . "$SHIPIT_SCRIPTS/step0-cp-approval.sh"
   ```
 
   This is **only** the §CP unblock — it does not weaken any other guard. The SHA-bound gate verdict
@@ -883,37 +617,7 @@ The required set is **derived, never eyeballed** — the same `class-probe` outp
 dispatches off, so `dispatched-gate == required-gate` holds by construction:
 
 ```bash
-# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
-PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
-# the required namespaces for THIS diff — one per artifact class present, plus review-design when
-# the diff is UI-affecting. `.glossary/**` rides has-code, so an ADR + a glossary row requires BOTH
-# review-doc AND review-code; satisfying one is not enough.
-# The probe is the LAST stage of its own capture, and its status is read — `class-probe` REFUSES with
-# exit 4 on a failed stdin read (#4010) and prints nothing, so an unchecked capture turns the refusal
-# into an empty `--require` set. Joining with `| paste -sd, -` INSIDE the capture is what made that
-# unobservable: `pipefail` is OFF here (#4146), so paste's 0 was the pipeline's status (#4231). Join
-# the ALREADY-CAPTURED value instead. The `verdict gate` zero-scope refusal downstream is untouched —
-# this removes the masking in front of it, it does not relocate the backstop.
-REQUIRED_NS="$(gh api --paginate "repos/$REPO/pulls/$PR/files" --jq '.[].filename' \
-  | "$PCLI" class-probe classify --namespaces)"; PROBE_RC=$?
-if [ "$PROBE_RC" -ne 0 ]; then
-  disarm_intent refuse || INTENT_UNCLEARED=1
-  echo "ship-it: refused at guard 1 — class-probe REFUSED (exit $PROBE_RC); the required-namespace set is UNKNOWN, not empty. NOT enqueued." >&2; exit 1
-fi
-REQUIRED="$(printf '%s\n' "$REQUIRED_NS" | grep '[^[:space:]]' | paste -sd, - || true)"
-if [ -z "$REQUIRED" ]; then
-  disarm_intent refuse || INTENT_UNCLEARED=1
-  echo "ship-it: refused at guard 1 (zero scope) — class-probe exited 0 but named ZERO namespaces; a zero-length required set would make the per-namespace conjunction vacuously true (ADR 0092). NOT enqueued." >&2; exit 1
-fi
-echo "ship-it guard 1: PR $PR requires $(printf '%s\n' "$REQUIRED_NS" | grep -c '[^[:space:]]' || true) namespace(s) → $REQUIRED"
-# A control-plane PR's pass path is the canonical SHA-less ADVISORY, bound in the body's
-# `Reviewed-head` line (ADR 0111/0151) — pass --cp so that form counts, and ONLY then. Set this from
-# Step 0's own classification (it printed `BLOCKING (…)` for a §CP path/content hit) AND only after
-# Step 0's approval gate discharged; leave it empty for every non-§CP PR.
-CP_FLAG=""   # → "--cp" iff Step 0 classified this PR §CP and its control-plane approval discharged
-"$PCLI" verdict gate --pr "$PR" --require "$REQUIRED" $CP_FLAG || {
-  disarm_intent refuse || INTENT_UNCLEARED=1
-  echo "ship-it: refused at guard 1 — see the named reason above; NOT enqueued."; exit 1; }
+. "$SHIPIT_SCRIPTS/step2-verdict-gate.sh"
 ```
 
 **Why a verb and not a careful read.** The rule below was already correct in prose ("docs present
@@ -1026,62 +730,7 @@ The native decisive review folds into the code namespace separately (the verb re
 not reviews), and that fold applies the ADR-0058 staleness test inline, at the fold itself:
 
 ```bash
-# the PR's CURRENT head SHA — the head every verdict must be bound to (ADR 0058)
-CURRENT_HEAD="$(gh api repos/$REPO/pulls/$PR --jq .head.sha)"
-
-# latest decisive native review (APPROVED / CHANGES_REQUESTED) — the review-code path only.
-# GitHub author-attributes reviews, so this path is unforgeable and needs no ACL check. commit_id IS
-# the SHA the reviewer approved, so the same staleness test applies to it as to a marker's @ <sha>.
-# `at: .submitted_at` is load-bearing, not decoration: it is the timestamp the newest-wins fold below
-# compares against the marker's write time. A review is never upserted, so `submitted_at` IS its write
-# time — the two sides are like for like. Drop it and the fold degenerates to a precedence rule.
-REVIEW=$(gh api "repos/$REPO/pulls/$PR/reviews?per_page=100" \
-  --jq '[.[] | select(.state=="APPROVED" or .state=="CHANGES_REQUESTED")]
-        | sort_by(.submitted_at) | last | {state, sha: .commit_id, at: .submitted_at}')
-
-# resolve the verdict CLI via the `bin/pipeline-cli` shim — in-repo bin, else the installed bin,
-# else the pinned `pnpm dlx` fallback reading the one pin (hooks/pin.sh); no version pinned here
-# (#3653; ADR 0062/0064; epic #994)
-VERDICT="${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/bin/pipeline-cli verdict"
-
-# Resolve the CODE namespace only — it is the one namespace with work left to do here, because it is
-# the only one a native GitHub review can decide, and `verdict gate` reads marker/advisory COMMENTS,
-# not reviews. The per-namespace PASS/FAIL conjunction across doc / skill / design was already
-# decided by the `verdict gate` call above, which runs FIRST and refuses on non-zero; re-resolving
-# those three here set six variables nothing read, at six subprocess spawns per ship (#4405).
-# CODE_PASS=1 iff a current-head PASS marker; CODE_FAIL=1 iff a current-head FAIL (the veto). A
-# stale / SHA-less / none verdict exits non-zero on BOTH, so it is neither — Step 2b's `unverified
-# (verdict not bound to current head)` refusal, owned by the verb. (A §CP advisory namespace is
-# SHA-less by design and resolves `none` here; `verdict gate --cp` reads its body Reviewed-head.)
-# The stdout JSON is kept because it carries `writtenAt`, the resolving verdict's WRITE time, which
-# is what the newest-wins fold below compares (#4200).
-CODE_JSON="$($VERDICT read --pr "$PR" --gate code --expect PASS 2>/dev/null)" && CODE_PASS=1 || CODE_PASS=0
-$VERDICT read --pr "$PR" --gate code   --expect FAIL >/dev/null 2>&1 && CODE_FAIL=1   || CODE_FAIL=0
-
-# fold the native decisive review into the code namespace (the verb reads only marker comments). Only
-# a review bound to the current head counts (same ADR-0058 staleness as a marker's @ <sha>).
-#
-# The fold is NEWEST-WINS by timestamp, never FAIL-precedence — the resolution the prose below states.
-# FAIL-precedence would be a live wedge, not a conservative default: a PR FAIL'd, repaired, and
-# re-PASSed at the SAME head would stay permanently blocked by the superseded FAIL, breaking the
-# repair → re-review → ship loop write-code drives.
-RSTATE=$(jq -r '.state // ""' <<<"$REVIEW"); RSHA=$(jq -r '.sha // empty' <<<"$REVIEW")
-RAT=$(jq -r '.at // ""' <<<"$REVIEW")
-if [ -n "$RSHA" ]; then case "$CURRENT_HEAD" in "$RSHA"*)
-  # the marker's WRITE time, straight off the verb's JSON — never the comment's created_at, which an
-  # in-place upsert leaves behind (#4200). An empty MARKER_AT means no current-head marker verdict
-  # stands (`verdict read` already dropped a none/sha-less/stale one) ⇒ the review decides alone.
-  MARKER_AT=""
-  [ "$((CODE_PASS + CODE_FAIL))" -gt 0 ] &&
-    MARKER_AT=$(jq -r '.writtenAt // empty' <<<"$CODE_JSON" 2>/dev/null)
-  # ISO-8601-UTC sorts lexically, so `>` IS the chronological compare.
-  if [ -z "$MARKER_AT" ] || [ "$RAT" \> "$MARKER_AT" ]; then
-    case "$RSTATE" in
-      CHANGES_REQUESTED) CODE_FAIL=1; CODE_PASS=0 ;;
-      APPROVED)          CODE_PASS=1; CODE_FAIL=0 ;;
-    esac
-  fi   # else the marker is newer and already stands — leave CODE_PASS/CODE_FAIL as the verb resolved them
-;; esac; fi
+. "$SHIPIT_SCRIPTS/step2-native-review-fold.sh"
 ```
 
 Now resolve **per namespace** (the marker verdict from the verb above, the native review + §CP
@@ -1409,18 +1058,7 @@ the workflow runs GitHub actually recorded for the head SHA — **both reads fai
 absence):
 
 ```bash
-HEAD_SHA=$(gh api repos/$REPO/pulls/$PR --jq '.head.sha')
-# (a) Does this repo run Actions at all? A CI-less / foreign repo's empty check set is genuine,
-#     not a dropped trigger — it degrades to the PASS-only path (Step 3.5 portability), no nudge.
-NWF=$(gh api "repos/$REPO/actions/workflows?per_page=100" --jq '.workflows | length' 2>/dev/null)
-# (b) Workflow runs recorded for THIS exact head SHA (the same head_sha bind Step 3.5 uses).
-NRUNS=$(gh api "repos/$REPO/actions/runs?head_sha=$HEAD_SHA&per_page=100" \
-  --jq '.workflow_runs | length' 2>/dev/null)
-# An empty capture = the lookup itself failed (network/auth/rate-limit), NOT a confirmed zero —
-# never nudge on an unconfirmed absence: assume "runs exist" / "no Actions", fall through, and
-# let the Step 3.5 backstop guard the merge.
-[ -z "$NRUNS" ] && NRUNS=1
-[ -z "$NWF" ]   && NWF=0
+. "$SHIPIT_SCRIPTS/step3-empty-checkset-probe.sh"
 ```
 
 Classify in this order (a `skipped` / `cancelled` conclusion is non-blocking — neither a failure
@@ -1508,84 +1146,7 @@ is why a later-empty pending set inside the loop is a genuine green, not the dro
 false-green Step 3z guards (that state is branch 3, never reached from here):
 
 ```bash
-SETTLE_BUDGET_SECS="${SHIP_IT_SETTLE_BUDGET_SECS:-600}"    # total in-process wait ceiling — BOUNDED, never unbounded
-SETTLE_INTERVAL_SECS="${SHIP_IT_SETTLE_INTERVAL_SECS:-30}" # cadence; each pass emits progress so a no-progress watchdog never fires
-WEDGE_DWELL_SECS="${SHIP_IT_WEDGE_DWELL_SECS:-120}"        # how long an all-wedged pending set must persist before it is called wedged
-ci_settle_wait() {   # returns 0=settled-green→enqueue · 1=refused (budget-exhausted, wedged, OR head moved mid-settle; comment posted) · 2=gating red mid-wait→heal-ci
-  local waited=0 wedged_for=0 json red pending wedged running headnow
-  while :; do
-    # The SAME read as Step 3 — REST check-runs through `pipeline-cli checks read`, never
-    # `gh pr checks` (#3999). An unreadable head refuses here exactly as it does at Step 3.
-    json="$(read_head_ci)" || {
-      disarm_intent refuse || INTENT_UNCLEARED=1
-      gh api "repos/$REPO/issues/$PR/comments" -f body="ship-it: refused — head CI became **unreadable** during the CI-settle wait — **not enqueued**. An unreadable head is not a green head; re-dispatch ship-it — idempotent (#3999)." >/dev/null
-      echo "refused — head CI unreadable mid-settle — not enqueued"; return 1
-    }
-    # same known-informational carve-out as Step 3: a red preview-deploy/teardown check never gates
-    red="$(jq -r '[.failing[] | select(. != "deploy (web)" and (startswith("cleanup (web,") | not))] | join(" ")' <<<"$json")"
-    running="$(jq -r '.running | join(" ")' <<<"$json")"
-    wedged="$(jq -r  '.wedged  | join(" ")' <<<"$json")"
-    pending="$(jq -r '(.running + .wedged) | join(" ")' <<<"$json")"
-    if [ -n "$red" ]; then
-      disarm_intent refuse || INTENT_UNCLEARED=1   # guard 6: this wait ends without an enqueue — park nothing
-      echo "gating check went red during settle-wait ($red) — routing to heal-ci"; return 2
-    fi
-    if [ -z "$pending" ]; then
-      # TOCTOU guard (secondary #1928 note): the in-process poll widens the window between Step 2/2b's
-      # SHA-bound verdict check (bound to $CURRENT_HEAD) and the enqueue. Unlike the old park→fresh-reinvoke
-      # (which re-ran Step 2b on resume), this in-process resume enters at Step 3.5 and does NOT re-run
-      # Step 2b — so a head-move during the settle would enqueue a head whose verdict/run-evidence predate
-      # it. Re-confirm the head is still the verified one before returning green; if it moved, refuse (same
-      # durable-comment/stop disposition as budget-exhaustion) so a re-dispatch re-runs Step 2b on the moved head.
-      headnow="$(gh api repos/$REPO/pulls/$PR --jq '.head.sha')"
-      if [ -n "$headnow" ] && [ "$headnow" != "$CURRENT_HEAD" ]; then
-        disarm_intent refuse || INTENT_UNCLEARED=1   # guard 6: a moved head invalidates the intent exactly as it does the verdict (ADR 0198/0058)
-        gh api "repos/$REPO/issues/$PR/comments" -f body="ship-it: refused — head moved during CI-settle (verified ${CURRENT_HEAD}, now ${headnow}) — **not enqueued**. The SHA-bound verdict and run-evidence (Step 2/2b) predate this head; re-dispatch ship-it to re-verify the moved head — idempotent, a re-ship on a re-verified head enqueues cleanly (#1928)." >/dev/null
-        echo "refused — head moved during settle-wait (${CURRENT_HEAD} → ${headnow}); Step 2b must re-run — not enqueued"; return 1
-      fi
-      echo "gating checks settled green after ${waited}s — proceeding to Step 3.5 → enqueue"; return 0
-    fi
-    # WEDGED: everything unfinished is queued-and-never-started. Such a run does not start on its
-    # own, so the remaining budget cannot clear it — refuse once the state has held for the dwell
-    # (a check queued seconds ago is normal; one queued with no start time for minutes is stuck).
-    if [ -n "$wedged" ] && [ -z "$running" ]; then
-      wedged_for=$((wedged_for + SETTLE_INTERVAL_SECS))
-    else
-      wedged_for=0
-    fi
-    if [ "$wedged_for" -ge "$WEDGE_DWELL_SECS" ]; then
-      disarm_intent refuse || INTENT_UNCLEARED=1   # guard 6: this wait ends without an enqueue — park nothing
-      gh api "repos/$REPO/issues/$PR/comments" -f body="ship-it: refused — CI **wedged (stranded in queue)** for ${wedged_for}s — **not enqueued**. These gating checks are \`queued\` with no start time and are not running: ${wedged}. A wedged run does not start on its own, so waiting the ${SETTLE_BUDGET_SECS}s settle budget out cannot clear it — this is reported as its own state rather than waited out (#3999). Operator lever (deliberately NOT automated — see the skill): cancel the stuck workflow run, then re-run it (a plain rerun on a still-queued run returns 403):
-\`\`\`
-RUN=\$(gh api \"repos/$REPO/actions/runs?head_sha=$CURRENT_HEAD&per_page=100\" --jq '.workflow_runs[] | select(.status==\"queued\") | .id')
-gh api -X POST \"repos/$REPO/actions/runs/\$RUN/cancel\" && gh api -X POST \"repos/$REPO/actions/runs/\$RUN/rerun\"
-\`\`\`
-Re-dispatch ship-it once the re-run settles — idempotent, a re-ship on the now-green head enqueues cleanly." >/dev/null
-      echo "refused — CI wedged (stranded in queue: ${wedged}) after ${wedged_for}s — not enqueued"; return 1
-    fi
-    if [ "$waited" -ge "$SETTLE_BUDGET_SECS" ]; then
-      disarm_intent refuse || INTENT_UNCLEARED=1   # guard 6: the budget ran out without an enqueue — park nothing
-      # Budget exhausted, still pending → the ONE required durable signal: an explicit PR-visible refusal.
-      # A plain outcome note, NOT a review-* verdict marker — so it never blocks a later idempotent re-ship.
-      gh api "repos/$REPO/issues/$PR/comments" -f body="ship-it: refused — CI still pending after ${SETTLE_BUDGET_SECS}s (still running: ${running:-none}; wedged in queue: ${wedged:-none}) — **not enqueued**. This head is not yet merge-ready; re-dispatch ship-it once CI settles — idempotent, a re-ship on the now-green head enqueues cleanly (#1928)." >/dev/null
-      echo "refused — CI still pending after ${SETTLE_BUDGET_SECS}s (PR outcome comment posted) — not enqueued"; return 1
-    fi
-    echo "checks still pending after ${waited}s (running: ${running:-none}; wedged: ${wedged:-none}) — re-reading in ${SETTLE_INTERVAL_SECS}s (budget ${SETTLE_BUDGET_SECS}s)"
-    sleep "$SETTLE_INTERVAL_SECS"; waited=$((waited + SETTLE_INTERVAL_SECS))
-  done
-}
-
-ci_settle_wait; SETTLE_RC=$?
-case "$SETTLE_RC" in
-  0) : ;;         # settled green → fall through to Step 3.5 → Step 4 (enqueue)
-  2)              # gating red mid-wait → route to /heal-ci (Step 3 branch 1's disposition), then STOP — never enqueue.
-     # This arm MUST terminate the ship, exactly like `1)`: a check that goes red DURING the poll is a
-     # gating red, and Step 3 branch 1's disposition is "do NOT merge; invoke /heal-ci and report." Invoke
-     # /heal-ci for this PR (the same agent action Step 3 branch 1 takes), then exit — falling through here
-     # would enqueue a red PR, the exact merge-safety hole this arm exists to close (#1928).
-     echo "routed to heal-ci — gating check went red mid-settle for PR #$PR; not enqueued"; exit 0 ;;
-  1) exit 0 ;;    # refused (budget-exhausted, wedged in queue, head moved mid-settle, or unreadable) — durable outcome comment posted; a successful decline, no longer silent (#1928)
-esac
+. "$SHIPIT_SCRIPTS/step3-ci-settle-wait.sh"
 ```
 
 The three returns are the **whole guarantee**: `0` reaches the enqueue, `2` routes a mid-wait red
@@ -1658,31 +1219,7 @@ statelessly against the PR's own reopened-event history so a genuinely-stuck pro
 loop:
 
 ```bash
-# Have we ALREADY nudged this exact head? A nudge leaves a `reopened` event; count the ones
-# that landed AFTER this head SHA was pushed (its committer date is the proxy for "since this
-# commit"). >=1 ⇒ we already close→reopened this head and runs STILL didn't fire ⇒ the producer
-# is genuinely stuck, not a dropped webhook ⇒ do NOT nudge again — refuse and hand to a human.
-HEAD_PUSHED=$(gh api "repos/$REPO/commits/$HEAD_SHA" --jq '.commit.committer.date')
-NUDGES=$(gh api "repos/$REPO/issues/$PR/events?per_page=100" \
-  --jq "[.[] | select(.event==\"reopened\") | .created_at | select(. > \"$HEAD_PUSHED\")] | length")
-
-disarm_intent refuse || INTENT_UNCLEARED=1   # guard 6: BOTH exits below stop without enqueuing — park nothing (ADR 0198)
-
-if [ "${NUDGES:-0}" -ge 1 ]; then
-  # Nudge exhausted → refuse and hand to a human, but leave a durable PR-visible signal (#1928):
-  # never a silent stop even on this dead-end path.
-  gh api "repos/$REPO/issues/$PR/comments" -f body="ship-it: unverified (no runs fired — nudge exhausted, producer may be stuck) — **not enqueued**. This head was already close→reopened once and CI still fired zero runs; handing to a human (#1928)." >/dev/null
-  echo "unverified (no runs fired — nudge exhausted, producer may be stuck)"; exit 0   # refuse, hand to human
-fi
-
-# First (and only) nudge for this head: close then reopen over REST (never `gh pr close/reopen`
-# or `gh pr edit` — Projects-classic breaks their GraphQL path in this org). The head ref is
-# untouched, so every SHA-bound review verdict (Step 2) survives the reopen.
-gh api -X PATCH "repos/$REPO/pulls/$PR" -f state=closed >/dev/null
-gh api -X PATCH "repos/$REPO/pulls/$PR" -f state=open   >/dev/null
-# Durable, PR-visible outcome so the park is observable (#1928): a re-dispatch after CI settles resumes the ship.
-gh api "repos/$REPO/issues/$PR/comments" -f body="ship-it: nudged (close→reopen) — CI re-triggered, **not enqueued** yet. The head SHA had zero workflow runs (dropped trigger); ship-it close→reopened it once to re-emit the trigger. Re-dispatch ship-it once CI settles — idempotent (#1928)." >/dev/null
-echo "nudged (close→reopen) — CI re-triggered, not yet merge-ready"; exit 0   # stop; re-dispatch after CI settles resumes the ship
+. "$SHIPIT_SCRIPTS/step3z-dropped-trigger.sh"
 ```
 
 The nudge **never bypasses verification** — it only restores the *missing runs*. A nudged PR
@@ -1718,24 +1255,7 @@ is never an error." This is a producer-presence test, **not** a per-PR escape: a
 below (that's a real gap, not portability).
 
 ```bash
-# Does THIS repo produce run-evidence at all? (a workflow named "run-evidence" defined on the
-# default branch). Absent → foreign repo → guard 2 N/A, gated on Step 3. Present → strict path.
-# FAIL SAFE: degrade ONLY on a confirmed-empty result. A successful query returns a SINGLE
-# count ("0", "1", …); an empty capture means the query itself FAILED (network / auth / rate-
-# limit), which must NOT silently skip guard 2 — least of all in the home repo, where the
-# strict path is invariant. So an unconfirmed lookup falls through to the strict path
-# (HAS_PRODUCER=1), not to degradation: a transient API blip costs strictness, never a skipped
-# bundle assertion. NOTE: no `--paginate` — with it, gh feeds each page to `--jq` separately so
-# `| length` prints one integer PER PAGE (a multi-line "0\n0" that defeats both the `-z` guard
-# and the `-eq 0` test). per_page=100 fits any realistic repo's workflow set in one page.
-HAS_PRODUCER=$(gh api "repos/$REPO/actions/workflows?per_page=100" \
-  --jq '[.workflows[] | select(.name=="run-evidence")] | length' 2>/dev/null)
-[ -z "$HAS_PRODUCER" ] && HAS_PRODUCER=1   # lookup failed (empty) → can't confirm absence → strict
-if [ "$HAS_PRODUCER" -eq 0 ]; then
-  echo "guard 2 N/A (no run-evidence producer in this repo) — gated on checks (Step 3)"
-  # Degraded: guard 2 clears here. Skip the bundle fetch + the four assertions below and
-  # proceed to Step 4 on the strength of Step 2 (PASS) + Step 3 (gating checks green).
-fi
+. "$SHIPIT_SCRIPTS/step3_5-producer-preflight.sh"
 ```
 
 When a producer **is** present (the phoenix home repo, or any adopter that ships the
@@ -1750,94 +1270,7 @@ control-plane skills at the seam — minor duplication is the cheaper trade now;
 helper later if a third consumer appears.
 
 ```bash
-HEAD_SHA=$(gh api repos/$REPO/pulls/$PR --jq '.head.sha')
-
-# --- transient-aware bundle fetch (the #3716 fix) -----------------------------------------------
-# A GitHub 5xx during the bundle fetch is UPSTREAM-UNAVAILABLE (a transport failure) — NOT a
-# producer that yielded nothing. Collapsing the two is the exact defect this guard's own note calls
-# out as load-bearing: on PR #3693 an outage wrote a 169-byte JSON 503 body into run-evidence.zip,
-# `unzip` failed, no manifest landed, and the gate reported "no run-evidence bundle" for a bundle
-# that was present the whole time. So every read below RETRIES a transient failure with backoff,
-# CAPTURES its stderr cause (never `2>/dev/null` — that swallowed the 503 that would have named the
-# outage), and — for the zip — verifies the bytes are a real archive by magic number before trusting
-# them. A failure that survives the retries is classified UNKNOWN (unverified-transient), never read
-# as an absent bundle (probe convention: an unrunnable probe is "unknown", never "down").
-ART_FETCH_ERR=""   # last captured transient cause, surfaced verbatim in the transient refusal reason
-
-gh_read_retry() {   # $1=api-path $2=jq-filter → echoes the jq result; exit 0 = read ok (INCLUDING a
-                    # valid response with no match — legit-empty, NOT transient), 1 = transient after retries.
-  local path="$1" jqf="$2" attempt=0 rc out errfile
-  errfile=$(mktemp "${TMPDIR:-/tmp}/ship-it-ghread.XXXXXX")
-  while [ "$attempt" -lt 4 ]; do
-    [ "$attempt" -gt 0 ] && sleep $(( 1 << (attempt - 1) ))   # 1s, 2s, 4s backoff before retries 2–4
-    attempt=$((attempt + 1))
-    out=$(gh api "$path" --jq "$jqf" 2>"$errfile"); rc=$?
-    if [ "$rc" -eq 0 ]; then rm -f "$errfile"; printf '%s' "$out"; return 0; fi
-    ART_FETCH_ERR="attempt $attempt reading ${path##*/}: gh exited $rc — $(tr -d '\n' <"$errfile" | head -c 160)"
-  done
-  rm -f "$errfile"; return 1
-}
-
-is_zip() {   # 0 iff $1 opens with the ZIP local-file-header magic PK\x03\x04 — a real archive, not a
-             # JSON error body (the incident: a 169-byte 503 payload written where a zip was expected).
-  [ -s "$1" ] || return 1
-  [ "$(dd if="$1" bs=4 count=1 2>/dev/null | od -An -tx1 | tr -d ' \n')" = "504b0304" ]
-}
-
-fetch_artifact_zip() {   # $1=ART_ID $2=dest ; 0 = a VALID zip landed, 1 = transient failure after retries
-  local art_id="$1" dest="$2" attempt=0 rc errfile
-  errfile=$(mktemp "${TMPDIR:-/tmp}/ship-it-artfetch.XXXXXX")
-  while [ "$attempt" -lt 4 ]; do
-    [ "$attempt" -gt 0 ] && sleep $(( 1 << (attempt - 1) ))
-    attempt=$((attempt + 1))
-    gh api "repos/$REPO/actions/artifacts/$art_id/zip" > "$dest" 2>"$errfile"; rc=$?
-    if [ "$rc" -eq 0 ] && is_zip "$dest"; then rm -f "$errfile"; return 0; fi
-    if [ "$rc" -ne 0 ]; then
-      ART_FETCH_ERR="attempt $attempt downloading artifact $art_id: gh exited $rc — $(tr -d '\n' <"$errfile" | head -c 160)"
-    else
-      ART_FETCH_ERR="attempt $attempt downloading artifact $art_id: $(wc -c <"$dest" | tr -d ' ')-byte non-zip payload (magic mismatch — an error body, not an archive)"
-    fi
-  done
-  rm -f "$errfile"; return 1
-}
-# ------------------------------------------------------------------------------------------------
-
-# ART_FETCH_STATUS ∈ {absent, ok, transient} — the #3716 distinction, decided HERE during the fetch,
-# NOT inferred from an empty manifest downstream. `absent` = a read succeeded but the producer yielded
-# nothing; `transient` = a read/download 5xx'd or returned a non-zip body after retries (UNKNOWN).
-ART_FETCH_STATUS=absent
-
-# the run-evidence workflow run for THIS exact head SHA (not a stale earlier push)
-RUN_ID=$(gh_read_retry "repos/$REPO/actions/runs?head_sha=$HEAD_SHA&per_page=100" \
-  '[.workflow_runs[] | select(.name=="run-evidence")] | sort_by(.created_at) | last | .id // empty')
-[ $? -ne 0 ] && ART_FETCH_STATUS=transient
-
-# the run-evidence artifact id (retry-aware — a 5xx here is UNKNOWN, not an absent artifact)
-ART_ID=""
-if [ "$ART_FETCH_STATUS" != transient ] && [ -n "$RUN_ID" ]; then
-  ART_ID=$(gh_read_retry "repos/$REPO/actions/runs/$RUN_ID/artifacts" \
-    '.artifacts[] | select(.name=="run-evidence") | .id')
-  [ $? -ne 0 ] && ART_FETCH_STATUS=transient
-fi
-
-# per-run bundle dir (mktemp -d), NOT a fixed /tmp/ship-it-bundle — the §SP per-run scratchpad
-# namespace (gh-issue-intake-formats.md): concurrent §CP shippers fan out, and a shared path lets
-# two racing runs read each other's bundle — merge-safety must not rest on Step 3.5's
-# commit==head assertion catching the swap after the fact (#2281; the #3718 silent-clobber class).
-BUNDLE_DIR=$(mktemp -d "${TMPDIR:-/tmp}/ship-it-bundle.XXXXXX")
-MANIFEST="$BUNDLE_DIR/manifest.json"
-
-# Download + unzip ONLY when a producer run + artifact both resolved. An empty RUN_ID/ART_ID is
-# genuine absence (assertion 1b); a LISTED artifact we cannot fetch as a valid zip is TRANSIENT.
-if [ "$ART_FETCH_STATUS" != transient ] && [ -n "$RUN_ID" ] && [ -n "$ART_ID" ]; then
-  if fetch_artifact_zip "$ART_ID" "$BUNDLE_DIR/run-evidence.zip"; then
-    unzip -oq "$BUNDLE_DIR/run-evidence.zip" -d "$BUNDLE_DIR" \
-      && ART_FETCH_STATUS=ok \
-      || ART_FETCH_STATUS=transient   # valid magic but unreadable ⇒ a corrupt/truncated transfer, still transient
-  else
-    ART_FETCH_STATUS=transient        # a listed artifact that will not download as a valid zip = UNKNOWN
-  fi
-fi
+. "$SHIPIT_SCRIPTS/step3_5-fetch-artifact.sh"
 ```
 
 Now assert the bundle, **failing closed** on each check — an unreachable upstream, a missing
@@ -1847,47 +1280,7 @@ failure (assertion 1a) is reported as unverified-transient and **must be checked
 genuine-absence case (1b), since a transport failure leaves the bundle fields empty:
 
 ```bash
-# Each refusal below (transient, absent, schema, stale, checks-failed) is a stop path, so each
-# clears the merge intent before it reports (guard 6 / ADR 0198) — one wrapper, not N hand-copied disarms.
-refuse_ship() { disarm_intent refuse || INTENT_UNCLEARED=1; echo "$1"; exit 0; }
-
-# 1a. TRANSIENT / upstream-unavailable (the #3716 fix — this MUST precede 1b). A read 5xx'd, or the
-#     listed artifact would not download as a valid zip after retry+backoff — a TRANSPORT failure,
-#     UNKNOWN, NOT an absent bundle. Report unverified-transient with the captured cause (probe
-#     convention: an unrunnable probe is "unknown", never "down"), so a re-dispatch after the outage
-#     clears it. Fail-closed: still declines to merge. Ordered first because on a transient failure
-#     RUN_ID/ART_ID/MANIFEST may be empty and would otherwise mis-trip 1b's "no bundle".
-if [ "$ART_FETCH_STATUS" = transient ]; then
-  refuse_ship "unverified (run-evidence artifact unreachable — transient upstream error, retried: ${ART_FETCH_ERR:-cause unavailable})"
-fi
-
-# 1b. GENUINE absence. Reads succeeded but there is no head-SHA run, no run-evidence artifact, or no
-#     manifest in it → the PRODUCER yielded nothing, so there is no proof this commit was run →
-#     refuse (ADR 0056: the artifact is the storage).
-if [ -z "$RUN_ID" ] || [ -z "$ART_ID" ] || [ ! -s "$MANIFEST" ]; then
-  refuse_ship "unverified (no run-evidence bundle)"   # refuse — see Running it
-fi
-
-# 2. schemaVersion the gate understands. Fail closed on an unrecognized MAJOR rather than
-#    misreading a newer shape (ADR 0056 §3 — schema skew is a visible refusal, not a trust hole).
-#    schemaVersion is a JSON NUMBER (Manifest.ts: Schema.Number, SCHEMA_VERSION = 1); compare it
-#    numerically inside jq (== 1) so a number/string skew can't fail-close a valid bundle. `SCHEMA`
-#    is only the human-readable echo for the refusal message.
-SCHEMA=$(jq -r '.schemaVersion // empty' "$MANIFEST")
-jq -e '.schemaVersion == 1' "$MANIFEST" >/dev/null \
-  || refuse_ship "unverified (unsupported bundle schemaVersion: ${SCHEMA:-none})"
-
-# 3. bundle.commit MUST equal the PR head SHA — evidence not for THIS commit is no evidence
-#    (ADR 0054 §1). A green run from an earlier push is stale → refuse.
-BUNDLE_COMMIT=$(jq -r '.commit // empty' "$MANIFEST")
-[ "$BUNDLE_COMMIT" = "$HEAD_SHA" ] || refuse_ship "unverified (stale run-evidence bundle: commit $BUNDLE_COMMIT != head $HEAD_SHA)"
-
-# 4. EVERY checks[] entry must be `pass`. Any `fail` (or an empty checks[]) → refuse.
-FAILED=$(jq -r '[.checks[]? | select(.status != "pass") | .name] | join(", ")' "$MANIFEST")
-NCHECKS=$(jq -r '.checks | length' "$MANIFEST")
-if [ "$NCHECKS" -eq 0 ] || [ -n "$FAILED" ]; then
-  refuse_ship "run-evidence checks failed (${FAILED:-no checks present})"   # refuse
-fi
+. "$SHIPIT_SCRIPTS/step3_5-assert-bundle.sh"
 ```
 
 The five refusal reasons are **distinct and load-bearing** — each names *why* the bundle
@@ -2025,54 +1418,7 @@ Discrimination is live-verified on this org: `github-advanced-security` and
 `copilot-pull-request-reviewer` return `Bot`, a human login returns `User` (#4408).
 
 ```bash
-ORG="${REPO%%/*}"; NAME="${REPO#*/}"
-# The ONE GraphQL read in ship-it (ADR 0158): REST exposes no isResolved. Read every thread's
-# resolution state, its first author's login AND __typename (the ADR-0224 class), and the text the
-# substantive-vs-nit judgment needs. Capture the body UNPIPED — `pipefail` is off on this platform,
-# so a piped read reports the last stage's status and a dead query would pose as an empty result.
-RAW="$(gh api graphql -f query='
-  query($o:String!,$n:String!,$pr:Int!) {
-    repository(owner:$o, name:$n) {
-      pullRequest(number:$pr) {
-        reviewThreads(first:100) {
-          nodes {
-            id
-            isResolved
-            isOutdated
-            path
-            line
-            comments(first:1) { nodes { author { login __typename } body } }
-          }
-        }
-      }
-    }
-  }' -F o="$ORG" -F n="$NAME" -F pr="$PR")" || RAW=""
-
-# Validate the payload SHAPE before interpreting it. An unreadable or non-conforming response — a
-# 403/503 body, a missing `data`, a present `errors`, a parse failure, a non-zero exit, an EMPTY
-# body — is UNKNOWN, and UNKNOWN is neither "no threads" nor "not a bot" (rule 3). `-s` is what
-# makes the empty case fail closed: without it an empty stdin yields no output and jq exits 0, so a
-# dead read reads back as a PR with zero threads and the gate silently passes.
-THREADS="$(printf '%s' "$RAW" | jq -e -s '
-    (.[0] // error("empty")) as $r
-    | if ($r | has("errors")) and ($r.errors | length) > 0 then error("errors")
-      elif ($r.data.repository.pullRequest.reviewThreads.nodes? | type) != "array" then error("shape")
-      else $r.data.repository.pullRequest.reviewThreads.nodes end' 2>/dev/null)"
-if [ $? -ne 0 ] || [ -z "$THREADS" ]; then
-  disarm_intent refuse || INTENT_UNCLEARED=1
-  echo "STOP: review-thread read UNREADABLE or non-conforming — author class is UNKNOWN for every thread, and UNKNOWN is human (ADR 0224 rule 3)."
-  echo "unresolved review threads unreadable (author class UNKNOWN ⇒ human) — refusing to enqueue"
-  exit 1
-fi
-
-# Derive the class per unresolved thread. `Bot` is the ONLY value that unlocks the resolve branch;
-# every other outcome — `User`, an unrecognised Actor type, a null author, an absent field — is
-# `human`, by construction.
-printf '%s' "$THREADS" | jq -c '.[] | select(.isResolved==false)
-  | {id, path, line,
-     author: (.comments.nodes[0].author.login // "<null>"),
-     class: (if (.comments.nodes[0].author.__typename? // "") == "Bot" then "bot" else "human" end),
-     body: ((.comments.nodes[0].body // "")[0:200])}'
+. "$SHIPIT_SCRIPTS/step3_6-threads-read.sh"
 ```
 
 ### Disposition — class first, then (bot only) substantive-vs-nit
@@ -2139,25 +1485,7 @@ boundary. Reuse the shared `findCommentLeaks` detector via the pipeline-cli verb
 matcher `redact-leaks` and `verdict post` already consume — one detector, not a re-invented one):
 
 ```bash
-# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
-PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
-# …and prove it resolved BEFORE the guard runs. Without this the `||` below fires on a 127 too,
-# and reports "a landed comment carries a machine-local path" for a CLI that never ran (#3314).
-[ -x "$PCLI" ] || {
-  disarm_intent refuse || INTENT_UNCLEARED=1
-  echo "ship-it: REFUSING to enqueue #$PR — leak-guard is UNRESOLVED at '$PCLI', so the leak scan has NO result (§CLI: could-not-run is UNKNOWN, never clean)." >&2
-  exit 1
-}
-# guard 4 — refuse the enqueue on ANY live leak in a landed comment (exit 2 = a leak; ADR 0092 fail-closed)
-"$PCLI" leak-guard scan-pr "$PR" || {
-  disarm_intent refuse || INTENT_UNCLEARED=1   # guard 6: a refusal parks nothing (ADR 0198)
-  echo "ship-it: REFUSING to enqueue #$PR — a landed comment carries a machine-local path (issue #3019)." >&2
-  echo "  Remediate, then re-run ship-it:" >&2
-  echo '  1. redact each flagged comment body — `$PCLI redact-leaks` (the merged #3021 tool) preserves evidential shape;' >&2
-  echo '  2. re-post the redacted body (a verdict via `$PCLI verdict post`, which now self-verifies the landed comment, #3019);' >&2
-  echo "  3. the underlying issue is a bypassed emit path — route the PR back to repair so the leaking comment is re-emitted through the mandated choke point." >&2
-  exit 1
-}
+. "$SHIPIT_SCRIPTS/step3_7-leak-scan.sh"
 ```
 
 Refuse **fail-closed**, exactly like the other pre-enqueue guards: a non-zero `scan-pr` (a live leak)
@@ -2221,19 +1549,7 @@ is the **`already queued to merge`** message the enqueue prints and/or the PR's 
 field, which gh 2.62.0 rejects, #1930). See ADR 0132 addendum §3.
 
 ```bash
-# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
-PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
-# The QUEUED signal is the success condition. `already queued to merge` from Step 4's --auto
-# and/or an `enqueued`/QUEUED mergeStateStatus confirm it — NOT a non-null auto_merge, which
-# under the queue stays null on a clean enqueue (ADR 0132 §3).
-gh api repos/$REPO/pulls/$PR --jq '{merged, auto_merge, mergeable_state}'
-gh pr view $PR --json mergeStateStatus --jq '{mergeStateStatus}'
-# Confirm queue membership through the SAME verb Step 5.5's reconcile polls — never a second,
-# hand-rolled timeline read here (#4193). Prints exactly one of merged/queued/pending/ejected.
-# An unresolved CLI prints nothing, and an empty QUEUE_STATE is not a state — refuse rather than
-# branch on it (§CLI: could-not-run is UNKNOWN, never a queue outcome; #3314).
-[ -x "$PCLI" ] || { echo "ship-it: merge-queue-classify is UNRESOLVED at '$PCLI' — queue membership is UNKNOWN, not confirmed." >&2; exit 1; }
-QUEUE_STATE=$("$PCLI" merge-queue-classify classify --pr "$PR" --repo "$REPO")
+. "$SHIPIT_SCRIPTS/step5-confirm-enqueued.sh"
 ```
 
 **Why the verb and not a `gh api …/timeline` one-liner here.** This confirmation used to
@@ -2604,97 +1920,7 @@ issue's inherited stamp (exactly the #1211/#1212/#1213 foundation shape, address
 behavior is exactly as it was before this dimension existed:
 
 ```bash
-RELEASE_QUEUE="n/a (not a dark ship)"   # default: the no-op state
-
-# Only a REAL dark ship has anything to queue: a linked issue + the cycle doc present (graceful
-# absence, ADR 0062), THEN a ground-truth signal that THIS PR shipped a flag-gated feature — never
-# the linked issue's (often epic-inherited) Containment stamp, the phantom-release bug #1257 closes.
-if [ -n "$ISSUE" ] && gh api "repos/$REPO/contents/product-development-cycle.md" --jq '.path' >/dev/null 2>&1; then
-  # (a) the DIFF introduces a flag: an ADDED declaration in the flag-IaC surface
-  #     (apps/web/worker/features/flagship/resources.ts — the canonical flag home, ADR 0081).
-  #     `+` patch lines are additions; an added `FlagshipFlag(` factory call or a `defaultVariation:`
-  #     flag-config line is a real default-off flag THIS PR introduced (write-code Step 4b mints it,
-  #     review-code Step 3b verifies it).
-  FLAG_IN_DIFF=$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" \
-    --jq '.[] | select(.filename | test("features/flagship/resources\\.ts$")) | .patch // ""' \
-    | grep -E '^\+' | grep -Eq 'FlagshipFlag\(|defaultVariation:' && echo yes || echo no)
-
-  # (b) the PR BODY declares the dark-ship flag key explicitly (a `Flag:`/`Flag key:` line naming a
-  #     kebab-case key) — covers gating behind a flag a PRIOR PR already declared (not in THIS diff).
-  #     The leading-prefix allowance absorbs only COSMETIC markdown — leading whitespace, an optional
-  #     ATX header (`#{1,6}`, so `## Flag:` / `### Flag key:` match, #1293), and `**` bold — while the
-  #     key grammar `[a-z0-9]+(-[a-z0-9]+)+` is untouched, so prose containing "flag" and a non-kebab
-  #     key still miss.
-  FLAG_IN_BODY=$(gh api repos/$REPO/pulls/$PR --jq '.body // ""' \
-    | grep -Eiq '^[[:space:]]*(#{1,6}[[:space:]]*)?\**[[:space:]]*flag([[:space:]]*key)?:[[:space:]]*\**[[:space:]]*[a-z0-9]+(-[a-z0-9]+)+' && echo yes || echo no)
-
-  # (c) the PR BODY names an ALREADY-DECLARED flag key in a GATING-DECLARATION line (the reused-flag
-  #     dark ship, #2086): the flag pre-dates this diff (so (a) misses) and write-code phrased it in
-  #     prose — "ships dark behind `phoenix-bildirim`" — rather than the canonical `Flag:` line (so (b)
-  #     misses). Two grounds, BOTH required (registry-grounding alone was necessary-but-not-sufficient
-  #     — it let a docs/example mention of a real key mis-fire, the #2897/#2843 phantom awaiting-release):
-  #     (1) the key is a REAL declared default-off flag — read the `key: <CONST>` list from the flag-IaC
-  #     surface (resources.ts) on `main`, resolved to literals via apps/web/src/flags/keys.ts; AND (2) it
-  #     appears in GATING context, not documentation/example prose (the FLAG_IN_PROSE scoping below).
-  # the const list round-trips through a file only because the two greps are separate streams;
-  # it lands under a per-run mktemp, never a shared /tmp leaf (§SP of gh-issue-intake-formats.md).
-  # `$$` alone is NOT the guarantee — an agent's Bash calls can share a shell, so two ship-it runs
-  # can carry the same PID-derived name, and a clobbered list reads back cleanly as another run's
-  # flag keys, silently mis-deciding the dark-ship branch (#3718). This is §SP's rule-4 carve-out:
-  # allocated and consumed inside THIS one Bash call, so the kernel's uniqueness is the whole
-  # guarantee and no deterministic path is needed (it never has to survive into a later call).
-  CONSTS_FILE="$(mktemp "${TMPDIR:-/tmp}/ship-it-flag-consts.XXXXXX")" || {
-    echo "ship-it: §SP could not allocate a per-run temp — refusing to read flag consts through a shared path (#3718)." >&2; exit 1; }
-  DECLARED_KEYS=$(
-    gh api "repos/$REPO/contents/apps/web/worker/features/flagship/resources.ts?ref=main" \
-        --jq '.content' 2>/dev/null | base64 -d 2>/dev/null \
-      | grep -oE 'key:[[:space:]]*[A-Z0-9_]+' | grep -oE '[A-Z0-9_]+$' | sort -u > "$CONSTS_FILE" || true
-    gh api "repos/$REPO/contents/apps/web/src/flags/keys.ts?ref=main" \
-        --jq '.content' 2>/dev/null | base64 -d 2>/dev/null \
-      | grep -oE '^export const [A-Z0-9_]+[[:space:]]*=[[:space:]]*"[a-z0-9]+(-[a-z0-9]+)+"' \
-      | sed -E 's/^export const ([A-Z0-9_]+)[[:space:]]*=[[:space:]]*"([a-z0-9-]+)"/\1 \2/' \
-      | while read -r CONST LIT; do grep -qx "$CONST" "$CONSTS_FILE" 2>/dev/null && echo "$LIT"; done
-    rm -f "$CONSTS_FILE"
-  )
-  FLAG_IN_PROSE=no
-  if [ -n "$DECLARED_KEYS" ]; then
-    BODY_PROSE=$(gh api repos/$REPO/pulls/$PR --jq '.body // ""')
-    # Narrow (c) to a GATING/DECLARATION context — the fix for the #2897/#2843 phantom-release
-    # false positive. A declared key mentioned only as documentation/example prose ("counts errors
-    # captured while phoenix-bildirim was on") reads identically to a real dark-ship declaration
-    # under a whole-body grep, so (c) mis-fired and queued a phantom status:awaiting-release. Two
-    # scopers restore the distinction WITHOUT dropping (c)'s genuine reused-flag coverage (#2086):
-    #   (i) drop fenced ```code``` blocks — an example dark-ship line shown INSIDE a fence is
-    #       documentation ABOUT dark-shipping (e.g. a PR editing a pipeline skill), not THIS PR's own
-    #       gating declaration.
-    #  (ii) keep only GATING-CONTEXT lines — a line carrying `behind` PLUS a dark-ship/gating word,
-    #       the exact prose write-code emits for a reused-flag dark ship it phrased instead of the
-    #       canonical `Flag:` line ("ships dark behind `phoenix-bildirim`", the #2086 case (a)/(b)
-    #       both miss). NOTE the inline `key` backticks are NOT stripped — the whole-token match below
-    #       treats a backtick as a boundary char, so `ships dark behind \`phoenix-bildirim\`` still
-    #       fires; a naive strip-inline-code fix would false-NEGATIVE this genuine case.
-    #  The false positive has no such line (its mention carries no gating intent) ⇒ (c) no-ops.
-    GATING_PROSE=$(printf '%s' "$BODY_PROSE" \
-      | awk '/^[[:space:]]*```/{f=!f; next} !f' \
-      | grep -Ei '(^|[^a-z])behind([^a-z]|$)' \
-      | grep -Ei '(^|[^a-z])(dark|ship|ships|shipped|shipping|gate|gated|gates|gating|guard|guarded|hide|hides|hidden|flag)([^a-z]|$)' || true)
-    while IFS= read -r K; do
-      [ -z "$K" ] && continue
-      # whole-token match: the declared key bounded by non-[a-z0-9-] on each side, so a longer key
-      # containing this one as a substring (e.g. phoenix-bildirim-x) is NOT matched by phoenix-bildirim
-      printf '%s' "$GATING_PROSE" | grep -Eq "(^|[^a-z0-9-])$K([^a-z0-9-]|\$)" && { FLAG_IN_PROSE=yes; break; }
-    done <<EOF
-$DECLARED_KEYS
-EOF
-  fi
-
-  if [ "$FLAG_IN_DIFF" = yes ] || [ "$FLAG_IN_BODY" = yes ] || [ "$FLAG_IN_PROSE" = yes ]; then
-    # deployed-dark (a real flag shipped) → add the linked issue to the release queue for a human flip (#602)
-    gh api -X POST "repos/$REPO/issues/$ISSUE/labels" -f "labels[]=status:awaiting-release"
-    RELEASE_QUEUE="queued (awaiting human flip)"
-  fi
-  # no signal ⇒ the PR shipped ungated (the inherited-stamp false positive #1257 closes) ⇒ no-op, no label
-fi
+. "$SHIPIT_SCRIPTS/step5b-release-queue.sh"
 ```
 
 The `status:awaiting-release` label is **orthogonal to the `status:*` pickability spine** — it
