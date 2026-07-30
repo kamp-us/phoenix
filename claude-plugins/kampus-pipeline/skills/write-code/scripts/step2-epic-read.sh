@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# shellcheck shell=bash disable=SC1007,SC1091,SC2016
+# shellcheck shell=bash disable=SC1007,SC1091,SC2016,SC2086
 # Step 2's three reads of the parent epic: its body (the `## Dependencies` topology), its real child
 # set with each child's state, and the handoff-note comment stream siblings left.
 #

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# shellcheck shell=bash disable=SC1007,SC1091,SC2016
+# shellcheck shell=bash disable=SC1007,SC1091,SC2016,SC2086
 # Step 5's AC enumeration — the checklist that must be satisfied in FULL before a closing keyword.
 #
 # Extracted VERBATIM from write-code/SKILL.md's Step 5 fenced block (epic #4435 phase 1, #4449).

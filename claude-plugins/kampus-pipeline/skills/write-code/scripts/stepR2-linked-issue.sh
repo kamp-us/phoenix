@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# shellcheck shell=bash disable=SC1007,SC1091,SC2016
+# shellcheck shell=bash disable=SC1007,SC1091,SC2016,SC2086
 # Step R2: resolve the PR's linked issue #N, then read its body and comment stream.
 #
 # Extracted VERBATIM from write-code/SKILL.md's Step R2 fenced block (epic #4435 phase 1, #4449).

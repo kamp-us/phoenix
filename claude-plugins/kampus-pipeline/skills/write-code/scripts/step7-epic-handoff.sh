@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# shellcheck shell=bash disable=SC1007,SC1091,SC2016
+# shellcheck shell=bash disable=SC1007,SC1091,SC2016,SC2086
 # Step 7: post the handoff note on the parent epic, gated on owning the CHILD (never the epic).
 #
 # Extracted VERBATIM from write-code/SKILL.md's Step 7 fenced block (epic #4435 phase 1, #4449).

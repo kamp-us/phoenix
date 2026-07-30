@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# shellcheck shell=bash disable=SC1007,SC1091,SC2016
+# shellcheck shell=bash disable=SC1007,SC1091,SC2016,SC2086
 # Step 3's orchestrated path: confirm the threaded delegated token owns #N, then hold §7 layer one.
 #
 # Extracted VERBATIM from write-code/SKILL.md's "Delegated claim" fenced block (epic #4435 phase 1,

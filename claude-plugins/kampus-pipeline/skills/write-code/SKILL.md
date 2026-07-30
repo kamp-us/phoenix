@@ -62,6 +62,18 @@ invocation site whose **stdout is consumed as an answer** carries an explicit `|
 site that omits it is one whose script `exit`s on its own failure path (the same behavior the inline
 block had). Never infer a negative from silence.
 
+Two things about those scripts, stated once here rather than repeated in twenty file headers:
+
+- **The moved shell is a byte-move, so its shellcheck findings moved with it.** Each script declares
+  the codes *its own* moved lines raise in its `# shellcheck … disable=` directive (mostly `SC2086`
+  on an unquoted `$REPO` in a `gh api` path) — declared per file, never blanket-suppressed, because
+  quoting them would be a rewrite and rewriting the glue is phase 2 ([#1929](https://github.com/kamp-us/phoenix/issues/1929)).
+- **Two committed proofs re-derive the claims instead of asserting them**, both reviewer-runnable:
+  [`scripts/verify-byte-move.sh`](scripts/verify-byte-move.sh) diffs each script against the fenced
+  block it replaced at the base commit, and
+  [`scripts/verify-fail-closed.sh`](scripts/verify-fail-closed.sh) captures every seam's exit code
+  **and** stdout byte count to prove no failure path can be read as an answer.
+
 ## The formats contract
 
 You **read three and write two** of the shared formats; read the contract before you

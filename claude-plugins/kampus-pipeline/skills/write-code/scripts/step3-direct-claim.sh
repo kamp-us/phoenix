@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# shellcheck shell=bash disable=SC1007,SC1091,SC2016
+# shellcheck shell=bash disable=SC1007,SC1091,SC2016,SC2086
 # Step 3's direct path: claim through the verb FIRST (layer two), and only then write layer one.
 #
 # Extracted VERBATIM from write-code/SKILL.md's "Direct path" fenced block (epic #4435 phase 1,

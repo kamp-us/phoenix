@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# shellcheck shell=bash disable=SC1007,SC1091,SC2016
+# shellcheck shell=bash disable=SC1007,SC1091,SC2016,SC2086
 # Step 6: post the four-section progress comment, composed under the §SP per-run scratch namespace.
 #
 # Extracted VERBATIM from write-code/SKILL.md's Step 6 fenced block (epic #4435 phase 1, #4449).

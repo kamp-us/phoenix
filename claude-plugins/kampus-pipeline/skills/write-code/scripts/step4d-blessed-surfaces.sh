@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# shellcheck shell=bash disable=SC1007,SC1091,SC2016
+# shellcheck shell=bash disable=SC1007,SC1091,SC2016,SC2034
 # Step 4d's reference-anchored sub-loop input: the blessed surface-ids from the committed pointer.
 #
 # Extracted VERBATIM from write-code/SKILL.md's "Reference-anchored generation" fenced block (epic

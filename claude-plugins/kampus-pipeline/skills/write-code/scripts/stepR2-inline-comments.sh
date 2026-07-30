@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# shellcheck shell=bash disable=SC1007,SC1091,SC2016
+# shellcheck shell=bash disable=SC1007,SC1091,SC2016,SC2154
 # Step R2's additive fold-in: the still-anchored, in-scope inline review comments.
 #
 # Extracted VERBATIM from write-code/SKILL.md's "Also fold in line-anchored inline review comments"

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# shellcheck shell=bash disable=SC1007,SC1091,SC2016
+# shellcheck shell=bash disable=SC1007,SC1091,SC2016,SC2154
 # Bounding: how many distinct gate-FAIL ROUNDS this PR has already accrued.
 #
 # Extracted VERBATIM from write-code/SKILL.md's "Bounding" fenced block (epic #4435 phase 1, #4449).

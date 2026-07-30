@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# shellcheck shell=bash disable=SC1007,SC1091,SC2016
+# shellcheck shell=bash disable=SC1007,SC1091,SC2016,SC2086
 # Step 5's five post-open seam checks (a)–(e): the cross-reference, the closing/partial-split seam,
 # the stray-close inverse guard, the dark-ship `Flag:` guard, and the `## Deviations` presence floor.
 #

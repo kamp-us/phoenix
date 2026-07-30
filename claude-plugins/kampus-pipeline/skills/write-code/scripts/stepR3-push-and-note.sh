@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# shellcheck shell=bash disable=SC1007,SC1091,SC2016
+# shellcheck shell=bash disable=SC1007,SC1091,SC2015,SC2016,SC2086
 # Step R3: re-assert the claim, force-with-lease the rebased head through `verified-push`, and post
 # the format-3 repair note.
 #

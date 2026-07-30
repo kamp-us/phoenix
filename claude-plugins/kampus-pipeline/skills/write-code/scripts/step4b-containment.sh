@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# shellcheck shell=bash disable=SC1007,SC1091,SC2016
+# shellcheck shell=bash disable=SC1007,SC1091,SC2016,SC2034,SC2086
 # Step 4b's containment-marker read — the tolerant read of the child's `**Containment:**` line.
 #
 # Extracted VERBATIM from write-code/SKILL.md's Step 4b fenced block (epic #4435 phase 1, #4449).

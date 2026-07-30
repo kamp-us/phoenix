@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# shellcheck shell=bash disable=SC1007,SC1091,SC2016
+# shellcheck shell=bash disable=SC1007,SC1091,SC2015,SC2016
 # Step 5's pre-PR mutations: re-derive the branch live from the worktree, push it through the
 # sanctioned `verified-push`, and confirm #N is this run's claim before opening a PR against it.
 #
