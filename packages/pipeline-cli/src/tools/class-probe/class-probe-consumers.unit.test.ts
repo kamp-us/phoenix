@@ -20,11 +20,18 @@ const COMMENT_ONLY = /^\s*#/;
 /** The consumer under test: the namespace-set read whose empty stdout is indistinguishable from a refusal. */
 const NAMESPACE_READ = "class-probe classify --namespaces";
 
-const markdownFiles = (dir: string): ReadonlyArray<string> =>
+/**
+ * The corpus is markdown AND the shell the skills extracted out of it into `scripts/*.sh` (#4448).
+ * A `.sh` file is one implicit runnable fence with no delimiters, so it is scanned whole; without
+ * that reach an extraction silently takes a call site off this scan and the suite stays green while
+ * covering one consumer fewer (#4470).
+ */
+const corpusFiles = (dir: string): ReadonlyArray<string> =>
 	readdirSync(dir, {withFileTypes: true}).flatMap((entry) => {
 		const full = join(dir, entry.name);
-		if (entry.isDirectory()) return markdownFiles(full);
-		return entry.isFile() && entry.name.endsWith(".md") ? [full] : [];
+		if (entry.isDirectory()) return corpusFiles(full);
+		if (!entry.isFile()) return [];
+		return entry.name.endsWith(".md") || entry.name.endsWith(".sh") ? [full] : [];
 	});
 
 interface Site {
@@ -38,7 +45,7 @@ interface Site {
 const namespaceReadSites = (file: string, content: string): ReadonlyArray<Site> => {
 	const sites: Site[] = [];
 	const lines = content.split("\n");
-	let openLang: string | null = null;
+	let openLang: string | null = file.endsWith(".sh") ? "bash" : null;
 	for (let i = 0; i < lines.length; i++) {
 		const raw = unquote(lines[i] ?? "");
 		const fence = raw.match(FENCE);
@@ -60,7 +67,7 @@ const namespaceReadSites = (file: string, content: string): ReadonlyArray<Site> 
 	return sites;
 };
 
-const SITES = markdownFiles(CORPUS_ROOT).flatMap((file) =>
+const SITES = corpusFiles(CORPUS_ROOT).flatMap((file) =>
 	namespaceReadSites(relative(REPO_ROOT, file), readFileSync(file, "utf8")),
 );
 
@@ -68,7 +75,7 @@ describe("class-probe namespace-set consumers observe the probe's exit status (#
 	// §ZS / ADR 0092: a scan that found nothing is a broken scan, not a pass — without this the whole
 	// suite goes green the moment the fence parser or the corpus path regresses.
 	it("scans a non-empty corpus", () => {
-		expect(markdownFiles(CORPUS_ROOT).length).toBeGreaterThan(0);
+		expect(corpusFiles(CORPUS_ROOT).length).toBeGreaterThan(0);
 		expect(SITES.length).toBeGreaterThanOrEqual(3);
 	});
 

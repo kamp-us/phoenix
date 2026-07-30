@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# shellcheck shell=bash disable=SC1091,SC2034,SC2154
+# shellcheck shell=bash disable=SC1007,SC1091,SC2034,SC2086
 # The bounded CI-settle poll — never a silent park (#1928).
 #
 # Extracted VERBATIM from ship-it/SKILL.md's Step 3 fenced block (epic #4435 phase 1, #4448).

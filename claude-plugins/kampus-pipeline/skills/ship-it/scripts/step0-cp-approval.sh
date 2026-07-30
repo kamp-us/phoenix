@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# shellcheck shell=bash disable=SC1091,SC2034,SC2154
+# shellcheck shell=bash disable=SC1007,SC1091,SC2046
 # The deterministic §CP discharge — control-plane team cardinality plus the two current-head signals (ADR 0175).
 #
 # Extracted VERBATIM from ship-it/SKILL.md's Step 0's §CP approval gate fenced block (epic #4435 phase 1, #4448).

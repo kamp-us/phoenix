@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# shellcheck shell=bash disable=SC1091,SC2034,SC2154
+# shellcheck shell=bash disable=SC1007,SC1091,SC2086
 # Resolve the code namespace's in-force marker verdict and fold the newest decisive native review into it.
 #
 # Extracted VERBATIM from ship-it/SKILL.md's Step 2 fenced block (epic #4435 phase 1, #4448).

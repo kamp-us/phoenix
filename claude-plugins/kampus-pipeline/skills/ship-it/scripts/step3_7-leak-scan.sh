@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# shellcheck shell=bash disable=SC1091,SC2034,SC2154
+# shellcheck shell=bash disable=SC1007,SC1091,SC2016,SC2034
 # Landed-comment leak scan — refuse to enqueue a PR whose comments carry a machine-local path (guard 4).
 #
 # Extracted VERBATIM from ship-it/SKILL.md's Step 3.7 fenced block (epic #4435 phase 1, #4448).

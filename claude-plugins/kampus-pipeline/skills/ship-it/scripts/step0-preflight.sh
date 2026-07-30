@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# shellcheck shell=bash disable=SC1091,SC2034,SC2154
+# shellcheck shell=bash disable=SC1007,SC1091,SC2016
 # Step 0's preflight: the §RO-iso isolation assert, guard 6 Site 1, and the changed-file read.
 #
 # Extracted VERBATIM from ship-it/SKILL.md's Step 0 fenced block (epic #4435 phase 1, #4448).
@@ -11,7 +11,14 @@
 # blocks still see them.
 . "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../shared/lib" && pwd)/common.sh"
 
-PR=<pr number>
+# The one seam this move needed: the block's `PR=<pr number>` placeholder was filled by whoever ran
+# the step, so the sourcing site passes it instead — `. "$SHIPIT_SCRIPTS/step0-preflight.sh" <pr number>`.
+# Fail closed on an absent one: an empty $PR addresses `repos/$REPO/pulls/` and reads as a clean miss.
+PR="${1:-}"
+if [ -z "$PR" ]; then
+	printf 'ship-it Step 0: no PR number — source this as `. "$SHIPIT_SCRIPTS/step0-preflight.sh" <pr number>`.\n' >&2
+	return 1
+fi
 # Isolation preflight FIRST. ship-it is §RO — it ships entirely over `gh api` / `gh pr merge`
 # (server-side) and materializes NO head via local git — so it should never touch the primary
 # checkout's git state. This is the defense-in-depth belt: if this ship-it spawn expected worktree

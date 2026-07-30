@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# shellcheck shell=bash disable=SC1091,SC2034,SC2154
+# shellcheck shell=bash disable=SC1007,SC1091,SC2034
 # Define `disarm_intent`, the guard-6 merge-intent lifecycle primitive wired at four mandated sites (ADR 0198).
 #
 # Extracted VERBATIM from ship-it/SKILL.md's The no-parked-merge-intent invariant fenced block (epic #4435 phase 1, #4448).

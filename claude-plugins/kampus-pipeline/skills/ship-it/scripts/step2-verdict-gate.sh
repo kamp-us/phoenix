@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# shellcheck shell=bash disable=SC1091,SC2034,SC2154
+# shellcheck shell=bash disable=SC1007,SC1091,SC2034,SC2086
 # Derive this diff's required gate namespaces and run `verdict gate` — the enqueue precondition (guard 1).
 #
 # Extracted VERBATIM from ship-it/SKILL.md's Step 2 gate fenced block (epic #4435 phase 1, #4448).

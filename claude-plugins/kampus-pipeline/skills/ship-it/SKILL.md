@@ -253,7 +253,7 @@ it. The fix round-trip is `write-code`'s (code) / the doc author's job, not your
 Before anything else, read the PR's changed files and split them by class. This is one read:
 
 ```bash
-. "$SHIPIT_SCRIPTS/step0-preflight.sh"
+. "$SHIPIT_SCRIPTS/step0-preflight.sh" <pr number>   # $PR for the whole run — every later step reads it back
 ```
 
 Classify each path. The classification is **derived by the shared verb `pipeline-cli cp-classify`**,
