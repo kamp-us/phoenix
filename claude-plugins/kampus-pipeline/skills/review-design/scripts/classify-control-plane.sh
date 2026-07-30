@@ -3,15 +3,29 @@
 # PR is held as §CP; prints NOTHING when the canonical verb answered a positive `not-control-plane`.
 # Extracted from review-design/SKILL.md (#4453, epic #4435 phase 1). Extraction contract +
 # shell-option rationale: ../SKILL.md § The extracted scripts.
+#
+# BECAUSE the caller reads EMPTY STDOUT as the one positive `not-control-plane` answer, every path
+# that returns before the classifier runs MUST print its own `BLOCKING (…)` line first. A guard that
+# could not run is UNKNOWN, and UNKNOWN is not "no" (§ZS / ADR 0092; #4231, #4010, #4219) — a bare
+# `exit` here would let a usage error or a failed `kp_repo` read pose as "proven ordinary".
 set -uo pipefail
 # shellcheck source=../../shared/lib/common.sh disable=SC1007,SC1091
 . "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../shared/lib" && pwd)/common.sh"
 # shellcheck source=./contract-helpers.sh disable=SC1007,SC1091
 . "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/contract-helpers.sh"
 
-[ "$#" -ge 1 ] || { echo "usage: classify-control-plane.sh <pr>" >&2; exit 2; }
+[ "$#" -ge 1 ] || {
+	echo "BLOCKING (classifier could not run — no <pr> argument ⇒ §CP, fail-closed)"
+	echo "usage: classify-control-plane.sh <pr>" >&2
+	exit 2
+}
 PR="$1"
-REPO="$(kp_repo)" || exit 1
+# Top-level assignment, never `local` — a `local REPO="$(kp_repo)"` takes `local`'s own status and
+# masks the substitution's, so the guard below would never fire (the kp_repo idiom's gotcha).
+REPO="$(kp_repo)" || {
+	echo "BLOCKING (classifier could not run — target repo unresolved ⇒ §CP, fail-closed)"
+	exit 1
+}
 # §CLI — the shim resolved by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314). An UNRESOLVED
 # shim (kp_pcli exit 127) leaves PCLI empty, so the classification below captures an EMPTY state word
 # and the catch-all holds the PR as §CP — the same fail-closed outcome the block documents for "a

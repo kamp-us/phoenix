@@ -6,12 +6,20 @@
 # verdict read-back guard (`verdict_readback_guard`). The SKILL.md blocks these scripts replace
 # instructed the agent to copy those functions verbatim into its shell before calling them
 # (§CPREAD: "copy it and `cp_head_sha` verbatim"), so a script boundary needs the same copy on
-# disk. Nothing here may be edited independently: if the contract changes, this file follows it
-# byte-for-byte.
+# disk. Nothing here may be edited independently: if the contract changes, this file follows it.
 #
-# The copy is deliberately skill-local rather than in `../../shared/lib/common.sh`: several
-# extraction children want these same functions, so whether they belong in the shared lib is a
-# decision to take once, deliberately, rather than six times in parallel (#4453; epic #4435).
+# WHAT THAT PROMISE IS AND IS NOT — claim only what is checkable:
+#   * §CPREAD's `cp_changed_files` + `cp_head_sha` ARE byte-identical to the contract.
+#   * `verdict_readback_guard` is SEMANTICALLY identical with two cosmetic deltas — a comment reading
+#     "this file" where the contract reads "this doc" (correct now that it is a file), and one `echo`
+#     + `return 1` split over two lines. No behavioural difference, but the file as a whole is NOT
+#     byte-for-byte, so a naive byte-diff guard would red on day one.
+#   * NOTHING MECHANICAL DETECTS DRIFT from the source today: `../../validate-gate-path-drift.sh`'s
+#     value-lock scans only its three COPY_FILES (the formats contract, ship-it, reviewer.md), and
+#     this file is in none of them. Keeping it in step is a HUMAN obligation until it is registered.
+# Registering it — and deciding whether these helpers belong in `../../shared/lib/common.sh` once for
+# all six extraction children instead of six skill-local copies — is #4488. The copy stayed
+# skill-local here because #4473 owned `common.sh` concurrently (#4453; epic #4435).
 #
 # Sourced, never executed: defines functions and sets no shell options, so the sourcing script
 # keeps its own — the same contract `common.sh` holds.

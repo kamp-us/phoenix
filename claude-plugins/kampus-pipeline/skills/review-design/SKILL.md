@@ -224,12 +224,34 @@ Two properties are load-bearing when you read or edit them:
   state-word assertion instead of an exit-status test (§CP), a `grep` whose empty result is an
   answer. `errexit` would abort those paths mid-classification and turn a fail-closed branch into no
   branch at all.
+- **A script whose stdout answers a safety question makes every failure path speak (the error-channel
+  rule).** Moving glue behind a script boundary invents a channel the inline block never had: a
+  non-zero exit with **0 bytes on stdout**. Where a caller reads *empty* stdout as a *positive* answer
+  — `not-control-plane` in Step 0's §CP classification, "no rendered surface" in its off-ramp
+  predicate — a silent guard exit is byte-identical to "proven safe", so a classifier that *could not
+  run* would resolve to the permissive branch. So each such script prints its **own** fail-closed line
+  on stdout (`BLOCKING (…)` / `CANNOT-CLASSIFY (…)`) before every early `exit`, **and** exits non-zero,
+  and the prose reads the status before the stdout. An absent or empty result is UNKNOWN, and UNKNOWN
+  is not "no" (§ZS / ADR
+  [0092](https://github.com/kamp-us/phoenix/blob/main/.decisions/0092-gates-fail-closed-on-zero-scope.md);
+  #4231, #4010, #4219). **The five sibling extractions inherit this rule** — check each moved block for
+  an empty-means-yes caller before you move it.
 - **[`scripts/contract-helpers.sh`](scripts/contract-helpers.sh) is a relocated copy, not a source.**
   The blocks that call §CPREAD's `cp_changed_files` / `cp_head_sha` and the
   `verdict_readback_guard` told you to copy those functions verbatim out of
   [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) before calling them; the script
   boundary needs the same copy on disk. That file is still the single source — if it changes, the
-  copy follows.
+  copy follows. **Nothing mechanical detects that drift today:**
+  [`../validate-gate-path-drift.sh`](../validate-gate-path-drift.sh)'s value-lock scans only its three `COPY_FILES`
+  (the formats contract, `ship-it`, `reviewer.md`), and this copy is in none of them — so keeping it in
+  step is a human obligation until it is registered. The copy is also **not byte-identical**: §CPREAD's
+  two functions are, but `verdict_readback_guard` carries two cosmetic deltas (a comment that says
+  "this file" where the contract says "this doc", now that it *is* a file; and one `echo` + `return 1`
+  split over two lines), so a naive byte-diff guard would red on day one. Registering the copy in the
+  drift validator — and deciding whether these helpers belong in
+  [`../shared/lib/common.sh`](../shared/lib/common.sh) once for all six extraction children instead of
+  six skill-local copies — is #4488, and belongs in the next child of #4453 rather than replicated
+  five more times.
 
 ## Read-only on git working state
 
@@ -282,13 +304,22 @@ PR=<pr number>
 UI_TOUCHED="$("${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-design/scripts/classify-ui-surface.sh" "$PR")"
 ```
 
-- **Empty** (the diff changes no `apps/web/src/**` surface — a pure backend / infra / docs / skill
-  PR) → **mis-route off-ramp.** Post a **plain note** (no `review-design:` marker — there is no
+Read **three** outcomes off the script, never two — and read its **exit status before its stdout**:
+
+- **Non-zero exit** (a usage error, an unresolvable target repo, an unsourceable lib) → **UNKNOWN,
+  which is NOT an off-ramp.** The script prints a `CANNOT-CLASSIFY (…)` sentinel on stdout on every
+  such path, so `$UI_TOUCHED` is non-empty and the off-ramp branch below is unreachable — but assert
+  on the status too, and on non-zero **fail closed to has-ui: proceed and verdict.** A classifier that
+  could not run must never be read as "no rendered surface"; that is the silent off-ramp the paragraph
+  above says must never happen, and it is the §ZS / ADR 0092 rule the repo has ruled on repeatedly
+  (#4231, #4010, #4219): an absent or empty result is UNKNOWN, and UNKNOWN is not "no."
+- **Empty** *and* **exit 0** (the diff changes no `apps/web/src/**` surface — a pure backend / infra /
+  docs / skill PR) → **mis-route off-ramp.** Post a **plain note** (no `review-design:` marker — there is no
   rendered UI to verdict) saying `not a UI-affecting PR — no rendered surface to gate; route to
   review-code / review-doc / review-skill by class` and **stop**. Never emit a `review-design` marker
   on a non-UI PR, and never emit a foreign gate's marker — routing to the right gate is the sibling's
   Step 0, not yours to stamp.
-- **Non-empty** → this is a UI PR; proceed. (A **mixed** PR — UI *and* code/docs — is gated by the
+- **Non-empty** *and* **exit 0** → this is a UI PR; proceed. (A **mixed** PR — UI *and* code/docs — is gated by the
   matching gate per class: you verdict the design surface and emit `review-design`; `review-code` /
   `review-doc` verdict their classes. `ship-it` requires the latest PASS in **each** namespace
   present before it merges.)
@@ -304,8 +335,12 @@ this verb removes (#4161, formats §CP):
 ```
 
 Any `BLOCKING (…)` line the script prints is the §CP hold and its reason; **no output** is the one
-positive `not-control-plane` answer. The script asserts on the verb's **state word**, never on an exit
-status, so a usage error or an unresolved CLI reads as UNKNOWN and holds — never as ordinary.
+positive `not-control-plane` answer. That contract puts the whole weight of the hold on the script
+never returning silently, so **every one of its own guard paths prints its own `BLOCKING (…)` line
+before exiting** — a missing `<pr>` argument and an unresolvable target repo both hold the PR as §CP
+rather than returning the 0 bytes that would read as "proven ordinary" (§ZS / ADR 0092; #4231, #4010,
+#4219). Inside the classifier the script asserts on the verb's **state word**, never on an exit status,
+so a bad flag or an unresolved CLI leaves an empty `CP_STATE` that the catch-all holds — never ordinary.
 
 - **`not-control-plane`** (an ordinary product-UI PR — the common case for this gate) →
   **non-blocking**: your PASS marker binds `ship-it`.
