@@ -1053,10 +1053,7 @@ a `**Containment:**` line, with a leading bold-marker, anywhere in the body; a *
 as `none`**:
 
 ```bash
-# the child's containment marker; a missing line reads as `none` (formats §2 tolerant-read rule)
-CONTAINMENT=$(gh api repos/$REPO/issues/<N> --jq '.body' \
-  | grep -ioE '\**\s*Containment:\**\s*(flag|exempt|none)' | head -n1 \
-  | grep -ioE '(flag|exempt|none)' || echo none)
+. "$WRITECODE_SCRIPTS/step4b-containment.sh" <N> || exit 1   # leaves $CONTAINMENT in this shell
 ```
 
 **Graceful absence — the dark-ship behavior applies only when there's a cycle.** It fires **only**
@@ -1069,9 +1066,10 @@ step is a **no-op**: you implement and ship the change exactly as Steps 4/5 alre
 graceful-absence contract `plan-epic` (stamp) and `review-code` (verify) honor:
 
 ```bash
-# the canonical cycle-doc probe (formats §1); absent ⇒ no cycle ⇒ ship normally, no flag
-gh api "repos/$REPO/contents/product-development-cycle.md" --jq '.path' >/dev/null 2>&1 \
-  && CYCLE_DOC=present || CYCLE_DOC=absent
+# the canonical cycle-doc probe (formats §1) — the SHARED script, not a skill-local copy; it leaves
+# $CYCLE_DOC in this shell. Absent ⇒ no cycle ⇒ ship normally, no flag.
+KP_SHARED="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/skills/shared/scripts"
+. "$KP_SHARED/cycle-doc-probe.sh"
 # ship dark ONLY when:  [ "$CONTAINMENT" = flag ] && [ "$CYCLE_DOC" = present ]
 ```
 
@@ -1263,11 +1261,7 @@ never blessed. The pointer is the committed source of truth (`packages/design-ca
 its `surfaces` map keyed by the same `<route>[:state]` capture surface-id):
 
 ```bash
-# blessed surface-ids: the keys of the committed pointer's `surfaces` map (ADR 0183).
-# Intersect with the surfaces THIS diff renders (Step 4d capture) — only that ∩ is reference-anchored.
-# Empty ∩ ⇒ no blessed surface changed ⇒ this whole sub-loop is a no-op; the plain pillars loop stands.
-POINTER=packages/design-capture/golden-pointer.json
-BLESSED_SURFACES="$(jq -r '.surfaces | keys[]' "$POINTER" 2>/dev/null || true)"
+. "$WRITECODE_SCRIPTS/step4d-blessed-surfaces.sh"   # leaves $POINTER and $BLESSED_SURFACES in this shell
 ```
 
 **The reference-anchored loop — consume the seam, never re-implement the diff.** For each blessed
@@ -1388,10 +1382,7 @@ one by one against what this diff actually delivers** — the same checklist `re
 grade against:
 
 ```bash
-# enumerate #N's acceptance criteria — the checklist you must satisfy in FULL to emit a closing keyword
-gh api repos/$REPO/issues/<N> --jq '.body' \
-  | awk '/^###[[:space:]]*Acceptance criteria/{f=1;next} /^###/{f=0} f' \
-  | grep -E '^\s*- \[' || echo "(no checkbox ACs — read the ### Acceptance criteria prose)"
+. "$WRITECODE_SCRIPTS/step5-acceptance-criteria.sh" <N> || exit 1   # stdout IS the checklist — an empty one is UNKNOWN, never "no ACs"
 ```
 
 - **All ACs met by this diff → `Fixes #N`** (the default full close, below).
