@@ -1478,27 +1478,28 @@ amount to is the canonical `CONTROL_PLANE_RE=` line in the next subsection.
 **nested** `.claude-plugin/` dir — the branch is root-anchored, and `kampus-pipeline`'s own
 `plugin.json` is a genuine sibling gap to file rather than patch by hand (ADR
 [0212](https://github.com/kamp-us/phoenix/blob/main/.decisions/0212-marketplace-manifest-is-control-plane.md)
-Consequences); and the crew engine defs under `claude-plugins/pipeline-crew/agents/**`, which class
-**has-skills** yet auto-ship on a `review-skill` PASS, because merge authority lives in `ship-it` and `shipper.md`
+Consequences); the `heal-ci`, `what-shipped`, `doctor`, and `wayfinder` skills, which gate no merge
+and hold no release authority (ADR
+[0174](https://github.com/kamp-us/phoenix/blob/main/.decisions/0174-bare-sh-guards-control-plane-gate.md))
+— that exclusion scopes to skill **dirs**, so `doctor/doctor.sh` (and any future `.sh` under those
+four) is still §CP by the `.sh` clause, which scopes to `.sh` **files** at any depth;
+and the crew engine defs under `claude-plugins/pipeline-crew/agents/**`, which class **has-skills**
+yet auto-ship on a `review-skill` PASS, because merge authority lives in `ship-it` and `shipper.md`
 — both §CP, both re-verifying the §CP approval independently — so the worst a weakened crew def can
 do is fail to bank (live founder ruling, re-affirmed 2026-07-24 on
 [#3765](https://github.com/kamp-us/phoenix/issues/3765)). Do **not** widen `CONTROL_PLANE_RE` by
-hand to cover either of them. ADR 0174's four operational skill dirs — `heal-ci`, `what-shipped`,
-`doctor`, `wayfinder` — are **no longer** out: the whole `kampus-pipeline` skills tree is §CP, the
-**directory** being the unit of coverage rather than the file type, so no naming convention has to
-hold and the boundary cannot rot as skills are added (ADR 0227).
+hand to cover any of them.
 
 A PR touching **any** path in this set is **control plane**: `ship-it` never auto-merges it off a
 gate verdict alone — it merges only once a `@kamp-us/control-plane` member approves at head, and
 `ship-it` then enqueues it. Every widening of the boundary, and the reason for each, is an ADR —
-0053, 0065, 0073, 0100, 0103, 0135, 0150, 0174, 0193, 0212, 0218, 0227 — plus the founder rulings on
-[#3402](https://github.com/kamp-us/phoenix/issues/3402) and
-[#4446](https://github.com/kamp-us/phoenix/issues/4446). Read them in `.decisions/`, where ADR
+0053, 0065, 0073, 0100, 0103, 0135, 0150, 0174, 0193, 0212, 0218 — plus the founder ruling on
+[#3402](https://github.com/kamp-us/phoenix/issues/3402). Read them in `.decisions/`, where ADR
 discovery is the CLAUDE.md contract; they are not restated here.
 Everything else — `apps/**`,
 **non**-guard `packages/**`, `.decisions/**` (**except a guard-touching ADR** — see the content
 clause below), `.patterns/**`, every prose doc `*.md` (the
-§DOC class), and every **non**-`kampus-pipeline` plugin's `skills/**` — is **non-blocking** and
+§DOC class), and every **non**-gate-critical `skills/**` — is **non-blocking** and
 auto-merges through its matching gate on a PASS. (This set governs *who merges*, not *which gate verifies* — a
 code-root `*.md` is non-blocking here yet rides `review-code`, not `review-doc`, per §DOC.)
 
@@ -1525,7 +1526,7 @@ against MAIN's boundary, not its own edit) and must not move to an in-tree impor
 # the single probe ship-it Step 0, review-code Step 2, review-doc Step 0, and review-skill
 # Step 0 all use — kept byte-in-sync with the pipeline-cli const (issue #2761); the live gates
 # re-resolve THIS line from origin/main (#981), so it stays here as the one un-importable copy:
-CONTROL_PLANE_RE='^(\.claude|\.github)/|^\.claude-plugin/|^claude-plugins/kampus-pipeline/skills/|^claude-plugins/kampus-pipeline/agents/|^claude-plugins/kampus-pipeline/hooks(/|\.json$)|^packages/ci-required/|^packages/pipeline-cli/src/[^/]+$|^packages/pipeline-cli/src/tools/(ci-required|codeowners-cp|control-plane-paths|cp-cardinality|cp-classify|review-head|trivial-diff|verdict)/|^packages/pipeline-cli/src/tools/tracker/gh-io\.ts$|^biome\.jsonc$|^biome-plugins/|^([^/]+/)*(lefthook|\.lefthook)[^/]+$'
+CONTROL_PLANE_RE='^(\.claude|\.github)/|^\.claude-plugin/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-design|review-plan|triage|write-code|plan-epic|release|review-trivial)/|^claude-plugins/kampus-pipeline/skills/([^/]+/)*[^/]+\.sh$|^claude-plugins/kampus-pipeline/agents/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\.md$|^claude-plugins/kampus-pipeline/hooks(/|\.json$)|^packages/ci-required/|^packages/pipeline-cli/src/[^/]+$|^packages/pipeline-cli/src/tools/(ci-required|codeowners-cp|control-plane-paths|cp-cardinality|cp-classify|review-head|trivial-diff|verdict)/|^packages/pipeline-cli/src/tools/tracker/gh-io\.ts$|^biome\.jsonc$|^biome-plugins/|^([^/]+/)*(lefthook|\.lefthook)[^/]+$'
 # The list this regex is matched against is a fallible READ, so it comes from §CPREAD's
 # `cp_changed_files` (defined below) — never a bare `gh api … | grep` pipe. With pipefail off that
 # pipe reports grep's status and discards gh's, so a failed read matches nothing and reads as "no §CP
@@ -1599,44 +1600,14 @@ it from THIS file on `origin/main`, which is the anti-self-authorization propert
 GUARD_ADR_RE='guard|invariant|fail-closed|fail-open|fail closed|fail open|containment|control-plane|control plane|§cp|self-weakening|blocking set|adversarial review|must never|hard-gate|hard gate|enforcement|\bgat(e|es|ing|ed)\b|relax|loosen|weaken|soften|widen|broaden|waive|bypass|exempt|carve[ -]?out|opt[ -]?out'
 ```
 
+The probe itself lives in [`shared/scripts/cp-guard-adr.sh`](shared/scripts/cp-guard-adr.sh) (§SHARED)
+— it resolves `GUARD_ADR_RE` live from `origin/main`, non-triviality-asserts the strip (#4401), and
+prints one `BLOCKING (…)` line per guard-touching or unreadable ADR:
+
 ```bash
-# §CP content clause (ADR 0164): a touched .decisions/** ADR whose CONTENT matches GUARD_ADR_RE is
-# §CP. Resolve GUARD_ADR_RE from origin/main at run time (like CONTROL_PLANE_RE, #981); read each
-# ADR's body at the PR head. FAIL CLOSED: an unreadable boundary ⇒ match-everything; an unreadable
-# ADR (delete/404) ⇒ §CP — never auto-ship an ADR that could not be read and proven guard-free.
-# This recipe carries NO seed copy of GUARD_ADR_RE: it used to, byte-identical to the canonical
-# above, and since every consumer resolves first-occurrence-wins that second line was an unguarded
-# shadow a corrective edit could land on and appear to work (#4401). The live read below is the
-# only resolution, and it already fails closed when it can't be made.
-GA_LIVE="$(gh api "repos/$REPO/contents/claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md?ref=main" -H 'Accept: application/vnd.github.raw' 2>/dev/null | grep '^GUARD_ADR_RE=' | head -n1 || true)"
-# accept_re (§CLASS) is the NON-TRIVIALITY ASSERT: a stripped value that is empty, or that still
-# carries the assignment prefix, is refused here rather than gated on (#4401). Single-sourced in
-# §CLASS and copied down here — as ship-it's Step 0 copies it — because a fenced recipe must run
-# standalone when pasted; a cross-block call resolves to `command not found`, an empty pattern,
-# and every touched ADR classified §CP (#4413).
-accept_re() {   # $1=name, $2=resolved value, $3=fail-closed default
-  case "$2" in
-    *"$1='"*) : ;;
-    *) if [ "${#2}" -ge 4 ]; then printf '%s' "$2"; return 0; fi ;;
-  esac
-  printf 'TRIVIAL-GATE-BOUNDARY: %s did not resolve to a usable pattern — failing closed.\n' "$1" >&2
-  printf '%s' "$3"
-}
-if [ -n "$GA_LIVE" ]; then GUARD_ADR_RE="$(accept_re GUARD_ADR_RE "$(printf '%s' "$GA_LIVE" | sed "s/^GUARD_ADR_RE='//; s/'$//")" '.')"; else GUARD_ADR_RE='.'; fi   # FAIL CLOSED: '.' ⇒ every ADR word matches ⇒ every touched ADR is §CP
-# The ref and the file list are fallible reads too — both come from §CPREAD (below), so an
-# unreadable head SHA leaves HEAD_SHA EMPTY (payload discarded) rather than holding gh's error body.
-cp_head_sha "$REPO" "$PR"; HEAD_SHA="$CP_HEAD_SHA"
-[ -n "$HEAD_SHA" ] || echo "BLOCKING (head SHA unreadable — ADR content unprobeable ⇒ §CP, fail-closed)"
-printf '%s\n' "$CP_FILES" | grep -E '^\.decisions/.*\.md$' | while IFS= read -r adr; do
-  [ -z "$adr" ] && continue
-  [ -n "$HEAD_SHA" ] || break
-  # Capture and CHECK, never `|| true`: gh writes its error document to STDOUT, so `|| true` would
-  # leave that JSON in $body, skip the fail-closed branch below, and grep an ERROR DOC for guard
-  # vocabulary (§CPREAD property 2).
-  body="$(gh api "repos/$REPO/contents/$adr?ref=$HEAD_SHA" -H 'Accept: application/vnd.github.raw' 2>/dev/null)" || body=""
-  if [ -z "$body" ]; then echo "BLOCKING ($adr — unreadable at head ⇒ §CP, fail-closed)"
-  elif printf '%s' "$body" | grep -Eiq "$GUARD_ADR_RE"; then echo "BLOCKING ($adr — guard-touching ADR ⇒ §CP, ADR 0164)"; fi
-done
+KP_SHARED="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/skills/shared/scripts"
+. "$KP_SHARED/cp-read.sh"; cp_changed_files "$REPO" "$PR" || CP_STATE=unknown   # §CPREAD owns the input
+. "$KP_SHARED/cp-guard-adr.sh"                                                 # ADR-0164 content clause
 ```
 
 A guard-touching ADR classifies **§CP for merge-authority** exactly like a path-§CP file:
@@ -1685,54 +1656,14 @@ This is the **one** hardened read, and it binds **every** §CP site — *includi
 block is exactly how byte-identical defective copies spread from it, so the scope here is *every*
 site in this file and in every skill that cites it — not merely the ones below.
 
-```bash
-# §CPREAD — the ONE hardened read of a PR's changed-file list, the input to BOTH §CP clauses.
-# Sets CP_FILES (the list) + CP_FILES_N (the scanned count); returns NON-ZERO on a read that could
-# not execute. A non-zero return is UNKNOWN — hold as §CP — never "no control-plane path touched".
-# --paginate + a STREAMING --jq (one line per file) is load-bearing: gh concatenates the per-page
-# element streams, so a consumer's grep aggregates matches across ALL pages. The API caps per_page at
-# 100 whatever you ask for, so a single non-paginated call truncates a >100-file PR — hiding a §CP
-# file in the tail. Never pair --paginate with an AGGREGATE --jq (`[ … ]` / `length` / `add`): gh runs
-# the filter PER PAGE and emits one result each (#725).
-cp_changed_files() {   # $1 = REPO, $2 = PR
-  CP_FILES="$(gh api --paginate "repos/$1/pulls/$2/files?per_page=100" \
-    --jq 'if type=="array" then .[].filename else ("payload is not a file-list array"|halt_error(1)) end' 2>/dev/null)" || {
-      CP_FILES=""; CP_FILES_N=0
-      echo "§CP scope: PR #$2 changed-file list READ FAILED (gh exited non-zero; payload discarded) — 0 file(s) scanned" >&2
-      return 1; }
-  CP_FILES_N="$(printf '%s\n' "$CP_FILES" | grep -c . || true)"
-  if [ "$CP_FILES_N" -eq 0 ]; then
-    CP_FILES=""
-    echo "§CP scope: PR #$2 changed-file list read returned ZERO files — a PR always changes >=1 file, so this is a FAILED READ, not a clean 'no §CP path'" >&2
-    return 1
-  fi
-  echo "§CP scope: PR #$2 changed-file list read OK — $CP_FILES_N file(s) scanned"   # §ZS #1: state the scope the classification rests on
-}
-
-# The PR head SHA is the SECOND fallible read every §CP site makes — the ref the ADR-0164 content
-# probe reads each ADR body at. It gets the same three properties, and for a reason worth stating
-# once: `HEAD_SHA="$(gh api … --jq .head.sha || true)"` followed by `[ -n "$HEAD_SHA" ]` is a DEAD
-# guard. On failure gh does not apply --jq at all — it writes its error document to STDOUT
-# (property 2) — so the variable is NON-EMPTY and the emptiness test can never fire. Capture, check
-# the exit status, DISCARD the payload, then shape-assert: a ref is 40 bare lowercase hex digits, so
-# an error body (or any other unexpected 200) cannot pass for one.
-cp_head_sha() {   # $1 = REPO, $2 = PR; sets CP_HEAD_SHA (EMPTY on failure), returns NON-ZERO ⇒ UNKNOWN
-  CP_HEAD_SHA="$(gh api "repos/$1/pulls/$2" \
-    --jq 'if type=="object" and (.head.sha|type)=="string" then .head.sha else ("payload is not a PR object"|halt_error(1)) end' 2>/dev/null)" || {
-      CP_HEAD_SHA=""
-      echo "§CP scope: PR #$2 head SHA READ FAILED (gh exited non-zero; payload discarded) — ADR content unprobeable" >&2
-      return 1; }
-  case "$CP_HEAD_SHA" in
-    *[!0-9a-f]*|"") CP_HEAD_SHA=""; echo "§CP scope: PR #$2 head SHA is not bare hex — discarded" >&2; return 1 ;;
-  esac
-  [ "${#CP_HEAD_SHA}" -eq 40 ] || {
-    CP_HEAD_SHA=""; echo "§CP scope: PR #$2 head SHA is not a 40-char ref — discarded" >&2; return 1; }
-}
-```
-
-Consumers branch on its **return status**, and on failure resolve toward §CP:
+`cp_changed_files` (the file list, setting `CP_FILES` + `CP_FILES_N`) and `cp_head_sha` (the ref, setting
+`CP_HEAD_SHA`) both live in [`shared/scripts/cp-read.sh`](shared/scripts/cp-read.sh) (§SHARED), with the
+`--paginate` + streaming-`--jq` and dead-guard rationale carried in the script's own comments. Consumers
+source it and branch on the **return status**, resolving a failure toward §CP:
 
 ```bash
+KP_SHARED="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/skills/shared/scripts"
+. "$KP_SHARED/cp-read.sh"
 if ! cp_changed_files "$REPO" "$PR"; then
   CP_STATE=unknown   # the input never arrived ⇒ UNKNOWN ⇒ hold as §CP (never `not-control-plane`)
 fi
@@ -1762,68 +1693,17 @@ fourth that the file-list read does not need:
    case where it did. What it costs is a true answer: the gate reports an outage as a finding about
    the team's shape.
 
+The three reads — `cp_team_roster` (sets `CP_MEMBERS` + `CP_MEMBERS_N`), `cp_pr_author` (sets
+`CP_PR_AUTHOR`), `cp_team_membership` (sets `CP_MEMBERSHIP` to a state or `absent`) — sit alongside the
+two above in [`shared/scripts/cp-read.sh`](shared/scripts/cp-read.sh) (§SHARED); each carries its own
+shape-assert rationale in-script:
+
 ```bash
-# cp_team_roster — the control-plane roster read. Sets CP_MEMBERS (logins, one per line) +
-# CP_MEMBERS_N; returns NON-ZERO ⇒ UNKNOWN (never a cardinality). A read that SUCCEEDS and returns
-# zero members is a DIFFERENT, honest state — the ADR-0175 N==0 STOP — and returns zero here, so the
-# §ZS zero-scope rule does NOT apply: unlike a PR's file list, an empty team is a real answer.
-cp_team_roster() {   # $1 = ORG
-  CP_MEMBERS="$(gh api --paginate "orgs/$1/teams/control-plane/members?per_page=100" \
-    --jq 'if type=="array" then .[].login else ("payload is not a member array"|halt_error(1)) end' 2>/dev/null)" || {
-      CP_MEMBERS=""; CP_MEMBERS_N=0
-      echo "§CP roster: @$1/control-plane member list READ FAILED (gh exited non-zero; payload discarded) — roster UNKNOWN, NOT empty" >&2
-      return 1; }
-  # Shape, then interpret. A status check alone still admits a 200 carrying something that is not a
-  # roster; a bare non-empty test admits the error blob outright. Only the login charset rejects both.
-  if printf '%s\n' "$CP_MEMBERS" | grep -qvE '^[A-Za-z0-9-]*$'; then
-    CP_MEMBERS=""; CP_MEMBERS_N=0
-    echo "§CP roster: @$1/control-plane member list carries a non-login entry — payload discarded, roster UNKNOWN, NOT empty" >&2
-    return 1
-  fi
-  CP_MEMBERS_N="$(printf '%s\n' "$CP_MEMBERS" | grep -c . || true)"
-  echo "§CP roster: @$1/control-plane read OK — $CP_MEMBERS_N member(s) scanned"   # §ZS #1: emit the scope
-}
-
-# cp_pr_author — the PR author login. An unresolved author is UNKNOWN: it un-skips the author in the
-# approver walk (a self-approval would count as a non-author approval) and mis-keys the cardinality
-# branch. Same dead-guard reason as cp_head_sha: on failure gh writes its error document to STDOUT,
-# so `[ -n "$AUTHOR" ]` can never fire — check the status, discard the payload, then shape-assert.
-cp_pr_author() {   # $1 = REPO, $2 = PR; sets CP_PR_AUTHOR (EMPTY on failure), NON-ZERO ⇒ UNKNOWN
-  CP_PR_AUTHOR="$(gh api "repos/$1/pulls/$2" \
-    --jq 'if type=="object" and (.user.login|type)=="string" then .user.login else ("payload is not a PR object"|halt_error(1)) end' 2>/dev/null)" || {
-      CP_PR_AUTHOR=""
-      echo "§CP author: PR #$2 author READ FAILED (gh exited non-zero; payload discarded) — author UNKNOWN" >&2
-      return 1; }
-  case "$CP_PR_AUTHOR" in
-    ""|*[!A-Za-z0-9-]*) CP_PR_AUTHOR=""
-      echo "§CP author: PR #$2 author is not a bare login — discarded, author UNKNOWN" >&2; return 1 ;;
-  esac
-}
-
-# cp_team_membership — is login $2 on @$1/control-plane? THREE outcomes, not two: `-i` keeps the
-# status line on stdout even when gh exits non-zero, which is the whole point — a 404 is a DEFINITE
-# non-member, anything else is UNKNOWN. The bare `--jq '.state' 2>/dev/null` this replaces made a
-# 5xx indistinguishable from a definite non-member, silently under-counting an approver.
-# Composition, measured: an ABSENT team namespace 404s here too, so this endpoint alone cannot tell
-# "not a member of a team that exists" from "no such team". It does not have to — call it only after
-# cp_team_roster has proven the team readable, which is what makes a 404 here definite.
-cp_team_membership() {   # $1 = ORG, $2 = login; sets CP_MEMBERSHIP = <state>|absent; NON-ZERO ⇒ UNKNOWN
-  _resp="$(gh api "orgs/$1/teams/control-plane/memberships/$2" -i 2>/dev/null)"; _rc=$?
-  _status="$(printf '%s\n' "$_resp" | head -n1 | awk '{print $2}')"   # $? already stashed above
-  case "$_status" in
-    200)
-      CP_MEMBERSHIP="$(printf '%s\n' "$_resp" | awk 'b{print} /^\r?$/{b=1}' \
-        | jq -r 'if type=="object" and (.state|type)=="string" then .state else ("payload is not a membership object"|halt_error(1)) end' 2>/dev/null)" || {
-          CP_MEMBERSHIP=""
-          echo "§CP membership: '$2' returned 200 with a non-membership payload — discarded, membership UNKNOWN" >&2
-          return 1; }
-      return 0 ;;
-    404) CP_MEMBERSHIP=absent; return 0 ;;
-    *)   CP_MEMBERSHIP=""
-      echo "§CP membership: '$2' on @$1/control-plane READ FAILED (HTTP ${_status:-none}, gh exit $_rc) — UNKNOWN, NOT a definite non-member" >&2
-      return 1 ;;
-  esac
-}
+KP_SHARED="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/skills/shared/scripts"
+. "$KP_SHARED/cp-read.sh"
+cp_team_roster "$ORG"          || CP_ROSTER_STATE=unknown   # NEVER a cardinality, never "the team is empty"
+cp_pr_author "$REPO" "$PR"     || CP_AUTHOR_STATE=unknown   # un-skipping the author would count a self-approval
+cp_team_membership "$ORG" "$L" || CP_MEMBER_STATE=unknown   # 404 is definite; anything else is UNKNOWN
 ```
 
 Consumers of these three resolve a failure to **UNKNOWN and stop under a reason line that names the
@@ -1844,26 +1724,17 @@ rather than erroring.
 runs the shared entry point, which cannot hand back a fail-open no:
 
 ```bash
-# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
-PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
-# The §CP classification entry point — four states on stdout (#4161). Re-resolves the live
-# CONTROL_PLANE_RE from origin/main itself (#981); pass --control-plane-re to reuse one you
-# already resolved. ASSERT ON THE STATE WORD, never on the exit status alone — see below.
-# The INPUT comes from §CPREAD, never from a bare `gh api … |` pipe: with pipefail off, a failed
-# read pipes its stdout ERROR BODY into the verb, which sees one non-`.decisions/` "path", matches
-# no §CP clause, and answers `not-control-plane` — a fail-open at the very entry point that exists
-# to prevent one (#4216).
-if ! cp_changed_files "$REPO" "$PR"; then
-  CP_STATE=unknown   # §CPREAD: the input never arrived ⇒ UNKNOWN ⇒ hold as §CP
-else
-  CP_STATE="$(printf '%s\n' "$CP_FILES" | "$PCLI" cp-classify classify --repo "$REPO")"
-fi
-if [ "$CP_STATE" = "not-control-plane" ]; then
-  : # proven ordinary — the ONLY branch that may skip the §CP hold
-else
-  echo "BLOCKING (§CP state '$CP_STATE')"   # every other value, INCLUDING the empty string a failed invocation yields
-fi
+KP_SHARED="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/skills/shared/scripts"
+. "$KP_SHARED/cp-classify-entry.sh"   # §SHARED: §CPREAD input → cp-classify → $CP_STATE, held on anything but not-control-plane
 ```
+
+[`shared/scripts/cp-classify-entry.sh`](shared/scripts/cp-classify-entry.sh) leaves `$CP_STATE` in the
+caller's shell and prints `BLOCKING (§CP state '…')` on every value except the one proven-ordinary
+`not-control-plane` — including the empty string a failed invocation yields. It takes its input from
+§CPREAD's `cp_changed_files`, never a bare `gh api … |` pipe: with `pipefail` off, a failed read pipes
+its stdout **error body** into the verb, which sees one non-`.decisions/` "path", matches no §CP clause,
+and answers `not-control-plane` — a fail-open at the very entry point that exists to prevent one
+(#4216).
 
 | stdout | meaning | exit |
 | --- | --- | --- |
@@ -2292,6 +2163,47 @@ checkout — the exact #2440/#2453 condition. `write-code`'s Step-4 `wt_prefligh
 sibling (it *always* expects isolation and additionally must branch the session tree, so it also
 refuses the standalone-on-primary case via its Non-isolated fallback); it is a deliberate,
 documented specialization of this same contract, not a fourth drifting copy.
+
+---
+
+## SHARED. The extracted shared scripts — one resolution, sourced not pasted (epic #4435)
+
+This contract's recipes are **sourced scripts**, not fenced prose an agent re-types. They live under
+[`shared/scripts/`](shared/scripts/) (`.sh`, at any depth under `skills/` — the extension is what puts
+them inside `CONTROL_PLANE_RE` and the `/claude-plugins/kampus-pipeline/skills/**/*.sh` CODEOWNERS row,
+so a change to one needs a human approval; #4446), beside the cross-script state lib
+[`shared/lib/common.sh`](shared/lib/common.sh).
+
+**Why sourced rather than fenced.** Each agent shell invocation is a fresh process, so a variable set
+in one fenced block is gone by the next — every recipe that produced `$CP_FILES`, `$GUARD_ADR_RE` or
+`$RUN_SCRATCH` for a *later* block was un-runnable as written, and each agent hand-stitched around it
+differently. A script also runs as **one** permitted command, so the worktree guard never parses its
+internals (#4427). The prose keeps the *why*; the script carries the shell (founder ruling on #4435).
+
+**The one resolution — re-run it per block, exactly like §CLI's `PCLI`.** `$KP_SHARED` is a shell
+variable, so it does not survive between an agent's separate Bash calls; never cache it to a file (§SP):
+
+```bash
+# §SHARED — resolve the extracted-script dir. Same two tiers as §CLI's shim: $CLAUDE_PLUGIN_ROOT
+# covers a foreign consumer install, the git-toplevel fallback covers this repo from ANY cwd, in the
+# primary checkout AND in an agent worktree.
+KP_SHARED="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/skills/shared/scripts"
+```
+
+Then `. "$KP_SHARED/<name>.sh"` to get its functions/variables into your shell, or
+`bash "$KP_SHARED/<name>.sh" …` when you only need its stdout. Each script's header states which of the
+two it is and which caller variables it reads.
+
+**What did NOT move, and why.** The nine column-0 boundary canonicals stay in *this* file, at column 0,
+exactly once each: `validate-gate-path-drift.sh` asserts that, and the live gates re-resolve them from
+this file on `origin/main` — the #981 anti-self-authorization property. So does the §CLI `PCLI=`
+preamble and the §Target-repo `REPO=` line, which are the invocation seams every script and skill
+pastes rather than sources.
+
+**The scripts are phase 1 only.** They carry the glue as it stood, byte-for-byte; turning it into
+tested `pipeline-cli` verbs is phase 2 (#1929), and ADR
+[0228](https://github.com/kamp-us/phoenix/blob/main/.decisions/0228-scripts-relay-never-derive.md) is the
+boundary — a script may **relay** a verb's answer, never **derive** the decision itself.
 
 ---
 
