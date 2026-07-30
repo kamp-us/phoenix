@@ -46,7 +46,7 @@ term's disambiguation note), resolve it once, at the top of your run, per the sh
 **Target repo resolution** ([`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md)):
 
 ```bash
-REPO="${CLAUDE_PIPELINE_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}"
+REPO="$("${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/glossary/scripts/resolve-repo.sh")" || exit 1
 ```
 
 In phoenix this defaults to `kamp-us/phoenix` with no config, so the behavior is unchanged

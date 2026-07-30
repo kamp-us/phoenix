@@ -30,20 +30,26 @@ targets `$REPO`), per the shared contract's target-repo rule
 ([`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md), ADR 0062):
 
 ```bash
-REPO="${CLAUDE_PIPELINE_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}"
+REPO="$("${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/what-shipped/scripts/resolve-repo.sh")" || exit 1
 ```
 
-## Resolve the `ship-digest` command once — in-repo-first, published-fallback
+## The extracted scripts
 
-Prefer the on-disk consolidated `packages/pipeline-cli/src/bin.ts` when it exists (phoenix-local:
-no network, no published-artifact dependency); otherwise invoke the **published**
-`@kampus/pipeline-cli` CLI via `pnpm dlx` (ADR 0064; epic #994). Build it once:
+This skill's shell lives in [`scripts/`](scripts/), and each fenced block is an **invocation** of
+one; the prose keeps the *why* (epic #4435 phase 1 — the shell moved as-is, and turning its glue into
+tested `pipeline-cli` verbs is #1929). They set `set -uo pipefail`, deliberately not `-e`: the moved
+glue steers its own control flow, and `errexit` would abort a fail-closed branch before it printed
+its refusal. Two notes:
 
-```bash
-# the `bin/pipeline-cli` shim resolves in-repo bin, else the installed bin, else the pinned
-# `pnpm dlx` fallback reading the ONE pin (hooks/pin.sh) — no version pinned here (#3653).
-DIGEST="${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/bin/pipeline-cli ship-digest"
-```
+- **The `ship-digest` shim resolution is no longer a step.** It was a block that only built a `$DIGEST`
+  string for a later block — and no shell variable survives between agent Bash calls, so it never
+  actually reached its consumer. [`scripts/derive-digest.sh`](scripts/derive-digest.sh) resolves the
+  shim itself through the shared lib's `kp_pcli` (in-repo bin → installed bin → the pinned `pnpm dlx`
+  reading the ONE pin; ADR 0064, #3653), so the in-repo-first / published-fallback behaviour is
+  unchanged and now lands where it is used.
+- **An empty entries file is a refusal, not an empty digest.** `derive-digest.sh` reds on a
+  missing/empty `<entries.json>`, because a zero-entry array derives a plausible, well-formed
+  "nothing shipped in this window" readout that is simply wrong.
 
 ---
 
@@ -54,10 +60,12 @@ another (`/what-shipped since 2026-06-01`, `/what-shipped last 30 days`). The wi
 dates the digest heading reports over:
 
 ```bash
-SINCE="${SINCE:-$(date -u -v-7d +%Y-%m-%d 2>/dev/null || date -u -d '7 days ago' +%Y-%m-%d)}"
-UNTIL="${UNTIL:-$(date -u +%Y-%m-%d)}"
-echo "window: $SINCE → $UNTIL"
+# prints `<since> <until>`; $SINCE / $UNTIL in the environment override either end
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/what-shipped/scripts/window.sh"
 ```
+
+Read the two dates off that output and pass them explicitly to the calls below. No shell variable
+survives between agent Bash calls, so the window travels as **arguments**, not as `$SINCE`/`$UNTIL`.
 
 `ship-digest derive` needs `--since` (required) and optional `--until` (defaults to today), so
 `$SINCE`/`$UNTIL` flow straight through at Step 4.
@@ -73,10 +81,8 @@ Read merged PRs via `gh api` REST (never GraphQL). The `search/issues` endpoint 
 `merged:` directly:
 
 ```bash
-# merged PRs in the window — REST search, never GraphQL. `is:merged` + `merged:$SINCE..$UNTIL`.
-gh api -X GET search/issues \
-  -f q="repo:$REPO is:pr is:merged merged:$SINCE..$UNTIL" \
-  -f per_page=100 --jq '.items[] | .number'
+# merged PRs in the window — REST search, never GraphQL. `is:merged` + `merged:<since>..<until>`.
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/what-shipped/scripts/merged-prs.sh" "$SINCE" "$UNTIL"
 ```
 
 If you prefer to anchor on the merge commits rather than trust the search index, cross-check with
@@ -89,7 +95,7 @@ For each merged PR number, read the fields the entry needs:
 ```bash
 # per merged PR: title, its `area:*` label (join-free product/infra signal, #1598), and the
 # linked issue via the `Fixes #N` / `Closes #N` in the PR body.
-gh api "repos/$REPO/pulls/$PR" --jq '{title: .title, body: .body, labels: [.labels[].name]}'
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/what-shipped/scripts/pr-context.sh" "$PR"
 ```
 
 - **`title`** → the entry's `title` (prefer the linked-issue title once resolved in Step 2).
@@ -107,8 +113,7 @@ issue, then read that issue's metadata:
 
 ```bash
 # the linked issue's title, milestone, and type:* — the entry's title (preferred), milestone, and type.
-gh api "repos/$REPO/issues/$ISSUE" \
-  --jq '{title: .title, milestone: (.milestone.title // null), type: ([.labels[].name | select(startswith("type:")) | sub("^type:";"")] | first // null)}'
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/what-shipped/scripts/issue-context.sh" "$ISSUE"
 ```
 
 Populate each entry from the join:
@@ -144,12 +149,8 @@ serving is truthful — a split-released flag's `defaultVariation` stays `off` f
 
 ```bash
 # authoritative Flagship state — every flag × env with its enabled/default value (ADR 0081/0123).
-# in-repo-first, published-fallback, same idiom as $DIGEST above.
-if [ -f packages/anka-ops/src/bin.ts ]; then
-  node packages/anka-ops/src/bin.ts flag list
-else
-  pnpm dlx @kampus/anka-ops@0.1.0 flag list
-fi
+# in-repo-first, published-fallback.
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/what-shipped/scripts/flag-list.sh"
 ```
 
 Assign each merged entry a **`releaseState`** — one of `live` / `awaiting-release` / `dark` /
@@ -204,9 +205,9 @@ Write it to a scratch file (never a repo path — this is throwaway gather outpu
 artifact), then invoke:
 
 ```bash
-ENTRIES="$(mktemp -t what-shipped-entries.XXXXXX.json)"
-# … write the gathered array to "$ENTRIES" …
-$DIGEST derive --entries "$ENTRIES" --since "$SINCE" --until "$UNTIL"
+# … having written the gathered array to a per-run JSON file (§SP) …
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/what-shipped/scripts/derive-digest.sh" \
+  "<entries.json>" "$SINCE" "$UNTIL"
 ```
 
 `ship-digest derive` decodes the entries, runs the pure `deriveShipDigest` core, and prints the

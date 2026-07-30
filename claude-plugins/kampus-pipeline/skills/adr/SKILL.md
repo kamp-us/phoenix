@@ -54,10 +54,9 @@ arc?"*. You cannot sweep for a question you cannot phrase.
 live-accepted ADRs whose decision domain yours touches and which you do **not** cite:
 
 ```bash
-# The shim resolves the bin (in-repo, else installed, else pinned dlx reading hooks/pin.sh; #3653).
 # Exit 0 = nothing left to open. Non-zero = a shortlist to clear, or an INDETERMINATE run.
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/bin/pipeline-cli" adr-sweep shortlist \
-  --new .decisions/NNNN-slug.md
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/adr/scripts/sweep-shortlist.sh" \
+  .decisions/NNNN-slug.md
 ```
 
 `pipeline-cli decisions-index compact` is the manual fallback: scan the `id · title · status` map

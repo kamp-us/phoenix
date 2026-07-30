@@ -45,8 +45,14 @@ it once, at the top of your run, per the shared contract's **Target repo resolut
 ([`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md)):
 
 ```bash
-REPO="${CLAUDE_PIPELINE_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}"
+REPO="$("${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/canon/scripts/resolve-repo.sh")" || exit 1
 ```
+
+This skill's shell lives in [`scripts/`](scripts/), and each fenced block is an **invocation** of one
+(epic #4435 phase 1 — the shell moved as-is; turning its glue into tested `pipeline-cli` verbs is
+#1929). They set `set -uo pipefail`, deliberately not `-e`: the self-checks below use a `grep` whose
+empty result is an *answer*, and `errexit` would abort on it. Each check therefore prints an explicit
+verdict word, so "the check found nothing" and "the check never ran" are never the same output.
 
 The **paths themselves are repo-relative** — `.patterns/` at the repo root — resolved from
 the working tree, never an absolute or home path. Resolve the repo root with
@@ -241,15 +247,8 @@ diff.
 Run mechanically — don't self-assess, actually check:
 
 ```bash
-ROOT="$(git rev-parse --show-toplevel)"
-# 1. cross-refs resolve: every relative link target in the docs you touched exists
-grep -roh '](\.\?\.\?/[^)]*\.md)' "$ROOT"/.patterns/<name>.md | sed 's/^](//; s/)$//'
-# 2. no wikilinks / leaked absolute paths
-grep -nE '\[\[|/Users/|\$USIRIN_VAULT_PATH|file://' "$ROOT"/.patterns/<name>.md && echo "LEAK — fix" || echo "links clean"
-# 3. no stale markers
-grep -niE 'as of|currently|at the time|in newer versions|when available' "$ROOT"/.patterns/<name>.md && echo "stale marker — fix" || echo "no stale markers"
-# 4. the index row exists for the doc
-grep -n '<name>.md' "$ROOT"/.patterns/index.md || echo "MISSING index row — add it"
+# all four checks over .patterns/<name>.md — cross-refs, leaks, stale markers, the index row
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/canon/scripts/verify-pattern-doc.sh" "<name>"
 ```
 
 Then, by judgment: for the doc — **name the specific mistake an agent makes without it**;

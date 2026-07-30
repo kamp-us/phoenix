@@ -133,9 +133,7 @@ auto-shippable. **Re-check the final path** against the live control-plane regex
 opening the PR:
 
 ```bash
-# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
-PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
-"$PCLI" control-plane-paths
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/author-skill/scripts/control-plane-paths.sh"
 ```
 
 A skill flips to §CP (human-merge, never auto-shipped) when its path falls under a gate skill
