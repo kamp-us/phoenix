@@ -25,15 +25,36 @@ fail() { printf 'FAIL: %s\n' "$*"; failures=$((failures + 1)); }
 ok() { printf 'ok: %s\n' "$*"; }
 
 # Every function under test must EXIST before any case runs. A missing function exits 127 with a
-# `command not found` on stderr — which several cases below would read as a correct fail-closed
-# refusal (non-zero, empty stdout, a diagnostic) and report as a pass. An unexercised case is
-# UNKNOWN, not a pass, so refuse up front instead.
-for fn in kp_skill_shell_surfaces kp_surface_text kp_skill_source_edges; do
+# `command not found` on stderr — which FOUR of the cases below read as a correct fail-closed
+# refusal (non-zero, empty stdout, a diagnostic on stderr) and report as a pass: the
+# unreadable-surface, broken-edge, sibling-edge and non-idiom-source cases (measured by deleting
+# this block and re-running). An unexercised case is UNKNOWN, not a pass, so refuse up front.
+#
+# The set is DERIVED from this file, never listed. A hardcoded list stops covering the moment a
+# case reaches for a fourth function, silently reopening the exact 127 class this refusal closes —
+# the same guard-in-text/absent-in-effect shape the rest of this suite pins. Derived from the RAW
+# text on purpose: it over-includes (a name appearing only in a message string is still required to
+# exist), and over-inclusion is the fail-closed direction. `kp__`-prefixed privates are excluded —
+# nothing here calls them directly. An empty derivation means this file could not be read, which is
+# UNKNOWN, never "no functions to check".
+required_fns="$(grep -oE 'kp_[a-z][a-z0-9_]*' "${BASH_SOURCE[0]}" | LC_ALL=C sort -u)"
+if [ -z "$required_fns" ]; then
+	printf 'FAIL: could not derive the exercised function set from %s — refusing to run cases whose 127 would read as a fail-closed pass.\n' "${BASH_SOURCE[0]}"
+	exit 1
+fi
+missing=0
+while IFS= read -r fn; do
+	[ -n "$fn" ] || continue
 	if ! type "$fn" >/dev/null 2>&1; then
 		printf 'FAIL: %s is not defined by %s — the cases below would resolve 127 and read as fail-closed passes. Refusing to run them.\n' "$fn" "$lib"
-		exit 1
+		missing=$((missing + 1))
 	fi
-done
+done <<EOF
+$required_fns
+EOF
+if [ "$missing" -ne 0 ]; then
+	exit 1
+fi
 if [ -z "${KP_EDGE_MAX_HOPS:-}" ]; then
 	printf 'FAIL: KP_EDGE_MAX_HOPS is not set by %s — the hop-cap case cannot be exercised.\n' "$lib"
 	exit 1
@@ -297,6 +318,26 @@ if [ "$rc" -eq 0 ] && [ "$out" = "$tmp/e/shared/scripts/first.sh" ] && [ "$KP_ED
 	ok "one hop only: the directly-sourced file enters, the file it sources does not"
 else
 	fail "twohop: rc=$rc cap=$KP_EDGE_MAX_HOPS out=[$out]"
+fi
+
+# 17. THE CREDIT PIN, on the SHIPPED lib rather than a fixture. `shared/lib/common.sh` is
+# edge-resolved into the widened surface of ALL FOUR cycle-aware skills (the validators' emitted
+# scope line names it `(edge:plan-epic)`, `(edge:write-code)`, `(edge:review-code)`,
+# `(edge:ship-it)`), because every one of them sources it — unconditionally, for reasons that have
+# nothing to do with the cycle. So a single probe literal in its executable text would green the
+# canonical-probe check for four independent skills at once, and "demonstrated dependency" would
+# degenerate into "everybody sources it" — directory membership by another name, which is what ADR
+# 0230 rule 1 exists to reject. The ADR's blessing of shared credit was written for
+# `shared/scripts/cycle-doc-probe.sh`, a file whose only purpose IS the probe; it does not transfer
+# here. Keyed on the SAME comment-stripped text the validators grep, so a mention in this file's
+# prose is correctly not a violation — only executable text is.
+probe_literal="contents/product-development-cycle.md"
+if ! out="$(kp_surface_text "$lib")"; then
+	fail "credit pin: could not read $lib — UNKNOWN, never 'the literal is absent'"
+elif grep -qF "$probe_literal" <<<"$out"; then
+	fail "credit pin: $lib carries the cycle-doc probe literal ('$probe_literal') in executable shell — it is edge-resolved into all four cycle-aware skills, so this one file would satisfy every skill's canonical-probe check (ADR 0230 rule 1)"
+else
+	ok "the shared lib carries no cycle-doc probe literal (no blanket four-skill credit)"
 fi
 
 cleanup

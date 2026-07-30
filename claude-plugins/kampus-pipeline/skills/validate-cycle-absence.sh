@@ -36,10 +36,17 @@
 set -uo pipefail
 
 # Same self-locating idiom as the presence twin: this script lives in the skills root, so its own
-# dir IS that root — resolve from BASH_SOURCE, PHYSICALLY (`cd -P`). The physical form is what the
-# source-edge allowlist needs: `skills/` is reached through the `.claude/skills` symlink, and a
-# LOGICAL root would be compared against physically-resolved edge targets and never match, reding
-# every skill for a path-shape reason (#4505 T7).
+# dir IS that root — resolve from BASH_SOURCE, PHYSICALLY (`cd -P`), because `skills/` is reached
+# through the `.claude/skills` symlink.
+#
+# What `-P` actually buys is the EMITTED SCOPE, not the allowlist. Measured: a logical-`cd` variant
+# through the symlink still exits 0, because `kp_skill_source_edges` resolves its own roots AND its
+# edge targets with `cd -P`, so that comparison is physical on both sides whatever it is handed.
+# What breaks under a logical root is the `${edge#"$skills_dir/"}` strip below: the prefix misses,
+# and every edge-resolved file is printed as a full absolute machine path instead of
+# `shared/scripts/cycle-doc-probe.sh (edge:plan-epic)`. That is an ADR 0092 §1 emission defect —
+# "what did this run look at" stops being answerable in repo terms — and a leak surface, since an
+# absolute path carries the runner's checkout layout into a CI log (#4505 T7).
 skills_dir="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [ ! -d "$skills_dir" ]; then
 	echo "FAIL: could not resolve the skills root from ${BASH_SOURCE[0]} — refusing to scan an unresolved root (ADR 0092)"

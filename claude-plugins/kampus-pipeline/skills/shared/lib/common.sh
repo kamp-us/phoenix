@@ -84,12 +84,17 @@ kp_skill_shell_surfaces() {
 # satisfied by its own prose (#4541). So every `.sh`-surface grep runs on this output instead.
 #
 # A `#` opens a comment only OUTSIDE quotes and only at line start or after whitespace, so
-# `${var#pat}`, a `*#*)` case pattern and a `#` inside a string all survive. No state crosses lines:
-# a heredoc body therefore cannot desync the scan, and the worst it can do is drop a `#` tail — which
-# REMOVES text, the fail-closed direction for a presence grep. Residue, stated rather than glossed: a
-# comment is dropped, but a needle planted in a `.sh` heredoc or an `if false` block still reads as
-# code. Distinguishing those needs a parser; that threat is deception, which §CP review of `skills/**`
-# covers, and this guard's threat is drift (ADR 0230, #4505's threat model T8).
+# `${var#pat}`, a `*#*)` case pattern and a `#` inside a string all survive. No state crosses lines,
+# so a heredoc body cannot desync the scan.
+#
+# Residue, stated rather than glossed, and it runs in BOTH directions — the common case removes text
+# (fail-closed for a presence grep: a dropped `#` tail can only make a needle harder to find), but
+# that is not exhaustive. Measured counter-example in the fail-OPEN direction: on a line carrying an
+# unbalanced double quote, the scan stays in-quote to end of line, so a `#` comment after it
+# SURVIVES. Likewise a needle planted in a `.sh` heredoc or an `if false` block still reads as code.
+# All of that sits inside T8's ACCEPTED residue rather than being a defect: separating them needs a
+# parser, shellcheck reds an unbalanced quote, and the threat they serve is deception — covered by
+# §CP review of `skills/**` — where this guard's threat is drift (ADR 0230, #4505's threat model T8).
 #
 # `\047` is a single quote, written octally so this awk program contains none and can live inside a
 # single-quoted shell string.
