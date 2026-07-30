@@ -1,12 +1,12 @@
 ---
-id: 0229
+id: 0230
 title: Cycle validators widen a skill's scan surface across its own source edges — one hop, fail-closed
 status: accepted
 date: 2026-07-30
 tags: [pipeline, skills, guards, control-plane]
 ---
 
-# 0229 — Cycle validators widen a skill's scan surface across its own source edges
+# 0230 — Cycle validators widen a skill's scan surface across its own source edges
 
 **What this decides:** `kp_skill_shell_surfaces` — and through it both cycle validators — resolves a
 cycle-aware skill's scan surface as `SKILL.md` + the skill's own `scripts/*.sh` **plus every
