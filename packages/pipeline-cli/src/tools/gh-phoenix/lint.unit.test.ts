@@ -73,6 +73,15 @@ describe("scanFile — flags GraphQL-path gh calls", () => {
 		assert.strictEqual(scanFile("s/SKILL.md", "the project board is classic").length, 0);
 	});
 
+	it("self-exempts the ADR-0158 sanctioned read PER SCRIPT, not the scripts/ directory", () => {
+		assert.isTrue(isSelfExempt("skills/review-code/scripts/unresolved-threads-read.sh"));
+		assert.isFalse(isSelfExempt("skills/review-code/scripts/pr-diff.sh"));
+		assert.isAbove(
+			scanFile("skills/review-code/scripts/pr-diff.sh", "gh api graphql -f query='{...}'").length,
+			0,
+		);
+	});
+
 	it("self-exempts the write-code skill (it documents the REST-only rule)", () => {
 		assert.isTrue(isSelfExempt(".claude/skills/write-code/SKILL.md"));
 		assert.strictEqual(

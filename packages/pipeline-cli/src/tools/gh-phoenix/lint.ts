@@ -114,6 +114,9 @@ const SELF_EXEMPT_SUFFIXES = [
 	// would silently exempt every future extracted script from a live lint.
 	"/skills/ship-it/scripts/step3_6-threads-read.sh",
 	"/skills/ship-it/scripts/step3z-dropped-trigger.sh",
+	// review-code's half of the same ADR-0158 sanctioned read, extracted by #4451. Same per-script
+	// granularity, same reason.
+	"/skills/review-code/scripts/unresolved-threads-read.sh",
 	"/skills/gh-issue-intake-formats.md",
 	"/packages/pipeline-cli/src/tools/gh-phoenix/README.md",
 ] as const;
