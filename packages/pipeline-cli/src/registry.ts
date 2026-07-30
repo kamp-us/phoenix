@@ -222,6 +222,12 @@ export const registeredTools: ReadonlyArray<ToolRegistration> = [
 	tool("cli-invocation-guard", () =>
 		import("./tools/cli-invocation-guard/command.ts").then((m) => m.cliInvocationGuardCommand),
 	),
+	// #4479 — reds on `errexit` + an `EXIT` trap in one runnable shell unit: on bash 3.2 a `set -u`
+	// abort then reaches the trap with `$?` already 0, so a cleanup trap exits 0 and the guard
+	// reports success on a path it never evaluated. Fail-closed on zero scope, per surface.
+	tool("trap-status-guard", () =>
+		import("./tools/trap-status-guard/command.ts").then((m) => m.trapStatusGuardCommand),
+	),
 	// #3606 — inverts the crew read-only-fanout per-bridge spawn denylist into an ENFORCED
 	// allowlist: reds when a mutating roster agent-type is neither allowlisted nor denied by a
 	// crew bridge (chief-of-staff/cartographer/intake-desk), closing the future-agent hole ADR
