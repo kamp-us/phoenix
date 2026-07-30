@@ -44,8 +44,55 @@ if set, else the current repository. In phoenix this defaults to `kamp-us/phoeni
 behavior is unchanged with no config (ADR 0062 §1).
 
 ```bash
-REPO="${CLAUDE_PIPELINE_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}"
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-code/scripts/resolve-repo.sh"
 ```
+
+Every script below resolves the repo the same way, through the shared lib's `kp_repo` — so the
+resolution is one rule in one place and it survives across steps, which a shell variable set in one
+fenced block does not (each agent shell invocation is a fresh process).
+
+## The extracted scripts
+
+This skill's shell lives in [`scripts/`](scripts/) and every fenced `bash` block below is an
+**invocation** of one. The prose keeps the *why*; the scripts hold the *how* (epic #4435 phase 1 —
+the shell moved as-is, and turning its `gh`/`jq` glue into tested `pipeline-cli` verbs is #1929, ADR
+0228: a script may RELAY a verb's answer, never DERIVE the decision). Four properties are
+load-bearing when you read or edit them:
+
+- **They set `set -uo pipefail`, deliberately not `-e`.** The moved glue decides its own control flow
+  through the guards written into it — `|| true` on a read that may legitimately match nothing, a
+  state-word assertion instead of an exit-status test (§CP), a `grep` whose empty result is an
+  answer. `errexit` would abort those paths before they print their fail-closed line, converting
+  fail-closed into fail-**open**.
+- **No script installs an `EXIT` trap.** Under bash 3.2 a cleanup trap's last command becomes the
+  script's exit status, which launders a `set -u` abort into exit 0 — a fail-closed guard that exits
+  0 having printed its refusal (#4476, class #4479).
+- **A script whose stdout answers a safety question makes every failure path speak (the
+  error-channel rule).** Moving glue behind a script boundary invents a channel the inline block
+  never had: a non-zero exit with **0 bytes on stdout**. Where a caller reads the *absence* of a
+  fail-closed line as a *positive* answer — `not-control-plane` in Step 2's §CP classification, the
+  skills-only off-ramp, Step 1's issueless carve-out — a silent guard exit is indistinguishable from
+  "proven safe". So each such script prints its **own** fail-closed sentinel on stdout
+  (`BLOCKING (…)` / `CANNOT-CLASSIFY (…)` / the hard-stop line) before every early `exit`, **and**
+  exits non-zero, and the prose reads the status before the stdout. An absent or empty result is
+  UNKNOWN, and UNKNOWN is never "no" (§ZS / ADR
+  [0092](https://github.com/kamp-us/phoenix/blob/main/.decisions/0092-gates-fail-closed-on-zero-scope.md);
+  #4231, #4010, #4219). Note the discriminator on a completed run is the **absent sentinel line**,
+  not empty stdout — a §ZS scope line legitimately lands on stdout too.
+- **The shared-contract helpers are SOURCED from their canonical home — there is no skill-local
+  copy.** §CPREAD's `cp_changed_files` / `cp_head_sha`, §RO-iso's `iso_preflight`, §WL's
+  `kp_wl_all_onclass` and the `verdict_post_verify` read-back all live in
+  [`../shared/scripts/`](../shared/scripts/) (#4489 extracted them out of
+  [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md)), and this skill's scripts source
+  them directly. With no second copy there is nothing to keep in step and no byte-identity claim to
+  make about one. The **one deliberate exception** is
+  [`scripts/cycle-doc-probe.sh`](scripts/cycle-doc-probe.sh): the two cycle validators
+  ([`../validate-cycle-presence.sh`](../validate-cycle-presence.sh) /
+  [`../validate-cycle-absence.sh`](../validate-cycle-absence.sh)) scope each skill's scan surface to
+  that skill's **own** directory on purpose, so sourcing the shared probe would move this skill's
+  cycle wiring out of its guarded surface and the validators would fail — per-skill wiring stays
+  per-skill (the rule is stated at `kp_skill_shell_surfaces` in
+  [`../shared/lib/common.sh`](../shared/lib/common.sh)).
 
 ## Read-only on git working state
 
@@ -93,9 +140,7 @@ PR ↔ issue pairing, because the issue is where the acceptance criteria live.
 
 ```bash
 PR=<pr number>
-# the PR: state, head branch, body (the Fixes #N lives here), mergeability
-gh api repos/$REPO/pulls/$PR \
-  --jq '{number, state, draft, merged, head: .head.ref, base: .base.ref, body}'
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-code/scripts/pr-context.sh" "$PR"
 ```
 
 Find the linked issue from the PR body's `Fixes #N` / `Closes #N` (the seam
@@ -103,11 +148,7 @@ Find the linked issue from the PR body's `Fixes #N` / `Closes #N` (the seam
 timeline if it's not obvious:
 
 ```bash
-# timeline shows "connected"/"cross-referenced" events linking PR ↔ issue
-# --paginate + a STREAMING --jq: per_page caps at 100, so a link event past event 100 is
-# invisible without it on a long-lived PR's timeline (#4193)
-gh api --paginate "repos/$REPO/issues/$PR/timeline?per_page=100" \
-  --jq '.[] | select(.event=="connected" or .event=="cross-referenced") | .source.issue.number // .issue.number' 2>/dev/null
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-code/scripts/linked-issue-timeline.sh" "$PR"
 ```
 
 Pin down `ISSUE=<N>`. If there is **no** linked issue, the rule is **class-aware** — this is
@@ -120,24 +161,12 @@ signal, **not** a second taxonomy; the ADR 0075 discipline `review-doc` follows 
 Step-0 class):
 
 ```bash
-# no linked issue → class-aware. The carve-out is scoped EXACTLY to the conversation-authored
-# coining class: the diff touches the `.glossary/**` CODE-class vocabulary coining site (ADR 0128)
-# AND every changed path lies on a conversation-authored surface — `.glossary/**`, or a doc
-# companion (`.decisions/**` / `.patterns/**`) carried in the same recording — and NOTHING else.
-# Any path off those surfaces (`apps/**`, `packages/**`, `infra/**`, a code-root README, a root
-# script) is behavioral work with a missing `Fixes #N` ⇒ a broken seam ⇒ hard-stop. Same file set +
-# same path-prefix class Step 2's skills-only route uses — no second class mechanism.
-# "every path is conversation-authored" is the EMPTY-OUTPUT form, never `! grep -qv` (§WL, #4155).
-FILES="$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename')"
-OFFSURFACE="$(grep -vE '^(\.glossary|\.decisions|\.patterns)/' <<<"$FILES")"
-if [ -n "$FILES" ] \
-   && grep -qE '^\.glossary/' <<<"$FILES" \
-   && [ -z "$OFFSURFACE" ]; then
-  echo "conversation-authored .glossary/** coining site, no Fixes #N — legitimate (ADR 0184/0075): ISSUE stays unset, AC half N/A"
-else
-  echo "no linked issue on a PR carrying behavioral code — broken seam: hard-stop (dangling-code guard, ADR 0184)"
-fi
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-code/scripts/classify-issueless.sh" "$PR"
 ```
+
+Read the script's **exit status before its stdout**, and note the carve-out line is the *permissive*
+answer: on a non-zero exit it prints the hard-stop line itself, so a classifier that could not run
+holds the PR at the broken-seam stop rather than waving it through as legitimately issueless.
 
 - **Behavioral code is present** (the diff carries any path off the conversation-authored coining
   surface — `apps/**`, `packages/**`, `infra/**`, a code-root README, or any product code) → stop
@@ -166,9 +195,7 @@ When `ISSUE` **is** set, honor it as today — pull the issue and its acceptance
 
 ```bash
 ISSUE=<N>
-gh api repos/$REPO/issues/$ISSUE --jq '{number, state, assignee: .assignee.login, body}'
-# the progress trail write-code left — context, not evidence
-gh api "repos/$REPO/issues/$ISSUE/comments?per_page=100" --jq '.[].body'
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-code/scripts/issue-context.sh" "$ISSUE"
 ```
 
 Extract the `### Acceptance criteria` checklist from the issue body. That list — every
@@ -199,11 +226,7 @@ Verification is grounded in the diff, the tests, and — where it matters — th
 not in the PR's self-description. Pull the change:
 
 ```bash
-# the full diff — gh pr diff is the reliable form; the diff media type is the REST equivalent
-gh pr diff $PR \
-  || gh api repos/$REPO/pulls/$PR -H "Accept: application/vnd.github.v3.diff"
-# files touched, at a glance
-gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[] | "\(.status)\t+\(.additions)/-\(.deletions)\t\(.filename)"'   # --paginate: streaming --jq, pages concatenate — the full set past file #100 (#725)
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-code/scripts/pr-diff.sh" "$PR"
 ```
 
 This same loaded diff (and the review worktree below) is what the **specialist fan-out** runs
@@ -223,18 +246,12 @@ to `review-doc`'s skills-only / pure-code routes and `review-skill`'s "not a ski
 each gate hands a mis-classed PR to the gate that owns its class:
 
 ```bash
-# the file set drives the class decision (same list pulled above)
-FILES="$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename')"   # --paginate + streaming --jq: full set past file #100 (the API caps per_page at 100; #725)
-# skills-only ⇒ every changed path is under skills/ or agents/ — review-skill's class, not yours
-# (agents/** are behavioral artifacts, review-skill-routed for the verdict — ADR 0150/#2003).
-# Empty-output form, never `! grep -qv`: a false-true here `exit 0`s the code gate on a PR that
-# does carry code (§WL of ../gh-issue-intake-formats.md, #4155).
-OFFCLASS="$(grep -vE '^claude-plugins/kampus-pipeline/(skills|agents)/' <<<"$FILES")"
-if [ -n "$FILES" ] && [ -z "$OFFCLASS" ]; then
-  echo "not a code PR — route to review-skill"   # plain note, no review-code: marker; stop
-  exit 0
-fi
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-code/scripts/classify-skills-only.sh" "$PR"
 ```
+
+Three outcomes, and the **exit status is read before the stdout**: a non-zero exit is UNKNOWN and
+prints `CANNOT-CLASSIFY (…)` — fail closed to has-code, verify here; the off-ramp line **at exit 0**
+routes to `review-skill` and stops; **no line at exit 0** means the PR carries code, so proceed.
 
 A **mixed** PR (`skills/**` *and* `apps/web`/`packages` code) is **not** skills-only — you
 verify the code class here and emit the `review-code` marker, while `review-skill` verifies the
@@ -309,77 +326,16 @@ make the isolation hold *by construction*, not by your remembering to behave:
 Your own session stays in *this* worktree (the trusted base config you were launched under).
 
 ```bash
-# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
-PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
-# Isolation preflight FIRST, before any head fetch / `git worktree add` below. If this
-# review-code spawn expected worktree isolation (reviewer agent-type) but the #2440 harness no-op
-# dropped it onto the shared PRIMARY checkout ($WORKTREE_ROOT unset), materializing the head here
-# is the #2452/#2453 primary-checkout-detach surface — fail closed LOUD and route up, never
-# materialize. Single-sourced in gh-issue-intake-formats.md §RO-iso (ADR 0172; the write-code
-# wt_preflight sibling). A genuine standalone run on the owner's checkout still proceeds.
-iso_preflight review-code || exit 1   # ../gh-issue-intake-formats.md §RO-iso — define it there, cite here
-
-# the trusted base — the PR's merge target at tip; your config already comes from here
-BASE_REF="$(gh api repos/$REPO/pulls/$PR --jq '.base.ref')"   # normally main
-
-# Refresh the base BEFORE any "is-it-shipped on main" ground-truth check (below). The PR
-# head reaches its own ref, but the base is the *other* half of verification — a long-lived
-# or busy checkout's local main goes stale, so an "is X shipped?" check read off the working
-# tree is only as fresh as whoever's checkout the gate ran in. This is the freshness gap
-# complementary to ADR 0052's config-isolation: 0052 pins your *config* to the base; this
-# pins your *ground-truth* to the base too. (PR #305 false-FAILed on exactly this — a doc
-# whose consumers had merged minutes earlier was FAILed against a stale local main.)
-git fetch origin "$BASE_REF"
-
-# §HEAD steps 1–3 (resolve the live head SHA, fetch pull/$PR/head into a per-run ref WITHOUT
-# touching the session tree, assert the fetched ref IS that head, add a throwaway DETACHED head
-# worktree) are the shared `pipeline-cli review-head materialize` verb (#3690 / #793 / #1807) —
-# cite it, don't re-derive it. `pull/<pr>/head` resolves for same-repo AND cross-fork PRs, so there
-# is no separate cross-fork branch to check out (the trust inversion ADR 0052 closes); the verb
-# never runs `gh pr checkout` / `git checkout` / `git switch` (which would land the head in the
-# shared PRIMARY the harness resets this cwd to and detach the human's `main` — #2270/#1103), and it
-# nonce-uniques the ref per invocation so a concurrent review of the same PR can't overwrite it
-# (#1807). It emits the resolved head + ref + worktree as JSON. Persist those to a per-run mktemp
-# handle so they survive the harness cwd/shell reset between Bash calls (a shell var is lost across
-# calls); re-source them with `. "$WT_FILE"` at each later step — NEVER re-derive from a shared leaf
-# name (a `git worktree list` re-derivation matches a SIBLING reviewer's tree and pins the wrong head).
-# The `--worktree` tree is a FULL checkout (ADR 0067): biome.jsonc + biome-plugins/, patches/, the
-# catalog/lockfile, and everything `fate generate` needs are present, so the typecheck bootstrap is
-# whole. A full checkout also lands the head's root CLAUDE.md + .claude/.decisions/.patterns — that
-# leak is closed by the explicit denylist removal + absence-assert below, NOT by any pattern set.
-WT_FILE="$(mktemp /tmp/review-code-wt.XXXXXX)"
-"$PCLI" review-head materialize --pr "$PR" --worktree \
-  | jq -r '"REVIEW_WT=\(.worktreeDir)\nPR_REF=\(.prRef)\nHEAD_SHA=\(.headSha)"' > "$WT_FILE"
-. "$WT_FILE"
-[ -n "${REVIEW_WT:-}" ] && [ -n "${PR_REF:-}" ] && [ -n "${HEAD_SHA:-}" ] || {
-  echo "FATAL: review-head materialize did not yield a head worktree — aborting (never review the base tree; §HEAD)." >&2; exit 1; }
-
-# LAYER-2 containment (#2666): a freshly materialized worktree MUST come up pristine — assert it
-# clean NOW, before the denylist `rm --cached` below deliberately dirties it. A dirty materialization
-# means a corrupted head checkout, and reviewing a contaminated tree is a false signal. Fail-closed
-# LOUD via the single-sourced, tested helper (packages/pipeline-cli/src/tools/worktree-guard).
-"$PCLI" worktree-guard assert-clean --path "$REVIEW_WT" || {
-  echo "FATAL: review worktree came up dirty at materialization — aborting (never review a contaminated tree; #2666)." >&2
-  exit 1
-}
-
-# Enforce the instruction denylist EXPLICITLY: remove the head's instruction surfaces from
-# the review tree so they never reach the reviewing agent's path (ADR 0049/0052 boundary; a
-# full checkout would otherwise leave root CLAUDE.md on disk). Config still comes from the
-# trusted base — this tree is run *against* via `pnpm -C`, never `cd`'d into.
-git -C "$REVIEW_WT" rm -r -q --cached --ignore-unmatch \
-  CLAUDE.md .claude .decisions .patterns
-rm -rf "$REVIEW_WT/CLAUDE.md" "$REVIEW_WT/.claude" "$REVIEW_WT/.decisions" "$REVIEW_WT/.patterns"
-
-# ASSERT absence — the load-bearing isolation check (ADR 0067 §Consequences). If any denied
-# path is still on disk the isolation is broken: abort the review rather than read head config.
-for p in CLAUDE.md .claude .decisions .patterns; do
-  if [ -e "$REVIEW_WT/$p" ]; then
-    echo "FATAL: denied instruction surface '$p' present in review worktree — isolation broken; aborting" >&2
-    exit 1
-  fi
-done
+. "$("${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-code/scripts/materialize-head.sh" "$PR")"
 ```
+
+The script's **only stdout line is the run-state handle** carrying `REVIEW_WT` / `PR_REF` /
+`HEAD_SHA` / `BASE_REF`, so sourcing its output puts those four in your shell; every progress, scope
+and FATAL line goes to stderr. On any failure path stdout is empty and the exit is non-zero, so the
+`.` itself fails loudly — **never** fall back to reading the launched checkout's working copy (that
+is the #793 false-PASS: reviewing the base tree while binding the verdict to the head SHA). Later
+steps re-derive the same four values with
+[`scripts/head-env.sh`](scripts/head-env.sh) after the harness resets the shell between calls.
 
 The cross-fork case needs no special branch: `pull/$PR/head` is the GitHub-provided ref for
 the PR head whether it lives on this repo or a fork, so the single `git fetch` above covers
@@ -391,29 +347,30 @@ an output), run the repo's commands **inside the review worktree** — behavior 
 running beats behavior inferred from a diff:
 
 ```bash
-. "$WT_FILE"                   # re-source the run-unique $REVIEW_WT/$PR_REF after a between-call reset (#1807) — never re-derive from the shared `review-head-${PR}` leaf
-pnpm -C "$REVIEW_WT" install   # the catalog/lockfile + patches/ are present, so this succeeds
-# Lint via `pnpm lint:worktree`, never `pnpm lint` / `biome check .`: bare `.` resolves to the
-# review worktree's CWD (sits under .claude/worktrees → matches `!**/.claude/worktrees`) and exits
-# 0 WITHOUT linting (false green; #236, ADR 0060). `lint:worktree` lints the EXPLICIT changed files
-# vs origin/main (committed + working-tree, biome-extension-filtered; docs-only/empty = clean skip),
-# so it catches root + `.claude/**` violations a bare `biome check apps packages` would miss and
-# reliably predicts the CI lint job (#553/#559):
-pnpm -C "$REVIEW_WT" lint:worktree   # and/or the specific test the criterion names
-# Scoping a test to the criterion is fine when the SHA-bound run-evidence bundle (Step 2)
-# corroborates the full surface. But when the bundle is DEGRADED (absent/expired/stale-for-SHA),
-# a feature-scoped run under-verifies the change's blast radius — see the "fail closed on the
-# test surface" rule in the degrade block below: run the FULL unit project, never a subset.
-rm -rf "$REVIEW_WT" && git worktree prune && git update-ref -d "$PR_REF"   # tear the throwaway tree + ref down
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-code/scripts/worktree-checks.sh"
 ```
 
-**Teardown runs on EVERY exit path — PASS, FAIL, or a mid-run error, not just the happy
-path.** The line above is the review's own `rm -rf` of a detached, already-pushed throwaway
+Scoping a test to the criterion is fine when the SHA-bound run-evidence bundle (Step 2) corroborates
+the full surface. But when the bundle is DEGRADED (absent/expired/stale-for-SHA), a feature-scoped
+run under-verifies the change's blast radius — see the "fail closed on the test surface" rule in the
+degrade block below: run the FULL unit project, never a subset.
+
+**Teardown is its own script, and it runs on EVERY exit path — PASS, FAIL, or a mid-run error, not
+just the happy path:**
+
+```bash
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-code/scripts/teardown-head.sh"
+```
+
+It is the review's own `rm -rf` of a detached, already-pushed throwaway
 it materialized itself (safe — it holds no branch and no unpushed work), so run it even when
 the review is exiting `FAIL` or aborting after a typecheck/lint error; a leaked `review-head-*`
 tree accumulates on the shared primary otherwise (#2785). To catch a mid-block error inside a
-single Bash call, register it as a trap right after `git worktree add`:
-`trap 'rm -rf "$REVIEW_WT"; git worktree prune; git update-ref -d "$PR_REF"' EXIT`. And the
+single Bash call, register the script as a trap right after materialization:
+`trap '…/scripts/teardown-head.sh' EXIT` — and note the trap belongs to **your** shell, not to any
+extracted script: none of them installs an `EXIT` trap, because under bash 3.2 the trap's last
+command becomes the script's exit status and would launder a `set -u` abort into exit 0 (#4476,
+class #4479). And the
 standing net for the un-catchable case — a session-end abort *between* Bash calls, which no
 in-shell trap can reach — is `pipeline-cli worktree-sweep --execute` (#2785): it reclaims any
 leaked `review-head-*` tree that is clean + idle + unlocked, **without** `--force` (a dirty /
@@ -426,7 +383,7 @@ the full build inputs, so the typecheck bootstrap is whole — run it and treat 
 the typecheck signal:
 
 ```bash
-pnpm -C "$REVIEW_WT" typecheck   # `pnpm install` above made patches/ hashable + `fate generate` resolvable
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-code/scripts/worktree-typecheck.sh"
 ```
 
 CI and the SHA-bound run-evidence bundle (below) are now **corroboration**, not the sole
@@ -459,22 +416,19 @@ you received an archive and not a 503 error body; `schemaVersion` and
 load-bearing**: a bundle from a stale earlier push is not evidence for this commit.
 
 ```bash
-# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
-PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
-HEAD_SHA="$(gh api repos/$REPO/pulls/$PR --jq '.head.sha')"
-# Exit 0 means `present` — a validated, head-bound bundle. Every other state comes back on stdout
-# as JSON, so read the state rather than branching on the exit alone.
-BUNDLE="$("$PCLI" run-evidence read --pr "$PR")" || true
-BUNDLE_STATE="$(jq -r '.state' <<<"$BUNDLE")"     # present | pending | absent | unknown
-BUNDLE_LINE="$(jq -r '.reportLine' <<<"$BUNDLE")" # the verdict line, evidence already in it
+. "$("${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-code/scripts/run-evidence-read.sh" "$PR")"
 ```
+
+Sourcing its one stdout line puts `HEAD_SHA`, `BUNDLE_STATE` (`present` | `pending` | `absent` |
+`unknown`) and `BUNDLE_LINE` in your shell. **Read the state word, never the exit alone** — the verb
+exits 0 only on `present`, and the other three are different facts, not one "absent".
 
 When the state is `present`, `.manifest` carries the structured results (ADR 0054 §2 fields):
 `checks[]` is each gate step (`{name, status: pass|fail}`), `tests` is the folded JUnit summary
 (`{total, passed, failed, skipped, failingSuites[]}`).
 
 ```bash
-[ "$BUNDLE_STATE" = present ] && jq '.manifest | {commit, schemaVersion, checks, tests}' <<<"$BUNDLE"
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-code/scripts/run-evidence-manifest.sh"
 ```
 
 Cite those numbers as the evidence for any criterion they speak to — "lint/typecheck/unit
@@ -526,8 +480,7 @@ gate exists to prevent. On the degrade path therefore:
   past a degraded verification.
 
   ```bash
-  . "$WT_FILE"                              # re-source $REVIEW_WT/$PR_REF after a between-call reset (#1807)
-  pnpm -C "$REVIEW_WT/apps/web" test:unit   # FULL unit project (the apps/web script) — never path-narrowed on the degrade path
+  "${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-code/scripts/full-unit-project.sh"
   ```
 
 - **If — and only if — the full unit project genuinely cannot run** (an environment fault
@@ -576,83 +529,23 @@ snapshot once mis-classified a now-control-plane PR (#981); reading §CP freshly
 
 The *boundary* is only half of it: the **changed-file list** the boundary is matched against is a
 fallible network read too, and a failed read used to resolve to "no control-plane path touched"
-(#4216). **Define `cp_changed_files` and `cp_head_sha` from
-[§CPREAD](../gh-issue-intake-formats.md#cpread) — copy them verbatim, it is the single source — before
-running the block below**, which consumes their `$CP_FILES` / `$CP_FILES_N` / `$CP_HEAD_SHA` and holds
-§CP on a non-zero return:
+(#4216). Both reads come from
+[§CPREAD](../gh-issue-intake-formats.md#cpread) — `cp_changed_files` and `cp_head_sha`, which the
+classifier **sources** from [`../shared/scripts/cp-read.sh`](../shared/scripts/cp-read.sh) rather
+than carrying a copy of, so there is nothing to keep in step (#4489). It holds §CP on a non-zero
+return:
 
 ```bash
-# §CP travels in the INJECTED skill snapshot, which can lag origin/main even when the on-disk file
-# is current — a pre-amendment snapshot once mis-classified a now-control-plane PR (#981).
-# §CP boundary is single-sourced in pipeline-cli (control-plane-paths/control-plane-re.ts, #2761);
-# run `pipeline-cli control-plane-paths` to print it. It is re-resolved from origin/main right below
-# (the #981 anti-self-authorization read), so this is only a fail-closed sentinel, never the live source.
-CONTROL_PLANE_RE='.'   # fail-closed default: every path is control-plane until origin/main resolves
-# Re-resolve §CP from origin/main at run time so a stale snapshot can't mis-flag a now-control-plane
-# PR as auto-mergeable (#981). ADR 0073 §6 names gh-issue-intake-formats.md the single source; read it
-# freshly via REST raw (never GraphQL). origin/main's line wins over the snapshot; fail closed on read failure.
-CP_LIVE="$(gh api "repos/$REPO/contents/claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md?ref=main" -H 'Accept: application/vnd.github.raw' 2>/dev/null | grep '^CONTROL_PLANE_RE=' | head -n1 || true)"
-if [ -n "$CP_LIVE" ]; then
-  CONTROL_PLANE_RE="$(printf '%s' "$CP_LIVE" | sed "s/^CONTROL_PLANE_RE='//; s/'$//")"   # the flag tracks origin/main, not the snapshot's age (AC1/AC2)
-else
-  CONTROL_PLANE_RE='.'   # FAIL CLOSED: can't read origin/main's boundary ⇒ flag EVERY path control-plane (not-auto-mergeable), never trust the possibly-stale snapshot
-fi
-# ONE hardened read of the changed-file list, feeding BOTH §CP clauses below. `cp_changed_files` is
-# §CPREAD of ../gh-issue-intake-formats.md — exit-status-checked, shape-asserted, scope-emitting; a
-# non-zero return means the read COULD NOT EXECUTE, which is UNKNOWN, not "no §CP path touched". Read
-# the why there once; do not re-derive it here. It also removes the second read this step used to make
-# (the GUARD_TOUCHING loop re-fetched the same list), so both clauses now see the same scanned scope.
-if ! cp_changed_files "$REPO" "$PR"; then
-  # FAIL CLOSED (#4216): a blinded read blinds BOTH clauses at once — the path regex AND the ADR-0164
-  # content probe, which is the only §CP signal a `.decisions/**`-only PR can produce. So resolve BOTH
-  # toward §CP; the sentinel is non-empty, which is exactly what Step 4a branches on.
-  CONTROL_PLANE_TOUCHED="<changed-file list unreadable — §CP UNKNOWN, held as control-plane>"
-  GUARD_TOUCHING="<changed-file list unreadable — §CP UNKNOWN, held as control-plane>"
-else
-  # grep aggregates the §CP matches ACROSS the concatenated pages — a jq `[ … ]` aggregate would
-  # instead emit one array PER PAGE. `|| true` here is now safe and means ONLY what it says: no §CP
-  # match is grep exit 1 over a list that was PROVEN to arrive (#725 + #4216).
-  CONTROL_PLANE_TOUCHED="$(printf '%s\n' "$CP_FILES" | grep -E "$CONTROL_PLANE_RE" || true)"
-  # non-empty → control-plane: emit the advisory line in the verdict (Step 4a) per ADR 0053/0065/0073
-  # §CP by CONTENT (ADR 0164): a touched .decisions/** ADR is not path-§CP, but a guard-RELAXING one is
-  # control-plane by nature. Probe each ADR's content at head with the SHARED `guard-content-probe` verb
-  # — the SAME probe ship-it Step 0, review-doc, and the driver (via trivial-diff) call, so a guard-touching
-  # ADR reads §CP consistently everywhere (issue #3645, founder ruling #3416). A mixed code+guard-ADR PR
-  # fans BOTH gates; either flagging the ADR carries the §CP merge-authority hold.
-  # The ref is a fallible read too — `cp_head_sha` is §CPREAD's companion to `cp_changed_files`
-  # (copy it verbatim from there). It leaves HEAD_SHA EMPTY on failure by DISCARDING gh's payload,
-  # which is what makes the `[ -n ]` test below a live guard rather than a dead one.
-  cp_head_sha "$REPO" "$PR"; HEAD_SHA="$CP_HEAD_SHA"
-  # Assert on the probe's STATE WORD, never on its exit status — the exit code discriminates the two
-  # verdicts only once the verb has RUN, so the old `>/dev/null && …` shape accumulated NOTHING when it
-  # never ran (bad flag / nested-cwd module-not-found / missing shim) and read an unprobed ADR as
-  # ordinary. The `*)` arm keeps could-not-determine a HOLD, exactly as an unreadable body is (#4219).
-  # §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
-  PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
-  GUARD_TOUCHING=""
-  [ -n "$HEAD_SHA" ] || GUARD_TOUCHING="<head SHA unreadable — ADR content unprobeable, held as control-plane>"   # fail closed: no ref ⇒ no probe ⇒ UNKNOWN
-  ADR_N=0
-  while IFS= read -r adr; do
-    [ -z "$adr" ] && continue
-    [ -n "$HEAD_SHA" ] || break
-    ADR_N=$((ADR_N + 1))
-    # Capture and CHECK before classifying, never a straight pipe — §CPREAD #2.
-    adr_body="$(gh api "repos/$REPO/contents/$adr?ref=$HEAD_SHA" -H 'Accept: application/vnd.github.raw' 2>/dev/null)" || adr_body=""
-    if [ -z "$adr_body" ]; then
-      GUARD_TOUCHING="$GUARD_TOUCHING $adr(body-unreadable⇒§CP)"   # fail closed: never auto-ship an ADR that could not be read and proven guard-free
-    else
-      GC_STATE="$(printf '%s' "$adr_body" | "$PCLI" guard-content-probe classify --path "$adr" 2>/dev/null)"
-      case "$GC_STATE" in
-        not-guard-touching) : ;;   # proven ordinary — the ONLY value that may skip the §CP hold
-        guard-touching) GUARD_TOUCHING="$GUARD_TOUCHING $adr" ;;
-        *) GUARD_TOUCHING="$GUARD_TOUCHING $adr(undetermined:'$GC_STATE')" ;;
-      esac
-    fi
-  done < <(printf '%s\n' "$CP_FILES" | grep -E '^\.decisions/.*\.md$' || true)
-  echo "§CP scope: $CP_FILES_N file(s) scanned, $ADR_N .decisions/** ADR(s) content-probed"   # §ZS #1 (ADR 0092): a §CP classification always states its scope
-fi
-# non-empty $GUARD_TOUCHING → §CP-advisory, same as CONTROL_PLANE_TOUCHED above (Step 4a; ADR 0164/0135)
+. "$("${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-code/scripts/classify-control-plane.sh" "$PR")"
 ```
+
+Sourcing its one stdout line puts `CONTROL_PLANE_TOUCHED` and `GUARD_TOUCHING` in your shell — the
+two flags Step 4a branches on — plus the `CP_FILES_N` / `ADR_N` scope counts. **A non-empty either
+flag ⇒ §CP-advisory** (ADR 0053/0065/0073 for the path clause; ADR 0164/0135 for the content clause).
+Every failure path writes the flags as a non-empty `§CP UNKNOWN, held as control-plane` sentinel
+*before* exiting non-zero, because an empty flag is exactly what Step 4a reads as auto-mergeable —
+and if even the handle could not be written, stdout is empty, the `.` fails loudly, and the PR is
+held as control plane.
 
 ---
 
@@ -749,6 +642,13 @@ is — cite it, don't restate the definitions; the steps below are *how* the app
 them. The other three gates run **this same procedure** (one logic, four call sites). Append by
 **reconstructing the issue body** — read it, gate, append the one new row, write it back — never
 by a blind edit:
+
+> **This block also did NOT move into [`scripts/`](scripts/) (#4451), for a different reason.**
+> [PR #4440](https://github.com/kamp-us/phoenix/pull/4440) relocates this whole
+> `## Specialist fan-out + route-don't-grade` section — this fence included — out of every gate and
+> into `../shared/specialist-fan-out.md` (#4396). Extracting it here would relocate the same lines a
+> second, conflicting way, so it stays put and whichever change lands first sets the other's baseline.
+> The remainder is tracked on [#4451](https://github.com/kamp-us/phoenix/issues/4451).
 
 ```bash
 # the §2 in-scope-only fence (fence 2) gates whether you may append AT ALL:
@@ -908,11 +808,12 @@ per the formats §Reading stance — a `**Containment:**` line, with a leading b
 in the body:
 
 ```bash
-# the linked issue's containment marker; a missing line reads as `none` (formats §2 tolerant-read rule)
-CONTAINMENT=$(gh api repos/$REPO/issues/$ISSUE --jq '.body' \
-  | grep -ioE '\**\s*Containment:\**\s*(flag|exempt|none)' | head -n1 \
-  | grep -ioE '(flag|exempt|none)' || echo none)
+CONTAINMENT="$("${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-code/scripts/containment-marker.sh" "$ISSUE")"
 ```
+
+The script prints exactly one of `flag` | `exempt` | `none`. `none` is the *skip* answer, so on a
+non-zero exit it prints `flag` instead — an unread marker is UNKNOWN, and here the conservative
+direction is the **armed** one: the gating verification runs rather than being silently skipped.
 
 **Graceful absence — skip cleanly, never false-FAIL.** The gating check runs **only** when the
 marker resolves to `flag` *and* the repo has a cycle doc. On `exempt`, `none`, a missing line, or
@@ -923,11 +824,13 @@ flag check on an exempt/foreign PR is the failure mode this guard exists to prev
 correct, first-class state (ADR 0062 portability), exactly as a missing milestone is.
 
 ```bash
-# the one canonical cycle-doc probe (formats §1); absent ⇒ no cycle ⇒ skip the gating check
-gh api "repos/$REPO/contents/product-development-cycle.md" --jq '.path' >/dev/null 2>&1 \
-  && CYCLE_DOC=present || CYCLE_DOC=absent
-# run the gating verification below ONLY when:  [ "$CONTAINMENT" = flag ] && [ "$CYCLE_DOC" = present ]
+. "${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-code/scripts/cycle-doc-probe.sh"
 ```
+
+Sourced, not run — the point is the `$CYCLE_DOC` (`present` | `absent`) it leaves in your shell. This
+is the one script here that is **deliberately review-code-local** rather than the shared
+[`../shared/scripts/cycle-doc-probe.sh`](../shared/scripts/cycle-doc-probe.sh); the reason is in
+§ The extracted scripts above.
 
 **Zero-scope = FAIL — a `flag`-marked PR that touches no user-facing surface fails (ADR 0092 / §ZS).**
 A `**Containment:** flag (default-off)` marker is the issue *claiming to deliver user-facing value*
@@ -950,17 +853,7 @@ FAIL — there is no dark feature here to gate (it is **not** a graceful skip; t
 surface and the surface came back empty):
 
 ```bash
-# the PR's user-facing surface (reachable UI + new data/API entry points), off the changed file set.
-# Emit the count + matched paths (ADR 0092 §ZS #1 — a gate states its scope), then fail closed on zero.
-FILES="$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename')"   # the changed paths (same set Step 2 pulled; --paginate past file #100, #725)
-USERFACING=$(printf '%s\n' "$FILES" | grep -E '^apps/web/src/.*\.(tsx|css)$|^apps/web/worker/.*\.(ts|tsx)$' || true)
-USERFACING_N=$(printf '%s\n' "$USERFACING" | grep -c . || true)
-echo "flag-gating user-facing scope: $USERFACING_N path(s) matched"; printf '%s\n' "$USERFACING"
-if [ "$USERFACING_N" -eq 0 ]; then
-  # relevant input (flag marker present), zero matches ⇒ FAIL CLOSED, never a silent PASS (§ZS #2).
-  # Emit ONE [FAIL] row into the conjunctive verdict; the PR is not merge-ready.
-  echo "- [FAIL] flag-gating (default-off) — \`**Containment:** flag\` marks a dark-shipped feature, but the diff touches NO user-facing surface (apps/web/src/**/*.{tsx,css}, new apps/web/worker/** resolver/route/mutation): empty scope on a flag-marked PR is a FAIL (ADR 0092 §ZS), not a pass — there is no user-facing path to gate."
-fi
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-code/scripts/userfacing-scope.sh" "$PR"
 ```
 
 The matched-paths emit is **load-bearing, not narration** (§ZS #1): the verdict states the exact
@@ -1032,54 +925,13 @@ the same change that ships the surface.
 folder is *new* only when its marker path is absent on fresh base.
 
 ```bash
-# the file list WITH status (Step 2 already loaded the diff; this reuses the same files endpoint)
-# --paginate + streaming --jq so the full set past file #100 is seen (the API caps per_page at 100; #725)
-FILES_STATUS="$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" \
-  --jq '.[] | "\(.status)\t\(.filename)"')"
-ADDED="$(printf '%s\n' "$FILES_STATUS" | awk -F'\t' '$1=="added"{print $2}')"
-
-# (1) a NEW feature folder: an added file under apps/web/worker/features/<dir>/... whose <dir>
-#     did not exist on fresh base. Dedupe to the folder; a folder is new iff base has no tree there.
-NEW_FEATURE_DIRS=""
-for d in $(printf '%s\n' "$ADDED" \
-            | sed -nE 's#^(apps/web/worker/features/[^/]+)/.*#\1#p' | sort -u); do
-  # read-only existence probe against FRESH base — never the working tree (formats §RO)
-  git cat-file -e "origin/$BASE_REF:$d" 2>/dev/null || NEW_FEATURE_DIRS="$NEW_FEATURE_DIRS $d"
-done
-
-# (2) a NEW public package: an added packages/<pkg>/package.json whose package dir is absent on base
-NEW_PACKAGES=""
-for p in $(printf '%s\n' "$ADDED" \
-            | sed -nE 's#^(packages/[^/]+)/package\.json$#\1#p' | sort -u); do
-  git cat-file -e "origin/$BASE_REF:$p/package.json" 2>/dev/null || NEW_PACKAGES="$NEW_PACKAGES $p"
-done
-
-# A new public EXPORT from an existing package is the third surface — a public entry point
-# (packages/<pkg>/src/index.ts, or the file a package.json "exports"/"main" names) that the diff
-# CHANGES to expose a new name. This one is read from the diff hunk, not a path-status test:
-# inspect the diff of any touched public entry for an added `export …` line. Treat a public-entry
-# file with an added export as a new surface for this gate.
-PUBLIC_ENTRY_EXPORT_ADDED="$(gh pr diff $PR \
-  | awk '/^\+\+\+ b\/packages\/[^/]+\/src\/index\.(ts|tsx)$/{e=1;next}
-         /^\+\+\+ /{e=0} e && /^\+[^+].*\bexport\b/{print}')"
-
-# the union: is there ANY new surface?
-NEW_SURFACE="$(printf '%s %s %s' "$NEW_FEATURE_DIRS" "$NEW_PACKAGES" "$PUBLIC_ENTRY_EXPORT_ADDED" | tr -s ' ')"
-
-# does the PR touch the glossary's domain-noun file? (added OR modified — any touch counts)
-GLOSSARY_TOUCHED="$(printf '%s\n' "$FILES_STATUS" | awk -F'\t' '$2==".glossary/TERMS.md"{print}')"
-
-# POSITIVE EVIDENCE OF SCOPE (§ZS / ADR 0092's "default FAIL, pass on positive evidence"): can the
-# three detectors above express ANYTHING in this repo at all? An empty $NEW_SURFACE has two causes —
-# "this PR added no surface" (a fact about the PR) and "this repo has no surface of the kind I know
-# how to look for" (a fact about the DETECTOR) — and until this probe they produced the identical
-# not-applicable line (#4299). Read-only, against fresh base, same as every probe above.
-DETECTOR_SURFACES="$(
-  git ls-tree --name-only "origin/$BASE_REF:apps/web/worker/features" 2>/dev/null
-  git ls-tree -r --name-only "origin/$BASE_REF:packages" 2>/dev/null | grep -E '^[^/]+/package\.json$'
-)"
-DETECTOR_SURFACES_N="$(printf '%s\n' "$DETECTOR_SURFACES" | grep -c . || true)"
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-code/scripts/glossary-freshness.sh" "$PR"
 ```
+
+The three detectors, the positive-evidence-of-scope probe and the four-outcome verdict chain live in
+that one script — the chain consumes the detectors' variables, and two separate scripts would have to
+re-derive them, so the block-group moved whole. It reads `BASE_REF` off the head handle, which is what
+keeps every existence probe against the **freshly fetched** base rather than the working tree.
 
 **The self-asserting / fail-closed verdict (formats §ZS, ADR 0092) — four outcomes, never a
 silent PASS.** This gate's signature failure mode is *scanning nothing and reading green*, so it
@@ -1114,27 +966,12 @@ the skip's clothes:
   not the PR author: adopt a layout the detector expresses, drop `.glossary/TERMS.md` (which routes to
   the honest graceful-absence skip below), or make surface detection declarable.
 
-```bash
-# The graceful-absence probe LEADS the chain, EXECUTED — never asserted in prose. Every branch below
-# claims the glossary is on base, so a repo that never adopted it must be excluded by a real test or
-# the final `else` states a fact it never checked — the gate's own sin, one branch over (#4299).
-if ! git cat-file -e "origin/$BASE_REF:.glossary/TERMS.md" 2>/dev/null; then
-  echo "glossary-freshness: not applicable — no .glossary/TERMS.md on base"   # graceful absence: no row
-elif [ -n "$(printf '%s' "$NEW_SURFACE" | tr -d ' ')" ]; then
-  echo "glossary-freshness: scanned new surfaces ⇒$NEW_SURFACE"   # §ZS #1: emit what it scanned
-  if [ -n "$GLOSSARY_TOUCHED" ]; then
-    echo "glossary-freshness: PASS — new surface ships with a .glossary/TERMS.md touch"
-  else
-    echo "glossary-freshness: FAIL — new surface added but .glossary/TERMS.md untouched (§ZS relevant-but-zero-match)"
-    # fold as a FAIL facet in the verdict table (and/or append the in-scope AC per the §2 surface)
-  fi
-elif [ "$DETECTOR_SURFACES_N" -gt 0 ]; then
-  echo "glossary-freshness: not applicable — no new feature folder / public package / export in this PR (detector expressible here: $DETECTOR_SURFACES_N candidate surface(s) on base)"   # §ZS #3 skip
-else
-  echo "glossary-freshness: UNVERIFIABLE — detector blind: .glossary/TERMS.md is on origin/$BASE_REF, but this repo has ZERO surfaces the detector can express (no apps/web/worker/features/* dir, no packages/*/package.json on base). The empty scan is a fact about the DETECTOR, not this PR — it is NOT evidence the PR added no surface."
-  # fold as an [UNVERIFIABLE] facet in the verdict table — a blocking soft fail, never an omitted row
-fi
-```
+The chain is the tail of the same
+[`scripts/glossary-freshness.sh`](scripts/glossary-freshness.sh) invoked above — the graceful-absence
+probe LEADS it, EXECUTED, never asserted in prose, so the detector-blind `UNVERIFIABLE` branch is
+structurally unreachable when the glossary is absent. A fifth line,
+`glossary-freshness: CANNOT-EVALUATE (…)` at a non-zero exit, is the extraction's own fail-closed
+sentinel: fold it as `[UNVERIFIABLE]`, never as a not-applicable skip.
 
 Fold the result into the per-criterion table as one line, exactly like Step 3b's flag-gating facet —
 so the conjunctive verdict (Step 3) accounts for it like any other criterion:
@@ -1203,14 +1040,12 @@ relevant-but-zero-match** case, and express a no-comment diff as an **explicit n
 skip** — distinct from a FAIL.
 
 ```bash
-# the added lines this PR introduced on comment-bearing code files, off the diff Step 2 already
-# loaded (the reviewer judges WHICH are comments per the deslop-comments rubric — a regex can't,
-# which is the point). Emit the scanned scope (§ZS #1) so a future drift that silently stops
-# finding added comment lines is visible in the run output rather than reading green.
-ADDED_ON_CODE="$(gh pr diff $PR \
-  | awk '/^\+\+\+ b\/.*\.(ts|tsx|js|jsx|css)$/{f=substr($0,7);next} /^\+\+\+ /{f=""} f && /^\+[^+]/{print f": "substr($0,2)}')"
-echo "comment-discipline: scanned $(printf '%s\n' "$ADDED_ON_CODE" | grep -c . || echo 0) added line(s) on comment-bearing files"
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-code/scripts/comment-scan.sh" "$PR"
 ```
+
+It prints the §ZS scope line, then the scanned lines themselves — the fence left those in a shell
+variable for you to read, and a script boundary has none to hand back. The scan **arms** your
+judgement; the rubric decides it.
 
 Three outcomes, folded into the per-criterion table exactly like Step 3b/3c:
 
@@ -1249,6 +1084,19 @@ REST-only rule — verified working on this org (the Projects-classic breakage i
 fields, not `reviewThreads`; ADR
 [0158](https://github.com/kamp-us/phoenix/blob/main/.decisions/0158-unresolved-review-thread-is-a-merge-gate.md)).
 Every other read/write in this skill stays REST.
+
+> **This is the one block that did NOT move into [`scripts/`](scripts/) (#4451).** The
+> `skill-gh-lint` job runs `gh-phoenix lint-skills` over the corpus and FAILs on any `gh api graphql`
+> in a runnable block — **including a whole `.sh`**. The lint's `SELF_EXEMPT_SUFFIXES` exempts
+> `/skills/review-code/SKILL.md` as a whole file, so the read is lawful *here* and would be flagged
+> the moment it landed in a script. The idiom that would cover an extracted script already exists:
+> [#4491](https://github.com/kamp-us/phoenix/pull/4491) **landed** (`15263296`) two **per-script**
+> entries in that same array, annotated there as deliberately *not* a `scripts/`-wide exemption. But
+> adding a `review-code/scripts/*.sh` entry edits
+> `packages/pipeline-cli/src/tools/gh-phoenix/lint.ts` — a **code-class** file outside a skills-only
+> extraction child. The operative rule: a block a guard parses out of the markdown cannot move until
+> the guard follows. It stays inline until that lands, and the remainder is tracked on
+> [#4451](https://github.com/kamp-us/phoenix/issues/4451).
 
 ```bash
 ORG="${REPO%%/*}"; NAME="${REPO#*/}"
@@ -1321,14 +1169,11 @@ Detect it off the diff Step 2 already loaded — emit the scanned scope (§ZS #1
 that silently stops matching is visible in the run output rather than reading green:
 
 ```bash
-# does this PR touch a session/caching seam? A hit ARMS the two-axis check below; it never
-# alone FAILs — the reviewer judges whether a hit is a genuine new caching path (per the fire
-# condition above) or an unrelated auth edit. Fail-closed on the security-load-bearing surface:
-# when in doubt that a hit is a caching path, run the check, don't skip it.
-CACHE_HITS="$(gh pr diff $PR \
-  | grep -inE 'cookieCache|session\.?cache|cacheSession|maxAge|staleness|ttl|revalidat' || true)"
-echo "session-caching gate: scanned the diff for session-caching seams — $(printf '%s\n' "$CACHE_HITS" | grep -c . || echo 0) candidate line(s)"
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-code/scripts/session-caching-scan.sh" "$PR"
 ```
+
+It prints the §ZS scope line, then the candidate lines themselves, so you can judge each against the
+fire condition above.
 
 **When it fires, both axes MUST be verified as REQUIRED test coverage — not prose, not one axis.**
 Confirm the PR adds (or already has, exercising the new path) a deterministic integration test for
@@ -1465,8 +1310,12 @@ any verdict not bound to the PR's current head (ADR
 verdict-body shape at the end of this step.
 
 ```bash
-HEAD_SHA="$(gh api repos/$REPO/pulls/$PR --jq .head.sha)"   # the head you reviewed
+HEAD_SHA="$("${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-code/scripts/current-head.sh" "$PR")"   # the head you reviewed
 ```
+
+The script shape-asserts the SHA (bare 40-hex) and prints **nothing** on a failed read, so gh's error
+document can never reach the marker's `@ <sha>` field — the #2683 shape `verdict post`'s
+`emissionDefect` gate would otherwise refuse the whole verdict over.
 
 **Preferred — an approving review** (the native, unambiguous GitHub signal). Capture its
 result and check the exit status **explicitly**; on failure (e.g. a 422 when you can't
@@ -1499,39 +1348,16 @@ genuinely unavoidable, the body **MUST** first pass `pipeline-cli leak-guard sca
 [gh-issue-intake-formats.md](../gh-issue-intake-formats.md#the-guarded-emit-path-is-mandatory--never-hand-post-a-verdict-marker-off-the-guard) — the *why* lives there, not re-derived here.
 
 ```bash
-# resolve the verdict CLI via the `bin/pipeline-cli` shim — in-repo bin, else the installed bin,
-# else the pinned `pnpm dlx` fallback reading the one pin (hooks/pin.sh); no version pinned here
-# (#3653; ADR 0062/0064; epic #994)
-VERDICT="${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/bin/pipeline-cli verdict"
-
-# Compose the PASS verdict straight into a shell variable (heredoc → multi-line markdown + backticks
-# survive) — NO scratch file, so no concurrent run can clobber it (#1465/#3718/#3801). First line:
-# review-code: PASS @ <HEAD_SHA> — merge-ready
-BODY="$(cat <<EOF
-review-code: PASS @ ${HEAD_SHA} — merge-ready
-… your per-criterion evidence table …
-EOF
-)"
-# Read-back assertion BEFORE the native APPROVE: the same gate `verdict post` enforces, piped on
-# stdin, so a malformed `@ <sha>` (e.g. an mktemp scratch path, #2683) fails loud here, never in a
-# review body.
-printf '%s' "$BODY" | $VERDICT validate --gate code || {
-  echo "FATAL: composed review-code marker is malformed — refusing to post (fix the @ <sha> field; #2683)" >&2
-  exit 1
-}
-if gh api -X POST repos/$REPO/pulls/$PR/reviews \
-     -f event=APPROVE -f body="$BODY"; then
-  : # native approving review posted (GitHub records its commit_id = the head you approved;
-    #  ship-it reads that commit_id for the same staleness test the marker's @ <sha> drives)
-else
-  # APPROVE failed (e.g. 422 on your own PR) — upsert the structured pass comment instead, through
-  # the guarded tool on stdin: it PATCHes your newest own review-code marker (namespace-anchored, so
-  # it also upserts a prior advisory across a non-blocking↔blocking flip) else POSTs the first, and
-  # it fail-closes on a malformed/cross-namespace body AND on a body bound to another PR's head
-  # (the #3801 post-time cross-check) so a broken/mis-bound marker never reaches GitHub.
-  printf '%s' "$BODY" | $VERDICT post --pr "$PR" --gate code
-fi
+printf '%s' "$BODY" | "${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-code/scripts/verdict-emit-pass.sh" "$PR" "$HEAD_SHA"
 ```
+
+`$BODY` is the verdict body **you** compose — its canonical shape is the markdown block at the end of
+this step; the script only receives it. Piping it on **stdin** is the collision-proof form: with no
+file on disk there is nothing for a concurrent review of the same PR to clobber and no scratch path
+that could bleed into the `@ <sha>` field. The script runs `verdict validate` as a read-back assertion
+first, then the native `APPROVE`, falling back to the `verdict post` comment upsert — as an **explicit
+`if`**, never `APPROVE || post`, because a pipe around the APPROVE call would make the pipeline's
+status mask its failure and the fallback would silently never fire.
 
 Either way, the verdict body states plainly: every acceptance criterion verified
 (the table), the PR is **merge-ready**, and — explicitly — that **review-code does not
@@ -1539,7 +1365,7 @@ merge**; the **`ship-it`** skill is the authorized merge step, and merging this 
 auto-close issue #N via its `Fixes #N`. Leave the issue as-is (it'll close on merge, not
 now).
 
-Verdict body shape (this is what you wrote to `$VERDICT_FILE` above) for the **non-blocking**
+Verdict body shape (this is the `$BODY` you pipe into the emitter above) for the **non-blocking**
 path. The first line is the **canonical bare marker** — no leading `**` emphasis, **with the
 `@ <HEAD_SHA>` you resolved above** — per the matcher contract in
 [gh-issue-intake-formats.md](../gh-issue-intake-formats.md) §5; matchers tolerate an optional
@@ -1700,24 +1526,12 @@ any later use are one single-sourced read, never two independent resolutions tha
 straddle a head move:
 
 ```bash
-# resolve the verdict CLI via the `bin/pipeline-cli` shim — in-repo bin, else the installed bin,
-# else the pinned `pnpm dlx` fallback reading the one pin (hooks/pin.sh); no version pinned here
-# (#3653; ADR 0062/0064; epic #994)
-VERDICT="${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/bin/pipeline-cli verdict"
-HEAD_SHA="$(gh api repos/$REPO/pulls/$PR --jq .head.sha)"   # resolve ONCE, before composing (mirror the PASS path)
-# Compose straight into a shell variable and pipe on stdin — NO scratch file, so no fixed/PR-keyed
-# name a concurrent run can clobber (#1465/#3718/#3801). First line: review-code: FAIL @ $HEAD_SHA — not merge-ready
-BODY="$(cat <<EOF
-review-code: FAIL @ ${HEAD_SHA} — not merge-ready
-… your per-criterion evidence table …
-EOF
-)"
-# Upsert through the guarded tool (resolved above), exactly as the PASS path: it upserts the one
-# review-code marker (namespace-anchored, advisory included) and fail-closes on a malformed/
-# cross-namespace body (so the mktemp-path `@ <sha>` leak #2683 can't land) AND on a body bound to
-# another PR's head (the #3801 post-time cross-check).
-printf '%s' "$BODY" | $VERDICT post --pr "$PR" --gate code
+HEAD_SHA="$("${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-code/scripts/current-head.sh" "$PR")"   # resolve ONCE, before composing (mirror the PASS path)
+printf '%s' "$BODY" | "${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-code/scripts/verdict-emit-fail.sh" "$PR" "$HEAD_SHA"
 ```
+
+Same stdin seam as the PASS path, for the same reason — no fixed or `${PR}`-keyed scratch name a
+concurrent run can clobber (#1465/#3718/#3801). `$BODY`'s canonical shape is the markdown block below.
 
 You *may* additionally request changes via a formal review
 (`-f event=REQUEST_CHANGES`) for the native signal — but the **comment with
@@ -1808,13 +1622,13 @@ state (never a carried variable) and runs the read-back on whatever landed, on *
 [`gh-issue-intake-formats.md` §Make the read-back UNCONDITIONAL (`verdict_post_verify`)](../gh-issue-intake-formats.md#make-the-read-back-unconditional--resolve-the-landed-verdict-from-pr-state-never-a-carried-id-verdict_post_verify):
 
 ```bash
-# UNCONDITIONAL post-verify: resolve the landed verdict from PR state (marker comment @ HEAD_SHA, the
-# advisory line, or the native APPROVE at commit_id==HEAD_SHA), then prove it present + well-formed +
-# leak-free. FATAL (non-zero) on absent / malformed / leaking — the #2264 whole-body-path leak, a
-# no-opped post, and a stale-head marker all fail here. Propagate the non-zero: never report the gate
-# done over an ungated PR. Runs no matter which 4a/4b branch posted — no $MINE, no skippable path.
-verdict_post_verify "$PR" review-code "$HEAD_SHA" || exit 1
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-code/scripts/verdict-readback.sh" "$PR" "$HEAD_SHA" || exit 1
 ```
+
+The script **sources** `verdict_post_verify` from
+[`../shared/scripts/verdict-readback.sh`](../shared/scripts/verdict-readback.sh) — there is no
+skill-local copy — and propagates its status. Propagate it further: never report the gate done over an
+ungated PR.
 
 `verdict_post_verify` is the load-bearing change over the old inline check: the prior presence scan
 merely *echoed* a warning on a miss and re-posted **without a non-zero exit**, so a garbled/absent
