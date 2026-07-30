@@ -47,8 +47,48 @@ if set, else the current repository. In phoenix this defaults to `kamp-us/phoeni
 behavior is unchanged with no config (ADR 0062 §1).
 
 ```bash
-REPO="${CLAUDE_PIPELINE_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}"
+REPO="$("${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/plan-epic/scripts/resolve-repo.sh")" || exit 1
 ```
+
+Every script under [`scripts/`](scripts/) resolves the repo the same way through the shared lib's
+`kp_repo`, so you never thread `$REPO` into one — that assignment is for your own ad-hoc `gh api`
+reads.
+
+## The extracted scripts
+
+This skill's shell lives in [`scripts/`](scripts/), one script per step, and each fenced `bash`
+block below is an **invocation** of one. The prose keeps the *why*; the scripts hold the *how*
+(epic #4435 phase 1 — the shell moved as-is, and turning its `gh`/`jq` glue into tested
+`pipeline-cli` verbs is #1929). Four properties are load-bearing when you read or edit them:
+
+- **They set `set -uo pipefail`, deliberately not `-e`.** The moved glue decides its own control
+  flow through the guards written into it — the Step-5 loop's `break`-on-abort branches, an
+  `if ! $LOCK acquire` that reads a status rather than dying on it, a `.milestone.number // empty`
+  whose empty result *is* the answer. `errexit` would abort those paths mid-decision and turn a
+  fail-closed branch into no branch at all.
+- **An exit status is the answer; an empty stdout never is.** The moved blocks' back-off `exit 0`
+  ended the *agent's own* bash block, which a separate process cannot do — and an exit 0 from a
+  script would read as "proceed". So [`scripts/epic-lock-acquire.sh`](scripts/epic-lock-acquire.sh)
+  exits **3** on a back-off and **0** only when `epic-lock acquire` itself won (printing
+  `epic-lock: won #<EPIC>`), and [`scripts/splice-body.sh`](scripts/splice-body.sh) exits **non-zero**
+  on every terminal path except a confirmed round-trip — so "could not land the topology" can never
+  be read as "pinned". An unresolved shim is **127** everywhere: UNKNOWN, never a clean answer.
+- **Cross-step state travels through the §SP scratch namespace, not shell variables.** Each agent
+  Bash call is a fresh process, so Step 1's snapshot reaches Step 5 through one directory the shared
+  lib re-derives: [`scripts/scratch-open.sh`](scripts/scratch-open.sh) calls `kp_scratch_open`
+  (which resets) exactly once, and every later script calls `kp_scratch_path` (which never does) —
+  which is why re-running the open step mid-plan would delete the very snapshot Step 5 reads back
+  (#3718).
+- **They relay, they never decide.** Each script passes its verb's answer through —
+  `epic-lock`, `intake-compose sub-issue`, `epic-splice apply`, `tracker graduate` — and never
+  re-derives the decision that verb owns (ADR 0228).
+
+[`scripts/verify-extraction.sh`](scripts/verify-extraction.sh) is the runnable harness for those
+four properties across **both** halves of the planning gate (this skill and
+[`review-plan`](../review-plan/SKILL.md)) — invocation-only fences, no bare `pipeline-cli`, no
+user-local path, `shellcheck -x`, the shared-lib source, no cleanup trap on `EXIT`, no unguarded
+empty-array expansion, and the two failure-path probes asserted on **both** exit code and stdout
+byte count. Run it after editing any script here; it fails closed on zero scope.
 
 ## The formats contract
 
@@ -140,18 +180,10 @@ re-implementing ~50 lines of `jq` inline. Resolve the tool in-repo first, publis
 (ADR 0064), then branch on its exit status:
 
 ```bash
-# The `bin/pipeline-cli` shim resolves the CLI (in-repo bin, else the installed bin, else the
-# pinned `pnpm dlx` fallback reading hooks/pin.sh) — no version pinned here (#3653; ADR 0064).
-LOCK="${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/bin/pipeline-cli epic-lock"
-
-# Acquire the two-layer lock. `epic-lock acquire` runs the WHOLE ADR-0115 protocol over $CLAUDE_CODE_SESSION_ID
-# and exits 0 ONLY when the lock is ours; every fail-closed back-off — a held label, a 422 missing label, a
-# failed claim post, a lost co-acquire, a missing session id — prints its reason on stderr and exits NON-ZERO.
-# Branch on exit status — never mutate on a non-zero.
-if ! $LOCK acquire <EPIC>; then
-  exit 0   # backed off (held lock / setup gap / lost race is not a plan-epic failure) — re-run later.
-fi
-# WON. WE hold the lock (label + earliest claim). Release it on EVERY terminal path (below).
+# exit 0 = lock WON (prints `epic-lock: won #<EPIC>`) → mutate, then RELEASE on every exit path.
+# 3 = backed off (held lock / setup gap / lost race — not a plan-epic failure, re-run later);
+# 127 = the shim never ran (UNKNOWN). NEVER mutate on a non-zero.
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/plan-epic/scripts/epic-lock-acquire.sh" <EPIC>
 ```
 
 **Release is an explicit agent step, not a shell `trap … EXIT`.** The acquire above runs in
@@ -164,12 +196,9 @@ the way out — run this exact `DELETE` once you reach **any** terminal state (P
 or a failure/abort mid-mutation):
 
 ```bash
-# release: run on EVERY exit path AFTER a WON acquire (done, park, or fault mid-mutation).
-# `epic-lock release` does BOTH parts: (a) retract OUR OWN claim comment(s) — re-found by session id,
-# since the acquire ran in a PRIOR process and its comment id is gone here; and (b) drop the coarse
-# label — a 404 is benign (already released), but ANY other DELETE failure is surfaced LOUDLY (a
-# silently-swallowed DELETE LEAKS the lock and wedges the epic, the exact ADR-0059 catastrophe).
-$LOCK release <EPIC>
+# A non-zero exit means the release did NOT complete — the lock is LEAKED and the epic is wedged.
+# Surface it loudly; never swallow it.
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/plan-epic/scripts/epic-lock-release.sh" <EPIC>
 ```
 
 The release fires on **every** terminal path on purpose: you drive this as an LLM agent across
@@ -229,30 +258,20 @@ Step 1 writes this state and **Step 5 reads it back from a different Bash call**
 must be *deterministic*, not randomly allocated: shell state doesn't survive between calls, and
 a re-run of `mktemp -d` would hand Step 5 a new empty directory instead of Step 1's files. §SP
 keys the namespace on `$CLAUDE_CODE_SESSION_ID` exactly so any later call can recompute it —
-**open** the run once here (the `rm -rf` clears a previous run of this same epic in this same
-session), then **re-derive** it with the same one-liner in every later block, per §SP rule 3:
+**open** the run once here (the open clears a previous run of this same epic in this same session),
+after which every later script **re-derives** the same directory through the shared lib's
+`kp_scratch_path`, which never clears it, per §SP rule 3:
 
 ```bash
-# §SP: the per-run scratch namespace — deterministic + fail-closed, never a shared fallback.
-[ -n "${CLAUDE_CODE_SESSION_ID:-}" ] || {
-  echo "plan-epic: §SP — CLAUDE_CODE_SESSION_ID unset; refusing to write plan state to a shared path (#3718)." >&2; exit 1; }
-RUN_SCRATCH="${TMPDIR:-/tmp}/kampus-run/$CLAUDE_CODE_SESSION_ID/plan-epic-<EPIC>"
-rm -rf "$RUN_SCRATCH" && mkdir -p "$RUN_SCRATCH" || {
-  echo "plan-epic: §SP could not create a per-run scratch dir — refusing to write plan state to a shared path (#3718)." >&2; exit 1; }
+# OPEN the namespace — run this ONCE per plan; it prints the directory and clears a previous run of
+# this same epic in this same session. Every later script re-derives it and never clears it.
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/plan-epic/scripts/scratch-open.sh" <EPIC>
 ```
 
 ```bash
-RUN_SCRATCH="${TMPDIR:-/tmp}/kampus-run/${CLAUDE_CODE_SESSION_ID:?§SP: session id unset (#3718)}/plan-epic-<EPIC>"   # §SP re-derive (see the open step above)
-# the epic, its current body, its labels, and any children it already has
-gh api repos/$REPO/issues/<EPIC> --jq '{number,title,labels:[.labels[].name],sub_issues_summary}'
-# capture the body AND its revision marker from ONE GET — reading them in two calls lets a writer
-# land between them, yielding an updated_at newer than the captured body (TOCTOU skew); the Step 5
-# recheck would then either spuriously retry or trust a marker that doesn't match the captured body.
-gh api repos/$REPO/issues/<EPIC> --jq '{body,updated_at}' > "$RUN_SCRATCH/snap.json"
-jq -r '.body'       "$RUN_SCRATCH/snap.json" > "$RUN_SCRATCH/current.md"
-jq -r '.updated_at' "$RUN_SCRATCH/snap.json" > "$RUN_SCRATCH/updated-at.txt"
-gh api 'repos/$REPO/issues/<EPIC>/sub_issues?per_page=100' \
-  --jq '.[] | "#\(.number) [\(.state)] \(.title)"'
+# the epic + its labels + child summary on stdout, and the body/updated_at snapshot written into the
+# namespace for Step 5 to read back
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/plan-epic/scripts/epic-read.sh" <EPIC>
 ```
 
 If the epic already has sub-issues or a plan section, you're **re-planning** — jump to
@@ -455,19 +474,8 @@ later; #1968 and #2099 the same verdict-resolver work in two places).
 **Read both sets once, before the create loop:**
 
 ```bash
-RUN_SCRATCH="${TMPDIR:-/tmp}/kampus-run/${CLAUDE_CODE_SESSION_ID:?§SP: session id unset (#3718)}/plan-epic-<EPIC>"   # §SP re-derive (see the open step above)
-# 1. Already-emitted OPEN children of THIS epic — the re-dispatch idempotency set. A re-run must
-#    SKIP any proposed child that matches one of these (reconcile, don't re-create). The sub-issue
-#    list is the source of truth for what the epic already spawned; on a mixed open/closed epic
-#    prefer it over sub_issues_summary (which undercounts).
-gh api "repos/$REPO/issues/<EPIC>/sub_issues?per_page=100" \
-  --jq '.[] | select(.state=="open") | .title' > "$RUN_SCRATCH/existing-children.txt"
-
-# 2. The open backlog — the cross-backlog overlap set. A decomposition can re-mint work that
-#    already exists as an open standalone issue or another epic's child, so a proposed child that
-#    overlaps an open issue is surfaced/skipped, not minted. (REST issue list, not GraphQL.)
-gh api "repos/$REPO/issues?state=open&per_page=100" \
-  --jq '.[] | select(.pull_request | not) | "#\(.number)\t\(.title)"' > "$RUN_SCRATCH/open-backlog.txt"
+# writes existing-children.txt (set 1) and open-backlog.txt (set 2) into the §SP namespace
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/plan-epic/scripts/idempotency-sets.sh" <EPIC>
 ```
 
 **Then classify each proposed child before you create it:**
@@ -506,32 +514,23 @@ caught only by `review-plan`'s non-blocking advisor (#754, the same silent-clobb
 #3718's `prref.txt`). The loop writes one spec per child, so the `mktemp` template matters here
 even within a single run:
 
-```bash
-# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
-PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
-RUN_SCRATCH="${TMPDIR:-/tmp}/kampus-run/${CLAUDE_CODE_SESSION_ID:?§SP: session id unset (#3718)}/plan-epic-<EPIC>"   # §SP re-derive (see the open step above)
-mkdir -p "$RUN_SCRATCH" || exit 1
-# write this child's spec into a per-run temp file, never a shared fixed path (#754)
-CHILD_SPEC_FILE="$(mktemp "$RUN_SCRATCH/child.XXXXXX")"
-cat > "$CHILD_SPEC_FILE" <<'EOF'
+Write the child's spec JSON to a file of your own — the shape below — and hand its path to the
+script, which relocates it into a per-run `mktemp` inside `$RUN_SCRATCH` before composing (that
+relocation *is* the #754 guard) and prints the created `{number,id}`:
+
+```json
 {
   "stories": "<bare numbers, e.g. `1` or `1, 3` — no `S` prefix; or `none (pure infra — see What to build)`>",
   "tdd": "yes",
   "whatToBuild": "<the prose spec>",
   "acceptanceCriteria": ["<observable, checkable criterion>"]
 }
-EOF
-# The verb composes the format-2 body per the contract and emits it BY VALUE to stdout — no
-# hand-re-derived `### What to build` / `### Acceptance criteria`, no `-f body=@file` leak.
-BODY="$("$PCLI" intake-compose sub-issue --spec "$CHILD_SPEC_FILE")"
-# ATOMIC create — body AND its type/priority/status:planned labels in ONE REST write. `POST /issues`
-# accepts `labels` inline, so an interrupted run can never leave a label-less child: the create
-# either lands the issue WITH its labels or creates nothing. (Values chosen per the paragraph below.)
-gh api repos/$REPO/issues \
-  -f title="<sharp single-unit title>" \
-  -f body="$BODY" \
-  -f "labels[]=type:feature" -f "labels[]=p2" -f "labels[]=status:planned" \
-  --jq '{number,id}'
+```
+
+```bash
+# type + priority are yours to choose per the paragraph below; status:planned is fixed by the script.
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/plan-epic/scripts/create-child.sh" \
+  <EPIC> "<sharp single-unit title>" type:feature p2 "<path/to/child-spec.json>"
 ```
 
 Capture both `number` and `id` from the create — Step 4 links by the `id`, so you won't need
@@ -562,8 +561,7 @@ adjust labels on an **already-existing** child:
 ```bash
 # amend-only — append/adjust labels on an EXISTING child. Fresh children are labeled AT CREATE (above),
 # so this never runs on the create path; using it there would reopen the label-less-orphan window.
-gh api repos/$REPO/issues/<CHILD>/labels \
-  -f "labels[]=type:feature" -f "labels[]=p2" -f "labels[]=status:planned"
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/plan-epic/scripts/amend-child-labels.sh" <CHILD> type:feature p2
 ```
 
 (Type and priority are your call as planner, the same authority triage has — you're
@@ -584,10 +582,8 @@ intake dimension*); this is the inherit-logic that section says lives here and c
 Read the epic's milestone once, and **only if it has one** PATCH each created child onto it:
 
 ```bash
-EPIC_MILESTONE=$(gh api repos/$REPO/issues/<EPIC> --jq '.milestone.number // empty')
-if [ -n "$EPIC_MILESTONE" ]; then
-  gh api -X PATCH repos/$REPO/issues/<CHILD> -f milestone="$EPIC_MILESTONE"
-fi
+# a no-op (reported on stdout) when the epic has no milestone — inheritance copies, never invents
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/plan-epic/scripts/inherit-milestone.sh" <EPIC> <CHILD>
 ```
 
 **If the epic has no milestone, children stay unmilestoned** — inheritance *copies* the
@@ -615,12 +611,10 @@ whole step no-ops (graceful absence, ADR
 [0062](https://github.com/kamp-us/phoenix/blob/main/.decisions/0062-repo-as-config-plugin.md)):
 
 ```bash
-# the formats-contract canonical probe — absent ⇒ no marker stamped (children carry `none`)
-if gh api "repos/$REPO/contents/product-development-cycle.md" --jq '.path' >/dev/null 2>&1; then
-  CYCLE_DOC=present
-else
-  CYCLE_DOC=absent
-fi
+# prints `present` or `absent`; it sources the ONE shared implementation of the formats-contract
+# canonical probe (`../shared/scripts/cycle-doc-probe.sh`), never a second copy.
+# absent ⇒ no marker stamped (children carry `none`)
+CYCLE_DOC="$("${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/plan-epic/scripts/cycle-doc-probe.sh")" || exit 1
 ```
 
 - **Cycle doc present.** For each child, consult the cycle's policy and decide the child's
@@ -690,20 +684,14 @@ is the real parent/child edge, not just a `## Dependencies` mention.
 The endpoint takes the child's **database id** (`.id`), *not* its issue number:
 
 ```bash
-# the child's database id (reuse the .id from the Step 3 create if you captured it)
-CHILD_ID=$(gh api repos/$REPO/issues/<CHILD> --jq '.id')
-gh api -X POST repos/$REPO/issues/<EPIC>/sub_issues \
-  -F sub_issue_id=$CHILD_ID \
-  --jq '.sub_issues_summary'
+# the script resolves the child's database id itself and POSTs the link (`-F`, so the id is a number)
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/plan-epic/scripts/link-child.sh" <EPIC> <CHILD>
 ```
 
-`-F` (not `-f`) so the id is sent as a number. Confirm the link landed:
+Confirm the link landed:
 
 ```bash
-gh api repos/$REPO/issues/<EPIC> --jq '.sub_issues_summary'
-# total should equal the number of children you linked
-gh api 'repos/$REPO/issues/<EPIC>/sub_issues?per_page=100' \
-  --jq '.[] | "#\(.number) [\(.state)] \(.title)"'
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/plan-epic/scripts/confirm-links.sh" <EPIC>
 ```
 
 The exact-equality check holds on the fresh-plan path, where every linked child is
@@ -717,8 +705,7 @@ endpoint is **singular** `sub_issue` (not `sub_issues`), and the id goes in the 
 body via `--input` — `-X DELETE … -F` does **not** work here:
 
 ```bash
-echo "{\"sub_issue_id\": $CHILD_ID}" \
-  | gh api -X DELETE repos/$REPO/issues/<EPIC>/sub_issue --input -
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/plan-epic/scripts/unlink-child.sh" <EPIC> <CHILD>
 ```
 
 Unlinking does not close the child; it just removes the parent/child edge. Closing is
@@ -804,156 +791,11 @@ loudly** if `deps.md` was not regenerated since the base it splices onto was rea
 "re-derive" from a comment you might skip into a precondition the script enforces.
 
 ```bash
-# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
-PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
-# §SP: re-derive the per-run scratch namespace — this is a LATER Bash call, so Step 1's
-# $RUN_SCRATCH variable is gone. Same recipe ⇒ same directory ⇒ Step 1's files are still there.
-# NO `rm -rf` here (that is the OPEN step's job only): clearing it would delete exactly the
-# snapshot this step reads back, which is the whole failure §SP rule 3 exists to prevent.
-[ -n "${CLAUDE_CODE_SESSION_ID:-}" ] || {
-  echo "plan-epic: §SP — CLAUDE_CODE_SESSION_ID unset; cannot re-derive the Step 1 scratch namespace (#3718)." >&2; exit 1; }
-RUN_SCRATCH="${TMPDIR:-/tmp}/kampus-run/$CLAUDE_CODE_SESSION_ID/plan-epic-<EPIC>"
-# Fail closed if Step 1's state isn't there: the freshness guard below compares file mtimes, and
-# `[ existing -nt missing ]` is TRUE in bash — so a missing base would let a STALE block splice
-# through silently. Assert presence first; never let the guard decide on absent files (#3718).
-for f in current.md updated-at.txt; do
-  [ -s "$RUN_SCRATCH/$f" ] || {
-    echo "plan-epic: §SP — $RUN_SCRATCH/$f is missing/empty; Step 1's snapshot did not survive." >&2
-    echo "  Re-run Step 1 in THIS session before splicing. Refusing to evaluate the freshness guard against absent state." >&2; exit 1; }
-done
-
-# "$RUN_SCRATCH/deps.md" = the new `## Dependencies` block. On a RE-PLAN, also
-#   "$RUN_SCRATCH/plan.md" = the new `## Plan (plan-epic)` block (set REPLAN=1).
-#   Give each block a trailing blank line so the next spliced heading stays separated.
-# Landing is confirmed against the WHOLE `## Dependencies` block round-tripping byte-for-byte,
-# NOT a single line: two concurrent runs on the SAME epic likely both emit a given `- #<child>`
-# line (they share children), so a lone matching line can't tell our section from a racer's
-# clobber (see step 6). deps.md is re-derived by YOU between attempts (the recheck breaks out and
-# hands back; step 2) — the freshness guard (step 2.5) enforces it was, so each pass splices a block
-# derived against the body it's splicing onto, never a stale one.
-# A first-time plan has NO `## Dependencies` heading yet (Step 2 doesn't write one) — that case
-# APPENDS the block to EOF; a re-plan has exactly one and SPLICES it in place. Zero headings on a
-# re-plan, or more than one ever, is corruption: the `epic-splice` verb (step 3) exits non-zero.
-#
-# This block is a SKELETON you re-run per attempt, not a one-shot. When the recheck (step 2) fires
-# it stamps the fresh base, BREAKS, and hands back to you to re-derive `deps.md` (+ `plan.md` on a
-# re-plan) against `$RUN_SCRATCH/current.md` — then you re-invoke the block. The freshness
-# guard (step 2.5) refuses to splice a `deps.md` older than the base it would splice onto, so a
-# stale block can never re-clobber a racer's legitimate topology.
-# Per attempt: re-read → recheck (verify unchanged) → freshness guard → epic-splice apply (guards + splice) → PATCH
-# → re-verify our block landed. `landed=1` only after a pass confirms the round-trip; `patched=1`
-# records that a PATCH was actually issued (so the terminal verdict can tell "raced every time,
-# never wrote" from "wrote and lost"). The terminal check after the loop turns an
-# exhausted-or-aborted run into a hard STOP rather than ambiguous output.
-landed=0; patched=0
-for attempt in 1 2 3; do
-  # 1. re-read the LIVE body + its revision marker from ONE GET (coherent — no TOCTOU skew)
-  gh api repos/$REPO/issues/<EPIC> --jq '{body,updated_at}' > "$RUN_SCRATCH/live.json"
-  jq -r '.body'       "$RUN_SCRATCH/live.json" > "$RUN_SCRATCH/live.md"
-  NOW=$(jq -r '.updated_at' "$RUN_SCRATCH/live.json")
-  WAS=$(cat "$RUN_SCRATCH/updated-at.txt")
-
-  # 2. optimistic recheck — if the body moved since we last read it, stamp the fresh base and BREAK.
-  #    Re-deriving the section is YOUR action (the script can't regenerate deps.md/plan.md inside one
-  #    bash invocation): re-run Step 2's split + Step 5's derivation against the now-fresh
-  #    `-current.md`, then re-invoke this block. The freshness guard (2.5) enforces that you did.
-  if [ "$NOW" != "$WAS" ]; then
-    echo "epic body changed since read ($WAS -> $NOW) — RE-DERIVE deps.md (+ plan.md on a re-plan)"
-    echo "  against the fresh base, then re-invoke this block. (Not auto-retried: the re-derive is an agent step.)"
-    cp "$RUN_SCRATCH/live.md" "$RUN_SCRATCH/current.md"   # fresh base to re-derive against
-    echo "$NOW" > "$RUN_SCRATCH/updated-at.txt"
-    break
-  fi
-
-  # 2.5. freshness guard — `deps.md` (and, on a re-plan, `plan.md`) MUST have been (re-)derived
-  #      against the base this attempt is splicing onto. That base is `-current.md` (stamped from the
-  #      live body the recheck above just confirmed unchanged), and your re-derive writes deps.md
-  #      AFTER it — so deps.md must be newer than current.md (`-nt` = "newer than"). If it isn't, the
-  #      re-derive precondition is unmet (you re-invoked without regenerating the block off the fresh
-  #      base): a stale block that references the wrong child set. Abort loudly, don't write — this is
-  #      what stops the `continue`-era footgun of re-splicing the originally-derived block (issue #261).
-  #      `-nt` alone CANNOT carry this check: `[ existing -nt missing ]` is TRUE in bash, so if the
-  #      derived block is absent the negation is false and the guard PASSES SILENTLY — a stale/no
-  #      block splices through. Assert the file exists and is non-empty FIRST, then compare mtimes.
-  if [ ! -s "$RUN_SCRATCH/deps.md" ] \
-     || ! [ "$RUN_SCRATCH/deps.md" -nt "$RUN_SCRATCH/current.md" ] \
-     || { [ "${REPLAN:-0}" = 1 ] && { [ ! -s "$RUN_SCRATCH/plan.md" ] \
-          || ! [ "$RUN_SCRATCH/plan.md" -nt "$RUN_SCRATCH/current.md" ]; }; }; then
-    echo "ABORT: deps.md (or plan.md on a re-plan) is NOT newer than the base it splices onto (-current.md) —"
-    echo "       you re-invoked without re-deriving. Re-run Step 2's split + Step 5's section derivation"
-    echo "       against "$RUN_SCRATCH/current.md", then re-invoke this block. Refusing to splice a stale block."
-    break
-  fi
-
-  # 3. splice/append the changed section(s) via the shared verb — `pipeline-cli epic-splice apply`
-  #    owns the deterministic transform (#3689, extracted from #261): the exact-`## Dependencies`
-  #    heading-count guards (0 + first-time → APPEND to EOF; exactly 1 → SPLICE in place; 0 on a
-  #    re-plan or >1 ever → corrupt, exit 1) and, on a re-plan, the in-place `## Plan (plan-epic)`
-  #    splice with its own exactly-one-heading guard. Everything OUTSIDE the replaced section(s) is
-  #    preserved byte-for-byte (the brief especially — layer 1). Pass `--plan-file` ONLY on a
-  #    re-plan: its presence IS the re-plan signal (both sections re-spliced); omit it first-time.
-  #    A corrupt/duplicated/drifted heading makes the verb exit non-zero — break loudly and inspect
-  #    by hand rather than blind-write. The recheck/freshness/round-trip orchestration around it
-  #    stays here (it is live-issue IO, not a text transform).
-  PLAN_ARG=(); [ "${REPLAN:-0}" = 1 ] && PLAN_ARG=(--plan-file "$RUN_SCRATCH/plan.md")
-  if ! "$PCLI" epic-splice apply \
-        --body-file "$RUN_SCRATCH/live.md" \
-        --deps-file "$RUN_SCRATCH/deps.md" \
-        "${PLAN_ARG[@]}" > "$RUN_SCRATCH/body.md"; then
-    echo "ABORT: epic-splice refused (corrupt/duplicated/drifted heading — see its stderr) — refusing to splice; inspect by hand"
-    break
-  fi
-  BODY="$(cat "$RUN_SCRATCH/body.md")"
-
-  # 5. extract THIS run's whole `## Dependencies` block (heading → EOF) from the body we're about
-  #    to write — that exact multi-line block is what we'll confirm round-tripped, so a racer who
-  #    happens to share a child number can't satisfy the check with one matching `- #` line.
-  awk '/^## Dependencies[[:space:]]*$/{f=1} f{print}' "$RUN_SCRATCH/body.md" \
-    > "$RUN_SCRATCH/deps-expected.md"
-
-  # 6. write, then re-confirm OUR WHOLE BLOCK landed — extract `## Dependencies`→EOF from the live
-  #    post-write body and diff it against the block we just wrote. A racer's clobber differs
-  #    somewhere in the block (different topology/labels/ordering), so an exact block match — not a
-  #    heading or a single child line — is what tells our section from theirs. The residual window
-  #    (below) means the PATCH is still last-write-wins; this is the honest after-the-fact check
-  #    that retries the loser.
-  gh api -X PATCH repos/$REPO/issues/<EPIC> -f body="$BODY" >/dev/null; patched=1
-  gh api repos/$REPO/issues/<EPIC> --jq '.body' \
-    | awk '/^## Dependencies[[:space:]]*$/{f=1} f{print}' > "$RUN_SCRATCH/deps-live.md"
-  if diff -q "$RUN_SCRATCH/deps-expected.md" "$RUN_SCRATCH/deps-live.md" >/dev/null; then
-    echo "epic body updated, our whole ## Dependencies block round-tripped"; landed=1; break
-  else
-    # A racer clobbered our write. Do NOT auto-re-splice the stale deps.md — that would
-    # silently re-clobber the racer's legitimate same-section topology change. Mirror the
-    # recheck-break (step 2): snapshot the racer's body as the FRESH base, then break to hand
-    # back to the agent to RE-DERIVE deps.md (and plan.md on a re-plan) against it before any
-    # re-splice. The freshness guard (step 2.5) then enforces the re-derive on the next invoke,
-    # so a stale block can never re-clobber.
-    echo "our ## Dependencies block is NOT the one in the post-write body — a racer clobbered it."
-    echo "       Re-derive deps.md (and plan.md on a re-plan) against the refreshed"
-    echo "       "$RUN_SCRATCH/current.md", then re-invoke this block. Refusing to re-splice the stale block."
-    gh api repos/$REPO/issues/<EPIC> > "$RUN_SCRATCH/snap.json"   # one snapshot, no TOCTOU between body+updated_at
-    jq -r '.body'       "$RUN_SCRATCH/snap.json" > "$RUN_SCRATCH/current.md"      # fresh base to re-derive against
-    jq -r '.updated_at' "$RUN_SCRATCH/snap.json" > "$RUN_SCRATCH/updated-at.txt"
-    break
-  fi
-done
-
-# Terminal verdict — the loop can exit several ways; only one is success. An orchestrator (and the
-# next agent reading the transcript) must not mistake an exhausted-or-aborted run for a win. The two
-# non-success modes differ: a run that NEVER issued a PATCH (raced + re-derived, or a guard aborted)
-# left the body untouched; a run that DID PATCH but lost the round-trip left it possibly half-written.
-if [ "$landed" != 1 ]; then
-  echo "plan-epic: could NOT land the ## Dependencies block — STOP and inspect, do not proceed."
-  if [ "$patched" = 1 ]; then
-    echo "  (A PATCH was issued but our block didn't round-trip — a racer clobbered it. The epic body"
-    echo "   may be half-written with someone else's topology; the topology this run derived is NOT pinned.)"
-  else
-    echo "  (No PATCH was ever issued — either a guard aborted (corrupt/duplicated heading, or deps.md"
-    echo "   not re-derived against the fresh base), or every attempt raced and handed back to re-derive."
-    echo "   The epic body is untouched; the topology this run derived is NOT pinned.)"
-  fi
-fi
+# Re-run this PER ATTEMPT. Pass --replan to re-splice the `## Plan (plan-epic)` block too.
+# exit 0 = our whole ## Dependencies block round-tripped (the topology is pinned). Any non-zero is
+# a hard STOP: a guard aborted, every attempt raced, or a racer clobbered the write — the script
+# names which on stdout, and re-derive is YOUR next action.
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/plan-epic/scripts/splice-body.sh" <EPIC>
 ```
 
 **Keep the brief byte-for-byte.** With the `epic-splice` verb's surgical splice/append this is
@@ -1001,35 +843,9 @@ Scan the **brief** (the top section you read in Step 1) for the graduation-prove
 close each source it names — but only a genuine `type:investigation` source, idempotently:
 
 ```bash
-# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
-PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
-RUN_SCRATCH="${TMPDIR:-/tmp}/kampus-run/${CLAUDE_CODE_SESSION_ID:?§SP: session id unset (#3718)}/plan-epic-<EPIC>"   # §SP re-derive (see the open step above)
-[ -s "$RUN_SCRATCH/current.md" ] || { echo "plan-epic: §SP — Step 1's current.md did not survive; re-run Step 1 in THIS session." >&2; exit 1; }
-# Extract every source the brief graduated from — tolerant of phrasing ("Emitted from resolved
-# investigation #N", "from resolved investigation #N"). The `resolved investigation` anchor is what
-# distinguishes a graduation provenance from an incidental `#N` cross-reference in the brief.
-SOURCES=$(grep -oiE 'resolved investigation #[0-9]+' "$RUN_SCRATCH/current.md" \
-  | grep -oE '[0-9]+' | sort -u)
-for SRC in $SOURCES; do
-  # Guard, fail-safe: close ONLY an open type:investigation — never a referenced epic/decision/bug,
-  # and never re-close a closed source (idempotent, so a re-plan run is a clean no-op). This is what
-  # keeps legitimately-open downstream artifacts (the epic itself, sibling epics) untouched.
-  read -r STATE TYPES < <(gh api repos/$REPO/issues/$SRC \
-    --jq '[.state, ([.labels[].name] | map(select(startswith("type:"))) | join(","))] | @tsv')
-  case "$STATE:$TYPES" in
-    open:*type:investigation*) ;;
-    *) echo "plan-epic: source #$SRC is $STATE ($TYPES) — not an open investigation, skipping close."; continue ;;
-  esac
-  # Audit trail (AC): the `tracker graduate` verb owns the graduation-close envelope (ADR 0190,
-  # #3266) — it posts the source → artifact provenance record so a reader can trace the graduation,
-  # then closes the source as completed (the work graduated, it wasn't abandoned — distinct from
-  # triage's not_planned). Don't hand-roll the comment + `state_reason=completed` PATCH; that inline
-  # re-derivation is what the adoption lint (#3254) flags.
-  "$PCLI" tracker graduate "$SRC" \
-    --artifact "epic #<EPIC> (planned by plan-epic)" \
-    --note "closing this investigation as the durable \`graduated into #<EPIC>\` record. Its diagnosis is carried forward by the epic and its planned children." >/dev/null
-  echo "plan-epic: closed graduated source investigation #$SRC → epic #<EPIC>."
-done
+# a no-op when the brief names no `resolved investigation #N`; each named source is closed only
+# if it is an OPEN type:investigation, so a re-plan run is idempotent
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/plan-epic/scripts/close-graduated-sources.sh" <EPIC>
 ```
 
 Only the *source* that graduated is closed; the epic and every downstream artifact it links stay
@@ -1070,12 +886,10 @@ Every supersede is auditable. Before closing a superseded child, post a comment 
 *why* and where the work went, so the trail is legible:
 
 ```bash
-gh api repos/$REPO/issues/<CHILD>/comments \
-  -f body="Superseded by re-plan of #<EPIC>: <specific reason — e.g. 'scope merged into #<NEW>' or 'dropped, the brief no longer asks for X'>."
-# unlink from the epic (singular sub_issue, id in the JSON body), then close not-planned
-CHILD_ID=$(gh api repos/$REPO/issues/<CHILD> --jq '.id')
-echo "{\"sub_issue_id\": $CHILD_ID}" | gh api -X DELETE repos/$REPO/issues/<EPIC>/sub_issue --input -
-gh api -X PATCH repos/$REPO/issues/<CHILD> -f state=closed -f state_reason=not_planned
+# posts the journal note FIRST, then unlinks and closes not-planned — the trail exists even if a
+# later leg fails. Only ever on an OPEN child; a closed-done child is history.
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/plan-epic/scripts/supersede-child.sh" <EPIC> <CHILD> \
+  "<specific reason — e.g. 'scope merged into #<NEW>' or 'dropped, the brief no longer asks for X'>"
 ```
 
 ### Fall back to full-supersede when reconciliation is messy
@@ -1096,13 +910,13 @@ whole-body `PATCH`. Re-plan is exactly the concurrency hot-spot the guard exists
 re-plan loop racing a fresh `plan-epic` run or a `review-plan` child-flip is the
 lost-update case in issue #261. Write the fresh `## Plan (plan-epic)` block to
 `$RUN_SCRATCH/plan.md`, the fresh `## Dependencies` block to
-`$RUN_SCRATCH/deps.md`, and run the Step 5 loop with `REPLAN=1` so it splices
+`$RUN_SCRATCH/deps.md`, and run `splice-body.sh <EPIC> --replan` so it splices
 **both** sections into the freshly-read live body in place (the live body already has exactly one
 `## Dependencies` heading and exactly one `## Plan (plan-epic)` heading to splice against — the
 loop's anchor guards abort if either drifted). When `updated_at` moved since your read, the loop
 breaks and hands back so you **re-derive both blocks against the fresh base** before re-invoking it
 — the re-derive is your step, not the script's, and the freshness guard enforces you did it. (On a
-first-time plan, leave `REPLAN` unset — the live body has no `## Dependencies` heading yet, so the
+first-time plan, omit `--replan` — the live body has no `## Dependencies` heading yet, so the
 loop appends the new block to EOF instead of splicing, and the Plan-heading guard is skipped.)
 
 ---
@@ -1117,12 +931,9 @@ scratch child not-planned, close the scratch epic, and label them so they're
 unmistakably test debris.
 
 ```bash
-# for each scratch child: unlink + close
-CHILD_ID=$(gh api repos/$REPO/issues/<CHILD> --jq '.id')
-echo "{\"sub_issue_id\": $CHILD_ID}" | gh api -X DELETE repos/$REPO/issues/<EPIC>/sub_issue --input -
-gh api -X PATCH repos/$REPO/issues/<CHILD> -f state=closed -f state_reason=not_planned
-# then close the scratch epic
-gh api -X PATCH repos/$REPO/issues/<EPIC> -f state=closed -f state_reason=not_planned
+# THROWAWAY EPICS ONLY — it closes exactly the numbers you name, and no script can tell test
+# debris from the real backlog
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/plan-epic/scripts/teardown-scratch-epic.sh" <EPIC> <CHILD> [<CHILD> …]
 ```
 
 (If you have repo-admin and the GraphQL `deleteIssue` mutation is available to you,

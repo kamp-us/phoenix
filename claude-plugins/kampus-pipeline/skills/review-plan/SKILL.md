@@ -59,8 +59,38 @@ if set, else the current repository. In phoenix this defaults to `kamp-us/phoeni
 behavior is unchanged with no config (ADR 0062 §1).
 
 ```bash
-REPO="${CLAUDE_PIPELINE_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}"
+REPO="$("${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-plan/scripts/resolve-repo.sh")" || exit 1
 ```
+
+Every script under [`scripts/`](scripts/) resolves the repo the same way through the shared lib's
+`kp_repo`, so you never thread `$REPO` into one — that assignment is for your own hand-run `gh api`
+reads.
+
+## The extracted scripts
+
+This skill's shell lives in [`scripts/`](scripts/), one script per step, and each fenced `bash`
+block below is an **invocation** of one. The prose keeps the *why*; the scripts hold the *how*
+(epic #4435 phase 1 — the shell moved as-is, and turning its glue into tested `pipeline-cli` verbs
+is #1929). Three properties are load-bearing when you read or edit them:
+
+- **They set `set -uo pipefail`, deliberately not `-e`.** The moved glue decides its own control
+  flow through the guards written into it — an `if ! $LOCK acquire` that branches on a status
+  rather than dying on it. `errexit` would abort those paths mid-decision and turn a fail-closed
+  branch into no branch at all.
+- **An exit status is the answer; an empty stdout never is.** Every script's failure paths exit
+  non-zero, and the moved blocks' back-off `exit 0` — which used to end the *agent's own* bash
+  block — became a distinct code, because a separate process's exit 0 would read as "proceed".
+  [`scripts/epic-lock-acquire.sh`](scripts/epic-lock-acquire.sh) exits **3** on a back-off (a held
+  lock, a setup gap, a lost race — not a review-plan failure, re-run later) and **0** only when
+  `epic-lock acquire` itself won, printing `epic-lock: won #<EPIC>`. An unresolved shim is **127**
+  everywhere — UNKNOWN, never a win and never a verdict.
+- **They relay, they never decide.** `run-gate.sh` passes `epic-ledger`'s verdict and exit status
+  straight through; the pass/fail decision stays the validator's, exactly as Step 1 requires
+  (ADR 0228).
+
+The runnable harness for those properties covers **both** halves of the planning gate and lives with
+the other half: [`../plan-epic/scripts/verify-extraction.sh`](../plan-epic/scripts/verify-extraction.sh).
+Run it after editing any script here; it fails closed on zero scope.
 
 ## Read-only on git working state
 
@@ -124,19 +154,10 @@ re-implementing ~50 lines of `jq` inline. Resolve the tool the same way `$GATE` 
 in-repo first, published fallback (ADR 0064) — then branch on its exit status:
 
 ```bash
-# The `bin/pipeline-cli` shim resolves the CLI (in-repo bin, else the installed bin, else the
-# pinned `pnpm dlx` fallback) — no version is pinned here; the one pin lives in hooks/pin.sh,
-# which the shim sources (#3653, per #3457).
-LOCK="${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/bin/pipeline-cli epic-lock"
-
-# Acquire the two-layer lock. `epic-lock acquire` runs the WHOLE ADR-0115 protocol over $CLAUDE_CODE_SESSION_ID
-# and exits 0 ONLY when the lock is ours; every fail-closed back-off — a held label, a 422 missing label, a
-# failed claim post, a lost co-acquire, a missing session id — prints its reason on stderr and exits NON-ZERO.
-# Branch on exit status — never flip/loop on a non-zero.
-if ! $LOCK acquire <EPIC>; then
-  exit 0   # backed off (held lock / setup gap / lost race is not a review-plan failure) — re-run later.
-fi
-# WON. WE hold the lock (label + earliest claim). Release it on EVERY terminal path (below).
+# exit 0 = lock WON (prints `epic-lock: won #<EPIC>`) → gate/loop, then RELEASE on every exit path.
+# 3 = backed off (held lock / setup gap / lost race — not a review-plan failure, re-run later);
+# 127 = the shim never ran (UNKNOWN). NEVER flip or loop on a non-zero.
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-plan/scripts/epic-lock-acquire.sh" <EPIC>
 ```
 
 **Release is an explicit agent step, not a shell `trap … EXIT`.** The acquire above runs in
@@ -148,12 +169,9 @@ snippet; it is an action **you** take, deliberately, on the way out — run this
 you reach **any** terminal state (PASS-and-flipped, parked, or a fault mid-flight):
 
 ```bash
-# release: run on EVERY exit path AFTER a WON acquire (PASS/flip, park, or fault mid-flight).
-# `epic-lock release` does BOTH parts: (a) retract OUR OWN claim comment(s) — re-found by session id,
-# since the acquire ran in a PRIOR process and its comment id is gone here; and (b) drop the coarse
-# label — a 404 is benign (already released), but ANY other DELETE failure is surfaced LOUDLY (a
-# silently-swallowed DELETE LEAKS the lock and wedges the epic, the exact ADR-0059 catastrophe).
-$LOCK release <EPIC>
+# A non-zero exit means the release did NOT complete — the lock is LEAKED and the epic is wedged.
+# Surface it loudly; never swallow it.
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-plan/scripts/epic-lock-release.sh" <EPIC>
 ```
 
 The release fires on **every** terminal path on purpose: the gate and the convergence loop can
@@ -212,21 +230,20 @@ no network, no published-artifact dependency on the daily pipeline), and otherwi
 once into a `$GATE` command and use it everywhere below, so there is exactly one resolution site:
 
 ```bash
-# resolve the gate command once via the `bin/pipeline-cli` shim — it resolves in-repo bin,
-# else the installed bin, else the pinned `pnpm dlx` fallback, reading the ONE pin from
-# hooks/pin.sh; no version is pinned here (#3653; ADR 0064; epic #994).
-GATE="${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/bin/pipeline-cli epic-ledger"
+# for your own ad-hoc `$GATE …` reads; `run-gate.sh` resolves the shim through the same one
+# primitive, so there is still exactly one resolution mechanism. Exit 127 ⇒ no gate command at all.
+GATE="$("${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-plan/scripts/resolve-gate.sh")" || exit 127
 ```
 
 The shim yields a runnable `$GATE`, so a foreign install **runs** the gate rather than
 degrading — and no raw `ERR_MODULE_NOT_FOUND` can surface, because the shim only runs the
 in-repo bin when it is on disk and otherwise fetches the pinned published package before running.
-Then run the gate through `$GATE`:
+Then run the gate:
 
 ```bash
-# from the repo root:
-$GATE <EPIC>            # the live gate — flips + comments
-$GATE <EPIC> --dry-run  # read-only: validate + print, no mutation
+# from the repo root. Exit status + stdout are the gate's own, relayed; 127 = no verdict at all.
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-plan/scripts/run-gate.sh" <EPIC>            # the live gate — flips + comments
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-plan/scripts/run-gate.sh" <EPIC> --dry-run  # read-only: validate + print, no mutation
 ```
 
 `runGate(<EPIC>)` is the underlying action the CLI calls (`epic-ledger`'s `runGate`,
