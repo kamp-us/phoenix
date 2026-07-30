@@ -7,20 +7,30 @@ description: Record an architecture decision in `.decisions/`. Trigger when the 
 
 Capture one decision per file in `.decisions/`. There is no committed index (ADR [0126](https://github.com/kamp-us/phoenix/blob/main/.decisions/0126-ambient-adr-discovery.md)) and **no `SessionStart` ADR-map hook** (ADR [0129](https://github.com/kamp-us/phoenix/blob/main/.decisions/0129-adr-discovery-is-the-claude-md-contract.md), dropping 0126's hook as needless indirection) — discovery is the CLAUDE.md contract alone, the same in every context: `ls .decisions/` + each file's frontmatter (`id`/`title`/`status`), with `pipeline-cli decisions-index compact` rendering the full `id · title · status` map **on demand** (never auto-injected). An ADR PR is **purely additive**: it adds one `.decisions/NNNN-slug.md` file (plus the status-line edit on a file it supersedes or amends-in-part), and never touches or regenerates an index.
 
+## The extracted scripts
+
+This skill's shell lives in [`scripts/`](scripts/), and each fenced block is an **invocation** of one
+(epic #4435 phase 1 — the shell moved as-is; turning its glue into tested `pipeline-cli` verbs is
+#1929). They set `set -uo pipefail`, deliberately not `-e`, and install no `EXIT` trap: the moved glue
+steers its own control flow, `errexit` would abort a fail-closed branch before it printed its refusal,
+and on bash 3.2 a `set -u` abort that reaches an `EXIT` trap yields exit **0** — a fail-closed script
+exiting clean having printed its FAIL (#4476, class #4479).
+
+**[`scripts/claimed-numbers.sh`](scripts/claimed-numbers.sh) fails closed on an unreadable query, and
+that is the whole point of the reservation lock.** An empty in-flight set reads as "nothing reserved",
+which is exactly the stale-on-disk fall-back ADR 0074 removes — so a failed enumeration exits non-zero
+rather than printing nothing, and an empty listing is only "nothing reserved" on **exit 0**.
+
 ## Steps
 
 1. **Claim the next number with an in-flight reservation lock** (ADR [0074](https://github.com/kamp-us/phoenix/blob/main/.decisions/0074-adr-number-claim-lock.md)) — not next-free-on-disk. Numbers are 4-digit zero-padded, monotonic. Compute the next number from the **union of two sets** and take `max(union) + 1`:
    - **Merged set** — the `NNNN` on the base ref, read from the `.decisions/NNNN-*.md` *filenames* (the authority; there is no committed index to consult — ADR [0126](https://github.com/kamp-us/phoenix/blob/main/.decisions/0126-ambient-adr-discovery.md)). Don't eyeball this — run **`"$PCLI" decisions-index next`** (resolve `$PCLI` with §CLI's canonical preamble — [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §CLI), the deterministic allocator (#2064): it reuses the same frontmatter parse `validate` runs and prints `max(id) + 1` zero-padded (e.g. `0155`). That kills the stale-guess case (a local checkout reading `0150` while origin/main is `0151`); run it against a **freshly fetched** base ref so the merged set is current. Take the `max` of *its* output and the in-flight set below.
    - **In-flight set** — the `NNNN` **claimed by open ADR PRs**. An open PR that adds a `.decisions/NNNN-*.md` file *is* the reservation for `NNNN` (no separate artifact, exactly as ADR 0059's `status:planning` label *is* the epic lock — opening the PR reserves, merging/closing releases). Enumerate via **`gh api` REST, never GraphQL** (the org's Projects-classic integration breaks GraphQL):
      ```bash
-     # NNNN claimed by any open PR that ADDS a .decisions/00NN-*.md file (REST, per-PR files endpoint)
-     for PR in $(gh api "repos/$REPO/pulls?state=open&per_page=100" --jq '.[].number'); do
-       gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" \
-         --jq '.[] | select(.status=="added") | .filename
-               | capture("^\\.decisions/(?<n>[0-9]{4})-") | .n'   # --paginate + streaming --jq: a >100-file PR that adds .decisions/NNNN past file #100 still claims its number (the API caps per_page at 100; #725)
-     done
+     # every NNNN claimed by an open PR that ADDS a .decisions/NNNN-*.md file, one per line
+     "${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/adr/scripts/claimed-numbers.sh" || exit 1
      ```
-     (`$REPO` resolves the same way write-code's does: `${CLAUDE_PIPELINE_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}`.) **Fail closed** (ADR 0074, ADR 0059's fail-closed acquire): if the in-flight query errors, **surface it and re-run** — never silently fall back to the on-disk-only number. That stale-on-disk fall-back is the bug this step removes.
+     (The script resolves `$REPO` itself, the same way write-code does.) **Fail closed** (ADR 0074, ADR 0059's fail-closed acquire): if the in-flight query errors it exits non-zero — **surface it and re-run**, and never silently fall back to the on-disk-only number. That stale-on-disk fall-back is the bug this step removes, so an empty listing is only "nothing reserved" on **exit 0**.
 
    This is **detect-and-serialize, not a CAS** — it *narrows* the collision window, it does not eliminate it. Two authors who enumerate in the same window before either PR is visible both pick the same number; that residual is **backstopped by the CI duplicate-`id` check** (the `decisions-index validate` PR job — see [ADR number lock](#adr-number-lock)), which reddens the second-to-merge PR for a manual renumber. The lock turns the *common* "branch after another's ADR PR is open" case from collide-and-renumber into don't-collide; the CI check remains the safety net for the rare residual.
 2. Pick a kebab-case slug from the title (≤ 5 words).

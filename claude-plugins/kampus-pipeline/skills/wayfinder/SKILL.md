@@ -86,6 +86,13 @@ printed its refusal. The **emission** step deliberately calls `report`'s own
 is agent-filed intake through the *same* footer and create envelope, so the two cannot drift (the
 same reason this skill already sourced `report`'s footer).
 
+**[`scripts/create-map.sh`](scripts/create-map.sh) and
+[`scripts/add-frontier-ticket.sh`](scripts/add-frontier-ticket.sh) take the body on stdin and REFUSE an
+empty one.** The fences they replace carried the body as a `$BODY` variable *inside* the block; a pipe
+makes it an external input, and an unread pipe is byte-identical to an empty one — so filing on it
+would open a bodyless map or ticket that reads as a successful chart (#3924 / #4010). That refusal is a
+guard the extraction itself owes, not a rewrite of moved glue.
+
 ## CHART mode — name the destination, map the frontier (plan-don't-do)
 
 CHART is invoked with **no map yet** (a fresh foggy idea) or **a named destination against an
@@ -191,12 +198,11 @@ plan-don't-do line, so it enters the pipeline only via emission, never as fog.
    re-lay the `## Open frontier`, but it preserves what earlier runs settled.
 
    ```bash
-   REPO="${CLAUDE_PIPELINE_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}"
-   # new map (REST only — the org bans GraphQL for issue ops):
-   MAP=$(gh api -X POST repos/$REPO/issues \
-     -f title="<destination, as a short noun phrase>" \
-     -f "labels[]=wayfinder:map" \
-     -f body="$BODY" --jq '.number')
+   # new map (REST only — the org bans GraphQL for issue ops); prints the map's issue number.
+   # The four-section body arrives on stdin from a per-run (§SP) file, because it is multi-line
+   # authored markdown; an EMPTY stdin is refused rather than filed as a bodyless map.
+   MAP="$("${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/wayfinder/scripts/create-map.sh" \
+     "<destination, as a short noun phrase>" < "<path/to/map-body.md>")" || exit 1
    ```
 
 2. **Name the `## Destination`.** State *where we want to be* in one or two sentences, concrete
@@ -233,11 +239,10 @@ plan-don't-do line, so it enters the pipeline only via emission, never as fog.
    internal **database id** (`.id`), not its issue number:
 
    ```bash
-   CHILD_ID=$(gh api -X POST repos/$REPO/issues \
-     -f title="Investigation: <the open question>" \
-     -f "labels[]=type:investigation" \
-     -f body="<what's unknown, and what an answer would unblock>" --jq '.id')
-   gh api -X POST repos/$REPO/issues/$MAP/sub_issues -F sub_issue_id="$CHILD_ID" >/dev/null
+   # files the ticket and links it under $MAP in one act; prints the child's issue number. The body
+   # (what's unknown, and what an answer would unblock) arrives on stdin; an empty stdin is refused.
+   "${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/wayfinder/scripts/add-frontier-ticket.sh" \
+     "$MAP" "Investigation: <the open question>" type:investigation < "<path/to/ticket-body.md>"
    ```
 
    Frontier tickets are **wayfinder-worked, not `write-code`-pickable** — they carry no

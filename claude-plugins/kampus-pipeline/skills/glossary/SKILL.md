@@ -54,6 +54,22 @@ In phoenix this defaults to `kamp-us/phoenix` with no config, so the behavior is
 root — resolved from the working tree, never an absolute or home path. Resolve the repo root
 with `git rev-parse --show-toplevel` and operate on `<root>/.glossary/TERMS.md`.
 
+## The extracted scripts
+
+This skill's shell lives in [`scripts/`](scripts/), and each fenced block is an **invocation** of one
+(epic #4435 phase 1 — the shell moved as-is; turning its glue into tested `pipeline-cli` verbs is
+#1929). They set `set -uo pipefail`, deliberately not `-e`, and install no `EXIT` trap: the moved glue
+steers its own control flow, `errexit` would abort a fail-closed branch before it printed its refusal,
+and on bash 3.2 a `set -u` abort that reaches an `EXIT` trap yields exit **0** — a fail-closed script
+exiting clean having printed its FAIL (#4476, class #4479).
+
+**Both scoping scripts give emptiness its own exit code (4), because this skill has two modes and an
+empty answer means a different one.** [`scripts/list-surfaces.sh`](scripts/list-surfaces.sh) exits 4
+when the repo has no `apps/*/src/features` and no `packages/*` at all, and
+[`scripts/glossary-drift.sh`](scripts/glossary-drift.sh) exits 4 when `TERMS.md` has never been
+committed — which is **bootstrap mode**, not an empty incremental drift. Read the exit status before
+the lines (§ZS / ADR 0092).
+
 ## The file you maintain
 
 `.glossary/TERMS.md` is a markdown file: a short top-of-file note (what it is + that the **code
@@ -103,10 +119,9 @@ The first-run seed. Run it when there's no glossary worth preserving.
    the equivalent top-level domains. List them from the tree, not from memory:
 
    ```bash
-   ROOT="$(git rev-parse --show-toplevel)"
-   # feature/domain folders + package names — the surfaces whose nouns the glossary covers
-   ls "$ROOT"/apps/*/src/features 2>/dev/null
-   ls -d "$ROOT"/packages/*/ 2>/dev/null
+   # feature/domain folders + package names. Exit 4 = this repo has NO such surfaces, which is a fact
+   # to confirm rather than an empty listing to read past.
+   "${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/glossary/scripts/list-surfaces.sh"
    ```
 
 2. **Harvest the nouns.** For each surface, read enough to name its domain nouns: the product
@@ -137,16 +152,14 @@ the change. The discipline is surgical — touch the affected rows, preserve eve
    The file's last-touch commit bounds the sweep:
 
    ```bash
-   ROOT="$(git rev-parse --show-toplevel)"
-   # the commit that last touched the glossary — the lower bound of "what changed since"
-   LAST=$(git -C "$ROOT" log -1 --format=%H -- .glossary/TERMS.md)
-   # the code surfaces that changed since then (feature folders, public exports, renames)
-   git -C "$ROOT" diff --name-status "$LAST"..HEAD -- apps packages
+   # the code surfaces that changed since the glossary last moved (feature folders, exports, renames)
+   "${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/glossary/scripts/glossary-drift.sh"
    ```
 
-   If the file has never been committed (you're staging a fresh seed), that's the bootstrap case,
-   not this one. If `LAST` is empty for a reason other than absence, fall back to reviewing the
-   working-tree diff (`git -C "$ROOT" diff --name-status HEAD -- apps packages`).
+   Exit 4 means the file has never been committed (you're staging a fresh seed) — that's the
+   bootstrap case, not this one. If the file *is* committed and the lower bound still won't resolve,
+   fall back to reviewing the working-tree diff
+   (`git -C "$(git rev-parse --show-toplevel)" diff --name-status HEAD -- apps packages`).
 
 2. **Classify each change against the vocabulary:**
    - **A new noun** (a new feature folder, a new public export, a new entity/table) → **add** a row
