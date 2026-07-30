@@ -454,23 +454,7 @@ delegation by resolving §7's tiebreak once — the **earliest authorized claim*
 session id must equal the threaded token — then proceed straight to implementing:
 
 ```bash
-# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
-PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
-# Orchestrated path: confirm the delegated claim is the earliest authorized claim, then proceed.
-# The §7 CLAIM_RE + write+ ACL + min(created_at, comment id) resolution is owned by the shared verb
-# — run it, never re-derive the grammar. Exit 0 = the threaded token owns #N; non-zero = it does
-# not (absent, foreign, or superseded) ⇒ abort, do not implement.
-"$PCLI" claim is-mine --issue <N> --session "$DELEGATED_TOKEN" \
-  || { echo "delegated token is not the earliest authorized claim — abort, do not implement." >&2; exit 1; }
-# Ensure §7 LAYER ONE for the whole build (#4298). The dispatcher owes this pre-spawn, but the
-# obligation lived in ONE orchestrator's prompt, so a lane dispatched by anything else reached here
-# with no assignee — and Step 8's release then freed the resolver on top of a gate that was never
-# written, leaving the issue `status:triaged` + unassigned with its PR in review. Idempotent and
-# additive: a gate already carrying us is a no-op, and the verb REFUSES on any lane whose claim is
-# not ours, so this asserts nothing about the dispatcher and evicts nothing (ADR 0215 §5).
-"$PCLI" claim assign --issue <N> --session "$DELEGATED_TOKEN" \
-  || { echo "could not set the availability gate on #<N> — routed blocker, do not implement." >&2; exit 1; }
-# delegation confirmed + layer one held — skip the direct-path claim below and go implement
+. "$WRITECODE_SCRIPTS/step3-delegated-claim.sh" <N> || exit 1   # non-zero ⇒ delegation NOT confirmed; do not implement
 ```
 
 ### Direct path — claim it yourself (no orchestrator)
@@ -484,35 +468,7 @@ Run it; never hand-roll a `claim:` body, which silently skips the ADR-0191 prese
 leaves this lane's claim permanently unprobeable (#3987):
 
 ```bash
-# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
-PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
-# 0. Fail-closed on a missing token: the claim comment is the ONLY agent-distinguishable signal
-#    under the shared `usirin` login — with no token a co-racer is unresolvable, so NEVER claim
-#    (and never fall back to the login-keyed assignee as ownership — that is the §7 degeneracy).
-#    The verb enforces this too (it backs off on an empty session), so this is a fast local exit.
-if [ -z "$CLAUDE_CODE_SESSION_ID" ]; then
-  echo "no CLAUDE_CODE_SESSION_ID in env — cannot post an agent-distinguishable claim. BACK OFF, re-pick." >&2
-  exit 0   # → re-run Step 1
-fi
-
-# 1. Claim through the verb FIRST — layer two, the fine agent-distinguishable resolver. It defers
-#    to a pre-existing authorized owner WITHOUT posting, posts a PRESENCE-STAMPED marker under
-#    $CLAUDE_CODE_SESSION_ID, re-reads canonical state, and retracts its OWN claim if it lost.
-#    Exit 0 = the claim is mine; non-zero = backed off, having mutated nothing that is not ours.
-if ! "$PCLI" tracker claim <N>; then
-  echo "did not win the claim on #$N (held by another agent, or lost the tiebreak) — back off, re-pick."
-  exit 0   # → re-run Step 1
-fi
-
-# 2. ONLY NOW write layer one — the coarse availability gate the Step-1 picker reads (§7). One verb
-#    owns this write on every path (#4298); never hand-roll the assignees POST. Defer-then-assign is
-#    load-bearing, not stylistic: every agent authenticates as the SAME login, so the assignee is ONE
-#    shared slot. Assigning first would make the back-off above a cleanup unassign that strips the
-#    LIVE incumbent's assignment — clearing the coarse gate on an issue someone else legitimately
-#    holds. Claiming first removes the cleanup entirely: the verb only ever writes on a claim it
-#    proved is ours, and it has no removal path at all, so there is nothing to undo (#4015).
-"$PCLI" claim assign --issue <N> || { echo "could not set the availability gate on #<N> — routed blocker." >&2; exit 1; }
-# claim won and confirmed (earliest authorized claim is mine) — proceed to implement
+. "$WRITECODE_SCRIPTS/step3-direct-claim.sh" <N> || exit 1   # non-zero ⇒ NO claim was made; back off and re-pick
 ```
 
 **The operating rule.** Posting the claim comment **detects** a race; the **checkpoint GET**
@@ -573,12 +529,7 @@ The token this run owns its work *under* is `MY_CLAIM`, resolved once at the top
   guard treats a target whose earliest authorized claim equals the threaded token as *mine*.
 
 ```bash
-# the claim token this run owns work under: the orchestrator's threaded delegated token if it
-# pre-claimed, else my own session id (the direct-path Step-3 self-claim). Fail-closed: with
-# NEITHER set there is no agent-distinguishable identity to verify ownership under — abort, never
-# fall back to the bare assignee login (that login degeneracy is the exact defect ADR 0115 removes).
-MY_CLAIM="${THREADED_CLAIM_TOKEN:-$CLAUDE_CODE_SESSION_ID}"
-: "${MY_CLAIM:?mis-attribution guard: no claim token — CLAUDE_CODE_SESSION_ID absent and none threaded; refusing to claim or mutate (ADR 0115 Consequences — never a login fallback)}"
+. "$WRITECODE_SCRIPTS/step3_5-my-claim.sh"   # leaves $MY_CLAIM in this shell; refuses (fail-closed) when neither token is set
 ```
 
 ### `claim_is_mine <N>` — MANDATED before every issue/PR-number mutation
@@ -588,20 +539,12 @@ Define the guard once and gate **every** number-targeting mutation on it, exactl
 is the **only** sanctioned path to a mutation that names `<N>`, no bypass:
 
 ```bash
-# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
-PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
-# claim_is_mine <N>: resolve the EARLIEST AUTHORIZED claim marker on #N (issue or PR) and assert
-# its embedded session id == MY_CLAIM. Returns 0 only on a proven-own claim; non-zero (REFUSE) on
-# an absent OR a foreign claim. The ADR-0115 §2 resolution — CLAIM_RE + the write+ ACL trust root
-# (ADR 0055) + the earliest-(created_at, comment id) tiebreak — is owned once by the shared verb
-# `pipeline-cli claim is-mine`; CITE it, never hand-roll the jq (#3687, the same envelope
-# extraction the shipped review-verdict and tracker verbs underwent). The verb is default-deny: an absent claim, an
-# unauthorized-only claim, a foreign owner, and a missing session all resolve NOT-mine (exit
-# non-zero) — exactly this guard's fail-closed refusal, so the exit-status contract is preserved.
-claim_is_mine() {
-  "$PCLI" claim is-mine --issue "$1" --session "$MY_CLAIM"   # exit 0 = mine; non-zero = REFUSE (default-deny)
-}
+. "$WRITECODE_SCRIPTS/step3_5-claim-is-mine.sh"   # leaves the `claim_is_mine` function in this shell
+```
 
+The calling convention, which every number-targeting mutation below follows:
+
+```bash
 claim_is_mine "<N>" && gh api repos/$REPO/issues/<N>/comments -f body="…"   # the guard gates the mutation; never run it ungated
 ```
 
