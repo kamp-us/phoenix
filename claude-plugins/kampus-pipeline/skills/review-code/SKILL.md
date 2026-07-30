@@ -1033,14 +1033,12 @@ relevant-but-zero-match** case, and express a no-comment diff as an **explicit n
 skip** — distinct from a FAIL.
 
 ```bash
-# the added lines this PR introduced on comment-bearing code files, off the diff Step 2 already
-# loaded (the reviewer judges WHICH are comments per the deslop-comments rubric — a regex can't,
-# which is the point). Emit the scanned scope (§ZS #1) so a future drift that silently stops
-# finding added comment lines is visible in the run output rather than reading green.
-ADDED_ON_CODE="$(gh pr diff $PR \
-  | awk '/^\+\+\+ b\/.*\.(ts|tsx|js|jsx|css)$/{f=substr($0,7);next} /^\+\+\+ /{f=""} f && /^\+[^+]/{print f": "substr($0,2)}')"
-echo "comment-discipline: scanned $(printf '%s\n' "$ADDED_ON_CODE" | grep -c . || echo 0) added line(s) on comment-bearing files"
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-code/scripts/comment-scan.sh" "$PR"
 ```
+
+It prints the §ZS scope line, then the scanned lines themselves — the fence left those in a shell
+variable for you to read, and a script boundary has none to hand back. The scan **arms** your
+judgement; the rubric decides it.
 
 Three outcomes, folded into the per-criterion table exactly like Step 3b/3c:
 
@@ -1079,6 +1077,17 @@ REST-only rule — verified working on this org (the Projects-classic breakage i
 fields, not `reviewThreads`; ADR
 [0158](https://github.com/kamp-us/phoenix/blob/main/.decisions/0158-unresolved-review-thread-is-a-merge-gate.md)).
 Every other read/write in this skill stays REST.
+
+> **This is the one block that did NOT move into [`scripts/`](scripts/) (#4451).** The
+> `skill-gh-lint` job runs `gh-phoenix lint-skills` over the corpus and FAILs on any `gh api graphql`
+> in a runnable block — **including a whole `.sh`**. The lint's `SELF_EXEMPT_SUFFIXES` exempts
+> `/skills/review-code/SKILL.md` as a whole file, so the read is lawful *here* and would be flagged
+> the moment it landed in a script, and continuing the exemption means editing the very
+> `SELF_EXEMPT_SUFFIXES` array
+> [PR #4491](https://github.com/kamp-us/phoenix/pull/4491) is already changing for ship-it's two
+> extracted scripts. The operative rule: a block a guard parses out of the markdown cannot move until
+> the guard follows. It stays inline until that lands, and the remainder is tracked on
+> [#4451](https://github.com/kamp-us/phoenix/issues/4451).
 
 ```bash
 ORG="${REPO%%/*}"; NAME="${REPO#*/}"
@@ -1151,14 +1160,11 @@ Detect it off the diff Step 2 already loaded — emit the scanned scope (§ZS #1
 that silently stops matching is visible in the run output rather than reading green:
 
 ```bash
-# does this PR touch a session/caching seam? A hit ARMS the two-axis check below; it never
-# alone FAILs — the reviewer judges whether a hit is a genuine new caching path (per the fire
-# condition above) or an unrelated auth edit. Fail-closed on the security-load-bearing surface:
-# when in doubt that a hit is a caching path, run the check, don't skip it.
-CACHE_HITS="$(gh pr diff $PR \
-  | grep -inE 'cookieCache|session\.?cache|cacheSession|maxAge|staleness|ttl|revalidat' || true)"
-echo "session-caching gate: scanned the diff for session-caching seams — $(printf '%s\n' "$CACHE_HITS" | grep -c . || echo 0) candidate line(s)"
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-code/scripts/session-caching-scan.sh" "$PR"
 ```
+
+It prints the §ZS scope line, then the candidate lines themselves, so you can judge each against the
+fire condition above.
 
 **When it fires, both axes MUST be verified as REQUIRED test coverage — not prose, not one axis.**
 Confirm the PR adds (or already has, exercising the new path) a deterministic integration test for
