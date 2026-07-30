@@ -117,6 +117,11 @@ const SELF_EXEMPT_SUFFIXES = [
 	// review-code's half of the same ADR-0158 sanctioned read, extracted by #4451. Same per-script
 	// granularity, same reason.
 	"/skills/review-code/scripts/unresolved-threads-read.sh",
+	// Same class, same granularity: #4404 moved write-code/SKILL.md's repair mode into repair.md,
+	// carrying the line that FORBIDS `gh pr edit` next to the REST PATCH it mandates instead. The
+	// text is byte-identical to its pre-move address — only the file changed, so its exemption
+	// follows it, still per-file and never a `write-code/`-wide exemption.
+	"/skills/write-code/repair.md",
 	"/skills/gh-issue-intake-formats.md",
 	"/packages/pipeline-cli/src/tools/gh-phoenix/README.md",
 ] as const;
