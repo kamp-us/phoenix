@@ -53,6 +53,22 @@ const CLAIM_WRITERS = [
 	".claude/workflows/drive-issue.js",
 ];
 
+/**
+ * The ordering pin's population, DECLARED rather than derived-and-trusted — exactly the files whose
+ * procedure writes layer one today. `writerSurface` deliberately stops at the sibling `scripts/` dir
+ * (see below), so extracting a write into `shared/scripts/**` drops that file out of the ordering
+ * scope *silently* — the same silent-coverage-loss class (#4509) reproducing inside its own remedy,
+ * and reachable today because this repo is actively moving fenced shell into `shared/scripts/`.
+ * Pinning the membership makes the drop-out RED: a writer that leaves, or an undeclared one that
+ * arrives, fails here and forces the surface (or this list) to be reconciled on purpose.
+ */
+const LAYER_ONE_WRITING_FILES = [
+	"claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md",
+	"claude-plugins/kampus-pipeline/skills/write-code/scripts/step3-delegated-claim.sh",
+	"claude-plugins/kampus-pipeline/skills/write-code/scripts/step3-direct-claim.sh",
+	".claude/workflows/drive-issue.js",
+];
+
 interface SurfaceFile {
 	readonly rel: string;
 	readonly content: string;
@@ -69,7 +85,8 @@ interface SurfaceFile {
  *
  * Sibling-scoped on purpose, NOT the whole plugin tree: `shared/scripts/` is a library many surfaces
  * call, so folding it into every caller's surface would assert one shared half-procedure against
- * every writer's own ordering rule.
+ * every writer's own ordering rule. That boundary holds in one direction only, and the residual is
+ * covered by declared membership, not by this function — see `LAYER_ONE_WRITING_FILES`.
  */
 const writerSurface = (rel: string): ReadonlyArray<SurfaceFile> => {
 	const scriptsRel = join(dirname(rel), "scripts");
@@ -93,9 +110,19 @@ const sourcedScripts = (text: string, rel: string): ReadonlyArray<SurfaceFile> =
 		.filter((f) => existsSync(join(REPO_ROOT, f)))
 		.map((f) => ({rel: f, content: readFileSync(join(REPO_ROOT, f), "utf8")}));
 
-/** §7 layer one — the assignee write, through the one verb or (still matchable) the raw POST. */
-const LAYER_ONE_WRITE =
-	/(?:gh api -X POST[^\n]*\/assignees|(?:pipeline-cli|"\$PCLI")\s+claim\s+assign\b)/;
+/**
+ * §7 layer one — the assignee write, in two deliberately DIFFERENT vocabularies. Keep them apart:
+ * collapsing them into one shared constant is what silently widened the #4298 one-verb pin (a
+ * tidy-up hoist that let a hand-rolled assignees POST pass the very test that forbids it).
+ * `LAYER_ONE_VERB` is the one sanctioned form, and is what the #4298 pin asserts. `ANY_WRITE` also
+ * admits the raw POST so the #4015 *ordering* pin still populates over an un-migrated corpus — a
+ * tolerance that belongs to a population predicate, never to the pin forbidding the raw form. It is
+ * derived from the verb so it can only ever be the wider of the two.
+ */
+const LAYER_ONE_VERB = /(?:pipeline-cli|"\$PCLI")\s+claim\s+assign\b/;
+const LAYER_ONE_ANY_WRITE = new RegExp(
+	`(?:gh api -X POST[^\\n]*\\/assignees|${LAYER_ONE_VERB.source})`,
+);
 /**
  * The claim verb's INVOCATION (verb + its issue argument), not a prose mention of it — a citation
  * elsewhere in the file must not satisfy an ordering claim about the procedure. `$N` is the extracted
@@ -196,14 +223,18 @@ describe("adoption-lint check — fail-closed exit contract (ADR 0092)", {
 		// assign` since #4298 — the raw POST stays matchable so the pin survives an un-migrated corpus.
 		// Fail closed on zero scope (ADR 0092).
 		const surfaces = CLAIM_WRITERS.map((rel) => writerSurface(rel));
-		const selfAssigning = surfaces.flat().filter(({content}) => LAYER_ONE_WRITE.test(content));
-		assert.isAbove(selfAssigning.length, 0, "expected at least one self-assigning claim writer");
+		const selfAssigning = surfaces.flat().filter(({content}) => LAYER_ONE_ANY_WRITE.test(content));
+		assert.deepStrictEqual(
+			selfAssigning.map(({rel}) => rel).sort(),
+			[...LAYER_ONE_WRITING_FILES].sort(),
+			"the ordering pin's population drifted from the declared one — a layer-one write left the scanned surface, or an undeclared one arrived. Reconcile deliberately; do not silently accept a smaller scope (also the ADR-0092 zero-scope guard for this pin)",
+		);
 
 		// The ordering is pinned PER FILE, because after the extraction one branch's whole procedure is
 		// one file — concatenating a surface would let a `tracker claim` in the direct-path script
 		// satisfy an ordering claim about the delegated one, which is a different procedure.
 		for (const {rel, content} of selfAssigning) {
-			const assignAt = content.search(LAYER_ONE_WRITE);
+			const assignAt = content.search(LAYER_ONE_ANY_WRITE);
 			const claimAt = content.search(CLAIM_INVOCATION);
 			if (claimAt > -1) {
 				assert.isAbove(
@@ -231,7 +262,7 @@ describe("adoption-lint check — fail-closed exit contract (ADR 0092)", {
 		// …and each writer's surface must still claim SOMEWHERE, so a surface that only ever assigns
 		// cannot pass by having every file take the delegated branch.
 		for (const surface of surfaces) {
-			if (!surface.some(({content}) => LAYER_ONE_WRITE.test(content))) continue;
+			if (!surface.some(({content}) => LAYER_ONE_ANY_WRITE.test(content))) continue;
 			assert.isTrue(
 				surface.some(({content}) => CLAIM_INVOCATION.test(content)),
 				`${surface[0]?.rel} must invoke the claim-write verb on the issue`,
@@ -257,7 +288,7 @@ describe("adoption-lint check — fail-closed exit contract (ADR 0092)", {
 				writerSurface(rel)
 					.map(({content}) => content)
 					.join("\n"),
-				LAYER_ONE_WRITE,
+				LAYER_ONE_VERB,
 				`${rel} (or the scripts/ shell extracted out of it) must write the §7 layer-one availability gate through \`pipeline-cli claim assign\``,
 			);
 		}
@@ -268,7 +299,7 @@ describe("adoption-lint check — fail-closed exit contract (ADR 0092)", {
 		assert.isAbove(delegatedAt, -1, "write-code must keep its delegated-claim branch");
 		assert.isAbove(directAt, delegatedAt, "write-code must keep its direct-path branch after it");
 		const delegated = skill.slice(delegatedAt, directAt);
-		if (!LAYER_ONE_WRITE.test(delegated)) {
+		if (!LAYER_ONE_VERB.test(delegated)) {
 			// The branch's write now lives in the script the branch sources, so follow the invocation
 			// into it. Fail closed when the slice resolves to no script at all (ADR 0092): a heading pair
 			// that reaches nothing is a broken scan, not a branch that passes.
@@ -279,7 +310,7 @@ describe("adoption-lint check — fail-closed exit contract (ADR 0092)", {
 				"write-code's DELEGATED branch neither writes layer one inline nor sources a resolvable script",
 			);
 			assert.isTrue(
-				followed.some(({content}) => LAYER_ONE_WRITE.test(content)),
+				followed.some(({content}) => LAYER_ONE_VERB.test(content)),
 				"write-code's DELEGATED branch must write layer one itself — skipping it is what left an issue `status:triaged` + unassigned with its PR in review (#4298)",
 			);
 		}
