@@ -49,7 +49,7 @@ sources.** `packages/pipeline-cli/src/skill-shell-surface.ts` owns that resoluti
   so folding it into every caller's surface lets one shared half-procedure satisfy every skill's own
   rule (the same scoping `kp_skill_shell_surfaces` chose, #4470).
 - **Scope by demonstrated dependency, not directory membership** — and keep the widening on the one
-  check that needs it ([ADR 0230](../.decisions/0230-cycle-validators-follow-the-source-edge.md)).
+  check that needs it (ADR 0230; the record lands separately, so this cites it by number).
   Directory scoping alone punishes the correct move: a skill that extracts its wiring into a shared
   helper and sources it has nothing left on its own surface but a comment, so the guard starts
   passing on prose (#4541). The repair is per-skill, per-edge inclusion — a shared file counts for a
