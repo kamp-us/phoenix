@@ -1594,18 +1594,9 @@ error**, posting another issue's ledger onto yours (#3718, the same silent-clobb
 #2038's `branch.txt`):
 
 ```bash
-# §SP: the per-run scratch namespace — deterministic + fail-closed, never a shared fallback.
-# Keyed on the session id, so if you compose progress.md in one Bash call and post it in the
-# next, this same line re-derives the SAME directory (a bare `mktemp -d` would hand the second
-# call a new EMPTY dir and post an empty body).
-RUN_SCRATCH="${TMPDIR:-/tmp}/kampus-run/${CLAUDE_CODE_SESSION_ID:?§SP: session id unset (#3718)}/write-code-<N>"
-mkdir -p "$RUN_SCRATCH" || {
-  echo "write-code: §SP could not create a per-run scratch dir — refusing to compose a comment through a shared path (#3718)." >&2; exit 1; }
-# …write the four-section comment to "$RUN_SCRATCH/progress.md", then:
-[ -s "$RUN_SCRATCH/progress.md" ] || { echo "write-code: progress.md is missing/empty — refusing to post an empty comment." >&2; exit 1; }
-BODY="$(cat "$RUN_SCRATCH/progress.md")"   # the four-section comment
-# gate the comment on the mis-attribution guard (Step 3.5) — only comment on an issue whose claim is mine
-claim_is_mine "<N>" && gh api repos/$REPO/issues/<N>/comments -f body="$BODY"
+# compose the four-section comment at "$RUN_SCRATCH/progress.md" FIRST; the script re-derives the same
+# session-keyed §SP path and refuses to post an empty body.
+. "$WRITECODE_SCRIPTS/step6-progress-comment.sh" <N> || exit 1
 ```
 
 Assemble the comment from a temp file so multi-line markdown and backticks survive the
@@ -1663,19 +1654,8 @@ so the spawner re-dispatches with the clause, rather than dropping the cross-tas
 silently. A blocked handoff is a fail-loud condition, never a silent no-op.
 
 ```bash
-# compose under the per-run scratch namespace (§SP), never a fixed /tmp leaf — a concurrent
-# coder lane would clobber it and this posts ITS handoff onto your epic, silently (#3718).
-# Deterministic (session-keyed), so writing handoff.md in one Bash call and posting it here in
-# the next resolves the SAME directory — re-running `mktemp -d` would yield an empty one.
-RUN_SCRATCH="${TMPDIR:-/tmp}/kampus-run/${CLAUDE_CODE_SESSION_ID:?§SP: session id unset (#3718)}/write-code-<N>"
-mkdir -p "$RUN_SCRATCH" || {
-  echo "write-code: §SP could not create a per-run scratch dir — refusing to compose a handoff through a shared path (#3718)." >&2; exit 1; }
-# …write the handoff to "$RUN_SCRATCH/handoff.md" first, then:
-[ -s "$RUN_SCRATCH/handoff.md" ] || { echo "write-code: handoff.md is missing/empty — refusing to post an empty handoff." >&2; exit 1; }
-BODY="$(cat "$RUN_SCRATCH/handoff.md")"   # ### Handoff: #N — <title> + the three fields
-# the handoff to the parent epic is predicated on OWNING THE CHILD — gate on claim_is_mine <child>
-# (Step 3.5), not the epic (which you never claim): only hand off about work whose claim is mine.
-claim_is_mine "<N>" && gh api repos/$REPO/issues/<EPIC>/comments -f body="$BODY"
+# write the handoff to "$RUN_SCRATCH/handoff.md" FIRST; the script gates the post on owning the CHILD.
+. "$WRITECODE_SCRIPTS/step7-epic-handoff.sh" <N> <EPIC> || exit 1
 ```
 
 Distill, don't dump — the fine detail lives in the child's progress comments and PR.
@@ -1700,12 +1680,7 @@ thing and then stop.
 The claim you took in Step 3 protected *this* build. The build is over, so give it up:
 
 ```bash
-# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
-PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
-# the last mutation of the run — retract OUR OWN claim marker on the issue we just built.
-# --session carries the token we owned the work under (the orchestrator's delegated token on the
-# orchestrated path), because that is the token the marker itself carries.
-"$PCLI" claim release --issue "<N>" --session "$MY_CLAIM"
+. "$WRITECODE_SCRIPTS/step8-claim-release.sh" <N> || exit 1   # non-zero ⇒ the claim was NOT released
 ```
 
 **Why this is mandatory, not tidy-up.** A claim that outlives its run never expires, and the
