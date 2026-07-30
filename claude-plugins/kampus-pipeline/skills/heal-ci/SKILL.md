@@ -298,11 +298,29 @@ re-deriving the resolver write-code once hand-copied, and keeps only the two thi
 # `pnpm dlx` fallback reading the one pin (hooks/pin.sh); no version pinned here (#3653; ADR 0062/0064).
 VERDICT="${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/bin/pipeline-cli verdict"
 
+# §CP-ness is part of the (PR, gate, head, §CP-ness) tuple `verdict read` resolves, so pass it here
+# exactly as write-code Step R1 does (#4049): on a §CP PR the pass is the SHA-less ADVISORY, invisible
+# without --cp, so a FAIL discharged by a BODY-ONLY repair (the head never moves, so ADR 0058
+# staleness cannot retire it) would read as a live repair forever and suppress every defect filing on
+# that PR. Fail-closed on BOTH fallible inputs, exactly as write-code Step R1 is: the changed-file
+# list comes from §CPREAD's `cp_changed_files`, sourced from its canonical home (#4489), because a
+# bare `gh … | cp-classify` pipe hands the verb gh's STDOUT error document to classify and answers
+# `not-control-plane` on an unread list (#4216); and only the PROVEN `not-control-plane` state word
+# drops the flag — never a bare non-zero test, which fires on a usage error (1) or a missing bin (127).
+. "${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/shared/scripts/cp-read.sh"
+if ! cp_changed_files "$REPO" "$PR"; then
+  CP_STATE=unknown   # the input never arrived ⇒ UNKNOWN ⇒ hold as §CP (never `not-control-plane`)
+else
+  CP_STATE="$(printf '%s\n' "$CP_FILES" \
+    | "${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/bin/pipeline-cli" cp-classify classify --repo "$REPO" 2>/dev/null)"
+fi
+if [ "$CP_STATE" = "not-control-plane" ]; then CP_FLAG=""; else CP_FLAG="--cp"; fi
+
 # a namespace is an active-repair FAIL iff its latest authorized verdict is FAIL bound to the current
 # head — exit 0 from `verdict read … --expect FAIL`. A stale / SHA-less / PASS / none verdict exits
 # non-zero, so it is correctly NOT an active repair, matching write-code's no-op on it.
-CODE_FAIL_JSON="$($VERDICT read --pr "$PR" --gate code --expect FAIL 2>/dev/null)" && CODE_FAIL=1 || CODE_FAIL=0
-DOC_FAIL_JSON="$($VERDICT  read --pr "$PR" --gate doc  --expect FAIL 2>/dev/null)" && DOC_FAIL=1  || DOC_FAIL=0
+CODE_FAIL_JSON="$($VERDICT read --pr "$PR" --gate code $CP_FLAG --expect FAIL 2>/dev/null)" && CODE_FAIL=1 || CODE_FAIL=0
+DOC_FAIL_JSON="$($VERDICT  read --pr "$PR" --gate doc  $CP_FLAG --expect FAIL 2>/dev/null)" && DOC_FAIL=1  || DOC_FAIL=0
 
 # UNRESOLVED ≠ "no FAIL". The verb prints its outcome JSON on BOTH exit paths, so absent JSON means the
 # namespace never resolved (a transport/5xx failure). Reading that as "no repair in flight" would file

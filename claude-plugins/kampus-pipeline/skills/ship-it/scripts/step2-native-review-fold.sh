@@ -34,14 +34,21 @@ VERDICT="${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/bin/pipeline-cli 
 # not reviews. The per-namespace PASS/FAIL conjunction across doc / skill / design was already
 # decided by the `verdict gate` call above, which runs FIRST and refuses on non-zero; re-resolving
 # those three here set six variables nothing read, at six subprocess spawns per ship (#4405).
-# CODE_PASS=1 iff a current-head PASS marker; CODE_FAIL=1 iff a current-head FAIL (the veto). A
+# CODE_PASS=1 iff a current-head pass; CODE_FAIL=1 iff a current-head FAIL (the veto). A
 # stale / SHA-less / none verdict exits non-zero on BOTH, so it is neither — Step 2b's `unverified
-# (verdict not bound to current head)` refusal, owned by the verb. (A §CP advisory namespace is
-# SHA-less by design and resolves `none` here; `verdict gate --cp` reads its body Reviewed-head.)
+# (verdict not bound to current head)` refusal, owned by the verb.
 # The stdout JSON is kept because it carries `writtenAt`, the resolving verdict's WRITE time, which
 # is what the newest-wins fold below compares (#4200).
-CODE_JSON="$($VERDICT read --pr "$PR" --gate code --expect PASS 2>/dev/null)" && CODE_PASS=1 || CODE_PASS=0
-$VERDICT read --pr "$PR" --gate code   --expect FAIL >/dev/null 2>&1 && CODE_FAIL=1   || CODE_FAIL=0
+#
+# `$CP_FLAG` is the SAME value `step2-verdict-gate.sh` passed to `verdict gate`, and passing it here
+# is load-bearing, not symmetry: §CP-ness is part of the (PR, gate, head, §CP-ness) tuple the verb
+# resolves. Omit it on a §CP PR and the advisory is invisible to `read`, so a FAIL discharged by a
+# BODY-ONLY repair — which deliberately never moves the head, so ADR 0058 staleness cannot retire it
+# — stays resolvable as the in-force verdict forever, and `read` disagrees with `gate` on the same
+# markers (#4049). With it, a current-head all-PASS advisory IS the namespace's pass and supersedes
+# the older FAIL.
+CODE_JSON="$($VERDICT read --pr "$PR" --gate code $CP_FLAG --expect PASS 2>/dev/null)" && CODE_PASS=1 || CODE_PASS=0
+$VERDICT read --pr "$PR" --gate code   $CP_FLAG --expect FAIL >/dev/null 2>&1 && CODE_FAIL=1   || CODE_FAIL=0
 
 # fold the native decisive review into the code namespace (the verb reads only marker comments). Only
 # a review bound to the current head counts (same ADR-0058 staleness as a marker's @ <sha>).

@@ -25,12 +25,17 @@ import {
 	compareWriteRecency,
 	GATE_KEYWORD,
 	isBoundToHead,
-	parseVerdict,
+	outcomeCommentId,
+	outcomeSha,
 	pickInForce,
 	polarityRe,
+	resolveVerdict,
 	reviewedHeadSha,
 	type VerdictComment,
 	type VerdictGate,
+	type VerdictOutcome,
+	type VerdictState,
+	verdictState,
 } from "./verdict-match.ts";
 
 /**
@@ -48,7 +53,15 @@ const failCheckboxRe = /^\s*[-*]?\s*\[\s*FAIL\s*\]/im;
 /** Which verdict FORM satisfied (or was found in) a namespace — the ADR 0111 distinction. */
 export type VerdictForm = "marker" | "advisory" | "none";
 
-/** One required namespace's resolved state against the PR's live head. */
+/**
+ * One namespace's resolved verdict against the PR's live head — the SINGLE resolution record both
+ * `verdict gate` and `verdict read` are computed from (#4049 AC2).
+ *
+ * `outcome` is the resolution; `state`, `commentId` and `sha` are DERIVED from it, never computed a
+ * second way. That is what makes the two verbs structurally unable to disagree: `gate` reads
+ * `state`, `read` prints `outcome` and tests it with `isReviewed`, and both go through
+ * `verdictState`.
+ */
 export interface NamespaceDecision {
 	readonly gate: VerdictGate;
 	/** `review-code` / `review-doc` / `review-skill` / `review-design` — the namespace label. */
@@ -59,18 +72,28 @@ export interface NamespaceDecision {
 	 * `absent` — NO consumable verdict exists in this namespace at all (the #3944 hole).
 	 * `unverified` — a verdict exists but is not bound to the live head (stale / SHA-less / not-all-PASS).
 	 */
-	readonly state: "pass" | "fail" | "absent" | "unverified";
+	readonly state: VerdictState;
 	readonly form: VerdictForm;
+	/** The resolved verdict itself — what `verdict read` prints and branches on. */
+	readonly outcome: VerdictOutcome;
 	readonly commentId: number | null;
 	/** The head the found verdict binds, when it binds one. */
 	readonly sha: string | null;
 	readonly reason: string;
 }
 
-export interface GateDecisionInput {
+/** The per-namespace inputs — `GateDecisionInput` minus the required SET (a property of the whole PR). */
+export interface NamespaceInput {
 	readonly comments: ReadonlyArray<VerdictComment>;
 	/** The write+ collaborator logins — the ADR 0055 trust root (resolved by the IO shell). */
 	readonly authorizedAuthors: ReadonlyArray<string>;
+	/** The PR's live head SHA — the head every verdict must bind (ADR 0058 rule 3). */
+	readonly headSha: string;
+	/** Is this a §CP (control-plane / blocking-set) PR, whose pass path is the advisory (ADR 0111/0151)? */
+	readonly controlPlane: boolean;
+}
+
+export interface GateDecisionInput extends NamespaceInput {
 	/**
 	 * Every namespace this PR's diff requires — the `class-probe classify --namespaces` set, which
 	 * derives one gate per artifact class present plus `review-design` when the diff is UI-affecting.
@@ -78,10 +101,6 @@ export interface GateDecisionInput {
 	 * (`.glossary/**` rides has-code), and satisfying only one must not be enough.
 	 */
 	readonly requiredGates: ReadonlyArray<VerdictGate>;
-	/** The PR's live head SHA — the head every verdict must bind (ADR 0058 rule 3). */
-	readonly headSha: string;
-	/** Is this a §CP (control-plane / blocking-set) PR, whose pass path is the advisory (ADR 0111/0151)? */
-	readonly controlPlane: boolean;
 }
 
 export interface GateDecision {
@@ -120,9 +139,97 @@ const inForceOf = (
 	return newerOf(a, b);
 };
 
-const decideNamespace = (gate: VerdictGate, input: GateDecisionInput): NamespaceDecision => {
+/** What an arm resolves; `state`/`commentId`/`sha` are then derived from `outcome`, never restated. */
+interface Resolution {
+	readonly outcome: VerdictOutcome;
+	readonly form: VerdictForm;
+	readonly reason: string;
+}
+
+/**
+ * The §CP advisory arm: classify an advisory that won the in-force pick by its ADR-0151 body anchor.
+ * The marker arm is `resolveVerdict` (which this file does not duplicate) — the two are the only
+ * ways a namespace resolves.
+ */
+const resolveAdvisory = (
+	advisory: VerdictComment,
+	namespace: string,
+	headSha: string,
+): Resolution => {
+	const sha = reviewedHeadSha(advisory.body);
+	if (sha === null) {
+		return {
+			outcome: {_tag: "sha-less", commentId: advisory.id, polarity: "PASS"},
+			form: "advisory",
+			reason: `unverified (§CP ${namespace} advisory carries no 'Reviewed-head: @ <sha>' body binding — an advisory is SHA-less in line 1 by design, so the body anchor is its only head binding, ADR 0151)`,
+		};
+	}
+	if (!isBoundToHead(sha, headSha)) {
+		return {
+			outcome: {_tag: "stale", commentId: advisory.id, polarity: "PASS", sha},
+			form: "advisory",
+			reason: `unverified (§CP ${namespace} advisory reviewed-head stale — body @ ${sha} ≠ current head ${headSha})`,
+		};
+	}
+	if (failCheckboxRe.test(advisory.body)) {
+		return {
+			outcome: {_tag: "advisory-not-all-pass", commentId: advisory.id, sha},
+			form: "advisory",
+			reason: `unverified (§CP ${namespace} advisory not all-PASS — a body checkbox is [FAIL])`,
+		};
+	}
+	return {
+		outcome: {_tag: "current", commentId: advisory.id, polarity: "PASS", sha},
+		form: "advisory",
+		reason: `§CP ${namespace} advisory at the current head, all-PASS — the ADR 0111/0151 PASS-equivalent`,
+	};
+};
+
+/**
+ * The marker arm — DELEGATED to `resolveVerdict` rather than re-deriving its four-way
+ * classification: it re-runs the identical `pickInForce(polarityRe(gate), …)` call that produced the
+ * marker candidate, so it resolves the same comment by construction, and ADR 0058's staleness rule
+ * stays written in exactly one place. Only the reason line is this file's.
+ */
+const resolveMarker = (gate: VerdictGate, namespace: string, input: NamespaceInput): Resolution => {
+	const outcome = resolveVerdict({
+		comments: input.comments,
+		authorizedAuthors: input.authorizedAuthors,
+		gate,
+		headSha: input.headSha,
+	});
+	return {
+		outcome,
+		form: outcome._tag === "none" ? "none" : "marker",
+		reason: markerReason(outcome, namespace, input.headSha),
+	};
+};
+
+/** The marker arm's reason line — the classification itself is `resolveVerdict`'s. */
+const markerReason = (outcome: VerdictOutcome, namespace: string, headSha: string): string => {
+	switch (outcome._tag) {
+		case "none":
+			return `unverified (no ${namespace} PASS): the latest authorized comment in this namespace carries no readable polarity`;
+		case "sha-less":
+			return `unverified (verdict not bound to current head): the latest ${namespace} marker is SHA-less (pre-0058)`;
+		case "stale":
+			return `unverified (verdict not bound to current head): the latest ${namespace} marker binds ${outcome.sha}, not the current head ${headSha}`;
+		case "current":
+			return outcome.polarity === "PASS"
+				? `current-head ${namespace} PASS @ ${outcome.sha}`
+				: `latest verdict is FAIL (${namespace}) @ ${outcome.sha}`;
+		case "advisory-not-all-pass":
+			// Unreachable: `resolveVerdict` is polarity-scoped and never sees an advisory.
+			return `unverified (${namespace}): an advisory reached the marker arm`;
+	}
+};
+
+/**
+ * Resolve ONE namespace against the live head — the single in-force resolution `verdict gate` folds
+ * over its required set and `verdict read` reads for its one gate (#4049).
+ */
+export const decideNamespace = (gate: VerdictGate, input: NamespaceInput): NamespaceDecision => {
 	const namespace = GATE_KEYWORD[gate];
-	const base = {gate, namespace} as const;
 	const marker = pickInForce(
 		input.comments,
 		input.authorizedAuthors,
@@ -131,111 +238,34 @@ const decideNamespace = (gate: VerdictGate, input: GateDecisionInput): Namespace
 		input.headSha,
 	);
 	// A non-§CP PR's advisory is NOT a candidate at all: it carries no bindable head and is not a
-	// PASS, so it must neither satisfy the namespace nor shadow an older bindable marker — exactly
-	// what `verdict read` already does by matching on `polarityRe` only.
+	// PASS, so it must neither satisfy the namespace nor shadow an older bindable marker.
 	const advisory = input.controlPlane
 		? pickInForce(input.comments, input.authorizedAuthors, advisoryRe(gate), gate, input.headSha)
 		: undefined;
 	const latest = inForceOf(marker, advisory, gate, input.headSha);
 
-	if (latest === undefined) {
-		return {
-			...base,
-			state: "absent",
-			form: "none",
-			commentId: null,
-			sha: null,
-			reason: input.controlPlane
-				? `unverified (no ${namespace} PASS): no authorized ${namespace} verdict on this PR — neither a bindable PASS marker nor a §CP advisory`
-				: `unverified (no ${namespace} PASS): no authorized ${namespace} verdict on this PR at all`,
-		};
-	}
+	const resolution: Resolution =
+		latest === undefined
+			? {
+					outcome: {_tag: "none"},
+					form: "none",
+					reason: input.controlPlane
+						? `unverified (no ${namespace} PASS): no authorized ${namespace} verdict on this PR — neither a bindable PASS marker nor a §CP advisory`
+						: `unverified (no ${namespace} PASS): no authorized ${namespace} verdict on this PR at all`,
+				}
+			: latest === advisory
+				? resolveAdvisory(latest, namespace, input.headSha)
+				: resolveMarker(gate, namespace, input);
 
-	if (latest === advisory) {
-		const sha = reviewedHeadSha(latest.body);
-		if (sha === null) {
-			return {
-				...base,
-				state: "unverified",
-				form: "advisory",
-				commentId: latest.id,
-				sha: null,
-				reason: `unverified (§CP ${namespace} advisory carries no 'Reviewed-head: @ <sha>' body binding — an advisory is SHA-less in line 1 by design, so the body anchor is its only head binding, ADR 0151)`,
-			};
-		}
-		if (!isBoundToHead(sha, input.headSha)) {
-			return {
-				...base,
-				state: "unverified",
-				form: "advisory",
-				commentId: latest.id,
-				sha,
-				reason: `unverified (§CP ${namespace} advisory reviewed-head stale — body @ ${sha} ≠ current head ${input.headSha})`,
-			};
-		}
-		if (failCheckboxRe.test(latest.body)) {
-			return {
-				...base,
-				state: "unverified",
-				form: "advisory",
-				commentId: latest.id,
-				sha,
-				reason: `unverified (§CP ${namespace} advisory not all-PASS — a body checkbox is [FAIL])`,
-			};
-		}
-		return {
-			...base,
-			state: "pass",
-			form: "advisory",
-			commentId: latest.id,
-			sha,
-			reason: `§CP ${namespace} advisory at the current head, all-PASS — the ADR 0111/0151 PASS-equivalent`,
-		};
-	}
-
-	// `polarityRe` matched, so `parseVerdict` cannot be null here — the `?? null` collapses the
-	// unreachable branch into the same fail-closed `absent` rather than asserting non-null.
-	const parsed = parseVerdict(latest.body, gate);
-	if (parsed === null) {
-		return {
-			...base,
-			state: "absent",
-			form: "none",
-			commentId: latest.id,
-			sha: null,
-			reason: `unverified (no ${namespace} PASS): the latest authorized comment in this namespace carries no readable polarity`,
-		};
-	}
-	if (parsed.sha === null) {
-		return {
-			...base,
-			state: "unverified",
-			form: "marker",
-			commentId: latest.id,
-			sha: null,
-			reason: `unverified (verdict not bound to current head): the latest ${namespace} marker is SHA-less (pre-0058)`,
-		};
-	}
-	if (!isBoundToHead(parsed.sha, input.headSha)) {
-		return {
-			...base,
-			state: "unverified",
-			form: "marker",
-			commentId: latest.id,
-			sha: parsed.sha,
-			reason: `unverified (verdict not bound to current head): the latest ${namespace} marker binds ${parsed.sha}, not the current head ${input.headSha}`,
-		};
-	}
 	return {
-		...base,
-		state: parsed.polarity === "PASS" ? "pass" : "fail",
-		form: "marker",
-		commentId: latest.id,
-		sha: parsed.sha,
-		reason:
-			parsed.polarity === "PASS"
-				? `current-head ${namespace} PASS @ ${parsed.sha}`
-				: `latest verdict is FAIL (${namespace}) @ ${parsed.sha}`,
+		gate,
+		namespace,
+		state: verdictState(resolution.outcome),
+		form: resolution.form,
+		outcome: resolution.outcome,
+		commentId: outcomeCommentId(resolution.outcome),
+		sha: outcomeSha(resolution.outcome),
+		reason: resolution.reason,
 	};
 };
 

@@ -203,6 +203,9 @@ PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-
   echo "  Resolve to UNKNOWN, never to 'no FAIL'. This is a resolution gap, NOT worktree teardown (§CLI)." >&2
   exit 127
 }
+# §CPREAD's `cp_changed_files`, sourced from its canonical home — no skill-local copy to drift
+# (#4489). It feeds the per-PR §CP-ness derivation inside the loop.
+. "${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/skills/shared/scripts/cp-read.sh"
 # open PRs you authored; print each one whose latest verdict in EITHER namespace is FAIL,
 # UNLESS it has already hit the N=3 repair cap (then it's a human's, not yours to re-pick)
 gh api "repos/$REPO/pulls?state=open&per_page=100" \
@@ -236,13 +239,31 @@ gh api "repos/$REPO/pulls?state=open&per_page=100" \
          then {n:(.n+1), prev:$t} else {n:.n, prev:$t} end)
      | .n' "$comments_file")
   [ "$ROUNDS" -ge 3 ] && continue   # at the cap → already escalated to a human, excluded from the scan
+  # §CP-ness is part of the (PR, gate, head, §CP-ness) tuple `verdict read` resolves (#4049). On a §CP
+  # PR the pass is the SHA-less ADVISORY, which a read without --cp cannot see at all — so a FAIL
+  # discharged by a BODY-ONLY repair (which deliberately never moves the head, so ADR 0058 staleness
+  # can never retire it) reads as a standing FAIL forever and pulls this scan into a phantom repair.
+  # Derive it per PR, fail-closed on BOTH fallible inputs: the changed-file list is a network read, so
+  # it comes from `cp_changed_files` and never a bare `gh … | cp-classify` pipe, which with pipefail
+  # off hands the verb gh's STDOUT error document and answers `not-control-plane` on an unread list
+  # (#4216); and only the PROVEN `not-control-plane` state word drops the flag — never `… ||
+  # CP_FLAG=""` on mere non-zero, which fires on a usage error (1) or a missing bin (127).
+  # `>&2` routes only the §ZS scope LINE, not the result: `cp_changed_files` returns its file list in
+  # $CP_FILES, and this loop's stdout is the repairable-PR list the caller reads. The scope line is
+  # still emitted (§ZS #1), on the same stream as this helper's failure lines.
+  if ! cp_changed_files "$REPO" "$PR" >&2; then
+    CP_STATE=unknown   # the input never arrived ⇒ UNKNOWN ⇒ hold as §CP (never `not-control-plane`)
+  else
+    CP_STATE="$(printf '%s\n' "$CP_FILES" | "$PCLI" cp-classify classify --repo "$REPO" 2>/dev/null)"
+  fi
+  if [ "$CP_STATE" = "not-control-plane" ]; then CP_FLAG=""; else CP_FLAG="--cp"; fi
   # resolve each namespace's latest current-head verdict through the shared verb — exit 0 iff HEAD
   # carries a current FAIL in that gate (a stale / SHA-less / PASS / none verdict exits non-zero).
   # stderr is NOT discarded and 127 is read apart from an ordinary negative: with `2>&1` swallowing
   # it, a `command not found` was byte-identical to "no FAIL verdict" and the PR dropped out of the
   # scan silently (§CLI exit-code taxonomy — "could not run" is never a verdict; #4398, #4236).
   for G in code doc skill; do
-    "$PCLI" verdict read --pr "$PR" --gate "$G" --expect FAIL >/dev/null
+    "$PCLI" verdict read --pr "$PR" --gate "$G" $CP_FLAG --expect FAIL >/dev/null
     RC=$?
     case $RC in
       0)   echo "#$PR review-$G FAIL" ;;
@@ -1864,13 +1885,24 @@ while IFS= read -r a; do
   esac
 done <<<"$markerAuthors"
 
+# §CP-ness is part of the (PR, gate, head, §CP-ness) tuple `verdict read` resolves (#4049) — see the
+# Step-1 pre-pick scan for the full why, including why the file list comes from `cp_changed_files`
+# instead of a fail-OPEN `gh … | cp-classify` pipe.
+. "${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/skills/shared/scripts/cp-read.sh"
+if ! cp_changed_files "$REPO" "$PR"; then
+  CP_STATE=unknown   # the input never arrived ⇒ UNKNOWN ⇒ hold as §CP (never `not-control-plane`)
+else
+  CP_STATE="$(printf '%s\n' "$CP_FILES" | "$PCLI" cp-classify classify --repo "$REPO" 2>/dev/null)"
+fi
+if [ "$CP_STATE" = "not-control-plane" ]; then CP_FLAG=""; else CP_FLAG="--cp"; fi
+
 # a namespace is a repairable FAIL iff its latest authorized verdict is FAIL bound to the current head
 # — exit 0 from `verdict read … --expect FAIL`. The verb's JSON (stdout) carries the resolving comment
 # id, which Step R2 uses to read the FAIL body. A stale / SHA-less / PASS / none verdict exits non-zero,
 # so it is correctly NOT repaired (idempotent no-op), needing no separate staleness test here.
-CODE_FAIL_JSON="$("$PCLI" verdict read --pr "$PR" --gate code  --expect FAIL 2>/dev/null)"  && CODE_FAIL=1  || CODE_FAIL=0
-DOC_FAIL_JSON="$("$PCLI"  verdict read --pr "$PR" --gate doc   --expect FAIL 2>/dev/null)"  && DOC_FAIL=1   || DOC_FAIL=0
-SKILL_FAIL_JSON="$("$PCLI" verdict read --pr "$PR" --gate skill --expect FAIL 2>/dev/null)" && SKILL_FAIL=1 || SKILL_FAIL=0
+CODE_FAIL_JSON="$("$PCLI" verdict read --pr "$PR" --gate code  $CP_FLAG --expect FAIL 2>/dev/null)"  && CODE_FAIL=1  || CODE_FAIL=0
+DOC_FAIL_JSON="$("$PCLI"  verdict read --pr "$PR" --gate doc   $CP_FLAG --expect FAIL 2>/dev/null)"  && DOC_FAIL=1   || DOC_FAIL=0
+SKILL_FAIL_JSON="$("$PCLI" verdict read --pr "$PR" --gate skill $CP_FLAG --expect FAIL 2>/dev/null)" && SKILL_FAIL=1 || SKILL_FAIL=0
 
 # UNRESOLVED ≠ "no FAIL". `verdict read` prints its outcome JSON on BOTH exit paths, so absent JSON
 # means the namespace never resolved at all (a transport/5xx error, not a verdict). Under a flaky
@@ -1925,8 +1957,11 @@ review), `DOC_FAIL=1`, or `SKILL_FAIL=1`. `verdict read` already encapsulates la
 SHA-staleness refusal: a newer FAIL is acted on even if an older PASS exists, but a FAIL whose `@ <sha>`
 is not the current head (or carries no `@ <sha>` — a pre-0058 legacy marker) resolves `stale`/`sha-less`,
 exits non-zero, and is **not** repaired — report `nothing to repair (latest FAIL not bound to current
-head)` and stop. A `review-skill: advisory` line (a blocking-set skill PR) is not a FAIL — `verdict read`
-resolves it `none` (no PASS/FAIL polarity), a clean no-op like a PASS. This keeps repair mode
+head)` and stop. A `review-skill: advisory` line (a blocking-set skill PR) is never a FAIL: without
+`--cp` it resolves `none` (no first-line polarity) and with `--cp` it resolves the §CP pass, so both
+are a clean no-op. Passing `--cp` is what makes the §CP case *correct* rather than merely quiet — a
+current-head all-PASS advisory then supersedes an older same-head FAIL that a body-only repair
+already discharged, instead of leaving that FAIL resolvable forever (#4049). This keeps repair mode
 **idempotent**: re-running it on an already-fixed/PASS PR, a no-FAIL PR, or a stale-FAIL PR is a clean
 no-op. If **more than one** namespace resolves FAIL (a mixed PR — e.g. code+doc, or skill+code), address
 **all** of them in this round.

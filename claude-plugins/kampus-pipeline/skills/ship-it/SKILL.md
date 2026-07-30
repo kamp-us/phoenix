@@ -637,12 +637,15 @@ all, a verdict bound to a stale head, a SHA-less pre-0058 marker, a §CP advisor
 required set** (zero required gates would make the conjunction vacuously true — an un-gated merge
 dressed as a pass, ADR 0092), and an unresolvable head.
 
-**`--cp` is load-bearing in both directions.** A §CP PR's only verdict is the SHA-less advisory, so
-`verdict read --gate code` legitimately resolves `_tag: none` on it — that `none` is the **expected**
-§CP shape, not an absent verdict, and a §CP PR must **never** be required to carry (nor be satisfied
-by) a bindable first-line `PASS @ <sha>` (that drops the §CP verdict into the auto-merge namespace,
-the ADR 0111 hazard). Pass `--cp` **only** for a PR Step 0 classified §CP whose control-plane
-approval gate already passed; without it the advisory is correctly not a pass.
+**`--cp` is load-bearing in both directions, and it belongs on `read` too.** A §CP PR's pass is the
+SHA-less advisory, which a `read` **without** `--cp` cannot see at all — it resolves `_tag: none`,
+the **expected** §CP shape, not an absent verdict — and a §CP PR must **never** be required to carry
+(nor be satisfied by) a bindable first-line `PASS @ <sha>` (that drops the §CP verdict into the
+auto-merge namespace, the ADR 0111 hazard). Pass `--cp` **only** for a PR Step 0 classified §CP whose
+control-plane approval gate already passed; without it the advisory is correctly not a pass. Pass the
+**same** `$CP_FLAG` to the code-namespace `verdict read` in the native-review fold below: both verbs
+resolve one in-force verdict from the same (PR, gate, head, §CP-ness) tuple, so feeding them
+different §CP-ness is the only way left to make them disagree (#4049).
 
 **The one signal the verb does not read — apply it on top.** `verdict gate` reads marker/advisory
 *comments*, not GitHub's native reviews. So a green `verdict gate` is **necessary, not sufficient**:
