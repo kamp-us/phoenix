@@ -106,6 +106,14 @@ const SELF_EXEMPT_SUFFIXES = [
 	"/skills/write-code/SKILL.md",
 	"/skills/review-code/SKILL.md",
 	"/skills/ship-it/SKILL.md",
+	// The two halves of ship-it/SKILL.md that #4448 moved into sourced scripts, and the only two
+	// that carry a named pattern: Step 3.6's ADR-0158 §Decision-2 sanctioned GraphQL read, and Step
+	// 3z's comment FORBIDDING `gh pr edit` next to the REST close/reopen it mandates instead. Both
+	// were already exempt as part of the markdown, so this continues one file's exemption at the
+	// same whole-file granularity — deliberately NOT a `scripts/` directory-wide exemption, which
+	// would silently exempt every future extracted script from a live lint.
+	"/skills/ship-it/scripts/step3_6-threads-read.sh",
+	"/skills/ship-it/scripts/step3z-dropped-trigger.sh",
 	"/skills/gh-issue-intake-formats.md",
 	"/packages/pipeline-cli/src/tools/gh-phoenix/README.md",
 ] as const;

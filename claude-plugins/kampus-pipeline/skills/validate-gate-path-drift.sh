@@ -96,8 +96,15 @@ fi
 BOUNDARY_NAMES="GUARD_ADR_RE HAS_CODE_RE HAS_SKILLS_RE HAS_DOCS_EXCLUDE_RE HAS_DOCS_RE DOC_VOCAB_EXCLUDE_RE DOC_VOCAB_SURFACE_RE CLAIM_RE UI_RE UI_EXCLUDE_RE"
 SHIPIT_MD="$skills_dir/ship-it/SKILL.md"
 REVIEWER_MD="$skills_dir/../agents/reviewer.md"
-# Every corpus file that may carry an assignment copy of a boundary name.
+# Every corpus file that may carry an assignment copy of a boundary name — INCLUDING the shell the
+# skills extracted out of their markdown into scripts/*.sh (#4448). Without that reach, moving a
+# fenced block carrying `HAS_*_RE=`/`UI_RE=` fail-closed literals into a script would take those
+# copies off 1c's scan surface and leave this invariant green while guarding nothing (#4470/#4486).
 COPY_FILES="$FORMATS_MD $SHIPIT_MD $REVIEWER_MD"
+for sh in "$skills_dir"/*/scripts/*.sh; do
+	# An unmatched glob stays a literal path here (no nullglob in bash 3.2), so test before appending.
+	[ -f "$sh" ] && COPY_FILES="$COPY_FILES $sh"
+done
 
 # An ASSIGNMENT occurrence: the name preceded by start-of-line, whitespace, or `; ` (reviewer.md
 # packs two per compound line). Deliberately NOT a bare substring match — `grep '^NAME='` and
