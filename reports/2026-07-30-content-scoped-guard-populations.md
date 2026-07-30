@@ -215,9 +215,10 @@ Concretely, three clauses:
    `MergeOutcome`, #4515).
 
 **This changes a repo-wide convention, so it is routed, not decided here** (#4509 AC 3). The
-convention question — whether clauses 1–3 become a `.patterns/` rule with a mechanical enforcement
-(the mutation-based check is mechanisable: mutate the corpus, list the rows that stayed green) or stay
-per-guard judgement — is filed as a decision follow-up.
+convention question — whether clauses 1–3 become an ADR plus a `.patterns/` rule, or stay per-guard
+judgement, and how the declaration's churn cost is weighed against the visibility it buys — is filed
+as [#4534](https://github.com/kamp-us/phoenix/issues/4534). Its mechanical half is separable and is
+filed as [#4536](https://github.com/kamp-us/phoenix/issues/4536).
 
 ## What changed in this PR, and what did not
 
@@ -234,10 +235,13 @@ per-guard judgement — is filed as a decision follow-up.
 - **A3 / A4** (`src/subprocess-budget.test.ts`, `src/pipeline-cli-shim.hook.test.ts`). Both sit at
   `packages/pipeline-cli/src/`'s non-recursive root, which `CONTROL_PLANE_RE` matches — so folding them
   in would change the **merge authority of this whole PR** to §CP and park an otherwise-ordinary class
-  fix behind a human approval. That is a structural bound, not a size one. Filed as a §CP-lane
-  follow-up carrying the exact patch shape.
+  fix behind a human approval. That is a structural bound, not a size one. Filed as
+  [#4535](https://github.com/kamp-us/phoenix/issues/4535), carrying both measurements and the patch shape.
 - **A1** (`adoption-lint/command.test.ts`) — no repair needed: PR #4503 landed it mid-investigation.
-- **The mechanised mutation check** across the suite — a new tool, well beyond bounded collapse. Filed.
+- **The mechanised mutation check** across the suite — a new tool, well beyond bounded collapse. Filed
+  as [#4536](https://github.com/kamp-us/phoenix/issues/4536).
+- **The convention itself** — repo-wide, so routed rather than decided here:
+  [#4534](https://github.com/kamp-us/phoenix/issues/4534).
 
 ## Reproducing the probes
 
