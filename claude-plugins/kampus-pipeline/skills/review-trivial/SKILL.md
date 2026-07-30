@@ -337,7 +337,8 @@ don't re-derive:
 - **code-class** diff (everything else — `apps/**`, `packages/**`, `.glossary/**`, a code-root
   `*.md`) → emit a **`review-code:`** marker.
 
-Whichever namespace, the verdict obeys the §5/§6/§6.5 matcher contract: the **first line** is
+Whichever namespace, the verdict obeys the [gate-verdict contract
+§VERDICT](../shared/gate-verdict-contract.md) matcher rules: the **first line** is
 the bare, canonical, SHA-bound marker, with `@ <sha>` **immediately after** the `PASS`/`FAIL`
 polarity and **before** the `— merge-ready` / `— not merge-ready` tail (token order is fixed;
 a trailing `@ <sha>` captures `sha=null` and `ship-it` refuses a correct PASS as `unverified`,
@@ -346,32 +347,30 @@ not bound to the PR's current head, and refuse a SHA-less marker outright (ADR 0
 
 **Re-check the live head before posting** (§HEAD #4): if the head moved while you reviewed, do
 **not** post a verdict bound to a SHA you no longer reviewed — re-resolve and re-review, or
-abort. Then resolve the head SHA and **upsert** (one verdict per (PR, namespace) — `PATCH` your
-own prior marker if present, else `POST`; ADR 0058 rule 2). The post is a **comment, never a
-native `APPROVE`** (a native review can't carry the `@ <sha>` this contract controls; ADR 0058
-rule 4):
+abort. Then resolve the head SHA and **upsert on the §VERDICT key — (PR, gate-namespace, head,
+run)**: `verdict post` replaces a prior marker in this namespace only when that marker matches
+*this head and this run*, and appends otherwise, so a re-review at a new head leaves the prior
+head's verdict standing and a concurrent run never overwrites another's record (ADR 0058 rule 2,
+refined by ADR 0213). The post is a **comment, never a native `APPROVE`** (a native review can't
+carry the `@ <sha>` this contract controls; ADR 0058 rule 4).
+
+**Post through the guarded tool, never a hand-rolled `PATCH`.** A raw comment patch of a verdict
+body is a marker hand-post: it resolves "my prior marker" by the shared login alone — head-blind
+and run-blind — which is exactly the ADR-0213 concurrent-reviewer clobber, and it skips
+`emissionDefect` plus the §READBACK re-scan that §VERDICT makes mandatory:
 
 ```bash
-NS=review-code   # or review-doc / review-skill, per the class above
+NS=code   # or doc / skill, per the class above — the gate namespace is `review-$NS`
 HEAD_NOW="$(gh api repos/$REPO/pulls/$PR --jq .head.sha)"
 [ "$HEAD_NOW" = "$HEAD_SHA" ] || { echo "head moved under the verdict — re-review the new head or abort (ADR 0058)"; exit 1; }
 
+# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
+PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
 VERDICT_FILE="$(mktemp /tmp/review-trivial-verdict.XXXXXX)"
 # write your composed verdict into "$VERDICT_FILE"; first line is the bare SHA-bound marker:
-#   <NS>: PASS @ <HEAD_SHA> — merge-ready          (every check passed)
-#   <NS>: FAIL @ <HEAD_SHA> — not merge-ready       (any check failed)
-BODY="$(cat "$VERDICT_FILE")"
-ME="$(gh api user --jq .login)"
-# upsert: PATCH your own newest marker in this namespace if present, else POST.
-# pipe gh api straight into standalone jq (--arg is a jq flag, not a gh-api one; binary-safe):
-MINE=$(gh api "repos/$REPO/issues/$PR/comments?per_page=100" \
-        | jq -r --arg me "$ME" --arg ns "$NS" 'map(select(.user.login==$me
-          and (.body | test("^\\s*\\**\\s*" + $ns + ":"; "i")))) | last | .id // empty')
-if [ -n "$MINE" ]; then
-  gh api -X PATCH "repos/$REPO/issues/comments/$MINE" -f body="$BODY"
-else
-  gh api -X POST  "repos/$REPO/issues/$PR/comments"   -f body="$BODY"
-fi
+#   review-<NS>: PASS @ <HEAD_SHA> — merge-ready          (every check passed)
+#   review-<NS>: FAIL @ <HEAD_SHA> — not merge-ready       (any check failed)
+"$PCLI" verdict post --pr "$PR" --gate "$NS" --body-file "$VERDICT_FILE"
 ```
 
 ### Verdict body shape

@@ -124,7 +124,7 @@ it is, resolve it once — `gh api repos/$REPO/pulls/<N>` succeeds for a PR and
 **The ownership boundary, stated once and load-bearing throughout:** **write-code owns
 fail → fix → re-request; `ship-it` owns PASS → merge.** You own the branch and the PR, so
 driving a FAIL'd PR back through the gate is your loop — but the merge is never yours, in
-either mode (this mirrors the `gh-issue-intake-formats.md` §5/§6/§6.5 relationship table, which
+either mode (this mirrors the `gh-issue-intake-formats.md` relationship table, which
 names write-code the consumer of *all three* FAIL markers and `ship-it` the consumer of *all
 three* PASS markers).
 
@@ -1781,7 +1781,7 @@ left to a separate reviewer.
 ## Repair mode — consume a gate FAIL verdict, fix-and-resubmit
 
 This is the second invocation shape: keyed off a **PR number**, it is the consumer the
-gate FAIL markers were written for (`gh-issue-intake-formats.md` §5/§6/§6.5 name write-code the
+gate FAIL markers were written for (`gh-issue-intake-formats.md`'s relationship table names write-code the
 reader of `review-code: FAIL @ <sha> — not merge-ready`, `review-doc: FAIL @ <sha> —
 changes-requested`, and `review-skill: FAIL @ <sha> — changes-requested`, SHA-bound per ADR
 0058). You take a PR that came back failed, apply exactly the enumerated
@@ -2285,8 +2285,9 @@ indistinguishable from "still FAILing after the cap" to the picker, so the same 
   Act only on a FAIL bound to the PR's **current head** — a FAIL whose `@ <sha>` is stale (or
   absent) judges code that has since changed, so repair mode ignores it. This mirrors
   `ship-it` Step 2b's staleness refusal on the reading side.
-- **All three namespaces.** Handle `review-code: FAIL @ <sha>` (§5), `review-doc: FAIL @ <sha>`
-  (§6), **and** `review-skill: FAIL @ <sha>` (§6.5) — latest current-head verdict per namespace —
+- **All three namespaces.** Handle `review-code: FAIL @ <sha>`, `review-doc: FAIL @ <sha>`
+  **and** `review-skill: FAIL @ <sha>` ([the gate-verdict contract
+  §VERDICT](../shared/gate-verdict-contract.md)) — latest current-head verdict per namespace —
   not just `review-code`. A skill PR's FAIL lands in the `review-skill` namespace (ADR 0073).
 - **Author-gated verdicts.** A marker counts only from a `write+` repo collaborator —
   the same GitHub-ACL gate `ship-it` Step 2 applies before the marker regex, so a forged or
@@ -2471,7 +2472,7 @@ from `status:planned` after gating a `plan-epic` ledger (epic children — ADR
 a claimed issue, a PR with `Fixes #N`, progress comments, and an epic handoff note — is
 exactly what `review-code`/`review-doc`/`review-skill` read to verify the work against its
 acceptance criteria before merge. The loop closes back on you: when a gate lands a **FAIL** marker
-(`review-code` §5, `review-doc` §6, or `review-skill` §6.5), *you* are its consumer — [Repair mode](#repair-mode--consume-a-gate-fail-verdict-fix-and-resubmit)
+(`review-code`, `review-doc`, or `review-skill` — §VERDICT), *you* are its consumer — [Repair mode](#repair-mode--consume-a-gate-fail-verdict-fix-and-resubmit)
 reads the findings, fixes, and re-submits for an independent re-gate, while `ship-it` stays
 the sole owner of PASS → merge. You also lean on two sibling skills inside type routing:
 `/adr`

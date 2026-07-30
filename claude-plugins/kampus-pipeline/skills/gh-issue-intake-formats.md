@@ -9,11 +9,14 @@ agent-operable work pipeline:
 2. The **sub-issue body format** — one executable task, mirroring a task entry.
 3. The **progress-comment format** — a per-issue work-log entry for the next agent.
 4. The **epic handoff-note format** — distilled cross-task context posted to the epic.
-5. The **review-code verdict markers** — the recognizable first line of a PR comment
-   signalling the verdict, **SHA-bound** to the head it reviewed (ADR 0058):
-   `PASS @ <sha> — merge-ready` (read by `ship-it`, the merge step) or
-   `FAIL @ <sha> — not merge-ready` (read by `write-code`'s fix round-trip).
-6. The **review-doc verdict markers** — the doc-class twin of format 5, in its own namespace.
+5. The **gate-verdict markers** — the recognizable first line of a PR comment signalling a
+   gate's verdict, **SHA-bound** to the head it reviewed (ADR 0058):
+   `PASS @ <sha> — merge-ready` (read by `ship-it`, the merge step) or the FAIL form (read by
+   `write-code`'s fix round-trip). All four gate namespaces share **one** spec, which lives in
+   [`shared/gate-verdict-contract.md`](shared/gate-verdict-contract.md) §VERDICT — not here.
+6. The **§CP advisory line** and the **verdict read-back / guarded-emit rules** — same file,
+   §ADVISORY and §READBACK. (Formats 5 and 6 left this document with #4438; the numbering is
+   kept so §7 and §8 citations still resolve.)
 7. The **issue-claim semantics** — self-assign as a detect-and-tiebreak (not a lock), the
    protocol `write-code`'s pick (Step 1) and claim (Step 3) implement.
 8. The **investigation→trivial-fix collapse rule** — the bounded exception (ADR 0070) that
@@ -1081,150 +1084,6 @@ silently leaks a local path into a **public** comment:
   route around this with `-F body=@file`: the `$BODY`-by-value form is the single idiom every
   skill here uses — reach for it, not a second mechanism.)
 
-### The verdict read-back guard — after posting a gate marker, re-read it and FAIL LOUD (`verdict_readback_guard`)
-
-The by-value form above (`-f body="$BODY"`) is the *source* idiom; it prevents a `body=@<path>`
-leak **at the call site**. But a source idiom cannot catch a **runtime deviation** — an agent that
-hand-assembles the wrong `$BODY` (the literal temp path as the marker body, a body missing its
-`Reviewed-head:` anchor, or a silently no-opped post) still lands a broken marker the by-value form
-happily transmits. That is the #2148 class: the posted verdict comment's entire body was a local
-temp path (`@/var/folders/…`), so no SHA-bound verdict existed for `ship-it` / the §CP merger to
-bind to (a **missing** gate verdict), **and** it leaked a machine-local path into a public comment.
-The source idiom alone can't see it; only a **post-write read-back** can.
-
-So every gate that posts a verdict marker — `review-code`, `review-doc`, `review-skill`,
-`review-design` — closes the loop with **one** canonical read-back guard: after the post/upsert
-lands, **re-read the comment you just wrote** and assert three invariants, failing **loud**
-(fail-closed, ADR
-[0092](https://github.com/kamp-us/phoenix/blob/main/.decisions/0092-gates-fail-closed-on-zero-scope.md) §ZS)
-on any miss — never a silent pass. This is the single source; each review skill **references it**
-(it does not re-derive its own copy — the three-copy drift is exactly what this contract exists to
-prevent):
-
-```bash
-KP_SHARED="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/skills/shared/scripts"
-. "$KP_SHARED/verdict-readback.sh"                                  # §SHARED: both guards, one source
-verdict_readback_guard "$CID" review-code "$HEAD_SHA" || …          # <gate> ∈ review-{code,doc,skill,design}
-```
-
-[`shared/scripts/verdict-readback.sh`](shared/scripts/verdict-readback.sh) carries the four checks and
-their reasons: **(0)** a non-empty body, **(1)** a canonical `<gate>:` marker — the bindable
-`PASS|FAIL @ <sha>` first line or the SHA-less `advisory` one, **(2)** the SHA-source-aware head
-binding, **(3)** no local-filesystem-path leak. Any miss returns non-zero and names the cause.
-
-Gate it exactly like the by-value post it follows: right after the `PATCH`/`POST` upsert returns the
-comment id, call `verdict_readback_guard "$CID" <gate> "$HEAD_SHA"` and, on non-zero, **re-post the
-real verdict and re-assert** — if it still cannot land clean, surface it as a **posting failure** in
-the run ledger (the PR is genuinely ungated; a consumer must not read it as verified), never swallow
-it as a silent success. A moved `HEAD_SHA` between the post and the read-back means the head advanced
-*during* the review — re-resolve the head, re-verify against it (the gate is stateless), and re-post;
-never loosen the match to paper over a moved head. (In practice a gate never calls this primitive with
-a hand-carried id — it calls the unconditional `verdict_post_verify` wrapper below, which resolves the
-landed comment id by re-scanning PR state and passes it here.)
-
-Check (2) is **SHA-source-aware** (#2272): the read-back fires on every verdict type without
-false-failing a legitimate non-blocking PASS. The bindable PASS/FAIL first line satisfies (1) via its
-`@ <sha>` — that SHA **is** the head binding, so (2) requires no separate `Reviewed-head:` line (the
-non-blocking binding templates carry the SHA only on the first line; this is the branch that keeps a
-clean non-blocking doc/skill PASS from false-failing under the unconditional `verdict_post_verify …
-|| exit 1`). The advisory blocking-set path carries no first-line `@ <sha>` by design (ADR 0111),
-which is why (1) accepts the `<gate>: advisory` first line; it binds the head **in the body** via the
-canonical `Reviewed-head: @ <sha>` line, which §6.6/ADR 0151 mandates on **all four gates'** advisories
-— **review-code included** (#2329: the earlier "review-code's §CP advisory carries NONE by design →
-accept its absence" carve-out contradicted §6.6's MUST and blinded (2) to a drifted `**Reviewed head:**`
-variant, which ship-it's §6.6 enqueue matcher then rejects; the carve-out is removed, so a missing or
-drifted advisory head-binding fails **loud at emission** rather than surfacing as a ship-it refusal on
-an approved PR). Any `Reviewed-head:` line present but bound to the wrong sha is always fatal. The
-canonical-marker check (1) and the leak check (3) are **unconditional** on every verdict type — the
-#2148/#2264 path-leak protection is never relaxed.
-
-### Make the read-back UNCONDITIONAL — resolve the landed verdict from PR state, never a carried id (`verdict_post_verify`)
-
-`verdict_readback_guard` above is correct but only fires **if it is reached with the right comment
-id**. The #2264 recurrence (after #2148/#2153 already "fixed" the leak) proves that condition is the
-real gap: the guard was invoked as `verdict_readback_guard "$MINE" …`, and `$MINE` is populated on
-**one** posting branch only (the APPROVE-failed comment-upsert `else` fallback). A verdict that lands
-by any **other** path — the native `APPROVE`, a first-verdict `POST` on a branch that didn't set
-`$MINE`, or an agent hand-rolling `gh api -f body=@file` — reaches the guard with an **empty** id, so
-the guard reads nothing and the broken/leaking marker sails through. A guard you can skip by taking a
-different post branch is not a guard.
-
-The fix is to **stop trusting a carried variable and re-derive the landed verdict from live PR
-state**, then run the read-back **unconditionally** on whatever landed. This is the single wrapper
-every gate calls after posting — it resolves the marker comment id by re-scanning, proves *a* verdict
-actually landed for the head, and **hard-fails (non-zero)** on absent / broken / leaking so a garbled
-or path-leaking marker is a **fatal** error the gate cannot silently pass:
-
-```bash
-KP_SHARED="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/skills/shared/scripts"
-. "$KP_SHARED/verdict-readback.sh"                                  # §SHARED: the wrapper and the guard it calls
-verdict_post_verify "$PR" review-code "$HEAD_SHA" || exit 1         # UNCONDITIONAL, after ANY post/upsert
-```
-
-It resolves the landed verdict from live PR state — **(A)** my SHA-bound or advisory marker comment,
-**(B)** a native `APPROVE` whose `commit_id` is this head — never from a carried `$MINE`/`$CID`; then
-**(C)** hard-fails when nothing bound to the head landed, **(D)** runs the read-back on the landed
-comment whichever branch posted it, and **(E)** leak-checks the native-`APPROVE` body too. Returns 0
-only on a proven-clean landed verdict.
-
-**Why this closes the #2264 recurrence — the post-path enumeration.** Every way a gate can land a
-verdict now routes through the same unconditional read-back, because `verdict_post_verify` resolves
-the landed surface from PR state instead of from a branch-local variable:
-
-- **native `APPROVE`** → resolved by (B); its body is leak-checked by (E); commit_id is its SHA anchor.
-- **comment `PATCH`-upsert** (the old `$MINE` branch) → resolved by (A); shape+leak by (D).
-- **comment `POST`** (first verdict, `$MINE` empty) → resolved by (A); shape+leak by (D). *This is the
-  branch the carried-`$MINE` call silently skipped.*
-- **advisory comment** (§CP blocking-set) → resolved by (A) via the `<gate>: advisory` arm; shape+leak by (D).
-- **hand-rolled `gh api -f body=@file`** (the literal path as the whole body) → has **no** `<gate>:`
-  first line, so (A) resolves empty and (B) is 0 ⇒ **(C) fatal** (`ungated`). A garbled marker is fatal.
-
-The single **fatal** exit on absent/broken/leaking is the load-bearing change: the prior Step-4c
-presence check merely *echoed* a warning and re-posted without a non-zero exit, so a garble read as
-green. Callers **must** propagate the non-zero — `verdict_post_verify … || exit 1` — so the gate
-cannot report itself done over an ungated PR.
-
-Gate it exactly like the by-value post it follows: right after the last of the Step-5/4a-4b upsert
-branches runs, call `verdict_post_verify "$PR" <gate> "$HEAD_SHA" || exit 1`. On a moved `HEAD_SHA`
-between post and verify the head advanced *during* review — re-resolve the head, re-verify against it
-(the gate is stateless), and re-post; never loosen the match to paper over a moved head.
-
-### The guarded emit path is MANDATORY — never hand-post a verdict marker off the guard
-
-`verdict_post_verify` above is the *read-back*: it re-scans PR state **after** a post and fails loud
-on a marker that landed broken or leaking. But a read-back cannot police a post it never sees. An
-agent that **hand-posts** the verdict marker with a raw `gh api …/comments` or `gh pr comment` call
-bypasses the verdict lib entirely, so `emissionDefect` never fires — and, worse, the marker often
-never resolves through `verdict_post_verify`'s re-scan either, so nothing catches it. That is the
-**emit-side hole** the recurrences rode: #2789 (the whole body was an `@filepath`), #2816 / #2818 (a
-`/var/folders` mktemp path glued into the `@ <sha>` field) — each leaked because the marker was
-hand-posted off the verdict lib, not because the lib's guard was wrong. Code cannot force a hand-post
-through a guard the reviewer never invokes; the **emit path itself** must be mandated, not just
-described.
-
-So for **all four PR gates** — `review-code`, `review-doc`, `review-skill`, `review-design` — routing
-every verdict-marker post through the guarded path is a **hard invariant, not a suggestion**:
-
-- **MUST** post every verdict marker through `pipeline-cli verdict post` — the single marker-emit
-  choke point that runs `emissionDefect` (the body-wide machine-local-path scan added by #2823, plus
-  the 40-hex `@ <sha>` field guards, #2683) and **refuses fail-closed** on a leaking or malformed
-  body. For the native `APPROVE` review body (which `verdict post` cannot emit), run the **same** gate
-  as an explicit read-back assertion — `verdict validate` — **before** the `APPROVE`, so a
-  malformed/leaking marker fails loud rather than landing in a public review body.
-- **FORBIDDEN:** a bare `gh api …/comments` / `gh pr comment` hand-post of a verdict marker that skips
-  the guard. The guarded tool is the **only** sanctioned emit path; a free-form raw post is a bypass,
-  never an equivalent — a reviewer must not free-form the marker even when the body "looks clean."
-- **The one escape hatch, itself guarded:** if a raw post is genuinely unavoidable, the body **MUST**
-  first pass `pipeline-cli leak-guard scan-comment` (the standalone pre-post net #2823 added — reads
-  the body on stdin / `--body-file`, exits non-zero on a machine-local path) **before** the post. A
-  raw post whose body was never scanned is the forbidden case; a scanned one is the escape hatch.
-
-This is the **enforcement complement** to #2823: #2823 hardened the guard *code* (`emissionDefect`'s
-body-wide scan + the `leak-guard scan-comment` CLI); this mandate closes the emit-side hole by
-forbidding the reviewer from routing around it — the two together are what actually close #2796. Each
-review gate **references this rule as the single source** (it does not re-derive the *why* per skill).
-Per #2393 the guard stays generic path-shape patterns, never a named-path deny-list.
-
 ---
 
 ## 3. Progress-comment format
@@ -1686,8 +1545,8 @@ over a PR's changed files, so it has no such read.
 
 ## DOC. The doc-class / review-doc surface — one canonical definition
 
-`review-doc` and the actors that cite it (`ship-it` Step 0, `write-code`, this file's §6
-marker prose) all need the *same* answer to a second question — **is this `*.md` a doc
+`review-doc` and the actors that cite it (`ship-it` Step 0, `write-code`, the gate-verdict
+contract's §VERDICT marker prose) all need the *same* answer to a second question — **is this `*.md` a doc
 artifact, or code-adjacent markdown that rides `review-code`?** The doc class was once
 described loosely as "prose `*.md` outside `.claude/`/`.github/`", which over-matched a
 **code-root** `*.md` (a `packages/**`/`apps/**` README) into the doc class even though no
@@ -2372,7 +2231,7 @@ assert it did:**
 1. **Resolve + materialize the head via the shared `pipeline-cli review-head` verb — never
    re-derive it inline** (#3690 / #793 / #1807; `packages/pipeline-cli/src/tools/review-head/`).
    The verb owns the deterministic mechanism this section used to spell out inline: it resolves the
-   live head SHA up front via REST (never GraphQL — the SHA the verdict binds to, §5/ADR 0058),
+   live head SHA up front via REST (never GraphQL — the SHA the verdict binds to, §VERDICT/ADR 0058),
    fetches the head into a per-run ref (never the launched checkout — the §RO read-only path), and
    **asserts the fetched ref resolves to exactly that SHA before you review** — aborting on a moved
    head rather than binding a stale verdict. Two modes, same core:
@@ -2401,7 +2260,7 @@ assert it did:**
 4. **Re-check the live head before posting; abort a stale-bound verdict.** If the head moved
    while you reviewed (re-resolve `headRefOid` and compare to `$HEAD_SHA`) or the head can't be
    reached, do **not** post a verdict bound to a SHA you no longer reviewed — re-resolve and
-   re-review the new head, or abort. A verdict's `@ <HEAD_SHA>` marker (§5) must name the SHA
+   re-review the new head, or abort. A verdict's `@ <HEAD_SHA>` marker (§VERDICT) must name the SHA
    whose *files you actually read*, and the verdict body must **assert it read the PR head (not
    the launched CWD)**, so a base-code review is self-evidently invalid to a human adjudicator.
 
@@ -2410,540 +2269,6 @@ Gates that materialize a full head worktree for behavior verification (`review-c
 `pnpm -C "$REVIEW_WT"`; the diff-only gate (`review-doc`) satisfies it via
 `git show "$PR_REF:<path>"`. Either way, the launched checkout's working copy is never the
 source of code under review.
-
----
-
-## 5. review-code pass marker
-
-When `review-code` lands its verdict and a native review can't be posted (e.g. org
-branch rules forbid reviewing your own PR), it falls back to a **comment whose first
-line is a recognizable marker**. That marker is a downstream contract: the **`ship-it`**
-skill scans PR comments for the PASS marker to find verified, merge-ready PRs
-unambiguously, and `write-code`'s fix round-trip scans for the FAIL marker to find a PR
-that came back failed.
-
-### Shape — SHA-bound (ADR 0058)
-
-The recognizable **first line** of the PR comment carries the **head SHA the reviewer
-inspected** (`@ <sha>`), resolved at post time from
-`gh api repos/$REPO/pulls/$PR --jq .head.sha`:
-
-```markdown
-review-code: PASS @ <sha> — merge-ready
-```
-
-```markdown
-review-code: FAIL @ <sha> — not merge-ready
-```
-
-`<sha>` is the full or abbreviated (≥7 hex) head SHA. The rest of the comment body carries
-the per-criterion evidence table (the verdict). What's load-bearing for the scanner is only
-that first marker line — the namespace, the polarity, **and the `@ <sha>`**; the table below
-it is for the human and the implementer.
-
-The `@ <sha>` is **load-bearing, not decoration**: `ship-it` and `write-code`-repair refuse a
-verdict whose `@ <sha>` does not match the PR's *current* head, and refuse a SHA-less marker
-outright — this is what closes the stale-PASS-masks-a-FAIL and head-moved-under-the-verdict
-races (ADR [0058](https://github.com/kamp-us/phoenix/blob/main/.decisions/0058-sha-bound-verdict-contract.md), issue #258). A marker
-with no `@ <sha>` is a *pre-0058 legacy* shape and resolves to `unverified`, not PASS.
-
-### Upsert, not append — one verdict per (PR, gate-namespace) (ADR 0058)
-
-`review-code` writes **exactly one** marker comment per PR in its namespace. That upsert is
-**`pipeline-cli verdict post`'s own behavior, not something a reviewer hand-rolls**: the verb
-scans the PR for **its own** prior `review-code:` marker keyed on `(namespace, head, runId)`
-and, if one exists, replaces that comment in place with the fresh verdict + fresh `@ <sha>`
-instead of appending a new one. A re-review at a **new** head appends a fresh record and leaves
-the prior head's verdict standing (that is what the `head` dimension of the key buys — #4007,
-ADR 0213); a re-post at the **same** head upserts, so no head's slot ever accumulates a stale
-verdict stream a millisecond decides. See ADR 0058 rule 2.
-
-**Do not translate this into a raw `gh api` comment `PATCH`.** A hand-rolled patch of a verdict
-body is a marker hand-post — it skips `emissionDefect` and the post-write `verifyLanded` re-scan,
-which is exactly the emit-side bypass [The guarded emit path is
-MANDATORY](#the-guarded-emit-path-is-mandatory--never-hand-post-a-verdict-marker-off-the-guard)
-forbids (#2789 / #2816 / #2818). If a raw post is genuinely unavoidable, take that section's one
-escape hatch — `pipeline-cli leak-guard scan-comment` on the body **first**.
-
-### The matcher contract: emphasis-tolerant + SHA-capturing (canonical shape)
-
-The marker line may carry **leading Markdown emphasis** — `review-code` historically emits
-it bolded (`**review-code: PASS @ <sha> — merge-ready**`), `review-doc` emits it bare. To stop
-the emitter and the matcher from drifting apart (the bolded marker once read as "no verdict"
-and stalled every code-lane merge — #219), this contract pins **one** rule both sides cite:
-
-- **Canonical emit shape** (what an emitter SHOULD write): the bare, unbolded first line —
-  `review-code: PASS @ <sha> — merge-ready`. New/converging emitters write this.
-- **Token order is fixed** (the single source every emitter cites): the `@ <sha>` comes
-  **immediately after** the `PASS`/`FAIL` polarity and **before** the `— merge-ready` /
-  `— not merge-ready` tail — `review-code: PASS @ <sha> — merge-ready`, never
-  `review-code: PASS — merge-ready @ <sha>`. The matcher below is **anchored to this order**:
-  it captures the SHA only when `@ <sha>` directly follows the polarity, so a marker that
-  pushes `@ <sha>` *past* `merge-ready` captures `sha=null` → the consumer resolves it
-  `unverified` and refuses a correct, current-head PASS (the token-order drift that silently
-  stalled #623's merge — #625). The fix is to **emit the canonical order**, not to loosen the
-  matcher to chase a trailing SHA (ADR 0058 forbids weakening the SHA-binding). §6/§6.5 inherit
-  this order for `review-doc` / `review-skill` via the same matcher contract.
-- **Matcher obligation** (what every scanner MUST accept): an **optional leading `**`** before
-  the namespace token, so a bolded marker resolves identically to a bare one, **and a captured
-  `@ <sha>`** so the consumer can apply the staleness test. The anchored, case-insensitive
-  matcher is `^\s*\**\s*review-(code|doc):\s*(PASS|FAIL)\s*@\s*([0-9a-f]{7,40})` — the leading
-  `\**` absorbs the emphasis; `^\s*` still pins it to the start of the body so a mid-body
-  *quote* never matches; the trailing `@\s*([0-9a-f]{7,40})` captures the bound head SHA. A
-  SHA-less marker that matches only the looser `^\s*\**\s*review-(code|doc):\s*(PASS|FAIL)`
-  prefix but **not** the `@ <sha>` tail is a legacy verdict → the consumer treats it as
-  `unverified` (ADR 0058 rule 3). Every matcher site — `ship-it` (merge gate) and `write-code`
-  (fix round-trip) — cites this rule so they can't diverge again.
-- **Forbidden emit forms** (what an emitter MUST NOT write): the matcher above is anchored, so
-  an emitter that freelances any of the shapes below produces a verdict **no consumer can read**
-  — `ship-it` resolves the PR to `unverified` and silently refuses to merge a genuine,
-  current-head PASS (the #1095 stall: a real PASS posted as `<!-- review-code: PASS sha:… -->`
-  sat unmerged). The emit contract is the mirror of the matcher — emit the canonical first line
-  and **none** of these:
-  - **HTML-comment-wrapped** — `<!-- review-code: PASS @ <sha> — merge-ready -->`. The `<!--`
-    is non-whitespace ahead of the namespace token, so it fails the `^\s*\**\s*` anchor (the
-    `\**` absorbs only Markdown emphasis, never `<!--`). The marker must be **live body text**,
-    not an HTML comment — the verdict-marker contract has no HTML-comment form (the only
-    sanctioned HTML comment in these formats is the unrelated AC-append provenance tag of §2).
-  - **`sha:` (or any non-`@`) SHA delimiter** — `review-code: PASS sha:<sha>`. The matcher
-    captures the bound SHA only from the literal `@ <sha>` tail; `sha:<sha>` matches only the
-    looser SHA-less prefix → `unverified`. The delimiter is `@`, never `sha:`/`SHA=`/`commit:`.
-  - **Heading-only / prose-only verdict** — `## review-code verdict: PASS` with no marker line.
-    A heading is not the contract: it carries no `@ <sha>` and isn't anchored at the namespace
-    token. The recognizable first line is required *in addition to* any human-facing heading.
-  - **Marker not on the literal first line** — the `^` anchor pins the marker to the **start of
-    the comment body**; a marker buried after a preamble paragraph never matches. It leads the
-    body.
-  - **Two namespace markers stacked in one comment (the multi-namespace fan)** — on a
-    mixed-class diff the reviewer fans several verdict namespaces (e.g. `review-code` +
-    `review-skill` for a skill+code PR, `review-design` for a UI PR). Each namespace's `^`
-    anchor pins its marker to the first line of **its own comment**, so stacking a second
-    namespace's marker on line 2 of the first's comment leaves that second marker un-anchored:
-    it never matches, its namespace resolves **empty**, and `ship-it` fail-closes a
-    substantively-PASS PR (the live PR #2456 stall — both reviews PASSed, but the stacked
-    `review-skill` marker was unmatchable and recovery needed a manual re-emit). **Emit each
-    fanned namespace's verdict as its OWN separate PR comment, its `<namespace>: PASS|FAIL @
-    <sha>` marker on that comment's literal first line — one comment per namespace, never two
-    markers stacked.** The upsert is still one-comment-per-`(PR, namespace)`; the fan writes
-    N such comments (one each), not one comment carrying N markers.
-  These are emitter bugs, not matcher gaps — the fix is always to **emit the canonical shape**,
-  never to loosen the anchored matcher to chase a malformed marker (ADR 0058 forbids weakening
-  the SHA-binding). §6/§6.5/§6.7 inherit this forbidden-forms list for `review-doc` /
-  `review-skill` / `review-design` via the same matcher contract.
-
-### Field notes
-
-- **First line, recognizable.** The marker leads the comment so a scan can match
-  it without parsing the whole body. Recognize it tolerantly by shape
-  (`review-code: PASS @ <sha>` … `merge-ready`) and emphasis (optional leading `**`, per the
-  matcher contract above), not by exact dashes or spacing — but the `@ <sha>` is required.
-- **Two markers, two consumers.** `PASS @ <sha> — merge-ready` (every criterion verified,
-  bound to that head) is read by `ship-it` as the go-ahead to merge **iff `<sha>` is the
-  current head**. `FAIL @ <sha> — not merge-ready` (≥1 criterion unmet) is read by
-  `write-code`'s fix round-trip as "my PR came back failed"; `ship-it` reads it as "do not
-  merge." Each marker has exactly one merge-relevant meaning.
-- **Signals, never merges.** The PASS marker is an approval signal `ship-it` acts on.
-  `review-code` writing it does **not** merge; merging is `ship-it`'s deliberate act
-  (see review-code/SKILL.md §"Authority limit" and ADR 0048).
-- The native approving review (`event=APPROVE`) is the preferred signal when it's
-  available; GitHub records its `commit_id`, which **is** the SHA the reviewer approved, so
-  `ship-it` applies the same staleness test to a native review via its `commit_id`. This
-  marker is the comment-based fallback that carries the same meaning (with the `@ <sha>`
-  doing explicitly what `commit_id` does for a native review) where a formal review can't be
-  posted.
-
----
-
-## 6. review-doc verdict marker
-
-`review-doc` is the **doc-class twin of `review-code`** — it gates a doc/knowledge PR
-(the **§DOC doc class**: `.decisions/**`, `.patterns/**`, `docs/**`, or a root/top-level
-prose `*.md` — explicitly **not** a code-root `*.md` under `apps/**`/`packages/**`, which
-rides `review-code`) against its
-linked issue's acceptance criteria *plus* a doc-hygiene checklist. It lands its verdict as a
-**comment whose first line is a recognizable, SHA-bound marker** — and **only** that comment,
-never a native approving review. The marker lives in its **own namespace**, distinct from
-§5's `review-code` marker.
-
-### Shape — SHA-bound (ADR 0058)
-
-The recognizable **first line** of the PR comment carries the head SHA the reviewer inspected
-(`@ <sha>`, from `gh api repos/$REPO/pulls/$PR --jq .head.sha`):
-
-```markdown
-review-doc: PASS @ <sha> — merge-ready
-```
-
-```markdown
-review-doc: FAIL @ <sha> — changes-requested
-```
-
-For a PR in the **control-plane / blocking set** (§CP), `review-doc` is advisory only and
-instead leads with the **canonical advisory line** (§6.6 — `review-doc: advisory — blocking-set
-PR (§CP — approval-gated)`) so its verdict stays *out* of `ship-it`'s PASS namespace — a §CP PR
-merges only once a `@kamp-us/control-plane` member approves at head and `ship-it` enqueues it
-(ADR [0135](https://github.com/kamp-us/phoenix/blob/main/.decisions/0135-hard-gate-control-plane-team-codeowners-approve-then-enqueue.md)
-amending [0053](https://github.com/kamp-us/phoenix/blob/main/.decisions/0053-control-plane-boundary.md);
-`ship-it` is the single merge actor, ADR
-[0048](https://github.com/kamp-us/phoenix/blob/main/.decisions/0048-ship-it-merge-actor.md)). The advisory line
-carries **no `@ <sha>`** by design: it authorizes nothing, so there is nothing to bind.
-
-The rest of the body carries the per-criterion + per-hygiene-check evidence table. What's
-load-bearing for the scanner is the namespace, the polarity, **and the `@ <sha>`** — the same
-staleness contract as §5: `ship-it`/`write-code`-repair refuse a `review-doc` verdict whose
-`@ <sha>` is not the PR's current head, and refuse a SHA-less one (ADR
-[0058](https://github.com/kamp-us/phoenix/blob/main/.decisions/0058-sha-bound-verdict-contract.md), issue #258).
-
-### Comment-only — the APPROVE/comment duality is resolved (ADR 0058)
-
-`review-doc` emits its verdict **only** as the SHA-bound `review-doc:` comment, **never** a
-native `APPROVE`/`REQUEST_CHANGES` review. This resolves the duality #258 flagged: a native
-GitHub review cannot carry the `@ <sha>` in the comment shape this contract controls (it
-records `commit_id` in a *different* record type), so leaving `review-doc` free to post either
-would force `ship-it` to compare a review against a comment for the doc lane — two
-incomparable records. One carrier, the comment, keeps the doc lane resolvable the same way
-the code lane is. (`review-code` keeps its native-`APPROVE` path because `ship-it` reads that
-review's `commit_id` for the staleness test; `review-doc` does not.)
-
-### Upsert, not append (ADR 0058)
-
-`review-doc` writes **exactly one** `review-doc:` marker comment per PR. As in §5 this is
-`pipeline-cli verdict post`'s own behavior — the verb finds **its own** prior `review-doc:`
-marker and replaces it in place with the fresh verdict + fresh `@ <sha>` rather than appending
-(ADR 0058 rule 2; same mechanism as §5, including §5's "never hand-roll this as a raw
-`gh api` `PATCH`").
-
-### Field notes
-
-- **Separate namespace from `review-code`.** `ship-it` matches the two markers with two
-  anchored, namespaced, emphasis-tolerant, SHA-capturing regexes —
-  `^\s*\**\s*review-code:\s*(PASS|FAIL)\s*@\s*([0-9a-f]{7,40})` and
-  `^\s*\**\s*review-doc:\s*(PASS|FAIL)\s*@\s*([0-9a-f]{7,40})` (the matcher contract in §5) —
-  resolves latest-verdict-wins **per namespace** by timestamp, then applies the SHA-staleness
-  test. A `review-code` scan must never match a `review-doc` marker, nor vice versa.
-  `review-doc` therefore **never** emits a `review-code` marker, and `review-code` never emits
-  a `review-doc` one.
-- **First line, recognizable.** The marker leads the comment so a scan matches it without
-  parsing the whole body. Recognize it tolerantly by shape (`review-doc: PASS @ <sha>` …
-  `merge-ready`) and emphasis (optional leading `**`, §5 matcher contract), not by exact
-  dashes or spacing — but the `@ <sha>` is required.
-- **Two markers, two consumers.** `PASS @ <sha> — merge-ready` (every AC + every hygiene check
-  verified, bound to that head) is read by `ship-it` as the go-ahead to merge a **non-blocking**
-  doc PR **iff `<sha>` is the current head**. `FAIL @ <sha> — changes-requested` (≥1 AC or
-  hygiene check unmet) is read by `write-code`'s fix round-trip as "my doc PR came back failed";
-  `ship-it` reads it as "do not merge."
-- **Advisory for the blocking set.** A PR in the §CP set gets the canonical advisory line
-  (§6.6), not a PASS marker — `review-doc`'s verdict does not authorize that merge; a
-  `@kamp-us/control-plane` approval at head does, and `ship-it` enqueues on it (ADR 0135
-  amending 0053). This keeps the control-plane approval gate intact.
-- **Signals, never merges.** The PASS marker is an approval signal `ship-it` acts on;
-  `review-doc` writing it does **not** merge (see review-doc/SKILL.md §"Authority limit").
-
----
-
-## 6.5. review-skill verdict marker
-
-`review-skill` is the **behavioral-artifact gate** — the third sibling of `review-code`
-(§5) and `review-doc` (§6). It gates a **skill PR** (`skills/**`, superseding ADR 0063's
-`skills/**` → `review-code` routing) against its linked issue's acceptance criteria *plus*
-a skill-specific rigor checklist (behavioral correctness, trigger/`description` quality,
-cross-skill conflict/shadowing, gate-invariant preservation — ADR
-[0073](https://github.com/kamp-us/phoenix/blob/main/.decisions/0073-review-skill-gate.md) §1). It lands its
-verdict as a **comment whose first line is a recognizable, SHA-bound marker** — and **only**
-that comment, never a native review (like `review-doc`, ADR 0058 rule 4). The marker lives
-in its **own namespace**, distinct from §5's `review-code` and §6's `review-doc`.
-
-### Shape — SHA-bound (ADR 0058)
-
-The recognizable **first line** of the PR comment carries the head SHA the reviewer
-inspected (`@ <sha>`, from `gh api repos/$REPO/pulls/$PR --jq .head.sha`):
-
-```markdown
-review-skill: PASS @ <sha> — merge-ready
-```
-
-```markdown
-review-skill: FAIL @ <sha> — changes-requested
-```
-
-For a PR in the **control-plane / blocking set** (§CP — every gate-critical skill is in it,
-so most skill PRs that touch a gate land here), `review-skill` is **advisory only** and
-instead leads with the **canonical advisory line** (§6.6):
-
-```markdown
-review-skill: advisory — blocking-set PR (§CP — approval-gated)
-```
-
-so its verdict stays *out* of `ship-it`'s PASS namespace — a §CP PR merges only once a
-`@kamp-us/control-plane` member approves at head and `ship-it` enqueues it (ADR 0135 amending
-0053; `ship-it` is the single merge actor, ADR 0048).
-The advisory line carries **no `@ <sha>`** by design: it authorizes nothing, so there is
-nothing to bind.
-
-The rest of the body carries the per-criterion + per-rigor-check evidence table. What's
-load-bearing for the scanner is the namespace, the polarity, **and the `@ <sha>`** — the
-same staleness contract as §5/§6: `ship-it`/`write-code`-repair refuse a `review-skill`
-verdict whose `@ <sha>` is not the PR's current head, and refuse a SHA-less one (ADR
-[0058](https://github.com/kamp-us/phoenix/blob/main/.decisions/0058-sha-bound-verdict-contract.md), issue #258).
-
-### Comment-only (ADR 0058)
-
-`review-skill` emits its verdict **only** as the SHA-bound `review-skill:` comment, **never**
-a native `APPROVE`/`REQUEST_CHANGES` review — for the same reason `review-doc` is comment-only
-(§6): a native review cannot carry the `@ <sha>` in the shape this contract controls, so one
-comparable record type per lane keeps the lane resolvable.
-
-### Upsert, not append (ADR 0058)
-
-`review-skill` writes **exactly one** `review-skill:` marker comment per PR. As in §5 this is
-`pipeline-cli verdict post`'s own behavior — the verb finds **its own** prior `review-skill:`
-marker and replaces it in place with the fresh verdict + fresh `@ <sha>` rather than appending
-(ADR 0058 rule 2; same mechanism as §5/§6, including §5's "never hand-roll this as a raw
-`gh api` `PATCH`").
-
-### The matcher contract — anchored, never cross-matching (canonical shape)
-
-`review-skill` adds a **third** namespace to the §5 matcher family, on the same
-emphasis-tolerant + SHA-capturing rule. The three matchers are mutually exclusive by
-construction — anchored at `^\s*` so a mid-body quote never matches, and each names its
-own token so a scan in one namespace can **never** cross-match another:
-
-- code:  `^\s*\**\s*review-code:\s*(PASS|FAIL)\s*@\s*([0-9a-f]{7,40})`
-- doc:   `^\s*\**\s*review-doc:\s*(PASS|FAIL)\s*@\s*([0-9a-f]{7,40})`
-- skill: `^\s*\**\s*review-skill:\s*(PASS|FAIL)\s*@\s*([0-9a-f]{7,40})`
-
-A `review-code` or `review-doc` scan must **never** match a `review-skill` marker, and vice
-versa. The tokens are distinct literals (`review-code` / `review-doc` / `review-skill`), and
-because `review-code:` ends in `code:` while `review-skill:` ends in `skill:`, the anchored
-`review-code:` literal cannot prefix-match `review-skill:` — the three are disjoint. Every
-matcher site (`ship-it` merge gate, `write-code` fix round-trip, `review-skill` upsert) cites
-this one rule so they can't diverge (the same discipline §5 pins for code/doc).
-
-### Field notes
-
-- **Separate namespace.** `ship-it` resolves each gate's verdict in its **own** namespace,
-  latest-verdict-wins by timestamp, then the SHA-staleness test (§5/§6). `review-skill`
-  never emits a `review-code` or `review-doc` marker, and they never emit a `review-skill` one.
-- **First line, recognizable.** The marker leads the comment so a scan matches it without
-  parsing the whole body. Recognize it tolerantly by shape (`review-skill: PASS @ <sha>` …
-  `merge-ready`) and emphasis (optional leading `**`, §5 matcher contract), not by exact
-  dashes — but the `@ <sha>` is required.
-- **Two markers, two consumers.** `PASS @ <sha> — merge-ready` (every AC + every rigor check
-  verified, bound to that head) is read by `ship-it` as the go-ahead to merge a **non-blocking**
-  skill PR **iff `<sha>` is the current head**. `FAIL @ <sha> — changes-requested` (≥1 AC or
-  rigor check unmet) is read by `write-code`'s fix round-trip as "my skill PR came back failed";
-  `ship-it` reads it as "do not merge."
-- **Advisory for the blocking set.** A skill PR touching a gate-critical skill (or any §CP
-  path) gets the **canonical advisory line** (§6.6), not a PASS marker — its verdict does not
-  authorize that merge; a `@kamp-us/control-plane` approval at head does, and `ship-it` enqueues
-  on it (ADR 0135 amending 0053/0065). This keeps the control-plane approval gate intact, and is
-  exactly the common case for a skill PR (every gate skill is gate-critical).
-- **Signals, never merges.** The PASS marker is an approval signal `ship-it` acts on;
-  `review-skill` writing it does **not** merge (see review-skill/SKILL.md §"Authority limit").
-
----
-
-## 6.6. The canonical advisory line — one form for all four gates
-
-The gates once expressed "advisory" two ways: `review-code` emitted a binding
-`PASS @ <sha> — merge-ready` line *plus* a control-plane caveat, while `review-doc`
-suppressed the binding PASS and led with a **no-`@ <sha>`** advisory line. ADR
-[0073](https://github.com/kamp-us/phoenix/blob/main/.decisions/0073-review-skill-gate.md) §5 picks
-`review-doc`'s form as the **single canonical advisory shape** and converges all the gates on
-it; the later `review-design` gate (§6.7, ADR 0165) adopts the same form from birth.
-
-For a PR in the **control-plane / blocking set** (§CP), the gate emits a comment whose first
-line is the **no-`@ <sha>`** advisory marker in its own namespace:
-
-```markdown
-review-code:   advisory — blocking-set PR (§CP — approval-gated)
-review-doc:    advisory — blocking-set PR (§CP — approval-gated)
-review-skill:  advisory — blocking-set PR (§CP — approval-gated)
-review-design: advisory — blocking-set PR (§CP — approval-gated)
-```
-
-The rest of the body carries the same per-check evidence table the PASS/FAIL paths carry —
-the verdict is *recorded* (for the human or delegated merge actor to read), it just **authorizes
-nothing on its first line**. The advisory **first line** **carries no `@ <sha>`** on purpose: it
-does not enter any `ship-it` `PASS @ <sha> — merge-ready` namespace, so a §CP PR is never
-auto-mergeable off it (ADR 0053). Under ADR 0135's approve-then-enqueue, `ship-it` enqueues it once a
-`@kamp-us/control-plane` approval is present at head (ADR 0053/0065/0135) — that approval, not a gate
-verdict, is what authorizes the merge.
-
-**The advisory body MUST carry the canonical `Reviewed-head` line (ADR 0151).** Immediately after
-the advisory's first-line marker + framing prose, the body carries **exactly one** line recording
-the reviewed head SHA in a fixed, machine-parseable form:
-
-```markdown
-Reviewed-head: @ <HEAD_SHA>
-```
-
-This is the single canonical binding for a §CP advisory — it replaces the free-prose "reviewed head"
-phrasings (which spelled the SHA half a dozen incompatible ways and made the §CP enqueue
-nondeterministic; #1932/#2022). It is a **body** line with a **distinct `Reviewed-head:` token**, so
-it is never matched by the first-line `review-(code|doc|skill): PASS @ <sha>` PASS-namespace matcher —
-the advisory stays out of `ship-it`'s auto-merge namespace exactly as ADR 0111 requires. Both a human
-delegated merge actor and `ship-it`'s ADR-0135 approval-aware §CP enqueue read the reviewed head from
-**this** line, via the anchored matcher (case-insensitive, optional `@`, 7–40 hex, ADR 0058
-prefix-match either side):
-
-```
-^\s*Reviewed-head:\s*@?\s*([0-9a-f]{7,40})\b
-```
-
-`ship-it` treats the §CP advisory namespace as an enqueue-eligible current-head PASS-equivalent iff
-(a) this `Reviewed-head` SHA prefix-matches the PR's current head, (b) every body checkbox is
-`[PASS]`, and (c) Step 0's control-plane approval is present at head — else it refuses
-deterministically (ship-it Step 2.§CP, ADR 0151). The reviewer is **never** asked to emit a bindable
-first-line PASS on a §CP PR to unblock enqueue (ADR 0111's advisory-is-SHA-less-in-first-line
-invariant is preserved; the reviewer marker contract is not widened).
-
-This is why the advisory form is namespace-uniform but binding-free: it keeps each gate's
-verdict **out** of `ship-it`'s merge path for the control plane while still leaving a
-visible, evidence-bearing verdict on the PR. (`review-code`'s historical binding-PASS +
-caveat shape was retired in favor of this; the reconciliation landed with #424.)
-
-**The first-line `@ <sha>` is omitted by design — the SHA is bound in the body's canonical
-`Reviewed-head` line, and both a delegated merge actor AND `ship-it`'s §CP enqueue confirm from
-that body line, not the first-line marker (ADR 0111/0151).** The advisory line deliberately
-withholds the first-line `@ <sha>` so it never enters `ship-it`'s `PASS @ <sha> — merge-ready`
-namespace — that withholding is exactly what makes `ship-it` refuse to *auto-merge* the §CP PR off a
-first-line PASS (ADR 0053). It is **not** a missing binding: the head SHA the reviewer inspected is
-recorded in the verdict **body** on the canonical `Reviewed-head: @ <sha>` line + the per-AC PASS
-table, per ADR 0058. So a **delegated** control-plane merge actor — an operator hand-merging a banked
-§CP PR, or `ship-it`'s ADR-0135 approval-aware enqueue acting on the maintainer's current-head
-APPROVE — must **not** try to bind the first-line marker (it will read as `unverified`, the
-SHA-less-by-design form #977 hit). It confirms the verdict by **reading the body**: the
-`Reviewed-head` `@ <sha>` against the PR's current head + every AC marked PASS, then applies
-`ship-it`'s just-in-time guards (head freshness, mergeable, no failing required check) and
-merges/enqueues. A namespace-isolated bindable *first-line* SHA was rejected (it would invite
-automated §CP auto-merge and erode ADR 0053) — ADR 0151 instead makes the *body*'s binding canonical
-and machine-read, keeping ADR 0111 intact. See
-[ADR 0111](https://github.com/kamp-us/phoenix/blob/main/.decisions/0111-blocking-set-verdicts-sha-less-by-design.md)
-and [ADR 0151](https://github.com/kamp-us/phoenix/blob/main/.decisions/0151-cp-advisory-body-sha-resolves-approval-aware-enqueue.md).
-
----
-
-## 6.7. review-design verdict marker
-
-`review-design` is the **design-class gate** — the fourth reviewer skill alongside
-`review-code` (§5), `review-doc` (§6), and `review-skill` (§6.5). It gates a **UI-affecting
-PR** by driving Playwright over the PR's preview deploy, capturing the changed UI surfaces,
-and judging the rendered screenshots multimodally against the **four-pillars design law**
-(ADR [0162](https://github.com/kamp-us/phoenix/blob/main/.decisions/0162-four-pillars-design-law.md);
-the gate itself is ADR [0165](https://github.com/kamp-us/phoenix/blob/main/.decisions/0165-review-design-gate.md),
-skill landed via #2246). It hard-FAILs **only** on the six enumerable, objective ADR-0162
-prohibitions; all holistic/taste judgment rides as advisory (non-blocking) notes in the same
-verdict comment. It lands its verdict as a **comment whose first line is a recognizable,
-SHA-bound marker** — and **only** that comment, never a native review (like `review-doc` /
-`review-skill`, ADR 0058 rule 4). The marker lives in its **own namespace**, distinct from
-§5's `review-code`, §6's `review-doc`, and §6.5's `review-skill`.
-
-### Shape — SHA-bound (ADR 0058)
-
-The recognizable **first line** of the PR comment carries the head SHA the reviewer
-inspected (`@ <sha>`, from `gh api repos/$REPO/pulls/$PR --jq .head.sha`):
-
-```markdown
-review-design: PASS @ <sha> — merge-ready
-```
-
-```markdown
-review-design: FAIL @ <sha> — changes-requested
-```
-
-For a PR in the **control-plane / blocking set** (§CP), `review-design` is **advisory only**
-and instead leads with the **canonical advisory line** (§6.6):
-
-```markdown
-review-design: advisory — blocking-set PR (§CP — approval-gated)
-```
-
-so its verdict stays *out* of `ship-it`'s PASS namespace — a §CP PR merges only once a
-`@kamp-us/control-plane` member approves at head and `ship-it` enqueues it (ADR 0135 amending
-0053; `ship-it` is the single merge actor, ADR 0048).
-The advisory line carries **no `@ <sha>`** by design: it authorizes nothing, so there is
-nothing to bind.
-
-The rest of the body carries the per-prohibition table (the six hard-FAIL checks, passing
-rows too), an **Advisory (non-blocking)** section, and an **Evidence** section embedding the
-GitHub-hosted screenshot URLs so a human can see what was judged. What's load-bearing for the
-scanner is the namespace, the polarity, **and the `@ <sha>`** — the same staleness contract as
-§5/§6/§6.5: `ship-it`/`write-code`-repair refuse a `review-design` verdict whose `@ <sha>` is
-not the PR's current head, and refuse a SHA-less one (ADR
-[0058](https://github.com/kamp-us/phoenix/blob/main/.decisions/0058-sha-bound-verdict-contract.md), issue #258).
-
-### Comment-only (ADR 0058)
-
-`review-design` emits its verdict **only** as the SHA-bound `review-design:` comment,
-**never** a native `APPROVE`/`REQUEST_CHANGES` review — for the same reason `review-doc` /
-`review-skill` are comment-only (§6/§6.5): a native review cannot carry the `@ <sha>` in the
-shape this contract controls, so one comparable record type per lane keeps the lane
-resolvable.
-
-### Upsert, not append (ADR 0058)
-
-`review-design` writes **exactly one** `review-design:` marker comment per PR. As in §5 this is
-`pipeline-cli verdict post`'s own behavior — the verb finds **its own** prior `review-design:`
-marker and replaces it in place with the fresh verdict + fresh `@ <sha>` rather than appending
-(ADR 0058 rule 2; same mechanism as §5/§6/§6.5, including §5's "never hand-roll this as a raw
-`gh api` `PATCH`").
-
-### The matcher contract — anchored, never cross-matching (canonical shape)
-
-`review-design` adds a **fourth** namespace to the §5 matcher family, on the same
-emphasis-tolerant + SHA-capturing rule. The four matchers are mutually exclusive by
-construction — anchored at `^\s*` so a mid-body quote never matches, and each names its own
-token so a scan in one namespace can **never** cross-match another:
-
-- code:   `^\s*\**\s*review-code:\s*(PASS|FAIL)\s*@\s*([0-9a-f]{7,40})`
-- doc:    `^\s*\**\s*review-doc:\s*(PASS|FAIL)\s*@\s*([0-9a-f]{7,40})`
-- skill:  `^\s*\**\s*review-skill:\s*(PASS|FAIL)\s*@\s*([0-9a-f]{7,40})`
-- design: `^\s*\**\s*review-design:\s*(PASS|FAIL)\s*@\s*([0-9a-f]{7,40})`
-
-The tokens are distinct literals, and because each ends in a different word (`code:` /
-`doc:` / `skill:` / `design:`) no anchored literal prefix-matches another — the four are
-disjoint. `review-design` also inherits §5's **token-order** rule (`@ <sha>` immediately
-after the polarity, before the `— merge-ready` / `— changes-requested` tail) and its
-**forbidden emit forms** (no HTML-comment wrapper, no `sha:` delimiter, no heading-only
-verdict, marker on the literal first line). Every matcher site cites this one rule so they
-can't diverge.
-
-### The `Reviewed-head` body anchor (ADR 0151)
-
-Every `review-design` verdict body carries the canonical **`Reviewed-head: @ <sha>`** line
-(§6.6 / ADR 0151) — the read-back guard asserts it on every path, and a delegated §CP merge
-actor (and `ship-it`'s ADR-0135 approval-aware enqueue) resolves the reviewed head from
-**exactly that line** on an advisory §CP verdict, never from the first-line marker.
-
-### Field notes
-
-- **Separate namespace.** `ship-it` resolves each gate's verdict in its **own** namespace,
-  latest-verdict-wins by timestamp, then the SHA-staleness test (§5/§6/§6.5). `review-design`
-  never emits a `review-code` / `review-doc` / `review-skill` marker, and they never emit a
-  `review-design` one.
-- **First line, recognizable.** The marker leads the comment so a scan matches it without
-  parsing the whole body. Recognize it tolerantly by shape (`review-design: PASS @ <sha>` …
-  `merge-ready`) and emphasis (optional leading `**`, §5 matcher contract), not by exact
-  dashes — but the `@ <sha>` is required.
-- **Two markers, two consumers.** `PASS @ <sha> — merge-ready` (every applicable prohibition
-  passed or N/A, bound to that head) is the go-ahead signal `ship-it` acts on to merge a
-  **non-blocking** UI PR **iff `<sha>` is the current head**. `review-design`'s required-gate
-  wiring **has landed** as part of the ADR-0165 rollout: `ship-it` runs the `UI_RE` probe and
-  refuses a `has-ui` PR with an empty `review-design` namespace, and §CLASS's
-  `pipeline-cli class-probe classify` folds the additive gate in.
-  `FAIL @ <sha> — changes-requested` (≥1 objective prohibition violated) is read by
-  `write-code`'s fix round-trip as "my UI PR came back failed"; `ship-it` reads it as "do not
-  merge."
-- **Advisory for the blocking set.** A UI PR in the §CP set gets the **canonical advisory
-  line** (§6.6), not a PASS marker — its verdict does not authorize that merge; a
-  `@kamp-us/control-plane` approval at head does, and `ship-it` enqueues on it (ADR 0135 amending
-  0053/0065). Because a design verdict is calibrated to FAIL conservatively (a borderline call is
-  downgraded to advisory), an advisory here can also mean "no objective prohibition hard-failed" —
-  but on a §CP PR the first-line advisory is always the approval-gated shape.
-- **Signals, never merges.** The PASS marker is an approval signal `ship-it` acts on;
-  `review-design` writing it does **not** merge (see review-design/SKILL.md §"Authority
-  limit").
 
 ---
 
@@ -2962,7 +2287,7 @@ own before mutating it. Every consumer cites the `CLAIM_RE` and tiebreak defined
 The **resolution** side of this contract — resolve one owner by the earliest authorized
 claim and decide "is it mine?", default-deny — is implemented once as the shared verb
 `pipeline-cli claim is-mine --issue <N>` (#3687, reusing the epic-lock `resolveClaim` core);
-a consumer runs the verb rather than hand-rolling the resolution `jq`, exactly as §5/§6 route
+a consumer runs the verb rather than hand-rolling the resolution `jq`, exactly as §VERDICT routes
 every marker emit through `pipeline-cli verdict post`. The bash resolution shown below is the
 canonical *reference* the verb implements — read it to understand the tiebreak, run the verb
 to make the decision.
@@ -3001,7 +2326,7 @@ The claim is **two layers** (ADR 0115 §1):
 ### The canonical claim marker + `CLAIM_RE` — single-sourced here
 
 The claim comment is **one line, emphasis-tolerant**, exactly as the SHA-bound verdict
-markers (§5/§6) are. Its **canonical grammar**:
+markers (§VERDICT) are. Its **canonical grammar**:
 
 ```
 claim: <CLAUDE_CODE_SESSION_ID> · <ISO-8601-UTC>
@@ -3034,7 +2359,7 @@ claim: <CLAUDE_CODE_SESSION_ID> · <ISO-8601-UTC> · presence <machine-fingerpri
   re-derives this write instead of citing the verb.
 - **Read surface — the canonical `CLAIM_RE`.** A claim comment is matched by this **one**
   anchored, case-insensitive, emphasis-tolerant regex; every consumer cites it and **none
-  re-hard-codes the grammar** (it pairs with §5/§6's marker-matcher discipline). The executable
+  re-hard-codes the grammar** (it pairs with §VERDICT's marker-matcher discipline). The executable
   matcher is the `RegExp` in `tools/epic-lock/claim-resolution.ts`; the jq/PCRE rendering below is
   single-sourced in `gate-boundaries.ts` and drift-locked to both (#4401):
 
@@ -3523,7 +2848,7 @@ cheapest moment to surface it — and had nowhere to go.
 ```markdown
 ## Deviations
 
-- **Scope narrowing** — **Said:** #4064's AC asks the gate teeth to cover §6.6's four gates plus
+- **Scope narrowing** — **Said:** #4064's AC asks the gate teeth to cover §ADVISORY's four gates plus
   `review-trivial`. **Did:** `review-trivial` gets a Step-0 bounce, not a deviation verdict.
   **Why:** it emits a trivial-path verdict, and a disclosed deviation is by construction evidence the
   diff is not trivial. **Disposition:** stated in the PR body per the AC; no ADR needed.
@@ -3709,6 +3034,11 @@ The rationale lives in ADR
 | review-skill FAIL marker | the PR | review-skill | write-code (fix round-trip) |
 | `## Deviations` section (§DEV) | the PR body | write-code (Step 5 opens it, repair R3 appends) | review-code, review-doc, review-skill, review-design (verdict row), review-trivial (triviality bounce) |
 | issue-claim (assignee) | the issue's assignees | write-code (Step 3 claim), triage (Step 0 sweep-claim) | write-code (Step 1 pick), triage (Step 0 Rule-0 back-off) |
+
+The six marker rows are **shapes defined elsewhere**:
+[`shared/gate-verdict-contract.md`](shared/gate-verdict-contract.md) §VERDICT is the single
+contract for all four gate namespaces (`review-design` included), §ADVISORY the §CP advisory
+form, §READBACK the post-write read-back.
 
 The issue-claim row is the one entry that is a **protocol over the assignee field**, not a
 markdown format — §7 governs *how* an agent writes and reads that field (detect-and-tiebreak,

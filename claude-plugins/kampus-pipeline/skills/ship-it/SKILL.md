@@ -202,19 +202,19 @@ you refuse any verdict not bound to the PR's *current* head (Step 2b, ADR
 
 - **product code** (`apps/**` — every app worker, not just `apps/web` — `packages`, other code) → `review-code`, whose marker is
   `review-code: PASS @ <sha> — merge-ready` or `review-code: FAIL @ <sha> — not merge-ready`
-  (canonical shape: [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §5).
+  (canonical shape: [the gate-verdict contract §VERDICT](../shared/gate-verdict-contract.md)).
   `review-code` can also land a native **approving review** (`event=APPROVE`), whose
   `commit_id` is its bound SHA.
 - **docs** (`.decisions`, `.patterns`, prose `*.md` outside `.claude`/`.github`, outside
   `claude-plugins/kampus-pipeline/skills/**`, and outside the code roots `apps/**`/`packages/**` — a package/app-internal README
   is `review-code`'s scope, not this class; see Step 0) → `review-doc`, whose marker is
   `review-doc: PASS @ <sha> — merge-ready` or
-  `review-doc: FAIL @ <sha> — changes-requested` (canonical shape: §6). `review-doc` is
+  `review-doc: FAIL @ <sha> — changes-requested` (canonical shape: §VERDICT). `review-doc` is
   **comment-only** — it never lands a native review (ADR 0058), so the doc lane is a single
   comparable record type, not a review-vs-comment mix.
 - **skills** (`claude-plugins/kampus-pipeline/skills/**`) → `review-skill`, whose marker is
   `review-skill: PASS @ <sha> — merge-ready` or `review-skill: FAIL @ <sha> — changes-requested`
-  (canonical shape: §6.5). `review-skill` is **comment-only** like `review-doc` (ADR 0058). This
+  (canonical shape: §VERDICT). `review-skill` is **comment-only** like `review-doc` (ADR 0058). This
   **supersedes ADR 0063's** `claude-plugins/kampus-pipeline/skills/**` → `review-code` routing (ADR 0073 §4): a skill is a
   behavioral artifact, gated by the gate built for it.
 - **UI-affecting** (a changed path under `apps/web/src`, a `*.tsx` file, or a style surface —
@@ -685,7 +685,7 @@ that merely *quotes* a marker mid-body doesn't match, **emphasis-tolerant** — 
 `\**` absorbs an optional bolding `**`, since `review-code` emits its marker bolded — and
 **SHA-capturing** — the trailing `@\s*([0-9a-f]{7,40})` captures the bound head SHA so Step 2b
 can apply the staleness refusal; see the matcher contract in
-[gh-issue-intake-formats.md](../gh-issue-intake-formats.md) §5/§6/§6.5 and ADR
+[the gate-verdict contract §VERDICT](../shared/gate-verdict-contract.md) and ADR
 [0058](https://github.com/kamp-us/phoenix/blob/main/.decisions/0058-sha-bound-verdict-contract.md)):
 
 - code:   `^\s*\**\s*review-code:\s*(PASS|FAIL)\s*@\s*([0-9a-f]{7,40})`
@@ -766,7 +766,7 @@ advisory folded in):
   is the marker's `@ <sha>` (or, for a native review, its `commit_id`). (The native
   approving-review path stays; it interleaves only with the review-code markers, never with
   review-doc.) A **§CP** code PR's verdict is likewise the SHA-less-first-line advisory
-  (`review-code: advisory — blocking-set PR …`) — §6.6/ADR 0151 converges **all four** gates on
+  (`review-code: advisory — blocking-set PR …`) — §ADVISORY/ADR 0151 converges **all four** gates on
   the one advisory form, so a §CP review-code advisory is resolved from the body's canonical
   `Reviewed-head` line via the
   **[§CP advisory resolution](#step-2cp--cp-advisory-namespace-resolution-adr-01350151)** below
@@ -860,7 +860,7 @@ refuse it as a legacy SHA-less marker. That refusal is **correct for a non-§CP 
 #1932/#2022 collision for a §CP one — the advisory is the *intended* §CP verdict, and its reviewed
 head is bound **in the body**, not the first line. So for the §CP advisory namespaces, resolve the
 reviewed head from the body's **canonical `Reviewed-head: @ <sha>` line** (mandated in
-`gh-issue-intake-formats.md` §6.6 and emitted by the review-skill/review-doc advisory templates,
+the gate-verdict contract's §ADVISORY and emitted by the review-skill/review-doc advisory templates,
 ADR 0151) instead of the first-line `@ <sha>`.
 
 This is **deterministic** — the outcome is a pure function of the PR's state (body `Reviewed-head`
@@ -877,7 +877,7 @@ For each §CP namespace whose latest verdict is a **current-head advisory** (fir
 `^\s*\**\s*review-(code|skill|doc|design):\s*advisory\b`), resolve it as an **enqueue-eligible
 current-head PASS-equivalent** iff **all three** hold, else **refuse deterministically with the
 named reason**. `review-code` is in this set: a §CP code PR's approved verdict is the same SHA-less
-advisory (§6.6/ADR 0151 converges **all four** gates on one advisory form), so its body
+advisory (§ADVISORY/ADR 0151 converges **all four** gates on one advisory form), so its body
 `Reviewed-head` line resolves the enqueue exactly like the doc/skill/design namespaces — without it,
 a canonical review-code §CP advisory had no written resolution path and read as `sha: null` → refused
 on a legitimately-approved PR (#2329).
@@ -889,7 +889,7 @@ authoritative §CP resolution to anyone auditing the merge gate (#4405). The in-
 conditions apply to is picked by the verb: author-gated write+ (ADR 0055) and ordered by its
 `Verdict-written:` stamp, never by `created_at`, because an advisory is upserted in place too.
 
-- **(a) The body's canonical `Reviewed-head: @ <sha>` line (ADR 0151 §6.6) must prefix-match the PR's
+- **(a) The body's canonical `Reviewed-head: @ <sha>` line (ADR 0151, §ADVISORY) must prefix-match the PR's
   current head.** The verb anchors on the `Reviewed-head:` token — deliberately *distinct* from the
   first-line advisory marker — so the body binding is never confused with a first-line marker and the
   advisory stays out of the PASS namespace. Two separate refusals fall out: an advisory carrying **no**

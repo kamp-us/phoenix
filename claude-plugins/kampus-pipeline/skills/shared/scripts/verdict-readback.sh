@@ -46,11 +46,11 @@ verdict_readback_guard() {
   #       validated it against ${sha:0:7}, so a non-blocking binding PASS/FAIL needs no separate line
   #       (this is the branch that keeps a legitimate non-blocking PASS from false-failing; #2272).
   #     - a SHA-less advisory first line (`<gate>: advisory`, ALL FOUR gates INCL review-code) MUST
-  #       carry the canonical body `Reviewed-head: @ <sha>` line (§6.6 / ADR 0151) — absence is FATAL.
+  #       carry the canonical body `Reviewed-head: @ <sha>` line (§ADVISORY / ADR 0151) — absence is FATAL.
   #       (#2329: the prior "review-code's §CP advisory carries NONE by design → accept its absence"
-  #       carve-out contradicted §6.6's own MUST and blinded the read-back to a drifted
+  #       carve-out contradicted §ADVISORY's own MUST and blinded the read-back to a drifted
   #       `**Reviewed head:**` variant — bold, space-not-hyphen, backticked SHA — that does NOT match
-  #       `^Reviewed-head:` and that ship-it's §6.6 enqueue matcher then rejects, leaving a genuinely
+  #       `^Reviewed-head:` and that ship-it's §ADVISORY enqueue matcher then rejects, leaving a genuinely
   #       -approved §CP PASS silently unshippable until a human hand-re-posts. Requiring the canonical
   #       line on every advisory makes a drifted line read as absent → FATAL here → forces a canonical
   #       re-post at EMISSION time, never a ship-it refusal on an approved PR.)
@@ -59,7 +59,7 @@ verdict_readback_guard() {
   if printf '%s' "$got" | grep -Eiq "^[[:space:]]*\**[[:space:]]*${gate}:[[:space:]]*(PASS|FAIL)[[:space:]]*@[[:space:]]*${sha:0:7}"; then
     : # bindable first line: its `@ <sha>` IS the head binding (validated by (1))
   elif ! printf '%s' "$got" | grep -Eiq "^[[:space:]]*Reviewed-head:"; then
-    echo "verdict_readback_guard FAILED: SHA-less advisory in comment $cid carries no canonical 'Reviewed-head: @ ${sha:0:7}' line — §6.6/ADR 0151 requires it on ALL four gates' advisories (incl review-code); a drifted '**Reviewed head:**' variant reads as absent. Re-post the canonical 'Reviewed-head: @ <sha>' line (hyphen, no bold, no backticks around the SHA)." >&2; return 1
+    echo "verdict_readback_guard FAILED: SHA-less advisory in comment $cid carries no canonical 'Reviewed-head: @ ${sha:0:7}' line — §ADVISORY/ADR 0151 requires it on ALL four gates' advisories (incl review-code); a drifted '**Reviewed head:**' variant reads as absent. Re-post the canonical 'Reviewed-head: @ <sha>' line (hyphen, no bold, no backticks around the SHA)." >&2; return 1
   fi
   # a present `Reviewed-head:` line (advisory OR a non-blocking PASS that also carries it) must bind head:
   if printf '%s' "$got" | grep -Eiq "^[[:space:]]*Reviewed-head:"; then
