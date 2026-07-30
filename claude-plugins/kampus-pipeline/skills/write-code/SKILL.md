@@ -45,7 +45,22 @@ to `kamp-us/phoenix` with no config.
 
 ```bash
 REPO="${CLAUDE_PIPELINE_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}"
+# This skill's steps are SOURCED scripts under `scripts/` (epic #4435 phase 1, #4449) — resolved the
+# same way §CLI resolves the `pipeline-cli` shim, because neither is on PATH. Source each step's
+# script where the step says to; sourcing (not executing) is what keeps a step's variables and
+# functions visible to the steps after it, exactly as the inline fenced blocks did.
+WRITECODE_SCRIPTS="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/skills/write-code/scripts"
 ```
+
+**A script's non-zero return is UNKNOWN — never an answer (§ZS, ADR
+[0092](https://github.com/kamp-us/phoenix/blob/main/.decisions/0092-gates-fail-closed-on-zero-scope.md)).**
+Every script below prints its result on **stdout** and signals "I could not produce one" by a
+**non-zero return with no stdout**. Those two states are not the same, and the empty one is never
+the permissive branch: an absent or empty result means the step did **not** run, so it can never be
+read as "no parent", "no dependencies", "not a dark ship", or "no claim conflict". So every
+invocation site whose **stdout is consumed as an answer** carries an explicit `|| exit 1`, and a
+site that omits it is one whose script `exit`s on its own failure path (the same behavior the inline
+block had). Never infer a negative from silence.
 
 ## The formats contract
 
@@ -250,11 +265,7 @@ List the candidate pool, priority bucket by priority bucket, stopping at the fir
 bucket that has any unassigned candidate:
 
 ```bash
-# p0 first; only fall through to p1, then p2 if a bucket is empty of unassigned issues
-for P in p0 p1 p2; do
-  gh api "repos/$REPO/issues?state=open&labels=status:triaged,$P&sort=created&direction=asc&per_page=100" \
-    --jq '.[] | select(.assignee == null and (.pull_request | not)) | "#\(.number)\t\(.created_at)\t\(.title)"'
-done
+. "$WRITECODE_SCRIPTS/step1-candidate-pool.sh"
 ```
 
 `(.pull_request | not)` filters out PRs (the issues endpoint returns both). Take the
@@ -338,23 +349,7 @@ sub-endpoint ADR
 §3 already names the authoritative linkage — and read **three** outcomes off it, never two:
 
 ```bash
-# `-i` keeps the status line on stdout even when gh exits non-zero, which is the whole point:
-# it is what distinguishes a genuine 404 ("No parent issue found" ⇒ standalone) from an
-# UNREADABLE response (5xx, rate-limit, auth, network ⇒ UNKNOWN). Collapsing those two into
-# "no parent" is a silent no-op that skips Step 2 on a real epic child (#4171, #3715, #4108).
-PARENT_RESP="$(gh api "repos/$REPO/issues/<N>/parent" -i 2>/dev/null)"
-PARENT_STATUS="$(printf '%s\n' "$PARENT_RESP" | head -n1 | awk '{print $2}')"
-case "$PARENT_STATUS" in
-  200)
-    EPIC="$(printf '%s\n' "$PARENT_RESP" | awk 'body{print} /^\r?$/{body=1}' | jq -r '.number // empty')"
-    : "${EPIC:?parent read returned 200 with no .number — UNKNOWN, not standalone; refusing to claim <N>}"
-    echo "#<N> is a sub-issue of epic #$EPIC → Step 2 (derive eligibility BEFORE claiming)" ;;
-  404)
-    echo "#<N> is standalone (404 'No parent issue found') → Step 3 (claim it)" ;;
-  *)
-    echo "write-code FAILED (fail-closed): parent read on #<N> returned HTTP '${PARENT_STATUS:-none}' — UNKNOWN, which is NOT evidence of 'no parent'. Refusing to claim: retry, or re-pick per Step 1." >&2
-    exit 1 ;;
-esac
+. "$WRITECODE_SCRIPTS/step1-parent-resolve.sh" <N> || exit 1   # stdout IS the classification — an empty one is UNKNOWN, never "standalone"
 ```
 
 - **Parent resolved (200)** → go to **Step 2** and derive eligibility before claiming.
@@ -380,15 +375,8 @@ when its dependencies are all closed. There is **no `status:blocked` label**;
 eligibility is computed fresh on every pick from the epic's `## Dependencies` section.
 
 ```bash
-EPIC=<the parent number Step 1's sub-endpoint read resolved — never a guessed or remembered one>
-# the epic body carries the plan + the ## Dependencies topology
-gh api repos/$REPO/issues/$EPIC --jq '.body'
-# the real child set + each child's state (the list endpoint is source of truth;
-# sub_issues_summary undercounts under mixed closed/open children)
-gh api "repos/$REPO/issues/$EPIC/sub_issues?per_page=100" \
-  --jq '.[] | "#\(.number) [\(.state)] \(.title)"'
-# the cross-task signal siblings left — read before assuming what's done
-gh api "repos/$REPO/issues/$EPIC/comments?per_page=100" --jq '.[].body'
+# pass the parent number Step 1's sub-endpoint read RESOLVED — never a guessed or remembered one
+. "$WRITECODE_SCRIPTS/step2-epic-read.sh" <EPIC> || exit 1   # no topology read ⇒ UNKNOWN, never "no dependencies"
 ```
 
 **The derivation rule** (from the formats `## Dependencies` grammar):
