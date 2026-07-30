@@ -400,17 +400,17 @@ sidestep it — ADR 0072, **never GraphQL**). Every skill that reads, writes, or
   milestone (the read `write-code`'s pick-order / drain-this-milestone query and a campaign sweep
   share).
 
+All five are in [`shared/scripts/milestone-rest.sh`](shared/scripts/milestone-rest.sh) (§SHARED),
+one function each:
+
 ```bash
-# read an issue's milestone (none ⇒ the well-formed default, never a defect to repair)
-gh api repos/$REPO/issues/<N> --jq '.milestone.number // "none"'
-# the existing open milestones — the ONLY legal assignment targets (never create one)
-gh api "repos/$REPO/milestones?state=open&per_page=100" --jq '.[] | "#\(.number)\t\(.title)"'
-# assign to an existing open milestone (triage / plan-epic inherit) — numeric id, never the title
-gh api -X PATCH repos/$REPO/issues/<N> -f milestone=<milestone-number>
-# clear a milestone (rare; assignment is the common write)
-gh api -X PATCH repos/$REPO/issues/<N> -F milestone=null
-# filter issues by milestone (write-code's drain-this-milestone query, a campaign sweep)
-gh api "repos/$REPO/issues?state=open&milestone=<milestone-number>&per_page=100"
+KP_SHARED="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/skills/shared/scripts"
+. "$KP_SHARED/milestone-rest.sh"
+kp_milestone_read <N>          # none ⇒ the well-formed default, never a defect to repair
+kp_milestone_catalog           # the existing open milestones — the ONLY legal assignment targets
+kp_milestone_assign <N> <m>    # numeric milestone id, never the title
+kp_milestone_clear <N>         # rare; assignment is the common write
+kp_milestone_issues <m>        # the drain-this-milestone query
 ```
 
 ---
@@ -449,12 +449,8 @@ Every consumer cites **this one canonical probe** — a content read against `$R
 branch (no second copy in any skill):
 
 ```bash
-# probe the well-known cycle doc; absent ⇒ the cycle-step no-ops (graceful absence, ADR 0062)
-if gh api "repos/$REPO/contents/product-development-cycle.md" --jq '.path' >/dev/null 2>&1; then
-  CYCLE_DOC=present   # consult it for the containment policy
-else
-  CYCLE_DOC=absent    # no-op: no marker, no dark-ship, no release queue
-fi
+KP_SHARED="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/skills/shared/scripts"
+. "$KP_SHARED/cycle-doc-probe.sh"   # §SHARED: leaves $CYCLE_DOC = present | absent
 ```
 
 A skill operating on a **local working tree** rather than the GitHub API (e.g. an offline
@@ -2190,20 +2186,18 @@ Bash call goes in the namespace below, never in that directory.
 
 Allocation is owned by one tested verb, so a caller **cites it instead of hand-rolling a path**
 (#3718). It prints the absolute directory on stdout and nothing else:
-
 ```bash
-# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
-PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
-# OPEN — the run's first write of scratch state. Claims the namespace exclusively and stamps it
-# as ours, clearing whatever an unclaimed earlier occupant left behind.
-RUN_SCRATCH="$("$PCLI" scratchpad open --slug review-doc-$PR)" || exit 1
-
-# RE-DERIVE — every LATER Bash call, where shell state is already gone. Asserts the namespace
-# exists AND is still ours; it never creates one, because answering "you never opened it" with a
-# fresh empty directory is how a read of your own state silently becomes a read of nothing.
-RUN_SCRATCH="$("$PCLI" scratchpad path --slug review-doc-$PR)" || exit 1
-VERDICT="$("$PCLI" scratchpad file --slug review-doc-$PR --name verdict.md)" || exit 1
+KP_SHARED="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/skills/shared/scripts"
+. "$KP_SHARED/scratchpad.sh"                        # §SHARED: the verb path and the no-CLI fallback
+kp_sp_verb "review-doc-$PR" verdict.md || exit 1    # open, then re-derive; $RUN_SCRATCH + $VERDICT
 ```
+
+[`shared/scripts/scratchpad.sh`](shared/scripts/scratchpad.sh) keeps the two calls apart because the
+distinction is load-bearing: **`open`** is the run's first write of scratch state — it claims the
+namespace exclusively, stamps it as ours, and clears whatever an unclaimed earlier occupant left
+behind — while **`path`** re-derives it in every later Bash call and *never* creates one, because
+answering "you never opened it" with a fresh empty directory is how a read of your own state silently
+becomes a read of nothing.
 
 Every failure is a **refusal with its own exit code** — `2` no session id, `3` a slug/leaf name
 that isn't a single path segment, `4` the namespace belongs to another run, `5` this run never
@@ -2228,29 +2222,24 @@ re-enters exactly as it stands), so the worst case degrades to two writers who a
 signal available, the same run — never one run silently reading another's state.
 
 The verb ships with `pipeline-cli`. Where it isn't installed (a foreign install, ADR 0062), the
-equivalent one-liner below is the fallback — deliberately inlined at each site rather than made a
-shell helper, since a helper is itself shell state that doesn't survive between Bash calls.
+equivalent recipe below is the fallback. It used to be **inlined at each site** rather than made a
+shell helper, because a helper is itself shell state that does not survive between Bash calls — a
+*sourced script* is a file on disk, not shell state, so the fallback is now a function alongside the
+verb path in the same script (§SHARED, epic #4435). The recipe is unchanged.
 
 **Open the run once, re-derive freely afterwards.** The distinction is load-bearing — getting
 it backwards re-creates the empty-directory bug it exists to prevent:
 
 ```bash
-# OPEN — the skill's first step that writes state. Fail closed on a missing session id: never
-# fall back to a shared path, since a fallback resurrects the exact clobber (ADR 0092). The
-# `rm -rf` clears leftovers from an EARLIER run of this same slug in this same session, so a
-# re-run never reads its predecessor's files.
-[ -n "${CLAUDE_CODE_SESSION_ID:-}" ] || {
-  echo "§SP: CLAUDE_CODE_SESSION_ID unset — refusing to write run state to a shared scratch path (#3718)." >&2; exit 1; }
-RUN_SCRATCH="${TMPDIR:-/tmp}/kampus-run/$CLAUDE_CODE_SESSION_ID/<slug>"
-rm -rf "$RUN_SCRATCH" && mkdir -p "$RUN_SCRATCH" || {
-  echo "§SP: could not create the per-run scratch dir $RUN_SCRATCH." >&2; exit 1; }
-
-# RE-DERIVE — every LATER Bash call. Same recipe ⇒ same directory ⇒ the files are still there.
-# NO `rm -rf` here: that is the open step's job, and repeating it would delete the very state
-# this call came to read. Assert what you expect to find, rather than reading a silent absence.
-RUN_SCRATCH="${TMPDIR:-/tmp}/kampus-run/${CLAUDE_CODE_SESSION_ID:?§SP: session id unset (#3718)}/<slug>"
-[ -s "$RUN_SCRATCH/<file>" ] || { echo "§SP: $RUN_SCRATCH/<file> did not survive — re-run the opening step in THIS session." >&2; exit 1; }
+KP_SHARED="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/skills/shared/scripts"
+. "$KP_SHARED/scratchpad.sh"                          # §SHARED
+kp_sp_open_fallback <slug> || exit 1                  # the run's FIRST write of state — clears leftovers
+kp_sp_path_fallback <slug> <file> || exit 1           # every LATER Bash call — asserts, never creates
 ```
+
+Both fail closed on a missing `$CLAUDE_CODE_SESSION_ID` rather than falling back to a shared path,
+since a fallback resurrects the exact clobber (ADR 0092); only the open arm does the `rm -rf`,
+because repeating it in `path` would delete the very state that call came to read.
 
 **Assert presence, never let a test decide on an absent file.** A missing scratch file is not
 a neutral input: `[ existing -nt missing ]` is **true** in bash, so a freshness/staleness guard
@@ -2331,9 +2320,9 @@ form [`lefthook.yml`](https://github.com/kamp-us/phoenix/blob/main/lefthook.yml)
 section is its pipeline-side statement — don't restate the rationale at each call site, point here:
 
 ```sh
-# "every changed path is under skills/ or agents/" — the empty-output form
-OFFCLASS=$(grep -vE '^claude-plugins/kampus-pipeline/(skills|agents)/' <<<"$FILES")
-if [ -n "$FILES" ] && [ -z "$OFFCLASS" ]; then …
+KP_SHARED="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/skills/shared/scripts"
+. "$KP_SHARED/wl-empty-output.sh"                     # §SHARED
+if kp_wl_all_onclass; then …                          # $FILES non-empty AND the inverted match empty
 ```
 
 ---
@@ -3122,10 +3111,10 @@ after the win, before it hands the lane on.**
 The write goes through **one verb** — never a hand-rolled `gh api … /assignees`:
 
 ```bash
-# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
-PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
-"$PCLI" claim assign --issue <N>                    # layer one under our own session
-"$PCLI" claim assign --issue <N> --session <token>  # …or under the threaded delegated token
+KP_SHARED="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/skills/shared/scripts"
+. "$KP_SHARED/claim-verbs.sh"   # §SHARED
+kp_claim_assign <N>             # layer one under our own session
+kp_claim_assign <N> <token>     # …or under the threaded delegated token
 ```
 
 The verb is the enforcement, not the prose: it resolves ownership through the same **default-deny**
@@ -3188,9 +3177,9 @@ A claim is **held for the duration of the work it protects, and given up when th
 done**. The owner performs that release itself:
 
 ```bash
-# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
-PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
-"$PCLI" claim release --issue <N>            # retract our own marker; --session <token> to release a delegated claim
+KP_SHARED="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/skills/shared/scripts"
+. "$KP_SHARED/claim-verbs.sh"   # §SHARED
+kp_claim_release <N>            # retract our own marker; pass the token as $2 to release a delegated claim
 ```
 
 **Who calls it, and when.** The run that holds the claim, at its terminus: `write-code` Step 8
@@ -3244,9 +3233,9 @@ be invisible; stranded lanes accumulated silently until a dispatch read `lost` a
 read-only inventory is the surface:
 
 ```bash
-# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
-PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
-"$PCLI" claim status --issue <N>   # every marker: author, authorization, liveness, and the resolved owner
+KP_SHARED="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/skills/shared/scripts"
+. "$KP_SHARED/claim-verbs.sh"   # §SHARED
+kp_claim_status <N>             # every marker: author, authorization, liveness, and the resolved owner
 ```
 
 Read it before concluding a lane is stuck. A row with `liveness: dead` is already superseded and
@@ -3315,11 +3304,11 @@ by an audited cleanup, not by a resolution rule — the rules above are untouche
 claim is never a candidate whatever its age:
 
 ```bash
-# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
-PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
-"$PCLI" claim audit                 # every open lane held by an unstamped marker, and which are retirable
-"$PCLI" claim audit --issue <N>     # the cheap single-lane read when a stall is already known
-"$PCLI" claim audit --execute       # retire the retirable ones through `claim release`
+KP_SHARED="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/skills/shared/scripts"
+. "$KP_SHARED/claim-verbs.sh"   # §SHARED
+kp_claim_audit                  # every open lane held by an unstamped marker, and which are retirable
+kp_claim_audit <N>              # the cheap single-lane read when a stall is already known
+kp_claim_audit --execute        # retire the retirable ones through `claim release`
 ```
 
 Retirement runs through **`claim release` under the marker's own token** — the one retraction
@@ -3634,32 +3623,15 @@ check; it never decides it. Emit the scanned scope (§ZS #1) so a drift that sil
 shows in the run log instead of reading green:
 
 ```bash
-# §DEV Tier M — presence of the section, plus the two diff-detectable classes.
-# The section-presence pattern below is the canonical copy; `write-code` Step 5 check (e) and
-# `review-trivial` Step 0 restate it mechanically, so a change here has to land in all three (the
-# rule is single-sourced, the pattern is not — a silent drift un-gates one lane).
-BODY="$(gh api repos/$REPO/pulls/$PR --jq '.body')"
-printf '%s' "$BODY" | grep -Eiq '^[[:space:]]*#{2,3}[[:space:]]*Deviations[[:space:]]*$' \
-  && echo "deviation-disclosure: ## Deviations section present" \
-  || echo "deviation-disclosure: ## Deviations section ABSENT — malformed body if the PR OWES the section (absent is not None.); [N/A] if it does not (see 'Who owes the section')"
-# class 5, added suppressions/skips
-DEV_SUPPRESS="$(gh pr diff "$PR" | grep -E '^\+' \
-  | grep -nE 'biome-ignore|eslint-disable|@ts-(expect-error|ignore)|\.(skip|only)\(|xit\(|xdescribe\(' || true)"
-# class 6, removed assertion lines — scoped to TEST files, matching the prose. Walk the diff
-# file-by-file so a `--- a/src/assert.ts` header can never match as a removed assertion, and only
-# removals inside a test file count. A bare `grep '^-'` over the whole diff matched exactly that
-# header (the `-` of `---` plus the word `assert` in the path).
-# EVERY file header re-decides the flag, and a DELETED file (`+++ /dev/null`) takes its path from the
-# `--- a/<path>` side. Keying only on `+++ b/` left the flag STALE across a deletion, which broke the
-# scan in both directions: a deleted non-test file after a test file scored false positives, and a
-# deleted test file after a non-test file silently dropped its removed assertions — the exact class-6
-# case this scan exists to arm.
-DEV_TESTCUTS="$(gh pr diff "$PR" | awk '
-  /^--- / { p = $0; next }
-  /^\+\+\+ / { t = ((($0 ~ /^\+\+\+ b\//) ? $0 : p) ~ /(\.|\/)(test|spec)\.[a-z]+$|\/(__tests__|test|tests)\//) ; next }
-  t && /^-[^-]/ && /expect\(|assert|toBe|toEqual|toThrow/ { print }')"
-echo "deviation-disclosure: Tier-M scan — $(printf '%s' "$DEV_SUPPRESS" | grep -c .) suppression/skip line(s), $(printf '%s' "$DEV_TESTCUTS" | grep -c .) removed-assertion line(s)"
+KP_SHARED="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/skills/shared/scripts"
+. "$KP_SHARED/dev-tier-m.sh"   # §SHARED: leaves $DEV_SUPPRESS + $DEV_TESTCUTS and echoes the scope
 ```
+
+[`shared/scripts/dev-tier-m.sh`](shared/scripts/dev-tier-m.sh) carries the section-presence pattern
+(the canonical copy — `write-code` Step 5 check (e) and `review-trivial` Step 0 restate it
+mechanically, so a change here has to land in all three), the class-5 suppression scan, and the
+class-6 removed-assertion walk, which re-decides its test-file flag at **every** file header so a
+deleted file cannot leave it stale in either direction.
 
 A hit is a **line to judge against the disclosure**, never a FAIL by itself — a `biome-ignore` the
 body discloses with a reason is a passing judgment item, and a legitimately-deleted obsolete test is
