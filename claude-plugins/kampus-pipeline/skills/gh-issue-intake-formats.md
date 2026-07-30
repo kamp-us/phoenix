@@ -2139,6 +2139,11 @@ fails closed on zero scope (§ZS / ADR 0092). The corpus is **two surfaces** und
   take its call sites off the scan (#4486; the unit-of-scan answer matches the `class-probe`
   consumer scan's, #4448).
 
+On **both** surfaces the scanned unit is what an agent actually *runs*, so a **comment-only line
+is skipped** — a `#`-leading line inside a runnable fence, or anywhere in a `.sh` file, names a
+verb without invoking it, exactly like prose. Every other line inside the unit is treated as a
+live invocation.
+
 Zero scope is fail-closed **per surface**: no file scanned, no runnable `.md` fence, *or* no `.sh`
 file all exit 3. A single total would let markdown's hundreds of fences satisfy the floor while the
 `.sh` leg of the corpus `find` silently contributed nothing.
