@@ -150,21 +150,94 @@ describe("cli-invocation-guard core", () => {
 		assert.strictEqual(findings[0]?.line, 2);
 	});
 
-	it("scanCorpus reports both scope axes and aggregates findings", () => {
+	it("scanCorpus reports every scope axis and aggregates findings", () => {
 		const result = scanCorpus([
 			{file: "a.md", content: fence("bash", "pipeline-cli version")},
 			{file: "b.md", content: fence("bash", "true")},
+			{file: "c.sh", content: "true\n"},
 		]);
-		assert.deepStrictEqual(result.scanned, ["a.md", "b.md"]);
+		assert.deepStrictEqual(result.scanned, ["a.md", "b.md", "c.sh"]);
 		assert.strictEqual(result.fenceCount, 2);
+		assert.strictEqual(result.shellFileCount, 1);
 		assert.strictEqual(result.findings.length, 1);
 		assert.isFalse(isZeroScope(result));
 	});
 
-	it("fails closed on zero scope — no file, or no runnable fence (ADR 0092)", () => {
+	// #4486: a `.sh` file is one implicit runnable fence. Without this the whole shell surface
+	// contributes zero scannable lines, so every extraction of fenced shell into `scripts/*.sh`
+	// silently narrows the guard while it keeps exiting 0.
+	describe("the shell surface — a `.sh` file is one implicit runnable fence (#4486)", () => {
+		it("flags a bare invocation in a `.sh` file with no fence at all", () => {
+			const {findings, fences} = scanFile(
+				"skills/report/scripts/footer.sh",
+				["#!/usr/bin/env bash", "set -euo pipefail", "pipeline-cli claim status --issue 42"].join(
+					"\n",
+				),
+			);
+			assert.strictEqual(fences, 1);
+			assert.strictEqual(findings.length, 1);
+			assert.strictEqual(findings[0]?.line, 3);
+			assert.include(findings[0]?.text ?? "", "claim status");
+		});
+
+		it("flags the cwd-relative `node …/src/bin.ts` form in a `.sh` file", () => {
+			const {findings} = scanFile(
+				"skills/ship-it/scripts/step2.sh",
+				"node packages/pipeline-cli/src/bin.ts verdict read --pr 1\n",
+			);
+			assert.strictEqual(findings.length, 1);
+		});
+
+		it("accepts the §CLI canonical form in a `.sh` file", () => {
+			const {findings} = scanFile(
+				"skills/shared/lib/common.sh",
+				[
+					// biome-ignore lint/suspicious/noTemplateCurlyInString: shell parameter expansion in a §CLI-preamble fixture, not a JS template
+					'PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"',
+					'"$PCLI" claim is-mine --issue 42',
+				].join("\n"),
+			);
+			assert.deepStrictEqual(findings, []);
+		});
+
+		it("still ignores a comment-only line in a `.sh` file", () => {
+			const {findings} = scanFile(
+				"skills/doctor/doctor.sh",
+				"# never call pipeline-cli bare — see §CLI\ntrue\n",
+			);
+			assert.deepStrictEqual(findings, []);
+		});
+
+		// The deliberate divergence from markdown: the extracted gate scripts emit markdown from
+		// heredocs, so honouring a fence delimiter would close the implicit fence and blind
+		// everything after it — the exact silent hole this widening closes.
+		it("does not let a fence delimiter inside a `.sh` file close the implicit fence", () => {
+			const {findings} = scanFile(
+				"skills/review-code/scripts/verdict.sh",
+				[
+					"cat <<'EOF'",
+					"```bash",
+					"an illustrative block inside a heredoc",
+					"```",
+					"EOF",
+					"pipeline-cli verdict write --pr 1",
+				].join("\n"),
+			);
+			assert.strictEqual(findings.length, 1);
+			assert.strictEqual(findings[0]?.line, 6);
+		});
+	});
+
+	it("fails closed on zero scope PER SURFACE — no file, no `.md` fence, or no `.sh` file (ADR 0092, #4486)", () => {
 		assert.isTrue(isZeroScope(scanCorpus([])));
 		assert.isTrue(
 			isZeroScope(scanCorpus([{file: "a.md", content: "prose only, no fence at all"}])),
 		);
+		// The load-bearing per-surface case: a healthy markdown surface must NOT satisfy the floor
+		// on behalf of a shell surface that contributed nothing (a `.sh` leg of the corpus `find`
+		// that silently matched no file).
+		assert.isTrue(isZeroScope(scanCorpus([{file: "a.md", content: fence("bash", "true")}])));
+		// …and the mirror: shell files present, markdown surface collapsed.
+		assert.isTrue(isZeroScope(scanCorpus([{file: "a.sh", content: "true\n"}])));
 	});
 });
