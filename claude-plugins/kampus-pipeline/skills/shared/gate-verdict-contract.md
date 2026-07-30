@@ -319,21 +319,25 @@ The three rules below govern the *emit path* and the *post-write read-back* that
 verdict marker's landing verifiable rather than assumed. They are cited, never re-derived, by each
 gate's Step-5-family verdict step.
 
-They moved here **byte-identically** — bytes verified against the pre-move span, not re-read — so
-three of their references still carry their pre-move spellings. Read them as:
+They moved here **byte-identically except for one repaired link** (below) — bytes verified against
+the pre-move span, not re-read — so two of their references still carry their pre-move spellings.
+Read them as:
 
 - *"the by-value form above"* → [§Posting a comment
   body](../gh-issue-intake-formats.md#posting-a-comment-body--read-it-into-body-never-gh-api--f-bodyfile-the-local-path-leak)
   of the formats contract, which stayed there.
 - *"§6.6"* → [§ADVISORY](#advisory-the-canonical-advisory-line--one-form-for-all-four-gates) above —
   the same section under its mnemonic name.
-- the relative link `[shared/scripts/verdict-readback.sh](shared/scripts/verdict-readback.sh)` in
-  §READBACK is **dead at this location — do not follow it.** It was authored one directory up, so
-  from here it resolves to `skills/shared/shared/scripts/verdict-readback.sh`, which does not exist.
-  The working path is [`scripts/verdict-readback.sh`](scripts/verdict-readback.sh), the sibling of
-  this file. It is left unrepaired **deliberately**: §READBACK is a byte-identical move, and editing
-  one byte inside it would forfeit the property that makes the move auditable (#4438). Repairing the
-  link is follow-up work on the block, not on this note.
+
+The **one** byte the move did not preserve: §READBACK's link to
+[`scripts/verdict-readback.sh`](scripts/verdict-readback.sh) was authored one directory up as
+`shared/scripts/…`, which from here resolves to the nonexistent
+`skills/shared/shared/scripts/verdict-readback.sh` — a dead link inside the block readers enter by
+anchor, and a red `doc-links` CI check. It is **retargeted to the working sibling path**; nothing
+else inside the block changed. Byte-identity had already discharged its audit purpose by then — two
+independent gates hashed the pre-move and post-move spans to the same
+`3bef3217a7c61158c6320f7578e5b4aea8e47a31` — and preserving a dead link to protect a property that
+has already paid out is the wrong trade (#4438).
 
 ### The verdict read-back guard — after posting a gate marker, re-read it and FAIL LOUD (`verdict_readback_guard`)
 
@@ -361,7 +365,7 @@ KP_SHARED="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/cl
 verdict_readback_guard "$CID" review-code "$HEAD_SHA" || …          # <gate> ∈ review-{code,doc,skill,design}
 ```
 
-[`shared/scripts/verdict-readback.sh`](shared/scripts/verdict-readback.sh) carries the four checks and
+[`scripts/verdict-readback.sh`](scripts/verdict-readback.sh) carries the four checks and
 their reasons: **(0)** a non-empty body, **(1)** a canonical `<gate>:` marker — the bindable
 `PASS|FAIL @ <sha>` first line or the SHA-less `advisory` one, **(2)** the SHA-source-aware head
 binding, **(3)** no local-filesystem-path leak. Any miss returns non-zero and names the cause.
