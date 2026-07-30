@@ -48,6 +48,16 @@ sources.** `packages/pipeline-cli/src/skill-shell-surface.ts` owns that resoluti
 - **Sibling-scoped**, never the whole plugin tree: `shared/lib/*.sh` is a library many skills call,
   so folding it into every caller's surface lets one shared half-procedure satisfy every skill's own
   rule (the same scoping `kp_skill_shell_surfaces` chose, #4470).
+- **Scope by demonstrated dependency, not directory membership** — and keep the widening on the one
+  check that needs it ([ADR 0230](../.decisions/0230-cycle-validators-follow-the-source-edge.md)).
+  Directory scoping alone punishes the correct move: a skill that extracts its wiring into a shared
+  helper and sources it has nothing left on its own surface but a comment, so the guard starts
+  passing on prose (#4541). The repair is per-skill, per-edge inclusion — a shared file counts for a
+  skill because that skill's own executable text sources it (`kp_skill_source_edges`), one hop,
+  fail-closed on an edge that will not resolve. Two rules keep this from becoming the whole-tree fold
+  by another route: feed the widened surface **only** to the check that needs the shared file, never
+  to the per-skill marker checks; and match `.sh` surfaces on **comment-stripped** text, so a
+  commented-out edge stops following and a citation in a docblock proves nothing.
 - **A sourced script that will not read back is UNRESOLVED, not absent** — the caller resolves its
   fail-closed constant, even if the constant it wanted is sitting inline right beside the source
   line. A partial read is not a read.

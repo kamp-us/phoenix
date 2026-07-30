@@ -15,6 +15,13 @@
 #      with an absent⇒no-op branch. No skill hardcodes a flag or assumes the doc exists.
 #      Scanned across the skill's whole shell surface — SKILL.md AND its extracted
 #      scripts/*.sh (#4470) — so moving a block out of SKILL.md cannot disarm this.
+#      TWO SURFACES, and the split is load-bearing (ADR 0230, #4541): only the canonical-probe
+#      check reads the WIDENED surface (own files + the shared files they demonstrably source,
+#      one hop); the absent⇒no-op and hardcoded-flag checks stay on the skill's OWN files. The
+#      shared probe file textually carries every skill's absence marker, so widening every check
+#      would let one shared file satisfy all four — #4470's blindness through a legitimate edge.
+#      Every `.sh` grep here runs on COMMENT-STRIPPED text, so a citation in a docblock proves
+#      nothing; the presence twin's docblock carries the full statement of what this proves.
 #   2. HERMETIC runtime — run the canonical working-tree probe against a temp repo root
 #      with no cycle doc, assert it resolves `absent` and the no-op default holds. This is
 #      the executable scenario walkthrough of the doc-absent branch (issue #605, epic #595).
@@ -28,9 +35,12 @@
 # whose failure errexit used to catch is checked explicitly below.
 set -uo pipefail
 
-# Same self-locating idiom as validate-skills.sh: this script lives in .claude/skills/, so
-# its own dir IS the skills root — resolve from BASH_SOURCE so it works from any cwd.
-skills_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Same self-locating idiom as the presence twin: this script lives in the skills root, so its own
+# dir IS that root — resolve from BASH_SOURCE, PHYSICALLY (`cd -P`). The physical form is what the
+# source-edge allowlist needs: `skills/` is reached through the `.claude/skills` symlink, and a
+# LOGICAL root would be compared against physically-resolved edge targets and never match, reding
+# every skill for a path-shape reason (#4505 T7).
+skills_dir="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [ ! -d "$skills_dir" ]; then
 	echo "FAIL: could not resolve the skills root from ${BASH_SOURCE[0]} — refusing to scan an unresolved root (ADR 0092)"
 	echo "validate-cycle-absence: FAILED — 1 error(s); the scan root could not be resolved"
@@ -69,6 +79,8 @@ errors=0
 checks=0
 scanned_skills=0
 declare -a scanned_paths=()
+declare -a surfaces=()
+declare -a edges=()
 
 fail() { echo "FAIL: $*"; errors=$((errors + 1)); }
 ok() { echo "ok: $*"; checks=$((checks + 1)); }
@@ -100,18 +112,54 @@ for entry in "${CYCLE_SKILLS[@]}"; do
 		continue
 	fi
 
+	# The source-edge widening, resolved UNPIPED so its status is readable. A named edge that will
+	# not resolve makes the surface UNKNOWN: red BY NAME rather than emit a confusing
+	# needle-not-found over a surface that was never finished (ADR 0230 rule 4; #4505 T7).
+	if ! edge_list="$(kp_skill_source_edges "$skills_dir" "$skill")"; then
+		fail "$skill: source-edge resolution failed (named diagnostic above) — the widened scan surface is UNKNOWN, so this skill was NOT evaluated (ADR 0230 rule 4 / ADR 0092)"
+		continue
+	fi
+	edges=()
+	while IFS= read -r edge; do
+		[ -n "$edge" ] && edges+=("$edge")
+	done <<EOF
+$edge_list
+EOF
+
 	scanned_skills=$((scanned_skills + 1))
 	for surface in "${surfaces[@]}"; do
 		scanned_paths+=("${surface#"$skills_dir/"}")
 	done
+	# Provenance in the emitted scope (ADR 0092 §1): an edge-resolved file is named with the skill
+	# whose source edge pulled it in, so "why was this file read" is answerable from the run log.
+	if [ "${#edges[@]}" -gt 0 ]; then
+		for edge in "${edges[@]}"; do
+			scanned_paths+=("${edge#"$skills_dir/"} (edge:$skill)")
+		done
+	fi
 
-	if ! grep -qF "$PROBE_NEEDLE" "${surfaces[@]}"; then
-		fail "$skill: does not cite the canonical cycle-doc probe ('$PROBE_NEEDLE') — every cycle-step must branch on the one well-known path (formats §1)"
+	if ! own_text="$(kp_surface_text "${surfaces[@]}")"; then
+		fail "$skill: could not read its own shell surface — UNKNOWN, never 'the marker is absent' (ADR 0092)"
+		continue
+	fi
+	probe_text="$own_text"
+	if [ "${#edges[@]}" -gt 0 ]; then
+		if ! edge_text="$(kp_surface_text "${edges[@]}")"; then
+			fail "$skill: could not read a source-edge target — UNKNOWN, never 'the marker is absent' (ADR 0092)"
+			continue
+		fi
+		probe_text="$own_text$edge_text"
+	fi
+
+	# Canonical-probe check: the ONE check that reads the widened surface.
+	if ! grep -qF "$PROBE_NEEDLE" <<<"$probe_text"; then
+		fail "$skill: does not cite the canonical cycle-doc probe ('$PROBE_NEEDLE') in executable shell or via a source edge — every cycle-step must branch on the one well-known path (formats §1)"
 	else
 		ok "$skill cites the canonical absence-probe"
 	fi
 
-	if ! grep -qiE "$noop_re" "${surfaces[@]}"; then
+	# The absent⇒no-op branch stays on the skill's OWN surface (#4505 T3).
+	if ! grep -qiE "$noop_re" <<<"$own_text"; then
 		fail "$skill: no absent⇒no-op branch found (expected /$noop_re/i) — an absent cycle doc must no-op gracefully (ADR 0062)"
 	else
 		ok "$skill has an absent⇒no-op branch"
@@ -133,7 +181,14 @@ for entry in "${CYCLE_SKILLS[@]}"; do
 		fail "$skill: no shell surface resolved (no SKILL.md, no *.sh) — refusing to scan an empty surface (ADR 0092)"
 		continue
 	fi
-	if grep -qiE 'cycle (doc|step) (is )?(always|unconditionally)' "${surfaces[@]}"; then
+	# OWN surface, comment-stripped (#4505 T3/T2). This heuristic looks for a skill ASSERTING the
+	# doc is always there; widening it to shared files would blame every sourcing skill for one
+	# shared file's wording.
+	if ! own_text="$(kp_surface_text "${surfaces[@]}")"; then
+		fail "$skill: could not read its own shell surface for the hardcoded-flag heuristic — UNKNOWN, never 'clean' (ADR 0092)"
+		continue
+	fi
+	if grep -qiE 'cycle (doc|step) (is )?(always|unconditionally)' <<<"$own_text"; then
 		fail "$skill: appears to assume the cycle doc is always present — graceful absence requires the probe to gate it"
 	fi
 done

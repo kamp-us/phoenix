@@ -8,6 +8,22 @@
 # test only proves the absent path" as a confirmed instance of the class).
 #
 # This asserts the inverse, hermetically:
+# WHAT THIS PROVES, and over which surface (the split is load-bearing — ADR 0230, #4541).
+# Two surfaces, deliberately different:
+#   OWN      SKILL.md + every *.sh under the skill's own directory (kp_skill_shell_surfaces).
+#   WIDENED  OWN plus every shared file the skill's own files DEMONSTRABLY SOURCE, one hop
+#            (kp_skill_source_edges) — inclusion keyed on a live-parsed sourcing edge in the
+#            skill's own executable shell, not on directory membership.
+# ONLY the canonical-probe check reads the WIDENED surface. The present-gate and per-skill action
+# checks stay on OWN. That is not fussiness: the shared probe file textually contains every skill's
+# markers, so feeding the widened surface to every check would let ONE shared file satisfy EVERY
+# skill's per-skill check — #4470's blindness rebuilt through a legitimate edge.
+# So the probe check now proves: EITHER the skill's own executable surface carries the canonical
+# probe literal, OR its own surface sources a shared file that does. Real wiring, either way — and
+# a comment naming the path proves nothing, because every `.sh` grep here runs on COMMENT-STRIPPED
+# text. (Honest wording: a live-parsed sourcing edge reaching a file that carries the probe as
+# executable code. Not proof of execution — see kp_surface_text's residue note.)
+#
 #   1. STATIC wiring — each cycle-aware skill carries a PRESENT branch (CYCLE_DOC=present)
 #      paired with its present-path action, not just the absent no-op. Scanned across the
 #      skill's whole shell surface — SKILL.md AND its extracted scripts/*.sh (#4470):
@@ -83,6 +99,8 @@ errors=0
 checks=0
 scanned_skills=0
 declare -a scanned_paths=()
+declare -a surfaces=()
+declare -a edges=()
 
 fail() { echo "FAIL: $*"; errors=$((errors + 1)); }
 ok() { echo "ok: $*"; checks=$((checks + 1)); }
@@ -116,24 +134,62 @@ for entry in "${CYCLE_SKILLS[@]}"; do
 		continue
 	fi
 
+	# The source-edge widening, resolved UNPIPED so its status is readable. A named edge that will
+	# not resolve makes the surface UNKNOWN: red on it BY NAME here rather than fall through to a
+	# needle-not-found over a surface that was never finished (ADR 0230 rule 4; #4505 T7).
+	if ! edge_list="$(kp_skill_source_edges "$skills_dir" "$skill")"; then
+		fail "$skill: source-edge resolution failed (named diagnostic above) — the widened scan surface is UNKNOWN, so this skill was NOT evaluated (ADR 0230 rule 4 / ADR 0092)"
+		continue
+	fi
+	edges=()
+	while IFS= read -r edge; do
+		[ -n "$edge" ] && edges+=("$edge")
+	done <<EOF
+$edge_list
+EOF
+
 	scanned_skills=$((scanned_skills + 1))
 	for surface in "${surfaces[@]}"; do
 		scanned_paths+=("${surface#"$skills_dir/"}")
 	done
+	# Provenance in the emitted scope (ADR 0092 §1): an edge-resolved file is named with the skill
+	# whose source edge pulled it in, so "why was this file read" is answerable from the run log.
+	if [ "${#edges[@]}" -gt 0 ]; then
+		for edge in "${edges[@]}"; do
+			scanned_paths+=("${edge#"$skills_dir/"} (edge:$skill)")
+		done
+	fi
 
-	if ! grep -qF "$PROBE_NEEDLE" "${surfaces[@]}"; then
-		fail "$skill: does not cite the canonical cycle-doc probe ('$PROBE_NEEDLE') — the present branch must key off the one well-known path (formats §1)"
+	# Comment-stripped match text. `.sh` commentary is not wiring — the whole defect this closes was
+	# a docblock satisfying the probe grep (#4541).
+	if ! own_text="$(kp_surface_text "${surfaces[@]}")"; then
+		fail "$skill: could not read its own shell surface — UNKNOWN, never 'the marker is absent' (ADR 0092)"
+		continue
+	fi
+	probe_text="$own_text"
+	if [ "${#edges[@]}" -gt 0 ]; then
+		if ! edge_text="$(kp_surface_text "${edges[@]}")"; then
+			fail "$skill: could not read a source-edge target — UNKNOWN, never 'the marker is absent' (ADR 0092)"
+			continue
+		fi
+		probe_text="$own_text$edge_text"
+	fi
+
+	# Canonical-probe check: the ONE check that reads the widened surface.
+	if ! grep -qF "$PROBE_NEEDLE" <<<"$probe_text"; then
+		fail "$skill: does not cite the canonical cycle-doc probe ('$PROBE_NEEDLE') in executable shell or via a source edge — the present branch must key off the one well-known path (formats §1)"
 	else
 		ok "$skill cites the canonical cycle-doc probe"
 	fi
 
-	if ! grep -qiE "$PRESENT_GATE_RE" "${surfaces[@]}"; then
+	# Every remaining check stays on the skill's OWN surface (#4505 T3).
+	if ! grep -qiE "$PRESENT_GATE_RE" <<<"$own_text"; then
 		fail "$skill: no present-resolution of the cycle probe found (expected /$PRESENT_GATE_RE/i) — the present-path action must be gated on the doc being present"
 	else
 		ok "$skill resolves the probe to present"
 	fi
 
-	if ! grep -qiE "$action_re" "${surfaces[@]}"; then
+	if ! grep -qiE "$action_re" <<<"$own_text"; then
 		fail "$skill: no present-path action found (expected /$action_re/i) — the cycle's present branch must DO something (ADR 0091/0092), not just no-op"
 	else
 		ok "$skill carries its present-path action (/$action_re/i)"
