@@ -529,83 +529,23 @@ snapshot once mis-classified a now-control-plane PR (#981); reading §CP freshly
 
 The *boundary* is only half of it: the **changed-file list** the boundary is matched against is a
 fallible network read too, and a failed read used to resolve to "no control-plane path touched"
-(#4216). **Define `cp_changed_files` and `cp_head_sha` from
-[§CPREAD](../gh-issue-intake-formats.md#cpread) — copy them verbatim, it is the single source — before
-running the block below**, which consumes their `$CP_FILES` / `$CP_FILES_N` / `$CP_HEAD_SHA` and holds
-§CP on a non-zero return:
+(#4216). Both reads come from
+[§CPREAD](../gh-issue-intake-formats.md#cpread) — `cp_changed_files` and `cp_head_sha`, which the
+classifier **sources** from [`../shared/scripts/cp-read.sh`](../shared/scripts/cp-read.sh) rather
+than carrying a copy of, so there is nothing to keep in step (#4489). It holds §CP on a non-zero
+return:
 
 ```bash
-# §CP travels in the INJECTED skill snapshot, which can lag origin/main even when the on-disk file
-# is current — a pre-amendment snapshot once mis-classified a now-control-plane PR (#981).
-# §CP boundary is single-sourced in pipeline-cli (control-plane-paths/control-plane-re.ts, #2761);
-# run `pipeline-cli control-plane-paths` to print it. It is re-resolved from origin/main right below
-# (the #981 anti-self-authorization read), so this is only a fail-closed sentinel, never the live source.
-CONTROL_PLANE_RE='.'   # fail-closed default: every path is control-plane until origin/main resolves
-# Re-resolve §CP from origin/main at run time so a stale snapshot can't mis-flag a now-control-plane
-# PR as auto-mergeable (#981). ADR 0073 §6 names gh-issue-intake-formats.md the single source; read it
-# freshly via REST raw (never GraphQL). origin/main's line wins over the snapshot; fail closed on read failure.
-CP_LIVE="$(gh api "repos/$REPO/contents/claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md?ref=main" -H 'Accept: application/vnd.github.raw' 2>/dev/null | grep '^CONTROL_PLANE_RE=' | head -n1 || true)"
-if [ -n "$CP_LIVE" ]; then
-  CONTROL_PLANE_RE="$(printf '%s' "$CP_LIVE" | sed "s/^CONTROL_PLANE_RE='//; s/'$//")"   # the flag tracks origin/main, not the snapshot's age (AC1/AC2)
-else
-  CONTROL_PLANE_RE='.'   # FAIL CLOSED: can't read origin/main's boundary ⇒ flag EVERY path control-plane (not-auto-mergeable), never trust the possibly-stale snapshot
-fi
-# ONE hardened read of the changed-file list, feeding BOTH §CP clauses below. `cp_changed_files` is
-# §CPREAD of ../gh-issue-intake-formats.md — exit-status-checked, shape-asserted, scope-emitting; a
-# non-zero return means the read COULD NOT EXECUTE, which is UNKNOWN, not "no §CP path touched". Read
-# the why there once; do not re-derive it here. It also removes the second read this step used to make
-# (the GUARD_TOUCHING loop re-fetched the same list), so both clauses now see the same scanned scope.
-if ! cp_changed_files "$REPO" "$PR"; then
-  # FAIL CLOSED (#4216): a blinded read blinds BOTH clauses at once — the path regex AND the ADR-0164
-  # content probe, which is the only §CP signal a `.decisions/**`-only PR can produce. So resolve BOTH
-  # toward §CP; the sentinel is non-empty, which is exactly what Step 4a branches on.
-  CONTROL_PLANE_TOUCHED="<changed-file list unreadable — §CP UNKNOWN, held as control-plane>"
-  GUARD_TOUCHING="<changed-file list unreadable — §CP UNKNOWN, held as control-plane>"
-else
-  # grep aggregates the §CP matches ACROSS the concatenated pages — a jq `[ … ]` aggregate would
-  # instead emit one array PER PAGE. `|| true` here is now safe and means ONLY what it says: no §CP
-  # match is grep exit 1 over a list that was PROVEN to arrive (#725 + #4216).
-  CONTROL_PLANE_TOUCHED="$(printf '%s\n' "$CP_FILES" | grep -E "$CONTROL_PLANE_RE" || true)"
-  # non-empty → control-plane: emit the advisory line in the verdict (Step 4a) per ADR 0053/0065/0073
-  # §CP by CONTENT (ADR 0164): a touched .decisions/** ADR is not path-§CP, but a guard-RELAXING one is
-  # control-plane by nature. Probe each ADR's content at head with the SHARED `guard-content-probe` verb
-  # — the SAME probe ship-it Step 0, review-doc, and the driver (via trivial-diff) call, so a guard-touching
-  # ADR reads §CP consistently everywhere (issue #3645, founder ruling #3416). A mixed code+guard-ADR PR
-  # fans BOTH gates; either flagging the ADR carries the §CP merge-authority hold.
-  # The ref is a fallible read too — `cp_head_sha` is §CPREAD's companion to `cp_changed_files`
-  # (copy it verbatim from there). It leaves HEAD_SHA EMPTY on failure by DISCARDING gh's payload,
-  # which is what makes the `[ -n ]` test below a live guard rather than a dead one.
-  cp_head_sha "$REPO" "$PR"; HEAD_SHA="$CP_HEAD_SHA"
-  # Assert on the probe's STATE WORD, never on its exit status — the exit code discriminates the two
-  # verdicts only once the verb has RUN, so the old `>/dev/null && …` shape accumulated NOTHING when it
-  # never ran (bad flag / nested-cwd module-not-found / missing shim) and read an unprobed ADR as
-  # ordinary. The `*)` arm keeps could-not-determine a HOLD, exactly as an unreadable body is (#4219).
-  # §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
-  PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
-  GUARD_TOUCHING=""
-  [ -n "$HEAD_SHA" ] || GUARD_TOUCHING="<head SHA unreadable — ADR content unprobeable, held as control-plane>"   # fail closed: no ref ⇒ no probe ⇒ UNKNOWN
-  ADR_N=0
-  while IFS= read -r adr; do
-    [ -z "$adr" ] && continue
-    [ -n "$HEAD_SHA" ] || break
-    ADR_N=$((ADR_N + 1))
-    # Capture and CHECK before classifying, never a straight pipe — §CPREAD #2.
-    adr_body="$(gh api "repos/$REPO/contents/$adr?ref=$HEAD_SHA" -H 'Accept: application/vnd.github.raw' 2>/dev/null)" || adr_body=""
-    if [ -z "$adr_body" ]; then
-      GUARD_TOUCHING="$GUARD_TOUCHING $adr(body-unreadable⇒§CP)"   # fail closed: never auto-ship an ADR that could not be read and proven guard-free
-    else
-      GC_STATE="$(printf '%s' "$adr_body" | "$PCLI" guard-content-probe classify --path "$adr" 2>/dev/null)"
-      case "$GC_STATE" in
-        not-guard-touching) : ;;   # proven ordinary — the ONLY value that may skip the §CP hold
-        guard-touching) GUARD_TOUCHING="$GUARD_TOUCHING $adr" ;;
-        *) GUARD_TOUCHING="$GUARD_TOUCHING $adr(undetermined:'$GC_STATE')" ;;
-      esac
-    fi
-  done < <(printf '%s\n' "$CP_FILES" | grep -E '^\.decisions/.*\.md$' || true)
-  echo "§CP scope: $CP_FILES_N file(s) scanned, $ADR_N .decisions/** ADR(s) content-probed"   # §ZS #1 (ADR 0092): a §CP classification always states its scope
-fi
-# non-empty $GUARD_TOUCHING → §CP-advisory, same as CONTROL_PLANE_TOUCHED above (Step 4a; ADR 0164/0135)
+. "$("${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-code/scripts/classify-control-plane.sh" "$PR")"
 ```
+
+Sourcing its one stdout line puts `CONTROL_PLANE_TOUCHED` and `GUARD_TOUCHING` in your shell — the
+two flags Step 4a branches on — plus the `CP_FILES_N` / `ADR_N` scope counts. **A non-empty either
+flag ⇒ §CP-advisory** (ADR 0053/0065/0073 for the path clause; ADR 0164/0135 for the content clause).
+Every failure path writes the flags as a non-empty `§CP UNKNOWN, held as control-plane` sentinel
+*before* exiting non-zero, because an empty flag is exactly what Step 4a reads as auto-mergeable —
+and if even the handle could not be written, stdout is empty, the `.` fails loudly, and the PR is
+held as control plane.
 
 ---
 
