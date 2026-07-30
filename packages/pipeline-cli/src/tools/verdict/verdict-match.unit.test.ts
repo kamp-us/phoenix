@@ -10,6 +10,7 @@ import {
 	isUnboundPolarityMarker,
 	malformedEmittedSha,
 	normalizeRunId,
+	outcomeReason,
 	parseVerdict,
 	resolveVerdict,
 	runIdOf,
@@ -17,6 +18,8 @@ import {
 	type VerdictComment,
 	type VerdictGate,
 	type VerdictOutcome,
+	type VerdictState,
+	verdictState,
 	withRunId,
 	withWrittenAt,
 	writeRecencyOf,
@@ -869,5 +872,57 @@ describe("the run-identity trailer — the upsert key's run dimension (#4016)", 
 		assert.isNull(normalizeRunId("short"));
 		assert.isNull(normalizeRunId("has whitespace inside"));
 		assert.isNull(normalizeRunId("-->injected"));
+	});
+});
+
+describe("verdictState — the ONE projection `read --expect` and `gate` both satisfy on (#4049)", () => {
+	// `read` used to test `_tag === "current" && polarity === expect` while `gate` tested its own
+	// `state` field. Two predicates over one resolution is what let the verbs disagree; these rows
+	// pin that every outcome shape maps to exactly one state, and that `isReviewed` IS that map.
+	const cases: ReadonlyArray<{
+		readonly name: string;
+		readonly outcome: VerdictOutcome;
+		readonly state: VerdictState;
+	}> = [
+		{name: "nothing resolved", outcome: {_tag: "none"}, state: "absent"},
+		{
+			name: "a pre-0058 SHA-less marker",
+			outcome: {_tag: "sha-less", commentId: 1, polarity: "PASS"},
+			state: "unverified",
+		},
+		{
+			name: "a marker bound to a dead head",
+			outcome: {_tag: "stale", commentId: 1, polarity: "PASS", sha: OLD},
+			state: "unverified",
+		},
+		{
+			name: "a §CP advisory at the live head recording a [FAIL] criterion",
+			outcome: {_tag: "advisory-not-all-pass", commentId: 1, sha: HEAD},
+			state: "unverified",
+		},
+		{
+			name: "a current-head PASS",
+			outcome: {_tag: "current", commentId: 1, polarity: "PASS", sha: HEAD},
+			state: "pass",
+		},
+		{
+			name: "a current-head FAIL",
+			outcome: {_tag: "current", commentId: 1, polarity: "FAIL", sha: HEAD},
+			state: "fail",
+		},
+	];
+
+	for (const {name, outcome, state} of cases) {
+		it(`${name} ⇒ ${state}, and isReviewed agrees in both polarities`, () => {
+			assert.strictEqual(verdictState(outcome), state);
+			assert.strictEqual(isReviewed(outcome, "PASS"), state === "pass");
+			assert.strictEqual(isReviewed(outcome, "FAIL"), state === "fail");
+		});
+	}
+
+	it("a not-all-PASS advisory is NOT a FAIL — its remedy is a re-review, not a repair round", () => {
+		const outcome: VerdictOutcome = {_tag: "advisory-not-all-pass", commentId: 3, sha: HEAD};
+		assert.isFalse(isReviewed(outcome, "FAIL"));
+		assert.include(outcomeReason(outcome, "PASS"), "not all-PASS");
 	});
 });

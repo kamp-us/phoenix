@@ -1,6 +1,6 @@
 import {assert, describe, it} from "@effect/vitest";
-import {decideGate, type GateDecisionInput} from "./gate-decision.ts";
-import type {VerdictComment, VerdictGate} from "./verdict-match.ts";
+import {decideGate, decideNamespace, type GateDecisionInput} from "./gate-decision.ts";
+import {isReviewed, type VerdictComment, type VerdictGate} from "./verdict-match.ts";
 
 const HEAD = "15ae9df658ce6225b8b71f22d214cfcabb6b1c9a";
 const OLD = "92c2cf4d0000000000000000000000000000abcd";
@@ -543,4 +543,150 @@ describe("decideGate — fail-closed on its own inputs (ADR 0092)", () => {
 		const result = decide({headSha: HEAD.slice(0, 8), comments: [comment({id: 1})]});
 		assert.isTrue(result.enqueueable);
 	});
+});
+
+describe("`verdict read` and `verdict gate` resolve ONE in-force verdict (#4049)", () => {
+	// PR #3988's marker set, the issue's own reference fixture: two FAILs and a superseding all-PASS
+	// advisory, ALL THREE bound to the same live head, because the repair that discharged the FAIL was
+	// body-only and deliberately did not move the head. ADR 0058 staleness therefore never fires, so
+	// recency across the marker AND advisory candidate sets is the only thing that can retire the FAIL
+	// — and `read`, which matched on polarity alone, could not see the advisory at all. Live before
+	// this change: `gate --cp` said enqueueable while `read --expect FAIL` exited 0 on the same head.
+	const FAIL_EARLY = comment({
+		id: 1,
+		createdAt: "2026-07-25T06:51:00Z",
+		body: `review-code: FAIL @ ${HEAD} — not merge-ready`,
+	});
+	const FAIL_LATE = comment({
+		id: 2,
+		createdAt: "2026-07-25T19:16:31Z",
+		body: `review-code: FAIL @ ${HEAD} — not merge-ready`,
+	});
+	const ADVISORY = comment({
+		id: 3,
+		createdAt: "2026-07-25T19:22:59Z",
+		body: advisory("code", HEAD),
+	});
+
+	/** What `verdict read --gate code [--cp]` resolves — the same call `Github.read` makes. */
+	const read = (comments: ReadonlyArray<VerdictComment>, controlPlane: boolean) =>
+		decideNamespace("code", {
+			comments,
+			authorizedAuthors: [REVIEWER],
+			headSha: HEAD,
+			controlPlane,
+		});
+
+	const cases: ReadonlyArray<{
+		readonly name: string;
+		readonly comments: ReadonlyArray<VerdictComment>;
+		readonly controlPlane: boolean;
+		readonly tag: string;
+		readonly commentId: number | null;
+		readonly expectPass: boolean;
+		readonly expectFail: boolean;
+	}> = [
+		{
+			name: "§CP: the superseding all-PASS advisory is in force — the FAIL is no longer resolvable",
+			comments: [FAIL_EARLY, FAIL_LATE, ADVISORY],
+			controlPlane: true,
+			tag: "current",
+			commentId: 3,
+			expectPass: true,
+			expectFail: false,
+		},
+		{
+			name: "the SAME set read WITHOUT --cp reproduces the pre-fix answer exactly (non-§CP unchanged)",
+			comments: [FAIL_EARLY, FAIL_LATE, ADVISORY],
+			controlPlane: false,
+			tag: "current",
+			commentId: 2,
+			expectPass: false,
+			expectFail: true,
+		},
+		{
+			name: "§CP: a FAIL posted AFTER the advisory is in force again — supersession runs both ways",
+			comments: [
+				ADVISORY,
+				comment({
+					id: 4,
+					createdAt: "2026-07-25T20:00:00Z",
+					body: `review-code: FAIL @ ${HEAD} — not merge-ready`,
+				}),
+			],
+			controlPlane: true,
+			tag: "current",
+			commentId: 4,
+			expectPass: false,
+			expectFail: true,
+		},
+		{
+			name: "§CP: an advisory recording a [FAIL] criterion satisfies NEITHER expectation",
+			comments: [comment({id: 5, body: advisory("code", HEAD, "[FAIL]")})],
+			controlPlane: true,
+			tag: "advisory-not-all-pass",
+			commentId: 5,
+			expectPass: false,
+			expectFail: false,
+		},
+		{
+			name: "§CP: an advisory whose Reviewed-head is stale is unverified, never a pass",
+			comments: [comment({id: 6, body: advisory("code", OLD)})],
+			controlPlane: true,
+			tag: "stale",
+			commentId: 6,
+			expectPass: false,
+			expectFail: false,
+		},
+		{
+			name: "§CP: an anchor-less advisory binds no head ⇒ unverified (ADR 0151)",
+			comments: [
+				comment({
+					id: 7,
+					body: "review-code: advisory — blocking-set PR (manual merge)\n\n- [PASS] x",
+				}),
+			],
+			controlPlane: true,
+			tag: "sha-less",
+			commentId: 7,
+			expectPass: false,
+			expectFail: false,
+		},
+		{
+			name: "§CP: an unauthorized author's advisory is invisible (the ADR 0055 gate composes)",
+			comments: [FAIL_LATE, comment({...ADVISORY, author: "attacker"})],
+			controlPlane: true,
+			tag: "current",
+			commentId: 2,
+			expectPass: false,
+			expectFail: true,
+		},
+	];
+
+	for (const {name, comments, controlPlane, tag, commentId, expectPass, expectFail} of cases) {
+		it(name, () => {
+			const decision = read(comments, controlPlane);
+			assert.strictEqual(decision.outcome._tag, tag);
+			assert.strictEqual(decision.commentId, commentId);
+			assert.strictEqual(isReviewed(decision.outcome, "PASS"), expectPass);
+			assert.strictEqual(isReviewed(decision.outcome, "FAIL"), expectFail);
+		});
+
+		// The AC2 invariant, asserted per row rather than argued: a `read --expect PASS` and a
+		// single-namespace `verdict gate` over the identical inputs must agree. A second resolution
+		// reintroduced on either side reds here even if both sides' own tests stay green.
+		it(`${name} — gate agrees with read --expect PASS`, () => {
+			const decision = read(comments, controlPlane);
+			const gateResult = decideGate({
+				comments,
+				authorizedAuthors: [REVIEWER],
+				requiredGates: ["code"],
+				headSha: HEAD,
+				controlPlane,
+			});
+			assert.strictEqual(gateResult.enqueueable, isReviewed(decision.outcome, "PASS"));
+			assert.strictEqual(gateResult.decisions[0]?.state, decision.state);
+			assert.strictEqual(gateResult.decisions[0]?.commentId, decision.commentId);
+		});
+	}
 });

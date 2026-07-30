@@ -12,9 +12,10 @@
  * Three verbs:
  *  - `gate(pr, requiredGates, controlPlane, headOverride)` — the SET-level enqueue decision: fold the
  *    same resolution over every namespace the diff requires, so an absent namespace refuses (#3982).
- *  - `read(pr, gate, expect, headOverride)` — resolve the PR's current head (REST), author-gate
- *    marker authors to write+ collaborators (ADR 0055), and run `resolveVerdict` to classify
- *    the namespace against that head. The consumer branches on the returned outcome.
+ *  - `read(pr, gate, expect, controlPlane, headOverride)` — resolve the PR's current head (REST),
+ *    author-gate marker authors to write+ collaborators (ADR 0055), and run the SAME
+ *    `decideNamespace` resolution `gate` uses to classify that one namespace against the head. The
+ *    consumer branches on the returned outcome.
  *  - `post(pr, gate, body, runId)` — the ADR-0058 rule-2 UPSERT, scoped per posting RUN (ADR 0213)
  *    and per attested HEAD (#4007): guard the body's first line is *this* gate's marker (fail-closed
  *    on a cross-namespace body), then PATCH the prior marker THIS RUN posted in the namespace AT THIS
@@ -44,17 +45,17 @@ import {
 	runGh,
 	whoAmIArgs,
 } from "../tracker/gh-io.ts";
-import {decideGate, type GateDecision} from "./gate-decision.ts";
+import {decideGate, decideNamespace, type GateDecision, type VerdictForm} from "./gate-decision.ts";
 import {
 	bindsSameHead,
 	boundHeadShas,
 	compareWriteRecency,
 	emissionDefect,
 	headBindingDefect,
+	isReviewed,
 	namespaceRe,
 	normalizeRunId,
 	type Polarity,
-	resolveVerdict,
 	runIdOf,
 	toStampIso,
 	type VerdictComment,
@@ -114,6 +115,8 @@ export interface ReadResult {
 	/** Does the outcome satisfy the caller's expected polarity (a current-head match)? */
 	readonly satisfied: boolean;
 	readonly expect: Polarity;
+	/** Which verdict FORM resolved the namespace — `marker`, the §CP `advisory`, or `none` (ADR 0111). */
+	readonly form: VerdictForm;
 	/**
 	 * When the resolving verdict was WRITTEN (`writeRecencyOf`), or `null` when nothing resolved.
 	 *
@@ -191,13 +194,22 @@ const listComments = Effect.fn("Github.listComments")(function* (repo: string, p
 /**
  * Read the PR's verdict for `gate` against its current head (or `headOverride` when the caller
  * already resolved it — e.g. a reviewer binding to the exact head it read). Author-gates the
- * distinct marker authors to write+ collaborators, then runs the pure `resolveVerdict`.
+ * distinct marker authors to write+ collaborators, then runs the SAME `decideNamespace` resolution
+ * `gate` folds over its required set — so the two verbs cannot answer one (PR, gate, head,
+ * §CP-ness) differently (#4049).
+ *
+ * `controlPlane` is an explicit input, not auto-detected: §CP-ness is a property of the PR's diff
+ * that the caller already derives (`pipeline-cli cp-classify`), and auto-detecting it here would put
+ * a REST files-fetch behind a resolution and split the two verbs' contracts again. Without it a §CP
+ * PR's advisory is correctly not a pass — and, before this, was invisible to `read` entirely, which
+ * is what left a body-only-repaired FAIL resolvable forever.
  */
 const read = Effect.fn("Github.read")(function* (
 	repo: string,
 	pr: number,
 	gate: VerdictGate,
 	expect: Polarity,
+	controlPlane: boolean,
 	headOverride: string | undefined,
 ) {
 	const headSha = headOverride?.trim() || (yield* currentHead(repo, pr));
@@ -212,12 +224,26 @@ const read = Effect.fn("Github.read")(function* (
 		),
 	];
 	const authorized = yield* authorizedAuthors(repo, markerAuthors);
-	const outcome = resolveVerdict({comments, authorizedAuthors: authorized, gate, headSha});
-	const satisfied = outcome._tag === "current" && outcome.polarity === expect;
+	const decision = decideNamespace(gate, {
+		comments,
+		authorizedAuthors: authorized,
+		headSha,
+		controlPlane,
+	});
+	const outcome = decision.outcome;
+	const satisfied = isReviewed(outcome, expect);
 	const resolving =
-		outcome._tag === "none" ? undefined : comments.find((c) => c.id === outcome.commentId);
+		decision.commentId === null ? undefined : comments.find((c) => c.id === decision.commentId);
 	const writtenAt = resolving === undefined ? null : writeRecencyOf(resolving);
-	return {outcome, headSha, gate, satisfied, expect, writtenAt} satisfies ReadResult;
+	return {
+		outcome,
+		headSha,
+		gate,
+		satisfied,
+		expect,
+		form: decision.form,
+		writtenAt,
+	} satisfies ReadResult;
 });
 
 /**
@@ -369,6 +395,7 @@ export class Github extends Context.Service<
 			pr: number,
 			gate: VerdictGate,
 			expect: Polarity,
+			controlPlane: boolean,
 			headOverride?: string,
 		) => Effect.Effect<
 			ReadResult,
@@ -417,8 +444,12 @@ export const GithubLive: Layer.Layer<Github, never, ChildProcessSpawner.ChildPro
 			) => effect.pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner));
 			const repo = yield* Effect.cached(withSpawner(resolveRepo()));
 			return {
-				read: (pr, gate, expect, headOverride) =>
-					repo.pipe(Effect.flatMap((r) => withSpawner(read(r, pr, gate, expect, headOverride)))),
+				read: (pr, gate, expect, controlPlane, headOverride) =>
+					repo.pipe(
+						Effect.flatMap((r) =>
+							withSpawner(read(r, pr, gate, expect, controlPlane, headOverride)),
+						),
+					),
 				gate: (pr, requiredGates, controlPlane, headOverride) =>
 					repo.pipe(
 						Effect.flatMap((r) =>
