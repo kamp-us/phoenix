@@ -68,6 +68,9 @@ check step7-epic-handoff.sh      "# compose under the per-run scratch namespace 
 check stepR2-inline-comments.sh  "ME=\$(gh api user --jq '.login')   # don't action your own author-side replies"
 check stepR-round-count.sh       "# how many distinct gate-FAIL ROUNDS has this PR already accrued (both namespaces)?"
 check stepR-frozen-ac.sh         "# does this round's resolving FAIL table carry a review-appended AC tagged at/after the final round?"
+# The single seam is the head-branch metavariable, so this IS expressible as one substitution — a
+# branch-switching, rebasing script is the last place the proof should have a silent gap (#4503 review).
+check stepR2-branch-rebase.sh    "git fetch origin" -e 's|git switch <the PR.s head branch>|git switch "$HEAD_BRANCH"|'
 
 # Partial moves — the base block's own first line stayed in SKILL.md as a placeholder or template.
 MODE=part FROM="# the epic body carries the plan + the ## Dependencies topology" \

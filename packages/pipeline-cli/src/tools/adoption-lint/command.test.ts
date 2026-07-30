@@ -10,7 +10,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import {tmpdir} from "node:os";
-import {join} from "node:path";
+import {dirname, join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {afterAll, assert, beforeAll, describe, it} from "@effect/vitest";
 import {SUBPROCESS_TEST_TIMEOUT_MS} from "../../test-budget.ts";
@@ -52,6 +52,58 @@ const CLAIM_WRITERS = [
 	"claude-plugins/kampus-pipeline/skills/write-code/SKILL.md",
 	".claude/workflows/drive-issue.js",
 ];
+
+interface SurfaceFile {
+	readonly rel: string;
+	readonly content: string;
+}
+
+/**
+ * A claim writer's SURFACE is its own text plus the shell that was extracted out of it into the
+ * `scripts/*.sh` beside it (epic #4435 phase 1). Reading the named file alone silently drops a claim
+ * site the moment an extraction moves one: both of write-code's `claim assign` calls left `SKILL.md`
+ * for `scripts/step3-{delegated,direct}-claim.sh`, which reddened the layer-one pin on a pure
+ * relocation and — worse — dropped the whole skill out of the ordering pin's scope while it stayed
+ * green. Same shape #4470 named and #4448 fixed for `validate-gate-path-drift` and
+ * `class-probe-consumers`; this is that widening for the claim pins.
+ *
+ * Sibling-scoped on purpose, NOT the whole plugin tree: `shared/scripts/` is a library many surfaces
+ * call, so folding it into every caller's surface would assert one shared half-procedure against
+ * every writer's own ordering rule.
+ */
+const writerSurface = (rel: string): ReadonlyArray<SurfaceFile> => {
+	const scriptsRel = join(dirname(rel), "scripts");
+	const scriptsAbs = join(REPO_ROOT, scriptsRel);
+	const scripts = existsSync(scriptsAbs)
+		? readdirSync(scriptsAbs)
+				.filter((entry) => entry.endsWith(".sh"))
+				.sort()
+				.map((entry) => join(scriptsRel, entry))
+		: [];
+	return [rel, ...scripts].map((f) => ({
+		rel: f,
+		content: readFileSync(join(REPO_ROOT, f), "utf8"),
+	}));
+};
+
+/** The `scripts/*.sh` a stretch of procedure text sources (`. "$<SKILL>_SCRIPTS/<name>.sh"`). */
+const sourcedScripts = (text: string, rel: string): ReadonlyArray<SurfaceFile> =>
+	[...text.matchAll(/_SCRIPTS\}?\/([\w.-]+\.sh)/g)]
+		.map((m) => join(dirname(rel), "scripts", m[1] as string))
+		.filter((f) => existsSync(join(REPO_ROOT, f)))
+		.map((f) => ({rel: f, content: readFileSync(join(REPO_ROOT, f), "utf8")}));
+
+/** §7 layer one — the assignee write, through the one verb or (still matchable) the raw POST. */
+const LAYER_ONE_WRITE =
+	/(?:gh api -X POST[^\n]*\/assignees|(?:pipeline-cli|"\$PCLI")\s+claim\s+assign\b)/;
+/**
+ * The claim verb's INVOCATION (verb + its issue argument), not a prose mention of it — a citation
+ * elsewhere in the file must not satisfy an ordering claim about the procedure. `$N` is the extracted
+ * form: a moved block's `<N>` metavariable becomes the script's positional parameter (#4449).
+ */
+const CLAIM_INVOCATION =
+	/(?:pipeline-cli|"\$PCLI")\s+tracker\s+claim\s+(?:<N>|\$\{issue\}|"?\$N"?)/;
+const IS_MINE = /(?:pipeline-cli|"\$PCLI")\s+claim\s+is-mine\b/;
 
 // The full live corpus the adoption-lint.yml job scans: every .md/.sh under the plugin
 // dir plus the orchestrator's drive-issue.js (the declared mirror).
@@ -116,17 +168,19 @@ describe("adoption-lint check — fail-closed exit contract (ADR 0092)", {
 	// `tracker claim` decision reds a NEW such writer; this pins the three that already exist.
 	it("every claim-marker writer cites `pipeline-cli tracker claim` and hand-composes no body", () => {
 		for (const rel of CLAIM_WRITERS) {
-			const content = readFileSync(join(REPO_ROOT, rel), "utf8");
+			const surface = writerSurface(rel);
 			assert.match(
-				content,
-				/pipeline-cli\s+tracker\s+claim\b/,
-				`${rel} must cite the claim-write verb`,
+				surface.map(({content}) => content).join("\n"),
+				/(?:pipeline-cli|"\$PCLI")\s+tracker\s+claim\b/,
+				`${rel} (or the scripts/ shell extracted out of it) must cite the claim-write verb`,
 			);
-			assert.notMatch(
-				content,
-				/body=["'`]?claim:/,
-				`${rel} must not hand-compose a claim-marker body (it would skip the presence stamp)`,
-			);
+			for (const {rel: f, content} of surface) {
+				assert.notMatch(
+					content,
+					/body=["'`]?claim:/,
+					`${f} must not hand-compose a claim-marker body (it would skip the presence stamp)`,
+				);
+			}
 		}
 	});
 
@@ -137,43 +191,53 @@ describe("adoption-lint check — fail-closed exit contract (ADR 0092)", {
 	// and the cleanup unassign then removes the INCUMBENT's assignment. Pin the only ordering that
 	// makes that unrepresentable — claim first, assign only on the verb's exit 0, never unassign.
 	it("claims before it writes layer one, so a defer cannot strip a live incumbent's assignment", () => {
-		// scope: the writers whose procedure actually writes layer one (a surface that only
-		// describes the claim has no ordering to pin). The write is `pipeline-cli claim assign`
-		// since #4298 — the raw POST stays matchable so the pin survives an un-migrated corpus.
+		// scope: across each writer's SURFACE, the files whose procedure actually writes layer one (a
+		// file that only describes the claim has no ordering to pin). The write is `pipeline-cli claim
+		// assign` since #4298 — the raw POST stays matchable so the pin survives an un-migrated corpus.
 		// Fail closed on zero scope (ADR 0092).
-		const LAYER_ONE_WRITE =
-			/(?:gh api -X POST[^\n]*\/assignees|(?:pipeline-cli|"\$PCLI")\s+claim\s+assign\b)/;
-		const selfAssigning = CLAIM_WRITERS.map((rel) => ({
-			rel,
-			content: readFileSync(join(REPO_ROOT, rel), "utf8"),
-		})).filter(({content}) => LAYER_ONE_WRITE.test(content));
+		const surfaces = CLAIM_WRITERS.map((rel) => writerSurface(rel));
+		const selfAssigning = surfaces.flat().filter(({content}) => LAYER_ONE_WRITE.test(content));
 		assert.isAbove(selfAssigning.length, 0, "expected at least one self-assigning claim writer");
 
+		// The ordering is pinned PER FILE, because after the extraction one branch's whole procedure is
+		// one file — concatenating a surface would let a `tracker claim` in the direct-path script
+		// satisfy an ordering claim about the delegated one, which is a different procedure.
 		for (const {rel, content} of selfAssigning) {
-			// the verb INVOCATION (verb + its issue argument), not a prose mention of the verb —
-			// a citation earlier in the file must not satisfy an ordering claim about the procedure.
-			// The invocation resolves the shim through §CLI's `$PCLI`; the bare `pipeline-cli` form
-			// stays matchable so this pin survives a corpus that has not yet been migrated (#3314).
-			const claimAt = content.search(
-				/(?:pipeline-cli|"\$PCLI")\s+tracker\s+claim\s+(?:<N>|\$\{issue\})/,
-			);
-			assert.isAbove(claimAt, -1, `${rel} must invoke the claim-write verb on the issue`);
-			assert.isAbove(
-				content.slice(claimAt).search(LAYER_ONE_WRITE),
-				-1,
-				`${rel} must write layer one AFTER it claims — assign-then-claim makes the defer path unassign the live incumbent (#4015)`,
-			);
-			// A layer-one write EARLIER in the file is the delegated branch, where the claim was won
-			// before the spawn — safe only if that branch first proves the lane is ours. Ungated, it
-			// is the same assign-then-claim hazard wearing a different hat.
-			const before = content.slice(0, claimAt);
-			if (LAYER_ONE_WRITE.test(before)) {
+			const assignAt = content.search(LAYER_ONE_WRITE);
+			const claimAt = content.search(CLAIM_INVOCATION);
+			if (claimAt > -1) {
+				assert.isAbove(
+					assignAt,
+					claimAt,
+					`${rel} must write layer one AFTER it claims — assign-then-claim makes the defer path unassign the live incumbent (#4015)`,
+				);
+			} else {
+				// A layer-one write with no claim of its own is the DELEGATED branch, where the claim was
+				// won before the spawn — safe only if that branch first proves the lane is ours. Ungated,
+				// it is the same assign-then-claim hazard wearing a different hat.
+				const isMineAt = content.search(IS_MINE);
+				assert.isAbove(
+					isMineAt,
+					-1,
+					`${rel} writes layer one without claiming — sound only on the delegated path, which must first prove the lane is ours (#4298)`,
+				);
 				assert.isBelow(
-					before.search(/(?:pipeline-cli|"\$PCLI")\s+claim\s+is-mine\b/),
-					before.search(LAYER_ONE_WRITE),
-					`${rel} writes layer one before its own claim — that is only sound on the delegated path, where ownership must be proven first (#4298)`,
+					isMineAt,
+					assignAt,
+					`${rel} writes layer one before it proves the lane is ours (#4298)`,
 				);
 			}
+		}
+		// …and each writer's surface must still claim SOMEWHERE, so a surface that only ever assigns
+		// cannot pass by having every file take the delegated branch.
+		for (const surface of surfaces) {
+			if (!surface.some(({content}) => LAYER_ONE_WRITE.test(content))) continue;
+			assert.isTrue(
+				surface.some(({content}) => CLAIM_INVOCATION.test(content)),
+				`${surface[0]?.rel} must invoke the claim-write verb on the issue`,
+			);
+		}
+		for (const {rel, content} of surfaces.flat()) {
 			assert.notMatch(
 				content,
 				/gh api -X DELETE[^\n]*\/assignees/,
@@ -190,24 +254,35 @@ describe("adoption-lint check — fail-closed exit contract (ADR 0092)", {
 	it("writes layer one through the one verb, and the delegated branch carries its own", () => {
 		for (const rel of CLAIM_WRITERS) {
 			assert.match(
-				readFileSync(join(REPO_ROOT, rel), "utf8"),
-				/(?:pipeline-cli|"\$PCLI")\s+claim\s+assign\b/,
-				`${rel} must write the §7 layer-one availability gate through \`pipeline-cli claim assign\``,
+				writerSurface(rel)
+					.map(({content}) => content)
+					.join("\n"),
+				LAYER_ONE_WRITE,
+				`${rel} (or the scripts/ shell extracted out of it) must write the §7 layer-one availability gate through \`pipeline-cli claim assign\``,
 			);
 		}
-		const skill = readFileSync(
-			join(REPO_ROOT, "claude-plugins/kampus-pipeline/skills/write-code/SKILL.md"),
-			"utf8",
-		);
+		const skillRel = "claude-plugins/kampus-pipeline/skills/write-code/SKILL.md";
+		const skill = readFileSync(join(REPO_ROOT, skillRel), "utf8");
 		const delegatedAt = skill.search(/^### Delegated claim/m);
 		const directAt = skill.search(/^### Direct path/m);
 		assert.isAbove(delegatedAt, -1, "write-code must keep its delegated-claim branch");
 		assert.isAbove(directAt, delegatedAt, "write-code must keep its direct-path branch after it");
-		assert.match(
-			skill.slice(delegatedAt, directAt),
-			/(?:pipeline-cli|"\$PCLI")\s+claim\s+assign\b/,
-			"write-code's DELEGATED branch must write layer one itself — skipping it is what left an issue `status:triaged` + unassigned with its PR in review (#4298)",
-		);
+		const delegated = skill.slice(delegatedAt, directAt);
+		if (!LAYER_ONE_WRITE.test(delegated)) {
+			// The branch's write now lives in the script the branch sources, so follow the invocation
+			// into it. Fail closed when the slice resolves to no script at all (ADR 0092): a heading pair
+			// that reaches nothing is a broken scan, not a branch that passes.
+			const followed = sourcedScripts(delegated, skillRel);
+			assert.isAbove(
+				followed.length,
+				0,
+				"write-code's DELEGATED branch neither writes layer one inline nor sources a resolvable script",
+			);
+			assert.isTrue(
+				followed.some(({content}) => LAYER_ONE_WRITE.test(content)),
+				"write-code's DELEGATED branch must write layer one itself — skipping it is what left an issue `status:triaged` + unassigned with its PR in review (#4298)",
+			);
+		}
 	});
 
 	it("exits 3 (zero-scope FAIL) when every handed file is unreadable/missing", async () => {
