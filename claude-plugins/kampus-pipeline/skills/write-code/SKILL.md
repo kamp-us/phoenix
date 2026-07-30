@@ -1936,14 +1936,9 @@ enumerated findings as the AC work list** — fix exactly what they name (the in
 below are additive to this list, not a substitute for it):
 
 ```bash
-# the full body of the resolving FAIL marker — its comment id came from R1's `verdict read` JSON
-# (swap CODE_FAIL_JSON→DOC_FAIL_JSON/SKILL_FAIL_JSON per namespace). `verdict read` already
-# author-gated and latest-wins-resolved that exact comment, so this is a plain body fetch of it —
-# no re-derivation of the resolver. (When the code namespace was resolved via a native
-# CHANGES_REQUESTED review rather than a marker, read the review body from
-# `repos/$REPO/pulls/$PR/reviews` instead — a native review carries no issue-comment id.)
-CID=$(jq -r '.commentId // empty' <<<"$CODE_FAIL_JSON")
-[ -n "$CID" ] && gh api "repos/$REPO/issues/comments/$CID" --jq '.body'
+# name the namespace's R1 JSON variable — CODE_FAIL_JSON (the default), DOC_FAIL_JSON, or
+# SKILL_FAIL_JSON. Leaves $CID in this shell for R3's thread reply.
+. "$WRITECODE_SCRIPTS/stepR2-fail-body.sh" CODE_FAIL_JSON
 ```
 
 #### A review-appended AC is an ordinary `[FAIL]` row — no special parser (ADR 0079)
@@ -2004,18 +1999,7 @@ is actionable only when its `line` is non-null. This is the inline-comment analo
 `@ <sha>` staleness test — repair never chases feedback bound to code that has since changed.
 
 ```bash
-ME=$(gh api user --jq '.login')   # don't action your own author-side replies
-# fetch into a var, then pipe to standalone jq — gh's --jq takes no --argjson, and this reuses
-# the same $authorized set R1/R2 already built (same pattern as the marker work-list above)
-inlineComments=$(gh api "repos/$REPO/pulls/$PR/comments?per_page=100")
-# in-scope, still-anchored inline review comments → your additive fix list (id+path+line+body)
-jq --argjson authorized "$authorized" --arg me "$ME" \
-  '[ .[]
-     | select(.line != null)                                  # non-null line ⇒ still anchored to current head (ADR 0058)
-     | select(.user.login != $me)                             # skip self-authored thread replies
-     | select((.user.login | IN($authorized[]))               # write+ collaborator (ADR 0055), or…
-              or .user.login == "copilot-pull-request-reviewer[bot]")  # …the explicitly-included review bot (#383)
-   ] | .[] | {id, path, line, body}' <<<"$inlineComments"
+. "$WRITECODE_SCRIPTS/stepR2-inline-comments.sh"   # reads the $authorized set R1 built; leaves $ME + $inlineComments
 ```
 
 For context on *what the PR was supposed to do*, resolve the **linked issue** via the PR
@@ -2023,24 +2007,15 @@ body's `Fixes #N` and re-read its `### Acceptance criteria` (the same checklist 
 verified) and the progress trail:
 
 ```bash
-N=$(gh api repos/$REPO/pulls/$PR \
-  --jq '.body | capture("(?i)\\b(fix(es|ed)?|close[sd]?|resolve[sd]?)\\s+#(?<n>[0-9]+)") | .n')
-gh api repos/$REPO/issues/$N --jq '.body'
-gh api "repos/$REPO/issues/$N/comments?per_page=100" --jq '.[].body'
+. "$WRITECODE_SCRIPTS/stepR2-linked-issue.sh"   # leaves $N (the PR's linked issue) in this shell
 ```
 
 Check out the **existing PR branch** and fix on it — **no new branch** (a new branch would
 orphan the PR and the gate's history):
 
 ```bash
-git fetch origin
-# mis-attribution guard (Step 3.5): confirm the PR's linked issue #N is MINE before touching its
-# branch — so a mis-dispatched repair never pushes to another agent's live PR (the #1404 class).
-# In orchestrated repair the original claim token is threaded as MY_CLAIM (ADR 0115 §3 delegated own).
-claim_is_mine "$N" || { echo "refusing to repair PR #$PR — its linked issue #$N is not my claim (Step 3.5)"; exit 1; }
-wt_preflight && git switch <the PR's head branch>   # gate the branch switch ([per-mutation preflight]); gh api .../pulls/$PR --jq '.head.ref'
-wt_preflight && git rebase origin/main   # freshen the dispatch-time base FIRST — surface a textual conflict now, in-context (see below)
-# apply the fixes addressing exactly the enumerated findings
+. "$WRITECODE_SCRIPTS/stepR2-branch-rebase.sh" <the PR's head branch> || exit 1   # gh api .../pulls/$PR --jq '.head.ref'
+# then apply the fixes addressing exactly the enumerated findings
 ```
 
 Repair mode runs in a worktree too, so re-run the Step-4 opening preflight (and capture `WT`)
