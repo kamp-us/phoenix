@@ -1089,10 +1089,12 @@ Every other read/write in this skill stays REST.
 > `skill-gh-lint` job runs `gh-phoenix lint-skills` over the corpus and FAILs on any `gh api graphql`
 > in a runnable block — **including a whole `.sh`**. The lint's `SELF_EXEMPT_SUFFIXES` exempts
 > `/skills/review-code/SKILL.md` as a whole file, so the read is lawful *here* and would be flagged
-> the moment it landed in a script, and continuing the exemption means editing the very
-> `SELF_EXEMPT_SUFFIXES` array
-> [PR #4491](https://github.com/kamp-us/phoenix/pull/4491) is already changing for ship-it's two
-> extracted scripts. The operative rule: a block a guard parses out of the markdown cannot move until
+> the moment it landed in a script. The idiom that would cover an extracted script already exists:
+> [#4491](https://github.com/kamp-us/phoenix/pull/4491) **landed** (`15263296`) two **per-script**
+> entries in that same array, annotated there as deliberately *not* a `scripts/`-wide exemption. But
+> adding a `review-code/scripts/*.sh` entry edits
+> `packages/pipeline-cli/src/tools/gh-phoenix/lint.ts` — a **code-class** file outside a skills-only
+> extraction child. The operative rule: a block a guard parses out of the markdown cannot move until
 > the guard follows. It stays inline until that lands, and the remainder is tracked on
 > [#4451](https://github.com/kamp-us/phoenix/issues/4451).
 
