@@ -89,6 +89,21 @@ describe("scanFile — flags GraphQL-path gh calls", () => {
 			0,
 		);
 	});
+
+	it("self-exempts write-code/repair.md per FILE, leaving its siblings live", () => {
+		assert.isTrue(isSelfExempt(".claude/skills/write-code/repair.md"));
+		assert.strictEqual(
+			scanFile("skills/write-code/repair.md", "gh pr edit is unreliable").length,
+			0,
+		);
+		// The granularity assertion: a sibling under the same directory is NOT exempt, so the
+		// exemption can never widen into a `write-code/`-wide hole.
+		assert.isFalse(isSelfExempt("skills/write-code/type-routing.md"));
+		assert.strictEqual(
+			scanFile("skills/write-code/type-routing.md", "gh pr edit is unreliable").length,
+			1,
+		);
+	});
 });
 
 describe("lintCorpus — scope + findings", () => {
