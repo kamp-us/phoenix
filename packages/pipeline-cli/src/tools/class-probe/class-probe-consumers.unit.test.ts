@@ -71,12 +71,39 @@ const SITES = corpusFiles(CORPUS_ROOT).flatMap((file) =>
 	namespaceReadSites(relative(REPO_ROOT, file), readFileSync(file, "utf8")),
 );
 
+/**
+ * The DECLARED consumer population — file → how many namespace-set reads it carries — asserted
+ * EQUAL to the derived one below.
+ *
+ * `SITES` is content-derived: a consumer whose call site is reworded or relocated simply stops
+ * matching, and a count FLOOR cannot tell that shrunken population from a covered one (#4509).
+ * Measured on this corpus: neutering `ship-it/scripts/step2-verdict-gate.sh`'s read while any
+ * third site exists anywhere leaves the old `>= 3` floor green with that consumer unchecked. The
+ * remedy is the drift shape already used by `fanout-guard`'s manifest (ADR 0155) and
+ * `core-import-closure`'s `ALLOWED_ESCAPES` (ADR 0218): declare the population, assert set
+ * equality, and make a dropout AND an unreviewed addition both red.
+ */
+const DECLARED_CONSUMERS: Readonly<Record<string, number>> = {
+	"claude-plugins/kampus-pipeline/agents/reviewer.md": 2,
+	"claude-plugins/kampus-pipeline/skills/ship-it/scripts/step2-verdict-gate.sh": 1,
+};
+
+const sitesByFile = (): Readonly<Record<string, number>> => {
+	const out: Record<string, number> = {};
+	for (const site of SITES) out[site.file] = (out[site.file] ?? 0) + 1;
+	return out;
+};
+
 describe("class-probe namespace-set consumers observe the probe's exit status (#4231)", () => {
-	// §ZS / ADR 0092: a scan that found nothing is a broken scan, not a pass — without this the whole
-	// suite goes green the moment the fence parser or the corpus path regresses.
-	it("scans a non-empty corpus", () => {
+	// §ZS / ADR 0092 at the level of the individual assertion: an empty declaration would make the
+	// equality below satisfiable by an empty corpus, i.e. green while asserting nothing (#4509).
+	it("declares a non-empty consumer population", () => {
+		expect(Object.keys(DECLARED_CONSUMERS).length).toBeGreaterThan(0);
+	});
+
+	it("derives exactly the declared consumer population — a dropout reds, so does a new site", () => {
 		expect(corpusFiles(CORPUS_ROOT).length).toBeGreaterThan(0);
-		expect(SITES.length).toBeGreaterThanOrEqual(3);
+		expect(sitesByFile()).toEqual(DECLARED_CONSUMERS);
 	});
 
 	it.each(
