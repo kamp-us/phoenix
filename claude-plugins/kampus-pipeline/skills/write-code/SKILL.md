@@ -2078,26 +2078,8 @@ departed from nothing adds nothing; it does **not** rewrite a prior round's entr
 unreliable in this org).
 
 ```bash
-# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
-PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
-# re-assert the mis-attribution guard (Step 3.5) before the resubmit push — a between-calls cwd
-# reset can't move the claim, but the guard is MANDATED before every number-targeting mutation,
-# exactly as wt_preflight is before every git op; gate both the push and the progress comment.
-claim_is_mine "$N" || { echo "refusing to push/comment — PR #$PR linked issue #$N not my claim (Step 3.5)"; exit 1; }
-# The SANCTIONED push path ([Pushing: the verdict is the ref, not the exit code]) — force-with-lease
-# because the R2 rebase onto origin/main moved the head. It confirms the remote ref carries the
-# rebased head before you claim the resubmit landed; exit 0 = MOVED, 1 = NOT-MOVED, 3 = UNKNOWN.
-# STOP on either non-zero: a reviewer waiting on a moved head would otherwise re-gate the STALE one.
-wt_preflight && "$PCLI" verified-push --cwd "$WT" --remote origin --force-with-lease \
-  || { echo "write-code: the repair push was NOT confirmed on the remote (see the PUSH-VERDICT line above) — the gate would re-run against the STALE head. Do not report the resubmit as landed." >&2; exit 1; }
-# compose the repair note under the §SP per-run scratch namespace, never a fixed /tmp leaf:
-# concurrent repair lanes clobber a shared name and this posts THEIR note onto your issue (#3718).
-# Session-keyed and deterministic, so the note you wrote in an earlier Bash call is still here.
-RUN_SCRATCH="${TMPDIR:-/tmp}/kampus-run/${CLAUDE_CODE_SESSION_ID:?§SP: session id unset (#3718)}/write-code-$N"
-mkdir -p "$RUN_SCRATCH" || { echo "write-code: §SP could not create a per-run scratch dir (#3718)." >&2; exit 1; }
-# …write the format-3 repair note to "$RUN_SCRATCH/repair-progress.md" first, then:
-[ -s "$RUN_SCRATCH/repair-progress.md" ] || { echo "write-code: repair-progress.md is missing/empty — refusing to post an empty comment." >&2; exit 1; }
-gh api repos/$REPO/issues/$N/comments -f body="$(cat "$RUN_SCRATCH/repair-progress.md")"
+# write the format-3 repair note to "$RUN_SCRATCH/repair-progress.md" FIRST.
+. "$WRITECODE_SCRIPTS/stepR3-push-and-note.sh" || exit 1   # push CONFIRMED on the remote, or nothing landed
 ```
 
 **Acknowledge the inline threads you addressed** so the loop is visible to the reviewer who
@@ -2105,9 +2087,7 @@ left them. For each in-scope inline comment you fixed, post a **threaded reply**
 you changed (REST, on the same review-comment thread):
 
 ```bash
-# reply on the inline comment thread you addressed ($CID = the comment id from R2)
-gh api -X POST "repos/$REPO/pulls/$PR/comments/$CID/replies" \
-  -f body="Addressed in <short-sha>: <one line on the fix>."
+. "$WRITECODE_SCRIPTS/stepR3-thread-reply.sh" "Addressed in <short-sha>: <one line on the fix>." || exit 1
 ```
 
 **Release the lane's claim before you stop**, exactly as Step 8 does for the initial build — the
@@ -2115,9 +2095,7 @@ repair round is over, and a claim left held is what makes the *next* repair disp
 read `lost` (#3780; the observed stall was a repair refused by a claim whose run had finished):
 
 ```bash
-# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
-PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
-"$PCLI" claim release --issue "$N" --session "$MY_CLAIM"   # retract OUR OWN marker; never another session's
+. "$WRITECODE_SCRIPTS/step8-claim-release.sh" "$N" || exit 1   # the SAME script Step 8 sources — retract OUR OWN marker; never another session's
 ```
 
 A reply is the acknowledgement this skill performs. **Resolving** the thread (collapsing it)
@@ -2152,19 +2130,7 @@ the cap fails to bind and the loop runs past N=3.) Same ACL author-gate as Step
 R1 (reuse its `$comments_file` + `$authorized`) — only a real reviewer's FAIL counts toward the cap:
 
 ```bash
-# how many distinct gate-FAIL ROUNDS has this PR already accrued (both namespaces)?
-# cluster FAIL markers by timestamp gap: a new round starts only when >120s separates two
-# FAILs, so a code+doc pass (seconds apart) is one round and two real rounds (fix-push +
-# re-review apart) are two — grid-free, so no minute-boundary split or same-minute merge.
-jq --argjson authorized "$authorized" \
-   '[.[] | select(.user.login | IN($authorized[]))
-         | select(.body | test("^\\s*\\**\\s*review-(code|doc|skill):\\s*FAIL"; "i"))
-         | .created_at | sub("\\..*Z$";"Z") | fromdateiso8601]
-    | sort
-    | reduce .[] as $t ({n:0, prev:null};
-        if (.prev == null) or ($t - .prev) > 120
-        then {n:(.n+1), prev:$t} else {n:.n, prev:$t} end)
-    | .n' "$comments_file"
+. "$WRITECODE_SCRIPTS/stepR-round-count.sh"   # stdout IS the round count; reads $authorized + $comments_file
 ```
 
 If this PR has **already had 3 FAIL→fix rounds** (you'd be pushing a 4th fix against a 4th
@@ -2225,13 +2191,7 @@ final repair round**, i.e. its tagged `round` ≥ `N` (= 3). Concretely, for eac
   hand the PR back, surface for re-triage:
 
 ```bash
-# does this round's resolving FAIL table carry a review-appended AC tagged at/after the final round?
-# the row is the ordinary checkbox shape; the tag is the only thing read here (no new parser)
-# $FAILBODY = the resolving FAIL marker body from R2; grep the provenance tags it carries
-echo "$FAILBODY" | grep -oE '<!-- *ac:review-[a-z]+ +pr:#[0-9]+ +round:[0-9]+ *-->' | while read -r tag; do
-  K=$(printf '%s' "$tag" | grep -oE 'round:[0-9]+' | cut -d: -f2)
-  [ "$K" -ge 3 ] && echo "FROZEN appended AC ($tag) — appended in/after final round; escalate, do not loop"
-done
+. "$WRITECODE_SCRIPTS/stepR-frozen-ac.sh"   # reads $FAILBODY (the resolving FAIL marker body from R2)
 ```
 
 If **any** `ac:review-*` row in the current FAIL table is frozen (`round >= 3`), take the
