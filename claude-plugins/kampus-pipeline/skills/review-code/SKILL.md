@@ -44,8 +44,55 @@ if set, else the current repository. In phoenix this defaults to `kamp-us/phoeni
 behavior is unchanged with no config (ADR 0062 §1).
 
 ```bash
-REPO="${CLAUDE_PIPELINE_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}"
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-code/scripts/resolve-repo.sh"
 ```
+
+Every script below resolves the repo the same way, through the shared lib's `kp_repo` — so the
+resolution is one rule in one place and it survives across steps, which a shell variable set in one
+fenced block does not (each agent shell invocation is a fresh process).
+
+## The extracted scripts
+
+This skill's shell lives in [`scripts/`](scripts/) and every fenced `bash` block below is an
+**invocation** of one. The prose keeps the *why*; the scripts hold the *how* (epic #4435 phase 1 —
+the shell moved as-is, and turning its `gh`/`jq` glue into tested `pipeline-cli` verbs is #1929, ADR
+0228: a script may RELAY a verb's answer, never DERIVE the decision). Four properties are
+load-bearing when you read or edit them:
+
+- **They set `set -uo pipefail`, deliberately not `-e`.** The moved glue decides its own control flow
+  through the guards written into it — `|| true` on a read that may legitimately match nothing, a
+  state-word assertion instead of an exit-status test (§CP), a `grep` whose empty result is an
+  answer. `errexit` would abort those paths before they print their fail-closed line, converting
+  fail-closed into fail-**open**.
+- **No script installs an `EXIT` trap.** Under bash 3.2 a cleanup trap's last command becomes the
+  script's exit status, which launders a `set -u` abort into exit 0 — a fail-closed guard that exits
+  0 having printed its refusal (#4476, class #4479).
+- **A script whose stdout answers a safety question makes every failure path speak (the
+  error-channel rule).** Moving glue behind a script boundary invents a channel the inline block
+  never had: a non-zero exit with **0 bytes on stdout**. Where a caller reads the *absence* of a
+  fail-closed line as a *positive* answer — `not-control-plane` in Step 2's §CP classification, the
+  skills-only off-ramp, Step 1's issueless carve-out — a silent guard exit is indistinguishable from
+  "proven safe". So each such script prints its **own** fail-closed sentinel on stdout
+  (`BLOCKING (…)` / `CANNOT-CLASSIFY (…)` / the hard-stop line) before every early `exit`, **and**
+  exits non-zero, and the prose reads the status before the stdout. An absent or empty result is
+  UNKNOWN, and UNKNOWN is never "no" (§ZS / ADR
+  [0092](https://github.com/kamp-us/phoenix/blob/main/.decisions/0092-gates-fail-closed-on-zero-scope.md);
+  #4231, #4010, #4219). Note the discriminator on a completed run is the **absent sentinel line**,
+  not empty stdout — a §ZS scope line legitimately lands on stdout too.
+- **The shared-contract helpers are SOURCED from their canonical home — there is no skill-local
+  copy.** §CPREAD's `cp_changed_files` / `cp_head_sha`, §RO-iso's `iso_preflight`, §WL's
+  `kp_wl_all_onclass` and the `verdict_post_verify` read-back all live in
+  [`../shared/scripts/`](../shared/scripts/) (#4489 extracted them out of
+  [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md)), and this skill's scripts source
+  them directly. With no second copy there is nothing to keep in step and no byte-identity claim to
+  make about one. The **one deliberate exception** is
+  [`scripts/cycle-doc-probe.sh`](scripts/cycle-doc-probe.sh): the two cycle validators
+  ([`../validate-cycle-presence.sh`](../validate-cycle-presence.sh) /
+  [`../validate-cycle-absence.sh`](../validate-cycle-absence.sh)) scope each skill's scan surface to
+  that skill's **own** directory on purpose, so sourcing the shared probe would move this skill's
+  cycle wiring out of its guarded surface and the validators would fail — per-skill wiring stays
+  per-skill (the rule is stated at `kp_skill_shell_surfaces` in
+  [`../shared/lib/common.sh`](../shared/lib/common.sh)).
 
 ## Read-only on git working state
 
@@ -93,9 +140,7 @@ PR ↔ issue pairing, because the issue is where the acceptance criteria live.
 
 ```bash
 PR=<pr number>
-# the PR: state, head branch, body (the Fixes #N lives here), mergeability
-gh api repos/$REPO/pulls/$PR \
-  --jq '{number, state, draft, merged, head: .head.ref, base: .base.ref, body}'
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-code/scripts/pr-context.sh" "$PR"
 ```
 
 Find the linked issue from the PR body's `Fixes #N` / `Closes #N` (the seam
@@ -103,11 +148,7 @@ Find the linked issue from the PR body's `Fixes #N` / `Closes #N` (the seam
 timeline if it's not obvious:
 
 ```bash
-# timeline shows "connected"/"cross-referenced" events linking PR ↔ issue
-# --paginate + a STREAMING --jq: per_page caps at 100, so a link event past event 100 is
-# invisible without it on a long-lived PR's timeline (#4193)
-gh api --paginate "repos/$REPO/issues/$PR/timeline?per_page=100" \
-  --jq '.[] | select(.event=="connected" or .event=="cross-referenced") | .source.issue.number // .issue.number' 2>/dev/null
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-code/scripts/linked-issue-timeline.sh" "$PR"
 ```
 
 Pin down `ISSUE=<N>`. If there is **no** linked issue, the rule is **class-aware** — this is
@@ -120,24 +161,12 @@ signal, **not** a second taxonomy; the ADR 0075 discipline `review-doc` follows 
 Step-0 class):
 
 ```bash
-# no linked issue → class-aware. The carve-out is scoped EXACTLY to the conversation-authored
-# coining class: the diff touches the `.glossary/**` CODE-class vocabulary coining site (ADR 0128)
-# AND every changed path lies on a conversation-authored surface — `.glossary/**`, or a doc
-# companion (`.decisions/**` / `.patterns/**`) carried in the same recording — and NOTHING else.
-# Any path off those surfaces (`apps/**`, `packages/**`, `infra/**`, a code-root README, a root
-# script) is behavioral work with a missing `Fixes #N` ⇒ a broken seam ⇒ hard-stop. Same file set +
-# same path-prefix class Step 2's skills-only route uses — no second class mechanism.
-# "every path is conversation-authored" is the EMPTY-OUTPUT form, never `! grep -qv` (§WL, #4155).
-FILES="$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename')"
-OFFSURFACE="$(grep -vE '^(\.glossary|\.decisions|\.patterns)/' <<<"$FILES")"
-if [ -n "$FILES" ] \
-   && grep -qE '^\.glossary/' <<<"$FILES" \
-   && [ -z "$OFFSURFACE" ]; then
-  echo "conversation-authored .glossary/** coining site, no Fixes #N — legitimate (ADR 0184/0075): ISSUE stays unset, AC half N/A"
-else
-  echo "no linked issue on a PR carrying behavioral code — broken seam: hard-stop (dangling-code guard, ADR 0184)"
-fi
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-code/scripts/classify-issueless.sh" "$PR"
 ```
+
+Read the script's **exit status before its stdout**, and note the carve-out line is the *permissive*
+answer: on a non-zero exit it prints the hard-stop line itself, so a classifier that could not run
+holds the PR at the broken-seam stop rather than waving it through as legitimately issueless.
 
 - **Behavioral code is present** (the diff carries any path off the conversation-authored coining
   surface — `apps/**`, `packages/**`, `infra/**`, a code-root README, or any product code) → stop
@@ -166,9 +195,7 @@ When `ISSUE` **is** set, honor it as today — pull the issue and its acceptance
 
 ```bash
 ISSUE=<N>
-gh api repos/$REPO/issues/$ISSUE --jq '{number, state, assignee: .assignee.login, body}'
-# the progress trail write-code left — context, not evidence
-gh api "repos/$REPO/issues/$ISSUE/comments?per_page=100" --jq '.[].body'
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-code/scripts/issue-context.sh" "$ISSUE"
 ```
 
 Extract the `### Acceptance criteria` checklist from the issue body. That list — every
@@ -199,11 +226,7 @@ Verification is grounded in the diff, the tests, and — where it matters — th
 not in the PR's self-description. Pull the change:
 
 ```bash
-# the full diff — gh pr diff is the reliable form; the diff media type is the REST equivalent
-gh pr diff $PR \
-  || gh api repos/$REPO/pulls/$PR -H "Accept: application/vnd.github.v3.diff"
-# files touched, at a glance
-gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[] | "\(.status)\t+\(.additions)/-\(.deletions)\t\(.filename)"'   # --paginate: streaming --jq, pages concatenate — the full set past file #100 (#725)
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-code/scripts/pr-diff.sh" "$PR"
 ```
 
 This same loaded diff (and the review worktree below) is what the **specialist fan-out** runs
@@ -223,18 +246,12 @@ to `review-doc`'s skills-only / pure-code routes and `review-skill`'s "not a ski
 each gate hands a mis-classed PR to the gate that owns its class:
 
 ```bash
-# the file set drives the class decision (same list pulled above)
-FILES="$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename')"   # --paginate + streaming --jq: full set past file #100 (the API caps per_page at 100; #725)
-# skills-only ⇒ every changed path is under skills/ or agents/ — review-skill's class, not yours
-# (agents/** are behavioral artifacts, review-skill-routed for the verdict — ADR 0150/#2003).
-# Empty-output form, never `! grep -qv`: a false-true here `exit 0`s the code gate on a PR that
-# does carry code (§WL of ../gh-issue-intake-formats.md, #4155).
-OFFCLASS="$(grep -vE '^claude-plugins/kampus-pipeline/(skills|agents)/' <<<"$FILES")"
-if [ -n "$FILES" ] && [ -z "$OFFCLASS" ]; then
-  echo "not a code PR — route to review-skill"   # plain note, no review-code: marker; stop
-  exit 0
-fi
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-code/scripts/classify-skills-only.sh" "$PR"
 ```
+
+Three outcomes, and the **exit status is read before the stdout**: a non-zero exit is UNKNOWN and
+prints `CANNOT-CLASSIFY (…)` — fail closed to has-code, verify here; the off-ramp line **at exit 0**
+routes to `review-skill` and stops; **no line at exit 0** means the PR carries code, so proceed.
 
 A **mixed** PR (`skills/**` *and* `apps/web`/`packages` code) is **not** skills-only — you
 verify the code class here and emit the `review-code` marker, while `review-skill` verifies the
