@@ -9,11 +9,12 @@
 #    printed message is not proof, which is why the byte count is measured rather than eyeballed.
 #
 # 2. ZERO COVERAGE DELTA for the two guards this extraction NARROWS. `cli-invocation-guard` is
-#    fence-scoped to markdown (#4486) and `leak-guard`'s DOC_SUFFIXES is markdown-only (#4496), so
-#    neither inspects a `.sh`. Their clean runs are therefore VACUOUS over these files — the delta is
-#    zero only if the files carry nothing either guard would have flagged. That is what is grepped:
-#    zero bare `pipeline-cli` invocations outside a comment, and zero hits for ANY arm of leak-guard's
-#    shared machine-local path matcher, anywhere in the new scripts.
+#    fence-scoped to markdown (#4486), so it does not inspect a `.sh` and its clean run is VACUOUS
+#    over these files — the delta is zero only if they carry nothing it would have flagged, which is
+#    what the first grep measures. `leak-guard` now scans `.sh` as a second surface (#4507 landed
+#    SHELL_SUFFIXES), so its coverage of these scripts is real rather than vacuous; the second grep
+#    stays as an independent, deliberately-broader restatement of every arm of the shared matcher.
+#    This harness is itself DOC_SELF_EXEMPT there — see the scope note in section 2.
 #
 # Usage:  bash claude-plugins/kampus-pipeline/skills/write-code/scripts/verify-fail-closed.sh
 set -uo pipefail
@@ -46,9 +47,9 @@ done
 
 echo "=== 2. zero-coverage-delta greps over the extracted scripts"
 # Scope: the EXTRACTED scripts. The two `verify-*.sh` proof harnesses are excluded, because they must
-# spell the forbidden tokens out as patterns to test for them — the same self-exemption leak-guard's
-# own DOC_SELF_EXEMPT applies to its own source. Paths are printed repo-relative on purpose: a
-# machine-local absolute path must not reach a PR body either.
+# spell the forbidden tokens out as patterns to test for them — which is also why this file carries a
+# DOC_SELF_EXEMPT entry now that leak-guard reaches `.sh`, mirroring path-matcher.ts. Paths are
+# printed repo-relative on purpose: a machine-local absolute path must not reach a PR body either.
 cd "$(git rev-parse --show-toplevel)" || exit 1
 REL=claude-plugins/kampus-pipeline/skills/write-code/scripts
 MOVED=$(git ls-files "$REL/*.sh" | grep -v "/verify-")

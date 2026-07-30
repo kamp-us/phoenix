@@ -274,4 +274,21 @@ describe("surface predicates", () => {
 		assert.isTrue(isSelfExempt(".claude/agents/triager.md"));
 		assert.isFalse(isSelfExempt("README.md"));
 	});
+
+	// The suffix is narrow on purpose: the exemption covers the one verification harness that has
+	// to enumerate the forbidden shapes, and NOT the shell surface it sits on (#4449).
+	it("isSelfExempt: the write-code verify harness is exempt, its sibling scripts are not", () => {
+		const scripts = "claude-plugins/kampus-pipeline/skills/write-code/scripts";
+		assert.isTrue(isSelfExempt(`${scripts}/verify-fail-closed.sh`));
+		assert.isFalse(isSelfExempt(`${scripts}/verify-byte-move.sh`));
+		assert.isFalse(isSelfExempt(`${scripts}/step4-preflight.sh`));
+	});
+
+	it("findLeaks: a non-exempt `.sh` still reds on a planted machine-local path", () =>
+		assert.isTrue(
+			hasLeak(
+				"claude-plugins/kampus-pipeline/skills/write-code/scripts/step4-preflight.sh",
+				'WT="/Users/someone/code/repo"',
+			),
+		));
 });
