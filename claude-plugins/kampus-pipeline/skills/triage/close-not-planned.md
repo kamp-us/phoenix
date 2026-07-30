@@ -29,24 +29,23 @@ Every kill is auditable and reversible. Always:
 4. Close as **not planned** (state `closed`, reason `not_planned`).
 
 ```bash
-# step 1 only when closing as a duplicate of #M. Temps live under the §SP per-run scratch
-# namespace (gh-issue-intake-formats.md) — an issue number is NOT unique, and a clobbered file
-# reads back cleanly as another run's body, preserving the WRONG original (#3718). Keyed on the
-# session id so composing dup-comment.md in a later Bash call still resolves this same directory:
-RUN_SCRATCH="${TMPDIR:-/tmp}/kampus-run/${CLAUDE_CODE_SESSION_ID:?§SP: session id unset — refusing a shared path (#3718)}/triage-close-<N>"
-mkdir -p "$RUN_SCRATCH" || { echo "§SP: no per-run scratch dir — refusing a shared path (#3718)." >&2; exit 1; }
-gh api "repos/$REPO/issues/<N>" --jq '.body' > "$RUN_SCRATCH/dup.md"   # then wrap in <details> and:
-gh api "repos/$REPO/issues/<M>/comments" -f body="$(cat "$RUN_SCRATCH/dup-comment.md")"
+# step 1 only when closing as a duplicate of #M. Both scripts resolve the SAME §SP per-run scratch
+# namespace through the shared lib's kp_scratch_* seam — an issue number is NOT unique, and a
+# clobbered file reads back cleanly as another run's body, preserving the WRONG original (#3718).
+RUN_SCRATCH="$("${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/triage/scripts/fetch-duplicate-body.sh" <N>)" || exit 1
+# then wrap $RUN_SCRATCH/dup.md in <details> as $RUN_SCRATCH/dup-comment.md, and:
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/triage/scripts/post-duplicate-comment.sh" <N> <M>
 # steps 2-4, every kill:
-gh api "repos/$REPO/issues/<N>/comments" -f body="Closing not-planned: <specific reason>."
-gh api "repos/$REPO/issues/<N>/labels" -f "labels[]=closed-by-triage"
-gh api -X PATCH "repos/$REPO/issues/<N>" -f state=closed -f state_reason=not_planned
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/triage/scripts/close-not-planned.sh" <N> "<specific reason>."
 ```
+
+The scripts live in [`scripts/`](scripts/) alongside the rest of this skill's extracted shell; the
+extraction contract and the `set -uo pipefail`-without-`-e` rationale are in
+[`SKILL.md` § The extracted scripts](./SKILL.md#the-extracted-scripts).
 
 The maintainer audits all kills with one query, so over-closing is caught and reopened
 cheaply:
 
 ```bash
-gh api "repos/$REPO/issues?state=closed&labels=closed-by-triage" \
-  --jq '.[] | "#\(.number) \(.title)"'
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/triage/scripts/audit-kills.sh"
 ```

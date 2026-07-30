@@ -44,15 +44,41 @@ resolution** ([`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md), 
 defaulting to `kamp-us/phoenix` with no config:
 
 ```bash
-REPO="${CLAUDE_PIPELINE_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}"
+REPO="$("${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/triage/scripts/resolve-repo.sh")" || exit 1
 ```
+
+Every script under [`scripts/`](scripts/) resolves the repo the same way through the shared lib's
+`kp_repo`, so you never thread `$REPO` into one — that assignment is for your own ad-hoc `gh api`
+reads.
 
 List the queue:
 
 ```bash
-gh api "repos/$REPO/issues?state=open&labels=status:needs-triage&per_page=100" \
-  --jq '.[] | "#\(.number) (\(.user.login)) \(.title)"'
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/triage/scripts/list-queue.sh"
 ```
+
+## The extracted scripts
+
+This skill's shell lives in [`scripts/`](scripts/), one script per step, and each fenced block below
+is an **invocation** of one — including the blocks in [`close-not-planned.md`](./close-not-planned.md).
+The prose keeps the *why*; the scripts hold the *how* (epic #4435 phase 1 — the shell moved as-is,
+and turning its `gh`/`jq` glue into tested `pipeline-cli` verbs is #1929). Three properties are
+load-bearing when you read or edit them:
+
+- **They set `set -uo pipefail`, deliberately not `-e`.** The moved glue decides its own control flow
+  through the guards written into it — a `|| true` on a delete that may legitimately 404, a
+  state-word assertion instead of an exit-status test, a read whose empty result is an answer.
+  `errexit` would abort those paths mid-decision and turn a fail-closed branch into no branch at all.
+- **An exit status is the answer; an empty stdout never is.** Every script's failure paths exit
+  non-zero, and the one script with a permissive branch —
+  [`scripts/claim-issue.sh`](scripts/claim-issue.sh) — reaches exit 0 only through its checkpoint GET
+  proving the claim, printing `claim: won #N`. So "could not run" can never read as "claimed" or as
+  "no duplicate found".
+- **Cross-step state travels through the §SP scratch namespace, not shell variables.** Each agent
+  Bash call is a fresh process, so the Step-4 pair (`fetch-original.sh` → `patch-body.sh`) and the
+  duplicate-preservation pair (`fetch-duplicate-body.sh` → `post-duplicate-comment.sh`) re-derive one
+  directory through the shared lib's `kp_scratch_open` / `kp_scratch_path` — `open` resets, `path`
+  never does, which is why the second half of each pair uses `path` (#3718).
 
 ## The glossary — read `.glossary/`, use the canonical terms
 
@@ -81,39 +107,10 @@ lock; the protocol below is detect-and-tiebreak, **not** mutual exclusion. Run i
 **per issue**, immediately before any mutation (split, rewrite, or label):
 
 ```bash
-ME=$(gh api user --jq '.login')
-
-# Rule 0 — defer to a pre-existing owner. If #N is already claimed (by a sibling sweep,
-# or — see the release note below — by a write-code agent that picked an already-triaged
-# issue), back off WITHOUT POSTing and move to the next issue. A fresh arrival never
-# evicts an owner that was there before it.
-PRE=$(gh api repos/$REPO/issues/<N> --jq '[.assignees[].login] | sort | join(" ")')
-[ -n "$PRE" ] && continue   # already claimed → skip this issue, take the next
-
-# POST self; capture the FULL assignees list the write returns (one observable write).
-ASSIGNEES=$(gh api -X POST repos/$REPO/issues/<N>/assignees \
-  -f "assignees[]=$ME" --jq '[.assignees[].login] | sort | join(" ")')
-
-# Provisional tiebreak among co-racers: min-login. The POST echo only DETECTS a race
-# (staggered co-racers see different sets and both may compute themselves min); the
-# checkpoint GET below RESOLVES it. See §7 for the full derivation.
-WINNER=$(printf '%s\n' $ASSIGNEES | head -n1)
-if [ "$WINNER" = "$ME" ]; then
-  for a in $ASSIGNEES; do
-    [ "$a" = "$ME" ] && continue
-    gh api -X DELETE repos/$REPO/issues/<N>/assignees -f "assignees[]=$a"
-  done
-  # CHECKPOINT — re-read canonical state (a fresh GET, not the stale POST echo) and
-  # re-confirm I am still min(assignees). This is what resolves the race; do not prune it.
-  STILL=$(gh api repos/$REPO/issues/<N> --jq '[.assignees[].login] | sort | join(" ")')
-  [ "$(printf '%s\n' $STILL | head -n1)" = "$ME" ] || {
-    gh api -X DELETE repos/$REPO/issues/<N>/assignees -f "assignees[]=$ME"; continue; }
-  # claim won and confirmed → triage this issue (Steps 1–6), then RELEASE in Step 6
-else
-  # lost the tiebreak: self-clean and take the next issue (do NOT triage — do NOT co-occupy)
-  gh api -X DELETE repos/$REPO/issues/<N>/assignees -f "assignees[]=$ME"
-  continue
-fi
+# exit 0 = claim WON and confirmed → triage #N, then release in Step 6.
+# non-zero = backed off (3: already claimed, or lost the tiebreak) or could not run (1) —
+# either way, do NOT triage #N. The script's own header states the full exit-code contract.
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/triage/scripts/claim-issue.sh" <N> || continue
 ```
 
 **You MUST release the claim when you finish triaging** (Step 6) — triage's claim is a
@@ -145,15 +142,13 @@ point** for the human path: a UI/hand-filed issue never ran `report`'s pre-file 
 keywords, excluding itself so it never flags itself:
 
 ```bash
-# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
-PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
-"$PCLI" intake-dedup check \
-  --query "<this issue's title + a few distinguishing keywords>" \
-  --exclude <N>
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/triage/scripts/dedup-check.sh" \
+  "<this issue's title + a few distinguishing keywords>" <N>
 ```
 
 It prints one `#<n>\t<title>` line per candidate open issue that may already cover this
-observation (empty output ⇒ no likely duplicate), fusing the read-after-write `needs-triage`
+observation — empty output ⇒ no likely duplicate, but **only on a zero exit**: a non-zero exit means
+the check never ran, which is UNKNOWN, never "clean" — fusing the read-after-write `needs-triage`
 queue with the eventually-consistent search index — the two sources this skill used to query
 by hand. It resolves the target repo itself (ADR 0062 §1), so it needs no `$REPO`.
 
@@ -306,21 +301,11 @@ How to split:
    empty husk open.
 
 ```bash
-# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
-PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
-# 1. Create-once guard: skip the POST if a child already covers this (parent, title) unit (#3464).
-EXISTING=$("$PCLI" split-guard check \
-  --parent "$N" --title "<single-unit title>")
-if [ -n "$EXISTING" ]; then
-  echo "split-guard: $EXISTING already covers this unit — reusing, not creating a twin"
-else
-  # 2. Body MUST carry the `split from #<N>` back-reference — it is the guard's create-once key.
-  #    The `tracker create-issue` verb owns this intake-create envelope (ADR 0190;
-  #    `packages/pipeline-cli/src/tools/tracker/`), filing a status:needs-triage issue — don't
-  #    hand-roll the `gh api repos/$REPO/issues` create (the adoption lint (#3254) flags it).
-  "$PCLI" tracker create-issue --title "<single-unit title>" --body "$BODY"
-  # then cross-link via a comment on the original (Step 6 shows the comment call)
-fi
+# The script runs the create-once guard first and only files when no child covers the unit; the
+# body arrives as a FILE because it is multi-line markdown and MUST carry `split from #<N>`, the
+# guard's create-once key. Cross-link via a comment on the original afterwards (Step 6).
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/triage/scripts/split-child.sh" \
+  <N> "<single-unit title>" "<path/to/child-body.md>"
 ```
 
 ---
@@ -403,33 +388,17 @@ in [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §SP. An iss
 body**, so triage would silently preserve the wrong original inside `<details>` (#3718):
 
 ```bash
-# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
-PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
-# §SP: the per-run scratch namespace — deterministic + fail-closed, never a shared fallback.
-# Keyed on the session id (not a bare `mktemp -d`) because the PATCH block below runs in a LATER
-# Bash call, where every shell variable is gone: it re-derives this same path to read body.md back.
-[ -n "${CLAUDE_CODE_SESSION_ID:-}" ] || {
-  echo "triage: §SP — CLAUDE_CODE_SESSION_ID unset; refusing to write issue bodies to a shared path (#3718)." >&2; exit 1; }
-RUN_SCRATCH="${TMPDIR:-/tmp}/kampus-run/$CLAUDE_CODE_SESSION_ID/triage-<N>"
-rm -rf "$RUN_SCRATCH" && mkdir -p "$RUN_SCRATCH" || {
-  echo "triage: §SP could not create a per-run scratch dir — refusing to write issue bodies to a shared path (#3718)." >&2; exit 1; }
-
-gh api "repos/$REPO/issues/<N>" --jq '.body' > "$RUN_SCRATCH/original.md"
-# redact any machine-local path leak in the ORIGINAL before it goes into <details>; leak-free
-# originals pass through byte-for-byte. Reuses the shared leak matcher — no divergent patterns.
-"$PCLI" redact-leaks --body-file "$RUN_SCRATCH/original.md" > "$RUN_SCRATCH/original.redacted.md"
-# assemble the <details> block from the REDACTED original, never the raw one
+# Prints the §SP scratch dir; writes original.md and original.redacted.md into it. Assemble the
+# <details> block from the REDACTED original, never the raw one.
+RUN_SCRATCH="$("${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/triage/scripts/fetch-original.sh" <N>)" || exit 1
 ```
 
 Assemble the new body in a temp file — under `$RUN_SCRATCH` for the same reason — and read it
 into `$BODY` so multi-line markdown, backticks, and the nested fences survive the shell:
 
 ```bash
-RUN_SCRATCH="${TMPDIR:-/tmp}/kampus-run/${CLAUDE_CODE_SESSION_ID:?§SP: session id unset (#3718)}/triage-<N>"   # §SP re-derive — same recipe as the block above, NO reset
-[ -s "$RUN_SCRATCH/body.md" ] || {
-  echo "triage: §SP — $RUN_SCRATCH/body.md is missing/empty; refusing to PATCH the issue with an empty body." >&2; exit 1; }
-BODY="$(cat "$RUN_SCRATCH/body.md")"
-gh api -X PATCH "repos/$REPO/issues/<N>" -f body="$BODY"
+# Re-derives the SAME §SP namespace (non-resetting) and refuses on a missing/empty body.md.
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/triage/scripts/patch-body.sh" <N>
 ```
 
 **Epics are the exception — wrap-in-place, never rewrite-on-top.** An epic's original
@@ -643,9 +612,9 @@ the numbers you may assign to:
 
 ```bash
 # the home candidates: the arc/campaign rows and the open milestones they pin to
-gh api "repos/$REPO/milestones?state=open" --jq '.[] | "#\(.number)\t\(.title)"'
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/triage/scripts/list-open-milestones.sh"
 # assign — one single-field, last-write-wins PATCH (benign, #91); by NUMBER, never title
-gh api -X PATCH "repos/$REPO/issues/<N>" -f milestone=<n>
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/triage/scripts/assign-milestone.sh" <N> <n>
 ```
 
 - **Existing open milestones only — triage NEVER creates one.** Match against the set that
@@ -734,9 +703,7 @@ approval "on his behalf," and do not treat your own draft as approved.
 issue you just drafted, so a red names *this* issue rather than the whole backlog:
 
 ```bash
-# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
-PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
-"$PCLI" pitch-guard check --issue <N>   # out-of-scope issues pass; a red is this draft
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/triage/scripts/pitch-guard.sh" <N>   # out-of-scope issues pass; a red is this draft
 ```
 
 An **unapproved** pitch is a legitimate, expected state for a freshly-triaged issue — the guard
@@ -758,9 +725,7 @@ queue (its `status:needs-triage` removed). Apply the whole transition with the `
 verb — the classification is the parameter, the label plumbing is the verb's:
 
 ```bash
-# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
-PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
-"$PCLI" tracker apply-triage <N> --type <type> --p <priority>
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/triage/scripts/apply-triage.sh" <N> <type> <priority>
 ```
 
 The verb adds the `type:` / priority / `status:triaged` labels and drops the queue label
@@ -782,10 +747,8 @@ this confirms the pair landed rather than racing it; the invariant is enforced a
 not re-swept by hand later:
 
 ```bash
-# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
-PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
-"$PCLI" homing-guard check --issue <N>   # the issue you just triaged
-"$PCLI" homing-guard check               # the whole open triaged backlog
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/triage/scripts/homing-guard.sh" <N>   # the issue you just triaged
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/triage/scripts/homing-guard.sh"       # the whole open triaged backlog
 ```
 
 ### Close not-planned (kill, agent issues only)
@@ -811,8 +774,7 @@ consistency: a parked `needs-info` issue or a closed one should carry no stray t
 claim. The DELETE is idempotent — a 404 means it was already unassigned, which is fine.
 
 ```bash
-ME=$(gh api user --jq '.login')
-gh api -X DELETE repos/$REPO/issues/<N>/assignees -f "assignees[]=$ME" 2>/dev/null || true
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/triage/scripts/release-claim.sh" <N>
 ```
 
 (A `closed-by-triage` issue is closed *and* unassigned; a needs-info issue is parked with
@@ -873,9 +835,7 @@ three applies is out of triage's scope (ADR
 
 ```bash
 # open milestones at 100% — 0 open issues, at least one closed (an empty milestone is not "done")
-gh api "repos/$REPO/milestones?state=open&per_page=100" \
-  --jq '.[] | select(.open_issues == 0 and .closed_issues > 0)
-        | "#\(.number)\t\(.title)\t(\(.closed_issues) closed, 0 open)"'
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/triage/scripts/completed-milestones.sh"
 ```
 
 Surface the matches in the sweep ledger (Step 5's report-back) as a **flag to the EA** — one
