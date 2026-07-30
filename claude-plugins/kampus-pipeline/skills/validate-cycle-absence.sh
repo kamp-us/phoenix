@@ -22,11 +22,20 @@
 # This guards the COMPOSITION of #597 (the hook) + #598–#601 (the four skill changes): if a
 # future edit drops the probe or flips an absent branch to a hardcoded flag, this fails the
 # build instead of silently breaking portability.
-set -euo pipefail
+# No `-e`, deliberately: this script installs a cleanup EXIT trap, and on bash 3.2 errexit +
+# an EXIT trap launders a `set -u` abort into exit 0 — a green guard over an unevaluated path
+# (#4479). See .patterns/skill-script-shell-shape.md for the measured matrix. Every command
+# whose failure errexit used to catch is checked explicitly below.
+set -uo pipefail
 
 # Same self-locating idiom as validate-skills.sh: this script lives in .claude/skills/, so
 # its own dir IS the skills root — resolve from BASH_SOURCE so it works from any cwd.
 skills_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ ! -d "$skills_dir" ]; then
+	echo "FAIL: could not resolve the skills root from ${BASH_SOURCE[0]} — refusing to scan an unresolved root (ADR 0092)"
+	echo "validate-cycle-absence: FAILED — 1 error(s); the scan root could not be resolved"
+	exit 1
+fi
 
 # kp_skill_shell_surfaces resolves each skill's scan surface — SKILL.md PLUS its extracted
 # scripts/*.sh (#4470). Sourced, not re-derived: the surface convention and its resolver live
@@ -135,6 +144,11 @@ done
 # same well-known path, same absent⇒no-op rule) against a synthetic repo root that has NO
 # cycle doc. This is the doc-absent scenario actually run, not just asserted in prose.
 tmp_root="$(mktemp -d)"
+if [ -z "$tmp_root" ] || [ ! -d "$tmp_root" ]; then
+	echo "FAIL: mktemp -d produced no temp root — refusing to run the hermetic walkthrough against nothing (ADR 0092)"
+	echo "validate-cycle-absence: FAILED — 1 error(s); the hermetic scenario could not be set up"
+	exit 1
+fi
 trap 'rm -rf "$tmp_root"' EXIT
 
 # A foreign install: a repo root with the usual files but no product-development-cycle.md.

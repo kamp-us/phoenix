@@ -22,16 +22,30 @@
 # MUST be present in phoenix (the present path must actually be exercised), and the static
 # scope (the cycle-aware skills) must be non-empty — a run that matched zero skills, or one
 # missing the cycle doc, is a FAIL, never a silent skip. The scanned scope is emitted.
-set -euo pipefail
+# No `-e`, deliberately: this script installs a cleanup EXIT trap, and on bash 3.2 errexit +
+# an EXIT trap launders a `set -u` abort into exit 0 — a green guard over an unevaluated path
+# (#4479). See .patterns/skill-script-shell-shape.md for the measured matrix. Every command
+# whose failure errexit used to catch is checked explicitly below.
+set -uo pipefail
 
 # Self-locating, same idiom as validate-cycle-absence.sh: this script lives in the skills
 # root, so its own dir IS that root — resolve from BASH_SOURCE (physical path, -P, so the
 # .claude/skills symlink doesn't poison the repo-root walk below) so it works from any cwd.
 skills_dir="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ ! -d "$skills_dir" ]; then
+	echo "FAIL: could not resolve the skills root from ${BASH_SOURCE[0]} — refusing to scan an unresolved root (ADR 0092)"
+	echo "validate-cycle-presence: FAILED — 1 error(s); the scan root could not be resolved"
+	exit 1
+fi
 # The repo root that holds product-development-cycle.md. Prefer git (robust to where the
 # script lives in the tree); fall back to the physical plugin path
 # (<root>/claude-plugins/kampus-pipeline/skills) when git is unavailable.
 repo_root="$(git -C "$skills_dir" rev-parse --show-toplevel 2>/dev/null || (cd "$skills_dir/../../.." && pwd))"
+if [ -z "$repo_root" ] || [ ! -d "$repo_root" ]; then
+	echo "FAIL: could not resolve the repo root from $skills_dir — the present-path probe has no root to read (ADR 0092)"
+	echo "validate-cycle-presence: FAILED — 1 error(s); the repo root could not be resolved"
+	exit 1
+fi
 
 # kp_skill_shell_surfaces resolves each skill's scan surface — SKILL.md PLUS its extracted
 # scripts/*.sh (#4470). Sourced, not re-derived: the surface convention and its resolver live
@@ -132,6 +146,11 @@ done
 # cycle-step does. This is the doc-present scenario actually run — the inverse of the absence
 # script's doc-absent walkthrough.
 tmp_root="$(mktemp -d)"
+if [ -z "$tmp_root" ] || [ ! -d "$tmp_root" ]; then
+	echo "FAIL: mktemp -d produced no temp root — refusing to run the hermetic walkthrough against nothing (ADR 0092)"
+	echo "validate-cycle-presence: FAILED — 1 error(s); the hermetic scenario could not be set up"
+	exit 1
+fi
 trap 'rm -rf "$tmp_root"' EXIT
 
 # A phoenix-shaped install: a repo root with a product-development-cycle.md at the root.
