@@ -1106,68 +1106,15 @@ on any miss — never a silent pass. This is the single source; each review skil
 prevent):
 
 ```bash
-# verdict_readback_guard <comment-id> <gate> <head-sha>: re-read the just-posted verdict comment
-# and PROVE it is a well-formed, leak-free, current-head-bound marker. FAIL LOUD (non-zero) on any
-# miss — a broken marker reads to consumers as "no verdict", or worse a human skims it as posted.
-# <gate> is one of: review-code | review-doc | review-skill | review-design — ALL FOUR PR gates, the
-# same set the emit mandate below scopes and the same set the verdict lib enumerates (VerdictGate).
-verdict_readback_guard() {
-  local cid="$1" gate="$2" sha="$3"
-  local got; got="$(gh api "repos/$REPO/issues/comments/$cid" --jq .body)" || {
-    echo "verdict_readback_guard FAILED: cannot re-read comment $cid — treat the verdict as UNLANDED." >&2; return 1; }
-
-  # (0) the body is non-empty. An empty/whitespace-only body carries no marker at all — the degenerate
-  #     case of a garbled post (#2268); reject it up front so the failure names the real cause rather
-  #     than falling through to (1)'s "no marker".
-  if [ -z "$(printf '%s' "$got" | tr -d '[:space:]')" ]; then
-    echo "verdict_readback_guard FAILED: comment $cid is empty/whitespace — no verdict landed; the PR is UNGATED." >&2; return 1
-  fi
-
-  # (1) the canonical gate marker token is present: either the bindable first-line
-  #     `<gate>: PASS|FAIL @ <sha>` (SHA prefix-matched, ADR 0058), OR the SHA-less `<gate>: advisory`
-  #     first line (blocking-set path — authorizes nothing but IS a posted verdict).
-  printf '%s' "$got" | grep -Eiq "^[[:space:]]*\**[[:space:]]*${gate}:[[:space:]]*(PASS|FAIL)[[:space:]]*@[[:space:]]*${sha:0:7}" \
-    || printf '%s' "$got" | grep -Eiq "^[[:space:]]*\**[[:space:]]*${gate}:[[:space:]]*advisory" \
-    || { echo "verdict_readback_guard FAILED: no canonical '${gate}:' marker (PASS/FAIL @ ${sha:0:7} or advisory) in comment $cid — the body is malformed; the PR is UNGATED." >&2; return 1; }
-
-  # (2) Head binding — SHA-SOURCE-AWARE (#2272), and every verdict body binds the reviewed head:
-  #     - a bindable first line (`<gate>: PASS|FAIL @ <sha>`) carries the binding inline — (1) already
-  #       validated it against ${sha:0:7}, so a non-blocking binding PASS/FAIL needs no separate line
-  #       (this is the branch that keeps a legitimate non-blocking PASS from false-failing; #2272).
-  #     - a SHA-less advisory first line (`<gate>: advisory`, ALL FOUR gates INCL review-code) MUST
-  #       carry the canonical body `Reviewed-head: @ <sha>` line (§6.6 / ADR 0151) — absence is FATAL.
-  #       (#2329: the prior "review-code's §CP advisory carries NONE by design → accept its absence"
-  #       carve-out contradicted §6.6's own MUST and blinded the read-back to a drifted
-  #       `**Reviewed head:**` variant — bold, space-not-hyphen, backticked SHA — that does NOT match
-  #       `^Reviewed-head:` and that ship-it's §6.6 enqueue matcher then rejects, leaving a genuinely
-  #       -approved §CP PASS silently unshippable until a human hand-re-posts. Requiring the canonical
-  #       line on every advisory makes a drifted line read as absent → FATAL here → forces a canonical
-  #       re-post at EMISSION time, never a ship-it refusal on an approved PR.)
-  #     - ANY `Reviewed-head:` line present (advisory, or a belt-and-suspenders non-blocking PASS) must
-  #       bind ${sha:0:7} — a mis-bound/stale one is ALWAYS fatal (a wrong head must never read verified).
-  if printf '%s' "$got" | grep -Eiq "^[[:space:]]*\**[[:space:]]*${gate}:[[:space:]]*(PASS|FAIL)[[:space:]]*@[[:space:]]*${sha:0:7}"; then
-    : # bindable first line: its `@ <sha>` IS the head binding (validated by (1))
-  elif ! printf '%s' "$got" | grep -Eiq "^[[:space:]]*Reviewed-head:"; then
-    echo "verdict_readback_guard FAILED: SHA-less advisory in comment $cid carries no canonical 'Reviewed-head: @ ${sha:0:7}' line — §6.6/ADR 0151 requires it on ALL four gates' advisories (incl review-code); a drifted '**Reviewed head:**' variant reads as absent. Re-post the canonical 'Reviewed-head: @ <sha>' line (hyphen, no bold, no backticks around the SHA)." >&2; return 1
-  fi
-  # a present `Reviewed-head:` line (advisory OR a non-blocking PASS that also carries it) must bind head:
-  if printf '%s' "$got" | grep -Eiq "^[[:space:]]*Reviewed-head:"; then
-    printf '%s' "$got" | grep -Eiq "^[[:space:]]*Reviewed-head:[[:space:]]*@?[[:space:]]*${sha:0:7}" \
-      || { echo "verdict_readback_guard FAILED: 'Reviewed-head:' line in comment $cid is bound to the wrong head (not @ ${sha:0:7}) — a stale/mis-bound head binding." >&2; return 1; }
-  fi
-
-  # (3) NO local filesystem path leaked into the public body (the #2148/#2268 leak). Reject a
-  #     machine-local scratch/home path or a leading `@<path>` marker-as-path. Match by absolute ROOT
-  #     (`/Users`, `/var`, `/tmp`, `/private`) — the roots a `mktemp`/scratchpad path lands under —
-  #     not just `/var/folders/`, so a leaked path under any of them cannot read green (#2268). Patterns
-  #     are placeholders, not real paths — this doc stays leak-clean.
-  if printf '%s' "$got" | grep -Eq '(/var/|/Users/|/tmp[/.]|/private/|(^|[[:space:]])~/|(^|[[:space:]])@/)'; then
-    echo "verdict_readback_guard FAILED: comment $cid leaks a local filesystem path in its body — a #2148/#2268 marker-as-path leak; refuse and re-post the real verdict." >&2; return 1
-  fi
-
-  echo "verdict_readback_guard OK: ${gate} verdict @ ${sha:0:7} landed on comment $cid — marker + head binding valid, no local-path leak."
-}
+KP_SHARED="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/skills/shared/scripts"
+. "$KP_SHARED/verdict-readback.sh"                                  # §SHARED: both guards, one source
+verdict_readback_guard "$CID" review-code "$HEAD_SHA" || …          # <gate> ∈ review-{code,doc,skill,design}
 ```
+
+[`shared/scripts/verdict-readback.sh`](shared/scripts/verdict-readback.sh) carries the four checks and
+their reasons: **(0)** a non-empty body, **(1)** a canonical `<gate>:` marker — the bindable
+`PASS|FAIL @ <sha>` first line or the SHA-less `advisory` one, **(2)** the SHA-source-aware head
+binding, **(3)** no local-filesystem-path leak. Any miss returns non-zero and names the cause.
 
 Gate it exactly like the by-value post it follows: right after the `PATCH`/`POST` upsert returns the
 comment id, call `verdict_readback_guard "$CID" <gate> "$HEAD_SHA"` and, on non-zero, **re-post the
@@ -1213,63 +1160,16 @@ actually landed for the head, and **hard-fails (non-zero)** on absent / broken /
 or path-leaking marker is a **fatal** error the gate cannot silently pass:
 
 ```bash
-# verdict_post_verify <PR> <gate> <head-sha>: the UNCONDITIONAL post-verification, run after ANY
-# verdict post/upsert (native APPROVE, comment PATCH-upsert, comment POST, advisory). It does NOT
-# rely on a $MINE/$CID captured on one posting branch — it RE-SCANS the PR's live state to resolve
-# whatever landed, then proves it well-formed + leak-free. Returns 0 ONLY on a proven-clean landed
-# verdict; non-zero (FATAL) on absent / malformed / leaking.
-# <gate> ∈ review-code|review-doc|review-skill|review-design — all four PR gates, same set as above.
-verdict_post_verify() {
-  local PR="$1" gate="$2" sha="$3" me cid approved rbody
-  me="$(gh api user --jq .login)"
-  # (A) resolve MY landed marker COMMENT id for this gate — the SHA-bound `<gate>: PASS|FAIL @ <sha>`
-  #     first line OR the SHA-less `<gate>: advisory` line — re-scanned from PR state, NOT a carried id.
-  #     A whole-body-path leak (#2264) has NO `<gate>:` first line, so it resolves empty here → caught in (C).
-  cid=$(gh api "repos/$REPO/issues/$PR/comments?per_page=100" \
-    | jq -r --arg me "$me" --arg g "$gate" --arg sha "${sha:0:7}" '
-        [ .[] | select(.user.login==$me)
-              | select((.body | test("^\\s*\\**\\s*" + $g + ":\\s*(PASS|FAIL)\\s*@\\s*" + $sha; "i"))
-                        or (.body | test("^\\s*\\**\\s*" + $g + ":\\s*advisory"; "i"))) ]
-        | sort_by(.created_at) | last | .id // empty')
-  # (B) or a native approving REVIEW GitHub bound to this exact head (commit_id == head; its own SHA anchor):
-  approved=$(gh api "repos/$REPO/pulls/$PR/reviews?per_page=100" \
-    --jq "[.[] | select(.user.login==\"$me\" and .commit_id==\"$sha\" and .state==\"APPROVED\")] | length")
-  rbody=$(gh api "repos/$REPO/pulls/$PR/reviews?per_page=100" \
-    --jq "[.[] | select(.user.login==\"$me\" and .commit_id==\"$sha\" and .state==\"APPROVED\")] | last | .body // empty")
-  echo "verdict_post_verify: PR #$PR ${gate} @ ${sha:0:7} -> comment=${cid:-none} native-approve=${approved:-0}"
-
-  # (C) FATAL: nothing bound to this head landed — the post no-opped, OR the body carries no marker
-  #     line at all (the #2264 whole-body-path leak leaves no `<gate>:` first line). The PR is UNGATED.
-  if [ -z "$cid" ] && [ "${approved:-0}" -eq 0 ]; then
-    echo "verdict_post_verify FAILED (fatal): no ${gate} verdict bound to head ${sha:0:7} landed on PR #$PR — the post no-opped or the marker's first line is absent (a whole-body local-path leak leaves no marker). Re-post the real by-value verdict; if it still cannot land, report a POSTING FAILURE — the PR is ungated." >&2
-    return 1
-  fi
-
-  # (D) UNCONDITIONAL shape + leak read-back on the landed COMMENT — covers PATCH-upsert, POST, and
-  #     advisory (every comment post path). $cid came from a re-scan, so this runs no matter which
-  #     branch posted; the guard asserts marker shape + `Reviewed-head:` + NO local-path leak.
-  if [ -n "$cid" ]; then
-    verdict_readback_guard "$cid" "$gate" "$sha" || {
-      echo "verdict_post_verify FAILED (fatal): landed ${gate} comment $cid on PR #$PR is malformed or leaks a local filesystem path — delete/re-post the real by-value verdict and re-verify; never leave a broken/leaking marker." >&2
-      return 1
-    }
-  fi
-
-  # (E) UNCONDITIONAL leak check on the native-APPROVE body too. The APPROVE body is by-value, but a
-  #     hand-assembled body could still carry a local path; its SHA binding is the commit_id, so ONLY
-  #     the leak check applies (no `Reviewed-head:` line is required of a native approve). LINEAR regex
-  #     (literal alternation + anchored `(^|[[:space:]])` — no nested quantifier, no ReDoS), the same
-  #     pattern verdict_readback_guard uses; paths are placeholders, keeping this doc leak-clean.
-  if [ "${approved:-0}" -gt 0 ] && [ -n "$rbody" ]; then
-    if printf '%s' "$rbody" | grep -Eq '(/var/|/Users/|/tmp[/.]|/private/|(^|[[:space:]])~/|(^|[[:space:]])@/)'; then
-      echo "verdict_post_verify FAILED (fatal): native APPROVE review body on PR #$PR leaks a local filesystem path — dismiss/re-post a clean by-value verdict." >&2
-      return 1
-    fi
-  fi
-
-  echo "verdict_post_verify OK: ${gate} verdict @ ${sha:0:7} landed clean on PR #$PR (comment=${cid:-none} native-approve=${approved:-0}) — present, well-formed, leak-free."
-}
+KP_SHARED="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/skills/shared/scripts"
+. "$KP_SHARED/verdict-readback.sh"                                  # §SHARED: the wrapper and the guard it calls
+verdict_post_verify "$PR" review-code "$HEAD_SHA" || exit 1         # UNCONDITIONAL, after ANY post/upsert
 ```
+
+It resolves the landed verdict from live PR state — **(A)** my SHA-bound or advisory marker comment,
+**(B)** a native `APPROVE` whose `commit_id` is this head — never from a carried `$MINE`/`$CID`; then
+**(C)** hard-fails when nothing bound to the head landed, **(D)** runs the read-back on the landed
+comment whichever branch posted it, and **(E)** leak-checks the native-`APPROVE` body too. Returns 0
+only on a proven-clean landed verdict.
 
 **Why this closes the #2264 recurrence — the post-path enumeration.** Every way a gate can land a
 verdict now routes through the same unconditional read-back, because `verdict_post_verify` resolves
@@ -1478,28 +1378,27 @@ amount to is the canonical `CONTROL_PLANE_RE=` line in the next subsection.
 **nested** `.claude-plugin/` dir — the branch is root-anchored, and `kampus-pipeline`'s own
 `plugin.json` is a genuine sibling gap to file rather than patch by hand (ADR
 [0212](https://github.com/kamp-us/phoenix/blob/main/.decisions/0212-marketplace-manifest-is-control-plane.md)
-Consequences); the `heal-ci`, `what-shipped`, `doctor`, and `wayfinder` skills, which gate no merge
-and hold no release authority (ADR
-[0174](https://github.com/kamp-us/phoenix/blob/main/.decisions/0174-bare-sh-guards-control-plane-gate.md))
-— that exclusion scopes to skill **dirs**, so `doctor/doctor.sh` (and any future `.sh` under those
-four) is still §CP by the `.sh` clause, which scopes to `.sh` **files** at any depth;
-and the crew engine defs under `claude-plugins/pipeline-crew/agents/**`, which class **has-skills**
-yet auto-ship on a `review-skill` PASS, because merge authority lives in `ship-it` and `shipper.md`
+Consequences); and the crew engine defs under `claude-plugins/pipeline-crew/agents/**`, which class
+**has-skills** yet auto-ship on a `review-skill` PASS, because merge authority lives in `ship-it` and `shipper.md`
 — both §CP, both re-verifying the §CP approval independently — so the worst a weakened crew def can
 do is fail to bank (live founder ruling, re-affirmed 2026-07-24 on
 [#3765](https://github.com/kamp-us/phoenix/issues/3765)). Do **not** widen `CONTROL_PLANE_RE` by
-hand to cover any of them.
+hand to cover either of them. ADR 0174's four operational skill dirs — `heal-ci`, `what-shipped`,
+`doctor`, `wayfinder` — are **no longer** out: the whole `kampus-pipeline` skills tree is §CP, the
+**directory** being the unit of coverage rather than the file type, so no naming convention has to
+hold and the boundary cannot rot as skills are added (ADR 0227).
 
 A PR touching **any** path in this set is **control plane**: `ship-it` never auto-merges it off a
 gate verdict alone — it merges only once a `@kamp-us/control-plane` member approves at head, and
 `ship-it` then enqueues it. Every widening of the boundary, and the reason for each, is an ADR —
-0053, 0065, 0073, 0100, 0103, 0135, 0150, 0174, 0193, 0212, 0218 — plus the founder ruling on
-[#3402](https://github.com/kamp-us/phoenix/issues/3402). Read them in `.decisions/`, where ADR
+0053, 0065, 0073, 0100, 0103, 0135, 0150, 0174, 0193, 0212, 0218, 0227 — plus the founder rulings on
+[#3402](https://github.com/kamp-us/phoenix/issues/3402) and
+[#4446](https://github.com/kamp-us/phoenix/issues/4446). Read them in `.decisions/`, where ADR
 discovery is the CLAUDE.md contract; they are not restated here.
 Everything else — `apps/**`,
 **non**-guard `packages/**`, `.decisions/**` (**except a guard-touching ADR** — see the content
 clause below), `.patterns/**`, every prose doc `*.md` (the
-§DOC class), and every **non**-gate-critical `skills/**` — is **non-blocking** and
+§DOC class), and every **non**-`kampus-pipeline` plugin's `skills/**` — is **non-blocking** and
 auto-merges through its matching gate on a PASS. (This set governs *who merges*, not *which gate verifies* — a
 code-root `*.md` is non-blocking here yet rides `review-code`, not `review-doc`, per §DOC.)
 
@@ -1526,7 +1425,7 @@ against MAIN's boundary, not its own edit) and must not move to an in-tree impor
 # the single probe ship-it Step 0, review-code Step 2, review-doc Step 0, and review-skill
 # Step 0 all use — kept byte-in-sync with the pipeline-cli const (issue #2761); the live gates
 # re-resolve THIS line from origin/main (#981), so it stays here as the one un-importable copy:
-CONTROL_PLANE_RE='^(\.claude|\.github)/|^\.claude-plugin/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-design|review-plan|triage|write-code|plan-epic|release|review-trivial)/|^claude-plugins/kampus-pipeline/skills/([^/]+/)*[^/]+\.sh$|^claude-plugins/kampus-pipeline/agents/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\.md$|^claude-plugins/kampus-pipeline/hooks(/|\.json$)|^packages/ci-required/|^packages/pipeline-cli/src/[^/]+$|^packages/pipeline-cli/src/tools/(ci-required|codeowners-cp|control-plane-paths|cp-cardinality|cp-classify|review-head|trivial-diff|verdict)/|^packages/pipeline-cli/src/tools/tracker/gh-io\.ts$|^biome\.jsonc$|^biome-plugins/|^([^/]+/)*(lefthook|\.lefthook)[^/]+$'
+CONTROL_PLANE_RE='^(\.claude|\.github)/|^\.claude-plugin/|^claude-plugins/kampus-pipeline/skills/|^claude-plugins/kampus-pipeline/agents/|^claude-plugins/kampus-pipeline/hooks(/|\.json$)|^packages/ci-required/|^packages/pipeline-cli/src/[^/]+$|^packages/pipeline-cli/src/tools/(ci-required|codeowners-cp|control-plane-paths|cp-cardinality|cp-classify|review-head|trivial-diff|verdict)/|^packages/pipeline-cli/src/tools/tracker/gh-io\.ts$|^biome\.jsonc$|^biome-plugins/|^([^/]+/)*(lefthook|\.lefthook)[^/]+$'
 # The list this regex is matched against is a fallible READ, so it comes from §CPREAD's
 # `cp_changed_files` (defined below) — never a bare `gh api … | grep` pipe. With pipefail off that
 # pipe reports grep's status and discards gh's, so a failed read matches nothing and reads as "no §CP
@@ -1918,32 +1817,16 @@ and every path falls through to the doc test). This is the same stance as §CP's
 `CONTROL_PLANE_RE='.'` and `UI_RE`'s fail-closed `has-ui`:
 
 ```bash
-# Re-resolve a canonical _RE= line from gh-issue-intake-formats.md@main (#981 ?ref=main idiom).
-# Prints the live value, or the fail-closed default $2 when the line is unreadable OR TRIVIAL.
-FORMATS_RAW="$(gh api "repos/$REPO/contents/claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md?ref=main" -H 'Accept: application/vnd.github.raw' 2>/dev/null || true)"
-# NON-TRIVIALITY ASSERT (#4401) — the guard every resolution site below runs before it gates on a
-# freshly-stripped pattern. A strip that silently did NOT strip (a surviving `grep -n` line-number
-# prefix broke the `^NAME='` anchor) or that yielded nothing still COMPILES: `grep -E ""` matches
-# every path and `grep -Ev ""` matches none, BOTH at exit 0 — so the polarity, not the error, decides
-# whether the miss is loud or silent. Absence was already handled; triviality was not.
-accept_re() {   # $1=name, $2=resolved value, $3=fail-closed default
-  case "$2" in
-    *"$1='"*) : ;;   # the assignment prefix survived the strip ⇒ not a pattern, a whole line
-    *) if [ "${#2}" -ge 4 ]; then printf '%s' "$2"; return 0; fi ;;
-  esac
-  printf 'TRIVIAL-GATE-BOUNDARY: %s did not resolve to a usable pattern — failing closed.\n' "$1" >&2
-  printf '%s' "$3"
-}
-reresolve_re() {   # $1=var name, $2=fail-closed default
-  live="$(printf '%s\n' "$FORMATS_RAW" | grep "^$1=" | head -n1 || true)"
-  if [ -z "$live" ]; then printf '%s' "$2"; return 0; fi
-  accept_re "$1" "$(printf '%s' "$live" | sed "s/^$1='//; s/'\$//")" "$2"
-}
-HAS_CODE_RE="$(reresolve_re HAS_CODE_RE '.')"
-HAS_SKILLS_RE="$(reresolve_re HAS_SKILLS_RE '.')"
-HAS_DOCS_EXCLUDE_RE="$(reresolve_re HAS_DOCS_EXCLUDE_RE '\$^')"   # fail-closed: exclude NOTHING ⇒ every path reaches the doc test
-HAS_DOCS_RE="$(reresolve_re HAS_DOCS_RE '.')"                     # fail-closed: every path is a doc
+KP_SHARED="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/skills/shared/scripts"
+. "$KP_SHARED/class-probe-resolve.sh"   # §SHARED: leaves the four live HAS_*_RE in this shell
 ```
+
+[`shared/scripts/class-probe-resolve.sh`](shared/scripts/class-probe-resolve.sh) makes the single
+`?ref=main` raw read, strips each canonical `_RE=` line, and runs the **non-triviality assert**
+(`accept_re`, #4401) before any caller gates on the result: a strip that silently did not strip, or
+yielded nothing, still *compiles* — `grep -E ""` matches every path and `grep -Ev ""` matches none,
+both at exit 0 — so the polarity, not the error, would decide whether the miss is loud or silent.
+Absence was already handled; triviality was not.
 
 ### The doc/vocab-surface predicate — the issueless allowance's axis (`DOC_VOCAB_*_RE`)
 
@@ -2109,51 +1992,18 @@ copies apart. Each gate runs it — `iso_preflight <surface> || exit 1` — **be
 head fetch / `git worktree add`:
 
 ```bash
-# iso_preflight <surface>: the shared primary-checkout fail-closed guard every head-materializing
-# gate runs BEFORE its first head fetch / `git worktree add` (§RO). Reviewer/shipper sibling of
-# write-code's Step-4 wt_preflight (ADR 0172) — the SAME git-dir==common-dir detection, the SAME
-# isolation-expected fork. Read-only (git rev-parse only); safe to re-run.
-iso_preflight() {
-  local surface="$1" gitdir common iso=0
-  gitdir="$(git rev-parse --absolute-git-dir 2>/dev/null)" || {
-    echo "$surface iso_preflight FAILED (fail-closed): not inside a git repository — refusing to materialize a PR head." >&2; return 1; }
-  common="$(git rev-parse --git-common-dir 2>/dev/null)"
-  case "$common" in /*) ;; *) common="$(pwd)/$common" ;; esac   # normalize a relative `.git` (older git)
-  common="$(cd "$common" && pwd)"
-  # Isolation was EXPECTED when the run is under an isolation-asserting pipeline agent-type —
-  # coder/reviewer/shipper all spawn isolation:worktree (agents/{coder,reviewer,shipper}.md) — read
-  # from the harness-set $CLAUDE_CODE_AGENT (stable across an agent's Bash calls, unlike a shell
-  # export), corroborated by a set $WORKTREE_ROOT. A genuine standalone run (a human /review-code,
-  # /ship-it) matches NEITHER. Critically the LOUD refusal fires on the AGENT-TYPE ALONE and does
-  # NOT key on $WORKTREE_ROOT being set — so the #2440 no-op (isolation requested, $WORKTREE_ROOT
-  # unset, which also disarms the $WORKTREE_ROOT-keyed worktree-guard) still trips this preflight;
-  # it is then the sole surviving layer, exactly as in write-code (ADR 0172).
-  # The THIRD clause is the env-independent corroboration — parity with the repo-side guard's
-  # `isIsolationExpected` (bash-pin.ts) and write-code's Step-4 detector (#3406): a NESTED/renamed
-  # spawn inherits the PARENT's agent-type string (e.g. `crew-engineering-manager`, ADR 0189), so the
-  # NAME match goes inert for it — but any agent-context run ($CLAUDE_CODE_AGENT non-empty) sitting on
-  # the PRIMARY checkout (gitdir == common) is a broken/absent worktree whatever its inherited name,
-  # and this clause arms regardless of the string. Do NOT hard-code an agent-type name to patch a
-  # rename — the corroboration removes the coupling rather than relocating it (#3406, #2462).
-  case "$CLAUDE_CODE_AGENT" in *coder*|*reviewer*|*shipper*) iso=1 ;; esac
-  [ -n "$WORKTREE_ROOT" ] && iso=1
-  [ -n "$CLAUDE_CODE_AGENT" ] && [ "$gitdir" = "$common" ] && iso=1
-  echo "$surface iso_preflight: git-dir=$gitdir common-dir=$common cwd=$(pwd) isolation-expected=$iso (agent=${CLAUDE_CODE_AGENT:-unset} worktree-root=${WORKTREE_ROOT:+set})"
-  if [ "$gitdir" = "$common" ]; then
-    if [ "$iso" = 1 ]; then
-      echo "$surface iso_preflight FAILED (fail-closed, LOUD): worktree isolation was EXPECTED (agent=${CLAUDE_CODE_AGENT:-?}, worktree-root=${WORKTREE_ROOT:+set}) but this run is on the PRIMARY checkout (git-dir == common-dir) and \$WORKTREE_ROOT is unset." >&2
-      echo "  Refusing to fetch / \`git worktree add\` the PR head here — the #2440 harness no-op left this $surface spawn in the shared primary checkout, and a head-materialization run there is the #2452/#2453 primary-checkout-detach surface. The \$WORKTREE_ROOT-keyed repo-side worktree-guard is disarmed by the same no-op, so THIS preflight is the only surviving layer." >&2
-      echo "  Do NOT self-provision a worktree to route around it — that hides the harness failure and leaves the primary-corruption defense collapsed to one, invisibly (#2270)." >&2
-      echo "  ROUTED BLOCKER — surface UP to the operator/EM: 'harness worktree provisioning no-op'd for a $surface spawn (isolation expected, \$WORKTREE_ROOT unset); the out-of-repo harness half (#2440) needs attention. Do NOT blindly retry the same spawn.'" >&2
-      return 1
-    fi
-    # isolation NOT expected ⇒ a genuine standalone run on the owner's primary checkout. This gate
-    # never mutates the launched tree (§RO): it materializes the head ONLY into a throwaway worktree
-    # / per-run ref, so operating from the primary checkout is safe here — proceed, no LOUD stop.
-    echo "$surface iso_preflight: standalone run on the primary checkout — proceeding read-only via the §RO throwaway-worktree / per-run-ref materialization (the launched tree is never mutated)." >&2
-  fi
-}
+KP_SHARED="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/skills/shared/scripts"
+. "$KP_SHARED/iso-preflight.sh"        # §SHARED: read-only, git rev-parse only, safe to re-run
+iso_preflight review-code || exit 1    # BEFORE the first head fetch / `git worktree add`
 ```
+
+[`shared/scripts/iso-preflight.sh`](shared/scripts/iso-preflight.sh) carries the detection and its
+three isolation-expected clauses: the agent-type name, a set `$WORKTREE_ROOT`, and the
+env-independent corroboration (any agent-context run sitting on the primary checkout — the clause
+that catches a nested/renamed spawn whose inherited agent-type string names no role, #3406). The LOUD
+refusal fires on the **agent type alone**, so the #2440 no-op that also disarms the
+`$WORKTREE_ROOT`-keyed repo-side `worktree-guard` still trips this preflight as the sole surviving
+layer.
 
 The fork is what keeps this **non-breaking for a legitimate standalone gate**: §RO explicitly
 runs a gate "in a checkout it does not own — often the owner's live checkout," and that
@@ -2269,12 +2119,8 @@ classification — make the refusal explicit, so an unresolved CLI can never be 
 verdict:
 
 ```bash
-[ -x "$PCLI" ] || {
-  echo "pipeline-cli: UNRESOLVED at '$PCLI' — the CLI never ran, so this gate has NO result." >&2
-  echo "  Resolve to UNKNOWN, never to clean/negative (§WL: a read that could not run is not an answer)." >&2
-  echo "  This is a resolution gap, NOT worktree teardown (teardown = exit 1 ENOENT on a tracked file, then exit 126)." >&2
-  exit 127
-}
+KP_SHARED="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/skills/shared/scripts"
+. "$KP_SHARED/cli-require.sh"   # §SHARED: refuses (127) unless $PCLI resolved — UNKNOWN, never a verdict
 ```
 
 This section owns the **call-site resolution** half only. Two adjacent seams own the rest and
