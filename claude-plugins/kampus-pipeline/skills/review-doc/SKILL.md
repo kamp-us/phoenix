@@ -590,30 +590,40 @@ Run each, scoped to the files the PR touches:
    (check the target file is in the repo at the PR head). A dead in-repo link is a FAIL.
    In-repo links must be standard markdown relative paths, not Obsidian `[[wikilinks]]`
    (CLAUDE.md conventions).
-4. **No leaked local/home paths — the #158 class.** The diff introduces **no** absolute
-   home/local/vault path: grep the added lines for `/Users/`, a leading `~/`, `~/.claude`,
-   `~/.agent`, or vault-style sibling-repo paths. Repo-relative paths only. This is a hard
-   FAIL — a leaked path in a committed doc is the exact regression class #158 exists to
-   stop.
+4. **No leaked local/home paths — the #158 class.** The diff introduces **no** machine-local
+   path — a home directory, an absolute machine path, a scratch/temp root, or a sibling-repo
+   clone. Repo-relative paths only. This is a hard FAIL — a leaked path in a committed doc is
+   the exact regression class #158 exists to stop.
+
+   Run the shared matcher over the added lines. **Do not restate the forbidden shapes** — not
+   here, not in a character class, not in your evidence row. The pattern set is single-sourced
+   in `packages/pipeline-cli/src/tools/leak-guard/path-matcher.ts`, so an inline copy drifts
+   from it; and because this row's evidence lands in a verdict comment, a spelled-out token is
+   read back by `leak-guard scan-pr` as a real leak and fail-closes the shipper on a PR that
+   leaks nothing (#4220).
 
    ```bash
-   # added lines only ('+'), scanned for home/local/vault path leaks
-   gh pr diff $PR | grep -E '^\+' | grep -nE '/Users/|[^A-Za-z0-9]~/|~/\.(claude|agent)|/vault/'
+   # §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
+   PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
+   # added lines only ('+'), scanned by the shared matcher: exit 0 = clean, 2 = leak found
+   # any OTHER non-zero (4 = the fail-closed stdin read, #4010) is an UNRESOLVED scan, never a pass
+   gh pr diff "$PR" | grep '^+' | "$PCLI" leak-guard scan-comment
    ```
 
+   Cite a hit by the **class** the scan names and the `file:line` from the diff hunk it sits
+   in — never by quoting the matched token, which just moves the leak into your verdict.
+
    A hit is a FAIL **unless it is one of the deliberate-non-leak cases — judge each in
-   context**: a fenced *example* of what-not-to-do, or — for a doc whose subject *is* path
-   hygiene (a path-hygiene check, skill, convention doc, or the check's own pattern/prose;
-   **this very SKILL.md is the canonical false positive** — it spells out `/Users/`,
-   `~/.claude`, `~/.agent`, `/vault/` as the *pattern*, not as real paths) — a token that
-   is **documented as the leak pattern** rather than **committed as a real path**. The
-   discriminator is exactly that: committed-as-a-real-path → FAIL; documented-as-a-pattern
-   → expected, pass. For an ordinary doc the default is still fail. Note that a path PR is
-   often in the blocking set anyway (this file touches `.claude/`, so your verdict here is
-   advisory — Step 0), but a sibling path-hygiene doc *outside* `.claude/`/`.github/` is
-   non-blocking and would hit this carve-out for real. The line number `grep -n` prints is
-   the position in the filtered stream, not the file line — locate the real `file:line`
-   from the diff hunk the hit sits in.
+   context**: a fenced *example* of what-not-to-do, or a doc whose subject *is* path hygiene
+   (a path-hygiene check, skill, or convention doc) where the token is **documented as the
+   pattern** rather than **committed as a real path**. The guard encodes that carve-out for
+   the *file* surface as its own self-exempt list, and this SKILL.md is on it; the added-lines
+   scan above carries no such list, so the judgment is yours. The discriminator is exactly
+   that: committed-as-a-real-path → FAIL; documented-as-a-pattern → expected, pass. For an
+   ordinary doc the default is still fail. Note that a path-hygiene PR is often in the
+   blocking set anyway (this file touches `.claude/`, so your verdict here is advisory —
+   Step 0), but a sibling path-hygiene doc *outside* `.claude/`/`.github/` is non-blocking
+   and would hit this carve-out for real.
 5. **Supersession noted + cross-linked.** If this doc replaces or amends a prior decision,
    the **superseding** doc names what it supersedes *and* the **superseded** doc is updated
    to point forward (its **frontmatter `status`** reflects `superseded by [NNNN]` — the
@@ -1093,7 +1103,7 @@ Verified PR #<PR> against #<ISSUE>'s acceptance criteria + the doc-hygiene check
 
 **Doc hygiene**
 - [PASS] House-format — <evidence>
-- [FAIL] No leaked local/home paths — `<the leaked /Users/… or ~/… line>` at <file:line>
+- [FAIL] No leaked local/home paths — added-lines scan hit <the class the matcher named> at <file:line>; cite the class, never the matched token
 - [FAIL] Single Diátaxis mode — host <mode> intrudes into <mode> at <file:line>; split <what> to <surface>
 - [PASS] Clear, concise prose (Strunk, no AI-tell density) — <evidence>
 - [UNVERIFIABLE] <check> — <why; what'd make it checkable>
