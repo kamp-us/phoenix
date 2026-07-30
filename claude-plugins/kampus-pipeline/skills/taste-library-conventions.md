@@ -81,10 +81,8 @@ an existing `pipeline-cli` subcommand; if you believe a script is genuinely requ
 raise it as a scope decision. Verify before opening the PR:
 
 ```bash
-# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
-PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
-git diff --name-only origin/main... | "$PCLI" cp-classify classify
 # proven-ordinary ⇒ exit 3. control-plane ⇒ exit 0 ⇒ something under your diff is owned; find it.
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/shared/scripts/cp-classify-working-diff.sh"
 ```
 
 ## 4. The SKILL.md / STANDARDS.md split

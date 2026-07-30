@@ -70,11 +70,13 @@ You need two things before the ritual:
    touch a flag:
 
    ```bash
-   cd packages/anka-ops
-   node src/bin.ts auth status   # reports where each credential resolves from and whether it authenticates
+   # reports where each credential resolves from and whether it authenticates
+   "${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/release/scripts/auth-status.sh"
    ```
 
-   If `auth status` reports the effective resolution does **not** authenticate, run
+   **Read its exit status before its output.** A non-zero exit means the pre-flight never ran, which is
+   UNKNOWN and not "credentials fine" — the absence of a failure line is only reassuring on exit 0. If
+   `auth status` reports the effective resolution does **not** authenticate, run
    `node src/bin.ts auth login` (prompts for the token + account id, validates them against an
    authenticated read **before** persisting, stores both in the Keychain) and re-check. Do not
    proceed on unauthenticated credentials — every step below would fail mid-ritual.

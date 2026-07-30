@@ -67,6 +67,10 @@ above all — before it printed its refusal. Two notes:
   ([`scripts/open-roadmap-pr.sh`](scripts/open-roadmap-pr.sh)). A script that ran `git switch -c`
   would mutate whichever checkout the caller happened to be sitting in — a footgun the extraction
   would have *introduced* rather than moved.
+- **A zero-length listing is an exit code, not silence.** [`scripts/list-wave.sh`](scripts/list-wave.sh)
+  exits 4 on a label naming zero issues and 1 on a read that never landed, because "no members" is the
+  permissive-looking answer and must never be what a failed read looks like (§ZS / ADR 0092). Read the
+  exit status before the lines.
 
 ## Preconditions — the wave label, the lifecycle direction, the campaign name
 
@@ -77,8 +81,9 @@ You need three inputs before the ritual:
 
    ```bash
    WAVE_LABEL="<the shared wave label>"
-   gh api -X GET "repos/$REPO/issues" -f "labels=$WAVE_LABEL" -f state=all -f per_page=100 --paginate \
-     --jq '.[] | select(.pull_request | not) | "#\(.number)\t\(.state)\t\(.title)"'
+   # one `#<n>\t<state>\t<title>` line per member. Exit 4 = the label names ZERO issues (no wave);
+   # exit 1 = the read never landed, which is UNKNOWN and never an empty cluster.
+   "${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/campaign/scripts/list-wave.sh" "$WAVE_LABEL"
    ```
 
 2. **The lifecycle direction — `active` (create) or `done` (complete).** Default is `active`
@@ -127,7 +132,7 @@ product arc:
   milestone for this wave, attach to it. List open milestones and match by title/description:
 
   ```bash
-  gh api "repos/$REPO/milestones?state=all&per_page=100" --jq '.[] | "#\(.number)\t\(.state)\t\(.title)"'
+  "${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/campaign/scripts/list-milestones.sh"
   ```
 
 - **Otherwise provision the campaign's own milestone** — the roadmap act the founder approval
@@ -135,10 +140,9 @@ product arc:
   milestone):
 
   ```bash
-  MILESTONE_NUMBER=$(gh api -X POST "repos/$REPO/milestones" \
-    -f "title=<Campaign name> campaign" \
-    -f "description=<one-line campaign scope> (bounded, platform-lane drained)." \
-    --jq .number)
+  MILESTONE_NUMBER="$("${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/campaign/scripts/create-milestone.sh" \
+    "<Campaign name> campaign" \
+    "<one-line campaign scope> (bounded, platform-lane drained).")" || exit 1
   ```
 
 Then **stamp the milestone on every wave-labeled issue** so the milestone projection matches the
@@ -230,7 +234,8 @@ run the **same gate** (Step 1), so completing a campaign is exactly as guarded a
   2. **Close the milestone** — the operational projection of a finished campaign:
 
      ```bash
-     gh api -X PATCH "repos/$REPO/milestones/$MILESTONE_NUMBER" -f state=closed >/dev/null
+     "${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/campaign/scripts/close-milestone.sh" \
+       "$MILESTONE_NUMBER" || exit 1
      ```
   3. **Flip the ROADMAP row to `done`** in a Campaigns-row PR (Step 4, `done` variant) — the row's
      `State` cell goes `active → done`, keeping the milestone pin.

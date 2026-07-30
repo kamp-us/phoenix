@@ -48,11 +48,18 @@ it once, at the top of your run, per the shared contract's **Target repo resolut
 REPO="$("${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/canon/scripts/resolve-repo.sh")" || exit 1
 ```
 
+## The extracted scripts
+
 This skill's shell lives in [`scripts/`](scripts/), and each fenced block is an **invocation** of one
 (epic #4435 phase 1 — the shell moved as-is; turning its glue into tested `pipeline-cli` verbs is
-#1929). They set `set -uo pipefail`, deliberately not `-e`: the self-checks below use a `grep` whose
-empty result is an *answer*, and `errexit` would abort on it. Each check therefore prints an explicit
-verdict word, so "the check found nothing" and "the check never ran" are never the same output.
+#1929). They set `set -uo pipefail`, deliberately not `-e`, and install no `EXIT` trap: the self-checks
+below use a `grep` whose empty result is an *answer*, `errexit` would abort on it, and on bash 3.2 a
+`set -u` abort that reaches an `EXIT` trap yields exit **0** — a fail-closed script exiting clean having
+printed its FAIL (#4476, class #4479). Each check therefore prints an explicit verdict word, so "the
+check found nothing" and "the check never ran" are never the same output — and the two listing scripts
+([`scripts/list-pattern-docs.sh`](scripts/list-pattern-docs.sh),
+[`scripts/pattern-doc-drift.sh`](scripts/pattern-doc-drift.sh)) give an empty result its own exit code
+(4) so it can never be read as a clean one (§ZS / ADR 0092).
 
 The **paths themselves are repo-relative** — `.patterns/` at the repo root — resolved from
 the working tree, never an absolute or home path. Resolve the repo root with
@@ -141,8 +148,8 @@ Run it when there's no doc worth preserving for a pattern that clears the index 
    don't duplicate one:
 
    ```bash
-   ROOT="$(git rev-parse --show-toplevel)"
-   ls "$ROOT"/.patterns/*.md
+   # exit 4 = there is no pattern-doc library (or it is empty) — a fact to confirm, not a listing
+   "${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/canon/scripts/list-pattern-docs.sh"
    ```
 
 2. **Read the source for the concern, in layers.** Stop as soon as you can name the decision
@@ -187,16 +194,15 @@ change. Surgical — touch the drifted parts, preserve everything else.
    last update; scan what changed in the source it describes since then, not the whole repo:
 
    ```bash
-   ROOT="$(git rev-parse --show-toplevel)"
-   # the commit that last touched this pattern doc — the lower bound of "what changed since"
-   LAST=$(git -C "$ROOT" log -1 --format=%H -- .patterns/<name>.md)
-   # the source surfaces that changed since then (scope to the dirs the doc describes)
-   git -C "$ROOT" diff --name-status "$LAST"..HEAD -- <source-dirs>
+   # the source surfaces that changed since the doc last moved. Exit 4 = the doc has never been
+   # committed, which is the BOOTSTRAP case below and not an empty drift.
+   "${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/canon/scripts/pattern-doc-drift.sh" \
+     "<name>" <source-dirs>
    ```
 
-   If the doc has never been committed, that's the bootstrap case. If `LAST` is empty for
-   another reason, fall back to the working-tree diff
-   (`git -C "$ROOT" diff --name-status HEAD -- <source-dirs>`).
+   Exit 4 means the doc has never been committed — that's the bootstrap case. If the doc *is*
+   committed and the lower bound still won't resolve, fall back to the working-tree diff
+   (`git -C "$(git rev-parse --show-toplevel)" diff --name-status HEAD -- <source-dirs>`).
 
 2. **Classify each source change against the doc:**
    - **A new approach / API shape** the doc doesn't cover → **add** the section, grounded in
