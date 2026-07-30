@@ -83,6 +83,13 @@ block below is an **invocation** of one. The prose keeps the *why*; the scripts 
   `epic-lock`, `intake-compose sub-issue`, `epic-splice apply`, `tracker graduate` — and never
   re-derives the decision that verb owns (ADR 0228).
 
+[`scripts/verify-extraction.sh`](scripts/verify-extraction.sh) is the runnable harness for those
+four properties across **both** halves of the planning gate (this skill and
+[`review-plan`](../review-plan/SKILL.md)) — invocation-only fences, no bare `pipeline-cli`, no
+user-local path, `shellcheck -x`, the shared-lib source, no cleanup trap on `EXIT`, no unguarded
+empty-array expansion, and the two failure-path probes asserted on **both** exit code and stdout
+byte count. Run it after editing any script here; it fails closed on zero scope.
+
 ## The formats contract
 
 You **write three of the five** shared formats; read them before you start:

@@ -88,6 +88,10 @@ is #1929). Three properties are load-bearing when you read or edit them:
   straight through; the pass/fail decision stays the validator's, exactly as Step 1 requires
   (ADR 0228).
 
+The runnable harness for those properties covers **both** halves of the planning gate and lives with
+the other half: [`../plan-epic/scripts/verify-extraction.sh`](../plan-epic/scripts/verify-extraction.sh).
+Run it after editing any script here; it fails closed on zero scope.
+
 ## Read-only on git working state
 
 **You never mutate the git working tree of the checkout you run in** — the single canonical
