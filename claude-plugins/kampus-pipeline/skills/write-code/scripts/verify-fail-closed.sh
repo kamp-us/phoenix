@@ -8,13 +8,13 @@
 #    — the script produced no answer at all, so there is nothing for a caller to mistake for one. A
 #    printed message is not proof, which is why the byte count is measured rather than eyeballed.
 #
-# 2. ZERO COVERAGE DELTA for the two guards this extraction NARROWS. `cli-invocation-guard` is
-#    fence-scoped to markdown (#4486), so it does not inspect a `.sh` and its clean run is VACUOUS
-#    over these files — the delta is zero only if they carry nothing it would have flagged, which is
-#    what the first grep measures. `leak-guard` now scans `.sh` as a second surface (#4507 landed
-#    SHELL_SUFFIXES), so its coverage of these scripts is real rather than vacuous; the second grep
-#    stays as an independent, deliberately-broader restatement of every arm of the shared matcher.
-#    This harness is itself DOC_SELF_EXEMPT there — see the scope note in section 2.
+# 2. ZERO COVERAGE DELTA for the two guards that follow this shell out of SKILL.md into `scripts/`.
+#    Both reach a `.sh` at this head: `cli-invocation-guard` scans a shell file as one implicit
+#    whole-file fence (#4486 is CLOSED, fixed by #4494), and `leak-guard` scans `.sh` as a second
+#    surface (#4507 landed SHELL_SUFFIXES). So the CI-enforced coverage of these scripts is real,
+#    not vacuous, and neither grep below is the only thing standing over them — each is an
+#    independent, deliberately-broader restatement of a guard's matcher, run at authoring time
+#    instead of merge time. This harness is itself DOC_SELF_EXEMPT in leak-guard — see section 2.
 #
 # Usage:  bash claude-plugins/kampus-pipeline/skills/write-code/scripts/verify-fail-closed.sh
 set -uo pipefail
