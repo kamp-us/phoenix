@@ -1502,8 +1502,12 @@ dashes; the `@ <sha>` is required (ADR 0058). Token order is fixed (§VERDICT): 
 **immediately after** `FAIL`, before `— not merge-ready`. (And `ship-it` reads it as the mirror
 of PASS: a FAIL marker means *do not merge*.)
 
-Post it as an **upsert** — `PATCH` your own prior `review-code:` marker if one exists, else
-`POST` — exactly as the PASS path (one `review-code` verdict comment per PR, ADR 0058 rule 2).
+Post it as an **upsert on the §VERDICT key — (PR, gate-namespace, head, run)** — exactly as the
+PASS path: `verdict post` replaces a prior `review-code:` marker only when that marker matches
+*this head and this run*, and appends otherwise, so a re-review at a new head leaves the prior
+head's verdict standing and a concurrent run never overwrites another's record (ADR 0058 rule 2,
+refined by ADR 0213). Never hand-roll the `PATCH` — §VERDICT forbids a raw comment patch of a
+verdict body, which bypasses `emissionDefect` and the §READBACK re-scan.
 As on the PASS path, **resolve `HEAD_SHA` once, before composing the verdict file**, and embed
 that same value in the marker's `@ <HEAD_SHA>` first line — so the SHA the comment carries and
 any later use are one single-sourced read, never two independent resolutions that could

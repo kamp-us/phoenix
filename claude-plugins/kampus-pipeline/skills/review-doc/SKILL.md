@@ -919,8 +919,8 @@ The upsert (scan your own prior `review-doc:` marker → `PATCH` it, else `POST`
 namespace guard are the ADR-0058 glue **all four gates share**, so they live in one
 deterministic, unit-tested tool — `pipeline-cli verdict post` (#2102) — rather than re-hand-rolled
 `jq` here. `verdict post` PATCHes only your *newest* own marker, so on a PR migrated from the
-pre-0058 append era a few older SHA-less own markers may linger — the one-per-gate invariant is
-**forward-looking**, and those legacy duplicates are tolerated because `ship-it`'s consumer
+pre-0058 append era a few older SHA-less own markers may linger — the (PR, gate-namespace, head,
+run) key is **forward-looking**, and those legacy duplicates are tolerated because `ship-it`'s consumer
 SHA-refuses any marker without an `@ <sha>` on the current head (Step 2b). It also refuses
 fail-closed if the body's first line is not a `review-doc:` marker — the cross-namespace
 emission guard (§the never-a-`review-code`-marker invariant) enforced by the tool, not by care.
@@ -1055,13 +1055,12 @@ Verified against #<ISSUE>'s acceptance criteria + doc hygiene — all checks pas
 
 Post the advisory line **as a comment, not a native `REQUEST_CHANGES`/review** — the
 blocking-set path is comment-only too, exactly like the PASS and FAIL paths (ADR 0058
-rule 4). Upsert it the same way (`PATCH` your own prior `review-doc:` marker if one exists,
-else `POST`):
+rule 4). Upsert it the same way, on the §VERDICT key — (PR, gate-namespace, head, run):
 
 ```bash
 # $VERDICT resolved above (in-repo-first, published-fallback; ADR 0062/0064). The advisory line
-# opens with `review-doc:` too, so `verdict post`'s namespace guard accepts it and upserts it the
-# same way — one comment per gate, PATCH own prior marker else POST.
+# opens with `review-doc:` too, so `verdict post`'s namespace guard accepts it and upserts it on
+# the same (PR, gate-namespace, head, run) key — replacing only this head+run's own record.
 VERDICT_FILE="$(mktemp /tmp/review-doc-verdict.XXXXXX)"
 # write your composed advisory verdict into "$VERDICT_FILE" (first line: review-doc: advisory — blocking-set PR (§CP — approval-gated))
 $VERDICT post --pr "$PR" --gate doc --body-file "$VERDICT_FILE"
@@ -1080,15 +1079,17 @@ One or more checks failed (or were unverifiable). **Nothing merges. The PR stays
 the issue stays open and assigned to whoever claimed it** — don't unassign, relabel, or
 close. Post a comment whose first line is the namespaced, SHA-bound FAIL marker (the seam
 `write-code`'s fix round-trip keys on), with the full per-check table — the passing rows
-too, so the author sees how close they are. **Upsert** it (`PATCH` your own prior
-`review-doc:` marker if one exists, else `POST`) exactly as the PASS path — one `review-doc`
-verdict comment per PR (ADR 0058 rule 2):
+too, so the author sees how close they are. **Upsert** it exactly as the PASS path, on the
+§VERDICT key — (PR, gate-namespace, head, run): `verdict post` replaces a prior `review-doc:`
+marker only when that marker matches *this head and this run*, and appends otherwise, so a
+re-review at a new head leaves the prior head's verdict standing and a concurrent run never
+overwrites another's record (ADR 0058 rule 2, refined by ADR 0213). Never hand-roll the `PATCH`:
 
 ```bash
 HEAD_SHA="$(gh api repos/$REPO/pulls/$PR --jq .head.sha)"   # the head you reviewed
 VERDICT_FILE="$(mktemp /tmp/review-doc-verdict.XXXXXX)"
 # write your composed FAIL verdict into "$VERDICT_FILE" (first line: review-doc: FAIL @ <HEAD_SHA> — changes-requested)
-# $VERDICT resolved above (ADR 0062/0064) — same one-per-gate upsert as the PASS path.
+# $VERDICT resolved above (ADR 0062/0064) — same (PR, gate-namespace, head, run) upsert as the PASS path.
 $VERDICT post --pr "$PR" --gate doc --body-file "$VERDICT_FILE"
 ```
 

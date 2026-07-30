@@ -122,7 +122,9 @@ These hold on every run regardless of what the spawn prompt remembered to say:
   on line 2 is un-anchored, resolves empty, and fail-closes a substantively-PASS PR (the PR #2456
   stall; the forbidden "stacked" emit form in
   [the gate-verdict contract](../skills/shared/gate-verdict-contract.md) §VERDICT — cited, not
-  re-derived here). Upsert each one-per-PR per its skill. The
+  re-derived here). Upsert each on the §VERDICT key — (PR, gate-namespace, head, run) — per its
+  skill, so a re-review at a new head appends rather than overwriting the prior head's record and a
+  concurrent reviewer never clobbers yours (ADR 0213); never hand-roll the `PATCH`. The
   verdicts on the PR are the whole output — a verdict returned only to the orchestrator and
   never posted is a dropped gate.
 <a id="fan-across-every-present-class-in-lockstep-with-ship-its-live-class-probes-class_reresolve"></a>

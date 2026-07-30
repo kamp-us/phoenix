@@ -327,8 +327,13 @@ three of their references still carry their pre-move spellings. Read them as:
   of the formats contract, which stayed there.
 - *"§6.6"* → [§ADVISORY](#advisory-the-canonical-advisory-line--one-form-for-all-four-gates) above —
   the same section under its mnemonic name.
-- the relative link `shared/scripts/verdict-readback.sh` → [`scripts/verdict-readback.sh`](scripts/verdict-readback.sh),
-  the sibling of this file (it was written from the parent directory).
+- the relative link `[shared/scripts/verdict-readback.sh](shared/scripts/verdict-readback.sh)` in
+  §READBACK is **dead at this location — do not follow it.** It was authored one directory up, so
+  from here it resolves to `skills/shared/shared/scripts/verdict-readback.sh`, which does not exist.
+  The working path is [`scripts/verdict-readback.sh`](scripts/verdict-readback.sh), the sibling of
+  this file. It is left unrepaired **deliberately**: §READBACK is a byte-identical move, and editing
+  one byte inside it would forfeit the property that makes the move auditable (#4438). Repairing the
+  link is follow-up work on the block, not on this note.
 
 ### The verdict read-back guard — after posting a gate marker, re-read it and FAIL LOUD (`verdict_readback_guard`)
 

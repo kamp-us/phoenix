@@ -661,8 +661,9 @@ merge on it.
 ```bash
 VERDICT_FILE="$(mktemp /tmp/review-skill-verdict.XXXXXX)"
 # write your composed PASS verdict into "$VERDICT_FILE" (first line: review-skill: PASS @ <HEAD_SHA> — merge-ready)
-# Upsert through the guarded tool: it PATCHes your newest own review-skill marker (namespace-
-# anchored, so a blocking↔non-blocking flip upserts a prior advisory too) else POSTs, and it
+# Upsert through the guarded tool on the (PR, gate-namespace, head, run) key: it replaces this
+# head+run's own review-skill record (namespace-anchored, so a blocking↔non-blocking flip replaces
+# a prior advisory at the same key too) and appends against any other key, and it
 # fail-closes on a malformed/cross-namespace body — the mktemp-path `@ <sha>` leak (#2683) never lands.
 $VERDICT post --pr "$PR" --gate skill --body-file "$VERDICT_FILE"
 ```
@@ -763,10 +764,11 @@ Verified against #<ISSUE>'s acceptance criteria + the skill-rigor checklist — 
 ```
 
 Upsert it the same way as the pass/fail paths — `mktemp` the verdict file (the PR number alone
-isn't unique; a fixed `/tmp/...-${PR}.md` collides under concurrent reviews), then `PATCH` your
-own prior `review-skill:` marker if one exists, else `POST`. The namespace-anchored find filter
-matches a prior PASS/FAIL too, so a re-review that flips a PR to blocking overwrites the old
-binding verdict with this advisory line, on the §VERDICT key — (PR, gate-namespace, head, run)
+isn't unique; a fixed `/tmp/...-${PR}.md` collides under concurrent reviews), then upsert on the
+§VERDICT key — (PR, gate-namespace, head, run): `verdict post` replaces a prior `review-skill:`
+marker only when it matches *this head and this run*, and appends against any other key. The
+namespace-anchored filter matches a prior PASS/FAIL at that key too, so a re-review that flips a PR
+to blocking replaces this run's own binding verdict at this head with the advisory line
 (ADR 0058 rule 2, refined by ADR 0213). The advisory **first line** carries no `@ <sha>` by design (SHA-less, so it never enters
 `ship-it`'s auto-merge namespace — ADR 0111); the reviewed head IS recorded, once, in the body's
 canonical `Reviewed-head: @ <HEAD_SHA>` line (ADR 0151), which `ship-it`'s §CP enqueue reads.
@@ -789,15 +791,19 @@ One or more checks failed (or were unverifiable). **Nothing merges. The PR stays
 issue stays open and assigned to whoever claimed it** — don't unassign, relabel, or close.
 Post a comment whose first line is the namespaced, SHA-bound FAIL marker (the seam
 `write-code`'s fix round-trip keys on), with the full per-check table — the passing rows too,
-so the author sees how close they are. **Upsert** it exactly as the PASS path (one
-`review-skill` verdict comment per PR, ADR 0058 rule 2):
+so the author sees how close they are. **Upsert** it exactly as the PASS path, on the §VERDICT
+key — (PR, gate-namespace, head, run): `verdict post` replaces a prior `review-skill:` marker only
+when that marker matches *this head and this run*, and appends otherwise, so a re-review at a new
+head leaves the prior head's verdict standing and a concurrent run never overwrites another's
+record (ADR 0058 rule 2, refined by ADR 0213). Never hand-roll the `PATCH`:
 
 ```bash
 HEAD_SHA="$(gh api repos/$REPO/pulls/$PR --jq .head.sha)"   # the head you reviewed
 VERDICT_FILE="$(mktemp /tmp/review-skill-verdict.XXXXXX)"
 # write your composed FAIL verdict into "$VERDICT_FILE" (first line: review-skill: FAIL @ <HEAD_SHA> — changes-requested)
-# Upsert through the guarded tool (namespace-anchored, so a fresh FAIL upserts whatever prior
-# review-skill marker exists, advisory included) — fail-closed on a malformed marker (#2683).
+# Upsert through the guarded tool on the (PR, gate-namespace, head, run) key — namespace-anchored,
+# so a fresh FAIL replaces this head+run's own prior review-skill record (an advisory included) and
+# appends against any other key — fail-closed on a malformed marker (#2683).
 $VERDICT post --pr "$PR" --gate skill --body-file "$VERDICT_FILE"
 ```
 

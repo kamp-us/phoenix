@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Upsert the ONE `review-design` verdict comment for a PR through the guarded emit path, and print
-# the comment id. Namespace-anchored (PATCH own prior marker, else POST); fails loud on a malformed
+# Upsert the `review-design` verdict comment through the guarded emit path, and print the comment
+# id. Keyed on (PR, gate-namespace, head, run) — see ADR 0213 — so it replaces only this head+run's
+# own prior marker and appends against any other key; fails loud on a malformed
 # marker — the verdict tool refuses fail-closed before landing unless every SHA field is a clean
 # full 40-hex head SHA (#2683).
 #
