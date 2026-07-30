@@ -83,6 +83,14 @@ for entry in "${CYCLE_SKILLS[@]}"; do
 		[ -n "$surface" ] && surfaces+=("$surface")
 	done < <(kp_skill_shell_surfaces "$skills_dir" "$skill")
 
+	# Guard before expanding: an empty `surfaces` aborts every "${surfaces[@]}" below under
+	# `set -u`, and the EXIT trap then launders that abort into exit 0 (see the resolver's
+	# docblock in shared/lib/common.sh, #4470). Refuse the skill instead of scanning nothing.
+	if [ "${#surfaces[@]}" -eq 0 ]; then
+		fail "$skill: no shell surface resolved (no SKILL.md, no *.sh) — refusing to scan an empty surface (ADR 0092)"
+		continue
+	fi
+
 	scanned_skills=$((scanned_skills + 1))
 	for surface in "${surfaces[@]}"; do
 		scanned_paths+=("${surface#"$skills_dir/"}")
@@ -112,6 +120,10 @@ for entry in "${CYCLE_SKILLS[@]}"; do
 	while IFS= read -r surface; do
 		[ -n "$surface" ] && surfaces+=("$surface")
 	done < <(kp_skill_shell_surfaces "$skills_dir" "$skill")
+	if [ "${#surfaces[@]}" -eq 0 ]; then
+		fail "$skill: no shell surface resolved (no SKILL.md, no *.sh) — refusing to scan an empty surface (ADR 0092)"
+		continue
+	fi
 	if grep -qiE 'cycle (doc|step) (is )?(always|unconditionally)' "${surfaces[@]}"; then
 		fail "$skill: appears to assume the cycle doc is always present — graceful absence requires the probe to gate it"
 	fi

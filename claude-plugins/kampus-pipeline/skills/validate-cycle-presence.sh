@@ -94,6 +94,14 @@ for entry in "${CYCLE_SKILLS[@]}"; do
 		[ -n "$surface" ] && surfaces+=("$surface")
 	done < <(kp_skill_shell_surfaces "$skills_dir" "$skill")
 
+	# Guard before expanding: an empty `surfaces` aborts every "${surfaces[@]}" below under
+	# `set -u`, and the EXIT trap then laundered that abort into exit 0 (see the resolver's
+	# docblock in shared/lib/common.sh, #4470). Refuse the skill instead of scanning nothing.
+	if [ "${#surfaces[@]}" -eq 0 ]; then
+		fail "$skill: no shell surface resolved (no SKILL.md, no *.sh) — refusing to scan an empty surface (ADR 0092)"
+		continue
+	fi
+
 	scanned_skills=$((scanned_skills + 1))
 	for surface in "${surfaces[@]}"; do
 		scanned_paths+=("${surface#"$skills_dir/"}")
@@ -194,7 +202,7 @@ else
 fi
 
 # Emitted scope (ADR 0092): every run states what it looked at.
-echo "scanned scope: ${scanned_skills} cycle-aware skill(s) [${scanned_paths[*]}]; phoenix cycle doc: $([ -f "$repo_root/$CYCLE_DOC_PATH" ] && echo present || echo MISSING)"
+echo "scanned scope: ${scanned_skills} cycle-aware skill(s) [${scanned_paths[*]-}]; phoenix cycle doc: $([ -f "$repo_root/$CYCLE_DOC_PATH" ] && echo present || echo MISSING)"
 
 if [ "$errors" -gt 0 ]; then
 	echo "validate-cycle-presence: FAILED — $errors error(s); phoenix's present cycle-doc path is not real (a present-branch action is missing, or the gate scanned zero scope — ADR 0091/0092)"

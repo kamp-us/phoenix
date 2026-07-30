@@ -33,6 +33,13 @@
 # — the same guard-in-text/absent-in-effect defect, reintroduced from the other side. A skill that
 # extracts its cycle wiring into the shared lib therefore FAILS these validators, loudly, which is
 # the correct direction: per-skill wiring stays per-skill, or the validator is updated deliberately.
+#
+# EMITS NOTHING for a skill directory with no SKILL.md and no `*.sh` (and still exits 0 — an
+# empty surface is not an error here, it is a fact the CALLER must decide about). A caller that
+# collects the lines into an array must therefore check the array is non-empty BEFORE expanding
+# it: under `set -u` on bash 3.2 `"${arr[@]}"`/`"${arr[*]}"` on an empty array aborts the script,
+# and with a cleanup `trap … EXIT` installed the trap's own exit status becomes the script's — so
+# a fail-closed validator exits 0 having printed its FAIL lines. Fail OPEN, invisibly (#4470).
 kp_skill_shell_surfaces() {
 	local skills_dir="$1" skill="$2"
 	if [ -f "$skills_dir/$skill/SKILL.md" ]; then
