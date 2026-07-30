@@ -36,7 +36,7 @@ merge-authority script, almost everything feeds the decision). On this ADR's PR 
 resolved that tension himself: he consciously narrowed his own ruling sentence to its derive-keyed
 intent — the bound set is logic that *computes* such a decision, not everything whose output feeds
 one (PR #4533, comment 5128540573). The narrowing carries his sign-off, so it is a ruled reading,
-not a drafting liberty. ADR 0228 stands unamended; the "feeds" phrasing stays discarded exactly as
+not a drafting liberty. ADR 0228 stands unamended by this ADR; the "feeds" phrasing stays discarded exactly as
 0228's amendment section argued, and this ADR extends 0228's derive-keyed boundary by confirming it
 as the corpus-wide answer to #4447 and as phase 2's endpoint (0228's own phase-2 constraint — "any
 decision a script still computes itself becomes a verb" — is that same endpoint).
