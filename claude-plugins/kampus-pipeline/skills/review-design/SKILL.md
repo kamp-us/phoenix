@@ -235,7 +235,13 @@ Two properties are load-bearing when you read or edit them:
   is not "no" (§ZS / ADR
   [0092](https://github.com/kamp-us/phoenix/blob/main/.decisions/0092-gates-fail-closed-on-zero-scope.md);
   #4231, #4010, #4219). **The five sibling extractions inherit this rule** — check each moved block for
-  an empty-means-yes caller before you move it.
+  an empty-means-yes caller before you move it. The `exit` sites are not the whole surface: a fallible
+  read swallowed with `|| true` (or any capture whose failure yields the empty string) reaches the
+  caller as **exit 0 with empty stdout**, which no status check can catch, so audit the reads too.
+  `classify-ui-surface.sh`'s own `gh api … || true` is exactly that shape — preserved byte-identical
+  from the inline block, so out of scope for a byte-faithful move and tracked as
+  [#4493](https://github.com/kamp-us/phoenix/issues/4493), but a sibling writing *new* glue must not
+  reproduce it.
 - **[`scripts/contract-helpers.sh`](scripts/contract-helpers.sh) is a relocated copy, not a source.**
   The blocks that call §CPREAD's `cp_changed_files` / `cp_head_sha` and the
   `verdict_readback_guard` told you to copy those functions verbatim out of
@@ -334,8 +340,10 @@ this verb removes (#4161, formats §CP):
 "${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-design/scripts/classify-control-plane.sh" "$PR"
 ```
 
-Any `BLOCKING (…)` line the script prints is the §CP hold and its reason; **no output** is the one
-positive `not-control-plane` answer. That contract puts the whole weight of the hold on the script
+Read its **exit status before its stdout**, exactly as the off-ramp above does: a **non-zero exit**
+holds the PR as §CP *regardless of what stdout says*. On exit 0, any `BLOCKING (…)` line the script
+prints is the §CP hold and its reason; **no output** is the one positive `not-control-plane` answer.
+That contract puts the whole weight of the hold on the script
 never returning silently, so **every one of its own guard paths prints its own `BLOCKING (…)` line
 before exiting** — a missing `<pr>` argument and an unresolvable target repo both hold the PR as §CP
 rather than returning the 0 bytes that would read as "proven ordinary" (§ZS / ADR 0092; #4231, #4010,
@@ -783,8 +791,10 @@ from the shared contract with the **`review-design`** gate token — it re-reads
 wrote and asserts the canonical `review-design:` marker, the anchored `Reviewed-head: @ <sha>` line,
 and **no leaked local filesystem path** (the #2148 marker-as-path leak).
 [`scripts/verdict-readback.sh`](scripts/verdict-readback.sh) runs exactly that guard, off the
-relocated copy in [`scripts/contract-helpers.sh`](scripts/contract-helpers.sh) which tracks the
-contract byte-for-byte — never write a *different* implementation of it:
+relocated copy in [`scripts/contract-helpers.sh`](scripts/contract-helpers.sh) — the same guard
+semantically, but **not** a byte-for-byte mirror of the contract, and nothing detects that drift
+mechanically yet; the copy's own header records exactly which functions are byte-identical and which
+cosmetic deltas the guard carries. Never write a *different* implementation of it:
 
 ```bash
 CID="$("${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-design/scripts/verdict-upsert.sh" "$PR" "$VERDICT_FILE")"
