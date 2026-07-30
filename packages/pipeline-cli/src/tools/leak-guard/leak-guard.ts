@@ -74,6 +74,10 @@ const DOC_SELF_EXEMPT = [
 	// text, not real paths, so routine edits must not trip the guard.
 	"/agents/triager.md",
 	"/skills/report/footer.sh",
+	// A verification harness whose whole job is proving a corpus carries none of the
+	// forbidden shapes, so it must enumerate them as pattern arms — exempt for the same
+	// reason path-matcher.ts is, and unreachable by any narrower fix (#4449).
+	"/skills/write-code/scripts/verify-fail-closed.sh",
 	// Its Lineage section deliberately names ~/code/... sibling-repo clones (the
 	// rebuild provenance), so routine edits to it must not trip the guard.
 	"/CLAUDE.md",

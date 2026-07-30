@@ -45,7 +45,34 @@ to `kamp-us/phoenix` with no config.
 
 ```bash
 REPO="${CLAUDE_PIPELINE_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}"
+# This skill's steps are SOURCED scripts under `scripts/` (epic #4435 phase 1, #4449) — resolved the
+# same way §CLI resolves the `pipeline-cli` shim, because neither is on PATH. Source each step's
+# script where the step says to; sourcing (not executing) is what keeps a step's variables and
+# functions visible to the steps after it, exactly as the inline fenced blocks did.
+WRITECODE_SCRIPTS="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/skills/write-code/scripts"
 ```
+
+**A script's non-zero return is UNKNOWN — never an answer (§ZS, ADR
+[0092](https://github.com/kamp-us/phoenix/blob/main/.decisions/0092-gates-fail-closed-on-zero-scope.md)).**
+Every script below prints its result on **stdout** and signals "I could not produce one" by a
+**non-zero return with no stdout**. Those two states are not the same, and the empty one is never
+the permissive branch: an absent or empty result means the step did **not** run, so it can never be
+read as "no parent", "no dependencies", "not a dark ship", or "no claim conflict". So every
+invocation site whose **stdout is consumed as an answer** carries an explicit `|| exit 1`, and a
+site that omits it is one whose script `exit`s on its own failure path (the same behavior the inline
+block had). Never infer a negative from silence.
+
+Two things about those scripts, stated once here rather than repeated in twenty file headers:
+
+- **The moved shell is a byte-move, so its shellcheck findings moved with it.** Each script declares
+  the codes *its own* moved lines raise in its `# shellcheck … disable=` directive (mostly `SC2086`
+  on an unquoted `$REPO` in a `gh api` path) — declared per file, never blanket-suppressed, because
+  quoting them would be a rewrite and rewriting the glue is phase 2 ([#1929](https://github.com/kamp-us/phoenix/issues/1929)).
+- **Two committed proofs re-derive the claims instead of asserting them**, both reviewer-runnable:
+  [`scripts/verify-byte-move.sh`](scripts/verify-byte-move.sh) diffs each script against the fenced
+  block it replaced at the base commit, and
+  [`scripts/verify-fail-closed.sh`](scripts/verify-fail-closed.sh) captures every seam's exit code
+  **and** stdout byte count to prove no failure path can be read as an answer.
 
 ## The formats contract
 
@@ -250,11 +277,7 @@ List the candidate pool, priority bucket by priority bucket, stopping at the fir
 bucket that has any unassigned candidate:
 
 ```bash
-# p0 first; only fall through to p1, then p2 if a bucket is empty of unassigned issues
-for P in p0 p1 p2; do
-  gh api "repos/$REPO/issues?state=open&labels=status:triaged,$P&sort=created&direction=asc&per_page=100" \
-    --jq '.[] | select(.assignee == null and (.pull_request | not)) | "#\(.number)\t\(.created_at)\t\(.title)"'
-done
+. "$WRITECODE_SCRIPTS/step1-candidate-pool.sh"
 ```
 
 `(.pull_request | not)` filters out PRs (the issues endpoint returns both). Take the
@@ -338,23 +361,7 @@ sub-endpoint ADR
 §3 already names the authoritative linkage — and read **three** outcomes off it, never two:
 
 ```bash
-# `-i` keeps the status line on stdout even when gh exits non-zero, which is the whole point:
-# it is what distinguishes a genuine 404 ("No parent issue found" ⇒ standalone) from an
-# UNREADABLE response (5xx, rate-limit, auth, network ⇒ UNKNOWN). Collapsing those two into
-# "no parent" is a silent no-op that skips Step 2 on a real epic child (#4171, #3715, #4108).
-PARENT_RESP="$(gh api "repos/$REPO/issues/<N>/parent" -i 2>/dev/null)"
-PARENT_STATUS="$(printf '%s\n' "$PARENT_RESP" | head -n1 | awk '{print $2}')"
-case "$PARENT_STATUS" in
-  200)
-    EPIC="$(printf '%s\n' "$PARENT_RESP" | awk 'body{print} /^\r?$/{body=1}' | jq -r '.number // empty')"
-    : "${EPIC:?parent read returned 200 with no .number — UNKNOWN, not standalone; refusing to claim <N>}"
-    echo "#<N> is a sub-issue of epic #$EPIC → Step 2 (derive eligibility BEFORE claiming)" ;;
-  404)
-    echo "#<N> is standalone (404 'No parent issue found') → Step 3 (claim it)" ;;
-  *)
-    echo "write-code FAILED (fail-closed): parent read on #<N> returned HTTP '${PARENT_STATUS:-none}' — UNKNOWN, which is NOT evidence of 'no parent'. Refusing to claim: retry, or re-pick per Step 1." >&2
-    exit 1 ;;
-esac
+. "$WRITECODE_SCRIPTS/step1-parent-resolve.sh" <N> || exit 1   # stdout IS the classification — an empty one is UNKNOWN, never "standalone"
 ```
 
 - **Parent resolved (200)** → go to **Step 2** and derive eligibility before claiming.
@@ -380,15 +387,8 @@ when its dependencies are all closed. There is **no `status:blocked` label**;
 eligibility is computed fresh on every pick from the epic's `## Dependencies` section.
 
 ```bash
-EPIC=<the parent number Step 1's sub-endpoint read resolved — never a guessed or remembered one>
-# the epic body carries the plan + the ## Dependencies topology
-gh api repos/$REPO/issues/$EPIC --jq '.body'
-# the real child set + each child's state (the list endpoint is source of truth;
-# sub_issues_summary undercounts under mixed closed/open children)
-gh api "repos/$REPO/issues/$EPIC/sub_issues?per_page=100" \
-  --jq '.[] | "#\(.number) [\(.state)] \(.title)"'
-# the cross-task signal siblings left — read before assuming what's done
-gh api "repos/$REPO/issues/$EPIC/comments?per_page=100" --jq '.[].body'
+# pass the parent number Step 1's sub-endpoint read RESOLVED — never a guessed or remembered one
+. "$WRITECODE_SCRIPTS/step2-epic-read.sh" <EPIC> || exit 1   # no topology read ⇒ UNKNOWN, never "no dependencies"
 ```
 
 **The derivation rule** (from the formats `## Dependencies` grammar):
@@ -466,23 +466,7 @@ delegation by resolving §7's tiebreak once — the **earliest authorized claim*
 session id must equal the threaded token — then proceed straight to implementing:
 
 ```bash
-# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
-PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
-# Orchestrated path: confirm the delegated claim is the earliest authorized claim, then proceed.
-# The §7 CLAIM_RE + write+ ACL + min(created_at, comment id) resolution is owned by the shared verb
-# — run it, never re-derive the grammar. Exit 0 = the threaded token owns #N; non-zero = it does
-# not (absent, foreign, or superseded) ⇒ abort, do not implement.
-"$PCLI" claim is-mine --issue <N> --session "$DELEGATED_TOKEN" \
-  || { echo "delegated token is not the earliest authorized claim — abort, do not implement." >&2; exit 1; }
-# Ensure §7 LAYER ONE for the whole build (#4298). The dispatcher owes this pre-spawn, but the
-# obligation lived in ONE orchestrator's prompt, so a lane dispatched by anything else reached here
-# with no assignee — and Step 8's release then freed the resolver on top of a gate that was never
-# written, leaving the issue `status:triaged` + unassigned with its PR in review. Idempotent and
-# additive: a gate already carrying us is a no-op, and the verb REFUSES on any lane whose claim is
-# not ours, so this asserts nothing about the dispatcher and evicts nothing (ADR 0215 §5).
-"$PCLI" claim assign --issue <N> --session "$DELEGATED_TOKEN" \
-  || { echo "could not set the availability gate on #<N> — routed blocker, do not implement." >&2; exit 1; }
-# delegation confirmed + layer one held — skip the direct-path claim below and go implement
+. "$WRITECODE_SCRIPTS/step3-delegated-claim.sh" <N> || exit 1   # non-zero ⇒ delegation NOT confirmed; do not implement
 ```
 
 ### Direct path — claim it yourself (no orchestrator)
@@ -496,35 +480,7 @@ Run it; never hand-roll a `claim:` body, which silently skips the ADR-0191 prese
 leaves this lane's claim permanently unprobeable (#3987):
 
 ```bash
-# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
-PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
-# 0. Fail-closed on a missing token: the claim comment is the ONLY agent-distinguishable signal
-#    under the shared `usirin` login — with no token a co-racer is unresolvable, so NEVER claim
-#    (and never fall back to the login-keyed assignee as ownership — that is the §7 degeneracy).
-#    The verb enforces this too (it backs off on an empty session), so this is a fast local exit.
-if [ -z "$CLAUDE_CODE_SESSION_ID" ]; then
-  echo "no CLAUDE_CODE_SESSION_ID in env — cannot post an agent-distinguishable claim. BACK OFF, re-pick." >&2
-  exit 0   # → re-run Step 1
-fi
-
-# 1. Claim through the verb FIRST — layer two, the fine agent-distinguishable resolver. It defers
-#    to a pre-existing authorized owner WITHOUT posting, posts a PRESENCE-STAMPED marker under
-#    $CLAUDE_CODE_SESSION_ID, re-reads canonical state, and retracts its OWN claim if it lost.
-#    Exit 0 = the claim is mine; non-zero = backed off, having mutated nothing that is not ours.
-if ! "$PCLI" tracker claim <N>; then
-  echo "did not win the claim on #$N (held by another agent, or lost the tiebreak) — back off, re-pick."
-  exit 0   # → re-run Step 1
-fi
-
-# 2. ONLY NOW write layer one — the coarse availability gate the Step-1 picker reads (§7). One verb
-#    owns this write on every path (#4298); never hand-roll the assignees POST. Defer-then-assign is
-#    load-bearing, not stylistic: every agent authenticates as the SAME login, so the assignee is ONE
-#    shared slot. Assigning first would make the back-off above a cleanup unassign that strips the
-#    LIVE incumbent's assignment — clearing the coarse gate on an issue someone else legitimately
-#    holds. Claiming first removes the cleanup entirely: the verb only ever writes on a claim it
-#    proved is ours, and it has no removal path at all, so there is nothing to undo (#4015).
-"$PCLI" claim assign --issue <N> || { echo "could not set the availability gate on #<N> — routed blocker." >&2; exit 1; }
-# claim won and confirmed (earliest authorized claim is mine) — proceed to implement
+. "$WRITECODE_SCRIPTS/step3-direct-claim.sh" <N> || exit 1   # non-zero ⇒ NO claim was made; back off and re-pick
 ```
 
 **The operating rule.** Posting the claim comment **detects** a race; the **checkpoint GET**
@@ -585,12 +541,7 @@ The token this run owns its work *under* is `MY_CLAIM`, resolved once at the top
   guard treats a target whose earliest authorized claim equals the threaded token as *mine*.
 
 ```bash
-# the claim token this run owns work under: the orchestrator's threaded delegated token if it
-# pre-claimed, else my own session id (the direct-path Step-3 self-claim). Fail-closed: with
-# NEITHER set there is no agent-distinguishable identity to verify ownership under — abort, never
-# fall back to the bare assignee login (that login degeneracy is the exact defect ADR 0115 removes).
-MY_CLAIM="${THREADED_CLAIM_TOKEN:-$CLAUDE_CODE_SESSION_ID}"
-: "${MY_CLAIM:?mis-attribution guard: no claim token — CLAUDE_CODE_SESSION_ID absent and none threaded; refusing to claim or mutate (ADR 0115 Consequences — never a login fallback)}"
+. "$WRITECODE_SCRIPTS/step3_5-my-claim.sh"   # leaves $MY_CLAIM in this shell; refuses (fail-closed) when neither token is set
 ```
 
 ### `claim_is_mine <N>` — MANDATED before every issue/PR-number mutation
@@ -600,20 +551,12 @@ Define the guard once and gate **every** number-targeting mutation on it, exactl
 is the **only** sanctioned path to a mutation that names `<N>`, no bypass:
 
 ```bash
-# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
-PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
-# claim_is_mine <N>: resolve the EARLIEST AUTHORIZED claim marker on #N (issue or PR) and assert
-# its embedded session id == MY_CLAIM. Returns 0 only on a proven-own claim; non-zero (REFUSE) on
-# an absent OR a foreign claim. The ADR-0115 §2 resolution — CLAIM_RE + the write+ ACL trust root
-# (ADR 0055) + the earliest-(created_at, comment id) tiebreak — is owned once by the shared verb
-# `pipeline-cli claim is-mine`; CITE it, never hand-roll the jq (#3687, the same envelope
-# extraction the shipped review-verdict and tracker verbs underwent). The verb is default-deny: an absent claim, an
-# unauthorized-only claim, a foreign owner, and a missing session all resolve NOT-mine (exit
-# non-zero) — exactly this guard's fail-closed refusal, so the exit-status contract is preserved.
-claim_is_mine() {
-  "$PCLI" claim is-mine --issue "$1" --session "$MY_CLAIM"   # exit 0 = mine; non-zero = REFUSE (default-deny)
-}
+. "$WRITECODE_SCRIPTS/step3_5-claim-is-mine.sh"   # leaves the `claim_is_mine` function in this shell
+```
 
+The calling convention, which every number-targeting mutation below follows:
+
+```bash
 claim_is_mine "<N>" && gh api repos/$REPO/issues/<N>/comments -f body="…"   # the guard gates the mutation; never run it ungated
 ```
 
@@ -707,83 +650,7 @@ whereas in the **primary checkout they are the same path**. Equal ⇒ you're in 
 checkout (or a bare/no-repo edge) ⇒ **stop**; differ ⇒ you're in a linked worktree ⇒ proceed.
 
 ```bash
-# fail closed unless we're in a LINKED git worktree (not the primary checkout)
-GITDIR="$(git rev-parse --absolute-git-dir 2>/dev/null)" || {
-  echo "write-code preflight FAILED: not inside a git repository — refusing to mutate." >&2; exit 1; }
-COMMON="$(git rev-parse --git-common-dir 2>/dev/null)"
-case "$COMMON" in /*) ;; *) COMMON="$(pwd)/$COMMON" ;; esac   # normalize relative `.git` (older git)
-COMMON="$(cd "$COMMON" && pwd)"
-
-# Was worktree isolation EXPECTED for this run? The coder agent-type (agents/coder.md) asserts
-# isolation UNCONDITIONALLY, so any run under it expects the harness to have provisioned a linked
-# worktree + set $WORKTREE_ROOT. Three machine-checkable, harness-set signals arm it — NOT a per-run
-# guess — mirroring the repo-side guard's `isIsolationExpected` (bash-pin.ts) exactly (#3406):
-#   1. a direct isolation-asserting agent-type name ($CLAUDE_CODE_AGENT matching coder/reviewer/shipper);
-#   2. a set $WORKTREE_ROOT (the harness signalled a provisioned root);
-#   3. the ENV-INDEPENDENT corroboration — any agent-context run ($CLAUDE_CODE_AGENT non-empty) sitting
-#      on the PRIMARY checkout (git-dir == common-dir). A NESTED/renamed coder spawn inherits the
-#      PARENT's agent-type string (e.g. `crew-engineering-manager` / `junior-engineer`, ADR 0189), so the
-#      NAME match alone goes inert for it — but such a spawn on the primary checkout is a broken/absent
-#      worktree whatever its inherited name, and clause 3 catches it regardless of the string. Keying on
-#      the agent-type LITERAL alone was the #3406 defect: a renamed coder computed isolation-expected=0
-#      and silently self-provisioned. Do NOT hard-code any agent-type name (junior-engineer or otherwise)
-#      to "fix" it — that just relocates the coupling to the next rename; the corroboration removes it.
-# A genuine standalone human run (a direct `/write-code`, $CLAUDE_CODE_AGENT unset) matches NONE of the
-# three, so it never over-refuses and still reaches the Non-isolated fallback. This is what lets the
-# fail-closed branch below distinguish "isolation expected but the harness no-op'd provisioning" (#2440)
-# from a legitimate standalone run, firing LOUD in the first case without regressing the second. See
-# ADR 0172, #2462 (the guard's parallel re-keying), and #3406.
-ISOLATION_EXPECTED=0
-case "$CLAUDE_CODE_AGENT" in *coder*|*reviewer*|*shipper*) ISOLATION_EXPECTED=1 ;; esac   # direct isolation-asserting agent-type name
-[ -n "$WORKTREE_ROOT" ] && ISOLATION_EXPECTED=1                            # harness signalled a provisioned root
-# env-independent corroboration: a non-empty agent-type on the PRIMARY checkout (git-dir == common-dir) —
-# catches a nested/renamed coder whose inherited agent-type string doesn't name a role (#3406).
-[ -n "$CLAUDE_CODE_AGENT" ] && [ "$GITDIR" = "$COMMON" ] && ISOLATION_EXPECTED=1
-echo "write-code preflight: git-dir=$GITDIR common-dir=$COMMON cwd=$(pwd) isolation-expected=$ISOLATION_EXPECTED (agent=${CLAUDE_CODE_AGENT:-unset} worktree-root=${WORKTREE_ROOT:+set})"   # emit scanned scope (ADR 0092 §1)
-if [ "$GITDIR" = "$COMMON" ]; then
-  if [ "$ISOLATION_EXPECTED" = 1 ]; then
-    # FAIL-CLOSED LOUD (the #2443 branch): isolation was EXPECTED but this run is on the PRIMARY
-    # checkout with no linked worktree — the harness's `git worktree add` + $WORKTREE_ROOT injection
-    # silently didn't run for this coder spawn (#2440's harness no-op). Because the whole repo-side
-    # worktree-guard keys on $WORKTREE_ROOT, that no-op ALSO disarmed it, leaving this preflight the
-    # sole surviving layer. Do NOT self-provision here: doing so papers over the harness failure and
-    # leaves the two-layer primary-corruption defense collapsed to one, invisibly (#2270 class).
-    echo "write-code preflight FAILED (fail-closed, LOUD): worktree isolation was EXPECTED (agent=${CLAUDE_CODE_AGENT:-?}, worktree-root=${WORKTREE_ROOT:+set}) but this run is on the PRIMARY checkout (git-dir == common-dir) and \$WORKTREE_ROOT is unset." >&2
-    echo "  ROOT CAUSE: the harness's worktree provisioning (git worktree add + \$WORKTREE_ROOT injection) did NOT run for this coder spawn — the #2440 harness no-op. The repo-side worktree-guard also keys on \$WORKTREE_ROOT, so it is disarmed too; only this preflight is left." >&2
-    echo "  REFUSING to self-provision — that would hide the harness failure and leave the two-layer defense collapsed to one, invisibly (the primary-checkout-corruption class, #2270)." >&2
-    echo "  ROUTED BLOCKER — surface UP to the operator/EM: 'harness worktree provisioning no-op'd for a coder spawn (isolation expected, \$WORKTREE_ROOT unset); the out-of-repo harness half (#2440) needs attention. Do NOT blindly retry the same spawn.'" >&2
-    exit 1
-  fi
-  # isolation was NOT expected ⇒ a genuine standalone run: fall through to the Non-isolated fallback,
-  # which self-provisions a worktree (this path is unchanged, and the loud branch above never fires for it).
-  echo "write-code preflight FAILED (fail-closed): git-dir == common-dir ⇒ this is the PRIMARY checkout, not an isolated worktree." >&2
-  echo "  Refusing to branch/commit here — a spawn without isolation:worktree (or a cwd reset to the primary tree) would mis-branch the owner's checkout." >&2
-  echo "  This run did NOT expect isolation (standalone) — take the Non-isolated fallback below to create a worktree before mutating." >&2
-  exit 1
-else
-  # POSITIVE worktree assertion — loud + EARLY (#3458). git-dir != common-dir is the ONE trust
-  # signal for "I am in my own linked worktree" that survives the misleading env a worktree spawn
-  # is handed: $WORKTREE_ROOT is unset (the reverted #2938 provisioning hook) and $CLAUDE_CODE_AGENT
-  # reports the PARENT's value (inherited agent-type, #2462) — so neither can anchor worktree
-  # identity. This git-plumbing check can, and does so independently of both. Capture $WT from THIS
-  # evidence, never from the untrustworthy env and never from a file. This assertion fires BEFORE the
-  # first Edit/Write on purpose: a raw Edit/Write to a primary-checkout absolute path is not a git op,
-  # so neither the repo-side worktree-guard nor wt_preflight fires on it — the ONLY thing standing
-  # between a cwd-reset + stale-Read-cache and a stray write into shared primary `main` is anchoring
-  # every edit under this $WT (see "Anchor every Edit/Write to $WT" below). Establishing $WT loudly
-  # here is what makes that anchoring actionable from the first file touch.
-  WT="$(git rev-parse --show-toplevel)"
-  # STAMP THE LANE — this is the one moment $WT is trustworthy, so pin an identity to it (#4398).
-  # Every LATER Bash call re-derives the toplevel from a cwd the harness may have reset, so a
-  # cwd-derived "$WT" answers "where am I" and not "which tree is mine" — and a check that compares
-  # that answer against itself is tautological. $CLAUDE_CODE_SESSION_ID is the per-lane fact that
-  # DOES survive between calls (the same anchor §SP keys $RUN_SCRATCH on); write it into this
-  # worktree's PRIVATE per-worktree git dir, which is outside the working tree (never committed,
-  # never in `git status`) and unique per worktree. That stamp is the independently-derived operand
-  # wt_preflight compares the ambient cwd's answer against.
-  printf '%s\n' "${CLAUDE_CODE_SESSION_ID:?write-code preflight FAILED: no session id — no durable lane identity to stamp, so no later git mutation could be verified as mine}" > "$GITDIR/kampus-lane"
-  echo "write-code preflight CONFIRMED (LOUD): in a LINKED worktree at $WT (git-dir != common-dir), stamped for lane $CLAUDE_CODE_SESSION_ID — worktree identity established from git plumbing, INDEPENDENT of \$WORKTREE_ROOT (${WORKTREE_ROOT:+set}${WORKTREE_ROOT:-unset}) and \$CLAUDE_CODE_AGENT (${CLAUDE_CODE_AGENT:-unset}), both of which may misreport. Anchor EVERY Edit/Write and git op to this \$WT (absolute) — never a primary-checkout path."
-fi
+. "$WRITECODE_SCRIPTS/step4-preflight.sh"   # leaves $GITDIR / $COMMON / $WT in this shell; `exit 1` on every unsafe state
 ```
 
 The preflight is **fail-closed by construction**: it refuses on the primary checkout, on a
@@ -990,22 +857,7 @@ isolated worktree (`fatal: 'main' is already checked out at <primary>`). Branch 
 latest origin `main` **without checking it out**:
 
 ```bash
-# Fetch the base fresh, and FAIL-LOUD if it doesn't run: FETCH_HEAD is what the branch below is
-# cut from, so a silently-failed fetch (network blip, a harness worktree whose exec env stripped
-# PATH) leaves FETCH_HEAD at a STALE prior tip, and the branch misses a base file merged just
-# before branch-cut → the SHA-bound run-evidence check false-fails on a file the head never
-# carried (#1920; the same stale-base class #1837 fixed at the repair step). Never proceed on an
-# unverified fetch — assert it succeeded before branching off FETCH_HEAD.
-git fetch origin main || { echo "write-code: 'git fetch origin main' failed — refusing to branch off a stale FETCH_HEAD (would cut a head missing a just-merged base file; #1920)." >&2; exit 1; }
-# Derive the prefix from THIS checkout's git identity — never a hardcoded literal. A copied
-# literal namespaces every agent's branch under one person's handle regardless of who runs.
-PREFIX="$(git config user.name | tr '[:upper:] ' '[:lower:]-')"   # e.g. "Umut Sirin" → "umut-sirin"
-: "${PREFIX:?set git user.name to derive a branch prefix}"        # empty identity ⇒ "/slug…" (leading slash) git rejects with an opaque error; fail here with a fixable one
-# Per-run suffix: the deterministic $PREFIX/<slug-for-issue-N> is the SAME ref for every
-# run on this issue, so two concurrent runs would both push origin/<that branch> and the
-# second push would clobber the first's commits. A per-invocation nonce keeps them distinct.
-BRANCH="$PREFIX/<slug-for-issue-N>-$(uuidgen | head -c 8)"
-wt_preflight && git switch -c "$BRANCH" FETCH_HEAD   # branch create is a git mutation → gate it (per-mutation preflight above)
+. "$WRITECODE_SCRIPTS/step4-branch.sh" <slug-for-issue-N> || exit 1   # leaves $BRANCH in this shell; no branch on non-zero
 ```
 
 It's `git switch -c "$BRANCH" FETCH_HEAD` (not `git checkout main`) on purpose: in an
@@ -1213,10 +1065,7 @@ a `**Containment:**` line, with a leading bold-marker, anywhere in the body; a *
 as `none`**:
 
 ```bash
-# the child's containment marker; a missing line reads as `none` (formats §2 tolerant-read rule)
-CONTAINMENT=$(gh api repos/$REPO/issues/<N> --jq '.body' \
-  | grep -ioE '\**\s*Containment:\**\s*(flag|exempt|none)' | head -n1 \
-  | grep -ioE '(flag|exempt|none)' || echo none)
+. "$WRITECODE_SCRIPTS/step4b-containment.sh" <N> || exit 1   # leaves $CONTAINMENT in this shell
 ```
 
 **Graceful absence — the dark-ship behavior applies only when there's a cycle.** It fires **only**
@@ -1229,9 +1078,10 @@ step is a **no-op**: you implement and ship the change exactly as Steps 4/5 alre
 graceful-absence contract `plan-epic` (stamp) and `review-code` (verify) honor:
 
 ```bash
-# the canonical cycle-doc probe (formats §1); absent ⇒ no cycle ⇒ ship normally, no flag
-gh api "repos/$REPO/contents/product-development-cycle.md" --jq '.path' >/dev/null 2>&1 \
-  && CYCLE_DOC=present || CYCLE_DOC=absent
+# the canonical cycle-doc probe (formats §1) — the SHARED script, not a skill-local copy; it leaves
+# $CYCLE_DOC in this shell. Absent ⇒ no cycle ⇒ ship normally, no flag.
+KP_SHARED="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/skills/shared/scripts"
+. "$KP_SHARED/cycle-doc-probe.sh"
 # ship dark ONLY when:  [ "$CONTAINMENT" = flag ] && [ "$CYCLE_DOC" = present ]
 ```
 
@@ -1423,11 +1273,7 @@ never blessed. The pointer is the committed source of truth (`packages/design-ca
 its `surfaces` map keyed by the same `<route>[:state]` capture surface-id):
 
 ```bash
-# blessed surface-ids: the keys of the committed pointer's `surfaces` map (ADR 0183).
-# Intersect with the surfaces THIS diff renders (Step 4d capture) — only that ∩ is reference-anchored.
-# Empty ∩ ⇒ no blessed surface changed ⇒ this whole sub-loop is a no-op; the plain pillars loop stands.
-POINTER=packages/design-capture/golden-pointer.json
-BLESSED_SURFACES="$(jq -r '.surfaces | keys[]' "$POINTER" 2>/dev/null || true)"
+. "$WRITECODE_SCRIPTS/step4d-blessed-surfaces.sh"   # leaves $POINTER and $BLESSED_SURFACES in this shell
 ```
 
 **The reference-anchored loop — consume the seam, never re-implement the diff.** For each blessed
@@ -1548,10 +1394,7 @@ one by one against what this diff actually delivers** — the same checklist `re
 grade against:
 
 ```bash
-# enumerate #N's acceptance criteria — the checklist you must satisfy in FULL to emit a closing keyword
-gh api repos/$REPO/issues/<N> --jq '.body' \
-  | awk '/^###[[:space:]]*Acceptance criteria/{f=1;next} /^###/{f=0} f' \
-  | grep -E '^\s*- \[' || echo "(no checkbox ACs — read the ### Acceptance criteria prose)"
+. "$WRITECODE_SCRIPTS/step5-acceptance-criteria.sh" <N> || exit 1   # stdout IS the checklist — an empty one is UNKNOWN, never "no ACs"
 ```
 
 - **All ACs met by this diff → `Fixes #N`** (the default full close, below).
@@ -1673,24 +1516,14 @@ re-derive them here. Two operational points that are yours, not the contract's:
   `for the reviewer to judge`).
 
 ```bash
-# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
-PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
-# RE-DERIVE the branch LIVE from the worktree — never a cached/shared-file value (see the
-# live-derivation rule in Step 4). $BRANCH from Step 4 is GONE across Bash calls; wt_preflight
-# just re-cd'd to $WT, so the checked-out branch IS the work branch. Read it, never guess it.
-wt_preflight && BRANCH="$(git -C "$WT" branch --show-current)"
-: "${BRANCH:?could not re-derive branch from worktree $WT — refusing to push to a guessed/cached ref}"
-# The SANCTIONED push path — see [Pushing: the verdict is the ref, not the exit code]. It pushes
-# AND independently confirms the remote ref, printing its verdict LAST on stdout. Exit 0 = MOVED,
-# 1 = NOT-MOVED, 3 = UNKNOWN; STOP on either non-zero — never open a PR against a branch you
-# cannot prove exists (an UNKNOWN is not a success).
-wt_preflight && "$PCLI" verified-push --cwd "$WT" --remote origin --branch "$BRANCH" --set-upstream \
-  || { echo "write-code: the push was NOT confirmed on the remote (see the PUSH-VERDICT line above) — refusing to open a PR against an unproven branch." >&2; exit 1; }
-# The PR opens AGAINST issue #N (Fixes #N) — gate it on the mis-attribution guard (Step 3.5): open a
-# PR closing only an issue whose claim is mine, never one mis-attributed to another agent's #N.
-claim_is_mine "<N>" || { echo "refusing to open a PR against #<N> — not my claim (Step 3.5)"; exit 1; }
-# The body carries `Fixes #N` and `## Deviations` ALWAYS; ADD the `Flag: <FLAG_KEY>` line ONLY when
-# Step 4b fired (a dark ship behind a flag — newly-declared OR prior-PR). Omit it for an ungated PR.
+. "$WRITECODE_SCRIPTS/step5-push.sh" <N> || exit 1   # push CONFIRMED on the remote + #N proven mine, or nothing happened
+```
+
+Then open the PR. The body is a **template you author**, so it stays here rather than in a script:
+it carries `Fixes #N` and `## Deviations` ALWAYS, and adds the `Flag: <FLAG_KEY>` line **only** when
+Step 4b fired (a dark ship behind a flag — newly-declared OR prior-PR); omit it for an ungated PR.
+
+```bash
 gh pr create \
   --base main \
   --title "<concise PR title>" \
@@ -1721,61 +1554,7 @@ itself**: read the PR body back and assert it matches a recognized closing keywo
 `#N` — that is exactly the token GitHub auto-closes on and that `ship-it` Step 1 resolves:
 
 ```bash
-# (a) the cross-reference landed (a closing OR non-closing mention both show here — necessary, not sufficient)
-#     --paginate + a STREAMING --jq, per the contract's pagination rule: the timeline endpoint
-#     defaults to 30 events/page, so an un-paginated read calls a cross-reference past event 30
-#     absent — a false alarm on any issue with a bit of history (#4193).
-gh api --paginate "repos/$REPO/issues/<N>/timeline?per_page=100" \
-  --jq '.[] | select(.event == "cross-referenced") | .event'
-# (b) the SUFFICIENT check, REST-only: the seam is armed iff the body carries EITHER a real
-#     CLOSING keyword for #N (full-close PR — the same set ship-it Step 1 resolves:
-#     fix(es|ed)/close[sd]?/resolve[sd]?) OR a `Part of #N` partial-split marker (the §9
-#     non-closing link that keeps #N OPEN by design). Only NEITHER is a truly broken seam.
-BODY=$(gh api repos/$REPO/pulls/<PR> --jq '.body')
-if printf '%s' "$BODY" | grep -qiE '\b(fix(e[sd])?|close[sd]?|resolve[sd]?)\s+#<N>\b'; then
-  echo "closing seam armed"
-elif printf '%s' "$BODY" | grep -qiE '\bpart of\s+#<N>\b'; then
-  echo "partial-split seam armed — Part of #<N>, no closing keyword by design (§9; #<N> stays open)"
-else
-  echo "BROKEN SEAM — body links #<N> with neither a closing keyword nor a 'Part of #<N>' marker"
-fi
-# (c) the INVERSE GUARD, REST-only: NO closing keyword targets any issue OTHER than #N.
-#     The set {issue numbers preceded by a closing keyword in the body} must be exactly {N};
-#     a stray member is a sibling-ref directive that auto-closes an issue this PR never fixed (#1259).
-STRAY=$(gh api repos/$REPO/pulls/<PR> --jq '.body' \
-  | grep -ioE '\b(fix(e[sd])?|close[sd]?|resolve[sd]?)\s+#[0-9]+' \
-  | grep -oE '[0-9]+' | sort -u | grep -vx '<N>')
-[ -z "$STRAY" ] \
-  && echo "no stray close directives — closing-keyword set is exactly {#<N>}" \
-  || echo "STRAY CLOSE DIRECTIVE(S) on $(printf '#%s ' $STRAY)— rewrite these sibling refs to a non-closing form (addresses/relates to/see #M) before opening/patching the PR"
-# (d) DARK-SHIP GUARD, REST-only: IF Step 4b fired, the body MUST carry a `Flag:` line that
-#     matches ship-it Step 5b's FLAG_IN_BODY grep verbatim — else the prior-PR dark ship is dropped
-#     from the release queue (#1282). Whether Step 4b fired is RE-DERIVED HERE from durable state —
-#     the child's `Containment:` marker and the cycle-doc probe, Step 4b's own two inputs, read in
-#     THIS Bash call. It used to key on `[ -n "$FLAG_KEY" ]`, a shell variable Step 4b assigns in a
-#     DIFFERENT Bash call: shell state does not survive between calls, so it was empty here and the
-#     check silently skipped itself in exactly the case it exists for (#4398).
-CONTAINMENT=$(gh api repos/$REPO/issues/<N> --jq '.body' \
-  | grep -ioE '\**\s*Containment:\**\s*(flag|exempt|none)' | head -n1 \
-  | grep -ioE '(flag|exempt|none)' || echo none)
-gh api "repos/$REPO/contents/product-development-cycle.md" --jq '.path' >/dev/null 2>&1 \
-  && CYCLE_DOC=present || CYCLE_DOC=absent
-if [ "$CONTAINMENT" = flag ] && [ "$CYCLE_DOC" = present ]; then
-  gh api repos/$REPO/pulls/<PR> --jq '.body' \
-    | grep -Eiq '^[[:space:]]*\**[[:space:]]*flag([[:space:]]*key)?:[[:space:]]*\**[[:space:]]*[a-z0-9]+(-[a-z0-9]+)+' \
-    && echo "dark-ship Flag: line present and matches ship-it Step 5b — release queue will fire" \
-    || echo "MISSING/MALFORMED Flag: line — Step 4b fired but the body has no matching plain 'Flag: <key>' line; patch it in before stopping (#1282)"
-else
-  echo "no dark ship (containment=$CONTAINMENT, cycle-doc=$CYCLE_DOC) — no Flag: line expected"
-fi
-# (e) DISCLOSURE PRESENCE, REST-only: the body carries a `## Deviations` heading. This is the
-#     PRESENCE floor only — it cannot tell an honest `None.` from a false one, and it sees none of
-#     the seven classes (§DEV's detection tiers). It exists so the one failure mode that is purely
-#     mechanical — forgetting the heading — never reaches a gate as a malformed body.
-gh api repos/$REPO/pulls/<PR> --jq '.body' \
-  | grep -Eiq '^[[:space:]]*#{2,3}[[:space:]]*Deviations[[:space:]]*$' \
-  && echo "## Deviations section present" \
-  || echo "MISSING ## Deviations section — an ABSENT section is a gate FAIL (§DEV: absent is not None.); patch the body before stopping"
+. "$WRITECODE_SCRIPTS/step5-seam-checks.sh" <N> <PR> || exit 1   # stdout IS the five verdicts — silence is UNKNOWN, never "armed"
 ```
 
 If (b) reports a broken seam, the body links `#N` with **neither** a closing keyword **nor**
@@ -1827,18 +1606,9 @@ error**, posting another issue's ledger onto yours (#3718, the same silent-clobb
 #2038's `branch.txt`):
 
 ```bash
-# §SP: the per-run scratch namespace — deterministic + fail-closed, never a shared fallback.
-# Keyed on the session id, so if you compose progress.md in one Bash call and post it in the
-# next, this same line re-derives the SAME directory (a bare `mktemp -d` would hand the second
-# call a new EMPTY dir and post an empty body).
-RUN_SCRATCH="${TMPDIR:-/tmp}/kampus-run/${CLAUDE_CODE_SESSION_ID:?§SP: session id unset (#3718)}/write-code-<N>"
-mkdir -p "$RUN_SCRATCH" || {
-  echo "write-code: §SP could not create a per-run scratch dir — refusing to compose a comment through a shared path (#3718)." >&2; exit 1; }
-# …write the four-section comment to "$RUN_SCRATCH/progress.md", then:
-[ -s "$RUN_SCRATCH/progress.md" ] || { echo "write-code: progress.md is missing/empty — refusing to post an empty comment." >&2; exit 1; }
-BODY="$(cat "$RUN_SCRATCH/progress.md")"   # the four-section comment
-# gate the comment on the mis-attribution guard (Step 3.5) — only comment on an issue whose claim is mine
-claim_is_mine "<N>" && gh api repos/$REPO/issues/<N>/comments -f body="$BODY"
+# compose the four-section comment at "$RUN_SCRATCH/progress.md" FIRST; the script re-derives the same
+# session-keyed §SP path and refuses to post an empty body.
+. "$WRITECODE_SCRIPTS/step6-progress-comment.sh" <N> || exit 1
 ```
 
 Assemble the comment from a temp file so multi-line markdown and backticks survive the
@@ -1896,19 +1666,8 @@ so the spawner re-dispatches with the clause, rather than dropping the cross-tas
 silently. A blocked handoff is a fail-loud condition, never a silent no-op.
 
 ```bash
-# compose under the per-run scratch namespace (§SP), never a fixed /tmp leaf — a concurrent
-# coder lane would clobber it and this posts ITS handoff onto your epic, silently (#3718).
-# Deterministic (session-keyed), so writing handoff.md in one Bash call and posting it here in
-# the next resolves the SAME directory — re-running `mktemp -d` would yield an empty one.
-RUN_SCRATCH="${TMPDIR:-/tmp}/kampus-run/${CLAUDE_CODE_SESSION_ID:?§SP: session id unset (#3718)}/write-code-<N>"
-mkdir -p "$RUN_SCRATCH" || {
-  echo "write-code: §SP could not create a per-run scratch dir — refusing to compose a handoff through a shared path (#3718)." >&2; exit 1; }
-# …write the handoff to "$RUN_SCRATCH/handoff.md" first, then:
-[ -s "$RUN_SCRATCH/handoff.md" ] || { echo "write-code: handoff.md is missing/empty — refusing to post an empty handoff." >&2; exit 1; }
-BODY="$(cat "$RUN_SCRATCH/handoff.md")"   # ### Handoff: #N — <title> + the three fields
-# the handoff to the parent epic is predicated on OWNING THE CHILD — gate on claim_is_mine <child>
-# (Step 3.5), not the epic (which you never claim): only hand off about work whose claim is mine.
-claim_is_mine "<N>" && gh api repos/$REPO/issues/<EPIC>/comments -f body="$BODY"
+# write the handoff to "$RUN_SCRATCH/handoff.md" FIRST; the script gates the post on owning the CHILD.
+. "$WRITECODE_SCRIPTS/step7-epic-handoff.sh" <N> <EPIC> || exit 1
 ```
 
 Distill, don't dump — the fine detail lives in the child's progress comments and PR.
@@ -1933,12 +1692,7 @@ thing and then stop.
 The claim you took in Step 3 protected *this* build. The build is over, so give it up:
 
 ```bash
-# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
-PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
-# the last mutation of the run — retract OUR OWN claim marker on the issue we just built.
-# --session carries the token we owned the work under (the orchestrator's delegated token on the
-# orchestrated path), because that is the token the marker itself carries.
-"$PCLI" claim release --issue "<N>" --session "$MY_CLAIM"
+. "$WRITECODE_SCRIPTS/step8-claim-release.sh" <N> || exit 1   # non-zero ⇒ the claim was NOT released
 ```
 
 **Why this is mandatory, not tidy-up.** A claim that outlives its run never expires, and the
@@ -2194,14 +1948,9 @@ enumerated findings as the AC work list** — fix exactly what they name (the in
 below are additive to this list, not a substitute for it):
 
 ```bash
-# the full body of the resolving FAIL marker — its comment id came from R1's `verdict read` JSON
-# (swap CODE_FAIL_JSON→DOC_FAIL_JSON/SKILL_FAIL_JSON per namespace). `verdict read` already
-# author-gated and latest-wins-resolved that exact comment, so this is a plain body fetch of it —
-# no re-derivation of the resolver. (When the code namespace was resolved via a native
-# CHANGES_REQUESTED review rather than a marker, read the review body from
-# `repos/$REPO/pulls/$PR/reviews` instead — a native review carries no issue-comment id.)
-CID=$(jq -r '.commentId // empty' <<<"$CODE_FAIL_JSON")
-[ -n "$CID" ] && gh api "repos/$REPO/issues/comments/$CID" --jq '.body'
+# name the namespace's R1 JSON variable — CODE_FAIL_JSON (the default), DOC_FAIL_JSON, or
+# SKILL_FAIL_JSON. Leaves $CID in this shell for R3's thread reply.
+. "$WRITECODE_SCRIPTS/stepR2-fail-body.sh" CODE_FAIL_JSON
 ```
 
 #### A review-appended AC is an ordinary `[FAIL]` row — no special parser (ADR 0079)
@@ -2262,18 +2011,7 @@ is actionable only when its `line` is non-null. This is the inline-comment analo
 `@ <sha>` staleness test — repair never chases feedback bound to code that has since changed.
 
 ```bash
-ME=$(gh api user --jq '.login')   # don't action your own author-side replies
-# fetch into a var, then pipe to standalone jq — gh's --jq takes no --argjson, and this reuses
-# the same $authorized set R1/R2 already built (same pattern as the marker work-list above)
-inlineComments=$(gh api "repos/$REPO/pulls/$PR/comments?per_page=100")
-# in-scope, still-anchored inline review comments → your additive fix list (id+path+line+body)
-jq --argjson authorized "$authorized" --arg me "$ME" \
-  '[ .[]
-     | select(.line != null)                                  # non-null line ⇒ still anchored to current head (ADR 0058)
-     | select(.user.login != $me)                             # skip self-authored thread replies
-     | select((.user.login | IN($authorized[]))               # write+ collaborator (ADR 0055), or…
-              or .user.login == "copilot-pull-request-reviewer[bot]")  # …the explicitly-included review bot (#383)
-   ] | .[] | {id, path, line, body}' <<<"$inlineComments"
+. "$WRITECODE_SCRIPTS/stepR2-inline-comments.sh"   # reads the $authorized set R1 built; leaves $ME + $inlineComments
 ```
 
 For context on *what the PR was supposed to do*, resolve the **linked issue** via the PR
@@ -2281,24 +2019,15 @@ body's `Fixes #N` and re-read its `### Acceptance criteria` (the same checklist 
 verified) and the progress trail:
 
 ```bash
-N=$(gh api repos/$REPO/pulls/$PR \
-  --jq '.body | capture("(?i)\\b(fix(es|ed)?|close[sd]?|resolve[sd]?)\\s+#(?<n>[0-9]+)") | .n')
-gh api repos/$REPO/issues/$N --jq '.body'
-gh api "repos/$REPO/issues/$N/comments?per_page=100" --jq '.[].body'
+. "$WRITECODE_SCRIPTS/stepR2-linked-issue.sh"   # leaves $N (the PR's linked issue) in this shell
 ```
 
 Check out the **existing PR branch** and fix on it — **no new branch** (a new branch would
 orphan the PR and the gate's history):
 
 ```bash
-git fetch origin
-# mis-attribution guard (Step 3.5): confirm the PR's linked issue #N is MINE before touching its
-# branch — so a mis-dispatched repair never pushes to another agent's live PR (the #1404 class).
-# In orchestrated repair the original claim token is threaded as MY_CLAIM (ADR 0115 §3 delegated own).
-claim_is_mine "$N" || { echo "refusing to repair PR #$PR — its linked issue #$N is not my claim (Step 3.5)"; exit 1; }
-wt_preflight && git switch <the PR's head branch>   # gate the branch switch ([per-mutation preflight]); gh api .../pulls/$PR --jq '.head.ref'
-wt_preflight && git rebase origin/main   # freshen the dispatch-time base FIRST — surface a textual conflict now, in-context (see below)
-# apply the fixes addressing exactly the enumerated findings
+. "$WRITECODE_SCRIPTS/stepR2-branch-rebase.sh" <the PR's head branch> || exit 1   # gh api .../pulls/$PR --jq '.head.ref'
+# then apply the fixes addressing exactly the enumerated findings
 ```
 
 Repair mode runs in a worktree too, so re-run the Step-4 opening preflight (and capture `WT`)
@@ -2361,26 +2090,8 @@ departed from nothing adds nothing; it does **not** rewrite a prior round's entr
 unreliable in this org).
 
 ```bash
-# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
-PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
-# re-assert the mis-attribution guard (Step 3.5) before the resubmit push — a between-calls cwd
-# reset can't move the claim, but the guard is MANDATED before every number-targeting mutation,
-# exactly as wt_preflight is before every git op; gate both the push and the progress comment.
-claim_is_mine "$N" || { echo "refusing to push/comment — PR #$PR linked issue #$N not my claim (Step 3.5)"; exit 1; }
-# The SANCTIONED push path ([Pushing: the verdict is the ref, not the exit code]) — force-with-lease
-# because the R2 rebase onto origin/main moved the head. It confirms the remote ref carries the
-# rebased head before you claim the resubmit landed; exit 0 = MOVED, 1 = NOT-MOVED, 3 = UNKNOWN.
-# STOP on either non-zero: a reviewer waiting on a moved head would otherwise re-gate the STALE one.
-wt_preflight && "$PCLI" verified-push --cwd "$WT" --remote origin --force-with-lease \
-  || { echo "write-code: the repair push was NOT confirmed on the remote (see the PUSH-VERDICT line above) — the gate would re-run against the STALE head. Do not report the resubmit as landed." >&2; exit 1; }
-# compose the repair note under the §SP per-run scratch namespace, never a fixed /tmp leaf:
-# concurrent repair lanes clobber a shared name and this posts THEIR note onto your issue (#3718).
-# Session-keyed and deterministic, so the note you wrote in an earlier Bash call is still here.
-RUN_SCRATCH="${TMPDIR:-/tmp}/kampus-run/${CLAUDE_CODE_SESSION_ID:?§SP: session id unset (#3718)}/write-code-$N"
-mkdir -p "$RUN_SCRATCH" || { echo "write-code: §SP could not create a per-run scratch dir (#3718)." >&2; exit 1; }
-# …write the format-3 repair note to "$RUN_SCRATCH/repair-progress.md" first, then:
-[ -s "$RUN_SCRATCH/repair-progress.md" ] || { echo "write-code: repair-progress.md is missing/empty — refusing to post an empty comment." >&2; exit 1; }
-gh api repos/$REPO/issues/$N/comments -f body="$(cat "$RUN_SCRATCH/repair-progress.md")"
+# write the format-3 repair note to "$RUN_SCRATCH/repair-progress.md" FIRST.
+. "$WRITECODE_SCRIPTS/stepR3-push-and-note.sh" || exit 1   # push CONFIRMED on the remote, or nothing landed
 ```
 
 **Acknowledge the inline threads you addressed** so the loop is visible to the reviewer who
@@ -2388,9 +2099,7 @@ left them. For each in-scope inline comment you fixed, post a **threaded reply**
 you changed (REST, on the same review-comment thread):
 
 ```bash
-# reply on the inline comment thread you addressed ($CID = the comment id from R2)
-gh api -X POST "repos/$REPO/pulls/$PR/comments/$CID/replies" \
-  -f body="Addressed in <short-sha>: <one line on the fix>."
+. "$WRITECODE_SCRIPTS/stepR3-thread-reply.sh" "Addressed in <short-sha>: <one line on the fix>." || exit 1
 ```
 
 **Release the lane's claim before you stop**, exactly as Step 8 does for the initial build — the
@@ -2398,9 +2107,7 @@ repair round is over, and a claim left held is what makes the *next* repair disp
 read `lost` (#3780; the observed stall was a repair refused by a claim whose run had finished):
 
 ```bash
-# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
-PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
-"$PCLI" claim release --issue "$N" --session "$MY_CLAIM"   # retract OUR OWN marker; never another session's
+. "$WRITECODE_SCRIPTS/step8-claim-release.sh" "$N" || exit 1   # the SAME script Step 8 sources — retract OUR OWN marker; never another session's
 ```
 
 A reply is the acknowledgement this skill performs. **Resolving** the thread (collapsing it)
@@ -2435,19 +2142,7 @@ the cap fails to bind and the loop runs past N=3.) Same ACL author-gate as Step
 R1 (reuse its `$comments_file` + `$authorized`) — only a real reviewer's FAIL counts toward the cap:
 
 ```bash
-# how many distinct gate-FAIL ROUNDS has this PR already accrued (both namespaces)?
-# cluster FAIL markers by timestamp gap: a new round starts only when >120s separates two
-# FAILs, so a code+doc pass (seconds apart) is one round and two real rounds (fix-push +
-# re-review apart) are two — grid-free, so no minute-boundary split or same-minute merge.
-jq --argjson authorized "$authorized" \
-   '[.[] | select(.user.login | IN($authorized[]))
-         | select(.body | test("^\\s*\\**\\s*review-(code|doc|skill):\\s*FAIL"; "i"))
-         | .created_at | sub("\\..*Z$";"Z") | fromdateiso8601]
-    | sort
-    | reduce .[] as $t ({n:0, prev:null};
-        if (.prev == null) or ($t - .prev) > 120
-        then {n:(.n+1), prev:$t} else {n:.n, prev:$t} end)
-    | .n' "$comments_file"
+. "$WRITECODE_SCRIPTS/stepR-round-count.sh"   # stdout IS the round count; reads $authorized + $comments_file
 ```
 
 If this PR has **already had 3 FAIL→fix rounds** (you'd be pushing a 4th fix against a 4th
@@ -2508,13 +2203,7 @@ final repair round**, i.e. its tagged `round` ≥ `N` (= 3). Concretely, for eac
   hand the PR back, surface for re-triage:
 
 ```bash
-# does this round's resolving FAIL table carry a review-appended AC tagged at/after the final round?
-# the row is the ordinary checkbox shape; the tag is the only thing read here (no new parser)
-# $FAILBODY = the resolving FAIL marker body from R2; grep the provenance tags it carries
-echo "$FAILBODY" | grep -oE '<!-- *ac:review-[a-z]+ +pr:#[0-9]+ +round:[0-9]+ *-->' | while read -r tag; do
-  K=$(printf '%s' "$tag" | grep -oE 'round:[0-9]+' | cut -d: -f2)
-  [ "$K" -ge 3 ] && echo "FROZEN appended AC ($tag) — appended in/after final round; escalate, do not loop"
-done
+. "$WRITECODE_SCRIPTS/stepR-frozen-ac.sh"   # reads $FAILBODY (the resolving FAIL marker body from R2)
 ```
 
 If **any** `ac:review-*` row in the current FAIL table is frozen (`round >= 3`), take the
