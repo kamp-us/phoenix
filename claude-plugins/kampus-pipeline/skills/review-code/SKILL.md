@@ -326,77 +326,16 @@ make the isolation hold *by construction*, not by your remembering to behave:
 Your own session stays in *this* worktree (the trusted base config you were launched under).
 
 ```bash
-# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
-PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
-# Isolation preflight FIRST, before any head fetch / `git worktree add` below. If this
-# review-code spawn expected worktree isolation (reviewer agent-type) but the #2440 harness no-op
-# dropped it onto the shared PRIMARY checkout ($WORKTREE_ROOT unset), materializing the head here
-# is the #2452/#2453 primary-checkout-detach surface — fail closed LOUD and route up, never
-# materialize. Single-sourced in gh-issue-intake-formats.md §RO-iso (ADR 0172; the write-code
-# wt_preflight sibling). A genuine standalone run on the owner's checkout still proceeds.
-iso_preflight review-code || exit 1   # ../gh-issue-intake-formats.md §RO-iso — define it there, cite here
-
-# the trusted base — the PR's merge target at tip; your config already comes from here
-BASE_REF="$(gh api repos/$REPO/pulls/$PR --jq '.base.ref')"   # normally main
-
-# Refresh the base BEFORE any "is-it-shipped on main" ground-truth check (below). The PR
-# head reaches its own ref, but the base is the *other* half of verification — a long-lived
-# or busy checkout's local main goes stale, so an "is X shipped?" check read off the working
-# tree is only as fresh as whoever's checkout the gate ran in. This is the freshness gap
-# complementary to ADR 0052's config-isolation: 0052 pins your *config* to the base; this
-# pins your *ground-truth* to the base too. (PR #305 false-FAILed on exactly this — a doc
-# whose consumers had merged minutes earlier was FAILed against a stale local main.)
-git fetch origin "$BASE_REF"
-
-# §HEAD steps 1–3 (resolve the live head SHA, fetch pull/$PR/head into a per-run ref WITHOUT
-# touching the session tree, assert the fetched ref IS that head, add a throwaway DETACHED head
-# worktree) are the shared `pipeline-cli review-head materialize` verb (#3690 / #793 / #1807) —
-# cite it, don't re-derive it. `pull/<pr>/head` resolves for same-repo AND cross-fork PRs, so there
-# is no separate cross-fork branch to check out (the trust inversion ADR 0052 closes); the verb
-# never runs `gh pr checkout` / `git checkout` / `git switch` (which would land the head in the
-# shared PRIMARY the harness resets this cwd to and detach the human's `main` — #2270/#1103), and it
-# nonce-uniques the ref per invocation so a concurrent review of the same PR can't overwrite it
-# (#1807). It emits the resolved head + ref + worktree as JSON. Persist those to a per-run mktemp
-# handle so they survive the harness cwd/shell reset between Bash calls (a shell var is lost across
-# calls); re-source them with `. "$WT_FILE"` at each later step — NEVER re-derive from a shared leaf
-# name (a `git worktree list` re-derivation matches a SIBLING reviewer's tree and pins the wrong head).
-# The `--worktree` tree is a FULL checkout (ADR 0067): biome.jsonc + biome-plugins/, patches/, the
-# catalog/lockfile, and everything `fate generate` needs are present, so the typecheck bootstrap is
-# whole. A full checkout also lands the head's root CLAUDE.md + .claude/.decisions/.patterns — that
-# leak is closed by the explicit denylist removal + absence-assert below, NOT by any pattern set.
-WT_FILE="$(mktemp /tmp/review-code-wt.XXXXXX)"
-"$PCLI" review-head materialize --pr "$PR" --worktree \
-  | jq -r '"REVIEW_WT=\(.worktreeDir)\nPR_REF=\(.prRef)\nHEAD_SHA=\(.headSha)"' > "$WT_FILE"
-. "$WT_FILE"
-[ -n "${REVIEW_WT:-}" ] && [ -n "${PR_REF:-}" ] && [ -n "${HEAD_SHA:-}" ] || {
-  echo "FATAL: review-head materialize did not yield a head worktree — aborting (never review the base tree; §HEAD)." >&2; exit 1; }
-
-# LAYER-2 containment (#2666): a freshly materialized worktree MUST come up pristine — assert it
-# clean NOW, before the denylist `rm --cached` below deliberately dirties it. A dirty materialization
-# means a corrupted head checkout, and reviewing a contaminated tree is a false signal. Fail-closed
-# LOUD via the single-sourced, tested helper (packages/pipeline-cli/src/tools/worktree-guard).
-"$PCLI" worktree-guard assert-clean --path "$REVIEW_WT" || {
-  echo "FATAL: review worktree came up dirty at materialization — aborting (never review a contaminated tree; #2666)." >&2
-  exit 1
-}
-
-# Enforce the instruction denylist EXPLICITLY: remove the head's instruction surfaces from
-# the review tree so they never reach the reviewing agent's path (ADR 0049/0052 boundary; a
-# full checkout would otherwise leave root CLAUDE.md on disk). Config still comes from the
-# trusted base — this tree is run *against* via `pnpm -C`, never `cd`'d into.
-git -C "$REVIEW_WT" rm -r -q --cached --ignore-unmatch \
-  CLAUDE.md .claude .decisions .patterns
-rm -rf "$REVIEW_WT/CLAUDE.md" "$REVIEW_WT/.claude" "$REVIEW_WT/.decisions" "$REVIEW_WT/.patterns"
-
-# ASSERT absence — the load-bearing isolation check (ADR 0067 §Consequences). If any denied
-# path is still on disk the isolation is broken: abort the review rather than read head config.
-for p in CLAUDE.md .claude .decisions .patterns; do
-  if [ -e "$REVIEW_WT/$p" ]; then
-    echo "FATAL: denied instruction surface '$p' present in review worktree — isolation broken; aborting" >&2
-    exit 1
-  fi
-done
+. "$("${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-code/scripts/materialize-head.sh" "$PR")"
 ```
+
+The script's **only stdout line is the run-state handle** carrying `REVIEW_WT` / `PR_REF` /
+`HEAD_SHA` / `BASE_REF`, so sourcing its output puts those four in your shell; every progress, scope
+and FATAL line goes to stderr. On any failure path stdout is empty and the exit is non-zero, so the
+`.` itself fails loudly — **never** fall back to reading the launched checkout's working copy (that
+is the #793 false-PASS: reviewing the base tree while binding the verdict to the head SHA). Later
+steps re-derive the same four values with
+[`scripts/head-env.sh`](scripts/head-env.sh) after the harness resets the shell between calls.
 
 The cross-fork case needs no special branch: `pull/$PR/head` is the GitHub-provided ref for
 the PR head whether it lives on this repo or a fork, so the single `git fetch` above covers
@@ -408,29 +347,30 @@ an output), run the repo's commands **inside the review worktree** — behavior 
 running beats behavior inferred from a diff:
 
 ```bash
-. "$WT_FILE"                   # re-source the run-unique $REVIEW_WT/$PR_REF after a between-call reset (#1807) — never re-derive from the shared `review-head-${PR}` leaf
-pnpm -C "$REVIEW_WT" install   # the catalog/lockfile + patches/ are present, so this succeeds
-# Lint via `pnpm lint:worktree`, never `pnpm lint` / `biome check .`: bare `.` resolves to the
-# review worktree's CWD (sits under .claude/worktrees → matches `!**/.claude/worktrees`) and exits
-# 0 WITHOUT linting (false green; #236, ADR 0060). `lint:worktree` lints the EXPLICIT changed files
-# vs origin/main (committed + working-tree, biome-extension-filtered; docs-only/empty = clean skip),
-# so it catches root + `.claude/**` violations a bare `biome check apps packages` would miss and
-# reliably predicts the CI lint job (#553/#559):
-pnpm -C "$REVIEW_WT" lint:worktree   # and/or the specific test the criterion names
-# Scoping a test to the criterion is fine when the SHA-bound run-evidence bundle (Step 2)
-# corroborates the full surface. But when the bundle is DEGRADED (absent/expired/stale-for-SHA),
-# a feature-scoped run under-verifies the change's blast radius — see the "fail closed on the
-# test surface" rule in the degrade block below: run the FULL unit project, never a subset.
-rm -rf "$REVIEW_WT" && git worktree prune && git update-ref -d "$PR_REF"   # tear the throwaway tree + ref down
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-code/scripts/worktree-checks.sh"
 ```
 
-**Teardown runs on EVERY exit path — PASS, FAIL, or a mid-run error, not just the happy
-path.** The line above is the review's own `rm -rf` of a detached, already-pushed throwaway
+Scoping a test to the criterion is fine when the SHA-bound run-evidence bundle (Step 2) corroborates
+the full surface. But when the bundle is DEGRADED (absent/expired/stale-for-SHA), a feature-scoped
+run under-verifies the change's blast radius — see the "fail closed on the test surface" rule in the
+degrade block below: run the FULL unit project, never a subset.
+
+**Teardown is its own script, and it runs on EVERY exit path — PASS, FAIL, or a mid-run error, not
+just the happy path:**
+
+```bash
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-code/scripts/teardown-head.sh"
+```
+
+It is the review's own `rm -rf` of a detached, already-pushed throwaway
 it materialized itself (safe — it holds no branch and no unpushed work), so run it even when
 the review is exiting `FAIL` or aborting after a typecheck/lint error; a leaked `review-head-*`
 tree accumulates on the shared primary otherwise (#2785). To catch a mid-block error inside a
-single Bash call, register it as a trap right after `git worktree add`:
-`trap 'rm -rf "$REVIEW_WT"; git worktree prune; git update-ref -d "$PR_REF"' EXIT`. And the
+single Bash call, register the script as a trap right after materialization:
+`trap '…/scripts/teardown-head.sh' EXIT` — and note the trap belongs to **your** shell, not to any
+extracted script: none of them installs an `EXIT` trap, because under bash 3.2 the trap's last
+command becomes the script's exit status and would launder a `set -u` abort into exit 0 (#4476,
+class #4479). And the
 standing net for the un-catchable case — a session-end abort *between* Bash calls, which no
 in-shell trap can reach — is `pipeline-cli worktree-sweep --execute` (#2785): it reclaims any
 leaked `review-head-*` tree that is clean + idle + unlocked, **without** `--force` (a dirty /
@@ -443,7 +383,7 @@ the full build inputs, so the typecheck bootstrap is whole — run it and treat 
 the typecheck signal:
 
 ```bash
-pnpm -C "$REVIEW_WT" typecheck   # `pnpm install` above made patches/ hashable + `fate generate` resolvable
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-code/scripts/worktree-typecheck.sh"
 ```
 
 CI and the SHA-bound run-evidence bundle (below) are now **corroboration**, not the sole
@@ -476,22 +416,19 @@ you received an archive and not a 503 error body; `schemaVersion` and
 load-bearing**: a bundle from a stale earlier push is not evidence for this commit.
 
 ```bash
-# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
-PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
-HEAD_SHA="$(gh api repos/$REPO/pulls/$PR --jq '.head.sha')"
-# Exit 0 means `present` — a validated, head-bound bundle. Every other state comes back on stdout
-# as JSON, so read the state rather than branching on the exit alone.
-BUNDLE="$("$PCLI" run-evidence read --pr "$PR")" || true
-BUNDLE_STATE="$(jq -r '.state' <<<"$BUNDLE")"     # present | pending | absent | unknown
-BUNDLE_LINE="$(jq -r '.reportLine' <<<"$BUNDLE")" # the verdict line, evidence already in it
+. "$("${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-code/scripts/run-evidence-read.sh" "$PR")"
 ```
+
+Sourcing its one stdout line puts `HEAD_SHA`, `BUNDLE_STATE` (`present` | `pending` | `absent` |
+`unknown`) and `BUNDLE_LINE` in your shell. **Read the state word, never the exit alone** — the verb
+exits 0 only on `present`, and the other three are different facts, not one "absent".
 
 When the state is `present`, `.manifest` carries the structured results (ADR 0054 §2 fields):
 `checks[]` is each gate step (`{name, status: pass|fail}`), `tests` is the folded JUnit summary
 (`{total, passed, failed, skipped, failingSuites[]}`).
 
 ```bash
-[ "$BUNDLE_STATE" = present ] && jq '.manifest | {commit, schemaVersion, checks, tests}' <<<"$BUNDLE"
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-code/scripts/run-evidence-manifest.sh"
 ```
 
 Cite those numbers as the evidence for any criterion they speak to — "lint/typecheck/unit
@@ -543,8 +480,7 @@ gate exists to prevent. On the degrade path therefore:
   past a degraded verification.
 
   ```bash
-  . "$WT_FILE"                              # re-source $REVIEW_WT/$PR_REF after a between-call reset (#1807)
-  pnpm -C "$REVIEW_WT/apps/web" test:unit   # FULL unit project (the apps/web script) — never path-narrowed on the degrade path
+  "${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-code/scripts/full-unit-project.sh"
   ```
 
 - **If — and only if — the full unit project genuinely cannot run** (an environment fault
