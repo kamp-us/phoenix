@@ -58,7 +58,7 @@ Below the five sections, append a footer carrying the machine context of the ses
 Gather the context with the helper, which reads it from the environment and git:
 
 ```bash
-claude-plugins/kampus-pipeline/skills/report/footer.sh
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/report/footer.sh"
 ```
 
 It prints a ready-to-append markdown block. Which fields appear varies by run — the helper includes only what the environment actually exposes and silently drops the rest, so a real footer might look like this (here `session` and `model` weren't available, so they're omitted — no dangling labels, no "unknown"):
@@ -86,8 +86,23 @@ All GitHub operations go through `gh api` REST. **Never GraphQL** — the kamp-u
 **Resolve the target repo once, up front.** This skill is repo-agnostic — every `gh api` call targets `$REPO`, not a hardcoded repo. Resolve it at the top of your run per the shared contract's **Target repo resolution** ([`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md)): `$CLAUDE_PIPELINE_REPO` if set, else the current repository. In phoenix this defaults to `kamp-us/phoenix`, so the behavior is unchanged with no config (ADR 0062 §1).
 
 ```bash
-REPO="${CLAUDE_PIPELINE_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}"
+REPO="$("${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/report/scripts/resolve-repo.sh")" || exit 1
 ```
+
+## The extracted scripts
+
+This skill's shell lives in [`scripts/`](scripts/), and each fenced `bash` block is an **invocation**
+of one; the prose keeps the *why* (epic #4435 phase 1 — the shell moved as-is, and turning its glue
+into tested `pipeline-cli` verbs is #1929). Two properties are load-bearing:
+
+- **They set `set -uo pipefail`, deliberately not `-e`.** The moved glue steers its own control flow
+  through the guards written into it; `errexit` would abort a fail-closed branch before it printed
+  its refusal.
+- **[`scripts/file-report.sh`](scripts/file-report.sh) takes the body on stdin and REFUSES an empty
+  one.** Streaming keeps §SP's "prefer no file at all" property intact, but a pipe — unlike the
+  literal heredoc it replaced — can arrive unread, and an unread pipe is byte-identical to an empty
+  one. Filing on it would post a bodyless issue that reads as a successful report, so an empty stdin
+  is a refusal, not a filing (#3924).
 
 1. Write the title: a short, specific, type-neutral summary of the observation (≤ ~70 chars). Good: "Retry helper in http worker swallows the abort reason". Bad: "Bug in worker" or "BUG: fix retry".
 2. Build the body: the `## Summary` lead, then the five sections, then a blank line, then the footer block from `footer.sh`.
@@ -100,10 +115,8 @@ REPO="${CLAUDE_PIPELINE_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOw
    fed your title plus a few keywords:
 
    ```bash
-   # §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
-   PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
-   "$PCLI" intake-dedup check \
-     --query "<the title + a few distinguishing keywords>"
+   "${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/report/scripts/dedup-check.sh" \
+     "<the title + a few distinguishing keywords>"
    ```
 
    It prints one `#<n>\t<title>` line per candidate duplicate to stdout (empty output
@@ -122,17 +135,13 @@ REPO="${CLAUDE_PIPELINE_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOw
 
 Stream the composed body **straight into the create call over stdin** — there is no named temp file to collide on and no shell variable to reuse stale, so two concurrent `report` runs cannot interleave bodies (the cross-filing hazard is structurally unrepresentable, not merely warned against — #2002). The `tracker create-issue` verb reads its `--body` from stdin when the flag is absent, so the **quoted** heredoc (`<<'EOF'`) passes the markdown through untouched — multi-line markdown, backticks, and nested fences survive intact, the "backticks survive the shell" guarantee with no round-trip through a variable. Don't hand-roll the `gh api repos/$REPO/issues` create — that inline envelope is exactly what the adoption lint (#3254) flags; the verb owns it (ADR 0190; `packages/pipeline-cli/src/tools/tracker/`) and enters the needs-triage queue by default:
 
+One command, one script invocation: the five sections arrive on the script's **stdin** as a quoted
+heredoc (`<<'EOF'` — the shell never touches the markdown, so backticks and nested ``` fences file
+intact), and the script appends the blank line + the `footer.sh` block and streams the whole thing
+into the create verb. Everything below the invocation line is your authored body, not glue:
+
 ```bash
-# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
-PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
-# The five sections + a blank line + the footer.sh block, piped straight into the
-# create verb over stdin. No mktemp, no $BODY_FILE, no `$(cat …)` — nothing shared to
-# collide on. `create-issue` consumes the whole stream as the body; the quoted `<<'EOF'`
-# heredoc means the shell never touches the markdown, so backticks and nested ``` fences
-# file intact. The verb passes the body by-value through a direct spawn (no `-f body=@file`),
-# so the local-path leak class is gone too.
-{
-  cat <<'EOF'
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/report/scripts/file-report.sh" "<title>" <<'EOF'
 ## Summary
 …
 
@@ -151,9 +160,6 @@ PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-
 ## Suggested next step (non-binding)
 …
 EOF
-  echo   # blank line before the footer block
-  claude-plugins/kampus-pipeline/skills/report/footer.sh   # emits its own `---` + <sub>… line
-} | "$PCLI" tracker create-issue --title "<title>"
 ```
 
 The body never lands on disk under a shared name and never round-trips through a variable, so the two named failure paths this hardening closes — "simplify" to a fixed `/tmp/report-body.md`, or reuse one `$BODY_FILE` across two creates — have no surface to occur on: there is no file path to fix and no variable to reuse. This is the
