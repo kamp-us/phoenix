@@ -252,8 +252,8 @@ attempt may have been a *human/manual* rerun, not heal-ci's, so triage shouldn't
 **Guard first — if a repair is already in flight on this PR, route to it, don't file a twin.**
 This is the one branch in the routing decision before defect-filing, and it only applies to a
 **PR run** (`PR` is set; a non-PR run has no repair to collide with — skip straight to filing).
-`heal-ci`'s defect branch and `write-code`'s FAIL-round-trip repair (`write-code/SKILL.md`,
-Repair mode) fire off **different signals** — a red CI run here, a `review-(code|doc): FAIL`
+`heal-ci`'s defect branch and `write-code`'s FAIL-round-trip repair
+([`write-code/repair.md`](../write-code/repair.md)) fire off **different signals** — a red CI run here, a `review-(code|doc): FAIL`
 marker there — so neither sees the other. The `report` dedup you delegate to searches **open
 issues**; it cannot see an in-flight repair, which lives as an **open PR + a FAIL marker**, not
 an issue. So before filing, check for that repair yourself and, if present, comment-and-stop
@@ -262,7 +262,7 @@ fixing (issue #265).
 
 An **active repair** is detectable from PR state alone — statelessly, the same way the
 already-rerun guard (Step 1) reads the run/PR state, and the **same verdict-resolution
-`write-code` already does in its repair-mode scan** ([`write-code/SKILL.md`](../write-code/SKILL.md)
+`write-code` already does in its repair-mode scan** ([`write-code/repair.md`](../write-code/repair.md)
 Step R1). That contract is the floor here: the guard may suppress the twin **only** when
 `write-code` would actually pick the repair up — so it must resolve the verdict the *exact* way
 write-code does, or it would skip the defect on a FAIL write-code will no-op, dropping the
