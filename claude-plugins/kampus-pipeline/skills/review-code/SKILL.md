@@ -643,6 +643,13 @@ them. The other three gates run **this same procedure** (one logic, four call si
 **reconstructing the issue body** — read it, gate, append the one new row, write it back — never
 by a blind edit:
 
+> **This block also did NOT move into [`scripts/`](scripts/) (#4451), for a different reason.**
+> [PR #4440](https://github.com/kamp-us/phoenix/pull/4440) relocates this whole
+> `## Specialist fan-out + route-don't-grade` section — this fence included — out of every gate and
+> into `../shared/specialist-fan-out.md` (#4396). Extracting it here would relocate the same lines a
+> second, conflicting way, so it stays put and whichever change lands first sets the other's baseline.
+> The remainder is tracked on [#4451](https://github.com/kamp-us/phoenix/issues/4451).
+
 ```bash
 # the §2 in-scope-only fence (fence 2) gates whether you may append AT ALL:
 # only an in-scope finding (traces to the issue's stated goal — Route, don't grade above)
@@ -1301,8 +1308,12 @@ any verdict not bound to the PR's current head (ADR
 verdict-body shape at the end of this step.
 
 ```bash
-HEAD_SHA="$(gh api repos/$REPO/pulls/$PR --jq .head.sha)"   # the head you reviewed
+HEAD_SHA="$("${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-code/scripts/current-head.sh" "$PR")"   # the head you reviewed
 ```
+
+The script shape-asserts the SHA (bare 40-hex) and prints **nothing** on a failed read, so gh's error
+document can never reach the marker's `@ <sha>` field — the #2683 shape `verdict post`'s
+`emissionDefect` gate would otherwise refuse the whole verdict over.
 
 **Preferred — an approving review** (the native, unambiguous GitHub signal). Capture its
 result and check the exit status **explicitly**; on failure (e.g. a 422 when you can't
@@ -1335,39 +1346,16 @@ genuinely unavoidable, the body **MUST** first pass `pipeline-cli leak-guard sca
 [gh-issue-intake-formats.md](../gh-issue-intake-formats.md#the-guarded-emit-path-is-mandatory--never-hand-post-a-verdict-marker-off-the-guard) — the *why* lives there, not re-derived here.
 
 ```bash
-# resolve the verdict CLI via the `bin/pipeline-cli` shim — in-repo bin, else the installed bin,
-# else the pinned `pnpm dlx` fallback reading the one pin (hooks/pin.sh); no version pinned here
-# (#3653; ADR 0062/0064; epic #994)
-VERDICT="${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/bin/pipeline-cli verdict"
-
-# Compose the PASS verdict straight into a shell variable (heredoc → multi-line markdown + backticks
-# survive) — NO scratch file, so no concurrent run can clobber it (#1465/#3718/#3801). First line:
-# review-code: PASS @ <HEAD_SHA> — merge-ready
-BODY="$(cat <<EOF
-review-code: PASS @ ${HEAD_SHA} — merge-ready
-… your per-criterion evidence table …
-EOF
-)"
-# Read-back assertion BEFORE the native APPROVE: the same gate `verdict post` enforces, piped on
-# stdin, so a malformed `@ <sha>` (e.g. an mktemp scratch path, #2683) fails loud here, never in a
-# review body.
-printf '%s' "$BODY" | $VERDICT validate --gate code || {
-  echo "FATAL: composed review-code marker is malformed — refusing to post (fix the @ <sha> field; #2683)" >&2
-  exit 1
-}
-if gh api -X POST repos/$REPO/pulls/$PR/reviews \
-     -f event=APPROVE -f body="$BODY"; then
-  : # native approving review posted (GitHub records its commit_id = the head you approved;
-    #  ship-it reads that commit_id for the same staleness test the marker's @ <sha> drives)
-else
-  # APPROVE failed (e.g. 422 on your own PR) — upsert the structured pass comment instead, through
-  # the guarded tool on stdin: it PATCHes your newest own review-code marker (namespace-anchored, so
-  # it also upserts a prior advisory across a non-blocking↔blocking flip) else POSTs the first, and
-  # it fail-closes on a malformed/cross-namespace body AND on a body bound to another PR's head
-  # (the #3801 post-time cross-check) so a broken/mis-bound marker never reaches GitHub.
-  printf '%s' "$BODY" | $VERDICT post --pr "$PR" --gate code
-fi
+printf '%s' "$BODY" | "${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-code/scripts/verdict-emit-pass.sh" "$PR" "$HEAD_SHA"
 ```
+
+`$BODY` is the verdict body **you** compose — its canonical shape is the markdown block at the end of
+this step; the script only receives it. Piping it on **stdin** is the collision-proof form: with no
+file on disk there is nothing for a concurrent review of the same PR to clobber and no scratch path
+that could bleed into the `@ <sha>` field. The script runs `verdict validate` as a read-back assertion
+first, then the native `APPROVE`, falling back to the `verdict post` comment upsert — as an **explicit
+`if`**, never `APPROVE || post`, because a pipe around the APPROVE call would make the pipeline's
+status mask its failure and the fallback would silently never fire.
 
 Either way, the verdict body states plainly: every acceptance criterion verified
 (the table), the PR is **merge-ready**, and — explicitly — that **review-code does not
@@ -1375,7 +1363,7 @@ merge**; the **`ship-it`** skill is the authorized merge step, and merging this 
 auto-close issue #N via its `Fixes #N`. Leave the issue as-is (it'll close on merge, not
 now).
 
-Verdict body shape (this is what you wrote to `$VERDICT_FILE` above) for the **non-blocking**
+Verdict body shape (this is the `$BODY` you pipe into the emitter above) for the **non-blocking**
 path. The first line is the **canonical bare marker** — no leading `**` emphasis, **with the
 `@ <HEAD_SHA>` you resolved above** — per the matcher contract in
 [gh-issue-intake-formats.md](../gh-issue-intake-formats.md) §5; matchers tolerate an optional
@@ -1536,24 +1524,12 @@ any later use are one single-sourced read, never two independent resolutions tha
 straddle a head move:
 
 ```bash
-# resolve the verdict CLI via the `bin/pipeline-cli` shim — in-repo bin, else the installed bin,
-# else the pinned `pnpm dlx` fallback reading the one pin (hooks/pin.sh); no version pinned here
-# (#3653; ADR 0062/0064; epic #994)
-VERDICT="${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/bin/pipeline-cli verdict"
-HEAD_SHA="$(gh api repos/$REPO/pulls/$PR --jq .head.sha)"   # resolve ONCE, before composing (mirror the PASS path)
-# Compose straight into a shell variable and pipe on stdin — NO scratch file, so no fixed/PR-keyed
-# name a concurrent run can clobber (#1465/#3718/#3801). First line: review-code: FAIL @ $HEAD_SHA — not merge-ready
-BODY="$(cat <<EOF
-review-code: FAIL @ ${HEAD_SHA} — not merge-ready
-… your per-criterion evidence table …
-EOF
-)"
-# Upsert through the guarded tool (resolved above), exactly as the PASS path: it upserts the one
-# review-code marker (namespace-anchored, advisory included) and fail-closes on a malformed/
-# cross-namespace body (so the mktemp-path `@ <sha>` leak #2683 can't land) AND on a body bound to
-# another PR's head (the #3801 post-time cross-check).
-printf '%s' "$BODY" | $VERDICT post --pr "$PR" --gate code
+HEAD_SHA="$("${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-code/scripts/current-head.sh" "$PR")"   # resolve ONCE, before composing (mirror the PASS path)
+printf '%s' "$BODY" | "${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-code/scripts/verdict-emit-fail.sh" "$PR" "$HEAD_SHA"
 ```
+
+Same stdin seam as the PASS path, for the same reason — no fixed or `${PR}`-keyed scratch name a
+concurrent run can clobber (#1465/#3718/#3801). `$BODY`'s canonical shape is the markdown block below.
 
 You *may* additionally request changes via a formal review
 (`-f event=REQUEST_CHANGES`) for the native signal — but the **comment with
@@ -1644,13 +1620,13 @@ state (never a carried variable) and runs the read-back on whatever landed, on *
 [`gh-issue-intake-formats.md` §Make the read-back UNCONDITIONAL (`verdict_post_verify`)](../gh-issue-intake-formats.md#make-the-read-back-unconditional--resolve-the-landed-verdict-from-pr-state-never-a-carried-id-verdict_post_verify):
 
 ```bash
-# UNCONDITIONAL post-verify: resolve the landed verdict from PR state (marker comment @ HEAD_SHA, the
-# advisory line, or the native APPROVE at commit_id==HEAD_SHA), then prove it present + well-formed +
-# leak-free. FATAL (non-zero) on absent / malformed / leaking — the #2264 whole-body-path leak, a
-# no-opped post, and a stale-head marker all fail here. Propagate the non-zero: never report the gate
-# done over an ungated PR. Runs no matter which 4a/4b branch posted — no $MINE, no skippable path.
-verdict_post_verify "$PR" review-code "$HEAD_SHA" || exit 1
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-code/scripts/verdict-readback.sh" "$PR" "$HEAD_SHA" || exit 1
 ```
+
+The script **sources** `verdict_post_verify` from
+[`../shared/scripts/verdict-readback.sh`](../shared/scripts/verdict-readback.sh) — there is no
+skill-local copy — and propagates its status. Propagate it further: never report the gate done over an
+ungated PR.
 
 `verdict_post_verify` is the load-bearing change over the old inline check: the prior presence scan
 merely *echoed* a warning on a miss and re-posted **without a non-zero exit**, so a garbled/absent
