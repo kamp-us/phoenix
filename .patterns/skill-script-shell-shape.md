@@ -28,6 +28,15 @@ to ~106).
 5. **Anything `errexit` used to catch is checked explicitly.** Dropping `-e` means a failed
    command substitution no longer aborts, so the assignments a script's correctness rests on
    (`mktemp -d`, a resolved root) get their own fail-closed check.
+6. **A resolver read through process substitution withholds its output on a failed scan.** In
+   `done < <(resolve …)` the producer's exit status is unobservable *even in principle*, so a
+   partially-failing `find` (unreadable subdirectory, a race with a writer — it prints what it
+   could read and exits non-zero) would hand the caller a silently narrowed but **non-empty** list
+   that its `-eq 0` zero-scope guard reads as complete. Capture the status where the pipeline runs,
+   and on failure emit **nothing** on stdout, a diagnostic on stderr, and a non-zero return: the
+   empty stdout is what reaches the caller's existing zero-scope guard
+   ([#4487](https://github.com/kamp-us/phoenix/issues/4487)). A genuinely empty surface still
+   exits 0 — empty is a fact, a failed scan is UNKNOWN, and the two must not look alike.
 
 Mechanically enforced for rule 1 by `pipeline-cli trap-status-guard check` (the
 `trap-status-guard.yml` job), which reds on `errexit` + an `EXIT` trap inside one runnable shell
@@ -106,6 +115,11 @@ grep -q "$needle" "${files[@]-}"
   [#4473](https://github.com/kamp-us/phoenix/pull/4473)).
 - `claude-plugins/kampus-pipeline/skills/validate-gate-path-drift.sh` — the `[ -f "$sh" ]`
   unmatched-glob idiom (rule 4).
+- `claude-plugins/kampus-pipeline/skills/shared/lib/common.sh` — `kp_skill_shell_surfaces`, the
+  surface resolver both cycle validators consume through `< <(…)` (rule 6). Pinned by
+  `shared/lib/common-test.sh`, which forces a partial `find` failure with an unreadable
+  subdirectory and asserts non-zero + empty stdout + a stderr diagnostic; run in the `skills` CI
+  job.
 
 ## The failure it prevents
 
