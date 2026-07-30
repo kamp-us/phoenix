@@ -5,12 +5,14 @@
 # ../SKILL.md § The extracted scripts. The graceful-absence *why* (ADR 0062 — absence is a
 # first-class correct state) stays in that step's prose.
 #
-# DELIBERATELY NOT the shared ../../shared/scripts/cycle-doc-probe.sh, even though the two are
-# equivalent: the cycle validators (../validate-cycle-presence.sh / ../validate-cycle-absence.sh)
-# resolve each skill's scan surface via `kp_skill_shell_surfaces`, which is scoped to the skill's OWN
-# directory on purpose — so sourcing the shared copy would move review-code's cycle wiring off its
-# guarded surface and the validators would fail, correctly. Per-skill wiring stays per-skill; the rule
-# is stated once at `kp_skill_shell_surfaces` in ../../shared/lib/common.sh.
+# A SECOND COPY of ../../shared/scripts/cycle-doc-probe.sh, and no longer a required one. It was
+# required: the cycle validators scanned each skill's OWN directory only, so sourcing the shared copy
+# moved review-code's cycle wiring off its guarded surface and reddened them. ADR 0230 removed that
+# forcing constraint — the validators now follow a skill's own source edges one hop
+# (`kp_skill_source_edges` in ../../shared/lib/common.sh), so sourcing the shared probe stays green.
+# Collapsing this copy onto that edge is the intended direction and is deliberately NOT done here:
+# minting the new sourced invocation is held behind the open question about `.`-sourcing under
+# worktree isolation (#4546). Until then this copy is the drift risk it always was — see #4541.
 #
 # Sets no shell options and installs no EXIT trap (#4476, class #4479).
 

@@ -8,11 +8,15 @@
 # It SOURCES the one shared implementation, `../../shared/scripts/cycle-doc-probe.sh`, rather than
 # carrying a second copy of the probe: that helper runs the formats-contract canonical probe — the
 # content read of `contents/product-development-cycle.md` — and leaves $CYCLE_DOC in this shell.
-# Naming that path here is load-bearing, not decoration: `validate-cycle-presence.sh` /
-# `validate-cycle-absence.sh` grep for the canonical probe across plan-epic's OWN shell surface
-# only (shared/lib is deliberately excluded — see `kp_skill_shell_surfaces` in
-# ../../shared/lib/common.sh), so this citation is what keeps the cycle validators scanning a real
-# reference instead of nothing.
+#
+# THE SOURCE LINE BELOW IS THE LOAD-BEARING TOKEN — this paragraph is not. The cycle validators
+# follow that line to the shared file and grep the probe literal THERE (`kp_skill_source_edges` in
+# ../../shared/lib/common.sh, ADR 0230), and every `.sh` grep they run is comment-stripped. Delete
+# the source line while keeping this text and they go red, by name. An earlier version of this
+# docblock claimed the opposite — that naming the path *here* is what kept the validators scanning a
+# real reference. It was true, and that was the bug: the guard was passing on this comment alone
+# (#4541). The citation stays because it tells a reader what the edge reaches, not because a grep
+# needs it.
 #
 # Extracted from plan-epic/SKILL.md (#4452, epic #4435 phase 1). Extraction contract +
 # shell-option rationale: ../SKILL.md § The extracted scripts.
