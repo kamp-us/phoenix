@@ -1,25 +1,26 @@
-import {readFileSync} from "node:fs";
 import {dirname, join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {assert, describe, it} from "@effect/vitest";
+import {skillSurfaceFromDisk, skillSurfaceFromText} from "../../skill-shell-surface.ts";
 import {classify, type MergeOutcome, type MergeQueueSignals} from "./merge-queue-classify.ts";
 import {
+	extractStep55Section,
 	FAILCLOSED_RECONCILE_BUDGET,
 	parseMergeDispositions,
 	parseReconcileBudget,
 	type ReconcileBudget,
+	resolveStep55Section,
 } from "./step55-contract.ts";
 
 // The live skill — the single source for Step 5.5's budget and disposition wording. Read
-// repo-relative off this file's own location so it resolves identically in CI and in a worktree.
-const SHIP_IT_PATH = join(
-	dirname(fileURLToPath(import.meta.url)),
-	"../../../../..",
-	"claude-plugins/kampus-pipeline/skills/ship-it/SKILL.md",
-);
-const SHIP_IT_TEXT = readFileSync(SHIP_IT_PATH, "utf8");
-const LIVE_BUDGET = parseReconcileBudget(SHIP_IT_TEXT);
-const LIVE_DISPOSITIONS = parseMergeDispositions(SHIP_IT_TEXT);
+// repo-relative off this file's own location so it resolves identically in CI and in a worktree. The
+// SURFACE, not the file: the step's shell lives in the `scripts/*.sh` the section sources, and the
+// parse follows into it (#4498), so this reaches the budget whether it was extracted or not.
+const SHIP_IT_REL = "claude-plugins/kampus-pipeline/skills/ship-it/SKILL.md";
+const SHIP_IT_PATH = join(dirname(fileURLToPath(import.meta.url)), "../../../../..", SHIP_IT_REL);
+const SHIP_IT = skillSurfaceFromDisk(SHIP_IT_PATH, SHIP_IT_REL);
+const LIVE_BUDGET = parseReconcileBudget(SHIP_IT);
+const LIVE_DISPOSITIONS = parseMergeDispositions(SHIP_IT);
 
 /** The budget as it stood before #4403 — the control the boundary cases are measured against. */
 const OLD_BUDGET: ReconcileBudget = {
@@ -27,6 +28,23 @@ const OLD_BUDGET: ReconcileBudget = {
 	sleepSeconds: 30,
 	horizonSeconds: 270, // poll 10 fires at 9*30s; the 10th sleep observed nothing
 	sleepsBetweenPollsOnly: false,
+};
+
+/**
+ * The budget as Step 5.5 writes it, for the #4498 fixtures below. Built rather than spelled out so
+ * biome's noTemplateCurlyInString stays quiet — these fixtures ARE shell, and a spelled-out
+ * `${VAR:-N}` trips the rule on every line (the `settings-env-guard` idiom, #2495).
+ */
+const BUDGET_LINES: ReadonlyArray<string> = [
+	`RECONCILE_TRIES=$\{SHIP_RECONCILE_TRIES:-16}`,
+	`RECONCILE_SLEEP=$\{SHIP_RECONCILE_SLEEP:-30}`,
+	'  if [ "$i" -lt "$RECONCILE_TRIES" ]; then sleep "$RECONCILE_SLEEP"; fi',
+];
+const BUDGET_16x30: ReconcileBudget = {
+	tries: 16,
+	sleepSeconds: 30,
+	horizonSeconds: 450,
+	sleepsBetweenPollsOnly: true,
 };
 
 /**
@@ -126,9 +144,116 @@ describe("ship-it Step 5.5's reconcile budget, read off the live SKILL.md", () =
 	});
 
 	it("fails closed on a Step 5.5 it cannot read, rather than resolving a plausible horizon", () => {
-		assert.deepStrictEqual(parseReconcileBudget(""), FAILCLOSED_RECONCILE_BUDGET);
+		assert.deepStrictEqual(
+			parseReconcileBudget(skillSurfaceFromText("")),
+			FAILCLOSED_RECONCILE_BUDGET,
+		);
 		assert.strictEqual(FAILCLOSED_RECONCILE_BUDGET.horizonSeconds, 0);
-		assert.strictEqual(parseMergeDispositions("").size, 0);
+		assert.strictEqual(parseMergeDispositions(skillSurfaceFromText("")).size, 0);
+	});
+
+	// The horizon identity above is VACUOUS at the fail-closed constant — 0 === (0-1)*0 — so it
+	// passes on a corpus the parser could not read. Pin the budget's own non-triviality here, where
+	// it is the assertion rather than a by-product, so an emptied parse reds on this row too.
+	it("resolves a real budget, not the fail-closed zero", () => {
+		assert.isAbove(LIVE_BUDGET.tries, 1);
+		assert.isAbove(LIVE_BUDGET.sleepSeconds, 0);
+		assert.isAbove(LIVE_BUDGET.horizonSeconds, 0);
+	});
+});
+
+// The disposition population is DERIVED FROM THE TEXT and, until #4498, was never pinned: a case arm
+// that stopped being reachable yielded an empty map, and every `notInclude`/`notStrictEqual` row
+// above passes vacuously on `""`. That is the #4509 silent-dropout shape — green while covering one
+// outcome fewer, with no symptom. The classifier's own union is the expected membership.
+describe("Step 5.5's disposition population is pinned against MergeOutcome, so an arm cannot drop out", () => {
+	const OUTCOMES: ReadonlyArray<MergeOutcome> = ["merged", "ejected", "queued", "pending"];
+
+	it("renders every outcome word the classifier can print, and nothing is blank", () => {
+		assert.deepStrictEqual([...LIVE_DISPOSITIONS.keys()].sort(), [...OUTCOMES].sort());
+		for (const outcome of OUTCOMES) {
+			assert.isAbove(
+				(LIVE_DISPOSITIONS.get(outcome) ?? "").length,
+				0,
+				`Step 5.5 renders no disposition for \`${outcome}\``,
+			);
+		}
+	});
+});
+
+// #4498. Before this, the parse read SKILL.md alone, so moving the reconcile block into a sourced
+// script — a pure relocation — resolved a ZERO horizon and reddened the mirror.
+describe("Step 5.5's parse follows the section's sourced scripts (extraction-invariant, #4498)", () => {
+	it("emits its scanned scope, and that scope is never empty on a resolvable section", () => {
+		const {scanned, unresolved} = resolveStep55Section(SHIP_IT);
+		assert.isAbove(scanned.length, 0, `Step 5.5 resolved ZERO scope — scanned: ${scanned.join()}`);
+		assert.strictEqual(scanned[0], SHIP_IT_REL);
+		assert.deepStrictEqual(unresolved, [], "every script Step 5.5 sources must read back");
+	});
+
+	it("reaches the budget through the source line, not only inline in the markdown", () => {
+		assert.match(resolveStep55Section(SHIP_IT).section, /^RECONCILE_TRIES=/m);
+		// Non-vacuous, and precisely so: the markdown slice ALONE no longer carries the budget, so the
+		// match above can only have come from a followed script.
+		assert.notMatch(
+			extractStep55Section(SHIP_IT.text),
+			/^RECONCILE_TRIES=/m,
+			"the budget is extracted (#4448), so the markdown slice alone must NOT carry it",
+		);
+	});
+
+	it("resolves the budget from the script when the markdown no longer carries it", () => {
+		const md = [
+			"### Step 5.5 — Bounded post-enqueue reconcile",
+			'. "$SHIPIT_SCRIPTS/reconcile.sh"',
+			"",
+			"#### Next",
+		].join("\n");
+		const script = BUDGET_LINES.join("\n");
+		assert.deepStrictEqual(
+			parseReconcileBudget(skillSurfaceFromText(md, {"reconcile.sh": script})),
+			BUDGET_16x30,
+		);
+		// …and the un-followed corpus is exactly what fails: the same markdown with no script.
+		assert.deepStrictEqual(
+			parseReconcileBudget(skillSurfaceFromText(md)),
+			FAILCLOSED_RECONCILE_BUDGET,
+		);
+	});
+
+	it("still resolves a budget that lives INLINE — the old path is not traded away for the new one", () => {
+		const inline = skillSurfaceFromText(
+			[
+				"### Step 5.5 — Bounded post-enqueue reconcile",
+				"```bash",
+				...BUDGET_LINES,
+				"```",
+				"#### Next",
+			].join("\n"),
+		);
+		assert.deepStrictEqual(parseReconcileBudget(inline), BUDGET_16x30);
+	});
+
+	it("a section that sources an UNREADABLE script fails closed — UNKNOWN, never 'no budget'", () => {
+		const missing = skillSurfaceFromText(
+			[
+				"### Step 5.5 — Bounded post-enqueue reconcile",
+				'. "$SHIPIT_SCRIPTS/gone.sh"',
+				...BUDGET_LINES,
+				"#### Next",
+			].join("\n"),
+		);
+		// The budget is RIGHT THERE inline — and it still refuses, because one file of the surface was
+		// unreadable. A partial read is not a read.
+		assert.deepStrictEqual(resolveStep55Section(missing).unresolved, ["gone.sh"]);
+		assert.deepStrictEqual(parseReconcileBudget(missing), FAILCLOSED_RECONCILE_BUDGET);
+	});
+
+	it("a renamed heading is ZERO SCOPE, and zero scope fails rather than resolving", () => {
+		const renamed = skillSurfaceFromText(`### Step 5.6 — renamed\n${BUDGET_LINES.join("\n")}\n`);
+		assert.deepStrictEqual(resolveStep55Section(renamed).scanned, []);
+		assert.deepStrictEqual(parseReconcileBudget(renamed), FAILCLOSED_RECONCILE_BUDGET);
+		assert.strictEqual(parseMergeDispositions(renamed).size, 0);
 	});
 });
 

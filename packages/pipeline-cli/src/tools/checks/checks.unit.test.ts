@@ -1,7 +1,7 @@
-import {readFileSync} from "node:fs";
 import {dirname, join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {assert, describe, it} from "@effect/vitest";
+import {skillSurfaceFromDisk, skillSurfaceFromText} from "../../skill-shell-surface.ts";
 import {
 	type CheckRun,
 	type CheckSuite,
@@ -10,7 +10,12 @@ import {
 	latestPerContext,
 	rollupChecks,
 } from "./checks.ts";
-import {FAILCLOSED_STEP3_ENTRY_TEST, parseStep3EntryTest} from "./step3-contract.ts";
+import {
+	extractStep3Section,
+	FAILCLOSED_STEP3_ENTRY_TEST,
+	parseStep3EntryTest,
+	resolveStep3Section,
+} from "./step3-contract.ts";
 
 let nextId = 1;
 const run = (over: Partial<CheckRun> & {readonly name: string}): CheckRun => ({
@@ -331,14 +336,14 @@ describe("rollupChecks — a check suite with zero attached runs is not pending"
 });
 
 // The live skill — the single source for Step 3's branch order. Read repo-relative off this
-// file's own location so it resolves identically in CI and in a worktree.
-const SHIP_IT_PATH = join(
-	dirname(fileURLToPath(import.meta.url)),
-	"../../../../..",
-	"claude-plugins/kampus-pipeline/skills/ship-it/SKILL.md",
-);
-const SHIP_IT_TEXT = readFileSync(SHIP_IT_PATH, "utf8");
-const LIVE_STEP3_ENTRY = parseStep3EntryTest(SHIP_IT_TEXT);
+// file's own location so it resolves identically in CI and in a worktree. The SURFACE, not the file:
+// the step's shell lives in the `scripts/*.sh` the section sources, and the parse follows into it
+// (#4498), so this reaches the bindings whether they were extracted or not.
+const SHIP_IT_REL = "claude-plugins/kampus-pipeline/skills/ship-it/SKILL.md";
+const SHIP_IT_PATH = join(dirname(fileURLToPath(import.meta.url)), "../../../../..", SHIP_IT_REL);
+const SHIP_IT = skillSurfaceFromDisk(SHIP_IT_PATH, SHIP_IT_REL);
+const SHIP_IT_TEXT = SHIP_IT.text;
+const LIVE_STEP3_ENTRY = parseStep3EntryTest(SHIP_IT);
 
 /**
  * A test-local mirror of ship-it Step 3's classification order, so the branch the shipper takes on
@@ -389,12 +394,107 @@ describe("ship-it Step 3's branch-2 entry test, read off the live SKILL.md", () 
 	it("the #3999 drift is caught: an entry test rewritten to the colour resolves no pending set", () => {
 		const drifted = SHIP_IT_TEXT.replace(LIVE_STEP3_ENTRY.condition, '[ "$CI_STATE" = pending ]');
 		assert.notStrictEqual(drifted, SHIP_IT_TEXT);
-		assert.deepStrictEqual(parseStep3EntryTest(drifted).fields, []);
+		assert.deepStrictEqual(parseStep3EntryTest({...SHIP_IT, text: drifted}).fields, []);
 	});
 
 	it("fails closed on a Step 3 it cannot read, rather than resolving a green-looking empty", () => {
-		assert.deepStrictEqual(parseStep3EntryTest(""), FAILCLOSED_STEP3_ENTRY_TEST);
+		assert.deepStrictEqual(
+			parseStep3EntryTest(skillSurfaceFromText("")),
+			FAILCLOSED_STEP3_ENTRY_TEST,
+		);
 		assert.deepStrictEqual(FAILCLOSED_STEP3_ENTRY_TEST.fields, []);
+	});
+});
+
+// #4498. Before this, the parse read SKILL.md alone, so moving the bindings into a sourced script —
+// a pure relocation that changes no behaviour — resolved NO fields and reddened the mirror. Worse
+// than red is quiet: the drift pin above and the two branch-2 cases below would keep passing while
+// covering nothing, which is the #4509 silent-dropout shape. Both directions are pinned here.
+describe("Step 3's parse follows the section's sourced scripts (extraction-invariant, #4498)", () => {
+	// The one binding site, wherever it lives: exactly one of the two surfaces carries it.
+	const bindingLine = /^RUNNING=\$\(jq/m;
+
+	it("emits its scanned scope, and that scope is never empty on a resolvable section", () => {
+		const {scanned, unresolved} = resolveStep3Section(SHIP_IT);
+		assert.isAbove(scanned.length, 0, `Step 3 resolved ZERO scope — scanned: ${scanned.join()}`);
+		assert.strictEqual(scanned[0], SHIP_IT_REL);
+		assert.deepStrictEqual(unresolved, [], "every script Step 3 sources must read back");
+	});
+
+	it("reaches the rollup bindings through the source line, not only inline in the markdown", () => {
+		assert.match(
+			resolveStep3Section(SHIP_IT).section,
+			bindingLine,
+			"the resolved surface must carry the rollup bindings",
+		);
+		// Non-vacuous, and precisely so: the markdown slice ALONE no longer carries them, so the match
+		// above can only have come from a followed script. A count of scanned files would not prove
+		// this — Step 3 sources three scripts, so an unrelated sibling would satisfy it.
+		assert.notMatch(
+			extractStep3Section(SHIP_IT.text),
+			bindingLine,
+			"the bindings are extracted (#4448), so the markdown slice alone must NOT carry them",
+		);
+	});
+
+	it("resolves the bindings from the script when the markdown no longer carries them", () => {
+		const relocated = skillSurfaceFromText(
+			[
+				"## Step 3 — Confirm the *gating* checks are green",
+				'2. **Else, something is still unfinished** (`[ -n "$RUNNING$WEDGED" ]`) → poll.',
+				'. "$SHIPIT_SCRIPTS/bindings.sh"',
+				"",
+				"## Step 4 — Enqueue",
+			].join("\n"),
+			{
+				"bindings.sh": [
+					`RUNNING=$(jq -r '.running | join(", ")' <<<"$CI_JSON")`,
+					`WEDGED=$(jq -r  '.wedged  | join(", ")' <<<"$CI_JSON")`,
+				].join("\n"),
+			},
+		);
+		assert.deepStrictEqual(parseStep3EntryTest(relocated).fields, ["running", "wedged"]);
+		// …and the un-followed corpus is exactly what fails: the same markdown with no script.
+		const unfollowed = skillSurfaceFromText(relocated.text);
+		assert.deepStrictEqual(parseStep3EntryTest(unfollowed), FAILCLOSED_STEP3_ENTRY_TEST);
+	});
+
+	it("still resolves bindings that live INLINE — the old path is not traded away for the new one", () => {
+		const inline = skillSurfaceFromText(
+			[
+				"## Step 3 — Confirm the *gating* checks are green",
+				'2. **Else, something is still unfinished** (`[ -n "$RUNNING$WEDGED" ]`) → poll.',
+				"```bash",
+				`RUNNING=$(jq -r '.running | join(", ")' <<<"$CI_JSON")`,
+				`WEDGED=$(jq -r  '.wedged  | join(", ")' <<<"$CI_JSON")`,
+				"```",
+				"## Step 4 — Enqueue",
+			].join("\n"),
+		);
+		assert.deepStrictEqual(parseStep3EntryTest(inline).fields, ["running", "wedged"]);
+	});
+
+	it("a section that sources an UNREADABLE script fails closed — UNKNOWN, never 'no bindings'", () => {
+		const missing = skillSurfaceFromText(
+			[
+				"## Step 3 — Confirm the *gating* checks are green",
+				'2. **Else** (`[ -n "$RUNNING$WEDGED" ]`) → poll.',
+				'. "$SHIPIT_SCRIPTS/gone.sh"',
+				`RUNNING=$(jq -r '.running' <<<"$CI_JSON")`,
+				`WEDGED=$(jq -r '.wedged' <<<"$CI_JSON")`,
+				"## Step 4 — Enqueue",
+			].join("\n"),
+		);
+		// The bindings are RIGHT THERE inline — and it still refuses, because one file of the surface
+		// was unreadable. A partial read is not a read.
+		assert.deepStrictEqual(resolveStep3Section(missing).unresolved, ["gone.sh"]);
+		assert.deepStrictEqual(parseStep3EntryTest(missing), FAILCLOSED_STEP3_ENTRY_TEST);
+	});
+
+	it("a renamed heading is ZERO SCOPE, and zero scope fails rather than resolving", () => {
+		const renamed = skillSurfaceFromText('## Step 3a — renamed\n2. (`[ -n "$RUNNING" ]`)\n');
+		assert.deepStrictEqual(resolveStep3Section(renamed).scanned, []);
+		assert.deepStrictEqual(parseStep3EntryTest(renamed), FAILCLOSED_STEP3_ENTRY_TEST);
 	});
 });
 

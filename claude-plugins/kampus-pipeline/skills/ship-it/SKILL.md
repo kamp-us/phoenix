@@ -986,36 +986,18 @@ verb also owns the running/wedged split and the latest-per-context reduction —
 re-derive the query (#3762).
 
 ```bash
-CHECKS="${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/bin/pipeline-cli checks"
-
-# Echo the rollup JSON; return 0 readable · 2 UNKNOWN (refuse — never a colour, never green).
-read_head_ci() {
-  local out rc conclusion
-  out="$($CHECKS read --pr "$PR" --expect green 2>/dev/null)"; rc=$?
-  # SHAPE-CHECK BEFORE INTERPRETING: an error body / truncated capture is not data. Exit 2 is the
-  # verb's own typed unknown; a body with no readable `conclusion` is treated identically.
-  conclusion="$(printf '%s' "$out" | jq -r '.conclusion? // empty' 2>/dev/null)"
-  case "$rc:$conclusion" in
-    0:green|1:red|1:pending) printf '%s' "$out"; return 0 ;;
-    *) return 2 ;;
-  esac
-}
-
-CI_JSON="$(read_head_ci)" || {
-  disarm_intent refuse || INTENT_UNCLEARED=1   # guard 6: this stop does not enqueue — park nothing
-  gh api "repos/$REPO/issues/$PR/comments" -f body="ship-it: refused — head CI **unreadable** (the check-runs read returned no interpretable state) — **not enqueued**. An unreadable head is not a green head; re-dispatch ship-it once the API is answering — idempotent (#3999)." >/dev/null
-  echo "refused — head CI unreadable (typed unknown) — not enqueued"; exit 0
-}
-
-# The aggregate `.conclusion` is deliberately NOT bound here: it is a colour in which red wins over
-# pending, so classifying off it lets an informational red mask an unfinished check (see below).
-CONTEXTS=$(jq -r '.contexts'    <<<"$CI_JSON")   # how many contexts the rollup covered
-RUNNING=$(jq -r  '.running | join(", ")' <<<"$CI_JSON")   # genuinely in flight — these settle
-WEDGED=$(jq -r   '.wedged  | join(", ")' <<<"$CI_JSON")   # queued, never started — these do NOT
-# The known-informational carve-out, applied to the failing set (names below).
-GATING_RED=$(jq -r '[.failing[]
-  | select(. != "deploy (web)" and (startswith("cleanup (web,") | not))] | join(", ")' <<<"$CI_JSON")
+. "$SHIPIT_SCRIPTS/step3-rollup-bindings.sh"
 ```
+
+**Parser-held — keep that source line inside this section.** The script's `jq` rollup bindings
+(`RUNNING`, `WEDGED`, `GATING_RED`, `CONTEXTS`) are a contract with
+`packages/pipeline-cli/src/tools/checks/step3-contract.ts`: it
+slices this `## Step 3 — ` section, **follows the source line above into the script**, and derives
+branch 2's pending predicate from the bindings it finds there — which is what stops
+`checks.unit.test.ts`'s executable branch mirror from hand-copying them (#4054). Rename a binding,
+point it at a different rollup field, or move the block to a script this section does not source, and
+the parse resolves **no** fields and the mirror reds. Unlike `UI_RE`/`UI_EXCLUDE_RE` above, nothing
+here has to stay in the markdown — only its **reachability from this heading** is fixed (#4498).
 
 Not every red check blocks a merge, and **this classification is ship-it's own** — it is
 deliberately *not* the base branch's required-context set, and must never be derived from it.
@@ -1642,87 +1624,19 @@ yet), which is **never** an ejection. The classification is a **pure, unit-teste
 reconcile shells out to it per poll and branches on the printed outcome word:
 
 ```bash
-# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
-PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
-# …and prove it resolved before polling. An unresolved CLI prints nothing, so every poll would
-# read as neither `merged` nor `ejected`, the budget would exhaust, and the run would report a
-# well-formed `pending` for a classifier that never ran — a could-not-run posing as an answer
-# (§CLI / §WL; #3314). UNKNOWN is the only honest outcome here.
-[ -x "$PCLI" ] || {
-  echo "ship-it: merge-queue-classify is UNRESOLVED at '$PCLI' — the reconcile outcome is UNKNOWN, NOT pending. Re-resolve the CLI and re-poll; do not report a merge outcome." >&2
-  exit 1
-}
-# Bounded reconcile: poll the authoritative merge-queue state within a batch window, then classify.
-# BOUNDED, not synchronous-to-merge (ADR 0132): a fixed budget of polls, then STOP and report —
-# a PR still QUEUED at the budget's end is a well-formed pending, not a failure.
-# The classifier reads PR state (gh pr view — the sanctioned PR-state read ship-it Step 2 uses,
-# NOT a GraphQL intake query the org's Projects-classic integration breaks) + the last merge-queue
-# timeline event AND whether a `merged` event is present (gh api …/timeline, REST — the pairing
-# that tells a consumed queue entry from an ejection, #4155), cross-checks a non-merged read against the base branch
-# (gh api …/commits?sha=<base>, the read that stayed fresh while the other two lagged — #4057), and
-# prints merged/ejected/queued/pending. It is fail-closed away from a false ship: any unreadable
-# signal ⇒ pending (keep polling), never a false merged/ejected.
-# The budget, and the ONE number the stand-down must report: the OBSERVATION HORIZON. Poll k fires
-# at (k-1)*SLEEP, so what the run actually watched is (TRIES-1)*SLEEP — not TRIES*SLEEP. The old
-# 10x30s pair observed to 4m30s while every sampled merge-queue dwell on this repo ran 5m17s–9m25s
-# (n=10, median 6m27s, mean 6m37s — #4403), so the budget expired mid-dwell on 10 of 10 merges, and
-# the trailing sleep after the last poll burned 30s observing nothing. 16x30s puts the horizon at
-# 7m30s, past both the median and the mean; it is NOT set past the 9m25s max because one shipper
-# invocation has a ~10-minute wall-clock ceiling and the 16 polls' own `gh` latency eats into it.
-# That ceiling is what makes over-widening WORSE than standing down: a run killed against it
-# mid-loop never reaches the ledger at all, so it emits no `merge:` line — silence, where a
-# stand-down would at least have stated the bound of what it watched.
-# So even the widened horizon can expire mid-dwell — which is exactly why the widening is the
-# secondary fix and the honest stand-down wording below is the primary one.
-RECONCILE_TRIES=${SHIP_RECONCILE_TRIES:-16}
-RECONCILE_SLEEP=${SHIP_RECONCILE_SLEEP:-30}
-RECONCILE_HORIZON=$(( (RECONCILE_TRIES - 1) * RECONCILE_SLEEP ))   # seconds ACTUALLY observed
-MERGE_OUTCOME=pending
-for i in $(seq 1 "$RECONCILE_TRIES"); do
-  MERGE_OUTCOME=$("$PCLI" merge-queue-classify classify --pr "$PR" --repo "$REPO")
-  [ "$MERGE_OUTCOME" = merged ] && break   # terminal success
-  [ "$MERGE_OUTCOME" = ejected ] && break  # a genuine dequeue (removed_from_merge_queue) — act below
-  # queued (still in the queue) or pending (enqueue-settle window) ⇒ keep polling within the budget.
-  # Sleep only BETWEEN polls: a trailing sleep after the last poll observes nothing, and only makes
-  # the reported horizon overstate the reach of the observation.
-  if [ "$i" -lt "$RECONCILE_TRIES" ]; then sleep "$RECONCILE_SLEEP"; fi
-done
-# At the budget's end a still-`pending` PR (never a merge-queue event) is reported as a well-formed
-# pending, NOT ejected — the settle window is not an ejection (#1921).
-
-# The run's merge disposition, single-sourced HERE and emitted verbatim as the ledger's `merge:`
-# line. Budget exhaustion while the PR is still in the queue is UNRESOLVED — genuinely unknown, and
-# neither a landing nor a failure — so it is worded as the bounded observation it is, carrying the
-# horizon it watched. The three renderings stay textually distinct (#4403).
-case "$MERGE_OUTCOME" in
-  merged)
-    MERGE_DISPOSITION="landed (queue merged the batch)" ;;
-  queued|pending)
-    MERGE_DISPOSITION="UNRESOLVED — still queued at my last read, ~${RECONCILE_HORIZON}s after enqueue; the merge may still land. Bounded observation, not a failure and not a landing — an independent later read closes the lane." ;;
-  ejected)
-    MERGE_DISPOSITION="EJECTED (routed to repair/re-queue)" ;;
-  *)
-    # Unreachable while the classifier prints one of its four words — which is exactly why it is
-    # here: without it an unrecognized $MERGE_OUTCOME leaves MERGE_DISPOSITION unset and the
-    # ledger's `merge:` line renders BLANK — a could-not-determine posing as nothing at all.
-    MERGE_DISPOSITION="UNKNOWN — the reconcile produced no recognized outcome word; the merge state was never determined. Not a landing, not a failure, not an ejection — re-read the PR before acting on it." ;;
-esac
-
-# Guard 6 (ADR 0198) — the reconcile's terminal read is the LAST place this run can leave an arm
-# behind, so it is also sites 3 and 4. `merged` and `queued` keep the intent (a live queue entry is
-# never disturbed); an `ejected` PR is cleared so a re-approval after its rebase cannot re-enqueue
-# it ahead of a fresh gate pass; and an arm that never became a queue entry on a QUEUE-GOVERNED
-# base branch is a PARKED intent — `merge-intent` reads the base branch's ruleset to tell the two
-# regimes apart, so a repo whose base branch has no merge queue keeps its legitimate armed
-# auto-merge while this repo's every unqueued arm is cleared.
-if [ "$MERGE_OUTCOME" = ejected ]; then
-  disarm_intent ejected || INTENT_UNCLEARED=1
-else
-  INTENT_ACTION=$("$PCLI" merge-intent disarm --pr "$PR" --repo "$REPO" --site post-enqueue) || INTENT_UNCLEARED=1
-  [ "$INTENT_ACTION" = disarmed ] && \
-    echo "refused — the enqueue did not take effect at this head; the parked intent was cleared. Re-dispatch ship-it to re-assert the gates and enqueue (idempotent)."
-fi
+. "$SHIPIT_SCRIPTS/step5_5-reconcile.sh"
 ```
+
+**Parser-held — keep that source line inside this section.** The script's `RECONCILE_TRIES` /
+`RECONCILE_SLEEP` defaults, its between-polls `sleep` guard, and its `MERGE_DISPOSITION` case arms
+are a contract with `packages/pipeline-cli/src/tools/merge-queue-classify/step55-contract.ts`: it
+slices this `### Step 5.5 — ` section, **follows the source line above into the script**, and derives
+the observation horizon and the three disposition renderings from what it finds there — which is what
+stops `step55-contract.unit.test.ts`'s executable reconcile mirror from hand-copying the budget
+(#4403). Widen the budget, drop the between-polls sleep guard, or move the block to a script this
+section does not source, and the parse resolves a **zero** horizon and the mirror reds.
+Nothing here has to stay in the markdown — only its **reachability from this heading** is fixed
+(#4498).
 
 #### The loop is not the evidence — and a bare removal event is not an ejection (#4155)
 
