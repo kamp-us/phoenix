@@ -56,7 +56,7 @@ describe("parseVerdict — polarity + bound SHA out of a first-line marker", () 
 			expected: {polarity: "FAIL", sha: HEAD},
 		},
 		{
-			name: "leading bold emphasis is tolerated (§5 \\**)",
+			name: "leading bold emphasis is tolerated (§VERDICT \\**)",
 			body: `**review-skill: PASS @ ${HEAD}** — merge-ready`,
 			gate: "skill",
 			expected: {polarity: "PASS", sha: HEAD},

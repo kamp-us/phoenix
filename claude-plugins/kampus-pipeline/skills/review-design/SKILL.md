@@ -1,6 +1,6 @@
 ---
 name: review-design
-description: Verify a UI-affecting PR against the four-pillars design law (ADR 0162) by driving Playwright over the PR's preview deploy, capturing the changed UI surfaces, and judging the rendered screenshots multimodally — the 4th reviewer skill alongside review-code / review-doc / review-skill in the configured target repo's pipeline. It hard-FAILs on the six enumerable, objective ADR-0162 prohibitions (faint-for-meaning, missing focus ring, off-grid spacing/type, void empty state, sub-36px tap target, colour-alone meaning), on an uncaught render exception, and on an unexplained deviation from a blessed golden on a blessed surface (calibration B, #2945 — the deterministic rendered-vs-golden diff via the `@kampus/design-capture` seam is escalated to multimodal judgment, never auto-failed on the raw diff); all OTHER holistic/taste judgment rides as advisory (non-blocking) notes in the same verdict comment, and it is calibrated to FAIL conservatively — a borderline call is downgraded to advisory, never a hard block. Trigger on "review the design of PR #N", "review-design #N", "run the design gate on #N", "gate the UI PR against the pillars", "does this UI PR meet the design law", "run review-design", or whenever you're asked to confirm a UI PR's rendered surfaces obey ADR 0162 before merge. This is the design-class verification stage of the issue-intake pipeline: it consumes the UI PRs write-code opens, renders and looks at them over the preview deploy, and emits a namespaced, SHA-bound `review-design: PASS @ <sha> — merge-ready` / `review-design: FAIL @ <sha> — changes-requested` comment marker (never a native review — ADR 0058), upserted to one-per-PR, embedding the GitHub-hosted screenshot evidence; on a FAIL it feeds the existing write-code repair loop. It never merges; it never emits a review-code / review-doc / review-skill marker.
+description: Verify a UI-affecting PR against the four-pillars design law (ADR 0162) by driving Playwright over the PR's preview deploy, capturing the changed UI surfaces, and judging the rendered screenshots multimodally — the 4th reviewer skill alongside review-code / review-doc / review-skill in the configured target repo's pipeline. It hard-FAILs on the six enumerable, objective ADR-0162 prohibitions (faint-for-meaning, missing focus ring, off-grid spacing/type, void empty state, sub-36px tap target, colour-alone meaning), on an uncaught render exception, and on an unexplained deviation from a blessed golden on a blessed surface (calibration B, #2945 — the deterministic rendered-vs-golden diff via the `@kampus/design-capture` seam is escalated to multimodal judgment, never auto-failed on the raw diff); all OTHER holistic/taste judgment rides as advisory (non-blocking) notes in the same verdict comment, and it is calibrated to FAIL conservatively — a borderline call is downgraded to advisory, never a hard block. Trigger on "review the design of PR #N", "review-design #N", "run the design gate on #N", "gate the UI PR against the pillars", "does this UI PR meet the design law", "run review-design", or whenever you're asked to confirm a UI PR's rendered surfaces obey ADR 0162 before merge. This is the design-class verification stage of the issue-intake pipeline: it consumes the UI PRs write-code opens, renders and looks at them over the preview deploy, and emits a namespaced, SHA-bound `review-design: PASS @ <sha> — merge-ready` / `review-design: FAIL @ <sha> — changes-requested` comment marker (never a native review — ADR 0058), upserted on the (PR, gate-namespace, head, run) key, embedding the GitHub-hosted screenshot evidence; on a FAIL it feeds the existing write-code repair loop. It never merges; it never emits a review-code / review-doc / review-skill marker.
 ---
 
 # review-design
@@ -188,7 +188,7 @@ stage exists to prevent — the same invariant the sibling gates hold.
 
 `ship-it` matches the gate markers in **separate namespaces** (anchored, emphasis-tolerant,
 SHA-capturing regexes that never cross-match — your `review-design` namespace is registered in
-[`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §6.7, on the shared §5 matcher
+[the gate-verdict contract](../shared/gate-verdict-contract.md) §VERDICT, on its shared matcher
 contract), latest-verdict-wins per
 namespace, then a SHA-staleness refusal (ADR 0058). Your verdict's first line is **always**
 `review-design: … @ <sha>` — never another gate's token. Emitting another gate's marker on a UI PR
@@ -276,9 +276,9 @@ Your inputs and output live in the shared contract — read it before you start:
 
 - **§CP** — the canonical control-plane / blocking-set definition (Step 0 classification). Cite it;
   don't re-hard-code the path list.
-- **§6.7** — your own registered marker namespace (on the shared §5 matcher contract). Your
-  `review-design` marker lives in its own namespace, distinct from `review-code` (§5), `review-doc`
-  (§6), and `review-skill` (§6.5); emit the same SHA-bound `PASS @ <sha> — merge-ready` /
+- **§VERDICT** — your own registered marker namespace (on its shared matcher contract). Your
+  `review-design` marker lives in its own namespace, distinct from the `review-code`, `review-doc`
+  and `review-skill` ones; emit the same SHA-bound `PASS @ <sha> — merge-ready` /
   `FAIL @ <sha> — changes-requested` shape and token order, under the `review-design:` token.
 - **The verdict read-back guard** (`verdict_readback_guard`) — the single canonical post-write
   read-back you call after your upsert (Step 5). It is **gate-parameterized** — call it with the
@@ -627,7 +627,8 @@ HEAD_SHA="$("${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review
 ```
 
 Write the verdict to a per-run temp file so multi-line markdown + backticks survive the shell, then
-**upsert** it — exactly **one** `review-design` verdict comment per PR (ADR 0058 rule 2), the
+**upsert** it — on the §VERDICT key — (PR, gate-namespace, head, run) (ADR 0058 rule 2, refined by
+ADR 0213); the
 `mktemp` handle run-unique (the PR number alone isn't — two concurrent reviews would collide). That
 upsert plus its emission guards are the ADR-0058 glue **all four gates share**, so — exactly as
 `review-doc` — post through the deterministic, unit-tested tool (`pipeline-cli verdict post`, #2102).
@@ -645,14 +646,14 @@ hole #2789 / #2816 / #2818 rode: hand-posting off the verdict lib means `emissio
 runs). If a raw post is ever genuinely unavoidable, the body **MUST** first pass
 `pipeline-cli leak-guard scan-comment` (the #2823 pre-post net) before the post. This is the
 single-source rule in
-[gh-issue-intake-formats.md](../gh-issue-intake-formats.md#the-guarded-emit-path-is-mandatory--never-hand-post-a-verdict-marker-off-the-guard) — the *why* lives there, not re-derived here.
+[the gate-verdict contract §READBACK](../shared/gate-verdict-contract.md#the-guarded-emit-path-is-mandatory--never-hand-post-a-verdict-marker-off-the-guard) — the *why* lives there, not re-derived here.
 
 The SHA in the first line is **load-bearing**: `ship-it` refuses any verdict not bound to the PR's
-current head (ADR 0058). **Token order is fixed** (§5): `@ <HEAD_SHA>` comes **immediately after**
+current head (ADR 0058). **Token order is fixed** (§VERDICT): `@ <HEAD_SHA>` comes **immediately after**
 `PASS`/`FAIL`, **before** `— merge-ready`/`— changes-requested` — never a trailing `@ <sha>` (that
 captures `sha=null` and `ship-it` refuses a correct PASS as `unverified`, #625).
 
-Every verdict body carries the canonical **`Reviewed-head: @ <HEAD_SHA>`** anchor line (§6.6 / ADR
+Every verdict body carries the canonical **`Reviewed-head: @ <HEAD_SHA>`** anchor line (§ADVISORY / ADR
 0151) — the read-back guard asserts it on every path, and `ship-it`'s §CP enqueue resolves the head
 from exactly that line. Every body also carries an **Evidence** section embedding the helper's
 GitHub-hosted screenshot URLs so a human can see what you judged.
@@ -788,7 +789,7 @@ and brick the lane the verdict was gating (#4047). Rule and rationale:
 ### Confirm the verdict landed clean (the shared read-back guard, #2148)
 
 After **any** of the three upserts returns its comment id, close the loop: call the **single
-canonical** [`verdict_readback_guard`](../gh-issue-intake-formats.md#the-verdict-read-back-guard--after-posting-a-gate-marker-re-read-it-and-fail-loud-verdict_readback_guard)
+canonical** [`verdict_readback_guard`](../shared/gate-verdict-contract.md#the-verdict-read-back-guard--after-posting-a-gate-marker-re-read-it-and-fail-loud-verdict_readback_guard)
 from the shared contract with the **`review-design`** gate token — it re-reads the comment you just
 wrote and asserts the canonical `review-design:` marker, the anchored `Reviewed-head: @ <sha>` line,
 and **no leaked local filesystem path** (the #2148 marker-as-path leak).

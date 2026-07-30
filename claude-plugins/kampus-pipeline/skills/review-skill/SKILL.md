@@ -1,6 +1,6 @@
 ---
 name: review-skill
-description: Verify a skill PR against its linked issue's acceptance criteria — plus a skill-specific rigor checklist (behavioral correctness, trigger/description quality, cross-skill conflict/shadowing, gate-invariant preservation) — before it merges. The behavioral-artifact sibling of review-code/review-doc in the configured target repo's pipeline. Trigger on "review this skill PR", "review-skill #N", "gate the skill PR", "verify the skill on #N before merge", "run review-skill", "does this skill PR meet its acceptance criteria", or whenever you're asked to confirm a `skills/**` PR actually satisfies the issue it claims to close and does not weaken a gate. This is the skill-class verification stage of the issue-intake pipeline: it consumes the skill PRs `write-code` opens and verifies them one criterion at a time plus the four rigor checks, evidence-based from reading the diff (no test-running). Emits a namespaced, SHA-bound `review-skill: PASS @ <sha> — merge-ready` / `review-skill: FAIL @ <sha> — changes-requested` comment marker (never a native review — ADR 0058), upserted to one-per-PR; for BLOCKING-set skill PRs (a gate-critical skill, or any `.claude`/`.github` path) it is advisory only; it never merges; it never emits a `review-code` or `review-doc` marker.
+description: Verify a skill PR against its linked issue's acceptance criteria — plus a skill-specific rigor checklist (behavioral correctness, trigger/description quality, cross-skill conflict/shadowing, gate-invariant preservation) — before it merges. The behavioral-artifact sibling of review-code/review-doc in the configured target repo's pipeline. Trigger on "review this skill PR", "review-skill #N", "gate the skill PR", "verify the skill on #N before merge", "run review-skill", "does this skill PR meet its acceptance criteria", or whenever you're asked to confirm a `skills/**` PR actually satisfies the issue it claims to close and does not weaken a gate. This is the skill-class verification stage of the issue-intake pipeline: it consumes the skill PRs `write-code` opens and verifies them one criterion at a time plus the four rigor checks, evidence-based from reading the diff (no test-running). Emits a namespaced, SHA-bound `review-skill: PASS @ <sha> — merge-ready` / `review-skill: FAIL @ <sha> — changes-requested` comment marker (never a native review — ADR 0058), upserted on the (PR, gate-namespace, head, run) key; for BLOCKING-set skill PRs (a gate-critical skill, or any `.claude`/`.github` path) it is advisory only; it never merges; it never emits a `review-code` or `review-doc` marker.
 ---
 
 # review-skill
@@ -64,7 +64,7 @@ path, which would read the **pre-PR base** (issue
 [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §HEAD — cite it, don't
 re-derive: resolve the live head via REST and **assert the fetched ref equals it** before
 reviewing (below), read all skill text from the head, and re-check the live head before posting
-(§HEAD #4); the verdict (§5) binds to the SHA whose files you actually read and asserts it.
+(§HEAD #4); the verdict (§VERDICT) binds to the SHA whose files you actually read and asserts it.
 
 ```bash
 # §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
@@ -136,7 +136,7 @@ invariant `review-code`/`review-doc` hold.
 
 `ship-it` matches the three markers in **separate namespaces** (three anchored,
 emphasis-tolerant, SHA-capturing regexes that never cross-match — see the matcher contract in
-[`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §5 / §6.5), latest-verdict-wins
+[the gate-verdict contract §VERDICT](../shared/gate-verdict-contract.md)), latest-verdict-wins
 per namespace by timestamp, then a SHA-staleness refusal (ADR 0058). Your verdict's first line
 is **always** `review-skill: … @ <sha>` — never `review-code:` or `review-doc:`. Emitting
 another gate's marker on a skill PR would let that namespace's scan match your verdict,
@@ -171,12 +171,13 @@ checked out — ADR 0052/0067).
 ## The formats contract
 
 Your gate is **format 2, the sub-issue body's `### Acceptance criteria` checklist** — and
-**format 6.5, the review-skill verdict marker** (your namespace). Read the contract so you
+**the review-skill verdict marker** (your namespace). Read the contracts so you
 know the shapes you verify against and emit:
-[`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §2 and §6.5. §6.5 defines the
+[`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §2, and
+[the gate-verdict contract](../shared/gate-verdict-contract.md) §VERDICT. §VERDICT defines the
 `review-skill` namespace (SHA-bound `PASS @ <sha> — merge-ready` / `FAIL @ <sha> —
-changes-requested`) and the canonical advisory line (§6.6), in a namespace distinct from §5's
-`review-code` and §6's `review-doc` markers — emit only the §6.5 / §6.6 shapes.
+changes-requested`) and §ADVISORY the canonical advisory line, in a namespace distinct from the
+`review-code` / `review-doc` / `review-design` markers — emit only your own namespace's shapes.
 
 The key invariant: **every issue carries at least one acceptance criterion.** That's the floor
 that guarantees there is always something to verify. If an issue you're handed has *zero*
@@ -304,7 +305,7 @@ so the PR reaches `ship-it` with a current-head PASS standing in each present na
 **Emit each namespace's verdict as its OWN separate PR comment — one comment per namespace, marker
 on that comment's literal first line — never two markers stacked in one comment** (the second
 would be un-anchored, resolve empty, and fail-close a substantively-PASS PR — the PR #2456 stall;
-the forbidden "stacked" emit form in `../gh-issue-intake-formats.md` §5).
+the forbidden "stacked" emit form in `../shared/gate-verdict-contract.md` §VERDICT).
 `ship-it`'s per-present-class requirement (its Step 2) is unchanged — it remains the
 **fail-closed late catch** for a genuinely-missing namespace, not the *first* place the second
 namespace is discovered.
@@ -481,8 +482,9 @@ rigor FAIL fails the gate** the same as an AC FAIL — the overall verdict is co
    - `review-code`/`review-doc`/`review-skill`: the **config-pin** (base-reviewed, not
      head-loaded); the **conjunctive** AC + (hygiene/rigor) verdict; the SHA-bound, upserted,
      namespaced marker; the **never-cross-match** matcher; "never merge."
-   - the formats contract (`gh-issue-intake-formats.md`): the §CP canonical set, the §5/§6/§6.5
-     matcher contracts, the ADR-0058 SHA-binding + upsert rules — none narrowed or made
+   - the formats contract (`gh-issue-intake-formats.md`): the §CP canonical set; the gate-verdict
+     contract (`shared/gate-verdict-contract.md`): §VERDICT's matcher contract and the ADR-0058
+     SHA-binding + upsert rules — none narrowed or made
      ambiguous.
    - Out of scope (do **not** flag): a PR that merely *exercises* ADR 0065's coarse
      blocking-rule (a gate-critical edit that stays human-merged) — that is the rule working,
@@ -500,7 +502,7 @@ Build the rigor findings into the same evidence shape as the AC table:
 ```
 - [PASS] Behavioral correctness — the new Step R2 fold reads exactly the enumerated findings (skills/write-code/SKILL.md:619–636)
 - [FAIL] Gate-invariant preservation — diff drops the `@ <sha>` from ship-it's matcher (Step 2, line NNN) → SHA-staleness refusal no longer fires
-- [PASS] Cross-skill conflict — review-skill marker token is disjoint from review-code/review-doc (§6.5)
+- [PASS] Cross-skill conflict — review-skill marker token is disjoint from review-code/review-doc (§VERDICT)
 ```
 
 ---
@@ -626,8 +628,9 @@ HEAD_SHA="$(gh api repos/$REPO/pulls/$PR --jq .head.sha)"   # the head you revie
 `review-skill` lands its verdict **only as the SHA-bound comment, never a native review** (ADR
 0058 rule 4 — like `review-doc`): a native review can't carry the `@ <sha>` in the shape this
 contract controls, so the comment is the single carrier. The post is an **upsert**, not an
-append: exactly **one** `review-skill` verdict comment per PR (ADR 0058 rule 2), a re-review of
-a new head overwriting the same record. That upsert plus its emission guards are the ADR-0058
+append — on the §VERDICT key — (PR, gate-namespace, head, run) (ADR 0058 rule 2, refined by
+ADR 0213): a re-post at your own key replaces that record in place, while a re-review at a NEW
+head appends a fresh one and leaves the prior head's verdict standing. That upsert plus its emission guards are the ADR-0058
 glue **all four gates share**, so — exactly as `review-doc` — post through the deterministic,
 unit-tested tool (`pipeline-cli verdict post`, #2102), never a hand-rolled `jq`. **The tool is
 the marker-emit choke point:** it refuses fail-closed unless every SHA field (the first-line
@@ -641,7 +644,7 @@ skips the guard is **FORBIDDEN** (it is the emit-side hole #2789 / #2816 / #2818
 off the verdict lib means `emissionDefect` never runs). If a raw post is ever genuinely unavoidable,
 the body **MUST** first pass `pipeline-cli leak-guard scan-comment` (the #2823 pre-post net) before
 the post. This is the single-source rule in
-[gh-issue-intake-formats.md](../gh-issue-intake-formats.md#the-guarded-emit-path-is-mandatory--never-hand-post-a-verdict-marker-off-the-guard) — the *why* lives there, not re-derived here.
+[the gate-verdict contract §READBACK](../shared/gate-verdict-contract.md#the-guarded-emit-path-is-mandatory--never-hand-post-a-verdict-marker-off-the-guard) — the *why* lives there, not re-derived here.
 
 ```bash
 # resolve the verdict CLI via the `bin/pipeline-cli` shim — in-repo bin, else the installed bin,
@@ -666,9 +669,9 @@ $VERDICT post --pr "$PR" --gate skill --body-file "$VERDICT_FILE"
 
 Verdict body shape. The first line is the **canonical bare marker** — no leading `**`
 emphasis, **with the `@ <HEAD_SHA>` you resolved above** — per the matcher contract in
-[gh-issue-intake-formats.md](../gh-issue-intake-formats.md) §5/§6.5 (matchers tolerate an
+[the gate-verdict contract §VERDICT](../shared/gate-verdict-contract.md) (matchers tolerate an
 optional leading `**`, but emit bare; the `@ <sha>` is required, ADR 0058). **Token order is
-fixed** (§5): `@ <HEAD_SHA>` comes **immediately after** `PASS`, **before** `— merge-ready` —
+fixed** (§VERDICT): `@ <HEAD_SHA>` comes **immediately after** `PASS`, **before** `— merge-ready` —
 never `review-skill: PASS — merge-ready @ <sha>`; `ship-it`'s capture is anchored to that
 order, so a trailing `@ <sha>` captures `sha=null` and refuses a correct PASS as `unverified` (#625):
 
@@ -699,14 +702,14 @@ authorized merge step; merging will auto-close #<ISSUE> via `Fixes #<ISSUE>`.
 The body carries the canonical `Reviewed-head: @ <HEAD_SHA>` line here too, so **every** verdict body
 this gate emits — non-blocking PASS, advisory, FAIL — binds the reviewed head in one uniform form
 (#2272). The non-blocking PASS is still bound primarily by its first-line `@ <sha>`; the body line is
-the same canonical token the read-back guard (§6.6) validates, so a clean non-blocking PASS never
+the same canonical token the read-back guard (§ADVISORY) validates, so a clean non-blocking PASS never
 false-fails the unconditional `verdict_post_verify … || exit 1`.
 
 ### Pass path — blocking-set PR (advisory only, the canonical advisory form)
 
 Every check passed but Step 0 classified the PR **blocking** (it touches a gate-critical skill
 or any §CP path — the common case for a skill PR that edits a gate). Post the **same
-evidence**, but the first line is the **canonical advisory line** (§6.6) — **not** a
+evidence**, but the first line is the **canonical advisory line** (§ADVISORY) — **not** a
 merge-ready go-ahead. `ship-it` does not auto-merge this PR on machine gates alone — it enqueues
 only once a `@kamp-us/control-plane` approval is present at head (ADR 0135). The advisory
 line carries **no first-line `@ <sha>`** by design (it authorizes nothing, so there is nothing to
@@ -728,7 +731,7 @@ bind), keeping your verdict out of `ship-it`'s PASS namespace.
 > **The body's `Reviewed-head:` line is canonical and load-bearing — emit it verbatim (ADR 0151).**
 > `ship-it`'s ADR-0135 approval-aware enqueue reads the reviewed head from **exactly** the
 > `Reviewed-head: @ <HEAD_SHA>` line below (the anchored matcher in
-> [gh-issue-intake-formats.md](../gh-issue-intake-formats.md) §6.6), gated on the control-plane
+> [the gate-verdict contract §ADVISORY](../shared/gate-verdict-contract.md)), gated on the control-plane
 > approval — that is what makes a §CP skill PR's enqueue **deterministic** (#1932/#2022; free-prose
 > "reviewed head" phrasings resolved nondeterministically and are retired). Write it as its own line
 > with the exact `Reviewed-head:` prefix and the head SHA you reviewed — do **not** paraphrase it,
@@ -763,8 +766,8 @@ Upsert it the same way as the pass/fail paths — `mktemp` the verdict file (the
 isn't unique; a fixed `/tmp/...-${PR}.md` collides under concurrent reviews), then `PATCH` your
 own prior `review-skill:` marker if one exists, else `POST`. The namespace-anchored find filter
 matches a prior PASS/FAIL too, so a re-review that flips a PR to blocking overwrites the old
-binding verdict with this advisory line — exactly one `review-skill` verdict per PR (ADR 0058
-rule 2). The advisory **first line** carries no `@ <sha>` by design (SHA-less, so it never enters
+binding verdict with this advisory line, on the §VERDICT key — (PR, gate-namespace, head, run)
+(ADR 0058 rule 2, refined by ADR 0213). The advisory **first line** carries no `@ <sha>` by design (SHA-less, so it never enters
 `ship-it`'s auto-merge namespace — ADR 0111); the reviewed head IS recorded, once, in the body's
 canonical `Reviewed-head: @ <HEAD_SHA>` line (ADR 0151), which `ship-it`'s §CP enqueue reads.
 
@@ -820,7 +823,7 @@ unmerged; #<ISSUE> stays open and assigned. Re-request review once they're satis
 
 Do **not** post a native `REQUEST_CHANGES` review — `review-skill` is comment-only (ADR 0058
 rule 4), so the SHA-bound marker comment is the **sole** verdict artifact. Recognize the marker
-tolerantly by shape (`review-skill: FAIL @ <sha>`), not exact dashes; token order is fixed (§5):
+tolerantly by shape (`review-skill: FAIL @ <sha>`), not exact dashes; token order is fixed (§VERDICT):
 `@ <sha>` comes **immediately after** `FAIL`, before `— changes-requested`. Do **not** touch the
 issue's labels, assignee, or state on a fail — a failed gate is a no-op on the work state plus
 a comment.
@@ -849,7 +852,7 @@ landed by any other path reached the guard with an empty id and a broken/leaking
 through). Call the **single unconditional wrapper** from the shared contract, which re-derives the
 landed verdict from live PR state (never a carried variable) and runs the read-back on whatever
 landed, on **every** post path —
-[`gh-issue-intake-formats.md` §Make the read-back UNCONDITIONAL (`verdict_post_verify`)](../gh-issue-intake-formats.md#make-the-read-back-unconditional--resolve-the-landed-verdict-from-pr-state-never-a-carried-id-verdict_post_verify):
+[the gate-verdict contract §READBACK — Make the read-back UNCONDITIONAL (`verdict_post_verify`)](../shared/gate-verdict-contract.md#make-the-read-back-unconditional--resolve-the-landed-verdict-from-pr-state-never-a-carried-id-verdict_post_verify):
 
 ```bash
 # UNCONDITIONAL post-verify: resolve the landed verdict from PR state, prove it present + well-formed

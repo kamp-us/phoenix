@@ -9,7 +9,7 @@
  * as one deterministic, table-tested function (ADR 0058, the SHA-bound verdict contract).
  *
  * The marker grammar, the emphasis-tolerant anchor, and the `@ <sha>` capture are
- * single-sourced from gh-issue-intake-formats.md §5/§6 and ADR 0058; this core is the
+ * single-sourced from the gate-verdict contract's §VERDICT and ADR 0058; this core is the
  * deterministic decision the IO shell (`github.ts`) drives at the boundary. The author-gate
  * (ADR 0055 write+ trust root) is resolved by the shell and handed in as `authorizedAuthors`,
  * exactly as `epic-lock`'s claim core takes it — a forged marker from a non-collaborator
@@ -39,7 +39,7 @@ export const GATES: ReadonlyArray<VerdictGate> = ["code", "doc", "skill", "desig
  * "is this a marker in my namespace at all" test the `post` upsert scans with, and the
  * cross-namespace guard (`review-code:` never matches the `doc` namespace and vice versa).
  * Anchored at string start with no `m` flag, so it tests the very first line only — a
- * comment that merely *quotes* a marker mid-body never matches (§5/§6).
+ * comment that merely *quotes* a marker mid-body never matches (§VERDICT).
  */
 export const namespaceRe = (gate: VerdictGate): RegExp =>
 	new RegExp(`^\\s*\\*{0,2}\\s*${GATE_KEYWORD[gate]}:`, "i");
@@ -47,7 +47,7 @@ export const namespaceRe = (gate: VerdictGate): RegExp =>
 /**
  * Bindable-verdict matcher: `review-<gate>: (PASS|FAIL) @ <sha>` — captures the polarity
  * (group 1) and the bound head SHA (group 2, ≥7 hex). The `@ <sha>` **immediately after**
- * PASS/FAIL is the fixed token order (§5) — a trailing `@ <sha>` after the em-dash tail does
+ * PASS/FAIL is the fixed token order (§VERDICT) — a trailing `@ <sha>` after the em-dash tail does
  * NOT match, exactly as `ship-it`'s capture refuses it (#625).
  */
 export const verdictRe = (gate: VerdictGate): RegExp =>

@@ -337,7 +337,8 @@ don't re-derive:
 - **code-class** diff (everything else — `apps/**`, `packages/**`, `.glossary/**`, a code-root
   `*.md`) → emit a **`review-code:`** marker.
 
-Whichever namespace, the verdict obeys the §5/§6/§6.5 matcher contract: the **first line** is
+Whichever namespace, the verdict obeys the [gate-verdict contract
+§VERDICT](../shared/gate-verdict-contract.md) matcher rules: the **first line** is
 the bare, canonical, SHA-bound marker, with `@ <sha>` **immediately after** the `PASS`/`FAIL`
 polarity and **before** the `— merge-ready` / `— not merge-ready` tail (token order is fixed;
 a trailing `@ <sha>` captures `sha=null` and `ship-it` refuses a correct PASS as `unverified`,
