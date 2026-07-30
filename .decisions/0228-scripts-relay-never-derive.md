@@ -1,7 +1,7 @@
 ---
 id: 0228
 title: Extracted skill scripts relay verb decisions, never derive them
-status: accepted
+status: amended-in-part by [0229](0229-mechanical-combination-is-relay.md)
 date: 2026-07-28
 tags: [pipeline, skills, control-plane, tooling]
 ---
