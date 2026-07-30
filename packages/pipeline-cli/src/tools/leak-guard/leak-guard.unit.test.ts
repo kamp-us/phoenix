@@ -1,5 +1,11 @@
 import {assert, describe, it} from "@effect/vitest";
-import {findCommentLeaks, findLeaks, isSelfExempt, isSharedArtifact} from "./leak-guard.ts";
+import {
+	findCommentLeaks,
+	findLeaks,
+	isSelfExempt,
+	isSharedArtifact,
+	surfaceOf,
+} from "./leak-guard.ts";
 
 const hasLeak = (filePath: string, text: string): boolean => findLeaks(filePath, text).length > 0;
 const hasCommentLeak = (text: string): boolean => findCommentLeaks(text).length > 0;
@@ -184,15 +190,74 @@ describe("findLeaks — file surface keeps its /tmp carve-out (unchanged by the 
 		assert.isFalse(hasLeak("notes.md", "ran under /var/folders/8f/T/tmp.abc")));
 });
 
+// #4496: the shell surface. Epic #4435 extracts pipeline shell out of markdown fences into
+// standalone `.sh` files, so without this surface the guard's coverage shrinks with every
+// extraction merge while the required check keeps exiting 0 (the #4470 class).
+describe("findLeaks — the shell surface (#4496)", () => {
+	it("flags a machine-local home path in a `.sh` file", () => {
+		const leaks = findLeaks(
+			"claude-plugins/kampus-pipeline/skills/ship-it/scripts/step2.sh",
+			'root="/Users/ci-fixture/code/github.com/acme/widget"\n',
+		);
+		assert.lengthOf(leaks, 1);
+		assert.strictEqual(leaks[0]?.matched, "/Users/ci-fixture");
+	});
+
+	// The deliberate divergence from an *invocation* guard, which skips comment-only lines
+	// because a commented call is not run: a machine-local path is a leak wherever it sits in a
+	// committed file, and a shell comment is the likeliest place for one to land (agents paste
+	// their own worktree paths into explanatory comments).
+	it("flags a machine-local path in a shell COMMENT, not just in a command", () =>
+		assert.isTrue(hasLeak("scripts/deploy.sh", "# built from ~/code/github.com/acme/widget\n")));
+
+	it("scans a `.sh` whole — a heredoc fence delimiter does not scope the surface", () =>
+		assert.isTrue(
+			hasLeak(
+				"scripts/verdict.sh",
+				["cat <<'EOF'", "```bash", "```", "EOF", "cd /Users/ci-fixture/x"].join("\n"),
+			),
+		));
+
+	it("passes a clean `.sh` that cites repo-relative paths only", () =>
+		assert.isFalse(
+			hasLeak("scripts/clean.sh", 'root="packages/pipeline-cli/src/tools/leak-guard"\n'),
+		));
+
+	// AC: the self-exempt mechanism must still hold — and this entry only became LIVE with the
+	// shell surface (it sat in the list unreachable while `.sh` was out of scope).
+	it("keeps a path-hygiene `.sh` self-exempt", () =>
+		assert.isFalse(hasLeak("skills/report/footer.sh", "cite /Users/ci-fixture/x, never\n")));
+});
+
 describe("surface predicates", () => {
-	it("isSharedArtifact: .md / .mdx / .markdown and .decisions/.patterns dirs", () => {
+	it("isSharedArtifact: .md / .mdx / .markdown, .decisions/.patterns dirs, and .sh", () => {
 		assert.isTrue(isSharedArtifact("x.md"));
 		assert.isTrue(isSharedArtifact("x.mdx"));
 		assert.isTrue(isSharedArtifact("x.markdown"));
 		assert.isTrue(isSharedArtifact(".decisions/0001.txt"));
 		assert.isTrue(isSharedArtifact(".patterns/foo.json"));
+		assert.isTrue(isSharedArtifact("claude-plugins/kampus-pipeline/skills/doctor/doctor.sh"));
 		assert.isFalse(isSharedArtifact("src/index.ts"));
 	});
+
+	// The scan's per-surface scope tally reads this classifier, so a surface cannot be scanned by
+	// one caller and skipped by another. Retained-by-design out of scope: `.ts` / `.yml` / `.json`
+	// / `.toml` (see the module docblock — the shell surface exists because its premise expired,
+	// which is not true of source or config).
+	it("surfaceOf names the surface, and is null for out-of-scope files", () => {
+		assert.strictEqual(surfaceOf("notes.md"), "doc");
+		assert.strictEqual(surfaceOf(".decisions/0001-x.md"), "doc");
+		assert.strictEqual(surfaceOf("scripts/deploy.sh"), "shell");
+		assert.isNull(surfaceOf("src/index.ts"));
+		assert.isNull(surfaceOf(".github/workflows/leak-guard.yml"));
+		assert.isNull(surfaceOf("package.json"));
+	});
+
+	// The shell suffix is checked ahead of the doc dirs, so a script vendored under a doc dir is
+	// tallied as the shell surface it is. Both surfaces scan identically, so this only pins the
+	// scope tally — but an ambiguous classification would make that tally unreadable.
+	it("surfaceOf classifies a `.sh` under a doc dir as the shell surface", () =>
+		assert.strictEqual(surfaceOf(".patterns/example.sh"), "shell"));
 
 	it("isSelfExempt: the guard's own files (old package + moved tool) and the path-hygiene skills", () => {
 		assert.isTrue(isSelfExempt("packages/leak-guard/src/leak-guard.ts"));
