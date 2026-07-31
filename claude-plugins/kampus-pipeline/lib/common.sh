@@ -6,31 +6,34 @@
 # Sourced, never executed: it defines functions and sets no shell options, so the sourcing
 # script keeps its own `set -euo pipefail`.
 #
-# DESTINATION CONVENTION — read this before adding any file under skills/ (#4446).
+# DESTINATION CONVENTION — read this before adding a pipeline shell file (#4446, #4484).
 #   per-skill script   claude-plugins/kampus-pipeline/skills/<skill>/scripts/<name>.sh
-#   this shared lib    claude-plugins/kampus-pipeline/skills/shared/lib/common.sh
-# `.sh` ONLY, at any depth. `.github/CODEOWNERS` gates
-# `/claude-plugins/kampus-pipeline/skills/**/*.sh` to @kamp-us/control-plane and §CP's
-# CONTROL_PLANE_RE carries the matching `skills/([^/]+/)*[^/]+\.sh$` branch (ADR 0174), so a
-# `.sh` file here needs a human approval to merge. A NON-`.sh` file here matches no
-# CODEOWNERS row at all — and because that file has no `*` catch-all and the branch's
-# required_approving_review_count is 0, an unmatched path merges with ZERO approvals.
-# Measured, not assumed: `pipeline-cli cp-classify classify` exits 3 `not-control-plane` for
-# `claude-plugins/kampus-pipeline/skills/shared/lib/common.env` and for an extensionless
-# `claude-plugins/kampus-pipeline/skills/shared/lib/common`, and exits 0 `control-plane` for
-# this file and for `claude-plugins/kampus-pipeline/skills/ship-it/scripts/<name>.sh`. So a
-# non-`.sh` helper must land its covering CODEOWNERS row and CONTROL_PLANE_RE branch FIRST.
+#   this shared lib    claude-plugins/kampus-pipeline/lib/common.sh
+# The lib sits beside `bin/`, NOT under `skills/`: `shared/` was never a skill, and it survived
+# in the skills namespace only because `validate-skills.sh` enumerates via a `*/SKILL.md` glob
+# that skips it (#4484). Both destinations are §CP by DIRECTORY, at any depth and any extension:
+# `.github/CODEOWNERS` gates `/claude-plugins/kampus-pipeline/skills/` and
+# `/claude-plugins/kampus-pipeline/lib/` to @kamp-us/control-plane, and CONTROL_PLANE_RE carries
+# the matching `^claude-plugins/kampus-pipeline/(skills|lib)/` branches. So every file under
+# either — a `README.md`, a `.env`, an extensionless helper — needs a human approval to merge.
+# A destination OUTSIDE both is the hazard: that file has no `*` catch-all and the branch's
+# required_approving_review_count is 0, so a path matching NO row merges with ZERO approvals.
+# Measured, not assumed: `pipeline-cli cp-classify classify` exits 0 `control-plane` for this
+# file and for `claude-plugins/kampus-pipeline/skills/ship-it/scripts/<name>.sh`, and exits 3
+# `not-control-plane` for `claude-plugins/kampus-pipeline/scripts/common.sh`. So a helper landing
+# anywhere else must bring its covering CODEOWNERS row and CONTROL_PLANE_RE branch FIRST, in the
+# SAME commit — that atomicity is what this file's own relocation had to honour.
 #
 # SOURCING IDIOM — resolve relative to this file so the caller's cwd is irrelevant. From a
 # script in a per-skill scripts/ directory:
-#   . "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../shared/lib" && pwd)/common.sh"
+#   . "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
 #
 # That idiom is now a MACHINE CONTRACT, not a style note (ADR 0230, #4541). `kp_skill_source_edges`
 # below matches it literally — column 0, single line, no interpolated directory — to decide which
 # shared file a skill demonstrably executes. A sourcing form outside it is not resolvable statically,
-# so a line that names a `shared/` target in any other shape is UNRESOLVED and reds the skill rather
-# than narrowing its surface in silence. Change the idiom and you change that matcher: they move
-# together, and `shared/lib/common-test.sh` pins the pair.
+# so a line that names a shared target — `skills/shared/` or this `lib/` — in any other shape is
+# UNRESOLVED and reds the skill rather than narrowing its surface in silence. Change the idiom and
+# you change that matcher: they move together, and `lib/common-test.sh` pins the pair.
 
 # Every file a skill's shell can live in, one absolute path per line: its SKILL.md plus every
 # `*.sh` under the skill's own directory — the destination the convention above sends extracted
@@ -38,7 +41,7 @@
 # it, staying green while guarding nothing (#4470); resolving the surface HERE, next to the
 # convention that defines it, is what keeps the two in step.
 #
-# Scoped to the skill's OWN directory on purpose. shared/*.sh is cross-skill, so folding the whole
+# Scoped to the skill's OWN directory on purpose. The shared shell is cross-skill, so folding the whole
 # directory into every skill's surface would let one skill's marker satisfy another skill's
 # per-skill check — the same guard-in-text/absent-in-effect defect, reintroduced from the other
 # side (#4470). That exclusion is on DIRECTORY MEMBERSHIP, and it stands. What a caller may add on
@@ -193,21 +196,21 @@ kp__is_under() { # <path> <root> — true when <path> IS <root> or sits beneath 
 # through a legitimate edge (#4505 threat model T3).
 #
 # FAIL-CLOSED, and loudly by name (ADR 0092 / §ZS, ADR 0230 rule 4). Emits NOTHING on stdout and
-# returns non-zero when: the skill's own surface will not resolve; a source line names a `shared/`
+# returns non-zero when: the skill's own surface will not resolve; a source line names a shared
 # target in any shape but the documented idiom (UNRESOLVED — never silently unfollowed); a resolved
 # target is missing or unreadable; or a target lands outside the allowlist (the skill's own dir,
-# `shared/scripts/`, `shared/lib/`), which is what stops skill A greening off wiring skill B owns and
+# `skills/shared/scripts/`, the plugin `lib/`), which is what stops skill A greening off wiring skill B owns and
 # can delete (T4). A named edge that will not resolve makes the surface UNKNOWN, and UNKNOWN is never
 # "the needle is absent" — the caller must red on it by name rather than report a confusing
 # needle-not-found over a surface it never finished reading (T7).
 #
-# A source line that resolves to neither — no `shared/` in it, not the idiom — is not an edge claim
+# A source line that resolves to neither — no shared root named in it, not the idiom — is not an edge claim
 # at all and is simply not followed. That direction is safe by construction: this function only ever
 # ADDS files, so an unfollowed line yields a NARROWER surface, and a narrower surface can only make a
 # presence grep fail.
 kp_skill_source_edges() {
 	local skills_dir="$1" skill="$2"
-	local own_root shared_scripts_root shared_lib_root own_list
+	local own_root shared_scripts_root plugin_lib_root own_list
 	local frontier next visited emitted f dir stripped hits line pair rel name tdir target hop grc allowed
 	local NL='
 '
@@ -219,7 +222,7 @@ kp_skill_source_edges() {
 	# symlink, and a logical path compares a resolved target against an unresolved root and never
 	# matches (T7). An absent shared root is not an error — it is simply not an allowed target.
 	shared_scripts_root="$(cd -P "$skills_dir/shared/scripts" 2>/dev/null && pwd)" || shared_scripts_root=""
-	shared_lib_root="$(cd -P "$skills_dir/shared/lib" 2>/dev/null && pwd)" || shared_lib_root=""
+	plugin_lib_root="$(cd -P "$skills_dir/../lib" 2>/dev/null && pwd)" || plugin_lib_root=""
 
 	if ! own_list="$(kp_skill_shell_surfaces "$skills_dir" "$skill")"; then
 		printf 'kp_skill_source_edges: %s: the own surface is UNKNOWN, so its edges are too; emitting nothing.\n' "$skill" >&2
@@ -274,8 +277,11 @@ EOF
 				fi
 				if [ -z "$pair" ]; then
 					case "$line" in
-					*shared/*)
-						printf 'kp_skill_source_edges: %s: %s carries a source line naming a shared/ target that does NOT match the documented sourcing idiom, so it cannot be resolved statically — the surface is UNKNOWN, not narrower (ADR 0230 rule 4):\n  %s\n' "$skill" "$f" "$line" >&2
+					# The UNRESOLVED trigger names BOTH shared roots — `skills/shared/` and the plugin
+					# `lib/` the library moved to (#4484). Missing either would let a non-idiom source
+					# line naming that root read as "not an edge claim" and silently narrow the surface.
+					*shared/* | */lib/* | */lib\"*)
+						printf 'kp_skill_source_edges: %s: %s carries a source line naming a shared target (skills/shared/ or the plugin lib/) that does NOT match the documented sourcing idiom, so it cannot be resolved statically — the surface is UNKNOWN, not narrower (ADR 0230 rule 4):\n  %s\n' "$skill" "$f" "$line" >&2
 						return 1
 						;;
 					esac
@@ -296,9 +302,9 @@ EOF
 				allowed=0
 				if kp__is_under "$tdir" "$own_root"; then allowed=1; fi
 				if [ "$allowed" -eq 0 ] && kp__is_under "$tdir" "$shared_scripts_root"; then allowed=1; fi
-				if [ "$allowed" -eq 0 ] && kp__is_under "$tdir" "$shared_lib_root"; then allowed=1; fi
+				if [ "$allowed" -eq 0 ] && kp__is_under "$tdir" "$plugin_lib_root"; then allowed=1; fi
 				if [ "$allowed" -eq 0 ]; then
-					printf 'kp_skill_source_edges: %s: %s sources %s, outside the followed-target allowlist (own dir, shared/scripts, shared/lib). Following it would let this skill green off wiring another skill owns and can delete (T4); refusing.\n' "$skill" "$f" "$target" >&2
+					printf 'kp_skill_source_edges: %s: %s sources %s, outside the followed-target allowlist (own dir, skills/shared/scripts, the plugin lib/). Following it would let this skill green off wiring another skill owns and can delete (T4); refusing.\n' "$skill" "$f" "$target" >&2
 					return 1
 				fi
 				case "$visited" in

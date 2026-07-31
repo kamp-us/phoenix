@@ -31,6 +31,16 @@
  * previously-excluded operational skill dirs (`heal-ci`, `what-shipped`, `doctor`, `wayfinder`)
  * are now §CP too — was stated to the founder and accepted.
  *
+ * The `lib/` clause (`^claude-plugins/kampus-pipeline/lib/`) carries the skills clause's coverage
+ * to the shared shell library's new home. `shared/` was never a skill — it survived inside
+ * `skills/` only because `validate-skills.sh` enumerates skills via a per-directory SKILL.md glob
+ * that skips it — so #4484 moved `common.sh` out to the ordinary `bin/` + `lib/` layout. Outside
+ * the skills tree the destination is proven-ordinary (zero required approvals), and this file is
+ * what every extracted
+ * per-skill script sources: relocating it without this branch would strip the human merge gate
+ * from the highest-leverage edit surface in the extraction programme. Move and branch are atomic
+ * by construction, one commit, the #4462 discipline.
+ *
  * The biome-governance clauses (`^biome\.jsonc$`, `^biome-plugins/`) are §CP because
  * lint/GritQL governance config is a guard-relaxing vector: an ungated path to weaken a
  * lint rule (disable a security lint, downgrade a GritQL guard) could pass the enforcement
@@ -88,4 +98,4 @@
  * runtime resolution off the origin/main read.
  */
 export const CONTROL_PLANE_RE =
-	"^(\\.claude|\\.github)/|^\\.claude-plugin/|^claude-plugins/kampus-pipeline/skills/|^claude-plugins/kampus-pipeline/agents/|^claude-plugins/kampus-pipeline/hooks(/|\\.json$)|^packages/ci-required/|^packages/pipeline-cli/src/[^/]+$|^packages/pipeline-cli/src/tools/(ci-required|codeowners-cp|control-plane-paths|cp-cardinality|cp-classify|review-head|trivial-diff|verdict)/|^packages/pipeline-cli/src/tools/tracker/gh-io\\.ts$|^biome\\.jsonc$|^biome-plugins/|^([^/]+/)*(lefthook|\\.lefthook)[^/]+$";
+	"^(\\.claude|\\.github)/|^\\.claude-plugin/|^claude-plugins/kampus-pipeline/skills/|^claude-plugins/kampus-pipeline/lib/|^claude-plugins/kampus-pipeline/agents/|^claude-plugins/kampus-pipeline/hooks(/|\\.json$)|^packages/ci-required/|^packages/pipeline-cli/src/[^/]+$|^packages/pipeline-cli/src/tools/(ci-required|codeowners-cp|control-plane-paths|cp-cardinality|cp-classify|review-head|trivial-diff|verdict)/|^packages/pipeline-cli/src/tools/tracker/gh-io\\.ts$|^biome\\.jsonc$|^biome-plugins/|^([^/]+/)*(lefthook|\\.lefthook)[^/]+$";
