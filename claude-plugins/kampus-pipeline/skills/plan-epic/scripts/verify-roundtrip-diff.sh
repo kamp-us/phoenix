@@ -4,7 +4,7 @@
 # against a stubbed `gh` — never a re-implementation of its awk, which would be blind to exactly the
 # defect it is here to pin (the expected side was derived from a surface that is never stored).
 #
-# Four cases, and the negative ones are the point: a check that only proves the happy path has
+# Five cases, and the negative ones are the point: a check that only proves the happy path has
 # replaced a false alarm with a silent miss, which is strictly worse.
 #
 #   A. CLEAN, deps-last, `deps.md` carrying the instructed trailing blank line → exit 0, "round-tripped".
@@ -14,10 +14,26 @@
 #      normalization is trailing-blank-LINES only; anything inside the block stays byte-exact.
 #   D. CLOBBERED heading-adjacent blank — an interior blank line deleted → exit 1. Pins that the
 #      normalization did not degrade into "strip all blank lines".
+#   E. CLEAN, but `deps.md` ends in a WHITESPACE-ONLY line against a store that strips trailing
+#      whitespace → exit 0. `$(cat)` strips newlines only, so `$BODY` reaches the PATCH still ending
+#      in that line while the store does not keep it — the one case the trailing-blank drop guards.
 #
-# B/C/D are the anti-weakening clamp. Falsify this harness by deleting the `deps_block` normalization
-# from splice-body.sh: A must go red. Falsify it the other way by widening `deps_block` to strip all
-# whitespace: C and D must go red.
+# Falsify this harness three ways. WHICH case reds is the claim — run the mutation before trusting
+# the mapping, because the obvious one is wrong (#4598 review):
+#
+#   - Full pre-fix — step 5 back to the FILE `body.md` AND `deps_block` back to a plain `{ print }`:
+#     A goes red, the #4596 false positive.
+#   - Drop `held` only (print every blank, keep the `$BODY` source): E goes red, A does NOT. Under a
+#     verbatim store both sides of A's diff are byte-identical with or without the normalization, so
+#     A can never pin that clause on its own; E is what pins it.
+#   - Widen `deps_block` to strip all whitespace: C and D go red. B/C/D are the anti-weakening clamp.
+#
+# What NO case reds, stated plainly rather than left to be discovered: the FILE→`$BODY` source change
+# alone, with the normalization left standing. It cannot — `body.md` and `$BODY` differ only in
+# trailing newlines, which `deps_block` drops, so the two sources are block-equivalent by
+# construction. The two halves of the fix each independently close #4596; the one-surface property is
+# pinned STRUCTURALLY (one `deps_block()`, both call sites through it) and is not a behavior a
+# black-box case can reach.
 #
 # Hermetic: `gh` is stubbed on PATH, so this needs no auth and touches no live issue. The
 # `pipeline-cli` shim IS the real one — `epic-splice apply` and `scratchpad` are offline local
@@ -55,7 +71,8 @@ mkdir -p "$BIN" || { echo "FAIL: cannot create the stub dir under $TMP"; exit 1;
 # The stub server. `body` is the stored body, byte-for-byte what the PATCH handed it — modelling
 # GitHub as a verbatim store on purpose, so case A's mismatch can only come from the CLIENT-side
 # `$(cat)` strip and not from a normalization this harness invented. $CLOBBER, when set, is a sed
-# program applied to the stored body right after the write: that IS the racer.
+# program applied to the stored body right after the write — the racer in B/C/D, and in E a store
+# that normalizes trailing whitespace rather than a second writer.
 cat > "$BIN/gh" <<'STUB'
 #!/usr/bin/env bash
 set -uo pipefail
@@ -108,17 +125,21 @@ DEPS_BLOCK='## Dependencies
 - #900002 — second child (requires: #900001)
 
 '
+# Case E's block: the same one, plus a trailing WHITESPACE-ONLY line. Built with `$'   \n'` rather
+# than written literally, so no formatter or editor can silently strip the trailing spaces that are
+# the whole fixture.
+DEPS_BLOCK_TRAILING_WS="$DEPS_BLOCK"$'   \n'
 
 fail=0
-run_case() {   # $1 = case name, $2 = expected exit (0|1), $3 = sed clobber program (may be empty)
-	local name="$1" want="$2" clobber="$3" scratch rc out
+run_case() {   # $1 = case name, $2 = expected exit (0|1), $3 = sed clobber program (may be empty), $4 = deps block (default: $DEPS_BLOCK)
+	local name="$1" want="$2" clobber="$3" deps="${4:-$DEPS_BLOCK}" scratch rc out
 	scratch="$(kp_scratch_open "plan-epic-$EPIC")" || { echo "BAD   $name: could not open the scratch namespace"; fail=1; return; }
 	mkdir -p "$TMP/state" || { echo "BAD   $name: could not create the stub state dir"; fail=1; return; }
 	printf '%s' "$BASE_BODY" > "$TMP/state/body"
 	printf '%s' "2026-07-31T00:00:00Z" > "$TMP/state/updated-at"
 	printf '%s' "$BASE_BODY" > "$scratch/current.md"
 	printf '%s' "2026-07-31T00:00:00Z" > "$scratch/updated-at.txt"
-	printf '%s' "$DEPS_BLOCK" > "$scratch/deps.md"
+	printf '%s' "$deps" > "$scratch/deps.md"
 	# The freshness guard compares mtimes; back-date the base rather than sleeping, so the guard is
 	# satisfied deterministically instead of by however coarse this filesystem's clock is.
 	touch -t 202001010000 "$scratch/current.md" "$scratch/updated-at.txt"
@@ -134,7 +155,7 @@ run_case() {   # $1 = case name, $2 = expected exit (0|1), $3 = sed clobber prog
 	printf '%s' "$out" > "$TMP/last-out"
 }
 
-echo "scope: $UNDER_TEST driven against a stubbed gh, 4 cases"
+echo "scope: $UNDER_TEST driven against a stubbed gh, 5 cases"
 
 run_case "A clean deps-last round-trip" 0 ""
 grep -q 'round-tripped' "$TMP/last-out" || { echo "BAD   A: exit 0 without the landed verdict on stdout"; fail=1; }
@@ -148,9 +169,15 @@ grep -q 'a racer clobbered it' "$TMP/last-out" || { echo "BAD   C: exit 1 withou
 run_case "D interior blank line whitespaced" 1 's/^$/ /'
 grep -q 'a racer clobbered it' "$TMP/last-out" || { echo "BAD   D: exit 1 without the racer verdict on stdout"; fail=1; }
 
+# The store keeps the bytes but not the trailing whitespace — `s/[[:space:]]*$//` touches only the
+# whitespace-only line this case adds (no other fixture line ends in whitespace). This is the ONLY
+# case that reds when the trailing-blank hold-and-flush is deleted from `deps_block`.
+run_case "E trailing whitespace-only line" 0 's/[[:space:]]*$//' "$DEPS_BLOCK_TRAILING_WS"
+grep -q 'round-tripped' "$TMP/last-out" || { echo "BAD   E: exit 0 without the landed verdict on stdout"; fail=1; }
+
 rm -rf "$TMP"
 if [ "$fail" -ne 0 ]; then
 	echo "FAIL: splice-body.sh's round-trip check does not hold both directions (#4596)"
 	exit 1
 fi
-echo "PASS: a clean deps-last splice round-trips, and every in-block difference still reds (#4596)"
+echo "PASS: a clean deps-last splice round-trips, the trailing-blank drop is pinned, and every in-block difference still reds (#4596)"
