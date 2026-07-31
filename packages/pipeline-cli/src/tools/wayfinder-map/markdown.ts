@@ -1,14 +1,14 @@
 /**
  * Tolerant markdown parsing for the four `wayfinder:map` sections the validator
  * reads: `## Destination`, `## Decisions-so-far`, `## Open frontier`, and
- * `## Graduated fog`. Per the formats contract these are conventions to read
+ * `## Graduated fog`. Per the map-shape contract these are conventions to read
  * tolerantly, not parser specs — recognize a section by its heading shape
  * (case-insensitive, punctuation-flexible), not by exact whitespace. Parsing is
  * pure and deterministic: the same body always yields the same `WayfinderMap`,
  * with entries emitted in document order.
  *
- * See `gh-issue-intake-formats.md` §The `wayfinder:map` issue shape for the four
- * sections and the worked example these regexes are calibrated against.
+ * See `claude-plugins/kampus-pipeline/skills/shared/wayfinder-map-issue-shape.md`
+ * for the four sections and the worked example these regexes are calibrated against.
  */
 import type {Decision, FogEntry, FrontierTicket, WayfinderMap} from "./Map.ts";
 

@@ -288,7 +288,7 @@ The pre-triage **ideation layer** that sits *upstream* of the execution pipeline
 pipeline (`report → triage → plan-epic → review-* → ship-it`) drains already-decided work,
 wayfinder is where a fuzzy destination is *charted* into a workable plan. It coins its own
 vocabulary; this names those nouns. The map-issue shape contract lives in
-[`claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md`](../claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md)
+[`claude-plugins/kampus-pipeline/skills/shared/wayfinder-map-issue-shape.md`](../claude-plugins/kampus-pipeline/skills/shared/wayfinder-map-issue-shape.md)
 (the wayfinder:map issue shape); the skill is
 [`claude-plugins/kampus-pipeline/skills/wayfinder/SKILL.md`](../claude-plugins/kampus-pipeline/skills/wayfinder/SKILL.md).
 
