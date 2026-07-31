@@ -184,7 +184,7 @@ if [ "$shared_read" != "ok" ]; then
 	# WARN, not FAIL: an adopter without the CLI resolved still gets every check above. What is
 	# lost is only the confirmation, and saying so beats claiming a verification that never ran.
 	say "$WARN" "doctor's required set is UNVERIFIED against the shared vocabulary — could not resolve it (unknown, NOT confirmed)"
-	fix "run from a checkout with packages/pipeline-cli, or make \`pipeline-cli vocabulary-preflight labels\` resolvable"
+	fix "run from a checkout with packages/pipeline-cli, or make the CLI shim's \`vocabulary-preflight labels\` verb resolvable"
 elif [ -n "$drifted" ]; then
 	say "$FAIL" "doctor's required set has DRIFTED from the shared vocabulary — absent from the table above:$drifted"
 	fix "add each label above to the LABELS table in this file as a tier-1 row (name|1|hex|description)"

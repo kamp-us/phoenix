@@ -54,11 +54,11 @@ fi
 # under set -e.
 CONST_RE=$(node "$repo_root/packages/pipeline-cli/src/bin.ts" control-plane-paths 2>/dev/null || true)
 if [ -z "$CONST_RE" ]; then
-	fail "could not read the §CP CONTROL_PLANE_RE const via \`pipeline-cli control-plane-paths\` (single source: packages/pipeline-cli/src/tools/control-plane-paths/control-plane-re.ts) — is pipeline-cli installed?"
+	fail "could not read the §CP CONTROL_PLANE_RE const via the CLI's \`control-plane-paths\` verb (single source: packages/pipeline-cli/src/tools/control-plane-paths/control-plane-re.ts) — is the CLI shim installed?"
 	echo "validate-gate-path-drift: FAILED — $errors error(s)"
 	exit 1
 fi
-ok "§CP CONTROL_PLANE_RE read from the single-source const (pipeline-cli control-plane-paths)"
+ok "§CP CONTROL_PLANE_RE read from the single-source const (the CLI's control-plane-paths verb)"
 
 # The one remaining copy: the origin/main-read line in gh-issue-intake-formats.md. Strip the
 # CONTROL_PLANE_RE=' … ' wrapper to compare the raw regex against the const.
@@ -96,8 +96,15 @@ fi
 BOUNDARY_NAMES="GUARD_ADR_RE HAS_CODE_RE HAS_SKILLS_RE HAS_DOCS_EXCLUDE_RE HAS_DOCS_RE DOC_VOCAB_EXCLUDE_RE DOC_VOCAB_SURFACE_RE CLAIM_RE UI_RE UI_EXCLUDE_RE"
 SHIPIT_MD="$skills_dir/ship-it/SKILL.md"
 REVIEWER_MD="$skills_dir/../agents/reviewer.md"
-# Every corpus file that may carry an assignment copy of a boundary name.
+# Every corpus file that may carry an assignment copy of a boundary name — INCLUDING the shell the
+# skills extracted out of their markdown into scripts/*.sh (#4448). Without that reach, moving a
+# fenced block carrying `HAS_*_RE=`/`UI_RE=` fail-closed literals into a script would take those
+# copies off 1c's scan surface and leave this invariant green while guarding nothing (#4470/#4486).
 COPY_FILES="$FORMATS_MD $SHIPIT_MD $REVIEWER_MD"
+for sh in "$skills_dir"/*/scripts/*.sh; do
+	# An unmatched glob stays a literal path here (no nullglob in bash 3.2), so test before appending.
+	[ -f "$sh" ] && COPY_FILES="$COPY_FILES $sh"
+done
 
 # An ASSIGNMENT occurrence: the name preceded by start-of-line, whitespace, or `; ` (reviewer.md
 # packs two per compound line). Deliberately NOT a bare substring match — `grep '^NAME='` and
@@ -113,7 +120,7 @@ for name in $BOUNDARY_NAMES; do
 	# hits the explicit empty-check below instead of aborting under set -e.
 	CONST_VAL=$(node "$repo_root/packages/pipeline-cli/src/bin.ts" control-plane-paths --boundary "$name" 2>/dev/null || true)
 	if [ -z "$CONST_VAL" ]; then
-		fail "could not read the $name const via \`pipeline-cli control-plane-paths --boundary $name\` (single source: packages/pipeline-cli/src/gate-boundaries.ts) — issue #4401"
+		fail "could not read the $name const via the CLI's \`control-plane-paths --boundary $name\` verb (single source: packages/pipeline-cli/src/gate-boundaries.ts) — issue #4401"
 		continue
 	fi
 

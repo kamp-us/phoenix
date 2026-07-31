@@ -25,6 +25,53 @@ source; the guard parses the literal line it depends on and fails when that line
    the parse no longer resolves. That is what proves the binding is load-bearing rather than
    decorative.
 
+## The skill's text is not one file — parse the SURFACE
+
+A skill's shell no longer lives only in its `SKILL.md`: epic #4435 moves fenced blocks into
+`<skill>/scripts/*.sh`, sourced back by a `. "$<SKILL>_SCRIPTS/<name>.sh"` line. A parser handed
+`readFileSync(SKILL.md)` therefore stops reaching the shell it parses **on a pure relocation** — and
+the two ways that goes wrong are not equally visible:
+
+- it **reds** on a change that altered no behaviour (the noisy case), or
+- it **quietly stops asserting** — the parse resolves an empty population and every `notInclude` /
+  "these two differ" row over it passes vacuously. `adoption-lint`'s ordering pin scoped itself to
+  writers whose *text* contained a layer-one write, so when that write moved into a script the whole
+  skill dropped out of a pin about its own claim ordering, with the suite still green
+  ([#4509](https://github.com/kamp-us/phoenix/issues/4509)).
+
+**So a section's surface is its heading slice plus the content of every `scripts/*.sh` the slice
+sources.** `packages/pipeline-cli/src/skill-shell-surface.ts` owns that resolution once
+(`resolveSection`), and the rules it fixes are worth stating because each was a real trap:
+
+- **Slice on the pristine markdown, then append** the followed scripts. Inlining *before* the slice
+  lets a script that emits markdown from a heredoc carry a `## ` line that truncates the section.
+- **Sibling-scoped**, never the whole plugin tree: the plugin `lib/*.sh` is a library many skills call,
+  so folding it into every caller's surface lets one shared half-procedure satisfy every skill's own
+  rule (the same scoping `kp_skill_shell_surfaces` chose, #4470).
+- **Scope by demonstrated dependency, not directory membership** — and keep the widening on the one
+  check that needs it (ADR 0230; the record lands separately, so this cites it by number).
+  Directory scoping alone punishes the correct move: a skill that extracts its wiring into a shared
+  helper and sources it has nothing left on its own surface but a comment, so the guard starts
+  passing on prose (#4541). The repair is per-skill, per-edge inclusion — a shared file counts for a
+  skill because that skill's own executable text sources it (`kp_skill_source_edges`), one hop,
+  fail-closed on an edge that will not resolve. Two rules keep this from becoming the whole-tree fold
+  by another route: feed the widened surface **only** to the check that needs the shared file, never
+  to the per-skill marker checks; and match `.sh` surfaces on **comment-stripped** text, so a
+  commented-out edge stops following and a citation in a docblock proves nothing.
+- **A sourced script that will not read back is UNRESOLVED, not absent** — the caller resolves its
+  fail-closed constant, even if the constant it wanted is sitting inline right beside the source
+  line. A partial read is not a read.
+- **Emit the scanned scope** (`scanned`), and have the consumer *assert* it — a zero-length scope is
+  what a renamed heading looks like, and it must red rather than resolve
+  ([ADR 0092](../.decisions/0092-gates-fail-closed-on-zero-scope.md)).
+- **Pin any population the parse derives from text.** If the parser discovers its own subject set
+  (the outcome words of a `case`, the members of a list), assert its expected *membership* against
+  an independent source — the classifier's own union, not the text — or a dropout is invisible.
+
+Non-vacuity is worth one extra assertion: pin that the markdown slice *alone* no longer carries the
+literal, so the positive match can only have come through the follow path. Counting scanned files
+does not prove it — a section that sources three scripts is satisfied by an unrelated sibling.
+
 ## Where it is used
 
 - `class-probe.ts` — `parseClassProbes` / `parseUiProbe` read the canonical `HAS_*_RE=` and `UI_RE=`
@@ -32,7 +79,10 @@ source; the guard parses the literal line it depends on and fails when that line
   over-dispatching gates on an unreadable source.
 - `step3-contract.ts` — `parseStep3EntryTest` reads ship-it Step 3's branch-2 entry condition and
   resolves the rollup fields it tests, so `checks.unit.test.ts`'s branch mirror derives its pending
-  predicate from the skill instead of copying it.
+  predicate from the skill instead of copying it. Heading-sliced, so it resolves its surface through
+  `resolveStep3Section` and reads the bindings out of the script Step 3 sources.
+- `step55-contract.ts` — `parseReconcileBudget` / `parseMergeDispositions` read ship-it Step 5.5's
+  poll budget and its three disposition renderings the same way, through `resolveStep55Section`.
 
 ## The failure it prevents
 

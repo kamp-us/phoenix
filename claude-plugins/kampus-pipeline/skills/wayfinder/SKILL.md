@@ -18,10 +18,10 @@ answers into a plan concrete enough to hand off to `triage` / `plan-epic`.
 The map is a single GitHub issue labelled **`wayfinder:map`** whose body is the
 **shared-state contract** every mode reads and writes. Its canonical shape — the four
 sections `## Destination`, `## Decisions-so-far`, `## Open frontier`, and
-`## Graduated fog` — is defined once in the formats contract:
-[`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) (the wayfinder:map issue
-shape). Read that section before you touch a map; this skill is a **consumer** of that
-contract, never a re-derivation of it. The same section is what the future wayfinder CLI
+`## Graduated fog` — is defined once in its own contract:
+[`../shared/wayfinder-map-issue-shape.md`](../shared/wayfinder-map-issue-shape.md) (the
+wayfinder:map issue shape). Read it before you touch a map; this skill is a **consumer** of that
+contract, never a re-derivation of it. The same contract is what the future wayfinder CLI
 tool reads and writes, so the map issue is the one durable seam between the modes.
 
 ## Two modes, one preserved human seam
@@ -75,6 +75,24 @@ transport, session gh-identity routing, and similar. The rule targets the operat
 - It is **not part of the linear execution flow** — it is the pre-triage ideation stage that
   runs *before* the pipeline picks anything up.
 
+## The extracted scripts
+
+This skill's shell lives in [`scripts/`](scripts/), and each fenced `bash` block is an **invocation**
+of one; the prose keeps the *why* (epic #4435 phase 1 — the shell moved as-is, and turning its glue
+into tested `pipeline-cli` verbs is #1929). They set `set -uo pipefail`, deliberately not `-e`: the
+moved glue steers its own control flow, and `errexit` would abort a fail-closed branch before it
+printed its refusal. The **emission** step deliberately calls `report`'s own
+[`file-report.sh`](../report/scripts/file-report.sh) rather than a wayfinder copy — the emitted epic
+is agent-filed intake through the *same* footer and create envelope, so the two cannot drift (the
+same reason this skill already sourced `report`'s footer).
+
+**[`scripts/create-map.sh`](scripts/create-map.sh) and
+[`scripts/add-frontier-ticket.sh`](scripts/add-frontier-ticket.sh) take the body on stdin and REFUSE an
+empty one.** The fences they replace carried the body as a `$BODY` variable *inside* the block; a pipe
+makes it an external input, and an unread pipe is byte-identical to an empty one — so filing on it
+would open a bodyless map or ticket that reads as a successful chart (#3924 / #4010). That refusal is a
+guard the extraction itself owes, not a rewrite of moved glue.
+
 ## CHART mode — name the destination, map the frontier (plan-don't-do)
 
 CHART is invoked with **no map yet** (a fresh foggy idea) or **a named destination against an
@@ -82,8 +100,9 @@ existing map** (a rewrite). It is the mode that first turns fog into structure. 
 **not** resolve any unknown — resolving is WORK mode's job — it only *frames* the unknowns as a
 workable frontier. Its output is a single `wayfinder:map` issue whose body carries the
 four-section shape from the map-shape contract
-([`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md), §The `wayfinder:map` issue
-shape), with the frontier laid out as **native sub-issues**. Read that contract for the section
+([`../shared/wayfinder-map-issue-shape.md`](../shared/wayfinder-map-issue-shape.md), §The
+`wayfinder:map` issue shape), with the frontier laid out as **native sub-issues**. Read that
+contract for the section
 grammar; this mode is a **producer** of that shape, never a re-derivation of it.
 
 ### The plan-don't-do law — the hard constraint CHART is built around
@@ -180,12 +199,11 @@ plan-don't-do line, so it enters the pipeline only via emission, never as fog.
    re-lay the `## Open frontier`, but it preserves what earlier runs settled.
 
    ```bash
-   REPO="${CLAUDE_PIPELINE_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}"
-   # new map (REST only — the org bans GraphQL for issue ops):
-   MAP=$(gh api -X POST repos/$REPO/issues \
-     -f title="<destination, as a short noun phrase>" \
-     -f "labels[]=wayfinder:map" \
-     -f body="$BODY" --jq '.number')
+   # new map (REST only — the org bans GraphQL for issue ops); prints the map's issue number.
+   # The four-section body arrives on stdin from a per-run (§SP) file, because it is multi-line
+   # authored markdown; an EMPTY stdin is refused rather than filed as a bodyless map.
+   MAP="$("${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/wayfinder/scripts/create-map.sh" \
+     "<destination, as a short noun phrase>" < "<path/to/map-body.md>")" || exit 1
    ```
 
 2. **Name the `## Destination`.** State *where we want to be* in one or two sentences, concrete
@@ -201,7 +219,7 @@ plan-don't-do line, so it enters the pipeline only via emission, never as fog.
    above — behavioral claims in source, design-history claims ("X was retired *because* Y") in the
    founder, never seeded from an artifact's own prose — and tag history-shaped givens with the
    *who* (below). **Attribute every seed `— from #<MAP>`** — the map's own issue number — per the
-   [map-shape contract's `## Decisions-so-far` rule](../gh-issue-intake-formats.md#the-four-sections):
+   [map-shape contract's `## Decisions-so-far` rule](../shared/wayfinder-map-issue-shape.md#the-four-sections):
    a CHART-time given (and an in-session founder ruling) has no frontier ticket to cite, so its
    honest, resolvable origin is the chart act that created the map. This is the form that passes
    the wayfinder CLI validator on the first write — an entry with no `— from #N` origin trips
@@ -222,11 +240,10 @@ plan-don't-do line, so it enters the pipeline only via emission, never as fog.
    internal **database id** (`.id`), not its issue number:
 
    ```bash
-   CHILD_ID=$(gh api -X POST repos/$REPO/issues \
-     -f title="Investigation: <the open question>" \
-     -f "labels[]=type:investigation" \
-     -f body="<what's unknown, and what an answer would unblock>" --jq '.id')
-   gh api -X POST repos/$REPO/issues/$MAP/sub_issues -F sub_issue_id="$CHILD_ID" >/dev/null
+   # files the ticket and links it under $MAP in one act; prints the child's issue number. The body
+   # (what's unknown, and what an answer would unblock) arrives on stdin; an empty stdin is refused.
+   "${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/wayfinder/scripts/add-frontier-ticket.sh" \
+     "$MAP" "Investigation: <the open question>" type:investigation < "<path/to/ticket-body.md>"
    ```
 
    Frontier tickets are **wayfinder-worked, not `write-code`-pickable** — they carry no
@@ -254,8 +271,9 @@ frontier down, WORK is the mode that *clears* it: it takes the map's `## Open fr
 **one** open ticket, records the answer, and graduates that ticket into the fog — the forward
 motion that walks a charted map toward "done enough" for the pipeline. WORK is a **consumer** of
 the four-section map-shape contract
-([`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md), §The `wayfinder:map` issue
-shape) — it never re-derives the section grammar, and it honors that contract's lockstep
+([`../shared/wayfinder-map-issue-shape.md`](../shared/wayfinder-map-issue-shape.md), §The
+`wayfinder:map` issue shape) — it never re-derives the section grammar, and it honors that
+contract's lockstep
 invariant: **a ticket leaves `## Open frontier` only by its answer landing in
 `## Decisions-so-far` and the ticket moving to `## Graduated fog`** — the three move together, so
 the map is never left with a resolved unknown that has no recorded answer.
@@ -377,8 +395,8 @@ Routing a fork touches the map's `## Open frontier` only, never `## Decisions-so
 
 - The fork's line **stays on `## Open frontier`**, marked `(founder-decision-fork — awaiting
   founder)` and referencing its `type:decision` sub-issue — the map-shape contract's fork-marking
-  ([`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md), §The `wayfinder:map` issue
-  shape).
+  ([`../shared/wayfinder-map-issue-shape.md`](../shared/wayfinder-map-issue-shape.md), §The
+  `wayfinder:map` issue shape).
 - It **does not graduate.** The lockstep invariant is that a ticket leaves `## Open frontier` only
   when its answer lands in `## Decisions-so-far`; a routed fork has **no answer yet**, so nothing is
   written to `## Decisions-so-far` and the fork is never moved to `## Graduated fog` at routing
@@ -482,15 +500,16 @@ rather than a hand-typed, human-owned issue, so triage's auto-close-eligibility 
 correctly (§the report footer in the formats contract). Stream the composed brief straight into the
 create over stdin (no shared temp file to collide on, per the report skill's filing rule):
 
+One emitted epic per coherent buildable unit. The brief is composed from map `#<MAP>`'s
+`## Destination` + the relevant `## Decisions-so-far` slice (read via the wayfinder CLI, never ad-hoc
+markdown slicing), and arrives on the filing script's **stdin** as a quoted heredoc. It files into
+the SAME `status:needs-triage` entry `report` uses — literally the same script, `report`'s own
+[`file-report.sh`](../report/scripts/file-report.sh), so the footer and the create envelope cannot
+drift from the report skill's:
+
 ```bash
-# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
-PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
-REPO="${CLAUDE_PIPELINE_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}"
-# One emitted epic per coherent buildable unit. The brief is composed from map #$MAP's
-# ## Destination + the relevant ## Decisions-so-far slice (read via the wayfinder CLI, never
-# ad-hoc markdown slicing). Files into the SAME status:needs-triage entry `report` uses.
-{
-  cat <<'EOF'
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/report/scripts/file-report.sh" \
+  "<the epic, as one concrete deliverable>" <<'EOF'
 ## Destination
 <the epic's end-state, from the map's ## Destination>
 
@@ -500,12 +519,9 @@ REPO="${CLAUDE_PIPELINE_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOw
 ## Emitted from wayfinder map
 Charted and cleared on wayfinder:map #<MAP>. Downstream is the existing pipeline: triage → plan-epic → write-code.
 EOF
-  echo   # blank line before the footer block
-  claude-plugins/kampus-pipeline/skills/report/footer.sh   # emits its own `---` + <sub>… line
-} | "$PCLI" tracker create-issue --title "<the epic, as one concrete deliverable>"
 ```
 
-The `tracker create-issue` verb owns this intake-create envelope (ADR 0190;
+The `tracker create-issue` verb the script calls owns this intake-create envelope (ADR 0190;
 `packages/pipeline-cli/src/tools/tracker/`): it files a `status:needs-triage` issue, reading the
 body from stdin so the composed heredoc streams straight in. Don't hand-roll the
 `gh api repos/$REPO/issues` create — that inline envelope is what the adoption lint (#3254) flags.
@@ -539,18 +555,11 @@ Make the ideation→execution handoff traceable from both ends, then close:
   stay as they are.
 
 ```bash
-# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
-PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
 # Name every artifact the map graduated into (epics and/or ADR and/or roadmap), then close it
 # IFF the destination is FULLY graduated. A partial graduation is annotated but stays open.
-# The `tracker graduate` verb owns this graduation-close envelope (ADR 0190, #3266): it posts
-# the `Graduated into <artifact>` source → artifact provenance record and closes the source as
-# completed. Don't hand-roll the comment + `state_reason=completed` PATCH — that inline
-# re-derivation is what the adoption lint (#3254) flags.
-"$PCLI" tracker graduate "$MAP" \
-  --artifact "#$E1, #$E2 → triage → plan-epic → write-code; ADR 0176; ROADMAP.md v1" \
-  --note "Frontier cleared — closing this map as the durable record of how the plan was discovered."
-# fully-graduated only; a partial graduation is annotated (a plain comment) but stays open.
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/wayfinder/scripts/graduate-map.sh" "$MAP" \
+  "#$E1, #$E2 → triage → plan-epic → write-code; ADR 0176; ROADMAP.md v1" \
+  "Frontier cleared — closing this map as the durable record of how the plan was discovered."
 ```
 
 ### What emission is not

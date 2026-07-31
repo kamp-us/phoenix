@@ -79,7 +79,7 @@ runtime's `crew/roles.ts` — not a per-install count. Three bridges + one engin
 | Role | Kind | Cardinality | Seam it owns | Def |
 |---|---|---|---|---|
 | cartographer | bridge | 1 | inbound ideation — the founder's fog → charted work (runs `wayfinder`) | [`agents/crew-cartographer.md`](agents/crew-cartographer.md) |
-| intake-desk | bridge | 1 | intake — world's observations → typed, prioritized backlog (runs report → triage; spawns planner/canon/adr) | [`agents/crew-intake-desk.md`](agents/crew-intake-desk.md) |
+| intake-desk | bridge | 1 | intake — world's observations → typed, prioritized backlog (runs report → triage; spawns planner/canon/adr, and reviewer scoped to `review-plan`) | [`agents/crew-intake-desk.md`](agents/crew-intake-desk.md) |
 | chief-of-staff | bridge | 1 | outbound awareness — factory state → founder understanding; human comms to founder + §CP approver | [`agents/crew-chief-of-staff.md`](agents/crew-chief-of-staff.md) |
 | engineering-manager | engine | N | none — pulls ready work off the board and drives coder → reviewer → shipper under WIP caps | [`agents/crew-engineering-manager.md`](agents/crew-engineering-manager.md) |
 

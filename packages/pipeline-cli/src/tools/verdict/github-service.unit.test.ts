@@ -119,7 +119,7 @@ const comment = (over: {
 describe("Github.read — resolve a PR's SHA-bound verdict over a mock gh spawner", () => {
 	it.effect("current-head PASS from a write+ author → satisfied", () =>
 		Effect.gen(function* () {
-			const result = yield* (yield* Github).read(PR, "doc", "PASS");
+			const result = yield* (yield* Github).read(PR, "doc", "PASS", false);
 			assert.strictEqual(result.outcome._tag, "current");
 			assert.isTrue(result.satisfied);
 		}).pipe((effect) =>
@@ -135,7 +135,7 @@ describe("Github.read — resolve a PR's SHA-bound verdict over a mock gh spawne
 
 	it.effect("a stale-sha PASS → not satisfied (unverified)", () =>
 		Effect.gen(function* () {
-			const result = yield* (yield* Github).read(PR, "doc", "PASS");
+			const result = yield* (yield* Github).read(PR, "doc", "PASS", false);
 			assert.strictEqual(result.outcome._tag, "stale");
 			assert.isFalse(result.satisfied);
 		}).pipe((effect) =>
@@ -151,7 +151,7 @@ describe("Github.read — resolve a PR's SHA-bound verdict over a mock gh spawne
 
 	it.effect("a forged PASS from a non-collaborator is invisible → none", () =>
 		Effect.gen(function* () {
-			const result = yield* (yield* Github).read(PR, "doc", "PASS");
+			const result = yield* (yield* Github).read(PR, "doc", "PASS", false);
 			assert.strictEqual(result.outcome._tag, "none");
 			assert.isFalse(result.satisfied);
 		}).pipe((effect) =>
@@ -171,7 +171,7 @@ describe("Github.read — resolve a PR's SHA-bound verdict over a mock gh spawne
 
 	it.effect("a --head override binds against the supplied head, not the PR's live head", () =>
 		Effect.gen(function* () {
-			const result = yield* (yield* Github).read(PR, "skill", "PASS", HEAD);
+			const result = yield* (yield* Github).read(PR, "skill", "PASS", false, HEAD);
 			assert.strictEqual(result.outcome._tag, "current");
 			assert.strictEqual(result.headSha, HEAD);
 		}).pipe((effect) =>
@@ -696,7 +696,7 @@ describe("the write-recency stamp at the boundary — post writes it, read repor
 
 	it.effect("read reports the resolving verdict's writtenAt, not its created_at", () =>
 		Effect.gen(function* () {
-			const result = yield* (yield* Github).read(PR, "doc", "PASS");
+			const result = yield* (yield* Github).read(PR, "doc", "PASS", false);
 			assert.strictEqual(result.outcome._tag, "current");
 			assert.strictEqual(result.writtenAt, "2026-07-26T00:49:26Z");
 		}).pipe((effect) =>
@@ -717,7 +717,7 @@ describe("the write-recency stamp at the boundary — post writes it, read repor
 
 	it.effect("read's writtenAt is null when no verdict resolved", () =>
 		Effect.gen(function* () {
-			const result = yield* (yield* Github).read(PR, "doc", "PASS");
+			const result = yield* (yield* Github).read(PR, "doc", "PASS", false);
 			assert.strictEqual(result.outcome._tag, "none");
 			assert.isNull(result.writtenAt);
 		}).pipe((effect) =>

@@ -13,6 +13,15 @@
 #   1. STATIC wiring — each of the four skills cites THE single canonical absence-probe
 #      (the well-known repo path `product-development-cycle.md`, formats §1) and pairs it
 #      with an absent⇒no-op branch. No skill hardcodes a flag or assumes the doc exists.
+#      Scanned across the skill's whole shell surface — SKILL.md AND its extracted
+#      scripts/*.sh (#4470) — so moving a block out of SKILL.md cannot disarm this.
+#      TWO SURFACES, and the split is load-bearing (ADR 0230, #4541): only the canonical-probe
+#      check reads the WIDENED surface (own files + the shared files they demonstrably source,
+#      one hop); the absent⇒no-op and hardcoded-flag checks stay on the skill's OWN files. The
+#      shared probe file textually carries every skill's absence marker, so widening every check
+#      would let one shared file satisfy all four — #4470's blindness through a legitimate edge.
+#      Every `.sh` grep here runs on COMMENT-STRIPPED text, so a citation in a docblock proves
+#      nothing; the presence twin's docblock carries the full statement of what this proves.
 #   2. HERMETIC runtime — run the canonical working-tree probe against a temp repo root
 #      with no cycle doc, assert it resolves `absent` and the no-op default holds. This is
 #      the executable scenario walkthrough of the doc-absent branch (issue #605, epic #595).
@@ -20,11 +29,42 @@
 # This guards the COMPOSITION of #597 (the hook) + #598–#601 (the four skill changes): if a
 # future edit drops the probe or flips an absent branch to a hardcoded flag, this fails the
 # build instead of silently breaking portability.
-set -euo pipefail
+# No `-e`, deliberately: this script installs a cleanup EXIT trap, and on bash 3.2 errexit +
+# an EXIT trap launders a `set -u` abort into exit 0 — a green guard over an unevaluated path
+# (#4479). See .patterns/skill-script-shell-shape.md for the measured matrix. Every command
+# whose failure errexit used to catch is checked explicitly below.
+set -uo pipefail
 
-# Same self-locating idiom as validate-skills.sh: this script lives in .claude/skills/, so
-# its own dir IS the skills root — resolve from BASH_SOURCE so it works from any cwd.
-skills_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Same self-locating idiom as the presence twin: this script lives in the skills root, so its own
+# dir IS that root — resolve from BASH_SOURCE, PHYSICALLY (`cd -P`), because `skills/` is reached
+# through the `.claude/skills` symlink.
+#
+# What `-P` actually buys is the EMITTED SCOPE, not the allowlist. Measured: a logical-`cd` variant
+# through the symlink still exits 0, because `kp_skill_source_edges` resolves its own roots AND its
+# edge targets with `cd -P`, so that comparison is physical on both sides whatever it is handed.
+# What breaks under a logical root is `scope_label`'s prefix strip below: the prefix misses,
+# and every edge-resolved file is printed as a full absolute machine path instead of
+# `shared/scripts/cycle-doc-probe.sh (edge:plan-epic)`. That is an ADR 0092 §1 emission defect —
+# "what did this run look at" stops being answerable in repo terms — and a leak surface, since an
+# absolute path carries the runner's checkout layout into a CI log (#4505 T7).
+skills_dir="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ ! -d "$skills_dir" ]; then
+	echo "FAIL: could not resolve the skills root from ${BASH_SOURCE[0]} — refusing to scan an unresolved root (ADR 0092)"
+	echo "validate-cycle-absence: FAILED — 1 error(s); the scan root could not be resolved"
+	exit 1
+fi
+
+# kp_skill_shell_surfaces resolves each skill's scan surface — SKILL.md PLUS its extracted
+# scripts/*.sh (#4470). Sourced, not re-derived: the surface convention and its resolver live
+# together in the lib. A missing lib is a FAIL, never a narrowed scan (ADR 0092).
+COMMON_LIB="$skills_dir/../lib/common.sh"
+if [ ! -f "$COMMON_LIB" ]; then
+	echo "FAIL: shared lib not found at $COMMON_LIB — cannot resolve each skill's shell surface; refusing to scan a narrowed surface (ADR 0092)"
+	echo "validate-cycle-absence: FAILED — 1 error(s); the scan surface could not be resolved"
+	exit 1
+fi
+# shellcheck source-path=SCRIPTDIR source=../lib/common.sh
+. "$COMMON_LIB"
 
 # The one well-known cycle-doc path every consumer probes (formats §1, single source).
 CYCLE_DOC_PATH="product-development-cycle.md"
@@ -44,9 +84,23 @@ declare -a CYCLE_SKILLS=(
 
 errors=0
 checks=0
+scanned_skills=0
+declare -a scanned_paths=()
+declare -a surfaces=()
+declare -a edges=()
 
 fail() { echo "FAIL: $*"; errors=$((errors + 1)); }
 ok() { echo "ok: $*"; checks=$((checks + 1)); }
+
+# Edge targets come back PHYSICAL and may sit ABOVE $skills_dir — the shared lib is at
+# <plugin>/lib since #4484 — so the emitted scope strips the physical plugin root as well as the
+# logical skills dir. Without it the scope line carries an absolute machine path.
+plugin_root_phys="$(cd -P "$skills_dir/.." 2>/dev/null && pwd)" || plugin_root_phys=""
+scope_label() {
+	local p="${1#"$skills_dir/"}"
+	[ -n "$plugin_root_phys" ] && p="${p#"$plugin_root_phys/"}"
+	printf '%s' "$p"
+}
 
 # Layer 1: static wiring.
 # Every cycle-aware skill must (a) cite the single canonical probe path and (b) pair it
@@ -62,13 +116,67 @@ for entry in "${CYCLE_SKILLS[@]}"; do
 		continue
 	fi
 
-	if ! grep -qF "$PROBE_NEEDLE" "$md"; then
-		fail "$skill: does not cite the canonical cycle-doc probe ('$PROBE_NEEDLE') — every cycle-step must branch on the one well-known path (formats §1)"
+	surfaces=()
+	while IFS= read -r surface; do
+		[ -n "$surface" ] && surfaces+=("$surface")
+	done < <(kp_skill_shell_surfaces "$skills_dir" "$skill")
+
+	# Guard before expanding: an empty `surfaces` aborts every "${surfaces[@]}" below under
+	# `set -u`, and the EXIT trap then launders that abort into exit 0 (see the resolver's
+	# docblock in the shared lib, #4470). Refuse the skill instead of scanning nothing.
+	if [ "${#surfaces[@]}" -eq 0 ]; then
+		fail "$skill: no shell surface resolved (no SKILL.md, no *.sh) — refusing to scan an empty surface (ADR 0092)"
+		continue
+	fi
+
+	# The source-edge widening, resolved UNPIPED so its status is readable. A named edge that will
+	# not resolve makes the surface UNKNOWN: red BY NAME rather than emit a confusing
+	# needle-not-found over a surface that was never finished (ADR 0230 rule 4; #4505 T7).
+	if ! edge_list="$(kp_skill_source_edges "$skills_dir" "$skill")"; then
+		fail "$skill: source-edge resolution failed (named diagnostic above) — the widened scan surface is UNKNOWN, so this skill was NOT evaluated (ADR 0230 rule 4 / ADR 0092)"
+		continue
+	fi
+	edges=()
+	while IFS= read -r edge; do
+		[ -n "$edge" ] && edges+=("$edge")
+	done <<EOF
+$edge_list
+EOF
+
+	scanned_skills=$((scanned_skills + 1))
+	for surface in "${surfaces[@]}"; do
+		scanned_paths+=("$(scope_label "$surface")")
+	done
+	# Provenance in the emitted scope (ADR 0092 §1): an edge-resolved file is named with the skill
+	# whose source edge pulled it in, so "why was this file read" is answerable from the run log.
+	if [ "${#edges[@]}" -gt 0 ]; then
+		for edge in "${edges[@]}"; do
+			scanned_paths+=("$(scope_label "$edge") (edge:$skill)")
+		done
+	fi
+
+	if ! own_text="$(kp_surface_text "${surfaces[@]}")"; then
+		fail "$skill: could not read its own shell surface — UNKNOWN, never 'the marker is absent' (ADR 0092)"
+		continue
+	fi
+	probe_text="$own_text"
+	if [ "${#edges[@]}" -gt 0 ]; then
+		if ! edge_text="$(kp_surface_text "${edges[@]}")"; then
+			fail "$skill: could not read a source-edge target — UNKNOWN, never 'the marker is absent' (ADR 0092)"
+			continue
+		fi
+		probe_text="$own_text$edge_text"
+	fi
+
+	# Canonical-probe check: the ONE check that reads the widened surface.
+	if ! grep -qF "$PROBE_NEEDLE" <<<"$probe_text"; then
+		fail "$skill: does not cite the canonical cycle-doc probe ('$PROBE_NEEDLE') in executable shell or via a source edge — every cycle-step must branch on the one well-known path (formats §1)"
 	else
 		ok "$skill cites the canonical absence-probe"
 	fi
 
-	if ! grep -qiE "$noop_re" "$md"; then
+	# The absent⇒no-op branch stays on the skill's OWN surface (#4505 T3).
+	if ! grep -qiE "$noop_re" <<<"$own_text"; then
 		fail "$skill: no absent⇒no-op branch found (expected /$noop_re/i) — an absent cycle doc must no-op gracefully (ADR 0062)"
 	else
 		ok "$skill has an absent⇒no-op branch"
@@ -81,9 +189,23 @@ done
 # is present without the probe that establishes it.)
 for entry in "${CYCLE_SKILLS[@]}"; do
 	skill="${entry%% *}"
-	md="$skills_dir/$skill/SKILL.md"
-	[ -f "$md" ] || continue
-	if grep -qiE 'cycle (doc|step) (is )?(always|unconditionally)' "$md"; then
+	[ -f "$skills_dir/$skill/SKILL.md" ] || continue
+	surfaces=()
+	while IFS= read -r surface; do
+		[ -n "$surface" ] && surfaces+=("$surface")
+	done < <(kp_skill_shell_surfaces "$skills_dir" "$skill")
+	if [ "${#surfaces[@]}" -eq 0 ]; then
+		fail "$skill: no shell surface resolved (no SKILL.md, no *.sh) — refusing to scan an empty surface (ADR 0092)"
+		continue
+	fi
+	# OWN surface, comment-stripped (#4505 T3/T2). This heuristic looks for a skill ASSERTING the
+	# doc is always there; widening it to shared files would blame every sourcing skill for one
+	# shared file's wording.
+	if ! own_text="$(kp_surface_text "${surfaces[@]}")"; then
+		fail "$skill: could not read its own shell surface for the hardcoded-flag heuristic — UNKNOWN, never 'clean' (ADR 0092)"
+		continue
+	fi
+	if grep -qiE 'cycle (doc|step) (is )?(always|unconditionally)' <<<"$own_text"; then
 		fail "$skill: appears to assume the cycle doc is always present — graceful absence requires the probe to gate it"
 	fi
 done
@@ -94,6 +216,11 @@ done
 # same well-known path, same absent⇒no-op rule) against a synthetic repo root that has NO
 # cycle doc. This is the doc-absent scenario actually run, not just asserted in prose.
 tmp_root="$(mktemp -d)"
+if [ -z "$tmp_root" ] || [ ! -d "$tmp_root" ]; then
+	echo "FAIL: mktemp -d produced no temp root — refusing to run the hermetic walkthrough against nothing (ADR 0092)"
+	echo "validate-cycle-absence: FAILED — 1 error(s); the hermetic scenario could not be set up"
+	exit 1
+fi
 trap 'rm -rf "$tmp_root"' EXIT
 
 # A foreign install: a repo root with the usual files but no product-development-cycle.md.
@@ -165,6 +292,16 @@ if [ "$RELEASE_QUEUE" = "n/a (not a dark ship)" ]; then
 else
 	fail "ship-it surfaced a release queue on an absent cycle doc"
 fi
+
+# Zero-scope guard (ADR 0092): a run that matched zero cycle-aware skills — a moved or renamed
+# skills dir — would sail through layer 2's hermetic walkthrough (which touches no skill) and
+# print OK having asserted nothing about the corpus. Fail closed instead.
+if [ "$scanned_skills" -eq 0 ]; then
+	fail "zero scope: no cycle-aware skills were scanned (skills dir moved?) — a zero-scope run is a FAIL, never a silent pass (ADR 0092)"
+fi
+
+# Emitted scope (ADR 0092): every run states what it looked at.
+echo "scanned scope: ${scanned_skills} cycle-aware skill(s) [${scanned_paths[*]-}]"
 
 if [ "$errors" -gt 0 ]; then
 	echo "validate-cycle-absence: FAILED — $errors error(s); the graceful-absence guarantee (ADR 0062 / 0083) is broken"

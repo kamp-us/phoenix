@@ -9,11 +9,14 @@ agent-operable work pipeline:
 2. The **sub-issue body format** — one executable task, mirroring a task entry.
 3. The **progress-comment format** — a per-issue work-log entry for the next agent.
 4. The **epic handoff-note format** — distilled cross-task context posted to the epic.
-5. The **review-code verdict markers** — the recognizable first line of a PR comment
-   signalling the verdict, **SHA-bound** to the head it reviewed (ADR 0058):
-   `PASS @ <sha> — merge-ready` (read by `ship-it`, the merge step) or
-   `FAIL @ <sha> — not merge-ready` (read by `write-code`'s fix round-trip).
-6. The **review-doc verdict markers** — the doc-class twin of format 5, in its own namespace.
+5. The **gate-verdict markers** — the recognizable first line of a PR comment signalling a
+   gate's verdict, **SHA-bound** to the head it reviewed (ADR 0058):
+   `PASS @ <sha> — merge-ready` (read by `ship-it`, the merge step) or the FAIL form (read by
+   `write-code`'s fix round-trip). All four gate namespaces share **one** spec, which lives in
+   [`shared/gate-verdict-contract.md`](shared/gate-verdict-contract.md) §VERDICT — not here.
+6. The **§CP advisory line** and the **verdict read-back / guarded-emit rules** — same file,
+   §ADVISORY and §READBACK. (Formats 5 and 6 left this document with #4438; the numbering is
+   kept so §7 and §8 citations still resolve.)
 7. The **issue-claim semantics** — self-assign as a detect-and-tiebreak (not a lock), the
    protocol `write-code`'s pick (Step 1) and claim (Step 3) implement.
 8. The **investigation→trivial-fix collapse rule** — the bounded exception (ADR 0070) that
@@ -195,8 +198,8 @@ sits one step further upstream still, before charting even begins.
 | `wayfinder:map` | **Issue-shape marker** (not a state, not a type) — this issue is a **wayfinder map**: the ideation-layer map whose body carries the four-section map shape (`## Destination` / `## Decisions-so-far` / `## Open frontier` / `## Graduated fog`) the `wayfinder` skill's chart/work modes and the wayfinder CLI read and write. Upstream of the pipeline (#2421). | No (an ideation surface, not pickable execution work) |
 | `wayfinder:backlog` | **Ideation-queue marker** (not a state, not a type) — this issue is a **destination queued for a wayfinding chart**: the cartographer's backlog of fuzzy end-states named but not yet charted. Sits upstream of triage, one step further up than `wayfinder:map`. | No (an ideation surface, not pickable execution work) |
 
-The **body shape** a `wayfinder:map` issue carries is defined below in
-[§The `wayfinder:map` issue shape](#the-wayfindermap-issue-shape); these rows document only
+The **body shape** a `wayfinder:map` issue carries is defined in its own single-reader contract,
+[§The `wayfinder:map` issue shape](shared/wayfinder-map-issue-shape.md); these rows document only
 the labels. Neither is `write-code`-pickable: a `wayfinder:map` issue is worked by the
 `wayfinder` skill, and only the concrete work it *graduates* into `triage` / `plan-epic`
 becomes pickable execution issues. A `wayfinder:backlog` destination graduates one step
@@ -329,8 +332,11 @@ the surface kind (ADR 0072 §2).
 that **already exists and is open**; a skill assigns to one, never **creates** or restructures
 the set. Creating/curating milestones is a **roadmap (human / CPO) act**, deliberately *not*
 autonomous — fragmenting the set would destroy its single-source-of-truth value, so there is no
-autonomous "create-milestones" skill (ADR 0072 §3). A skill that finds no clear match to an
-existing open milestone leaves the issue **unmilestoned**; it does not invent a home.
+autonomous "create-milestones" skill (ADR 0072 §3). **At the triage seam**, a skill that finds no
+clear match to an existing open milestone still does not invent a home — it reaches for a
+**standing-lane label or a kill**, per the fallback rule immediately below (ADR 0202/0208).
+"Leave it unmilestoned" is **not** a triage outcome. (`plan-epic`'s inheritance is a different
+act — children of an unmilestoned epic stay unmilestoned; see the write side below.)
 
 **Freeze-by-absence moved from an absence to a label (ADR 0208).** The signal ADR 0072 §4 carried
 — *this work is parked by design; don't force-fit it* — is not retired, but it no longer rides on
@@ -397,17 +403,16 @@ sidestep it — ADR 0072, **never GraphQL**). Every skill that reads, writes, or
   milestone (the read `write-code`'s pick-order / drain-this-milestone query and a campaign sweep
   share).
 
+All five are in [`shared/scripts/milestone-rest.sh`](shared/scripts/milestone-rest.sh) (§SHARED),
+
+one subcommand each. Each relays the `gh api` answer straight to stdout:
+
 ```bash
-# read an issue's milestone (none ⇒ the well-formed default, never a defect to repair)
-gh api repos/$REPO/issues/<N> --jq '.milestone.number // "none"'
-# the existing open milestones — the ONLY legal assignment targets (never create one)
-gh api "repos/$REPO/milestones?state=open&per_page=100" --jq '.[] | "#\(.number)\t\(.title)"'
-# assign to an existing open milestone (triage / plan-epic inherit) — numeric id, never the title
-gh api -X PATCH repos/$REPO/issues/<N> -f milestone=<milestone-number>
-# clear a milestone (rare; assignment is the common write)
-gh api -X PATCH repos/$REPO/issues/<N> -F milestone=null
-# filter issues by milestone (write-code's drain-this-milestone query, a campaign sweep)
-gh api "repos/$REPO/issues?state=open&milestone=<milestone-number>&per_page=100"
+bash ./claude-plugins/kampus-pipeline/skills/shared/scripts/milestone-rest.sh "$REPO" read <N>          # stdout: the milestone number, or `none` — the well-formed default, never a defect to repair
+bash ./claude-plugins/kampus-pipeline/skills/shared/scripts/milestone-rest.sh "$REPO" catalog           # stdout: one `#<n>\t<title>` per open milestone — the ONLY legal assignment targets
+bash ./claude-plugins/kampus-pipeline/skills/shared/scripts/milestone-rest.sh "$REPO" assign <N> <m>    # numeric milestone id, never the title
+bash ./claude-plugins/kampus-pipeline/skills/shared/scripts/milestone-rest.sh "$REPO" clear <N>         # rare; assignment is the common write
+bash ./claude-plugins/kampus-pipeline/skills/shared/scripts/milestone-rest.sh "$REPO" issues <m>        # the drain-this-milestone query
 ```
 
 ---
@@ -446,12 +451,8 @@ Every consumer cites **this one canonical probe** — a content read against `$R
 branch (no second copy in any skill):
 
 ```bash
-# probe the well-known cycle doc; absent ⇒ the cycle-step no-ops (graceful absence, ADR 0062)
-if gh api "repos/$REPO/contents/product-development-cycle.md" --jq '.path' >/dev/null 2>&1; then
-  CYCLE_DOC=present   # consult it for the containment policy
-else
-  CYCLE_DOC=absent    # no-op: no marker, no dark-ship, no release queue
-fi
+# stdout: exactly one line, `CYCLE_DOC=present` or `CYCLE_DOC=absent`.
+bash ./claude-plugins/kampus-pipeline/skills/shared/scripts/cycle-doc-probe.sh "$REPO"
 ```
 
 A skill operating on a **local working tree** rather than the GitHub API (e.g. an offline
@@ -818,7 +819,7 @@ a missing tag as upstream-authored.
 
 This section **defines** the four fences; they are **enforced mechanically at the append site**
 by the `review-*` gates' shared
-[four-fences-enforced append procedure](review-code/SKILL.md#performing-the-append--the-four-fences-enforced-at-this-site-adr-0079)
+[four-fences-enforced append procedure](shared/specialist-fan-out.md#performing-the-append--the-four-fences-enforced-at-this-site-adr-0079)
 (ADR 0079) — fail-closed ACL self-check, round-K freeze-then-escalate, and append-only body
 reconstruction — so an invalid append is unrepresentable, not merely discouraged. The drain
 side of fence 4 (a frozen `ac:review-*` row escalating instead of looping) is enforced
@@ -943,115 +944,6 @@ epic. Every other type (`type:bug`, `type:chore`, `type:decision`, `type:investi
 
 ---
 
-## The `wayfinder:map` issue shape
-
-A `wayfinder:map` issue (the [`wayfinder:map` label](#the-wayfindermap--wayfinderbacklog-ideation-layer-markers--not-pipeline-states-not-type)) is not a task and not an epic — it is a **living map**: the
-ideation-layer surface the `wayfinder` skill's **chart** and **work** modes and the wayfinder
-CLI all read and write. This section is the **single source** of that body shape, so every one
-of those consumers cites *one* definition and cannot drift (the same single-source discipline
-§Milestone and §CP use). The map is a **shared state contract**, not free prose: its four
-sections are the durable seam between the modes, so a `wayfinder work` run picks up cold from
-what a prior `chart`/`work` run left on the map.
-
-The *why* — what the ideation layer is and how it feeds the pipeline — lives in the
-[`wayfinder` skill](wayfinder/SKILL.md); this section is the **contract**.
-
-### The four sections
-
-A `wayfinder:map` issue body carries exactly these four sections, in order:
-
-- **`## Destination`** — the named end-state the map is charting toward: one or two sentences
-  stating *where we want to be*, concretely enough to tell "arrived" from "not yet." This is the
-  fixed star the map steers by; it changes rarely, and only in **chart** mode.
-- **`## Decisions-so-far`** — the **accreting answer log**: the settled decisions and
-  established facts, newest last, each a one-line entry naming *what was decided/found* and its
-  resolvable origin (`— from #N`). This is the map's growing spine of certainty; a **work** run
-  appends to it as it resolves each frontier ticket. Nothing is ever deleted here — a decision
-  that is later revisited gets a new superseding entry, so the log stays auditable. **Every entry
-  carries a `— from #N` origin** (the validator's auditability floor); the `#N` differs by *how*
-  the entry entered the log:
-  - **A WORK-mode append** cites the **frontier ticket** it resolved — `— from #<frontier-ticket>`.
-  - **A CHART-time seed** (a founder given brought in at charting, and an in-session founder
-    ruling recorded during a chart/work run) has **no frontier ticket** to cite — it is
-    attributed to the **map's own issue number**, `— from #<MAP>`. The seed *came from* the chart
-    act that created the map, so the map number is its honest origin; this keeps the seed
-    resolvable and auditable without inventing an unattributed form. A history-shaped given whose
-    provenance is a person still uses `— from #<MAP>`, carrying the *who* alongside the ref (e.g.
-    `— from #<MAP> (@founder)`), never *instead of* it — see the [`wayfinder` skill](wayfinder/SKILL.md)'s
-    CHART step 3 for when a design-history given may be seeded at all.
-- **`## Open frontier`** — the **live edge of the unknown**: the open investigation and decision
-  tickets, kept as **native sub-issues** of the map (so each is a real, linkable, closable
-  GitHub issue, reusing the existing infra). Each line references its sub-issue and states the
-  open question. A ticket flagged a **founder-decision-fork** is marked as such — `wayfinder`
-  surfaces it and stops rather than auto-resolving it (the preserved human seam). This section
-  shrinks as tickets are answered and grows as answers reveal new unknowns; the map is "done
-  enough" for handoff when it holds no more *answerable* unknowns.
-- **`## Graduated fog`** — the **cleared unknowns**: tickets whose answers have been recorded
-  into `## Decisions-so-far` and whose resolution *graduated* them off the frontier (often
-  spawning the next frontier ticket in the process — that is the map's forward motion). Each
-  line references the now-closed sub-issue and, where it spawned follow-on frontier, names it
-  (`→ spawned #M`). This is the map's history of motion: the record of *how the fog cleared*,
-  distinct from `## Decisions-so-far`, which records *what was decided*.
-
-The invariant tying them together: **a ticket leaves `## Open frontier` only by its answer
-landing in `## Decisions-so-far` and the ticket moving to `## Graduated fog`** — the three move
-in lockstep, so the map is never left in a state where a resolved unknown has no recorded
-answer.
-
-### Worked example
-
-```markdown
-## Destination
-kamp.us has a working invite (kefil) flow: an existing yazar can vouch a new person in, and
-that person lands as a çaylak with a clear first-run path — no founder in the loop.
-
-## Decisions-so-far
-- The çaylak → yazar path is vouch-gated (kefil), not open signup — a founder given brought in at
-  charting. — from #100 (@founder)
-- Invites are karma-gated, not seat-gated — a yazar spends no quota, the çaylak's own karma
-  ramp is the throttle. — from #101
-- The invite artifact is a single-use signed link, not an in-app request/approve handshake. — from #102
-
-## Open frontier
-- #103 — Investigation: does better-auth's session model let us mint a single-use invite token
-  without a new table, or do we need an `invite` store of record?
-- #104 — Decision (founder-decision-fork): should an invited çaylak start at 0 karma or inherit
-  a small vouch-backed starting balance? (options + trade-offs surfaced; awaiting founder)
-
-## Graduated fog
-- #101 — Decided invites are karma-gated. → spawned #104 (starting-balance question)
-- #102 — Decided the artifact is a signed link. → spawned #103 (token storage investigation)
-```
-
-The map here is `#100`. Its first `## Decisions-so-far` entry is a **CHART-time seed** — a
-founder given with no frontier ticket to cite — so it is attributed `— from #100`, the map's own
-number (with `(@founder)` naming the *who*). `#101`/`#102` have graduated (their answers are in
-`## Decisions-so-far`, they sit in `## Graduated fog`, and each spawned the next frontier ticket,
-so those two entries cite their **frontier tickets**), `#103` is an answerable investigation
-`work` mode can clear, and `#104` is a **founder-decision-fork** `wayfinder` surfaces and stops
-on — never auto-resolves.
-
-### Field notes
-
-- **Read tolerantly, write canonically** (per §Reading stance): a map that spells a heading
-  slightly differently, or carries an extra note under a section, still means what it means;
-  emit the four canonical section headings.
-- **The sub-issue infra is reused, not reinvented.** Frontier tickets are ordinary GitHub
-  sub-issues of the map — they carry their own `type:*`/`status:*` as any issue does once they
-  graduate into the execution pipeline; on the map they are referenced by number, not copied.
-- **The map is not `write-code`-pickable.** Only the concrete work a map *graduates* into
-  `triage` / `plan-epic` becomes pickable execution issues; the map itself is worked by
-  `wayfinder`, never picked by `write-code`.
-- **A `wayfinder:backlog` destination has no map body yet.** The [`wayfinder:backlog`
-  label](#the-wayfindermap--wayfinderbacklog-ideation-layer-markers--not-pipeline-states-not-type)
-  marks a destination *queued* for charting — a named end-state, not yet a living map — so it
-  carries no four-section shape. Charting it is what *produces* this body shape: a
-  `wayfinder:backlog` destination graduates when the cartographer charts it into a
-  `wayfinder:map`, which then graduates its cleared frontier into emitted factory work. Like
-  the map, it is never picked by `write-code`.
-
----
-
 ## Posting a comment body — read it into `$BODY`, never `gh api -f body=@file` (the local-path leak)
 
 Formats 3 and 4 (and every claim/handoff comment below) are posted with `gh api … -f body=…`.
@@ -1081,247 +973,6 @@ silently leaks a local path into a **public** comment:
   (Only `-F`/`--field` — the *typed* flag — reads a file via `@`, per `gh api --help`. Do not
   route around this with `-F body=@file`: the `$BODY`-by-value form is the single idiom every
   skill here uses — reach for it, not a second mechanism.)
-
-### The verdict read-back guard — after posting a gate marker, re-read it and FAIL LOUD (`verdict_readback_guard`)
-
-The by-value form above (`-f body="$BODY"`) is the *source* idiom; it prevents a `body=@<path>`
-leak **at the call site**. But a source idiom cannot catch a **runtime deviation** — an agent that
-hand-assembles the wrong `$BODY` (the literal temp path as the marker body, a body missing its
-`Reviewed-head:` anchor, or a silently no-opped post) still lands a broken marker the by-value form
-happily transmits. That is the #2148 class: the posted verdict comment's entire body was a local
-temp path (`@/var/folders/…`), so no SHA-bound verdict existed for `ship-it` / the §CP merger to
-bind to (a **missing** gate verdict), **and** it leaked a machine-local path into a public comment.
-The source idiom alone can't see it; only a **post-write read-back** can.
-
-So every gate that posts a verdict marker — `review-code`, `review-doc`, `review-skill` — closes the
-loop with **one** canonical read-back guard: after the post/upsert lands, **re-read the comment you
-just wrote** and assert three invariants, failing **loud** (fail-closed, ADR
-[0092](https://github.com/kamp-us/phoenix/blob/main/.decisions/0092-gates-fail-closed-on-zero-scope.md) §ZS)
-on any miss — never a silent pass. This is the single source; each review skill **references it**
-(it does not re-derive its own copy — the three-copy drift is exactly what this contract exists to
-prevent):
-
-```bash
-# verdict_readback_guard <comment-id> <gate> <head-sha>: re-read the just-posted verdict comment
-# and PROVE it is a well-formed, leak-free, current-head-bound marker. FAIL LOUD (non-zero) on any
-# miss — a broken marker reads to consumers as "no verdict", or worse a human skims it as posted.
-# <gate> is one of: review-code | review-doc | review-skill.
-verdict_readback_guard() {
-  local cid="$1" gate="$2" sha="$3"
-  local got; got="$(gh api "repos/$REPO/issues/comments/$cid" --jq .body)" || {
-    echo "verdict_readback_guard FAILED: cannot re-read comment $cid — treat the verdict as UNLANDED." >&2; return 1; }
-
-  # (0) the body is non-empty. An empty/whitespace-only body carries no marker at all — the degenerate
-  #     case of a garbled post (#2268); reject it up front so the failure names the real cause rather
-  #     than falling through to (1)'s "no marker".
-  if [ -z "$(printf '%s' "$got" | tr -d '[:space:]')" ]; then
-    echo "verdict_readback_guard FAILED: comment $cid is empty/whitespace — no verdict landed; the PR is UNGATED." >&2; return 1
-  fi
-
-  # (1) the canonical gate marker token is present: either the bindable first-line
-  #     `<gate>: PASS|FAIL @ <sha>` (SHA prefix-matched, ADR 0058), OR the SHA-less `<gate>: advisory`
-  #     first line (blocking-set path — authorizes nothing but IS a posted verdict).
-  printf '%s' "$got" | grep -Eiq "^[[:space:]]*\**[[:space:]]*${gate}:[[:space:]]*(PASS|FAIL)[[:space:]]*@[[:space:]]*${sha:0:7}" \
-    || printf '%s' "$got" | grep -Eiq "^[[:space:]]*\**[[:space:]]*${gate}:[[:space:]]*advisory" \
-    || { echo "verdict_readback_guard FAILED: no canonical '${gate}:' marker (PASS/FAIL @ ${sha:0:7} or advisory) in comment $cid — the body is malformed; the PR is UNGATED." >&2; return 1; }
-
-  # (2) Head binding — SHA-SOURCE-AWARE (#2272), and every verdict body binds the reviewed head:
-  #     - a bindable first line (`<gate>: PASS|FAIL @ <sha>`) carries the binding inline — (1) already
-  #       validated it against ${sha:0:7}, so a non-blocking binding PASS/FAIL needs no separate line
-  #       (this is the branch that keeps a legitimate non-blocking PASS from false-failing; #2272).
-  #     - a SHA-less advisory first line (`<gate>: advisory`, ALL FOUR gates INCL review-code) MUST
-  #       carry the canonical body `Reviewed-head: @ <sha>` line (§6.6 / ADR 0151) — absence is FATAL.
-  #       (#2329: the prior "review-code's §CP advisory carries NONE by design → accept its absence"
-  #       carve-out contradicted §6.6's own MUST and blinded the read-back to a drifted
-  #       `**Reviewed head:**` variant — bold, space-not-hyphen, backticked SHA — that does NOT match
-  #       `^Reviewed-head:` and that ship-it's §6.6 enqueue matcher then rejects, leaving a genuinely
-  #       -approved §CP PASS silently unshippable until a human hand-re-posts. Requiring the canonical
-  #       line on every advisory makes a drifted line read as absent → FATAL here → forces a canonical
-  #       re-post at EMISSION time, never a ship-it refusal on an approved PR.)
-  #     - ANY `Reviewed-head:` line present (advisory, or a belt-and-suspenders non-blocking PASS) must
-  #       bind ${sha:0:7} — a mis-bound/stale one is ALWAYS fatal (a wrong head must never read verified).
-  if printf '%s' "$got" | grep -Eiq "^[[:space:]]*\**[[:space:]]*${gate}:[[:space:]]*(PASS|FAIL)[[:space:]]*@[[:space:]]*${sha:0:7}"; then
-    : # bindable first line: its `@ <sha>` IS the head binding (validated by (1))
-  elif ! printf '%s' "$got" | grep -Eiq "^[[:space:]]*Reviewed-head:"; then
-    echo "verdict_readback_guard FAILED: SHA-less advisory in comment $cid carries no canonical 'Reviewed-head: @ ${sha:0:7}' line — §6.6/ADR 0151 requires it on ALL four gates' advisories (incl review-code); a drifted '**Reviewed head:**' variant reads as absent. Re-post the canonical 'Reviewed-head: @ <sha>' line (hyphen, no bold, no backticks around the SHA)." >&2; return 1
-  fi
-  # a present `Reviewed-head:` line (advisory OR a non-blocking PASS that also carries it) must bind head:
-  if printf '%s' "$got" | grep -Eiq "^[[:space:]]*Reviewed-head:"; then
-    printf '%s' "$got" | grep -Eiq "^[[:space:]]*Reviewed-head:[[:space:]]*@?[[:space:]]*${sha:0:7}" \
-      || { echo "verdict_readback_guard FAILED: 'Reviewed-head:' line in comment $cid is bound to the wrong head (not @ ${sha:0:7}) — a stale/mis-bound head binding." >&2; return 1; }
-  fi
-
-  # (3) NO local filesystem path leaked into the public body (the #2148/#2268 leak). Reject a
-  #     machine-local scratch/home path or a leading `@<path>` marker-as-path. Match by absolute ROOT
-  #     (`/Users`, `/var`, `/tmp`, `/private`) — the roots a `mktemp`/scratchpad path lands under —
-  #     not just `/var/folders/`, so a leaked path under any of them cannot read green (#2268). Patterns
-  #     are placeholders, not real paths — this doc stays leak-clean.
-  if printf '%s' "$got" | grep -Eq '(/var/|/Users/|/tmp[/.]|/private/|(^|[[:space:]])~/|(^|[[:space:]])@/)'; then
-    echo "verdict_readback_guard FAILED: comment $cid leaks a local filesystem path in its body — a #2148/#2268 marker-as-path leak; refuse and re-post the real verdict." >&2; return 1
-  fi
-
-  echo "verdict_readback_guard OK: ${gate} verdict @ ${sha:0:7} landed on comment $cid — marker + head binding valid, no local-path leak."
-}
-```
-
-Gate it exactly like the by-value post it follows: right after the `PATCH`/`POST` upsert returns the
-comment id, call `verdict_readback_guard "$CID" <gate> "$HEAD_SHA"` and, on non-zero, **re-post the
-real verdict and re-assert** — if it still cannot land clean, surface it as a **posting failure** in
-the run ledger (the PR is genuinely ungated; a consumer must not read it as verified), never swallow
-it as a silent success. A moved `HEAD_SHA` between the post and the read-back means the head advanced
-*during* the review — re-resolve the head, re-verify against it (the gate is stateless), and re-post;
-never loosen the match to paper over a moved head. (In practice a gate never calls this primitive with
-a hand-carried id — it calls the unconditional `verdict_post_verify` wrapper below, which resolves the
-landed comment id by re-scanning PR state and passes it here.)
-
-Check (2) is **SHA-source-aware** (#2272): the read-back fires on every verdict type without
-false-failing a legitimate non-blocking PASS. The bindable PASS/FAIL first line satisfies (1) via its
-`@ <sha>` — that SHA **is** the head binding, so (2) requires no separate `Reviewed-head:` line (the
-non-blocking binding templates carry the SHA only on the first line; this is the branch that keeps a
-clean non-blocking doc/skill PASS from false-failing under the unconditional `verdict_post_verify …
-|| exit 1`). The advisory blocking-set path carries no first-line `@ <sha>` by design (ADR 0111),
-which is why (1) accepts the `<gate>: advisory` first line; it binds the head **in the body** via the
-canonical `Reviewed-head: @ <sha>` line, which §6.6/ADR 0151 mandates on **all four gates'** advisories
-— **review-code included** (#2329: the earlier "review-code's §CP advisory carries NONE by design →
-accept its absence" carve-out contradicted §6.6's MUST and blinded (2) to a drifted `**Reviewed head:**`
-variant, which ship-it's §6.6 enqueue matcher then rejects; the carve-out is removed, so a missing or
-drifted advisory head-binding fails **loud at emission** rather than surfacing as a ship-it refusal on
-an approved PR). Any `Reviewed-head:` line present but bound to the wrong sha is always fatal. The
-canonical-marker check (1) and the leak check (3) are **unconditional** on every verdict type — the
-#2148/#2264 path-leak protection is never relaxed.
-
-### Make the read-back UNCONDITIONAL — resolve the landed verdict from PR state, never a carried id (`verdict_post_verify`)
-
-`verdict_readback_guard` above is correct but only fires **if it is reached with the right comment
-id**. The #2264 recurrence (after #2148/#2153 already "fixed" the leak) proves that condition is the
-real gap: the guard was invoked as `verdict_readback_guard "$MINE" …`, and `$MINE` is populated on
-**one** posting branch only (the APPROVE-failed comment-upsert `else` fallback). A verdict that lands
-by any **other** path — the native `APPROVE`, a first-verdict `POST` on a branch that didn't set
-`$MINE`, or an agent hand-rolling `gh api -f body=@file` — reaches the guard with an **empty** id, so
-the guard reads nothing and the broken/leaking marker sails through. A guard you can skip by taking a
-different post branch is not a guard.
-
-The fix is to **stop trusting a carried variable and re-derive the landed verdict from live PR
-state**, then run the read-back **unconditionally** on whatever landed. This is the single wrapper
-every gate calls after posting — it resolves the marker comment id by re-scanning, proves *a* verdict
-actually landed for the head, and **hard-fails (non-zero)** on absent / broken / leaking so a garbled
-or path-leaking marker is a **fatal** error the gate cannot silently pass:
-
-```bash
-# verdict_post_verify <PR> <gate> <head-sha>: the UNCONDITIONAL post-verification, run after ANY
-# verdict post/upsert (native APPROVE, comment PATCH-upsert, comment POST, advisory). It does NOT
-# rely on a $MINE/$CID captured on one posting branch — it RE-SCANS the PR's live state to resolve
-# whatever landed, then proves it well-formed + leak-free. Returns 0 ONLY on a proven-clean landed
-# verdict; non-zero (FATAL) on absent / malformed / leaking. <gate> ∈ review-code|review-doc|review-skill.
-verdict_post_verify() {
-  local PR="$1" gate="$2" sha="$3" me cid approved rbody
-  me="$(gh api user --jq .login)"
-  # (A) resolve MY landed marker COMMENT id for this gate — the SHA-bound `<gate>: PASS|FAIL @ <sha>`
-  #     first line OR the SHA-less `<gate>: advisory` line — re-scanned from PR state, NOT a carried id.
-  #     A whole-body-path leak (#2264) has NO `<gate>:` first line, so it resolves empty here → caught in (C).
-  cid=$(gh api "repos/$REPO/issues/$PR/comments?per_page=100" \
-    | jq -r --arg me "$me" --arg g "$gate" --arg sha "${sha:0:7}" '
-        [ .[] | select(.user.login==$me)
-              | select((.body | test("^\\s*\\**\\s*" + $g + ":\\s*(PASS|FAIL)\\s*@\\s*" + $sha; "i"))
-                        or (.body | test("^\\s*\\**\\s*" + $g + ":\\s*advisory"; "i"))) ]
-        | sort_by(.created_at) | last | .id // empty')
-  # (B) or a native approving REVIEW GitHub bound to this exact head (commit_id == head; its own SHA anchor):
-  approved=$(gh api "repos/$REPO/pulls/$PR/reviews?per_page=100" \
-    --jq "[.[] | select(.user.login==\"$me\" and .commit_id==\"$sha\" and .state==\"APPROVED\")] | length")
-  rbody=$(gh api "repos/$REPO/pulls/$PR/reviews?per_page=100" \
-    --jq "[.[] | select(.user.login==\"$me\" and .commit_id==\"$sha\" and .state==\"APPROVED\")] | last | .body // empty")
-  echo "verdict_post_verify: PR #$PR ${gate} @ ${sha:0:7} -> comment=${cid:-none} native-approve=${approved:-0}"
-
-  # (C) FATAL: nothing bound to this head landed — the post no-opped, OR the body carries no marker
-  #     line at all (the #2264 whole-body-path leak leaves no `<gate>:` first line). The PR is UNGATED.
-  if [ -z "$cid" ] && [ "${approved:-0}" -eq 0 ]; then
-    echo "verdict_post_verify FAILED (fatal): no ${gate} verdict bound to head ${sha:0:7} landed on PR #$PR — the post no-opped or the marker's first line is absent (a whole-body local-path leak leaves no marker). Re-post the real by-value verdict; if it still cannot land, report a POSTING FAILURE — the PR is ungated." >&2
-    return 1
-  fi
-
-  # (D) UNCONDITIONAL shape + leak read-back on the landed COMMENT — covers PATCH-upsert, POST, and
-  #     advisory (every comment post path). $cid came from a re-scan, so this runs no matter which
-  #     branch posted; the guard asserts marker shape + `Reviewed-head:` + NO local-path leak.
-  if [ -n "$cid" ]; then
-    verdict_readback_guard "$cid" "$gate" "$sha" || {
-      echo "verdict_post_verify FAILED (fatal): landed ${gate} comment $cid on PR #$PR is malformed or leaks a local filesystem path — delete/re-post the real by-value verdict and re-verify; never leave a broken/leaking marker." >&2
-      return 1
-    }
-  fi
-
-  # (E) UNCONDITIONAL leak check on the native-APPROVE body too. The APPROVE body is by-value, but a
-  #     hand-assembled body could still carry a local path; its SHA binding is the commit_id, so ONLY
-  #     the leak check applies (no `Reviewed-head:` line is required of a native approve). LINEAR regex
-  #     (literal alternation + anchored `(^|[[:space:]])` — no nested quantifier, no ReDoS), the same
-  #     pattern verdict_readback_guard uses; paths are placeholders, keeping this doc leak-clean.
-  if [ "${approved:-0}" -gt 0 ] && [ -n "$rbody" ]; then
-    if printf '%s' "$rbody" | grep -Eq '(/var/|/Users/|/tmp[/.]|/private/|(^|[[:space:]])~/|(^|[[:space:]])@/)'; then
-      echo "verdict_post_verify FAILED (fatal): native APPROVE review body on PR #$PR leaks a local filesystem path — dismiss/re-post a clean by-value verdict." >&2
-      return 1
-    fi
-  fi
-
-  echo "verdict_post_verify OK: ${gate} verdict @ ${sha:0:7} landed clean on PR #$PR (comment=${cid:-none} native-approve=${approved:-0}) — present, well-formed, leak-free."
-}
-```
-
-**Why this closes the #2264 recurrence — the post-path enumeration.** Every way a gate can land a
-verdict now routes through the same unconditional read-back, because `verdict_post_verify` resolves
-the landed surface from PR state instead of from a branch-local variable:
-
-- **native `APPROVE`** → resolved by (B); its body is leak-checked by (E); commit_id is its SHA anchor.
-- **comment `PATCH`-upsert** (the old `$MINE` branch) → resolved by (A); shape+leak by (D).
-- **comment `POST`** (first verdict, `$MINE` empty) → resolved by (A); shape+leak by (D). *This is the
-  branch the carried-`$MINE` call silently skipped.*
-- **advisory comment** (§CP blocking-set) → resolved by (A) via the `<gate>: advisory` arm; shape+leak by (D).
-- **hand-rolled `gh api -f body=@file`** (the literal path as the whole body) → has **no** `<gate>:`
-  first line, so (A) resolves empty and (B) is 0 ⇒ **(C) fatal** (`ungated`). A garbled marker is fatal.
-
-The single **fatal** exit on absent/broken/leaking is the load-bearing change: the prior Step-4c
-presence check merely *echoed* a warning and re-posted without a non-zero exit, so a garble read as
-green. Callers **must** propagate the non-zero — `verdict_post_verify … || exit 1` — so the gate
-cannot report itself done over an ungated PR.
-
-Gate it exactly like the by-value post it follows: right after the last of the Step-5/4a-4b upsert
-branches runs, call `verdict_post_verify "$PR" <gate> "$HEAD_SHA" || exit 1`. On a moved `HEAD_SHA`
-between post and verify the head advanced *during* review — re-resolve the head, re-verify against it
-(the gate is stateless), and re-post; never loosen the match to paper over a moved head.
-
-### The guarded emit path is MANDATORY — never hand-post a verdict marker off the guard
-
-`verdict_post_verify` above is the *read-back*: it re-scans PR state **after** a post and fails loud
-on a marker that landed broken or leaking. But a read-back cannot police a post it never sees. An
-agent that **hand-posts** the verdict marker with a raw `gh api …/comments` or `gh pr comment` call
-bypasses the verdict lib entirely, so `emissionDefect` never fires — and, worse, the marker often
-never resolves through `verdict_post_verify`'s re-scan either, so nothing catches it. That is the
-**emit-side hole** the recurrences rode: #2789 (the whole body was an `@filepath`), #2816 / #2818 (a
-`/var/folders` mktemp path glued into the `@ <sha>` field) — each leaked because the marker was
-hand-posted off the verdict lib, not because the lib's guard was wrong. Code cannot force a hand-post
-through a guard the reviewer never invokes; the **emit path itself** must be mandated, not just
-described.
-
-So for **all four PR gates** — `review-code`, `review-doc`, `review-skill`, `review-design` — routing
-every verdict-marker post through the guarded path is a **hard invariant, not a suggestion**:
-
-- **MUST** post every verdict marker through `pipeline-cli verdict post` — the single marker-emit
-  choke point that runs `emissionDefect` (the body-wide machine-local-path scan added by #2823, plus
-  the 40-hex `@ <sha>` field guards, #2683) and **refuses fail-closed** on a leaking or malformed
-  body. For the native `APPROVE` review body (which `verdict post` cannot emit), run the **same** gate
-  as an explicit read-back assertion — `verdict validate` — **before** the `APPROVE`, so a
-  malformed/leaking marker fails loud rather than landing in a public review body.
-- **FORBIDDEN:** a bare `gh api …/comments` / `gh pr comment` hand-post of a verdict marker that skips
-  the guard. The guarded tool is the **only** sanctioned emit path; a free-form raw post is a bypass,
-  never an equivalent — a reviewer must not free-form the marker even when the body "looks clean."
-- **The one escape hatch, itself guarded:** if a raw post is genuinely unavoidable, the body **MUST**
-  first pass `pipeline-cli leak-guard scan-comment` (the standalone pre-post net #2823 added — reads
-  the body on stdin / `--body-file`, exits non-zero on a machine-local path) **before** the post. A
-  raw post whose body was never scanned is the forbidden case; a scanned one is the escape hatch.
-
-This is the **enforcement complement** to #2823: #2823 hardened the guard *code* (`emissionDefect`'s
-body-wide scan + the `leak-guard scan-comment` CLI); this mandate closes the emit-side hole by
-forbidding the reviewer from routing around it — the two together are what actually close #2796. Each
-review gate **references this rule as the single source** (it does not re-derive the *why* per skill).
-Per #2393 the guard stays generic path-shape patterns, never a named-path deny-list.
 
 ---
 
@@ -1461,185 +1112,38 @@ source of the set**, so every consumer cites *one* definition and the copies can
 again (ADR [0073](https://github.com/kamp-us/phoenix/blob/main/.decisions/0073-review-skill-gate.md) §6,
 closing the #375 drift class).
 
-**The control-plane / blocking set is, exactly:**
+**What the set governs — and where to read it.** It decides **merge authority**: who may merge a
+PR that touches it. That is the only axis it governs; which gate *verifies* the PR is a separate
+question (the callout below). The membership list is single-sourced in the `CONTROL_PLANE_RE`
+const and printed, expanded, by **`pipeline-cli control-plane-paths --paths`** — run that rather
+than read a copy, and never re-hard-code the list here or in a consumer. The regex those members
+amount to is the canonical `CONTROL_PLANE_RE=` line in the next subsection.
 
-- `.claude/**` — the agent control plane (instructions, tools, hooks).
-- `.github/**` — CI enforcement.
-- `.claude-plugin/**` — the **root marketplace manifest** (`marketplace.json`), which declares
-  what the `kampus` marketplace serves and where each plugin's `source` tree is. It governs
-  **delivery of the control plane itself**: the `kampus-pipeline` entry is how the gate-critical
-  skills and the pipeline agents reach a session, and `validate-gate-path-drift.sh` Invariant 2
-  resolves the `.claude/skills` symlink against this file's `source` field. An unreviewed edit
-  here can redirect which tree the gates are loaded from — a self-weakening surface by ADR 0187's
-  enforcement-surface test, even though nothing under it is itself a guard (ADR
-  [0212](https://github.com/kamp-us/phoenix/blob/main/.decisions/0212-marketplace-manifest-is-control-plane.md), #3933).
-  It needs its **own** `^\.claude-plugin/` branch: the `^(\.claude|\.github)/` branch requires a
-  literal `/` after `.claude`, and the next character here is a hyphen, so it never matched.
-
-  **Deliberately OUT — every NESTED `.claude-plugin/` dir** (`claude-plugins/*/.claude-plugin/plugin.json`).
-  The branch is root-anchored: an un-anchored form would also sweep in `claude-plugins/pipeline-crew/`,
-  whose corpus a live founder ruling keeps out of §CP (#3765). `kampus-pipeline`'s own `plugin.json`
-  is a genuine sibling gap — file it, don't widen the anchor by hand (ADR 0212 Consequences).
-- the **gate-critical skills** — the verification/merge machinery plus the shared marker
-  contract they all depend on:
-  - `claude-plugins/kampus-pipeline/skills/ship-it/**`
-  - `claude-plugins/kampus-pipeline/skills/review-code/**`
-  - `claude-plugins/kampus-pipeline/skills/review-doc/**`
-  - `claude-plugins/kampus-pipeline/skills/review-skill/**`
-  - `claude-plugins/kampus-pipeline/skills/review-design/**`
-  - `claude-plugins/kampus-pipeline/skills/review-plan/**`
-  - `claude-plugins/kampus-pipeline/skills/review-trivial/**` — the trivial-diff gate emits
-    SHA-bound, merge-consumed verdicts, so it is gate-critical exactly like the other reviewers;
-    its omission was a live fail-**open** §CP-bypass (ADR
-    [0174](https://github.com/kamp-us/phoenix/blob/main/.decisions/0174-bare-sh-guards-control-plane-gate.md), #2679).
-  - `claude-plugins/kampus-pipeline/skills/triage/**`
-  - `claude-plugins/kampus-pipeline/skills/write-code/**`
-  - `claude-plugins/kampus-pipeline/skills/plan-epic/**`
-  - `claude-plugins/kampus-pipeline/skills/release/**` — the release machinery (ADR 0174, #2679).
-  - `claude-plugins/kampus-pipeline/skills/**/*.sh` — every skill shell helper, at **any depth**
-    under `skills/`: the bare gate-critical guard scripts directly under `skills/`
-    (`validate-gate-path-drift.sh`, `validate-skills.sh`, `validate-cycle-*.sh`) **and** a helper
-    nested in a skill subdir (`report/footer.sh` — its `Filed by an agent` provenance marker feeds
-    triage's ADR-0159 auto-close eligibility; `doctor/doctor.sh`): executable enforcement that
-    feeds or runs the gates, control-plane *by nature* like the guard packages. The
-    `^claude-plugins/kampus-pipeline/skills/([^/]+/)*[^/]+\.sh$` branch classifies them (ADR
-    [0174](https://github.com/kamp-us/phoenix/blob/main/.decisions/0174-bare-sh-guards-control-plane-gate.md), #2576/#2950);
-    the leaf `[^/]+\.sh$` matches a `.sh` filename and `([^/]+/)*` the intervening dirs, so it owns
-    a shell helper wherever it sits without reaching the non-`.sh` files in the skill *dirs* above.
-  - `claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md` (this file)
-
-  **Deliberately OUT of §CP** (recorded so their absence is a decision, not an oversight): the
-  `heal-ci`, `what-shipped`, `doctor`, and `wayfinder` skills are operational diagnostics /
-  reporting / orientation — they neither gate a merge nor hold release authority nor sit on a
-  gate-critical path, so they auto-merge on a `review-skill` PASS like any ordinary skill. Do
-  **not** add them to the boundary (ADR 0174).
-- the **pipeline agent definitions** — `claude-plugins/kampus-pipeline/agents/**`: the behavior
-  instructions for the very agents that run the pipeline, including `shipper.md` (the merge
-  authority) and `reviewer.md` (the verdict gate). An agents-only PR matched **no** §CP clause
-  and **no** routing probe, so `ship-it` would have enqueued it with no human merge and no gate —
-  a gate/merge agent auto-shipping a weakening of its own instructions, the exact
-  self-modification-of-guardrails risk §CP exists to prevent (ADR
-  [0150](https://github.com/kamp-us/phoenix/blob/main/.decisions/0150-control-plane-covers-pipeline-agent-defs.md),
-  #2003; same ADR 0065 rationale that makes the gate-critical skills blocking). Agent defs are
-  behavioral artifacts like skills → **`review-skill`-routed for the verdict**, **blocking for merge**.
-
-  **Deliberately OUT of §CP — the crew engine defs** (`claude-plugins/pipeline-crew/agents/**`, the
-  sibling `pipeline-crew` plugin, `crew-engineering-manager.md` et al.): scoped **only** to the
-  `kampus-pipeline` plugin above, the crew defs class **has-skills** (they ride a `review-skill` gate,
-  #2387) but are **NOT** §CP — they auto-ship on a `review-skill` PASS. This exclusion is a **live
-  founder ruling, re-affirmed 2026-07-24** (recorded on #3765), re-affirming #2342 ("extras don't
-  block") for the crew defs on a **stated containment basis, threat-modeled** for the one path that
-  matters: a weakened crew engine def cannot produce an **un-approved merge** through any path *other
-  than the shipper*, because the actual merge authority lives in the `ship-it` skill and `shipper.md`
-  — both §CP, both re-verifying the §CP approval **independently** of whatever a crew engine def
-  believes. The crew defs orchestrate (claim, spawn, bank, watch); they never gate a verdict nor
-  perform the merge. So the worst a weakened crew def can do is **fail to bank** — which surfaces as a
-  visible unshipped §CP PR a human notices — never drive a merge past the approval §CP requires. The
-  self-modification-of-guardrails risk that pulls `kampus-pipeline/agents/**` into §CP (ADR 0150) is
-  therefore contained short of the crew corpus. Do **not** add `pipeline-crew/agents/**` to
-  `CONTROL_PLANE_RE` on this ruling — it narrows nothing and widens nothing (#3765). Re-examine if a
-  crew def ever gains independent merge/gate authority, or per the #3766 direction of travel (moving
-  N-engine lane exclusion into the tracker/tool layer makes this exclusion even less load-bearing).
-- the **plugin hook surface** — `claude-plugins/kampus-pipeline/hooks/**` (the `install.sh`
-  that drops the installed `pipeline-cli` and the `guard.sh` fail-open dispatch wrapper) plus
-  `claude-plugins/kampus-pipeline/hooks.json` (the foreign-repo hook manifest). These are
-  self-weakening by nature — they wire the guard dispatch + the CLI install the `.claude/settings.json`
-  hooks depend on (ADR [0103](https://github.com/kamp-us/phoenix/blob/main/.decisions/0103-consolidate-pipeline-cli-package.md),
-  #1003). The `^claude-plugins/kampus-pipeline/hooks(/|\.json$)` clause covers the dir + the manifest.
-- the **enforcement-guard packages** — the executable guardrails that gate agent tooling,
-  control-plane *by nature* the same way the gate-critical skills are (ADR
-  [0065](https://github.com/kamp-us/phoenix/blob/main/.decisions/0065-gate-critical-skills-are-blocking.md)),
-  even though they live under `packages/` rather than `.claude`/skills (ADR
-  [0100](https://github.com/kamp-us/phoenix/blob/main/.decisions/0100-control-plane-covers-enforcement-guard-packages.md)):
-  - `packages/ci-required/**` — the zero-dep aggregator of the gating CI checks. Its sources were
-    inlined into pipeline-cli at `packages/pipeline-cli/src/tools/ci-required/` (#3802), and its CI
-    job now runs `node packages/pipeline-cli/src/tools/ci-required/bin.ts`; the aggregator's
-    CP coverage now flows through the pipeline-cli enforcement-core clauses below (its sources sit
-    at `src/tools/ci-required/`, a retained core path). The `^packages/ci-required/`
-    clause below is retained deliberately (ADR 0100) as defense-in-depth against a re-created package
-    at that path, even though it no longer carries tracked sources.
-  - `packages/pipeline-cli/` — **an enforcement core, not the whole package** (ADR
-    [0218](https://github.com/kamp-us/phoenix/blob/main/.decisions/0218-pipeline-cli-cp-enforcement-core.md),
-    amending ADR 0100, which had rejected exactly this sub-path split). The package is the
-    consolidated home for every guard the standalone `*-guard` packages used to carry (ADR
-    [0103](https://github.com/kamp-us/phoenix/blob/main/.decisions/0103-consolidate-pipeline-cli-package.md),
-    #1003), but ~68 tools live there and most gate nothing — so ADR
-    [0187](https://github.com/kamp-us/phoenix/blob/main/.decisions/0187-crew-mcp-is-not-control-plane.md)'s
-    enforcement-surface test is applied **per path** rather than to the package as a whole. Three
-    clauses carry it:
-    - `^packages/pipeline-cli/src/[^/]+$` — the `src/` **root, non-recursive**: the shared
-      dispatch + process plumbing every tool including every gate runs through (`registry.ts`'s
-      `registeredTools[]` can disable any guard without touching that guard's own directory;
-      plus `router.ts`/`bin.ts`/`gate-fail.ts`/`read-stdin*.ts`/`run.ts`/`tool-registration.ts`/…).
-      A non-recursive pattern, not a file list, so it cannot rot as root modules are added.
-    - `^packages/pipeline-cli/src/tools/(…)/` — the **eight** tools that are themselves the
-      enforcement surface: `ci-required` (a branch-protection-required check), `verdict` (the
-      enqueue gate, ADR 0058), `cp-cardinality` (§CP approval discharge, ADR 0175),
-      `control-plane-paths` (this boundary), `cp-classify` (the §CP verdict, #4161),
-      `codeowners-cp` (the regex↔CODEOWNERS drift gate), `trivial-diff` (routes a PR to the
-      lighter gate, ADR 0120), `review-head` (resolves the head every verdict binds to).
-    - `^packages/pipeline-cli/src/tools/tracker/gh-io\.ts$` — **one file, not its directory.**
-      `gh-io.ts` exports `authorizedAuthors`, the ADR 0055 write+ ACL, and `verdict/github.ts`
-      feeds its result straight into `resolveVerdict`: widening it to return every author would
-      let a **forged verdict from a non-collaborator count as a PASS**. Retaining `verdict` while
-      leaving its authorization source ungated is an incoherent line. The rest of `tools/tracker/`
-      is claim/coordination tooling and stays out — hence the file-level anchor.
-
-    The legacy `^packages/[^/]*-guard/` clause is retired with those packages. Note what the
-    narrowing means concretely: the Tier-3 guards ADR 0100 named **by name** (`leak-guard`,
-    `spawn-guard`, `structured-output-guard`, `worktree-guard`, `read-guard`) are **no longer
-    §CP** — they are CI-enforced, not human-approval-enforced. ADR 0218 records that trade, the
-    three modules the core imports without retaining, and why `codeowners-cp` cannot catch a
-    stale over-broad CODEOWNERS row.
-- the **local hook-wiring config** — `lefthook.yml` and its siblings, matched by the
-  `^([^/]+/)*(lefthook|\.lefthook)[^/]+$` branch. This config is what *wires* the local git hooks:
-  the ADR-0160 ref-guard (#2143) and the #2778 primary-index guards, which have **no CI backstop**
-  and are the only defense the shared local checkout has against a proven-real corruption class. An
-  edit that silently unwires them is self-weakening in exactly ADR 0187's sense, so it must not
-  auto-ship (founder ruling on #3402). The branch is a **shape, not a named list** (#2393): the same
-  depth-agnostic `([^/]+/)*` prefix the skill-`.sh` clause uses, over the `lefthook` / `.lefthook`
-  stem, so every config filename lefthook itself discovers — `lefthook.yml`, the `.yaml`/`.toml`/
-  `.json` forms, a `lefthook-local.*` override, and the `.lefthookrc` every generated hook wrapper
-  sources — is covered without enumerating one of them. The `[^/]+` leaf keeps it narrow: it matches
-  lefthook-named **leaves** only, so no other root config is swept in.
+**Deliberately OUT, recorded so each absence reads as a decision and not an oversight:** every
+**nested** `.claude-plugin/` dir — the branch is root-anchored, and `kampus-pipeline`'s own
+`plugin.json` is a genuine sibling gap to file rather than patch by hand (ADR
+[0212](https://github.com/kamp-us/phoenix/blob/main/.decisions/0212-marketplace-manifest-is-control-plane.md)
+Consequences); and the crew engine defs under `claude-plugins/pipeline-crew/agents/**`, which class
+**has-skills** yet auto-ship on a `review-skill` PASS, because merge authority lives in `ship-it` and `shipper.md`
+— both §CP, both re-verifying the §CP approval independently — so the worst a weakened crew def can
+do is fail to bank (live founder ruling, re-affirmed 2026-07-24 on
+[#3765](https://github.com/kamp-us/phoenix/issues/3765)). Do **not** widen `CONTROL_PLANE_RE` by
+hand to cover either of them. ADR 0174's four operational skill dirs — `heal-ci`, `what-shipped`,
+`doctor`, `wayfinder` — are **no longer** out: the whole `kampus-pipeline` skills tree is §CP, the
+**directory** being the unit of coverage rather than the file type, so no naming convention has to
+hold and the boundary cannot rot as skills are added (ADR 0227).
 
 A PR touching **any** path in this set is **control plane**: `ship-it` never auto-merges it off a
 gate verdict alone — it merges only once a `@kamp-us/control-plane` member approves at head, and
-`ship-it` then enqueues it (ADR
-[0135](https://github.com/kamp-us/phoenix/blob/main/.decisions/0135-hard-gate-control-plane-team-codeowners-approve-then-enqueue.md)
-amending ADR
-[0053](https://github.com/kamp-us/phoenix/blob/main/.decisions/0053-control-plane-boundary.md),
-widened to the gate-critical skills by ADR
-[0065](https://github.com/kamp-us/phoenix/blob/main/.decisions/0065-gate-critical-skills-are-blocking.md);
-`review-skill/**` added to the gate-critical set by ADR
-[0073](https://github.com/kamp-us/phoenix/blob/main/.decisions/0073-review-skill-gate.md), since the gate
-that reviews the gates is itself a gate; the enforcement-guard packages added by ADR
-[0100](https://github.com/kamp-us/phoenix/blob/main/.decisions/0100-control-plane-covers-enforcement-guard-packages.md),
-since a guard is a self-weakening surface wherever it lives; that coverage flowed
-through the consolidated `packages/pipeline-cli/` package per ADR
-[0103](https://github.com/kamp-us/phoenix/blob/main/.decisions/0103-consolidate-pipeline-cli-package.md)
-and is now scoped to that package's **enforcement core** per ADR
-[0218](https://github.com/kamp-us/phoenix/blob/main/.decisions/0218-pipeline-cli-cp-enforcement-core.md);
-the **pipeline agent definitions** (`claude-plugins/kampus-pipeline/agents/**`) added by ADR
-[0150](https://github.com/kamp-us/phoenix/blob/main/.decisions/0150-control-plane-covers-pipeline-agent-defs.md),
-since a gate/merge agent's own instructions are a self-weakening surface; the **bare gate-critical
-`.sh` guards** under `skills/` and the **`release`/`review-trivial` skill dirs** added by ADR
-[0174](https://github.com/kamp-us/phoenix/blob/main/.decisions/0174-bare-sh-guards-control-plane-gate.md)
-(#2576/#2679), since a guard script and a SHA-bound-verdict gate are self-weakening surfaces that
-were escaping the boundary; the **lint/GritQL governance config** — `biome.jsonc` and
-`biome-plugins/**` — added by ADR
-[0193](https://github.com/kamp-us/phoenix/blob/main/.decisions/0193-lint-governance-config-is-control-plane.md),
-since an ungated path to weaken a lint rule is a guard-relaxing vector; the **root marketplace
-manifest** — `.claude-plugin/**` — added by ADR
-[0212](https://github.com/kamp-us/phoenix/blob/main/.decisions/0212-marketplace-manifest-is-control-plane.md),
-since the file that decides what the control-plane plugin *delivers* is itself control plane; the
-**local hook-wiring config** — `lefthook.yml` and its siblings — added on the founder ruling on
-[#3402](https://github.com/kamp-us/phoenix/issues/3402), since the config that wires the
-CI-unbacked local-integrity guards can unwire them).
+`ship-it` then enqueues it. Every widening of the boundary, and the reason for each, is an ADR —
+0053, 0065, 0073, 0100, 0103, 0135, 0150, 0174, 0193, 0212, 0218, 0227 — plus the founder rulings on
+[#3402](https://github.com/kamp-us/phoenix/issues/3402) and
+[#4446](https://github.com/kamp-us/phoenix/issues/4446). Read them in `.decisions/`, where ADR
+discovery is the CLAUDE.md contract; they are not restated here.
 Everything else — `apps/**`,
 **non**-guard `packages/**`, `.decisions/**` (**except a guard-touching ADR** — see the content
 clause below), `.patterns/**`, every prose doc `*.md` (the
-§DOC class), and every **non**-gate-critical `skills/**` — is **non-blocking** and
+§DOC class), and every **non**-`kampus-pipeline` plugin's `skills/**` — is **non-blocking** and
 auto-merges through its matching gate on a PASS. (This set governs *who merges*, not *which gate verifies* — a
 code-root `*.md` is non-blocking here yet rides `review-code`, not `review-doc`, per §DOC.)
 
@@ -1666,7 +1170,7 @@ against MAIN's boundary, not its own edit) and must not move to an in-tree impor
 # the single probe ship-it Step 0, review-code Step 2, review-doc Step 0, and review-skill
 # Step 0 all use — kept byte-in-sync with the pipeline-cli const (issue #2761); the live gates
 # re-resolve THIS line from origin/main (#981), so it stays here as the one un-importable copy:
-CONTROL_PLANE_RE='^(\.claude|\.github)/|^\.claude-plugin/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-design|review-plan|triage|write-code|plan-epic|release|review-trivial)/|^claude-plugins/kampus-pipeline/skills/([^/]+/)*[^/]+\.sh$|^claude-plugins/kampus-pipeline/agents/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\.md$|^claude-plugins/kampus-pipeline/hooks(/|\.json$)|^packages/ci-required/|^packages/pipeline-cli/src/[^/]+$|^packages/pipeline-cli/src/tools/(ci-required|codeowners-cp|control-plane-paths|cp-cardinality|cp-classify|review-head|trivial-diff|verdict)/|^packages/pipeline-cli/src/tools/tracker/gh-io\.ts$|^biome\.jsonc$|^biome-plugins/|^([^/]+/)*(lefthook|\.lefthook)[^/]+$'
+CONTROL_PLANE_RE='^(\.claude|\.github)/|^\.claude-plugin/|^claude-plugins/kampus-pipeline/skills/|^claude-plugins/kampus-pipeline/lib/|^claude-plugins/kampus-pipeline/agents/|^claude-plugins/kampus-pipeline/hooks(/|\.json$)|^packages/ci-required/|^packages/pipeline-cli/src/[^/]+$|^packages/pipeline-cli/src/tools/(ci-required|codeowners-cp|control-plane-paths|cp-cardinality|cp-classify|review-head|trivial-diff|verdict)/|^packages/pipeline-cli/src/tools/tracker/gh-io\.ts$|^biome\.jsonc$|^biome-plugins/|^([^/]+/)*(lefthook|\.lefthook)[^/]+$'
 # The list this regex is matched against is a fallible READ, so it comes from §CPREAD's
 # `cp_changed_files` (defined below) — never a bare `gh api … | grep` pipe. With pipefail off that
 # pipe reports grep's status and discards gh's, so a failed read matches nothing and reads as "no §CP
@@ -1684,13 +1188,20 @@ copy embedded in their own skill body.** A skill runs against the **snapshot inj
 agent's context at invoke time**, which can lag `origin/main` even when the on-disk copy in the
 same worktree is current — so an agent on a pre-amendment snapshot once auto-merged a
 now-control-plane PR the *current* boundary marks approval-gated (#981). The fix makes the
-single source authoritative **at run time**: `ship-it` Step 0 and `review-code` Step 2 read the
-`CONTROL_PLANE_RE` line from this file on `origin/main` (REST raw, `?ref=main`) and classify
-against *that*, **failing closed** — every path treated as control-plane, so the gate refuses —
-if the read can't be made, never falling back to the possibly-stale snapshot. The embedded copy
-each consumer still carries is the fail-closed reference and the `validate-gate-path-drift`
-lockstep target; it is **not** the live decision source. This makes ADR 0073 §6's "single
-definition" hold across snapshot age, not just on disk.
+single source authoritative **at run time**, by either of two routes to the same read.
+`review-code` Step 2 and `review-doc` Step 0 read the `CONTROL_PLANE_RE` line from this file on
+`origin/main` (REST raw, `?ref=main`) inline. `ship-it` Step 0, `review-skill` Step 0,
+`review-design` and `review-trivial` classify through `pipeline-cli cp-classify`, which performs
+that same `?ref=main` read itself (`cp-classify/command.ts` `fetchLiveControlPlaneRe`). Either
+route classifies against `origin/main`'s boundary and **fails closed** — every path treated as
+control-plane, so the gate refuses — if the read can't be made, never falling back to the
+possibly-stale snapshot. An inline reader carries an embedded `CONTROL_PLANE_RE='.'` fail-closed
+default as its reference; a `cp-classify` consumer carries **no** embedded copy, because the verb
+owns both the read and the fail-closed direction — **do not add one back**, which is the drift
+this section exists to close. The one un-importable copy is the `CONTROL_PLANE_RE=` line above,
+and it, not any consumer's, is `validate-gate-path-drift`'s lockstep target; neither is the live
+decision source. This makes ADR 0073 §6's "single definition" hold across snapshot age, not just
+on disk.
 
 The **0052 instruction-trust set** (root `CLAUDE.md`, `.claude/**`, `.decisions/**`,
 `.patterns/**`) is a *different* set — what a reviewer must never *load*, an isolation
@@ -1733,44 +1244,16 @@ it from THIS file on `origin/main`, which is the anti-self-authorization propert
 GUARD_ADR_RE='guard|invariant|fail-closed|fail-open|fail closed|fail open|containment|control-plane|control plane|§cp|self-weakening|blocking set|adversarial review|must never|hard-gate|hard gate|enforcement|\bgat(e|es|ing|ed)\b|relax|loosen|weaken|soften|widen|broaden|waive|bypass|exempt|carve[ -]?out|opt[ -]?out'
 ```
 
+The probe itself lives in [`shared/scripts/cp-guard-adr.sh`](shared/scripts/cp-guard-adr.sh) (§SHARED)
+— it resolves `GUARD_ADR_RE` live from `origin/main`, non-triviality-asserts the strip (#4401), and
+prints one `BLOCKING (…)` line per guard-touching or unreadable ADR:
+
 ```bash
-# §CP content clause (ADR 0164): a touched .decisions/** ADR whose CONTENT matches GUARD_ADR_RE is
-# §CP. Resolve GUARD_ADR_RE from origin/main at run time (like CONTROL_PLANE_RE, #981); read each
-# ADR's body at the PR head. FAIL CLOSED: an unreadable boundary ⇒ match-everything; an unreadable
-# ADR (delete/404) ⇒ §CP — never auto-ship an ADR that could not be read and proven guard-free.
-# This recipe carries NO seed copy of GUARD_ADR_RE: it used to, byte-identical to the canonical
-# above, and since every consumer resolves first-occurrence-wins that second line was an unguarded
-# shadow a corrective edit could land on and appear to work (#4401). The live read below is the
-# only resolution, and it already fails closed when it can't be made.
-GA_LIVE="$(gh api "repos/$REPO/contents/claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md?ref=main" -H 'Accept: application/vnd.github.raw' 2>/dev/null | grep '^GUARD_ADR_RE=' | head -n1 || true)"
-# accept_re (§CLASS) is the NON-TRIVIALITY ASSERT: a stripped value that is empty, or that still
-# carries the assignment prefix, is refused here rather than gated on (#4401). Single-sourced in
-# §CLASS and copied down here — as ship-it's Step 0 copies it — because a fenced recipe must run
-# standalone when pasted; a cross-block call resolves to `command not found`, an empty pattern,
-# and every touched ADR classified §CP (#4413).
-accept_re() {   # $1=name, $2=resolved value, $3=fail-closed default
-  case "$2" in
-    *"$1='"*) : ;;
-    *) if [ "${#2}" -ge 4 ]; then printf '%s' "$2"; return 0; fi ;;
-  esac
-  printf 'TRIVIAL-GATE-BOUNDARY: %s did not resolve to a usable pattern — failing closed.\n' "$1" >&2
-  printf '%s' "$3"
-}
-if [ -n "$GA_LIVE" ]; then GUARD_ADR_RE="$(accept_re GUARD_ADR_RE "$(printf '%s' "$GA_LIVE" | sed "s/^GUARD_ADR_RE='//; s/'$//")" '.')"; else GUARD_ADR_RE='.'; fi   # FAIL CLOSED: '.' ⇒ every ADR word matches ⇒ every touched ADR is §CP
-# The ref and the file list are fallible reads too — both come from §CPREAD (below), so an
-# unreadable head SHA leaves HEAD_SHA EMPTY (payload discarded) rather than holding gh's error body.
-cp_head_sha "$REPO" "$PR"; HEAD_SHA="$CP_HEAD_SHA"
-[ -n "$HEAD_SHA" ] || echo "BLOCKING (head SHA unreadable — ADR content unprobeable ⇒ §CP, fail-closed)"
-printf '%s\n' "$CP_FILES" | grep -E '^\.decisions/.*\.md$' | while IFS= read -r adr; do
-  [ -z "$adr" ] && continue
-  [ -n "$HEAD_SHA" ] || break
-  # Capture and CHECK, never `|| true`: gh writes its error document to STDOUT, so `|| true` would
-  # leave that JSON in $body, skip the fail-closed branch below, and grep an ERROR DOC for guard
-  # vocabulary (§CPREAD property 2).
-  body="$(gh api "repos/$REPO/contents/$adr?ref=$HEAD_SHA" -H 'Accept: application/vnd.github.raw' 2>/dev/null)" || body=""
-  if [ -z "$body" ]; then echo "BLOCKING ($adr — unreadable at head ⇒ §CP, fail-closed)"
-  elif printf '%s' "$body" | grep -Eiq "$GUARD_ADR_RE"; then echo "BLOCKING ($adr — guard-touching ADR ⇒ §CP, ADR 0164)"; fi
-done
+# stdout: `GUARD_ADR_RE=…` and `HEAD_SHA=…`, then one `BLOCKING (…)` line per finding. Those two
+# NAME= lines are the evidence the probe ran, since its ordinary answer is the ABSENCE of a BLOCKING
+# line — never read empty stdout as "no guard-touching ADR". It makes the §CPREAD changed-file read
+# itself, so a failed read prints BLOCKING and exits non-zero rather than probing nothing.
+bash ./claude-plugins/kampus-pipeline/skills/shared/scripts/cp-guard-adr.sh "$REPO" "$PR"
 ```
 
 A guard-touching ADR classifies **§CP for merge-authority** exactly like a path-§CP file:
@@ -1819,55 +1302,15 @@ This is the **one** hardened read, and it binds **every** §CP site — *includi
 block is exactly how byte-identical defective copies spread from it, so the scope here is *every*
 site in this file and in every skill that cites it — not merely the ones below.
 
-```bash
-# §CPREAD — the ONE hardened read of a PR's changed-file list, the input to BOTH §CP clauses.
-# Sets CP_FILES (the list) + CP_FILES_N (the scanned count); returns NON-ZERO on a read that could
-# not execute. A non-zero return is UNKNOWN — hold as §CP — never "no control-plane path touched".
-# --paginate + a STREAMING --jq (one line per file) is load-bearing: gh concatenates the per-page
-# element streams, so a consumer's grep aggregates matches across ALL pages. The API caps per_page at
-# 100 whatever you ask for, so a single non-paginated call truncates a >100-file PR — hiding a §CP
-# file in the tail. Never pair --paginate with an AGGREGATE --jq (`[ … ]` / `length` / `add`): gh runs
-# the filter PER PAGE and emits one result each (#725).
-cp_changed_files() {   # $1 = REPO, $2 = PR
-  CP_FILES="$(gh api --paginate "repos/$1/pulls/$2/files?per_page=100" \
-    --jq 'if type=="array" then .[].filename else ("payload is not a file-list array"|halt_error(1)) end' 2>/dev/null)" || {
-      CP_FILES=""; CP_FILES_N=0
-      echo "§CP scope: PR #$2 changed-file list READ FAILED (gh exited non-zero; payload discarded) — 0 file(s) scanned" >&2
-      return 1; }
-  CP_FILES_N="$(printf '%s\n' "$CP_FILES" | grep -c . || true)"
-  if [ "$CP_FILES_N" -eq 0 ]; then
-    CP_FILES=""
-    echo "§CP scope: PR #$2 changed-file list read returned ZERO files — a PR always changes >=1 file, so this is a FAILED READ, not a clean 'no §CP path'" >&2
-    return 1
-  fi
-  echo "§CP scope: PR #$2 changed-file list read OK — $CP_FILES_N file(s) scanned"   # §ZS #1: state the scope the classification rests on
-}
-
-# The PR head SHA is the SECOND fallible read every §CP site makes — the ref the ADR-0164 content
-# probe reads each ADR body at. It gets the same three properties, and for a reason worth stating
-# once: `HEAD_SHA="$(gh api … --jq .head.sha || true)"` followed by `[ -n "$HEAD_SHA" ]` is a DEAD
-# guard. On failure gh does not apply --jq at all — it writes its error document to STDOUT
-# (property 2) — so the variable is NON-EMPTY and the emptiness test can never fire. Capture, check
-# the exit status, DISCARD the payload, then shape-assert: a ref is 40 bare lowercase hex digits, so
-# an error body (or any other unexpected 200) cannot pass for one.
-cp_head_sha() {   # $1 = REPO, $2 = PR; sets CP_HEAD_SHA (EMPTY on failure), returns NON-ZERO ⇒ UNKNOWN
-  CP_HEAD_SHA="$(gh api "repos/$1/pulls/$2" \
-    --jq 'if type=="object" and (.head.sha|type)=="string" then .head.sha else ("payload is not a PR object"|halt_error(1)) end' 2>/dev/null)" || {
-      CP_HEAD_SHA=""
-      echo "§CP scope: PR #$2 head SHA READ FAILED (gh exited non-zero; payload discarded) — ADR content unprobeable" >&2
-      return 1; }
-  case "$CP_HEAD_SHA" in
-    *[!0-9a-f]*|"") CP_HEAD_SHA=""; echo "§CP scope: PR #$2 head SHA is not bare hex — discarded" >&2; return 1 ;;
-  esac
-  [ "${#CP_HEAD_SHA}" -eq 40 ] || {
-    CP_HEAD_SHA=""; echo "§CP scope: PR #$2 head SHA is not a 40-char ref — discarded" >&2; return 1; }
-}
-```
-
-Consumers branch on its **return status**, and on failure resolve toward §CP:
+`cp_changed_files` (the file list, setting `CP_FILES` + `CP_FILES_N`) and `cp_head_sha` (the ref, setting
+`CP_HEAD_SHA`) both live in [`shared/scripts/cp-read.sh`](shared/scripts/cp-read.sh) (§SHARED), with the
+`--paginate` + streaming-`--jq` and dead-guard rationale carried in the script's own comments. Run it
+and branch on the **exit status**, resolving a failure toward §CP:
 
 ```bash
-if ! cp_changed_files "$REPO" "$PR"; then
+# stdout: `CP_FILES_N=<n>` then one `CP_FILE=<path>` per file. A read that could not execute prints
+# NOTHING on stdout and exits non-zero — so read the status, never the emptiness.
+if ! bash ./claude-plugins/kampus-pipeline/skills/shared/scripts/cp-read.sh "$REPO" changed-files "$PR"; then
   CP_STATE=unknown   # the input never arrived ⇒ UNKNOWN ⇒ hold as §CP (never `not-control-plane`)
 fi
 ```
@@ -1896,68 +1339,18 @@ fourth that the file-list read does not need:
    case where it did. What it costs is a true answer: the gate reports an outage as a finding about
    the team's shape.
 
+The three reads — `cp_team_roster` (sets `CP_MEMBERS` + `CP_MEMBERS_N`), `cp_pr_author` (sets
+`CP_PR_AUTHOR`), `cp_team_membership` (sets `CP_MEMBERSHIP` to a state or `absent`) — sit alongside the
+two above in [`shared/scripts/cp-read.sh`](shared/scripts/cp-read.sh) (§SHARED); each carries its own
+shape-assert rationale in-script:
+
 ```bash
-# cp_team_roster — the control-plane roster read. Sets CP_MEMBERS (logins, one per line) +
-# CP_MEMBERS_N; returns NON-ZERO ⇒ UNKNOWN (never a cardinality). A read that SUCCEEDS and returns
-# zero members is a DIFFERENT, honest state — the ADR-0175 N==0 STOP — and returns zero here, so the
-# §ZS zero-scope rule does NOT apply: unlike a PR's file list, an empty team is a real answer.
-cp_team_roster() {   # $1 = ORG
-  CP_MEMBERS="$(gh api --paginate "orgs/$1/teams/control-plane/members?per_page=100" \
-    --jq 'if type=="array" then .[].login else ("payload is not a member array"|halt_error(1)) end' 2>/dev/null)" || {
-      CP_MEMBERS=""; CP_MEMBERS_N=0
-      echo "§CP roster: @$1/control-plane member list READ FAILED (gh exited non-zero; payload discarded) — roster UNKNOWN, NOT empty" >&2
-      return 1; }
-  # Shape, then interpret. A status check alone still admits a 200 carrying something that is not a
-  # roster; a bare non-empty test admits the error blob outright. Only the login charset rejects both.
-  if printf '%s\n' "$CP_MEMBERS" | grep -qvE '^[A-Za-z0-9-]*$'; then
-    CP_MEMBERS=""; CP_MEMBERS_N=0
-    echo "§CP roster: @$1/control-plane member list carries a non-login entry — payload discarded, roster UNKNOWN, NOT empty" >&2
-    return 1
-  fi
-  CP_MEMBERS_N="$(printf '%s\n' "$CP_MEMBERS" | grep -c . || true)"
-  echo "§CP roster: @$1/control-plane read OK — $CP_MEMBERS_N member(s) scanned"   # §ZS #1: emit the scope
-}
-
-# cp_pr_author — the PR author login. An unresolved author is UNKNOWN: it un-skips the author in the
-# approver walk (a self-approval would count as a non-author approval) and mis-keys the cardinality
-# branch. Same dead-guard reason as cp_head_sha: on failure gh writes its error document to STDOUT,
-# so `[ -n "$AUTHOR" ]` can never fire — check the status, discard the payload, then shape-assert.
-cp_pr_author() {   # $1 = REPO, $2 = PR; sets CP_PR_AUTHOR (EMPTY on failure), NON-ZERO ⇒ UNKNOWN
-  CP_PR_AUTHOR="$(gh api "repos/$1/pulls/$2" \
-    --jq 'if type=="object" and (.user.login|type)=="string" then .user.login else ("payload is not a PR object"|halt_error(1)) end' 2>/dev/null)" || {
-      CP_PR_AUTHOR=""
-      echo "§CP author: PR #$2 author READ FAILED (gh exited non-zero; payload discarded) — author UNKNOWN" >&2
-      return 1; }
-  case "$CP_PR_AUTHOR" in
-    ""|*[!A-Za-z0-9-]*) CP_PR_AUTHOR=""
-      echo "§CP author: PR #$2 author is not a bare login — discarded, author UNKNOWN" >&2; return 1 ;;
-  esac
-}
-
-# cp_team_membership — is login $2 on @$1/control-plane? THREE outcomes, not two: `-i` keeps the
-# status line on stdout even when gh exits non-zero, which is the whole point — a 404 is a DEFINITE
-# non-member, anything else is UNKNOWN. The bare `--jq '.state' 2>/dev/null` this replaces made a
-# 5xx indistinguishable from a definite non-member, silently under-counting an approver.
-# Composition, measured: an ABSENT team namespace 404s here too, so this endpoint alone cannot tell
-# "not a member of a team that exists" from "no such team". It does not have to — call it only after
-# cp_team_roster has proven the team readable, which is what makes a 404 here definite.
-cp_team_membership() {   # $1 = ORG, $2 = login; sets CP_MEMBERSHIP = <state>|absent; NON-ZERO ⇒ UNKNOWN
-  _resp="$(gh api "orgs/$1/teams/control-plane/memberships/$2" -i 2>/dev/null)"; _rc=$?
-  _status="$(printf '%s\n' "$_resp" | head -n1 | awk '{print $2}')"   # $? already stashed above
-  case "$_status" in
-    200)
-      CP_MEMBERSHIP="$(printf '%s\n' "$_resp" | awk 'b{print} /^\r?$/{b=1}' \
-        | jq -r 'if type=="object" and (.state|type)=="string" then .state else ("payload is not a membership object"|halt_error(1)) end' 2>/dev/null)" || {
-          CP_MEMBERSHIP=""
-          echo "§CP membership: '$2' returned 200 with a non-membership payload — discarded, membership UNKNOWN" >&2
-          return 1; }
-      return 0 ;;
-    404) CP_MEMBERSHIP=absent; return 0 ;;
-    *)   CP_MEMBERSHIP=""
-      echo "§CP membership: '$2' on @$1/control-plane READ FAILED (HTTP ${_status:-none}, gh exit $_rc) — UNKNOWN, NOT a definite non-member" >&2
-      return 1 ;;
-  esac
-}
+CPREAD=./claude-plugins/kampus-pipeline/skills/shared/scripts/cp-read.sh
+# stdout: `CP_MEMBERS_N=<n>` then one `CP_MEMBER=<login>` per member. `CP_MEMBERS_N=0` at exit 0 is a
+# real answer here — an empty team is a FACT (the ADR-0175 N==0 STOP), unlike an empty file list.
+bash "$CPREAD" "$ORG"  team-roster              || CP_ROSTER_STATE=unknown   # NEVER a cardinality, never "the team is empty"
+bash "$CPREAD" "$REPO" pr-author       "$PR"    || CP_AUTHOR_STATE=unknown   # stdout `CP_PR_AUTHOR=<login>`; un-skipping the author would count a self-approval
+bash "$CPREAD" "$ORG"  team-membership "$L"     || CP_MEMBER_STATE=unknown   # stdout `CP_MEMBERSHIP=<state>|absent`; 404 is definite, anything else is UNKNOWN
 ```
 
 Consumers of these three resolve a failure to **UNKNOWN and stop under a reason line that names the
@@ -1978,26 +1371,19 @@ rather than erroring.
 runs the shared entry point, which cannot hand back a fail-open no:
 
 ```bash
-# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
-PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
-# The §CP classification entry point — four states on stdout (#4161). Re-resolves the live
-# CONTROL_PLANE_RE from origin/main itself (#981); pass --control-plane-re to reuse one you
-# already resolved. ASSERT ON THE STATE WORD, never on the exit status alone — see below.
-# The INPUT comes from §CPREAD, never from a bare `gh api … |` pipe: with pipefail off, a failed
-# read pipes its stdout ERROR BODY into the verb, which sees one non-`.decisions/` "path", matches
-# no §CP clause, and answers `not-control-plane` — a fail-open at the very entry point that exists
-# to prevent one (#4216).
-if ! cp_changed_files "$REPO" "$PR"; then
-  CP_STATE=unknown   # §CPREAD: the input never arrived ⇒ UNKNOWN ⇒ hold as §CP
-else
-  CP_STATE="$(printf '%s\n' "$CP_FILES" | "$PCLI" cp-classify classify --repo "$REPO")"
-fi
-if [ "$CP_STATE" = "not-control-plane" ]; then
-  : # proven ordinary — the ONLY branch that may skip the §CP hold
-else
-  echo "BLOCKING (§CP state '$CP_STATE')"   # every other value, INCLUDING the empty string a failed invocation yields
-fi
+# stdout, in order: the §CP scope line, `CP_STATE=<state>`, then `BLOCKING (…)` on every state but
+# `not-control-plane`. Assert on the CP_STATE word — an exit code discriminates outcomes only once
+# the script has RUN, so `… || ordinary` fail-opens on a usage error (1) or a missing binary (127).
+bash ./claude-plugins/kampus-pipeline/skills/shared/scripts/cp-classify-entry.sh "$REPO" "$PR"
 ```
+
+[`shared/scripts/cp-classify-entry.sh`](shared/scripts/cp-classify-entry.sh) prints `CP_STATE=…` and
+`BLOCKING (§CP state '…')` on every value except the one proven-ordinary
+`not-control-plane` — including the empty string a failed invocation yields. It takes its input from
+§CPREAD's `cp_changed_files`, never a bare `gh api … |` pipe: with `pipefail` off, a failed read pipes
+its stdout **error body** into the verb, which sees one non-`.decisions/` "path", matches no §CP clause,
+and answers `not-control-plane` — a fail-open at the very entry point that exists to prevent one
+(#4216).
 
 | stdout | meaning | exit |
 | --- | --- | --- |
@@ -2030,7 +1416,7 @@ table or it does not ship.
 
 | site | sources | note |
 | --- | --- | --- |
-| `ship-it` Step 0 | path + content | the merge-deciding gate; both re-resolved from `origin/main` |
+| `ship-it` Step 0 | `cp-classify` (path + content) | the merge-deciding gate; was ~500 lines of hand-rolled boundary bash — the last merge-deciding site to migrate (#4405). The verb re-resolves the boundary from `origin/main` itself, so the #981 run-time re-derivation is preserved, not traded for a compile-time import |
 | `review-code` Step 2 | path + content | |
 | `review-doc` Step 0 | path + content | |
 | `review-design` | `cp-classify` (path + content) | was path-only |
@@ -2054,8 +1440,8 @@ over a PR's changed files, so it has no such read.
 
 ## DOC. The doc-class / review-doc surface — one canonical definition
 
-`review-doc` and the actors that cite it (`ship-it` Step 0, `write-code`, this file's §6
-marker prose) all need the *same* answer to a second question — **is this `*.md` a doc
+`review-doc` and the actors that cite it (`ship-it` Step 0, `write-code`, the gate-verdict
+contract's §VERDICT marker prose) all need the *same* answer to a second question — **is this `*.md` a doc
 artifact, or code-adjacent markdown that rides `review-code`?** The doc class was once
 described loosely as "prose `*.md` outside `.claude/`/`.github/`", which over-matched a
 **code-root** `*.md` (a `packages/**`/`apps/**` README) into the doc class even though no
@@ -2168,7 +1554,7 @@ as the artifacts it manifests — no new class or gate is invented. This is **on
 axis: `CONTROL_PLANE_RE` (§CP, who-merges) is a **separate** regex and is **untouched**, so a crew
 plugin's `agents/**` gains a `review-skill` gate yet still **auto-ships** on PASS (the founder #2342
 ruling — extras don't block — **re-affirmed 2026-07-24 on #3765** on the threat-modeled containment
-basis recorded in the §CP "Deliberately OUT — the crew engine defs" note above; the class fix and the
+basis recorded in the crew-engine-defs clause of the §CP **Deliberately OUT** paragraph above; the class fix and the
 §CP ruling compose).
 
 **Both consumers re-resolve these lines from `origin/main` at run time** (REST raw, `?ref=main`
@@ -2181,32 +1567,17 @@ and every path falls through to the doc test). This is the same stance as §CP's
 `CONTROL_PLANE_RE='.'` and `UI_RE`'s fail-closed `has-ui`:
 
 ```bash
-# Re-resolve a canonical _RE= line from gh-issue-intake-formats.md@main (#981 ?ref=main idiom).
-# Prints the live value, or the fail-closed default $2 when the line is unreadable OR TRIVIAL.
-FORMATS_RAW="$(gh api "repos/$REPO/contents/claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md?ref=main" -H 'Accept: application/vnd.github.raw' 2>/dev/null || true)"
-# NON-TRIVIALITY ASSERT (#4401) — the guard every resolution site below runs before it gates on a
-# freshly-stripped pattern. A strip that silently did NOT strip (a surviving `grep -n` line-number
-# prefix broke the `^NAME='` anchor) or that yielded nothing still COMPILES: `grep -E ""` matches
-# every path and `grep -Ev ""` matches none, BOTH at exit 0 — so the polarity, not the error, decides
-# whether the miss is loud or silent. Absence was already handled; triviality was not.
-accept_re() {   # $1=name, $2=resolved value, $3=fail-closed default
-  case "$2" in
-    *"$1='"*) : ;;   # the assignment prefix survived the strip ⇒ not a pattern, a whole line
-    *) if [ "${#2}" -ge 4 ]; then printf '%s' "$2"; return 0; fi ;;
-  esac
-  printf 'TRIVIAL-GATE-BOUNDARY: %s did not resolve to a usable pattern — failing closed.\n' "$1" >&2
-  printf '%s' "$3"
-}
-reresolve_re() {   # $1=var name, $2=fail-closed default
-  live="$(printf '%s\n' "$FORMATS_RAW" | grep "^$1=" | head -n1 || true)"
-  if [ -z "$live" ]; then printf '%s' "$2"; return 0; fi
-  accept_re "$1" "$(printf '%s' "$live" | sed "s/^$1='//; s/'\$//")" "$2"
-}
-HAS_CODE_RE="$(reresolve_re HAS_CODE_RE '.')"
-HAS_SKILLS_RE="$(reresolve_re HAS_SKILLS_RE '.')"
-HAS_DOCS_EXCLUDE_RE="$(reresolve_re HAS_DOCS_EXCLUDE_RE '\$^')"   # fail-closed: exclude NOTHING ⇒ every path reaches the doc test
-HAS_DOCS_RE="$(reresolve_re HAS_DOCS_RE '.')"                     # fail-closed: every path is a doc
+# stdout: four lines — HAS_CODE_RE=…, HAS_SKILLS_RE=…, HAS_DOCS_EXCLUDE_RE=…, HAS_DOCS_RE=… — each
+# already carrying the fail-closed default when its live read was unusable.
+bash ./claude-plugins/kampus-pipeline/skills/shared/scripts/class-probe-resolve.sh "$REPO"
 ```
+
+[`shared/scripts/class-probe-resolve.sh`](shared/scripts/class-probe-resolve.sh) makes the single
+`?ref=main` raw read, strips each canonical `_RE=` line, and runs the **non-triviality assert**
+(`accept_re`, #4401) before any caller gates on the result: a strip that silently did not strip, or
+yielded nothing, still *compiles* — `grep -E ""` matches every path and `grep -Ev ""` matches none,
+both at exit 0 — so the polarity, not the error, would decide whether the miss is loud or silent.
+Absence was already handled; triviality was not.
 
 ### The doc/vocab-surface predicate — the issueless allowance's axis (`DOC_VOCAB_*_RE`)
 
@@ -2368,55 +1739,22 @@ Step-4 `wt_preflight` (ADR [0172](https://github.com/kamp-us/phoenix/blob/main/.
 #2443/#2446): the **same** `git-dir == common-dir` primary-checkout detection and the **same**
 isolation-expected fork, defined **once here** so the three head-materializing gates
 (`review-code`, `review-trivial`, `ship-it`) share one contract rather than drifting three
-copies apart. Each gate runs it — `iso_preflight <surface> || exit 1` — **before** its first
-head fetch / `git worktree add`:
+copies apart. Each gate runs it **before** its first head fetch / `git worktree add`:
 
 ```bash
-# iso_preflight <surface>: the shared primary-checkout fail-closed guard every head-materializing
-# gate runs BEFORE its first head fetch / `git worktree add` (§RO). Reviewer/shipper sibling of
-# write-code's Step-4 wt_preflight (ADR 0172) — the SAME git-dir==common-dir detection, the SAME
-# isolation-expected fork. Read-only (git rev-parse only); safe to re-run.
-iso_preflight() {
-  local surface="$1" gitdir common iso=0
-  gitdir="$(git rev-parse --absolute-git-dir 2>/dev/null)" || {
-    echo "$surface iso_preflight FAILED (fail-closed): not inside a git repository — refusing to materialize a PR head." >&2; return 1; }
-  common="$(git rev-parse --git-common-dir 2>/dev/null)"
-  case "$common" in /*) ;; *) common="$(pwd)/$common" ;; esac   # normalize a relative `.git` (older git)
-  common="$(cd "$common" && pwd)"
-  # Isolation was EXPECTED when the run is under an isolation-asserting pipeline agent-type —
-  # coder/reviewer/shipper all spawn isolation:worktree (agents/{coder,reviewer,shipper}.md) — read
-  # from the harness-set $CLAUDE_CODE_AGENT (stable across an agent's Bash calls, unlike a shell
-  # export), corroborated by a set $WORKTREE_ROOT. A genuine standalone run (a human /review-code,
-  # /ship-it) matches NEITHER. Critically the LOUD refusal fires on the AGENT-TYPE ALONE and does
-  # NOT key on $WORKTREE_ROOT being set — so the #2440 no-op (isolation requested, $WORKTREE_ROOT
-  # unset, which also disarms the $WORKTREE_ROOT-keyed worktree-guard) still trips this preflight;
-  # it is then the sole surviving layer, exactly as in write-code (ADR 0172).
-  # The THIRD clause is the env-independent corroboration — parity with the repo-side guard's
-  # `isIsolationExpected` (bash-pin.ts) and write-code's Step-4 detector (#3406): a NESTED/renamed
-  # spawn inherits the PARENT's agent-type string (e.g. `crew-engineering-manager`, ADR 0189), so the
-  # NAME match goes inert for it — but any agent-context run ($CLAUDE_CODE_AGENT non-empty) sitting on
-  # the PRIMARY checkout (gitdir == common) is a broken/absent worktree whatever its inherited name,
-  # and this clause arms regardless of the string. Do NOT hard-code an agent-type name to patch a
-  # rename — the corroboration removes the coupling rather than relocating it (#3406, #2462).
-  case "$CLAUDE_CODE_AGENT" in *coder*|*reviewer*|*shipper*) iso=1 ;; esac
-  [ -n "$WORKTREE_ROOT" ] && iso=1
-  [ -n "$CLAUDE_CODE_AGENT" ] && [ "$gitdir" = "$common" ] && iso=1
-  echo "$surface iso_preflight: git-dir=$gitdir common-dir=$common cwd=$(pwd) isolation-expected=$iso (agent=${CLAUDE_CODE_AGENT:-unset} worktree-root=${WORKTREE_ROOT:+set})"
-  if [ "$gitdir" = "$common" ]; then
-    if [ "$iso" = 1 ]; then
-      echo "$surface iso_preflight FAILED (fail-closed, LOUD): worktree isolation was EXPECTED (agent=${CLAUDE_CODE_AGENT:-?}, worktree-root=${WORKTREE_ROOT:+set}) but this run is on the PRIMARY checkout (git-dir == common-dir) and \$WORKTREE_ROOT is unset." >&2
-      echo "  Refusing to fetch / \`git worktree add\` the PR head here — the #2440 harness no-op left this $surface spawn in the shared primary checkout, and a head-materialization run there is the #2452/#2453 primary-checkout-detach surface. The \$WORKTREE_ROOT-keyed repo-side worktree-guard is disarmed by the same no-op, so THIS preflight is the only surviving layer." >&2
-      echo "  Do NOT self-provision a worktree to route around it — that hides the harness failure and leaves the primary-corruption defense collapsed to one, invisibly (#2270)." >&2
-      echo "  ROUTED BLOCKER — surface UP to the operator/EM: 'harness worktree provisioning no-op'd for a $surface spawn (isolation expected, \$WORKTREE_ROOT unset); the out-of-repo harness half (#2440) needs attention. Do NOT blindly retry the same spawn.'" >&2
-      return 1
-    fi
-    # isolation NOT expected ⇒ a genuine standalone run on the owner's primary checkout. This gate
-    # never mutates the launched tree (§RO): it materializes the head ONLY into a throwaway worktree
-    # / per-run ref, so operating from the primary checkout is safe here — proceed, no LOUD stop.
-    echo "$surface iso_preflight: standalone run on the primary checkout — proceeding read-only via the §RO throwaway-worktree / per-run-ref materialization (the launched tree is never mutated)." >&2
-  fi
-}
+# Read-only (git rev-parse only), safe to re-run. stdout: the scope line, then `ISO_PREFLIGHT=OK`
+# only when the tree is safe to materialize into; a refusal names itself on stderr and exits 1.
+# The EXIT STATUS is this guard's whole contract — never proceed past a non-zero.
+bash ./claude-plugins/kampus-pipeline/skills/shared/scripts/iso-preflight.sh review-code || exit 1
 ```
+
+[`shared/scripts/iso-preflight.sh`](shared/scripts/iso-preflight.sh) carries the detection and its
+three isolation-expected clauses: the agent-type name, a set `$WORKTREE_ROOT`, and the
+env-independent corroboration (any agent-context run sitting on the primary checkout — the clause
+that catches a nested/renamed spawn whose inherited agent-type string names no role, #3406). The LOUD
+refusal fires on the **agent type alone**, so the #2440 no-op that also disarms the
+`$WORKTREE_ROOT`-keyed repo-side `worktree-guard` still trips this preflight as the sole surviving
+layer.
 
 The fork is what keeps this **non-breaking for a legitimate standalone gate**: §RO explicitly
 runs a gate "in a checkout it does not own — often the owner's live checkout," and that
@@ -2426,6 +1764,63 @@ checkout — the exact #2440/#2453 condition. `write-code`'s Step-4 `wt_prefligh
 sibling (it *always* expects isolation and additionally must branch the session tree, so it also
 refuses the standalone-on-primary case via its Non-isolated fallback); it is a deliberate,
 documented specialization of this same contract, not a fourth drifting copy.
+
+---
+
+## SHARED. The extracted shared scripts — executed by literal path, answers on stdout (epic #4435)
+
+This contract's recipes are **scripts you run**, not fenced prose an agent re-types. They live under
+[`shared/scripts/`](shared/scripts/) — inside the skills tree, which `CONTROL_PLANE_RE` and the
+`/claude-plugins/kampus-pipeline/skills/` CODEOWNERS row gate whole, at any depth and any extension,
+so a change to one needs a human approval (#4446, #4458). The cross-script state lib they source,
+[`../lib/common.sh`](../lib/common.sh), sits OUTSIDE that tree beside `bin/` — `shared/` was never a
+skill — and carries its own `^claude-plugins/kampus-pipeline/lib/` branch and CODEOWNERS row, added
+in the same commit as the move (#4484).
+
+**Why a script rather than a fence.** Each agent shell invocation is a fresh process, so a variable set
+in one fenced block is gone by the next — every recipe that produced `$CP_FILES`, `$GUARD_ADR_RE` or
+`$RUN_SCRATCH` for a *later* block was un-runnable as written, and each agent hand-stitched around it
+differently. A script also runs as **one** permitted command, so the worktree guard never parses its
+internals (#4427). The prose keeps the *why*; the script carries the shell (founder ruling on #4435).
+
+**How you invoke one — literal path, results on stdout (ADR
+[0232](https://github.com/kamp-us/phoenix/blob/main/.decisions/0232-agents-execute-skill-scripts-never-source-them.md)).**
+
+```bash
+bash ./claude-plugins/kampus-pipeline/skills/shared/scripts/<name>.sh <args…>
+```
+
+Two constraints make that the only shape, and both are the harness's, not this contract's: its
+isolation verifier refuses a `.`/`source` at an agent's top-level command **by any path form**, and it
+refuses the interpolated `"${CLAUDE_PLUGIN_ROOT:-…}/…"` idiom as too complex to verify. So the path is
+written out literally, which hardcodes the in-repo plugin location — the ADR
+[0062](https://github.com/kamp-us/phoenix/blob/main/.decisions/0062-repo-as-config-plugin.md)
+portability trade ADR 0232 accepts and records.
+
+**Read the answer off stdout, and read the exit status first.** Exit 0 means the script produced its
+answer on stdout; any non-zero means it could not, which is UNKNOWN and never the permissive answer
+(§ZS / ADR 0092). Each block below names the lines its script prints. Every value the sourced form
+used to leave in your shell now arrives as a `NAME=value` line, a multi-valued one as a repeated
+singular key (`CP_FILE=<path>` alongside `CP_FILES_N=<n>`); a script whose answer is prose prints its
+§ZS scope line first, so "ran and found nothing" never looks like "never ran".
+
+**In-script sourcing is untouched.** A script sourcing the shared lib or another shared script
+in-chain is unaffected — the verifier judges only *your* top-level command, and ADR
+[0230](https://github.com/kamp-us/phoenix/blob/main/.decisions/0230-cycle-validators-follow-the-source-edge.md)'s
+validators keep following that edge. The shape both modes are written in is
+[`.patterns/skill-script-shell-shape.md`](https://github.com/kamp-us/phoenix/blob/main/.patterns/skill-script-shell-shape.md)
+§ The dual-mode shape.
+
+**What did NOT move, and why.** The nine column-0 boundary canonicals stay in *this* file, at column 0,
+exactly once each: `validate-gate-path-drift.sh` asserts that, and the live gates re-resolve them from
+this file on `origin/main` — the #981 anti-self-authorization property. So does the §CLI `PCLI=`
+preamble and the §Target-repo `REPO=` line, which are the invocation seams every script and skill
+pastes rather than sources.
+
+**The scripts are phase 1 only.** They carry the glue as it stood, byte-for-byte; turning it into
+tested `pipeline-cli` verbs is phase 2 (#1929), and ADR
+[0228](https://github.com/kamp-us/phoenix/blob/main/.decisions/0228-scripts-relay-never-derive.md) is the
+boundary — a script may **relay** a verb's answer, never **derive** the decision itself.
 
 ---
 
@@ -2491,12 +1886,10 @@ classification — make the refusal explicit, so an unresolved CLI can never be 
 verdict:
 
 ```bash
-[ -x "$PCLI" ] || {
-  echo "pipeline-cli: UNRESOLVED at '$PCLI' — the CLI never ran, so this gate has NO result." >&2
-  echo "  Resolve to UNKNOWN, never to clean/negative (§WL: a read that could not run is not an answer)." >&2
-  echo "  This is a resolution gap, NOT worktree teardown (teardown = exit 1 ENOENT on a tracked file, then exit 126)." >&2
-  exit 127
-}
+# Pass the shim path the §CLI preamble resolved — an executed child cannot see your unexported $PCLI.
+# stdout: `PCLI=<path>` only when the shim is executable; otherwise nothing on stdout, the three
+# refusal lines on stderr, and exit 127 — UNKNOWN, never a verdict.
+bash ./claude-plugins/kampus-pipeline/skills/shared/scripts/cli-require.sh "$PCLI" || exit 127
 ```
 
 This section owns the **call-site resolution** half only. Two adjacent seams own the rest and
@@ -2505,13 +1898,35 @@ mid-run, and **#4185** owns legibility when the shim resolved but the CLI's modu
 failed. Both reserve the same "could not run ⇒ UNKNOWN" contract this taxonomy states, so a fix
 there extends this table rather than forking it.
 
-`pipeline-cli cli-invocation-guard check` enforces both bans mechanically over the plugin corpus
-(`claude-plugins/**/*.md`) — it reds on a bare `pipeline-cli` invocation *and* on a
-`node …/pipeline-cli/src/bin.ts` one inside a runnable `bash`/`sh` fence, and fails closed on zero
-scope (§ZS / ADR 0092). Its corpus is markdown under `claude-plugins/` only, so `.github/workflows/`
-— which legitimately runs the entrypoint through `node`, having no shim-resolution context — is out
-of scope and needs no carve-out. Should the corpus ever widen past `claude-plugins/**/*.md`, the
-carve-out mechanism for such a context gets documented **here**, in this section.
+`pipeline-cli cli-invocation-guard check` enforces both bans mechanically over the plugin corpus —
+it reds on a bare `pipeline-cli` invocation *and* on a `node …/pipeline-cli/src/bin.ts` one, and
+fails closed on zero scope (§ZS / ADR 0092). The corpus is **two surfaces** under
+`claude-plugins/`, both scanned by one job:
+
+- `claude-plugins/**/*.md` — runnable `bash`/`sh`/`shell`/`zsh` fences only; prose that merely
+  names a verb is not an invocation.
+- `claude-plugins/**/*.sh` — **the whole file, as one implicit runnable fence**. A shell file has
+  no delimiters to scope by, and fence delimiters are deliberately *not* interpreted inside one,
+  so a heredoc that emits markdown cannot close the implicit fence and blind the rest of the file.
+  This surface is why extracting a skill's fenced shell into `scripts/*.sh` (epic #4435) does not
+  take its call sites off the scan (#4486; the unit-of-scan answer matches the `class-probe`
+  consumer scan's, #4448).
+
+On **both** surfaces the scanned unit is what an agent actually *runs*, so a **comment-only line
+is skipped** — a `#`-leading line inside a runnable fence, or anywhere in a `.sh` file, names a
+verb without invoking it, exactly like prose. Every other line inside the unit is treated as a
+live invocation.
+
+Zero scope is fail-closed **per surface**: no file scanned, no runnable `.md` fence, *or* no `.sh`
+file all exit 3. A single total would let markdown's hundreds of fences satisfy the floor while the
+`.sh` leg of the corpus `find` silently contributed nothing.
+
+**The one carve-out, and why it needs no mechanism.** `.github/workflows/` legitimately runs the
+entrypoint through `node` — a workflow step has no shim-resolution context — and it is out of
+corpus, so it is exempt by scope rather than by an exception list. That is the whole carve-out
+today: the corpus is `claude-plugins/**` and nothing else, on either surface. Should it ever widen
+beyond `claude-plugins/`, the carve-out mechanism for such a context gets documented **here**, in
+this section.
 
 ---
 
@@ -2566,20 +1981,17 @@ Bash call goes in the namespace below, never in that directory.
 
 Allocation is owned by one tested verb, so a caller **cites it instead of hand-rolling a path**
 (#3718). It prints the absolute directory on stdout and nothing else:
-
 ```bash
-# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
-PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
-# OPEN — the run's first write of scratch state. Claims the namespace exclusively and stamps it
-# as ours, clearing whatever an unclaimed earlier occupant left behind.
-RUN_SCRATCH="$("$PCLI" scratchpad open --slug review-doc-$PR)" || exit 1
-
-# RE-DERIVE — every LATER Bash call, where shell state is already gone. Asserts the namespace
-# exists AND is still ours; it never creates one, because answering "you never opened it" with a
-# fresh empty directory is how a read of your own state silently becomes a read of nothing.
-RUN_SCRATCH="$("$PCLI" scratchpad path --slug review-doc-$PR)" || exit 1
-VERDICT="$("$PCLI" scratchpad file --slug review-doc-$PR --name verdict.md)" || exit 1
+# open, then re-derive. stdout: `RUN_SCRATCH=<dir>` and `VERDICT=<file>`; nothing on a refusal.
+bash ./claude-plugins/kampus-pipeline/skills/shared/scripts/scratchpad.sh verb "review-doc-$PR" verdict.md || exit 1
 ```
+
+[`shared/scripts/scratchpad.sh`](shared/scripts/scratchpad.sh) keeps the two calls apart because the
+distinction is load-bearing: **`open`** is the run's first write of scratch state — it claims the
+namespace exclusively, stamps it as ours, and clears whatever an unclaimed earlier occupant left
+behind — while **`path`** re-derives it in every later Bash call and *never* creates one, because
+answering "you never opened it" with a fresh empty directory is how a read of your own state silently
+becomes a read of nothing.
 
 Every failure is a **refusal with its own exit code** — `2` no session id, `3` a slug/leaf name
 that isn't a single path segment, `4` the namespace belongs to another run, `5` this run never
@@ -2604,29 +2016,23 @@ re-enters exactly as it stands), so the worst case degrades to two writers who a
 signal available, the same run — never one run silently reading another's state.
 
 The verb ships with `pipeline-cli`. Where it isn't installed (a foreign install, ADR 0062), the
-equivalent one-liner below is the fallback — deliberately inlined at each site rather than made a
-shell helper, since a helper is itself shell state that doesn't survive between Bash calls.
+equivalent recipe below is the fallback. It used to be **inlined at each site** rather than made a
+shell helper, because a helper is itself shell state that does not survive between Bash calls — a
+*script* is a file on disk, not shell state, so the fallback is now a subcommand alongside the verb
+path in the same script (§SHARED, epic #4435). The recipe is unchanged.
 
 **Open the run once, re-derive freely afterwards.** The distinction is load-bearing — getting
 it backwards re-creates the empty-directory bug it exists to prevent:
 
 ```bash
-# OPEN — the skill's first step that writes state. Fail closed on a missing session id: never
-# fall back to a shared path, since a fallback resurrects the exact clobber (ADR 0092). The
-# `rm -rf` clears leftovers from an EARLIER run of this same slug in this same session, so a
-# re-run never reads its predecessor's files.
-[ -n "${CLAUDE_CODE_SESSION_ID:-}" ] || {
-  echo "§SP: CLAUDE_CODE_SESSION_ID unset — refusing to write run state to a shared scratch path (#3718)." >&2; exit 1; }
-RUN_SCRATCH="${TMPDIR:-/tmp}/kampus-run/$CLAUDE_CODE_SESSION_ID/<slug>"
-rm -rf "$RUN_SCRATCH" && mkdir -p "$RUN_SCRATCH" || {
-  echo "§SP: could not create the per-run scratch dir $RUN_SCRATCH." >&2; exit 1; }
-
-# RE-DERIVE — every LATER Bash call. Same recipe ⇒ same directory ⇒ the files are still there.
-# NO `rm -rf` here: that is the open step's job, and repeating it would delete the very state
-# this call came to read. Assert what you expect to find, rather than reading a silent absence.
-RUN_SCRATCH="${TMPDIR:-/tmp}/kampus-run/${CLAUDE_CODE_SESSION_ID:?§SP: session id unset (#3718)}/<slug>"
-[ -s "$RUN_SCRATCH/<file>" ] || { echo "§SP: $RUN_SCRATCH/<file> did not survive — re-run the opening step in THIS session." >&2; exit 1; }
+SP=./claude-plugins/kampus-pipeline/skills/shared/scripts/scratchpad.sh   # both print `RUN_SCRATCH=<dir>`
+bash "$SP" open-fallback <slug> || exit 1             # the run's FIRST write of state — clears leftovers
+bash "$SP" path-fallback <slug> <file> || exit 1      # every LATER Bash call — asserts, never creates
 ```
+
+Both fail closed on a missing `$CLAUDE_CODE_SESSION_ID` rather than falling back to a shared path,
+since a fallback resurrects the exact clobber (ADR 0092); only the open arm does the `rm -rf`,
+because repeating it in `path` would delete the very state that call came to read.
 
 **Assert presence, never let a test decide on an absent file.** A missing scratch file is not
 a neutral input: `[ existing -nt missing ]` is **true** in bash, so a freshness/staleness guard
@@ -2707,9 +2113,10 @@ form [`lefthook.yml`](https://github.com/kamp-us/phoenix/blob/main/lefthook.yml)
 section is its pipeline-side statement — don't restate the rationale at each call site, point here:
 
 ```sh
-# "every changed path is under skills/ or agents/" — the empty-output form
-OFFCLASS=$(grep -vE '^claude-plugins/kampus-pipeline/(skills|agents)/' <<<"$FILES")
-if [ -n "$FILES" ] && [ -z "$OFFCLASS" ]; then …
+# The path list arrives on STDIN. stdout: `WL_ALL_ONCLASS=yes` only when the set is NON-EMPTY and the
+# inverted match captured NOTHING; `WL_ALL_ONCLASS=no` (exit 1) otherwise. Read the printed word —
+# the emptiness of the captured output is the condition, never the exit status of a `grep -v`.
+printf '%s\n' "$FILES" | bash ./claude-plugins/kampus-pipeline/skills/shared/scripts/wl-empty-output.sh
 ```
 
 ---
@@ -2737,7 +2144,7 @@ assert it did:**
 1. **Resolve + materialize the head via the shared `pipeline-cli review-head` verb — never
    re-derive it inline** (#3690 / #793 / #1807; `packages/pipeline-cli/src/tools/review-head/`).
    The verb owns the deterministic mechanism this section used to spell out inline: it resolves the
-   live head SHA up front via REST (never GraphQL — the SHA the verdict binds to, §5/ADR 0058),
+   live head SHA up front via REST (never GraphQL — the SHA the verdict binds to, §VERDICT/ADR 0058),
    fetches the head into a per-run ref (never the launched checkout — the §RO read-only path), and
    **asserts the fetched ref resolves to exactly that SHA before you review** — aborting on a moved
    head rather than binding a stale verdict. Two modes, same core:
@@ -2766,7 +2173,7 @@ assert it did:**
 4. **Re-check the live head before posting; abort a stale-bound verdict.** If the head moved
    while you reviewed (re-resolve `headRefOid` and compare to `$HEAD_SHA`) or the head can't be
    reached, do **not** post a verdict bound to a SHA you no longer reviewed — re-resolve and
-   re-review the new head, or abort. A verdict's `@ <HEAD_SHA>` marker (§5) must name the SHA
+   re-review the new head, or abort. A verdict's `@ <HEAD_SHA>` marker (§VERDICT) must name the SHA
    whose *files you actually read*, and the verdict body must **assert it read the PR head (not
    the launched CWD)**, so a base-code review is self-evidently invalid to a human adjudicator.
 
@@ -2775,524 +2182,6 @@ Gates that materialize a full head worktree for behavior verification (`review-c
 `pnpm -C "$REVIEW_WT"`; the diff-only gate (`review-doc`) satisfies it via
 `git show "$PR_REF:<path>"`. Either way, the launched checkout's working copy is never the
 source of code under review.
-
----
-
-## 5. review-code pass marker
-
-When `review-code` lands its verdict and a native review can't be posted (e.g. org
-branch rules forbid reviewing your own PR), it falls back to a **comment whose first
-line is a recognizable marker**. That marker is a downstream contract: the **`ship-it`**
-skill scans PR comments for the PASS marker to find verified, merge-ready PRs
-unambiguously, and `write-code`'s fix round-trip scans for the FAIL marker to find a PR
-that came back failed.
-
-### Shape — SHA-bound (ADR 0058)
-
-The recognizable **first line** of the PR comment carries the **head SHA the reviewer
-inspected** (`@ <sha>`), resolved at post time from
-`gh api repos/$REPO/pulls/$PR --jq .head.sha`:
-
-```markdown
-review-code: PASS @ <sha> — merge-ready
-```
-
-```markdown
-review-code: FAIL @ <sha> — not merge-ready
-```
-
-`<sha>` is the full or abbreviated (≥7 hex) head SHA. The rest of the comment body carries
-the per-criterion evidence table (the verdict). What's load-bearing for the scanner is only
-that first marker line — the namespace, the polarity, **and the `@ <sha>`**; the table below
-it is for the human and the implementer.
-
-The `@ <sha>` is **load-bearing, not decoration**: `ship-it` and `write-code`-repair refuse a
-verdict whose `@ <sha>` does not match the PR's *current* head, and refuse a SHA-less marker
-outright — this is what closes the stale-PASS-masks-a-FAIL and head-moved-under-the-verdict
-races (ADR [0058](https://github.com/kamp-us/phoenix/blob/main/.decisions/0058-sha-bound-verdict-contract.md), issue #258). A marker
-with no `@ <sha>` is a *pre-0058 legacy* shape and resolves to `unverified`, not PASS.
-
-### Upsert, not append — one verdict per (PR, gate-namespace) (ADR 0058)
-
-`review-code` writes **exactly one** marker comment per PR in its namespace: before posting
-it scans the PR's comments for **its own** prior `review-code:` marker and, if one exists,
-`PATCH`es it (`gh api -X PATCH repos/$REPO/issues/comments/<id>`) with the fresh
-verdict + fresh `@ <sha>` instead of `POST`-ing a new comment. A re-review of a new head
-overwrites the same record; the PR thread never accumulates a stale verdict stream a
-millisecond decides. See ADR 0058 rule 2.
-
-### The matcher contract: emphasis-tolerant + SHA-capturing (canonical shape)
-
-The marker line may carry **leading Markdown emphasis** — `review-code` historically emits
-it bolded (`**review-code: PASS @ <sha> — merge-ready**`), `review-doc` emits it bare. To stop
-the emitter and the matcher from drifting apart (the bolded marker once read as "no verdict"
-and stalled every code-lane merge — #219), this contract pins **one** rule both sides cite:
-
-- **Canonical emit shape** (what an emitter SHOULD write): the bare, unbolded first line —
-  `review-code: PASS @ <sha> — merge-ready`. New/converging emitters write this.
-- **Token order is fixed** (the single source every emitter cites): the `@ <sha>` comes
-  **immediately after** the `PASS`/`FAIL` polarity and **before** the `— merge-ready` /
-  `— not merge-ready` tail — `review-code: PASS @ <sha> — merge-ready`, never
-  `review-code: PASS — merge-ready @ <sha>`. The matcher below is **anchored to this order**:
-  it captures the SHA only when `@ <sha>` directly follows the polarity, so a marker that
-  pushes `@ <sha>` *past* `merge-ready` captures `sha=null` → the consumer resolves it
-  `unverified` and refuses a correct, current-head PASS (the token-order drift that silently
-  stalled #623's merge — #625). The fix is to **emit the canonical order**, not to loosen the
-  matcher to chase a trailing SHA (ADR 0058 forbids weakening the SHA-binding). §6/§6.5 inherit
-  this order for `review-doc` / `review-skill` via the same matcher contract.
-- **Matcher obligation** (what every scanner MUST accept): an **optional leading `**`** before
-  the namespace token, so a bolded marker resolves identically to a bare one, **and a captured
-  `@ <sha>`** so the consumer can apply the staleness test. The anchored, case-insensitive
-  matcher is `^\s*\**\s*review-(code|doc):\s*(PASS|FAIL)\s*@\s*([0-9a-f]{7,40})` — the leading
-  `\**` absorbs the emphasis; `^\s*` still pins it to the start of the body so a mid-body
-  *quote* never matches; the trailing `@\s*([0-9a-f]{7,40})` captures the bound head SHA. A
-  SHA-less marker that matches only the looser `^\s*\**\s*review-(code|doc):\s*(PASS|FAIL)`
-  prefix but **not** the `@ <sha>` tail is a legacy verdict → the consumer treats it as
-  `unverified` (ADR 0058 rule 3). Every matcher site — `ship-it` (merge gate) and `write-code`
-  (fix round-trip) — cites this rule so they can't diverge again.
-- **Forbidden emit forms** (what an emitter MUST NOT write): the matcher above is anchored, so
-  an emitter that freelances any of the shapes below produces a verdict **no consumer can read**
-  — `ship-it` resolves the PR to `unverified` and silently refuses to merge a genuine,
-  current-head PASS (the #1095 stall: a real PASS posted as `<!-- review-code: PASS sha:… -->`
-  sat unmerged). The emit contract is the mirror of the matcher — emit the canonical first line
-  and **none** of these:
-  - **HTML-comment-wrapped** — `<!-- review-code: PASS @ <sha> — merge-ready -->`. The `<!--`
-    is non-whitespace ahead of the namespace token, so it fails the `^\s*\**\s*` anchor (the
-    `\**` absorbs only Markdown emphasis, never `<!--`). The marker must be **live body text**,
-    not an HTML comment — the verdict-marker contract has no HTML-comment form (the only
-    sanctioned HTML comment in these formats is the unrelated AC-append provenance tag of §2).
-  - **`sha:` (or any non-`@`) SHA delimiter** — `review-code: PASS sha:<sha>`. The matcher
-    captures the bound SHA only from the literal `@ <sha>` tail; `sha:<sha>` matches only the
-    looser SHA-less prefix → `unverified`. The delimiter is `@`, never `sha:`/`SHA=`/`commit:`.
-  - **Heading-only / prose-only verdict** — `## review-code verdict: PASS` with no marker line.
-    A heading is not the contract: it carries no `@ <sha>` and isn't anchored at the namespace
-    token. The recognizable first line is required *in addition to* any human-facing heading.
-  - **Marker not on the literal first line** — the `^` anchor pins the marker to the **start of
-    the comment body**; a marker buried after a preamble paragraph never matches. It leads the
-    body.
-  - **Two namespace markers stacked in one comment (the multi-namespace fan)** — on a
-    mixed-class diff the reviewer fans several verdict namespaces (e.g. `review-code` +
-    `review-skill` for a skill+code PR, `review-design` for a UI PR). Each namespace's `^`
-    anchor pins its marker to the first line of **its own comment**, so stacking a second
-    namespace's marker on line 2 of the first's comment leaves that second marker un-anchored:
-    it never matches, its namespace resolves **empty**, and `ship-it` fail-closes a
-    substantively-PASS PR (the live PR #2456 stall — both reviews PASSed, but the stacked
-    `review-skill` marker was unmatchable and recovery needed a manual re-emit). **Emit each
-    fanned namespace's verdict as its OWN separate PR comment, its `<namespace>: PASS|FAIL @
-    <sha>` marker on that comment's literal first line — one comment per namespace, never two
-    markers stacked.** The upsert is still one-comment-per-`(PR, namespace)`; the fan writes
-    N such comments (one each), not one comment carrying N markers.
-  These are emitter bugs, not matcher gaps — the fix is always to **emit the canonical shape**,
-  never to loosen the anchored matcher to chase a malformed marker (ADR 0058 forbids weakening
-  the SHA-binding). §6/§6.5/§6.7 inherit this forbidden-forms list for `review-doc` /
-  `review-skill` / `review-design` via the same matcher contract.
-
-### Field notes
-
-- **First line, recognizable.** The marker leads the comment so a scan can match
-  it without parsing the whole body. Recognize it tolerantly by shape
-  (`review-code: PASS @ <sha>` … `merge-ready`) and emphasis (optional leading `**`, per the
-  matcher contract above), not by exact dashes or spacing — but the `@ <sha>` is required.
-- **Two markers, two consumers.** `PASS @ <sha> — merge-ready` (every criterion verified,
-  bound to that head) is read by `ship-it` as the go-ahead to merge **iff `<sha>` is the
-  current head**. `FAIL @ <sha> — not merge-ready` (≥1 criterion unmet) is read by
-  `write-code`'s fix round-trip as "my PR came back failed"; `ship-it` reads it as "do not
-  merge." Each marker has exactly one merge-relevant meaning.
-- **Signals, never merges.** The PASS marker is an approval signal `ship-it` acts on.
-  `review-code` writing it does **not** merge; merging is `ship-it`'s deliberate act
-  (see review-code/SKILL.md §"Authority limit" and ADR 0048).
-- The native approving review (`event=APPROVE`) is the preferred signal when it's
-  available; GitHub records its `commit_id`, which **is** the SHA the reviewer approved, so
-  `ship-it` applies the same staleness test to a native review via its `commit_id`. This
-  marker is the comment-based fallback that carries the same meaning (with the `@ <sha>`
-  doing explicitly what `commit_id` does for a native review) where a formal review can't be
-  posted.
-
----
-
-## 6. review-doc verdict marker
-
-`review-doc` is the **doc-class twin of `review-code`** — it gates a doc/knowledge PR
-(the **§DOC doc class**: `.decisions/**`, `.patterns/**`, `docs/**`, or a root/top-level
-prose `*.md` — explicitly **not** a code-root `*.md` under `apps/**`/`packages/**`, which
-rides `review-code`) against its
-linked issue's acceptance criteria *plus* a doc-hygiene checklist. It lands its verdict as a
-**comment whose first line is a recognizable, SHA-bound marker** — and **only** that comment,
-never a native approving review. The marker lives in its **own namespace**, distinct from
-§5's `review-code` marker.
-
-### Shape — SHA-bound (ADR 0058)
-
-The recognizable **first line** of the PR comment carries the head SHA the reviewer inspected
-(`@ <sha>`, from `gh api repos/$REPO/pulls/$PR --jq .head.sha`):
-
-```markdown
-review-doc: PASS @ <sha> — merge-ready
-```
-
-```markdown
-review-doc: FAIL @ <sha> — changes-requested
-```
-
-For a PR in the **control-plane / blocking set** (§CP), `review-doc` is advisory only and
-instead leads with the **canonical advisory line** (§6.6 — `review-doc: advisory — blocking-set
-PR (§CP — approval-gated)`) so its verdict stays *out* of `ship-it`'s PASS namespace — a §CP PR
-merges only once a `@kamp-us/control-plane` member approves at head and `ship-it` enqueues it
-(ADR [0135](https://github.com/kamp-us/phoenix/blob/main/.decisions/0135-hard-gate-control-plane-team-codeowners-approve-then-enqueue.md)
-amending [0053](https://github.com/kamp-us/phoenix/blob/main/.decisions/0053-control-plane-boundary.md);
-`ship-it` is the single merge actor, ADR
-[0048](https://github.com/kamp-us/phoenix/blob/main/.decisions/0048-ship-it-merge-actor.md)). The advisory line
-carries **no `@ <sha>`** by design: it authorizes nothing, so there is nothing to bind.
-
-The rest of the body carries the per-criterion + per-hygiene-check evidence table. What's
-load-bearing for the scanner is the namespace, the polarity, **and the `@ <sha>`** — the same
-staleness contract as §5: `ship-it`/`write-code`-repair refuse a `review-doc` verdict whose
-`@ <sha>` is not the PR's current head, and refuse a SHA-less one (ADR
-[0058](https://github.com/kamp-us/phoenix/blob/main/.decisions/0058-sha-bound-verdict-contract.md), issue #258).
-
-### Comment-only — the APPROVE/comment duality is resolved (ADR 0058)
-
-`review-doc` emits its verdict **only** as the SHA-bound `review-doc:` comment, **never** a
-native `APPROVE`/`REQUEST_CHANGES` review. This resolves the duality #258 flagged: a native
-GitHub review cannot carry the `@ <sha>` in the comment shape this contract controls (it
-records `commit_id` in a *different* record type), so leaving `review-doc` free to post either
-would force `ship-it` to compare a review against a comment for the doc lane — two
-incomparable records. One carrier, the comment, keeps the doc lane resolvable the same way
-the code lane is. (`review-code` keeps its native-`APPROVE` path because `ship-it` reads that
-review's `commit_id` for the staleness test; `review-doc` does not.)
-
-### Upsert, not append (ADR 0058)
-
-`review-doc` writes **exactly one** `review-doc:` marker comment per PR: before posting it
-scans for **its own** prior `review-doc:` marker and `PATCH`es it with the fresh verdict +
-fresh `@ <sha>` rather than appending a new comment (ADR 0058 rule 2; same mechanism as §5).
-
-### Field notes
-
-- **Separate namespace from `review-code`.** `ship-it` matches the two markers with two
-  anchored, namespaced, emphasis-tolerant, SHA-capturing regexes —
-  `^\s*\**\s*review-code:\s*(PASS|FAIL)\s*@\s*([0-9a-f]{7,40})` and
-  `^\s*\**\s*review-doc:\s*(PASS|FAIL)\s*@\s*([0-9a-f]{7,40})` (the matcher contract in §5) —
-  resolves latest-verdict-wins **per namespace** by timestamp, then applies the SHA-staleness
-  test. A `review-code` scan must never match a `review-doc` marker, nor vice versa.
-  `review-doc` therefore **never** emits a `review-code` marker, and `review-code` never emits
-  a `review-doc` one.
-- **First line, recognizable.** The marker leads the comment so a scan matches it without
-  parsing the whole body. Recognize it tolerantly by shape (`review-doc: PASS @ <sha>` …
-  `merge-ready`) and emphasis (optional leading `**`, §5 matcher contract), not by exact
-  dashes or spacing — but the `@ <sha>` is required.
-- **Two markers, two consumers.** `PASS @ <sha> — merge-ready` (every AC + every hygiene check
-  verified, bound to that head) is read by `ship-it` as the go-ahead to merge a **non-blocking**
-  doc PR **iff `<sha>` is the current head**. `FAIL @ <sha> — changes-requested` (≥1 AC or
-  hygiene check unmet) is read by `write-code`'s fix round-trip as "my doc PR came back failed";
-  `ship-it` reads it as "do not merge."
-- **Advisory for the blocking set.** A PR in the §CP set gets the canonical advisory line
-  (§6.6), not a PASS marker — `review-doc`'s verdict does not authorize that merge; a
-  `@kamp-us/control-plane` approval at head does, and `ship-it` enqueues on it (ADR 0135
-  amending 0053). This keeps the control-plane approval gate intact.
-- **Signals, never merges.** The PASS marker is an approval signal `ship-it` acts on;
-  `review-doc` writing it does **not** merge (see review-doc/SKILL.md §"Authority limit").
-
----
-
-## 6.5. review-skill verdict marker
-
-`review-skill` is the **behavioral-artifact gate** — the third sibling of `review-code`
-(§5) and `review-doc` (§6). It gates a **skill PR** (`skills/**`, superseding ADR 0063's
-`skills/**` → `review-code` routing) against its linked issue's acceptance criteria *plus*
-a skill-specific rigor checklist (behavioral correctness, trigger/`description` quality,
-cross-skill conflict/shadowing, gate-invariant preservation — ADR
-[0073](https://github.com/kamp-us/phoenix/blob/main/.decisions/0073-review-skill-gate.md) §1). It lands its
-verdict as a **comment whose first line is a recognizable, SHA-bound marker** — and **only**
-that comment, never a native review (like `review-doc`, ADR 0058 rule 4). The marker lives
-in its **own namespace**, distinct from §5's `review-code` and §6's `review-doc`.
-
-### Shape — SHA-bound (ADR 0058)
-
-The recognizable **first line** of the PR comment carries the head SHA the reviewer
-inspected (`@ <sha>`, from `gh api repos/$REPO/pulls/$PR --jq .head.sha`):
-
-```markdown
-review-skill: PASS @ <sha> — merge-ready
-```
-
-```markdown
-review-skill: FAIL @ <sha> — changes-requested
-```
-
-For a PR in the **control-plane / blocking set** (§CP — every gate-critical skill is in it,
-so most skill PRs that touch a gate land here), `review-skill` is **advisory only** and
-instead leads with the **canonical advisory line** (§6.6):
-
-```markdown
-review-skill: advisory — blocking-set PR (§CP — approval-gated)
-```
-
-so its verdict stays *out* of `ship-it`'s PASS namespace — a §CP PR merges only once a
-`@kamp-us/control-plane` member approves at head and `ship-it` enqueues it (ADR 0135 amending
-0053; `ship-it` is the single merge actor, ADR 0048).
-The advisory line carries **no `@ <sha>`** by design: it authorizes nothing, so there is
-nothing to bind.
-
-The rest of the body carries the per-criterion + per-rigor-check evidence table. What's
-load-bearing for the scanner is the namespace, the polarity, **and the `@ <sha>`** — the
-same staleness contract as §5/§6: `ship-it`/`write-code`-repair refuse a `review-skill`
-verdict whose `@ <sha>` is not the PR's current head, and refuse a SHA-less one (ADR
-[0058](https://github.com/kamp-us/phoenix/blob/main/.decisions/0058-sha-bound-verdict-contract.md), issue #258).
-
-### Comment-only (ADR 0058)
-
-`review-skill` emits its verdict **only** as the SHA-bound `review-skill:` comment, **never**
-a native `APPROVE`/`REQUEST_CHANGES` review — for the same reason `review-doc` is comment-only
-(§6): a native review cannot carry the `@ <sha>` in the shape this contract controls, so one
-comparable record type per lane keeps the lane resolvable.
-
-### Upsert, not append (ADR 0058)
-
-`review-skill` writes **exactly one** `review-skill:` marker comment per PR: before posting
-it scans for **its own** prior `review-skill:` marker and `PATCH`es it with the fresh verdict
-+ fresh `@ <sha>` rather than appending (ADR 0058 rule 2; same mechanism as §5/§6).
-
-### The matcher contract — anchored, never cross-matching (canonical shape)
-
-`review-skill` adds a **third** namespace to the §5 matcher family, on the same
-emphasis-tolerant + SHA-capturing rule. The three matchers are mutually exclusive by
-construction — anchored at `^\s*` so a mid-body quote never matches, and each names its
-own token so a scan in one namespace can **never** cross-match another:
-
-- code:  `^\s*\**\s*review-code:\s*(PASS|FAIL)\s*@\s*([0-9a-f]{7,40})`
-- doc:   `^\s*\**\s*review-doc:\s*(PASS|FAIL)\s*@\s*([0-9a-f]{7,40})`
-- skill: `^\s*\**\s*review-skill:\s*(PASS|FAIL)\s*@\s*([0-9a-f]{7,40})`
-
-A `review-code` or `review-doc` scan must **never** match a `review-skill` marker, and vice
-versa. The tokens are distinct literals (`review-code` / `review-doc` / `review-skill`), and
-because `review-code:` ends in `code:` while `review-skill:` ends in `skill:`, the anchored
-`review-code:` literal cannot prefix-match `review-skill:` — the three are disjoint. Every
-matcher site (`ship-it` merge gate, `write-code` fix round-trip, `review-skill` upsert) cites
-this one rule so they can't diverge (the same discipline §5 pins for code/doc).
-
-### Field notes
-
-- **Separate namespace.** `ship-it` resolves each gate's verdict in its **own** namespace,
-  latest-verdict-wins by timestamp, then the SHA-staleness test (§5/§6). `review-skill`
-  never emits a `review-code` or `review-doc` marker, and they never emit a `review-skill` one.
-- **First line, recognizable.** The marker leads the comment so a scan matches it without
-  parsing the whole body. Recognize it tolerantly by shape (`review-skill: PASS @ <sha>` …
-  `merge-ready`) and emphasis (optional leading `**`, §5 matcher contract), not by exact
-  dashes — but the `@ <sha>` is required.
-- **Two markers, two consumers.** `PASS @ <sha> — merge-ready` (every AC + every rigor check
-  verified, bound to that head) is read by `ship-it` as the go-ahead to merge a **non-blocking**
-  skill PR **iff `<sha>` is the current head**. `FAIL @ <sha> — changes-requested` (≥1 AC or
-  rigor check unmet) is read by `write-code`'s fix round-trip as "my skill PR came back failed";
-  `ship-it` reads it as "do not merge."
-- **Advisory for the blocking set.** A skill PR touching a gate-critical skill (or any §CP
-  path) gets the **canonical advisory line** (§6.6), not a PASS marker — its verdict does not
-  authorize that merge; a `@kamp-us/control-plane` approval at head does, and `ship-it` enqueues
-  on it (ADR 0135 amending 0053/0065). This keeps the control-plane approval gate intact, and is
-  exactly the common case for a skill PR (every gate skill is gate-critical).
-- **Signals, never merges.** The PASS marker is an approval signal `ship-it` acts on;
-  `review-skill` writing it does **not** merge (see review-skill/SKILL.md §"Authority limit").
-
----
-
-## 6.6. The canonical advisory line — one form for all four gates
-
-The gates once expressed "advisory" two ways: `review-code` emitted a binding
-`PASS @ <sha> — merge-ready` line *plus* a control-plane caveat, while `review-doc`
-suppressed the binding PASS and led with a **no-`@ <sha>`** advisory line. ADR
-[0073](https://github.com/kamp-us/phoenix/blob/main/.decisions/0073-review-skill-gate.md) §5 picks
-`review-doc`'s form as the **single canonical advisory shape** and converges all the gates on
-it; the later `review-design` gate (§6.7, ADR 0165) adopts the same form from birth.
-
-For a PR in the **control-plane / blocking set** (§CP), the gate emits a comment whose first
-line is the **no-`@ <sha>`** advisory marker in its own namespace:
-
-```markdown
-review-code:   advisory — blocking-set PR (§CP — approval-gated)
-review-doc:    advisory — blocking-set PR (§CP — approval-gated)
-review-skill:  advisory — blocking-set PR (§CP — approval-gated)
-review-design: advisory — blocking-set PR (§CP — approval-gated)
-```
-
-The rest of the body carries the same per-check evidence table the PASS/FAIL paths carry —
-the verdict is *recorded* (for the human or delegated merge actor to read), it just **authorizes
-nothing on its first line**. The advisory **first line** **carries no `@ <sha>`** on purpose: it
-does not enter any `ship-it` `PASS @ <sha> — merge-ready` namespace, so a §CP PR is never
-auto-mergeable off it (ADR 0053). Under ADR 0135's approve-then-enqueue, `ship-it` enqueues it once a
-`@kamp-us/control-plane` approval is present at head (ADR 0053/0065/0135) — that approval, not a gate
-verdict, is what authorizes the merge.
-
-**The advisory body MUST carry the canonical `Reviewed-head` line (ADR 0151).** Immediately after
-the advisory's first-line marker + framing prose, the body carries **exactly one** line recording
-the reviewed head SHA in a fixed, machine-parseable form:
-
-```markdown
-Reviewed-head: @ <HEAD_SHA>
-```
-
-This is the single canonical binding for a §CP advisory — it replaces the free-prose "reviewed head"
-phrasings (which spelled the SHA half a dozen incompatible ways and made the §CP enqueue
-nondeterministic; #1932/#2022). It is a **body** line with a **distinct `Reviewed-head:` token**, so
-it is never matched by the first-line `review-(code|doc|skill): PASS @ <sha>` PASS-namespace matcher —
-the advisory stays out of `ship-it`'s auto-merge namespace exactly as ADR 0111 requires. Both a human
-delegated merge actor and `ship-it`'s ADR-0135 approval-aware §CP enqueue read the reviewed head from
-**this** line, via the anchored matcher (case-insensitive, optional `@`, 7–40 hex, ADR 0058
-prefix-match either side):
-
-```
-^\s*Reviewed-head:\s*@?\s*([0-9a-f]{7,40})\b
-```
-
-`ship-it` treats the §CP advisory namespace as an enqueue-eligible current-head PASS-equivalent iff
-(a) this `Reviewed-head` SHA prefix-matches the PR's current head, (b) every body checkbox is
-`[PASS]`, and (c) Step 0's control-plane approval is present at head — else it refuses
-deterministically (ship-it Step 2.§CP, ADR 0151). The reviewer is **never** asked to emit a bindable
-first-line PASS on a §CP PR to unblock enqueue (ADR 0111's advisory-is-SHA-less-in-first-line
-invariant is preserved; the reviewer marker contract is not widened).
-
-This is why the advisory form is namespace-uniform but binding-free: it keeps each gate's
-verdict **out** of `ship-it`'s merge path for the control plane while still leaving a
-visible, evidence-bearing verdict on the PR. (`review-code`'s historical binding-PASS +
-caveat shape is the one being retired in favor of this; the reconciliation is part of #424's
-build.)
-
-**The first-line `@ <sha>` is omitted by design — the SHA is bound in the body's canonical
-`Reviewed-head` line, and both a delegated merge actor AND `ship-it`'s §CP enqueue confirm from
-that body line, not the first-line marker (ADR 0111/0151).** The advisory line deliberately
-withholds the first-line `@ <sha>` so it never enters `ship-it`'s `PASS @ <sha> — merge-ready`
-namespace — that withholding is exactly what makes `ship-it` refuse to *auto-merge* the §CP PR off a
-first-line PASS (ADR 0053). It is **not** a missing binding: the head SHA the reviewer inspected is
-recorded in the verdict **body** on the canonical `Reviewed-head: @ <sha>` line + the per-AC PASS
-table, per ADR 0058. So a **delegated** control-plane merge actor — an operator hand-merging a banked
-§CP PR, or `ship-it`'s ADR-0135 approval-aware enqueue acting on the maintainer's current-head
-APPROVE — must **not** try to bind the first-line marker (it will read as `unverified`, the
-SHA-less-by-design form #977 hit). It confirms the verdict by **reading the body**: the
-`Reviewed-head` `@ <sha>` against the PR's current head + every AC marked PASS, then applies
-`ship-it`'s just-in-time guards (head freshness, mergeable, no failing required check) and
-merges/enqueues. A namespace-isolated bindable *first-line* SHA was rejected (it would invite
-automated §CP auto-merge and erode ADR 0053) — ADR 0151 instead makes the *body*'s binding canonical
-and machine-read, keeping ADR 0111 intact. See
-[ADR 0111](https://github.com/kamp-us/phoenix/blob/main/.decisions/0111-blocking-set-verdicts-sha-less-by-design.md)
-and [ADR 0151](https://github.com/kamp-us/phoenix/blob/main/.decisions/0151-cp-advisory-body-sha-resolves-approval-aware-enqueue.md).
-
----
-
-## 6.7. review-design verdict marker
-
-`review-design` is the **design-class gate** — the fourth reviewer skill alongside
-`review-code` (§5), `review-doc` (§6), and `review-skill` (§6.5). It gates a **UI-affecting
-PR** by driving Playwright over the PR's preview deploy, capturing the changed UI surfaces,
-and judging the rendered screenshots multimodally against the **four-pillars design law**
-(ADR [0162](https://github.com/kamp-us/phoenix/blob/main/.decisions/0162-four-pillars-design-law.md);
-the gate itself is ADR [0165](https://github.com/kamp-us/phoenix/blob/main/.decisions/0165-review-design-gate.md),
-skill landed via #2246). It hard-FAILs **only** on the six enumerable, objective ADR-0162
-prohibitions; all holistic/taste judgment rides as advisory (non-blocking) notes in the same
-verdict comment. It lands its verdict as a **comment whose first line is a recognizable,
-SHA-bound marker** — and **only** that comment, never a native review (like `review-doc` /
-`review-skill`, ADR 0058 rule 4). The marker lives in its **own namespace**, distinct from
-§5's `review-code`, §6's `review-doc`, and §6.5's `review-skill`.
-
-### Shape — SHA-bound (ADR 0058)
-
-The recognizable **first line** of the PR comment carries the head SHA the reviewer
-inspected (`@ <sha>`, from `gh api repos/$REPO/pulls/$PR --jq .head.sha`):
-
-```markdown
-review-design: PASS @ <sha> — merge-ready
-```
-
-```markdown
-review-design: FAIL @ <sha> — changes-requested
-```
-
-For a PR in the **control-plane / blocking set** (§CP), `review-design` is **advisory only**
-and instead leads with the **canonical advisory line** (§6.6):
-
-```markdown
-review-design: advisory — blocking-set PR (§CP — approval-gated)
-```
-
-so its verdict stays *out* of `ship-it`'s PASS namespace — a §CP PR merges only once a
-`@kamp-us/control-plane` member approves at head and `ship-it` enqueues it (ADR 0135 amending
-0053; `ship-it` is the single merge actor, ADR 0048).
-The advisory line carries **no `@ <sha>`** by design: it authorizes nothing, so there is
-nothing to bind.
-
-The rest of the body carries the per-prohibition table (the six hard-FAIL checks, passing
-rows too), an **Advisory (non-blocking)** section, and an **Evidence** section embedding the
-GitHub-hosted screenshot URLs so a human can see what was judged. What's load-bearing for the
-scanner is the namespace, the polarity, **and the `@ <sha>`** — the same staleness contract as
-§5/§6/§6.5: `ship-it`/`write-code`-repair refuse a `review-design` verdict whose `@ <sha>` is
-not the PR's current head, and refuse a SHA-less one (ADR
-[0058](https://github.com/kamp-us/phoenix/blob/main/.decisions/0058-sha-bound-verdict-contract.md), issue #258).
-
-### Comment-only (ADR 0058)
-
-`review-design` emits its verdict **only** as the SHA-bound `review-design:` comment,
-**never** a native `APPROVE`/`REQUEST_CHANGES` review — for the same reason `review-doc` /
-`review-skill` are comment-only (§6/§6.5): a native review cannot carry the `@ <sha>` in the
-shape this contract controls, so one comparable record type per lane keeps the lane
-resolvable.
-
-### Upsert, not append (ADR 0058)
-
-`review-design` writes **exactly one** `review-design:` marker comment per PR: before posting
-it scans for **its own** prior `review-design:` marker and `PATCH`es it with the fresh verdict
-+ fresh `@ <sha>` rather than appending (ADR 0058 rule 2; same mechanism as §5/§6/§6.5).
-
-### The matcher contract — anchored, never cross-matching (canonical shape)
-
-`review-design` adds a **fourth** namespace to the §5 matcher family, on the same
-emphasis-tolerant + SHA-capturing rule. The four matchers are mutually exclusive by
-construction — anchored at `^\s*` so a mid-body quote never matches, and each names its own
-token so a scan in one namespace can **never** cross-match another:
-
-- code:   `^\s*\**\s*review-code:\s*(PASS|FAIL)\s*@\s*([0-9a-f]{7,40})`
-- doc:    `^\s*\**\s*review-doc:\s*(PASS|FAIL)\s*@\s*([0-9a-f]{7,40})`
-- skill:  `^\s*\**\s*review-skill:\s*(PASS|FAIL)\s*@\s*([0-9a-f]{7,40})`
-- design: `^\s*\**\s*review-design:\s*(PASS|FAIL)\s*@\s*([0-9a-f]{7,40})`
-
-The tokens are distinct literals, and because each ends in a different word (`code:` /
-`doc:` / `skill:` / `design:`) no anchored literal prefix-matches another — the four are
-disjoint. `review-design` also inherits §5's **token-order** rule (`@ <sha>` immediately
-after the polarity, before the `— merge-ready` / `— changes-requested` tail) and its
-**forbidden emit forms** (no HTML-comment wrapper, no `sha:` delimiter, no heading-only
-verdict, marker on the literal first line). Every matcher site cites this one rule so they
-can't diverge.
-
-### The `Reviewed-head` body anchor (ADR 0151)
-
-Every `review-design` verdict body carries the canonical **`Reviewed-head: @ <sha>`** line
-(§6.6 / ADR 0151) — the read-back guard asserts it on every path, and a delegated §CP merge
-actor (and `ship-it`'s ADR-0135 approval-aware enqueue) resolves the reviewed head from
-**exactly that line** on an advisory §CP verdict, never from the first-line marker.
-
-### Field notes
-
-- **Separate namespace.** `ship-it` resolves each gate's verdict in its **own** namespace,
-  latest-verdict-wins by timestamp, then the SHA-staleness test (§5/§6/§6.5). `review-design`
-  never emits a `review-code` / `review-doc` / `review-skill` marker, and they never emit a
-  `review-design` one.
-- **First line, recognizable.** The marker leads the comment so a scan matches it without
-  parsing the whole body. Recognize it tolerantly by shape (`review-design: PASS @ <sha>` …
-  `merge-ready`) and emphasis (optional leading `**`, §5 matcher contract), not by exact
-  dashes — but the `@ <sha>` is required.
-- **Two markers, two consumers.** `PASS @ <sha> — merge-ready` (every applicable prohibition
-  passed or N/A, bound to that head) is the go-ahead signal `ship-it` acts on to merge a
-  **non-blocking** UI PR **iff `<sha>` is the current head** — once `review-design`'s
-  required-gate wiring lands as part of the ADR-0165 rollout (`ship-it` / `reviewer.md`
-  consumption). `FAIL @ <sha> — changes-requested` (≥1 objective prohibition violated) is read
-  by `write-code`'s fix round-trip as "my UI PR came back failed"; `ship-it` reads it as "do
-  not merge."
-- **Advisory for the blocking set.** A UI PR in the §CP set gets the **canonical advisory
-  line** (§6.6), not a PASS marker — its verdict does not authorize that merge; a
-  `@kamp-us/control-plane` approval at head does, and `ship-it` enqueues on it (ADR 0135 amending
-  0053/0065). Because a design verdict is calibrated to FAIL conservatively (a borderline call is
-  downgraded to advisory), an advisory here can also mean "no objective prohibition hard-failed" —
-  but on a §CP PR the first-line advisory is always the approval-gated shape.
-- **Signals, never merges.** The PASS marker is an approval signal `ship-it` acts on;
-  `review-design` writing it does **not** merge (see review-design/SKILL.md §"Authority
-  limit").
 
 ---
 
@@ -3311,7 +2200,7 @@ own before mutating it. Every consumer cites the `CLAIM_RE` and tiebreak defined
 The **resolution** side of this contract — resolve one owner by the earliest authorized
 claim and decide "is it mine?", default-deny — is implemented once as the shared verb
 `pipeline-cli claim is-mine --issue <N>` (#3687, reusing the epic-lock `resolveClaim` core);
-a consumer runs the verb rather than hand-rolling the resolution `jq`, exactly as §5/§6 route
+a consumer runs the verb rather than hand-rolling the resolution `jq`, exactly as §VERDICT routes
 every marker emit through `pipeline-cli verdict post`. The bash resolution shown below is the
 canonical *reference* the verb implements — read it to understand the tiebreak, run the verb
 to make the decision.
@@ -3350,7 +2239,7 @@ The claim is **two layers** (ADR 0115 §1):
 ### The canonical claim marker + `CLAIM_RE` — single-sourced here
 
 The claim comment is **one line, emphasis-tolerant**, exactly as the SHA-bound verdict
-markers (§5/§6) are. Its **canonical grammar**:
+markers (§VERDICT) are. Its **canonical grammar**:
 
 ```
 claim: <CLAUDE_CODE_SESSION_ID> · <ISO-8601-UTC>
@@ -3383,7 +2272,7 @@ claim: <CLAUDE_CODE_SESSION_ID> · <ISO-8601-UTC> · presence <machine-fingerpri
   re-derives this write instead of citing the verb.
 - **Read surface — the canonical `CLAIM_RE`.** A claim comment is matched by this **one**
   anchored, case-insensitive, emphasis-tolerant regex; every consumer cites it and **none
-  re-hard-codes the grammar** (it pairs with §5/§6's marker-matcher discipline). The executable
+  re-hard-codes the grammar** (it pairs with §VERDICT's marker-matcher discipline). The executable
   matcher is the `RegExp` in `tools/epic-lock/claim-resolution.ts`; the jq/PCRE rendering below is
   single-sourced in `gate-boundaries.ts` and drift-locked to both (#4401):
 
@@ -3412,63 +2301,34 @@ won  ==  earliest-authorized-claim.session  ==  $CLAUDE_CODE_SESSION_ID
 trust root — the same write+ collaborator gate `ship-it` Step 2 and the `write-code` repair
 scan apply: keep only claim markers **authored by an account holding `write+` on the repo**.
 A forged claim from a non-collaborator is **ignored**; an **empty authorized set resolves no
-winner — fail-closed**, never a false win. The canonical resolution (read tolerantly per the
-§Reading stance):
+winner — fail-closed**, never a false win. The matcher that resolution scans with is the one
+machine-readable copy in this file (read tolerantly per the §Reading stance):
 
 ```bash
-cf=$(mktemp); gh api "repos/$REPO/issues/<N>/comments?per_page=100" --paginate > "$cf"
+# The canonical CLAIM_RE stays here at column 0 for the same reason §CP's CONTROL_PLANE_RE line
+# does: `validate-gate-path-drift.sh` and the live gates re-resolve it from THIS file on
+# origin/main (#981, #4401), so it must remain present, byte-identical, exactly once.
 CLAIM_RE='(?i)^\s*\**\s*claim:\s*[0-9a-f-]{36}\b'
-# authors of any claim marker on the issue
-claimAuthors=$(jq -r --arg re "$CLAIM_RE" '[.[] | select(.body | test($re)) | .user.login] | unique | .[]' "$cf")
-# keep only write+ collaborators (the ADR 0055 trust root) — a forged claim is ignored, empty ⇒ no winner
-authorized='[]'
-while IFS= read -r a; do
-  [ -z "$a" ] && continue
-  perm=$(gh api "repos/$REPO/collaborators/$a/permission" --jq .permission 2>/dev/null)
-  case "$perm" in admin|maintain|write) authorized=$(jq -c --arg a "$a" '. + [$a]' <<<"$authorized") ;; esac
-done <<<"$claimAuthors"
-# the EARLIEST authorized claim — min (created_at, comment id) — is the canonical winner; read its session.
-WINSID=$(jq -r --argjson authorized "$authorized" '
-  [.[] | select(.user.login | IN($authorized[]))
-       | select(.body | test("(?i)^\\s*\\**\\s*claim:\\s*[0-9a-f-]{36}\\b"))
-       | {sid: (.body | capture("(?i)^\\s*\\**\\s*claim:\\s*(?<s>[0-9a-f-]{36})").s), at: .created_at, id: .id}]
-  | sort_by([.at, .id]) | first | .sid // ""' "$cf")
-# you won iff the earliest authorized claim is yours
-[ -n "$WINSID" ] && [ "$WINSID" = "$CLAUDE_CODE_SESSION_ID" ] && echo "claim is mine" || echo "not mine — back off"
 ```
 
-This swaps the degenerate `lexicographic-min(login)` for `earliest(authorized claim)`,
-resolved by the same **checkpoint GET against canonical issue state, fail-closed** shape the
-old design used. The race-case derivation transfers and is *strengthened* (ADR 0115 §2):
+**Do not hand-roll the resolution around it.** `pipeline-cli claim is-mine --issue <N> --session
+<token>` owns the whole read — the `CLAIM_RE` scan, the ADR 0055 write+ filter, the earliest
+`(created_at, comment id)` tiebreak, and the default-deny outcome — and `pipeline-cli adoption-lint
+check` reds a corpus file that re-derives it instead of citing the verb.
 
-- **Staggered co-racers.** Each posts a claim comment; the server stamps each a unique,
-  monotonic `id`. The checkpoint GET re-reads the same canonical comment set, so exactly one
-  finds the earliest authorized claim's session equals its own and proceeds; every other
-  recomputes the same earliest claim, sees it is not theirs, **retracts its own claim
-  comment** (`DELETE` the comment it posted), and re-picks. The comment-post detects, the GET
-  resolves — same shape as the old assignee race, but the key is now agent-distinguishable.
-- **Straggler / Rule-0 defer collapses into the tiebreak.** A late arrival's comment has a
-  strictly larger `id`, so it is **never** the earliest authorized claim — it loses by
-  construction, **and** Rule 0 (defer to a pre-existing owner — re-read before posting and
-  back off if an authorized claim from a *different* session already owns it) tells it to
-  back off before posting at all. Because **earliest-claim-wins, Rule 0 and the tiebreak are
-  the same fact**: the pre-existing owner *is* the minimum. This removes the
-  straggler-evicts-owner tension the old `min(login)` needed a separate non-revocability
-  argument to close — a lower login could belong to a later arrival; a lower comment id
-  cannot.
-- **Transient window.** The comments may transiently carry two claims before a loser retracts,
-  and — because the assignment lands only *after* a won claim (below) — a won-but-not-yet-assigned
-  issue is briefly still unassigned. Both degrade safely: the picker skips on **any non-null
-  assignee**, so a transiently double-claimed issue is passed over rather than double-picked, and
-  an agent that picks the still-unassigned issue in the other window runs the claim verb and
-  defers to the earlier claim.
+The race-case derivation this tiebreak rests on — staggered co-racers, where the comment POST
+detects and the checkpoint GET resolves; the straggler whose Rule-0 defer collapses *into* the
+tiebreak, because earliest-claim-wins makes the pre-existing owner and the minimum the same fact;
+and the transient double-claimed and won-but-not-yet-assigned windows the picker's
+skip-on-any-assignee absorbs — is ADR
+[0115](https://github.com/kamp-us/phoenix/blob/main/.decisions/0115-agent-distinguishable-claim-marker.md)
+§2. Read it there; it is not restated here.
 
-This remains **detect-and-tiebreak, not a kernel mutex** (the epic's honest non-goal): the
-comment/assignee APIs offer no conditional write, so true single-writer exclusion is off the
-table. The guarantee is the one that matters — of any set of co-window racers, exactly one
-proceeds, deterministically, and every loser self-retracts its claim comment and re-picks.
-Don't reintroduce the "it's the lock" framing, and **never fall back to the bare assignee login
-as an ownership signal** — that is the degeneracy ADR 0115 removes.
+Two consequences of that derivation are standing rules, because they get re-litigated: this is
+**detect-and-tiebreak, not a kernel mutex** — the comment and assignee APIs offer no conditional
+write, so the guarantee is that exactly one of any co-window racer set proceeds and every loser
+self-retracts, not single-writer exclusion. And **never fall back to the bare assignee login as an
+ownership signal** — that is the degeneracy ADR 0115 removes.
 
 <a id="claim-before-you-assign-a-defer-must-not-strip-the-incumbent"></a>
 ### Claim before you assign — a defer must not strip the incumbent
@@ -3511,10 +2371,9 @@ after the win, before it hands the lane on.**
 The write goes through **one verb** — never a hand-rolled `gh api … /assignees`:
 
 ```bash
-# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
-PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
-"$PCLI" claim assign --issue <N>                    # layer one under our own session
-"$PCLI" claim assign --issue <N> --session <token>  # …or under the threaded delegated token
+CV=./claude-plugins/kampus-pipeline/skills/shared/scripts/claim-verbs.sh   # stdout + exit status are the verb's own
+bash "$CV" assign <N>             # layer one under our own session
+bash "$CV" assign <N> <token>     # …or under the threaded delegated token
 ```
 
 The verb is the enforcement, not the prose: it resolves ownership through the same **default-deny**
@@ -3577,9 +2436,8 @@ A claim is **held for the duration of the work it protects, and given up when th
 done**. The owner performs that release itself:
 
 ```bash
-# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
-PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
-"$PCLI" claim release --issue <N>            # retract our own marker; --session <token> to release a delegated claim
+# retract our own marker; pass the delegated token as the third argument to release a delegated claim
+bash ./claude-plugins/kampus-pipeline/skills/shared/scripts/claim-verbs.sh release <N>
 ```
 
 **Who calls it, and when.** The run that holds the claim, at its terminus: `write-code` Step 8
@@ -3633,9 +2491,9 @@ be invisible; stranded lanes accumulated silently until a dispatch read `lost` a
 read-only inventory is the surface:
 
 ```bash
-# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
-PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
-"$PCLI" claim status --issue <N>   # every marker: author, authorization, liveness, and the resolved owner
+# stdout: the verb's inventory — every marker with its author, authorization, liveness, and the
+# resolved owner.
+bash ./claude-plugins/kampus-pipeline/skills/shared/scripts/claim-verbs.sh status <N>
 ```
 
 Read it before concluding a lane is stuck. A row with `liveness: dead` is already superseded and
@@ -3704,11 +2562,10 @@ by an audited cleanup, not by a resolution rule — the rules above are untouche
 claim is never a candidate whatever its age:
 
 ```bash
-# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
-PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
-"$PCLI" claim audit                 # every open lane held by an unstamped marker, and which are retirable
-"$PCLI" claim audit --issue <N>     # the cheap single-lane read when a stall is already known
-"$PCLI" claim audit --execute       # retire the retirable ones through `claim release`
+CV=./claude-plugins/kampus-pipeline/skills/shared/scripts/claim-verbs.sh   # stdout is the verb's own report
+bash "$CV" audit                  # every open lane held by an unstamped marker, and which are retirable
+bash "$CV" audit <N>              # the cheap single-lane read when a stall is already known
+bash "$CV" audit --execute        # retire the retirable ones through `claim release`
 ```
 
 Retirement runs through **`claim release` under the marker's own token** — the one retraction
@@ -3901,7 +2758,7 @@ cheapest moment to surface it — and had nowhere to go.
 ```markdown
 ## Deviations
 
-- **Scope narrowing** — **Said:** #4064's AC asks the gate teeth to cover §6.6's four gates plus
+- **Scope narrowing** — **Said:** #4064's AC asks the gate teeth to cover §ADVISORY's four gates plus
   `review-trivial`. **Did:** `review-trivial` gets a Step-0 bounce, not a deviation verdict.
   **Why:** it emits a trivial-path verdict, and a disclosed deviation is by construction evidence the
   diff is not trivial. **Disposition:** stated in the PR body per the AC; no ADR needed.
@@ -4023,32 +2880,16 @@ check; it never decides it. Emit the scanned scope (§ZS #1) so a drift that sil
 shows in the run log instead of reading green:
 
 ```bash
-# §DEV Tier M — presence of the section, plus the two diff-detectable classes.
-# The section-presence pattern below is the canonical copy; `write-code` Step 5 check (e) and
-# `review-trivial` Step 0 restate it mechanically, so a change here has to land in all three (the
-# rule is single-sourced, the pattern is not — a silent drift un-gates one lane).
-BODY="$(gh api repos/$REPO/pulls/$PR --jq '.body')"
-printf '%s' "$BODY" | grep -Eiq '^[[:space:]]*#{2,3}[[:space:]]*Deviations[[:space:]]*$' \
-  && echo "deviation-disclosure: ## Deviations section present" \
-  || echo "deviation-disclosure: ## Deviations section ABSENT — malformed body if the PR OWES the section (absent is not None.); [N/A] if it does not (see 'Who owes the section')"
-# class 5, added suppressions/skips
-DEV_SUPPRESS="$(gh pr diff "$PR" | grep -E '^\+' \
-  | grep -nE 'biome-ignore|eslint-disable|@ts-(expect-error|ignore)|\.(skip|only)\(|xit\(|xdescribe\(' || true)"
-# class 6, removed assertion lines — scoped to TEST files, matching the prose. Walk the diff
-# file-by-file so a `--- a/src/assert.ts` header can never match as a removed assertion, and only
-# removals inside a test file count. A bare `grep '^-'` over the whole diff matched exactly that
-# header (the `-` of `---` plus the word `assert` in the path).
-# EVERY file header re-decides the flag, and a DELETED file (`+++ /dev/null`) takes its path from the
-# `--- a/<path>` side. Keying only on `+++ b/` left the flag STALE across a deletion, which broke the
-# scan in both directions: a deleted non-test file after a test file scored false positives, and a
-# deleted test file after a non-test file silently dropped its removed assertions — the exact class-6
-# case this scan exists to arm.
-DEV_TESTCUTS="$(gh pr diff "$PR" | awk '
-  /^--- / { p = $0; next }
-  /^\+\+\+ / { t = ((($0 ~ /^\+\+\+ b\//) ? $0 : p) ~ /(\.|\/)(test|spec)\.[a-z]+$|\/(__tests__|test|tests)\//) ; next }
-  t && /^-[^-]/ && /expect\(|assert|toBe|toEqual|toThrow/ { print }')"
-echo "deviation-disclosure: Tier-M scan — $(printf '%s' "$DEV_SUPPRESS" | grep -c .) suppression/skip line(s), $(printf '%s' "$DEV_TESTCUTS" | grep -c .) removed-assertion line(s)"
+# stdout: the two `deviation-disclosure:` scope lines, then one `DEV_SUPPRESS_LINE=<text>` per
+# class-5 hit and one `DEV_TESTCUT_LINE=<text>` per class-6 hit.
+bash ./claude-plugins/kampus-pipeline/skills/shared/scripts/dev-tier-m.sh "$REPO" "$PR"
 ```
+
+[`shared/scripts/dev-tier-m.sh`](shared/scripts/dev-tier-m.sh) carries the section-presence pattern
+(the canonical copy — `write-code` Step 5 check (e) and `review-trivial` Step 0 restate it
+mechanically, so a change here has to land in all three), the class-5 suppression scan, and the
+class-6 removed-assertion walk, which re-decides its test-file flag at **every** file header so a
+deleted file cannot leave it stale in either direction.
 
 A hit is a **line to judge against the disclosure**, never a FAIL by itself — a `biome-ignore` the
 body discloses with a reason is a passing judgment item, and a legitimately-deleted obsolete test is
@@ -4104,6 +2945,11 @@ The rationale lives in ADR
 | review-skill FAIL marker | the PR | review-skill | write-code (fix round-trip) |
 | `## Deviations` section (§DEV) | the PR body | write-code (Step 5 opens it, repair R3 appends) | review-code, review-doc, review-skill, review-design (verdict row), review-trivial (triviality bounce) |
 | issue-claim (assignee) | the issue's assignees | write-code (Step 3 claim), triage (Step 0 sweep-claim) | write-code (Step 1 pick), triage (Step 0 Rule-0 back-off) |
+
+The six marker rows are **shapes defined elsewhere**:
+[`shared/gate-verdict-contract.md`](shared/gate-verdict-contract.md) §VERDICT is the single
+contract for all four gate namespaces (`review-design` included), §ADVISORY the §CP advisory
+form, §READBACK the post-write read-back.
 
 The issue-claim row is the one entry that is a **protocol over the assignee field**, not a
 markdown format — §7 governs *how* an agent writes and reads that field (detect-and-tiebreak,

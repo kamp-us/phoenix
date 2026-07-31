@@ -121,8 +121,9 @@ export const validateMap = (ledger: WayfinderMapLedger): ReadonlyArray<Defect> =
 		}
 	});
 
-	// A frontier ticket must reference a REAL sub-issue of the map (formats §Open
-	// frontier: frontier tickets are native sub-issues). Resolved against the
+	// A frontier ticket must reference a REAL sub-issue of the map (§Open frontier in
+	// `claude-plugins/kampus-pipeline/skills/shared/wayfinder-map-issue-shape.md`:
+	// frontier tickets are native sub-issues). Resolved against the
 	// boundary-supplied `subIssues`; an empty set disables the check (nothing was
 	// resolved to compare against — the offline/foreign graceful-absence case),
 	// exactly as epic-ledger's `externalRefs`-gated DANGLING_DEP does.

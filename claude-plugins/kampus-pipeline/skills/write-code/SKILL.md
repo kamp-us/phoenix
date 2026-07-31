@@ -28,7 +28,7 @@ resubmit (repair mode) and leave the verdict to them. Re-reading your own diff t
 before you push* is fine — what's forbidden is **stepping into the gate role**: running a
 review skill on your PR, or emitting a verdict marker. Repair mode's loop is sound for the same
 reason — you fix, an **independent** re-review re-gates; you never write the PASS (see
-[Why the author may fix its own FAIL'd PR](#why-the-author-may-fix-its-own-faild-pr-this-is-not-a-firewall-violation)).
+[Why the author may fix its own FAIL'd PR](repair.md#why-the-author-may-fix-its-own-faild-pr-this-is-not-a-firewall-violation)).
 This invariant is the skill's own rule, enforced here — **it does not rely on a per-spawn
 hand-off instruction** (which agents demonstrably ignored, walking themselves into the gate on
 their own PR — #664).
@@ -45,7 +45,42 @@ to `kamp-us/phoenix` with no config.
 
 ```bash
 REPO="${CLAUDE_PIPELINE_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}"
+# Most of this skill's steps are still SOURCED scripts under `scripts/` (epic #4435 phase 1, #4449),
+# resolved the same way §CLI resolves the `pipeline-cli` shim because neither is on PATH. Source each
+# one where its step says to. This variable serves ONLY that surviving sourced set — it is not a
+# second invocation convention on offer, and #4573 deletes it when the last sourced step converts.
+WRITECODE_SCRIPTS="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/skills/write-code/scripts"
 ```
+
+**The sanctioned invocation form is literal-path execution with a stdout contract (ADR
+[0232](https://github.com/kamp-us/phoenix/blob/main/.decisions/0232-agents-execute-skill-scripts-never-source-them.md)) —
+`bash ./claude-plugins/…/scripts/<step>.sh`, results read off stdout.** The harness's isolation
+verifier refuses `.` itself, by *any* path form, and every executor here is worktree-isolated — so a
+sourced step cannot run as designed. The steps written in that form below are the whole of the
+convention; where a step still reads `. "$WRITECODE_SCRIPTS/…"` you are looking at the unconverted
+remainder (#4573), which is history, **not** a shape to copy for anything new.
+
+**A script's non-zero return is UNKNOWN — never an answer (§ZS, ADR
+[0092](https://github.com/kamp-us/phoenix/blob/main/.decisions/0092-gates-fail-closed-on-zero-scope.md)).**
+Every script below prints its result on **stdout** and signals "I could not produce one" by a
+**non-zero return with no stdout**. Those two states are not the same, and the empty one is never
+the permissive branch: an absent or empty result means the step did **not** run, so it can never be
+read as "no parent", "no dependencies", "not a dark ship", or "no claim conflict". So every
+invocation site whose **stdout is consumed as an answer** carries an explicit `|| exit 1`, and a
+site that omits it is one whose script `exit`s on its own failure path (the same behavior the inline
+block had). Never infer a negative from silence.
+
+Two things about those scripts, stated once here rather than repeated in twenty file headers:
+
+- **The moved shell is a byte-move, so its shellcheck findings moved with it.** Each script declares
+  the codes *its own* moved lines raise in its `# shellcheck … disable=` directive (mostly `SC2086`
+  on an unquoted `$REPO` in a `gh api` path) — declared per file, never blanket-suppressed, because
+  quoting them would be a rewrite and rewriting the glue is phase 2 ([#1929](https://github.com/kamp-us/phoenix/issues/1929)).
+- **Two committed proofs re-derive the claims instead of asserting them**, both reviewer-runnable:
+  [`scripts/verify-byte-move.sh`](scripts/verify-byte-move.sh) diffs each script against the fenced
+  block it replaced at the base commit, and
+  [`scripts/verify-fail-closed.sh`](scripts/verify-fail-closed.sh) captures every seam's exit code
+  **and** stdout byte count to prove no failure path can be read as an answer.
 
 ## The formats contract
 
@@ -81,11 +116,14 @@ inventing your own (the one-concept-named-four-ways drift, #851; ADR 0099):
 
 write-code has **two invocation shapes**, and the argument tells them apart:
 
-- **A PR number → repair mode.** "Repair PR #N" / "fix the failed review on #N" hands you
-  an *existing* PR. Go to [Repair mode](#repair-mode--consume-a-gate-fail-verdict-fix-and-resubmit):
-  resolve the PR's latest gate verdict, and **only if** that latest verdict is FAIL, read
-  the findings, fix them on the existing branch, push so the stateless gate re-runs, and
-  stop. You do **not** pick new work, you do **not** branch, you do **not** merge.
+- **A PR number → repair mode. STOP READING THIS FILE HERE AND OPEN
+  [`repair.md`](repair.md) NOW.** "Repair PR #N" / "fix the failed review on #N" hands you an
+  *existing* PR, and every step a repair runs — R0/R1/R2/R3 — lives in that file, not below.
+  It names the three sections of *this* file it depends on, so read it and follow its
+  pointers back; do not read Steps 1–8 below, which are the initial build and do not apply.
+  There you resolve the PR's latest gate verdict, and **only if** that latest verdict is
+  FAIL, read the findings, fix them on the existing branch, push so the stateless gate
+  re-runs, and stop. You do **not** pick new work, you do **not** branch, you do **not** merge.
 - **An issue number, or no argument → initial-build mode.** "Implement #N" / "work the
   next issue" runs the normal **pick → claim → Steps 4–7** path below. This is unchanged.
 
@@ -97,7 +135,7 @@ it is, resolve it once — `gh api repos/$REPO/pulls/<N>` succeeds for a PR and
 **The ownership boundary, stated once and load-bearing throughout:** **write-code owns
 fail → fix → re-request; `ship-it` owns PASS → merge.** You own the branch and the PR, so
 driving a FAIL'd PR back through the gate is your loop — but the merge is never yours, in
-either mode (this mirrors the `gh-issue-intake-formats.md` §5/§6/§6.5 relationship table, which
+either mode (this mirrors the `gh-issue-intake-formats.md` relationship table, which
 names write-code the consumer of *all three* FAIL markers and `ship-it` the consumer of *all
 three* PASS markers).
 
@@ -161,56 +199,11 @@ work, scan your own open PRs for one whose **latest** gate verdict (in *any* of 
 namespaces) is an unaddressed FAIL:
 
 ```bash
-ME=$(gh api user --jq '.login')
-# resolve the verdict CLI once via the `bin/pipeline-cli` shim — in-repo bin, else the installed
-# bin, else the pinned `pnpm dlx` fallback reading the one pin (hooks/pin.sh); no version pinned
-# here (#3653; ADR 0062/0064; epic #994). Each per-(PR, gate) FAIL-bound-to-head resolution below
-# delegates to `pipeline-cli verdict read` (ACL author-gate + latest-wins + SHA-staleness, ADR
-# 0055/0058; its unit tests are the contract).
-VERDICT="${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/bin/pipeline-cli verdict"
-# open PRs you authored; print each one whose latest verdict in EITHER namespace is FAIL,
-# UNLESS it has already hit the N=3 repair cap (then it's a human's, not yours to re-pick)
-gh api "repos/$REPO/pulls?state=open&per_page=100" \
-  --jq ".[] | select(.user.login==\"$ME\") | .number" | while read PR; do
-  # The N=3 FAIL-round count is the one thing `verdict read` does NOT do (it resolves the latest
-  # verdict, it does not count rounds) — genuinely more than a single (PR, gate) resolution, so it
-  # stays inline. Author-gate the FAIL markers to write+ collaborators (ADR 0055, supersedes 0051)
-  # so a forged review-(code|doc|skill): FAIL can't inflate the count; an empty authorized set counts
-  # zero rounds — fail-closed. Cluster by timestamp gap (>120s = new round), per fix-round not per
-  # marker (a both-namespace round counts once), the same identity the Bounding count uses.
-  comments_file=$(mktemp)
-  gh api "repos/$REPO/issues/$PR/comments?per_page=100" > "$comments_file"
-  markerAuthors=$(jq -r '[.[]
-      | select(.body | test("^\\s*\\**\\s*review-(code|doc|skill):\\s*(PASS|FAIL)"; "i"))
-      | .user.login] | unique | .[]' "$comments_file")
-  authorized='[]'
-  while IFS= read -r a; do
-    [ -z "$a" ] && continue
-    perm=$(gh api "repos/$REPO/collaborators/$a/permission" --jq .permission 2>/dev/null)
-    case "$perm" in
-      admin|maintain|write) authorized=$(jq -c --arg a "$a" '. + [$a]' <<<"$authorized") ;;
-    esac
-  done <<<"$markerAuthors"
-  ROUNDS=$(jq --argjson authorized "$authorized" \
-    '[.[] | select(.user.login | IN($authorized[]))
-          | select(.body | test("^\\s*\\**\\s*review-(code|doc|skill):\\s*FAIL"; "i"))
-          | .created_at | sub("\\..*Z$";"Z") | fromdateiso8601]
-     | sort
-     | reduce .[] as $t ({n:0, prev:null};
-         if (.prev == null) or ($t - .prev) > 120
-         then {n:(.n+1), prev:$t} else {n:.n, prev:$t} end)
-     | .n' "$comments_file")
-  [ "$ROUNDS" -ge 3 ] && continue   # at the cap → already escalated to a human, excluded from the scan
-  # resolve each namespace's latest current-head verdict through the shared verb — exit 0 iff HEAD
-  # carries a current FAIL in that gate (a stale / SHA-less / PASS / none verdict exits non-zero).
-  $VERDICT read --pr "$PR" --gate code  --expect FAIL >/dev/null 2>&1 && echo "#$PR review-code FAIL"
-  $VERDICT read --pr "$PR" --gate doc   --expect FAIL >/dev/null 2>&1 && echo "#$PR review-doc FAIL"
-  $VERDICT read --pr "$PR" --gate skill --expect FAIL >/dev/null 2>&1 && echo "#$PR review-skill FAIL"
-done
+bash ./claude-plugins/kampus-pipeline/skills/write-code/scripts/step1-repairable-prs.sh || exit 1   # stdout IS the repairable-PR list — silence is UNKNOWN, never "nothing to repair"
 ```
 
 If such a PR exists, **repair it instead of picking new work** — go to
-[Repair mode](#repair-mode--consume-a-gate-fail-verdict-fix-and-resubmit) with that PR
+[Repair mode](repair.md#repair-mode--consume-a-gate-fail-verdict-fix-and-resubmit) with that PR
 number. Only once you have **no** PR with an unaddressed latest FAIL do you fall through to
 the normal pick below. (This scan resolves each (PR, gate) verdict through the **same
 authoritative SHA-bound `pipeline-cli verdict read`** repair mode Step R1 uses; R1 still
@@ -234,11 +227,7 @@ List the candidate pool, priority bucket by priority bucket, stopping at the fir
 bucket that has any unassigned candidate:
 
 ```bash
-# p0 first; only fall through to p1, then p2 if a bucket is empty of unassigned issues
-for P in p0 p1 p2; do
-  gh api "repos/$REPO/issues?state=open&labels=status:triaged,$P&sort=created&direction=asc&per_page=100" \
-    --jq '.[] | select(.assignee == null and (.pull_request | not)) | "#\(.number)\t\(.created_at)\t\(.title)"'
-done
+. "$WRITECODE_SCRIPTS/step1-candidate-pool.sh"
 ```
 
 `(.pull_request | not)` filters out PRs (the issues endpoint returns both). Take the
@@ -322,23 +311,7 @@ sub-endpoint ADR
 §3 already names the authoritative linkage — and read **three** outcomes off it, never two:
 
 ```bash
-# `-i` keeps the status line on stdout even when gh exits non-zero, which is the whole point:
-# it is what distinguishes a genuine 404 ("No parent issue found" ⇒ standalone) from an
-# UNREADABLE response (5xx, rate-limit, auth, network ⇒ UNKNOWN). Collapsing those two into
-# "no parent" is a silent no-op that skips Step 2 on a real epic child (#4171, #3715, #4108).
-PARENT_RESP="$(gh api "repos/$REPO/issues/<N>/parent" -i 2>/dev/null)"
-PARENT_STATUS="$(printf '%s\n' "$PARENT_RESP" | head -n1 | awk '{print $2}')"
-case "$PARENT_STATUS" in
-  200)
-    EPIC="$(printf '%s\n' "$PARENT_RESP" | awk 'body{print} /^\r?$/{body=1}' | jq -r '.number // empty')"
-    : "${EPIC:?parent read returned 200 with no .number — UNKNOWN, not standalone; refusing to claim <N>}"
-    echo "#<N> is a sub-issue of epic #$EPIC → Step 2 (derive eligibility BEFORE claiming)" ;;
-  404)
-    echo "#<N> is standalone (404 'No parent issue found') → Step 3 (claim it)" ;;
-  *)
-    echo "write-code FAILED (fail-closed): parent read on #<N> returned HTTP '${PARENT_STATUS:-none}' — UNKNOWN, which is NOT evidence of 'no parent'. Refusing to claim: retry, or re-pick per Step 1." >&2
-    exit 1 ;;
-esac
+. "$WRITECODE_SCRIPTS/step1-parent-resolve.sh" <N> || exit 1   # stdout IS the classification — an empty one is UNKNOWN, never "standalone"
 ```
 
 - **Parent resolved (200)** → go to **Step 2** and derive eligibility before claiming.
@@ -364,15 +337,8 @@ when its dependencies are all closed. There is **no `status:blocked` label**;
 eligibility is computed fresh on every pick from the epic's `## Dependencies` section.
 
 ```bash
-EPIC=<the parent number Step 1's sub-endpoint read resolved — never a guessed or remembered one>
-# the epic body carries the plan + the ## Dependencies topology
-gh api repos/$REPO/issues/$EPIC --jq '.body'
-# the real child set + each child's state (the list endpoint is source of truth;
-# sub_issues_summary undercounts under mixed closed/open children)
-gh api "repos/$REPO/issues/$EPIC/sub_issues?per_page=100" \
-  --jq '.[] | "#\(.number) [\(.state)] \(.title)"'
-# the cross-task signal siblings left — read before assuming what's done
-gh api "repos/$REPO/issues/$EPIC/comments?per_page=100" --jq '.[].body'
+# pass the parent number Step 1's sub-endpoint read RESOLVED — never a guessed or remembered one
+. "$WRITECODE_SCRIPTS/step2-epic-read.sh" <EPIC> || exit 1   # no topology read ⇒ UNKNOWN, never "no dependencies"
 ```
 
 **The derivation rule** (from the formats `## Dependencies` grammar):
@@ -450,23 +416,7 @@ delegation by resolving §7's tiebreak once — the **earliest authorized claim*
 session id must equal the threaded token — then proceed straight to implementing:
 
 ```bash
-# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
-PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
-# Orchestrated path: confirm the delegated claim is the earliest authorized claim, then proceed.
-# The §7 CLAIM_RE + write+ ACL + min(created_at, comment id) resolution is owned by the shared verb
-# — run it, never re-derive the grammar. Exit 0 = the threaded token owns #N; non-zero = it does
-# not (absent, foreign, or superseded) ⇒ abort, do not implement.
-"$PCLI" claim is-mine --issue <N> --session "$DELEGATED_TOKEN" \
-  || { echo "delegated token is not the earliest authorized claim — abort, do not implement." >&2; exit 1; }
-# Ensure §7 LAYER ONE for the whole build (#4298). The dispatcher owes this pre-spawn, but the
-# obligation lived in ONE orchestrator's prompt, so a lane dispatched by anything else reached here
-# with no assignee — and Step 8's release then freed the resolver on top of a gate that was never
-# written, leaving the issue `status:triaged` + unassigned with its PR in review. Idempotent and
-# additive: a gate already carrying us is a no-op, and the verb REFUSES on any lane whose claim is
-# not ours, so this asserts nothing about the dispatcher and evicts nothing (ADR 0215 §5).
-"$PCLI" claim assign --issue <N> --session "$DELEGATED_TOKEN" \
-  || { echo "could not set the availability gate on #<N> — routed blocker, do not implement." >&2; exit 1; }
-# delegation confirmed + layer one held — skip the direct-path claim below and go implement
+. "$WRITECODE_SCRIPTS/step3-delegated-claim.sh" <N> || exit 1   # non-zero ⇒ delegation NOT confirmed; do not implement
 ```
 
 ### Direct path — claim it yourself (no orchestrator)
@@ -480,35 +430,7 @@ Run it; never hand-roll a `claim:` body, which silently skips the ADR-0191 prese
 leaves this lane's claim permanently unprobeable (#3987):
 
 ```bash
-# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
-PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
-# 0. Fail-closed on a missing token: the claim comment is the ONLY agent-distinguishable signal
-#    under the shared `usirin` login — with no token a co-racer is unresolvable, so NEVER claim
-#    (and never fall back to the login-keyed assignee as ownership — that is the §7 degeneracy).
-#    The verb enforces this too (it backs off on an empty session), so this is a fast local exit.
-if [ -z "$CLAUDE_CODE_SESSION_ID" ]; then
-  echo "no CLAUDE_CODE_SESSION_ID in env — cannot post an agent-distinguishable claim. BACK OFF, re-pick." >&2
-  exit 0   # → re-run Step 1
-fi
-
-# 1. Claim through the verb FIRST — layer two, the fine agent-distinguishable resolver. It defers
-#    to a pre-existing authorized owner WITHOUT posting, posts a PRESENCE-STAMPED marker under
-#    $CLAUDE_CODE_SESSION_ID, re-reads canonical state, and retracts its OWN claim if it lost.
-#    Exit 0 = the claim is mine; non-zero = backed off, having mutated nothing that is not ours.
-if ! "$PCLI" tracker claim <N>; then
-  echo "did not win the claim on #$N (held by another agent, or lost the tiebreak) — back off, re-pick."
-  exit 0   # → re-run Step 1
-fi
-
-# 2. ONLY NOW write layer one — the coarse availability gate the Step-1 picker reads (§7). One verb
-#    owns this write on every path (#4298); never hand-roll the assignees POST. Defer-then-assign is
-#    load-bearing, not stylistic: every agent authenticates as the SAME login, so the assignee is ONE
-#    shared slot. Assigning first would make the back-off above a cleanup unassign that strips the
-#    LIVE incumbent's assignment — clearing the coarse gate on an issue someone else legitimately
-#    holds. Claiming first removes the cleanup entirely: the verb only ever writes on a claim it
-#    proved is ours, and it has no removal path at all, so there is nothing to undo (#4015).
-"$PCLI" claim assign --issue <N> || { echo "could not set the availability gate on #<N> — routed blocker." >&2; exit 1; }
-# claim won and confirmed (earliest authorized claim is mine) — proceed to implement
+. "$WRITECODE_SCRIPTS/step3-direct-claim.sh" <N> || exit 1   # non-zero ⇒ NO claim was made; back off and re-pick
 ```
 
 **The operating rule.** Posting the claim comment **detects** a race; the **checkpoint GET**
@@ -569,12 +491,7 @@ The token this run owns its work *under* is `MY_CLAIM`, resolved once at the top
   guard treats a target whose earliest authorized claim equals the threaded token as *mine*.
 
 ```bash
-# the claim token this run owns work under: the orchestrator's threaded delegated token if it
-# pre-claimed, else my own session id (the direct-path Step-3 self-claim). Fail-closed: with
-# NEITHER set there is no agent-distinguishable identity to verify ownership under — abort, never
-# fall back to the bare assignee login (that login degeneracy is the exact defect ADR 0115 removes).
-MY_CLAIM="${THREADED_CLAIM_TOKEN:-$CLAUDE_CODE_SESSION_ID}"
-: "${MY_CLAIM:?mis-attribution guard: no claim token — CLAUDE_CODE_SESSION_ID absent and none threaded; refusing to claim or mutate (ADR 0115 Consequences — never a login fallback)}"
+. "$WRITECODE_SCRIPTS/step3_5-my-claim.sh"   # leaves $MY_CLAIM in this shell; refuses (fail-closed) when neither token is set
 ```
 
 ### `claim_is_mine <N>` — MANDATED before every issue/PR-number mutation
@@ -584,20 +501,12 @@ Define the guard once and gate **every** number-targeting mutation on it, exactl
 is the **only** sanctioned path to a mutation that names `<N>`, no bypass:
 
 ```bash
-# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
-PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
-# claim_is_mine <N>: resolve the EARLIEST AUTHORIZED claim marker on #N (issue or PR) and assert
-# its embedded session id == MY_CLAIM. Returns 0 only on a proven-own claim; non-zero (REFUSE) on
-# an absent OR a foreign claim. The ADR-0115 §2 resolution — CLAIM_RE + the write+ ACL trust root
-# (ADR 0055) + the earliest-(created_at, comment id) tiebreak — is owned once by the shared verb
-# `pipeline-cli claim is-mine`; CITE it, never hand-roll the jq (#3687, the same envelope
-# extraction the shipped review-verdict and tracker verbs underwent). The verb is default-deny: an absent claim, an
-# unauthorized-only claim, a foreign owner, and a missing session all resolve NOT-mine (exit
-# non-zero) — exactly this guard's fail-closed refusal, so the exit-status contract is preserved.
-claim_is_mine() {
-  "$PCLI" claim is-mine --issue "$1" --session "$MY_CLAIM"   # exit 0 = mine; non-zero = REFUSE (default-deny)
-}
+. "$WRITECODE_SCRIPTS/step3_5-claim-is-mine.sh"   # leaves the `claim_is_mine` function in this shell
+```
 
+The calling convention, which every number-targeting mutation below follows:
+
+```bash
 claim_is_mine "<N>" && gh api repos/$REPO/issues/<N>/comments -f body="…"   # the guard gates the mutation; never run it ungated
 ```
 
@@ -691,74 +600,7 @@ whereas in the **primary checkout they are the same path**. Equal ⇒ you're in 
 checkout (or a bare/no-repo edge) ⇒ **stop**; differ ⇒ you're in a linked worktree ⇒ proceed.
 
 ```bash
-# fail closed unless we're in a LINKED git worktree (not the primary checkout)
-GITDIR="$(git rev-parse --absolute-git-dir 2>/dev/null)" || {
-  echo "write-code preflight FAILED: not inside a git repository — refusing to mutate." >&2; exit 1; }
-COMMON="$(git rev-parse --git-common-dir 2>/dev/null)"
-case "$COMMON" in /*) ;; *) COMMON="$(pwd)/$COMMON" ;; esac   # normalize relative `.git` (older git)
-COMMON="$(cd "$COMMON" && pwd)"
-
-# Was worktree isolation EXPECTED for this run? The coder agent-type (agents/coder.md) asserts
-# isolation UNCONDITIONALLY, so any run under it expects the harness to have provisioned a linked
-# worktree + set $WORKTREE_ROOT. Three machine-checkable, harness-set signals arm it — NOT a per-run
-# guess — mirroring the repo-side guard's `isIsolationExpected` (bash-pin.ts) exactly (#3406):
-#   1. a direct isolation-asserting agent-type name ($CLAUDE_CODE_AGENT matching coder/reviewer/shipper);
-#   2. a set $WORKTREE_ROOT (the harness signalled a provisioned root);
-#   3. the ENV-INDEPENDENT corroboration — any agent-context run ($CLAUDE_CODE_AGENT non-empty) sitting
-#      on the PRIMARY checkout (git-dir == common-dir). A NESTED/renamed coder spawn inherits the
-#      PARENT's agent-type string (e.g. `crew-engineering-manager` / `junior-engineer`, ADR 0189), so the
-#      NAME match alone goes inert for it — but such a spawn on the primary checkout is a broken/absent
-#      worktree whatever its inherited name, and clause 3 catches it regardless of the string. Keying on
-#      the agent-type LITERAL alone was the #3406 defect: a renamed coder computed isolation-expected=0
-#      and silently self-provisioned. Do NOT hard-code any agent-type name (junior-engineer or otherwise)
-#      to "fix" it — that just relocates the coupling to the next rename; the corroboration removes it.
-# A genuine standalone human run (a direct `/write-code`, $CLAUDE_CODE_AGENT unset) matches NONE of the
-# three, so it never over-refuses and still reaches the Non-isolated fallback. This is what lets the
-# fail-closed branch below distinguish "isolation expected but the harness no-op'd provisioning" (#2440)
-# from a legitimate standalone run, firing LOUD in the first case without regressing the second. See
-# ADR 0172, #2462 (the guard's parallel re-keying), and #3406.
-ISOLATION_EXPECTED=0
-case "$CLAUDE_CODE_AGENT" in *coder*|*reviewer*|*shipper*) ISOLATION_EXPECTED=1 ;; esac   # direct isolation-asserting agent-type name
-[ -n "$WORKTREE_ROOT" ] && ISOLATION_EXPECTED=1                            # harness signalled a provisioned root
-# env-independent corroboration: a non-empty agent-type on the PRIMARY checkout (git-dir == common-dir) —
-# catches a nested/renamed coder whose inherited agent-type string doesn't name a role (#3406).
-[ -n "$CLAUDE_CODE_AGENT" ] && [ "$GITDIR" = "$COMMON" ] && ISOLATION_EXPECTED=1
-echo "write-code preflight: git-dir=$GITDIR common-dir=$COMMON cwd=$(pwd) isolation-expected=$ISOLATION_EXPECTED (agent=${CLAUDE_CODE_AGENT:-unset} worktree-root=${WORKTREE_ROOT:+set})"   # emit scanned scope (ADR 0092 §1)
-if [ "$GITDIR" = "$COMMON" ]; then
-  if [ "$ISOLATION_EXPECTED" = 1 ]; then
-    # FAIL-CLOSED LOUD (the #2443 branch): isolation was EXPECTED but this run is on the PRIMARY
-    # checkout with no linked worktree — the harness's `git worktree add` + $WORKTREE_ROOT injection
-    # silently didn't run for this coder spawn (#2440's harness no-op). Because the whole repo-side
-    # worktree-guard keys on $WORKTREE_ROOT, that no-op ALSO disarmed it, leaving this preflight the
-    # sole surviving layer. Do NOT self-provision here: doing so papers over the harness failure and
-    # leaves the two-layer primary-corruption defense collapsed to one, invisibly (#2270 class).
-    echo "write-code preflight FAILED (fail-closed, LOUD): worktree isolation was EXPECTED (agent=${CLAUDE_CODE_AGENT:-?}, worktree-root=${WORKTREE_ROOT:+set}) but this run is on the PRIMARY checkout (git-dir == common-dir) and \$WORKTREE_ROOT is unset." >&2
-    echo "  ROOT CAUSE: the harness's worktree provisioning (git worktree add + \$WORKTREE_ROOT injection) did NOT run for this coder spawn — the #2440 harness no-op. The repo-side worktree-guard also keys on \$WORKTREE_ROOT, so it is disarmed too; only this preflight is left." >&2
-    echo "  REFUSING to self-provision — that would hide the harness failure and leave the two-layer defense collapsed to one, invisibly (the primary-checkout-corruption class, #2270)." >&2
-    echo "  ROUTED BLOCKER — surface UP to the operator/EM: 'harness worktree provisioning no-op'd for a coder spawn (isolation expected, \$WORKTREE_ROOT unset); the out-of-repo harness half (#2440) needs attention. Do NOT blindly retry the same spawn.'" >&2
-    exit 1
-  fi
-  # isolation was NOT expected ⇒ a genuine standalone run: fall through to the Non-isolated fallback,
-  # which self-provisions a worktree (this path is unchanged, and the loud branch above never fires for it).
-  echo "write-code preflight FAILED (fail-closed): git-dir == common-dir ⇒ this is the PRIMARY checkout, not an isolated worktree." >&2
-  echo "  Refusing to branch/commit here — a spawn without isolation:worktree (or a cwd reset to the primary tree) would mis-branch the owner's checkout." >&2
-  echo "  This run did NOT expect isolation (standalone) — take the Non-isolated fallback below to create a worktree before mutating." >&2
-  exit 1
-else
-  # POSITIVE worktree assertion — loud + EARLY (#3458). git-dir != common-dir is the ONE trust
-  # signal for "I am in my own linked worktree" that survives the misleading env a worktree spawn
-  # is handed: $WORKTREE_ROOT is unset (the reverted #2938 provisioning hook) and $CLAUDE_CODE_AGENT
-  # reports the PARENT's value (inherited agent-type, #2462) — so neither can anchor worktree
-  # identity. This git-plumbing check can, and does so independently of both. Capture $WT from THIS
-  # evidence, never from the untrustworthy env and never from a file. This assertion fires BEFORE the
-  # first Edit/Write on purpose: a raw Edit/Write to a primary-checkout absolute path is not a git op,
-  # so neither the repo-side worktree-guard nor wt_preflight fires on it — the ONLY thing standing
-  # between a cwd-reset + stale-Read-cache and a stray write into shared primary `main` is anchoring
-  # every edit under this $WT (see "Anchor every Edit/Write to $WT" below). Establishing $WT loudly
-  # here is what makes that anchoring actionable from the first file touch.
-  WT="$(git rev-parse --show-toplevel)"
-  echo "write-code preflight CONFIRMED (LOUD): in a LINKED worktree at $WT (git-dir != common-dir) — worktree identity established from git plumbing, INDEPENDENT of \$WORKTREE_ROOT (${WORKTREE_ROOT:+set}${WORKTREE_ROOT:-unset}) and \$CLAUDE_CODE_AGENT (${CLAUDE_CODE_AGENT:-unset}), both of which may misreport. Anchor EVERY Edit/Write and git op to this \$WT (absolute) — never a primary-checkout path."
-fi
+. "$WRITECODE_SCRIPTS/step4-preflight.sh"   # leaves $GITDIR / $COMMON / $WT in this shell; `exit 1` on every unsafe state
 ```
 
 The preflight is **fail-closed by construction**: it refuses on the primary checkout, on a
@@ -823,29 +665,41 @@ is intentionally left untouched here so the two changes can't double-implement o
 > cross-contaminating each other's PRs (#832). One pass at Step-4 start does **not** hold for
 > the whole run.
 >
-> Capture your worktree root once, then run this **mandatory per-mutation preflight** —
-> `wt_preflight` — *immediately before* every `git commit`, `git push`, and branch
-> create/switch (Steps 4, 5, R2, R3). It re-`cd`s to your own worktree root first (correcting
-> a between-calls reset), then re-runs the same fail-closed check **and** asserts the toplevel
-> is your worktree. A green `wt_preflight` is the **only** sanctioned path to a mutation — no
-> bypass, same construction as the opening preflight:
+> Run this **mandatory per-mutation preflight** — `wt_preflight` — *immediately before* every
+> `git commit`, `git push`, and branch create/switch (Steps 4, 5, R2, R3). It first asserts that
+> the tree the cwd is *currently* in is not another lane's, then resolves **your** worktree from
+> the lane stamp the opening preflight wrote and **prints that root on stdout**. A green
+> `wt_preflight` is the **only** sanctioned path to a mutation — no bypass, same fail-closed
+> construction as the opening preflight:
 >
 > ```bash
-> WT="$(git rev-parse --show-toplevel)"   # same $WT the opening preflight CONFIRMED; re-derive per Bash call (shell state doesn't survive), never from a file
-> wt_preflight() {   # MANDATED before every git commit/push/branch op — fail-closed, re-correcting cwd
->   cd "$WT" || { echo "wt_preflight FAILED: cannot cd to worktree root $WT" >&2; return 1; }
->   GITDIR="$(git rev-parse --absolute-git-dir 2>/dev/null)" || {
->     echo "wt_preflight FAILED: not in a git repo at $WT" >&2; return 1; }
->   COMMON="$(git rev-parse --git-common-dir 2>/dev/null)"
->   case "$COMMON" in /*) ;; *) COMMON="$(pwd)/$COMMON" ;; esac
->   COMMON="$(cd "$COMMON" && pwd)"
->   TOP="$(git rev-parse --show-toplevel)"
->   echo "wt_preflight: git-dir=$GITDIR common-dir=$COMMON toplevel=$TOP wt=$WT"
->   [ "$GITDIR" != "$COMMON" ] || { echo "wt_preflight FAILED (fail-closed): on the PRIMARY checkout, not the worktree — refusing to mutate." >&2; return 1; }
->   [ "$TOP" = "$WT" ]        || { echo "wt_preflight FAILED (fail-closed): toplevel ($TOP) != my worktree ($WT) — cwd reset landed me in a sibling/primary tree." >&2; return 1; }
-> }
-> wt_preflight && git <commit|push|switch …>   # the guard gates the mutation; never run the mutation without it
+> WT="$(bash ./claude-plugins/kampus-pipeline/skills/write-code/scripts/step4-wt-preflight.sh)" || exit 1
+> git -C "$WT" <commit|push|switch …>   # address git at the root the guard resolved; never mutate without it
 > ```
+>
+> **The guard decides; you apply.** The script is *executed*, not sourced (ADR 0232), so it cannot
+> `cd` your shell for you — a subprocess never changes its parent's directory, and ADR 0232 retires
+> leave-state-in-the-caller's-shell as a design property outright. What moved is the **effect**, not
+> the decision: every classification and every refusal still runs inside the script, its narration
+> goes to stderr, and stdout carries exactly the resolved root. Correcting a between-calls cwd reset
+> is then the caller's one obligation — **address git at `$WT` explicitly**, never rely on where the
+> cwd happens to be. An empty `$WT` is a refusal, so `|| exit 1` is what keeps that fail-closed.
+>
+> **What makes it able to fail, stated so a future editor can check it.** Both refusals compare
+> operands from different origins: a **stamp file** written when a worktree was proven, against the
+> **process env**. Put cwd in a sibling lane's tree and they differ, so the refusal prints. The
+> assertion this replaces compared `git rev-parse --show-toplevel` against `git rev-parse
+> --show-toplevel` run in the same directory after a `cd` to it — always equal, so its failure
+> message could never print.
+>
+> **The rule is about where the operands come from, not about where the line sits.** An assertion
+> that re-derives the value the `cd` just set — asking the cwd where the cwd is — is true by
+> construction and is not a guard; that, specifically, is the defect above. An assertion whose
+> operands come from somewhere else is a real guard wherever it sits, **including after the `cd`**:
+> the primary-checkout refusal above tests `lane_worktree`'s *answer* with two different plumbing
+> queries (`--absolute-git-dir` vs `--git-common-dir`) that coincide only on the primary, and it
+> fires on a `worktrees/<name>/gitdir` naming the primary root. So never delete a later assertion
+> merely because it follows the `cd` — check its operands first.
 
 <a id="anchor-edits-to-wt"></a>
 > **Anchor EVERY `Edit`/`Write` to `$WT` — the raw-write path no git guard covers (#3458).**
@@ -902,22 +756,7 @@ isolated worktree (`fatal: 'main' is already checked out at <primary>`). Branch 
 latest origin `main` **without checking it out**:
 
 ```bash
-# Fetch the base fresh, and FAIL-LOUD if it doesn't run: FETCH_HEAD is what the branch below is
-# cut from, so a silently-failed fetch (network blip, a harness worktree whose exec env stripped
-# PATH) leaves FETCH_HEAD at a STALE prior tip, and the branch misses a base file merged just
-# before branch-cut → the SHA-bound run-evidence check false-fails on a file the head never
-# carried (#1920; the same stale-base class #1837 fixed at the repair step). Never proceed on an
-# unverified fetch — assert it succeeded before branching off FETCH_HEAD.
-git fetch origin main || { echo "write-code: 'git fetch origin main' failed — refusing to branch off a stale FETCH_HEAD (would cut a head missing a just-merged base file; #1920)." >&2; exit 1; }
-# Derive the prefix from THIS checkout's git identity — never a hardcoded literal. A copied
-# literal namespaces every agent's branch under one person's handle regardless of who runs.
-PREFIX="$(git config user.name | tr '[:upper:] ' '[:lower:]-')"   # e.g. "Umut Sirin" → "umut-sirin"
-: "${PREFIX:?set git user.name to derive a branch prefix}"        # empty identity ⇒ "/slug…" (leading slash) git rejects with an opaque error; fail here with a fixable one
-# Per-run suffix: the deterministic $PREFIX/<slug-for-issue-N> is the SAME ref for every
-# run on this issue, so two concurrent runs would both push origin/<that branch> and the
-# second push would clobber the first's commits. A per-invocation nonce keeps them distinct.
-BRANCH="$PREFIX/<slug-for-issue-N>-$(uuidgen | head -c 8)"
-wt_preflight && git switch -c "$BRANCH" FETCH_HEAD   # branch create is a git mutation → gate it (per-mutation preflight above)
+. "$WRITECODE_SCRIPTS/step4-branch.sh" <slug-for-issue-N> || exit 1   # leaves $BRANCH in this shell; no branch on non-zero
 ```
 
 It's `git switch -c "$BRANCH" FETCH_HEAD` (not `git checkout main`) on purpose: in an
@@ -939,8 +778,8 @@ freshly-fetched `FETCH_HEAD` is the only flow that works — don't "fix" it back
 > *filename* is what collides.
 >
 > **The rule (mandatory, at every git op after this create): re-derive the branch live from
-> your own worktree — never read it from a file.** Right after `wt_preflight` re-`cd`s you to
-> `$WT`, the checked-out branch **is** your work branch, so read it straight from the
+> your own worktree — never read it from a file.** Right after `wt_preflight` resolves `$WT`,
+> the branch checked out there **is** your work branch, so read it straight from the
 > worktree HEAD:
 >
 > ```bash
@@ -1125,10 +964,7 @@ a `**Containment:**` line, with a leading bold-marker, anywhere in the body; a *
 as `none`**:
 
 ```bash
-# the child's containment marker; a missing line reads as `none` (formats §2 tolerant-read rule)
-CONTAINMENT=$(gh api repos/$REPO/issues/<N> --jq '.body' \
-  | grep -ioE '\**\s*Containment:\**\s*(flag|exempt|none)' | head -n1 \
-  | grep -ioE '(flag|exempt|none)' || echo none)
+. "$WRITECODE_SCRIPTS/step4b-containment.sh" <N> || exit 1   # leaves $CONTAINMENT in this shell
 ```
 
 **Graceful absence — the dark-ship behavior applies only when there's a cycle.** It fires **only**
@@ -1141,9 +977,9 @@ step is a **no-op**: you implement and ship the change exactly as Steps 4/5 alre
 graceful-absence contract `plan-epic` (stamp) and `review-code` (verify) honor:
 
 ```bash
-# the canonical cycle-doc probe (formats §1); absent ⇒ no cycle ⇒ ship normally, no flag
-gh api "repos/$REPO/contents/product-development-cycle.md" --jq '.path' >/dev/null 2>&1 \
-  && CYCLE_DOC=present || CYCLE_DOC=absent
+# the canonical cycle-doc probe (formats §1) — relayed to the SHARED script, never copied; stdout is
+# `present` or `absent`. Absent ⇒ no cycle ⇒ ship normally, no flag.
+CYCLE_DOC="$(bash ./claude-plugins/kampus-pipeline/skills/write-code/scripts/step4b-cycle-doc.sh)" || exit 1
 # ship dark ONLY when:  [ "$CONTAINMENT" = flag ] && [ "$CYCLE_DOC" = present ]
 ```
 
@@ -1162,7 +998,11 @@ The change gates behind a default-off flag, which is **one of two shapes** that 
   shape: a feature gated behind the prior-PR #1204 authorship flag.
 
 Whichever shape applies, **capture the exact kebab-case flag key as `FLAG_KEY`** — it is the single
-fact that flows out of this step. The load-bearing invariant the patterns own is **default =
+fact that flows out of this step — and it flows as **text you carry into Step 5's body**, not as a
+shell variable. `$FLAG_KEY` is gone by the next Bash call, so no later step may branch on it (#4398);
+Step 5's dark-ship check re-derives whether this step fired from the issue's `Containment:` marker.
+
+The load-bearing invariant the patterns own is **default =
 safe-state**, the three facets `review-code` Step 3b will verify, so build to make each checkable
 from the outside:
 
@@ -1331,11 +1171,7 @@ never blessed. The pointer is the committed source of truth (`packages/design-ca
 its `surfaces` map keyed by the same `<route>[:state]` capture surface-id):
 
 ```bash
-# blessed surface-ids: the keys of the committed pointer's `surfaces` map (ADR 0183).
-# Intersect with the surfaces THIS diff renders (Step 4d capture) — only that ∩ is reference-anchored.
-# Empty ∩ ⇒ no blessed surface changed ⇒ this whole sub-loop is a no-op; the plain pillars loop stands.
-POINTER=packages/design-capture/golden-pointer.json
-BLESSED_SURFACES="$(jq -r '.surfaces | keys[]' "$POINTER" 2>/dev/null || true)"
+. "$WRITECODE_SCRIPTS/step4d-blessed-surfaces.sh"   # leaves $POINTER and $BLESSED_SURFACES in this shell
 ```
 
 **The reference-anchored loop — consume the seam, never re-implement the diff.** For each blessed
@@ -1456,10 +1292,7 @@ one by one against what this diff actually delivers** — the same checklist `re
 grade against:
 
 ```bash
-# enumerate #N's acceptance criteria — the checklist you must satisfy in FULL to emit a closing keyword
-gh api repos/$REPO/issues/<N> --jq '.body' \
-  | awk '/^###[[:space:]]*Acceptance criteria/{f=1;next} /^###/{f=0} f' \
-  | grep -E '^\s*- \[' || echo "(no checkbox ACs — read the ### Acceptance criteria prose)"
+. "$WRITECODE_SCRIPTS/step5-acceptance-criteria.sh" <N> || exit 1   # stdout IS the checklist — an empty one is UNKNOWN, never "no ACs"
 ```
 
 - **All ACs met by this diff → `Fixes #N`** (the default full close, below).
@@ -1581,24 +1414,14 @@ re-derive them here. Two operational points that are yours, not the contract's:
   `for the reviewer to judge`).
 
 ```bash
-# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
-PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
-# RE-DERIVE the branch LIVE from the worktree — never a cached/shared-file value (see the
-# live-derivation rule in Step 4). $BRANCH from Step 4 is GONE across Bash calls; wt_preflight
-# just re-cd'd to $WT, so the checked-out branch IS the work branch. Read it, never guess it.
-wt_preflight && BRANCH="$(git -C "$WT" branch --show-current)"
-: "${BRANCH:?could not re-derive branch from worktree $WT — refusing to push to a guessed/cached ref}"
-# The SANCTIONED push path — see [Pushing: the verdict is the ref, not the exit code]. It pushes
-# AND independently confirms the remote ref, printing its verdict LAST on stdout. Exit 0 = MOVED,
-# 1 = NOT-MOVED, 3 = UNKNOWN; STOP on either non-zero — never open a PR against a branch you
-# cannot prove exists (an UNKNOWN is not a success).
-wt_preflight && "$PCLI" verified-push --cwd "$WT" --remote origin --branch "$BRANCH" --set-upstream \
-  || { echo "write-code: the push was NOT confirmed on the remote (see the PUSH-VERDICT line above) — refusing to open a PR against an unproven branch." >&2; exit 1; }
-# The PR opens AGAINST issue #N (Fixes #N) — gate it on the mis-attribution guard (Step 3.5): open a
-# PR closing only an issue whose claim is mine, never one mis-attributed to another agent's #N.
-claim_is_mine "<N>" || { echo "refusing to open a PR against #<N> — not my claim (Step 3.5)"; exit 1; }
-# The body carries `Fixes #N` and `## Deviations` ALWAYS; ADD the `Flag: <FLAG_KEY>` line ONLY when
-# Step 4b fired (a dark ship behind a flag — newly-declared OR prior-PR). Omit it for an ungated PR.
+. "$WRITECODE_SCRIPTS/step5-push.sh" <N> || exit 1   # push CONFIRMED on the remote + #N proven mine, or nothing happened
+```
+
+Then open the PR. The body is a **template you author**, so it stays here rather than in a script:
+it carries `Fixes #N` and `## Deviations` ALWAYS, and adds the `Flag: <FLAG_KEY>` line **only** when
+Step 4b fired (a dark ship behind a flag — newly-declared OR prior-PR); omit it for an ungated PR.
+
+```bash
 gh pr create \
   --base main \
   --title "<concise PR title>" \
@@ -1629,50 +1452,7 @@ itself**: read the PR body back and assert it matches a recognized closing keywo
 `#N` — that is exactly the token GitHub auto-closes on and that `ship-it` Step 1 resolves:
 
 ```bash
-# (a) the cross-reference landed (a closing OR non-closing mention both show here — necessary, not sufficient)
-#     --paginate + a STREAMING --jq, per the contract's pagination rule: the timeline endpoint
-#     defaults to 30 events/page, so an un-paginated read calls a cross-reference past event 30
-#     absent — a false alarm on any issue with a bit of history (#4193).
-gh api --paginate "repos/$REPO/issues/<N>/timeline?per_page=100" \
-  --jq '.[] | select(.event == "cross-referenced") | .event'
-# (b) the SUFFICIENT check, REST-only: the seam is armed iff the body carries EITHER a real
-#     CLOSING keyword for #N (full-close PR — the same set ship-it Step 1 resolves:
-#     fix(es|ed)/close[sd]?/resolve[sd]?) OR a `Part of #N` partial-split marker (the §9
-#     non-closing link that keeps #N OPEN by design). Only NEITHER is a truly broken seam.
-BODY=$(gh api repos/$REPO/pulls/<PR> --jq '.body')
-if printf '%s' "$BODY" | grep -qiE '\b(fix(e[sd])?|close[sd]?|resolve[sd]?)\s+#<N>\b'; then
-  echo "closing seam armed"
-elif printf '%s' "$BODY" | grep -qiE '\bpart of\s+#<N>\b'; then
-  echo "partial-split seam armed — Part of #<N>, no closing keyword by design (§9; #<N> stays open)"
-else
-  echo "BROKEN SEAM — body links #<N> with neither a closing keyword nor a 'Part of #<N>' marker"
-fi
-# (c) the INVERSE GUARD, REST-only: NO closing keyword targets any issue OTHER than #N.
-#     The set {issue numbers preceded by a closing keyword in the body} must be exactly {N};
-#     a stray member is a sibling-ref directive that auto-closes an issue this PR never fixed (#1259).
-STRAY=$(gh api repos/$REPO/pulls/<PR> --jq '.body' \
-  | grep -ioE '\b(fix(e[sd])?|close[sd]?|resolve[sd]?)\s+#[0-9]+' \
-  | grep -oE '[0-9]+' | sort -u | grep -vx '<N>')
-[ -z "$STRAY" ] \
-  && echo "no stray close directives — closing-keyword set is exactly {#<N>}" \
-  || echo "STRAY CLOSE DIRECTIVE(S) on $(printf '#%s ' $STRAY)— rewrite these sibling refs to a non-closing form (addresses/relates to/see #M) before opening/patching the PR"
-# (d) DARK-SHIP GUARD, REST-only: IF Step 4b fired, the body MUST carry a `Flag:` line that
-#     matches ship-it Step 5b's FLAG_IN_BODY grep verbatim — else the prior-PR dark ship is dropped
-#     from the release queue (#1282). Run this check ONLY when Step 4b fired (FLAG_KEY is set).
-if [ -n "$FLAG_KEY" ]; then
-  gh api repos/$REPO/pulls/<PR> --jq '.body' \
-    | grep -Eiq '^[[:space:]]*\**[[:space:]]*flag([[:space:]]*key)?:[[:space:]]*\**[[:space:]]*[a-z0-9]+(-[a-z0-9]+)+' \
-    && echo "dark-ship Flag: line present and matches ship-it Step 5b — release queue will fire" \
-    || echo "MISSING/MALFORMED Flag: line — Step 4b fired but the body has no matching plain 'Flag: <key>' line; patch it in before stopping (#1282)"
-fi
-# (e) DISCLOSURE PRESENCE, REST-only: the body carries a `## Deviations` heading. This is the
-#     PRESENCE floor only — it cannot tell an honest `None.` from a false one, and it sees none of
-#     the seven classes (§DEV's detection tiers). It exists so the one failure mode that is purely
-#     mechanical — forgetting the heading — never reaches a gate as a malformed body.
-gh api repos/$REPO/pulls/<PR> --jq '.body' \
-  | grep -Eiq '^[[:space:]]*#{2,3}[[:space:]]*Deviations[[:space:]]*$' \
-  && echo "## Deviations section present" \
-  || echo "MISSING ## Deviations section — an ABSENT section is a gate FAIL (§DEV: absent is not None.); patch the body before stopping"
+. "$WRITECODE_SCRIPTS/step5-seam-checks.sh" <N> <PR> || exit 1   # stdout IS the five verdicts — silence is UNKNOWN, never "armed"
 ```
 
 If (b) reports a broken seam, the body links `#N` with **neither** a closing keyword **nor**
@@ -1724,18 +1504,9 @@ error**, posting another issue's ledger onto yours (#3718, the same silent-clobb
 #2038's `branch.txt`):
 
 ```bash
-# §SP: the per-run scratch namespace — deterministic + fail-closed, never a shared fallback.
-# Keyed on the session id, so if you compose progress.md in one Bash call and post it in the
-# next, this same line re-derives the SAME directory (a bare `mktemp -d` would hand the second
-# call a new EMPTY dir and post an empty body).
-RUN_SCRATCH="${TMPDIR:-/tmp}/kampus-run/${CLAUDE_CODE_SESSION_ID:?§SP: session id unset (#3718)}/write-code-<N>"
-mkdir -p "$RUN_SCRATCH" || {
-  echo "write-code: §SP could not create a per-run scratch dir — refusing to compose a comment through a shared path (#3718)." >&2; exit 1; }
-# …write the four-section comment to "$RUN_SCRATCH/progress.md", then:
-[ -s "$RUN_SCRATCH/progress.md" ] || { echo "write-code: progress.md is missing/empty — refusing to post an empty comment." >&2; exit 1; }
-BODY="$(cat "$RUN_SCRATCH/progress.md")"   # the four-section comment
-# gate the comment on the mis-attribution guard (Step 3.5) — only comment on an issue whose claim is mine
-claim_is_mine "<N>" && gh api repos/$REPO/issues/<N>/comments -f body="$BODY"
+# compose the four-section comment at "$RUN_SCRATCH/progress.md" FIRST; the script re-derives the same
+# session-keyed §SP path and refuses to post an empty body.
+. "$WRITECODE_SCRIPTS/step6-progress-comment.sh" <N> || exit 1
 ```
 
 Assemble the comment from a temp file so multi-line markdown and backticks survive the
@@ -1793,19 +1564,8 @@ so the spawner re-dispatches with the clause, rather than dropping the cross-tas
 silently. A blocked handoff is a fail-loud condition, never a silent no-op.
 
 ```bash
-# compose under the per-run scratch namespace (§SP), never a fixed /tmp leaf — a concurrent
-# coder lane would clobber it and this posts ITS handoff onto your epic, silently (#3718).
-# Deterministic (session-keyed), so writing handoff.md in one Bash call and posting it here in
-# the next resolves the SAME directory — re-running `mktemp -d` would yield an empty one.
-RUN_SCRATCH="${TMPDIR:-/tmp}/kampus-run/${CLAUDE_CODE_SESSION_ID:?§SP: session id unset (#3718)}/write-code-<N>"
-mkdir -p "$RUN_SCRATCH" || {
-  echo "write-code: §SP could not create a per-run scratch dir — refusing to compose a handoff through a shared path (#3718)." >&2; exit 1; }
-# …write the handoff to "$RUN_SCRATCH/handoff.md" first, then:
-[ -s "$RUN_SCRATCH/handoff.md" ] || { echo "write-code: handoff.md is missing/empty — refusing to post an empty handoff." >&2; exit 1; }
-BODY="$(cat "$RUN_SCRATCH/handoff.md")"   # ### Handoff: #N — <title> + the three fields
-# the handoff to the parent epic is predicated on OWNING THE CHILD — gate on claim_is_mine <child>
-# (Step 3.5), not the epic (which you never claim): only hand off about work whose claim is mine.
-claim_is_mine "<N>" && gh api repos/$REPO/issues/<EPIC>/comments -f body="$BODY"
+# write the handoff to "$RUN_SCRATCH/handoff.md" FIRST; the script gates the post on owning the CHILD.
+. "$WRITECODE_SCRIPTS/step7-epic-handoff.sh" <N> <EPIC> || exit 1
 ```
 
 Distill, don't dump — the fine detail lives in the child's progress comments and PR.
@@ -1830,12 +1590,7 @@ thing and then stop.
 The claim you took in Step 3 protected *this* build. The build is over, so give it up:
 
 ```bash
-# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
-PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
-# the last mutation of the run — retract OUR OWN claim marker on the issue we just built.
-# --session carries the token we owned the work under (the orchestrator's delegated token on the
-# orchestrated path), because that is the token the marker itself carries.
-"$PCLI" claim release --issue "<N>" --session "$MY_CLAIM"
+. "$WRITECODE_SCRIPTS/step8-claim-release.sh" <N> || exit 1   # non-zero ⇒ the claim was NOT released
 ```
 
 **Why this is mandatory, not tidy-up.** A claim that outlives its run never expires, and the
@@ -1892,600 +1647,11 @@ owns both halves.
 The split-role guarantee holds **without per-spawn babysitting**: this hard stop is the skill's
 own rule, not a hand-off line a spawner must remember to include (the omitted-clause failure that
 let implementers walk into the gate — #664). You re-enter this skill **only** later, in
-[Repair mode](#repair-mode--consume-a-gate-fail-verdict-fix-and-resubmit), when a *separate*
+[Repair mode](repair.md#repair-mode--consume-a-gate-fail-verdict-fix-and-resubmit), when a *separate*
 reviewer has landed a FAIL on your PR — and even then you fix and resubmit, never review (Step R3).
 If you were spawned with a wider "review-and-ship this through" instruction, the structural rule
 here **wins** over it: open the PR, hand off, and stop — flag in your run ledger that the gate is
 left to a separate reviewer.
-
----
-
-## Repair mode — consume a gate FAIL verdict, fix-and-resubmit
-
-This is the second invocation shape: keyed off a **PR number**, it is the consumer the
-gate FAIL markers were written for (`gh-issue-intake-formats.md` §5/§6/§6.5 name write-code the
-reader of `review-code: FAIL @ <sha> — not merge-ready`, `review-doc: FAIL @ <sha> —
-changes-requested`, and `review-skill: FAIL @ <sha> — changes-requested`, SHA-bound per ADR
-0058). You take a PR that came back failed, apply exactly the enumerated
-findings on the **same branch**, push so the **stateless** gate re-runs, and stop. Steps
-1–7 above are the *initial* build; this is everything that happens *after* a gate FAIL.
-
-### Why the author may fix its own FAIL'd PR (this is not a firewall violation)
-
-The bias firewall lives at the **review step, not the fix step.** The FAIL came from an
-**independent** reviewer, and an **independent re-review re-gates** the fix statelessly.
-write-code re-editing its own branch is sound *precisely because it cannot self-approve* —
-it never writes a PASS marker, never merges, and the gate re-runs and re-judges the new
-commits with fresh eyes. So repair mode does **not** spawn a distinct fixer; the author
-fixing its own PR and an independent gate re-judging it is the firewall, intact.
-
-### Step R0 — A repair dispatch MUST carry a claim token (no token ⇒ refuse, never a judgment call)
-
-Repair is the dispatch class the mis-attribution guard was **inert** on. A repair re-drive
-arrives on a lane someone else opened — often a *new* engine session re-driving a lane whose
-original claimant is gone — so the earliest authorized claim on the linked issue is, by default,
-**not this run's session**. With no token threaded, `claim_is_mine` can neither authorize nor
-refuse the repair on evidence, and two coders on the same wave resolved that ambiguity in
-**opposite** directions (one wrote to the issue, one withheld its progress comment — #3751).
-Fail-open ambiguity is the defect; both halves below close it.
-
-**The dispatcher's obligation.** Whatever dispatches a repair — the orchestrator
-(`.claude/workflows/drive-issue.js`, which threads the token it claimed pre-spawn) or a crew
-engine re-driving a stalled lane (which **claims the lane in its own session first**, via
-`pipeline-cli tracker claim <issue>`, and threads *that* token) — **MUST** thread the lane's
-claim token into the repair prompt, exactly as the initial-build dispatch does (ADR 0115 §3
-delegated ownership). There is no repair-specific token mechanism: it is the same
-`THREADED_CLAIM_TOKEN` contract.
-
-**Your obligation, and the one thing you may not do.** Resolve `MY_CLAIM` per
-[Step 3.5](#mis-attribution-guard) and gate the repair on `claim_is_mine "$N"` against the PR's
-linked issue. If it refuses — no token was threaded, or the threaded token is not the earliest
-**live** authorized claim — **STOP and report the refusal.** You may **not** proceed on the
-strength of an explicit-looking dispatch brief, or on independently corroborating
-PR → branch → `Fixes #N` → the FAIL verdict. That corroboration says the *dispatch was
-coherent*; it says nothing about *who owns the lane*, which is the only question the guard asks.
-Talking yourself past the refusal is the exact failure this step removes: the outcome is
-**deterministic — threaded ⇒ proceed, unthreaded ⇒ refuse** — and the refusal is a routed
-blocker for the dispatcher (it must claim and re-dispatch), never yours to override.
-
-**Why a dead claimant no longer blocks a legitimate re-drive.** The old resolution asserted
-against the *earliest* authorized claim, full stop — so a dead session's marker shadowed every
-later legitimate claim forever, and an engine that correctly re-claimed the lane in its own
-session *still* failed the guard. `pipeline-cli claim is-mine` now treats a claim whose claimant
-is **provably dead** as **superseded** (ADR 0191 presence liveness — the claimant's session
-process is stamped on the marker and probed), so the earliest *live-or-indeterminate* claim wins.
-Supersession requires **positive evidence of death**: an unstamped marker, a claim from another
-host, or an unprobeable pid stays indeterminate, still counts, and the guard still refuses — doubt
-never evicts a slow-but-live agent (the hazard `gh-issue-intake-formats.md` §7's deferred-reclaim
-note protects).
-
-### Step R1 — Resolve the latest verdict per namespace (mirror `ship-it` Step 2)
-
-Do **not** act on the presence of any FAIL that ever existed. Resolve `review-code`,
-`review-doc`, and `review-skill` in **separate namespaces** and take the **latest current-head
-verdict** in each — the exact resolution `ship-it` Step 2 reads. That resolution (the ADR-0055
-write+ author-gate so a self-authored or forged `review-(code|doc|skill): FAIL` is invisible, the
-latest-wins pick, and the ADR-0058 SHA-staleness refusal) is owned by `pipeline-cli verdict read`,
-so R1 delegates to the verb rather than re-deriving it (#2102) — its unit tests are the contract.
-The native decisive review that folds into the code namespace is the one thing the verb does not
-resolve (it reads only marker comments); it needs no ACL gate — GitHub author-attributes reviews, so
-that path is unforgeable — so R1 keeps just that fold inline. The fold is **newest-WRITTEN wins**,
-matching `ship-it` Step 2: the code verdict is the newest of {latest decisive review, in-force
-`review-code` marker}, so a more recently written `APPROVED` clears an older FAIL rather than the FAIL
-standing forever. Compare the review's `submitted_at` against the verb's `writtenAt`, never the marker
-comment's `created_at` — an in-place upsert leaves `created_at` at the slot's open time, so a review is
-systematically over-ranked against a marker rewritten after it (#4200).
-
-```bash
-PR=<the PR number you were handed>
-# resolve the verdict CLI once via the `bin/pipeline-cli` shim — in-repo bin, else the installed
-# bin, else the pinned `pnpm dlx` fallback reading the one pin (hooks/pin.sh); no version pinned
-# here (#3653; ADR 0062/0064; epic #994). The per-(PR, gate) FAIL-bound-to-head resolution
-# delegates to `pipeline-cli verdict read`: the ADR-0055 write+ author-gate, the latest-wins pick,
-# and the ADR-0058 SHA-staleness test folded into one exit code (its unit tests are the contract,
-# #2102) — the same resolution ship-it Step 2 reads.
-VERDICT="${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/bin/pipeline-cli verdict"
-
-# The write+ author-set (ADR 0055) — `verdict read` computes it internally for the marker resolution,
-# but two DOWNSTREAM steps that are genuinely more than a single (PR, gate) resolution reuse it: the
-# inline-review-comment gate (Step R2) and the repair-mode N=3 FAIL-round count. Build it once here.
-comments_file=$(mktemp)
-gh api "repos/$REPO/issues/$PR/comments?per_page=100" > "$comments_file"
-markerAuthors=$(jq -r '[.[]
-    | select(.body | test("^\\s*\\**\\s*review-(code|doc|skill):\\s*(PASS|FAIL)"; "i"))
-    | .user.login] | unique | .[]' "$comments_file")
-authorized='[]'
-while IFS= read -r a; do
-  [ -z "$a" ] && continue
-  perm=$(gh api "repos/$REPO/collaborators/$a/permission" --jq .permission 2>/dev/null)
-  case "$perm" in
-    admin|maintain|write) authorized=$(jq -c --arg a "$a" '. + [$a]' <<<"$authorized") ;;
-  esac
-done <<<"$markerAuthors"
-
-# a namespace is a repairable FAIL iff its latest authorized verdict is FAIL bound to the current head
-# — exit 0 from `verdict read … --expect FAIL`. The verb's JSON (stdout) carries the resolving comment
-# id, which Step R2 uses to read the FAIL body. A stale / SHA-less / PASS / none verdict exits non-zero,
-# so it is correctly NOT repaired (idempotent no-op), needing no separate staleness test here.
-CODE_FAIL_JSON="$($VERDICT read --pr "$PR" --gate code  --expect FAIL 2>/dev/null)"  && CODE_FAIL=1  || CODE_FAIL=0
-DOC_FAIL_JSON="$($VERDICT  read --pr "$PR" --gate doc   --expect FAIL 2>/dev/null)"  && DOC_FAIL=1   || DOC_FAIL=0
-SKILL_FAIL_JSON="$($VERDICT read --pr "$PR" --gate skill --expect FAIL 2>/dev/null)" && SKILL_FAIL=1 || SKILL_FAIL=0
-
-# UNRESOLVED ≠ "no FAIL". `verdict read` prints its outcome JSON on BOTH exit paths, so absent JSON
-# means the namespace never resolved at all (a transport/5xx error, not a verdict). Under a flaky
-# GitHub that silently reads as "nothing to repair" and SKIPS a real repair — so treat it as UNKNOWN
-# and defer the run instead (a deferred repair is retried; a skipped one is lost).
-VERDICT_UNKNOWN=0
-for J in "$CODE_FAIL_JSON" "$DOC_FAIL_JSON" "$SKILL_FAIL_JSON"; do
-  jq -e . >/dev/null 2>&1 <<<"$J" || VERDICT_UNKNOWN=1
-done
-
-# the native decisive review folds into the code namespace (the verb reads only marker comments):
-# GitHub author-attributes reviews, so this path needs no ACL gate — commit_id IS its bound SHA, and
-# only a review prefix-matching the current head participates (ADR 0058).
-#
-# The fold is NEWEST-WRITTEN wins — the resolution ship-it Step 2 states and this step mirrors.
-# `at: .submitted_at` is load-bearing, not decoration: it is what the compare reads, and a review is
-# never upserted, so `submitted_at` IS the review's write time — like for like against the marker's
-# `writtenAt` below. A bare
-# "CHANGES_REQUESTED ⇒ CODE_FAIL=1" would be FAIL-precedence, re-entering repair on a PR whose newer
-# marker already PASS'd at the same head — a spurious repair loop, not a safe default.
-CURRENT_HEAD="$(gh api repos/$REPO/pulls/$PR --jq .head.sha)"
-REVIEW=$(gh api "repos/$REPO/pulls/$PR/reviews?per_page=100" \
-  --jq '[.[] | select(.state=="APPROVED" or .state=="CHANGES_REQUESTED")]
-        | sort_by(.submitted_at) | last | {state, sha: .commit_id, at: .submitted_at}')
-RSTATE=$(jq -r '.state // ""' <<<"$REVIEW"); RSHA=$(jq -r '.sha // empty' <<<"$REVIEW")
-RAT=$(jq -r '.at // ""' <<<"$REVIEW")
-# marker side: `_tag == "current"` is exactly "a current-head marker verdict stands" (a none/sha-less/
-# stale one does not participate); the verb's `writtenAt` is the WRITE time newest-wins compares
-# against — never the comment's created_at, which an in-place upsert leaves behind (#4200).
-MARKER_AT=""
-[ "$(jq -r '._tag // ""' <<<"$CODE_FAIL_JSON" 2>/dev/null)" = "current" ] &&
-  MARKER_AT=$(jq -r '.writtenAt // empty' <<<"$CODE_FAIL_JSON" 2>/dev/null)
-if [ -n "$RSHA" ] && [ -n "$RAT" ]; then case "$CURRENT_HEAD" in "$RSHA"*)
-  # ISO-8601-UTC sorts lexically, so `>` IS the chronological compare. Empty MARKER_AT ⇒ the review is
-  # the only current-head event ⇒ it decides alone. A newer APPROVED clears an older FAIL — that is the
-  # point: without it a repaired-and-re-approved PR would re-enter repair forever.
-  if [ -z "$MARKER_AT" ] || [ "$RAT" \> "$MARKER_AT" ]; then
-    [ "$RSTATE" = "CHANGES_REQUESTED" ] && CODE_FAIL=1 || CODE_FAIL=0
-  fi
-;; esac; fi
-```
-
-**A namespace that did not resolve at all is UNKNOWN, not "no FAIL" — defer, don't skip.** If
-`VERDICT_UNKNOWN=1` (a `verdict read` that printed no outcome JSON — a transport/5xx failure rather
-than a verdict), stop and report `verdict unresolved (GitHub read failed) — deferring, not skipping`.
-Reading an unresolvable namespace as "nothing to repair" would silently drop a real repair; a
-deferred run is retried, a skipped one is lost.
-
-**Act only when a namespace's latest verdict is FAIL *bound to the current head*** — i.e. `CODE_FAIL=1`
-(a current-head `review-code: FAIL` marker per `verdict read`, or a current-head `CHANGES_REQUESTED`
-review), `DOC_FAIL=1`, or `SKILL_FAIL=1`. `verdict read` already encapsulates latest-wins **and** the
-SHA-staleness refusal: a newer FAIL is acted on even if an older PASS exists, but a FAIL whose `@ <sha>`
-is not the current head (or carries no `@ <sha>` — a pre-0058 legacy marker) resolves `stale`/`sha-less`,
-exits non-zero, and is **not** repaired — report `nothing to repair (latest FAIL not bound to current
-head)` and stop. A `review-skill: advisory` line (a blocking-set skill PR) is not a FAIL — `verdict read`
-resolves it `none` (no PASS/FAIL polarity), a clean no-op like a PASS. This keeps repair mode
-**idempotent**: re-running it on an already-fixed/PASS PR, a no-FAIL PR, or a stale-FAIL PR is a clean
-no-op. If **more than one** namespace resolves FAIL (a mixed PR — e.g. code+doc, or skill+code), address
-**all** of them in this round.
-
-R1 resolves the **AC gate** — the marker (and the decisive native review folded into the
-code namespace) is what decides whether there's anything to repair, and its `[FAIL]` table
-is the AC work-list (Step R2). Line-anchored **inline review comments** are a *separate,
-additive* input read in Step R2: they never substitute for the marker (a PR with no
-current-head FAIL is still a clean no-op even if inline comments exist) and they don't
-themselves gate — they fold into the same fix round as additional required fixes.
-
-### Step R2 — Read the enumerated findings, fix exactly those
-
-The FAIL marker comment (or `CHANGES_REQUESTED` review body) carries a **per-criterion
-evidence table** — each unmet `### Acceptance criterion` (and, for `review-doc`, each unmet
-hygiene check; for `review-skill`, each unmet rigor check) listed as a `[FAIL]`/`[UNVERIFIABLE]`
-line with what's missing. Read the full body of the resolving comment/review and treat **those
-enumerated findings as the AC work list** — fix exactly what they name (the inline-comment fixes
-below are additive to this list, not a substitute for it):
-
-```bash
-# the full body of the resolving FAIL marker — its comment id came from R1's `verdict read` JSON
-# (swap CODE_FAIL_JSON→DOC_FAIL_JSON/SKILL_FAIL_JSON per namespace). `verdict read` already
-# author-gated and latest-wins-resolved that exact comment, so this is a plain body fetch of it —
-# no re-derivation of the resolver. (When the code namespace was resolved via a native
-# CHANGES_REQUESTED review rather than a marker, read the review body from
-# `repos/$REPO/pulls/$PR/reviews` instead — a native review carries no issue-comment id.)
-CID=$(jq -r '.commentId // empty' <<<"$CODE_FAIL_JSON")
-[ -n "$CID" ] && gh api "repos/$REPO/issues/comments/$CID" --jq '.body'
-```
-
-#### A review-appended AC is an ordinary `[FAIL]` row — no special parser (ADR 0079)
-
-A `review-*` gate may **append** a new acceptance criterion to the linked issue when it spots
-an in-scope defect the issue's AC never named (the reviewer-append surface — its shape, its
-provenance tag, and its four fences live in
-[`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §2, the single source; cite
-it, don't re-derive it). On the **drain** side that AC needs **no new machinery**: it is
-written in the exact checkbox-bullet shape the rest of the list uses, so when the next review
-verifies the issue against its (now-longer) AC list, an unmet appended criterion surfaces in
-the resolving FAIL marker's `[FAIL]` table **identically** to any triage-authored one. You
-already fixed that table above — a review-appended `[FAIL]` row is fixed by the **same**
-repair, with **no parallel path**.
-
-The one thing you *do* honor is the criterion's **provenance tag** — the trailing
-`<!-- ac:<gate> pr:#NNN round:K -->` comment §2 defines. It is not a parser hook (the row is
-the same checkbox shape with or without it); you read it only for two things: the audit trail
-(Step R3 records *that a fix addressed a review-authored AC* — `ac:review-*`, as opposed to an
-upstream `ac:triage`/`ac:plan-epic`/untagged one) and the **frozen-after-round-K** fence
-(Bounding below reads the tag's `round:K` to decide escalate-vs-loop). A criterion with **no**
-`ac:` tag, or an `ac:triage`/`ac:plan-epic` tag, is upstream-authored and drains exactly as it
-always has — the tag changes nothing about *how* you fix the row, only how you log it and when
-the freeze fence trips.
-
-#### Also fold in line-anchored inline review comments (additive, not the gate)
-
-The marker's `[FAIL]` table is the **AC gate** and remains so — but humans and review bots
-leave their most concrete, fixable feedback as **inline review comments** anchored to a
-specific `path`+`line` on the diff (`GET repos/$REPO/pulls/$PR/comments`), and as
-**decisive native review bodies** (`GET .../pulls/$PR/reviews`, already resolved in R1).
-Repair mode reads these too and folds them into the **same** fix round — *in addition to*
-the marker findings, never as a replacement. **Precedence:** if the marker (R1) has no
-current-head FAIL, there is nothing to repair and inline comments alone do **not** trigger a
-repair round; once a FAIL round is open, every in-scope inline comment is a **required fix**
-alongside the `[FAIL]` table.
-
-**Reviewer scoping** — an inline comment counts as a required fix only when its author is
-**either**:
-
-- a **`write+` repo collaborator** — the same GitHub-ACL floor ADR
-  [0055](https://github.com/kamp-us/phoenix/blob/main/.decisions/0055-acl-sourced-review-authz.md)
-  applies to marker authority (reuse the per-author `collaborators/<login>/permission`
-  check from R1); **or**
-- the **`copilot-pull-request-reviewer[bot]`** review bot, included **explicitly** by
-  login. Review bots don't hold collaborator permissions, so the `write+` floor would
-  silently drop them — and Copilot is already the bot commenting on these PRs (#383), so its
-  line-level findings are exactly the signal this path exists to action. No other bot is
-  in scope; widen the allow-list deliberately, never by default.
-
-Anything outside that set (a `read`-only human, a drive-by bot) is **advisory** — surface it
-but don't treat it as a required fix.
-
-**Head-binding (ADR 0058 staleness, applied to inline comments).** A comment whose anchor
-no longer exists at the PR's current head is **stale** and is skipped: GitHub nulls the
-comment's `line` (and `position`) once the anchored hunk is outdated, so an in-scope comment
-is actionable only when its `line` is non-null. This is the inline-comment analog of R1's
-`@ <sha>` staleness test — repair never chases feedback bound to code that has since changed.
-
-```bash
-ME=$(gh api user --jq '.login')   # don't action your own author-side replies
-# fetch into a var, then pipe to standalone jq — gh's --jq takes no --argjson, and this reuses
-# the same $authorized set R1/R2 already built (same pattern as the marker work-list above)
-inlineComments=$(gh api "repos/$REPO/pulls/$PR/comments?per_page=100")
-# in-scope, still-anchored inline review comments → your additive fix list (id+path+line+body)
-jq --argjson authorized "$authorized" --arg me "$ME" \
-  '[ .[]
-     | select(.line != null)                                  # non-null line ⇒ still anchored to current head (ADR 0058)
-     | select(.user.login != $me)                             # skip self-authored thread replies
-     | select((.user.login | IN($authorized[]))               # write+ collaborator (ADR 0055), or…
-              or .user.login == "copilot-pull-request-reviewer[bot]")  # …the explicitly-included review bot (#383)
-   ] | .[] | {id, path, line, body}' <<<"$inlineComments"
-```
-
-For context on *what the PR was supposed to do*, resolve the **linked issue** via the PR
-body's `Fixes #N` and re-read its `### Acceptance criteria` (the same checklist the gate
-verified) and the progress trail:
-
-```bash
-N=$(gh api repos/$REPO/pulls/$PR \
-  --jq '.body | capture("(?i)\\b(fix(es|ed)?|close[sd]?|resolve[sd]?)\\s+#(?<n>[0-9]+)") | .n')
-gh api repos/$REPO/issues/$N --jq '.body'
-gh api "repos/$REPO/issues/$N/comments?per_page=100" --jq '.[].body'
-```
-
-Check out the **existing PR branch** and fix on it — **no new branch** (a new branch would
-orphan the PR and the gate's history):
-
-```bash
-git fetch origin
-# mis-attribution guard (Step 3.5): confirm the PR's linked issue #N is MINE before touching its
-# branch — so a mis-dispatched repair never pushes to another agent's live PR (the #1404 class).
-# In orchestrated repair the original claim token is threaded as MY_CLAIM (ADR 0115 §3 delegated own).
-claim_is_mine "$N" || { echo "refusing to repair PR #$PR — its linked issue #$N is not my claim (Step 3.5)"; exit 1; }
-wt_preflight && git switch <the PR's head branch>   # gate the branch switch ([per-mutation preflight]); gh api .../pulls/$PR --jq '.head.ref'
-wt_preflight && git rebase origin/main   # freshen the dispatch-time base FIRST — surface a textual conflict now, in-context (see below)
-# apply the fixes addressing exactly the enumerated findings
-```
-
-Repair mode runs in a worktree too, so re-run the Step-4 opening preflight (and capture `WT`)
-before this switch, then gate every later `git commit`/`git push` on `wt_preflight` exactly
-as the initial build does.
-
-**Freshen the base onto latest `origin/main` before you fix — surface a textual conflict at
-code-time, not merge-time.** The repair branch still carries its **dispatch-time base**; if
-`main` moved while the PR sat in the gate (other PRs merged) and touched the same lines, the
-**textual merge conflict** doesn't surface until *merge* — when you (the coder) are long gone
-and can't resolve it in-context. The `git fetch origin` above already updated `origin/main`, so
-**`git rebase origin/main`** replays the branch onto the latest base **before** you apply the
-fixes. Two outcomes:
-
-- **Clean rebase** — the base was stale but non-conflicting; the branch is now current and you
-  proceed to fix exactly as before. (ADR 0132's merge queue would catch a *behind-main* base at
-  ship, but it does **not** auto-resolve a textual conflict — so freshening here is a genuine
-  earlier catch, not a queue duplicate.)
-- **Rebase hits a conflict** — a `main`-side change overlaps your branch's lines. This is the
-  whole point: **resolve it now, in-context.** Reconcile each conflicted hunk (keeping both the
-  incoming `main` change and your branch's intent), `git add` the resolved files, `git rebase
-  --continue`, and only then apply the review findings on top. Do **not** `git rebase --abort`
-  and push the stale base — that just re-buries the conflict until merge. Because a rebase moves
-  the head, the eventual R3 push needs `--force-with-lease` (pass that flag to the R3
-  `pipeline-cli verified-push` — never a bare push, which the corpus lint rejects), and
-  the fresh re-review re-binds the verdict to the new head (the [rebase → re-review → ship is
-  atomic](#a-rebase-invalidates-the-pass--rebase--re-review--ship-is-atomic) rule already covers
-  this — the R3 push *is* that head-move, and the independent gate re-reviews it).
-
-Ground the fixes the same way the initial build does — ADRs in `.decisions/` for the *why*,
-patterns in `.patterns/` for *how the code is shaped* — and run the **pre-push typecheck**
-(`pnpm typecheck`, the exact CI command — never a hand-rolled `tsc`; see Step 4) / the test
-suite plus **`pnpm lint:worktree`** from Step 4 (never `pnpm lint` / `biome check .`,
-which self-no-ops from inside a worktree — #236, #553) before pushing, exactly as Step 4 requires.
-
-### Step R3 — Push, post a progress comment, then stop (the gate re-runs)
-
-Push the fix to the same branch and post a **format-3 progress comment** on the linked
-issue (Completed = the findings you addressed; Decisions/Gotchas; Next = "re-review
-requested"). **Where a fixed `[FAIL]` row was a review-appended AC** (an `ac:review-*`
-provenance tag, §2) rather than an upstream triage/plan-epic criterion, **say so in
-Completed** — name it as a review-authored AC and cite the originating PR/round from its tag.
-This keeps the audit trail of the time-varying AC contract complete (ADR 0079 Consequences):
-the next reader can see which criteria the *reviewer* added and that the loop drained them,
-not just that boxes were checked. The same note carries into the Step 7 epic handoff
-("Affects siblings") for a sub-issue, since a reviewer-added criterion is exactly the kind of
-cross-task signal a sibling should know the gate now enforces. Pushing new commits is what
-makes the **stateless** gate re-run — you do **not** re-trigger or self-approve it:
-
-**A repair round that departed from anything APPENDS to `## Deviations` — it never rewrites it.**
-The repair round is where the undisclosed call is most likely to be made and least likely to be
-written down: you declined an optional reviewer suggestion, you fixed the finding a narrower way
-than the verdict prescribed, you changed a pre-existing test the fix now contradicts, you pushed
-past a hook. Walk the contract's seven classes ([§DEV](../gh-issue-intake-formats.md)) against
-*this round's* diff, and if any fired, patch the PR body to add the entries under the existing
-`## Deviations` heading, tagged `**(repair round K)**`, leaving every earlier entry standing — the
-section is the PR's whole-life log, and a round that overwrites it erases the trail. A round that
-departed from nothing adds nothing; it does **not** rewrite a prior round's entries to `None.`
-(patch via REST — `gh api -X PATCH repos/$REPO/pulls/$PR -f body="…"` — since `gh pr edit` is
-unreliable in this org).
-
-```bash
-# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
-PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
-# re-assert the mis-attribution guard (Step 3.5) before the resubmit push — a between-calls cwd
-# reset can't move the claim, but the guard is MANDATED before every number-targeting mutation,
-# exactly as wt_preflight is before every git op; gate both the push and the progress comment.
-claim_is_mine "$N" || { echo "refusing to push/comment — PR #$PR linked issue #$N not my claim (Step 3.5)"; exit 1; }
-# The SANCTIONED push path ([Pushing: the verdict is the ref, not the exit code]) — force-with-lease
-# because the R2 rebase onto origin/main moved the head. It confirms the remote ref carries the
-# rebased head before you claim the resubmit landed; exit 0 = MOVED, 1 = NOT-MOVED, 3 = UNKNOWN.
-# STOP on either non-zero: a reviewer waiting on a moved head would otherwise re-gate the STALE one.
-wt_preflight && "$PCLI" verified-push --cwd "$WT" --remote origin --force-with-lease \
-  || { echo "write-code: the repair push was NOT confirmed on the remote (see the PUSH-VERDICT line above) — the gate would re-run against the STALE head. Do not report the resubmit as landed." >&2; exit 1; }
-# compose the repair note under the §SP per-run scratch namespace, never a fixed /tmp leaf:
-# concurrent repair lanes clobber a shared name and this posts THEIR note onto your issue (#3718).
-# Session-keyed and deterministic, so the note you wrote in an earlier Bash call is still here.
-RUN_SCRATCH="${TMPDIR:-/tmp}/kampus-run/${CLAUDE_CODE_SESSION_ID:?§SP: session id unset (#3718)}/write-code-$N"
-mkdir -p "$RUN_SCRATCH" || { echo "write-code: §SP could not create a per-run scratch dir (#3718)." >&2; exit 1; }
-# …write the format-3 repair note to "$RUN_SCRATCH/repair-progress.md" first, then:
-[ -s "$RUN_SCRATCH/repair-progress.md" ] || { echo "write-code: repair-progress.md is missing/empty — refusing to post an empty comment." >&2; exit 1; }
-gh api repos/$REPO/issues/$N/comments -f body="$(cat "$RUN_SCRATCH/repair-progress.md")"
-```
-
-**Acknowledge the inline threads you addressed** so the loop is visible to the reviewer who
-left them. For each in-scope inline comment you fixed, post a **threaded reply** naming what
-you changed (REST, on the same review-comment thread):
-
-```bash
-# reply on the inline comment thread you addressed ($CID = the comment id from R2)
-gh api -X POST "repos/$REPO/pulls/$PR/comments/$CID/replies" \
-  -f body="Addressed in <short-sha>: <one line on the fix>."
-```
-
-**Release the lane's claim before you stop**, exactly as Step 8 does for the initial build — the
-repair round is over, and a claim left held is what makes the *next* repair dispatch on this PR
-read `lost` (#3780; the observed stall was a repair refused by a claim whose run had finished):
-
-```bash
-# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
-PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
-"$PCLI" claim release --issue "$N" --session "$MY_CLAIM"   # retract OUR OWN marker; never another session's
-```
-
-A reply is the acknowledgement this skill performs. **Resolving** the thread (collapsing it)
-is a GraphQL-only mutation (`resolveReviewThread`), and the org's Projects-classic
-integration breaks GraphQL (see the top-of-skill REST-only rule), so repair mode does **not**
-resolve threads — the reviewer (or `ship-it` on merge) resolves; the reply is what closes the
-loop on write-code's side.
-
-Then **stop.** The independent re-review re-gates the fix and lands a fresh verdict; that
-is the firewall. write-code does **not** run a review skill on the resubmitted head, does
-**not** write a PASS marker, does **not** approve, and does **not** merge — merge is
-`ship-it`'s sole authority (and for a control-plane `.claude`/`.github` PR, a *human's*; see
-the guardrail below). The push **is** the only re-trigger the stateless gate needs; a
-**separate** reviewer picks the new head up and judges it. Report which findings you addressed
-and that you handed the PR back to the gate.
-
-### Bounding — cap at 3 rounds, then escalate
-
-Repair is **bounded at N = 3** fix → re-review rounds on the same PR, to avoid looping
-forever on a finding it cannot resolve. Count your rounds from the PR's history — a "round"
-is one (gate FAIL → your fix-push) pair. Count **rounds, not markers**: a mixed PR that FAILs
-in *multiple* namespaces in the same review pass is **one** round, not several. Identify
-a review pass by **timestamp adjacency, not a wall-clock bucket**: cluster the FAIL markers
-and start a new round only when the gap to the previous FAIL exceeds a threshold (`120s`
-below). The markers of one multi-namespace pass land seconds apart (back-to-back `gh api`
-posts) so they cluster into one round regardless of which side of a minute boundary they
-fall on; two *genuine* rounds are always separated by your fix-push + an independent
-re-review (minutes at least), so they never collapse into one. (A fixed `created_at[:16]`
-minute bucket gets both of these wrong: it splits one pass straddling `:59`/`:00` into two
-rounds — premature escalation — and merges two real rounds that share a minute into one —
-the cap fails to bind and the loop runs past N=3.) Same ACL author-gate as Step
-R1 (reuse its `$comments_file` + `$authorized`) — only a real reviewer's FAIL counts toward the cap:
-
-```bash
-# how many distinct gate-FAIL ROUNDS has this PR already accrued (both namespaces)?
-# cluster FAIL markers by timestamp gap: a new round starts only when >120s separates two
-# FAILs, so a code+doc pass (seconds apart) is one round and two real rounds (fix-push +
-# re-review apart) are two — grid-free, so no minute-boundary split or same-minute merge.
-jq --argjson authorized "$authorized" \
-   '[.[] | select(.user.login | IN($authorized[]))
-         | select(.body | test("^\\s*\\**\\s*review-(code|doc|skill):\\s*FAIL"; "i"))
-         | .created_at | sub("\\..*Z$";"Z") | fromdateiso8601]
-    | sort
-    | reduce .[] as $t ({n:0, prev:null};
-        if (.prev == null) or ($t - .prev) > 120
-        then {n:(.n+1), prev:$t} else {n:.n, prev:$t} end)
-    | .n' "$comments_file"
-```
-
-If this PR has **already had 3 FAIL→fix rounds** (you'd be pushing a 4th fix against a 4th
-FAIL), **stop fixing and escalate** instead of pushing again:
-
-```bash
-# mis-attribution guard (Step 3.5): escalation is a number-targeting mutation on #N (comment +
-# relabel), reachable as a fresh stateless repair's FIRST mutation when the PR is already at the
-# N=3 cap (write-code escalates INSTEAD OF running R2/R3, so the R2/R3 guards never fire). Gate it
-# fail-closed so a mis-dispatched repair never comments-on/relabels another agent's live issue (the
-# #1404 class — the relabel is more disruptive than a comment).
-claim_is_mine "$N" || { echo "refusing to escalate PR #$PR — its linked issue #$N is not my claim (Step 3.5)"; exit 1; }
-gh api repos/$REPO/issues/$N/comments -f body="$(cat <<'EOF'
-### Repair escalation — PR #<PR> still FAILing after 3 rounds
-
-This PR has reached the N=3 repair cap with the gate still requesting changes. Handing
-back to a human rather than looping. Still-failing criteria:
-
-- <criterion> — <what the gate keeps flagging>
-
-Needs a human decision (the finding may be unresolvable as scoped, or the AC needs
-revisiting).
-EOF
-)"
-# surface it for a human / re-triage rather than re-pushing
-gh api -X POST repos/$REPO/issues/$N/labels -f "labels[]=status:needs-triage"
-```
-
-Escalation **stops the loop** — name the still-failing criteria, hand the PR back to a
-human, and surface the issue for re-triage. Do **not** push a 4th fix. Escalation does
-**not** flip the PR's latest verdict (it stays FAIL — only an independent re-review can
-PASS it), so the loop closes on the *picker* side: the pre-pick scan (Step 1) excludes any
-PR already at the cap (`ROUNDS >= 3`), so a future write-code run steps over this escalated
-PR and picks new `status:triaged` work instead of re-entering repair and re-escalating it
-forever. The cap thus terminates **both** the fix loop *and* the re-selection loop.
-
-### Freeze-after-round-K — a review-appended AC at the cap escalates, never loops (ADR 0079)
-
-The reviewer-append surface (§2) lets a gate add an AC mid-life, so the AC list a worker
-drains is **time-varying** — and an AC appended *late enough* could keep the loop alive past
-its bound (append a fresh criterion every round, fixer never catches up). §2's **fourth fence**
-closes that on the drain side, and binds **K to the same N=3 round cap above** — there is no
-second tunable: `K = N = 3`. Cite §2 fence 4 as the single source; this is its drain-side
-enforcement.
-
-The fence triggers off the appended AC's **`round:K` provenance tag** (§2), which records the
-round-cluster index the gate appended it in. An appended criterion (an `ac:review-*` `[FAIL]`
-row in this round's table) is **frozen — not drainable — when it was appended in or after the
-final repair round**, i.e. its tagged `round` ≥ `N` (= 3). Concretely, for each
-`ac:review-*` `[FAIL]` row you are about to fix, read its `round:K`:
-
-- **`round < 3`** — it was appended with a repair round still left to drain it: fix it in this
-  round like any other `[FAIL]` row (the Step R2 drain), no freeze.
-- **`round >= 3`** — it was appended **in or after** the final round, so there is **no round
-  left to drain-and-re-verify it within the bound**. Do **not** fix-and-push it (that push
-  would be the out-of-budget loop iteration the cap exists to forbid). **Escalate to a human**
-  via the **same escalation path** as the N=3 cap above — name the frozen appended criterion,
-  hand the PR back, surface for re-triage:
-
-```bash
-# does this round's resolving FAIL table carry a review-appended AC tagged at/after the final round?
-# the row is the ordinary checkbox shape; the tag is the only thing read here (no new parser)
-# $FAILBODY = the resolving FAIL marker body from R2; grep the provenance tags it carries
-echo "$FAILBODY" | grep -oE '<!-- *ac:review-[a-z]+ +pr:#[0-9]+ +round:[0-9]+ *-->' | while read -r tag; do
-  K=$(printf '%s' "$tag" | grep -oE 'round:[0-9]+' | cut -d: -f2)
-  [ "$K" -ge 3 ] && echo "FROZEN appended AC ($tag) — appended in/after final round; escalate, do not loop"
-done
-```
-
-If **any** `ac:review-*` row in the current FAIL table is frozen (`round >= 3`), take the
-**escalation path** (the same `### Repair escalation` comment + `status:needs-triage` label as
-the N=3 block — and therefore the **same `claim_is_mine "$N"` fail-closed gate** that block
-carries, MANDATED before its comment+relabel exactly as in the N=3 case: a frozen-AC escalation
-is just as reachable as a mis-dispatched repair's first mutation, so it must not comment-on or
-relabel an issue whose claim isn't mine), naming the frozen appended criterion as the still-open
-finding and noting it was appended in/after the final round — then **stop, do not push**. The escalation comment's
-"Needs a human decision" framing fits exactly: a criterion that arrived with no budget left to
-drain it is the human's call (accept the PR as-is, extend the AC's life by a fresh triage, or
-drop the criterion). This keeps **append-rate bounded by fix-rate** — a gate cannot keep a
-bounded loop alive forever by appending fresh criteria, because the last-round append escalates
-instead of re-looping. A non-frozen appended AC (`round < 3`) drains normally; a frozen one is
-indistinguishable from "still FAILing after the cap" to the picker, so the same Step-1
-`ROUNDS >= 3` cap-exclusion steps a future run over the PR — no silent re-pick, no re-loop.
-
-### Guardrails (repair mode)
-
-- **Never merge.** Repair mode pushes and hands back to the gate; the merge is `ship-it`'s
-  (PASS → merge), and for a control-plane `.claude`/`.github` PR a **human's** — `ship-it`
-  *refuses* to auto-merge blocking-set PRs and `review-doc` is advisory-only on them (ADR
-  [0053](https://github.com/kamp-us/phoenix/blob/main/.decisions/0053-control-plane-boundary.md)). **This very edit is such a PR:
-  a `.claude/**` change `ship-it` will refuse to auto-merge, merged by hand.** Repair mode
-  never weakens that refusal.
-- **Never review your own resubmit (split-role firewall).** After pushing the fix you
-  **stop** — you do **not** run `review-code`/`review-doc`/`review-skill` on the new head, post
-  a `review-(code|doc|skill): PASS`/`FAIL` marker, or open a native PR review on it. The fix is
-  re-gated by an **independent** reviewer; the bias firewall lives at the *review* step, and
-  write-code occupying both seats is exactly what defeats it (#664). The push is the only
-  re-trigger; a separate reviewer judges the new head.
-- **Same branch, never a new one.** Fix on the PR's existing head branch so the PR and its
-  gate history stay intact.
-- **Mis-attribution guard before every push/comment ([Step 3.5](#mis-attribution-guard)).**
-  Confirm the PR's linked issue `#N` carries **your own** claim (`claim_is_mine "$N"` — the
-  dispatcher threads the lane's claim as `MY_CLAIM` for delegated repair, ADR 0115 §3, mandated by
-  [Step R0](#step-r0--a-repair-dispatch-must-carry-a-claim-token-no-token--refuse-never-a-judgment-call))
-  before the R2 branch switch and the R3 push/comment, so a mis-dispatched repair never clobbers
-  another agent's live PR (the #1404 class). Fail-closed: an absent or foreign claim refuses, and
-  the refusal is **not overridable by a corroborated dispatch brief** (#3751).
-- **Idempotent.** Re-running on an already-fixed / PASS PR (one with no latest FAIL, or one
-  whose latest FAIL is bound to a now-stale head) is a clean no-op (Step R1).
-- **SHA-bound verdicts (ADR [0058](https://github.com/kamp-us/phoenix/blob/main/.decisions/0058-sha-bound-verdict-contract.md)).**
-  Act only on a FAIL bound to the PR's **current head** — a FAIL whose `@ <sha>` is stale (or
-  absent) judges code that has since changed, so repair mode ignores it. This mirrors
-  `ship-it` Step 2b's staleness refusal on the reading side.
-- **All three namespaces.** Handle `review-code: FAIL @ <sha>` (§5), `review-doc: FAIL @ <sha>`
-  (§6), **and** `review-skill: FAIL @ <sha>` (§6.5) — latest current-head verdict per namespace —
-  not just `review-code`. A skill PR's FAIL lands in the `review-skill` namespace (ADR 0073).
-- **Author-gated verdicts.** A marker counts only from a `write+` repo collaborator —
-  the same GitHub-ACL gate `ship-it` Step 2 applies before the marker regex, so a forged or
-  self-authored `review-(code|doc): FAIL`/`PASS` can neither trigger spurious repair nor
-  mask a real verdict (ADR [0055](https://github.com/kamp-us/phoenix/blob/main/.decisions/0055-acl-sourced-review-authz.md)).
-- **Inline comments are additive, never the gate (Step R2).** Repair also folds in
-  line-anchored inline review comments (`pulls/$PR/comments`) as *required fixes alongside*
-  the marker's `[FAIL]` table — never as a substitute: with no current-head marker FAIL there
-  is nothing to repair, inline comments alone don't open a round. In scope are comments from
-  a **`write+`** author (ADR 0055 floor) **or** the explicitly-named
-  `copilot-pull-request-reviewer[bot]`; out-of-scope authors are advisory only. A comment with
-  a **null `line`** is stale (its anchor no longer exists at the current head) and is skipped —
-  the ADR 0058 staleness test applied to inline anchors. Addressed threads get a REST reply
-  (resolve is GraphQL-only → out of reach here).
-- **Review-appended ACs drain like any `[FAIL]` row — no new parser (ADR
-  [0079](https://github.com/kamp-us/phoenix/blob/main/.decisions/0079-reviewer-authored-acceptance-criteria.md),
-  §2).** A gate-appended criterion (`ac:review-*` provenance tag) surfaces in the resolving
-  FAIL table in the **same checkbox shape** as a triage-authored one and is fixed by the
-  **same** Step R2 repair — the tag is read only for the audit trail (Step R3 logs that a fix
-  addressed a review-authored AC) and the freeze fence (below).
-- **Freeze-after-round-K (§2 fence 4, `K = N = 3`).** A review-appended AC tagged
-  `round >= 3` was added in/after the final repair round, so there is no budget left to
-  drain-and-re-verify it within the bound — **escalate it via the same N=3 escalation path,
-  never fix-and-push**. Binding K to the existing N=3 cap (no second tunable) keeps
-  append-rate bounded by fix-rate so the loop still terminates (Bounding, Freeze-after-round-K).
-- **Bounded *and* non-starving.** The N=3 cap stops the fix loop; the pre-pick scan's
-  cap-exclusion (`ROUNDS >= 3`) stops the re-selection loop, so an escalated PR never
-  re-pulls a future run into repair (Step 1, Bounding).
-- **`gh api` REST / porcelain only**, never GraphQL (same reason as everywhere in this
-  skill — the org's Projects-classic integration breaks GraphQL).
 
 ---
 
@@ -2612,7 +1778,8 @@ A single invocation does one unit of work end to end, in one of the two modes:
   `work milestone N` scope if either applied, or the sub-issue eligibility derivation), the
   branch and PR opened (or the ADR/diagnosis for a decision/investigation), a pointer to
   the progress comment, and that the gate is left to a separate reviewer.
-- **Repair** (PR number): resolve the PR's latest verdict per namespace (Step R1) and, if
+- **Repair** (PR number — every step of it in [`repair.md`](repair.md)): resolve the PR's
+  latest verdict per namespace (Step R1) and, if
   it's FAIL, fix the enumerated marker findings — **including any review-appended AC, drained
   as an ordinary `[FAIL]` row (ADR 0079, §2)** — **plus the in-scope line-anchored inline
   review comments** (Step R2) on the same branch, push, reply on the threads you addressed,
@@ -2640,7 +1807,7 @@ from `status:planned` after gating a `plan-epic` ledger (epic children — ADR
 a claimed issue, a PR with `Fixes #N`, progress comments, and an epic handoff note — is
 exactly what `review-code`/`review-doc`/`review-skill` read to verify the work against its
 acceptance criteria before merge. The loop closes back on you: when a gate lands a **FAIL** marker
-(`review-code` §5, `review-doc` §6, or `review-skill` §6.5), *you* are its consumer — [Repair mode](#repair-mode--consume-a-gate-fail-verdict-fix-and-resubmit)
+(`review-code`, `review-doc`, or `review-skill` — §VERDICT), *you* are its consumer — [Repair mode](repair.md#repair-mode--consume-a-gate-fail-verdict-fix-and-resubmit)
 reads the findings, fixes, and re-submits for an independent re-gate, while `ship-it` stays
 the sole owner of PASS → merge. You also lean on two sibling skills inside type routing:
 `/adr`

@@ -9,7 +9,7 @@
  * as one deterministic, table-tested function (ADR 0058, the SHA-bound verdict contract).
  *
  * The marker grammar, the emphasis-tolerant anchor, and the `@ <sha>` capture are
- * single-sourced from gh-issue-intake-formats.md §5/§6 and ADR 0058; this core is the
+ * single-sourced from the gate-verdict contract's §VERDICT and ADR 0058; this core is the
  * deterministic decision the IO shell (`github.ts`) drives at the boundary. The author-gate
  * (ADR 0055 write+ trust root) is resolved by the shell and handed in as `authorizedAuthors`,
  * exactly as `epic-lock`'s claim core takes it — a forged marker from a non-collaborator
@@ -39,7 +39,7 @@ export const GATES: ReadonlyArray<VerdictGate> = ["code", "doc", "skill", "desig
  * "is this a marker in my namespace at all" test the `post` upsert scans with, and the
  * cross-namespace guard (`review-code:` never matches the `doc` namespace and vice versa).
  * Anchored at string start with no `m` flag, so it tests the very first line only — a
- * comment that merely *quotes* a marker mid-body never matches (§5/§6).
+ * comment that merely *quotes* a marker mid-body never matches (§VERDICT).
  */
 export const namespaceRe = (gate: VerdictGate): RegExp =>
 	new RegExp(`^\\s*\\*{0,2}\\s*${GATE_KEYWORD[gate]}:`, "i");
@@ -47,7 +47,7 @@ export const namespaceRe = (gate: VerdictGate): RegExp =>
 /**
  * Bindable-verdict matcher: `review-<gate>: (PASS|FAIL) @ <sha>` — captures the polarity
  * (group 1) and the bound head SHA (group 2, ≥7 hex). The `@ <sha>` **immediately after**
- * PASS/FAIL is the fixed token order (§5) — a trailing `@ <sha>` after the em-dash tail does
+ * PASS/FAIL is the fixed token order (§VERDICT) — a trailing `@ <sha>` after the em-dash tail does
  * NOT match, exactly as `ship-it`'s capture refuses it (#625).
  */
 export const verdictRe = (gate: VerdictGate): RegExp =>
@@ -115,7 +115,7 @@ export const isBoundToHead = (sha: string | null | undefined, head: string): boo
 	return a.startsWith(b) || b.startsWith(a);
 };
 
-/** The resolved verdict for a (PR, gate) — exactly one of four states against the current head. */
+/** The resolved verdict for a (PR, gate) — exactly one of five states against the current head. */
 export type VerdictOutcome =
 	/** No authorized PASS/FAIL marker exists in this namespace (or the authorized set was empty). */
 	| {readonly _tag: "none"}
@@ -134,7 +134,48 @@ export type VerdictOutcome =
 			readonly commentId: number;
 			readonly polarity: Polarity;
 			readonly sha: string;
-	  };
+	  }
+	/**
+	 * The in-force artifact is a §CP advisory bound to the current head whose body records a `[FAIL]`
+	 * criterion (ADR 0111/0151). Deliberately NOT a FAIL: an advisory carries no polarity, and its
+	 * remedy is a re-review, not the author's repair round-trip — which is what a FAIL marker names.
+	 * Only `decideNamespace`'s §CP arm produces it; `resolveVerdict` (marker-only) never does.
+	 */
+	| {readonly _tag: "advisory-not-all-pass"; readonly commentId: number; readonly sha: string};
+
+/**
+ * The in-force STATE of a namespace — the one projection every consumer's satisfaction test goes
+ * through, so `verdict read --expect` and `verdict gate` cannot answer the same (PR, gate, head,
+ * §CP-ness) differently (#4049 AC2). `read` was polarity-matching while `gate` was latest-wins, and
+ * a §CP body-only repair (the head deliberately never moves, so ADR 0058 staleness never fires) made
+ * the two diverge permanently: `gate` saw the superseding advisory, `read` could not see an advisory
+ * at all and kept resolving the superseded FAIL as current.
+ */
+export type VerdictState = "pass" | "fail" | "absent" | "unverified";
+
+/** Project a resolved outcome onto its state — total, and the ONE place the mapping is written. */
+export const verdictState = (outcome: VerdictOutcome): VerdictState => {
+	switch (outcome._tag) {
+		case "none":
+			return "absent";
+		case "sha-less":
+		case "stale":
+		case "advisory-not-all-pass":
+			return "unverified";
+		case "current":
+			return outcome.polarity === "PASS" ? "pass" : "fail";
+	}
+};
+
+/** The comment that resolved an outcome, or `null` when nothing resolved. */
+export const outcomeCommentId = (outcome: VerdictOutcome): number | null =>
+	outcome._tag === "none" ? null : outcome.commentId;
+
+/** The head the resolving verdict binds, or `null` when it binds none. */
+export const outcomeSha = (outcome: VerdictOutcome): string | null =>
+	outcome._tag === "stale" || outcome._tag === "current" || outcome._tag === "advisory-not-all-pass"
+		? outcome.sha
+		: null;
 
 export interface ResolveVerdictInput {
 	readonly comments: ReadonlyArray<VerdictComment>;
@@ -294,6 +335,12 @@ export const pickInForce = (
  * `@ <sha>` prefix-matches the head, else `stale`; `sha-less` when it carries no `@ <sha>`;
  * `none` when the authorized candidate set is empty. Fail-closed everywhere: an empty authorized
  * set is `none`, never a false win.
+ *
+ * This is the MARKER arm only — an advisory carries no polarity, so `polarityRe` deliberately never
+ * matches one. The §CP-aware full resolution (marker ∪ advisory) is `decideNamespace` in
+ * `gate-decision.ts`, which delegates its marker classification here so the two arms can't drift;
+ * `Github.read` and `Github.gate` both consume THAT. Calling this directly answers "which bindable
+ * marker is in force", never "which verdict is in force on a §CP PR" (#4049).
  */
 export const resolveVerdict = (input: ResolveVerdictInput): VerdictOutcome => {
 	const latest = pickInForce(
@@ -318,13 +365,13 @@ export const resolveVerdict = (input: ResolveVerdictInput): VerdictOutcome => {
 };
 
 /**
- * The `read` verb's decision: is HEAD reviewed with the expected polarity? True **only** for a
- * current-head-bound verdict whose polarity matches — a `sha-less`, `stale`, or `none` outcome
- * is never satisfied. `ship-it` expects `PASS`; `write-code`-repair expects `FAIL` (the seam it
- * consumes). This is the single boolean the inline `is_current`-then-polarity checks recomputed.
+ * The `read` verb's decision: is HEAD reviewed with the expected polarity? Expressed on
+ * `verdictState` rather than on the raw tag, so it is satisfied by exactly what `verdict gate`
+ * calls a pass (or a fail) and by nothing else — the anti-drift construction of #4049. `ship-it`
+ * expects `PASS`; `write-code`-repair expects `FAIL` (the seam it consumes).
  */
 export const isReviewed = (outcome: VerdictOutcome, expect: Polarity): boolean =>
-	outcome._tag === "current" && outcome.polarity === expect;
+	verdictState(outcome) === (expect === "PASS" ? "pass" : "fail");
 
 /**
  * A machine-readable reason for a non-satisfying `read` outcome — the named refusal `ship-it`
@@ -338,6 +385,8 @@ export const outcomeReason = (outcome: VerdictOutcome, expect: Polarity): string
 			return "unverified (verdict not bound to current head): latest marker is SHA-less (pre-0058)";
 		case "stale":
 			return `unverified (verdict not bound to current head): latest marker bound to ${outcome.sha}, not the current head`;
+		case "advisory-not-all-pass":
+			return `unverified (§CP advisory at the current head is not all-PASS — a body checkbox is [FAIL]); its remedy is a re-review, not a repair round`;
 		case "current":
 			return outcome.polarity === expect
 				? `reviewed: current-head ${outcome.polarity} @ ${outcome.sha}`

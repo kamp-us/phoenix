@@ -4,11 +4,22 @@
  * instead of hand-copying it (#4054). Same drift-proof idiom as `class-probe`'s `HAS_*_RE` parse:
  * the skill's fenced block stays the single source, this reads it, no second copy exists to rot.
  *
- * Fail-closed in one direction only: a renamed Step 3, a missing entry condition, or a shell
- * variable the fenced block never binds to a rollup field all resolve to NO fields — which makes
- * the consuming guard red (nothing is ever pending ⇒ the #3999 regression cases stop settle-polling),
- * never quietly green.
+ * Fail-closed in one direction only: a renamed Step 3, a missing entry condition, an unreadable
+ * sourced script, or a shell variable the block never binds to a rollup field all resolve to NO
+ * fields — which makes the consuming guard red (nothing is ever pending ⇒ the #3999 regression cases
+ * stop settle-polling), never quietly green.
+ *
+ * The parse is **extraction-invariant**: the bindings live in `scripts/step3-rollup-bindings.sh`, and
+ * the section's `. "$SHIPIT_SCRIPTS/…"` line is followed into it (`skill-shell-surface.ts`, #4498).
+ * It reads the bindings wherever they sit — inline in the markdown or in the sourced script — so a
+ * pure relocation neither reds this nor, worse, quietly empties it.
  */
+
+import {
+	type ResolvedSection,
+	resolveSection,
+	type SkillSurface,
+} from "../../skill-shell-surface.ts";
 
 export interface Step3EntryTest {
 	/** The literal shell condition, e.g. `[ -n "$RUNNING$WEDGED" ]`. Empty when unresolvable. */
@@ -27,6 +38,14 @@ export const extractStep3Section = (shipItText: string): string => {
 	const end = section.slice(1).search(/^## /m);
 	return end < 0 ? section : section.slice(0, end + 1);
 };
+
+/**
+ * Step 3's full shell surface: the heading slice plus every `scripts/*.sh` it sources. The returned
+ * `scanned` is the emitted scope (ADR 0092) — a caller asserts what was read rather than trusting a
+ * green, since ZERO scanned files is what a renamed heading looks like.
+ */
+export const resolveStep3Section = (surface: SkillSurface): ResolvedSection =>
+	resolveSection(surface, extractStep3Section);
 
 /**
  * The fenced block's `VAR=$(jq -r '.field …' <<<"$CI_JSON")` lines, as var → rollup field. The
@@ -62,8 +81,12 @@ const numberedItem = (section: string, label: string): string => {
  * condition actually reads. `{[ -n "$RUNNING$WEDGED" ]} → ["running", "wedged"]` — the pending
  * sets. A rewrite to the rollup colour resolves elsewhere (or nowhere), which is the whole point.
  */
-export const parseStep3EntryTest = (shipItText: string): Step3EntryTest => {
-	const section = extractStep3Section(shipItText);
+export const parseStep3EntryTest = (surface: SkillSurface): Step3EntryTest => {
+	const {section, scanned, unresolved} = resolveStep3Section(surface);
+	// ZERO SCOPE and UNRESOLVED are both UNKNOWN, never "the bindings are absent": a heading that
+	// matched nothing, or a sourced script that would not read back, has told us nothing about the
+	// step. Resolve to no fields so the consuming mirror reds (ADR 0092 / §ZS).
+	if (scanned.length === 0 || unresolved.length > 0) return FAILCLOSED_STEP3_ENTRY_TEST;
 	const condition = numberedItem(section, "2").match(/`(\[[^`]*\])`/)?.[1] ?? "";
 	if (condition === "") return FAILCLOSED_STEP3_ENTRY_TEST;
 	const bindings = parseRollupBindings(section);

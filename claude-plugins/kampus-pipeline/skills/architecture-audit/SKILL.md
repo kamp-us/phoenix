@@ -37,8 +37,18 @@ if set, else the current repository. In phoenix this defaults to `kamp-us/phoeni
 behavior is unchanged with no config (ADR 0062 §1).
 
 ```bash
-REPO="${CLAUDE_PIPELINE_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}"
+REPO="$("${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/architecture-audit/scripts/resolve-repo.sh")" || exit 1
 ```
+
+## The extracted scripts
+
+This skill's shell lives in [`scripts/`](scripts/), and each fenced block is an **invocation** of
+one; the prose keeps the *why* (epic #4435 phase 1 — the shell moved as-is, and turning its glue into
+tested `pipeline-cli` verbs is #1929). They set `set -uo pipefail`, deliberately not `-e`: the moved
+glue steers its own control flow, and `errexit` would abort a fail-closed branch before it printed
+its refusal. The **filing** step calls `report`'s own
+[`file-report.sh`](../report/scripts/file-report.sh) rather than a copy — a finding is filed "exactly
+like report", so it goes through the *same* footer and create envelope and the two cannot drift.
 
 ## Vocabulary — read it from `.glossary/*`, don't carry your own
 
@@ -62,8 +72,7 @@ Read both before walking code:
 
 ```bash
 # the committed architecture + domain vocabulary the audit speaks in
-cat .glossary/LANGUAGE.md
-cat .glossary/TERMS.md
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/architecture-audit/scripts/read-glossary.sh"
 ```
 
 If a glossary file is genuinely absent (a foreign install that hasn't adopted the glossary
@@ -96,10 +105,8 @@ committed index (ADR 0126); the `NNNN-slug` filenames are the map, and each file
 carries `id`/`title`/`status`:
 
 ```bash
-# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
-PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
-ls .decisions/                          # the map — one NNNN-slug.md per ADR
-"$PCLI" decisions-index compact         # or: the compact id · title · status map
+# the `NNNN-slug.md` filenames (the map), then the compact id · title · status index
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/architecture-audit/scripts/decisions-map.sh"
 ```
 
 Treat a recorded decision as decided ground: don't surface a finding that contradicts a
@@ -195,13 +202,8 @@ an already-open issue covering the same observation. The audit is re-runnable an
 report agents exist, so the same friction may already be filed:
 
 ```bash
-# (a) the live needs-triage queue — read-after-write consistent, catches a just-filed twin
-gh api "repos/$REPO/issues?state=open&labels=status:needs-triage&per_page=100" \
-  --jq '.[] | "#\(.number) \(.title)"'
-# (b) the search index — covers older open issues that already left the queue
-#     join keywords with + (raw spaces produce a malformed query URL)
-gh api "search/issues?q=repo:$REPO+is:issue+is:open+<keywords>" \
-  --jq '.items[] | "#\(.number) \(.title)"'
+# (a) the live needs-triage queue, then (b) the search index; the script joins keywords with +
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/architecture-audit/scripts/dedup-search.sh" "<keywords>"
 ```
 
 Both commands guard different failure modes — don't drop either: (a) is read-after-write
@@ -229,19 +231,18 @@ call). Map the finding into the report template:
   [DEEPENING.md](DEEPENING.md) dependency category (so the eventual implementer knows the test
   seam), explicitly labeled a guess, never a mandate.
 
+One finding, one issue — only `status:needs-triage`, exactly like `report`, through `report`'s own
+filing script. The five sections arrive on its **stdin** as a quoted heredoc; it appends the footer
+and hands the stream to the `tracker create-issue` verb, which owns this intake-create envelope
+(ADR 0190; `packages/pipeline-cli/src/tools/tracker/`). Don't hand-roll the
+`gh api repos/$REPO/issues` create — the adoption lint (#3254) flags it. There is no temp file to
+collide on, which is what retires the old `/tmp/arch-audit-body.XXXXXX` shared-`/tmp` hazard (§SP):
+
 ```bash
-# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
-PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
-# one finding, one issue — only status:needs-triage, exactly like report. The
-# `tracker create-issue` verb owns this intake-create envelope (ADR 0190;
-# `packages/pipeline-cli/src/tools/tracker/`) and enters the needs-triage queue by default;
-# don't hand-roll the `gh api repos/$REPO/issues` create — the adoption lint (#3254) flags it.
-BODY_FILE="$(mktemp /tmp/arch-audit-body.XXXXXX)"   # per-run temp file (concurrent runs share /tmp)
-# … write the five sections + footer into "$BODY_FILE" …
-BODY="$(cat "$BODY_FILE")"
-"$PCLI" tracker create-issue \
-  --title "<short, type-neutral finding summary (≤ ~70 chars)>" \
-  --body "$BODY"
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/report/scripts/file-report.sh" \
+  "<short, type-neutral finding summary (≤ ~70 chars)>" <<'EOF'
+<the five sections>
+EOF
 ```
 
 Use the `report` footer helper for the metadata block so it stays free of PII and local paths

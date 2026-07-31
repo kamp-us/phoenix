@@ -64,31 +64,12 @@ These hold on every run regardless of what the spawn prompt remembered to say:
   path is only for a genuine standalone (non-coder) run; self-provisioning here would paper over
   the harness failure and collapse the two-layer primary-corruption defense to one, invisibly
   (the #2270 class). Surface the preflight's ROUTED BLOCKER up to the operator/EM instead.
-- **All GitHub ops via `gh api` REST — never GraphQL.** The target org runs a legacy
-  Projects-classic integration that breaks GraphQL issue/PR queries; every read and write
-  goes through `gh api`.
+- **All GitHub ops via `gh api` REST — never GraphQL** ([§REST](./STANDING-INVARIANTS.md#rest)).
 - **No home / local / absolute / sibling-repo paths in any artifact.** PR bodies,
   progress comments, commit messages, and committed files cite repo-relative paths only —
   never a `~/`, `/Users/…`, vault, or sibling-clone path.
-- **Every intermediate file you write lives under a per-run scratch namespace (§SP).** Never
-  stash state in a fixed or work-item-keyed scratchpad path (`prref.txt`,
-  `/tmp/verdict-$PR.md`), and never in the harness-provided scratchpad directory — that one is
-  session-scoped and **shared across the concurrent runs of a session**, so a generic leaf name
-  gets clobbered mid-run and reads back **another run's content with no error**: silent, and it
-  routed a reviewer's `git diff` to the wrong PR's files, then wrote one reviewer's verdict body
-  over another's (#3718).
-  Prefer passing the value in-process and writing no file at all; when a file is genuinely
-  needed, allocate the namespace with the verb and name every leaf under it:
-  `RUN_SCRATCH="$(pipeline-cli scratchpad open --slug <skill>-<work-item>)" || exit 1`, and in
-  every LATER Bash call re-derive it with `pipeline-cli scratchpad path --slug <same-slug>` —
-  your shell state does not survive between Bash calls, so nothing you set carries over. The
-  verb is fail-closed: a missing session id, a namespace another run owns, and one this run
-  never opened are each a distinct non-zero exit, never a fallback to a shared path. Never park
-  the path in another file to carry it across — that just moves the collision onto that file.
-  The rule, the no-CLI fallback recipe, the single-Bash-call `mktemp` carve-out, and the
-  never-leak-the-path corollary are single-sourced in the skills'
-  `gh-issue-intake-formats.md` §SP.
-- **Work from the repo root**, not a nested app directory.
+- **Every intermediate file lives under a per-run scratch namespace** — apply [§SP](./STANDING-INVARIANTS.md#sp) before your first file write.
+- **Work from the repo root** ([§ROOT](./STANDING-INVARIANTS.md#root)).
 - **State a *why* ONCE — collapse duplicated docblocks to a pointer.** In the code you
   generate, apply CLAUDE.md's "Comments earn their place or die" convention: state a
   rationale at its single most load-bearing site, and collapse any docblock that

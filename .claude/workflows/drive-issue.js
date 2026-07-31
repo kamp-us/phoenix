@@ -578,8 +578,8 @@ async function drive() {
 	// check here — the shipper owns both; an `awaiting control-plane approval` stop IS the
 	// halt outcome (a human approves out-of-band, then a shipper re-run enqueues). Success is
 	// ENQUEUED + green, not merged-now: the merge queue owns the final async merge and the
-	// async `Fixes #N` issue-close (ADR 0132), so this stage returns `enqueued` (QUEUED ->
-	// auto-merges on green), never an in-run merge/close assertion.
+	// async `Fixes #N` issue-close (ADR 0132), so this stage returns `enqueued` (QUEUED — the
+	// queue owns the async merge), never an in-run merge/close assertion.
 	//
 	// QUEUED is NOT terminal: the queue can EJECT an enqueued PR (textual batch conflict or a
 	// combined-batch CI failure) without merging it, leaving it silently stalled (still open,
@@ -601,10 +601,11 @@ async function drive() {
 			`(a human approves out-of-band, then a shipper re-run enqueues). For a non-§CP PR, assert the matching gate ` +
 			`PASS, confirm CI is green, enqueue for a squash-merge with \`gh pr merge --auto\` (no method flag — the queue owns the SQUASH method), and confirm it ` +
 			`is enqueued + green. The merge queue owns the final, async merge (ADR 0132): success is "enqueued + green" ` +
-			`(QUEUED -> auto-merges on green), NOT "merged now" — the linked issue auto-closes async when the queue lands ` +
+			`(QUEUED — the queue owns the async merge), NOT "merged now" — the linked issue auto-closes async IF AND WHEN the queue lands ` +
 			`the merge. After a successful enqueue, run your bounded post-enqueue RECONCILE (Step 5.5): poll the PR's ` +
 				`merged/state/mergeStateStatus within a batch window and classify the terminal outcome as "landed" (queue ` +
-				`merged it), "queued" (still in the queue at the window's end — a well-formed pending), or "ejected" (still ` +
+				`merged it), "queued" (still in the queue when the bounded observation expired — report it as UNRESOLVED: ` +
+				`neither a landing nor a failure), or "ejected" (still ` +
 				`open, no longer queued, not merged — the queue dropped it on a textual or combined-batch conflict). On ` +
 				`"ejected", surface it (comment on the PR) and do NOT report shipped — it routes back to repair/re-queue. ` +
 				`Return { enqueued: true|false, mergeOutcome: "landed"|"queued"|"ejected"|"n/a", awaitingControlPlaneApproval: ` +
@@ -632,7 +633,13 @@ async function drive() {
 		ejected
 			? `PR #${pr} EJECTED from the merge queue (not merged) — routing back to repair/re-queue: ${shipped.reason ?? "textual or combined-batch conflict"}`
 			: shipped.enqueued
-				? `PR #${pr} QUEUED -> auto-merges on green${shipped.mergeOutcome === "landed" ? " (reconciled: landed)" : shipped.mergeOutcome === "queued" ? " (reconciled: still queued)" : ""}`
+				// Worded off ship-it Step 5.5's `case` block — the single source for these three strings
+				// and for why an expired observation asserts neither a landing nor a failure (#4403).
+				? shipped.mergeOutcome === "landed"
+					? `PR #${pr} LANDED — the queue merged the batch`
+					: shipped.mergeOutcome === "queued"
+						? `PR #${pr} UNRESOLVED — still queued when the shipper's bounded observation expired; the merge may still land. Neither a landing nor a failure — an independent later read closes the lane`
+						: `PR #${pr} QUEUED — the queue owns the async merge; the shipper reported no reconcile outcome`
 				: shipped.awaitingControlPlaneApproval
 					? `PR #${pr} awaiting control-plane approval (§CP) — a @kamp-us/control-plane member must approve at the current head; re-run the shipper after approval`
 					: `PR #${pr} not enqueued (reviewedReady=${shipped.reviewedReady ?? false}): ${shipped.reason ?? "see shipper output"}`,

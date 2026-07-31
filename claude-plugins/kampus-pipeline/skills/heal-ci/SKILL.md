@@ -35,8 +35,33 @@ if set, else the current repository. In phoenix this defaults to `kamp-us/phoeni
 behavior is unchanged with no config (ADR 0062 §1).
 
 ```bash
-REPO="${CLAUDE_PIPELINE_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}"
+REPO="$("${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/heal-ci/scripts/resolve-repo.sh")" || exit 1
 ```
+
+## The extracted scripts
+
+This skill's shell lives in [`scripts/`](scripts/), and each fenced `bash` block is an **invocation**
+of one; the prose keeps the *why* (epic #4435 phase 1 — the shell moved as-is, and turning its glue
+into tested `pipeline-cli` verbs is #1929). Three properties are load-bearing:
+
+- **They set `set -uo pipefail`, deliberately not `-e`, and install no `EXIT` trap.** The moved glue
+  steers its own control flow through the guards written into it, and `errexit` would abort a
+  fail-closed branch before it printed its refusal. The pairing is worse than cosmetic: on bash 3.2 a
+  `set -u` abort that reaches an `EXIT` trap yields **exit 0**, so a fail-closed script would exit
+  clean having printed its FAIL (#4476, class #4479).
+- **Every early exit prints its own fail-closed line on stdout.** heal-ci's prose reads emptiness as a
+  positive answer in three places — an empty `--log-failed`, `rerun-markers=0`, `ROUNDS < 3` — and each
+  of those is the permissive branch. A read that *could not run* must therefore not arrive as the same
+  emptiness: **read the exit status before the stdout** (§ZS / ADR 0092, the #4231 / #4010 class).
+- **[`scripts/rerun-once.sh`](scripts/rerun-once.sh) owns the marker phrasing that
+  [`scripts/already-rerun.sh`](scripts/already-rerun.sh) greps for.** That paired contract is unchanged
+  by the move; it is now two files rather than two fences.
+
+**One block is deliberately still inline** — the repair-in-flight verdict resolution in Step 3, whose
+interior is being edited by open PR #4372 (the §CP-awareness `CP_FLAG` addition). Relocating a block
+another PR is editing is how an in-flight change gets silently dropped in a conflict resolution, so it
+waits for #4372; only its self-contained N=3 round count moved out
+([`scripts/repair-rounds.sh`](scripts/repair-rounds.sh)).
 
 ## What you do NOT do
 
@@ -69,21 +94,20 @@ once, up front, then use the vars in every command below:
 ```bash
 RUN=<run id>     # the failed run
 PR=<n>           # the PR, if this is a PR run (else leave unset)
-gh run view $RUN --log-failed
-# the job/step rollup, to know which job died (and its databaseId, for the fallback below)
-gh run view $RUN --json conclusion,headBranch,jobs \
-  --jq '{conclusion, headBranch, jobs: [.jobs[] | select(.conclusion=="failure") | {name, databaseId, steps: [.steps[] | select(.conclusion=="failure") | .name]}]}'
+# the failed logs, then the job/step rollup that names which job died (and its databaseId)
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/heal-ci/scripts/failed-logs.sh" "$RUN"
 ```
 
 If `--log-failed` returns nothing (it sometimes does — e.g. a bare `exit 1` with no
 annotated failed-step rows), fall back to the failed job's full log: take its `databaseId`
 from the rollup above and read the job log directly via the REST API, then grep/scope to the
 failed step's output. You must **always** be able to reach the actual log body to match the
-taxonomy — never stay stuck with only step names.
+taxonomy — never stay stuck with only step names. **Read the script's exit status before its
+emptiness**: a non-zero exit means the read never landed, which is not "no annotated failed steps".
 
 ```bash
 JOB=<failed job databaseId from the rollup above>
-gh api repos/$REPO/actions/jobs/$JOB/logs
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/heal-ci/scripts/job-log.sh" "$JOB"
 ```
 
 ### Entering from a PR — resolve the failing run over REST
@@ -94,49 +118,29 @@ from an earlier attempt can't send you at a run that has since gone green (#3762
 the head is genuinely red; exit 2 means it was **unreadable**, which is not "nothing is failing":
 
 ```bash
-CHECKS="${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/bin/pipeline-cli checks"
-CI_JSON="$($CHECKS read --pr "$PR" --expect red 2>/dev/null)"; rc=$?
-CONCLUSION="$(printf '%s' "$CI_JSON" | jq -r '.conclusion? // empty' 2>/dev/null)"
-case "$rc:$CONCLUSION" in
-  0:red)     ;;   # genuinely red — resolve the failing check's run below
-  1:green)   echo "heal-ci: head is green — nothing to classify"; exit 0 ;;
-  1:pending) ;;   # not red yet — take the running/wedged branch below
-  *)         echo "heal-ci: head CI unreadable — re-dispatch once the API answers; an unreadable head is not a green one (#3999)" >&2; exit 1 ;;
-esac
+# prints `CONTEXT=<name> JOB=<id> RUN=<id>` on exit 0. Exit 3 green · 4 pending · 5 not-an-Actions-check
+# · 1 unreadable. READ THE STATUS BEFORE THE STDOUT — an unreadable head is not a green one.
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/heal-ci/scripts/resolve-failing-run.sh" "$PR"
 ```
 
-**A pending head is two different facts, and only one of them is yours.** `.running` is genuinely
-in flight and settles on its own — there is no failure to classify yet, so stop and say so.
+One script, because the three fences this replaces shared a `$CI_JSON` that **never survived**: each
+agent shell invocation is a fresh process, so the second and third re-read an empty variable and the
+resolution was hand-stitched per call (epic #4435, story 1). The three facts it decides between:
+
+**A pending head (exit 4) is two different facts, and only one of them is yours.** `.running` is
+genuinely in flight and settles on its own — there is no failure to classify yet, so stop and say so.
 `.wedged` is stranded in the queue (`status: queued`, `started_at` still null): a run that never
 starts, so it has produced **no log body** to match the taxonomy against, and rerunning it is not
 the lever. Report the stranded contexts by name and stop — an operator, not a rerun, unwedges it.
 Collapsing the two is the defect #3999 removed from the merge gate; don't reintroduce it here.
 
-```bash
-jq -r '.running | join(", ")' <<<"$CI_JSON"   # still in flight — wait, don't classify
-jq -r '.wedged  | join(", ")' <<<"$CI_JSON"   # queued, never started — report, don't rerun
-```
-
-On a red head, take one failing context (one routed action per invocation) and resolve its run
-id. **For a GitHub Actions check run, the check-run `id` IS the Actions job id** — verified live
+On a red head the script takes one failing context (one routed action per invocation) and resolves its
+run id. **For a GitHub Actions check run, the check-run `id` IS the Actions job id** — verified live
 on this repo: check run `89736644366` reads back at `actions/jobs/89736644366` with
 `run_id: 30180715802`, the same pair its `details_url` spells out. So one REST hop yields both
-`JOB` (what the log fallback above needs) and `RUN`:
+`JOB` (what the log fallback above needs) and `RUN`.
 
-```bash
-FAILING="$(jq -r '.failing[0] // empty' <<<"$CI_JSON")"
-HEAD_SHA="$(gh api "repos/$REPO/pulls/$PR" --jq '.head.sha')"
-# The check-runs endpoint returns an object per page, so --slurp is what makes a busy head (>100
-# runs) parseable at all. Pick the latest run for the named context — later `started_at` wins,
-# ties fall back to the id — the same recency order the rollup used to name it.
-JOB="$(gh api --paginate --slurp "repos/$REPO/commits/$HEAD_SHA/check-runs?per_page=100" \
-  | jq -r --arg name "$FAILING" '[.[].check_runs[]
-      | select(.name == $name and .app.slug == "github-actions")]
-      | sort_by(.started_at // "", .id) | last | .id // empty')"
-RUN="$(gh api "repos/$REPO/actions/jobs/$JOB" --jq '.run_id')"
-```
-
-An empty `JOB` means the failing context is **not** a GitHub Actions check (a third-party app's
+**Exit 5** means the failing context is **not** a GitHub Actions check (a third-party app's
 check run has no Actions job and no log to read). Don't guess at it: file it via `report` as an
 unknown, naming the context, and stop.
 
@@ -145,11 +149,9 @@ the one-rerun rule hold across invocations (this skill is per-invocation memoryl
 but the run/PR state itself remembers a prior rerun). Read two facts:
 
 ```bash
-# 1) the run's own attempt count: a rerun bumps `attempt` to 2+
-ATTEMPT=$(gh run view $RUN --json attempt --jq '.attempt')
-# 2) a prior heal-ci rerun marker on the PR (if this is a PR run)
-gh api repos/$REPO/issues/$PR/comments --jq \
-  '[.[] | select(.body | test("heal-ci:.*rerun queued"))] | length'
+# prints `attempt=<n> rerun-markers=<n>`. A non-zero exit means a read did not land — UNKNOWN, and
+# UNKNOWN is never "not yet rerun". READ THE STATUS BEFORE THE NUMBERS.
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/heal-ci/scripts/already-rerun.sh" "$RUN" "$PR"
 ```
 
 **The one-rerun rule (canonical statement — every later step points here).** A flake gets
@@ -221,13 +223,13 @@ reads back (without it, the cross-invocation one-rerun rule rests only on `attem
 manual rerun can also bump):
 
 ```bash
-gh run rerun $RUN --failed
-# on a PR run, write the marker Step 1's already-rerun detector queries:
-gh api repos/$REPO/issues/$PR/comments \
-  -f body="heal-ci: <signature> — rerun queued (run $RUN). One rerun only; a recurring failure becomes a defect."
+# reruns the failed jobs, then — on a PR run — writes the marker Step 1's detector queries. Omit the
+# PR argument on a non-PR run. A failed rerun writes NO marker.
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/heal-ci/scripts/rerun-once.sh" \
+  "$RUN" "<signature>" "$PR"
 ```
 
-This marker string and Step 1's `test("heal-ci:.*rerun queued")` grep are a paired contract — change the phrasing here and you must update the matcher there (same discipline ship-it uses for its `review-code:` / `review-doc:` anchors).
+The marker string the script writes and Step 1's `test("heal-ci:.*rerun queued")` grep are a paired contract — change the phrasing in [`scripts/rerun-once.sh`](scripts/rerun-once.sh) and you must update the matcher in [`scripts/already-rerun.sh`](scripts/already-rerun.sh) (same discipline ship-it uses for its `review-code:` / `review-doc:` anchors).
 
 One rerun, then stop — see the canonical one-rerun rule in Step 1 for why this holds across
 invocations (the `attempt` bump + the marker you just posted are what a later invocation reads).
@@ -250,8 +252,8 @@ attempt may have been a *human/manual* rerun, not heal-ci's, so triage shouldn't
 **Guard first — if a repair is already in flight on this PR, route to it, don't file a twin.**
 This is the one branch in the routing decision before defect-filing, and it only applies to a
 **PR run** (`PR` is set; a non-PR run has no repair to collide with — skip straight to filing).
-`heal-ci`'s defect branch and `write-code`'s FAIL-round-trip repair (`write-code/SKILL.md`,
-Repair mode) fire off **different signals** — a red CI run here, a `review-(code|doc): FAIL`
+`heal-ci`'s defect branch and `write-code`'s FAIL-round-trip repair
+([`write-code/repair.md`](../write-code/repair.md)) fire off **different signals** — a red CI run here, a `review-(code|doc): FAIL`
 marker there — so neither sees the other. The `report` dedup you delegate to searches **open
 issues**; it cannot see an in-flight repair, which lives as an **open PR + a FAIL marker**, not
 an issue. So before filing, check for that repair yourself and, if present, comment-and-stop
@@ -260,7 +262,7 @@ fixing (issue #265).
 
 An **active repair** is detectable from PR state alone — statelessly, the same way the
 already-rerun guard (Step 1) reads the run/PR state, and the **same verdict-resolution
-`write-code` already does in its repair-mode scan** ([`write-code/SKILL.md`](../write-code/SKILL.md)
+`write-code` already does in its repair-mode scan** ([`write-code/repair.md`](../write-code/repair.md)
 Step R1). That contract is the floor here: the guard may suppress the twin **only** when
 `write-code` would actually pick the repair up — so it must resolve the verdict the *exact* way
 write-code does, or it would skip the defect on a FAIL write-code will no-op, dropping the
@@ -289,74 +291,12 @@ re-deriving the resolver write-code once hand-copied, and keeps only the two thi
   the same round identity write-code uses) and treats a capped PR as fall-through-and-file.
 
 ```bash
-# is a write-code repair already in flight on this PR? (PR runs only) — resolve the verdict the
-# EXACT way write-code Step R1 does, by delegating each (PR, gate) FAIL-bound-to-head resolution to
-# `pipeline-cli verdict read` (ACL author-gate + latest-wins + SHA-staleness, ADR 0055/0058). Resolve
-# the CLI via the `bin/pipeline-cli` shim — in-repo bin, else the installed bin, else the pinned
-# `pnpm dlx` fallback reading the one pin (hooks/pin.sh); no version pinned here (#3653; ADR 0062/0064).
-VERDICT="${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/bin/pipeline-cli verdict"
-
-# a namespace is an active-repair FAIL iff its latest authorized verdict is FAIL bound to the current
-# head — exit 0 from `verdict read … --expect FAIL`. A stale / SHA-less / PASS / none verdict exits
-# non-zero, so it is correctly NOT an active repair, matching write-code's no-op on it.
-CODE_FAIL_JSON="$($VERDICT read --pr "$PR" --gate code --expect FAIL 2>/dev/null)" && CODE_FAIL=1 || CODE_FAIL=0
-DOC_FAIL_JSON="$($VERDICT  read --pr "$PR" --gate doc  --expect FAIL 2>/dev/null)" && DOC_FAIL=1  || DOC_FAIL=0
-
-# UNRESOLVED ≠ "no FAIL". The verb prints its outcome JSON on BOTH exit paths, so absent JSON means the
-# namespace never resolved (a transport/5xx failure). Reading that as "no repair in flight" would file
-# a twin defect against a live repair — so treat it as UNKNOWN and defer this invocation.
-VERDICT_UNKNOWN=0
-for J in "$CODE_FAIL_JSON" "$DOC_FAIL_JSON"; do jq -e . >/dev/null 2>&1 <<<"$J" || VERDICT_UNKNOWN=1; done
-
-# the native decisive review folds into the code namespace (the verb reads only marker comments), by
-# NEWEST-WRITTEN wins — the same fold ship-it Step 2 / write-code R1 run. `at: .submitted_at` is what
-# the compare reads (a review is never upserted, so it IS the review's write time); a bare
-# "CHANGES_REQUESTED ⇒ CODE_FAIL=1" would report a repair in flight on a PR whose newer marker already
-# PASS'd at the same head, suppressing a defect that should be filed.
-CURRENT_HEAD="$(gh api repos/$REPO/pulls/$PR --jq .head.sha)"
-REVIEW=$(gh api "repos/$REPO/pulls/$PR/reviews?per_page=100" \
-  --jq '[.[] | select(.state=="APPROVED" or .state=="CHANGES_REQUESTED")]
-        | sort_by(.submitted_at) | last | {state, sha: .commit_id, at: .submitted_at}')
-RSTATE=$(jq -r '.state // ""' <<<"$REVIEW"); RSHA=$(jq -r '.sha // empty' <<<"$REVIEW")
-RAT=$(jq -r '.at // ""' <<<"$REVIEW")
-# `_tag == "current"` is exactly "a current-head marker verdict stands"; the verb's `writtenAt` is the
-# WRITE time the compare needs — never the comment's created_at, which an in-place upsert leaves at the
-# slot's open time and which would let a review wrongly out-rank a later-written marker (#4200).
-MARKER_AT=""
-[ "$(jq -r '._tag // ""' <<<"$CODE_FAIL_JSON" 2>/dev/null)" = "current" ] &&
-  MARKER_AT=$(jq -r '.writtenAt // empty' <<<"$CODE_FAIL_JSON" 2>/dev/null)
-if [ -n "$RSHA" ] && [ -n "$RAT" ]; then case "$CURRENT_HEAD" in "$RSHA"*)
-  # ISO-8601-UTC sorts lexically, so `>` IS the chronological compare.
-  if [ -z "$MARKER_AT" ] || [ "$RAT" \> "$MARKER_AT" ]; then
-    [ "$RSTATE" = "CHANGES_REQUESTED" ] && CODE_FAIL=1 || CODE_FAIL=0
-  fi
-;; esac; fi
-
-# the N=3 repair cap `verdict read` does NOT count: a PR already at 3 FAIL rounds is escalated to a
-# human, NOT an active repair. Author-gate the FAIL markers to write+ collaborators (ADR 0055) and
-# cluster by >120s gap — the same round identity write-code uses.
-comments_file=$(mktemp)
-gh api "repos/$REPO/issues/$PR/comments?per_page=100" > "$comments_file"
-markerAuthors=$(jq -r '[.[]
-    | select(.body | test("^\\s*\\**\\s*review-(code|doc):\\s*(PASS|FAIL)"; "i"))
-    | .user.login] | unique | .[]' "$comments_file")
-authorized='[]'
-while IFS= read -r a; do
-  [ -z "$a" ] && continue
-  perm=$(gh api "repos/$REPO/collaborators/$a/permission" --jq .permission 2>/dev/null)
-  case "$perm" in
-    admin|maintain|write) authorized=$(jq -c --arg a "$a" '. + [$a]' <<<"$authorized") ;;
-  esac
-done <<<"$markerAuthors"
-ROUNDS=$(jq --argjson authorized "$authorized" \
-  '[.[] | select(.user.login | IN($authorized[]))
-        | select(.body | test("^\\s*\\**\\s*review-(code|doc):\\s*FAIL"; "i"))
-        | .created_at | sub("\\..*Z$";"Z") | fromdateiso8601]
-   | sort
-   | reduce .[] as $t ({n:0, prev:null};
-       if (.prev == null) or ($t - .prev) > 120
-       then {n:(.n+1), prev:$t} else {n:.n, prev:$t} end)
-   | .n' "$comments_file")
+# is a write-code repair already in flight on this PR? (PR runs only) — the script resolves each
+# namespace's verdict the EXACT way write-code Step R1 does, and keeps the two things
+# `pipeline-cli verdict read` does not do (the native-review fold, the N=3 round count).
+# It prints `VERDICT_UNKNOWN=`, `CODE_FAIL=`, `DOC_FAIL=` and `ROUNDS=` on stdout; a non-zero exit
+# means it produced NO answer, which is UNKNOWN and never "no repair in flight" (§ZS / ADR 0092).
+bash ./claude-plugins/kampus-pipeline/skills/heal-ci/scripts/active-repair.sh "$PR" || exit 1
 ```
 
 If `VERDICT_UNKNOWN=1` the verdict never resolved (a GitHub read failure, not a verdict) — **defer
@@ -374,8 +314,8 @@ with the `Filed #N` comment the no-repair path posts, but routed to the in-fligh
 of a fresh issue — and stop. That comment *is* your one routed action for this invocation:
 
 ```bash
-gh api repos/$REPO/issues/$PR/comments \
-  -f body="heal-ci: CI red — <signature>. Active write-code repair in flight (latest gate verdict FAIL); not filing a twin. Run <run url> — fold into the in-flight fix."
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/heal-ci/scripts/comment-active-repair.sh" \
+  "$PR" "<signature>" "<run url>"
 ```
 
 Report: `defect: <signature> — active repair on #$PR, routed (no twin filed)`. Otherwise — no
@@ -406,8 +346,9 @@ that real number — never post the `Filed #<N>` line with an unresolved `<N>` p
 
 ```bash
 N=<the .number report returned>
-gh api repos/$REPO/issues/$PR/comments \
-  -f body="heal-ci: CI red — <signature>. Filed #$N (needs-triage). Not merged."
+# refuses a non-numeric N, so the `Filed #<N>` line can never post with an unresolved placeholder
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/heal-ci/scripts/comment-filed.sh" \
+  "$PR" "$N" "<signature>"
 ```
 
 ### Unknown → file via `report`, flagged unknown

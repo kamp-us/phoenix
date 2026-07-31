@@ -131,6 +131,24 @@ describe("judge — the every-agent-type-is-classified decision", () => {
 		expect(judge(currentInput()).pass).toBe(true);
 	});
 
+	it("classifies the intake-desk's review-plan reviewer as allowed, not out of scope (#4445)", () => {
+		// The intake-desk fires `review-plan` over the ledger it just planned (founder directive,
+		// 2026-07-29). The table is agent-granular, so the review-plan-only scoping lives in the
+		// seat's charter prose — here we pin only what the guard can check: `reviewer` allowlisted
+		// and OFF the out-of-scope table for this one bridge.
+		expect(BRIDGE_ALLOWLIST["crew-intake-desk"]).toContain("reviewer");
+		expect(BRIDGE_OUT_OF_SCOPE["crew-intake-desk"]).not.toContain("reviewer");
+		// the build drain stays off the seat — the exception is the gate, not the pipeline
+		for (const buildAgent of ["coder", "shipper", "crew-engineering-manager"]) {
+			expect(BRIDGE_OUT_OF_SCOPE["crew-intake-desk"]).toContain(buildAgent);
+		}
+		// the other two bridges are untouched: no bridge but the intake-desk may spawn `reviewer`
+		expect(BRIDGE_OUT_OF_SCOPE["crew-cartographer"]).toContain("reviewer");
+		expect(BRIDGE_OUT_OF_SCOPE["crew-chief-of-staff"]).toContain("reviewer");
+		// classification stays total with reviewer moved across
+		expect(judge(currentInput()).pass).toBe(true);
+	});
+
 	it("fails closed on zero roster and on zero bridges (ADR 0092)", () => {
 		expect(judge({rosterAgents: [], bridges: [CARTOGRAPHER, CHIEF, INTAKE]})).toMatchObject({
 			pass: false,

@@ -106,6 +106,22 @@ const SELF_EXEMPT_SUFFIXES = [
 	"/skills/write-code/SKILL.md",
 	"/skills/review-code/SKILL.md",
 	"/skills/ship-it/SKILL.md",
+	// The two halves of ship-it/SKILL.md that #4448 moved into sourced scripts, and the only two
+	// that carry a named pattern: Step 3.6's ADR-0158 §Decision-2 sanctioned GraphQL read, and Step
+	// 3z's comment FORBIDDING `gh pr edit` next to the REST close/reopen it mandates instead. Both
+	// were already exempt as part of the markdown, so this continues one file's exemption at the
+	// same whole-file granularity — deliberately NOT a `scripts/` directory-wide exemption, which
+	// would silently exempt every future extracted script from a live lint.
+	"/skills/ship-it/scripts/step3_6-threads-read.sh",
+	"/skills/ship-it/scripts/step3z-dropped-trigger.sh",
+	// review-code's half of the same ADR-0158 sanctioned read, extracted by #4451. Same per-script
+	// granularity, same reason.
+	"/skills/review-code/scripts/unresolved-threads-read.sh",
+	// Same class, same granularity: #4404 moved write-code/SKILL.md's repair mode into repair.md,
+	// carrying the line that FORBIDS `gh pr edit` next to the REST PATCH it mandates instead. The
+	// text is byte-identical to its pre-move address — only the file changed, so its exemption
+	// follows it, still per-file and never a `write-code/`-wide exemption.
+	"/skills/write-code/repair.md",
 	"/skills/gh-issue-intake-formats.md",
 	"/packages/pipeline-cli/src/tools/gh-phoenix/README.md",
 ] as const;

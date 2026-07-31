@@ -46,11 +46,31 @@ Resolve `$REPO` the repo-agnostic way the rest of the pipeline does (ADR
 [0062](https://github.com/kamp-us/phoenix/blob/main/.decisions/0062-repo-agnostic-pipeline.md)):
 
 ```bash
-REPO="${CLAUDE_PIPELINE_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}"
+REPO="$("${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/campaign/scripts/resolve-repo.sh")" || exit 1
 ```
 
 All GitHub reads/writes below go through **`gh api` REST** — never GraphQL (the org's
 Projects-classic integration errors GraphQL issue/PR queries, the standing pipeline constraint).
+
+## The extracted scripts
+
+This skill's shell lives in [`scripts/`](scripts/), and each fenced block is an **invocation** of
+one; the prose keeps the *why* (epic #4435 phase 1 — the shell moved as-is, and turning its glue into
+tested `pipeline-cli` verbs is #1929). They set `set -uo pipefail`, deliberately not `-e`: the moved
+glue steers its own control flow, and `errexit` would abort a fail-closed branch — the trace refusal
+above all — before it printed its refusal. Two notes:
+
+- **The founder login is an argument, never a default.** [`scripts/verify-trace.sh`](scripts/verify-trace.sh)
+  takes it positionally and refuses an empty one, so the authorization anchor can never degrade into
+  an implicit login.
+- **The ROADMAP.md branch + edit + commit stay in the prose.** Only the PR-open half is a script
+  ([`scripts/open-roadmap-pr.sh`](scripts/open-roadmap-pr.sh)). A script that ran `git switch -c`
+  would mutate whichever checkout the caller happened to be sitting in — a footgun the extraction
+  would have *introduced* rather than moved.
+- **A zero-length listing is an exit code, not silence.** [`scripts/list-wave.sh`](scripts/list-wave.sh)
+  exits 4 on a label naming zero issues and 1 on a read that never landed, because "no members" is the
+  permissive-looking answer and must never be what a failed read looks like (§ZS / ADR 0092). Read the
+  exit status before the lines.
 
 ## Preconditions — the wave label, the lifecycle direction, the campaign name
 
@@ -61,8 +81,9 @@ You need three inputs before the ritual:
 
    ```bash
    WAVE_LABEL="<the shared wave label>"
-   gh api -X GET "repos/$REPO/issues" -f "labels=$WAVE_LABEL" -f state=all -f per_page=100 --paginate \
-     --jq '.[] | select(.pull_request | not) | "#\(.number)\t\(.state)\t\(.title)"'
+   # one `#<n>\t<state>\t<title>` line per member. Exit 4 = the label names ZERO issues (no wave);
+   # exit 1 = the read never landed, which is UNKNOWN and never an empty cluster.
+   "${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/campaign/scripts/list-wave.sh" "$WAVE_LABEL"
    ```
 
 2. **The lifecycle direction — `active` (create) or `done` (complete).** Default is `active`
@@ -84,9 +105,7 @@ every other input (absent, malformed, non-founder author, zero scope) exits non-
 [0092](https://github.com/kamp-us/phoenix/blob/main/.decisions/0092-gates-fail-closed-on-zero-scope.md)):
 
 ```bash
-cd packages/pipeline-cli
-node src/bin.ts campaign verify-trace "$WAVE_LABEL" --founder "$FOUNDER" \
-  || { echo "campaign: REFUSED — no valid founder-approval trace for '$WAVE_LABEL'. The wave stays un-recorded." >&2; exit 1; }
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/campaign/scripts/verify-trace.sh" "$WAVE_LABEL" "$FOUNDER" || exit 1
 ```
 
 The trace the verifier requires is a **founder-authored comment**, on any issue carrying the wave
@@ -113,7 +132,7 @@ product arc:
   milestone for this wave, attach to it. List open milestones and match by title/description:
 
   ```bash
-  gh api "repos/$REPO/milestones?state=all&per_page=100" --jq '.[] | "#\(.number)\t\(.state)\t\(.title)"'
+  "${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/campaign/scripts/list-milestones.sh"
   ```
 
 - **Otherwise provision the campaign's own milestone** — the roadmap act the founder approval
@@ -121,20 +140,16 @@ product arc:
   milestone):
 
   ```bash
-  MILESTONE_NUMBER=$(gh api -X POST "repos/$REPO/milestones" \
-    -f "title=<Campaign name> campaign" \
-    -f "description=<one-line campaign scope> (bounded, platform-lane drained)." \
-    --jq .number)
+  MILESTONE_NUMBER="$("${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/campaign/scripts/create-milestone.sh" \
+    "<Campaign name> campaign" \
+    "<one-line campaign scope> (bounded, platform-lane drained).")" || exit 1
   ```
 
 Then **stamp the milestone on every wave-labeled issue** so the milestone projection matches the
 cluster (the milestone is set per-issue via the issue-edit endpoint):
 
 ```bash
-for N in $(gh api -X GET "repos/$REPO/issues" -f "labels=$WAVE_LABEL" -f state=all -f per_page=100 --paginate \
-    --jq '.[] | select(.pull_request | not) | .number'); do
-  gh api -X PATCH "repos/$REPO/issues/$N" -F "milestone=$MILESTONE_NUMBER" >/dev/null
-done
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/campaign/scripts/home-wave.sh" "$WAVE_LABEL" "$MILESTONE_NUMBER"
 ```
 
 **Assignments.** Record who owns the campaign's drain if the founder named owners (assign the wave
@@ -152,11 +167,7 @@ campaign runs alongside whichever arc is active). Swap any existing `p0`/`p2` fo
 wave issue:
 
 ```bash
-for N in $(gh api -X GET "repos/$REPO/issues" -f "labels=$WAVE_LABEL" -f state=all -f per_page=100 --paginate \
-    --jq '.[] | select((.pull_request | not) and .state=="open") | .number'); do
-  for P in p0 p2; do gh api -X DELETE "repos/$REPO/issues/$N/labels/$P" >/dev/null 2>&1; done
-  gh api -X POST "repos/$REPO/issues/$N/labels" -f "labels[]=p1" >/dev/null
-done
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/campaign/scripts/normalize-priority.sh" "$WAVE_LABEL"
 ```
 
 Only open issues need re-pricing — a closed wave issue has already drained and its priority is
@@ -188,13 +199,14 @@ never the primary):
 
 Open the PR against the wave's tracking issue so it closes on merge:
 
+1. Branch off fresh `main` **in your worktree**:
+   `git switch -c "<prefix>/campaign-<wave-label>-<active|done>" origin/main`.
+2. Edit ROADMAP.md's `## Campaigns` table and commit ROADMAP.md **by explicit path**.
+3. Open the PR:
+
 ```bash
-git switch -c "<prefix>/campaign-<wave-label>-<active|done>" origin/main   # branch off fresh main in your worktree
-# edit ROADMAP.md's ## Campaigns table, commit ROADMAP.md by explicit path
-gh api -X POST "repos/$REPO/pulls" \
-  -f "title=roadmap: record <Campaign name> campaign (<active|done>)" \
-  -f "head=<branch>" -f "base=main" \
-  -f "body=Records the <Campaign name> audit wave (\`$WAVE_LABEL\`) as a bounded campaign — milestone #<MILESTONE_NUMBER>, p1, platform-lane drained. Founder-approval trace verified. Fixes #<tracking-issue>."
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/campaign/scripts/open-roadmap-pr.sh" \
+  "<Campaign name>" "<active|done>" "<branch>" "$WAVE_LABEL" "<MILESTONE_NUMBER>" "<tracking-issue>"
 ```
 
 The PR keeps `roadmap-guard` green **by construction**: creating a campaign adds a row that
@@ -222,7 +234,8 @@ run the **same gate** (Step 1), so completing a campaign is exactly as guarded a
   2. **Close the milestone** — the operational projection of a finished campaign:
 
      ```bash
-     gh api -X PATCH "repos/$REPO/milestones/$MILESTONE_NUMBER" -f state=closed >/dev/null
+     "${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/campaign/scripts/close-milestone.sh" \
+       "$MILESTONE_NUMBER" || exit 1
      ```
   3. **Flip the ROADMAP row to `done`** in a Campaigns-row PR (Step 4, `done` variant) — the row's
      `State` cell goes `active → done`, keeping the milestone pin.

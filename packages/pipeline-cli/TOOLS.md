@@ -212,13 +212,19 @@ node packages/pipeline-cli/src/bin.ts intake-dedup check --query "<title + keywo
 
 ### `leak-guard` — personal-data leak gate for shared artifacts (#173, #2357, #2796, #3019)
 
-Four verbs over the shared deny-list-per-surface core (`findLeaks` for doc files, the stricter
-`findCommentLeaks` for comment bodies):
+Four verbs over the shared deny-list-per-surface core (`findLeaks` for committed files, the
+stricter `findCommentLeaks` for comment bodies):
 
 - **`leak-guard scan <file>…`** — the changed-file gate (#173): reports any user-local
-  filesystem path leaking into a shared **doc surface** (`.md`, `.decisions/`, `.patterns/`),
-  exit 2 on a hit. CI hands it every changed file; the core (`findLeaks`) self-scopes to doc
-  surfaces.
+  filesystem path leaking into a shared artifact, exit 2 on a hit. CI hands it every changed
+  file; the core (`findLeaks`) self-scopes to **two surfaces** — `doc` (`.md`/`.mdx`/
+  `.markdown`, plus anything under `.decisions/`/`.patterns/`) and `shell` (`.sh`, scanned
+  whole, comments included). The shell surface exists because the doc-only scoping's premise
+  expired: epic #4435 extracts pipeline shell out of markdown fences into standalone scripts,
+  so the bytes this gate used to scan were walking off it one merge at a time (#4496).
+  `.ts`/`.yml`/`.json`/`.toml` stay out of scope by design — that premise still holds. The verb
+  prints its **per-surface scope** on stdout before the verdict (ADR 0092 §1), so a surface
+  that silently stops contributing is legible instead of indistinguishable from clean.
 - **`leak-guard scan-comment [--body-file <f>]`** — the pre-post net for a single PR/issue
   **comment body** (stdin or `--body-file`, #2796): a comment is unconditionally a public
   artifact, so `findCommentLeaks` runs with no doc-surface gate and stricter temp-root
@@ -242,8 +248,8 @@ Four verbs over the shared deny-list-per-surface core (`findLeaks` for doc files
   false-positive-prone).
 
 ```bash
-# changed-file doc-surface scan (exit 2 on a leak)
-node packages/pipeline-cli/src/bin.ts leak-guard scan path/to/file.md
+# changed-file scan over both surfaces — doc and shell (exit 2 on a leak)
+node packages/pipeline-cli/src/bin.ts leak-guard scan path/to/file.md path/to/script.sh
 
 # scan a PR's landed comments (issue + review) — the ship-it pre-enqueue preflight (exit 2 on a leak)
 node packages/pipeline-cli/src/bin.ts leak-guard scan-pr 123
@@ -599,7 +605,7 @@ The machine-readable substrate the `wayfinder` skill's fog-graduation and emissi
 read instead of prose-guessing a map's state. A `wayfinder:map` issue is the ideation-layer
 map that sits upstream of the execution pipeline; its body carries four canonical sections
 (`## Destination` / `## Decisions-so-far` / `## Open frontier` / `## Graduated fog`), defined
-once in the [formats contract](../../claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md).
+once in the [map-shape contract](../../claude-plugins/kampus-pipeline/skills/shared/wayfinder-map-issue-shape.md).
 This tool parses that body into `{destination, decisionsSoFar, openFrontier, graduatedFog}`,
 validates it against a structural floor (the epic-ledger idiom: a closed defect enum, sorted
 deterministically), and exposes a **graduation-readiness** predicate — is the open frontier

@@ -1,7 +1,7 @@
 ---
 id: 0174
 title: "ACCEPTED — Gate-critical bare `.sh` guards under `skills/` are control-plane (broaden `CONTROL_PLANE_RE` to `skills/[^/]+\\.sh$`)"
-status: accepted
+status: amended-in-part by [0227](0227-kampus-pipeline-skills-tree-is-control-plane.md)
 date: 2026-07-11
 tags: [pipeline, control-plane, security]
 ---
