@@ -8,9 +8,11 @@
 # hand-rolled $RUN_SCRATCH derivation duplicates `kp_scratch_path` (the plugin lib/common.sh), and
 # collapsing it onto that helper is phase 2's call.
 #
-# SOURCED, never executed: it reads the $N / $PR / $WT and the `claim_is_mine` + `wt_preflight`
-# functions the earlier steps left in this shell. WRITE "$RUN_SCRATCH/repair-progress.md" BEFORE
-# sourcing this. Sets NO shell options; no EXIT trap (#4476, class #4479).
+# SOURCED, never executed: it reads the $N / $PR / $WT the earlier steps left in this shell, plus
+# `claim_is_mine` (Step 3.5's script) and `wt_preflight` (the lib sourced below, which is why that
+# guard lives there and not in the EXECUTED `step4-wt-preflight.sh` — #4449). WRITE
+# "$RUN_SCRATCH/repair-progress.md" BEFORE sourcing this. Sets NO shell options; no EXIT trap
+# (#4476, class #4479).
 . "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
 
 # §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).

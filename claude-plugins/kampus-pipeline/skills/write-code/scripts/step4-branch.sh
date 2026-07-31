@@ -8,10 +8,11 @@
 # (#1929).
 #
 # SOURCED, never executed. $BRANCH and $PREFIX must land in the sourcing shell exactly as the inline
-# block left them, so this file sets NO shell options. It calls `wt_preflight`, which SKILL.md's
-# per-mutation-preflight blockquote defines in that same shell — sourcing (not executing) is what
-# keeps that function reachable. No EXIT trap: under bash 3.2 a cleanup trap's last command becomes
-# the script's status, laundering a `set -u` abort into exit 0 (#4476, class #4479).
+# block left them, so this file sets NO shell options. It calls `wt_preflight`, which the lib sourced
+# below defines — sourcing (not executing) is what keeps that function reachable, which is why the
+# guard lives in the lib and not in the EXECUTED `step4-wt-preflight.sh` (#4449). No EXIT trap: under
+# bash 3.2 a cleanup trap's last command becomes the script's status, laundering a `set -u` abort
+# into exit 0 (#4476, class #4479).
 . "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
 
 # The one seam this move needed: the block's `<slug-for-issue-N>` metavariable was substituted by
