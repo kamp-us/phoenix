@@ -45,7 +45,7 @@ sources.** `packages/pipeline-cli/src/skill-shell-surface.ts` owns that resoluti
 
 - **Slice on the pristine markdown, then append** the followed scripts. Inlining *before* the slice
   lets a script that emits markdown from a heredoc carry a `## ` line that truncates the section.
-- **Sibling-scoped**, never the whole plugin tree: `shared/lib/*.sh` is a library many skills call,
+- **Sibling-scoped**, never the whole plugin tree: the plugin `lib/*.sh` is a library many skills call,
   so folding it into every caller's surface lets one shared half-procedure satisfy every skill's own
   rule (the same scoping `kp_skill_shell_surfaces` chose, #4470).
 - **Scope by demonstrated dependency, not directory membership** — and keep the widening on the one

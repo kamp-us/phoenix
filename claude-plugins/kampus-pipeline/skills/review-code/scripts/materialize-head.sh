@@ -11,8 +11,8 @@
 # caller's `.` then fails loudly rather than sourcing a half-written handle (§ZS: a materialization
 # that could not run is UNKNOWN, and reviewing the BASE tree is the #793 false-PASS hazard).
 set -uo pipefail
-# shellcheck source=../../shared/lib/common.sh disable=SC1007,SC1091
-. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../shared/lib" && pwd)/common.sh"
+# shellcheck source=../../../lib/common.sh disable=SC1007,SC1091
+. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
 # §RO-iso's `iso_preflight`, sourced from its canonical home rather than re-copied (#4489 extracted
 # it out of ../../gh-issue-intake-formats.md).
 # shellcheck source=../../shared/scripts/iso-preflight.sh disable=SC1007,SC1091

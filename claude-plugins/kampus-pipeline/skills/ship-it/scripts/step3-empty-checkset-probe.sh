@@ -9,7 +9,7 @@
 # file deliberately sets NO shell options — several guards here depend on `pipefail` being OFF —
 # and leaves its variables and functions in the sourcing shell, which is how the step's later
 # blocks still see them.
-. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../shared/lib" && pwd)/common.sh"
+. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
 
 HEAD_SHA=$(gh api repos/$REPO/pulls/$PR --jq '.head.sha')
 # (a) Does this repo run Actions at all? A CI-less / foreign repo's empty check set is genuine,

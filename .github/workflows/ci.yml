@@ -597,8 +597,10 @@ jobs:
       # Executable pin for the shared surface resolver both cycle validators consume: a
       # partially-failing `find` must not hand them a silently narrowed — but non-empty —
       # surface that their zero-scope guard reads as complete (#4487).
-      # Same script runs locally: `bash .claude/skills/shared/lib/common-test.sh`.
-      - run: bash .claude/skills/shared/lib/common-test.sh
+      # The lib sits beside `bin/`, outside the skills tree, so this path is the real one rather
+      # than a `.claude/skills/…` symlink hop (#4484).
+      # Same script runs locally: `bash claude-plugins/kampus-pipeline/lib/common-test.sh`.
+      - run: bash claude-plugins/kampus-pipeline/lib/common-test.sh
 
       # Executable pin for ship-it's sourced chain (#4547): every function a step script
       # calls must be defined in-chain, and Step 2's §CP seam must pass the caller's

@@ -57,15 +57,15 @@ echo "scope: $# step script(s) under skills/ship-it/scripts, SKILL.md at skills/
 # ---------------------------------------------------------------------------------------------
 # 1. STATIC — every cross-file call resolves in-chain
 # ---------------------------------------------------------------------------------------------
-# The candidate names are the CROSS-FILE helper surface: everything defined in shared/lib,
-# shared/scripts, or a ship-it step script. A name defined only inside the file that calls it is
+# The candidate names are the CROSS-FILE helper surface: everything defined in the plugin lib/,
+# skills/shared/scripts, or a ship-it step script. A name defined only inside the file that calls it is
 # reachable by construction and needs no check; names from unrelated skills are out of scope, and
 # including them would match prose words (`fail`, `check`, `ok`) inside message strings.
 defs_in() { grep -oE '^[a-zA-Z_][a-zA-Z0-9_]*\(\)' "$1" 2>/dev/null | sed 's/()$//'; }
 
 CANDIDATES="$TMP/candidates"
 : > "$CANDIDATES"
-for f in "$SKILLS"/shared/lib/*.sh "$SKILLS"/shared/scripts/*.sh "$DIR"/*.sh; do
+for f in "$SKILLS"/../lib/*.sh "$SKILLS"/shared/scripts/*.sh "$DIR"/*.sh; do
 	[ -f "$f" ] || continue
 	# `verify-*` / `*-test.sh` are harnesses, not helper surface: their private `ok`/`fail`
 	# assertion shims are not names a step script could ever be calling.

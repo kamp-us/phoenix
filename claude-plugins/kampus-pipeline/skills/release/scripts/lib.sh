@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # release-only helpers. Sourced, never executed: it defines functions and sets no shell options, so
 # the sourcing script keeps its own `set -uo pipefail`. This lives HERE and not in
-# ../../shared/lib/common.sh because only this skill needs it — anka-ops is the flag lever, and no
+# ../../../lib/common.sh because only this skill needs it — anka-ops is the flag lever, and no
 # other skill touches it.
 
 # Absolute path to the anka-ops package. The moved blocks all opened with a bare

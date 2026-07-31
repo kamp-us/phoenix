@@ -11,7 +11,7 @@
 # shell, which is how the steps after it still see them. No EXIT trap: under bash 3.2 a cleanup
 # trap's last command becomes the script's status, laundering a `set -u` abort into exit 0 (#4476,
 # class #4479).
-. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../shared/lib" && pwd)/common.sh"
+. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
 
 # p0 first; only fall through to p1, then p2 if a bucket is empty of unassigned issues
 for P in p0 p1 p2; do

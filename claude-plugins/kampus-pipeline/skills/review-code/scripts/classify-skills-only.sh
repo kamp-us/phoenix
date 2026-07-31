@@ -12,8 +12,8 @@
 # read needs no separate sentinel: gh writes its error document to STDOUT, so a failed read leaves a
 # non-`skills/`-prefixed line in `$OFFCLASS` and the predicate correctly refuses the off-ramp.
 set -uo pipefail
-# shellcheck source=../../shared/lib/common.sh disable=SC1007,SC1091
-. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../shared/lib" && pwd)/common.sh"
+# shellcheck source=../../../lib/common.sh disable=SC1007,SC1091
+. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
 # §WL's `kp_wl_all_onclass` — the empty-output form of "every changed path is under skills/ or
 # agents/", sourced from its canonical home rather than re-copied (#4489 extracted it out of
 # ../../gh-issue-intake-formats.md). Never `! grep -qv`: a false-true there `exit 0`s the code gate

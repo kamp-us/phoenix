@@ -10,7 +10,7 @@
 # `claim_is_mine` reads it. Sets NO shell options; no EXIT trap (under bash 3.2 a cleanup trap's
 # last command becomes the script's status, laundering a `set -u` abort into exit 0 — #4476, class
 # #4479). The `:` fail-closed refusal below IS this file's contract, so nothing may swallow it.
-. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../shared/lib" && pwd)/common.sh"
+. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
 
 # the claim token this run owns work under: the orchestrator's threaded delegated token if it
 # pre-claimed, else my own session id (the direct-path Step-3 self-claim). Fail-closed: with

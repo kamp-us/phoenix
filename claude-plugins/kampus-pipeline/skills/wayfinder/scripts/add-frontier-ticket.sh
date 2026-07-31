@@ -14,8 +14,8 @@
 # Extracted from wayfinder/SKILL.md (#4454, epic #4435 phase 1). Extraction contract +
 # shell-option rationale: ../SKILL.md § The extracted scripts.
 set -uo pipefail
-# shellcheck source=../../shared/lib/common.sh disable=SC1007,SC1091
-. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../shared/lib" && pwd)/common.sh"
+# shellcheck source=../../../lib/common.sh disable=SC1007,SC1091
+. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
 
 [ "$#" -ge 3 ] || { echo "wayfinder: add-frontier-ticket.sh needs <map-issue> <title> <type-label> — NO ticket was filed."; echo "usage: add-frontier-ticket.sh <map-issue> \"<title>\" <type:investigation|type:decision> < body.md" >&2; exit 2; }
 MAP="$1"

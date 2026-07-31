@@ -14,7 +14,7 @@
 # leaves its variables in the sourcing shell. No EXIT trap: under bash 3.2 a cleanup trap's last
 # command becomes the script's status, laundering a `set -u` abort into exit 0 (#4476, class #4479),
 # and this preflight's whole contract is its EXIT STATUS.
-. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../shared/lib" && pwd)/common.sh"
+. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
 
 # fail closed unless we're in a LINKED git worktree (not the primary checkout)
 GITDIR="$(git rev-parse --absolute-git-dir 2>/dev/null)" || {

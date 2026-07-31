@@ -8,7 +8,7 @@
 # SOURCED, never executed, for consistency with every other step here — its output is read off
 # stdout, not out of a variable. Sets NO shell options: `pipefail` being OFF is what lets the moved
 # `|| echo "(no checkbox ACs …)"` fallback fire. No EXIT trap (#4476, class #4479).
-. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../shared/lib" && pwd)/common.sh"
+. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
 
 # The one seam this move needed: the block's `<N>` metavariable was substituted by whoever ran the
 # step, so the sourcing site passes it instead. Fail closed on an absent one — with no number the

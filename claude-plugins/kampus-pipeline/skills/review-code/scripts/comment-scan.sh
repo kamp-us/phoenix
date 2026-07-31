@@ -9,8 +9,8 @@
 # to stdout after the scope line: the fence left them in `$ADDED_ON_CODE` for the reviewer to read,
 # and a script boundary has no shell variable to hand back.
 set -uo pipefail
-# shellcheck source=../../shared/lib/common.sh disable=SC1007,SC1091
-. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../shared/lib" && pwd)/common.sh"
+# shellcheck source=../../../lib/common.sh disable=SC1007,SC1091
+. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
 
 [ "$#" -ge 1 ] || { echo "usage: comment-scan.sh <pr>" >&2; exit 2; }
 PR="$1"

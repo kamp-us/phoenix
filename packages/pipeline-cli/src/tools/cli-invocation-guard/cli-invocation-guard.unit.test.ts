@@ -190,7 +190,7 @@ describe("cli-invocation-guard core", () => {
 
 		it("accepts the §CLI canonical form in a `.sh` file", () => {
 			const {findings} = scanFile(
-				"skills/shared/lib/common.sh",
+				"lib/common.sh",
 				[
 					// biome-ignore lint/suspicious/noTemplateCurlyInString: shell parameter expansion in a §CLI-preamble fixture, not a JS template
 					'PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"',

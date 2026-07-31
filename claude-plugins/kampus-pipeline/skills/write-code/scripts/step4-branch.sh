@@ -12,7 +12,7 @@
 # per-mutation-preflight blockquote defines in that same shell — sourcing (not executing) is what
 # keeps that function reachable. No EXIT trap: under bash 3.2 a cleanup trap's last command becomes
 # the script's status, laundering a `set -u` abort into exit 0 (#4476, class #4479).
-. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../shared/lib" && pwd)/common.sh"
+. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
 
 # The one seam this move needed: the block's `<slug-for-issue-N>` metavariable was substituted by
 # whoever ran the step, so the sourcing site passes the kebab-case slug instead. Fail closed on an

@@ -10,7 +10,7 @@
 # SOURCED, never executed: it reads the $authorized set and the $comments_file the pre-pick scan / R1
 # left in this shell, and prints the round count on stdout. Sets NO shell options; no EXIT trap
 # (#4476, class #4479).
-. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../shared/lib" && pwd)/common.sh"
+. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
 
 # how many distinct gate-FAIL ROUNDS has this PR already accrued (both namespaces)?
 # cluster FAIL markers by timestamp gap: a new round starts only when >120s separates two

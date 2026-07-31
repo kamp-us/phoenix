@@ -10,7 +10,7 @@
 # file deliberately sets NO shell options and leaves $EPIC in the sourcing shell. No EXIT trap:
 # under bash 3.2 a cleanup trap's last command becomes the script's status, laundering a `set -u`
 # abort into exit 0 (#4476, class #4479).
-. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../shared/lib" && pwd)/common.sh"
+. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
 
 # The one seam this move needed: the block opened with the placeholder assignment
 # `EPIC=<the parent number Step 1's sub-endpoint read resolved — never a guessed or remembered one>`,

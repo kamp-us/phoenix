@@ -8,8 +8,8 @@
 # STDOUT on failure: an unshape-checked capture would put that document into the marker's `@ <sha>`
 # field, and `verdict post`'s emissionDefect gate would then refuse the whole verdict (#2683).
 set -uo pipefail
-# shellcheck source=../../shared/lib/common.sh disable=SC1007,SC1091
-. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../shared/lib" && pwd)/common.sh"
+# shellcheck source=../../../lib/common.sh disable=SC1007,SC1091
+. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
 
 [ "$#" -ge 1 ] || { echo "usage: current-head.sh <pr>" >&2; exit 2; }
 PR="$1"

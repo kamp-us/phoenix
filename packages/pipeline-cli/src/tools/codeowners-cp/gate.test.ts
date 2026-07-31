@@ -16,6 +16,7 @@ const FULL_CODEOWNERS = [
 	"/.github/ @usirin",
 	"/.claude-plugin/ @usirin",
 	"/claude-plugins/kampus-pipeline/skills/ @usirin",
+	"/claude-plugins/kampus-pipeline/lib/ @usirin",
 	"/claude-plugins/kampus-pipeline/agents/ @usirin",
 	"/claude-plugins/kampus-pipeline/hooks/ @usirin",
 	"/claude-plugins/kampus-pipeline/hooks.json @usirin",

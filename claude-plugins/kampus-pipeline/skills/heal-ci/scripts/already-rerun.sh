@@ -15,8 +15,8 @@
 # Extracted from heal-ci/SKILL.md (#4454, epic #4435 phase 1). Extraction contract +
 # shell-option rationale: ../SKILL.md § The extracted scripts.
 set -uo pipefail
-# shellcheck source=../../shared/lib/common.sh disable=SC1007,SC1091
-. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../shared/lib" && pwd)/common.sh"
+# shellcheck source=../../../lib/common.sh disable=SC1007,SC1091
+. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
 
 [ "$#" -ge 1 ] || { echo "heal-ci: already-rerun.sh needs a run id — the guard did NOT run (UNKNOWN, never 'not yet rerun')."; echo "usage: already-rerun.sh <run-id> [pr]" >&2; exit 2; }
 RUN="$1"

@@ -4,13 +4,13 @@
 #
 # Extracted VERBATIM from write-code/SKILL.md's Step 7 fenced block (epic #4435 phase 1, #4449).
 # A byte-move, not a rewrite: replacing this glue with `pipeline-cli` verbs is phase 2 (#1929) — the
-# hand-rolled $RUN_SCRATCH derivation duplicates `kp_scratch_path` (shared/lib/common.sh), and
+# hand-rolled $RUN_SCRATCH derivation duplicates `kp_scratch_path` (the plugin lib/common.sh), and
 # collapsing it onto that helper is phase 2's call.
 #
 # SOURCED, never executed, so `claim_is_mine` (defined by step3_5-claim-is-mine.sh in this same shell)
 # is reachable. WRITE "$RUN_SCRATCH/handoff.md" BEFORE sourcing this. Sets NO shell options; no EXIT
 # trap (#4476, class #4479).
-. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../shared/lib" && pwd)/common.sh"
+. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
 
 # The two seams this move needed: the block's `<N>` (the child you own) and `<EPIC>` (the parent you
 # post onto) metavariables were substituted by whoever ran the step, so the sourcing site passes them

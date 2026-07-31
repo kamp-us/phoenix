@@ -10,8 +10,8 @@
 # non-zero (§ZS / ADR 0092: a relevant-input gate with zero evidence fails closed, and UNKNOWN is
 # never a pass).
 set -uo pipefail
-# shellcheck source=../../shared/lib/common.sh disable=SC1007,SC1091
-. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../shared/lib" && pwd)/common.sh"
+# shellcheck source=../../../lib/common.sh disable=SC1007,SC1091
+. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
 
 # shellcheck disable=SC2016  # the `**Containment:** flag` / `apps/web/src/**` text is literal verdict prose, not an expansion
 ZERO_ROW='- [FAIL] flag-gating (default-off) — `**Containment:** flag` marks a dark-shipped feature, but the diff touches NO user-facing surface (apps/web/src/**/*.{tsx,css}, new apps/web/worker/** resolver/route/mutation): empty scope on a flag-marked PR is a FAIL (ADR 0092 §ZS), not a pass — there is no user-facing path to gate.'

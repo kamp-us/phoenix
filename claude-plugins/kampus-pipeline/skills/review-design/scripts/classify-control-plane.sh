@@ -12,8 +12,8 @@
 # ADR 0092; #4231, #4010, #4219) — a bare `exit` here would let a usage error or a failed `kp_repo`
 # read pose as "proven ordinary".
 set -uo pipefail
-# shellcheck source=../../shared/lib/common.sh disable=SC1007,SC1091
-. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../shared/lib" && pwd)/common.sh"
+# shellcheck source=../../../lib/common.sh disable=SC1007,SC1091
+. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
 # §CPREAD's `cp_changed_files` + `cp_head_sha`, sourced from their canonical home — no skill-local
 # copy to drift (#4489 extracted them out of `../../gh-issue-intake-formats.md`).
 # shellcheck source=../../shared/scripts/cp-read.sh disable=SC1007,SC1091

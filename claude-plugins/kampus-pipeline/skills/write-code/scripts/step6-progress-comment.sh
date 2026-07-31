@@ -4,14 +4,14 @@
 #
 # Extracted VERBATIM from write-code/SKILL.md's Step 6 fenced block (epic #4435 phase 1, #4449).
 # A byte-move, not a rewrite: replacing this glue with `pipeline-cli` verbs is phase 2 (#1929) — the
-# hand-rolled $RUN_SCRATCH derivation duplicates `kp_scratch_path` (shared/lib/common.sh) and the
+# hand-rolled $RUN_SCRATCH derivation duplicates `kp_scratch_path` (the plugin lib/common.sh) and the
 # `scratchpad` verb, and collapsing it onto either is phase 2's call, not this move's.
 #
 # SOURCED, never executed, so $RUN_SCRATCH stays visible and `claim_is_mine` (defined by
 # step3_5-claim-is-mine.sh in this same shell) is reachable. WRITE "$RUN_SCRATCH/progress.md" BEFORE
 # sourcing this — the path is deterministic and session-keyed, so it re-derives identically in an
 # earlier Bash call. Sets NO shell options; no EXIT trap (#4476, class #4479).
-. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../shared/lib" && pwd)/common.sh"
+. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
 
 # The one seam this move needed: the block's `<N>` metavariable was substituted by whoever ran the
 # step, so the sourcing site passes it instead. Fail closed on an absent one — an empty number both

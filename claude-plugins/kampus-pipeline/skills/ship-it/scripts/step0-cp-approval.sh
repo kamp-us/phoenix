@@ -9,7 +9,7 @@
 # file deliberately sets NO shell options — several guards here depend on `pipefail` being OFF —
 # and leaves its variables and functions in the sourcing shell, which is how the step's later
 # blocks still see them.
-. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../shared/lib" && pwd)/common.sh"
+. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
 # §CPREAD + §CPREAD-APPROVAL's `cp_team_roster` / `cp_pr_author` / `cp_head_sha` /
 # `cp_team_membership`, sourced IN-CHAIN. SKILL.md documents a verbatim-paste precondition ahead of
 # this step, which is a real precondition but still a hand step the shipper has to remember — the

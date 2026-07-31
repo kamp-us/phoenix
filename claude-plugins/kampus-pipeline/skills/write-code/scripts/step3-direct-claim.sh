@@ -11,7 +11,7 @@
 # lost race is the moved block's own control flow — the run is meant to end and re-pick from Step 1;
 # do not "improve" it into a `return`. No EXIT trap: under bash 3.2 a cleanup trap's last command
 # becomes the script's status, laundering a `set -u` abort into exit 0 (#4476, class #4479).
-. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../shared/lib" && pwd)/common.sh"
+. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
 
 # The one seam this move needed: the block's `<N>` metavariable was substituted by whoever ran the
 # step, so the sourcing site passes it instead. Fail closed on an absent one — `tracker claim` with

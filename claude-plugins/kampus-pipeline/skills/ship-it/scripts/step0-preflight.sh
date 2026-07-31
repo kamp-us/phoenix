@@ -9,7 +9,7 @@
 # file deliberately sets NO shell options — several guards here depend on `pipefail` being OFF —
 # and leaves its variables and functions in the sourcing shell, which is how the step's later
 # blocks still see them.
-. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../shared/lib" && pwd)/common.sh"
+. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
 # §RO-iso's `iso_preflight`, sourced IN-CHAIN from its canonical home — the extraction dropped this
 # line and left the call below command-not-found (#4547). Same idiom as review-code's
 # `materialize-head.sh`; never a re-copy of the function.

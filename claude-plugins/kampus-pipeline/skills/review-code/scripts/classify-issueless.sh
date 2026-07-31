@@ -10,8 +10,8 @@
 # no separate sentinel — gh writes its error document to STDOUT, which matches no `^\.glossary/` path,
 # so a failed read already falls into the hard-stop branch.
 set -uo pipefail
-# shellcheck source=../../shared/lib/common.sh disable=SC1007,SC1091
-. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../shared/lib" && pwd)/common.sh"
+# shellcheck source=../../../lib/common.sh disable=SC1007,SC1091
+. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
 
 HARD_STOP="no linked issue on a PR carrying behavioral code — broken seam: hard-stop (dangling-code guard, ADR 0184)"
 

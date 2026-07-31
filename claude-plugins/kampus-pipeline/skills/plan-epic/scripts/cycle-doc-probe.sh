@@ -11,7 +11,7 @@
 #
 # THE SOURCE LINE BELOW IS THE LOAD-BEARING TOKEN — this paragraph is not. The cycle validators
 # follow that line to the shared file and grep the probe literal THERE (`kp_skill_source_edges` in
-# ../../shared/lib/common.sh, ADR 0230), and every `.sh` grep they run is comment-stripped. Delete
+# ../../../lib/common.sh, ADR 0230), and every `.sh` grep they run is comment-stripped. Delete
 # the source line while keeping this text and they go red, by name. An earlier version of this
 # docblock claimed the opposite — that naming the path *here* is what kept the validators scanning a
 # real reference. It was true, and that was the bug: the guard was passing on this comment alone
@@ -21,8 +21,8 @@
 # Extracted from plan-epic/SKILL.md (#4452, epic #4435 phase 1). Extraction contract +
 # shell-option rationale: ../SKILL.md § The extracted scripts.
 set -uo pipefail
-# shellcheck source=../../shared/lib/common.sh disable=SC1007,SC1091
-. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../shared/lib" && pwd)/common.sh"
+# shellcheck source=../../../lib/common.sh disable=SC1007,SC1091
+. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
 
 REPO="$(kp_repo)" || exit 1
 export REPO

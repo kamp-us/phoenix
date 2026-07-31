@@ -12,7 +12,7 @@
 # SOURCED, never executed. $BRANCH must land in the sourcing shell exactly as the inline block left
 # it, and `wt_preflight` / `claim_is_mine` are defined in that same shell — sourcing (not executing)
 # is what keeps them reachable. Sets NO shell options; no EXIT trap (#4476, class #4479).
-. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../shared/lib" && pwd)/common.sh"
+. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
 
 # The one seam this move needed: the block's `<N>` metavariable was substituted by whoever ran the
 # step, so the sourcing site passes it instead. Fail closed on an absent one — `claim_is_mine ""`

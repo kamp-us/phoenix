@@ -16,8 +16,8 @@ set -uo pipefail
 # Defined BEFORE the source below so it survives a failed source (which leaves `kp_repo` undefined
 # and trips the guard at 127).
 CANNOT_CLASSIFY='CANNOT-CLASSIFY (classify-ui-surface.sh could not run ⇒ UNKNOWN ⇒ treat as has-ui: proceed and verdict, fail-closed)'
-# shellcheck source=../../shared/lib/common.sh disable=SC1007,SC1091
-. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../shared/lib" && pwd)/common.sh"
+# shellcheck source=../../../lib/common.sh disable=SC1007,SC1091
+. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
 
 [ "$#" -ge 1 ] || {
 	echo "$CANNOT_CLASSIFY — no <pr> argument"

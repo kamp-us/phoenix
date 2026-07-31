@@ -1280,7 +1280,7 @@ against MAIN's boundary, not its own edit) and must not move to an in-tree impor
 # the single probe ship-it Step 0, review-code Step 2, review-doc Step 0, and review-skill
 # Step 0 all use — kept byte-in-sync with the pipeline-cli const (issue #2761); the live gates
 # re-resolve THIS line from origin/main (#981), so it stays here as the one un-importable copy:
-CONTROL_PLANE_RE='^(\.claude|\.github)/|^\.claude-plugin/|^claude-plugins/kampus-pipeline/skills/|^claude-plugins/kampus-pipeline/agents/|^claude-plugins/kampus-pipeline/hooks(/|\.json$)|^packages/ci-required/|^packages/pipeline-cli/src/[^/]+$|^packages/pipeline-cli/src/tools/(ci-required|codeowners-cp|control-plane-paths|cp-cardinality|cp-classify|review-head|trivial-diff|verdict)/|^packages/pipeline-cli/src/tools/tracker/gh-io\.ts$|^biome\.jsonc$|^biome-plugins/|^([^/]+/)*(lefthook|\.lefthook)[^/]+$'
+CONTROL_PLANE_RE='^(\.claude|\.github)/|^\.claude-plugin/|^claude-plugins/kampus-pipeline/skills/|^claude-plugins/kampus-pipeline/lib/|^claude-plugins/kampus-pipeline/agents/|^claude-plugins/kampus-pipeline/hooks(/|\.json$)|^packages/ci-required/|^packages/pipeline-cli/src/[^/]+$|^packages/pipeline-cli/src/tools/(ci-required|codeowners-cp|control-plane-paths|cp-cardinality|cp-classify|review-head|trivial-diff|verdict)/|^packages/pipeline-cli/src/tools/tracker/gh-io\.ts$|^biome\.jsonc$|^biome-plugins/|^([^/]+/)*(lefthook|\.lefthook)[^/]+$'
 # The list this regex is matched against is a fallible READ, so it comes from §CPREAD's
 # `cp_changed_files` (defined below) — never a bare `gh api … | grep` pipe. With pipefail off that
 # pipe reports grep's status and discards gh's, so a failed read matches nothing and reads as "no §CP
@@ -1874,10 +1874,12 @@ documented specialization of this same contract, not a fourth drifting copy.
 ## SHARED. The extracted shared scripts — one resolution, sourced not pasted (epic #4435)
 
 This contract's recipes are **sourced scripts**, not fenced prose an agent re-types. They live under
-[`shared/scripts/`](shared/scripts/) (`.sh`, at any depth under `skills/` — the extension is what puts
-them inside `CONTROL_PLANE_RE` and the `/claude-plugins/kampus-pipeline/skills/**/*.sh` CODEOWNERS row,
-so a change to one needs a human approval; #4446), beside the cross-script state lib
-[`shared/lib/common.sh`](shared/lib/common.sh).
+[`shared/scripts/`](shared/scripts/) — inside the skills tree, which `CONTROL_PLANE_RE` and the
+`/claude-plugins/kampus-pipeline/skills/` CODEOWNERS row gate whole, at any depth and any extension,
+so a change to one needs a human approval (#4446, #4458). The cross-script state lib they source,
+[`../lib/common.sh`](../lib/common.sh), sits OUTSIDE that tree beside `bin/` — `shared/` was never a
+skill — and carries its own `^claude-plugins/kampus-pipeline/lib/` branch and CODEOWNERS row, added
+in the same commit as the move (#4484).
 
 **Why sourced rather than fenced.** Each agent shell invocation is a fresh process, so a variable set
 in one fenced block is gone by the next — every recipe that produced `$CP_FILES`, `$GUARD_ADR_RE` or

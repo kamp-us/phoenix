@@ -15,7 +15,7 @@
 # RECONCILE_SLEEP defaults, the between-polls sleep guard, and the MERGE_DISPOSITION case arms out
 # of Step 5.5's surface. It reaches them by following SKILL.md's source line into this file, so keep
 # those bindings at column 0 and keep that source line inside the `### Step 5.5 — ` section.
-. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../shared/lib" && pwd)/common.sh"
+. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
 
 # §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
 PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"

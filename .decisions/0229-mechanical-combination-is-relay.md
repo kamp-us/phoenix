@@ -132,7 +132,7 @@ The worked boundary case, already ruled by a review gate:
 [`packages/pipeline-cli/src/skill-shell-surface.ts`](../packages/pipeline-cli/src/skill-shell-surface.ts)
 takes a markdown heading slice and returns that section's shell surface *as text*, appending the
 content of each script the slice sources; `kp_skill_shell_surfaces` in
-[`skills/shared/lib/common.sh`](../claude-plugins/kampus-pipeline/skills/shared/lib/common.sh)
+[`lib/common.sh`](../claude-plugins/kampus-pipeline/lib/common.sh)
 takes a skill directory and returns its *file paths*, sorted. No input is accepted by both, so
 neither can contradict the other — different questions, not duplication. The same file carries the
 positive case: `sourcedScriptNames` is deliberately the *same* matcher `adoption-lint`'s claim pins

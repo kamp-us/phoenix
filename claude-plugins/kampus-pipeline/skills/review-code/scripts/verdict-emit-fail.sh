@@ -10,8 +10,8 @@
 # No native REQUEST_CHANGES here: the fence made that an optional nicety on top, and the comment with
 # per-criterion evidence is the REQUIRED artifact.
 set -uo pipefail
-# shellcheck source=../../shared/lib/common.sh disable=SC1007,SC1091
-. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../shared/lib" && pwd)/common.sh"
+# shellcheck source=../../../lib/common.sh disable=SC1007,SC1091
+. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
 
 [ "$#" -ge 2 ] || { echo "usage: printf '%s' \"\$BODY\" | verdict-emit-fail.sh <pr> <head-sha>" >&2; exit 2; }
 PR="$1"; HEAD_SHA="$2"
