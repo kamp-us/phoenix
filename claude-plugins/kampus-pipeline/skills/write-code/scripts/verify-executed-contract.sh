@@ -32,7 +32,7 @@ while IFS= read -r f; do
     printf 'BAD   %s — no column-0 `set -uo pipefail` line\n' "$f"; fail=1
   fi
   if grep -qE '^set -[a-z]*e[a-z]* ' "$f"; then
-    printf 'BAD   %s — enables errexit; `-e` laundres a `set -u` abort into exit 0 under a cleanup trap\n' "$f"; fail=1
+    printf 'BAD   %s — enables errexit; `-e` launders a `set -u` abort into exit 0 under a cleanup trap\n' "$f"; fail=1
   fi
   if grep -qE '^[[:space:]]*trap[[:space:]].*EXIT' "$f"; then
     printf 'BAD   %s — installs an EXIT trap; banned outright in this corpus (#4476, class #4479)\n' "$f"; fail=1

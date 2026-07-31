@@ -11,10 +11,11 @@
 #
 # The guard body itself is NOT here: `wt_preflight` and `lane_worktree` live in `lib/common.sh`,
 # sourced below. This script owns only the EXECUTED FORM — run the guard, narrate to stderr, print
-# the resolved root. The body stays in the lib because it has other consumers that call it as a
-# function in their own shell (`shared/scripts/iso-preflight.sh`, `review-code/scripts/
-# materialize-head.sh`, `ship-it/scripts/step0-preflight.sh`); a subprocess's functions never reach
-# its parent, and no CI check can see that break (#4449 repair round 2).
+# the resolved root. The body stays in the lib because that is the only file its other caller can
+# reach: `lib/common-test.sh` sources the lib and calls `wt_preflight` / `lane_worktree` directly
+# (cases 18–22). Hosted in this executed script they would exist only in a subprocess — a
+# subprocess's functions never reach its parent — leaving those tests calling nothing (#4449
+# repair round 2).
 #
 # `set -uo pipefail`, never `-e`: errexit aborts a fail-closed branch before it prints its BLOCKING
 # line, and paired with a cleanup EXIT trap it launders a `set -u` abort into exit 0
