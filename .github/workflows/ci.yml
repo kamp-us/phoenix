@@ -611,6 +611,15 @@ jobs:
       # Same script runs locally: `bash .claude/skills/ship-it/scripts/verify-chain-resolves.sh`.
       - run: bash .claude/skills/ship-it/scripts/verify-chain-resolves.sh
 
+      # Executable pin for plan-epic's round-trip race detector (#4596): a CLEAN splice whose
+      # `## Dependencies` block is the body's last section — the standard first-time layout —
+      # must exit 0, while ANY in-block difference must still exit 1 with the racer verdict. The
+      # pre-fix diff reported "a racer clobbered it" on every clean deps-last write, so both
+      # directions are pinned; greening the false alarm by loosening the block-level byte-exactness
+      # would trade it for a silent miss. Hermetic: gh is stubbed, no network.
+      # Same script runs locally: `bash .claude/skills/plan-epic/scripts/verify-roundtrip-diff.sh`.
+      - run: bash .claude/skills/plan-epic/scripts/verify-roundtrip-diff.sh
+
       # Gate-path drift guard (issue #720): assert the five CONTROL_PLANE_RE= copies
       # in ship-it/review-code/review-doc/review-skill/gh-issue-intake-formats are
       # byte-identical to the §CP canonical line, and that .claude/skills resolves to
