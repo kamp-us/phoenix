@@ -5,7 +5,10 @@
  */
 import type {WayfinderMap, WayfinderMapLedger} from "./Map.ts";
 
-/** A canonical, well-formed `wayfinder:map` body — the formats §worked-example shape. */
+/**
+ * A canonical, well-formed `wayfinder:map` body — the worked-example shape from
+ * `claude-plugins/kampus-pipeline/skills/shared/wayfinder-map-issue-shape.md`.
+ */
 export const cleanMapBody = `## Destination
 kamp.us has a working invite (kefil) flow: an existing yazar can vouch a new person in.
 

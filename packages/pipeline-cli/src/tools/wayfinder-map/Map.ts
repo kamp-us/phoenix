@@ -4,7 +4,7 @@
  *
  * A `WayfinderMapLedger` is a `wayfinder:map` issue's parsed state: the four map
  * sections (`## Destination` / `## Decisions-so-far` / `## Open frontier` /
- * `## Graduated fog`, parsed off the body per the formats contract) plus the set
+ * `## Graduated fog`, parsed off the body per the map-shape contract) plus the set
  * of the map's real sub-issue numbers, resolved at the GitHub boundary. The shape
  * is deliberately post-parse: markdown has already been lowered to structured
  * entries, so `validateMap` / `isGraduationReady` are pure functions over data,
@@ -12,8 +12,8 @@
  * (`github.ts`); everything downstream is total over a decoded ledger.
  *
  * The four-section contract this mirrors is single-sourced in
- * `gh-issue-intake-formats.md` §The `wayfinder:map` issue shape — this model is a
- * consumer of that contract, not a second definition of it.
+ * `claude-plugins/kampus-pipeline/skills/shared/wayfinder-map-issue-shape.md` —
+ * this model is a consumer of that contract, not a second definition of it.
  */
 import * as Schema from "effect/Schema";
 
