@@ -1,18 +1,22 @@
 #!/usr/bin/env bash
 # shellcheck shell=bash disable=SC1007,SC1091,SC2016,SC2086
-# The per-mutation worktree preflight: defines `lane_worktree` and `wt_preflight`, the guard every
-# `git commit` / `git push` / branch op in Steps 4–5 and repair R2/R3 is gated on.
+# The per-mutation worktree preflight — the guard every commit / branch op / verified-push in
+# Steps 4–5 and repair R2/R3 is gated on. EXECUTED, never sourced (ADR 0232): it runs the whole
+# fail-closed classification here and prints the resolved worktree ROOT on stdout; every
+# diagnostic and every refusal line goes to stderr. The caller consumes that root and addresses
+# git at it explicitly (`git -C "$WT" …`) — the DECISION stays in the script, only its EFFECT
+# moves to the caller, which is what the stdout contract (#4510) is for. A subprocess cannot
+# change its parent's directory, and ADR 0232 retires leave-state-in-the-caller's-shell as a
+# design property outright.
 #
-# Extracted VERBATIM from write-code/SKILL.md's per-mutation-preflight blockquote (epic #4435
-# phase 1, #4449) — the second of the two blocks PR #4503 left behind. The only change is the
-# blockquote's `> ` prefix, which is markdown, not shell.
+# The guard body below is VERBATIM from write-code/SKILL.md's per-mutation-preflight blockquote
+# (epic #4435 phase 1, #4449) — every refusal branch and both `cd`s intact. The internal `cd "$WT"`
+# stays because the defence-in-depth plumbing after it reads the tree it lands in.
 #
-# SOURCED, never executed — and here that is the CONTRACT, not a convention: `wt_preflight`'s
-# correction is a `cd` into this lane's worktree, which only survives in the caller's own shell.
-# Sets NO shell options for the same reason its 27 siblings don't (the moved glue steers its own
-# control flow, and `return`-based refusals need the caller's shell). No EXIT trap: under bash 3.2 a
-# cleanup trap's last command becomes the script's status, laundering a `set -u` abort into exit 0
-# (#4476, class #4479).
+# `set -uo pipefail`, never `-e`: errexit aborts a fail-closed branch before it prints its BLOCKING
+# line, and paired with a cleanup EXIT trap it launders a `set -u` abort into exit 0
+# (`.patterns/skill-script-shell-shape.md`). No EXIT trap is installed here either.
+set -uo pipefail
 . "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
 
 # Resolve MY worktree by IDENTITY, never from cwd (#4398). `git rev-parse --show-toplevel` answers
@@ -75,3 +79,9 @@ wt_preflight() {   # MANDATED before every git commit/push/branch op — fail-cl
   [ "$RES_GITDIR" != "$RES_COMMON" ] || { echo "wt_preflight FAILED (fail-closed): this lane's stamp resolved to the PRIMARY checkout ($WT) — git-dir == common-dir. Refusing to mutate." >&2; return 1; }
   echo "wt_preflight OK: mutating my lane at $WT (git-dir $RES_GITDIR)"
 }
+
+# `>&2` routes the guard's whole narration — the ambient-classification line and every refusal —
+# to stderr WITHOUT touching a moved line, leaving stdout carrying exactly one thing: the root.
+# Silence on stdout plus a non-zero exit is therefore UNKNOWN/REFUSED, never a permissive answer.
+wt_preflight >&2 || exit 1
+printf '%s\n' "$WT"

@@ -2,18 +2,23 @@
 # shellcheck shell=bash disable=SC1007,SC1091,SC2016,SC2086,SC2162
 # Step 1's pre-pick exception: print every open PR you authored whose LATEST gate verdict is an
 # unaddressed, uncapped FAIL — the arc that must be repaired before any new issue is picked.
+# EXECUTED, never sourced (ADR 0232): stdout IS that list, one `#<PR> review-<gate> FAIL` per line,
+# and every diagnostic goes to stderr. Empty stdout with a non-zero exit is UNKNOWN, never
+# "nothing to repair" — which is why the caller carries `|| exit 1`.
 #
-# Extracted VERBATIM from write-code/SKILL.md's Step 1 fenced block (epic #4435 phase 1, #4449).
-# This is one of the two blocks PR #4503 deliberately left in the markdown while it overlapped the
-# #4372 lane; a byte-move, not a rewrite — replacing this glue with verbs is phase 2 (#1929).
+# Extracted from write-code/SKILL.md's Step 1 fenced block (epic #4435 phase 1, #4449) — one of the
+# two blocks PR #4503 left in the markdown while it overlapped the #4372 lane. Replacing this glue
+# with verbs is still phase 2 (#1929); nothing below is rewritten toward that.
 #
-# SOURCED, never executed (the invocation-class note in `.patterns/skill-script-shell-shape.md`).
-# The fenced block it replaces ran inline in the agent's shell, so this file deliberately sets NO
-# shell options — the moved glue steers its own control flow, several of its guards depend on
-# `pipefail` being OFF (the §CP comment below turns on exactly that), and its `exit` paths are meant
-# to stop the agent's run, not a subshell. No EXIT trap: under bash 3.2 a cleanup trap's last
+# `set -uo pipefail`, never `-e`: errexit would abort the §ZS refusals before they print
+# (`.patterns/skill-script-shell-shape.md`). No EXIT trap — under bash 3.2 a cleanup trap's last
 # command becomes the script's status, laundering a `set -u` abort into exit 0 (#4476, class #4479).
+set -uo pipefail
 . "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
+
+# `$REPO` no longer arrives from a sourcing caller — resolve it here and fail closed rather than
+# address `repos//pulls`, which would answer an empty scan that reads as "no repairable PR".
+REPO="$(kp_repo)" || exit 1
 
 ME=$(gh api user --jq '.login')
 # §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314). The shim's own
@@ -32,7 +37,10 @@ PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-
 }
 # §CPREAD's `cp_changed_files`, sourced from its canonical home — no skill-local copy to drift
 # (#4489). It feeds the per-PR §CP-ness derivation inside the loop.
-. "${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/skills/shared/scripts/cp-read.sh"
+# Reached by the documented BASH_SOURCE-relative idiom, the one form ADR 0230's cycle validators
+# resolve statically; the interpolated `${CLAUDE_PLUGIN_ROOT:-…}` shape this replaced could not be,
+# so it dropped write-code out of `validate-cycle-absence`'s scanned scope entirely.
+. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../shared/scripts" && pwd)/cp-read.sh"
 # open PRs you authored; print each one whose latest verdict in EITHER namespace is FAIL,
 # UNLESS it has already hit the N=3 repair cap (then it's a human's, not yours to re-pick)
 gh api "repos/$REPO/pulls?state=open&per_page=100" \

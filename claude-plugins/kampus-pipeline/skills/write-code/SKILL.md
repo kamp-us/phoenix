@@ -45,12 +45,20 @@ to `kamp-us/phoenix` with no config.
 
 ```bash
 REPO="${CLAUDE_PIPELINE_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}"
-# This skill's steps are SOURCED scripts under `scripts/` (epic #4435 phase 1, #4449) — resolved the
-# same way §CLI resolves the `pipeline-cli` shim, because neither is on PATH. Source each step's
-# script where the step says to; sourcing (not executing) is what keeps a step's variables and
-# functions visible to the steps after it, exactly as the inline fenced blocks did.
+# Most of this skill's steps are still SOURCED scripts under `scripts/` (epic #4435 phase 1, #4449),
+# resolved the same way §CLI resolves the `pipeline-cli` shim because neither is on PATH. Source each
+# one where its step says to. This variable serves ONLY that surviving sourced set — it is not a
+# second invocation convention on offer, and #4573 deletes it when the last sourced step converts.
 WRITECODE_SCRIPTS="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/skills/write-code/scripts"
 ```
+
+**The sanctioned invocation form is literal-path execution with a stdout contract (ADR
+[0232](https://github.com/kamp-us/phoenix/blob/main/.decisions/0232-agents-execute-skill-scripts-never-source-them.md)) —
+`bash ./claude-plugins/…/scripts/<step>.sh`, results read off stdout.** The harness's isolation
+verifier refuses `.` itself, by *any* path form, and every executor here is worktree-isolated — so a
+sourced step cannot run as designed. The steps written in that form below are the whole of the
+convention; where a step still reads `. "$WRITECODE_SCRIPTS/…"` you are looking at the unconverted
+remainder (#4573), which is history, **not** a shape to copy for anything new.
 
 **A script's non-zero return is UNKNOWN — never an answer (§ZS, ADR
 [0092](https://github.com/kamp-us/phoenix/blob/main/.decisions/0092-gates-fail-closed-on-zero-scope.md)).**
@@ -191,7 +199,7 @@ work, scan your own open PRs for one whose **latest** gate verdict (in *any* of 
 namespaces) is an unaddressed FAIL:
 
 ```bash
-. "$WRITECODE_SCRIPTS/step1-repairable-prs.sh"   # stdout IS the repairable-PR list — silence is UNKNOWN, never "nothing to repair"
+bash ./claude-plugins/kampus-pipeline/skills/write-code/scripts/step1-repairable-prs.sh || exit 1   # stdout IS the repairable-PR list — silence is UNKNOWN, never "nothing to repair"
 ```
 
 If such a PR exists, **repair it instead of picking new work** — go to
@@ -660,14 +668,22 @@ is intentionally left untouched here so the two changes can't double-implement o
 > Run this **mandatory per-mutation preflight** — `wt_preflight` — *immediately before* every
 > `git commit`, `git push`, and branch create/switch (Steps 4, 5, R2, R3). It first asserts that
 > the tree the cwd is *currently* in is not another lane's, then resolves **your** worktree from
-> the lane stamp the opening preflight wrote and `cd`s there, correcting a between-calls reset to
-> the primary checkout. A green `wt_preflight` is the **only** sanctioned path to a mutation — no
-> bypass, same fail-closed construction as the opening preflight:
+> the lane stamp the opening preflight wrote and **prints that root on stdout**. A green
+> `wt_preflight` is the **only** sanctioned path to a mutation — no bypass, same fail-closed
+> construction as the opening preflight:
 >
 > ```bash
-> . "$WRITECODE_SCRIPTS/step4-wt-preflight.sh"   # leaves `lane_worktree` + `wt_preflight` in this shell
-> wt_preflight && git <commit|push|switch …>   # the guard gates the mutation; never run the mutation without it
+> WT="$(bash ./claude-plugins/kampus-pipeline/skills/write-code/scripts/step4-wt-preflight.sh)" || exit 1
+> git -C "$WT" <commit|push|switch …>   # address git at the root the guard resolved; never mutate without it
 > ```
+>
+> **The guard decides; you apply.** The script is *executed*, not sourced (ADR 0232), so it cannot
+> `cd` your shell for you — a subprocess never changes its parent's directory, and ADR 0232 retires
+> leave-state-in-the-caller's-shell as a design property outright. What moved is the **effect**, not
+> the decision: every classification and every refusal still runs inside the script, its narration
+> goes to stderr, and stdout carries exactly the resolved root. Correcting a between-calls cwd reset
+> is then the caller's one obligation — **address git at `$WT` explicitly**, never rely on where the
+> cwd happens to be. An empty `$WT` is a refusal, so `|| exit 1` is what keeps that fail-closed.
 >
 > **What makes it able to fail, stated so a future editor can check it.** Both refusals compare
 > operands from different origins: a **stamp file** written when a worktree was proven, against the
@@ -762,8 +778,8 @@ freshly-fetched `FETCH_HEAD` is the only flow that works — don't "fix" it back
 > *filename* is what collides.
 >
 > **The rule (mandatory, at every git op after this create): re-derive the branch live from
-> your own worktree — never read it from a file.** Right after `wt_preflight` re-`cd`s you to
-> `$WT`, the checked-out branch **is** your work branch, so read it straight from the
+> your own worktree — never read it from a file.** Right after `wt_preflight` resolves `$WT`,
+> the branch checked out there **is** your work branch, so read it straight from the
 > worktree HEAD:
 >
 > ```bash
@@ -961,9 +977,9 @@ step is a **no-op**: you implement and ship the change exactly as Steps 4/5 alre
 graceful-absence contract `plan-epic` (stamp) and `review-code` (verify) honor:
 
 ```bash
-# the canonical cycle-doc probe (formats §1) — relayed to the SHARED script, never copied; it
-# leaves $CYCLE_DOC in this shell. Absent ⇒ no cycle ⇒ ship normally, no flag.
-. "$WRITECODE_SCRIPTS/step4b-cycle-doc.sh"
+# the canonical cycle-doc probe (formats §1) — relayed to the SHARED script, never copied; stdout is
+# `present` or `absent`. Absent ⇒ no cycle ⇒ ship normally, no flag.
+CYCLE_DOC="$(bash ./claude-plugins/kampus-pipeline/skills/write-code/scripts/step4b-cycle-doc.sh)" || exit 1
 # ship dark ONLY when:  [ "$CONTAINMENT" = flag ] && [ "$CYCLE_DOC" = present ]
 ```
 
