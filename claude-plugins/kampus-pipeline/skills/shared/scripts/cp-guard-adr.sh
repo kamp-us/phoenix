@@ -69,13 +69,22 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
   printf 'HEAD_SHA=%s\n' "$HEAD_SHA"
 fi
 [ -n "$HEAD_SHA" ] || echo "BLOCKING (head SHA unreadable — ADR content unprobeable ⇒ §CP, fail-closed)"
-printf '%s\n' "$CP_FILES" | grep -E '^\.decisions/.*\.md$' | while IFS= read -r adr; do
-  [ -z "$adr" ] && continue
-  [ -n "$HEAD_SHA" ] || break
-  # Capture and CHECK, never `|| true`: gh writes its error document to STDOUT, so `|| true` would
-  # leave that JSON in $body, skip the fail-closed branch below, and grep an ERROR DOC for guard
-  # vocabulary (§CPREAD property 2).
-  body="$(gh api "repos/$REPO/contents/$adr?ref=$HEAD_SHA" -H 'Accept: application/vnd.github.raw' 2>/dev/null)" || body=""
-  if [ -z "$body" ]; then echo "BLOCKING ($adr — unreadable at head ⇒ §CP, fail-closed)"
-  elif printf '%s' "$body" | grep -Eiq "$GUARD_ADR_RE"; then echo "BLOCKING ($adr — guard-touching ADR ⇒ §CP, ADR 0164)"; fi
+# The probe's ORDINARY answer is a PR that touches no ADR at all — i.e. this filter matching
+# NOTHING. Left inside the pipeline, that no-match exit 1 becomes the pipeline's status under
+# executed mode's `pipefail`, and therefore the script's: §SHARED tells its reader to read the exit
+# status first and treat any non-zero as UNKNOWN, so every clean §CP guard-ADR probe would resolve
+# UNKNOWN. Capture the filter's output first (`|| true`) so no filter status can reach the entry's,
+# and keep the loop body an `if … fi` so an EMPTY list still leaves the loop's status 0
+# (`.patterns/skill-script-shell-shape.md` § The dual-mode shape rule 4). The exit status answers
+# "could I probe", never "did I find something" — the findings are the BLOCKING lines on stdout.
+TOUCHED_ADRS="$(printf '%s\n' "$CP_FILES" | grep -E '^\.decisions/.*\.md$' || true)"
+printf '%s\n' "$TOUCHED_ADRS" | while IFS= read -r adr; do
+  if [ -n "$adr" ] && [ -n "$HEAD_SHA" ]; then
+    # Capture and CHECK, never `|| true`: gh writes its error document to STDOUT, so `|| true` would
+    # leave that JSON in $body, skip the fail-closed branch below, and grep an ERROR DOC for guard
+    # vocabulary (§CPREAD property 2).
+    body="$(gh api "repos/$REPO/contents/$adr?ref=$HEAD_SHA" -H 'Accept: application/vnd.github.raw' 2>/dev/null)" || body=""
+    if [ -z "$body" ]; then echo "BLOCKING ($adr — unreadable at head ⇒ §CP, fail-closed)"
+    elif printf '%s' "$body" | grep -Eiq "$GUARD_ADR_RE"; then echo "BLOCKING ($adr — guard-touching ADR ⇒ §CP, ADR 0164)"; fi
+  fi
 done

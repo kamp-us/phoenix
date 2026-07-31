@@ -49,11 +49,17 @@ DEV_TESTCUTS="$(gh pr diff "$PR" | awk '
   t && /^-[^-]/ && /expect\(|assert|toBe|toEqual|toThrow/ { print }')"
 echo "deviation-disclosure: Tier-M scan — $(printf '%s' "$DEV_SUPPRESS" | grep -c .) suppression/skip line(s), $(printf '%s' "$DEV_TESTCUTS" | grep -c .) removed-assertion line(s)"
 
+# A CLEAN scan — zero suppression and zero removed-assertion hits — is this scan's ORDINARY answer,
+# and it must arrive at exit 0: §SHARED tells its reader to read the exit status first and treat any
+# non-zero as UNKNOWN, so a clean scan returning 1 makes every green PR unreadable. Hence the
+# `if … fi` bodies: with both variables empty the `[ -n "" ]` of an `&&` body would be each loop's
+# last command, and the second loop's status is the script's
+# (`.patterns/skill-script-shell-shape.md` § The dual-mode shape rule 4).
 if [ "${BASH_SOURCE[0]}" = "$0" ]; then
   printf '%s\n' "$DEV_SUPPRESS" | while IFS= read -r _l; do
-    [ -n "$_l" ] && printf 'DEV_SUPPRESS_LINE=%s\n' "$_l"
+    if [ -n "$_l" ]; then printf 'DEV_SUPPRESS_LINE=%s\n' "$_l"; fi
   done
   printf '%s\n' "$DEV_TESTCUTS" | while IFS= read -r _l; do
-    [ -n "$_l" ] && printf 'DEV_TESTCUT_LINE=%s\n' "$_l"
+    if [ -n "$_l" ]; then printf 'DEV_TESTCUT_LINE=%s\n' "$_l"; fi
   done
 fi

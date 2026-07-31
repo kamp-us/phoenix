@@ -19,12 +19,12 @@
 #                team-membership  CP_MEMBERSHIP=<state>|absent
 #              A read that could not execute prints NOTHING on stdout and exits non-zero — UNKNOWN,
 #              never "no control-plane path touched".
-#   SOURCED:   the sanctioned in-script edge, and the reason the functions below are untouched. Six
+#   SOURCED:   the sanctioned in-script edge, and the reason the functions below are untouched. SEVEN
 #              scripts source this file for them: review-code/ and review-design/
 #              scripts/classify-control-plane.sh, ship-it/scripts/step0-classify.sh and
-#              step0-cp-approval.sh, and this directory's cp-classify-entry.sh and cp-guard-adr.sh.
-#              The three ship-it ones set NO shell options by design, which is why the options above
-#              are applied in executed mode only.
+#              step0-cp-approval.sh, heal-ci/scripts/active-repair.sh, and this directory's
+#              cp-classify-entry.sh and cp-guard-adr.sh. The three ship-it ones set NO shell options
+#              by design, which is why the options above are applied in executed mode only.
 # No EXIT trap — under bash 3.2 a cleanup trap's last command becomes the script's status, which
 # converts a `set -u` abort into exit 0 (#4476/#4479).
 #
@@ -144,6 +144,12 @@ cp_team_membership() {   # $1 = ORG, $2 = login; sets CP_MEMBERSHIP = <state>|ab
 
 # The ADR-0232 executed entry. It RELAYS each function's result onto stdout and its status onto the
 # exit code; it adds no branch of its own, so the executed and sourced answers cannot diverge.
+#
+# EVERY relay loop below uses an `if … fi` body rather than `[ -n "$x" ] && printf …`. That is a
+# correctness requirement, not a style call: with an EMPTY variable the `[ -n "" ]` test is the
+# loop's last executed command, so the `while` — and the script — returns 1 on the very answer the
+# read succeeded at, and §SHARED's "read the exit status first, non-zero is UNKNOWN" rule then makes
+# a clean read unreadable. `.patterns/skill-script-shell-shape.md` § The dual-mode shape rule 4.
 if [ "${BASH_SOURCE[0]}" = "$0" ]; then
   _target="${1:?cp-read.sh: no <REPO|ORG> argument — refusing to read against an unnamed target}"
   case "${2-}" in
@@ -151,7 +157,7 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
       cp_changed_files "$_target" "${3:?cp-read.sh changed-files: no PR number}" || exit 1
       printf 'CP_FILES_N=%s\n' "$CP_FILES_N"
       printf '%s\n' "$CP_FILES" | while IFS= read -r _f; do
-        [ -n "$_f" ] && printf 'CP_FILE=%s\n' "$_f"
+        if [ -n "$_f" ]; then printf 'CP_FILE=%s\n' "$_f"; fi
       done
       ;;
     head-sha)
@@ -161,11 +167,13 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
     team-roster)
       # Zero members is a FACT here, not a failed read (the ADR-0175 N==0 STOP), so this branch
       # legitimately prints `CP_MEMBERS_N=0` and no CP_MEMBER lines at exit 0 — the asymmetry with
-      # changed-files above is deliberate (`.patterns/skill-script-io-contract.md`).
+      # changed-files above is deliberate (`.patterns/skill-script-io-contract.md`). That asymmetry
+      # is exactly what the `if … fi` loop body preserves: an `&&` body would return 1 at N==0 and
+      # collapse this branch back onto the failed-read one it is defined against (#4571 repair r1).
       cp_team_roster "$_target" || exit 1
       printf 'CP_MEMBERS_N=%s\n' "$CP_MEMBERS_N"
       printf '%s\n' "$CP_MEMBERS" | while IFS= read -r _m; do
-        [ -n "$_m" ] && printf 'CP_MEMBER=%s\n' "$_m"
+        if [ -n "$_m" ]; then printf 'CP_MEMBER=%s\n' "$_m"; fi
       done
       ;;
     pr-author)
