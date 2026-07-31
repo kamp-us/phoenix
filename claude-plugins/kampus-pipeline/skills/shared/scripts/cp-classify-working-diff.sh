@@ -17,8 +17,8 @@
 #
 # Extracted from taste-library-conventions.md (#4454, epic #4435 phase 1).
 set -uo pipefail
-# shellcheck source=../lib/common.sh disable=SC1007,SC1091
-. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../lib" && pwd)/common.sh"
+# shellcheck source=../../../lib/common.sh disable=SC1007,SC1091
+. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
 
 PCLI="$(kp_pcli)" || { echo "BLOCKING (§CP classifier could not run — the CLI shim is unresolved; UNKNOWN, never 'ordinary')"; exit 1; }
 
