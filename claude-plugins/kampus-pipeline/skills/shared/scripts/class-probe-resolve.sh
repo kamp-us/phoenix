@@ -8,14 +8,19 @@
 # so a reviewer can diff it against the deleted block directly. Verbification is phase 2 (#1929,
 # ADR 0228). Do not "improve" it here.
 #
-# SOURCE it (`. class-probe-resolve.sh`) with REPO set: the point is the four HAS_*_RE values it
-# leaves in the caller's shell. It sets no shell options and installs no EXIT trap — under bash 3.2 a
-# cleanup trap's last command becomes the script's status, laundering a `set -u` abort into exit 0
-# (#4476, class #4479).
+# DUAL-MODE (ADR 0232) — the why is `.patterns/skill-script-shell-shape.md` § The dual-mode shape.
+#   EXECUTED:  bash ./claude-plugins/kampus-pipeline/skills/shared/scripts/class-probe-resolve.sh <REPO>
+#              stdout ⇒ four lines, `HAS_CODE_RE=…`, `HAS_SKILLS_RE=…`, `HAS_DOCS_EXCLUDE_RE=…`,
+#              `HAS_DOCS_RE=…` — the same four values the sourced form left in the caller's shell.
+#   SOURCED:   no in-script consumer today; the edge stays open for one.
+# No EXIT trap — under bash 3.2 a cleanup trap's last command becomes the script's status,
+# laundering a `set -u` abort into exit 0 (#4476, class #4479).
 #
 # The canonical HAS_*_RE lines it reads are, and stay, column-0 assignments in the contract itself:
 # `validate-gate-path-drift.sh` asserts each appears there exactly once at column 0, and every live
 # consumer resolves them with `grep '^NAME='` off `origin/main`.
+
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then set -uo pipefail; fi   # executed mode only (ADR 0232)
 
 REPO="${REPO:-${1:?class-probe-resolve.sh: REPO unset and no \$1 — refusing to resolve a boundary from an unnamed repo}}"
 
@@ -44,3 +49,10 @@ HAS_CODE_RE="$(reresolve_re HAS_CODE_RE '.')"
 HAS_SKILLS_RE="$(reresolve_re HAS_SKILLS_RE '.')"
 HAS_DOCS_EXCLUDE_RE="$(reresolve_re HAS_DOCS_EXCLUDE_RE '\$^')"   # fail-closed: exclude NOTHING ⇒ every path reaches the doc test
 HAS_DOCS_RE="$(reresolve_re HAS_DOCS_RE '.')"                     # fail-closed: every path is a doc
+
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+  printf 'HAS_CODE_RE=%s\n' "$HAS_CODE_RE"
+  printf 'HAS_SKILLS_RE=%s\n' "$HAS_SKILLS_RE"
+  printf 'HAS_DOCS_EXCLUDE_RE=%s\n' "$HAS_DOCS_EXCLUDE_RE"
+  printf 'HAS_DOCS_RE=%s\n' "$HAS_DOCS_RE"
+fi

@@ -10,10 +10,17 @@
 # `<token>` -> "$2"). These ARE the verbs, so there is nothing for phase 2 (#1929) to verbify — ADR
 # 0228 keeps them relays: the script passes the verb's answer through, it never re-derives it.
 #
-# Sourced, never executed: it defines functions and sets no shell options, so the caller keeps its own
-# `set -euo pipefail`. No EXIT trap — under bash 3.2 a cleanup trap's last command becomes the
-# script's status, laundering a `set -u` abort into exit 0 (#4476, class #4479). The verbs are
-# default-deny, so their EXIT STATUS is the whole contract: never swallow it.
+# DUAL-MODE (ADR 0232) — the why is `.patterns/skill-script-shell-shape.md` § The dual-mode shape.
+#   EXECUTED:  bash ./claude-plugins/kampus-pipeline/skills/shared/scripts/claim-verbs.sh \
+#                   <assign|release|status|audit> [<issue>] [<token>|--execute]
+#              stdout ⇒ the verb's own stdout, relayed byte-for-byte; the verb's EXIT STATUS is
+#              relayed too, because these verbs are default-deny and the status is the whole
+#              contract (never swallow it).
+#   SOURCED:   no in-script consumer today; the four functions stay for one.
+# No EXIT trap — under bash 3.2 a cleanup trap's last command becomes the script's status,
+# laundering a `set -u` abort into exit 0 (#4476, class #4479).
+
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then set -uo pipefail; fi   # executed mode only (ADR 0232)
 
 # §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
 PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
@@ -55,3 +62,13 @@ case "${1:-}" in
 ;;
 esac
 }
+
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+  case "${1-}" in
+    assign)  kp_claim_assign  "${2:?claim-verbs.sh assign: no issue number}" "${3-}" ;;
+    release) kp_claim_release "${2:?claim-verbs.sh release: no issue number}" "${3-}" ;;
+    status)  kp_claim_status  "${2:?claim-verbs.sh status: no issue number}" ;;
+    audit)   kp_claim_audit   "${2-}" ;;
+    *) echo "usage: claim-verbs.sh <assign|release|status|audit> [<issue>] [<token>|--execute]" >&2; exit 2 ;;
+  esac
+fi

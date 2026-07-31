@@ -9,13 +9,24 @@
 # so a reviewer can diff it against the deleted blocks directly. Verbification is phase 2 (#1929,
 # ADR 0228: a script may RELAY a verb's answer, never DERIVE the decision). Do not "improve" it here.
 #
-# Sourced, never executed: it defines two functions and sets no shell options, so the caller keeps its
-# own `set -euo pipefail`. No EXIT trap — under bash 3.2 a cleanup trap's last command becomes the
-# script's status, which launders a `set -u` abort into exit 0 (#4476, class #4479).
+# DUAL-MODE (ADR 0232) — the why is `.patterns/skill-script-shell-shape.md` § The dual-mode shape.
+#   EXECUTED:  bash ./claude-plugins/kampus-pipeline/skills/shared/scripts/verdict-readback.sh \
+#                   <REPO> guard <comment-id> <gate> <head-sha>
+#                   <REPO> post-verify <PR> <gate> <head-sha>
+#              stdout ⇒ the chosen guard's own lines, relayed unchanged — the `… OK: …` line on a
+#              proven-clean verdict, nothing on a refusal (which names itself on stderr). The EXIT
+#              STATUS is the verdict: 0 only for a landed, well-formed, leak-free marker.
+#   SOURCED:   the sanctioned in-script edge — `review-code/scripts/verdict-readback.sh` and
+#              `review-design/scripts/verdict-readback.sh` source this file for the two functions,
+#              which read $REPO from their caller exactly as the fences did. Unchanged.
+# No EXIT trap — under bash 3.2 a cleanup trap's last command becomes the script's status, which
+# launders a `set -u` abort into exit 0 (#4476, class #4479).
 #
-# Reads $REPO from the caller, exactly as the fences did. The local-path patterns in checks (3)/(E)
+# The local-path patterns in checks (3)/(E)
 # are PLACEHOLDERS the guard matches against a comment body — never real paths, so this file, like the
 # contract it came from, stays leak-clean.
+
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then set -uo pipefail; fi   # executed mode only (ADR 0232)
 
 # verdict_readback_guard <comment-id> <gate> <head-sha>: re-read the just-posted verdict comment
 # and PROVE it is a well-formed, leak-free, current-head-bound marker. FAIL LOUD (non-zero) on any
@@ -135,3 +146,18 @@ verdict_post_verify() {
 
   echo "verdict_post_verify OK: ${gate} verdict @ ${sha:0:7} landed clean on PR #$PR (comment=${cid:-none} native-approve=${approved:-0}) — present, well-formed, leak-free."
 }
+
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+  REPO="${REPO:-${1:?verdict-readback.sh: REPO unset and no \$1 — refusing to re-read a verdict from an unnamed repo}}"
+  case "${2-}" in
+    guard)
+      verdict_readback_guard "${3:?verdict-readback.sh guard: no comment id}" \
+                             "${4:?verdict-readback.sh guard: no gate}" \
+                             "${5:?verdict-readback.sh guard: no head sha}" ;;
+    post-verify)
+      verdict_post_verify "${3:?verdict-readback.sh post-verify: no PR number}" \
+                          "${4:?verdict-readback.sh post-verify: no gate}" \
+                          "${5:?verdict-readback.sh post-verify: no head sha}" ;;
+    *) echo "usage: verdict-readback.sh <REPO> <guard <comment-id>|post-verify <PR>> <gate> <head-sha>" >&2; exit 2 ;;
+  esac
+fi
