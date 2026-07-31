@@ -105,6 +105,16 @@ declare -a edges=()
 fail() { echo "FAIL: $*"; errors=$((errors + 1)); }
 ok() { echo "ok: $*"; checks=$((checks + 1)); }
 
+# Edge targets come back PHYSICAL and may sit ABOVE $skills_dir — the shared lib is at
+# <plugin>/lib since #4484 — so the emitted scope strips the physical plugin root as well as the
+# logical skills dir. Without it the scope line carries an absolute machine path.
+plugin_root_phys="$(cd -P "$skills_dir/.." 2>/dev/null && pwd)" || plugin_root_phys=""
+scope_label() {
+	local p="${1#"$skills_dir/"}"
+	[ -n "$plugin_root_phys" ] && p="${p#"$plugin_root_phys/"}"
+	printf '%s' "$p"
+}
+
 # Layer 1: static wiring (present branch).
 # Every cycle-aware skill must (a) cite the canonical probe path, (b) resolve it to `present`
 # somewhere, and (c) carry the present-path ACTION the cycle requires of it. This is what proves
@@ -150,13 +160,13 @@ EOF
 
 	scanned_skills=$((scanned_skills + 1))
 	for surface in "${surfaces[@]}"; do
-		scanned_paths+=("${surface#"$skills_dir/"}")
+		scanned_paths+=("$(scope_label "$surface")")
 	done
 	# Provenance in the emitted scope (ADR 0092 §1): an edge-resolved file is named with the skill
 	# whose source edge pulled it in, so "why was this file read" is answerable from the run log.
 	if [ "${#edges[@]}" -gt 0 ]; then
 		for edge in "${edges[@]}"; do
-			scanned_paths+=("${edge#"$skills_dir/"} (edge:$skill)")
+			scanned_paths+=("$(scope_label "$edge") (edge:$skill)")
 		done
 	fi
 

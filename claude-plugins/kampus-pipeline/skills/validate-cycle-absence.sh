@@ -42,7 +42,7 @@ set -uo pipefail
 # What `-P` actually buys is the EMITTED SCOPE, not the allowlist. Measured: a logical-`cd` variant
 # through the symlink still exits 0, because `kp_skill_source_edges` resolves its own roots AND its
 # edge targets with `cd -P`, so that comparison is physical on both sides whatever it is handed.
-# What breaks under a logical root is the `${edge#"$skills_dir/"}` strip below: the prefix misses,
+# What breaks under a logical root is `scope_label`'s prefix strip below: the prefix misses,
 # and every edge-resolved file is printed as a full absolute machine path instead of
 # `shared/scripts/cycle-doc-probe.sh (edge:plan-epic)`. That is an ADR 0092 §1 emission defect —
 # "what did this run look at" stops being answerable in repo terms — and a leak surface, since an
@@ -92,6 +92,16 @@ declare -a edges=()
 fail() { echo "FAIL: $*"; errors=$((errors + 1)); }
 ok() { echo "ok: $*"; checks=$((checks + 1)); }
 
+# Edge targets come back PHYSICAL and may sit ABOVE $skills_dir — the shared lib is at
+# <plugin>/lib since #4484 — so the emitted scope strips the physical plugin root as well as the
+# logical skills dir. Without it the scope line carries an absolute machine path.
+plugin_root_phys="$(cd -P "$skills_dir/.." 2>/dev/null && pwd)" || plugin_root_phys=""
+scope_label() {
+	local p="${1#"$skills_dir/"}"
+	[ -n "$plugin_root_phys" ] && p="${p#"$plugin_root_phys/"}"
+	printf '%s' "$p"
+}
+
 # Layer 1: static wiring.
 # Every cycle-aware skill must (a) cite the single canonical probe path and (b) pair it
 # with an absent⇒no-op branch. Proves AC: "the canonical absence-probe is the one each
@@ -135,13 +145,13 @@ EOF
 
 	scanned_skills=$((scanned_skills + 1))
 	for surface in "${surfaces[@]}"; do
-		scanned_paths+=("${surface#"$skills_dir/"}")
+		scanned_paths+=("$(scope_label "$surface")")
 	done
 	# Provenance in the emitted scope (ADR 0092 §1): an edge-resolved file is named with the skill
 	# whose source edge pulled it in, so "why was this file read" is answerable from the run log.
 	if [ "${#edges[@]}" -gt 0 ]; then
 		for edge in "${edges[@]}"; do
-			scanned_paths+=("${edge#"$skills_dir/"} (edge:$skill)")
+			scanned_paths+=("$(scope_label "$edge") (edge:$skill)")
 		done
 	fi
 

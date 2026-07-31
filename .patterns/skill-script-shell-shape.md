@@ -115,9 +115,9 @@ grep -q "$needle" "${files[@]-}"
   [#4473](https://github.com/kamp-us/phoenix/pull/4473)).
 - `claude-plugins/kampus-pipeline/skills/validate-gate-path-drift.sh` — the `[ -f "$sh" ]`
   unmatched-glob idiom (rule 4).
-- `claude-plugins/kampus-pipeline/skills/shared/lib/common.sh` — `kp_skill_shell_surfaces`, the
+- `claude-plugins/kampus-pipeline/lib/common.sh` — `kp_skill_shell_surfaces`, the
   surface resolver both cycle validators consume through `< <(…)` (rule 6). Pinned by
-  `shared/lib/common-test.sh`, which forces a partial `find` failure with an unreadable
+  `lib/common-test.sh`, which forces a partial `find` failure with an unreadable
   subdirectory and asserts non-zero + empty stdout + a stderr diagnostic; run in the `skills` CI
   job.
 
