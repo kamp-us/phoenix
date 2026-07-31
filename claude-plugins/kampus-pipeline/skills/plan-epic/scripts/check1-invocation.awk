@@ -60,7 +60,11 @@ function classify(l,   c, t, u) {
 	# as shell composition (campaign's FOUNDER guard carries a `;` inside its refusal message)
 	gsub(/\$\{[^}]*\}/, "$V", t)
 	if (t ~ /^[A-Za-z_][A-Za-z0-9_]*=.*bin\/pipeline-cli['"]?$/) return 1   # the shim resolution itself
-	if (t ~ /^[A-Za-z_][A-Za-z0-9_]*=/ && !computed(t)) return 1            # NAME=<placeholder>, operator-filled
+	# reads the UNMASKED `c` for the substitution, because the mask above deletes a `$( … )` NESTED
+	# INSIDE an expansion — so `computed(t)` alone accepted `NUMS="${X:-$(gh api … | sort | head -5)}"`,
+	# the wrapper rather than the pipeline deciding (#4587 repair round 1). Pinned by
+	# `expansion-default-with-substitution` in check 1a.
+	if (t ~ /^[A-Za-z_][A-Za-z0-9_]*=/ && !computed(t) && index(c, "$(") == 0 && index(c, "`") == 0) return 1
 	return 0
 }
 

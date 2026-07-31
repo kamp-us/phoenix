@@ -190,6 +190,30 @@ gh api "repos/$REPO/pulls?state=open&per_page=100" \
 ```
 FIXTURE
 
+# The second payload line of each of these three is a SANCTIONED invocation, so the block's verdict
+# turns on the first line alone — a glue partner would red the block for the wrong reason and the
+# fixture would pass with its clamp disabled (the trap the first draft of this fixture fell into).
+c1_case expansion-default-with-substitution red <<'FIXTURE'
+```bash
+NUMS="${CACHED_NUMS:-$(gh api "repos/$REPO/issues?state=open" --jq ".[].number" | sort -n | head -5)}"
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/triage/scripts/dedup.sh" "$NUMS"
+```
+FIXTURE
+
+c1_case expansion-default-with-backtick red <<'FIXTURE'
+```bash
+NUMS="${CACHED_NUMS:-`gh api "repos/$REPO/issues?state=open" --jq ".[].number"`}"
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/triage/scripts/dedup.sh" "$NUMS"
+```
+FIXTURE
+
+c1_case comment-cannot-classify-the-code red <<'FIXTURE'
+```bash
+mkdir -p .decisions                                # per skills/adr/scripts/next-number.sh
+cp .decisions/0000-template.md .decisions/NNNN.md  # per skills/adr/scripts/next-number.sh
+```
+FIXTURE
+
 c1_case empty-block red <<'FIXTURE'
 ```bash
 ```
