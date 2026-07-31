@@ -1,12 +1,12 @@
 ---
 id: 0232
-title: Under isolation, skill scripts run by literal-path execution with a stdout contract — never sourced
+title: Under isolation, agents execute skill scripts by literal path with a stdout contract — never source them at the top-level command
 status: accepted
 date: 2026-07-30
 tags: [pipeline, skills, tooling, isolation, control-plane]
 ---
 
-# 0232 — Under isolation, skill scripts run by literal-path execution with a stdout contract — never sourced
+# 0232 — Under isolation, agents execute skill scripts by literal path with a stdout contract — never source them at the top-level command
 
 **What this decides:** When a worktree-isolated agent runs an extracted skill script, it invokes it as `bash ./claude-plugins/kampus-pipeline/skills/<skill>/scripts/<script>.sh` and reads the results off stdout — it never sources the script into its own shell, and the sourced-script class is converted to executed scripts.
 
