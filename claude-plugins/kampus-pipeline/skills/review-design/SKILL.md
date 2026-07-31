@@ -343,9 +343,9 @@ this verb removes (#4161, formats §CP):
 Read its **exit status before its stdout**, exactly as the off-ramp above does: a **non-zero exit**
 holds the PR as §CP *regardless of what stdout says*. On exit 0, any `BLOCKING (…)` line the script
 prints is the §CP hold and its reason; **no `BLOCKING (…)` line** is the one positive
-`not-control-plane` answer. Read the absence of that line, not empty stdout: §CPREAD's
-`cp_changed_files` emits its scope line (`§CP scope: … read OK — N file(s) scanned`) on **stdout**, so
-a completed run's stdout is never empty. That contract puts the whole weight of the hold on the script
+`not-control-plane` answer. Read the absence of that line, not empty stdout: the script leads with
+its own scope line (`§CP scope: PR #N — N file(s) scanned, state '…'`) on **stdout**, so a completed
+run's stdout is never empty. That contract puts the whole weight of the hold on the script
 never returning silently, so **every one of its own guard paths prints its own `BLOCKING (…)` line
 before exiting** — a missing `<pr>` argument and an unresolvable target repo both hold the PR as §CP
 rather than returning the 0 bytes that would read as "proven ordinary" (§ZS / ADR 0092; #4231, #4010,

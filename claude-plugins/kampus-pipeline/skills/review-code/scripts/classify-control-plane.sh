@@ -7,7 +7,9 @@
 # STDOUT IS A MACHINE CHANNEL: the only stdout line is the run-state handle carrying
 # CONTROL_PLANE_TOUCHED / GUARD_TOUCHING / CP_FILES_N / ADR_N, so Step 4a can
 # `. "$(classify-control-plane.sh "$PR")"` and branch on the two flags. Scope + diagnostic lines go
-# to stderr.
+# to stderr, per `.patterns/skill-script-io-contract.md`. The §CPREAD helpers keep stdout clean
+# themselves now, so no call site below redirects — an un-redirected `cp_changed_files` is what put
+# a scope sentence ahead of the handle path and got it sourced as one (#4510).
 #
 # EVERY failure path WRITES THE HANDLE WITH THE §CP SENTINEL FIRST, then exits non-zero. That is the
 # whole reason this script exists in this shape: an empty `$CONTROL_PLANE_TOUCHED` is what Step 4a
@@ -74,11 +76,7 @@ fi
 # non-zero return means the read COULD NOT EXECUTE, which is UNKNOWN, not "no §CP path touched". Read
 # the why there once; do not re-derive it here. It also removes the second read this step used to make
 # (the GUARD_TOUCHING loop re-fetched the same list), so both clauses now see the same scanned scope.
-# `>&2` on the call, not on a subshell: cp_changed_files writes its §ZS scope line to STDOUT, and
-# stdout here is the handle channel — measured, an un-redirected call put the scope line ahead of the
-# handle path and the caller's `. "$(…)"` tried to source it. A redirection on a function invocation
-# still lets the function's assignments reach this shell (no subshell), so $CP_FILES survives.
-if ! cp_changed_files "$REPO" "$PR" >&2; then
+if ! cp_changed_files "$REPO" "$PR"; then
   # FAIL CLOSED (#4216): a blinded read blinds BOTH clauses at once — the path regex AND the ADR-0164
   # content probe, which is the only §CP signal a `.decisions/**`-only PR can produce. So resolve BOTH
   # toward §CP; the sentinel is non-empty, which is exactly what Step 4a branches on.
@@ -99,7 +97,7 @@ else
   # The ref is a fallible read too — `cp_head_sha` is §CPREAD's companion to `cp_changed_files`
   # (sourced above from ../../shared/scripts/cp-read.sh). It leaves HEAD_SHA EMPTY on failure by
   # DISCARDING gh's payload, which is what makes the `[ -n ]` test below a live guard rather than a dead one.
-  cp_head_sha "$REPO" "$PR" >&2; HEAD_SHA="$CP_HEAD_SHA"   # stdout is the handle channel — see the note above
+  cp_head_sha "$REPO" "$PR"; HEAD_SHA="$CP_HEAD_SHA"
   # Assert on the probe's STATE WORD, never on its exit status — the exit code discriminates the two
   # verdicts only once the verb has RUN, so the old `>/dev/null && …` shape accumulated NOTHING when it
   # never ran (bad flag / nested-cwd module-not-found / missing shim) and read an unprobed ADR as

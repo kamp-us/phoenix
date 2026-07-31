@@ -24,6 +24,11 @@
 # anywhere else must bring its covering CODEOWNERS row and CONTROL_PLANE_RE branch FIRST, in the
 # SAME commit — that atomicity is what this file's own relocation had to honour.
 #
+# OUTPUT CHANNEL — stdout is the ANSWER, stderr is everything else, and a non-zero return means the
+# answer was never produced (UNKNOWN, never the permissive one). Every function below already obeys
+# it; the rule, the exit taxonomy, and why a non-zero with 0 bytes of stdout is a CALLER-side
+# fail-open are `.patterns/skill-script-io-contract.md` (#4510, ADR 0232).
+#
 # SOURCING IDIOM — resolve relative to this file so the caller's cwd is irrelevant. From a
 # script in a per-skill scripts/ directory:
 #   . "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
