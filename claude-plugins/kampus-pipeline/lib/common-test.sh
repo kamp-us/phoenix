@@ -3,8 +3,10 @@
 # SC2016 is declared, not suppressed on principle: the fixtures below EMIT shell text, so the single
 # quotes are the point — an expanded `${v#pre}` or `$dir` would write a different fixture than the
 # one under test.
-# Executable pin for kp_skill_shell_surfaces' scan-status contract (#4487) and for the source-edge
-# surface widening + comment-stripped matching that ADR 0230 adds on top (#4541). Run it directly:
+# Executable pin for kp_skill_shell_surfaces' scan-status contract (#4487), for the source-edge
+# surface widening + comment-stripped matching that ADR 0230 adds on top (#4541), and for the
+# per-mutation worktree guard the lib hosts so its four SOURCED callers can reach it (#4449). Run it
+# directly:
 #   bash claude-plugins/kampus-pipeline/lib/common-test.sh
 #
 # Every case here is written to be FALSIFIABLE — each asserts a behaviour that the pre-ADR-0230
@@ -351,6 +353,79 @@ elif grep -qF "$probe_literal" <<<"$out"; then
 	fail "credit pin: $lib carries the cycle-doc probe literal ('$probe_literal') in executable shell — it is edge-resolved into all four cycle-aware skills, so this one file would satisfy every skill's canonical-probe check (ADR 0230 rule 1)"
 else
 	ok "the shared lib carries no cycle-doc probe literal (no blanket four-skill credit)"
+fi
+
+# ---------------------------------------------------------------------------------------------
+# #4449 — the per-mutation worktree guard, whose HOME is the seam under test.
+# ---------------------------------------------------------------------------------------------
+
+# 18. THE SEAM PIN, and the falsification of the shipped defect. `wt_preflight` / `lane_worktree` are
+# called BY NAME from four SOURCED siblings (write-code's `step4-branch.sh`, `step5-push.sh`,
+# `stepR2-branch-rebase.sh`, `stepR3-push-and-note.sh`), each of which sources this lib and nothing
+# else that could define them. Hosted in the EXECUTED `step4-wt-preflight.sh` instead, they exist
+# only in a subprocess and every one of those calls dies 127 — steps 4/5/R2/R3 inoperable, with no
+# other check able to see it. `required_fns` above cannot cover this: it derives `kp_`-prefixed names
+# only, and these two deliberately keep the unprefixed names their callers use.
+for fn in wt_preflight lane_worktree; do
+	if type "$fn" >/dev/null 2>&1; then
+		ok "$fn is defined by sourcing the lib alone — the four sourced siblings can call it (#4449)"
+	else
+		fail "$fn is NOT defined by $lib — every sourced caller of it exits 127 (#4449)"
+	fi
+done
+
+# `lane_worktree` fixture: a repo whose per-worktree git dirs are stamped by hand. It reads only
+# `--git-common-dir` plus the `kampus-lane` / `gitdir` files under it, so a real `git worktree add`
+# is unnecessary — and a hand-built fixture is what lets case 21 stamp TWO trees with one lane.
+mkdir -p "$tmp/lw/main" "$tmp/lw/wtA" "$tmp/lw/wtB"
+if ! git -C "$tmp/lw/main" init -q --template='' >/dev/null 2>&1; then
+	fail "fixture did not take: could not git-init the lane_worktree fixture — cases 19–21 were NOT exercised"
+else
+	mkdir -p "$tmp/lw/main/.git/worktrees/A" "$tmp/lw/main/.git/worktrees/B"
+	printf '%s/.git\n' "$tmp/lw/wtA" > "$tmp/lw/main/.git/worktrees/A/gitdir"
+	printf '%s/.git\n' "$tmp/lw/wtB" > "$tmp/lw/main/.git/worktrees/B/gitdir"
+	lane_sid="kp-test-lane-0001"
+
+	# 19. No tree carries this lane's stamp ⇒ REFUSE. Silence is never "use the cwd": the caller's
+	# `git -C ""` would fall back to wherever the cwd landed, which is the corruption this guards.
+	out="$(cd "$tmp/lw/main" && CLAUDE_CODE_SESSION_ID="$lane_sid" lane_worktree 2>/dev/null)"; rc=$?
+	if [ "$rc" -eq 0 ]; then
+		fail "lane_worktree returned 0 with no tree stamped for this lane — it must refuse"
+	elif [ -n "$out" ]; then
+		fail "lane_worktree emitted [$out] with no tree stamped for this lane — it must emit nothing"
+	else
+		ok "lane_worktree with no stamped tree: non-zero, empty stdout (fail-closed)"
+	fi
+
+	# 20. Exactly one stamped tree ⇒ its PHYSICAL root, on stdout, exit 0.
+	printf '%s\n' "$lane_sid" > "$tmp/lw/main/.git/worktrees/A/kampus-lane"
+	out="$(cd "$tmp/lw/main" && CLAUDE_CODE_SESSION_ID="$lane_sid" lane_worktree)"; rc=$?
+	if [ "$rc" -eq 0 ] && [ "$out" = "$tmp/lw/wtA" ]; then
+		ok "lane_worktree resolves the single tree stamped with this lane"
+	else
+		fail "lane_worktree single-stamp: rc=$rc out=[$out] expected [$tmp/lw/wtA]"
+	fi
+
+	# 21. Two trees stamped with the same lane is AMBIGUOUS, and ambiguity refuses rather than
+	# picking one — the `-eq 1` test, which is also why `set -- $hits` must stay unquoted.
+	printf '%s\n' "$lane_sid" > "$tmp/lw/main/.git/worktrees/B/kampus-lane"
+	out="$(cd "$tmp/lw/main" && CLAUDE_CODE_SESSION_ID="$lane_sid" lane_worktree 2>/dev/null)"; rc=$?
+	if [ "$rc" -eq 0 ] || [ -n "$out" ]; then
+		fail "lane_worktree picked a tree from an AMBIGUOUS two-stamp state: rc=$rc out=[$out]"
+	else
+		ok "lane_worktree with two trees on one lane: non-zero, empty stdout (ambiguity refuses)"
+	fi
+fi
+
+# 22. `wt_preflight` with no lane identity at all refuses before it looks at any tree — the
+# `${CLAUDE_CODE_SESSION_ID:?}` floor. Run in a subshell because that expansion aborts the shell.
+out="$(CLAUDE_CODE_SESSION_ID='' wt_preflight 2>/dev/null)"; rc=$?
+if [ "$rc" -eq 0 ]; then
+	fail "wt_preflight returned 0 with no session id — it has no lane identity to verify against"
+elif [ -n "$out" ]; then
+	fail "wt_preflight emitted [$out] with no session id — it must emit nothing"
+else
+	ok "wt_preflight with no session id: non-zero, empty stdout (fail-closed)"
 fi
 
 cleanup

@@ -5,9 +5,10 @@
 # Extracted VERBATIM from write-code/SKILL.md's Step R2 fenced block (epic #4435 phase 1, #4449).
 # A byte-move, not a rewrite: replacing this glue with `pipeline-cli` verbs is phase 2 (#1929).
 #
-# SOURCED, never executed: `claim_is_mine` and `wt_preflight` are defined in the sourcing shell, and
-# the `cd` that `wt_preflight` performs must persist for the rebase and the R3 push. Sets NO shell
-# options; no EXIT trap (#4476, class #4479).
+# SOURCED, never executed: `claim_is_mine` (Step 3.5's script) and `wt_preflight` (the lib sourced
+# below) both live in the sourcing shell, and the `cd` that `wt_preflight` performs must persist for
+# the rebase and the R3 push — which is why that guard is defined in the lib rather than in the
+# EXECUTED `step4-wt-preflight.sh` (#4449). Sets NO shell options; no EXIT trap (#4476, class #4479).
 . "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
 
 # The one seam this move needed: the block's `<the PR's head branch>` metavariable was substituted by
