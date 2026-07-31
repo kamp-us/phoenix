@@ -135,11 +135,10 @@ the register is the single source. (ADR 0099.)
 
 ## Step 1 — Resolve the PR and its linked issue
 
-You're given a PR number (or you're told to review the PR for issue #N). Establish the
-PR ↔ issue pairing, because the issue is where the acceptance criteria live.
+You're given a PR number (or you're told to review the PR for issue #N). Bind `PR` to that
+number, then establish the PR ↔ issue pairing — the issue is where the acceptance criteria live.
 
 ```bash
-PR=<pr number>
 "${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-code/scripts/pr-context.sh" "$PR"
 ```
 
@@ -191,10 +190,10 @@ holds the PR at the broken-seam stop rather than waving it through as legitimate
   (ADR [0164](https://github.com/kamp-us/phoenix/blob/main/.decisions/0164-guard-relaxing-adr-cp-gate.md))
   are all unchanged and still apply in full, and the verdict for such a PR rests on them alone.
 
-When `ISSUE` **is** set, honor it as today — pull the issue and its acceptance criteria:
+When `ISSUE` **is** set, honor it as today — bind `ISSUE` to that number and pull the issue
+and its acceptance criteria:
 
 ```bash
-ISSUE=<N>
 "${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-code/scripts/issue-context.sh" "$ISSUE"
 ```
 
