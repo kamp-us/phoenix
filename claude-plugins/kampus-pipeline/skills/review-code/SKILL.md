@@ -85,14 +85,18 @@ load-bearing when you read or edit them:
   [`../shared/scripts/`](../shared/scripts/) (#4489 extracted them out of
   [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md)), and this skill's scripts source
   them directly. With no second copy there is nothing to keep in step and no byte-identity claim to
-  make about one. The **one deliberate exception** is
-  [`scripts/cycle-doc-probe.sh`](scripts/cycle-doc-probe.sh): the two cycle validators
+  make about one. That now holds **without exception**:
+  [`scripts/cycle-doc-probe.sh`](scripts/cycle-doc-probe.sh) was the last skill-local second copy
+  and has collapsed onto the shared [`../shared/scripts/cycle-doc-probe.sh`](../shared/scripts/cycle-doc-probe.sh)
+  too (#4549). It could not before, because the two cycle validators
   ([`../validate-cycle-presence.sh`](../validate-cycle-presence.sh) /
-  [`../validate-cycle-absence.sh`](../validate-cycle-absence.sh)) scope each skill's scan surface to
-  that skill's **own** directory on purpose, so sourcing the shared probe would move this skill's
-  cycle wiring out of its guarded surface and the validators would fail — per-skill wiring stays
-  per-skill (the rule is stated at `kp_skill_shell_surfaces` in
-  [`../../lib/common.sh`](../../lib/common.sh)).
+  [`../validate-cycle-absence.sh`](../validate-cycle-absence.sh)) scoped each skill's scan surface to
+  that skill's **own** directory, so sourcing the shared probe moved this skill's cycle wiring off its
+  guarded surface; ADR [0230](https://github.com/kamp-us/phoenix/blob/main/.decisions/0230-cycle-validators-follow-the-source-edge.md)
+  removed that constraint by having them follow a skill's own source edges one hop
+  (`kp_skill_source_edges` in [`../../lib/common.sh`](../../lib/common.sh)). What stays per-skill is
+  this skill's **consumption** of the probe — the `CYCLE_GATING` branch the wrapper keeps in its own
+  file, which is what the validators' own-surface checks read.
 
 ## Read-only on git working state
 
@@ -646,13 +650,18 @@ flag check on an exempt/foreign PR is the failure mode this guard exists to prev
 correct, first-class state (ADR 0062 portability), exactly as a missing milestone is.
 
 ```bash
-. "${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-code/scripts/cycle-doc-probe.sh"
+bash ./claude-plugins/kampus-pipeline/skills/review-code/scripts/cycle-doc-probe.sh || exit 1
 ```
 
-Sourced, not run — the point is the `$CYCLE_DOC` (`present` | `absent`) it leaves in your shell. This
-is the one script here that is **deliberately review-code-local** rather than the shared
-[`../shared/scripts/cycle-doc-probe.sh`](../shared/scripts/cycle-doc-probe.sh); the reason is in
-§ The extracted scripts above.
+**Executed, not sourced, and stdout is the answer** (ADR
+[0232](https://github.com/kamp-us/phoenix/blob/main/.decisions/0232-agents-execute-skill-scripts-never-source-them.md),
+[`.patterns/skill-script-io-contract.md`](https://github.com/kamp-us/phoenix/blob/main/.patterns/skill-script-io-contract.md)).
+It prints two `KEY=value` lines — `CYCLE_DOC=present|absent` and
+`CYCLE_GATING=verify-gating|skip` — and the script itself sources the shared
+[`../shared/scripts/cycle-doc-probe.sh`](../shared/scripts/cycle-doc-probe.sh) for the probe, so
+there is no second copy of it here (#4549). `CYCLE_GATING=verify-gating` says the cycle *admits* the
+gating verification, not that it fires: the marker must also read `flag`. A non-zero exit is
+**UNKNOWN, never `absent`** — hold rather than skip.
 
 **Zero-scope = FAIL — a `flag`-marked PR that touches no user-facing surface fails (ADR 0092 / §ZS).**
 A `**Containment:** flag (default-off)` marker is the issue *claiming to deliver user-facing value*

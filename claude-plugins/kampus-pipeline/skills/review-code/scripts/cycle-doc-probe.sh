@@ -1,25 +1,46 @@
 #!/usr/bin/env bash
-# Step 3b — the one canonical product-development-cycle probe (formats §1). SOURCE it (`. cycle-doc-probe.sh`)
-# with REPO set: the point is the $CYCLE_DOC it leaves in the caller's shell. Extracted from
-# review-code/SKILL.md (#4451, epic #4435 phase 1). Extraction contract:
-# ../SKILL.md § The extracted scripts. The graceful-absence *why* (ADR 0062 — absence is a
-# first-class correct state) stays in that step's prose.
+# Step 3b — resolve the product-development-cycle doc and review-code's consumption of it.
+# The *why* — graceful absence (ADR 0062): absent ⇒ Step 3b's flag-gating verification no-ops and
+# contributes no criterion — stays in ../SKILL.md § Step 3b.
 #
-# A SECOND COPY of ../../shared/scripts/cycle-doc-probe.sh, and no longer a required one. It was
-# required: the cycle validators scanned each skill's OWN directory only, so sourcing the shared copy
-# moved review-code's cycle wiring off its guarded surface and reddened them. ADR 0230 removed that
-# forcing constraint — the validators now follow a skill's own source edges one hop
-# (`kp_skill_source_edges` in ../../../lib/common.sh), so sourcing the shared probe stays green.
-# Collapsing this copy onto that edge is the intended direction and is deliberately NOT done here:
-# minting the new sourced invocation is held behind the open question about `.`-sourcing under
-# worktree isolation (#4546). Until then this copy is the drift risk it always was — see #4541.
+# usage: bash ./claude-plugins/kampus-pipeline/skills/review-code/scripts/cycle-doc-probe.sh
 #
-# Sets no shell options and installs no EXIT trap (#4476, class #4479).
+# STDOUT IS THE ANSWER (ADR 0232, .patterns/skill-script-io-contract.md) — two `KEY=value` lines:
+#   CYCLE_DOC=present|absent          the canonical probe's resolution
+#   CYCLE_GATING=verify-gating|skip   whether the cycle ADMITS Step 3b's gating verification at all
+# `verify-gating` does not mean the check fires: Step 3b still runs it only when the containment
+# marker also reads `flag`. `skip` is unconditional — no cycle doc, no gating criterion, no FAIL.
+# Any other $CYCLE_DOC is UNKNOWN: no stdout, a named stderr diagnostic, non-zero (§ZS, ADR 0092).
+#
+# It SOURCES the one shared implementation, ../../shared/scripts/cycle-doc-probe.sh, rather than
+# carrying a second copy of the probe (#4549). The copy was required once — the cycle validators
+# scanned each skill's OWN directory only — and ADR 0230 removed that forcing constraint by having
+# them follow a skill's own source edges one hop (`kp_skill_source_edges` in ../../../lib/common.sh).
+# In-script sourcing of a shared target stays sanctioned under ADR 0232; only sourcing at an agent's
+# top-level command is banned, which is why ../SKILL.md now EXECUTES this script.
+#
+# THE SOURCE LINE BELOW IS THE LOAD-BEARING TOKEN — this paragraph is not. The validators follow that
+# line to the shared file and grep the probe literal THERE, and every `.sh` grep they run is
+# comment-stripped, so deleting the line while keeping this text reds them by name.
+#
+# Extracted from review-code/SKILL.md (#4451, epic #4435 phase 1). Extraction contract +
+# shell-option rationale: ../SKILL.md § The extracted scripts.
+set -uo pipefail
+# shellcheck source=../../../lib/common.sh disable=SC1007,SC1091
+. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
 
-REPO="${REPO:-${1:?cycle-doc-probe.sh: REPO unset and no \$1 — refusing to probe an unnamed repo}}"
+REPO="$(kp_repo)" || exit 1
+export REPO
+# shellcheck source=../../shared/scripts/cycle-doc-probe.sh disable=SC1007,SC1091
+. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../shared/scripts" && pwd)/cycle-doc-probe.sh"
 
-# the one canonical cycle-doc probe (formats §1); absent ⇒ no cycle ⇒ skip the gating check
-# shellcheck disable=SC2034  # $CYCLE_DOC is this script's whole output — it is read by the SOURCING caller
-gh api "repos/$REPO/contents/product-development-cycle.md" --jq '.path' >/dev/null 2>&1 \
-  && CYCLE_DOC=present || CYCLE_DOC=absent
-# run the gating verification below ONLY when:  [ "$CONTAINMENT" = flag ] && [ "$CYCLE_DOC" = present ]
+# The two states are ENUMERATED, not interpolated: an unset or unexpected $CYCLE_DOC cannot be
+# laundered into the permissive `absent` answer by a `%s`.
+case "${CYCLE_DOC:-}" in
+present) printf 'CYCLE_DOC=present\nCYCLE_GATING=verify-gating\n' ;;
+absent) printf 'CYCLE_DOC=absent\nCYCLE_GATING=skip\n' ;;
+*)
+	echo "cycle-doc-probe.sh: the shared probe left \$CYCLE_DOC as '${CYCLE_DOC:-<unset>}' — UNKNOWN, never 'absent'. No answer produced." >&2
+	exit 1
+	;;
+esac
