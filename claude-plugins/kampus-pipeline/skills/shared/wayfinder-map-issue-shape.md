@@ -7,9 +7,12 @@ invariant that moves a ticket off the frontier.
 **Who reads it.** Two consumers, and nobody else: the `wayfinder` skill's **chart** and **work**
 modes ([`../wayfinder/SKILL.md`](../wayfinder/SKILL.md)) and the wayfinder CLI
 (`packages/pipeline-cli/src/tools/wayfinder-map/`). Both **cite** this file; neither re-derives it.
-Two non-reader surfaces name it as the contract's home rather than restating it — the glossary
-(`.glossary/TERMS.md`) and the tool front door (`packages/pipeline-cli/TOOLS.md`) — and they are
-part of the same single-source set: if this file moves, all four pointers move with it.
+Three non-reader surfaces name it as the contract's home rather than restating it — the glossary
+(`.glossary/TERMS.md`), the tool front door (`packages/pipeline-cli/TOOLS.md`), and the intake
+contract's own forward reference from its label table
+([`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md)). They are part of the same
+single-source set: if this file moves, all **five** naming surfaces — the two readers above and
+these three — move with it.
 
 Extracted from [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md), where this shape
 sat in the shared intake contract that twenty skills load and only `wayfinder` reads (#4439). It
