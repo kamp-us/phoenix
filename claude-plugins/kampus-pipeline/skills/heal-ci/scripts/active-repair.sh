@@ -54,7 +54,8 @@ VERDICT="$KP_ROOT/bin/pipeline-cli verdict"
 # drops the flag — never a bare non-zero test, which fires on a usage error (1) or a missing bin (127).
 # `>&2` routes only the §ZS scope LINE — the result arrives in $CP_FILES, and THIS script's stdout is
 # the four-line answer its caller reads, so a diagnostic on it would corrupt the answer.
-. "$KP_ROOT/skills/shared/scripts/cp-read.sh"
+# shellcheck source=../../shared/scripts/cp-read.sh
+. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../shared/scripts" && pwd)/cp-read.sh"
 if ! cp_changed_files "$REPO" "$PR" >&2; then
   CP_STATE=unknown   # the input never arrived ⇒ UNKNOWN ⇒ hold as §CP (never `not-control-plane`)
 else
