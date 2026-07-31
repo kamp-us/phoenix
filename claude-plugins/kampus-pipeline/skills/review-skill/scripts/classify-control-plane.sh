@@ -28,7 +28,7 @@ REPO="$(kp_repo)" || {
   echo "BLOCKING (target repo unresolvable — §CP unclassifiable ⇒ §CP, fail-closed)"; exit 1; }
 # §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
 PCLI="$(kp_pcli)" || {
-  echo "BLOCKING (pipeline-cli UNRESOLVED — cp-classify never ran ⇒ §CP, fail-closed)"; exit 127; }
+  echo "BLOCKING (the CLI shim is UNRESOLVED — cp-classify never ran ⇒ §CP, fail-closed)"; exit 127; }
 
 # The shared §CP classification entry point — one verb all the gates cite (#4161, formats §CP). It
 # re-resolves CONTROL_PLANE_RE from origin/main itself (§CP travels in the INJECTED skill snapshot,

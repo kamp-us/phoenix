@@ -10,6 +10,15 @@
 # BEFORE exiting, and exits non-zero: a classifier that never ran must never reach the caller as
 # silence, which the caller would read as "proven trivial" and under-gate (§ZS / ADR 0092,
 # `.patterns/skill-script-io-contract.md`; #4216, #4161, #4219). Scope + diagnostics go to stderr.
+#
+# BASH 3.2 NOTE, load-bearing: the ADR-0164 probe loop below sits inside a `$( … )`, and bash 3.2
+# balances parens across the WHOLE substitution body — including inside comments, where a lone `(`
+# or `)` is counted as if it were syntax. Two consequences, both measured on 3.2.57(1)-release:
+# every `case` pattern in there carries the POSIX leading `(` (otherwise the pattern's closing `)`
+# ends the substitution early), and no comment in there may carry an unbalanced paren. Neither
+# hazard was reachable while this block lived inline in the markdown and never ran, and CI's bash 5
+# parses both shapes — so CI cannot catch either. The local interpreter every agent run gets is the
+# one that decides (`.patterns/skill-script-shell-shape.md`).
 set -uo pipefail
 # shellcheck source=../../../lib/common.sh disable=SC1007,SC1091
 . "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
@@ -29,7 +38,7 @@ REPO="$(kp_repo)" || {
   exit 1; }
 # §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
 PCLI="$(kp_pcli)" || {
-  echo "review-trivial: not-trivial — pipeline-cli UNRESOLVED, so cp-classify never ran (UNKNOWN, never 'ordinary'); route to full path"
+  echo "review-trivial: not-trivial — the CLI shim is UNRESOLVED, so cp-classify never ran (UNKNOWN, never 'ordinary'); route to full path"
   exit 127; }
 
 # The changed-file list is a fallible READ, and an unchecked capture resolved a failed one to "no §CP
@@ -70,10 +79,11 @@ if [ "$CP_STATE" != "not-control-plane" ]; then
         if [ -z "$adr_body" ]; then echo "$adr(body-unreadable⇒§CP)"
         else
           GC_STATE="$(printf '%s' "$adr_body" | "$PCLI" guard-content-probe classify --path "$adr" 2>/dev/null)"
+          # The pattern prefixes below are REQUIRED — see the header note on bash 3.2.
           case "$GC_STATE" in
-            not-guard-touching) : ;;
-            guard-touching) echo "$adr" ;;
-            *) echo "$adr(undetermined:'$GC_STATE')" ;;
+            (not-guard-touching) : ;;
+            (guard-touching) echo "$adr" ;;
+            (*) echo "$adr(undetermined:'$GC_STATE')" ;;
           esac
         fi
       done)"
