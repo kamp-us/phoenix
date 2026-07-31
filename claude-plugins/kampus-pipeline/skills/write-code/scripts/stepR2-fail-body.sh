@@ -1,26 +1,56 @@
 #!/usr/bin/env bash
-# shellcheck shell=bash disable=SC1007,SC1091,SC2016
 # Step R2: fetch the body of the resolving FAIL marker, by the comment id R1's `verdict read` returned.
 #
-# Extracted VERBATIM from write-code/SKILL.md's Step R2 fenced block (epic #4435 phase 1, #4449).
-# A byte-move, not a rewrite: replacing this glue with `pipeline-cli` verbs is phase 2 (#1929).
+# usage: stepR2-fail-body.sh <PR> [code|doc|skill]
 #
-# SOURCED, never executed: it reads the $CODE_FAIL_JSON / $DOC_FAIL_JSON / $SKILL_FAIL_JSON that R1
-# left in this shell, and leaves $CID there for R3's thread reply. Sets NO shell options; no EXIT trap
-# (#4476, class #4479).
+# stdout is TWO header lines — `CID=<comment id>` and `FAILBODY_FILE=<path>` — followed by the FAIL
+# marker body itself. The body is also written to that file, which stepR-frozen-ac.sh reads; `$CID`
+# is what R3's thread reply is addressed at.
+#
+# Executed, never sourced (ADR 0232). It used to read the `$CODE_FAIL_JSON` / `$DOC_FAIL_JSON` /
+# `$SKILL_FAIL_JSON` R1 left in the agent's shell, indirecting through a variable NAME passed as $1;
+# it now names the NAMESPACE and reads R1's payload out of the §SP scratch dir R1 wrote. An absent
+# payload is UNKNOWN (R1 never ran here) and refuses — never an empty FAIL table.
+#
+# When the code namespace was resolved via a native CHANGES_REQUESTED review rather than a marker,
+# read the review body from `repos/$REPO/pulls/$PR/reviews` instead — a native review carries no
+# issue-comment id, so there is no CID to fetch.
+# shellcheck disable=SC1007,SC1091,SC2016
+set -uo pipefail
+# shellcheck source=../../../lib/common.sh
 . "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
 
-# The one seam this move needed: the fenced block hardcoded $CODE_FAIL_JSON and told the reader to
-# "swap CODE_FAIL_JSON→DOC_FAIL_JSON/SKILL_FAIL_JSON per namespace"; a script cannot be hand-edited
-# per namespace, so the sourcing site names the namespace and this indirects to that variable. The
-# default preserves the moved default exactly.
-FAIL_JSON_VAR="${1:-CODE_FAIL_JSON}"
-FAIL_JSON="${!FAIL_JSON_VAR:-}"   # bash indirect expansion, not `eval` — the value is a network payload
-# the full body of the resolving FAIL marker — its comment id came from R1's `verdict read` JSON
-# (swap CODE_FAIL_JSON→DOC_FAIL_JSON/SKILL_FAIL_JSON per namespace). `verdict read` already
-# author-gated and latest-wins-resolved that exact comment, so this is a plain body fetch of it —
-# no re-derivation of the resolver. (When the code namespace was resolved via a native
-# CHANGES_REQUESTED review rather than a marker, read the review body from
-# `repos/$REPO/pulls/$PR/reviews` instead — a native review carries no issue-comment id.)
-CID=$(jq -r '.commentId // empty' <<<"$FAIL_JSON")
-[ -n "$CID" ] && gh api "repos/$REPO/issues/comments/$CID" --jq '.body'
+PR="${1:-}"
+if [ -z "$PR" ]; then
+	printf 'write-code Step R2: no PR number — run this as `bash ./claude-plugins/kampus-pipeline/skills/write-code/scripts/stepR2-fail-body.sh <PR> [code|doc|skill]`. NO findings were read.\n' >&2
+	exit 1
+fi
+GATE="${2:-code}"   # the moved block hardcoded the code namespace and told the reader to swap per namespace
+case "$GATE" in code|doc|skill) ;; *)
+	echo "write-code Step R2: unknown namespace '$GATE' — expected code, doc or skill. NO findings were read." >&2
+	exit 1 ;;
+esac
+REPO="$(kp_repo)" || { echo "write-code Step R2: target repo unresolved — NO findings were read." >&2; exit 1; }
+if [ -z "${CLAUDE_CODE_SESSION_ID:-}" ]; then
+	echo "write-code Step R2: §SP session id unset — cannot re-derive R1's scratch dir (#3718)." >&2
+	exit 1
+fi
+SCRATCH="${TMPDIR:-/tmp}/kampus-run/$CLAUDE_CODE_SESSION_ID/write-code-repair-$PR"
+JSON_FILE="$SCRATCH/$GATE-fail.json"
+if [ ! -s "$JSON_FILE" ]; then
+	echo "write-code Step R2: no R1 payload at $JSON_FILE — Step R1 never ran in this session. That is UNKNOWN, never an empty FAIL table." >&2
+	exit 1
+fi
+# the full body of the resolving FAIL marker — its comment id came from R1's `verdict read` JSON.
+# `verdict read` already author-gated and latest-wins-resolved that exact comment, so this is a plain
+# body fetch of it — no re-derivation of the resolver.
+CID=$(jq -r '.commentId // empty' < "$JSON_FILE")
+if [ -z "$CID" ]; then
+	echo "write-code Step R2: R1's $GATE payload carries no commentId — the resolving verdict was a native review (read pulls/$PR/reviews) or none at all. NO marker body was fetched." >&2
+	exit 1
+fi
+mkdir -p "$SCRATCH" || { echo "write-code Step R2: §SP could not create a per-run scratch dir (#3718)." >&2; exit 1; }
+gh api "repos/$REPO/issues/comments/$CID" --jq '.body' > "$SCRATCH/fail-body.md" \
+	|| { echo "write-code Step R2: could not read comment $CID — NO findings were read (UNKNOWN, never 'no findings')." >&2; exit 1; }
+printf 'CID=%s\nFAILBODY_FILE=%s\n' "$CID" "$SCRATCH/fail-body.md"
+cat "$SCRATCH/fail-body.md"

@@ -1,23 +1,29 @@
 #!/usr/bin/env bash
-# shellcheck shell=bash disable=SC1007,SC1091,SC2016
 # Step R3: reply on the inline review thread this round addressed.
 #
-# Extracted VERBATIM from write-code/SKILL.md's Step R3 fenced block (epic #4435 phase 1, #4449).
-# A byte-move, not a rewrite: replacing this glue with `pipeline-cli` verbs is phase 2 (#1929).
+# usage: stepR3-thread-reply.sh <PR> <CID> "Addressed in <short-sha>: <one line on the fix>."
 #
-# SOURCED, never executed: it reads the $PR and the $CID that stepR2-fail-body.sh left in this shell.
-# Sets NO shell options; no EXIT trap (#4476, class #4479).
+# Its answer is its EXIT STATUS — non-zero ⇒ NOTHING was posted.
+#
+# Executed, never sourced (ADR 0232). It used to read the `$PR` and the `$CID` stepR2-fail-body.sh
+# left in the agent's shell; both now arrive as explicit arguments (CID is that script's `CID=` stdout
+# line). The reply body stays a per-run TEMPLATE authored at the call site, which is what keeps it
+# visible in repair.md rather than frozen in a script.
+# shellcheck disable=SC1007,SC1091,SC2016,SC2086
+set -uo pipefail
+# shellcheck source=../../../lib/common.sh
 . "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
 
-# The one seam this move needed: the block's reply body was a per-run TEMPLATE
-# ("Addressed in <short-sha>: <one line on the fix>."), so it stays authored at the sourcing site and
-# arrives as $1 — which keeps the template visible in SKILL.md rather than frozen in a script. Fail
-# closed on an absent one: an empty body posts a blank reply that claims a fix and says nothing.
-REPLY_BODY="${1:-}"
-if [ -z "$REPLY_BODY" ]; then
-  printf 'write-code Step R3: no reply body — source this as `. "$WRITECODE_SCRIPTS/stepR3-thread-reply.sh" "Addressed in <short-sha>: <one line on the fix>."`. NOTHING was posted.\n' >&2
-  return 1
+PR="${1:-}"
+CID="${2:-}"
+REPLY_BODY="${3:-}"
+# Fail closed on any absent one: an empty body posts a blank reply that claims a fix and says nothing,
+# and an empty PR/CID addresses a thread that is not the one this round answered.
+if [ -z "$PR" ] || [ -z "$CID" ] || [ -z "$REPLY_BODY" ]; then
+	printf 'write-code Step R3: need the PR, the comment id and a reply body — run this as `bash ./claude-plugins/kampus-pipeline/skills/write-code/scripts/stepR3-thread-reply.sh <PR> <CID> "Addressed in <short-sha>: <one line on the fix>."`. NOTHING was posted.\n' >&2
+	exit 1
 fi
+REPO="$(kp_repo)" || { echo "write-code Step R3: target repo unresolved — NOTHING was posted." >&2; exit 1; }
 # reply on the inline comment thread you addressed ($CID = the comment id from R2)
 gh api -X POST "repos/$REPO/pulls/$PR/comments/$CID/replies" \
-  -f body="$REPLY_BODY"
+	-f body="$REPLY_BODY" >&2

@@ -11,10 +11,10 @@
 #
 # The guard body itself is NOT here: `wt_preflight` and `lane_worktree` live in `lib/common.sh`,
 # sourced below. This script owns only the EXECUTED FORM — run the guard, narrate to stderr, print
-# the resolved root. Hosting the definitions here instead would strand four SOURCED siblings
-# (`step4-branch.sh`, `step5-push.sh`, `stepR2-branch-rebase.sh`, `stepR3-push-and-note.sh`) that
-# call `wt_preflight` in the agent's own shell: a subprocess's functions never reach its parent, and
-# no CI check can see the break (#4449 repair round 2).
+# the resolved root. The body stays in the lib because it has other consumers that call it as a
+# function in their own shell (`shared/scripts/iso-preflight.sh`, `review-code/scripts/
+# materialize-head.sh`, `ship-it/scripts/step0-preflight.sh`); a subprocess's functions never reach
+# its parent, and no CI check can see that break (#4449 repair round 2).
 #
 # `set -uo pipefail`, never `-e`: errexit aborts a fail-closed branch before it prints its BLOCKING
 # line, and paired with a cleanup EXIT trap it launders a `set -u` abort into exit 0
