@@ -31,6 +31,19 @@ describe("CONTROL_PLANE_RE classifies the ADR-0174 boundary broadenings (#2761)"
 		expect(isControlPlane("claude-plugins/kampus-pipeline/skills/report/lib/helper.sh")).toBe(true);
 	});
 
+	it("classifies gate-shared text under skills/shared/ as control-plane (#4396)", () => {
+		// Text a gate is instructed to FOLLOW is gate-critical wherever it is hosted, so extracting it
+		// out of a consumer's SKILL.md to cut per-run load cost must not buy that saving by dropping it
+		// out of §CP. The whole-tree skills clause (#4446) already covers it; this pins that, so a
+		// future re-narrowing of the clause reds here instead of silently un-gating the shared text.
+		expect(
+			isControlPlane("claude-plugins/kampus-pipeline/skills/shared/specialist-fan-out.md"),
+		).toBe(true);
+		expect(isControlPlane("claude-plugins/kampus-pipeline/skills/shared/anything-else.md")).toBe(
+			true,
+		);
+	});
+
 	it("classifies the lint/GritQL governance config as control-plane (ADR 0193)", () => {
 		// An ungated path to weaken a lint rule is a guard-relaxing vector — same class as ADR 0187's
 		// enforcement-surface test. The root biome config and every GritQL plugin rule are §CP.

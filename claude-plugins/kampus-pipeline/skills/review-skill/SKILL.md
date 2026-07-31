@@ -518,9 +518,10 @@ work-list, exactly as `review-code` does for code. **The fan-out is additive —
 *additional* findings into the route step; the four-check rigor checklist (Step 4), including
 gate-invariant-preservation, is preserved in full, not replaced.**
 
-**This is one logic with four call sites — `review-code` is its citable home.** The fan-out
+**This is one logic with four call sites — [`../shared/specialist-fan-out.md`](../shared/specialist-fan-out.md)
+is its citable home.** The fan-out
 mechanism, the binary in/out-of-scope route decision, and the append surface are defined once
-in [`review-code`'s shared reference](../review-code/SKILL.md#specialist-fan-out--route-dont-grade-adr-0079--the-shared-reference)
+in [the shared reference](../shared/specialist-fan-out.md#specialist-fan-out--route-dont-grade-adr-0079--the-shared-reference)
 (ADR [0079](https://github.com/kamp-us/phoenix/blob/main/.decisions/0079-reviewer-authored-acceptance-criteria.md)
 §1–§2) and the append shape + provenance tag + four fences in
 [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §2. **Cite them; do not
@@ -547,7 +548,7 @@ verdict.
   same trace test the reference and `plan-epic` use) → **append a new acceptance criterion**
   to the linked issue via the **§2 reviewer-append surface**, provenance-tagged
   `<!-- ac:review-skill pr:#<PR> round:K -->`. Perform the append by the reference's
-  [four-fences-enforced procedure](../review-code/SKILL.md#performing-the-append--the-four-fences-enforced-at-this-site-adr-0079)
+  [four-fences-enforced procedure](../shared/specialist-fan-out.md#performing-the-append--the-four-fences-enforced-at-this-site-adr-0079)
   — fail-closed ACL self-check, round-K freeze, append-only body reconstruction — so every fence
   is enforced at the site, not merely cited. It lands as a fresh `[ ]` row the next
   `write-code` repair round drains and the next review verifies; it shows in *this* verdict's
