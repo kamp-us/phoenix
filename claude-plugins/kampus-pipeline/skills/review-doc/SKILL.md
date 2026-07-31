@@ -1031,7 +1031,7 @@ re-review at a new head leaves the prior head's verdict standing and a concurren
 overwrites another's record (ADR 0058 rule 2, refined by ADR 0213). Never hand-roll the `PATCH`:
 
 ```bash
-HEAD_SHA="$(gh api repos/$REPO/pulls/$PR --jq .head.sha)"   # the head you reviewed
+HEAD_SHA="$(bash ./claude-plugins/kampus-pipeline/skills/review-doc/scripts/current-head.sh "$PR")"   # the head you reviewed
 # $BODY is your composed FAIL verdict; first line: review-doc: FAIL @ <HEAD_SHA> — changes-requested.
 # Same (PR, gate-namespace, head, run) upsert as the PASS path.
 printf '%s' "$BODY" | bash ./claude-plugins/kampus-pipeline/skills/review-doc/scripts/verdict-post.sh "$PR"

@@ -769,7 +769,7 @@ head leaves the prior head's verdict standing and a concurrent run never overwri
 record (ADR 0058 rule 2, refined by ADR 0213). Never hand-roll the `PATCH`:
 
 ```bash
-HEAD_SHA="$(gh api repos/$REPO/pulls/$PR --jq .head.sha)"   # the head you reviewed
+HEAD_SHA="$(bash ./claude-plugins/kampus-pipeline/skills/review-skill/scripts/current-head.sh "$PR")"   # the head you reviewed
 # $BODY is your composed FAIL verdict; first line: review-skill: FAIL @ <HEAD_SHA> — changes-requested.
 # Upsert through the guarded tool on the (PR, gate-namespace, head, run) key — namespace-anchored,
 # so a fresh FAIL replaces this head+run's own prior review-skill record (an advisory included) and
