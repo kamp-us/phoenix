@@ -190,9 +190,44 @@ gh api "repos/$REPO/pulls?state=open&per_page=100" \
 ```
 FIXTURE
 
-# The second payload line of each of these three is a SANCTIONED invocation, so the block's verdict
-# turns on the first line alone — a glue partner would red the block for the wrong reason and the
-# fixture would pass with its clamp disabled (the trap the first draft of this fixture fell into).
+# THE CLAMP GROUP — one fixture per accept clause's clamp, in classify() order, each pinning the
+# REJECT side its clause's accept fixture cannot. Two rounds of review found a clause whose accept
+# side alone was pinned (#4587 repair rounds 1 and 2), so the coverage rule is: mutate each clamp
+# individually, and exactly one fixture here must flip.
+#
+# The second payload line of each is a SANCTIONED invocation, so the block's verdict turns on the
+# first line alone — a glue partner would red the block for the wrong reason and the fixture would
+# pass with its clamp disabled (the trap the first draft of these fixtures fell into).
+c1_case script-invocation-heading-a-pipeline red <<'FIXTURE'
+```bash
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/triage/scripts/dedup.sh" "$N" | jq -r '.[]'
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/triage/scripts/label.sh" "$N"
+```
+FIXTURE
+
+# `verb-call-inside-a-pipeline` above pins the ANCHORING (a shim path buried mid-pipeline never
+# matches at all), not this clamp — a verb call that HEADS the pipeline is what reaches it.
+c1_case verb-call-heading-a-pipeline red <<'FIXTURE'
+```bash
+"$PCLI" verdict read --pr "$PR" --gate code | jq -r '._tag'
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/triage/scripts/dedup.sh" "$N"
+```
+FIXTURE
+
+c1_case shim-resolution-with-pipeline red <<'FIXTURE'
+```bash
+PCLI="$(gh api "repos/$REPO/issues" --jq '.[].number' | sort -n | head -1)/bin/pipeline-cli"
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/triage/scripts/dedup.sh" "$N"
+```
+FIXTURE
+
+c1_case placeholder-assignment-then-chain red <<'FIXTURE'
+```bash
+RUN=<run id> && gh run view "$RUN" --log-failed
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/heal-ci/scripts/failed-logs.sh" "$RUN"
+```
+FIXTURE
+
 c1_case expansion-default-with-substitution red <<'FIXTURE'
 ```bash
 NUMS="${CACHED_NUMS:-$(gh api "repos/$REPO/issues?state=open" --jq ".[].number" | sort -n | head -5)}"
@@ -207,6 +242,9 @@ NUMS="${CACHED_NUMS:-`gh api "repos/$REPO/issues?state=open" --jq ".[].number"`}
 ```
 FIXTURE
 
+# The one fixture with NO sanctioned partner — both its lines are the offending class, because the
+# defect IS that a trailing comment classifies the code. Still non-vacuous: it flips alone when
+# decomment()'s strip is deleted.
 c1_case comment-cannot-classify-the-code red <<'FIXTURE'
 ```bash
 mkdir -p .decisions                                # per skills/adr/scripts/next-number.sh

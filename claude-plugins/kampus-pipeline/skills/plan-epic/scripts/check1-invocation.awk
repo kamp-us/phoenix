@@ -13,9 +13,13 @@
 # every verb in a one-line script, hide the operator placeholders) removes zero glue and reduces
 # legibility, which is what the epic exists to undo.
 #
-# Every shape is clamped by composes(): a recognized command that PIPES, CHAINS or `eval`s is glue
-# again, whatever it invokes. That clamp is what keeps the widening from greening everything (#4587
-# AC3) — without it a `gh … | grep … | "$PCLI" leak-guard scan-comment` scores as a verb call.
+# EVERY accept clause in classify() is clamped by composes() — read on the UNMASKED line, and via
+# computed() for the bare-assignment clause: a recognized command that PIPES, CHAINS or `eval`s is
+# glue again, whatever it invokes. That clamp is what keeps the widening from greening everything
+# (#4587 AC3) — without it a `gh … | grep … | "$PCLI" leak-guard scan-comment` scores as a verb call
+# and a `PCLI="$(gh … | sort | head -1)/bin/pipeline-cli"` scores as a shim resolution. check 1a pins
+# BOTH directions of every clause, because an accept side pinned alone is how the shim-resolution
+# clause shipped unclamped through two review rounds (#4587 repair round 2).
 
 # a trailing ` # …` comment is prose. Strip it before matching so a mention of `$PCLI` or of a
 # `skills/**.sh` path inside a comment cannot classify the CODE on that line. The strip needs
@@ -59,7 +63,11 @@ function classify(l,   c, t, u) {
 	# mask ${...} expansions: their :?/:- message text is prose, and its punctuation must not read
 	# as shell composition (campaign's FOUNDER guard carries a `;` inside its refusal message)
 	gsub(/\$\{[^}]*\}/, "$V", t)
-	if (t ~ /^[A-Za-z_][A-Za-z0-9_]*=.*bin\/pipeline-cli['"]?$/) return 1   # the shim resolution itself
+	# the shim resolution itself. The clamp reads the UNMASKED `c`: the mask above exists to hide an
+	# expansion's prose punctuation, so composing it would let a `PCLI="$(gh … | sort | head -1)/bin/
+	# pipeline-cli"` pipeline hide behind the wrapper (#4587 repair round 2). `!computed(c)` would be
+	# wrong here — a real shim resolution legitimately carries `$(git rev-parse …)`.
+	if (!composes(c) && t ~ /^[A-Za-z_][A-Za-z0-9_]*=.*bin\/pipeline-cli['"]?$/) return 1
 	# reads the UNMASKED `c` for the substitution, because the mask above deletes a `$( … )` NESTED
 	# INSIDE an expansion — so `computed(t)` alone accepted `NUMS="${X:-$(gh api … | sort | head -5)}"`,
 	# the wrapper rather than the pipeline deciding (#4587 repair round 1). Pinned by
