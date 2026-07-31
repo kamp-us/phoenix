@@ -10,9 +10,19 @@
 # (ADR 0092): a run that resolved no SKILL.md or no scripts is a FAIL, never a silent pass. This
 # harness excludes ITSELF from the extracted-script set — it is the verifier, not moved shell.
 #
-#   1. INVOCATION-ONLY — every fenced bash/sh block left in each SKILL.md contains nothing but
-#      script invocations (comments, blanks and trailing `\` continuations allowed); no multi-line
-#      glue remains.
+#   1. INVOCATION-ONLY — every fenced bash/sh block left in each SKILL.md carries only sanctioned
+#      non-glue lines (comments, blanks and trailing `\` continuations allowed); no multi-line glue
+#      remains. The sanctioned shapes are epic #4435 / child #4454's AC4 list as recorded in the
+#      epic ledger — a skill-local script executed by path (anywhere under `skills/<skill>/`, not
+#      only `scripts/`), a `pipeline-cli` verb call (the path-resolved shim, literal or via a
+#      resolved `"$PCLI"`), the shim-resolution assignment, an operator placeholder assignment
+#      (`NAME=<placeholder>`) that supplies one, and a heredoc body fed to a recognized invocation.
+#      The recognizer lives in `check1-invocation.awk`; #4587 is why it is that wide, and why the
+#      fix belongs here and never in the corpus it judges.
+#   1a. RECOGNIZER SELF-TEST — check 1's classifier, run over fixture blocks that pin BOTH
+#      directions: every sanctioned shape is accepted, AND a multi-line gh/jq pipeline still reds.
+#      A widening that greens everything is a failure, so the harness re-proves it didn't on every
+#      run rather than asserting it in prose (#4587 AC3).
 #   2. NO BARE `pipeline-cli` — the extracted scripts reach the shim only through `kp_pcli`, so a
 #      PATH-resolved `pipeline-cli` (not on PATH, ADR 0207) cannot re-enter the corpus.
 #   3. NO USER-LOCAL PATHS — no /Users/<name> or /home/<name> absolute path. This is the check
@@ -46,7 +56,9 @@ set -uo pipefail
 # shellcheck disable=SC1007  # `CDPATH= cd` is the corpus idiom: an empty CDPATH for this one command
 SKILLS_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 # shellcheck disable=SC1007
-SELF="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/$(basename -- "${BASH_SOURCE[0]}")"
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+SELF="$SCRIPT_DIR/$(basename -- "${BASH_SOURCE[0]}")"
+CHECK1_AWK="$SCRIPT_DIR/check1-invocation.awk"
 SKILLS=(plan-epic review-plan)
 [ "$#" -gt 0 ] && SKILLS=("$@")
 
@@ -65,6 +77,128 @@ code_lines() {
 	done
 }
 
+# 1a. the recognizer self-test — the SAME awk check 1 runs, over fixtures that pin both directions
+[ -f "$CHECK1_AWK" ] || {
+	fail "check 1's recognizer is missing at $CHECK1_AWK — refusing to report a pass over nothing (ADR 0092)"
+	echo "verify-extraction: FAILED — $errors error(s)"
+	exit 1
+}
+c1_cases=0
+c1_bad=0
+c1_case() {   # <name> <ok|red>; the fixture's fenced block arrives on stdin
+	local name="$1" expect="$2" tmp out verdict
+	tmp="$(mktemp)" || { fail "check 1 self-test '$name': could not allocate a fixture"; c1_bad=1; return; }
+	cat > "$tmp"
+	out="$(awk -v skill="$name" -f "$CHECK1_AWK" "$tmp")"
+	rm -f "$tmp"
+	verdict=ok
+	[ -n "$out" ] && verdict=red
+	c1_cases=$((c1_cases + 1))
+	[ "$verdict" = "$expect" ] && return
+	fail "check 1 self-test '$name': recognizer said $verdict, expected $expect"
+	[ -n "$out" ] && printf '%s\n' "$out"
+	c1_bad=1
+}
+
+c1_case script-invocation ok <<'FIXTURE'
+```bash
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/triage/scripts/dedup.sh" "$N"
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/triage/scripts/label.sh" "$N"
+```
+FIXTURE
+
+c1_case skill-local-script-outside-scripts ok <<'FIXTURE'
+```bash
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/report/footer.sh"
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/report/footer.sh" --short
+```
+FIXTURE
+
+c1_case resolved-pcli-verb-call ok <<'FIXTURE'
+```bash
+PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
+EXISTING=$("$PCLI" split-guard check \
+  --parent <original #N> --title "<the split-child title>")
+```
+FIXTURE
+
+c1_case literal-shim-verb-call ok <<'FIXTURE'
+```bash
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/bin/pipeline-cli" decisions-index compact
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/bin/pipeline-cli" commands compact
+```
+FIXTURE
+
+c1_case operator-placeholder-assignment ok <<'FIXTURE'
+```bash
+RUN=<run id>     # the failed run
+PR=<n>           # the PR, if this is a PR run (else leave unset)
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/heal-ci/scripts/failed-logs.sh" "$RUN"
+```
+FIXTURE
+
+c1_case heredoc-body-template ok <<'FIXTURE'
+```bash
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/report/scripts/file-report.sh" \
+  "<title>" <<'EOF'
+## Summary
+A body line that merely LOOKS like glue: gh api repos/o/r/issues | jq -r '.[].number'
+EOF
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/report/footer.sh"
+```
+FIXTURE
+
+c1_case solo-uncomposed-command ok <<'FIXTURE'
+```bash
+ls .decisions/NNNN-*.md   # -> .decisions/NNNN-real-slug.md, use exactly this filename
+```
+FIXTURE
+
+c1_case multi-line-gh-jq-pipeline red <<'FIXTURE'
+```bash
+gh api "repos/$REPO/issues?state=open&per_page=100" \
+  --jq '.[] | select(.assignee == null) | .number' | while read -r n; do
+  gh api "repos/$REPO/issues/$n" --jq .title
+done
+```
+FIXTURE
+
+c1_case captured-gh-jq-assignment red <<'FIXTURE'
+```bash
+PRS=$(gh api "repos/$REPO/pulls?state=open" --jq '.[].number')
+for p in $PRS; do echo "#$p"; done
+```
+FIXTURE
+
+c1_case solo-composed-glue red <<'FIXTURE'
+```bash
+gh api "repos/$REPO/labels" --jq '.[].name' | sort
+```
+FIXTURE
+
+c1_case verb-call-inside-a-pipeline red <<'FIXTURE'
+```bash
+PCLI="${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/bin/pipeline-cli"
+gh pr diff "$PR" | grep '^+' | "$PCLI" leak-guard scan-comment
+```
+FIXTURE
+
+c1_case solo-continued-command red <<'FIXTURE'
+```bash
+gh api "repos/$REPO/pulls?state=open&per_page=100" \
+  --jq '.[] | select(.draft | not) | .number'
+```
+FIXTURE
+
+c1_case empty-block red <<'FIXTURE'
+```bash
+```
+FIXTURE
+
+if [ "$c1_bad" = 0 ]; then
+	ok "check 1 recognizer self-test: $c1_cases fixture block(s) — every sanctioned shape accepted, glue still red"
+fi
+
 SCRIPT_PATHS=()
 for skill in "${SKILLS[@]}"; do
 	md="$SKILLS_DIR/$skill/SKILL.md"
@@ -79,28 +213,13 @@ for skill in "${SKILLS[@]}"; do
 		scanned_sh=$((scanned_sh + 1))
 	done < <(find "$dir" -type f -name '*.sh' | LC_ALL=C sort)
 
-	# 1. every remaining fenced bash/sh block contains only script invocations
-	bad="$(awk -v skill="$skill" '
-		/^[[:space:]]*```(bash|sh)[[:space:]]*$/ { inb=1; start=NR; n=0; inv=0; cont=0; next }
-		inb && /^[[:space:]]*```[[:space:]]*$/ {
-			if (n == 0 || inv != n) printf "%s:%d (payload lines=%d, invocations=%d)\n", skill, start, n, inv
-			inb=0; next
-		}
-		inb {
-			line=$0
-			sub(/^[[:space:]]+/, "", line)
-			if (line == "" || line ~ /^#/) next          # comments and blanks are not glue
-			if (cont) { cont = (line ~ /\\$/); next }    # a continuation of the counted line
-			n++
-			if (line ~ /skills\/[a-z-]+\/scripts\/[a-z0-9_-]+\.sh/) inv++
-			cont = (line ~ /\\$/)
-		}
-	' "$md")"
+	# 1. every remaining fenced bash/sh block carries only sanctioned non-glue lines
+	bad="$(awk -v skill="$skill" -f "$CHECK1_AWK" "$md")"
 	if [ -n "$bad" ]; then
-		fail "$skill/SKILL.md: fenced block(s) carry something other than script invocations:"
-		printf '  %s\n' "$bad"
+		fail "$skill/SKILL.md: fenced block(s) carry something other than a sanctioned invocation shape:"
+		printf '%s\n' "$bad"
 	else
-		ok "$skill/SKILL.md: every fenced bash/sh block carries only scripts/*.sh invocations"
+		ok "$skill/SKILL.md: every fenced bash/sh block carries only sanctioned invocation shapes"
 	fi
 done
 
