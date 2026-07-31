@@ -1,9 +1,47 @@
+#!/usr/bin/env bash
+# heal-ci Step 4's twin-suppression guard: is a write-code repair already in flight on this PR?
+#
+# usage: active-repair.sh <pr>
+#
+# Prints four `KEY=value` lines on stdout — VERDICT_UNKNOWN, CODE_FAIL, DOC_FAIL, ROUNDS. Those four
+# ARE the answer heal-ci's prose reads (`ROUNDS < 3` plus a current-head FAIL in either namespace ⇒
+# an active repair ⇒ route the comment, do not file a twin).
+#
+# FAIL-CLOSED: the permissive reading here is "no repair in flight", and that branch FILES a twin
+# defect against a live repair — so an answer this script could not produce must never arrive as
+# one. A non-zero exit prints NOTHING on stdout and its diagnostic on stderr (§ZS / ADR 0092);
+# `VERDICT_UNKNOWN=1` is the in-band form of the same rule for the one input that resolves
+# per-namespace rather than per-run.
+#
+# Extracted from heal-ci/SKILL.md (#4454, epic #4435). Executed, never sourced (ADR 0232).
+# The moved lines' shellcheck findings moved with them: `$VERDICT` / `$CP_FLAG` / the `gh api`
+# path expand to argument WORDS on purpose, and quoting them would be a rewrite — phase 2 (#1929),
+# not this byte-move. SC1007/SC1091 are the shared `CDPATH= cd` source idiom's, as in every
+# sibling script.
+# shellcheck disable=SC1007,SC1091,SC2086
+set -uo pipefail
+# shellcheck source=../../../lib/common.sh
+. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
+
+HERE="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+[ -n "$HERE" ] || { echo "heal-ci: could not resolve this script's own directory — the active-repair check did NOT run." >&2; exit 1; }
+KP_ROOT="$(CDPATH= cd -- "$HERE/../../.." && pwd)"
+[ -n "$KP_ROOT" ] || { echo "heal-ci: could not resolve the plugin root — the active-repair check did NOT run." >&2; exit 1; }
+
+[ "$#" -ge 1 ] || {
+	echo "heal-ci: active-repair.sh needs a PR number — the check did NOT run (UNKNOWN, never 'no repair in flight')." >&2
+	echo "usage: active-repair.sh <pr>" >&2
+	exit 2
+}
+PR="$1"
+REPO="$(kp_repo)" || { echo "heal-ci: target repo unresolved — the active-repair check did NOT run (UNKNOWN, never 'no repair in flight')." >&2; exit 1; }
+
 # is a write-code repair already in flight on this PR? (PR runs only) — resolve the verdict the
 # EXACT way write-code Step R1 does, by delegating each (PR, gate) FAIL-bound-to-head resolution to
 # `pipeline-cli verdict read` (ACL author-gate + latest-wins + SHA-staleness, ADR 0055/0058). Resolve
 # the CLI via the `bin/pipeline-cli` shim — in-repo bin, else the installed bin, else the pinned
 # `pnpm dlx` fallback reading the one pin (hooks/pin.sh); no version pinned here (#3653; ADR 0062/0064).
-VERDICT="${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/bin/pipeline-cli verdict"
+VERDICT="$KP_ROOT/bin/pipeline-cli verdict"
 
 # §CP-ness is part of the (PR, gate, head, §CP-ness) tuple `verdict read` resolves, so pass it here
 # exactly as write-code Step R1 does (#4049): on a §CP PR the pass is the SHA-less ADVISORY, invisible
@@ -14,12 +52,14 @@ VERDICT="${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/bin/pipeline-cli 
 # bare `gh … | cp-classify` pipe hands the verb gh's STDOUT error document to classify and answers
 # `not-control-plane` on an unread list (#4216); and only the PROVEN `not-control-plane` state word
 # drops the flag — never a bare non-zero test, which fires on a usage error (1) or a missing bin (127).
-. "${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/shared/scripts/cp-read.sh"
-if ! cp_changed_files "$REPO" "$PR"; then
+# `>&2` routes only the §ZS scope LINE — the result arrives in $CP_FILES, and THIS script's stdout is
+# the four-line answer its caller reads, so a diagnostic on it would corrupt the answer.
+. "$KP_ROOT/skills/shared/scripts/cp-read.sh"
+if ! cp_changed_files "$REPO" "$PR" >&2; then
   CP_STATE=unknown   # the input never arrived ⇒ UNKNOWN ⇒ hold as §CP (never `not-control-plane`)
 else
   CP_STATE="$(printf '%s\n' "$CP_FILES" \
-    | "${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/bin/pipeline-cli" cp-classify classify --repo "$REPO" 2>/dev/null)"
+    | "$KP_ROOT/bin/pipeline-cli" cp-classify classify --repo "$REPO" 2>/dev/null)"
 fi
 if [ "$CP_STATE" = "not-control-plane" ]; then CP_FLAG=""; else CP_FLAG="--cp"; fi
 
@@ -63,4 +103,11 @@ if [ -n "$RSHA" ] && [ -n "$RAT" ]; then case "$CURRENT_HEAD" in "$RSHA"*)
 # human, NOT an active repair. The script author-gates the FAIL markers to write+ collaborators
 # (ADR 0055) and clusters by >120s gap — the same round identity write-code uses. A non-zero exit is
 # UNKNOWN, never 0 rounds; read the status before the number.
-ROUNDS="$("${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/heal-ci/scripts/repair-rounds.sh" "$PR")" || exit 1
+ROUNDS="$("$HERE/repair-rounds.sh" "$PR")" || {
+	printf '%s\n' "$ROUNDS" >&2
+	echo "heal-ci: the FAIL-round count did not resolve — UNKNOWN, never 0 rounds. No answer emitted." >&2
+	exit 1
+}
+
+printf 'VERDICT_UNKNOWN=%s\nCODE_FAIL=%s\nDOC_FAIL=%s\nROUNDS=%s\n' \
+	"$VERDICT_UNKNOWN" "$CODE_FAIL" "$DOC_FAIL" "$ROUNDS"
