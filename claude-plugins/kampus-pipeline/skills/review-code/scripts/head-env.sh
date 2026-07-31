@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
 # Print the absolute path of the run-state handle `materialize-head.sh` wrote (REVIEW_WT / PR_REF /
-# HEAD_SHA / BASE_REF), so any later step re-derives it with `. "$(head-env.sh)"` after the harness
-# resets the shell between Bash calls. Extracted from review-code/SKILL.md's repeated
-# `. "$WT_FILE"` re-source line (#4451, epic #4435 phase 1). Extraction contract:
-# ../SKILL.md § The extracted scripts.
+# HEAD_SHA / BASE_REF), so a later step re-derives those four after the harness resets the shell
+# between Bash calls. Extracted from review-code/SKILL.md's repeated `. "$WT_FILE"` re-source line
+# (#4451, epic #4435 phase 1). Extraction contract: ../SKILL.md § The extracted scripts.
+#
+# ITS CALLERS ARE THIS SKILL'S OWN SCRIPTS, never the agent's top-level command. They read it as
+# `. "$(head-env.sh)"` from inside their own process, which ADR 0232 leaves sanctioned — the ban is
+# on an AGENT sourcing at its top-level command, which the isolation verifier refuses. The agent
+# reads the same four values off `materialize-head.sh`'s stdout instead.
 #
 # The namespace is per-run and per-session (§SP, #3718), which is what keeps a SIBLING reviewer's
 # tree out of reach — the failure a `git worktree list` re-derivation on a shared leaf name walks

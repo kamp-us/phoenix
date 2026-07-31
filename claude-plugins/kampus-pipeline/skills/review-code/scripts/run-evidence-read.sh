@@ -3,12 +3,20 @@
 # Extracted from review-code/SKILL.md (#4451, epic #4435 phase 1). Extraction contract:
 # ../SKILL.md § The extracted scripts.
 #
-# STDOUT IS A MACHINE CHANNEL: the ONLY thing this writes to stdout is the run-state handle carrying
-# BUNDLE / BUNDLE_STATE / BUNDLE_LINE, so the caller can `. "$(run-evidence-read.sh "$PR")"`. Four
-# states come back on BUNDLE_STATE and they are DIFFERENT FACTS — `present` | `pending` | `absent` |
-# `unknown`; read the state word, never the exit alone, and never report `pending`/`unknown` as
-# `absent` (that invents a CI gap — PR #3913). An UNRESOLVED shim exits 127 with EMPTY stdout, so the
-# caller's `.` fails loudly: "could not run" is not a bundle state.
+# usage: bash ./claude-plugins/kampus-pipeline/skills/review-code/scripts/run-evidence-read.sh <pr>
+#
+# STDOUT IS THE ANSWER (ADR 0232, .patterns/skill-script-io-contract.md) — four `KEY=value` lines:
+#   HEAD_SHA / BUNDLE_STATE / BUNDLE_JSON / BUNDLE_LINE
+# BUNDLE_LINE is printed LAST and RAW (never %q-quoted) because the caller pastes it verbatim into
+# the verdict; the §SP handle keeps its own %q-quoted copy, which is what `run-evidence-manifest.sh`
+# re-sources in-process (sanctioned under ADR 0232 — only an agent's top-level `.` is banned).
+#
+# Four states come back on BUNDLE_STATE and they are DIFFERENT FACTS — `present` | `pending` |
+# `absent` | `unknown`; read the state word, never the exit alone, and never report `pending`/
+# `unknown` as `absent` (that invents a CI gap — PR #3913). The set is ENUMERATED, not interpolated:
+# anything else is UNKNOWN, so stdout stays EMPTY, a named diagnostic goes to stderr and the exit is
+# non-zero (§ZS, ADR 0092). An UNRESOLVED shim exits 127 with EMPTY stdout the same way: "could not
+# run" is not a bundle state, and a non-zero exit here is never `absent`.
 set -uo pipefail
 # shellcheck source=../../../lib/common.sh disable=SC1007,SC1091
 . "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
@@ -25,12 +33,29 @@ BUNDLE="$("$PCLI" run-evidence read --pr "$PR")" || true
 BUNDLE_STATE="$(jq -r '.state' <<<"$BUNDLE")"     # present | pending | absent | unknown
 BUNDLE_LINE="$(jq -r '.reportLine' <<<"$BUNDLE")" # the verdict line, evidence already in it
 
+# Assert the state word BEFORE writing anything. `jq` on an empty/non-JSON $BUNDLE leaves
+# BUNDLE_STATE empty, and an empty state word is UNKNOWN — it must never reach the caller as a fifth,
+# unnamed state it has to interpret, nor as the permissive `absent`.
+case "$BUNDLE_STATE" in
+  present|pending|absent|unknown) ;;
+  *)
+    echo "run-evidence-read.sh: \`run-evidence read\` yielded state '${BUNDLE_STATE:-<empty>}', outside the enumerated present|pending|absent|unknown — UNKNOWN, never 'absent'. No answer produced." >&2
+    exit 1
+    ;;
+esac
+
 OUT="$(kp_scratch_open review-code-bundle)/bundle.env" || exit 1
+BUNDLE_JSON="$(dirname "$OUT")/bundle.json"
 {
   printf 'HEAD_SHA=%s\n' "$HEAD_SHA"
   printf 'BUNDLE_STATE=%s\n' "$BUNDLE_STATE"
   printf 'BUNDLE_LINE=%s\n' "$(printf '%q' "$BUNDLE_LINE")"
+  printf 'BUNDLE_JSON=%s\n' "$BUNDLE_JSON"
 } > "$OUT"
-printf '%s\n' "$BUNDLE" > "$(dirname "$OUT")/bundle.json"
-printf 'BUNDLE_JSON=%s\n' "$(dirname "$OUT")/bundle.json" >> "$OUT"
-printf '%s\n' "$OUT"
+printf '%s\n' "$BUNDLE" > "$BUNDLE_JSON"
+
+# THE ANSWER. BUNDLE_LINE goes last and unquoted so the caller can lift it verbatim into the verdict.
+printf 'HEAD_SHA=%s\n' "$HEAD_SHA"
+printf 'BUNDLE_STATE=%s\n' "$BUNDLE_STATE"
+printf 'BUNDLE_JSON=%s\n' "$BUNDLE_JSON"
+printf 'BUNDLE_LINE=%s\n' "$BUNDLE_LINE"
