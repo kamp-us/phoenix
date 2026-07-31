@@ -7,8 +7,8 @@
 # `test:unit` lives in `apps/web/package.json`, NOT the repo root, so the `-C` target is
 # `$REVIEW_WT/apps/web`; a bare `pnpm -C "$REVIEW_WT" test:unit` hits ERR_PNPM_NO_SCRIPT.
 set -uo pipefail
-# shellcheck source=../../shared/lib/common.sh disable=SC1007,SC1091
-. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../shared/lib" && pwd)/common.sh"
+# shellcheck source=../../../lib/common.sh disable=SC1007,SC1091
+. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
 
 # re-source $REVIEW_WT/$PR_REF after a between-call reset (#1807)
 # shellcheck disable=SC1007,SC1090

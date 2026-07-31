@@ -5,13 +5,13 @@
 #
 # Extracted VERBATIM from write-code/SKILL.md's Step R3 fenced block (epic #4435 phase 1, #4449).
 # A byte-move, not a rewrite: replacing this glue with `pipeline-cli` verbs is phase 2 (#1929) — the
-# hand-rolled $RUN_SCRATCH derivation duplicates `kp_scratch_path` (shared/lib/common.sh), and
+# hand-rolled $RUN_SCRATCH derivation duplicates `kp_scratch_path` (the plugin lib/common.sh), and
 # collapsing it onto that helper is phase 2's call.
 #
 # SOURCED, never executed: it reads the $N / $PR / $WT and the `claim_is_mine` + `wt_preflight`
 # functions the earlier steps left in this shell. WRITE "$RUN_SCRATCH/repair-progress.md" BEFORE
 # sourcing this. Sets NO shell options; no EXIT trap (#4476, class #4479).
-. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../shared/lib" && pwd)/common.sh"
+. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
 
 # §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
 PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"

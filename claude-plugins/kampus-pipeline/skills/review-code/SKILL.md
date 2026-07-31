@@ -92,7 +92,7 @@ load-bearing when you read or edit them:
   that skill's **own** directory on purpose, so sourcing the shared probe would move this skill's
   cycle wiring out of its guarded surface and the validators would fail — per-skill wiring stays
   per-skill (the rule is stated at `kp_skill_shell_surfaces` in
-  [`../shared/lib/common.sh`](../shared/lib/common.sh)).
+  [`../../lib/common.sh`](../../lib/common.sh)).
 
 ## Read-only on git working state
 

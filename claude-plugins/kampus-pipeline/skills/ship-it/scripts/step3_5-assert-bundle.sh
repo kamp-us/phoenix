@@ -9,7 +9,7 @@
 # file deliberately sets NO shell options — several guards here depend on `pipefail` being OFF —
 # and leaves its variables and functions in the sourcing shell, which is how the step's later
 # blocks still see them.
-. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../shared/lib" && pwd)/common.sh"
+. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
 
 # Each refusal below (transient, absent, schema, stale, checks-failed) is a stop path, so each
 # clears the merge intent before it reports (guard 6 / ADR 0198) — one wrapper, not N hand-copied disarms.

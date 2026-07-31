@@ -7,8 +7,8 @@
 # says which state it saw instead when it is not `present`, so a non-`present` bundle can never be
 # mistaken for an empty manifest (the four states are different facts; #3991).
 set -uo pipefail
-# shellcheck source=../../shared/lib/common.sh disable=SC1007,SC1091
-. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../shared/lib" && pwd)/common.sh"
+# shellcheck source=../../../lib/common.sh disable=SC1007,SC1091
+. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
 
 # shellcheck disable=SC1090,SC1091
 . "$(kp_scratch_path review-code-bundle)/bundle.env" || {

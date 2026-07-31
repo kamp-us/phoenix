@@ -7,8 +7,8 @@
 # then has to decide about — it is NOT a positive "standalone PR", and the caller never reads it as
 # one: `classify-issueless.sh` is what answers that, fail-closed, on its own evidence.
 set -uo pipefail
-# shellcheck source=../../shared/lib/common.sh disable=SC1007,SC1091
-. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../shared/lib" && pwd)/common.sh"
+# shellcheck source=../../../lib/common.sh disable=SC1007,SC1091
+. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
 
 [ "$#" -ge 1 ] || { echo "usage: linked-issue-timeline.sh <pr>" >&2; exit 2; }
 PR="$1"

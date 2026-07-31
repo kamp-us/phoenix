@@ -10,8 +10,8 @@
 #
 # Extracted from adr/SKILL.md (#4454, epic #4435 phase 1).
 set -uo pipefail
-# shellcheck source=../../shared/lib/common.sh disable=SC1007,SC1091
-. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../shared/lib" && pwd)/common.sh"
+# shellcheck source=../../../lib/common.sh disable=SC1007,SC1091
+. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
 
 [ "$#" -ge 1 ] || { echo "usage: sweep-shortlist.sh <path/to/.decisions/NNNN-slug.md>" >&2; exit 2; }
 PCLI="$(kp_pcli)" || exit 127

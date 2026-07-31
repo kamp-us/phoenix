@@ -142,7 +142,7 @@ describe("CONTROL_PLANE_RE covers the kampus-pipeline skills tree whole (#4458)"
 			`${skills}/shared/lib/common`, // extensionless — exit 3 before
 			`${skills}/shared/lib/README.md`, // exit 3 before
 			`${skills}/shared/specialist-fan-out.md`, // the #4440 relocation destination
-			`${skills}/shared/lib/common.sh`, // the one case that was already covered
+			`${skills}/shared/scripts/cp-read.sh`, // the `.sh` case that was already covered
 		]) {
 			expect(isControlPlane(path)).toBe(true);
 		}
@@ -177,6 +177,37 @@ describe("CONTROL_PLANE_RE covers the kampus-pipeline skills tree whole (#4458)"
 		);
 		expect(isControlPlane("claude-plugins/pipeline-crew/skills/some-skill/SKILL.md")).toBe(false);
 		expect(isControlPlane("claude-plugins/pipeline-crew/skills/lib/helper.sh")).toBe(false);
+	});
+});
+
+// #4484 moved the shared shell library out of the skills tree. Outside `skills/**` a path is
+// proven-ordinary (`cp-classify` exit 3 — ZERO required approvals under the live ruleset), so the
+// move only stays safe while this branch exists. These cases go red the moment it is narrowed.
+describe("CONTROL_PLANE_RE covers the relocated shared shell lib (#4484)", () => {
+	const lib = "claude-plugins/kampus-pipeline/lib";
+
+	it("classifies the plugin lib/ whole — every file, any depth, any extension", () => {
+		for (const path of [
+			`${lib}/common.sh`, // the library every extracted per-skill script sources
+			`${lib}/common-test.sh`, // its executable pin
+			`${lib}/README.md`, // non-`.sh`: the zero-approval hole the DIRECTORY unit closes
+			`${lib}/common.env`,
+			`${lib}/extensionless-helper`,
+			`${lib}/nested/deeply/fixture.json`,
+		]) {
+			expect(isControlPlane(path)).toBe(true);
+		}
+	});
+
+	it("does NOT over-widen: a path just outside the branch stays proven-ordinary", () => {
+		// The negative half is the assertion that matters — a branch broad enough to be safe is
+		// only honest if its edge is pinned. The trailing `/` is load-bearing, and a same-named
+		// dir under a different plugin or a different parent is NOT swept in.
+		expect(isControlPlane("claude-plugins/kampus-pipeline/lib-notes/draft.md")).toBe(false);
+		expect(isControlPlane("claude-plugins/kampus-pipeline/libs/common.sh")).toBe(false);
+		expect(isControlPlane("claude-plugins/kampus-pipeline/scripts/common.sh")).toBe(false);
+		expect(isControlPlane("claude-plugins/pipeline-crew/lib/common.sh")).toBe(false);
+		expect(isControlPlane("lib/common.sh")).toBe(false);
 	});
 });
 

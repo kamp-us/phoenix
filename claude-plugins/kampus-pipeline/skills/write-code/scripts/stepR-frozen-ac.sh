@@ -10,7 +10,7 @@
 # SOURCED, never executed: it reads the $FAILBODY (the resolving FAIL marker body from R2) the
 # sourcing shell carries, and prints its finding on stdout. Sets NO shell options; no EXIT trap
 # (#4476, class #4479).
-. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../shared/lib" && pwd)/common.sh"
+. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
 
 # does this round's resolving FAIL table carry a review-appended AC tagged at/after the final round?
 # the row is the ordinary checkbox shape; the tag is the only thing read here (no new parser)

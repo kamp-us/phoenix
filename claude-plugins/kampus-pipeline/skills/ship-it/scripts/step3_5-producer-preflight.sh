@@ -9,7 +9,7 @@
 # file deliberately sets NO shell options — several guards here depend on `pipefail` being OFF —
 # and leaves its variables and functions in the sourcing shell, which is how the step's later
 # blocks still see them.
-. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../shared/lib" && pwd)/common.sh"
+. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
 
 # Does THIS repo produce run-evidence at all? (a workflow named "run-evidence" defined on the
 # default branch). Absent → foreign repo → guard 2 N/A, gated on Step 3. Present → strict path.

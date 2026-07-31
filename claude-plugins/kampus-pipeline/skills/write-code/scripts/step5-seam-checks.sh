@@ -13,7 +13,7 @@
 # NO shell options: EVERY check here is an `&& echo … || echo …` pair over a pipeline, so turning on
 # `pipefail` or `errexit` would abort the step at its first negative branch — i.e. convert a
 # fail-closed report into no report at all. No EXIT trap (#4476, class #4479).
-. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../shared/lib" && pwd)/common.sh"
+. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
 
 # The two seams this move needed: the block's `<N>` and `<PR>` metavariables were substituted by
 # whoever ran the step, so the sourcing site passes them instead. Each ERE below splices the number

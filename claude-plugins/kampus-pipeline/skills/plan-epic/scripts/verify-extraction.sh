@@ -22,7 +22,7 @@
 #      property for these files.
 #   4. SHELLCHECK — `shellcheck -x` clean on every extracted script (reported as a SKIP with no
 #      result, never as a pass, when the binary is absent).
-#   5. SOURCES THE SHARED LIB — every script sources ../../shared/lib/common.sh, so no skill-local
+#   5. SOURCES THE SHARED LIB — every script sources ../../../lib/common.sh, so no skill-local
 #      copy of kp_repo / kp_pcli / kp_scratch_* can drift (the PR #4485 lesson: source, don't copy).
 #   6. NO CLEANUP TRAP ON EXIT — on bash 3.2 such a trap makes its last command the script's exit
 #      status, laundering a `set -u` abort into exit 0 (#4476, class #4479).
@@ -141,10 +141,10 @@ fi
 # 5. every script sources the shared lib
 missing=""
 for f in "${SCRIPT_PATHS[@]}"; do
-	grep -qF 'shared/lib" && pwd)/common.sh' "$f" || missing="$missing $f"
+	grep -qF '../../../lib" && pwd)/common.sh' "$f" || missing="$missing $f"
 done
 if [ -n "$missing" ]; then
-	fail "script(s) that do not source shared/lib/common.sh (a local copy would drift):$missing"
+	fail "script(s) that do not source the plugin lib/common.sh (a local copy would drift):$missing"
 else
 	ok "all ${#SCRIPT_PATHS[@]} script(s) source the shared lib's common.sh"
 fi
@@ -174,7 +174,7 @@ done
 # 8. a shim miss is 127 with EMPTY stdout — probed live on the shared primitive, network-free
 probe_out="$(CLAUDE_PLUGIN_ROOT=/nonexistent-kampus-plugin-root bash -c '
 	set -uo pipefail
-	. "'"$SKILLS_DIR"'/shared/lib/common.sh"
+	. "'"$SKILLS_DIR"'/../lib/common.sh"
 	kp_pcli
 ' 2>/dev/null)"
 probe_rc=$?

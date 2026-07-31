@@ -7,7 +7,7 @@
 #
 # SOURCED, never executed: it reads the $PR and the $CID that stepR2-fail-body.sh left in this shell.
 # Sets NO shell options; no EXIT trap (#4476, class #4479).
-. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../shared/lib" && pwd)/common.sh"
+. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
 
 # The one seam this move needed: the block's reply body was a per-run TEMPLATE
 # ("Addressed in <short-sha>: <one line on the fix>."), so it stays authored at the sourcing site and

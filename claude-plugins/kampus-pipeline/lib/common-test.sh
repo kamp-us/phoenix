@@ -5,7 +5,7 @@
 # one under test.
 # Executable pin for kp_skill_shell_surfaces' scan-status contract (#4487) and for the source-edge
 # surface widening + comment-stripped matching that ADR 0230 adds on top (#4541). Run it directly:
-#   bash claude-plugins/kampus-pipeline/skills/shared/lib/common-test.sh
+#   bash claude-plugins/kampus-pipeline/lib/common-test.sh
 #
 # Every case here is written to be FALSIFIABLE — each asserts a behaviour that the pre-ADR-0230
 # resolver did not have, so the file goes red against the old one. A fixture that fails to take is
@@ -192,16 +192,19 @@ else
 fi
 chmod 644 "$tmp/strip/locked.sh"
 
-# Edge fixtures: a skill that sources a shared script, one that only names the path in a comment,
-# one whose edge target is missing, one that sources a SIBLING skill, and one that sources nothing.
-mkdir -p "$tmp/e/shared/scripts" "$tmp/e/shared/lib" \
-	"$tmp/e/sourcer/scripts" "$tmp/e/commenter/scripts" "$tmp/e/broken/scripts" \
-	"$tmp/e/sibling/scripts" "$tmp/e/lonely/scripts" "$tmp/e/owndir/scripts"
+# Edge fixtures: a skill that sources a shared script, one that sources the plugin lib a level ABOVE
+# the skills dir, one that only names the path in a comment, one whose edge target is missing, one
+# that sources a SIBLING skill, and one that sources nothing. The fixture mirrors the shipped layout
+# after #4484 — the lib is `$skills_dir/../lib`, NOT inside the skills tree.
+mkdir -p "$tmp/e/shared/scripts" "$tmp/lib" \
+	"$tmp/e/sourcer/scripts" "$tmp/e/libsourcer/scripts" "$tmp/e/commenter/scripts" \
+	"$tmp/e/broken/scripts" "$tmp/e/sibling/scripts" "$tmp/e/lonely/scripts" "$tmp/e/owndir/scripts"
 printf 'MARKER=shared\n' > "$tmp/e/shared/scripts/probe.sh"
-printf 'x\n' > "$tmp/e/shared/lib/common.sh"
-for s in sourcer commenter broken sibling lonely owndir; do printf 'x\n' > "$tmp/e/$s/SKILL.md"; done
+printf 'MARKER=lib\n' > "$tmp/lib/common.sh"
+for s in sourcer libsourcer commenter broken sibling lonely owndir; do printf 'x\n' > "$tmp/e/$s/SKILL.md"; done
 
 idiom '../../shared/scripts' 'probe.sh' > "$tmp/e/sourcer/scripts/w.sh"
+idiom '../../../lib' 'common.sh' > "$tmp/e/libsourcer/scripts/w.sh"
 printf '# ../../shared/scripts/probe.sh — named in a comment only\n' > "$tmp/e/commenter/scripts/w.sh"
 idiom '../../shared/scripts' 'gone.sh' > "$tmp/e/broken/scripts/w.sh"
 idiom '../../sourcer/scripts' 'w.sh' > "$tmp/e/sibling/scripts/w.sh"
@@ -217,6 +220,16 @@ if [ "$rc" -eq 0 ] && [ "$out" = "$tmp/e/shared/scripts/probe.sh" ]; then
 	ok "a sourced shared script enters the surface (one hop, widen-never-replace)"
 else
 	fail "sourcer edge: rc=$rc out=[$out]"
+fi
+
+# 8b. THE #4484 PIN: the shared lib now sits ABOVE the skills dir, so the followed-target allowlist
+# has to name `$skills_dir/../lib` too. If it still named only `shared/lib`, every relocated edge
+# would land outside the allowlist and refuse — the whole corpus would red at once.
+out="$(edges_of libsourcer)"; rc=$?
+if [ "$rc" -eq 0 ] && [ "$out" = "$tmp/lib/common.sh" ]; then
+	ok "an edge into the plugin lib/ (above the skills dir) is allowed and enters the surface (#4484)"
+else
+	fail "libsourcer edge: rc=$rc out=[$out] — the allowlist must cover \$skills_dir/../lib (#4484)"
 fi
 
 # 9. THE #4541 PIN: a comment naming the shared path resolves NO edge, so a marker that lives only

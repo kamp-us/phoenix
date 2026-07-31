@@ -10,8 +10,8 @@
 # `absent` (that invents a CI gap — PR #3913). An UNRESOLVED shim exits 127 with EMPTY stdout, so the
 # caller's `.` fails loudly: "could not run" is not a bundle state.
 set -uo pipefail
-# shellcheck source=../../shared/lib/common.sh disable=SC1007,SC1091
-. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../shared/lib" && pwd)/common.sh"
+# shellcheck source=../../../lib/common.sh disable=SC1007,SC1091
+. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
 
 [ "$#" -ge 1 ] || { echo "usage: run-evidence-read.sh <pr>" >&2; exit 2; }
 PR="$1"

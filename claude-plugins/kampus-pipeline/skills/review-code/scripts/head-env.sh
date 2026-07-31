@@ -10,8 +10,8 @@
 # straight into, pinning the wrong head (#1807). Exits non-zero with EMPTY stdout when the namespace
 # was never opened, so a caller's `.` fails loudly instead of reading the base tree.
 set -uo pipefail
-# shellcheck source=../../shared/lib/common.sh disable=SC1007,SC1091
-. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../shared/lib" && pwd)/common.sh"
+# shellcheck source=../../../lib/common.sh disable=SC1007,SC1091
+. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
 
 DIR="$(kp_scratch_path review-code-head)" || exit 1
 [ -f "$DIR/head.env" ] || {

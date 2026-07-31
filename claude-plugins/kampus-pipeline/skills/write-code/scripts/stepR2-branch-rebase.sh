@@ -8,7 +8,7 @@
 # SOURCED, never executed: `claim_is_mine` and `wt_preflight` are defined in the sourcing shell, and
 # the `cd` that `wt_preflight` performs must persist for the rebase and the R3 push. Sets NO shell
 # options; no EXIT trap (#4476, class #4479).
-. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../shared/lib" && pwd)/common.sh"
+. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
 
 # The one seam this move needed: the block's `<the PR's head branch>` metavariable was substituted by
 # whoever ran the step (the comment on that line names the read that yields it), so the sourcing site

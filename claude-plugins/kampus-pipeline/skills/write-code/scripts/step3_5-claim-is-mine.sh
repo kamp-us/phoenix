@@ -16,7 +16,7 @@
 # (`claim_is_mine "<N>" && gh api …/comments -f body="…"`) deliberately did NOT move here: it is a
 # metavariable-carrying example, and a moved copy would be a runnable line that posts a literal `…`
 # comment. It stays in SKILL.md next to this file's invocation, where it is documentation.
-. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../shared/lib" && pwd)/common.sh"
+. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
 
 # §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
 PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"

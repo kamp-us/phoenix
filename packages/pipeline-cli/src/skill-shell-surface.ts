@@ -12,9 +12,9 @@
  *   Followed content is appended, which also keeps the prose-position parses (a numbered item and
  *   its continuation lines) byte-identical to the un-extracted corpus.
  * - **Sibling-scoped, not the whole plugin tree** — the same scoping `kp_skill_shell_surfaces`
- *   (`shared/lib/common.sh`, #4470) and `adoption-lint`'s claim pins (#4449) chose: `shared/` is a
- *   library many skills call, so folding it into every caller's surface would let one shared
- *   half-procedure satisfy every skill's own rule.
+ *   (`claude-plugins/kampus-pipeline/lib/common.sh`, #4470) and `adoption-lint`'s claim pins (#4449)
+ *   chose: the shared shell is a library many skills call, so folding it into every caller's surface
+ *   would let one shared half-procedure satisfy every skill's own rule.
  *
  * Fail-closed direction, unchanged from the parsers that consume this (ADR 0092 / §ZS): a heading
  * that matches nothing resolves to ZERO scanned files, and a sourced script that cannot be read is

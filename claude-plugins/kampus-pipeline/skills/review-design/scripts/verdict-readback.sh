@@ -8,8 +8,8 @@
 # Extracted from review-design/SKILL.md (#4453, epic #4435 phase 1). Extraction contract +
 # shell-option rationale: ../SKILL.md § The extracted scripts.
 set -uo pipefail
-# shellcheck source=../../shared/lib/common.sh disable=SC1007,SC1091
-. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../shared/lib" && pwd)/common.sh"
+# shellcheck source=../../../lib/common.sh disable=SC1007,SC1091
+. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
 # `verdict_readback_guard` itself, sourced from its canonical home — no skill-local copy to drift
 # (#4489 extracted it out of `../../gh-issue-intake-formats.md`).
 # shellcheck source=../../shared/scripts/verdict-readback.sh disable=SC1007,SC1091

@@ -57,13 +57,13 @@ fi
 # kp_skill_shell_surfaces resolves each skill's scan surface — SKILL.md PLUS its extracted
 # scripts/*.sh (#4470). Sourced, not re-derived: the surface convention and its resolver live
 # together in the lib. A missing lib is a FAIL, never a narrowed scan (ADR 0092).
-COMMON_LIB="$skills_dir/shared/lib/common.sh"
+COMMON_LIB="$skills_dir/../lib/common.sh"
 if [ ! -f "$COMMON_LIB" ]; then
 	echo "FAIL: shared lib not found at $COMMON_LIB — cannot resolve each skill's shell surface; refusing to scan a narrowed surface (ADR 0092)"
 	echo "validate-cycle-absence: FAILED — 1 error(s); the scan surface could not be resolved"
 	exit 1
 fi
-# shellcheck source-path=SCRIPTDIR source=shared/lib/common.sh
+# shellcheck source-path=SCRIPTDIR source=../lib/common.sh
 . "$COMMON_LIB"
 
 # The one well-known cycle-doc path every consumer probes (formats §1, single source).
@@ -113,7 +113,7 @@ for entry in "${CYCLE_SKILLS[@]}"; do
 
 	# Guard before expanding: an empty `surfaces` aborts every "${surfaces[@]}" below under
 	# `set -u`, and the EXIT trap then launders that abort into exit 0 (see the resolver's
-	# docblock in shared/lib/common.sh, #4470). Refuse the skill instead of scanning nothing.
+	# docblock in the shared lib, #4470). Refuse the skill instead of scanning nothing.
 	if [ "${#surfaces[@]}" -eq 0 ]; then
 		fail "$skill: no shell surface resolved (no SKILL.md, no *.sh) — refusing to scan an empty surface (ADR 0092)"
 		continue

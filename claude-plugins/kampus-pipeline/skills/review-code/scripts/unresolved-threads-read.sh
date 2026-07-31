@@ -9,8 +9,8 @@
 # lint-skills` names THIS path in its self-exempt array — a per-script entry, never a `scripts/`-wide
 # one. Nothing else in this skill may reach for GraphQL.
 set -uo pipefail
-# shellcheck source=../../shared/lib/common.sh disable=SC1007,SC1091
-. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../shared/lib" && pwd)/common.sh"
+# shellcheck source=../../../lib/common.sh disable=SC1007,SC1091
+. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
 
 [ "$#" -ge 1 ] || { echo "usage: unresolved-threads-read.sh <pr>" >&2; exit 2; }
 PR="$1"

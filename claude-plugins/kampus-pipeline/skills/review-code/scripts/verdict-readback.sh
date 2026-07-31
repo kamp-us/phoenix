@@ -12,8 +12,8 @@
 # PROPAGATE THE NON-ZERO. This wrapper's single FATAL exit is what makes verdict-posting an ENFORCED
 # gate rather than a hopeful one — never report the gate done over an ungated PR.
 set -uo pipefail
-# shellcheck source=../../shared/lib/common.sh disable=SC1007,SC1091
-. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../shared/lib" && pwd)/common.sh"
+# shellcheck source=../../../lib/common.sh disable=SC1007,SC1091
+. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
 
 [ "$#" -ge 2 ] || { echo "usage: verdict-readback.sh <pr> <head-sha>" >&2; exit 2; }
 PR="$1"; HEAD_SHA="$2"

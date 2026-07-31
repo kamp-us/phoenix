@@ -9,7 +9,7 @@
 # required: the cycle validators scanned each skill's OWN directory only, so sourcing the shared copy
 # moved review-code's cycle wiring off its guarded surface and reddened them. ADR 0230 removed that
 # forcing constraint — the validators now follow a skill's own source edges one hop
-# (`kp_skill_source_edges` in ../../shared/lib/common.sh), so sourcing the shared probe stays green.
+# (`kp_skill_source_edges` in ../../../lib/common.sh), so sourcing the shared probe stays green.
 # Collapsing this copy onto that edge is the intended direction and is deliberately NOT done here:
 # minting the new sourced invocation is held behind the open question about `.`-sourcing under
 # worktree isolation (#4546). Until then this copy is the drift risk it always was — see #4541.

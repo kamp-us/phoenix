@@ -9,7 +9,7 @@
 # file deliberately sets NO shell options — several guards here depend on `pipefail` being OFF —
 # and leaves its variables and functions in the sourcing shell, which is how the step's later
 # blocks still see them.
-. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../shared/lib" && pwd)/common.sh"
+. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
 
 SETTLE_BUDGET_SECS="${SHIP_IT_SETTLE_BUDGET_SECS:-600}"    # total in-process wait ceiling — BOUNDED, never unbounded
 SETTLE_INTERVAL_SECS="${SHIP_IT_SETTLE_INTERVAL_SECS:-30}" # cadence; each pass emits progress so a no-progress watchdog never fires

@@ -11,8 +11,8 @@
 # Extracted from campaign/SKILL.md (#4454, epic #4435 phase 1). Extraction contract +
 # shell-option rationale: ../SKILL.md § The extracted scripts.
 set -uo pipefail
-# shellcheck source=../../shared/lib/common.sh disable=SC1007,SC1091
-. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../shared/lib" && pwd)/common.sh"
+# shellcheck source=../../../lib/common.sh disable=SC1007,SC1091
+. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
 
 [ "$#" -ge 6 ] || { echo "usage: open-roadmap-pr.sh <campaign name> <active|done> <branch> <wave-label> <milestone-number> <tracking-issue>" >&2; exit 2; }
 NAME="$1"; STATE="$2"; BRANCH="$3"; WAVE_LABEL="$4"; MILESTONE_NUMBER="$5"; TRACKING="$6"

@@ -11,8 +11,8 @@
 # `[UNVERIFIABLE]` row — the same blocking soft-fail the detector-blind branch yields. An absent or
 # empty result is UNKNOWN, and UNKNOWN is never a skip (§ZS / ADR 0092; #4299).
 set -uo pipefail
-# shellcheck source=../../shared/lib/common.sh disable=SC1007,SC1091
-. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../shared/lib" && pwd)/common.sh"
+# shellcheck source=../../../lib/common.sh disable=SC1007,SC1091
+. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
 
 cannot() { echo "glossary-freshness: CANNOT-EVALUATE ($1) — fold as [UNVERIFIABLE], never as a not-applicable skip (§ZS, #4299)"; exit "${2:-1}"; }
 

@@ -1874,10 +1874,12 @@ documented specialization of this same contract, not a fourth drifting copy.
 ## SHARED. The extracted shared scripts — one resolution, sourced not pasted (epic #4435)
 
 This contract's recipes are **sourced scripts**, not fenced prose an agent re-types. They live under
-[`shared/scripts/`](shared/scripts/) (`.sh`, at any depth under `skills/` — the extension is what puts
-them inside `CONTROL_PLANE_RE` and the `/claude-plugins/kampus-pipeline/skills/**/*.sh` CODEOWNERS row,
-so a change to one needs a human approval; #4446), beside the cross-script state lib
-[`shared/lib/common.sh`](shared/lib/common.sh).
+[`shared/scripts/`](shared/scripts/) — inside the skills tree, which `CONTROL_PLANE_RE` and the
+`/claude-plugins/kampus-pipeline/skills/` CODEOWNERS row gate whole, at any depth and any extension,
+so a change to one needs a human approval (#4446, #4458). The cross-script state lib they source,
+[`../lib/common.sh`](../lib/common.sh), sits OUTSIDE that tree beside `bin/` — `shared/` was never a
+skill — and carries its own `^claude-plugins/kampus-pipeline/lib/` branch and CODEOWNERS row, added
+in the same commit as the move (#4484).
 
 **Why sourced rather than fenced.** Each agent shell invocation is a fresh process, so a variable set
 in one fenced block is gone by the next — every recipe that produced `$CP_FILES`, `$GUARD_ADR_RE` or

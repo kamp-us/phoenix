@@ -13,7 +13,7 @@
 #
 # SOURCED, never executed — leaving $POINTER and $BLESSED_SURFACES in the sourcing shell is the whole
 # point. Sets NO shell options; no EXIT trap (#4476, class #4479).
-. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../shared/lib" && pwd)/common.sh"
+. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
 
 # blessed surface-ids: the keys of the committed pointer's `surfaces` map (ADR 0183).
 # Intersect with the surfaces THIS diff renders (Step 4d capture) — only that ∩ is reference-anchored.

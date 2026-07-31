@@ -9,8 +9,8 @@
 # security-load-bearing surface: when in doubt that a hit is a caching path, run the check, don't
 # skip it — so a usage error prints nothing and exits non-zero rather than a reassuring zero count.
 set -uo pipefail
-# shellcheck source=../../shared/lib/common.sh disable=SC1007,SC1091
-. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../shared/lib" && pwd)/common.sh"
+# shellcheck source=../../../lib/common.sh disable=SC1007,SC1091
+. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
 
 [ "$#" -ge 1 ] || { echo "usage: session-caching-scan.sh <pr>" >&2; exit 2; }
 PR="$1"

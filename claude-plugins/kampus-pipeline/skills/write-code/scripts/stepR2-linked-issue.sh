@@ -7,7 +7,7 @@
 #
 # SOURCED, never executed: leaving $N in the sourcing shell is the whole point — every later repair
 # mutation gates on `claim_is_mine "$N"`. Sets NO shell options; no EXIT trap (#4476, class #4479).
-. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../shared/lib" && pwd)/common.sh"
+. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
 
 N=$(gh api repos/$REPO/pulls/$PR \
   --jq '.body | capture("(?i)\\b(fix(es|ed)?|close[sd]?|resolve[sd]?)\\s+#(?<n>[0-9]+)") | .n')

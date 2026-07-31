@@ -16,7 +16,7 @@
 # out of Step 3's surface to derive the branch-2 pending predicate. It reaches them by following
 # SKILL.md's source line into this file, so keep the bindings at column 0 and keep that source line
 # inside the `## Step 3 — ` section.
-. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../shared/lib" && pwd)/common.sh"
+. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
 
 CHECKS="${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/bin/pipeline-cli checks"
 

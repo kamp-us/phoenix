@@ -8,7 +8,7 @@
 #
 # SOURCED, never executed: it reads the $authorized set R1 built in this shell and the $PR R1 resolved,
 # and leaves $ME and $inlineComments there. Sets NO shell options; no EXIT trap (#4476, class #4479).
-. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../shared/lib" && pwd)/common.sh"
+. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
 
 ME=$(gh api user --jq '.login')   # don't action your own author-side replies
 # fetch into a var, then pipe to standalone jq — gh's --jq takes no --argjson, and this reuses

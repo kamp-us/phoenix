@@ -15,7 +15,7 @@
 # turning it on here would silently change the moved behavior. No EXIT trap (under bash 3.2 a
 # cleanup trap's last command becomes the script's status, laundering a `set -u` abort into exit 0 —
 # #4476, class #4479).
-. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../shared/lib" && pwd)/common.sh"
+. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
 
 # The one seam this move needed: the block's `<N>` metavariable was substituted by whoever ran the
 # step, so the sourcing site passes it instead. Fail closed on an absent one — `issues/` with no
