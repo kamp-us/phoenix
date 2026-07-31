@@ -333,7 +333,7 @@ else
 	fail "twohop: rc=$rc cap=$KP_EDGE_MAX_HOPS out=[$out]"
 fi
 
-# 17. THE CREDIT PIN, on the SHIPPED lib rather than a fixture. `shared/lib/common.sh` is
+# 17. THE CREDIT PIN, on the SHIPPED lib rather than a fixture. `lib/common.sh` is
 # edge-resolved into the widened surface of ALL FOUR cycle-aware skills (the validators' emitted
 # scope line names it `(edge:plan-epic)`, `(edge:write-code)`, `(edge:review-code)`,
 # `(edge:ship-it)`), because every one of them sources it — unconditionally, for reasons that have

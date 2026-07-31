@@ -138,9 +138,9 @@ describe("CONTROL_PLANE_RE covers the kampus-pipeline skills tree whole (#4458)"
 
 	it("classifies a NON-`.sh` file beside a gated script — the proven zero-approval hole", () => {
 		for (const path of [
-			`${skills}/shared/lib/common.env`, // exit 3 before
-			`${skills}/shared/lib/common`, // extensionless — exit 3 before
-			`${skills}/shared/lib/README.md`, // exit 3 before
+			`${skills}/shared/notes.env`, // exit 3 before
+			`${skills}/shared/scripts/helper`, // extensionless — exit 3 before
+			`${skills}/shared/scripts/README.md`, // exit 3 before
 			`${skills}/shared/specialist-fan-out.md`, // the #4440 relocation destination
 			`${skills}/shared/scripts/cp-read.sh`, // the `.sh` case that was already covered
 		]) {
