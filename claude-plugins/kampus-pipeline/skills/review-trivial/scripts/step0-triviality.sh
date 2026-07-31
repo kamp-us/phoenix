@@ -1,0 +1,76 @@
+# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
+PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
+PR=<pr number>
+# The changed-file list is a fallible READ, and an unchecked capture resolved a failed one to "no §CP
+# path touched" (#4216) — at the gate that routes to the LIGHTER path, so a fail-open here UNDER-gates.
+# `cp_changed_files` / `cp_head_sha` are §CPREAD of ../gh-issue-intake-formats.md — copy them verbatim
+# from there (single source; the why lives there, not here).
+if ! cp_changed_files "$REPO" "$PR"; then
+  echo "review-trivial: not-trivial — changed-file list unreadable (§CP UNKNOWN, never 'no §CP path'); route to full path"; exit 0
+fi
+FILES="$CP_FILES"; NFILES="$CP_FILES_N"   # proven-arrived; scope already emitted per §ZS #1 (ADR 0092)
+ADD=$(gh api repos/$REPO/pulls/$PR --jq '.additions'); DEL=$(gh api repos/$REPO/pulls/$PR --jq '.deletions')
+
+# Four states on stdout: control-plane / content-undetermined / not-control-plane / unknown.
+# Only `not-control-plane` is a proven-ordinary answer; every other state is a HOLD.
+CP_STATE="$(printf '%s\n' "$FILES" | "$PCLI" cp-classify classify --repo "$REPO")"
+# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
+PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
+# Fail-closed on EVERY value but the proven-ordinary one. The test is a positive match on the
+# STATE WORD, not on the exit status: the exit code discriminates the four states only once the
+# verb has RUN, so a bad flag (exit 1) or a missing binary (exit 127) would fail OPEN through
+# `… || ordinary`. Here they leave CP_STATE empty, which this test routes to the full path (#4161).
+if [ "$CP_STATE" != "not-control-plane" ]; then
+  # Resolve the one state that is an obligation rather than a verdict (ADR 0164, #4161).
+  if [ "$CP_STATE" = "content-undetermined" ]; then
+    cp_head_sha "$REPO" "$PR"; HEAD_SHA="$CP_HEAD_SHA"   # EMPTY on failure (payload discarded) — §CPREAD
+    if [ -z "$HEAD_SHA" ]; then
+      echo "review-trivial: not-trivial — head SHA unreadable, ADR content unprobeable (§CP UNKNOWN); route to full path"; exit 0
+    fi
+    # Assert on the probe's STATE WORD, never on its exit status: the exit code discriminates the
+    # two verdicts only once the verb has RUN, so `>/dev/null && echo "$adr"` collected NOTHING when
+    # it never ran and read an unprobed ADR as ordinary. Only `not-guard-touching` clears (#4219).
+    GUARD_TOUCHING="$(printf '%s\n' "$FILES" | grep -E '^\.decisions/.*\.md$' | while IFS= read -r adr; do
+        # Capture and CHECK, never a straight pipe: gh writes its error document to STDOUT, so a pipe
+        # hands the probe an ERROR BODY as the ADR body (§CPREAD #2). Unreadable ⇒ §CP, fail-closed.
+        adr_body="$(gh api "repos/$REPO/contents/$adr?ref=$HEAD_SHA" -H 'Accept: application/vnd.github.raw' 2>/dev/null)" || adr_body=""
+        if [ -z "$adr_body" ]; then echo "$adr(body-unreadable⇒§CP)"
+        else
+          GC_STATE="$(printf '%s' "$adr_body" | "$PCLI" guard-content-probe classify --path "$adr" 2>/dev/null)"
+          case "$GC_STATE" in
+            not-guard-touching) : ;;
+            guard-touching) echo "$adr" ;;
+            *) echo "$adr(undetermined:'$GC_STATE')" ;;
+          esac
+        fi
+      done)"
+    if [ -z "$GUARD_TOUCHING" ]; then
+      : # every touched ADR probed not-guard-touching ⇒ the content axis is resolved, carry on
+    else
+      echo "review-trivial: not-trivial — ADR not proven ordinary by content (guard-touching, or the probe could not determine; ADR 0164): $GUARD_TOUCHING; route to full path"; exit 0
+    fi
+  else
+    echo "review-trivial: not-trivial — §CP state '$CP_STATE'; route to full path (ADR 0053/0065; #4161)"; exit 0
+  fi
+fi
+
+# §DEV: the disclosure section decides triviality too — a disclosed deviation, or a missing heading,
+# routes to the full path. Read the section's body (heading → next heading or EOF) and compare.
+BODY="$(gh api repos/$REPO/pulls/$PR --jq '.body')"
+# `IGNORECASE` is a gawk extension BSD/macOS awk ignores SILENTLY, so a lowercase `## deviations`
+# heading yielded an empty DEV_BODY here while the case-insensitive `grep -i` below still saw the
+# heading — the two halves disagreed about case. Spell the case-insensitivity into the pattern
+# instead (POSIX, portable) so both halves read the same heading.
+DEV_BODY="$(printf '%s\n' "$BODY" \
+  | awk '/^[[:space:]]*###?[[:space:]]*[Dd][Ee][Vv][Ii][Aa][Tt][Ii][Oo][Nn][Ss][[:space:]]*$/{f=1;next} /^[[:space:]]*##?#?[[:space:]]/{f=0} f' \
+  | grep -Ev '^[[:space:]]*$')"
+if ! printf '%s\n' "$BODY" | grep -Eiq '^[[:space:]]*#{2,3}[[:space:]]*Deviations[[:space:]]*$'; then
+  echo "review-trivial: not-trivial — no ## Deviations section, so no None. claim to stand on (§DEV); route to full path, which decides owed-vs-not"; exit 0
+elif [ "$(printf '%s\n' "$DEV_BODY" | grep -c .)" = 1 ] && printf '%s\n' "$DEV_BODY" | grep -Eiqx '[[:space:]]*none\.?[[:space:]]*'; then
+  : # exactly one non-blank line, and it is `None.` — the triviality premise holds, continue Step 0
+else
+  # anything else — a disclosed deviation, OR an empty section (which is not the `None.` claim §DEV
+  # requires) — is outside the lighter gate's bound. Default-deny, exactly like the unreadable
+  # CONTROL_PLANE_RE above: you cannot prove the premise, so you must not treat the diff as trivial.
+  echo "review-trivial: not-trivial — the body discloses a deviation, or its ## Deviations section is empty (§DEV); route to full path"; exit 0
+fi

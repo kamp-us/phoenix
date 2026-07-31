@@ -1,0 +1,1 @@
+   git show "$PR_REF" | grep -nE '^\+' | grep -niE 'api[_-]?key|secret|token|password|passwd|BEGIN [A-Z ]*PRIVATE KEY|AKIA[0-9A-Z]{16}|ghp_[0-9A-Za-z]{30,}|xox[baprs]-|-----BEGIN' || echo "no secret-shaped added lines"
