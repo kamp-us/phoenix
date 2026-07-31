@@ -8,11 +8,14 @@
  * first-time APPEND or a re-plan in-place REPLACE — with the anchor-count guards. `--plan-file`
  * present ⇒ re-plan mode; absent ⇒ first-time (or a deps-only re-splice).
  *
- * Exit 0 = a clean splice printed to stdout (raw bytes, no trailing newline added, so the caller's
- * PATCH round-trips byte-for-byte). Exit 1 = a corrupt-heading refusal (the reason on stderr) — the
- * caller must inspect by hand rather than blind-write. Pure text transform: no `gh` boundary, so it
- * needs no `Github` layer — the optimistic `updated_at` recheck + PATCH orchestration stay in the
- * skill prose (#3689 scope).
+ * Exit 0 = a clean splice printed to stdout as raw bytes, with no trailing newline added. That is
+ * the tool's half only, and it is not an end-to-end byte-exactness guarantee: the sole executing
+ * caller — `plan-epic`'s `splice-body.sh` — captures stdout with `BODY="$(cat …)"`, and command
+ * substitution strips every trailing newline before the PATCH, so what GitHub stores is
+ * trailing-newline-normalized rather than the emitted bytes (#4599). Exit 1 = a corrupt-heading
+ * refusal (the reason on stderr) — the caller must inspect by hand rather than blind-write. Pure
+ * text transform: no `gh` boundary, so it needs no `Github` layer — the optimistic `updated_at`
+ * recheck + PATCH orchestration stay in the skill prose (#3689 scope).
  */
 import {readFileSync} from "node:fs";
 import {Effect, Option} from "effect";
@@ -54,7 +57,8 @@ const apply = Command.make(
 			process.stderr.write(`epic-splice: ${outcome.reason}\n`);
 			return yield* Effect.sync(() => process.exit(CORRUPT_EXIT_CODE));
 		}
-		// Raw bytes, no trailing newline added — the caller PATCHes this verbatim (byte-preservation).
+		// Raw bytes, no trailing newline added. What the caller then writes is not these exact bytes —
+		// see the docblock (#4599).
 		yield* Effect.sync(() => process.stdout.write(outcome.body));
 		process.stderr.write(
 			`epic-splice: ${outcome.mode === "append" ? "appended" : "spliced"} the section(s)\n`,
