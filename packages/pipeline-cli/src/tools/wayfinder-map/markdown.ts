@@ -30,7 +30,10 @@ const DECISIONS_HEADING = /^#{1,6}\s+decisions?[-\s]+so[-\s]+far\b/i;
 const FRONTIER_HEADING = /^#{1,6}\s+open[-\s]+frontier\b/i;
 const FOG_HEADING = /^#{1,6}\s+graduated[-\s]+fog\b/i;
 
-/** A `founder-decision-fork` flag anywhere on a frontier line (formats §Open frontier). */
+/**
+ * A `founder-decision-fork` flag anywhere on a frontier line (map-shape contract
+ * §Open frontier — the file this module's docblock cites).
+ */
 const FOUNDER_FORK = /founder[-\s]decision[-\s]fork/i;
 
 /** A decision line's `— from #N` attribution; captures the origin issue (group 1). */
@@ -79,8 +82,8 @@ const sliceSection = (body: string, headingRe: RegExp): Section => {
  * A wrapped item's continuation lines fold into its text: a non-blank line under
  * a bullet that is not itself a bullet is glued onto the current item before ref
  * extraction, and a blank line ends the item. Without this a `— from #N`
- * attribution that wraps onto a continuation line (as in the §worked-example map)
- * is dropped, spuriously yielding MALFORMED_DECISION_ENTRY (#2426).
+ * attribution that wraps onto a continuation line (as in the map-shape contract's
+ * worked example) is dropped, spuriously yielding MALFORMED_DECISION_ENTRY (#2426).
  */
 const listItems = (section: Section): ReadonlyArray<string> => {
 	const items: string[] = [];

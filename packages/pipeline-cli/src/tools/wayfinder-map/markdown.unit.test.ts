@@ -3,7 +3,11 @@ import {cleanMapBody} from "./fixtures.ts";
 import {parseMapBody} from "./markdown.ts";
 import {validateMap} from "./validate.ts";
 
-/** The #2421 §worked-example map verbatim — every list item wraps onto a continuation line. */
+/**
+ * The worked-example map (#2421) verbatim, from the map-shape contract
+ * `claude-plugins/kampus-pipeline/skills/shared/wayfinder-map-issue-shape.md` —
+ * every list item wraps onto a continuation line.
+ */
 const wrappedWorkedExample = [
 	"## Destination",
 	"kamp.us has a working invite (kefil) flow: an existing yazar can vouch a new person in, and",
@@ -74,7 +78,7 @@ describe("parseMapBody — decision entries", () => {
 	});
 
 	it("folds a wrapped item's continuation line, extracting its `— from #N` (#2426)", () => {
-		// The #2421 §worked-example map: a well-formed decision whose `— from #N`
+		// The map-shape contract's worked-example map (#2421): a well-formed decision whose `— from #N`
 		// attribution wraps onto an indented continuation line must parse clean, not
 		// spuriously yield MALFORMED_DECISION_ENTRY.
 		const m = parseMapBody(wrappedWorkedExample);
@@ -110,7 +114,7 @@ describe("parseMapBody — the wrapped worked example validates clean (#2426)", 
 });
 
 describe("parseMapBody — CHART-time seed attribution `— from #<MAP>` (#3405)", () => {
-	// The sanctioned seed idiom (formats §The four sections): a CHART-time founder
+	// The sanctioned seed idiom (map-shape contract §The four sections): a CHART-time founder
 	// given has no frontier ticket to cite, so it is attributed the map's OWN number
 	// (`— from #100` for map #100). That form already parses to a resolvable origin,
 	// so a map seeded per the documented idiom validates clean — no validator change.
