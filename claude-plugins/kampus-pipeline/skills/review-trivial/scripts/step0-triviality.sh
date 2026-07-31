@@ -1,21 +1,54 @@
+#!/usr/bin/env bash
+# Step 0 — the fail-closed triviality re-affirm: the §CP path/content classification and the §DEV
+# disclosure premise. Extracted from review-trivial/SKILL.md (#4453, epic #4435 phase 1). Extraction
+# contract + shell-option rationale: ../SKILL.md § The extracted scripts. The *why* for each clause
+# stays in that step's prose.
+#
+# STDOUT IS THE ANSWER, AND ITS EMPTY STATE IS THE PERMISSIVE ONE. Any `review-trivial: not-trivial
+# — …` line on stdout means "route to the full path"; EMPTY stdout with exit 0 means the triviality
+# premise held. That inversion is why every could-not-run path here PRINTS a `not-trivial` line
+# BEFORE exiting, and exits non-zero: a classifier that never ran must never reach the caller as
+# silence, which the caller would read as "proven trivial" and under-gate (§ZS / ADR 0092,
+# `.patterns/skill-script-io-contract.md`; #4216, #4161, #4219). Scope + diagnostics go to stderr.
+set -uo pipefail
+# shellcheck source=../../../lib/common.sh disable=SC1007,SC1091
+. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
+# §CPREAD's `cp_changed_files` + `cp_head_sha`, sourced from their canonical home — no skill-local
+# copy to drift (#4489 extracted them out of ../../gh-issue-intake-formats.md, which is why the moved
+# comment below no longer says "copy them verbatim"). They write on stderr only, so no call site
+# redirects (`.patterns/skill-script-io-contract.md`, #4510).
+# shellcheck source=../../shared/scripts/cp-read.sh disable=SC1007,SC1091
+. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../shared/scripts" && pwd)/cp-read.sh"
+
+[ "$#" -ge 1 ] || {
+  echo "review-trivial: not-trivial — step0-triviality.sh ran with no <pr> argument, so nothing was classified; route to full path"
+  echo "usage: step0-triviality.sh <pr>" >&2; exit 2; }
+PR="$1"
+REPO="$(kp_repo)" || {
+  echo "review-trivial: not-trivial — target repo unresolvable, so §CP could not be classified (UNKNOWN, never 'ordinary'); route to full path"
+  exit 1; }
 # §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
-PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
-PR=<pr number>
+PCLI="$(kp_pcli)" || {
+  echo "review-trivial: not-trivial — pipeline-cli UNRESOLVED, so cp-classify never ran (UNKNOWN, never 'ordinary'); route to full path"
+  exit 127; }
+
 # The changed-file list is a fallible READ, and an unchecked capture resolved a failed one to "no §CP
 # path touched" (#4216) — at the gate that routes to the LIGHTER path, so a fail-open here UNDER-gates.
-# `cp_changed_files` / `cp_head_sha` are §CPREAD of ../gh-issue-intake-formats.md — copy them verbatim
-# from there (single source; the why lives there, not here).
+# `cp_changed_files` / `cp_head_sha` are §CPREAD, sourced above from ../../shared/scripts/cp-read.sh
+# (single source; the why lives in ../../gh-issue-intake-formats.md, not here).
 if ! cp_changed_files "$REPO" "$PR"; then
-  echo "review-trivial: not-trivial — changed-file list unreadable (§CP UNKNOWN, never 'no §CP path'); route to full path"; exit 0
+  echo "review-trivial: not-trivial — changed-file list unreadable (§CP UNKNOWN, never 'no §CP path'); route to full path"; exit 1
 fi
 FILES="$CP_FILES"; NFILES="$CP_FILES_N"   # proven-arrived; scope already emitted per §ZS #1 (ADR 0092)
-ADD=$(gh api repos/$REPO/pulls/$PR --jq '.additions'); DEL=$(gh api repos/$REPO/pulls/$PR --jq '.deletions')
+ADD=$(gh api repos/"$REPO"/pulls/"$PR" --jq '.additions'); DEL=$(gh api repos/"$REPO"/pulls/"$PR" --jq '.deletions')
+# The size facts feed the verdict's triviality-re-affirm evidence row. They go to STDERR because
+# stdout is the not-trivial channel and an extra line there would read as a hold (the seam the
+# fenced block did not have: it left $NFILES/$ADD/$DEL in the caller's shell, retired by ADR 0232).
+echo "review-trivial scope: $NFILES file(s), +${ADD:-?}/-${DEL:-?}" >&2
 
 # Four states on stdout: control-plane / content-undetermined / not-control-plane / unknown.
 # Only `not-control-plane` is a proven-ordinary answer; every other state is a HOLD.
 CP_STATE="$(printf '%s\n' "$FILES" | "$PCLI" cp-classify classify --repo "$REPO")"
-# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
-PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
 # Fail-closed on EVERY value but the proven-ordinary one. The test is a positive match on the
 # STATE WORD, not on the exit status: the exit code discriminates the four states only once the
 # verb has RUN, so a bad flag (exit 1) or a missing binary (exit 127) would fail OPEN through
@@ -25,7 +58,7 @@ if [ "$CP_STATE" != "not-control-plane" ]; then
   if [ "$CP_STATE" = "content-undetermined" ]; then
     cp_head_sha "$REPO" "$PR"; HEAD_SHA="$CP_HEAD_SHA"   # EMPTY on failure (payload discarded) — §CPREAD
     if [ -z "$HEAD_SHA" ]; then
-      echo "review-trivial: not-trivial — head SHA unreadable, ADR content unprobeable (§CP UNKNOWN); route to full path"; exit 0
+      echo "review-trivial: not-trivial — head SHA unreadable, ADR content unprobeable (§CP UNKNOWN); route to full path"; exit 1
     fi
     # Assert on the probe's STATE WORD, never on its exit status: the exit code discriminates the
     # two verdicts only once the verb has RUN, so `>/dev/null && echo "$adr"` collected NOTHING when
@@ -56,7 +89,8 @@ fi
 
 # §DEV: the disclosure section decides triviality too — a disclosed deviation, or a missing heading,
 # routes to the full path. Read the section's body (heading → next heading or EOF) and compare.
-BODY="$(gh api repos/$REPO/pulls/$PR --jq '.body')"
+BODY="$(gh api repos/"$REPO"/pulls/"$PR" --jq '.body')" || {
+  echo "review-trivial: not-trivial — PR body unreadable, so the §DEV None. premise is unprovable; route to full path"; exit 1; }
 # `IGNORECASE` is a gawk extension BSD/macOS awk ignores SILENTLY, so a lowercase `## deviations`
 # heading yielded an empty DEV_BODY here while the case-insensitive `grep -i` below still saw the
 # heading — the two halves disagreed about case. Spell the case-insensitivity into the pattern
