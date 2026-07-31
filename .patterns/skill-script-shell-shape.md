@@ -38,9 +38,51 @@ to ~106).
    ([#4487](https://github.com/kamp-us/phoenix/issues/4487)). A genuinely empty surface still
    exits 0 — empty is a fact, a failed scan is UNKNOWN, and the two must not look alike.
 
-Mechanically enforced for rule 1 by `pipeline-cli trap-status-guard check` (the
-`trap-status-guard.yml` job), which reds on `errexit` + an `EXIT` trap inside one runnable shell
-unit and fails closed on zero scope per surface ([ADR 0092](../.decisions/0092-gates-fail-closed-on-zero-scope.md)).
+## Where each rule is mechanically enforced
+
+Two different rules about the `EXIT` trap, two different enforcers, two different scopes — they
+are not interchangeable, and citing one for the other's job is a live mis-authoring path
+([PR #4526](https://github.com/kamp-us/phoenix/pull/4526) did exactly that):
+
+| Rule | Scope | Enforcer |
+|---|---|---|
+| Rule 1's co-occurrence: `errexit` enabled **together with** an `EXIT` trap in one runnable shell unit | every shell surface the guard resolves | `pipeline-cli trap-status-guard check` (the `trap-status-guard.yml` job), fail-closed on zero scope per surface ([ADR 0092](../.decisions/0092-gates-fail-closed-on-zero-scope.md)) |
+| No cleanup `EXIT` trap **at all** in executable code | the extracted `scripts/*.sh` of the skill(s) the verifier is run over | [`claude-plugins/kampus-pipeline/skills/plan-epic/scripts/verify-extraction.sh`](../claude-plugins/kampus-pipeline/skills/plan-epic/scripts/verify-extraction.sh) check 6 ([#4476](https://github.com/kamp-us/phoenix/issues/4476), class [#4479](https://github.com/kamp-us/phoenix/issues/4479)) |
+
+`trap-status-guard` reds only on the *pair*: a cleanup trap without `errexit` is fine by it, which
+is correct — that combination keeps the abort's status (see the matrix below). Check 6 is stricter
+because an extracted script that later regains `-e` would silently re-enter the fail-open, so the
+trap is banned outright in that corpus. Neither enforces the sourced class's no-options shape;
+that one survives on the header idiom below.
+
+## The two invocation classes — executed and sourced
+
+The rule above is the **executed** class's shape, and executed is the sanctioned class: an agent
+runs a skill script as `bash ./claude-plugins/kampus-pipeline/skills/<skill>/scripts/<script>.sh`
+and reads the results off stdout ([ADR 0232](../.decisions/0232-agents-execute-skill-scripts-never-source-them.md)).
+
+The corpus also holds a **sourced** class — the ~61 files that set *no* shell options at all. Read
+them as history, not as a choice on offer:
+
+- **Recognize one by its header, and leave it alone.** The idiom is an explicit "SOURCED, never
+  executed" note plus zero `set -` lines. The exemplar is
+  [`claude-plugins/kampus-pipeline/skills/ship-it/scripts/step2-verdict-gate.sh`](../claude-plugins/kampus-pipeline/skills/ship-it/scripts/step2-verdict-gate.sh),
+  whose header states the reason: *"this file deliberately sets NO shell options — several guards
+  here depend on `pipefail` being OFF."* The missing `set -uo pipefail` is the design, not an
+  omission — adding it "for consistency" changes those guards' behavior.
+- **Why no options.** `set` in a sourced file runs in the *caller's* shell, so the options persist
+  and change every subsequent command in that session — including commands the script's author
+  never saw.
+- **What ADR 0232 settled.** Sourcing a skill script at an agent's top-level command is banned
+  (the harness's isolation verifier refuses `.` itself, by any path form), the sourced class
+  converts to executed scripts, and *leave-state-in-the-caller's-shell* is retired as a design
+  property — the harness resets shell state between an agent's Bash calls, so it never carried
+  cross-call value. Do not design a new script to mutate its caller's shell.
+- **In-script sourcing of the shared helper lib stays sanctioned.** The verifier judges only the
+  agent's top-level command; a script sourcing the shared lib internally is unaffected, and
+  `verify-extraction.sh` check 5 *requires* it (a local copy would drift). The cycle validators of
+  [ADR 0230](../.decisions/0230-cycle-validators-follow-the-source-edge.md) follow that source edge
+  as before.
 
 ## Why: the measured matrix
 
