@@ -309,7 +309,7 @@ If the soft-advisor finds nothing, say so (`No advisory caveats — the plan rea
 
 The soft-advisor's reads are the plan-layer call site of the **specialist fan-out +
 route-don't-grade** mechanism — defined once in
-[`review-code`'s shared reference](../review-code/SKILL.md#specialist-fan-out--route-dont-grade-adr-0079--the-shared-reference)
+[the shared reference](../shared/specialist-fan-out.md#specialist-fan-out--route-dont-grade-adr-0079--the-shared-reference)
 (ADR [0079](https://github.com/kamp-us/phoenix/blob/main/.decisions/0079-reviewer-authored-acceptance-criteria.md)
 §1–§2), with the append shape + provenance tag + four fences in
 [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §2. **Cite them; do not
@@ -337,7 +337,7 @@ Route each soft finding:
   via the §2 surface (tag `ac:review-plan`), *and* keep the prose caveat. Subject to all four
   §2 fences (append-only · in-scope-only · ACL-gated/fail-closed · frozen-after-round-K),
   enforced by the reference's
-  [four-fences-enforced procedure](../review-code/SKILL.md#performing-the-append--the-four-fences-enforced-at-this-site-adr-0079)
+  [four-fences-enforced procedure](../shared/specialist-fan-out.md#performing-the-append--the-four-fences-enforced-at-this-site-adr-0079)
   — fail-closed ACL self-check, round-K freeze, append-only body reconstruction — with the append
   target being the **child issue** (`$ISSUE` = the child), never a PR.
 - **Out-of-scope** — a real defect that doesn't trace to any child's story (a gap the brief
