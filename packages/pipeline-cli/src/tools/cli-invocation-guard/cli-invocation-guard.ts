@@ -20,6 +20,10 @@
  * delimiters, scanned whole. Without that reach, every extraction of fenced shell into a
  * per-skill `scripts/*.sh` takes its call sites off the scan while the guard keeps exiting 0
  * (#4486, the #4470 class; the unit-of-scan answer follows #4448's consumer precedent).
+ *
+ * Detection is corpus-wide by design; ATTRIBUTION is what `attribute` below adds (#4250). The
+ * scan still sees every violation anywhere in the tree — only the verdict is narrowed, on the
+ * PR leg, to the ones this head introduced.
  */
 
 export interface ScanFile {
@@ -147,3 +151,85 @@ export const scanCorpus = (files: ReadonlyArray<ScanFile>): GuardResult => {
  */
 export const isZeroScope = (result: GuardResult): boolean =>
 	result.scanned.length === 0 || result.fenceCount === 0 || result.shellFileCount === 0;
+
+/** Whether a head finding was already there at the merge-base, or this head introduced it. */
+export type Attribution = "new" | "pre-existing";
+
+export interface AttributedFinding extends Finding {
+	readonly attribution: Attribution;
+}
+
+/**
+ * A finding's identity for baseline comparison: the file plus the exact offending text, and
+ * deliberately NOT the line number — an unrelated edit above shifts every line below it, and a
+ * shifted line is the same pre-existing violation, not a new one. Keying on the file (rather
+ * than text alone) keeps a violation MOVED into another file attributable, which is the strict
+ * direction.
+ */
+const findingKey = (f: Finding): string => `${f.file}\t${f.text}`;
+
+/**
+ * Classify each head finding against the merge-base's findings.
+ *
+ * The diff is a MULTISET, not a set: a file carrying one offending line at the base and two at
+ * head introduced one, and the second must not hide behind the first. That is the property
+ * that keeps this from degenerating into "any file that was ever dirty is forever exempt".
+ */
+export const attribute = (
+	head: ReadonlyArray<Finding>,
+	baseline: ReadonlyArray<Finding>,
+): ReadonlyArray<AttributedFinding> => {
+	const unconsumed = new Map<string, number>();
+	for (const f of baseline) {
+		const key = findingKey(f);
+		unconsumed.set(key, (unconsumed.get(key) ?? 0) + 1);
+	}
+	return head.map((f) => {
+		const key = findingKey(f);
+		const left = unconsumed.get(key) ?? 0;
+		if (left === 0) return {...f, attribution: "new"};
+		unconsumed.set(key, left - 1);
+		return {...f, attribution: "pre-existing"};
+	});
+};
+
+/**
+ * A baseline is trustworthy only if the base-side scan actually looked at something. A zero
+ * scope on ANY axis — including the `.sh` surface (#4486) — means the base scan is broken, and a
+ * broken base scan must never read as "nothing was pre-existing": that inverts to "everything is
+ * newly introduced" on one leg and, if the emptiness came from the other direction, would mask
+ * real new violations. Callers red on false (ADR 0092 §ZS, extended to the baseline input —
+ * #4250).
+ */
+export const isUsableBaseline = (baseline: GuardResult): boolean => !isZeroScope(baseline);
+
+const isFinding = (value: unknown): value is Finding => {
+	if (typeof value !== "object" || value === null) return false;
+	const f = value as Record<string, unknown>;
+	return typeof f.file === "string" && typeof f.line === "number" && typeof f.text === "string";
+};
+
+/**
+ * Parse a `baseline`-emitted manifest back into a `GuardResult`. `null` = unusable, which reds.
+ *
+ * Every scope axis is asserted present AND numeric, `shellFileCount` included: a manifest written
+ * by a build predating the `.sh` surface (#4486) omits the field, it reads back `undefined`, and
+ * `isZeroScope`'s `=== 0` test does not catch that — so a zero-shell-scope baseline would sail
+ * through as usable. Only reachable under version skew between the base-side `baseline` and the
+ * head-side `check`, but "no pre-existing violations" is the wrong direction to be wrong in.
+ */
+export const parseBaseline = (raw: string): GuardResult | null => {
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(raw) as unknown;
+	} catch {
+		return null;
+	}
+	if (typeof parsed !== "object" || parsed === null) return null;
+	const {findings, scanned, fenceCount, shellFileCount} = parsed as Record<string, unknown>;
+	if (!Array.isArray(findings) || !findings.every(isFinding)) return null;
+	if (!Array.isArray(scanned) || !scanned.every((s) => typeof s === "string")) return null;
+	if (typeof fenceCount !== "number") return null;
+	if (typeof shellFileCount !== "number") return null;
+	return {findings, scanned, fenceCount, shellFileCount};
+};
