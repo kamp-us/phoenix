@@ -15,7 +15,7 @@ boundary amendment.
 
 ## The `wayfinder:map` issue shape
 
-A `wayfinder:map` issue (the [`wayfinder:map` label](#the-wayfindermap--wayfinderbacklog-ideation-layer-markers--not-pipeline-states-not-type)) is not a task and not an epic — it is a **living map**: the
+A `wayfinder:map` issue (the [`wayfinder:map` label](../gh-issue-intake-formats.md#the-wayfindermap--wayfinderbacklog-ideation-layer-markers--not-pipeline-states-not-type)) is not a task and not an epic — it is a **living map**: the
 ideation-layer surface the `wayfinder` skill's **chart** and **work** modes and the wayfinder
 CLI all read and write. This section is the **single source** of that body shape, so every one
 of those consumers cites *one* definition and cannot drift (the same single-source discipline
@@ -24,7 +24,7 @@ sections are the durable seam between the modes, so a `wayfinder work` run picks
 what a prior `chart`/`work` run left on the map.
 
 The *why* — what the ideation layer is and how it feeds the pipeline — lives in the
-[`wayfinder` skill](wayfinder/SKILL.md); this section is the **contract**.
+[`wayfinder` skill](../wayfinder/SKILL.md); this section is the **contract**.
 
 ### The four sections
 
@@ -47,7 +47,7 @@ A `wayfinder:map` issue body carries exactly these four sections, in order:
     act that created the map, so the map number is its honest origin; this keeps the seed
     resolvable and auditable without inventing an unattributed form. A history-shaped given whose
     provenance is a person still uses `— from #<MAP>`, carrying the *who* alongside the ref (e.g.
-    `— from #<MAP> (@founder)`), never *instead of* it — see the [`wayfinder` skill](wayfinder/SKILL.md)'s
+    `— from #<MAP> (@founder)`), never *instead of* it — see the [`wayfinder` skill](../wayfinder/SKILL.md)'s
     CHART step 3 for when a design-history given may be seeded at all.
 - **`## Open frontier`** — the **live edge of the unknown**: the open investigation and decision
   tickets, kept as **native sub-issues** of the map (so each is a real, linkable, closable
@@ -113,7 +113,7 @@ on — never auto-resolves.
   `triage` / `plan-epic` becomes pickable execution issues; the map itself is worked by
   `wayfinder`, never picked by `write-code`.
 - **A `wayfinder:backlog` destination has no map body yet.** The [`wayfinder:backlog`
-  label](#the-wayfindermap--wayfinderbacklog-ideation-layer-markers--not-pipeline-states-not-type)
+  label](../gh-issue-intake-formats.md#the-wayfindermap--wayfinderbacklog-ideation-layer-markers--not-pipeline-states-not-type)
   marks a destination *queued* for charting — a named end-state, not yet a living map — so it
   carries no four-section shape. Charting it is what *produces* this body shape: a
   `wayfinder:backlog` destination graduates when the cartographer charts it into a

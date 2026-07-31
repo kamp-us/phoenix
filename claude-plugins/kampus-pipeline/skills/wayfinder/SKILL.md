@@ -18,10 +18,10 @@ answers into a plan concrete enough to hand off to `triage` / `plan-epic`.
 The map is a single GitHub issue labelled **`wayfinder:map`** whose body is the
 **shared-state contract** every mode reads and writes. Its canonical shape — the four
 sections `## Destination`, `## Decisions-so-far`, `## Open frontier`, and
-`## Graduated fog` — is defined once in the formats contract:
-[`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) (the wayfinder:map issue
-shape). Read that section before you touch a map; this skill is a **consumer** of that
-contract, never a re-derivation of it. The same section is what the future wayfinder CLI
+`## Graduated fog` — is defined once in its own contract:
+[`../shared/wayfinder-map-issue-shape.md`](../shared/wayfinder-map-issue-shape.md) (the
+wayfinder:map issue shape). Read it before you touch a map; this skill is a **consumer** of that
+contract, never a re-derivation of it. The same contract is what the future wayfinder CLI
 tool reads and writes, so the map issue is the one durable seam between the modes.
 
 ## Two modes, one preserved human seam
@@ -100,8 +100,9 @@ existing map** (a rewrite). It is the mode that first turns fog into structure. 
 **not** resolve any unknown — resolving is WORK mode's job — it only *frames* the unknowns as a
 workable frontier. Its output is a single `wayfinder:map` issue whose body carries the
 four-section shape from the map-shape contract
-([`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md), §The `wayfinder:map` issue
-shape), with the frontier laid out as **native sub-issues**. Read that contract for the section
+([`../shared/wayfinder-map-issue-shape.md`](../shared/wayfinder-map-issue-shape.md), §The
+`wayfinder:map` issue shape), with the frontier laid out as **native sub-issues**. Read that
+contract for the section
 grammar; this mode is a **producer** of that shape, never a re-derivation of it.
 
 ### The plan-don't-do law — the hard constraint CHART is built around
@@ -218,7 +219,7 @@ plan-don't-do line, so it enters the pipeline only via emission, never as fog.
    above — behavioral claims in source, design-history claims ("X was retired *because* Y") in the
    founder, never seeded from an artifact's own prose — and tag history-shaped givens with the
    *who* (below). **Attribute every seed `— from #<MAP>`** — the map's own issue number — per the
-   [map-shape contract's `## Decisions-so-far` rule](../gh-issue-intake-formats.md#the-four-sections):
+   [map-shape contract's `## Decisions-so-far` rule](../shared/wayfinder-map-issue-shape.md#the-four-sections):
    a CHART-time given (and an in-session founder ruling) has no frontier ticket to cite, so its
    honest, resolvable origin is the chart act that created the map. This is the form that passes
    the wayfinder CLI validator on the first write — an entry with no `— from #N` origin trips
@@ -270,8 +271,9 @@ frontier down, WORK is the mode that *clears* it: it takes the map's `## Open fr
 **one** open ticket, records the answer, and graduates that ticket into the fog — the forward
 motion that walks a charted map toward "done enough" for the pipeline. WORK is a **consumer** of
 the four-section map-shape contract
-([`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md), §The `wayfinder:map` issue
-shape) — it never re-derives the section grammar, and it honors that contract's lockstep
+([`../shared/wayfinder-map-issue-shape.md`](../shared/wayfinder-map-issue-shape.md), §The
+`wayfinder:map` issue shape) — it never re-derives the section grammar, and it honors that
+contract's lockstep
 invariant: **a ticket leaves `## Open frontier` only by its answer landing in
 `## Decisions-so-far` and the ticket moving to `## Graduated fog`** — the three move together, so
 the map is never left with a resolved unknown that has no recorded answer.
@@ -393,8 +395,8 @@ Routing a fork touches the map's `## Open frontier` only, never `## Decisions-so
 
 - The fork's line **stays on `## Open frontier`**, marked `(founder-decision-fork — awaiting
   founder)` and referencing its `type:decision` sub-issue — the map-shape contract's fork-marking
-  ([`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md), §The `wayfinder:map` issue
-  shape).
+  ([`../shared/wayfinder-map-issue-shape.md`](../shared/wayfinder-map-issue-shape.md), §The
+  `wayfinder:map` issue shape).
 - It **does not graduate.** The lockstep invariant is that a ticket leaves `## Open frontier` only
   when its answer lands in `## Decisions-so-far`; a routed fork has **no answer yet**, so nothing is
   written to `## Decisions-so-far` and the fork is never moved to `## Graduated fog` at routing

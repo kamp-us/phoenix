@@ -198,8 +198,8 @@ sits one step further upstream still, before charting even begins.
 | `wayfinder:map` | **Issue-shape marker** (not a state, not a type) — this issue is a **wayfinder map**: the ideation-layer map whose body carries the four-section map shape (`## Destination` / `## Decisions-so-far` / `## Open frontier` / `## Graduated fog`) the `wayfinder` skill's chart/work modes and the wayfinder CLI read and write. Upstream of the pipeline (#2421). | No (an ideation surface, not pickable execution work) |
 | `wayfinder:backlog` | **Ideation-queue marker** (not a state, not a type) — this issue is a **destination queued for a wayfinding chart**: the cartographer's backlog of fuzzy end-states named but not yet charted. Sits upstream of triage, one step further up than `wayfinder:map`. | No (an ideation surface, not pickable execution work) |
 
-The **body shape** a `wayfinder:map` issue carries is defined below in
-[§The `wayfinder:map` issue shape](#the-wayfindermap-issue-shape); these rows document only
+The **body shape** a `wayfinder:map` issue carries is defined in its own single-reader contract,
+[§The `wayfinder:map` issue shape](shared/wayfinder-map-issue-shape.md); these rows document only
 the labels. Neither is `write-code`-pickable: a `wayfinder:map` issue is worked by the
 `wayfinder` skill, and only the concrete work it *graduates* into `triage` / `plan-epic`
 becomes pickable execution issues. A `wayfinder:backlog` destination graduates one step
