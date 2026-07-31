@@ -8,10 +8,18 @@
 # so a reviewer can diff it against the deleted block directly. Verbification is phase 2 (#1929,
 # ADR 0228). Do not "improve" it here.
 #
-# Sourced, never executed: it defines one function and sets no shell options, so the caller keeps its
-# own `set -euo pipefail`. No EXIT trap — under bash 3.2 a cleanup trap's last command becomes the
-# script's status, laundering a `set -u` abort into exit 0 (#4476, class #4479); this guard's whole
-# contract is its EXIT STATUS, so that laundering would silently disarm it.
+# DUAL-MODE (ADR 0232) — the why is `.patterns/skill-script-shell-shape.md` § The dual-mode shape.
+#   EXECUTED:  bash ./claude-plugins/kampus-pipeline/skills/shared/scripts/iso-preflight.sh <surface>
+#              stdout ⇒ the function's own scope line, then `ISO_PREFLIGHT=OK`; on a refusal the
+#              LOUD ROUTED BLOCKER lines go to stderr, stdout carries no `ISO_PREFLIGHT=OK`, and the
+#              exit status is 1. This guard's whole contract is that status — read it first.
+#   SOURCED:   the sanctioned in-script edge — `review-code/scripts/materialize-head.sh` and
+#              `ship-it/scripts/step0-preflight.sh` source this file for `iso_preflight`. Unchanged,
+#              including which stream each of its lines lands on.
+# No EXIT trap — under bash 3.2 a cleanup trap's last command becomes the script's status,
+# laundering a `set -u` abort into exit 0 (#4476, class #4479), which would silently disarm it.
+
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then set -uo pipefail; fi   # executed mode only (ADR 0232)
 
 # iso_preflight <surface>: the shared primary-checkout fail-closed guard every head-materializing
 # gate runs BEFORE its first head fetch / `git worktree add` (§RO). Reviewer/shipper sibling of
@@ -57,3 +65,15 @@ iso_preflight() {
     echo "$surface iso_preflight: standalone run on the primary checkout — proceeding read-only via the §RO throwaway-worktree / per-run-ref materialization (the launched tree is never mutated)." >&2
   fi
 }
+
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+  # The function reads $CLAUDE_CODE_AGENT and $WORKTREE_ROOT UNDEFAULTED, so under this mode's
+  # `set -u` an unset one aborts before the guard can answer at all. Bind each to its own current
+  # value — empty when unset — so the executed form evaluates exactly the branches a no-options
+  # sourced caller gets. The body stays untouched: the undefaulted reads under a sourced `set -u`
+  # caller are a separate pre-existing defect, filed rather than fixed from here.
+  CLAUDE_CODE_AGENT="${CLAUDE_CODE_AGENT-}"
+  WORKTREE_ROOT="${WORKTREE_ROOT-}"
+  iso_preflight "${1:?iso-preflight.sh: no <surface> argument — refusing to run an unnamed preflight}" || exit 1
+  echo "ISO_PREFLIGHT=OK"
+fi

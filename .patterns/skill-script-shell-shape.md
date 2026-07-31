@@ -84,6 +84,62 @@ them as history, not as a choice on offer:
   [ADR 0230](../.decisions/0230-cycle-validators-follow-the-source-edge.md) follow that source edge
   as before.
 
+## The dual-mode shape — an executed entry over a preserved source edge
+
+A shared script under `skills/shared/scripts/` is reached two ways at once, and ADR 0232 retires only
+one of them. An **agent** invokes it as a top-level command, which must be literal-path execution
+with results on stdout. Another **script** sources it in-chain for the functions or variables it
+defines — the edge ADR 0232 explicitly keeps sanctioned, [ADR 0230](../.decisions/0230-cycle-validators-follow-the-source-edge.md)'s
+validators follow, and `verify-extraction.sh` check 5 requires. Converting such a file to a
+source-hostile executed script orphans its in-script consumers at `rc 127`, which no CI check sees.
+
+So the converted shape is **both**: the file's existing top-level body and function definitions stay
+exactly as they were, and an **executed entry** is added that runs them and prints their results.
+Four rules make it hold:
+
+1. **Two literal guards, `[ "${BASH_SOURCE[0]}" = "$0" ]`** — one near the top applying the shell
+   options, one at the bottom holding the entry. The condition is written out at both sites rather
+   than hidden behind a helper function, because a helper is itself state the sourcing caller
+   inherits.
+2. **`set -uo pipefail` fires in executed mode only.** `set` in a sourced file runs in the *caller's*
+   shell, and several in-chain consumers (`ship-it/scripts/step0-*.sh`) deliberately set no options —
+   applying the options unconditionally would silently change their guards' behaviour, which is
+   exactly the not-a-relay change ADRs [0228](../.decisions/0228-scripts-relay-never-derive.md)/[0229](../.decisions/0229-mechanical-combination-is-relay.md)
+   forbid.
+3. **The in-script `.` line does not move and does not indent.** `kp_skill_source_edges` matches the
+   sourcing idiom anchored at **column 0**; wrapping one in an `if` makes the edge invisible, which
+   narrows a cycle validator's surface in silence, and re-writing one with an interpolated directory
+   makes the whole edge list UNRESOLVED and reds the skill.
+4. **The entry's exit status is `could I answer`, never `did I find something` — and no `grep` or
+   `while` may set it by accident.** The stdout rule below says what an entry must *print*; this says
+   what it must *return*, and the two are equally load-bearing, because the intake contract's §SHARED
+   tells every reader to *read the exit status first* and treat any non-zero as UNKNOWN. So an entry
+   whose ordinary answer is *nothing found* must still return **0** — and under rule 2's `pipefail`
+   two ordinary shapes silently return 1 instead:
+   - a **filter left inside the pipeline** (`… | grep <pattern> | while …`) leaks `grep`'s no-match
+     exit 1 as the pipeline's status. Capture the filter's output into a variable first, with an
+     explicit `|| true`, then loop over the variable.
+   - an **`&&` loop body** (`while read -r x; do [ -n "$x" ] && printf …; done`) over an *empty*
+     variable makes the failing `[ -n "" ]` the loop's last executed command, so the `while` — and
+     the script — returns 1. Use an `if … fi` body, whose status is 0 when no branch runs.
+
+   Both mis-fire only on the **empty/clean** input, which is exactly the class a
+   populated-input-only recipe cannot see: `cp-guard-adr.sh`, `dev-tier-m.sh` and `cp-read.sh
+   team-roster` each shipped this defect and each returned 1 on its clean answer (#4571). Prove the
+   entry's status against the **empty** input as well as the populated one, or the rule is untested.
+
+The executed entry prints one `NAME=value` line per value the sourced form used to leave in the
+shell (a multi-valued one repeats a singular key — `CP_FILE=<path>` alongside `CP_FILES_N=<n>`), so
+the two modes' answers correspond line for line. It adds no decision logic: it relays what the
+sourced body already computed.
+
+Rule 4's *empty means 0* is not the same as *empty means fine*: whether an empty result is a fact or
+a failed read is the **script's** call, made in its body, and the entry only relays it. `cp-read.sh`
+carries both answers — `changed-files` treats zero files as a failed read (non-zero, nothing on
+stdout) because a PR always changes at least one file, while `team-roster` prints `CP_MEMBERS_N=0` at
+exit 0 because an empty team is a real answer (the ADR-0175 N==0 STOP). The failure rule 4 removes is
+the entry *inventing* a non-zero the body never decided.
+
 ## Why: the measured matrix
 
 Measured on `GNU bash 3.2.57(1)-release (arm64-apple-darwin23)`. Each script assigns a temp dir,

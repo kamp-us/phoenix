@@ -7,9 +7,26 @@
 # below — replacing glue with `pipeline-cli` verbs is phase 2 (#1929, ADR 0228: a script may RELAY a
 # verb's answer, never DERIVE the decision). Do not otherwise "improve" it here.
 #
-# Sourced, never executed: it defines functions and sets no shell options, so the sourcing caller
-# keeps its own `set -euo pipefail`. No EXIT trap — under bash 3.2 a cleanup trap's last command
-# becomes the script's status, which converts a `set -u` abort into exit 0 (#4476/#4479).
+# DUAL-MODE (ADR 0232) — the why is `.patterns/skill-script-shell-shape.md` § The dual-mode shape.
+#   EXECUTED:  bash ./claude-plugins/kampus-pipeline/skills/shared/scripts/cp-read.sh <REPO|ORG> \
+#                   <changed-files|head-sha|team-roster|pr-author|team-membership> <PR|login>
+#              stdout ⇒ one `NAME=value` line per value the matching function sets, the multi-valued
+#              ones as a repeated singular key:
+#                changed-files    CP_FILES_N=<n>  then one CP_FILE=<path> per file
+#                head-sha         CP_HEAD_SHA=<40-hex>
+#                team-roster      CP_MEMBERS_N=<n>  then one CP_MEMBER=<login> per member
+#                pr-author        CP_PR_AUTHOR=<login>
+#                team-membership  CP_MEMBERSHIP=<state>|absent
+#              A read that could not execute prints NOTHING on stdout and exits non-zero — UNKNOWN,
+#              never "no control-plane path touched".
+#   SOURCED:   the sanctioned in-script edge, and the reason the functions below are untouched. SEVEN
+#              scripts source this file for them: review-code/ and review-design/
+#              scripts/classify-control-plane.sh, ship-it/scripts/step0-classify.sh and
+#              step0-cp-approval.sh, heal-ci/scripts/active-repair.sh, and this directory's
+#              cp-classify-entry.sh and cp-guard-adr.sh. The three ship-it ones set NO shell options
+#              by design, which is why the options above are applied in executed mode only.
+# No EXIT trap — under bash 3.2 a cleanup trap's last command becomes the script's status, which
+# converts a `set -u` abort into exit 0 (#4476/#4479).
 #
 # OUTPUT CHANNEL — every function here writes on STDERR ONLY. The rule and its why are
 # `.patterns/skill-script-io-contract.md`; the instance is that these are sourced helpers whose
@@ -17,6 +34,8 @@
 # the caller wants and a line printed there can only corrupt the caller's own answer. It did: the
 # §ZS scope line used to land on stdout, and a consumer whose stdout is a machine channel sourced
 # that sentence as a path (#4510). No call site needs a `>&2` — if one appears, the helper is wrong.
+
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then set -uo pipefail; fi   # executed mode only (ADR 0232)
 
 # §CPREAD — the ONE hardened read of a PR's changed-file list, the input to BOTH §CP clauses.
 # Sets CP_FILES (the list) + CP_FILES_N (the scanned count); returns NON-ZERO on a read that could
@@ -122,3 +141,51 @@ cp_team_membership() {   # $1 = ORG, $2 = login; sets CP_MEMBERSHIP = <state>|ab
       return 1 ;;
   esac
 }
+
+# The ADR-0232 executed entry. It RELAYS each function's result onto stdout and its status onto the
+# exit code; it adds no branch of its own, so the executed and sourced answers cannot diverge.
+#
+# EVERY relay loop below uses an `if … fi` body rather than `[ -n "$x" ] && printf …`. That is a
+# correctness requirement, not a style call: with an EMPTY variable the `[ -n "" ]` test is the
+# loop's last executed command, so the `while` — and the script — returns 1 on the very answer the
+# read succeeded at, and §SHARED's "read the exit status first, non-zero is UNKNOWN" rule then makes
+# a clean read unreadable. `.patterns/skill-script-shell-shape.md` § The dual-mode shape rule 4.
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+  _target="${1:?cp-read.sh: no <REPO|ORG> argument — refusing to read against an unnamed target}"
+  case "${2-}" in
+    changed-files)
+      cp_changed_files "$_target" "${3:?cp-read.sh changed-files: no PR number}" || exit 1
+      printf 'CP_FILES_N=%s\n' "$CP_FILES_N"
+      printf '%s\n' "$CP_FILES" | while IFS= read -r _f; do
+        if [ -n "$_f" ]; then printf 'CP_FILE=%s\n' "$_f"; fi
+      done
+      ;;
+    head-sha)
+      cp_head_sha "$_target" "${3:?cp-read.sh head-sha: no PR number}" || exit 1
+      printf 'CP_HEAD_SHA=%s\n' "$CP_HEAD_SHA"
+      ;;
+    team-roster)
+      # Zero members is a FACT here, not a failed read (the ADR-0175 N==0 STOP), so this branch
+      # legitimately prints `CP_MEMBERS_N=0` and no CP_MEMBER lines at exit 0 — the asymmetry with
+      # changed-files above is deliberate (`.patterns/skill-script-io-contract.md`). That asymmetry
+      # is exactly what the `if … fi` loop body preserves: an `&&` body would return 1 at N==0 and
+      # collapse this branch back onto the failed-read one it is defined against (#4571 repair r1).
+      cp_team_roster "$_target" || exit 1
+      printf 'CP_MEMBERS_N=%s\n' "$CP_MEMBERS_N"
+      printf '%s\n' "$CP_MEMBERS" | while IFS= read -r _m; do
+        if [ -n "$_m" ]; then printf 'CP_MEMBER=%s\n' "$_m"; fi
+      done
+      ;;
+    pr-author)
+      cp_pr_author "$_target" "${3:?cp-read.sh pr-author: no PR number}" || exit 1
+      printf 'CP_PR_AUTHOR=%s\n' "$CP_PR_AUTHOR"
+      ;;
+    team-membership)
+      cp_team_membership "$_target" "${3:?cp-read.sh team-membership: no login}" || exit 1
+      printf 'CP_MEMBERSHIP=%s\n' "$CP_MEMBERSHIP"
+      ;;
+    *)
+      echo "usage: cp-read.sh <REPO|ORG> <changed-files|head-sha|team-roster|pr-author|team-membership> <PR|login>" >&2
+      exit 2 ;;
+  esac
+fi

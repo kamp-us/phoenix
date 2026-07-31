@@ -8,8 +8,13 @@
 # metavariables bound to positional parameters in the no-CLI fallback (`<slug>` -> "$1",
 # `<file>` -> "$2"). Verbification is phase 2 (#1929, ADR 0228). Do not "improve" it here.
 #
-# SOURCE it (`. scratchpad.sh`) — the point is the $RUN_SCRATCH it leaves in the caller's shell. Sets
-# no shell options and installs no EXIT trap: under bash 3.2 a cleanup trap's last command becomes the
+# DUAL-MODE (ADR 0232) — the why is `.patterns/skill-script-shell-shape.md` § The dual-mode shape.
+#   EXECUTED:  bash ./claude-plugins/kampus-pipeline/skills/shared/scripts/scratchpad.sh \
+#                   <verb|open-fallback|path-fallback> <slug> [<leaf-file>]
+#              stdout ⇒ `RUN_SCRATCH=<dir>`, plus `VERDICT=<file>` for the `verb` form — the same
+#              values the sourced form left in the caller's shell. Nothing on stdout on failure.
+#   SOURCED:   no in-script consumer today; the three functions stay for one.
+# No EXIT trap: under bash 3.2 a cleanup trap's last command becomes the
 # script's status, which would launder a `set -u` abort — or the fail-closed session-id refusal below
 # — into exit 0 (#4476, class #4479).
 #
@@ -18,6 +23,8 @@
 # shell state that doesn't survive between Bash calls." A SOURCED script is not shell state — it is a
 # file on disk — so the fallback is a function here. That is the extraction's whole point (#4435), not
 # a change to the recipe, which is byte-identical below.
+
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then set -uo pipefail; fi   # executed mode only (ADR 0232)
 
 # --- The verb: allocation is owned by one tested verb, so a caller cites it ------------------------
 # §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
@@ -55,3 +62,22 @@ kp_sp_path_fallback() {   # $1 = slug, $2 = leaf file name whose survival is ass
 RUN_SCRATCH="${TMPDIR:-/tmp}/kampus-run/${CLAUDE_CODE_SESSION_ID:?§SP: session id unset (#3718)}/$1"
 [ -s "$RUN_SCRATCH/$2" ] || { echo "§SP: $RUN_SCRATCH/$2 did not survive — re-run the opening step in THIS session." >&2; return 1; }
 }
+
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+  case "${1-}" in
+    verb)
+      kp_sp_verb "${2:?scratchpad.sh verb: no slug}" "${3:?scratchpad.sh verb: no leaf file name}" || exit 1
+      printf 'RUN_SCRATCH=%s\n' "$RUN_SCRATCH"
+      printf 'VERDICT=%s\n' "$VERDICT"
+      ;;
+    open-fallback)
+      kp_sp_open_fallback "${2:?scratchpad.sh open-fallback: no slug}" || exit 1
+      printf 'RUN_SCRATCH=%s\n' "$RUN_SCRATCH"
+      ;;
+    path-fallback)
+      kp_sp_path_fallback "${2:?scratchpad.sh path-fallback: no slug}" "${3:?scratchpad.sh path-fallback: no leaf file name}" || exit 1
+      printf 'RUN_SCRATCH=%s\n' "$RUN_SCRATCH"
+      ;;
+    *) echo "usage: scratchpad.sh <verb|open-fallback|path-fallback> <slug> [<leaf-file>]" >&2; exit 2 ;;
+  esac
+fi

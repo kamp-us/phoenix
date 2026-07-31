@@ -7,13 +7,22 @@
 # MECHANICAL MOVE. The moved lines are byte-identical to the fence they came from and sit at column 0.
 # Verbification is phase 2 (#1929, ADR 0228). Do not "improve" it here.
 #
-# SOURCE it (`. cli-require.sh`) from a gate-critical block, after §CLI's `PCLI=` preamble has run —
-# the fence's `exit 127` becomes a `return 127` when sourced, so the caller decides whether an
-# unresolved CLI ends the run or is routed up; either way it is UNKNOWN, never a verdict. Sets no
-# shell options and installs no EXIT trap: under bash 3.2 a cleanup trap's last command becomes the
-# script's exit status, which would launder this very refusal into exit 0 (#4476, class #4479).
+# DUAL-MODE (ADR 0232) — the why is `.patterns/skill-script-shell-shape.md` § The dual-mode shape.
+#   EXECUTED:  bash ./claude-plugins/kampus-pipeline/skills/shared/scripts/cli-require.sh <pcli-path>
+#              stdout ⇒ one line, `PCLI=<path>`, ONLY when the shim is executable; otherwise nothing
+#              on stdout, the three refusal lines on stderr, and exit 127. The path is an ARGUMENT
+#              because an executed child cannot see a caller's unexported `$PCLI` — a silent empty
+#              read there would refuse every run, which is the wrong kind of fail-closed.
+#   SOURCED:   after §CLI's `PCLI=` preamble; the `exit 127` becomes `return 127`, so the caller
+#              decides whether an unresolved CLI ends the run or is routed up. Either way it is
+#              UNKNOWN, never a verdict.
+# No EXIT trap: under bash 3.2 a cleanup trap's last command becomes the script's exit status,
+# which would launder this very refusal into exit 0 (#4476, class #4479).
 
-: "${PCLI?cli-require.sh: \$PCLI unset — run the §CLI preamble first; an unresolved shim is UNKNOWN, never a verdict}"
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then set -uo pipefail; fi   # executed mode only (ADR 0232)
+
+PCLI="${PCLI-${1-}}"
+: "${PCLI?cli-require.sh: \$PCLI unset and no \$1 — run the §CLI preamble first, or pass the shim path; an unresolved shim is UNKNOWN, never a verdict}"
 
 [ -x "$PCLI" ] || {
   echo "pipeline-cli: UNRESOLVED at '$PCLI' — the CLI never ran, so this gate has NO result." >&2
@@ -21,3 +30,7 @@
   echo "  This is a resolution gap, NOT worktree teardown (teardown = exit 1 ENOENT on a tracked file, then exit 126)." >&2
   return 127 2>/dev/null || exit 127
 }
+
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+  printf 'PCLI=%s\n' "$PCLI"
+fi

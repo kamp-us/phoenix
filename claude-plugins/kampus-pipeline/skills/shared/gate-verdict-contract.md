@@ -360,9 +360,9 @@ on any miss — never a silent pass. This is the single source; each review skil
 prevent):
 
 ```bash
-KP_SHARED="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/skills/shared/scripts"
-. "$KP_SHARED/verdict-readback.sh"                                  # §SHARED: both guards, one source
-verdict_readback_guard "$CID" review-code "$HEAD_SHA" || …          # <gate> ∈ review-{code,doc,skill,design}
+# stdout: the `verdict_readback_guard OK: …` line, and nothing at all on a miss — which names its
+# cause on stderr and exits non-zero. <gate> ∈ review-{code,doc,skill,design}.
+bash ./claude-plugins/kampus-pipeline/skills/shared/scripts/verdict-readback.sh "$REPO" guard "$CID" review-code "$HEAD_SHA" || …
 ```
 
 [`scripts/verdict-readback.sh`](scripts/verdict-readback.sh) carries the four checks and
@@ -414,9 +414,9 @@ actually landed for the head, and **hard-fails (non-zero)** on absent / broken /
 or path-leaking marker is a **fatal** error the gate cannot silently pass:
 
 ```bash
-KP_SHARED="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/skills/shared/scripts"
-. "$KP_SHARED/verdict-readback.sh"                                  # §SHARED: the wrapper and the guard it calls
-verdict_post_verify "$PR" review-code "$HEAD_SHA" || exit 1         # UNCONDITIONAL, after ANY post/upsert
+# UNCONDITIONAL, after ANY post/upsert. stdout: the resolution line then `verdict_post_verify OK: …`;
+# a fatal miss prints nothing there, names itself on stderr, and exits non-zero.
+bash ./claude-plugins/kampus-pipeline/skills/shared/scripts/verdict-readback.sh "$REPO" post-verify "$PR" review-code "$HEAD_SHA" || exit 1
 ```
 
 It resolves the landed verdict from live PR state — **(A)** my SHA-bound or advisory marker comment,

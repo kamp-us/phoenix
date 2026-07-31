@@ -7,10 +7,18 @@
 # MECHANICAL MOVE. Every moved line is byte-identical to the fence it came from and sits at column 0.
 # Verbification is phase 2 (#1929, ADR 0228). Do not "improve" it here.
 #
-# SOURCE it (`. dev-tier-m.sh`) with REPO and PR set: the point is $DEV_SUPPRESS / $DEV_TESTCUTS in the
-# caller's shell, plus the two scope lines it echoes (§ZS #1 — emit the scanned scope so a drift that
-# silently stops matching shows in the run log instead of reading green). Sets no shell options and
-# installs no EXIT trap (#4476, class #4479).
+# DUAL-MODE (ADR 0232) — the why is `.patterns/skill-script-shell-shape.md` § The dual-mode shape.
+#   EXECUTED:  bash ./claude-plugins/kampus-pipeline/skills/shared/scripts/dev-tier-m.sh <REPO> <PR>
+#              stdout ⇒ the two scope lines the body already echoes (§ZS #1 — emit the scanned scope
+#              so a drift that silently stops matching shows in the run log instead of reading
+#              green), then one `DEV_SUPPRESS_LINE=<text>` per class-5 hit and one
+#              `DEV_TESTCUT_LINE=<text>` per class-6 hit — the contents of the two variables the
+#              sourced form left in the caller's shell. This scan ARMS the check and never decides
+#              it: a hit is a line to judge against the disclosure, not a FAIL.
+#   SOURCED:   no in-script consumer today; $DEV_SUPPRESS / $DEV_TESTCUTS stay available for one.
+# No EXIT trap (#4476, class #4479).
+
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then set -uo pipefail; fi   # executed mode only (ADR 0232)
 
 REPO="${REPO:-${1:?dev-tier-m.sh: REPO unset and no \$1 — refusing to scan an unnamed repo}}"
 PR="${PR:-${2:?dev-tier-m.sh: PR unset and no \$2 — refusing to scan an unnamed PR}}"
@@ -40,3 +48,18 @@ DEV_TESTCUTS="$(gh pr diff "$PR" | awk '
   /^\+\+\+ / { t = ((($0 ~ /^\+\+\+ b\//) ? $0 : p) ~ /(\.|\/)(test|spec)\.[a-z]+$|\/(__tests__|test|tests)\//) ; next }
   t && /^-[^-]/ && /expect\(|assert|toBe|toEqual|toThrow/ { print }')"
 echo "deviation-disclosure: Tier-M scan — $(printf '%s' "$DEV_SUPPRESS" | grep -c .) suppression/skip line(s), $(printf '%s' "$DEV_TESTCUTS" | grep -c .) removed-assertion line(s)"
+
+# A CLEAN scan — zero suppression and zero removed-assertion hits — is this scan's ORDINARY answer,
+# and it must arrive at exit 0: §SHARED tells its reader to read the exit status first and treat any
+# non-zero as UNKNOWN, so a clean scan returning 1 makes every green PR unreadable. Hence the
+# `if … fi` bodies: with both variables empty the `[ -n "" ]` of an `&&` body would be each loop's
+# last command, and the second loop's status is the script's
+# (`.patterns/skill-script-shell-shape.md` § The dual-mode shape rule 4).
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+  printf '%s\n' "$DEV_SUPPRESS" | while IFS= read -r _l; do
+    if [ -n "$_l" ]; then printf 'DEV_SUPPRESS_LINE=%s\n' "$_l"; fi
+  done
+  printf '%s\n' "$DEV_TESTCUTS" | while IFS= read -r _l; do
+    if [ -n "$_l" ]; then printf 'DEV_TESTCUT_LINE=%s\n' "$_l"; fi
+  done
+fi

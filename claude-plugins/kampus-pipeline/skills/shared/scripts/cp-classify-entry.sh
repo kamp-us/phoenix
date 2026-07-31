@@ -9,14 +9,23 @@
 # sourcing seam in this header block, and the §ZS scope line below (#4510). Verbification is phase 2
 # (#1929, ADR 0228). Do not otherwise "improve" it here.
 #
-# SOURCE it (`. cp-classify-entry.sh`) with REPO and PR set: the point of the recipe is the $CP_STATE
-# it leaves in the caller's shell. It sets no shell options and installs no EXIT trap — under bash
-# 3.2 a cleanup trap's last command becomes the script's exit status, laundering a `set -u` abort
-# into exit 0 (#4476, class #4479).
+# DUAL-MODE (ADR 0232) — the why is `.patterns/skill-script-shell-shape.md` § The dual-mode shape.
+#   EXECUTED:  bash ./claude-plugins/kampus-pipeline/skills/shared/scripts/cp-classify-entry.sh <REPO> <PR>
+#              stdout is a PROSE answer channel: the §CP scope line, then `CP_STATE=<state>`, then a
+#              `BLOCKING (…)` line on every state but `not-control-plane`. Read the scope line as the
+#              evidence the run happened — the ordinary answer here is the ABSENCE of a BLOCKING
+#              line, so emptiness must never be read as "ordinary".
+#   SOURCED:   no in-script consumer today; the $CP_STATE the body leaves in the caller's shell stays
+#              available for one.
+# No EXIT trap — under bash 3.2 a cleanup trap's last command becomes the script's exit status,
+# laundering a `set -u` abort into exit 0 (#4476, class #4479).
+
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then set -uo pipefail; fi   # executed mode only (ADR 0232)
 
 REPO="${REPO:-${1:?cp-classify-entry.sh: REPO unset and no \$1 — refusing to classify an unnamed repo}}"
 PR="${PR:-${2:?cp-classify-entry.sh: PR unset and no \$2 — refusing to classify an unnamed PR}}"
 # §CPREAD owns cp_changed_files; the fence assumed the reader had already pasted it into the shell.
+# shellcheck source=cp-read.sh disable=SC1007,SC1091
 . "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/cp-read.sh"
 
 # §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
@@ -38,6 +47,7 @@ fi
 # stderr now, so without it stdout would be 0 bytes on the ordinary path
 # (`.patterns/skill-script-io-contract.md`, #4510).
 echo "§CP scope: PR #$PR — ${CP_FILES_N:-0} file(s) scanned, state '$CP_STATE'"
+printf 'CP_STATE=%s\n' "$CP_STATE"   # the positive token, so the executed reader never infers the state from an absence
 if [ "$CP_STATE" = "not-control-plane" ]; then
   : # proven ordinary — the ONLY branch that may skip the §CP hold
 else
