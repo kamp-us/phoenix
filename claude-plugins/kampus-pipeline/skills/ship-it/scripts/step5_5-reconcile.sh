@@ -20,7 +20,7 @@
 # RECONCILE_SLEEP defaults, the between-polls sleep guard, and the MERGE_DISPOSITION case arms out
 # of Step 5.5's surface. It reaches them by following SKILL.md's source line into this file, so keep
 # those bindings at column 0 and keep that INVOCATION inside the `### Step 5.5 — ` section.
-# (`sourcedScriptNames` learned the ADR-0232 literal-path form alongside the old `$SHIPIT_SCRIPTS/`
+# (`reachedScriptNames` learned the ADR-0232 literal-path form alongside the old `$SHIPIT_SCRIPTS/`
 # one, so the follow still resolves.)
 if [ "${BASH_SOURCE[0]}" = "$0" ]; then set -uo pipefail; fi   # executed mode only (ADR 0232)
 . "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"

@@ -20,7 +20,7 @@
 # PARSER-HELD (#4498): `checks/step3-contract.ts` reads the `VAR=$(jq -r '.field …)` bindings below
 # out of Step 3's surface to derive the branch-2 pending predicate. It reaches them by following
 # SKILL.md's INVOCATION line into this file, so keep the bindings at column 0 and keep that
-# invocation inside the `## Step 3 — ` section. (`sourcedScriptNames` learned the ADR-0232
+# invocation inside the `## Step 3 — ` section. (`reachedScriptNames` learned the ADR-0232
 # literal-path form alongside the old `$SHIPIT_SCRIPTS/` one, so the follow still resolves.)
 if [ "${BASH_SOURCE[0]}" = "$0" ]; then set -uo pipefail; fi   # executed mode only (ADR 0232)
 . "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
