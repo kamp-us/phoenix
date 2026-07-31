@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 # Classify the PR blocking (§CP) vs non-blocking. Prints one or more `BLOCKING (…)` lines when the
 # PR is held as §CP; prints NO `BLOCKING (…)` line when the canonical verb answered a positive
-# `not-control-plane`. Note stdout is NOT empty on that path — `cp_changed_files` emits its §ZS scope
-# line there — so the absent BLOCKING line, not empty output, is the discriminator.
+# `not-control-plane`. Note stdout is NOT empty on that path — this script prints its own §ZS scope
+# line there — so the absent BLOCKING line, not empty output, is the discriminator. That scope line
+# is emitted HERE rather than by `cp_changed_files` because a §ZS scope statement belongs to the unit
+# that JUDGES, on that unit's own answer channel (`.patterns/skill-script-io-contract.md`, #4510);
+# the helper is a sourced input supplier, so its own lines are diagnostics and go to stderr.
 # Extracted from review-design/SKILL.md (#4453, epic #4435 phase 1). Extraction contract +
 # shell-option rationale: ../SKILL.md § The extracted scripts.
 #
@@ -49,6 +52,10 @@ if ! cp_changed_files "$REPO" "$PR"; then
 else
   CP_STATE="$(printf '%s\n' "$CP_FILES" | "$PCLI" cp-classify classify --repo "$REPO")" || CP_STATE=""
 fi
+# §ZS #1 on the answer channel: the caller reads the ABSENCE of a `BLOCKING (…)` line as the positive
+# answer, so this line is what tells "ran and found nothing" from "never ran" — without it an
+# ordinary PR's stdout would be 0 bytes, byte-identical to a script that failed to start.
+echo "§CP scope: PR #$PR — ${CP_FILES_N:-0} file(s) scanned, state '$CP_STATE'"
 # `content-undetermined` is an OBLIGATION, not an answer: probe each listed ADR at head before
 # calling this PR non-blocking (the same ADR-0164 verb ship-it Step 0 and review-code/doc run).
 if [ "$CP_STATE" = "content-undetermined" ]; then

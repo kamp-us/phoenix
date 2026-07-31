@@ -3,13 +3,20 @@
 # `gh-issue-intake-formats.md` (epic #4435 phase 1, #4450). The *why* for every property asserted
 # here stays in that contract's §CPREAD prose; the comments below travelled with the shell.
 #
-# MECHANICAL MOVE. The shell is unchanged apart from the sourcing seam — replacing glue with
-# `pipeline-cli` verbs is phase 2 (#1929, ADR 0228: a script may RELAY a verb's answer, never
-# DERIVE the decision). Do not "improve" it here.
+# MECHANICAL MOVE. The shell is unchanged apart from the sourcing seam and the #4510 channel fix
+# below — replacing glue with `pipeline-cli` verbs is phase 2 (#1929, ADR 0228: a script may RELAY a
+# verb's answer, never DERIVE the decision). Do not otherwise "improve" it here.
 #
 # Sourced, never executed: it defines functions and sets no shell options, so the sourcing caller
 # keeps its own `set -euo pipefail`. No EXIT trap — under bash 3.2 a cleanup trap's last command
 # becomes the script's status, which converts a `set -u` abort into exit 0 (#4476/#4479).
+#
+# OUTPUT CHANNEL — every function here writes on STDERR ONLY. The rule and its why are
+# `.patterns/skill-script-io-contract.md`; the instance is that these are sourced helpers whose
+# result is the `CP_*` variables they leave in the caller's shell, so their stdout carries nothing
+# the caller wants and a line printed there can only corrupt the caller's own answer. It did: the
+# §ZS scope line used to land on stdout, and a consumer whose stdout is a machine channel sourced
+# that sentence as a path (#4510). No call site needs a `>&2` — if one appears, the helper is wrong.
 
 # §CPREAD — the ONE hardened read of a PR's changed-file list, the input to BOTH §CP clauses.
 # Sets CP_FILES (the list) + CP_FILES_N (the scanned count); returns NON-ZERO on a read that could
@@ -31,7 +38,7 @@ cp_changed_files() {   # $1 = REPO, $2 = PR
     echo "§CP scope: PR #$2 changed-file list read returned ZERO files — a PR always changes >=1 file, so this is a FAILED READ, not a clean 'no §CP path'" >&2
     return 1
   fi
-  echo "§CP scope: PR #$2 changed-file list read OK — $CP_FILES_N file(s) scanned"   # §ZS #1: state the scope the classification rests on
+  echo "§CP scope: PR #$2 changed-file list read OK — $CP_FILES_N file(s) scanned" >&2   # §ZS #1: state the scope the classification rests on
 }
 
 # The PR head SHA is the SECOND fallible read every §CP site makes — the ref the ADR-0164 content
@@ -72,7 +79,7 @@ cp_team_roster() {   # $1 = ORG
     return 1
   fi
   CP_MEMBERS_N="$(printf '%s\n' "$CP_MEMBERS" | grep -c . || true)"
-  echo "§CP roster: @$1/control-plane read OK — $CP_MEMBERS_N member(s) scanned"   # §ZS #1: emit the scope
+  echo "§CP roster: @$1/control-plane read OK — $CP_MEMBERS_N member(s) scanned" >&2   # §ZS #1: emit the scope
 }
 
 # cp_pr_author — the PR author login. An unresolved author is UNKNOWN: it un-skips the author in the

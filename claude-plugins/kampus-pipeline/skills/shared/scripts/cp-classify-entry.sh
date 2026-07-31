@@ -5,8 +5,9 @@
 # prose; the comments below travelled with the shell.
 #
 # MECHANICAL MOVE. Every moved line sits at column 0, byte-identical to the fence it came from, so a
-# reviewer can diff it against the deleted block directly. Only the argument + sourcing seam in this
-# header block is new. Verbification is phase 2 (#1929, ADR 0228). Do not "improve" it here.
+# reviewer can diff it against the deleted block directly. New since the move: the argument +
+# sourcing seam in this header block, and the §ZS scope line below (#4510). Verbification is phase 2
+# (#1929, ADR 0228). Do not otherwise "improve" it here.
 #
 # SOURCE it (`. cp-classify-entry.sh`) with REPO and PR set: the point of the recipe is the $CP_STATE
 # it leaves in the caller's shell. It sets no shell options and installs no EXIT trap — under bash
@@ -32,6 +33,11 @@ if ! cp_changed_files "$REPO" "$PR"; then
 else
   CP_STATE="$(printf '%s\n' "$CP_FILES" | "$PCLI" cp-classify classify --repo "$REPO")"
 fi
+# §ZS #1 on the answer channel: the ordinary answer here is the ABSENCE of a `BLOCKING (…)` line, so
+# this line is what tells "ran and found nothing" from "never ran". `cp_changed_files` writes only to
+# stderr now, so without it stdout would be 0 bytes on the ordinary path
+# (`.patterns/skill-script-io-contract.md`, #4510).
+echo "§CP scope: PR #$PR — ${CP_FILES_N:-0} file(s) scanned, state '$CP_STATE'"
 if [ "$CP_STATE" = "not-control-plane" ]; then
   : # proven ordinary — the ONLY branch that may skip the §CP hold
 else
