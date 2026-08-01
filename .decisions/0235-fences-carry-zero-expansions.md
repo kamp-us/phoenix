@@ -104,6 +104,20 @@ Mechanics of the ruling:
 - Documenting a workaround convention for top-level dynamic fences — top-level dynamic fences
   are no longer a sanctioned shape, so there is nothing to sanction a workaround *for*.
 
+**Application: prospective only.** The rule binds new and held work — it lands through the held
+conversion lanes' acceptance criteria ([#4575](https://github.com/kamp-us/phoenix/issues/4575)'s
+sweep, [#4576](https://github.com/kamp-us/phoenix/issues/4576)'s backstop, the residue lanes),
+held precisely so a rule change lands without re-cutting finished work. It does **not** re-open
+work already gated: a PR gated before this ADR stays judged under the rules in force at its head
+— concretely, the six banked control-plane PRs of 2026-08-01, whose gates deliberately passed
+main-identical residual expansion fences and routed the class to the ruling issue; that routing
+was correct. A retroactive reading would supersede current-head verdicts and void granted
+approvals via dismiss-stale-on-push, buying no safety: the residual fences are main-identical
+and the sweep lanes own their removal. Grounding: the desk posture record
+([#4605 comment](https://github.com/kamp-us/phoenix/issues/4605#issuecomment-5148997890)) and
+the engine's hazard record
+([#4605 comment](https://github.com/kamp-us/phoenix/issues/4605#issuecomment-5148992269)).
+
 ## Consequences
 
 - **The ~38-fence `gh api $REPO` census converts to script-backed reads**, routed into the
