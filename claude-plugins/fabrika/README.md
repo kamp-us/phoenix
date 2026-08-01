@@ -27,8 +27,8 @@ fabrika owns here is the discipline, not the tool.
 **No skill enters fabrika by any path other than `/skill-creator`** — founder ruling
 [#4637-C](https://github.com/kamp-us/phoenix/issues/4637). There is no second door: a skill is
 not hand-dropped into `skills/`, not ported from v1, not copied from a sibling plugin. Every
-fabrika skill is authored through `/skill-creator`, against the fabrika conventions, and enters
-as that session's output.
+fabrika skill is authored through `/skill-creator`, against the [fabrika skill
+conventions](docs/skill-conventions.md), and enters as that session's output.
 
 This posture is the whole reason `skills/` is empty right now. An empty directory is the correct
 state until the first authoring session lands its skill through the door; a skill that appears

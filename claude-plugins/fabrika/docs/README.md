@@ -13,6 +13,6 @@ This directory is the home; the docs themselves land as the foundation epic's la
 
 | Doc | What it fixes | Child |
 |---|---|---|
-| skill conventions | the writing discipline every fabrika skill meets — wrapper sizing, invocation-axis economics, the quality vocabulary and failure-mode taxonomy, checkable completion criteria, the scope law | #4653 |
+| [skill conventions](skill-conventions.md) | the writing discipline every fabrika skill meets — the two-layer split, wrapper sizing, invocation-axis economics, the quality vocabulary and failure-mode taxonomy, checkable completion criteria, the scope law, the literal-invocation rule, the ship gate | #4653 |
 | CLI interface convention + contract-spec format | what every fabrika verb owes its caller (`--help` discoverability, uniform output contracts, usage examples) and the shape of the contract a skill derives for the verbs it needs | #4654 |
 | authoring-brief contract | the boot document a stateless `/skill-creator` session works from | #4655 |
