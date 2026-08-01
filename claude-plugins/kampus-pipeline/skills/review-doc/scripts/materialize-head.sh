@@ -4,11 +4,17 @@
 # Extracted from review-doc/SKILL.md (#4453, epic #4435 phase 1). Extraction contract +
 # shell-option rationale: ../SKILL.md § The extracted scripts.
 #
-# STDOUT IS A MACHINE CHANNEL: the ONLY stdout line is the absolute path of the run-state handle
-# carrying PR_REF / HEAD_SHA (and REVIEW_WT under `--worktree`), so the caller can
-# `. "$(materialize-head.sh "$PR")"`. Diagnostics go to stderr. On ANY failure path stdout stays
-# EMPTY and the exit is non-zero — the caller's `.` then fails loudly rather than sourcing a
-# half-written handle and reviewing the launched checkout's BASE tree (#793, the false-PASS hazard).
+# usage: bash ./claude-plugins/kampus-pipeline/skills/review-doc/scripts/materialize-head.sh <pr> [--worktree]
+#
+# STDOUT IS THE ANSWER (ADR 0232, .patterns/skill-script-io-contract.md) — one `KEY=value` line per
+# resolved value: PR_REF / HEAD_SHA, plus REVIEW_WT under `--worktree`. Diagnostics go to stderr. On
+# ANY failure path stdout stays EMPTY and the exit is non-zero — read the exit status BEFORE the
+# stdout, because a materialization that could not run is UNKNOWN and must never fall back to the
+# launched checkout's BASE tree (#793, the false-PASS hazard).
+#
+# The same values also persist to this run's §SP handle, which this skill's OWN later scripts
+# re-source in-process via head-env.sh. In-script sourcing stays sanctioned under ADR 0232; only the
+# `.` at an agent's top-level command is banned.
 set -uo pipefail
 # shellcheck source=../../../lib/common.sh disable=SC1007,SC1091
 . "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
@@ -53,5 +59,8 @@ if [ "$MODE" = "--worktree" ] && [ -z "${REVIEW_WT:-}" ]; then
   echo "FATAL: --worktree was asked for but no worktree came back — aborting (§HEAD)." >&2; exit 1
 fi
 
-# The handle path — the ONLY stdout line, so the caller can `. "$(materialize-head.sh "$PR")"`.
-printf '%s\n' "$HEAD_ENV"
+# THE ANSWER — the resolved values, one KEY=value line each, and the only stdout this script writes.
+# Printed from the variables the handle read back above, so what the caller reads and what the later
+# steps re-source through head-env.sh are the same values by construction.
+[ -n "${REVIEW_WT:-}" ] && printf 'REVIEW_WT=%s\n' "$REVIEW_WT"
+printf 'PR_REF=%s\nHEAD_SHA=%s\n' "$PR_REF" "$HEAD_SHA"

@@ -47,7 +47,7 @@ if set, else the current repository. In phoenix this defaults to `kamp-us/phoeni
 behavior is unchanged with no config (ADR 0062 §1).
 
 ```bash
-REPO="$("${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/plan-epic/scripts/resolve-repo.sh")" || exit 1
+REPO="$(bash ./claude-plugins/kampus-pipeline/skills/plan-epic/scripts/resolve-repo.sh)" || exit 1
 ```
 
 Every script under [`scripts/`](scripts/) resolves the repo the same way through the shared lib's
@@ -183,7 +183,7 @@ re-implementing ~50 lines of `jq` inline. Resolve the tool in-repo first, publis
 # exit 0 = lock WON (prints `epic-lock: won #<EPIC>`) → mutate, then RELEASE on every exit path.
 # 3 = backed off (held lock / setup gap / lost race — not a plan-epic failure, re-run later);
 # 127 = the shim never ran (UNKNOWN). NEVER mutate on a non-zero.
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/plan-epic/scripts/epic-lock-acquire.sh" <EPIC>
+bash ./claude-plugins/kampus-pipeline/skills/plan-epic/scripts/epic-lock-acquire.sh <EPIC>
 ```
 
 **Release is an explicit agent step, not a shell `trap … EXIT`.** The acquire above runs in
@@ -198,7 +198,7 @@ or a failure/abort mid-mutation):
 ```bash
 # A non-zero exit means the release did NOT complete — the lock is LEAKED and the epic is wedged.
 # Surface it loudly; never swallow it.
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/plan-epic/scripts/epic-lock-release.sh" <EPIC>
+bash ./claude-plugins/kampus-pipeline/skills/plan-epic/scripts/epic-lock-release.sh <EPIC>
 ```
 
 The release fires on **every** terminal path on purpose: you drive this as an LLM agent across
@@ -265,13 +265,13 @@ after which every later script **re-derives** the same directory through the sha
 ```bash
 # OPEN the namespace — run this ONCE per plan; it prints the directory and clears a previous run of
 # this same epic in this same session. Every later script re-derives it and never clears it.
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/plan-epic/scripts/scratch-open.sh" <EPIC>
+bash ./claude-plugins/kampus-pipeline/skills/plan-epic/scripts/scratch-open.sh <EPIC>
 ```
 
 ```bash
 # the epic + its labels + child summary on stdout, and the body/updated_at snapshot written into the
 # namespace for Step 5 to read back
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/plan-epic/scripts/epic-read.sh" <EPIC>
+bash ./claude-plugins/kampus-pipeline/skills/plan-epic/scripts/epic-read.sh <EPIC>
 ```
 
 If the epic already has sub-issues or a plan section, you're **re-planning** — jump to
@@ -475,7 +475,7 @@ later; #1968 and #2099 the same verdict-resolver work in two places).
 
 ```bash
 # writes existing-children.txt (set 1) and open-backlog.txt (set 2) into the §SP namespace
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/plan-epic/scripts/idempotency-sets.sh" <EPIC>
+bash ./claude-plugins/kampus-pipeline/skills/plan-epic/scripts/idempotency-sets.sh <EPIC>
 ```
 
 **Then classify each proposed child before you create it:**
@@ -529,7 +529,7 @@ relocation *is* the #754 guard) and prints the created `{number,id}`:
 
 ```bash
 # type + priority are yours to choose per the paragraph below; status:planned is fixed by the script.
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/plan-epic/scripts/create-child.sh" \
+bash ./claude-plugins/kampus-pipeline/skills/plan-epic/scripts/create-child.sh \
   <EPIC> "<sharp single-unit title>" type:feature p2 "<path/to/child-spec.json>"
 ```
 
@@ -561,7 +561,7 @@ adjust labels on an **already-existing** child:
 ```bash
 # amend-only — append/adjust labels on an EXISTING child. Fresh children are labeled AT CREATE (above),
 # so this never runs on the create path; using it there would reopen the label-less-orphan window.
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/plan-epic/scripts/amend-child-labels.sh" <CHILD> type:feature p2
+bash ./claude-plugins/kampus-pipeline/skills/plan-epic/scripts/amend-child-labels.sh <CHILD> type:feature p2
 ```
 
 (Type and priority are your call as planner, the same authority triage has — you're
@@ -583,7 +583,7 @@ Read the epic's milestone once, and **only if it has one** PATCH each created ch
 
 ```bash
 # a no-op (reported on stdout) when the epic has no milestone — inheritance copies, never invents
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/plan-epic/scripts/inherit-milestone.sh" <EPIC> <CHILD>
+bash ./claude-plugins/kampus-pipeline/skills/plan-epic/scripts/inherit-milestone.sh <EPIC> <CHILD>
 ```
 
 **If the epic has no milestone, children stay unmilestoned** — inheritance *copies* the
@@ -614,7 +614,7 @@ whole step no-ops (graceful absence, ADR
 # prints `present` or `absent`; it sources the ONE shared implementation of the formats-contract
 # canonical probe (`../shared/scripts/cycle-doc-probe.sh`), never a second copy.
 # absent ⇒ no marker stamped (children carry `none`)
-CYCLE_DOC="$("${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/plan-epic/scripts/cycle-doc-probe.sh")" || exit 1
+CYCLE_DOC="$(bash ./claude-plugins/kampus-pipeline/skills/plan-epic/scripts/cycle-doc-probe.sh)" || exit 1
 ```
 
 - **Cycle doc present.** For each child, consult the cycle's policy and decide the child's
@@ -685,13 +685,13 @@ The endpoint takes the child's **database id** (`.id`), *not* its issue number:
 
 ```bash
 # the script resolves the child's database id itself and POSTs the link (`-F`, so the id is a number)
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/plan-epic/scripts/link-child.sh" <EPIC> <CHILD>
+bash ./claude-plugins/kampus-pipeline/skills/plan-epic/scripts/link-child.sh <EPIC> <CHILD>
 ```
 
 Confirm the link landed:
 
 ```bash
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/plan-epic/scripts/confirm-links.sh" <EPIC>
+bash ./claude-plugins/kampus-pipeline/skills/plan-epic/scripts/confirm-links.sh <EPIC>
 ```
 
 The exact-equality check holds on the fresh-plan path, where every linked child is
@@ -705,7 +705,7 @@ endpoint is **singular** `sub_issue` (not `sub_issues`), and the id goes in the 
 body via `--input` — `-X DELETE … -F` does **not** work here:
 
 ```bash
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/plan-epic/scripts/unlink-child.sh" <EPIC> <CHILD>
+bash ./claude-plugins/kampus-pipeline/skills/plan-epic/scripts/unlink-child.sh <EPIC> <CHILD>
 ```
 
 Unlinking does not close the child; it just removes the parent/child edge. Closing is
@@ -795,7 +795,7 @@ loudly** if `deps.md` was not regenerated since the base it splices onto was rea
 # exit 0 = our whole ## Dependencies block round-tripped (the topology is pinned). Any non-zero is
 # a hard STOP: a guard aborted, every attempt raced, or a racer clobbered the write — the script
 # names which on stdout, and re-derive is YOUR next action.
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/plan-epic/scripts/splice-body.sh" <EPIC>
+bash ./claude-plugins/kampus-pipeline/skills/plan-epic/scripts/splice-body.sh <EPIC>
 ```
 
 **Keep the brief byte-for-byte.** With the `epic-splice` verb's surgical splice/append this is
@@ -845,7 +845,7 @@ close each source it names — but only a genuine `type:investigation` source, i
 ```bash
 # a no-op when the brief names no `resolved investigation #N`; each named source is closed only
 # if it is an OPEN type:investigation, so a re-plan run is idempotent
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/plan-epic/scripts/close-graduated-sources.sh" <EPIC>
+bash ./claude-plugins/kampus-pipeline/skills/plan-epic/scripts/close-graduated-sources.sh <EPIC>
 ```
 
 Only the *source* that graduated is closed; the epic and every downstream artifact it links stay
@@ -888,7 +888,7 @@ Every supersede is auditable. Before closing a superseded child, post a comment 
 ```bash
 # posts the journal note FIRST, then unlinks and closes not-planned — the trail exists even if a
 # later leg fails. Only ever on an OPEN child; a closed-done child is history.
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/plan-epic/scripts/supersede-child.sh" <EPIC> <CHILD> \
+bash ./claude-plugins/kampus-pipeline/skills/plan-epic/scripts/supersede-child.sh <EPIC> <CHILD> \
   "<specific reason — e.g. 'scope merged into #<NEW>' or 'dropped, the brief no longer asks for X'>"
 ```
 
@@ -933,7 +933,7 @@ unmistakably test debris.
 ```bash
 # THROWAWAY EPICS ONLY — it closes exactly the numbers you name, and no script can tell test
 # debris from the real backlog
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/plan-epic/scripts/teardown-scratch-epic.sh" <EPIC> <CHILD> [<CHILD> …]
+bash ./claude-plugins/kampus-pipeline/skills/plan-epic/scripts/teardown-scratch-epic.sh <EPIC> <CHILD> [<CHILD> …]
 ```
 
 (If you have repo-admin and the GraphQL `deleteIssue` mutation is available to you,

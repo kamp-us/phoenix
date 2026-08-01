@@ -202,7 +202,7 @@ plan-don't-do line, so it enters the pipeline only via emission, never as fog.
    # new map (REST only — the org bans GraphQL for issue ops); prints the map's issue number.
    # The four-section body arrives on stdin from a per-run (§SP) file, because it is multi-line
    # authored markdown; an EMPTY stdin is refused rather than filed as a bodyless map.
-   MAP="$("${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/wayfinder/scripts/create-map.sh" \
+   MAP="$(bash ./claude-plugins/kampus-pipeline/skills/wayfinder/scripts/create-map.sh \
      "<destination, as a short noun phrase>" < "<path/to/map-body.md>")" || exit 1
    ```
 
@@ -242,7 +242,7 @@ plan-don't-do line, so it enters the pipeline only via emission, never as fog.
    ```bash
    # files the ticket and links it under $MAP in one act; prints the child's issue number. The body
    # (what's unknown, and what an answer would unblock) arrives on stdin; an empty stdin is refused.
-   "${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/wayfinder/scripts/add-frontier-ticket.sh" \
+   bash ./claude-plugins/kampus-pipeline/skills/wayfinder/scripts/add-frontier-ticket.sh \
      "$MAP" "Investigation: <the open question>" type:investigation < "<path/to/ticket-body.md>"
    ```
 
@@ -508,7 +508,7 @@ the SAME `status:needs-triage` entry `report` uses — literally the same script
 drift from the report skill's:
 
 ```bash
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/report/scripts/file-report.sh" \
+bash ./claude-plugins/kampus-pipeline/skills/report/scripts/file-report.sh \
   "<the epic, as one concrete deliverable>" <<'EOF'
 ## Destination
 <the epic's end-state, from the map's ## Destination>
@@ -557,7 +557,7 @@ Make the ideation→execution handoff traceable from both ends, then close:
 ```bash
 # Name every artifact the map graduated into (epics and/or ADR and/or roadmap), then close it
 # IFF the destination is FULLY graduated. A partial graduation is annotated but stays open.
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/wayfinder/scripts/graduate-map.sh" "$MAP" \
+bash ./claude-plugins/kampus-pipeline/skills/wayfinder/scripts/graduate-map.sh "$MAP" \
   "#$E1, #$E2 → triage → plan-epic → write-code; ADR 0176; ROADMAP.md v1" \
   "Frontier cleared — closing this map as the durable record of how the plan was discovered."
 ```

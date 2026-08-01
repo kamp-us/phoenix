@@ -133,7 +133,7 @@ auto-shippable. **Re-check the final path** against the live control-plane regex
 opening the PR:
 
 ```bash
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/author-skill/scripts/control-plane-paths.sh"
+bash ./claude-plugins/kampus-pipeline/skills/author-skill/scripts/control-plane-paths.sh
 ```
 
 A skill flips to §CP (human-merge, never auto-shipped) when its path falls under a gate skill

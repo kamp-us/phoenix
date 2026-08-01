@@ -30,7 +30,7 @@ targets `$REPO`), per the shared contract's target-repo rule
 ([`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md), ADR 0062):
 
 ```bash
-REPO="$("${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/what-shipped/scripts/resolve-repo.sh")" || exit 1
+REPO="$(bash ./claude-plugins/kampus-pipeline/skills/what-shipped/scripts/resolve-repo.sh)" || exit 1
 ```
 
 ## The extracted scripts
@@ -61,7 +61,7 @@ dates the digest heading reports over:
 
 ```bash
 # prints `<since> <until>`; $SINCE / $UNTIL in the environment override either end
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/what-shipped/scripts/window.sh"
+bash ./claude-plugins/kampus-pipeline/skills/what-shipped/scripts/window.sh
 ```
 
 Read the two dates off that output and pass them explicitly to the calls below. No shell variable
@@ -82,7 +82,7 @@ Read merged PRs via `gh api` REST (never GraphQL). The `search/issues` endpoint 
 
 ```bash
 # merged PRs in the window — REST search, never GraphQL. `is:merged` + `merged:<since>..<until>`.
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/what-shipped/scripts/merged-prs.sh" "$SINCE" "$UNTIL"
+bash ./claude-plugins/kampus-pipeline/skills/what-shipped/scripts/merged-prs.sh "$SINCE" "$UNTIL"
 ```
 
 If you prefer to anchor on the merge commits rather than trust the search index, cross-check with
@@ -95,7 +95,7 @@ For each merged PR number, read the fields the entry needs:
 ```bash
 # per merged PR: title, its `area:*` label (join-free product/infra signal, #1598), and the
 # linked issue via the `Fixes #N` / `Closes #N` in the PR body.
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/what-shipped/scripts/pr-context.sh" "$PR"
+bash ./claude-plugins/kampus-pipeline/skills/what-shipped/scripts/pr-context.sh "$PR"
 ```
 
 - **`title`** → the entry's `title` (prefer the linked-issue title once resolved in Step 2).
@@ -113,7 +113,7 @@ issue, then read that issue's metadata:
 
 ```bash
 # the linked issue's title, milestone, and type:* — the entry's title (preferred), milestone, and type.
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/what-shipped/scripts/issue-context.sh" "$ISSUE"
+bash ./claude-plugins/kampus-pipeline/skills/what-shipped/scripts/issue-context.sh "$ISSUE"
 ```
 
 Populate each entry from the join:
@@ -150,7 +150,7 @@ serving is truthful — a split-released flag's `defaultVariation` stays `off` f
 ```bash
 # authoritative Flagship state — every flag × env with its enabled/default value (ADR 0081/0123).
 # in-repo-first, published-fallback.
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/what-shipped/scripts/flag-list.sh"
+bash ./claude-plugins/kampus-pipeline/skills/what-shipped/scripts/flag-list.sh
 ```
 
 Assign each merged entry a **`releaseState`** — one of `live` / `awaiting-release` / `dark` /
@@ -206,7 +206,7 @@ artifact), then invoke:
 
 ```bash
 # … having written the gathered array to a per-run JSON file (§SP) …
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/what-shipped/scripts/derive-digest.sh" \
+bash ./claude-plugins/kampus-pipeline/skills/what-shipped/scripts/derive-digest.sh \
   "<entries.json>" "$SINCE" "$UNTIL"
 ```
 

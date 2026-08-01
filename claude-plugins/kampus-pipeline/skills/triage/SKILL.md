@@ -44,7 +44,7 @@ resolution** ([`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md), 
 defaulting to `kamp-us/phoenix` with no config:
 
 ```bash
-REPO="$("${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/triage/scripts/resolve-repo.sh")" || exit 1
+REPO="$(bash ./claude-plugins/kampus-pipeline/skills/triage/scripts/resolve-repo.sh)" || exit 1
 ```
 
 Every script under [`scripts/`](scripts/) resolves the repo the same way through the shared lib's
@@ -54,7 +54,7 @@ reads.
 List the queue:
 
 ```bash
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/triage/scripts/list-queue.sh"
+bash ./claude-plugins/kampus-pipeline/skills/triage/scripts/list-queue.sh
 ```
 
 ## The extracted scripts
@@ -110,7 +110,7 @@ lock; the protocol below is detect-and-tiebreak, **not** mutual exclusion. Run i
 # exit 0 = claim WON and confirmed → triage #N, then release in Step 6.
 # non-zero = backed off (3: already claimed, or lost the tiebreak) or could not run (1) —
 # either way, do NOT triage #N. The script's own header states the full exit-code contract.
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/triage/scripts/claim-issue.sh" <N> || continue
+bash ./claude-plugins/kampus-pipeline/skills/triage/scripts/claim-issue.sh <N> || continue
 ```
 
 **You MUST release the claim when you finish triaging** (Step 6) — triage's claim is a
@@ -142,7 +142,7 @@ point** for the human path: a UI/hand-filed issue never ran `report`'s pre-file 
 keywords, excluding itself so it never flags itself:
 
 ```bash
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/triage/scripts/dedup-check.sh" \
+bash ./claude-plugins/kampus-pipeline/skills/triage/scripts/dedup-check.sh \
   "<this issue's title + a few distinguishing keywords>" <N>
 ```
 
@@ -245,8 +245,8 @@ How to split:
    new unit's title + keywords:
 
    ```bash
-   # §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
-   PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
+   # §CLI — bind the shim by LITERAL assignment, run from the repo root (ADR 0207; #3314).
+   PCLI="./claude-plugins/kampus-pipeline/bin/pipeline-cli"
    "$PCLI" intake-dedup check \
      --query "<the new unit's title + a few distinguishing keywords>"
    ```
@@ -270,8 +270,8 @@ How to split:
    body byte-equality, so a twin re-emitted with a slightly different body is still caught:
 
    ```bash
-   # §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
-   PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
+   # §CLI — bind the shim by LITERAL assignment, run from the repo root (ADR 0207; #3314).
+   PCLI="./claude-plugins/kampus-pipeline/bin/pipeline-cli"
    EXISTING=$("$PCLI" split-guard check \
      --parent <original #N> --title "<the split-child title>")
    ```
@@ -304,7 +304,7 @@ How to split:
 # The script runs the create-once guard first and only files when no child covers the unit; the
 # body arrives as a FILE because it is multi-line markdown and MUST carry `split from #<N>`, the
 # guard's create-once key. Cross-link via a comment on the original afterwards (Step 6).
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/triage/scripts/split-child.sh" \
+bash ./claude-plugins/kampus-pipeline/skills/triage/scripts/split-child.sh \
   <N> "<single-unit title>" "<path/to/child-body.md>"
 ```
 
@@ -390,7 +390,7 @@ body**, so triage would silently preserve the wrong original inside `<details>` 
 ```bash
 # Prints the §SP scratch dir; writes original.md and original.redacted.md into it. Assemble the
 # <details> block from the REDACTED original, never the raw one.
-RUN_SCRATCH="$("${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/triage/scripts/fetch-original.sh" <N>)" || exit 1
+RUN_SCRATCH="$(bash ./claude-plugins/kampus-pipeline/skills/triage/scripts/fetch-original.sh <N>)" || exit 1
 ```
 
 Assemble the new body in a temp file — under `$RUN_SCRATCH` for the same reason — and read it
@@ -398,7 +398,7 @@ into `$BODY` so multi-line markdown, backticks, and the nested fences survive th
 
 ```bash
 # Re-derives the SAME §SP namespace (non-resetting) and refuses on a missing/empty body.md.
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/triage/scripts/patch-body.sh" <N>
+bash ./claude-plugins/kampus-pipeline/skills/triage/scripts/patch-body.sh <N>
 ```
 
 **Epics are the exception — wrap-in-place, never rewrite-on-top.** An epic's original
@@ -612,9 +612,9 @@ the numbers you may assign to:
 
 ```bash
 # the home candidates: the arc/campaign rows and the open milestones they pin to
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/triage/scripts/list-open-milestones.sh"
+bash ./claude-plugins/kampus-pipeline/skills/triage/scripts/list-open-milestones.sh
 # assign — one single-field, last-write-wins PATCH (benign, #91); by NUMBER, never title
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/triage/scripts/assign-milestone.sh" <N> <n>
+bash ./claude-plugins/kampus-pipeline/skills/triage/scripts/assign-milestone.sh <N> <n>
 ```
 
 - **Existing open milestones only — triage NEVER creates one.** Match against the set that
@@ -703,7 +703,7 @@ approval "on his behalf," and do not treat your own draft as approved.
 issue you just drafted, so a red names *this* issue rather than the whole backlog:
 
 ```bash
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/triage/scripts/pitch-guard.sh" <N>   # out-of-scope issues pass; a red is this draft
+bash ./claude-plugins/kampus-pipeline/skills/triage/scripts/pitch-guard.sh <N>   # out-of-scope issues pass; a red is this draft
 ```
 
 An **unapproved** pitch is a legitimate, expected state for a freshly-triaged issue — the guard
@@ -725,7 +725,7 @@ queue (its `status:needs-triage` removed). Apply the whole transition with the `
 verb — the classification is the parameter, the label plumbing is the verb's:
 
 ```bash
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/triage/scripts/apply-triage.sh" <N> <type> <priority>
+bash ./claude-plugins/kampus-pipeline/skills/triage/scripts/apply-triage.sh <N> <type> <priority>
 ```
 
 The verb adds the `type:` / priority / `status:triaged` labels and drops the queue label
@@ -747,8 +747,8 @@ this confirms the pair landed rather than racing it; the invariant is enforced a
 not re-swept by hand later:
 
 ```bash
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/triage/scripts/homing-guard.sh" <N>   # the issue you just triaged
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/triage/scripts/homing-guard.sh"       # the whole open triaged backlog
+bash ./claude-plugins/kampus-pipeline/skills/triage/scripts/homing-guard.sh <N>   # the issue you just triaged
+bash ./claude-plugins/kampus-pipeline/skills/triage/scripts/homing-guard.sh       # the whole open triaged backlog
 ```
 
 ### Close not-planned (kill, agent issues only)
@@ -774,7 +774,7 @@ consistency: a parked `needs-info` issue or a closed one should carry no stray t
 claim. The DELETE is idempotent — a 404 means it was already unassigned, which is fine.
 
 ```bash
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/triage/scripts/release-claim.sh" <N>
+bash ./claude-plugins/kampus-pipeline/skills/triage/scripts/release-claim.sh <N>
 ```
 
 (A `closed-by-triage` issue is closed *and* unassigned; a needs-info issue is parked with
@@ -835,7 +835,7 @@ three applies is out of triage's scope (ADR
 
 ```bash
 # open milestones at 100% — 0 open issues, at least one closed (an empty milestone is not "done")
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/triage/scripts/completed-milestones.sh"
+bash ./claude-plugins/kampus-pipeline/skills/triage/scripts/completed-milestones.sh
 ```
 
 Surface the matches in the sweep ledger (Step 5's report-back) as a **flag to the EA** — one

@@ -46,7 +46,7 @@ term's disambiguation note), resolve it once, at the top of your run, per the sh
 **Target repo resolution** ([`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md)):
 
 ```bash
-REPO="$("${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/glossary/scripts/resolve-repo.sh")" || exit 1
+REPO="$(bash ./claude-plugins/kampus-pipeline/skills/glossary/scripts/resolve-repo.sh)" || exit 1
 ```
 
 In phoenix this defaults to `kamp-us/phoenix` with no config, so the behavior is unchanged
@@ -121,7 +121,7 @@ The first-run seed. Run it when there's no glossary worth preserving.
    ```bash
    # feature/domain folders + package names. Exit 4 = this repo has NO such surfaces, which is a fact
    # to confirm rather than an empty listing to read past.
-   "${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/glossary/scripts/list-surfaces.sh"
+   bash ./claude-plugins/kampus-pipeline/skills/glossary/scripts/list-surfaces.sh
    ```
 
 2. **Harvest the nouns.** For each surface, read enough to name its domain nouns: the product
@@ -153,7 +153,7 @@ the change. The discipline is surgical — touch the affected rows, preserve eve
 
    ```bash
    # the code surfaces that changed since the glossary last moved (feature folders, exports, renames)
-   "${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/glossary/scripts/glossary-drift.sh"
+   bash ./claude-plugins/kampus-pipeline/skills/glossary/scripts/glossary-drift.sh
    ```
 
    Exit 4 means the file has never been committed (you're staging a fresh seed) — that's the

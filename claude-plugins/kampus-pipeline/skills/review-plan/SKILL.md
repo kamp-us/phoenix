@@ -59,7 +59,7 @@ if set, else the current repository. In phoenix this defaults to `kamp-us/phoeni
 behavior is unchanged with no config (ADR 0062 §1).
 
 ```bash
-REPO="$("${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-plan/scripts/resolve-repo.sh")" || exit 1
+REPO="$(bash ./claude-plugins/kampus-pipeline/skills/review-plan/scripts/resolve-repo.sh)" || exit 1
 ```
 
 Every script under [`scripts/`](scripts/) resolves the repo the same way through the shared lib's
@@ -157,7 +157,7 @@ in-repo first, published fallback (ADR 0064) — then branch on its exit status:
 # exit 0 = lock WON (prints `epic-lock: won #<EPIC>`) → gate/loop, then RELEASE on every exit path.
 # 3 = backed off (held lock / setup gap / lost race — not a review-plan failure, re-run later);
 # 127 = the shim never ran (UNKNOWN). NEVER flip or loop on a non-zero.
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-plan/scripts/epic-lock-acquire.sh" <EPIC>
+bash ./claude-plugins/kampus-pipeline/skills/review-plan/scripts/epic-lock-acquire.sh <EPIC>
 ```
 
 **Release is an explicit agent step, not a shell `trap … EXIT`.** The acquire above runs in
@@ -171,7 +171,7 @@ you reach **any** terminal state (PASS-and-flipped, parked, or a fault mid-fligh
 ```bash
 # A non-zero exit means the release did NOT complete — the lock is LEAKED and the epic is wedged.
 # Surface it loudly; never swallow it.
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-plan/scripts/epic-lock-release.sh" <EPIC>
+bash ./claude-plugins/kampus-pipeline/skills/review-plan/scripts/epic-lock-release.sh <EPIC>
 ```
 
 The release fires on **every** terminal path on purpose: the gate and the convergence loop can
@@ -232,7 +232,7 @@ once into a `$GATE` command and use it everywhere below, so there is exactly one
 ```bash
 # for your own ad-hoc `$GATE …` reads; `run-gate.sh` resolves the shim through the same one
 # primitive, so there is still exactly one resolution mechanism. Exit 127 ⇒ no gate command at all.
-GATE="$("${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-plan/scripts/resolve-gate.sh")" || exit 127
+GATE="$(bash ./claude-plugins/kampus-pipeline/skills/review-plan/scripts/resolve-gate.sh)" || exit 127
 ```
 
 The shim yields a runnable `$GATE`, so a foreign install **runs** the gate rather than
@@ -242,8 +242,8 @@ Then run the gate:
 
 ```bash
 # from the repo root. Exit status + stdout are the gate's own, relayed; 127 = no verdict at all.
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-plan/scripts/run-gate.sh" <EPIC>            # the live gate — flips + comments
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-plan/scripts/run-gate.sh" <EPIC> --dry-run  # read-only: validate + print, no mutation
+bash ./claude-plugins/kampus-pipeline/skills/review-plan/scripts/run-gate.sh <EPIC>            # the live gate — flips + comments
+bash ./claude-plugins/kampus-pipeline/skills/review-plan/scripts/run-gate.sh <EPIC> --dry-run  # read-only: validate + print, no mutation
 ```
 
 `runGate(<EPIC>)` is the underlying action the CLI calls (`epic-ledger`'s `runGate`,

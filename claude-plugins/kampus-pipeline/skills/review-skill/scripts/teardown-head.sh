@@ -14,13 +14,15 @@ set -uo pipefail
 [ "$#" -ge 1 ] || { echo "usage: teardown-head.sh <pr>" >&2; exit 2; }
 PR="$1"
 
+# head-env.sh's STDOUT is the answer (ADR 0232) — the same KEY=value lines the agent reads — so bind
+# them here rather than sourcing a handle path. Capture and CHECK first: `eval` of an empty capture
+# returns 0, which would read a lost handle as a successful bind.
 # shellcheck disable=SC1007
-HANDLE="$("$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/head-env.sh" "$PR" 2>/dev/null)" || {
+HEAD_ENV_LINES="$("$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/head-env.sh" "$PR" 2>/dev/null)" || {
   echo "teardown-head.sh: no head handle for this run — nothing this gate materialized to tear down (no-op)." >&2
   exit 0
 }
-# shellcheck disable=SC1090
-. "$HANDLE"
+eval "$HEAD_ENV_LINES"
 [ -n "${REVIEW_WT:-}" ] && [ -n "${PR_REF:-}" ] || {
   echo "teardown-head.sh: handle carries no REVIEW_WT/PR_REF — refusing to guess a path to \`rm -rf\` (no-op)." >&2
   exit 0

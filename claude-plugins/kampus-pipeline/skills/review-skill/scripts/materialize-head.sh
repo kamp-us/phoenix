@@ -4,12 +4,17 @@
 # #4435 phase 1). Extraction contract + shell-option rationale: ../SKILL.md § The extracted scripts.
 # The *why* for every step stays in that step's prose.
 #
-# STDOUT IS A MACHINE CHANNEL: the ONLY thing this writes to stdout is the absolute path of the
-# run-state handle carrying REVIEW_WT / PR_REF / HEAD_SHA / BASE_REF, so the caller can
-# `. "$(materialize-head.sh "$PR")"`. Every progress and FATAL line goes to stderr. On ANY failure
-# path stdout stays EMPTY and the exit is non-zero — the caller's `.` then fails loudly rather than
-# sourcing a half-written handle. A materialization that could not run is UNKNOWN, and reviewing the
-# BASE tree is the #793 false-PASS hazard (§ZS / ADR 0092).
+# usage: bash ./claude-plugins/kampus-pipeline/skills/review-skill/scripts/materialize-head.sh <pr>
+#
+# STDOUT IS THE ANSWER (ADR 0232, .patterns/skill-script-io-contract.md) — four `KEY=value` lines:
+# REVIEW_WT / PR_REF / HEAD_SHA / BASE_REF. Every progress and FATAL line goes to stderr. On ANY
+# failure path stdout stays EMPTY and the exit is non-zero — read the exit status BEFORE the stdout,
+# because a materialization that could not run is UNKNOWN, and reviewing the BASE tree is the #793
+# false-PASS hazard (§ZS / ADR 0092).
+#
+# The same four values also persist to this run's §SP handle, which this skill's OWN later scripts
+# re-source in-process via head-env.sh. In-script sourcing stays sanctioned under ADR 0232; only the
+# `.` at an agent's top-level command is banned.
 set -uo pipefail
 # shellcheck source=../../../lib/common.sh disable=SC1007,SC1091
 . "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
@@ -33,7 +38,7 @@ git fetch origin "$BASE_REF" >&2
 # #2270/#1103; §RO), and it internally aborts on a fetched-ref ≠ resolved-head mismatch (§HEAD #2)
 # so you never review a different SHA than the verdict claims. Persist its emitted head/ref/worktree
 # to the per-run handle so they survive the harness cwd/shell reset between Bash calls (a shell
-# var is lost across calls); re-derive them with `. "$(head-env.sh "$PR")"` at each later step —
+# var is lost across calls); re-derive them by RUNNING head-env.sh at each later step —
 # NEVER from a shared leaf name (a `git worktree list` re-derivation matches a SIBLING reviewer's
 # tree and reads the wrong head's skill text — the #1807 collision). This is the §SP per-run
 # scratchpad namespace (gh-issue-intake-formats.md): a PR number is not unique, and a clobbered file
@@ -63,5 +68,7 @@ for p in CLAUDE.md .claude .decisions .patterns; do
   fi
 done
 
-# The handle path — the ONLY stdout line, so the caller can `. "$(materialize-head.sh "$PR")"`.
-printf '%s\n' "$WT_FILE"
+# THE ANSWER — the four resolved values, one KEY=value line each, and the only stdout this script
+# writes. Printed from the variables the handle read back above, so what the caller reads and what
+# the later steps re-source through head-env.sh are the same four values by construction.
+printf 'REVIEW_WT=%s\nPR_REF=%s\nHEAD_SHA=%s\nBASE_REF=%s\n' "$REVIEW_WT" "$PR_REF" "$HEAD_SHA" "$BASE_REF"

@@ -58,7 +58,7 @@ Below the five sections, append a footer carrying the machine context of the ses
 Gather the context with the helper, which reads it from the environment and git:
 
 ```bash
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/report/footer.sh"
+bash ./claude-plugins/kampus-pipeline/skills/report/footer.sh
 ```
 
 It prints a ready-to-append markdown block. Which fields appear varies by run — the helper includes only what the environment actually exposes and silently drops the rest, so a real footer might look like this (here `session` and `model` weren't available, so they're omitted — no dangling labels, no "unknown"):
@@ -86,7 +86,7 @@ All GitHub operations go through `gh api` REST. **Never GraphQL** — the kamp-u
 **Resolve the target repo once, up front.** This skill is repo-agnostic — every `gh api` call targets `$REPO`, not a hardcoded repo. Resolve it at the top of your run per the shared contract's **Target repo resolution** ([`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md)): `$CLAUDE_PIPELINE_REPO` if set, else the current repository. In phoenix this defaults to `kamp-us/phoenix`, so the behavior is unchanged with no config (ADR 0062 §1).
 
 ```bash
-REPO="$("${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/report/scripts/resolve-repo.sh")" || exit 1
+REPO="$(bash ./claude-plugins/kampus-pipeline/skills/report/scripts/resolve-repo.sh)" || exit 1
 ```
 
 ## The extracted scripts
@@ -115,7 +115,7 @@ into tested `pipeline-cli` verbs is #1929). Two properties are load-bearing:
    fed your title plus a few keywords:
 
    ```bash
-   "${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/report/scripts/dedup-check.sh" \
+   bash ./claude-plugins/kampus-pipeline/skills/report/scripts/dedup-check.sh \
      "<the title + a few distinguishing keywords>"
    ```
 
@@ -141,7 +141,7 @@ intact), and the script appends the blank line + the `footer.sh` block and strea
 into the create verb. Everything below the invocation line is your authored body, not glue:
 
 ```bash
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/report/scripts/file-report.sh" "<title>" <<'EOF'
+bash ./claude-plugins/kampus-pipeline/skills/report/scripts/file-report.sh "<title>" <<'EOF'
 ## Summary
 …
 

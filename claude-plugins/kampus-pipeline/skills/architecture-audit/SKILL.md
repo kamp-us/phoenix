@@ -37,7 +37,7 @@ if set, else the current repository. In phoenix this defaults to `kamp-us/phoeni
 behavior is unchanged with no config (ADR 0062 §1).
 
 ```bash
-REPO="$("${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/architecture-audit/scripts/resolve-repo.sh")" || exit 1
+REPO="$(bash ./claude-plugins/kampus-pipeline/skills/architecture-audit/scripts/resolve-repo.sh)" || exit 1
 ```
 
 ## The extracted scripts
@@ -72,7 +72,7 @@ Read both before walking code:
 
 ```bash
 # the committed architecture + domain vocabulary the audit speaks in
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/architecture-audit/scripts/read-glossary.sh"
+bash ./claude-plugins/kampus-pipeline/skills/architecture-audit/scripts/read-glossary.sh
 ```
 
 If a glossary file is genuinely absent (a foreign install that hasn't adopted the glossary
@@ -106,7 +106,7 @@ carries `id`/`title`/`status`:
 
 ```bash
 # the `NNNN-slug.md` filenames (the map), then the compact id · title · status index
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/architecture-audit/scripts/decisions-map.sh"
+bash ./claude-plugins/kampus-pipeline/skills/architecture-audit/scripts/decisions-map.sh
 ```
 
 Treat a recorded decision as decided ground: don't surface a finding that contradicts a
@@ -203,7 +203,7 @@ report agents exist, so the same friction may already be filed:
 
 ```bash
 # (a) the live needs-triage queue, then (b) the search index; the script joins keywords with +
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/architecture-audit/scripts/dedup-search.sh" "<keywords>"
+bash ./claude-plugins/kampus-pipeline/skills/architecture-audit/scripts/dedup-search.sh "<keywords>"
 ```
 
 Both commands guard different failure modes — don't drop either: (a) is read-after-write
@@ -239,7 +239,7 @@ and hands the stream to the `tracker create-issue` verb, which owns this intake-
 collide on, which is what retires the old `/tmp/arch-audit-body.XXXXXX` shared-`/tmp` hazard (§SP):
 
 ```bash
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/report/scripts/file-report.sh" \
+bash ./claude-plugins/kampus-pipeline/skills/report/scripts/file-report.sh \
   "<short, type-neutral finding summary (≤ ~70 chars)>" <<'EOF'
 <the five sections>
 EOF

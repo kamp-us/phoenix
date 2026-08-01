@@ -45,7 +45,7 @@ it once, at the top of your run, per the shared contract's **Target repo resolut
 ([`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md)):
 
 ```bash
-REPO="$("${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/canon/scripts/resolve-repo.sh")" || exit 1
+REPO="$(bash ./claude-plugins/kampus-pipeline/skills/canon/scripts/resolve-repo.sh)" || exit 1
 ```
 
 ## The extracted scripts
@@ -149,7 +149,7 @@ Run it when there's no doc worth preserving for a pattern that clears the index 
 
    ```bash
    # exit 4 = there is no pattern-doc library (or it is empty) — a fact to confirm, not a listing
-   "${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/canon/scripts/list-pattern-docs.sh"
+   bash ./claude-plugins/kampus-pipeline/skills/canon/scripts/list-pattern-docs.sh
    ```
 
 2. **Read the source for the concern, in layers.** Stop as soon as you can name the decision
@@ -196,7 +196,7 @@ change. Surgical — touch the drifted parts, preserve everything else.
    ```bash
    # the source surfaces that changed since the doc last moved. Exit 4 = the doc has never been
    # committed, which is the BOOTSTRAP case below and not an empty drift.
-   "${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/canon/scripts/pattern-doc-drift.sh" \
+   bash ./claude-plugins/kampus-pipeline/skills/canon/scripts/pattern-doc-drift.sh \
      "<name>" <source-dirs>
    ```
 
@@ -254,7 +254,7 @@ Run mechanically — don't self-assess, actually check:
 
 ```bash
 # all four checks over .patterns/<name>.md — cross-refs, leaks, stale markers, the index row
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/canon/scripts/verify-pattern-doc.sh" "<name>"
+bash ./claude-plugins/kampus-pipeline/skills/canon/scripts/verify-pattern-doc.sh "<name>"
 ```
 
 Then, by judgment: for the doc — **name the specific mistake an agent makes without it**;

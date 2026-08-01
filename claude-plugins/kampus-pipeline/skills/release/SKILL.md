@@ -71,7 +71,7 @@ You need two things before the ritual:
 
    ```bash
    # reports where each credential resolves from and whether it authenticates
-   "${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/release/scripts/auth-status.sh"
+   bash ./claude-plugins/kampus-pipeline/skills/release/scripts/auth-status.sh
    ```
 
    **Read its exit status before its output.** A non-zero exit means the pre-flight never ran, which is
@@ -94,7 +94,7 @@ You need two things before the ritual:
 Resolve `$REPO` the same way the rest of the pipeline does (it is repo-agnostic; ADR 0062):
 
 ```bash
-REPO="$("${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/release/scripts/resolve-repo.sh")" || exit 1
+REPO="$(bash ./claude-plugins/kampus-pipeline/skills/release/scripts/resolve-repo.sh)" || exit 1
 ```
 
 All GitHub reads/writes below go through **`gh api` REST** — never GraphQL (the org's
@@ -131,7 +131,7 @@ anything. `flag get` reports it in the canonical form (`off (default)` for an un
 `on@100% (split)` for a released one, `on@N% (ramping)` for a partial):
 
 ```bash
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/release/scripts/flag-get.sh" "$FLAG_KEY" "$ENV"
+bash ./claude-plugins/kampus-pipeline/skills/release/scripts/flag-get.sh "$FLAG_KEY" "$ENV"
 ```
 
 - **Currently `off (default)` (dark) →** this is a release you can perform: proceed to Step 2.
@@ -153,7 +153,7 @@ whose closing PR dark-shipped **this** flag key:
 
 ```bash
 # prints one `match: issue #<I> ← PR #<P> declares Flag: <key>` line per match
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/release/scripts/find-linked-issue.sh" "$FLAG_KEY"
+bash ./claude-plugins/kampus-pipeline/skills/release/scripts/find-linked-issue.sh "$FLAG_KEY"
 # LINKED_ISSUE is the awaiting-release issue whose closing PR body carried `Flag: $FLAG_KEY`.
 LINKED_ISSUE="<that issue number>"
 ```
@@ -187,7 +187,7 @@ missing. Run it for the resolved key **before the dry-run flip**:
 # HARD-REFUSE the flip on a non-zero exit — the script relays the guard's report (on stderr), which
 # names which assertion failed, then prints the refusal. The flag stays dark; do NOT proceed to
 # Step 2.
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/release/scripts/reachability-gate.sh" "$FLAG_KEY" || exit 1
+bash ./claude-plugins/kampus-pipeline/skills/release/scripts/reachability-gate.sh "$FLAG_KEY" || exit 1
 ```
 
 - **Non-zero exit → hard-refuse the flip.** This is the identical fail-closed refusal shape as
@@ -223,19 +223,19 @@ live state:
 
 ```bash
 # Full release (100% — the default release act). DRY-RUN: prints current → target, writes nothing.
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/release/scripts/flag-open-dryrun.sh" "$FLAG_KEY" "$ENV"
+bash ./claude-plugins/kampus-pipeline/skills/release/scripts/flag-open-dryrun.sh "$FLAG_KEY" "$ENV"
 
 # Ramped release (serve `on` to N% of traffic; the remainder falls to the safe default). DRY-RUN.
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/release/scripts/flag-open-dryrun.sh" "$FLAG_KEY" "$ENV" "$N"
+bash ./claude-plugins/kampus-pipeline/skills/release/scripts/flag-open-dryrun.sh "$FLAG_KEY" "$ENV" "$N"
 ```
 
 Once the dry-run diff is exactly the release you intend, **execute it** by re-running the same
 command with `--execute`:
 
 ```bash
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/release/scripts/flag-open-execute.sh" "$FLAG_KEY" "$ENV"        # APPLY the full release
+bash ./claude-plugins/kampus-pipeline/skills/release/scripts/flag-open-execute.sh "$FLAG_KEY" "$ENV"        # APPLY the full release
 # or, for a ramp:
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/release/scripts/flag-open-execute.sh" "$FLAG_KEY" "$ENV" "$N"
+bash ./claude-plugins/kampus-pipeline/skills/release/scripts/flag-open-execute.sh "$FLAG_KEY" "$ENV" "$N"
 ```
 
 **`--percent <n>` — the ramped-release form.** `/release <flag-key> --percent 50` runs the
@@ -260,7 +260,7 @@ it now reports the live state — the dark → live transition actually landed:
 
 ```bash
 # expect: on@100% (split)  — or  on@N% (ramping) for a ramp
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/release/scripts/flag-get.sh" "$FLAG_KEY" "$ENV"
+bash ./claude-plugins/kampus-pipeline/skills/release/scripts/flag-get.sh "$FLAG_KEY" "$ENV"
 ```
 
 Assert the transition:
@@ -289,7 +289,7 @@ hand-cleared the night this skill was proposed):
 
 ```bash
 # remove the release-queue label from the (closed) linked issue — the consume half of #602
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/release/scripts/clear-queue-label.sh" "$LINKED_ISSUE"
+bash ./claude-plugins/kampus-pipeline/skills/release/scripts/clear-queue-label.sh "$LINKED_ISSUE"
 ```
 
 The label lives on a **closed** issue (the dark ship's PR closed it on merge); removing a label
@@ -309,7 +309,7 @@ linked issue so it is durable and discoverable next to the work it releases (and
 text to the human running the command):
 
 ```bash
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/release/scripts/post-release-note.sh" \
+bash ./claude-plugins/kampus-pipeline/skills/release/scripts/post-release-note.sh \
   "$LINKED_ISSUE" "$FLAG_KEY" "$ENV" "$SERVING_NOW" "<human releaser>"
 ```
 

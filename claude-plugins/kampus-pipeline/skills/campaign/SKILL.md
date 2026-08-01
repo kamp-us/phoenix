@@ -46,7 +46,7 @@ Resolve `$REPO` the repo-agnostic way the rest of the pipeline does (ADR
 [0062](https://github.com/kamp-us/phoenix/blob/main/.decisions/0062-repo-agnostic-pipeline.md)):
 
 ```bash
-REPO="$("${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/campaign/scripts/resolve-repo.sh")" || exit 1
+REPO="$(bash ./claude-plugins/kampus-pipeline/skills/campaign/scripts/resolve-repo.sh)" || exit 1
 ```
 
 All GitHub reads/writes below go through **`gh api` REST** — never GraphQL (the org's
@@ -83,7 +83,7 @@ You need three inputs before the ritual:
    WAVE_LABEL="<the shared wave label>"
    # one `#<n>\t<state>\t<title>` line per member. Exit 4 = the label names ZERO issues (no wave);
    # exit 1 = the read never landed, which is UNKNOWN and never an empty cluster.
-   "${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/campaign/scripts/list-wave.sh" "$WAVE_LABEL"
+   bash ./claude-plugins/kampus-pipeline/skills/campaign/scripts/list-wave.sh "$WAVE_LABEL"
    ```
 
 2. **The lifecycle direction — `active` (create) or `done` (complete).** Default is `active`
@@ -105,7 +105,7 @@ every other input (absent, malformed, non-founder author, zero scope) exits non-
 [0092](https://github.com/kamp-us/phoenix/blob/main/.decisions/0092-gates-fail-closed-on-zero-scope.md)):
 
 ```bash
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/campaign/scripts/verify-trace.sh" "$WAVE_LABEL" "$FOUNDER" || exit 1
+bash ./claude-plugins/kampus-pipeline/skills/campaign/scripts/verify-trace.sh "$WAVE_LABEL" "$FOUNDER" || exit 1
 ```
 
 The trace the verifier requires is a **founder-authored comment**, on any issue carrying the wave
@@ -132,7 +132,7 @@ product arc:
   milestone for this wave, attach to it. List open milestones and match by title/description:
 
   ```bash
-  "${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/campaign/scripts/list-milestones.sh"
+  bash ./claude-plugins/kampus-pipeline/skills/campaign/scripts/list-milestones.sh
   ```
 
 - **Otherwise provision the campaign's own milestone** — the roadmap act the founder approval
@@ -140,7 +140,7 @@ product arc:
   milestone):
 
   ```bash
-  MILESTONE_NUMBER="$("${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/campaign/scripts/create-milestone.sh" \
+  MILESTONE_NUMBER="$(bash ./claude-plugins/kampus-pipeline/skills/campaign/scripts/create-milestone.sh \
     "<Campaign name> campaign" \
     "<one-line campaign scope> (bounded, platform-lane drained).")" || exit 1
   ```
@@ -149,7 +149,7 @@ Then **stamp the milestone on every wave-labeled issue** so the milestone projec
 cluster (the milestone is set per-issue via the issue-edit endpoint):
 
 ```bash
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/campaign/scripts/home-wave.sh" "$WAVE_LABEL" "$MILESTONE_NUMBER"
+bash ./claude-plugins/kampus-pipeline/skills/campaign/scripts/home-wave.sh "$WAVE_LABEL" "$MILESTONE_NUMBER"
 ```
 
 **Assignments.** Record who owns the campaign's drain if the founder named owners (assign the wave
@@ -167,7 +167,7 @@ campaign runs alongside whichever arc is active). Swap any existing `p0`/`p2` fo
 wave issue:
 
 ```bash
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/campaign/scripts/normalize-priority.sh" "$WAVE_LABEL"
+bash ./claude-plugins/kampus-pipeline/skills/campaign/scripts/normalize-priority.sh "$WAVE_LABEL"
 ```
 
 Only open issues need re-pricing — a closed wave issue has already drained and its priority is
@@ -205,7 +205,7 @@ Open the PR against the wave's tracking issue so it closes on merge:
 3. Open the PR:
 
 ```bash
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/campaign/scripts/open-roadmap-pr.sh" \
+bash ./claude-plugins/kampus-pipeline/skills/campaign/scripts/open-roadmap-pr.sh \
   "<Campaign name>" "<active|done>" "<branch>" "$WAVE_LABEL" "<MILESTONE_NUMBER>" "<tracking-issue>"
 ```
 
@@ -234,7 +234,7 @@ run the **same gate** (Step 1), so completing a campaign is exactly as guarded a
   2. **Close the milestone** — the operational projection of a finished campaign:
 
      ```bash
-     "${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/campaign/scripts/close-milestone.sh" \
+     bash ./claude-plugins/kampus-pipeline/skills/campaign/scripts/close-milestone.sh \
        "$MILESTONE_NUMBER" || exit 1
      ```
   3. **Flip the ROADMAP row to `done`** in a Campaigns-row PR (Step 4, `done` variant) — the row's

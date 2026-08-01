@@ -82,7 +82,7 @@ raise it as a scope decision. Verify before opening the PR:
 
 ```bash
 # proven-ordinary ⇒ exit 3. control-plane ⇒ exit 0 ⇒ something under your diff is owned; find it.
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/shared/scripts/cp-classify-working-diff.sh"
+bash ./claude-plugins/kampus-pipeline/skills/shared/scripts/cp-classify-working-diff.sh
 ```
 
 ## 4. The SKILL.md / STANDARDS.md split

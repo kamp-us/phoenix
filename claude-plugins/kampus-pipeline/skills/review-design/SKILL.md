@@ -205,7 +205,7 @@ repo-agnostic — every `gh api` call targets `$REPO`, not a hardcoded repo) per
 0062 §1); in phoenix this defaults to `kamp-us/phoenix` with no config.
 
 ```bash
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-design/scripts/resolve-repo.sh"
+bash ./claude-plugins/kampus-pipeline/skills/review-design/scripts/resolve-repo.sh
 ```
 
 Every script below resolves the repo the same way, through the shared lib's `kp_repo` — so the
@@ -307,7 +307,7 @@ never silently off-ramp, which is the failure that mints the phantom gate.
 
 ```bash
 PR=<pr number>
-UI_TOUCHED="$("${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-design/scripts/classify-ui-surface.sh" "$PR")"
+UI_TOUCHED="$(bash ./claude-plugins/kampus-pipeline/skills/review-design/scripts/classify-ui-surface.sh "$PR")"
 ```
 
 Read **three** outcomes off the script, never two — and read its **exit status before its stdout**:
@@ -337,7 +337,7 @@ with zero path matches, so a path-only test here would classify it non-blocking 
 this verb removes (#4161, formats §CP):
 
 ```bash
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-design/scripts/classify-control-plane.sh" "$PR"
+bash ./claude-plugins/kampus-pipeline/skills/review-design/scripts/classify-control-plane.sh "$PR"
 ```
 
 Read its **exit status before its stdout**, exactly as the off-ramp above does: a **non-zero exit**
@@ -369,7 +369,7 @@ so a bad flag or an unresolved CLI leaves an empty `CP_STATE` that the catch-all
 ## Step 1 — Resolve the PR, its head SHA, the preview URL, and the changed surfaces
 
 ```bash
-HEAD_SHA="$("${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-design/scripts/resolve-head.sh" "$PR")"
+HEAD_SHA="$(bash ./claude-plugins/kampus-pipeline/skills/review-design/scripts/resolve-head.sh "$PR")"
 ```
 
 Find the linked issue from the PR body's `Fixes #N` / `Closes #N` (the seam `write-code` writes) —
@@ -377,7 +377,7 @@ cross-check via the timeline if it's not obvious — for context on *what* the U
 surfaces it targets. The script prints the PR summary first, then the numbers its timeline links:
 
 ```bash
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-design/scripts/pr-context.sh" "$PR"
+bash ./claude-plugins/kampus-pipeline/skills/review-design/scripts/pr-context.sh "$PR"
 ```
 
 ### Resolve the preview URL from the sticky preview-deploy comment
@@ -389,7 +389,7 @@ CI posts a **sticky comment keyed by `<!-- preview-deploy -->`**, with a per-app
 your own app server**:
 
 ```bash
-PREVIEW_URL="$("${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-design/scripts/resolve-preview-url.sh" "$PR")"
+PREVIEW_URL="$(bash ./claude-plugins/kampus-pipeline/skills/review-design/scripts/resolve-preview-url.sh "$PR")"
 ```
 
 If **no preview URL** can be resolved (the preview-deploy comment is absent or the deploy failed),
@@ -403,7 +403,7 @@ Derive the **routes/surfaces** the diff affects from the changed frontend files 
 maps to the page(s) that render it. Read the diff for surface selection:
 
 ```bash
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-design/scripts/pr-diff.sh" "$PR"
+bash ./claude-plugins/kampus-pipeline/skills/review-design/scripts/pr-diff.sh "$PR"
 ```
 
 Map each changed `apps/web/src/**` surface to the route(s) that render it (a changed
@@ -422,7 +422,7 @@ render-exception still apply to it). The pointer is the committed source of trut
 surface-ids are the same `<route>[:state]` capture spec:
 
 ```bash
-BLESSED_SURFACES="$("${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-design/scripts/blessed-surfaces.sh")"
+BLESSED_SURFACES="$(bash ./claude-plugins/kampus-pipeline/skills/review-design/scripts/blessed-surfaces.sh)"
 ```
 
 The changed BLESSED surfaces are the capture surface-ids (Step 1) ∩ `$BLESSED_SURFACES`. An empty
@@ -459,7 +459,7 @@ implementation legs land to match):
 ```bash
 # one <route>[:state] argument per surface; CAPTURES is the helper's stdout JSON array of
 # { surface, route, state, localPath, hostedUrl, uploadError, pageErrors }
-CAPTURES="$("${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-design/scripts/capture-surfaces.sh" "$PREVIEW_URL" "<route>[:state]" ...)"
+CAPTURES="$(bash ./claude-plugins/kampus-pipeline/skills/review-design/scripts/capture-surfaces.sh "$PREVIEW_URL" "<route>[:state]" ...)"
 ```
 
 **Now judge the LOCAL bytes.** For each captured surface, **read the local PNG** (`localPath`) as
@@ -475,8 +475,8 @@ hard-FAILs the gate regardless of how its screenshot looks; a bare `console.erro
 
 ```bash
 # uncaught exceptions → hard-FAIL rows (surface + message); console.error → advisory
-RENDER_CRASHES="$(printf '%s' "$CAPTURES" | "${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-design/scripts/render-errors.sh" pageerror)"
-RENDER_ADVISORIES="$(printf '%s' "$CAPTURES" | "${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-design/scripts/render-errors.sh" console.error)"
+RENDER_CRASHES="$(printf '%s' "$CAPTURES" | bash ./claude-plugins/kampus-pipeline/skills/review-design/scripts/render-errors.sh pageerror)"
+RENDER_ADVISORIES="$(printf '%s' "$CAPTURES" | bash ./claude-plugins/kampus-pipeline/skills/review-design/scripts/render-errors.sh console.error)"
 ```
 
 A non-empty `RENDER_CRASHES` is a **FAIL** (Step 3), naming each thrown error + its surface so a
@@ -623,7 +623,7 @@ new head before posting (never bind a verdict to a head whose UI you didn't see)
 
 ```bash
 # prints the CURRENT head; warns on stderr when it moved off the head you reviewed
-HEAD_SHA="$("${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-design/scripts/current-head.sh" "$PR" "$HEAD_SHA")"
+HEAD_SHA="$(bash ./claude-plugins/kampus-pipeline/skills/review-design/scripts/current-head.sh "$PR" "$HEAD_SHA")"
 ```
 
 Write the verdict to a per-run temp file so multi-line markdown + backticks survive the shell, then
@@ -799,8 +799,8 @@ it from [`../shared/scripts/verdict-readback.sh`](../shared/scripts/verdict-read
 implementation of it:
 
 ```bash
-CID="$("${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-design/scripts/verdict-upsert.sh" "$PR" "$VERDICT_FILE")"
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/review-design/scripts/verdict-readback.sh" "$CID" "$HEAD_SHA"
+CID="$(bash ./claude-plugins/kampus-pipeline/skills/review-design/scripts/verdict-upsert.sh "$PR" "$VERDICT_FILE")"
+bash ./claude-plugins/kampus-pipeline/skills/review-design/scripts/verdict-readback.sh "$CID" "$HEAD_SHA"
 ```
 
 A non-zero exit is the read-back failing: re-post the real verdict and re-assert; if it still can't

@@ -67,11 +67,18 @@ reviewing (below), read all skill text from the head, and re-check the live head
 (§HEAD #4); the verdict (§VERDICT) binds to the SHA whose files you actually read and asserts it.
 
 ```bash
-# Prints ONE line — the absolute path of this run's handle, carrying REVIEW_WT / PR_REF / HEAD_SHA /
-# BASE_REF. Every FATAL line goes to stderr; on any failure stdout is EMPTY, so this `.` fails loudly
-# rather than sourcing a half-written handle and reviewing the base tree (#793).
-. "$(bash ./claude-plugins/kampus-pipeline/skills/review-skill/scripts/materialize-head.sh "$PR")"
+bash ./claude-plugins/kampus-pipeline/skills/review-skill/scripts/materialize-head.sh "$PR" || exit 1
 ```
+
+**Executed, not sourced, and stdout is the answer** (ADR
+[0232](https://github.com/kamp-us/phoenix/blob/main/.decisions/0232-agents-execute-skill-scripts-never-source-them.md),
+[`.patterns/skill-script-io-contract.md`](https://github.com/kamp-us/phoenix/blob/main/.patterns/skill-script-io-contract.md)).
+It prints four `KEY=value` lines — `REVIEW_WT`, `PR_REF`, `HEAD_SHA`, `BASE_REF` — and every FATAL
+line goes to stderr. **Read those four values off stdout and carry them forward yourself**; every
+`$REVIEW_WT` / `$PR_REF` / `$HEAD_SHA` / `$BASE_REF` below names the value you read here, not a
+variable that survives into the next Bash call. **Read the exit status before the stdout:** on any
+failure path stdout is empty and the exit is non-zero, and that is UNKNOWN — never fall back to
+reviewing the base tree (#793).
 
 The script fetches the trusted base, drives §HEAD steps 1–3 through the shared
 `pipeline-cli review-head materialize` verb, and then enforces + asserts the instruction denylist.
@@ -83,8 +90,8 @@ Two properties of it are load-bearing and stated here rather than left to the fi
   detach the human's `main` — #2270/#1103; §RO), and it internally aborts on a fetched-ref ≠
   resolved-head mismatch (§HEAD #2) so you never review a different SHA than the verdict claims.
 - **The handle is the §SP per-run scratchpad namespace, not a `mktemp`** (#3718). A shell variable is
-  lost across the harness's between-call reset, so each later step re-derives the handle with
-  [`scripts/head-env.sh`](scripts/head-env.sh) — **never** from a shared leaf name, which under a
+  lost across the harness's between-call reset, so each later step re-reads the four values by
+  running [`scripts/head-env.sh`](scripts/head-env.sh) — **never** from a shared leaf name, which under a
   parallel fan-out matches a SIBLING reviewer's tree and reads the wrong head's skill text (#1807).
   §SP rules 2+3 apply because the handle is a CROSS-CALL carrier, not the rule-4 allocate-and-consume
   carve-out; the path is a deterministic function of this run's session id, which is what makes it
@@ -335,16 +342,20 @@ bash ./claude-plugins/kampus-pipeline/skills/review-skill/scripts/pr-diff.sh "$P
 For checks that need the file in context (a trigger phrase, a cross-skill reference, the full
 shape of a step you're judging), read the changed skill at the PR head **from the isolated
 review worktree** (`$REVIEW_WT/skills/...`) the config-pin step set up — never by checking the
-head out into your session tree. Because the harness resets the shell between Bash calls,
-re-source the run-unique handle at the start of any later step that references `$REVIEW_WT`,
-never re-deriving it from the shared `review-skill-head-${PR}` leaf — under a parallel fan-out
-that leaf name also matches a sibling's worktree (#1807). `$WT_FILE` is itself a lost shell
-variable by then, so recompute its path from the same §SP recipe first — that is exactly why
-the namespace is session-derived rather than `mktemp`-allocated:
+head out into your session tree. Because the harness resets the shell between Bash calls, re-read
+the run-unique values at the start of any later step that references `$REVIEW_WT`, never
+re-deriving them from the shared `review-skill-head-${PR}` leaf — under a parallel fan-out that
+leaf name also matches a sibling's worktree (#1807). The script recomputes the namespace path from
+the same §SP recipe and prints the four `KEY=value` lines on stdout; that is exactly why the
+namespace is session-derived rather than `mktemp`-allocated:
 
 ```bash
-. "$(bash ./claude-plugins/kampus-pipeline/skills/review-skill/scripts/head-env.sh "$PR")"
+bash ./claude-plugins/kampus-pipeline/skills/review-skill/scripts/head-env.sh "$PR" || exit 1
 ```
+
+A non-zero exit with empty stdout is UNKNOWN — re-run the materialize step in this session rather
+than reading the base tree. Bind any value you need in a later block by **literal assignment inside
+that block** (`REVIEW_WT="<the path head-env.sh printed>"`), never by sourcing.
 
 ### Fetch the base fresh before any "is-it-shipped on main" check
 

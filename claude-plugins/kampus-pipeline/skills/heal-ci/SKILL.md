@@ -35,7 +35,7 @@ if set, else the current repository. In phoenix this defaults to `kamp-us/phoeni
 behavior is unchanged with no config (ADR 0062 §1).
 
 ```bash
-REPO="$("${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/heal-ci/scripts/resolve-repo.sh")" || exit 1
+REPO="$(bash ./claude-plugins/kampus-pipeline/skills/heal-ci/scripts/resolve-repo.sh)" || exit 1
 ```
 
 ## The extracted scripts
@@ -95,7 +95,7 @@ once, up front, then use the vars in every command below:
 RUN=<run id>     # the failed run
 PR=<n>           # the PR, if this is a PR run (else leave unset)
 # the failed logs, then the job/step rollup that names which job died (and its databaseId)
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/heal-ci/scripts/failed-logs.sh" "$RUN"
+bash ./claude-plugins/kampus-pipeline/skills/heal-ci/scripts/failed-logs.sh "$RUN"
 ```
 
 If `--log-failed` returns nothing (it sometimes does — e.g. a bare `exit 1` with no
@@ -107,7 +107,7 @@ emptiness**: a non-zero exit means the read never landed, which is not "no annot
 
 ```bash
 JOB=<failed job databaseId from the rollup above>
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/heal-ci/scripts/job-log.sh" "$JOB"
+bash ./claude-plugins/kampus-pipeline/skills/heal-ci/scripts/job-log.sh "$JOB"
 ```
 
 ### Entering from a PR — resolve the failing run over REST
@@ -120,7 +120,7 @@ the head is genuinely red; exit 2 means it was **unreadable**, which is not "not
 ```bash
 # prints `CONTEXT=<name> JOB=<id> RUN=<id>` on exit 0. Exit 3 green · 4 pending · 5 not-an-Actions-check
 # · 1 unreadable. READ THE STATUS BEFORE THE STDOUT — an unreadable head is not a green one.
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/heal-ci/scripts/resolve-failing-run.sh" "$PR"
+bash ./claude-plugins/kampus-pipeline/skills/heal-ci/scripts/resolve-failing-run.sh "$PR"
 ```
 
 One script, because the three fences this replaces shared a `$CI_JSON` that **never survived**: each
@@ -151,7 +151,7 @@ but the run/PR state itself remembers a prior rerun). Read two facts:
 ```bash
 # prints `attempt=<n> rerun-markers=<n>`. A non-zero exit means a read did not land — UNKNOWN, and
 # UNKNOWN is never "not yet rerun". READ THE STATUS BEFORE THE NUMBERS.
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/heal-ci/scripts/already-rerun.sh" "$RUN" "$PR"
+bash ./claude-plugins/kampus-pipeline/skills/heal-ci/scripts/already-rerun.sh "$RUN" "$PR"
 ```
 
 **The one-rerun rule (canonical statement — every later step points here).** A flake gets
@@ -225,7 +225,7 @@ manual rerun can also bump):
 ```bash
 # reruns the failed jobs, then — on a PR run — writes the marker Step 1's detector queries. Omit the
 # PR argument on a non-PR run. A failed rerun writes NO marker.
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/heal-ci/scripts/rerun-once.sh" \
+bash ./claude-plugins/kampus-pipeline/skills/heal-ci/scripts/rerun-once.sh \
   "$RUN" "<signature>" "$PR"
 ```
 
@@ -314,7 +314,7 @@ with the `Filed #N` comment the no-repair path posts, but routed to the in-fligh
 of a fresh issue — and stop. That comment *is* your one routed action for this invocation:
 
 ```bash
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/heal-ci/scripts/comment-active-repair.sh" \
+bash ./claude-plugins/kampus-pipeline/skills/heal-ci/scripts/comment-active-repair.sh \
   "$PR" "<signature>" "<run url>"
 ```
 
@@ -347,7 +347,7 @@ that real number — never post the `Filed #<N>` line with an unresolved `<N>` p
 ```bash
 N=<the .number report returned>
 # refuses a non-numeric N, so the `Filed #<N>` line can never post with an unresolved placeholder
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/heal-ci/scripts/comment-filed.sh" \
+bash ./claude-plugins/kampus-pipeline/skills/heal-ci/scripts/comment-filed.sh \
   "$PR" "$N" "<signature>"
 ```
 

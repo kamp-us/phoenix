@@ -28,7 +28,7 @@ rather than printing nothing, and an empty listing is only "nothing reserved" on
    - **In-flight set** — the `NNNN` **claimed by open ADR PRs**. An open PR that adds a `.decisions/NNNN-*.md` file *is* the reservation for `NNNN` (no separate artifact, exactly as ADR 0059's `status:planning` label *is* the epic lock — opening the PR reserves, merging/closing releases). Enumerate via **`gh api` REST, never GraphQL** (the org's Projects-classic integration breaks GraphQL):
      ```bash
      # every NNNN claimed by an open PR that ADDS a .decisions/NNNN-*.md file, one per line
-     "${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/adr/scripts/claimed-numbers.sh" || exit 1
+     bash ./claude-plugins/kampus-pipeline/skills/adr/scripts/claimed-numbers.sh || exit 1
      ```
      (The script resolves `$REPO` itself, the same way write-code does.) **Fail closed** (ADR 0074, ADR 0059's fail-closed acquire): if the in-flight query errors it exits non-zero — **surface it and re-run**, and never silently fall back to the on-disk-only number. That stale-on-disk fall-back is the bug this step removes, so an empty listing is only "nothing reserved" on **exit 0**.
 
@@ -41,7 +41,9 @@ rather than printing nothing, and an empty listing is only "nothing reserved" on
    # OPTIONAL local render of the on-demand compact map — nothing to `git add` (no committed index).
    # The `bin/pipeline-cli` shim resolves the bin (in-repo, else installed, else pinned dlx reading
    # the ONE pin in hooks/pin.sh) — no version pinned here (#3653).
-   "${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/bin/pipeline-cli" decisions-index compact
+   # §CLI — bind the shim by LITERAL assignment, run from the repo root.
+   PCLI="./claude-plugins/kampus-pipeline/bin/pipeline-cli"
+   "$PCLI" decisions-index compact
    ```
    The published CLI operates on the local `.decisions/` filesystem (no GitHub target), so there is no `$REPO`/`$CLAUDE_PIPELINE_REPO` resolution here — it is purely the in-repo-vs-published invocation swap.
 6. **Record the ADR's vocabulary impact (required — a named term or an explicit "none").** An ADR is a primary *coining site*: it is where a concept most often enters the repo vocabulary — a new term, or a redefinition of an existing one (ADR 0126's "ambient discovery" was coined here and drifted silently). So before you tell the user the path, run the point-of-coining glossary catch defined in [§Vocabulary impact](#vocabulary-impact--catch-a-coined-or-redefined-term-at-its-source). This is a **coining-time authoring hook, not the `review-code` gate** — it lives in this skill (prong (c) of ADR [0128](https://github.com/kamp-us/phoenix/blob/main/.decisions/0128-glossary-concept-trigger-off-the-gate.md), Fixes #1737); it never touches `review-code`'s fail-closed Step 3c. **You must land on one of two explicit outcomes — a named term routed to the glossary, or a recorded "no vocabulary impact"; silently skipping it is not an option.**
@@ -65,7 +67,7 @@ live-accepted ADRs whose decision domain yours touches and which you do **not** 
 
 ```bash
 # Exit 0 = nothing left to open. Non-zero = a shortlist to clear, or an INDETERMINATE run.
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/adr/scripts/sweep-shortlist.sh" \
+bash ./claude-plugins/kampus-pipeline/skills/adr/scripts/sweep-shortlist.sh \
   .decisions/NNNN-slug.md
 ```
 
@@ -178,4 +180,4 @@ On a **PR**, `.github/workflows/decisions-index.yml` runs `decisions-index valid
 - Never edit an accepted ADR's decision text after the fact — supersede instead, or amend in part (below).
 - **Amending in part: the status line only.** When your ADR changes part of a live `accepted` ADR while the rest still stands, set `status: amended-in-part by [NNNN](NNNN-slug.md)` on that older file and change **nothing else in it** — its decision text is immutable. Name the relationship in your own `## Context`. Precedents: 0023, 0028, 0031, 0035. Finding the ADRs that need this is the [§Contradiction sweep](#contradiction-sweep--never-decide-against-a-live-adr-silently), which is required on every ADR.
 - **Always resolve the vocabulary-impact outcome** (Step 6 / [§Vocabulary impact](#vocabulary-impact--catch-a-coined-or-redefined-term-at-its-source)): every ADR ends with *either* a term surfaced to `.glossary/TERMS.md` *or* an explicit recorded "no vocabulary impact." Never leave it unstated — the explicit "none" is a real outcome, not a skip.
-- Your PR adds only the ADR file (plus the status-line edit on a file it supersedes or amends-in-part); there is no committed index. Optional local render of the on-demand compact map (nothing to stage): `"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/bin/pipeline-cli" decisions-index compact` (the shim resolves the bin — in-repo, else installed, else pinned dlx reading the one pin in hooks/pin.sh; #3653).
+- Your PR adds only the ADR file (plus the status-line edit on a file it supersedes or amends-in-part); there is no committed index. Optional local render of the on-demand compact map (nothing to stage): `./claude-plugins/kampus-pipeline/bin/pipeline-cli decisions-index compact` (the shim resolves the bin — in-repo, else installed, else pinned dlx reading the one pin in hooks/pin.sh; #3653).

@@ -186,17 +186,25 @@ check is satisfied by what the diff actually shows, not by the author asserting 
 
 Pull the file list first; the classification gates everything after it. One script runs **both** §CP
 clauses — the path clause and the ADR-0164 content clause — off **one** hardened read of the changed
-files, and leaves their two flags in your shell through the run-state handle it prints:
+files, and prints their two flags:
 
 ```bash
 PR=<pr number>
-# Prints ONE line — the handle carrying CONTROL_PLANE_TOUCHED / GUARD_TOUCHING / CP_FILES_N / ADR_N.
-# The changed-file list and the §ZS scope line go to stderr. On any failure the handle is written
-# with the §CP SENTINEL first, so a classifier that could not run reaches you as a HOLD, never as an
-# empty (= non-blocking) flag; if even the handle cannot be written, stdout is empty and this `.`
-# fails loudly. Read the STATUS before the flags.
-. "$(bash ./claude-plugins/kampus-pipeline/skills/review-doc/scripts/classify-control-plane.sh "$PR")"
+bash ./claude-plugins/kampus-pipeline/skills/review-doc/scripts/classify-control-plane.sh "$PR"
 ```
+
+**Executed, not sourced, and stdout is the answer** (ADR
+[0232](https://github.com/kamp-us/phoenix/blob/main/.decisions/0232-agents-execute-skill-scripts-never-source-them.md),
+[`.patterns/skill-script-io-contract.md`](https://github.com/kamp-us/phoenix/blob/main/.patterns/skill-script-io-contract.md)).
+It prints four `KEY=value` lines — `CONTROL_PLANE_TOUCHED` and `GUARD_TOUCHING`, the two flags this
+step branches on, plus the `CP_FILES_N` / `ADR_N` scope counts. The two flag values are
+`printf '%q'`-quoted, so each is a single line and the **empty** (not-§CP) answer arrives as the
+positive token `''` rather than as an absence you have to infer. The changed-file list and the §ZS
+scope line go to stderr. Every failure path prints the flags as a non-empty §CP sentinel *before*
+exiting non-zero, because an empty flag is exactly what this step reads as non-blocking. **Read the
+exit status before the stdout**: a non-zero exit is a hold whatever the flags say, and stdout
+carrying no `CONTROL_PLANE_TOUCHED=` line at all means the classifier never ran — UNKNOWN, so hold
+the PR as control plane.
 
 - **Any control-plane path** — the **canonical §CP set** in
   [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md): `.claude/**`, `.github/**`,
@@ -393,14 +401,20 @@ the hunk alone — and read it **read-only**, without ever switching the checkou
 **Read-only on git working state** below). Fetch the head into a ref and read off that ref:
 
 ```bash
-# Prints ONE line — the handle carrying PR_REF / HEAD_SHA. On any failure stdout is EMPTY, so this
-# `.` fails loudly rather than leaving you reading the launched checkout's base tree (#793).
-. "$(bash ./claude-plugins/kampus-pipeline/skills/review-doc/scripts/materialize-head.sh "$PR")"
+bash ./claude-plugins/kampus-pipeline/skills/review-doc/scripts/materialize-head.sh "$PR" || exit 1
 
 # Read the head's files off the ref — read-only, no checkout:
 git show "$PR_REF:<path>"            # the file's content at the PR head
 git grep -n "<pattern>" "$PR_REF"    # search the head tree without checking it out
 ```
+
+**Executed, not sourced, and stdout is the answer** (ADR
+[0232](https://github.com/kamp-us/phoenix/blob/main/.decisions/0232-agents-execute-skill-scripts-never-source-them.md)).
+It prints one `KEY=value` line per resolved value — `PR_REF` and `HEAD_SHA` — and every progress and
+FATAL line goes to stderr. Read those values off stdout; every `$PR_REF` / `$HEAD_SHA` below names
+the value you read here, not a variable that survives into the next Bash call. **Read the exit
+status before the stdout:** on any failure path stdout is empty and the exit is non-zero, and that
+is UNKNOWN — **never** fall back to reading the launched checkout's base tree (the #793 false-PASS).
 
 The script drives §HEAD's fetch-into-a-ref through the shared `pipeline-cli review-head materialize`
 verb (#3690 / #793 / #1807) — cite it, don't re-derive it. Ref-only mode resolves the live head SHA
@@ -420,13 +434,13 @@ dir. `scratchpad` is the allocator (§SP rule 2 of
 [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md)); it refuses with a reason on stderr
 rather than falling back to a shared path.
 
-**Every later Bash call re-derives `$HEAD_ENV`; it never inherits it.** Run
-[`scripts/head-env.sh`](scripts/head-env.sh) — same session, same slug, same path — then re-source.
-It **refuses** when the namespace was never opened in this run, so a lost handle fails loud instead
-of silently reading an empty directory:
+**Every later Bash call re-derives the head values; it never inherits them.** Run
+[`scripts/head-env.sh`](scripts/head-env.sh) — same session, same slug, same path — and read the
+same `KEY=value` lines off its stdout. It **refuses** (non-zero, empty stdout) when the namespace was
+never opened in this run, so a lost handle fails loud instead of silently reading an empty directory:
 
 ```bash
-. "$(bash ./claude-plugins/kampus-pipeline/skills/review-doc/scripts/head-env.sh "$PR")"   # $PR_REF / $HEAD_SHA (and $REVIEW_WT, if --worktree was used)
+bash ./claude-plugins/kampus-pipeline/skills/review-doc/scripts/head-env.sh "$PR" || exit 1   # PR_REF / HEAD_SHA (and REVIEW_WT, if --worktree was used)
 ```
 
 If a check genuinely needs a materialized tree (rare for a doc PR), pass `--worktree` to the
@@ -437,7 +451,7 @@ reviewer's tree and pins the wrong head (the #1807 collision). Tear it down with
 [`scripts/teardown-head.sh`](scripts/teardown-head.sh), which also drops the throwaway ref:
 
 ```bash
-. "$(bash ./claude-plugins/kampus-pipeline/skills/review-doc/scripts/materialize-head.sh "$PR" --worktree)"
+bash ./claude-plugins/kampus-pipeline/skills/review-doc/scripts/materialize-head.sh "$PR" --worktree || exit 1   # adds a REVIEW_WT= line
 # Register teardown as a trap so a mid-block error still tears the throwaway tree down. The trap is
 # YOURS, not the script's — an extracted script installs no EXIT trap of its own (#4476/#4479).
 trap 'bash ./claude-plugins/kampus-pipeline/skills/review-doc/scripts/teardown-head.sh "$PR"' EXIT
@@ -645,10 +659,17 @@ a question you cannot sweep for.
 citations.** The mechanical shortlist is one command — it ranks the live-accepted ADRs whose
 decision domain the new one touches **and which it does not cite**:
 
+`PR_REF` is the value Step 2's materialize printed; if that ran in an EARLIER Bash call the variable
+is gone, so re-read it off `head-env.sh`'s stdout — never re-run the materialize just to rebind it:
+
 ```bash
-# $PR_REF is bound by Step 2's materialize; if that ran in an EARLIER Bash call the variable is gone,
-# so re-derive it via head-env.sh first — never re-run the materialize just to rebind it.
-. "$(bash ./claude-plugins/kampus-pipeline/skills/review-doc/scripts/head-env.sh "$PR")"
+bash ./claude-plugins/kampus-pipeline/skills/review-doc/scripts/head-env.sh "$PR" || exit 1
+```
+
+Then bind it by literal assignment in the block that uses it:
+
+```bash
+PR_REF="<the refs/pr/… value head-env.sh printed>"
 bash ./claude-plugins/kampus-pipeline/skills/review-doc/scripts/adr-sweep.sh "$PR_REF" .decisions/NNNN-slug.md
 SWEEP=$?
 ```

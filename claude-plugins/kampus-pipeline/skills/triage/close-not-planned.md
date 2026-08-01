@@ -32,11 +32,11 @@ Every kill is auditable and reversible. Always:
 # step 1 only when closing as a duplicate of #M. Both scripts resolve the SAME §SP per-run scratch
 # namespace through the shared lib's kp_scratch_* seam — an issue number is NOT unique, and a
 # clobbered file reads back cleanly as another run's body, preserving the WRONG original (#3718).
-RUN_SCRATCH="$("${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/triage/scripts/fetch-duplicate-body.sh" <N>)" || exit 1
+RUN_SCRATCH="$(bash ./claude-plugins/kampus-pipeline/skills/triage/scripts/fetch-duplicate-body.sh <N>)" || exit 1
 # then wrap $RUN_SCRATCH/dup.md in <details> as $RUN_SCRATCH/dup-comment.md, and:
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/triage/scripts/post-duplicate-comment.sh" <N> <M>
+bash ./claude-plugins/kampus-pipeline/skills/triage/scripts/post-duplicate-comment.sh <N> <M>
 # steps 2-4, every kill:
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/triage/scripts/close-not-planned.sh" <N> "<specific reason>."
+bash ./claude-plugins/kampus-pipeline/skills/triage/scripts/close-not-planned.sh <N> "<specific reason>."
 ```
 
 The scripts live in [`scripts/`](scripts/) alongside the rest of this skill's extracted shell; the
@@ -47,5 +47,5 @@ The maintainer audits all kills with one query, so over-closing is caught and re
 cheaply:
 
 ```bash
-"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/triage/scripts/audit-kills.sh"
+bash ./claude-plugins/kampus-pipeline/skills/triage/scripts/audit-kills.sh
 ```
