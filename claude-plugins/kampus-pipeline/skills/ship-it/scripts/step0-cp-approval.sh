@@ -5,10 +5,20 @@
 # Extracted VERBATIM from ship-it/SKILL.md's Step 0's §CP approval gate fenced block (epic #4435 phase 1, #4448).
 # A byte-move, not a rewrite: replacing this glue with `pipeline-cli` verbs is phase 2 (#1929).
 #
-# SOURCED, never executed. The fenced block it replaces ran inline in the agent's shell, so this
-# file deliberately sets NO shell options — several guards here depend on `pipefail` being OFF —
-# and leaves its variables and functions in the sourcing shell, which is how the step's later
-# blocks still see them.
+# DUAL-MODE (ADR 0232) — the why is `.patterns/skill-script-shell-shape.md` § The dual-mode shape.
+#   EXECUTED:  bash ./claude-plugins/kampus-pipeline/skills/ship-it/scripts/step0-cp-approval.sh <REPO> <PR>
+#              stdout ⇒ exactly one `§CP approval: …` line, and — on the discharge branch only —
+#              `CP_FLAG=--cp`. That token is the Step-2 seam: it used to be an assignment the agent
+#              made in its own shell, and a process cannot inherit one, so the discharge branch PRINTS
+#              it and the shipper re-passes it as Step 2's third argument. A branch that could not
+#              answer names the failed read on stderr and exits 1 — read the status first, and never
+#              read a missing `CP_FLAG=` line as a discharge.
+#   SOURCED:   `verify-chain-resolves.sh` check 2 stands this file up against a stubbed `gh` /
+#              `pipeline-cli`, reading $REPO and $PR out of its own driver shell. Untouched.
+# No EXIT trap — under bash 3.2 a cleanup trap's last command becomes the script's status,
+# laundering a `set -u` abort into exit 0 (#4476, class #4479).
+
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then set -uo pipefail; fi   # executed mode only (ADR 0232)
 . "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
 # §CPREAD + §CPREAD-APPROVAL's `cp_team_roster` / `cp_pr_author` / `cp_head_sha` /
 # `cp_team_membership`, sourced IN-CHAIN. SKILL.md documents a verbatim-paste precondition ahead of
@@ -19,6 +29,8 @@
 
 # §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
 PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
+REPO="${REPO:-${1:?step0-cp-approval.sh: REPO unset and no \$1 — refusing to discharge §CP on an unnamed repo}}"
+PR="${PR:-${2:?step0-cp-approval.sh: PR unset and no \$2 — refusing to discharge §CP on an unnamed PR}}"
 # ADR 0175: DETERMINISTIC §CP discharge keyed on control-plane team cardinality, not judgment.
 ORG="${REPO%%/*}"                                            # owner half of owner/repo
 # The one non-firing exit that is NOT a definite answer: it names the read that could not execute,
@@ -114,6 +126,11 @@ if printf '%s\n' "$MEMBERS" | "$PCLI" cp-cardinality decide \
      $([ "$NON_AUTHOR_APPROVAL_AT_HEAD" = true ] && printf -- '--non-author-approval-at-head') \
      $([ "$SELF_APPROVAL_AT_HEAD" = true ] && printf -- '--self-approval-at-head'); then
   echo "§CP approval: discharged deterministically (ADR 0175) → carry on to machine gates"
+  # THE SEAM (#4547), now a printed token rather than a caller-shell assignment (ADR 0232). This is
+  # still its ONLY sanctioned site: `--cp` licenses the SHA-less advisory at Step 2, and the
+  # discharge is exactly the condition that licenses it. A shipper that reads no `CP_FLAG=` line
+  # passes nothing, which is the STRICTER branch — an omitted seam can only refuse a §CP PR.
+  echo "CP_FLAG=--cp"
 else
   # Reachable ONLY with every input proven readable, so this message states a fact: the branch's
   # required human signal is genuinely absent.

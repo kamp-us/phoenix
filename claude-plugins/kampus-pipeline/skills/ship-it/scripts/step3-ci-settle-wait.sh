@@ -5,11 +5,36 @@
 # Extracted VERBATIM from ship-it/SKILL.md's Step 3 fenced block (epic #4435 phase 1, #4448).
 # A byte-move, not a rewrite: replacing this glue with `pipeline-cli` verbs is phase 2 (#1929).
 #
-# SOURCED, never executed. The fenced block it replaces ran inline in the agent's shell, so this
-# file deliberately sets NO shell options — several guards here depend on `pipefail` being OFF —
-# and leaves its variables and functions in the sourcing shell, which is how the step's later
-# blocks still see them.
+# DUAL-MODE (ADR 0232) — the why is `.patterns/skill-script-shell-shape.md` § The dual-mode shape.
+#   EXECUTED:  bash ./claude-plugins/kampus-pipeline/skills/ship-it/scripts/step3-ci-settle-wait.sh \
+#                   <REPO> <PR> <CURRENT_HEAD>
+#              stdout ⇒ one progress line per poll, then exactly one terminal line: `gating checks
+#              settled green after …` (proceed to Step 3.5), `routed to heal-ci …`, or one of the
+#              `refused — …` lines. Every terminus also prints `INTENT_UNCLEARED=<0|1>`. Read the
+#              TERMINAL WORD, not the exit status: like the fenced block, every disposition here is a
+#              successful decline and exits 0 — only a refusal to run at all exits non-zero.
+#              `<CURRENT_HEAD>` is the head Step 2 verified, printed by `step2-native-review-fold.sh`;
+#              the mid-settle head-move guard compares against it, so passing it is load-bearing.
+#   SOURCED:   no in-script consumer today; the edge stays open for one.
+# No EXIT trap — under bash 3.2 a cleanup trap's last command becomes the script's status,
+# laundering a `set -u` abort into exit 0 (#4476, class #4479).
+
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then set -uo pipefail; fi   # executed mode only (ADR 0232)
 . "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
+
+REPO="${REPO:-${1:?step3-ci-settle-wait.sh: REPO unset and no \$1 — refusing to poll CI in an unnamed repo}}"
+PR="${PR:-${2:?step3-ci-settle-wait.sh: PR unset and no \$2 — refusing to poll CI on an unnamed PR}}"
+# The head Step 2 verified. Fail closed on an absent one: the mid-settle head-move guard below
+# compares against it, and an empty value would make every head "unchanged" and re-open the TOCTOU
+# window the guard exists to close.
+CURRENT_HEAD="${CURRENT_HEAD:-${3:?step3-ci-settle-wait.sh: CURRENT_HEAD unset and no \$3 — refusing to poll without the verified head to compare against}}"
+# `read_head_ci` (and, through it, `disarm_intent`), sourced IN-CHAIN. The poll re-reads the head
+# through the SAME function Step 3's rollup used, and a process inherits no functions, so this file
+# pulls the definition in itself rather than carrying a second copy that could drift (ADR 0232/0228).
+# The cost is one extra `checks read` at source time — the same read this loop makes on its first
+# pass anyway, with the same refusal disposition on an unreadable head.
+# shellcheck source=step3-rollup-bindings.sh
+. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/." && pwd)/step3-rollup-bindings.sh"
 
 SETTLE_BUDGET_SECS="${SHIP_IT_SETTLE_BUDGET_SECS:-600}"    # total in-process wait ceiling — BOUNDED, never unbounded
 SETTLE_INTERVAL_SECS="${SHIP_IT_SETTLE_INTERVAL_SECS:-30}" # cadence; each pass emits progress so a no-progress watchdog never fires
@@ -79,6 +104,9 @@ Re-dispatch ship-it once the re-run settles — idempotent, a re-ship on the now
 }
 
 ci_settle_wait; SETTLE_RC=$?
+# Every terminus below is a successful decline or a proceed, so the ledger's intent state has to ride
+# stdout — it is the one value the sourced form left in the caller's shell that no process inherits.
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then printf 'INTENT_UNCLEARED=%s\n' "$INTENT_UNCLEARED"; fi
 case "$SETTLE_RC" in
   0) : ;;         # settled green → fall through to Step 3.5 → Step 4 (enqueue)
   2)              # gating red mid-wait → route to /heal-ci (Step 3 branch 1's disposition), then STOP — never enqueue.

@@ -5,11 +5,28 @@
 # Extracted VERBATIM from ship-it/SKILL.md's Step 5b fenced block (epic #4435 phase 1, #4448).
 # A byte-move, not a rewrite: replacing this glue with `pipeline-cli` verbs is phase 2 (#1929).
 #
-# SOURCED, never executed. The fenced block it replaces ran inline in the agent's shell, so this
-# file deliberately sets NO shell options — several guards here depend on `pipefail` being OFF —
-# and leaves its variables and functions in the sourcing shell, which is how the step's later
-# blocks still see them.
+# DUAL-MODE (ADR 0232) — the why is `.patterns/skill-script-shell-shape.md` § The dual-mode shape.
+#   EXECUTED:  bash ./claude-plugins/kampus-pipeline/skills/ship-it/scripts/step5b-release-queue.sh \
+#                   <REPO> <PR> [<ISSUE>]
+#              stdout ⇒ one line, `RELEASE_QUEUE=queued (awaiting human flip)` or
+#              `RELEASE_QUEUE=n/a (not a dark ship)` — the ledger value the sourced form left in the
+#              caller's shell. <ISSUE> is the linked issue Step 1 resolved; an ABSENT one keeps the
+#              fenced block's own behaviour — no linked issue means nothing to queue, so the step
+#              no-ops and reports `n/a`.
+#   SOURCED:   no in-script consumer today; the edge stays open for one.
+#
+# `pipefail` (executed mode) changes what a PIPELINE's status is, and two detector captures below
+# read one, so each is re-derived as capture-then-match. See their comments — the predicates
+# themselves are byte-unchanged (ADR 0228/0229).
+# No EXIT trap — under bash 3.2 a cleanup trap's last command becomes the script's status,
+# laundering a `set -u` abort into exit 0 (#4476, class #4479).
+
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then set -uo pipefail; fi   # executed mode only (ADR 0232)
 . "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
+
+REPO="${REPO:-${1:?step5b-release-queue.sh: REPO unset and no \$1 — refusing to queue a release in an unnamed repo}}"
+PR="${PR:-${2:?step5b-release-queue.sh: PR unset and no \$2 — refusing to read the dark-ship signals off an unnamed PR}}"
+ISSUE="${ISSUE-${3-}}"   # legitimately empty: no linked issue ⇒ nothing to queue ⇒ the `n/a` no-op
 
 RELEASE_QUEUE="n/a (not a dark ship)"   # default: the no-op state
 
@@ -22,8 +39,14 @@ if [ -n "$ISSUE" ] && gh api "repos/$REPO/contents/product-development-cycle.md"
   #     `+` patch lines are additions; an added `FlagshipFlag(` factory call or a `defaultVariation:`
   #     flag-config line is a real default-off flag THIS PR introduced (write-code Step 4b mints it,
   #     review-code Step 3b verifies it).
-  FLAG_IN_DIFF=$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" \
-    --jq '.[] | select(.filename | test("features/flagship/resources\\.ts$")) | .patch // ""' \
+  #     CAPTURE-THEN-MATCH: the detector's decision is the GREPS' verdict, and only theirs. Left as
+  #     one pipeline under executed mode's `pipefail`, a non-zero `gh` would fold into the status and
+  #     answer `no` — a transport failure posing as "this PR ships no flag", which silently skips the
+  #     release queue. Capturing the read first restores the original operand exactly; the two greps
+  #     and their patterns are untouched.
+  FLAG_PATCHES=$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" \
+    --jq '.[] | select(.filename | test("features/flagship/resources\\.ts$")) | .patch // ""')
+  FLAG_IN_DIFF=$(printf '%s\n' "$FLAG_PATCHES" \
     | grep -E '^\+' | grep -Eq 'FlagshipFlag\(|defaultVariation:' && echo yes || echo no)
 
   # (b) the PR BODY declares the dark-ship flag key explicitly (a `Flag:`/`Flag key:` line naming a
@@ -32,7 +55,10 @@ if [ -n "$ISSUE" ] && gh api "repos/$REPO/contents/product-development-cycle.md"
   #     ATX header (`#{1,6}`, so `## Flag:` / `### Flag key:` match, #1293), and `**` bold — while the
   #     key grammar `[a-z0-9]+(-[a-z0-9]+)+` is untouched, so prose containing "flag" and a non-kebab
   #     key still miss.
-  FLAG_IN_BODY=$(gh api repos/$REPO/pulls/$PR --jq '.body // ""' \
+  #     Same capture-then-match as (a), same reason: the grep's verdict is the detector, `gh`'s
+  #     status is not part of it.
+  BODY_RAW=$(gh api repos/$REPO/pulls/$PR --jq '.body // ""')
+  FLAG_IN_BODY=$(printf '%s\n' "$BODY_RAW" \
     | grep -Eiq '^[[:space:]]*(#{1,6}[[:space:]]*)?\**[[:space:]]*flag([[:space:]]*key)?:[[:space:]]*\**[[:space:]]*[a-z0-9]+(-[a-z0-9]+)+' && echo yes || echo no)
 
   # (c) the PR BODY names an ALREADY-DECLARED flag key in a GATING-DECLARATION line (the reused-flag
@@ -89,7 +115,7 @@ if [ -n "$ISSUE" ] && gh api "repos/$REPO/contents/product-development-cycle.md"
       [ -z "$K" ] && continue
       # whole-token match: the declared key bounded by non-[a-z0-9-] on each side, so a longer key
       # containing this one as a substring (e.g. phoenix-bildirim-x) is NOT matched by phoenix-bildirim
-      printf '%s' "$GATING_PROSE" | grep -Eq "(^|[^a-z0-9-])$K([^a-z0-9-]|\$)" && { FLAG_IN_PROSE=yes; break; }
+      if printf '%s' "$GATING_PROSE" | grep -Eq "(^|[^a-z0-9-])$K([^a-z0-9-]|\$)"; then FLAG_IN_PROSE=yes; break; fi
     done <<EOF
 $DECLARED_KEYS
 EOF
@@ -102,3 +128,5 @@ EOF
   fi
   # no signal ⇒ the PR shipped ungated (the inherited-stamp false positive #1257 closes) ⇒ no-op, no label
 fi
+
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then printf 'RELEASE_QUEUE=%s\n' "$RELEASE_QUEUE"; fi

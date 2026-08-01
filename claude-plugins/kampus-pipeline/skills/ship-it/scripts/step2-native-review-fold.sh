@@ -5,11 +5,25 @@
 # Extracted VERBATIM from ship-it/SKILL.md's Step 2 fenced block (epic #4435 phase 1, #4448).
 # A byte-move, not a rewrite: replacing this glue with `pipeline-cli` verbs is phase 2 (#1929).
 #
-# SOURCED, never executed. The fenced block it replaces ran inline in the agent's shell, so this
-# file deliberately sets NO shell options — several guards here depend on `pipefail` being OFF —
-# and leaves its variables and functions in the sourcing shell, which is how the step's later
-# blocks still see them.
+# DUAL-MODE (ADR 0232) — the why is `.patterns/skill-script-shell-shape.md` § The dual-mode shape.
+#   EXECUTED:  bash ./claude-plugins/kampus-pipeline/skills/ship-it/scripts/step2-native-review-fold.sh \
+#                   <REPO> <PR> [--cp]
+#              stdout ⇒ three lines — `CURRENT_HEAD=<40-hex>`, `CODE_PASS=<0|1>`, `CODE_FAIL=<0|1>`
+#              — the three values the sourced form left in the caller's shell. `CURRENT_HEAD` is
+#              re-passed to Step 3's settle wait, which compares against it to catch a head that
+#              moved mid-poll. The exit status answers "could I resolve them", never "is it a PASS":
+#              a folded FAIL is `CODE_FAIL=1` at exit 0 (rule 4).
+#   SOURCED:   no in-script consumer today; the edge stays open for one.
+# No EXIT trap — under bash 3.2 a cleanup trap's last command becomes the script's status,
+# laundering a `set -u` abort into exit 0 (#4476, class #4479).
+
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then set -uo pipefail; fi   # executed mode only (ADR 0232)
 . "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
+
+REPO="${REPO:-${1:?step2-native-review-fold.sh: REPO unset and no \$1 — refusing to fold a review in an unnamed repo}}"
+PR="${PR:-${2:?step2-native-review-fold.sh: PR unset and no \$2 — refusing to fold a review on an unnamed PR}}"
+# The same seam Step 2's gate reads, re-passed as the third argument (see step0-cp-approval.sh).
+CP_FLAG="${CP_FLAG:-${3-}}"
 
 # the PR's CURRENT head SHA — the head every verdict must be bound to (ADR 0058)
 CURRENT_HEAD="$(gh api repos/$REPO/pulls/$PR --jq .head.sha)"
@@ -74,3 +88,9 @@ if [ -n "$RSHA" ]; then case "$CURRENT_HEAD" in "$RSHA"*)
     esac
   fi   # else the marker is newer and already stands — leave CODE_PASS/CODE_FAIL as the verb resolved them
 ;; esac; fi
+
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+  printf 'CURRENT_HEAD=%s\n' "$CURRENT_HEAD"
+  printf 'CODE_PASS=%s\n' "$CODE_PASS"
+  printf 'CODE_FAIL=%s\n' "$CODE_FAIL"
+fi
