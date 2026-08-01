@@ -426,29 +426,68 @@ kp__scratch() {
 # names stay unprefixed, against this file's `kp_` convention, because they ARE the names those
 # callers and write-code/SKILL.md refer to.
 #
-# The block below is VERBATIM from write-code/SKILL.md's per-mutation-preflight blockquote (epic
-# #4435 phase 1, #4449) — two-space indent included. Byte fidelity is the extraction's contract, so
-# it is not reindented to this file's tabs.
+# The block below was extracted from write-code/SKILL.md's per-mutation-preflight blockquote (epic
+# #4435 phase 1, #4449) and keeps that blockquote's two-space indent rather than this file's tabs;
+# SKILL.md now carries prose only, so the lib is the single source and reindenting it would be pure
+# diff noise.
 
 # Resolve MY worktree by IDENTITY, never from cwd (#4398). `git rev-parse --show-toplevel` answers
 # "where is the cwd" — which a between-calls reset makes a different question from "which tree is
 # mine". Deriving $WT from it and then re-deriving the toplevel to compare against is one answer
 # checked against itself: always equal, so its failure branch could never print. The stamp is
 # CONTENT written once when $WT was trustworthy, so these two operands can genuinely differ.
-lane_worktree() {   # print the absolute root of the worktree stamped with THIS lane's session id
-  common="$(git rev-parse --git-common-dir 2>/dev/null)" || return 1
+#
+# THE SESSION ID NAMES A SESSION, NOT A WORKTREE (#4500). Every sibling subagent of one dispatching
+# session shares $CLAUDE_CODE_SESSION_ID, so each lane's opening preflight stamps its own tree with
+# the SAME value and a session-wide search finds N of them — making the `-eq 1` assertion below
+# unsatisfiable for every lane after the first, and capping the factory at one concurrent lane.
+# Nothing in the process env distinguishes sibling lanes (measured on the harness: every CLAUDE_*
+# identifier, $CLAUDE_PID included, is session-scoped), so no per-worktree stamp VALUE could be
+# searched for either — a per-worktree key is only ever readable from the tree you are standing in.
+# Hence the two-path resolution: read the ambient tree's own stamp first, and fall back to the
+# session-wide search only when the cwd is the primary checkout (the harness's between-calls reset),
+# where the lane is genuinely unknowable if the session owns more than one tree. The `-eq 1`
+# assertion is therefore KEPT, unrelaxed — it now guards only the case where ambiguity is real.
+#
+# Exit codes are the cause: 0 ⇒ root on stdout; 2 ⇒ NO tree carries this lane's stamp; 3 ⇒ SEVERAL
+# do. 2 and 3 have opposite remedies and only 2's was ever printed, which is why this survived five
+# reproductions — every debugger was told its worktree was gone (#4661 fold-in).
+lane_worktree() {   # print the absolute root of THIS lane's worktree
+  common="$(git rev-parse --git-common-dir 2>/dev/null)" || return 2
   case "$common" in /*) ;; *) common="$(pwd -P)/$common" ;; esac
-  common="$(cd "$common" && pwd -P)" || return 1   # -P: git answers in PHYSICAL paths, so must we
+  common="$(cd "$common" && pwd -P)" || return 2   # -P: git answers in PHYSICAL paths, so must we
+  # AMBIENT-FIRST. The operands stay independent (#4398): the stamp is durable CONTENT written when
+  # the tree was proven, matched against the process env, and the root comes from the durable
+  # `worktrees/<name>/gitdir` file — never from `--show-toplevel`, so nothing is compared to its own
+  # derivation. A linked tree carrying MY session's stamp is a tree my own opening preflight proved.
+  amb="$(git rev-parse --absolute-git-dir 2>/dev/null)"
+  [ -n "$amb" ] && amb="$(cd "$amb" && pwd -P)"
+  if [ -n "$amb" ] && [ "$amb" != "$common" ] && [ -f "$amb/kampus-lane" ] &&
+     [ "$(cat "$amb/kampus-lane")" = "$CLAUDE_CODE_SESSION_ID" ] && [ -f "$amb/gitdir" ]; then
+    gd="$(cat "$amb/gitdir")" || return 2                 # "<worktree-root>/.git"
+    root="$(cd "${gd%/.git}" 2>/dev/null && pwd -P)" || return 2
+    [ -n "$root" ] || return 2
+    printf '%s\n' "$root"
+    return 0
+  fi
   hits=""
-  for st in "$common"/worktrees/*/kampus-lane; do
+  for st in "$common"/worktrees/*/kampus-lane; do   # a retired stamp is `kampus-lane.retired`: no match
     [ -f "$st" ] || continue
     [ "$(cat "$st")" = "$CLAUDE_CODE_SESSION_ID" ] || continue
-    gd="$(cat "${st%/kampus-lane}/gitdir")" || return 1   # "<worktree-root>/.git"
+    gd="$(cat "${st%/kampus-lane}/gitdir")" || return 2   # "<worktree-root>/.git"
     hits="$hits $(cd "${gd%/.git}" && pwd -P)"
   done
   set -- $hits
-  [ "$#" -eq 1 ] || return 1   # 0 ⇒ no tree is mine; >1 ⇒ ambiguous. Both REFUSE (fail-closed).
-  printf '%s\n' "$1"
+  if [ "$#" -eq 1 ]; then   # unchanged: exactly one, or REFUSE (fail-closed)
+    printf '%s\n' "$1"
+    return 0
+  fi
+  if [ "$#" -eq 0 ]; then
+    echo "lane_worktree: ZERO worktrees carry this lane's stamp ($CLAUDE_CODE_SESSION_ID) under $common/worktrees/." >&2
+    return 2
+  fi
+  echo "lane_worktree: AMBIGUOUS — $# worktrees carry this lane's stamp ($CLAUDE_CODE_SESSION_ID): $*" >&2
+  return 3
 }
 wt_preflight() {   # MANDATED before every git commit/push/branch op — fail-closed, re-correcting cwd
   : "${CLAUDE_CODE_SESSION_ID:?wt_preflight FAILED (fail-closed): no session id — no lane identity to verify a worktree against}"
@@ -473,9 +512,19 @@ wt_preflight() {   # MANDATED before every git commit/push/branch op — fail-cl
     return 1
   fi
   # cwd is my own tree or the PRIMARY checkout (the between-calls reset). Resolve my lane by
-  # identity and cd there — the correction. A miss REFUSES: no tree is mine (unprovisioned, torn
-  # down, or a foreign session), or several are (ambiguous).
-  WT="$(lane_worktree)" || { echo "wt_preflight FAILED (fail-closed): no single worktree carries this lane's stamp ($CLAUDE_CODE_SESSION_ID) — the opening preflight never ran, or its tree is gone. Refusing to mutate." >&2; return 1; }
+  # identity and cd there — the correction. A miss REFUSES, and the two misses get DIFFERENT
+  # messages because they have opposite remedies: rc 2 means re-establish a worktree, rc 3 means
+  # the cwd was reset to the primary checkout and only the lane itself can say which tree it is.
+  # One shared message that explained only rc 2 is what routed five debuggers to the wrong (and
+  # dangerous — self-provision, blanket worktree removal) remedy (#4500 AC4).
+  WT="$(lane_worktree)"
+  case "$?" in
+    0) ;;
+    3) echo "wt_preflight FAILED (fail-closed): AMBIGUOUS — SEVERAL worktrees carry this lane's stamp ($CLAUDE_CODE_SESSION_ID), listed above. Your worktree is NOT missing: sibling lanes of this same session are stamped too, and from the PRIMARY checkout the lane is unknowable. Re-run the mutation from your own lane's worktree (the root the opening preflight CONFIRMED) instead of re-running the opening preflight, self-provisioning, or removing worktrees. Refusing to mutate." >&2
+       return 1 ;;
+    *) echo "wt_preflight FAILED (fail-closed): ZERO worktrees carry this lane's stamp ($CLAUDE_CODE_SESSION_ID) — the opening preflight never ran, or its tree is gone. Refusing to mutate." >&2
+       return 1 ;;
+  esac
   cd "$WT" || { echo "wt_preflight FAILED: cannot cd to worktree root $WT" >&2; return 1; }
   # DEFENCE IN DEPTH — the resolved lane must not BE the primary checkout. This sits after the
   # `cd` and is still a genuine assertion, because its operands do not come from the cwd: it
