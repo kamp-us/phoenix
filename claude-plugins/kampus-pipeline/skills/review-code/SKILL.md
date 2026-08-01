@@ -44,7 +44,7 @@ if set, else the current repository. In phoenix this defaults to `kamp-us/phoeni
 behavior is unchanged with no config (ADR 0062 §1).
 
 ```bash
-bash ./claude-plugins/kampus-pipeline/skills/review-code/scripts/resolve-repo.sh
+bash ./.claude/.pipeline/skills/review-code/scripts/resolve-repo.sh
 ```
 
 Every script below resolves the repo the same way, through the shared lib's `kp_repo` — so the
@@ -60,7 +60,7 @@ the shell moved as-is, and turning its `gh`/`jq` glue into tested `pipeline-cli`
 load-bearing when you read or edit them:
 
 - **Every one is EXECUTED by literal path, and stdout is its answer** — `bash
-  ./claude-plugins/kampus-pipeline/skills/review-code/scripts/<script>.sh …`, never `.`/`source` at
+  ./.claude/.pipeline/skills/review-code/scripts/<script>.sh …`, never `.`/`source` at
   your top-level command and never the old interpolated plugin-root idiom (a `${…:-…}`-defaulted
   variable standing in for the plugin directory), both of which the isolation verifier refuses (ADR
   [0232](https://github.com/kamp-us/phoenix/blob/main/.decisions/0232-agents-execute-skill-scripts-never-source-them.md)).
@@ -153,7 +153,7 @@ You're given a PR number (or you're told to review the PR for issue #N). Bind `P
 number, then establish the PR ↔ issue pairing — the issue is where the acceptance criteria live.
 
 ```bash
-bash ./claude-plugins/kampus-pipeline/skills/review-code/scripts/pr-context.sh "$PR"
+bash ./.claude/.pipeline/skills/review-code/scripts/pr-context.sh "$PR"
 ```
 
 Find the linked issue from the PR body's `Fixes #N` / `Closes #N` (the seam
@@ -161,7 +161,7 @@ Find the linked issue from the PR body's `Fixes #N` / `Closes #N` (the seam
 timeline if it's not obvious:
 
 ```bash
-bash ./claude-plugins/kampus-pipeline/skills/review-code/scripts/linked-issue-timeline.sh "$PR"
+bash ./.claude/.pipeline/skills/review-code/scripts/linked-issue-timeline.sh "$PR"
 ```
 
 Pin down `ISSUE=<N>`. If there is **no** linked issue, the rule is **class-aware** — this is
@@ -174,7 +174,7 @@ signal, **not** a second taxonomy; the ADR 0075 discipline `review-doc` follows 
 Step-0 class):
 
 ```bash
-bash ./claude-plugins/kampus-pipeline/skills/review-code/scripts/classify-issueless.sh "$PR"
+bash ./.claude/.pipeline/skills/review-code/scripts/classify-issueless.sh "$PR"
 ```
 
 Read the script's **exit status before its stdout**, and note the carve-out line is the *permissive*
@@ -208,7 +208,7 @@ When `ISSUE` **is** set, honor it as today — bind `ISSUE` to that number and p
 and its acceptance criteria:
 
 ```bash
-bash ./claude-plugins/kampus-pipeline/skills/review-code/scripts/issue-context.sh "$ISSUE"
+bash ./.claude/.pipeline/skills/review-code/scripts/issue-context.sh "$ISSUE"
 ```
 
 Extract the `### Acceptance criteria` checklist from the issue body. That list — every
@@ -239,7 +239,7 @@ Verification is grounded in the diff, the tests, and — where it matters — th
 not in the PR's self-description. Pull the change:
 
 ```bash
-bash ./claude-plugins/kampus-pipeline/skills/review-code/scripts/pr-diff.sh "$PR"
+bash ./.claude/.pipeline/skills/review-code/scripts/pr-diff.sh "$PR"
 ```
 
 This same loaded diff (and the review worktree below) is what the **specialist fan-out** runs
@@ -259,7 +259,7 @@ to `review-doc`'s skills-only / pure-code routes and `review-skill`'s "not a ski
 each gate hands a mis-classed PR to the gate that owns its class:
 
 ```bash
-bash ./claude-plugins/kampus-pipeline/skills/review-code/scripts/classify-skills-only.sh "$PR"
+bash ./.claude/.pipeline/skills/review-code/scripts/classify-skills-only.sh "$PR"
 ```
 
 Three outcomes, and the **exit status is read before the stdout**: a non-zero exit is UNKNOWN and
@@ -339,7 +339,7 @@ make the isolation hold *by construction*, not by your remembering to behave:
 Your own session stays in *this* worktree (the trusted base config you were launched under).
 
 ```bash
-bash ./claude-plugins/kampus-pipeline/skills/review-code/scripts/materialize-head.sh "$PR" || exit 1
+bash ./.claude/.pipeline/skills/review-code/scripts/materialize-head.sh "$PR" || exit 1
 ```
 
 **Executed, not sourced, and stdout is the answer** (ADR
@@ -367,7 +367,7 @@ an output), run the repo's commands **inside the review worktree** — behavior 
 running beats behavior inferred from a diff:
 
 ```bash
-bash ./claude-plugins/kampus-pipeline/skills/review-code/scripts/worktree-checks.sh
+bash ./.claude/.pipeline/skills/review-code/scripts/worktree-checks.sh
 ```
 
 Scoping a test to the criterion is fine when the SHA-bound run-evidence bundle (Step 2) corroborates
@@ -379,7 +379,7 @@ degrade block below: run the FULL unit project, never a subset.
 just the happy path:**
 
 ```bash
-bash ./claude-plugins/kampus-pipeline/skills/review-code/scripts/teardown-head.sh
+bash ./.claude/.pipeline/skills/review-code/scripts/teardown-head.sh
 ```
 
 It is the review's own `rm -rf` of a detached, already-pushed throwaway
@@ -387,7 +387,7 @@ it materialized itself (safe — it holds no branch and no unpushed work), so ru
 the review is exiting `FAIL` or aborting after a typecheck/lint error; a leaked `review-head-*`
 tree accumulates on the shared primary otherwise (#2785). To catch a mid-block error inside a
 single Bash call, register the script as a trap right after materialization:
-`trap 'bash ./claude-plugins/kampus-pipeline/skills/review-code/scripts/teardown-head.sh' EXIT` —
+`trap 'bash ./.claude/.pipeline/skills/review-code/scripts/teardown-head.sh' EXIT` —
 and note the trap belongs to **your** shell, not to any extracted script: none of them installs an
 `EXIT` trap, because under bash 3.2 the trap's last command becomes the script's exit status and
 would launder a `set -u` abort into exit 0 (#4476, class #4479). And the
@@ -403,7 +403,7 @@ the full build inputs, so the typecheck bootstrap is whole — run it and treat 
 the typecheck signal:
 
 ```bash
-bash ./claude-plugins/kampus-pipeline/skills/review-code/scripts/worktree-typecheck.sh
+bash ./.claude/.pipeline/skills/review-code/scripts/worktree-typecheck.sh
 ```
 
 CI and the SHA-bound run-evidence bundle (below) are now **corroboration**, not the sole
@@ -436,7 +436,7 @@ you received an archive and not a 503 error body; `schemaVersion` and
 load-bearing**: a bundle from a stale earlier push is not evidence for this commit.
 
 ```bash
-bash ./claude-plugins/kampus-pipeline/skills/review-code/scripts/run-evidence-read.sh "$PR" || exit 1
+bash ./.claude/.pipeline/skills/review-code/scripts/run-evidence-read.sh "$PR" || exit 1
 ```
 
 **Executed, not sourced, and stdout is the answer** (ADR 0232). It prints four `KEY=value` lines —
@@ -452,7 +452,7 @@ When the state is `present`, `.manifest` carries the structured results (ADR 005
 (`{total, passed, failed, skipped, failingSuites[]}`).
 
 ```bash
-bash ./claude-plugins/kampus-pipeline/skills/review-code/scripts/run-evidence-manifest.sh
+bash ./.claude/.pipeline/skills/review-code/scripts/run-evidence-manifest.sh
 ```
 
 Cite those numbers as the evidence for any criterion they speak to — "lint/typecheck/unit
@@ -504,7 +504,7 @@ gate exists to prevent. On the degrade path therefore:
   past a degraded verification.
 
   ```bash
-  bash ./claude-plugins/kampus-pipeline/skills/review-code/scripts/full-unit-project.sh
+  bash ./.claude/.pipeline/skills/review-code/scripts/full-unit-project.sh
   ```
 
 - **If — and only if — the full unit project genuinely cannot run** (an environment fault
@@ -560,7 +560,7 @@ than carrying a copy of, so there is nothing to keep in step (#4489). It holds �
 return:
 
 ```bash
-bash ./claude-plugins/kampus-pipeline/skills/review-code/scripts/classify-control-plane.sh "$PR"
+bash ./.claude/.pipeline/skills/review-code/scripts/classify-control-plane.sh "$PR"
 ```
 
 **Executed, not sourced, and stdout is the answer** (ADR 0232). It prints four `KEY=value` lines —
@@ -658,7 +658,7 @@ per the formats §Reading stance — a `**Containment:**` line, with a leading b
 in the body:
 
 ```bash
-CONTAINMENT="$(bash ./claude-plugins/kampus-pipeline/skills/review-code/scripts/containment-marker.sh "$ISSUE")"
+CONTAINMENT="$(bash ./.claude/.pipeline/skills/review-code/scripts/containment-marker.sh "$ISSUE")"
 ```
 
 The script prints exactly one of `flag` | `exempt` | `none`. `none` is the *skip* answer, so on a
@@ -674,7 +674,7 @@ flag check on an exempt/foreign PR is the failure mode this guard exists to prev
 correct, first-class state (ADR 0062 portability), exactly as a missing milestone is.
 
 ```bash
-bash ./claude-plugins/kampus-pipeline/skills/review-code/scripts/cycle-doc-probe.sh || exit 1
+bash ./.claude/.pipeline/skills/review-code/scripts/cycle-doc-probe.sh || exit 1
 ```
 
 **Executed, not sourced, and stdout is the answer** (ADR
@@ -708,7 +708,7 @@ FAIL — there is no dark feature here to gate (it is **not** a graceful skip; t
 surface and the surface came back empty):
 
 ```bash
-bash ./claude-plugins/kampus-pipeline/skills/review-code/scripts/userfacing-scope.sh "$PR"
+bash ./.claude/.pipeline/skills/review-code/scripts/userfacing-scope.sh "$PR"
 ```
 
 The matched-paths emit is **load-bearing, not narration** (§ZS #1): the verdict states the exact
@@ -780,7 +780,7 @@ the same change that ships the surface.
 folder is *new* only when its marker path is absent on fresh base.
 
 ```bash
-bash ./claude-plugins/kampus-pipeline/skills/review-code/scripts/glossary-freshness.sh "$PR"
+bash ./.claude/.pipeline/skills/review-code/scripts/glossary-freshness.sh "$PR"
 ```
 
 The three detectors, the positive-evidence-of-scope probe and the four-outcome verdict chain live in
@@ -895,7 +895,7 @@ relevant-but-zero-match** case, and express a no-comment diff as an **explicit n
 skip** — distinct from a FAIL.
 
 ```bash
-bash ./claude-plugins/kampus-pipeline/skills/review-code/scripts/comment-scan.sh "$PR"
+bash ./.claude/.pipeline/skills/review-code/scripts/comment-scan.sh "$PR"
 ```
 
 It prints the §ZS scope line, then the scanned lines themselves — the fence left those in a shell
@@ -948,7 +948,7 @@ lint's self-exempt array, the shape [#4491](https://github.com/kamp-us/phoenix/p
 query is one file's licence, not the directory's.
 
 ```bash
-bash ./claude-plugins/kampus-pipeline/skills/review-code/scripts/unresolved-threads-read.sh "$PR"
+bash ./.claude/.pipeline/skills/review-code/scripts/unresolved-threads-read.sh "$PR"
 ```
 
 Read the script's **exit status before its stdout**: an unreadable `reviewThreads` response prints
@@ -1008,7 +1008,7 @@ Detect it off the diff Step 2 already loaded — emit the scanned scope (§ZS #1
 that silently stops matching is visible in the run output rather than reading green:
 
 ```bash
-bash ./claude-plugins/kampus-pipeline/skills/review-code/scripts/session-caching-scan.sh "$PR"
+bash ./.claude/.pipeline/skills/review-code/scripts/session-caching-scan.sh "$PR"
 ```
 
 It prints the §ZS scope line, then the candidate lines themselves, so you can judge each against the
@@ -1149,7 +1149,7 @@ any verdict not bound to the PR's current head (ADR
 verdict-body shape at the end of this step.
 
 ```bash
-HEAD_SHA="$(bash ./claude-plugins/kampus-pipeline/skills/review-code/scripts/current-head.sh "$PR")"   # the head you reviewed
+HEAD_SHA="$(bash ./.claude/.pipeline/skills/review-code/scripts/current-head.sh "$PR")"   # the head you reviewed
 ```
 
 The script shape-asserts the SHA (bare 40-hex) and prints **nothing** on a failed read, so gh's error
@@ -1187,7 +1187,7 @@ genuinely unavoidable, the body **MUST** first pass `pipeline-cli leak-guard sca
 [the gate-verdict contract §READBACK](../shared/gate-verdict-contract.md#the-guarded-emit-path-is-mandatory--never-hand-post-a-verdict-marker-off-the-guard) — the *why* lives there, not re-derived here.
 
 ```bash
-printf '%s' "$BODY" | bash ./claude-plugins/kampus-pipeline/skills/review-code/scripts/verdict-emit-pass.sh "$PR" "$HEAD_SHA"
+printf '%s' "$BODY" | bash ./.claude/.pipeline/skills/review-code/scripts/verdict-emit-pass.sh "$PR" "$HEAD_SHA"
 ```
 
 `$BODY` is the verdict body **you** compose — its canonical shape is the markdown block at the end of
@@ -1369,8 +1369,8 @@ any later use are one single-sourced read, never two independent resolutions tha
 straddle a head move:
 
 ```bash
-HEAD_SHA="$(bash ./claude-plugins/kampus-pipeline/skills/review-code/scripts/current-head.sh "$PR")"   # resolve ONCE, before composing (mirror the PASS path)
-printf '%s' "$BODY" | bash ./claude-plugins/kampus-pipeline/skills/review-code/scripts/verdict-emit-fail.sh "$PR" "$HEAD_SHA"
+HEAD_SHA="$(bash ./.claude/.pipeline/skills/review-code/scripts/current-head.sh "$PR")"   # resolve ONCE, before composing (mirror the PASS path)
+printf '%s' "$BODY" | bash ./.claude/.pipeline/skills/review-code/scripts/verdict-emit-fail.sh "$PR" "$HEAD_SHA"
 ```
 
 Same stdin seam as the PASS path, for the same reason — no fixed or `${PR}`-keyed scratch name a
@@ -1465,7 +1465,7 @@ state (never a carried variable) and runs the read-back on whatever landed, on *
 [the gate-verdict contract §READBACK — Make the read-back UNCONDITIONAL (`verdict_post_verify`)](../shared/gate-verdict-contract.md#make-the-read-back-unconditional--resolve-the-landed-verdict-from-pr-state-never-a-carried-id-verdict_post_verify):
 
 ```bash
-bash ./claude-plugins/kampus-pipeline/skills/review-code/scripts/verdict-readback.sh "$PR" "$HEAD_SHA" || exit 1
+bash ./.claude/.pipeline/skills/review-code/scripts/verdict-readback.sh "$PR" "$HEAD_SHA" || exit 1
 ```
 
 The script **sources** `verdict_post_verify` from

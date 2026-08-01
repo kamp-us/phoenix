@@ -7,6 +7,7 @@ import {
 	lintCorpus,
 	type ScanFile,
 	scanBarePush,
+	scanFencePortability,
 	scanFile,
 } from "./lint.ts";
 
@@ -343,6 +344,94 @@ describe("lintCorpus — bare-push findings + scope (ADR 0092)", () => {
 	it("is zero scope — a FAIL — when the push check was handed nothing to scan", () => {
 		const result = lintCorpus([{file: "agents/coder.txt", content: "git push origin main"}]);
 		assert.strictEqual(result.barePushScanned.length, 0);
+		assert.isTrue(isZeroScope(result));
+	});
+});
+
+describe("scanFencePortability — the #4605 consumer-break gate", () => {
+	it("reds on a repo-relative ./claude-plugins/ script path in a fence", () => {
+		const f = scanFencePortability(
+			"skills/write-code/SKILL.md",
+			fenced("bash ./claude-plugins/kampus-pipeline/skills/write-code/scripts/step4-branch.sh x"),
+		);
+		assert.strictEqual(f.length, 1);
+		assert.strictEqual(f[0]?.matched, "./claude-plugins/kampus-pipeline/skills/");
+	});
+
+	it("reds on a repo-relative shim assignment too — bin/, not only skills/", () => {
+		const f = scanFencePortability(
+			"agents/reviewer.md",
+			fenced('PCLI="./claude-plugins/kampus-pipeline/bin/pipeline-cli"'),
+		);
+		assert.strictEqual(f.length, 1);
+	});
+
+	it("greens on the portable planted-link form", () => {
+		const f = scanFencePortability(
+			"skills/write-code/SKILL.md",
+			fenced("bash ./.claude/.pipeline/skills/write-code/scripts/step4-branch.sh x"),
+		);
+		assert.strictEqual(f.length, 0);
+	});
+
+	it("leaves PROSE about the old form alone — the docs must be able to explain it", () => {
+		const content = [
+			"The old form was `bash ./claude-plugins/kampus-pipeline/skills/x/scripts/y.sh`.",
+			fenced("bash ./.claude/.pipeline/skills/x/scripts/y.sh"),
+		].join("\n");
+		assert.strictEqual(scanFencePortability("skills/x/SKILL.md", content).length, 0);
+	});
+
+	it("leaves the marketplace manifest's `source:` value alone — no runnable-surface segment", () => {
+		const f = scanFencePortability(
+			"README.md",
+			fenced('"source": "./claude-plugins/kampus-pipeline"'),
+		);
+		assert.strictEqual(f.length, 0);
+	});
+
+	it("leaves a `../claude-plugins/…` symlink target alone — the `.` is preceded by a `.`", () => {
+		const f = scanFencePortability(
+			"README.md",
+			fenced("skills -> ../claude-plugins/kampus-pipeline/skills"),
+		);
+		assert.strictEqual(f.length, 0);
+	});
+
+	it("sees a fence nested in a blockquote — write-code's most safety-critical blocks are there", () => {
+		const content = [
+			"> ```bash",
+			"> bash ./claude-plugins/kampus-pipeline/skills/write-code/scripts/step4-wt-preflight.sh",
+			"> ```",
+		].join("\n");
+		assert.strictEqual(scanFencePortability("skills/write-code/SKILL.md", content).length, 1);
+	});
+
+	it("is markdown-only — a .sh is never pasted by an agent", () => {
+		assert.strictEqual(
+			scanFencePortability("hooks/x.sh", "bash ./claude-plugins/kampus-pipeline/skills/a/b.sh")
+				.length,
+			0,
+		);
+	});
+});
+
+describe("lintCorpus — portability findings + scope (ADR 0092)", () => {
+	it("does NOT exempt write-code, the file that owns the most fences", () => {
+		const result = lintCorpus([
+			{
+				file: "skills/write-code/SKILL.md",
+				content: fenced("bash ./claude-plugins/kampus-pipeline/skills/write-code/scripts/a.sh"),
+			},
+		]);
+		assert.strictEqual(result.findings.length, 0); // gh-grep self-exempt
+		assert.strictEqual(result.portabilityFindings.length, 1); // portability check is NOT
+		assert.deepStrictEqual([...result.portabilityScanned], ["skills/write-code/SKILL.md"]);
+	});
+
+	it("is zero scope — a FAIL — when the portability check was handed no markdown", () => {
+		const result = lintCorpus([{file: "hooks/install.sh", content: "git push origin main"}]);
+		assert.strictEqual(result.portabilityScanned.length, 0);
 		assert.isTrue(isZeroScope(result));
 	});
 });

@@ -356,11 +356,16 @@ kp_repo() {
 # PATH, is not there, and dies `command not found` inside a fail-closed wrapper that would
 # launder the miss into a verdict (§CLI, ADR 0207). Exit 127 here means the CLI never ran —
 # UNKNOWN, never a clean or negative answer.
+# The fallback resolves from THIS FILE, never from `git rev-parse --show-toplevel`. The old git
+# derivation assumed the plugin is vendored in the repo the caller is standing in — true in phoenix,
+# false for every marketplace consumer, where it named a `claude-plugins/` directory that does not
+# exist and turned every verb call into a 127 (#4605). This file always sits at `<plugin>/lib/`,
+# in-repo or in a plugin cache, so its own location is the one true answer and needs no subprocess.
 kp_pcli() {
 	local root pcli
 	root="${CLAUDE_PLUGIN_ROOT:-}"
 	if [ -z "$root" ]; then
-		root="$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline"
+		root="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)"
 	fi
 	pcli="$root/bin/pipeline-cli"
 	if [ ! -x "$pcli" ]; then

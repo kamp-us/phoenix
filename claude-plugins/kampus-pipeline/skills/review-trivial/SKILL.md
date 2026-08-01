@@ -47,7 +47,7 @@ queries; every read and write goes through `gh api`. Resolve the target repo onc
 ADR 0062 §1):
 
 ```bash
-bash ./claude-plugins/kampus-pipeline/skills/review-trivial/scripts/resolve-repo.sh
+bash ./.claude/.pipeline/skills/review-trivial/scripts/resolve-repo.sh
 ```
 
 ## The extracted scripts
@@ -122,7 +122,7 @@ don't re-hard-code the list:
 
 ```bash
 PR=<pr number>
-HOLD="$(bash ./claude-plugins/kampus-pipeline/skills/review-trivial/scripts/step0-triviality.sh "$PR")"; RC=$?
+HOLD="$(bash ./.claude/.pipeline/skills/review-trivial/scripts/step0-triviality.sh "$PR")"; RC=$?
 ```
 
 **Read the exit status before the stdout, and read `$HOLD` as a hold, never as a summary.** A
@@ -191,7 +191,7 @@ come from the trusted base** — never load the head's `.claude/**` / `CLAUDE.md
 ```bash
 # Prints HEAD_SHA= / PR_REF= / ISSUE= on stdout; the linked issue's body (its ### Acceptance
 # criteria) goes to stderr. `eval` the three, or read them off the run log.
-eval "$(bash ./claude-plugins/kampus-pipeline/skills/review-trivial/scripts/materialize-head.sh "$PR")" || exit 1
+eval "$(bash ./.claude/.pipeline/skills/review-trivial/scripts/materialize-head.sh "$PR")" || exit 1
 ```
 
 The script runs §RO-iso's `iso_preflight` **first**, before any fetch, and shape-asserts the head SHA
@@ -238,7 +238,7 @@ Verify **all** of the following over the head diff. Each is conjunctive; **one m
    for a pasted secret. Scan the added hunks:
 
    ```bash
-   bash ./claude-plugins/kampus-pipeline/skills/review-trivial/scripts/secret-scan.sh "$PR_REF"
+   bash ./.claude/.pipeline/skills/review-trivial/scripts/secret-scan.sh "$PR_REF"
    ```
    Treat any hit as a finding to confirm by eye (a variable *named* `token` referencing a binding
    is fine; a literal secret value is a **FAIL**).
@@ -258,7 +258,7 @@ Verify **all** of the following over the head diff. Each is conjunctive; **one m
    ```bash
    # added lines only ('+'), scanned by the shared matcher: exit 0 = clean, 2 = leak found
    # any OTHER non-zero (4 = the fail-closed stdin read, #4010) is an UNRESOLVED scan, never a pass
-   bash ./claude-plugins/kampus-pipeline/skills/review-trivial/scripts/leak-scan.sh "$PR_REF"
+   bash ./.claude/.pipeline/skills/review-trivial/scripts/leak-scan.sh "$PR_REF"
    ```
    A repo-relative path (`apps/web/…`, `.decisions/…`) is fine; a hit is a **FAIL** — cite it by
    the class the scan names, never by quoting the matched token. A hit you suspect is a documented
@@ -315,7 +315,7 @@ and run-blind — which is exactly the ADR-0213 concurrent-reviewer clobber, and
 # bare SHA-bound marker (`review-<NS>: PASS @ <HEAD_SHA> — merge-ready`, or `FAIL … — not
 # merge-ready`). Passing $HEAD_SHA makes the script re-check the live head first and refuse if it
 # moved (§HEAD #4 / ADR 0058).
-printf '%s' "$BODY" | bash ./claude-plugins/kampus-pipeline/skills/review-trivial/scripts/verdict-post.sh "$PR" "$NS" "$HEAD_SHA"
+printf '%s' "$BODY" | bash ./.claude/.pipeline/skills/review-trivial/scripts/verdict-post.sh "$PR" "$NS" "$HEAD_SHA"
 ```
 
 ### Verdict body shape

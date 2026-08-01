@@ -48,12 +48,22 @@ Each step below is a script under [`scripts/`](scripts), **executed by literal p
 [0232](https://github.com/kamp-us/phoenix/blob/main/.decisions/0232-agents-execute-skill-scripts-never-source-them.md)).
 The harness's isolation verifier refuses `.` at an agent's top-level command by **any** path form, and
 refuses the interpolated `"${CLAUDE_PLUGIN_ROOT:-…}"` idiom as too complex to verify; a plain literal
-path is the one shape that runs. So every invocation looks like this, and the prose at each site names
-what to read off its stdout:
+path is the one shape that runs ([#4595](https://github.com/kamp-us/phoenix/issues/4595)'s controlled
+matrix). So every invocation looks like this, and the prose at each site names what to read off its
+stdout:
 
 ```bash
-bash ./claude-plugins/kampus-pipeline/skills/write-code/scripts/<script>.sh <args>
+bash ./.claude/.pipeline/skills/write-code/scripts/<script>.sh <args>
 ```
+
+**`.claude/.pipeline` is a symlink the hooks plant at the live plugin install, and the reason it
+exists is portability, not tidiness ([#4605](https://github.com/kamp-us/phoenix/issues/4605)).** The
+literal has to be true in *every* consuming repo, and `./claude-plugins/…` is true only inside a
+phoenix checkout — a marketplace consumer's install lives in their plugin cache, outside their repo,
+where that path is `No such file or directory`. A hook is a harness-*substituted* surface (it
+receives `CLAUDE_PLUGIN_ROOT`), an agent's top-level command is not, so the hooks are the one place
+that can know where the plugin actually is; the link is how they tell you. If it is missing, `bash`
+exits **127 with nothing on stdout** — which is UNKNOWN, never "the script answered no" (§ZS below).
 
 The handful of fences below that are *not* a script invocation — the milestone-drain read, the repair
 escalation — call `gh api` directly, so they resolve the target repo in their own fence:
@@ -216,7 +226,7 @@ namespaces) is an unaddressed FAIL:
 # Which of MY open PRs carry an unaddressed, current-head gate FAIL? An EMPTY answer means nothing of
 # mine needs repair, so empty is the PERMISSIVE reading — a non-zero exit (127 = the CLI never ran) is
 # UNKNOWN and must stop the run, never fall through to new work.
-bash ./claude-plugins/kampus-pipeline/skills/write-code/scripts/step1-repairable-prs.sh || exit 1
+bash ./.claude/.pipeline/skills/write-code/scripts/step1-repairable-prs.sh || exit 1
 ```
 
 If such a PR exists, **repair it instead of picking new work** — go to
@@ -245,7 +255,7 @@ bucket that has any unassigned candidate:
 
 ```bash
 # stdout IS the pool, one `#N<TAB>created_at<TAB>title` row per candidate, p0 rows first
-bash ./claude-plugins/kampus-pipeline/skills/write-code/scripts/step1-candidate-pool.sh || exit 1
+bash ./.claude/.pipeline/skills/write-code/scripts/step1-candidate-pool.sh || exit 1
 ```
 
 `(.pull_request | not)` filters out PRs (the issues endpoint returns both). Take the
@@ -331,7 +341,7 @@ sub-endpoint ADR
 ```bash
 # stdout IS the classification — an empty one is UNKNOWN, never "standalone". On a sub-issue its
 # first line is `EPIC=<n>`: that number, and never a guessed or remembered one, is Step 2's argument.
-bash ./claude-plugins/kampus-pipeline/skills/write-code/scripts/step1-parent-resolve.sh <N> || exit 1
+bash ./.claude/.pipeline/skills/write-code/scripts/step1-parent-resolve.sh <N> || exit 1
 ```
 
 - **Parent resolved (200)** → go to **Step 2** and derive eligibility before claiming.
@@ -359,7 +369,7 @@ eligibility is computed fresh on every pick from the epic's `## Dependencies` se
 ```bash
 # pass the parent number Step 1's sub-endpoint read RESOLVED (its `EPIC=` stdout line) — never a
 # guessed or remembered one. No topology read ⇒ UNKNOWN, never "no dependencies".
-bash ./claude-plugins/kampus-pipeline/skills/write-code/scripts/step2-epic-read.sh <EPIC> || exit 1
+bash ./.claude/.pipeline/skills/write-code/scripts/step2-epic-read.sh <EPIC> || exit 1
 ```
 
 **The derivation rule** (from the formats `## Dependencies` grammar):
@@ -439,7 +449,7 @@ session id must equal the threaded token — then proceed straight to implementi
 ```bash
 # pass the token the orchestrator threaded into your prompt; non-zero ⇒ delegation NOT confirmed,
 # do not implement
-bash ./claude-plugins/kampus-pipeline/skills/write-code/scripts/step3-delegated-claim.sh <N> "<threaded token>" || exit 1
+bash ./.claude/.pipeline/skills/write-code/scripts/step3-delegated-claim.sh <N> "<threaded token>" || exit 1
 ```
 
 ### Direct path — claim it yourself (no orchestrator)
@@ -453,7 +463,7 @@ Run it; never hand-roll a `claim:` body, which silently skips the ADR-0191 prese
 leaves this lane's claim permanently unprobeable (#3987):
 
 ```bash
-bash ./claude-plugins/kampus-pipeline/skills/write-code/scripts/step3-direct-claim.sh <N> || exit 1   # non-zero ⇒ NO claim was made; back off and re-pick
+bash ./.claude/.pipeline/skills/write-code/scripts/step3-direct-claim.sh <N> || exit 1   # non-zero ⇒ NO claim was made; back off and re-pick
 ```
 
 **The operating rule.** Posting the claim comment **detects** a race; the **checkpoint GET**
@@ -517,7 +527,7 @@ The token this run owns its work *under* is `MY_CLAIM`, resolved once at the top
 # prints `MY_CLAIM=<token>`; refuses (fail-closed) when neither token is set. Read it to SEE which
 # token this lane owns work under — every guarded site below resolves the SAME token internally,
 # because a shell variable does not survive to the next Bash call.
-bash ./claude-plugins/kampus-pipeline/skills/write-code/scripts/step3_5-my-claim.sh || exit 1
+bash ./.claude/.pipeline/skills/write-code/scripts/step3_5-my-claim.sh || exit 1
 ```
 
 ### The guard script — MANDATED before every issue/PR-number mutation
@@ -528,14 +538,14 @@ Gate **every** number-targeting mutation on it, exactly as
 contract**; it prints nothing on stdout, so never read its text for the answer:
 
 ```bash
-bash ./claude-plugins/kampus-pipeline/skills/write-code/scripts/step3_5-claim-is-mine.sh "<N>" || exit 1
+bash ./.claude/.pipeline/skills/write-code/scripts/step3_5-claim-is-mine.sh "<N>" || exit 1
 ```
 
 The calling convention, which every number-targeting mutation below follows:
 
 ```bash
 # the guard gates the mutation; never run the mutation without it
-bash ./claude-plugins/kampus-pipeline/skills/write-code/scripts/step3_5-claim-is-mine.sh "<N>" \
+bash ./.claude/.pipeline/skills/write-code/scripts/step3_5-claim-is-mine.sh "<N>" \
   && gh api repos/$REPO/issues/<N>/comments -f body="…"
 ```
 
@@ -632,7 +642,7 @@ checkout (or a bare/no-repo edge) ⇒ **stop**; differ ⇒ you're in a linked wo
 # stdout is `GITDIR=` / `COMMON=` / `WT=`; the scope line, the LOUD refusals and the CONFIRMED
 # assertion are on stderr. `exit 1` on every unsafe state, with NOTHING on stdout. `WT=` is the one
 # you act on: anchor every later Edit/Write and git op to that absolute root.
-bash ./claude-plugins/kampus-pipeline/skills/write-code/scripts/step4-preflight.sh || exit 1
+bash ./.claude/.pipeline/skills/write-code/scripts/step4-preflight.sh || exit 1
 ```
 
 The preflight is **fail-closed by construction**: it refuses on the primary checkout, on a
@@ -705,7 +715,7 @@ is intentionally left untouched here so the two changes can't double-implement o
 > construction as the opening preflight:
 >
 > ```bash
-> WT="$(bash ./claude-plugins/kampus-pipeline/skills/write-code/scripts/step4-wt-preflight.sh)" || exit 1
+> WT="$(bash ./.claude/.pipeline/skills/write-code/scripts/step4-wt-preflight.sh)" || exit 1
 > git -C "$WT" <commit|push|switch …>   # address git at the root the guard resolved; never mutate without it
 > ```
 >
@@ -790,7 +800,7 @@ latest origin `main` **without checking it out**:
 ```bash
 # prints `BRANCH=<name>`; no branch on non-zero. Read the name only to SEE it — every later git op
 # RE-DERIVES the branch live from the worktree HEAD (below).
-bash ./claude-plugins/kampus-pipeline/skills/write-code/scripts/step4-branch.sh <slug-for-issue-N> || exit 1
+bash ./.claude/.pipeline/skills/write-code/scripts/step4-branch.sh <slug-for-issue-N> || exit 1
 ```
 
 It's `git switch -c "$BRANCH" FETCH_HEAD` (not `git checkout main`) on purpose: in an
@@ -817,7 +827,7 @@ freshly-fetched `FETCH_HEAD` is the only flow that works — don't "fix" it back
 > worktree's HEAD:
 >
 > ```bash
-> WT="$(bash ./claude-plugins/kampus-pipeline/skills/write-code/scripts/step4-wt-preflight.sh)" || exit 1
+> WT="$(bash ./.claude/.pipeline/skills/write-code/scripts/step4-wt-preflight.sh)" || exit 1
 > BRANCH="$(git -C "$WT" branch --show-current)"   # live from the worktree — the source of truth, re-read at each git op
 > : "${BRANCH:?could not re-derive branch from worktree $WT — refusing to push to a guessed/cached ref}"
 > ```
@@ -1000,7 +1010,7 @@ as `none`**:
 
 ```bash
 # prints `CONTAINMENT=<flag|exempt|none>` — the first of Step 4b's two inputs
-bash ./claude-plugins/kampus-pipeline/skills/write-code/scripts/step4b-containment.sh <N> || exit 1
+bash ./.claude/.pipeline/skills/write-code/scripts/step4b-containment.sh <N> || exit 1
 ```
 
 **Graceful absence — the dark-ship behavior applies only when there's a cycle.** It fires **only**
@@ -1015,7 +1025,7 @@ graceful-absence contract `plan-epic` (stamp) and `review-code` (verify) honor.
 ```bash
 # the canonical cycle-doc probe (formats §1) — relayed to the SHARED script, never copied; stdout is
 # `present` or `absent`. Absent ⇒ no cycle ⇒ ship normally, no flag.
-CYCLE_DOC="$(bash ./claude-plugins/kampus-pipeline/skills/write-code/scripts/step4b-cycle-doc.sh)" || exit 1
+CYCLE_DOC="$(bash ./.claude/.pipeline/skills/write-code/scripts/step4b-cycle-doc.sh)" || exit 1
 # ship dark ONLY when:  [ "$CONTAINMENT" = flag ] && [ "$CYCLE_DOC" = present ]
 ```
 
@@ -1211,7 +1221,7 @@ never blessed. The pointer is the committed source of truth (`packages/design-ca
 its `surfaces` map keyed by the same `<route>[:state]` capture surface-id):
 
 ```bash
-bash ./claude-plugins/kampus-pipeline/skills/write-code/scripts/step4d-blessed-surfaces.sh   # prints `POINTER=<path>` then one blessed surface-id per line
+bash ./.claude/.pipeline/skills/write-code/scripts/step4d-blessed-surfaces.sh   # prints `POINTER=<path>` then one blessed surface-id per line
 ```
 
 **The reference-anchored loop — consume the seam, never re-implement the diff.** For each blessed
@@ -1332,7 +1342,7 @@ one by one against what this diff actually delivers** — the same checklist `re
 grade against:
 
 ```bash
-bash ./claude-plugins/kampus-pipeline/skills/write-code/scripts/step5-acceptance-criteria.sh <N> || exit 1   # stdout IS the checklist — an empty one is UNKNOWN, never "no ACs"
+bash ./.claude/.pipeline/skills/write-code/scripts/step5-acceptance-criteria.sh <N> || exit 1   # stdout IS the checklist — an empty one is UNKNOWN, never "no ACs"
 ```
 
 - **All ACs met by this diff → `Fixes #N`** (the default full close, below).
@@ -1455,7 +1465,7 @@ re-derive them here. Two operational points that are yours, not the contract's:
 
 ```bash
 # push CONFIRMED on the remote + #N proven mine, or nothing happened. stdout is `WT=` and `BRANCH=`.
-bash ./claude-plugins/kampus-pipeline/skills/write-code/scripts/step5-push.sh <N> || exit 1
+bash ./.claude/.pipeline/skills/write-code/scripts/step5-push.sh <N> || exit 1
 ```
 
 Then open the PR. The body is a **template you author**, so it stays here rather than in a script:
@@ -1493,7 +1503,7 @@ itself**: read the PR body back and assert it matches a recognized closing keywo
 `#N` — that is exactly the token GitHub auto-closes on and that `ship-it` Step 1 resolves:
 
 ```bash
-bash ./claude-plugins/kampus-pipeline/skills/write-code/scripts/step5-seam-checks.sh <N> <PR> || exit 1   # stdout IS the five verdicts — silence is UNKNOWN, never "armed"
+bash ./.claude/.pipeline/skills/write-code/scripts/step5-seam-checks.sh <N> <PR> || exit 1   # stdout IS the five verdicts — silence is UNKNOWN, never "armed"
 ```
 
 If (b) reports a broken seam, the body links `#N` with **neither** a closing keyword **nor**
@@ -1547,7 +1557,7 @@ error**, posting another issue's ledger onto yours (#3718, the same silent-clobb
 ```bash
 # compose the four-section comment at "$RUN_SCRATCH/progress.md" FIRST; the script re-derives the same
 # session-keyed §SP path (it names it on stderr) and refuses to post an empty body.
-bash ./claude-plugins/kampus-pipeline/skills/write-code/scripts/step6-progress-comment.sh <N> || exit 1
+bash ./.claude/.pipeline/skills/write-code/scripts/step6-progress-comment.sh <N> || exit 1
 ```
 
 Assemble the comment from a temp file so multi-line markdown and backticks survive the
@@ -1606,7 +1616,7 @@ silently. A blocked handoff is a fail-loud condition, never a silent no-op.
 
 ```bash
 # write the handoff to "$RUN_SCRATCH/handoff.md" FIRST; the script gates the post on owning the CHILD.
-bash ./claude-plugins/kampus-pipeline/skills/write-code/scripts/step7-epic-handoff.sh <N> <EPIC> || exit 1
+bash ./.claude/.pipeline/skills/write-code/scripts/step7-epic-handoff.sh <N> <EPIC> || exit 1
 ```
 
 Distill, don't dump — the fine detail lives in the child's progress comments and PR.
@@ -1631,7 +1641,7 @@ thing and then stop.
 The claim you took in Step 3 protected *this* build. The build is over, so give it up:
 
 ```bash
-bash ./claude-plugins/kampus-pipeline/skills/write-code/scripts/step8-claim-release.sh <N> || exit 1   # non-zero ⇒ the claim was NOT released
+bash ./.claude/.pipeline/skills/write-code/scripts/step8-claim-release.sh <N> || exit 1   # non-zero ⇒ the claim was NOT released
 ```
 
 **Why this is mandatory, not tidy-up.** A claim that outlives its run never expires, and the
@@ -1776,7 +1786,7 @@ a **diagnosis** and the *routing* of its findings, not a feature branch:
    ```bash
    # closing #N is a number-targeting mutation — gate it on the mis-attribution guard (Step 3.5)
    # so a mis-attributed number never closes another agent's live issue (the #1404 class).
-   bash ./claude-plugins/kampus-pipeline/skills/write-code/scripts/step3_5-claim-is-mine.sh "<N>" \
+   bash ./.claude/.pipeline/skills/write-code/scripts/step3_5-claim-is-mine.sh "<N>" \
      || { echo "refusing to close #<N> — not my claim (Step 3.5)"; exit 1; }
    gh api repos/$REPO/issues/<N>/comments -f body="$DIAGNOSIS"
    gh api -X PATCH repos/$REPO/issues/<N> -f state=closed -f state_reason=completed

@@ -5,6 +5,15 @@
 	"hooks": {
 		"PreToolUse": [
 			{
+				"matcher": "Bash|Read|Edit|Write",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "\"$CLAUDE_PROJECT_DIR/claude-plugins/kampus-pipeline/hooks/plant-link-pretooluse.sh\""
+					}
+				]
+			},
+			{
 				"matcher": "Read|Edit|Write",
 				"hooks": [
 					{

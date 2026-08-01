@@ -99,7 +99,7 @@ failed the trace test was already routed to `report`; if one reaches you anyway,
 four gates run:
 
 ```bash
-bash ./claude-plugins/kampus-pipeline/skills/shared/scripts/reviewer-append-ac.sh \
+bash ./.claude/.pipeline/skills/shared/scripts/reviewer-append-ac.sh \
   <ISSUE> <PR> <ROUND_K> <review-code|review-doc|review-skill|review-plan> \
   "<criterion — observable, checkable from the outside>" \
   "<finding — the in-scope defect; what an AC would have required>"

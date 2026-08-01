@@ -107,7 +107,7 @@ systematically over-ranked against a marker rewritten after it (#4200).
 #
 # A non-zero exit means NO verdict was resolved (127 = the CLI never ran) — UNKNOWN, and never
 # "nothing to repair".
-bash ./claude-plugins/kampus-pipeline/skills/write-code/scripts/stepR1-verdicts.sh <PR> || exit 1
+bash ./.claude/.pipeline/skills/write-code/scripts/stepR1-verdicts.sh <PR> || exit 1
 ```
 
 **A namespace that did not resolve at all is UNKNOWN, not "no FAIL" — defer, don't skip.** If
@@ -152,7 +152,7 @@ below are additive to this list, not a substitute for it):
 # R1's payload out of the §SP scratch dir R1 wrote, so run R1 first; an absent payload refuses.
 # stdout is `CID=<comment id>` and `FAILBODY_FILE=<path>`, then the FAIL marker body itself. `$CID` is
 # what R3's thread reply is addressed at; the body file is what the freeze fence reads.
-bash ./claude-plugins/kampus-pipeline/skills/write-code/scripts/stepR2-fail-body.sh <PR> code || exit 1
+bash ./.claude/.pipeline/skills/write-code/scripts/stepR2-fail-body.sh <PR> code || exit 1
 ```
 
 #### A review-appended AC is an ordinary `[FAIL]` row — no special parser (ADR 0079)
@@ -215,7 +215,7 @@ is actionable only when its `line` is non-null. This is the inline-comment analo
 ```bash
 # stdout IS the additive fix list, one {id, path, line, body} object per in-scope comment. It reads
 # the write+ author set R1 wrote to the §SP scratch dir; an absent set refuses (R1 never ran here).
-bash ./claude-plugins/kampus-pipeline/skills/write-code/scripts/stepR2-inline-comments.sh <PR> || exit 1
+bash ./.claude/.pipeline/skills/write-code/scripts/stepR2-inline-comments.sh <PR> || exit 1
 ```
 
 For context on *what the PR was supposed to do*, resolve the **linked issue** via the PR
@@ -225,7 +225,7 @@ verified) and the progress trail:
 ```bash
 # stdout is `N=<the PR's linked issue>` first, then that issue's body and comment stream. `$N` is the
 # number every later repair mutation is claim-gated on, so an unresolvable `Fixes #N` refuses.
-bash ./claude-plugins/kampus-pipeline/skills/write-code/scripts/stepR2-linked-issue.sh <PR> || exit 1
+bash ./.claude/.pipeline/skills/write-code/scripts/stepR2-linked-issue.sh <PR> || exit 1
 ```
 
 Check out the **existing PR branch** and fix on it — **no new branch** (a new branch would
@@ -236,7 +236,7 @@ orphan the PR and the gate's history):
 # stdout is `WT=<root>` — the tree the switch and rebase happened in, and the tree R3's push must be
 # addressed at. Non-zero ⇒ nothing was switched, or the rebase stopped on a conflict (resolve it in
 # $WT and re-run; never `git rebase --abort`).
-bash ./claude-plugins/kampus-pipeline/skills/write-code/scripts/stepR2-branch-rebase.sh <PR> <N> <the PR's head branch> || exit 1
+bash ./.claude/.pipeline/skills/write-code/scripts/stepR2-branch-rebase.sh <PR> <N> <the PR's head branch> || exit 1
 # then apply the fixes addressing exactly the enumerated findings
 ```
 
@@ -301,7 +301,7 @@ unreliable in this org).
 
 ```bash
 # write the format-3 repair note to "$RUN_SCRATCH/repair-progress.md" FIRST.
-bash ./claude-plugins/kampus-pipeline/skills/write-code/scripts/stepR3-push-and-note.sh <PR> <N> || exit 1   # push CONFIRMED on the remote, or nothing landed
+bash ./.claude/.pipeline/skills/write-code/scripts/stepR3-push-and-note.sh <PR> <N> || exit 1   # push CONFIRMED on the remote, or nothing landed
 ```
 
 **Acknowledge the inline threads you addressed** so the loop is visible to the reviewer who
@@ -310,7 +310,7 @@ you changed (REST, on the same review-comment thread):
 
 ```bash
 # <CID> is stepR2-fail-body.sh's `CID=` line — the thread this round answered
-bash ./claude-plugins/kampus-pipeline/skills/write-code/scripts/stepR3-thread-reply.sh <PR> <CID> "Addressed in <short-sha>: <one line on the fix>." || exit 1
+bash ./.claude/.pipeline/skills/write-code/scripts/stepR3-thread-reply.sh <PR> <CID> "Addressed in <short-sha>: <one line on the fix>." || exit 1
 ```
 
 **Release the lane's claim before you stop**, exactly as Step 8 does for the initial build — the
@@ -318,7 +318,7 @@ repair round is over, and a claim left held is what makes the *next* repair disp
 read `lost` (#3780; the observed stall was a repair refused by a claim whose run had finished):
 
 ```bash
-bash ./claude-plugins/kampus-pipeline/skills/write-code/scripts/step8-claim-release.sh <N> || exit 1   # the SAME script Step 8 runs — retract OUR OWN marker; never another session's
+bash ./.claude/.pipeline/skills/write-code/scripts/step8-claim-release.sh <N> || exit 1   # the SAME script Step 8 runs — retract OUR OWN marker; never another session's
 ```
 
 A reply is the acknowledgement this skill performs. **Resolving** the thread (collapsing it)
@@ -355,7 +355,7 @@ R1 (reuse its `$comments_file` + `$authorized`) — only a real reviewer's FAIL 
 ```bash
 # stdout IS the round count, one integer; it reads the author set + comment stream R1 wrote to the
 # §SP scratch dir. Empty stdout is UNKNOWN, never 0 rounds — read the status before the number.
-bash ./claude-plugins/kampus-pipeline/skills/write-code/scripts/stepR-round-count.sh <PR> || exit 1
+bash ./.claude/.pipeline/skills/write-code/scripts/stepR-round-count.sh <PR> || exit 1
 ```
 
 If this PR has **already had 3 FAIL→fix rounds** (you'd be pushing a 4th fix against a 4th
@@ -368,7 +368,7 @@ FAIL), **stop fixing and escalate** instead of pushing again:
 # fail-closed so a mis-dispatched repair never comments-on/relabels another agent's live issue (the
 # #1404 class — the relabel is more disruptive than a comment).
 REPO="${CLAUDE_PIPELINE_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}"
-bash ./claude-plugins/kampus-pipeline/skills/write-code/scripts/step3_5-claim-is-mine.sh "$N" \
+bash ./.claude/.pipeline/skills/write-code/scripts/step3_5-claim-is-mine.sh "$N" \
   || { echo "refusing to escalate PR #$PR — its linked issue #$N is not my claim (Step 3.5)"; exit 1; }
 gh api repos/$REPO/issues/$N/comments -f body="$(cat <<'EOF'
 ### Repair escalation — PR #<PR> still FAILing after 3 rounds
@@ -421,7 +421,7 @@ final repair round**, i.e. its tagged `round` ≥ `N` (= 3). Concretely, for eac
 # reads the resolving FAIL marker body stepR2-fail-body.sh wrote to the §SP scratch dir. stdout is one
 # `FROZEN appended AC …` line per frozen criterion — EMPTY means none is frozen, which is why an
 # absent body refuses rather than answer empty.
-bash ./claude-plugins/kampus-pipeline/skills/write-code/scripts/stepR-frozen-ac.sh <PR> || exit 1
+bash ./.claude/.pipeline/skills/write-code/scripts/stepR-frozen-ac.sh <PR> || exit 1
 ```
 
 If **any** `ac:review-*` row in the current FAIL table is frozen (`round >= 3`), take the

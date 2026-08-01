@@ -8,7 +8,7 @@ is a **contract**, not a formatting choice.
 
 It became load-bearing when [ADR 0232](../.decisions/0232-agents-execute-skill-scripts-never-source-them.md)
 made **stdout the return channel**: an isolated agent runs
-`bash ./claude-plugins/kampus-pipeline/skills/<skill>/scripts/<script>.sh` and reads the result off
+`bash ./.claude/.pipeline/skills/<skill>/scripts/<script>.sh` and reads the result off
 stdout, because sourcing at an agent's top-level command is refused by the harness. A diagnostic
 printed on stdout is therefore not noise — it is **corruption of the return value**. That already
 happened once: `cp_changed_files` put its §ZS scope sentence on stdout, a consumer whose stdout is a

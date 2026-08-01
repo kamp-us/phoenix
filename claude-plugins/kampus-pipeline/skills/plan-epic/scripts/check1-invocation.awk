@@ -56,6 +56,11 @@ function classify(l,   c, t, u) {
 	# either run directly or captured. The skills MANDATE this shape (ADR 0207 — the shim is not on
 	# PATH), so it can never be glue. Anchored: a verb name must follow the shim at the START of the
 	# command, so a shim path buried mid-pipeline stays unrecognized.
+	# The third alternative — the CAPTURED verb call — is the weakest leg here, and saying so is the
+	# point: its `[^)]*` cannot span a `)`, so a capture whose substitution carries one simply falls
+	# out of the clause and is judged by the other legs. Do not credit it with holding a property on
+	# its own; the teeth are the first clause (a skill-local script executed by path) plus the
+	# `composes()` clamp, both of which are line-shape-blind (#4605 acceptance condition 5).
 	if (!composes(c) && (u ~ /^\$\{?PCLI\}?[[:space:]]+[a-z][a-z0-9-]*/ ||
 	                     u ~ /^[^[:space:]]*bin\/pipeline-cli[[:space:]]+[a-z][a-z0-9-]*/ ||
 	                     u ~ /^[A-Za-z_][A-Za-z0-9_]*=\$\([^)]*(\$\{?PCLI\}?|bin\/pipeline-cli)[[:space:]]+[a-z][a-z0-9-]*/)) return 1

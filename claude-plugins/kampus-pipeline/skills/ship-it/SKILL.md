@@ -96,7 +96,7 @@ REPO="${CLAUDE_PIPELINE_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOw
 This skill's steps are scripts under `scripts/`, and you **run** them:
 
 ```bash
-bash ./claude-plugins/kampus-pipeline/skills/ship-it/scripts/<name>.sh <args…>
+bash ./.claude/.pipeline/skills/ship-it/scripts/<name>.sh <args…>
 ```
 
 Two constraints make that the only shape, and both are the harness's: its isolation verifier refuses
@@ -188,7 +188,7 @@ each of those steps prints `INTENT_UNCLEARED=<0|1>` and that is what your outcom
 it directly only to clear an intent outside a step (stdout is the same one line):
 
 ```bash
-bash ./claude-plugins/kampus-pipeline/skills/ship-it/scripts/disarm-intent.sh <owner/repo> <pr> <preflight|refuse|post-enqueue|ejected>
+bash ./.claude/.pipeline/skills/ship-it/scripts/disarm-intent.sh <owner/repo> <pr> <preflight|refuse|post-enqueue|ejected>
 ```
 
 **Site 1 is Step 0's `disarm_intent preflight || exit 1`, and it is the one that catches the
@@ -283,7 +283,7 @@ Before anything else, read the PR's changed files and split them by class. This 
 # stdout: `PR=<n>` — the run's PR, which you re-pass as every later step's second argument — then one
 # changed-file path per line. A refusal (the §RO-iso stop, or a guard-6 Site-1 disarm that failed)
 # prints NO `PR=` line, names itself on stderr, and exits non-zero: read the status first.
-bash ./claude-plugins/kampus-pipeline/skills/ship-it/scripts/step0-preflight.sh <owner/repo> <pr number>
+bash ./.claude/.pipeline/skills/ship-it/scripts/step0-preflight.sh <owner/repo> <pr number>
 ```
 
 Classify each path. The classification is **derived by the shared verb `pipeline-cli cp-classify`**,
@@ -365,7 +365,7 @@ UI_EXCLUDE_RE='\.(test|spec)\.tsx?$'
 # surface. The ordinary §CP answer is the ABSENCE of a BLOCKING line, so read `CP_STATE=` as the
 # evidence the derivation ran — never emptiness. A classification that could not be made prints
 # `STOP: …` and exits 1; that is UNKNOWN, never "no gates required".
-bash ./claude-plugins/kampus-pipeline/skills/ship-it/scripts/step0-classify.sh <owner/repo> <pr number>
+bash ./.claude/.pipeline/skills/ship-it/scripts/step0-classify.sh <owner/repo> <pr number>
 ```
 
 **Routing:**
@@ -448,7 +448,7 @@ bash ./claude-plugins/kampus-pipeline/skills/ship-it/scripts/step0-classify.sh <
   # stdout: exactly one `§CP approval: …` line, plus `CP_FLAG=--cp` on the discharge branch only —
   # that token is the Step-2 seam, and this is its only source. A branch that could not answer names
   # the failed read on stderr and exits 1: UNKNOWN, never `awaiting control-plane approval`.
-  bash ./claude-plugins/kampus-pipeline/skills/ship-it/scripts/step0-cp-approval.sh <owner/repo> <pr number>
+  bash ./.claude/.pipeline/skills/ship-it/scripts/step0-cp-approval.sh <owner/repo> <pr number>
   ```
 
   This is **only** the §CP unblock — it does not weaken any other guard. The SHA-bound gate verdict
@@ -668,7 +668,7 @@ dispatches off, so `dispatched-gate == required-gate` holds by construction:
 # stdout: one `ship-it guard 1: …` line naming the required namespaces. The EXIT STATUS is the gate —
 # 0 only when `verdict gate` passed every required namespace; every refusal names itself on stderr
 # and exits 1. Pass `--cp` as the THIRD argument only when Step 0's approval gate printed it.
-bash ./claude-plugins/kampus-pipeline/skills/ship-it/scripts/step2-verdict-gate.sh <owner/repo> <pr number> [--cp]
+bash ./.claude/.pipeline/skills/ship-it/scripts/step2-verdict-gate.sh <owner/repo> <pr number> [--cp]
 ```
 
 **The one input this step takes beyond the PR is the §CP seam, and Step 0 already decided it.** Step
@@ -796,7 +796,7 @@ not reviews), and that fold applies the ADR-0058 staleness test inline, at the f
 # verdict. Carry `CURRENT_HEAD` forward: Step 3's settle wait compares against it to catch a head
 # that moved mid-poll. The exit status answers "could I resolve them", never "is it a PASS" — a
 # folded FAIL is `CODE_FAIL=1` at exit 0. Pass the same `--cp` token Step 2's gate got, or omit it.
-bash ./claude-plugins/kampus-pipeline/skills/ship-it/scripts/step2-native-review-fold.sh <owner/repo> <pr number> [--cp]
+bash ./.claude/.pipeline/skills/ship-it/scripts/step2-native-review-fold.sh <owner/repo> <pr number> [--cp]
 ```
 
 Now resolve **per namespace** (the marker verdict from the verb above, the native review + §CP
@@ -1056,7 +1056,7 @@ re-derive the query (#3762).
 # input the branches below read. An empty RUNNING/WEDGED/GATING_RED is the all-green answer, so the
 # lines are always printed; an unreadable head instead prints `refused — head CI unreadable …` plus
 # `INTENT_UNCLEARED=<0|1>` and exits 0 (a successful decline). Read for `CONTEXTS=`, not the status.
-bash ./claude-plugins/kampus-pipeline/skills/ship-it/scripts/step3-rollup-bindings.sh <owner/repo> <pr number>
+bash ./.claude/.pipeline/skills/ship-it/scripts/step3-rollup-bindings.sh <owner/repo> <pr number>
 ```
 
 **Parser-held — keep that source line inside this section.** The script's `jq` rollup bindings
@@ -1112,7 +1112,7 @@ absence):
 ```bash
 # stdout: `HEAD_SHA=<40-hex>`, `NWF=<n>`, `NRUNS=<n>`. Both counts already carry their fail-safe
 # substitute when the lookup itself failed, so the printed number is the one to branch on.
-bash ./claude-plugins/kampus-pipeline/skills/ship-it/scripts/step3-empty-checkset-probe.sh <owner/repo> <pr number>
+bash ./.claude/.pipeline/skills/ship-it/scripts/step3-empty-checkset-probe.sh <owner/repo> <pr number>
 ```
 
 Classify in this order (a `skipped` / `cancelled` conclusion is non-blocking — neither a failure
@@ -1205,7 +1205,7 @@ false-green Step 3z guards (that state is branch 3, never reached from here):
 # stdout: a progress line per poll, then ONE terminal line — `gating checks settled green after …`
 # (proceed to Step 3.5), `routed to heal-ci …`, or a `refused — …` — plus `INTENT_UNCLEARED=<0|1>`.
 # Every disposition is a successful decline and exits 0: read the TERMINAL WORD, not the status.
-bash ./claude-plugins/kampus-pipeline/skills/ship-it/scripts/step3-ci-settle-wait.sh <owner/repo> <pr number> <CURRENT_HEAD>
+bash ./.claude/.pipeline/skills/ship-it/scripts/step3-ci-settle-wait.sh <owner/repo> <pr number> <CURRENT_HEAD>
 ```
 
 The three returns are the **whole guarantee**: `0` reaches the enqueue, `2` routes a mid-wait red
@@ -1282,7 +1282,7 @@ loop:
 # THAT commit, so a guessed head would mis-count them and re-nudge a head already nudged once.
 # stdout: one terminal line — `nudged (close→reopen) …` or `unverified (no runs fired …)` — plus
 # `INTENT_UNCLEARED=<0|1>`. Both are successful declines and exit 0; read the terminal word.
-bash ./claude-plugins/kampus-pipeline/skills/ship-it/scripts/step3z-dropped-trigger.sh <owner/repo> <pr number> <HEAD_SHA>
+bash ./.claude/.pipeline/skills/ship-it/scripts/step3z-dropped-trigger.sh <owner/repo> <pr number> <HEAD_SHA>
 ```
 
 The nudge **never bypasses verification** — it only restores the *missing runs*. A nudged PR
@@ -1320,7 +1320,7 @@ below (that's a real gap, not portability).
 ```bash
 # stdout: `HAS_PRODUCER=<n>`, plus the `guard 2 N/A …` line at 0. The NUMBER is the answer, and a 0
 # is reached only on a CONFIRMED-empty lookup — an unread one degrades to the strict path, never here.
-bash ./claude-plugins/kampus-pipeline/skills/ship-it/scripts/step3_5-producer-preflight.sh <owner/repo>
+bash ./.claude/.pipeline/skills/ship-it/scripts/step3_5-producer-preflight.sh <owner/repo>
 ```
 
 When a producer **is** present (the phoenix home repo, or any adopter that ships the
@@ -1340,7 +1340,7 @@ helper later if a third consumer appears.
 # genuine absence (that IS assertion 1b's input), so every line is printed unconditionally: an absent
 # line would mean the fetch never ran. The bundle itself stays on disk under the per-run `mktemp -d`
 # that `MANIFEST=` points into — the one piece of cross-step state a process boundary does not lose.
-bash ./claude-plugins/kampus-pipeline/skills/ship-it/scripts/step3_5-fetch-artifact.sh <owner/repo> <pr number>
+bash ./.claude/.pipeline/skills/ship-it/scripts/step3_5-fetch-artifact.sh <owner/repo> <pr number>
 ```
 
 Now assert the bundle, **failing closed** on each check — an unreachable upstream, a missing
@@ -1357,7 +1357,7 @@ genuine-absence case (1b), since a transport failure leaves the bundle fields em
 # stdout: NOTHING when all four assertions hold — guard 2 cleared; otherwise the ONE `unverified (…)`
 # / `run-evidence checks failed (…)` line plus `INTENT_UNCLEARED=<0|1>`, at exit 0 (a successful
 # decline). Read the line, not the status.
-bash ./claude-plugins/kampus-pipeline/skills/ship-it/scripts/step3_5-assert-bundle.sh \
+bash ./.claude/.pipeline/skills/ship-it/scripts/step3_5-assert-bundle.sh \
   <owner/repo> <pr number> <ART_FETCH_STATUS> <RUN_ID> <ART_ID> <MANIFEST> <HEAD_SHA> <ART_FETCH_ERR>
 ```
 
@@ -1500,7 +1500,7 @@ Discrimination is live-verified on this org: `github-advanced-security` and
 # ZERO objects at exit 0 is the ordinary clean answer — no unresolved threads. A read that could not
 # execute prints its two `STOP:` / refusal lines plus `INTENT_UNCLEARED=<0|1>` and exits 1, so the
 # status is what tells "no threads" from "no answer": never read emptiness as clean.
-bash ./claude-plugins/kampus-pipeline/skills/ship-it/scripts/step3_6-threads-read.sh <owner/repo> <pr number>
+bash ./.claude/.pipeline/skills/ship-it/scripts/step3_6-threads-read.sh <owner/repo> <pr number>
 ```
 
 ### Disposition — class first, then (bot only) substantive-vs-nit
@@ -1570,7 +1570,7 @@ matcher `redact-leaks` and `verdict post` already consume — one detector, not 
 # stdout: `LEAK_SCAN=clean` when guard 4 clears — a positive token, because this guard's clean answer
 # is otherwise silence and silence is also what a scan that never ran looks like. A leak, or an
 # unresolved shim, names itself on stderr, prints `INTENT_UNCLEARED=<0|1>`, and exits 1.
-bash ./claude-plugins/kampus-pipeline/skills/ship-it/scripts/step3_7-leak-scan.sh <owner/repo> <pr number>
+bash ./.claude/.pipeline/skills/ship-it/scripts/step3_7-leak-scan.sh <owner/repo> <pr number>
 ```
 
 Refuse **fail-closed**, exactly like the other pre-enqueue guards: a non-zero `scan-pr` (a live leak)
@@ -1637,7 +1637,7 @@ field, which gh 2.62.0 rejects, #1930). See ADR 0132 addendum §3.
 # stdout: the two PR-state objects, then `QUEUE_STATE=<merged|queued|pending|ejected>` — that last
 # line is the answer. An unresolved shim prints no `QUEUE_STATE=` line, names itself, and exits 1:
 # could-not-run is UNKNOWN, never a queue outcome.
-bash ./claude-plugins/kampus-pipeline/skills/ship-it/scripts/step5-confirm-enqueued.sh <owner/repo> <pr number>
+bash ./.claude/.pipeline/skills/ship-it/scripts/step5-confirm-enqueued.sh <owner/repo> <pr number>
 ```
 
 **Why the verb and not a `gh api …/timeline` one-liner here.** This confirmation used to
@@ -1734,7 +1734,7 @@ reconcile shells out to it per poll and branches on the printed outcome word:
 # `INTENT_UNCLEARED=<0|1>`, then `MERGE_DISPOSITION=<text>` last (it is the only multi-word value, so
 # take the rest of that line verbatim into the ledger's `merge:` line). An unresolved shim prints
 # none of them and exits 1 — a reconcile that never ran is UNKNOWN, not `pending`.
-bash ./claude-plugins/kampus-pipeline/skills/ship-it/scripts/step5_5-reconcile.sh <owner/repo> <pr number>
+bash ./.claude/.pipeline/skills/ship-it/scripts/step5_5-reconcile.sh <owner/repo> <pr number>
 ```
 
 **Parser-held — keep that source line inside this section.** The script's `RECONCILE_TRIES` /
@@ -1947,7 +1947,7 @@ behavior is exactly as it was before this dimension existed:
 # Hand it the linked issue Step 1 resolved. stdout: one line, `RELEASE_QUEUE=queued (awaiting human
 # flip)` or `RELEASE_QUEUE=n/a (not a dark ship)` — the ledger value. No linked issue ⇒ nothing to
 # queue ⇒ the `n/a` no-op, unchanged.
-bash ./claude-plugins/kampus-pipeline/skills/ship-it/scripts/step5b-release-queue.sh <owner/repo> <pr number> <linked issue>
+bash ./.claude/.pipeline/skills/ship-it/scripts/step5b-release-queue.sh <owner/repo> <pr number> <linked issue>
 ```
 
 The `status:awaiting-release` label is **orthogonal to the `status:*` pickability spine** — it

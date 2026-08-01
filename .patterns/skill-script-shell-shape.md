@@ -58,8 +58,14 @@ that one survives on the header idiom below.
 ## The two invocation classes — executed and sourced
 
 The rule above is the **executed** class's shape, and executed is the sanctioned class: an agent
-runs a skill script as `bash ./claude-plugins/kampus-pipeline/skills/<skill>/scripts/<script>.sh`
+runs a skill script as `bash ./.claude/.pipeline/skills/<skill>/scripts/<script>.sh`
 and reads the results off stdout ([ADR 0232](../.decisions/0232-agents-execute-skill-scripts-never-source-them.md)).
+The `.claude/.pipeline` prefix is a symlink the plugin's hooks plant at the live install: a fence may
+carry no expansion at all, so the only path that resolves both in this repo and in a marketplace
+consumer's tree is a literal the consuming repo itself provides
+([#4605](https://github.com/kamp-us/phoenix/issues/4605); the mechanism is in the plugin's
+[README](../claude-plugins/kampus-pipeline/README.md)). **A missing link is exit 127 with empty
+stdout — UNKNOWN by the §ZS rule above, never a negative answer.**
 
 The corpus also holds a **sourced** class — the ~61 files that set *no* shell options at all. Read
 them as history, not as a choice on offer:
