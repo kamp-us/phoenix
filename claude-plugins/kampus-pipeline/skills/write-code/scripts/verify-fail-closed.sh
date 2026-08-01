@@ -35,12 +35,13 @@ echo "=== 1. §ZS: every seam refuses with a NON-ZERO exit and ZERO stdout bytes
 # its namespace argument is defaulted: the property under test is that a no-argument RUN produces no
 # answer, and it holds there too (its PR seam is required), so excluding it would leave the harness
 # claiming less than its own scope (#4503 review).
-SEAMED="step1-parent-resolve.sh step2-epic-read.sh step3-delegated-claim.sh step3-direct-claim.sh
-        step3_5-claim-is-mine.sh step4-branch.sh step4b-containment.sh step5-acceptance-criteria.sh
+SEAMED="step1-milestone-pool.sh step1-parent-resolve.sh step2-epic-read.sh step3-delegated-claim.sh
+        step3-direct-claim.sh step3_5-claim-is-mine.sh step4-branch.sh step4-live-branch.sh
+        step4b-containment.sh step5-acceptance-criteria.sh
         step5-push.sh step5-seam-checks.sh step6-progress-comment.sh step7-epic-handoff.sh
         step8-claim-release.sh stepR1-verdicts.sh stepR-frozen-ac.sh stepR-round-count.sh
         stepR2-branch-rebase.sh stepR2-fail-body.sh stepR2-inline-comments.sh stepR2-linked-issue.sh
-        stepR3-push-and-note.sh stepR3-thread-reply.sh"
+        stepR3-push-and-note.sh stepR3-thread-reply.sh type-investigation-close.sh"
 for s in $SEAMED; do
   bash "$DIR/$s" > "$TMP/out" 2> "$TMP/err"
   rc=$?

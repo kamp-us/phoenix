@@ -298,11 +298,7 @@ Milestone shapes the pick in two modes:
   filter and pick from it by the **same** priority-then-age order:
 
   ```bash
-  # explicit milestone drain: same priority spine, scoped to milestone N (REST, never GraphQL)
-  for P in p0 p1 p2; do
-    gh api "repos/$REPO/issues?state=open&milestone=$N&labels=status:triaged,$P&sort=created&direction=asc&per_page=100" \
-      --jq '.[] | select(.assignee == null and (.pull_request | not)) | "#\(.number)\t\(.created_at)\t\(.title)"'
-  done
+  bash ./claude-plugins/kampus-pipeline/skills/write-code/scripts/step1-milestone-pool.sh <milestone-number> || exit 1   # stdout IS the milestone-scoped pool — silence is UNKNOWN, never "drained"
   ```
 
   Even here the priority spine wins **inside** the milestone (p0s in the milestone before
@@ -818,8 +814,7 @@ freshly-fetched `FETCH_HEAD` is the only flow that works — don't "fix" it back
 >
 > ```bash
 > WT="$(bash ./claude-plugins/kampus-pipeline/skills/write-code/scripts/step4-wt-preflight.sh)" || exit 1
-> BRANCH="$(git -C "$WT" branch --show-current)"   # live from the worktree — the source of truth, re-read at each git op
-> : "${BRANCH:?could not re-derive branch from worktree $WT — refusing to push to a guessed/cached ref}"
+> BRANCH="$(bash ./claude-plugins/kampus-pipeline/skills/write-code/scripts/step4-live-branch.sh "$WT")" || exit 1   # stdout IS the branch, live from the worktree — an empty one is a refusal, never a ref to push to
 > ```
 >
 > This is exactly the recovery the reported incident used to self-heal, promoted to the
@@ -1778,8 +1773,7 @@ a **diagnosis** and the *routing* of its findings, not a feature branch:
    # so a mis-attributed number never closes another agent's live issue (the #1404 class).
    bash ./claude-plugins/kampus-pipeline/skills/write-code/scripts/step3_5-claim-is-mine.sh "<N>" \
      || { echo "refusing to close #<N> — not my claim (Step 3.5)"; exit 1; }
-   gh api repos/$REPO/issues/<N>/comments -f body="$DIAGNOSIS"
-   gh api -X PATCH repos/$REPO/issues/<N> -f state=closed -f state_reason=completed
+   bash ./claude-plugins/kampus-pipeline/skills/write-code/scripts/type-investigation-close.sh "<N>" "$DIAGNOSIS" || exit 1
    ```
 
    (`completed`, not `not_planned` — the investigation *did its job*. Reserve
