@@ -31,7 +31,7 @@ per-tool help documents subcommands and exit codes inline.
 - Every verb, every subcommand, and every flag carries a one-line description. A flag with no
   description is an undocumented input.
 - `--help` states, for the verb: what it answers, its output **shape** (rule 2), its exit codes
-  (rule 3), and at least one example (rule 4).
+  (rule 3), and at least one example (rule 5).
 - The index of verbs is **derived from the registry**, never hand-maintained. v1's
   `pipeline-cli commands compact` is the working precedent: it reads name + description off the same
   `Command` objects the router dispatches on, so a new verb appears automatically and a verb shipped
@@ -107,8 +107,14 @@ symlink to a nonexistent target runs and fails with an ordinary `127`, and `$HOM
 special-cased. So no env-injection mechanism of any kind can make a variable-rooted invocation
 usable at an agent's top-level command.
 
-- A fabrika verb is invoked as a plain `fabrika-cli <verb> …` command string. No `$VAR`, no
-  `${VAR:-default}`, no command substitution, no `source`.
+- A fabrika verb is invoked as a plain literal command string — written `fabrika-cli <verb> …`
+  throughout this doc. No `$VAR`, no `${VAR:-default}`, no command substitution, no `source`.
+  **The binary name is illustrative and not fixed here.** Where fabrika's verbs live — and so what
+  they are invoked as — is deferred to [#4650](https://github.com/kamp-us/phoenix/issues/4650) (epic
+  [#4648](https://github.com/kamp-us/phoenix/issues/4648), Resolved question 2: the seed package
+  rides with the first derived contract, because minting one earlier would invert
+  contract-before-implementation). This rule constrains the **form** of an invocation, never its
+  name; substitute whatever name #4650 lands.
 - **Examples in `--help` and in a contract spec are held to the same rule.** An example an agent
   cannot paste verbatim is not an example.
 - A verb never requires an env var to *locate* itself. Configuration may still arrive by env
@@ -180,8 +186,9 @@ point: an implementer can tell an unfinished spec from a finished one before sta
 
 Illustration only. It is not a commissioned verb, and it does not pre-commit the `/adr` contract —
 that one is derived by its own authoring session as the wave-0 pilot in
-[#4650](https://github.com/kamp-us/phoenix/issues/4650). It is here to show a complete block at the
-level of detail the completeness test demands.
+[#4650](https://github.com/kamp-us/phoenix/issues/4650). The `fabrika-cli` binary name it invokes is
+illustrative on the same terms (rule 5): an example needs a name to be readable, and #4650 owns the
+real one. It is here to show a complete block at the level of detail the completeness test demands.
 
 ---
 
