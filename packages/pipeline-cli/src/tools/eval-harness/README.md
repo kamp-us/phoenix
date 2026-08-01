@@ -192,6 +192,7 @@ against the schema, and render the graded scorecard over runner rows:
 ```bash
 pipeline-cli eval-harness check <manifest>    # exit 0 if valid; non-zero on a bad manifest
 pipeline-cli eval-harness report <rows.json>  # the graded two-axis scorecard (see below)
+pipeline-cli eval-harness cases <evals.json>  # validate an authored eval set (see below)
 ```
 
 ## Repair-churn cost — net-token pricing of a model swap
@@ -302,6 +303,79 @@ does not reproduce from its id the way a persisted `review-code: FAIL` marker do
 triage corpus therefore covers the edge by spanning the classification space (a routine
 `p2` `decision`, an urgent `p0` `bug`, a `p1` `chore`) rather than pinning an unstable
 `needs-info`.
+
+## Authored eval-set ingestion ([#4674](https://github.com/kamp-us/phoenix/issues/4674))
+
+An **eval set** is the collection of **eval cases** one skill's authoring session produced. fabrika
+reuses `/skill-creator`'s authoring format verbatim (epic
+[#4649](https://github.com/kamp-us/phoenix/issues/4649): the authoring tool owns eval *authoring*,
+this epic owns eval *enforcement*), so `skill-eval-set.ts` **decodes** what a session already emits
+and adds no required field to it. This model sits **beside** `CorpusManifest`, which is unchanged —
+the stage-keyed corpus keeps serving the model-tiering scorecard.
+
+The two authored files, and where their shapes come from:
+
+- **`evals/evals.json`** — the case list, per the `skill-creator` plugin's
+  `references/schemas.md` (`## evals.json`): `{skill_name, evals: [{id, prompt, expected_output,
+  files?, expectations?}]}`, where each `expectations` entry is a verifiable statement in prose.
+- **`eval_metadata.json`** — the per-case sidecar, per that plugin's `SKILL.md` ("Running and
+  evaluating test cases", step 1): `{eval_id, eval_name, prompt, assertions}`.
+
+Two things about that format are genuinely underspecified upstream, and are read tolerantly rather
+than guessed at:
+
+- **`expectations` vs `assertions`.** `schemas.md` names the `evals.json` field `expectations`;
+  `SKILL.md` calls the same field "the `assertions` field". Both keys are accepted, `expectations`
+  first.
+- **An assertion's element shape.** `schemas.md` documents plain strings, and the sidecar's
+  `assertions` is only ever shown as `[]` — no upstream consumer reads its elements. A bare string
+  and a `{text}` object are both accepted; the string form is the documented one.
+
+`id` and `prompt` are the only required per-case fields, because the authoring session writes
+prompts first and drafts assertions later (`SKILL.md` step 1 → step 2) — a set captured between
+those steps must still decode.
+
+### The derived execution tier
+
+The tier is **derived from a case's assertions, never authored** — that is what lets a runner route
+a case without re-reading its prose while the authored format stays untouched:
+
+- Each assertion is classified into a discriminated union on `kind`: `mechanical` (carrying the
+  `cue` naming the observable it checks — `exit-status`, `file-artifact`, `output-content`,
+  `tool-invocation`) or `judgment` (no cue). An assertion whose payload doesn't match its kind is
+  unrepresentable.
+- Classification is a small **literal-phrase lexicon** matched case-insensitively; anything
+  unmatched falls through to `judgment`. The asymmetry is deliberate: a judgment case mis-derived
+  as mechanical would skip the grading it needs and report a green it never earned, while a
+  mechanical case mis-derived as judgment only costs a graded run.
+- A case is `deterministic` iff it has assertions and **every** one is mechanical; otherwise
+  `graded`. One judgment assertion puts the whole case on the graded path, and a case with no
+  assertions yet is `graded`.
+
+Executing either tier is out of scope here — the deterministic tier is
+[#4677](https://github.com/kamp-us/phoenix/issues/4677), the graded axis
+[#4678](https://github.com/kamp-us/phoenix/issues/4678), and the unattended runner
+[#4676](https://github.com/kamp-us/phoenix/issues/4676).
+
+`decodeSkillEvalSet(text)` and `decodeEvalCaseMetadata(text)` are **total**: a malformed body or a
+schema mismatch returns a typed `SkillEvalSetDecodeError` `Result` failure (`malformed-json` /
+`schema-mismatch`), never a throw — the same contract as `decodeManifest`. `withCaseMetadata(set,
+sidecars)` joins sidecars onto a set by case id; the sidecar only *fills* (a name, or assertions for
+a case that has none yet), because `evals.json` is the authored set of record.
+
+```bash
+# exit 0 on a valid set; non-zero with a named reason on a bad one
+pipeline-cli eval-harness cases <path-to-evals.json>
+```
+
+The verb prints the skill name, the case count, the per-tier split, and one line per case. It reds
+on an **empty** set as well as a malformed one: a set that decodes but carries zero cases would
+report green while checking nothing, the zero-scope pass [ADR
+0092](../../../../../.decisions/0092-gates-fail-closed-on-zero-scope.md) forbids.
+
+An unedited authoring-session output shape is committed under
+[`fixtures/skill-creator/`](./fixtures/skill-creator) and is what the unit tests decode, so "decodes
+with no edits" is checked against the real shape rather than asserted.
 
 ## Out of scope
 
