@@ -1,0 +1,52 @@
+# fabrika
+
+> Copy from the already-battle-tested external workflow (mattpocock/skills — the skill theory,
+> surveyed with receipts on #4644) and from our own already-battle-tested one (the pipeline's
+> verbs, gates, and 74-incident scar tissue) — and **build fabrika for the next generation of
+> software building with agents.** Neither source arrives on authority: every borrowed idea
+> re-earns its place against the eval bar.
+>
+> — the founder mission statement, recorded on epic [#4648](https://github.com/kamp-us/phoenix/issues/4648)
+
+**fabrika** is the kamp.us agent pipeline, rebuilt from first principles as its own plugin. It
+grows here, beside the v1 baseline in [`../kampus-pipeline/`](../kampus-pipeline/), which stays
+frozen and untouched — v1 is not a failure to clean up but a deliberate experiment that succeeded
+at its own goal and has run its course (wayfinder:map #4631). Keeping it intact is what gives
+fabrika something to be measured against.
+
+Turkish for "factory". The name is sealed (#4631) and styled lowercase, like the sibling brand
+nouns `sozluk` and `pano`.
+
+## The only door: /skill-creator
+
+**No skill enters fabrika by any path other than `/skill-creator`** — founder ruling
+[#4637-C](https://github.com/kamp-us/phoenix/issues/4637). There is no second door: a skill is
+not hand-dropped into `skills/`, not ported from v1, not copied from a sibling plugin. Every
+fabrika skill is authored through `/skill-creator`, against the fabrika conventions, and enters
+as that session's output.
+
+This posture is the whole reason `skills/` is empty right now. An empty directory is the correct
+state until the first authoring session lands its skill through the door; a skill that appears
+here by any other route is a defect, not a shortcut.
+
+## Layout
+
+```
+claude-plugins/fabrika/
+├── .claude-plugin/plugin.json   the plugin manifest (no version — ADR 0110, continuous ship)
+├── README.md                    this file: the mission, the only-door posture, the layout
+├── docs/                        the canonical convention + contract docs (see docs/README.md)
+└── skills/                      one dir per skill, each authored by /skill-creator — empty today
+```
+
+`skills/` holds a `.gitkeep` so the directory survives a clone while it is empty. It carries no
+`README` and no loose files: the fabrika layout law is `SKILL.md` under a per-skill directory and
+nothing else at the `skills/` root.
+
+## What is deliberately absent
+
+- **No marketplace entry.** fabrika is not listed in the root marketplace manifest
+  (`.claude-plugin/`), so nothing here reaches the pinned external channel (#4643).
+- **No skills yet.** They arrive one authoring session at a time through `/skill-creator`.
+- **No CLI.** fabrika's verbs will live in their own workspace package; `pipeline-cli` stays the
+  v1-era substrate fabrika may call but never grows into.
