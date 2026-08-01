@@ -1792,7 +1792,15 @@ bash ./claude-plugins/kampus-pipeline/skills/shared/scripts/<name>.sh <args…>
 
 Two constraints make that the only shape, and both are the harness's, not this contract's: its
 isolation verifier refuses a `.`/`source` at an agent's top-level command **by any path form**, and it
-refuses the interpolated `"${CLAUDE_PLUGIN_ROOT:-…}/…"` idiom as too complex to verify. So the path is
+refuses a path it cannot resolve statically. The second refusal is **position-blind**, which an
+18-trial reproduction pinned ([#4595](https://github.com/kamp-us/phoenix/issues/4595)): three
+triggers each fire on their own — the `${VAR:-default}` syntax itself (refused even when the
+variable is already set), any expansion the verifier cannot resolve, and `$(…)` command
+substitution. That means "assignments are safe, only invocations are refused" is not a real
+distinction, and the rule is constructive rather than positional: **a fence may bind a variable only
+by literal assignment inside the same block.**
+
+So the path is
 written out literally, which hardcodes the in-repo plugin location — the ADR
 [0062](https://github.com/kamp-us/phoenix/blob/main/.decisions/0062-repo-as-config-plugin.md)
 portability trade ADR 0232 accepts and records.
@@ -1850,16 +1858,24 @@ the gate silently never fires (#4236). Use `"$PCLI"`.
 ### The canonical preamble — paste it once per bash block that invokes the CLI
 
 ```bash
-# §CLI — resolve the shim. `$CLAUDE_PLUGIN_ROOT` covers a foreign consumer install; the
-# git-toplevel fallback covers this repo from ANY cwd, in the primary checkout AND in an
-# agent worktree (both trees carry the shim, and a worktree's toplevel is its own root).
-PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
+# §CLI — bind the shim by LITERAL assignment, run from the repo root.
+PCLI="./claude-plugins/kampus-pipeline/bin/pipeline-cli"
 ```
 
 Then call it as `"$PCLI" <verb> …`. That is the **one** documented form; do not re-derive a
 second. `$PCLI` is a shell variable, so — like `$BRANCH` and `$WT` — it does **not** survive
 between an agent's separate Bash calls: re-run the preamble in each block, never cache the path
 to a file (§SP).
+
+**Why a literal, and what it costs.** The preamble used to resolve `$CLAUDE_PLUGIN_ROOT` with a
+git-toplevel fallback, so it worked from any cwd and in a foreign consumer install. The harness
+refuses that whole shape at an agent's top-level command — see the §SHARED constraint above — so
+the assignment is written out literally instead. The trade is the same one §SHARED records: the
+in-repo plugin location is hardcoded and the block must be pasted from the repo root, which is the
+ADR [0062](https://github.com/kamp-us/phoenix/blob/main/.decisions/0062-repo-as-config-plugin.md)
+portability cost ADR [0232](https://github.com/kamp-us/phoenix/blob/main/.decisions/0232-agents-execute-skill-scripts-never-source-them.md)
+accepts. A script may still resolve its own paths however it likes — the verifier judges only the
+command *you* run, not a script's body.
 
 ### The exit-code taxonomy — "could not run" is never a verdict
 
@@ -2149,8 +2165,8 @@ assert it did:**
    **asserts the fetched ref resolves to exactly that SHA before you review** — aborting on a moved
    head rather than binding a stale verdict. Two modes, same core:
    ```bash
-   # §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
-   PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
+   # §CLI — bind the shim by LITERAL assignment, from the repo root (the preamble above).
+   PCLI="./claude-plugins/kampus-pipeline/bin/pipeline-cli"
    # ref-only (review-doc reads via `git show "$PR_REF:<path>"`):
    eval "$("$PCLI" review-head materialize --pr "$PR" | jq -r '"PR_REF=\(.prRef); HEAD_SHA=\(.headSha)"')"
    # full detached head worktree (review-code / review-skill), emitted as `.worktreeDir`:
