@@ -48,13 +48,23 @@ export interface ResolvedSection {
 export const ZERO_SCOPE: ResolvedSection = {section: "", scanned: [], unresolved: []};
 
 /**
- * The `scripts/*.sh` a stretch of skill text sources (`. "$<SKILL>_SCRIPTS/<name>.sh"`), in first
- * appearance order, deduplicated. Deliberately the SAME matcher `adoption-lint`'s claim pins use
- * (#4449) — three consumers answering "which script does this text source?" three ways would be its
- * own defect.
+ * The `scripts/*.sh` a stretch of skill text reaches, in first appearance order, deduplicated.
+ * Deliberately the SAME matcher `adoption-lint`'s claim pins use (#4449) — three consumers answering
+ * "which script does this text run?" three ways would be its own defect.
+ *
+ * TWO forms, because ADR 0232 replaced one with the other and the corpus converts skill by skill:
+ * the original `. "$<SKILL>_SCRIPTS/<name>.sh"`, and the literal-path `bash
+ * ./claude-plugins/<plugin>/skills/<skill>/scripts/<name>.sh` an isolated agent must use instead.
+ * Recognizing only the first is not a lint miss but a SILENT NARROWING: a converted section resolves
+ * to the markdown alone, and every constant this module exists to follow into the script — Step 3's
+ * rollup bindings, Step 5.5's reconcile defaults — reads back absent. The consumers turn absent into
+ * their own fail-closed constant, so the failure surfaces as a red guard rather than a wrong answer;
+ * matching both forms is what keeps it from surfacing at all.
  */
 export const sourcedScriptNames = (text: string): ReadonlyArray<string> => [
-	...new Set([...text.matchAll(/_SCRIPTS\}?\/([\w.-]+\.sh)/g)].flatMap((m) => m[1] ?? [])),
+	...new Set(
+		[...text.matchAll(/(?:_SCRIPTS\}?|\/scripts)\/([\w.-]+\.sh)/g)].flatMap((m) => m[1] ?? []),
+	),
 ];
 
 /** Resolve one heading-sliced section into its full shell surface. */

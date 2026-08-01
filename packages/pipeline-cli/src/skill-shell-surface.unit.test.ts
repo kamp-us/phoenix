@@ -32,8 +32,29 @@ describe("sourcedScriptNames", () => {
 		]);
 	});
 
+	it("names every ADR-0232 literal-path `bash ./…/scripts/<file>.sh` invocation too", () => {
+		// The whole point of matching this form: a converted section that resolved to the markdown
+		// alone would read back with ZERO bindings, and every constant the parsers follow into the
+		// script would look absent rather than unfollowed (#4572).
+		const text = [
+			"bash ./claude-plugins/kampus-pipeline/skills/ship-it/scripts/step3-rollup-bindings.sh $REPO $PR",
+			'bash "./claude-plugins/kampus-pipeline/skills/ship-it/scripts/step5_5-reconcile.sh"',
+			"bash ./claude-plugins/kampus-pipeline/skills/ship-it/scripts/step3-rollup-bindings.sh $REPO $PR",
+		].join("\n");
+		assert.deepStrictEqual(sourcedScriptNames(text), [
+			"step3-rollup-bindings.sh",
+			"step5_5-reconcile.sh",
+		]);
+	});
+
 	it("names nothing for text that sources nothing — the un-extracted corpus", () => {
 		assert.deepStrictEqual(sourcedScriptNames(`RECONCILE_TRIES=${brace("X:-16")}\n`), []);
+	});
+
+	// The falsification: drop the `/scripts` alternative from the matcher and this reds. Without it
+	// the literal-path case above would return [] and the parsers would silently narrow.
+	it("does not match a bare `.sh` mention that is not a scripts/ path", () => {
+		assert.deepStrictEqual(sourcedScriptNames("see verify-chain-resolves.sh for the proof"), []);
 	});
 });
 

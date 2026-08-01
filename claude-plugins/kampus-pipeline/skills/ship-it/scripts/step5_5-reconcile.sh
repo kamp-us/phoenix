@@ -6,19 +6,32 @@
 # #4448/#4498). A byte-move, not a rewrite: replacing this glue with `pipeline-cli` verbs is
 # phase 2 (#1929).
 #
-# SOURCED, never executed. The fenced block it replaces ran inline in the agent's shell, so this
-# file deliberately sets NO shell options — several guards here depend on `pipefail` being OFF —
-# and leaves its variables and functions in the sourcing shell, which is how the ledger still sees
-# $MERGE_OUTCOME / $MERGE_DISPOSITION / $RECONCILE_HORIZON / $INTENT_UNCLEARED.
+# DUAL-MODE (ADR 0232) — the why is `.patterns/skill-script-shell-shape.md` § The dual-mode shape.
+#   EXECUTED:  bash ./claude-plugins/kampus-pipeline/skills/ship-it/scripts/step5_5-reconcile.sh <REPO> <PR>
+#              stdout ⇒ `MERGE_OUTCOME=<merged|queued|pending|ejected>`, `RECONCILE_HORIZON=<secs>`,
+#              `INTENT_UNCLEARED=<0|1>`, and `MERGE_DISPOSITION=<text>` — the four values the ledger
+#              renders, which the sourced form left in the caller's shell. `MERGE_DISPOSITION` is
+#              printed LAST because it is the only multi-word one, so a reader can take the rest of
+#              the line verbatim. An unresolved shim prints NONE of them and exits 1: a reconcile
+#              that never ran is UNKNOWN, not `pending`.
+#   SOURCED:   no in-script consumer today; the edge stays open for one.
 #
 # PARSER-HELD (#4498): `merge-queue-classify/step55-contract.ts` reads the RECONCILE_TRIES /
 # RECONCILE_SLEEP defaults, the between-polls sleep guard, and the MERGE_DISPOSITION case arms out
 # of Step 5.5's surface. It reaches them by following SKILL.md's source line into this file, so keep
-# those bindings at column 0 and keep that source line inside the `### Step 5.5 — ` section.
+# those bindings at column 0 and keep that INVOCATION inside the `### Step 5.5 — ` section.
+# (`sourcedScriptNames` learned the ADR-0232 literal-path form alongside the old `$SHIPIT_SCRIPTS/`
+# one, so the follow still resolves.)
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then set -uo pipefail; fi   # executed mode only (ADR 0232)
 . "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
+# `disarm_intent` (guard 6 / ADR 0198), sourced IN-CHAIN — a process inherits no functions (ADR 0232).
+# shellcheck source=disarm-intent.sh
+. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/." && pwd)/disarm-intent.sh"
 
 # §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
 PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
+REPO="${REPO:-${1:?step5_5-reconcile.sh: REPO unset and no \$1 — refusing to reconcile in an unnamed repo}}"
+PR="${PR:-${2:?step5_5-reconcile.sh: PR unset and no \$2 — refusing to reconcile an unnamed PR}}"
 # …and prove it resolved before polling. An unresolved CLI prints nothing, so every poll would
 # read as neither `merged` nor `ejected`, the budget would exhaust, and the run would report a
 # well-formed `pending` for a classifier that never ran — a could-not-run posing as an answer
@@ -94,6 +107,18 @@ if [ "$MERGE_OUTCOME" = ejected ]; then
   disarm_intent ejected || INTENT_UNCLEARED=1
 else
   INTENT_ACTION=$("$PCLI" merge-intent disarm --pr "$PR" --repo "$REPO" --site post-enqueue) || INTENT_UNCLEARED=1
-  [ "$INTENT_ACTION" = disarmed ] && \
+  # `if … fi`: the ORDINARY outcome is an intent that was NOT a parked arm — i.e. this test being
+  # FALSE — and as the branch's last command that failing test became the script's exit status, so
+  # every clean reconcile would report itself UNKNOWN under §SHARED's read-the-status-first rule
+  # (`.patterns/skill-script-shell-shape.md` § The dual-mode shape rule 4). The predicate is unchanged.
+  if [ "$INTENT_ACTION" = disarmed ]; then
     echo "refused — the enqueue did not take effect at this head; the parked intent was cleared. Re-dispatch ship-it to re-assert the gates and enqueue (idempotent)."
+  fi
+fi
+
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+  printf 'MERGE_OUTCOME=%s\n' "$MERGE_OUTCOME"
+  printf 'RECONCILE_HORIZON=%s\n' "$RECONCILE_HORIZON"
+  printf 'INTENT_UNCLEARED=%s\n' "$INTENT_UNCLEARED"
+  printf 'MERGE_DISPOSITION=%s\n' "$MERGE_DISPOSITION"
 fi
