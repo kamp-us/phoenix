@@ -48,8 +48,8 @@ restrictive sentinel — over shape (2), narrowing check 9's scope to scripts wh
 safety answer. This ADR records that ruling. The stdout/stderr contract this amends in part is the
 #4510-lineage IO contract doc
 ([`.patterns/skill-script-io-contract.md`](../.patterns/skill-script-io-contract.md), landed via PR
-#4577), whose exit taxonomy currently reads non-zero as "stdout: nothing" unconditionally — the
-reconciliation follow-up records the declared-sentinel convention there.
+#4577), whose exit taxonomy currently reads non-zero as "stdout: nothing" unconditionally — issue
+#4618 records the declared-sentinel convention there.
 
 ## Decision
 
@@ -98,15 +98,21 @@ empty stdout"), and makes conformance mechanically checkable via the declaration
   the fail-open edit (delete the sentinel, keep the empty-stdout green) becomes a check FAIL by
   construction instead of a per-review judgment call.
 - The IO contract doc's exit taxonomy ("non-zero → stdout: nothing") is **amended in part** by the
-  safety-answer class; the doc is a pattern doc, so it is corrected in place by the follow-up, no
+  safety-answer class; the doc is a pattern doc, so it is corrected in place by #4618, no
   supersession mechanics needed.
 - **The reconciliation build is explicitly not this ADR's scope** — amending check 9, recording the
-  convention in the IO contract doc, and the six-site exit-status-vs-value audit are a separate
-  follow-up filed into the programme. This ADR is the recorded ruling those changes implement.
+  convention in the IO contract doc, and the six-site exit-status-vs-value audit are carried by
+  issue **#4618**. This ADR is the recorded ruling those changes implement; until #4618 lands, the
+  ruling is recorded but not yet mechanized, and the six scripts stay red against check 9.
 
 ## Records
 
-- Closes #4584 (the ticket's AC: the collision is ruled on and recorded as an ADR).
+- Closes #4584 for its first acceptance criterion only — the collision is ruled on and recorded as
+  an ADR. #4584's remaining three criteria (reconcile check 9 to this ruling; audit the six red
+  call sites for exit-status-vs-value sensitivity; the verifier reporting no check-9 FAILs with
+  `containment-marker.sh` still ARMED) are carried **verbatim** by **#4618**, which inherits them
+  when this PR closes #4584. The founder ruling split the ownership of that work, not the
+  obligation.
 - Vocabulary impact: coins **declared restrictive sentinel** (and the two usage-miss classes,
   *silent* / *safety-answer*) — routed to
   [`.glossary/TERMS.md`](../.glossary/TERMS.md) (Run-evidence / CI gating section) in this PR.
