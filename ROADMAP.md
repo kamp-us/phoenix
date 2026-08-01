@@ -25,30 +25,32 @@ flowchart TD
 		arc_at_lye["Atölye"]:::done
 	end
 	subgraph campaigns["Campaigns"]
-		camp_mentor_audit["Mentor Audit"]:::active
+		camp_mentor_audit["Mentor Audit"]:::done
 		camp_crew_mcp_finish_replace_the_tmux_relay_with_crew_mcp["Crew-MCP Finish — replace the tmux relay with crew-mcp"]:::done
 		camp_deterministic_crew_mechanics["Deterministic Crew Mechanics"]:::active
 		camp_di_taxis_docs_pipeline_crew_mcp["Diátaxis docs — pipeline-crew & -mcp"]:::done
 		camp_merge_gate_reliability["Merge-Gate Reliability"]:::active
 		camp_worktree_isolation_integrity["Worktree-Isolation Integrity"]:::active
 		camp_cp_verdict_integrity["§CP Verdict Integrity"]:::active
-		camp_flag_graduation["Flag Graduation"]:::active
-		camp_pipeline_cli_glue_consolidation["pipeline-cli Glue Consolidation"]:::active
+		camp_flag_lifecycle_graduation_mechanism_retirement_tail["Flag Lifecycle — graduation mechanism + retirement tail"]:::active
+		camp_pipeline_cli_glue_consolidation["pipeline-cli Glue Consolidation"]:::done
 		camp_lint_gate_adoption["Lint-Gate Adoption"]:::active
 		camp_taste_skill_library["Taste-Skill Library"]:::active
 		camp_pipeline_anywhere["Pipeline Anywhere"]:::active
-		camp_pipeline_cli_effect_platform_migration["pipeline-cli @effect/platform migration"]:::active
+		camp_pipeline_cli_effect_platform_migration["pipeline-cli @effect/platform migration"]:::done
 		camp_agentic_design_system_coverage["Agentic design-system coverage"]:::done
-		camp_flag_retirement_adr_0136["Flag Retirement (ADR 0136)"]:::active
+		camp_flag_retirement_adr_0136["Flag Retirement (ADR 0136)"]:::done
 		camp_writing_craft_import["Writing-Craft Import"]:::done
 	end
 	ext_3642["#3642"]:::external
 	ext_3833["#3833"]:::external
 	ext_adr_0202["ADR 0202"]:::external
 	ext_triage_rubric["Triage rubric"]:::external
-	ext_3642 --> camp_flag_graduation
+	ext_3101["#3101"]:::external
+	ext_3642 --> camp_flag_lifecycle_graduation_mechanism_retirement_tail
 	ext_3833 --> camp_pipeline_anywhere
 	ext_adr_0202 --> ext_triage_rubric
+	ext_3101 --> arc_mecmua_v2
 	classDef active fill:#1a7f37,stroke:#116329,color:#ffffff;
 	classDef queued fill:#9a6700,stroke:#7d4e00,color:#ffffff;
 	classDef done fill:#57606a,stroke:#424a53,color:#ffffff;
@@ -68,7 +70,7 @@ flowchart TD
 
 **Geçit** — *active. The passage.* The membrane of the community: onboarding, künye (the reputation DO), and moderation. How a stranger becomes a çaylak, a çaylak becomes a yazar by vouch, and how the community governs itself. The çaylak→yazar journey — undefined today — gets designed here. (The earlier künye milestone folded in.)
 
-**Mecmua v2** — The next chapter of long-form publishing: the Thinking-Machines 3-zone reading layout, and the reading/authoring experience maturing past v1.
+**Mecmua v2** — *PARKED (2026-08-01, kill-sweep Ruling #4 on #4621).* Not in flight; the arc (the Thinking-Machines 3-zone reading layout, annotation model, diff rendering) stays intact as a unit, gated on #3101 (the annotation storage/anchor decision). The `queued` state cell is the grammar's parked representation — an arc sequenced but deliberately not fed; unpark by founder ruling when a product lane frees up.
 
 **Atölye** — *the workshop.* The in-product museum of craft: curated exhibits, live and playable, where kamp.us shows how it is made.
 
@@ -78,21 +80,21 @@ Campaigns are bounded, milestone-backed pushes that run *concurrently* with the 
 
 | Campaign | Milestone | State |
 |----------|-----------|-------|
-| Mentor Audit | #27 | active |
+| Mentor Audit | #27 | done |
 | Crew-MCP Finish — replace the tmux relay with crew-mcp | #28 | done |
 | Deterministic Crew Mechanics | #29 | active |
 | Diátaxis docs — pipeline-crew & -mcp | #31 | done |
 | Merge-Gate Reliability | #36 | active |
 | Worktree-Isolation Integrity | #37 | active |
 | §CP Verdict Integrity | #38 | active |
-| Flag Graduation | #39 | active |
-| pipeline-cli Glue Consolidation | #40 | active |
+| Flag Lifecycle — graduation mechanism + retirement tail | #39 | active |
+| pipeline-cli Glue Consolidation | #40 | done |
 | Lint-Gate Adoption | #41 | active |
 | Taste-Skill Library | #42 | active |
 | Pipeline Anywhere | #35 | active |
-| pipeline-cli @effect/platform migration | #32 | active |
+| pipeline-cli @effect/platform migration | #32 | done |
 | Agentic design-system coverage | #33 | done |
-| Flag Retirement (ADR 0136) | #34 | active |
+| Flag Retirement (ADR 0136) | #34 | done |
 | Writing-Craft Import | #30 | done |
 
 **The table is a parsed contract.** It is the single source the campaign skill (which appends a row and flips its state) and the lifecycle guard (which reads it) both bind to, so the grammar is pinned here rather than re-derived at either end:
@@ -100,7 +102,7 @@ Campaigns are bounded, milestone-backed pushes that run *concurrently* with the 
 - **Columns** are `Campaign | Milestone | State`, in that order. `Campaign` is the founder-voice name; `Milestone` pins the campaign to its GitHub milestone **by number** (`#N`) — the same row→milestone-by-number binding the roadmap-guard already enforces on `## Arcs`, and that number is the one link to the operational projection. `State` is the lifecycle cell.
 - **`State ∈ {active, done}`** — the symmetric two-state lifecycle. A campaign is `active` while its milestone is draining, and flips to `done` once that milestone is fully drained (its GitHub milestone closed). There is no `queued` state: unlike an arc, a campaign is not sequenced ahead — it opens `active` when the founder starts it and ends `done`, running concurrently with whichever arc is active.
 
-**Mentor Audit** — a security & architecture audit wave (the staff-mentor findings: the karma double-bump race, per-actor rate limiting, ops runbooks, `SECURITY.md`, …). To be solved ASAP; drains via the platform lane alongside Geçit.
+**Mentor Audit** — *done (2026-08-01, kill-sweep Ruling #1 on #4621; done-enough at 24 of 31).* The security & architecture audit wave (the karma double-bump race, per-actor rate limiting, ops runbooks, `SECURITY.md`, …). Residue re-homed: the `author_name` cluster stays connected under epic #2569; the rest stands alone in the general pool.
 
 ## Dependencies
 
@@ -110,9 +112,10 @@ Campaign→arc concurrency (a campaign draining alongside the active arc via the
 
 | Blocker | Blocks | Why |
 |---------|--------|-----|
-| #3642 | Flag Graduation | anka-ops cutover must land before the Flag Graduation (#39) drain can complete |
+| #3642 | Flag Lifecycle — graduation mechanism + retirement tail | anka-ops cutover must land before the Flag Graduation (#39) drain can complete |
 | #3833 | Pipeline Anywhere | publish-isolation guard precedes the Pipeline Anywhere external arcs |
 | ADR 0202 | Triage rubric | the CrewOps declarative-state doctrine precedes the triage-rubric change |
+| #3101 | Mecmua v2 | the annotation storage/anchor decision gates the parked Mecmua v2 arc |
 
 Regenerate the diagram after editing any table with `pipeline-cli roadmap diagram`; the follow-up roadmap-guard extension fails CI closed when the committed block drifts from the tables + this declaration (#3870).
 
