@@ -11,6 +11,12 @@ name: skill-gh-lint
 #      (a fenced shell block, or a whole .sh) — a bare push cannot report whether the ref
 #      landed, so `pipeline-cli verified-push` is the only sanctioned path. Prose ABOUT a
 #      bare push is untouched; the skills have to explain why it is forbidden.
+#   4. Fence portability (#4605): FAIL on a repo-relative `./claude-plugins/…` path literal
+#      inside a fenced block. That literal resolves only inside a phoenix checkout; a
+#      marketplace consumer's install lives in their plugin cache, OUTSIDE their repo, so the
+#      same fence is `No such file or directory` there — the live customer-down break this
+#      gate exists to make unrepeatable. The portable form is the hook-planted
+#      `./.claude/.pipeline/…` link. Prose about the old form is untouched, same as gate 3.
 #
 # Scans the FULL corpus (not just changed files) so a bad call/frontmatter anywhere
 # is caught regardless of which PR introduced it, and FAILS CLOSED on zero scope per
@@ -31,7 +37,7 @@ permissions:
 
 jobs:
   lint:
-    name: lint skill corpus for GraphQL-path gh calls + invalid YAML frontmatter + bare git push
+    name: lint skill corpus for GraphQL-path gh calls + invalid YAML frontmatter + bare git push + non-portable fences
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4.2.2

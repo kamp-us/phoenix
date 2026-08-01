@@ -5,7 +5,7 @@
  * nothing on a *pure relocation* (#4498).
  *
  * A section's surface is therefore its heading slice **plus the content of every `scripts/*.sh` the
- * slice sources**. Two deliberate choices:
+ * slice reaches** — sourced or executed (`reachedScriptNames`). Two deliberate choices:
  *
  * - **Slice first, then follow.** The section boundary is computed on the pristine markdown, so a
  *   script that emits markdown from a heredoc cannot truncate the section by carrying a `## ` line.
@@ -48,13 +48,26 @@ export interface ResolvedSection {
 export const ZERO_SCOPE: ResolvedSection = {section: "", scanned: [], unresolved: []};
 
 /**
- * The `scripts/*.sh` a stretch of skill text sources (`. "$<SKILL>_SCRIPTS/<name>.sh"`), in first
- * appearance order, deduplicated. Deliberately the SAME matcher `adoption-lint`'s claim pins use
- * (#4449) — three consumers answering "which script does this text source?" three ways would be its
- * own defect.
+ * The `scripts/*.sh` a stretch of skill text REACHES, in first appearance order, deduplicated.
+ *
+ * Two invocation shapes are sanctioned and both reach the same file: the sourced form
+ * `. "$<SKILL>_SCRIPTS/<name>.sh"`, and ADR 0232's executed form, which names the script by a
+ * literal repo-relative path. Matching only the variable form read a step's *invocation style* as
+ * the *fact being asserted*, so a lane converted to executed scripts resolved to zero scripts and
+ * reddened pins about where its steps write — with nothing about those writes changed (#4573).
+ * `shared/scripts/` stays excluded: it is a library many skills call, and the sibling scoping this
+ * module documents above is what stops one shared half-procedure satisfying every caller's own rule.
+ *
+ * Deliberately the SAME matcher `adoption-lint`'s claim pins use (#4449) — three consumers
+ * answering "which script does this text reach?" three ways would be its own defect, so those pins
+ * import this rather than re-declaring the regex.
  */
-export const sourcedScriptNames = (text: string): ReadonlyArray<string> => [
-	...new Set([...text.matchAll(/_SCRIPTS\}?\/([\w.-]+\.sh)/g)].flatMap((m) => m[1] ?? [])),
+export const reachedScriptNames = (text: string): ReadonlyArray<string> => [
+	...new Set(
+		[...text.matchAll(/(?:_SCRIPTS\}?|(?<!shared)\/scripts)\/([\w.-]+\.sh)/g)].flatMap(
+			(m) => m[1] ?? [],
+		),
+	),
 ];
 
 /** Resolve one heading-sliced section into its full shell surface. */
@@ -67,7 +80,7 @@ export const resolveSection = (
 	const scanned = [surface.label];
 	const unresolved: string[] = [];
 	const parts = [sliced];
-	for (const name of sourcedScriptNames(sliced)) {
+	for (const name of reachedScriptNames(sliced)) {
 		const content = surface.readScript(name);
 		if (content === undefined || content === "") {
 			unresolved.push(name);

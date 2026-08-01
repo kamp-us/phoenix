@@ -148,6 +148,21 @@ if ! git worktree add --detach "$worktree_path" FETCH_HEAD >&2; then
 	exit 1
 fi
 
+# Plant `<worktree>/.claude/.pipeline` -> the live plugin (#4605). A worktree is a SEPARATE working
+# tree with its own `.claude/`, so the primary checkout's link does not reach it — every worktree
+# needs its own, and it must exist before the occupying agent's first tool call. Planting here, while
+# the spawn is still blocked on this hook, is what makes that ordering hold: the harness does not
+# adopt the tree until this script exits, so no agent can run in it beforehand.
+#
+# FAIL-CLOSED, like every other provisioning failure above: a worktree whose link is missing is a
+# lane where every skill fence exits 127. That is precisely the state acceptance condition 2 forbids
+# a caller from reading as an ordinary negative, so it must never be provisioned silently.
+if ! bash "$(dirname -- "${BASH_SOURCE[0]}")/plant-pipeline-link.sh" "$worktree_path" >/dev/null; then
+	trace "fail: plant-pipeline-link $worktree_path"
+	echo "create-worktree: could not plant '$worktree_path/.claude/.pipeline' — refusing (fail-closed, #4605)." >&2
+	exit 1
+fi
+
 # Stamp the OWNING SESSION into the new tree's git admin dir, so a reaper can ask "is this tree's
 # owner still running?" instead of guessing from age (#3943, ADR 0191). Without a stamp the sweep
 # had only mtime, which cannot see a live shipper lane — it removed two mid-run. The stamp lives in

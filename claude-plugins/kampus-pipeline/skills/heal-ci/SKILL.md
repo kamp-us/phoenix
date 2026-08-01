@@ -296,7 +296,7 @@ re-deriving the resolver write-code once hand-copied, and keeps only the two thi
 # `pipeline-cli verdict read` does not do (the native-review fold, the N=3 round count).
 # It prints `VERDICT_UNKNOWN=`, `CODE_FAIL=`, `DOC_FAIL=` and `ROUNDS=` on stdout; a non-zero exit
 # means it produced NO answer, which is UNKNOWN and never "no repair in flight" (§ZS / ADR 0092).
-bash ./claude-plugins/kampus-pipeline/skills/heal-ci/scripts/active-repair.sh "$PR" || exit 1
+bash ./.claude/.pipeline/skills/heal-ci/scripts/active-repair.sh "$PR" || exit 1
 ```
 
 If `VERDICT_UNKNOWN=1` the verdict never resolved (a GitHub read failure, not a verdict) — **defer

@@ -94,8 +94,15 @@ sourced_by() {
 # functions in the agent's shell by the time a later step runs. This is what makes
 # `disarm_intent` — defined in disarm-intent.sh, sourced in SKILL.md's preamble — legitimately
 # reachable from every step without any step sourcing it.
-skill_md_line_of() {   # $1 = script basename; prints the line number of its SKILL.md source, or 0
-	grep -n "SHIPIT_SCRIPTS/$1\"" "$SKILL_MD" 2>/dev/null | head -n1 | cut -d: -f1
+skill_md_line_of() {   # $1 = script basename; prints the line number of its SKILL.md invocation, or 0
+	# ADR 0232 replaced `. "$SHIPIT_SCRIPTS/<name>.sh"` with the literal-path executed form, so the
+	# chain order is now read off `…/ship-it/scripts/<name>.sh`. Matching only the old form would make
+	# every `mine` resolve to 0, the predecessor loop would `continue` for every script, and the
+	# reachable set would silently lose everything SKILL.md's order used to contribute — the audit
+	# would then report BAD for calls that resolve fine, or (worse, in the other direction) stop
+	# covering the ordering property entirely. Both spellings are matched so the check survives a
+	# corpus that converts skill by skill.
+	grep -nE "(SHIPIT_SCRIPTS/|/ship-it/scripts/)$1(\"|\$|[[:space:]])" "$SKILL_MD" 2>/dev/null | head -n1 | cut -d: -f1
 }
 
 for s in $SCRIPTS; do

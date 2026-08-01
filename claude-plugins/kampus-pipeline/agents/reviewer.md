@@ -149,8 +149,9 @@ These hold on every run regardless of what the spawn prompt remembered to say:
   unit-tested probe (it parses the **same** §CLASS `HAS_*_RE` lines `ship-it` Step 0 reads — no
   third copy) and dispatch a gate for **exactly** each namespace it prints:
   ```bash
-  # §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
-  PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
+  # §CLI — bind the shim by LITERAL assignment, from the repo root; not on PATH, and a fence
+  # may not interpolate a path in any position (ADR 0207/0232; the why is §CLI's, not restated here).
+  PCLI="./.claude/.pipeline/bin/pipeline-cli"
   # <a id="probe-status-note"></a>READ THE PROBE'S EXIT STATUS — an empty set is UNKNOWN, never "no gates"
   # (#4231). class-probe's stdin branch REFUSES with exit 4 on a failed read (#4010) and prints NOTHING,
   # so stdout alone cannot tell a refusal from a legitimate result — capture the probe as the LAST stage
@@ -253,8 +254,9 @@ These hold on every run regardless of what the spawn prompt remembered to say:
   required namespace empty" unrepresentable from the reviewer's side; it does **not** touch ship-it's
   fail-closed per-namespace PASS gate (the merge authority), which stays the terminal check, untouched.
   ```bash
-  # §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
-  PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
+  # §CLI — bind the shim by LITERAL assignment, from the repo root; not on PATH, and a fence
+  # may not interpolate a path in any position (ADR 0207/0232; the why is §CLI's, not restated here).
+  PCLI="./.claude/.pipeline/bin/pipeline-cli"
   HEAD_SHA="$(gh pr view "$PR" --repo "$REPO" --json headRefOid -q .headRefOid)"
   # the required set — same class-probe output the fan dispatches on (folds in review-design when has-ui),
   # read under the same status contract (see the fan invariant's [probe-status note](#probe-status-note)):

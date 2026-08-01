@@ -89,12 +89,33 @@ behavior is unchanged with no config (ADR 0062 §1).
 
 ```bash
 REPO="${CLAUDE_PIPELINE_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}"
-# This skill's steps are SOURCED scripts under `scripts/` (epic #4435 phase 1, #4448) — resolved the
-# same way §CLI resolves the `pipeline-cli` shim, because neither is on PATH. Source each step's
-# script where the step says to; sourcing (not executing) is what keeps a step's variables and
-# functions visible to the steps after it, exactly as the inline fenced blocks did.
-SHIPIT_SCRIPTS="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/skills/ship-it/scripts"
 ```
+
+**Run each step's script by literal path and read its answer off stdout (ADR
+[0232](https://github.com/kamp-us/phoenix/blob/main/.decisions/0232-agents-execute-skill-scripts-never-source-them.md)).**
+This skill's steps are scripts under `scripts/`, and you **run** them:
+
+```bash
+bash ./.claude/.pipeline/skills/ship-it/scripts/<name>.sh <args…>
+```
+
+Two constraints make that the only shape, and both are the harness's: its isolation verifier refuses
+a `.`/`source` at an agent's top-level command **by any path form**, and it refuses the interpolated
+`"${CLAUDE_PLUGIN_ROOT:-…}/…"` idiom as too complex to verify. So the path is written out literally,
+which hardcodes the in-repo plugin location — the ADR
+[0062](https://github.com/kamp-us/phoenix/blob/main/.decisions/0062-repo-as-config-plugin.md)
+portability trade ADR 0232 accepts and records.
+
+**Read the exit status first, then the stdout.** Exit 0 means the script produced its answer on
+stdout; a non-zero means it could not, which is UNKNOWN and never the permissive branch (§ZS / ADR
+0092). Two of this skill's conventions sharpen that, and both are stated at each step below:
+
+- **A refusal is not a failure to run.** Most of ship-it's stop paths are *successful declines* —
+  they print their `refused — …` / `unverified (…)` line and exit **0**, exactly as the fenced blocks
+  did. Where a step works that way, read the **terminal word** on stdout, not the status.
+- **Every value a step used to leave in your shell now arrives as a `NAME=value` line**, and you
+  re-pass it as the next step's argument. Nothing survives between your Bash calls, so a step that
+  needs `$PR`, `$CP_FLAG`, `$CURRENT_HEAD` or the run-evidence handles is *handed* them.
 
 ## The hard guards
 
@@ -160,8 +181,14 @@ The enqueue primitive is unchanged (`gh pr merge --auto`, Step 4). What is added
 rule with **four mandated sites** — run start, every stop/refusal, an ejection, and after the
 bounded reconcile:
 
+The primitive lives in
+[`scripts/disarm-intent.sh`](scripts/disarm-intent.sh). Every step script that has a stop path
+sources it in-chain for `disarm_intent`, so you never invoke it yourself on the ordinary paths —
+each of those steps prints `INTENT_UNCLEARED=<0|1>` and that is what your outcome line carries. Run
+it directly only to clear an intent outside a step (stdout is the same one line):
+
 ```bash
-. "$SHIPIT_SCRIPTS/disarm-intent.sh"
+bash ./.claude/.pipeline/skills/ship-it/scripts/disarm-intent.sh <owner/repo> <pr> <preflight|refuse|post-enqueue|ejected>
 ```
 
 **Site 1 is Step 0's `disarm_intent preflight || exit 1`, and it is the one that catches the
@@ -253,7 +280,10 @@ it. The fix round-trip is `write-code`'s (code) / the doc author's job, not your
 Before anything else, read the PR's changed files and split them by class. This is one read:
 
 ```bash
-. "$SHIPIT_SCRIPTS/step0-preflight.sh" <pr number>   # $PR for the whole run — every later step reads it back
+# stdout: `PR=<n>` — the run's PR, which you re-pass as every later step's second argument — then one
+# changed-file path per line. A refusal (the §RO-iso stop, or a guard-6 Site-1 disarm that failed)
+# prints NO `PR=` line, names itself on stderr, and exits non-zero: read the status first.
+bash ./.claude/.pipeline/skills/ship-it/scripts/step0-preflight.sh <owner/repo> <pr number>
 ```
 
 Classify each path. The classification is **derived by the shared verb `pipeline-cli cp-classify`**,
@@ -330,7 +360,12 @@ UI_EXCLUDE_RE='\.(test|spec)\.tsx?$'
 ```
 
 ```bash
-. "$SHIPIT_SCRIPTS/step0-classify.sh"
+# stdout, in order: `CP_STATE=<state>`, then one `BLOCKING (…)` line per §CP finding, then one class
+# word per class present (`has-skills` / `has-code` / `has-docs`) and `has-ui` when the diff renders a
+# surface. The ordinary §CP answer is the ABSENCE of a BLOCKING line, so read `CP_STATE=` as the
+# evidence the derivation ran — never emptiness. A classification that could not be made prints
+# `STOP: …` and exits 1; that is UNKNOWN, never "no gates required".
+bash ./.claude/.pipeline/skills/ship-it/scripts/step0-classify.sh <owner/repo> <pr number>
 ```
 
 **Routing:**
@@ -346,14 +381,13 @@ UI_EXCLUDE_RE='\.(test|spec)\.tsx?$'
   [§CP approval gate](#step-0-cp-approval-gate) below, ADR 0175):
   - **discharge** → the human-judgment gate is satisfied; **set the Step-2 §CP seam**, then **carry
     on** into Step 2's normal machine
-    gates (matching-gate SHA-bound PASS, CI green, run-evidence). The seam is one assignment in this
-    same shell, and this is its **only** sanctioned site — a §CP PR's pass path is the SHA-less
-    advisory, which `verdict gate` counts only under `--cp` (Step 2), and the discharge is exactly
-    the condition that licenses it:
-
-    ```bash
-    CP_FLAG=--cp   # §CP classified AND approval discharged — the ONLY state that sets this (#4547)
-    ```
+    gates (matching-gate SHA-bound PASS, CI green, run-evidence). The seam is the literal token
+    `--cp`, **printed by the approval gate's discharge branch as `CP_FLAG=--cp`**, and that branch is
+    its **only** source — a §CP PR's pass path is the SHA-less advisory, which `verdict gate` counts
+    only under `--cp` (Step 2), and the discharge is exactly the condition that licenses it. Carry
+    that token forward as the **third argument** to Step 2's gate and its native-review fold. Read no
+    `CP_FLAG=` line ⇒ pass nothing, which is the stricter branch: an omitted seam can only refuse a
+    §CP PR, never pass one (#4547).
 
     Once those pass, ENQUEUE exactly
     like a non-§CP PR (`gh pr merge --auto`, no method flag — the queue owns the SQUASH method;
@@ -411,7 +445,10 @@ UI_EXCLUDE_RE='\.(test|spec)\.tsx?$'
   Each failure branch stops under a message that names the read that failed.
 
   ```bash
-  . "$SHIPIT_SCRIPTS/step0-cp-approval.sh"
+  # stdout: exactly one `§CP approval: …` line, plus `CP_FLAG=--cp` on the discharge branch only —
+  # that token is the Step-2 seam, and this is its only source. A branch that could not answer names
+  # the failed read on stderr and exits 1: UNKNOWN, never `awaiting control-plane approval`.
+  bash ./.claude/.pipeline/skills/ship-it/scripts/step0-cp-approval.sh <owner/repo> <pr number>
   ```
 
   This is **only** the §CP unblock — it does not weaken any other guard. The SHA-bound gate verdict
@@ -628,15 +665,19 @@ The required set is **derived, never eyeballed** — the same `class-probe` outp
 dispatches off, so `dispatched-gate == required-gate` holds by construction:
 
 ```bash
-. "$SHIPIT_SCRIPTS/step2-verdict-gate.sh"   # reads $CP_FLAG from this shell — set ONLY by Step 0's §CP discharge
+# stdout: one `ship-it guard 1: …` line naming the required namespaces. The EXIT STATUS is the gate —
+# 0 only when `verdict gate` passed every required namespace; every refusal names itself on stderr
+# and exits 1. Pass `--cp` as the THIRD argument only when Step 0's approval gate printed it.
+bash ./.claude/.pipeline/skills/ship-it/scripts/step2-verdict-gate.sh <owner/repo> <pr number> [--cp]
 ```
 
-**The one input this step takes is `$CP_FLAG`, and it is already set (or deliberately unset) by the
-time you get here.** Step 0's §CP discharge branch is its only writer; every other path leaves it
-unset, which the script reads as the non-§CP branch. So this source line takes no argument and needs
-no hand-substituted value — run it as written. Setting `CP_FLAG` here, from your own reading of the
-diff, is the [defect this seam replaced](https://github.com/kamp-us/phoenix/issues/4547): it puts the
-§CP decision back where an eyeball makes it, next to the verb that is supposed to be handed it.
+**The one input this step takes beyond the PR is the §CP seam, and Step 0 already decided it.** Step
+0's §CP discharge branch is its only source — it prints `CP_FLAG=--cp` — and every other path prints
+nothing, which the script reads as the non-§CP branch. So pass the token **iff you read it off that
+branch's stdout**, verbatim, and otherwise omit the argument entirely. Deciding `--cp` here, from your
+own reading of the diff, is the [defect this seam replaced](https://github.com/kamp-us/phoenix/issues/4547):
+it puts the §CP decision back where an eyeball makes it, next to the verb that is supposed to be
+handed it.
 
 **Why a verb and not a careful read.** The rule below was already correct in prose ("docs present
 but the review-doc namespace is empty → `unverified (no review-doc PASS)`"), but nothing *computed*
@@ -751,7 +792,11 @@ The native decisive review folds into the code namespace separately (the verb re
 not reviews), and that fold applies the ADR-0058 staleness test inline, at the fold itself:
 
 ```bash
-. "$SHIPIT_SCRIPTS/step2-native-review-fold.sh"
+# stdout: `CURRENT_HEAD=<40-hex>`, `CODE_PASS=<0|1>`, `CODE_FAIL=<0|1>` — the folded code-namespace
+# verdict. Carry `CURRENT_HEAD` forward: Step 3's settle wait compares against it to catch a head
+# that moved mid-poll. The exit status answers "could I resolve them", never "is it a PASS" — a
+# folded FAIL is `CODE_FAIL=1` at exit 0. Pass the same `--cp` token Step 2's gate got, or omit it.
+bash ./.claude/.pipeline/skills/ship-it/scripts/step2-native-review-fold.sh <owner/repo> <pr number> [--cp]
 ```
 
 Now resolve **per namespace** (the marker verdict from the verb above, the native review + §CP
@@ -1007,7 +1052,11 @@ verb also owns the running/wedged split and the latest-per-context reduction —
 re-derive the query (#3762).
 
 ```bash
-. "$SHIPIT_SCRIPTS/step3-rollup-bindings.sh"
+# stdout: `CONTEXTS=<n>`, `RUNNING=<names>`, `WEDGED=<names>`, `GATING_RED=<names>` — the classifier
+# input the branches below read. An empty RUNNING/WEDGED/GATING_RED is the all-green answer, so the
+# lines are always printed; an unreadable head instead prints `refused — head CI unreadable …` plus
+# `INTENT_UNCLEARED=<0|1>` and exits 0 (a successful decline). Read for `CONTEXTS=`, not the status.
+bash ./.claude/.pipeline/skills/ship-it/scripts/step3-rollup-bindings.sh <owner/repo> <pr number>
 ```
 
 **Parser-held — keep that source line inside this section.** The script's `jq` rollup bindings
@@ -1061,7 +1110,9 @@ the workflow runs GitHub actually recorded for the head SHA — **both reads fai
 absence):
 
 ```bash
-. "$SHIPIT_SCRIPTS/step3-empty-checkset-probe.sh"
+# stdout: `HEAD_SHA=<40-hex>`, `NWF=<n>`, `NRUNS=<n>`. Both counts already carry their fail-safe
+# substitute when the lookup itself failed, so the printed number is the one to branch on.
+bash ./.claude/.pipeline/skills/ship-it/scripts/step3-empty-checkset-probe.sh <owner/repo> <pr number>
 ```
 
 Classify in this order (a `skipped` / `cancelled` conclusion is non-blocking — neither a failure
@@ -1149,7 +1200,12 @@ is why a later-empty pending set inside the loop is a genuine green, not the dro
 false-green Step 3z guards (that state is branch 3, never reached from here):
 
 ```bash
-. "$SHIPIT_SCRIPTS/step3-ci-settle-wait.sh"
+# Hand it the head Step 2 verified (`CURRENT_HEAD=` from the native-review fold) — the mid-settle
+# head-move guard compares against it, so a guessed value re-opens the TOCTOU window it closes.
+# stdout: a progress line per poll, then ONE terminal line — `gating checks settled green after …`
+# (proceed to Step 3.5), `routed to heal-ci …`, or a `refused — …` — plus `INTENT_UNCLEARED=<0|1>`.
+# Every disposition is a successful decline and exits 0: read the TERMINAL WORD, not the status.
+bash ./.claude/.pipeline/skills/ship-it/scripts/step3-ci-settle-wait.sh <owner/repo> <pr number> <CURRENT_HEAD>
 ```
 
 The three returns are the **whole guarantee**: `0` reaches the enqueue, `2` routes a mid-wait red
@@ -1222,7 +1278,11 @@ statelessly against the PR's own reopened-event history so a genuinely-stuck pro
 loop:
 
 ```bash
-. "$SHIPIT_SCRIPTS/step3z-dropped-trigger.sh"
+# Hand it the `HEAD_SHA=` the empty-checkset probe printed — the nudge counts `reopened` events since
+# THAT commit, so a guessed head would mis-count them and re-nudge a head already nudged once.
+# stdout: one terminal line — `nudged (close→reopen) …` or `unverified (no runs fired …)` — plus
+# `INTENT_UNCLEARED=<0|1>`. Both are successful declines and exit 0; read the terminal word.
+bash ./.claude/.pipeline/skills/ship-it/scripts/step3z-dropped-trigger.sh <owner/repo> <pr number> <HEAD_SHA>
 ```
 
 The nudge **never bypasses verification** — it only restores the *missing runs*. A nudged PR
@@ -1258,7 +1318,9 @@ is never an error." This is a producer-presence test, **not** a per-PR escape: a
 below (that's a real gap, not portability).
 
 ```bash
-. "$SHIPIT_SCRIPTS/step3_5-producer-preflight.sh"
+# stdout: `HAS_PRODUCER=<n>`, plus the `guard 2 N/A …` line at 0. The NUMBER is the answer, and a 0
+# is reached only on a CONFIRMED-empty lookup — an unread one degrades to the strict path, never here.
+bash ./.claude/.pipeline/skills/ship-it/scripts/step3_5-producer-preflight.sh <owner/repo>
 ```
 
 When a producer **is** present (the phoenix home repo, or any adopter that ships the
@@ -1273,7 +1335,12 @@ control-plane skills at the seam — minor duplication is the cheaper trade now;
 helper later if a third consumer appears.
 
 ```bash
-. "$SHIPIT_SCRIPTS/step3_5-fetch-artifact.sh"
+# stdout: `HEAD_SHA=`, `RUN_ID=`, `ART_ID=`, `MANIFEST=`, `ART_FETCH_STATUS=`, `ART_FETCH_ERR=` — the
+# six inputs the assertion below takes as arguments. `RUN_ID` / `ART_ID` are legitimately EMPTY on a
+# genuine absence (that IS assertion 1b's input), so every line is printed unconditionally: an absent
+# line would mean the fetch never ran. The bundle itself stays on disk under the per-run `mktemp -d`
+# that `MANIFEST=` points into — the one piece of cross-step state a process boundary does not lose.
+bash ./.claude/.pipeline/skills/ship-it/scripts/step3_5-fetch-artifact.sh <owner/repo> <pr number>
 ```
 
 Now assert the bundle, **failing closed** on each check — an unreachable upstream, a missing
@@ -1283,7 +1350,15 @@ failure (assertion 1a) is reported as unverified-transient and **must be checked
 genuine-absence case (1b), since a transport failure leaves the bundle fields empty:
 
 ```bash
-. "$SHIPIT_SCRIPTS/step3_5-assert-bundle.sh"
+# Hand it the six values the fetch printed, VERBATIM and in this order. They are positional because
+# the fetch and the assertion are separate processes now, and an input that silently defaulted to
+# empty here would read as "genuine absence" (assertion 1b) for a bundle that fetched fine — so each
+# refuses when absent, except `ART_FETCH_ERR`, which is the transient cause text and may be empty.
+# stdout: NOTHING when all four assertions hold — guard 2 cleared; otherwise the ONE `unverified (…)`
+# / `run-evidence checks failed (…)` line plus `INTENT_UNCLEARED=<0|1>`, at exit 0 (a successful
+# decline). Read the line, not the status.
+bash ./.claude/.pipeline/skills/ship-it/scripts/step3_5-assert-bundle.sh \
+  <owner/repo> <pr number> <ART_FETCH_STATUS> <RUN_ID> <ART_ID> <MANIFEST> <HEAD_SHA> <ART_FETCH_ERR>
 ```
 
 The five refusal reasons are **distinct and load-bearing** — each names *why* the bundle
@@ -1421,7 +1496,11 @@ Discrimination is live-verified on this org: `github-advanced-security` and
 `copilot-pull-request-reviewer` return `Bot`, a human login returns `User` (#4408).
 
 ```bash
-. "$SHIPIT_SCRIPTS/step3_6-threads-read.sh"
+# stdout: one compact JSON object per UNRESOLVED thread (`{id, path, line, author, class, body}`).
+# ZERO objects at exit 0 is the ordinary clean answer — no unresolved threads. A read that could not
+# execute prints its two `STOP:` / refusal lines plus `INTENT_UNCLEARED=<0|1>` and exits 1, so the
+# status is what tells "no threads" from "no answer": never read emptiness as clean.
+bash ./.claude/.pipeline/skills/ship-it/scripts/step3_6-threads-read.sh <owner/repo> <pr number>
 ```
 
 ### Disposition — class first, then (bot only) substantive-vs-nit
@@ -1488,7 +1567,10 @@ boundary. Reuse the shared `findCommentLeaks` detector via the pipeline-cli verb
 matcher `redact-leaks` and `verdict post` already consume — one detector, not a re-invented one):
 
 ```bash
-. "$SHIPIT_SCRIPTS/step3_7-leak-scan.sh"
+# stdout: `LEAK_SCAN=clean` when guard 4 clears — a positive token, because this guard's clean answer
+# is otherwise silence and silence is also what a scan that never ran looks like. A leak, or an
+# unresolved shim, names itself on stderr, prints `INTENT_UNCLEARED=<0|1>`, and exits 1.
+bash ./.claude/.pipeline/skills/ship-it/scripts/step3_7-leak-scan.sh <owner/repo> <pr number>
 ```
 
 Refuse **fail-closed**, exactly like the other pre-enqueue guards: a non-zero `scan-pr` (a live leak)
@@ -1552,7 +1634,10 @@ is the **`already queued to merge`** message the enqueue prints and/or the PR's 
 field, which gh 2.62.0 rejects, #1930). See ADR 0132 addendum §3.
 
 ```bash
-. "$SHIPIT_SCRIPTS/step5-confirm-enqueued.sh"
+# stdout: the two PR-state objects, then `QUEUE_STATE=<merged|queued|pending|ejected>` — that last
+# line is the answer. An unresolved shim prints no `QUEUE_STATE=` line, names itself, and exits 1:
+# could-not-run is UNKNOWN, never a queue outcome.
+bash ./.claude/.pipeline/skills/ship-it/scripts/step5-confirm-enqueued.sh <owner/repo> <pr number>
 ```
 
 **Why the verb and not a `gh api …/timeline` one-liner here.** This confirmation used to
@@ -1645,7 +1730,11 @@ yet), which is **never** an ejection. The classification is a **pure, unit-teste
 reconcile shells out to it per poll and branches on the printed outcome word:
 
 ```bash
-. "$SHIPIT_SCRIPTS/step5_5-reconcile.sh"
+# stdout: `MERGE_OUTCOME=<merged|queued|pending|ejected>`, `RECONCILE_HORIZON=<secs>`,
+# `INTENT_UNCLEARED=<0|1>`, then `MERGE_DISPOSITION=<text>` last (it is the only multi-word value, so
+# take the rest of that line verbatim into the ledger's `merge:` line). An unresolved shim prints
+# none of them and exits 1 — a reconcile that never ran is UNKNOWN, not `pending`.
+bash ./.claude/.pipeline/skills/ship-it/scripts/step5_5-reconcile.sh <owner/repo> <pr number>
 ```
 
 **Parser-held — keep that source line inside this section.** The script's `RECONCILE_TRIES` /
@@ -1855,7 +1944,10 @@ issue's inherited stamp (exactly the #1211/#1212/#1213 foundation shape, address
 behavior is exactly as it was before this dimension existed:
 
 ```bash
-. "$SHIPIT_SCRIPTS/step5b-release-queue.sh"
+# Hand it the linked issue Step 1 resolved. stdout: one line, `RELEASE_QUEUE=queued (awaiting human
+# flip)` or `RELEASE_QUEUE=n/a (not a dark ship)` — the ledger value. No linked issue ⇒ nothing to
+# queue ⇒ the `n/a` no-op, unchanged.
+bash ./.claude/.pipeline/skills/ship-it/scripts/step5b-release-queue.sh <owner/repo> <pr number> <linked issue>
 ```
 
 The `status:awaiting-release` label is **orthogonal to the `status:*` pickability spine** — it

@@ -70,7 +70,7 @@ reviewing (below), read all skill text from the head, and re-check the live head
 # Prints ONE line — the absolute path of this run's handle, carrying REVIEW_WT / PR_REF / HEAD_SHA /
 # BASE_REF. Every FATAL line goes to stderr; on any failure stdout is EMPTY, so this `.` fails loudly
 # rather than sourcing a half-written handle and reviewing the base tree (#793).
-. "$(bash ./claude-plugins/kampus-pipeline/skills/review-skill/scripts/materialize-head.sh "$PR")"
+. "$(bash ./.claude/.pipeline/skills/review-skill/scripts/materialize-head.sh "$PR")"
 ```
 
 The script fetches the trusted base, drives §HEAD steps 1–3 through the shared
@@ -140,7 +140,7 @@ if set, else the current repository. In phoenix this defaults to `kamp-us/phoeni
 behavior is unchanged with no config (ADR 0062 §1).
 
 ```bash
-bash ./claude-plugins/kampus-pipeline/skills/review-skill/scripts/resolve-repo.sh
+bash ./.claude/.pipeline/skills/review-skill/scripts/resolve-repo.sh
 ```
 
 ## The extracted scripts
@@ -226,7 +226,7 @@ path as control-plane → advisory not-auto-mergeable) if that read can't be mad
 
 ```bash
 PR=<pr number>
-CP_HOLD="$(bash ./claude-plugins/kampus-pipeline/skills/review-skill/scripts/classify-control-plane.sh "$PR")"; RC=$?
+CP_HOLD="$(bash ./.claude/.pipeline/skills/review-skill/scripts/classify-control-plane.sh "$PR")"; RC=$?
 ```
 
 Read its **exit status before its stdout**: a non-zero `$RC` holds the PR as §CP regardless of what
@@ -292,14 +292,14 @@ namespace is discovered.
 ## Step 1 — Resolve the PR and its linked issue
 
 ```bash
-bash ./claude-plugins/kampus-pipeline/skills/review-skill/scripts/pr-context.sh "$PR"
+bash ./.claude/.pipeline/skills/review-skill/scripts/pr-context.sh "$PR"
 ```
 
 Find the linked issue from the PR body's `Fixes #N` / `Closes #N` (the seam `write-code`
 writes). Cross-check via the timeline if it's not obvious:
 
 ```bash
-bash ./claude-plugins/kampus-pipeline/skills/review-skill/scripts/linked-issue-timeline.sh "$PR"
+bash ./.claude/.pipeline/skills/review-skill/scripts/linked-issue-timeline.sh "$PR"
 ```
 
 The `issues/$PR/timeline` endpoint accepts the PR number, and the
@@ -313,7 +313,7 @@ Now pull the issue and its acceptance criteria:
 
 ```bash
 ISSUE=<N>
-bash ./claude-plugins/kampus-pipeline/skills/review-skill/scripts/issue-context.sh "$ISSUE"
+bash ./.claude/.pipeline/skills/review-skill/scripts/issue-context.sh "$ISSUE"
 ```
 
 Extract the `### Acceptance criteria` checklist from the issue body. That list — every box —
@@ -329,7 +329,7 @@ here** — a skill is an instruction, not running code; the artifact *is* the pr
 so you read it. Pull the change:
 
 ```bash
-bash ./claude-plugins/kampus-pipeline/skills/review-skill/scripts/pr-diff.sh "$PR"
+bash ./.claude/.pipeline/skills/review-skill/scripts/pr-diff.sh "$PR"
 ```
 
 For checks that need the file in context (a trigger phrase, a cross-skill reference, the full
@@ -343,7 +343,7 @@ variable by then, so recompute its path from the same §SP recipe first — that
 the namespace is session-derived rather than `mktemp`-allocated:
 
 ```bash
-. "$(bash ./claude-plugins/kampus-pipeline/skills/review-skill/scripts/head-env.sh "$PR")"
+. "$(bash ./.claude/.pipeline/skills/review-skill/scripts/head-env.sh "$PR")"
 ```
 
 ### Fetch the base fresh before any "is-it-shipped on main" check
@@ -355,8 +355,8 @@ contract section it cites is present." Verify those against a **freshly fetched*
 or a local `main`, which may be stale:
 
 ```bash
-bash ./claude-plugins/kampus-pipeline/skills/review-skill/scripts/base-groundtruth.sh exists "$BASE_REF" .decisions/0073-review-skill-gate.md
-bash ./claude-plugins/kampus-pipeline/skills/review-skill/scripts/base-groundtruth.sh show   "$BASE_REF" skills/gh-issue-intake-formats.md
+bash ./.claude/.pipeline/skills/review-skill/scripts/base-groundtruth.sh exists "$BASE_REF" .decisions/0073-review-skill-gate.md
+bash ./.claude/.pipeline/skills/review-skill/scripts/base-groundtruth.sh show   "$BASE_REF" skills/gh-issue-intake-formats.md
 ```
 
 You're reading, not building — no `pnpm install`, no typecheck, no test suite. The diff, the
@@ -367,7 +367,7 @@ Tear the throwaway tree + ref down on **every** exit path — PASS, FAIL, or a m
 not only when you finish reading clean:
 
 ```bash
-bash ./claude-plugins/kampus-pipeline/skills/review-skill/scripts/teardown-head.sh "$PR"
+bash ./.claude/.pipeline/skills/review-skill/scripts/teardown-head.sh "$PR"
 ```
 
 Run this even when the review is exiting `FAIL` or aborting mid-run, so no `review-skill-head-*`
@@ -594,7 +594,7 @@ verdict not bound to the PR's current head (ADR
 [0058](https://github.com/kamp-us/phoenix/blob/main/.decisions/0058-sha-bound-verdict-contract.md), issue #258).
 
 ```bash
-HEAD_SHA="$(bash ./claude-plugins/kampus-pipeline/skills/review-skill/scripts/current-head.sh "$PR")"   # the head you reviewed
+HEAD_SHA="$(bash ./.claude/.pipeline/skills/review-skill/scripts/current-head.sh "$PR")"   # the head you reviewed
 ```
 
 `review-skill` lands its verdict **only as the SHA-bound comment, never a native review** (ADR
@@ -637,7 +637,7 @@ merge on it.
 # this head+run's own review-skill record (namespace-anchored, so a blocking↔non-blocking flip
 # replaces a prior advisory at the same key too) and appends against any other key, and it
 # fail-closes on a malformed/cross-namespace body.
-printf '%s' "$BODY" | bash ./claude-plugins/kampus-pipeline/skills/review-skill/scripts/verdict-post.sh "$PR"
+printf '%s' "$BODY" | bash ./.claude/.pipeline/skills/review-skill/scripts/verdict-post.sh "$PR"
 ```
 
 Verdict body shape. The first line is the **canonical bare marker** — no leading `**`
@@ -749,7 +749,7 @@ canonical `Reviewed-head: @ <HEAD_SHA>` line (ADR 0151), which `ship-it`'s §CP 
 # $BODY is your composed advisory verdict; first line: review-skill: advisory — blocking-set PR
 # (§CP — approval-gated). The guarded tool also validates the §CP advisory's `Reviewed-head: @ <sha>`
 # anchor line is a clean full 40-hex head SHA — the exact field the #2680 mktemp path leaked into (#2683).
-printf '%s' "$BODY" | bash ./claude-plugins/kampus-pipeline/skills/review-skill/scripts/verdict-post.sh "$PR"
+printf '%s' "$BODY" | bash ./.claude/.pipeline/skills/review-skill/scripts/verdict-post.sh "$PR"
 ```
 
 Post it **as a comment, never a native review** (ADR 0058 rule 4). Do **not** emit the
@@ -769,12 +769,12 @@ head leaves the prior head's verdict standing and a concurrent run never overwri
 record (ADR 0058 rule 2, refined by ADR 0213). Never hand-roll the `PATCH`:
 
 ```bash
-HEAD_SHA="$(bash ./claude-plugins/kampus-pipeline/skills/review-skill/scripts/current-head.sh "$PR")"   # the head you reviewed
+HEAD_SHA="$(bash ./.claude/.pipeline/skills/review-skill/scripts/current-head.sh "$PR")"   # the head you reviewed
 # $BODY is your composed FAIL verdict; first line: review-skill: FAIL @ <HEAD_SHA> — changes-requested.
 # Upsert through the guarded tool on the (PR, gate-namespace, head, run) key — namespace-anchored,
 # so a fresh FAIL replaces this head+run's own prior review-skill record (an advisory included) and
 # appends against any other key — fail-closed on a malformed marker (#2683).
-printf '%s' "$BODY" | bash ./claude-plugins/kampus-pipeline/skills/review-skill/scripts/verdict-post.sh "$PR"
+printf '%s' "$BODY" | bash ./.claude/.pipeline/skills/review-skill/scripts/verdict-post.sh "$PR"
 ```
 
 Verdict body shape:
@@ -834,7 +834,7 @@ landed, on **every** post path —
 # UNCONDITIONAL post-verify: resolve the landed verdict from PR state, prove it present + well-formed
 # + leak-free, FATAL (non-zero) on absent / malformed / leaking. Propagate the non-zero — never report
 # the gate done over an ungated PR. Runs no matter which Step-5 branch posted; no $MINE, no skippable path.
-bash ./claude-plugins/kampus-pipeline/skills/review-skill/scripts/verdict-readback.sh "$PR" "$HEAD_SHA" || exit 1
+bash ./.claude/.pipeline/skills/review-skill/scripts/verdict-readback.sh "$PR" "$HEAD_SHA" || exit 1
 ```
 
 The wrapper's single **fatal** exit — on nothing-landed *and* on a malformed/leaking marker resolved

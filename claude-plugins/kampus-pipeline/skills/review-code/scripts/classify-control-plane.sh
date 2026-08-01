@@ -4,19 +4,25 @@
 # review-code/SKILL.md (#4451, epic #4435 phase 1). Extraction contract + shell-option rationale:
 # ../SKILL.md § The extracted scripts. The *why* for each clause stays in that step's prose.
 #
-# STDOUT IS A MACHINE CHANNEL: the only stdout line is the run-state handle carrying
-# CONTROL_PLANE_TOUCHED / GUARD_TOUCHING / CP_FILES_N / ADR_N, so Step 4a can
-# `. "$(classify-control-plane.sh "$PR")"` and branch on the two flags. Scope + diagnostic lines go
-# to stderr, per `.patterns/skill-script-io-contract.md`. The §CPREAD helpers keep stdout clean
-# themselves now, so no call site below redirects — an un-redirected `cp_changed_files` is what put
-# a scope sentence ahead of the handle path and got it sourced as one (#4510).
+# usage: bash ./claude-plugins/kampus-pipeline/skills/review-code/scripts/classify-control-plane.sh <pr>
 #
-# EVERY failure path WRITES THE HANDLE WITH THE §CP SENTINEL FIRST, then exits non-zero. That is the
+# STDOUT IS THE ANSWER (ADR 0232, .patterns/skill-script-io-contract.md) — four `KEY=value` lines:
+#   CONTROL_PLANE_TOUCHED / GUARD_TOUCHING   the two flags Step 4a branches on, `printf '%q'`-quoted
+#   CP_FILES_N / ADR_N                       the §ZS scope counts
+# The two flags are %q-quoted for two reasons: a multi-file match stays ONE line, and the ordinary
+# not-§CP answer arrives as the positive token `''` rather than as an absence Step 4a has to infer
+# (.patterns/skill-script-io-contract.md, "the positive answer must be a positive token"). Scope +
+# diagnostic lines go to stderr; the §CPREAD helpers keep stdout clean themselves, so no call site
+# below redirects — an un-redirected `cp_changed_files` is what put a scope sentence ahead of the
+# answer and got it read as one (#4510).
+#
+# EVERY failure path PRINTS THE FLAGS AS THE §CP SENTINEL FIRST, then exits non-zero. That is the
 # whole reason this script exists in this shape: an empty `$CONTROL_PLANE_TOUCHED` is what Step 4a
 # reads as "auto-mergeable", so a classifier that could not run must never reach the caller as an
 # unset/empty flag. An absent or empty result is UNKNOWN, and UNKNOWN is never "no §CP path touched"
-# (§ZS / ADR 0092; #4216, #4231, #4010, #4219). If even the handle cannot be written, stdout stays
-# EMPTY and the caller's `.` fails loudly — hold the PR as §CP.
+# (§ZS / ADR 0092; #4216, #4231, #4010, #4219). Under ADR 0232 stdout carries the answer directly, so
+# there is no run-state handle left to fail to open — the sentinel now reaches the caller on EVERY
+# path, including the one where the §SP namespace itself is unavailable.
 set -uo pipefail
 # shellcheck source=../../../lib/common.sh disable=SC1007,SC1091
 . "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
@@ -26,29 +32,22 @@ set -uo pipefail
 # shellcheck source=../../shared/scripts/cp-read.sh disable=SC1007,SC1091
 . "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../shared/scripts" && pwd)/cp-read.sh"
 
-SENTINEL="<§CP classifier could not run — §CP UNKNOWN, held as control-plane>"
-HANDLE=""
+# ASCII punctuation in every EMITTED string below, deliberately: bash 3.2's `printf %q` escapes a
+# 3-byte UTF-8 sequence half-raw (`—` becomes a raw 0xE2 then `\200\224`), which round-trips through
+# a `.` but renders as mojibake on the stdout an agent now READS. `§` is 2-byte and survives, so the
+# canonical §CP term stays; the em-dashes and `⇒` do not. Measured on bash 3.2.57, macOS.
+SENTINEL="<§CP classifier could not run - §CP UNKNOWN, held as control-plane>"
 # emit_and_exit <status> <control-plane-touched> <guard-touching> <cp-files-n> <adr-n>
+# The ONLY writer of this script's stdout, so every exit — success, usage error, blinded read —
+# leaves the caller a readable flag pair rather than 0 bytes it would have to interpret.
 emit_and_exit() {
-  if [ -n "$HANDLE" ]; then
-    {
-      printf 'CONTROL_PLANE_TOUCHED=%q\n' "$2"
-      printf 'GUARD_TOUCHING=%q\n' "$3"
-      printf 'CP_FILES_N=%s\n' "$4"
-      printf 'ADR_N=%s\n' "$5"
-    } > "$HANDLE"
-    printf '%s\n' "$HANDLE"
-  else
-    echo "classify-control-plane.sh: could not open the per-run handle — no §CP answer was produced. Hold the PR as CONTROL PLANE." >&2
-  fi
+  printf 'CONTROL_PLANE_TOUCHED=%q\n' "$2"
+  printf 'GUARD_TOUCHING=%q\n' "$3"
+  printf 'CP_FILES_N=%s\n' "$4"
+  printf 'ADR_N=%s\n' "$5"
   exit "$1"
 }
 
-# Open the handle BEFORE the argument check, so even a usage error reaches the caller as the §CP
-# sentinel IN THE HANDLE rather than as 0 bytes on stdout. Measured: with the checks the other way
-# round the usage path exited 2 with an empty stdout, which is still fail-closed (the caller's `.`
-# fails loudly) but hands it no readable flag.
-HANDLE="$(kp_scratch_open review-code-cp)/cp.env" || HANDLE=""
 [ "$#" -ge 1 ] || { echo "usage: classify-control-plane.sh <pr>" >&2; emit_and_exit 2 "$SENTINEL" "$SENTINEL" 0 0; }
 PR="$1"
 # Top-level assignment, never `local` — `local REPO="$(kp_repo)"` masks the substitution's status,
@@ -80,8 +79,8 @@ if ! cp_changed_files "$REPO" "$PR"; then
   # FAIL CLOSED (#4216): a blinded read blinds BOTH clauses at once — the path regex AND the ADR-0164
   # content probe, which is the only §CP signal a `.decisions/**`-only PR can produce. So resolve BOTH
   # toward §CP; the sentinel is non-empty, which is exactly what Step 4a branches on.
-  CONTROL_PLANE_TOUCHED="<changed-file list unreadable — §CP UNKNOWN, held as control-plane>"
-  GUARD_TOUCHING="<changed-file list unreadable — §CP UNKNOWN, held as control-plane>"
+  CONTROL_PLANE_TOUCHED="<changed-file list unreadable - §CP UNKNOWN, held as control-plane>"
+  GUARD_TOUCHING="<changed-file list unreadable - §CP UNKNOWN, held as control-plane>"
   emit_and_exit 1 "$CONTROL_PLANE_TOUCHED" "$GUARD_TOUCHING" "${CP_FILES_N:-0}" 0
 else
   # grep aggregates the §CP matches ACROSS the concatenated pages — a jq `[ … ]` aggregate would
@@ -103,7 +102,7 @@ else
   # never ran (bad flag / nested-cwd module-not-found / missing shim) and read an unprobed ADR as
   # ordinary. The `*)` arm keeps could-not-determine a HOLD, exactly as an unreadable body is (#4219).
   GUARD_TOUCHING=""
-  [ -n "$HEAD_SHA" ] || GUARD_TOUCHING="<head SHA unreadable — ADR content unprobeable, held as control-plane>"   # fail closed: no ref ⇒ no probe ⇒ UNKNOWN
+  [ -n "$HEAD_SHA" ] || GUARD_TOUCHING="<head SHA unreadable - ADR content unprobeable, held as control-plane>"   # fail closed: no ref ⇒ no probe ⇒ UNKNOWN
   ADR_N=0
   while IFS= read -r adr; do
     [ -z "$adr" ] && continue
@@ -112,7 +111,7 @@ else
     # Capture and CHECK before classifying, never a straight pipe — §CPREAD #2.
     adr_body="$(gh api "repos/$REPO/contents/$adr?ref=$HEAD_SHA" -H 'Accept: application/vnd.github.raw' 2>/dev/null)" || adr_body=""
     if [ -z "$adr_body" ]; then
-      GUARD_TOUCHING="$GUARD_TOUCHING $adr(body-unreadable⇒§CP)"   # fail closed: never auto-ship an ADR that could not be read and proven guard-free
+      GUARD_TOUCHING="$GUARD_TOUCHING $adr(body-unreadable=>§CP)"   # fail closed: never auto-ship an ADR that could not be read and proven guard-free
     else
       GC_STATE="$(printf '%s' "$adr_body" | "$PCLI" guard-content-probe classify --path "$adr" 2>/dev/null)"
       case "$GC_STATE" in

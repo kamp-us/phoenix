@@ -5,11 +5,26 @@
 # Extracted VERBATIM from ship-it/SKILL.md's Step 3.5 fenced block (epic #4435 phase 1, #4448).
 # A byte-move, not a rewrite: replacing this glue with `pipeline-cli` verbs is phase 2 (#1929).
 #
-# SOURCED, never executed. The fenced block it replaces ran inline in the agent's shell, so this
-# file deliberately sets NO shell options — several guards here depend on `pipefail` being OFF —
-# and leaves its variables and functions in the sourcing shell, which is how the step's later
-# blocks still see them.
+# DUAL-MODE (ADR 0232) — the why is `.patterns/skill-script-shell-shape.md` § The dual-mode shape.
+#   EXECUTED:  bash ./claude-plugins/kampus-pipeline/skills/ship-it/scripts/step3_5-fetch-artifact.sh <REPO> <PR>
+#              stdout ⇒ six lines — `HEAD_SHA=`, `RUN_ID=`, `ART_ID=`, `MANIFEST=`,
+#              `ART_FETCH_STATUS=`, `ART_FETCH_ERR=` — the values the sourced form left in the
+#              caller's shell, and exactly the inputs `step3_5-assert-bundle.sh` now takes as
+#              arguments. `RUN_ID` / `ART_ID` are legitimately EMPTY on a genuinely absent bundle,
+#              which is assertion 1b's input, so each line is printed unconditionally: an absent line
+#              would be indistinguishable from a fetch that never ran (rule 4 / §ZS). The BUNDLE
+#              itself stays on disk under the per-run `mktemp -d` that `MANIFEST=` points into — the
+#              one piece of cross-step state that is a FILE, so a process boundary does not lose it.
+#   SOURCED:   no in-script consumer today; the edge stays open for one.
+# No EXIT trap — under bash 3.2 a cleanup trap's last command becomes the script's status,
+# laundering a `set -u` abort into exit 0 (#4476, class #4479). It also must not delete $BUNDLE_DIR:
+# the next step reads the manifest out of it.
+
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then set -uo pipefail; fi   # executed mode only (ADR 0232)
 . "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
+
+REPO="${REPO:-${1:?step3_5-fetch-artifact.sh: REPO unset and no \$1 — refusing to fetch evidence from an unnamed repo}}"
+PR="${PR:-${2:?step3_5-fetch-artifact.sh: PR unset and no \$2 — refusing to fetch evidence for an unnamed PR}}"
 
 HEAD_SHA=$(gh api repos/$REPO/pulls/$PR --jq '.head.sha')
 
@@ -71,14 +86,17 @@ ART_FETCH_STATUS=absent
 # the run-evidence workflow run for THIS exact head SHA (not a stale earlier push)
 RUN_ID=$(gh_read_retry "repos/$REPO/actions/runs?head_sha=$HEAD_SHA&per_page=100" \
   '[.workflow_runs[] | select(.name=="run-evidence")] | sort_by(.created_at) | last | .id // empty')
-[ $? -ne 0 ] && ART_FETCH_STATUS=transient
+# `if … fi` bodies below (rule 4): the ORDINARY case is a read that SUCCEEDED, which makes
+# `[ $? -ne 0 ]` false — as an `&&` body that failing test would be the last command executed on the
+# clean path and would leak a 1 into this script's status. `$?` is still read first, unchanged.
+if [ $? -ne 0 ]; then ART_FETCH_STATUS=transient; fi
 
 # the run-evidence artifact id (retry-aware — a 5xx here is UNKNOWN, not an absent artifact)
 ART_ID=""
 if [ "$ART_FETCH_STATUS" != transient ] && [ -n "$RUN_ID" ]; then
   ART_ID=$(gh_read_retry "repos/$REPO/actions/runs/$RUN_ID/artifacts" \
     '.artifacts[] | select(.name=="run-evidence") | .id')
-  [ $? -ne 0 ] && ART_FETCH_STATUS=transient
+  if [ $? -ne 0 ]; then ART_FETCH_STATUS=transient; fi   # `if … fi`, same rule-4 reason as above
 fi
 
 # per-run bundle dir (mktemp -d), NOT a fixed /tmp/ship-it-bundle — the §SP per-run scratchpad
@@ -98,4 +116,13 @@ if [ "$ART_FETCH_STATUS" != transient ] && [ -n "$RUN_ID" ] && [ -n "$ART_ID" ];
   else
     ART_FETCH_STATUS=transient        # a listed artifact that will not download as a valid zip = UNKNOWN
   fi
+fi
+
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+  printf 'HEAD_SHA=%s\n' "$HEAD_SHA"
+  printf 'RUN_ID=%s\n' "$RUN_ID"
+  printf 'ART_ID=%s\n' "$ART_ID"
+  printf 'MANIFEST=%s\n' "$MANIFEST"
+  printf 'ART_FETCH_STATUS=%s\n' "$ART_FETCH_STATUS"
+  printf 'ART_FETCH_ERR=%s\n' "$ART_FETCH_ERR"
 fi

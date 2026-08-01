@@ -18,6 +18,12 @@
  *     and a detached run's output file carries no status at all, so a dead push reads
  *     as a clean one. `pipeline-cli verified-push` is the sanctioned path; this check
  *     is what makes that mechanical rather than attention-based (ADR 0202).
+ *  4. Non-portable plugin path literal in a fence (issue #4605) — flags a repo-relative
+ *     `./claude-plugins/…` path inside a fenced block. That literal resolves only inside
+ *     a phoenix checkout; a marketplace consumer's install lives in their plugin cache,
+ *     outside their repo, so the same fence is `No such file or directory` there. This is
+ *     the guard that would have caught the live customer-down break, and it exists because
+ *     nothing asserted the consumer's case (only the in-repo one).
  *
  * Fails CLOSED on zero scope (ADR 0092): `lintCorpus` returns the set of files
  * scanned alongside the findings, and `isZeroScope` reports when nothing was
@@ -59,12 +65,16 @@ export interface LintResult {
 	readonly frontmatterFindings: ReadonlyArray<FrontmatterFinding>;
 	/** Executable `git push` invocations in the corpus (#4213). */
 	readonly barePushFindings: ReadonlyArray<Finding>;
+	/** Non-portable `./claude-plugins/…` path literals inside fenced blocks (#4605). */
+	readonly portabilityFindings: ReadonlyArray<Finding>;
 	/** Every file path the gh-call scan looked at — its scope (ADR 0092). */
 	readonly scanned: ReadonlyArray<string>;
 	/** Every file path the frontmatter check looked at — its scope (ADR 0092). */
 	readonly frontmatterScanned: ReadonlyArray<string>;
 	/** Every file path the bare-push scan looked at — its scope (ADR 0092). */
 	readonly barePushScanned: ReadonlyArray<string>;
+	/** Every file path the fence-portability scan looked at — its scope (ADR 0092). */
+	readonly portabilityScanned: ReadonlyArray<string>;
 }
 
 interface LintPattern {
@@ -264,6 +274,61 @@ export const scanBarePush = (file: string, content: string): ReadonlyArray<Findi
 };
 
 /**
+ * A repo-relative path literal into the plugin's runnable surface — `./claude-plugins/<plugin>/skills|bin|lib|hooks/…`.
+ *
+ * This literal resolves ONLY inside a phoenix checkout. A marketplace consumer installs the plugin
+ * into its own cache, outside its repo, so the same fence there is a guaranteed `No such file or
+ * directory` — a live customer-down break (#4605). The portable literal is `./.claude/.pipeline/…`,
+ * a symlink the SessionStart / WorktreeCreate hooks plant at whatever install is live.
+ *
+ * The leading `(?<![\w./-])` is what keeps two legitimate neighbours out of scope: the marketplace
+ * manifest's `source: "./claude-plugins/<plugin>"` (no runnable-surface segment follows, so the
+ * trailing group never matches) and the `.claude/skills -> ../claude-plugins/…` symlink target in
+ * the README's tree diagram (the `.` is preceded by another `.`). Both are true statements about
+ * this repo's own layout, not commands anyone pastes.
+ */
+const NON_PORTABLE_PLUGIN_PATH =
+	/(?<![\w./-])\.\/claude-plugins\/[A-Za-z0-9._-]+\/(?:skills|bin|lib|hooks)\//g;
+
+/** Every file the fence-portability check looks at: the markdown corpus (the pasteable surface). */
+export const isPortabilityScoped = (path: string): boolean => normalize(path).endsWith(".md");
+
+/**
+ * A non-portable plugin path literal inside a FENCED block — the surface an agent actually pastes.
+ * Prose may keep naming the old form (it has to, to explain why it is forbidden), and a `.sh` is
+ * never pasted by an agent, so neither is in scope; the fence is.
+ *
+ * There is deliberately no self-exempt list and no per-line pragma: an escape hatch is the
+ * attention-based enforcement ADR 0202 rules out, and the corpus needs none — the planted link is
+ * reachable from every consuming repo by construction.
+ */
+export const scanFencePortability = (file: string, content: string): ReadonlyArray<Finding> => {
+	if (!isPortabilityScoped(file)) return [];
+	const findings: Finding[] = [];
+	const lines = content.split("\n");
+	let inFence = false;
+	for (let i = 0; i < lines.length; i++) {
+		const text = stripQuotePrefix(lines[i] ?? "");
+		if (FENCE.test(text)) {
+			inFence = !inFence;
+			continue;
+		}
+		if (!inFence) continue;
+		NON_PORTABLE_PLUGIN_PATH.lastIndex = 0;
+		for (const match of text.matchAll(NON_PORTABLE_PLUGIN_PATH)) {
+			findings.push({
+				file,
+				line: i + 1,
+				matched: match[0],
+				reason:
+					"a repo-relative `./claude-plugins/…` literal resolves only inside a phoenix checkout — in a marketplace consumer's repo the plugin lives in their cache and this fence is `No such file or directory`; use the hook-planted `./.claude/.pipeline/…` link (#4605)",
+			});
+		}
+	}
+	return findings;
+};
+
+/**
  * Scan the whole handed-in corpus. Runs BOTH checks and returns their findings
  * and their (independent) scopes. The caller pairs this with `isZeroScope` to
  * fail closed when EITHER scope is empty (ADR 0092).
@@ -275,7 +340,13 @@ export const lintCorpus = (files: ReadonlyArray<ScanFile>): LintResult => {
 	const frontmatterFindings: FrontmatterFinding[] = [];
 	const barePushScanned: string[] = [];
 	const barePushFindings: Finding[] = [];
+	const portabilityScanned: string[] = [];
+	const portabilityFindings: Finding[] = [];
 	for (const {file, content} of files) {
+		if (isPortabilityScoped(file)) {
+			portabilityScanned.push(file);
+			portabilityFindings.push(...scanFencePortability(file, content));
+		}
 		if (isFrontmatterScoped(file)) {
 			frontmatterScanned.push(file);
 			const fm = checkFrontmatter(file, content);
@@ -295,9 +366,11 @@ export const lintCorpus = (files: ReadonlyArray<ScanFile>): LintResult => {
 		findings,
 		frontmatterFindings,
 		barePushFindings,
+		portabilityFindings,
 		scanned,
 		frontmatterScanned,
 		barePushScanned,
+		portabilityScanned,
 	};
 };
 
@@ -312,4 +385,5 @@ export const lintCorpus = (files: ReadonlyArray<ScanFile>): LintResult => {
 export const isZeroScope = (result: LintResult): boolean =>
 	result.scanned.length === 0 ||
 	result.frontmatterScanned.length === 0 ||
-	result.barePushScanned.length === 0;
+	result.barePushScanned.length === 0 ||
+	result.portabilityScanned.length === 0;

@@ -1,8 +1,8 @@
 import {assert, describe, it} from "@effect/vitest";
 import {
+	reachedScriptNames,
 	resolveSection,
 	skillSurfaceFromText,
-	sourcedScriptNames,
 	ZERO_SCOPE,
 } from "./skill-shell-surface.ts";
 
@@ -19,21 +19,55 @@ const sliceStep = (text: string): string => {
 	return end < 0 ? rest : rest.slice(0, end + 1);
 };
 
-describe("sourcedScriptNames", () => {
+describe("reachedScriptNames", () => {
 	it("names every `$<SKILL>_SCRIPTS/<file>.sh` a stretch of text sources, deduplicated in order", () => {
 		const text = [
 			'. "$SHIPIT_SCRIPTS/step3-rollup-bindings.sh"',
 			`. "${brace("WRITE_CODE_SCRIPTS")}/step5_5-reconcile.sh"`,
 			'. "$SHIPIT_SCRIPTS/step3-rollup-bindings.sh"',
 		].join("\n");
-		assert.deepStrictEqual(sourcedScriptNames(text), [
+		assert.deepStrictEqual(reachedScriptNames(text), [
 			"step3-rollup-bindings.sh",
 			"step5_5-reconcile.sh",
 		]);
 	});
 
-	it("names nothing for text that sources nothing — the un-extracted corpus", () => {
-		assert.deepStrictEqual(sourcedScriptNames(`RECONCILE_TRIES=${brace("X:-16")}\n`), []);
+	// ADR 0232's executed form names the script by a literal repo-relative path — no `$…_SCRIPTS`
+	// to key on. A matcher that saw only the variable form reported "reaches nothing" for a lane
+	// that plainly does, reddening pins about the step's writes on a pure invocation-shape change
+	// (#4573).
+	it("names a script the text EXECUTES by literal repo-relative path (ADR 0232)", () => {
+		const text = [
+			"bash ./claude-plugins/kampus-pipeline/skills/write-code/scripts/step3-delegated-claim.sh 7",
+			'"$WT/claude-plugins/kampus-pipeline/skills/ship-it/scripts/step3-rollup-bindings.sh"',
+			"bash ./claude-plugins/kampus-pipeline/skills/write-code/scripts/step3-delegated-claim.sh 7",
+		].join("\n");
+		assert.deepStrictEqual(reachedScriptNames(text), [
+			"step3-delegated-claim.sh",
+			"step3-rollup-bindings.sh",
+		]);
+	});
+
+	// The sibling scoping this module documents: `shared/scripts/` is a library many skills call,
+	// so a caller naming it never folds it into the caller's own surface. Load-bearing beyond
+	// scoping: `readScript` resolves by BASENAME, and `cycle-doc-probe.sh` exists under both
+	// `review-code/scripts/` and `shared/scripts/` — without the exclusion a shared mention
+	// resolves to the skill-local file's content, a wrong answer rather than an UNRESOLVED.
+	it("never names a `shared/scripts/` library script", () => {
+		assert.deepStrictEqual(
+			reachedScriptNames("claude-plugins/kampus-pipeline/skills/shared/scripts/verdict-read.sh"),
+			[],
+		);
+	});
+
+	it("names nothing for text that reaches nothing — the un-extracted corpus", () => {
+		assert.deepStrictEqual(reachedScriptNames(`RECONCILE_TRIES=${brace("X:-16")}\n`), []);
+	});
+
+	// The falsification: drop the `/scripts` alternative from the matcher and this reds. Without it
+	// the literal-path case above would return [] and the parsers would silently narrow.
+	it("does not match a bare `.sh` mention that is not a scripts/ path", () => {
+		assert.deepStrictEqual(reachedScriptNames("see verify-chain-resolves.sh for the proof"), []);
 	});
 });
 

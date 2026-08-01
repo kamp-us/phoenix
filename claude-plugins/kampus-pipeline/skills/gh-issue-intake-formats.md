@@ -408,11 +408,11 @@ All five are in [`shared/scripts/milestone-rest.sh`](shared/scripts/milestone-re
 one subcommand each. Each relays the `gh api` answer straight to stdout:
 
 ```bash
-bash ./claude-plugins/kampus-pipeline/skills/shared/scripts/milestone-rest.sh "$REPO" read <N>          # stdout: the milestone number, or `none` — the well-formed default, never a defect to repair
-bash ./claude-plugins/kampus-pipeline/skills/shared/scripts/milestone-rest.sh "$REPO" catalog           # stdout: one `#<n>\t<title>` per open milestone — the ONLY legal assignment targets
-bash ./claude-plugins/kampus-pipeline/skills/shared/scripts/milestone-rest.sh "$REPO" assign <N> <m>    # numeric milestone id, never the title
-bash ./claude-plugins/kampus-pipeline/skills/shared/scripts/milestone-rest.sh "$REPO" clear <N>         # rare; assignment is the common write
-bash ./claude-plugins/kampus-pipeline/skills/shared/scripts/milestone-rest.sh "$REPO" issues <m>        # the drain-this-milestone query
+bash ./.claude/.pipeline/skills/shared/scripts/milestone-rest.sh "$REPO" read <N>          # stdout: the milestone number, or `none` — the well-formed default, never a defect to repair
+bash ./.claude/.pipeline/skills/shared/scripts/milestone-rest.sh "$REPO" catalog           # stdout: one `#<n>\t<title>` per open milestone — the ONLY legal assignment targets
+bash ./.claude/.pipeline/skills/shared/scripts/milestone-rest.sh "$REPO" assign <N> <m>    # numeric milestone id, never the title
+bash ./.claude/.pipeline/skills/shared/scripts/milestone-rest.sh "$REPO" clear <N>         # rare; assignment is the common write
+bash ./.claude/.pipeline/skills/shared/scripts/milestone-rest.sh "$REPO" issues <m>        # the drain-this-milestone query
 ```
 
 ---
@@ -452,7 +452,7 @@ branch (no second copy in any skill):
 
 ```bash
 # stdout: exactly one line, `CYCLE_DOC=present` or `CYCLE_DOC=absent`.
-bash ./claude-plugins/kampus-pipeline/skills/shared/scripts/cycle-doc-probe.sh "$REPO"
+bash ./.claude/.pipeline/skills/shared/scripts/cycle-doc-probe.sh "$REPO"
 ```
 
 A skill operating on a **local working tree** rather than the GitHub API (e.g. an offline
@@ -1253,7 +1253,7 @@ prints one `BLOCKING (…)` line per guard-touching or unreadable ADR:
 # NAME= lines are the evidence the probe ran, since its ordinary answer is the ABSENCE of a BLOCKING
 # line — never read empty stdout as "no guard-touching ADR". It makes the §CPREAD changed-file read
 # itself, so a failed read prints BLOCKING and exits non-zero rather than probing nothing.
-bash ./claude-plugins/kampus-pipeline/skills/shared/scripts/cp-guard-adr.sh "$REPO" "$PR"
+bash ./.claude/.pipeline/skills/shared/scripts/cp-guard-adr.sh "$REPO" "$PR"
 ```
 
 A guard-touching ADR classifies **§CP for merge-authority** exactly like a path-§CP file:
@@ -1310,7 +1310,7 @@ and branch on the **exit status**, resolving a failure toward §CP:
 ```bash
 # stdout: `CP_FILES_N=<n>` then one `CP_FILE=<path>` per file. A read that could not execute prints
 # NOTHING on stdout and exits non-zero — so read the status, never the emptiness.
-if ! bash ./claude-plugins/kampus-pipeline/skills/shared/scripts/cp-read.sh "$REPO" changed-files "$PR"; then
+if ! bash ./.claude/.pipeline/skills/shared/scripts/cp-read.sh "$REPO" changed-files "$PR"; then
   CP_STATE=unknown   # the input never arrived ⇒ UNKNOWN ⇒ hold as §CP (never `not-control-plane`)
 fi
 ```
@@ -1345,7 +1345,7 @@ two above in [`shared/scripts/cp-read.sh`](shared/scripts/cp-read.sh) (§SHARED)
 shape-assert rationale in-script:
 
 ```bash
-CPREAD=./claude-plugins/kampus-pipeline/skills/shared/scripts/cp-read.sh
+CPREAD=./.claude/.pipeline/skills/shared/scripts/cp-read.sh
 # stdout: `CP_MEMBERS_N=<n>` then one `CP_MEMBER=<login>` per member. `CP_MEMBERS_N=0` at exit 0 is a
 # real answer here — an empty team is a FACT (the ADR-0175 N==0 STOP), unlike an empty file list.
 bash "$CPREAD" "$ORG"  team-roster              || CP_ROSTER_STATE=unknown   # NEVER a cardinality, never "the team is empty"
@@ -1374,7 +1374,7 @@ runs the shared entry point, which cannot hand back a fail-open no:
 # stdout, in order: the §CP scope line, `CP_STATE=<state>`, then `BLOCKING (…)` on every state but
 # `not-control-plane`. Assert on the CP_STATE word — an exit code discriminates outcomes only once
 # the script has RUN, so `… || ordinary` fail-opens on a usage error (1) or a missing binary (127).
-bash ./claude-plugins/kampus-pipeline/skills/shared/scripts/cp-classify-entry.sh "$REPO" "$PR"
+bash ./.claude/.pipeline/skills/shared/scripts/cp-classify-entry.sh "$REPO" "$PR"
 ```
 
 [`shared/scripts/cp-classify-entry.sh`](shared/scripts/cp-classify-entry.sh) prints `CP_STATE=…` and
@@ -1569,7 +1569,7 @@ and every path falls through to the doc test). This is the same stance as §CP's
 ```bash
 # stdout: four lines — HAS_CODE_RE=…, HAS_SKILLS_RE=…, HAS_DOCS_EXCLUDE_RE=…, HAS_DOCS_RE=… — each
 # already carrying the fail-closed default when its live read was unusable.
-bash ./claude-plugins/kampus-pipeline/skills/shared/scripts/class-probe-resolve.sh "$REPO"
+bash ./.claude/.pipeline/skills/shared/scripts/class-probe-resolve.sh "$REPO"
 ```
 
 [`shared/scripts/class-probe-resolve.sh`](shared/scripts/class-probe-resolve.sh) makes the single
@@ -1745,7 +1745,7 @@ copies apart. Each gate runs it **before** its first head fetch / `git worktree 
 # Read-only (git rev-parse only), safe to re-run. stdout: the scope line, then `ISO_PREFLIGHT=OK`
 # only when the tree is safe to materialize into; a refusal names itself on stderr and exits 1.
 # The EXIT STATUS is this guard's whole contract — never proceed past a non-zero.
-bash ./claude-plugins/kampus-pipeline/skills/shared/scripts/iso-preflight.sh review-code || exit 1
+bash ./.claude/.pipeline/skills/shared/scripts/iso-preflight.sh review-code || exit 1
 ```
 
 [`shared/scripts/iso-preflight.sh`](shared/scripts/iso-preflight.sh) carries the detection and its
@@ -1787,12 +1787,20 @@ internals (#4427). The prose keeps the *why*; the script carries the shell (foun
 [0232](https://github.com/kamp-us/phoenix/blob/main/.decisions/0232-agents-execute-skill-scripts-never-source-them.md)).**
 
 ```bash
-bash ./claude-plugins/kampus-pipeline/skills/shared/scripts/<name>.sh <args…>
+bash ./.claude/.pipeline/skills/shared/scripts/<name>.sh <args…>
 ```
 
 Two constraints make that the only shape, and both are the harness's, not this contract's: its
 isolation verifier refuses a `.`/`source` at an agent's top-level command **by any path form**, and it
-refuses the interpolated `"${CLAUDE_PLUGIN_ROOT:-…}/…"` idiom as too complex to verify. So the path is
+refuses a path it cannot resolve statically. The second refusal is **position-blind**, which an
+18-trial reproduction pinned ([#4595](https://github.com/kamp-us/phoenix/issues/4595)): three
+triggers each fire on their own — the `${VAR:-default}` syntax itself (refused even when the
+variable is already set), any expansion the verifier cannot resolve, and `$(…)` command
+substitution. That means "assignments are safe, only invocations are refused" is not a real
+distinction, and the rule is constructive rather than positional: **a fence may bind a variable only
+by literal assignment inside the same block.**
+
+So the path is
 written out literally, which hardcodes the in-repo plugin location — the ADR
 [0062](https://github.com/kamp-us/phoenix/blob/main/.decisions/0062-repo-as-config-plugin.md)
 portability trade ADR 0232 accepts and records.
@@ -1850,16 +1858,24 @@ the gate silently never fires (#4236). Use `"$PCLI"`.
 ### The canonical preamble — paste it once per bash block that invokes the CLI
 
 ```bash
-# §CLI — resolve the shim. `$CLAUDE_PLUGIN_ROOT` covers a foreign consumer install; the
-# git-toplevel fallback covers this repo from ANY cwd, in the primary checkout AND in an
-# agent worktree (both trees carry the shim, and a worktree's toplevel is its own root).
-PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
+# §CLI — bind the shim by LITERAL assignment, run from the repo root.
+PCLI="./.claude/.pipeline/bin/pipeline-cli"
 ```
 
 Then call it as `"$PCLI" <verb> …`. That is the **one** documented form; do not re-derive a
 second. `$PCLI` is a shell variable, so — like `$BRANCH` and `$WT` — it does **not** survive
 between an agent's separate Bash calls: re-run the preamble in each block, never cache the path
 to a file (§SP).
+
+**Why a literal, and what it costs.** The preamble used to resolve `$CLAUDE_PLUGIN_ROOT` with a
+git-toplevel fallback, so it worked from any cwd and in a foreign consumer install. The harness
+refuses that whole shape at an agent's top-level command — see the §SHARED constraint above — so
+the assignment is written out literally instead. The trade is the same one §SHARED records: the
+in-repo plugin location is hardcoded and the block must be pasted from the repo root, which is the
+ADR [0062](https://github.com/kamp-us/phoenix/blob/main/.decisions/0062-repo-as-config-plugin.md)
+portability cost ADR [0232](https://github.com/kamp-us/phoenix/blob/main/.decisions/0232-agents-execute-skill-scripts-never-source-them.md)
+accepts. A script may still resolve its own paths however it likes — the verifier judges only the
+command *you* run, not a script's body.
 
 ### The exit-code taxonomy — "could not run" is never a verdict
 
@@ -1889,7 +1905,7 @@ verdict:
 # Pass the shim path the §CLI preamble resolved — an executed child cannot see your unexported $PCLI.
 # stdout: `PCLI=<path>` only when the shim is executable; otherwise nothing on stdout, the three
 # refusal lines on stderr, and exit 127 — UNKNOWN, never a verdict.
-bash ./claude-plugins/kampus-pipeline/skills/shared/scripts/cli-require.sh "$PCLI" || exit 127
+bash ./.claude/.pipeline/skills/shared/scripts/cli-require.sh "$PCLI" || exit 127
 ```
 
 This section owns the **call-site resolution** half only. Two adjacent seams own the rest and
@@ -1983,7 +1999,7 @@ Allocation is owned by one tested verb, so a caller **cites it instead of hand-r
 (#3718). It prints the absolute directory on stdout and nothing else:
 ```bash
 # open, then re-derive. stdout: `RUN_SCRATCH=<dir>` and `VERDICT=<file>`; nothing on a refusal.
-bash ./claude-plugins/kampus-pipeline/skills/shared/scripts/scratchpad.sh verb "review-doc-$PR" verdict.md || exit 1
+bash ./.claude/.pipeline/skills/shared/scripts/scratchpad.sh verb "review-doc-$PR" verdict.md || exit 1
 ```
 
 [`shared/scripts/scratchpad.sh`](shared/scripts/scratchpad.sh) keeps the two calls apart because the
@@ -2025,7 +2041,7 @@ path in the same script (§SHARED, epic #4435). The recipe is unchanged.
 it backwards re-creates the empty-directory bug it exists to prevent:
 
 ```bash
-SP=./claude-plugins/kampus-pipeline/skills/shared/scripts/scratchpad.sh   # both print `RUN_SCRATCH=<dir>`
+SP=./.claude/.pipeline/skills/shared/scripts/scratchpad.sh   # both print `RUN_SCRATCH=<dir>`
 bash "$SP" open-fallback <slug> || exit 1             # the run's FIRST write of state — clears leftovers
 bash "$SP" path-fallback <slug> <file> || exit 1      # every LATER Bash call — asserts, never creates
 ```
@@ -2116,7 +2132,7 @@ section is its pipeline-side statement — don't restate the rationale at each c
 # The path list arrives on STDIN. stdout: `WL_ALL_ONCLASS=yes` only when the set is NON-EMPTY and the
 # inverted match captured NOTHING; `WL_ALL_ONCLASS=no` (exit 1) otherwise. Read the printed word —
 # the emptiness of the captured output is the condition, never the exit status of a `grep -v`.
-printf '%s\n' "$FILES" | bash ./claude-plugins/kampus-pipeline/skills/shared/scripts/wl-empty-output.sh
+printf '%s\n' "$FILES" | bash ./.claude/.pipeline/skills/shared/scripts/wl-empty-output.sh
 ```
 
 ---
@@ -2149,8 +2165,8 @@ assert it did:**
    **asserts the fetched ref resolves to exactly that SHA before you review** — aborting on a moved
    head rather than binding a stale verdict. Two modes, same core:
    ```bash
-   # §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
-   PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
+   # §CLI — bind the shim by LITERAL assignment, from the repo root (the preamble above).
+   PCLI="./.claude/.pipeline/bin/pipeline-cli"
    # ref-only (review-doc reads via `git show "$PR_REF:<path>"`):
    eval "$("$PCLI" review-head materialize --pr "$PR" | jq -r '"PR_REF=\(.prRef); HEAD_SHA=\(.headSha)"')"
    # full detached head worktree (review-code / review-skill), emitted as `.worktreeDir`:
@@ -2371,7 +2387,7 @@ after the win, before it hands the lane on.**
 The write goes through **one verb** — never a hand-rolled `gh api … /assignees`:
 
 ```bash
-CV=./claude-plugins/kampus-pipeline/skills/shared/scripts/claim-verbs.sh   # stdout + exit status are the verb's own
+CV=./.claude/.pipeline/skills/shared/scripts/claim-verbs.sh   # stdout + exit status are the verb's own
 bash "$CV" assign <N>             # layer one under our own session
 bash "$CV" assign <N> <token>     # …or under the threaded delegated token
 ```
@@ -2437,7 +2453,7 @@ done**. The owner performs that release itself:
 
 ```bash
 # retract our own marker; pass the delegated token as the third argument to release a delegated claim
-bash ./claude-plugins/kampus-pipeline/skills/shared/scripts/claim-verbs.sh release <N>
+bash ./.claude/.pipeline/skills/shared/scripts/claim-verbs.sh release <N>
 ```
 
 **Who calls it, and when.** The run that holds the claim, at its terminus: `write-code` Step 8
@@ -2493,7 +2509,7 @@ read-only inventory is the surface:
 ```bash
 # stdout: the verb's inventory — every marker with its author, authorization, liveness, and the
 # resolved owner.
-bash ./claude-plugins/kampus-pipeline/skills/shared/scripts/claim-verbs.sh status <N>
+bash ./.claude/.pipeline/skills/shared/scripts/claim-verbs.sh status <N>
 ```
 
 Read it before concluding a lane is stuck. A row with `liveness: dead` is already superseded and
@@ -2562,7 +2578,7 @@ by an audited cleanup, not by a resolution rule — the rules above are untouche
 claim is never a candidate whatever its age:
 
 ```bash
-CV=./claude-plugins/kampus-pipeline/skills/shared/scripts/claim-verbs.sh   # stdout is the verb's own report
+CV=./.claude/.pipeline/skills/shared/scripts/claim-verbs.sh   # stdout is the verb's own report
 bash "$CV" audit                  # every open lane held by an unstamped marker, and which are retirable
 bash "$CV" audit <N>              # the cheap single-lane read when a stall is already known
 bash "$CV" audit --execute        # retire the retirable ones through `claim release`
@@ -2882,7 +2898,7 @@ shows in the run log instead of reading green:
 ```bash
 # stdout: the two `deviation-disclosure:` scope lines, then one `DEV_SUPPRESS_LINE=<text>` per
 # class-5 hit and one `DEV_TESTCUT_LINE=<text>` per class-6 hit.
-bash ./claude-plugins/kampus-pipeline/skills/shared/scripts/dev-tier-m.sh "$REPO" "$PR"
+bash ./.claude/.pipeline/skills/shared/scripts/dev-tier-m.sh "$REPO" "$PR"
 ```
 
 [`shared/scripts/dev-tier-m.sh`](shared/scripts/dev-tier-m.sh) carries the section-presence pattern

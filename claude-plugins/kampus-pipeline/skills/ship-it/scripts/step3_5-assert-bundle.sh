@@ -5,15 +5,48 @@
 # Extracted VERBATIM from ship-it/SKILL.md's Step 3.5 fenced block (epic #4435 phase 1, #4448).
 # A byte-move, not a rewrite: replacing this glue with `pipeline-cli` verbs is phase 2 (#1929).
 #
-# SOURCED, never executed. The fenced block it replaces ran inline in the agent's shell, so this
-# file deliberately sets NO shell options — several guards here depend on `pipefail` being OFF —
-# and leaves its variables and functions in the sourcing shell, which is how the step's later
-# blocks still see them.
+# DUAL-MODE (ADR 0232) — the why is `.patterns/skill-script-shell-shape.md` § The dual-mode shape.
+#   EXECUTED:  bash ./claude-plugins/kampus-pipeline/skills/ship-it/scripts/step3_5-assert-bundle.sh \
+#                   <REPO> <PR> <ART_FETCH_STATUS> <RUN_ID> <ART_ID> <MANIFEST> <HEAD_SHA> [<ART_FETCH_ERR>]
+#              The six inputs after <PR> are the values `step3_5-fetch-artifact.sh` printed. They are
+#              POSITIONAL rather than inherited because the fetch and the assertion are now separate
+#              processes: an executed child sees none of its parent's shell, and an input silently
+#              defaulting to empty here would read as "genuine absence" — assertion 1b — for a bundle
+#              that was fetched fine. So every one of them refuses when absent (§ZS: an unread input
+#              is UNKNOWN, never a finding). The one exception is <ART_FETCH_ERR>, which is the
+#              transient CAUSE TEXT and is legitimately empty.
+#              stdout ⇒ nothing at all when all four assertions hold — guard 2 cleared; otherwise the
+#              ONE `unverified (…)` / `run-evidence checks failed (…)` refusal line plus
+#              `INTENT_UNCLEARED=<0|1>`. Each refusal is a successful decline and exits 0, as the
+#              fenced block did, so read the LINE, not the status.
+#   SOURCED:   no in-script consumer today; a caller that has all six in its own shell may still
+#              source it, and its values win over the positionals.
+# No EXIT trap — under bash 3.2 a cleanup trap's last command becomes the script's status,
+# laundering a `set -u` abort into exit 0 (#4476, class #4479).
+
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then set -uo pipefail; fi   # executed mode only (ADR 0232)
 . "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
+# `disarm_intent` (guard 6 / ADR 0198), sourced IN-CHAIN — a process inherits no functions (ADR 0232).
+# shellcheck source=disarm-intent.sh
+. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/." && pwd)/disarm-intent.sh"
+
+REPO="${REPO:-${1:?step3_5-assert-bundle.sh: REPO unset and no \$1 — refusing to assert a bundle in an unnamed repo}}"
+PR="${PR:-${2:?step3_5-assert-bundle.sh: PR unset and no \$2 — refusing to assert a bundle for an unnamed PR}}"
+ART_FETCH_STATUS="${ART_FETCH_STATUS:-${3:?step3_5-assert-bundle.sh: ART_FETCH_STATUS unset and no \$3 — an unknown fetch outcome is UNKNOWN, never 'absent'}}"
+RUN_ID="${RUN_ID-${4-}}"     # legitimately EMPTY on a genuine absence — assertion 1b's own input
+ART_ID="${ART_ID-${5-}}"     # likewise
+MANIFEST="${MANIFEST:-${6:?step3_5-assert-bundle.sh: MANIFEST unset and no \$6 — refusing to assert against an unnamed manifest path}}"
+HEAD_SHA="${HEAD_SHA:-${7:?step3_5-assert-bundle.sh: HEAD_SHA unset and no \$7 — with no head to compare, assertion 3 could not tell a stale bundle from a current one}}"
+ART_FETCH_ERR="${ART_FETCH_ERR-${8-}}"   # the transient cause text; legitimately empty
 
 # Each refusal below (transient, absent, schema, stale, checks-failed) is a stop path, so each
 # clears the merge intent before it reports (guard 6 / ADR 0198) — one wrapper, not N hand-copied disarms.
-refuse_ship() { disarm_intent refuse || INTENT_UNCLEARED=1; echo "$1"; exit 0; }
+refuse_ship() {
+  disarm_intent refuse || INTENT_UNCLEARED=1
+  echo "$1"
+  if [ "${BASH_SOURCE[0]}" = "$0" ]; then printf 'INTENT_UNCLEARED=%s\n' "$INTENT_UNCLEARED"; fi
+  exit 0
+}
 
 # 1a. TRANSIENT / upstream-unavailable (the #3716 fix — this MUST precede 1b). A read 5xx'd, or the
 #     listed artifact would not download as a valid zip after retry+backoff — a TRANSPORT failure,

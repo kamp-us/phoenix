@@ -141,8 +141,12 @@ UPDATED="$(printf '%s\n%s\n' "$BODY" "$NEW_AC")"
 # catastrophe fence 1 forbids). The diff is captured BEFORE it is matched on purpose: with
 # `pipefail` on, `diff … | grep -qE '^< '` returns diff's own 1-on-difference even when grep
 # matched, so the guard's `&&` would never fire and the abort would be silently disabled.
-# Its over-strictness on a body with no trailing newline is preserved as-is — see #4600.
-DIFF_OUT="$(diff <(printf '%s' "$BODY") <(printf '%s' "$UPDATED"))"
+# BOTH operands go through ONE normalizer, and that symmetry IS the guard's correctness: `gh api …
+# --jq .body` strips every trailing newline, while the rebuilt body re-emits that same last line
+# WITH one — so an unnormalized diff read the last pre-existing line as CHANGED and aborted every
+# non-empty append. Normalizing a single side would move the asymmetry, not remove it (#4600).
+newline_terminated() { printf '%s\n' "$1"; }
+DIFF_OUT="$(diff <(newline_terminated "$BODY") <(newline_terminated "$UPDATED"))"
 if printf '%s\n' "$DIFF_OUT" | grep -qE '^< '; then
 	echo "append-only violation: a pre-existing line would change — ABORT, do not write" >&2
 	exit 1

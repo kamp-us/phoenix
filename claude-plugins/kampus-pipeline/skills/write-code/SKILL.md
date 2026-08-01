@@ -43,44 +43,68 @@ Resolve the target repo once, up front (this skill is repo-agnostic — every ca
 ([`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md), ADR 0062 §1), defaulting
 to `kamp-us/phoenix` with no config.
 
+Each step below is a script under [`scripts/`](scripts), **executed by literal path** and read off
+**stdout** — never sourced (ADR
+[0232](https://github.com/kamp-us/phoenix/blob/main/.decisions/0232-agents-execute-skill-scripts-never-source-them.md)).
+The harness's isolation verifier refuses `.` at an agent's top-level command by **any** path form, and
+refuses the interpolated `"${CLAUDE_PLUGIN_ROOT:-…}"` idiom as too complex to verify; a plain literal
+path is the one shape that runs ([#4595](https://github.com/kamp-us/phoenix/issues/4595)'s controlled
+matrix). So every invocation looks like this, and the prose at each site names what to read off its
+stdout:
+
 ```bash
-REPO="${CLAUDE_PIPELINE_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}"
-# Most of this skill's steps are still SOURCED scripts under `scripts/` (epic #4435 phase 1, #4449),
-# resolved the same way §CLI resolves the `pipeline-cli` shim because neither is on PATH. Source each
-# one where its step says to. This variable serves ONLY that surviving sourced set — it is not a
-# second invocation convention on offer, and #4573 deletes it when the last sourced step converts.
-WRITECODE_SCRIPTS="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/skills/write-code/scripts"
+bash ./.claude/.pipeline/skills/write-code/scripts/<script>.sh <args>
 ```
 
-**The sanctioned invocation form is literal-path execution with a stdout contract (ADR
-[0232](https://github.com/kamp-us/phoenix/blob/main/.decisions/0232-agents-execute-skill-scripts-never-source-them.md)) —
-`bash ./claude-plugins/…/scripts/<step>.sh`, results read off stdout.** The harness's isolation
-verifier refuses `.` itself, by *any* path form, and every executor here is worktree-isolated — so a
-sourced step cannot run as designed. The steps written in that form below are the whole of the
-convention; where a step still reads `. "$WRITECODE_SCRIPTS/…"` you are looking at the unconverted
-remainder (#4573), which is history, **not** a shape to copy for anything new.
+**`.claude/.pipeline` is a symlink the hooks plant at the live plugin install, and the reason it
+exists is portability, not tidiness ([#4605](https://github.com/kamp-us/phoenix/issues/4605)).** The
+literal has to be true in *every* consuming repo, and `./claude-plugins/…` is true only inside a
+phoenix checkout — a marketplace consumer's install lives in their plugin cache, outside their repo,
+where that path is `No such file or directory`. A hook is a harness-*substituted* surface (it
+receives `CLAUDE_PLUGIN_ROOT`), an agent's top-level command is not, so the hooks are the one place
+that can know where the plugin actually is; the link is how they tell you. If it is missing, `bash`
+exits **127 with nothing on stdout** — which is UNKNOWN, never "the script answered no" (§ZS below).
 
-**A script's non-zero return is UNKNOWN — never an answer (§ZS, ADR
+The handful of fences below that are *not* a script invocation — the milestone-drain read, the repair
+escalation — call `gh api` directly, so they resolve the target repo in their own fence:
+
+```bash
+REPO="${CLAUDE_PIPELINE_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}"
+```
+
+**Nothing crosses a Bash call in a shell variable.** The harness resets shell state between an
+agent's Bash calls, so a value a step needs later travels one of three ways and never as an inherited
+variable: printed on **stdout** (`WT=`, `BRANCH=`, `EPIC=`, `CONTAINMENT=`), passed as an explicit
+**argument** to the next script, or written to the **§SP per-run scratch namespace**
+([`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §SP) — which is how repair mode's
+author set, verdict payloads and FAIL body reach the steps that read them. The `$REPO` and `$PCLI`
+each script needs are resolved **inside** it, through the shared lib's `kp_repo` / `kp_pcli`.
+
+**A script's non-zero exit is UNKNOWN — never an answer (§ZS, ADR
 [0092](https://github.com/kamp-us/phoenix/blob/main/.decisions/0092-gates-fail-closed-on-zero-scope.md)).**
 Every script below prints its result on **stdout** and signals "I could not produce one" by a
-**non-zero return with no stdout**. Those two states are not the same, and the empty one is never
+**non-zero exit with no stdout**. Those two states are not the same, and the empty one is never
 the permissive branch: an absent or empty result means the step did **not** run, so it can never be
 read as "no parent", "no dependencies", "not a dark ship", or "no claim conflict". So every
 invocation site whose **stdout is consumed as an answer** carries an explicit `|| exit 1`, and a
-site that omits it is one whose script `exit`s on its own failure path (the same behavior the inline
-block had). Never infer a negative from silence.
+site that omits it is one whose script `exit`s on its own failure path. Never infer a negative from
+silence.
 
-Two things about those scripts, stated once here rather than repeated in twenty file headers:
+Two things about those scripts, stated once here rather than repeated in thirty file headers:
 
-- **The moved shell is a byte-move, so its shellcheck findings moved with it.** Each script declares
-  the codes *its own* moved lines raise in its `# shellcheck … disable=` directive (mostly `SC2086`
-  on an unquoted `$REPO` in a `gh api` path) — declared per file, never blanket-suppressed, because
-  quoting them would be a rewrite and rewriting the glue is phase 2 ([#1929](https://github.com/kamp-us/phoenix/issues/1929)).
+- **The shape is [`.patterns/skill-script-shell-shape.md`](https://github.com/kamp-us/phoenix/blob/main/.patterns/skill-script-shell-shape.md)'s**
+  — `set -uo pipefail`, never `-e`, no cleanup `EXIT` trap — and the stream contract is
+  [`.patterns/skill-script-io-contract.md`](https://github.com/kamp-us/phoenix/blob/main/.patterns/skill-script-io-contract.md)'s:
+  stdout is the answer, everything else is stderr. Each script declares the shellcheck codes *its own*
+  lines raise in its `# shellcheck … disable=` directive (mostly `SC2086` on an unquoted `$REPO` in a
+  `gh api` path) — declared per file, never blanket-suppressed, because quoting them would be the
+  rewrite that is phase 2 ([#1929](https://github.com/kamp-us/phoenix/issues/1929)).
 - **Two committed proofs re-derive the claims instead of asserting them**, both reviewer-runnable:
-  [`scripts/verify-byte-move.sh`](scripts/verify-byte-move.sh) diffs each script against the fenced
-  block it replaced at the base commit, and
   [`scripts/verify-fail-closed.sh`](scripts/verify-fail-closed.sh) captures every seam's exit code
-  **and** stdout byte count to prove no failure path can be read as an answer.
+  **and** stdout byte count to prove no failure path can be read as an answer, and
+  [`scripts/verify-executed-contract.sh`](scripts/verify-executed-contract.sh) asserts the shell
+  shape, that no fence sources at the top level or interpolates `CLAUDE_PLUGIN_ROOT`, and that every
+  literal path a fence invokes exists.
 
 ## The formats contract
 
@@ -199,7 +223,10 @@ work, scan your own open PRs for one whose **latest** gate verdict (in *any* of 
 namespaces) is an unaddressed FAIL:
 
 ```bash
-bash ./claude-plugins/kampus-pipeline/skills/write-code/scripts/step1-repairable-prs.sh || exit 1   # stdout IS the repairable-PR list — silence is UNKNOWN, never "nothing to repair"
+# Which of MY open PRs carry an unaddressed, current-head gate FAIL? An EMPTY answer means nothing of
+# mine needs repair, so empty is the PERMISSIVE reading — a non-zero exit (127 = the CLI never ran) is
+# UNKNOWN and must stop the run, never fall through to new work.
+bash ./.claude/.pipeline/skills/write-code/scripts/step1-repairable-prs.sh || exit 1
 ```
 
 If such a PR exists, **repair it instead of picking new work** — go to
@@ -227,7 +254,8 @@ List the candidate pool, priority bucket by priority bucket, stopping at the fir
 bucket that has any unassigned candidate:
 
 ```bash
-. "$WRITECODE_SCRIPTS/step1-candidate-pool.sh"
+# stdout IS the pool, one `#N<TAB>created_at<TAB>title` row per candidate, p0 rows first
+bash ./.claude/.pipeline/skills/write-code/scripts/step1-candidate-pool.sh || exit 1
 ```
 
 `(.pull_request | not)` filters out PRs (the issues endpoint returns both). Take the
@@ -311,7 +339,9 @@ sub-endpoint ADR
 §3 already names the authoritative linkage — and read **three** outcomes off it, never two:
 
 ```bash
-. "$WRITECODE_SCRIPTS/step1-parent-resolve.sh" <N> || exit 1   # stdout IS the classification — an empty one is UNKNOWN, never "standalone"
+# stdout IS the classification — an empty one is UNKNOWN, never "standalone". On a sub-issue its
+# first line is `EPIC=<n>`: that number, and never a guessed or remembered one, is Step 2's argument.
+bash ./.claude/.pipeline/skills/write-code/scripts/step1-parent-resolve.sh <N> || exit 1
 ```
 
 - **Parent resolved (200)** → go to **Step 2** and derive eligibility before claiming.
@@ -337,8 +367,9 @@ when its dependencies are all closed. There is **no `status:blocked` label**;
 eligibility is computed fresh on every pick from the epic's `## Dependencies` section.
 
 ```bash
-# pass the parent number Step 1's sub-endpoint read RESOLVED — never a guessed or remembered one
-. "$WRITECODE_SCRIPTS/step2-epic-read.sh" <EPIC> || exit 1   # no topology read ⇒ UNKNOWN, never "no dependencies"
+# pass the parent number Step 1's sub-endpoint read RESOLVED (its `EPIC=` stdout line) — never a
+# guessed or remembered one. No topology read ⇒ UNKNOWN, never "no dependencies".
+bash ./.claude/.pipeline/skills/write-code/scripts/step2-epic-read.sh <EPIC> || exit 1
 ```
 
 **The derivation rule** (from the formats `## Dependencies` grammar):
@@ -416,7 +447,9 @@ delegation by resolving §7's tiebreak once — the **earliest authorized claim*
 session id must equal the threaded token — then proceed straight to implementing:
 
 ```bash
-. "$WRITECODE_SCRIPTS/step3-delegated-claim.sh" <N> || exit 1   # non-zero ⇒ delegation NOT confirmed; do not implement
+# pass the token the orchestrator threaded into your prompt; non-zero ⇒ delegation NOT confirmed,
+# do not implement
+bash ./.claude/.pipeline/skills/write-code/scripts/step3-delegated-claim.sh <N> "<threaded token>" || exit 1
 ```
 
 ### Direct path — claim it yourself (no orchestrator)
@@ -430,7 +463,7 @@ Run it; never hand-roll a `claim:` body, which silently skips the ADR-0191 prese
 leaves this lane's claim permanently unprobeable (#3987):
 
 ```bash
-. "$WRITECODE_SCRIPTS/step3-direct-claim.sh" <N> || exit 1   # non-zero ⇒ NO claim was made; back off and re-pick
+bash ./.claude/.pipeline/skills/write-code/scripts/step3-direct-claim.sh <N> || exit 1   # non-zero ⇒ NO claim was made; back off and re-pick
 ```
 
 **The operating rule.** Posting the claim comment **detects** a race; the **checkpoint GET**
@@ -491,23 +524,29 @@ The token this run owns its work *under* is `MY_CLAIM`, resolved once at the top
   guard treats a target whose earliest authorized claim equals the threaded token as *mine*.
 
 ```bash
-. "$WRITECODE_SCRIPTS/step3_5-my-claim.sh"   # leaves $MY_CLAIM in this shell; refuses (fail-closed) when neither token is set
+# prints `MY_CLAIM=<token>`; refuses (fail-closed) when neither token is set. Read it to SEE which
+# token this lane owns work under — every guarded site below resolves the SAME token internally,
+# because a shell variable does not survive to the next Bash call.
+bash ./.claude/.pipeline/skills/write-code/scripts/step3_5-my-claim.sh || exit 1
 ```
 
-### `claim_is_mine <N>` — MANDATED before every issue/PR-number mutation
+### The guard script — MANDATED before every issue/PR-number mutation
 
-Define the guard once and gate **every** number-targeting mutation on it, exactly as
-[`wt_preflight`](#per-mutation-preflight) gates every git mutation — a green `claim_is_mine`
-is the **only** sanctioned path to a mutation that names `<N>`, no bypass:
+Gate **every** number-targeting mutation on it, exactly as
+[the worktree preflight](#per-mutation-preflight) gates every git mutation — a green run is the
+**only** sanctioned path to a mutation that names `<N>`, no bypass. Its **exit status is the entire
+contract**; it prints nothing on stdout, so never read its text for the answer:
 
 ```bash
-. "$WRITECODE_SCRIPTS/step3_5-claim-is-mine.sh"   # leaves the `claim_is_mine` function in this shell
+bash ./.claude/.pipeline/skills/write-code/scripts/step3_5-claim-is-mine.sh "<N>" || exit 1
 ```
 
 The calling convention, which every number-targeting mutation below follows:
 
 ```bash
-claim_is_mine "<N>" && gh api repos/$REPO/issues/<N>/comments -f body="…"   # the guard gates the mutation; never run it ungated
+# the guard gates the mutation; never run the mutation without it
+bash ./.claude/.pipeline/skills/write-code/scripts/step3_5-claim-is-mine.sh "<N>" \
+  && gh api repos/$REPO/issues/<N>/comments -f body="…"
 ```
 
 The guard is **fail-closed by construction** — the verb proceeds (exit 0) **only** on positive
@@ -535,7 +574,7 @@ case can now resolve, instead of being permanently unprovable.
 > **Which `<N>` to guard at each site.** The guarded number is the **work-target whose mutation
 > could clobber another agent**: Step 5 guards the **issue** you open the PR against; Step 6 the
 > **issue** you comment on; **Step 7 guards the child you own** (the handoff to the parent epic is
-> predicated on owning the child — gate on `claim_is_mine <child>`, not the epic, which you never
+> predicated on owning the child — gate on the **child** number, not the epic, which you never
 > claim); repair R2/R3 guard the **PR's linked issue `#N`** (the claim lives on the issue, so
 > resolving `Fixes #N` and confirming its claim is `MY_CLAIM` is what proves the PR is yours to
 > push); the **repair escalation** sites — both the N=3 cap block and the freeze-after-round-K
@@ -560,7 +599,7 @@ The guard handed a number it did **not** claim refuses to mutate it. Walk the th
 
 1. **Foreign claim — REFUSE.** Agent B (its own session `B-sid`) holds the earliest authorized
    claim on issue `#900`. Agent A (`MY_CLAIM = A-sid`) is handed `#900` by a mis-attributed number
-   and reaches a mutation. `claim_is_mine 900` resolves `winner = B-sid`; `B-sid != A-sid` ⇒
+   and reaches a mutation. The guard run on `900` resolves `winner = B-sid`; `B-sid != A-sid` ⇒
    **FAILED (fail-closed): #900 is claimed by ANOTHER agent** — A pushes/closes nothing. This is
    the #1404 near-miss, now structurally unreachable.
 2. **Absent claim — REFUSE.** The number names an issue with **no** authorized claim marker (or
@@ -600,7 +639,10 @@ whereas in the **primary checkout they are the same path**. Equal ⇒ you're in 
 checkout (or a bare/no-repo edge) ⇒ **stop**; differ ⇒ you're in a linked worktree ⇒ proceed.
 
 ```bash
-. "$WRITECODE_SCRIPTS/step4-preflight.sh"   # leaves $GITDIR / $COMMON / $WT in this shell; `exit 1` on every unsafe state
+# stdout is `GITDIR=` / `COMMON=` / `WT=`; the scope line, the LOUD refusals and the CONFIRMED
+# assertion are on stderr. `exit 1` on every unsafe state, with NOTHING on stdout. `WT=` is the one
+# you act on: anchor every later Edit/Write and git op to that absolute root.
+bash ./.claude/.pipeline/skills/write-code/scripts/step4-preflight.sh || exit 1
 ```
 
 The preflight is **fail-closed by construction**: it refuses on the primary checkout, on a
@@ -673,7 +715,7 @@ is intentionally left untouched here so the two changes can't double-implement o
 > construction as the opening preflight:
 >
 > ```bash
-> WT="$(bash ./claude-plugins/kampus-pipeline/skills/write-code/scripts/step4-wt-preflight.sh)" || exit 1
+> WT="$(bash ./.claude/.pipeline/skills/write-code/scripts/step4-wt-preflight.sh)" || exit 1
 > git -C "$WT" <commit|push|switch …>   # address git at the root the guard resolved; never mutate without it
 > ```
 >
@@ -693,17 +735,17 @@ is intentionally left untouched here so the two changes can't double-implement o
 > message could never print.
 >
 > **The rule is about where the operands come from, not about where the line sits.** An assertion
-> that re-derives the value the `cd` just set — asking the cwd where the cwd is — is true by
-> construction and is not a guard; that, specifically, is the defect above. An assertion whose
-> operands come from somewhere else is a real guard wherever it sits, **including after the `cd`**:
-> the primary-checkout refusal above tests `lane_worktree`'s *answer* with two different plumbing
-> queries (`--absolute-git-dir` vs `--git-common-dir`) that coincide only on the primary, and it
-> fires on a `worktrees/<name>/gitdir` naming the primary root. So never delete a later assertion
-> merely because it follows the `cd` — check its operands first.
+> that re-derives the value the resolution just produced — asking the cwd where the cwd is — is true
+> by construction and is not a guard; that, specifically, is the defect above. An assertion whose
+> operands come from somewhere else is a real guard wherever it sits, **including after the lane is
+> resolved**: the script's primary-checkout refusal tests `lane_worktree`'s *answer* with two
+> different plumbing queries (`--absolute-git-dir` vs `--git-common-dir`) that coincide only on the
+> primary, and it fires on a `worktrees/<name>/gitdir` naming the primary root. So never delete a
+> later assertion merely because it follows the resolution — check its operands first.
 
 <a id="anchor-edits-to-wt"></a>
 > **Anchor EVERY `Edit`/`Write` to `$WT` — the raw-write path no git guard covers (#3458).**
-> `wt_preflight` and the repo-side worktree-guard both gate **head-moving git ops**. A raw
+> `step4-wt-preflight.sh` and the repo-side worktree-guard both gate **head-moving git ops**. A raw
 > `Edit`/`Write` to a file is **not** a git op, so **neither guard fires on it** — an edit whose
 > target is a **primary-checkout absolute path** writes straight into the shared primary tree,
 > silently, and is caught (if at all) only by a coder noticing the primary went dirty before commit.
@@ -756,7 +798,9 @@ isolated worktree (`fatal: 'main' is already checked out at <primary>`). Branch 
 latest origin `main` **without checking it out**:
 
 ```bash
-. "$WRITECODE_SCRIPTS/step4-branch.sh" <slug-for-issue-N> || exit 1   # leaves $BRANCH in this shell; no branch on non-zero
+# prints `BRANCH=<name>`; no branch on non-zero. Read the name only to SEE it — every later git op
+# RE-DERIVES the branch live from the worktree HEAD (below).
+bash ./.claude/.pipeline/skills/write-code/scripts/step4-branch.sh <slug-for-issue-N> || exit 1
 ```
 
 It's `git switch -c "$BRANCH" FETCH_HEAD` (not `git checkout main`) on purpose: in an
@@ -778,11 +822,12 @@ freshly-fetched `FETCH_HEAD` is the only flow that works — don't "fix" it back
 > *filename* is what collides.
 >
 > **The rule (mandatory, at every git op after this create): re-derive the branch live from
-> your own worktree — never read it from a file.** Right after `wt_preflight` resolves `$WT`,
-> the branch checked out there **is** your work branch, so read it straight from the
-> worktree HEAD:
+> your own worktree — never read it from a file.** The branch checked out in the worktree
+> `step4-wt-preflight.sh` just resolved **is** your work branch, so read it straight from that
+> worktree's HEAD:
 >
 > ```bash
+> WT="$(bash ./.claude/.pipeline/skills/write-code/scripts/step4-wt-preflight.sh)" || exit 1
 > BRANCH="$(git -C "$WT" branch --show-current)"   # live from the worktree — the source of truth, re-read at each git op
 > : "${BRANCH:?could not re-derive branch from worktree $WT — refusing to push to a guessed/cached ref}"
 > ```
@@ -915,7 +960,7 @@ path too, so the diff a reviewer reads matches what you wrote.
 > Bash-scripted in-place replace (a `node`/`sed` splice) rather than the Edit tool. (Most write-code
 > tasks don't touch `.claude/` content at all — this is the escape hatch for the ones that must.)
 
-Commit per repo conventions, gating each `git commit` on `wt_preflight` (the
+Commit per repo conventions, gating each `git commit` on `step4-wt-preflight.sh` (the
 [per-mutation preflight](#per-mutation-preflight) above) so a between-calls cwd reset can't
 land the commit on the primary tree. Don't push to or PR from `main`.
 
@@ -964,7 +1009,8 @@ a `**Containment:**` line, with a leading bold-marker, anywhere in the body; a *
 as `none`**:
 
 ```bash
-. "$WRITECODE_SCRIPTS/step4b-containment.sh" <N> || exit 1   # leaves $CONTAINMENT in this shell
+# prints `CONTAINMENT=<flag|exempt|none>` — the first of Step 4b's two inputs
+bash ./.claude/.pipeline/skills/write-code/scripts/step4b-containment.sh <N> || exit 1
 ```
 
 **Graceful absence — the dark-ship behavior applies only when there's a cycle.** It fires **only**
@@ -974,14 +1020,18 @@ foreign install with no cycle and no flag substrate — ADR
 [0062](https://github.com/kamp-us/phoenix/blob/main/.decisions/0062-repo-as-config-plugin.md)), this
 step is a **no-op**: you implement and ship the change exactly as Steps 4/5 already describe, with
 **no flag introduced**. Absence is a first-class, correct state, not a defect — the same
-graceful-absence contract `plan-epic` (stamp) and `review-code` (verify) honor:
+graceful-absence contract `plan-epic` (stamp) and `review-code` (verify) honor.
 
 ```bash
 # the canonical cycle-doc probe (formats §1) — relayed to the SHARED script, never copied; stdout is
 # `present` or `absent`. Absent ⇒ no cycle ⇒ ship normally, no flag.
-CYCLE_DOC="$(bash ./claude-plugins/kampus-pipeline/skills/write-code/scripts/step4b-cycle-doc.sh)" || exit 1
+CYCLE_DOC="$(bash ./.claude/.pipeline/skills/write-code/scripts/step4b-cycle-doc.sh)" || exit 1
 # ship dark ONLY when:  [ "$CONTAINMENT" = flag ] && [ "$CYCLE_DOC" = present ]
 ```
+
+That probe is the **shared** `skills/shared/scripts/cycle-doc-probe.sh` — not a skill-local copy —
+and the relay above **sources it in-script**, which is the one sourcing form ADR 0232 leaves
+sanctioned and the same way `plan-epic` and `review-code` reach it.
 
 When it **does** fire, ship dark per the dark-ship procedure — **don't re-derive the mechanics**.
 The change gates behind a default-off flag, which is **one of two shapes** that this step treats
@@ -1070,7 +1120,7 @@ whole-codebase pass:
   next agent something the code can't. If a docblock carries real unhomed *why*, collapse it
   to a pointer or migrate it per the skill's MIGRATE fork — never silently delete it.
 
-After deslopping, commit the comment-only change (gate it on `wt_preflight` like every other
+After deslopping, commit the comment-only change (gate it on `step4-wt-preflight.sh` like every other
 commit) so the pushed head carries the cleaned diff.
 
 > **This is a self-check, not the gate — the split-role firewall holds.** Deslopping your
@@ -1171,7 +1221,7 @@ never blessed. The pointer is the committed source of truth (`packages/design-ca
 its `surfaces` map keyed by the same `<route>[:state]` capture surface-id):
 
 ```bash
-. "$WRITECODE_SCRIPTS/step4d-blessed-surfaces.sh"   # leaves $POINTER and $BLESSED_SURFACES in this shell
+bash ./.claude/.pipeline/skills/write-code/scripts/step4d-blessed-surfaces.sh   # prints `POINTER=<path>` then one blessed surface-id per line
 ```
 
 **The reference-anchored loop — consume the seam, never re-implement the diff.** For each blessed
@@ -1292,7 +1342,7 @@ one by one against what this diff actually delivers** — the same checklist `re
 grade against:
 
 ```bash
-. "$WRITECODE_SCRIPTS/step5-acceptance-criteria.sh" <N> || exit 1   # stdout IS the checklist — an empty one is UNKNOWN, never "no ACs"
+bash ./.claude/.pipeline/skills/write-code/scripts/step5-acceptance-criteria.sh <N> || exit 1   # stdout IS the checklist — an empty one is UNKNOWN, never "no ACs"
 ```
 
 - **All ACs met by this diff → `Fixes #N`** (the default full close, below).
@@ -1414,7 +1464,8 @@ re-derive them here. Two operational points that are yours, not the contract's:
   `for the reviewer to judge`).
 
 ```bash
-. "$WRITECODE_SCRIPTS/step5-push.sh" <N> || exit 1   # push CONFIRMED on the remote + #N proven mine, or nothing happened
+# push CONFIRMED on the remote + #N proven mine, or nothing happened. stdout is `WT=` and `BRANCH=`.
+bash ./.claude/.pipeline/skills/write-code/scripts/step5-push.sh <N> || exit 1
 ```
 
 Then open the PR. The body is a **template you author**, so it stays here rather than in a script:
@@ -1452,7 +1503,7 @@ itself**: read the PR body back and assert it matches a recognized closing keywo
 `#N` — that is exactly the token GitHub auto-closes on and that `ship-it` Step 1 resolves:
 
 ```bash
-. "$WRITECODE_SCRIPTS/step5-seam-checks.sh" <N> <PR> || exit 1   # stdout IS the five verdicts — silence is UNKNOWN, never "armed"
+bash ./.claude/.pipeline/skills/write-code/scripts/step5-seam-checks.sh <N> <PR> || exit 1   # stdout IS the five verdicts — silence is UNKNOWN, never "armed"
 ```
 
 If (b) reports a broken seam, the body links `#N` with **neither** a closing keyword **nor**
@@ -1505,8 +1556,8 @@ error**, posting another issue's ledger onto yours (#3718, the same silent-clobb
 
 ```bash
 # compose the four-section comment at "$RUN_SCRATCH/progress.md" FIRST; the script re-derives the same
-# session-keyed §SP path and refuses to post an empty body.
-. "$WRITECODE_SCRIPTS/step6-progress-comment.sh" <N> || exit 1
+# session-keyed §SP path (it names it on stderr) and refuses to post an empty body.
+bash ./.claude/.pipeline/skills/write-code/scripts/step6-progress-comment.sh <N> || exit 1
 ```
 
 Assemble the comment from a temp file so multi-line markdown and backticks survive the
@@ -1565,7 +1616,7 @@ silently. A blocked handoff is a fail-loud condition, never a silent no-op.
 
 ```bash
 # write the handoff to "$RUN_SCRATCH/handoff.md" FIRST; the script gates the post on owning the CHILD.
-. "$WRITECODE_SCRIPTS/step7-epic-handoff.sh" <N> <EPIC> || exit 1
+bash ./.claude/.pipeline/skills/write-code/scripts/step7-epic-handoff.sh <N> <EPIC> || exit 1
 ```
 
 Distill, don't dump — the fine detail lives in the child's progress comments and PR.
@@ -1590,7 +1641,7 @@ thing and then stop.
 The claim you took in Step 3 protected *this* build. The build is over, so give it up:
 
 ```bash
-. "$WRITECODE_SCRIPTS/step8-claim-release.sh" <N> || exit 1   # non-zero ⇒ the claim was NOT released
+bash ./.claude/.pipeline/skills/write-code/scripts/step8-claim-release.sh <N> || exit 1   # non-zero ⇒ the claim was NOT released
 ```
 
 **Why this is mandatory, not tidy-up.** A claim that outlives its run never expires, and the
@@ -1735,7 +1786,8 @@ a **diagnosis** and the *routing* of its findings, not a feature branch:
    ```bash
    # closing #N is a number-targeting mutation — gate it on the mis-attribution guard (Step 3.5)
    # so a mis-attributed number never closes another agent's live issue (the #1404 class).
-   claim_is_mine "<N>" || { echo "refusing to close #<N> — not my claim (Step 3.5)"; exit 1; }
+   bash ./.claude/.pipeline/skills/write-code/scripts/step3_5-claim-is-mine.sh "<N>" \
+     || { echo "refusing to close #<N> — not my claim (Step 3.5)"; exit 1; }
    gh api repos/$REPO/issues/<N>/comments -f body="$DIAGNOSIS"
    gh api -X PATCH repos/$REPO/issues/<N> -f state=closed -f state_reason=completed
    ```

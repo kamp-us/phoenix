@@ -8,7 +8,7 @@ is a **contract**, not a formatting choice.
 
 It became load-bearing when [ADR 0232](../.decisions/0232-agents-execute-skill-scripts-never-source-them.md)
 made **stdout the return channel**: an isolated agent runs
-`bash ./claude-plugins/kampus-pipeline/skills/<skill>/scripts/<script>.sh` and reads the result off
+`bash ./.claude/.pipeline/skills/<skill>/scripts/<script>.sh` and reads the result off
 stdout, because sourcing at an agent's top-level command is refused by the harness. A diagnostic
 printed on stdout is therefore not noise — it is **corruption of the return value**. That already
 happened once: `cp_changed_files` put its §ZS scope sentence on stdout, a consumer whose stdout is a
@@ -123,9 +123,13 @@ its stdout instead ([#4487](https://github.com/kamp-us/phoenix/issues/4487)).
 - [`claude-plugins/kampus-pipeline/skills/shared/scripts/cp-read.sh`](../claude-plugins/kampus-pipeline/skills/shared/scripts/cp-read.sh) —
   the sourced §CPREAD helpers: no stdout at all, results in `CP_*` variables, every scope and
   failure line on stderr.
-- `skills/review-code/scripts/classify-control-plane.sh` — a **machine** answer channel (the
-  run-state handle path), which is why every failure path writes the handle with a §CP sentinel
-  before exiting non-zero rather than leaving stdout empty.
+- `skills/review-code/scripts/classify-control-plane.sh` — a **machine** answer channel of
+  `KEY=value` lines, which is why every failure path prints the flags as a §CP sentinel before
+  exiting non-zero rather than leaving stdout empty. Its `%q`-quoted flags are the positive-token
+  rule applied literally: the ordinary not-§CP answer is `''`, not an absence. Its siblings
+  `materialize-head.sh` and `run-evidence-read.sh` are the same shape — each once returned a path to
+  a §SP handle for the caller to source, and ADR 0232 moved the answer onto stdout while the handle
+  stayed behind purely for the *later scripts of the same skill* to re-source in-process (#4574).
 - `skills/review-design/scripts/classify-control-plane.sh` and
   `skills/shared/scripts/cp-classify-entry.sh` — **prose** answer channels, each printing its own
   §CP scope line ahead of the `BLOCKING (…)` lines.

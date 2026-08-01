@@ -13,6 +13,7 @@ import {tmpdir} from "node:os";
 import {dirname, join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {afterAll, assert, beforeAll, describe, it} from "@effect/vitest";
+import {reachedScriptNames} from "../../skill-shell-surface.ts";
 import {SUBPROCESS_TEST_TIMEOUT_MS} from "../../test-budget.ts";
 
 // The fail-closed exit contract of `pipeline-cli adoption-lint check` over the shared bin.
@@ -103,10 +104,15 @@ const writerSurface = (rel: string): ReadonlyArray<SurfaceFile> => {
 	}));
 };
 
-/** The `scripts/*.sh` a stretch of procedure text sources (`. "$<SKILL>_SCRIPTS/<name>.sh"`). */
-const sourcedScripts = (text: string, rel: string): ReadonlyArray<SurfaceFile> =>
-	[...text.matchAll(/_SCRIPTS\}?\/([\w.-]+\.sh)/g)]
-		.map((m) => join(dirname(rel), "scripts", m[1] as string))
+/**
+ * The `scripts/*.sh` beside the skill that a stretch of procedure text reaches — sourced or
+ * executed. The matcher is `reachedScriptNames`, imported rather than re-declared: this file used
+ * to carry its own copy of the regex, and a copy is exactly how the shared matcher's ADR-0232
+ * widening could have landed while the pin below kept reading the old shape (#4573).
+ */
+const reachedScripts = (text: string, rel: string): ReadonlyArray<SurfaceFile> =>
+	reachedScriptNames(text)
+		.map((name) => join(dirname(rel), "scripts", name))
 		.filter((f) => existsSync(join(REPO_ROOT, f)))
 		.map((f) => ({rel: f, content: readFileSync(join(REPO_ROOT, f), "utf8")}));
 
@@ -300,14 +306,15 @@ describe("adoption-lint check — fail-closed exit contract (ADR 0092)", {
 		assert.isAbove(directAt, delegatedAt, "write-code must keep its direct-path branch after it");
 		const delegated = skill.slice(delegatedAt, directAt);
 		if (!LAYER_ONE_VERB.test(delegated)) {
-			// The branch's write now lives in the script the branch sources, so follow the invocation
-			// into it. Fail closed when the slice resolves to no script at all (ADR 0092): a heading pair
+			// The branch's write now lives in the script the branch invokes, so follow the invocation
+			// into it — sourced or executed, since which shape a step uses says nothing about where it
+			// writes. Fail closed when the slice resolves to no script at all (ADR 0092): a heading pair
 			// that reaches nothing is a broken scan, not a branch that passes.
-			const followed = sourcedScripts(delegated, skillRel);
+			const followed = reachedScripts(delegated, skillRel);
 			assert.isAbove(
 				followed.length,
 				0,
-				"write-code's DELEGATED branch neither writes layer one inline nor sources a resolvable script",
+				"write-code's DELEGATED branch neither writes layer one inline nor reaches a resolvable script",
 			);
 			assert.isTrue(
 				followed.some(({content}) => LAYER_ONE_VERB.test(content)),

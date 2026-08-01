@@ -4,12 +4,18 @@
 # review-code/SKILL.md (#4451, epic #4435 phase 1). Extraction contract + shell-option rationale:
 # ../SKILL.md § The extracted scripts. The *why* for every step stays in that step's prose.
 #
-# STDOUT IS A MACHINE CHANNEL: the ONLY thing this script writes to stdout is the absolute path of
-# the run-state handle carrying REVIEW_WT / PR_REF / HEAD_SHA / BASE_REF. Every progress, scope and
-# FATAL line goes to stderr, so the caller can `. "$(materialize-head.sh "$PR")"` and have the four
-# values in its own shell. On ANY failure path stdout stays EMPTY and the exit is non-zero — the
-# caller's `.` then fails loudly rather than sourcing a half-written handle (§ZS: a materialization
-# that could not run is UNKNOWN, and reviewing the BASE tree is the #793 false-PASS hazard).
+# usage: bash ./claude-plugins/kampus-pipeline/skills/review-code/scripts/materialize-head.sh <pr>
+#
+# STDOUT IS THE ANSWER (ADR 0232, .patterns/skill-script-io-contract.md) — four `KEY=value` lines:
+#   REVIEW_WT / PR_REF / HEAD_SHA / BASE_REF
+# Every progress, scope and FATAL line goes to stderr, so the four lines are the whole stdout. On ANY
+# failure path stdout stays EMPTY and the exit is non-zero (§ZS: a materialization that could not run
+# is UNKNOWN, and reviewing the BASE tree is the #793 false-PASS hazard).
+#
+# The same four values ALSO persist to a per-run §SP handle. That is not a second answer channel: the
+# harness resets the agent's shell between Bash calls, so the LATER scripts of this skill re-source
+# the handle in-process via head-env.sh. In-script sourcing stays sanctioned under ADR 0232 — only
+# the `.` at an agent's top-level command is banned.
 set -uo pipefail
 # shellcheck source=../../../lib/common.sh disable=SC1007,SC1091
 . "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
@@ -95,5 +101,7 @@ for p in CLAUDE.md .claude .decisions .patterns; do
   fi
 done
 
-# The handle path — the ONLY stdout line, so the caller can `. "$(materialize-head.sh "$PR")"`.
-printf '%s\n' "$WT_FILE"
+# THE ANSWER — the four resolved values, one KEY=value line each, and the only stdout this script
+# writes. Printed from the variables the handle read back above, so what the caller sees and what the
+# later steps re-source through head-env.sh are the same four values by construction.
+printf 'REVIEW_WT=%s\nPR_REF=%s\nHEAD_SHA=%s\nBASE_REF=%s\n' "$REVIEW_WT" "$PR_REF" "$HEAD_SHA" "$BASE_REF"
