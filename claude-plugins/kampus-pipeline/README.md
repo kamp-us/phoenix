@@ -115,6 +115,32 @@ Claude Code:
 `kampus-pipeline` from the `kampus` marketplace. After install, the 14 skills are
 available in the picker (e.g. `triage`, `write-code`, `ship-it`).
 
+### The channel is pinned — you get a fixed commit, not `main`
+
+The marketplace serves `kampus-pipeline` from a **pinned commit**, not from the tip of the
+default branch. The plugin entry in [`.claude-plugin/marketplace.json`](../../.claude-plugin/marketplace.json)
+uses a `git-subdir` source carrying an explicit `sha`, and per the marketplace contract the
+`sha` is the effective pin: Claude Code checks out that exact commit. With no `version` field
+anywhere, the resolved version *is* that SHA — so it never changes, and both `/plugin update`
+and background auto-update skip the plugin. **An install with `autoUpdate: true` therefore
+stops tracking `main`.** That is the intent: the pipeline is being rewritten, and an external
+install should not ride the rewrite.
+
+**To move an installed copy forward**, do nothing on your side — we bump the pin, you refresh:
+
+```
+/plugin marketplace update kampus
+/plugin update kampus-pipeline@kampus
+```
+
+The first command re-fetches the catalog (picking up the new `sha`); the second re-resolves
+the plugin against it. Nothing in your settings changes, and skipping both leaves you exactly
+where you are — which is the point of a pin.
+
+**To cut a new pin** (maintainer side), edit the one `sha` field in the marketplace entry to a
+newer `main` commit and merge it. That file is control-plane, so the change lands only through
+the human-approval gate.
+
 ## Configuration — point the pipeline at your repo
 
 The pipeline is **zero-config for the common case**. Every skill resolves its target
@@ -164,6 +190,8 @@ the gap surfaces before any work is done; it **prints** the fix and never applie
 ## Design notes — versioning and spec conformance
 
 The plugin carries **no per-plugin `version`** (neither in the marketplace plugin entry nor in [`.claude-plugin/plugin.json`](.claude-plugin/plugin.json)): Claude Code then content-addresses the install by git commit SHA, so every commit is a new "version" and skill additions/edits reach already-installed users on the normal update path — a fixed semver pin froze the cache and silently served stale content (#945). This omission is **deliberate, not a defect — do not add a `version`**; the decision record (why + history) is [ADR 0110](https://github.com/kamp-us/phoenix/blob/main/.decisions/0110-plugin-carries-no-version-continuous-ship.md).
+
+The **continuous-ship half of that is currently suspended for marketplace consumers**, by founder ruling on [#4639](https://github.com/kamp-us/phoenix/issues/4639): the marketplace entry pins a `sha` (see [The channel is pinned](#the-channel-is-pinned--you-get-a-fixed-commit-not-main)), so external installs sit on a fixed commit for the duration of the pipeline rewrite and move forward only by an explicit update. The `version` omission is what *makes* the pin work — with no `version`, the resolved version is the pinned SHA, so pinning content and stopping auto-update are the same field — which is why 0110's "do not add a `version`" still holds unchanged. Contributors working **in this repo** are unaffected: local runs resolve the skills through the in-tree `.claude/skills` symlink and the `.claude/.pipeline` link, never through the marketplace.
 
 The whole plugin surface was audited against the official Claude Code plugin spec ([plugins reference](https://docs.claude.com/en/docs/claude-code/plugins-reference), [marketplaces](https://docs.claude.com/en/docs/claude-code/plugin-marketplaces)); the conformance record — the corrected manifest `$schema` URL plus every deliberate deviation (no `version`, the root-level `hooks.json`, the absent `commands/`, the `.claude/skills` discovery symlink) and its forcing constraint — is [ADR 0171](https://github.com/kamp-us/phoenix/blob/main/.decisions/0171-kampus-pipeline-plugin-spec-conformance.md). A future audit that re-flags any of those reads the disposition there: documented-intentional, not an open defect.
 
@@ -284,7 +312,7 @@ phoenix/
 ├── .claude-plugin/
 │   └── marketplace.json                 # catalog — lists each plugin + its source
 ├── claude-plugins/                      # marketplace container (one subdir per plugin)
-│   └── kampus-pipeline/                 # this plugin — source: "./claude-plugins/kampus-pipeline"
+│   └── kampus-pipeline/                 # this plugin — the git-subdir source's pinned `path`
 │       ├── .claude-plugin/
 │       │   └── plugin.json
 │       ├── README.md                    # this file — the plugin's front-door entry point

@@ -12,7 +12,13 @@
 	"plugins": [
 		{
 			"name": "kampus-pipeline",
-			"source": "./claude-plugins/kampus-pipeline",
+			"source": {
+				"source": "git-subdir",
+				"url": "https://github.com/kamp-us/phoenix.git",
+				"path": "claude-plugins/kampus-pipeline",
+				"ref": "main",
+				"sha": "f66bc0547772eabb0b0aa0bbe02e5afea1b429a6"
+			},
 			"description": "The kamp.us agent pipeline: report → triage → plan-epic → write-code → review → ship-it, with artifact-class review gates (code/doc/skill/plan) plus adr, heal-ci, and deslop-comments. Repo-agnostic — operates on the working git repo's issue queue (CLAUDE_PIPELINE_REPO override).",
 			"author": {
 				"name": "kamp-us",

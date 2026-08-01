@@ -182,11 +182,15 @@ EOF
 	ok "$name copies across the corpus match the single-source const"
 done
 
-# Invariant 2: .claude/skills symlink agrees with marketplace source.
+# Invariant 2: .claude/skills symlink agrees with the marketplace's plugin root.
 #
 # .claude/skills -> ../claude-plugins/kampus-pipeline/skills
-# marketplace.json source -> ./claude-plugins/kampus-pipeline
-# Invariant: resolved(.claude/skills) == resolved(marketplace source)/skills
+# marketplace plugin root -> claude-plugins/kampus-pipeline
+# Invariant: resolved(.claude/skills) == resolved(plugin root)/skills
+#
+# "Plugin root" is whichever field the entry's `source` union uses to name it: the bare
+# relative-path string, or a pinned `git-subdir` object's `path` (#4643). Both spell the same
+# in-repo directory, so the invariant is unchanged — only the field it reads moved.
 SYMLINK="$repo_root/.claude/skills"
 MARKETPLACE="$repo_root/.claude-plugin/marketplace.json"
 
@@ -201,23 +205,34 @@ else
 	if [ ! -f "$MARKETPLACE" ]; then
 		fail ".claude-plugin/marketplace.json not found — cannot verify symlink ↔ marketplace agreement"
 	else
-		# Extract source field (bash 3.2: grep + sed, no python/jq required)
-		MP_SOURCE=$(grep '"source"' "$MARKETPLACE" | head -n1 \
-			| sed 's/.*"source"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/' || true)   # || true: no-match → empty → fail below, not a set -e abort
+		# Parse the plugin root out of the NAMED entry. The old grep+sed took the file's first
+		# `"source"` line, which only worked while every entry was a bare string and kampus-pipeline
+		# happened to be listed first; against a `git-subdir` object it matched the opening brace and
+		# silently yielded a path that resolves to nothing. Node already gates this script (the
+		# boundary consts above are read through it), so parsing the JSON adds no dependency.
+		MP_SOURCE=$(node -e '
+			const m = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8"));
+			const entry = (m.plugins || []).find((p) => p.name === "kampus-pipeline");
+			if (!entry) process.exit(1);
+			const s = entry.source;
+			const root = typeof s === "string" ? s : s && s.source === "git-subdir" ? s.path : null;
+			if (!root) process.exit(1);
+			process.stdout.write(root);
+		' "$MARKETPLACE" 2>/dev/null || true)   # || true: a parse/shape failure yields empty → fail below, not a set -e abort
 		if [ -z "$MP_SOURCE" ]; then
-			fail "marketplace.json: no \"source\" field found in plugins entry"
+			fail "marketplace.json: could not resolve the kampus-pipeline entry's plugin root (expected a relative-path \"source\" string or a \"git-subdir\" source with a \"path\")"
 		else
-			# Resolve marketplace source to absolute path, then append /skills
+			# Resolve the plugin root to an absolute path, then append /skills
 			if ! MP_SOURCE_RESOLVED=$(cd "$repo_root" && cd "$MP_SOURCE" && pwd) 2>/dev/null; then
-				fail "marketplace.json source \"$MP_SOURCE\" does not resolve to a directory"
+				fail "marketplace.json plugin root \"$MP_SOURCE\" does not resolve to a directory"
 			else
 				EXPECTED_SYMLINK="$MP_SOURCE_RESOLVED/skills"
 				if [ "$SYMLINK_RESOLVED" = "$EXPECTED_SYMLINK" ]; then
-					ok ".claude/skills symlink agrees with marketplace source ($MP_SOURCE + /skills)"
+					ok ".claude/skills symlink agrees with the marketplace plugin root ($MP_SOURCE + /skills)"
 				else
-					fail ".claude/skills symlink has drifted from marketplace source
+					fail ".claude/skills symlink has drifted from the marketplace plugin root
   symlink resolves to: $SYMLINK_RESOLVED
-  marketplace expects: $EXPECTED_SYMLINK (source=\"$MP_SOURCE\" + /skills)"
+  marketplace expects: $EXPECTED_SYMLINK (plugin root \"$MP_SOURCE\" + /skills)"
 				fi
 			fi
 		fi
