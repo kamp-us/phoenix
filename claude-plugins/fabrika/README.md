@@ -19,6 +19,11 @@ nouns `sozluk` and `pano`.
 
 ## The only door: /skill-creator
 
+`/skill-creator` is the founder's **existing** skill, used **as-is** — fabrika builds no
+authoring tool of its own ([#4648 scope
+correction](https://github.com/kamp-us/phoenix/issues/4648#issuecomment-5152523719)). What
+fabrika owns here is the discipline, not the tool.
+
 **No skill enters fabrika by any path other than `/skill-creator`** — founder ruling
 [#4637-C](https://github.com/kamp-us/phoenix/issues/4637). There is no second door: a skill is
 not hand-dropped into `skills/`, not ported from v1, not copied from a sibling plugin. Every
