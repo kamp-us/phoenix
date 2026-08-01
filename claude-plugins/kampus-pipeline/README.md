@@ -293,8 +293,41 @@ phoenix/
 │           └── gh-issue-intake-formats.md
 ├── apps/  packages/  infra/             # repo source — no longer shipped to installers
 └── .claude/
-    └── skills -> ../claude-plugins/kampus-pipeline/skills  # symlink — local discovery
+    ├── skills -> ../claude-plugins/kampus-pipeline/skills  # symlink — local discovery
+    └── .pipeline -> <the live plugin install>              # symlink — planted by the hooks, gitignored
 ```
+
+#### `.claude/.pipeline` — the portable fence prefix (#4605)
+
+Every skill fence invokes its scripts as `bash ./.claude/.pipeline/skills/<skill>/scripts/<x>.sh`.
+That prefix is a **symlink the hooks plant**, and it exists because a fence may carry **no expansion
+at all** — the harness's isolation verifier is a syntactic check on the command string, so
+`$CLAUDE_PLUGIN_ROOT`, `${VAR:-default}` and `$(…)` are all refused, and only a plain literal runs.
+
+A literal has to be true in every consuming repo. `./claude-plugins/…` is true only inside a phoenix
+checkout: a marketplace consumer's install lives in **their** plugin cache, outside their repo, where
+that path does not exist. A hook, unlike an agent's top-level command, is a harness-**substituted**
+surface that receives `CLAUDE_PLUGIN_ROOT` — so the hooks are the one place that can know where the
+plugin actually is, and the link is how they say it.
+
+Three planting sites, deliberately overlapping, all idempotent:
+
+| hook | plants into | why it alone is not enough |
+|---|---|---|
+| `SessionStart` (`hooks/install.sh`, its FIRST action) | the session's project dir | does not reach a worktree, which has its own `.claude/` |
+| `WorktreeCreate` (`hooks/create-worktree.sh`) | the new worktree | inert on the harness path that provisions agent worktrees ([#4180](https://github.com/kamp-us/phoenix/issues/4180)) |
+| `PreToolUse` (`hooks/plant-link-pretooluse.sh`) | the payload's `cwd` **and** the project dir | the belt that actually covers a worktree lane; runs before every tool call |
+
+In a repo that **vendors** the plugin (phoenix, and each of its worktrees) the link is *relative* —
+`../claude-plugins/kampus-pipeline` — so no machine-local path is ever written into a tree and a lane
+exercises the corpus it has checked out. Everywhere else it is the absolute install path. It is
+gitignored: a committed link would pin one machine's install into every clone.
+
+**A missing link is 127 with empty stdout, and that is UNKNOWN — never "the script answered no."**
+That distinction is the whole safety property (§ZS, ADR 0092), and it is proved rather than asserted:
+`skills/write-code/scripts/verify-executed-contract.sh` probes the absent, dangling and good link
+live, and asserts that no corpus script may exit 127 for any reason other than a could-not-run.
+`pipeline-cli gh-phoenix lint-skills` reds on any fence that reintroduces the repo-relative literal.
 
 #### Link invariants
 

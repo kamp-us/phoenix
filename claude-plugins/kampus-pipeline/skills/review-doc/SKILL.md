@@ -107,7 +107,7 @@ if set, else the current repository. In phoenix this defaults to `kamp-us/phoeni
 behavior is unchanged with no config (ADR 0062 §1).
 
 ```bash
-bash ./claude-plugins/kampus-pipeline/skills/review-doc/scripts/resolve-repo.sh
+bash ./.claude/.pipeline/skills/review-doc/scripts/resolve-repo.sh
 ```
 
 ## The extracted scripts
@@ -195,7 +195,7 @@ PR=<pr number>
 # with the §CP SENTINEL first, so a classifier that could not run reaches you as a HOLD, never as an
 # empty (= non-blocking) flag; if even the handle cannot be written, stdout is empty and this `.`
 # fails loudly. Read the STATUS before the flags.
-. "$(bash ./claude-plugins/kampus-pipeline/skills/review-doc/scripts/classify-control-plane.sh "$PR")"
+. "$(bash ./.claude/.pipeline/skills/review-doc/scripts/classify-control-plane.sh "$PR")"
 ```
 
 - **Any control-plane path** — the **canonical §CP set** in
@@ -294,14 +294,14 @@ namespace is discovered.
 ## Step 1 — Resolve the PR and its linked issue
 
 ```bash
-bash ./claude-plugins/kampus-pipeline/skills/review-doc/scripts/pr-context.sh "$PR"
+bash ./.claude/.pipeline/skills/review-doc/scripts/pr-context.sh "$PR"
 ```
 
 Find the linked issue from the PR body's `Fixes #N` / `Closes #N` (the seam `write-code`
 writes). Cross-check via the timeline if it's not obvious:
 
 ```bash
-bash ./claude-plugins/kampus-pipeline/skills/review-doc/scripts/linked-issue-timeline.sh "$PR"
+bash ./.claude/.pipeline/skills/review-doc/scripts/linked-issue-timeline.sh "$PR"
 ```
 
 The `issues/$PR/timeline` endpoint accepts the PR number, and the
@@ -324,7 +324,7 @@ Resolve it **mechanically, never by eye**:
 # doc/vocab-surface-only? exit 0 = yes (issueless is legitimate), non-zero = no (hard-stop below).
 # Predicate single-sourced in §CLASS (DOC_VOCAB_EXCLUDE_RE / DOC_VOCAB_SURFACE_RE); fails closed to
 # "no" on an unreadable source or zero input (ADR 0092) — it can only ever REFUSE the allowance.
-bash ./claude-plugins/kampus-pipeline/skills/review-doc/scripts/classify-issueless.sh "$PR"
+bash ./.claude/.pipeline/skills/review-doc/scripts/classify-issueless.sh "$PR"
 ```
 
 - **Not doc/vocab-surface-only** — any changed path under `apps/**`, `packages/**`, `infra/**`, or
@@ -352,7 +352,7 @@ When `ISSUE` **is** set, honor it as today: pull the issue and its acceptance cr
 
 ```bash
 ISSUE=<N>
-bash ./claude-plugins/kampus-pipeline/skills/review-doc/scripts/issue-context.sh "$ISSUE"
+bash ./.claude/.pipeline/skills/review-doc/scripts/issue-context.sh "$ISSUE"
 ```
 
 Extract the `### Acceptance criteria` checklist from the issue body. That list — every
@@ -383,7 +383,7 @@ test-running here** — a doc PR has no behavior to exercise; the artifact *is* 
 so you read it. Pull the change:
 
 ```bash
-bash ./claude-plugins/kampus-pipeline/skills/review-doc/scripts/pr-diff.sh "$PR"
+bash ./.claude/.pipeline/skills/review-doc/scripts/pr-diff.sh "$PR"
 ```
 
 For checks that need the file in context (a link target exists, an index row matches, a
@@ -395,7 +395,7 @@ the hunk alone — and read it **read-only**, without ever switching the checkou
 ```bash
 # Prints ONE line — the handle carrying PR_REF / HEAD_SHA. On any failure stdout is EMPTY, so this
 # `.` fails loudly rather than leaving you reading the launched checkout's base tree (#793).
-. "$(bash ./claude-plugins/kampus-pipeline/skills/review-doc/scripts/materialize-head.sh "$PR")"
+. "$(bash ./.claude/.pipeline/skills/review-doc/scripts/materialize-head.sh "$PR")"
 
 # Read the head's files off the ref — read-only, no checkout:
 git show "$PR_REF:<path>"            # the file's content at the PR head
@@ -426,7 +426,7 @@ It **refuses** when the namespace was never opened in this run, so a lost handle
 of silently reading an empty directory:
 
 ```bash
-. "$(bash ./claude-plugins/kampus-pipeline/skills/review-doc/scripts/head-env.sh "$PR")"   # $PR_REF / $HEAD_SHA (and $REVIEW_WT, if --worktree was used)
+. "$(bash ./.claude/.pipeline/skills/review-doc/scripts/head-env.sh "$PR")"   # $PR_REF / $HEAD_SHA (and $REVIEW_WT, if --worktree was used)
 ```
 
 If a check genuinely needs a materialized tree (rare for a doc PR), pass `--worktree` to the
@@ -437,11 +437,11 @@ reviewer's tree and pins the wrong head (the #1807 collision). Tear it down with
 [`scripts/teardown-head.sh`](scripts/teardown-head.sh), which also drops the throwaway ref:
 
 ```bash
-. "$(bash ./claude-plugins/kampus-pipeline/skills/review-doc/scripts/materialize-head.sh "$PR" --worktree)"
+. "$(bash ./.claude/.pipeline/skills/review-doc/scripts/materialize-head.sh "$PR" --worktree)"
 # Register teardown as a trap so a mid-block error still tears the throwaway tree down. The trap is
 # YOURS, not the script's — an extracted script installs no EXIT trap of its own (#4476/#4479).
-trap 'bash ./claude-plugins/kampus-pipeline/skills/review-doc/scripts/teardown-head.sh "$PR"' EXIT
-bash ./claude-plugins/kampus-pipeline/skills/review-doc/scripts/teardown-head.sh "$PR"   # on EVERY exit path — PASS or FAIL
+trap 'bash ./.claude/.pipeline/skills/review-doc/scripts/teardown-head.sh "$PR"' EXIT
+bash ./.claude/.pipeline/skills/review-doc/scripts/teardown-head.sh "$PR"   # on EVERY exit path — PASS or FAIL
 ```
 
 **Teardown runs on both the success and the failure path**, not just when the check passed —
@@ -469,11 +469,11 @@ that predated them. Make the freshness structural — a fetch you run, not a pro
 whoever's checkout the gate happens to run in:
 
 ```bash
-BASE_REF="$(bash ./claude-plugins/kampus-pipeline/skills/review-doc/scripts/base-groundtruth.sh fetch "$PR")"   # resolves + refreshes the merge target
+BASE_REF="$(bash ./.claude/.pipeline/skills/review-doc/scripts/base-groundtruth.sh fetch "$PR")"   # resolves + refreshes the merge target
 
 # Verify shipped-state against the FETCHED remote ref, not the working tree / local main:
-bash ./claude-plugins/kampus-pipeline/skills/review-doc/scripts/base-groundtruth.sh exists "$BASE_REF" "<path>"   # does this path exist on fresh main?
-bash ./claude-plugins/kampus-pipeline/skills/review-doc/scripts/base-groundtruth.sh show   "$BASE_REF" "<path>"   # read its shipped content to confirm
+bash ./.claude/.pipeline/skills/review-doc/scripts/base-groundtruth.sh exists "$BASE_REF" "<path>"   # does this path exist on fresh main?
+bash ./.claude/.pipeline/skills/review-doc/scripts/base-groundtruth.sh show   "$BASE_REF" "<path>"   # read its shipped content to confirm
 ```
 
 You're reading, not building — no `pnpm install`, no typecheck, no test suite. The diff,
@@ -558,7 +558,7 @@ Run each, scoped to the files the PR touches:
    ```bash
    # added lines only ('+'), scanned by the shared matcher: exit 0 = clean, 2 = leak found
    # any OTHER non-zero (4 = the fail-closed stdin read, #4010) is an UNRESOLVED scan, never a pass
-   bash ./claude-plugins/kampus-pipeline/skills/review-doc/scripts/leak-scan.sh "$PR"
+   bash ./.claude/.pipeline/skills/review-doc/scripts/leak-scan.sh "$PR"
    ```
 
    Cite a hit by the **class** the scan names and the `file:line` from the diff hunk it sits
@@ -648,8 +648,8 @@ decision domain the new one touches **and which it does not cite**:
 ```bash
 # $PR_REF is bound by Step 2's materialize; if that ran in an EARLIER Bash call the variable is gone,
 # so re-derive it via head-env.sh first — never re-run the materialize just to rebind it.
-. "$(bash ./claude-plugins/kampus-pipeline/skills/review-doc/scripts/head-env.sh "$PR")"
-bash ./claude-plugins/kampus-pipeline/skills/review-doc/scripts/adr-sweep.sh "$PR_REF" .decisions/NNNN-slug.md
+. "$(bash ./.claude/.pipeline/skills/review-doc/scripts/head-env.sh "$PR")"
+bash ./.claude/.pipeline/skills/review-doc/scripts/adr-sweep.sh "$PR_REF" .decisions/NNNN-slug.md
 SWEEP=$?
 ```
 
@@ -844,7 +844,7 @@ verdict not bound to the PR's current head (ADR
 [0058](https://github.com/kamp-us/phoenix/blob/main/.decisions/0058-sha-bound-verdict-contract.md), issue #258).
 
 ```bash
-HEAD_SHA="$(bash ./claude-plugins/kampus-pipeline/skills/review-doc/scripts/current-head.sh "$PR")"   # the head you reviewed
+HEAD_SHA="$(bash ./.claude/.pipeline/skills/review-doc/scripts/current-head.sh "$PR")"   # the head you reviewed
 ```
 
 ### Pass path — non-blocking PR (the binding signal)
@@ -891,7 +891,7 @@ same PR to clobber, and no `mktemp` path that can bleed into the marker's `@ <sh
 
 ```bash
 # $BODY is your composed PASS verdict; first line: review-doc: PASS @ <HEAD_SHA> — merge-ready.
-printf '%s' "$BODY" | bash ./claude-plugins/kampus-pipeline/skills/review-doc/scripts/verdict-post.sh "$PR"   # upsert (PATCH own prior marker, else POST)
+printf '%s' "$BODY" | bash ./.claude/.pipeline/skills/review-doc/scripts/verdict-post.sh "$PR"   # upsert (PATCH own prior marker, else POST)
 ```
 
 Verdict body shape. The first line is the **canonical bare marker** — no leading `**`
@@ -1008,7 +1008,7 @@ rule 4). Upsert it the same way, on the §VERDICT key — (PR, gate-namespace, h
 # The advisory line opens with `review-doc:` too, so `verdict post`'s namespace guard accepts it and
 # upserts it on the same (PR, gate-namespace, head, run) key — replacing only this head+run's own
 # record. $BODY's first line: review-doc: advisory — blocking-set PR (§CP — approval-gated).
-printf '%s' "$BODY" | bash ./claude-plugins/kampus-pipeline/skills/review-doc/scripts/verdict-post.sh "$PR"
+printf '%s' "$BODY" | bash ./.claude/.pipeline/skills/review-doc/scripts/verdict-post.sh "$PR"
 ```
 
 Do **not** emit the `review-doc: PASS @ <sha> — merge-ready` marker for a blocking PR — that marker is a
@@ -1031,10 +1031,10 @@ re-review at a new head leaves the prior head's verdict standing and a concurren
 overwrites another's record (ADR 0058 rule 2, refined by ADR 0213). Never hand-roll the `PATCH`:
 
 ```bash
-HEAD_SHA="$(bash ./claude-plugins/kampus-pipeline/skills/review-doc/scripts/current-head.sh "$PR")"   # the head you reviewed
+HEAD_SHA="$(bash ./.claude/.pipeline/skills/review-doc/scripts/current-head.sh "$PR")"   # the head you reviewed
 # $BODY is your composed FAIL verdict; first line: review-doc: FAIL @ <HEAD_SHA> — changes-requested.
 # Same (PR, gate-namespace, head, run) upsert as the PASS path.
-printf '%s' "$BODY" | bash ./claude-plugins/kampus-pipeline/skills/review-doc/scripts/verdict-post.sh "$PR"
+printf '%s' "$BODY" | bash ./.claude/.pipeline/skills/review-doc/scripts/verdict-post.sh "$PR"
 ```
 
 Verdict body shape:
@@ -1096,7 +1096,7 @@ landed, on **every** post path —
 # UNCONDITIONAL post-verify: resolve the landed verdict from PR state, prove it present + well-formed
 # + leak-free, FATAL (non-zero) on absent / malformed / leaking. Propagate the non-zero — never report
 # the gate done over an ungated PR. Runs no matter which Step-5 branch posted; no $MINE, no skippable path.
-bash ./claude-plugins/kampus-pipeline/skills/review-doc/scripts/verdict-readback.sh "$PR" "$HEAD_SHA" || exit 1
+bash ./.claude/.pipeline/skills/review-doc/scripts/verdict-readback.sh "$PR" "$HEAD_SHA" || exit 1
 ```
 
 The wrapper's single **fatal** exit — on nothing-landed *and* on a malformed/leaking marker resolved

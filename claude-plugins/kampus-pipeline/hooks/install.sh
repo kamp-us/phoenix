@@ -16,6 +16,16 @@
 set -u
 
 HOOKS_DIR="$(dirname "${BASH_SOURCE[0]}")"
+
+# Plant `.claude/.pipeline` FIRST — before the data-dir resolution, before the version-marker early
+# return, before any network. Every skill fence in the corpus names the pipeline through that link
+# (#4605), so it has to exist before the first tool call of the session, and this hook is the
+# FIRST entry of the SessionStart array in both hooks.json and phoenix's settings.json — which is
+# what makes "before the first skill invocation" an ordering guarantee rather than a hope.
+# Best-effort like everything else here: a failure is loud on stderr and never aborts the session.
+bash "$HOOKS_DIR/plant-pipeline-link.sh" "${CLAUDE_PROJECT_DIR:-$PWD}" >/dev/null \
+	|| echo "kampus-pipeline: could not plant .claude/.pipeline — skill fences will exit 127 (#4605)" >&2
+
 . "$HOOKS_DIR/resolve-data-dir.sh"
 . "$HOOKS_DIR/pin.sh"   # KAMPUS_PIPELINE_CLI_PIN / _PKG — the one pin, shared with guard.sh
 PIN="$KAMPUS_PIPELINE_CLI_PIN"

@@ -71,10 +71,13 @@ const judge = (result: LintResult): Effect.Effect<void, ZeroScope | FindingsFoun
 		}
 
 		const total =
-			result.findings.length + result.frontmatterFindings.length + result.barePushFindings.length;
+			result.findings.length +
+			result.frontmatterFindings.length +
+			result.barePushFindings.length +
+			result.portabilityFindings.length;
 		if (total === 0) {
 			yield* Console.log(
-				"gh-phoenix lint-skills: clean — no GraphQL-path gh calls, no bare `git push` in an executable block, and all frontmatter parses as strict YAML.",
+				"gh-phoenix lint-skills: clean — no GraphQL-path gh calls, no bare `git push` in an executable block, no non-portable plugin path literal in a fence, and all frontmatter parses as strict YAML.",
 			);
 			return;
 		}
@@ -102,6 +105,15 @@ const judge = (result: LintResult): Effect.Effect<void, ZeroScope | FindingsFoun
 				`gh-phoenix lint-skills: FAIL — ${result.barePushFindings.length} bare \`git push\` invocation(s) in an executable block (the sanctioned path is \`pipeline-cli verified-push\`, #4213):`,
 			);
 			for (const f of result.barePushFindings) {
+				yield* Console.error(`  ${f.file}:${f.line}: ${f.matched} — ${f.reason}`);
+			}
+		}
+
+		if (result.portabilityFindings.length > 0) {
+			yield* Console.error(
+				`gh-phoenix lint-skills: FAIL — ${result.portabilityFindings.length} non-portable plugin path literal(s) in a fence (a consumer installs the plugin outside their repo, so \`./claude-plugins/…\` cannot resolve there; use \`./.claude/.pipeline/…\`, #4605):`,
+			);
+			for (const f of result.portabilityFindings) {
 				yield* Console.error(`  ${f.file}:${f.line}: ${f.matched} — ${f.reason}`);
 			}
 		}
@@ -143,6 +155,11 @@ const lintSkills = Command.make(
 				(result.barePushScanned.length > 0 ? `:` : ` (zero scope)`),
 		);
 		for (const f of result.barePushScanned) yield* Console.log(`  push-scanned: ${f}`);
+		yield* Console.log(
+			`gh-phoenix lint-skills: fence-portability scan scanned ${result.portabilityScanned.length} file(s)` +
+				(result.portabilityScanned.length > 0 ? `:` : ` (zero scope)`),
+		);
+		for (const f of result.portabilityScanned) yield* Console.log(`  portability-scanned: ${f}`);
 
 		yield* judge(result).pipe(
 			Effect.catchTag("ZeroScope", onZeroScope),
