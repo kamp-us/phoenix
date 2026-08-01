@@ -87,7 +87,7 @@ is for what is *missing*, per the CLI interface convention's Part 2.
 
 Every brief points at both, and neither is summarised in the brief:
 
-- `claude-plugins/fabrika/docs/skill-conventions.md` — the writing discipline the `SKILL.md` meets
+- [`skill-conventions.md`](skill-conventions.md) — the writing discipline the `SKILL.md` meets
   ([#4653](https://github.com/kamp-us/phoenix/issues/4653)).
 - `claude-plugins/fabrika/docs/cli-interface-convention.md` — what a verb owes its caller, and the
   shape of the contract spec the session emits
@@ -96,13 +96,20 @@ Every brief points at both, and neither is summarised in the brief:
 A brief that paraphrases a convention creates a second source of truth for it, and the paraphrase is
 the copy that rots. Point.
 
-(Both are cited by path rather than linked here because they land in sibling pull requests; the
-[docs index](README.md) carries the links as each one merges.)
+(The CLI convention is cited by path rather than linked because it lands in a sibling pull request;
+the [docs index](README.md) carries the link once it merges.)
 
 ### 6. Output contract — one PR, linked back
 
 Stated in the brief itself, so the session reads its own deliverable rather than inferring it:
 
+- **`skill-reviewer` runs on the authored skill *before* the PR opens** — the plugin-dev
+  `skill-reviewer` agent is the ruled gate for fabrika skill PRs from day one, and it is **step 5.5
+  of the founder's runbook**: author, review, fix the findings, *then* open the PR, which carries the
+  review pass ([#4650 build-order ruling](https://github.com/kamp-us/phoenix/issues/4650#issuecomment-5150261966),
+  restated as constraint 4 of the [decomposition-dispatch contract](https://github.com/kamp-us/phoenix/issues/4650#issuecomment-5150265328)).
+  A session booting from the brief alone reads this here or not at all, so every brief states it —
+  and because the gate is `skill-reviewer`, nothing waits on fabrika's own `/review-skill`.
 - **One pull request**, carrying the authored `SKILL.md` **and** the derived contract spec
   (`contract.md` beside it, per the CLI interface convention's Part 2).
 - **Linked back to the brief issue** — `Fixes #<brief>` in the PR body, so the brief closes on merge
@@ -119,24 +126,54 @@ verbs has left its lane; a session that emits no contract spec has skipped its d
 A brief issue must never enter the `write-code` candidate pool. If it does, a coder agent picks it
 up and implements the skill directly — which is a second door, and the ruling says there is one.
 
-The pool predicate is mechanical: `write-code` picks issues that are **open, labelled
-`status:triaged`, and unassigned**
-([`../../kampus-pipeline/skills/write-code/SKILL.md`](../../kampus-pipeline/skills/write-code/SKILL.md),
-Step 1). So a brief carries **no `status:triaged` label** while it is open and unassigned. It is
-fired by a human starting a fresh session, not drained by the coder loop.
+The pool predicate is mechanical
+([`step1-candidate-pool.sh`](../../kampus-pipeline/skills/write-code/scripts/step1-candidate-pool.sh)):
+**open**, labelled **`status:triaged`** and a priority bucket, and **`assignee == null`**. A brief
+could in principle miss the label or hold an assignee — and only one of those two survives the
+pipeline that emits it.
 
-There is no mechanical guard on this today, and that absence is deliberate for the same reason the
-CLI convention has no conformance guard: with zero brief issues in existence a repo-wide check has
-zero scope and reds on itself ([ADR
-0092](../../../.decisions/0092-gates-fail-closed-on-zero-scope.md)). It is the emitting planner's
-obligation until there is a corpus to guard.
+**Label-absence does not survive, so the rule may not rest on it.** A brief is minted by `plan-epic`
+as an epic child; a child must carry a `status:` label to clear the ledger floor
+(`REQUIRED_LABEL_PREFIXES` in
+[`validate.ts`](../../../packages/pipeline-cli/src/tools/epic-ledger/validate.ts)), so it is minted
+`status:planned`. `review-plan` then flips **every** `status:planned` child of a clean ledger to
+`status:triaged` — the filter is that label and nothing else (`plannedChildren` in
+[`gate.ts`](../../../packages/pipeline-cli/src/tools/epic-ledger/gate.ts)), with no per-child
+exception hook, and the skill states it owns that flip exclusively. So "the planner emits the brief
+without `status:triaged`" is undone one stage later, deterministically, for every brief in the
+decomposition at once.
+
+**The assignee does survive, so that is the barrier.** Nothing in `plan-epic`, `review-plan` or the
+`epic-ledger` gate reads or writes an assignee — the gate's only mutation is the label flip.
+
+> **A brief is emitted assigned**, to the human who will fire its session — applied by `plan-epic` at
+> child creation, in the same per-child attribute pass that sets the labels, the milestone and the
+> containment marker. An unassigned brief is not a valid brief. The picker steps over it for as long
+> as it is open, whatever label `review-plan` puts on it.
+
+The obligation sits on `plan-epic` because `plan-epic` is the one actor that both emits the brief and
+can set an attribute nothing downstream undoes.
+
+**The residual gap, stated rather than assumed away.** This is an obligation on the emitting
+planner's prompt, not yet a guarantee: `plan-epic` sets no assignee at child creation as written, and
+`review-plan` verifies no such invariant — so this contract cannot enforce the rule alone, and today
+nothing else does either. Tracked at [#4693](https://github.com/kamp-us/phoenix/issues/4693), which
+is where the enforcement shape (planner-applies, plan-gate-verifies, or both) gets decided. It goes
+live on the very next run: #4650's decomposition is held until this contract lands and mints 19+
+briefs immediately after, so **check the minted briefs' assignees before the pilot returns**.
+
+A repo-wide *guard* on brief board-state is not the near-term answer for the same reason the CLI
+convention has no conformance guard: with zero brief issues in existence such a check has zero scope
+and reds on itself ([ADR 0092](../../../.decisions/0092-gates-fail-closed-on-zero-scope.md)) —
+which is part of what #4693 has to resolve.
 
 ## Who writes a brief
 
 `plan-epic`, decomposing a sibling founding epic, emits **one brief per skill** — 19 for the
 execution core ([#4650](https://github.com/kamp-us/phoenix/issues/4650)), the same shape for the
 ideation quartet ([#4651](https://github.com/kamp-us/phoenix/issues/4651)). This doc is the format
-those planners emit against; it emits no briefs itself.
+those planners emit against; it emits no briefs itself. Emission carries the board-state obligation
+above with it: each brief is created **assigned**, or it is in the coder pool.
 
 ## Completeness test
 
@@ -207,7 +244,8 @@ Assume these; derive a contract only for deterministic work they do not already 
 **Conventions:** `claude-plugins/fabrika/docs/skill-conventions.md` ·
 `claude-plugins/fabrika/docs/cli-interface-convention.md`
 
-**Output contract:** one PR carrying `claude-plugins/fabrika/skills/adr/SKILL.md` and
-`claude-plugins/fabrika/skills/adr/contract.md`, with `Fixes #<this brief>` in the body. The verbs
-the contract specifies are implemented downstream by `write-code`, against that spec. No skill
-enters fabrika by any other path (#4637-C).
+**Output contract:** run `skill-reviewer` on the authored skill and fix its findings **before**
+opening the PR (runbook step 5.5). Then one PR carrying `claude-plugins/fabrika/skills/adr/SKILL.md`
+and `claude-plugins/fabrika/skills/adr/contract.md`, with `Fixes #<this brief>` in the body and the
+review pass. The verbs the contract specifies are implemented downstream by `write-code`, against
+that spec. No skill enters fabrika by any other path (#4637-C).
