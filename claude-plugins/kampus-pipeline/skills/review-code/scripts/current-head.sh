@@ -11,6 +11,7 @@ set -uo pipefail
 # shellcheck source=../../../lib/common.sh disable=SC1007,SC1091
 . "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
 
+# usage-miss-sentinel: <silent>
 [ "$#" -ge 1 ] || { echo "usage: current-head.sh <pr>" >&2; exit 2; }
 PR="$1"
 REPO="$(kp_repo)" || exit 1

@@ -48,6 +48,12 @@ emit_and_exit() {
   exit "$1"
 }
 
+# The declared lines carry bash 3.2.57's `%q` escaping (the platform measured above); bash 5 quotes
+# the same string differently, so a mismatch here on another bash is the escaping, not a lost sentinel.
+# usage-miss-sentinel: CONTROL_PLANE_TOUCHED=\<§CP\ classifier\ could\ not\ run\ -\ §CP\ UNKNOWN\,\ held\ as\ control-plane\>
+# usage-miss-sentinel: GUARD_TOUCHING=\<§CP\ classifier\ could\ not\ run\ -\ §CP\ UNKNOWN\,\ held\ as\ control-plane\>
+# usage-miss-sentinel: CP_FILES_N=0
+# usage-miss-sentinel: ADR_N=0
 [ "$#" -ge 1 ] || { echo "usage: classify-control-plane.sh <pr>" >&2; emit_and_exit 2 "$SENTINEL" "$SENTINEL" 0 0; }
 PR="$1"
 # Top-level assignment, never `local` — `local REPO="$(kp_repo)"` masks the substitution's status,

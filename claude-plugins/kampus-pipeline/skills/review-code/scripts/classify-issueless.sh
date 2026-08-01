@@ -15,6 +15,7 @@ set -uo pipefail
 
 HARD_STOP="no linked issue on a PR carrying behavioral code — broken seam: hard-stop (dangling-code guard, ADR 0184)"
 
+# usage-miss-sentinel: no linked issue on a PR carrying behavioral code — broken seam: hard-stop (dangling-code guard, ADR 0184)
 [ "$#" -ge 1 ] || {
 	echo "$HARD_STOP"
 	echo "usage: classify-issueless.sh <pr>" >&2

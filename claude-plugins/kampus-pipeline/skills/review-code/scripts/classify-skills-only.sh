@@ -21,6 +21,7 @@ set -uo pipefail
 # shellcheck source=../../shared/scripts/wl-empty-output.sh disable=SC1007,SC1091
 . "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../shared/scripts" && pwd)/wl-empty-output.sh"
 
+# usage-miss-sentinel: CANNOT-CLASSIFY (no <pr> argument — artifact class UNKNOWN, never an off-ramp)
 [ "$#" -ge 1 ] || {
 	echo "CANNOT-CLASSIFY (no <pr> argument — artifact class UNKNOWN, never an off-ramp)"
 	echo "usage: classify-skills-only.sh <pr>" >&2

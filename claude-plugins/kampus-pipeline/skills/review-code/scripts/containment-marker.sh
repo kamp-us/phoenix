@@ -14,6 +14,7 @@ set -uo pipefail
 # shellcheck source=../../../lib/common.sh disable=SC1007,SC1091
 . "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
 
+# usage-miss-sentinel: flag
 [ "$#" -ge 1 ] || { echo flag; echo "usage: containment-marker.sh <issue>" >&2; exit 2; }
 ISSUE="$1"
 REPO="$(kp_repo)" || { echo flag; echo "containment-marker.sh: target repo unresolved — marker UNKNOWN, held ARMED (flag)." >&2; exit 1; }

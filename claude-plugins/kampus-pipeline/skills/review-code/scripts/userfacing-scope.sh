@@ -16,6 +16,7 @@ set -uo pipefail
 # shellcheck disable=SC2016  # the `**Containment:** flag` / `apps/web/src/**` text is literal verdict prose, not an expansion
 ZERO_ROW='- [FAIL] flag-gating (default-off) — `**Containment:** flag` marks a dark-shipped feature, but the diff touches NO user-facing surface (apps/web/src/**/*.{tsx,css}, new apps/web/worker/** resolver/route/mutation): empty scope on a flag-marked PR is a FAIL (ADR 0092 §ZS), not a pass — there is no user-facing path to gate.'
 
+# usage-miss-sentinel: - [FAIL] flag-gating (default-off) — `**Containment:** flag` marks a dark-shipped feature, but the diff touches NO user-facing surface (apps/web/src/**/*.{tsx,css}, new apps/web/worker/** resolver/route/mutation): empty scope on a flag-marked PR is a FAIL (ADR 0092 §ZS), not a pass — there is no user-facing path to gate.
 [ "$#" -ge 1 ] || { printf '%s\n' "$ZERO_ROW"; echo "usage: userfacing-scope.sh <pr>" >&2; exit 2; }
 PR="$1"
 REPO="$(kp_repo)" || { printf '%s\n' "$ZERO_ROW"; echo "userfacing-scope.sh: target repo unresolved — scope UNKNOWN, failing closed." >&2; exit 1; }

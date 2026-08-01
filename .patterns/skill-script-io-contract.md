@@ -55,7 +55,7 @@ UNKNOWN, never the permissive answer** ([ADR 0092](../.decisions/0092-gates-fail
 | Exit | Meaning | stdout | stderr |
 |---|---|---|---|
 | `0` | The answer was produced | the answer (possibly a legitimately empty set, see below) | nothing, or progress |
-| non-zero | The unit could not run, or its input was UNKNOWN | **nothing** | a named diagnostic |
+| non-zero | The unit could not run, or its input was UNKNOWN | **nothing**, or exactly the unit's declared restrictive sentinel (below) | a named diagnostic |
 | `127` | The unit never ran at all (unresolved shim/binary — §CLI, [ADR 0207](../.decisions/0207-gh-path-shim-retired.md)) | **nothing** | a named diagnostic |
 
 Two consequences that are easy to get backwards:
@@ -95,6 +95,39 @@ So the contract has a second half:
 - **Assert on a state word, never on an exit status alone**, when a unit has more than two outcomes.
   An exit code discriminates outcomes only once the unit has *run*, so `… || ordinary` fail-opens on
   a usage error (`1`) or a missing binary (`127`).
+
+## The declared restrictive sentinel — the one thing a failure path may print
+
+A unit whose stdout a call site reads as a **safety value** cannot obey "print nothing when you
+fail". Where the caller gates on the value, silence resolves to whatever the empty string means
+there, and for `containment-marker.sh` that is `none` — the *skip* answer. Printing nothing would
+disarm a live dark-ship gate while every downstream gate reported green.
+
+So the taxonomy above has one exception, and it is narrow enough to be mechanical
+([ADR 0234](../.decisions/0234-usage-miss-declared-restrictive-sentinel.md)). A failing unit prints
+on stdout either **nothing** (the silent class, the default) or **exactly the one restrictive
+sentinel it declares, and nothing else** (the safety-answer class) — never a third thing, and never
+the permissive value. The restrictive sentinel is the answer that holds the guard armed.
+
+The declaration is what makes this checkable instead of a per-review judgment call. A safety-answer
+script declares its sentinel in a contiguous pragma block, one line per expected stdout line, in
+order, immediately above the guard that emits it:
+
+```sh
+# usage-miss-sentinel: flag
+[ "$#" -ge 1 ] || { echo flag; echo "usage: containment-marker.sh <issue>" >&2; exit 2; }
+```
+
+`# usage-miss-sentinel: <silent>` is the reserved counter-declaration: *this* unit's failure stdout
+is deliberately empty, asserted rather than assumed. A unit whose call site captures its stdout into
+a variable must carry one or the other.
+
+`verify-extraction.sh` check 9 probes each argument-taking script with no arguments and compares the
+captured stdout against that declaration. The point of declaring rather than judging is what it
+makes impossible: deleting the emission to satisfy a "must be silent" check now contradicts the
+script's own declaration and reds, so the fail-open edit — quietly dropping a value-sensitive
+sentinel — is a check failure by construction. That edit is banned outright by ADR 0234; the
+declaration is what stops it from also being *easy*.
 
 ## A meaningful exit code does not survive a pipeline
 

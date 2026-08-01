@@ -42,9 +42,21 @@
 #      bogus CLAUDE_PLUGIN_ROOT), asserting BOTH the captured exit code and the captured stdout byte
 #      count; plus every script that reaches a verb resolves it as `PCLI="$(kp_pcli)" || exit 127`,
 #      so a could-not-run can never surface as an answer. Network-free.
-#   9. USAGE MISS IS NON-ZERO WITH EMPTY STDOUT — every script that takes arguments, run with none,
-#      asserted on BOTH the captured exit code and the captured stdout byte count. Network-free
-#      (the usage guard precedes every `gh` call).
+#   9. USAGE MISS IS NON-ZERO, AND ITS STDOUT IS EMPTY OR EXACTLY THE DECLARED SENTINEL — every
+#      script that takes arguments, run with none, asserted on BOTH the captured exit code and the
+#      captured stdout. Network-free (the usage guard precedes every `gh` call). Per ADR 0234 a
+#      usage-miss prints nothing (the silent class) or exactly the script's declared restrictive
+#      sentinel (the safety-answer class), so this check reads each script's own declaration — a
+#      contiguous `# usage-miss-sentinel: <line>` block, one pragma line per expected stdout line, in
+#      order — rather than demanding silence from a script whose stdout a call site reads as a safety
+#      value. Deleting the emission while the declaration stands is a FAIL, which is what keeps the
+#      check from being satisfiable by the fail-open edit ADR 0234 bans. Two corroborating legs make
+#      the declaration itself hard to drop: a script whose SKILL.md call site CAPTURES its stdout
+#      into a variable must declare EITHER a sentinel or the reserved `<silent>` (evidence outside
+#      the file a greening edit would touch — `containment-marker.sh`'s dark-ship gate is that
+#      case), and an undeclared script must still be silent. So a captured script cannot be
+#      de-declared quietly; the silent claim has to be written down. A prose-channel sentinel that
+#      no call site captures rests on its declaration alone; that gap is stated, not papered over.
 #
 # Checks 2, 6 and 7 match against a COMMENT-STRIPPED copy of each script (everything from the first
 # `#` on a line is dropped) so the skills can keep *writing about* a bare shim, a cleanup trap, or an
@@ -374,24 +386,58 @@ for f in "${SCRIPT_PATHS[@]}"; do
 done
 [ "$pcli_bad" = 0 ] && ok "every script that reaches a verb resolves it as PCLI=\"\$(kp_pcli)\" || exit 127"
 
-# 9. a usage miss is non-zero with EMPTY stdout — asserted on BOTH operands, network-free
+# 9. a usage miss is non-zero, and its stdout is EMPTY or EXACTLY the declared restrictive sentinel
+#    (ADR 0234) — asserted on BOTH operands, network-free
 probed=0
+declaring=0
 usage_bad=0
+# The one reserved declaration value: "my usage miss is silent, deliberately". A captured script must
+# say which class it is, so dropping a sentinel is never a silent de-declaration — it has to be
+# written down as a claim a reviewer can weigh.
+SILENT_DECL='<silent>'
 for f in "${SCRIPT_PATHS[@]}"; do
 	grep -qE '^\[ "\$#" -ge [0-9]+ \] \|\|' "$f" || continue
 	probed=$((probed + 1))
+	base="$(basename "$f")"
+	declared="$(sed -n -e 's/^# usage-miss-sentinel: //p' "$f")"
 	out="$(bash "$f" 2>/dev/null)"
 	rc=$?
 	bytes=$(printf '%s' "$out" | wc -c | tr -d ' ')
-	if [ "$rc" = 0 ] || [ "$bytes" != 0 ]; then
-		fail "$(basename "$f") with no args: exit=$rc, stdout bytes=$bytes (want non-zero exit, 0 bytes)"
+	# script-external evidence that this script's stdout is read as a VALUE: its own skill's SKILL.md
+	# captures it into a variable. A fail-open edit to the script cannot remove this, so it is what
+	# makes dropping the declaration itself a FAIL for the captured class.
+	md="$(dirname "$(dirname "$f")")/SKILL.md"
+	captured=0
+	[ -f "$md" ] && grep -qE '=[[:space:]]*"?\$\([^)]*'"$base" "$md" && captured=1
+	if [ "$rc" = 0 ]; then
+		fail "$base with no args: exit=$rc — a usage miss must exit non-zero (ADR 0234)"
+		usage_bad=1
+	elif [ "$declared" = "$SILENT_DECL" ]; then
+		if [ "$bytes" != 0 ]; then
+			fail "$base declares the silent class ($SILENT_DECL) but printed $bytes byte(s) on a usage miss (ADR 0234)"
+			usage_bad=1
+		fi
+	elif [ -n "$declared" ]; then
+		declaring=$((declaring + 1))
+		if [ "$out" != "$declared" ]; then
+			fail "$base with no args: stdout is not its declared restrictive sentinel (ADR 0234) — deleting or weakening a declared sentinel is a FAIL, never a way to green this check. Declared:"
+			printf '  %s\n' "$declared"
+			echo "  observed ($bytes byte(s)):"
+			printf '  %s\n' "$out"
+			usage_bad=1
+		fi
+	elif [ "$captured" = 1 ]; then
+		fail "$base declares no \`# usage-miss-sentinel:\` yet $(basename "$md") captures its stdout as a value — declare its restrictive sentinel, or \`$SILENT_DECL\` if an empty capture is genuinely not the permissive answer there (ADR 0234)"
+		usage_bad=1
+	elif [ "$bytes" != 0 ]; then
+		fail "$base with no args: exit=$rc, stdout bytes=$bytes — an undeclared script must be silent; declare the sentinel with \`# usage-miss-sentinel:\` if its stdout answers a safety question (ADR 0234)"
 		usage_bad=1
 	fi
 done
 if [ "$probed" -eq 0 ]; then
 	fail "zero scope: no argument-taking script was probed for its usage refusal (ADR 0092)"
 elif [ "$usage_bad" = 0 ]; then
-	ok "all $probed argument-taking script(s) refuse a no-args call with a non-zero exit AND 0 bytes of stdout"
+	ok "all $probed argument-taking script(s) refuse a no-args call with a non-zero exit AND stdout that is empty or exactly the declared restrictive sentinel ($declaring declaring one — ADR 0234)"
 fi
 
 echo "scanned scope: ${scanned_md} SKILL.md, ${scanned_sh} extracted script(s) across [${SKILLS[*]}]"

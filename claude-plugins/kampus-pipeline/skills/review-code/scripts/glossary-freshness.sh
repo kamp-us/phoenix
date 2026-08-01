@@ -16,6 +16,7 @@ set -uo pipefail
 
 cannot() { echo "glossary-freshness: CANNOT-EVALUATE ($1) — fold as [UNVERIFIABLE], never as a not-applicable skip (§ZS, #4299)"; exit "${2:-1}"; }
 
+# usage-miss-sentinel: glossary-freshness: CANNOT-EVALUATE (no <pr> argument) — fold as [UNVERIFIABLE], never as a not-applicable skip (§ZS, #4299)
 [ "$#" -ge 1 ] || { echo "usage: glossary-freshness.sh <pr>" >&2; cannot "no <pr> argument" 2; }
 PR="$1"
 REPO="$(kp_repo)" || cannot "target repo unresolved"
