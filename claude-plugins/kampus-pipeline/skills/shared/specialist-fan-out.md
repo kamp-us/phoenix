@@ -127,16 +127,16 @@ is never blocked by this step and still posts its normal verdict.
 
 A non-zero exit is the fence-1 abort (a pre-existing line would have changed) or an input the
 script could not resolve: nothing on stdout, a named diagnostic on stderr. Treat it as a hold —
-the issue body was **not** written. **Known standing condition:** an issue body read back through
-`gh api … --jq .body` never ends in a newline, which `diff` reports as its last line *changing*,
-so fence 1 aborts on every non-empty body. That over-strictness is inherited verbatim from the
-procedure this script was extracted from and is out of scope to relax here — it errs toward
-refusing a write, never toward losing a criterion ([#4600](https://github.com/kamp-us/phoenix/issues/4600)).
+the issue body was **not** written.
 
 The append is **append-only by construction** (fence 1): the body is rebuilt from the existing
 one with a single row added, and a `diff` guard refuses any write that would drop or mutate a
 prior line — so a reviewer flow *cannot* edit or remove an existing AC (the catastrophe
-`review-skill`'s gate-invariant check exists to catch). It is **in-scope-only** (fence 2): only
+`review-skill`'s gate-invariant check exists to catch). That the guard is both correct and
+non-vacuous is re-derived rather than asserted:
+[`scripts/reviewer-append-ac-fence1-proof.sh`](scripts/reviewer-append-ac-fence1-proof.sh) runs
+the real script offline over four cases — clean append, mutated prior line, dropped prior line,
+and the same drop with the guard neutered as the control. It is **in-scope-only** (fence 2): only
 a finding that passed the trace-to-stated-goal test (Route, don't grade) reaches this step; a
 tangential one was routed to `report` and never arrives. It is **ACL-gated and fails closed**
 (fence 3): a below-`write+` author — or any ACL lookup failure — skips the append entirely, so
