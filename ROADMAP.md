@@ -41,6 +41,7 @@ flowchart TD
 		camp_agentic_design_system_coverage["Agentic design-system coverage"]:::done
 		camp_flag_retirement_adr_0136["Flag Retirement (ADR 0136)"]:::done
 		camp_writing_craft_import["Writing-Craft Import"]:::done
+		camp_skill_harness_audit["Skill Harness Audit"]:::active
 	end
 	ext_3642["#3642"]:::external
 	ext_3833["#3833"]:::external
@@ -96,6 +97,7 @@ Campaigns are bounded, milestone-backed pushes that run *concurrently* with the 
 | Agentic design-system coverage | #33 | done |
 | Flag Retirement (ADR 0136) | #34 | done |
 | Writing-Craft Import | #30 | done |
+| Skill Harness Audit | #43 | active |
 
 **The table is a parsed contract.** It is the single source the campaign skill (which appends a row and flips its state) and the lifecycle guard (which reads it) both bind to, so the grammar is pinned here rather than re-derived at either end:
 
