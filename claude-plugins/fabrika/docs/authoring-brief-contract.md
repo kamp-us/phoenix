@@ -89,15 +89,12 @@ Every brief points at both, and neither is summarised in the brief:
 
 - [`skill-conventions.md`](skill-conventions.md) — the writing discipline the `SKILL.md` meets
   ([#4653](https://github.com/kamp-us/phoenix/issues/4653)).
-- `claude-plugins/fabrika/docs/cli-interface-convention.md` — what a verb owes its caller, and the
+- [`cli-interface-convention.md`](cli-interface-convention.md) — what a verb owes its caller, and the
   shape of the contract spec the session emits
   ([#4654](https://github.com/kamp-us/phoenix/issues/4654)).
 
 A brief that paraphrases a convention creates a second source of truth for it, and the paraphrase is
 the copy that rots. Point.
-
-(The CLI convention is cited by path rather than linked because it lands in a sibling pull request;
-the [docs index](README.md) carries the link once it merges.)
 
 ### 6. Output contract — one PR, linked back
 
