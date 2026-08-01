@@ -175,6 +175,87 @@ total: a malformed body or a shape mismatch exits non-zero with a typed reason, 
 The shape is stable: field names + nesting are the contract, and `toJson` is a thin projection of
 the in-memory `Scorecard` so the JSON and the type never drift.
 
+## The deterministic tier ([#4677](https://github.com/kamp-us/phoenix/issues/4677))
+
+The no-model half of the fabrika eval layer (epic
+[#4649](https://github.com/kamp-us/phoenix/issues/4649)). A case whose assertions are all
+mechanically checkable never needs a model: it runs its CLI-layer command **once**, and its
+assertions are read straight off what that run produced. This is the tier that keeps a
+100%-and-growing regression floor cheap enough to sit on every change, and it is where
+incident-derived cases are pushed by default (founder ruling 4 on
+[#4637](https://github.com/kamp-us/phoenix/issues/4637)); the graded path is the justified
+exception, and it is the review stage's, not CI's (the ruling on
+[#4649](https://github.com/kamp-us/phoenix/issues/4649#issuecomment-5153280445)).
+
+`deterministic-tier.ts` is the **pure core** — it imports nothing, so it can reach nothing
+spawnable, and a unit test reads its import list to keep it that way.
+`deterministic-shell-observer.ts` is the **one IO leg**: it spawns a *process*, never a model.
+
+### The one-run protocol, and the flake stance as a mechanism
+
+- `runDeterministicTier({cases, resolveCommand, observe, deferGraded})` routes each decoded case
+  by its derived `tier` and executes the deterministic half **exactly once**. `deferGraded` is the
+  handoff to the graded tier ([#4678](https://github.com/kamp-us/phoenix/issues/4678)) and the only
+  seam here through which a model could ever be reached — it is never called for a deterministic
+  case, which is what a caller (or a test) asserts against.
+- Nothing in this module re-executes a case to obtain a pass. `reconcileRerun(first, rerun)` exists
+  for the opposite purpose: an **agreeing** re-run returns the first row untouched (`runs` stays 1
+  — the verdict came from one execution), and a **disagreeing** one returns a `flake` row plus a
+  `FlakeDefect` to file through the normal `report` path. A deterministic case that does not
+  reproduce is a bug in the case or in the CLI it exercises — surfaced, never quarantined, never
+  retried into green.
+
+### Everything unreadable is a case defect, never a pass
+
+`readExpectation` reads a mechanical assertion's prose into a concrete expectation (an expected
+exit code, a quoted output substring and its stream, a quoted file path, a quoted tool) with a
+deliberately narrow literal reader. Every shape it cannot read becomes `Unreadable`, which reds
+the case as `uncheckable`. The direction is the point: a permissive reader that *guessed* an
+expectation would report a green nobody earned, whereas an `Unreadable` costs a one-line edit to
+the case. The same rule covers a case with no assertions, a case declaring no command, an unknown
+cue, and a `tool-invocation` assertion under the shell observer (which cannot see tool invocations
+and says so, rather than answering "not invoked").
+
+**Did-not-run is UNKNOWN, not a negative answer.** A command that never started (no binary, a bad
+cwd) reports `notRun` and the case reds `uncheckable`; a command that started and was killed
+reports `exitStatus: null` with `notRun: null` and genuinely fails. An `exit 127` from a shell that
+*did* run is an ordinary answered status, distinct from both.
+
+### One row shape, one aggregation path
+
+Both tiers emit `EvalRow` — `{caseId, tier, outcome, runs, assertions, detail}`, where each
+`AssertionOutcome` is the flat `{text, cue, status, detail}` (a judged assertion carries
+`cue: null`). `summarizeEvalRows(rows)` is **the** aggregator: graded rows fold in here rather than
+through a second path. Its verdict is green only when every row passed, and **zero rows is red**,
+never a vacuous green over a corpus the suite could not see (ADR
+[0092](../../../../../.decisions/0092-gates-fail-closed-on-zero-scope.md)).
+
+```ts
+import {runDeterministicTier, reconcileRerun, summarizeEvalRows} from "./deterministic-tier.ts";
+import {observeShellCommand} from "./deterministic-shell-observer.ts";
+```
+
+### Measured cost
+
+**20 deterministic cases, two mechanical assertions each, real subprocess per case: 55–58 ms
+(~2.8 ms/case)** — measured on macOS 14 / Node 26 over three consecutive runs. That is well inside
+"sits on an ordinary change": the whole tier costs less than a single `tsc` file. The subprocess is
+the only cost that matters; the pure judging is free.
+
+Re-measure with the end-to-end suite, which prints the figure:
+
+```bash
+pnpm --filter @kampus/pipeline-cli exec vitest run \
+  src/tools/eval-harness/deterministic-shell-observer.unit.test.ts --reporter=verbose
+```
+
+The suite asserts the observable outcome — a green over cases that hold, a **red** over one that
+genuinely fails — and never a wall-clock threshold: a timing assertion is precisely the flaky test
+the ruling this tier implements calls a bug. The figure above is measured over a 20-case
+corpus-shaped stand-in, because the fabrika incident corpus
+([#4675](https://github.com/kamp-us/phoenix/issues/4675)) has not landed yet; re-run the command
+above against it once it does and update this number.
+
 ## Why it exists
 
 ADR 0112's apparatus grades **one** frozen input per stage with a **binary** oracle —
