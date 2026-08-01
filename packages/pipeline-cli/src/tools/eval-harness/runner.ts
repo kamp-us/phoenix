@@ -8,9 +8,10 @@
  * core, ADR 0112 §2), yielding a `{entry, grade, spend}` row. A per-(stage × model) collection
  * of those rows is the raw material the report slice aggregates into pass-rate + churn cost.
  *
- * This runner is a deterministic, side-effect-light COLLECTOR over runs that already happened —
- * it does NOT spawn stage agents (spawning is the operator's act; the fleet model is pinned by
- * spawn-guard). Two modes, story-split:
+ * This runner is a deterministic, side-effect-light COLLECTOR over runs that already happened — it
+ * spawns nothing, which is what keeps the offline replay reproducible. That is still true of this
+ * file, but no longer of the module: `spawn.ts`/`spawn-io.ts` execute an eval set (ADR 0236).
+ * Two modes, story-split:
  *  - Offline/replay (story 6): `collectRuns` over already-loaded transcripts + recorded
  *    artifacts — reproducible, no spawn. The primary path.
  *  - Capture-manifest (story 7): `CaptureManifest` documents, per run, the transcript path +
@@ -28,12 +29,19 @@ import {type CorpusEntry, type CorpusManifest, STAGES} from "./corpus.ts";
 import {type Grade, gradeEntry} from "./oracle.ts";
 
 /**
- * One run's token spend: reconstructed from its transcript, or explicitly missing. Modelled as a
- * union (not a nullable `StageSpend`) so a not-found transcript is a distinct, counted outcome —
- * never a fabricated zero the report could mistake for a genuinely free run.
+ * One run's token spend, as one of three distinct outcomes — never a nullable `StageSpend`, so a
+ * zero can never be fabricated where a measurement is missing.
+ *
+ * `NoBilledTurns` is the third: a transcript that exists and parses cleanly but carries **zero**
+ * billed assistant turns, which reconstructs to a genuine, well-formed zero indistinguishable from a
+ * free run. That is not hypothetical — a `claude -p` run whose skill failed to resolve writes
+ * exactly such a transcript, and `token-spend` reports all-zeros at exit 0 (measured on 2.1.220,
+ * #4673 §6). Folding it into `Reconstructed` would put the fabricated zero back that this union
+ * exists to keep out.
  */
 export type RunSpend =
 	| {readonly _tag: "Reconstructed"; readonly spend: StageSpend}
+	| {readonly _tag: "NoBilledTurns"}
 	| {readonly _tag: "TranscriptMissing"};
 
 /** One graded run row: the corpus entry, its grade against the label, and its token spend. */
@@ -62,11 +70,15 @@ export interface RunInput {
 export const collectRun = (input: RunInput): RunRow => ({
 	entry: input.entry,
 	grade: gradeEntry(input.entry, input.artifact),
-	spend:
-		input.transcript === null
-			? {_tag: "TranscriptMissing"}
-			: {_tag: "Reconstructed", spend: reconstructSpend(input.transcript)},
+	spend: classifyRunSpend(input.transcript),
 });
+
+/** Resolve a transcript to one of the three `RunSpend` outcomes. Pure + total. */
+export const classifyRunSpend = (transcript: string | null): RunSpend => {
+	if (transcript === null) return {_tag: "TranscriptMissing"};
+	const spend = reconstructSpend(transcript);
+	return spend.assistantTurns === 0 ? {_tag: "NoBilledTurns"} : {_tag: "Reconstructed", spend};
+};
 
 /**
  * Offline/replay entry point (story 6): collect a graded `{entry, grade, spend}` row per supplied
@@ -79,9 +91,12 @@ export const collectRuns = (inputs: ReadonlyArray<RunInput>): ReadonlyArray<RunR
 /**
  * A capture-manifest run (story 7): names, for one corpus run, WHERE its transcript lives and WHAT
  * artifact it produced, keyed by (stage, inputRef) so it joins to a `CorpusEntry`'s ground-truth
- * label. `transcriptPath` is the sub-agent transcript at `<parent-session-id>/subagents/agent-<id>.jsonl`
- * (ADR 0112 §2); `artifact` is the recorded decision artifact graded as-is. This is the documented
- * shape a fresh live run (spawned by the operator, not this tool) folds into the corpus deterministically.
+ * label. `artifact` is the recorded decision artifact graded as-is.
+ *
+ * `transcriptPath` takes either of the two real shapes: a Task-spawned sub-agent's
+ * `<parent-session-id>/subagents/agent-<id>.jsonl` (ADR 0112 §2), or a headless `claude -p` run's
+ * `<claude-data-root>/projects/<cwd-slug>/<session-id>.jsonl` — a top-level session, so NOT under
+ * `subagents/`. Both reconstruct through the same `token-spend` core.
  */
 export const CaptureRun = Schema.Struct({
 	stage: Schema.Literals([...STAGES]),

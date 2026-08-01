@@ -19,6 +19,7 @@
  * Thin IO shell over the pure cores (the `token-spend` / `readme-guard` idiom): read the file,
  * decode, render. An unreadable path and a malformed/mismatched input both exit non-zero.
  */
+import {randomUUID} from "node:crypto";
 import {Console, Effect, FileSystem, Result} from "effect";
 import * as Schema from "effect/Schema";
 import {Argument, Command, Flag} from "effect/unstable/cli";
@@ -31,6 +32,20 @@ import {
 	toJson,
 } from "./report.ts";
 import {decodeSkillEvalSet, tierCounts} from "./skill-eval-set.ts";
+import {
+	buildClaudeArgs,
+	buildLedger,
+	captureToJson,
+	EVAL_ARMS,
+	executeRuns,
+	isStageName,
+	ledgerToJson,
+	parseArms,
+	planEvalRuns,
+	renderLedger,
+	suiteExecuted,
+} from "./spawn.ts";
+import {claudeExecutor, claudeVersion, locateTranscript, readTranscript} from "./spawn-io.ts";
 
 const GATE_FAIL_EXIT_CODE = 1;
 
@@ -231,9 +246,194 @@ const cases = Command.make(
 	),
 );
 
-export const evalHarnessCommand = Command.make("eval-harness").pipe(
-	Command.withSubcommands([check, report, cases]),
+const stageFlag = Flag.string("stage").pipe(
+	Flag.withDescription(
+		`the pipeline stage this skill's eval set exercises — the capture manifest's join key (one of: ${STAGES.join(", ")})`,
+	),
+);
+
+const pluginDirFlag = Flag.string("plugin-dir").pipe(
+	Flag.withDescription(
+		"the candidate skill's plugin directory — loaded for the with-skill arm only, which is what makes the two arms differ",
+	),
+);
+
+const modelFlag = Flag.string("model").pipe(
+	Flag.withDescription(
+		"the model every run is pinned to — required, because a scorecard is only comparable when it names one",
+	),
+);
+
+const armsFlag = Flag.string("arms").pipe(
+	Flag.withDefault("with-skill,without-skill"),
+	Flag.withDescription(`comma-separated arms to run (${EVAL_ARMS.join(", ")})`),
+);
+
+const jsonSchemaFlag = Flag.string("json-schema").pipe(
+	Flag.optional,
+	Flag.withDescription(
+		"path to a JSON schema for the decision artifact; its text is passed to --json-schema and the validated object becomes the capture run's artifact",
+	),
+);
+
+const timeoutFlag = Flag.integer("timeout-ms").pipe(
+	Flag.withDefault(900_000),
+	Flag.withDescription(
+		"the stated wall-clock bound per run; a run past it is a typed TimedOut case",
+	),
+);
+
+const ledgerOutFlag = Flag.string("out").pipe(
+	Flag.optional,
+	Flag.withDescription(
+		"write the full run ledger (every run's typed outcome + the capture manifest) here",
+	),
+);
+
+const captureOutFlag = Flag.string("capture-out").pipe(
+	Flag.optional,
+	Flag.withDescription(
+		"write the bare capture manifest here — the file `eval-harness report` and collectFromCapture consume unchanged",
+	),
+);
+
+const dryRunFlag = Flag.boolean("dry-run").pipe(
+	Flag.withDescription("print the argv of every planned run and spawn nothing"),
+);
+
+/**
+ * `run` — execute an eval set unattended and emit the capture manifest the existing collector reads.
+ *
+ * Its supported invocation sites are an operator's shell and a `review-skill` review-stage spawn.
+ * **No CI workflow invokes this path**, and none is shipped with it: the founder ruling on epic #4649
+ * (comment 5153280445) removed model-in-the-loop execution from CI on a **cost** constraint — there
+ * are no credits for model runs inside the CI provider. That is a cost constraint, not a principle,
+ * recorded so a future reader knows what would have to change to revisit it. #4681's deterministic
+ * regression-floor leg is the separate, model-free thing CI does run.
+ */
+const runCommand = Command.make(
+	"run",
+	{
+		path: evalSetArg,
+		stage: stageFlag,
+		pluginDir: pluginDirFlag,
+		model: modelFlag,
+		arms: armsFlag,
+		jsonSchema: jsonSchemaFlag,
+		timeoutMs: timeoutFlag,
+		out: ledgerOutFlag,
+		captureOut: captureOutFlag,
+		dryRun: dryRunFlag,
+	},
+	Effect.fn(function* (opts) {
+		const run = Effect.gen(function* () {
+			const fs = yield* FileSystem.FileSystem;
+			const text = yield* Effect.mapError(
+				fs.readFileString(opts.path),
+				() => new EvalSetUnreadable({path: opts.path}),
+			);
+			const decoded = decodeSkillEvalSet(text);
+			if (Result.isFailure(decoded)) {
+				yield* Console.error(
+					`eval-harness: ${opts.path} is not a valid skill eval set (${decoded.failure.reason}): ${decoded.failure.message}`,
+				);
+				return yield* Effect.sync(() => process.exit(GATE_FAIL_EXIT_CODE));
+			}
+			const set = decoded.success;
+			if (set.cases.length === 0) {
+				yield* Console.error(
+					`eval-harness: ${opts.path} carries zero eval cases — refusing to report a green suite that ran nothing (ADR 0092)`,
+				);
+				return yield* Effect.sync(() => process.exit(GATE_FAIL_EXIT_CODE));
+			}
+			if (!isStageName(opts.stage)) {
+				yield* Console.error(
+					`eval-harness: --stage '${opts.stage}' is not a known stage (${STAGES.join(", ")})`,
+				);
+				return yield* Effect.sync(() => process.exit(GATE_FAIL_EXIT_CODE));
+			}
+			const arms = parseArms(opts.arms);
+			if (arms === null) {
+				yield* Console.error(
+					`eval-harness: --arms '${opts.arms}' names something that is not an arm (${EVAL_ARMS.join(", ")})`,
+				);
+				return yield* Effect.sync(() => process.exit(GATE_FAIL_EXIT_CODE));
+			}
+
+			let jsonSchema: string | null = null;
+			if (opts.jsonSchema._tag === "Some") {
+				const schemaPath = opts.jsonSchema.value;
+				jsonSchema = yield* Effect.mapError(
+					fs.readFileString(schemaPath),
+					() => new EvalSetUnreadable({path: schemaPath}),
+				);
+			}
+
+			const plans = planEvalRuns({
+				cases: set.cases,
+				arms,
+				model: opts.model,
+				pluginDir: opts.pluginDir,
+				jsonSchema,
+				sessionId: () => randomUUID(),
+			});
+
+			if (opts.dryRun) {
+				for (const plan of plans) {
+					yield* Console.log(
+						`case ${plan.caseId} [${plan.arm}] claude ${buildClaudeArgs(plan).join(" ")}`,
+					);
+				}
+				return;
+			}
+
+			const outcomes = executeRuns({
+				plans,
+				executor: claudeExecutor({timeoutMs: opts.timeoutMs}),
+				locateTranscript: (sessionId) => locateTranscript(sessionId),
+				loadTranscript: readTranscript,
+			});
+			const ledger = buildLedger({
+				skillName: set.skillName,
+				stage: opts.stage,
+				model: opts.model,
+				cliVersion: claudeVersion(),
+				outcomes,
+			});
+
+			if (opts.out._tag === "Some") yield* fs.writeFileString(opts.out.value, ledgerToJson(ledger));
+			if (opts.captureOut._tag === "Some") {
+				yield* fs.writeFileString(opts.captureOut.value, captureToJson(ledger.capture));
+			}
+			yield* Console.log(renderLedger(ledger));
+
+			// The suite always completes; the exit code reports only whether every case EXECUTED.
+			// Whether they passed is the oracle's answer, read off the capture manifest downstream.
+			if (!suiteExecuted(ledger.summary)) {
+				yield* Console.error(
+					`eval-harness: ${ledger.summary.failed} of ${ledger.summary.planned} run(s) did not execute — ${JSON.stringify(ledger.summary.byFailure)}`,
+				);
+				return yield* Effect.sync(() => process.exit(GATE_FAIL_EXIT_CODE));
+			}
+		});
+		yield* run.pipe(
+			Effect.catchTag("EvalSetUnreadable", (e) =>
+				Effect.gen(function* () {
+					yield* Console.error(`eval-harness: cannot read ${e.path}`);
+					return yield* Effect.sync(() => process.exit(GATE_FAIL_EXIT_CODE));
+				}),
+			),
+		);
+	}),
+).pipe(
 	Command.withDescription(
-		"Graded per-stage corpus + scorecard + authored-eval-set ingestion: the labeled ground-truth format, the model-tiering evidence report, and the /skill-creator eval-set decode (#1848, #1853, #4674)",
+		"Execute a skill's eval set unattended (both arms) and emit the capture manifest the existing collector consumes — for an operator's shell or a review-skill spawn, never a CI job (#4676)",
+	),
+);
+
+export const evalHarnessCommand = Command.make("eval-harness").pipe(
+	Command.withSubcommands([check, report, cases, runCommand]),
+	Command.withDescription(
+		"Graded per-stage corpus + scorecard + authored-eval-set ingestion + the unattended runner (#1848, #1853, #4674, #4676)",
 	),
 );
