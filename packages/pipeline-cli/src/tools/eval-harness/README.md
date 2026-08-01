@@ -543,6 +543,24 @@ the only file in the module that imports `node:child_process`. The reversal that
 module could previously not spawn anything) and its bounds are recorded in [ADR
 0236](../../../../../.decisions/0236-eval-harness-gains-a-spawning-shell.md).
 
+## The fabrika incident corpus ([#4675](https://github.com/kamp-us/phoenix/issues/4675))
+
+`incident-corpus/` is a **second, separate** body of ground truth, and the name matters: the
+per-stage *corpus manifest* above serves model-tiering, while the **incident corpus** is the
+committed set of incident-derived eval cases fabrika's 100% regression floor is measured against
+(epic [#4649](https://github.com/kamp-us/phoenix/issues/4649)). They share this module and nothing
+else.
+
+- `incident-corpus/evals.json` — the cases, authored in the reused `/skill-creator` format and
+  decoded by `skill-eval-set.ts`. No second format is invented for them.
+- `incident-corpus/provenance.json` — the sidecar binding each case to the artifact it pins:
+  the `#NNNN` incidents, how membership was verified, the tier, and any later **correction**.
+  `incident-provenance.ts` decodes it; a `graded` case without a written rationale is
+  unrepresentable, because the ruled bar makes graded the exception that must justify itself.
+- `incident-corpus/README.md` — the intake path: what makes an incident a case, who writes it,
+  the days-scale expectation from the [#4637](https://github.com/kamp-us/phoenix/issues/4637)
+  ruling, and how a case is corrected rather than rewritten.
+
 ## Out of scope
 
 **Making the tiering call** is [#1576](https://github.com/kamp-us/phoenix/issues/1576), a
