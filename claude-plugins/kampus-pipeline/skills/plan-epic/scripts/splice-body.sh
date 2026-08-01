@@ -16,13 +16,44 @@
 #
 # Exit 0 iff the block LANDED (the round-trip confirmed); every other terminal path — an aborted
 # guard, an exhausted loop, a racer's clobber — exits non-zero with its verdict on stdout, so
-# "could not land" can never be read as "pinned".
+# "could not land" can never be read as "pinned". Both directions of that claim are pinned by
+# `verify-roundtrip-diff.sh`, which drives THIS script against a stubbed `gh`.
 #
 # Extracted from plan-epic/SKILL.md (#4452, epic #4435 phase 1). Extraction contract +
 # shell-option rationale: ../SKILL.md § The extracted scripts.
 set -uo pipefail
 # shellcheck source=../../../lib/common.sh disable=SC1007,SC1091
 . "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
+
+# The ONE extraction surface both sides of step 6's round-trip diff go through: `## Dependencies` →
+# EOF, with trailing blank lines dropped and everything else — interior blanks, whitespace-only
+# lines, trailing spaces on a content line — preserved byte-for-byte. Two properties, both
+# load-bearing (#4596):
+#
+#   ONE FUNCTION, BOTH SIDES. The asymmetry it removes was structural, not a typo: the expected side
+#   was extracted from the FILE `body.md` while the bytes actually PATCHed are `$BODY`, which
+#   `$(cat)` had already stripped of every trailing newline. Deriving the expectation from a surface
+#   that is never stored is the same shape as a check blind to what it seeks; step 5 below now
+#   extracts from `$BODY` itself, and both sides call THIS function, so the two cannot drift apart
+#   again by a one-sided edit.
+#
+#   TRAILING BLANK LINES ONLY. `deps.md` carries the trailing blank line ../SKILL.md instructs, and a
+#   first-time plan appends the block to EOF — so deps-last-with-trailing-blank is the STANDARD
+#   layout, and the pre-fix diff reported "a racer clobbered it" and exited 1 on every one of them.
+#   Normalizing any further would trade that false alarm for a silent miss, which is strictly worse:
+#   the exit status is contractually "0 iff the block LANDED", so an in-block difference of ANY kind
+#   must still red. `verify-roundtrip-diff.sh` pins both directions.
+#
+# The `$0`/`$b` in the awk program are awk's, not the shell's — SC2016 is declared, not waved off.
+# shellcheck disable=SC2016
+deps_block() {   # stdin: a body; stdout: its `## Dependencies` block, trailing blank lines dropped
+	awk '
+		/^## Dependencies[[:space:]]*$/ { f = 1 }
+		!f { next }
+		/^[[:space:]]*$/ { held = held $0 "\n"; next }
+		{ printf "%s%s\n", held, $0; held = "" }
+	'
+}
 
 [ "$#" -ge 1 ] || { echo "usage: splice-body.sh <EPIC> [--replan]" >&2; exit 2; }
 EPIC="$1"; shift
@@ -127,21 +158,21 @@ for attempt in 1 2 3; do
   fi
   BODY="$(cat "$RUN_SCRATCH/body.md")"
 
-  # 5. extract THIS run's whole `## Dependencies` block (heading → EOF) from the body we're about
-  #    to write — that exact multi-line block is what we'll confirm round-tripped, so a racer who
-  #    happens to share a child number can't satisfy the check with one matching `- #` line.
-  awk '/^## Dependencies[[:space:]]*$/{f=1} f{print}' "$RUN_SCRATCH/body.md" \
-    > "$RUN_SCRATCH/deps-expected.md"
+  # 5. extract THIS run's whole `## Dependencies` block (heading → EOF) from `$BODY` — the bytes we
+  #    are ACTUALLY about to PATCH, not the pre-strip `body.md` file they came from (#4596). That
+  #    exact multi-line block is what we'll confirm round-tripped, so a racer who happens to share a
+  #    child number can't satisfy the check with one matching `- #` line.
+  printf '%s\n' "$BODY" | deps_block > "$RUN_SCRATCH/deps-expected.md"
 
   # 6. write, then re-confirm OUR WHOLE BLOCK landed — extract `## Dependencies`→EOF from the live
   #    post-write body and diff it against the block we just wrote. A racer's clobber differs
   #    somewhere in the block (different topology/labels/ordering), so an exact block match — not a
   #    heading or a single child line — is what tells our section from theirs. The residual window
   #    (below) means the PATCH is still last-write-wins; this is the honest after-the-fact check
-  #    that retries the loser.
+  #    that retries the loser. Both sides go through `deps_block` — same extraction, same trailing-
+  #    blank normalization — so the only thing this diff can report is an in-block difference.
   gh api -X PATCH "repos/$REPO/issues/$EPIC" -f body="$BODY" >/dev/null; patched=1
-  gh api "repos/$REPO/issues/$EPIC" --jq '.body' \
-    | awk '/^## Dependencies[[:space:]]*$/{f=1} f{print}' > "$RUN_SCRATCH/deps-live.md"
+  gh api "repos/$REPO/issues/$EPIC" --jq '.body' | deps_block > "$RUN_SCRATCH/deps-live.md"
   if diff -q "$RUN_SCRATCH/deps-expected.md" "$RUN_SCRATCH/deps-live.md" >/dev/null; then
     echo "epic body updated, our whole ## Dependencies block round-tripped"; landed=1; break
   else
