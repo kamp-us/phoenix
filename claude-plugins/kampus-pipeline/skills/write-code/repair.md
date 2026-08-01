@@ -10,9 +10,9 @@ here; Steps 1–7 there are the *initial* build and do not apply to a repair.
 
 | Read first | What repair mode takes from it |
 | --- | --- |
-| [All GitHub ops via `gh api` REST — never GraphQL](SKILL.md#all-github-ops-via-gh-api-rest--never-graphql) | `$REPO`, `$WRITECODE_SCRIPTS`, and §ZS — a script's non-zero return is UNKNOWN, never an answer |
-| [Step 3.5 — the mis-attribution guard](SKILL.md#mis-attribution-guard) | `$MY_CLAIM` and `claim_is_mine`, which Step R0 gates the entire repair on |
-| [Step 4's opening preflight and `wt_preflight`](SKILL.md#per-mutation-preflight) | the worktree assertion R2's branch switch and R3's push are each gated on |
+| [All GitHub ops via `gh api` REST — never GraphQL](SKILL.md#all-github-ops-via-gh-api-rest--never-graphql) | the literal-path execution convention (ADR 0232), and §ZS — a script's non-zero exit is UNKNOWN, never an answer |
+| [Step 3.5 — the mis-attribution guard](SKILL.md#mis-attribution-guard) | `MY_CLAIM` and `scripts/step3_5-claim-is-mine.sh`, which Step R0 gates the entire repair on |
+| [Step 4's opening preflight and `scripts/step4-wt-preflight.sh`](SKILL.md#per-mutation-preflight) | the worktree assertion R2's branch switch and R3's push are each gated on |
 
 ---
 
@@ -40,7 +40,7 @@ fixing its own PR and an independent gate re-judging it is the firewall, intact.
 Repair is the dispatch class the mis-attribution guard was **inert** on. A repair re-drive
 arrives on a lane someone else opened — often a *new* engine session re-driving a lane whose
 original claimant is gone — so the earliest authorized claim on the linked issue is, by default,
-**not this run's session**. With no token threaded, `claim_is_mine` can neither authorize nor
+**not this run's session**. With no token threaded, the mis-attribution guard can neither authorize nor
 refuse the repair on evidence, and two coders on the same wave resolved that ambiguity in
 **opposite** directions (one wrote to the issue, one withheld its progress comment — #3751).
 Fail-open ambiguity is the defect; both halves below close it.
@@ -54,7 +54,7 @@ delegated ownership). There is no repair-specific token mechanism: it is the sam
 `THREADED_CLAIM_TOKEN` contract.
 
 **Your obligation, and the one thing you may not do.** Resolve `MY_CLAIM` per
-[Step 3.5](SKILL.md#mis-attribution-guard) and gate the repair on `claim_is_mine "$N"` against the PR's
+[Step 3.5](SKILL.md#mis-attribution-guard) and gate the repair on `step3_5-claim-is-mine.sh "$N"` against the PR's
 linked issue. If it refuses — no token was threaded, or the threaded token is not the earliest
 **live** authorized claim — **STOP and report the refusal.** You may **not** proceed on the
 strength of an explicit-looking dispatch brief, or on independently corroborating
@@ -93,94 +93,21 @@ comment's `created_at` — an in-place upsert leaves `created_at` at the slot's 
 systematically over-ranked against a marker rewritten after it (#4200).
 
 ```bash
-PR=<the PR number you were handed>
-# §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314). The per-(PR,
-# gate) FAIL-bound-to-head resolution delegates to `pipeline-cli verdict read`: the ADR-0055 write+
-# author-gate, the latest-wins pick, and the ADR-0058 SHA-staleness test folded into one exit code
-# (its unit tests are the contract, #2102) — the same resolution ship-it Step 2 reads.
-PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
-# GATE-CRITICAL (§CLI): an unresolved CLI here would print no outcome JSON, which the UNKNOWN test
-# below already defers on — refuse up front anyway, so the reason is legible instead of inferred.
-[ -x "$PCLI" ] || {
-  echo "pipeline-cli: UNRESOLVED at '$PCLI' — this repair has NO verdict; resolve to UNKNOWN, never to 'nothing to repair' (§CLI)." >&2
-  exit 127
-}
-
-# The write+ author-set (ADR 0055) — `verdict read` computes it internally for the marker resolution,
-# but two DOWNSTREAM steps that are genuinely more than a single (PR, gate) resolution reuse it: the
-# inline-review-comment gate (Step R2) and the repair-mode N=3 FAIL-round count. Build it once here.
-comments_file=$(mktemp)
-gh api "repos/$REPO/issues/$PR/comments?per_page=100" > "$comments_file"
-markerAuthors=$(jq -r '[.[]
-    | select(.body | test("^\\s*\\**\\s*review-(code|doc|skill):\\s*(PASS|FAIL)"; "i"))
-    | .user.login] | unique | .[]' "$comments_file")
-authorized='[]'
-while IFS= read -r a; do
-  [ -z "$a" ] && continue
-  perm=$(gh api "repos/$REPO/collaborators/$a/permission" --jq .permission 2>/dev/null)
-  case "$perm" in
-    admin|maintain|write) authorized=$(jq -c --arg a "$a" '. + [$a]' <<<"$authorized") ;;
-  esac
-done <<<"$markerAuthors"
-
-# §CP-ness is part of the (PR, gate, head, §CP-ness) tuple `verdict read` resolves (#4049) — see the
-# Step-1 pre-pick scan for the full why, including why the file list comes from `cp_changed_files`
-# instead of a fail-OPEN `gh … | cp-classify` pipe.
-. "${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/skills/shared/scripts/cp-read.sh"
-if ! cp_changed_files "$REPO" "$PR"; then
-  CP_STATE=unknown   # the input never arrived ⇒ UNKNOWN ⇒ hold as §CP (never `not-control-plane`)
-else
-  CP_STATE="$(printf '%s\n' "$CP_FILES" | "$PCLI" cp-classify classify --repo "$REPO" 2>/dev/null)"
-fi
-if [ "$CP_STATE" = "not-control-plane" ]; then CP_FLAG=""; else CP_FLAG="--cp"; fi
-
-# a namespace is a repairable FAIL iff its latest authorized verdict is FAIL bound to the current head
-# — exit 0 from `verdict read … --expect FAIL`. The verb's JSON (stdout) carries the resolving comment
-# id, which Step R2 uses to read the FAIL body. A stale / SHA-less / PASS / none verdict exits non-zero,
-# so it is correctly NOT repaired (idempotent no-op), needing no separate staleness test here.
-CODE_FAIL_JSON="$("$PCLI" verdict read --pr "$PR" --gate code  $CP_FLAG --expect FAIL 2>/dev/null)"  && CODE_FAIL=1  || CODE_FAIL=0
-DOC_FAIL_JSON="$("$PCLI"  verdict read --pr "$PR" --gate doc   $CP_FLAG --expect FAIL 2>/dev/null)"  && DOC_FAIL=1   || DOC_FAIL=0
-SKILL_FAIL_JSON="$("$PCLI" verdict read --pr "$PR" --gate skill $CP_FLAG --expect FAIL 2>/dev/null)" && SKILL_FAIL=1 || SKILL_FAIL=0
-
-# UNRESOLVED ≠ "no FAIL". `verdict read` prints its outcome JSON on BOTH exit paths, so absent JSON
-# means the namespace never resolved at all (a transport/5xx error, not a verdict). Under a flaky
-# GitHub that silently reads as "nothing to repair" and SKIPS a real repair — so treat it as UNKNOWN
-# and defer the run instead (a deferred repair is retried; a skipped one is lost).
-VERDICT_UNKNOWN=0
-for J in "$CODE_FAIL_JSON" "$DOC_FAIL_JSON" "$SKILL_FAIL_JSON"; do
-  jq -e . >/dev/null 2>&1 <<<"$J" || VERDICT_UNKNOWN=1
-done
-
-# the native decisive review folds into the code namespace (the verb reads only marker comments):
-# GitHub author-attributes reviews, so this path needs no ACL gate — commit_id IS its bound SHA, and
-# only a review prefix-matching the current head participates (ADR 0058).
+# <PR> is the PR number you were handed. The script does all of R1 in one process: it builds the
+# write+ author-set (ADR 0055) the inline-comment gate and the N=3 round count reuse, derives §CP-ness
+# through §CPREAD's `cp_changed_files`, delegates each (PR, gate) FAIL-bound-to-head resolution to
+# `pipeline-cli verdict read` (author-gate + latest-wins + ADR-0058 SHA-staleness in one exit code),
+# and folds the native decisive review into the code namespace by NEWEST-WRITTEN wins.
 #
-# The fold is NEWEST-WRITTEN wins — the resolution ship-it Step 2 states and this step mirrors.
-# `at: .submitted_at` is load-bearing, not decoration: it is what the compare reads, and a review is
-# never upserted, so `submitted_at` IS the review's write time — like for like against the marker's
-# `writtenAt` below. A bare
-# "CHANGES_REQUESTED ⇒ CODE_FAIL=1" would be FAIL-precedence, re-entering repair on a PR whose newer
-# marker already PASS'd at the same head — a spurious repair loop, not a safe default.
-CURRENT_HEAD="$(gh api repos/$REPO/pulls/$PR --jq .head.sha)"
-REVIEW=$(gh api "repos/$REPO/pulls/$PR/reviews?per_page=100" \
-  --jq '[.[] | select(.state=="APPROVED" or .state=="CHANGES_REQUESTED")]
-        | sort_by(.submitted_at) | last | {state, sha: .commit_id, at: .submitted_at}')
-RSTATE=$(jq -r '.state // ""' <<<"$REVIEW"); RSHA=$(jq -r '.sha // empty' <<<"$REVIEW")
-RAT=$(jq -r '.at // ""' <<<"$REVIEW")
-# marker side: `_tag == "current"` is exactly "a current-head marker verdict stands" (a none/sha-less/
-# stale one does not participate); the verb's `writtenAt` is the WRITE time newest-wins compares
-# against — never the comment's created_at, which an in-place upsert leaves behind (#4200).
-MARKER_AT=""
-[ "$(jq -r '._tag // ""' <<<"$CODE_FAIL_JSON" 2>/dev/null)" = "current" ] &&
-  MARKER_AT=$(jq -r '.writtenAt // empty' <<<"$CODE_FAIL_JSON" 2>/dev/null)
-if [ -n "$RSHA" ] && [ -n "$RAT" ]; then case "$CURRENT_HEAD" in "$RSHA"*)
-  # ISO-8601-UTC sorts lexically, so `>` IS the chronological compare. Empty MARKER_AT ⇒ the review is
-  # the only current-head event ⇒ it decides alone. A newer APPROVED clears an older FAIL — that is the
-  # point: without it a repaired-and-re-approved PR would re-enter repair forever.
-  if [ -z "$MARKER_AT" ] || [ "$RAT" \> "$MARKER_AT" ]; then
-    [ "$RSTATE" = "CHANGES_REQUESTED" ] && CODE_FAIL=1 || CODE_FAIL=0
-  fi
-;; esac; fi
+# stdout is five `KEY=value` lines: `REPAIR_SCRATCH=`, `VERDICT_UNKNOWN=`, `CODE_FAIL=`, `DOC_FAIL=`,
+# `SKILL_FAIL=`. `REPAIR_SCRATCH` is the §SP per-run directory this step WRITES the author set, the
+# comment stream and the three verdict payloads into — that is how Bounding, R2's FAIL-body read and
+# the inline-comment fold reach state R1 resolved, since no shell variable survives to the next Bash
+# call. Each of them refuses if R1 never wrote it: absent state is UNKNOWN, never an empty set.
+#
+# A non-zero exit means NO verdict was resolved (127 = the CLI never ran) — UNKNOWN, and never
+# "nothing to repair".
+bash ./claude-plugins/kampus-pipeline/skills/write-code/scripts/stepR1-verdicts.sh <PR> || exit 1
 ```
 
 **A namespace that did not resolve at all is UNKNOWN, not "no FAIL" — defer, don't skip.** If
@@ -221,9 +148,11 @@ enumerated findings as the AC work list** — fix exactly what they name (the in
 below are additive to this list, not a substitute for it):
 
 ```bash
-# name the namespace's R1 JSON variable — CODE_FAIL_JSON (the default), DOC_FAIL_JSON, or
-# SKILL_FAIL_JSON. Leaves $CID in this shell for R3's thread reply.
-. "$WRITECODE_SCRIPTS/stepR2-fail-body.sh" CODE_FAIL_JSON
+# name the namespace whose FAIL you are draining — `code` (the default), `doc` or `skill`. It reads
+# R1's payload out of the §SP scratch dir R1 wrote, so run R1 first; an absent payload refuses.
+# stdout is `CID=<comment id>` and `FAILBODY_FILE=<path>`, then the FAIL marker body itself. `$CID` is
+# what R3's thread reply is addressed at; the body file is what the freeze fence reads.
+bash ./claude-plugins/kampus-pipeline/skills/write-code/scripts/stepR2-fail-body.sh <PR> code || exit 1
 ```
 
 #### A review-appended AC is an ordinary `[FAIL]` row — no special parser (ADR 0079)
@@ -284,7 +213,9 @@ is actionable only when its `line` is non-null. This is the inline-comment analo
 `@ <sha>` staleness test — repair never chases feedback bound to code that has since changed.
 
 ```bash
-. "$WRITECODE_SCRIPTS/stepR2-inline-comments.sh"   # reads the $authorized set R1 built; leaves $ME + $inlineComments
+# stdout IS the additive fix list, one {id, path, line, body} object per in-scope comment. It reads
+# the write+ author set R1 wrote to the §SP scratch dir; an absent set refuses (R1 never ran here).
+bash ./claude-plugins/kampus-pipeline/skills/write-code/scripts/stepR2-inline-comments.sh <PR> || exit 1
 ```
 
 For context on *what the PR was supposed to do*, resolve the **linked issue** via the PR
@@ -292,19 +223,25 @@ body's `Fixes #N` and re-read its `### Acceptance criteria` (the same checklist 
 verified) and the progress trail:
 
 ```bash
-. "$WRITECODE_SCRIPTS/stepR2-linked-issue.sh"   # leaves $N (the PR's linked issue) in this shell
+# stdout is `N=<the PR's linked issue>` first, then that issue's body and comment stream. `$N` is the
+# number every later repair mutation is claim-gated on, so an unresolvable `Fixes #N` refuses.
+bash ./claude-plugins/kampus-pipeline/skills/write-code/scripts/stepR2-linked-issue.sh <PR> || exit 1
 ```
 
 Check out the **existing PR branch** and fix on it — **no new branch** (a new branch would
 orphan the PR and the gate's history):
 
 ```bash
-. "$WRITECODE_SCRIPTS/stepR2-branch-rebase.sh" <the PR's head branch> || exit 1   # gh api .../pulls/$PR --jq '.head.ref'
+# <N> is stepR2-linked-issue.sh's `N=` line; the head branch is `gh api .../pulls/<PR> --jq .head.ref`.
+# stdout is `WT=<root>` — the tree the switch and rebase happened in, and the tree R3's push must be
+# addressed at. Non-zero ⇒ nothing was switched, or the rebase stopped on a conflict (resolve it in
+# $WT and re-run; never `git rebase --abort`).
+bash ./claude-plugins/kampus-pipeline/skills/write-code/scripts/stepR2-branch-rebase.sh <PR> <N> <the PR's head branch> || exit 1
 # then apply the fixes addressing exactly the enumerated findings
 ```
 
 Repair mode runs in a worktree too, so re-run the Step-4 opening preflight (and capture `WT`)
-before this switch, then gate every later `git commit`/`git push` on `wt_preflight` exactly
+before this switch, then gate every later `git commit`/`git push` on `step4-wt-preflight.sh` exactly
 as the initial build does.
 
 **Freshen the base onto latest `origin/main` before you fix — surface a textual conflict at
@@ -364,7 +301,7 @@ unreliable in this org).
 
 ```bash
 # write the format-3 repair note to "$RUN_SCRATCH/repair-progress.md" FIRST.
-. "$WRITECODE_SCRIPTS/stepR3-push-and-note.sh" || exit 1   # push CONFIRMED on the remote, or nothing landed
+bash ./claude-plugins/kampus-pipeline/skills/write-code/scripts/stepR3-push-and-note.sh <PR> <N> || exit 1   # push CONFIRMED on the remote, or nothing landed
 ```
 
 **Acknowledge the inline threads you addressed** so the loop is visible to the reviewer who
@@ -372,7 +309,8 @@ left them. For each in-scope inline comment you fixed, post a **threaded reply**
 you changed (REST, on the same review-comment thread):
 
 ```bash
-. "$WRITECODE_SCRIPTS/stepR3-thread-reply.sh" "Addressed in <short-sha>: <one line on the fix>." || exit 1
+# <CID> is stepR2-fail-body.sh's `CID=` line — the thread this round answered
+bash ./claude-plugins/kampus-pipeline/skills/write-code/scripts/stepR3-thread-reply.sh <PR> <CID> "Addressed in <short-sha>: <one line on the fix>." || exit 1
 ```
 
 **Release the lane's claim before you stop**, exactly as Step 8 does for the initial build — the
@@ -380,7 +318,7 @@ repair round is over, and a claim left held is what makes the *next* repair disp
 read `lost` (#3780; the observed stall was a repair refused by a claim whose run had finished):
 
 ```bash
-. "$WRITECODE_SCRIPTS/step8-claim-release.sh" "$N" || exit 1   # the SAME script Step 8 sources — retract OUR OWN marker; never another session's
+bash ./claude-plugins/kampus-pipeline/skills/write-code/scripts/step8-claim-release.sh <N> || exit 1   # the SAME script Step 8 runs — retract OUR OWN marker; never another session's
 ```
 
 A reply is the acknowledgement this skill performs. **Resolving** the thread (collapsing it)
@@ -415,7 +353,9 @@ the cap fails to bind and the loop runs past N=3.) Same ACL author-gate as Step
 R1 (reuse its `$comments_file` + `$authorized`) — only a real reviewer's FAIL counts toward the cap:
 
 ```bash
-. "$WRITECODE_SCRIPTS/stepR-round-count.sh"   # stdout IS the round count; reads $authorized + $comments_file
+# stdout IS the round count, one integer; it reads the author set + comment stream R1 wrote to the
+# §SP scratch dir. Empty stdout is UNKNOWN, never 0 rounds — read the status before the number.
+bash ./claude-plugins/kampus-pipeline/skills/write-code/scripts/stepR-round-count.sh <PR> || exit 1
 ```
 
 If this PR has **already had 3 FAIL→fix rounds** (you'd be pushing a 4th fix against a 4th
@@ -427,7 +367,9 @@ FAIL), **stop fixing and escalate** instead of pushing again:
 # N=3 cap (write-code escalates INSTEAD OF running R2/R3, so the R2/R3 guards never fire). Gate it
 # fail-closed so a mis-dispatched repair never comments-on/relabels another agent's live issue (the
 # #1404 class — the relabel is more disruptive than a comment).
-claim_is_mine "$N" || { echo "refusing to escalate PR #$PR — its linked issue #$N is not my claim (Step 3.5)"; exit 1; }
+REPO="${CLAUDE_PIPELINE_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}"
+bash ./claude-plugins/kampus-pipeline/skills/write-code/scripts/step3_5-claim-is-mine.sh "$N" \
+  || { echo "refusing to escalate PR #$PR — its linked issue #$N is not my claim (Step 3.5)"; exit 1; }
 gh api repos/$REPO/issues/$N/comments -f body="$(cat <<'EOF'
 ### Repair escalation — PR #<PR> still FAILing after 3 rounds
 
@@ -476,12 +418,15 @@ final repair round**, i.e. its tagged `round` ≥ `N` (= 3). Concretely, for eac
   hand the PR back, surface for re-triage:
 
 ```bash
-. "$WRITECODE_SCRIPTS/stepR-frozen-ac.sh"   # reads $FAILBODY (the resolving FAIL marker body from R2)
+# reads the resolving FAIL marker body stepR2-fail-body.sh wrote to the §SP scratch dir. stdout is one
+# `FROZEN appended AC …` line per frozen criterion — EMPTY means none is frozen, which is why an
+# absent body refuses rather than answer empty.
+bash ./claude-plugins/kampus-pipeline/skills/write-code/scripts/stepR-frozen-ac.sh <PR> || exit 1
 ```
 
 If **any** `ac:review-*` row in the current FAIL table is frozen (`round >= 3`), take the
 **escalation path** (the same `### Repair escalation` comment + `status:needs-triage` label as
-the N=3 block — and therefore the **same `claim_is_mine "$N"` fail-closed gate** that block
+the N=3 block — and therefore the **same `step3_5-claim-is-mine.sh "$N"` fail-closed gate** that block
 carries, MANDATED before its comment+relabel exactly as in the N=3 case: a frozen-AC escalation
 is just as reachable as a mis-dispatched repair's first mutation, so it must not comment-on or
 relabel an issue whose claim isn't mine), naming the frozen appended criterion as the still-open
@@ -511,7 +456,7 @@ indistinguishable from "still FAILing after the cap" to the picker, so the same 
 - **Same branch, never a new one.** Fix on the PR's existing head branch so the PR and its
   gate history stay intact.
 - **Mis-attribution guard before every push/comment ([Step 3.5](SKILL.md#mis-attribution-guard)).**
-  Confirm the PR's linked issue `#N` carries **your own** claim (`claim_is_mine "$N"` — the
+  Confirm the PR's linked issue `#N` carries **your own** claim (`step3_5-claim-is-mine.sh "$N"` — the
   dispatcher threads the lane's claim as `MY_CLAIM` for delegated repair, ADR 0115 §3, mandated by
   [Step R0](#step-r0--a-repair-dispatch-must-carry-a-claim-token-no-token--refuse-never-a-judgment-call))
   before the R2 branch switch and the R3 push/comment, so a mis-dispatched repair never clobbers
