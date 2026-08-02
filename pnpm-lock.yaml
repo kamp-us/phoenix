@@ -863,6 +863,31 @@ importers:
         specifier: 'catalog:'
         version: 4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
 
+  packages/fabrika-cli:
+    dependencies:
+      '@effect/platform-node':
+        specifier: 'catalog:'
+        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))(ioredis@5.10.1)
+      effect:
+        specifier: 'catalog:'
+        version: 4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)
+    devDependencies:
+      '@effect/tsgo':
+        specifier: 'catalog:'
+        version: 0.5.2
+      '@types/node':
+        specifier: 'catalog:'
+        version: 25.6.2
+      '@typescript/native-preview':
+        specifier: 'catalog:'
+        version: 7.0.0-dev.20260509.2
+      typescript:
+        specifier: 'catalog:'
+        version: 6.0.3
+      vitest:
+        specifier: 'catalog:'
+        version: 4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
+
   packages/fate-effect:
     dependencies:
       '@nkzw/fate':
