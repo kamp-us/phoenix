@@ -617,11 +617,13 @@ not-guard-touching
 
 **Grounding**
 
-- ADR 0164 (**`proposed`**, not accepted) — `.decisions/**` matches no control-plane *path*, so a
-  guard-governing ADR is §CP by content alone. The behaviour is live regardless: `cp-classify` and
-  `guard-content-probe` enforce it and stamp `(§CP, ADR 0164)` into their output. Cite the
-  enforcement rather than the decision until 0164 lands — this spec's own `live`/`landed` rule
-  forbids leaning on a `proposed` ADR as settled law, and it binds the spec too.
+- ADR 0164 — `.decisions/**` matches no control-plane *path*, so a guard-governing ADR is §CP by
+  content alone. **The binding fact is the enforcement, not the ADR's status field:** `cp-classify`
+  and `guard-content-probe` implement this today and stamp `(§CP, ADR 0164)` into their output, while
+  0164 itself has read `proposed` throughout — the mismatch is #4388, which carries a founder ruling
+  to accept it that has not landed. Neither this spec nor the skill asserts 0164's status, because a
+  status claim about another record is exactly the thing that rots; `adr resolve` is how a caller
+  learns it at the moment of citing.
 - #4386 / #3416 — a guard-touching ADR routed as ordinary reaches `main` with zero approvals.
 - Upstream's exit codes are inverted — `0` is guard-touching, `3` is not-guard-touching — and its own
   README says to read the stdout word and never the status. The inversion must not leak through this

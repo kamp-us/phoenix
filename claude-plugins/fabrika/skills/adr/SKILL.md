@@ -108,9 +108,9 @@ fabrika-cli adr classify 0240
 ```
 
 Prints `guard-touching` or `not-guard-touching`. No `.decisions/**` path matches the control-plane
-pattern, so a guard-governing ADR is §CP by content alone — the rule `cp-classify` enforces today,
-still `proposed` in ADR 0164 — and one routed as ordinary reaches `main` with zero approvals (#4386,
-#3416). Anything but `not-guard-touching`, a verb that never ran included, needs approval at head.
+pattern, so a guard-governing ADR is §CP by content alone — what `cp-classify` enforces on the merge
+path — and one routed as ordinary reaches `main` with zero approvals (#4386, #3416). Anything but
+`not-guard-touching`, a verb that never ran included, needs approval at head.
 
 **Never reword to change that verdict.** The probe fires on words — `gate`, `guard`, `control-plane`
 — so 84% of the corpus classifies §CP; a false §CP costs one approval, a false ordinary is #4386.
