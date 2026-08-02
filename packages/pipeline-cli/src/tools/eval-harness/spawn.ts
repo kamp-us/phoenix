@@ -1,0 +1,516 @@
+/**
+ * `eval-harness` spawn-and-collect core — planning an unattended eval run and classifying what came
+ * back (issue #4676, epic #4649).
+ *
+ * This is the **pure** half of the execution layer: it plans the invocations, builds their argv,
+ * decodes the headless result payload, and classifies each run into a typed outcome. It imports no
+ * `node:child_process` and touches no filesystem — the spawning lives in `spawn-io.ts`, so the
+ * module's offline replay path (`runner.ts`) stays reproducible and this core stays unit-testable
+ * against a stubbed executor. See ADR 0236 for why the module gained a spawning shell at all.
+ *
+ * The invocation contract below is **measured, not inferred** — every flag comes from the #4673
+ * spike's evidence log (comment 5153355534 on that issue), re-verified here against `claude`
+ * 2.1.220.
+ *
+ * The one thing that shapes everything else: **an unresolvable skill is a silent green.**
+ * `claude -p "/not-a-skill"` exits 0 with `is_error: false`, `subtype: "success"`, `num_turns: 0`,
+ * `total_cost_usd: 0`, `modelUsage: {}` — and `token-spend` reconstructs its transcript to
+ * well-formed zeros, also at exit 0. Nothing in the platform reports the failure, so a with-skill
+ * arm whose plugin failed to load degrades into a without-skill arm and scores as a legitimate free
+ * run. `classifyRun` therefore synthesizes the missing signal (`NO_MODEL_TURNS_SIGNALS`), and its
+ * verdict is the one place a run is allowed to become a `CaptureRun`.
+ */
+import {reconstructSpend} from "../token-spend/token-spend.ts";
+import {STAGES} from "./corpus.ts";
+import type {CaptureManifest, CaptureRun, TranscriptLoader} from "./runner.ts";
+import type {EvalTier} from "./skill-eval-set.ts";
+
+/**
+ * The with/without methodology's arm variable is **skill availability**, and `--plugin-dir` is the
+ * toggle: it loads the skill under test for that session only. `--disable-slash-commands` is NOT a
+ * usable toggle — measured against a loaded plugin it short-circuits to `num_turns: 0`, `$0`,
+ * `"Unknown command: …"` and never reaches the model (#4673 §4).
+ */
+export const EVAL_ARMS = ["with-skill", "without-skill"] as const;
+
+export type EvalArm = (typeof EVAL_ARMS)[number];
+
+/**
+ * The minimum a case must offer to be run. Declared structurally rather than imported as
+ * `SkillEvalCase` so the executor never depends on the authored format's other fields — a decoded
+ * `SkillEvalCase` satisfies it, and so does a synthetic case in a test.
+ */
+export interface RunnableCase {
+	readonly id: number;
+	readonly prompt: string;
+	readonly tier: EvalTier;
+}
+
+/** One planned invocation: exactly one (case × arm), with the session id its transcript will land under. */
+export interface PlannedRun {
+	readonly caseId: number;
+	readonly tier: EvalTier;
+	readonly arm: EvalArm;
+	readonly sessionId: string;
+	readonly prompt: string;
+	readonly model: string;
+	/** The candidate skill's plugin dir on the with-skill arm; `null` is what makes the other arm the other arm. */
+	readonly pluginDir: string | null;
+	/** The JSON schema text requested for the decision artifact, or `null` when none was asked for. */
+	readonly jsonSchema: string | null;
+}
+
+/**
+ * Plan one invocation per (case × arm). `sessionId` is supplied by the caller (the IO shell mints
+ * UUIDs) because pinning it is what makes the transcript locatable afterwards — the result payload
+ * carries `session_id` but never the transcript path (#4673 §7).
+ */
+export const planEvalRuns = (args: {
+	readonly cases: ReadonlyArray<RunnableCase>;
+	readonly arms: ReadonlyArray<EvalArm>;
+	readonly model: string;
+	readonly pluginDir: string;
+	readonly jsonSchema: string | null;
+	readonly sessionId: (caseId: number, arm: EvalArm) => string;
+}): ReadonlyArray<PlannedRun> =>
+	args.cases.flatMap((evalCase) =>
+		args.arms.map(
+			(arm): PlannedRun => ({
+				caseId: evalCase.id,
+				tier: evalCase.tier,
+				arm,
+				sessionId: args.sessionId(evalCase.id, arm),
+				prompt: evalCase.prompt,
+				model: args.model,
+				pluginDir: arm === "with-skill" ? args.pluginDir : null,
+				jsonSchema: args.jsonSchema,
+			}),
+		),
+	);
+
+/**
+ * The argv for one planned run, minus the executable.
+ *
+ * Two flags are deliberately absent and must stay absent. `--no-session-persistence` would suppress
+ * the transcript this whole path is built to collect, and `--disable-slash-commands` silently
+ * short-circuits a `/<skill>` prompt (both #4673 §4/§7).
+ */
+export const buildClaudeArgs = (plan: PlannedRun): ReadonlyArray<string> => [
+	"-p",
+	plan.prompt,
+	"--output-format",
+	"json",
+	"--session-id",
+	plan.sessionId,
+	"--model",
+	plan.model,
+	...(plan.pluginDir === null ? [] : ["--plugin-dir", plan.pluginDir]),
+	...(plan.jsonSchema === null ? [] : ["--json-schema", plan.jsonSchema]),
+];
+
+/** What the executor observed. Total: a dead or wedged child is a value here, never an exception. */
+export type ExecutorResult =
+	| {
+			readonly _tag: "Exited";
+			readonly code: number;
+			readonly stdout: string;
+			readonly stderr: string;
+	  }
+	| {readonly _tag: "TimedOut"; readonly boundMs: number}
+	| {readonly _tag: "SpawnFailed"; readonly detail: string};
+
+/** The seam the unit tier stubs: a planned run in, an observation out. No model call in a unit test. */
+export type Executor = (plan: PlannedRun) => ExecutorResult;
+
+/** The fields of the headless `result` message this runner reads. Everything else in it is ignored. */
+export interface HeadlessResult {
+	readonly isError: boolean;
+	readonly subtype: string;
+	readonly numTurns: number;
+	readonly text: string;
+	readonly sessionId: string;
+	readonly modelUsageKeys: ReadonlyArray<string>;
+	readonly totalCostUsd: number | null;
+	readonly hasStructuredOutput: boolean;
+	readonly structuredOutput: unknown;
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+	typeof value === "object" && value !== null && !Array.isArray(value);
+
+/**
+ * Find the `result` message in a headless run's stdout.
+ *
+ * `--output-format json` emits a **JSON array of stream messages** (`system/init`, `assistant`,
+ * `result`) on 2.1.220 — measured, and a correction to the spike, which described the top level as
+ * the result object itself. Both shapes are read: the last `type: "result"` element of an array, or
+ * a bare object that already is one. Reading only one of them would make the runner version-brittle
+ * in the direction that matters least safely — a missed result reads as a dead run.
+ */
+const findResultMessage = (parsed: unknown): Record<string, unknown> | null => {
+	if (Array.isArray(parsed)) {
+		for (let i = parsed.length - 1; i >= 0; i -= 1) {
+			const message: unknown = parsed[i];
+			if (isRecord(message) && message.type === "result") return message;
+		}
+		return null;
+	}
+	if (isRecord(parsed) && (parsed.type === "result" || parsed.type === undefined)) {
+		return parsed;
+	}
+	return null;
+};
+
+const asNumber = (value: unknown): number | null => (typeof value === "number" ? value : null);
+
+/**
+ * Decode a headless run's stdout into the fields the guard needs, or `null` when it holds no
+ * readable result message.
+ *
+ * Hand-read rather than schema-decoded on purpose: the payload carries a dozen fields that vary by
+ * CLI version, and a strict decode would turn a harmless new key into a dead run. Every field is
+ * read defensively and a missing one degrades to the value that makes `classifyRun` *stricter*
+ * (zero turns, no model usage, no structured output), never to a pass.
+ */
+export const decodeHeadlessResult = (stdout: string): HeadlessResult | null => {
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(stdout);
+	} catch {
+		return null;
+	}
+	const message = findResultMessage(parsed);
+	if (message === null) return null;
+	const modelUsage = message.modelUsage;
+	return {
+		isError: message.is_error === true,
+		subtype: typeof message.subtype === "string" ? message.subtype : "",
+		numTurns: asNumber(message.num_turns) ?? 0,
+		text: typeof message.result === "string" ? message.result : "",
+		sessionId: typeof message.session_id === "string" ? message.session_id : "",
+		modelUsageKeys: isRecord(modelUsage) ? Object.keys(modelUsage) : [],
+		totalCostUsd: asNumber(message.total_cost_usd),
+		hasStructuredOutput: message.structured_output !== undefined,
+		structuredOutput: message.structured_output,
+	};
+};
+
+/**
+ * The five ways a run can report success while never having reached a model. Each is an independent
+ * observation of the same hazard, kept separate so a ledger names *which* one fired — "the plugin
+ * did not load" and "the schema was ignored" are different repairs.
+ */
+export const NO_MODEL_TURNS_SIGNALS = [
+	"unknown-command",
+	"zero-turns",
+	"empty-model-usage",
+	"zero-assistant-turns",
+	"missing-structured-output",
+] as const;
+
+export type NoModelTurnsSignal = (typeof NO_MODEL_TURNS_SIGNALS)[number];
+
+/** Why a run is not collectable. Every arm is counted; none is ever scored as a pass. */
+export type RunFailure =
+	| {readonly _tag: "SpawnFailed"; readonly detail: string}
+	| {readonly _tag: "TimedOut"; readonly boundMs: number}
+	| {readonly _tag: "UndecodableResult"; readonly detail: string}
+	| {readonly _tag: "ReportedError"; readonly detail: string}
+	| {readonly _tag: "NoModelTurns"; readonly signal: NoModelTurnsSignal; readonly detail: string}
+	| {readonly _tag: "TranscriptNotFound"; readonly sessionId: string};
+
+/** One executed run: collectable, or a typed counted failure. There is no third state. */
+export type RunOutcome =
+	| {
+			readonly _tag: "Completed";
+			readonly caseId: number;
+			readonly tier: EvalTier;
+			readonly arm: EvalArm;
+			readonly sessionId: string;
+			readonly transcriptPath: string;
+			readonly artifact: unknown;
+			readonly numTurns: number;
+			readonly totalCostUsd: number | null;
+	  }
+	| {
+			readonly _tag: "Failed";
+			readonly caseId: number;
+			readonly tier: EvalTier;
+			readonly arm: EvalArm;
+			readonly sessionId: string;
+			readonly failure: RunFailure;
+	  };
+
+const failed = (plan: PlannedRun, failure: RunFailure): RunOutcome => ({
+	_tag: "Failed",
+	caseId: plan.caseId,
+	tier: plan.tier,
+	arm: plan.arm,
+	sessionId: plan.sessionId,
+	failure,
+});
+
+/**
+ * Detect a run that reported success without reaching a model. Order is by specificity: the
+ * `Unknown command:` prefix names the actual cause, so it is reported ahead of the `num_turns === 0`
+ * that always accompanies it.
+ *
+ * `assistantTurns` is the transcript's own reconstruction (`reconstructSpend`), passed in rather
+ * than computed here so this stays pure; `null` means no transcript was read yet, which is not
+ * itself a signal — `TranscriptNotFound` covers that separately.
+ */
+const noModelTurns = (args: {
+	readonly result: HeadlessResult;
+	readonly schemaRequested: boolean;
+	readonly assistantTurns: number | null;
+}): {readonly signal: NoModelTurnsSignal; readonly detail: string} | null => {
+	const {result} = args;
+	if (/^Unknown command:/.test(result.text)) {
+		return {signal: "unknown-command", detail: result.text};
+	}
+	if (result.numTurns === 0) {
+		return {signal: "zero-turns", detail: "the run reported num_turns: 0"};
+	}
+	if (result.modelUsageKeys.length === 0) {
+		return {signal: "empty-model-usage", detail: "the run reported an empty modelUsage"};
+	}
+	if (args.assistantTurns === 0) {
+		return {
+			signal: "zero-assistant-turns",
+			detail: "the transcript reconstructs to zero billed assistant turns",
+		};
+	}
+	if (args.schemaRequested && !result.hasStructuredOutput) {
+		return {
+			signal: "missing-structured-output",
+			detail: "a --json-schema was requested but the result carried no structured_output",
+		};
+	}
+	return null;
+};
+
+/**
+ * Classify one executed run. This is the fail-closed seam: only a run that survives every check
+ * becomes `Completed`, and only a `Completed` run reaches the capture manifest.
+ */
+export const classifyRun = (args: {
+	readonly plan: PlannedRun;
+	readonly exec: ExecutorResult;
+	readonly transcriptPath: string | null;
+	readonly assistantTurns: number | null;
+}): RunOutcome => {
+	const {plan, exec} = args;
+	if (exec._tag === "SpawnFailed") return failed(plan, {_tag: "SpawnFailed", detail: exec.detail});
+	if (exec._tag === "TimedOut") return failed(plan, {_tag: "TimedOut", boundMs: exec.boundMs});
+
+	const result = decodeHeadlessResult(exec.stdout);
+	if (result === null) {
+		return failed(plan, {
+			_tag: "UndecodableResult",
+			detail: `exit ${exec.code}: stdout carried no readable result message`,
+		});
+	}
+	if (result.isError) {
+		return failed(plan, {_tag: "ReportedError", detail: result.text || result.subtype});
+	}
+
+	const silentGreen = noModelTurns({
+		result,
+		schemaRequested: plan.jsonSchema !== null,
+		assistantTurns: args.assistantTurns,
+	});
+	if (silentGreen !== null) {
+		return failed(plan, {_tag: "NoModelTurns", ...silentGreen});
+	}
+	if (args.transcriptPath === null) {
+		return failed(plan, {_tag: "TranscriptNotFound", sessionId: plan.sessionId});
+	}
+
+	return {
+		_tag: "Completed",
+		caseId: plan.caseId,
+		tier: plan.tier,
+		arm: plan.arm,
+		sessionId: plan.sessionId,
+		transcriptPath: args.transcriptPath,
+		// `null`, never `undefined`, when no schema was requested: `JSON.stringify` drops an
+		// undefined value entirely, and the written manifest would then fail the existing
+		// `decodeCaptureManifest` on a missing required key.
+		artifact: result.hasStructuredOutput ? result.structuredOutput : null,
+		numTurns: result.numTurns,
+		totalCostUsd: result.totalCostUsd,
+	};
+};
+
+/**
+ * Execute a planned suite and classify every run.
+ *
+ * Pure in the sense that matters: the three effects it needs are parameters, so the unit tier drives
+ * it with a stubbed executor and no model call. It is also the "the suite still completes" guarantee
+ * — a case that dies is classified and the loop continues to the next one, never aborting the run.
+ */
+export const executeRuns = (args: {
+	readonly plans: ReadonlyArray<PlannedRun>;
+	readonly executor: Executor;
+	readonly locateTranscript: (sessionId: string) => string | null;
+	readonly loadTranscript: TranscriptLoader;
+}): ReadonlyArray<RunOutcome> =>
+	args.plans.map((plan) => {
+		const exec = args.executor(plan);
+		const transcriptPath = args.locateTranscript(plan.sessionId);
+		const transcript = transcriptPath === null ? null : args.loadTranscript(transcriptPath);
+		return classifyRun({
+			plan,
+			exec,
+			transcriptPath,
+			assistantTurns: transcript === null ? null : reconstructSpend(transcript).assistantTurns,
+		});
+	});
+
+/**
+ * Fold the completed runs into the capture-manifest shape `collectFromCapture` already consumes —
+ * the whole point of the runner's output (#4676 AC2). `stage` is named by the operator (a skill's
+ * eval set exercises one pipeline stage) and `inputRef` is the case id, which is what joins a run
+ * to its corpus ground truth. A `Failed` run contributes nothing: an uncollected run cannot be
+ * graded, and grading it would be the fabricated pass this whole guard exists to prevent.
+ */
+export const toCaptureManifest = (
+	stage: CaptureRun["stage"],
+	outcomes: ReadonlyArray<RunOutcome>,
+): CaptureManifest => ({
+	version: 1,
+	runs: outcomes.flatMap((outcome) =>
+		outcome._tag === "Completed"
+			? [
+					{
+						stage,
+						inputRef: outcome.caseId,
+						transcriptPath: outcome.transcriptPath,
+						artifact: outcome.artifact,
+					},
+				]
+			: [],
+	),
+});
+
+/** The counted shape of a suite: how many ran, how many died, and of what. */
+export interface RunSummary {
+	readonly planned: number;
+	readonly completed: number;
+	readonly failed: number;
+	readonly byFailure: Readonly<Record<string, number>>;
+	readonly byArm: Readonly<Record<EvalArm, {readonly completed: number; readonly failed: number}>>;
+}
+
+export const summarizeRuns = (outcomes: ReadonlyArray<RunOutcome>): RunSummary => {
+	const byFailure: Record<string, number> = {};
+	const byArm: Record<EvalArm, {completed: number; failed: number}> = {
+		"with-skill": {completed: 0, failed: 0},
+		"without-skill": {completed: 0, failed: 0},
+	};
+	let completed = 0;
+	for (const outcome of outcomes) {
+		if (outcome._tag === "Completed") {
+			completed += 1;
+			byArm[outcome.arm].completed += 1;
+			continue;
+		}
+		byArm[outcome.arm].failed += 1;
+		const key =
+			outcome.failure._tag === "NoModelTurns"
+				? `NoModelTurns:${outcome.failure.signal}`
+				: outcome.failure._tag;
+		byFailure[key] = (byFailure[key] ?? 0) + 1;
+	}
+	return {
+		planned: outcomes.length,
+		completed,
+		failed: outcomes.length - completed,
+		byFailure,
+		byArm,
+	};
+};
+
+/**
+ * Whether the suite executed. Fail-closed in both directions ADR 0092 names: a suite that planned
+ * nothing reports red (a zero-case run that exits green is the zero-scope pass the epic exists to
+ * end), and so does one where any case died. This says nothing about whether the cases *passed* —
+ * grading is `oracle.ts`'s, and the tier verbs' (#4677/#4678), never this verb's.
+ */
+export const suiteExecuted = (summary: RunSummary): boolean =>
+	summary.planned > 0 && summary.failed === 0;
+
+/**
+ * The runner's on-disk output: the ledger of every planned run's typed outcome, plus the capture
+ * manifest folded out of the collectable ones. Both arms are in `runs`, each naming its own, so
+ * with-skill and without-skill stay distinguishable after collection — `CaptureRun` has no arm
+ * field and gains none.
+ */
+export interface RunLedger {
+	readonly version: 1;
+	readonly skillName: string;
+	readonly stage: CaptureRun["stage"];
+	readonly model: string;
+	readonly cliVersion: string | null;
+	readonly runs: ReadonlyArray<RunOutcome>;
+	readonly capture: CaptureManifest;
+	readonly summary: RunSummary;
+}
+
+export const buildLedger = (args: {
+	readonly skillName: string;
+	readonly stage: CaptureRun["stage"];
+	readonly model: string;
+	readonly cliVersion: string | null;
+	readonly outcomes: ReadonlyArray<RunOutcome>;
+}): RunLedger => ({
+	version: 1,
+	skillName: args.skillName,
+	stage: args.stage,
+	model: args.model,
+	cliVersion: args.cliVersion,
+	runs: args.outcomes,
+	capture: toCaptureManifest(args.stage, args.outcomes),
+	summary: summarizeRuns(args.outcomes),
+});
+
+/** The stage names a `--stage` flag accepts — re-exported so the shell needn't reach into `runner.ts`. */
+export const isStageName = (value: string): value is CaptureRun["stage"] =>
+	(STAGES as ReadonlyArray<string>).includes(value);
+
+/** Parse a comma-separated `--arms` value; `null` when it names anything that is not an arm. */
+export const parseArms = (value: string): ReadonlyArray<EvalArm> | null => {
+	const parts = value
+		.split(",")
+		.map((part) => part.trim())
+		.filter((part) => part !== "");
+	if (parts.length === 0) return null;
+	const arms: Array<EvalArm> = [];
+	for (const part of parts) {
+		if (!(EVAL_ARMS as ReadonlyArray<string>).includes(part)) return null;
+		if (!arms.includes(part as EvalArm)) arms.push(part as EvalArm);
+	}
+	return arms;
+};
+
+/** The ledger's stable JSON form — sorted keys are not needed, but a trailing newline is. */
+export const ledgerToJson = (ledger: RunLedger): string => `${JSON.stringify(ledger, null, 2)}\n`;
+
+export const captureToJson = (capture: CaptureManifest): string =>
+	`${JSON.stringify(capture, null, 2)}\n`;
+
+/** A one-line-per-run human rendering, so an operator sees which arm died of what without a jq. */
+export const renderLedger = (ledger: RunLedger): string => {
+	const lines = [
+		`eval-harness run: ${ledger.skillName} · stage ${ledger.stage} · model ${ledger.model}`,
+		...ledger.runs.map((outcome) =>
+			outcome._tag === "Completed"
+				? `  case ${outcome.caseId} [${outcome.arm}] ok — ${outcome.numTurns} turns, transcript ${outcome.transcriptPath}`
+				: `  case ${outcome.caseId} [${outcome.arm}] FAILED — ${outcome.failure._tag}${
+						outcome.failure._tag === "NoModelTurns" ? `:${outcome.failure.signal}` : ""
+					}`,
+		),
+		`  planned ${ledger.summary.planned} · collected ${ledger.summary.completed} · failed ${ledger.summary.failed}`,
+	];
+	return lines.join("\n");
+};

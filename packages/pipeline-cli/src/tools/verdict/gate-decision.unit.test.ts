@@ -1,5 +1,11 @@
 import {assert, describe, it} from "@effect/vitest";
-import {decideGate, decideNamespace, type GateDecisionInput} from "./gate-decision.ts";
+import {
+	coverageDefect,
+	decideGate,
+	decideNamespace,
+	type GateDecisionInput,
+	parseRequiredGates,
+} from "./gate-decision.ts";
 import {isReviewed, type VerdictComment, type VerdictGate} from "./verdict-match.ts";
 
 const HEAD = "15ae9df658ce6225b8b71f22d214cfcabb6b1c9a";
@@ -22,6 +28,16 @@ const decide = (over: Partial<GateDecisionInput>) =>
 		controlPlane: false,
 		...over,
 	});
+
+/**
+ * The parse's gates, with the ok-branch ASSERTED rather than defaulted — a `?? []` here would let a
+ * refusing parse silently gate on zero namespaces, which is the shape of the bug under test.
+ */
+const requiredOf = (occurrences: ReadonlyArray<string>): ReadonlyArray<VerdictGate> => {
+	const parse = parseRequiredGates(occurrences);
+	assert.strictEqual(parse._tag, "ok");
+	return parse._tag === "ok" ? parse.gates : [];
+};
 
 /** The §CP advisory shape ship-it Step 2.§CP resolves: SHA-less line 1, head bound in the body. */
 const advisory = (gate: VerdictGate, sha: string, checkbox = "[PASS]") =>
@@ -689,4 +705,98 @@ describe("`verdict read` and `verdict gate` resolve ONE in-force verdict (#4049)
 			assert.strictEqual(gateResult.decisions[0]?.commentId, decision.commentId);
 		});
 	}
+});
+
+describe("parseRequiredGates — flag-shape parity (#4520)", () => {
+	it("repeated occurrences and one comma-separated occurrence are the SAME set", () => {
+		assert.deepStrictEqual(
+			requiredOf(["review-code", "review-doc"]),
+			requiredOf(["review-code,review-doc"]),
+		);
+	});
+
+	it("the union is order-blind and covers every occurrence, not just the first", () => {
+		assert.deepStrictEqual(requiredOf(["review-code", "review-doc"]), ["code", "doc"]);
+		assert.deepStrictEqual(requiredOf(["skill", "review-code", "doc"]), ["skill", "code", "doc"]);
+	});
+
+	it("a bogus token in a LATER occurrence reaches the token guard (it used to vanish upstream)", () => {
+		const parse = parseRequiredGates(["review-code", "bogus"]);
+		assert.strictEqual(parse._tag, "error");
+		if (parse._tag === "error") assert.include(parse.reason, "shrink the gate conjunction");
+	});
+
+	it("a bogus token in the FIRST occurrence still refuses (the shape that already worked)", () => {
+		assert.strictEqual(parseRequiredGates(["bogus", "review-code"])._tag, "error");
+	});
+
+	it("an explicitly-empty value yields zero gates, which decideGate refuses on zero scope", () => {
+		assert.deepStrictEqual(requiredOf([""]), []);
+		assert.isFalse(decide({requiredGates: []}).enqueueable);
+	});
+});
+
+describe("the repeated --require shape gates on EVERY namespace (#4520 acceptance)", () => {
+	// The live repro: review-code PASSes at head, review-doc has no verdict at all. The old
+	// single-valued flag dropped review-doc and cleared the enqueue; the union must refuse.
+	const codePass = comment({id: 1, body: `review-code: PASS @ ${HEAD} — merge-ready`});
+
+	it("an absent verdict in the LATER-occurrence namespace refuses", () => {
+		const result = decide({
+			comments: [codePass],
+			requiredGates: requiredOf(["review-code", "review-doc"]),
+		});
+		assert.isFalse(result.enqueueable);
+		assert.include(result.reason, "no review-doc PASS");
+	});
+
+	it("a live FAIL in the LATER-occurrence namespace refuses", () => {
+		const result = decide({
+			comments: [
+				codePass,
+				comment({id: 2, body: `review-doc: FAIL @ ${HEAD} — changes-requested`}),
+			],
+			requiredGates: requiredOf(["review-code", "review-doc"]),
+		});
+		assert.isFalse(result.enqueueable);
+		assert.include(result.reason, "latest verdict is FAIL (review-doc)");
+	});
+
+	it("both spellings of the same requirement decide identically", () => {
+		const comments = [codePass];
+		const repeated = decide({
+			comments,
+			requiredGates: requiredOf(["review-code", "review-doc"]),
+		});
+		const commaJoined = decide({
+			comments,
+			requiredGates: requiredOf(["review-code,review-doc"]),
+		});
+		assert.strictEqual(repeated.enqueueable, commaJoined.enqueueable);
+		assert.strictEqual(repeated.reason, commaJoined.reason);
+	});
+});
+
+describe("coverageDefect — an affirmative answer must cover every namespace asked (#4520)", () => {
+	const passing = decide({
+		comments: [comment({id: 1, body: `review-doc: PASS @ ${HEAD} — merge-ready`})],
+	});
+
+	it("no defect when the answer covers exactly the distinct requested set", () => {
+		assert.isNull(coverageDefect(["doc"], passing));
+	});
+
+	it("duplicates in the request are not a defect — the core dedups the set", () => {
+		assert.isNull(coverageDefect(["doc", "doc"], passing));
+	});
+
+	it("a pass that decided FEWER namespaces than were asked is refused, and names the missing one", () => {
+		const defect = coverageDefect(["doc", "code"], passing);
+		assert.isNotNull(defect);
+		assert.include(defect ?? "", "NEVER decided: code");
+	});
+
+	it("a pass that decided a namespace nobody asked for is refused too", () => {
+		assert.include(coverageDefect([], passing) ?? "", "decided unasked: doc");
+	});
 });

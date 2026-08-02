@@ -66,13 +66,18 @@ of those rows is the raw material the report slice ([#1853](https://github.com/k
 aggregates into pass-rate + churn cost.
 
 The runner is a deterministic, side-effect-light **collector over runs that already happened** — it
-does **not** spawn stage agents. Spawning is the operator's act, and the fleet's model is pinned by
-`spawn-guard`; keeping the runner spawn-free is what makes the harness reproducible.
+spawns nothing itself, which is what makes it reproducible offline. That property still holds for
+`runner.ts` and for every other core here, but it is **no longer true of the module**: `run` (below)
+starts processes from `spawn-io.ts`. The reversal and its bounds are [ADR
+0236](../../../../../.decisions/0236-eval-harness-gains-a-spawning-shell.md).
 
-`RunRow` is `{entry, grade, spend}` where `spend` is a `RunSpend` union — either
-`{_tag: "Reconstructed", spend}` (the `token-spend` `StageSpend`) or `{_tag: "TranscriptMissing"}`.
-The missing case is a distinct, counted outcome rather than a fabricated zero the report could
-mistake for a genuinely free run — a **missing transcript is graded and counted, never a crash**.
+`RunRow` is `{entry, grade, spend}` where `spend` is a **three-arm** `RunSpend` union:
+`{_tag: "Reconstructed", spend}` (the `token-spend` `StageSpend`), `{_tag: "NoBilledTurns"}`, or
+`{_tag: "TranscriptMissing"}`. None of the three can be mistaken for a genuinely free run — a
+**missing transcript is graded and counted, never a crash**, and a transcript that is present and
+well-formed but carries **zero billed assistant turns** gets its own arm rather than a zero-valued
+`Reconstructed`: that is exactly what a run whose skill failed to resolve writes, and folding it in
+would restore the fabricated zero this union exists to prevent.
 
 Two modes, story-split:
 
@@ -82,9 +87,12 @@ Two modes, story-split:
   total (a malformed artifact grades `fail` via the oracle) and spend reconstruction is fail-open (a
   malformed transcript undercounts, never throws) — so a whole corpus resolves without a crash.
 - **Capture-manifest (story 7)** — `CaptureManifest` is the documented shape naming, per run, the
-  transcript path (`<parent-session-id>/subagents/agent-<id>.jsonl`, ADR 0112 §2) + the recorded
-  artifact, keyed by `(stage, inputRef)` so a fresh live run (spawned by the **operator**, not this
-  tool) folds into the corpus deterministically. `decodeCaptureManifest(text)` is total (typed
+  transcript path + the recorded artifact, keyed by `(stage, inputRef)` so a fresh live run folds
+  into the corpus deterministically. The path takes either of the two real shapes: a **Task-spawned
+  sub-agent**'s `<parent-session-id>/subagents/agent-<id>.jsonl` (ADR 0112 §2), or a **headless
+  `claude -p` run**'s `<claude-data-root>/projects/<cwd-slug>/<session-id>.jsonl` — the latter is a
+  top-level session, so it is not under `subagents/`. Both reconstruct through the same
+  `token-spend` core, verified against the run's own `result.usage`. `decodeCaptureManifest(text)` is total (typed
   `Result` failure on malformed JSON or a schema mismatch). `collectFromCapture({stage, corpus,
   capture, loadTranscript})` joins each capture run to its corpus entry (for the ground-truth label),
   loads transcripts through the caller-supplied `TranscriptLoader` (keeping the core pure — the
@@ -175,6 +183,87 @@ total: a malformed body or a shape mismatch exits non-zero with a typed reason, 
 The shape is stable: field names + nesting are the contract, and `toJson` is a thin projection of
 the in-memory `Scorecard` so the JSON and the type never drift.
 
+## The deterministic tier ([#4677](https://github.com/kamp-us/phoenix/issues/4677))
+
+The no-model half of the fabrika eval layer (epic
+[#4649](https://github.com/kamp-us/phoenix/issues/4649)). A case whose assertions are all
+mechanically checkable never needs a model: it runs its CLI-layer command **once**, and its
+assertions are read straight off what that run produced. This is the tier that keeps a
+100%-and-growing regression floor cheap enough to sit on every change, and it is where
+incident-derived cases are pushed by default (founder ruling 4 on
+[#4637](https://github.com/kamp-us/phoenix/issues/4637)); the graded path is the justified
+exception, and it is the review stage's, not CI's (the ruling on
+[#4649](https://github.com/kamp-us/phoenix/issues/4649#issuecomment-5153280445)).
+
+`deterministic-tier.ts` is the **pure core** — it imports nothing, so it can reach nothing
+spawnable, and a unit test reads its import list to keep it that way.
+`deterministic-shell-observer.ts` is the **one IO leg**: it spawns a *process*, never a model.
+
+### The one-run protocol, and the flake stance as a mechanism
+
+- `runDeterministicTier({cases, resolveCommand, observe, deferGraded})` routes each decoded case
+  by its derived `tier` and executes the deterministic half **exactly once**. `deferGraded` is the
+  handoff to the graded tier ([#4678](https://github.com/kamp-us/phoenix/issues/4678)) and the only
+  seam here through which a model could ever be reached — it is never called for a deterministic
+  case, which is what a caller (or a test) asserts against.
+- Nothing in this module re-executes a case to obtain a pass. `reconcileRerun(first, rerun)` exists
+  for the opposite purpose: an **agreeing** re-run returns the first row untouched (`runs` stays 1
+  — the verdict came from one execution), and a **disagreeing** one returns a `flake` row plus a
+  `FlakeDefect` to file through the normal `report` path. A deterministic case that does not
+  reproduce is a bug in the case or in the CLI it exercises — surfaced, never quarantined, never
+  retried into green.
+
+### Everything unreadable is a case defect, never a pass
+
+`readExpectation` reads a mechanical assertion's prose into a concrete expectation (an expected
+exit code, a quoted output substring and its stream, a quoted file path, a quoted tool) with a
+deliberately narrow literal reader. Every shape it cannot read becomes `Unreadable`, which reds
+the case as `uncheckable`. The direction is the point: a permissive reader that *guessed* an
+expectation would report a green nobody earned, whereas an `Unreadable` costs a one-line edit to
+the case. The same rule covers a case with no assertions, a case declaring no command, an unknown
+cue, and a `tool-invocation` assertion under the shell observer (which cannot see tool invocations
+and says so, rather than answering "not invoked").
+
+**Did-not-run is UNKNOWN, not a negative answer.** A command that never started (no binary, a bad
+cwd) reports `notRun` and the case reds `uncheckable`; a command that started and was killed
+reports `exitStatus: null` with `notRun: null` and genuinely fails. An `exit 127` from a shell that
+*did* run is an ordinary answered status, distinct from both.
+
+### One row shape, one aggregation path
+
+Both tiers emit `EvalRow` — `{caseId, tier, outcome, runs, assertions, detail}`, where each
+`AssertionOutcome` is the flat `{text, cue, status, detail}` (a judged assertion carries
+`cue: null`). `summarizeEvalRows(rows)` is **the** aggregator: graded rows fold in here rather than
+through a second path. Its verdict is green only when every row passed, and **zero rows is red**,
+never a vacuous green over a corpus the suite could not see (ADR
+[0092](../../../../../.decisions/0092-gates-fail-closed-on-zero-scope.md)).
+
+```ts
+import {runDeterministicTier, reconcileRerun, summarizeEvalRows} from "./deterministic-tier.ts";
+import {observeShellCommand} from "./deterministic-shell-observer.ts";
+```
+
+### Measured cost
+
+**20 deterministic cases, two mechanical assertions each, real subprocess per case: 55–58 ms
+(~2.8 ms/case)** — measured on macOS 14 / Node 26 over three consecutive runs. That is well inside
+"sits on an ordinary change": the whole tier costs less than a single `tsc` file. The subprocess is
+the only cost that matters; the pure judging is free.
+
+Re-measure with the end-to-end suite, which prints the figure:
+
+```bash
+pnpm --filter @kampus/pipeline-cli exec vitest run \
+  src/tools/eval-harness/deterministic-shell-observer.unit.test.ts --reporter=verbose
+```
+
+The suite asserts the observable outcome — a green over cases that hold, a **red** over one that
+genuinely fails — and never a wall-clock threshold: a timing assertion is precisely the flaky test
+the ruling this tier implements calls a bug. The figure above is measured over a 20-case
+corpus-shaped stand-in, because the fabrika incident corpus
+([#4675](https://github.com/kamp-us/phoenix/issues/4675)) has not landed yet; re-run the command
+above against it once it does and update this number.
+
 ## Why it exists
 
 ADR 0112's apparatus grades **one** frozen input per stage with a **binary** oracle —
@@ -192,6 +281,7 @@ against the schema, and render the graded scorecard over runner rows:
 ```bash
 pipeline-cli eval-harness check <manifest>    # exit 0 if valid; non-zero on a bad manifest
 pipeline-cli eval-harness report <rows.json>  # the graded two-axis scorecard (see below)
+pipeline-cli eval-harness cases <evals.json>  # validate an authored eval set (see below)
 ```
 
 ## Repair-churn cost — net-token pricing of a model swap
@@ -303,8 +393,179 @@ triage corpus therefore covers the edge by spanning the classification space (a 
 `p2` `decision`, an urgent `p0` `bug`, a `p1` `chore`) rather than pinning an unstable
 `needs-info`.
 
+## Authored eval-set ingestion ([#4674](https://github.com/kamp-us/phoenix/issues/4674))
+
+An **eval set** is the collection of **eval cases** one skill's authoring session produced. fabrika
+reuses `/skill-creator`'s authoring format verbatim (epic
+[#4649](https://github.com/kamp-us/phoenix/issues/4649): the authoring tool owns eval *authoring*,
+this epic owns eval *enforcement*), so `skill-eval-set.ts` **decodes** what a session already emits
+and adds no required field to it. This model sits **beside** `CorpusManifest`, which is unchanged —
+the stage-keyed corpus keeps serving the model-tiering scorecard.
+
+The two authored files, and where their shapes come from:
+
+- **`evals/evals.json`** — the case list, per the `skill-creator` plugin's
+  `references/schemas.md` (`## evals.json`): `{skill_name, evals: [{id, prompt, expected_output,
+  files?, expectations?}]}`, where each `expectations` entry is a verifiable statement in prose.
+- **`eval_metadata.json`** — the per-case sidecar, per that plugin's `SKILL.md` ("Running and
+  evaluating test cases", step 1): `{eval_id, eval_name, prompt, assertions}`.
+
+Two things about that format are genuinely underspecified upstream, and are read tolerantly rather
+than guessed at:
+
+- **`expectations` vs `assertions`.** `schemas.md` names the `evals.json` field `expectations`;
+  `SKILL.md` calls the same field "the `assertions` field". Both keys are accepted, `expectations`
+  first.
+- **An assertion's element shape.** `schemas.md` documents plain strings, and the sidecar's
+  `assertions` is only ever shown as `[]` — no upstream consumer reads its elements. A bare string
+  and a `{text}` object are both accepted; the string form is the documented one.
+
+`id` and `prompt` are the only required per-case fields, because the authoring session writes
+prompts first and drafts assertions later (`SKILL.md` step 1 → step 2) — a set captured between
+those steps must still decode.
+
+### The derived execution tier
+
+The tier is **derived from a case's assertions, never authored** — that is what lets a runner route
+a case without re-reading its prose while the authored format stays untouched:
+
+- Each assertion is classified into a discriminated union on `kind`: `mechanical` (carrying the
+  `cue` naming the observable it checks — `exit-status`, `file-artifact`, `output-content`,
+  `tool-invocation`) or `judgment` (no cue). An assertion whose payload doesn't match its kind is
+  unrepresentable.
+- Classification is a small **literal-phrase lexicon** matched case-insensitively; anything
+  unmatched falls through to `judgment`. The asymmetry is deliberate: a judgment case mis-derived
+  as mechanical would skip the grading it needs and report a green it never earned, while a
+  mechanical case mis-derived as judgment only costs a graded run.
+- A case is `deterministic` iff it has assertions and **every** one is mechanical; otherwise
+  `graded`. One judgment assertion puts the whole case on the graded path, and a case with no
+  assertions yet is `graded`.
+
+Executing either tier is out of scope here — the deterministic tier is
+[#4677](https://github.com/kamp-us/phoenix/issues/4677), the graded axis
+[#4678](https://github.com/kamp-us/phoenix/issues/4678), and the unattended runner
+[#4676](https://github.com/kamp-us/phoenix/issues/4676).
+
+`decodeSkillEvalSet(text)` and `decodeEvalCaseMetadata(text)` are **total**: a malformed body or a
+schema mismatch returns a typed `SkillEvalSetDecodeError` `Result` failure (`malformed-json` /
+`schema-mismatch`), never a throw — the same contract as `decodeManifest`. `withCaseMetadata(set,
+sidecars)` joins sidecars onto a set by case id; the sidecar only *fills* (a name, or assertions for
+a case that has none yet), because `evals.json` is the authored set of record.
+
+```bash
+# exit 0 on a valid set; non-zero with a named reason on a bad one
+pipeline-cli eval-harness cases <path-to-evals.json>
+```
+
+The verb prints the skill name, the case count, the per-tier split, and one line per case. It reds
+on an **empty** set as well as a malformed one: a set that decodes but carries zero cases would
+report green while checking nothing, the zero-scope pass [ADR
+0092](../../../../../.decisions/0092-gates-fail-closed-on-zero-scope.md) forbids.
+
+An unedited authoring-session output shape is committed under
+[`fixtures/skill-creator/`](./fixtures/skill-creator) and is what the unit tests decode, so "decodes
+with no edits" is checked against the real shape rather than asserted.
+
+## `eval-harness run` — executing an eval set unattended (#4676)
+
+```bash
+pipeline-cli eval-harness run <evals.json> \
+  --stage <triage|write-code|review-code|review-doc|ship-it> \
+  --plugin-dir <the candidate skill's plugin dir> \
+  --model <model> \
+  [--arms with-skill,without-skill] [--json-schema <schema.json>] \
+  [--timeout-ms 900000] [--out ledger.json] [--capture-out capture.json] [--dry-run]
+```
+
+One command runs a skill's whole eval set with nobody watching. Per (case × arm) it invokes
+`claude -p "<case prompt>" --output-format json --session-id <uuid> --model <m> [--plugin-dir …]`,
+locates the pinned session's transcript, classifies the run, and folds the collectable ones into the
+**capture manifest** `collectFromCapture` already consumes. Grading, spend reconstruction and the
+scorecard are all pre-existing code paths — this verb adds no oracle, no meter and no renderer.
+
+**The two arms are `--plugin-dir` present or absent.** That is the whole difference in the argv, and
+it is the arm variable the /skill-creator methodology means by with-skill vs without-skill. Two flags
+are deliberately never emitted: `--no-session-persistence` (it suppresses the transcript this path
+exists to collect) and `--disable-slash-commands` (measured: against a loaded plugin it
+short-circuits to zero turns and `$0`, so it is not a usable arm toggle).
+
+**A `/<skill>` case prompt makes the without-skill arm structurally unrunnable** — with no plugin
+loaded there is no such command, so that arm reports `NoModelTurns:unknown-command` rather than a
+score. That is the runner telling the truth, not a defect: a case meant to be run on both arms is
+written as plain task text, and only a with-skill-only case names the slash command.
+
+### The failure mode this verb exists to catch
+
+**An unresolvable skill is a silent green.** Measured on `claude` 2.1.220:
+`claude -p "/not-a-skill"` exits **0** with `is_error: false`, `subtype: "success"`,
+`num_turns: 0`, `total_cost_usd: 0`, `modelUsage: {}` — and `pipeline-cli token-spend` reconstructs
+its transcript to well-formed **zeros, also at exit 0**. Nothing errors. A with-skill arm whose
+plugin failed to load therefore degrades into a without-skill arm and scores as a legitimate free
+run, which is precisely the class of silent pass this whole epic exists to end.
+
+So the runner **synthesizes the signal the platform does not give it**. A run is a counted
+`NoModelTurns` failure — never a pass, never a graded fail — when any of these hold:
+
+| signal | what it caught |
+|---|---|
+| `unknown-command` | the result text starts `Unknown command:` — the skill did not resolve |
+| `zero-turns` | `num_turns === 0` |
+| `empty-model-usage` | `modelUsage` is `{}` |
+| `zero-assistant-turns` | the transcript reconstructs to zero billed assistant turns |
+| `missing-structured-output` | a `--json-schema` was requested and no `structured_output` came back |
+
+Alongside these, a run that never started (`SpawnFailed`), one past its stated bound (`TimedOut`),
+unreadable stdout (`UndecodableResult`), a run the CLI itself flagged (`ReportedError`), and a
+healthy run whose transcript cannot be found (`TranscriptNotFound`) are all typed, counted outcomes.
+**The suite always completes** — a dying case is classified and the next one runs.
+
+The **exit code reports executability only**: zero when every planned run was collected, non-zero
+when any died *or* when the set planned nothing (zero scope reds, [ADR
+0092](../../../../../.decisions/0092-gates-fail-closed-on-zero-scope.md)). Whether the cases
+*passed* is the oracle's answer, read off the capture manifest downstream.
+
+### Where it may be invoked — and where it may not
+
+Its supported sites are **an operator's shell** and a **`review-skill` review-stage spawn**.
+**Model-in-the-loop execution never runs in CI**, per the founder ruling on epic
+[#4649](https://github.com/kamp-us/phoenix/issues/4649) (comment 5153280445). The stated reason is
+**cost** — there are no credits for model runs inside the CI provider — and it is recorded as a cost
+constraint, *not a principle*, so a future reader knows what would have to change to revisit it. No
+workflow ships with this verb, and a unit test reds if any `.github/workflows/*` file ever calls it.
+CI's own eval legs (#4677's deterministic tier, #4681's presence/head-binding/bar check) run no
+model at all.
+
+### Shape
+
+`spawn.ts` is pure — planning, argv, result decode, classification, the capture fold — and is what
+the unit tier drives through a **stubbed executor**, so no unit test spends a cent. `spawn-io.ts` is
+the only file in the module that imports `node:child_process`. The reversal that lands here (this
+module could previously not spawn anything) and its bounds are recorded in [ADR
+0236](../../../../../.decisions/0236-eval-harness-gains-a-spawning-shell.md).
+
+## The fabrika incident corpus ([#4675](https://github.com/kamp-us/phoenix/issues/4675))
+
+`incident-corpus/` is a **second, separate** body of ground truth, and the name matters: the
+per-stage *corpus manifest* above serves model-tiering, while the **incident corpus** is the
+committed set of incident-derived eval cases fabrika's 100% regression floor is measured against
+(epic [#4649](https://github.com/kamp-us/phoenix/issues/4649)). They share this module and nothing
+else.
+
+- `incident-corpus/evals.json` — the cases, authored in the reused `/skill-creator` format and
+  decoded by `skill-eval-set.ts`. No second format is invented for them.
+- `incident-corpus/provenance.json` — the sidecar binding each case to the artifact it pins:
+  the `#NNNN` incidents, how membership was verified, the tier, and any later **correction**.
+  `incident-provenance.ts` decodes it; a `graded` case without a written rationale is
+  unrepresentable, because the ruled bar makes graded the exception that must justify itself.
+- `incident-corpus/README.md` — the intake path: what makes an incident a case, who writes it,
+  the days-scale expectation from the [#4637](https://github.com/kamp-us/phoenix/issues/4637)
+  ruling, and how a case is corrected rather than rewritten.
+
 ## Out of scope
 
-Running any stage (collecting the transcripts) is the operator's act, not this tool.
 **Making the tiering call** is [#1576](https://github.com/kamp-us/phoenix/issues/1576), a
 separate `type:decision` — the harness supplies the graded evidence, the human decides.
+
+**The tier protocols.** `run` executes and collects; it does not implement the deterministic tier's
+mechanical checks (#4677) or the graded tier's 5-run median (#4678), and it renders no scorecard
+series (#4680).

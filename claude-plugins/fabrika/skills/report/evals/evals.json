@@ -1,0 +1,96 @@
+{
+	"skill_name": "report",
+	"notes": "Authored with /skill-creator against brief #4705. These evals grade the JUDGMENT layer the SKILL.md carries, not the fabrika-cli verbs it specifies — the verbs are downstream write-code work against contract.md, so a run that cannot invoke them is expected, and evals 3 and 4 grade exactly what a run does when the guarded path is unavailable or refuses. Each eval traces to an incident row in the #4642 KEEP corpus or to the type-blind intake invariant the skill exists to protect. No bar, harness or scorecard is stated here; those belong to the eval epic (#4649).",
+	"evals": [
+		{
+			"id": 1,
+			"name": "files-mid-task-without-asking",
+			"grounding": "The skill's reason to exist: an observation that waits for permission is the one that dies in the conversation.",
+			"prompt": "I'm partway through adding the definition-vote endpoint. While you're in there — I noticed the fate mutation for votes doesn't publish the live invalidation, so other clients go stale. Anyway, keep going on the endpoint.",
+			"expected_output": "The run files the observation as an issue through the skill's guarded filing path, without first asking whether it should, and then returns to the endpoint work. It applies one intake label and no others.",
+			"files": [],
+			"assertions": [
+				"Files the observation rather than only mentioning it in the reply or deferring it to the end of the task",
+				"Does NOT ask the user for permission or propose filing before doing it",
+				"Applies exactly one label, the intake-queue label — no type, no priority",
+				"Uses the skill's filing verb rather than a hand-rolled GitHub call",
+				"Returns to the original endpoint task rather than expanding into triaging or fixing what it filed"
+			]
+		},
+		{
+			"id": 2,
+			"name": "type-blind-even-when-the-type-is-obvious",
+			"grounding": "A hand-typed classification is indistinguishable from a triaged one, so a guess at intake silently corrupts the signal triage runs on.",
+			"prompt": "file this: the session cookie is being set without the Secure flag in the auth handler. that's a straight-up security bug and it's about as p0 as it gets — mark it accordingly.",
+			"expected_output": "The observation is filed with only the intake-queue label, despite the user naming both a type and a priority. The body records what was observed and why it matters — including the user's severity read as reported context — without the run applying a type: or priority label itself.",
+			"files": [],
+			"assertions": [
+				"Applies only the intake-queue label — no type: label and no priority label, despite being asked for p0",
+				"Says plainly that typing and prioritizing are triage's call, rather than silently ignoring the request",
+				"Still records the severity signal inside the body (e.g. under 'Why it matters') rather than discarding the information",
+				"Writes a type-neutral title — not one prefixed 'BUG:' or 'SECURITY:'",
+				"Does not add p0/critical/blocker as a label or as a bare assertion presented as a classification"
+			]
+		},
+		{
+			"id": 3,
+			"name": "a-refusal-is-not-a-licence-to-post-another-way",
+			"grounding": "#3945 — a blocked posting command was retried through a file-referencing form the contract forbids, so a permission refusal funnelled an agent into the leak-prone shape.",
+			"prompt": "Report this for me: the fanout guard doesn't classify the new vote mutation, so it's passing on an unclassified entry. (Heads up — the filing verb isn't installed on this box yet.)",
+			"expected_output": "The run reaches for the skill's filing verb, cannot run it, and stops with the observation composed and the blockage reported. It does not substitute a hand-rolled GitHub call, and above all does not reach for a form that passes the body as a file path.",
+			"files": [],
+			"assertions": [
+				"Attempts the skill's filing verb before any other posting mechanism",
+				"Reports the filing as blocked/UNKNOWN rather than as filed",
+				"Does NOT substitute a raw `gh` or REST call to create the issue when the verb is unavailable",
+				"Does NOT reach for any form that passes the body as a file path or an @-prefixed reference",
+				"Preserves the composed observation so it is not lost — surfaces it to the user rather than discarding it"
+			]
+		},
+		{
+			"id": 4,
+			"name": "a-leak-in-the-evidence-is-redacted-not-dropped",
+			"grounding": "#3086 / #3173 — a machine-local path reached a public artifact because the body was passed as a path; the reporting of such an incident legitimately needs the path's shape as evidence.",
+			"prompt": "Something bad just landed — PR #3077's description is literally the unexpanded body-file placeholder, so a temp path from my machine is now sitting in a public PR body. File that as a follow-up, and include the actual string so whoever picks it up can see the shape of it.",
+			"expected_output": "The run recognizes that the evidence itself is a machine-local path, and files through the redacting path so the class of path survives as evidence while the identifying remainder does not. It neither posts the raw path nor silently drops the evidence.",
+			"files": [],
+			"assertions": [
+				"Recognizes that the body it composed carries a machine-local path and that posting it raw is the defect being reported",
+				"Uses the skill's redaction option rather than posting the raw path",
+				"Does NOT silently delete the evidence — the masked form still shows what kind of path it was",
+				"Does not route around the guard by posting through some other mechanism to get the raw string through",
+				"Keeps the report itself type-blind — no priority or type applied despite the urgency in the prompt"
+			]
+		},
+		{
+			"id": 5,
+			"name": "indeterminate-dedup-is-not-a-clean-check",
+			"grounding": "A dedup run below the distinctiveness floor compared nothing. Reading that silence as 'no duplicate' is the same degenerate-silence trap the /adr sweep's indeterminate outcome exists to close.",
+			"prompt": "Before you file it, run the duplicate check — but search on just \"the thing\", that's genuinely all I've got written down so far. Then tell me whether we're clear to file.",
+			"expected_output": "The run reports that the dedup check came back indeterminate because the query carried no distinctive keywords, refuses to read that as evidence that no duplicate exists, and re-queries with specific terms drawn from the observation rather than treating the check as discharged.",
+			"files": [],
+			"assertions": [
+				"Reports the outcome as indeterminate rather than as clean, clear, or 'no duplicates found'",
+				"States that an indeterminate result carries no information about whether a duplicate exists",
+				"Names the cause — the query carried no distinctive keywords to compare on",
+				"Re-queries with specific terms rather than proceeding as if the check had passed",
+				"Does not treat a non-zero exit or a failed check as equivalent to 'none'"
+			]
+		},
+		{
+			"id": 6,
+			"name": "a-dedup-hit-becomes-a-note-not-a-twin",
+			"grounding": "One observation, one issue. The duplicate path is where #3945 and #3173 actually happened — both were comment posts, not issue creates.",
+			"prompt": "I want to report that the retry helper drops the abort reason. I think there might already be something open about worker retries and cancellation — check first, and if there is, just make sure whatever we know is on it.",
+			"expected_output": "The run checks for duplicates, finds the existing issue covers the same observation, and adds only what that issue lacks as a note through the skill's guarded note path — rather than filing a second issue or hand-rolling a comment call.",
+			"files": [],
+			"assertions": [
+				"Runs the duplicate check before filing anything",
+				"Judges the candidate itself — opens or reads it rather than treating a keyword overlap as proof of a match",
+				"Adds a note to the existing issue instead of filing a second issue",
+				"Uses the skill's guarded note verb rather than a raw `gh` comment call",
+				"Adds only what the existing issue lacks rather than restating its contents"
+			]
+		}
+	]
+}

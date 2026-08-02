@@ -139,6 +139,9 @@ const bucketize = (rows: ReadonlyArray<RunRow>): ReadonlyArray<Bucket> => {
 			bucket.billedSum += row.spend.spend.billed;
 			bucket.exCacheReadSum += row.spend.spend.exCacheRead;
 		} else {
+			// Both no-measurement arms (`TranscriptMissing`, `NoBilledTurns`) land here: neither
+			// contributes to the per-run averages, which is what keeps a fabricated zero out of the
+			// spend axis. Giving `NoBilledTurns` its own scorecard column belongs to #4680.
 			bucket.transcriptMissing += 1;
 		}
 	}
@@ -348,6 +351,7 @@ const StageSpendSchema = Schema.Struct({
 
 const RunSpendSchema = Schema.Union([
 	Schema.Struct({_tag: Schema.Literal("Reconstructed"), spend: StageSpendSchema}),
+	Schema.Struct({_tag: Schema.Literal("NoBilledTurns")}),
 	Schema.Struct({_tag: Schema.Literal("TranscriptMissing")}),
 ]);
 

@@ -417,7 +417,71 @@ else
 	fi
 fi
 
-# 22. `wt_preflight` with no lane identity at all refuses before it looks at any tree — the
+# The multi-lane fixture (#4500): TWO REAL linked worktrees of ONE session, both stamped with the
+# same id — the exact live condition, since sibling subagents share $CLAUDE_CODE_SESSION_ID. Real
+# `git worktree add` trees, not hand-built ones, because cases 22–24 resolve from INSIDE a worktree
+# and so need `git rev-parse --absolute-git-dir` to answer there.
+mkdir -p "$tmp/ml"
+if ! git -C "$tmp/ml" init -q --template='' >/dev/null 2>&1 ||
+	! git -C "$tmp/ml" -c user.name=kp-test -c user.email=kp-test@invalid commit -q --allow-empty -m init >/dev/null 2>&1 ||
+	! git -C "$tmp/ml" worktree add -q -b lane-a "$tmp/ml-a" >/dev/null 2>&1 ||
+	! git -C "$tmp/ml" worktree add -q -b lane-b "$tmp/ml-b" >/dev/null 2>&1; then
+	fail "fixture did not take: could not build the two-worktree fixture — cases 22–24 were NOT exercised"
+else
+	ml_sid="kp-test-lane-multi"
+	printf '%s\n' "$ml_sid" > "$tmp/ml/.git/worktrees/ml-a/kampus-lane"
+	printf '%s\n' "$ml_sid" > "$tmp/ml/.git/worktrees/ml-b/kampus-lane"
+	ml_a="$(cd "$tmp/ml-a" && pwd -P)"
+	ml_b="$(cd "$tmp/ml-b" && pwd -P)"
+
+	# 22. THE DEFECT (#4500). Two live lanes of one session: each resolves ITS OWN tree. Before the
+	# fix both refused, because the session-wide search found two stamps and `-eq 1` cannot hold for
+	# a value that is shared by construction — a hard cap of one concurrent lane on the whole factory.
+	out="$(cd "$tmp/ml-a" && CLAUDE_CODE_SESSION_ID="$ml_sid" lane_worktree)"; rc=$?
+	if [ "$rc" -eq 0 ] && [ "$out" = "$ml_a" ]; then
+		ok "lane_worktree in lane A resolves A while a same-session sibling is stamped (#4500)"
+	else
+		fail "lane_worktree multi-lane A: rc=$rc out=[$out] expected [$ml_a]"
+	fi
+	out="$(cd "$tmp/ml-b" && CLAUDE_CODE_SESSION_ID="$ml_sid" lane_worktree)"; rc=$?
+	if [ "$rc" -eq 0 ] && [ "$out" = "$ml_b" ]; then
+		ok "lane_worktree in lane B resolves B while a same-session sibling is stamped (#4500)"
+	else
+		fail "lane_worktree multi-lane B: rc=$rc out=[$out] expected [$ml_b]"
+	fi
+
+	# 23. The two refusals are DISTINGUISHABLE, by exit code and by message. They have opposite
+	# remedies, and emitting only the zero-case explanation for both is what kept #4500 misdiagnosed
+	# across five reproductions. Read from the fixture's PRIMARY checkout, which is where the
+	# session-wide search — and therefore genuine ambiguity — still lives.
+	err_many="$(cd "$tmp/ml" && CLAUDE_CODE_SESSION_ID="$ml_sid" wt_preflight 2>&1 >/dev/null)"; rc_many=$?
+	rm -f "$tmp/ml/.git/worktrees/ml-a/kampus-lane" "$tmp/ml/.git/worktrees/ml-b/kampus-lane"
+	err_none="$(cd "$tmp/ml" && CLAUDE_CODE_SESSION_ID="$ml_sid" wt_preflight 2>&1 >/dev/null)"; rc_none=$?
+	if [ "$rc_many" -eq 0 ] || [ "$rc_none" -eq 0 ]; then
+		fail "wt_preflight returned 0 from the primary checkout (many=$rc_many none=$rc_none) — both states must refuse"
+	elif ! grep -qF 'AMBIGUOUS' <<<"$err_many"; then
+		fail "wt_preflight's several-stamps refusal does not name ambiguity: [$err_many]"
+	elif grep -qF 'AMBIGUOUS' <<<"$err_none"; then
+		fail "wt_preflight's zero-stamp refusal claims ambiguity: [$err_none]"
+	elif ! grep -qF 'its tree is gone' <<<"$err_none"; then
+		fail "wt_preflight's zero-stamp refusal does not name a missing/torn-down tree: [$err_none]"
+	else
+		ok "wt_preflight names the actual cause: ambiguity vs missing tree are different messages (#4500)"
+	fi
+
+	# 24. A RETIRED stamp is `kampus-lane.retired`, which the `*/kampus-lane` glob does not match and
+	# the ambient read does not open — so operator-retired stamps leave a lane unresolvable rather
+	# than silently resolving a dead one. Pinned because the retire-by-rename sweep is live on hosts.
+	printf '%s\n' "$ml_sid" > "$tmp/ml/.git/worktrees/ml-a/kampus-lane.retired"
+	out="$(cd "$tmp/ml-a" && CLAUDE_CODE_SESSION_ID="$ml_sid" lane_worktree 2>/dev/null)"; rc=$?
+	if [ "$rc" -eq 0 ] || [ -n "$out" ]; then
+		fail "lane_worktree resolved [$out] from a RETIRED stamp (rc=$rc) — a retired lane must not resolve"
+	else
+		ok "lane_worktree ignores retired stamps (kampus-lane.retired), ambient and search alike"
+	fi
+fi
+
+# 25. `wt_preflight` with no lane identity at all refuses before it looks at any tree — the
 # `${CLAUDE_CODE_SESSION_ID:?}` floor. Run in a subshell because that expansion aborts the shell.
 out="$(CLAUDE_CODE_SESSION_ID='' wt_preflight 2>/dev/null)"; rc=$?
 if [ "$rc" -eq 0 ]; then
