@@ -1,5 +1,5 @@
 /**
- * eval-harness corpus runner — collect graded runs for one (stage × model), offline (issue
+ * The eval corpus runner — collect graded runs for one (stage × model), offline (issue
  * #1851, epic #1842).
  *
  * The collection layer between the corpus format (#1848) and the report slice (#1853): for
@@ -22,9 +22,9 @@
  * counts the run with an explicit `TranscriptMissing` spend rather than crashing, and a
  * malformed artifact grades `fail` through the oracle — never a throw.
  */
-import {Result} from "effect";
+import {Effect, Result} from "effect";
 import * as Schema from "effect/Schema";
-import {reconstructSpend, type StageSpend} from "../token-spend/token-spend.ts";
+import {reconstructSpend, type StageSpend} from "../spend/token-spend.ts";
 import {type CorpusEntry, type CorpusManifest, STAGES} from "./corpus.ts";
 import {type Grade, gradeEntry} from "./oracle.ts";
 
@@ -152,10 +152,10 @@ export const decodeCaptureManifest = (
 
 /**
  * Load a transcript's raw text for a path, or `null` when it is absent/unreadable. The runner core
- * stays pure by taking this as a parameter — the command shell (or the report slice) supplies an
- * fs-backed loader, and a not-found transcript surfaces as a `TranscriptMissing` run, never a throw.
+ * stays free of platform services by taking this as a parameter — the command shell supplies the
+ * `FileSystem`-backed loader, and a not-found transcript surfaces as a `TranscriptMissing` run.
  */
-export type TranscriptLoader = (path: string) => string | null;
+export type TranscriptLoader<R = never> = (path: string) => Effect.Effect<string | null, never, R>;
 
 /**
  * Fold a capture manifest against the corpus ground truth for one stage, then collect graded rows
@@ -163,24 +163,25 @@ export type TranscriptLoader = (path: string) => string | null;
  * label; a run whose (stage, inputRef) has no matching corpus entry is skipped (no label to grade
  * against), and a run whose transcript the loader can't find is collected with `TranscriptMissing`.
  */
-export const collectFromCapture = (args: {
+export const collectFromCapture = <R>(args: {
 	readonly stage: CorpusEntry["stage"];
 	readonly corpus: CorpusManifest;
 	readonly capture: CaptureManifest;
-	readonly loadTranscript: TranscriptLoader;
-}): ReadonlyArray<RunRow> => {
-	const entries: ReadonlyArray<CorpusEntry> = args.corpus.stages[args.stage];
-	const byRef = new Map(entries.map((entry) => [entry.inputRef, entry] as const));
-	const inputs: Array<RunInput> = [];
-	for (const run of args.capture.runs) {
-		if (run.stage !== args.stage) continue;
-		const entry = byRef.get(run.inputRef);
-		if (entry === undefined) continue;
-		inputs.push({
-			entry,
-			transcript: args.loadTranscript(run.transcriptPath),
-			artifact: run.artifact,
-		});
-	}
-	return collectRuns(inputs);
-};
+	readonly loadTranscript: TranscriptLoader<R>;
+}): Effect.Effect<ReadonlyArray<RunRow>, never, R> =>
+	Effect.gen(function* () {
+		const entries: ReadonlyArray<CorpusEntry> = args.corpus.stages[args.stage];
+		const byRef = new Map(entries.map((entry) => [entry.inputRef, entry] as const));
+		const inputs: Array<RunInput> = [];
+		for (const run of args.capture.runs) {
+			if (run.stage !== args.stage) continue;
+			const entry = byRef.get(run.inputRef);
+			if (entry === undefined) continue;
+			inputs.push({
+				entry,
+				transcript: yield* args.loadTranscript(run.transcriptPath),
+				artifact: run.artifact,
+			});
+		}
+		return collectRuns(inputs);
+	});

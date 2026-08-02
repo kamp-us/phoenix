@@ -1,4 +1,4 @@
-# eval-harness
+# eval — fabrika's eval harness
 
 The graded per-stage **corpus** apparatus for the token-economics program (epic
 [#1842](https://github.com/kamp-us/phoenix/issues/1842), extending ADR 0112).
@@ -30,7 +30,7 @@ slice ([#1848](https://github.com/kamp-us/phoenix/issues/1848)) shipped the corp
 ## The graded oracle ([#1849](https://github.com/kamp-us/phoenix/issues/1849))
 
 `gradeEntry(entry, artifact): Grade` (`oracle.ts`) is the per-corpus-entry quality grade. ADR
-[0112](../../../../../.decisions/0112-token-measurement-no-quality-compromise-methodology.md) §3
+[0112](../../../../.decisions/0112-token-measurement-no-quality-compromise-methodology.md) §3
 defines a per-stage output-quality oracle — a reproducible pass/fail that an optimized stage
 reproduced the **same decision artifact** as the baseline — as a *binary* over one frozen input.
 This generalizes it to grade **each** corpus entry, so the report slice can compute a pass-*rate*
@@ -69,7 +69,7 @@ The runner is a deterministic, side-effect-light **collector over runs that alre
 spawns nothing itself, which is what makes it reproducible offline. That property still holds for
 `runner.ts` and for every other core here, but it is **no longer true of the module**: `run` (below)
 starts processes from `spawn-io.ts`. The reversal and its bounds are [ADR
-0236](../../../../../.decisions/0236-eval-harness-gains-a-spawning-shell.md).
+0236](../../../../.decisions/0236-eval-harness-gains-a-spawning-shell.md).
 
 `RunRow` is `{entry, grade, spend}` where `spend` is a **three-arm** `RunSpend` union:
 `{_tag: "Reconstructed", spend}` (the `token-spend` `StageSpend`), `{_tag: "NoBilledTurns"}`, or
@@ -136,13 +136,13 @@ fabricated zero. `buildScorecard`, `renderTable`, `toJson`, and `decodeReportInp
 
 ```bash
 # human table (default) — the founder reads this to decide #1576
-pipeline-cli eval-harness report <rows.json>
+fabrika-cli eval report <rows.json>
 
 # stable machine-readable JSON — a future gate / CI consumes this
-pipeline-cli eval-harness report <rows.json> --json
+fabrika-cli eval report <rows.json> --json
 
 # price net saving against a baseline (stage × model)
-pipeline-cli eval-harness report <rows.json> --baseline-stage write-code --baseline-model opus-4.8
+fabrika-cli eval report <rows.json> --baseline-stage write-code --baseline-model opus-4.8
 ```
 
 `<rows.json>` is a serialized `RunRow[]` — the array `collectRuns` emits. `decodeReportInput` is
@@ -236,7 +236,7 @@ Both tiers emit `EvalRow` — `{caseId, tier, outcome, runs, assertions, detail}
 `cue: null`). `summarizeEvalRows(rows)` is **the** aggregator: graded rows fold in here rather than
 through a second path. Its verdict is green only when every row passed, and **zero rows is red**,
 never a vacuous green over a corpus the suite could not see (ADR
-[0092](../../../../../.decisions/0092-gates-fail-closed-on-zero-scope.md)).
+[0092](../../../../.decisions/0092-gates-fail-closed-on-zero-scope.md)).
 
 ```ts
 import {runDeterministicTier, reconcileRerun, summarizeEvalRows} from "./deterministic-tier.ts";
@@ -253,8 +253,8 @@ the only cost that matters; the pure judging is free.
 Re-measure with the end-to-end suite, which prints the figure:
 
 ```bash
-pnpm --filter @kampus/pipeline-cli exec vitest run \
-  src/tools/eval-harness/deterministic-shell-observer.unit.test.ts --reporter=verbose
+pnpm --filter @kampus/fabrika-cli exec vitest run \
+  src/eval/deterministic-shell-observer.unit.test.ts --reporter=verbose
 ```
 
 The suite asserts the observable outcome — a green over cases that hold, a **red** over one that
@@ -279,9 +279,9 @@ The core is a pure library — import `CorpusEntry`, `CorpusManifest`, `decodeMa
 against the schema, and render the graded scorecard over runner rows:
 
 ```bash
-pipeline-cli eval-harness check <manifest>    # exit 0 if valid; non-zero on a bad manifest
-pipeline-cli eval-harness report <rows.json>  # the graded two-axis scorecard (see below)
-pipeline-cli eval-harness cases <evals.json>  # validate an authored eval set (see below)
+fabrika-cli eval check <manifest>    # exit 0 if valid; non-zero on a bad manifest
+fabrika-cli eval report <rows.json>  # the graded two-axis scorecard (see below)
+fabrika-cli eval cases <evals.json>  # validate an authored eval set (see below)
 ```
 
 ## Repair-churn cost — net-token pricing of a model swap
@@ -345,7 +345,7 @@ The frozen ground truth lives beside this module as one manifest per stage under
 - [`corpus/review-code.json`](./corpus/review-code.json) — review-code verdicts
 
 Each file is a `CorpusManifest` whose non-target stage arrays are empty, so it decodes
-clean on its own and validates through `pipeline-cli eval-harness check`. Every entry is
+clean on its own and validates through `fabrika-cli eval check`. Every entry is
 covered by `corpus.data.unit.test.ts`, which decodes each committed file through
 `decodeManifest` and asserts `Ok` — so a malformed corpus cannot land. A replay grades a
 recorded run against these files with **no live network dependency**: the ground truth is
@@ -361,7 +361,7 @@ it exercises the FAIL grading and the repair-churn cost the epic prices.
 ## Corpus-curation policy (ADR 0112 §1)
 
 The corpus is governed by the **representative-task-set discipline** of ADR
-[0112 §1](../../../../../.decisions/0112-token-measurement-no-quality-compromise-methodology.md)
+[0112 §1](../../../../.decisions/0112-token-measurement-no-quality-compromise-methodology.md)
 (frozen inputs, apples-to-apples). Three rules:
 
 - **Selection — representative, stable, reproducible-from-id.** An entry is a real
@@ -454,22 +454,22 @@ a case that has none yet), because `evals.json` is the authored set of record.
 
 ```bash
 # exit 0 on a valid set; non-zero with a named reason on a bad one
-pipeline-cli eval-harness cases <path-to-evals.json>
+fabrika-cli eval cases <path-to-evals.json>
 ```
 
 The verb prints the skill name, the case count, the per-tier split, and one line per case. It reds
 on an **empty** set as well as a malformed one: a set that decodes but carries zero cases would
 report green while checking nothing, the zero-scope pass [ADR
-0092](../../../../../.decisions/0092-gates-fail-closed-on-zero-scope.md) forbids.
+0092](../../../../.decisions/0092-gates-fail-closed-on-zero-scope.md) forbids.
 
 An unedited authoring-session output shape is committed under
 [`fixtures/skill-creator/`](./fixtures/skill-creator) and is what the unit tests decode, so "decodes
 with no edits" is checked against the real shape rather than asserted.
 
-## `eval-harness run` — executing an eval set unattended (#4676)
+## `fabrika-cli eval run` — executing an eval set unattended (#4676)
 
 ```bash
-pipeline-cli eval-harness run <evals.json> \
+fabrika-cli eval run <evals.json> \
   --stage <triage|write-code|review-code|review-doc|ship-it> \
   --plugin-dir <the candidate skill's plugin dir> \
   --model <model> \
@@ -498,7 +498,7 @@ written as plain task text, and only a with-skill-only case names the slash comm
 
 **An unresolvable skill is a silent green.** Measured on `claude` 2.1.220:
 `claude -p "/not-a-skill"` exits **0** with `is_error: false`, `subtype: "success"`,
-`num_turns: 0`, `total_cost_usd: 0`, `modelUsage: {}` — and `pipeline-cli token-spend` reconstructs
+`num_turns: 0`, `total_cost_usd: 0`, `modelUsage: {}` — and fabrika's token meter (`src/spend/token-spend.ts`) reconstructs
 its transcript to well-formed **zeros, also at exit 0**. Nothing errors. A with-skill arm whose
 plugin failed to load therefore degrades into a without-skill arm and scores as a legitimate free
 run, which is precisely the class of silent pass this whole epic exists to end.
@@ -521,7 +521,7 @@ healthy run whose transcript cannot be found (`TranscriptNotFound`) are all type
 
 The **exit code reports executability only**: zero when every planned run was collected, non-zero
 when any died *or* when the set planned nothing (zero scope reds, [ADR
-0092](../../../../../.decisions/0092-gates-fail-closed-on-zero-scope.md)). Whether the cases
+0092](../../../../.decisions/0092-gates-fail-closed-on-zero-scope.md)). Whether the cases
 *passed* is the oracle's answer, read off the capture manifest downstream.
 
 ### Where it may be invoked — and where it may not
@@ -541,7 +541,7 @@ model at all.
 the unit tier drives through a **stubbed executor**, so no unit test spends a cent. `spawn-io.ts` is
 the only file in the module that imports `node:child_process`. The reversal that lands here (this
 module could previously not spawn anything) and its bounds are recorded in [ADR
-0236](../../../../../.decisions/0236-eval-harness-gains-a-spawning-shell.md).
+0236](../../../../.decisions/0236-eval-harness-gains-a-spawning-shell.md).
 
 ## The fabrika incident corpus ([#4675](https://github.com/kamp-us/phoenix/issues/4675))
 

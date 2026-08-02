@@ -1,5 +1,5 @@
 /**
- * `eval-harness` corpus core — the typed data model + on-disk format for the graded
+ * `eval` corpus core — the typed data model + on-disk format for the graded
  * per-stage ground truth (issue #1848, epic #1842).
  *
  * The token-economics apparatus (ADR 0112) grades one frozen input per stage with a

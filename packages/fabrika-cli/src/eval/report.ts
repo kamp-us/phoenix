@@ -1,7 +1,7 @@
 /**
- * eval-harness report core — the graded two-axis scorecard (issue #1853, epic #1842).
+ * The eval report core — the graded two-axis scorecard (issue #1853, epic #1842).
  *
- * The top of the eval-harness vertical slice and the evidence artifact the model-tiering
+ * The top of the eval vertical slice and the evidence artifact the model-tiering
  * decision (#1576) consumes. It aggregates the runner's graded `{entry, grade, spend}` rows
  * (`runner.ts`) into a per-(stage × model) scorecard on the ADR 0112 §4 two-axis gate, now
  * GRADED: the token axis (billed + ex-cache-read spend per run, ADR 0112 §2) AND a graded
@@ -284,7 +284,7 @@ const signedNum = (n: number | null): string => {
  */
 export const renderTable = (scorecard: Scorecard): string => {
 	const lines: Array<string> = [];
-	lines.push("eval-harness scorecard — graded two-axis gate (pass-rate × net-token cost)");
+	lines.push("fabrika eval scorecard — graded two-axis gate (pass-rate × net-token cost)");
 	lines.push(scorecard.framing);
 	if (scorecard.baseline !== null) {
 		lines.push(

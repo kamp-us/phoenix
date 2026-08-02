@@ -1,5 +1,5 @@
 /**
- * eval-harness deterministic tier — the no-model half of the fabrika eval layer (issue #4677,
+ * The eval deterministic tier — the no-model half of the fabrika eval layer (issue #4677,
  * epic #4649).
  *
  * A case whose assertions are all mechanically checkable never needs a model: it runs its
@@ -7,14 +7,15 @@
  * This module owns that judgement, the one-run protocol (`reconcileRerun`), and `EvalRow` — the
  * row shape the graded tier (#4678) reports in too, so one aggregator serves both.
  *
- * The tier is pure: `resolveCommand` and `observe` are supplied by the caller, so the only IO is
- * the caller's. That is what makes "no model in the loop" *checkable* rather than asserted — this
- * file imports nothing, so it can reach nothing spawnable, and `deferGraded` is its only handoff
- * toward a model-bearing path.
+ * The tier holds no IO of its own: `resolveCommand` and `observe` are supplied by the caller, so
+ * the only IO is the caller's. That is what makes "no model in the loop" *checkable* rather than
+ * asserted — this file imports nothing but `effect` itself, so it can reach nothing spawnable, and
+ * `deferGraded` is its only handoff toward a model-bearing path.
  *
  * The case shape it consumes is #4674's decoded `SkillEvalCase` (`skill-eval-set.ts`), read
  * structurally so this tier re-derives no parser and adds no field to the authored format.
  */
+import {Effect} from "effect";
 
 /**
  * The two tiers a decoded case routes to. Same two values #4674's derived `EvalTier` yields;
@@ -318,11 +319,16 @@ export const judgeDeterministicCase = (
 /** Resolves the CLI-layer command a case runs, or `null` when the case declares none. */
 export type CommandResolver = (evalCase: TieredEvalCase) => DeterministicCommand | null;
 
-/** Runs one case's command and reports what it produced. The caller's only IO seam. */
-export type CaseObserver = (
+/**
+ * Runs one case's command and reports what it produced. The caller's only IO seam.
+ *
+ * `R` is the platform requirement the *implementation* carries — the shell observer's services, or
+ * `never` for a stub — so this tier still names no platform service and can reach nothing spawnable.
+ */
+export type CaseObserver<R = never> = (
 	evalCase: TieredEvalCase,
 	command: DeterministicCommand,
-) => CliObservation;
+) => Effect.Effect<CliObservation, never, R>;
 
 /** What one pass over a set produced: a row per deterministic case, and the graded ids it routed away. */
 export interface DeterministicTierRun {
@@ -338,36 +344,37 @@ export interface DeterministicTierRun {
  * deterministic one, which is what a caller (or a test) asserts against to prove no model entered
  * the loop.
  */
-export const runDeterministicTier = (args: {
+export const runDeterministicTier = <R>(args: {
 	readonly cases: ReadonlyArray<TieredEvalCase>;
 	readonly resolveCommand: CommandResolver;
-	readonly observe: CaseObserver;
+	readonly observe: CaseObserver<R>;
 	readonly deferGraded?: (evalCase: TieredEvalCase) => void;
-}): DeterministicTierRun => {
-	const rows: Array<EvalRow> = [];
-	const deferredToGraded: Array<number> = [];
-	for (const evalCase of args.cases) {
-		if (evalCase.tier !== "deterministic") {
-			deferredToGraded.push(evalCase.id);
-			args.deferGraded?.(evalCase);
-			continue;
+}): Effect.Effect<DeterministicTierRun, never, R> =>
+	Effect.gen(function* () {
+		const rows: Array<EvalRow> = [];
+		const deferredToGraded: Array<number> = [];
+		for (const evalCase of args.cases) {
+			if (evalCase.tier !== "deterministic") {
+				deferredToGraded.push(evalCase.id);
+				args.deferGraded?.(evalCase);
+				continue;
+			}
+			const command = args.resolveCommand(evalCase);
+			if (command === null) {
+				rows.push({
+					caseId: evalCase.id,
+					tier: "deterministic",
+					outcome: "uncheckable",
+					runs: 0,
+					assertions: [],
+					detail: "the case declares no CLI-layer command to run",
+				});
+				continue;
+			}
+			rows.push(judgeDeterministicCase(evalCase, yield* args.observe(evalCase, command)));
 		}
-		const command = args.resolveCommand(evalCase);
-		if (command === null) {
-			rows.push({
-				caseId: evalCase.id,
-				tier: "deterministic",
-				outcome: "uncheckable",
-				runs: 0,
-				assertions: [],
-				detail: "the case declares no CLI-layer command to run",
-			});
-			continue;
-		}
-		rows.push(judgeDeterministicCase(evalCase, args.observe(evalCase, command)));
-	}
-	return {rows, deferredToGraded};
-};
+		return {rows, deferredToGraded};
+	});
 
 /** A deterministic case that did not reproduce — a defect of the case, routed like any other bug. */
 export interface FlakeDefect {

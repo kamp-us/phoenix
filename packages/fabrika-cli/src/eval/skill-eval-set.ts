@@ -1,5 +1,5 @@
 /**
- * `eval-harness` skill-eval-set core — decoding a `/skill-creator`-authored **eval set** into the
+ * `eval` skill-eval-set core — decoding a `/skill-creator`-authored **eval set** into the
  * harness (issue #4674, epic #4649).
  *
  * The authoring format is not ours. It is the `skill-creator` plugin's, reused verbatim: its

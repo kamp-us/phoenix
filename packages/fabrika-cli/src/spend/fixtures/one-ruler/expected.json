@@ -1,0 +1,10 @@
+{
+	"input": 1219,
+	"cacheCreate": 35024,
+	"cacheRead": 69024,
+	"output": 1856,
+	"billed": 107123,
+	"exCacheRead": 38099,
+	"assistantTurns": 3,
+	"model": "claude-opus-4-1"
+}

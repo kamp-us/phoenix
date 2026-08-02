@@ -1,3 +1,5 @@
+import {readFileSync} from "node:fs";
+import {fileURLToPath} from "node:url";
 import {assert, describe, it} from "@effect/vitest";
 import {
 	formatStageSpend,
@@ -121,6 +123,34 @@ describe("reconstructSpend — four-component billed reconstruction (pattern §2
 		assert.strictEqual(spend.billed, 0);
 		assert.strictEqual(spend.assistantTurns, 0);
 		assert.strictEqual(spend.model, null);
+	});
+});
+
+/**
+ * The v1 half of the one-ruler proof (#4777).
+ *
+ * fabrika re-implements this meter rather than calling it (ADR 0238), so the two could drift. They
+ * cannot drift silently while both read **the same committed fixture**: this suite asserts v1's
+ * numbers against the file fabrika's own suite asserts against.
+ *
+ * The direction of this read is the one ADR 0238 permits — v1 reaching into fabrika's fixture, not
+ * fabrika reaching into v1 — which is also what keeps the ban's real purpose intact: v1 stays
+ * deletable, because deleting it removes this suite and leaves fabrika's assertion standing.
+ */
+const oneRuler = (name: string): string =>
+	readFileSync(
+		fileURLToPath(
+			new URL(`../../../../fabrika-cli/src/spend/fixtures/one-ruler/${name}`, import.meta.url),
+		),
+		"utf8",
+	);
+
+describe("reconstructSpend — the shared one-ruler fixture (ADR 0112 §2, #4777)", () => {
+	it("reproduces the committed expectation fabrika's implementation is held to", () => {
+		assert.deepStrictEqual(
+			reconstructSpend(oneRuler("transcript.jsonl")),
+			JSON.parse(oneRuler("expected.json")) as StageSpend,
+		);
 	});
 });
 

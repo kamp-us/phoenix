@@ -1,8 +1,9 @@
 import {mkdtempSync, rmSync, writeFileSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
+import {NodeServices} from "@effect/platform-node";
 import {assert, describe, it} from "@effect/vitest";
-import {SUBPROCESS_TEST_TIMEOUT_MS} from "../../test-budget.ts";
+import {Effect} from "effect";
 import {observeShellCommand} from "./deterministic-shell-observer.ts";
 import {
 	type DeterministicCommand,
@@ -10,6 +11,18 @@ import {
 	summarizeEvalRows,
 	type TieredEvalCase,
 } from "./deterministic-tier.ts";
+
+/**
+ * These suites spawn real children, and a spawn costs far more than vitest's 5s default budget
+ * under this repo's normal operating condition (many worktree agents at once). A generous upper
+ * bound still fails decisively on a genuinely hung child; raising the global default instead would
+ * blunt the 5s budget the pure suites are correctly held to.
+ */
+const SUBPROCESS_TEST_TIMEOUT_MS = 60_000;
+
+/** Run an effect against the real Node platform — these suites are about the real OS boundary. */
+const live = <A>(effect: Effect.Effect<A, never, NodeServices.NodeServices>): Promise<A> =>
+	Effect.runPromise(Effect.provide(effect, NodeServices.layer));
 
 const mechanical = (text: string, cue: string) => ({kind: "mechanical", text, cue}) as const;
 
@@ -29,10 +42,9 @@ const sh = (script: string, cwd: string | null = null): DeterministicCommand => 
 describe("observeShellCommand — a real process, never a model", {
 	timeout: SUBPROCESS_TEST_TIMEOUT_MS,
 }, () => {
-	it("reports the exit status and both streams of a run that answered", () => {
-		const observation = observeShellCommand(
-			evalCase(1, []),
-			sh("printf out; printf err >&2; exit 3"),
+	it("reports the exit status and both streams of a run that answered", async () => {
+		const observation = await live(
+			observeShellCommand(evalCase(1, []), sh("printf out; printf err >&2; exit 3")),
 		);
 		assert.strictEqual(observation.exitStatus, 3);
 		assert.strictEqual(observation.stdout, "out");
@@ -40,33 +52,39 @@ describe("observeShellCommand — a real process, never a model", {
 		assert.strictEqual(observation.notRun, null);
 	});
 
-	it("reports a command that never started as notRun, not as a failing status (§ZS)", () => {
-		const observation = observeShellCommand(evalCase(1, []), {
-			command: "kampus-no-such-binary-4677",
-			args: [],
-			cwd: null,
-			timeoutMs: 5_000,
-		});
+	it("reports a command that never started as notRun, not as a failing status (§ZS)", async () => {
+		const observation = await live(
+			observeShellCommand(evalCase(1, []), {
+				command: "kampus-no-such-binary-4677",
+				args: [],
+				cwd: null,
+				timeoutMs: 5_000,
+			}),
+		);
 		assert.strictEqual(observation.notRun !== null, true);
 		assert.strictEqual(observation.exitStatus, null);
 	});
 
-	it("distinguishes an exit 127 (ran, answered) from a did-not-run", () => {
-		const observation = observeShellCommand(evalCase(1, []), sh("kampus-no-such-binary-4677"));
+	it("distinguishes an exit 127 (ran, answered) from a did-not-run", async () => {
+		const observation = await live(
+			observeShellCommand(evalCase(1, []), sh("kampus-no-such-binary-4677")),
+		);
 		assert.strictEqual(observation.exitStatus, 127);
 		assert.strictEqual(observation.notRun, null);
 	});
 
-	it("probes only the artifact paths the case's assertions name", () => {
+	it("probes only the artifact paths the case's assertions name", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "eval-artifacts-"));
 		try {
 			writeFileSync(join(dir, "made.txt"), "x");
-			const observation = observeShellCommand(
-				evalCase(1, [
-					mechanical("a file named `made.txt` exists", "file-artifact"),
-					mechanical("a file named `absent.txt` exists", "file-artifact"),
-				]),
-				sh("true", dir),
+			const observation = await live(
+				observeShellCommand(
+					evalCase(1, [
+						mechanical("a file named `made.txt` exists", "file-artifact"),
+						mechanical("a file named `absent.txt` exists", "file-artifact"),
+					]),
+					sh("true", dir),
+				),
 			);
 			assert.deepStrictEqual(observation.artifacts, ["made.txt"]);
 		} finally {
@@ -74,8 +92,8 @@ describe("observeShellCommand — a real process, never a model", {
 		}
 	});
 
-	it("cannot see tool invocations, and says so rather than answering no", () => {
-		const observation = observeShellCommand(evalCase(1, []), sh("true"));
+	it("cannot see tool invocations, and says so rather than answering no", async () => {
+		const observation = await live(observeShellCommand(evalCase(1, []), sh("true")));
 		assert.strictEqual(observation.toolInvocations, null);
 	});
 });
@@ -102,16 +120,18 @@ describe("the deterministic tier end to end over a corpus-shaped set", {
 			]),
 		);
 
-	it(`runs ${CASES} cases green, one run each`, () => {
+	it(`runs ${CASES} cases green, one run each`, async () => {
 		const started = Date.now();
-		const run = runDeterministicTier({
-			cases: corpusShaped(),
-			resolveCommand: (c) => sh(`printf 'case-%s' ${c.id}`),
-			observe: observeShellCommand,
-			deferGraded: () => {
-				throw new Error("a model was spawned for a deterministic case");
-			},
-		});
+		const run = await live(
+			runDeterministicTier({
+				cases: corpusShaped(),
+				resolveCommand: (c) => sh(`printf 'case-%s' ${c.id}`),
+				observe: observeShellCommand,
+				deferGraded: () => {
+					throw new Error("a model was spawned for a deterministic case");
+				},
+			}),
+		);
 		const elapsedMs = Date.now() - started;
 		const summary = summarizeEvalRows(run.rows);
 
@@ -125,15 +145,17 @@ describe("the deterministic tier end to end over a corpus-shaped set", {
 		console.log(`deterministic tier: ${CASES} cases in ${elapsedMs}ms`);
 	});
 
-	it("goes red on a case that genuinely fails — the tier is observed red, not assumed", () => {
-		const run = runDeterministicTier({
-			cases: [
-				evalCase(1, [mechanical("exits 0", "exit-status")]),
-				evalCase(2, [mechanical("exits 0", "exit-status")]),
-			],
-			resolveCommand: (c) => sh(c.id === 2 ? "exit 4" : "true"),
-			observe: observeShellCommand,
-		});
+	it("goes red on a case that genuinely fails — the tier is observed red, not assumed", async () => {
+		const run = await live(
+			runDeterministicTier({
+				cases: [
+					evalCase(1, [mechanical("exits 0", "exit-status")]),
+					evalCase(2, [mechanical("exits 0", "exit-status")]),
+				],
+				resolveCommand: (c) => sh(c.id === 2 ? "exit 4" : "true"),
+				observe: observeShellCommand,
+			}),
+		);
 		const summary = summarizeEvalRows(run.rows);
 		assert.strictEqual(summary.verdict, "red");
 		assert.strictEqual(summary.total.failed, 1);
