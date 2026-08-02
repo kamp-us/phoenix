@@ -6,28 +6,25 @@
 lands — [#4648](https://github.com/kamp-us/phoenix/issues/4648) Resolved question 2 defers the
 decision to the first derived contract, which is this one. The package is `packages/fabrika-cli/`,
 its binary is `fabrika-cli`, and this skill's verbs sit under an `adr` subcommand group. The
-[CLI interface convention](../../docs/cli-interface-convention.md) governs all five; where this spec
+[CLI interface convention](../../docs/cli-interface-convention.md) governs all six; where this spec
 and that doc disagree, the doc wins and this spec is the bug.
 
-**`fabrika-cli` delegates to `pipeline-cli`; it does not absorb it.** `adr sweep` and `adr classify`
-shell out to `pipeline-cli adr-sweep shortlist` and `pipeline-cli guard-content-probe classify` and
-relay their answers. fabrika may call that substrate and never grows into it — neither verb
-reimplements the ranking or the vocabulary match, and a second implementation of either would be
-strictly worse, because two adjacency rankers drifting apart is a failure nobody would notice.
+**`fabrika-cli` calls `pipeline-cli` nowhere, and neither does the skill.** fabrika is self-contained
+by construction: every verb this skill needs is implemented in `packages/fabrika-cli/`, and no fence
+in `SKILL.md` invokes anything else. That is the [isolation rule](../../docs/cli-interface-convention.md);
+it is a hard constraint on every fabrika skill, not a preference of this one.
 
-The delegation is a wrapper rather than a raw call in the skill for two reasons, and both are
-mechanical rather than stylistic:
+The reason is the deletion test. A fabrika that calls `pipeline-cli` can never be the thing that
+replaces it — every call is a tether that keeps the old tree alive. Isolation costs a duplicated
+ranking during the transition; a tether costs the ability to ever delete anything.
 
-- **There is no legal way for a fabrika skill to invoke `pipeline-cli` directly.** The harness's
-  isolation verifier refuses a `$VAR`-rooted invocation (skill conventions §4), and
-  `cli-invocation-guard` reds a bare `pipeline-cli` inside a runnable fence anywhere under
-  `claude-plugins/`. The canonical `PCLI="…"` form that satisfies the guard is exactly what §4 bans.
-- **Both upstream verbs carry exit contracts a caller gets wrong.** `adr-sweep shortlist` exits `1`
-  whenever it *has* a shortlist — its normal, informative case. `guard-content-probe classify` exits
-  `0` on the §CP hold and `3` on proven-ordinary, inverted from intuition, and its own README says to
-  read the stdout word and never the status. Normalising both onto this contract's uniform "`0` means
-  the answer is on stdout" is the wrapper's whole job, and it is testable in one place instead of
-  remembered at every call site.
+**`adr classify` was considered and deliberately not derived.** Classifying an ADR as control-plane
+by content is what `cp-classify` already does at the merge gate, and that gate is the authority. A
+fabrika copy of the guard vocabulary could tell an author "ordinary" while the gate says
+"control-plane" — two answers to a merge-gating question, which is worse than either a tether or a
+drifted ranking. The skill instead states the expectation (assume §CP, never reword to dodge the
+gate) and leaves the verdict where it is enforced. The incidents behind it, #4386 and #3416, were the
+*gate* misclassifying, so an author-side predictor would not have caught them anyway.
 
 ## Verb inventory
 
@@ -38,8 +35,7 @@ mechanical rather than stylistic:
 | `adr resolve` | resolve an id to its real filename and state against a fetched base ref | a lookup with a defined answer; whether the result may be cited stays in the skill |
 | `adr supersede` | rewrite an older ADR's `status:` line to `superseded by [NNNN](…)` | *deciding* to supersede is judgment; the one-line edit and its link are mechanical |
 | `adr amend-in-part` | append this ADR to an older one's `amended-in-part by` list | as above, plus the list-append and refusal rules an author gets wrong by hand |
-| `adr sweep` | rank the uncited live-accepted ADRs this one may contradict | the ranking is upstream and deterministic; only *judging* the hits is the skill's, and this verb normalises an exit contract the caller misreads |
-| `adr classify` | answer whether this ADR is control-plane by content | a fixed vocabulary match with an inverted exit code; the judgment left over is whether to dispute it, not how to compute it |
+| `adr sweep` | rank the uncited live-accepted ADRs this one may contradict | ranking is deterministic — scan, score, sort; only *judging* the hits is the skill's |
 
 **Considered and not derived.** A verb for step 3's dated `## Amendments` note. It is mechanical, but
 the note's *content* is judgment and its shape is one line the skill already carries, so a verb would
@@ -164,7 +160,7 @@ $ echo $?
   #3779.
 - ADR 0092 — zero scope reds; an empty record scan is a refusal, not `0001`.
 - **The residual race is real and this verb does not close it.** Two authors between the same pair of
-  invocations still collide. `pipeline-cli decisions-index validate` reds the second-to-merge PR in
+  invocations still collide. CI's `decisions-index validate` job reds the second-to-merge PR in
   CI, and the skill's step 6 re-check catches it for the caller's own id before the PR opens. A verb
   that claimed to close it would be lying; state the residual in `--help`.
 - #4208 / #4219 — a proven refusal never shares an exit code with a failure to invoke.
@@ -308,11 +304,10 @@ what a caller wrongly reads as "citable": 36 of the 233 records on `main` today 
 *not* live — 20 `superseded`, 9 `proposed`, 2 `superseded-in-part`, plus `retired`, `moot` and
 `reference`. A verb that answered `landed` for all 233 would license citing every one of them.
 
-The predicate is `isLiveAccepted`, already implemented and named in
-[`adr-sweep`](../../../../packages/pipeline-cli/src/tools/adr-sweep/adr-sweep.ts) — reuse that
-notion rather than minting a second one, because two definitions of "live" drifting apart is worse
-than either definition being wrong. `accepted` is live; so is `amended-in-part`, whose unamended
-remainder still stands. `proposed` is not yet live and `superseded` is no longer.
+fabrika owns this predicate; it does not import one. The semantics: `accepted` is live, and so is
+`amended-in-part`, whose unamended remainder still stands. `proposed` is not yet live and
+`superseded` is no longer. v1's `isLiveAccepted` is a **reference for what the words mean**, never a
+dependency — read it to check the semantics agree, then implement fabrika's own.
 
 With `--json`, one object per id with keys `id`, `state`, `file`, `detail`, `baseRef`, `baseSha`.
 
@@ -485,8 +480,8 @@ $ echo $?
 
 ## `adr sweep`
 
-Delegates to `pipeline-cli adr-sweep shortlist` and relays its answer on this contract's exit terms.
-It reimplements no ranking.
+Ranks the uncited live-accepted ADRs whose decision domain the subject touches. **Implemented in
+`fabrika-cli`, calling nothing** — the lexical/rarity ranking is fabrika's own.
 
 **Invocation**
 
@@ -554,79 +549,13 @@ $ echo $?
 
 **Grounding**
 
-- `adr-sweep shortlist` exits `1` whenever it has a shortlist — exit 0 only on `no-overlap`. Relaying
-  that status makes the informative case byte-indistinguishable from a failure.
 - ADR 0092 — zero scope reds.
-- #4723 — upstream's `--json` payload currently goes to **stderr**, leaving stdout empty. This verb's
-  `--json` puts it on stdout per rule 2, so the wrapper must move it until #4723 lands.
-
----
-
-## `adr classify`
-
-Delegates to `pipeline-cli guard-content-probe classify` and relays its verdict on this contract's
-exit terms. It reimplements no vocabulary match.
-
-**Invocation**
-
-```
-fabrika-cli adr classify 0240 [--dir <path>]
-```
-
-**Inputs**
-
-| Flag | Type | Required | Default | Description |
-|---|---|---|---|---|
-| `<id>` | positional string | yes | — | the four-digit id of the ADR to classify, resolved under `--dir` |
-| `--dir` | string | no | `.decisions` | the directory holding the record |
-
-**Output** — one line, `guard-touching` or `not-guard-touching`, newline-terminated. The human reason
-naming the matched vocabulary goes to stderr.
-
-**Exit status**
-
-| Code | Trigger |
-|---|---|
-| `0` | a verdict was produced on stdout |
-| `1` | usage error, or the verb failed to run |
-| `3` | the probe could not run, so the verdict is UNKNOWN |
-| `4` | `<id>` has no record under `--dir` |
-
-**Errors**
-
-| Message (stderr) | Code | Kind |
-|---|---|---|
-| `adr classify: the probe failed: <reason> — the verdict is UNKNOWN. Treat this ADR as control plane.` | 3 | refusal |
-| `adr classify: no record for id <id> under <dir>.` | 4 | refusal |
-
-**Scope** — one record, so ADR 0092's zero-scope clause does not apply. The fail-closed direction
-here is the *verdict*, not the scope: any non-zero exit obliges the caller to treat the ADR as §CP,
-because a false §CP costs one approval while a false ordinary is #4386.
-
-**Examples**
-
-```
-$ fabrika-cli adr classify 0092
-guard-touching
-```
-
-```
-$ fabrika-cli adr classify 0023
-not-guard-touching
-```
-
-**Grounding**
-
-- ADR 0164 — `.decisions/**` matches no control-plane *path*, so a guard-governing ADR is §CP by
-  content alone. **The binding fact is the enforcement, not the ADR's status field:** `cp-classify`
-  and `guard-content-probe` implement this today and stamp `(§CP, ADR 0164)` into their output, while
-  0164 itself has read `proposed` throughout — the mismatch is #4388, which carries a founder ruling
-  to accept it that has not landed. Neither this spec nor the skill asserts 0164's status, because a
-  status claim about another record is exactly the thing that rots; `adr resolve` is how a caller
-  learns it at the moment of citing.
-- #4386 / #3416 — a guard-touching ADR routed as ordinary reaches `main` with zero approvals.
-- Upstream's exit codes are inverted — `0` is guard-touching, `3` is not-guard-touching — and its own
-  README says to read the stdout word and never the status. The inversion must not leak through this
-  wrapper; normalising it is half the reason the wrapper exists.
-- #2617 — 196 of 233 ADRs currently classify `guard-touching`, an 84% rate. This verb relays that
-  calibration rather than correcting it; re-tuning the vocabulary is #2617's call, not this spec's.
+- v1's `adr-sweep` is worth reading before implementing this, for two scars it already carries: it
+  exits `1` whenever it *has* a shortlist (so a caller reads its informative case as a failure), and
+  its `--json` payload goes to stderr leaving stdout empty (#4723). fabrika repeats neither — all
+  three outcomes exit `0` here, and `--json` goes to stdout per rule 2. Read it as a list of mistakes
+  already made, not as an implementation to copy.
+- The ranking is a lexical/rarity score over decision-bearing text, capped at 8, excluding the
+  subject's own citations. `indeterminate` fires when the subject yields no distinctive terms or the
+  live-accepted corpus is below the rarity floor of 10 — a small corpus makes every term look common,
+  so silence there is degenerate rather than clean.

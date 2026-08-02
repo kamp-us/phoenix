@@ -52,6 +52,6 @@ nothing else at the `skills/` root.
 
 - **No marketplace entry.** fabrika is not listed in the root marketplace manifest
   (`.claude-plugin/`), so nothing here reaches the pinned external channel (#4643).
-- **No skills yet.** They arrive one authoring session at a time through `/skill-creator`.
-- **No CLI.** fabrika's verbs will live in their own workspace package; `pipeline-cli` stays the
-  v1-era substrate fabrika may call but never grows into.
+- **No dependency on v1.** fabrika calls `pipeline-cli` nowhere — not from a skill, not from a verb.
+  Its own verbs live in `packages/fabrika-cli/`. v1 is a reference to read, never a runtime to call,
+  because a fabrika that calls the old tree can never be the thing that replaces it.

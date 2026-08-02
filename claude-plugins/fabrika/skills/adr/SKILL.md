@@ -95,7 +95,7 @@ Land on **exactly one** outcome; the explicit "none" separates *considered it* f
   PR when the definition is short and unambiguous, otherwise `/glossary`.
 - **Nothing is coined** → add a terminal `## Records` section and write `no vocabulary impact`.
 
-## 6 — Check, classify, report
+## 6 — Check, then report
 
 ```bash
 fabrika-cli adr resolve 0240
@@ -104,17 +104,10 @@ fabrika-cli adr resolve 0240
 Your own id, one last time: `absent` means nobody claimed it while you wrote; `in-flight` means
 another lane opened its PR first, so renumber now.
 
-```bash
-fabrika-cli adr classify 0240
-```
+**Expect this PR to route as control plane.** No `.decisions/**` path matches the control-plane
+pattern, so `cp-classify` decides it on content at the gate — and 84% of the corpus comes back
+guard-touching. **That gate is the authority; do not predict it and never reword the ADR to change
+its verdict.** A false §CP costs one approval, a false ordinary reaches `main` with none (#4386,
+#3416). If you think it misfired, say so on the PR (#2617).
 
-Prints `guard-touching` or `not-guard-touching`. No `.decisions/**` path matches the control-plane
-pattern, so a guard-governing ADR is §CP by content alone — what `cp-classify` enforces on the merge
-path — and one routed as ordinary reaches `main` with zero approvals (#4386, #3416). Anything but
-`not-guard-touching`, a verb that never ran included, needs approval at head.
-
-**Never reword to change that verdict.** The probe fires on words — `gate`, `guard`, `control-plane`
-— so 84% of the corpus classifies §CP; a false §CP costs one approval, a false ordinary is #4386.
-Say it misfired on the PR (#2617).
-
-Report the path, the verdict and the vocabulary outcome; do not summarize the body.
+Report the path and the vocabulary outcome; do not summarize the body.
