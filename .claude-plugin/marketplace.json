@@ -55,6 +55,11 @@
 				"claude-channel",
 				"repo-agnostic"
 			]
+		},
+		{
+			"name": "fabrika",
+			"source": "./claude-plugins/fabrika",
+			"description": "The kamp.us agent pipeline rebuilt from first principles. Authoritative description: claude-plugins/fabrika/.claude-plugin/plugin.json."
 		}
 	]
 }
