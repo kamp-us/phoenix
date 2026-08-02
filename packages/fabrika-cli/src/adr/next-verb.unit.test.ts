@@ -1,7 +1,13 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {errOut, fakeShell, okOut, tree} from "../fakes.test-support.ts";
-import {BASE_UNFETCHABLE, IN_FLIGHT_UNKNOWN, runNext, ZERO_SCOPE} from "./next-verb.ts";
+import {
+	BASE_UNFETCHABLE,
+	DIR_UNREADABLE,
+	IN_FLIGHT_UNKNOWN,
+	runNext,
+	ZERO_SCOPE,
+} from "./next-verb.ts";
 
 const SHA = "49a22902d1e0c7b3f5a8e4126b9d0f3c7a1e5b82";
 
@@ -84,6 +90,25 @@ describe("runNext", () => {
 		expect(out.code).toBe(ZERO_SCOPE);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toContain("ADR 0092");
+	});
+
+	// The two states below are both non-zero and must stay on different codes: an unreadable
+	// directory is a PROVEN refusal, so it may not share `1` with a verb that failed to run
+	// (#4208, #4219, #4736), and it may not be confused with the empty directory that answers 5.
+	it("refuses an unreadable --dir on its own proven code, not on 1", async () => {
+		const out = await run([[/^git ls-tree/, errOut("fatal: not a tree object")]]);
+		expect(out.code).toBe(DIR_UNREADABLE);
+		expect(out.code).not.toBe(1);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toBe(
+			'adr next: cannot read .decisions at origin/main: fatal: not a tree object — the merged set is UNKNOWN, never "0 records".',
+		);
+	});
+
+	it("keeps an unreadable --dir distinguishable from an empty one", async () => {
+		const unreadable = await run([[/^git ls-tree/, errOut("fatal: not a tree object")]]);
+		const empty = await run([[/^git ls-tree/, okOut("")]]);
+		expect(unreadable.code).not.toBe(empty.code);
 	});
 
 	it("refuses a record whose id cannot be parsed", async () => {

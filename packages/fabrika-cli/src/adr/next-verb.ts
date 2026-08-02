@@ -19,6 +19,15 @@ export const BASE_UNFETCHABLE = 3;
 export const IN_FLIGHT_UNKNOWN = 4;
 /** `--dir` was read and held zero records — zero scope (ADR 0092). */
 export const ZERO_SCOPE = 5;
+/**
+ * `--dir` could not be read at the fetched base ref, so the merged set is UNKNOWN.
+ *
+ * This is a proven outcome, so it takes a `3`+ code and not `1`: a caller that saw a refusal share
+ * the failure-to-invoke code could not tell "the directory is not there at that ref" from "the verb
+ * never ran" (#4208, #4219, #4736). `6` is the lowest code this verb's table had free — `3`, `4` and
+ * `5` already carry other proven outcomes — and `resolve` seats the same state on the same number.
+ */
+export const DIR_UNREADABLE = 6;
 
 export interface NextOptions {
 	readonly dir: string;
@@ -53,7 +62,10 @@ export const runNext = (options: NextOptions): Shell<VerbOutcome> =>
 				);
 			}
 			if (e._tag === "DirUnreadable") {
-				return refuse(FAILED, `adr next: cannot read ${dir} at ${base}: ${e.reason}`);
+				return refuse(
+					DIR_UNREADABLE,
+					`adr next: cannot read ${dir} at ${base}: ${e.reason} — the merged set is UNKNOWN, never "0 records".`,
+				);
 			}
 			if (e._tag === "UnparseableId") {
 				return refuse(FAILED, `adr next: ${dir} holds a record with an unparseable id: ${e.file}`);
