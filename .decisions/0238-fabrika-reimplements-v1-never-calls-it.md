@@ -84,7 +84,7 @@ In exchange, v1 becomes deletable. That is the whole point, and it does not come
 remaining call is enough to block the removal.
 
 Worth stating so nobody over-reads this: **it does not make `packages/pipeline-cli/` removable
-today.** Thirty-three CI workflows call that package directly, independent of any skill — it is the
+today.** Thirty-one CI workflows invoke that package directly, independent of any skill — it is the
 guard and enforcement layer, not merely v1's skill tooling. This decision makes the v1 *skills*
 deletable once fabrika replaces them; retiring the package is a separate and larger question that
 this ADR does not answer.
