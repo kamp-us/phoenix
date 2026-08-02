@@ -6,8 +6,15 @@
  * duplicate id (#3779), and a stale tree once made a review gate declare a merged ADR nonexistent
  * (#4163). Every read below takes the resolved base SHA, never a ref name, so nothing can silently
  * re-resolve to a different commit mid-run.
+ *
+ * The outcome type is {@link Attempt} rather than the `E` channel on purpose: a fetch that fails and
+ * a `ls-tree` that fails are *expected outcomes* this package maps onto its own exit codes, and each
+ * carries the reason it quotes in the refusal. The subprocess fault underneath is already typed —
+ * `execCapture` folds it into `ok: false` (see `exec.ts`).
  */
-import type {Exec} from "./exec.ts";
+import {Effect} from "effect";
+import type {ChildProcessSpawner} from "effect/unstable/process";
+import {execCapture} from "./exec.ts";
 
 export type Failure = {readonly _tag: "Failure"; readonly reason: string};
 export type Ok<A> = {readonly _tag: "Ok"; readonly value: A};
@@ -15,6 +22,9 @@ export type Attempt<A> = Ok<A> | Failure;
 
 export const ok = <A>(value: A): Ok<A> => ({_tag: "Ok", value});
 export const fail = (reason: string): Failure => ({_tag: "Failure", reason});
+
+/** Anything in this module: it shells out, so the platform spawner is its one requirement. */
+export type Shell<A> = Effect.Effect<A, never, ChildProcessSpawner.ChildProcessSpawner>;
 
 /** A 40- or 64-hex object name. Validating the SHAPE is what stops a stray line reading as a SHA. */
 export const isObjectName = (s: string): boolean => /^[0-9a-f]{40}([0-9a-f]{24})?$/.test(s.trim());
@@ -29,13 +39,13 @@ export const isObjectName = (s: string): boolean => /^[0-9a-f]{40}([0-9a-f]{24})
  */
 export const splitRemoteRef = (
 	base: string,
-	remotes: ReadonlyArray<string>,
+	remoteNames: ReadonlyArray<string>,
 ): {readonly remote: string; readonly ref: string} | null => {
 	const slash = base.indexOf("/");
 	if (slash <= 0) return null;
 	const remote = base.slice(0, slash);
 	const ref = base.slice(slash + 1);
-	return remotes.includes(remote) && ref !== "" ? {remote, ref} : null;
+	return remoteNames.includes(remote) && ref !== "" ? {remote, ref} : null;
 };
 
 /** `owner/name` from a remote URL, in either the SSH or HTTPS spelling. */
@@ -45,25 +55,25 @@ export const parseOwnerRepo = (url: string): string | null => {
 };
 
 /** The configured remote names. */
-export const remotes = (exec: Exec): ReadonlyArray<string> => {
-	const r = exec("git", ["remote"]);
+export const remotes: Shell<ReadonlyArray<string>> = Effect.gen(function* () {
+	const r = yield* execCapture("git", ["remote"]);
 	return r.ok
 		? r.stdout
 				.split("\n")
 				.map((l) => l.trim())
 				.filter((l) => l !== "")
 		: [];
-};
+});
 
 /** The default `--repo`: `owner/name` off the `origin` remote's URL. */
-export const originRepo = (exec: Exec): Attempt<string> => {
-	const r = exec("git", ["remote", "get-url", "origin"]);
+export const originRepo: Shell<Attempt<string>> = Effect.gen(function* () {
+	const r = yield* execCapture("git", ["remote", "get-url", "origin"]);
 	if (!r.ok) return fail(r.reason);
 	const parsed = parseOwnerRepo(r.stdout);
 	return parsed === null
 		? fail(`cannot parse owner/name from origin URL "${r.stdout.trim()}"`)
 		: ok(parsed);
-};
+});
 
 /**
  * Fetch `base` and resolve it to a commit SHA.
@@ -72,20 +82,25 @@ export const originRepo = (exec: Exec): Attempt<string> => {
  * resolution that comes back in a shape that is not an object name is treated the same way — an
  * unreadable input resolves to a refusal, never to a permissive default.
  */
-export const fetchAndResolve = (exec: Exec, base: string): Attempt<string> => {
-	const split = splitRemoteRef(base, remotes(exec));
-	const fetched =
-		split === null
-			? exec("git", ["fetch", "--quiet"])
-			: exec("git", ["fetch", "--quiet", split.remote, split.ref]);
-	if (!fetched.ok) return fail(fetched.reason);
-	const resolved = exec("git", ["rev-parse", "--verify", "--quiet", `${base}^{commit}`]);
-	if (!resolved.ok) return fail(`cannot resolve ${base} to a commit after fetching`);
-	const sha = resolved.stdout.trim();
-	return isObjectName(sha)
-		? ok(sha)
-		: fail(`git resolved ${base} to "${sha}", which is not an object name`);
-};
+export const fetchAndResolve = (base: string): Shell<Attempt<string>> =>
+	Effect.gen(function* () {
+		const split = splitRemoteRef(base, yield* remotes);
+		const fetched = yield* split === null
+			? execCapture("git", ["fetch", "--quiet"])
+			: execCapture("git", ["fetch", "--quiet", split.remote, split.ref]);
+		if (!fetched.ok) return fail(fetched.reason);
+		const resolved = yield* execCapture("git", [
+			"rev-parse",
+			"--verify",
+			"--quiet",
+			`${base}^{commit}`,
+		]);
+		if (!resolved.ok) return fail(`cannot resolve ${base} to a commit after fetching`);
+		const sha = resolved.stdout.trim();
+		return isObjectName(sha)
+			? ok(sha)
+			: fail(`git resolved ${base} to "${sha}", which is not an object name`);
+	});
 
 /**
  * The base names of every file under `dir` at `sha` (one level; the record directory is flat).
@@ -93,19 +108,21 @@ export const fetchAndResolve = (exec: Exec, base: string): Attempt<string> => {
  * Newline-separated rather than `-z`: a record base name is `NNNN-slug.md` by construction, so
  * there is no name a newline could split, and a plain line grammar keeps the fixtures readable.
  */
-export const listDir = (exec: Exec, sha: string, dir: string): Attempt<ReadonlyArray<string>> => {
-	const r = exec("git", ["ls-tree", "--name-only", `${sha}:${dir}`]);
-	if (!r.ok) return fail(r.reason);
-	return ok(
-		r.stdout
-			.split("\n")
-			.map((n) => n.trim())
-			.filter((n) => n !== ""),
-	);
-};
+export const listDir = (sha: string, dir: string): Shell<Attempt<ReadonlyArray<string>>> =>
+	Effect.gen(function* () {
+		const r = yield* execCapture("git", ["ls-tree", "--name-only", `${sha}:${dir}`]);
+		if (!r.ok) return fail(r.reason);
+		return ok(
+			r.stdout
+				.split("\n")
+				.map((n) => n.trim())
+				.filter((n) => n !== ""),
+		);
+	});
 
 /** One file's contents at `sha`. */
-export const readFileAt = (exec: Exec, sha: string, path: string): Attempt<string> => {
-	const r = exec("git", ["show", `${sha}:${path}`]);
-	return r.ok ? ok(r.stdout) : fail(r.reason);
-};
+export const readFileAt = (sha: string, path: string): Shell<Attempt<string>> =>
+	Effect.gen(function* () {
+		const r = yield* execCapture("git", ["show", `${sha}:${path}`]);
+		return r.ok ? ok(r.stdout) : fail(r.reason);
+	});

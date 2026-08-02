@@ -50,23 +50,49 @@ describe("parseLinks", () => {
 });
 
 describe("diffBeyondStatusLine — the assertion the implementation owes", () => {
-	const before = ["---", "id: 0023", "status: accepted", "---", "", "body"];
+	const lines = ["---", "id: 0023", "status: accepted", "---", "", "body"];
+	const before = lines.join("\n");
+	const rewrite = (mutate: (l: string[]) => void, newline = "\n"): string => {
+		const l = [...lines];
+		l[2] = "status: superseded by [0240](0240-x.md)";
+		mutate(l);
+		return l.join(newline);
+	};
 
 	it("is null when only the status line moved", () => {
-		const after = [...before];
-		after[2] = "status: superseded by [0240](0240-x.md)";
-		expect(diffBeyondStatusLine(before, after, 2)).toBeNull();
+		expect(
+			diffBeyondStatusLine(
+				before,
+				rewrite(() => {}),
+				2,
+			),
+		).toBeNull();
 	});
 
 	it("counts a second edited line — this is what aborts the write with exit 6", () => {
-		const after = [...before];
-		after[2] = "status: superseded by [0240](0240-x.md)";
-		after[5] = "body, silently rewritten";
-		expect(diffBeyondStatusLine(before, after, 2)).toBe(1);
+		expect(
+			diffBeyondStatusLine(
+				before,
+				rewrite((l) => {
+					l[5] = "body, silently rewritten";
+				}),
+				2,
+			),
+		).toBe(1);
 	});
 
 	it("counts a dropped line, so a rewrite that loses text cannot pass", () => {
-		expect(diffBeyondStatusLine(before, before.slice(0, -1), 2)).toBe(1);
+		expect(diffBeyondStatusLine(before, lines.slice(0, -1).join("\n"), 2)).toBe(1);
+	});
+
+	it("counts a LINE-ENDING change — the blind spot a post-split array comparison cannot see", () => {
+		expect(
+			diffBeyondStatusLine(
+				before,
+				rewrite(() => {}, "\r\n"),
+				2,
+			),
+		).toBe(4);
 	});
 });
 

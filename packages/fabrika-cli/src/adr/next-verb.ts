@@ -7,8 +7,8 @@
  * and the skill's own re-check catches it for the caller's id before the pull request opens. A verb
  * that claimed to close it would be lying.
  */
-import type {Exec} from "../io/exec.ts";
-import {originRepo} from "../io/git.ts";
+import {Effect} from "effect";
+import {originRepo, type Shell} from "../io/git.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {loadInFlight, loadMerged} from "./base-ref.ts";
 import {allocate} from "./next.ts";
@@ -27,69 +27,70 @@ export interface NextOptions {
 	readonly json: boolean;
 }
 
-export const runNext = (exec: Exec, options: NextOptions): VerbOutcome => {
-	const {dir, base, json} = options;
+export const runNext = (options: NextOptions): Shell<VerbOutcome> =>
+	Effect.gen(function* () {
+		const {dir, base, json} = options;
 
-	let repo = options.repo;
-	if (repo === null) {
-		const resolved = originRepo(exec);
-		if (resolved._tag === "Failure") {
+		let repo = options.repo;
+		if (repo === null) {
+			const resolved = yield* originRepo;
+			if (resolved._tag === "Failure") {
+				return refuse(
+					FAILED,
+					`adr next: cannot resolve --repo from the origin remote: ${resolved.reason}`,
+				);
+			}
+			repo = resolved.value;
+		}
+
+		const merged = yield* loadMerged(base, dir);
+		if (merged._tag === "Err") {
+			const e = merged.error;
+			if (e._tag === "FetchFailed") {
+				return refuse(
+					BASE_UNFETCHABLE,
+					`adr next: cannot fetch ${base}: ${e.reason} — the merged set is UNKNOWN. Re-run; do not answer from the local tree.`,
+				);
+			}
+			if (e._tag === "DirUnreadable") {
+				return refuse(FAILED, `adr next: cannot read ${dir} at ${base}: ${e.reason}`);
+			}
+			if (e._tag === "UnparseableId") {
+				return refuse(FAILED, `adr next: ${dir} holds a record with an unparseable id: ${e.file}`);
+			}
 			return refuse(
-				FAILED,
-				`adr next: cannot resolve --repo from the origin remote: ${resolved.reason}`,
+				ZERO_SCOPE,
+				`adr next: scanned ${dir} at ${base}, 0 decision records — refusing to answer (ADR 0092).`,
 			);
 		}
-		repo = resolved.value;
-	}
 
-	const merged = loadMerged(exec, base, dir);
-	if (merged._tag === "Err") {
-		const e = merged.error;
-		if (e._tag === "FetchFailed") {
+		const inFlight = yield* loadInFlight(repo, dir);
+		if (inFlight._tag === "Err") {
+			const e = inFlight.error;
 			return refuse(
-				BASE_UNFETCHABLE,
-				`adr next: cannot fetch ${base}: ${e.reason} — the merged set is UNKNOWN. Re-run; do not answer from the local tree.`,
+				IN_FLIGHT_UNKNOWN,
+				e._tag === "PrListFailed"
+					? `adr next: cannot enumerate open pull requests in ${repo}: ${e.reason} — the in-flight set is UNKNOWN, never "nothing reserved". Re-run; do not fall back to the on-disk id.`
+					: `adr next: cannot read PR #${e.pr}'s file list: ${e.reason} — the in-flight set is INCOMPLETE, so it is UNKNOWN.`,
 			);
 		}
-		if (e._tag === "DirUnreadable") {
-			return refuse(FAILED, `adr next: cannot read ${dir} at ${base}: ${e.reason}`);
-		}
-		if (e._tag === "UnparseableId") {
-			return refuse(FAILED, `adr next: ${dir} holds a record with an unparseable id: ${e.file}`);
-		}
-		return refuse(
-			ZERO_SCOPE,
-			`adr next: scanned ${dir} at ${base}, 0 decision records — refusing to answer (ADR 0092).`,
+
+		const allocation = allocate(
+			merged.value.ids,
+			inFlight.value.map((r) => r.id),
 		);
-	}
+		const scope = `adr next: scanned ${dir} at ${merged.value.sha}, ${merged.value.files.length} decision records; ${allocation.inFlight.length} id(s) in flight across the open pull requests of ${repo}.`;
 
-	const inFlight = loadInFlight(exec, repo, dir);
-	if (inFlight._tag === "Err") {
-		const e = inFlight.error;
-		return refuse(
-			IN_FLIGHT_UNKNOWN,
-			e._tag === "PrListFailed"
-				? `adr next: cannot enumerate open pull requests in ${repo}: ${e.reason} — the in-flight set is UNKNOWN, never "nothing reserved". Re-run; do not fall back to the on-disk id.`
-				: `adr next: cannot read PR #${e.pr}'s file list: ${e.reason} — the in-flight set is INCOMPLETE, so it is UNKNOWN.`,
+		return answer(
+			json
+				? JSON.stringify({
+						id: allocation.id,
+						mergedMax: allocation.mergedMax,
+						inFlight: allocation.inFlight,
+						baseRef: base,
+						baseSha: merged.value.sha,
+					})
+				: allocation.id,
+			[scope],
 		);
-	}
-
-	const allocation = allocate(
-		merged.value.ids,
-		inFlight.value.map((r) => r.id),
-	);
-	const scope = `adr next: scanned ${dir} at ${merged.value.sha}, ${merged.value.files.length} decision records; ${allocation.inFlight.length} id(s) in flight across the open pull requests of ${repo}.`;
-
-	return answer(
-		json
-			? JSON.stringify({
-					id: allocation.id,
-					mergedMax: allocation.mergedMax,
-					inFlight: allocation.inFlight,
-					baseRef: base,
-					baseSha: merged.value.sha,
-				})
-			: allocation.id,
-		[scope],
-	);
-};
+	});

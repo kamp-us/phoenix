@@ -1,5 +1,6 @@
+import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {fakeFs, record} from "../fakes.test-support.ts";
+import {type FakeFs, fakeFs, record} from "../fakes.test-support.ts";
 import {CORPUS_UNREADABLE, NO_SUBJECT, runSweep, ZERO_SCOPE} from "./sweep-verb.ts";
 
 const dir = ".decisions";
@@ -23,16 +24,19 @@ const fsWith = (files: Record<string, string | null>) =>
 
 const options = {new: "0240", dir, limit: 8, json: false};
 
+const run = (fs: FakeFs, overrides: Partial<typeof options> = {}) =>
+	Effect.runPromise(Effect.provide(runSweep({...options, ...overrides}), fs.layer));
+
 describe("runSweep", () => {
-	it("exits 0 WITH a shortlist — the informative case is not a failure", () => {
-		const out = runSweep(fsWith(corpus()), options);
+	it("exits 0 WITH a shortlist — the informative case is not a failure", async () => {
+		const out = await run(fsWith(corpus()));
 		expect(out.code).toBe(0);
 		expect(out.stdout.split("\n")[0]).toBe("shortlist");
 		expect(out.stdout.split("\n").filter((l) => l !== "").length).toBeGreaterThan(1);
 	});
 
-	it("puts the --json payload on STDOUT, not stderr (#4723)", () => {
-		const out = runSweep(fsWith(corpus()), {...options, json: true});
+	it("puts the --json payload on STDOUT, not stderr (#4723)", async () => {
+		const out = await run(fsWith(corpus()), {json: true});
 		expect(out.code).toBe(0);
 		const payload = JSON.parse(out.stdout);
 		expect(payload.outcome).toBe("shortlist");
@@ -44,75 +48,75 @@ describe("runSweep", () => {
 		expect(out.stderr.join("")).not.toContain('"outcome"');
 	});
 
-	it("exits 0 on no-overlap, with the reason on stderr", () => {
+	it("exits 0 on no-overlap, with the reason on stderr", async () => {
 		const files = corpus();
 		files[`${dir}/0240-subject.md`] = record("0240", "proposed", "marzipan bicycle telemetry");
-		const out = runSweep(fsWith(files), options);
+		const out = await run(fsWith(files));
 		expect(out.code).toBe(0);
 		expect(out.stdout).toBe("no-overlap\n");
 		expect(out.stderr.join("\n")).toContain("not a clearance");
 	});
 
-	it("exits 0 on indeterminate below the rarity floor", () => {
+	it("exits 0 on indeterminate below the rarity floor", async () => {
 		const files = {
 			[`${dir}/0100-x.md`]: record("0100", "accepted", "anything"),
 			[`${dir}/0240-subject.md`]: record("0240", "proposed", "anything"),
 		};
-		const out = runSweep(fsWith(files), options);
+		const out = await run(fsWith(files));
 		expect(out.code).toBe(0);
 		expect(out.stdout).toBe("indeterminate\n");
 		expect(out.stderr.join("\n")).toContain("rarity floor");
 	});
 
-	it("states the corpus size and in-scope count on stderr, so indeterminate is readable", () => {
-		const out = runSweep(fsWith(corpus()), options);
+	it("states the corpus size and in-scope count on stderr, so indeterminate is readable", async () => {
+		const out = await run(fsWith(corpus()));
 		expect(out.stderr[0]).toContain("13 decision records");
 		expect(out.stderr[0]).toContain("in scope");
 	});
 
-	it("refuses an unreadable corpus — UNKNOWN, never no-overlap", () => {
-		const out = runSweep(fakeFs({dirs: {[dir]: null}}), options);
+	it("refuses an unreadable corpus — UNKNOWN, never no-overlap", async () => {
+		const out = await run(fakeFs({dirs: {[dir]: null}}));
 		expect(out.code).toBe(CORPUS_UNREADABLE);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toContain('never "no-overlap"');
 	});
 
-	it("refuses when ONE corpus member is unreadable rather than ranking against the rest", () => {
+	it("refuses when ONE corpus member is unreadable rather than ranking against the rest", async () => {
 		const files: Record<string, string | null> = corpus();
 		files[`${dir}/0105-x.md`] = null;
-		const out = runSweep(fsWith(files), options);
+		const out = await run(fsWith(files));
 		expect(out.code).toBe(CORPUS_UNREADABLE);
 		expect(out.stdout).toBe("");
 	});
 
-	it("refuses on zero scope", () => {
-		const out = runSweep(fakeFs({dirs: {[dir]: ["README.md"]}}), options);
+	it("refuses on zero scope", async () => {
+		const out = await run(fakeFs({dirs: {[dir]: ["README.md"]}}));
 		expect(out.code).toBe(ZERO_SCOPE);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toContain("ADR 0092");
 	});
 
-	it("refuses when --new names no readable ADR", () => {
-		const out = runSweep(fsWith(corpus()), {...options, new: "9999"});
+	it("refuses when --new names no readable ADR", async () => {
+		const out = await run(fsWith(corpus()), {new: "9999"});
 		expect(out.code).toBe(NO_SUBJECT);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toBe("adr sweep: no readable ADR for --new 9999.");
 	});
 
-	it("accepts --new as a path to a draft outside the corpus", () => {
+	it("accepts --new as a path to a draft outside the corpus", async () => {
 		const files: Record<string, string | null> = corpus();
 		files["/drafts/0300-draft.md"] = record("0300", "proposed", "reticulate the splines");
 		const io = fakeFs({
 			dirs: {[dir]: Object.keys(corpus()).map((p) => p.slice(dir.length + 1))},
 			files,
 		});
-		const out = runSweep(io, {...options, new: "/drafts/0300-draft.md"});
+		const out = await run(io, {new: "/drafts/0300-draft.md"});
 		expect(out.code).toBe(0);
 		expect(out.stdout.split("\n")[0]).toBe("shortlist");
 	});
 
-	it("honours --limit", () => {
-		const out = runSweep(fsWith(corpus()), {...options, limit: 1});
+	it("honours --limit", async () => {
+		const out = await run(fsWith(corpus()), {limit: 1});
 		expect(out.stdout.split("\n").filter((l) => l !== "")).toHaveLength(2);
 	});
 });

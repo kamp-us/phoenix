@@ -1,5 +1,6 @@
+import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeExec, okOut} from "../fakes.test-support.ts";
+import {errOut, type FakeShell, fakeShell, faultingShell, okOut} from "../fakes.test-support.ts";
 import {fetchAndResolve, isObjectName, parseOwnerRepo, splitRemoteRef} from "./git.ts";
 
 describe("isObjectName", () => {
@@ -30,49 +31,51 @@ describe("parseOwnerRepo", () => {
 });
 
 describe("fetchAndResolve — fetched before it is read", () => {
-	const script = (extra: ReadonlyArray<readonly [RegExp, ReturnType<typeof okOut>]> = []) =>
-		fakeExec([
+	const shell = (extra: ReadonlyArray<readonly [RegExp, ReturnType<typeof okOut>]> = []) =>
+		fakeShell([
 			...extra,
 			[/^git remote$/, okOut("origin\n")],
 			[/^git fetch/, okOut("")],
 			[/^git rev-parse/, okOut("49a22902d1e0c7b3f5a8e4126b9d0f3c7a1e5b82\n")],
 		]);
 
-	it("fetches, then resolves to a sha", () => {
-		expect(fetchAndResolve(script(), "origin/main")).toEqual({
+	const run = (s: FakeShell, base: string) =>
+		Effect.runPromise(Effect.provide(fetchAndResolve(base), s.layer));
+
+	it("fetches, then resolves to a sha", async () => {
+		await expect(run(shell(), "origin/main")).resolves.toEqual({
 			_tag: "Ok",
 			value: "49a22902d1e0c7b3f5a8e4126b9d0f3c7a1e5b82",
 		});
 	});
 
-	it("fetches BEFORE resolving — a stale local ref is never what gets read", () => {
-		const calls: string[] = [];
-		const exec = (file: string, args: ReadonlyArray<string>) => {
-			calls.push([file, ...args].join(" "));
-			if (args[0] === "remote") return okOut("origin\n");
-			if (args[0] === "fetch") return okOut("");
-			return okOut("49a22902d1e0c7b3f5a8e4126b9d0f3c7a1e5b82\n");
-		};
-		fetchAndResolve(exec, "origin/main");
-		const fetchAt = calls.findIndex((c) => c.includes(" fetch"));
-		const resolveAt = calls.findIndex((c) => c.includes("rev-parse"));
+	it("fetches BEFORE resolving — a stale local ref is never what gets read", async () => {
+		const s = shell();
+		await run(s, "origin/main");
+		const fetchAt = s.calls.findIndex((c) => c.includes(" fetch"));
+		const resolveAt = s.calls.findIndex((c) => c.includes("rev-parse"));
 		expect(fetchAt).toBeGreaterThanOrEqual(0);
 		expect(fetchAt).toBeLessThan(resolveAt);
 	});
 
-	it("refuses when the fetch fails", () => {
-		const result = fetchAndResolve(
-			script([[/^git fetch/, errOut("couldn't find remote ref")]]),
+	it("refuses when the fetch fails", async () => {
+		const result = await run(
+			shell([[/^git fetch/, errOut("couldn't find remote ref")]]),
 			"origin/nope",
 		);
 		expect(result).toEqual({_tag: "Failure", reason: "couldn't find remote ref"});
 	});
 
-	it("refuses when git answers with something that is not an object name", () => {
-		const result = fetchAndResolve(
-			script([[/^git rev-parse/, okOut("HEAD -> main\n")]]),
-			"origin/main",
+	it("refuses when git answers with something that is not an object name", async () => {
+		const result = await run(shell([[/^git rev-parse/, okOut("HEAD -> main\n")]]), "origin/main");
+		expect(result._tag).toBe("Failure");
+	});
+
+	it("refuses when the SPAWN faults — an absent `git` is never a resolved base", async () => {
+		const result = await Effect.runPromise(
+			Effect.provide(fetchAndResolve("origin/main"), faultingShell),
 		);
 		expect(result._tag).toBe("Failure");
+		expect(result._tag === "Failure" && result.reason).toContain("spawn git ENOENT");
 	});
 });

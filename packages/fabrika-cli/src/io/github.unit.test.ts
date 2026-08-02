@@ -1,5 +1,6 @@
+import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeExec, okOut} from "../fakes.test-support.ts";
+import {errOut, fakeShell, okOut} from "../fakes.test-support.ts";
 import {
 	claimedIdOf,
 	idsClaimedByPr,
@@ -56,52 +57,54 @@ describe("claimedIdOf", () => {
 });
 
 describe("openPullRequests", () => {
-	it("refuses when gh fails", () => {
-		const result = openPullRequests(
-			fakeExec([[/gh api/, errOut("HTTP 404")]]),
-			"kamp-us/nonexistent",
+	it("refuses when gh fails", async () => {
+		const result = await Effect.runPromise(
+			Effect.provide(
+				openPullRequests("kamp-us/nonexistent"),
+				fakeShell([[/gh api/, errOut("HTTP 404")]]).layer,
+			),
 		);
 		expect(result._tag).toBe("Failure");
 	});
 
-	it("refuses when gh exits 0 with output of the wrong shape", () => {
-		const result = openPullRequests(
-			fakeExec([[/gh api/, okOut("not-a-number\n")]]),
-			"kamp-us/phoenix",
+	it("refuses when gh exits 0 with output of the wrong shape", async () => {
+		const result = await Effect.runPromise(
+			Effect.provide(
+				openPullRequests("kamp-us/phoenix"),
+				fakeShell([[/gh api/, okOut("not-a-number\n")]]).layer,
+			),
 		);
 		expect(result._tag).toBe("Failure");
 	});
 
-	it("pages — the request asks for the full set, not the first page", () => {
-		let seen = "";
-		const exec = (file: string, args: ReadonlyArray<string>) => {
-			seen = [file, ...args].join(" ");
-			return okOut("1\n");
-		};
-		openPullRequests(exec, "kamp-us/phoenix");
-		expect(seen).toContain("--paginate");
-		expect(seen).toContain("per_page=100");
+	it("pages — the request asks for the full set, not the first page", async () => {
+		const shell = fakeShell([[/gh api/, okOut("1\n")]]);
+		await Effect.runPromise(Effect.provide(openPullRequests("kamp-us/phoenix"), shell.layer));
+		expect(shell.calls[0]).toContain("--paginate");
+		expect(shell.calls[0]).toContain("per_page=100");
 	});
 });
 
 describe("idsClaimedByPr", () => {
-	it("counts only ADDED record files", () => {
-		const exec = fakeExec([
+	it("counts only ADDED record files", async () => {
+		const shell = fakeShell([
 			[
 				/files/,
 				okOut("added\t.decisions/0239-x.md\nmodified\t.decisions/0126-y.md\nadded\tREADME.md\n"),
 			],
 		]);
-		const result = idsClaimedByPr(exec, "kamp-us/phoenix", 4711, ".decisions");
+		const result = await Effect.runPromise(
+			Effect.provide(idsClaimedByPr("kamp-us/phoenix", 4711, ".decisions"), shell.layer),
+		);
 		expect(result).toEqual({_tag: "Ok", value: [{id: "0239", file: "0239-x.md", pr: 4711}]});
 	});
 
-	it("refuses rather than returning a short list when the read fails", () => {
-		const result = idsClaimedByPr(
-			fakeExec([[/files/, errOut("HTTP 502")]]),
-			"kamp-us/phoenix",
-			1,
-			".decisions",
+	it("refuses rather than returning a short list when the read fails", async () => {
+		const result = await Effect.runPromise(
+			Effect.provide(
+				idsClaimedByPr("kamp-us/phoenix", 1, ".decisions"),
+				fakeShell([[/files/, errOut("HTTP 502")]]).layer,
+			),
 		);
 		expect(result._tag).toBe("Failure");
 	});

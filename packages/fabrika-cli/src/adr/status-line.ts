@@ -59,19 +59,46 @@ export const nextStatusValue = (
 };
 
 /**
+ * Split a text into its lines **with their terminators attached**.
+ *
+ * Retaining the terminator is what makes {@link diffBeyondStatusLine} able to see a line-ending
+ * change; a plain `split(/\r?\n/)` discards exactly the byte that changed. The element count matches
+ * `split(/\r?\n/)`'s (separators + 1, trailing remainder included), so a status-line index computed
+ * on one indexes the other.
+ */
+const linesWithEndings = (text: string): ReadonlyArray<string> => {
+	const out: string[] = [];
+	const separator = /\r\n|\n/g;
+	let start = 0;
+	let m = separator.exec(text);
+	while (m !== null) {
+		const end = m.index + m[0].length;
+		out.push(text.slice(start, end));
+		start = end;
+		m = separator.exec(text);
+	}
+	out.push(text.slice(start));
+	return out;
+};
+
+/**
  * How many lines the rewrite changed **beyond** the status line, or `null` when the answer is
  * "none" — the assertion the contract names as the deterministic test this implementation owes.
  *
- * It compares the text as read against the text as rewritten, line for line, including the line
- * count. A rewrite that dropped a line, duplicated one, or edited a second one is caught here and
- * the caller aborts before writing; an accepted ADR's decision text is immutable, and this is that
- * rule made mechanical instead of remembered.
+ * It takes the two **texts**, not the split array the rewrite worked on, and compares them line for
+ * line **including each line's terminator**. That is what makes it a real check rather than a
+ * restatement of the edit: `rewriteStatus` splits on `/\r?\n/` and re-joins with one newline it
+ * chose, so on a mixed-ending file every line's terminator is rewritten — invisible to a comparison
+ * of post-split arrays, visible here, and aborted with `MultiLineDiff` before anything is written.
+ * A dropped, duplicated or second-edited line is caught the same way.
  */
 export const diffBeyondStatusLine = (
-	before: ReadonlyArray<string>,
-	after: ReadonlyArray<string>,
+	beforeText: string,
+	afterText: string,
 	statusIndex: number,
 ): number | null => {
+	const before = linesWithEndings(beforeText);
+	const after = linesWithEndings(afterText);
 	if (before.length !== after.length) return Math.abs(before.length - after.length);
 	let changed = 0;
 	for (const [i, line] of before.entries()) {
@@ -108,10 +135,11 @@ const statusLineIndex = (lines: ReadonlyArray<string>): number | null => {
  * Rewrite the record's status line, asserting before returning that the result differs from the
  * original on that line alone.
  *
- * The assertion compares operands from two independent origins — the original text as read, and
- * the text as re-joined after the edit — so it can genuinely fail: a rewrite that dropped a line,
- * normalised a line ending, or lost the trailing newline shows up as a diff count other than 1 and
- * aborts with `MultiLineDiff` rather than writing.
+ * The assertion runs on the **original text as read** against the **re-joined result**, so it can
+ * genuinely fail rather than restate the edit. The reachable case is a mixed-ending file: the split
+ * below drops every terminator and the join picks one, so a `\r\n` file with a stray `\n` line (or
+ * the reverse) has lines rewritten that this verb has no licence to touch — `MultiLineDiff`, nothing
+ * written. A dropped or duplicated line would land the same way.
  */
 export const rewriteStatus = (
 	relationship: Relationship,
@@ -127,7 +155,8 @@ export const rewriteStatus = (
 	const statusAfter = nextStatusValue(relationship, currentStatus, added);
 	const rewritten = [...lines];
 	rewritten[index] = `status: ${statusAfter}`;
-	const diff = diffBeyondStatusLine(lines, rewritten, index);
+	const rewrittenText = rewritten.join(newline);
+	const diff = diffBeyondStatusLine(text, rewrittenText, index);
 	if (diff !== null) return {_tag: "MultiLineDiff", changed: diff};
-	return {_tag: "Rewritten", text: rewritten.join(newline), statusAfter};
+	return {_tag: "Rewritten", text: rewrittenText, statusAfter};
 };

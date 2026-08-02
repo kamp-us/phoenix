@@ -8,8 +8,6 @@
  */
 import {Effect, Option} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
-import {execCapture} from "../io/exec.ts";
-import {nodeFileSystem} from "../io/fs.ts";
 import type {VerbOutcome} from "../verb.ts";
 import {runNew} from "./new-verb.ts";
 import {runNext} from "./next-verb.ts";
@@ -63,7 +61,7 @@ const next = Command.make(
 	"next",
 	{dir: dirFlag, base: baseFlag, repo: repoFlag, json: jsonFlag},
 	Effect.fn(function* ({dir, base, repo, json}) {
-		yield* emit(runNext(execCapture, {dir, base, repo: Option.getOrNull(repo), json}));
+		yield* emit(yield* runNext({dir, base, repo: Option.getOrNull(repo), json}));
 	}),
 ).pipe(
 	Command.withDescription(
@@ -107,7 +105,7 @@ const newCmd = Command.make(
 	},
 	Effect.fn(function* ({id, slug, dir, status, date, title, tags, json}) {
 		yield* emit(
-			runNew(nodeFileSystem, {
+			yield* runNew({
 				id,
 				slug,
 				dir,
@@ -135,7 +133,7 @@ const resolve = Command.make(
 		json: jsonFlag,
 	},
 	Effect.fn(function* ({ids, dir, base, repo, json}) {
-		yield* emit(runResolve(execCapture, {ids, dir, base, repo: Option.getOrNull(repo), json}));
+		yield* emit(yield* runResolve({ids, dir, base, repo: Option.getOrNull(repo), json}));
 	}),
 ).pipe(
 	Command.withDescription(
@@ -151,7 +149,7 @@ const supersede = Command.make(
 	"supersede",
 	{id: idArg, by: byFlag, dir: dirFlag, json: jsonFlag},
 	Effect.fn(function* ({id, by, dir, json}) {
-		yield* emit(runRelate(nodeFileSystem, {relationship: "supersede", id, by, dir, json}));
+		yield* emit(yield* runRelate({relationship: "supersede", id, by, dir, json}));
 	}),
 ).pipe(
 	Command.withDescription(
@@ -163,7 +161,7 @@ const amendInPart = Command.make(
 	"amend-in-part",
 	{id: idArg, by: byFlag, dir: dirFlag, json: jsonFlag},
 	Effect.fn(function* ({id, by, dir, json}) {
-		yield* emit(runRelate(nodeFileSystem, {relationship: "amend-in-part", id, by, dir, json}));
+		yield* emit(yield* runRelate({relationship: "amend-in-part", id, by, dir, json}));
 	}),
 ).pipe(
 	Command.withDescription(
@@ -187,7 +185,7 @@ const sweepCmd = Command.make(
 		json: jsonFlag,
 	},
 	Effect.fn(function* ({new: subject, dir, limit, json}) {
-		yield* emit(runSweep(nodeFileSystem, {new: subject, dir, limit, json}));
+		yield* emit(yield* runSweep({new: subject, dir, limit, json}));
 	}),
 ).pipe(
 	Command.withDescription(

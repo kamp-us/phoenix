@@ -5,7 +5,8 @@
  * shortlist as a failed run, which is precisely the mistake v1's `adr-sweep` makes by exiting 1 on
  * the one case it was asked to produce; and `--json` goes to **stdout**, not stderr (#4723).
  */
-import type {FileSystemLike} from "../io/fs.ts";
+import {Effect, type FileSystem, Result} from "effect";
+import {readDir, readFile} from "../io/fs.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {idFromFile, isFourDigitId, partitionRecordNames} from "./records.ts";
 import {renderEntry, type SweepCandidate, sweep} from "./sweep.ts";
@@ -25,65 +26,72 @@ export interface SweepOptions {
 	readonly json: boolean;
 }
 
-export const runSweep = (fs: FileSystemLike, options: SweepOptions): VerbOutcome => {
-	const {dir, limit, json} = options;
-	const root = dir.replace(/\/+$/, "");
+export const runSweep = (
+	options: SweepOptions,
+): Effect.Effect<VerbOutcome, never, FileSystem.FileSystem> =>
+	Effect.gen(function* () {
+		const {dir, limit, json} = options;
+		const root = dir.replace(/\/+$/, "");
 
-	const names = fs.readDir(root);
-	if (names === null) {
-		return refuse(
-			CORPUS_UNREADABLE,
-			`adr sweep: cannot read ${root}: the directory could not be listed — the outcome is UNKNOWN, never "no-overlap".`,
-		);
-	}
-	const {records} = partitionRecordNames(names);
-	if (records.length === 0) {
-		return refuse(
-			ZERO_SCOPE,
-			`adr sweep: scanned ${root}, 0 decision records — refusing to answer (ADR 0092).`,
-		);
-	}
-
-	const corpus: SweepCandidate[] = [];
-	for (const file of records) {
-		const text = fs.readFile(`${root}/${file}`);
-		// One unreadable member makes the corpus INCOMPLETE, and an incomplete corpus is UNKNOWN —
-		// silently ranking against the rest would answer from a corpus nobody scanned.
-		if (text === null) {
+		const listing = yield* Effect.result(readDir(root));
+		if (Result.isFailure(listing)) {
 			return refuse(
 				CORPUS_UNREADABLE,
-				`adr sweep: cannot read ${root}: ${file} could not be read — the outcome is UNKNOWN, never "no-overlap".`,
+				`adr sweep: cannot read ${root}: the directory could not be listed — the outcome is UNKNOWN, never "no-overlap".`,
 			);
 		}
-		corpus.push({id: idFromFile(file) ?? file, file, text});
-	}
+		const {records} = partitionRecordNames(listing.success);
+		if (records.length === 0) {
+			return refuse(
+				ZERO_SCOPE,
+				`adr sweep: scanned ${root}, 0 decision records — refusing to answer (ADR 0092).`,
+			);
+		}
 
-	const wanted = options.new;
-	const byId = isFourDigitId(wanted) ? corpus.find((c) => c.id === wanted) : undefined;
-	const subjectText = byId?.text ?? fs.readFile(wanted);
-	if (subjectText === null || subjectText === undefined) {
-		return refuse(NO_SUBJECT, `adr sweep: no readable ADR for --new ${wanted}.`);
-	}
-	const subjectId = byId?.id ?? idFromFile(wanted.split("/").pop() ?? "");
+		const corpus: SweepCandidate[] = [];
+		for (const file of records) {
+			const text = yield* Effect.result(readFile(`${root}/${file}`));
+			// One unreadable member makes the corpus INCOMPLETE, and an incomplete corpus is UNKNOWN —
+			// silently ranking against the rest would answer from a corpus nobody scanned.
+			if (Result.isFailure(text)) {
+				return refuse(
+					CORPUS_UNREADABLE,
+					`adr sweep: cannot read ${root}: ${file} could not be read — the outcome is UNKNOWN, never "no-overlap".`,
+				);
+			}
+			corpus.push({id: idFromFile(file) ?? file, file, text: text.success});
+		}
 
-	if (limit < 0) return refuse(FAILED, `adr sweep: --limit ${limit} is negative.`);
+		const wanted = options.new;
+		const byId = isFourDigitId(wanted) ? corpus.find((c) => c.id === wanted) : undefined;
+		let subjectText = byId?.text;
+		if (subjectText === undefined) {
+			const draft = yield* Effect.result(readFile(wanted));
+			if (Result.isFailure(draft)) {
+				return refuse(NO_SUBJECT, `adr sweep: no readable ADR for --new ${wanted}.`);
+			}
+			subjectText = draft.success;
+		}
+		const subjectId = byId?.id ?? idFromFile(wanted.split("/").pop() ?? "");
 
-	const result = sweep({id: subjectId, text: subjectText}, corpus, limit);
-	const scope = `adr sweep: scanned ${root}, ${result.scanned} decision records; ${result.inScope} uncited live-accepted record(s) in scope (${result.cited} already cited).`;
-	const diagnostics = result.reason === null ? [scope] : [scope, `adr sweep: ${result.reason}.`];
+		if (limit < 0) return refuse(FAILED, `adr sweep: --limit ${limit} is negative.`);
 
-	if (json) {
-		return answer(
-			JSON.stringify({
-				outcome: result.outcome,
-				entries: result.entries,
-				reason: result.reason,
-				scanned: result.scanned,
-				inScope: result.inScope,
-				cited: result.cited,
-			}),
-			diagnostics,
-		);
-	}
-	return answer([result.outcome, ...result.entries.map(renderEntry)].join("\n"), diagnostics);
-};
+		const result = sweep({id: subjectId, text: subjectText}, corpus, limit);
+		const scope = `adr sweep: scanned ${root}, ${result.scanned} decision records; ${result.inScope} uncited live-accepted record(s) in scope (${result.cited} already cited).`;
+		const diagnostics = result.reason === null ? [scope] : [scope, `adr sweep: ${result.reason}.`];
+
+		if (json) {
+			return answer(
+				JSON.stringify({
+					outcome: result.outcome,
+					entries: result.entries,
+					reason: result.reason,
+					scanned: result.scanned,
+					inScope: result.inScope,
+					cited: result.cited,
+				}),
+				diagnostics,
+			);
+		}
+		return answer([result.outcome, ...result.entries.map(renderEntry)].join("\n"), diagnostics);
+	});

@@ -98,3 +98,13 @@ layer in [`src/adr/command.ts`](./src/adr/command.ts) does both. That split is w
 each refusal as deterministically testable as each answer, which is why the tests can drive
 an unreadable directory, a `gh` that exits 0 with the wrong bytes, and a base ref that
 cannot be fetched — inputs a real tree cannot be asked to produce on demand.
+
+Those dependencies are the **Effect platform services**, never a raw `node:*` import: the
+filesystem is `FileSystem` / `Path` from `effect`
+([.patterns/effect-platform-access.md](../../.patterns/effect-platform-access.md)) and the
+subprocess is `ChildProcess` / `ChildProcessSpawner` from `effect/unstable/process`
+([.patterns/effect-process-cli-shell.md](../../.patterns/effect-process-cli-shell.md)), both
+satisfied by the one `NodeServices.layer` [`src/run.ts`](./src/run.ts) provides. A test
+substitutes those same services rather than a hand-rolled double, so the seam under test is
+the seam production uses. A read that could not be performed fails on the `E` channel — it
+never resolves to an empty value a caller could forget to distinguish from a real one.

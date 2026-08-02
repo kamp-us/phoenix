@@ -13,8 +13,9 @@
  * remove.
  */
 
-import type {Exec} from "./exec.ts";
-import {type Attempt, fail, ok} from "./git.ts";
+import {Effect} from "effect";
+import {execCapture} from "./exec.ts";
+import {type Attempt, fail, ok, type Shell} from "./git.ts";
 
 /** A `.decisions/NNNN[a]-slug.md` path an open pull request adds. */
 export interface ClaimedId {
@@ -73,43 +74,44 @@ export const claimedIdOf = (path: string, dir: string): {id: string; file: strin
 };
 
 /** Every open pull request number in `repo`, paged. */
-export const openPullRequests = (exec: Exec, repo: string): Attempt<ReadonlyArray<number>> => {
-	const r = exec("gh", [
-		"api",
-		"--paginate",
-		`repos/${repo}/pulls?state=open&per_page=100`,
-		"--jq",
-		".[].number",
-	]);
-	if (!r.ok) return fail(r.reason);
-	const numbers = parsePrNumbers(r.stdout);
-	return numbers === null
-		? fail("`gh api` exited 0 but its output is not a list of pull request numbers")
-		: ok(numbers);
-};
+export const openPullRequests = (repo: string): Shell<Attempt<ReadonlyArray<number>>> =>
+	Effect.gen(function* () {
+		const r = yield* execCapture("gh", [
+			"api",
+			"--paginate",
+			`repos/${repo}/pulls?state=open&per_page=100`,
+			"--jq",
+			".[].number",
+		]);
+		if (!r.ok) return fail(r.reason);
+		const numbers = parsePrNumbers(r.stdout);
+		return numbers === null
+			? fail("`gh api` exited 0 but its output is not a list of pull request numbers")
+			: ok(numbers);
+	});
 
 /** The `.decisions/` ids one open pull request ADDS, paged over its file list. */
 export const idsClaimedByPr = (
-	exec: Exec,
 	repo: string,
 	pr: number,
 	dir: string,
-): Attempt<ReadonlyArray<ClaimedId>> => {
-	const r = exec("gh", [
-		"api",
-		"--paginate",
-		`repos/${repo}/pulls/${pr}/files?per_page=100`,
-		"--jq",
-		'.[] | "\\(.status)\t\\(.filename)"',
-	]);
-	if (!r.ok) return fail(r.reason);
-	const rows = parseFileRows(r.stdout);
-	if (rows === null) return fail("`gh api` exited 0 but its output is not a list of file rows");
-	const claimed: ClaimedId[] = [];
-	for (const row of rows) {
-		if (row.status !== "added") continue;
-		const hit = claimedIdOf(row.filename, dir);
-		if (hit !== null) claimed.push({id: hit.id, file: hit.file, pr});
-	}
-	return ok(claimed);
-};
+): Shell<Attempt<ReadonlyArray<ClaimedId>>> =>
+	Effect.gen(function* () {
+		const r = yield* execCapture("gh", [
+			"api",
+			"--paginate",
+			`repos/${repo}/pulls/${pr}/files?per_page=100`,
+			"--jq",
+			'.[] | "\\(.status)\t\\(.filename)"',
+		]);
+		if (!r.ok) return fail(r.reason);
+		const rows = parseFileRows(r.stdout);
+		if (rows === null) return fail("`gh api` exited 0 but its output is not a list of file rows");
+		const claimed: ClaimedId[] = [];
+		for (const row of rows) {
+			if (row.status !== "added") continue;
+			const hit = claimedIdOf(row.filename, dir);
+			if (hit !== null) claimed.push({id: hit.id, file: hit.file, pr});
+		}
+		return ok(claimed);
+	});

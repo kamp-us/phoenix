@@ -1,8 +1,9 @@
+import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {fakeFs} from "../fakes.test-support.ts";
-import {ALREADY_EXISTS, BAD_ARGUMENT, runNew} from "./new-verb.ts";
+import {type FakeFs, fakeFs} from "../fakes.test-support.ts";
+import {ALREADY_EXISTS, BAD_ARGUMENT, type NewOptions, runNew} from "./new-verb.ts";
 
-const options = {
+const options: NewOptions = {
 	id: "0240",
 	slug: "only-landed-adrs-may-be-cited",
 	dir: ".decisions",
@@ -13,10 +14,13 @@ const options = {
 	json: false,
 };
 
+const run = (fs: FakeFs, overrides: Partial<typeof options> = {}) =>
+	Effect.runPromise(Effect.provide(runNew({...options, ...overrides}), fs.layer));
+
 describe("runNew", () => {
-	it("writes the record and prints its path", () => {
+	it("writes the record and prints its path", async () => {
 		const fs = fakeFs({});
-		const out = runNew(fs, options);
+		const out = await run(fs);
 		expect(out.code).toBe(0);
 		expect(out.stdout).toBe(".decisions/0240-only-landed-adrs-may-be-cited.md\n");
 		expect(fs.written.get(".decisions/0240-only-landed-adrs-may-be-cited.md")).toContain(
@@ -24,8 +28,8 @@ describe("runNew", () => {
 		);
 	});
 
-	it("--json carries path, id and slug", () => {
-		const out = runNew(fakeFs({}), {...options, json: true});
+	it("--json carries path, id and slug", async () => {
+		const out = await run(fakeFs({}), {json: true});
 		expect(JSON.parse(out.stdout)).toEqual({
 			path: ".decisions/0240-only-landed-adrs-may-be-cited.md",
 			id: "0240",
@@ -33,9 +37,9 @@ describe("runNew", () => {
 		});
 	});
 
-	it("refuses to overwrite an existing record and writes nothing", () => {
+	it("refuses to overwrite an existing record and writes nothing", async () => {
 		const fs = fakeFs({files: {".decisions/0126-ambient-adr-discovery.md": "existing"}});
-		const out = runNew(fs, {...options, id: "0126", slug: "ambient-adr-discovery"});
+		const out = await run(fs, {id: "0126", slug: "ambient-adr-discovery"});
 		expect(out.code).toBe(ALREADY_EXISTS);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toBe(
@@ -44,28 +48,37 @@ describe("runNew", () => {
 		expect(fs.written.size).toBe(0);
 	});
 
-	it("refuses an id that is not four zero-padded digits", () => {
-		const out = runNew(fakeFs({}), {...options, id: "240"});
+	it("refuses an id that is not four zero-padded digits", async () => {
+		const out = await run(fakeFs({}), {id: "240"});
 		expect(out.code).toBe(BAD_ARGUMENT);
 		expect(out.stderr.at(-1)).toBe('adr new: id "240" is not four zero-padded digits.');
 	});
 
-	it("refuses a slug that is not kebab-case", () => {
-		const out = runNew(fakeFs({}), {...options, slug: "Not Kebab"});
+	it("refuses a slug that is not kebab-case", async () => {
+		const out = await run(fakeFs({}), {slug: "Not Kebab"});
 		expect(out.code).toBe(BAD_ARGUMENT);
 		expect(out.stderr.at(-1)).toContain("is not kebab-case");
 	});
 
-	it("refuses — rather than reporting success — when the write itself fails", () => {
+	it("refuses — rather than reporting success — when the write itself fails", async () => {
 		const fs = fakeFs({unwritable: [".decisions/0240-only-landed-adrs-may-be-cited.md"]});
-		const out = runNew(fs, options);
+		const out = await run(fs);
 		expect(out.code).toBe(1);
 		expect(out.stdout).toBe("");
+		expect(fs.written.size).toBe(0);
 	});
 
-	it("uses --title and --tags when given", () => {
+	it("refuses an existence probe that FAILED, rather than reading it as 'absent' and writing", async () => {
+		const fs = fakeFs({unprobeable: [".decisions/0240-only-landed-adrs-may-be-cited.md"]});
+		const out = await run(fs);
+		expect(out.code).toBe(1);
+		expect(out.stdout).toBe("");
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("uses --title and --tags when given", async () => {
 		const fs = fakeFs({});
-		runNew(fs, {...options, title: "A real title", tags: "decisions,gates"});
+		await run(fs, {title: "A real title", tags: "decisions,gates"});
 		const written = fs.written.get(".decisions/0240-only-landed-adrs-may-be-cited.md") ?? "";
 		expect(written).toContain("title: A real title");
 		expect(written).toContain("tags: [decisions, gates]");

@@ -1,11 +1,13 @@
+import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {fakeFs} from "../fakes.test-support.ts";
+import {type FakeFs, fakeFs} from "../fakes.test-support.ts";
 import {
 	ALREADY_SUPERSEDED,
 	MULTI_LINE_DIFF,
 	NO_BY,
 	NO_STATUS_LINE,
 	NO_SUBJECT,
+	type RelateOptions,
 	runRelate,
 } from "./relate-verb.ts";
 
@@ -28,10 +30,13 @@ const fs = () => fakeFs({dirs, files});
 const supersede = {relationship: "supersede", dir, json: false} as const;
 const amend = {relationship: "amend-in-part", dir, json: false} as const;
 
+const run = (io: FakeFs, options: RelateOptions) =>
+	Effect.runPromise(Effect.provide(runRelate(options), io.layer));
+
 describe("runRelate — supersede", () => {
-	it("rewrites the status line and prints path + new status", () => {
+	it("rewrites the status line and prints path + new status", async () => {
 		const io = fs();
-		const out = runRelate(io, {...supersede, id: "0126", by: "0240"});
+		const out = await run(io, {...supersede, id: "0126", by: "0240"});
 		expect(out.code).toBe(0);
 		expect(out.stdout).toBe(
 			".decisions/0126-ambient-adr-discovery.md\tsuperseded by [0240](0240-only-landed-adrs-may-be-cited.md)\n",
@@ -41,20 +46,20 @@ describe("runRelate — supersede", () => {
 		);
 	});
 
-	it("resolves --by's slug off disk, never from a guessed title", () => {
-		const out = runRelate(fs(), {...supersede, id: "0126", by: "0240"});
+	it("resolves --by's slug off disk, never from a guessed title", async () => {
+		const out = await run(fs(), {...supersede, id: "0126", by: "0240"});
 		expect(out.stdout).toContain("(0240-only-landed-adrs-may-be-cited.md)");
 	});
 
-	it("refuses when <id> has no record", () => {
-		const out = runRelate(fs(), {...supersede, id: "9998", by: "0240"});
+	it("refuses when <id> has no record", async () => {
+		const out = await run(fs(), {...supersede, id: "9998", by: "0240"});
 		expect(out.code).toBe(NO_SUBJECT);
 		expect(out.stderr.at(-1)).toBe("adr supersede: no record for id 9998 under .decisions.");
 	});
 
-	it("refuses a dead --by link and writes nothing", () => {
+	it("refuses a dead --by link and writes nothing", async () => {
 		const io = fs();
-		const out = runRelate(io, {...supersede, id: "0126", by: "9999"});
+		const out = await run(io, {...supersede, id: "0126", by: "9999"});
 		expect(out.code).toBe(NO_BY);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toBe(
@@ -63,7 +68,7 @@ describe("runRelate — supersede", () => {
 		expect(io.written.size).toBe(0);
 	});
 
-	it("refuses a record with no single frontmatter status line", () => {
+	it("refuses a record with no single frontmatter status line", async () => {
 		const io = fakeFs({
 			dirs: {[dir]: ["0126-a.md", "0240-b.md"]},
 			files: {
@@ -71,30 +76,30 @@ describe("runRelate — supersede", () => {
 				[`${dir}/0240-b.md`]: rec("0240", "accepted"),
 			},
 		});
-		const out = runRelate(io, {...supersede, id: "0126", by: "0240"});
+		const out = await run(io, {...supersede, id: "0126", by: "0240"});
 		expect(out.code).toBe(NO_STATUS_LINE);
 		expect(io.written.size).toBe(0);
 	});
 
-	it("refuses an unreadable subject rather than treating it as empty", () => {
+	it("refuses an unreadable subject rather than treating it as empty", async () => {
 		const io = fakeFs({
 			dirs: {[dir]: ["0126-a.md", "0240-b.md"]},
 			files: {[`${dir}/0126-a.md`]: null, [`${dir}/0240-b.md`]: rec("0240", "accepted")},
 		});
-		const out = runRelate(io, {...supersede, id: "0126", by: "0240"});
+		const out = await run(io, {...supersede, id: "0126", by: "0240"});
 		expect(out.code).not.toBe(0);
 		expect(out.stdout).toBe("");
 		expect(io.written.size).toBe(0);
 	});
 
-	it("refuses an unreadable directory rather than reporting 'no record'... with a write", () => {
+	it("refuses an unreadable directory rather than reporting 'no record'... with a write", async () => {
 		const io = fakeFs({dirs: {[dir]: null}});
-		const out = runRelate(io, {...supersede, id: "0126", by: "0240"});
+		const out = await run(io, {...supersede, id: "0126", by: "0240"});
 		expect(out.code).toBe(NO_SUBJECT);
 		expect(io.written.size).toBe(0);
 	});
 
-	it("refuses to re-supersede an already-superseded record", () => {
+	it("refuses to re-supersede an already-superseded record", async () => {
 		const io = fakeFs({
 			dirs,
 			files: {
@@ -102,16 +107,16 @@ describe("runRelate — supersede", () => {
 				[`${dir}/0126-ambient-adr-discovery.md`]: rec("0126", "superseded by [0100](0100-x.md)"),
 			},
 		});
-		const out = runRelate(io, {...supersede, id: "0126", by: "0240"});
+		const out = await run(io, {...supersede, id: "0126", by: "0240"});
 		expect(out.code).toBe(ALREADY_SUPERSEDED);
 		expect(out.stderr.at(-1)).toContain("not re-supersedable");
 	});
 });
 
 describe("runRelate — amend-in-part", () => {
-	it("APPENDS to an existing multi-link list, preserving every link already there", () => {
+	it("APPENDS to an existing multi-link list, preserving every link already there", async () => {
 		const io = fs();
-		const out = runRelate(io, {...amend, id: "0023", by: "0240"});
+		const out = await run(io, {...amend, id: "0023", by: "0240"});
 		expect(out.code).toBe(0);
 		expect(out.stdout).toBe(
 			`.decisions/0023-live-views-sse-livedo.md\t${THREE_LINKS}, [0240](0240-only-landed-adrs-may-be-cited.md)\n`,
@@ -120,25 +125,25 @@ describe("runRelate — amend-in-part", () => {
 		for (const id of ["0025", "0028", "0037", "0240"]) expect(written).toContain(`[${id}]`);
 	});
 
-	it("changes exactly one line of the file", () => {
+	it("changes exactly one line of the file", async () => {
 		const io = fs();
-		runRelate(io, {...amend, id: "0023", by: "0240"});
+		await run(io, {...amend, id: "0023", by: "0240"});
 		const before = (files[`${dir}/0023-live-views-sse-livedo.md`] ?? "").split("\n");
 		const after = (io.written.get(`${dir}/0023-live-views-sse-livedo.md`) ?? "").split("\n");
 		expect(after).toHaveLength(before.length);
 		expect(before.filter((line, i) => line !== after[i])).toHaveLength(1);
 	});
 
-	it("re-adding the same link is a no-op that still exits 0", () => {
+	it("re-adding the same link is a no-op that still exits 0", async () => {
 		const io = fs();
-		runRelate(io, {...amend, id: "0023", by: "0240"});
+		await run(io, {...amend, id: "0023", by: "0240"});
 		const first = io.written.get(`${dir}/0023-live-views-sse-livedo.md`);
-		const out = runRelate(io, {...amend, id: "0023", by: "0240"});
+		const out = await run(io, {...amend, id: "0023", by: "0240"});
 		expect(out.code).toBe(0);
 		expect(io.written.get(`${dir}/0023-live-views-sse-livedo.md`)).toBe(first);
 	});
 
-	it("refuses to amend a superseded record", () => {
+	it("refuses to amend a superseded record", async () => {
 		const io = fakeFs({
 			dirs,
 			files: {
@@ -146,19 +151,19 @@ describe("runRelate — amend-in-part", () => {
 				[`${dir}/0023-live-views-sse-livedo.md`]: rec("0023", "superseded by [0100](0100-x.md)"),
 			},
 		});
-		const out = runRelate(io, {...amend, id: "0023", by: "0240"});
+		const out = await run(io, {...amend, id: "0023", by: "0240"});
 		expect(out.code).toBe(ALREADY_SUPERSEDED);
 		expect(out.stderr.at(-1)).toContain("not amendable");
 		expect(io.written.size).toBe(0);
 	});
 
-	it("prefixes every message with the invoked verb name", () => {
-		const out = runRelate(fs(), {...amend, id: "9998", by: "0240"});
+	it("prefixes every message with the invoked verb name", async () => {
+		const out = await run(fs(), {...amend, id: "9998", by: "0240"});
 		expect(out.stderr.at(-1)?.startsWith("adr amend-in-part:")).toBe(true);
 	});
 
-	it("--json carries the before and after status", () => {
-		const out = runRelate(fs(), {...amend, id: "0126", by: "0240", json: true});
+	it("--json carries the before and after status", async () => {
+		const out = await run(fs(), {...amend, id: "0126", by: "0240", json: true});
 		expect(JSON.parse(out.stdout)).toEqual({
 			path: ".decisions/0126-ambient-adr-discovery.md",
 			id: "0126",
@@ -166,6 +171,27 @@ describe("runRelate — amend-in-part", () => {
 			statusBefore: "accepted",
 			statusAfter: "amended-in-part by [0240](0240-only-landed-adrs-may-be-cited.md)",
 		});
+	});
+});
+
+describe("exit 6 — the one-line-diff assertion, driven through the verb", () => {
+	/**
+	 * A record whose frontmatter is `\n`-terminated while its body is `\r\n`-terminated. The rewrite
+	 * splits on `/\r?\n/` and re-joins with the one ending `\r\n` it sees in the text, so every
+	 * frontmatter line's terminator would change — lines this verb has no licence to touch.
+	 */
+	const mixed = "---\nid: 0126\ntitle: T\nstatus: accepted\n---\n\r\n# 0126 — T\r\n";
+
+	it("refuses a rewrite that would normalise other lines' endings, and writes NOTHING", async () => {
+		const io = fakeFs({
+			dirs: {[dir]: ["0126-a.md", "0240-b.md"]},
+			files: {[`${dir}/0126-a.md`]: mixed, [`${dir}/0240-b.md`]: rec("0240", "accepted")},
+		});
+		const out = await run(io, {...supersede, id: "0126", by: "0240"});
+		expect(out.code).toBe(MULTI_LINE_DIFF);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toContain("line(s) beyond status:");
+		expect(io.written.size).toBe(0);
 	});
 });
 
