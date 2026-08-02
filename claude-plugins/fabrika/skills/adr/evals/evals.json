@@ -42,7 +42,7 @@
 				"Enumerates what the draft ADR decides as explicit questions, not as a summary",
 				"Runs the contradiction sweep against the draft",
 				"Explicitly states that a 'no-overlap' result does not establish that there is no contradiction",
-				"Does not treat the sweep's non-zero exit status as a failed run",
+				"Treats a shortlist as the sweep working, not as a failed run",
 				"Opens or reads the shortlisted ADRs rather than reporting only their scores",
 				"States that clearing the shortlist would not prove absence of contradiction"
 			]

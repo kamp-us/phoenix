@@ -30,9 +30,8 @@ not hand-dropped into `skills/`, not ported from v1, not copied from a sibling p
 fabrika skill is authored through `/skill-creator`, against the [fabrika skill
 conventions](docs/skill-conventions.md), and enters as that session's output.
 
-This posture is the whole reason `skills/` is empty right now. An empty directory is the correct
-state until the first authoring session lands its skill through the door; a skill that appears
-here by any other route is a defect, not a shortcut.
+This posture is why `skills/` fills one authoring session at a time rather than by porting. A skill
+that appears here by any other route is a defect, not a shortcut — the door is the only door.
 
 ## Layout
 
@@ -41,12 +40,12 @@ claude-plugins/fabrika/
 ├── .claude-plugin/plugin.json   the plugin manifest (no version — ADR 0110, continuous ship)
 ├── README.md                    this file: the mission, the only-door posture, the layout
 ├── docs/                        the canonical convention + contract docs (see docs/README.md)
-└── skills/                      one dir per skill, each authored by /skill-creator — empty today
+└── skills/                      one dir per skill, each authored by /skill-creator
 ```
 
-`skills/` holds a `.gitkeep` so the directory survives a clone while it is empty. It carries no
-`README` and no loose files: the fabrika layout law is `SKILL.md` under a per-skill directory and
-nothing else at the `skills/` root.
+`skills/` carries no `README` and no loose files: the fabrika layout law is `SKILL.md` under a
+per-skill directory and nothing else at the `skills/` root. A `.gitkeep` remains from when the
+directory was empty; it is harmless and can go with any later change.
 
 ## What is deliberately absent
 

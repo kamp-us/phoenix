@@ -172,7 +172,7 @@ $ echo $?
 **Invocation**
 
 ```
-fabrika-cli adr new 0240 only-landed-adrs-may-be-cited [--dir <path>] [--status <text>] [--date <YYYY-MM-DD>] [--title <text>] [--tags <a,b>]
+fabrika-cli adr new 0240 only-landed-adrs-may-be-cited [--dir <path>] [--status <text>] [--date <YYYY-MM-DD>] [--title <text>] [--tags <a,b>] [--json]
 ```
 
 **Inputs**
@@ -309,7 +309,9 @@ fabrika owns this predicate; it does not import one. The semantics: `accepted` i
 `superseded` is no longer. v1's `isLiveAccepted` is a **reference for what the words mean**, never a
 dependency — read it to check the semantics agree, then implement fabrika's own.
 
-With `--json`, one object per id with keys `id`, `state`, `file`, `detail`, `baseRef`, `baseSha`.
+With `--json`, a **JSON array** — one object per id, in argument order, with keys `id`, `state`,
+`file`, `detail`, `baseRef`, `baseSha`. An array rather than JSON-lines, so a single id and many ids
+parse identically and a caller never has to branch on the count.
 
 **All four states are answers, and each is a positive token.** `absent` on exit 0 means *proven
 absent against a current tree*: the fetch succeeded, the records were read, the open pull requests
