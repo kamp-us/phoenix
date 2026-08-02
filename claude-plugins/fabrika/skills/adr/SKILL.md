@@ -1,0 +1,119 @@
+---
+name: adr
+description: Record one architecture decision as a `.decisions/NNNN-slug.md` file. Trigger on "/adr", "save this as an ADR", "record this decision", "ADR for X" — and reach for it too whenever a technical preference, convention, or invariant gets settled in conversation that future agents must respect, even when nobody asks for an ADR, because an unrecorded ruling is one the next session re-decides differently. Done when the file exists, the sweep landed on hits-resolved or read-by-hand, every ADR reference in it resolves as live, and the vocabulary impact is a named term or an explicit none.
+---
+
+# adr
+
+One decision per file; the pull request adds nothing but that file plus the status-line edits it
+implies, because discovery is the CLAUDE.md contract and there is no index. Examples run id `0240`.
+
+## 1 — Claim the number
+
+```bash
+fabrika-cli adr next
+```
+
+Unions the freshly fetched merged set with the ids open ADR PRs already claim, so a checkout sitting
+at `0150` while origin is at `0151` cannot mint a duplicate.
+
+**A non-zero exit is UNKNOWN, never "nothing reserved."** Re-run it. Falling back to the highest id
+on disk is what minted ADR 0198 from two lanes at once, and 0114 and 0123 before it (#3779).
+
+## 2 — Write the decision
+
+```bash
+fabrika-cli adr new 0240 only-landed-adrs-may-be-cited
+```
+
+Scaffolds the frontmatter and section skeleton; the slug is kebab-case, at most 5 words.
+
+**The `title` carries the decision, not the topic** — `Every gate fails closed on zero scope`, never
+`Gate scope handling`. One clause, long enough to carry the discriminating half when the ruling has
+one (`X, never Y`); the corpus median is 14 words, a shape rather than a cap. It renders verbatim as
+this ADR's compact-map row, and the `# NNNN — <Title>` H1 repeats it character for character. The
+`**What this decides:**` line beneath is the plain-language gloss a non-author reads.
+
+`## Decision` opens with one bolded declarative sentence, ahead of any mechanics. Where this ADR
+constrains future work, close it with an austere `**Binding constraints.**` or `**Banned.**` list.
+
+## 3 — Sweep the live ADRs this one might contradict
+
+Two live `accepted` ADRs deciding opposite things on one question are worse than an open question:
+each reads as authoritative, neither hints the other exists. Write down what this ADR settles **as
+questions** — *"may an open issue exist without a milestone?"* — not as a summary; you cannot sweep
+for a question you cannot phrase. Then rank the uncited live-accepted ADRs your domain touches:
+
+```bash
+fabrika-cli adr sweep --new 0240
+```
+
+None of its three outcomes is a clearance:
+
+- **`shortlist`** — open the entries and judge each once. It ranks lexical adjacency, caps at 8, and
+  **re-ranks as you add citations**, so the tail refills and chasing a clean result is the trap.
+- **`no-overlap`** — nothing mechanically adjacent was left to open, **never** that there is no
+  contradiction: an ADR disagreeing with yours about what a label *means*, sharing no distinctive
+  vocabulary, never appears at all. Read the domain by hand.
+- **`indeterminate`** — the run carries no information: your draft yielded no distinctive terms, or
+  the corpus is too small to rank rarity against. Say which, and read by hand regardless.
+
+Resolve each real hit in step 4 — supersede where this ADR replaces it outright, amend-in-part where
+the rest still stands. Where you only refine your own earlier ADR's mechanics and its ruling holds,
+append a dated `- **#NNNN — <what changed> (YYYY-MM-DD).**` line under its `## Amendments` instead.
+
+## 4 — Resolve every reference, then edit the status lines
+
+```bash
+fabrika-cli adr resolve 0164 0023 0126
+```
+
+Answers against a freshly fetched base ref, printing `live`, `landed`, `in-flight` or `absent` with
+the real filename. Pass every citation, supersede link and amend target in one call.
+
+**Cite only `live`.** `landed` means present but `proposed`, `superseded` or `retired` — 36 of the
+234 ADRs on `main` — and citing one as settled law is how a withdrawn ADR gets applied 86 minutes
+after its withdrawal (#4338). `in-flight` may never merge: that is how PR #4293 cited ADR 0219 and
+every gate passed on a dead citation (#4296). **A non-zero exit is UNKNOWN, never `absent`** (#4163).
+**Use the filename it prints** — 0048 is `ship-it-merge-actor`, not `single-merge-authority`.
+
+```bash
+fabrika-cli adr supersede 0126 --by 0240
+```
+
+Where the rest of that ADR still stands, `fabrika-cli adr amend-in-part 0023 --by 0240` instead.
+Either verb touches the `status:` line and nothing else — an accepted ADR's decision text is
+immutable, so name the relationship in your own `## Context` rather than editing theirs.
+
+## 5 — Record the vocabulary impact
+
+An ADR is a primary coining site — 0126's "ambient discovery" was coined here and drifted silently.
+Land on **exactly one** outcome; the explicit "none" separates *considered it* from *forgot to*:
+
+- **A term is coined or redefined** → name it and route it to `.glossary/TERMS.md`: the row in this
+  PR when the definition is short and unambiguous, otherwise `/glossary`.
+- **Nothing is coined** → add a terminal `## Records` section and write `no vocabulary impact`.
+
+## 6 — Check, classify, report
+
+```bash
+fabrika-cli adr resolve 0240
+```
+
+Your own id, one last time: `absent` means nobody claimed it while you wrote; `in-flight` means
+another lane opened its PR first, so renumber now.
+
+```bash
+fabrika-cli adr classify 0240
+```
+
+Prints `guard-touching` or `not-guard-touching`. No `.decisions/**` path matches the control-plane
+pattern, so a guard-governing ADR is §CP by content alone (ADR 0164), and one routed as ordinary
+reaches `main` with zero approvals (#4386, #3416). Anything but `not-guard-touching` — a verb that
+never ran included — needs a control-plane approval at head.
+
+**Never reword to change that verdict.** The probe fires on words — `gate`, `guard`, `control-plane`
+— so 84% of the corpus classifies §CP; a false §CP costs one approval, a false ordinary is #4386.
+Say it misfired on the PR (#2617).
+
+Report the path, the verdict and the vocabulary outcome; do not summarize the body.
