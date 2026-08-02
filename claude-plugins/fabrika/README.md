@@ -39,9 +39,16 @@ that appears here by any other route is a defect, not a shortcut — the door is
 claude-plugins/fabrika/
 ├── .claude-plugin/plugin.json   the plugin manifest (no version — ADR 0110, continuous ship)
 ├── README.md                    this file: the mission, the only-door posture, the layout
+├── bin/fabrika-cli              what the bare `fabrika-cli` in every skill resolves to (#4784)
 ├── docs/                        the canonical convention + contract docs (see docs/README.md)
 └── skills/                      one dir per skill, each authored by /skill-creator
 ```
+
+`bin/` is on `PATH` for an enabled plugin, which is what makes the bare literal invocation the
+[CLI interface convention](docs/cli-interface-convention.md) mandates resolve. The shim finds
+`packages/fabrika-cli/src/bin.ts` from its own path and runs it under `node` — no build step, and no
+cwd dependence, since an agent's working directory resets between calls. Outside a phoenix checkout
+it resolves nothing and says so on stderr with exit `2`; #4775 owns that consumer-side install path.
 
 `skills/` carries no `README` and no loose files: the fabrika layout law is `SKILL.md` under a
 per-skill directory and nothing else at the `skills/` root. A `.gitkeep` remains from when the

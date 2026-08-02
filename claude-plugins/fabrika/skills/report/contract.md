@@ -14,17 +14,14 @@ below is implemented from scratch here. v1's tools were read for their semantics
 each Grounding section names what the corresponding v1 tool gets wrong and what this spec does
 instead — but no clause defers to one, and none is invoked.
 
-**How the bare binary name resolves is an open blocker, not an assumption this spec makes.** The
-skill's fences invoke `fabrika-cli` as a plain literal name, which is what the harness's isolation
-verifier requires — that check is *syntactic*, on the command string. Whether the name then
-**resolves** is a separate question this spec does not answer, and the repo's own evidence says the
-analogous v1 shape does not: `packages/pipeline-cli/src/tools/cli-invocation-guard/cli-invocation-guard.ts`
-records that a bare `pipeline-cli <verb>` "is not on PATH where pipeline agents spawn and never will
-be (ADR 0207 retired PATH-shadowing), so it dies `command not found`." Until
-[#4650](https://github.com/kamp-us/phoenix/issues/4650) lands a resolution mechanism, **every fence
-in this skill exits 127**, and 127 means the verb never ran — never a verdict. Stated here so it is
-a tracked blocker rather than a surprise, and so an eval run cannot quietly grade "the verb is not
-available yet" as though it were the skill's own behaviour.
+**The bare binary name resolves; this was a tracked blocker and is now closed.** The skill's fences
+invoke `fabrika-cli` as a plain literal name, which is what the harness's isolation verifier
+requires — that check is *syntactic*, on the command string. Whether the name then **resolved** was
+an open question this spec deliberately refused to assume, and the answer was no: every fence exited
+`127`. [#4784](https://github.com/kamp-us/phoenix/issues/4784) plants the executable at
+`claude-plugins/fabrika/bin/fabrika-cli`, the directory an enabled plugin contributes to `PATH`, so
+the fences below now run. A resolution failure there prints what it looked for and exits `2`, never
+`127` — so an eval run can still tell "the verb is not available" from the skill's own behaviour.
 
 **One skill named `report` already exists** at `claude-plugins/kampus-pipeline/skills/report/`, and
 it is model-invoked with an overlapping trigger list. The collision is dormant only by
@@ -81,7 +78,8 @@ Every verb below obeys these; they are stated once rather than repeated per bloc
   resolvable the verb exits 1 rather than guessing. `--json` swaps the line grammar for one JSON
   object with the named keys given per verb.
 - **Reserved exit codes.** `0` = the answer is on stdout. `1` = usage error, or the verb failed to
-  run. `127` = the verb never ran. `3` and up are each verb's own proven outcomes.
+  run. `2` = the `fabrika-cli` shim resolved no implementation, so no verb may return it. `127` =
+  the verb never ran. `3` and up are each verb's own proven outcomes.
 - **A non-zero exit is UNKNOWN.** No verb prints a partial or permissive answer on a non-zero exit;
   a caller reads the status before the bytes.
 - **GitHub reads and writes go through `gh api` REST, never GraphQL** — the org's Projects-classic

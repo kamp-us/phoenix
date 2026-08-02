@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+# `fabrika-cli` — the executable the bare name in every fabrika skill resolves to (#4784).
+#
+# An enabled plugin's `<plugin-root>/bin` is appended to PATH, so planting this file is what makes
+# the bare literal invocation rule 5 of ../docs/cli-interface-convention.md mandates actually run.
+# The bare form is the whole point and is not negotiable: the harness's isolation verifier is a
+# syntactic check on the command string, so a variable-rooted `"$SOMETHING"/fabrika-cli` is
+# unusable by construction (#4641, ADR 0232).
+#
+# Resolution — one tier, then a loud refusal:
+#   1. the in-repo TypeScript entry point, located from THIS FILE's own path
+#      (bin -> fabrika -> claude-plugins -> repo root). Self-path resolution is load-bearing: an
+#      agent's working directory resets between Bash calls, so anything keyed on the caller's cwd
+#      is broken by construction. Node runs the `.ts` directly, so a fresh checkout works with no
+#      build step and an absent `dist/` can never resurface as a resolution failure.
+#   2. there is no second tier. `@kampus/fabrika-cli` is unpublished (verified 404 against the live
+#      registry), so a registry fallback would resolve to nothing while looking like a safety net.
+#      A failure to resolve prints what was looked for and where, and exits 2.
+#
+# Exit 2 is reserved for "the shim ran but could not resolve the implementation" — deliberately
+# neither 127 (which is what an unresolved binary produces, silently, and is the state this file
+# exists to make impossible to reach) nor 1 (a verb's own usage error), so "never ran" and "ran and
+# said no" stay distinguishable (#4666). The reserved-code table lives in
+# ../docs/cli-interface-convention.md rule 3.
+#
+# fabrika calls nothing under claude-plugins/kampus-pipeline/ (ADR 0238, rule 6). v1's
+# `pipeline-cli` shim was read for its shape and its scars; it is never invoked.
+set -uo pipefail
+
+SHIM_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+if [ -z "${SHIM_DIR:-}" ] || [ ! -d "$SHIM_DIR" ]; then
+	echo "fabrika-cli: could not resolve this shim's own directory — refusing to run." >&2
+	exit 2
+fi
+
+REPO_SRC="$SHIM_DIR/../../../packages/fabrika-cli/src/bin.ts"
+
+if [ -f "$REPO_SRC" ]; then
+	if ! command -v node >/dev/null 2>&1; then
+		{
+			echo "fabrika-cli: found the verb package at"
+			echo "    $REPO_SRC"
+			echo "  but no \`node\` is on PATH to run it — refusing to run."
+			echo "  Install Node (the package pins 26.2.0 via volta) and re-run."
+		} >&2
+		exit 2
+	fi
+	# bash 3.2 aborts on "$@" under `set -u` when there are no positional parameters, so the
+	# no-argument case gets its own expansion-free exec.
+	if [ "$#" -gt 0 ]; then
+		exec node "$REPO_SRC" "$@"
+	fi
+	exec node "$REPO_SRC"
+fi
+
+{
+	echo "fabrika-cli: cannot resolve the fabrika verb package — refusing to run."
+	echo "  looked for the in-repo TypeScript entry point at:"
+	echo "    $REPO_SRC"
+	echo "  resolved from this shim at:"
+	echo "    $SHIM_DIR"
+	echo "  (resolution is keyed on the shim's own path, never on the caller's working directory)"
+	echo
+	echo "  This is what a fabrika plugin installed OUTSIDE a phoenix checkout looks like: the"
+	echo "  plugin ships the skills and this shim, but not packages/fabrika-cli. #4775 owns that"
+	echo "  consumer-side install path; nothing here silently falls back to a registry, because"
+	echo "  @kampus/fabrika-cli is unpublished."
+	echo
+	echo "  Exit 2 means the verb never ran. It is NOT a verdict, and it is NOT 127."
+} >&2
+exit 2

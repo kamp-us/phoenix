@@ -76,8 +76,14 @@ exit taxonomy, and the verdict-vs-invocation rule proven in v1 at
   |---|---|
   | `0` | the answer was produced on stdout |
   | `1` | usage error, or the verb failed to run |
+  | `2` | the `fabrika-cli` shim ran but resolved no implementation to hand the verb to (rule 5) |
   | `127` | the verb never ran at all (unresolved binary) |
   | `3`+ | the verb's own proven outcomes, each enumerated in `--help` |
+
+  `2` is reserved for the shim, so **no verb may return it**. It exists because `127` and empty
+  output are what an unresolvable binary produces on its own — the one failure that is
+  byte-identical to a verb that ran and refused. The shim never lets a caller land there silently:
+  it prints what it looked for and where, and exits `2`.
 
 - A verb whose result crosses a pipe keeps its exit code binary (`0` / non-zero) and puts the
   discriminator in a stdout state word: a meaningful code does not survive `xargs`.
@@ -109,12 +115,19 @@ usable at an agent's top-level command.
 
 - A fabrika verb is invoked as a plain literal command string — written `fabrika-cli <verb> …`
   throughout this doc. No `$VAR`, no `${VAR:-default}`, no command substitution, no `source`.
-  **The binary name is illustrative and not fixed here.** Where fabrika's verbs live — and so what
-  they are invoked as — is deferred to [#4650](https://github.com/kamp-us/phoenix/issues/4650) (epic
-  [#4648](https://github.com/kamp-us/phoenix/issues/4648), Resolved question 2: the seed package
-  rides with the first derived contract, because minting one earlier would invert
-  contract-before-implementation). This rule constrains the **form** of an invocation, never its
-  name; substitute whatever name #4650 lands.
+- **The literal is `fabrika-cli`.** The name was deferred to
+  [#4650](https://github.com/kamp-us/phoenix/issues/4650) while the seed package was still being
+  derived; [#4784](https://github.com/kamp-us/phoenix/issues/4784) closes that deferral by planting
+  the executable, so the name is now fixed rather than illustrative. Every skill, every `--help`
+  example and every contract spec writes exactly `fabrika-cli`.
+
+  What the name resolves to is [`../bin/fabrika-cli`](../bin/fabrika-cli), a committed shim in the
+  plugin's own `bin/` — the directory an enabled plugin contributes to `PATH`. The shim locates the
+  verb package from **its own path**, never from the caller's working directory, because an agent's
+  working directory resets between Bash calls. It runs the TypeScript source directly, so a fresh
+  checkout needs no build step and a missing build artifact cannot resurface as an unresolved
+  binary. When it resolves nothing it says what it looked for and where, and exits `2` (rule 3) —
+  never `127`, never silence.
 - **Examples in `--help` and in a contract spec are held to the same rule.** An example an agent
   cannot paste verbatim is not an example.
 - A verb never requires an env var to *locate* itself. Configuration may still arrive by env
@@ -215,9 +228,8 @@ point: an implementer can tell an unfinished spec from a finished one before sta
 
 Illustration only. It is not a commissioned verb, and it does not pre-commit the `/adr` contract —
 that one is derived by its own authoring session as the wave-0 pilot in
-[#4650](https://github.com/kamp-us/phoenix/issues/4650). The `fabrika-cli` binary name it invokes is
-illustrative on the same terms (rule 5): an example needs a name to be readable, and #4650 owns the
-real one. It is here to show a complete block at the level of detail the completeness test demands.
+[#4650](https://github.com/kamp-us/phoenix/issues/4650). It is here to show a complete block at the
+level of detail the completeness test demands.
 
 ---
 

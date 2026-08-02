@@ -53,7 +53,8 @@ Every verb below obeys these; they are stated once rather than repeated per bloc
   from the `origin` remote) is the repository whose open pull requests form the in-flight set.
   `--json` swaps the line grammar for one JSON object with the named keys given per verb.
 - **Reserved exit codes.** `0` = the answer is on stdout. `1` = usage error, or the verb failed to
-  run. `127` = the verb never ran. `3` and up are each verb's own proven outcomes.
+  run. `2` = the `fabrika-cli` shim resolved no implementation, so no verb may return it. `127` =
+  the verb never ran. `3` and up are each verb's own proven outcomes.
 - **A non-zero exit is UNKNOWN.** No verb prints a partial or permissive answer on a non-zero exit;
   a caller reads the status before the bytes.
 - **GitHub reads go through `gh api` REST, never GraphQL** — the org's Projects-classic integration
