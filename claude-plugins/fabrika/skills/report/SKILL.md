@@ -15,9 +15,9 @@ that dies.
 
 ## 1 — Write the observation
 
-The title first — short (aim under ~70 characters), specific, type-neutral. *"Retry helper in the
-http worker swallows the abort reason"* names what you saw; *"Bug in worker"* names nothing, and
-*"BUG: fix retry"* types and prescribes in four words.
+The title first — short (aim under ~70 characters), specific, type-neutral. *"Aborted requests in
+the http worker surface as plain timeouts"* names what you saw; *"Bug in worker"* names nothing,
+and *"BUG: fix aborts"* types and prescribes in three words.
 
 Then six sections. They are the same six whether you found a crash, a smell, or a question — that
 sameness is what lets you file without classifying first:
@@ -48,7 +48,7 @@ Report runs go concurrently, so what you just saw may have reached the board min
 creating stays small:
 
 ```bash
-fabrika-cli report dedup --query "retry helper http worker abort reason swallowed cause"
+fabrika-cli report dedup --query "http worker aborted request downstream plain timeout reason"
 ```
 
 Three outcomes, and only one of them is about your observation:
@@ -62,10 +62,20 @@ Three outcomes, and only one of them is about your observation:
 A non-zero exit is UNKNOWN, never `none`. **When it is genuinely ambiguous, file it** — triage
 closes a duplicate in seconds, and a lost observation is gone.
 
-## 3 — File it
+You are done here when the outcome has told you which of the next two steps you are taking, and
+they are branches of one decision rather than two things to do in order:
+
+- **`none`, an `indeterminate` you re-queried and cleared, or candidates none of which is your
+  observation** → step 3, file it.
+- **A candidate you have judged to be the same observation** → step 4, add what it lacks.
+- **A non-zero exit, or an `indeterminate` a re-query did not clear** → step 3, file it. The check
+  answered nothing, so it cannot be the thing that stops you; say in the filing that the duplicate
+  check did not run, and let triage close a twin in seconds.
+
+## 3 — File it — the branch where nothing already covers it
 
 ```bash
-fabrika-cli report file --title "Retry helper in the http worker swallows the abort reason" <<'EOF'
+fabrika-cli report file --title "Aborted requests in the http worker surface as plain timeouts" <<'EOF'
 ## Summary
 …
 EOF
@@ -84,7 +94,7 @@ silently rewrites what you wrote.
 
 You are done here when the verb exits 0 and prints the number and URL.
 
-## 4 — Or add what the existing issue lacks
+## 4 — Add what the existing issue lacks — the branch where step 2 found it
 
 When step 2 found your observation already filed, do not file a twin. Add only what that issue does
 not already carry, over the same guarded path:
