@@ -31,7 +31,7 @@ if [ -z "$ROOT" ]; then
 fi
 PCLI="$ROOT/claude-plugins/kampus-pipeline/bin/pipeline-cli"
 if [ ! -x "$PCLI" ]; then
-	echo "FAIL: pipeline-cli shim not executable at claude-plugins/kampus-pipeline/bin/pipeline-cli — the parity compare has no reference answer"
+	echo "FAIL: the CLI shim is missing or not executable at claude-plugins/kampus-pipeline/bin/pipeline-cli — restore it (chmod +x); without it the parity compare has no reference answer"
 	exit 1
 fi
 
