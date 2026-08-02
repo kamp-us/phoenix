@@ -121,6 +121,35 @@ usable at an agent's top-level command.
   (a session id, a target repo), and each such variable is named in `--help` with its default and
   what happens when it is unset.
 
+### 6. fabrika calls nothing outside fabrika
+
+Source: founder ruling, in-session 2026-08-01, on the wave-0 pilot's derived contract
+([#4704](https://github.com/kamp-us/phoenix/issues/4704) / [#4724](https://github.com/kamp-us/phoenix/pull/4724)).
+
+**No fabrika skill and no fabrika verb invokes `pipeline-cli`, or anything else under
+`claude-plugins/kampus-pipeline/`.** Every deterministic step a skill needs is implemented in
+fabrika's own verb package. Where v1 already solves the same problem, read its source to learn the
+semantics and the scars, then implement fabrika's own — duplication is the accepted cost.
+
+The reason is the **deletion test**: a fabrika that calls v1 can never be the thing that replaces it,
+because every call is a tether keeping the old tree alive. Duplication costs a second implementation
+during the transition. A tether costs the ability to ever delete anything.
+
+Two consequences worth stating, because both were live questions on the pilot:
+
+- **This supersedes "fabrika may call `pipeline-cli` but never grows into it."** That earlier posture
+  produced wrapper verbs whose only job was relaying an upstream answer — seven verbs for one skill,
+  two of them pure pass-throughs. Extrapolated across the skill corpus it rebuilds `pipeline-cli` by
+  accretion, which is the outcome the posture existed to prevent.
+- **Not every v1 call becomes a fabrika verb; some become nothing.** Where the thing being computed
+  is already *enforced* elsewhere — a CI gate, a merge check — fabrika does not compute a second
+  answer to it. The pilot's `adr classify` was dropped for exactly this: `cp-classify` decides
+  control-plane membership at the merge gate, and a fabrika copy could contradict the gate on a
+  merge-gating question. Ask whether the skill needs the answer, or only needs to expect it.
+
+An authoring brief's "assumable verbs" field is therefore a list of **prior art to read**, not a list
+of things to call.
+
 ### Enforcement
 
 There is no mechanical conformance guard yet, and that absence is deliberate: with zero fabrika verbs

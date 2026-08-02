@@ -71,17 +71,25 @@ Two rules keep the field honest:
 - **A skill with no corpus rows says so explicitly.** An empty list and an unwritten list read the
   same on the page and mean opposite things.
 
-### 4. Assumable verbs — the deterministic layer that already exists
+### 4. Prior art — the deterministic layer that already exists, to read and not to call
 
-The existing verbs this skill may call, named. The inventory is the
+The existing v1 verbs that already solve some part of this skill's problem, named — as **prior art
+to read, never as a runtime to call**. fabrika calls `pipeline-cli` nowhere (CLI interface
+convention, rule 6): where v1 already does the work, the session reads its source for the semantics
+and the scars it carries, then specifies fabrika's own. The inventory is the
 [#4635](https://github.com/kamp-us/phoenix/issues/4635) gap analysis of `packages/pipeline-cli`
-(76 tools, verified 2026-08-01); `pipeline-cli commands compact` renders the live one-line-per-tool
-map on demand, so a brief's list is checkable rather than remembered.
+(76 tools, verified 2026-08-01).
 
-`pipeline-cli` is the v1-era substrate **fabrika may call but never grows into** (the
-[README](../README.md)'s own line). Naming what already exists is what stops a session from
-deriving a contract for work that is already deterministic and already tested — the derived contract
-is for what is *missing*, per the CLI interface convention's Part 2.
+Naming it is still what stops a session from re-deriving a solved problem from zero — it just changes
+what the session does with the answer. Two things a brief should say per entry: what v1's verb
+computes, and what it gets *wrong*, because a scar recorded in the old implementation is the cheapest
+thing a rebuild can inherit. The pilot found two worth carrying: `adr-sweep` exits non-zero on its
+own informative case, and its `--json` payload goes to stderr (#4723). Both were designed out rather
+than reproduced.
+
+**Not every entry becomes a verb.** Where the thing is already *enforced* elsewhere — a CI gate, a
+merge check — fabrika does not compute a second answer to it. Ask whether the skill needs the answer
+or only needs to expect it.
 
 ### 5. Conventions — the two pointers, not their content
 
@@ -180,7 +188,7 @@ point: a session can tell an unbootable brief from a bootable one before it star
 1. The skill name and its destination directory are both stated.
 2. The v1 baseline is a real repo-relative path, or an explicit **none**.
 3. Every incident is a number **and** a one-line behavior; an empty list is written as empty.
-4. Every assumable verb is named as a literal command string.
+4. Every prior-art verb is named, with what it computes and — where known — what it gets wrong.
 5. Both convention docs are linked, and neither is summarised.
 6. The output contract is stated in the brief, not assumed.
 
@@ -228,7 +236,8 @@ The last three are one class read from three angles: **ADR state was resolved ag
 was not current**, and the wrong answer was indistinguishable from a right one. #3779 is the
 allocation race the v1 skill's reservation lock narrows but does not close.
 
-**Assumable verbs** (#4635 inventory — `pipeline-cli commands compact` renders the live map):
+**Prior art to read, not to call** (#4635 inventory; fabrika calls `pipeline-cli` nowhere — CLI
+interface convention rule 6):
 
 - `pipeline-cli decisions-index next` — the next id, `max(id) + 1` zero-padded, parsed from
   `.decisions/` frontmatter.
@@ -236,7 +245,8 @@ allocation race the v1 skill's reservation lock narrows but does not close.
 - `pipeline-cli decisions-index validate` — reds on a duplicate id or a filename/frontmatter
   mismatch; this is the CI backstop the number lock relies on.
 
-Assume these; derive a contract only for deterministic work they do not already cover.
+Read these for semantics and scars; specify fabrika's own. Derive nothing for work that is already
+*enforced* somewhere else — a second answer to a gated question is worse than no answer.
 
 **Conventions:** `claude-plugins/fabrika/docs/skill-conventions.md` ·
 `claude-plugins/fabrika/docs/cli-interface-convention.md`

@@ -30,9 +30,8 @@ not hand-dropped into `skills/`, not ported from v1, not copied from a sibling p
 fabrika skill is authored through `/skill-creator`, against the [fabrika skill
 conventions](docs/skill-conventions.md), and enters as that session's output.
 
-This posture is the whole reason `skills/` is empty right now. An empty directory is the correct
-state until the first authoring session lands its skill through the door; a skill that appears
-here by any other route is a defect, not a shortcut.
+This posture is why `skills/` fills one authoring session at a time rather than by porting. A skill
+that appears here by any other route is a defect, not a shortcut — the door is the only door.
 
 ## Layout
 
@@ -41,17 +40,17 @@ claude-plugins/fabrika/
 ├── .claude-plugin/plugin.json   the plugin manifest (no version — ADR 0110, continuous ship)
 ├── README.md                    this file: the mission, the only-door posture, the layout
 ├── docs/                        the canonical convention + contract docs (see docs/README.md)
-└── skills/                      one dir per skill, each authored by /skill-creator — empty today
+└── skills/                      one dir per skill, each authored by /skill-creator
 ```
 
-`skills/` holds a `.gitkeep` so the directory survives a clone while it is empty. It carries no
-`README` and no loose files: the fabrika layout law is `SKILL.md` under a per-skill directory and
-nothing else at the `skills/` root.
+`skills/` carries no `README` and no loose files: the fabrika layout law is `SKILL.md` under a
+per-skill directory and nothing else at the `skills/` root. A `.gitkeep` remains from when the
+directory was empty; it is harmless and can go with any later change.
 
 ## What is deliberately absent
 
 - **No marketplace entry.** fabrika is not listed in the root marketplace manifest
   (`.claude-plugin/`), so nothing here reaches the pinned external channel (#4643).
-- **No skills yet.** They arrive one authoring session at a time through `/skill-creator`.
-- **No CLI.** fabrika's verbs will live in their own workspace package; `pipeline-cli` stays the
-  v1-era substrate fabrika may call but never grows into.
+- **No dependency on v1.** fabrika calls `pipeline-cli` nowhere — not from a skill, not from a verb.
+  Its own verbs live in `packages/fabrika-cli/`. v1 is a reference to read, never a runtime to call,
+  because a fabrika that calls the old tree can never be the thing that replaces it.
