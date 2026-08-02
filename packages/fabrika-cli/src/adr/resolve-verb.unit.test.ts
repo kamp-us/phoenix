@@ -1,7 +1,13 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {errOut, fakeShell, okOut, record, tree} from "../fakes.test-support.ts";
-import {BASE_UNFETCHABLE, IN_FLIGHT_UNKNOWN, runResolve, ZERO_SCOPE} from "./resolve-verb.ts";
+import {
+	BASE_UNFETCHABLE,
+	DIR_UNREADABLE,
+	IN_FLIGHT_UNKNOWN,
+	runResolve,
+	ZERO_SCOPE,
+} from "./resolve-verb.ts";
 
 const SHA = "49a22902d1e0c7b3f5a8e4126b9d0f3c7a1e5b82";
 const AMEND_LIST =
@@ -104,6 +110,22 @@ describe("runResolve", () => {
 		const out = await run([[/^git ls-tree/, okOut("")]]);
 		expect(out.code).toBe(ZERO_SCOPE);
 		expect(out.stdout).toBe("");
+	});
+
+	it("refuses an unreadable --dir on its own proven code, not on 1", async () => {
+		const out = await run([[/^git ls-tree/, errOut("fatal: not a tree object")]]);
+		expect(out.code).toBe(DIR_UNREADABLE);
+		expect(out.code).not.toBe(1);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toBe(
+			'adr resolve: cannot read .decisions at origin/main: fatal: not a tree object — every state is UNKNOWN, never "absent".',
+		);
+	});
+
+	it("keeps an unreadable --dir distinguishable from an empty one", async () => {
+		const unreadable = await run([[/^git ls-tree/, errOut("fatal: not a tree object")]]);
+		const empty = await run([[/^git ls-tree/, okOut("")]]);
+		expect(unreadable.code).not.toBe(empty.code);
 	});
 
 	it("refuses an id that is not four zero-padded digits", async () => {

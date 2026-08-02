@@ -29,6 +29,8 @@ export const BASE_UNFETCHABLE = 3;
 export const IN_FLIGHT_UNKNOWN = 4;
 /** `--dir` was read and held zero records — zero scope (ADR 0092). */
 export const ZERO_SCOPE = 5;
+/** `--dir` could not be read at the fetched base ref, so every state is UNKNOWN. See `next-verb.ts`'s `DIR_UNREADABLE` for why this is a `3`+ code and not `1`. */
+export const DIR_UNREADABLE = 6;
 
 export interface ResolveOptions {
 	readonly ids: ReadonlyArray<string>;
@@ -70,7 +72,10 @@ export const runResolve = (options: ResolveOptions): Shell<VerbOutcome> =>
 				);
 			}
 			if (e._tag === "DirUnreadable") {
-				return refuse(FAILED, `adr resolve: cannot read ${dir} at ${base}: ${e.reason}`);
+				return refuse(
+					DIR_UNREADABLE,
+					`adr resolve: cannot read ${dir} at ${base}: ${e.reason} — every state is UNKNOWN, never "absent".`,
+				);
 			}
 			if (e._tag === "UnparseableId") {
 				return refuse(
