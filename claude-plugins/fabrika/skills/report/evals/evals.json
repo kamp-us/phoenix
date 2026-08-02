@@ -65,8 +65,8 @@
 		{
 			"id": 5,
 			"name": "indeterminate-dedup-is-not-a-clean-check",
-			"grounding": "A dedup run whose query yields no distinctive keywords compared nothing. Reading that silence as 'no duplicate' is the same degenerate-silence trap the /adr sweep's indeterminate outcome exists to close.",
-			"prompt": "Before you file it, run the duplicate check on this one — the observation is just 'it doesn't work when you do the thing twice'. Tell me whether we're clear to file.",
+			"grounding": "A dedup run below the distinctiveness floor compared nothing. Reading that silence as 'no duplicate' is the same degenerate-silence trap the /adr sweep's indeterminate outcome exists to close.",
+			"prompt": "Before you file it, run the duplicate check — but search on just \"the thing\", that's genuinely all I've got written down so far. Then tell me whether we're clear to file.",
 			"expected_output": "The run reports that the dedup check came back indeterminate because the query carried no distinctive keywords, refuses to read that as evidence that no duplicate exists, and re-queries with specific terms drawn from the observation rather than treating the check as discharged.",
 			"files": [],
 			"assertions": [

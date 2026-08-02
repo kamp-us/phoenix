@@ -1,6 +1,6 @@
 ---
 name: report
-description: File one follow-up GitHub issue the moment you spot work you will not do right now — a bug, a refactor, a design question, a missing test, a confusing convention. Fire it mid-task and autonomously, without asking permission and without finishing what you were doing first, because an observation that stays in the conversation dies there. Also trigger on "/report", "file an issue", "report this", "open a follow-up", "track this for later". Done when the issue exists carrying `status:needs-triage` and nothing else, and you are back on the task you interrupted.
+description: File one follow-up GitHub issue the moment you spot work you will not do right now — a bug, a refactor, a design question, a missing test, a confusing convention. Fire it mid-task and autonomously, without asking permission and without finishing what you were doing first, because an observation that stays in the conversation dies there. Composes and posts the body over a single guarded path that refuses a machine-local path, an empty body, or a hand-applied classification and reads back what landed, after a duplicate check whose three outcomes it makes you read. Also trigger on "/report", "file an issue", "report this", "open a follow-up", "track this for later". Done when the observation is on the board — a new issue carrying `status:needs-triage` and nothing else, or a note on the issue that already covered it — and you are back on the task you interrupted.
 ---
 
 # report
@@ -15,9 +15,9 @@ that dies.
 
 ## 1 — Write the observation
 
-The title first — short, specific, type-neutral. *"Retry helper in the http worker swallows the
-abort reason"* names what you saw; *"Bug in worker"* names nothing, and *"BUG: fix retry"* types
-and prescribes in four words.
+The title first — short (aim under ~70 characters), specific, type-neutral. *"Retry helper in the
+http worker swallows the abort reason"* names what you saw; *"Bug in worker"* names nothing, and
+*"BUG: fix retry"* types and prescribes in four words.
 
 Then six sections. They are the same six whether you found a crash, a smell, or a question — that
 sameness is what lets you file without classifying first:
@@ -39,6 +39,8 @@ A hand-typed classification is indistinguishable from a triaged one, so a guess 
 corrupts the signal triage runs on. One observation, one issue — two things you noticed are two
 filings.
 
+You are done here when all six sections carry content, except the last, which may be empty.
+
 ## 2 — Check whether it is already filed
 
 Report runs go concurrently, so what you just saw may have reached the board minutes ago. Run this
@@ -46,15 +48,16 @@ Report runs go concurrently, so what you just saw may have reached the board min
 creating stays small:
 
 ```bash
-fabrika-cli report dedup --query "the title plus a few distinguishing keywords"
+fabrika-cli report dedup --query "retry helper http worker abort reason swallowed cause"
 ```
 
 Three outcomes, and only one of them is about your observation:
 
 - **`candidates`** — open each and judge it yourself. Shared vocabulary is not a shared observation.
+  The list is capped, and the verb says on stderr when it truncated.
 - **`none`** — both sources were read and nothing open matched. A real answer.
-- **`indeterminate`** — your query carried no distinctive keywords, so nothing was compared. This is
-  a non-check, not a clean one. Re-query with the specific terms.
+- **`indeterminate`** — your query carried too few distinctive keywords to discriminate, so nothing
+  useful was compared. This is a non-check, not a clean one. Re-query with the specific terms.
 
 A non-zero exit is UNKNOWN, never `none`. **When it is genuinely ambiguous, file it** — triage
 closes a duplicate in seconds, and a lost observation is gone.
@@ -68,36 +71,33 @@ fabrika-cli report file --title "Retry helper in the http worker swallows the ab
 EOF
 ```
 
-The body arrives on this verb's stdin and never becomes a filename. That is the design, not an
-implementation detail: every issue-body leak in the record is one agent reaching for a *path* where
-a body belonged — a file-referencing post form sends the literal path text instead of the file's
-contents, so a machine-local path lands in a public artifact while the poster reads success
-(#3086, #3173).
-
 **When the verb refuses, fix the input and run it again.** A refusal names one thing — an empty
-section, a machine-local path in the body, a missing queue label, a body that never reached stdin —
-and each is a thing to correct. A refusal is never a signal to post some other way: that is the
-path #3945 walked, where a blocked command was retried through a file-referencing form and landed
-the exact leak the guard had just declined.
+section, a machine-local path in the body, a body that never reached stdin, a title that classifies
+— and each is a thing to correct. A refusal is never a signal to post some other way: that is the
+path #3945 walked, where a blocked command was retried through a form that passes the body as a
+*file path*, and the path text posted instead of the file's contents. That is how a machine-local
+path reaches a public artifact while the poster reads success (#3086, #3173).
 
 Use `--redact` when a machine-local path is genuinely part of the evidence — reporting a leak
 incident is the case it exists for. It masks each path down to its class and says so; it never
 silently rewrites what you wrote.
 
+You are done here when the verb exits 0 and prints the number and URL.
+
 ## 4 — Or add what the existing issue lacks
 
 When step 2 found your observation already filed, do not file a twin. Add only what that issue does
-not already carry:
+not already carry, over the same guarded path:
 
 ```bash
-fabrika-cli report note --issue 4705 <<'EOF'
+fabrika-cli report note --issue 4312 <<'EOF'
 …
 EOF
 ```
 
-Same stdin, same refusals, same reason for both.
+Done when the verb exits 0 and prints the comment id and URL.
 
 ## 5 — Report and return
 
-One line: the issue number and its URL, as the verb printed them. Then **go back to the task you
-interrupted.** You are not triaging what you filed, and you are not fixing it.
+One line: the number and URL the verb printed. Then **go back to the task you interrupted.** You are
+not triaging what you filed, and you are not fixing it.
