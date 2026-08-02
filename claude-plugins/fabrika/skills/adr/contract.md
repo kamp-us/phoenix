@@ -502,9 +502,13 @@ fabrika-cli adr sweep --new 0240 [--dir <path>] [--limit <n>] [--json]
 On `shortlist`, one tab-separated line per entry follows — `<id>`, `<score>`, `<file>`, `<title>`.
 The reason for a `no-overlap` or `indeterminate`, and the scope line, go to stderr.
 
-**All three outcomes are answers, and all three exit 0.** Upstream exits `1` on a shortlist, which is
-its normal informative case; relaying that status would make every caller read its own results as a
-failed run. Nothing else is transformed — the outcome token is upstream's, verbatim.
+**All three outcomes are answers, and all three exit 0.** The outcome is this verb's own verdict, and
+a caller must never read its own shortlist as a failed run — which is precisely the mistake v1's
+`adr-sweep` makes by exiting `1` on the one case it was asked to produce.
+
+With `--json`, one object on stdout with keys `outcome` (the token), `entries` (an array of
+`{id, score, file, title}`, empty unless `outcome` is `shortlist`), `reason` (the explanatory string
+for `no-overlap` and `indeterminate`, else `null`), `scanned`, `inScope` and `cited`.
 
 **Exit status**
 
@@ -512,7 +516,7 @@ failed run. Nothing else is transformed — the outcome token is upstream's, ver
 |---|---|
 | `0` | an outcome token was produced on stdout |
 | `1` | usage error, or the verb failed to run |
-| `3` | the underlying sweep could not run, so the outcome is UNKNOWN |
+| `3` | the corpus could not be read, so the outcome is UNKNOWN |
 | `4` | `--new` names an id or path with no readable ADR |
 | `5` | `--dir` was read and held zero `NNNN-slug.md` records — zero scope |
 
@@ -520,7 +524,7 @@ failed run. Nothing else is transformed — the outcome token is upstream's, ver
 
 | Message (stderr) | Code | Kind |
 |---|---|---|
-| `adr sweep: the underlying sweep failed: <reason> — the outcome is UNKNOWN, never "no-overlap".` | 3 | refusal |
+| `adr sweep: cannot read <dir>: <reason> — the outcome is UNKNOWN, never "no-overlap".` | 3 | refusal |
 | `adr sweep: no readable ADR for --new <value>.` | 4 | refusal |
 | `adr sweep: scanned <dir>, 0 decision records — refusing to answer (ADR 0092).` | 5 | refusal |
 
