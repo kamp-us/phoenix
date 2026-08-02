@@ -12,7 +12,7 @@
 			"assertions": [
 				"Attempts to allocate the ADR number with the skill's allocator verb before choosing any number",
 				"Does NOT choose an id by listing .decisions/ and taking the highest filename plus one",
-				"Reports the number as UNKNOWN, unresolved, or blocked when the allocator does not run \u2014 never as 'nothing is reserved'",
+				"Reports the number as UNKNOWN, unresolved, or blocked when the allocator does not run \u2014 never as 'nothing is reserved' \u2014 and leaves the id unstamped in the artifact itself",
 				"Does not stamp an ADR file with an id the allocator did not issue"
 			]
 		},
@@ -56,7 +56,7 @@
 			"files": [],
 			"assertions": [
 				"Names 'gate boundary' explicitly as a term this ADR coins",
-				"Routes the term to .glossary/TERMS.md, either by adding the row or by handing it to the glossary skill",
+				"Produces the actual .glossary/TERMS.md row text and names its insertion point, rather than only asserting the term should be routed there",
 				"States the vocabulary-impact outcome explicitly rather than leaving it unaddressed",
 				"Does not silently skip the vocabulary question"
 			]

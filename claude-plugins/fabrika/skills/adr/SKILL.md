@@ -29,10 +29,11 @@ fabrika-cli adr new 0240 only-landed-adrs-may-be-cited
 Scaffolds the frontmatter and section skeleton; the slug is kebab-case, at most 5 words.
 
 **The `title` carries the decision, not the topic** — `Every gate fails closed on zero scope`, never
-`Gate scope handling`. One clause, long enough to carry the discriminating half when the ruling has
-one (`X, never Y`); the corpus median is 14 words, a shape rather than a cap. It renders verbatim as
-this ADR's compact-map row, and the `# NNNN — <Title>` H1 repeats it character for character. The
-`**What this decides:**` line beneath is the plain-language gloss a non-author reads.
+`Gate scope handling`. **One clause**: where the ruling has a discriminating half, it belongs inside
+that clause (`X, never Y`), never appended as a second clause after an em-dash. The corpus median is
+14 words, a shape rather than a cap. It renders verbatim as this ADR's compact-map row, and the
+`# NNNN — <Title>` H1 repeats it character for character. The `**What this decides:**` line beneath
+is the plain-language gloss a non-author reads.
 
 `## Decision` opens with one bolded declarative sentence, ahead of any mechanics. Where this ADR
 constrains future work, close it with an austere `**Binding constraints.**` or `**Banned.**` list.
