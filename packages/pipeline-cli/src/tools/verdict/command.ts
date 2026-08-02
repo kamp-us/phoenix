@@ -52,6 +52,7 @@
 import {Console, Effect, FileSystem, Option} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
 import {readStdinTextOrExit} from "../../read-stdin.ts";
+import {coverageDefect, parseRequiredGates} from "./gate-decision.ts";
 import {Github, GithubLive} from "./github.ts";
 import {
 	emissionDefect,
@@ -156,35 +157,28 @@ const read = Command.make(
  * and a piped set that arrives empty (a dropped/undelivered stdin) is indistinguishable from "this
  * PR needs no gates" — the #3786 zero-input class. An explicit flag makes the omission a usage
  * error instead, and an explicitly-empty value still refuses on zero scope below.
+ *
+ * REPEATABLE (`Flag.atLeast(1)` — at least one occurrence, all of them collected), because the
+ * single-valued `Flag.string` this replaces kept only the FIRST `--require` and dropped the rest in
+ * silence: `--require review-code --require review-doc` gated on review-code alone and still printed
+ * `enqueueable: true`, while the byte-identical requirement spelled `--require review-code,review-doc`
+ * correctly refused. Repeated occurrences now UNION into one set, so the two spellings cannot give
+ * opposite answers, and a later occurrence's bogus token reaches the unrecognized-token refusal
+ * instead of vanishing upstream of it (#4520).
  */
 const requireFlag = Flag.string("require").pipe(
 	Flag.withDescription(
-		"the required review namespaces, comma/space separated (`review-code,review-doc` or `code,doc`) — derive with `pipeline-cli class-probe classify --namespaces`",
+		"the required review namespaces — repeatable, and comma/space separated within one occurrence (`--require review-code,review-doc` ≡ `--require review-code --require review-doc`); derive with `pipeline-cli class-probe classify --namespaces`",
 	),
+	Flag.atLeast(1),
 );
 
-/**
- * Parse the required-namespace set, tolerating both shapes the producer emits: the
- * `class-probe classify --namespaces` output (`review-code`) and a bare gate name (`code`). An
- * unrecognized token is a hard input error, never a silently-dropped requirement — dropping one
- * would shrink the conjunction, the exact fail-open this verb exists to prevent.
- */
-const parseRequired = (raw: string): Effect.Effect<ReadonlyArray<VerdictGate>, never> => {
-	const tokens = raw
-		.split(/[\s,]+/)
-		.map((t) => t.trim().toLowerCase())
-		.filter((t) => t.length > 0);
-	const gates: VerdictGate[] = [];
-	for (const token of tokens) {
-		const name = token.startsWith("review-") ? token.slice("review-".length) : token;
-		if (!(GATES as ReadonlyArray<string>).includes(name)) {
-			return fail(
-				`unrecognized required namespace '${token}' — expected review-<gate> or <gate>, one of ${GATES.join(" | ")}. Refusing to drop it from the required set (that would shrink the gate conjunction).`,
-			);
-		}
-		gates.push(name as VerdictGate);
-	}
-	return Effect.succeed(gates);
+/** The pure parse (`gate-decision.ts`) lifted into this verb's fail-closed exit convention. */
+const parseRequired = (
+	occurrences: ReadonlyArray<string>,
+): Effect.Effect<ReadonlyArray<VerdictGate>, never> => {
+	const parsed = parseRequiredGates(occurrences);
+	return parsed._tag === "ok" ? Effect.succeed(parsed.gates) : fail(parsed.reason);
 };
 
 /**
@@ -196,7 +190,9 @@ const parseRequired = (raw: string): Effect.Effect<ReadonlyArray<VerdictGate>, n
  * This is deliberately not expressible as N × `verdict read`: absence is a property of the required
  * SET, so it can only be decided where the set is known. `--require` takes the same set
  * `class-probe classify --namespaces` derives, so a PR spanning an ADR plus a `.glossary/**` row
- * (which rides has-code) needs BOTH review-doc and review-code, not either.
+ * (which rides has-code) needs BOTH review-doc and review-code, not either. It is **repeatable** and
+ * every occurrence unions in, and an affirmative answer is checked to cover the whole distinct set
+ * before it is believed — the two halves of #4520.
  */
 const gate = Command.make(
 	"gate",
@@ -212,6 +208,11 @@ const gate = Command.make(
 		// The full per-namespace decision goes to stdout as JSON (a caller may want to name which
 		// namespace blocked); the single named outcome line goes to stderr, mirroring `read`.
 		yield* Console.log(JSON.stringify(decision));
+		// The coverage assertion, run BEFORE the clearance is believed: the answer must be about as
+		// many distinct namespaces as argv asked about. Union-or-error fixes the one spelling #4520
+		// found; this refuses any path that answers about fewer things than it was asked.
+		const coverage = coverageDefect(requiredGates, decision);
+		if (decision.enqueueable && coverage !== null) return yield* fail(coverage);
 		if (decision.enqueueable) {
 			process.stderr.write(`verdict gate: ${decision.reason}\n`);
 			return;
