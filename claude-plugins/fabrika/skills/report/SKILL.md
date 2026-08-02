@@ -62,7 +62,14 @@ Three outcomes, and only one of them is about your observation:
 A non-zero exit is UNKNOWN, never `none`. **When it is genuinely ambiguous, file it** — triage
 closes a duplicate in seconds, and a lost observation is gone.
 
-## 3 — File it
+You are done here when the outcome has told you which of the next two steps you are taking, and
+they are branches of one decision rather than two things to do in order:
+
+- **`none`, an `indeterminate` you re-queried and cleared, or candidates none of which is your
+  observation** → step 3, file it.
+- **A candidate you have judged to be the same observation** → step 4, add what it lacks.
+
+## 3 — File it — the branch where nothing already covers it
 
 ```bash
 fabrika-cli report file --title "Retry helper in the http worker swallows the abort reason" <<'EOF'
@@ -84,7 +91,7 @@ silently rewrites what you wrote.
 
 You are done here when the verb exits 0 and prints the number and URL.
 
-## 4 — Or add what the existing issue lacks
+## 4 — Add what the existing issue lacks — the branch where step 2 found it
 
 When step 2 found your observation already filed, do not file a twin. Add only what that issue does
 not already carry, over the same guarded path:

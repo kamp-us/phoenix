@@ -550,6 +550,16 @@ $ echo $?
   cannot serve it: every pipeline-filed issue goes through one shared login, so authorship reads the
   same for a hand-typed issue and an agent-filed one. That is why the marker is the one footer field
   that is never dropped.
+- **v1's `leak-guard` cannot see an issue body, and where it can see a body it looks after the
+  fact.** Its file scan is scoped by suffix to committed docs and shell scripts
+  (`packages/pipeline-cli/src/tools/leak-guard/leak-guard.ts`), and an issue body is never a
+  committed file, so this whole surface is off it. Its `scan-pr` leg does reach comment bodies —
+  but by re-reading what has **already landed** on a public PR, which its own header states is
+  the point: a check no emit path can bypass, moved to the ship-it preflight. Detection after the
+  path is public is the scar. Exit 5 is it designed out: the predicate is a precondition of the
+  create, run in-process over the composed body, so the path is refused before it is public rather
+  than found once it is. The two are complements — this verb keeps its own writes clean, the v1
+  guard still backstops every write it does not own.
 - **v1's report skill never checks that the queue label exists.** Its `vocabulary-preflight` tool is
   consumed by `doctor`, `homing-guard` and `pitch-guard` and by nothing on the filing path, so a
   repo missing the label files an issue that silently never enters the queue. Exit 7 folds that
