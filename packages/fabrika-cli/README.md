@@ -1,8 +1,9 @@
 # @kampus/fabrika-cli
 
 The deterministic verb package [fabrika](../../claude-plugins/fabrika/) skills call.
-`fabrika-cli <group> <verb> …` dispatches to a registered verb group; the first group is
-`adr`, which implements the six verbs the `/adr` skill's derived contract specifies.
+`fabrika-cli <group> <verb> …` dispatches to a registered verb group. Two groups are
+registered: `adr`, the six verbs the `/adr` skill's derived contract specifies, and
+`report`, the three the `/report` contract specifies.
 
 ## Who it's for
 
@@ -84,6 +85,40 @@ Three behaviours are worth knowing before you call them:
   decision text is immutable, so a rewrite that would touch any line but `status:` aborts
   with exit 6 and writes nothing.
 
+## The `report` group
+
+The contract these three implement is
+[`claude-plugins/fabrika/skills/report/contract.md`](../../claude-plugins/fabrika/skills/report/contract.md).
+
+| Verb | Answers |
+|---|---|
+| `report dedup` | ranks the open issues that may already cover an observation — `candidates` / `none` / `indeterminate`, all three at exit 0 |
+| `report file` | composes the intake issue from the six sections on stdin, guards it, creates it, and reads back what landed |
+| `report note` | adds a note to an existing issue over the same guarded path, and reads the comment back |
+
+Four behaviours are worth knowing before you call them:
+
+- **The body is a value, never a path.** The two writing verbs take it on **stdin only** —
+  no `--body`, no `--body-file`, no temp file. A flag that accepts a path turns the body
+  into a string the verb could post verbatim, which is exactly how a machine-local path
+  reached a public artifact while the poster read success. A shell redirect is fine: the
+  *shell* reads the file, so what reaches the verb is already the bytes.
+- **An empty stdin is a refusal, not an empty body.** A read that failed exits `1` (the body
+  is UNKNOWN) and a pipe that was read and held nothing exits `3` (a proven refusal). They
+  are never the same answer.
+- **A missing `--label` is a refusal on `dedup` too, not a `none`.** `GET /issues?labels=…`
+  answers HTTP 200 with `[]` for a label that does not exist, so an unchecked `dedup` would
+  print a proven negative over a scope of zero — the fail-open ADR 0092 forbids. Both
+  writing and reading verbs check the label first and exit `7` when it is absent
+  ([#4752](https://github.com/kamp-us/phoenix/issues/4752)).
+- **The write is not finished until it is read back.** A create call's own response is the
+  server echoing the request; exit `9` is the landed artifact failing to match what was
+  composed.
+
+Intake applies **no type and no priority**, and that is defended mechanically rather than in
+prose: exit `10` refuses a `--label` or a title prefix that resolves to the target repo's own
+type/priority vocabulary.
+
 ## Development
 
 ```bash
@@ -94,7 +129,7 @@ pnpm --filter @kampus/fabrika-cli build       # tsc -p tsconfig.build.json
 
 A verb is a **pure function of its dependencies** — the `*-verb.ts` modules compute a
 `VerbOutcome` (exit code, stdout, stderr) and never write a stream or exit. The Effect CLI
-layer in [`src/adr/command.ts`](./src/adr/command.ts) does both. That split is what makes
+layer in each group's `command.ts` does both. That split is what makes
 each refusal as deterministically testable as each answer, which is why the tests can drive
 an unreadable directory, a `gh` that exits 0 with the wrong bytes, and a base ref that
 cannot be fetched — inputs a real tree cannot be asked to produce on demand.
@@ -108,3 +143,9 @@ satisfied by the one `NodeServices.layer` [`src/run.ts`](./src/run.ts) provides.
 substitutes those same services rather than a hand-rolled double, so the seam under test is
 the seam production uses. A read that could not be performed fails on the `E` channel — it
 never resolves to an empty value a caller could forget to distinguish from a real one.
+
+The one exception is **fd 0**, which stays a raw `node:fs` read at the boundary in
+[`src/io/stdin.ts`](./src/io/stdin.ts) — the standing ruling in the same pattern doc, where
+`Stdio.stdin` is a considered-and-declined stream swap rather than a missing service. The
+verbs take the read as an injected effect, so the `EAGAIN` and TTY paths stay testable
+without a real descriptor.
