@@ -72,7 +72,7 @@ Answers against a freshly fetched base ref, printing `live`, `landed`, `in-fligh
 the real filename. Pass every citation, supersede link and amend target in one call.
 
 **Cite only `live`.** `landed` means present but `proposed`, `superseded` or `retired` — 36 of the
-234 ADRs on `main` — and citing one as settled law is how a withdrawn ADR gets applied 86 minutes
+233 ADRs on `main` — and citing one as settled law is how a withdrawn ADR gets applied 86 minutes
 after its withdrawal (#4338). `in-flight` may never merge: that is how PR #4293 cited ADR 0219 and
 every gate passed on a dead citation (#4296). **A non-zero exit is UNKNOWN, never `absent`** (#4163).
 **Use the filename it prints** — 0048 is `ship-it-merge-actor`, not `single-merge-authority`.
@@ -108,9 +108,9 @@ fabrika-cli adr classify 0240
 ```
 
 Prints `guard-touching` or `not-guard-touching`. No `.decisions/**` path matches the control-plane
-pattern, so a guard-governing ADR is §CP by content alone (ADR 0164), and one routed as ordinary
-reaches `main` with zero approvals (#4386, #3416). Anything but `not-guard-touching` — a verb that
-never ran included — needs a control-plane approval at head.
+pattern, so a guard-governing ADR is §CP by content alone — the rule `cp-classify` enforces today,
+still `proposed` in ADR 0164 — and one routed as ordinary reaches `main` with zero approvals (#4386,
+#3416). Anything but `not-guard-touching`, a verb that never ran included, needs approval at head.
 
 **Never reword to change that verdict.** The probe fires on words — `gate`, `guard`, `control-plane`
 — so 84% of the corpus classifies §CP; a false §CP costs one approval, a false ordinary is #4386.

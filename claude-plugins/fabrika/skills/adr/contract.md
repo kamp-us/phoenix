@@ -304,9 +304,9 @@ One or more ids may be given; each produces one line, in argument order. One fet
 | `absent` | `-` | `-` |
 
 **`live` and `landed` split presence from authority, and the split is the point.** Presence alone is
-what a caller wrongly reads as "citable": 36 of the 234 records on `main` today are present and
+what a caller wrongly reads as "citable": 36 of the 233 records on `main` today are present and
 *not* live — 20 `superseded`, 9 `proposed`, 2 `superseded-in-part`, plus `retired`, `moot` and
-`reference`. A verb that answered `landed` for all 234 would license citing every one of them.
+`reference`. A verb that answered `landed` for all 233 would license citing every one of them.
 
 The predicate is `isLiveAccepted`, already implemented and named in
 [`adr-sweep`](../../../../packages/pipeline-cli/src/tools/adr-sweep/adr-sweep.ts) — reuse that
@@ -617,8 +617,11 @@ not-guard-touching
 
 **Grounding**
 
-- ADR 0164 — `.decisions/**` matches no control-plane *path*, so a guard-governing ADR is §CP by
-  content alone.
+- ADR 0164 (**`proposed`**, not accepted) — `.decisions/**` matches no control-plane *path*, so a
+  guard-governing ADR is §CP by content alone. The behaviour is live regardless: `cp-classify` and
+  `guard-content-probe` enforce it and stamp `(§CP, ADR 0164)` into their output. Cite the
+  enforcement rather than the decision until 0164 lands — this spec's own `live`/`landed` rule
+  forbids leaning on a `proposed` ADR as settled law, and it binds the spec too.
 - #4386 / #3416 — a guard-touching ADR routed as ordinary reaches `main` with zero approvals.
 - Upstream's exit codes are inverted — `0` is guard-touching, `3` is not-guard-touching — and its own
   README says to read the stdout word and never the status. The inversion must not leak through this
