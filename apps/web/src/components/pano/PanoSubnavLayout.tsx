@@ -2,6 +2,7 @@ import {createContext, type ReactNode, useContext, useState} from "react";
 import {Outlet} from "react-router";
 import type {SubnavFilter} from "../layout/Subnav";
 import {SubnavShell} from "../layout/SubnavShell";
+import {Button} from "../ui/Button";
 import {PanoSubnavCta} from "./PanoSubnavCta";
 
 /**
@@ -51,15 +52,17 @@ function PanoSubnavFilters({
 	return (
 		<>
 			{filters.map((f) => (
-				<button
+				<Button
 					key={f.id}
 					type="button"
+					variant="link"
+					size="sm"
 					className="kp-subnav__filter"
-					aria-pressed={activeFilter === f.id}
+					pressed={activeFilter === f.id}
 					onClick={() => onFilterChange(f.id)}
 				>
 					{f.label}
-				</button>
+				</Button>
 			))}
 		</>
 	);
@@ -73,9 +76,15 @@ function PanoSubnavCrumb({crumb}: {crumb: {label: ReactNode; onClear: () => void
 	return (
 		<span className="kp-subnav__crumb">
 			{crumb.label}
-			<button type="button" className="kp-subnav__crumb-clear" onClick={crumb.onClear}>
+			<Button
+				type="button"
+				variant="link"
+				size="sm"
+				className="kp-subnav__crumb-clear"
+				onClick={crumb.onClear}
+			>
 				× filtreyi kaldır
-			</button>
+			</Button>
 		</span>
 	);
 }

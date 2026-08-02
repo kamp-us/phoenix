@@ -19,6 +19,7 @@
 import {lazy, Suspense, useEffect, useState} from "react";
 import {useParams} from "react-router";
 import {MecmuaSubscribeButton} from "../components/mecmua/MecmuaSubscribeButton";
+import {Alert} from "../components/ui/Alert";
 import {MECMUA_PUBLIC_READ} from "../flags/keys";
 import {useFlag} from "../flags/useFlag";
 import {NotFoundPage} from "./NotFoundPage";
@@ -112,7 +113,9 @@ function MecmuaPostReader({slug}: {slug: string}) {
 		return (
 			<div className="kp-page">
 				<div className="kp-page__inner">
-					<p role="alert">yazı yüklenemedi, tekrar dene.</p>
+					<Alert variant="danger" className="kp-alert--inline">
+						yazı yüklenemedi, tekrar dene.
+					</Alert>
 				</div>
 			</div>
 		);

@@ -36,8 +36,8 @@ gate** (fail-closed, ADR
 [0092](../../../../../../.decisions/0092-gates-fail-closed-on-zero-scope.md)). The
 covered set can never silently go stale.
 
-`deferred` is a conscious, reasoned parking spot (a compound base-ui/portal
-primitive, or a control whose accessible name comes from a composed Field/Label),
+`deferred` is a conscious, reasoned parking spot (a Manti machine/portal
+primitive, or a control whose accessible name comes from a composed field prop),
 each carrying its promotion reason — not an escape hatch.
 
 ## Run it

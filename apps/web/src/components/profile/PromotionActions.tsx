@@ -15,7 +15,7 @@
  * sandbox-visibility-for-yazars question (#1205) — is designed. The vouch *mechanism*
  * ships server-side (`user.vouch`); only its surface is held back here.
  *
- * a11y: a native `<button>` (focusable, keyboard-activatable, visible focus from the
+ * a11y: a Manti Button (focusable, keyboard-activatable, visible focus from the
  * app's button styles); the section is a labelled landmark; the outcome is a
  * `role="status" aria-live="polite"` text region (state conveyed as words, never
  * color); copy is lowercase Turkish; no animation (reduced-motion-safe by default).
@@ -25,6 +25,8 @@ import {useFateClient, view} from "react-fate";
 import type {PromotionReceipt} from "../../../worker/features/fate/views";
 import {codeOf} from "../../fate/wire";
 import {promoteVisible} from "../divan/divanGating";
+import {Alert} from "../ui/Alert";
+import {Button} from "../ui/Button";
 
 /**
  * Gate the profile-page promote mount the way the divan does: mod-only
@@ -109,24 +111,27 @@ export function PromotionActions({userId}: {userId: string}) {
 			data-testid="promotion-actions"
 		>
 			<div className="kp-promotion__buttons">
-				<button
+				<Button
 					type="button"
+					variant="primary"
+					size="sm"
 					className="kp-promotion__action"
 					onClick={onPromote}
 					disabled={busy}
+					loading={busy}
 					data-testid="promote-button"
 				>
 					yazarlığa yükselt
-				</button>
+				</Button>
 			</div>
-			<p
-				className="kp-promotion__status"
-				role="status"
+			<Alert
+				variant="secondary"
+				className="kp-alert--inline kp-promotion__status"
 				aria-live="polite"
 				data-testid="promotion-status"
 			>
 				{message}
-			</p>
+			</Alert>
 		</section>
 	);
 }

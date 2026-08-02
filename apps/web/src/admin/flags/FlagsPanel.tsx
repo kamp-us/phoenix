@@ -15,6 +15,7 @@
  * `role="status"` live region, never color.
  */
 import {useState} from "react";
+import {Alert} from "../../components/ui/Alert";
 import {Button} from "../../components/ui/Button";
 import {DECLARED_FLAGS} from "../../flags/keys";
 import "./FlagsPanel.css";
@@ -95,14 +96,14 @@ export default function FlagsPanel() {
 				})}
 			</ul>
 			{message ? (
-				<p
-					className="kp-flags__message"
-					role="status"
+				<Alert
+					variant="secondary"
+					className="kp-alert--inline kp-flags__message"
 					aria-live="polite"
 					data-testid="flags-message"
 				>
 					{message}
-				</p>
+				</Alert>
 			) : null}
 		</section>
 	);

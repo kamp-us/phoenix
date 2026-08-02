@@ -19,10 +19,12 @@ import {actorLabel} from "../moderation/actor-identity";
 import {useVoteToggle} from "../pano/useVoteToggle";
 import {DefinitionReactionBar} from "../reaction/DefinitionReactionBar";
 import {ReactionBarSlot} from "../reaction/ReactionBarSlot";
+import {Alert} from "../ui/Alert";
 import {Button} from "../ui/Button";
 import {CopyLinkButton} from "../ui/CopyLinkButton";
 import {Dialog} from "../ui/Dialog";
 import {EditedIndicator} from "../ui/EditedIndicator";
+import {Textarea} from "../ui/Form";
 import {MetaRow} from "../ui/MetaRow";
 import {ReportButton, type ReportOutcome} from "../ui/ReportButton";
 import {ReviewBadge} from "../ui/ReviewBadge";
@@ -220,21 +222,24 @@ export function DefinitionCard(props: DefinitionCardProps) {
 	return (
 		<article className={cls} data-testid={`definition-card-${definition.id}`}>
 			<div className="kp-sozluk-definition__vote">
-				{/* Self-vote is blocked (#2216): drop the vote button on one's own definition
-				    while the score still renders. The server guard is the invariant, this is
-				    the matching affordance. */}
-				{isAuthor ? null : (
-					<button
-						type="button"
-						className="kp-sozluk-definition__vote-btn"
-						aria-pressed={voted}
-						aria-label={voted ? "Oyunu geri al" : "Yukarı oy"}
-						data-testid={`definition-vote-${definition.id}`}
-						onClick={onVoteClick}
-					>
-						<VoteTriangle />
-					</button>
-				)}
+				{/* Self-vote remains blocked (#2216), but the disabled control preserves the
+				    same vote rail and makes the affordance discoverable on every row. */}
+				<Button
+					type="button"
+					variant="outline"
+					size="sm"
+					iconOnly
+					className="kp-sozluk-definition__vote-btn"
+					pressed={voted}
+					disabled={isAuthor}
+					aria-label={
+						isAuthor ? "Kendi tanımına oy veremezsin" : voted ? "Oyunu geri al" : "Yukarı oy"
+					}
+					data-testid={`definition-vote-${definition.id}`}
+					onClick={onVoteClick}
+				>
+					<VoteTriangle />
+				</Button>
 				<span
 					className={`kp-sozluk-definition__vote-count${flashing ? " kp-vote-flash" : ""}`}
 					onAnimationEnd={endFlash}
@@ -247,22 +252,25 @@ export function DefinitionCard(props: DefinitionCardProps) {
 			<div>
 				{editing ? (
 					<form className="kp-sozluk-composer" onSubmit={onEditSubmit}>
-						<textarea
+						<Textarea
 							className="kp-sozluk-composer__textarea"
+							aria-label="tanımı düzenle"
 							value={editBody}
 							onChange={(e) => setEditBody(e.target.value)}
 							disabled={editInFlight}
 							data-testid={`definition-edit-body-${definition.id}`}
 							maxLength={BODY_MAX + 100}
+							fullWidth
+							resize="vertical"
 						/>
 						{editError ? (
-							<p
-								className="kp-sozluk-composer__error"
-								role="alert"
+							<Alert
+								variant="danger"
+								className="kp-alert--inline kp-sozluk-composer__error"
 								data-testid={`definition-edit-error-${definition.id}`}
 							>
 								{editError}
-							</p>
+							</Alert>
 						) : null}
 						<footer className="kp-sozluk-composer__foot">
 							<span style={{display: "flex", gap: 6}}>
@@ -321,8 +329,10 @@ export function DefinitionCard(props: DefinitionCardProps) {
 						<ReportButton onReport={onReport} testId={`definition-report-${definition.id}`} />
 						{isAuthor && !editing ? (
 							<>
-								<button
+								<Button
 									type="button"
+									variant="link"
+									size="sm"
 									data-testid={`definition-edit-${definition.id}`}
 									onClick={() => {
 										setEditBody(definition.body);
@@ -331,14 +341,16 @@ export function DefinitionCard(props: DefinitionCardProps) {
 									}}
 								>
 									düzenle
-								</button>
-								<button
+								</Button>
+								<Button
 									type="button"
+									variant="link"
+									size="sm"
 									data-testid={`definition-delete-${definition.id}`}
 									onClick={() => setConfirmDelete(true)}
 								>
 									sil
-								</button>
+								</Button>
 							</>
 						) : null}
 					</span>
@@ -353,33 +365,36 @@ export function DefinitionCard(props: DefinitionCardProps) {
 					</ReactionBarSlot>
 				) : null}
 				{isAuthor ? (
-					<Dialog.Root open={confirmDelete} onOpenChange={setConfirmDelete}>
-						<Dialog.Popup>
-							<Dialog.Head
-								title="tanımı sil"
-								description="bu tanımı silmek istediğine emin misin? geri alınamaz."
-							/>
-							<Dialog.Body>
-								{deleteError ? (
-									<p className="kp-sozluk-composer__error" role="alert">
-										{deleteError}
-									</p>
-								) : null}
-							</Dialog.Body>
-							<Dialog.Foot>
-								<Dialog.Close render={<Button variant="tertiary">vazgeç</Button>} />
+					<Dialog
+						open={confirmDelete}
+						onOpenChange={setConfirmDelete}
+						role="alertdialog"
+						title="tanımı sil"
+						description="bu tanımı silmek istediğine emin misin? geri alınamaz."
+						footer={({close}) => (
+							<>
+								<Button variant="tertiary" onClick={close}>
+									vazgeç
+								</Button>
 								<Button
 									variant="primary"
 									type="button"
 									disabled={deleteInFlight}
+									loading={deleteInFlight}
 									data-testid={`definition-delete-confirm-${definition.id}`}
 									onClick={onDeleteConfirm}
 								>
 									{deleteInFlight ? "siliniyor…" : "sil"}
 								</Button>
-							</Dialog.Foot>
-						</Dialog.Popup>
-					</Dialog.Root>
+							</>
+						)}
+					>
+						{deleteError ? (
+							<Alert variant="danger" className="kp-alert--inline kp-sozluk-composer__error">
+								{deleteError}
+							</Alert>
+						) : null}
+					</Dialog>
 				) : null}
 			</div>
 		</article>

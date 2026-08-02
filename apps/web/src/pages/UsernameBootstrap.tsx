@@ -17,6 +17,7 @@ import {useState} from "react";
 import {useFateClient, view} from "react-fate";
 import type {User} from "../../worker/features/fate/views";
 import {deriveUsernameFromEmail} from "../../worker/features/pasaport/username-rule";
+import {Alert, Button, Form, Input} from "../components/ui";
 import {codeOf} from "../fate/wire";
 import {localRuleMessage, messageForCode} from "./usernameMessages";
 import "./AuthPage.css";
@@ -100,35 +101,48 @@ export function UsernameBootstrap({
 				</div>
 				<h2 className="kp-auth__title">kullanıcı adını seç</h2>
 				<p className="kp-auth__sub">profilin /u/&lt;ad&gt; üzerinden açılır. sonradan değişmez.</p>
-				<form className="kp-auth__form" onSubmit={onSubmit}>
-					<div className="kp-auth__field">
-						<label htmlFor="bootstrap-username">kullanıcı adı</label>
-						<input
-							id="bootstrap-username"
-							name="username"
-							type="text"
-							autoComplete="off"
-							required
-							minLength={3}
-							maxLength={30}
-							value={value}
-							onChange={(e) => {
-								setValue(e.currentTarget.value);
-								setConfirmed(false);
-							}}
-							placeholder="elif-kaya"
-						/>
-					</div>
-					{needsConfirm ? (
-						<p className="kp-auth__hint">
-							bu e-postandan türetilmiş ad. sonradan değişmez — onaylamadan önce istersen değiştir.
-						</p>
+				<Form className="kp-auth__form" onSubmit={onSubmit}>
+					<Input
+						className="kp-auth__field"
+						id="bootstrap-username"
+						name="username"
+						type="text"
+						label="kullanıcı adı"
+						aria-label="kullanıcı adı"
+						hint={
+							needsConfirm
+								? "bu e-postandan türetilmiş ad. sonradan değişmez — onaylamadan önce istersen değiştir."
+								: undefined
+						}
+						autoComplete="off"
+						required
+						minLength={3}
+						maxLength={30}
+						value={value}
+						onChange={(e) => {
+							setValue(e.currentTarget.value);
+							setConfirmed(false);
+						}}
+						fullWidth
+						variant="fill"
+						placeholder="elif-kaya"
+					/>
+					{error ? (
+						<Alert variant="danger" className="kp-alert--inline kp-auth__error">
+							{error}
+						</Alert>
 					) : null}
-					{error ? <p className="kp-auth__error">{error}</p> : null}
-					<button type="submit" className="kp-auth__submit" disabled={pending}>
+					<Button
+						type="submit"
+						variant="primary"
+						block
+						className="kp-auth__submit"
+						disabled={pending}
+						loading={pending}
+					>
 						{pending ? "ayarlanıyor…" : needsConfirm ? "bu adı onayla" : "devam et"}
-					</button>
-				</form>
+					</Button>
+				</Form>
 			</div>
 		</div>
 	);

@@ -8,6 +8,7 @@
  * on, signed in, not the viewer's own content) and only mounts this when it can act.
  */
 import {useState} from "react";
+import {Button} from "../ui/Button";
 import {useMemberMute} from "./useMemberMute";
 
 export interface MuteButtonProps {
@@ -32,8 +33,10 @@ export function MuteButton({memberId, memberLabel, testId}: MuteButtonProps) {
 	}
 
 	return (
-		<button
+		<Button
 			type="button"
+			variant="link"
+			size="sm"
 			className="kp-mute-action"
 			onClick={onClick}
 			disabled={busy}
@@ -42,6 +45,6 @@ export function MuteButton({memberId, memberLabel, testId}: MuteButtonProps) {
 			data-testid={testId}
 		>
 			sustur
-		</button>
+		</Button>
 	);
 }

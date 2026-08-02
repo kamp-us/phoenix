@@ -9,24 +9,42 @@ prohibitions, and the role-token values — is founder-authored in
 [`design-system-manifest.md`](design-system-manifest.md) and is never written here. A
 when-to-use references that law; it never restates or mints it.
 
+## Alert
+
+_Source: apps/web/src/components/ui/Alert.tsx_
+
+**When to use:** A Manti-backed inline semantic message. Use `danger` for errors and another semantic variant for non-error outcomes; add `kp-alert--inline` when preserving a feature's existing text-only geometry.
+
+**Slots:**
+- `children` — The message description.
+
 ## Avatar
 
 _Source: apps/web/src/components/ui/Avatar.tsx_
 
-**When to use:** The user/actor image primitive. Always pass `name` — it is the alt text when `src` renders and the source of the initials fallback when it does not, so an avatar is never nameless. Reach for it for any actor identity glyph.
+**When to use:** The Manti-backed user/actor image primitive. Always pass `name`: it names the image and supplies the initials fallback when `src` is absent or fails. Reach for it for any actor identity glyph.
 
 **Slots:**
-- `fallback` — Rendered when `src` is absent/fails: the first two initials of `name` (composed internally, not a caller slot).
+- `fallback` — Rendered internally from the first two initials of `name`.
+
+## Badge
+
+_Source: apps/web/src/components/ui/Badge.tsx_
+
+**When to use:** A Manti-backed compact status or category chip. Keep state in text, not color alone, and use a feature class only to preserve an established Phoenix category palette.
+
+**Slots:**
+- `children` — The badge label.
 
 ## Button
 
 _Source: apps/web/src/components/ui/Button.tsx_
 
-**When to use:** The base action control. Reach for `variant="primary"` for the one promoted action per view, `secondary` for standard actions, `tertiary` for low-emphasis inline actions, `danger` for destructive ones — the variant scale and the one-primary-per-view rule are the manifest's, referenced not restated (see `design-system-manifest.md`). Prefer this over a hand-rolled `<button>`.
+**When to use:** The Manti-backed base action control. Use `primary` for the promoted action, `secondary` for standard actions, `tertiary` for low-emphasis actions and `danger` for destructive actions; prefer it over a hand-rolled button.
 
 **Slots:**
-- `children` — The button label — the accessible name comes from it, so an icon-only button must be named via `aria-label` instead.
-- `icon` — Optional leading decorative glyph; never the accessible name.
+- `children` — The visible label and accessible name.
+- `icon` — Optional leading decorative glyph, mapped to Manti's icon slot.
 
 ## Card
 
@@ -53,12 +71,11 @@ _Source: apps/web/src/components/ui/atoms.tsx_
 
 _Source: apps/web/src/components/ui/Collapsible.tsx_
 
-**When to use:** The show/hide disclosure compound (base-ui). Compose from its parts to toggle a region's visibility inline — a "show more" body, an expandable detail. `Trigger` supplies its own genişlet/daralt aria-label, so reach for it rather than a hand-wired button + hidden div.
+**When to use:** The Manti-backed inline disclosure. Pass the trigger and panel content to reveal optional detail while retaining keyboard and ARIA behavior.
 
 **Slots:**
-- `Root` — The open/close state provider wrapping the trigger + panel.
-- `Trigger` — The +/– toggle control that opens/closes the panel.
-- `Panel` — The collapsible content region.
+- `trigger` — The disclosure control supplied through the `trigger` prop.
+- `children` — The region shown while the disclosure is open.
 
 ## CopyLinkButton
 
@@ -83,16 +100,12 @@ _Source: apps/web/src/components/ui/CountToggle.tsx_
 
 _Source: apps/web/src/components/ui/Dialog.tsx_
 
-**When to use:** The modal-dialog compound (base-ui). Compose from its parts for any modal (confirm, form, detail overlay); `Head`'s `title` supplies the accessible name via `aria-labelledby`, so reach for `Head` rather than a bare heading.
+**When to use:** The Manti-backed modal surface for confirmations, forms and focused overlay tasks. Supply `title` for its accessible name and use the footer render prop when actions need the provided `close` callback.
 
 **Slots:**
-- `Root` — The open/close state provider wrapping trigger + popup.
-- `Trigger` — The element that opens the dialog.
-- `Popup` — The portalled, backdropped modal surface.
-- `Head` — The title/description/close header region.
-- `Body` — The scrollable content region (renders nothing when empty).
-- `Foot` — The action row (footer).
-- `Close` — An element that dismisses the dialog.
+- `trigger` — Optional element that opens the dialog.
+- `children` — The dialog body.
+- `footer` — Optional action row, accepting Manti's dialog render props.
 
 ## DraftRestoreBanner
 
@@ -124,50 +137,23 @@ _Source: apps/web/src/components/ui/EmptyState.tsx_
 - `description` — Optional supporting line under the title.
 - `action` — Optional CTA (e.g. a Button) below the copy.
 
-## Field
-
-_Source: apps/web/src/components/ui/Form.tsx_
-
-**When to use:** The single-field grouping (base-ui) — wraps one `Label` + control + `Hint`/`FieldError`, wiring their aria relationships. Reach for it once per input inside a `Form` so label/error association is automatic.
-
-**Slots:**
-- `children` — The field's `Label`, control, and hint/error parts.
-
-## FieldError
-
-_Source: apps/web/src/components/ui/Form.tsx_
-
-**When to use:** The field validation message (base-ui) — the error line for its `Field`'s control, wired to the control and shown on invalid state. Reach for it for validation feedback; use `Hint` for always-on guidance.
-
-**Slots:**
-- `children` — The error text.
-
 ## Form
 
 _Source: apps/web/src/components/ui/Form.tsx_
 
-**When to use:** The form shell (base-ui) — the outermost element for any input form, wiring native submit + validation. Compose the field family (`Field`, `Label`, `Hint`, `FieldError`, `Input`, `Textarea`) inside it rather than hand-rolling a `<form>`.
+**When to use:** The native form shell around Manti's field-owning Input and Textarea components. Use it for submit semantics without introducing another field state layer.
 
 **Slots:**
-- `children` — The form's fields and controls.
-
-## Hint
-
-_Source: apps/web/src/components/ui/Form.tsx_
-
-**When to use:** The field helper text (base-ui) — a persistent description under a control, wired to `aria-describedby`. Reach for it for guidance that always shows; use `FieldError` for validation messages instead.
-
-**Slots:**
-- `children` — The hint text.
+- `children` — The Manti fields and form actions.
 
 ## Input
 
 _Source: apps/web/src/components/ui/Form.tsx_
 
-**When to use:** The single-line text control (base-ui). Reach for it inside a `Field` for any one-line input; for multi-line text use `Textarea`.
+**When to use:** The Manti single-line field. Pass its `label` directly and use `hint` or `error` so Manti owns the field's accessible relationships.
 
 **Slots:**
-- `none` — A leaf control; no children slot.
+- `none` — A leaf field control with its label and messages supplied as props.
 
 ## Kbd
 
@@ -177,15 +163,6 @@ _Source: apps/web/src/components/ui/atoms.tsx_
 
 **Slots:**
 - `children` — The key label (a single key or a combo).
-
-## Label
-
-_Source: apps/web/src/components/ui/Form.tsx_
-
-**When to use:** The field label (base-ui) — the accessible name for its `Field`'s control. Reach for it inside every `Field`; it associates to the control automatically, so never substitute a bare `<label>` or placeholder text.
-
-**Slots:**
-- `children` — The label text.
 
 ## Mark
 
@@ -200,14 +177,11 @@ _Source: apps/web/src/components/ui/atoms.tsx_
 
 _Source: apps/web/src/components/ui/Menu.tsx_
 
-**When to use:** The dropdown-menu compound (base-ui). Compose from its parts for any contextual action list or overflow menu; each `Item`'s accessible name comes from its text child. Its z-index/anchor handling is tuned for the sticky nav stack (#1640/#2041) — reach for it rather than a hand-built popup.
+**When to use:** The Manti-backed dropdown command list for account and contextual actions. Describe commands through `items`; use groups and separators for structure instead of hand-built popup content.
 
 **Slots:**
-- `Root` — The open/close state provider wrapping the trigger + popup.
-- `Trigger` — The element that opens the menu.
-- `Popup` — The portalled, positioned popup surface holding the items.
-- `Item` — A menu action; supports `danger` and a `shortcut` hint.
-- `Separator` — A divider rule between item groups.
+- `trigger` — The element that opens the menu.
+- `items` — Commands, separators and command groups supplied through `items`.
 
 ## MetaRow
 
@@ -217,6 +191,25 @@ _Source: apps/web/src/components/ui/MetaRow.tsx_
 
 **Slots:**
 - `children` — The metadata items; separate them with `MetaRow.Dot`.
+
+## NumberInput
+
+_Source: apps/web/src/components/ui/NumberInput.tsx_
+
+**When to use:** A Manti-backed numeric field with bounds and step controls. Prefer this over a generic Input with `type="number"` when numeric stepping is the interaction.
+
+**Slots:**
+- `label` — Optional visible field label.
+
+## Popover
+
+_Source: apps/web/src/components/ui/Popover.tsx_
+
+**When to use:** The Manti-backed non-modal anchored surface for compact interactive content such as the notification preview. Use Dialog when the task must be modal.
+
+**Slots:**
+- `trigger` — The element that anchors and opens the popover.
+- `children` — The popover content.
 
 ## ReportButton
 
@@ -235,6 +228,15 @@ _Source: apps/web/src/components/ui/ReviewBadge.tsx_
 
 **Slots:**
 - `none` — Fixed copy; no children slot.
+
+## ScrollArea
+
+_Source: apps/web/src/components/ui/ScrollArea.tsx_
+
+**When to use:** A bounded Manti-backed scroll viewport that needs keyboard focus and draggable scrollbars while its surrounding header/footer stay fixed.
+
+**Slots:**
+- `children` — Scrollable content.
 
 ## Skeleton
 
@@ -258,22 +260,19 @@ _Source: apps/web/src/components/ui/Card.tsx_
 
 _Source: apps/web/src/components/ui/Switch.tsx_
 
-**When to use:** The on/off toggle primitive (base-ui). Reach for it for a binary setting that applies immediately; for a toggle that carries a count or defers until submit, reach for `CountToggle` or a checkbox instead. Name it via an associated label (it renders no text of its own).
+**When to use:** The Manti-backed binary setting control for an immediately applied on/off value. Supply a textual child as its label; use CountToggle when a count travels with the state.
 
 **Slots:**
-- `thumb` — The sliding knob (composed internally, not a caller slot).
+- `children` — The switch's trailing accessible label.
 
 ## Tabs
 
 _Source: apps/web/src/components/ui/Tabs.tsx_
 
-**When to use:** The tabbed-panels compound (base-ui). Compose from its parts to switch between sibling views within one region; supports an `underline` or `pill` `variant`. Reach for it over hand-wired show/hide so keyboard + aria roles come for free.
+**When to use:** The Manti-backed sibling-view switcher. Declare each trigger and panel through `items`; use line, pill or soft appearance without hand-wiring tab roles and selection state.
 
 **Slots:**
-- `Root` — The selection-state provider wrapping the list + panels.
-- `List` — The tab strip holding the `Tab` triggers.
-- `Tab` — A single tab trigger; its text child is its accessible name.
-- `Panel` — The content region shown for the matching tab.
+- `items` — Tab labels and their corresponding panel content.
 
 ## Tag
 
@@ -288,44 +287,43 @@ _Source: apps/web/src/components/ui/atoms.tsx_
 
 _Source: apps/web/src/components/ui/Form.tsx_
 
-**When to use:** The multi-line text control. Reach for it inside a `Field` for free-form text (a comment body, a definition); pass `mono` for code/preformatted input. For a single line use `Input`.
+**When to use:** The Manti multi-line field for free-form content. Pass its `label` directly; use `kp-textarea--mono` only for code or preformatted input.
 
 **Slots:**
-- `none` — A leaf control; no children slot.
+- `none` — A leaf field control with its label and messages supplied as props.
 
 ## ToastProvider
 
 _Source: apps/web/src/components/ui/Toast.tsx_
 
-**When to use:** The transient-notification host. Mount it once near the app root; child surfaces raise toasts via the `useToast` hook (`show`/`dismiss`). Reach for it for ephemeral status messages (a saved confirmation, a session-expired notice) — re-showing the same id replaces rather than stacks.
+**When to use:** The Manti-backed transient-notification host. Mount it once near the application root and raise ephemeral status through `useToast`; stable ids replace.
 
 **Slots:**
-- `children` — The subtree that can raise toasts via `useToast`.
+- `children` — The subtree that can call `useToast`.
 
 ## ToggleGroup
 
 _Source: apps/web/src/components/ui/ToggleGroup.tsx_
 
-**When to use:** The single/multi-select toggle set (base-ui). Compose `Root` + `Item`s for a segmented control, a filter set, or a swatch picker (`variant="swatch"` with `swatchColor`). Reach for it when a small fixed set of options toggles in place; for a binary on/off use `Switch`.
+**When to use:** The Manti-backed compact selection set for segmented controls, filters and small fixed option lists. Supply options through `items` and control selection with the string-array `value` contract.
 
 **Slots:**
-- `Root` — The selection-state provider wrapping the items.
-- `Item` — A single toggle option; text child is its accessible name (or set `aria-label` for an icon/swatch-only item).
+- `items` — Toggle options supplied through `items`.
 
 ## Tooltip
 
 _Source: apps/web/src/components/ui/Tooltip.tsx_
 
-**When to use:** The hover/focus tooltip (base-ui). Wrap a trigger element to attach a short supplementary hint. It is supplementary only — never put essential information solely in a tooltip; its z-index is tuned to clear the sticky Subnav (#2046). Requires a `TooltipProvider` ancestor.
+**When to use:** The Manti-backed hover/focus hint for short supplementary text. Never place essential information solely in a tooltip.
 
 **Slots:**
-- `children` — The trigger element the tooltip is attached to.
+- `children` — The trigger content wrapped by Manti's inline trigger.
 
 ## TooltipProvider
 
 _Source: apps/web/src/components/ui/Tooltip.tsx_
 
-**When to use:** The tooltip timing/context host (base-ui). Mount it once high in the tree so grouped tooltips share open/close delays; every `Tooltip` renders under it. Reach for it at the app/shell level, not per tooltip.
+**When to use:** Compatibility-only no-op for the former application-level provider. Manti Tooltip needs no provider; new code should not add another provider.
 
 **Slots:**
-- `children` — The subtree whose `Tooltip`s share this provider's timing.
+- `children` — The application subtree, returned unchanged.

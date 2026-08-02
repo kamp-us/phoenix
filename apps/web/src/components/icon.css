@@ -3,6 +3,10 @@
    --text-secondary; a call-site raises it to --text-primary (hover), --accent
    (active), or --text-muted (disabled) by setting `color` on the icon or its control. */
 .kp-icon {
+	/* Manti's reset deliberately makes every svg block-level. Functional icons
+	   also appear inside running text, so the canonical Icon wrapper restores
+	   inline flow while remaining a non-growing flex item in flex controls. */
+	display: inline-block;
 	flex: none;
 	vertical-align: middle;
 	color: var(--text-secondary);

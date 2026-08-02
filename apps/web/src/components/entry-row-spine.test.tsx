@@ -20,7 +20,7 @@
  */
 import {readFileSync} from "node:fs";
 import {fileURLToPath} from "node:url";
-import {fireEvent, render} from "@testing-library/react";
+import {fireEvent, render, waitFor} from "@testing-library/react";
 import {describe, expect, it, vi} from "vitest";
 import {ReactionBar} from "./reaction/ReactionBar";
 import {Button} from "./ui/Button";
@@ -33,6 +33,9 @@ const readSource = (rel: string): string =>
 
 const GLOBAL_CSS = readSource("./../styles/global.css");
 const BUTTON_CSS = readSource("./ui/Button.css");
+const FORM_CSS = readSource("./ui/Form.css");
+const ICON_CSS = readSource("./icon.css");
+const TOGGLE_GROUP_CSS = readSource("./ui/ToggleGroup.css");
 
 describe("entry-row spine — focus-ring presence", () => {
 	// The ring is painted once, globally, by the single `:focus-visible` rule over
@@ -42,6 +45,38 @@ describe("entry-row spine — focus-ring presence", () => {
 	it("global.css defines the shared focus-ring token and a single :focus-visible outline rule", () => {
 		expect(GLOBAL_CSS).toMatch(/--focus-ring:/);
 		expect(GLOBAL_CSS).toMatch(/:focus-visible\s*\{[^}]*outline:\s*var\(--focus-ring\)/s);
+	});
+
+	it("Manti Field inputs delegate focus paint to their outer control — no double ring", () => {
+		expect(GLOBAL_CSS).toMatch(
+			/:where\(\[data-scope="field"\]\[data-part="input"\]\):focus-visible\s*\{[^}]*outline:\s*none/s,
+		);
+	});
+
+	it("the native button reset leaves every Manti anatomy button under component control", () => {
+		expect(GLOBAL_CSS).toMatch(/button:not\(\[data-scope\]\[data-part\]\)\s*\{[^}]*padding:\s*0/s);
+		expect(GLOBAL_CSS).not.toMatch(/button\s*\{[^}]*padding:\s*0/s);
+	});
+
+	it("the shared Icon restores inline flow after Manti's block-level svg reset", () => {
+		expect(ICON_CSS).toMatch(/\.kp-icon\s*\{[^}]*display:\s*inline-block/s);
+	});
+
+	it("ToggleGroup root variants match the base anatomy specificity", () => {
+		for (const variant of ["segmented", "outline", "square", "swatch"]) {
+			expect(TOGGLE_GROUP_CSS).toMatch(
+				new RegExp(
+					`\\.kp-toggle-group--${variant}\\[data-scope="toggle-group"\\]\\[data-part="root"\\]`,
+				),
+			);
+		}
+	});
+
+	it("Manti Field height stays on its mapped control token, never an undefined Phoenix variable", () => {
+		expect(FORM_CSS).not.toMatch(/--manti-field-height:\s*var\(--control-height\)/);
+		expect(FORM_CSS).toMatch(
+			/\.kp-field--semantic-required\s+\[data-part="required"\]\s*\{[^}]*display:\s*none/s,
+		);
 	});
 
 	it("Button renders a native <button> the shared ring paints, with no hand-rolled outline", () => {
@@ -63,10 +98,13 @@ describe("entry-row spine — focus-ring presence", () => {
 
 	it("ToggleGroup items render native <button>s the shared ring paints", () => {
 		const {container} = render(
-			<ToggleGroup.Root value={["a"]}>
-				<ToggleGroup.Item value="a">A</ToggleGroup.Item>
-				<ToggleGroup.Item value="b">B</ToggleGroup.Item>
-			</ToggleGroup.Root>,
+			<ToggleGroup
+				value={["a"]}
+				items={[
+					{value: "a", label: "A"},
+					{value: "b", label: "B"},
+				]}
+			/>,
 		);
 		const items = container.querySelectorAll("button");
 		expect(items.length).toBe(2);
@@ -113,17 +151,20 @@ describe("entry-row spine — aria roles/labels/state", () => {
 		expect(container.querySelector(".kp-meta-row__dot")!.getAttribute("aria-hidden")).toBe("true");
 	});
 
-	it("ToggleGroup exposes role=group and per-item aria-pressed reflecting the value", () => {
+	it("ToggleGroup exposes radio semantics and per-item aria-checked reflecting the value", () => {
 		const {container} = render(
-			<ToggleGroup.Root value={["a"]} aria-label="Seçenek">
-				<ToggleGroup.Item value="a">A</ToggleGroup.Item>
-				<ToggleGroup.Item value="b">B</ToggleGroup.Item>
-			</ToggleGroup.Root>,
+			<ToggleGroup
+				value={["a"]}
+				items={[
+					{value: "a", label: "A"},
+					{value: "b", label: "B"},
+				]}
+			/>,
 		);
-		expect(container.querySelector('[role="group"]')).not.toBeNull();
+		expect(container.querySelector('[role="radiogroup"]')).not.toBeNull();
 		const [a, b] = Array.from(container.querySelectorAll("button"));
-		expect(a!.getAttribute("aria-pressed")).toBe("true");
-		expect(b!.getAttribute("aria-pressed")).toBe("false");
+		expect(a!.getAttribute("aria-checked")).toBe("true");
+		expect(b!.getAttribute("aria-checked")).toBe("false");
 	});
 
 	it("ReactionBar names each button by its gloss and marks the glyph decorative", () => {
@@ -170,32 +211,38 @@ describe("entry-row spine — keyboard order & operability", () => {
 		expect(onToggle).toHaveBeenCalledOnce();
 	});
 
-	it("ToggleGroup uses composite roving tabindex — exactly one item is tabbable", () => {
+	it("ToggleGroup uses a single root tab stop before roving focus enters its items", () => {
 		const {container} = render(
-			<ToggleGroup.Root value={["b"]}>
-				<ToggleGroup.Item value="a">A</ToggleGroup.Item>
-				<ToggleGroup.Item value="b">B</ToggleGroup.Item>
-				<ToggleGroup.Item value="c">C</ToggleGroup.Item>
-			</ToggleGroup.Root>,
+			<ToggleGroup
+				value={["b"]}
+				items={[
+					{value: "a", label: "A"},
+					{value: "b", label: "B"},
+					{value: "c", label: "C"},
+				]}
+			/>,
 		);
-		const tabbable = Array.from(container.querySelectorAll("button")).filter(
-			(b) => b.tabIndex === 0,
-		);
-		// The composite (base-ui roving focus) keeps the group a single tab stop and
-		// moves between items with arrow keys — exactly one item tabbable at a time.
-		expect(tabbable.length).toBe(1);
+		const group = container.querySelector<HTMLElement>('[role="radiogroup"]');
+		expect(group?.tabIndex).toBe(0);
+		expect(
+			Array.from(container.querySelectorAll("button")).every((button) => button.tabIndex === -1),
+		).toBe(true);
 	});
 
-	it("ToggleGroup routes a click to onValueChange (operable)", () => {
+	it("ToggleGroup routes a click to onValueChange (operable)", async () => {
 		const onValueChange = vi.fn();
 		const {getByText} = render(
-			<ToggleGroup.Root value={["a"]} onValueChange={onValueChange}>
-				<ToggleGroup.Item value="a">A</ToggleGroup.Item>
-				<ToggleGroup.Item value="b">B</ToggleGroup.Item>
-			</ToggleGroup.Root>,
+			<ToggleGroup
+				value={["a"]}
+				onValueChange={onValueChange}
+				items={[
+					{value: "a", label: "A"},
+					{value: "b", label: "B"},
+				]}
+			/>,
 		);
 		fireEvent.click(getByText("B"));
-		expect(onValueChange).toHaveBeenCalled();
+		await waitFor(() => expect(onValueChange).toHaveBeenCalled());
 	});
 });
 
@@ -213,10 +260,7 @@ describe("entry-row spine — prefers-reduced-motion respect", () => {
 		expect(reset![0]).toMatch(/transition-duration:/);
 	});
 
-	it("Button's spinner animation rides the neutralizable --motion-* token seam", () => {
-		// The one entry-row primitive with an animation drives its duration through a
-		// `--motion-*` custom property (the design system's motion scale), keeping it
-		// on the seam the global reset governs rather than a hardcoded literal.
-		expect(BUTTON_CSS).toMatch(/animation:[^;]*var\(--motion-/);
+	it("Button's loading state delegates animation to Manti's reduced-motion-aware spinner", () => {
+		expect(BUTTON_CSS).toMatch(/\.kp-btn\[data-loading="true"\]/);
 	});
 });

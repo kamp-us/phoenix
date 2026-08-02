@@ -72,6 +72,9 @@
 	align-items: center;
 }
 .kp-sozluk-definition__vote-btn {
+	--manti-button-height: var(--vote-w);
+	--manti-button-padding-x: 0px;
+	min-width: var(--vote-w);
 	width: 26px;
 	height: 26px;
 	display: inline-flex;
@@ -91,11 +94,16 @@
 .kp-sozluk-definition__vote-btn:hover {
 	color: var(--accent);
 	border-color: var(--accent);
+	background: var(--surface);
 }
 .kp-sozluk-definition__vote-btn[aria-pressed="true"] {
 	color: var(--accent-fg);
 	background: var(--accent);
 	border-color: var(--accent);
+}
+.kp-sozluk-definition__vote-btn:disabled {
+	cursor: not-allowed;
+	opacity: 0.5;
 }
 /* Ring from the shared focus layer (global.css, #2169); tighter offset hugs the
    compact vote control. */
@@ -198,20 +206,24 @@
 	font-weight: 600;
 	color: var(--text-primary);
 }
-.kp-sozluk-composer__textarea {
+.kp-sozluk-composer__textarea[data-scope="field"][data-part="root"] {
 	width: 100%;
-	min-height: 120px;
-	resize: vertical;
+}
+.kp-sozluk-composer__textarea[data-scope="field"] [data-part="control"] {
+	width: 100%;
 	background: var(--surface);
 	border: 1px solid var(--border);
 	border-radius: var(--r-sm);
+	box-sizing: border-box;
+}
+.kp-sozluk-composer__textarea[data-scope="field"] [data-part="input"] {
+	min-height: 120px;
 	padding: 8px;
 	font: var(--t-mono);
 	color: var(--text-primary);
-	outline: none;
 	box-sizing: border-box;
 }
-.kp-sozluk-composer__textarea:focus {
+.kp-sozluk-composer__textarea[data-scope="field"]:focus-within [data-part="control"] {
 	border-color: var(--accent);
 }
 .kp-sozluk-composer__foot {

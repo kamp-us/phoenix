@@ -9,18 +9,22 @@
  * every one to appear here (see `a11y-pbt.test.tsx`'s coverage test) — a newly
  * added primitive that no one classified fails the gate, so the covered set can
  * never silently go stale. `deferred` is a conscious, reasoned parking spot (a
- * compound base-ui/portal primitive, or a control needing composition context to
+ * machine-backed portal primitive, or a control needing composition context to
  * have an accessible name), not an escape hatch — each carries its promotion reason.
  */
 
 import fc from "fast-check";
 import type {ReactElement} from "react";
+import {Alert} from "../Alert";
 import {Avatar} from "../Avatar";
 import {Code, Kbd, Mark, Skeleton, Tag} from "../atoms";
+import {Badge} from "../Badge";
 import {Button} from "../Button";
 import {Card, Surface} from "../Card";
 import {CountToggle} from "../CountToggle";
 import {MetaRow} from "../MetaRow";
+import {NumberInput} from "../NumberInput";
+import {ScrollArea} from "../ScrollArea";
 
 /** An interactive control: name/focus invariants apply to its `selector` element. */
 export interface InteractiveSpec {
@@ -147,9 +151,37 @@ const skeletonArb: fc.Arbitrary<ReactElement> = fc
 	.record({width: fc.integer({min: 8, max: 320}), height: fc.integer({min: 8, max: 64})})
 	.map((props) => <Skeleton {...props} />);
 
-/** Reason shared by the base-ui compound primitives parked out of the bare-prop harness. */
+const numberInputArb: fc.Arbitrary<ReactElement> = fc
+	.record({
+		label,
+		value: fc.integer({min: -100, max: 100}),
+		disabled: fc.boolean(),
+	})
+	.map(({label: inputLabel, value, disabled}) => (
+		<NumberInput label={inputLabel} value={String(value)} disabled={disabled} />
+	));
+
+const alertArb: fc.Arbitrary<ReactElement> = fc
+	.record({
+		variant: fc.constantFrom(...(["secondary", "success", "info", "danger"] as const)),
+		children: text,
+	})
+	.map(({children, ...props}) => <Alert {...props}>{children}</Alert>);
+
+const badgeArb: fc.Arbitrary<ReactElement> = fc
+	.record({
+		variant: fc.constantFrom(...(["primary", "secondary", "success", "info", "danger"] as const)),
+		children: text,
+	})
+	.map(({children, ...props}) => <Badge {...props}>{children}</Badge>);
+
+const scrollAreaArb: fc.Arbitrary<ReactElement> = text.map((children) => (
+	<ScrollArea orientation="vertical">{children}</ScrollArea>
+));
+
+/** Reason shared by Manti primitives parked out of the bare-prop harness. */
 const COMPOUND_REASON =
-	"compound base-ui primitive — needs its Root/Trigger/Panel (or portal/provider) composition to render a representative interactive surface; covered by its composed-usage tests, a promotion candidate for a composed a11y fixture.";
+	"Manti machine primitive — needs required items/trigger/content props or a portal interaction to render a representative surface; covered by composed-usage tests.";
 
 /**
  * The classification of EVERY runtime export of `../index.ts`. The coverage test
@@ -160,56 +192,45 @@ export const REGISTRY: Readonly<Record<string, PrimitiveSpec>> = {
 	// Interactive controls — the full name/focus/ARIA invariant set applies.
 	Button: {kind: "interactive", selector: "button", arb: buttonArb},
 	CountToggle: {kind: "interactive", selector: "button", arb: countToggleArb},
+	NumberInput: {kind: "interactive", selector: "input", arb: numberInputArb},
 
 	// Presentational primitives — structural ARIA invariants only.
 	Surface: {kind: "presentational", arb: surfaceArb},
 	Card: {kind: "presentational", arb: cardArb},
 	MetaRow: {kind: "presentational", arb: metaRowArb},
+	Alert: {kind: "presentational", arb: alertArb},
 	Avatar: {kind: "presentational", arb: avatarArb},
+	Badge: {kind: "presentational", arb: badgeArb},
+	ScrollArea: {kind: "presentational", arb: scrollAreaArb},
 	Tag: {kind: "presentational", arb: tagArb},
 	Code: {kind: "presentational", arb: inlineAtomArb(Code)},
 	Kbd: {kind: "presentational", arb: inlineAtomArb(Kbd)},
 	Mark: {kind: "presentational", arb: inlineAtomArb(Mark)},
 	Skeleton: {kind: "presentational", arb: skeletonArb},
 
-	// Deferred — compound / portal / provider-bound base-ui primitives.
+	// Deferred — Manti machine / portal / provider-bound primitives.
 	Collapsible: {kind: "deferred", reason: COMPOUND_REASON},
 	Dialog: {kind: "deferred", reason: COMPOUND_REASON},
 	Menu: {kind: "deferred", reason: COMPOUND_REASON},
+	Popover: {kind: "deferred", reason: COMPOUND_REASON},
 	Tabs: {kind: "deferred", reason: COMPOUND_REASON},
 	ToggleGroup: {kind: "deferred", reason: COMPOUND_REASON},
 	Switch: {kind: "deferred", reason: COMPOUND_REASON},
 	Tooltip: {kind: "deferred", reason: COMPOUND_REASON},
 	TooltipProvider: {kind: "deferred", reason: COMPOUND_REASON},
 
-	// Deferred — form controls whose accessible name comes from a composed Field/Label.
-	Field: {
-		kind: "deferred",
-		reason: "form control — accessible name comes from a composed Field/Label wrapper.",
-	},
-	FieldError: {
-		kind: "deferred",
-		reason: "form control — accessible name comes from a composed Field/Label wrapper.",
-	},
+	// Deferred — form controls whose accessible name comes from Manti's field-owning props.
 	Form: {
 		kind: "deferred",
-		reason: "form control — accessible name comes from a composed Field/Label wrapper.",
-	},
-	Hint: {
-		kind: "deferred",
-		reason: "form control — accessible name comes from a composed Field/Label wrapper.",
+		reason: "native form wrapper — needs labelled Manti controls in a composed fixture.",
 	},
 	Input: {
 		kind: "deferred",
-		reason: "form control — accessible name comes from a composed Field/Label wrapper.",
-	},
-	Label: {
-		kind: "deferred",
-		reason: "form control — accessible name comes from a composed Field/Label wrapper.",
+		reason: "Manti Input — accessible name comes from its required composed label prop.",
 	},
 	Textarea: {
 		kind: "deferred",
-		reason: "form control — accessible name comes from a composed Field/Label wrapper.",
+		reason: "Manti Textarea — accessible name comes from its required composed label prop.",
 	},
 
 	// Deferred — controls with side effects / data props needing a composed fixture.

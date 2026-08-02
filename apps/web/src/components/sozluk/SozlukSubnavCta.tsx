@@ -1,9 +1,9 @@
-import type * as React from "react";
+import * as React from "react";
 import {useNavigate} from "react-router";
 import {slugifyTerm} from "../../lib/slugifyTerm";
 import {Button} from "../ui/Button";
 import {Dialog} from "../ui/Dialog";
-import {Field, FieldError, Form, Input, Label} from "../ui/Form";
+import {Form, Input} from "../ui/Form";
 import {useSozlukCreateDialog} from "./SozlukCreateDialogState";
 
 /**
@@ -24,50 +24,69 @@ export function SozlukSubnavCta() {
 	// #3600 pinned: an ancestor unmount would silently reset it, vanishing the dialog.
 	const {open, setOpen} = useSozlukCreateDialog();
 	const navigate = useNavigate();
+	const [term, setTerm] = React.useState("");
+	const [termError, setTermError] = React.useState<string | null>(null);
 	function onSubmit(e: React.FormEvent<HTMLFormElement>) {
 		e.preventDefault();
-		// `validateTerm` (below) blocks the base-ui submit while the term is unslugifiable,
-		// so a term that reaches here always yields a slug; the guard is the last-resort no-op
-		// that never navigates to an empty slug (#3746 dismiss, #3789 no-op).
-		const slug = slugifyTerm(String(new FormData(e.currentTarget).get("term") ?? ""));
+		const validationError = validateTerm(term);
+		if (validationError) {
+			setTermError(validationError);
+			return;
+		}
+		const slug = slugifyTerm(term);
 		if (!slug) return;
 		setOpen(false);
+		setTerm("");
+		setTermError(null);
 		navigate(`/sozluk/${slug}`);
 	}
 	return (
-		<Dialog.Root open={open} onOpenChange={setOpen}>
-			<Dialog.Trigger
-				render={
-					<Button variant="primary" icon={<PlusGlyph />}>
-						yeni tanım
+		<Dialog
+			open={open}
+			onOpenChange={(next) => {
+				setOpen(next);
+				if (!next) setTermError(null);
+			}}
+			trigger={
+				<Button variant="primary" icon={<PlusGlyph />}>
+					yeni tanım
+				</Button>
+			}
+			title="Yeni tanım"
+			description="oluşturmak istediğin terimi yaz."
+		>
+			<Form onSubmit={onSubmit}>
+				<Input
+					name="term"
+					label="Terim"
+					className="kp-field--semantic-required"
+					value={term}
+					onChange={(event) => {
+						setTerm(event.currentTarget.value);
+						setTermError(null);
+					}}
+					error={termError}
+					required
+					autoFocus
+					fullWidth
+					placeholder="terim…"
+				/>
+				<div className="kp-dialog-actions">
+					<Button variant="tertiary" type="button" onClick={() => setOpen(false)}>
+						vazgeç
 					</Button>
-				}
-			/>
-			<Dialog.Popup>
-				<Dialog.Head title="Yeni tanım" description="oluşturmak istediğin terimi yaz." />
-				<Dialog.Body>
-					<Form onSubmit={onSubmit}>
-						<Field name="term" validate={validateTerm}>
-							<Label>Terim</Label>
-							<Input name="term" required autoFocus placeholder="terim…" />
-							<FieldError match="customError">{UNSLUGIFIABLE_TERM_MESSAGE}</FieldError>
-						</Field>
-						<Dialog.Foot>
-							<Dialog.Close render={<Button variant="tertiary">vazgeç</Button>} />
-							<Button variant="primary" type="submit">
-								oluştur
-							</Button>
-						</Dialog.Foot>
-					</Form>
-				</Dialog.Body>
-			</Dialog.Popup>
-		</Dialog.Root>
+					<Button variant="primary" type="submit">
+						oluştur
+					</Button>
+				</div>
+			</Form>
+		</Dialog>
 	);
 }
 
 // A punctuation-only term (e.g. "!!!") is a non-empty value `required` accepts but that
 // `slugifyTerm` reduces to "" — the composer is slug-addressed, so it has nowhere to go.
-// Surfacing it as a field error (base-ui blocks the submit + flags `customError`) replaces the
+// Surfacing it through Manti Input's error slot replaces the
 // silent no-op the bare `if (!slug) return` guard left behind (#3789). Empty is left to
 // `required`; only the non-empty-but-unslugifiable term errors here. Turkish copy, per the
 // user-facing sözlük surface (.glossary/LANGUAGE.md).

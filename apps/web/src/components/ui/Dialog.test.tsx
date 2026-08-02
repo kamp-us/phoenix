@@ -1,33 +1,34 @@
-/**
- * Pins the shared Dialog.Body empty-collapse contract (#1638): a delete-confirm
- * dialog whose body renders only on error must NOT paint a hollow padded band
- * between head and foot when there's no error. Body renders nothing when empty,
- * and still renders its content (role="alert" error) when present — the guard the
- * pano/sözlük delete-confirm surfaces and DeleteAccountDialog/VouchSheet rely on.
- */
-import {render} from "@testing-library/react";
-import {describe, expect, it} from "vitest";
+import {fireEvent, render, screen, waitFor} from "@testing-library/react";
+import {describe, expect, it, vi} from "vitest";
+import {Button} from "./Button";
 import {Dialog} from "./Dialog";
 
-describe("Dialog.Body — empty collapses, content renders", () => {
-	it("renders nothing (no padded box) when it has no children", () => {
-		const {container} = render(<Dialog.Body>{null}</Dialog.Body>);
-		expect(container.querySelector(".kp-dialog__body")).toBeNull();
-	});
-
-	it("renders nothing when a conditional child evaluates to false", () => {
-		const hasError = false;
-		const {container} = render(<Dialog.Body>{hasError ? <p>err</p> : null}</Dialog.Body>);
-		expect(container.querySelector(".kp-dialog__body")).toBeNull();
-	});
-
-	it("renders the padded body when it has content", () => {
-		const {container, getByRole} = render(
-			<Dialog.Body>
-				<p role="alert">bir şeyler ters gitti</p>
-			</Dialog.Body>,
+describe("Dialog — Manti flat API", () => {
+	it("renders the public title, description, body and footer anatomy", () => {
+		render(
+			<Dialog open title="başlık" description="açıklama" footer={<Button>tamam</Button>}>
+				<p>gövde</p>
+			</Dialog>,
 		);
-		expect(container.querySelector(".kp-dialog__body")).not.toBeNull();
-		expect(getByRole("alert").textContent).toBe("bir şeyler ters gitti");
+
+		expect(screen.getByRole("dialog")).not.toBeNull();
+		expect(screen.getByText("başlık").getAttribute("data-part")).toBe("title");
+		expect(screen.getByText("açıklama").getAttribute("data-part")).toBe("description");
+		expect(screen.getByText("gövde").closest('[data-part="body"]')).not.toBeNull();
+		expect(screen.getByText("tamam").closest('[data-part="footer"]')).not.toBeNull();
+	});
+
+	it("footer render-prop close helper dismisses through onOpenChange", async () => {
+		const onOpenChange = vi.fn();
+		render(
+			<Dialog
+				open
+				onOpenChange={onOpenChange}
+				title="onay"
+				footer={({close}) => <Button onClick={close}>vazgeç</Button>}
+			/>,
+		);
+		fireEvent.click(screen.getByText("vazgeç"));
+		await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
 	});
 });

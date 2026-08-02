@@ -11,6 +11,7 @@
  * when its nav entry is selected. Lowercase-Turkish copy per the design law.
  */
 import {Suspense, useState} from "react";
+import {Button} from "../components/ui/Button";
 import {consoleRegistry} from "./app-modules.ts";
 import {type ConsoleRegistry, selectActiveModule} from "./module-registry.ts";
 
@@ -24,15 +25,17 @@ export function AdminConsole({registry = consoleRegistry}: {readonly registry?: 
 		<section className="kp-admin" aria-label="yönetim konsolu" data-testid="admin-console">
 			<nav className="kp-admin__nav" aria-label="konsol modülleri">
 				{modules.map((module) => (
-					<button
+					<Button
 						key={module.id}
 						type="button"
+						variant="tertiary"
+						size="sm"
 						aria-current={active?.id === module.id ? "page" : undefined}
 						onClick={() => setSelectedId(module.id)}
 						data-testid={`admin-nav-${module.id}`}
 					>
 						{module.label}
-					</button>
+					</Button>
 				))}
 			</nav>
 			<div className="kp-admin__panel" data-testid="admin-panel">

@@ -1,4 +1,5 @@
 import type * as React from "react";
+import {Badge} from "./Badge";
 import "./atoms.css";
 
 export type TagKind = "discuss" | "ask" | "show" | "rant" | "meta" | "news";
@@ -29,7 +30,9 @@ export function Tag({
 			{children}
 		</a>
 	) : (
-		<span className={cls}>{children}</span>
+		<Badge variant="secondary" className={cls}>
+			{children}
+		</Badge>
 	);
 }
 

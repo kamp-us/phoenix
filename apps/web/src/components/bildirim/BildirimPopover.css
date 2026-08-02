@@ -35,10 +35,6 @@
 
 /* The Positioner carries the stacking rank (the `position: fixed` element), the
    same rule the Menu/Tooltip wrappers document — outrank the sticky Subnav. */
-.kp-bildirim-pop__positioner {
-	z-index: 70;
-}
-
 .kp-bildirim-pop__popup {
 	display: flex;
 	flex-direction: column;
@@ -49,10 +45,13 @@
 	border: 1px solid var(--border);
 	border-radius: var(--r-md);
 	box-shadow: var(--shadow-dropdown);
+	padding: 0;
+	gap: 0;
+	backdrop-filter: none;
 	overflow: hidden;
 }
 
-.kp-bildirim-pop__head {
+.kp-bildirim-pop__popup > [data-part="title"] {
 	padding: var(--s-2) var(--s-3);
 	border-bottom: 1px solid var(--border-faint);
 }
@@ -66,7 +65,6 @@
 .kp-bildirim-pop__body {
 	flex: 1;
 	min-height: 0;
-	overflow-y: auto;
 	padding: var(--s-1) var(--s-3);
 }
 

@@ -130,3 +130,33 @@ describe("ProfilePage readUsername precedence (#2188 — the me-hop removal)", (
 		expect(screen.getByTestId("contrib-username").textContent).toBe("canonical-me-uname");
 	});
 });
+
+describe("ProfilePage appearance controls", () => {
+	it("uses the shared Manti outline ToggleGroup without the retired page override", () => {
+		sessionUsername = "session-uname";
+		meUsername = "session-uname";
+
+		renderProfile();
+
+		const themeGroup = screen
+			.getByRole("radio", {name: "koyu"})
+			.closest('[data-scope="toggle-group"][data-part="root"]');
+		const densityGroup = screen
+			.getByRole("radio", {name: "normal"})
+			.closest('[data-scope="toggle-group"][data-part="root"]');
+
+		for (const group of [themeGroup, densityGroup]) {
+			expect(group?.classList).toContain("kp-toggle-group--outline");
+			expect(group?.classList).not.toContain("kp-profile__theme-toggle");
+		}
+	});
+
+	it("promotes account deletion as the dangerous area's primary action", () => {
+		sessionUsername = "session-uname";
+		meUsername = "session-uname";
+
+		renderProfile();
+
+		expect(screen.getByTestId("delete-account-btn").getAttribute("data-variant")).toBe("primary");
+	});
+});

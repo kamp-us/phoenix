@@ -24,6 +24,8 @@ import {useSetDivanSubnavContent} from "../components/divan/DivanSubnavLayout";
 import {Raporlar} from "../components/divan/Raporlar";
 import {TriageLoop} from "../components/divan/TriageLoop";
 import type {SubnavFilter} from "../components/layout/Subnav";
+import {Alert} from "../components/ui/Alert";
+import {Button} from "../components/ui/Button";
 import {Screen} from "../fate/Screen";
 import "../components/divan/Divan.css";
 
@@ -98,17 +100,21 @@ function DivanWorkspace() {
 
 				{!inZone && raporlarVisible && (
 					<nav className="kp-divan__nav" aria-label="divan bölümleri">
-						<button
+						<Button
 							type="button"
+							variant="tertiary"
+							size="sm"
 							className="kp-divan__nav-tab"
 							aria-current={section === "caylaklar" ? "true" : undefined}
 							onClick={() => setSection("caylaklar")}
 							data-testid="divan-nav-caylaklar"
 						>
 							çaylaklar
-						</button>
-						<button
+						</Button>
+						<Button
 							type="button"
+							variant="tertiary"
+							size="sm"
 							className="kp-divan__nav-tab"
 							aria-current={section === "raporlar" ? "true" : undefined}
 							onClick={() => {
@@ -118,7 +124,7 @@ function DivanWorkspace() {
 							data-testid="divan-nav-raporlar"
 						>
 							raporlar
-						</button>
+						</Button>
 					</nav>
 				)}
 
@@ -190,8 +196,12 @@ function DivanWorkspace() {
 function AccessError({code}: {readonly code: string}) {
 	const denied = code === "UNAUTHORIZED" || code === "FORBIDDEN";
 	return (
-		<p className="kp-divan__error" role="alert" data-testid="divan-access-error">
+		<Alert
+			variant="danger"
+			className="kp-alert--inline kp-divan__error"
+			data-testid="divan-access-error"
+		>
 			{denied ? "bu alanı görme yetkin yok." : "divan yüklenemedi, tekrar dene."}
-		</p>
+		</Alert>
 	);
 }

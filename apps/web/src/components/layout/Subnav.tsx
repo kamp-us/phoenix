@@ -1,5 +1,6 @@
 import type * as React from "react";
 import {NavLink} from "react-router";
+import {Button} from "../ui/Button";
 import "./Subnav.css";
 
 export type SubnavFilter = {id: string; label: React.ReactNode};
@@ -60,15 +61,17 @@ export function Subnav({
 			{filters?.length || links?.length || destinations ? (
 				<div className="kp-subnav__filters">
 					{filters?.map((f) => (
-						<button
+						<Button
 							key={f.id}
 							type="button"
+							variant="link"
+							size="sm"
 							className="kp-subnav__filter"
-							aria-pressed={activeFilter === f.id}
+							pressed={activeFilter === f.id}
 							onClick={() => onFilterChange?.(f.id)}
 						>
 							{f.label}
-						</button>
+						</Button>
 					))}
 					{/* NavLink sets aria-current="page" on the active route by default */}
 					{links?.map((l) => (
@@ -85,9 +88,15 @@ export function Subnav({
 				<span className="kp-subnav__crumb">
 					{crumb.label}
 					{crumb.onClear ? (
-						<button type="button" className="kp-subnav__crumb-clear" onClick={crumb.onClear}>
+						<Button
+							type="button"
+							variant="link"
+							size="sm"
+							className="kp-subnav__crumb-clear"
+							onClick={crumb.onClear}
+						>
 							× filtreyi kaldır
-						</button>
+						</Button>
 					) : null}
 				</span>
 			) : null}

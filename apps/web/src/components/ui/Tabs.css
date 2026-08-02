@@ -1,61 +1,53 @@
-/* Tabs — Base UI primitive wrapper.
-   Used by: SubmitForm (link/yazı), CommentComposer (yaz/önizle), AuthPage (login/register). */
-
-.kp-tabs {
-	display: flex;
-	flex-direction: column;
+/* Phoenix tab visual contract over Manti Tabs anatomy. */
+[data-scope="tabs"][data-part="root"] {
 	gap: var(--s-3);
 }
 
-.kp-tabs__list {
-	display: flex;
+[data-scope="tabs"][data-part="list"] {
 	gap: var(--s-1);
-	border-bottom: 1px solid var(--border-faint);
+	border-color: var(--border-faint);
 }
 
-.kp-tabs__tab {
+[data-scope="tabs"][data-part="trigger"] {
 	padding: 6px var(--s-3);
 	font: var(--t-body-sm);
 	font-weight: 500;
 	color: var(--text-secondary);
-	border-bottom: 2px solid transparent;
-	margin-bottom: -1px;
-	cursor: pointer;
-	user-select: none;
 }
-.kp-tabs__tab:hover {
+[data-scope="tabs"][data-part="trigger"]:hover,
+[data-scope="tabs"][data-part="trigger"][data-selected] {
 	color: var(--text-primary);
 }
-.kp-tabs__tab[data-selected] {
+
+[data-scope="tabs"][data-part="root"][data-variant="line"]
+	> [data-part="list"]
+	> [data-part="indicator"] {
+	background: var(--accent-9);
+}
+
+[data-scope="tabs"][data-part="content"] {
 	color: var(--text-primary);
-	border-bottom-color: var(--accent-9);
-}
-/* Ring from the shared focus layer (global.css, #2169); only the rounded outline
-   corner is tab-specific. */
-.kp-tabs__tab:focus-visible {
-	border-radius: var(--r-sm);
+	line-height: inherit;
 }
 
-.kp-tabs__panel {
-	outline: none;
-}
-
-/* "Pill" variant — used for write/preview style tabs (composer) */
-.kp-tabs--pill .kp-tabs__list {
-	display: inline-flex;
+[data-scope="tabs"][data-part="root"][data-variant="pill"] > [data-part="list"] {
 	background: var(--surface-sunken);
 	border: 1px solid var(--border-faint);
 	border-radius: var(--r-md);
 	padding: 2px;
-	gap: 0;
 }
-.kp-tabs--pill .kp-tabs__tab {
-	border-bottom: 0;
-	margin-bottom: 0;
+[data-scope="tabs"][data-part="root"][data-variant="pill"]
+	> [data-part="list"]
+	> [data-part="trigger"] {
 	border-radius: var(--r-sm);
 	padding: 4px var(--s-3);
 }
-.kp-tabs--pill .kp-tabs__tab[data-selected] {
+[data-scope="tabs"][data-part="root"][data-variant="pill"]
+	> [data-part="list"]
+	> [data-part="indicator"] {
 	background: var(--surface-raised);
-	color: var(--text-primary);
+	border-radius: var(--r-sm);
+	border: 0;
+	box-shadow: none;
+	backdrop-filter: none;
 }

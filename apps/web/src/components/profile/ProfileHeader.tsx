@@ -15,17 +15,10 @@
  * `null` renders handle-only, exactly as before.
  */
 import {Karma} from "../karma/Karma";
+import {Alert} from "../ui/Alert";
+import {Avatar} from "../ui/Avatar";
 import {profileStatTiles} from "./profileStatTiles";
 import "./ProfileHeader.css";
-
-function initialsOf(name: string) {
-	return name
-		.split(/\s+|_|-/)
-		.filter(Boolean)
-		.slice(0, 2)
-		.map((p) => p[0]?.toUpperCase() ?? "")
-		.join("");
-}
 
 export interface ProfileHeaderStats {
 	readonly definitionCount: number;
@@ -62,8 +55,13 @@ export function ProfileHeader({
 
 	return (
 		<header className="kp-profile-header">
-			<div className="kp-profile-header__avatar" aria-hidden>
-				{image ? <img src={image} alt="" /> : <span>{initialsOf(displayName)}</span>}
+			<div className="kp-profile-header__avatar-wrap" aria-hidden="true">
+				<Avatar
+					name={displayName}
+					src={image ?? undefined}
+					size="xl"
+					className="kp-profile-header__avatar"
+				/>
 			</div>
 			<div className="kp-profile-header__id">
 				<div className="kp-profile-header__name" data-testid="user-profile-display-name">
@@ -74,13 +72,13 @@ export function ProfileHeader({
 				</div>
 			</div>
 			{statsError ? (
-				<div
-					className="kp-profile-header__stats kp-profile-header__stats--error"
+				<Alert
+					variant="danger"
+					className="kp-alert--inline kp-profile-header__stats kp-profile-header__stats--error"
 					data-testid="stats-error"
-					role="alert"
 				>
 					istatistikler yüklenemedi
-				</div>
+				</Alert>
 			) : (
 				<div className="kp-profile-header__stats" data-testid="user-profile-stats">
 					{tiles.map((tile) => (

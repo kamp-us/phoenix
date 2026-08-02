@@ -73,7 +73,7 @@ describe("SozlukSubnavLayout — sözlük product Subnav zone through SubnavShel
 		const {container} = renderZone();
 		const cta = container.querySelector(".kp-subnav__cta");
 		expect(cta).toBeTruthy();
-		expect(cta?.querySelector(".kp-btn--primary")).toBeTruthy();
+		expect(cta?.querySelector('[data-scope="button"][data-variant="primary"]')).toBeTruthy();
 		// the CTA slot is not the filter/input slot, and no search input leaks onto the bar
 		expect(container.querySelector(".kp-subnav__cta .kp-subnav__filter")).toBeNull();
 	});
@@ -82,7 +82,9 @@ describe("SozlukSubnavLayout — sözlük product Subnav zone through SubnavShel
 		renderZone("/sozluk/mevcut-terim");
 		expect(screen.getByTestId("term-leaf").textContent).toContain("term:mevcut-terim");
 		fireEvent.click(screen.getByRole("button", {name: /yeni tanım/i}));
-		const field = await screen.findByLabelText("Terim");
+		const field = await screen.findByLabelText(/Terim/);
+		expect((field as HTMLInputElement).required).toBe(true);
+		expect(field.closest('[data-part="root"]')?.classList).toContain("kp-field--semantic-required");
 		fireEvent.change(field, {target: {value: "yeni terim"}});
 		const form = field.closest("form");
 		if (!form) throw new Error("the create field is not inside a form");
@@ -93,31 +95,31 @@ describe("SozlukSubnavLayout — sözlük product Subnav zone through SubnavShel
 
 	/**
 	 * #3746: a submit the create flow cannot act on must not dismiss the dialog. `required`
-	 * is no defence — base-ui's `Form` renders `noValidate` and gates on its own field
-	 * validity, which a non-empty punctuation term passes on its way to slugifying into
+	 * alone is no defence: a non-empty punctuation term passes native required validation
+	 * on its way to slugifying into
 	 * nothing. That used to close the dialog while navigating nowhere.
 	 */
 	it("keeps the create dialog open when the term slugifies to nothing — never a silent dismiss", async () => {
 		renderZone("/sozluk/mevcut-terim");
 		fireEvent.click(screen.getByRole("button", {name: /yeni tanım/i}));
-		const field = await screen.findByLabelText("Terim");
+		const field = await screen.findByLabelText(/Terim/);
 		fireEvent.change(field, {target: {value: "!!!"}});
 		const form = field.closest("form");
 		if (!form) throw new Error("the create field is not inside a form");
 		fireEvent.submit(form);
-		expect(screen.getByLabelText("Terim")).toBeTruthy();
+		expect(screen.getByLabelText(/Terim/)).toBeTruthy();
 		expect(screen.getByTestId("term-leaf").textContent).toContain("term:mevcut-terim");
 	});
 
 	/**
 	 * #3789: an unslugifiable term is no longer a silent no-op — it surfaces a Turkish field
-	 * error through the existing Field/FieldError affordance, so the user learns why `oluştur`
+	 * error through Manti Input's error affordance, so the user learns why `oluştur`
 	 * did nothing instead of only being able to `vazgeç`.
 	 */
 	it("surfaces a Turkish field error when the term slugifies to nothing — not a silent no-op", async () => {
 		renderZone("/sozluk/mevcut-terim");
 		fireEvent.click(screen.getByRole("button", {name: /yeni tanım/i}));
-		const field = await screen.findByLabelText("Terim");
+		const field = await screen.findByLabelText(/Terim/);
 		fireEvent.change(field, {target: {value: "!!!"}});
 		const form = field.closest("form");
 		if (!form) throw new Error("the create field is not inside a form");
@@ -130,16 +132,15 @@ describe("SozlukSubnavLayout — sözlük product Subnav zone through SubnavShel
 	it("keeps the create dialog open when the typed term is lost before submit", async () => {
 		renderZone("/sozluk/mevcut-terim");
 		fireEvent.click(screen.getByRole("button", {name: /yeni tanım/i}));
-		const field = (await screen.findByLabelText("Terim")) as HTMLInputElement;
+		const field = (await screen.findByLabelText(/Terim/)) as HTMLInputElement;
 		fireEvent.change(field, {target: {value: "gecerli terim"}});
-		// Drop the control's value with no change event, the way a remount of the
-		// uncontrolled input drops it (#3600). Which layer refuses the resulting empty
-		// submit is base-ui's business; that the dialog survives it is ours.
-		field.value = "";
+		// Drop the controlled Manti Input value before submit. Native required validity
+		// is separate; that the dialog survives the empty state is ours.
+		fireEvent.change(field, {target: {value: ""}});
 		const form = field.closest("form");
 		if (!form) throw new Error("the create field is not inside a form");
 		fireEvent.submit(form);
-		expect(screen.getByLabelText("Terim")).toBeTruthy();
+		expect(screen.getByLabelText(/Terim/)).toBeTruthy();
 		expect(screen.getByTestId("term-leaf").textContent).toContain("term:mevcut-terim");
 	});
 

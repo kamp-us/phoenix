@@ -13,6 +13,7 @@ import {actorLabel} from "../moderation/actor-identity";
 import {PostReactionBar} from "../reaction/PostReactionBar";
 import {ReactionBarSlot} from "../reaction/ReactionBarSlot";
 import {Tag, type TagKind} from "../ui/atoms";
+import {Button} from "../ui/Button";
 import {CopyLinkButton} from "../ui/CopyLinkButton";
 import {EditedIndicator} from "../ui/EditedIndicator";
 import {MetaRow} from "../ui/MetaRow";
@@ -110,12 +111,24 @@ export function PanoPostHeader(props: PanoPostHeaderProps) {
 				{props.onReport ? <ReportButton onReport={props.onReport} testId="post-report" /> : null}
 				{props.isAuthor ? (
 					<>
-						<button type="button" data-testid="post-edit" onClick={props.onEdit}>
+						<Button
+							type="button"
+							variant="link"
+							size="sm"
+							data-testid="post-edit"
+							onClick={props.onEdit}
+						>
 							düzenle
-						</button>
-						<button type="button" data-testid="post-delete" onClick={props.onDelete}>
+						</Button>
+						<Button
+							type="button"
+							variant="link"
+							size="sm"
+							data-testid="post-delete"
+							onClick={props.onDelete}
+						>
 							sil
-						</button>
+						</Button>
 					</>
 				) : null}
 			</MetaRow>
@@ -140,7 +153,7 @@ export function PanoPostHeaderVote({
 	isAuthor = false,
 }: {
 	post: ViewRef<"Post">;
-	/** The viewer authored this post — drop the vote button (self-vote is blocked, #2216). */
+	/** The viewer authored this post — keep the vote visible but disabled (#2216). */
 	isAuthor?: boolean;
 }) {
 	const data = useLiveView(PanoPostHeaderView, post);

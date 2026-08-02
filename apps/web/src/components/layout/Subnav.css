@@ -38,6 +38,7 @@
 }
 .kp-subnav__filter:hover {
 	color: var(--text-primary);
+	text-decoration: none;
 }
 /* aria-pressed → sort toggles; aria-current → NavLink active route (kaydedilenler). */
 .kp-subnav__filter[aria-pressed="true"],
@@ -74,6 +75,10 @@
 .kp-subnav__cta {
 	display: inline-flex;
 	align-items: center;
+}
+.kp-subnav__cta .kp-btn:where([data-scope="button"][data-part="root"]) {
+	--manti-button-height: calc(var(--subnav-h) - var(--s-2));
+	--manti-button-padding-x: var(--s-3);
 }
 
 /* Input slot (#2602) — a product-scoped on-demand utility box (sözlük go-to-or-create),

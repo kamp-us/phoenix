@@ -15,6 +15,13 @@
 	font-size: var(--t-meta);
 }
 
+.kp-knobs__control {
+	min-width: 0;
+	margin: 0;
+	padding: 0;
+	border: 0;
+}
+
 .kp-knobs__empty {
 	color: var(--text-muted);
 	font-size: var(--t-body-sm);
