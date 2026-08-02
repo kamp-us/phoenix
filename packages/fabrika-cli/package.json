@@ -1,0 +1,51 @@
+{
+	"name": "@kampus/fabrika-cli",
+	"version": "0.1.0",
+	"description": "fabrika-cli — the deterministic verb package fabrika skills call; `fabrika-cli <group> <verb> …` (epic #4650)",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/kamp-us/phoenix.git",
+		"directory": "packages/fabrika-cli"
+	},
+	"type": "module",
+	"bin": {
+		"fabrika-cli": "./dist/bin.js"
+	},
+	"main": "./dist/index.js",
+	"module": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		}
+	},
+	"files": [
+		"dist"
+	],
+	"publishConfig": {
+		"access": "public"
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.build.json",
+		"prepublishOnly": "tsc -p tsconfig.build.json",
+		"typecheck": "tsgo -p tsconfig.json",
+		"test": "vitest run",
+		"cli": "node src/bin.ts"
+	},
+	"dependencies": {
+		"@effect/platform-node": "catalog:",
+		"effect": "catalog:"
+	},
+	"devDependencies": {
+		"@effect/tsgo": "catalog:",
+		"@types/node": "catalog:",
+		"@typescript/native-preview": "catalog:",
+		"typescript": "catalog:",
+		"vitest": "catalog:"
+	},
+	"volta": {
+		"node": "26.2.0"
+	}
+}
