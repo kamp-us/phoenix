@@ -24,6 +24,7 @@ import {
 	boundHead,
 	compareWriteRecency,
 	GATE_KEYWORD,
+	GATES,
 	isBoundToHead,
 	outcomeCommentId,
 	outcomeSha,
@@ -318,4 +319,73 @@ export const decideGate = (input: GateDecisionInput): GateDecision => {
 			.map((d) => `${d.namespace} (${d.form})`)
 			.join(" + ")} @ ${input.headSha}`,
 	};
+};
+
+/** What `parseRequiredGates` resolved: the union of every occurrence, or the input error that refuses. */
+export type RequiredParse =
+	| {readonly _tag: "ok"; readonly gates: ReadonlyArray<VerdictGate>}
+	| {readonly _tag: "error"; readonly reason: string};
+
+/**
+ * Parse the required-namespace set out of EVERY `--require` occurrence, tolerating both shapes the
+ * producer emits: `class-probe classify --namespaces` output (`review-code`) and a bare gate name
+ * (`code`). The occurrences are UNIONED, so `--require a --require b` and `--require a,b` are the
+ * same required set — the flag-shape parity #4520 found broken.
+ *
+ * Taking `ReadonlyArray<string>` rather than `string` is the whole fix, and it is a type-level one:
+ * the single-valued `Flag.string("require")` handed this function ONE occurrence, so every later
+ * `--require` was dropped by the flag layer, upstream of the unrecognized-token refusal below —
+ * which meant a guard whose stated purpose is "never shrink the gate conjunction" was structurally
+ * unreachable for occurrence 2..n, born dead rather than drifted. With the flag now repeatable
+ * (`Flag.atLeast(1)`), every occurrence reaches this parse and a bogus token in ANY of them refuses.
+ */
+export const parseRequiredGates = (occurrences: ReadonlyArray<string>): RequiredParse => {
+	const tokens = occurrences
+		.flatMap((raw) => raw.split(/[\s,]+/))
+		.map((t) => t.trim().toLowerCase())
+		.filter((t) => t.length > 0);
+	const gates: VerdictGate[] = [];
+	for (const token of tokens) {
+		const name = token.startsWith("review-") ? token.slice("review-".length) : token;
+		if (!(GATES as ReadonlyArray<string>).includes(name)) {
+			return {
+				_tag: "error",
+				reason: `unrecognized required namespace '${token}' — expected review-<gate> or <gate>, one of ${GATES.join(" | ")}. Refusing to drop it from the required set (that would shrink the gate conjunction).`,
+			};
+		}
+		gates.push(name as VerdictGate);
+	}
+	return {_tag: "ok", gates};
+};
+
+/**
+ * The coverage assertion: an AFFIRMATIVE gate answer must be about exactly the namespaces it was
+ * asked about — `decisions` must be one per DISTINCT requested gate, no more and no fewer.
+ *
+ * This is the general form of #4520, and it is the part that outlives the specific spelling.
+ * Repeatable `--require` fixes the one path where a namespace went missing; this refuses ANY future
+ * path that answers about fewer things than it was asked, because the defect's signature is a
+ * *plausible value* rather than an error — the answer runs, exits clean, and is well-formed, just
+ * smaller. The natural guards (did it run? did it exit 0? did it return a set?) are all satisfied by
+ * the wrong answer, so only an explicit count can see it.
+ *
+ * The operands come from two different origins on purpose (`.patterns/skill-script-shell-shape.md`'s
+ * rule, same idea): the requested set is the CLI's own parse of argv, the answered set comes back
+ * over the `Github` service boundary. An assertion that re-derived `decisions` from `requiredGates`
+ * inside `decideGate` would be true by construction and could never fire.
+ *
+ * Applied to a pass only: a refusal already refuses, and its own reason is the more useful one.
+ */
+export const coverageDefect = (
+	requested: ReadonlyArray<VerdictGate>,
+	decision: GateDecision,
+): string | null => {
+	const distinct = new Set(requested);
+	const answered = new Set(decision.decisions.map((d) => d.gate));
+	const missing = [...distinct].filter((g) => !answered.has(g));
+	const extra = [...answered].filter((g) => !distinct.has(g));
+	if (missing.length === 0 && extra.length === 0 && decision.decisions.length === distinct.size) {
+		return null;
+	}
+	return `refused (fail-closed, coverage): the gate answered about ${decision.decisions.length} namespace(s) [${[...answered].join(", ") || "none"}] but was asked about ${distinct.size} [${[...distinct].join(", ") || "none"}]${missing.length > 0 ? ` — NEVER decided: ${missing.join(", ")}` : ""}${extra.length > 0 ? ` — decided unasked: ${extra.join(", ")}` : ""}. A pass that covers fewer namespaces than were required is an un-gated merge reported as a clean one (#4520).`;
 };

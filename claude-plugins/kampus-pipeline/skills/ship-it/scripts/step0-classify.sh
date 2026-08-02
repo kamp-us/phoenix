@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # shellcheck shell=bash disable=SC1007,SC1091
-# Classify the diff: the §CP derivation, the artifact-class probes, and the additive UI probe.
+# Classify the diff: the §CP derivation, then the artifact-class + UI answer, both from shared verbs.
 #
 # Extracted VERBATIM from ship-it/SKILL.md's Step 0 fenced block (epic #4435 phase 1, #4448).
-# A byte-move, not a rewrite: replacing this glue with `pipeline-cli` verbs is phase 2 (#1929).
+# The class/UI half is no longer that byte-move: it delegates to `pipeline-cli class-probe classify`
+# rather than re-deriving a second, smaller answer beside it (#4730 — see the block below).
 #
 # DUAL-MODE (ADR 0232) — the why is `.patterns/skill-script-shell-shape.md` § The dual-mode shape.
 #   EXECUTED:  bash ./claude-plugins/kampus-pipeline/skills/ship-it/scripts/step0-classify.sh <REPO> <PR>
@@ -46,18 +47,9 @@ if ! cp_changed_files "$REPO" "$PR"; then
   exit 1
 fi
 FILES="$CP_FILES"   # proven-arrived, scope already emitted ($CP_FILES_N files) per §ZS #1
-# NON-TRIVIALITY ASSERT (#4401) — single-sourced in §CLASS of gh-issue-intake-formats.md; copied
-# here verbatim because Step 0 runs as one shell block. EVERY boundary this step strips out of a
-# network read goes through it before anything gates on it: an empty or prefix-carrying value still
-# COMPILES, and `grep -E ""` matches every path while `grep -Ev ""` matches none, both at exit 0.
-accept_re() {   # $1=name, $2=resolved value, $3=fail-closed default
-  case "$2" in
-    *"$1='"*) : ;;   # the assignment prefix survived the strip ⇒ not a pattern, a whole line
-    *) if [ "${#2}" -ge 4 ]; then printf '%s' "$2"; return 0; fi ;;
-  esac
-  printf 'TRIVIAL-GATE-BOUNDARY: %s did not resolve to a usable pattern — failing closed.\n' "$1" >&2
-  printf '%s' "$3"
-}
+# §CLASS's NON-TRIVIALITY ASSERT used to live here, guarding the gate boundaries this step stripped
+# out of a network read itself. It went with them: this step no longer resolves a boundary regex —
+# the shared verbs below do, each behind its own copy of that assert.
 # §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
 PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)/claude-plugins/kampus-pipeline}/bin/pipeline-cli"
 # Could-not-run is UNKNOWN, never a discharge (§CLI, #3314). The catch-all below would hold an
@@ -118,72 +110,47 @@ elif [ "$CP_STATE" = "content-undetermined" ]; then
 elif [ "$CP_STATE" != "not-control-plane" ]; then
   echo "BLOCKING (§CP state '$CP_STATE' ⇒ not proven ordinary, held)"   # `unknown`, anything unenumerated, and the EMPTY STRING a failed invocation yields
 fi
-# The has-code/has-docs/has-skills probes are single-sourced as canonical HAS_*_RE= lines in
-# gh-issue-intake-formats.md §CLASS and re-resolved from origin/main here (the #981 idiom, same as
-# UI_RE below and as the §CP boundary cp-classify re-resolves internally) so this snapshot can't
-# mis-classify — and so the reviewer (which consumes the SAME
-# lines) fans across every present class in lockstep with what ship-it requires (#2383). The reviewer
-# and this step both run `pipeline-cli class-probe classify` (which parses these SAME §CLASS lines —
-# no third copy) as the deterministic class set, so `required == dispatched` can't diverge by an
-# eyeball miss the way `.glossary/**` did on PR #2430 (#2434). FAIL CLOSED: an unreadable source ⇒
-# dispatch/require the gate. The literals below are the fail-closed reference, NOT the live decision
-# source — §CLASS is the source:
-#   gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename' | pipeline-cli class-probe classify
-HAS_CODE_RE='^(apps|packages|\.glossary|infra)/'
-HAS_SKILLS_RE='^claude-plugins/[^/]+/(skills|agents)/|^\.claude-plugin/'
-HAS_DOCS_EXCLUDE_RE='^(claude-plugins|apps|packages|\.glossary|infra)/'
-HAS_DOCS_RE='^(\.decisions|\.patterns)/|\.md$'
-CLASS_RAW="$(gh api "repos/$REPO/contents/claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md?ref=main" -H 'Accept: application/vnd.github.raw' 2>/dev/null || true)"
-reresolve_re() { live="$(printf '%s\n' "$CLASS_RAW" | grep "^$1=" | head -n1 || true)"; if [ -z "$live" ]; then printf '%s' "$2"; else accept_re "$1" "$(printf '%s' "$live" | sed "s/^$1='//; s/'\$//")" "$2"; fi; }
-HAS_CODE_RE="$(reresolve_re HAS_CODE_RE '.')"
-HAS_SKILLS_RE="$(reresolve_re HAS_SKILLS_RE '.')"
-HAS_DOCS_EXCLUDE_RE="$(reresolve_re HAS_DOCS_EXCLUDE_RE '\$^')"   # fail-closed: exclude NOTHING ⇒ every path reaches the doc test
-HAS_DOCS_RE="$(reresolve_re HAS_DOCS_RE '.')"                     # fail-closed: every path is a doc
-# `if … then … fi`, not `… && echo`: a class the diff does NOT carry is this probe's ORDINARY answer,
-# and with `&& echo` the failing `grep` is the last command executed — so a docs-only PR would leave
-# this script's exit status at 1 and §SHARED's "read the status first, non-zero is UNKNOWN" rule
-# would make a perfectly good classification unreadable (rule 4). The predicates are byte-unchanged.
-if echo "$FILES" | grep -Eq "$HAS_SKILLS_RE"; then echo "has-skills"; fi   # → review-skill (ADR 0073/0150); §CP-blocking for merge via the cp-classify derivation above
-if echo "$FILES" | grep -Eq "$HAS_CODE_RE"; then echo "has-code"; fi       # → review-code; the has-code roots agree with the docs-exclusion below in lockstep (§CLASS/§DOC, #663/#919/#1987)
-if echo "$FILES" | grep -Ev "$HAS_DOCS_EXCLUDE_RE" | grep -Eq "$HAS_DOCS_RE"; then echo "has-docs"; fi   # → review-doc; carve out code roots/skills/.glossary first, then test for a doc path (§DOC contract)
-# No-class fail-closed (#2765): a NON-EMPTY diff whose files match NONE of the three classes above
-# — root tooling outside the code roots (biome-plugins/**, biome.jsonc, turbo.json) — must NOT ship
-# un-gated. `pipeline-cli class-probe classify` (the live decision source above) folds this in: any
-# unclassified changed file rides has-code → review-code, so a non-empty diff never requires zero
-# gates. This is the §CLASS "no-class fail-closed" rule, NOT a widened HAS_CODE_RE (that is #2761).
-# UI probe → review-design (ADDITIVE, not a class): a changed path under apps/web/src — the
-# rendered frontend surface (React components, styles, tokens, routes). `pipeline-cli class-probe
-# classify` above ALSO emits `has-ui` (it parses this same UI_RE from its single source,
-# ship-it/SKILL.md) — so the reviewer fan dispatches review-design off the SAME deterministic probe
-# it fans the class gates from, rather than eyeballing the files and skipping it (the #2483 deadlock;
-# #2485). Like the §CP boundary and GUARD_ADR_RE (both re-resolved inside their shared verbs above),
-# the literal below is the fail-closed REFERENCE + the validate-gate-path-drift lockstep target, NOT
-# the live decision source: it is re-resolved from
-# origin/main right after, so an injected skill snapshot that predates the review-design gate can't
-# silently DROP the UI probe and slip a UI PR past the gate (#2341 — the #981 idiom, previously only
-# on §CP/GUARD, now extended to UI_RE). ship-it/SKILL.md@main's `UI_RE=` line is the ONE live source;
-# reviewer.md, class-probe, AND review-design's Step 0 off-ramp all re-resolve the SAME line from the
-# same ref, so required-gate == dispatched-gate == satisfiable-gate holds by construction — all sides
-# read live main, not independently-aging snapshots. When a second app worker is added, generalize
-# this one live UI_RE to apps/**/src and every side tracks it.
-# SCOPE (#2470): UI_RE is `^apps/web/src/` ONLY — a `.tsx`/`.css` OUTSIDE apps/web/src (a Hono
-# server-JSX file, a `.tsx` test fixture, a non-web `.css`) has no rendered surface, so it is NOT
-# design-gate work and must NOT mint a required review-design. The earlier `|\.tsx$|\.css$` branches
-# made the *require* predicate a superset of review-design's own dispatch/off-ramp predicate
-# (`^apps/web/src/`): a non-web `.tsx` was required-but-unroutable — the dispatched review-design run
-# off-ramped with no marker and ship-it deadlocked on a review-design PASS no run could produce.
-# IN-SRC TEST CARVE-OUT (#3071): a change whose apps/web/src paths are ALL test/spec files renders no
-# surface, so it must NOT mint a required review-design either — the src-colocated `*.test.tsx` next to
-# a component (the established sibling-colocation convention) stalled #3046/#3047 at ship on a gate no
-# run could satisfy. ERE (grep -E) has no negative lookahead, so a single UI_RE can't express "under
-# src, but not a test" — mirror §CLASS's has-docs carve-then-test: strip test/spec files FIRST, THEN
-# test for a UI path. A real component (apps/web/src/**/*.tsx non-test) or a mixed component+test diff
-# survives the carve and STILL gates; only an all-test/spec src diff is exempted.
-UI_RE='^apps/web/src/'
-UI_EXCLUDE_RE='\.(test|spec)\.tsx?$'
-UI_RAW="$(gh api "repos/$REPO/contents/claude-plugins/kampus-pipeline/skills/ship-it/SKILL.md?ref=main" -H 'Accept: application/vnd.github.raw' 2>/dev/null || true)"
-UI_LIVE="$(printf '%s\n' "$UI_RAW" | grep '^UI_RE=' | head -n1 || true)"
-UX_LIVE="$(printf '%s\n' "$UI_RAW" | grep '^UI_EXCLUDE_RE=' | head -n1 || true)"
-if [ -n "$UI_LIVE" ]; then UI_RE="$(accept_re UI_RE "$(printf '%s' "$UI_LIVE" | sed "s/^UI_RE='//; s/'$//")" '.')"; else UI_RE='.'; fi   # FAIL CLOSED: can't read origin/main's UI_RE — or it resolves TRIVIAL — ⇒ '.' ⇒ every path UI-affecting ⇒ REQUIRE review-design, never silently skip (#2341/#4401)
-if [ -n "$UX_LIVE" ]; then UI_EXCLUDE_RE="$(accept_re UI_EXCLUDE_RE "$(printf '%s' "$UX_LIVE" | sed "s/^UI_EXCLUDE_RE='//; s/'$//")" '$^')"; else UI_EXCLUDE_RE='$^'; fi   # FAIL CLOSED: unreadable or trivial ⇒ '$^' never-match ⇒ carve out NOTHING ⇒ every apps/web/src path (incl. tests) gates review-design
-if echo "$FILES" | grep -Ev "$UI_EXCLUDE_RE" | grep -Eq "$UI_RE"; then echo "has-ui"; fi   # carve test/spec first, THEN require review-design ALONGSIDE the class gate(s)
+# THE CLASS SET IS `class-probe`'s ANSWER, PRINTED — one derivation, not two (#4730, finishing #2765).
+#
+# This step used to re-implement the §CLASS probes here: four re-resolved HAS_*_RE literals plus a
+# re-resolved UI_RE, three `grep -Eq` class tests and one UI test. That copy answered a STRICT SUBSET
+# of `class-probe`'s, in one direction only — its failure mode on a file matching none of the three
+# predicates was SILENCE, and silence subtracts a class. `class-probe` does the opposite in code
+# (`files.some(isCode) || files.some((f) => !isClassified(f))`), so an unclassified file rides
+# has-code there and vanished here. On PR #4724 the copy printed `has-skills` alone where the probe
+# printed `has-code, has-skills` — the three `claude-plugins/fabrika/{README.md,docs/**}` files are
+# under no code root, under no `skills/`|`agents/` segment, and carved out of the doc test, so they
+# classified nowhere. Any plugin home carrying docs beside its skills reproduces it.
+#
+# The rule was never dropped here — it was never written here. The commit closing #2765 added it to
+# this step as five comment lines and zero executable lines, i.e. BORN DEAD, and stated the design
+# intent in the same breath: the rule "lives once in the shared class-probe core that ship-it Step 0
+# and the reviewer fan both run". Printing the probe's output is therefore #2765 finished, not a
+# redesign — and it is the same verb Step 2 re-derives the required set from, so Step 0's printed set
+# and Step 2's enforced set are now identical BY CONSTRUCTION rather than by matched maintenance.
+#
+# The HAS_*_RE / UI_RE literals are gone from this file along with the derivation they served. That
+# does NOT remove drift detection: `validate-gate-path-drift.sh` locks each boundary's CANONICAL
+# (invariants 1b/1d, in gh-issue-intake-formats.md §CLASS and ship-it/SKILL.md) against the typed
+# const in packages/pipeline-cli/src/gate-boundaries.ts, and 1c value-locks whatever copies exist.
+# A copy that no longer exists cannot drift; the anchor it was checked against is untouched.
+CLASS_OUT="$(printf '%s\n' "$FILES" | "$PCLI" class-probe classify)" || {
+  echo "BLOCKING (class-probe could not classify ⇒ required-gate set UNKNOWN, held — ADR 0092 §ZS)"
+  echo "STOP: classification unresolved — refuse to enqueue and report the failed probe; do NOT read this as 'no gates required'."
+  exit 1
+}
+# NO-CLASS FAIL-CLOSED (#2765) — as EXECUTABLE CODE, which is the whole point. Its operands come from
+# two different origins, which is what makes it able to fire: the file COUNT is §CPREAD's ($CP_FILES_N,
+# already proven ≥ 1 — `cp_changed_files` fails closed on a zero-length list), the class SET is
+# class-probe's stdout. A non-empty diff that spans zero classes would require zero gates, i.e. a
+# vacuous conjunction — an un-gated merge reported as a clean one. `class-probe` folds the rule in
+# (an unclassified file rides has-code), so reaching this branch means the probe itself answered
+# emptily; that is UNKNOWN, and UNKNOWN is never "no gates required".
+if [ -z "$CLASS_OUT" ]; then
+  echo "BLOCKING ($CP_FILES_N changed file(s) but the class set came back EMPTY ⇒ zero required gates would be a vacuous conjunction, held — §CLASS no-class fail-closed, #2765/#4730)"
+  echo "STOP: classification unresolved — refuse to enqueue; do NOT read this as 'no gates required'."
+  exit 1
+fi
+# One class word per line, `has-ui` last when the diff renders a surface — the probe's own emission
+# order, passed through unaltered. Carry THIS set into Step 2 (which re-derives it from the same verb).
+printf '%s\n' "$CLASS_OUT"
