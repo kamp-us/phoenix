@@ -149,10 +149,29 @@ operator, a renamed tool directory or a different machine needs no edit:
 3. **Temp and scratch roots** — `/tmp/…`, `/private/tmp/…`, `/private/var/…`, `/var/folders/…`. No
    carve-out: a public issue body has no legitimate bare temp path.
 
-All three are redactable and refuse on **exit 5**. `--redact` masks each match down to its class
-marker and keeps the evidential shape — a temp-root hit becomes `/tmp/<redacted>`, a home-relative
-hit `~/<redacted>` — so the body still reads as evidence that a path of that kind was there. Every
-redaction is reported on stderr with its line number; the verb never rewrites a body silently.
+All three are redactable and refuse on **exit 5**. `--redact` replaces each match with
+`<class-root>/<redacted>`, so the body still reads as evidence that a path of *that* kind was there.
+
+**The matched span is the whole path run, and the mask keeps the class root — never a single
+collapsed marker.** Which root a path came from is itself the evidence, so the roots do not fold
+together:
+
+| Matched | Redacts to |
+|---|---|
+| `/var/folders/…` | `/var/folders/<redacted>` |
+| `/private/tmp/…` | `/private/tmp/<redacted>` |
+| `/private/var/…` | `/private/var/<redacted>` |
+| `/tmp/…` | `/tmp/<redacted>` |
+| `/Users/<account>/…` | `/Users/<redacted>` |
+| `/home/<account>/…` | `/home/<redacted>` |
+| `~/…` | `~/<redacted>` |
+
+**The leaf filename does not survive**, and that is deliberate rather than an oversight: a filename
+can itself identify a person or a machine, and a reader who needs it can ask the reporter. Longer
+matches are replaced before shorter ones so an overlapping pair cannot corrupt each other.
+
+Every redaction is reported on stderr with its line number and class; the verb never rewrites a body
+silently.
 
 Separately, and **not** redactable: a body whose first non-whitespace run is an `@`-prefixed path
 (`@/…`). That is the composed body having never arrived at all, so it refuses on **exit 6** with its
