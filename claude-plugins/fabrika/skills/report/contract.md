@@ -327,7 +327,7 @@ is now an issue in the intake queue*, and splitting them would hand a caller the
 **Invocation**
 
 ```
-fabrika-cli report file --title "Retry helper in the http worker swallows the abort reason" [--redact] [--label <name>] [--repo <owner/name>] [--json]
+fabrika-cli report file --title "Aborted requests in the http worker surface as plain timeouts" [--redact] [--label <name>] [--repo <owner/name>] [--json]
 ```
 
 The six authored sections arrive on **stdin** as markdown.
@@ -400,13 +400,13 @@ is indistinguishable from a triaged one downstream:
   otherwise sail through the read-back, which counts labels rather than reading them.
 - **The title may not lead with a classification prefix.** The refusal needs *both* conditions: the
   leading token has a `WORD:` or `[WORD]` shape, **and** that word resolves to the repo's type or
-  priority vocabulary. Both together, so `BUG: fix retry` refuses while `Bug reports from the
+  priority vocabulary. Both together, so `BUG: fix aborts` refuses while `Bug reports from the
   sozluk form are lost` files cleanly — the shape alone would reject a legitimate title whose first
   word happens to be a vocabulary term.
 
 The vocabulary is **derived from the target repo's label set**, which this verb already reads for
 exit 7, never a hardcoded list that rots. Both refusals are exit 10. Fully-fuzzy non-neutrality
-("Retry helper is broken") is judgment and stays in the skill; the prefix form is a shape and
+("The abort wiring is broken") is judgment and stays in the skill; the prefix form is a shape and
 belongs here.
 
 **Output** — one **tab-separated** line: `<number>`, `<url>`. The number is bare, with no `#` sigil
@@ -460,37 +460,37 @@ to byte-identity if it holds, recording what was found.
 **Examples**
 
 ```
-$ fabrika-cli report file --title "Retry helper in the http worker swallows the abort reason" <<'EOF'
+$ fabrika-cli report file --title "Aborted requests in the http worker surface as plain timeouts" <<'EOF'
 ## Summary
-The retry helper drops the abort reason when it re-wraps a failed request, so a cancelled call
-surfaces downstream as a generic timeout.
+An aborted request's interruption reaches the downstream handler carrying nothing about why, so a
+cancelled call is indistinguishable from a call that timed out.
 
 ## What I was doing
 Tracing a flaky integration test in the web worker's http layer.
 
 ## What I observed
-`withRetry` constructs a fresh AbortError and discards `cause`.
+`interruptOnAbort` interrupts the request fiber but never carries the signal's `reason` with it.
 
 ## Why it matters
-Every cancellation reads as a timeout, so the retry budget is spent on calls the caller already
+Every cancellation reads as a timeout, so time is spent chasing latency on calls the caller already
 abandoned. Might also be why the flake only shows under load.
 
 ## Pointers
-apps/web/worker/http/retry.ts
+apps/web/worker/http/interrupt-on-abort.ts
 
 ## Suggested next step (non-binding)
-Maybe thread `cause` through the re-wrap.
+Maybe carry the signal's `reason` onto the interruption.
 EOF
 4732	https://github.com/kamp-us/phoenix/issues/4732
 ```
 
 ```
-$ fabrika-cli report file --title "Retry helper swallows the abort reason" --json < body.md
+$ fabrika-cli report file --title "Aborted requests surface as plain timeouts" --json < body.md
 {"number":4732,"url":"https://github.com/kamp-us/phoenix/issues/4732","label":"status:needs-triage","redactions":[],"bodyBytes":812}
 ```
 
 ```
-$ printf '' | fabrika-cli report file --title "Retry helper swallows the abort reason"
+$ printf '' | fabrika-cli report file --title "Aborted requests surface as plain timeouts"
 report file: stdin was read and held 0 bytes — refusing to file a bodyless issue.
 $ echo $?
 3
@@ -518,7 +518,7 @@ $ echo $?
 ```
 
 ```
-$ fabrika-cli report file --title "Retry helper swallows the abort reason" --repo kamp-us/fresh-adopter < body.md
+$ fabrika-cli report file --title "Aborted requests surface as plain timeouts" --repo kamp-us/fresh-adopter < body.md
 report file: kamp-us/fresh-adopter has no "status:needs-triage" label — the issue would be filed outside the intake queue. Create the label, then re-run.
 $ echo $?
 7
