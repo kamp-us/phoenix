@@ -4,6 +4,9 @@
  * The unit tests cover the resolution; only a real process proves the code, and the code is the part
  * that carried the lie — `fabrika triage --help` exited 0 (#4822). An assertion on stdout alone would
  * have passed against the defect, because the defect printed help.
+ *
+ * The fixture token is no longer `triage`: that group is registered now, so reusing the reported
+ * token would assert the guard against a name that resolves.
  */
 import {execFileSync} from "node:child_process";
 import {fileURLToPath} from "node:url";
@@ -46,9 +49,9 @@ describe("an unresolvable path is refused, at every depth", {
 	timeout: SUBPROCESS_TEST_TIMEOUT_MS,
 }, () => {
 	it.each([
-		["an unknown group", ["triage"]],
-		["an unknown group probed with --help", ["triage", "--help"]],
-		["an unknown group probed with -h", ["triage", "-h"]],
+		["an unknown group", ["nosuchgroup"]],
+		["an unknown group probed with --help", ["nosuchgroup", "--help"]],
+		["an unknown group probed with -h", ["nosuchgroup", "-h"]],
 		["an unknown verb in a known group", ["adr", "bogus"]],
 		["an unknown verb probed with --help", ["adr", "bogus", "--help"]],
 		["a multi-token invalid tail probed with --help", ["adr", "bogus", "deeper", "--help"]],
