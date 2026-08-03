@@ -13,6 +13,7 @@
  */
 import {Effect, Option} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
+import {leafCommand} from "../excess-operand.ts";
 import {readStdin} from "../io/stdin.ts";
 import type {VerbOutcome} from "../verb.ts";
 import {DEFAULT_LIMIT} from "./dedup.ts";
@@ -47,7 +48,7 @@ const redactFlag = Flag.boolean("redact").pipe(
 	),
 );
 
-const dedup = Command.make(
+const dedup = leafCommand(
 	"dedup",
 	{
 		query: Flag.string("query").pipe(
@@ -84,7 +85,7 @@ const dedup = Command.make(
 	),
 );
 
-const fileCmd = Command.make(
+const fileCmd = leafCommand(
 	"file",
 	{
 		title: Flag.string("title").pipe(
@@ -120,7 +121,7 @@ const fileCmd = Command.make(
 	),
 );
 
-const note = Command.make(
+const note = leafCommand(
 	"note",
 	{
 		issue: Flag.integer("issue").pipe(Flag.withDescription("the issue number to add the note to")),

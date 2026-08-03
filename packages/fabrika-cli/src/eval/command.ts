@@ -23,6 +23,7 @@
 import {Console, Crypto, Effect, FileSystem, Result} from "effect";
 import * as Schema from "effect/Schema";
 import {Argument, Command, Flag} from "effect/unstable/cli";
+import {leafCommand} from "../excess-operand.ts";
 import {decodeManifest, STAGES} from "./corpus.ts";
 import {
 	type BaselineKey,
@@ -61,7 +62,7 @@ const manifestArg = Argument.string("manifest").pipe(
 	Argument.withDescription("path to a corpus manifest JSON file to validate against the schema"),
 );
 
-const check = Command.make(
+const check = leafCommand(
 	"check",
 	{manifest: manifestArg},
 	Effect.fn(function* ({manifest}) {
@@ -127,7 +128,7 @@ const baselineModelFlag = Flag.string("baseline-model").pipe(
 const isStage = (s: string): s is (typeof STAGES)[number] =>
 	(STAGES as ReadonlyArray<string>).includes(s);
 
-const report = Command.make(
+const report = leafCommand(
 	"report",
 	{
 		rows: rowsArg,
@@ -195,7 +196,7 @@ const evalSetArg = Argument.string("path").pipe(
 	),
 );
 
-const cases = Command.make(
+const cases = leafCommand(
 	"cases",
 	{path: evalSetArg},
 	Effect.fn(function* ({path}) {
@@ -311,7 +312,7 @@ const dryRunFlag = Flag.boolean("dry-run").pipe(
  * recorded so a future reader knows what would have to change to revisit it. #4681's deterministic
  * regression-floor leg is the separate, model-free thing CI does run.
  */
-const runCommand = Command.make(
+const runCommand = leafCommand(
 	"run",
 	{
 		path: evalSetArg,

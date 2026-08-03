@@ -8,6 +8,7 @@
  */
 import {Effect, Option} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
+import {leafCommand} from "../excess-operand.ts";
 import type {VerbOutcome} from "../verb.ts";
 import {runNew} from "./new-verb.ts";
 import {runNext} from "./next-verb.ts";
@@ -57,7 +58,7 @@ const jsonFlag = Flag.boolean("json").pipe(
 
 const today = (): string => new Date().toISOString().slice(0, 10);
 
-const next = Command.make(
+const next = leafCommand(
 	"next",
 	{dir: dirFlag, base: baseFlag, repo: repoFlag, json: jsonFlag},
 	Effect.fn(function* ({dir, base, repo, json}) {
@@ -77,7 +78,7 @@ const slugArg = Argument.string("slug").pipe(
 	Argument.withDescription("the kebab-case slug, at most 5 words"),
 );
 
-const newCmd = Command.make(
+const newCmd = leafCommand(
 	"new",
 	{
 		id: idArg,
@@ -123,7 +124,7 @@ const newCmd = Command.make(
 	),
 );
 
-const resolve = Command.make(
+const resolve = leafCommand(
 	"resolve",
 	{
 		ids: idArg.pipe(Argument.atLeast(1)),
@@ -145,7 +146,7 @@ const byFlag = Flag.string("by").pipe(
 	Flag.withDescription("the four-digit id of the ADR doing the superseding or amending"),
 );
 
-const supersede = Command.make(
+const supersede = leafCommand(
 	"supersede",
 	{id: idArg, by: byFlag, dir: dirFlag, json: jsonFlag},
 	Effect.fn(function* ({id, by, dir, json}) {
@@ -157,7 +158,7 @@ const supersede = Command.make(
 	),
 );
 
-const amendInPart = Command.make(
+const amendInPart = leafCommand(
 	"amend-in-part",
 	{id: idArg, by: byFlag, dir: dirFlag, json: jsonFlag},
 	Effect.fn(function* ({id, by, dir, json}) {
@@ -169,7 +170,7 @@ const amendInPart = Command.make(
 	),
 );
 
-const sweepCmd = Command.make(
+const sweepCmd = leafCommand(
 	"sweep",
 	{
 		new: Flag.string("new").pipe(

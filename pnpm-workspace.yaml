@@ -136,9 +136,9 @@ onlyBuiltDependencies:
 #    re-validating the session (~22 on an authed /pano load — #2273). Regression test:
 #    apps/web/src/fate/liveSubscribeBatch.test.ts. Not upstreamed in 1.3.1.
 #
-# effect — TWO hunks on 4.0.0-beta.92 (dist only; `effect/unstable/ai` resolves to
-# dist/*.js + dist/*.d.ts), giving the MCP channel edge the two things the fixed public
-# `McpServer`/`McpSchema` surface can't express (#3053, epic #3045):
+# effect — THREE hunks on 4.0.0-beta.92 (dist only; `effect/unstable/*` resolves to
+# dist/*.js + dist/*.d.ts). Hunks 1–2 give the MCP channel edge the two things the fixed
+# public `McpServer`/`McpSchema` surface can't express (#3053, epic #3045):
 # 1. unstable/ai/McpServer.{js,d.ts} — an `experimental` capability passthrough in
 #    `layerHandlers` (+ the `experimental?` option on run/layer/layerStdio/layerHttp),
 #    so a server can advertise `experimental: { "claude/channel": {} }`. The
@@ -150,6 +150,15 @@ onlyBuiltDependencies:
 #    `McpServer.notifications` client both gain the custom notification.
 # Behavior-pinned by packages/pipeline-crew-mcp/src/edge/mcp-channel.test.ts (the
 # `@patch-pin` guard, #3040/#3051). Retire when effect ships these natively.
+# 3. unstable/cli/internal/command.js — `buildHelpDoc` skips a positional argument marked
+#    hidden, the rule that file already applies to hidden flags and hidden subcommands.
+#    `Param.withHidden` is public and documented as hiding, but upstream honours it for
+#    flags only, so a hidden argument still rendered in USAGE and ARGUMENTS. fabrika's
+#    excess-operand guard declares one hidden trailing catch-all per leaf verb (#4828);
+#    without this hunk every verb's `--help` would advertise an operand it refuses, and
+#    `--help` is fabrika's stated interface. Cosmetic and scoped to hidden arguments, of
+#    which nothing else in the repo declares any. Behavior-pinned by
+#    packages/fabrika-cli/src/excess-operand.cli.test.ts. Retire when effect honours it.
 patchedDependencies:
   '@nkzw/fate@1.3.1': patches/@nkzw__fate@1.3.1.patch
   alchemy@2.0.0-beta.59: patches/alchemy@2.0.0-beta.59.patch
