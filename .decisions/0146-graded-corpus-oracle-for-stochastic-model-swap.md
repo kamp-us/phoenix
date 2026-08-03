@@ -32,7 +32,7 @@ is the right rule, but its §3 oracle has no *statistical* form to apply it agai
 whose output is a distribution rather than a fixed artifact.
 
 Epic [#1842](https://github.com/kamp-us/phoenix/issues/1842) built the apparatus that supplies
-that statistical evidence: the [`eval-harness`](../packages/pipeline-cli/src/tools/eval-harness)
+that statistical evidence: the [`eval-harness`](../packages/fabrika-cli/src/eval)
 tool. This ADR records the durable *why* — what graded-over-corpus measurement is and why a
 stochastic model swap requires it — extending 0112's method to the stochastic case. It records
 **no** per-swap numbers (those live on the lever/decision children, per 0112's division of
@@ -55,7 +55,7 @@ stage and reduces the grades to two aggregate axes:
    representative-task-set discipline as 0112 §1 (reproducible-from-identifier, pinned to the
    recorded state, append-only growth) — scaled from n=1 to a set large enough that a rate is
    meaningful. This is the committed ground truth under
-   [`eval-harness/corpus/`](../packages/pipeline-cli/src/tools/eval-harness/corpus).
+   [`eval-harness/corpus/`](../packages/fabrika-cli/src/eval/corpus).
 
 2. **A graded oracle — the generalization of 0112 §3's binary oracle.** 0112 §3's per-stage
    oracle (did the stage reproduce the same decision artifact) is applied **per corpus entry**,
