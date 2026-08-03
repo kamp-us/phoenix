@@ -546,8 +546,12 @@ PINROOT=$(cd "$tmp/pin" && pwd -P)" ]; then
 	bare_err="$(git -C "$pin_lane" switch kp-feat 2>&1)"; bare_rc=$?
 	if [ "$bare_rc" -eq 0 ]; then
 		fail "fixture did not take: a bare \`git switch\` onto a branch another worktree holds SUCCEEDED — the pinned-branch condition was NOT reproduced"
-	elif ! grep -qF 'already checked out' <<<"$bare_err"; then
-		fail "the bare switch failed for some other reason than the pin: [$bare_err]"
+	# Assert on the PINNING TREE'S PATH, not on git's wording: 2.40 says "already checked out at
+	# '<path>'" and 2.54 says "already used by worktree at '<path>'", and only the pin refusal names
+	# that path at all. Grepping the wording passed locally and red on CI's newer git, leaving the
+	# sanctioned co-checkout below — this fix's whole point — unexercised there.
+	elif ! grep -qF "$pin_left" <<<"$bare_err"; then
+		fail "the bare switch failed for some other reason than the pin (its error does not name the pinning tree $pin_left): [$bare_err]"
 	else
 		err="$tmp/stderr"
 		CLAUDE_CODE_SESSION_ID="$pin_sid" kp_switch_head_branch "$pin_lane" kp-feat 2>"$err"; rc=$?

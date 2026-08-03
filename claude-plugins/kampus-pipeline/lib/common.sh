@@ -417,8 +417,9 @@ kp__scratch() {
 
 kp__phys() { # <path> — its physical form, or the path itself when the directory is gone (a prunable
 	# worktree registration outlives its directory, and it still pins the branch).
-	cd -P "$1" 2>/dev/null && pwd -P && return 0
-	printf '%s\n' "$1"
+	# The `cd` runs in a subshell so this can never move the CALLER's cwd — every call site wraps it
+	# in `$( … )` today, but a bare call would otherwise relocate the shell that sourced this lib.
+	(cd -P "$1" 2>/dev/null && pwd -P) || printf '%s\n' "$1"
 }
 
 # WHICH worktree holds <branch> checked out right now — the classifier repair R2 routes on when a
