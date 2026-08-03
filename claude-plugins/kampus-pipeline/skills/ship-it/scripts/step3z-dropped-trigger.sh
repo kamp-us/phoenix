@@ -29,11 +29,8 @@ PR="${PR:-${2:?step3z-dropped-trigger.sh: PR unset and no \$2 — refusing to nu
 HEAD_SHA="${HEAD_SHA:-${3:?step3z-dropped-trigger.sh: HEAD_SHA unset and no \$3 — refusing to count nudges against an unnamed head}}"
 
 # This script's OWN evidence that the head is in the state its remedy is for (#4830). The branch
-# that selects Step 3z lives in the agent's prose classification, so before this the only thing
-# between a mis-read branch and a close→reopen of a live PR was the agent having read correctly —
-# and on PR #4816 it had not: a fully-green head (CONTEXTS=45, NRUNS=33) was close→reopened and
-# given a durable comment asserting zero workflow runs. Re-derive the three numbers that DEFINE the
-# state instead of trusting the caller for them, and read every unreadable one as a REFUSAL: an
+# that selects Step 3z is agent-side prose, and on PR #4816 a mis-read close→reopened a live green
+# head and left a false zero-runs comment on it. Every unreadable number below refuses too — an
 # unknown is never a confirmed zero (class #4482).
 CHECKS_CLI="$(kp_pcli)" || CHECKS_CLI=""   # its own name: `$PCLI` belongs to disarm-intent.sh, sourced above
 # `.contexts` is relayed from `checks read`, the single head-CI rollup reader (ADR 0228) — never a
@@ -62,8 +59,7 @@ case "$NWF"      in unreadable|0) DROPPED=0 ;; esac
 disarm_intent refuse || INTENT_UNCLEARED=1   # guard 6: ALL exits below stop without enqueuing — park nothing (ADR 0198)
 
 if [ "$DROPPED" -ne 1 ]; then
-  # No PATCH and no comment: the PR is not this run's to mutate, and a "dropped trigger" comment
-  # here would be the same false claim #4816 left behind. The refusal is stdout-only by design.
+  # Stdout-only on purpose: a comment here would be the same false claim #4816 left behind.
   echo "refused (not the dropped-trigger state: CONTEXTS=$CONTEXTS NWF=$NWF NRUNS=$NRUNS) — no nudge"
   if [ "${BASH_SOURCE[0]}" = "$0" ]; then printf 'INTENT_UNCLEARED=%s\n' "$INTENT_UNCLEARED"; fi
   exit 0
