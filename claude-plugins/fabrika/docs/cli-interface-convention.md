@@ -45,9 +45,21 @@ per-tool help documents subcommands and exit codes inline.
   probe otherwise — `effect`'s `Command.runWith` processes action flags before it inspects parse
   errors, and `--help` is an action flag, so it printed the deepest valid prefix's help and exited `0`
   while discarding the whole invalid tail ([#4822](https://github.com/kamp-us/phoenix/issues/4822)).
-  **The residual caveat:** the guarantee covers the command *path*, not a verb's operands. A leaf verb
-  takes arguments, not subcommands, so its extra tokens are its own business —
-  `fabrika adr next bogus` still runs `adr next`.
+- **An operand a leaf verb never declared is refused too**, at the argument layer rather than the path
+  layer. Every leaf declares a hidden trailing catch-all, so the parser hands the verb whatever its own
+  arguments left, and the verb refuses on stderr with exit `1` (rule 3's usage-error code) instead of
+  binding none of them and answering anyway. `fabrika adr next bogus` refuses; `fabrika adr resolve
+  0164 0023` still absorbs both ids, because a variadic argument consumes its operands before the
+  catch-all sees them ([#4828](https://github.com/kamp-us/phoenix/issues/4828)).
+- **The residual caveat: a global flag placed *before* the group name ends the path guard's walk.**
+  `fabrika --log-level info triage --help` exits `0` with root help even though `triage` names no
+  group. The walk stops at the first `-`-prefixed token because a later bare token may be that flag's
+  value (`--log-level debug`), and reading a value as a subcommand would refuse a valid invocation — a
+  miss is the fail-safe direction for a guard whose only output is a refusal. This stays a documented
+  residual rather than a code fix: telling a flag's value from a subcommand needs the parser's own
+  per-flag arity, which the published `effect` types do not expose, so a fabrika-side fix would carry a
+  hand-maintained list of which global flags take a value — the parallel-list rot this same rule
+  forbids for the verb index.
 
 ### 2. Results by value on stdout; the shape is documented, not guessed
 
