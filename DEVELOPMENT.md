@@ -235,21 +235,31 @@ Where the run dies tells you what broke:
 |---|---|
 | **Resolve the release tag** (before install) | The tag prefix matches no published package, or the tag version disagrees with that package's `package.json`. A real defect — nothing published. |
 | **Typecheck / build** | A genuine break in the tagged tree. Nothing published. |
-| **Publish, with a 403** | An OIDC failure: the Trusted Publisher registration no longer matches this workflow — see below. |
+| **Publish, with a 403** | An OIDC failure: the Trusted Publisher registration does not match this workflow — either it never did, or it stopped. See below. |
 
 **Reading a 403.** Auth is OIDC Trusted Publishing with **no `NPM_TOKEN` fallback**, and each
-package's registration is a one-time human step on npmjs.com. **Both published packages are
-registered**, so a 403 is *not* expected — it means a registration stopped matching this
-workflow, and one of the two hazards below is the usual cause. `fabrika-cli`'s registration is
-recorded on [#4800](https://github.com/kamp-us/phoenix/issues/4800), which pastes npm's own
-confirmation (this repo, workflow file `publish.yml`). Registration state is a **web-UI fact**:
-npm exposes no trusted-publisher field over the CLI or the registry API, so nothing here can
-re-check it — npmjs.com (Settings → Publishing) is the only authority.
+package's registration is a one-time human step on npmjs.com. A 403 means that registration
+**does not match** this workflow — and it has two branches, so read which one you are in before
+hunting a regression:
+
+- **It never matched** — this is the registration's *first* use. `pipeline-cli` is past that
+  point: two green publish runs, and its published artifact carries the attestations only an
+  OIDC publish stamps. `fabrika-cli` is not. Its registration is recorded on
+  [#4800](https://github.com/kamp-us/phoenix/issues/4800), which pastes npm's own confirmation
+  (this repo, workflow file `publish.yml`), but no publish run has ever fired for the package —
+  so its first release is the first exercise of that registration, and that run is the proof.
+  Expect nothing either way for it.
+- **It stopped matching** — a registration that had been working no longer does, and one of the
+  two hazards below is the usual cause.
+
+Registration state is a **web-UI fact**: npm exposes no trusted-publisher field over the CLI or
+the registry API, so nothing here can re-check it — npmjs.com (Settings → Publishing) is the
+only authority.
 
 When a 403 does fire it arrives *after* install, typecheck and build have all gone green. That
 lateness makes it read like a broken build; it is not. It is the path failing closed on missing
-authorization, and nothing is corrupted by it — no version is consumed, because nothing was
-published.
+authorization, and nothing is corrupted by it — **no version number is burned**, because nothing
+was published, and re-running the release after fixing the registration recovers cleanly.
 
 **Two ways to invalidate a registration, both silent until a release 403s:**
 
