@@ -1,7 +1,7 @@
 ---
 id: 0162
 title: "The four pillars — performance · cohesiveness · usability · accessibility as non-negotiable frontend design law, with the founder-ratified v1 values"
-status: proposed
+status: proposed; amended-in-part by [0223](0223-pillar-4-bans-motion-alone.md)
 date: 2026-07-05
 tags: [design, frontend, pipeline, accessibility, tokens, control-plane]
 ---
