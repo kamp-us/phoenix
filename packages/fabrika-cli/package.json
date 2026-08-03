@@ -19,15 +19,29 @@
 		"./package.json": "./package.json"
 	},
 	"files": [
-		"src"
+		"dist"
 	],
 	"engines": {
 		"node": ">=24"
 	},
 	"publishConfig": {
-		"access": "public"
+		"access": "public",
+		"bin": {
+			"fabrika": "./dist/bin.js"
+		},
+		"main": "./dist/index.js",
+		"types": "./dist/index.d.ts",
+		"exports": {
+			".": {
+				"types": "./dist/index.d.ts",
+				"import": "./dist/index.js"
+			},
+			"./package.json": "./package.json"
+		}
 	},
 	"scripts": {
+		"build": "tsc -p tsconfig.build.json",
+		"prepublishOnly": "pnpm run build",
 		"typecheck": "tsgo -p tsconfig.json",
 		"test": "vitest run",
 		"cli": "node src/bin.ts"

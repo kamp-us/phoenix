@@ -84,16 +84,17 @@ refuse an unknown flag.
 > convention reserves for exactly that: the verb never ran. Inside a phoenix checkout the fallback
 > is `node packages/fabrika-cli/src/bin.ts …`.
 
-> [!WARNING]
-> **A `.ts` `bin` cannot run from an installed copy, and that blocks the global half of the
-> delegation.** Node refuses to strip types for any file whose resolved path is under
-> `node_modules` — `stripTypeScriptModuleTypes` throws `ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING`
-> unconditionally on `isUnderNodeModules(filename)` (verified against Node 24.4.1 and 26.2.0's own
-> bundled source). Inside phoenix this is invisible, because pnpm links the workspace package and the
-> resolved path is `packages/fabrika-cli/src/bin.ts`, outside `node_modules`. A real
-> `pnpm add --global` lands under `node_modules` and therefore **cannot start**. The no-build
-> development story and a runnable published artifact are in tension here; the resolution is a
-> founder call, tracked on [#4784](https://github.com/kamp-us/phoenix/issues/4784).
+> [!NOTE]
+> **The published artifact is compiled; the development loop is not.** Node refuses to strip types
+> for any file whose resolved path is under `node_modules` — `stripTypeScriptModuleTypes` throws
+> `ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING` unconditionally on `isUnderNodeModules(filename)`
+> (read from Node 24.4.1 and 26.2.0's own bundled source) — so a `.ts` `bin` cannot start from an
+> installed copy, which is what a real `pnpm add --global` produces. `publishConfig` is what lets
+> both halves be true at once: the manifest's `bin` stays `./src/bin.ts` for the workspace, where
+> pnpm's link resolves *outside* `node_modules` and an edit to `src/` is live on the next
+> invocation, and npm rewrites `bin`/`main`/`types`/`exports` onto the compiled `dist/` at publish
+> time. `files` is `["dist"]` and `prepublishOnly` runs the build, so a tarball can neither miss
+> `dist/` nor ship a stale one (#4784).
 
 ## Quickstart
 
@@ -221,12 +222,15 @@ a committed transcript fixture both packages' unit tiers assert against —
 ```bash
 pnpm --filter @kampus/fabrika-cli test        # vitest
 pnpm --filter @kampus/fabrika-cli typecheck   # tsgo
+pnpm --filter @kampus/fabrika-cli build       # tsc -> dist/, for the published tarball only
 ```
 
-**There is no build step.** `bin` points at `./src/bin.ts` and Node ≥ 24 strips the types natively,
-so an edit to `src/` is live on the next invocation — which is the entire point of the workspace
-`devDependencies` line in the root `package.json`. Nothing is compiled, nothing is emitted, and there
-is no `dist/` to go stale against the source.
+**The development loop has no build step.** `bin` points at `./src/bin.ts` and Node ≥ 24 strips the
+types natively, so an edit to `src/` is live on the next invocation — which is the entire point of
+the workspace `devDependencies` line in the root `package.json`. `build` emits `dist/` for the
+published tarball and nothing else reads it; see the publish note above for why the two halves
+differ. `tsc` and not `tsgo`: the repo carries no bundler, and the artifact consumers install comes
+off the stable compiler.
 
 A verb is a **pure function of its dependencies** — the `*-verb.ts` modules compute a
 `VerbOutcome` (exit code, stdout, stderr) and never write a stream or exit. The Effect CLI
