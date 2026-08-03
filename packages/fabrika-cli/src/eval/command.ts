@@ -1,14 +1,15 @@
 /**
- * The `eval` verb group — `fabrika eval check|report|cases|run`.
+ * The `eval` verb group — `fabrika eval check|report|cases|run|keeps`.
  *
  * The graded-corpus apparatus for adjudicating a stochastic model swap per stage (epic
- * #1842), plus the ingestion of `/skill-creator`-authored eval sets (epic #4649). Four live
+ * #1842), plus the ingestion of `/skill-creator`-authored eval sets (epic #4649). Five live
  * surfaces:
  *
  *   fabrika eval check <manifest>   # decode a corpus manifest; exit non-zero on a bad one
  *   fabrika eval report <rows>      # the graded two-axis scorecard over runner rows
  *   fabrika eval cases <path>       # decode an authored eval set; exit non-zero on a bad one
  *   fabrika eval run <path>         # execute an eval set unattended, emit the capture manifest
+ *   fabrika eval keeps <path>       # print the ruled KEEP corpus and what already pins each row
  *
  * `check` (issue #1848) validates the on-disk corpus format. `report` (issue #1853) is the
  * top of the vertical slice: it reads the runner's graded `{entry, grade, spend}` rows and
@@ -16,15 +17,18 @@
  * cost — as a human table (default) or stable JSON (`--json`), the evidence the model-tiering
  * decision (#1576) consumes. It presents measurement, never a recommendation. `cases` (issue
  * #4674) validates a `/skill-creator` `evals/evals.json` and prints the tier each case derives to.
+ * `keeps` (issue #4823) prints the ruled KEEP corpus — the enumeration that replaced the
+ * two-artifact join every consumer used to re-run by hand.
  *
  * Thin IO shell over the pure cores (the `token-spend` / `readme-guard` idiom): read the file,
  * decode, render. An unreadable path and a malformed/mismatched input both exit non-zero.
  */
-import {Console, Crypto, Effect, FileSystem, Result} from "effect";
+import {Console, Crypto, Effect, FileSystem, Path, Result} from "effect";
 import * as Schema from "effect/Schema";
 import {Argument, Command, Flag} from "effect/unstable/cli";
 import {leafCommand} from "../excess-operand.ts";
 import {decodeManifest, STAGES} from "./corpus.ts";
+import {decodeIncidentProvenance} from "./incident-provenance.ts";
 import {
 	type BaselineKey,
 	buildScorecard,
@@ -32,6 +36,13 @@ import {
 	renderTable,
 	toJson,
 } from "./report.ts";
+import {
+	decodeRuledKeeps,
+	keepsToJson,
+	renderKeeps,
+	ruledKeepsViolations,
+	withCoverage,
+} from "./ruled-keeps.ts";
 import {decodeSkillEvalSet, tierCounts} from "./skill-eval-set.ts";
 import {
 	buildClaudeArgs,
@@ -435,9 +446,96 @@ const runCommand = leafCommand(
 	),
 );
 
-export const evalCommand = Command.make("eval").pipe(
-	Command.withSubcommands([check, report, cases, runCommand]),
+// A named enumeration/ledger path that could not be read — a hard error (exit 1), not a skip.
+class KeepsUnreadable extends Schema.TaggedErrorClass<KeepsUnreadable>()("KeepsUnreadable", {
+	path: Schema.String,
+}) {}
+
+const keepsArg = Argument.string("path").pipe(
+	Argument.withDescription(
+		"path to the ruled-KEEP enumeration (incident-corpus/ruled-keeps.json) — the committed membership list",
+	),
+);
+
+const provenanceFlag = Flag.string("provenance").pipe(
+	Flag.optional,
+	Flag.withDescription(
+		"path to the provenance ledger the coverage column is joined from (default: provenance.json beside the enumeration)",
+	),
+);
+
+/**
+ * `keeps` — print the ruled KEEP corpus (#4823).
+ *
+ * Membership was ruled in #4642 and never written down, so every consumer re-ran a two-artifact
+ * join by hand. This verb is the read that replaces it. Coverage is joined live from the
+ * provenance ledger rather than stored, so the two can never disagree.
+ */
+const keeps = Command.make(
+	"keeps",
+	{path: keepsArg, provenance: provenanceFlag, json: jsonFlag},
+	Effect.fn(function* (opts) {
+		const run = Effect.gen(function* () {
+			const fs = yield* FileSystem.FileSystem;
+			const path = yield* Path.Path;
+			const text = yield* Effect.mapError(
+				fs.readFileString(opts.path),
+				() => new KeepsUnreadable({path: opts.path}),
+			);
+			const decoded = decodeRuledKeeps(text);
+			if (Result.isFailure(decoded)) {
+				yield* Console.error(
+					`fabrika eval: ${opts.path} is not a valid ruled-KEEP enumeration (${decoded.failure.reason}): ${decoded.failure.message}`,
+				);
+				return yield* Effect.sync(() => process.exit(GATE_FAIL_EXIT_CODE));
+			}
+			const violations = ruledKeepsViolations(decoded.success);
+			if (violations.length > 0) {
+				yield* Console.error(
+					`fabrika eval: ${opts.path} decodes but breaks its own integrity rules:\n${violations.map((v) => `  - ${v}`).join("\n")}`,
+				);
+				return yield* Effect.sync(() => process.exit(GATE_FAIL_EXIT_CODE));
+			}
+
+			const ledgerPath =
+				opts.provenance._tag === "Some"
+					? opts.provenance.value
+					: path.join(path.dirname(opts.path), "provenance.json");
+			const ledgerText = yield* Effect.mapError(
+				fs.readFileString(ledgerPath),
+				() => new KeepsUnreadable({path: ledgerPath}),
+			);
+			const ledger = decodeIncidentProvenance(ledgerText);
+			if (Result.isFailure(ledger)) {
+				yield* Console.error(
+					`fabrika eval: ${ledgerPath} is not a valid provenance ledger (${ledger.failure.reason}): ${ledger.failure.message}`,
+				);
+				return yield* Effect.sync(() => process.exit(GATE_FAIL_EXIT_CODE));
+			}
+
+			const covered = withCoverage(decoded.success, ledger.success);
+			yield* Console.log(
+				opts.json ? keepsToJson(decoded.success, covered) : renderKeeps(decoded.success, covered),
+			);
+		});
+		yield* run.pipe(
+			Effect.catchTag("KeepsUnreadable", (e) =>
+				Effect.gen(function* () {
+					yield* Console.error(`fabrika eval: cannot read ${e.path}`);
+					return yield* Effect.sync(() => process.exit(GATE_FAIL_EXIT_CODE));
+				}),
+			),
+		);
+	}),
+).pipe(
 	Command.withDescription(
-		"Graded per-stage corpus + scorecard + authored-eval-set ingestion + the unattended runner (#1848, #1853, #4674, #4676)",
+		"Print the ruled KEEP corpus — the committed enumeration of the fabrika eval feedstock, with each row's derivation and the eval cases that pin it (#4823)",
+	),
+);
+
+export const evalCommand = Command.make("eval").pipe(
+	Command.withSubcommands([check, report, cases, runCommand, keeps]),
+	Command.withDescription(
+		"Graded per-stage corpus + scorecard + authored-eval-set ingestion + the unattended runner + the ruled KEEP enumeration (#1848, #1853, #4674, #4676, #4823)",
 	),
 );
