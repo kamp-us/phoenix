@@ -217,6 +217,7 @@ so a PR could appear as a triageable row.
 | `1` | usage error, `--limit` below 1, unresolvable repo, or the verb failed to run |
 | `2` | no implementation could be resolved |
 | `7` | the label does not exist in the repository — zero scope, a refusal |
+| `127` | the verb never ran (unresolved binary) |
 
 **Errors**
 
@@ -426,6 +427,7 @@ still a footer.
 | `1` | usage error, unresolvable repo, or the verb failed to run |
 | `2` | no implementation could be resolved |
 | `4` | the issue does not exist |
+| `127` | the verb never ran (unresolved binary) |
 
 **Errors**
 
@@ -516,6 +518,7 @@ seeing rather than a row to hide. The two standing lanes are fixed and are not r
 | `1` | usage error, unresolvable repo, `ROADMAP.md` unreadable, or the verb failed to run |
 | `2` | no implementation could be resolved |
 | `7` | the repository has zero open milestones, **or `ROADMAP.md` parsed to zero arc rows** — zero scope, a refusal |
+| `127` | the verb never ran (unresolved binary) |
 
 **Errors**
 
@@ -634,6 +637,7 @@ a silent lost split, in the one direction v1's own module says it refuses.
 | `5` | the child body carries a machine-local path |
 | `8` | the create failed — the outcome is UNKNOWN |
 | `9` | the child was created but the read-back does not match |
+| `127` | the verb never ran (unresolved binary) |
 
 **Errors**
 
