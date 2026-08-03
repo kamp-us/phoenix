@@ -7,12 +7,14 @@ must pass, always — and the founder's ruling on
 becomes a case within days. This page is how you do that, so the floor grows by rule rather than
 by whoever remembers.
 
-Two files hold the corpus:
+Three files hold the corpus:
 
 - `evals.json` — the cases, in the `/skill-creator` authoring format, decoded by
   [`../skill-eval-set.ts`](../skill-eval-set.ts). No field is added to that format here.
 - `provenance.json` — the sidecar that binds each case to the artifact it pins, decoded by
   [`../incident-provenance.ts`](../incident-provenance.ts).
+- `ruled-keeps.json` — the enumeration of the incidents ruled into the feedstock, decoded by
+  [`../ruled-keeps.ts`](../ruled-keeps.ts) and printed by `fabrika eval keeps`.
 
 ## What makes an incident a case
 
@@ -39,11 +41,19 @@ sharpest the moment it lands, and a case written a week later is written from th
 than from the failure. The ruled expectation is **days, not sprints**: an incident closed today
 should carry its case before the week is out.
 
-If the incident is one of the 74 KEEP issues, verify membership **two ways**, because no
-enumeration of the 74 exists to read: a `KEEP-AS-EVAL` row on the
-[#4634](https://github.com/kamp-us/phoenix/issues/4634) verdict table, **and** absence from the
-153-issue kill list in the [#4642](https://github.com/kamp-us/phoenix/issues/4642) ruling. Record
-both in the case's `verification`.
+If the incident is one of the ruled KEEP issues, **read `ruled-keeps.json`** — or run
+`fabrika eval keeps incident-corpus/ruled-keeps.json`, which prints each row with the eval cases
+that already pin it. Membership is **66**, plus one pending row
+([#4180](https://github.com/kamp-us/phoenix/issues/4180), whose sweep verdict the
+[#4642](https://github.com/kamp-us/phoenix/issues/4642) ruling retracted and never replaced). Cite
+the enumeration in the case's `verification`.
+
+Do **not** re-run the two-artifact join by hand. That join — a `KEEP-AS-EVAL` row on the
+[#4634](https://github.com/kamp-us/phoenix/issues/4634) verdict table **and** absence from the
+153-issue kill list in the #4642 ruling — is now recorded once, as `ruled-keeps.json`'s
+`derivation`, which is also where the arithmetic behind the corrected figure lives. #4642 published
+the size as 74; that double-counts the 7 borderline items, which carry `KEEP-AS-EVAL` rows and were
+never outside the set. The enumerated figure is 66 ([#4823](https://github.com/kamp-us/phoenix/issues/4823)).
 
 ## Adding a case
 
