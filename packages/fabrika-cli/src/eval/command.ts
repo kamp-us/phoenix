@@ -471,7 +471,7 @@ const provenanceFlag = Flag.string("provenance").pipe(
  * join by hand. This verb is the read that replaces it. Coverage is joined live from the
  * provenance ledger rather than stored, so the two can never disagree.
  */
-const keeps = Command.make(
+const keeps = leafCommand(
 	"keeps",
 	{path: keepsArg, provenance: provenanceFlag, json: jsonFlag},
 	Effect.fn(function* (opts) {
