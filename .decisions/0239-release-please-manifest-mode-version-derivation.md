@@ -27,16 +27,24 @@ What has never existed is the *version-derivation* half. Every version number so
 picked by hand and typed into a `package.json`, and the release tag was typed to match it.
 That is the gap #4791 opened: the repo has publishing, and no convention-driven versioning.
 
-Two constraints from 0076 are load-bearing here and are **not** re-derived — they are carried
-forward as binding constraints below:
+Two constraints are load-bearing here and are carried forward as binding constraints below.
+They have **different provenance**, and the difference is stated rather than blurred: one is
+inherited from an earlier ADR, the other is recorded by this ADR for the first time.
 
 - **npm versions are immutable.** A published version can never be corrected in place, only
   superseded by a higher one. Any automation that can fire before a rename or a manifest fix
-  has landed bakes the error into the registry permanently. This is not hypothetical: the
-  `@kampus/fabrika-cli@0.1.0` bootstrap publish very nearly shipped a retired command name
-  because the local checkout doing the publish was behind the merge that renamed it.
-- **The publish verb is `pnpm publish`, never `npm publish`.** Every dependency in this repo
-  is sourced from the pnpm workspace `catalog:` (the CLAUDE.md convention, enforced by
+  has landed bakes the error into the registry permanently. **No ADR has ruled this before —
+  this one does.** It is a registry fact rather than an inherited ruling, and the evidence it
+  rests on is this repo's own near-miss: the `@kampus/fabrika-cli@0.1.0` bootstrap publish
+  (2026-08-03) very nearly shipped a retired command name because the local checkout doing the
+  publish was behind the merge that renamed it. Binding from here, and inherited by #4801 and
+  #4803.
+- **The publish verb is `pnpm publish`, never `npm publish`.** This one *is* inherited — from
+  ADR [0076](0076-decisions-index-npm-publish-automated-release.md) §2, which is
+  `superseded by [0103](0103-consolidate-pipeline-cli-package.md)` on the packaging axis but
+  **not** on the verb: 0103 does not restate the verb ruling, so superseded-0076 remains its
+  only written ADR home and is cited here as live on that point alone. Every dependency in this
+  repo is sourced from the pnpm workspace `catalog:` (the CLAUDE.md convention, enforced by
   `catalog-guard`). npm cannot resolve a `catalog:` specifier and would ship the literal
   string `"catalog:"` as a dependency range, producing a tarball installable by nobody. pnpm
   resolves catalog and workspace specifiers into the tarball at pack time, which is what makes
@@ -49,9 +57,11 @@ asserted (the convention exists because ADR 0040 rested on an unverified platfor
 ADR 0082 had to tear out what grew on it). Where the source disagrees with the relayed claim,
 the source wins and the correction is recorded below.
 
-**Grounding basis.** All source citations are read from the published `release-please@17.11.1`
-tarball (`build/src/…`, the compiled output of the package the action bundles) and from
-`googleapis/release-please-action` at tags `v4.4.1` and `v5.0.0`.
+**Grounding basis.** release-please citations are read from the published
+`release-please@17.11.1` tarball (`build/src/…`, the compiled output of the package the action
+bundles) and from `googleapis/release-please-action` at tags `v4.4.1` and `v5.0.0`. The §6
+rejection citations are read from `knope-dev/knope` at tag `versioning/v0.8.0` and `nrwl/nx` at
+tag `23.1.1`.
 
 ## Decision
 
@@ -81,9 +91,10 @@ The `release-please` package contains no npm-publish path — no `npm publish`, 
 `registry.npmjs.org`, no registry credential handling anywhere in `build/src/`. Its verbs
 open pull requests and create GitHub releases. The publish step therefore stays exactly where
 it already works: `.github/workflows/publish.yml`, on the `release: published` event, minting
-a short-lived OIDC credential and running **`pnpm publish`** (ADRs 0076/0103). The only change
-that workflow needs is resolving *which* package from the release-tag prefix instead of
-hardcoding one — that is #4801's job, not this ADR's.
+a short-lived OIDC credential and running **`pnpm publish`** (ADR 0076 §2 — superseded by 0103
+on packaging, not on the verb; see Context). The only change that workflow needs is resolving
+*which* package from the release-tag prefix instead of hardcoding one — that is #4801's job,
+not this ADR's.
 
 ### 3. ADR 0083 is not overturned — the Release PR carries both halves
 
@@ -147,10 +158,23 @@ be taken back.
 
 ### 6. Rejected alternatives
 
-- **knope** — routes by commit **scope**, which is precisely this repo's failure mode.
-  Disqualified on the exact axis §1 resolves.
-- **Nx release** — pnpm catalogs are unsupported. A tool that cannot read the catalog cannot
-  be trusted near a repo where every dependency is a `catalog:` specifier.
+- **knope** — routes by commit **scope**, grounded in source: a package's commits are selected
+  by matching the commit's conventional-commit scope against that package's configured `scopes`
+  list, and `changes_from_commit_message()` returns *no* changes when the scope is absent from
+  it (`crates/knope-versioning/src/changes/conventional_commit.rs:44-53`, fed
+  `self.scopes` by `Package::get_changes()` in `crates/knope-versioning/src/package.rs:111`).
+  There is nothing to route on but the scope — the `Commit` struct that feeds change derivation
+  carries only `message` and `info`, no touched-file list (`conventional_commit.rs:8-11`). That
+  is precisely this repo's failure mode, so knope is disqualified on the exact axis §1 resolves.
+- **Nx release** — the relayed claim was that pnpm catalogs are unsupported. **A source read
+  does not support that claim and it is recorded here as not reproduced**: `@nx/js` resolves a
+  `catalog:` specifier through `getCatalogManager()` / `isCatalogReference()` /
+  `resolveCatalogReference()` and writes derived bumps back into the catalog definition with
+  `updateCatalogVersions()` (`packages/js/src/release/version-actions.ts:174-181`, `:256-264`,
+  `:319`). The rejection stands on adoption cost instead: Nx release derives versions from the
+  **Nx project graph** and errors out without one, demanding the `@nx/js` plugin and a built
+  graph (`:250-253`). Adopting it means adopting Nx as this repo's build system in place of
+  turbo — far more than the version-derivation mechanism this ADR is choosing.
 - **Lerna-Lite** — unverified on whether it rewrites `catalog:` into a tarball. Not needed:
   release-please never packs a tarball, so it cannot mishandle one.
 - **changesets** — requires a per-PR changeset file. Agent-authored PRs forget artifacts;
@@ -217,6 +241,13 @@ merits or not at all without blocking any of this.
   supersede or amend-in-part is warranted. ADR 0201 §4 rules on release cadence and is realized,
   not re-decided (§4). ADRs 0064/0076/0103 rule on the publish half and are cited, not
   re-decided; 0083 is preserved by construction (§3).
-- **Correction recorded.** The relayed `releases_created`-always-true claim is **not reproduced**
-  against `release-please-action` v4.4.1 source; §5 records the accurate hazard in its place.
+- **Corrections recorded.** Two relayed claims are **not reproduced** against source: the
+  `releases_created`-always-true claim (`release-please-action` v4.4.1 — §5 records the accurate
+  hazard in its place) and the Nx-cannot-read-pnpm-catalogs claim (nx `23.1.1` — §6 records what
+  the source actually does and re-grounds the rejection).
+- **Provenance corrected.** An earlier draft attributed the npm-version-immutability constraint
+  to ADR 0076. It does not appear there, and no ADR rules it: this ADR records it for the first
+  time, on the evidence of the `@kampus/fabrika-cli@0.1.0` bootstrap near-miss (Context). The
+  `pnpm publish` constraint does trace to 0076 §2, whose `superseded by 0103` status is marked
+  at each citation because 0103 does not restate that ruling.
 - Closes #4799.
