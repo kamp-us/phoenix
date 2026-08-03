@@ -68,10 +68,11 @@ units** — only an agent filing may be left as an empty husk and killed, becaus
 
 ## 5 — Home it, then enrich: rewrite on top, original preserved beneath
 
-Lane-entering work — an epic, or a parentless feature — carries a `## Pitch` whose `Arc` *is* its
-home, so pick the home before you write the body, and **only the founder approves a pitch**. Take an
-existing one: **triage never creates a milestone** (ADR 0072 §3), and `wayfinder:backlog` is bounded
-to genuine fog rather than work you would rather not decide about.
+**Every issue leaves with a home** — an open milestone, or one of the two standing lanes.
+Lane-entering work (an epic, or a parentless feature) additionally carries a `## Pitch` whose `Arc`
+*is* that home, so pick it before you write the body, and **only the founder approves a pitch**. Take
+an existing home: **triage never creates a milestone** (ADR 0072 §3), and `wayfinder:backlog` is
+bounded to genuine fog rather than work you would rather not decide about.
 
 ```bash
 fabrika triage homes
@@ -83,7 +84,9 @@ fabrika triage enrich 4312 <<'EOF'
 EOF
 ```
 
-Pass `--epic` for an epic: its brief is consumed verbatim downstream, so nothing goes above it. The
+For an epic, run `fabrika triage enrich 4318 --epic` **bare**: it reads no stdin at all in that mode,
+so a piped rewrite is silently discarded rather than refused — the brief is consumed verbatim
+downstream, and nothing goes above it. The
 rewrite adds real paths and function names over vague framing, and acceptance criteria that make
 "done" legible — not a closed set, a `review-*` gate may append (ADR 0079). **No invention**: enrich
 from what you found, keep the uncertainty the original had, and mark your own reads `Triage note:`.
@@ -100,6 +103,10 @@ default** and most of a healthy backlog. A roadmap row confers no band either wa
 ```bash
 fabrika triage apply 4312 --type bug --priority p2 --ready-for agent --home 47
 ```
+
+A standing lane takes `--lane wayfinder:backlog` (or `axis:pipeline-hardening`) **instead of**
+`--home`, never both — a lane label is not a milestone number, and putting a milestone on a
+lane-exempt issue is banned outright (ADR 0208).
 
 **`--ready-for` is a different question from readiness.** `status:triaged` says the ticket is ready;
 `ready-for:` says ready *for whom* (#4780). Send it to `agent` when the work is specified well enough
@@ -132,10 +139,11 @@ EOF
 - **`agent`** and unsalvageable, duplicate, or moving nothing forward → kill it, which closes it
   not-planned carrying `closed-by-triage`. **`--confirm` is you attesting that salvage was genuinely
   attempted**: a human-invoked `/report` carries the same agent footer, so footer presence alone
-  never licenses a close.
+  never licenses a close. Killing a duplicate takes `--duplicate-of <survivor>`, which folds this
+  issue's content into that one before closing; without it the content is simply lost.
 
 ```bash
-fabrika triage kill 4312 --confirm <<'EOF'
+fabrika triage kill 4312 --confirm --duplicate-of 4290 <<'EOF'
 …
 EOF
 ```

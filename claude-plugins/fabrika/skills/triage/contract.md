@@ -619,6 +619,18 @@ With `--json`, an object with keys `outcome`, `milestones` (array of `{number, t
 row to hide. The two standing lanes are fixed and are not read from the repo. There is no third, and
 this verb never invents one.
 
+**The join, stated rather than left to the implementer** — this is the verb's whole split test, so it
+is the one thing that must not be inferred. `ROADMAP.md`'s `## Arcs` and `## Campaigns` tables are
+`| <name> | <milestone> | <state> |`, where the milestone cell is `#<number>` — the same
+row-to-milestone-by-number binding `roadmap-guard` already enforces. So: **the join key is that
+`#<number>` matched against the milestone's number, never the title**, and `roadmapRow` is the row's
+**first column** — the arc or campaign name. The `State` column is not read: this verb reports what
+exists, and whether an arc is active is a question for the caller, not a filter here. A milestone no
+row pins yields `null`; a row pinning a milestone that is closed or absent contributes nothing.
+
+Matching on the title would be the obvious shortcut and it is wrong — an arc named `Geçit` pins a
+milestone titled `Sözlük — search and discovery`, and the two share no substring.
+
 **Exit status**
 
 | Code | Trigger |
@@ -960,7 +972,20 @@ draft required a body it then discarded, which is worse: it made the caller auth
 authored text: `3` (nothing to be empty), `5` and `6` (nothing to carry a path or be a bare
 reference). The preserved original is still redacted, so `<redactions>` is still meaningful.
 
-**The re-enrich detector** matches the literal line `<summary>Original report (verbatim)</summary>`
+**The re-enrich detector matches the envelope's shape, not the summary line alone.** A body counts as
+already-enriched only when the `<details>` block is the **last** block in the body and closes at
+end-of-body — the exact shape this verb emits. A body that carries the summary line anywhere else is
+treated as a **first** enrichment and wrapped, never replaced.
+
+The strict form is required for the same reason `triage provenance` pins its footer match, but the
+failure direction is worse: provenance fails *open* toward a wrong verdict, while a loose re-enrich
+detector fails *destructively* — "replace everything above the opening `<details>`" applied to an
+issue that merely **quotes** an enrichment envelope (a bug report about this very format, a pasted
+body) silently deletes every line above the paste, on a public issue, irreversibly. In this repo an
+issue pasting a fabrika envelope is an ordinary filing, not an exotic one.
+
+For reference, the literal the strict check anchors on is the line
+`<summary>Original report (verbatim)</summary>`
 or `<summary>Original brief (verbatim)</summary>`. On a match the verb replaces everything above the
 opening `<details>` and preserves that block **unchanged**. Because the block is preserved rather
 than re-wrapped, nesting cannot accumulate at all — a second pass produces the same one-level
@@ -1280,6 +1305,33 @@ no type, no priority, no audience and no home. Folding it into `apply` would mak
 conditionally required — the shape that let v1 emit a fully-triaged-looking issue with a facet
 missing.
 
+### The owned facets — what `park` may remove
+
+Stating the end state is not enough; a verb that asserts "a parked issue carries no type" and then
+reads back only its own two labels will certify an issue that carries five. That gap is reachable
+without any misuse: a re-park, or an issue parked after an earlier `apply`, arrives already priced.
+
+| Facet | Owned pattern | Kept |
+|---|---|---|
+| status | `^status:(needs-triage\|triaged\|needs-info)$` | `status:needs-info` |
+| type | `^type:` | none |
+| priority | `^p\d+$` | none |
+| audience | `^ready-for:` | none |
+| lane | `^(wayfinder:backlog\|axis:pipeline-hardening)$` | none |
+| milestone | the issue's milestone | none — cleared |
+
+Every label matching an owned pattern is removed unless it is the one kept; every label matching no
+owned pattern is preserved untouched. **The read-back asserts the whole shape**, not just the status
+swap: `status:needs-info` present, `status:needs-triage` and `status:triaged` both absent, no
+`type:`, no `p*`, no `ready-for:`, no lane label, and the milestone null. `removed` in the `--json`
+object is exactly the set this reconcile deleted, so the example's `["status:needs-triage"]` is the
+ordinary case — an issue arriving straight from the queue with nothing else to clear.
+
+**Parking a triaged issue is a demotion, and it must leave no residue.** An issue reading both
+`status:triaged` and `status:needs-info` corrupts the two queue reads every other verb and the sweep
+depend on, and the read-back that is supposed to catch that is the thing that would otherwise certify
+it.
+
 **Exit status**
 
 | Code | Trigger |
@@ -1312,8 +1364,8 @@ partially labelled" would be false, and a caller reading it would go looking for
 never started. Only the second failure can leave a partial label state.
 
 **Scope** — one issue, plus the repository's label set for the `status:needs-info` precondition. The
-read-back asserts `status:needs-info` present and `status:needs-triage` absent. Parking leaves the
-queue deliberately: a parked question must not resurface in every sweep, and it re-enters when
+read-back is the one specified under the owned facets above; it is not restated here. Parking leaves
+the queue deliberately: a parked question must not resurface in every sweep, and it re-enters when
 whoever answers swaps the labels back.
 
 **Examples**
