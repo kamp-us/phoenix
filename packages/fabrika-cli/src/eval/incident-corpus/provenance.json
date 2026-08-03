@@ -166,7 +166,7 @@
 			"incidents": ["#4285"],
 			"verification": [
 				"KEEP-AS-EVAL row on the #4634 verdict table: bare 1 applied as a literal label on #4282, reported success.",
-				"Absent from the 153-issue kill list on #4642, and named in that ruling's fold into the 74-issue KEEP corpus."
+				"Absent from the 153-issue kill list on #4642, and named among the 7 borderline items that ruling folded into the KEEP corpus. The fold double-counts them — each already carries a KEEP-AS-EVAL row — so the enumerated corpus is 66, not the 74 the ruling published (ruled-keeps.json, #4823)."
 			],
 			"corrections": []
 		},
@@ -177,7 +177,7 @@
 			"incidents": ["#4163"],
 			"verification": [
 				"KEEP-AS-EVAL row on the #4634 verdict table: review gate declared a merged ADR nonexistent, four seats in one session.",
-				"Absent from the 153-issue kill list on #4642, and named in that ruling's fold into the 74-issue KEEP corpus."
+				"Absent from the 153-issue kill list on #4642, and named among the 7 borderline items that ruling folded into the KEEP corpus. The fold double-counts them — each already carries a KEEP-AS-EVAL row — so the enumerated corpus is 66, not the 74 the ruling published (ruled-keeps.json, #4823)."
 			],
 			"corrections": []
 		},
@@ -188,7 +188,7 @@
 			"incidents": ["#4338"],
 			"verification": [
 				"KEEP-AS-EVAL row on the #4634 verdict table: stale checkout applied a withdrawn ADR 86 minutes after the withdrawal merged.",
-				"Absent from the 153-issue kill list on #4642, and named in that ruling's fold into the 74-issue KEEP corpus."
+				"Absent from the 153-issue kill list on #4642, and named among the 7 borderline items that ruling folded into the KEEP corpus. The fold double-counts them — each already carries a KEEP-AS-EVAL row — so the enumerated corpus is 66, not the 74 the ruling published (ruled-keeps.json, #4823)."
 			],
 			"corrections": []
 		}
