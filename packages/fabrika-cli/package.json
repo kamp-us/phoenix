@@ -1,7 +1,7 @@
 {
 	"name": "@kampus/fabrika-cli",
 	"version": "0.1.0",
-	"description": "fabrika-cli — the deterministic verb package fabrika skills call; `fabrika-cli <group> <verb> …` (epic #4650)",
+	"description": "@kampus/fabrika-cli — the deterministic verb package fabrika skills call; `fabrika <group> <verb> …` (epic #4650)",
 	"license": "MIT",
 	"repository": {
 		"type": "git",
@@ -10,7 +10,7 @@
 	},
 	"type": "module",
 	"bin": {
-		"fabrika-cli": "./src/bin.ts"
+		"fabrika": "./src/bin.ts"
 	},
 	"main": "./src/index.ts",
 	"types": "./src/index.ts",

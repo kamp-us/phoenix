@@ -131,7 +131,7 @@ export const delegateOrRunHere = async (): Promise<void> => {
 		process.exit(outcome.status);
 	}
 	console.error(
-		`fabrika-cli: could not resolve which copy to run.\n` +
+		`fabrika: could not resolve which copy to run.\n` +
 			`  looked for a repo root above: ${process.cwd()}\n` +
 			`  stopped at: ${outcome.failed}\n` +
 			`  cause: ${outcome.reason}`,

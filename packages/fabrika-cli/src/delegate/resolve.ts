@@ -1,5 +1,5 @@
 /**
- * Decide, and then act on, which copy of `fabrika-cli` serves this invocation.
+ * Decide, and then act on, which copy of `fabrika` serves this invocation.
  *
  * The decision is a pure function of four facts — where the running copy lives, whether there is a
  * repo root, what the root's install probe said, and what the root manifest declares — so every
@@ -29,7 +29,7 @@ export const INVOCATION_DIR_ENV = "FABRIKA_INVOCATION_DIR";
 /** Set to any value to silence the no-local-install warning. */
 export const GLOBAL_WARNING_DISABLED_ENV = "FABRIKA_GLOBAL_WARNING_DISABLED";
 
-export const DEBUG_ENV = "FABRIKA_CLI_DEBUG";
+export const DEBUG_ENV = "FABRIKA_DEBUG";
 
 export type Resolution =
 	| {readonly _tag: "run-here"; readonly why: string}
@@ -75,7 +75,7 @@ export interface WarningInput {
  */
 export const globalWarning = ({repoRoot, reason, globalVersion, declared}: WarningInput): string =>
 	[
-		`fabrika-cli: running the GLOBAL install (v${globalVersion}) — ${repoRoot} ${reason}.`,
+		`fabrika: running the GLOBAL install (v${globalVersion}) — ${repoRoot} ${reason}.`,
 		declared === undefined
 			? `  ${repoRoot}/package.json declares no @kampus/fabrika-cli dependency.`
 			: `  ${repoRoot}/package.json declares @kampus/fabrika-cli ${declared}; install it to run the version this repo pins.`,
@@ -92,11 +92,11 @@ export const globalWarning = ({repoRoot, reason, globalVersion, declared}: Warni
 export const traceLine = (selfPackageRoot: string, resolution: Resolution): string => {
 	switch (resolution._tag) {
 		case "delegate":
-			return `fabrika-cli: global at ${selfPackageRoot} — delegating to the repo-local install at ${resolution.to.packageRoot} (${resolution.to.binPath}, v${resolution.to.version})`;
+			return `fabrika: global at ${selfPackageRoot} — delegating to the repo-local install at ${resolution.to.packageRoot} (${resolution.to.binPath}, v${resolution.to.version})`;
 		case "warn-and-run-here":
-			return `fabrika-cli: running here, at ${selfPackageRoot} — repo root ${resolution.repoRoot}, but ${resolution.reason}`;
+			return `fabrika: running here, at ${selfPackageRoot} — repo root ${resolution.repoRoot}, but ${resolution.reason}`;
 		case "run-here":
-			return `fabrika-cli: running here, at ${selfPackageRoot} — ${resolution.why}`;
+			return `fabrika: running here, at ${selfPackageRoot} — ${resolution.why}`;
 	}
 };
 
@@ -170,7 +170,7 @@ export const spawnDelegate = ({
 			// rule 3 table.
 			return Effect.sync(() => {
 				console.error(
-					`fabrika-cli: found a repo-local install but could not run it.\n` +
+					`fabrika: found a repo-local install but could not run it.\n` +
 						`  tried: ${execPath} ${binPath}\n` +
 						`  cause: ${cause.message}`,
 				);

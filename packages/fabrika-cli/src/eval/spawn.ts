@@ -517,7 +517,7 @@ export const captureToJson = (capture: CaptureManifest): string =>
 /** A one-line-per-run human rendering, so an operator sees which arm died of what without a jq. */
 export const renderLedger = (ledger: RunLedger): string => {
 	const lines = [
-		`fabrika-cli eval run: ${ledger.skillName} · stage ${ledger.stage} · model ${ledger.model}`,
+		`fabrika eval run: ${ledger.skillName} · stage ${ledger.stage} · model ${ledger.model}`,
 		...ledger.runs.map((outcome) =>
 			outcome._tag === "Completed"
 				? `  case ${outcome.caseId} [${outcome.arm}] ok — ${outcome.numTurns} turns, transcript ${outcome.transcriptPath}`

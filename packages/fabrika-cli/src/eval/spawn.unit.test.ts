@@ -600,7 +600,9 @@ describe("no CI workflow invokes the model-spawning runner (#4649 ruling)", () =
 		const offenders = readdirSync(workflows)
 			.filter((f) => f.endsWith(".yml") || f.endsWith(".yaml"))
 			.filter((f) =>
-				/(eval-harness|fabrika-cli\s+eval)\s+run\b/.test(readFileSync(join(workflows, f), "utf8")),
+				/(eval-harness|fabrika(-cli)?\s+eval)\s+run\b/.test(
+					readFileSync(join(workflows, f), "utf8"),
+				),
 			);
 		assert.deepStrictEqual(offenders, []);
 	});

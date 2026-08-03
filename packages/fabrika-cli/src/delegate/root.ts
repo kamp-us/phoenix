@@ -2,7 +2,7 @@
  * Where the repo containing the cwd starts.
  *
  * This exists so the delegation can tell *"I am not in a repo"* apart from *"I am in a repo that
- * pins fabrika-cli but has not installed it"*. Collapsing those two into one branch is what makes a
+ * pins `@kampus/fabrika-cli` but has not installed it"*. Collapsing those two into one branch is what makes a
  * delegation quietly wrong: the second case silently runs the global, which is the outcome #4784
  * exists to prevent. Only one of them is allowed to be silent, and it is the first.
  *

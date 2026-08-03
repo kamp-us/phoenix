@@ -82,7 +82,7 @@ exit taxonomy, and the verdict-vs-invocation rule proven in v1 at
 
   `2` is the seat between the two invocation failures. `127` is the shell reporting that nothing
   ran; `1` is a verb reporting that it ran and the caller asked wrongly. Between them sits the case
-  where `fabrika-cli` itself started, could not reach a working set of verbs — an unlinked
+  where `fabrika` itself started, could not reach a working set of verbs — an unlinked
   dependency, a repo-local install it could not execute — and has something specific to say about
   it. Seating that on `1` would make it indistinguishable from a typo in a flag ([#4666](https://github.com/kamp-us/phoenix/issues/4666)).
 
@@ -116,11 +116,13 @@ usable at an agent's top-level command.
 
 - A fabrika verb is invoked as a plain literal command string — no `$VAR`, no `${VAR:-default}`, no
   command substitution, no `source`.
-- **The literal is `fabrika-cli`.** That name is now fixed, closing the deferral this rule carried
+- **The literal is `fabrika`.** That name is now fixed, closing the deferral this rule carried
   to [#4650](https://github.com/kamp-us/phoenix/issues/4650): every fence in every fabrika skill
-  writes `fabrika-cli <group> <verb> …` and nothing else. The name is the `bin` of the
-  `@kampus/fabrika-cli` package, and [Delivery](#delivery--one-name-two-installs) below is how it
-  comes to resolve.
+  writes `fabrika <group> <verb> …` and nothing else. The command and the package are deliberately
+  **different names** — `fabrika` is the `bin` *key* of the `@kampus/fabrika-cli` package, which
+  keeps its name on npm and its directory at `packages/fabrika-cli/`
+  ([#4784](https://github.com/kamp-us/phoenix/issues/4784)). [Delivery](#delivery--one-name-two-installs)
+  below is how the command comes to resolve.
 - **Examples in `--help` and in a contract spec are held to the same rule.** An example an agent
   cannot paste verbatim is not an example.
 - A verb never requires an env var to *locate* itself. Configuration may still arrive by env
@@ -130,7 +132,7 @@ usable at an agent's top-level command.
 <a id="delivery--one-name-two-installs"></a>
 #### Delivery — one name, two installs, both of them real
 
-`fabrika-cli` is delivered as a **global install** of `@kampus/fabrika-cli`. On startup the binary
+`fabrika` is delivered as a **global install** of `@kampus/fabrika-cli`. On startup the binary
 finds the **repo root** above the working directory, asks Node's own resolver what copy that root
 installed, and hands the invocation to it. This is the shape [turbo](https://turborepo.com) ships
 (`crates/turborepo-shim/`) — a global entry point that defers to the version the repo pins —
@@ -154,7 +156,7 @@ quiet. Separating those two is the whole point — collapsing them is what makes
 wrong.
 
 Three environment variables belong to the delivery layer rather than to any verb, and none of them
-locates the binary, so none weakens the rule above: `FABRIKA_CLI_DEBUG` prints one stderr line naming
+locates the binary, so none weakens the rule above: `FABRIKA_DEBUG` prints one stderr line naming
 which copy served the invocation; `FABRIKA_GLOBAL_WARNING_DISABLED` silences the degenerate branch's
 warning; `FABRIKA_SKIP_INFER` is the recursion guard for a caller that cannot alter argv. The guard
 the CLI itself uses on the child is the **`--skip-infer` flag**, stripped before any verb sees it,
@@ -266,7 +268,7 @@ level of detail the completeness test demands.
 **Invocation**
 
 ```
-fabrika-cli decisions next-id [--dir <path>]
+fabrika decisions next-id [--dir <path>]
 ```
 
 **Inputs**
@@ -302,12 +304,12 @@ The scope line goes to stderr, because this verb's answer channel is machine.
 **Examples**
 
 ```
-$ fabrika-cli decisions next-id
+$ fabrika decisions next-id
 0233
 ```
 
 ```
-$ fabrika-cli decisions next-id --dir /nonexistent
+$ fabrika decisions next-id --dir /nonexistent
 decisions: cannot read /nonexistent: ENOENT
 $ echo $?
 1

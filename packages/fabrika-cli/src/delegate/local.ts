@@ -19,9 +19,14 @@ import {readFile} from "../io/fs.ts";
 import {isRecord, parseJson} from "../io/json.ts";
 import {resolvePackageManifest} from "./node-resolve.ts";
 
-/** The npm name the probe resolves, and the bin key inside that package's manifest. */
+/**
+ * The npm name the probe resolves, and the bin key inside that package's manifest.
+ *
+ * They differ on purpose: resolution is by **package** name, while the command a caller types — and
+ * therefore the manifest's `bin` key — is `fabrika` (#4784).
+ */
 export const PACKAGE_NAME = "@kampus/fabrika-cli";
-export const BIN_NAME = "fabrika-cli";
+export const BIN_NAME = "fabrika";
 
 /** A repo-local install: a real installed package with a declared entry point and a version. */
 export interface LocalInstall {

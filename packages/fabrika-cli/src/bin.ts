@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * `fabrika-cli` — the bin.
+ * `fabrika` — the bin.
  *
  *   node src/bin.ts --help          # list the registered verb groups
  *   node src/bin.ts adr --help      # one group's verbs, flags and exit codes
@@ -32,7 +32,7 @@ try {
 		// install` is right for a phoenix checkout and wrong for a globally installed copy, whose
 		// dependencies came with the tarball.
 		console.error(
-			`fabrika-cli: a dependency is not linked (${message}).\n` +
+			`fabrika: a dependency is not linked (${message}).\n` +
 				"If this is a phoenix checkout, run `pnpm install` at its root and re-run.\n" +
 				"If this is a global install, reinstall it: `pnpm add -g @kampus/fabrika-cli`.",
 		);

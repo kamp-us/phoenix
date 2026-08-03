@@ -11,7 +11,7 @@ implies, because discovery is the CLAUDE.md contract and there is no index. Exam
 ## 1 — Claim the number
 
 ```bash
-fabrika-cli adr next
+fabrika adr next
 ```
 
 Unions the freshly fetched merged set with the ids open ADR PRs already claim, so a checkout sitting
@@ -23,7 +23,7 @@ on disk is what minted ADR 0198 from two lanes at once, and 0114 and 0123 before
 ## 2 — Write the decision
 
 ```bash
-fabrika-cli adr new 0240 only-landed-adrs-may-be-cited
+fabrika adr new 0240 only-landed-adrs-may-be-cited
 ```
 
 Scaffolds the frontmatter and section skeleton; the slug is kebab-case, at most 5 words.
@@ -46,7 +46,7 @@ questions** — *"may an open issue exist without a milestone?"* — not as a su
 for a question you cannot phrase. Then rank the uncited live-accepted ADRs your domain touches:
 
 ```bash
-fabrika-cli adr sweep --new 0240
+fabrika adr sweep --new 0240
 ```
 
 None of its three outcomes is a clearance:
@@ -66,7 +66,7 @@ append a dated `- **#NNNN — <what changed> (YYYY-MM-DD).**` line under its `##
 ## 4 — Resolve every reference, then edit the status lines
 
 ```bash
-fabrika-cli adr resolve 0164 0023 0126
+fabrika adr resolve 0164 0023 0126
 ```
 
 Answers against a freshly fetched base ref, printing `live`, `landed`, `in-flight` or `absent` with
@@ -79,10 +79,10 @@ every gate passed on a dead citation (#4296). **A non-zero exit is UNKNOWN, neve
 **Use the filename it prints** — 0048 is `ship-it-merge-actor`, not `single-merge-authority`.
 
 ```bash
-fabrika-cli adr supersede 0126 --by 0240
+fabrika adr supersede 0126 --by 0240
 ```
 
-Where the rest of that ADR still stands, `fabrika-cli adr amend-in-part 0023 --by 0240` instead.
+Where the rest of that ADR still stands, `fabrika adr amend-in-part 0023 --by 0240` instead.
 Either verb touches the `status:` line and nothing else — an accepted ADR's decision text is
 immutable, so name the relationship in your own `## Context` rather than editing theirs.
 
@@ -98,7 +98,7 @@ Land on **exactly one** outcome; the explicit "none" separates *considered it* f
 ## 6 — Check, then report
 
 ```bash
-fabrika-cli adr resolve 0240
+fabrika adr resolve 0240
 ```
 
 Your own id, one last time: `absent` means nobody claimed it while you wrote; `in-flight` means

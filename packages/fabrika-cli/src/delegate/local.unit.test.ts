@@ -14,7 +14,7 @@ const manifest = (text: string) =>
 
 describe("readInstallManifest", () => {
 	it("resolves the bin against the manifest's own directory", () => {
-		expect(manifest('{"version":"1.2.3","bin":{"fabrika-cli":"./src/bin.ts"}}')).toEqual({
+		expect(manifest('{"version":"1.2.3","bin":{"fabrika":"./src/bin.ts"}}')).toEqual({
 			version: "1.2.3",
 			bin: "/repo/node_modules/pkg/src/bin.ts",
 		});
@@ -30,7 +30,7 @@ describe("readInstallManifest", () => {
 		});
 	});
 
-	it("calls a manifest with no fabrika-cli bin corrupt", () => {
+	it("calls a manifest with no fabrika bin corrupt", () => {
 		expect(manifest('{"version":"1.2.3"}')).toMatchObject({
 			corrupt: expect.stringContaining("bin"),
 		});

@@ -1,7 +1,7 @@
 # @kampus/fabrika-cli
 
 The deterministic verb package [fabrika](../../claude-plugins/fabrika/) skills call.
-`fabrika-cli <group> <verb> …` dispatches to a registered verb group. Three groups are
+`fabrika <group> <verb> …` dispatches to a registered verb group. Three groups are
 registered: `adr`, the six verbs the `/adr` skill's derived contract specifies; `report`,
 the three the `/report` contract specifies; and `eval`, the graded-corpus harness the
 fabrika eval layer measures itself with.
@@ -15,7 +15,7 @@ not a general-purpose CLI.
 
 ## It calls nothing outside fabrika
 
-**`fabrika-cli` invokes `pipeline-cli` nowhere** — no import, no subprocess
+**`fabrika` invokes `pipeline-cli` nowhere** — no import, no subprocess
 ([ADR 0238](../../.decisions/0238-fabrika-reimplements-v1-never-calls-it.md)). Where v1
 already solves the same problem, its source is a reference for the semantics and the scars,
 never a dependency.
@@ -27,7 +27,7 @@ anything.
 
 ## How it is delivered
 
-`fabrika-cli` is installed **globally**, once, and the binary decides for itself which copy runs:
+`fabrika` is installed **globally**, once, and the binary decides for itself which copy runs:
 
 ```bash
 pnpm add --global @kampus/fabrika-cli
@@ -53,17 +53,17 @@ is the quietly-wrong case, so it says so out loud and names the global's version
 root manifest declared. Set `FABRIKA_GLOBAL_WARNING_DISABLED=1` to silence it.
 
 The property this buys is a **repo-pinned version**. phoenix carries `@kampus/fabrika-cli` in its
-root `devDependencies`, so a bare `fabrika-cli` anywhere in a phoenix checkout runs the version this
+root `devDependencies`, so a bare `fabrika` anywhere in a phoenix checkout runs the version this
 repo pins — and because pnpm links the workspace package, that means the **working tree**: edit
 `src/`, the next invocation runs the edit. This supersedes `pnpm link --global`, which is
 machine-wide and has to be remembered and undone.
 
-`FABRIKA_CLI_DEBUG=1` prints one stderr line naming which copy served the invocation:
+`FABRIKA_DEBUG=1` prints one stderr line naming which copy served the invocation:
 
 ```
-$ FABRIKA_CLI_DEBUG=1 fabrika-cli --version
-fabrika-cli: global at …/pnpm/global/5/…/@kampus/fabrika-cli — delegating to the repo-local install at …/packages/fabrika-cli (…/src/bin.ts, v0.1.0)
-fabrika-cli v0.1.0
+$ FABRIKA_DEBUG=1 fabrika --version
+fabrika: global at …/pnpm/global/5/…/@kampus/fabrika-cli — delegating to the repo-local install at …/packages/fabrika-cli (…/src/bin.ts, v0.1.0)
+fabrika v0.1.0
 ```
 
 **Two independent recursion guards**, both read before any filesystem work: the parent always passes
@@ -80,7 +80,7 @@ refuse an unknown flag.
 > answers a registry 404 (`npm error code E404`, exit `1`, nothing on stdout). Publishing needs npm
 > Trusted Publishing registered against this repo plus a one-time bootstrap publish — a human action
 > outside the repo, tracked by [#4791](https://github.com/kamp-us/phoenix/issues/4791). Until it
-> lands, a bare `fabrika-cli` exits `127` on a machine with no global install, which the interface
+> lands, a bare `fabrika` exits `127` on a machine with no global install, which the interface
 > convention reserves for exactly that: the verb never ran. Inside a phoenix checkout the fallback
 > is `node packages/fabrika-cli/src/bin.ts …`.
 

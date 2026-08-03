@@ -1,14 +1,14 @@
 /**
- * The `eval` verb group — `fabrika-cli eval check|report|cases|run`.
+ * The `eval` verb group — `fabrika eval check|report|cases|run`.
  *
  * The graded-corpus apparatus for adjudicating a stochastic model swap per stage (epic
  * #1842), plus the ingestion of `/skill-creator`-authored eval sets (epic #4649). Four live
  * surfaces:
  *
- *   fabrika-cli eval check <manifest>   # decode a corpus manifest; exit non-zero on a bad one
- *   fabrika-cli eval report <rows>      # the graded two-axis scorecard over runner rows
- *   fabrika-cli eval cases <path>       # decode an authored eval set; exit non-zero on a bad one
- *   fabrika-cli eval run <path>         # execute an eval set unattended, emit the capture manifest
+ *   fabrika eval check <manifest>   # decode a corpus manifest; exit non-zero on a bad one
+ *   fabrika eval report <rows>      # the graded two-axis scorecard over runner rows
+ *   fabrika eval cases <path>       # decode an authored eval set; exit non-zero on a bad one
+ *   fabrika eval run <path>         # execute an eval set unattended, emit the capture manifest
  *
  * `check` (issue #1848) validates the on-disk corpus format. `report` (issue #1853) is the
  * top of the vertical slice: it reads the runner's graded `{entry, grade, spend}` rows and
@@ -74,16 +74,16 @@ const check = Command.make(
 			const result = decodeManifest(text);
 			if (Result.isFailure(result)) {
 				yield* Console.error(
-					`fabrika-cli eval: ${manifest} is not a valid corpus manifest (${result.failure.reason}): ${result.failure.message}`,
+					`fabrika eval: ${manifest} is not a valid corpus manifest (${result.failure.reason}): ${result.failure.message}`,
 				);
 				return yield* Effect.sync(() => process.exit(GATE_FAIL_EXIT_CODE));
 			}
-			yield* Console.log(`fabrika-cli eval: ${manifest} is a valid corpus manifest.`);
+			yield* Console.log(`fabrika eval: ${manifest} is a valid corpus manifest.`);
 		});
 		yield* run.pipe(
 			Effect.catchTag("ManifestUnreadable", (e) =>
 				Effect.gen(function* () {
-					yield* Console.error(`fabrika-cli eval: cannot read manifest ${e.path}`);
+					yield* Console.error(`fabrika eval: cannot read manifest ${e.path}`);
 					return yield* Effect.sync(() => process.exit(GATE_FAIL_EXIT_CODE));
 				}),
 			),
@@ -145,7 +145,7 @@ const report = Command.make(
 			const decoded = decodeReportInput(text);
 			if (Result.isFailure(decoded)) {
 				yield* Console.error(
-					`fabrika-cli eval: ${rows} is not a valid runner-rows file (${decoded.failure.reason}): ${decoded.failure.message}`,
+					`fabrika eval: ${rows} is not a valid runner-rows file (${decoded.failure.reason}): ${decoded.failure.message}`,
 				);
 				return yield* Effect.sync(() => process.exit(GATE_FAIL_EXIT_CODE));
 			}
@@ -157,7 +157,7 @@ const report = Command.make(
 				const stage = baselineStage.value;
 				if (!isStage(stage)) {
 					yield* Console.error(
-						`fabrika-cli eval: --baseline-stage '${stage}' is not a known stage (${STAGES.join(", ")})`,
+						`fabrika eval: --baseline-stage '${stage}' is not a known stage (${STAGES.join(", ")})`,
 					);
 					return yield* Effect.sync(() => process.exit(GATE_FAIL_EXIT_CODE));
 				}
@@ -172,7 +172,7 @@ const report = Command.make(
 		yield* run.pipe(
 			Effect.catchTag("RowsUnreadable", (e) =>
 				Effect.gen(function* () {
-					yield* Console.error(`fabrika-cli eval: cannot read runner-rows file ${e.path}`);
+					yield* Console.error(`fabrika eval: cannot read runner-rows file ${e.path}`);
 					return yield* Effect.sync(() => process.exit(GATE_FAIL_EXIT_CODE));
 				}),
 			),
@@ -208,7 +208,7 @@ const cases = Command.make(
 			const result = decodeSkillEvalSet(text);
 			if (Result.isFailure(result)) {
 				yield* Console.error(
-					`fabrika-cli eval: ${path} is not a valid skill eval set (${result.failure.reason}): ${result.failure.message}`,
+					`fabrika eval: ${path} is not a valid skill eval set (${result.failure.reason}): ${result.failure.message}`,
 				);
 				return yield* Effect.sync(() => process.exit(GATE_FAIL_EXIT_CODE));
 			}
@@ -217,13 +217,13 @@ const cases = Command.make(
 			// zero-scope pass ADR 0092 forbids. It reds with a named reason like any other bad set.
 			if (set.cases.length === 0) {
 				yield* Console.error(
-					`fabrika-cli eval: ${path} is not a usable skill eval set (empty-set): it decodes, but carries zero eval cases (ADR 0092 — zero scope reds)`,
+					`fabrika eval: ${path} is not a usable skill eval set (empty-set): it decodes, but carries zero eval cases (ADR 0092 — zero scope reds)`,
 				);
 				return yield* Effect.sync(() => process.exit(GATE_FAIL_EXIT_CODE));
 			}
 			const counts = tierCounts(set);
 			yield* Console.log(
-				`fabrika-cli eval: ${path} is a valid skill eval set — skill '${set.skillName}', ${set.cases.length} case(s): ${counts.deterministic} deterministic, ${counts.graded} graded.`,
+				`fabrika eval: ${path} is a valid skill eval set — skill '${set.skillName}', ${set.cases.length} case(s): ${counts.deterministic} deterministic, ${counts.graded} graded.`,
 			);
 			for (const evalCase of set.cases) {
 				yield* Console.log(
@@ -234,7 +234,7 @@ const cases = Command.make(
 		yield* run.pipe(
 			Effect.catchTag("EvalSetUnreadable", (e) =>
 				Effect.gen(function* () {
-					yield* Console.error(`fabrika-cli eval: cannot read eval set ${e.path}`);
+					yield* Console.error(`fabrika eval: cannot read eval set ${e.path}`);
 					return yield* Effect.sync(() => process.exit(GATE_FAIL_EXIT_CODE));
 				}),
 			),
@@ -293,7 +293,7 @@ const ledgerOutFlag = Flag.string("out").pipe(
 const captureOutFlag = Flag.string("capture-out").pipe(
 	Flag.optional,
 	Flag.withDescription(
-		"write the bare capture manifest here — the file `fabrika-cli eval report` and collectFromCapture consume unchanged",
+		"write the bare capture manifest here — the file `fabrika eval report` and collectFromCapture consume unchanged",
 	),
 );
 
@@ -335,27 +335,27 @@ const runCommand = Command.make(
 			const decoded = decodeSkillEvalSet(text);
 			if (Result.isFailure(decoded)) {
 				yield* Console.error(
-					`fabrika-cli eval: ${opts.path} is not a valid skill eval set (${decoded.failure.reason}): ${decoded.failure.message}`,
+					`fabrika eval: ${opts.path} is not a valid skill eval set (${decoded.failure.reason}): ${decoded.failure.message}`,
 				);
 				return yield* Effect.sync(() => process.exit(GATE_FAIL_EXIT_CODE));
 			}
 			const set = decoded.success;
 			if (set.cases.length === 0) {
 				yield* Console.error(
-					`fabrika-cli eval: ${opts.path} carries zero eval cases — refusing to report a green suite that ran nothing (ADR 0092)`,
+					`fabrika eval: ${opts.path} carries zero eval cases — refusing to report a green suite that ran nothing (ADR 0092)`,
 				);
 				return yield* Effect.sync(() => process.exit(GATE_FAIL_EXIT_CODE));
 			}
 			if (!isStageName(opts.stage)) {
 				yield* Console.error(
-					`fabrika-cli eval: --stage '${opts.stage}' is not a known stage (${STAGES.join(", ")})`,
+					`fabrika eval: --stage '${opts.stage}' is not a known stage (${STAGES.join(", ")})`,
 				);
 				return yield* Effect.sync(() => process.exit(GATE_FAIL_EXIT_CODE));
 			}
 			const arms = parseArms(opts.arms);
 			if (arms === null) {
 				yield* Console.error(
-					`fabrika-cli eval: --arms '${opts.arms}' names something that is not an arm (${EVAL_ARMS.join(", ")})`,
+					`fabrika eval: --arms '${opts.arms}' names something that is not an arm (${EVAL_ARMS.join(", ")})`,
 				);
 				return yield* Effect.sync(() => process.exit(GATE_FAIL_EXIT_CODE));
 			}
@@ -414,7 +414,7 @@ const runCommand = Command.make(
 			// Whether they passed is the oracle's answer, read off the capture manifest downstream.
 			if (!suiteExecuted(ledger.summary)) {
 				yield* Console.error(
-					`fabrika-cli eval: ${ledger.summary.failed} of ${ledger.summary.planned} run(s) did not execute — ${JSON.stringify(ledger.summary.byFailure)}`,
+					`fabrika eval: ${ledger.summary.failed} of ${ledger.summary.planned} run(s) did not execute — ${JSON.stringify(ledger.summary.byFailure)}`,
 				);
 				return yield* Effect.sync(() => process.exit(GATE_FAIL_EXIT_CODE));
 			}
@@ -422,7 +422,7 @@ const runCommand = Command.make(
 		yield* run.pipe(
 			Effect.catchTag("EvalSetUnreadable", (e) =>
 				Effect.gen(function* () {
-					yield* Console.error(`fabrika-cli eval: cannot read ${e.path}`);
+					yield* Console.error(`fabrika eval: cannot read ${e.path}`);
 					return yield* Effect.sync(() => process.exit(GATE_FAIL_EXIT_CODE));
 				}),
 			),
