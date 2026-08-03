@@ -24,7 +24,7 @@
 #   The history boundary lives in `release-please-config.json` as `last-release-sha`
 #   (with `bootstrap-sha` at the same commit for the never-released fabrika-cli leaf).
 #   Without it the first run has no stopping point and folds ~94 commits of pipeline-cli
-#   backlog into one bump. npm versions are immutable (ADR 0076), so the first Release PR
+#   backlog into one bump. npm versions are immutable, so the first Release PR
 #   is read before it is merged, never after.
 #
 # ADR 0069 boundary: `changelog.yml` owns the ROOT CHANGELOG.md, derived from pipeline
@@ -87,6 +87,9 @@ jobs:
           {
             echo "## Released this push"
             echo
+            # the backticks are literal markdown in a printf FORMAT string, so the single
+            # quotes are correct; shellcheck reads them as an unexpanded command substitution
+            # shellcheck disable=SC2016
             printf -- '- `%s`\n' "${released[@]}"
             echo
             echo "Tags: \`${PIPELINE_CLI_TAG:-none}\` / \`${FABRIKA_CLI_TAG:-none}\`"
