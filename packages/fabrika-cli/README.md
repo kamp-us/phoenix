@@ -33,27 +33,47 @@ anything.
 pnpm add --global @kampus/fabrika-cli
 ```
 
-On startup it walks up from the working directory looking for a repo-local install of itself
-(`node_modules/@kampus/fabrika-cli`) and hands the invocation to that copy when it finds one; with
-none, it serves the invocation itself. This is the shape [turbo](https://turborepo.com) ships,
-reimplemented here in TypeScript ([#4784](https://github.com/kamp-us/phoenix/issues/4784)).
+On startup it finds the **repo root** above the working directory, asks **Node's own resolver** what
+copy of `@kampus/fabrika-cli` that root has installed, and hands the invocation to it. This is the
+shape [turbo](https://turborepo.com) ships (`crates/turborepo-shim/`), reimplemented here in
+TypeScript ([#4784](https://github.com/kamp-us/phoenix/issues/4784)).
 
-The property it buys is a **repo-pinned version**. phoenix carries `@kampus/fabrika-cli` in its root
-`devDependencies`, so a bare `fabrika-cli` anywhere in a phoenix checkout runs the version this repo
-pins, not whatever the machine's global happens to be.
+There are exactly three outcomes, and **only one of them is silent**:
+
+| Where you are | What runs | Warning |
+| --- | --- | --- |
+| In phoenix | the working tree — `packages/fabrika-cli` | — |
+| In a consumer repo that installed it | that repo's pinned version | — |
+| In a consumer repo that did **not** install it | the global | **yes**, naming both versions |
+| In no repo at all | the global | no — deliberately |
+
+The last two are the whole design. Running the global outside any repo is a normal, correct
+invocation, so it stays quiet. Running the global *inside a repo that asked for a specific version*
+is the quietly-wrong case, so it says so out loud and names the global's version beside the one the
+root manifest declared. Set `FABRIKA_GLOBAL_WARNING_DISABLED=1` to silence it.
+
+The property this buys is a **repo-pinned version**. phoenix carries `@kampus/fabrika-cli` in its
+root `devDependencies`, so a bare `fabrika-cli` anywhere in a phoenix checkout runs the version this
+repo pins — and because pnpm links the workspace package, that means the **working tree**: edit
+`src/`, the next invocation runs the edit. This supersedes `pnpm link --global`, which is
+machine-wide and has to be remembered and undone.
 
 `FABRIKA_CLI_DEBUG=1` prints one stderr line naming which copy served the invocation:
 
 ```
 $ FABRIKA_CLI_DEBUG=1 fabrika-cli --version
-fabrika-cli: global at …/pnpm/global/5/…/@kampus/fabrika-cli — delegating to the repo-local install at …/packages/fabrika-cli (…/dist/bin.js)
-fabrika-cli: running here, at …/packages/fabrika-cli — already delegated (FABRIKA_CLI_DELEGATED set)
+fabrika-cli: global at …/pnpm/global/5/…/@kampus/fabrika-cli — delegating to the repo-local install at …/packages/fabrika-cli (…/src/bin.ts, v0.1.0)
 fabrika-cli v0.1.0
 ```
 
-Both branches end in a real installed package. Nothing here selects a copy by testing whether a file
-exists and guessing that it will run — a walk that cannot be *performed* exits `2` naming what it
-tried, rather than falling through to a version the repo did not pin.
+**Two independent recursion guards**, both read before any filesystem work: the parent always passes
+`--skip-infer` to the child (stripped before any verb sees it), and `FABRIKA_SKIP_INFER` does the
+same for a caller that cannot alter argv. turbo needs both because a missed guard would re-enter the
+shim; we need them *more*, because for us the global and the local are the same JS file shape.
+
+The child's cwd is the **repo root**, not yours; your cwd travels as `FABRIKA_INVOCATION_DIR`. That
+is deliberate — an older local binary cannot choke on an env var it never reads, whereas it would
+refuse an unknown flag.
 
 > [!IMPORTANT]
 > **`@kampus/fabrika-cli` is not published yet, so the install above does not work today.** It
@@ -63,6 +83,17 @@ tried, rather than falling through to a version the repo did not pin.
 > lands, a bare `fabrika-cli` exits `127` on a machine with no global install, which the interface
 > convention reserves for exactly that: the verb never ran. Inside a phoenix checkout the fallback
 > is `node packages/fabrika-cli/src/bin.ts …`.
+
+> [!WARNING]
+> **A `.ts` `bin` cannot run from an installed copy, and that blocks the global half of the
+> delegation.** Node refuses to strip types for any file whose resolved path is under
+> `node_modules` — `stripTypeScriptModuleTypes` throws `ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING`
+> unconditionally on `isUnderNodeModules(filename)` (verified against Node 24.4.1 and 26.2.0's own
+> bundled source). Inside phoenix this is invisible, because pnpm links the workspace package and the
+> resolved path is `packages/fabrika-cli/src/bin.ts`, outside `node_modules`. A real
+> `pnpm add --global` lands under `node_modules` and therefore **cannot start**. The no-build
+> development story and a runnable published artifact are in tension here; the resolution is a
+> founder call, tracked on [#4784](https://github.com/kamp-us/phoenix/issues/4784).
 
 ## Quickstart
 
@@ -190,8 +221,12 @@ a committed transcript fixture both packages' unit tiers assert against —
 ```bash
 pnpm --filter @kampus/fabrika-cli test        # vitest
 pnpm --filter @kampus/fabrika-cli typecheck   # tsgo
-pnpm --filter @kampus/fabrika-cli build       # tsc -p tsconfig.build.json
 ```
+
+**There is no build step.** `bin` points at `./src/bin.ts` and Node ≥ 24 strips the types natively,
+so an edit to `src/` is live on the next invocation — which is the entire point of the workspace
+`devDependencies` line in the root `package.json`. Nothing is compiled, nothing is emitted, and there
+is no `dist/` to go stale against the source.
 
 A verb is a **pure function of its dependencies** — the `*-verb.ts` modules compute a
 `VerbOutcome` (exit code, stdout, stderr) and never write a stream or exit. The Effect CLI

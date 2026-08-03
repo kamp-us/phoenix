@@ -131,27 +131,35 @@ usable at an agent's top-level command.
 #### Delivery — one name, two installs, both of them real
 
 `fabrika-cli` is delivered as a **global install** of `@kampus/fabrika-cli`. On startup the binary
-walks up from the working directory looking for a repo-local install of itself, and hands the
-invocation to that copy when it finds one; with none, it serves the invocation itself. This is the
-shape [turbo](https://turborepo.com) ships — a global entry point that defers to the version the
-repo pins — reimplemented in fabrika's own TypeScript
+finds the **repo root** above the working directory, asks Node's own resolver what copy that root
+installed, and hands the invocation to it. This is the shape [turbo](https://turborepo.com) ships
+(`crates/turborepo-shim/`) — a global entry point that defers to the version the repo pins —
+reimplemented in fabrika's own TypeScript
 ([#4784](https://github.com/kamp-us/phoenix/issues/4784)).
 
 The property that buys is a **repo-pinned version**: a repo carrying `@kampus/fabrika-cli` in its
 `devDependencies` gets that version from a bare fence, whatever each machine's global happens to be.
 
-Two branches, and the reason this is not the resolution ladder [#4784](https://github.com/kamp-us/phoenix/issues/4784)
+Branches, and the reason this is not the resolution ladder [#4784](https://github.com/kamp-us/phoenix/issues/4784)
 rejected: **a repo-local install is a real installed package, and the global is a real installed
-package.** Neither branch is chosen by testing whether a file exists and guessing that it will run.
-Tiers that can only be right or loudly absent are fine; tiers that can be quietly wrong are the
-defect. A walk that cannot be performed — an unreadable directory, a manifest that declares no
-`fabrika-cli` bin — exits `2` naming what it tried, and never falls through to a version the repo
-did not pin.
+package.** Neither is chosen by testing whether a file exists and guessing that it will run. Tiers
+that can only be right or loudly absent are fine; tiers that can be quietly wrong are the defect.
 
-Two environment variables belong to the delivery layer rather than to any verb. Neither locates the
-binary, so neither weakens the rule above: `FABRIKA_CLI_DEBUG`, unset by default, prints one stderr
-line naming which copy served the invocation; `FABRIKA_CLI_DELEGATED` is set by the CLI *on the
-child* it delegates to and caps the hop at one.
+The branch that makes that concrete is the degenerate one. **A repo root that pins the package but
+has not installed it, or whose install is corrupt, runs the global and says so loudly** — naming the
+global's version beside the version the root manifest declared, silenceable with
+`FABRIKA_GLOBAL_WARNING_DISABLED`. It is not an error: the worst outcome is that the global runs.
+**No repo root at all is the one silent branch**, deliberately, so a global-only invocation stays
+quiet. Separating those two is the whole point — collapsing them is what makes a delegation quietly
+wrong.
+
+Three environment variables belong to the delivery layer rather than to any verb, and none of them
+locates the binary, so none weakens the rule above: `FABRIKA_CLI_DEBUG` prints one stderr line naming
+which copy served the invocation; `FABRIKA_GLOBAL_WARNING_DISABLED` silences the degenerate branch's
+warning; `FABRIKA_SKIP_INFER` is the recursion guard for a caller that cannot alter argv. The guard
+the CLI itself uses on the child is the **`--skip-infer` flag**, stripped before any verb sees it,
+and the child is additionally handed the user's original directory as `FABRIKA_INVOCATION_DIR`
+because its own cwd is set to the repo root.
 
 ### 6. fabrika calls nothing outside fabrika
 

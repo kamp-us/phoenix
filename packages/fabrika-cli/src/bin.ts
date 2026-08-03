@@ -6,9 +6,9 @@
  *   node src/bin.ts adr --help      # one group's verbs, flags and exit codes
  *   node src/bin.ts adr next        # run a verb
  *
- * Two things happen here, in order. First the **delegation**: the copy on `PATH` walks up from the
- * cwd and hands the invocation to the repo-local install when it is standing in a repo that pins one
- * ([`delegate/`](./delegate/discover.ts) — the shape turbo ships, #4784). Then the router in
+ * Two things happen here, in order. First the **delegation**: the copy on `PATH` finds the repo root
+ * above the cwd and hands the invocation to the install that repo pins
+ * ([`delegate/entry.ts`](./delegate/entry.ts) — the shape turbo ships, #4784). Then the router in
  * `run.ts`, loaded via a **dynamic** `import()` so an unlinked `catalog:` dep — the path hit on a
  * fresh checkout before `pnpm install` has settled — is a *catchable* `ERR_MODULE_NOT_FOUND` with a
  * legible remediation instead of a raw static-load throw.
