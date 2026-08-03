@@ -978,10 +978,12 @@ the very label `triage apply` writes.
 **Nothing this mode adds can reach the brief.** `plan-epic` splices around it: `epic-splice` anchors
 on the exact headings `## Dependencies` and `## Plan (plan-epic)` and preserves every other byte
 verbatim (`packages/pipeline-cli/src/tools/epic-splice/epic-splice.ts:48-51`), so neither heading
-above is an anchor it can cut on, and the wrapped original is untouched bytes either way. The
-`<details>` block also stays the **last** block in the body, which is what keeps the re-enrich
-detector below strict: a re-enrich replaces the pitch and the header from fresh stdin and preserves
-the wrap unchanged, exactly as the default mode replaces a rewrite.
+above is an anchor it can cut on, and the wrapped original is untouched bytes either way. What
+`plan-epic` *does* change is where the wrap sits: `## Plan (plan-epic)` and `## Dependencies` both
+land **below** it, so this mode's envelope stops being terminal the moment the epic is planned. The
+re-enrich detector below is position-independent in this mode for exactly that reason; a re-enrich
+replaces the pitch and the header from fresh stdin and preserves the wrap — and everything under it —
+unchanged, exactly as the default mode replaces a rewrite.
 
 **Stdin carries the five field lines, not the section heading.** The verb writes `## Pitch` itself,
 so the heading always matches the guard's anchor rather than a caller's typing; a caller who sends
@@ -1027,25 +1029,65 @@ This verb refuses only what it can refuse about text the caller just wrote — e
 machine-local path (`5`), a bare `@` reference (`6`) — and **adds no exit code**: `--epic` reaching
 those three is the removal of a restriction, not a new outcome.
 
-**The re-enrich detector matches the envelope's shape, not the summary line alone.** A body counts as
-already-enriched only when the `<details>` block is the **last** block in the body and closes at
-end-of-body — the exact shape this verb emits. A body that carries the summary line anywhere else is
-treated as a **first** enrichment and wrapped, never replaced.
+**The re-enrich detector matches the envelope's shape, not the summary line alone — and the shape
+differs by mode.** Default mode's wrap is terminal and stays terminal, so that mode keys on
+terminality: a body counts as already-enriched only when the `<details>` block whose summary is the
+literal `<summary>Original report (verbatim)</summary>` is the **last** block in the body and closes
+at end-of-body. A body that carries that summary line anywhere else is treated as a **first**
+enrichment and wrapped, never replaced. Nothing downstream disturbs that shape — `epic-splice` is
+`plan-epic`'s and runs only on epics.
 
-The strict form is required for the same reason `triage provenance` pins its footer match, but the
-failure direction is worse: provenance fails *open* toward a wrong verdict, while a loose re-enrich
-detector fails *destructively* — "replace everything above the opening `<details>`" applied to an
-issue that merely **quotes** an enrichment envelope (a bug report about this very format, a pasted
-body) silently deletes every line above the paste, on a public issue, irreversibly. In this repo an
-issue pasting a fabrika envelope is an ordinary filing, not an exotic one.
+**`--epic` mode's detector is position-independent, because terminality is false there by design.**
+Once `plan-epic` runs, `## Plan (plan-epic)` and `## Dependencies` sit *below* the wrap
+(`epic-splice.ts:128-130` appends the first-time deps block at end-of-body under `depsCount === 0`;
+`plan-epic` Step 2 writes the plan "below the untouched brief"). A terminality test would therefore
+stop matching on **every planned epic**, and the "first enrichment ⇒ wrap" rule would then re-wrap
+the pitch, the header, the plan, the topology and the previous envelope inside a fresh
+`Original brief (verbatim)` block — compounding per run, and labelling the authored plan as the
+reporter's own text, which is the provenance boundary this envelope exists to keep sharp. So this
+mode keys on the envelope's own headers instead. A body counts as already-enriched only when **all
+three** hold:
 
-For reference, the literal the strict check anchors on is the line
-`<summary>Original report (verbatim)</summary>`
-or `<summary>Original brief (verbatim)</summary>`. On a match the verb replaces everything above the
-opening `<details>` and preserves that block **unchanged**. Because the block is preserved rather
-than re-wrapped, nesting cannot accumulate at all — a second pass produces the same one-level
-envelope as the first, and "the innermost original" is not a case that arises. This is the rule's
-only statement in this spec; the Scope section below states the scope and does not restate it.
+- it opens at byte 0 with the exact heading `## Pitch`;
+- it carries the exact top-level heading `## Epic — awaiting plan`;
+- the first `<summary>Original brief (verbatim)</summary>` line in the body sits **below** that
+  heading.
+
+Where the `<details>` block sits relative to end-of-body is not tested at all.
+
+**On a match this mode replaces the authored region only — byte 0 up to the opening `<details>` — and
+preserves that block *and every byte below it* verbatim.** Preserving the block alone would be the
+same destruction by a shorter route: it would delete the plan and the dependency topology
+`plan-epic` wrote underneath. Default mode's match is the same rule where "everything below" is
+empty.
+
+**The quote-protection is preserved; it moved from terminality onto the authored prefix.** The strict
+form is required for the same reason `triage provenance` pins its footer match, but the failure
+direction is worse: provenance fails *open* toward a wrong verdict, while a loose re-enrich detector
+fails *destructively* — "replace everything above the opening `<details>`" applied to an issue that
+merely **quotes** an enrichment envelope (a bug report about this very format, a pasted body)
+silently deletes every line above the paste, on a public issue, irreversibly. In this repo an issue
+pasting a fabrika envelope is an ordinary filing, not an exotic one. Both anchors hold that line: a
+quoting body carries the reporter's own framing prose above the paste, so it fails default mode's
+terminality test *and* fails `--epic`'s byte-0 `## Pitch` test. The `--epic` anchors were checked
+against the implementation rather than inherited: `epic-splice` cuts only on `## Dependencies` and
+`## Plan (plan-epic)` (`epic-splice.ts:48-51`), so `## Pitch` and `## Epic — awaiting plan` are bytes
+it can never touch, and they survive every plan and re-plan.
+
+**The residual case, stated rather than assumed away:** a body whose *first* bytes are a raw paste of
+a complete epic envelope is byte-indistinguishable from an enriched epic and will be read as one.
+Terminality did not cover that case either — a paste that ends the body is terminal — so this trades
+no protection away; it is the limit of any content-derived test, and if it ever bites the answer is a
+marker the verb writes and a paste does not, never a weaker anchor.
+
+**Idempotency, stated as the other write verbs state theirs.** Re-running `enrich` on an
+already-enriched issue **converges**: it replaces the authored region from fresh stdin and leaves the
+preserved original — and, under `--epic`, every byte below it — unchanged, so a second pass produces
+the same body as the first, nesting never accumulates, and "the innermost original" is not a case
+that arises. This holds for a **planned** epic body, which is the case the position-independent
+detector exists for. No branch here refuses, so the exit-status and error tables are unchanged and
+the **adds no exit code** statement above stands. This is the rule's only statement in this spec; the
+Scope section below states the scope and does not restate it.
 
 **Redaction is asymmetric and deliberate.** The **preserved original** is foreign content: any
 machine-local path in it is masked to its class root, counted, and reported on stderr with its line
