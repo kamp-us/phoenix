@@ -611,6 +611,15 @@ jobs:
       # Same script runs locally: `bash .claude/skills/ship-it/scripts/verify-chain-resolves.sh`.
       - run: bash .claude/skills/ship-it/scripts/verify-chain-resolves.sh
 
+      # Executable pin for Step 3z's precondition (#4830): the one ship-it step that mutates a live
+      # PR — close→reopen — must fire ONLY in the dropped-trigger state and refuse without touching
+      # the PR otherwise, including on an unreadable count. The precondition used to live in the
+      # caller's prose, and a mis-read branch close→reopened a green PR (#4816). The harness carries
+      # its own mutant, so an assertion that stopped having teeth reds here rather than passing
+      # quietly. Hermetic: gh and the CLI shim are stubbed, no network.
+      # Same script runs locally: `bash .claude/skills/ship-it/scripts/verify-step3z-precondition.sh`.
+      - run: bash .claude/skills/ship-it/scripts/verify-step3z-precondition.sh
+
       # Executable pin for plan-epic's round-trip race detector (#4596): a CLEAN splice whose
       # `## Dependencies` block is the body's last section — the standard first-time layout —
       # must exit 0, while ANY in-block difference must still exit 1 with the racer verdict. The
