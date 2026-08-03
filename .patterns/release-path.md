@@ -187,16 +187,30 @@ corrupted by it — no version is consumed, because nothing was published.
 
 ## Current state
 
-Both published packages are registered as npm Trusted Publishers for this repo and this
-workflow file, so **no publish 403 is expected**. `fabrika-cli`'s registration is recorded on
-[#4800](https://github.com/kamp-us/phoenix/issues/4800), which pastes npm's own confirmation
-of it.
+Both published packages have an npm Trusted Publisher registration naming this repo and this
+workflow file — but only one of them has ever been *exercised* by it, and those are two
+different facts.
+
+- **`pipeline-cli` — proven by exercise.** Its registration has carried two green `publish.yml`
+  release runs, and the published artifact carries the publish attestations
+  (`npm view @kampus/pipeline-cli --json` → a `dist.attestations` key) that only an OIDC publish
+  stamps.
+- **`fabrika-cli` — recorded, never exercised.** The registration is recorded on
+  [#4800](https://github.com/kamp-us/phoenix/issues/4800), which pastes npm's own confirmation
+  of it, and `publish.yml` has since gained its resolve arm — but no publish run has ever fired
+  for the package. `fabrika-cli@0.1.0` reached the registry through the bootstrap `pnpm publish`
+  of step 4 above, not through this path (its artifact carries no attestations). Its **first**
+  release run is the first use of that registration, and that run is the proof.
 
 That record is the authority, because nothing here can re-derive it: npm exposes no
 trusted-publisher field over the CLI or the registry API, so registration state is a web-UI
 fact and npmjs.com (Settings → Publishing) is the only place to check it. Never restate it as
 tool-verified.
 
+So expect no outcome in either direction for that first run. If it 403s, the path failed closed:
+nothing was published, **no version number is burned**, and re-running the release after fixing
+the registration recovers cleanly.
+
 Because `release-please-config.json` sets `separate-pull-requests: false`, one Release PR can
-carry both packages and its merge can create both tags — two publish runs, both expected
-green.
+carry both packages and its merge can create both tags — two publish runs, one over a
+registration proven by exercise and one over a registration being used for the first time.
