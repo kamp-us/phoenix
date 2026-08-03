@@ -19,7 +19,10 @@ import {Argument, Command, Flag} from "effect/unstable/cli";
 import {leafCommand} from "../excess-operand.ts";
 import {readStdin} from "../io/stdin.ts";
 import type {VerbOutcome} from "../verb.ts";
+import {runApply} from "./apply-verb.ts";
 import {runCodes} from "./codes-verb.ts";
+import {AUDIENCES, PRIORITIES, STANDING_LANES, TYPES} from "./facets.ts";
+import {runPark} from "./park-verb.ts";
 import {runSplit} from "./split-verb.ts";
 
 /** Write the outcome and exit on its code — stdout is the answer, everything else is stderr. */
@@ -97,12 +100,91 @@ const split = leafCommand(
 	),
 );
 
+/**
+ * The classification flags are declared as free strings, not as CLI-level enums, so an off-vocabulary
+ * value reaches the verb and is refused there on `10` with the message the contract states. A
+ * parser-level rejection would seat it on `1`, fusing "you named a priority that does not exist" with
+ * "the binary is broken".
+ */
+const issueArg = Argument.integer("issue").pipe(
+	Argument.withDescription("the issue number to stamp"),
+);
+
+const apply = leafCommand(
+	"apply",
+	{
+		issue: issueArg,
+		type: Flag.string("type").pipe(
+			Flag.withDescription(`the issue's type: one of ${TYPES.join(", ")}`),
+		),
+		priority: Flag.string("priority").pipe(
+			Flag.withDescription(`the priority bucket: one of ${PRIORITIES.join(", ")}`),
+		),
+		readyFor: Flag.string("ready-for").pipe(
+			Flag.withDescription(`who picks it up: ${AUDIENCES.join(" or ")}`),
+		),
+		home: Flag.integer("home").pipe(
+			Flag.optional,
+			Flag.withDescription("the number of an open milestone to home the issue in"),
+		),
+		lane: Flag.string("lane").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				`a standing lane instead of a milestone: ${STANDING_LANES.join(" or ")}`,
+			),
+		),
+		repo: repoFlag,
+		json: jsonFlag,
+	},
+	Effect.fn(function* ({issue, type, priority, readyFor, home, lane, repo, json}) {
+		yield* emit(
+			yield* runApply({
+				issue,
+				type,
+				priority,
+				readyFor,
+				home: Option.getOrNull(home),
+				lane: Option.getOrNull(lane),
+				repo: Option.getOrNull(repo),
+				json,
+				env: process.env,
+			}),
+		);
+	}),
+).pipe(
+	Command.withDescription(
+		"Stamp the whole triaged transition — type, priority, audience, status and home — as ONE owned-facet reconcile, then read the end state back positively. Exactly one of --home / --lane. Prints `triaged\\t<n>\\t<type>\\t<priority>\\t<ready-for>\\t<home>`. Exits 7 (no such issue, or a label this run would write does not exist), 8 (a write failed — UNKNOWN), 9 (read-back mismatch), 10 (off-vocabulary value, or a non-open milestone), 11 (a precondition read failed). Example: fabrika triage apply 4312 --type bug --priority p2 --ready-for agent --home 47",
+	),
+);
+
+const park = leafCommand(
+	"park",
+	{issue: issueArg, repo: repoFlag, json: jsonFlag},
+	Effect.fn(function* ({issue, repo, json}) {
+		yield* emit(
+			yield* runPark({
+				issue,
+				repo: Option.getOrNull(repo),
+				json,
+				env: process.env,
+				stdin: Effect.sync(readStdin),
+			}),
+		);
+	}),
+).pipe(
+	Command.withDescription(
+		"Demote an issue to status:needs-info with the questions on STDIN, clearing every priced facet — type, priority, audience, lane and milestone. The comment is posted BEFORE the labels move. Prints `parked\\t<n>\\t<comment-url>`. Exits 3 (empty stdin), 5 (machine-local path), 6 (bare @ reference), 7 (no such issue, or status:needs-info does not exist), 8 (a write failed — UNKNOWN), 9 (read-back mismatch), 11 (a precondition read failed). Example: fabrika triage park 4290 < questions.md",
+	),
+);
+
 export const triageCommand = Command.make("triage").pipe(
 	Command.withSubcommands([
 		// One leaf per line, so five in-flight slices append at five distinct lines rather than all
 		// editing one. The comment is what keeps the formatter from collapsing the list back.
 		codes,
 		split,
+		apply,
+		park,
 	]),
 	Command.withDescription(
 		"Take one intake-queue issue from arrival to a triaged, homed transition — or park it, split it, or close it not-planned — over reads that page and writes that are read back",
