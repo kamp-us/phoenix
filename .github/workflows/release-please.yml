@@ -1,0 +1,95 @@
+# Derives each publishable package's next version from conventional commits and parks
+# the answer in a standing Release PR (ADR 0239). Merging that PR is the human release
+# act: it tags `<component>-v<version>`, the tag creates the GitHub Release, and the
+# `release: published` event is what fires `publish.yml`. Nothing here publishes — this
+# workflow has no registry credential and release-please has no publish path.
+#
+# Routing is by CHANGED FILE PATH, not by commit scope (ADR 0239 §1): a commit is
+# assigned to a package root by the files it touched, so `fix(pipeline): …` still bumps
+# whichever package its diff landed in, and a commit touching no package root bumps
+# nothing.
+#
+# The `<component>-v<version>` tag grammar is what `publish.yml` guards and what
+# `publish-isolation-guard` machine-reads out of that workflow to derive its own scope,
+# so the components below must stay `pipeline-cli` / `fabrika-cli` (ADR 0239 §4).
+#
+# Two hazards this file is wired against, both from ADR 0239 §5:
+#
+#   `releases_created` is REPO-WIDE — true when ANY configured path released, silent
+#   about which. It is NOT "always true" (release-please-action v4.4.1/v5.0.0 set it to
+#   `releases.length > 0` in `outputReleases`), which makes it worse, not better: it
+#   looks trustworthy and would gate a pipeline-cli action on a fabrika-cli release.
+#   Every condition here keys on the per-path `<path>--release_created` output instead.
+#
+#   The history boundary lives in `release-please-config.json` as `last-release-sha`
+#   (with `bootstrap-sha` at the same commit for the never-released fabrika-cli leaf).
+#   Without it the first run has no stopping point and folds ~94 commits of pipeline-cli
+#   backlog into one bump. npm versions are immutable (ADR 0076), so the first Release PR
+#   is read before it is merged, never after.
+#
+# ADR 0069 boundary: `changelog.yml` owns the ROOT CHANGELOG.md, derived from pipeline
+# metadata on the same `*-v*` tag. release-please writes PER-PACKAGE CHANGELOG.md files
+# under each package root (the node strategy prefixes `changelog-path` with the package
+# path). Different files, different sources — pointing release-please at the root
+# changelog is banned.
+name: release-please
+
+on:
+  push:
+    branches: [main]
+
+# release-please opens/updates the Release PR and creates releases + tags on merge.
+# No `id-token` — this workflow never touches a registry; `publish.yml` mints the OIDC
+# credential on the release event.
+permissions:
+  contents: write
+  pull-requests: write
+
+# Never cancel in flight: a cancelled run can leave the standing Release PR groomed
+# against a stale commit range.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release-please:
+    name: derive versions and groom the standing Release PR
+    runs-on: ubuntu-latest
+    steps:
+      - uses: googleapis/release-please-action@v5.0.0
+        id: release
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+      # The one gate in this file, keyed on the PER-PATH outputs. `releases_created`
+      # appears nowhere.
+      - name: Summarize which packages this push released
+        if: ${{ steps.release.outputs['packages/pipeline-cli--release_created'] == 'true' || steps.release.outputs['packages/fabrika-cli--release_created'] == 'true' }}
+        env:
+          PATHS_RELEASED: ${{ steps.release.outputs.paths_released }}
+          PIPELINE_CLI_TAG: ${{ steps.release.outputs['packages/pipeline-cli--tag_name'] }}
+          FABRIKA_CLI_TAG: ${{ steps.release.outputs['packages/fabrika-cli--tag_name'] }}
+        run: |
+          set -uo pipefail
+
+          released=()
+          while IFS= read -r path; do
+            [ -n "$path" ] && released+=("$path")
+          done < <(printf '%s' "${PATHS_RELEASED:-[]}" | jq -r '.[]?')
+
+          if [ "${#released[@]}" -eq 0 ]; then
+            echo "::error::a per-path release_created output was true but paths_released is empty — refusing to report a release that cannot be named"
+            exit 1
+          fi
+
+          {
+            echo "## Released this push"
+            echo
+            printf -- '- `%s`\n' "${released[@]}"
+            echo
+            echo "Tags: \`${PIPELINE_CLI_TAG:-none}\` / \`${FABRIKA_CLI_TAG:-none}\`"
+            echo
+            echo "Publishing is \`publish.yml\` on the \`release: published\` event — not this workflow."
+          } >> "$GITHUB_STEP_SUMMARY"
