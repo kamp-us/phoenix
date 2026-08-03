@@ -1,10 +1,11 @@
 # @kampus/fabrika-cli
 
 The deterministic verb package [fabrika](../../claude-plugins/fabrika/) skills call.
-`fabrika <group> <verb> …` dispatches to a registered verb group. Three groups are
+`fabrika <group> <verb> …` dispatches to a registered verb group. Four groups are
 registered: `adr`, the six verbs the `/adr` skill's derived contract specifies; `report`,
-the three the `/report` contract specifies; and `eval`, the graded-corpus harness the
-fabrika eval layer measures itself with.
+the three the `/report` contract specifies; `triage`, the intake-queue group the `/triage`
+contract specifies; and `eval`, the graded-corpus harness the fabrika eval layer measures
+itself with.
 
 ## Who it's for
 
@@ -191,6 +192,36 @@ Four behaviours are worth knowing before you call them:
 Intake applies **no type and no priority**, and that is defended mechanically rather than in
 prose: exit `10` refuses a `--label` or a title prefix that resolves to the target repo's own
 type/priority vocabulary.
+
+## The `triage` group
+
+The contract is
+[`claude-plugins/fabrika/skills/triage/contract.md`](../../claude-plugins/fabrika/skills/triage/contract.md).
+**Only the shared substrate is built so far** — the group's nine verbs (`queue`, `claim`,
+`provenance`, `homes`, `split`, `enrich`, `apply`, `park`, `kill`) land in later slices of
+[#4831](https://github.com/kamp-us/phoenix/issues/4831), and the one registered verb today
+prints the table they will all allocate from.
+
+| Verb | Answers |
+|---|---|
+| `triage codes` | the exit taxonomy every verb in the group allocates from, one `<code>\t<meaning>` line per code |
+
+Three properties of that substrate are worth knowing before the verbs arrive:
+
+- **All nine verbs allocate from one table** ([`src/triage/codes.ts`](./src/triage/codes.ts)),
+  so a code means one thing across this group. Where it overlaps the two `report` writing
+  verbs — `3`, `5`, `6`, `7`, `8`, `9`, `10`, `11` — the meanings match **code for code**, so
+  a caller driving both groups in one sweep reads one meaning. That alignment does not extend
+  repo-wide: `adr` allocates per verb, and `report dedup`'s own `3`/`4` mean something else
+  again.
+- **`4` is a deliberate gap.** It once fused "the target issue is proven absent" with "the
+  target issue could not be read". `7` and `11` took the halves, and the slot is left
+  unallocated rather than compacted — a gap is cheaper than a collision, and it keeps the
+  alignment with `report file`, where `4` is a body-section failure no verb here performs.
+- **Every list read pages and reports its scanned count** on stderr
+  ([`src/triage/scope.ts`](./src/triage/scope.ts)). A verdict driven by a silently truncated
+  read is a verdict over unknown scope; pagination fixes the reach, and printing what was
+  scanned is what makes the reach checkable from outside the process.
 
 ## The `eval` group
 
