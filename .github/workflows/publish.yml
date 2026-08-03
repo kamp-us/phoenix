@@ -1,12 +1,20 @@
-# Publishes the single consolidated `@kampus/pipeline-cli` package to npm on a
-# human-cut GitHub Release (ADR 0103). The whole agent pipeline — skills, CLIs,
-# guards, CI primitives — folds into this one package, so there is exactly one
-# thing to publish and no "which package" to derive (that derivation, and the
-# `publish-guard` gate that enforced it, are retired with this consolidation).
+# Publishes one `@kampus/*` package to npm on a human-cut GitHub Release. A `release`
+# event carries exactly one tag, so this is a single resolved job, not a fan-out: the
+# tag's prefix names which workspace member publishes, and per-package independent
+# versions/tags are preserved.
 #
-# Release tag grammar: `pipeline-cli-v<version>` (e.g. `pipeline-cli-v0.1.0`),
-# where `<version>` exactly equals packages/pipeline-cli/package.json `version`.
-# A guard fails the run if they disagree, so a mistagged release never publishes.
+# Release tag grammar: `<unscoped-name>-v<version>` (e.g. `pipeline-cli-v0.1.0`,
+# `fabrika-cli-v0.1.0`), where `<version>` exactly equals that package's package.json
+# `version`. The resolve step below fails the run before any publish step when the
+# prefix maps to no published package or the versions disagree, so a mistagged or
+# unknown release never publishes.
+#
+# The resolve step's tag-match arms are the SINGLE source of truth for the published set:
+# `pipeline-cli publish-isolation-guard check` parses THIS file's tag-grammar regex
+# anchors to derive which packages publish (ADR 0201 §4), so adding an arm widens the
+# guard's scope automatically and dropping one narrows it. Keep the arms as literal
+# anchored regexes — moving the grammar behind a variable or an external file zeroes
+# that gate, which then fails closed (ADR 0092) rather than passing vacuously.
 #
 # Auth is OIDC Trusted Publishing — no NPM_TOKEN secret: `id-token: write` mints a
 # short-lived per-run credential, and provenance is generated automatically.
@@ -14,13 +22,16 @@
 # Publish is `pnpm publish` (not `npm publish`): pnpm has native OIDC
 # trusted-publishing support and resolves `catalog:`/`workspace:` specifiers into
 # the tarball at pack time, so the source package.json keeps the pnpm catalog as
-# the single source of truth.
+# the single source of truth. Every dep in this repo is `catalog:`, so `npm publish`
+# would ship a literal `"catalog:"` string and produce an uninstallable tarball.
 #
-# ── One-time HUMAN setup (until done, the workflow fails closed — that's correct) ─
-#   Register THIS repo + this workflow file (`publish.yml`) as a Trusted Publisher
-#   for `@kampus/pipeline-cli` on npmjs.com (Settings → Publishing). npm Trusted
-#   Publishing binds to the exact workflow FILENAME; the OIDC credential is
-#   mintable only after this registration — before it, `pnpm publish` 403s.
+# ── One-time HUMAN setup, PER PACKAGE (until done, the run fails closed — correct) ─
+#   Register THIS repo + this workflow file (`publish.yml`) as a Trusted Publisher for
+#   each published package on npmjs.com (Settings → Publishing). npm Trusted Publishing
+#   binds to the exact workflow FILENAME — that is why this file keeps its name and why
+#   no second publish workflow is added: a rename or a new file silently invalidates an
+#   existing registration. The OIDC credential is mintable only after registration;
+#   before it, `pnpm publish` 403s.
 # ──────────────────────────────────────────────────────────────────────────────
 name: publish
 
@@ -34,9 +45,14 @@ permissions:
 
 jobs:
   publish:
-    name: publish @kampus/pipeline-cli to npm
+    name: publish the tagged @kampus package to npm
     runs-on: ubuntu-latest
     steps:
+      # A bare checkout is the TAGGED tree, not a moving branch head: GitHub's
+      # events-that-trigger-workflows reference gives the `release` event GITHUB_SHA
+      # "Last commit in the tagged release" and GITHUB_REF `refs/tags/<tag_name>`. That
+      # matters because npm versions are immutable (ADR 0076) — a publish from a stale
+      # ref bakes its error in permanently.
       - uses: actions/checkout@v4.2.2
 
       # pnpm derives from the root `packageManager` field (pnpm@10.27.0) — pnpm 11
@@ -50,39 +66,51 @@ jobs:
           registry-url: https://registry.npmjs.org
           cache: pnpm
 
-      # The release event carries no tag filter, so the grammar gate lives here:
-      # a tag that isn't `pipeline-cli-v<version>` fails the run before any publish.
-      - name: Guard — release tag must be pipeline-cli-v<version> matching package.json
+      # The release event carries no tag filter, so the grammar gate lives here.
+      - name: Resolve the release tag to a published package
+        # The tag reaches the script through the environment, never string-interpolated
+        # into it — a `${{ }}` splice of an attacker-shaped tag name would execute.
+        env:
+          TAG: ${{ github.event.release.tag_name }}
         run: |
-          TAG="${{ github.event.release.tag_name }}"
-          if [[ ! "$TAG" =~ ^pipeline-cli-v([0-9].*)$ ]]; then
-            echo "::error::release tag '$TAG' does not match the pipeline-cli-v<version> grammar — refusing to publish"
+          set -uo pipefail
+          if [[ "$TAG" =~ ^pipeline-cli-v([0-9].*)$ ]]; then
+            PKG_DIR="packages/pipeline-cli"
+            TAG_VERSION="${BASH_REMATCH[1]}"
+          elif [[ "$TAG" =~ ^fabrika-cli-v([0-9].*)$ ]]; then
+            PKG_DIR="packages/fabrika-cli"
+            TAG_VERSION="${BASH_REMATCH[1]}"
+          else
+            echo "::error::release tag '$TAG' matches no published package's <name>-v<version> grammar — refusing to publish"
             exit 1
           fi
-          TAG_VERSION="${BASH_REMATCH[1]}"
-          PKG_VERSION="$(node -p "require('./packages/pipeline-cli/package.json').version")"
+          PKG_NAME="$(node -p "require('./$PKG_DIR/package.json').name")"
+          PKG_VERSION="$(node -p "require('./$PKG_DIR/package.json').version")"
+          echo "resolved package:     $PKG_NAME"
+          echo "resolved directory:   $PKG_DIR"
           echo "tag version:          $TAG_VERSION"
           echo "package.json version: $PKG_VERSION"
           if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
-            echo "::error::release tag ($TAG_VERSION) does not match packages/pipeline-cli/package.json version ($PKG_VERSION) — refusing to publish"
+            echo "::error::release tag ($TAG_VERSION) does not match $PKG_DIR/package.json version ($PKG_VERSION) — refusing to publish"
             exit 1
           fi
+          {
+            echo "PKG_DIR=$PKG_DIR"
+            echo "PKG_NAME=$PKG_NAME"
+          } >> "$GITHUB_ENV"
 
       - run: pnpm install --frozen-lockfile
 
       - name: Typecheck
-        run: pnpm --filter @kampus/pipeline-cli typecheck
+        run: pnpm --filter "$PKG_NAME" typecheck
 
-      # The package ships compiled ESM JS (bin/exports point at dist/, files: [dist]),
+      # The packages ship compiled ESM JS (bin/exports point at dist/, files: [dist]),
       # never raw .ts — Node refuses to strip types under node_modules, so a source-only
       # tarball is dead-on-arrival for any consumer (issue #405). Build dist/ before
       # publish; prepublishOnly also runs it, but an explicit step makes the gate visible.
       - name: Build (compile src/ → dist/)
-        run: pnpm --filter @kampus/pipeline-cli build
+        run: pnpm --filter "$PKG_NAME" build
 
-      # No NPM_TOKEN — pnpm's native OIDC trusted publishing supplies the credential
-      # per run and generates provenance automatically. pnpm resolves catalog:/
-      # workspace: specifiers into the tarball at pack time.
       - name: Publish to npm (pnpm OIDC trusted publishing + automatic provenance)
-        working-directory: packages/pipeline-cli
+        working-directory: ${{ env.PKG_DIR }}
         run: pnpm publish --access public --no-git-checks

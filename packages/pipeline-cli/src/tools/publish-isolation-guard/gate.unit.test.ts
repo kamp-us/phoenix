@@ -6,13 +6,14 @@
  * prefix-with-no-member drift, and a zero-scope publish.yml all `CheckFailed`) from
  * observable outcomes — never by spawning the bin.
  */
-import {mkdirSync, mkdtempSync, rmSync, writeFileSync} from "node:fs";
+import {existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from "node:fs";
 import {tmpdir} from "node:os";
-import {join} from "node:path";
+import {dirname, join} from "node:path";
 import {NodeServices} from "@effect/platform-node";
 import {afterEach, beforeEach, describe, expect, it} from "@effect/vitest";
 import {Cause, Effect, Exit, type FileSystem, type Path} from "effect";
 import {CheckFailed, checkPublishIsolation} from "./gate.ts";
+import {parsePublishedTagPrefixes} from "./publish-isolation-guard.ts";
 
 let root: string;
 beforeEach(() => {
@@ -122,5 +123,66 @@ describe("checkPublishIsolation — the CI exit-code gate over a fake repo dir",
 		mkPackage("pipeline-cli", {name: "@kampus/pipeline-cli", dependencies: {effect: "catalog:"}});
 		const exit = await run(checkPublishIsolation(root));
 		expect(isCheckFailed(exit)).toBe(true);
+	});
+
+	it("SUCCEEDS over a TWO-prefix publish.yml — both published members are in scope", async () => {
+		writeWorkspace();
+		writePublishWorkflow(["pipeline-cli", "fabrika-cli"]);
+		mkPackage("pipeline-cli", {name: "@kampus/pipeline-cli", dependencies: {effect: "catalog:"}});
+		mkPackage("fabrika-cli", {
+			name: "@kampus/fabrika-cli",
+			dependencies: {effect: "catalog:", "@effect/platform-node": "catalog:"},
+		});
+		const exit = await run(checkPublishIsolation(root));
+		expect(Exit.isSuccess(exit)).toBe(true);
+	});
+
+	it("FAILS over a TWO-prefix publish.yml when the SECOND package links a workspace:* dep", async () => {
+		writeWorkspace();
+		writePublishWorkflow(["pipeline-cli", "fabrika-cli"]);
+		mkPackage("pipeline-cli", {name: "@kampus/pipeline-cli", dependencies: {effect: "catalog:"}});
+		mkPackage("fabrika-cli", {
+			name: "@kampus/fabrika-cli",
+			dependencies: {"@kampus/pipeline-crew-mcp": "workspace:*"},
+		});
+		const exit = await run(checkPublishIsolation(root));
+		expect(isCheckFailed(exit)).toBe(true);
+	});
+
+	it("FAILS (fail-closed, drift) when ONE of two prefixes maps to no workspace member", async () => {
+		writeWorkspace();
+		writePublishWorkflow(["pipeline-cli", "fabrika-cli"]);
+		mkPackage("pipeline-cli", {name: "@kampus/pipeline-cli", dependencies: {effect: "catalog:"}});
+		const exit = await run(checkPublishIsolation(root));
+		expect(isCheckFailed(exit)).toBe(true);
+	});
+});
+
+/**
+ * The fixtures above prove the gate's behavior; this pins its SCOPE to the real release
+ * pipeline. The published set is derived by parsing `publish.yml`'s tag-grammar anchors,
+ * so an edit that drops an arm — or moves the grammar behind a variable and unparses it —
+ * silently narrows or zeroes the guard. Reading the shipped file is what makes that edit
+ * red here instead of passing vacuously.
+ */
+describe("the repo's own publish.yml — derived published set", () => {
+	const repoRoot = (): string => {
+		let dir = import.meta.dirname;
+		while (!existsSync(join(dir, "pnpm-workspace.yaml"))) {
+			const up = dirname(dir);
+			if (up === dir) throw new Error("could not locate the repo root from the test file");
+			dir = up;
+		}
+		return dir;
+	};
+
+	it("derives BOTH published packages (fabrika-cli, pipeline-cli) from the shipped workflow", () => {
+		const yaml = readFileSync(join(repoRoot(), ".github", "workflows", "publish.yml"), "utf8");
+		expect(parsePublishedTagPrefixes(yaml)).toEqual(["fabrika-cli", "pipeline-cli"]);
+	});
+
+	it("PASSES the live gate over the real repo — both packages link no private @kampus deps", async () => {
+		const exit = await run(checkPublishIsolation(repoRoot()));
+		expect(Exit.isSuccess(exit)).toBe(true);
 	});
 });
