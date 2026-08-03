@@ -9,13 +9,8 @@
  * of `bin.ts` — about 2.3s on a CI runner — so spawn count *is* this file's cost, and the matrix it
  * used to walk twelve times is covered in 19ms by `excess-operand.unit.test.ts`. What only a
  * subprocess can prove is the exit status, which needs a handful of representative invocations, not
- * one per phrasing.
- *
- * The variadic case additionally ran `adr resolve` **inside this repo**, where the verb fetches
- * `origin/main` before reading it: a real network fetch, 15.4s green and 41.3s under merge-queue
- * contention, which timed out and ejected PR #4835. It now runs from a scratch directory that is not
- * a git repository, so that read refuses in milliseconds — which changes nothing it asserts, because
- * the excess-operand check runs at parse time, before the verb ever reaches git.
+ * one per phrasing. Twelve spawns plus one that fetched `origin/main` for real is what timed out and
+ * ejected PR #4835 from the merge queue; the cwd that removes that fetch is explained at its case.
  */
 import {execFileSync} from "node:child_process";
 import {mkdtempSync, readdirSync} from "node:fs";
@@ -94,10 +89,13 @@ describe("an operand no leaf verb declares is refused", {
 describe("what already worked still works", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}, () => {
 	/**
 	 * `adr resolve` is the one variadic leaf, so it is the one verb whose own arguments must swallow
-	 * the operands before the catch-all sees them. Run from a non-repo cwd it refuses at its first
-	 * git read — `--repo` is what seats that refusal on `BASE_UNFETCHABLE` rather than the `1` the
-	 * origin-remote lookup would return, so the code alone distinguishes "ran and could not fetch"
-	 * from "refused the operands".
+	 * the operands before the catch-all sees them. It is also the one verb here that does real work:
+	 * inside this repo it fetches `origin/main` before reading it, which cost 15.4s green and 41.3s
+	 * under merge-queue contention. From a cwd that is not a git repository it refuses at that first
+	 * git read instead, and the assertion is unweakened — the excess-operand check runs at parse
+	 * time, before the verb reaches git, so a regressed catch-all still seats `USAGE_ERROR` here.
+	 * `--repo` is what keeps the refusal on `BASE_UNFETCHABLE` rather than the ambiguous `1` the
+	 * origin-remote lookup would return, so the code alone separates "ran" from "refused".
 	 */
 	it("a variadic verb absorbs its operands rather than refusing them", () => {
 		const run = fabrika(["adr", "resolve", "0164", "0023", "--repo", "owner/name"], scratchDir());
