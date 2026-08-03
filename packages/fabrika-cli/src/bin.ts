@@ -23,11 +23,18 @@ try {
 } catch (err) {
 	const message = err instanceof Error ? err.message : String(err);
 	if (message.includes("ERR_MODULE_NOT_FOUND") || message.includes("Cannot find package")) {
+		// Exit 2, not 1: this is "could not resolve an implementation", the same reserved code the
+		// shim uses, so a resolution failure never reads as a verb's own usage error (#4666). The
+		// remedy is stated conditionally on purpose — `pnpm install` is right for your own checkout
+		// and wrong for a marketplace-managed plugin clone, which the harness owns and re-syncs.
 		console.error(
 			`fabrika-cli: a dependency is not linked (${message}).\n` +
-				"Run `pnpm install` at the repo root, then re-run.",
+				"If this is your own phoenix checkout, run `pnpm install` at its root and re-run.\n" +
+				"If it is a marketplace-managed plugin clone, do not install into it — fabrika has no\n" +
+				"working implementation outside a phoenix checkout until @kampus/fabrika-cli is\n" +
+				"published (#4786).",
 		);
-		process.exit(1);
+		process.exit(2);
 	}
 	throw err;
 }

@@ -47,8 +47,20 @@ claude-plugins/fabrika/
 `bin/` is on `PATH` for an enabled plugin, which is what makes the bare literal invocation the
 [CLI interface convention](docs/cli-interface-convention.md) mandates resolve. The shim finds
 `packages/fabrika-cli/src/bin.ts` from its own path and runs it under `node` — no build step, and no
-cwd dependence, since an agent's working directory resets between calls. Outside a phoenix checkout
-it resolves nothing and says so on stderr with exit `2`; #4775 owns that consumer-side install path.
+cwd dependence, since an agent's working directory resets between calls.
+
+It selects that tier on **runnability, not file presence**: a marketplace install is a depth-1 clone
+of the whole tree, so the source file is on disk in a consumer while its imports cannot resolve
+there, and a `-f` test would pick a tier that cannot run. The registry tier behind it
+(`@kampus/fabrika-cli` at a pinned version) is **empty today** — the package is unpublished and
+[#4786](https://github.com/kamp-us/phoenix/issues/4786) owns the publish path — so it rejects itself
+by name rather than resolving to nothing.
+
+**So fabrika works inside a phoenix checkout and does not work outside one yet.** In a consumer every
+fence exits `2` with nothing on stdout and, on stderr, each tier and why it was rejected. That is a
+well-worded failure, not a working fabrika; the "works outside phoenix" criterion
+([#4776](https://github.com/kamp-us/phoenix/issues/4776)) is discharged by the publish path, not
+here.
 
 `skills/` carries no `README` and no loose files: the fabrika layout law is `SKILL.md` under a
 per-skill directory and nothing else at the `skills/` root. A `.gitkeep` remains from when the

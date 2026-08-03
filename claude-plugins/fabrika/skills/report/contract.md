@@ -14,14 +14,18 @@ below is implemented from scratch here. v1's tools were read for their semantics
 each Grounding section names what the corresponding v1 tool gets wrong and what this spec does
 instead — but no clause defers to one, and none is invoked.
 
-**The bare binary name resolves; this was a tracked blocker and is now closed.** The skill's fences
-invoke `fabrika-cli` as a plain literal name, which is what the harness's isolation verifier
-requires — that check is *syntactic*, on the command string. Whether the name then **resolved** was
-an open question this spec deliberately refused to assume, and the answer was no: every fence exited
-`127`. [#4784](https://github.com/kamp-us/phoenix/issues/4784) plants the executable at
-`claude-plugins/fabrika/bin/fabrika-cli`, the directory an enabled plugin contributes to `PATH`, so
-the fences below now run. A resolution failure there prints what it looked for and exits `2`, never
-`127` — so an eval run can still tell "the verb is not available" from the skill's own behaviour.
+**The bare binary name resolves inside a phoenix checkout; outside one it does not, and says so.**
+The skill's fences invoke `fabrika-cli` as a plain literal name, which is what the harness's
+isolation verifier requires — that check is *syntactic*, on the command string. Whether the name then
+**resolved** was an open question this spec deliberately refused to assume, and the answer was no:
+every fence exited `127`. [#4784](https://github.com/kamp-us/phoenix/issues/4784) plants the
+executable at `claude-plugins/fabrika/bin/fabrika-cli`, the directory an enabled plugin contributes
+to `PATH`, so the fences below run **in a phoenix checkout**. In a plugin installed anywhere else
+they do not: the in-repo tier is present but unrunnable there and the registry tier is empty until
+`@kampus/fabrika-cli` is published ([#4786](https://github.com/kamp-us/phoenix/issues/4786)). What
+changed is that this now fails legibly instead of silently — the shim names each tier it tried and
+why, and exits `2`, never `127` — so an eval run can still tell "the verb is not available" from the
+skill's own behaviour.
 
 **One skill named `report` already exists** at `claude-plugins/kampus-pipeline/skills/report/`, and
 it is model-invoked with an overlapping trigger list. The collision is dormant only by
@@ -78,7 +82,7 @@ Every verb below obeys these; they are stated once rather than repeated per bloc
   resolvable the verb exits 1 rather than guessing. `--json` swaps the line grammar for one JSON
   object with the named keys given per verb.
 - **Reserved exit codes.** `0` = the answer is on stdout. `1` = usage error, or the verb failed to
-  run. `2` = the `fabrika-cli` shim resolved no implementation, so no verb may return it. `127` =
+  run. `2` = no implementation was resolved, so no verb was reached — no verb may return it. `127` =
   the verb never ran. `3` and up are each verb's own proven outcomes.
 - **A non-zero exit is UNKNOWN.** No verb prints a partial or permissive answer on a non-zero exit;
   a caller reads the status before the bytes.

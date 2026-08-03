@@ -76,14 +76,16 @@ exit taxonomy, and the verdict-vs-invocation rule proven in v1 at
   |---|---|
   | `0` | the answer was produced on stdout |
   | `1` | usage error, or the verb failed to run |
-  | `2` | the `fabrika-cli` shim ran but resolved no implementation to hand the verb to (rule 5) |
+  | `2` | no implementation was resolved, so no verb was reached (rule 5) |
   | `127` | the verb never ran at all (unresolved binary) |
   | `3`+ | the verb's own proven outcomes, each enumerated in `--help` |
 
-  `2` is reserved for the shim, so **no verb may return it**. It exists because `127` and empty
+  `2` is reserved for resolution, so **no verb may return it**. It exists because `127` and empty
   output are what an unresolvable binary produces on its own — the one failure that is
-  byte-identical to a verb that ran and refused. The shim never lets a caller land there silently:
-  it prints what it looked for and where, and exits `2`.
+  byte-identical to a verb that ran and refused. It is emitted by whichever layer discovers the
+  failure — the shim when no tier is runnable, or the verb package's bootstrap when a dependency
+  fails to load past the shim's probe — and either way the caller can tell "never ran" from "ran and
+  said no" without reading the text.
 
 - A verb whose result crosses a pipe keeps its exit code binary (`0` / non-zero) and puts the
   discriminator in a stdout state word: a meaningful code does not survive `xargs`.
@@ -126,8 +128,19 @@ usable at an agent's top-level command.
   verb package from **its own path**, never from the caller's working directory, because an agent's
   working directory resets between Bash calls. It runs the TypeScript source directly, so a fresh
   checkout needs no build step and a missing build artifact cannot resurface as an unresolved
-  binary. When it resolves nothing it says what it looked for and where, and exits `2` (rule 3) —
-  never `127`, never silence.
+  binary.
+
+  It picks that tier on **runnability, not file presence**. A marketplace install is a depth-1 clone
+  of the whole repository, so the source file exists in a consumer while its imports cannot resolve
+  there — an `-f` test would select a tier that cannot run, and would keep doing so after the
+  registry tier lands. The registry tier (`@kampus/fabrika-cli` at a pinned version) is **empty
+  today**: the package is unpublished, so the pin is unset and the tier rejects itself by name
+  rather than fetching whatever `latest` happens to be
+  ([#4786](https://github.com/kamp-us/phoenix/issues/4786) owns the publish path).
+
+  **In a phoenix checkout the fences run; outside one, none of them do — yet.** When no tier
+  resolves, the shim names each tier it tried and why it was rejected, and exits `2` (rule 3) with
+  nothing on stdout — never `127`, never silence.
 - **Examples in `--help` and in a contract spec are held to the same rule.** An example an agent
   cannot paste verbatim is not an example.
 - A verb never requires an env var to *locate* itself. Configuration may still arrive by env

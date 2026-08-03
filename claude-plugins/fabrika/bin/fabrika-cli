@@ -7,25 +7,39 @@
 # syntactic check on the command string, so a variable-rooted `"$SOMETHING"/fabrika-cli` is
 # unusable by construction (#4641, ADR 0232).
 #
-# Resolution — one tier, then a loud refusal:
-#   1. the in-repo TypeScript entry point, located from THIS FILE's own path
-#      (bin -> fabrika -> claude-plugins -> repo root). Self-path resolution is load-bearing: an
-#      agent's working directory resets between Bash calls, so anything keyed on the caller's cwd
-#      is broken by construction. Node runs the `.ts` directly, so a fresh checkout works with no
-#      build step and an absent `dist/` can never resurface as a resolution failure.
-#   2. there is no second tier. `@kampus/fabrika-cli` is unpublished (verified 404 against the live
-#      registry), so a registry fallback would resolve to nothing while looking like a safety net.
-#      A failure to resolve prints what was looked for and where, and exits 2.
+# Three tiers, tried in order, then a refusal that names each tier and why it was rejected:
 #
-# Exit 2 is reserved for "the shim ran but could not resolve the implementation" — deliberately
-# neither 127 (which is what an unresolved binary produces, silently, and is the state this file
-# exists to make impossible to reach) nor 1 (a verb's own usage error), so "never ran" and "ran and
-# said no" stay distinguishable (#4666). The reserved-code table lives in
-# ../docs/cli-interface-convention.md rule 3.
+#   1. the in-repo TypeScript source, located from THIS FILE's own path (bin -> fabrika ->
+#      claude-plugins -> repo root). Self-path resolution is load-bearing: an agent's working
+#      directory resets between Bash calls, so anything keyed on the caller's cwd is broken by
+#      construction. Node runs the `.ts` directly, so a fresh checkout needs no build step.
+#
+#      Selected on RUNNABILITY, never on file presence. A marketplace install is a depth-1 clone
+#      of the WHOLE tree, so `packages/fabrika-cli/src/bin.ts` is on disk in a consumer while node
+#      cannot resolve its imports there — an `-f` test would confidently select a tier that cannot
+#      run. That was measured on a live install, and it is why the #4784 ruling was amended.
+#
+#   2. a registry fetch of the pinned `@kampus/fabrika-cli`. EMPTY TODAY: the package is a verified
+#      npm 404 and nothing publishes it yet (#4786 owns the publish path), so the pin below is
+#      deliberately unset and this tier rejects itself out loud. An unset pin is never interpolated
+#      into a fetch — `<pkg>@` resolves to whatever `latest` happens to be, and resolving to
+#      something-other-than-the-pin is the failure mode this tier must not have.
+#
+#   3. loud, legible refusal: nothing on stdout, every tier and its rejection reason on stderr.
+#
+# Exit 2 is reserved for "the shim ran but could not resolve an implementation" — deliberately
+# neither 127 (what an unresolved binary produces, silently, and the state this file exists to make
+# unreachable) nor 1 (a verb's own usage error), so "never ran" and "ran and said no" stay
+# distinguishable (#4666). `packages/fabrika-cli/src/bin.ts` exits the same 2 when a dependency
+# fails to load past this shim's probe, so the code holds on every resolution path. The
+# reserved-code table lives in ../docs/cli-interface-convention.md rule 3.
 #
 # fabrika calls nothing under claude-plugins/kampus-pipeline/ (ADR 0238, rule 6). v1's
 # `pipeline-cli` shim was read for its shape and its scars; it is never invoked.
 set -uo pipefail
+
+FABRIKA_CLI_PKG="@kampus/fabrika-cli"
+FABRIKA_CLI_PIN="" # unset until #4786 publishes; see tier 2 above.
 
 SHIM_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 if [ -z "${SHIM_DIR:-}" ] || [ ! -d "$SHIM_DIR" ]; then
@@ -33,18 +47,22 @@ if [ -z "${SHIM_DIR:-}" ] || [ ! -d "$SHIM_DIR" ]; then
 	exit 2
 fi
 
-REPO_SRC="$SHIM_DIR/../../../packages/fabrika-cli/src/bin.ts"
+REPO_PKG_DIR="$SHIM_DIR/../../../packages/fabrika-cli"
+REPO_SRC="$REPO_PKG_DIR/src/bin.ts"
 
-if [ -f "$REPO_SRC" ]; then
-	if ! command -v node >/dev/null 2>&1; then
-		{
-			echo "fabrika-cli: found the verb package at"
-			echo "    $REPO_SRC"
-			echo "  but no \`node\` is on PATH to run it — refusing to run."
-			echo "  Install Node (the package pins 26.2.0 via volta) and re-run."
-		} >&2
-		exit 2
-	fi
+TIER1_REJECT=""
+TIER2_REJECT=""
+
+if [ ! -f "$REPO_SRC" ]; then
+	TIER1_REJECT="no in-repo verb package — nothing at $REPO_SRC"
+elif ! command -v node >/dev/null 2>&1; then
+	TIER1_REJECT="the verb package is at $REPO_SRC, but no \`node\` is on PATH to run it (the package pins 26.2.0 via volta)"
+elif ! (
+	cd -- "$REPO_PKG_DIR" &&
+		node --input-type=module -e 'import.meta.resolve("effect");import.meta.resolve("@effect/platform-node")'
+) >/dev/null 2>&1; then
+	TIER1_REJECT="the verb package is present at $REPO_SRC but is NOT runnable — node's own resolver, run from $REPO_PKG_DIR, cannot resolve the two runtime dependencies that package declares (effect, @effect/platform-node), so its imports would not load"
+else
 	# bash 3.2 aborts on "$@" under `set -u` when there are no positional parameters, so the
 	# no-argument case gets its own expansion-free exec.
 	if [ "$#" -gt 0 ]; then
@@ -53,18 +71,35 @@ if [ -f "$REPO_SRC" ]; then
 	exec node "$REPO_SRC"
 fi
 
+if [ -z "$FABRIKA_CLI_PIN" ]; then
+	TIER2_REJECT="no pinned version to fetch — $FABRIKA_CLI_PKG is unpublished (a verified npm 404) and nothing publishes it yet; #4786 owns the publish path"
+elif ! command -v pnpm >/dev/null 2>&1; then
+	TIER2_REJECT="pinned at $FABRIKA_CLI_PKG@$FABRIKA_CLI_PIN, but no \`pnpm\` is on PATH to fetch it"
+else
+	if [ "$#" -gt 0 ]; then
+		exec pnpm dlx "$FABRIKA_CLI_PKG@$FABRIKA_CLI_PIN" "$@"
+	fi
+	exec pnpm dlx "$FABRIKA_CLI_PKG@$FABRIKA_CLI_PIN"
+fi
+
 {
-	echo "fabrika-cli: cannot resolve the fabrika verb package — refusing to run."
-	echo "  looked for the in-repo TypeScript entry point at:"
-	echo "    $REPO_SRC"
+	echo "fabrika-cli: no tier resolved a fabrika implementation — refusing to run."
+	echo
+	echo "  tier 1 — in-repo TypeScript source, selected on runnability — REJECTED:"
+	echo "      $TIER1_REJECT"
+	echo "  tier 2 — registry fetch at a pinned version — REJECTED:"
+	echo "      $TIER2_REJECT"
+	echo "  tier 3 — this message."
+	echo
 	echo "  resolved from this shim at:"
-	echo "    $SHIM_DIR"
+	echo "      $SHIM_DIR"
 	echo "  (resolution is keyed on the shim's own path, never on the caller's working directory)"
 	echo
-	echo "  This is what a fabrika plugin installed OUTSIDE a phoenix checkout looks like: the"
-	echo "  plugin ships the skills and this shim, but not packages/fabrika-cli. #4775 owns that"
-	echo "  consumer-side install path; nothing here silently falls back to a registry, because"
-	echo "  @kampus/fabrika-cli is unpublished."
+	echo "  If this tree is your own phoenix checkout, run \`pnpm install\` at its root and re-run."
+	echo "  If it is a marketplace-managed plugin clone, do NOT install into it — that directory is"
+	echo "  owned and re-synced by the harness. Outside a phoenix checkout fabrika has no working"
+	echo "  implementation until $FABRIKA_CLI_PKG is published (#4786); this refusal is the honest"
+	echo "  answer, not a fallback."
 	echo
 	echo "  Exit 2 means the verb never ran. It is NOT a verdict, and it is NOT 127."
 } >&2
