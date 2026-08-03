@@ -492,6 +492,137 @@ else
 	ok "wt_preflight with no session id: non-zero, empty stdout (fail-closed)"
 fi
 
+# ---------------------------------------------------------------------------------------------
+# #4826 — the pinned head branch. Real worktrees, because the condition IS a second checkout of one
+# branch and no fixture can fake git's own refusal of it.
+# ---------------------------------------------------------------------------------------------
+
+mkdir -p "$tmp/pin"
+pin_sid="kp-test-lane-pin"
+if ! git -C "$tmp/pin" init -q --template='' >/dev/null 2>&1 ||
+	! git -C "$tmp/pin" -c user.name=kp-test -c user.email=kp-test@invalid commit -q --allow-empty -m c1 >/dev/null 2>&1 ||
+	! git -C "$tmp/pin" worktree add -q -b kp-lane "$tmp/pin-lane" >/dev/null 2>&1 ||
+	! git -C "$tmp/pin" worktree add -q -b kp-feat "$tmp/pin-left" >/dev/null 2>&1 ||
+	! git -C "$tmp/pin" -c user.name=kp-test -c user.email=kp-test@invalid commit -q --allow-empty -m c2 >/dev/null 2>&1; then
+	fail "fixture did not take: could not build the pinned-branch fixture — cases 26–31 were NOT exercised"
+else
+	pin_base="$(git -C "$tmp/pin" symbolic-ref --short HEAD)"
+	pin_lane="$(cd "$tmp/pin-lane" && pwd -P)"
+	pin_left="$(cd "$tmp/pin-left" && pwd -P)"
+	# Real uncommitted work in the leftover lane's tree. It must still be there at the end: eating a
+	# dirty tree is strictly worse than the bug this fix closes.
+	printf 'precious uncommitted work\n' > "$pin_left/UNCOMMITTED.txt"
+
+	# 26. The classifier separates the four states. A boolean "is it pinned" cannot, and the states
+	# have opposite handling — `other` co-checks-out, `primary` and `live-lane` refuse.
+	printf '%s\n' "$pin_sid" > "$tmp/pin/.git/worktrees/pin-left/kampus-lane"
+	out_live="$(CLAUDE_CODE_SESSION_ID="$pin_sid" kp_branch_pin "$pin_lane" kp-feat)"
+	rm -f "$tmp/pin/.git/worktrees/pin-left/kampus-lane"
+	out_other="$(CLAUDE_CODE_SESSION_ID="$pin_sid" kp_branch_pin "$pin_lane" kp-feat)"
+	out_mine="$(CLAUDE_CODE_SESSION_ID="$pin_sid" kp_branch_pin "$pin_lane" kp-lane)"
+	out_free="$(CLAUDE_CODE_SESSION_ID="$pin_sid" kp_branch_pin "$pin_lane" kp-no-such-branch)"
+	out_primary="$(CLAUDE_CODE_SESSION_ID="$pin_sid" kp_branch_pin "$pin_lane" "$pin_base")"
+	if [ "$out_live" != "PIN=live-lane
+PINROOT=$pin_left" ]; then
+		fail "kp_branch_pin: a pinning tree stamped with MY lane must read live-lane: [$out_live]"
+	elif [ "$out_other" != "PIN=other
+PINROOT=$pin_left" ]; then
+		fail "kp_branch_pin: an unstamped pinning tree must read other: [$out_other]"
+	elif [ "$out_mine" != "PIN=mine
+PINROOT=$pin_lane" ]; then
+		fail "kp_branch_pin: my own branch must read mine: [$out_mine]"
+	elif [ "$out_free" != "PIN=free
+PINROOT=" ]; then
+		fail "kp_branch_pin: an unheld branch must read free: [$out_free]"
+	elif [ "$out_primary" != "PIN=primary
+PINROOT=$(cd "$tmp/pin" && pwd -P)" ]; then
+		fail "kp_branch_pin: a branch held by the primary checkout must read primary: [$out_primary]"
+	else
+		ok "kp_branch_pin separates free / mine / primary / live-lane / other"
+	fi
+
+	# 27. THE FALSIFICATION. The bare `git switch` the step used to run REFUSES here — that refusal is
+	# the whole defect — while the sanctioned path puts this lane on the branch, still attached.
+	bare_err="$(git -C "$pin_lane" switch kp-feat 2>&1)"; bare_rc=$?
+	if [ "$bare_rc" -eq 0 ]; then
+		fail "fixture did not take: a bare \`git switch\` onto a branch another worktree holds SUCCEEDED — the pinned-branch condition was NOT reproduced"
+	elif ! grep -qF 'already checked out' <<<"$bare_err"; then
+		fail "the bare switch failed for some other reason than the pin: [$bare_err]"
+	else
+		err="$tmp/stderr"
+		CLAUDE_CODE_SESSION_ID="$pin_sid" kp_switch_head_branch "$pin_lane" kp-feat 2>"$err"; rc=$?
+		diag="$(cat "$err")"
+		head_ref="$(git -C "$pin_lane" symbolic-ref -q HEAD)"
+		if [ "$rc" -ne 0 ]; then
+			fail "the sanctioned path refused the routine leftover-tree case (rc=$rc): [$diag]"
+		elif [ "$head_ref" != "refs/heads/kp-feat" ]; then
+			fail "the sanctioned path left HEAD at [$head_ref] — a DETACHED head is what makes verified-push resolve UNKNOWN (#4826)"
+		elif ! grep -qF 'SANCTIONED' <<<"$diag"; then
+			fail "the sanctioned co-checkout narrated nothing naming itself sanctioned: [$diag]"
+		else
+			ok "pinned head branch: the bare switch refuses, the sanctioned co-checkout attaches this lane to the branch"
+		fi
+	fi
+
+	# 28. The freshen-the-base guarantee survives the sanctioned switch — the guarantee the detached
+	# improvisation dropped. The rebase must land, on a branch ref, not a detached head.
+	if ! git -C "$pin_lane" -c user.name=kp-test -c user.email=kp-test@invalid rebase "$pin_base" >/dev/null 2>&1; then
+		fail "rebase onto $pin_base failed after the sanctioned switch — the freshen-the-base step is not reachable"
+	elif [ "$(git -C "$pin_lane" symbolic-ref -q HEAD)" != "refs/heads/kp-feat" ]; then
+		fail "the rebase left HEAD detached — verified-push would resolve UNKNOWN and push nothing"
+	elif ! git -C "$pin_lane" merge-base --is-ancestor "$pin_base" HEAD; then
+		fail "kp-feat is not on top of $pin_base after the rebase — the base was never freshened"
+	else
+		ok "the rebase onto the latest base still happens on the sanctioned path, on an attached branch"
+	fi
+
+	# 29. THE SAFETY PIN. The leftover tree is still registered and its uncommitted work is still
+	# there: the sanctioned path removes no worktree, so there is no `--force` to eat a dirty tree.
+	if [ ! -f "$pin_left/UNCOMMITTED.txt" ]; then
+		fail "the leftover worktree's uncommitted file is GONE — a removal was introduced (#4826 hard constraint)"
+	elif [ "$(cat "$pin_left/UNCOMMITTED.txt")" != "precious uncommitted work" ]; then
+		fail "the leftover worktree's uncommitted file was modified"
+	elif ! git -C "$tmp/pin" worktree list --porcelain | grep -qF "worktree $pin_left"; then
+		fail "the leftover worktree was UNREGISTERED — the sanctioned path must remove nothing"
+	else
+		ok "the leftover worktree and its dirty, uncommitted work are untouched (nothing removed)"
+	fi
+
+	# 30. The primary checkout is never co-checked-out: its branch ref would move under the shared
+	# tree. Refusal names the remedy, and this lane's HEAD does not move.
+	err="$tmp/stderr"
+	CLAUDE_CODE_SESSION_ID="$pin_sid" kp_switch_head_branch "$pin_lane" "$pin_base" 2>"$err"; rc=$?
+	diag="$(cat "$err")"
+	if [ "$rc" -eq 0 ]; then
+		fail "the sanctioned path co-checked-out a branch held by the PRIMARY checkout — the #2270 class"
+	elif [ "$(git -C "$pin_lane" symbolic-ref -q HEAD)" != "refs/heads/kp-feat" ]; then
+		fail "the primary refusal moved this lane's HEAD — a refusal must change nothing"
+	elif ! grep -qF 'REMEDY:' <<<"$diag"; then
+		fail "the primary refusal names no remedy: [$diag] — a refusal with no way forward is what gets improvised past"
+	else
+		ok "a branch held by the primary checkout: refused, HEAD unmoved, remedy named"
+	fi
+
+	# 31. A pinning tree stamped with THIS session is a sibling lane that may still be building on the
+	# branch; the rebase would move its HEAD mid-flight. Refuse, name the remedy, remove nothing.
+	if ! git -C "$tmp/pin" worktree add -q -b kp-sib "$tmp/pin-sib" >/dev/null 2>&1; then
+		fail "fixture did not take: could not add the sibling-lane worktree — case 31 was NOT exercised"
+	else
+		printf '%s\n' "$pin_sid" > "$tmp/pin/.git/worktrees/pin-sib/kampus-lane"
+		CLAUDE_CODE_SESSION_ID="$pin_sid" kp_switch_head_branch "$pin_lane" kp-sib 2>"$err"; rc=$?
+		diag="$(cat "$err")"
+		if [ "$rc" -eq 0 ]; then
+			fail "the sanctioned path co-checked-out a branch held by a LIVE sibling lane of this session"
+		elif ! grep -qF 'REMEDY:' <<<"$diag"; then
+			fail "the live-lane refusal names no remedy: [$diag]"
+		elif ! git -C "$tmp/pin" worktree list --porcelain | grep -qF "worktree $(cd "$tmp/pin-sib" && pwd -P)"; then
+			fail "the live-lane refusal removed the sibling worktree"
+		else
+			ok "a branch held by a same-session sibling lane: refused, remedy named, nothing removed"
+		fi
+	fi
+fi
+
 cleanup
 if [ "$failures" -ne 0 ]; then
 	printf '\ncommon-test: %d failure(s)\n' "$failures"

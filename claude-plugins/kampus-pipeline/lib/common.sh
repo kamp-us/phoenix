@@ -415,6 +415,160 @@ kp__scratch() {
 	printf '%s\n' "$dir"
 }
 
+kp__phys() { # <path> — its physical form, or the path itself when the directory is gone (a prunable
+	# worktree registration outlives its directory, and it still pins the branch).
+	cd -P "$1" 2>/dev/null && pwd -P && return 0
+	printf '%s\n' "$1"
+}
+
+# WHICH worktree holds <branch> checked out right now — the classifier repair R2 routes on when a
+# leftover build lane still pins the PR's head branch (#4826). Prints exactly two lines:
+#
+#   PIN=free|mine|primary|live-lane|other
+#   PINROOT=<absolute worktree root>          (empty only for `free`)
+#
+# The four non-free states are NOT interchangeable, which is the whole reason this is a classifier
+# and not a boolean: co-checking-out a branch (`git switch --ignore-other-worktrees`) leaves the
+# pinning tree's FILES untouched but lets a later rebase move the branch ref under its HEAD. That is
+# harmless for a finished lane's leftover tree (`other`), and it is exactly the #2270
+# primary-checkout-corruption class for the shared primary tree (`primary`) or a lane that may still
+# be building on it (`live-lane`).
+#
+# `live-lane` is keyed on the ONLY liveness evidence available here: the pinning tree's own
+# `kampus-lane` stamp equalling THIS session's id, i.e. a sibling lane of the very session now
+# repairing. A foreign session's stamp proves nothing either way and resolves `other` — stated
+# plainly rather than dressed up as a liveness check, because the mitigation for it is that the
+# co-checkout removes nothing and writes nothing into that tree.
+#
+# A read it cannot complete is UNKNOWN and returns non-zero with nothing on stdout — never `free`,
+# which is the permissive branch (§ZS, ADR 0092).
+kp_branch_pin() {
+	local mine="$1" branch="$2"
+	local common list line cur primary="" hits="" mine_p hit_p state gd r stamp
+	local NL='
+'
+	if [ -z "$mine" ] || [ -z "$branch" ]; then
+		printf 'kp_branch_pin: need <my-worktree-root> <branch> — the pin state is UNKNOWN, never free.\n' >&2
+		return 1
+	fi
+	if ! common="$(git -C "$mine" rev-parse --git-common-dir 2>/dev/null)"; then
+		printf 'kp_branch_pin: %s is not inside a git repository — the pin state is UNKNOWN, never free.\n' "$mine" >&2
+		return 1
+	fi
+	case "$common" in /*) ;; *) common="$mine/$common" ;; esac
+	if ! common="$(cd "$common" 2>/dev/null && pwd -P)"; then
+		printf 'kp_branch_pin: could not resolve the common git dir of %s — UNKNOWN, never free.\n' "$mine" >&2
+		return 1
+	fi
+	if ! list="$(git -C "$mine" worktree list --porcelain 2>/dev/null)"; then
+		printf 'kp_branch_pin: `git worktree list` failed under %s — UNKNOWN, never free.\n' "$mine" >&2
+		return 1
+	fi
+	# git lists the MAIN worktree first, so the first record names the primary checkout; a detached
+	# worktree emits no `branch` line and therefore pins nothing.
+	while IFS= read -r line; do
+		case "$line" in
+		"worktree "*)
+			cur="${line#worktree }"
+			[ -n "$primary" ] || primary="$cur"
+			;;
+		"branch refs/heads/$branch") hits="$hits$cur$NL" ;;
+		esac
+	done <<EOF
+$list
+EOF
+	if [ -z "$hits" ]; then
+		printf 'PIN=free\nPINROOT=\n'
+		return 0
+	fi
+	mine_p="$(kp__phys "$mine")"
+	# SEVERAL trees can legitimately hold one branch — that is precisely the state the sanctioned
+	# co-checkout leaves behind — and MINE wins the read, so re-running the step after a co-checkout
+	# resolves `mine` and is a clean no-op rather than a repeat refusal.
+	hit_p=""
+	while IFS= read -r line; do
+		[ -n "$line" ] || continue
+		r="$(kp__phys "$line")"
+		if [ "$r" = "$mine_p" ]; then
+			hit_p="$mine_p"
+			break
+		fi
+		[ -n "$hit_p" ] || hit_p="$r"
+	done <<EOF
+$hits
+EOF
+	if [ "$hit_p" = "$mine_p" ]; then
+		state="mine"
+	elif [ "$hit_p" = "$(kp__phys "$primary")" ] || [ "$hit_p" = "$(kp__phys "${common%/.git}")" ]; then
+		state="primary"
+	else
+		state="other"
+		for gd in "$common"/worktrees/*/gitdir; do
+			[ -f "$gd" ] || continue
+			r="$(cat "$gd")"
+			[ "$(kp__phys "${r%/.git}")" = "$hit_p" ] || continue
+			stamp="$(cat "${gd%/gitdir}/kampus-lane" 2>/dev/null)"
+			if [ -n "${CLAUDE_CODE_SESSION_ID:-}" ] && [ "$stamp" = "$CLAUDE_CODE_SESSION_ID" ]; then
+				state="live-lane"
+			fi
+			break
+		done
+	fi
+	printf 'PIN=%s\nPINROOT=%s\n' "$state" "$hit_p"
+}
+
+# Put MY lane's HEAD on <branch> whatever pins it — the SANCTIONED path repair R2 takes, so no repair
+# agent has to invent one (#4826). Narration and every refusal go to stderr; stdout stays empty
+# because this is an effect, not an answer.
+#
+# It removes NO worktree, on any branch — not even a prunable registration, and never with `--force`.
+# A build lane's tree can hold real uncommitted work, so eating one is strictly worse than the bug
+# this closes; the co-checkout needs no removal at all, which is why that is the shape chosen.
+#
+# Every refusal names its remedy in the refusal line. A fail-closed stop with no stated way forward
+# is what produced the improvisations in the first place, one of which silently dropped the rebase
+# onto latest `main` and the `verified-push` verification.
+kp_switch_head_branch() {
+	local wt="$1" branch="$2" pin state root
+	if ! pin="$(kp_branch_pin "$wt" "$branch")"; then
+		printf 'kp_switch_head_branch: the pin state of %s is UNKNOWN (see above), so the sanctioned path cannot be chosen. REMEDY: re-run from your own lane once `git worktree list` reads cleanly. NOTHING was switched.\n' "$branch" >&2
+		return 1
+	fi
+	state="$(printf '%s\n' "$pin" | sed -n 's/^PIN=//p')"
+	root="$(printf '%s\n' "$pin" | sed -n 's/^PINROOT=//p')"
+	case "$state" in
+	mine)
+		printf 'kp_switch_head_branch: %s already holds %s — nothing to switch.\n' "$wt" "$branch" >&2
+		;;
+	free)
+		if ! git -C "$wt" switch "$branch" >&2; then
+			printf 'kp_switch_head_branch: `git switch %s` failed in %s, and NO worktree holds that branch — so this is NOT the pinned-branch case and its remedy does not apply. REMEDY: read git'\''s error above; a local change blocking the switch is committed or stashed IN %s, an unknown branch needs `git fetch origin` first. NOTHING was switched.\n' "$branch" "$wt" "$wt" >&2
+			return 1
+		fi
+		;;
+	other)
+		printf 'kp_switch_head_branch: %s is pinned by worktree %s — not this lane, not the primary checkout. Taking the SANCTIONED co-checkout in MY lane (%s): `git switch --ignore-other-worktrees`. That tree is left in place and its files are untouched; no worktree is removed. Its HEAD will follow the branch ref once this repair rebases.\n' "$branch" "$root" "$wt" >&2
+		if ! git -C "$wt" switch --ignore-other-worktrees "$branch" >&2; then
+			printf 'kp_switch_head_branch: the sanctioned co-checkout of %s into %s failed (git'\''s error is above) — the pin is NOT what blocked it. REMEDY: resolve what git named in %s and re-run this step. Do NOT detach HEAD to work around it: a detached repair skips the rebase onto origin/main and `verified-push` resolves a detached HEAD to UNKNOWN and pushes nothing. NOTHING was switched.\n' "$branch" "$wt" "$wt" >&2
+			return 1
+		fi
+		;;
+	primary)
+		printf 'kp_switch_head_branch REFUSED (fail-closed): %s is checked out in the PRIMARY checkout %s. Co-checking it out here would let this repair'\''s rebase move the branch ref under the shared primary tree (the #2270 primary-corruption class). REMEDY: release %s in that checkout (`git switch <some other branch>`), then re-run this step. Do NOT remove any worktree. NOTHING was switched.\n' "$branch" "$root" "$branch" >&2
+		return 1
+		;;
+	live-lane)
+		printf 'kp_switch_head_branch REFUSED (fail-closed): %s is checked out in %s, a worktree stamped with THIS session'\''s lane id (%s) — a sibling lane that may still be building on it. The rebase would move its HEAD mid-flight. REMEDY: run this repair from that lane'\''s worktree, or wait for it to finish and re-run. Do NOT remove that worktree — it can hold uncommitted work. NOTHING was switched.\n' "$branch" "$root" "${CLAUDE_CODE_SESSION_ID:-<unset>}" >&2
+		return 1
+		;;
+	*)
+		printf 'kp_switch_head_branch REFUSED (fail-closed): the pin classifier returned no state for %s — UNKNOWN, never free. REMEDY: run `git worktree list --porcelain` from %s and report what it shows. NOTHING was switched.\n' "$branch" "$wt" >&2
+		return 1
+		;;
+	esac
+	return 0
+}
+
 # The per-mutation worktree guard and the lane resolver under it. They live HERE, in the file every
 # pipeline shell script already sources, because they have TWO classes of caller: the EXECUTED
 # `write-code/scripts/step4-wt-preflight.sh`, which runs `wt_preflight` in a subprocess and prints
