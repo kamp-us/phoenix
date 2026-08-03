@@ -38,6 +38,16 @@ per-tool help documents subcommands and exit codes inline.
   without a description is mechanically detectable
   ([`packages/pipeline-cli/src/tools/commands/commands.ts`](../../../packages/pipeline-cli/src/tools/commands/commands.ts)).
   A parallel hand-written list rots; that is the defect the derived index replaced.
+- **A `--help` that resolves is proof the path exists — up to the last node that takes subcommands.**
+  `fabrika <unknown> …` is refused before the CLI runner sees it: the reason on stderr, nothing on
+  stdout, exit `1`. That holds at the group level and inside a group, with or without `--help`, and
+  however many invalid tokens follow. It has to be a fabrika-side guard because the runner answers the
+  probe otherwise — `effect`'s `Command.runWith` processes action flags before it inspects parse
+  errors, and `--help` is an action flag, so it printed the deepest valid prefix's help and exited `0`
+  while discarding the whole invalid tail ([#4822](https://github.com/kamp-us/phoenix/issues/4822)).
+  **The residual caveat:** the guarantee covers the command *path*, not a verb's operands. A leaf verb
+  takes arguments, not subcommands, so its extra tokens are its own business —
+  `fabrika adr next bogus` still runs `adr next`.
 
 ### 2. Results by value on stdout; the shape is documented, not guessed
 
