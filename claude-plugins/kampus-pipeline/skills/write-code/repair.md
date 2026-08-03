@@ -244,6 +244,36 @@ Repair mode runs in a worktree too, so re-run the Step-4 opening preflight (and 
 before this switch, then gate every later `git commit`/`git push` on `step4-wt-preflight.sh` exactly
 as the initial build does.
 
+#### The head branch is usually pinned by the build lane's leftover worktree — the sanctioned path
+
+A build lane's worktree is not released when its lane finishes, so by the time you repair, the PR's
+head branch is normally **still checked out there** and git refuses a second checkout of it
+(`fatal: '<branch>' is already checked out at …`). **This is the routine case, not an edge case**, and
+the step above already handles it — **do not improvise past it.** Two lanes that improvised on the
+same night took different routes, and one committed on a **detached checkout**, which silently cost
+both the rebase onto latest `origin/main` *and* `verified-push` (which resolves a detached HEAD to
+`UNKNOWN` and pushes nothing, so that lane hand-rolled its own refspec push and `ls-remote` check —
+#4826).
+
+`stepR2-branch-rebase.sh` classifies what holds the branch and routes on it, inside **your own**
+`wt_preflight`-resolved worktree, and **removes no worktree in any case**:
+
+| What holds the head branch | What the step does |
+| --- | --- |
+| Nothing | plain `git switch` |
+| **Your own lane** already | nothing to switch — a re-run after a co-checkout is a clean no-op |
+| **Another lane's leftover tree** | the sanctioned **co-checkout**: `git switch --ignore-other-worktrees` in your lane. That tree keeps its files, including uncommitted work; only the branch ref moves when you rebase |
+| The **primary checkout** | **REFUSES** — rebasing would move a branch ref under the shared primary tree (the #2270 class). Remedy in the refusal: release the branch there, then re-run |
+| A worktree stamped with **this session's** lane id | **REFUSES** — a sibling lane may still be building on it, and the rebase would move its HEAD mid-flight. Remedy: run the repair from that lane, or wait and re-run |
+
+Two rules hold across all five rows, and neither is negotiable. **Never remove a worktree to free a
+branch** — a build lane's tree can hold real uncommitted work, so eating one is strictly worse than
+the bug; the co-checkout needs no removal at all, which is why it is the shape chosen. (Reaping the
+accumulated leftover trees is a separate, undecided policy question — #4806 — and is deliberately not
+solved here.) And **never detach HEAD to get past a refusal**: a detached repair skips the rebase and
+leaves `verified-push` with no branch to verify. Every refusal above names its remedy on the refusal
+line; if you hit one, take *that* remedy or stop and report — do not invent a sixth route.
+
 **Freshen the base onto latest `origin/main` before you fix — surface a textual conflict at
 code-time, not merge-time.** The repair branch still carries its **dispatch-time base**; if
 `main` moved while the PR sat in the gate (other PRs merged) and touched the same lines, the
