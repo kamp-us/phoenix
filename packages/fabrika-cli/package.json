@@ -29,6 +29,7 @@
 	},
 	"scripts": {
 		"build": "tsc -p tsconfig.build.json",
+		"prepare": "tsc -p tsconfig.build.json",
 		"prepublishOnly": "tsc -p tsconfig.build.json",
 		"typecheck": "tsgo -p tsconfig.json",
 		"test": "vitest run",

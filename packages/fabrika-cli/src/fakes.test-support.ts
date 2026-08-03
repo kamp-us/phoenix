@@ -33,6 +33,8 @@ export interface FakeFsOptions {
 	readonly unwritable?: ReadonlyArray<string>;
 	/** Paths whose existence check itself fails — distinct from a path that is absent. */
 	readonly unprobeable?: ReadonlyArray<string>;
+	/** Symlink path → the path it really is. Anything unlisted is its own real path. */
+	readonly real?: Readonly<Record<string, string>>;
 }
 
 export interface FakeFs {
@@ -65,6 +67,7 @@ export const fakeFs = (options: FakeFsOptions): FakeFs => {
 					? notFound("exists", path)
 					: Effect.succeed(Object.hasOwn(files, path) && files[path] !== null),
 			makeDirectory: () => Effect.void,
+			realPath: (path: string) => Effect.succeed(options.real?.[path] ?? path),
 			writeFileString: (path: string, data: string) => {
 				if (options.unwritable?.includes(path) === true) return notFound("writeFileString", path);
 				files[path] = data;

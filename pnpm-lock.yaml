@@ -208,6 +208,9 @@ importers:
       '@effect/tsgo':
         specifier: 'catalog:'
         version: 0.5.2
+      '@kampus/fabrika-cli':
+        specifier: workspace:*
+        version: link:packages/fabrika-cli
       '@typescript/native-preview':
         specifier: 'catalog:'
         version: 7.0.0-dev.20260509.2

@@ -25,6 +25,45 @@ replaces it, because every call is a tether keeping the old tree alive. Duplicat
 second implementation during the transition; a tether costs the ability to ever delete
 anything.
 
+## How it is delivered
+
+`fabrika-cli` is installed **globally**, once, and the binary decides for itself which copy runs:
+
+```bash
+pnpm add --global @kampus/fabrika-cli
+```
+
+On startup it walks up from the working directory looking for a repo-local install of itself
+(`node_modules/@kampus/fabrika-cli`) and hands the invocation to that copy when it finds one; with
+none, it serves the invocation itself. This is the shape [turbo](https://turborepo.com) ships,
+reimplemented here in TypeScript ([#4784](https://github.com/kamp-us/phoenix/issues/4784)).
+
+The property it buys is a **repo-pinned version**. phoenix carries `@kampus/fabrika-cli` in its root
+`devDependencies`, so a bare `fabrika-cli` anywhere in a phoenix checkout runs the version this repo
+pins, not whatever the machine's global happens to be.
+
+`FABRIKA_CLI_DEBUG=1` prints one stderr line naming which copy served the invocation:
+
+```
+$ FABRIKA_CLI_DEBUG=1 fabrika-cli --version
+fabrika-cli: global at …/pnpm/global/5/…/@kampus/fabrika-cli — delegating to the repo-local install at …/packages/fabrika-cli (…/dist/bin.js)
+fabrika-cli: running here, at …/packages/fabrika-cli — already delegated (FABRIKA_CLI_DELEGATED set)
+fabrika-cli v0.1.0
+```
+
+Both branches end in a real installed package. Nothing here selects a copy by testing whether a file
+exists and guessing that it will run — a walk that cannot be *performed* exits `2` naming what it
+tried, rather than falling through to a version the repo did not pin.
+
+> [!IMPORTANT]
+> **`@kampus/fabrika-cli` is not published yet, so the install above does not work today.** It
+> answers a registry 404 (`npm error code E404`, exit `1`, nothing on stdout). Publishing needs npm
+> Trusted Publishing registered against this repo plus a one-time bootstrap publish — a human action
+> outside the repo, tracked by [#4791](https://github.com/kamp-us/phoenix/issues/4791). Until it
+> lands, a bare `fabrika-cli` exits `127` on a machine with no global install, which the interface
+> convention reserves for exactly that: the verb never ran. Inside a phoenix checkout the fallback
+> is `node packages/fabrika-cli/src/bin.ts …`.
+
 ## Quickstart
 
 ```bash
@@ -54,8 +93,9 @@ Four rules matter most to a caller:
   `no-overlap`, not an empty shortlist — a verb whose "nothing found" answer is empty
   stdout is byte-identical to a verb that never ran.
 - **The exit status is the answer; empty stdout never is.** `0` = the answer is on stdout,
-  `1` = usage error or the verb failed to run, `127` = the verb never ran, `3`+ = the verb's
-  own proven outcomes. **A non-zero exit is UNKNOWN** — read the status before the bytes.
+  `1` = usage error or the verb failed to run, `2` = the binary started but could not resolve an
+  implementation, `127` = the verb never ran, `3`+ = the verb's own proven outcomes. **A non-zero
+  exit is UNKNOWN** — read the status before the bytes.
 - **Fail closed on missing scope or state.** A zero-record scan is a failed read, not an
   answer ([ADR 0092](../../.decisions/0092-gates-fail-closed-on-zero-scope.md)); an
   unreadable input resolves to a refusal, never to a permissive default.
@@ -177,3 +217,9 @@ than a missing service; the verbs take the read as an injected effect, so the `E
 TTY paths stay testable without a real descriptor. **`homedir()`** stays a raw `node:os`
 read in [`src/eval/spawn-io.ts`](./src/eval/spawn-io.ts), because Effect v4 ships no
 equivalent at all; it is a parameter default, so a test substitutes it without a service.
+
+The delegation layer reads `process` — `cwd()`, `argv`, `execPath`, `env`, `exit()` — and that is
+confined to [`src/delegate/entry.ts`](./src/delegate/entry.ts), the boundary the bin bootstrap calls.
+The walk and the decision it feeds are Effects over `FileSystem` / `Path` / `ChildProcessSpawner`,
+so every branch — including "an ancestor could not be probed" and "the spawn faulted" — is driven by
+substituted services rather than by a real tree.
