@@ -1,6 +1,10 @@
-import {Effect} from "effect";
+import {mkdtempSync, rmSync, writeFileSync} from "node:fs";
+import {tmpdir} from "node:os";
+import {join} from "node:path";
+import {NodeServices} from "@effect/platform-node";
+import {Effect, PlatformError} from "effect";
 import {describe, expect, it} from "vitest";
-import {faultingShell} from "../fakes.test-support.ts";
+import {faultingShell, signalledExitError, signalledShell} from "../fakes.test-support.ts";
 import type {LocalInstall} from "./local.ts";
 import {
 	GLOBAL_WARNING_DISABLED_ENV,
@@ -109,14 +113,27 @@ describe("traceLine", () => {
 });
 
 describe("signalFromError", () => {
-	it("recovers the signal name effect v4 only reports inside a message", () => {
-		expect(signalFromError("Process interrupted due to receipt of signal: 'SIGINT'")).toBe(
-			"SIGINT",
-		);
+	/**
+	 * The regression test that matters: the operand is the error the spawner really fails with, not a
+	 * literal the caller never supplies. Reading `.message` — the shape this once had — sees only
+	 * `Unknown: ChildProcess.exitCode (…)`, so the assertion pair below fails the pre-fix code.
+	 */
+	it("reads the signal out of the nested cause of a real spawner PlatformError", () => {
+		const error = signalledExitError("SIGINT", `/usr/bin/node ${install.binPath} --skip-infer adr`);
+		expect(error.message).not.toContain("SIGINT");
+		expect(signalFromError(error)).toBe("SIGINT");
 	});
 
 	it("answers undefined for a spawn fault — which must never read as a signal death", () => {
-		expect(signalFromError("spawn node ENOENT")).toBeUndefined();
+		expect(
+			signalFromError(
+				PlatformError.badArgument({
+					module: "ChildProcess",
+					method: "spawn",
+					description: "spawn node ENOENT",
+				}),
+			),
+		).toBeUndefined();
 	});
 });
 
@@ -132,5 +149,42 @@ describe("spawnDelegate", () => {
 			}).pipe(Effect.provide(faultingShell)),
 		);
 		expect(outcome).toEqual({_tag: "exited", status: 2});
+	});
+
+	it("reports a signal-killed child as signalled, never as the exit-2 could-not-run diagnosis", async () => {
+		const outcome = await Effect.runPromise(
+			spawnDelegate({
+				execPath: "/usr/bin/node",
+				binPath: install.binPath,
+				args: ["adr", "next"],
+				cwd: "/repo",
+				invocationDir: "/repo/packages/fabrika-cli",
+			}).pipe(Effect.provide(signalledShell("SIGINT"))),
+		);
+		expect(outcome).toEqual({_tag: "signalled", signal: "SIGINT"});
+	});
+
+	/**
+	 * The end-to-end anchor: a genuinely signalled child through the REAL spawner, so the fix stays
+	 * bound to the dependency's actual error shape rather than to our reproduction of it.
+	 */
+	it("reports a genuinely SIGINT-killed child, spawned through the real platform spawner", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "fabrika-signal-"));
+		const child = join(dir, "kills-itself.js");
+		writeFileSync(child, "process.kill(process.pid, 'SIGINT');\nsetTimeout(() => {}, 5000);\n");
+		try {
+			const outcome = await Effect.runPromise(
+				spawnDelegate({
+					execPath: process.execPath,
+					binPath: child,
+					args: [],
+					cwd: dir,
+					invocationDir: dir,
+				}).pipe(Effect.provide(NodeServices.layer)),
+			);
+			expect(outcome).toEqual({_tag: "signalled", signal: "SIGINT"});
+		} finally {
+			rmSync(dir, {recursive: true, force: true});
+		}
 	});
 });

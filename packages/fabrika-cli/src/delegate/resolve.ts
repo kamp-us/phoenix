@@ -117,16 +117,28 @@ export interface SpawnInput {
 
 /**
  * effect v4's `ChildProcessHandle` exposes only an `ExitCode`; a child killed by a signal surfaces
- * as a `PlatformError` whose message names the signal, and there is no structured field for it
- * (`@effect/platform-node-shared` `NodeChildProcessSpawner`, the `exitCode` deferred). Recovering
- * the name from the message is therefore the only way to re-raise the signal on ourselves, and a
- * message that stops matching must read as "could not tell", never as a clean exit.
+ * as a `PlatformError` with no structured field for the name, so recovering it from a message is the
+ * only way to re-raise the signal on ourselves.
+ *
+ * **The name is one level down, in the cause chain — never on the `PlatformError` itself.**
+ * `NodeChildProcessSpawner`'s `exitCode` deferred builds `new Error("Process interrupted due to
+ * receipt of signal: '<sig>'")` and passes it as the `cause` of `PlatformError.systemError`, whose
+ * own `message` getter renders `"<tag>: <module>.<method> (<command>)"` and drops it
+ * (`@effect/platform-node-shared@4.0.0-beta.92` `NodeChildProcessSpawner` + `internal/utils`'s
+ * `handleErrnoException`; `effect`'s `PlatformError.SystemError.message`). This walks the chain and
+ * takes the *error* rather than a message string precisely so no caller can read the wrong level
+ * again — matching the top-level message compiled fine, passed a pure-function test, and made the
+ * signalled branch dead code on every real signal death (#4792). A chain that stops matching must
+ * read as "could not tell", never as a clean exit.
  */
 const SIGNAL_MESSAGE = /receipt of signal: '([A-Z0-9]+)'/;
 
-export const signalFromError = (message: string): NodeJS.Signals | undefined => {
-	const matched = SIGNAL_MESSAGE.exec(message);
-	return matched === null ? undefined : (matched[1] as NodeJS.Signals);
+export const signalFromError = (error: unknown): NodeJS.Signals | undefined => {
+	for (let link: unknown = error; link instanceof Error; link = link.cause) {
+		const matched = SIGNAL_MESSAGE.exec(link.message);
+		if (matched !== null) return matched[1] as NodeJS.Signals;
+	}
+	return undefined;
 };
 
 /**
@@ -162,7 +174,7 @@ export const spawnDelegate = ({
 		}),
 	).pipe(
 		Effect.catchTag("PlatformError", (cause): Effect.Effect<ChildOutcome> => {
-			const signal = signalFromError(cause.message);
+			const signal = signalFromError(cause);
 			if (signal !== undefined) return Effect.succeed({_tag: "signalled", signal});
 			// A spawn that never happened must not read as the child's own verdict. `2` is this
 			// package's reserved "could not resolve an implementation" code, distinct from `1` (a
