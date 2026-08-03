@@ -102,9 +102,11 @@ describe("against the real fabrika command tree", () => {
 		expect(registeredGroups.length).toBeGreaterThan(0);
 	});
 
+	// The token used to be `triage`, which #4822 was reported against; registering that group turned
+	// this fixture green for the wrong reason, so it moved to a name no slice will ever claim.
 	it("refuses an unregistered group", () => {
-		expect(findUnknownSubcommand(fabrikaCommand, ["triage", "--help"])).toEqual({
-			token: "triage",
+		expect(findUnknownSubcommand(fabrikaCommand, ["nosuchgroup", "--help"])).toEqual({
+			token: "nosuchgroup",
 			path: ["fabrika"],
 			known: registeredGroups.map((group) => group.name),
 		});
