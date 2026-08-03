@@ -121,5 +121,5 @@ export const TRIAGE_EXIT_TABLE: ReadonlyArray<ExitCodeRow> = [
 	{code: NEVER_RAN, meaning: "the verb never ran (unresolved binary)"},
 ];
 
-/** The unallocated code, named so the gap is legible rather than looking like an oversight. */
+/** The unallocated code — see the gap note at the top of this file. */
 export const DELIBERATE_GAP = 4;
