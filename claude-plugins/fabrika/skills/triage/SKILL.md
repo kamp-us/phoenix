@@ -70,9 +70,9 @@ units** — only an agent filing may be left as an empty husk and killed, becaus
 
 **Every issue leaves with a home** — an open milestone, or one of the two standing lanes.
 Lane-entering work (an epic, or a parentless feature) additionally carries a `## Pitch` whose `Arc`
-*is* that home, so pick it before you write the body, and **only the founder approves a pitch**. Take
-an existing home: **triage never creates a milestone** (ADR 0072 §3), and `wayfinder:backlog` is
-bounded to genuine fog rather than work you would rather not decide about.
+*is* that home — inside your rewrite for a feature, on stdin for an epic — and **only the founder
+approves a pitch**. Take an existing home: **triage never creates a milestone** (ADR 0072 §3), and
+`wayfinder:backlog` is bounded to genuine fog rather than work you would rather not decide about.
 
 ```bash
 fabrika triage homes
@@ -84,12 +84,12 @@ fabrika triage enrich 4312 <<'EOF'
 EOF
 ```
 
-For an epic, run `fabrika triage enrich 4318 --epic` **bare**: it reads no stdin at all in that mode,
-so a piped rewrite is silently discarded rather than refused — the brief is consumed verbatim
-downstream, and nothing goes above it. The
-rewrite adds real paths and function names over vague framing, and acceptance criteria that make
-"done" legible — not a closed set, a `review-*` gate may append (ADR 0079). **No invention**: enrich
-from what you found, keep the uncertainty the original had, and mark your own reads `Triage note:`.
+For an epic, `fabrika triage enrich 4318 --epic` takes the pitch's five fields on that same stdin —
+Problem / Arc / Appetite / Rabbit-holes / No-gos — and heads them `## Pitch` above the brief, which
+it preserves verbatim for the planner; no *rewrite* goes above an epic's brief. The rewrite adds
+real paths and function names over vague framing, and acceptance criteria that make "done" legible —
+not a closed set, a `review-*` gate may append (ADR 0079). **No invention**: enrich from what you
+found, keep the uncertainty the original had, and mark your own reads `Triage note:`.
 On a **re-type, rewrite the body's criteria to the new type** — stale criteria under a re-scoped
 comment ship a misleading spec (#2165). Done when every claim traces to something you read.
 

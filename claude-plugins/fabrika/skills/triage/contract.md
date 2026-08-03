@@ -28,7 +28,7 @@ implementer guess ([#4734](https://github.com/kamp-us/phoenix/issues/4734)).
 | `triage provenance` | was this issue filed by an agent or hand-typed by a human | a structural marker test over a fetched body — an empty body fails closed to `human`, an unreadable one refuses rather than guessing; what to *do* about a human filing stays in the skill |
 | `triage homes` | the assignable homes — open milestones joined to their ROADMAP rows, plus the standing lanes | the join and the open-milestone filter are mechanical; picking which home fits is judgment |
 | `triage split` | create one split child, once, keyed on the parent back-reference | idempotency keyed on a durable reference is mechanical; deciding a report *is* a bundle is judgment |
-| `triage enrich` | replace the body with your rewrite over a preserved, leak-redacted original | envelope assembly, redaction and read-back are mechanical; what the rewrite says is judgment |
+| `triage enrich` | replace the body with your rewrite — or, for an epic, your pitch — over a preserved, leak-redacted original | envelope assembly, redaction and read-back are mechanical; what the rewrite says is judgment |
 | `triage apply` | apply the whole triaged transition — type, priority, audience, home — and read it back | closed-vocabulary validation and an atomic label envelope are mechanical; the classification is judgment |
 | `triage park` | park a human-filed issue on `status:needs-info` with questions | the label swap and comment are mechanical; the questions are judgment |
 | `triage kill` | close an agent-filed issue not-planned, auditably, preserving a duplicate's content | the three-write envelope, the redacted fold and the human-filed refusal are mechanical; the verdict is judgment |
@@ -58,8 +58,8 @@ exists every fabrika skill's rejections live inline like these.
 - **A `triage pitch-check` verb.** Same shape: `.github/workflows/pitch-guard.yml` fires on
   `issues: [labeled]` filtered to `status:triaged`. Worse, v1's wrapper *reds on its own expected
   case* — an unapproved pitch is the normal state of freshly-triaged work and resolves to
-  `pass: false` → exit 1, so the happy path always looks like a failure. The skill drafts the pitch
-  and lets the seam gate answer.
+  `pass: false` → exit 1, so the happy path always looks like a failure. The skill drafts the pitch —
+  into the body `triage enrich` writes — and lets the seam gate answer.
 - **A `triage classify-cp` verb.** `cp-classify` routes the control-plane question and CODEOWNERS
   enforces it at merge. #4227 is precisely the cost of a triage-side second opinion: a routing note
   asserted the opposite of a settled ruling and a lane was planned around an approval that never
@@ -911,17 +911,18 @@ $ fabrika triage split 4312 --title "Editor loses focus after save" --json < chi
 fabrika triage enrich 4312 [--epic] [--repo <owner/name>] [--json]
 ```
 
-The rewritten body arrives on **stdin only**, for the reason given under `triage split`.
+The rewrite — or, with `--epic`, the pitch — arrives on **stdin only**, for the reason given under
+`triage split`.
 
 **Inputs**
 
 | Flag | Type | Required | Default | Description |
 |---|---|---|---|---|
 | *(positional)* | integer | yes | — | the issue to enrich |
-| `--epic` | boolean | no | `false` | wrap the original in place under a one-line header instead of writing a rewrite above it; stdin is not read at all in this mode |
+| `--epic` | boolean | no | `false` | wrap the original in place under a fixed header and head the pitch above it, instead of writing a rewrite over it; stdin carries the pitch, not a rewrite |
 | `--repo` | string | no | resolved | the repository |
 | `--json` | boolean | no | `false` | emit the result object |
-| stdin | markdown | yes in default mode, **never read** with `--epic` | — | the rewritten body that goes above the preserved original |
+| stdin | markdown | yes | — | the rewritten body that goes above the preserved original — with `--epic`, the pitch's five field lines instead: `**Problem:**`, `**Arc:**`, `**Appetite:** <N> cycles`, `**Rabbit-holes:**`, `**No-gos:**`, one per line |
 
 **Output** — machine channel. One tab-separated line: `enriched`, `<number>`, `<redactions>`, where
 `<redactions>` is the count of machine-local paths masked in the preserved original. With `--json`,
@@ -945,10 +946,17 @@ original:
 </details>
 ```
 
-`--epic` mode takes **no stdin at all** and emits a fixed header instead of a rewrite:
+`--epic` mode emits the **pitch** instead of a rewrite, above a fixed header and the wrapped
+original, where `<PITCH>` is stdin verbatim:
 
 ```
-**Epic — awaiting plan.** `plan-epic` appends its plan and dependency topology below.
+## Pitch
+
+<PITCH>
+
+## Epic — awaiting plan
+
+`plan-epic` appends its plan and dependency topology below.
 
 <details>
 <summary>Original brief (verbatim)</summary>
@@ -958,19 +966,66 @@ original:
 </details>
 ```
 
-An epic's original is consumed verbatim by the downstream planning step, so a rewrite above it would
-fork the brief.
+An epic's original is consumed verbatim by the downstream planning step, so a **rewrite** above it
+would fork the brief — which is why this mode never takes one. **A pitch is not a rewrite**: it is
+the five-field bet `pitch-guard` requires in the body of every `status:triaged` `type:epic`
+(`packages/pipeline-cli/src/tools/pitch-guard/pitch-guard.ts:219-223` — an epic is lane-entering
+unconditionally, with no parent test — and `:244-246`, where an absent `## Pitch` section is the
+red), and this is the only verb in the group that writes a body. An earlier revision read no stdin
+here at all, which left an epic **structurally unable to carry the section a CI guard fires on** at
+the very label `triage apply` writes.
 
-**With `--epic` the stdin descriptor is never opened, and a caller who redirects into it gets nothing
-written and nothing said.** That is stated rather than refused because it cannot be refused: whether
-a caller wrote `< rewrite.md` is invisible to a process that does not read the descriptor, so there
-is no byte to detect and no error to raise. The rule is therefore an interface fact — **do not pipe a
-rewrite with `--epic`; it is not merged, ignored, or rejected, it is simply never read.** An earlier
-draft required a body it then discarded, which is worse: it made the caller author one.
+**Nothing this mode adds can reach the brief.** `plan-epic` splices around it: `epic-splice` anchors
+on the exact headings `## Dependencies` and `## Plan (plan-epic)` and preserves every other byte
+verbatim (`packages/pipeline-cli/src/tools/epic-splice/epic-splice.ts:48-51`), so neither heading
+above is an anchor it can cut on, and the wrapped original is untouched bytes either way. The
+`<details>` block also stays the **last** block in the body, which is what keeps the re-enrich
+detector below strict: a re-enrich replaces the pitch and the header from fresh stdin and preserves
+the wrap unchanged, exactly as the default mode replaces a rewrite.
 
-**Three codes are consequently unreachable with `--epic`**, all for the same reason — there is no
-authored text: `3` (nothing to be empty), `5` and `6` (nothing to carry a path or be a bare
-reference). The preserved original is still redacted, so `<redactions>` is still meaningful.
+**Stdin carries the five field lines, not the section heading.** The verb writes `## Pitch` itself,
+so the heading always matches the guard's anchor rather than a caller's typing; a caller who sends
+the heading too gets two of them, and the guard reads the empty section between them as a pitch
+missing all five fields — loud at the seam, never a silent pass. The five lines, stated here rather
+than deferred to another skill's prose:
+
+```
+**Problem:** <who has it, and what breaks or stalls for them today>
+**Arc:** <the home just assigned — the milestone title, or the standing lane>
+**Appetite:** <N> cycles
+**Rabbit-holes:** <the named traps — the specific ways this overspends if left unbounded>
+**No-gos:** <what this deliberately does not do>
+```
+
+**The label opens the line.** The guard reads a field as `<optional emphasis><name><optional
+emphasis>:` anchored at line start over optional spaces and tabs, tolerating case and `Rabbit holes`
+for `Rabbit-holes` (`pitch-guard.ts:89-93`) — so a bulleted `- Problem: …` does **not** read as a
+field. Field order is not load-bearing; `Appetite` must parse as a whole positive number of cycles
+(`:104-109`).
+
+**`## Epic — awaiting plan` is a heading, and that is load-bearing rather than cosmetic.** The guard
+reads the pitch section from `## Pitch` to *the next heading of any level, or end of body*
+(`pitch-guard.ts:73-80`), so a plain bold line there would run the section on **into the wrapped
+original** — and a field the draft omitted could then be satisfied by any `**Problem:**`-shaped line
+the reporter happened to type. Section scoping is the guard's own defence against exactly that read
+(its comment: *"Scoping field extraction to this section is what keeps a plan-epic body's
+`### Problem & who has it` from reading as a pitch field"*), and this heading is what keeps that
+defence true here.
+
+**That is measured, not reasoned.** `readPitch` was run on 2026-08-03 over both envelopes, with a
+draft deliberately missing `Problem` and a brief containing a `**Problem:**` line. With this
+heading: `malformed ["Problem"]` — caught. With a bold line in its place: `present`, appetite 2 — a
+pitch the drafter never wrote, passing on the reporter's prose. A caller who sends the `## Pitch`
+heading too reads `malformed` on all five, and the canonical envelope reads `present` and resolves
+`pitched` against a `pitch-approved: appetite 2 cycles` comment. **Do not demote this heading back
+to bold text.**
+
+**The pitch is drafted here and judged nowhere here.** Well-formedness and founder approval are
+`pitch-guard`'s, at the `status:triaged` seam `triage apply` trips; this spec computes no second
+verdict on a gated question, which is the same reason a `triage pitch-check` verb is not derived.
+This verb refuses only what it can refuse about text the caller just wrote — empty (`3`), a
+machine-local path (`5`), a bare `@` reference (`6`) — and **adds no exit code**: `--epic` reaching
+those three is the removal of a restriction, not a new outcome.
 
 **The re-enrich detector matches the envelope's shape, not the summary line alone.** A body counts as
 already-enriched only when the `<details>` block is the **last** block in the body and closes at
@@ -1002,9 +1057,9 @@ else's leak, and preserving it unredacted re-commits that leak into a public iss
 
 | Code | Trigger |
 |---|---|
-| `3` | stdin was read and held nothing — **default mode only; unreachable with `--epic`** |
-| `5` | the **rewrite** carries a machine-local path — **unreachable with `--epic`** |
-| `6` | the **rewrite** is a bare `@` path reference — **unreachable with `--epic`** |
+| `3` | stdin was read and held nothing — the rewrite, or the pitch with `--epic` |
+| `5` | the **authored** text carries a machine-local path — the rewrite, or the pitch with `--epic` |
+| `6` | the **authored** text is a bare `@` path reference — the rewrite, or the pitch with `--epic` |
 | `7` | the issue is proven absent (404) |
 | `8` | the `PATCH` failed — UNKNOWN whether the body changed |
 | `9` | the body was written but the read-back does not match |
@@ -1014,19 +1069,19 @@ else's leak, and preserving it unredacted re-commits that leak into a public iss
 
 | Message (stderr) | Code | Kind |
 |---|---|---|
-| `triage enrich: no body on stdin — pipe the rewritten body in.` | 3 | refusal |
+| `triage enrich: no body on stdin — pipe the rewritten body in (with --epic, the pitch's five fields).` | 3 | refusal |
 | `triage enrich: issue #<n> not found in <repo>.` | 7 | refusal |
 | `triage enrich: cannot read #<n> in <repo>: <reason> — refusing to write an envelope over an original that was never read.` | 11 | refusal |
-| `triage enrich: your rewrite carries a machine-local path at line <k> (<class>) — rewrite it repo-relative. The preserved original is redacted automatically; this refusal is about the text you wrote.` | 5 | refusal |
-| `triage enrich: your rewrite is a bare "@" path reference — it never arrived. Send it on stdin.` | 6 | refusal |
+| `triage enrich: the text you sent on stdin carries a machine-local path at line <k> (<class>) — rewrite it repo-relative. The preserved original is redacted automatically; this refusal is about the text you wrote.` | 5 | refusal |
+| `triage enrich: stdin is a bare "@" path reference — the text never arrived. Send its bytes, not its path.` | 6 | refusal |
 | `triage enrich: redacted <k> machine-local path(s) from the preserved original (lines <l1>, <l2>).` | 0 | notice |
 | `triage enrich: PATCH failed: <reason> — UNKNOWN whether the body changed; re-read #<n> before retrying.` | 8 | refusal |
 | `triage enrich: body written but the read-back does not match — inspect #<n> before continuing.` | 9 | refusal |
 
-**Scope** — one issue body, plus the caller's rewrite in default mode. An issue proven absent is `7`;
-a body that could not be read is `11`. Neither ever degrades to an empty original preserved as though
-it were the record — which is the failure that would quietly delete a report while printing
-`enriched`. Re-enrichment is covered above, under the detector.
+**Scope** — one issue body, plus the caller's stdin: the rewrite, or the pitch with `--epic`. An
+issue proven absent is `7`; a body that could not be read is `11`. Neither ever degrades to an empty
+original preserved as though it were the record — which is the failure that would quietly delete a
+report while printing `enriched`. Re-enrichment is covered above, under the detector.
 
 **Examples**
 
@@ -1042,7 +1097,7 @@ enriched	4290	1
 ```
 
 ```
-$ fabrika triage enrich 4318 --epic
+$ fabrika triage enrich 4318 --epic < pitch.md
 enriched	4318	0
 ```
 
@@ -1064,6 +1119,10 @@ $ fabrika triage enrich 4312 --json < enriched.md
   hit `ARG_MAX` on a large enrichment. Stdin and an in-process envelope remove both.
 - v1's `PATCH` had no read-back, while the skill's own Step 0 names last-write-wins body clobbering
   as the reason its claim exists.
+- Founder ruling #3909 / §PITCH — lane-entering work becomes pickable only carrying a pitch, and
+  `pitch-guard` scopes **every** triaged `type:epic`. This verb is the group's only body-writing
+  verb, so `--epic` reading the pitch on stdin is the epic's one path to that section; an earlier
+  revision read no stdin here, which required a section it left no way to write.
 
 ---
 
