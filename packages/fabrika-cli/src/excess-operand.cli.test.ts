@@ -4,16 +4,28 @@
  * The defect this covers produced a successful-looking result — exit 0 with the id `adr next` would
  * have printed anyway (#4828) — so a test asserting on stdout *content* is exactly the test that
  * passes against the bug. Every case below asserts the exit code and stderr instead.
+ *
+ * **Five spawns, and none of them touch the network (#4847).** Each `it` costs one cold node+TS load
+ * of `bin.ts` — about 2.3s on a CI runner — so spawn count *is* this file's cost, and the matrix it
+ * used to walk twelve times is covered in 19ms by `excess-operand.unit.test.ts`. What only a
+ * subprocess can prove is the exit status, which needs a handful of representative invocations, not
+ * one per phrasing. Twelve spawns plus one that fetched `origin/main` for real is what timed out and
+ * ejected PR #4835 from the merge queue; the cwd that removes that fetch is explained at its case.
  */
 import {execFileSync} from "node:child_process";
-import {mkdtempSync} from "node:fs";
+import {mkdtempSync, readdirSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {describe, expect, it} from "vitest";
+import {BASE_UNFETCHABLE} from "./adr/resolve-verb.ts";
 
-/** Spawning under a loaded machine outruns vitest's 5s default (the #4014 false red). */
-const SUBPROCESS_TEST_TIMEOUT_MS = 30_000;
+/**
+ * One spawn costs ~2.3s on a CI runner. The contention factor measured between two runs of this file
+ * 24 minutes apart was **2.69×** (#4847), so a ceiling is only a margin if it clears that band: 20s
+ * is ~8× the per-spawn baseline, while still failing a genuinely wedged spawn well inside the job.
+ */
+const SUBPROCESS_TEST_TIMEOUT_MS = 20_000;
 
 const BIN = fileURLToPath(new URL("./bin.ts", import.meta.url));
 
@@ -27,9 +39,10 @@ interface Run {
  * `FABRIKA_SKIP_INFER` pins the invocation to *this* copy: the delegation would otherwise resolve
  * whichever install the enclosing repo root pins, which is not the tree under test.
  */
-const fabrika = (...args: ReadonlyArray<string>): Run => {
+const fabrika = (args: ReadonlyArray<string>, cwd: string = process.cwd()): Run => {
 	try {
 		const stdout = execFileSync(process.execPath, [BIN, ...args], {
+			cwd,
 			encoding: "utf8",
 			env: {...process.env, FABRIKA_SKIP_INFER: "1"},
 			stdio: ["ignore", "pipe", "pipe"],
@@ -53,70 +66,57 @@ const USAGE_ERROR = 1;
 describe("an operand no leaf verb declares is refused", {
 	timeout: SUBPROCESS_TEST_TIMEOUT_MS,
 }, () => {
-	it("refuses one excess operand on a verb that declares none", () => {
-		const run = fabrika("adr", "next", "extratoken");
+	it("refuses an excess operand, naming both the token and the verb path", () => {
+		const run = fabrika(["adr", "next", "extratoken"]);
 		expect(run.code).toBe(USAGE_ERROR);
 		expect(run.stderr).toContain('unexpected operand "extratoken"');
+		expect(run.stderr).toContain('for "fabrika adr next"');
 		expect(run.stdout).toBe("");
 	});
 
-	it("refuses more than one excess operand, naming each", () => {
-		const run = fabrika("adr", "next", "a", "b");
-		expect(run.code).toBe(USAGE_ERROR);
-		expect(run.stderr).toContain('unexpected operands "a", "b"');
-		expect(run.stdout).toBe("");
-	});
-
-	it("refuses an excess operand that follows a flag", () => {
-		const run = fabrika("adr", "next", "--json", "extratoken");
-		expect(run.code).toBe(USAGE_ERROR);
-		expect(run.stderr).toContain('unexpected operand "extratoken"');
-		expect(run.stdout).toBe("");
-	});
-
-	it("refuses an operand beyond a fixed arity, and writes nothing", () => {
+	// The operand trails a flag *and* a satisfied arity, which is the shape a pre-runner argv walk
+	// gets wrong: only the parser knows `extra` is a positional rather than another `--dir` value.
+	it("refuses an operand past a fixed arity that follows a flag, and writes nothing", () => {
 		const dir = scratchDir();
-		const run = fabrika("adr", "new", "0240", "some-slug", "extra", "--dir", dir);
+		const run = fabrika(["adr", "new", "0240", "some-slug", "--dir", dir, "extra"]);
 		expect(run.code).toBe(USAGE_ERROR);
 		expect(run.stderr).toContain('unexpected operand "extra"');
 		expect(run.stdout).toBe("");
-	});
-
-	it("refuses in a group other than adr, so the guard is not one verb's", () => {
-		const run = fabrika("eval", "check", "some-manifest.json", "extra");
-		expect(run.code).toBe(USAGE_ERROR);
-		expect(run.stderr).toContain('unexpected operand "extra"');
-	});
-
-	it("names the full verb path, not just the token", () => {
-		expect(fabrika("adr", "next", "extratoken").stderr).toContain('for "fabrika adr next"');
+		expect(readdirSync(dir)).toEqual([]);
 	});
 });
 
 describe("what already worked still works", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}, () => {
+	/**
+	 * `adr resolve` is the one variadic leaf, so it is the one verb whose own arguments must swallow
+	 * the operands before the catch-all sees them. It is also the one verb here that does real work:
+	 * inside this repo it fetches `origin/main` before reading it, which cost 15.4s green and 41.3s
+	 * under merge-queue contention. From a cwd that is not a git repository it refuses at that first
+	 * git read instead, and the assertion is unweakened — the excess-operand check runs at parse
+	 * time, before the verb reaches git, so a regressed catch-all still seats `USAGE_ERROR` here.
+	 * `--repo` is what keeps the refusal on `BASE_UNFETCHABLE` rather than the ambiguous `1` the
+	 * origin-remote lookup would return, so the code alone separates "ran" from "refused".
+	 */
 	it("a variadic verb absorbs its operands rather than refusing them", () => {
-		const run = fabrika("adr", "resolve", "0164", "0023", "--dir", scratchDir());
+		const run = fabrika(["adr", "resolve", "0164", "0023", "--repo", "owner/name"], scratchDir());
 		expect(run.stderr).not.toContain("unexpected operand");
+		expect(run.code).toBe(BASE_UNFETCHABLE);
 	});
 
 	it("a fixed-arity verb at its declared arity still succeeds", () => {
-		const run = fabrika("adr", "new", "0240", "some-slug", "--dir", scratchDir());
+		const run = fabrika(["adr", "new", "0240", "some-slug", "--dir", scratchDir()]);
 		expect(run.code).toBe(0);
 		expect(run.stdout).not.toBe("");
 	});
 
-	it.each([
-		["the root index", ["--help"]],
-		["a group's verbs", ["adr", "--help"]],
-		["a verb's flags", ["adr", "next", "--help"]],
-	])("%s still exits 0 with help on stdout and an empty stderr", (_label, args) => {
-		const run = fabrika(...args);
+	// That help at every depth still exits 0 with USAGE is asserted four ways in
+	// `unknown-subcommand.cli.test.ts`; the half only this file owns is that the hidden catch-all
+	// stays out of it — help is the interface, and it must not offer an argument that does not exist.
+	it("a verb's help exits 0 and never advertises the catch-all", () => {
+		const run = fabrika(["adr", "next", "--help"]);
 		expect(run.code).toBe(0);
 		expect(run.stdout).toContain("USAGE");
 		expect(run.stderr).toBe("");
-	});
-
-	it("the catch-all stays out of the help a caller reads — help is the interface", () => {
-		expect(fabrika("adr", "next", "--help").stdout).not.toContain("excess");
+		expect(run.stdout).not.toContain("excess");
 	});
 });
