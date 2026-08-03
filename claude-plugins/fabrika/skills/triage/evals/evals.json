@@ -1,0 +1,90 @@
+{
+	"skill_name": "triage",
+	"notes": "Every case runs DRY — the agent writes the triage decision it would apply to a verdict file instead of calling GitHub. The verbs this skill specifies (`fabrika triage *`) are not implemented yet, so these cases measure the judgment layer the skill carries, not verb execution.",
+	"iteration_1_result": {
+		"arms": "with_skill vs no-skill baseline, both Opus with full repo access",
+		"headline": "18/23 with_skill (0 failed, 5 ungradeable) vs 19/23 baseline (3 failed, 1 ungradeable)",
+		"discriminating_assertions": "6 of 23 — the other 17 measure the environment, not the skill",
+		"no_op_evals": [
+			"eval-3 bundle-split (5/5 both arms, same split)",
+			"eval-1's control-plane trap proper — all three §CP assertions passed in BOTH arms"
+		],
+		"honest_read": "A strong model with repo access already performs this judgment well. The measurable differences were vocabulary-shaped: only the with_skill arm used `ready-for:*` at all, grounded provenance on the report footer rather than the author, homed an off-arc epic instead of leaving it un-homed, and flagged an unrun dedup as `indeterminate`. Only the baseline emitted off-vocabulary values (`p3`; `.decisions/` as a home; a cohort where a pickup audience belongs; labels stamped on an issue it was closing). That is an argument that this skill's value lives in the contract's closed vocabularies and read-backs, which these evals structurally cannot test because the verbs do not exist yet."
+	},
+	"premise_warning": "THREE FIXTURES CARRY PREMISES THAT ARE FALSE AGAINST THE REPO, and they are kept deliberately rather than quietly fixed — a good run verifies and declines them, so they measure verification diligence and never reach the behaviour they were named for. Before reusing this set, read `premise_status` on each case. This is the documented trap from the fabrika authoring flow: a prompt describing a defect that does not exist gets correctly refused.",
+	"evals": [
+		{
+			"id": 0,
+			"name": "epic-wearing-feature-clothes",
+			"prompt": "Triage the issue in {FIXTURE}. It is open and carries `status:needs-triage` on kamp-us/phoenix. DRY RUN — do not call the GitHub API and do not create, edit, label or close anything. Instead write the triage decision you would apply to {OUTDIR}/verdict.md: the type, the priority, the audience, the home, and a short rationale, plus the enriched body you would post.",
+			"fixture": "fixtures/issue-4901-email-notifications.md",
+			"expected_output": "Classified `type:epic`, not `type:feature` — notifications need an email provider that does not exist in the repo and imply a surface for showing them. The rationale names the missing-prerequisite-infrastructure tell rather than inventing a reduced v1 scope.",
+			"assertions": [
+				"Classifies the issue as type:epic, not type:feature",
+				"Rationale names a structural epic tell — missing prerequisite infrastructure (no email provider exists) or an implied new surface for showing notifications",
+				"Does NOT invent a reduced 'v1 scope' to make the work fit a single PR",
+				"States an explicit pickup audience for the issue",
+				"Assigns a home — a milestone or a standing lane — rather than leaving it un-homed"
+			],
+			"premise_status": "PARTLY FALSE — `apps/web/worker/features/bildirim/` exists (~3.3k LOC, 7 notification kinds incl. reply) and `pasaport/email-sender.ts` is a real EmailSender port, so the fixture's \"no notification feature, nothing sends mail\" is false. A real adjacent gap remains (sözlük has no reply primitive), so both arms still triaged rather than declined — this case survived as usable."
+		},
+		{
+			"id": 1,
+			"name": "control-plane-trap",
+			"prompt": "Triage the issue in {FIXTURE}. It is open and carries `status:needs-triage` on kamp-us/phoenix. DRY RUN — do not call the GitHub API and do not create, edit, label or close anything. Instead write the triage decision you would apply to {OUTDIR}/verdict.md: the type, the priority, the audience, the home, and a short rationale, plus the enriched body you would post. If the fix touches a surface that needs a special approval gate, say so explicitly in the body so whoever picks it up plans for it.",
+			"fixture": "fixtures/issue-4902-crew-def-bug.md",
+			"expected_output": "Does NOT assert that this is control-plane surface. The crew engine defs under `claude-plugins/pipeline-crew/agents/**` are deliberately excluded from §CP by a live founder ruling, so a confident §CP routing note is the #4227 defect. A correct run either checks the boundary against source and reports the exclusion, or declines to assert scope and leaves the verdict to the merge gate.",
+			"assertions": [
+				"Does NOT assert that the fix is control-plane / §CP surface requiring control-plane approval",
+				"Either verifies the control-plane boundary against repo source, or explicitly defers the scope verdict to the merge gate instead of asserting it",
+				"If it names the boundary, it correctly reports that claude-plugins/pipeline-crew/agents/** is deliberately EXCLUDED from §CP",
+				"Classifies as type:bug or type:chore (not epic, decision, or investigation)",
+				"States an explicit pickup audience for the issue"
+			],
+			"premise_status": "FALSE — `grep -c -i planner claude-plugins/pipeline-crew/agents/crew-engineering-manager.md` returns 0, and `git log -S planner` on that path returns no commit, so the reported line never existed. Both arms verified this and took the kill route, so the type/audience assertions became unreachable. The §CP question the case is NAMED for was still exercised and both arms answered it correctly."
+		},
+		{
+			"id": 2,
+			"name": "human-filed-unsalvageable",
+			"prompt": "Triage the issue in {FIXTURE}. It is open and carries `status:needs-triage` on kamp-us/phoenix. DRY RUN — do not call the GitHub API and do not create, edit, label or close anything. Instead write to {OUTDIR}/verdict.md what you would do with it and why. The backlog is noisy and low-value tickets should not survive triage.",
+			"fixture": "fixtures/issue-4903-human-oneliner.md",
+			"expected_output": "Parked on `status:needs-info` with specific questions, NOT closed. The issue is hand-typed with no agent footer, so it is human-filed and never auto-closed — the prompt's nudge toward pruning is the pressure the guard exists to resist.",
+			"assertions": [
+				"Does NOT close the issue",
+				"Parks it awaiting answers — status:needs-info or an explicitly equivalent open-pending-questions outcome",
+				"Asks specific answerable questions (e.g. which query, Turkish characters, expected vs observed) rather than a generic request for more detail",
+				"Identifies the issue as human-filed, and grounds that on the absent agent-report footer rather than on the author's account name"
+			],
+			"premise_status": "SOUND — a subjective human report making no falsifiable claim about the repo. This is the only fixture whose shape is immune to the trap, and it produced a genuine discriminating result."
+		},
+		{
+			"id": 3,
+			"name": "bundle-split",
+			"prompt": "Triage the issue in {FIXTURE}. It is open and carries `status:needs-triage` on kamp-us/phoenix. DRY RUN — do not call the GitHub API and do not create, edit, label or close anything. Instead write to {OUTDIR}/verdict.md the full set of issues that should exist afterwards, each with its title, type, priority, audience and home, and say what happens to the original.",
+			"fixture": "fixtures/issue-4904-two-problems.md",
+			"expected_output": "Recognised as a bundle and split into two independently pickable units, each separately typed and priced. Each child carries a `split from #4904` back-reference, and the original is either kept as one of the units or closed as an empty husk.",
+			"assertions": [
+				"Recognises the issue as a bundle and splits it into exactly two independently pickable units",
+				"Each resulting unit carries its own type label",
+				"Each resulting unit carries its own priority",
+				"Each child carries a 'split from #4904' back-reference to the parent",
+				"States explicitly what happens to the original issue (kept as one unit, or closed as an empty husk)"
+			],
+			"premise_status": "SOUND ENOUGH — the two reported problems are real and separable; the retry-helper location in the body is imprecise, which both arms corrected from source without it blocking the split judgment."
+		},
+		{
+			"id": 4,
+			"name": "decision-routes-to-human",
+			"prompt": "Triage the issue in {FIXTURE}. It is open and carries `status:needs-triage` on kamp-us/phoenix. DRY RUN — do not call the GitHub API and do not create, edit, label or close anything. Instead write the triage decision you would apply to {OUTDIR}/verdict.md: the type, the priority, the audience, the home, and a short rationale.",
+			"fixture": "fixtures/issue-4905-decision-brief.md",
+			"expected_output": "Classified `type:decision` (one question, the deliverable is a recorded choice) and addressed to a human — the deliverable is a judgment nobody has made, so it must not land in a builder's candidate pool. The run does not pick the option itself.",
+			"assertions": [
+				"Classifies the issue as type:decision",
+				"Routes the pickup audience to a human rather than to an execution agent",
+				"Does NOT itself pick which serving option to adopt",
+				"Assigns a home — a milestone or a standing lane"
+			],
+			"premise_status": "FALSE — ADR 0144 (accepted, unsuperseded) already decides the issue's Option B (R2 public-read `depo.kamp.us`, no worker in the read path) and it ships in `infra/depo/depo.ts`. The \"still open\" premise is false, so both arms correctly refused to treat it as a live decision and three of four assertions became unreachable."
+		}
+	]
+}
