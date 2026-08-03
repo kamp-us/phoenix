@@ -171,6 +171,102 @@ The skills that have landed live in [`claude-plugins/fabrika/skills/`](./claude-
 
 Two things before you map a fabrika skill onto the v1 table above: the nouns moved — `build` is the text-construction skill and `review` is a single skill, not v1's `review-*` family (ADR [0242](./.decisions/0242-fabrika-skill-nouns-redefine-build-and-review.md)) — and the conventions every fabrika skill is held to live in [`claude-plugins/fabrika/docs/`](./claude-plugins/fabrika/docs/README.md).
 
+## Releasing
+
+The pipeline above lands PRs on `main`. This section is what takes `main` to npm. Two
+`@kampus/*` packages publish today — [`pipeline-cli`](./packages/pipeline-cli) and
+[`fabrika-cli`](./packages/fabrika-cli) — and the authoritative list is the tag-match arms in
+[`.github/workflows/publish.yml`](./.github/workflows/publish.yml), not this paragraph.
+
+The *why* is ADR [0239](./.decisions/0239-release-please-manifest-mode-version-derivation.md);
+the shape of the path and the constraints a change to it must not break are
+[.patterns/release-path.md](./.patterns/release-path.md).
+
+### How a version gets derived
+
+Nobody types a version number. Every push to `main` runs
+[`release-please.yml`](./.github/workflows/release-please.yml), which reads the conventional
+commits since the last release and works out each package's next version.
+
+**Routing is by changed file path, not by commit scope.** A commit is assigned to a package by
+the files it touched, so a commit written `fix(pipeline-cli): …` whose diff only touches
+`packages/fabrika-cli/` bumps **fabrika-cli**. Your scope string is changelog prose; your diff
+is what decides. A commit touching no package root bumps nothing.
+
+### The standing Release PR
+
+The answer is parked in one long-lived pull request — titled `chore: release main`, on the
+branch `release-please--branches--main`, opened by `github-actions[bot]` — that is re-groomed
+on every push to `main` and sits there until a human merges it. Merging it *is* the release
+act; ADR [0083](./.decisions/0083-agents-deploy-humans-release.md) survives by construction,
+since only the number is automated.
+
+It covers **all** packages at once (`separate-pull-requests: false`), so one merge can cut
+several releases. [PR #4833](https://github.com/kamp-us/phoenix/pull/4833), the first real one,
+proposes `pipeline-cli 0.3.0` and `fabrika-cli 0.1.1` together.
+
+**Before you merge one, check:**
+
+- **The commit range is what you expect.** Skim the PR's per-package changelog sections. An
+  unexpectedly long list means the history boundary (`last-release-sha` /`bootstrap-sha` in
+  [`release-please-config.json`](./release-please-config.json)) is wrong, and merging folds the
+  whole backlog into one version.
+- **Each derived version is the one you want.** npm versions are **immutable**: a wrong number,
+  or a release that fires before a rename or manifest fix has landed on `main`, is baked into
+  the registry permanently and can only be superseded by a higher version. This is the one
+  check with no undo.
+- **Everything the release depends on is already on `main`.** The publish job builds from the
+  *tagged* tree, so anything merged after the tag is not in the tarball.
+
+### What merging it does
+
+1. Version bumps and per-package `CHANGELOG.md` updates land on `main`.
+2. A tag `<unscoped-name>-v<version>` (e.g. `pipeline-cli-v0.3.0`) is created **per released
+   package**, each with a GitHub Release.
+3. Each `release: published` event fires [`publish.yml`](./.github/workflows/publish.yml) —
+   once per tag, resolving that tag's prefix to one workspace member. It checks out the tagged
+   tree, installs, typechecks, builds `src/` → `dist/` (the tarball ships compiled JS, never raw
+   `.ts`), then `pnpm publish`es under a short-lived OIDC credential. It is `pnpm publish`, not
+   `npm publish`, because npm cannot resolve this repo's `catalog:` specifiers.
+4. The same tag also fires [`changelog.yml`](./.github/workflows/changelog.yml), which
+   regenerates the **root** `CHANGELOG.md` from pipeline metadata (ADR
+   [0069](./.decisions/0069-derived-changelog-from-shipped-work.md)). That is a separate file
+   from the per-package changelogs release-please writes.
+
+Nothing in step 1–2 publishes: `release-please.yml` holds no registry credential.
+
+### Reading a red publish run
+
+Where the run dies tells you what broke:
+
+| Fails at | Meaning |
+|---|---|
+| **Resolve the release tag** (before install) | The tag prefix matches no published package, or the tag version disagrees with that package's `package.json`. A real defect — nothing published. |
+| **Typecheck / build** | A genuine break in the tagged tree. Nothing published. |
+| **Publish, with a 403** | Almost always the missing Trusted Publisher registration — see below. |
+
+**The expected 403.** Auth is OIDC Trusted Publishing with **no `NPM_TOKEN` fallback**, and
+each package's registration is a one-time human step on npmjs.com. `fabrika-cli` has **no
+registration yet**, so any `fabrika-cli-v*` release 403s at the publish step — *after* install,
+typecheck and build have all gone green. That lateness makes it read like a broken build; it is
+not. It is the path failing closed on missing authorization, and nothing is corrupted by it
+(no version is consumed, because nothing was published). Because one Release PR can carry both
+packages, the first merge including fabrika changes yields **one green publish run and one red
+one** until that registration exists.
+
+`pipeline-cli`'s registration is bound to `publish.yml`'s **exact filename** — renaming that
+file, or adding a second publish workflow, silently invalidates it and turns every publish into
+this same 403.
+
+### Adding a third published package
+
+It is not a code-only change: a package that does not exist on the registry cannot have a
+Trusted Publisher registered, so its **first** publish is a human `pnpm publish` and CI can only
+take over afterwards. The full ordered procedure — including the resolve arm, the
+release-please config and manifest entries, the per-path gate, the bootstrap publish and the
+registration — is in
+[.patterns/release-path.md → Adding a third published package](./.patterns/release-path.md#adding-a-third-published-package).
+
 ## Ops runbooks
 
 When the running system breaks, the procedures live in **[ops/](./ops/README.md)** — a peer
