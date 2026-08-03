@@ -547,6 +547,51 @@ export const closeNotPlanned = (repo: string, issue: number): Shell<Attempt<void
 		return r.ok ? ok(undefined) : fail(r.reason);
 	});
 
+/** One intake-queue row. `IssueRow` omits `created_at`, and the age is half of what a queue prints. */
+export interface QueueIssue {
+	readonly number: number;
+	readonly createdAt: string;
+	readonly title: string;
+}
+
+/**
+ * Open issues carrying `label` with their filing time, paged, pull requests filtered out.
+ *
+ * The rows are cut at the **first two** tabs rather than through {@link parseTabRows}, because a
+ * title may itself contain a tab: a strict three-field split would turn one odd title into a failed
+ * read of the whole queue, and a queue that cannot be read is a sweep that cannot terminate.
+ */
+export const openQueueIssues = (
+	repo: string,
+	label: string,
+): Shell<Attempt<ReadonlyArray<QueueIssue>>> =>
+	Effect.gen(function* () {
+		const r = yield* execCapture("gh", [
+			"api",
+			"--paginate",
+			`repos/${repo}/issues?state=open&labels=${encodeURIComponent(label)}&per_page=100`,
+			"--jq",
+			'.[] | select(.pull_request | not) | "\\(.number)\t\\(.created_at)\t\\(.title)"',
+		]);
+		if (!r.ok) return fail(r.reason);
+		const rows: QueueIssue[] = [];
+		for (const line of r.stdout.split("\n")) {
+			if (line === "") continue;
+			const first = line.indexOf("\t");
+			const second = line.indexOf("\t", first + 1);
+			if (first <= 0 || second <= first) {
+				return fail("`gh api` exited 0 but its output is not a list of queue rows");
+			}
+			const number = line.slice(0, first);
+			const createdAt = line.slice(first + 1, second);
+			if (!/^\d+$/.test(number) || Number.isNaN(Date.parse(createdAt))) {
+				return fail("`gh api` exited 0 but a queue row carries no issue number and filing time");
+			}
+			rows.push({number: Number.parseInt(number, 10), createdAt, title: line.slice(second + 1)});
+		}
+		return ok(rows);
+	});
+
 /** An issue or pull request that references this one, from the timeline. */
 export interface CrossReference {
 	readonly number: number;
