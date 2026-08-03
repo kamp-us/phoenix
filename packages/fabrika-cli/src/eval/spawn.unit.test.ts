@@ -12,7 +12,7 @@ import {readdirSync, readFileSync} from "node:fs";
 import {join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {assert, describe, it} from "@effect/vitest";
-import {Result} from "effect";
+import {Effect, Result} from "effect";
 import type {CorpusManifest} from "./corpus.ts";
 import {classifyRunSpend, collectFromCapture, decodeCaptureManifest} from "./runner.ts";
 import {
@@ -120,14 +120,16 @@ const completedRun = (over: Partial<Parameters<typeof classifyRun>[0]> = {}): Ru
 
 describe("planEvalRuns — one invocation per (case × arm)", () => {
 	it("plans every case on every requested arm", () => {
-		const plans = planEvalRuns({
-			cases: CASES,
-			arms: BOTH_ARMS,
-			model: "sonnet",
-			pluginDir: "/candidate",
-			jsonSchema: null,
-			sessionId: (id, arm) => `${id}-${arm}`,
-		});
+		const plans = Effect.runSync(
+			planEvalRuns({
+				cases: CASES,
+				arms: BOTH_ARMS,
+				model: "sonnet",
+				pluginDir: "/candidate",
+				jsonSchema: null,
+				sessionId: (id, arm) => Effect.succeed(`${id}-${arm}`),
+			}),
+		);
 		assert.strictEqual(plans.length, 4);
 		assert.deepStrictEqual(
 			plans.map((p) => `${p.caseId}:${p.arm}`),
@@ -136,27 +138,31 @@ describe("planEvalRuns — one invocation per (case × arm)", () => {
 	});
 
 	it("the arm variable is skill availability: with-skill carries the plugin dir, without-skill carries none", () => {
-		const plans = planEvalRuns({
-			cases: [CASES[0] as RunnableCase],
-			arms: BOTH_ARMS,
-			model: "sonnet",
-			pluginDir: "/candidate",
-			jsonSchema: null,
-			sessionId: (id, arm) => `${id}-${arm}`,
-		});
+		const plans = Effect.runSync(
+			planEvalRuns({
+				cases: [CASES[0] as RunnableCase],
+				arms: BOTH_ARMS,
+				model: "sonnet",
+				pluginDir: "/candidate",
+				jsonSchema: null,
+				sessionId: (id, arm) => Effect.succeed(`${id}-${arm}`),
+			}),
+		);
 		assert.strictEqual(plans[0]?.pluginDir, "/candidate");
 		assert.strictEqual(plans[1]?.pluginDir, null);
 	});
 
 	it("carries each case's derived tier through, so a downstream tier verb needn't re-read the set", () => {
-		const plans = planEvalRuns({
-			cases: CASES,
-			arms: ["with-skill"],
-			model: "sonnet",
-			pluginDir: "/candidate",
-			jsonSchema: null,
-			sessionId: (id) => `${id}`,
-		});
+		const plans = Effect.runSync(
+			planEvalRuns({
+				cases: CASES,
+				arms: ["with-skill"],
+				model: "sonnet",
+				pluginDir: "/candidate",
+				jsonSchema: null,
+				sessionId: (id) => Effect.succeed(`${id}`),
+			}),
+		);
 		assert.deepStrictEqual(
 			plans.map((p) => p.tier),
 			["graded", "deterministic"],
@@ -380,26 +386,30 @@ describe("executeRuns — the suite completes, against a stubbed executor", () =
 	const stub =
 		(byArm: Readonly<Record<EvalArm, ExecutorResult>>): Executor =>
 		(p) =>
-			byArm[p.arm];
+			Effect.succeed(byArm[p.arm] as ExecutorResult);
 
 	it("one dead arm does not abort the suite; every planned run is accounted for", () => {
-		const plans = planEvalRuns({
-			cases: CASES,
-			arms: BOTH_ARMS,
-			model: "sonnet",
-			pluginDir: "/candidate",
-			jsonSchema: null,
-			sessionId: (id, arm) => `${id}-${arm}`,
-		});
-		const outcomes = executeRuns({
-			plans,
-			executor: stub({
-				"with-skill": exited(SILENT_GREEN_STDOUT),
-				"without-skill": exited(resultStdout()),
+		const plans = Effect.runSync(
+			planEvalRuns({
+				cases: CASES,
+				arms: BOTH_ARMS,
+				model: "sonnet",
+				pluginDir: "/candidate",
+				jsonSchema: null,
+				sessionId: (id, arm) => Effect.succeed(`${id}-${arm}`),
 			}),
-			locateTranscript: (sessionId) => `/data/${sessionId}.jsonl`,
-			loadTranscript: () => billedTranscript,
-		});
+		);
+		const outcomes = Effect.runSync(
+			executeRuns({
+				plans,
+				executor: stub({
+					"with-skill": exited(SILENT_GREEN_STDOUT),
+					"without-skill": exited(resultStdout()),
+				}),
+				locateTranscript: (sessionId) => Effect.succeed(`/data/${sessionId}.jsonl`),
+				loadTranscript: () => Effect.succeed(billedTranscript),
+			}),
+		);
 		assert.strictEqual(outcomes.length, 4);
 		const summary = summarizeRuns(outcomes);
 		assert.strictEqual(summary.planned, 4);
@@ -409,20 +419,24 @@ describe("executeRuns — the suite completes, against a stubbed executor", () =
 	});
 
 	it("both arms stay distinguishable in the collected output", () => {
-		const plans = planEvalRuns({
-			cases: [CASES[0] as RunnableCase],
-			arms: BOTH_ARMS,
-			model: "sonnet",
-			pluginDir: "/candidate",
-			jsonSchema: null,
-			sessionId: (id, arm) => `${id}-${arm}`,
-		});
-		const outcomes = executeRuns({
-			plans,
-			executor: () => exited(resultStdout()),
-			locateTranscript: (sessionId) => `/data/${sessionId}.jsonl`,
-			loadTranscript: () => billedTranscript,
-		});
+		const plans = Effect.runSync(
+			planEvalRuns({
+				cases: [CASES[0] as RunnableCase],
+				arms: BOTH_ARMS,
+				model: "sonnet",
+				pluginDir: "/candidate",
+				jsonSchema: null,
+				sessionId: (id, arm) => Effect.succeed(`${id}-${arm}`),
+			}),
+		);
+		const outcomes = Effect.runSync(
+			executeRuns({
+				plans,
+				executor: () => Effect.succeed(exited(resultStdout())),
+				locateTranscript: (sessionId) => Effect.succeed(`/data/${sessionId}.jsonl`),
+				loadTranscript: () => Effect.succeed(billedTranscript),
+			}),
+		);
 		assert.deepStrictEqual(
 			outcomes.map((o) => o.arm),
 			["with-skill", "without-skill"],
@@ -439,20 +453,24 @@ describe("executeRuns — the suite completes, against a stubbed executor", () =
 	});
 
 	it("a transcript the loader cannot read yields TranscriptNotFound, not a fabricated zero", () => {
-		const plans = planEvalRuns({
-			cases: [CASES[0] as RunnableCase],
-			arms: ["with-skill"],
-			model: "sonnet",
-			pluginDir: "/candidate",
-			jsonSchema: null,
-			sessionId: () => "s",
-		});
-		const outcomes = executeRuns({
-			plans,
-			executor: () => exited(resultStdout()),
-			locateTranscript: () => null,
-			loadTranscript: () => null,
-		});
+		const plans = Effect.runSync(
+			planEvalRuns({
+				cases: [CASES[0] as RunnableCase],
+				arms: ["with-skill"],
+				model: "sonnet",
+				pluginDir: "/candidate",
+				jsonSchema: null,
+				sessionId: () => Effect.succeed("s"),
+			}),
+		);
+		const outcomes = Effect.runSync(
+			executeRuns({
+				plans,
+				executor: () => Effect.succeed(exited(resultStdout())),
+				locateTranscript: () => Effect.succeed(null),
+				loadTranscript: () => Effect.succeed(null),
+			}),
+		);
 		assert.strictEqual(outcomes[0]?._tag, "Failed");
 	});
 });
@@ -500,12 +518,14 @@ describe("toCaptureManifest — the existing collector consumes it unchanged", (
 			transcriptPath: "/t.jsonl",
 			assistantTurns: 3,
 		});
-		const rows = collectFromCapture({
-			stage: "triage",
-			corpus,
-			capture: toCaptureManifest("triage", [outcome]),
-			loadTranscript: () => billedTranscript,
-		});
+		const rows = Effect.runSync(
+			collectFromCapture({
+				stage: "triage",
+				corpus,
+				capture: toCaptureManifest("triage", [outcome]),
+				loadTranscript: () => Effect.succeed(billedTranscript),
+			}),
+		);
 		assert.strictEqual(rows.length, 1);
 		assert.strictEqual(rows[0]?.grade.status, "pass");
 	});
@@ -568,16 +588,20 @@ describe("flag parsing", () => {
  * a note: the runner's model-spawning verb cannot be wired into a workflow without this reddening.
  */
 describe("no CI workflow invokes the model-spawning runner (#4649 ruling)", () => {
-	const workflows = fileURLToPath(new URL("../../../../../.github/workflows", import.meta.url));
+	const workflows = fileURLToPath(new URL("../../../../.github/workflows", import.meta.url));
 
 	it("finds workflow files at all — fail closed on zero scope (ADR 0092)", () => {
 		assert.isAbove(readdirSync(workflows).filter((f) => f.endsWith(".yml")).length, 0);
 	});
 
-	it("no workflow calls `eval-harness run`", () => {
+	// Both spellings, so the ruling survives the rename: v1's `eval-harness run` and fabrika's
+	// `eval run` are the same forbidden invocation, and a workflow written against either reds.
+	it("no workflow calls the runner under either verb name", () => {
 		const offenders = readdirSync(workflows)
 			.filter((f) => f.endsWith(".yml") || f.endsWith(".yaml"))
-			.filter((f) => /eval-harness\s+run\b/.test(readFileSync(join(workflows, f), "utf8")));
+			.filter((f) =>
+				/(eval-harness|fabrika-cli\s+eval)\s+run\b/.test(readFileSync(join(workflows, f), "utf8")),
+			);
 		assert.deepStrictEqual(offenders, []);
 	});
 });

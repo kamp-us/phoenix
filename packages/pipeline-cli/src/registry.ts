@@ -156,9 +156,6 @@ export const registeredTools: ReadonlyArray<ToolRegistration> = [
 	tool("review-head", () =>
 		import("./tools/review-head/command.ts").then((m) => m.reviewHeadCommand),
 	),
-	tool("eval-harness", () =>
-		import("./tools/eval-harness/command.ts").then((m) => m.evalHarnessCommand),
-	),
 	tool("main-sync", () => import("./tools/main-sync/command.ts").then((m) => m.mainSyncCommand)),
 	tool("ref-guard", () => import("./tools/ref-guard/command.ts").then((m) => m.refGuardCommand)),
 	tool("verified-push", () =>

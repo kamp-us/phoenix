@@ -1,5 +1,5 @@
 /**
- * `eval-harness` repair-churn cost core — net-token pricing of a stochastic model swap
+ * `eval` repair-churn cost core — net-token pricing of a stochastic model swap
  * (issue #1850, epic #1842).
  *
  * ADR 0112's token-economics gate is binary-per-run: it prices a stage's spend on a single
@@ -28,7 +28,7 @@
  */
 import {Result} from "effect";
 import * as Schema from "effect/Schema";
-import {reconstructSpend} from "../token-spend/token-spend.ts";
+import {reconstructSpend} from "../spend/token-spend.ts";
 
 /** A gate pass probability p ∈ [0, 1] for a (stage × model) — the fraction of graded runs that PASS. */
 const PassRate = Schema.Finite.pipe(

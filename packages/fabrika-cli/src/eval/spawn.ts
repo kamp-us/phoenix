@@ -1,12 +1,13 @@
 /**
- * `eval-harness` spawn-and-collect core — planning an unattended eval run and classifying what came
+ * `eval` spawn-and-collect core — planning an unattended eval run and classifying what came
  * back (issue #4676, epic #4649).
  *
  * This is the **pure** half of the execution layer: it plans the invocations, builds their argv,
- * decodes the headless result payload, and classifies each run into a typed outcome. It imports no
- * `node:child_process` and touches no filesystem — the spawning lives in `spawn-io.ts`, so the
- * module's offline replay path (`runner.ts`) stays reproducible and this core stays unit-testable
- * against a stubbed executor. See ADR 0236 for why the module gained a spawning shell at all.
+ * decodes the headless result payload, and classifies each run into a typed outcome. It reaches no
+ * platform service itself — the spawning and the file reads live in `spawn-io.ts` behind the seams
+ * below, so the module's offline replay path (`runner.ts`) stays reproducible and this core stays
+ * unit-testable against a stubbed executor. See ADR 0236 for why the module gained a spawning shell
+ * at all.
  *
  * The invocation contract below is **measured, not inferred** — every flag comes from the #4673
  * spike's evidence log (comment 5153355534 on that issue), re-verified here against `claude`
@@ -20,7 +21,8 @@
  * run. `classifyRun` therefore synthesizes the missing signal (`NO_MODEL_TURNS_SIGNALS`), and its
  * verdict is the one place a run is allowed to become a `CaptureRun`.
  */
-import {reconstructSpend} from "../token-spend/token-spend.ts";
+import {Effect, Result} from "effect";
+import {reconstructSpend} from "../spend/token-spend.ts";
 import {STAGES} from "./corpus.ts";
 import type {CaptureManifest, CaptureRun, TranscriptLoader} from "./runner.ts";
 import type {EvalTier} from "./skill-eval-set.ts";
@@ -61,32 +63,37 @@ export interface PlannedRun {
 }
 
 /**
- * Plan one invocation per (case × arm). `sessionId` is supplied by the caller (the IO shell mints
- * UUIDs) because pinning it is what makes the transcript locatable afterwards — the result payload
- * carries `session_id` but never the transcript path (#4673 §7).
+ * Plan one invocation per (case × arm). `sessionId` is minted by the caller — through the `Crypto`
+ * service in the bin, a fixed sequence in a test — because pinning it is what makes the transcript
+ * locatable afterwards: the result payload carries `session_id` but never the transcript path
+ * (#4673 §7). It is the one effect in the planner, which is why the planner returns an `Effect`.
  */
-export const planEvalRuns = (args: {
+export const planEvalRuns = <R>(args: {
 	readonly cases: ReadonlyArray<RunnableCase>;
 	readonly arms: ReadonlyArray<EvalArm>;
 	readonly model: string;
 	readonly pluginDir: string;
 	readonly jsonSchema: string | null;
-	readonly sessionId: (caseId: number, arm: EvalArm) => string;
-}): ReadonlyArray<PlannedRun> =>
-	args.cases.flatMap((evalCase) =>
-		args.arms.map(
-			(arm): PlannedRun => ({
-				caseId: evalCase.id,
-				tier: evalCase.tier,
-				arm,
-				sessionId: args.sessionId(evalCase.id, arm),
-				prompt: evalCase.prompt,
-				model: args.model,
-				pluginDir: arm === "with-skill" ? args.pluginDir : null,
-				jsonSchema: args.jsonSchema,
-			}),
-		),
-	);
+	readonly sessionId: (caseId: number, arm: EvalArm) => Effect.Effect<string, never, R>;
+}): Effect.Effect<ReadonlyArray<PlannedRun>, never, R> =>
+	Effect.gen(function* () {
+		const plans: Array<PlannedRun> = [];
+		for (const evalCase of args.cases) {
+			for (const arm of args.arms) {
+				plans.push({
+					caseId: evalCase.id,
+					tier: evalCase.tier,
+					arm,
+					sessionId: yield* args.sessionId(evalCase.id, arm),
+					prompt: evalCase.prompt,
+					model: args.model,
+					pluginDir: arm === "with-skill" ? args.pluginDir : null,
+					jsonSchema: args.jsonSchema,
+				});
+			}
+		}
+		return plans;
+	});
 
 /**
  * The argv for one planned run, minus the executable.
@@ -119,8 +126,13 @@ export type ExecutorResult =
 	| {readonly _tag: "TimedOut"; readonly boundMs: number}
 	| {readonly _tag: "SpawnFailed"; readonly detail: string};
 
-/** The seam the unit tier stubs: a planned run in, an observation out. No model call in a unit test. */
-export type Executor = (plan: PlannedRun) => ExecutorResult;
+/**
+ * The seam the unit tier stubs: a planned run in, an observation out. No model call in a unit test.
+ *
+ * `R` is the platform requirement the *implementation* carries — `ChildProcessSpawner` for the real
+ * one, `never` for a stub — so this core names no platform service of its own.
+ */
+export type Executor<R = never> = (plan: PlannedRun) => Effect.Effect<ExecutorResult, never, R>;
 
 /** The fields of the headless `result` message this runner reads. Everything else in it is ignored. */
 export interface HeadlessResult {
@@ -173,13 +185,9 @@ const asNumber = (value: unknown): number | null => (typeof value === "number" ?
  * (zero turns, no model usage, no structured output), never to a pass.
  */
 export const decodeHeadlessResult = (stdout: string): HeadlessResult | null => {
-	let parsed: unknown;
-	try {
-		parsed = JSON.parse(stdout);
-	} catch {
-		return null;
-	}
-	const message = findResultMessage(parsed);
+	const parsed = Result.try({try: (): unknown => JSON.parse(stdout), catch: () => null});
+	if (Result.isFailure(parsed)) return null;
+	const message = findResultMessage(parsed.success);
 	if (message === null) return null;
 	const modelUsage = message.modelUsage;
 	return {
@@ -349,22 +357,29 @@ export const classifyRun = (args: {
  * it with a stubbed executor and no model call. It is also the "the suite still completes" guarantee
  * — a case that dies is classified and the loop continues to the next one, never aborting the run.
  */
-export const executeRuns = (args: {
+export const executeRuns = <RE, RL, RT>(args: {
 	readonly plans: ReadonlyArray<PlannedRun>;
-	readonly executor: Executor;
-	readonly locateTranscript: (sessionId: string) => string | null;
-	readonly loadTranscript: TranscriptLoader;
-}): ReadonlyArray<RunOutcome> =>
-	args.plans.map((plan) => {
-		const exec = args.executor(plan);
-		const transcriptPath = args.locateTranscript(plan.sessionId);
-		const transcript = transcriptPath === null ? null : args.loadTranscript(transcriptPath);
-		return classifyRun({
-			plan,
-			exec,
-			transcriptPath,
-			assistantTurns: transcript === null ? null : reconstructSpend(transcript).assistantTurns,
-		});
+	readonly executor: Executor<RE>;
+	readonly locateTranscript: (sessionId: string) => Effect.Effect<string | null, never, RL>;
+	readonly loadTranscript: TranscriptLoader<RT>;
+}): Effect.Effect<ReadonlyArray<RunOutcome>, never, RE | RL | RT> =>
+	Effect.gen(function* () {
+		const outcomes: Array<RunOutcome> = [];
+		for (const plan of args.plans) {
+			const exec = yield* args.executor(plan);
+			const transcriptPath = yield* args.locateTranscript(plan.sessionId);
+			const transcript =
+				transcriptPath === null ? null : yield* args.loadTranscript(transcriptPath);
+			outcomes.push(
+				classifyRun({
+					plan,
+					exec,
+					transcriptPath,
+					assistantTurns: transcript === null ? null : reconstructSpend(transcript).assistantTurns,
+				}),
+			);
+		}
+		return outcomes;
 	});
 
 /**
@@ -502,7 +517,7 @@ export const captureToJson = (capture: CaptureManifest): string =>
 /** A one-line-per-run human rendering, so an operator sees which arm died of what without a jq. */
 export const renderLedger = (ledger: RunLedger): string => {
 	const lines = [
-		`eval-harness run: ${ledger.skillName} · stage ${ledger.stage} · model ${ledger.model}`,
+		`fabrika-cli eval run: ${ledger.skillName} · stage ${ledger.stage} · model ${ledger.model}`,
 		...ledger.runs.map((outcome) =>
 			outcome._tag === "Completed"
 				? `  case ${outcome.caseId} [${outcome.arm}] ok — ${outcome.numTurns} turns, transcript ${outcome.transcriptPath}`

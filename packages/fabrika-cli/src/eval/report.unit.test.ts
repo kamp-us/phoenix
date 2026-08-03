@@ -1,5 +1,5 @@
 import {assert, describe, it} from "@effect/vitest";
-import type {StageSpend} from "../token-spend/token-spend.ts";
+import type {StageSpend} from "../spend/token-spend.ts";
 import type {CorpusEntry} from "./corpus.ts";
 import {
 	buildScorecard,

@@ -1,5 +1,5 @@
 /**
- * `eval-harness` incident-provenance core — the ledger that binds each committed **incident
+ * `eval` incident-provenance core — the ledger that binds each committed **incident
  * corpus** case to the real artifact it pins (issue #4675, epic #4649).
  *
  * The corpus itself is authored in the reused `/skill-creator` eval format and decoded by

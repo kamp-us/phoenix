@@ -1,9 +1,10 @@
 # @kampus/fabrika-cli
 
 The deterministic verb package [fabrika](../../claude-plugins/fabrika/) skills call.
-`fabrika-cli <group> <verb> …` dispatches to a registered verb group. Two groups are
-registered: `adr`, the six verbs the `/adr` skill's derived contract specifies, and
-`report`, the three the `/report` contract specifies.
+`fabrika-cli <group> <verb> …` dispatches to a registered verb group. Three groups are
+registered: `adr`, the six verbs the `/adr` skill's derived contract specifies; `report`,
+the three the `/report` contract specifies; and `eval`, the graded-corpus harness the
+fabrika eval layer measures itself with.
 
 ## Who it's for
 
@@ -119,6 +120,31 @@ Intake applies **no type and no priority**, and that is defended mechanically ra
 prose: exit `10` refuses a `--label` or a title prefix that resolves to the target repo's own
 type/priority vocabulary.
 
+## The `eval` group
+
+The eval harness, moved here from v1 by founder ruling
+([#4777](https://github.com/kamp-us/phoenix/issues/4777)) so that "the existing report and
+scorecard path" the eval-layer children are specced against is a fabrika path rather than a
+call into `pipeline-cli` that ADR 0238 forbids. Its own docs are
+[`src/eval/README.md`](./src/eval/README.md).
+
+| Verb | Answers |
+|---|---|
+| `eval check` | whether a corpus manifest matches the schema |
+| `eval report` | the graded two-axis scorecard (pass-rate × net-token cost) over runner rows |
+| `eval cases` | whether an authored eval set decodes, and the tier each case derives to |
+| `eval run` | executes an eval set unattended on both arms and emits the capture manifest |
+
+`eval run` is the one verb that spawns a model. Its supported callers are an operator's
+shell and a `review-skill` spawn — **never a CI job**, on the cost constraint the founder
+ruled on epic #4649, which `src/eval/spawn.unit.test.ts` asserts rather than states.
+
+The token meter these verbs price runs with is fabrika's own
+([`src/spend/token-spend.ts`](./src/spend/token-spend.ts)), not v1's. `billed` is
+*specified* by ADR 0112 §2, not chosen, so the two implementations are held to one ruler by
+a committed transcript fixture both packages' unit tiers assert against —
+`src/spend/fixtures/one-ruler/`.
+
 ## Development
 
 ```bash
@@ -144,8 +170,10 @@ substitutes those same services rather than a hand-rolled double, so the seam un
 the seam production uses. A read that could not be performed fails on the `E` channel — it
 never resolves to an empty value a caller could forget to distinguish from a real one.
 
-The one exception is **fd 0**, which stays a raw `node:fs` read at the boundary in
-[`src/io/stdin.ts`](./src/io/stdin.ts) — the standing ruling in the same pattern doc, where
-`Stdio.stdin` is a considered-and-declined stream swap rather than a missing service. The
-verbs take the read as an injected effect, so the `EAGAIN` and TTY paths stay testable
-without a real descriptor.
+Two raw `node:*` reads survive, both named by that pattern doc rather than overlooked. **fd
+0** stays a raw `node:fs` read at the boundary in [`src/io/stdin.ts`](./src/io/stdin.ts) —
+the standing ruling, where `Stdio.stdin` is a considered-and-declined stream swap rather
+than a missing service; the verbs take the read as an injected effect, so the `EAGAIN` and
+TTY paths stay testable without a real descriptor. **`homedir()`** stays a raw `node:os`
+read in [`src/eval/spawn-io.ts`](./src/eval/spawn-io.ts), because Effect v4 ships no
+equivalent at all; it is a parameter default, so a test substitutes it without a service.

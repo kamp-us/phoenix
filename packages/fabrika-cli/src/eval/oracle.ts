@@ -1,5 +1,5 @@
 /**
- * eval-harness graded oracle — the per-corpus-entry quality grade (issue #1849, epic #1842).
+ * The eval graded oracle — the per-corpus-entry quality grade (issue #1849, epic #1842).
  *
  * ADR 0112 §3 defines a per-stage output-quality oracle: a reproducible pass/fail that asserts
  * an optimized stage reproduced the SAME decision artifact as the baseline. That oracle is

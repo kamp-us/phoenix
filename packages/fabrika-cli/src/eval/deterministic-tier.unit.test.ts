@@ -1,6 +1,7 @@
 import {readFileSync} from "node:fs";
 import {fileURLToPath} from "node:url";
 import {assert, describe, it} from "@effect/vitest";
+import {Effect} from "effect";
 import {
 	type CliObservation,
 	checkAssertion,
@@ -23,6 +24,10 @@ const ran = (over: Partial<CliObservation> = {}): CliObservation => ({
 	notRun: null,
 	...over,
 });
+
+/** The observation seam as the `Effect` the tier takes. Nothing here does IO — it is a value. */
+const saw = (over: Partial<CliObservation> = {}): Effect.Effect<CliObservation> =>
+	Effect.succeed(ran(over));
 
 const mechanical = (text: string, cue: string) => ({kind: "mechanical", text, cue}) as const;
 
@@ -207,11 +212,13 @@ describe("judgeDeterministicCase — the whole verdict, from exactly one run", (
 
 describe("runDeterministicTier — routing, with no model in the loop", () => {
 	it("routes each case by its derived tier", () => {
-		const run = runDeterministicTier({
-			cases: [deterministicCase(1, [mechanical("exits 0", "exit-status")]), gradedCase(2)],
-			resolveCommand,
-			observe: () => ran(),
-		});
+		const run = Effect.runSync(
+			runDeterministicTier({
+				cases: [deterministicCase(1, [mechanical("exits 0", "exit-status")]), gradedCase(2)],
+				resolveCommand,
+				observe: () => saw(),
+			}),
+		);
 		assert.deepStrictEqual(
 			run.rows.map((r) => r.caseId),
 			[1],
@@ -220,17 +227,19 @@ describe("runDeterministicTier — routing, with no model in the loop", () => {
 	});
 
 	it("never reaches the model-bearing seam for a deterministic case", () => {
-		const run = runDeterministicTier({
-			cases: [
-				deterministicCase(1, [mechanical("exits 0", "exit-status")]),
-				deterministicCase(2, [mechanical("exits non-zero", "exit-status")]),
-			],
-			resolveCommand,
-			observe: () => ran(),
-			deferGraded: () => {
-				throw new Error("a model was spawned for a deterministic case");
-			},
-		});
+		const run = Effect.runSync(
+			runDeterministicTier({
+				cases: [
+					deterministicCase(1, [mechanical("exits 0", "exit-status")]),
+					deterministicCase(2, [mechanical("exits non-zero", "exit-status")]),
+				],
+				resolveCommand,
+				observe: () => saw(),
+				deferGraded: () => {
+					throw new Error("a model was spawned for a deterministic case");
+				},
+			}),
+		);
 		assert.strictEqual(run.rows.length, 2);
 		assert.deepStrictEqual(run.deferredToGraded, []);
 	});
@@ -238,41 +247,47 @@ describe("runDeterministicTier — routing, with no model in the loop", () => {
 	it("hands a graded case to that seam instead of executing it", () => {
 		const handed: Array<number> = [];
 		const observed: Array<number> = [];
-		runDeterministicTier({
-			cases: [gradedCase(7)],
-			resolveCommand,
-			observe: (evalCase) => {
-				observed.push(evalCase.id);
-				return ran();
-			},
-			deferGraded: (evalCase) => handed.push(evalCase.id),
-		});
+		Effect.runSync(
+			runDeterministicTier({
+				cases: [gradedCase(7)],
+				resolveCommand,
+				observe: (evalCase) => {
+					observed.push(evalCase.id);
+					return saw();
+				},
+				deferGraded: (evalCase) => handed.push(evalCase.id),
+			}),
+		);
 		assert.deepStrictEqual(handed, [7]);
 		assert.deepStrictEqual(observed, []);
 	});
 
 	it("executes each deterministic case exactly once", () => {
 		const executions: Array<number> = [];
-		runDeterministicTier({
-			cases: [
-				deterministicCase(1, [mechanical("exits 0", "exit-status")]),
-				deterministicCase(2, [mechanical("exits 0", "exit-status")]),
-			],
-			resolveCommand,
-			observe: (evalCase) => {
-				executions.push(evalCase.id);
-				return ran({exitStatus: 1});
-			},
-		});
+		Effect.runSync(
+			runDeterministicTier({
+				cases: [
+					deterministicCase(1, [mechanical("exits 0", "exit-status")]),
+					deterministicCase(2, [mechanical("exits 0", "exit-status")]),
+				],
+				resolveCommand,
+				observe: (evalCase) => {
+					executions.push(evalCase.id);
+					return saw({exitStatus: 1});
+				},
+			}),
+		);
 		assert.deepStrictEqual(executions, [1, 2]);
 	});
 
 	it("reds a case that declares no command instead of skipping it", () => {
-		const run = runDeterministicTier({
-			cases: [deterministicCase(1, [mechanical("exits 0", "exit-status")])],
-			resolveCommand: () => null,
-			observe: () => ran(),
-		});
+		const run = Effect.runSync(
+			runDeterministicTier({
+				cases: [deterministicCase(1, [mechanical("exits 0", "exit-status")])],
+				resolveCommand: () => null,
+				observe: () => saw(),
+			}),
+		);
 		assert.strictEqual(run.rows[0]?.outcome, "uncheckable");
 		assert.strictEqual(run.rows[0]?.runs, 0);
 	});

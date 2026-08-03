@@ -1,5 +1,5 @@
 import {assert, describe, it} from "@effect/vitest";
-import {Result} from "effect";
+import {Effect, Result} from "effect";
 import type {CorpusEntry, CorpusManifest} from "./corpus.ts";
 import {
 	type CaptureManifest,
@@ -163,12 +163,14 @@ describe("collectFromCapture — capture-manifest fold against the corpus (story
 			"session-x/subagents/agent-a.jsonl": transcript(10, 5, 100, 20),
 			"session-x/subagents/agent-b.jsonl": transcript(2, 2, 2, 2),
 		};
-		const rows = collectFromCapture({
-			stage: "triage",
-			corpus,
-			capture,
-			loadTranscript: (p) => transcripts[p] ?? null,
-		});
+		const rows = Effect.runSync(
+			collectFromCapture({
+				stage: "triage",
+				corpus,
+				capture,
+				loadTranscript: (p) => Effect.succeed(transcripts[p] ?? null),
+			}),
+		);
 		assert.strictEqual(rows.length, 2);
 		assert.strictEqual(rows[0]?.grade.status, "pass");
 		assert.strictEqual(rows[1]?.grade.status, "fail");
@@ -187,12 +189,14 @@ describe("collectFromCapture — capture-manifest fold against the corpus (story
 				},
 			],
 		};
-		const rows = collectFromCapture({
-			stage: "triage",
-			corpus,
-			capture,
-			loadTranscript: () => null, // nothing on disk
-		});
+		const rows = Effect.runSync(
+			collectFromCapture({
+				stage: "triage",
+				corpus,
+				capture,
+				loadTranscript: () => Effect.succeed(null), // nothing on disk
+			}),
+		);
 		assert.strictEqual(rows.length, 1);
 		assert.strictEqual(rows[0]?.grade.status, "pass");
 		assert.strictEqual(rows[0]?.spend._tag, "TranscriptMissing");
@@ -205,12 +209,14 @@ describe("collectFromCapture — capture-manifest fold against the corpus (story
 				{stage: "triage", inputRef: 999, transcriptPath: "x.jsonl", artifact: {}}, // no entry #999
 			],
 		};
-		const rows = collectFromCapture({
-			stage: "triage",
-			corpus,
-			capture,
-			loadTranscript: () => transcript(1, 1, 1, 1),
-		});
+		const rows = Effect.runSync(
+			collectFromCapture({
+				stage: "triage",
+				corpus,
+				capture,
+				loadTranscript: () => Effect.succeed(transcript(1, 1, 1, 1)),
+			}),
+		);
 		assert.strictEqual(rows.length, 0);
 	});
 });

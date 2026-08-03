@@ -1,0 +1,7 @@
+{"type":"summary","summary":"a leading non-message line the reconstruction must skip"}
+{"message":{"role":"assistant","model":"claude-opus-4-1","usage":{"input_tokens":1200,"cache_creation_input_tokens":34000,"cache_read_input_tokens":0,"output_tokens":450}}}
+{"message":{"role":"user","content":"a user turn carries no usage and is never billed"}}
+{"message":{"role":"assistant","model":"claude-opus-4-1","usage":{"input_tokens":8,"cache_creation_input_tokens":1024,"cache_read_input_tokens":34000,"output_tokens":1310}}}
+this line is not JSON at all and must be skipped rather than thrown on
+{"message":{"role":"assistant","model":"claude-opus-4-1"}}
+{"message":{"role":"assistant","model":"claude-opus-4-1","usage":{"input_tokens":11,"cache_creation_input_tokens":0,"cache_read_input_tokens":35024,"output_tokens":96}}}
