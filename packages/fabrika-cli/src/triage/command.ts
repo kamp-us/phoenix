@@ -8,8 +8,8 @@
  *
  * This is the group's foundation slice: the shared exit table (`codes.ts`), the scanned-count
  * convention (`scope.ts`) and the GitHub reads and writes in `../io/issues.ts` land here, ahead of
- * the verbs that consume them. Later slices append their leaves below and extend the
- * `withSubcommands` list at the end of the file, so two slices in flight touch different regions.
+ * the verbs that consume them. Later slices append their leaves below and add one line each to the
+ * `withSubcommands` list at the end of the file, which is why that list is one entry per line.
  *
  * **Every leaf is declared with `leafCommand`, never a bare `Command.make`** — the bare form
  * silently opts out of the excess-operand guard, which `../excess-operand.unit.test.ts` reds on.
@@ -59,7 +59,11 @@ const codes = leafCommand(
 );
 
 export const triageCommand = Command.make("triage").pipe(
-	Command.withSubcommands([codes]),
+	Command.withSubcommands([
+		// One leaf per line, so five in-flight slices append at five distinct lines rather than all
+		// editing one. The comment is what keeps the formatter from collapsing the list back.
+		codes,
+	]),
 	Command.withDescription(
 		"Take one intake-queue issue from arrival to a triaged, homed transition — or park it, split it, or close it not-planned — over reads that page and writes that are read back",
 	),

@@ -226,6 +226,24 @@ describe("the writes send the fields the API needs, in the form it accepts", () 
 		expect(shell.calls[0]).toContain("state_reason=not_planned");
 	});
 
+	it("patchIssueBody writes the body field — a `title=` here would overwrite the title", async () => {
+		const shell = fakeShell([[/gh api/, okOut("")]]);
+		await run(
+			Effect.provide(patchIssueBody("kamp-us/phoenix", 7, "enriched-body-text"), shell.layer),
+		);
+		expect(shell.calls[0]).toContain("--method PATCH");
+		expect(shell.calls[0]).toContain("repos/kamp-us/phoenix/issues/7");
+		expect(shell.calls[0]).toContain("-f body=enriched-body-text");
+		expect(shell.calls[0]).not.toContain("title=");
+	});
+
+	it("deleteComment targets the id it was given — an off-by-one deletes someone else's", async () => {
+		const shell = fakeShell([[/gh api/, okOut("")]]);
+		await run(Effect.provide(deleteComment("kamp-us/phoenix", 5170139674), shell.layer));
+		expect(shell.calls[0]).toContain("--method DELETE");
+		expect(shell.calls[0]).toContain("repos/kamp-us/phoenix/issues/comments/5170139674");
+	});
+
 	it("patchIssueBody and deleteComment surface the failure rather than swallowing it", async () => {
 		const failing = fakeShell([[/gh api/, errOut("gh: Bad gateway (HTTP 502)")]]).layer;
 		expect((await run(Effect.provide(patchIssueBody("r/r", 1, "b"), failing)))._tag).toBe(
