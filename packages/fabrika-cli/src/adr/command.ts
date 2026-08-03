@@ -1,5 +1,5 @@
 /**
- * The `adr` verb group — `fabrika-cli adr <next|new|resolve|supersede|amend-in-part|sweep>`.
+ * The `adr` verb group — `fabrika adr <next|new|resolve|supersede|amend-in-part|sweep>`.
  *
  * This file is the adapter and nothing else: it declares the flags (`--help` is the interface, so
  * every flag carries a one-line description), runs the pure verb, and emits its outcome. Every
@@ -65,7 +65,7 @@ const next = Command.make(
 	}),
 ).pipe(
 	Command.withDescription(
-		"The next unused ADR id — max(fetched merged set ∪ open-PR claims) + 1. Prints `0240`; --json adds mergedMax/inFlight/baseSha. Exits 3 (base unfetchable), 4 (in-flight unknown), 5 (zero scope). Example: fabrika-cli adr next",
+		"The next unused ADR id — max(fetched merged set ∪ open-PR claims) + 1. Prints `0240`; --json adds mergedMax/inFlight/baseSha. Exits 3 (base unfetchable), 4 (in-flight unknown), 5 (zero scope). Example: fabrika adr next",
 	),
 );
 
@@ -119,7 +119,7 @@ const newCmd = Command.make(
 	}),
 ).pipe(
 	Command.withDescription(
-		"Scaffold .decisions/NNNN-slug.md from the canonical template. Prints the path written. Exits 3 (path exists — never overwritten), 4 (bad id or slug). Example: fabrika-cli adr new 0240 only-landed-adrs-may-be-cited",
+		"Scaffold .decisions/NNNN-slug.md from the canonical template. Prints the path written. Exits 3 (path exists — never overwritten), 4 (bad id or slug). Example: fabrika adr new 0240 only-landed-adrs-may-be-cited",
 	),
 );
 
@@ -137,7 +137,7 @@ const resolve = Command.make(
 	}),
 ).pipe(
 	Command.withDescription(
-		"Resolve ids to their real filename and state against a fetched base ref — one `<state>\\t<file>\\t<detail>` line per id, state ∈ live|landed|in-flight|absent. Exits 3 (base unfetchable), 4 (in-flight unknown), 5 (zero scope). Example: fabrika-cli adr resolve 0164 0023",
+		"Resolve ids to their real filename and state against a fetched base ref — one `<state>\\t<file>\\t<detail>` line per id, state ∈ live|landed|in-flight|absent. Exits 3 (base unfetchable), 4 (in-flight unknown), 5 (zero scope). Example: fabrika adr resolve 0164 0023",
 	),
 );
 
@@ -153,7 +153,7 @@ const supersede = Command.make(
 	}),
 ).pipe(
 	Command.withDescription(
-		"Rewrite an older ADR's status: line to `superseded by [NNNN](NNNN-slug.md)` — that line and nothing else. Prints `<path>\\t<new status>`. Exits 3 (no such id), 4 (no --by record), 5 (no single status: line), 6 (diff touched another line — nothing written), 7 (already superseded). Example: fabrika-cli adr supersede 0126 --by 0240",
+		"Rewrite an older ADR's status: line to `superseded by [NNNN](NNNN-slug.md)` — that line and nothing else. Prints `<path>\\t<new status>`. Exits 3 (no such id), 4 (no --by record), 5 (no single status: line), 6 (diff touched another line — nothing written), 7 (already superseded). Example: fabrika adr supersede 0126 --by 0240",
 	),
 );
 
@@ -165,7 +165,7 @@ const amendInPart = Command.make(
 	}),
 ).pipe(
 	Command.withDescription(
-		"Append this ADR to an older one's `amended-in-part by` list, in id order, preserving the links already there. Prints `<path>\\t<new status>`. Same exit codes as supersede. Example: fabrika-cli adr amend-in-part 0023 --by 0240",
+		"Append this ADR to an older one's `amended-in-part by` list, in id order, preserving the links already there. Prints `<path>\\t<new status>`. Same exit codes as supersede. Example: fabrika adr amend-in-part 0023 --by 0240",
 	),
 );
 
@@ -189,7 +189,7 @@ const sweepCmd = Command.make(
 	}),
 ).pipe(
 	Command.withDescription(
-		"Rank the uncited live-accepted ADRs this one may contradict. First stdout line is the outcome token — shortlist | no-overlap | indeterminate — and ALL THREE exit 0; a shortlist adds one `<id>\\t<score>\\t<file>\\t<title>` line per entry. Exits 3 (corpus unreadable), 4 (no readable --new), 5 (zero scope). Example: fabrika-cli adr sweep --new 0240",
+		"Rank the uncited live-accepted ADRs this one may contradict. First stdout line is the outcome token — shortlist | no-overlap | indeterminate — and ALL THREE exit 0; a shortlist adds one `<id>\\t<score>\\t<file>\\t<title>` line per entry. Exits 3 (corpus unreadable), 4 (no readable --new), 5 (zero scope). Example: fabrika adr sweep --new 0240",
 	),
 );
 

@@ -1,7 +1,7 @@
 # @kampus/fabrika-cli
 
 The deterministic verb package [fabrika](../../claude-plugins/fabrika/) skills call.
-`fabrika-cli <group> <verb> …` dispatches to a registered verb group. Three groups are
+`fabrika <group> <verb> …` dispatches to a registered verb group. Three groups are
 registered: `adr`, the six verbs the `/adr` skill's derived contract specifies; `report`,
 the three the `/report` contract specifies; and `eval`, the graded-corpus harness the
 fabrika eval layer measures itself with.
@@ -15,7 +15,7 @@ not a general-purpose CLI.
 
 ## It calls nothing outside fabrika
 
-**`fabrika-cli` invokes `pipeline-cli` nowhere** — no import, no subprocess
+**`fabrika` invokes `pipeline-cli` nowhere** — no import, no subprocess
 ([ADR 0238](../../.decisions/0238-fabrika-reimplements-v1-never-calls-it.md)). Where v1
 already solves the same problem, its source is a reference for the semantics and the scars,
 never a dependency.
@@ -24,6 +24,77 @@ The reason is the deletion test: a fabrika that calls v1 can never be the thing 
 replaces it, because every call is a tether keeping the old tree alive. Duplication costs a
 second implementation during the transition; a tether costs the ability to ever delete
 anything.
+
+## How it is delivered
+
+`fabrika` is installed **globally**, once, and the binary decides for itself which copy runs:
+
+```bash
+pnpm add --global @kampus/fabrika-cli
+```
+
+On startup it finds the **repo root** above the working directory, asks **Node's own resolver** what
+copy of `@kampus/fabrika-cli` that root has installed, and hands the invocation to it. This is the
+shape [turbo](https://turborepo.com) ships (`crates/turborepo-shim/`), reimplemented here in
+TypeScript ([#4784](https://github.com/kamp-us/phoenix/issues/4784)).
+
+There are exactly three outcomes, and **only one of them is silent**:
+
+| Where you are | What runs | Warning |
+| --- | --- | --- |
+| In phoenix | the working tree — `packages/fabrika-cli` | — |
+| In a consumer repo that installed it | that repo's pinned version | — |
+| In a consumer repo that did **not** install it | the global | **yes**, naming both versions |
+| In no repo at all | the global | no — deliberately |
+
+The last two are the whole design. Running the global outside any repo is a normal, correct
+invocation, so it stays quiet. Running the global *inside a repo that asked for a specific version*
+is the quietly-wrong case, so it says so out loud and names the global's version beside the one the
+root manifest declared. Set `FABRIKA_GLOBAL_WARNING_DISABLED=1` to silence it.
+
+The property this buys is a **repo-pinned version**. phoenix carries `@kampus/fabrika-cli` in its
+root `devDependencies`, so a bare `fabrika` anywhere in a phoenix checkout runs the version this
+repo pins — and because pnpm links the workspace package, that means the **working tree**: edit
+`src/`, the next invocation runs the edit. This supersedes `pnpm link --global`, which is
+machine-wide and has to be remembered and undone.
+
+`FABRIKA_DEBUG=1` prints one stderr line naming which copy served the invocation:
+
+```
+$ FABRIKA_DEBUG=1 fabrika --version
+fabrika: global at …/pnpm/global/5/…/@kampus/fabrika-cli — delegating to the repo-local install at …/packages/fabrika-cli (…/src/bin.ts, v0.1.0)
+fabrika v0.1.0
+```
+
+**Two independent recursion guards**, both read before any filesystem work: the parent always passes
+`--skip-infer` to the child (stripped before any verb sees it), and `FABRIKA_SKIP_INFER` does the
+same for a caller that cannot alter argv. turbo needs both because a missed guard would re-enter the
+shim; we need them *more*, because for us the global and the local are the same JS file shape.
+
+The child's cwd is the **repo root**, not yours; your cwd travels as `FABRIKA_INVOCATION_DIR`. That
+is deliberate — an older local binary cannot choke on an env var it never reads, whereas it would
+refuse an unknown flag.
+
+> [!IMPORTANT]
+> **`@kampus/fabrika-cli` is not published yet, so the install above does not work today.** It
+> answers a registry 404 (`npm error code E404`, exit `1`, nothing on stdout). Publishing needs npm
+> Trusted Publishing registered against this repo plus a one-time bootstrap publish — a human action
+> outside the repo, tracked by [#4791](https://github.com/kamp-us/phoenix/issues/4791). Until it
+> lands, a bare `fabrika` exits `127` on a machine with no global install, which the interface
+> convention reserves for exactly that: the verb never ran. Inside a phoenix checkout the fallback
+> is `node packages/fabrika-cli/src/bin.ts …`.
+
+> [!NOTE]
+> **The published artifact is compiled; the development loop is not.** Node refuses to strip types
+> for any file whose resolved path is under `node_modules` — `stripTypeScriptModuleTypes` throws
+> `ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING` unconditionally on `isUnderNodeModules(filename)`
+> (read from Node 24.4.1 and 26.2.0's own bundled source) — so a `.ts` `bin` cannot start from an
+> installed copy, which is what a real `pnpm add --global` produces. `publishConfig` is what lets
+> both halves be true at once: the manifest's `bin` stays `./src/bin.ts` for the workspace, where
+> pnpm's link resolves *outside* `node_modules` and an edit to `src/` is live on the next
+> invocation, and npm rewrites `bin`/`main`/`types`/`exports` onto the compiled `dist/` at publish
+> time. `files` is `["dist"]` and `prepublishOnly` runs the build, so a tarball can neither miss
+> `dist/` nor ship a stale one (#4784).
 
 ## Quickstart
 
@@ -54,8 +125,9 @@ Four rules matter most to a caller:
   `no-overlap`, not an empty shortlist — a verb whose "nothing found" answer is empty
   stdout is byte-identical to a verb that never ran.
 - **The exit status is the answer; empty stdout never is.** `0` = the answer is on stdout,
-  `1` = usage error or the verb failed to run, `127` = the verb never ran, `3`+ = the verb's
-  own proven outcomes. **A non-zero exit is UNKNOWN** — read the status before the bytes.
+  `1` = usage error or the verb failed to run, `2` = the binary started but could not resolve an
+  implementation, `127` = the verb never ran, `3`+ = the verb's own proven outcomes. **A non-zero
+  exit is UNKNOWN** — read the status before the bytes.
 - **Fail closed on missing scope or state.** A zero-record scan is a failed read, not an
   answer ([ADR 0092](../../.decisions/0092-gates-fail-closed-on-zero-scope.md)); an
   unreadable input resolves to a refusal, never to a permissive default.
@@ -150,8 +222,15 @@ a committed transcript fixture both packages' unit tiers assert against —
 ```bash
 pnpm --filter @kampus/fabrika-cli test        # vitest
 pnpm --filter @kampus/fabrika-cli typecheck   # tsgo
-pnpm --filter @kampus/fabrika-cli build       # tsc -p tsconfig.build.json
+pnpm --filter @kampus/fabrika-cli build       # tsc -> dist/, for the published tarball only
 ```
+
+**The development loop has no build step.** `bin` points at `./src/bin.ts` and Node ≥ 24 strips the
+types natively, so an edit to `src/` is live on the next invocation — which is the entire point of
+the workspace `devDependencies` line in the root `package.json`. `build` emits `dist/` for the
+published tarball and nothing else reads it; see the publish note above for why the two halves
+differ. `tsc` and not `tsgo`: the repo carries no bundler, and the artifact consumers install comes
+off the stable compiler.
 
 A verb is a **pure function of its dependencies** — the `*-verb.ts` modules compute a
 `VerbOutcome` (exit code, stdout, stderr) and never write a stream or exit. The Effect CLI
@@ -177,3 +256,9 @@ than a missing service; the verbs take the read as an injected effect, so the `E
 TTY paths stay testable without a real descriptor. **`homedir()`** stays a raw `node:os`
 read in [`src/eval/spawn-io.ts`](./src/eval/spawn-io.ts), because Effect v4 ships no
 equivalent at all; it is a parameter default, so a test substitutes it without a service.
+
+The delegation layer reads `process` — `cwd()`, `argv`, `execPath`, `env`, `exit()` — and that is
+confined to [`src/delegate/entry.ts`](./src/delegate/entry.ts), the boundary the bin bootstrap calls.
+The walk and the decision it feeds are Effects over `FileSystem` / `Path` / `ChildProcessSpawner`,
+so every branch — including "an ancestor could not be probed" and "the spawn faulted" — is driven by
+substituted services rather than by a real tree.

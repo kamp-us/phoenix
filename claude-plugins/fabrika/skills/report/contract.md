@@ -2,20 +2,20 @@
 
 **Skill:** [`report`](SKILL.md) · **Authoring brief:** [#4705](https://github.com/kamp-us/phoenix/issues/4705) · **Date:** 2026-08-01
 
-These verbs live in `packages/fabrika-cli/`, binary `fabrika-cli`, grouped under a `report`
+These verbs live in `packages/fabrika-cli/`, binary `fabrika`, grouped under a `report`
 subcommand — the package the [`/adr` contract](../adr/contract.md) mints and
 [#4725](https://github.com/kamp-us/phoenix/issues/4725) builds. The
 [CLI interface convention](../../docs/cli-interface-convention.md) governs all three; where this
 spec and that doc disagree, the doc wins and this spec is the bug.
 
-**`fabrika-cli` calls `pipeline-cli` nowhere, and neither does the skill**
+**`fabrika` calls `pipeline-cli` nowhere, and neither does the skill**
 ([ADR 0238](../../../../.decisions/0238-fabrika-reimplements-v1-never-calls-it.md)). Every verb
 below is implemented from scratch here. v1's tools were read for their semantics and their scars —
 each Grounding section names what the corresponding v1 tool gets wrong and what this spec does
 instead — but no clause defers to one, and none is invoked.
 
 **How the bare binary name resolves is an open blocker, not an assumption this spec makes.** The
-skill's fences invoke `fabrika-cli` as a plain literal name, which is what the harness's isolation
+skill's fences invoke `fabrika` as a plain literal name, which is what the harness's isolation
 verifier requires — that check is *syntactic*, on the command string. Whether the name then
 **resolves** is a separate question this spec does not answer, and the repo's own evidence says the
 analogous v1 shape does not: `packages/pipeline-cli/src/tools/cli-invocation-guard/cli-invocation-guard.ts`
@@ -184,7 +184,7 @@ own message — the fix is to send the body, not to mask a placeholder.
 **Invocation**
 
 ```
-fabrika-cli report dedup --query "retry helper swallows the abort reason" [--label <name>] [--limit <n>] [--repo <owner/name>] [--json]
+fabrika report dedup --query "retry helper swallows the abort reason" [--label <name>] [--limit <n>] [--repo <owner/name>] [--json]
 ```
 
 **Inputs**
@@ -265,31 +265,31 @@ list was truncated.
 **Examples**
 
 ```
-$ fabrika-cli report dedup --query "retry helper swallows the abort reason in the http worker"
+$ fabrika report dedup --query "retry helper swallows the abort reason in the http worker"
 candidates
 4312	both	4	Abort reason lost when the worker retry helper re-wraps the request
 4088	search	2	http worker retries do not propagate cancellation
 ```
 
 ```
-$ fabrika-cli report dedup --query "sozluk definition editor loses focus after an entry is saved"
+$ fabrika report dedup --query "sozluk definition editor loses focus after an entry is saved"
 none
 ```
 
 ```
-$ fabrika-cli report dedup --query "the thing"
+$ fabrika report dedup --query "the thing"
 indeterminate
 $ echo $?
 0
 ```
 
 ```
-$ fabrika-cli report dedup --query "retry helper abort reason" --json
+$ fabrika report dedup --query "retry helper abort reason" --json
 {"outcome":"candidates","candidates":[{"number":4312,"source":"both","score":4,"title":"Abort reason lost when the worker retry helper re-wraps the request"}],"reason":null,"tokens":["retry","helper","abort","reason"],"truncated":false,"queueCount":31,"searchCount":6}
 ```
 
 ```
-$ fabrika-cli report dedup --query "retry helper abort reason" --repo kamp-us/nonexistent
+$ fabrika report dedup --query "retry helper abort reason" --repo kamp-us/nonexistent
 report dedup: cannot read the status:needs-triage queue in kamp-us/nonexistent: HTTP 404 — the outcome is UNKNOWN, never "none".
 $ echo $?
 3
@@ -327,7 +327,7 @@ is now an issue in the intake queue*, and splitting them would hand a caller the
 **Invocation**
 
 ```
-fabrika-cli report file --title "Aborted requests in the http worker surface as plain timeouts" [--redact] [--label <name>] [--repo <owner/name>] [--json]
+fabrika report file --title "Aborted requests in the http worker surface as plain timeouts" [--redact] [--label <name>] [--repo <owner/name>] [--json]
 ```
 
 The six authored sections arrive on **stdin** as markdown.
@@ -460,7 +460,7 @@ to byte-identity if it holds, recording what was found.
 **Examples**
 
 ```
-$ fabrika-cli report file --title "Aborted requests in the http worker surface as plain timeouts" <<'EOF'
+$ fabrika report file --title "Aborted requests in the http worker surface as plain timeouts" <<'EOF'
 ## Summary
 An aborted request's interruption reaches the downstream handler carrying nothing about why, so a
 cancelled call is indistinguishable from a call that timed out.
@@ -485,19 +485,19 @@ EOF
 ```
 
 ```
-$ fabrika-cli report file --title "Aborted requests surface as plain timeouts" --json < body.md
+$ fabrika report file --title "Aborted requests surface as plain timeouts" --json < body.md
 {"number":4732,"url":"https://github.com/kamp-us/phoenix/issues/4732","label":"status:needs-triage","redactions":[],"bodyBytes":812}
 ```
 
 ```
-$ printf '' | fabrika-cli report file --title "Aborted requests surface as plain timeouts"
+$ printf '' | fabrika report file --title "Aborted requests surface as plain timeouts"
 report file: stdin was read and held 0 bytes — refusing to file a bodyless issue.
 $ echo $?
 3
 ```
 
 ```
-$ fabrika-cli report file --title "PR body shipped a literal body-file reference" < incident.md
+$ fabrika report file --title "PR body shipped a literal body-file reference" < incident.md
 report file: the body carries 1 machine-local path(s) — refusing to post them to a public issue.
   line 12, temp root
 $ echo $?
@@ -505,20 +505,20 @@ $ echo $?
 ```
 
 ```
-$ fabrika-cli report file --title "PR body shipped a literal body-file reference" --redact < incident.md
+$ fabrika report file --title "PR body shipped a literal body-file reference" --redact < incident.md
 report file: redacted 1 machine-local path — line 12, temp root
 4733	https://github.com/kamp-us/phoenix/issues/4733
 ```
 
 ```
-$ fabrika-cli report file --title "BUG: retry helper swallows the abort reason" < body.md
+$ fabrika report file --title "BUG: retry helper swallows the abort reason" < body.md
 report file: the title leads with the classification prefix "BUG:" — intake files type-neutral titles. Drop the prefix.
 $ echo $?
 10
 ```
 
 ```
-$ fabrika-cli report file --title "Aborted requests surface as plain timeouts" --repo kamp-us/fresh-adopter < body.md
+$ fabrika report file --title "Aborted requests surface as plain timeouts" --repo kamp-us/fresh-adopter < body.md
 report file: kamp-us/fresh-adopter has no "status:needs-triage" label — the issue would be filed outside the intake queue. Create the label, then re-run.
 $ echo $?
 7
@@ -583,7 +583,7 @@ call #3945 and #3173 each made. Both of those incidents were comment posts, not 
 **Invocation**
 
 ```
-fabrika-cli report note --issue 4312 [--redact] [--repo <owner/name>] [--json]
+fabrika report note --issue 4312 [--redact] [--repo <owner/name>] [--json]
 ```
 
 The note arrives on **stdin** as markdown.
@@ -639,26 +639,26 @@ had sent, reported upward as a success — so a post that is not verified is not
 **Examples**
 
 ```
-$ fabrika-cli report note --issue 4312 <<'EOF'
+$ fabrika report note --issue 4312 <<'EOF'
 Also reproduces on the streaming path, not just the buffered one — same discarded `cause`.
 EOF
 5154891644	https://github.com/kamp-us/phoenix/issues/4312#issuecomment-5154891644
 ```
 
 ```
-$ fabrika-cli report note --issue 4312 --json < note.md
+$ fabrika report note --issue 4312 --json < note.md
 {"id":5154891644,"url":"https://github.com/kamp-us/phoenix/issues/4312#issuecomment-5154891644","issue":4312,"redactions":[],"bodyBytes":94}
 ```
 
 ```
-$ printf '' | fabrika-cli report note --issue 4312
+$ printf '' | fabrika report note --issue 4312
 report note: stdin was read and held 0 bytes — refusing to post an empty note.
 $ echo $?
 3
 ```
 
 ```
-$ fabrika-cli report note --issue 99999 < note.md
+$ fabrika report note --issue 99999 < note.md
 report note: kamp-us/phoenix has no issue #99999.
 $ echo $?
 7

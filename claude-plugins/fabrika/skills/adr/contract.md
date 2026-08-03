@@ -5,11 +5,11 @@
 **The seed package.** These are fabrika's first derived verbs, so this spec is where the verb package
 lands — [#4648](https://github.com/kamp-us/phoenix/issues/4648) Resolved question 2 defers the
 decision to the first derived contract, which is this one. The package is `packages/fabrika-cli/`,
-its binary is `fabrika-cli`, and this skill's verbs sit under an `adr` subcommand group. The
+its binary is `fabrika`, and this skill's verbs sit under an `adr` subcommand group. The
 [CLI interface convention](../../docs/cli-interface-convention.md) governs all six; where this spec
 and that doc disagree, the doc wins and this spec is the bug.
 
-**`fabrika-cli` calls `pipeline-cli` nowhere, and neither does the skill.** fabrika is self-contained
+**`fabrika` calls `pipeline-cli` nowhere, and neither does the skill.** fabrika is self-contained
 by construction: every verb this skill needs is implemented in `packages/fabrika-cli/`, and no fence
 in `SKILL.md` invokes anything else. That is the [isolation rule](../../docs/cli-interface-convention.md);
 it is a hard constraint on every fabrika skill, not a preference of this one.
@@ -67,7 +67,7 @@ Every verb below obeys these; they are stated once rather than repeated per bloc
 **Invocation**
 
 ```
-fabrika-cli adr next [--dir <path>] [--base <ref>] [--repo <owner/name>] [--json]
+fabrika adr next [--dir <path>] [--base <ref>] [--repo <owner/name>] [--json]
 ```
 
 **Inputs**
@@ -127,17 +127,17 @@ The two halves fail differently, and the difference is load-bearing:
 **Examples**
 
 ```
-$ fabrika-cli adr next
+$ fabrika adr next
 0240
 ```
 
 ```
-$ fabrika-cli adr next --json
+$ fabrika adr next --json
 {"id":"0240","mergedMax":"0236","inFlight":["0237","0239"],"baseRef":"origin/main","baseSha":"49a22902d1e0c7b3f5a8e4126b9d0f3c7a1e5b82"}
 ```
 
 ```
-$ fabrika-cli adr next --repo kamp-us/nonexistent
+$ fabrika adr next --repo kamp-us/nonexistent
 adr next: cannot enumerate open pull requests in kamp-us/nonexistent: HTTP 404 — the in-flight set is UNKNOWN, never "nothing reserved". Re-run; do not fall back to the on-disk id.
 $ echo $?
 4
@@ -172,7 +172,7 @@ $ echo $?
 **Invocation**
 
 ```
-fabrika-cli adr new 0240 only-landed-adrs-may-be-cited [--dir <path>] [--status <text>] [--date <YYYY-MM-DD>] [--title <text>] [--tags <a,b>] [--json]
+fabrika adr new 0240 only-landed-adrs-may-be-cited [--dir <path>] [--status <text>] [--date <YYYY-MM-DD>] [--title <text>] [--tags <a,b>] [--json]
 ```
 
 **Inputs**
@@ -249,12 +249,12 @@ whether the id is claimed; that is `adr next` and `adr resolve`.
 **Examples**
 
 ```
-$ fabrika-cli adr new 0240 only-landed-adrs-may-be-cited
+$ fabrika adr new 0240 only-landed-adrs-may-be-cited
 .decisions/0240-only-landed-adrs-may-be-cited.md
 ```
 
 ```
-$ fabrika-cli adr new 0126 ambient-adr-discovery
+$ fabrika adr new 0126 ambient-adr-discovery
 adr new: .decisions/0126-ambient-adr-discovery.md already exists — refusing to overwrite.
 $ echo $?
 3
@@ -275,7 +275,7 @@ $ echo $?
 **Invocation**
 
 ```
-fabrika-cli adr resolve 0164 [--dir <path>] [--base <ref>] [--repo <owner/name>] [--json]
+fabrika adr resolve 0164 [--dir <path>] [--base <ref>] [--repo <owner/name>] [--json]
 ```
 
 One or more ids may be given; each produces one line, in argument order. One fetch serves them all.
@@ -344,23 +344,23 @@ same reason it does in `adr next`. The scope line goes to stderr, naming the bas
 **Examples**
 
 ```
-$ fabrika-cli adr resolve 0164
+$ fabrika adr resolve 0164
 landed	0164-guard-relaxing-adr-cp-gate.md	proposed
 ```
 
 ```
-$ fabrika-cli adr resolve 0023 0240
+$ fabrika adr resolve 0023 0240
 live	0023-live-views-sse-livedo.md	amended-in-part by [0025](0025-split-livedo-connection-topic.md), [0028](0028-effect-durable-object-model.md), [0037](0037-unified-void-aligned-live-do.md)
 absent	-	-
 ```
 
 ```
-$ fabrika-cli adr resolve 0239
+$ fabrika adr resolve 0239
 in-flight	0239-campaign-milestones-close-with-their-arc.md	PR #4711
 ```
 
 ```
-$ fabrika-cli adr resolve 0164 --base origin/nonexistent
+$ fabrika adr resolve 0164 --base origin/nonexistent
 adr resolve: cannot fetch origin/nonexistent: couldn't find remote ref — every state is UNKNOWN, never "absent".
 $ echo $?
 3
@@ -390,11 +390,11 @@ nothing else**.
 **Invocation**
 
 ```
-fabrika-cli adr supersede 0126 --by 0240 [--dir <path>]
+fabrika adr supersede 0126 --by 0240 [--dir <path>]
 ```
 
 ```
-fabrika-cli adr amend-in-part 0023 --by 0240 [--dir <path>]
+fabrika adr amend-in-part 0023 --by 0240 [--dir <path>]
 ```
 
 **Inputs**
@@ -453,17 +453,17 @@ reads one more, the record for `--by`, to resolve its slug.
 **Examples**
 
 ```
-$ fabrika-cli adr supersede 0126 --by 0240
+$ fabrika adr supersede 0126 --by 0240
 .decisions/0126-ambient-adr-discovery.md	superseded by [0240](0240-only-landed-adrs-may-be-cited.md)
 ```
 
 ```
-$ fabrika-cli adr amend-in-part 0023 --by 0240
+$ fabrika adr amend-in-part 0023 --by 0240
 .decisions/0023-live-views-sse-livedo.md	amended-in-part by [0025](0025-split-livedo-connection-topic.md), [0028](0028-effect-durable-object-model.md), [0037](0037-unified-void-aligned-live-do.md), [0240](0240-only-landed-adrs-may-be-cited.md)
 ```
 
 ```
-$ fabrika-cli adr supersede 0126 --by 9999
+$ fabrika adr supersede 0126 --by 9999
 adr supersede: no record for --by id 9999 under .decisions — refusing to write a dead link.
 $ echo $?
 4
@@ -483,12 +483,12 @@ $ echo $?
 ## `adr sweep`
 
 Ranks the uncited live-accepted ADRs whose decision domain the subject touches. **Implemented in
-`fabrika-cli`, calling nothing** — the lexical/rarity ranking is fabrika's own.
+`fabrika`, calling nothing** — the lexical/rarity ranking is fabrika's own.
 
 **Invocation**
 
 ```
-fabrika-cli adr sweep --new 0240 [--dir <path>] [--limit <n>] [--json]
+fabrika adr sweep --new 0240 [--dir <path>] [--limit <n>] [--json]
 ```
 
 **Inputs**
@@ -538,7 +538,7 @@ of 10, and a caller that cannot see the count cannot tell that from a clean swee
 **Examples**
 
 ```
-$ fabrika-cli adr sweep --new 0240
+$ fabrika adr sweep --new 0240
 shortlist
 0233	15.11	0233-decision-shell-enforcement-review-skill-criterion.md	New decision-computing shell is caught by a review-skill criterion row
 0160	13.46	0160-ref-transaction-guard-refuses-diverging-primary-main.md	A git reference-transaction guard refuses a diverging refs/heads/main ref-move
@@ -547,7 +547,7 @@ $ echo $?
 ```
 
 ```
-$ fabrika-cli adr sweep --new 0240 --dir claude-plugins/fabrika/skills/adr/evals/fixtures/small-corpus
+$ fabrika adr sweep --new 0240 --dir claude-plugins/fabrika/skills/adr/evals/fixtures/small-corpus
 indeterminate
 $ echo $?
 0

@@ -33,6 +33,8 @@ export interface FakeFsOptions {
 	readonly unwritable?: ReadonlyArray<string>;
 	/** Paths whose existence check itself fails — distinct from a path that is absent. */
 	readonly unprobeable?: ReadonlyArray<string>;
+	/** Symlink path → the path it really is. Anything unlisted is its own real path. */
+	readonly real?: Readonly<Record<string, string>>;
 }
 
 export interface FakeFs {
@@ -65,6 +67,7 @@ export const fakeFs = (options: FakeFsOptions): FakeFs => {
 					? notFound("exists", path)
 					: Effect.succeed(Object.hasOwn(files, path) && files[path] !== null),
 			makeDirectory: () => Effect.void,
+			realPath: (path: string) => Effect.succeed(options.real?.[path] ?? path),
 			writeFileString: (path: string, data: string) => {
 				if (options.unwritable?.includes(path) === true) return notFound("writeFileString", path);
 				files[path] = data;
@@ -140,6 +143,54 @@ export const faultingShell: Layer.Layer<ChildProcessSpawner.ChildProcessSpawner>
 		),
 	),
 );
+
+/**
+ * The `PlatformError` `NodeChildProcessSpawner` really fails a signal-killed child's `exitCode` with
+ * — reproduced through the same `PlatformError.systemError` constructor and the same nested `cause`,
+ * so a test over it binds to the dependency's shape rather than to a literal string (#4792).
+ */
+export const signalledExitError = (
+	signal: NodeJS.Signals,
+	commandLine: string,
+): PlatformError.PlatformError =>
+	PlatformError.systemError({
+		_tag: "Unknown",
+		module: "ChildProcess",
+		method: "exitCode",
+		pathOrDescriptor: commandLine,
+		cause: new globalThis.Error(`Process interrupted due to receipt of signal: '${signal}'`),
+	});
+
+/** A spawner that spawns fine and whose child is then killed by `signal`. */
+export const signalledShell = (
+	signal: NodeJS.Signals,
+): Layer.Layer<ChildProcessSpawner.ChildProcessSpawner> =>
+	Layer.succeed(ChildProcessSpawner.ChildProcessSpawner)(
+		ChildProcessSpawner.make((command) =>
+			Effect.succeed(
+				ChildProcessSpawner.makeHandle({
+					pid: ChildProcessSpawner.ProcessId(1),
+					stdin: Sink.drain,
+					stdout: Stream.empty,
+					stderr: Stream.empty,
+					all: Stream.empty,
+					exitCode: Effect.fail(
+						signalledExitError(
+							signal,
+							command._tag === "StandardCommand"
+								? [command.command, ...command.args].join(" ")
+								: "<piped>",
+						),
+					),
+					isRunning: Effect.succeed(false),
+					kill: () => Effect.void,
+					getInputFd: () => Sink.drain,
+					getOutputFd: () => Stream.empty,
+					unref: Effect.succeed(Effect.void),
+				}),
+			),
+		),
+	);
 
 export const okOut = (stdout: string): ExecResult => ({ok: true, stdout, reason: ""});
 

@@ -136,13 +136,13 @@ fabricated zero. `buildScorecard`, `renderTable`, `toJson`, and `decodeReportInp
 
 ```bash
 # human table (default) — the founder reads this to decide #1576
-fabrika-cli eval report <rows.json>
+fabrika eval report <rows.json>
 
 # stable machine-readable JSON — a future gate / CI consumes this
-fabrika-cli eval report <rows.json> --json
+fabrika eval report <rows.json> --json
 
 # price net saving against a baseline (stage × model)
-fabrika-cli eval report <rows.json> --baseline-stage write-code --baseline-model opus-4.8
+fabrika eval report <rows.json> --baseline-stage write-code --baseline-model opus-4.8
 ```
 
 `<rows.json>` is a serialized `RunRow[]` — the array `collectRuns` emits. `decodeReportInput` is
@@ -279,9 +279,9 @@ The core is a pure library — import `CorpusEntry`, `CorpusManifest`, `decodeMa
 against the schema, and render the graded scorecard over runner rows:
 
 ```bash
-fabrika-cli eval check <manifest>    # exit 0 if valid; non-zero on a bad manifest
-fabrika-cli eval report <rows.json>  # the graded two-axis scorecard (see below)
-fabrika-cli eval cases <evals.json>  # validate an authored eval set (see below)
+fabrika eval check <manifest>    # exit 0 if valid; non-zero on a bad manifest
+fabrika eval report <rows.json>  # the graded two-axis scorecard (see below)
+fabrika eval cases <evals.json>  # validate an authored eval set (see below)
 ```
 
 ## Repair-churn cost — net-token pricing of a model swap
@@ -345,7 +345,7 @@ The frozen ground truth lives beside this module as one manifest per stage under
 - [`corpus/review-code.json`](./corpus/review-code.json) — review-code verdicts
 
 Each file is a `CorpusManifest` whose non-target stage arrays are empty, so it decodes
-clean on its own and validates through `fabrika-cli eval check`. Every entry is
+clean on its own and validates through `fabrika eval check`. Every entry is
 covered by `corpus.data.unit.test.ts`, which decodes each committed file through
 `decodeManifest` and asserts `Ok` — so a malformed corpus cannot land. A replay grades a
 recorded run against these files with **no live network dependency**: the ground truth is
@@ -454,7 +454,7 @@ a case that has none yet), because `evals.json` is the authored set of record.
 
 ```bash
 # exit 0 on a valid set; non-zero with a named reason on a bad one
-fabrika-cli eval cases <path-to-evals.json>
+fabrika eval cases <path-to-evals.json>
 ```
 
 The verb prints the skill name, the case count, the per-tier split, and one line per case. It reds
@@ -466,10 +466,10 @@ An unedited authoring-session output shape is committed under
 [`fixtures/skill-creator/`](./fixtures/skill-creator) and is what the unit tests decode, so "decodes
 with no edits" is checked against the real shape rather than asserted.
 
-## `fabrika-cli eval run` — executing an eval set unattended (#4676)
+## `fabrika eval run` — executing an eval set unattended (#4676)
 
 ```bash
-fabrika-cli eval run <evals.json> \
+fabrika eval run <evals.json> \
   --stage <triage|write-code|review-code|review-doc|ship-it> \
   --plugin-dir <the candidate skill's plugin dir> \
   --model <model> \

@@ -1,5 +1,5 @@
 /**
- * The `report` verb group — `fabrika-cli report <dedup|file|note>`.
+ * The `report` verb group — `fabrika report <dedup|file|note>`.
  *
  * The adapter and nothing else: it declares the flags (`--help` is the interface, so every flag
  * carries a one-line description), runs the pure verb, and emits its outcome. Every decision lives
@@ -80,7 +80,7 @@ const dedup = Command.make(
 	}),
 ).pipe(
 	Command.withDescription(
-		'Rank the open issues that may already cover an observation. First stdout line is the outcome token — candidates | none | indeterminate — and ALL THREE exit 0; a candidates list adds one `<number>\\t<source>\\t<score>\\t<title>` line per entry. Exits 3 (queue unreadable), 4 (search index unreadable), 7 (--label does not exist, so the queue half would scan nothing). Example: fabrika-cli report dedup --query "retry helper swallows the abort reason"',
+		'Rank the open issues that may already cover an observation. First stdout line is the outcome token — candidates | none | indeterminate — and ALL THREE exit 0; a candidates list adds one `<number>\\t<source>\\t<score>\\t<title>` line per entry. Exits 3 (queue unreadable), 4 (search index unreadable), 7 (--label does not exist, so the queue half would scan nothing). Example: fabrika report dedup --query "retry helper swallows the abort reason"',
 	),
 );
 
@@ -116,7 +116,7 @@ const fileCmd = Command.make(
 	}),
 ).pipe(
 	Command.withDescription(
-		'Compose the intake issue from the six sections on STDIN, guard it, create it, and read back what landed. Prints `<number>\\t<url>`. Exits 3 (empty stdin), 4 (bad sections), 5 (machine-local path), 6 (bare @ reference), 7 (no such label), 8 (create failed — UNKNOWN), 9 (read-back mismatch), 10 (title or label classifies), 11 (label set unreadable). Example: fabrika-cli report file --title "Retry helper swallows the abort reason" < body.md',
+		'Compose the intake issue from the six sections on STDIN, guard it, create it, and read back what landed. Prints `<number>\\t<url>`. Exits 3 (empty stdin), 4 (bad sections), 5 (machine-local path), 6 (bare @ reference), 7 (no such label), 8 (create failed — UNKNOWN), 9 (read-back mismatch), 10 (title or label classifies), 11 (label set unreadable). Example: fabrika report file --title "Retry helper swallows the abort reason" < body.md',
 	),
 );
 
@@ -142,7 +142,7 @@ const note = Command.make(
 	}),
 ).pipe(
 	Command.withDescription(
-		"Add a note from STDIN to an existing issue over the same guarded path, then read the comment back. Prints `<comment-id>\\t<url>`. Exits 3 (empty stdin), 5 (machine-local path), 6 (bare @ reference), 7 (no such issue), 8 (post failed — UNKNOWN), 9 (read-back mismatch), 11 (issue unreadable). Example: fabrika-cli report note --issue 4312 < note.md",
+		"Add a note from STDIN to an existing issue over the same guarded path, then read the comment back. Prints `<comment-id>\\t<url>`. Exits 3 (empty stdin), 5 (machine-local path), 6 (bare @ reference), 7 (no such issue), 8 (post failed — UNKNOWN), 9 (read-back mismatch), 11 (issue unreadable). Example: fabrika report note --issue 4312 < note.md",
 	),
 );
 
