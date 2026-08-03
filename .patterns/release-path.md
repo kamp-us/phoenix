@@ -149,6 +149,14 @@ and build have already passed.
 
 That is also why one file resolves the tag rather than one workflow per package.
 
+**The environment field is part of that binding, and it is the easier half to break.**
+`publish.yml` declares no `environment:` key, and the `fabrika-cli` registration recorded on
+[#4800](https://github.com/kamp-us/phoenix/issues/4800) was made with npm's environment field
+deliberately left empty so the OIDC claim matches. A change that adds an `environment:` to
+`publish.yml` **must edit the registrations on npmjs.com in the same change** — otherwise the
+claim stops matching and publishing breaks with the same late 403, with nothing about the
+workflow looking wrong.
+
 ## Adding a third published package
 
 Publishing a new `@kampus/*` package is **not** a code-only change: it needs a one-time human
@@ -179,8 +187,16 @@ corrupted by it — no version is consumed, because nothing was published.
 
 ## Current state
 
-`fabrika-cli` has no Trusted Publisher registration yet (step 5 above is outstanding), so a
-`fabrika-cli-v*` release 403s. Because `release-please-config.json` sets
-`separate-pull-requests: false`, one Release PR can carry both packages and its merge can
-create both tags — yielding one green publish run and one red one until that registration
-exists.
+Both published packages are registered as npm Trusted Publishers for this repo and this
+workflow file, so **no publish 403 is expected**. `fabrika-cli`'s registration is recorded on
+[#4800](https://github.com/kamp-us/phoenix/issues/4800), which pastes npm's own confirmation
+of it.
+
+That record is the authority, because nothing here can re-derive it: npm exposes no
+trusted-publisher field over the CLI or the registry API, so registration state is a web-UI
+fact and npmjs.com (Settings → Publishing) is the only place to check it. Never restate it as
+tool-verified.
+
+Because `release-please-config.json` sets `separate-pull-requests: false`, one Release PR can
+carry both packages and its merge can create both tags — two publish runs, both expected
+green.

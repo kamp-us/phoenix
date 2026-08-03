@@ -243,20 +243,30 @@ Where the run dies tells you what broke:
 |---|---|
 | **Resolve the release tag** (before install) | The tag prefix matches no published package, or the tag version disagrees with that package's `package.json`. A real defect — nothing published. |
 | **Typecheck / build** | A genuine break in the tagged tree. Nothing published. |
-| **Publish, with a 403** | Almost always the missing Trusted Publisher registration — see below. |
+| **Publish, with a 403** | An OIDC failure: the Trusted Publisher registration no longer matches this workflow — see below. |
 
-**The expected 403.** Auth is OIDC Trusted Publishing with **no `NPM_TOKEN` fallback**, and
-each package's registration is a one-time human step on npmjs.com. `fabrika-cli` has **no
-registration yet**, so any `fabrika-cli-v*` release 403s at the publish step — *after* install,
-typecheck and build have all gone green. That lateness makes it read like a broken build; it is
-not. It is the path failing closed on missing authorization, and nothing is corrupted by it
-(no version is consumed, because nothing was published). Because one Release PR can carry both
-packages, the first merge including fabrika changes yields **one green publish run and one red
-one** until that registration exists.
+**Reading a 403.** Auth is OIDC Trusted Publishing with **no `NPM_TOKEN` fallback**, and each
+package's registration is a one-time human step on npmjs.com. **Both published packages are
+registered**, so a 403 is *not* expected — it means a registration stopped matching this
+workflow, and one of the two hazards below is the usual cause. `fabrika-cli`'s registration is
+recorded on [#4800](https://github.com/kamp-us/phoenix/issues/4800), which pastes npm's own
+confirmation (this repo, workflow file `publish.yml`). Registration state is a **web-UI fact**:
+npm exposes no trusted-publisher field over the CLI or the registry API, so nothing here can
+re-check it — npmjs.com (Settings → Publishing) is the only authority.
 
-`pipeline-cli`'s registration is bound to `publish.yml`'s **exact filename** — renaming that
-file, or adding a second publish workflow, silently invalidates it and turns every publish into
-this same 403.
+When a 403 does fire it arrives *after* install, typecheck and build have all gone green. That
+lateness makes it read like a broken build; it is not. It is the path failing closed on missing
+authorization, and nothing is corrupted by it — no version is consumed, because nothing was
+published.
+
+**Two ways to invalidate a registration, both silent until a release 403s:**
+
+- **Renaming `publish.yml`**, or adding a second publish workflow — each registration names
+  that exact filename.
+- **Adding an `environment:` key to `publish.yml`.** The workflow declares none, and the
+  registration on #4800 was made with npm's environment field deliberately empty to match. Add
+  one without editing the registrations in the **same change** and the OIDC claim stops
+  matching.
 
 ### Adding a third published package
 
