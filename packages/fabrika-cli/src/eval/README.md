@@ -60,7 +60,7 @@ The grade is a typed value, never a throw:
 `runner.ts` is the **collection layer** between the corpus format and the report slice: it turns
 a corpus manifest into **graded runs** for a chosen (stage × model). For each corpus entry it
 grades the entry's actual run `artifact` (via `oracle.ts` `gradeEntry`) and reconstructs the
-run's token spend from its sub-agent transcript (via the [`token-spend`](../token-spend/token-spend.ts)
+run's token spend from its sub-agent transcript (via the [`token-spend`](../spend/token-spend.ts)
 core, ADR 0112 §2), producing a `{entry, grade, spend}` **row**. A per-(stage × model) collection
 of those rows is the raw material the report slice ([#1853](https://github.com/kamp-us/phoenix/issues/1853))
 aggregates into pass-rate + churn cost.
@@ -302,8 +302,8 @@ Import `repairChurnCost`, `priceModelSwap`, and `tokensFromTranscript` from `rep
   worth of tokens.
 - **`passRate`** is the fraction of *graded* runs for a (stage × model) that **PASS** the
   gate. It counts only repair-forcing gate outcomes: a crash or infra flake is a
-  `failure-classifier` **TRANSIENT** death (see [`failure-classifier`](../failure-classifier/failure-classifier.ts)),
-  not a fail the model owns, so it is **excluded** from `passRate` — otherwise churn would be
+  `failure-classifier` **TRANSIENT** death (that classifier is a v1 module and did not move here,
+  so it is named, not linked), not a fail the model owns, so it is **excluded** from `passRate` — otherwise churn would be
   inflated with flakiness the swap doesn't cause. Only a `logic`-class gate FAIL is churn.
 - **Expected extra cycles** are derived as the **geometric expectation** from a per-attempt
   fail probability. Each attempt passes independently with probability `p = passRate`, so the
@@ -327,7 +327,7 @@ tokens net once its repair churn is priced in.
 ### Token grounding (ADR 0112 §2 — no second meter)
 
 The per-run and per-repair token inputs are the **billed** figure from the existing
-[`token-spend`](../token-spend/token-spend.ts) reconstruction — the four-`usage`-component
+[`token-spend`](../spend/token-spend.ts) reconstruction — the four-`usage`-component
 offline sum (`input + cache_creation + cache_read + output`) over a stage's
 `agent-<id>.jsonl` transcript (ADR 0112 §2). `tokensFromTranscript` reuses that core
 **read-only**; the churn core never mints its own token meter. (`token-spend` also exposes

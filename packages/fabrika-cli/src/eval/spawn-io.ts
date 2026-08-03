@@ -105,7 +105,10 @@ export const claudeVersion = (
  * The three outcomes stay *values*, which is what keeps `classifyRun` total. `TimedOut` comes from
  * the timeout arm — the scope closes on interruption, so the child is reaped rather than orphaned —
  * and a spawn fault (an unresolvable executable) arrives as a `PlatformError` and folds into
- * `SpawnFailed`. Everything that ran and reported is `Exited`, whatever its code.
+ * `SpawnFailed`. So does a signal-killed child: `handle.exitCode` yields no number for one, it
+ * fails with a `PlatformError` ("Process interrupted due to receipt of signal"), which the same
+ * `catchTag` classifies `SpawnFailed` — the tag v1's explicit `status === null` branch produced.
+ * Only a child that ran and reported an exit code is `Exited`, whatever that code is.
  */
 export const claudeExecutor = (opts: {
 	readonly timeoutMs: number;
