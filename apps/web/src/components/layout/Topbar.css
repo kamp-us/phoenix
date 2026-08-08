@@ -58,6 +58,7 @@
 	color: var(--text-secondary);
 	border-radius: var(--r-sm);
 	text-decoration: none;
+	line-height: 1;
 }
 /* The divan glyph follows its link's role token (icon.css pins `--text-secondary` by
    default, so without this the parent hover/active color wouldn't reach it). */
@@ -173,7 +174,6 @@
 	color: var(--text-primary);
 	background: none;
 	border: 0;
-	line-height: 12px;
 }
 .kp-topbar__user:hover {
 	background: var(--surface-raised);

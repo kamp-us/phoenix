@@ -78,7 +78,7 @@
 }
 .kp-subnav__cta .kp-btn:where([data-scope="button"][data-part="root"]) {
 	--manti-button-height: calc(var(--subnav-h) - var(--s-2));
-	--manti-button-padding-x: var(--s-2);
+	--manti-button-padding-x: var(--s-3);
 	/* A leading `+` is optically lighter than a letter, so the default --s-2 gap on top of
 	   the padding reads as a glyph floating in space rather than a label with an icon. */
 	--manti-button-gap: var(--s-1);

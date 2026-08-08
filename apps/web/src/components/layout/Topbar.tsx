@@ -145,7 +145,7 @@ export function Topbar({
 			{/* Drawn Lucide, not the hand-inlined magnifier this replaced: ADR 0166 §2 rules
 			    icons are drawn glyphs, and §4 floors them at 16 — below that a stroke muddies
 			    on a dark surface, which is exactly how the old 11px one read. */}
-			<Icon icon={Search} size={16} />
+			<Icon icon={Search} size={12} />
 			{/* key + defaultValue: uncontrolled so it stays editable, yet a query→query
 			    navigation re-seeds the echoed value by remounting with the new default. */}
 			<Input

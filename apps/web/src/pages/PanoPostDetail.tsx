@@ -194,7 +194,7 @@ export function PanoPostDetail() {
 		<div className="kp-page">
 			<div className="kp-page__inner">
 				<Link to="/pano" className="kp-pano-postpage__back">
-					<Icon icon={ArrowLeft} size={16} />
+					<Icon icon={ArrowLeft} size={14} />
 					akışa dön
 				</Link>
 				<Screen

@@ -14,6 +14,11 @@
 	color: var(--accent);
 	text-decoration: none;
 }
+/* icon.css pins .kp-icon to --text-secondary, so without this the link's hover colour stops
+   at the label and the glyph stays grey. Same opt-in the topbar's divan link makes. */
+.kp-pano-postpage__back .kp-icon {
+	color: inherit;
+}
 
 .kp-pano-postpage__head {
 	display: grid;

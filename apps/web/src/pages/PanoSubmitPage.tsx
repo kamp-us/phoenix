@@ -230,7 +230,7 @@ export function PanoSubmitPage() {
 			<div className="kp-page__inner">
 				<div className="kp-pano-submit">
 					<Link to="/pano" className="kp-pano-submit__back">
-						<Icon icon={ArrowLeft} size={16} />
+						<Icon icon={ArrowLeft} size={14} />
 						akışa dön
 					</Link>
 					<h1 className="kp-pano-submit__title">bir şey paylaş</h1>

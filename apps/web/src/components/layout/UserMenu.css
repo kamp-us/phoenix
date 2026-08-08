@@ -26,38 +26,48 @@
 	flex-direction: column;
 }
 
-/* Rows are links (nav) or a button (çıkış) — reset both to one shared row box so
-   the two element types are visually indistinguishable. `min-height: --tap-min`
-   holds the 36px floor (design-manifest Pillar 4) without inflating the label. */
+/* Rows are links (nav) or the Button primitive (çıkış) — flatten both to one shared row
+   box so the two element types are visually indistinguishable. `min-height: --tap-min`
+   holds the 36px floor (design-manifest Pillar 4) without inflating the label.
+   `justify-content` / `min-width` are here for the Button: Manti's own anatomy centers a
+   label in a --tap-min-wide box, and unlayered rules only outrank a layered one for the
+   properties they actually declare, so a row that wants left-aligned text must say so. */
 .kp-user-menu__item {
 	display: flex;
 	align-items: center;
+	justify-content: flex-start;
 	min-height: var(--tap-min);
+	min-width: 0;
 	padding: 0 var(--s-3);
 	border: 0;
 	border-radius: 0;
 	background: none;
 	font: var(--t-body-sm);
+	line-height: 1;
 	color: var(--text-primary);
 	text-align: left;
 	text-decoration: none;
 	cursor: pointer;
 }
-.kp-user-menu__item:hover {
+/* 0-4-0 is what this costs, and the reason is the çıkış row: it is a tertiary Button, and
+   `.kp-btn:where([data-variant="tertiary"]):hover:not(:disabled)` is 0-3-0 — it outranks a
+   bare `.kp-user-menu__item:hover` and paints --surface-raised, which is this panel's OWN
+   ground, so the row read as having no hover at all while its link siblings lit up. The
+   rows must share one hover, so it is declared above the variant's weight.
+   `text-decoration` is here because global.css underlines every `a:hover`, and a full-bleed
+   row is not body prose — the hover background already carries the affordance. */
+.kp-user-menu__popup .kp-user-menu__item:hover:not(:disabled) {
 	background: var(--accent-faint);
 	color: var(--text-primary);
-	/* global.css underlines every `a:hover`; a full-bleed row is not body prose, and the
-	   hover background already carries the affordance. */
 	text-decoration: none;
 }
 
-/* The çıkış row is a plain <button>, which global.css strips to `padding: 0`
-   (`button:not([data-scope][data-part])` — specificity 0-2-1, outranking the shared
-   0-1-0 row rule above). Restated here above that weight so the button row keeps the
-   exact box its link siblings have; the third class is what buys the specificity. */
-.kp-user-menu__popup .kp-user-menu__item.kp-user-menu__item--action {
+/* Only the width differs from a link row: a Button is inline-sized, and the row's hover
+   has to span the full panel like its siblings'. (The padding needed restating here while
+   this was a bare <button>, which global.css strips to `padding: 0`; going through the
+   Button primitive puts it outside that reset's `:not([data-scope][data-part])`.) */
+.kp-user-menu__item--action {
 	width: 100%;
-	padding: 0 var(--s-3);
 }
 
 /* The tema row: label left, segmented control right — a labeled settings row,

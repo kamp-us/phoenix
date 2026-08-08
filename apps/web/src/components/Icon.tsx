@@ -6,7 +6,7 @@ import "./icon.css";
 // 16/20/24 size scale, Lucide's native per-size optical stroke (never a pinned
 // absoluteStrokeWidth), and monochrome stroke:currentColor driven by role tokens
 // only (icon.css). Pass `label` for a meaningful icon; omit it for a decorative one.
-export type IconSize = 16 | 20 | 24;
+export type IconSize = 12 | 14 | 16 | 20 | 24;
 
 export interface IconProps {
 	icon: LucideIcon;

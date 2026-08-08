@@ -3,21 +3,36 @@
 	--manti-button-radius: var(--r-sm);
 	--manti-button-gap: 6px;
 	--manti-button-height: var(--tap-min);
-	--manti-button-padding-x: var(--s-2);
+	--manti-button-padding-x: var(--s-3);
 	min-width: var(--tap-min);
 	font: var(--t-body-sm);
 	font-weight: 500;
-	/* After the `font` shorthand, which would otherwise drag the prose leading (1.45) into
-	   a control. A label is one line the flex box centers, so the line box should measure
-	   the text and nothing more — that keeps the height --manti-button-height's alone, and
-	   stops an auto-height button from inheriting paragraph spacing. The `link` variant
-	   re-inherits via its own `font: inherit`, so inline link text is untouched. */
-	line-height: 1;
 	cursor: pointer;
 	transition:
 		background 80ms,
 		color 80ms,
 		border-color 80ms;
+}
+
+/* Control leading, deliberately its own rule at the anatomy's own weight.
+ *
+ * `font` is a SHORTHAND: every `font: var(--t-body-sm)` a feature sheet sets on a button
+ * silently resets line-height to that type token's PROSE leading (1.45). Declaring
+ * line-height in the base rule above cannot stop it — `:where()` contributes zero
+ * specificity, so that whole selector is 0-1-0, a tie with any single feature class, which
+ * source order then hands to the feature sheet. That is why a dozen buttons across the app
+ * were silently back on paragraph leading.
+ *
+ * 0-3-0 is the deliberate level. It outranks every plain `.kp-feature-class` rule — the
+ * accidental case, which is the bug — while only tying with a call site that spelled out the
+ * full anatomy selector itself (`.kp-auth__submit[data-scope][data-part]`, which wants 1.2).
+ * Writing the anatomy selector IS the opt-out: a deliberate override still wins on order, an
+ * accidental one no longer does. Going higher would clobber the deliberate ones too.
+ *
+ * The value: a label is one line the flex box centers, so its line box should measure the
+ * text and nothing more — leaving the height to --manti-button-height alone. */
+.kp-btn[data-scope="button"][data-part="root"] {
+	line-height: 1;
 }
 
 .kp-btn:where([data-variant="primary"]) {
@@ -81,6 +96,13 @@
 	box-shadow: none;
 	color: var(--accent);
 	font: inherit;
+}
+/* The one variant that opts back out: a link button is auto-height and sits INSIDE running
+   text (`font: inherit` above says as much), so it has to keep the surrounding prose leading
+   rather than a control's. Spelled at 0-4-0 to clear the control-leading rule above — the
+   `font: inherit` alone would lose to it. */
+.kp-btn[data-scope="button"][data-part="root"]:where([data-variant="link"]) {
+	line-height: inherit;
 }
 .kp-btn:where([data-variant="link"]):hover:not(:disabled) {
 	background: transparent;

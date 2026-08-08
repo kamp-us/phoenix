@@ -91,8 +91,13 @@ export function UserMenu({
 				</div>
 			) : null}
 			<hr className="kp-user-menu__sep" />
-			<button
+			{/* The Button primitive, not a bare <button> — the Manti-adoption guard rules out raw
+			    interactive controls, and going through it also means global.css's plain-button
+			    reset (which zeroes padding on `button:not([data-scope][data-part])`) no longer
+			    applies here, so the row keeps the shared box without outranking anything. */}
+			<Button
 				type="button"
+				variant="tertiary"
 				className="kp-user-menu__item kp-user-menu__item--action"
 				onClick={() => {
 					close();
@@ -100,7 +105,7 @@ export function UserMenu({
 				}}
 			>
 				çıkış
-			</button>
+			</Button>
 		</Popover>
 	);
 }

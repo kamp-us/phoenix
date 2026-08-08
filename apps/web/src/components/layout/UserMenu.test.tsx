@@ -19,6 +19,7 @@ const readSource = (rel: string): string =>
 	readFileSync(fileURLToPath(new URL(rel, import.meta.url)), "utf8");
 const USER_MENU_CSS = readSource("./UserMenu.css");
 const GLOBAL_CSS = readSource("../../styles/global.css");
+const BUTTON_CSS = readSource("../ui/Button.css");
 
 // The Manti popover panel is portaled and mounts a tick after the trigger click.
 async function openMenu() {
@@ -37,30 +38,39 @@ async function openMenu() {
 }
 
 describe("UserMenu row box", () => {
-	it("the çıkış row keeps its padding against global.css's plain-button reset", async () => {
+	it("the çıkış row goes through the Button primitive, so the plain-button reset misses it", async () => {
 		const logout = await openMenu();
-		// The reset that forces the whole dance — a plain <button> is stripped to padding: 0
-		// at specificity 0-2-1. If it ever stops covering this button, the scoped rule below
-		// is dead weight and should go.
+		// global.css zeroes padding on every NON-Manti button. Routing çıkış through the
+		// Button primitive puts it outside that `:not([data-scope][data-part])`, which is what
+		// lets the shared row rule keep its padding at a plain 0-1-0 — no specificity dance.
 		expect(GLOBAL_CSS).toMatch(/button:not\(\[data-scope\]\[data-part\]\)\s*\{[^}]*padding:\s*0/);
 		expect(logout.tagName).toBe("BUTTON");
-		// `.kp-user-menu__popup .kp-user-menu__item.kp-user-menu__item--action` is 0-3-0 — it
-		// only outranks the reset while all three classes are present AND the popup class is
-		// an ancestor. Assert both halves, then that the rule itself still carries padding.
+		expect(logout.getAttribute("data-scope")).toBe("button");
+		expect(logout.getAttribute("data-part")).toBe("root");
+		// It still wears the shared row box, so it is indistinguishable from its link siblings.
 		expect(logout.classList.contains("kp-user-menu__item")).toBe(true);
 		expect(logout.classList.contains("kp-user-menu__item--action")).toBe(true);
-		expect(logout.closest(".kp-user-menu__popup")).not.toBeNull();
-		expect(USER_MENU_CSS).toMatch(
-			/\.kp-user-menu__popup\s+\.kp-user-menu__item\.kp-user-menu__item--action\s*\{[^}]*padding:/,
-		);
+		expect(USER_MENU_CSS).toMatch(/\.kp-user-menu__item\s*\{[^}]*padding:\s*0 var\(--s-3\)/);
 	});
 
-	it("a hovered row is not underlined — the rule restates text-decoration over a:hover", () => {
-		// global.css underlines every a:hover; the row rule must turn it back off, or the nav
-		// rows underline on hover (they are full-bleed rows, not body prose).
-		expect(GLOBAL_CSS).toMatch(/a:hover\s*\{[^}]*text-decoration:\s*underline/);
-		const hoverRule = USER_MENU_CSS.match(/\.kp-user-menu__item:hover\s*\{([^}]*)\}/);
+	// One hover for both row types, and it has to outrank two separate globals to exist at all.
+	it("the row hover outranks the tertiary-variant hover and drops the a:hover underline", () => {
+		const hoverRule = USER_MENU_CSS.match(
+			/\.kp-user-menu__popup\s+\.kp-user-menu__item:hover:not\(:disabled\)\s*\{([^}]*)\}/,
+		);
 		expect(hoverRule).not.toBeNull();
+
+		// 1. çıkış is a tertiary Button, and Button.css paints that variant's hover at 0-3-0
+		//    with --surface-raised — which IS this panel's ground, so the row looked hoverless
+		//    while its link siblings lit up. The row rule is 0-4-0 to clear it.
+		expect(BUTTON_CSS).toMatch(
+			/\.kp-btn:where\(\[data-variant="tertiary"\]\):hover:not\(:disabled\)\s*\{[^}]*background:\s*var\(--surface-raised\)/,
+		);
+		expect(hoverRule?.[1]).toMatch(/background:\s*var\(--accent-faint\)/);
+
+		// 2. global.css underlines every a:hover, so the shared rule must turn it back off or
+		//    the link rows underline (they are full-bleed rows, not body prose).
+		expect(GLOBAL_CSS).toMatch(/a:hover\s*\{[^}]*text-decoration:\s*underline/);
 		expect(hoverRule?.[1]).toMatch(/text-decoration:\s*none/);
 	});
 });

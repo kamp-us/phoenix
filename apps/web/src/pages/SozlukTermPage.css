@@ -61,9 +61,19 @@
    cohesiveness; #2166). */
 .kp-sozluk-definition--top {
 	background: var(--surface-raised);
-	border-left: 2px solid var(--accent);
+	/* The marker is an INSET SHADOW, not a border-left. A one-sided border does not follow
+	   border-radius — across each rounded corner it tapers from 2px to the 0-width top/bottom
+	   border, so the bar overhangs the card's curve at both ends. An inset shadow is clipped
+	   by the radius, so the marker starts and stops exactly where the card does. The extra
+	   padding-left absorbs the 2px the border used to contribute, so no content shifts. */
+	box-shadow: inset 2px 0 0 0 var(--accent);
 	padding: var(--s-3);
-	margin: 0 -8px;
+	padding-left: calc(var(--s-3) + 2px);
+	/* No horizontal bleed. This used to be `margin: 0 -8px`, which pulled the one highlighted
+	   card 8px further left than every other card and than the header above it — the marker
+	   ended up outside the column's own edge and read as an overhang. The card now shares the
+	   column's edge; its padding indents the content instead, which is what a highlighted
+	   card's padding is for. */
 	border-radius: var(--r-sm);
 }
 .kp-sozluk-definition__vote {
