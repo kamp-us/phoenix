@@ -175,6 +175,28 @@ describe("the fabrika `--epic` envelope survives the splice — #4850's position
 		expect(readsAsEnrichedByAnchors(out)).toBe(true);
 	});
 
+	// The quote-protection AC4 requires to survive the move off terminality: each negative pins ONE of
+	// the three anchors, so a detector that drops any of them goes red here rather than silently
+	// widening into "replace everything above the opening `<details>`" on somebody's pasted envelope.
+	it("rejects a body that merely QUOTES an envelope below the reporter's own framing prose", () => {
+		const quoting = `## What I saw\n\nA report about this very format. The body it pasted:\n\n${EPIC_ENVELOPE}`;
+		expect(quoting).toContain(SUMMARY_LINE);
+		expect(readsAsEnrichedByAnchors(quoting)).toBe(false);
+	});
+
+	it("rejects a pitch that quotes the summary line ABOVE the header", () => {
+		const quotingPitch = `## Pitch\n\nThe wrapper it writes opens \`${SUMMARY_LINE}\`.\n\n${EPIC_HEADER_BLOCK}`;
+		expect(quotingPitch.startsWith("## Pitch\n")).toBe(true);
+		expect(readsAsEnrichedByAnchors(quotingPitch)).toBe(false);
+	});
+
+	it("rejects a pitched body carrying no `## Epic — awaiting plan` heading", () => {
+		const headerless = EPIC_PITCH + EPIC_DETAILS;
+		expect(headerless.startsWith("## Pitch\n")).toBe(true);
+		expect(headerless).toContain(SUMMARY_LINE);
+		expect(readsAsEnrichedByAnchors(headerless)).toBe(false);
+	});
+
 	it("never cuts on `## Pitch` or `## Epic — awaiting plan` — they are not splice anchors", () => {
 		const body = beforeFirstPlan + epicDeps;
 		const freshDeps = "## Dependencies\n\n### Phase 1\n- #12 — z\n";
