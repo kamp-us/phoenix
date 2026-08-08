@@ -52,11 +52,11 @@ catalogs:
       specifier: 5.2.8
       version: 5.2.8
     '@manti-ui/react':
-      specifier: 0.6.0
-      version: 0.6.0
+      specifier: 0.9.0
+      version: 0.9.0
     '@manti-ui/styles':
-      specifier: 0.6.0
-      version: 0.6.0
+      specifier: 0.9.0
+      version: 0.9.0
     '@nkzw/fate':
       specifier: 1.3.1
       version: 1.3.1
@@ -264,10 +264,10 @@ importers:
         version: link:../../packages/fate-effect
       '@manti-ui/react':
         specifier: 'catalog:'
-        version: 0.6.0(@internationalized/date@3.12.3)(@manti-ui/styles@0.6.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+        version: 0.9.0(@internationalized/date@3.12.3)(@manti-ui/styles@0.9.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@manti-ui/styles':
         specifier: 'catalog:'
-        version: 0.6.0
+        version: 0.9.0
       '@nkzw/fate':
         specifier: 'catalog:'
         version: 1.3.1(patch_hash=e0af930dd67d32efc5463f43c35824fc35d9b9558716831f9cec3764017cf40c)(@trpc/client@11.17.0(@trpc/server@11.17.0(typescript@6.0.3))(typescript@6.0.3))(drizzle-orm@1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3))(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
@@ -2227,21 +2227,21 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@manti-ui/folds@0.6.0':
-    resolution: {integrity: sha512-SMryITcVHM0binUPEIf990OBIkN5MfMBBW2OtxqPljfGp9hF8K+j+8w43ak4U3N9PesVXh1jZ56yDPNG5GonyQ==}
+  '@manti-ui/folds@0.9.0':
+    resolution: {integrity: sha512-nFTuyWuKuv4lUwydh1fp0+I3WpEBe35lvfT9YDVmqXxXgBT2FtzqeGwY2rmvar7igF9BWgrRCFbMXs5VU5b4gA==}
 
-  '@manti-ui/react@0.6.0':
-    resolution: {integrity: sha512-FqmA176Qa6hoG5pPspU036K53q7pi4OppX15BU/HDFZ6u9aLsN6RACLENP/qykQKB5/rt4l1VcKnIiAEjnYSuQ==}
+  '@manti-ui/react@0.9.0':
+    resolution: {integrity: sha512-+8pTNyHsXDOu8a3Yj16OuEsLqXmvABvb9bheMAoDYiv2iHxlRfPxrCt1BOP2W00i1zrUNUp3JLtYq2r1NTXaIQ==}
     peerDependencies:
-      '@manti-ui/styles': ^0.6.0
+      '@manti-ui/styles': ^0.9.0
       react: ^18.0.0 || ^19.0.0
       react-dom: ^18.0.0 || ^19.0.0
 
-  '@manti-ui/styles@0.6.0':
-    resolution: {integrity: sha512-u/7jr70wJJY95lt3o844dR2ceVam2lmlfW19Nl6F3qX6S3codbzbDw8wh4GO+Vk1BclPhLOBh9AWYMHAyMluTA==}
+  '@manti-ui/styles@0.9.0':
+    resolution: {integrity: sha512-nUTXCBx2mBwjbeKZWwSUm3Gaj490lNjs/7e/Y/aKKWAo4iCxbuC4rzmzxw9N0WJ41Mi/mvbDjVA3eDpTqCtErw==}
 
-  '@manti-ui/tokens@0.6.0':
-    resolution: {integrity: sha512-zzGINY9pYd/eEJdYqv6D6TCJ4eEfVkSrScuWgz02ZmSbKSwYcj59HFzr55HxpUzvXhTZQljjYRRZJrefXrbtcA==}
+  '@manti-ui/tokens@0.9.0':
+    resolution: {integrity: sha512-P6GA//BTBvUhR+1+/9yliT7gG20ZHYODMKAj5HWr0EuG31NBJy1/EjTL05X1cmL2/ki/XU/x/71QyfLCmoR63Q==}
 
   '@msgpackr-extract/msgpackr-extract-darwin-arm64@3.0.3':
     resolution: {integrity: sha512-QZHtlVgbAdy2zAqNA9Gu1UpIuI8Xvsd1v8ic6B2pZmeFnFcMWiPLfWXh7TVw4eGEZ/C9TH281KwhVoeQUKbyjw==}
@@ -5735,7 +5735,7 @@ snapshots:
   '@libsql/win32-x64-msvc@0.5.29':
     optional: true
 
-  '@manti-ui/folds@0.6.0(@internationalized/date@3.12.3)':
+  '@manti-ui/folds@0.9.0(@internationalized/date@3.12.3)':
     dependencies:
       '@tanstack/table-core': 8.21.3
       '@zag-js/accordion': 1.43.0
@@ -5780,11 +5780,11 @@ snapshots:
     transitivePeerDependencies:
       - '@internationalized/date'
 
-  '@manti-ui/react@0.6.0(@internationalized/date@3.12.3)(@manti-ui/styles@0.6.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
+  '@manti-ui/react@0.9.0(@internationalized/date@3.12.3)(@manti-ui/styles@0.9.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
     dependencies:
-      '@manti-ui/folds': 0.6.0(@internationalized/date@3.12.3)
-      '@manti-ui/styles': 0.6.0
-      '@manti-ui/tokens': 0.6.0
+      '@manti-ui/folds': 0.9.0(@internationalized/date@3.12.3)
+      '@manti-ui/styles': 0.9.0
+      '@manti-ui/tokens': 0.9.0
       '@tanstack/react-table': 8.21.3(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@zag-js/react': 1.43.0(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       react: 19.2.6
@@ -5792,11 +5792,11 @@ snapshots:
     transitivePeerDependencies:
       - '@internationalized/date'
 
-  '@manti-ui/styles@0.6.0':
+  '@manti-ui/styles@0.9.0':
     dependencies:
-      '@manti-ui/tokens': 0.6.0
+      '@manti-ui/tokens': 0.9.0
 
-  '@manti-ui/tokens@0.6.0': {}
+  '@manti-ui/tokens@0.9.0': {}
 
   '@msgpackr-extract/msgpackr-extract-darwin-arm64@3.0.3':
     optional: true
