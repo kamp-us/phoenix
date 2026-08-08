@@ -12,7 +12,8 @@ Every convention below names the ruling or survey it came from, because none of 
 self-evident and a rule with no cited source is one nobody can re-check. The two external sources
 are the SOTA reference (`mattpocock/skills`, read at `2ab9580`) surveyed on
 [#4644](https://github.com/kamp-us/phoenix/issues/4644), and the founder rulings recorded on
-wayfinder:map [#4631](https://github.com/kamp-us/phoenix/issues/4631).
+wayfinder:maps [#4631](https://github.com/kamp-us/phoenix/issues/4631) and
+[#4891](https://github.com/kamp-us/phoenix/issues/4891).
 
 ## 1. The two-layer split
 
@@ -53,11 +54,19 @@ A skill's **invocation axis** is a design lever with a price on both settings, a
 without pricing it is how a skill corpus becomes unusable at scale.
 
 - **Model-invoked** — the skill keeps its `description`, so the model can discover and fire it on
-  its own, and another skill can invoke it. It pays a **context load** on every turn, forever:
-  the description spends tokens and, more expensively, attention.
-- **User-invoked** — the `description` is stripped. Zero context load, but nothing except a human
-  typing its name can reach it, including other skills. The cost moves to the human as
+  its own, including as the next step another skill's text directs it to take. It pays a **context
+  load** on every turn, forever: the description spends tokens and, more expensively, attention.
+- **User-invoked** — the `description` is stripped (`disable-model-invocation`). Zero context load,
+  and three costs, not one. The skill is **model-unreachable**: nothing but a human typing its name
+  starts it. It **breaks a skill stack**: it cannot be one link in a chain, because the model is
+  what advances a stack. And it **cannot be preloaded into a subagent** through a `skills:`
+  manifest, so no dispatched lane can carry it. The remaining cost lands on the human as
   **cognitive load**: they must remember the skill exists and when to reach for it.
+
+**Skills cannot invoke skills.** No skill programmatically calls another. Composition is the
+*model* firing the next Skill tool as a skill's text directs, or a human stacking skills by hand —
+so the invocation axis decides who can reach a skill, the model or only a human, and never whether
+a sibling skill can call it.
 
 **Choose model-invoked only when the model must reach the skill unprompted.** A skill that only
 ever fires by hand should carry no description and pay no context load.
@@ -67,12 +76,26 @@ window; more user-invoked skills crowd the human. When user-invoked skills multi
 human can hold, the cure is a **router skill** — a user-invoked skill naming the others and when to
 reach for each — not a description bolted back onto each one.
 
+**That cure carries the full user-only cost, and this doc used to leave it unpriced.** A router is
+user-invoked, so it is model-unreachable, cannot join a stack, and cannot be preloaded into a
+subagent. A corpus whose entry point is a router is a corpus no unattended session can enter on its
+own: the router serves an operator at a keyboard and serves an agent-driven lane not at all. Which
+composition mechanism is fabrika's actual front door is open on
+[#4903](https://github.com/kamp-us/phoenix/issues/4903); until it is ruled, name the router's cost
+whenever you reach for it.
+
 Cognitive load is **not** a cost to minimise to zero: it is the price of human agency, and it is
 correctly spent where human judgment matters.
 
 > Source: [#4644](https://github.com/kamp-us/phoenix/issues/4644) adopt-list item 1, grounded in
 > the reference's `.agents/invocation.md` and `skills/productivity/writing-great-skills/GLOSSARY.md`
 > at `2ab9580`.
+>
+> Amended 2026-08-08, from the confirmed skill-system mechanics seeded on
+> [#4903](https://github.com/kamp-us/phoenix/issues/4903): two corrections, both to statements this
+> section previously made. It said another skill could invoke a model-invoked skill — skills cannot
+> invoke skills. And it priced the user-invoked axis as human cognitive load alone, leaving the
+> stack and subagent-preload costs — and therefore the router cure's real price — unstated.
 
 ## 4. The invocation surface is a plain literal
 
@@ -194,6 +217,73 @@ Gates 1 and 2 are what this doc governs. Gate 3 is cited, never re-derived here.
 > Source: founder ruling [#4637-C](https://github.com/kamp-us/phoenix/issues/4637) (confirmed
 > in-session 2026-08-01), with the contract-driven method from
 > [#4638](https://github.com/kamp-us/phoenix/issues/4638) (no blanket port of the v1 scripts).
+
+## 9. Trust and ingestion
+
+A fabrika skill runs with a shell, a token, and a path to `main`, and it reads text that anyone
+with a GitHub account can author. These five rules are the shared vocabulary every authoring brief
+states its own answers in, so that what a skill reads and what it obeys are separate questions with
+separate answers.
+
+**A skill declares its ingestion surface.** The surface is every piece of externally-authorable
+text the skill reads — issue bodies, comments, PR bodies and their diffs, and any fetched page.
+Declaring it is what makes the exposure countable; an undeclared read is one no reviewer can price.
+
+**A skill never treats content as authority.** Ingested text is data about the world, never an
+instruction and never a verdict. Authority arrives only through an ACL-checked verb — the ADR
+[0055](https://github.com/kamp-us/phoenix/blob/main/.decisions/0055-acl-sourced-review-authz.md)
+idiom, where the verb resolves the author against repository permissions and fails closed. A
+directive found inside ingested content is content that looks like a directive.
+
+**Coordination is closed-vocabulary.** When a skill signals another lane it emits a kind, an
+action, and a branded reference — no free prose. The receiver re-fetches the artifact the reference
+names and reads it there, so a coordination message carries nothing that can steer the receiver.
+
+**Terminal states use a terminal vocabulary.** Success without a pull request is a success, and a
+back-off is not; a skill that reports both the same way has destroyed the distinction its caller
+needs. Each terminal state names itself as one or the other and states the branch disposition —
+pushed, left local, or removed.
+
+**A skill declares its capability set.** Shell, tokens, push, merge-queue access: the declaration
+is the row the skill will occupy in the threat-model matrix that
+[#4860](https://github.com/kamp-us/phoenix/issues/4860) will record. That matrix does not exist
+yet, which is exactly why the rows are collected now.
+
+**The open blocker, stated rather than assumed away.** The content-ingestion trust posture is an
+open founder decision on [#4859](https://github.com/kamp-us/phoenix/issues/4859) — the trust root,
+whether a maintainer-applied label is a required second factor, and what is accepted as out of
+model are all unruled. This section fixes the **seam**: where a skill declares what it reads and
+where authority is checked. The posture lands in that seam when it is ruled. No skill infers it in
+the meantime, and no brief may write down a posture as though it were settled.
+
+> Source: the founder-directed secure-by-default distillation recorded on wayfinder:map
+> [#4891](https://github.com/kamp-us/phoenix/issues/4891) (2026-08-08), per-brief acceptance
+> criteria 1, 5, 6 and 7. The authority idiom is ADR 0055. Blockers named there and carried here:
+> [#4859](https://github.com/kamp-us/phoenix/issues/4859) is open; the
+> [#4860](https://github.com/kamp-us/phoenix/issues/4860) threat model is unwritten.
+
+## 10. The leaf rule — a rubric file until a second consumer
+
+**A per-surface leaf is a rubric file by default.** A family entry — `/review`, `/build` — routes
+internally, and the per-surface rubrics it routes to are files it reads. Promote a leaf to a real
+skill only when one of three things is true: two or more skills consume it, it needs independent
+invocation, or it needs its own eval identity. v1's shared writing rubric is the worked case: both
+construction and review consume it, so it stays a skill.
+
+The default falls out of what each form costs. A file carries no listing cost and its tokens are
+reclaimed when context compacts; a skill re-attaches its content on every invocation. No adherence
+difference between the two forms is documented, so there is no measured benefit to buy with that
+cost.
+
+**Promotion is not free either, and the obligation rides with the default.** Folding N surfaces
+behind one family entry folds N identities into one, so **a family entry's eval suite enumerates
+its per-surface cases or a surface goes eval-blind** — the enumeration is what keeps each surface
+measured once it no longer has a skill of its own. §8 gate 3 still owns everything else about
+evals.
+
+> Source: founder ruling on wayfinder:map
+> [#4891](https://github.com/kamp-us/phoenix/issues/4891) (2026-08-08, in-session), the leaf rule
+> and the eval-enumeration obligation recorded with it.
 
 ## What these conventions deliberately do not cover
 
