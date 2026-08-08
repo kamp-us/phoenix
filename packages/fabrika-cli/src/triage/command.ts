@@ -22,6 +22,7 @@ import type {VerbOutcome} from "../verb.ts";
 import {runApply} from "./apply-verb.ts";
 import {DEFAULT_TTL_MINUTES, runClaim} from "./claim-verb.ts";
 import {runCodes} from "./codes-verb.ts";
+import {runEnrich} from "./enrich-verb.ts";
 import {AUDIENCES, PRIORITIES, STANDING_LANES, TYPES} from "./facets.ts";
 import {DEFAULT_ROADMAP, runHomes} from "./homes-verb.ts";
 import {runKill} from "./kill-verb.ts";
@@ -328,6 +329,41 @@ const homes = leafCommand(
 	),
 );
 
+/**
+ * The rewrite — or, with `--epic`, the pitch — arrives on **stdin only**, for `split`'s reason above.
+ * `--epic` is a mode on this verb rather than a second verb because both compose the same envelope
+ * around the same preserved original; only the authored region above the marker differs.
+ */
+const enrich = leafCommand(
+	"enrich",
+	{
+		issue: Argument.integer("issue").pipe(Argument.withDescription("the issue to enrich")),
+		epic: Flag.boolean("epic").pipe(
+			Flag.withDescription(
+				"wrap the original under a fixed header and head a pitch above it; stdin carries the pitch's five field lines, not a rewrite",
+			),
+		),
+		repo: repoFlag,
+		json: jsonFlag,
+	},
+	Effect.fn(function* ({issue, epic, repo, json}) {
+		yield* emit(
+			yield* runEnrich({
+				issue,
+				epic,
+				repo: Option.getOrNull(repo),
+				json,
+				env: process.env,
+				stdin: Effect.sync(readStdin),
+			}),
+		);
+	}),
+).pipe(
+	Command.withDescription(
+		"Replace an issue body with the rewrite on STDIN above the preserved, leak-redacted original — or with --epic, a pitch above the original under a fixed header. A prior enrichment is recognised by the marker this verb writes, bound to this issue number, so a re-run in EITHER mode replaces the authored region instead of nesting a second envelope. Prints `enriched\\t<number>\\t<redactions>`. Exits 3 (empty stdin), 5 (machine-local path in the authored text), 6 (bare @ reference), 7 (issue absent, or its body is empty — no original to preserve), 8 (the PATCH failed — UNKNOWN), 9 (read-back mismatch), 11 (the issue could not be read). Example: fabrika triage enrich 4312 < enriched.md",
+	),
+);
+
 export const triageCommand = Command.make("triage").pipe(
 	Command.withSubcommands([
 		// One leaf per line, so five in-flight slices append at five distinct lines rather than all
@@ -341,6 +377,7 @@ export const triageCommand = Command.make("triage").pipe(
 		queue,
 		provenance,
 		homes,
+		enrich,
 	]),
 	Command.withDescription(
 		"Take one intake-queue issue from arrival to a triaged, homed transition — or park it, split it, or close it not-planned — over reads that page and writes that are read back",
