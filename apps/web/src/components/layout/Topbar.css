@@ -97,7 +97,9 @@
 	gap: 6px;
 	width: 240px;
 	height: 24px;
-	padding: 0 8px;
+	/* Asymmetric on purpose: the trailing edge holds a ⌘K keycap, which carries its own
+	   box, so it needs half the breathing room the leading magnifier does. */
+	padding: 0 var(--s-1) 0 var(--s-2);
 	background: var(--surface);
 	border: 1px solid var(--border);
 	border-radius: var(--r-sm);
@@ -171,6 +173,7 @@
 	color: var(--text-primary);
 	background: none;
 	border: 0;
+	line-height: 12px;
 }
 .kp-topbar__user:hover {
 	background: var(--surface-raised);

@@ -1,4 +1,4 @@
-import {Gavel} from "lucide-react";
+import {Gavel, Search} from "lucide-react";
 import type * as React from "react";
 import {useEffect} from "react";
 import {Link, NavLink} from "react-router";
@@ -142,18 +142,10 @@ export function Topbar({
 				onSearchSubmit?.(input?.value ?? "");
 			}}
 		>
-			<svg
-				width="11"
-				height="11"
-				viewBox="0 0 24 24"
-				fill="none"
-				stroke="currentColor"
-				strokeWidth="2.4"
-				aria-hidden="true"
-			>
-				<circle cx="11" cy="11" r="7" />
-				<path d="m20 20-3.5-3.5" />
-			</svg>
+			{/* Drawn Lucide, not the hand-inlined magnifier this replaced: ADR 0166 §2 rules
+			    icons are drawn glyphs, and §4 floors them at 16 — below that a stroke muddies
+			    on a dark surface, which is exactly how the old 11px one read. */}
+			<Icon icon={Search} size={16} />
 			{/* key + defaultValue: uncontrolled so it stays editable, yet a query→query
 			    navigation re-seeds the echoed value by remounting with the new default. */}
 			<Input
