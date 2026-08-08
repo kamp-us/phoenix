@@ -272,6 +272,12 @@ Three properties are worth knowing before you call them:
   [`verdict-marker.ts`](./src/wire/verdict-marker.ts)'s `bindToHead` — three answers again
   (`Current` / `Stale` / `Unbindable`), because a head the caller could not resolve is not a
   comparison anyone made.
+- **A registered format is a conforming format.** A registry row carries the fixtures its laws
+  are driven from and the brands its value is built from, and both are required by the row
+  type — so adding a format means filling them in, and
+  [`conformance.ts`](./src/wire/conformance.ts) then holds it to the same laws as every other
+  row without naming it. Weakening one of those brands to a bare `string` stops the *row* from
+  compiling, which is how the type-level half is inherited rather than re-written per format.
 
 ```bash
 printf 'the read is total\n[x] the registry is the seam\n' \
