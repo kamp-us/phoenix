@@ -140,6 +140,58 @@ describe("rank", () => {
 		expect(none.outcome).toBe("indeterminate");
 	});
 
+	it("omits --exclude from BOTH sources, so an issue can no longer flag itself", () => {
+		const self = {number: 4312, title: "Abort reason lost in the retry helper"};
+		const other = {number: 4088, title: "Abort reason lost in the retry helper"};
+		const result = rank({
+			tokens,
+			queue: [self, other],
+			search: [self],
+			limit: 20,
+			label: "status:needs-triage",
+			exclude: 4312,
+		});
+		expect(result.candidates.map((c) => c.number)).toEqual([4088]);
+		// `search` was the only other source carrying 4312, so the survivor is a plain queue hit —
+		// proof the filter ran on the search half too, not just the queue half.
+		expect(result.candidates[0]?.source).toBe("queue");
+	});
+
+	it("filters BEFORE the cap, so an excluded row never gives up its slot to a truncated one", () => {
+		const queue = Array.from({length: 3}, (_, i) => ({number: i + 1, title: "retry helper"}));
+		const result = rank({tokens, queue, search: [], limit: 2, label: "l", exclude: 3});
+		expect(result.candidates.map((c) => c.number)).toEqual([2, 1]);
+		expect(result.truncated).toBe(false);
+	});
+
+	it("reports `none` — the proven negative — when the only match was the excluded issue", () => {
+		const result = rank({
+			tokens,
+			queue: [{number: 4312, title: "Abort reason lost in the retry helper"}],
+			search: [],
+			limit: 20,
+			label: "status:needs-triage",
+			exclude: 4312,
+		});
+		expect(result.outcome).toBe("none");
+		expect(result.candidates).toEqual([]);
+	});
+
+	it("treats an --exclude matching nothing as satisfied, not as an error", () => {
+		const queue = [{number: 4088, title: "Abort reason lost in the retry helper"}];
+		const excluded = rank({tokens, queue, search: [], limit: 20, label: "l", exclude: 999});
+		const plain = rank({tokens, queue, search: [], limit: 20, label: "l"});
+		expect(excluded).toEqual(plain);
+	});
+
+	it("filters nothing when --exclude is absent or null", () => {
+		const queue = [{number: 4312, title: "Abort reason lost in the retry helper"}];
+		expect(rank({tokens, queue, search: [], limit: 20, label: "l"}).candidates).toHaveLength(1);
+		expect(
+			rank({tokens, queue, search: [], limit: 20, label: "l", exclude: null}).candidates,
+		).toHaveLength(1);
+	});
+
 	it("never reports a degenerate query as `none`, even when candidates exist", () => {
 		const result = rank({
 			tokens: ["thing"],

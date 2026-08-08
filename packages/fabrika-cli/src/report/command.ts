@@ -64,15 +64,22 @@ const dedup = leafCommand(
 			Flag.withDefault(DEFAULT_LIMIT),
 			Flag.withDescription(`the maximum number of candidates to print (default: ${DEFAULT_LIMIT})`),
 		),
+		exclude: Flag.integer("exclude").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"an issue number to omit from both sources — the issue being deduped, so it never flags itself",
+			),
+		),
 		repo: repoFlag,
 		json: jsonFlag,
 	},
-	Effect.fn(function* ({query, label, limit, repo, json}) {
+	Effect.fn(function* ({query, label, limit, exclude, repo, json}) {
 		yield* emit(
 			yield* runDedup({
 				query,
 				label,
 				limit,
+				exclude: Option.getOrNull(exclude),
 				repo: Option.getOrNull(repo),
 				json,
 				env: process.env,
@@ -81,7 +88,7 @@ const dedup = leafCommand(
 	}),
 ).pipe(
 	Command.withDescription(
-		'Rank the open issues that may already cover an observation. First stdout line is the outcome token — candidates | none | indeterminate — and ALL THREE exit 0; a candidates list adds one `<number>\\t<source>\\t<score>\\t<title>` line per entry. Exits 3 (queue unreadable), 4 (search index unreadable), 7 (--label does not exist, so the queue half would scan nothing). Example: fabrika report dedup --query "retry helper swallows the abort reason"',
+		'Rank the open issues that may already cover an observation. First stdout line is the outcome token — candidates | none | indeterminate — and ALL THREE exit 0; a candidates list adds one `<number>\\t<source>\\t<score>\\t<title>` line per entry. Exits 3 (queue unreadable), 4 (search index unreadable), 7 (--label does not exist, so the queue half would scan nothing). Example: fabrika report dedup --query "retry helper swallows the abort reason" --exclude 4312',
 	),
 );
 

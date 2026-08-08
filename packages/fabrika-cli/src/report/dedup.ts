@@ -102,6 +102,16 @@ export interface RankInput {
 	readonly search: ReadonlyArray<Row>;
 	readonly limit: number;
 	readonly label: string;
+	/**
+	 * An issue number to omit from **both** sources — the issue being deduped, so it never flags
+	 * itself. Absent filters nothing.
+	 *
+	 * The filter runs here, after retrieval and **before scoring and the cap**, so excluding an issue
+	 * never changes the rank order of the rest and never lets a truncated row take the excluded
+	 * issue's place. A number matching nothing is not an error: the caller's intent — "not this one"
+	 * — is satisfied either way.
+	 */
+	readonly exclude?: number | null;
 }
 
 /**
@@ -112,7 +122,12 @@ export interface RankInput {
  * body**, so it is kept regardless of its title score. `both` is the strongest duplicate signal.
  */
 export const rank = (input: RankInput): RankResult => {
-	const {tokens, queue, search, limit, label} = input;
+	const {tokens, limit, label} = input;
+	const excluded = input.exclude ?? null;
+	const keep = (rows: ReadonlyArray<Row>) =>
+		excluded === null ? rows : rows.filter((row) => row.number !== excluded);
+	const queue = keep(input.queue);
+	const search = keep(input.search);
 
 	if (tokens.length < TOKEN_FLOOR) {
 		return {

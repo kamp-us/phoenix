@@ -14,6 +14,7 @@ const options = {
 	limit: 20,
 	repo: null,
 	json: false,
+	exclude: null as number | null,
 	env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,
 };
 
@@ -36,6 +37,22 @@ describe("runDedup", () => {
 		expect(out.stdout.split("\n")[0]).toBe("candidates");
 		expect(out.stdout).toContain("4312\tqueue\t");
 		expect(out.stdout).toContain("4088\tsearch\t");
+	});
+
+	it("--exclude drops the issue being deduped from both sources, so it cannot flag itself", async () => {
+		const title = "Abort reason lost when the retry helper re-wraps the request";
+		const out = await run(
+			[labelsOk, [QUEUE, okOut(`4312\t${title}`)], [SEARCH, okOut(`4312\t${title}`)]],
+			{exclude: 4312},
+		);
+		expect(out.code).toBe(0);
+		expect(out.stdout).toBe("none\n");
+		expect(out.stderr.join("\n")).toContain("#4312 excluded from both sources");
+	});
+
+	it("says nothing about exclusion on the scope line when --exclude was not given", async () => {
+		const out = await run([labelsOk, [QUEUE, okOut("")], [SEARCH, okOut("")]]);
+		expect(out.stderr.join("\n")).not.toContain("excluded from both sources");
 	});
 
 	it("exits 0 on a PROVEN none, printing the token rather than empty stdout", async () => {
