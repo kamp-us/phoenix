@@ -44,6 +44,26 @@ describe("parseRoadmap", () => {
 		expect(parseRoadmap(ROADMAP).arcs.map((r) => r.milestone)).not.toContain(99);
 	});
 
+	it("stops after the FIRST matching section, so a repeated heading appends nothing", () => {
+		// The `## ` break is only observable here: a second `## Arcs` further down — a stray heading, a
+		// quoted table, an archive block — would otherwise silently merge its rows into the live arcs.
+		const rows = parseRoadmap(`## Arcs
+
+| Arc | Milestone |
+|-----|-----------|
+| Live | #1 |
+
+## Archive
+
+## Arcs
+
+| Arc | Milestone |
+|-----|-----------|
+| Retired | #2 |
+`);
+		expect(rows.arcs).toEqual([{name: "Live", milestone: 1}]);
+	});
+
 	it("drops the header and `|---|` separator rows without matching on their text", () => {
 		expect(parseRoadmap(ROADMAP).arcs.map((r) => r.name)).not.toContain("Arc");
 		expect(parseRoadmap(ROADMAP).arcs.some((r) => r.name.startsWith("---"))).toBe(false);
