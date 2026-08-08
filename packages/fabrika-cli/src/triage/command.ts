@@ -20,6 +20,7 @@ import {leafCommand} from "../excess-operand.ts";
 import {readStdin} from "../io/stdin.ts";
 import type {VerbOutcome} from "../verb.ts";
 import {runApply} from "./apply-verb.ts";
+import {DEFAULT_TTL_MINUTES, runClaim} from "./claim-verb.ts";
 import {runCodes} from "./codes-verb.ts";
 import {AUDIENCES, PRIORITIES, STANDING_LANES, TYPES} from "./facets.ts";
 import {runKill} from "./kill-verb.ts";
@@ -220,6 +221,37 @@ const park = leafCommand(
 	),
 );
 
+const claim = leafCommand(
+	"claim",
+	{
+		issue: Argument.integer("issue").pipe(Argument.withDescription("the issue number to claim")),
+		ttlMinutes: Flag.integer("ttl-minutes").pipe(
+			Flag.withDefault(DEFAULT_TTL_MINUTES),
+			Flag.withDescription(
+				`how long an existing claim marker stays binding before it is treated as abandoned (default: ${DEFAULT_TTL_MINUTES})`,
+			),
+		),
+		repo: repoFlag,
+		json: jsonFlag,
+	},
+	Effect.fn(function* ({issue, ttlMinutes, repo, json}) {
+		yield* emit(
+			yield* runClaim({
+				issue,
+				ttlMinutes,
+				repo: Option.getOrNull(repo),
+				json,
+				env: process.env,
+				now: () => new Date(),
+			}),
+		);
+	}),
+).pipe(
+	Command.withDescription(
+		'Take a session-scoped claim on one issue, proven by re-reading the markers back. Prints `won` or `lost\\t<holder-session-id>` — both are proven answers and both exit 0. Exits 1 (CLAUDE_CODE_SESSION_ID unset), 7 (no such issue, or it is closed), 8 (marker POST failed — UNKNOWN), 9 (marker absent on read-back, or a conceded marker could not be deleted), 11 (the issue or its comments could not be read — never "won"). Example: fabrika triage claim 4312',
+	),
+);
+
 export const triageCommand = Command.make("triage").pipe(
 	Command.withSubcommands([
 		// One leaf per line, so five in-flight slices append at five distinct lines rather than all
@@ -229,6 +261,7 @@ export const triageCommand = Command.make("triage").pipe(
 		split,
 		apply,
 		park,
+		claim,
 	]),
 	Command.withDescription(
 		"Take one intake-queue issue from arrival to a triaged, homed transition — or park it, split it, or close it not-planned — over reads that page and writes that are read back",
