@@ -192,6 +192,26 @@ export const signalledShell = (
 		),
 	);
 
+/**
+ * A pattern that matches at most once, so a script can answer the *same* command line differently on
+ * successive calls.
+ *
+ * {@link fakeShell} resolves each call by the first entry whose pattern matches, which cannot express
+ * a seam that is read twice on purpose — a reconcile reads the issue, writes, then re-reads the very
+ * same endpoint. Without this, the observed state and the read-back are forced to be identical, and
+ * every read-back test would be asserting against the input it already knew.
+ */
+export const once = (source: RegExp): RegExp => {
+	const pattern = new RegExp(source.source, source.flags);
+	let spent = false;
+	pattern.test = (line: string): boolean => {
+		if (spent) return false;
+		spent = RegExp.prototype.test.call(pattern, line);
+		return spent;
+	};
+	return pattern;
+};
+
 export const okOut = (stdout: string): ExecResult => ({ok: true, stdout, reason: ""});
 
 export const errOut = (reason: string): ExecResult => ({ok: false, stdout: "", reason});
