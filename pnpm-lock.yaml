@@ -192,7 +192,7 @@ patchedDependencies:
     hash: 204bf3117812a8a49610d2657951bba0c304d2b712f5767e02dcbd2c5536e8bc
     path: patches/alchemy@2.0.0-beta.59.patch
   effect@4.0.0-beta.92:
-    hash: 86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4
+    hash: ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89
     path: patches/effect@4.0.0-beta.92.patch
   react-fate@1.3.1:
     hash: 6333650bb56ba24c05dc81b19328e014d9b510316cf349d8a05cdd1b7b0efc2b
@@ -211,6 +211,9 @@ importers:
       '@effect/tsgo':
         specifier: 'catalog:'
         version: 0.5.2
+      '@kampus/fabrika-cli':
+        specifier: workspace:*
+        version: link:packages/fabrika-cli
       '@typescript/native-preview':
         specifier: 'catalog:'
         version: 7.0.0-dev.20260509.2
@@ -228,25 +231,25 @@ importers:
     dependencies:
       '@alchemy.run/better-auth':
         specifier: 'catalog:'
-        version: 2.0.0-beta.59(5f6d5c3574a9611f1a56173004aba329)
+        version: 2.0.0-beta.59(1bff1674407b05b4dd562007a8f75a43)
       '@better-auth/api-key':
         specifier: 'catalog:'
-        version: 1.6.23(69b8791598f4310069b7d12d63c52a1c)
+        version: 1.6.23(21577f855b9191067dbbab69dd47e65a)
       '@better-auth/core':
         specifier: 'catalog:'
         version: 1.6.23(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.1)(@cloudflare/workers-types@4.20260629.1)(@opentelemetry/api@1.9.1)(better-call@1.3.7(zod@4.4.3))(jose@6.2.3)(kysely@0.28.17)(nanostores@1.3.0)
       '@effect/platform-bun':
         specifier: 'catalog:'
-        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))
+        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))
       '@effect/platform-node':
         specifier: 'catalog:'
-        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))(ioredis@5.10.1)
+        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(ioredis@5.10.1)
       '@effect/sql-d1':
         specifier: 'catalog:'
-        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))
+        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))
       '@effect/sql-pg':
         specifier: 'catalog:'
-        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))
+        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))
       '@kampus/authz':
         specifier: workspace:*
         version: link:../../packages/authz
@@ -261,19 +264,19 @@ importers:
         version: link:../../packages/fate-effect
       '@manti-ui/react':
         specifier: 'catalog:'
-        version: 0.6.0(@internationalized/date@3.12.2)(@manti-ui/styles@0.6.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+        version: 0.6.0(@internationalized/date@3.12.3)(@manti-ui/styles@0.6.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@manti-ui/styles':
         specifier: 'catalog:'
         version: 0.6.0
       '@nkzw/fate':
         specifier: 'catalog:'
-        version: 1.3.1(patch_hash=e0af930dd67d32efc5463f43c35824fc35d9b9558716831f9cec3764017cf40c)(@trpc/client@11.17.0(@trpc/server@11.17.0(typescript@6.0.3))(typescript@6.0.3))(drizzle-orm@1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3))(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
+        version: 1.3.1(patch_hash=e0af930dd67d32efc5463f43c35824fc35d9b9558716831f9cec3764017cf40c)(@trpc/client@11.17.0(@trpc/server@11.17.0(typescript@6.0.3))(typescript@6.0.3))(drizzle-orm@1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3))(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
       '@sentry/cloudflare':
         specifier: 'catalog:'
         version: 10.62.0(@cloudflare/workers-types@4.20260629.1)
       '@sentry/effect':
         specifier: 'catalog:'
-        version: 10.62.0(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.8.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.8.0(@opentelemetry/api@1.9.1))(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))
+        version: 10.62.0(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.8.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.8.0(@opentelemetry/api@1.9.1))(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))
       '@sentry/react':
         specifier: 'catalog:'
         version: 10.62.0(react@19.2.6)
@@ -282,19 +285,19 @@ importers:
         version: 0.2.0
       alchemy:
         specifier: 'catalog:'
-        version: 2.0.0-beta.59(patch_hash=204bf3117812a8a49610d2657951bba0c304d2b712f5767e02dcbd2c5536e8bc)(c09e2a04e41915af1ba43a8c7062de29)
+        version: 2.0.0-beta.59(patch_hash=204bf3117812a8a49610d2657951bba0c304d2b712f5767e02dcbd2c5536e8bc)(234b374c9d508cf92321aefc5efec8fe)
       better-auth:
         specifier: 'catalog:'
-        version: 1.6.23(@cloudflare/workers-types@4.20260629.1)(@opentelemetry/api@1.9.1)(drizzle-kit@1.0.0-rc.4)(drizzle-orm@1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
+        version: 1.6.23(@cloudflare/workers-types@4.20260629.1)(@opentelemetry/api@1.9.1)(drizzle-kit@1.0.0-rc.4)(drizzle-orm@1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
       better-call:
         specifier: 'catalog:'
         version: 1.3.7(zod@4.4.3)
       drizzle-orm:
         specifier: 'catalog:'
-        version: 1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3)
+        version: 1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3)
       effect:
         specifier: 'catalog:'
-        version: 4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)
+        version: 4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)
       lucide-react:
         specifier: 'catalog:'
         version: 1.23.0(react@19.2.6)
@@ -306,7 +309,7 @@ importers:
         version: 19.2.6(react@19.2.6)
       react-fate:
         specifier: 'catalog:'
-        version: 1.3.1(patch_hash=6333650bb56ba24c05dc81b19328e014d9b510316cf349d8a05cdd1b7b0efc2b)(@trpc/client@11.17.0(@trpc/server@11.17.0(typescript@6.0.3))(typescript@6.0.3))(drizzle-orm@1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
+        version: 1.3.1(patch_hash=6333650bb56ba24c05dc81b19328e014d9b510316cf349d8a05cdd1b7b0efc2b)(@trpc/client@11.17.0(@trpc/server@11.17.0(typescript@6.0.3))(typescript@6.0.3))(drizzle-orm@1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
       react-router:
         specifier: 'catalog:'
         version: 7.18.1(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
@@ -319,13 +322,13 @@ importers:
         version: 4.20260629.1
       '@distilled.cloud/cloudflare':
         specifier: 'catalog:'
-        version: 0.27.0(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))
+        version: 0.27.0(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))
       '@effect/tsgo':
         specifier: 'catalog:'
         version: 0.5.2
       '@effect/vitest':
         specifier: 'catalog:'
-        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
+        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
       '@fontsource/ibm-plex-sans':
         specifier: 'catalog:'
         version: 5.2.8
@@ -391,10 +394,10 @@ importers:
     dependencies:
       alchemy:
         specifier: 'catalog:'
-        version: 2.0.0-beta.59(patch_hash=204bf3117812a8a49610d2657951bba0c304d2b712f5767e02dcbd2c5536e8bc)(c09e2a04e41915af1ba43a8c7062de29)
+        version: 2.0.0-beta.59(patch_hash=204bf3117812a8a49610d2657951bba0c304d2b712f5767e02dcbd2c5536e8bc)(234b374c9d508cf92321aefc5efec8fe)
       effect:
         specifier: 'catalog:'
-        version: 4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)
+        version: 4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)
     devDependencies:
       '@cloudflare/workers-types':
         specifier: 'catalog:'
@@ -404,7 +407,7 @@ importers:
         version: 0.5.2
       '@effect/vitest':
         specifier: 'catalog:'
-        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
+        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
       '@types/node':
         specifier: 'catalog:'
         version: 25.6.2
@@ -422,19 +425,19 @@ importers:
     dependencies:
       '@better-auth/api-key':
         specifier: 'catalog:'
-        version: 1.6.23(69b8791598f4310069b7d12d63c52a1c)
+        version: 1.6.23(21577f855b9191067dbbab69dd47e65a)
       alchemy:
         specifier: 'catalog:'
-        version: 2.0.0-beta.59(patch_hash=204bf3117812a8a49610d2657951bba0c304d2b712f5767e02dcbd2c5536e8bc)(c09e2a04e41915af1ba43a8c7062de29)
+        version: 2.0.0-beta.59(patch_hash=204bf3117812a8a49610d2657951bba0c304d2b712f5767e02dcbd2c5536e8bc)(234b374c9d508cf92321aefc5efec8fe)
       better-auth:
         specifier: 'catalog:'
-        version: 1.6.23(@cloudflare/workers-types@4.20260629.1)(@opentelemetry/api@1.9.1)(drizzle-kit@1.0.0-rc.4)(drizzle-orm@1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
+        version: 1.6.23(@cloudflare/workers-types@4.20260629.1)(@opentelemetry/api@1.9.1)(drizzle-kit@1.0.0-rc.4)(drizzle-orm@1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
       drizzle-orm:
         specifier: 'catalog:'
-        version: 1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3)
+        version: 1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3)
       effect:
         specifier: 'catalog:'
-        version: 4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)
+        version: 4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)
     devDependencies:
       '@cloudflare/workers-types':
         specifier: 'catalog:'
@@ -444,7 +447,7 @@ importers:
         version: 0.5.2
       '@effect/vitest':
         specifier: 'catalog:'
-        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
+        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
       '@types/node':
         specifier: 'catalog:'
         version: 25.6.2
@@ -462,10 +465,10 @@ importers:
     dependencies:
       '@distilled.cloud/cloudflare':
         specifier: 'catalog:'
-        version: 0.27.0(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))
+        version: 0.27.0(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))
       '@effect/platform-node':
         specifier: 'catalog:'
-        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))(ioredis@5.10.1)
+        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(ioredis@5.10.1)
       '@kampus/authz':
         specifier: workspace:*
         version: link:../authz
@@ -474,10 +477,10 @@ importers:
         version: link:../d1-rest
       drizzle-orm:
         specifier: 'catalog:'
-        version: 1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3)
+        version: 1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3)
       effect:
         specifier: 'catalog:'
-        version: 4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)
+        version: 4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)
     devDependencies:
       '@cloudflare/workers-types':
         specifier: 'catalog:'
@@ -487,7 +490,7 @@ importers:
         version: 0.5.2
       '@effect/vitest':
         specifier: 'catalog:'
-        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
+        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
       '@types/node':
         specifier: 'catalog:'
         version: 25.6.2
@@ -496,7 +499,7 @@ importers:
         version: 7.0.0-dev.20260509.2
       alchemy:
         specifier: 'catalog:'
-        version: 2.0.0-beta.59(patch_hash=204bf3117812a8a49610d2657951bba0c304d2b712f5767e02dcbd2c5536e8bc)(c09e2a04e41915af1ba43a8c7062de29)
+        version: 2.0.0-beta.59(patch_hash=204bf3117812a8a49610d2657951bba0c304d2b712f5767e02dcbd2c5536e8bc)(234b374c9d508cf92321aefc5efec8fe)
       typescript:
         specifier: 'catalog:'
         version: 6.0.3
@@ -508,16 +511,16 @@ importers:
     dependencies:
       '@distilled.cloud/cloudflare':
         specifier: 'catalog:'
-        version: 0.27.0(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))
+        version: 0.27.0(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))
       '@effect/platform-node':
         specifier: 'catalog:'
-        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))(ioredis@5.10.1)
+        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(ioredis@5.10.1)
       '@kampus/cf-credentials':
         specifier: workspace:*
         version: link:../cf-credentials
       effect:
         specifier: 'catalog:'
-        version: 4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)
+        version: 4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)
     devDependencies:
       '@cloudflare/workers-types':
         specifier: 'catalog:'
@@ -527,7 +530,7 @@ importers:
         version: 0.5.2
       '@effect/vitest':
         specifier: 'catalog:'
-        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
+        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
       '@types/node':
         specifier: 'catalog:'
         version: 25.6.2
@@ -545,7 +548,7 @@ importers:
     dependencies:
       '@effect/platform-node':
         specifier: 'catalog:'
-        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))(ioredis@5.10.1)
+        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(ioredis@5.10.1)
       '@kampus/audit-stage':
         specifier: workspace:*
         version: link:../audit-stage
@@ -554,7 +557,7 @@ importers:
         version: link:../audit-verdict
       effect:
         specifier: 'catalog:'
-        version: 4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)
+        version: 4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)
     devDependencies:
       '@cloudflare/workers-types':
         specifier: 'catalog:'
@@ -564,7 +567,7 @@ importers:
         version: 0.5.2
       '@effect/vitest':
         specifier: 'catalog:'
-        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
+        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
       '@types/node':
         specifier: 'catalog:'
         version: 25.6.2
@@ -582,7 +585,7 @@ importers:
     dependencies:
       '@effect/platform-node':
         specifier: 'catalog:'
-        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))(ioredis@5.10.1)
+        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(ioredis@5.10.1)
       '@kampus/d1-rest':
         specifier: workspace:*
         version: link:../d1-rest
@@ -594,7 +597,7 @@ importers:
         version: link:../preview-seed
       effect:
         specifier: 'catalog:'
-        version: 4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)
+        version: 4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)
     devDependencies:
       '@cloudflare/workers-types':
         specifier: 'catalog:'
@@ -604,7 +607,7 @@ importers:
         version: 0.5.2
       '@effect/vitest':
         specifier: 'catalog:'
-        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
+        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
       '@types/node':
         specifier: 'catalog:'
         version: 25.6.2
@@ -622,17 +625,17 @@ importers:
     dependencies:
       '@effect/platform-node':
         specifier: 'catalog:'
-        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))(ioredis@5.10.1)
+        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(ioredis@5.10.1)
       effect:
         specifier: 'catalog:'
-        version: 4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)
+        version: 4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)
     devDependencies:
       '@effect/tsgo':
         specifier: 'catalog:'
         version: 0.5.2
       '@effect/vitest':
         specifier: 'catalog:'
-        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
+        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
       '@types/node':
         specifier: 'catalog:'
         version: 25.6.2
@@ -650,7 +653,7 @@ importers:
     dependencies:
       effect:
         specifier: 'catalog:'
-        version: 4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)
+        version: 4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)
     devDependencies:
       '@effect/tsgo':
         specifier: 'catalog:'
@@ -672,10 +675,10 @@ importers:
     dependencies:
       '@distilled.cloud/cloudflare':
         specifier: 'catalog:'
-        version: 0.27.0(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))
+        version: 0.27.0(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))
       effect:
         specifier: 'catalog:'
-        version: 4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)
+        version: 4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)
     devDependencies:
       '@cloudflare/workers-types':
         specifier: 'catalog:'
@@ -685,7 +688,7 @@ importers:
         version: 0.5.2
       '@effect/vitest':
         specifier: 'catalog:'
-        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
+        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
       '@types/node':
         specifier: 'catalog:'
         version: 25.6.2
@@ -758,10 +761,10 @@ importers:
     dependencies:
       '@distilled.cloud/cloudflare':
         specifier: 'catalog:'
-        version: 0.27.0(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))
+        version: 0.27.0(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))
       effect:
         specifier: 'catalog:'
-        version: 4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)
+        version: 4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)
     devDependencies:
       '@cloudflare/workers-types':
         specifier: 'catalog:'
@@ -771,7 +774,7 @@ importers:
         version: 0.5.2
       '@effect/vitest':
         specifier: 'catalog:'
-        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
+        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
       '@types/node':
         specifier: 'catalog:'
         version: 25.6.2
@@ -789,7 +792,7 @@ importers:
     dependencies:
       drizzle-orm:
         specifier: 'catalog:'
-        version: 1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3)
+        version: 1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3)
     devDependencies:
       '@effect/tsgo':
         specifier: 'catalog:'
@@ -811,17 +814,17 @@ importers:
     dependencies:
       '@effect/platform-node':
         specifier: 'catalog:'
-        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))(ioredis@5.10.1)
+        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(ioredis@5.10.1)
       effect:
         specifier: 'catalog:'
-        version: 4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)
+        version: 4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)
     devDependencies:
       '@effect/tsgo':
         specifier: 'catalog:'
         version: 0.5.2
       '@effect/vitest':
         specifier: 'catalog:'
-        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
+        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
       '@types/node':
         specifier: 'catalog:'
         version: 25.6.2
@@ -839,7 +842,7 @@ importers:
     dependencies:
       '@effect/platform-node':
         specifier: 'catalog:'
-        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))(ioredis@5.10.1)
+        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(ioredis@5.10.1)
       '@kampus/depo':
         specifier: workspace:*
         version: link:../depo
@@ -848,14 +851,14 @@ importers:
         version: 1.59.1
       effect:
         specifier: 'catalog:'
-        version: 4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)
+        version: 4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)
     devDependencies:
       '@effect/tsgo':
         specifier: 'catalog:'
         version: 0.5.2
       '@effect/vitest':
         specifier: 'catalog:'
-        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
+        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
       '@types/node':
         specifier: 'catalog:'
         version: 25.6.2
@@ -873,14 +876,17 @@ importers:
     dependencies:
       '@effect/platform-node':
         specifier: 'catalog:'
-        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))(ioredis@5.10.1)
+        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(ioredis@5.10.1)
       effect:
         specifier: 'catalog:'
-        version: 4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)
+        version: 4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)
     devDependencies:
       '@effect/tsgo':
         specifier: 'catalog:'
         version: 0.5.2
+      '@effect/vitest':
+        specifier: 'catalog:'
+        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
       '@types/node':
         specifier: 'catalog:'
         version: 25.6.2
@@ -898,10 +904,10 @@ importers:
     dependencies:
       '@nkzw/fate':
         specifier: 'catalog:'
-        version: 1.3.1(patch_hash=e0af930dd67d32efc5463f43c35824fc35d9b9558716831f9cec3764017cf40c)(@trpc/client@11.17.0(@trpc/server@11.17.0(typescript@6.0.3))(typescript@6.0.3))(drizzle-orm@1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3))(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
+        version: 1.3.1(patch_hash=e0af930dd67d32efc5463f43c35824fc35d9b9558716831f9cec3764017cf40c)(@trpc/client@11.17.0(@trpc/server@11.17.0(typescript@6.0.3))(typescript@6.0.3))(drizzle-orm@1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3))(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
       effect:
         specifier: 'catalog:'
-        version: 4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)
+        version: 4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)
     devDependencies:
       '@effect/tsgo':
         specifier: 'catalog:'
@@ -923,17 +929,17 @@ importers:
     dependencies:
       '@effect/platform-node':
         specifier: 'catalog:'
-        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))(ioredis@5.10.1)
+        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(ioredis@5.10.1)
       effect:
         specifier: 'catalog:'
-        version: 4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)
+        version: 4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)
     devDependencies:
       '@effect/tsgo':
         specifier: 'catalog:'
         version: 0.5.2
       '@effect/vitest':
         specifier: 'catalog:'
-        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
+        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
       '@types/node':
         specifier: 'catalog:'
         version: 25.6.2
@@ -951,10 +957,10 @@ importers:
     dependencies:
       '@distilled.cloud/cloudflare':
         specifier: 'catalog:'
-        version: 0.27.0(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))
+        version: 0.27.0(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))
       '@effect/platform-node':
         specifier: 'catalog:'
-        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))(ioredis@5.10.1)
+        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(ioredis@5.10.1)
       '@kampus/authz':
         specifier: workspace:*
         version: link:../authz
@@ -963,10 +969,10 @@ importers:
         version: link:../d1-rest
       drizzle-orm:
         specifier: 'catalog:'
-        version: 1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3)
+        version: 1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3)
       effect:
         specifier: 'catalog:'
-        version: 4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)
+        version: 4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)
     devDependencies:
       '@cloudflare/workers-types':
         specifier: 'catalog:'
@@ -976,7 +982,7 @@ importers:
         version: 0.5.2
       '@effect/vitest':
         specifier: 'catalog:'
-        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
+        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
       '@types/node':
         specifier: 'catalog:'
         version: 25.6.2
@@ -985,7 +991,7 @@ importers:
         version: 7.0.0-dev.20260509.2
       alchemy:
         specifier: 'catalog:'
-        version: 2.0.0-beta.59(patch_hash=204bf3117812a8a49610d2657951bba0c304d2b712f5767e02dcbd2c5536e8bc)(c09e2a04e41915af1ba43a8c7062de29)
+        version: 2.0.0-beta.59(patch_hash=204bf3117812a8a49610d2657951bba0c304d2b712f5767e02dcbd2c5536e8bc)(234b374c9d508cf92321aefc5efec8fe)
       typescript:
         specifier: 'catalog:'
         version: 6.0.3
@@ -997,10 +1003,10 @@ importers:
     dependencies:
       '@distilled.cloud/cloudflare':
         specifier: 'catalog:'
-        version: 0.27.0(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))
+        version: 0.27.0(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))
       '@effect/platform-node':
         specifier: 'catalog:'
-        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))(ioredis@5.10.1)
+        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(ioredis@5.10.1)
       '@kampus/d1-rest':
         specifier: workspace:*
         version: link:../d1-rest
@@ -1012,10 +1018,10 @@ importers:
         version: link:../../apps/web
       drizzle-orm:
         specifier: 'catalog:'
-        version: 1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3)
+        version: 1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3)
       effect:
         specifier: 'catalog:'
-        version: 4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)
+        version: 4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)
     devDependencies:
       '@cloudflare/workers-types':
         specifier: 'catalog:'
@@ -1025,7 +1031,7 @@ importers:
         version: 0.5.2
       '@effect/vitest':
         specifier: 'catalog:'
-        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
+        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
       '@types/node':
         specifier: 'catalog:'
         version: 25.6.2
@@ -1043,7 +1049,7 @@ importers:
     dependencies:
       '@effect/platform-node':
         specifier: 'catalog:'
-        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))(ioredis@5.10.1)
+        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(ioredis@5.10.1)
       '@kampus/design-capture':
         specifier: workspace:*
         version: link:../design-capture
@@ -1052,14 +1058,14 @@ importers:
         version: 1.59.1
       effect:
         specifier: 'catalog:'
-        version: 4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)
+        version: 4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)
     devDependencies:
       '@effect/tsgo':
         specifier: 'catalog:'
         version: 0.5.2
       '@effect/vitest':
         specifier: 'catalog:'
-        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
+        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
       '@types/node':
         specifier: 'catalog:'
         version: 25.6.2
@@ -1077,17 +1083,17 @@ importers:
     dependencies:
       '@effect/platform-node':
         specifier: 'catalog:'
-        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))(ioredis@5.10.1)
+        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(ioredis@5.10.1)
       effect:
         specifier: 'catalog:'
-        version: 4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)
+        version: 4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)
     devDependencies:
       '@effect/tsgo':
         specifier: 'catalog:'
         version: 0.5.2
       '@effect/vitest':
         specifier: 'catalog:'
-        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
+        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
       '@types/node':
         specifier: 'catalog:'
         version: 25.6.2
@@ -1105,19 +1111,19 @@ importers:
     dependencies:
       '@distilled.cloud/cloudflare':
         specifier: 'catalog:'
-        version: 0.27.0(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))
+        version: 0.27.0(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))
       '@effect/platform-node':
         specifier: 'catalog:'
-        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))(ioredis@5.10.1)
+        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(ioredis@5.10.1)
       '@kampus/d1-rest':
         specifier: workspace:*
         version: link:../d1-rest
       drizzle-orm:
         specifier: 'catalog:'
-        version: 1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3)
+        version: 1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3)
       effect:
         specifier: 'catalog:'
-        version: 4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)
+        version: 4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)
     devDependencies:
       '@cloudflare/workers-types':
         specifier: 'catalog:'
@@ -1127,7 +1133,7 @@ importers:
         version: 0.5.2
       '@effect/vitest':
         specifier: 'catalog:'
-        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
+        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
       '@types/node':
         specifier: 'catalog:'
         version: 25.6.2
@@ -1136,7 +1142,7 @@ importers:
         version: 7.0.0-dev.20260509.2
       alchemy:
         specifier: 'catalog:'
-        version: 2.0.0-beta.59(patch_hash=204bf3117812a8a49610d2657951bba0c304d2b712f5767e02dcbd2c5536e8bc)(c09e2a04e41915af1ba43a8c7062de29)
+        version: 2.0.0-beta.59(patch_hash=204bf3117812a8a49610d2657951bba0c304d2b712f5767e02dcbd2c5536e8bc)(234b374c9d508cf92321aefc5efec8fe)
       typescript:
         specifier: 'catalog:'
         version: 6.0.3
@@ -1148,20 +1154,20 @@ importers:
     dependencies:
       '@effect/platform-node':
         specifier: 'catalog:'
-        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))(ioredis@5.10.1)
+        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(ioredis@5.10.1)
       '@kampus/cf-credentials':
         specifier: workspace:*
         version: link:../cf-credentials
       effect:
         specifier: 'catalog:'
-        version: 4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)
+        version: 4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)
     devDependencies:
       '@effect/tsgo':
         specifier: 'catalog:'
         version: 0.5.2
       '@effect/vitest':
         specifier: 'catalog:'
-        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
+        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
       '@types/node':
         specifier: 'catalog:'
         version: 25.6.2
@@ -1179,10 +1185,10 @@ importers:
     dependencies:
       '@effect/platform-node':
         specifier: 'catalog:'
-        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))(ioredis@5.10.1)
+        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(ioredis@5.10.1)
       effect:
         specifier: 'catalog:'
-        version: 4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)
+        version: 4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)
       fast-xml-parser:
         specifier: 'catalog:'
         version: 5.8.0
@@ -1195,7 +1201,7 @@ importers:
         version: 0.5.2
       '@effect/vitest':
         specifier: 'catalog:'
-        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
+        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
       '@types/node':
         specifier: 'catalog:'
         version: 25.6.2
@@ -1213,10 +1219,10 @@ importers:
     dependencies:
       '@effect/platform-node':
         specifier: 'catalog:'
-        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))(ioredis@5.10.1)
+        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(ioredis@5.10.1)
       effect:
         specifier: 'catalog:'
-        version: 4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)
+        version: 4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)
       proper-lockfile:
         specifier: 'catalog:'
         version: 4.1.2
@@ -1226,7 +1232,7 @@ importers:
         version: 0.5.2
       '@effect/vitest':
         specifier: 'catalog:'
-        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
+        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
       '@types/node':
         specifier: 'catalog:'
         version: 25.6.2
@@ -1247,10 +1253,10 @@ importers:
     dependencies:
       '@distilled.cloud/cloudflare':
         specifier: 'catalog:'
-        version: 0.27.0(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))
+        version: 0.27.0(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))
       '@effect/platform-node':
         specifier: 'catalog:'
-        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))(ioredis@5.10.1)
+        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(ioredis@5.10.1)
       '@kampus/d1-rest':
         specifier: workspace:*
         version: link:../d1-rest
@@ -1262,10 +1268,10 @@ importers:
         version: link:../../apps/web
       drizzle-orm:
         specifier: 'catalog:'
-        version: 1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3)
+        version: 1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3)
       effect:
         specifier: 'catalog:'
-        version: 4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)
+        version: 4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)
     devDependencies:
       '@cloudflare/workers-types':
         specifier: 'catalog:'
@@ -1275,7 +1281,7 @@ importers:
         version: 0.5.2
       '@effect/vitest':
         specifier: 'catalog:'
-        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
+        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
       '@types/node':
         specifier: 'catalog:'
         version: 25.6.2
@@ -1284,7 +1290,7 @@ importers:
         version: 7.0.0-dev.20260509.2
       alchemy:
         specifier: 'catalog:'
-        version: 2.0.0-beta.59(patch_hash=204bf3117812a8a49610d2657951bba0c304d2b712f5767e02dcbd2c5536e8bc)(c09e2a04e41915af1ba43a8c7062de29)
+        version: 2.0.0-beta.59(patch_hash=204bf3117812a8a49610d2657951bba0c304d2b712f5767e02dcbd2c5536e8bc)(234b374c9d508cf92321aefc5efec8fe)
       typescript:
         specifier: 'catalog:'
         version: 6.0.3
@@ -1299,7 +1305,7 @@ importers:
         version: 0.5.2
       '@effect/vitest':
         specifier: 'catalog:'
-        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
+        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
       '@types/node':
         specifier: 'catalog:'
         version: 25.6.2
@@ -2148,8 +2154,8 @@ packages:
   '@fontsource/jetbrains-mono@5.2.8':
     resolution: {integrity: sha512-6w8/SG4kqvIMu7xd7wt6x3idn1Qux3p9N62s6G3rfldOUYHpWcc2FKrqf+Vo44jRvqWj2oAtTHrZXEP23oSKwQ==}
 
-  '@internationalized/date@3.12.2':
-    resolution: {integrity: sha512-FY1Y+H64NDs+HAF6omlnWxm3mEpfgaCSWtL5l551ZZfImA+kGjPFgrnJrGjH6lfmLL0g8Z/mBu1R3kufeCp6Jw==}
+  '@internationalized/date@3.12.3':
+    resolution: {integrity: sha512-fuLX+3ZKLsxI73y8b01EG/WjHb6gE6weCqlfawPO27kBWGMh9G1yH6Csv1uU7/cac9H2GHmOMt6CjmuQ1aia4Q==}
 
   '@internationalized/number@3.6.7':
     resolution: {integrity: sha512-3ji1fcrT+FPAK86UqEhB/psHixYo6niWPJtt7+qRaYFynt/BaJG8GhAPimtWUpEiVSTq8ZM8L5psMxGquiB/Vg==}
@@ -3104,224 +3110,224 @@ packages:
   '@vitest/utils@4.1.5':
     resolution: {integrity: sha512-76wdkrmfXfqGjueGgnb45ITPyUi1ycZ4IHgC2bhPDUfWHklY/q3MdLOAB+TF1e6xfl8NxNY0ZYaPCFNWSsw3Ug==}
 
-  '@zag-js/accordion@1.42.0':
-    resolution: {integrity: sha512-eTVh6Uz3CqdcJDr5mHWTT+oICSrZFfYCCxIpOKF00nADmb96nCDqOAYFMf8gM3J/4UDS/V27QzEH5GPmFWiHIw==}
+  '@zag-js/accordion@1.43.0':
+    resolution: {integrity: sha512-Cy7jSbmFAn4mm+btHjCk0rtYEq5ggTvuLEFDdLnnEUw3SvK0H9J1hlouX5QVEybgibI2TFwk5wd8arn+hpZRnw==}
 
   '@zag-js/anatomy@1.22.1':
     resolution: {integrity: sha512-I5OvOuJBt6hEqbpqVkWCOEoDfGMnKuLx+S0h7Un5SyAwnif3F1dSqDYujU28bCy8FtKs36vsq/izxufXyiXSEg==}
 
-  '@zag-js/anatomy@1.42.0':
-    resolution: {integrity: sha512-F6kRAPxgBZRZmuV5SLywcrGNSclKcAcPAAgSrEdr2Z2dzFgQngbvS4dmdQyGau/vtQ42OlCI48Ri4t0hZxXkMw==}
+  '@zag-js/anatomy@1.43.0':
+    resolution: {integrity: sha512-hcARaNvhU+jXukKCU4Gz4eXU2oUSlppi15L/MoxcckMum+Pu1HFqjWpllDgjb7RyByHYX6XfFk6ijPRV8EzPpg==}
 
-  '@zag-js/aria-hidden@1.42.0':
-    resolution: {integrity: sha512-ao1RyEbHbglJtLLR4sJLPiD3hWF1CacuN5eqvODh/7HcntWULrkUHo8DIdzYgFL9GUHDyDmpaechMX5wL3kdPg==}
+  '@zag-js/aria-hidden@1.43.0':
+    resolution: {integrity: sha512-JUPIIPbcNsWW3vbPBkGBTHiPwC1jPsiYCMptyXif73J3RQpEW2DLdjen4jl7CrolSZndhVtkAUAQSfmuvWel8Q==}
 
-  '@zag-js/auto-resize@1.42.0':
-    resolution: {integrity: sha512-iL7EI30VknEkVb8PhTcLkvR8aiZda0IwJGT4K0cb7J/fMxsDAGjnjdLRu+dGUPZsXji1n58wlaKjTtCQCaXfOA==}
+  '@zag-js/auto-resize@1.43.0':
+    resolution: {integrity: sha512-qbwmMwMn6HxHgDWyF6FzWWf7yJeoWmmIPRzFbNVDg1ohMI2CpSfYqxh7LHk1bO/5C5j3pZ/0VY2j27b3szckqA==}
 
-  '@zag-js/avatar@1.42.0':
-    resolution: {integrity: sha512-rY2OxTTlvX1EMXENruejUUOZeiHusEpWLHNhrlqXMWMPWmcCe3aZ7iGMvjPFMb2mTMn0fzWmuY0nZDdVYk3V/g==}
+  '@zag-js/avatar@1.43.0':
+    resolution: {integrity: sha512-9bN1OzbrfKn2bP2d+Tw3d81h5vLbCKms/CTXvdkMnX1ZP5VrD/C1Hy1TyVW/7apUoJ1nHS6/Zi1RIfb2xnF0jQ==}
 
-  '@zag-js/carousel@1.42.0':
-    resolution: {integrity: sha512-8VMPlg5DP8vye4ujyEqzM/EQ0osOVtoG3bUJ6CGWdRIdSkbgjIt1tY8DlS1WzOvSUMnTcTAi/RPxoxYZwTIhsw==}
+  '@zag-js/carousel@1.43.0':
+    resolution: {integrity: sha512-6ZOXOQHiNth+WNzAvFwzp/l8UDjLjAXHdEpHW1XjkY/6sXbpmbT7hXFqM4X9U/IuVrsnG+bF59yb0bZdrzF4DA==}
 
-  '@zag-js/checkbox@1.42.0':
-    resolution: {integrity: sha512-Pn4IHtJFGLUorynWiOUN79qvYofbvIB8xM6ZwRR7gi8TjRdYPL8rVc5ASlNxus9slsvHGevRtKl5dLbT2DONNg==}
+  '@zag-js/checkbox@1.43.0':
+    resolution: {integrity: sha512-nrGTLaW/pG7ZITJua5vTgAufn5n4DPKsjsQr174eHkYyVkZJ2zj6zJEHcfysTdqsHamW9wTBazDMRKq64tDRfQ==}
 
-  '@zag-js/clipboard@1.42.0':
-    resolution: {integrity: sha512-x/APygRMNF2eqThsORb8c7CFAZWpBZ6wzKgjgiN2DHsNm9xF/pTg11ELn/2KQuDOlAlcV55RCc2FuWS3BVLBIg==}
+  '@zag-js/clipboard@1.43.0':
+    resolution: {integrity: sha512-uZjPhFCQmYVjxln8FncMX/0/TytLCVTDEX2PGQPslRPvn3AzSO3hQuDnnQLkw6wYav6qiSnDFiF0zl78np2r0Q==}
 
-  '@zag-js/collapsible@1.42.0':
-    resolution: {integrity: sha512-MSQo9qRwp2r6aj3G/lKd3gSXAAjuCaq1LtLT3BxHEQ5skn2NQWTKVgReUSuDJNl0Lz+Z5WYq5+5TCDHr4YKHRA==}
+  '@zag-js/collapsible@1.43.0':
+    resolution: {integrity: sha512-6AqDCYLQI/AdD4gOIlg/msQUkkvdH4WknZCm4dCgJ2v9sRPu7QcCSN83Y/k/PTQqv02V4pVSRQHVHzLosGjShw==}
 
-  '@zag-js/collection@1.42.0':
-    resolution: {integrity: sha512-+Bhj/2zqVVzmS788lsg/xK1ezksMc2pfVg2oO6MnipLCo8KrgzuuvhUahUzK+uIOc9ljBW4zl9Wcm3G248gh0A==}
+  '@zag-js/collection@1.43.0':
+    resolution: {integrity: sha512-5B/K12/z146o2tMY26HKFwG+faEAhp8+lMX2XnyOEh8y4LRUBNBt6znwxNU+YrLHrhb6i3lIEaHRcfSvkglEJQ==}
 
-  '@zag-js/color-picker@1.42.0':
-    resolution: {integrity: sha512-oNovW0RkCFuLoz9gdkKcvS2HbZEhf9mu/KMDkpNM2qjQtU/y3GUKOjYB84ucHPIJWw84zT/9KnbBaPExRl/aGA==}
+  '@zag-js/color-picker@1.43.0':
+    resolution: {integrity: sha512-CW4JdrS6Bd2dgxwFVV8pC7tA2jNt6c/pdqd+j4k6gUOUtxPtPdIeEtb9OzKArdIbO4kbWs2K9x1Hj6hYDf/ZLg==}
 
-  '@zag-js/color-utils@1.42.0':
-    resolution: {integrity: sha512-whhEQPMKvQyh3J/m23EemIPOL5bWxJBUCpFrBqP7+XuXgVLG316P2quwBxTYHupQdkxLj4/B1yQbRmwRe+RaxA==}
+  '@zag-js/color-utils@1.43.0':
+    resolution: {integrity: sha512-DDQgSWcUM+b9vvwJ71xGtRuq7WzG9LfPEwn399gRmbaAtZvC5Jv8CqSLXV5K+U4wKoV8TKQI80kA8cU7FeNjPQ==}
 
-  '@zag-js/combobox@1.42.0':
-    resolution: {integrity: sha512-fe+Sco278h8PPFM0g3eR5366/oVIfSI3B7qDXl/xmYKMQXhIp+bKxew3U0q1COSVof0x3wrIoIpY51BXj1McGw==}
+  '@zag-js/combobox@1.43.0':
+    resolution: {integrity: sha512-fpK19QSZtxlZQp5Zwql3mXFzXoJMVAy/3FJ7p1VQex3ZyezpZK4X3ThRdfxupOEmFst1HmtRtlGLqJXNVFEIsg==}
 
   '@zag-js/core@1.22.1':
     resolution: {integrity: sha512-4BNrwO9Tadq2Z0d2xSSQs4O/o3OarEHzXM2FQqx46vrwSE57qUghnZex429ZQ51fuk8AL5Lowt26a9JxE9sVPg==}
 
-  '@zag-js/core@1.42.0':
-    resolution: {integrity: sha512-jE/sbpZvbD+/etbawzhL/L2lP1pPefed5d919je+K5h9b6GAK3lUThleaDUCww3bT53B1L7O5gtqBapW37N1ug==}
+  '@zag-js/core@1.43.0':
+    resolution: {integrity: sha512-iIpTu/U1OHKXGjXq/bn/ek32nIKE0lmS2gLdihYmv1jtPXH8hVHaIOXR5KYGfOjMVb4+FiMMCZHlH9MWbLk2iA==}
 
-  '@zag-js/date-picker@1.42.0':
-    resolution: {integrity: sha512-M8zt5kdOld7YKYmCZCQ8xPJ8+xwBpxIumzWgzFGoadSxYQPaK8gPqPFKxADJZWX7p/oHdpw2BVcVFWNC0urcyg==}
+  '@zag-js/date-picker@1.43.0':
+    resolution: {integrity: sha512-pusQ1SYXJ5ffCLMoVLddxfef+nbAzhndZ6mvZLDNK2QAgFymqZ6Imo4kYC3nJ2r6yGKu9KjRQKZM4hzZNhMT1g==}
     peerDependencies:
       '@internationalized/date': '>=3.0.0'
 
-  '@zag-js/date-utils@1.42.0':
-    resolution: {integrity: sha512-pjFahzgNGlIIbNQWaPY4RcFhMo+9d9nHj7FctmexXdQ6x4aByfD8bPCUKomO2MsMs0/2lRkACjqZeJwP4oivAw==}
+  '@zag-js/date-utils@1.43.0':
+    resolution: {integrity: sha512-DdiyAjpK3ct4IkttSSvkkoSE3QKa2iQx4KjR/DILl1FIuXltlZQIqxf8nlIsArHERcQPioqnv//8GEPo+EO3Cg==}
     peerDependencies:
       '@internationalized/date': '>=3.0.0'
 
-  '@zag-js/dialog@1.42.0':
-    resolution: {integrity: sha512-2KpLQASTjr2JUR0XvqsMueVo+AAPeanD9ShFCY/YKv2qp6WRHo1Ig/tRj6pInsSBiHFo7QXyAD4SDax6C0zDcw==}
+  '@zag-js/dialog@1.43.0':
+    resolution: {integrity: sha512-CuJo+w6ZSfZqaK4+Cqm+rX++/8W1LkU3lnR4ojtFzAZkA9JTruuXOgQ3Q9M9mRj5SBk5cqBRt6uCN1SaS7Ku4g==}
 
   '@zag-js/dismissable@1.22.1':
     resolution: {integrity: sha512-0DzbykJu9QoXYw4Zcjte69Mtk6ThNRCXWxxCKBf930V8Bw3Ha7vfY5bgdb4RFT5K+BQP3E8vLT+PzIaDINn2Xw==}
 
-  '@zag-js/dismissable@1.42.0':
-    resolution: {integrity: sha512-Cx/FAQ2MuQy3kecdmswrFk94Zie1ieBa1Pnt/2ECI5FR914EJd3DwY9Krsmlrq4Z15Wm+pVtfLXgakDewVgsiQ==}
+  '@zag-js/dismissable@1.43.0':
+    resolution: {integrity: sha512-bf19aG9iLxwivpC+lntS2Lzkr4OB73zzPJWI21eIeyMDOX5+QDAZEX9gwNZRKYh1AkEq/oVHYWu71aZKNmdR8w==}
 
   '@zag-js/dom-query@1.22.1':
     resolution: {integrity: sha512-mtvGj2z3rkl40mkjd+QwoOHvxqpiOkY4mtVjzNzgzcbVtUN63Mz7giW8OZB+KLy37hwFX0B8JfiQncU8IOHNpw==}
 
-  '@zag-js/dom-query@1.42.0':
-    resolution: {integrity: sha512-JgCNfp7F+YNFNb7Xmt6rXQr3N3V9Mp+pFRvZ8j5BTC3/G8ZYj/enrgOcuVwPlXPBGtA7ysvjig2x1c0Uou/6kg==}
+  '@zag-js/dom-query@1.43.0':
+    resolution: {integrity: sha512-yQDR00jJj0tgrRH43QJx7NtQH+EBxQtEdFKMzG7c88xL1ZRtqXYpqNNSmCuGj5RTsEceQjEhAxeTJikUYp9M0g==}
 
-  '@zag-js/editable@1.42.0':
-    resolution: {integrity: sha512-THFNLCCdfSCvO2Q3SEtIzyts8YBpg9aanHx/qu+QDsYF967rIS/jmmcwZri4JQKBGWBDE5tMgVLUfVpGOh2jVw==}
+  '@zag-js/editable@1.43.0':
+    resolution: {integrity: sha512-9uIOg3Tdgf3f8GO5pgvSzIQZawQeKHt3lXrlSwXrFnGXP3O43sOG8LR/478Lt9T+MwIp5coRhF/Pu6RAkmt9Ww==}
 
-  '@zag-js/file-upload@1.42.0':
-    resolution: {integrity: sha512-1I8mCSh6fykHmTStuD9qS425vySOhBjFZfkqLG1J10IfGjz8KCoHcOEbZDHqbJa4/Yq0d+mrwHpOYPS6jYBimA==}
+  '@zag-js/file-upload@1.43.0':
+    resolution: {integrity: sha512-3DoyQ+NRWkYYNbKFyuK60Ral5P7Fd+58YPDIQTX2RgjGgGzMzkfGMQWmLdGUe+aISHPjuNU6/iH1+MGhC+xwVg==}
 
-  '@zag-js/file-utils@1.42.0':
-    resolution: {integrity: sha512-goU5T/8SVpeoR33PS4kRWZkcfSERI7FVqqSn521PmxZ/wZMVDrXaivygbttGV8nCWfbwmsMqeyp2iy5MnbNovQ==}
+  '@zag-js/file-utils@1.43.0':
+    resolution: {integrity: sha512-ddt5UBU1pecmiUQbWe9xymcyBop8gGCcYXRautsqPz6aAHA82O9UvJ7/FxLr6qvXQO8fmYaPsIRR4342NahIZw==}
 
-  '@zag-js/floating-panel@1.42.0':
-    resolution: {integrity: sha512-C1nUUgpkAex6QG7/5IkTu38ZBj4RMLbK3sNrssMoZ6kR60jB7D1Lz7D4NbD2b0dYabM6XH10TEaCzEPY8LpC3A==}
+  '@zag-js/floating-panel@1.43.0':
+    resolution: {integrity: sha512-m/D+ymocdP8a+02KdWuATHIcCvRaUip3vtITnXzQHL8uZ03gpCrMk120q3GkbxhPYssPanluHEh7FgygJUf0Kg==}
 
-  '@zag-js/focus-trap@1.42.0':
-    resolution: {integrity: sha512-47O/OpLUm9o8CZd3ez0ntAOUKZEQ1zFj7e86fpYuQ+fNtBlpYMFHQxMRftPkiU5Ysjrz5x8RYV8A8uJ9cboNig==}
+  '@zag-js/focus-trap@1.43.0':
+    resolution: {integrity: sha512-6JApoRanDOcrfQBd7pz/rp2YxdtBmIjRenH9+1tKscbtXRJLWUGZTtr2QiCHCkyRKZdi7kyo7309HTzM62n+OA==}
 
-  '@zag-js/focus-visible@1.42.0':
-    resolution: {integrity: sha512-zT1Fk+8m6x6hzoD5fOIEV4JQIX33pwkBzANqwruQwaSqkOYtI2FmsG71YHnzKvrBppG2okPrRHEMyZEgfshIcQ==}
+  '@zag-js/focus-visible@1.43.0':
+    resolution: {integrity: sha512-1CDA2BZ9k6E6DozNjpTmt+i68HuDAvME2pbqtC+aM7woJK9SuHAXA82qyz//NnaOQnXKQMAOigumfS3fguNswQ==}
 
-  '@zag-js/hover-card@1.42.0':
-    resolution: {integrity: sha512-jEQjuHZOHdgAmNbiQStrJYT7pjI5RXo9NmfX5RqihFlF+NKTPxEUJ2ydbjf4+s225TgjxgP77QVEMo1hfE9eKQ==}
+  '@zag-js/hover-card@1.43.0':
+    resolution: {integrity: sha512-zD0oQ/BF+KdUOa3a3SPqwe3rjqVz0fIfB6uRUxxePHSKcQZEiWFsnAwnja/vv6VBDaytgeAQiWe9jwCxhXyMFQ==}
 
-  '@zag-js/i18n-utils@1.42.0':
-    resolution: {integrity: sha512-uVw+Ua3apxaBCRcsfHOlXcRPDNygSGoJ6ivmK0UJaw5QikZLEBYr7grzXDwRvZrdk0j0sA9Hk/gg3GdSXkhI3Q==}
+  '@zag-js/i18n-utils@1.43.0':
+    resolution: {integrity: sha512-HSjdmTziCUuc+DkUDO/3oV8X6zynr4wactlyqnQfNNfgaWDTYY9dJRWJ12ILhTjtasNSDENxBlhuEdDmOwDisQ==}
 
   '@zag-js/interact-outside@1.22.1':
     resolution: {integrity: sha512-+iZ3xHC9+jVo2FCC4B9c9ntcXv19shVOqQGDr2cD30Hwmwtm9kCOdVydMqv3Lp3UhR8a105MXEVUAKg53WbCoA==}
 
-  '@zag-js/interact-outside@1.42.0':
-    resolution: {integrity: sha512-CNNT1OtASacXEst8NMWDGmDwkOQgVQ0Ahc2SpPjSBZoVpxQIfhZ9FoeqcggDX7Nvze7kl6/OwA7pPi5TGQTVZQ==}
+  '@zag-js/interact-outside@1.43.0':
+    resolution: {integrity: sha512-mQ/6HT6Tn99H4l7u7FaxvXirE4wYenlZFuFkR0qXGRaR7bDRUeWm3dJKcV0Ex3gwcs+G5Z0ZdvA++VBfVh+WUg==}
 
-  '@zag-js/listbox@1.42.0':
-    resolution: {integrity: sha512-nt842jgTaBYTgkqu3y+4l88wpmoyesXkS+Bc3Uvuc7ze9IB04vicSiRi+vstYyA20s/EjOr2tR9Kq7dNoROLaQ==}
+  '@zag-js/listbox@1.43.0':
+    resolution: {integrity: sha512-gNO10K9yffPjkXILP91R8uU/o8Tgw0CzpbBPiVp6IF0dA/3A0Nb7fijJBlYL/s11F/5CDjnuiAWHpENv41+AUw==}
 
-  '@zag-js/live-region@1.42.0':
-    resolution: {integrity: sha512-YFkytNxBJDQIndh7W+bWMN9P74qsnQkzqqLv6LtX/TiOYr1PnL0p54DMvWhE7hqYiCyyLscBM9nbA1foSoPIPg==}
+  '@zag-js/live-region@1.43.0':
+    resolution: {integrity: sha512-8lUL9+Z34416bXyS/1sorU1sbICcgktp653PVXZ43kmzbUefl6WMTwTYuxULGklRrFX7vOLQebJ8qw9Bdf2xFw==}
 
-  '@zag-js/menu@1.42.0':
-    resolution: {integrity: sha512-Jg2q+FrHeZ2ZTxrz/TAnNelapN6IGtyCnBmoNbcHGcnf3gqnEjJpug3Fn6BmPQrmTNw0+q7hBmrESyncjrfbUg==}
+  '@zag-js/menu@1.43.0':
+    resolution: {integrity: sha512-Sox9be5JdAYnsZHj1esbXH2J9in/EL/bbbMG1+MFcHPV57TjsI0HyT5ETT3WeeATrY5h45Z7gHYhJkRkHKZxWA==}
 
-  '@zag-js/navigation-menu@1.42.0':
-    resolution: {integrity: sha512-oQWtx70YV6CHD4NZ30RVa58uP10aPYXsOx8xoXw27SRWTdOrvbbGaohCZZPJMFsZXL3x2PkW5P3/Wa2JhLu7jw==}
+  '@zag-js/navigation-menu@1.43.0':
+    resolution: {integrity: sha512-YwiYU9aAM40YJJPP86MUPH1fw0AHwkMwRJcsqaFwyT4sQ2nLA73h4HhfBbPIdbOOCiyK3a9zYiGQy2z32T0P2A==}
 
-  '@zag-js/number-input@1.42.0':
-    resolution: {integrity: sha512-dOdABVSftfHdrUr24WyICVGRQLJrD9fIuIO9FM/Zgzc75IgYTegAyNOZHVTUeJeRw+etPb+VEq6halVDP7qrgQ==}
+  '@zag-js/number-input@1.43.0':
+    resolution: {integrity: sha512-Y8qcZjG5w+R6oenGDazNSoPY6bYeYAZC1WcMhmSXt86A+87DYj/uFmox5h2MjEt4M9BCgGjUUTnEKC3QpcK3lg==}
 
-  '@zag-js/pagination@1.42.0':
-    resolution: {integrity: sha512-QEcnc8z0U4RREOa1MVGFNbKJONLzbo5egdUppURkbAwhv+paR9ufG4uli7QlMvA3KgdfCHPM92+MhnYwutp5nw==}
+  '@zag-js/pagination@1.43.0':
+    resolution: {integrity: sha512-ccm/erPTk8B0mygMFuEiHRkomp7gtTlTJouebN0H0dTQ8tvyOrap4mvpUknme/KOJpzs7zlSSnoqZh3sNyxJxg==}
 
-  '@zag-js/pin-input@1.42.0':
-    resolution: {integrity: sha512-DvIh+ir//QRvjLdgRRkBLggUnewwfPRNx++iiL7gJ1D9bEulr1yXFTiqFK7hxtEv6BrXCbT9vlrPzrdS0r0pHg==}
+  '@zag-js/pin-input@1.43.0':
+    resolution: {integrity: sha512-qp3AeHsG5yxqQclSSVuLAcVfM6yCb85Eim035HPJ8XfPrY7mcDep+nDo0QMbNorYqLiLNIn2F7oT7SHTpjUyhw==}
 
-  '@zag-js/popover@1.42.0':
-    resolution: {integrity: sha512-4knrgFDeYlKqjyRfYPEUfpIRjsTvg4zY/C0i3sbdxNEWiOW30DzW+/8Igabb00bOabrtRuIHBejm0Jorgn5JIQ==}
+  '@zag-js/popover@1.43.0':
+    resolution: {integrity: sha512-/4fXaOxcKsYV+RbcXmT36MdsVgjFKJOQ7Bnbcd3ZrB9ygbv7L+zkuveLCbWtXd1XJB5XJG1VmMfpyoo068FSQw==}
 
   '@zag-js/popper@1.22.1':
     resolution: {integrity: sha512-vBI5WpvE/3ugsimjZaNisOwcECiYfzc+3LIJwaU8od62kInZ1XF6m096BvV7JGwP0FjkMPJrgjcv7weDtY2iDQ==}
 
-  '@zag-js/popper@1.42.0':
-    resolution: {integrity: sha512-hQvXzLen/hXCItww5tJT6+VLxnee8CpsX0FabIiHub/fKIB6OeHmS/lk+RnIII57bljdjLSus/KnT8Xlmj6tRw==}
+  '@zag-js/popper@1.43.0':
+    resolution: {integrity: sha512-mN69qeFpsbrnwijwbRZlgFWiBT7Aes+VMT9sLOZ5nMHQDDupbWQDqh3DCWz8Ojqp6LbDUq6uOFdA5zrLxE5rmQ==}
 
-  '@zag-js/progress@1.42.0':
-    resolution: {integrity: sha512-ZGex63fTJHy4or5N8fBUxiwqxBGd1Vr+OE0Bnm8+FAQNjJ5BtCLhIlmsIUS8aX2SrBR0j/tp8E0ss35/PNq29Q==}
+  '@zag-js/progress@1.43.0':
+    resolution: {integrity: sha512-vGtpT6pq999MP9jPa+Tm5WuYNW45ykDJoGuLQSZvPt5dAZq2e+Ucr8pJMQHVdiP5wmIqNBa1BuuNNAZi4lHYLA==}
 
-  '@zag-js/radio-group@1.42.0':
-    resolution: {integrity: sha512-VtoN9/d3HCe/oumjdwKzv/KilF2aLzbt1IYpejXF7Cwat8xmqnCoxiA2PLjE9NfD97ZM7grng1YGcjqrWOWvuQ==}
+  '@zag-js/radio-group@1.43.0':
+    resolution: {integrity: sha512-5Y06hC2R+PHDa9Hxu+sAVyCm89fmjA5tLHEFFS4ZdwqSqc9dO42EEwSeneC7ZB3uqDKTfHgL/L6/Bw2vrzg9fw==}
 
-  '@zag-js/rating-group@1.42.0':
-    resolution: {integrity: sha512-0+OQ+iy0djWJBzWdH8pMn+ze88B0T4TdO3kJuHyG2fgJnVgmuGWkoKp8RtXSAv2CVqXfx+diivqF9ZmhNmzLQA==}
+  '@zag-js/rating-group@1.43.0':
+    resolution: {integrity: sha512-6gb8tAR/RRD9Lj8BuGVtAopuAGVHJqxXXUH7/39KbH0HCEa53YKf04Y2vCqNNfWBuay5wtcqC80k88rfiR5Dtw==}
 
-  '@zag-js/react@1.42.0':
-    resolution: {integrity: sha512-5rVcXTpOK0i4enXwFtz+Tlwvo+uVxemJBe4loYu14D/e9QC8yJd6XY5V/AEudI4em5505/0K7h+3hGF26c6Mog==}
+  '@zag-js/react@1.43.0':
+    resolution: {integrity: sha512-UGgZcPZw69p5DUE0XiUBdPHK8m/JmsRD8RC/DRHMKyAlrYqKxzp7TKhheCeJ52ZwXMG/QryUA6TWEBOVuYG1Tg==}
     peerDependencies:
       react: '>=18.0.0'
       react-dom: '>=18.0.0'
 
-  '@zag-js/rect-utils@1.42.0':
-    resolution: {integrity: sha512-4hIvDZEPxYAqhiSNVkZtQLzd7dV7IAn7c5GdWnVVAYtJDD1Tn+v0TYkoPuGQMqLsdpNDwncw3baT3xq1+PQi+w==}
+  '@zag-js/rect-utils@1.43.0':
+    resolution: {integrity: sha512-Cj4Y9trhY4+NpVN74dkLb5ZOkLFieypnIRFvOovo0JrexZ/wtj1srG9Y35zWgBsmWDTkvp9bexdFg0rggPcNGQ==}
 
-  '@zag-js/remove-scroll@1.42.0':
-    resolution: {integrity: sha512-RP1SzQuVDk+np5knkEz/mRasLHZUbO6f3xgq4M2u4SQhpOe34uJybd+14f4ElBntAJQWVeMhohpW4n0pNUW6WQ==}
+  '@zag-js/remove-scroll@1.43.0':
+    resolution: {integrity: sha512-2cE7yS3G6JffdlKMzECDQm2ro3mAqWf2ovSylFcsHh/xLx4RIgtv3EivJrNTcr1d+H0YF2/uVyDuUwYlycWNsQ==}
 
-  '@zag-js/scroll-snap@1.42.0':
-    resolution: {integrity: sha512-gFc5LZvHa4lyCmlt5n6nODc77dGeOc+3sWQMK+20cm/VjYNCsUDjoHP2KO5tgqLJNjPrON+i0BN/QfJUfoNA7Q==}
+  '@zag-js/scroll-snap@1.43.0':
+    resolution: {integrity: sha512-nLvza7HlprDzrmSMRzRE3uv6xDm7Yh66tqkea88YYs/hgLk397jxEOFgHUuo8tGoahKQkCdJrppg+cuwmrIEoQ==}
 
-  '@zag-js/select@1.42.0':
-    resolution: {integrity: sha512-SkfKM7BvAEXLpJda4bS6O2n7YOW9SNeLYvV8vxZjoPFGZDVV6uUcxZE6UPKWQqmTYbu3udCcTlQg749+4NB2mQ==}
+  '@zag-js/select@1.43.0':
+    resolution: {integrity: sha512-3fP52objnr7WhATOw4QukZS5Dd3ktaCfA8381lIp1MWYyW5G+skskFz7bLx4g9R8XW3gpF4As5jCDV3Y30A3zA==}
 
-  '@zag-js/signature-pad@1.42.0':
-    resolution: {integrity: sha512-QTocVn/A2keKfKp2FaDwpbbfH/cithI2saydz90Xvkuj2tskrgT4u3+0wVL6zeehQwqvR88QTFlyFHdSciXXNQ==}
+  '@zag-js/signature-pad@1.43.0':
+    resolution: {integrity: sha512-cL/vzaivv3fRKK0T/PgGhkgQnxLHnxmyQSY5jhiSA00pALCj4H8ZhEz9qXzPxyN73KbWAgXez7mNNeishfgf+A==}
 
-  '@zag-js/slider@1.42.0':
-    resolution: {integrity: sha512-bHTNGxM2H2oag5IbsfsV/OJegz4ic1Zs89Mvm+ryVzqOc0upJl0xMC/D/K8wnRJ8OPubNnldA+R4W8o+/4IU8w==}
+  '@zag-js/slider@1.43.0':
+    resolution: {integrity: sha512-1wiR7pwjTkQKivJxI+9agXTHdJExuTM7ohujJY204lcAMgUO4QzQADWrpSyARL9DmJTOFE8fYXbg9XNeP1gyHA==}
 
-  '@zag-js/splitter@1.42.0':
-    resolution: {integrity: sha512-J0UdVz1CluaDFdwDUGKBTtAZkLyAImFSGC8OeVi0l/tbcDACHOB8XjSiiibnqdyG6DVy5H3rgHj3GrqAPdfJmA==}
+  '@zag-js/splitter@1.43.0':
+    resolution: {integrity: sha512-4yo7uWlmU+pB4yGefaI2pje7HU+JC9hlNo/UPBV9U+sS6TtqfeN15DYfBKpbjEm5gSM1R0FPz/4Tp/ylFsuByQ==}
 
-  '@zag-js/steps@1.42.0':
-    resolution: {integrity: sha512-IDJKk4zPhQjJv5fxAvOy+LRcdnim5rJjpUdEsWq0/aDiVZiddg3sXLgJ8dTGfv6e58AIjTlaz85xv21dldWKYw==}
+  '@zag-js/steps@1.43.0':
+    resolution: {integrity: sha512-73L0E/1x2wzHcQ1EisQj6y2TwIgIA39DwuFcvTluWg07P49oAtrhw7qw5KxqS7+GlSSWO4ZV1/yHEm5289qkyA==}
 
-  '@zag-js/store@1.42.0':
-    resolution: {integrity: sha512-qQ5LB+l2dR1rZFCsErn9PeSrOADjnsvDl1NreEN/AaKXw9RK0YiQDqaCh7ndqjjA72UAcrnzgXsS0AAqxCC+MQ==}
+  '@zag-js/store@1.43.0':
+    resolution: {integrity: sha512-Q6b6vbAbIGDkXO1sGoM+hjOP2BL6uHIMX3MUhpjFpIZ6qhkxU+iRa8bCGU7xYT2vRyEMlN5NUU77PjoITpSwRg==}
 
-  '@zag-js/switch@1.42.0':
-    resolution: {integrity: sha512-227GNBAz8mYSKVsHV6r4YA/1/0rtbrP2foygPligDOkWMsNP9cjnW1HwM/z3x54UPWLqKuZjsjD7LSuDhbxtBA==}
+  '@zag-js/switch@1.43.0':
+    resolution: {integrity: sha512-WH6i+0H9l7iIg7gYlcq5EcbJpwBjdYgxxFOGqyr04+q2WV46ytEnkW+iu61TVFr9vpE75wgtkLEG/gc080Y/zw==}
 
-  '@zag-js/tabs@1.42.0':
-    resolution: {integrity: sha512-O0qFmeneJHr85AUL/44mHQy8Cr/jCZzh55rTKz5sBoZxmk7PIGopsasNLnpyaZ34tOpcKnNEg96FdlZ4O1bjlQ==}
+  '@zag-js/tabs@1.43.0':
+    resolution: {integrity: sha512-Nll5xQUPGOdVTYd+DYGA3wF+0xlJc+kRmQoAuE5ZHIsLuJrXn9jhRwkmQHL2rh/lln3cT9Ecp4UDWl/qyqBecQ==}
 
-  '@zag-js/tags-input@1.42.0':
-    resolution: {integrity: sha512-+zGHcW1EeYCfxfngR4DXJEUWn6iKBoWkN2OnP4HrrWIAwk+0yTOQpwEd4UcCoUOo7CPtqwBmZp2Y92AMuAFA+Q==}
+  '@zag-js/tags-input@1.43.0':
+    resolution: {integrity: sha512-2qX3htVoJnrxOyF0x1O0QPYk0GFTNOw6Kw9pkO9bfUbs92TggCDZXsW/8N2vsMr6eAKo31jrQLcS4K1w7zmiig==}
 
   '@zag-js/time-picker@1.22.1':
     resolution: {integrity: sha512-7fqCtyDbuaelffLZ8q9infns+HQKqFMjL4k2V5zALAWdYu2NzvlMYHgj2Ue9AI4VI5QaE1nnwV6hxwS4Zpglvg==}
     peerDependencies:
       '@internationalized/date': '>=3.0.0'
 
-  '@zag-js/toast@1.42.0':
-    resolution: {integrity: sha512-8WLogVjJiCrvQ4hv9vQrcjaFJLFGtOCb/pnir7SjqR1RzbYHoPLj5ASbM9bbjpcgQQYr0GaLovP6beQW8kjBjg==}
+  '@zag-js/toast@1.43.0':
+    resolution: {integrity: sha512-T2bChbXQXfYCk8Kw4NYqoybRBN1z3XL2HnpzRe1zRyNQ/Q9RfnUsU492P+sl8IlLB2nchNKgN2BCg/UacffSYQ==}
 
-  '@zag-js/toggle-group@1.42.0':
-    resolution: {integrity: sha512-lhsPcj115a646wxHgzSkhSW4IZFKw4pqRTHSL0e8vR4jgCRhGLBzE70S+EgYIj+000A05eB+or0PhX5zeMK5qQ==}
+  '@zag-js/toggle-group@1.43.0':
+    resolution: {integrity: sha512-KFfmv5YloBaRTqPgmhZ2uootzUheuj/aO6lro6CsCB8njBR7vSTCp1ur5DFyq/dNSaSpasthr9UKXKdkBbFhIQ==}
 
-  '@zag-js/toggle@1.42.0':
-    resolution: {integrity: sha512-olWXY0xd6pqR15GlzrvYhzVpaIu25OZrSkhVwOnbjGmpDisRTGvph0y1bEHRdujphWbH91w8XLk0ULQiswssjQ==}
+  '@zag-js/toggle@1.43.0':
+    resolution: {integrity: sha512-95PJHu6Efm3osVglKrgiaPu3Annk0wA2gOqbhCtvjYxJ6tJtUjEebqhzIPFaRp0iHWL5AROo64Bm+B2+UUEbiA==}
 
-  '@zag-js/tooltip@1.42.0':
-    resolution: {integrity: sha512-viRGjX2yxF317M2G2tYvPS7+ZS3osmE+iGm40ZPg0sciezSZW1l4ZFSQ56qyCJ8rTUKv3T1m0NPWYhqVoT3eoA==}
+  '@zag-js/tooltip@1.43.0':
+    resolution: {integrity: sha512-gZNsKXI4gVbQkuGUgVzz0hHbD0fU/aBxrDlD//zXtoAicmIBTic4dw+kRqpPKNNEetD9XuoKlbJ0xNbbNxgatw==}
 
-  '@zag-js/tour@1.42.0':
-    resolution: {integrity: sha512-4uzXi3h3rePglgnzohSPfXjI2UpGyKUA0FKCOBaigEBR/H5rJtrsQtLqA/BXerpd+P97ELK2WRJTt0gxH8E6IQ==}
+  '@zag-js/tour@1.43.0':
+    resolution: {integrity: sha512-pePWmQ5hFc984t2oca+tUpyR80Xezh8Akla70UMdM2Ekay7VnKn5bYoxAch3RbZnMIHU5VQ4bwJOfmV7Sj7tDg==}
 
-  '@zag-js/tree-view@1.42.0':
-    resolution: {integrity: sha512-QXIfFgE7BbtB7cHXwi8Gu/9ezkOaeZ4XFAixoJttiOgnw3EIRZPqATRijh446SDPuqsFh9RSjC2zEe3vcFssZA==}
+  '@zag-js/tree-view@1.43.0':
+    resolution: {integrity: sha512-8oH76vTIzauKlaWUpNmQx/XimE7VX2gqWoW4BqcWIzIPBzBGgwfJQw7z4NfPn/Cv+9iFefb2DY0GytaGGJWxyw==}
 
   '@zag-js/types@1.22.1':
     resolution: {integrity: sha512-lvpDSMR96e7H7TdwOiVpMzj6css5Ydix1nBi7BlmjME6v5OPR0KZwVDGD6h5UtTeVjPq8dPaqM8TJWw+QwbQSw==}
 
-  '@zag-js/types@1.42.0':
-    resolution: {integrity: sha512-4ghao1wuLouepdYMheEYtyOlKpVsvL0Eg9tf//5VyAf7S9zC7cgGxD6ttGTlIMxqKqnAuxIMsYHG76qkb8tv1w==}
+  '@zag-js/types@1.43.0':
+    resolution: {integrity: sha512-pheZyCiVjJaXBzbfoj/gMKXkZUo1D5JWd46QVYWonHJZIdUfDRDwBvDKcXGIHmpuq7fJrnGXbegAk0+D2aa4bw==}
 
   '@zag-js/utils@1.22.1':
     resolution: {integrity: sha512-VXY4gjHaTENHW+wjnKKENZ2jcaW0vnG2a5lYEMuZR4dpNCKH217yFr/bCNrI44y2s1W3LWhWmpEjfZluP6udYg==}
 
-  '@zag-js/utils@1.42.0':
-    resolution: {integrity: sha512-Km0r9hY+f6/oCJXrO4nqCIuo+4gTqbloD0V0q7B8Jq8qeWte7HN+YJSagVlk8tfADqFMRgEW4Rug0bYHzrGbVA==}
+  '@zag-js/utils@1.43.0':
+    resolution: {integrity: sha512-ZxkL+AuKRv/UGmmp5iZwmzfcVV7iWiDIrhYiMrKDKPJGdIPIFpMOisM+bTKYVkvn0jmCZV0CTF0jJm29hEV+LQ==}
 
   acorn-import-attributes@1.9.5:
     resolution: {integrity: sha512-n02Vykv5uA3eHGM/Z2dQrcD56kL8TyDb2p1+0P83PClMnC/nc+anbQRhIOWnSq4Ke/KvDPrY3C9hDtC/A3eHnQ==}
@@ -4879,11 +4885,11 @@ snapshots:
       ansi-styles: 6.2.3
       is-fullwidth-code-point: 5.1.0
 
-  '@alchemy.run/better-auth@2.0.0-beta.59(5f6d5c3574a9611f1a56173004aba329)':
+  '@alchemy.run/better-auth@2.0.0-beta.59(1bff1674407b05b4dd562007a8f75a43)':
     dependencies:
-      alchemy: 2.0.0-beta.59(patch_hash=204bf3117812a8a49610d2657951bba0c304d2b712f5767e02dcbd2c5536e8bc)(c09e2a04e41915af1ba43a8c7062de29)
-      better-auth: 1.6.23(@cloudflare/workers-types@4.20260629.1)(@opentelemetry/api@1.9.1)(drizzle-kit@1.0.0-rc.4)(drizzle-orm@1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
-      effect: 4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)
+      alchemy: 2.0.0-beta.59(patch_hash=204bf3117812a8a49610d2657951bba0c304d2b712f5767e02dcbd2c5536e8bc)(234b374c9d508cf92321aefc5efec8fe)
+      better-auth: 1.6.23(@cloudflare/workers-types@4.20260629.1)(@opentelemetry/api@1.9.1)(drizzle-kit@1.0.0-rc.4)(drizzle-orm@1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
+      effect: 4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)
     transitivePeerDependencies:
       - '@effect/platform-bun'
       - '@effect/platform-node'
@@ -5137,11 +5143,11 @@ snapshots:
 
   '@babel/runtime@7.29.2': {}
 
-  '@better-auth/api-key@1.6.23(69b8791598f4310069b7d12d63c52a1c)':
+  '@better-auth/api-key@1.6.23(21577f855b9191067dbbab69dd47e65a)':
     dependencies:
       '@better-auth/core': 1.6.23(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.1)(@cloudflare/workers-types@4.20260629.1)(@opentelemetry/api@1.9.1)(better-call@1.3.7(zod@4.4.3))(jose@6.2.3)(kysely@0.28.17)(nanostores@1.3.0)
       '@better-auth/utils': 0.4.2
-      better-auth: 1.6.23(@cloudflare/workers-types@4.20260629.1)(@opentelemetry/api@1.9.1)(drizzle-kit@1.0.0-rc.4)(drizzle-orm@1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
+      better-auth: 1.6.23(@cloudflare/workers-types@4.20260629.1)(@opentelemetry/api@1.9.1)(drizzle-kit@1.0.0-rc.4)(drizzle-orm@1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
       better-call: 1.3.7(zod@4.4.3)
       zod: 4.4.3
 
@@ -5160,12 +5166,12 @@ snapshots:
       '@cloudflare/workers-types': 4.20260629.1
       '@opentelemetry/api': 1.9.1
 
-  '@better-auth/drizzle-adapter@1.6.23(@better-auth/core@1.6.23(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.1)(@cloudflare/workers-types@4.20260629.1)(@opentelemetry/api@1.9.1)(better-call@1.3.7(zod@4.4.3))(jose@6.2.3)(kysely@0.28.17)(nanostores@1.3.0))(@better-auth/utils@0.4.2)(drizzle-orm@1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3))':
+  '@better-auth/drizzle-adapter@1.6.23(@better-auth/core@1.6.23(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.1)(@cloudflare/workers-types@4.20260629.1)(@opentelemetry/api@1.9.1)(better-call@1.3.7(zod@4.4.3))(jose@6.2.3)(kysely@0.28.17)(nanostores@1.3.0))(@better-auth/utils@0.4.2)(drizzle-orm@1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3))':
     dependencies:
       '@better-auth/core': 1.6.23(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.1)(@cloudflare/workers-types@4.20260629.1)(@opentelemetry/api@1.9.1)(better-call@1.3.7(zod@4.4.3))(jose@6.2.3)(kysely@0.28.17)(nanostores@1.3.0)
       '@better-auth/utils': 0.4.2
     optionalDependencies:
-      drizzle-orm: 1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3)
+      drizzle-orm: 1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3)
 
   '@better-auth/kysely-adapter@1.6.23(@better-auth/core@1.6.23(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.1)(@cloudflare/workers-types@4.20260629.1)(@opentelemetry/api@1.9.1)(better-call@1.3.7(zod@4.4.3))(jose@6.2.3)(kysely@0.28.17)(nanostores@1.3.0))(@better-auth/utils@0.4.2)(kysely@0.28.17)':
     dependencies:
@@ -5290,24 +5296,24 @@ snapshots:
 
   '@csstools/css-tokenizer@3.0.4': {}
 
-  '@distilled.cloud/aws@0.27.0(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))':
+  '@distilled.cloud/aws@0.27.0(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))':
     dependencies:
       '@aws-crypto/crc32': 5.2.0
       '@aws-crypto/util': 5.2.0
       '@aws-sdk/credential-providers': 3.1053.0
       '@aws-sdk/types': 3.973.9
-      '@distilled.cloud/core': 0.27.0(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))
+      '@distilled.cloud/core': 0.27.0(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))
       '@smithy/shared-ini-file-loader': 4.5.4
       '@smithy/types': 4.14.2
       '@smithy/util-base64': 4.4.4
       aws4fetch: 1.0.20
-      effect: 4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)
+      effect: 4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)
       fast-xml-parser: 5.8.0
 
-  '@distilled.cloud/axiom@0.27.0(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))':
+  '@distilled.cloud/axiom@0.27.0(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))':
     dependencies:
-      '@distilled.cloud/core': 0.27.0(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))
-      effect: 4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)
+      '@distilled.cloud/core': 0.27.0(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))
+      effect: 4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)
 
   '@distilled.cloud/cloudflare-rolldown-plugin@0.11.3(rolldown@1.0.1)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))(workerd@1.20260617.1)':
     dependencies:
@@ -5320,74 +5326,74 @@ snapshots:
     transitivePeerDependencies:
       - workerd
 
-  '@distilled.cloud/cloudflare-runtime@0.11.3(@distilled.cloud/cloudflare@0.27.0(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)))(@effect/platform-bun@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)))(@effect/platform-node@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))(ioredis@5.10.1))(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))':
+  '@distilled.cloud/cloudflare-runtime@0.11.3(@distilled.cloud/cloudflare@0.27.0(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@effect/platform-bun@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@effect/platform-node@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(ioredis@5.10.1))(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))':
     dependencies:
       '@alchemy.run/node-utils': 0.0.5
-      '@distilled.cloud/cloudflare': 0.27.0(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))
-      effect: 4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)
+      '@distilled.cloud/cloudflare': 0.27.0(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))
+      effect: 4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)
       workerd: 1.20260617.1
     optionalDependencies:
-      '@effect/platform-bun': 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))
-      '@effect/platform-node': 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))(ioredis@5.10.1)
+      '@effect/platform-bun': 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))
+      '@effect/platform-node': 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(ioredis@5.10.1)
 
-  '@distilled.cloud/cloudflare-vite-plugin@0.11.3(6a411e22b8e9206f3da31ab14aa1418d)':
+  '@distilled.cloud/cloudflare-vite-plugin@0.11.3(73367d03f73b5c9779e53b579e9d83e1)':
     dependencies:
-      '@distilled.cloud/cloudflare': 0.27.0(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))
+      '@distilled.cloud/cloudflare': 0.27.0(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))
       '@distilled.cloud/cloudflare-rolldown-plugin': 0.11.3(rolldown@1.0.1)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))(workerd@1.20260617.1)
-      '@distilled.cloud/cloudflare-runtime': 0.11.3(@distilled.cloud/cloudflare@0.27.0(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)))(@effect/platform-bun@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)))(@effect/platform-node@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))(ioredis@5.10.1))(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))
-      effect: 4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)
+      '@distilled.cloud/cloudflare-runtime': 0.11.3(@distilled.cloud/cloudflare@0.27.0(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@effect/platform-bun@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@effect/platform-node@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(ioredis@5.10.1))(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))
+      effect: 4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)
       vite: 8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)
     optionalDependencies:
-      '@effect/platform-bun': 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))
-      '@effect/platform-node': 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))(ioredis@5.10.1)
+      '@effect/platform-bun': 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))
+      '@effect/platform-node': 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(ioredis@5.10.1)
     transitivePeerDependencies:
       - rolldown
       - workerd
 
-  '@distilled.cloud/cloudflare@0.27.0(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))':
+  '@distilled.cloud/cloudflare@0.27.0(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))':
     dependencies:
-      '@distilled.cloud/core': 0.27.0(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))
-      effect: 4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)
+      '@distilled.cloud/core': 0.27.0(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))
+      effect: 4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)
 
-  '@distilled.cloud/core@0.27.0(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))':
+  '@distilled.cloud/core@0.27.0(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))':
     dependencies:
-      effect: 4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)
+      effect: 4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)
 
-  '@distilled.cloud/neon@0.27.0(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))':
+  '@distilled.cloud/neon@0.27.0(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))':
     dependencies:
-      '@distilled.cloud/core': 0.27.0(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))
-      effect: 4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)
+      '@distilled.cloud/core': 0.27.0(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))
+      effect: 4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)
 
-  '@distilled.cloud/planetscale@0.27.0(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))':
+  '@distilled.cloud/planetscale@0.27.0(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))':
     dependencies:
-      '@distilled.cloud/core': 0.27.0(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))
-      effect: 4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)
+      '@distilled.cloud/core': 0.27.0(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))
+      effect: 4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)
 
   '@drizzle-team/brocli@0.12.0': {}
 
   '@effect/language-service@0.85.1': {}
 
-  '@effect/platform-bun@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))':
+  '@effect/platform-bun@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))':
     dependencies:
-      '@effect/platform-node-shared': 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))
-      effect: 4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)
+      '@effect/platform-node-shared': 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))
+      effect: 4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)
     transitivePeerDependencies:
       - bufferutil
       - utf-8-validate
 
-  '@effect/platform-node-shared@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))':
+  '@effect/platform-node-shared@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))':
     dependencies:
       '@types/ws': 8.18.1
-      effect: 4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)
+      effect: 4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)
       ws: 8.21.0
     transitivePeerDependencies:
       - bufferutil
       - utf-8-validate
 
-  '@effect/platform-node@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))(ioredis@5.10.1)':
+  '@effect/platform-node@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(ioredis@5.10.1)':
     dependencies:
-      '@effect/platform-node-shared': 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))
-      effect: 4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)
+      '@effect/platform-node-shared': 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))
+      effect: 4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)
       ioredis: 5.10.1
       mime: 4.1.0
       undici: 8.3.0
@@ -5395,14 +5401,14 @@ snapshots:
       - bufferutil
       - utf-8-validate
 
-  '@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))':
+  '@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))':
     dependencies:
       '@cloudflare/workers-types': 4.20260629.1
-      effect: 4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)
+      effect: 4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)
 
-  '@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))':
+  '@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))':
     dependencies:
-      effect: 4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)
+      effect: 4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)
       pg: 8.21.0
       pg-connection-string: 2.12.0
       pg-cursor: 2.20.0(pg@8.21.0)
@@ -5442,9 +5448,9 @@ snapshots:
       '@effect/tsgo-win32-arm64': 0.5.2
       '@effect/tsgo-win32-x64': 0.5.2
 
-  '@effect/vitest@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))':
+  '@effect/vitest@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))':
     dependencies:
-      effect: 4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)
+      effect: 4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)
       vitest: 4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
 
   '@emnapi/core@1.10.0':
@@ -5655,7 +5661,7 @@ snapshots:
 
   '@fontsource/jetbrains-mono@5.2.8': {}
 
-  '@internationalized/date@3.12.2':
+  '@internationalized/date@3.12.3':
     dependencies:
       '@swc/helpers': 0.5.23
 
@@ -5729,58 +5735,58 @@ snapshots:
   '@libsql/win32-x64-msvc@0.5.29':
     optional: true
 
-  '@manti-ui/folds@0.6.0(@internationalized/date@3.12.2)':
+  '@manti-ui/folds@0.6.0(@internationalized/date@3.12.3)':
     dependencies:
       '@tanstack/table-core': 8.21.3
-      '@zag-js/accordion': 1.42.0
-      '@zag-js/avatar': 1.42.0
-      '@zag-js/carousel': 1.42.0
-      '@zag-js/checkbox': 1.42.0
-      '@zag-js/clipboard': 1.42.0
-      '@zag-js/collapsible': 1.42.0
-      '@zag-js/color-picker': 1.42.0
-      '@zag-js/combobox': 1.42.0
-      '@zag-js/date-picker': 1.42.0(@internationalized/date@3.12.2)
-      '@zag-js/dialog': 1.42.0
-      '@zag-js/editable': 1.42.0
-      '@zag-js/file-upload': 1.42.0
-      '@zag-js/floating-panel': 1.42.0
-      '@zag-js/hover-card': 1.42.0
-      '@zag-js/listbox': 1.42.0
-      '@zag-js/menu': 1.42.0
-      '@zag-js/navigation-menu': 1.42.0
-      '@zag-js/number-input': 1.42.0
-      '@zag-js/pagination': 1.42.0
-      '@zag-js/pin-input': 1.42.0
-      '@zag-js/popover': 1.42.0
-      '@zag-js/progress': 1.42.0
-      '@zag-js/radio-group': 1.42.0
-      '@zag-js/rating-group': 1.42.0
-      '@zag-js/select': 1.42.0
-      '@zag-js/signature-pad': 1.42.0
-      '@zag-js/slider': 1.42.0
-      '@zag-js/splitter': 1.42.0
-      '@zag-js/steps': 1.42.0
-      '@zag-js/switch': 1.42.0
-      '@zag-js/tabs': 1.42.0
-      '@zag-js/tags-input': 1.42.0
-      '@zag-js/time-picker': 1.22.1(@internationalized/date@3.12.2)
-      '@zag-js/toast': 1.42.0
-      '@zag-js/toggle': 1.42.0
-      '@zag-js/toggle-group': 1.42.0
-      '@zag-js/tooltip': 1.42.0
-      '@zag-js/tour': 1.42.0
-      '@zag-js/tree-view': 1.42.0
+      '@zag-js/accordion': 1.43.0
+      '@zag-js/avatar': 1.43.0
+      '@zag-js/carousel': 1.43.0
+      '@zag-js/checkbox': 1.43.0
+      '@zag-js/clipboard': 1.43.0
+      '@zag-js/collapsible': 1.43.0
+      '@zag-js/color-picker': 1.43.0
+      '@zag-js/combobox': 1.43.0
+      '@zag-js/date-picker': 1.43.0(@internationalized/date@3.12.3)
+      '@zag-js/dialog': 1.43.0
+      '@zag-js/editable': 1.43.0
+      '@zag-js/file-upload': 1.43.0
+      '@zag-js/floating-panel': 1.43.0
+      '@zag-js/hover-card': 1.43.0
+      '@zag-js/listbox': 1.43.0
+      '@zag-js/menu': 1.43.0
+      '@zag-js/navigation-menu': 1.43.0
+      '@zag-js/number-input': 1.43.0
+      '@zag-js/pagination': 1.43.0
+      '@zag-js/pin-input': 1.43.0
+      '@zag-js/popover': 1.43.0
+      '@zag-js/progress': 1.43.0
+      '@zag-js/radio-group': 1.43.0
+      '@zag-js/rating-group': 1.43.0
+      '@zag-js/select': 1.43.0
+      '@zag-js/signature-pad': 1.43.0
+      '@zag-js/slider': 1.43.0
+      '@zag-js/splitter': 1.43.0
+      '@zag-js/steps': 1.43.0
+      '@zag-js/switch': 1.43.0
+      '@zag-js/tabs': 1.43.0
+      '@zag-js/tags-input': 1.43.0
+      '@zag-js/time-picker': 1.22.1(@internationalized/date@3.12.3)
+      '@zag-js/toast': 1.43.0
+      '@zag-js/toggle': 1.43.0
+      '@zag-js/toggle-group': 1.43.0
+      '@zag-js/tooltip': 1.43.0
+      '@zag-js/tour': 1.43.0
+      '@zag-js/tree-view': 1.43.0
     transitivePeerDependencies:
       - '@internationalized/date'
 
-  '@manti-ui/react@0.6.0(@internationalized/date@3.12.2)(@manti-ui/styles@0.6.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
+  '@manti-ui/react@0.6.0(@internationalized/date@3.12.3)(@manti-ui/styles@0.6.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
     dependencies:
-      '@manti-ui/folds': 0.6.0(@internationalized/date@3.12.2)
+      '@manti-ui/folds': 0.6.0(@internationalized/date@3.12.3)
       '@manti-ui/styles': 0.6.0
       '@manti-ui/tokens': 0.6.0
       '@tanstack/react-table': 8.21.3(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
-      '@zag-js/react': 1.42.0(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      '@zag-js/react': 1.43.0(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       react: 19.2.6
       react-dom: 19.2.6(react@19.2.6)
     transitivePeerDependencies:
@@ -5826,13 +5832,13 @@ snapshots:
 
   '@neon-rs/load@0.0.4': {}
 
-  '@nkzw/fate@1.3.1(patch_hash=e0af930dd67d32efc5463f43c35824fc35d9b9558716831f9cec3764017cf40c)(@trpc/client@11.17.0(@trpc/server@11.17.0(typescript@6.0.3))(typescript@6.0.3))(drizzle-orm@1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3))(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))':
+  '@nkzw/fate@1.3.1(patch_hash=e0af930dd67d32efc5463f43c35824fc35d9b9558716831f9cec3764017cf40c)(@trpc/client@11.17.0(@trpc/server@11.17.0(typescript@6.0.3))(typescript@6.0.3))(drizzle-orm@1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3))(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))':
     dependencies:
       '@trpc/client': 11.17.0(@trpc/server@11.17.0(typescript@6.0.3))(typescript@6.0.3)
       superjson: 2.2.6
       zod: 4.4.3
     optionalDependencies:
-      drizzle-orm: 1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3)
+      drizzle-orm: 1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3)
       vite: 8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)
 
   '@noble/ciphers@2.2.0': {}
@@ -6080,12 +6086,12 @@ snapshots:
 
   '@sentry/core@10.62.0': {}
 
-  '@sentry/effect@10.62.0(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.8.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.8.0(@opentelemetry/api@1.9.1))(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))':
+  '@sentry/effect@10.62.0(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.8.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.8.0(@opentelemetry/api@1.9.1))(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))':
     dependencies:
       '@sentry/browser': 10.62.0
       '@sentry/core': 10.62.0
       '@sentry/node-core': 10.62.0(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.8.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.8.0(@opentelemetry/api@1.9.1))
-      effect: 4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)
+      effect: 4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)
     transitivePeerDependencies:
       - '@opentelemetry/api'
       - '@opentelemetry/core'
@@ -6566,138 +6572,138 @@ snapshots:
       convert-source-map: 2.0.0
       tinyrainbow: 3.1.0
 
-  '@zag-js/accordion@1.42.0':
+  '@zag-js/accordion@1.43.0':
     dependencies:
-      '@zag-js/anatomy': 1.42.0
-      '@zag-js/core': 1.42.0
-      '@zag-js/dom-query': 1.42.0
-      '@zag-js/types': 1.42.0
-      '@zag-js/utils': 1.42.0
+      '@zag-js/anatomy': 1.43.0
+      '@zag-js/core': 1.43.0
+      '@zag-js/dom-query': 1.43.0
+      '@zag-js/types': 1.43.0
+      '@zag-js/utils': 1.43.0
 
   '@zag-js/anatomy@1.22.1': {}
 
-  '@zag-js/anatomy@1.42.0': {}
+  '@zag-js/anatomy@1.43.0': {}
 
-  '@zag-js/aria-hidden@1.42.0':
+  '@zag-js/aria-hidden@1.43.0':
     dependencies:
-      '@zag-js/dom-query': 1.42.0
+      '@zag-js/dom-query': 1.43.0
 
-  '@zag-js/auto-resize@1.42.0':
+  '@zag-js/auto-resize@1.43.0':
     dependencies:
-      '@zag-js/dom-query': 1.42.0
+      '@zag-js/dom-query': 1.43.0
 
-  '@zag-js/avatar@1.42.0':
+  '@zag-js/avatar@1.43.0':
     dependencies:
-      '@zag-js/anatomy': 1.42.0
-      '@zag-js/core': 1.42.0
-      '@zag-js/dom-query': 1.42.0
-      '@zag-js/types': 1.42.0
-      '@zag-js/utils': 1.42.0
+      '@zag-js/anatomy': 1.43.0
+      '@zag-js/core': 1.43.0
+      '@zag-js/dom-query': 1.43.0
+      '@zag-js/types': 1.43.0
+      '@zag-js/utils': 1.43.0
 
-  '@zag-js/carousel@1.42.0':
+  '@zag-js/carousel@1.43.0':
     dependencies:
-      '@zag-js/anatomy': 1.42.0
-      '@zag-js/core': 1.42.0
-      '@zag-js/dom-query': 1.42.0
-      '@zag-js/scroll-snap': 1.42.0
-      '@zag-js/types': 1.42.0
-      '@zag-js/utils': 1.42.0
+      '@zag-js/anatomy': 1.43.0
+      '@zag-js/core': 1.43.0
+      '@zag-js/dom-query': 1.43.0
+      '@zag-js/scroll-snap': 1.43.0
+      '@zag-js/types': 1.43.0
+      '@zag-js/utils': 1.43.0
 
-  '@zag-js/checkbox@1.42.0':
+  '@zag-js/checkbox@1.43.0':
     dependencies:
-      '@zag-js/anatomy': 1.42.0
-      '@zag-js/core': 1.42.0
-      '@zag-js/dom-query': 1.42.0
-      '@zag-js/focus-visible': 1.42.0
-      '@zag-js/types': 1.42.0
-      '@zag-js/utils': 1.42.0
+      '@zag-js/anatomy': 1.43.0
+      '@zag-js/core': 1.43.0
+      '@zag-js/dom-query': 1.43.0
+      '@zag-js/focus-visible': 1.43.0
+      '@zag-js/types': 1.43.0
+      '@zag-js/utils': 1.43.0
 
-  '@zag-js/clipboard@1.42.0':
+  '@zag-js/clipboard@1.43.0':
     dependencies:
-      '@zag-js/anatomy': 1.42.0
-      '@zag-js/core': 1.42.0
-      '@zag-js/dom-query': 1.42.0
-      '@zag-js/types': 1.42.0
-      '@zag-js/utils': 1.42.0
+      '@zag-js/anatomy': 1.43.0
+      '@zag-js/core': 1.43.0
+      '@zag-js/dom-query': 1.43.0
+      '@zag-js/types': 1.43.0
+      '@zag-js/utils': 1.43.0
 
-  '@zag-js/collapsible@1.42.0':
+  '@zag-js/collapsible@1.43.0':
     dependencies:
-      '@zag-js/anatomy': 1.42.0
-      '@zag-js/core': 1.42.0
-      '@zag-js/dom-query': 1.42.0
-      '@zag-js/types': 1.42.0
-      '@zag-js/utils': 1.42.0
+      '@zag-js/anatomy': 1.43.0
+      '@zag-js/core': 1.43.0
+      '@zag-js/dom-query': 1.43.0
+      '@zag-js/types': 1.43.0
+      '@zag-js/utils': 1.43.0
 
-  '@zag-js/collection@1.42.0':
+  '@zag-js/collection@1.43.0':
     dependencies:
-      '@zag-js/utils': 1.42.0
+      '@zag-js/utils': 1.43.0
 
-  '@zag-js/color-picker@1.42.0':
+  '@zag-js/color-picker@1.43.0':
     dependencies:
-      '@zag-js/anatomy': 1.42.0
-      '@zag-js/color-utils': 1.42.0
-      '@zag-js/core': 1.42.0
-      '@zag-js/dismissable': 1.42.0
-      '@zag-js/dom-query': 1.42.0
-      '@zag-js/popper': 1.42.0
-      '@zag-js/types': 1.42.0
-      '@zag-js/utils': 1.42.0
+      '@zag-js/anatomy': 1.43.0
+      '@zag-js/color-utils': 1.43.0
+      '@zag-js/core': 1.43.0
+      '@zag-js/dismissable': 1.43.0
+      '@zag-js/dom-query': 1.43.0
+      '@zag-js/popper': 1.43.0
+      '@zag-js/types': 1.43.0
+      '@zag-js/utils': 1.43.0
 
-  '@zag-js/color-utils@1.42.0':
+  '@zag-js/color-utils@1.43.0':
     dependencies:
-      '@zag-js/utils': 1.42.0
+      '@zag-js/utils': 1.43.0
 
-  '@zag-js/combobox@1.42.0':
+  '@zag-js/combobox@1.43.0':
     dependencies:
-      '@zag-js/anatomy': 1.42.0
-      '@zag-js/collection': 1.42.0
-      '@zag-js/core': 1.42.0
-      '@zag-js/dismissable': 1.42.0
-      '@zag-js/dom-query': 1.42.0
-      '@zag-js/focus-visible': 1.42.0
-      '@zag-js/live-region': 1.42.0
-      '@zag-js/popper': 1.42.0
-      '@zag-js/types': 1.42.0
-      '@zag-js/utils': 1.42.0
+      '@zag-js/anatomy': 1.43.0
+      '@zag-js/collection': 1.43.0
+      '@zag-js/core': 1.43.0
+      '@zag-js/dismissable': 1.43.0
+      '@zag-js/dom-query': 1.43.0
+      '@zag-js/focus-visible': 1.43.0
+      '@zag-js/live-region': 1.43.0
+      '@zag-js/popper': 1.43.0
+      '@zag-js/types': 1.43.0
+      '@zag-js/utils': 1.43.0
 
   '@zag-js/core@1.22.1':
     dependencies:
       '@zag-js/dom-query': 1.22.1
       '@zag-js/utils': 1.22.1
 
-  '@zag-js/core@1.42.0':
+  '@zag-js/core@1.43.0':
     dependencies:
-      '@zag-js/dom-query': 1.42.0
-      '@zag-js/utils': 1.42.0
+      '@zag-js/dom-query': 1.43.0
+      '@zag-js/utils': 1.43.0
 
-  '@zag-js/date-picker@1.42.0(@internationalized/date@3.12.2)':
+  '@zag-js/date-picker@1.43.0(@internationalized/date@3.12.3)':
     dependencies:
-      '@internationalized/date': 3.12.2
-      '@zag-js/anatomy': 1.42.0
-      '@zag-js/core': 1.42.0
-      '@zag-js/date-utils': 1.42.0(@internationalized/date@3.12.2)
-      '@zag-js/dismissable': 1.42.0
-      '@zag-js/dom-query': 1.42.0
-      '@zag-js/live-region': 1.42.0
-      '@zag-js/popper': 1.42.0
-      '@zag-js/types': 1.42.0
-      '@zag-js/utils': 1.42.0
+      '@internationalized/date': 3.12.3
+      '@zag-js/anatomy': 1.43.0
+      '@zag-js/core': 1.43.0
+      '@zag-js/date-utils': 1.43.0(@internationalized/date@3.12.3)
+      '@zag-js/dismissable': 1.43.0
+      '@zag-js/dom-query': 1.43.0
+      '@zag-js/live-region': 1.43.0
+      '@zag-js/popper': 1.43.0
+      '@zag-js/types': 1.43.0
+      '@zag-js/utils': 1.43.0
 
-  '@zag-js/date-utils@1.42.0(@internationalized/date@3.12.2)':
+  '@zag-js/date-utils@1.43.0(@internationalized/date@3.12.3)':
     dependencies:
-      '@internationalized/date': 3.12.2
+      '@internationalized/date': 3.12.3
 
-  '@zag-js/dialog@1.42.0':
+  '@zag-js/dialog@1.43.0':
     dependencies:
-      '@zag-js/anatomy': 1.42.0
-      '@zag-js/aria-hidden': 1.42.0
-      '@zag-js/core': 1.42.0
-      '@zag-js/dismissable': 1.42.0
-      '@zag-js/dom-query': 1.42.0
-      '@zag-js/focus-trap': 1.42.0
-      '@zag-js/remove-scroll': 1.42.0
-      '@zag-js/types': 1.42.0
-      '@zag-js/utils': 1.42.0
+      '@zag-js/anatomy': 1.43.0
+      '@zag-js/aria-hidden': 1.43.0
+      '@zag-js/core': 1.43.0
+      '@zag-js/dismissable': 1.43.0
+      '@zag-js/dom-query': 1.43.0
+      '@zag-js/focus-trap': 1.43.0
+      '@zag-js/remove-scroll': 1.43.0
+      '@zag-js/types': 1.43.0
+      '@zag-js/utils': 1.43.0
 
   '@zag-js/dismissable@1.22.1':
     dependencies:
@@ -6705,156 +6711,156 @@ snapshots:
       '@zag-js/interact-outside': 1.22.1
       '@zag-js/utils': 1.22.1
 
-  '@zag-js/dismissable@1.42.0':
+  '@zag-js/dismissable@1.43.0':
     dependencies:
-      '@zag-js/dom-query': 1.42.0
-      '@zag-js/interact-outside': 1.42.0
-      '@zag-js/utils': 1.42.0
+      '@zag-js/dom-query': 1.43.0
+      '@zag-js/interact-outside': 1.43.0
+      '@zag-js/utils': 1.43.0
 
   '@zag-js/dom-query@1.22.1':
     dependencies:
       '@zag-js/types': 1.22.1
 
-  '@zag-js/dom-query@1.42.0':
+  '@zag-js/dom-query@1.43.0':
     dependencies:
-      '@zag-js/types': 1.42.0
+      '@zag-js/types': 1.43.0
 
-  '@zag-js/editable@1.42.0':
+  '@zag-js/editable@1.43.0':
     dependencies:
-      '@zag-js/anatomy': 1.42.0
-      '@zag-js/core': 1.42.0
-      '@zag-js/dom-query': 1.42.0
-      '@zag-js/interact-outside': 1.42.0
-      '@zag-js/types': 1.42.0
-      '@zag-js/utils': 1.42.0
+      '@zag-js/anatomy': 1.43.0
+      '@zag-js/core': 1.43.0
+      '@zag-js/dom-query': 1.43.0
+      '@zag-js/interact-outside': 1.43.0
+      '@zag-js/types': 1.43.0
+      '@zag-js/utils': 1.43.0
 
-  '@zag-js/file-upload@1.42.0':
+  '@zag-js/file-upload@1.43.0':
     dependencies:
-      '@zag-js/anatomy': 1.42.0
-      '@zag-js/core': 1.42.0
-      '@zag-js/dom-query': 1.42.0
-      '@zag-js/file-utils': 1.42.0
-      '@zag-js/i18n-utils': 1.42.0
-      '@zag-js/types': 1.42.0
-      '@zag-js/utils': 1.42.0
+      '@zag-js/anatomy': 1.43.0
+      '@zag-js/core': 1.43.0
+      '@zag-js/dom-query': 1.43.0
+      '@zag-js/file-utils': 1.43.0
+      '@zag-js/i18n-utils': 1.43.0
+      '@zag-js/types': 1.43.0
+      '@zag-js/utils': 1.43.0
 
-  '@zag-js/file-utils@1.42.0':
+  '@zag-js/file-utils@1.43.0':
     dependencies:
-      '@zag-js/i18n-utils': 1.42.0
+      '@zag-js/i18n-utils': 1.43.0
 
-  '@zag-js/floating-panel@1.42.0':
+  '@zag-js/floating-panel@1.43.0':
     dependencies:
-      '@zag-js/anatomy': 1.42.0
-      '@zag-js/core': 1.42.0
-      '@zag-js/dom-query': 1.42.0
-      '@zag-js/popper': 1.42.0
-      '@zag-js/rect-utils': 1.42.0
-      '@zag-js/store': 1.42.0
-      '@zag-js/types': 1.42.0
-      '@zag-js/utils': 1.42.0
+      '@zag-js/anatomy': 1.43.0
+      '@zag-js/core': 1.43.0
+      '@zag-js/dom-query': 1.43.0
+      '@zag-js/popper': 1.43.0
+      '@zag-js/rect-utils': 1.43.0
+      '@zag-js/store': 1.43.0
+      '@zag-js/types': 1.43.0
+      '@zag-js/utils': 1.43.0
 
-  '@zag-js/focus-trap@1.42.0':
+  '@zag-js/focus-trap@1.43.0':
     dependencies:
-      '@zag-js/dom-query': 1.42.0
+      '@zag-js/dom-query': 1.43.0
 
-  '@zag-js/focus-visible@1.42.0':
+  '@zag-js/focus-visible@1.43.0':
     dependencies:
-      '@zag-js/dom-query': 1.42.0
+      '@zag-js/dom-query': 1.43.0
 
-  '@zag-js/hover-card@1.42.0':
+  '@zag-js/hover-card@1.43.0':
     dependencies:
-      '@zag-js/anatomy': 1.42.0
-      '@zag-js/core': 1.42.0
-      '@zag-js/dismissable': 1.42.0
-      '@zag-js/dom-query': 1.42.0
-      '@zag-js/popper': 1.42.0
-      '@zag-js/types': 1.42.0
-      '@zag-js/utils': 1.42.0
+      '@zag-js/anatomy': 1.43.0
+      '@zag-js/core': 1.43.0
+      '@zag-js/dismissable': 1.43.0
+      '@zag-js/dom-query': 1.43.0
+      '@zag-js/popper': 1.43.0
+      '@zag-js/types': 1.43.0
+      '@zag-js/utils': 1.43.0
 
-  '@zag-js/i18n-utils@1.42.0':
+  '@zag-js/i18n-utils@1.43.0':
     dependencies:
-      '@zag-js/dom-query': 1.42.0
+      '@zag-js/dom-query': 1.43.0
 
   '@zag-js/interact-outside@1.22.1':
     dependencies:
       '@zag-js/dom-query': 1.22.1
       '@zag-js/utils': 1.22.1
 
-  '@zag-js/interact-outside@1.42.0':
+  '@zag-js/interact-outside@1.43.0':
     dependencies:
-      '@zag-js/dom-query': 1.42.0
-      '@zag-js/utils': 1.42.0
+      '@zag-js/dom-query': 1.43.0
+      '@zag-js/utils': 1.43.0
 
-  '@zag-js/listbox@1.42.0':
+  '@zag-js/listbox@1.43.0':
     dependencies:
-      '@zag-js/anatomy': 1.42.0
-      '@zag-js/collection': 1.42.0
-      '@zag-js/core': 1.42.0
-      '@zag-js/dom-query': 1.42.0
-      '@zag-js/focus-visible': 1.42.0
-      '@zag-js/types': 1.42.0
-      '@zag-js/utils': 1.42.0
+      '@zag-js/anatomy': 1.43.0
+      '@zag-js/collection': 1.43.0
+      '@zag-js/core': 1.43.0
+      '@zag-js/dom-query': 1.43.0
+      '@zag-js/focus-visible': 1.43.0
+      '@zag-js/types': 1.43.0
+      '@zag-js/utils': 1.43.0
 
-  '@zag-js/live-region@1.42.0': {}
+  '@zag-js/live-region@1.43.0': {}
 
-  '@zag-js/menu@1.42.0':
+  '@zag-js/menu@1.43.0':
     dependencies:
-      '@zag-js/anatomy': 1.42.0
-      '@zag-js/core': 1.42.0
-      '@zag-js/dismissable': 1.42.0
-      '@zag-js/dom-query': 1.42.0
-      '@zag-js/focus-visible': 1.42.0
-      '@zag-js/popper': 1.42.0
-      '@zag-js/rect-utils': 1.42.0
-      '@zag-js/types': 1.42.0
-      '@zag-js/utils': 1.42.0
+      '@zag-js/anatomy': 1.43.0
+      '@zag-js/core': 1.43.0
+      '@zag-js/dismissable': 1.43.0
+      '@zag-js/dom-query': 1.43.0
+      '@zag-js/focus-visible': 1.43.0
+      '@zag-js/popper': 1.43.0
+      '@zag-js/rect-utils': 1.43.0
+      '@zag-js/types': 1.43.0
+      '@zag-js/utils': 1.43.0
 
-  '@zag-js/navigation-menu@1.42.0':
+  '@zag-js/navigation-menu@1.43.0':
     dependencies:
-      '@zag-js/anatomy': 1.42.0
-      '@zag-js/core': 1.42.0
-      '@zag-js/dismissable': 1.42.0
-      '@zag-js/dom-query': 1.42.0
-      '@zag-js/types': 1.42.0
-      '@zag-js/utils': 1.42.0
+      '@zag-js/anatomy': 1.43.0
+      '@zag-js/core': 1.43.0
+      '@zag-js/dismissable': 1.43.0
+      '@zag-js/dom-query': 1.43.0
+      '@zag-js/types': 1.43.0
+      '@zag-js/utils': 1.43.0
 
-  '@zag-js/number-input@1.42.0':
+  '@zag-js/number-input@1.43.0':
     dependencies:
       '@internationalized/number': 3.6.7
-      '@zag-js/anatomy': 1.42.0
-      '@zag-js/core': 1.42.0
-      '@zag-js/dom-query': 1.42.0
-      '@zag-js/types': 1.42.0
-      '@zag-js/utils': 1.42.0
+      '@zag-js/anatomy': 1.43.0
+      '@zag-js/core': 1.43.0
+      '@zag-js/dom-query': 1.43.0
+      '@zag-js/types': 1.43.0
+      '@zag-js/utils': 1.43.0
 
-  '@zag-js/pagination@1.42.0':
+  '@zag-js/pagination@1.43.0':
     dependencies:
-      '@zag-js/anatomy': 1.42.0
-      '@zag-js/core': 1.42.0
-      '@zag-js/dom-query': 1.42.0
-      '@zag-js/types': 1.42.0
-      '@zag-js/utils': 1.42.0
+      '@zag-js/anatomy': 1.43.0
+      '@zag-js/core': 1.43.0
+      '@zag-js/dom-query': 1.43.0
+      '@zag-js/types': 1.43.0
+      '@zag-js/utils': 1.43.0
 
-  '@zag-js/pin-input@1.42.0':
+  '@zag-js/pin-input@1.43.0':
     dependencies:
-      '@zag-js/anatomy': 1.42.0
-      '@zag-js/core': 1.42.0
-      '@zag-js/dom-query': 1.42.0
-      '@zag-js/types': 1.42.0
-      '@zag-js/utils': 1.42.0
+      '@zag-js/anatomy': 1.43.0
+      '@zag-js/core': 1.43.0
+      '@zag-js/dom-query': 1.43.0
+      '@zag-js/types': 1.43.0
+      '@zag-js/utils': 1.43.0
 
-  '@zag-js/popover@1.42.0':
+  '@zag-js/popover@1.43.0':
     dependencies:
-      '@zag-js/anatomy': 1.42.0
-      '@zag-js/aria-hidden': 1.42.0
-      '@zag-js/core': 1.42.0
-      '@zag-js/dismissable': 1.42.0
-      '@zag-js/dom-query': 1.42.0
-      '@zag-js/focus-trap': 1.42.0
-      '@zag-js/popper': 1.42.0
-      '@zag-js/remove-scroll': 1.42.0
-      '@zag-js/types': 1.42.0
-      '@zag-js/utils': 1.42.0
+      '@zag-js/anatomy': 1.43.0
+      '@zag-js/aria-hidden': 1.43.0
+      '@zag-js/core': 1.43.0
+      '@zag-js/dismissable': 1.43.0
+      '@zag-js/dom-query': 1.43.0
+      '@zag-js/focus-trap': 1.43.0
+      '@zag-js/popper': 1.43.0
+      '@zag-js/remove-scroll': 1.43.0
+      '@zag-js/types': 1.43.0
+      '@zag-js/utils': 1.43.0
 
   '@zag-js/popper@1.22.1':
     dependencies:
@@ -6862,136 +6868,136 @@ snapshots:
       '@zag-js/dom-query': 1.22.1
       '@zag-js/utils': 1.22.1
 
-  '@zag-js/popper@1.42.0':
+  '@zag-js/popper@1.43.0':
     dependencies:
       '@floating-ui/dom': 1.7.6
-      '@zag-js/dom-query': 1.42.0
-      '@zag-js/utils': 1.42.0
+      '@zag-js/dom-query': 1.43.0
+      '@zag-js/utils': 1.43.0
 
-  '@zag-js/progress@1.42.0':
+  '@zag-js/progress@1.43.0':
     dependencies:
-      '@zag-js/anatomy': 1.42.0
-      '@zag-js/core': 1.42.0
-      '@zag-js/dom-query': 1.42.0
-      '@zag-js/types': 1.42.0
-      '@zag-js/utils': 1.42.0
+      '@zag-js/anatomy': 1.43.0
+      '@zag-js/core': 1.43.0
+      '@zag-js/dom-query': 1.43.0
+      '@zag-js/types': 1.43.0
+      '@zag-js/utils': 1.43.0
 
-  '@zag-js/radio-group@1.42.0':
+  '@zag-js/radio-group@1.43.0':
     dependencies:
-      '@zag-js/anatomy': 1.42.0
-      '@zag-js/core': 1.42.0
-      '@zag-js/dom-query': 1.42.0
-      '@zag-js/focus-visible': 1.42.0
-      '@zag-js/types': 1.42.0
-      '@zag-js/utils': 1.42.0
+      '@zag-js/anatomy': 1.43.0
+      '@zag-js/core': 1.43.0
+      '@zag-js/dom-query': 1.43.0
+      '@zag-js/focus-visible': 1.43.0
+      '@zag-js/types': 1.43.0
+      '@zag-js/utils': 1.43.0
 
-  '@zag-js/rating-group@1.42.0':
+  '@zag-js/rating-group@1.43.0':
     dependencies:
-      '@zag-js/anatomy': 1.42.0
-      '@zag-js/core': 1.42.0
-      '@zag-js/dom-query': 1.42.0
-      '@zag-js/types': 1.42.0
-      '@zag-js/utils': 1.42.0
+      '@zag-js/anatomy': 1.43.0
+      '@zag-js/core': 1.43.0
+      '@zag-js/dom-query': 1.43.0
+      '@zag-js/types': 1.43.0
+      '@zag-js/utils': 1.43.0
 
-  '@zag-js/react@1.42.0(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
+  '@zag-js/react@1.43.0(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
     dependencies:
-      '@zag-js/core': 1.42.0
-      '@zag-js/store': 1.42.0
-      '@zag-js/types': 1.42.0
-      '@zag-js/utils': 1.42.0
+      '@zag-js/core': 1.43.0
+      '@zag-js/store': 1.43.0
+      '@zag-js/types': 1.43.0
+      '@zag-js/utils': 1.43.0
       react: 19.2.6
       react-dom: 19.2.6(react@19.2.6)
 
-  '@zag-js/rect-utils@1.42.0': {}
+  '@zag-js/rect-utils@1.43.0': {}
 
-  '@zag-js/remove-scroll@1.42.0':
+  '@zag-js/remove-scroll@1.43.0':
     dependencies:
-      '@zag-js/dom-query': 1.42.0
+      '@zag-js/dom-query': 1.43.0
 
-  '@zag-js/scroll-snap@1.42.0':
+  '@zag-js/scroll-snap@1.43.0':
     dependencies:
-      '@zag-js/dom-query': 1.42.0
+      '@zag-js/dom-query': 1.43.0
 
-  '@zag-js/select@1.42.0':
+  '@zag-js/select@1.43.0':
     dependencies:
-      '@zag-js/anatomy': 1.42.0
-      '@zag-js/collection': 1.42.0
-      '@zag-js/core': 1.42.0
-      '@zag-js/dismissable': 1.42.0
-      '@zag-js/dom-query': 1.42.0
-      '@zag-js/focus-visible': 1.42.0
-      '@zag-js/popper': 1.42.0
-      '@zag-js/types': 1.42.0
-      '@zag-js/utils': 1.42.0
+      '@zag-js/anatomy': 1.43.0
+      '@zag-js/collection': 1.43.0
+      '@zag-js/core': 1.43.0
+      '@zag-js/dismissable': 1.43.0
+      '@zag-js/dom-query': 1.43.0
+      '@zag-js/focus-visible': 1.43.0
+      '@zag-js/popper': 1.43.0
+      '@zag-js/types': 1.43.0
+      '@zag-js/utils': 1.43.0
 
-  '@zag-js/signature-pad@1.42.0':
+  '@zag-js/signature-pad@1.43.0':
     dependencies:
-      '@zag-js/anatomy': 1.42.0
-      '@zag-js/core': 1.42.0
-      '@zag-js/dom-query': 1.42.0
-      '@zag-js/types': 1.42.0
-      '@zag-js/utils': 1.42.0
+      '@zag-js/anatomy': 1.43.0
+      '@zag-js/core': 1.43.0
+      '@zag-js/dom-query': 1.43.0
+      '@zag-js/types': 1.43.0
+      '@zag-js/utils': 1.43.0
       perfect-freehand: 1.2.3
 
-  '@zag-js/slider@1.42.0':
+  '@zag-js/slider@1.43.0':
     dependencies:
-      '@zag-js/anatomy': 1.42.0
-      '@zag-js/core': 1.42.0
-      '@zag-js/dom-query': 1.42.0
-      '@zag-js/types': 1.42.0
-      '@zag-js/utils': 1.42.0
+      '@zag-js/anatomy': 1.43.0
+      '@zag-js/core': 1.43.0
+      '@zag-js/dom-query': 1.43.0
+      '@zag-js/types': 1.43.0
+      '@zag-js/utils': 1.43.0
 
-  '@zag-js/splitter@1.42.0':
+  '@zag-js/splitter@1.43.0':
     dependencies:
-      '@zag-js/anatomy': 1.42.0
-      '@zag-js/core': 1.42.0
-      '@zag-js/dom-query': 1.42.0
-      '@zag-js/types': 1.42.0
-      '@zag-js/utils': 1.42.0
+      '@zag-js/anatomy': 1.43.0
+      '@zag-js/core': 1.43.0
+      '@zag-js/dom-query': 1.43.0
+      '@zag-js/types': 1.43.0
+      '@zag-js/utils': 1.43.0
 
-  '@zag-js/steps@1.42.0':
+  '@zag-js/steps@1.43.0':
     dependencies:
-      '@zag-js/anatomy': 1.42.0
-      '@zag-js/core': 1.42.0
-      '@zag-js/dom-query': 1.42.0
-      '@zag-js/types': 1.42.0
-      '@zag-js/utils': 1.42.0
+      '@zag-js/anatomy': 1.43.0
+      '@zag-js/core': 1.43.0
+      '@zag-js/dom-query': 1.43.0
+      '@zag-js/types': 1.43.0
+      '@zag-js/utils': 1.43.0
 
-  '@zag-js/store@1.42.0':
+  '@zag-js/store@1.43.0':
     dependencies:
       proxy-compare: 3.0.1
 
-  '@zag-js/switch@1.42.0':
+  '@zag-js/switch@1.43.0':
     dependencies:
-      '@zag-js/anatomy': 1.42.0
-      '@zag-js/core': 1.42.0
-      '@zag-js/dom-query': 1.42.0
-      '@zag-js/focus-visible': 1.42.0
-      '@zag-js/types': 1.42.0
-      '@zag-js/utils': 1.42.0
+      '@zag-js/anatomy': 1.43.0
+      '@zag-js/core': 1.43.0
+      '@zag-js/dom-query': 1.43.0
+      '@zag-js/focus-visible': 1.43.0
+      '@zag-js/types': 1.43.0
+      '@zag-js/utils': 1.43.0
 
-  '@zag-js/tabs@1.42.0':
+  '@zag-js/tabs@1.43.0':
     dependencies:
-      '@zag-js/anatomy': 1.42.0
-      '@zag-js/core': 1.42.0
-      '@zag-js/dom-query': 1.42.0
-      '@zag-js/types': 1.42.0
-      '@zag-js/utils': 1.42.0
+      '@zag-js/anatomy': 1.43.0
+      '@zag-js/core': 1.43.0
+      '@zag-js/dom-query': 1.43.0
+      '@zag-js/types': 1.43.0
+      '@zag-js/utils': 1.43.0
 
-  '@zag-js/tags-input@1.42.0':
+  '@zag-js/tags-input@1.43.0':
     dependencies:
-      '@zag-js/anatomy': 1.42.0
-      '@zag-js/auto-resize': 1.42.0
-      '@zag-js/core': 1.42.0
-      '@zag-js/dom-query': 1.42.0
-      '@zag-js/interact-outside': 1.42.0
-      '@zag-js/live-region': 1.42.0
-      '@zag-js/types': 1.42.0
-      '@zag-js/utils': 1.42.0
+      '@zag-js/anatomy': 1.43.0
+      '@zag-js/auto-resize': 1.43.0
+      '@zag-js/core': 1.43.0
+      '@zag-js/dom-query': 1.43.0
+      '@zag-js/interact-outside': 1.43.0
+      '@zag-js/live-region': 1.43.0
+      '@zag-js/types': 1.43.0
+      '@zag-js/utils': 1.43.0
 
-  '@zag-js/time-picker@1.22.1(@internationalized/date@3.12.2)':
+  '@zag-js/time-picker@1.22.1(@internationalized/date@3.12.3)':
     dependencies:
-      '@internationalized/date': 3.12.2
+      '@internationalized/date': 3.12.3
       '@zag-js/anatomy': 1.22.1
       '@zag-js/core': 1.22.1
       '@zag-js/dismissable': 1.22.1
@@ -7000,73 +7006,73 @@ snapshots:
       '@zag-js/types': 1.22.1
       '@zag-js/utils': 1.22.1
 
-  '@zag-js/toast@1.42.0':
+  '@zag-js/toast@1.43.0':
     dependencies:
-      '@zag-js/anatomy': 1.42.0
-      '@zag-js/core': 1.42.0
-      '@zag-js/dismissable': 1.42.0
-      '@zag-js/dom-query': 1.42.0
-      '@zag-js/types': 1.42.0
-      '@zag-js/utils': 1.42.0
+      '@zag-js/anatomy': 1.43.0
+      '@zag-js/core': 1.43.0
+      '@zag-js/dismissable': 1.43.0
+      '@zag-js/dom-query': 1.43.0
+      '@zag-js/types': 1.43.0
+      '@zag-js/utils': 1.43.0
 
-  '@zag-js/toggle-group@1.42.0':
+  '@zag-js/toggle-group@1.43.0':
     dependencies:
-      '@zag-js/anatomy': 1.42.0
-      '@zag-js/core': 1.42.0
-      '@zag-js/dom-query': 1.42.0
-      '@zag-js/types': 1.42.0
-      '@zag-js/utils': 1.42.0
+      '@zag-js/anatomy': 1.43.0
+      '@zag-js/core': 1.43.0
+      '@zag-js/dom-query': 1.43.0
+      '@zag-js/types': 1.43.0
+      '@zag-js/utils': 1.43.0
 
-  '@zag-js/toggle@1.42.0':
+  '@zag-js/toggle@1.43.0':
     dependencies:
-      '@zag-js/anatomy': 1.42.0
-      '@zag-js/core': 1.42.0
-      '@zag-js/dom-query': 1.42.0
-      '@zag-js/types': 1.42.0
-      '@zag-js/utils': 1.42.0
+      '@zag-js/anatomy': 1.43.0
+      '@zag-js/core': 1.43.0
+      '@zag-js/dom-query': 1.43.0
+      '@zag-js/types': 1.43.0
+      '@zag-js/utils': 1.43.0
 
-  '@zag-js/tooltip@1.42.0':
+  '@zag-js/tooltip@1.43.0':
     dependencies:
-      '@zag-js/anatomy': 1.42.0
-      '@zag-js/core': 1.42.0
-      '@zag-js/dom-query': 1.42.0
-      '@zag-js/focus-visible': 1.42.0
-      '@zag-js/popper': 1.42.0
-      '@zag-js/types': 1.42.0
-      '@zag-js/utils': 1.42.0
+      '@zag-js/anatomy': 1.43.0
+      '@zag-js/core': 1.43.0
+      '@zag-js/dom-query': 1.43.0
+      '@zag-js/focus-visible': 1.43.0
+      '@zag-js/popper': 1.43.0
+      '@zag-js/types': 1.43.0
+      '@zag-js/utils': 1.43.0
 
-  '@zag-js/tour@1.42.0':
+  '@zag-js/tour@1.43.0':
     dependencies:
-      '@zag-js/anatomy': 1.42.0
-      '@zag-js/core': 1.42.0
-      '@zag-js/dismissable': 1.42.0
-      '@zag-js/dom-query': 1.42.0
-      '@zag-js/focus-trap': 1.42.0
-      '@zag-js/interact-outside': 1.42.0
-      '@zag-js/popper': 1.42.0
-      '@zag-js/types': 1.42.0
-      '@zag-js/utils': 1.42.0
+      '@zag-js/anatomy': 1.43.0
+      '@zag-js/core': 1.43.0
+      '@zag-js/dismissable': 1.43.0
+      '@zag-js/dom-query': 1.43.0
+      '@zag-js/focus-trap': 1.43.0
+      '@zag-js/interact-outside': 1.43.0
+      '@zag-js/popper': 1.43.0
+      '@zag-js/types': 1.43.0
+      '@zag-js/utils': 1.43.0
 
-  '@zag-js/tree-view@1.42.0':
+  '@zag-js/tree-view@1.43.0':
     dependencies:
-      '@zag-js/anatomy': 1.42.0
-      '@zag-js/collection': 1.42.0
-      '@zag-js/core': 1.42.0
-      '@zag-js/dom-query': 1.42.0
-      '@zag-js/types': 1.42.0
-      '@zag-js/utils': 1.42.0
+      '@zag-js/anatomy': 1.43.0
+      '@zag-js/collection': 1.43.0
+      '@zag-js/core': 1.43.0
+      '@zag-js/dom-query': 1.43.0
+      '@zag-js/types': 1.43.0
+      '@zag-js/utils': 1.43.0
 
   '@zag-js/types@1.22.1':
     dependencies:
       csstype: 3.1.3
 
-  '@zag-js/types@1.42.0':
+  '@zag-js/types@1.43.0':
     dependencies:
       csstype: 3.2.3
 
   '@zag-js/utils@1.22.1': {}
 
-  '@zag-js/utils@1.42.0': {}
+  '@zag-js/utils@1.43.0': {}
 
   acorn-import-attributes@1.9.5(acorn@8.17.0):
     dependencies:
@@ -7076,21 +7082,21 @@ snapshots:
 
   agent-base@7.1.4: {}
 
-  alchemy@2.0.0-beta.59(patch_hash=204bf3117812a8a49610d2657951bba0c304d2b712f5767e02dcbd2c5536e8bc)(c09e2a04e41915af1ba43a8c7062de29):
+  alchemy@2.0.0-beta.59(patch_hash=204bf3117812a8a49610d2657951bba0c304d2b712f5767e02dcbd2c5536e8bc)(234b374c9d508cf92321aefc5efec8fe):
     dependencies:
       '@alchemy.run/node-utils': 0.0.5
       '@aws-sdk/credential-providers': 3.1053.0
       '@clack/prompts': 0.11.0
-      '@distilled.cloud/aws': 0.27.0(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))
-      '@distilled.cloud/axiom': 0.27.0(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))
-      '@distilled.cloud/cloudflare': 0.27.0(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))
+      '@distilled.cloud/aws': 0.27.0(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))
+      '@distilled.cloud/axiom': 0.27.0(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))
+      '@distilled.cloud/cloudflare': 0.27.0(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))
       '@distilled.cloud/cloudflare-rolldown-plugin': 0.11.3(rolldown@1.0.1)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))(workerd@1.20260617.1)
-      '@distilled.cloud/cloudflare-runtime': 0.11.3(@distilled.cloud/cloudflare@0.27.0(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)))(@effect/platform-bun@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)))(@effect/platform-node@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))(ioredis@5.10.1))(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))
-      '@distilled.cloud/cloudflare-vite-plugin': 0.11.3(6a411e22b8e9206f3da31ab14aa1418d)
-      '@distilled.cloud/core': 0.27.0(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))
-      '@distilled.cloud/neon': 0.27.0(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))
-      '@distilled.cloud/planetscale': 0.27.0(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))
-      '@effect/vitest': 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
+      '@distilled.cloud/cloudflare-runtime': 0.11.3(@distilled.cloud/cloudflare@0.27.0(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@effect/platform-bun@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@effect/platform-node@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(ioredis@5.10.1))(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))
+      '@distilled.cloud/cloudflare-vite-plugin': 0.11.3(73367d03f73b5c9779e53b579e9d83e1)
+      '@distilled.cloud/core': 0.27.0(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))
+      '@distilled.cloud/neon': 0.27.0(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))
+      '@distilled.cloud/planetscale': 0.27.0(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))
+      '@effect/vitest': 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
       '@libsql/client': 0.17.3
       '@octokit/rest': 22.0.1
       '@octokit/webhooks': 14.2.0
@@ -7100,7 +7106,7 @@ snapshots:
       '@types/aws-lambda': 8.10.161
       aws4fetch: 1.0.20
       capnweb: 0.6.1
-      effect: 4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)
+      effect: 4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)
       fast-glob: 3.3.3
       fast-xml-parser: 5.8.0
       ink: 6.8.0(@types/react@19.2.14)(react@19.2.6)
@@ -7116,11 +7122,11 @@ snapshots:
       undici: 7.24.8
       yaml: 2.9.0
     optionalDependencies:
-      '@effect/platform-bun': 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))
-      '@effect/platform-node': 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))(ioredis@5.10.1)
-      '@effect/sql-pg': 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))
+      '@effect/platform-bun': 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))
+      '@effect/platform-node': 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(ioredis@5.10.1)
+      '@effect/sql-pg': 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))
       drizzle-kit: 1.0.0-rc.4
-      drizzle-orm: 1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3)
+      drizzle-orm: 1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3)
       vite: 8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)
       ws: 8.21.0
     transitivePeerDependencies:
@@ -7161,10 +7167,10 @@ snapshots:
 
   before-after-hook@4.0.0: {}
 
-  better-auth@1.6.23(@cloudflare/workers-types@4.20260629.1)(@opentelemetry/api@1.9.1)(drizzle-kit@1.0.0-rc.4)(drizzle-orm@1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))):
+  better-auth@1.6.23(@cloudflare/workers-types@4.20260629.1)(@opentelemetry/api@1.9.1)(drizzle-kit@1.0.0-rc.4)(drizzle-orm@1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))):
     dependencies:
       '@better-auth/core': 1.6.23(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.1)(@cloudflare/workers-types@4.20260629.1)(@opentelemetry/api@1.9.1)(better-call@1.3.7(zod@4.4.3))(jose@6.2.3)(kysely@0.28.17)(nanostores@1.3.0)
-      '@better-auth/drizzle-adapter': 1.6.23(@better-auth/core@1.6.23(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.1)(@cloudflare/workers-types@4.20260629.1)(@opentelemetry/api@1.9.1)(better-call@1.3.7(zod@4.4.3))(jose@6.2.3)(kysely@0.28.17)(nanostores@1.3.0))(@better-auth/utils@0.4.2)(drizzle-orm@1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3))
+      '@better-auth/drizzle-adapter': 1.6.23(@better-auth/core@1.6.23(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.1)(@cloudflare/workers-types@4.20260629.1)(@opentelemetry/api@1.9.1)(better-call@1.3.7(zod@4.4.3))(jose@6.2.3)(kysely@0.28.17)(nanostores@1.3.0))(@better-auth/utils@0.4.2)(drizzle-orm@1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3))
       '@better-auth/kysely-adapter': 1.6.23(@better-auth/core@1.6.23(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.1)(@cloudflare/workers-types@4.20260629.1)(@opentelemetry/api@1.9.1)(better-call@1.3.7(zod@4.4.3))(jose@6.2.3)(kysely@0.28.17)(nanostores@1.3.0))(@better-auth/utils@0.4.2)(kysely@0.28.17)
       '@better-auth/memory-adapter': 1.6.23(@better-auth/core@1.6.23(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.1)(@cloudflare/workers-types@4.20260629.1)(@opentelemetry/api@1.9.1)(better-call@1.3.7(zod@4.4.3))(jose@6.2.3)(kysely@0.28.17)(nanostores@1.3.0))(@better-auth/utils@0.4.2)
       '@better-auth/mongo-adapter': 1.6.23(@better-auth/core@1.6.23(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.1)(@cloudflare/workers-types@4.20260629.1)(@opentelemetry/api@1.9.1)(better-call@1.3.7(zod@4.4.3))(jose@6.2.3)(kysely@0.28.17)(nanostores@1.3.0))(@better-auth/utils@0.4.2)
@@ -7182,7 +7188,7 @@ snapshots:
       zod: 4.4.3
     optionalDependencies:
       drizzle-kit: 1.0.0-rc.4
-      drizzle-orm: 1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3)
+      drizzle-orm: 1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3)
       mysql2: 3.22.3(@types/node@25.6.2)
       pg: 8.21.0
       react: 19.2.6
@@ -7286,19 +7292,19 @@ snapshots:
       get-tsconfig: 4.14.0
       jiti: 2.7.0
 
-  drizzle-orm@1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3):
+  drizzle-orm@1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3):
     optionalDependencies:
       '@cloudflare/workers-types': 4.20260629.1
-      '@effect/sql-d1': 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))
-      '@effect/sql-pg': 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))
+      '@effect/sql-d1': 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))
+      '@effect/sql-pg': 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))
       '@libsql/client': 0.17.3
       '@opentelemetry/api': 1.9.1
-      effect: 4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)
+      effect: 4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)
       mysql2: 3.22.3(@types/node@25.6.2)
       pg: 8.21.0
       zod: 4.4.3
 
-  effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4):
+  effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89):
     dependencies:
       '@standard-schema/spec': 1.1.0
       fast-check: 4.8.0
@@ -8058,9 +8064,9 @@ snapshots:
       react: 19.2.6
       scheduler: 0.27.0
 
-  react-fate@1.3.1(patch_hash=6333650bb56ba24c05dc81b19328e014d9b510316cf349d8a05cdd1b7b0efc2b)(@trpc/client@11.17.0(@trpc/server@11.17.0(typescript@6.0.3))(typescript@6.0.3))(drizzle-orm@1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)):
+  react-fate@1.3.1(patch_hash=6333650bb56ba24c05dc81b19328e014d9b510316cf349d8a05cdd1b7b0efc2b)(@trpc/client@11.17.0(@trpc/server@11.17.0(typescript@6.0.3))(typescript@6.0.3))(drizzle-orm@1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)):
     dependencies:
-      '@nkzw/fate': 1.3.1(patch_hash=e0af930dd67d32efc5463f43c35824fc35d9b9558716831f9cec3764017cf40c)(@trpc/client@11.17.0(@trpc/server@11.17.0(typescript@6.0.3))(typescript@6.0.3))(drizzle-orm@1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4)))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92(patch_hash=86156a90a2a601313cb88e7bbd19ae0e42065a114c44806c2e303167eb7528a4))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3))(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
+      '@nkzw/fate': 1.3.1(patch_hash=e0af930dd67d32efc5463f43c35824fc35d9b9558716831f9cec3764017cf40c)(@trpc/client@11.17.0(@trpc/server@11.17.0(typescript@6.0.3))(typescript@6.0.3))(drizzle-orm@1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3))(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
       react: 19.2.6
       react-dom: 19.2.6(react@19.2.6)
     transitivePeerDependencies:

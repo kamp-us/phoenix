@@ -1,6 +1,6 @@
 {
 	"skill_name": "adr",
-	"notes": "Authored with /skill-creator against brief #4704. These evals grade the JUDGMENT layer the SKILL.md carries, not the fabrika-cli verbs it specifies \u2014 the verbs are downstream write-code work against contract.md, so a run that cannot invoke them is expected and eval 1 grades exactly that failure mode. Each eval traces to an incident row in the #4642 KEEP corpus.",
+	"notes": "Authored with /skill-creator against brief #4704. These evals grade the JUDGMENT layer the SKILL.md carries, not the fabrika verbs it specifies \u2014 the verbs are downstream write-code work against contract.md, so a run that cannot invoke them is expected and eval 1 grades exactly that failure mode. Each eval traces to an incident row in the #4642 KEEP corpus.",
 	"evals": [
 		{
 			"id": 1,

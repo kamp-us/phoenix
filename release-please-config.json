@@ -1,0 +1,16 @@
+{
+	"$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+	"last-release-sha": "97f3022228eeeb850b02ef4cb10b64c772fbd77f",
+	"bootstrap-sha": "97f3022228eeeb850b02ef4cb10b64c772fbd77f",
+	"release-type": "node",
+	"include-component-in-tag": true,
+	"separate-pull-requests": false,
+	"packages": {
+		"packages/pipeline-cli": {
+			"component": "pipeline-cli"
+		},
+		"packages/fabrika-cli": {
+			"component": "fabrika-cli"
+		}
+	}
+}

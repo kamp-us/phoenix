@@ -138,6 +138,22 @@ index 4cb198b928a5538737af01c0d18a03c7d28eb445..61e2bf1044a334b96832b28517577512
        return Effect.withFiber(fiber => {
          const httpRequest = Context.getOrUndefined(fiber.context, HttpServerRequest.HttpServerRequest);
          if (httpRequest) {
+diff --git a/dist/unstable/cli/internal/command.js b/dist/unstable/cli/internal/command.js
+index 7d5450e539e1e23b7cc0336a84b82ce3c32d82c8..9e4598a0aad0223b801c917a70eb1aa6c57c9570 100644
+--- a/dist/unstable/cli/internal/command.js
++++ b/dist/unstable/cli/internal/command.js
+@@ -64,6 +64,11 @@ export const makeCommand = options => {
+       const singles = Param.extractSingleParams(arg);
+       const metadata = Param.getParamMetadata(arg);
+       for (const single of singles) {
++        // phoenix patch (#4828): hidden positional arguments still parse but are omitted from
++        // generated --help output, the same rule this file already applies to hidden flags and
++        // hidden subcommands. Upstream honours `Param.withHidden` for flags only, so an argument
++        // marked hidden was silently still advertised. Retire when effect ships the same rule.
++        if (single.hidden) continue;
+         args.push({
+           name: single.name,
+           type: single.typeName ?? Primitive.getTypeName(single.primitiveType),
 diff --git a/dist/unstable/rpc/RpcSerialization.js b/dist/unstable/rpc/RpcSerialization.js
 index 92e6608cda58cb4a325931a9be154ae86b2807b2..d596537dd79d204425310f276286114dcefcdf76 100644
 --- a/dist/unstable/rpc/RpcSerialization.js

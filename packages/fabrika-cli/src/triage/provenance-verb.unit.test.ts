@@ -1,0 +1,74 @@
+import {Effect} from "effect";
+import {describe, expect, it} from "vitest";
+import {errOut, fakeShell, okOut} from "../fakes.test-support.ts";
+import {ANSWER, FAILED} from "../verb.ts";
+import {PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
+import {runProvenance} from "./provenance-verb.ts";
+
+const ISSUE = /repos\/o\/r\/issues\/4312/;
+
+const options = {
+	issue: 4312,
+	repo: null,
+	json: false,
+	env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,
+};
+
+const issueJson = (body: string) =>
+	JSON.stringify({number: 4312, title: "t", html_url: "u", state: "open", labels: [], body});
+
+const run = (
+	script: ReadonlyArray<readonly [RegExp, ReturnType<typeof okOut>]>,
+	overrides: Partial<typeof options> = {},
+) =>
+	Effect.runPromise(
+		Effect.provide(runProvenance({...options, ...overrides}), fakeShell(script).layer),
+	);
+
+const AGENT_BODY = "What I observed.\n\n---\n<sub>Filed by an agent · 2026-08-03T05:47:38Z</sub>\n";
+
+describe("runProvenance", () => {
+	it("answers `agent` on the footer, on stdout, exit 0", async () => {
+		const out = await run([[ISSUE, okOut(issueJson(AGENT_BODY))]]);
+		expect(out.code).toBe(ANSWER);
+		expect(out.stdout).toBe("agent\n");
+	});
+
+	it("answers `human` for a hand-typed body", async () => {
+		const out = await run([[ISSUE, okOut(issueJson("I hit a bug in the retry helper.\n"))]]);
+		expect(out.code).toBe(ANSWER);
+		expect(out.stdout).toBe("human\n");
+	});
+
+	it("answers `human` for a PRESENT-but-empty body — a measurement, fail-closed", async () => {
+		const out = await run([[ISSUE, okOut(issueJson("   \n"))]]);
+		expect(out.code).toBe(ANSWER);
+		expect(out.stdout).toBe("human\n");
+		expect(out.stderr.join("\n")).toContain("empty body");
+	});
+
+	it("REFUSES an unreadable issue as UNKNOWN — never `human`, which a kill acts on", async () => {
+		const out = await run([[ISSUE, errOut("gh: Bad gateway (HTTP 502)")]]);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toContain("UNKNOWN");
+	});
+
+	it("refuses a PROVEN-absent issue on the zero-scope code, apart from the unknown one", async () => {
+		const out = await run([[ISSUE, errOut("gh: Not Found (HTTP 404)")]]);
+		expect(out.code).toBe(ZERO_SCOPE);
+		expect(out.stdout).toBe("");
+	});
+
+	it("puts the --json payload on stdout with the marker and the reason", async () => {
+		const out = await run([[ISSUE, okOut(issueJson(AGENT_BODY))]], {json: true});
+		expect(JSON.parse(out.stdout)).toMatchObject({outcome: "agent", marker: true});
+		expect(out.stderr.join("")).not.toContain('"outcome"');
+	});
+
+	it("refuses when no target repo resolves", async () => {
+		const out = await run([[/git remote get-url/, errOut("no origin")]], {env: {}});
+		expect(out.code).toBe(FAILED);
+		expect(out.stderr.at(-1)).toContain("CLAUDE_PIPELINE_REPO");
+	});
+});

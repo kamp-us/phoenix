@@ -1,7 +1,7 @@
 /**
- * The fabrika-cli verb-group registry — the extension seam.
+ * The fabrika verb-group registry — the extension seam.
  *
- * One row per verb group exposed as `fabrika-cli <group> <verb> …`. The root command and its
+ * One row per verb group exposed as `fabrika <group> <verb> …`. The root command and its
  * `--help` index both read this array, so a group appears under `--help` by being registered and
  * nowhere else: the index is **derived from the registry, never hand-maintained**, which is the
  * defect a parallel hand-written list reintroduces the moment it drifts.
@@ -16,10 +16,17 @@
 import type {NodeServices} from "@effect/platform-node";
 import type {Command} from "effect/unstable/cli";
 import {adrCommand} from "./adr/command.ts";
+import {evalCommand} from "./eval/command.ts";
 import {reportCommand} from "./report/command.ts";
+import {triageCommand} from "./triage/command.ts";
 
-/** A registered verb group: a top-level `Command` whose name is the `fabrika-cli <name>` selector. */
+/** A registered verb group: a top-level `Command` whose name is the `fabrika <name>` selector. */
 export type VerbGroup = Command.Command<any, any, object, unknown, NodeServices.NodeServices>;
 
 /** The registered groups, in the order they list under `--help`. */
-export const registeredGroups: ReadonlyArray<VerbGroup> = [adrCommand, reportCommand];
+export const registeredGroups: ReadonlyArray<VerbGroup> = [
+	adrCommand,
+	evalCommand,
+	reportCommand,
+	triageCommand,
+];

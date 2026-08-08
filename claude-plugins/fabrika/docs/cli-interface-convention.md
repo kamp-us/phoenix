@@ -38,6 +38,28 @@ per-tool help documents subcommands and exit codes inline.
   without a description is mechanically detectable
   ([`packages/pipeline-cli/src/tools/commands/commands.ts`](../../../packages/pipeline-cli/src/tools/commands/commands.ts)).
   A parallel hand-written list rots; that is the defect the derived index replaced.
+- **A `--help` that resolves is proof the path exists — up to the last node that takes subcommands.**
+  `fabrika <unknown> …` is refused before the CLI runner sees it: the reason on stderr, nothing on
+  stdout, exit `1`. That holds at the group level and inside a group, with or without `--help`, and
+  however many invalid tokens follow. It has to be a fabrika-side guard because the runner answers the
+  probe otherwise — `effect`'s `Command.runWith` processes action flags before it inspects parse
+  errors, and `--help` is an action flag, so it printed the deepest valid prefix's help and exited `0`
+  while discarding the whole invalid tail ([#4822](https://github.com/kamp-us/phoenix/issues/4822)).
+- **An operand a leaf verb never declared is refused too**, at the argument layer rather than the path
+  layer. Every leaf declares a hidden trailing catch-all, so the parser hands the verb whatever its own
+  arguments left, and the verb refuses on stderr with exit `1` (rule 3's usage-error code) instead of
+  binding none of them and answering anyway. `fabrika adr next bogus` refuses; `fabrika adr resolve
+  0164 0023` still absorbs both ids, because a variadic argument consumes its operands before the
+  catch-all sees them ([#4828](https://github.com/kamp-us/phoenix/issues/4828)).
+- **The residual caveat: a global flag placed *before* the group name ends the path guard's walk.**
+  `fabrika --log-level info triage --help` exits `0` with root help even though `triage` names no
+  group. The walk stops at the first `-`-prefixed token because a later bare token may be that flag's
+  value (`--log-level debug`), and reading a value as a subcommand would refuse a valid invocation — a
+  miss is the fail-safe direction for a guard whose only output is a refusal. This stays a documented
+  residual rather than a code fix: telling a flag's value from a subcommand needs the parser's own
+  per-flag arity, which the published `effect` types do not expose, so a fabrika-side fix would carry a
+  hand-maintained list of which global flags take a value — the parallel-list rot this same rule
+  forbids for the verb index.
 
 ### 2. Results by value on stdout; the shape is documented, not guessed
 
@@ -76,8 +98,15 @@ exit taxonomy, and the verdict-vs-invocation rule proven in v1 at
   |---|---|
   | `0` | the answer was produced on stdout |
   | `1` | usage error, or the verb failed to run |
+  | `2` | no implementation could be resolved — the binary was found, the verbs were not |
   | `127` | the verb never ran at all (unresolved binary) |
   | `3`+ | the verb's own proven outcomes, each enumerated in `--help` |
+
+  `2` is the seat between the two invocation failures. `127` is the shell reporting that nothing
+  ran; `1` is a verb reporting that it ran and the caller asked wrongly. Between them sits the case
+  where `fabrika` itself started, could not reach a working set of verbs — an unlinked
+  dependency, a repo-local install it could not execute — and has something specific to say about
+  it. Seating that on `1` would make it indistinguishable from a typo in a flag ([#4666](https://github.com/kamp-us/phoenix/issues/4666)).
 
 - A verb whose result crosses a pipe keeps its exit code binary (`0` / non-zero) and puts the
   discriminator in a stdout state word: a meaningful code does not survive `xargs`.
@@ -107,19 +136,54 @@ symlink to a nonexistent target runs and fails with an ordinary `127`, and `$HOM
 special-cased. So no env-injection mechanism of any kind can make a variable-rooted invocation
 usable at an agent's top-level command.
 
-- A fabrika verb is invoked as a plain literal command string — written `fabrika-cli <verb> …`
-  throughout this doc. No `$VAR`, no `${VAR:-default}`, no command substitution, no `source`.
-  **The binary name is illustrative and not fixed here.** Where fabrika's verbs live — and so what
-  they are invoked as — is deferred to [#4650](https://github.com/kamp-us/phoenix/issues/4650) (epic
-  [#4648](https://github.com/kamp-us/phoenix/issues/4648), Resolved question 2: the seed package
-  rides with the first derived contract, because minting one earlier would invert
-  contract-before-implementation). This rule constrains the **form** of an invocation, never its
-  name; substitute whatever name #4650 lands.
+- A fabrika verb is invoked as a plain literal command string — no `$VAR`, no `${VAR:-default}`, no
+  command substitution, no `source`.
+- **The literal is `fabrika`.** That name is now fixed, closing the deferral this rule carried
+  to [#4650](https://github.com/kamp-us/phoenix/issues/4650): every fence in every fabrika skill
+  writes `fabrika <group> <verb> …` and nothing else. The command and the package are deliberately
+  **different names** — `fabrika` is the `bin` *key* of the `@kampus/fabrika-cli` package, which
+  keeps its name on npm and its directory at `packages/fabrika-cli/`
+  ([#4784](https://github.com/kamp-us/phoenix/issues/4784)). [Delivery](#delivery--one-name-two-installs)
+  below is how the command comes to resolve.
 - **Examples in `--help` and in a contract spec are held to the same rule.** An example an agent
   cannot paste verbatim is not an example.
 - A verb never requires an env var to *locate* itself. Configuration may still arrive by env
   (a session id, a target repo), and each such variable is named in `--help` with its default and
   what happens when it is unset.
+
+<a id="delivery--one-name-two-installs"></a>
+#### Delivery — one name, two installs, both of them real
+
+`fabrika` is delivered as a **global install** of `@kampus/fabrika-cli`. On startup the binary
+finds the **repo root** above the working directory, asks Node's own resolver what copy that root
+installed, and hands the invocation to it. This is the shape [turbo](https://turborepo.com) ships
+(`crates/turborepo-shim/`) — a global entry point that defers to the version the repo pins —
+reimplemented in fabrika's own TypeScript
+([#4784](https://github.com/kamp-us/phoenix/issues/4784)).
+
+The property that buys is a **repo-pinned version**: a repo carrying `@kampus/fabrika-cli` in its
+`devDependencies` gets that version from a bare fence, whatever each machine's global happens to be.
+
+Branches, and the reason this is not the resolution ladder [#4784](https://github.com/kamp-us/phoenix/issues/4784)
+rejected: **a repo-local install is a real installed package, and the global is a real installed
+package.** Neither is chosen by testing whether a file exists and guessing that it will run. Tiers
+that can only be right or loudly absent are fine; tiers that can be quietly wrong are the defect.
+
+The branch that makes that concrete is the degenerate one. **A repo root that pins the package but
+has not installed it, or whose install is corrupt, runs the global and says so loudly** — naming the
+global's version beside the version the root manifest declared, silenceable with
+`FABRIKA_GLOBAL_WARNING_DISABLED`. It is not an error: the worst outcome is that the global runs.
+**No repo root at all is the one silent branch**, deliberately, so a global-only invocation stays
+quiet. Separating those two is the whole point — collapsing them is what makes a delegation quietly
+wrong.
+
+Three environment variables belong to the delivery layer rather than to any verb, and none of them
+locates the binary, so none weakens the rule above: `FABRIKA_DEBUG` prints one stderr line naming
+which copy served the invocation; `FABRIKA_GLOBAL_WARNING_DISABLED` silences the degenerate branch's
+warning; `FABRIKA_SKIP_INFER` is the recursion guard for a caller that cannot alter argv. The guard
+the CLI itself uses on the child is the **`--skip-infer` flag**, stripped before any verb sees it,
+and the child is additionally handed the user's original directory as `FABRIKA_INVOCATION_DIR`
+because its own cwd is set to the repo root.
 
 ### 6. fabrika calls nothing outside fabrika
 
@@ -215,9 +279,8 @@ point: an implementer can tell an unfinished spec from a finished one before sta
 
 Illustration only. It is not a commissioned verb, and it does not pre-commit the `/adr` contract —
 that one is derived by its own authoring session as the wave-0 pilot in
-[#4650](https://github.com/kamp-us/phoenix/issues/4650). The `fabrika-cli` binary name it invokes is
-illustrative on the same terms (rule 5): an example needs a name to be readable, and #4650 owns the
-real one. It is here to show a complete block at the level of detail the completeness test demands.
+[#4650](https://github.com/kamp-us/phoenix/issues/4650). It is here to show a complete block at the
+level of detail the completeness test demands.
 
 ---
 
@@ -227,7 +290,7 @@ real one. It is here to show a complete block at the level of detail the complet
 **Invocation**
 
 ```
-fabrika-cli decisions next-id [--dir <path>]
+fabrika decisions next-id [--dir <path>]
 ```
 
 **Inputs**
@@ -263,12 +326,12 @@ The scope line goes to stderr, because this verb's answer channel is machine.
 **Examples**
 
 ```
-$ fabrika-cli decisions next-id
+$ fabrika decisions next-id
 0233
 ```
 
 ```
-$ fabrika-cli decisions next-id --dir /nonexistent
+$ fabrika decisions next-id --dir /nonexistent
 decisions: cannot read /nonexistent: ENOENT
 $ echo $?
 1

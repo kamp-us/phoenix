@@ -1,7 +1,7 @@
 {
 	"name": "@kampus/fabrika-cli",
 	"version": "0.1.0",
-	"description": "fabrika-cli — the deterministic verb package fabrika skills call; `fabrika-cli <group> <verb> …` (epic #4650)",
+	"description": "@kampus/fabrika-cli — the deterministic verb package fabrika skills call; `fabrika <group> <verb> …` (epic #4650)",
 	"license": "MIT",
 	"repository": {
 		"type": "git",
@@ -10,26 +10,38 @@
 	},
 	"type": "module",
 	"bin": {
-		"fabrika-cli": "./dist/bin.js"
+		"fabrika": "./src/bin.ts"
 	},
-	"main": "./dist/index.js",
-	"module": "./dist/index.js",
-	"types": "./dist/index.d.ts",
+	"main": "./src/index.ts",
+	"types": "./src/index.ts",
 	"exports": {
-		".": {
-			"types": "./dist/index.d.ts",
-			"import": "./dist/index.js"
-		}
+		".": "./src/index.ts",
+		"./package.json": "./package.json"
 	},
 	"files": [
 		"dist"
 	],
+	"engines": {
+		"node": ">=24"
+	},
 	"publishConfig": {
-		"access": "public"
+		"access": "public",
+		"bin": {
+			"fabrika": "./dist/bin.js"
+		},
+		"main": "./dist/index.js",
+		"types": "./dist/index.d.ts",
+		"exports": {
+			".": {
+				"types": "./dist/index.d.ts",
+				"import": "./dist/index.js"
+			},
+			"./package.json": "./package.json"
+		}
 	},
 	"scripts": {
 		"build": "tsc -p tsconfig.build.json",
-		"prepublishOnly": "tsc -p tsconfig.build.json",
+		"prepublishOnly": "pnpm run build",
 		"typecheck": "tsgo -p tsconfig.json",
 		"test": "vitest run",
 		"cli": "node src/bin.ts"
@@ -40,6 +52,7 @@
 	},
 	"devDependencies": {
 		"@effect/tsgo": "catalog:",
+		"@effect/vitest": "catalog:",
 		"@types/node": "catalog:",
 		"@typescript/native-preview": "catalog:",
 		"typescript": "catalog:",

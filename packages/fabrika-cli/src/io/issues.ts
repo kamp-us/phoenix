@@ -1,6 +1,7 @@
 /**
- * The GitHub surface the `report` verbs read and write: the intake queue, the search index, the
- * repository's label set, and the issue/comment writes plus their read-backs.
+ * The GitHub surface the `report` and `triage` verbs read and write: the intake queue, the search
+ * index, the repository's label set and open milestones, and the issue/comment writes plus their
+ * read-backs.
  *
  * Everything goes through `gh api` REST and **never GraphQL** — the org's Projects-classic
  * integration errors out GraphQL issue queries — and **every list read pages**: an unpaginated
@@ -149,11 +150,20 @@ export interface IssueRecord {
 	readonly state: string;
 	readonly labels: ReadonlyArray<string>;
 	readonly url: string;
+	/**
+	 * The assigned milestone's number, or `null` for an unhomed issue.
+	 *
+	 * A home write cannot be proven from the labels, so a read-back that does not carry this field
+	 * cannot tell "homed where I asked" from "not homed at all".
+	 */
+	readonly milestone: number | null;
+	/** `completed` / `not_planned` on a closed issue, `null` otherwise. A kill's read-back reads it. */
+	readonly stateReason: string | null;
 }
 
 const toIssueRecord = (value: unknown): IssueRecord | null => {
 	if (!isRecord(value)) return null;
-	const {number, title, body, state, labels, html_url: url} = value;
+	const {number, title, body, state, labels, html_url: url, milestone, state_reason} = value;
 	if (typeof number !== "number" || typeof title !== "string" || typeof url !== "string") {
 		return null;
 	}
@@ -168,6 +178,9 @@ const toIssueRecord = (value: unknown): IssueRecord | null => {
 		state: typeof state === "string" ? state : "",
 		labels: names as ReadonlyArray<string>,
 		url,
+		milestone:
+			isRecord(milestone) && typeof milestone.number === "number" ? milestone.number : null,
+		stateReason: typeof state_reason === "string" ? state_reason : null,
 	};
 };
 
@@ -259,4 +272,358 @@ export const getComment = (repo: string, id: number): Shell<Attempt<string>> =>
 		return isRecord(parsed) && typeof parsed.body === "string"
 			? ok(parsed.body)
 			: fail("`gh api` exited 0 but its output is not a comment");
+	});
+
+// ---------------------------------------------------------------------------------------------
+// The `triage` group's reads and writes, appended as one block so later verb slices extend the
+// file here without colliding with the `report` half above.
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * Split `stdout` into rows of exactly `columns` tab-separated fields, or `null` when any line is not
+ * that shape.
+ *
+ * The wider sibling of {@link parseIssueRows}: same discipline, any column count. A shape that is
+ * not what was asked for is a failure, never an empty result — `gh` can exit 0 having printed a `jq`
+ * error, and interpreting those bytes positionally is how a malformed read answers a plausible
+ * value.
+ */
+export const parseTabRows = (
+	stdout: string,
+	columns: number,
+): ReadonlyArray<ReadonlyArray<string>> | null => {
+	const rows: ReadonlyArray<string>[] = [];
+	for (const line of stdout.split("\n")) {
+		if (line === "") continue;
+		const fields = line.split("\t");
+		if (fields.length !== columns) return null;
+		rows.push(fields);
+	}
+	return rows;
+};
+
+/** The leading field of every tab row as a non-negative integer — `null` if any is not one. */
+const leadingNumbers = (
+	rows: ReadonlyArray<ReadonlyArray<string>>,
+): ReadonlyArray<number> | null => {
+	const out: number[] = [];
+	for (const row of rows) {
+		const first = row[0];
+		if (first === undefined || !/^\d+$/.test(first)) return null;
+		out.push(Number.parseInt(first, 10));
+	}
+	return out;
+};
+
+/** One open milestone, as a home candidate. */
+export interface Milestone {
+	readonly number: number;
+	readonly title: string;
+}
+
+/**
+ * Every **open** milestone in `repo`, paged.
+ *
+ * The pagination is load-bearing rather than defensive: an unpaginated read caps candidates at
+ * GitHub's default page of 30 with no truncation signal, and "no home fits" is a conclusion that
+ * routes work toward a park or a close.
+ */
+export const listOpenMilestones = (repo: string): Shell<Attempt<ReadonlyArray<Milestone>>> =>
+	Effect.gen(function* () {
+		const r = yield* execCapture("gh", [
+			"api",
+			"--paginate",
+			`repos/${repo}/milestones?state=open&per_page=100`,
+			"--jq",
+			'.[] | "\\(.number)\t\\(.title)"',
+		]);
+		if (!r.ok) return fail(r.reason);
+		const rows = parseTabRows(r.stdout, 2);
+		if (rows === null) return fail("`gh api` exited 0 but its output is not a list of milestones");
+		const numbers = leadingNumbers(rows);
+		if (numbers === null) {
+			return fail("`gh api` exited 0 but a milestone row does not start with a number");
+		}
+		return ok(rows.map((row, i) => ({number: numbers[i] as number, title: row[1] ?? ""})));
+	});
+
+/**
+ * Split `gh api --paginate`'s concatenated top-level JSON values back into one string per page.
+ *
+ * `--paginate` emits `[…][…]` with no separator, which `JSON.parse` rejects outright — so a
+ * single-parse read would fail on exactly the responses pagination exists to reach. Bracket depth is
+ * counted outside string literals only, so a `[` inside a comment body cannot split a page.
+ */
+export const splitJsonArrays = (stdout: string): ReadonlyArray<string> => {
+	const pages: string[] = [];
+	let depth = 0;
+	let start = -1;
+	let inString = false;
+	let escaped = false;
+	for (let i = 0; i < stdout.length; i++) {
+		const c = stdout[i];
+		if (inString) {
+			if (escaped) escaped = false;
+			else if (c === "\\") escaped = true;
+			else if (c === '"') inString = false;
+			continue;
+		}
+		if (c === '"') inString = true;
+		else if (c === "[" || c === "{") {
+			if (depth === 0) start = i;
+			depth++;
+		} else if (c === "]" || c === "}") {
+			depth--;
+			if (depth === 0 && start >= 0) {
+				pages.push(stdout.slice(start, i + 1));
+				start = -1;
+			}
+		}
+	}
+	return pages;
+};
+
+/** One issue comment, as a claim scan reads it. */
+export interface CommentRecord {
+	readonly id: number;
+	readonly author: string;
+	readonly createdAt: string;
+	readonly body: string;
+}
+
+/**
+ * Every comment on `issue`, paged, oldest first.
+ *
+ * The bodies arrive as typed JSON rather than through `--jq .body`: a body carrying an unescaped
+ * control character makes `jq -r` error mid-stream, which inside a loop reads back as an empty
+ * comment rather than as a failure.
+ */
+export const listComments = (
+	repo: string,
+	issue: number,
+): Shell<Attempt<ReadonlyArray<CommentRecord>>> =>
+	Effect.gen(function* () {
+		const r = yield* execCapture("gh", [
+			"api",
+			"--paginate",
+			`repos/${repo}/issues/${issue}/comments?per_page=100`,
+		]);
+		if (!r.ok) return fail(r.reason);
+		const out: CommentRecord[] = [];
+		for (const page of splitJsonArrays(r.stdout)) {
+			const parsed = parseJson(page);
+			if (!Array.isArray(parsed)) {
+				return fail("`gh api` exited 0 but its output is not a list of comments");
+			}
+			for (const value of parsed) {
+				if (!isRecord(value) || typeof value.id !== "number") {
+					return fail("`gh api` exited 0 but one entry is not a comment");
+				}
+				const user = value.user;
+				out.push({
+					id: value.id,
+					author: isRecord(user) && typeof user.login === "string" ? user.login : "",
+					createdAt: typeof value.created_at === "string" ? value.created_at : "",
+					body: typeof value.body === "string" ? value.body : "",
+				});
+			}
+		}
+		return ok(out);
+	});
+
+/** Delete one issue comment — how a claim is retracted. */
+export const deleteComment = (repo: string, id: number): Shell<Attempt<void>> =>
+	Effect.gen(function* () {
+		const r = yield* execCapture("gh", [
+			"api",
+			"--method",
+			"DELETE",
+			`repos/${repo}/issues/comments/${id}`,
+		]);
+		return r.ok ? ok(undefined) : fail(r.reason);
+	});
+
+/** Replace an issue's body. The caller re-reads and compares; this call's echo is not evidence. */
+export const patchIssueBody = (repo: string, issue: number, body: string): Shell<Attempt<void>> =>
+	Effect.gen(function* () {
+		const r = yield* execCapture("gh", [
+			"api",
+			"--method",
+			"PATCH",
+			`repos/${repo}/issues/${issue}`,
+			"-f",
+			`body=${body}`,
+		]);
+		return r.ok ? ok(undefined) : fail(r.reason);
+	});
+
+/** Add labels to an issue, leaving every label already on it in place. */
+export const addLabels = (
+	repo: string,
+	issue: number,
+	labels: ReadonlyArray<string>,
+): Shell<Attempt<void>> =>
+	Effect.gen(function* () {
+		if (labels.length === 0) return ok(undefined);
+		const r = yield* execCapture("gh", [
+			"api",
+			"--method",
+			"POST",
+			`repos/${repo}/issues/${issue}/labels`,
+			...labels.flatMap((l) => ["-f", `labels[]=${l}`]),
+		]);
+		return r.ok ? ok(undefined) : fail(r.reason);
+	});
+
+/**
+ * Remove one label from an issue. `true` = it was removed, `false` = it was already absent.
+ *
+ * The 404 folds into the success channel deliberately: removal is idempotent, so a label that was
+ * not on the issue leaves the caller in exactly the state it asked for. Every other failure stays a
+ * failure — "I could not remove it" and "it is gone" are opposite facts.
+ */
+export const removeLabel = (repo: string, issue: number, label: string): Shell<Attempt<boolean>> =>
+	Effect.gen(function* () {
+		const r = yield* execCapture("gh", [
+			"api",
+			"--method",
+			"DELETE",
+			`repos/${repo}/issues/${issue}/labels/${encodeURIComponent(label)}`,
+		]);
+		if (r.ok) return ok(true);
+		return httpStatusOf(r.reason) === 404 ? ok(false) : fail(r.reason);
+	});
+
+/** Home an issue on a milestone by number. */
+export const setMilestone = (
+	repo: string,
+	issue: number,
+	milestone: number,
+): Shell<Attempt<void>> =>
+	Effect.gen(function* () {
+		const r = yield* execCapture("gh", [
+			"api",
+			"--method",
+			"PATCH",
+			`repos/${repo}/issues/${issue}`,
+			"-F",
+			`milestone=${milestone}`,
+		]);
+		return r.ok ? ok(undefined) : fail(r.reason);
+	});
+
+/**
+ * Clear an issue's milestone.
+ *
+ * `-F` is what sends a JSON `null`; the `-f` form would send the four-character string `"null"`,
+ * which the API rejects rather than reading as a clear.
+ */
+export const clearMilestone = (repo: string, issue: number): Shell<Attempt<void>> =>
+	Effect.gen(function* () {
+		const r = yield* execCapture("gh", [
+			"api",
+			"--method",
+			"PATCH",
+			`repos/${repo}/issues/${issue}`,
+			"-F",
+			"milestone=null",
+		]);
+		return r.ok ? ok(undefined) : fail(r.reason);
+	});
+
+/** Close an issue as `not_planned` — the only close spelling a kill may use. */
+export const closeNotPlanned = (repo: string, issue: number): Shell<Attempt<void>> =>
+	Effect.gen(function* () {
+		const r = yield* execCapture("gh", [
+			"api",
+			"--method",
+			"PATCH",
+			`repos/${repo}/issues/${issue}`,
+			"-f",
+			"state=closed",
+			"-f",
+			"state_reason=not_planned",
+		]);
+		return r.ok ? ok(undefined) : fail(r.reason);
+	});
+
+/** One intake-queue row. `IssueRow` omits `created_at`, and the age is half of what a queue prints. */
+export interface QueueIssue {
+	readonly number: number;
+	readonly createdAt: string;
+	readonly title: string;
+}
+
+/**
+ * Open issues carrying `label` with their filing time, paged, pull requests filtered out.
+ *
+ * The rows are cut at the **first two** tabs rather than through {@link parseTabRows}, because a
+ * title may itself contain a tab: a strict three-field split would turn one odd title into a failed
+ * read of the whole queue, and a queue that cannot be read is a sweep that cannot terminate.
+ */
+export const openQueueIssues = (
+	repo: string,
+	label: string,
+): Shell<Attempt<ReadonlyArray<QueueIssue>>> =>
+	Effect.gen(function* () {
+		const r = yield* execCapture("gh", [
+			"api",
+			"--paginate",
+			`repos/${repo}/issues?state=open&labels=${encodeURIComponent(label)}&per_page=100`,
+			"--jq",
+			'.[] | select(.pull_request | not) | "\\(.number)\t\\(.created_at)\t\\(.title)"',
+		]);
+		if (!r.ok) return fail(r.reason);
+		const rows: QueueIssue[] = [];
+		for (const line of r.stdout.split("\n")) {
+			if (line === "") continue;
+			const first = line.indexOf("\t");
+			const second = line.indexOf("\t", first + 1);
+			if (first <= 0 || second <= first) {
+				return fail("`gh api` exited 0 but its output is not a list of queue rows");
+			}
+			const number = line.slice(0, first);
+			const createdAt = line.slice(first + 1, second);
+			if (!/^\d+$/.test(number) || Number.isNaN(Date.parse(createdAt))) {
+				return fail("`gh api` exited 0 but a queue row carries no issue number and filing time");
+			}
+			rows.push({number: Number.parseInt(number, 10), createdAt, title: line.slice(second + 1)});
+		}
+		return ok(rows);
+	});
+
+/** An issue or pull request that references this one, from the timeline. */
+export interface CrossReference {
+	readonly number: number;
+	readonly isPullRequest: boolean;
+}
+
+/**
+ * The `cross-referenced` entries of an issue's timeline, paged — what already points at this issue.
+ *
+ * A split child is keyed on its parent back-reference, so this read is what makes creating one
+ * idempotent: an existing cross-reference is the evidence the child is already there.
+ */
+export const issueTimeline = (
+	repo: string,
+	issue: number,
+): Shell<Attempt<ReadonlyArray<CrossReference>>> =>
+	Effect.gen(function* () {
+		const r = yield* execCapture("gh", [
+			"api",
+			"--paginate",
+			`repos/${repo}/issues/${issue}/timeline?per_page=100`,
+			"--jq",
+			'.[] | select(.event == "cross-referenced") | "\\(.source.issue.number)\t\\(.source.issue.pull_request != null)"',
+		]);
+		if (!r.ok) return fail(r.reason);
+		const rows = parseTabRows(r.stdout, 2);
+		if (rows === null) return fail("`gh api` exited 0 but its output is not a timeline");
+		const numbers = leadingNumbers(rows);
+		if (numbers === null) {
+			return fail("`gh api` exited 0 but a timeline row does not start with an issue number");
+		}
+		return ok(
+			rows.map((row, i) => ({number: numbers[i] as number, isPullRequest: row[1] === "true"})),
+		);
 	});

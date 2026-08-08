@@ -41,13 +41,15 @@ export interface DedupOptions {
 	readonly repo: string | null;
 	readonly json: boolean;
 	readonly env: Readonly<Record<string, string | undefined>>;
+	/** The issue being deduped, filtered from both sources so it never flags itself. */
+	readonly exclude: number | null;
 }
 
 export const runDedup = (
 	options: DedupOptions,
 ): Effect.Effect<VerbOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
 	Effect.gen(function* () {
-		const {label, limit, json} = options;
+		const {label, limit, json, exclude} = options;
 
 		if (options.query.trim() === "") return refuse(FAILED, "report dedup: --query is empty.");
 		if (limit < 0) return refuse(FAILED, `report dedup: --limit ${limit} is negative.`);
@@ -80,7 +82,7 @@ export const runDedup = (
 
 		const tokens = tokenize(options.query);
 		if (tokens.length < 2) {
-			const result = rank({tokens, queue: [], search: [], limit, label});
+			const result = rank({tokens, queue: [], search: [], limit, label, exclude});
 			const scope = `report dedup: ${repo}, tokens: ${tokens.join(", ") || "(none)"} — neither source was read, because the query cannot discriminate.`;
 			const diagnostics = [scope, `report dedup: ${result.reason}.`];
 			return json
@@ -120,8 +122,9 @@ export const runDedup = (
 			);
 		}
 
-		const result = rank({tokens, queue: queue.value, search: search.value, limit, label});
-		const scope = `report dedup: ${repo}, ${queue.value.length} open issue(s) in the ${label} queue, ${search.value.length} search hit(s); tokens: ${tokens.join(", ")}${result.truncated ? `; list TRUNCATED to --limit ${limit}` : ""}.`;
+		const result = rank({tokens, queue: queue.value, search: search.value, limit, label, exclude});
+		const excluded = exclude === null ? "" : `; #${exclude} excluded from both sources`;
+		const scope = `report dedup: ${repo}, ${queue.value.length} open issue(s) in the ${label} queue, ${search.value.length} search hit(s)${excluded}; tokens: ${tokens.join(", ")}${result.truncated ? `; list TRUNCATED to --limit ${limit}` : ""}.`;
 		const diagnostics =
 			result.reason === null ? [scope] : [scope, `report dedup: ${result.reason}.`];
 
