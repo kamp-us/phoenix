@@ -1074,6 +1074,16 @@ against the implementation rather than inherited: `epic-splice` cuts only on `##
 `## Plan (plan-epic)` (`epic-splice.ts:48-51`), so `## Pitch` and `## Epic — awaiting plan` are bytes
 it can never touch, and they survive every plan and re-plan.
 
+**That survival is pinned executably, not only argued.** `epic-splice`'s unit tests
+(`packages/pipeline-cli/src/tools/epic-splice/epic-splice.unit.test.ts`, the *fabrika `--epic`
+envelope survives the splice* block) run a real envelope through a first-time plan and a re-plan and
+assert that the `<details>` block stops being terminal, that the three anchors still hold, that the
+wrapped original survives byte-for-byte, and that the summary line never doubles. Three negatives pin
+the quote-protection to the same anchors: a body that quotes an envelope below its own framing prose,
+a pitch that quotes the summary line above the header, and a pitched body carrying no header are each
+rejected. Change an anchor and those tests go red, which is what keeps this section from drifting back
+into an assumption.
+
 **The residual case, stated rather than assumed away:** a body whose *first* bytes are a raw paste of
 a complete epic envelope is byte-indistinguishable from an enriched epic and will be read as one.
 Terminality did not cover that case either — a paste that ends the body is terminal — so this trades
