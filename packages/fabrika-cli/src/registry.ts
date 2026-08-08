@@ -19,6 +19,7 @@ import {adrCommand} from "./adr/command.ts";
 import {evalCommand} from "./eval/command.ts";
 import {reportCommand} from "./report/command.ts";
 import {triageCommand} from "./triage/command.ts";
+import {wireCommand} from "./wire/command.ts";
 
 /** A registered verb group: a top-level `Command` whose name is the `fabrika <name>` selector. */
 export type VerbGroup = Command.Command<any, any, object, unknown, NodeServices.NodeServices>;
@@ -29,4 +30,5 @@ export const registeredGroups: ReadonlyArray<VerbGroup> = [
 	evalCommand,
 	reportCommand,
 	triageCommand,
+	wireCommand,
 ];
