@@ -10,6 +10,7 @@
  * Error routing is the call-site catch — see `.patterns/fate-mutations-client.md`.
  */
 import {toEntityId, type ViewData, type ViewEntity, type ViewSelection} from "@nkzw/fate";
+import {ArrowLeft} from "lucide-react";
 import * as React from "react";
 import {useFateClient, useLiveListView, useRequest, useView, type ViewRef, view} from "react-fate";
 import {Link, useLocation, useNavigate, useParams} from "react-router";
@@ -18,6 +19,7 @@ import {sandboxesNewContent} from "../../worker/features/kunye/standing";
 import {useSession} from "../auth/client";
 import {useMe} from "../auth/useMe";
 import {FirstContributionOnramp} from "../components/authorship/FirstContributionOnramp";
+import {Icon} from "../components/Icon";
 import {actorLabel} from "../components/moderation/actor-identity";
 import {CommentTreeNode, CommentTreeNodeView} from "../components/pano/CommentTreeNode";
 import {buildCommentTree, type CommentNode} from "../components/pano/commentTree";
@@ -28,6 +30,7 @@ import {
 } from "../components/pano/PanoPostHeader";
 import {PanoPostSkeleton} from "../components/pano/PanoSkeleton";
 import {Alert} from "../components/ui/Alert";
+import {Kbd} from "../components/ui/atoms";
 import {Button} from "../components/ui/Button";
 import {Dialog} from "../components/ui/Dialog";
 import {EmptyState} from "../components/ui/EmptyState";
@@ -191,7 +194,8 @@ export function PanoPostDetail() {
 		<div className="kp-page">
 			<div className="kp-page__inner">
 				<Link to="/pano" className="kp-pano-postpage__back">
-					← akışa dön
+					<Icon icon={ArrowLeft} size={16} />
+					akışa dön
 				</Link>
 				<Screen
 					fallback={<PanoPostSkeleton />}
@@ -939,7 +943,7 @@ function CommentComposer({
 			) : null}
 			<div className="kp-pano-comment-composer__foot">
 				<span className="kp-pano-comment-composer__hint">
-					markdown · <kbd>⌘</kbd>+<kbd>↵</kbd>
+					markdown · <Kbd>⌘</Kbd>+<Kbd>↵</Kbd>
 				</span>
 				<div style={{display: "flex", gap: 6}}>
 					{onCancel ? (
@@ -1035,7 +1039,7 @@ function CommentEditComposer({
 			) : null}
 			<div className="kp-pano-comment-composer__foot">
 				<span className="kp-pano-comment-composer__hint">
-					markdown · <kbd>⌘</kbd>+<kbd>↵</kbd>
+					markdown · <Kbd>⌘</Kbd>+<Kbd>↵</Kbd>
 				</span>
 				<div style={{display: "flex", gap: 6}}>
 					<Button variant="tertiary" size="sm" type="button" onClick={onCancel} disabled={inFlight}>

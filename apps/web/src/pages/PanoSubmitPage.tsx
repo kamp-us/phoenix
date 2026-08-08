@@ -1,8 +1,10 @@
+import {ArrowLeft} from "lucide-react";
 import * as React from "react";
 import {useFateClient} from "react-fate";
 import {Link, useNavigate} from "react-router";
 import {useSession} from "../auth/client";
 import {FirstContributionOnramp} from "../components/authorship/FirstContributionOnramp";
+import {Icon} from "../components/Icon";
 import {actorLabel} from "../components/moderation/actor-identity";
 import {PanoPostCardView} from "../components/pano/PanoPostCard";
 import {Alert} from "../components/ui/Alert";
@@ -228,7 +230,8 @@ export function PanoSubmitPage() {
 			<div className="kp-page__inner">
 				<div className="kp-pano-submit">
 					<Link to="/pano" className="kp-pano-submit__back">
-						← akışa dön
+						<Icon icon={ArrowLeft} size={16} />
+						akışa dön
 					</Link>
 					<h1 className="kp-pano-submit__title">bir şey paylaş</h1>
 					<p className="kp-pano-submit__lede">

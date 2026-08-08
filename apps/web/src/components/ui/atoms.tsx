@@ -1,3 +1,4 @@
+import {Kbd as MantiKbd} from "@manti-ui/react";
 import type * as React from "react";
 import {Badge} from "./Badge";
 import "./atoms.css";
@@ -44,7 +45,7 @@ export function Tag({
  * @slot children The key label (a single key or a combo).
  */
 export function Kbd({children}: {children: React.ReactNode}) {
-	return <kbd className="kp-kbd">{children}</kbd>;
+	return <MantiKbd className="kp-kbd">{children}</MantiKbd>;
 }
 
 /**

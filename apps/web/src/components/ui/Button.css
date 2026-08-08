@@ -7,6 +7,12 @@
 	min-width: var(--tap-min);
 	font: var(--t-body-sm);
 	font-weight: 500;
+	/* After the `font` shorthand, which would otherwise drag the prose leading (1.45) into
+	   a control. A label is one line the flex box centers, so the line box should measure
+	   the text and nothing more — that keeps the height --manti-button-height's alone, and
+	   stops an auto-height button from inheriting paragraph spacing. The `link` variant
+	   re-inherits via its own `font: inherit`, so inline link text is untouched. */
+	line-height: 1;
 	cursor: pointer;
 	transition:
 		background 80ms,

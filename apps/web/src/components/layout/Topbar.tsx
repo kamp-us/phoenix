@@ -8,6 +8,7 @@ import {BildirimPopover} from "../bildirim/BildirimPopover";
 import {showUnreadBadge} from "../bildirim/bildirim";
 import {Icon} from "../Icon";
 import {Karma} from "../karma/Karma";
+import {Kbd} from "../ui/atoms";
 import {Input} from "../ui/Form";
 import {ThemeChoicePicker} from "./ThemeChoicePicker";
 import {UserMenu} from "./UserMenu";
@@ -84,7 +85,7 @@ export function Topbar({
 	 */
 	reserveSignedInSlots?: boolean;
 }) {
-	// ⌘K (mac) / Ctrl+K (other) focuses search, backing the <kbd>⌘K</kbd> hint below.
+	// ⌘K (mac) / Ctrl+K (other) focuses search, backing the <Kbd>⌘K</Kbd> hint below.
 	// preventDefault overrides the browser's own ⌘/Ctrl+K (address-bar) binding.
 	useEffect(() => {
 		const onKeyDown = (e: KeyboardEvent) => {
@@ -164,7 +165,7 @@ export function Topbar({
 				placeholder="ara…"
 				aria-label="Ara"
 			/>
-			<kbd>⌘K</kbd>
+			<Kbd>⌘K</Kbd>
 		</form>
 	);
 	// The three-way theme picker (#2612) — the sole theme control. Signed-in ⇒ it lives in

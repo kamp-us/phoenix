@@ -30,6 +30,15 @@
 	letter-spacing: -0.005em;
 	color: var(--text-primary);
 }
+/* The incelemede badge trails the title inside the h1. It stays INLINE rather than making
+   the h1 a flex row, so a wrapping title carries it on the last line instead of parking it
+   beside the whole block; `middle` then centers the small cap against the big title's
+   x-height, where the default baseline alignment left it sitting low. The gap is scoped
+   here because the badge's other homes are MetaRows, which already space their children. */
+.kp-pano-postpage__title .kp-review-badge {
+	margin-inline-start: var(--s-2);
+	vertical-align: middle;
+}
 
 .kp-pano-postpage__url {
 	display: inline-flex;

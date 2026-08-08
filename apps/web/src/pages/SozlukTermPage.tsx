@@ -28,7 +28,7 @@ import {actorLabel} from "../components/moderation/actor-identity";
 import {DefinitionCard, DefinitionView} from "../components/sozluk/DefinitionCard";
 import {SozlukTermHeader, TermHeaderView} from "../components/sozluk/SozlukTermHeader";
 import {Alert} from "../components/ui/Alert";
-import {Skeleton} from "../components/ui/atoms";
+import {Kbd, Skeleton} from "../components/ui/atoms";
 import {Button} from "../components/ui/Button";
 import {DraftRestoreBanner} from "../components/ui/DraftRestoreBanner";
 import {Textarea} from "../components/ui/Form";
@@ -503,7 +503,7 @@ function Composer({
 			) : null}
 			<footer className="kp-sozluk-composer__foot">
 				<span className="kp-sozluk-composer__hint">
-					markdown · <kbd>⌘</kbd>+<kbd>↵</kbd> gönder
+					markdown · <Kbd>⌘</Kbd>+<Kbd>↵</Kbd> gönder
 				</span>
 				<span style={{display: "flex", gap: 6}}>
 					<Button
