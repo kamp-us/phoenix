@@ -1533,10 +1533,10 @@ it.
 
 | Message (stderr) | Code | Kind |
 |---|---|---|
-| `triage park: no questions on stdin — a parked issue must say what would unblock it.` | 3 | refusal |
+| `triage park: no body on stdin — a parked issue must say what would unblock it: pipe the questions in.` | 3 | refusal |
 | `triage park: issue #<n> not found in <repo>.` | 7 | refusal |
-| `triage park: the questions carry a machine-local path at line <k> (<class>) — rewrite it repo-relative.` | 5 | refusal |
-| `triage park: the questions are a bare "@" path reference — they never arrived. Send them on stdin.` | 6 | refusal |
+| `triage park: the questions text carries a machine-local path at line <k> (<class>) — rewrite it repo-relative.` | 5 | refusal |
+| `triage park: the questions text is a bare "@" path reference — the body never arrived. Send it on stdin.` | 6 | refusal |
 | `triage park: label status:needs-info does not exist in <repo> — refusing to write, because the API would create it (#4285).` | 7 | refusal |
 | `triage park: cannot read <what> in <repo>: <reason> — nothing was written; the park is UNKNOWN.` | 11 | refusal |
 | `triage park: the questions comment on #<n> failed: <reason> — nothing was labelled and #<n> is unchanged. Re-run.` | 8 | refusal |
@@ -1645,12 +1645,12 @@ location, with the leak matcher literally named for comments.
 
 | Message (stderr) | Code | Kind |
 |---|---|---|
-| `triage kill: no reason on stdin — refusing an unauditable kill.` | 3 | refusal |
+| `triage kill: no body on stdin — refusing an unauditable kill: pipe the reason in.` | 3 | refusal |
 | `triage kill: issue #<n> not found in <repo>.` | 7 | refusal |
 | `triage kill: issue #<n> is already closed.` | 7 | refusal |
 | `triage kill: --duplicate-of #<m> is closed — refusing to fold this issue's content into a closed issue where nobody will read it.` | 7 | refusal |
 | `triage kill: the reason carries a machine-local path at line <k> (<class>) — rewrite it repo-relative.` | 5 | refusal |
-| `triage kill: the reason is a bare "@" path reference — it never arrived. Send it on stdin.` | 6 | refusal |
+| `triage kill: the reason is a bare "@" path reference — the body never arrived. Send it on stdin.` | 6 | refusal |
 | `triage kill: label closed-by-triage does not exist in <repo> — refusing a kill that would be invisible to the audit.` | 7 | refusal |
 | `triage kill: cannot read #<n> in <repo>: <reason> — the provenance test has no evidence; refusing to close on a body that was never read.` | 11 | refusal |
 | `triage kill: #<n> is human-filed — refusing to close it. Park it with questions instead.` | 12 | refusal |

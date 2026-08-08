@@ -28,13 +28,11 @@ import {
 	resolveRepo,
 } from "../io/issues.ts";
 import type {StdinRead} from "../io/stdin.ts";
-import {isBareAtReference, renderLeaks, scanBody} from "../report/leaks.ts";
+import {scanBody} from "../report/leaks.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
+import {type AuthoredSurface, leakRefusal, readAuthored} from "./authored.ts";
 import {
-	BARE_AT_PATH,
-	EMPTY_STDIN,
 	HUMAN_FILED,
-	LEAKED_PATH,
 	PRECONDITION_UNKNOWN,
 	READBACK_MISMATCH,
 	UNCONFIRMED,
@@ -46,6 +44,12 @@ import {scannedLine} from "./scope.ts";
 
 /** The label a kill is audited by. Its absence in the repo is a zero-scope refusal, not a create. */
 export const KILL_LABEL = "closed-by-triage";
+
+const SURFACE: AuthoredSurface = {
+	verb: "triage kill",
+	noun: "the reason",
+	emptyHint: "refusing an unauditable kill: pipe the reason in.",
+};
 
 export interface KillOptions {
 	readonly issue: number;
@@ -88,37 +92,13 @@ export const runKill = (
 		}
 		const repo = repoAttempt.value;
 
-		const read = yield* options.stdin;
-		if (read._tag === "Failed") {
-			return refuse(
-				FAILED,
-				`triage kill: could not read stdin: ${read.reason} — the reason is UNKNOWN, never empty.`,
-			);
-		}
-		const reason = read._tag === "NoStdin" ? "" : read.text;
-		if (reason.trim() === "") {
-			return refuse(EMPTY_STDIN, "triage kill: no reason on stdin — refusing an unauditable kill.");
-		}
+		const authored = readAuthored(SURFACE, yield* options.stdin);
+		if (authored._tag === "Refused") return authored.outcome;
+		const reason = authored.text;
 
-		if (isBareAtReference(reason)) {
-			return refuse(
-				BARE_AT_PATH,
-				'triage kill: the reason is a bare "@" path reference — it never arrived. Send it on stdin.',
-			);
-		}
-
-		// The reason is authored text, so a leak in it is refusable — the author can fix it. The
-		// duplicate's body below is foreign content being preserved, so it is redacted instead. That
-		// asymmetry is the whole of the leak design (`../report/leaks.ts`).
-		const reasonScan = scanBody(reason);
-		const firstLeak = reasonScan.leaks[0];
-		if (firstLeak !== undefined) {
-			return refuse(
-				LEAKED_PATH,
-				`triage kill: the reason carries a machine-local path at line ${firstLeak.line} (${firstLeak.class}) — rewrite it repo-relative.`,
-				renderLeaks(reasonScan.leaks),
-			);
-		}
+		// The reason is posted verbatim, so scanning it here is scanning the composed body.
+		const leaked = leakRefusal(SURFACE, reason);
+		if (leaked !== null) return leaked;
 
 		const target = yield* getIssue(repo, issue);
 		if (target._tag === "Absent") {
@@ -197,6 +177,8 @@ export const runKill = (
 			);
 		}
 
+		// The duplicate's body is foreign content being preserved, so it is redacted rather than
+		// refused — the asymmetry `./authored.ts` states.
 		const foldScan = scanBody(target.value.body);
 		const redactions = duplicate === null ? 0 : foldScan.leaks.length;
 		const redactionNotice =
