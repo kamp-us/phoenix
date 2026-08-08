@@ -7,7 +7,17 @@
  * Every function returns a `Resolved` — a refusal is a value here, never a throw and
  * never a fallback to a shared path.
  */
-import {existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync} from "node:fs";
+import {randomUUID} from "node:crypto";
+import {
+	existsSync,
+	linkSync,
+	mkdirSync,
+	readdirSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
+import {dirname} from "node:path";
 import {
 	classifyOwnership,
 	fail,
@@ -56,16 +66,46 @@ const clearLeftovers = (namespace: Namespace): void => {
 };
 
 /**
+ * Publish the owner stamp so the name never exists holding partial content: write the whole
+ * stamp to a private temp file, then `link()` it into place. `link` is BOTH atomic and
+ * exclusive — it raises `EEXIST` when a peer already claimed — so the kernel-picks-the-winner
+ * property survives while the mid-write window closes. (A plain `rename` is atomic but not
+ * exclusive: it would silently clobber the peer's claim, so it is not a substitute.)
+ *
+ * `wx` alone was not enough, and this is the #4864 defect: `writeFileSync(path, <utf8 string>)`
+ * takes Node's C++ fast path (`lib/fs.js`) into `WriteFileUtf8` (`src/node_file.cc`), which is
+ * a `uv_fs_open` followed by a SEPARATE `uv_fs_write` loop. `O_CREAT | O_EXCL` makes the
+ * *create* exclusive; it does not make the content appear atomically, so a loser could hit
+ * `EEXIST`, read the file at size 0, parse nothing, and be refused `NamespaceUnavailable`
+ * (exit 6) where it was owed `ForeignNamespace` (exit 4) — a transient lost race reported as
+ * a permanent breakage.
+ *
+ * The temp file is a DOT-PREFIXED sibling of the namespace directory, and both halves of that
+ * matter: a sibling escapes `clearLeftovers`, which the winner runs over the namespace and
+ * would otherwise delete a concurrent peer's in-flight temp; and `SLUG_RE` forbids a leading
+ * dot, so the name can never collide with some other run's namespace.
+ */
+const publishOwnerStamp = (namespace: Namespace, stamp: string): void => {
+	const temp = `${dirname(namespace.path)}/.claim-${randomUUID()}.tmp`;
+	writeFileSync(temp, stamp);
+	try {
+		linkSync(temp, namespace.ownerFile);
+	} finally {
+		rmSync(temp, {force: true});
+	}
+};
+
+/**
  * OPEN — the run's first write of scratch state. Claims the namespace and stamps it as ours.
  *
- * The claim is ONE exclusive create: the stamp is written with `wx` (`O_CREAT | O_EXCL`), so
- * the kernel — not a preceding existence check — picks the single winner among concurrent
- * opens, and the `EEXIST` it raises IS the refusal. This is the shape Node's own `fs` docs
- * prescribe (the "write (RECOMMENDED)" example), against the check-then-act they name as a
- * race. The earlier `existsSync` → classify → `rmSync` + write sequence had a real window
- * between the check and the act: eight concurrent opens on one session and slug each
- * concluded they owned it, five reporting success, which put #3718's silent cross-run read
- * back in reach on precisely the case the stamp was added to close.
+ * The claim is ONE exclusive, atomic publish (`publishOwnerStamp`), so the kernel — not a
+ * preceding existence check — picks the single winner among concurrent opens, and the
+ * `EEXIST` it raises IS the refusal. This is the shape Node's own `fs` docs prescribe (the
+ * "write (RECOMMENDED)" example), against the check-then-act they name as a race. The earlier
+ * `existsSync` → classify → `rmSync` + write sequence had a real window between the check and
+ * the act: eight concurrent opens on one session and slug each concluded they owned it, five
+ * reporting success, which put #3718's silent cross-run read back in reach on precisely the
+ * case the stamp was added to close.
  */
 export const openNamespace = (
 	input: NamespaceInput,
@@ -80,12 +120,12 @@ export const openNamespace = (
 		return unavailable(namespace, cause);
 	}
 	try {
-		writeFileSync(namespace.ownerFile, formatOwner(namespace.identity, now().toISOString()), {
-			flag: "wx",
-		});
+		publishOwnerStamp(namespace, formatOwner(namespace.identity, now().toISOString()));
 	} catch (cause) {
 		if (!isEexist(cause)) return unavailable(namespace, cause);
-		// The claim is already held. Whose?
+		// The claim is already held. Whose? An unreadable stamp is UNKNOWN, never "ours" — and
+		// now that the stamp is published atomically it can no longer be a peer mid-write, so
+		// this branch means genuine corruption and stays a refusal.
 		const owner = readOwner(namespace);
 		if (owner === null)
 			return fail({

@@ -88,6 +88,18 @@ describe("openNamespace", () => {
 		if (!resolved.ok) assert.strictEqual(resolved.error._tag, "NamespaceUnavailable");
 	});
 
+	it("refuses a zero-length stamp too — an empty claim is corrupt, never an invitation", () => {
+		// The claim is published atomically (#4864), so the stamp can no longer be empty because a
+		// peer is mid-write. An empty one is therefore real residue, and reading it as "unowned"
+		// would turn the fix for a wrong exit code into a fail-open.
+		const claimed = join(root, "kampus-run", REVIEWER_A.session, "review-doc-3951");
+		mkdirSync(claimed, {recursive: true});
+		writeFileSync(join(claimed, ".kampus-run-owner"), "");
+		const resolved = openNamespace(input(REVIEWER_A, "review-doc-3951"));
+		assert.isFalse(resolved.ok);
+		if (!resolved.ok) assert.strictEqual(resolved.error._tag, "NamespaceUnavailable");
+	});
+
 	it("refuses with MissingSessionId rather than allocating a shared path", () => {
 		const resolved = openNamespace({
 			tmpdir: root,

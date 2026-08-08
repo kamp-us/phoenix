@@ -26,6 +26,12 @@ const RACERS = 8;
 interface RunResult {
 	readonly code: number;
 	readonly stdout: string;
+	/**
+	 * Captured because the exit code alone cannot say WHICH refusal fired: four branches map to
+	 * `NamespaceUnavailable` (exit 6) and only one of them names an unreadable owner stamp. A run
+	 * that discarded stderr proved *a* exit-6 refusal and left the diagnosis to guesswork (#4864).
+	 */
+	readonly stderr: string;
 }
 
 let root: string;
@@ -44,12 +50,12 @@ const open = (pid: string): Promise<RunResult> =>
 			"node",
 			[BIN, "scratchpad", "open", "--slug", SLUG, "--session", SESSION],
 			{env: {...process.env, TMPDIR: root, CLAUDE_PID: pid}},
-			(error, stdout) => {
+			(error, stdout, stderr) => {
 				const code =
 					error && typeof (error as {code?: unknown}).code === "number"
 						? (error as {code: number}).code
 						: 0;
-				resolve({code, stdout: stdout.trim()});
+				resolve({code, stdout: stdout.trim(), stderr: stderr.trim()});
 			},
 		);
 	});
@@ -66,8 +72,18 @@ describe("scratchpad open — concurrent claims on one namespace", {
 			1,
 			`expected a single winner, got exit codes [${results.map((r) => r.code).join(" ")}]`,
 		);
-		for (const loser of results.filter((result) => result.code !== 0))
-			assert.strictEqual(loser.code, 4, "a loser must be refused as ForeignNamespace, not 0 or 6");
+		for (const loser of results.filter((result) => result.code !== 0)) {
+			assert.strictEqual(
+				loser.code,
+				4,
+				`a loser must be refused as ForeignNamespace, not 0 or 6 — refusal was: ${loser.stderr || "<no stderr captured>"}`,
+			);
+			assert.include(
+				loser.stderr,
+				"scratchpad: ForeignNamespace",
+				"the refusal must name itself on stderr, so an exit code is never diagnosed by guesswork",
+			);
+		}
 
 		// The winner owns what it was handed: the surviving stamp names it, and no loser
 		// printed a path it could have written into.
