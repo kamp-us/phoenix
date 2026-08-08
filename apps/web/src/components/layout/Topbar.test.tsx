@@ -275,6 +275,46 @@ describe("Topbar tema toggle → theme picker (#2612)", () => {
 		await waitFor(() => expect(onThemeChange).toHaveBeenLastCalledWith("auto"));
 	});
 
+	// The picker's own segmented track stands 42px (its items' --tap-min floor + the track's
+	// 2px pad + 1px border), which overflows the 38px compact topbar and paints through its
+	// bottom border. Topbar.css shrinks it to the bar's control scale — but ONLY there, which
+	// is a fact about where each instance sits in the tree, not about the rule's text.
+	it("the utility-zone picker is scaled down to the topbar's control ramp, the popover one is not", async () => {
+		const rule = cssRules(TOPBAR_CSS).find(
+			(r) => /kp-theme-picker/.test(r.selector) && /data-part="item"/.test(r.selector),
+		);
+		expect(rule).toBeDefined();
+		// A density token, not a pinned px — it must ride compact/normal/spacious.
+		expect(rule?.body).toMatch(/min-height:\s*var\(--letter-size\)/);
+		// The rule is scoped under .kp-topbar, so it reaches an instance only while that
+		// instance renders inside the bar. Signed out, the picker does.
+		const {unmount} = render(
+			<MemoryRouter>
+				<Topbar nav={NAV} themeChoice="light" onThemeChange={() => {}} />
+			</MemoryRouter>,
+		);
+		expect(rule?.selector).toMatch(/^\.kp-topbar\s/);
+		expect(screen.getByTestId("topbar-theme-picker").closest(".kp-topbar")).not.toBeNull();
+		unmount();
+		// Signed in, the picker rides the portaled popover — out of the bar, so it keeps the
+		// full-size track. If Manti ever stopped portaling, the panel would inherit the
+		// topbar's compact scale and this would catch it.
+		render(
+			<MemoryRouter>
+				<Topbar
+					nav={NAV}
+					themeChoice="light"
+					onThemeChange={() => {}}
+					user={{name: "Elif", username: "elif"}}
+				/>
+			</MemoryRouter>,
+		);
+		fireEvent.click(screen.getByText("Elif"));
+		const inPopover = await screen.findByTestId("topbar-theme-picker");
+		expect(inPopover.closest(".kp-user-menu__popup")).not.toBeNull();
+		expect(inPopover.closest(".kp-topbar")).toBeNull();
+	});
+
 	it("signed out: the same light/dark/auto picker is reachable in the topbar utility zone", async () => {
 		const onThemeChange = vi.fn();
 		render(

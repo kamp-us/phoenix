@@ -236,7 +236,19 @@
 /* The three-way theme picker (#2612) that replaces the tema toggle. Here — the utility
    zone, for a signed-out visitor — the label is absent and the segmented control sits
    inline; the labeled settings row it becomes inside the account popover is styled in
-   UserMenu.css, next to the markup that builds it. */
+   UserMenu.css, next to the markup that builds it.
+
+   The track's default height is its items' --tap-min floor (36px) plus its own 2px pad
+   + 1px border = 42px, which overflows the 38px compact topbar and paints straight
+   through its bottom border. So the picker rides the topbar's own control scale here,
+   the same density override `.kp-topbar__btn` / `.kp-topbar__user` take — off
+   --letter-size, the token the search field already sizes to, so it tracks the
+   compact/normal/spacious ramp instead of pinning one height. Scoped under .kp-topbar,
+   which reaches only this instance: the account-popover picker is portaled out of the
+   topbar and keeps the full-size track, where there is room for it. */
+.kp-topbar .kp-theme-picker [data-part="item"] {
+	min-height: var(--letter-size);
+}
 
 /* The desktop row cannot preserve nav, search, the three-way Manti theme control and
    account affordance inside a narrow viewport. On mobile, keep every control reachable
