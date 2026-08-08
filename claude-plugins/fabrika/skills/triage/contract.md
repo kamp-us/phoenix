@@ -938,6 +938,7 @@ original:
 
 ---
 
+<!-- fabrika:enriched issue=<N> mode=rewrite -->
 <details>
 <summary>Original report (verbatim)</summary>
 
@@ -958,6 +959,7 @@ original, where `<PITCH>` is stdin verbatim:
 
 `plan-epic` appends its plan and dependency topology below.
 
+<!-- fabrika:enriched issue=<N> mode=wrap -->
 <details>
 <summary>Original brief (verbatim)</summary>
 
@@ -965,6 +967,10 @@ original, where `<PITCH>` is stdin verbatim:
 
 </details>
 ```
+
+**The `<!-- fabrika:enriched … -->` line is the re-enrich marker**, described in full under the
+detector below. It renders as nothing, it is the boundary between the region this verb owns and the
+bytes it must never touch, and it carries the issue number it was written on.
 
 An epic's original is consumed verbatim by the downstream planning step, so a **rewrite** above it
 would fork the brief — which is why this mode never takes one. **A pitch is not a rewrite**: it is
@@ -981,7 +987,7 @@ verbatim (`packages/pipeline-cli/src/tools/epic-splice/epic-splice.ts:48-51`), s
 above is an anchor it can cut on, and the wrapped original is untouched bytes either way. What
 `plan-epic` *does* change is where the wrap sits: `## Plan (plan-epic)` and `## Dependencies` both
 land **below** it, so this mode's envelope stops being terminal the moment the epic is planned. The
-re-enrich detector below is position-independent in this mode for exactly that reason; a re-enrich
+re-enrich detector below tests position nowhere, in either mode, for exactly that reason; a re-enrich
 replaces the pitch and the header from fresh stdin and preserves the wrap — and everything under it —
 unchanged, exactly as the default mode replaces a rewrite.
 
@@ -1029,75 +1035,109 @@ This verb refuses only what it can refuse about text the caller just wrote — e
 machine-local path (`5`), a bare `@` reference (`6`) — and **adds no exit code**: `--epic` reaching
 those three is the removal of a restriction, not a new outcome.
 
-**The re-enrich detector matches the envelope's shape, not the summary line alone — and the shape
-differs by mode.** Default mode's wrap is terminal and stays terminal, so that mode keys on
-terminality: a body counts as already-enriched only when the `<details>` block whose summary is the
-literal `<summary>Original report (verbatim)</summary>` is the **last** block in the body and closes
-at end-of-body. A body that carries that summary line anywhere else is treated as a **first**
-enrichment and wrapped, never replaced. Nothing downstream disturbs that shape — `epic-splice` is
-`plan-epic`'s and runs only on epics.
+**The re-enrich detector is the marker this verb writes — one rule, mode-independent** (founder
+ruling on [#4866](https://github.com/kamp-us/phoenix/issues/4866), 2026-08-08, option (b)). A body
+counts as already-enriched **when, and only when, it carries a marker line bound to this issue**:
 
-**`--epic` mode's detector is position-independent, because terminality is false there by design.**
-Once `plan-epic` runs, `## Plan (plan-epic)` and `## Dependencies` sit *below* the wrap
-(`epic-splice.ts:128-130` appends the first-time deps block at end-of-body under `depsCount === 0`;
-`plan-epic` Step 2 writes the plan "below the untouched brief"). A terminality test would therefore
-stop matching on **every planned epic**, and the "first enrichment ⇒ wrap" rule would then re-wrap
-the pitch, the header, the plan, the topology and the previous envelope inside a fresh
-`Original brief (verbatim)` block — compounding per run, and labelling the authored plan as the
-reporter's own text, which is the provenance boundary this envelope exists to keep sharp. So this
-mode keys on the envelope's own headers instead. A body counts as already-enriched only when **all
-three** hold:
+```
+<!-- fabrika:enriched issue=<N> mode=<rewrite|wrap> -->
+```
 
-- it opens at byte 0 with the exact heading `## Pitch`;
-- it carries the exact top-level heading `## Epic — awaiting plan`;
-- the first `<summary>Original brief (verbatim)</summary>` line in the body sits **below** that
-  heading.
+matched **anchored to a whole line**, never as a substring — a filing that *mentions* the marker in
+prose is an ordinary filing here, and reading its prose as a marker would overwrite the reporter's
+own text above the mention.
 
-Where the `<details>` block sits relative to end-of-body is not tested at all.
+**This supersedes the two shape-based detectors this section specified before the ruling** — default
+mode's terminality-plus-`Original report (verbatim)` test, and `--epic`'s three envelope anchors. The
+reasoning that produced them is not withdrawn: each was correct about its own mode, and the
+`--epic` rule's position-independence was itself the ruled fix to a real compounding bug
+([#4850](https://github.com/kamp-us/phoenix/issues/4850)) — once `plan-epic` runs,
+`## Plan (plan-epic)` and `## Dependencies` sit *below* the wrap
+(`epic-splice.ts:128-130`; `plan-epic` Step 2 writes the plan "below the untouched brief"), so a
+terminality test stops matching on every planned epic. What the ruling settles is that **both** were
+mode-scoped and keyed on disjoint literals, so neither could recognise the other mode's envelope. A
+re-run in the other mode therefore fell through to "first enrichment ⇒ wrap" and nested the whole
+existing envelope — pitch, header, plan, topology and the previous provenance boundary — inside a
+fresh block, compounding per run and labelling authored content as the reporter's own text. That path
+is ordinary rather than exotic: `triage apply`'s owned-facet table owns `^type:`, so re-classifying an
+enriched issue to `type:epic` and re-enriching with `--epic` is a supported sequence with no guard
+between its steps.
 
-**On a match this mode replaces the authored region only — byte 0 up to the opening `<details>` — and
-preserves that block *and every byte below it* verbatim.** Preserving the block alone would be the
-same destruction by a shorter route: it would delete the plan and the dependency topology
-`plan-epic` wrote underneath. Default mode's match is the same rule where "everything below" is
-empty.
+A marker is written by this verb and by nothing else, so presence *is* the answer, whichever mode
+wrote it and whichever mode is re-running. The class dies for every marker-bearing body rather than
+for one axis of it.
 
-**The quote-protection is preserved; it moved from terminality onto the authored prefix.** The strict
-form is required for the same reason `triage provenance` pins its footer match, but the failure
-direction is worse: provenance fails *open* toward a wrong verdict, while a loose re-enrich detector
-fails *destructively* — "replace everything above the opening `<details>`" applied to an issue that
-merely **quotes** an enrichment envelope (a bug report about this very format, a pasted body)
-silently deletes every line above the paste, on a public issue, irreversibly. In this repo an issue
-pasting a fabrika envelope is an ordinary filing, not an exotic one. Both anchors hold that line: a
-quoting body carries the reporter's own framing prose above the paste, so it fails default mode's
-terminality test *and* fails `--epic`'s byte-0 `## Pitch` test. The `--epic` anchors were checked
-against the implementation rather than inherited: `epic-splice` cuts only on `## Dependencies` and
+**The marker is also the boundary.** It sits on its own line immediately above the opening
+`<details>`, so "is this enriched?" and "where does the authored region end?" are the same read.
+Nothing has to locate a `<details>` opener or a summary literal — which is precisely what made the
+retired detectors mode-scoped. **On a match the verb replaces the authored region only — byte 0 up to
+the marker — and preserves the marker's line onward, the block *and every byte below it*, verbatim**
+(it re-emits a fresh marker carrying the mode that just wrote the region). Preserving the block alone
+would be the same destruction by a shorter route: it would delete the plan and the dependency
+topology `plan-epic` wrote underneath. Default mode's match is the same rule where "everything below"
+is empty.
+
+**The split is on the FIRST marker in the body.** The verb always writes its own marker *above* the
+preserved region, so a marker carried *inside* preserved content — a quoted envelope, a foreign paste
+that was wrapped — is always the later one and can never be mistaken for the boundary.
+
+**Legacy is a self-healing migration, and is meant to be deleted.** On meeting a **pre-marker**
+wrapped body the verb recognises the two v1 envelope shapes above — default mode's terminality test,
+and `--epic`'s three anchors — **does not double-wrap**, and **stamps the marker in passing**. Every
+body that branch can match therefore converts on its next enrichment and never returns to it. It is
+one-time code that retires with v1-backlog absorption (founder mandate, map #4891); an implementation
+keeps it separable so retiring it is a delete rather than an excavation. The shapes are used **only**
+for a body carrying no marker at all — a body whose marker binds *another* issue short-circuits ahead
+of them, so the legacy door cannot re-admit the impersonation the binding exists to refuse.
+
+**The quote-protection is preserved, and it moved onto the binding.** The strict form is required for
+the same reason `triage provenance` pins its footer match, but the failure direction is worse:
+provenance fails *open* toward a wrong verdict, while a loose re-enrich detector fails
+*destructively* — "replace everything above the boundary" applied to an issue that merely **quotes**
+an enrichment envelope (a bug report about this very format, a pasted body) silently deletes every
+line above the paste, on a public issue, irreversibly. In this repo an issue pasting a fabrika
+envelope is an ordinary filing, not an exotic one.
+
+**The issue number bound into the marker is what holds that line, and it holds a strictly wider one
+than the anchors did.** A pasted envelope carries the marker of the issue it was written on, so on
+*any other* issue it reads as **fresh** and is wrapped rather than partially overwritten — whatever
+the paste's shape, and wherever in the body it sits. That covers both the quote-impersonation case
+the retired anchors defended against **and** the residual the section previously had to state as
+uncovered: a body whose *first* bytes are a raw paste of a complete envelope. That case was
+byte-indistinguishable from an enriched body under any content-derived test, and terminality did not
+cover it either (a paste that ends the body is terminal). The section named the answer at the time —
+*"if it ever bites the answer is a marker the verb writes and a paste does not, never a weaker
+anchor"* — and this is that answer.
+
+The `--epic` anchors, which the legacy branch still uses as recognisers, were checked against the
+implementation rather than inherited: `epic-splice` cuts only on `## Dependencies` and
 `## Plan (plan-epic)` (`epic-splice.ts:48-51`), so `## Pitch` and `## Epic — awaiting plan` are bytes
-it can never touch, and they survive every plan and re-plan.
+it can never touch, and they survive every plan and re-plan. The same holds of the marker: it is
+neither of those two headings, so `epic-splice` preserves it verbatim through every plan and re-plan.
 
 **That survival is pinned executably, not only argued.** `epic-splice`'s unit tests
 (`packages/pipeline-cli/src/tools/epic-splice/epic-splice.unit.test.ts`, the *fabrika `--epic`
 envelope survives the splice* block) run a real envelope through a first-time plan and a re-plan and
-assert that the `<details>` block stops being terminal, that the three anchors still hold, that the
-wrapped original survives byte-for-byte, and that the summary line never doubles. Three negatives pin
-the quote-protection to the same anchors: a body that quotes an envelope below its own framing prose,
-a pitch that quotes the summary line above the header, and a pitched body carrying no header are each
-rejected. Change an anchor and those tests go red, which is what keeps this section from drifting back
-into an assumption.
+assert that the `<details>` block stops being terminal, that the anchors still hold, that the wrapped
+original survives byte-for-byte, and that the summary line never doubles. The marker rule is pinned
+the same way on the verb's own side, in `packages/fabrika-cli/src/triage/enrich.unit.test.ts`, which
+reproduces the **retired** detectors in-test as controls: the cross-mode re-run they miss is asserted
+to be recognised here, a pasted envelope bound to another issue is asserted to read as fresh, and a
+legacy body is asserted to be recognised, preserved and stamped. Change the rule and those tests go
+red, which is what keeps this section from drifting back into an assumption.
 
-**The residual case, stated rather than assumed away:** a body whose *first* bytes are a raw paste of
-a complete epic envelope is byte-indistinguishable from an enriched epic and will be read as one.
-Terminality did not cover that case either — a paste that ends the body is terminal — so this trades
-no protection away; it is the limit of any content-derived test, and if it ever bites the answer is a
-marker the verb writes and a paste does not, never a weaker anchor.
-
-**Idempotency, stated as the other write verbs state theirs.** Re-running `enrich` on an
-already-enriched issue **converges**: it replaces the authored region from fresh stdin and leaves the
-preserved original — and, under `--epic`, every byte below it — unchanged, so a second pass produces
-the same body as the first, nesting never accumulates, and "the innermost original" is not a case
-that arises. This holds for a **planned** epic body, which is the case the position-independent
-detector exists for. No branch here refuses, so the exit-status and error tables are unchanged and
-the **adds no exit code** statement above stands. This is the rule's only statement in this spec; the
-Scope section below states the scope and does not restate it.
+**Idempotency, stated as the other write verbs state theirs — and now unconditional.** Re-running
+`enrich` on an already-enriched issue **converges**: it replaces the authored region from fresh stdin
+and leaves the marker's line onward — the preserved original and every byte below it — unchanged, so
+a second pass produces the same body as the first, nesting never accumulates, and "the innermost
+original" is not a case that arises. This holds over a **planned** epic body (the position axis,
+#4850) and it holds when the re-run's mode **differs** from the mode that wrote the envelope (the
+mode axis, #4866) — the two qualifications the sentence previously needed. The one case it does not
+claim is a body carrying no marker and matching neither v1 shape, which is a *first* enrichment by
+definition rather than a re-run. No branch here refuses, so the exit-status and error tables are
+unchanged and the **adds no exit code** statement above stands: the marker is a body-composition
+change, not a refusal branch. This is the rule's only statement in this spec; the Scope section below
+states the scope and does not restate it.
 
 **Redaction is asymmetric and deliberate.** The **preserved original** is foreign content: any
 machine-local path in it is masked to its class root, counted, and reported on stderr with its line
@@ -1112,7 +1152,7 @@ else's leak, and preserving it unredacted re-commits that leak into a public iss
 | `3` | stdin was read and held nothing — the rewrite, or the pitch with `--epic` |
 | `5` | the **authored** text carries a machine-local path — the rewrite, or the pitch with `--epic` |
 | `6` | the **authored** text is a bare `@` path reference — the rewrite, or the pitch with `--epic` |
-| `7` | the issue is proven absent (404) |
+| `7` | the issue is proven absent (404), or it was read and its body is empty — a read that succeeded over nothing |
 | `8` | the `PATCH` failed — UNKNOWN whether the body changed |
 | `9` | the body was written but the read-back does not match |
 | `11` | the issue body could not be read — there is no original to preserve |
@@ -1123,6 +1163,7 @@ else's leak, and preserving it unredacted re-commits that leak into a public iss
 |---|---|---|
 | `triage enrich: no body on stdin — pipe the rewritten body in (with --epic, the pitch's five fields).` | 3 | refusal |
 | `triage enrich: issue #<n> not found in <repo>.` | 7 | refusal |
+| `triage enrich: #<n> has an empty body — there is no original to preserve, and an empty one must never be preserved as though it were the record.` | 7 | refusal |
 | `triage enrich: cannot read #<n> in <repo>: <reason> — refusing to write an envelope over an original that was never read.` | 11 | refusal |
 | `triage enrich: the text you sent on stdin carries a machine-local path at line <k> (<class>) — rewrite it repo-relative. The preserved original is redacted automatically; this refusal is about the text you wrote.` | 5 | refusal |
 | `triage enrich: stdin is a bare "@" path reference — the text never arrived. Send its bytes, not its path.` | 6 | refusal |
@@ -1131,7 +1172,8 @@ else's leak, and preserving it unredacted re-commits that leak into a public iss
 | `triage enrich: body written but the read-back does not match — inspect #<n> before continuing.` | 9 | refusal |
 
 **Scope** — one issue body, plus the caller's stdin: the rewrite, or the pitch with `--epic`. An
-issue proven absent is `7`; a body that could not be read is `11`. Neither ever degrades to an empty
+issue proven absent is `7`; a body that could not be read is `11`; a body that *was* read and is
+empty is `7`, a read that succeeded over nothing. None of the three ever degrades to an empty
 original preserved as though it were the record — which is the failure that would quietly delete a
 report while printing `enriched`. Re-enrichment is covered above, under the detector.
 
@@ -1171,6 +1213,12 @@ $ fabrika triage enrich 4312 --json < enriched.md
   hit `ARG_MAX` on a large enrichment. Stdin and an in-process envelope remove both.
 - v1's `PATCH` had no read-back, while the skill's own Step 0 names last-write-wins body clobbering
   as the reason its claim exists.
+- Founder ruling #4866 (2026-08-08), option (b) — the re-enrich detector is a verb-written marker
+  rather than envelope-shape inspection, with the issue number bound into it and a self-healing
+  legacy migration. It supersedes the two shape-based detectors this section carried, on evidence
+  from investigation #4896 (map #4891). The wrap-last unification (option (c)) stays on the table as
+  within-brief design for fabrika's `plan-epic` (#4712); if it is adopted later the marker becomes
+  redundant insurance, and nothing here has to be undone.
 - Founder ruling #3909 / §PITCH — lane-entering work becomes pickable only carrying a pitch, and
   `pitch-guard` scopes **every** triaged `type:epic`. This verb is the group's only body-writing
   verb, so `--epic` reading the pitch on stdin is the epic's one path to that section; an earlier

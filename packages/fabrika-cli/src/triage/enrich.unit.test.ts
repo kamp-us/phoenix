@@ -90,6 +90,13 @@ describe("detect — the marker is the whole rule, and it is mode-independent (#
 		expect(detection).toMatchObject({_tag: "Fresh", reason: "no marker"});
 	});
 
+	it("reads a body that MENTIONS the marker mid-line as fresh, never as enriched", () => {
+		// A bug report about this very format is an ordinary filing here. Treating its prose as a
+		// marker would overwrite the reporter's own text above the mention.
+		const talking = `The verb writes <!-- fabrika:enriched issue=4312 mode=rewrite --> above the block.\n\n${ORIGINAL}`;
+		expect(detect(talking, ISSUE, legacyPreserved)).toMatchObject({_tag: "Fresh"});
+	});
+
 	it("recognises this issue's own default-mode envelope", () => {
 		const detection = detect(enrichedDefault(), ISSUE, legacyPreserved);
 		expect(detection).toMatchObject({_tag: "Enriched", via: "marker", markedMode: "rewrite"});
@@ -207,6 +214,13 @@ describe("legacy migration — recognise once, stamp in passing, never wrap twic
 
 	it("refuses a pitch that quotes the summary line ABOVE the epic header", () => {
 		const quoting = `## Pitch\n\n${PITCH}\n\n${SUMMARY_LINE.wrap}\n\n## Epic — awaiting plan\n`;
+		expect(legacyPreserved(quoting)).toBeNull();
+	});
+
+	it("refuses an otherwise-perfect epic envelope that does not OPEN at byte 0 with ## Pitch", () => {
+		// Only the byte-0 anchor separates this from a real v1 epic envelope: the reporter's framing
+		// prose sits above it, which is what a quoting filing looks like.
+		const quoting = `Here is what our epics look like:\n\n## Pitch\n\n${PITCH}\n\n## Epic — awaiting plan\n\n<details>\n${SUMMARY_LINE.wrap}\n\n${ORIGINAL}\n\n</details>\n`;
 		expect(legacyPreserved(quoting)).toBeNull();
 	});
 
