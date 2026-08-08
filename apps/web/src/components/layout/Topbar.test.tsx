@@ -244,7 +244,7 @@ describe("Topbar tema toggle → theme picker (#2612)", () => {
 		expect(screen.queryByRole("button", {name: "tema"})).toBeNull();
 	});
 
-	it("signed in: the theme commands live in the user menu next to ayarlar", async () => {
+	it("signed in: the same picker lives in the account popover next to ayarlar", async () => {
 		const onThemeChange = vi.fn();
 		render(
 			<MemoryRouter>
@@ -256,26 +256,22 @@ describe("Topbar tema toggle → theme picker (#2612)", () => {
 				/>
 			</MemoryRouter>,
 		);
-		// The Manti menu is portaled — open it, then the theme command group appears.
+		// The Manti popover is portaled — open it, then the tema row appears.
 		fireEvent.click(screen.getByText("Elif"));
-		// `ayarlar` sits directly above the theme group. Manti Menu does not expose
-		// menuitemradio, so the visually marked choice is mirrored in a hidden value.
-		expect(await screen.findByRole("menuitem", {name: "ayarlar"})).toBeTruthy();
+		// `ayarlar` sits directly above the tema row. The panel's rows are real links,
+		// not menuitems: UserMenu is a Popover so the picker can keep radio semantics.
+		expect(await screen.findByRole("link", {name: "ayarlar"})).toBeTruthy();
 		const row = await screen.findByTestId("topbar-theme-row");
 		expect(row.textContent).toContain("tema");
-		expect(within(row).getByTestId("topbar-theme-picker").textContent).toBe("dark");
-		expect(
-			screen
-				.getByRole("menuitem", {name: "koyu"})
-				.querySelector(".kp-topbar__theme-choice--active"),
-		).not.toBeNull();
-		const autoCommand = screen.getByRole("menuitem", {name: "otomatik"});
-		// Gerçek mouse etkileşimi hover/pointerdown ile aktif öğeyi belirler,
-		// ardından click seçimi gönderir.
-		fireEvent.pointerMove(autoCommand, {pointerType: "mouse"});
-		await waitFor(() => expect(autoCommand.hasAttribute("data-highlighted")).toBe(true));
-		fireEvent.pointerDown(autoCommand, {pointerType: "mouse"});
-		fireEvent.click(autoCommand);
+		// The active choice is a real aria-checked radio, not a ✓ glyph on a command.
+		const picker = within(row).getByTestId("topbar-theme-picker");
+		for (const label of ["açık", "koyu", "otomatik"]) {
+			expect(within(picker).getByRole("radio", {name: label})).toBeTruthy();
+		}
+		expect(within(picker).getByRole("radio", {name: "koyu"}).getAttribute("aria-checked")).toBe(
+			"true",
+		);
+		fireEvent.click(within(picker).getByRole("radio", {name: "otomatik"}));
 		await waitFor(() => expect(onThemeChange).toHaveBeenLastCalledWith("auto"));
 	});
 

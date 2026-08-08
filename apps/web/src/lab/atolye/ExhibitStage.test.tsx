@@ -28,7 +28,9 @@ describe("ExhibitStage — knob-value → props plumbing (behavior)", () => {
 		const host = container.querySelector(".kp-btn")!;
 		expect(host.hasAttribute("aria-busy")).toBe(false);
 
-		fireEvent.click(screen.getByRole("checkbox", {name: "loading"}));
+		// The boolean knob is a Manti Switch: since 0.9.0 its hidden input carries an
+		// explicit role="switch" (before, `type="checkbox"` left it the implicit checkbox role).
+		fireEvent.click(screen.getByRole("switch", {name: "loading"}));
 
 		await waitFor(() => expect(host.getAttribute("aria-busy")).toBe("true"));
 		expect(container.querySelector('[data-part="spinner"]')).not.toBeNull();
