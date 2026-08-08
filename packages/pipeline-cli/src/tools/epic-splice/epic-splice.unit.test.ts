@@ -92,6 +92,98 @@ describe("re-plan of both sections — splice plan AND deps in place", () => {
 	});
 });
 
+/**
+ * The `--epic` enrichment envelope, byte for byte per the `## triage enrich` section of
+ * `claude-plugins/fabrika/skills/triage/contract.md`. `fabrika triage enrich --epic` writes it;
+ * `plan-epic` then splices around it, which is what these fixtures exercise.
+ */
+const EPIC_ORIGINAL = "## Summary\n\nThe reporter's own brief.  \nA `code` span and a — dash.\n";
+const EPIC_DETAILS = `<details>\n<summary>Original brief (verbatim)</summary>\n\n${EPIC_ORIGINAL}\n</details>\n`;
+const EPIC_PITCH =
+	"## Pitch\n\n**Problem:** who has it, and what stalls.\n**Arc:** fabrika campaign\n" +
+	"**Appetite:** 1 cycles\n**Rabbit-holes:** none named.\n**No-gos:** none named.\n\n";
+const EPIC_HEADER_BLOCK =
+	"## Epic — awaiting plan\n\n`plan-epic` appends its plan and dependency topology below.\n\n";
+const EPIC_ENVELOPE = EPIC_PITCH + EPIC_HEADER_BLOCK + EPIC_DETAILS;
+
+const SUMMARY_LINE = "<summary>Original brief (verbatim)</summary>";
+const EPIC_HEADER_RE = /^## Epic — awaiting plan[^\S\n]*$/m;
+
+/**
+ * The RETIRED terminality rule: a body read as already-enriched only when the `<details>` block was
+ * the last block and closed at end-of-body. Kept here as the falsified predicate — #4850's whole
+ * defect is that `spliceEpicBody` makes this false on every planned epic, at which point the old
+ * "first enrichment ⇒ wrap" branch re-wrapped pitch, header, plan and topology inside a fresh
+ * `Original brief (verbatim)` block, compounding per run.
+ */
+const readsAsEnrichedByTerminality = (body: string): boolean =>
+	body.includes(SUMMARY_LINE) && /<\/details>[^\S\n]*\n?$/.test(body);
+
+/**
+ * The ruled position-independent detector (option (a), founder ruling on #4850): all three anchors
+ * must hold, and where the `<details>` block sits relative to end-of-body is not tested at all.
+ */
+const readsAsEnrichedByAnchors = (body: string): boolean => {
+	const headerAt = body.search(EPIC_HEADER_RE);
+	const summaryAt = body.indexOf(SUMMARY_LINE);
+	return body.startsWith("## Pitch\n") && headerAt !== -1 && summaryAt > headerAt;
+};
+
+const occurrences = (body: string, needle: string): number => body.split(needle).length - 1;
+
+describe("the fabrika `--epic` envelope survives the splice — #4850's position-independent anchors", () => {
+	const epicPlan = "## Plan (plan-epic)\n\n### Product layer\n\nthe authored plan.\n\n";
+	const epicDeps = "## Dependencies\n\n### Phase 1\n- #10 — x\n";
+	// What `plan-epic` Step 2 leaves: the plan written below the untouched envelope, no topology yet.
+	const beforeFirstPlan = EPIC_ENVELOPE + epicPlan;
+
+	it("the envelope alone reads as enriched under BOTH the retired and the ruled detector", () => {
+		expect(readsAsEnrichedByTerminality(EPIC_ENVELOPE)).toBe(true);
+		expect(readsAsEnrichedByAnchors(EPIC_ENVELOPE)).toBe(true);
+	});
+
+	it("a first-time plan appends below the wrap, which falsifies terminality (the #4850 root cause)", () => {
+		const out = spliced(spliceEpicBody({body: beforeFirstPlan, deps: epicDeps, plan: null}));
+		expect(out).toBe(beforeFirstPlan + epicDeps);
+		expect(readsAsEnrichedByTerminality(out)).toBe(false);
+	});
+
+	it("but the three ruled anchors all still hold on that same planned body", () => {
+		const out = spliced(spliceEpicBody({body: beforeFirstPlan, deps: epicDeps, plan: null}));
+		expect(out.startsWith("## Pitch\n")).toBe(true);
+		expect(out.search(EPIC_HEADER_RE)).toBe(EPIC_PITCH.length);
+		expect(out.indexOf(SUMMARY_LINE)).toBeGreaterThan(out.search(EPIC_HEADER_RE));
+		expect(readsAsEnrichedByAnchors(out)).toBe(true);
+	});
+
+	it("preserves the wrapped original byte-for-byte through a first-time plan", () => {
+		const out = spliced(spliceEpicBody({body: beforeFirstPlan, deps: epicDeps, plan: null}));
+		expect(out).toContain(EPIC_DETAILS);
+		expect(occurrences(out, SUMMARY_LINE)).toBe(1);
+	});
+
+	it("keeps every anchor and the wrap intact through a re-plan of BOTH sections", () => {
+		const body = beforeFirstPlan + epicDeps;
+		const freshPlan = "## Plan (plan-epic)\n\n### Product layer\n\nre-planned prose.\n\n";
+		const freshDeps = "## Dependencies\n\n### Phase 1\n- #11 — y\n";
+		const out = spliced(spliceEpicBody({body, deps: freshDeps, plan: freshPlan}));
+		expect(out).toBe(EPIC_ENVELOPE + freshPlan + freshDeps);
+		expect(out.startsWith("## Pitch\n")).toBe(true);
+		expect(out.search(EPIC_HEADER_RE)).toBe(EPIC_PITCH.length);
+		expect(out).toContain(EPIC_DETAILS);
+		expect(occurrences(out, SUMMARY_LINE)).toBe(1);
+		expect(readsAsEnrichedByAnchors(out)).toBe(true);
+	});
+
+	it("never cuts on `## Pitch` or `## Epic — awaiting plan` — they are not splice anchors", () => {
+		const body = beforeFirstPlan + epicDeps;
+		const freshDeps = "## Dependencies\n\n### Phase 1\n- #12 — z\n";
+		const out = spliced(spliceEpicBody({body, deps: freshDeps, plan: null}));
+		// Everything above the pinned `## Dependencies` heading is verbatim live bytes, envelope included.
+		expect(out).toBe(EPIC_ENVELOPE + epicPlan + freshDeps);
+	});
+});
+
 describe("corrupt-heading guards — refuse rather than orphan or double a section", () => {
 	it("refuses a body with more than one `## Dependencies` heading", () => {
 		const body = `${BRIEF}${DEPS}\n${DEPS}`;
