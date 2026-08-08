@@ -213,6 +213,20 @@ describe("runSplit — a read that cannot see is never an answer", () => {
 		expect(calls.some((c) => CREATE.test(c))).toBe(false);
 	});
 
+	// The same refusal on the second loop. The timeline read carries no titles, so it fetches every
+	// cross-reference — an UNKNOWN one there is just as likely to BE the child as an UNKNOWN queue row.
+	it("exits 11 on an UNKNOWN timeline candidate too, not only a queue one", async () => {
+		const {outcome, calls} = await run(
+			script(
+				[TIMELINE, okOut("4400\tfalse\n")],
+				[issueRead(4400), errOut("gh: Bad gateway (HTTP 502)")],
+			),
+		);
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+		expect(outcome.stdout).toBe("");
+		expect(calls.some((c) => CREATE.test(c))).toBe(false);
+	});
+
 	it("exits 11 on an unreadable queue, never on a silent create", async () => {
 		const {outcome, calls} = await run(script([QUEUE, errOut("gh: Bad gateway (HTTP 502)")]));
 		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
