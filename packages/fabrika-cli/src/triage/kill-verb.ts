@@ -1,0 +1,284 @@
+/**
+ * `triage kill` — close an agent-filed issue not-planned, auditably.
+ *
+ * This is the group's only irreversible act on a public board, which shapes every decision below:
+ * no precondition resolves to a plausible value, and no write runs before all of them are proven.
+ *
+ * **Two guards, and they are different guards (ADR 0159).** A missing footer means the issue is
+ * human-owned and the verb refuses outright; a present footer makes it *eligible*, not closeable — a
+ * human-invoked `/report` emits the same footer, so `--confirm` is the confirmation step made
+ * structural. That is why `--confirm` is optional at the parser and refused at the verb: a
+ * parser-required flag's absence is a usage error, indistinguishable from a typo, while ADR 0159's
+ * confirmation is a decision whose absence must be a proven refusal a caller can read as one.
+ *
+ * **Write order is the auditability guarantee.** Fold the duplicate content, post the reason, apply
+ * `closed-by-triage`, then close — and each step gates the next, so a failure before the close
+ * leaves the issue OPEN, which is the recoverable direction. The three unguarded sequential writes
+ * this replaces landed a closed, unexplained, unlabelled issue whenever the middle one failed.
+ */
+import {Effect} from "effect";
+import type {ChildProcessSpawner} from "effect/unstable/process";
+import {
+	addLabels,
+	closeNotPlanned,
+	createComment,
+	getIssue,
+	type IssueRecord,
+	listLabels,
+	resolveRepo,
+} from "../io/issues.ts";
+import type {StdinRead} from "../io/stdin.ts";
+import {isBareAtReference, renderLeaks, scanBody} from "../report/leaks.ts";
+import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
+import {
+	BARE_AT_PATH,
+	EMPTY_STDIN,
+	HUMAN_FILED,
+	LEAKED_PATH,
+	PRECONDITION_UNKNOWN,
+	READBACK_MISMATCH,
+	UNCONFIRMED,
+	WRITE_UNKNOWN,
+	ZERO_SCOPE,
+} from "./codes.ts";
+import {provenanceOf} from "./provenance.ts";
+import {scannedLine} from "./scope.ts";
+
+/** The label a kill is audited by. Its absence in the repo is a zero-scope refusal, not a create. */
+export const KILL_LABEL = "closed-by-triage";
+
+export interface KillOptions {
+	readonly issue: number;
+	/** ADR 0159's confirmation. Absent ⇒ a proven refusal on `13`, never a usage error. */
+	readonly confirm: boolean;
+	readonly duplicateOf: number | null;
+	readonly repo: string | null;
+	readonly json: boolean;
+	readonly env: Readonly<Record<string, string | undefined>>;
+	readonly stdin: Effect.Effect<StdinRead>;
+}
+
+const isIssueNumber = (n: number): boolean => Number.isInteger(n) && n > 0;
+
+export const runKill = (
+	options: KillOptions,
+): Effect.Effect<VerbOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
+	Effect.gen(function* () {
+		const {issue, duplicateOf, json} = options;
+
+		if (!isIssueNumber(issue)) {
+			return refuse(FAILED, `triage kill: ${issue} is not an issue number.`);
+		}
+		if (duplicateOf !== null && !isIssueNumber(duplicateOf)) {
+			return refuse(FAILED, `triage kill: --duplicate-of ${duplicateOf} is not an issue number.`);
+		}
+		if (duplicateOf === issue) {
+			return refuse(
+				FAILED,
+				`triage kill: --duplicate-of #${issue} is the issue being killed — refusing to fold it into itself.`,
+			);
+		}
+
+		const repoAttempt = yield* resolveRepo(options.repo, options.env);
+		if (repoAttempt._tag === "Failure") {
+			return refuse(
+				FAILED,
+				"triage kill: cannot resolve a target repo — set CLAUDE_PIPELINE_REPO, or run inside a checkout whose origin remote resolves.",
+			);
+		}
+		const repo = repoAttempt.value;
+
+		const read = yield* options.stdin;
+		if (read._tag === "Failed") {
+			return refuse(
+				FAILED,
+				`triage kill: could not read stdin: ${read.reason} — the reason is UNKNOWN, never empty.`,
+			);
+		}
+		const reason = read._tag === "NoStdin" ? "" : read.text;
+		if (reason.trim() === "") {
+			return refuse(EMPTY_STDIN, "triage kill: no reason on stdin — refusing an unauditable kill.");
+		}
+
+		if (isBareAtReference(reason)) {
+			return refuse(
+				BARE_AT_PATH,
+				'triage kill: the reason is a bare "@" path reference — it never arrived. Send it on stdin.',
+			);
+		}
+
+		// The reason is authored text, so a leak in it is refusable — the author can fix it. The
+		// duplicate's body below is foreign content being preserved, so it is redacted instead. That
+		// asymmetry is the whole of the leak design (`../report/leaks.ts`).
+		const reasonScan = scanBody(reason);
+		const firstLeak = reasonScan.leaks[0];
+		if (firstLeak !== undefined) {
+			return refuse(
+				LEAKED_PATH,
+				`triage kill: the reason carries a machine-local path at line ${firstLeak.line} (${firstLeak.class}) — rewrite it repo-relative.`,
+				renderLeaks(reasonScan.leaks),
+			);
+		}
+
+		const target = yield* getIssue(repo, issue);
+		if (target._tag === "Absent") {
+			return refuse(ZERO_SCOPE, `triage kill: issue #${issue} not found in ${repo}.`);
+		}
+		if (target._tag === "Unknown") {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`triage kill: cannot read #${issue} in ${repo}: ${target.reason} — the provenance test has no evidence; refusing to close on a body that was never read.`,
+			);
+		}
+		if (target.value.state === "closed") {
+			return refuse(ZERO_SCOPE, `triage kill: issue #${issue} is already closed.`);
+		}
+
+		const emptyBodyNotice =
+			target.value.body.trim() === ""
+				? [
+						`triage kill: #${issue} has an empty body — reading its provenance as human (fail-closed).`,
+					]
+				: [];
+
+		const provenance = provenanceOf(target.value.body);
+		if (provenance === "human") {
+			return refuse(
+				HUMAN_FILED,
+				`triage kill: #${issue} is human-filed — refusing to close it. Park it with questions instead.`,
+				emptyBodyNotice,
+			);
+		}
+
+		if (!options.confirm) {
+			return refuse(
+				UNCONFIRMED,
+				`triage kill: #${issue} is agent-filed and close-eligible, but ADR 0159 makes the confirmation the guard — pass --confirm once salvage has genuinely been attempted.`,
+			);
+		}
+
+		let duplicate: IssueRecord | null = null;
+		if (duplicateOf !== null) {
+			const found = yield* getIssue(repo, duplicateOf);
+			if (found._tag === "Absent") {
+				return refuse(
+					ZERO_SCOPE,
+					`triage kill: --duplicate-of #${duplicateOf} not found in ${repo}.`,
+				);
+			}
+			if (found._tag === "Unknown") {
+				return refuse(
+					PRECONDITION_UNKNOWN,
+					`triage kill: cannot read --duplicate-of #${duplicateOf} in ${repo}: ${found.reason} — no kill was attempted.`,
+				);
+			}
+			if (found.value.state === "closed") {
+				return refuse(
+					ZERO_SCOPE,
+					`triage kill: --duplicate-of #${duplicateOf} is closed — refusing to fold this issue's content into a closed issue where nobody will read it.`,
+				);
+			}
+			duplicate = found.value;
+		}
+
+		const labels = yield* listLabels(repo);
+		if (labels._tag === "Failure") {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`triage kill: cannot read the label set of ${repo}: ${labels.reason} — no kill was attempted.`,
+			);
+		}
+		const scope = scannedLine("triage kill", repo, labels.value.length, "label");
+		if (!labels.value.includes(KILL_LABEL)) {
+			return refuse(
+				ZERO_SCOPE,
+				`triage kill: label ${KILL_LABEL} does not exist in ${repo} — refusing a kill that would be invisible to the audit.`,
+				[scope, ...emptyBodyNotice],
+			);
+		}
+
+		const foldScan = scanBody(target.value.body);
+		const redactions = duplicate === null ? 0 : foldScan.leaks.length;
+		const redactionNotice =
+			redactions === 0
+				? []
+				: [
+						`triage kill: redacted ${redactions} machine-local path(s) from the folded duplicate body.`,
+					];
+		const diagnostics = [scope, ...emptyBodyNotice, ...redactionNotice];
+
+		// Each write gates the next, and each `8` names what landed, what did not, and the recovery —
+		// because "nothing happened, re-run" and "three comments are live, re-running duplicates them"
+		// are opposite instructions.
+		if (duplicate !== null) {
+			const foldBody = `Folded from #${issue} (closed not-planned as a duplicate of this issue).\n\n${foldScan.redacted}`;
+			const folded = yield* createComment(repo, duplicate.number, foldBody);
+			if (folded._tag === "Failure") {
+				return refuse(
+					WRITE_UNKNOWN,
+					`triage kill: the fold comment on #${duplicate.number} failed: ${folded.reason} — #${issue} is NOT closed, carries no reason and no label; nothing was lost. Re-run.`,
+					diagnostics,
+				);
+			}
+		}
+
+		const reasonComment = yield* createComment(repo, issue, reason);
+		if (reasonComment._tag === "Failure") {
+			return refuse(
+				WRITE_UNKNOWN,
+				duplicate === null
+					? `triage kill: the reason comment on #${issue} failed: ${reasonComment.reason} — #${issue} is NOT closed and carries no label; nothing landed and nothing was lost. Re-run.`
+					: `triage kill: the reason comment on #${issue} failed: ${reasonComment.reason} — #${issue} is NOT closed and carries no label, but the fold on #${duplicate.number} DID land; delete that comment before re-running, or the fold posts twice.`,
+				diagnostics,
+			);
+		}
+
+		const labelled = yield* addLabels(repo, issue, [KILL_LABEL]);
+		if (labelled._tag === "Failure") {
+			return refuse(
+				WRITE_UNKNOWN,
+				`triage kill: applying ${KILL_LABEL} to #${issue} failed: ${labelled.reason} — the fold and the reason comment landed; #${issue} is still OPEN and invisible to the kill audit. Apply the label by hand, or delete the landed comments and re-run.`,
+				diagnostics,
+			);
+		}
+
+		const closed = yield* closeNotPlanned(repo, issue);
+		if (closed._tag === "Failure") {
+			return refuse(
+				WRITE_UNKNOWN,
+				`triage kill: closing #${issue} failed: ${closed.reason} — the fold, the reason and ${KILL_LABEL} all landed; #${issue} is still OPEN and fully annotated. Close it by hand with state_reason=not_planned, or delete the landed comments and re-run.`,
+				diagnostics,
+			);
+		}
+
+		// A plain `closed` reads as "done", not "killed", so the read-back asserts BOTH fields. An
+		// unreadable read-back is not a proven close either: the writes landed and the outcome is
+		// unverified, which is exactly what `9` says.
+		const after = yield* getIssue(repo, issue);
+		if (after._tag !== "Present") {
+			return refuse(
+				READBACK_MISMATCH,
+				`triage kill: the writes on #${issue} landed but the read-back itself failed: ${
+					after._tag === "Absent" ? "the issue is now absent" : after.reason
+				} — the close is unverified.`,
+				diagnostics,
+			);
+		}
+		if (after.value.state !== "closed" || after.value.stateReason !== "not_planned") {
+			return refuse(
+				READBACK_MISMATCH,
+				`triage kill: closed, but the read-back shows state=${after.value.state} state_reason=${
+					after.value.stateReason ?? "none"
+				}, not not_planned — #${issue} reads as done rather than killed.`,
+				diagnostics,
+			);
+		}
+
+		const foldedInto = duplicate === null ? null : duplicate.number;
+		return json
+			? answer(
+					JSON.stringify({outcome: "killed", number: issue, foldedInto, redactions, provenance}),
+					diagnostics,
+				)
+			: answer(`killed\t${issue}\t${foldedInto ?? "none"}`, diagnostics);
+	});

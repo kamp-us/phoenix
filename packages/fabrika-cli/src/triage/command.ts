@@ -22,6 +22,7 @@ import type {VerbOutcome} from "../verb.ts";
 import {runApply} from "./apply-verb.ts";
 import {runCodes} from "./codes-verb.ts";
 import {AUDIENCES, PRIORITIES, STANDING_LANES, TYPES} from "./facets.ts";
+import {runKill} from "./kill-verb.ts";
 import {runPark} from "./park-verb.ts";
 import {runSplit} from "./split-verb.ts";
 
@@ -60,6 +61,48 @@ const codes = leafCommand(
 ).pipe(
 	Command.withDescription(
 		"Print the exit taxonomy every verb in this group allocates from, one `<code>\\t<meaning>` line per code. Reads nothing and always exits 0. Example: fabrika triage codes",
+	),
+);
+
+const kill = leafCommand(
+	"kill",
+	{
+		issue: Argument.integer("issue").pipe(
+			Argument.withDescription("the issue to close not-planned"),
+		),
+		// Optional at the parser and refused at the verb, deliberately: a parser-required flag's
+		// absence is a usage error indistinguishable from a typo, and ADR 0159's confirmation is a
+		// decision whose absence must be a proven refusal (exit 13).
+		confirm: Flag.boolean("confirm").pipe(
+			Flag.withDescription(
+				"assert that salvage was attempted and this filing is genuinely unsalvageable (ADR 0159); its absence is a refusal on 13, not a usage error",
+			),
+		),
+		duplicateOf: Flag.integer("duplicate-of").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"the surviving issue; this issue's body is folded into it, leak-redacted, before the close",
+			),
+		),
+		repo: repoFlag,
+		json: jsonFlag,
+	},
+	Effect.fn(function* ({issue, confirm, duplicateOf, repo, json}) {
+		yield* emit(
+			yield* runKill({
+				issue,
+				confirm,
+				duplicateOf: Option.getOrNull(duplicateOf),
+				repo: Option.getOrNull(repo),
+				json,
+				env: process.env,
+				stdin: Effect.sync(readStdin),
+			}),
+		);
+	}),
+).pipe(
+	Command.withDescription(
+		"Close an agent-filed issue not-planned over four gated writes — the optional redacted duplicate fold, the reason from STDIN, the closed-by-triage label, then the close — and read back that it says not_planned. Prints `killed\\t<number>\\t<foldedInto|none>`. Exits 3 (empty stdin), 5 (machine-local path in the reason), 6 (bare @ reference), 7 (issue absent or closed, duplicate absent or closed, or no closed-by-triage label), 8 (a write failed — UNKNOWN), 9 (read-back is not a not-planned close), 11 (a precondition read failed), 12 (human-filed), 13 (unconfirmed). Example: fabrika triage kill 4312 --confirm --duplicate-of 4290 < reason.md",
 	),
 );
 
@@ -182,6 +225,7 @@ export const triageCommand = Command.make("triage").pipe(
 		// One leaf per line, so five in-flight slices append at five distinct lines rather than all
 		// editing one. The comment is what keeps the formatter from collapsing the list back.
 		codes,
+		kill,
 		split,
 		apply,
 		park,
