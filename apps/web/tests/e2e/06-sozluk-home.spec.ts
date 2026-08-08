@@ -88,7 +88,9 @@ test.describe("SozlukHome create-flow (+ yeni tanım → composer)", () => {
 		// ancestor unmount resetting the CTA's local `open` useState, and #3840 hoisted that
 		// state above the unmounting boundary — so the dialog no longer vanishes on an idle
 		// `/sozluk`, and the flow is a straight open → fill → submit → navigate.
-		const dialog = page.locator(".kp-dialog__popup");
+		// The Manti migration made Dialog a straight re-export, so the old `.kp-dialog__popup`
+		// BEM class is emitted by nothing; the role is the stable contract either way.
+		const dialog = page.getByRole("dialog");
 		await expect(dialog).toBeVisible();
 		// The dialog collects the term name (the composer is slug-addressed).
 		await page.getByLabel("Terim").fill(term);
