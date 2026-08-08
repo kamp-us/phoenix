@@ -7,7 +7,7 @@ test.describe("AuthPage (/auth)", () => {
 		await expect(page.locator(".kp-auth__card")).toBeVisible();
 		await expect(page.getByRole("heading", {name: /giriş yap/i})).toBeVisible();
 		await expect(page.getByLabel("e-posta")).toBeVisible();
-		await expect(page.getByLabel("parola")).toBeVisible();
+		await expect(page.getByLabel("parola", {exact: true})).toBeVisible();
 		// no görünen ad in sign-in mode
 		await expect(page.getByLabel("görünen ad")).toHaveCount(0);
 	});

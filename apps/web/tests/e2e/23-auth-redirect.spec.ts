@@ -66,7 +66,7 @@ test.describe("T17 auth-redirect with returnTo", () => {
 		const emailB = `voter-${slug}@kamp.us`;
 		await page.getByLabel("görünen ad").fill("voter b");
 		await page.getByLabel("e-posta").fill(emailB);
-		await page.getByLabel("parola").fill("hunter222!");
+		await page.getByLabel("parola", {exact: true}).fill("hunter222!");
 		await page.getByRole("button", {name: /hesap aç/i}).click();
 
 		// Layout's effect navigates off /auth honoring `returnTo` (T17).

@@ -67,7 +67,7 @@ export async function signUp(page: Page, opts?: Partial<Credentials>): Promise<C
 
 	await page.getByLabel("görünen ad").fill(name);
 	await page.getByLabel("e-posta").fill(email);
-	await page.getByLabel("parola").fill(password);
+	await page.getByLabel("parola", {exact: true}).fill(password);
 	await page.getByRole("button", {name: /hesap aç/i}).click();
 
 	// Layout's effect navigates off /auth once session.data lands.
