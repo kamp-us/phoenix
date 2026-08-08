@@ -256,6 +256,12 @@ Three properties are worth knowing before you call them:
 - **The artifact arrives on stdin only.** No `--body`, no `--body-file` — the same reason the
   `report` and `triage` writing verbs take theirs there: a flag that accepts a path turns the
   artifact into a string the verb could echo back onto a public surface.
+- **A `found` verdict marker is well-formed, not current.** `verdict-marker` carries the head
+  SHA the reviewer inspected, and a marker bound to a head that has since moved is *stale*, not
+  passing. Whether a marker binds the head you hold is
+  [`verdict-marker.ts`](./src/wire/verdict-marker.ts)'s `bindToHead` — three answers again
+  (`Current` / `Stale` / `Unbindable`), because a head the caller could not resolve is not a
+  comparison anyone made.
 
 ```bash
 printf 'the read is total\n[x] the registry is the seam\n' \

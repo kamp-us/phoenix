@@ -30,6 +30,7 @@ import {runRead} from "./read-verb.ts";
 import {registeredFormats} from "./registry.ts";
 
 const KEY = "acceptance-criteria";
+const VERDICT = "verdict-marker";
 
 const piped = (text: string): Effect.Effect<StdinRead> => Effect.succeed({_tag: "Text", text});
 const noStdin: Effect.Effect<StdinRead> = Effect.succeed({
@@ -202,6 +203,66 @@ describe("wire formats", () => {
 			producers: expect.arrayContaining(["triage"]),
 			consumers: expect.arrayContaining(["review"]),
 		});
+	});
+
+	it("lists the verdict marker with its owner module's producers and consumers", () => {
+		const out = runFormats({json: true});
+		expect(JSON.parse(out.stdout).formats).toContainEqual({
+			key: VERDICT,
+			purpose: expect.any(String),
+			producers: expect.arrayContaining(["review"]),
+			consumers: expect.arrayContaining(["ship"]),
+		});
+	});
+});
+
+/**
+ * The seam's own test: a second format reaches every verb through its registry row alone.
+ *
+ * If any assertion here needed a branch in `read-verb.ts` / `check-verb.ts` / `emit-verb.ts` to
+ * pass, the registry would not be the landing surface it claims to be — so these cases are as much
+ * about the adapter as about the marker.
+ */
+describe("a second format on the same seam", () => {
+	const HEAD = "03135b91e7d4a2c6f1b8093a5c4d2e1f6a7b8c9d";
+	const MARKER = `review-code: PASS @ ${HEAD} — merge-ready\n`;
+
+	it("answers a conforming marker through the SAME read verb, exit 0", async () => {
+		const out = await read(piped(MARKER), VERDICT);
+		expect(out.code).toBe(ANSWER);
+		expect(out.stdout).toBe(
+			`found\t${VERDICT}\t4\nnamespace\treview-code\npolarity\tPASS\nsha\t${HEAD}\nclause\tmerge-ready\n`,
+		);
+	});
+
+	it("seats a comment with no marker on ABSENT and a drifted marker on MALFORMED", async () => {
+		expect((await read(piped("looks good to me\n"), VERDICT)).code).toBe(ABSENT);
+		expect((await read(piped("review-code: PASS — merge-ready\n"), VERDICT)).code).toBe(MALFORMED);
+	});
+
+	it("refuses an artifact it never saw as UNKNOWN rather than as an unreviewed PR", async () => {
+		expect((await read(readFailed, VERDICT)).code).toBe(ARTIFACT_UNKNOWN);
+		expect((await read(piped("  \n"), VERDICT)).code).toBe(EMPTY_ARTIFACT);
+	});
+
+	it("checks and emits on the same taxonomy, and `emit` round-trips through `read`", async () => {
+		expect((await check(piped(MARKER), VERDICT)).code).toBe(ANSWER);
+		const composed = await emit(
+			piped(`namespace: review-code\npolarity: PASS\nsha: ${HEAD}\nclause: merge-ready\n`),
+			VERDICT,
+		);
+		expect(composed.code).toBe(ANSWER);
+		expect(composed.stdout).toBe(MARKER);
+		expect((await read(piped(composed.stdout), VERDICT)).code).toBe(ANSWER);
+	});
+
+	it("refuses fields that compose no bound marker, on the shared UNUSABLE_FIELDS code", async () => {
+		const out = await emit(
+			piped("namespace: review-code\npolarity: PASS\nclause: merge-ready\n"),
+			VERDICT,
+		);
+		expect(out.code).toBe(UNUSABLE_FIELDS);
+		expect(out.stdout).toBe("");
 	});
 });
 
