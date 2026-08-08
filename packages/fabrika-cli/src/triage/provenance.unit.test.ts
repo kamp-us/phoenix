@@ -33,6 +33,10 @@ describe("hasAgentFooter", () => {
 		expect(hasAgentFooter("> <sub>Filed by an agent · 2026-01-01</sub>")).toBe(false);
 	});
 
+	it("answers human on a hand-typed body that never mentions the footer at all", () => {
+		expect(hasAgentFooter("I hit a bug in the retry helper.\n")).toBe(false);
+	});
+
 	it("answers human on an empty body — the fail-closed default", () => {
 		expect(provenanceOf("")).toBe("human");
 	});

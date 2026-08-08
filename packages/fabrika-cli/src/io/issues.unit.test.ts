@@ -10,6 +10,7 @@ import {
 	issueTimeline,
 	listComments,
 	listOpenMilestones,
+	openQueueIssues,
 	parseTabRows,
 	patchIssueBody,
 	removeLabel,
@@ -250,6 +251,96 @@ describe("the writes send the fields the API needs, in the form it accepts", () 
 			"Failure",
 		);
 		expect((await run(Effect.provide(deleteComment("r/r", 9), failing)))._tag).toBe("Failure");
+	});
+});
+
+describe("openQueueIssues", () => {
+	it("pages, filters pull requests out, and carries the filing time the age is computed from", async () => {
+		const shell = fakeShell([
+			[
+				/gh api/,
+				okOut(
+					"4312\t2026-08-01T00:00:00Z\tAbort reason lost\n4088\t2026-07-01T00:00:00Z\tCancellation\n",
+				),
+			],
+		]);
+		const result = await run(
+			Effect.provide(openQueueIssues("kamp-us/phoenix", "status:needs-triage"), shell.layer),
+		);
+		expect(result).toEqual({
+			_tag: "Ok",
+			value: [
+				{number: 4312, createdAt: "2026-08-01T00:00:00Z", title: "Abort reason lost"},
+				{number: 4088, createdAt: "2026-07-01T00:00:00Z", title: "Cancellation"},
+			],
+		});
+		expect(shell.calls[0]).toContain("--paginate");
+		expect(shell.calls[0]).toContain("per_page=100");
+		expect(shell.calls[0]).toContain("pull_request | not");
+	});
+
+	it("cuts at the FIRST TWO tabs, so a title containing a tab does not fail the whole queue", async () => {
+		const result = await run(
+			Effect.provide(
+				openQueueIssues("o/r", "l"),
+				fakeShell([[/gh api/, okOut("7\t2026-08-01T00:00:00Z\ta\tb\tc\n")]]).layer,
+			),
+		);
+		expect(result).toEqual({
+			_tag: "Ok",
+			value: [{number: 7, createdAt: "2026-08-01T00:00:00Z", title: "a\tb\tc"}],
+		});
+	});
+
+	it("escapes the label into the query string", async () => {
+		const shell = fakeShell([[/gh api/, okOut("")]]);
+		await run(Effect.provide(openQueueIssues("o/r", "status:needs-triage"), shell.layer));
+		expect(shell.calls[0]).toContain("labels=status%3Aneeds-triage");
+	});
+
+	it("reads no rows as an empty FACT — the caller turns that into the `empty` state word", async () => {
+		const result = await run(
+			Effect.provide(openQueueIssues("o/r", "l"), fakeShell([[/gh api/, okOut("")]]).layer),
+		);
+		expect(result).toEqual({_tag: "Ok", value: []});
+	});
+
+	it("refuses a 0 exit whose bytes are not queue rows, rather than reading them positionally", async () => {
+		const tooFewFields = await run(
+			Effect.provide(
+				openQueueIssues("o/r", "l"),
+				fakeShell([[/gh api/, okOut("7\ttitle\n")]]).layer,
+			),
+		);
+		expect(tooFewFields._tag).toBe("Failure");
+
+		const notANumber = await run(
+			Effect.provide(
+				openQueueIssues("o/r", "l"),
+				fakeShell([[/gh api/, okOut("jq: error\t2026-08-01T00:00:00Z\tt\n")]]).layer,
+			),
+		);
+		expect(notANumber._tag).toBe("Failure");
+	});
+
+	it("refuses a row whose second field is not a filing time — an unparseable age is not 0", async () => {
+		const result = await run(
+			Effect.provide(
+				openQueueIssues("o/r", "l"),
+				fakeShell([[/gh api/, okOut("7\tnot-a-date\tt\n")]]).layer,
+			),
+		);
+		expect(result._tag).toBe("Failure");
+	});
+
+	it("refuses rather than returning a short list when the read fails", async () => {
+		const result = await run(
+			Effect.provide(
+				openQueueIssues("o/r", "l"),
+				fakeShell([[/gh api/, errOut("gh: Bad gateway (HTTP 502)")]]).layer,
+			),
+		);
+		expect(result._tag).toBe("Failure");
 	});
 });
 
