@@ -143,6 +143,17 @@ describe("resolveClaim", () => {
 			ttlMinutes: 60,
 		});
 		expect(out._tag).not.toBe("Won");
+
+		// With a marker of its own present the MineAbsent branch no longer short-circuits, so the
+		// winner comparison itself runs — which is where the empty identity would compare equal. This
+		// case, not the one above, is what pins it.
+		const holdingOne = resolveClaim({
+			markers: [marker(2, THEIRS, "2026-08-02T09:14:02Z"), marker(3, "", "2026-08-02T09:50:00Z")],
+			session: "",
+			now,
+			ttlMinutes: 60,
+		});
+		expect(holdingOne._tag).toBe("Lost");
 	});
 });
 
