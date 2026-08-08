@@ -41,7 +41,7 @@ describe("Subnav CTA slot (#2598)", () => {
 
 	it("keeps the Manti CTA inside the bar with explicit horizontal padding", () => {
 		expect(SUBNAV_CSS).toMatch(
-			/\.kp-subnav__cta\s+\.kp-btn:where\([^)]*\)\s*\{[^}]*--manti-button-height:\s*calc\(var\(--subnav-h\) - var\(--s-2\)\)[^}]*--manti-button-padding-x:\s*var\(--s-3\)/s,
+			/\.kp-subnav__cta\s+\.kp-btn:where\([^)]*\)\s*\{[^}]*--manti-button-height:\s*calc\(var\(--subnav-h\) - var\(--s-2\)\)[^}]*--manti-button-padding-x:\s*var\(--s-2\)/s,
 		);
 	});
 

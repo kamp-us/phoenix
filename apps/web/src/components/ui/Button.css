@@ -3,7 +3,7 @@
 	--manti-button-radius: var(--r-sm);
 	--manti-button-gap: 6px;
 	--manti-button-height: var(--tap-min);
-	--manti-button-padding-x: var(--s-3);
+	--manti-button-padding-x: var(--s-2);
 	min-width: var(--tap-min);
 	font: var(--t-body-sm);
 	font-weight: 500;
@@ -81,9 +81,10 @@
 	text-decoration: underline;
 }
 
+/* No padding-x here: sm has always carried the base value, so it tracks the base
+   rather than restating it and silently diverging when the base moves. */
 .kp-btn:where([data-size="sm"]) {
 	--manti-button-height: 30px;
-	--manti-button-padding-x: var(--s-3);
 	font: var(--t-body-sm);
 	font-weight: 500;
 }
