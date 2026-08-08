@@ -163,3 +163,42 @@ export const discoverRepoRoot = (
 		}
 		return chooseRoot(path, candidates);
 	});
+
+/**
+ * Where the *running* copy lives — the second root the delegation has to know about.
+ *
+ * A tagged union rather than `string | undefined` on purpose: `undefined` would be readable as "not
+ * looked up", and never looking it up is exactly the defect (#4956). This type has no state that
+ * means "undecided", so a caller either has an answer or is holding an `Effect` that failed.
+ */
+export type SelfOrigin =
+	| {readonly _tag: "no-checkout"}
+	| {readonly _tag: "checkout"; readonly root: string};
+
+const NODE_MODULES = "node_modules";
+
+/**
+ * The checkout the copy at `packageRoot` belongs to, or `no-checkout` for an installed artifact.
+ *
+ * Two narrowings against {@link discoverRepoRoot} keep the designed global-install delegation intact,
+ * and both are load-bearing rather than defensive. The walk starts at the package root's **parent**,
+ * because a package root always holds its own `package.json` and would otherwise be its own repo
+ * root. And a path with a `node_modules` segment answers `no-checkout` outright, because an installed
+ * copy is an artifact of some tree, not a checkout of one — `pnpm add --global` writes a
+ * `package.json` beside the global `node_modules`, so a plain ancestor walk would report every global
+ * install as a checkout and turn the one branch that is *meant* to delegate into a refusal.
+ */
+export const originOf = (
+	packageRoot: string,
+): Effect.Effect<SelfOrigin, ReadFailed, FileSystem.FileSystem | Path.Path> =>
+	Effect.gen(function* () {
+		const path = yield* Path.Path;
+		const resolved = path.resolve(packageRoot);
+		if (resolved.split(path.sep).includes(NODE_MODULES)) return {_tag: "no-checkout"} as const;
+		const parent = path.dirname(resolved);
+		if (parent === resolved) return {_tag: "no-checkout"} as const;
+		const root = yield* discoverRepoRoot(parent);
+		return root === undefined
+			? ({_tag: "no-checkout"} as const)
+			: ({_tag: "checkout", root} as const);
+	});

@@ -40,7 +40,7 @@ copy of `@kampus/fabrika-cli` that root has installed, and hands the invocation 
 shape [turbo](https://turborepo.com) ships (`crates/turborepo-shim/`), reimplemented here in
 TypeScript ([#4784](https://github.com/kamp-us/phoenix/issues/4784)).
 
-There are exactly three outcomes, and **only one of them is silent**:
+**No outcome is both silent and wrong**:
 
 | Where you are | What runs | Warning |
 | --- | --- | --- |
@@ -48,11 +48,21 @@ There are exactly three outcomes, and **only one of them is silent**:
 | In a consumer repo that installed it | that repo's pinned version | — |
 | In a consumer repo that did **not** install it | the global | **yes**, naming both versions |
 | In no repo at all | the global | no — deliberately |
+| Running a **different checkout's** copy by path | nothing — it refuses, exit `2` | **yes**, naming both checkouts |
 
-The last two are the whole design. Running the global outside any repo is a normal, correct
-invocation, so it stays quiet. Running the global *inside a repo that asked for a specific version*
-is the quietly-wrong case, so it says so out loud and names the global's version beside the one the
-root manifest declared. Set `FABRIKA_GLOBAL_WARNING_DISABLED=1` to silence it.
+Rows three and four are the original design. Running the global outside any repo is a normal,
+correct invocation, so it stays quiet. Running the global *inside a repo that asked for a specific
+version* is the quietly-wrong case, so it says so out loud and names the global's version beside the
+one the root manifest declared. Set `FABRIKA_GLOBAL_WARNING_DISABLED=1` to silence it.
+
+The last row closes the one case that used to be quietly wrong ([#4956](https://github.com/kamp-us/phoenix/issues/4956)).
+`node <other-checkout>/packages/fabrika-cli/src/bin.ts` run from a cwd inside *this* checkout looked
+exactly like a global install on `PATH`, so it delegated — and answered from the checkout you did
+not name, with no warning at all. It is a live hazard for anyone reviewing from a worktree: the CLI
+reports the state of `main` while you are reading a branch. The two are separated by asking which
+checkout the *invoked copy* belongs to; an installed copy (anything under `node_modules`) belongs to
+none, which is what keeps the global-install delegation exactly as it was. Either run it from inside
+its own checkout, or pass `--skip-infer` to make the copy you named serve the invocation.
 
 The property this buys is a **repo-pinned version**. phoenix carries `@kampus/fabrika-cli` in its
 root `devDependencies`, so a bare `fabrika` anywhere in a phoenix checkout runs the version this

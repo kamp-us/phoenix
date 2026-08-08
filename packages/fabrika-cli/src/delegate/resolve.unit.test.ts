@@ -7,13 +7,16 @@ import {describe, expect, it} from "vitest";
 import {faultingShell, signalledExitError, signalledShell} from "../fakes.test-support.ts";
 import type {LocalInstall} from "./local.ts";
 import {
+	foreignCheckoutRefusal,
 	GLOBAL_WARNING_DISABLED_ENV,
 	globalWarning,
 	resolve,
+	SKIP_INFER_FLAG,
 	signalFromError,
 	spawnDelegate,
 	traceLine,
 } from "./resolve.ts";
+import type {SelfOrigin} from "./root.ts";
 
 const install: LocalInstall = {
 	packageRoot: "/repo/packages/fabrika-cli",
@@ -24,21 +27,39 @@ const install: LocalInstall = {
 
 const GLOBAL = "/usr/local/pnpm/global/5/node_modules/@kampus/fabrika-cli";
 
+/** A copy on `PATH`: it belongs to no checkout, which is what makes delegating from it correct. */
+const INSTALLED: SelfOrigin = {_tag: "no-checkout"};
+
+/** The reviewer's shape — a second checkout of the same repo, invoked by path from elsewhere. */
+const OTHER_CHECKOUT = "/repo/.claude/worktrees/agent-1";
+const otherCopy = `${OTHER_CHECKOUT}/packages/fabrika-cli`;
+
 describe("resolve", () => {
 	it("delegates to the repo-local install — the pinned version wins over the global", () => {
 		expect(
-			resolve({selfPackageRoot: GLOBAL, repoRoot: "/repo", local: {_tag: "found", install}}),
+			resolve({
+				selfPackageRoot: GLOBAL,
+				selfOrigin: INSTALLED,
+				repoRoot: "/repo",
+				local: {_tag: "found", install},
+			}),
 		).toEqual({_tag: "delegate", to: install});
 	});
 
 	it("runs here SILENTLY outside any repo — a global-only invocation is not a defect", () => {
-		const resolution = resolve({selfPackageRoot: GLOBAL, repoRoot: undefined, local: undefined});
+		const resolution = resolve({
+			selfPackageRoot: GLOBAL,
+			selfOrigin: INSTALLED,
+			repoRoot: undefined,
+			local: undefined,
+		});
 		expect(resolution._tag).toBe("run-here");
 	});
 
 	it("WARNS when a repo root exists but nothing is installed — the quietly-wrong case", () => {
 		const resolution = resolve({
 			selfPackageRoot: GLOBAL,
+			selfOrigin: INSTALLED,
 			repoRoot: "/repo",
 			local: {_tag: "absent"},
 		});
@@ -48,6 +69,7 @@ describe("resolve", () => {
 	it("warns rather than throws on a corrupt local — the worst outcome is running the global", () => {
 		const resolution = resolve({
 			selfPackageRoot: GLOBAL,
+			selfOrigin: INSTALLED,
 			repoRoot: "/repo",
 			local: {_tag: "corrupt", reason: "manifest declares no version"},
 		});
@@ -61,10 +83,69 @@ describe("resolve", () => {
 	it("runs here when the install it found IS this copy, rather than spawning itself", () => {
 		const resolution = resolve({
 			selfPackageRoot: install.packageRoot,
+			selfOrigin: {_tag: "checkout", root: "/repo"},
 			repoRoot: "/repo",
 			local: {_tag: "found", install},
 		});
 		expect(resolution._tag).toBe("run-here");
+	});
+});
+
+/**
+ * The two cases #4956 fused. Both reach the delegate comparison with `selfPackageRoot` outside the
+ * cwd's repo root, so `selfOrigin` is the only fact separating them — and these two assertions
+ * disagree on the outcome, which is what makes a future edit that drops the field fail rather than
+ * quietly restore the wrong answer.
+ */
+describe("resolve — a global install and a foreign checkout are NOT the same input", () => {
+	const input = {repoRoot: "/repo", local: {_tag: "found", install}} as const;
+
+	it("REFUSES a copy invoked out of a different checkout, naming both roots", () => {
+		const resolution = resolve({
+			...input,
+			selfPackageRoot: otherCopy,
+			selfOrigin: {_tag: "checkout", root: OTHER_CHECKOUT},
+		});
+		expect(resolution).toEqual({
+			_tag: "refuse-foreign-checkout",
+			selfPackageRoot: otherCopy,
+			selfCheckout: OTHER_CHECKOUT,
+			repoRoot: "/repo",
+			wouldHaveRun: install,
+		});
+	});
+
+	it("still delegates SILENTLY from an install that belongs to no checkout — same comparison, opposite answer", () => {
+		expect(resolve({...input, selfPackageRoot: GLOBAL, selfOrigin: INSTALLED})).toEqual({
+			_tag: "delegate",
+			to: install,
+		});
+	});
+
+	it("delegates within ONE checkout — the pinned install may differ from the copy you ran", () => {
+		expect(
+			resolve({
+				...input,
+				selfPackageRoot: "/repo/vendor/fabrika-cli",
+				selfOrigin: {_tag: "checkout", root: "/repo"},
+			}),
+		).toEqual({_tag: "delegate", to: install});
+	});
+});
+
+describe("foreignCheckoutRefusal", () => {
+	it("names both checkouts, the answer it declined to give, and both ways out", () => {
+		const text = foreignCheckoutRefusal({
+			selfPackageRoot: otherCopy,
+			selfCheckout: OTHER_CHECKOUT,
+			repoRoot: "/repo",
+			wouldHaveRun: install,
+		});
+		expect(text).toContain(otherCopy);
+		expect(text).toContain(OTHER_CHECKOUT);
+		expect(text).toContain("/repo");
+		expect(text).toContain(install.binPath);
+		expect(text).toContain(SKIP_INFER_FLAG);
 	});
 });
 
@@ -96,7 +177,12 @@ describe("traceLine", () => {
 	it("names both copies on a delegation, so the hop is checkable from outside", () => {
 		const line = traceLine(
 			GLOBAL,
-			resolve({selfPackageRoot: GLOBAL, repoRoot: "/repo", local: {_tag: "found", install}}),
+			resolve({
+				selfPackageRoot: GLOBAL,
+				selfOrigin: INSTALLED,
+				repoRoot: "/repo",
+				local: {_tag: "found", install},
+			}),
 		);
 		expect(line).toContain(GLOBAL);
 		expect(line).toContain(install.packageRoot);
@@ -106,7 +192,12 @@ describe("traceLine", () => {
 	it("says why it stayed put, not merely that it did", () => {
 		const line = traceLine(
 			GLOBAL,
-			resolve({selfPackageRoot: GLOBAL, repoRoot: undefined, local: undefined}),
+			resolve({
+				selfPackageRoot: GLOBAL,
+				selfOrigin: INSTALLED,
+				repoRoot: undefined,
+				local: undefined,
+			}),
 		);
 		expect(line).toContain("not inside a repo");
 	});
