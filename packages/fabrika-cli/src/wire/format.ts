@@ -59,6 +59,62 @@ export type WireEmit = WireComposed | WireUnusable;
 export type WireReadLines = WireRead<NonEmptyReadonlyArray<string>>;
 
 /**
+ * The fields a round-trip is driven from, plus what surviving the round-trip means.
+ *
+ * `values` is the non-tautological half: it lists the field *values* `fields` carries, and the
+ * conformance law is that every one of them is still in `read`'s answer. A format that drops a
+ * field on the way out composes and reads back perfectly well — the answer is just quietly smaller
+ * than what was written, which is the same plausible-value failure the whole group exists to remove.
+ */
+export interface WireRoundTripFixture {
+	/** The fields exactly as {@link WireFormat.emit} takes them. */
+	readonly fields: string;
+	/** Every field value `fields` carries. Each must survive into the read's answer. */
+	readonly values: NonEmptyReadonlyArray<string>;
+}
+
+/** An artifact that reaches for the format's block and misses. */
+export interface WireMalformedFixture {
+	/** What drifted, so a broken law names the case rather than an index. */
+	readonly drift: string;
+	readonly artifact: string;
+}
+
+/**
+ * The samples the conformance suite drives a row through, carried by the row itself.
+ *
+ * Fixtures live on the registry rather than in the suite so the suite never learns a format's name:
+ * a new format inherits the laws by filling these in, and — because every field here is required —
+ * a row added without them does not compile, rather than silently reducing coverage to the formats
+ * whose author remembered to write tests.
+ */
+export interface WireFixtures {
+	readonly roundTrip: WireRoundTripFixture;
+	/** An artifact that genuinely carries no block: `Absent`, never `Malformed`. */
+	readonly absent: string;
+	/** At least one drift: `Malformed`, never `Found` and never `Absent`. */
+	readonly malformed: NonEmptyReadonlyArray<WireMalformedFixture>;
+}
+
+/** A field of the format's value whose type is a brand rather than a bare `string`. */
+export interface WireBrandWitness {
+	readonly field: string;
+}
+
+/**
+ * Declare that `field` carries the brand `A` — and make weakening `A` a compile error.
+ *
+ * A brand is a proper subtype of `string`, so `string extends A` is false for it and the parameter
+ * is an ordinary `string`. Weaken the brand to bare `string` and the parameter becomes `never`, so
+ * the row itself stops compiling (`TS2345`). That is the whole mechanism: the counterexample is not
+ * a hand-written `@ts-expect-error` per brand — which is why `Clause` had none while `HeadSha` did
+ * — it is the registry row every format must fill.
+ */
+export const brandWitness = <A extends string>(
+	field: string extends A ? never : string,
+): WireBrandWitness => ({field});
+
+/**
  * A registered format: its identity, its wiring, and its bytes.
  *
  * The `emit`/`read` pair is stated over **bytes in, bytes out** so one array can hold formats whose
@@ -78,4 +134,8 @@ export interface WireFormat {
 	readonly emit: (fields: string) => WireEmit;
 	/** An artifact's bytes → the total read, with `Found` rendered to stdout lines. */
 	readonly read: (artifact: string) => WireReadLines;
+	/** The samples `./conformance.ts` drives this row's laws from. Required — see {@link WireFixtures}. */
+	readonly fixtures: WireFixtures;
+	/** The brands this format's value is built from. Non-empty, so the check has scope (ADR 0092). */
+	readonly brands: NonEmptyReadonlyArray<WireBrandWitness>;
 }

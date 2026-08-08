@@ -10,9 +10,13 @@
  *
  * A new format lands as a sibling schema module plus one row here — never as a branch inside a
  * verb.
+ *
+ * A row also carries what `./conformance.ts` judges it by: the fixtures its laws are driven from and
+ * the brands its value is built from. Both are required by {@link WireFormat}, so a format cannot be
+ * registered without them — which is what makes the totality law inherited rather than re-written.
  */
 import * as acceptanceCriteria from "./acceptance-criteria.ts";
-import type {WireFormat} from "./format.ts";
+import {brandWitness, type WireFormat} from "./format.ts";
 import * as verdictMarker from "./verdict-marker.ts";
 
 export const registeredFormats: ReadonlyArray<WireFormat> = [
@@ -24,6 +28,28 @@ export const registeredFormats: ReadonlyArray<WireFormat> = [
 		consumers: ["build", "review"],
 		emit: acceptanceCriteria.emitFromFields,
 		read: acceptanceCriteria.readToLines,
+		fixtures: {
+			roundTrip: {
+				fields: "- [ ] the read is total\n- [x] the registry is the seam\n",
+				values: ["the read is total", "the registry is the seam"],
+			},
+			absent: "### What to build\n\nStand up the group. Nothing here reaches for the block.\n",
+			malformed: [
+				{
+					drift: "the heading spelling drifted",
+					artifact: "### Acceptance Criteria\n- [ ] one\n- [ ] two\n",
+				},
+				{
+					drift: "the heading level drifted",
+					artifact: "#### Acceptance criteria\n- [ ] one\n",
+				},
+				{
+					drift: "the conforming heading is present over prose instead of checkbox items",
+					artifact: "### Acceptance criteria\n\nEvery box is implied.\n",
+				},
+			],
+		},
+		brands: [brandWitness<acceptanceCriteria.CriterionText>("text")],
 	},
 	{
 		key: "verdict-marker",
@@ -33,6 +59,32 @@ export const registeredFormats: ReadonlyArray<WireFormat> = [
 		consumers: ["build", "ship"],
 		emit: verdictMarker.emitFromFields,
 		read: verdictMarker.readToLines,
+		fixtures: {
+			roundTrip: {
+				fields: "namespace: review-code\npolarity: PASS\nsha: 03135b91\nclause: merge-ready\n",
+				values: ["review-code", "PASS", "03135b91", "merge-ready"],
+			},
+			absent: "Thanks — this reads well to me, no notes.\n",
+			malformed: [
+				{
+					drift: "the namespace is not kebab-case",
+					artifact: "review_code: PASS @ 03135b91 — merge-ready\n",
+				},
+				{
+					drift: "the marker is bound to no head SHA",
+					artifact: "review-code: PASS — merge-ready\n",
+				},
+				{
+					drift: "the polarity is not PASS or FAIL",
+					artifact: "review-code: APPROVED @ 03135b91 — merge-ready\n",
+				},
+			],
+		},
+		brands: [
+			brandWitness<verdictMarker.HeadSha>("sha"),
+			brandWitness<verdictMarker.Clause>("clause"),
+			brandWitness<verdictMarker.Polarity>("polarity"),
+		],
 	},
 ];
 

@@ -21,9 +21,25 @@
 
 import type {NonEmptyReadonlyArray, WireEmit, WireRead, WireReadLines} from "./format.ts";
 
+declare const CRITERION_TEXT: unique symbol;
+
+/**
+ * What a criterion says, trimmed and non-blank.
+ *
+ * Branded for the same reason `HeadSha` is: a checkbox with nothing after it is not a criterion, and
+ * a `Found` carrying one would be a well-formed answer that grades a PR against nothing. The read
+ * refused it before; the brand is what makes the refusal the only way to build one.
+ */
+export type CriterionText = string & {readonly [CRITERION_TEXT]: true};
+
+export const criterionText = (raw: string): CriterionText | null => {
+	const value = raw.trim();
+	return value === "" ? null : (value as CriterionText);
+};
+
 /** One criterion and whether it is checked off. The field type of this format. */
 export interface AcceptanceCriterion {
-	readonly text: string;
+	readonly text: CriterionText;
 	readonly checked: boolean;
 }
 
@@ -193,8 +209,8 @@ export const read = (body: string): AcceptanceCriteriaRead => {
 	for (const [offset, line] of sectionOf(lines, heading).entries()) {
 		const item = CHECKBOX_ITEM.exec(line);
 		if (item === null) continue;
-		const text = (item[2] ?? "").trim();
-		if (text === "") {
+		const text = criterionText(item[2] ?? "");
+		if (text === null) {
 			return malformed(
 				"a checkbox item under the acceptance-criteria heading carries no text",
 				`line ${heading.line + offset + 1}: "${line}"`,
@@ -237,8 +253,8 @@ export const parseFields = (fields: string): AcceptanceFields => {
 		const line = raw.trim();
 		if (line === "") continue;
 		const match = FIELD_LINE.exec(line);
-		const text = (match?.[2] ?? "").trim();
-		if (text === "") {
+		const text = criterionText(match?.[2] ?? "");
+		if (text === null) {
 			return {
 				_tag: "Unusable",
 				reason: `line ${index + 1} carries a checkbox marker and no criterion text: "${line}"`,

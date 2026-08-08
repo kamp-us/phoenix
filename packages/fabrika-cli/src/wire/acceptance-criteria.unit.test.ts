@@ -10,6 +10,7 @@
 import {describe, expect, it} from "vitest";
 import {
 	type AcceptanceCriterion,
+	criterionText,
 	emit,
 	HEADING_TEXT,
 	parseFields,
@@ -18,6 +19,13 @@ import {
 } from "./acceptance-criteria.ts";
 
 const body = (...lines: ReadonlyArray<string>): string => lines.join("\n");
+
+/** A criterion, through the smart constructor the brand leaves as the only way in. */
+const criterion = (text: string, checked: boolean): AcceptanceCriterion => {
+	const value = criterionText(text);
+	if (value === null) throw new Error(`"${text}" is not criterion text`);
+	return {text: value, checked};
+};
 
 const found = (source: string): ReadonlyArray<AcceptanceCriterion> => {
 	const result = read(source);
@@ -42,18 +50,15 @@ const CONFORMING = body(
 describe("emit", () => {
 	it("composes the heading and one checkbox line per criterion", () => {
 		expect(
-			emit([
-				{text: "the read is total", checked: false},
-				{text: "the registry is the seam", checked: true},
-			]),
+			emit([criterion("the read is total", false), criterion("the registry is the seam", true)]),
 		).toBe("### Acceptance criteria\n\n- [ ] the read is total\n- [x] the registry is the seam\n");
 	});
 
 	it("round-trips: what it composes is what `read` finds", () => {
 		const criteria: AcceptanceCriterion[] = [
-			{text: "first", checked: true},
-			{text: "second", checked: false},
-			{text: "third with `backticks` and a #4942 ref", checked: false},
+			criterion("first", true),
+			criterion("second", false),
+			criterion("third with `backticks` and a #4942 ref", false),
 		];
 		expect(found(emit([criteria[0]!, ...criteria.slice(1)]))).toEqual(criteria);
 	});
@@ -62,8 +67,8 @@ describe("emit", () => {
 describe("read — Found", () => {
 	it("finds every criterion with its checked state, from a full sub-issue body", () => {
 		expect(found(CONFORMING)).toEqual([
-			{text: "the read is total", checked: false},
-			{text: "the registry is the only place a format is registered", checked: true},
+			criterion("the read is total", false),
+			criterion("the registry is the only place a format is registered", true),
 		]);
 	});
 
@@ -72,13 +77,11 @@ describe("read — Found", () => {
 			found(
 				body("### Acceptance criteria", "- [ ] mine", "", "### Out of scope", "- [ ] not mine"),
 			),
-		).toEqual([{text: "mine", checked: false}]);
+		).toEqual([criterion("mine", false)]);
 	});
 
 	it("reads an uppercase [X] as checked — a tolerant read of a real drift that changes no meaning", () => {
-		expect(found(body("### Acceptance criteria", "- [X] done"))).toEqual([
-			{text: "done", checked: true},
-		]);
+		expect(found(body("### Acceptance criteria", "- [X] done"))).toEqual([criterion("done", true)]);
 	});
 });
 
@@ -182,7 +185,7 @@ describe("read — a fenced example is not the real block", () => {
 					"- [ ] the contract",
 				),
 			),
-		).toEqual([{text: "the contract", checked: false}]);
+		).toEqual([criterion("the contract", false)]);
 	});
 });
 
@@ -190,11 +193,7 @@ describe("parseFields", () => {
 	it("takes one criterion per line, with the state marker optional", () => {
 		expect(parseFields("first\n[x] second\n- [ ] third\n")).toEqual({
 			_tag: "Fields",
-			criteria: [
-				{text: "first", checked: false},
-				{text: "second", checked: true},
-				{text: "third", checked: false},
-			],
+			criteria: [criterion("first", false), criterion("second", true), criterion("third", false)],
 		});
 	});
 
@@ -212,11 +211,9 @@ describe("parseFields", () => {
 
 describe("renderCriteria", () => {
 	it("renders one `<state>\\t<text>` line per criterion", () => {
-		expect(
-			renderCriteria([
-				{text: "a", checked: false},
-				{text: "b", checked: true},
-			]),
-		).toEqual(["open\ta", "checked\tb"]);
+		expect(renderCriteria([criterion("a", false), criterion("b", true)])).toEqual([
+			"open\ta",
+			"checked\tb",
+		]);
 	});
 });
