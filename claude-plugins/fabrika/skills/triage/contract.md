@@ -1082,13 +1082,39 @@ preserved region, so a marker carried *inside* preserved content — a quoted en
 that was wrapped — is always the later one and can never be mistaken for the boundary.
 
 **Legacy is a self-healing migration, and is meant to be deleted.** On meeting a **pre-marker**
-wrapped body the verb recognises the two v1 envelope shapes above — default mode's terminality test,
+wrapped body the verb recognises the two v1 envelope shapes below — default mode's terminality test,
 and `--epic`'s three anchors — **does not double-wrap**, and **stamps the marker in passing**. Every
 body that branch can match therefore converts on its next enrichment and never returns to it. It is
 one-time code that retires with v1-backlog absorption (founder mandate, map #4891); an implementation
 keeps it separable so retiring it is a delete rather than an excavation. The shapes are used **only**
 for a body carrying no marker at all — a body whose marker binds *another* issue short-circuits ahead
 of them, so the legacy door cannot re-admit the impersonation the binding exists to refuse.
+
+### The two v1 envelope shapes — legacy recognisers only, never the detector
+
+Restated here **only** as what the legacy branch recognises, so the clause above resolves against a
+specification rather than a label, and so the retirement has something to delete. These are **not**
+the detector: detection is marker presence, and it is mode-independent. They decide nothing about a
+marker-bearing body — a body whose marker binds *another* issue short-circuits ahead of them
+(`detect`, `enrich.ts:95-107`) — and they are consulted **only** for a body carrying no marker at
+all. Their whole purpose is that a **pre-marker** body is preserved rather than double-wrapped. Both
+live in exactly one place, `packages/fabrika-cli/src/triage/enrich-legacy.ts`, whose retirement is a
+whole-file delete plus the injected `legacyPreserved` argument at `detect`'s call sites.
+
+**v1 default mode — terminality plus the report literal.** All three conditions hold: the body
+carries a line that is exactly `<summary>Original report (verbatim)</summary>`; that line's
+`<details>` opener sits immediately above it, blank lines aside; and the body's **last non-blank
+line** is `</details>`, so the block closes at end of body. The preserved region is that opener line
+onward, to end of body.
+
+**v1 `--epic` mode — three anchors, position-independent** (#4850's ruled option (a)). All three
+conditions hold: the body's **first** line is exactly `## Pitch`; the body carries the exact line
+`## Epic — awaiting plan`; and the first `<summary>Original brief (verbatim)</summary>` line sits
+**below** that header. The preserved region is that summary's `<details>` opener line onward, to end
+of body.
+
+Every line test above compares the line with trailing whitespace stripped, and each anchor resolves
+to its **first** occurrence in the body.
 
 **The quote-protection is preserved, and it moved onto the binding.** The strict form is required for
 the same reason `triage provenance` pins its footer match, but the failure direction is worse:
