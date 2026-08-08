@@ -676,9 +676,6 @@
 	--manti-duration-slow: var(--motion-slow);
 	--manti-ease-smooth: var(--ease-emphasized);
 	--manti-ease-soft: var(--ease-standard);
-	--manti-shadow-sm: var(--shadow-raised);
-	--manti-shadow-md: var(--shadow-dropdown);
-	--manti-shadow-lg: var(--shadow-overlay);
 	--manti-overlay: var(--black-a40);
 
 	/* Component-level geometry preserves Phoenix's deliberately dense controls. */
@@ -700,6 +697,12 @@
 	--variant-on-solid: var(--accent-fg);
 	--variant-soft-bg: var(--accent-faint);
 	--variant-soft-bg-hover: var(--accent-soft);
+	/* Manti 0.9.0 added the -active step to the soft tier. Unset, the pressed state falls
+	   back to Manti's OWN orange while -bg and -hover are already phoenix's accent — a
+	   half-themed control. One step past --accent-soft toward the solid, at the same 82%
+	   ratio --variant-solid-active uses. (--variant-fill/-fill-strong need no entry: Manti
+	   derives both off --variant-soft-bg, so they follow these for free.) */
+	--variant-soft-bg-active: color-mix(in oklab, var(--accent-soft) 82%, var(--accent));
 	--variant-soft-text: var(--link);
 	--variant-border: var(--accent-soft);
 	--variant-text: var(--link);

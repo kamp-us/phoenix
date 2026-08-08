@@ -47,12 +47,6 @@
 	padding: var(--s-4) 0 var(--s-3);
 }
 
-.kp-lab__label {
-	font: var(--t-meta);
-	font-weight: 600;
-	color: var(--text-secondary);
-}
-
 .kp-lab__textarea[data-scope="field"] [data-part="control"] {
 	background: var(--surface-sunken);
 	border: 1px solid var(--border);

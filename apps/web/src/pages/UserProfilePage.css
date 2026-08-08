@@ -28,12 +28,6 @@
 /* The contribution row + kind chrome now lives with the shared ContributionRow
    component (components/profile/ContributionRow.css, #1209). */
 
-.kp-user-profile__more {
-	color: var(--text-muted);
-	font: var(--t-meta);
-	margin-top: var(--s-2);
-}
-
 /* The çaylak→yazar promotion surface (#1206). */
 .kp-promotion {
 	display: flex;

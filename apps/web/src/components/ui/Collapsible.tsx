@@ -1,5 +1,3 @@
-import "./Collapsible.css";
-
 /**
  * @component Collapsible
  * @whenToUse The Manti-backed inline disclosure. Pass the trigger and panel

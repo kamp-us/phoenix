@@ -79,6 +79,9 @@
 	background: var(--surface-sunken);
 }
 
+/* Part of the primitive's variant API, not a call-site style: no surface uses --square
+   today, but entry-row-spine pins all four root variants at the base anatomy specificity,
+   so it stays available like any unused variant of a component library. */
 .kp-toggle-group--square[data-scope="toggle-group"][data-part="root"] {
 	gap: 2px;
 }

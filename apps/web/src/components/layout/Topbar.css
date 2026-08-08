@@ -202,23 +202,6 @@
 	align-self: center;
 }
 
-/* The status-zone unread bildirim signal (#2613) — the Bell glyph (ADR 0166) + count read
-   as "unread notifications" at a glance. A read-only signal: neutral role tokens, no accent,
-   no button/link chrome; the icon inherits the signal's color. */
-.kp-topbar__bildirim-signal {
-	display: inline-flex;
-	align-items: center;
-	gap: var(--s-1);
-	color: var(--text-secondary);
-}
-.kp-topbar__bildirim-signal .kp-icon {
-	color: inherit;
-}
-.kp-topbar__bildirim-count {
-	font: var(--t-meta);
-	color: var(--text-primary);
-}
-
 /* Accent-scarcity containment law (#2614, epic #2595). Under the nav-IA zone grammar the
    topbar holds ZERO accent fills: #2600 relocated the one promoted `+ gönderi` CTA to the
    pano Subnav, so no surviving topbar element may claim the accent budget (design-manifest

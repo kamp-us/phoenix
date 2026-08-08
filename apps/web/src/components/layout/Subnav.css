@@ -36,7 +36,12 @@
 	border-right: 0;
 	cursor: pointer;
 }
-.kp-subnav__filter:hover {
+/* 0-4-0, and it has to be: the filters are `<Button variant="link">`, and Button.css
+   underlines that variant on hover at 0-3-0 — which outranks a bare `.kp-subnav__filter:hover`,
+   so the tabs underlined despite this rule saying otherwise. A tab is a destination affordance,
+   not prose; its active state is the accent underline below, and a hover underline reads as a
+   second, competing one. */
+.kp-subnav__filters .kp-subnav__filter:hover:not(:disabled) {
 	color: var(--text-primary);
 	text-decoration: none;
 }

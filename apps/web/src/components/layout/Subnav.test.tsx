@@ -13,6 +13,7 @@ import {Subnav} from "./Subnav";
 const readSource = (rel: string): string =>
 	readFileSync(fileURLToPath(new URL(rel, import.meta.url)), "utf8");
 const SUBNAV_CSS = readSource("./Subnav.css");
+const BUTTON_CSS = readSource("../ui/Button.css");
 
 describe("Subnav CTA slot (#2598)", () => {
 	it("renders the passed cta node in the dedicated primary-action slot", () => {
@@ -45,7 +46,15 @@ describe("Subnav CTA slot (#2598)", () => {
 		);
 	});
 
-	it("keeps filter hover free of link-style text decoration", () => {
-		expect(SUBNAV_CSS).toMatch(/\.kp-subnav__filter:hover\s*\{[^}]*text-decoration:\s*none/s);
+	it("keeps filter hover free of link-style text decoration — at a weight that actually wins", () => {
+		// The filters are `<Button variant="link">`, and Button.css underlines that variant on
+		// hover at 0-3-0. Asserting only that this rule SAYS `text-decoration: none` passed
+		// while the tabs still underlined, so pin the weight too: the descendant form is 0-4-0.
+		expect(BUTTON_CSS).toMatch(
+			/\.kp-btn:where\(\[data-variant="link"\]\):hover:not\(:disabled\)\s*\{[^}]*text-decoration:\s*underline/s,
+		);
+		expect(SUBNAV_CSS).toMatch(
+			/\.kp-subnav__filters\s+\.kp-subnav__filter:hover:not\(:disabled\)\s*\{[^}]*text-decoration:\s*none/s,
+		);
 	});
 });
