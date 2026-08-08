@@ -275,30 +275,33 @@ describe("Topbar tema toggle → theme picker (#2612)", () => {
 		await waitFor(() => expect(onThemeChange).toHaveBeenLastCalledWith("auto"));
 	});
 
-	// The picker's own segmented track stands 42px (its items' --tap-min floor + the track's
-	// 2px pad + 1px border), which overflows the 38px compact topbar and paints through its
-	// bottom border. Topbar.css shrinks it to the bar's control scale — but ONLY there, which
-	// is a fact about where each instance sits in the tree, not about the rule's text.
-	it("the utility-zone picker is scaled down to the topbar's control ramp, the popover one is not", async () => {
-		const rule = cssRules(TOPBAR_CSS).find(
-			(r) => /kp-theme-picker/.test(r.selector) && /data-part="item"/.test(r.selector),
+	// The picker's segmented track would otherwise stand 42px (its items' --tap-min floor +
+	// the track's 2px pad + 1px border) — taller than the 38px compact topbar it must sit
+	// inside, and taller than the popover's rows. It sizes itself down, in its own sheet, so
+	// BOTH homes get it; the two homes are portal-separated, so neither can style the other.
+	it("the picker sizes itself to a density token, in both of its homes", async () => {
+		const rule = cssRules(readSource("./ThemeChoicePicker.css")).find((r) =>
+			/kp-theme-picker/.test(r.selector),
 		);
 		expect(rule).toBeDefined();
 		// A density token, not a pinned px — it must ride compact/normal/spacious.
 		expect(rule?.body).toMatch(/min-height:\s*var\(--letter-size\)/);
-		// The rule is scoped under .kp-topbar, so it reaches an instance only while that
-		// instance renders inside the bar. Signed out, the picker does.
+		// Unscoped to either host (no .kp-topbar / .kp-user-menu prefix), and specific enough
+		// to beat ToggleGroup.css's own 0-2-0 item rule without depending on import order.
+		expect(rule?.selector).not.toMatch(/kp-topbar|kp-user-menu/);
+		// ToggleGroup.css's `.kp-toggle-group [data-part="item"]` is 0-2-0; carrying BOTH
+		// classes puts this at 0-3-0, so the tie is decided by weight, not import order.
+		expect(rule?.selector).toMatch(/\.kp-theme-picker\b/);
+		expect(rule?.selector).toMatch(/\.kp-toggle-group\b/);
+		// Signed out the picker sits in the bar; signed in it rides the portaled popover,
+		// OUT of the bar — so the host-scoped sheets never reach it.
 		const {unmount} = render(
 			<MemoryRouter>
 				<Topbar nav={NAV} themeChoice="light" onThemeChange={() => {}} />
 			</MemoryRouter>,
 		);
-		expect(rule?.selector).toMatch(/^\.kp-topbar\s/);
 		expect(screen.getByTestId("topbar-theme-picker").closest(".kp-topbar")).not.toBeNull();
 		unmount();
-		// Signed in, the picker rides the portaled popover — out of the bar, so it keeps the
-		// full-size track. If Manti ever stopped portaling, the panel would inherit the
-		// topbar's compact scale and this would catch it.
 		render(
 			<MemoryRouter>
 				<Topbar

@@ -1,0 +1,14 @@
+/* The three-way tema picker's own scale (#2612). Both of its homes are dense — the
+   38px compact topbar (signed out) and the account popover's 36px rows (signed in) —
+   and the segmented track's default height is its items' --tap-min floor (36px) plus
+   the track's 2px pad + 1px border, i.e. 42px. That overflows the topbar outright and
+   makes the tema row the one tall row in the popover, so the picker sizes to
+   --letter-size instead: the token the topbar search field already rides, so this
+   tracks the compact/normal/spacious ramp rather than pinning one height.
+
+   Specificity is deliberate, not incidental: `.kp-toggle-group [data-part="item"]`
+   (ToggleGroup.css) is 0-2-0, so the extra class here is what decides the tie instead
+   of stylesheet import order. */
+.kp-theme-picker .kp-toggle-group [data-part="item"] {
+	min-height: var(--letter-size);
+}

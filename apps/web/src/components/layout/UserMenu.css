@@ -63,14 +63,15 @@
 /* The tema row: label left, segmented control right — a labeled settings row,
    which is what a three-way choice is. The picker is the neutral `segmented`
    ToggleGroup, so it carries no accent fill (#2614 stays satisfied).
-   No min-height and no block padding: the segmented track already stands taller
-   than a text row (its items carry the --tap-min floor, plus the track's own 2px
-   pad + 1px border), so anything here is pure added height on the tallest row. */
+   Same --tap-min row box as its link siblings, so the panel keeps ONE rhythm: the
+   picker sizes itself below that (ThemeChoicePicker.css) and centers inside, rather
+   than pushing this row taller than every other one. */
 .kp-user-menu__theme-row {
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
 	gap: var(--s-3);
+	min-height: var(--tap-min);
 	padding: 0 var(--s-3);
 }
 .kp-user-menu__theme-label {

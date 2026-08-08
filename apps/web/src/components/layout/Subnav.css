@@ -79,6 +79,13 @@
 .kp-subnav__cta .kp-btn:where([data-scope="button"][data-part="root"]) {
 	--manti-button-height: calc(var(--subnav-h) - var(--s-2));
 	--manti-button-padding-x: var(--s-3);
+	/* A leading `+` is optically lighter than a letter, so manti's symmetric padding-x
+	   plus the default --s-2 gap reads as a glyph floating in space rather than a label
+	   with an icon. Both sides of the glyph tighten one step; the trailing edge keeps the
+	   full padding, which is what carries the button's shape. Unlayered, so the
+	   padding-inline-start outranks manti's own layered padding-inline. */
+	--manti-button-gap: var(--s-1);
+	padding-inline-start: var(--s-2);
 }
 
 /* Input slot (#2602) — a product-scoped on-demand utility box (sözlük go-to-or-create),
