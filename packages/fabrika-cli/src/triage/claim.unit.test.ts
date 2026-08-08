@@ -1,6 +1,7 @@
 import {describe, expect, it} from "vitest";
 import {
 	expiryOf,
+	isStampableSession,
 	MARKER_PREFIX,
 	markerBody,
 	markersOf,
@@ -36,6 +37,29 @@ describe("markerBody / sessionOf", () => {
 		// one direction the protocol may not fail.
 		expect(sessionOf(`${MARKER_PREFIX} -->`)).toBe("");
 		expect(sessionOf(`${MARKER_PREFIX}${MINE}`)).toBe(MINE);
+	});
+});
+
+describe("isStampableSession", () => {
+	it("accepts a single whitespace-free token", () => {
+		expect(isStampableSession(MINE)).toBe(true);
+	});
+
+	it("rejects an id carrying whitespace — it would read back as a different session", () => {
+		expect(isStampableSession("two tokens")).toBe(false);
+		expect(isStampableSession("")).toBe(false);
+	});
+
+	it("rejects an id carrying `-->` — it would close the comment and escape as body text", () => {
+		// Both halves of the guard are load-bearing, and only the whitespace half fails loudly. An id
+		// containing `-->` is a single token, so it passes the first half; what it produces is
+		// `<!-- fabrika-triage-claim session=-->@here -->`, whose comment ends at the FIRST `-->` and
+		// renders `@here -->` as visible markdown in the comment this verb posts.
+		expect(isStampableSession("-->x")).toBe(false);
+		expect(isStampableSession("-->@here")).toBe(false);
+		// the escape itself, so the guard is pinned to the thing it prevents rather than to a literal
+		const escaped = markerBody("-->@here");
+		expect(escaped.indexOf("-->")).toBeLessThan(escaped.length - "-->".length);
 	});
 });
 
