@@ -60,7 +60,7 @@ describe("Button control leading (the `font:` shorthand trap)", () => {
 	const BUTTON_CSS = readSource("./Button.css");
 	const ruleFor = (selector: string) =>
 		BUTTON_CSS.match(
-			new RegExp(`${selector.replaceAll(/[.[\]()*:"-]/g, "\\$&")}\\s*\\{([^}]*)\\}`),
+			new RegExp(`${selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\{([^}]*)\\}`),
 		);
 
 	it("declares line-height at the anatomy's own weight, not inside the :where() base", () => {
