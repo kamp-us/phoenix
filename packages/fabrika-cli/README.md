@@ -1,11 +1,12 @@
 # @kampus/fabrika-cli
 
 The deterministic verb package [fabrika](../../claude-plugins/fabrika/) skills call.
-`fabrika <group> <verb> …` dispatches to a registered verb group. Four groups are
+`fabrika <group> <verb> …` dispatches to a registered verb group. Five groups are
 registered: `adr`, the six verbs the `/adr` skill's derived contract specifies; `report`,
 the three the `/report` contract specifies; `triage`, the intake-queue group the `/triage`
-contract specifies; and `eval`, the graded-corpus harness the fabrika eval layer measures
-itself with.
+contract specifies; `eval`, the graded-corpus harness the fabrika eval layer measures
+itself with; and `wire`, which owns the byte-level formats two skills meet through on a
+GitHub artifact.
 
 ## Who it's for
 
@@ -222,6 +223,45 @@ Three properties of that substrate are worth knowing before the verbs arrive:
   ([`src/triage/scope.ts`](./src/triage/scope.ts)). A verdict driven by a silently truncated
   read is a verdict over unknown scope; pagination fixes the reach, and printing what was
   scanned is what makes the reach checkable from outside the process.
+
+## The `wire` group
+
+A **wire format** is the byte-level agreement two skills meet through on a GitHub artifact —
+the acceptance-criteria block on a sub-issue body, the verdict marker on a PR. Each one is
+owned by a typed schema module under [`src/wire/`](./src/wire/) with an `emit` and a
+`read`, registered as one row in [`src/wire/registry.ts`](./src/wire/registry.ts). The
+formats used to live as prose in a skill body, which is why fabrika could not pin one: the
+`### Acceptance criteria` heading was named in no code at all.
+
+| Verb | Answers |
+|---|---|
+| `wire formats` | the registered formats, derived from the registry — key, purpose, producers, consumers |
+| `wire codes` | the exit taxonomy every verb in the group allocates from |
+| `wire emit` | the format's bytes, composed from the fields on stdin |
+| `wire read` | the format's fields, read out of the artifact on stdin |
+| `wire check` | whether the artifact on stdin carries a conforming block, without the fields |
+
+Three properties are worth knowing before you call them:
+
+- **`read` is total, and `found` is its only answer.** The return type is
+  `Found | Absent | Malformed` and nothing else, with `Found` carrying a non-empty list by
+  construction. A heading that drifted — a different spelling, a different level, a section
+  with no checkbox items — is `Malformed`, never a `Found` holding nothing. That is the whole
+  point: the prose-owned era's failure was not a crash, it was a *plausible* empty answer, and
+  a grader reading it passed over nothing without an error.
+- **Absent, malformed and never-seen are three different exit codes.** `3` is a proven
+  negative over an artifact that was read in full; `4` is a proven defect; `6` means fd 0
+  carried nothing readable, so nothing is proven at all. Fusing any pair is what lets an
+  unread artifact pass for a clean one.
+- **The artifact arrives on stdin only.** No `--body`, no `--body-file` — the same reason the
+  `report` and `triage` writing verbs take theirs there: a flag that accepts a path turns the
+  artifact into a string the verb could echo back onto a public surface.
+
+```bash
+printf 'the read is total\n[x] the registry is the seam\n' \
+  | node src/bin.ts wire emit --format acceptance-criteria \
+  | node src/bin.ts wire check --format acceptance-criteria
+```
 
 ## The `eval` group
 
