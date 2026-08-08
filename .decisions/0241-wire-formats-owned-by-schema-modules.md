@@ -41,7 +41,8 @@ This ADR records a ruling already made first-hand (founder, 2026-08-08, on epic
 [#4925](https://github.com/kamp-us/phoenix/issues/4925)) so the ownership law is citable at the
 moment of temptation instead of living only in an epic body. Re-opening the ruling is that epic's
 named rabbit-hole. Both stage-1 slices have landed, so the mechanics below are described from
-shipped code rather than from intent.
+shipped code rather than from intent — with one exception, marked where it appears: the index doc is
+prescription, still owed to a later child.
 
 ## Decision
 
@@ -88,9 +89,9 @@ is a branded type with no empty inhabitant — a `Found` carrying no SHA is unre
 `bindToHead` answers `Current | Stale | Unbindable`, never a boolean, because a stale marker is not
 a passing one and a head that could not be resolved is not a negative result.
 
-**Discovery is one thin index doc.** `claude-plugins/fabrika/docs/wire-formats.md` maps format →
-owner module → producers/consumers with about a paragraph of protocol narrative each: the *why* and
-the *when*. It never carries the shape. A shape restated in prose is precisely the v1 failure this
+**Discovery is one thin index doc.** `claude-plugins/fabrika/docs/wire-formats.md` — not yet
+written, owed to a later child — maps format → owner module → producers/consumers with about a
+paragraph of protocol narrative each: the *why* and the *when*. It never carries the shape. A shape restated in prose is precisely the v1 failure this
 replaces.
 
 **Binding constraints.**
