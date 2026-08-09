@@ -96,23 +96,76 @@ export interface WireFixtures {
 	readonly malformed: NonEmptyReadonlyArray<WireMalformedFixture>;
 }
 
-/** A field of the format's value whose type is a brand rather than a bare `string`. */
-export interface WireBrandWitness {
-	readonly field: string;
-}
+const WITNESSED: unique symbol = Symbol("wire brand witness");
 
 /**
- * Declare that `field` carries the brand `A` — and make weakening `A` a compile error.
+ * A field of the format's value whose type is a brand rather than a bare `string`.
  *
- * A brand is a proper subtype of `string`, so `string extends A` is false for it and the parameter
- * is an ordinary `string`. Weaken the brand to bare `string` and the parameter becomes `never`, so
- * the row itself stops compiling (`TS2345`). That is the whole mechanism: the counterexample is not
- * a hand-written `@ts-expect-error` per brand — which is why `Clause` had none while `HeadSha` did
- * — it is the registry row every format must fill.
+ * Unforgeable on purpose. {@link WITNESSED} is a module-private `unique symbol`, so a hand-written
+ * `{field: "sha"}` is not a witness and {@link brandWitnesses} is the only way to build one. Without
+ * that, the per-field coverage that function enforces would be a convention a row could opt out of
+ * by hand-rolling the array — and a guard a row can opt out of is the shape of defect #4969 is about.
  */
-export const brandWitness = <A extends string>(
-	field: string extends A ? never : string,
-): WireBrandWitness => ({field});
+export interface WireBrandWitness {
+	readonly field: string;
+	readonly [WITNESSED]: true;
+}
+
+/** `true` only for a *proper* subtype of `string` — a brand, or a literal union. Bare `string` is `false`. */
+type NarrowerThanString<A> = [A] extends [string] ? ([string] extends [A] ? false : true) : false;
+
+/**
+ * The fields of `V` whose type is a proper subtype of `string`.
+ *
+ * This is the binding the old `brandWitness<A>(field)` lacked (#4969): `A` was supplied at the call
+ * site and appeared nowhere but in a guard on a plain `string` parameter, so it asserted only "the
+ * type I named is not bare `string`" — true of any surviving brand anywhere in the module. Here the
+ * brand is *derived from the field*, so naming one brand while witnessing another is not a mistake
+ * to catch, it is unrepresentable; and a field name that is not a key of `V` is not in this union at
+ * all. Weaken a brand to bare `string` and its key leaves the union, so the row stops compiling.
+ */
+export type BrandedKeys<V> = {
+	[K in keyof V]-?: NarrowerThanString<V[K]> extends true ? K : never;
+}[keyof V] &
+	string;
+
+/**
+ * Every branded field of `V`, each acknowledged by name — a witness per field, not per row.
+ *
+ * A mapped type over {@link BrandedKeys} makes each key **required**, so omitting one is `TS2345`
+ * and naming a non-branded or non-existent field is an excess property. That settles the coverage
+ * question the type used to leave open: `brands` needed only *one* witness, so weakening any other
+ * branded field on the same format was caught by nothing.
+ *
+ * `never` when `V` has no branded field, which makes such a call unwritable rather than a row with
+ * an empty `brands` — zero scope is a refusal (ADR 0092).
+ */
+export type WireBrandWitnesses<V> = [BrandedKeys<V>] extends [never]
+	? never
+	: {readonly [K in BrandedKeys<V>]: true};
+
+/**
+ * Build a row's `brands` from its value type — the compile-time half of the conformance laws.
+ *
+ * **The residue, stated rather than implied (#4969).** The row still chooses which `V` to name, and
+ * nothing binds that choice to the row's own `emit`/`read`: {@link WireFormat} is stated over bytes
+ * so one array can hold formats whose values have nothing in common, and that erasure is what would
+ * have to go to close the last gap. So this device enforces *field ↔ brand* agreement and per-field
+ * coverage, and takes *which value type a row names* on trust.
+ */
+export const brandWitnesses = <V>(
+	witnessed: WireBrandWitnesses<V>,
+): NonEmptyReadonlyArray<WireBrandWitness> => {
+	const [first, ...rest] = Object.keys(witnessed).map(
+		(field): WireBrandWitness => ({field, [WITNESSED]: true}),
+	);
+	if (first === undefined) {
+		// Unreachable through the parameter type, which is `never` for a `V` with no branded field.
+		// A silently empty `brands` would be the zero-scope pass ADR 0092 forbids, so it throws.
+		throw new Error("brandWitnesses was handed no branded field to witness");
+	}
+	return [first, ...rest];
+};
 
 /**
  * A registered format: its identity, its wiring, and its bytes.

@@ -8,10 +8,15 @@
  * itself (`WireFixtures`), which the type makes required: a row added without them does not compile,
  * so coverage cannot quietly shrink to the formats whose author remembered to write tests.
  *
- * The compile-time half of the same idea is `format.ts`'s `brandWitness`, whose signature collapses
- * to `never` when a brand is weakened to `string`. The two halves are complementary: what a type can
- * refuse it refuses here at build time, and what it cannot — that `read` answers `Malformed` rather
- * than `Absent` for a drift — the findings below refuse at test time.
+ * The compile-time half of the same idea is `format.ts`'s `brandWitnesses`, which derives a row's
+ * brand witnesses from its value type. The two halves are complementary: what a type can refuse it
+ * refuses at build time, and what it cannot — that `read` answers `Malformed` rather than `Absent`
+ * for a drift — the findings below refuse at test time.
+ *
+ * There is deliberately **no** law over `brands` here. There was one, checking the witnesses named
+ * distinct non-blank fields; `brandWitnesses` made it unfalsifiable — the field names are object
+ * keys of the row's own value type, and `WireBrandWitness` is unforgeable — and a law that cannot
+ * fail is the vacuous pass this module exists to forbid, so it went with the gap it covered (#4969).
  *
  * Zero scope is a refusal, not a pass (ADR 0092): a suite that iterated an empty registry would run
  * no assertions and report green, which is the vacuous pass the law exists to forbid.
@@ -41,7 +46,6 @@ export const LAWS = {
 	emptyIsAbsent: "empty bytes read Absent — never Found",
 	absentIsAbsent: "the declared absent fixture reads Absent — never Found, never Malformed",
 	driftIsMalformed: "each declared drift fixture reads Malformed — never Found, never Absent",
-	brandsNamed: "the row's brand witnesses name distinct, non-blank fields",
 	keysUnique: "each registered key appears once",
 } as const;
 
@@ -86,14 +90,6 @@ export const conformFormat = (format: WireFormat): ReadonlyArray<ConformanceFind
 		if (drifted._tag !== "Malformed") {
 			fail(LAWS.driftIsMalformed, `"${fixture.drift}" read ${drifted._tag}`);
 		}
-	}
-
-	const fields = format.brands.map((witness) => witness.field.trim());
-	if (fields.some((field) => field === "")) {
-		fail(LAWS.brandsNamed, "a brand witness names no field");
-	}
-	if (new Set(fields).size !== fields.length) {
-		fail(LAWS.brandsNamed, `the same field is witnessed twice: ${fields.join(", ")}`);
 	}
 
 	return findings;
