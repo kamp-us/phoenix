@@ -2,7 +2,7 @@
 
 **Skill:** [`build`](SKILL.md) · **Authoring brief:** [#4707](https://github.com/kamp-us/phoenix/issues/4707) · **Date:** 2026-08-08
 
-**Amended 2026-08-09** — the campaign-scope admission term ([ADR 0245](../../../../.decisions/0245-campaign-scope-fence-binds-both-seams.md), [#5013](https://github.com/kamp-us/phoenix/issues/5013)): a new [Scope admission](#scope-admission--the-campaign-fence-one-predicate-two-seams) section under shared conventions, two codes (`20`, `21`) in the shared exit matrix, and the consuming clauses in `build pick` and `build claim`.
+**Amended 2026-08-09** — the campaign-scope admission term ([ADR 0245](../../../../.decisions/0245-campaign-scope-fence-binds-both-seams.md), [#5013](https://github.com/kamp-us/phoenix/issues/5013)): a new [admission test](#admission-test--scope-admission-and-the-audience-axis) section under shared conventions — scope admission composed with the pre-existing `ready-for:` audience axis, two named axes rather than one widened term — two codes (`20`, `21`) in the shared exit matrix, and the consuming clauses in `build pick` and `build claim`.
 
 The verbs land in `packages/fabrika-cli/` under the `build` subcommand group, registered in
 `packages/fabrika-cli/src/registry.ts` like the shipped `adr`, `report`, `triage` and `wire`
@@ -104,22 +104,36 @@ Every verb obeys these; stated once.
   always the verdict line — the ordering guarantee is the contract (see its block; v1 documented
   this idiom and then shipped it on the wrong stream).
 
-<a id="scope-admission--the-campaign-fence-one-predicate-two-seams"></a>
-### Scope admission — the campaign fence, one predicate, two seams
+<a id="admission-test--scope-admission-and-the-audience-axis"></a>
+### The admission test — scope admission composed with the audience axis, one module, two seams
 
-**What it answers.** Whether an issue is inside the campaign in **exclusive focus**, and whether its
-audience is an agent. It is a different question from dependency eligibility (`build eligible` asks
-whether an issue's predecessors are done) and from priority (a home confers no band, ADR 0219): among
-admitted issues the ranking is unchanged, and a scope refusal never reads as blocked — `16` is
-`build eligible`'s alone, and no scope outcome borrows it. The ruling is
-[ADR 0245](../../../../.decisions/0245-campaign-scope-fence-binds-both-seams.md); this section is the
-term it asks this contract to carry.
+**Two axes, composed — not one widened term.** What both seams run is an **admission test** built
+from two separate questions, computed together and answered together:
 
-**One module, two call sites.** The predicate is computed in exactly one place —
-`packages/fabrika-cli/src/build/scope-admission.ts` — and **imported** by `build pick` and
-`build claim`. Neither seam re-derives it, and no verb exists whose only behaviour is relaying it
-(the wrapper shape ADR 0238 bans). A second implementation is banned outright: a board where the
-picker and the claim step disagree about what is in scope is worse than no fence at all.
+- **Scope admission** — is the issue inside the campaign in **exclusive focus**? This is the term
+  [ADR 0245](../../../../.decisions/0245-campaign-scope-fence-binds-both-seams.md) coins, and it
+  names campaign membership and nothing else. Refusal is `20`.
+- **The audience axis** — is the issue's `ready-for:` label `ready-for:agent`? This axis is older
+  than the fence (#4780); `build pick` already carried it, and ADR 0245 asks for the scope axis to
+  be added **beside** it, not folded into it. Refusal is `21`.
+
+**Keep the two names apart.** *Scope admission* is a different question from the audience axis (who
+the work is for), from dependency eligibility (`build eligible` asks whether an issue's predecessors
+are done), from priority (a home confers no band, ADR 0219), and from the milestone pick-order
+tiebreaker (ADR 0072) — the same not-this list ADR 0245 draws. Among admitted issues the ranking is
+unchanged, and a scope refusal never reads as blocked — `16` is `build eligible`'s alone, and no
+scope outcome borrows it. This section is the term ADR 0245 asks this contract to carry, at exactly
+the width the ADR gives it; the composition with the audience axis is stated here so no reader has
+to infer that the coined term swallowed a second question.
+
+**One module, two call sites.** Both axes are evaluated in exactly one place —
+`packages/fabrika-cli/src/build/scope-admission.ts` — and that module is **imported** by `build pick`
+and `build claim`. Neither seam re-derives either axis, and no verb exists whose only behaviour is
+relaying them (the wrapper shape ADR 0238 bans). A second implementation is banned outright: a board
+where the picker and the claim step disagree about what is admissible is worse than no fence at all.
+The file is named for the axis this contract adds; it **hosts** the audience axis rather than
+redefining it, and the two axes stay separately named, separately seated and separately reported
+everywhere the module is consumed.
 
 **Both seams, because the pool filter alone has a hole.** Filtering the offered pool is the browse
 path. An operator can hand a verb an issue number directly, and a directly-handed number passes
@@ -148,8 +162,8 @@ chosen.
   an issue carrying a standing-lane label, that label.
 - **The issue's audience** — its `ready-for:` label.
 
-**The four outcomes — state words, never a boolean.** The predicate returns exactly one, and every
-refusal carries its reason:
+**The four outcomes — state words, never a boolean.** The admission test returns exactly one across
+both axes, and every refusal carries its reason and names which axis refused:
 
 | Outcome | Trigger | Seat |
 |---|---|---|
@@ -159,8 +173,9 @@ refusal carries its reason:
 | `unknown` | the declaration or the issue's home could not be read (`11`), or the declaration is malformed (`4`) | `11` / `4` |
 
 **The two refusals are separately named and separately seated**, never one collapsed "refused": they
-have different remedies (edit the focus row, or re-label the audience), and the per-issue exclusion
-reason `build pick` reports is derivable only if the outcome set keeps them apart.
+come from the two different axes, they have different remedies (edit the focus row, or re-label the
+audience), and the per-issue exclusion reason `build pick` reports is derivable only if the outcome
+set keeps them apart.
 
 **The standing-lane exemption, named.** Exactly two labels — `wayfinder:backlog` and
 `axis:pipeline-hardening` (ADR 0208) — are **admitted on the scope axis whatever the declaration
@@ -227,8 +242,8 @@ range, exactly as `triage/codes.ts` itself states for `adr`.
 | `17` | proven: the push completed but the remote ref did not move |
 | `18` | proven: this tree's validation is red |
 | `19` | refused: the requested push is unsafe (detached HEAD, or a non-fast-forward without `--force-with-lease`) |
-| `20` | proven: scope-refused, out of focus — the issue's home is not the declared milestone and no standing-lane label exempts it |
-| `21` | proven: scope-refused, audience not agent — the issue's `ready-for:` label is not `ready-for:agent`, or is absent |
+| `20` | proven: not admitted on the scope axis, out of focus — the issue's home is not the declared milestone and no standing-lane label exempts it |
+| `21` | proven: not admitted on the audience axis, audience not agent — the issue's `ready-for:` label is not `ready-for:agent`, or is absent |
 | `127` | the verb never ran at all (unresolved binary — the shell's code, not this process's) |
 
 **`7` versus `11` is the split the whole group rests on** (the `wire` group's `ABSENT` vs
@@ -344,7 +359,7 @@ convention rule 2).
 **Each scope-excluded issue is reported with its reason**, so a shortened or empty pool is auditable
 from the answer itself rather than only from the counts. Each `excluded` entry is
 `{"number", "home", "reason"}`, where `reason` is one of `out-of-focus` / `audience-not-agent` /
-`unreadable` — the outcome set of [scope admission](#scope-admission--the-campaign-fence-one-predicate-two-seams),
+`unreadable` — the outcome set of the [admission test](#admission-test--scope-admission-and-the-audience-axis),
 one reason per outcome. The scanned counts alone cannot tell a working fence from a broken one; the
 reasons can. `focus` is `{"state": "declared", "milestone": "44"}` or `{"state": "none"}`, the same
 fact the stderr scope line carries.
@@ -352,15 +367,15 @@ fact the stderr scope line carries.
 The filter, fail-closed on every axis:
 
 - `status:triaged` present, `status:` nothing-else;
-- **admitted by scope admission**, the shared predicate imported from
-  `packages/fabrika-cli/src/build/scope-admission.ts` — this verb re-derives nothing. It carries both
-  of that predicate's axes: the **scope axis** (an issue whose home is outside the declared focus is
+- **admitted by the shared admission test** imported from
+  `packages/fabrika-cli/src/build/scope-admission.ts` — this verb re-derives nothing. The test
+  composes two axes: **scope admission** (an issue whose home is outside the declared focus is
   excluded, with the two standing-lane labels — `wayfinder:backlog` and `axis:pipeline-hardening` —
   admitted whatever the declaration says, because a standing lane is milestone-less by design and a
-  milestone-presence fence would starve it) and the **audience axis** (`ready-for:agent` present; an
-  issue with no `ready-for:` label is excluded, since absence is an unknown audience, never an agent
-  audience — #4780, the negative test the brief's acceptance criterion names). With **no focus
-  declared** the scope axis admits everything and the fence is reported inert on the scope line and
+  milestone-presence fence would starve it) and the pre-existing **audience axis** (`ready-for:agent`
+  present; an issue with no `ready-for:` label is excluded, since absence is an unknown audience,
+  never an agent audience — #4780, the negative test the brief's acceptance criterion names). With
+  **no focus declared** the scope axis admits everything and the fence is reported inert on the scope line and
   in `focus`; a **failed read of the declaration** makes the whole pool `11`, never an unfiltered
   pool — an unfiltered pool on a failed read is the fail-open shape the fence exists to remove. An
   individual issue whose home the listing named but the repository does not resolve is excluded with
@@ -554,12 +569,13 @@ fabrika build release 4312 [--repo <owner/name>]
 |---|---|---|---|---|
 | `<number>` | positional integer | yes | — | the issue (or, in repair, the PR) the claim concerns |
 | `--repo` | string | no | the `origin` remote's `owner/name` | the repository whose markers are read and written |
-| `--override` | string | no | — | claim an issue scope admission refused, naming why; the reason is written into the claim marker |
+| `--override` | string | no | — | claim an issue the admission test refused on either axis, naming why; the reason is written into the claim marker |
 
-**`claim` runs the scope fence before it writes anything.** After the target-open check and **before
-any marker is posted**, `claim` puts `<number>` through
-[scope admission](#scope-admission--the-campaign-fence-one-predicate-two-seams) — the same imported
-predicate `build pick` filters on, never a second derivation. A `refused: out-of-focus` is `20` and a
+**`claim` runs the fence before it writes anything.** After the target-open check and **before
+any marker is posted**, `claim` puts `<number>` through the
+[admission test](#admission-test--scope-admission-and-the-audience-axis) — the same imported
+module `build pick` filters on, both axes, never a second derivation. A `refused: out-of-focus` is
+`20` and a
 `refused: audience-not-agent` is `21`, each named on stderr; an unreadable declaration or home is
 `11` and a malformed declaration is `4`, and neither ever proceeds. Nothing is written on any of the
 four: the issue carries no marker, so a refused claim leaves no trace to retract.
