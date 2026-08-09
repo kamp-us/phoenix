@@ -282,8 +282,8 @@ fabrika ship scope 4321 [--repo <owner/name>] [--json]
 **Output** — machine channel. First line:
 `scoped\t<head-sha>\t<open|draft|merged|closed>\t<issue-ref>` where `<issue-ref>` is
 `fixes:<n>`, `part-of:<n>`, or `-` (none). Then one line per present artifact class —
-`class\t<code|doc|skill|ui>\t<file-count>` — then one line per required review namespace —
-`namespace\t<review-code|review-doc|review-skill|review-ui>` — then
+`class\t<code|doc|skill|ui>\t<file-count>` — then one line per required namespace —
+`namespace\t<review-code|review-doc|review-skill|review-ui|governance>` — then
 `cp\t<control-plane|content-undetermined|not-control-plane|unknown>` and `files\t<scanned>`.
 
 With `--json`: `{"outcome":"scoped","head":<40-hex>,"state":…,"issue":{"kind":"fixes"|"part-of"|"none","number":<n|null>},"classes":[{name,files}…],"namespaces":[…],"cp":…,"scanned":<n>}`.
@@ -302,6 +302,15 @@ in one script and hand-copied it in another, and the copy dropped a class on a l
 (#4730). A non-empty diff deriving an empty namespace set is refused (`13`-adjacent but
 proven, so: the verb reds on `7`'s vacuous-conjunction arm below) — a merge gated on zero
 gates is vacuously green (#2765).
+
+**`governance` is appended to that set, not mapped from a class.** A diff with at least one
+changed path under `.decisions/`, `.claude/`, `.github/` or `claude-plugins/` additionally
+derives `namespace\tgovernance`; a diff under none of those four roots derives exactly the
+namespaces it derived before, unchanged. Those paths already carry a file class, so this is a
+second, orthogonal question about the same files rather than a fifth class — and the predicate
+is the one `governance scope` computes, shared as code so the two cannot disagree. A namespace
+`ship gate` can require but `ship scope` never names would be admissible-but-unreachable, which
+is the fail-open half of the same gap (#5199).
 
 **The `cp` line** is the four-state routing input (see "Considered and deliberately not
 derived"), and its source is the **enforced artifact itself**: `.github/CODEOWNERS`, read at run

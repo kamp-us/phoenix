@@ -96,9 +96,31 @@ export type ShipClassName = (typeof SHIP_CLASS_NAMES)[number];
 export const isUiSurface = (path: string): boolean =>
 	path.startsWith("apps/web/src/") && !/\.(?:test|spec)\.tsx?$/.test(path);
 
+/**
+ * The four roots a diff derives the `governance` namespace over.
+ *
+ * The `harness` flag's three-root list above is deliberately left alone rather than reused: these
+ * four add `.decisions/`, the decision corpus, and widening `harness` to match would change what
+ * `review scope` already reports about an unrelated diff. Exported so `governance scope` computes
+ * the requirement from this list instead of a second copy — two derivations of one namespace are
+ * two answers to one question (#4730).
+ */
+export const GOVERNANCE_ROOTS: ReadonlyArray<string> = [
+	".decisions/",
+	".claude/",
+	".github/",
+	"claude-plugins/",
+];
+
+/** The whole `governance` requirement: at least one changed path under at least one root. */
+export const touchesGovernanceRoot = (files: ReadonlyArray<string>): boolean =>
+	files.some((file) => GOVERNANCE_ROOTS.some((root) => file.startsWith(root)));
+
 export interface ShipPartition {
 	/** Only the classes actually present, in {@link SHIP_CLASS_NAMES} order. */
 	readonly classes: ReadonlyArray<{readonly name: ShipClassName; readonly files: number}>;
+	/** {@link touchesGovernanceRoot} over the same file list — a flag, not a class. */
+	readonly governance: boolean;
 	readonly scanned: number;
 }
 
@@ -107,12 +129,24 @@ export const partitionWithUi = (files: ReadonlyArray<string>): ShipPartition => 
 	const ui = files.filter(isUiSurface).length;
 	return {
 		classes: ui === 0 ? base.classes : [...base.classes, {name: "ui" as const, files: ui}],
+		governance: touchesGovernanceRoot(files),
 		scanned: base.scanned,
 	};
 };
 
-export const shipNamespacesOf = (result: ShipPartition): ReadonlyArray<string> =>
-	result.classes.map((entry) => `review-${entry.name}`);
+/**
+ * The namespaces one PR's diff requires.
+ *
+ * `governance` is appended off the flag rather than mapped off a class because no file class derives
+ * it — a governance-bearing path is already partitioned as `skill` or `doc` or `code`, and the
+ * namespace is a second, orthogonal question about the same file. Appending is the only direction
+ * this function may move a PR's bar: the `review-*` rows are untouched, so a diff under no
+ * governance root requires exactly what it required before (#5199).
+ */
+export const shipNamespacesOf = (result: ShipPartition): ReadonlyArray<string> => {
+	const classes = result.classes.map((entry) => `review-${entry.name}`);
+	return result.governance ? [...classes, "governance"] : classes;
+};
 
 /**
  * The closed namespace vocabulary `ship gate --require` admits.

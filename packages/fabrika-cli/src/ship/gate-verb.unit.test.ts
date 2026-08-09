@@ -207,6 +207,24 @@ describe("runGate", () => {
 		expect(out.stdout).toBe([`gate\tblocked\t${HEAD}`, "ns\tgovernance\tabsent\t-", ""].join("\n"));
 	});
 
+	// The gap this pins is deliberate and still open: `verdict-marker`'s NAMESPACE_PREFIXES is
+	// `["review", "check-epic-plan"]`, so a governance marker is turned away before its regex is
+	// tested and the namespace can never read anything but `absent`. Widening that constant is
+	// #5199's surface change 2; when it lands this test reds, which is the point — the alternative
+	// is a fail-open gate that silently starts passing (#5199).
+	it("still reads a posted governance PASS as absent — the marker format cannot carry it yet", async () => {
+		const out = await run(
+			[
+				[PULL, pull({comments: 1})],
+				[COMMENTS, comments({id: 1, body: marker("governance", "PASS", HEAD)})],
+				[REVIEWS, reviews()],
+				[ACL, okOut("write")],
+			],
+			{require: ["governance"]},
+		);
+		expect(out.stdout).toBe([`gate\tblocked\t${HEAD}`, "ns\tgovernance\tabsent\t-", ""].join("\n"));
+	});
+
 	it("refuses a truncated comment sweep on 13", async () => {
 		const out = await run([
 			[PULL, pull({comments: 9})],
