@@ -621,6 +621,22 @@ locates the pinned session's transcript, classifies the run, and folds the colle
 **capture manifest** `collectFromCapture` already consumes. Grading, spend reconstruction and the
 scorecard are all pre-existing code paths — this verb adds no oracle, no meter and no renderer.
 
+### The `--model` contract ([#5158](https://github.com/kamp-us/phoenix/issues/5158))
+
+`--model` is **required** and its value is **normalized, not policed**. The spelling you pass is
+canonicalized through fabrika's one alias table ([`../models.ts`](../models.ts)) before it reaches a
+planned run, so `--model <alias>` and `--model <its canonical id>` are the same run, the same argv,
+and — because the ledger and capture manifest record the canonical spelling — the same scorecard
+cell. That is the whole change: there is **no allowlist**, **no default**, and **no rejection**. A
+model the table has never heard of canonicalizes to itself and runs exactly as named, which is what
+keeps [#4680](https://github.com/kamp-us/phoenix/issues/4680)'s model-churn re-run contract (ADR
+0236 §2) intact — a new model can be evaluated the day it exists, without editing this package.
+`fabrika eval report --baseline-model` is normalized the same way, so a baseline named in either
+spelling still matches the cell it means. The ruling behind this is
+[#5148](https://github.com/kamp-us/phoenix/issues/5148) (option B), and the table lives in one place
+by ADR [0238](../../../../.decisions/0238-fabrika-reimplements-v1-never-calls-it.md) — nothing under
+`src/eval/` declares a second copy.
+
 ### What each run cost, attributed to the run ([#5008](https://github.com/kamp-us/phoenix/issues/5008))
 
 The runner already reconstructed every run's transcript to detect a silent green and then threw the

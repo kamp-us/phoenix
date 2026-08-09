@@ -1,5 +1,6 @@
 import {assert, describe, it} from "@effect/vitest";
 import {Result} from "effect";
+import {MODEL_ALIASES} from "../models.ts";
 import type {StageSpend} from "../spend/token-spend.ts";
 import type {CorpusEntry} from "./corpus.ts";
 import {
@@ -114,13 +115,13 @@ describe("buildScorecard — single (stage × model)", () => {
 	it("computes pass-rate and mean per-run billed + ex-cache-read spend for one cell", () => {
 		// 3 runs, 2 pass ⇒ pass-rate 2/3; billed 100/200/300 ⇒ mean 200.
 		const rows: ReadonlyArray<RunRow> = [
-			row({pass: true, billed: 100, model: "opus"}),
-			row({pass: true, billed: 200, model: "opus"}),
-			row({pass: false, billed: 300, model: "opus"}),
+			row({pass: true, billed: 100, model: "opus-4.8"}),
+			row({pass: true, billed: 200, model: "opus-4.8"}),
+			row({pass: false, billed: 300, model: "opus-4.8"}),
 		];
 		const sc = buildScorecard({rows});
 		assert.strictEqual(sc.cells.length, 1);
-		const cell = cellFor(sc.cells, "opus");
+		const cell = cellFor(sc.cells, "opus-4.8");
 		assert.strictEqual(cell.stage, "triage");
 		assert.strictEqual(cell.gradedRuns, 3);
 		assert.strictEqual(cell.passedRuns, 2);
@@ -136,13 +137,13 @@ describe("buildScorecard — single (stage × model)", () => {
 
 	it("a transcript-missing run counts toward pass-rate but not toward the spend mean", () => {
 		const rows: ReadonlyArray<RunRow> = [
-			row({pass: true, billed: 100, model: "opus"}),
+			row({pass: true, billed: 100, model: "opus-4.8"}),
 			missingSpendRow({pass: true}),
 		];
 		const sc = buildScorecard({rows});
 		// Both runs land in the same (stage × model) cell — the missing-transcript run has model null,
 		// so it buckets separately. Assert the two are distinct and both counted.
-		const opusCell = cellFor(sc.cells, "opus");
+		const opusCell = cellFor(sc.cells, "opus-4.8");
 		assert.strictEqual(opusCell.gradedRuns, 1);
 		assert.strictEqual(opusCell.spend?.billedPerRun, 100);
 		const nullCell = cellFor(sc.cells, null);
@@ -160,14 +161,14 @@ describe("buildScorecard — multi-model comparison against a baseline", () => {
 		// Candidate: sonnet, pass-rate 1.0, 400 billed/run ⇒ zero churn, amortized 400.
 		// Net saving of sonnet = baseline 1000 − sonnet amortized 400 = +600.
 		const rows: ReadonlyArray<RunRow> = [
-			row({pass: true, billed: 1000, model: "opus", inputRef: 1}),
+			row({pass: true, billed: 1000, model: "opus-4.8", inputRef: 1}),
 			row({pass: true, billed: 400, model: "sonnet", inputRef: 2}),
 		];
-		const sc = buildScorecard({rows, baseline: {stage: "triage", model: "opus"}});
+		const sc = buildScorecard({rows, baseline: {stage: "triage", model: "opus-4.8"}});
 		assert.isNotNull(sc.baseline);
-		assert.strictEqual(sc.baseline?.model, "opus");
+		assert.strictEqual(sc.baseline?.model, "opus-4.8");
 
-		const opus = cellFor(sc.cells, "opus");
+		const opus = cellFor(sc.cells, "opus-4.8");
 		// The baseline cell measures no net saving against itself.
 		assert.isNull(opus.netSaving);
 		assert.isFalse(opus.netNegative);
@@ -186,11 +187,11 @@ describe("buildScorecard — the net-negative churn case (the epic's headline ri
 		//   expected extra cycles = (1−0.5)/0.5 = 1; churn = 1 × 700 = 700; amortized = 700 + 700 = 1400.
 		//   net saving = 1000 − 1400 = −400 ⇒ NET-NEGATIVE: churn ate the saving.
 		const rows: ReadonlyArray<RunRow> = [
-			row({pass: true, billed: 1000, model: "opus", inputRef: 1}),
+			row({pass: true, billed: 1000, model: "opus-4.8", inputRef: 1}),
 			row({pass: true, billed: 700, model: "sonnet", inputRef: 2}),
 			row({pass: false, billed: 700, model: "sonnet", inputRef: 3}),
 		];
-		const sc = buildScorecard({rows, baseline: {stage: "triage", model: "opus"}});
+		const sc = buildScorecard({rows, baseline: {stage: "triage", model: "opus-4.8"}});
 		const sonnet = cellFor(sc.cells, "sonnet");
 		assert.approximately(sonnet.passRate, 0.5, 1e-9);
 		assert.strictEqual(sonnet.churn?.expectedExtraCycles, 1);
@@ -202,10 +203,10 @@ describe("buildScorecard — the net-negative churn case (the epic's headline ri
 
 	it("a never-passing model (pass-rate 0) prices +Infinity churn and is net-negative", () => {
 		const rows: ReadonlyArray<RunRow> = [
-			row({pass: true, billed: 1000, model: "opus", inputRef: 1}),
+			row({pass: true, billed: 1000, model: "opus-4.8", inputRef: 1}),
 			row({pass: false, billed: 10, model: "flaky", inputRef: 2}),
 		];
-		const sc = buildScorecard({rows, baseline: {stage: "triage", model: "opus"}});
+		const sc = buildScorecard({rows, baseline: {stage: "triage", model: "opus-4.8"}});
 		const flaky = cellFor(sc.cells, "flaky");
 		assert.strictEqual(flaky.passRate, 0);
 		assert.strictEqual(flaky.churn?.churnTokens, Number.POSITIVE_INFINITY);
@@ -224,8 +225,8 @@ describe("buildScorecard — the net-negative churn case (the epic's headline ri
 describe("buildScorecard — a `review` pass-rate never spans two graders (ADR 0243 §4)", () => {
 	// The mixed-surface PR of ADR 0243 §3: one inputRef, one row per surface, two graders.
 	const mixedSurfaceRows: ReadonlyArray<RunRow> = [
-		entryRow({entry: reviewEntry("code", 42), pass: true, billed: 100, model: "opus"}),
-		entryRow({entry: reviewEntry("doc", 42), pass: false, billed: 100, model: "opus"}),
+		entryRow({entry: reviewEntry("code", 42), pass: true, billed: 100, model: "opus-4.8"}),
+		entryRow({entry: reviewEntry("doc", 42), pass: false, billed: 100, model: "opus-4.8"}),
 	];
 
 	it("buckets the two surfaces of one inputRef separately, each keeping its own pass-rate", () => {
@@ -298,8 +299,8 @@ describe("buildScorecard — a `review` pass-rate never spans two graders (ADR 0
 		// 0244) — so it neither gains a surface nor collapses into the live `review` cell.
 		const sc = buildScorecard({
 			rows: [
-				entryRow({entry: recordedReviewCodeEntry(7), pass: true, billed: 100, model: "opus"}),
-				entryRow({entry: reviewEntry("code", 7), pass: false, billed: 100, model: "opus"}),
+				entryRow({entry: recordedReviewCodeEntry(7), pass: true, billed: 100, model: "opus-4.8"}),
+				entryRow({entry: reviewEntry("code", 7), pass: false, billed: 100, model: "opus-4.8"}),
 			],
 		});
 
@@ -314,13 +315,16 @@ describe("buildScorecard — a `review` pass-rate never spans two graders (ADR 0
 
 describe("buildScorecard — the baseline resolves to exactly one cell under the extended key", () => {
 	const rows: ReadonlyArray<RunRow> = [
-		entryRow({entry: reviewEntry("code", 1), pass: true, billed: 1000, model: "opus"}),
-		entryRow({entry: reviewEntry("doc", 1), pass: true, billed: 1000, model: "opus"}),
+		entryRow({entry: reviewEntry("code", 1), pass: true, billed: 1000, model: "opus-4.8"}),
+		entryRow({entry: reviewEntry("doc", 1), pass: true, billed: 1000, model: "opus-4.8"}),
 		entryRow({entry: reviewEntry("code", 2), pass: true, billed: 400, model: "sonnet"}),
 	];
 
 	it("a (stage, surface, model) baseline names one cell and prices the others against it", () => {
-		const sc = buildScorecard({rows, baseline: {stage: "review", surface: "code", model: "opus"}});
+		const sc = buildScorecard({
+			rows,
+			baseline: {stage: "review", surface: "code", model: "opus-4.8"},
+		});
 
 		assert.isNotNull(sc.baseline);
 		assert.strictEqual(sc.baseline?.surface, "code");
@@ -337,7 +341,7 @@ describe("buildScorecard — the baseline resolves to exactly one cell under the
 	});
 
 	it("a surfaceless `review` baseline selects NO cell rather than silently picking one", () => {
-		const sc = buildScorecard({rows, baseline: {stage: "review", model: "opus"}});
+		const sc = buildScorecard({rows, baseline: {stage: "review", model: "opus-4.8"}});
 
 		assert.isNull(
 			sc.baseline,
@@ -356,12 +360,17 @@ describe("buildScorecard — the baseline resolves to exactly one cell under the
 describe("buildScorecard — the bucket key prefers the model the run recorded", () => {
 	it("a transcript-missing row with a recorded model keeps its model bucket, not `(unknown)`", () => {
 		const rows: ReadonlyArray<RunRow> = [
-			row({pass: true, billed: 100, model: "opus", provenance: {model: "opus", arm: "with-skill"}}),
-			missingSpendRow({pass: true, provenance: {model: "opus", arm: "without-skill"}}),
+			row({
+				pass: true,
+				billed: 100,
+				model: "opus-4.8",
+				provenance: {model: "opus-4.8", arm: "with-skill"},
+			}),
+			missingSpendRow({pass: true, provenance: {model: "opus-4.8", arm: "without-skill"}}),
 		];
 		const sc = buildScorecard({rows});
 		assert.strictEqual(sc.cells.length, 1, "both rows belong to the same recorded-model cell");
-		const cell = cellFor(sc.cells, "opus");
+		const cell = cellFor(sc.cells, "opus-4.8");
 		assert.strictEqual(cell.gradedRuns, 2);
 		// The unmeasured run still stays out of the spend mean — it is attributed, not fabricated.
 		assert.strictEqual(cell.spend?.billedPerRun, 100);
@@ -385,6 +394,55 @@ describe("buildScorecard — the bucket key prefers the model the run recorded",
 	it("a row that recorded nothing still buckets on its reconstructed model", () => {
 		const sc = buildScorecard({rows: [row({pass: true, billed: 100, model: "sonnet"})]});
 		assert.strictEqual(sc.cells[0]?.model, "sonnet");
+	});
+});
+
+/**
+ * #5158 (ruled option B on #5148): one model, one cell. The alias pair is READ from fabrika's one
+ * table rather than typed here — a spelling written into a test is the second source the ruling
+ * forbids, and it would keep passing after the table moved on.
+ */
+const aliasEntry = Object.entries(MODEL_ALIASES)[0];
+if (aliasEntry === undefined) {
+	throw new Error("MODEL_ALIASES declares no alias — there is nothing for the report to normalize");
+}
+const [aliasedModel, canonicalId] = aliasEntry;
+
+describe("buildScorecard — a model's aliases are one cell, an unknown model is its own", () => {
+	it("two spellings of one model produce a single cell, not two pass-rates", () => {
+		const rows: ReadonlyArray<RunRow> = [
+			row({pass: true, billed: 100, model: aliasedModel, inputRef: 1}),
+			row({pass: false, billed: 300, model: canonicalId, inputRef: 2}),
+		];
+		const sc = buildScorecard({rows});
+		assert.strictEqual(sc.cells.length, 1, "the alias and the canonical id are the same model");
+		const cell = cellFor(sc.cells, canonicalId);
+		assert.strictEqual(cell.gradedRuns, 2);
+		assert.strictEqual(cell.passRate, 0.5);
+		assert.strictEqual(cell.spend?.billedPerRun, 200);
+	});
+
+	it("a model the table has never seen passes through unchanged and keeps its own cell", () => {
+		const unknown = "a-model-the-table-has-never-seen";
+		const rows: ReadonlyArray<RunRow> = [
+			row({pass: true, billed: 100, model: unknown, inputRef: 1}),
+			row({pass: true, billed: 100, model: aliasedModel, inputRef: 2}),
+		];
+		const sc = buildScorecard({rows});
+		// Normalize-only: no allowlist and no rejection, so the unrecognized model still reports.
+		assert.strictEqual(cellFor(sc.cells, unknown).gradedRuns, 1);
+		assert.strictEqual(sc.cells.length, 2);
+	});
+
+	it("a --baseline-model given as an alias matches the cell recorded under the canonical id", () => {
+		const rows: ReadonlyArray<RunRow> = [
+			row({pass: true, billed: 1000, model: canonicalId, inputRef: 1}),
+			row({pass: true, billed: 400, model: "sonnet", inputRef: 2}),
+		];
+		const sc = buildScorecard({rows, baseline: {stage: "triage", model: aliasedModel}});
+		// Pre-#5158 this matched no bucket and every netSaving came back null — fail-quiet.
+		assert.strictEqual(sc.baseline?.model, canonicalId);
+		assert.strictEqual(cellFor(sc.cells, "sonnet").netSaving, 600);
 	});
 });
 
@@ -412,8 +470,8 @@ describe("decodeReportInput — a rows file written before provenance existed st
 
 describe("report — the output carries no model recommendation, only evidence for #1576", () => {
 	it("the scorecard and both rendered surfaces point at the decision and recommend nothing", () => {
-		const rows: ReadonlyArray<RunRow> = [row({pass: true, billed: 100, model: "opus"})];
-		const sc = buildScorecard({rows, baseline: {stage: "triage", model: "opus"}});
+		const rows: ReadonlyArray<RunRow> = [row({pass: true, billed: 100, model: "opus-4.8"})];
+		const sc = buildScorecard({rows, baseline: {stage: "triage", model: "opus-4.8"}});
 		assert.strictEqual(sc.decisionRef, DECISION_POINTER);
 		assert.strictEqual(DECISION_POINTER, 1576);
 
