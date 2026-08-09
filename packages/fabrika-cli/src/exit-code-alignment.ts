@@ -64,6 +64,16 @@ export const SHARED_SEATS: SharedSeats = {
  */
 export const BUILD_SEATS: SharedSeats = {...SHARED_SEATS, BAD_SECTIONS: "BAD_SECTIONS"};
 
+/**
+ * `review-ui`'s seats: the same eight, plus `4` under its own name.
+ *
+ * The name differs because the meaning is the base's read widened, not renamed: `report file`'s `4`
+ * is a body section that is missing or out of order, and `review-ui` seats the same fact about a
+ * whole derived document — a capture set's `manifest.json`, or `design-harness.json` at the
+ * tier-choice read. Naming the pair is the claim a bare number cannot make.
+ */
+export const REVIEW_UI_SEATS: SharedSeats = {...SHARED_SEATS, MALFORMED_DOCUMENT: "BAD_SECTIONS"};
+
 /** The groups that align to {@link ALIGNMENT_BASE}, each with the seats it claims to share. */
 export const ALIGNED_GROUPS: Readonly<Record<string, SharedSeats>> = {
 	build: BUILD_SEATS,
@@ -71,6 +81,7 @@ export const ALIGNED_GROUPS: Readonly<Record<string, SharedSeats>> = {
 	plan: BUILD_SEATS,
 	triage: SHARED_SEATS,
 	review: SHARED_SEATS,
+	"review-ui": REVIEW_UI_SEATS,
 	ship: SHARED_SEATS,
 };
 

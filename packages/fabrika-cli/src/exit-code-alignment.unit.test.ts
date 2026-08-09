@@ -13,6 +13,7 @@ import {
 import * as plan from "./plan/codes.ts";
 import * as report from "./report/codes.ts";
 import * as review from "./review/codes.ts";
+import * as reviewUi from "./review-ui/codes.ts";
 import * as ship from "./ship/codes.ts";
 import * as triage from "./triage/codes.ts";
 import * as wire from "./wire/codes.ts";
@@ -30,6 +31,7 @@ const TABLES: Readonly<Record<string, CodeTable>> = {
 	plan,
 	report,
 	review,
+	"review-ui": reviewUi,
 	ship,
 	triage,
 	wire,
