@@ -12,8 +12,8 @@ tags: [fabrika, glossary, vocabulary, pipeline]
 `review`, `review-ui`, `governance`, `build-epic`, `front-door`, `check-epic-plan` — are canonical
 domain nouns and get rows in [`.glossary/TERMS.md`](../.glossary/TERMS.md). Two of them displace a
 meaning that is live in this repo today, and this entry is the dated record of that displacement.
-`review-ui` also resolves a name already coined, for a different scope, by ADR
-[0144](0144-depo-internal-asset-cdn.md).
+`review-ui` also shares its spelling with a name coined, for a different scope, by ADR
+[0144](0144-depo-internal-asset-cdn.md); §4 records how the two coexist.
 
 ## Context
 
@@ -97,15 +97,21 @@ Two judgements are carved out of the absorbed three rather than travelling with 
 gate-invariant-preservation check in `review-skill`) becomes the dedicated **`governance`** skill,
 which `review` invokes and does not own; and **visual calibration** is `review-ui`'s.
 
-### 4. `review-ui` — one name, and ADR 0144's coinage is superseded, not forked
+### 4. `review-ui` — two distinct names that coexist; this entry claims nothing over ADR 0144
 
 ADR [0144](0144-depo-internal-asset-cdn.md) already coined `review-ui`: "the Playwright step that
 captures UI screenshots on UI-affecting PRs and embeds them via `depo put` is a distinct new
 **`review-ui`** skill, filed as its own epic." That is a narrower scope than #4904's visual-modality
-gate, and leaving both readings live is exactly the silent-wrong-answer this entry exists to close.
+gate, so a reader who meets the bare name needs to know which one is meant.
 
-**`review-ui` names the visual-modality review gate, and nothing else.** The reconciliation is factual,
-not a compromise:
+**In a fabrika context, `review-ui` names the visual-modality review gate.** That is a statement about
+fabrika's own vocabulary and nothing more. **ADR 0144 is not overturned** — it keeps `status: accepted`
+and every word of its decision text (founder ruling (a), 2026-08-08 on epic
+[#4904](https://github.com/kamp-us/phoenix/issues/4904), transcribed into
+[#4951](https://github.com/kamp-us/phoenix/issues/4951)). The two names coexist, and the qualifying
+note #4951 adds at 0144's clause is what tells a reader landing there which reading is which.
+
+The coexistence is safe because the two readings converge on one artifact rather than competing for it:
 
 - **0144's `review-ui` was never built as a skill.** No `review-ui` directory exists under any plugin.
 - **Its function was built — inside the gate that now carries the name.** The capture-and-embed leg
@@ -114,16 +120,9 @@ not a compromise:
 - **#4904 renames that gate `review-ui`**, and its brief is explicit that `review-design` "is **not** a
   second skill and **not** a predecessor to be ported: it is this same skill under its superseded name."
 
-So the two readings converge on one artifact. 0144's sentence is superseded in part — the capture step
-is a **leg of the visual gate**, never a standalone skill — **and 0144 says so at its own end.** An
-ADR's *decision text* is inviolate, but its *status line* is exactly where a moved reading is
-recorded, and the corpus already carries the mechanism for a single displaced clause:
-[0011](0011-drizzle-context-service.md) and [0029](0029-worker-runtime-servicemap.md) both read
-`status: superseded-in-part by […]` with every word of their decision text intact. 0144 gets the same
-treatment — the status line plus a one-line note at the superseded clause — so a reader landing on
-that clause, the likeliest path to this collision, is told the reading moved instead of resolving it
-to the standalone sense. depo's own decision stands, and the `depo` row in `TERMS.md` still points at
-`review-ui` as depo's first consumer, which stays true under this reading.
+So the capture step is a **leg of the visual gate** rather than a standalone skill — a fact about what
+got built, not a supersession this entry asserts. depo's own decision, and the decoupling 0144's clause
+protects, stand untouched.
 
 ## Consequences
 
@@ -131,11 +130,11 @@ to the standalone sense. depo's own decision stands, and the `depo` row in `TERM
   `review` rows carry their superseded reading in the `Not` column, pointing here.
 - A reader of any pre-#4904 ticket, ADR or skill doc that says `build` or `review` has one place to
   learn that the word moved and what it used to mean.
-- **No landed ADR's decision text is edited — the status line of the one superseded ADR is.** ADR 0144
-  gains `status: superseded-in-part by [0242]` plus a note at the superseded clause: the additive shape
-  the `adr` skill sanctions, and the same mechanism 0011 and 0029 use. ADR 0079's "all four `review-*`"
-  and ADR 0226's "the four review gate templates" stay untouched — nothing supersedes them; they
-  describe v1, which is frozen and still on disk. This entry is the bridge, not a retraction.
+- **No landed ADR is edited by this entry — not its decision text, not its status line.** ADR 0144
+  keeps `status: accepted`; the qualifying note that disambiguates the shared `review-ui` name is
+  #4951's to write, not this entry's. ADR 0079's "all four `review-*`" and ADR 0226's "the four review
+  gate templates" stay untouched too — nothing supersedes them; they describe v1, which is frozen and
+  still on disk. This entry is the bridge, not a retraction.
 - The register alone would not have carried this. Every future redefinition of a live noun needs the
   same pair — a row for the new reading, a dated entry for the change.
 - Nothing here re-opens a ruling. Every name is founder-fixed on #4891 and transcribed by #4904; this

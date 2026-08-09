@@ -1,8 +1,7 @@
 ---
 id: 0144
 title: depo — kampus internal asset store/CDN (own `infra/` stack, R2 public-read `depo.kamp.us`, doorman upload worker, standalone CLI) — supersedes 0044's imge
-status: superseded-in-part by [0242](0242-fabrika-skill-nouns-redefine-build-and-review.md)
-superseded-section-by: 0242
+status: accepted
 date: 2026-07-04
 tags: [depo, storage, infra, cdn]
 ---
@@ -36,7 +35,6 @@ This ADR brutally narrows imge → **depo** (Turkish "depot/warehouse") and reco
 
 - **imge's imgur scope is rejected.** Cut: public frontend/gallery, user uploads, video, the full upload-safety envelope (agents feed trusted PNGs, not hostile user uploads — so sniffing/SVG-defang/EXIF-strip evaporate). Old issues #102/#110/#112 are superseded — routed to triage for disposition (not auto-closed; they are human-filed).
 - **The producer is a separate epic.** depo is only the *sink*. The Playwright step that captures UI screenshots on UI-affecting PRs and embeds them via `depo put` is a distinct new **`review-ui`** skill, filed as its own epic. Keeping them separate preserves depo's decoupling: depo does not know its consumers.
-  - **Superseded in part by [0242](0242-fabrika-skill-nouns-redefine-build-and-review.md):** `review-ui` is no longer a standalone skill — that capture-and-embed function was built inside `review-design`, and the name now denotes the visual half of `review`. depo's own decision, including the decoupling this clause protects, stands unchanged.
 - **New infra surface:** an `infra/depo` stack (R2 bucket + `depo.kamp.us` custom domain + DNS), the doorman upload worker, and a `packages/depo` client+CLI enter the repo. The build is filed as its own issue.
 - **Auth wiring:** how an agent obtains/holds its pasaport `apiKey` is a build detail (0044 already established the `@better-auth/api-key` path); depo reuses it, coining no new credential class.
 
