@@ -16,6 +16,7 @@
  * IO-free and total — the `gh api` label read and the `ROADMAP.md` read live in
  * `github.ts`/`gate.ts`.
  */
+import {BANKED_LABEL} from "../cp-bank/cp-bank.ts";
 import {ISSUE_TYPE_LABELS} from "../drive-issue-flow/type-route.ts";
 import {EXEMPT_LABELS, TRIAGED_LABEL} from "../homing-guard/homing-guard.ts";
 import {PLATFORM_LABELS} from "../lane/lane.ts";
@@ -42,6 +43,7 @@ export const LABEL_GROUPS: ReadonlyArray<LabelGroup> = [
 	{name: "issue types", labels: ISSUE_TYPE_LABELS},
 	{name: "standing lanes", labels: EXEMPT_LABELS},
 	{name: "platform discriminator", labels: PLATFORM_LABELS},
+	{name: "control-plane banking", labels: [BANKED_LABEL]},
 ];
 
 /** Every label the tools scope on, deduped, in group order. */
