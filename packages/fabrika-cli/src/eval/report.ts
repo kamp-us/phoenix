@@ -27,6 +27,7 @@
  */
 import {Effect, Result} from "effect";
 import * as Schema from "effect/Schema";
+import {canonicalModel} from "../models.ts";
 import {CorpusEntry, type ReviewSurface} from "./corpus.ts";
 import {priceModelSwap, repairChurnCost} from "./repair-churn.ts";
 import {EVAL_ARMS, type RunRow} from "./runner.ts";
@@ -131,8 +132,13 @@ const identityOf = (entry: CorpusEntry): CellIdentity =>
 const cellKey = (id: CellIdentity, model: string | null): string =>
 	`${id.stage}\u0000${id.surface ?? ""}\u0000${model ?? ""}`;
 
+// The baseline's model is canonicalized on the way in for the same reason a row's is: a baseline
+// named in the other spelling of the cell's model matched nothing and reported `null` rather than
+// reporting wrong, which is fail-quiet (#5158).
 const sameCell = (a: {id: CellIdentity; model: string | null}, b: BaselineKey): boolean =>
-	a.id.stage === b.stage && a.id.surface === (b.surface ?? null) && a.model === (b.model ?? null);
+	a.id.stage === b.stage &&
+	a.id.surface === (b.surface ?? null) &&
+	a.model === canonicalModel(b.model);
 
 interface Bucket {
 	readonly id: CellIdentity;
@@ -151,9 +157,16 @@ interface Bucket {
  * transcript is machine-local and perishable, so reconstruction is the fallback for a row that
  * recorded nothing — not the source (#4996). A row with a recorded model therefore keeps its
  * bucket even when its transcript is gone, instead of collapsing into `(unknown)`.
+ *
+ * Whichever of the two attests it, the spelling is canonicalized through fabrika's one alias table
+ * (`../models.ts`) before it becomes a bucket key, so an alias and its canonical id are one cell
+ * rather than two pass-rates over the same model (#5158). An unknown model canonicalizes to itself
+ * and keeps its own cell — this normalizes, it never allowlists.
  */
 const modelOf = (row: RunRow): string | null =>
-	row.provenance.model ?? (row.spend._tag === "Reconstructed" ? row.spend.spend.model : null);
+	canonicalModel(
+		row.provenance.model ?? (row.spend._tag === "Reconstructed" ? row.spend.spend.model : null),
+	);
 
 const bucketize = (rows: ReadonlyArray<RunRow>): ReadonlyArray<Bucket> => {
 	const byKey = new Map<string, Bucket>();

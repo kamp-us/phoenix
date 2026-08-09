@@ -22,6 +22,7 @@
  * verdict is the one place a run is allowed to become a `CaptureRun`.
  */
 import {Effect, Result} from "effect";
+import {canonicalModel} from "../models.ts";
 import {classifyRunSpend, type RunSpend} from "../spend/token-spend.ts";
 import {STAGES} from "./corpus.ts";
 import {
@@ -47,6 +48,18 @@ export interface RunnableCase {
 	readonly prompt: string;
 	readonly tier: EvalTier;
 }
+
+/**
+ * The one spelling a run is pinned under: `--model`'s value canonicalized through fabrika's single
+ * alias table (`../models.ts`), which declares it — nothing here holds a second copy (ADR 0238).
+ *
+ * Normalize-only, by the ruling on #5148: an alias resolves to its canonical id, and **everything
+ * else passes through unchanged** — no allowlist, no default, no rejection — so a model the table
+ * has never seen still runs and #4680's model-churn re-run contract (ADR 0236 §2) survives. The
+ * `?? model` arm keeps a blank value exactly as unnormalized as it is today; refusing it here would
+ * be the rejection the ruling rules out.
+ */
+const pinnedModel = (model: string): string => canonicalModel(model) ?? model;
 
 /** One planned invocation: exactly one (case × arm), with the session id its transcript will land under. */
 export interface PlannedRun {
@@ -86,7 +99,7 @@ export const planEvalRuns = <R>(args: {
 					arm,
 					sessionId: yield* args.sessionId(evalCase.id, arm),
 					prompt: evalCase.prompt,
-					model: args.model,
+					model: pinnedModel(args.model),
 					pluginDir: arm === "with-skill" ? args.pluginDir : null,
 					jsonSchema: args.jsonSchema,
 				});
@@ -588,18 +601,24 @@ export const buildLedger = (args: {
 	readonly cliVersion: string | null;
 	readonly recordedAt: string;
 	readonly outcomes: ReadonlyArray<RunOutcome>;
-}): RunLedger => ({
-	version: 1,
-	skillName: args.skillName,
-	stage: args.stage,
-	model: args.model,
-	cliVersion: args.cliVersion,
-	recordedAt: args.recordedAt,
-	runs: args.outcomes,
-	capture: toCaptureManifest(args),
-	spendRows: toSpendRows(args),
-	summary: summarizeRuns(args.outcomes),
-});
+}): RunLedger => {
+	// The recorded model is canonicalized here too, not only on the plans: the capture manifest and
+	// the spend rows are what the scorecard buckets on, and a header spelt differently from the argv
+	// would split one model across two cells (#5158).
+	const model = pinnedModel(args.model);
+	return {
+		version: 1,
+		skillName: args.skillName,
+		stage: args.stage,
+		model,
+		cliVersion: args.cliVersion,
+		recordedAt: args.recordedAt,
+		runs: args.outcomes,
+		capture: toCaptureManifest({...args, model}),
+		spendRows: toSpendRows({...args, model}),
+		summary: summarizeRuns(args.outcomes),
+	};
+};
 
 /** The stage names a `--stage` flag accepts — re-exported so the shell needn't reach into `runner.ts`. */
 export const isStageName = (value: string): value is CaptureRun["stage"] =>

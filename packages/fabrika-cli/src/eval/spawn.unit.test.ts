@@ -13,6 +13,7 @@ import {join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {assert, describe, it} from "@effect/vitest";
 import {Effect, Result} from "effect";
+import {MODEL_ALIASES} from "../models.ts";
 import {classifyRunSpend} from "../spend/token-spend.ts";
 import type {CorpusManifest} from "./corpus.ts";
 import {collectFromCapture, decodeCaptureManifest} from "./runner.ts";
@@ -173,6 +174,64 @@ describe("planEvalRuns — one invocation per (case × arm)", () => {
 			plans.map((p) => p.tier),
 			["graded", "deterministic"],
 		);
+	});
+});
+
+/**
+ * #5158 (ruled option B on #5148): `--model` is normalized to one canonical spelling before it
+ * reaches a plan, and is normalized ONLY — an unknown value still runs. The alias pair is read from
+ * fabrika's one table rather than typed, so a test can never become a second source.
+ */
+describe("planEvalRuns — the model a run is pinned to is canonicalized, never allowlisted", () => {
+	const aliasEntry = Object.entries(MODEL_ALIASES)[0];
+	if (aliasEntry === undefined) {
+		throw new Error("MODEL_ALIASES declares no alias — there is nothing for a run to normalize");
+	}
+	const [aliasedModel, canonicalId] = aliasEntry;
+
+	const plansFor = (model: string) =>
+		Effect.runSync(
+			planEvalRuns({
+				cases: [CASES[0] as RunnableCase],
+				arms: ["with-skill"],
+				model,
+				pluginDir: "/candidate",
+				jsonSchema: null,
+				sessionId: (id) => Effect.succeed(`${id}`),
+			}),
+		);
+
+	it("an alias reaches the plan — and the argv — as its canonical id", () => {
+		const planned = plansFor(aliasedModel);
+		assert.strictEqual(planned[0]?.model, canonicalId);
+		assert.include([...buildClaudeArgs(planned[0] as PlannedRun)], canonicalId);
+	});
+
+	it("a model the table has never seen is planned exactly as given", () => {
+		const unknown = "a-model-the-table-has-never-seen";
+		assert.strictEqual(plansFor(unknown)[0]?.model, unknown);
+	});
+
+	it("the ledger and its capture manifest record the canonical spelling too", () => {
+		const outcomes = Effect.runSync(
+			executeRuns({
+				plans: plansFor(aliasedModel),
+				executor: () => Effect.succeed(exited(resultStdout())),
+				locateTranscript: (sessionId) => Effect.succeed(`/data/${sessionId}.jsonl`),
+				loadTranscript: () => Effect.succeed(billedTranscript),
+			}),
+		);
+		const ledger = buildLedger({
+			skillName: "probe",
+			stage: "triage",
+			model: aliasedModel,
+			cliVersion: "2.1.220",
+			recordedAt: "2026-08-09T00:00:00Z",
+			outcomes,
+		});
+		assert.strictEqual(ledger.model, canonicalId);
+		assert.strictEqual(ledger.capture.runs[0]?.model, canonicalId);
+		assert.strictEqual(ledger.spendRows[0]?.model, canonicalId);
 	});
 });
 

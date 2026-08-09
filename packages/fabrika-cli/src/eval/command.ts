@@ -134,7 +134,9 @@ const baselineStageFlag = Flag.string("baseline-stage").pipe(
 
 const baselineModelFlag = Flag.string("baseline-model").pipe(
 	Flag.optional,
-	Flag.withDescription("the model of the baseline cell (paired with --baseline-stage)"),
+	Flag.withDescription(
+		"the model of the baseline cell (paired with --baseline-stage) — normalized the same way as --model, so an alias still matches the cell recorded under its canonical id",
+	),
 );
 
 const baselineSurfaceFlag = Flag.string("baseline-surface").pipe(
@@ -311,7 +313,7 @@ const pluginDirFlag = Flag.string("plugin-dir").pipe(
 
 const modelFlag = Flag.string("model").pipe(
 	Flag.withDescription(
-		"the model every run is pinned to — required, because a scorecard is only comparable when it names one",
+		"the model every run is pinned to — required, because a scorecard is only comparable when it names one; a known alias is normalized to its canonical id, anything else runs as given",
 	),
 );
 
