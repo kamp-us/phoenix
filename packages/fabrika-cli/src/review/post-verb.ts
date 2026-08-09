@@ -77,23 +77,41 @@ const prefixMatch = (a: string, b: string): boolean => a.startsWith(b) || b.star
 /**
  * Why the read-back does not show what was posted, or `null` when it does.
  *
- * The marker carrier is checked through the format's own `read`, which is the contract's step 6. The
- * **advisory** carrier cannot be: its first line deliberately withholds the SHA, so the format reads
- * it as `Malformed` by design (ADR 0111). It is verified through its own two anchors instead — the
- * advisory first line and the canonical `Reviewed-head:` body line — which is the same unconditional
- * live-state assertion applied to the shape that was actually written.
+ * Two assertions, and both are needed. The **marker** is checked through the format's own `read`,
+ * which is the contract's step 6 — the four fields have to be the four that were composed. The
+ * **whole comment** is then compared against the bytes that were sent, through `normalizeForReadback`
+ * from `report/compose.ts`: a marker that parses proves nothing about the body under it, and the body
+ * is the verdict. The normalizer is what makes that comparison survivable — its trailing-newline step
+ * is the one a re-derivation drops, which fires this refusal on every clean run.
+ *
+ * The **advisory** carrier cannot go through the format: its first line deliberately withholds the
+ * SHA, so `read` calls it `Malformed` by design (ADR 0111). It is verified through its own two
+ * anchors instead — the advisory first line and the canonical `Reviewed-head:` body line — and then
+ * through the same whole-comment comparison.
  */
-const mismatchOf = (body: string, posted: Posted, carrier: Carrier): string | null => {
+const mismatchOf = (
+	body: string,
+	posted: Posted,
+	carrier: Carrier,
+	composed: string,
+): string | null => {
 	const normalized = normalizeForReadback(body);
+	// The field checks run first because they name WHICH field drifted; the whole-comment comparison
+	// below is the broader net and would otherwise mask that with one generic reason.
+	const bytes =
+		normalized === normalizeForReadback(composed)
+			? null
+			: "the comment's bytes are not the ones that were sent";
 	if (carrier === "advisory") {
 		const advisory = readAdvisory(normalized);
 		if (advisory === null) return "the advisory first line or its Reviewed-head: line is not there";
 		if (advisory.namespace !== posted.namespace) {
 			return `namespace ${advisory.namespace}, expected ${posted.namespace}`;
 		}
-		return advisory.sha === posted.sha
-			? null
-			: `Reviewed-head ${advisory.sha}, expected ${posted.sha}`;
+		if (advisory.sha !== posted.sha) {
+			return `Reviewed-head ${advisory.sha}, expected ${posted.sha}`;
+		}
+		return bytes;
 	}
 	const parsed = readMarker(normalized);
 	if (parsed._tag !== "Found") return parsed.reason;
@@ -105,9 +123,10 @@ const mismatchOf = (body: string, posted: Posted, carrier: Carrier): string | nu
 		return `polarity ${marker.polarity}, expected ${posted.polarity}`;
 	}
 	if (marker.sha !== posted.sha) return `sha ${marker.sha}, expected ${posted.sha}`;
-	return normalizeForReadback(marker.clause) === normalizeForReadback(posted.clause)
-		? null
-		: `clause "${marker.clause}", expected "${posted.clause}"`;
+	if (marker.clause !== posted.clause) {
+		return `clause "${marker.clause}", expected "${posted.clause}"`;
+	}
+	return bytes;
 };
 
 /** Steps 1, 2 and 5's reads failing is `11`: nothing was written, so the outcome is known-unwritten. */
@@ -248,7 +267,7 @@ export const runPost = (
 		const mismatch =
 			back._tag === "Failure"
 				? back.reason
-				: mismatchOf(back.value, {namespace, polarity, sha: inspected, clause}, carrier);
+				: mismatchOf(back.value, {namespace, polarity, sha: inspected, clause}, carrier, composed);
 		if (mismatch !== null) {
 			return refuse(
 				READBACK_MISMATCH,
