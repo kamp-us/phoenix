@@ -54,6 +54,14 @@ export interface TargetOptions {
 	readonly requireFiles: boolean;
 	/** The tail of the zero-changed-files refusal, which each verb phrases in its own terms. */
 	readonly emptyReason?: string;
+	/**
+	 * The whole `11` message, when this verb names something other than "the scope" as UNKNOWN.
+	 *
+	 * The wording is the verb's because the refusal has to say what is unknown *to it* — for
+	 * `review deviations` that is the disclosure state, and "the scope is UNKNOWN" would leave the
+	 * caller free to read `none`.
+	 */
+	readonly unknownMessage?: (reason: string) => string;
 }
 
 export type Target =
@@ -79,7 +87,8 @@ export const openPull = (
 				_tag: "Refused" as const,
 				outcome: refuse(
 					PRECONDITION_UNKNOWN,
-					`${verb}: cannot read PR #${pr} in ${repo}: ${found.reason} — the scope is UNKNOWN.`,
+					options.unknownMessage?.(found.reason) ??
+						`${verb}: cannot read PR #${pr} in ${repo}: ${found.reason} — the scope is UNKNOWN.`,
 				),
 			};
 		}

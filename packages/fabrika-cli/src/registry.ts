@@ -18,6 +18,7 @@ import type {Command} from "effect/unstable/cli";
 import {adrCommand} from "./adr/command.ts";
 import {evalCommand} from "./eval/command.ts";
 import {reportCommand} from "./report/command.ts";
+import {reviewCommand} from "./review/command.ts";
 import {triageCommand} from "./triage/command.ts";
 import {wireCommand} from "./wire/command.ts";
 
@@ -29,6 +30,7 @@ export const registeredGroups: ReadonlyArray<VerbGroup> = [
 	adrCommand,
 	evalCommand,
 	reportCommand,
+	reviewCommand,
 	triageCommand,
 	wireCommand,
 ];
