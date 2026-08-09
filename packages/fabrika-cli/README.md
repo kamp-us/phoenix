@@ -1,12 +1,12 @@
 # @kampus/fabrika-cli
 
 The deterministic verb package [fabrika](../../claude-plugins/fabrika/) skills call.
-`fabrika <group> <verb> …` dispatches to a registered verb group. Five groups are
+`fabrika <group> <verb> …` dispatches to a registered verb group. Six groups are
 registered: `adr`, the six verbs the `/adr` skill's derived contract specifies; `report`,
 the three the `/report` contract specifies; `triage`, the intake-queue group the `/triage`
-contract specifies; `eval`, the graded-corpus harness the fabrika eval layer measures
-itself with; and `wire`, which owns the byte-level formats two skills meet through on a
-GitHub artifact.
+contract specifies; `review`, the eight the `/review` contract specifies; `eval`, the
+graded-corpus harness the fabrika eval layer measures itself with; and `wire`, which owns
+the byte-level formats two skills meet through on a GitHub artifact.
 
 ## Who it's for
 
@@ -233,6 +233,40 @@ Three properties of that substrate are worth knowing before the verbs arrive:
   ([`src/triage/scope.ts`](./src/triage/scope.ts)). A verdict driven by a silently truncated
   read is a verdict over unknown scope; pagination fixes the reach, and printing what was
   scanned is what makes the reach checkable from outside the process.
+
+## The `review` group
+
+Everything a text review needs off one pull request, plus the one sanctioned way to write a
+verdict back. The group implements
+[`claude-plugins/fabrika/skills/review/contract.md`](../../claude-plugins/fabrika/skills/review/contract.md).
+
+| Verb | What it answers |
+|---|---|
+| `review scope` | head SHA, linked issue, the code / doc / skill partition of the changed files, and the `self` / `harness` flags |
+| `review diff` | the diff bytes, with truncation refused rather than passed through |
+| `review criteria` | the linked issue's acceptance-criteria block, through the registered wire format |
+| `review ci` | the live check-run rollup at a head, fail-closed on incomplete enumeration |
+| `review verdicts` | every verdict marker on the PR, each with its `current` / `stale` / `unbindable` binding |
+| `review deviations` | the PR body's `## Deviations` state, its entries, and the Tier-M token scan over the diff |
+| `review post` | the single sanctioned verdict emit — compose, bind, one comment per namespace, read back |
+| `review append-criterion` | one reviewer-authored criterion appended under ADR 0079's four fences |
+
+- **A check that cannot see what it is looking for does not return a plausible value.** An
+  unreadable response, a provably short read and a non-conforming payload each resolve to
+  their own loud refusal — `11`, `13` and `7` — and never to a clean pass. That is the whole
+  reason `13` exists beside the other two ([`src/review/codes.ts`](./src/review/codes.ts)).
+- **The overlapping exit codes are imported, not restated** — `3`, `5`, `6`, `7`, `8`, `9`,
+  `10` and `11` come from `../report/codes.ts` and `../triage/codes.ts` by re-export, so they
+  cannot drift from the shipped values.
+- **`current` / `stale` / `unbindable` stay three outcomes.** `review verdicts` is the first
+  consumer of [`verdict-marker.ts`](./src/wire/verdict-marker.ts)'s `bindToHead`, and folding
+  any two of them together is how a stale PASS reads as a current one.
+- **Four modules are imported rather than re-derived**: the AC parser, the verdict-marker
+  parser, `normalizeForReadback`, and the machine-local-path predicate.
+- **Every guard is demonstrated failing.**
+  [`src/review/mutation.unit.test.ts`](./src/review/mutation.unit.test.ts) plants a
+  counterexample per guard, breaks exactly that guard, and asserts the verb returns the
+  specific wrong answer instead — a guard that cannot be shown failing is not demonstrated.
 
 ## The `wire` group
 

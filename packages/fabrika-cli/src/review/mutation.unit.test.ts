@@ -1,0 +1,370 @@
+/**
+ * The mutation harness: for each load-bearing guard, plant a counterexample the guard must catch,
+ * then break exactly that guard and prove the verb answers **wrongly** instead.
+ *
+ * A guard you cannot demonstrate failing is not demonstrated. An ordinary unit test shows the guard
+ * refusing; only the mutant shows that the refusal is *load-bearing* — that without it the verb
+ * returns a plausible value over evidence it never had.
+ *
+ * **Every mutant is asserted to die for its INTENDED reason.** Each case pins the exact wrong answer
+ * the mutant produces (a `green` rollup, a `current` binding, an exit 0 where a refusal belongs), not
+ * merely that something differed. A sibling lane's harness scored every mutant "caught" while they
+ * were all dying of an unrelated path-resolution error, so a loose `expect(mutant).not.toEqual(real)`
+ * is exactly the assertion this file may not make.
+ *
+ * The mutants are injected by module substitution rather than by editing files on disk: each case
+ * resets the module registry, overrides **one** export of **one** module over the real one, and
+ * re-imports the verb. The specifiers below are byte-identical to the ones the verbs themselves
+ * import, so no path is re-derived and nothing resolves through a symlink.
+ */
+import {Effect} from "effect";
+import type {ChildProcessSpawner} from "effect/unstable/process";
+import {afterEach, describe, expect, it, vi} from "vitest";
+import {errOut, fakeShell, okOut, once} from "../fakes.test-support.ts";
+import type {ExecResult} from "../io/exec.ts";
+import type {StdinRead} from "../io/stdin.ts";
+import {APPEND_ONLY, INCOMPLETE_SCAN, LEAKED_PATH, READBACK_MISMATCH} from "./codes.ts";
+import {
+	checkRuns,
+	comments,
+	DIFF,
+	files,
+	HEAD,
+	issue,
+	OLD_HEAD,
+	pull,
+} from "./fixtures.test-support.ts";
+
+const PULL = /^gh api repos\/o\/r\/pulls\/4321$/;
+const FILES = /^gh api --paginate repos\/o\/r\/pulls\/4321\/files/;
+const RAW = /^gh api -H Accept: application\/vnd\.github\.diff repos\/o\/r\/pulls\/4321$/;
+const RUNS = /^gh api --paginate repos\/o\/r\/commits\/[0-9a-f]+\/check-runs/;
+const COMMENTS = /^gh api --paginate repos\/o\/r\/issues\/4321\/comments/;
+const CREATE = /^gh api --method POST repos\/o\/r\/issues\/4321\/comments /;
+const READBACK = /^gh api repos\/o\/r\/issues\/comments\/\d+$/;
+const USER = /^gh api user --jq \.login$/;
+const PERMISSION = /^gh api repos\/o\/r\/collaborators\/kampus-bot\/permission --jq \.permission$/;
+const ISSUE = /^gh api repos\/o\/r\/issues\/4287$/;
+const PATCH = /^gh api --method PATCH repos\/o\/r\/issues\/4287 -f body=/;
+
+const ENV = {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>;
+
+const withShell = <A>(
+	effect: Effect.Effect<A, never, ChildProcessSpawner.ChildProcessSpawner>,
+	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
+): Promise<A> => Effect.runPromise(Effect.provide(effect, fakeShell(script).layer));
+
+afterEach(() => {
+	vi.resetModules();
+	vi.doUnmock("./rollup.ts");
+	vi.doUnmock("./diff.ts");
+	vi.doUnmock("./append.ts");
+	vi.doUnmock("../wire/verdict-marker.ts");
+	vi.doUnmock("../report/leaks.ts");
+	vi.doUnmock("../report/compose.ts");
+});
+
+/** Replace one export of one module, keeping every other export real. */
+const mutate = async <M extends Record<string, unknown>>(
+	specifier: string,
+	patch: (actual: M) => Partial<M>,
+): Promise<void> => {
+	vi.resetModules();
+	const actual = (await vi.importActual(specifier)) as M;
+	vi.doMock(specifier, () => ({...actual, ...patch(actual)}));
+};
+
+describe("the CI rollup's fail-closed buckets", () => {
+	const CANCELLED = checkRuns(1, [
+		{name: "unit tests", status: "completed", conclusion: "cancelled"},
+	]);
+	const script: ReadonlyArray<readonly [RegExp, ExecResult]> = [
+		[PULL, pull()],
+		[RUNS, CANCELLED],
+	];
+
+	it("reds a cancelled check — a check that proved nothing must not read green", async () => {
+		const {runCi} = await import("./ci-verb.ts");
+		const out = await withShell(
+			runCi({pr: 4321, sha: null, repo: null, json: false, env: ENV}),
+			script,
+		);
+		expect(out.stdout.split("\n")[0]).toBe(`ci\t${HEAD}\tred`);
+	});
+
+	it("MUTANT: dropping `cancelled` from the red set makes the same PR report GREEN", async () => {
+		await mutate<typeof import("./rollup.ts")>("./rollup.ts", (actual) => ({
+			rollupOf: (runs) => actual.rollupOf(runs.filter((run) => run.conclusion !== "cancelled")),
+		}));
+		const {runCi} = await import("./ci-verb.ts");
+		const out = await withShell(
+			runCi({pr: 4321, sha: null, repo: null, json: false, env: ENV}),
+			script,
+		);
+		// The intended death, named exactly: the answer flips to the permissive token, at exit 0.
+		expect(out.code).toBe(0);
+		expect(out.stdout.split("\n")[0]).toBe(`ci\t${HEAD}\tgreen`);
+	});
+});
+
+describe("the three-outcome binding", () => {
+	const STALE = `review-code: PASS @ ${OLD_HEAD} — merge-ready`;
+	const script: ReadonlyArray<readonly [RegExp, ExecResult]> = [
+		[PULL, pull({comments: 1})],
+		[COMMENTS, comments({id: 1, body: STALE})],
+	];
+
+	it("prints a stale PASS as stale", async () => {
+		const {runVerdicts} = await import("./verdicts-verb.ts");
+		const out = await withShell(runVerdicts({pr: 4321, repo: null, json: false, env: ENV}), script);
+		expect(out.stdout).toContain("\tstale\t");
+	});
+
+	it("MUTANT: folding Stale into Current makes a stale PASS read as a CURRENT one (ADR 0058)", async () => {
+		await mutate<typeof import("../wire/verdict-marker.ts")>(
+			"../wire/verdict-marker.ts",
+			(actual) => ({
+				bindToHead: (marker, head) => {
+					const binding = actual.bindToHead(marker, head);
+					return binding._tag === "Stale" ? {_tag: "Current", sha: marker.sha} : binding;
+				},
+			}),
+		);
+		const {runVerdicts} = await import("./verdicts-verb.ts");
+		const out = await withShell(runVerdicts({pr: 4321, repo: null, json: false, env: ENV}), script);
+		expect(out.code).toBe(0);
+		expect(out.stdout).toContain("\tcurrent\t");
+		expect(out.stdout).not.toContain("\tstale\t");
+	});
+});
+
+describe("the diff completeness proof", () => {
+	// The PR declares seven files; the platform served two. Anything but a refusal judges 2/7.
+	const script: ReadonlyArray<readonly [RegExp, ExecResult]> = [
+		[PULL, pull({changedFiles: 7})],
+		[RAW, okOut(DIFF)],
+	];
+
+	it("refuses a truncated diff on 13", async () => {
+		const {runDiff} = await import("./diff-verb.ts");
+		const out = await withShell(runDiff({pr: 4321, repo: null, env: ENV}), script);
+		expect(out.code).toBe(INCOMPLETE_SCAN);
+		expect(out.stdout).toBe("");
+	});
+
+	it("MUTANT: a file count that always matches serves the partial diff as the whole (#3925)", async () => {
+		await mutate<typeof import("./diff.ts")>("./diff.ts", () => ({filesInDiff: () => 7}));
+		const {runDiff} = await import("./diff-verb.ts");
+		const out = await withShell(runDiff({pr: 4321, repo: null, env: ENV}), script);
+		expect(out.code).toBe(0);
+		expect(out.stdout).toBe(DIFF);
+	});
+});
+
+describe("the leak predicate over the assembled verdict", () => {
+	const LEAKY = "the failure is at /Users/someone/scratch/case.md";
+	const options = {
+		pr: 4321,
+		namespace: "review-doc",
+		polarity: "PASS",
+		sha: HEAD,
+		clause: "guide matches shipped behavior",
+		carrier: "marker",
+		repo: null,
+		json: false,
+		env: ENV,
+		stdin: Effect.succeed<StdinRead>({_tag: "Text", text: LEAKY}),
+	};
+	const script: ReadonlyArray<readonly [RegExp, ExecResult]> = [
+		[PULL, pull()],
+		[FILES, files("src/cart.ts", "README.md")],
+		[USER, okOut("kampus-bot")],
+		[COMMENTS, comments()],
+		[CREATE, okOut(JSON.stringify({id: 1, html_url: "https://example.test/c/1"}))],
+		[
+			READBACK,
+			okOut(
+				JSON.stringify({
+					body: `review-doc: PASS @ ${HEAD} — guide matches shipped behavior\n\n${LEAKY}`,
+				}),
+			),
+		],
+	];
+
+	it("refuses a machine-local path in the verdict body on 5, posting nothing", async () => {
+		const {runPost} = await import("./post-verb.ts");
+		const shell = fakeShell(script);
+		const out = await Effect.runPromise(Effect.provide(runPost(options), shell.layer));
+		expect(out.code).toBe(LEAKED_PATH);
+		expect(shell.calls.some((call) => CREATE.test(call))).toBe(false);
+	});
+
+	it("MUTANT: a predicate that finds nothing posts the machine-local path to the PR (#3173)", async () => {
+		await mutate<typeof import("../report/leaks.ts")>("../report/leaks.ts", () => ({
+			scanBody: (body: string) => ({leaks: [], redacted: body}),
+		}));
+		const {runPost} = await import("./post-verb.ts");
+		const shell = fakeShell(script);
+		const out = await Effect.runPromise(Effect.provide(runPost(options), shell.layer));
+		expect(out.code).toBe(0);
+		expect(shell.calls.some((call) => call.includes("/Users/someone/scratch/case.md"))).toBe(true);
+	});
+});
+
+describe("normalizeForReadback's trailing-newline step", () => {
+	// The contract's explicit warning: a re-derivation that drops the third step fires exit 9 on a
+	// clean run. The counterexample is a comment GitHub echoed back with a trailing newline.
+	const options = {
+		pr: 4321,
+		namespace: "review-doc",
+		polarity: "PASS",
+		sha: HEAD,
+		clause: "guide matches shipped behavior",
+		carrier: "marker",
+		repo: null,
+		json: false,
+		env: ENV,
+		stdin: Effect.succeed<StdinRead>({_tag: "Text", text: "the table\n"}),
+	};
+	const script: ReadonlyArray<readonly [RegExp, ExecResult]> = [
+		[PULL, pull()],
+		[FILES, files("src/cart.ts", "README.md")],
+		[USER, okOut("kampus-bot")],
+		[COMMENTS, comments()],
+		[CREATE, okOut(JSON.stringify({id: 1, html_url: "https://example.test/c/1"}))],
+		[
+			READBACK,
+			okOut(
+				JSON.stringify({
+					body: `review-doc: PASS @ ${HEAD} — guide matches shipped behavior   \n\nthe table\n\n\n`,
+				}),
+			),
+		],
+	];
+
+	it("accepts a read-back that differs only in trailing whitespace", async () => {
+		const {runPost} = await import("./post-verb.ts");
+		const out = await withShell(runPost(options), script);
+		expect(out.code).toBe(0);
+	});
+
+	it("MUTANT: dropping the trailing-newline step fires exit 9 on a CLEAN run", async () => {
+		await mutate<typeof import("../report/compose.ts")>("../report/compose.ts", () => ({
+			normalizeForReadback: (text: string) => text,
+		}));
+		const {runPost} = await import("./post-verb.ts");
+		const out = await withShell(runPost(options), script);
+		expect(out.code).toBe(READBACK_MISMATCH);
+		expect(out.stderr.at(-1)).toContain("the comment's bytes are not the ones that were sent");
+	});
+});
+
+describe("the append-only fence", () => {
+	const TEXT = "a regression test covers qty > 1";
+	const options = {
+		issue: 4287,
+		pr: 4321,
+		round: 1,
+		repo: null,
+		json: false,
+		env: ENV,
+		stdin: Effect.succeed<StdinRead>({_tag: "Text", text: TEXT}),
+	};
+	const WITH_LATER_SECTION = `### Acceptance criteria
+
+- [ ] the only criterion
+
+## Notes
+
+nothing yet.
+`;
+	const script: ReadonlyArray<readonly [RegExp, ExecResult]> = [
+		[USER, okOut("kampus-bot")],
+		[PERMISSION, okOut("write")],
+		[ISSUE, issue(WITH_LATER_SECTION)],
+		[PATCH, okOut("{}")],
+	];
+
+	it("MUTANT: a composition that appends PAST the block reds on 15, before any PATCH", async () => {
+		await mutate<typeof import("./append.ts")>("./append.ts", () => ({
+			insertAfterLastCriterion: (body: string, _last: string, row: string) => `${body}\n${row}`,
+		}));
+		const {runAppendCriterion} = await import("./append-criterion-verb.ts");
+		const shell = fakeShell(script);
+		const out = await Effect.runPromise(Effect.provide(runAppendCriterion(options), shell.layer));
+		expect(out.code).toBe(APPEND_ONLY);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toBe(
+			"review append-criterion: the append would drop or mutate an existing row — refusing (append-only fence).",
+		);
+		expect(shell.calls.some((call) => PATCH.test(call))).toBe(false);
+	});
+
+	it("MUTANT: a growth check that always passes lets an unchanged read-back exit 0", async () => {
+		await mutate<typeof import("./append.ts")>("./append.ts", () => ({
+			grewByOne: () => true,
+		}));
+		const {runAppendCriterion} = await import("./append-criterion-verb.ts");
+		const unchanged: ReadonlyArray<readonly [RegExp, ExecResult]> = [
+			[USER, okOut("kampus-bot")],
+			[PERMISSION, okOut("write")],
+			[once(ISSUE), issue()],
+			[ISSUE, issue()],
+			[PATCH, okOut("{}")],
+		];
+		const out = await withShell(runAppendCriterion(options), unchanged);
+		expect(out.code).toBe(0);
+	});
+
+	it("without the mutant, that same unchanged read-back reds on 9", async () => {
+		const {runAppendCriterion} = await import("./append-criterion-verb.ts");
+		const unchanged: ReadonlyArray<readonly [RegExp, ExecResult]> = [
+			[USER, okOut("kampus-bot")],
+			[PERMISSION, okOut("write")],
+			[once(ISSUE), issue()],
+			[ISSUE, issue()],
+			[PATCH, okOut("{}")],
+		];
+		const out = await withShell(runAppendCriterion(options), unchanged);
+		expect(out.code).toBe(READBACK_MISMATCH);
+	});
+});
+
+describe("the short-read refusal on the changed-file list", () => {
+	const script: ReadonlyArray<readonly [RegExp, ExecResult]> = [
+		[PULL, pull({changedFiles: 9})],
+		[FILES, files("src/cart.ts", "README.md")],
+	];
+
+	it("refuses a partition over a truncated read on 13", async () => {
+		const {runScope} = await import("./scope-verb.ts");
+		const out = await withShell(runScope({pr: 4321, repo: null, json: false, env: ENV}), script);
+		expect(out.code).toBe(INCOMPLETE_SCAN);
+	});
+
+	it("MUTANT: a file list that reports the declared count partitions 2 of 9 files as the whole", async () => {
+		await mutate<typeof import("../io/pulls.ts")>("../io/pulls.ts", (actual) => ({
+			listPullFiles: (repo: string, pr: number) =>
+				Effect.map(actual.listPullFiles(repo, pr), (attempt) =>
+					attempt._tag === "Ok"
+						? {
+								_tag: "Ok" as const,
+								value: [...attempt.value, ...Array.from({length: 7}, (_, i) => `pad-${i}.ts`)],
+							}
+						: attempt,
+				),
+		}));
+		const {runScope} = await import("./scope-verb.ts");
+		const out = await withShell(runScope({pr: 4321, repo: null, json: false, env: ENV}), script);
+		expect(out.code).toBe(0);
+		expect(out.stdout).toContain("scoped\t");
+	});
+
+	it("proves the harness itself is live — an unscripted call still fails loudly", async () => {
+		const {runScope} = await import("./scope-verb.ts");
+		const out = await withShell(runScope({pr: 4321, repo: null, json: false, env: ENV}), [
+			[PULL, errOut("gh: Bad gateway (HTTP 502)")],
+		]);
+		expect(out.code).not.toBe(0);
+	});
+});
