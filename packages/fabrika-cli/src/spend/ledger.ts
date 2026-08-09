@@ -23,7 +23,19 @@ import type {RunSpend, StageSpend} from "./token-spend.ts";
  */
 export const DEFAULT_SPEND_LEDGER_PATH = ".fabrika/spend-ledger.jsonl";
 
-/** The shape version stamped on every line — the seam a later row shape evolves through. */
+/**
+ * The shape version stamped on every line — the seam a later row shape evolves through.
+ *
+ * **Bumping this past 1 is not a one-line change.** {@link decodeLine} has no below-current branch:
+ * any `v` that is not the current one is damage. That reading is right only while the current version
+ * is the first one ever written, because then no ledger can hold an older line. At `2`, every intact
+ * `v: 1` row starts counting as `malformed` and drops out of the roll-up — the operator is told their
+ * measurements are corrupt while the totals quietly shrink (#5116). So a bump has to decide, in the
+ * same change, what an older intact row becomes: decode it into a {@link LedgerRow}, or count it under
+ * a skip of its own that every {@link LedgerSkips} reader renders. Until one of those lands the bump
+ * reds the below-current guard in `ledger.unit.test.ts`, which is what keeps the decision from being
+ * skipped by someone who never read this.
+ */
 export const LEDGER_ROW_VERSION = 1;
 
 /**
@@ -52,8 +64,8 @@ export interface LedgerRow {
  * the rows are still there and the action is to upgrade the CLI. One counter reported both as "40
  * lines lost", which is a false alarm in one direction and a missed data loss in the other.
  *
- * A `v` *below* the current one counts as malformed on purpose: v1 is the first shape ever written,
- * so there is no older ledger for such a line to have come from.
+ * A `v` *below* the current one counts as malformed, which is true only while the current version is
+ * the first one ever written — see {@link LEDGER_ROW_VERSION} for what a bump obliges.
  */
 export interface LedgerSkips {
 	/** Lines that will never decode — a truncated tail, a partial write, corruption. Data loss. */
