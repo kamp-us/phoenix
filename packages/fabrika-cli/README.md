@@ -531,6 +531,42 @@ The core is [`src/spend/rollup.ts`](./src/spend/rollup.ts), pure and total: it s
 `readSpendLedger` result over a resolved window and groups it three ways.
 [`src/spend/rollup-verb.ts`](./src/spend/rollup-verb.ts) is the IO around it.
 
+## The capture machinery
+
+Not a verb group — a **library subpath**, `@kampus/fabrika-cli/capture`. It is the
+screenshot / render / golden-diff machinery `build-ui` and `review-ui` drive: shoot a
+surface over a preview or a local build, store and resolve a blessed golden, and diff
+rendered-vs-golden. Its own docs are [`src/capture/README.md`](./src/capture/README.md).
+
+```ts
+import {captureAndUpload, diffRasters, loadGoldenPointer} from "@kampus/fabrika-cli/capture";
+```
+
+It moved here from phoenix's `packages/design-capture` by founder ruling
+([#5063](https://github.com/kamp-us/phoenix/issues/5063)), so an adopter gets it with
+fabrika rather than through a second release train. **The repo-specific data did not move**:
+golden bytes stay in depo and the pointer naming them stays in the consuming repo
+([ADR 0183](../../.decisions/0183-golden-screen-storage-depo-git-pointer.md)) — this package
+ships the machine, never a repo's goldens.
+
+Three consequences worth knowing before you install it:
+
+- **`@playwright/test` is a hard dependency**, inherited from the machinery, so a fabrika
+  install pulls it in even for a caller that never captures. The browser binary is still a
+  separate `playwright install chromium`, so the capture path fails loudly on a machine
+  without it rather than silently.
+- **Storing golden bytes is an injected `StoreLeg`, not a dependency.** A repo's goldens live
+  in its own asset store, so anything naming a host or a credential stayed with the consuming
+  repo — phoenix keeps that half in `packages/design-capture/`. This package owns the shape and
+  the diff, never the store. It is also what keeps the package installable: a published artifact
+  may depend only on what a clean registry resolves
+  ([ADR 0201](../../.decisions/0201-pipeline-tenant-phoenix-first.md) §3), and phoenix's depo client is
+  private.
+- **The capture bin is still phoenix's** — `node packages/design-capture/src/bin.ts capture …`,
+  unchanged. It is a v1 caller, not the adopter-facing surface; the adopter-facing surface is the
+  `ui` verb group, which is [#5061](https://github.com/kamp-us/phoenix/issues/5061)'s work. This
+  move deliberately changed no behavior.
+
 ## Development
 
 ```bash

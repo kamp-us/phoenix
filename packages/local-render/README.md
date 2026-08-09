@@ -12,13 +12,13 @@ evidence** so a reviewer sees the composed delta without re-running anything.
 ```
 running local build          this harness                      on disk
 (pnpm dev: Vite + alchemy) → resolve local base → build plan → captureShots → surface.png
-                             + dev-override cookie  + crop/downscale  (design-capture)
+                             + dev-override cookie  + crop/downscale  (fabrika capture)
 ```
 
-Neither [`@kampus/design-capture`](../design-capture/README.md) (shoots a *deployed*
+Neither [`@kampus/fabrika-cli/capture`](../fabrika-cli/README.md) (shoots a *deployed*
 preview URL) nor `@kampus/audit-run` (a *deployed* stage) targets a local build — this adds
-that targeting on top of design-capture's plan/viewport/**capture** primitives. It does
-**not** re-implement browser capture: the Playwright leg is design-capture's `captureShots`.
+that targeting on top of fabrika capture's plan/viewport/**capture** primitives. It does
+**not** re-implement browser capture: the Playwright leg is fabrika capture's `captureShots`.
 
 ## What it renders — the composed surface over `alchemy dev`
 
@@ -62,7 +62,7 @@ unit-tested; the impure browser leg is injected.
 
 ## Pure core + injected impure leg
 
-Same idiom design-capture follows: the pure selection logic (base resolution, cookie build,
+Same idiom fabrika capture follows: the pure selection logic (base resolution, cookie build,
 crop/downscale plan, CLI-token parsers — [`plan.ts`](./src/plan.ts)) is unit-tested, and the
 orchestration ([`render.ts`](./src/render.ts)) is parameterized over the capture leg
 (`CaptureLeg`, defaulting to `captureShots`) so the unit test injects a fake — no real
@@ -94,14 +94,14 @@ PNG the evidence-attach step (`attachLocalEvidence`, below) uploads and attaches
 `attachLocalEvidence` ([`attach.ts`](./src/attach.ts)) turns two render passes into
 **SHA-bound PR evidence**: hand it the before (pre-edit baseline) and after (post-edit
 result) `CapturedSurface[]` from two `renderLocal` runs plus the PR head SHA, and it uploads
-each PNG through design-capture's upload leg and renders the PR-attachment markdown — one
+each PNG through fabrika capture's upload leg and renders the PR-attachment markdown — one
 before/after block per surface, bound to the head via a `Captured-head: @ <sha>` anchor.
 
 - **SHA-bound** (ADR 0058): the markdown refuses to render unless `headSha` is a full 40-hex
   SHA, and it carries a `Captured-head:` anchor distinct from review-design's `Reviewed-head:`
   — this is generation evidence, not a merge-authorizing verdict, so it stays out of
   `ship-it`'s PASS namespace.
-- **Upload is display-only** (ADR 0165): the injected leg is design-capture's `uploadAsset`,
+- **Upload is display-only** (ADR 0165): the injected leg is fabrika capture's `uploadAsset`,
   whose error channel is `never` — a failed upload degrades one embed to its `uploadError`
   diagnostic, it never loses the paired evidence and never fails the effect.
 - **New/removed surfaces** are tolerated: a surface present in only one pass renders a
@@ -111,9 +111,9 @@ before/after block per surface, bound to the head via a `Captured-head: @ <sha>`
   live network. The caller (the write-code loop, #2965) wires the real `uploadAsset`.
 
 > **Depo dependency — none here.** This capability uploads to GitHub user-attachments via
-> design-capture's `uploadAsset` (the same undocumented endpoint the review-design gate uses),
+> fabrika capture's `uploadAsset` (the same undocumented endpoint the review-design gate uses),
 > **not** to depo. It does not depend on the depo write-host (ADR 0083/0144) being deployed —
-> the golden-baseline depo path (ADR 0183) is a separate design-capture concern.
+> the golden-baseline depo path (ADR 0183) is a separate fabrika capture concern.
 
 ## What downstream consumes
 

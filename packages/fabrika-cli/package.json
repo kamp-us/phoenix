@@ -16,6 +16,7 @@
 	"types": "./src/index.ts",
 	"exports": {
 		".": "./src/index.ts",
+		"./capture": "./src/capture/index.ts",
 		"./package.json": "./package.json"
 	},
 	"files": [
@@ -36,6 +37,10 @@
 				"types": "./dist/index.d.ts",
 				"import": "./dist/index.js"
 			},
+			"./capture": {
+				"types": "./dist/capture/index.d.ts",
+				"import": "./dist/capture/index.js"
+			},
 			"./package.json": "./package.json"
 		}
 	},
@@ -48,6 +53,7 @@
 	},
 	"dependencies": {
 		"@effect/platform-node": "catalog:",
+		"@playwright/test": "catalog:",
 		"effect": "catalog:"
 	},
 	"devDependencies": {

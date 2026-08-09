@@ -1,5 +1,5 @@
-import type {CapturedSurface, CaptureOptions, Shot} from "@kampus/design-capture";
-import {parseSurfaceSpec} from "@kampus/design-capture";
+import type {CapturedSurface, CaptureOptions, Shot} from "@kampus/fabrika-cli/capture";
+import {parseSurfaceSpec} from "@kampus/fabrika-cli/capture";
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {type CaptureLeg, renderLocal} from "./render.ts";

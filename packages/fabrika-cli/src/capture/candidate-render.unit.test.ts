@@ -7,9 +7,13 @@
  */
 import {assert, describe, it} from "@effect/vitest";
 import {Effect} from "effect";
-import {type CaptureLeg, renderCandidateSet, type StoreLeg} from "./candidate-render.ts";
+import {
+	type CaptureLeg,
+	renderCandidateSet,
+	type StoredGolden,
+	type StoreLeg,
+} from "./candidate-render.ts";
 import {type CapturedSurface, CaptureError, type CaptureOptions} from "./capture.ts";
-import type {StoredGolden} from "./golden-store.ts";
 import type {Shot} from "./plan.ts";
 
 /** A fake capture leg: returns stub captures with per-surface deterministic bytes. */

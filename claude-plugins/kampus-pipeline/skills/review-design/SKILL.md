@@ -1,6 +1,6 @@
 ---
 name: review-design
-description: Verify a UI-affecting PR against the four-pillars design law (ADR 0162) by driving Playwright over the PR's preview deploy, capturing the changed UI surfaces, and judging the rendered screenshots multimodally — the 4th reviewer skill alongside review-code / review-doc / review-skill in the configured target repo's pipeline. It hard-FAILs on the six enumerable, objective ADR-0162 prohibitions (faint-for-meaning, missing focus ring, off-grid spacing/type, void empty state, sub-36px tap target, colour-alone meaning), on an uncaught render exception, and on an unexplained deviation from a blessed golden on a blessed surface (calibration B, #2945 — the deterministic rendered-vs-golden diff via the `@kampus/design-capture` seam is escalated to multimodal judgment, never auto-failed on the raw diff); all OTHER holistic/taste judgment rides as advisory (non-blocking) notes in the same verdict comment, and it is calibrated to FAIL conservatively — a borderline call is downgraded to advisory, never a hard block. Trigger on "review the design of PR #N", "review-design #N", "run the design gate on #N", "gate the UI PR against the pillars", "does this UI PR meet the design law", "run review-design", or whenever you're asked to confirm a UI PR's rendered surfaces obey ADR 0162 before merge. This is the design-class verification stage of the issue-intake pipeline: it consumes the UI PRs write-code opens, renders and looks at them over the preview deploy, and emits a namespaced, SHA-bound `review-design: PASS @ <sha> — merge-ready` / `review-design: FAIL @ <sha> — changes-requested` comment marker (never a native review — ADR 0058), upserted on the (PR, gate-namespace, head, run) key, embedding the GitHub-hosted screenshot evidence; on a FAIL it feeds the existing write-code repair loop. It never merges; it never emits a review-code / review-doc / review-skill marker.
+description: Verify a UI-affecting PR against the four-pillars design law (ADR 0162) by driving Playwright over the PR's preview deploy, capturing the changed UI surfaces, and judging the rendered screenshots multimodally — the 4th reviewer skill alongside review-code / review-doc / review-skill in the configured target repo's pipeline. It hard-FAILs on the six enumerable, objective ADR-0162 prohibitions (faint-for-meaning, missing focus ring, off-grid spacing/type, void empty state, sub-36px tap target, colour-alone meaning), on an uncaught render exception, and on an unexplained deviation from a blessed golden on a blessed surface (calibration B, #2945 — the deterministic rendered-vs-golden diff via the `@kampus/fabrika-cli/capture` seam is escalated to multimodal judgment, never auto-failed on the raw diff); all OTHER holistic/taste judgment rides as advisory (non-blocking) notes in the same verdict comment, and it is calibrated to FAIL conservatively — a borderline call is downgraded to advisory, never a hard block. Trigger on "review the design of PR #N", "review-design #N", "run the design gate on #N", "gate the UI PR against the pillars", "does this UI PR meet the design law", "run review-design", or whenever you're asked to confirm a UI PR's rendered surfaces obey ADR 0162 before merge. This is the design-class verification stage of the issue-intake pipeline: it consumes the UI PRs write-code opens, renders and looks at them over the preview deploy, and emits a namespaced, SHA-bound `review-design: PASS @ <sha> — merge-ready` / `review-design: FAIL @ <sha> — changes-requested` comment marker (never a native review — ADR 0058), upserted on the (PR, gate-namespace, head, run) key, embedding the GitHub-hosted screenshot evidence; on a FAIL it feeds the existing write-code repair loop. It never merges; it never emits a review-code / review-doc / review-skill marker.
 ---
 
 # review-design
@@ -124,7 +124,7 @@ prohibitions + render-exception only). You never block a surface you have no ble
 **The flow — deterministic diff → escalate → judge:**
 
 1. **Deterministic diff (the objective signal, never the verdict).** For each changed *blessed*
-   surface, compute the rendered-vs-golden diff through the `@kampus/design-capture` golden seam
+   surface, compute the rendered-vs-golden diff through the `@kampus/fabrika-cli/capture` golden seam
    (Step 2b): `resolveGoldenBytes(pointer, surfaceId)` → the golden bytes, then `diffRasters(golden,
    candidate, {masks, channelThreshold})` → the structured `DiffResult` (`magnitude` in [0, 1] + the
    differing `regions`), under the **diff-time flake canon** (known-dynamic regions masked so they
@@ -444,7 +444,8 @@ bin, the `epic-ledger` / `leak-guard` idiom), invoked as a thin bin.
 if #2247 lands a different package name/flags, this reference updates in lockstep, ADR 0165's four
 implementation legs land to match):
 
-- **Module:** `@kampus/design-capture` at `packages/design-capture/`, run as `node
+- **Module:** the capture machinery is `@kampus/fabrika-cli/capture` at
+  `packages/fabrika-cli/src/capture/`; the bin that drives it is phoenix's, run as `node
   packages/design-capture/src/bin.ts capture …` (the `pipeline-cli` / `node src/bin.ts` idiom).
 - **Input:** the preview URL, the route+state surface list (Step 1), an output dir for the PNG bytes,
   and the target `repository_id` (for the upload).
@@ -471,7 +472,7 @@ degradation in the evidence section and proceed.
 **Then extract the deterministic render-exception signal** (#2594) — no vision needed, just read
 `pageErrors`. A surface that threw an **uncaught exception** (`kind == "pageerror"`) during its render
 hard-FAILs the gate regardless of how its screenshot looks; a bare `console.error` is advisory. The
-`design-capture` bin also prints a `render FAILED — …` summary to stderr when any surface threw:
+`fabrika capture` bin also prints a `render FAILED — …` summary to stderr when any surface threw:
 
 ```bash
 # uncaught exceptions → hard-FAIL rows (surface + message); console.error → advisory
@@ -489,7 +490,7 @@ A non-empty `RENDER_CRASHES` is a **FAIL** (Step 3), naming each thrown error + 
 **Skip this step entirely when no blessed surface changed** (Step 1's intersection was empty) — the
 golden-deviation class is then N/A and the run is exactly as before. When one or more changed surfaces
 *are* blessed, compute the **deterministic** rendered-vs-golden diff for each through the
-`@kampus/design-capture` golden seam. This is the **signal** that decides whether to escalate — it is
+`@kampus/fabrika-cli/capture` golden seam. This is the **signal** that decides whether to escalate — it is
 **not** the verdict, and it **never** auto-FAILs (calibration B, #2945).
 
 **The seam this step codes against** (the golden substrate #2960 landed under ADR 0183 — the same
@@ -497,8 +498,9 @@ package Step 2 captures with; if it later exposes a dedicated golden-diff bin th
 in lockstep, as Step 2's capture-seam note does):
 
 - **Resolve the golden** — `resolveGoldenBytes(pointer, surfaceId)` ties the committed pointer to the
-  blessed bytes: `loadGoldenPointer("packages/design-capture/golden-pointer.json")` → `resolveGoldenBytes`
-  (pointer → depo URL → bytes). An **unblessed** surface resolves to `null` (already excluded by Step
+  blessed bytes: `loadGoldenPointer("packages/design-capture/golden-pointer.json")` (fabrika's
+  `@kampus/fabrika-cli/capture`) → `resolveGoldenBytes` (phoenix's `@kampus/design-capture`, which
+  owns the depo half — pointer → depo URL → bytes). An **unblessed** surface resolves to `null` (already excluded by Step
   1's intersection); a **depo fetch fault** is an error — the *can't-gate* branch below, never a FAIL.
 - **The candidate bytes** are the surface's captured `localPath` PNG from Step 2.
 - **Diff** — `diffRasters(golden, candidate, {masks, channelThreshold})` returns the structured
@@ -821,7 +823,7 @@ A single invocation gates one UI PR end to end: classify UI-affecting + blocking
 canonical §CP set (Step 0, mis-route off-ramp if not a UI PR), resolve the PR / head SHA / preview
 URL / changed surfaces + flag which changed surfaces are blessed (Step 1), drive the #2247 helper to
 capture over the preview deploy and read the **local bytes** + the per-surface `pageErrors` (Step 2),
-diff each changed *blessed* surface against its golden through the `@kampus/design-capture` seam
+diff each changed *blessed* surface against its golden through the `@kampus/fabrika-cli/capture` seam
 (Step 2b — the deterministic signal, never a raw-diff FAIL), judge each surface against the six
 objective ADR-0162 prohibitions plus the deterministic render-exception check (#2594) plus the
 golden-deviation class (escalate-to-judgment: an unexplained deviation from a blessed golden hard-

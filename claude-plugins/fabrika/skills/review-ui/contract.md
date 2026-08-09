@@ -17,13 +17,12 @@ section names the scar the v1 counterpart carries and what this spec does instea
 **The capture-machinery boundary (the tandem ruling).** Rendering, capture validation, golden
 resolution and raster diffing are **one machinery shared with `build-ui`** — same render paths,
 same golden formats, same modules (founder ruling, brief amendment 2026-08-09). That machinery is
-the fabrika-owned capture package: [#5063](https://github.com/kamp-us/phoenix/issues/5063) moves
-`packages/design-capture/`'s machinery onto fabrika's train (repo-specific DATA — golden bytes,
-`golden-pointer.json`, harness config — stays per-repo), sequenced **before or as slice 1 of**
-the `ui`-verb implementation (#5061). An implementer imports that fabrika-owned module the way
-`build`'s verbs import the `wire` modules; this contract cites the module boundary, not
-`@kampus/design-capture`'s pre-move path. Every scar this spec designs out binds regardless of
-whether the implementation imports or reimplements.
+fabrika-owned: [#5063](https://github.com/kamp-us/phoenix/issues/5063) moved that machinery onto
+fabrika's train, where it now lives at `packages/fabrika-cli/src/capture/` behind the
+`@kampus/fabrika-cli/capture` subpath (repo-specific DATA — golden bytes, `golden-pointer.json`,
+harness config — stayed per-repo), ahead of the `ui`-verb implementation (#5061). An implementer
+imports that module the way `build`'s verbs import the `wire` modules. Every scar this spec designs
+out binds regardless of whether the implementation imports or reimplements.
 
 **Reused, never respecified — the sibling contracts this one leans on:**
 
@@ -456,7 +455,7 @@ $ echo $?
 **Grounding**
 
 - #3925 / v1 S1, S24, and the `never`-typed upload channel
-  (`packages/design-capture/src/upload.ts` — every transport failure degraded to
+  (`packages/fabrika-cli/src/capture/upload.ts` — every transport failure degraded to
   `{hostedUrl: null, uploadError}` and no consumer ever read `uploadError`): the upload outcome
   was advisory by contract, so a 100%-failed channel decorated months of PASSes. Step 4 makes it
   a precondition; `17` is this contract's reason to exist.

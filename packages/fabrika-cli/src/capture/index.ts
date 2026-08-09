@@ -1,6 +1,17 @@
 /**
- * @kampus/design-capture — the Playwright-capture + GitHub user-attachments
- * upload helper the review-design gate drives (ADR 0165, epic #1966).
+ * `@kampus/fabrika-cli/capture` — the screenshot/render/golden-diff machinery the
+ * design gates drive (ADR 0165, epic #1966). It lives here, on fabrika's release
+ * train, so an adopter repo gets it with fabrika instead of depending on a
+ * phoenix-published package (founder ruling on #5061, issue #5063).
+ *
+ * The same ruling keeps the repo-specific DATA per-repo, and that boundary is what
+ * decides where a module lives. Anything naming a *host* or a *credential* — the depo
+ * store/fetch of golden bytes, the pointer file, the harness config — is the consuming
+ * repo's and is NOT here; phoenix keeps its half in `packages/design-capture/` (ADR 0183).
+ * That is not only a taste call: this package is published, so a dependency on a private
+ * `@kampus/*` package could not resolve from a clean registry (ADR 0201 §3, enforced by
+ * `publish-isolation-guard`). Storing bytes is therefore an injected `StoreLeg` here — the
+ * shape, never the store.
  *
  * The seam #2246 codes against: `captureAndUpload(request)` →
  * `Effect<CaptureRecord[], CaptureError, HttpClient>`, each record
@@ -30,6 +41,7 @@ export type {
 	CaptureLeg as CandidateCaptureLeg,
 	RenderCandidateSetDeps,
 	RenderCandidateSetRequest,
+	StoredGolden,
 	StoreLeg,
 } from "./candidate-render.ts";
 export {renderCandidateSet} from "./candidate-render.ts";
@@ -42,9 +54,10 @@ export type {
 export {assembleCandidateSet, parseCandidateSet, serializeCandidateSet} from "./candidate-set.ts";
 export type {CaptureCookie, CapturedSurface, CaptureOptions} from "./capture.ts";
 export {CaptureError, captureShots} from "./capture.ts";
-// The golden-baseline seam (ADR 0183): bytes in depo, the current-golden pointer in
-// git; store → resolve → deterministic diff. Consumed by write-code (self-check) and
-// review-design (blocking gate) so there is ONE notion of "golden".
+// The golden-baseline seam (ADR 0183): the current-golden pointer in git, the bytes in
+// the consuming repo's asset store; pointer → deterministic diff. Consumed by write-code
+// (self-check) and review-design (blocking gate) so there is ONE notion of "golden". The
+// store/fetch half is NOT here — see the module docblock.
 export type {DiffOptions, DiffRegion, DiffResult, RasterImage, Rect} from "./golden-diff.ts";
 export {diffRasters} from "./golden-diff.ts";
 export {loadGoldenPointer, serializeGoldenPointer} from "./golden-fs.ts";
@@ -55,14 +68,6 @@ export {
 	isSha256Hex,
 	resolveGoldenEntry,
 } from "./golden-pointer.ts";
-export type {StoredGolden} from "./golden-store.ts";
-export {
-	fetchGoldenBytes,
-	GoldenFetchError,
-	resolveGoldenBytes,
-	resolveGoldenUrl,
-	storeGolden,
-} from "./golden-store.ts";
 export type {CaptureAndUploadRequest, CaptureRecord} from "./orchestrate.ts";
 export {captureAndUpload, hostedUrls, mergeRecord} from "./orchestrate.ts";
 export type {PageError, SurfacePageErrors} from "./page-errors.ts";
