@@ -141,7 +141,9 @@ neither substitutes for the other.
 not.** Pick from the repository's contributors and say in the child body why — a wrong pick is one
 re-assignment. But where the epic says the owner sits *outside* the roster you can see (a legal
 sign-off, a finance ruling, another team's call), naming someone anyway invents accountability, and
-that is what `NEEDS-INPUT` is for: ask, do not guess.
+that is what `NEEDS-INPUT` is for: ask, do not guess. Then mint **nothing** — not even the slices
+that are unblocked, whose creation would publish half a topology for a human to reconcile (§TERM,
+`NEEDS-INPUT`).
 
 Done when it answers `minted` with the child number and `linked: true`. The verb creates, records
 the child in the run manifest, links, then re-reads. `23` means the child **exists and is unlinked**: it names the number, and
@@ -264,8 +266,8 @@ epic — so read each code off the command that produced it and never off this l
   set — a half-minted epic with no topology and no plan in its body is a state a human has to
   reconcile — then state the one question and post it with `fabrika build note`.
 - `BACKED-OFF` — `15` at the claim: held by another lane. Nothing read, written, or released.
-- `STOPPED` — everything else that leaves the run UNKNOWN: `3`, `11`, `12`, `13`, an unrepairable `4`/`5`/`6`/`25`, a `10` you cannot
-  repair, `13` from `build tree`, a `15` after the claim was won, and any `1`, `2` or `127` from any verb.
+- `STOPPED` — everything else that leaves the run UNKNOWN: `3`, `11`, `12`, an unrepairable `4`/`5`/`6`/`25`, a `10` you cannot
+  repair, `13` from `build tree` (no `ledger` verb seats a `13`), a `15` after the claim was won, and any `1`, `2` or `127` from any verb.
   Post the state for a successor with `fabrika build note` **when you hold the claim**; otherwise
   report the code.
 
