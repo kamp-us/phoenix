@@ -17,22 +17,17 @@
 import {Effect} from "effect";
 import {execCapture} from "../io/exec.ts";
 import {type Attempt, fail, ok, type Shell} from "../io/git.ts";
-import {
-	absent,
-	type Existence,
-	httpStatusOf,
-	present,
-	splitJsonArrays,
-	unknown,
-} from "../io/issues.ts";
+import {absent, type Existence, httpStatusOf, pagedJson, present, unknown} from "../io/issues.ts";
 import {isRecord, parseJson} from "../io/json.ts";
 
 const str = (value: unknown): string => (typeof value === "string" ? value : "");
 
 /** Every element of every page, or the failure that stopped the read. */
 const pagedArray = (stdout: string): Attempt<ReadonlyArray<unknown>> => {
+	const pages = pagedJson(stdout);
+	if (pages._tag === "Failure") return pages;
 	const out: unknown[] = [];
-	for (const page of splitJsonArrays(stdout)) {
+	for (const page of pages.value) {
 		const parsed = parseJson(page);
 		if (!Array.isArray(parsed)) return fail("`gh api` exited 0 but its output is not a list");
 		out.push(...parsed);
@@ -45,9 +40,11 @@ const pagedEnvelope = (
 	stdout: string,
 	key: string,
 ): Attempt<{declared: number; entries: ReadonlyArray<unknown>}> => {
+	const pages = pagedJson(stdout);
+	if (pages._tag === "Failure") return pages;
 	const entries: unknown[] = [];
 	let declared: number | null = null;
-	for (const page of splitJsonArrays(stdout)) {
+	for (const page of pages.value) {
 		const parsed = parseJson(page);
 		if (!isRecord(parsed) || !Array.isArray(parsed[key])) {
 			return fail(`\`gh api\` exited 0 but its output carries no ${key} list`);

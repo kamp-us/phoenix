@@ -20,14 +20,7 @@
 import {Effect} from "effect";
 import {execCapture} from "../io/exec.ts";
 import {type Attempt, fail, ok, type Shell} from "../io/git.ts";
-import {
-	absent,
-	type Existence,
-	httpStatusOf,
-	present,
-	splitJsonArrays,
-	unknown,
-} from "../io/issues.ts";
+import {absent, type Existence, httpStatusOf, pagedJson, present, unknown} from "../io/issues.ts";
 import {isRecord, parseJson} from "../io/json.ts";
 import type {CycleDoc} from "./model.ts";
 
@@ -48,8 +41,10 @@ export const listSubIssues = (repo: string, epic: number): Shell<Attempt<Readonl
 			`repos/${repo}/issues/${epic}/sub_issues?per_page=100`,
 		]);
 		if (!r.ok) return fail(r.reason);
+		const pages = pagedJson(r.stdout);
+		if (pages._tag === "Failure") return pages;
 		const numbers: number[] = [];
-		for (const page of splitJsonArrays(r.stdout)) {
+		for (const page of pages.value) {
 			const parsed = parseJson(page);
 			if (!Array.isArray(parsed)) {
 				return fail("`gh api` exited 0 but its output is not a list of sub-issues");

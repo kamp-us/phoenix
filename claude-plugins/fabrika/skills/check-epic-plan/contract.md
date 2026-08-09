@@ -36,7 +36,8 @@ close. Modules reused by import:
 
 - `packages/fabrika-cli/src/io/issues.ts` — `resolveRepo`, `getIssue` (three-way
   `Present` / `Absent` (404 only) / `Unknown`), `listComments` (typed JSON, never `--jq .body`),
-  `splitJsonArrays` (`--paginate`'s concatenated arrays), `addLabels`, `removeLabel` (**folds 404
+  `pagedJson` (`--paginate`'s concatenated arrays, **a truncated read as a failure**), `addLabels`,
+  `removeLabel` (**folds 404
   into success — removal is idempotent**, which is v1 scar F3 gone for free), `listLabels`.
 - `packages/fabrika-cli/src/build/dependencies.ts` — `readTopology` (`Parsed` / `Absent` /
   `Unparseable{line,text}`) and `predecessorsOf`. **This spec adds no second `## Dependencies`

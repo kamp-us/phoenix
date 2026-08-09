@@ -21,6 +21,7 @@ import {
 	issue,
 	LANE_UUID,
 	marker,
+	truncatedComments,
 } from "./fixtures.test-support.ts";
 import {runPick} from "./pick-verb.ts";
 import {DEFAULT_ROADMAP} from "./scope-admission.ts";
@@ -180,6 +181,24 @@ describe("runClaim", () => {
 		]);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stderr.at(-1)).toContain('ownership is UNKNOWN, never "unclaimed"');
+	});
+
+	it("refuses a TRUNCATED marker read on 11 and keeps its own marker — a short read is not a loss", async () => {
+		const shell = fakeShell([
+			[ISSUE, CLAIMABLE],
+			[POST, POSTED],
+			[GET_COMMENT, ECHO],
+			[COMMENTS, truncatedComments({id: 9001, body: MINE})],
+			[perm("agent"), okOut("write\n")],
+			[DELETE, okOut("")],
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(runClaim(options), Layer.merge(shell.layer, NO_FOCUS.layer)),
+		);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stderr.at(-1)).toContain("page boundary");
+		expect(out.stderr.some((line) => line.includes("is not authorized"))).toBe(false);
+		expect(shell.calls.some((line) => DELETE.test(line))).toBe(false);
 	});
 
 	it("refuses an unreadable PERMISSION on 11 — a transient read never demotes an author", async () => {
@@ -390,6 +409,16 @@ describe("runConfirm", () => {
 			'build confirm: no claim exists on #4312 — nothing to confirm; run "fabrika build claim 4312" first.',
 		);
 	});
+
+	it("refuses a truncated read on 11, never as the 'no claim exists' it looks like", async () => {
+		const out = await run(runConfirm, [
+			[ISSUE, CLAIMABLE],
+			[COMMENTS, truncatedComments({id: 9001, body: MINE})],
+			[perm("agent"), okOut("write\n")],
+		]);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stderr.at(-1)).toContain("page boundary");
+	});
 });
 
 describe("runRelease", () => {
@@ -423,6 +452,20 @@ describe("runRelease", () => {
 		expect(out.stderr.at(-1)).toBe(
 			"build release: this session holds no claim on #4312 — refusing to release another lane's.",
 		);
+		expect(shell.calls.some((line) => DELETE.test(line))).toBe(false);
+	});
+
+	it("refuses a truncated read on 11 and deletes nothing", async () => {
+		const shell = fakeShell([
+			[ISSUE, CLAIMABLE],
+			[COMMENTS, truncatedComments({id: 9001, body: MINE})],
+			[perm("agent"), okOut("write\n")],
+			[DELETE, okOut("")],
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(runRelease(options), Layer.merge(shell.layer, NO_FOCUS.layer)),
+		);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(shell.calls.some((line) => DELETE.test(line))).toBe(false);
 	});
 

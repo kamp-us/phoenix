@@ -11,12 +11,12 @@ import {
 	listComments,
 	listOpenMilestones,
 	openQueueIssues,
+	pagedJson,
 	parseTabRows,
 	patchIssueBody,
 	removeLabel,
 	scanJsonPages,
 	setMilestone,
-	splitJsonArrays,
 } from "./issues.ts";
 
 const run = <A>(effect: Effect.Effect<A, never, never>) => Effect.runPromise(effect);
@@ -39,18 +39,30 @@ describe("parseTabRows — shape before interpretation", () => {
 	});
 });
 
-describe("splitJsonArrays", () => {
+describe("pagedJson", () => {
 	it("splits the concatenated pages `--paginate` emits, which JSON.parse rejects whole", () => {
 		expect(() => JSON.parse("[1][2]")).toThrow();
-		expect(splitJsonArrays("[1][2]")).toEqual(["[1]", "[2]"]);
+		expect(pagedJson("[1][2]")).toEqual({_tag: "Ok", value: ["[1]", "[2]"]});
 	});
 
 	it("does not split on a bracket inside a string — a body may contain one", () => {
-		expect(splitJsonArrays('[{"body":"see [1] and ]"}]')).toEqual(['[{"body":"see [1] and ]"}]']);
+		expect(pagedJson('[{"body":"see [1] and ]"}]')).toEqual({
+			_tag: "Ok",
+			value: ['[{"body":"see [1] and ]"}]'],
+		});
 	});
 
 	it("does not split on an escaped quote inside a string", () => {
-		expect(splitJsonArrays('[{"body":"a \\" ] b"}]')).toEqual(['[{"body":"a \\" ] b"}]']);
+		expect(pagedJson('[{"body":"a \\" ] b"}]')).toEqual({
+			_tag: "Ok",
+			value: ['[{"body":"a \\" ] b"}]'],
+		});
+	});
+
+	it("fails on a read that stopped mid-page rather than handing back the pages that closed", () => {
+		const result = pagedJson('[{"id":1}][{"id');
+		expect(result._tag).toBe("Failure");
+		expect(result).toMatchObject({reason: expect.stringContaining("page boundary")});
 	});
 });
 
@@ -233,6 +245,16 @@ describe("listComments", () => {
 			),
 		);
 		expect(result._tag).toBe("Failure");
+	});
+
+	it("refuses a read that stopped mid-page — never the comments that arrived before the cut", async () => {
+		const whole = `[${comment(1, "usirin", "first")}][${comment(2, "cansirin", "second")}]`;
+		const cut = whole.slice(0, whole.lastIndexOf("second") + 3);
+		const result = await run(
+			Effect.provide(listComments("kamp-us/phoenix", 1), fakeShell([[/gh api/, okOut(cut)]]).layer),
+		);
+		expect(result._tag).toBe("Failure");
+		expect(result).toMatchObject({reason: expect.stringContaining("page boundary")});
 	});
 });
 
