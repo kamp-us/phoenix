@@ -830,10 +830,22 @@ sentinel: fold it as `[UNVERIFIABLE]`, never as a not-applicable skip. **A detec
 RUN reaches that sentinel too**, and the reason it has to is that its silence is indistinguishable
 from a negative: detector (3) shipped with a regex awk refused to compile, exited 2 into a status
 nothing tested, and the gate printed its confident `not applicable` skip on 16 export-changing PRs
-over six weeks (#4700). So each detector's exit status is tested, and an unrun one is UNKNOWN. That
-the detectors can fire *at all* is pinned executably by
-[`scripts/verify-glossary-detector-fires.sh`](scripts/verify-glossary-detector-fires.sh) — a
-positive fixture, because a born-dead detector passes every test that only asserts the happy skip.
+over six weeks (#4700). So each detector's exit status is tested, and an unrun one is UNKNOWN.
+
+**A read that SUCCEEDED while seeing nothing reaches the sentinel too (#4986).** An exit status only
+catches the read that *died*; the read that returns zero rows at exit 0 is the same UNKNOWN wearing a
+plausible answer's clothes. So the two inputs whose emptiness is impossible for a real PR — the file
+list (every PR touches at least one file) and the diff text — carry a **scope assert** on top of their
+status test, and an empty one routes to `CANNOT-EVALUATE`, never to "this PR added no new surface".
+The base read gets the same treatment from the other direction: `git cat-file -e` exits non-zero for
+both "no such path" and "the read failed", so the chain now **asserts the base tree is readable once,
+up front** — which is what makes each later non-zero probe mean *absence* and nothing else.
+
+That the detectors can fire *at all*, and that each of those reads goes loud rather than silent, is
+pinned executably by
+[`scripts/verify-glossary-detector-fires.sh`](scripts/verify-glossary-detector-fires.sh) — positive
+fixtures, because a born-dead detector passes every test that only asserts the happy skip, plus eight
+mutants that each delete one guard and require the assertions to go red.
 
 Fold the result into the per-criterion table as one line, exactly like Step 3b's flag-gating facet —
 so the conjunctive verdict (Step 3) accounts for it like any other criterion:
@@ -861,6 +873,13 @@ reading green.
 > `glossary-freshness: not applicable — no .glossary/TERMS.md on base` and contributes no row. This
 > is the same portability / graceful-absence contract the cycle-doc probe (Step 3b, formats §1) and
 > the milestone default follow — absence is a first-class state, not a defect.
+>
+> **Absent is only distinguishable from unreadable because the base tree is asserted first (#4986).**
+> `git cat-file -e` fails identically for "this path is not there" and "I could not read the base at
+> all", so on an unreadable base *every* probe reads absent and this skip would be printed about a
+> base the gate never saw. The chain asserts `origin/$BASE_REF^{tree}` is readable before any path
+> probe; that assert failing is `CANNOT-EVALUATE`, and only past it does a non-zero probe mean
+> absence.
 >
 > **This probe is the executed guard that LEADS the verdict chain above** — it is the chain's first
 > `if`, so the detector-blind `UNVERIFIABLE` branch is structurally unreachable when the glossary is

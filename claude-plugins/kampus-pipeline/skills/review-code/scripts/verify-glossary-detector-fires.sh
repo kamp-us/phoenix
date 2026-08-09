@@ -12,18 +12,33 @@
 # add a public export and require a match — plus the loudness contract on the other side: an unrun
 # detector must be CANNOT-EVALUATE, never a plausible empty answer.
 #
-# Falsifiability is asserted, not assumed. The harness generates five MUTANTS, each reverting one
+# A read that could not SEE is the second property, and it is the same shape one branch over (#4986):
+# three reads used to resolve a failure or an empty result to the clean skip. Each now routes through
+# `cannot()`, and each is driven here by a fixture that forces exactly that could-not-see state — an
+# unreadable base tree, an exit-0-but-empty file list, an exit-0-but-empty diff.
+#
+# Falsifiability is asserted, not assumed. The harness generates eight MUTANTS, each reverting one
 # claim this fix rests on, and requires the assertions to go red under each:
 #   M1  the awk regex literal comes back        → positive fixture must go LOUD, not green
-#   M2  the detector status test is deleted     → an unrun detector must fall through to the skip
-#   M3  M1 + M2, i.e. the code as filed         → reproduces #4700 verbatim: a clean skip
+#   M2  detector (3)'s loudness is deleted      → an unrun detector must fall through to the skip
+#   M3  M1 + M2, i.e. the code as filed         → reproduces #4700: a clean skip
 #   M4  `\b` comes back as the word boundary    → one-true-awk does not implement it, so no match
 #   M5  the added-line test and the export test fuse back into one `^\+[^+].*export` regex, where
 #       the `[^+]` eats the `e` of an unindented `+export` before `.*export` can match
+#   M6  the empty-diff scope assert is deleted  → an empty diff must fall through to the skip
+#   M7  the empty-file-list assert is deleted   → an empty file list must fall through to the skip
+#   M8  the base-tree assert is deleted         → an unreadable base must read as "no .glossary"
 # M4 and M5 pin two further deaths found while fixing the filed one: with the character class
 # repaired and nothing else changed, this detector STILL matched nothing. M5 is also why the added-
 # line test and the export test are two separate patterns rather than one — split, `[^+]` is
 # harmless; fused, it silently drops the commonest shape of the surface the detector exists to see.
+# M6–M8 are the #4986 half: each deletes exactly one guard and requires the deleted guard's own
+# could-not-see fixture to reach a `not applicable` skip again.
+#
+# M1 and M3 do not reproduce the filed regex byte-for-byte: the `sed` generator consumes the
+# backslashes, so what lands is the UNESCAPED form of it. That is still unparseable to one-true-awk
+# for the same reason (a `/` inside a bracket expression closes the regex literal), so the property
+# under test — an unparseable program must go loud — is pinned either way.
 #
 # Hermetic: `gh`, `git` and the CLI shim are stubbed, so this needs no auth, no network, and reads
 # no real PR.
@@ -63,19 +78,23 @@ printf 'BASE_REF=main\nHEAD_SHA=%s\n' "0000000000000000000000000000000000000000"
 
 cat > "$BIN/gh" <<'STUB'
 #!/usr/bin/env bash
+# FAIL and EMPTY are two DIFFERENT stub modes, because the defect under test is exactly their
+# conflation: FAIL exits non-zero, EMPTY exits 0 with nothing on stdout (#4986).
 case "$1 ${2:-}" in
-  "pr diff")        [ "$STUB_DIFF"  = FAIL ] && exit 1; cat "$STUB_DIFF";  exit 0 ;;
-  "api --paginate") [ "$STUB_FILES" = FAIL ] && exit 1; cat "$STUB_FILES"; exit 0 ;;
+  "pr diff")        [ "$STUB_DIFF"  = FAIL ] && exit 1; [ "$STUB_DIFF"  = EMPTY ] && exit 0; cat "$STUB_DIFF";  exit 0 ;;
+  "api --paginate") [ "$STUB_FILES" = FAIL ] && exit 1; [ "$STUB_FILES" = EMPTY ] && exit 0; cat "$STUB_FILES"; exit 0 ;;
 esac
 exit 0
 STUB
 
 # Every path EXISTS on base except when the case says otherwise, so detectors (1) and (2) stay mute
 # and detector (3) is the only one that can speak — which is what isolates it under test.
+# `STUB_BASE=FAIL` is the unreadable-base mode: `cat-file` fails on EVERY path, which is what makes
+# "the base could not be read" indistinguishable from "the path is absent" without the tree assert.
 cat > "$BIN/git" <<'STUB'
 #!/usr/bin/env bash
 case "$1" in
-  cat-file) exit 0 ;;
+  cat-file) [ "${STUB_BASE:-ok}" = FAIL ] && exit 1; exit 0 ;;
   ls-tree)  if [ "$2" = "-r" ]; then printf 'kit/package.json\nui/package.json\n'
             else printf 'sozluk\npano\n'; fi
             exit 0 ;;
@@ -127,8 +146,8 @@ printf 'modified\tpackages/kit/src/index.ts\n' > "$TMP/files-plain"
 printf 'modified\tpackages/kit/src/index.ts\nmodified\t.glossary/TERMS.md\n' > "$TMP/files-glossary-touched"
 
 # One case = one run of the script under one PR shape. `$OUT` is its stdout, `$RC` its exit status.
-run_case() {   # $1 = script, $2 = diff fixture (or FAIL), $3 = files fixture (or FAIL)
-	OUT="$(STUB_DIFF="$2" STUB_FILES="$3" STUB_HEAD_DIR="$HEAD" \
+run_case() {   # $1 = script, $2 = diff fixture (or FAIL|EMPTY), $3 = files fixture (or FAIL|EMPTY), $4 = base (ok|FAIL)
+	OUT="$(STUB_DIFF="$2" STUB_FILES="$3" STUB_BASE="${4:-ok}" STUB_HEAD_DIR="$HEAD" \
 		CLAUDE_PIPELINE_REPO=owner/repo CLAUDE_PLUGIN_ROOT="$TMP/plugin" \
 		PATH="$BIN:$PATH" bash "$1" 1 2>"$TMP/err")"
 	RC=$?
@@ -153,7 +172,7 @@ check() {   # $1 = label, $2 = expected stdout substring, $3 = zero|nonzero
 	printf 'OK    %-38s %s\n' "$1" "$2"
 }
 
-echo "scope: $SUT, driven under 6 PR shapes + 5 mutants"
+echo "scope: $SUT, driven under 9 PR shapes + 8 mutants"
 
 # --- the POSITIVE fixture: detector (3) fires, and the gate reaches the new-surface branch ---------
 run_case "$SUT" "$TMP/diff-export-added" "$TMP/files-plain"
@@ -173,6 +192,14 @@ run_case "$SUT" FAIL "$TMP/files-plain"
 check "diff unreadable ⇒ CANNOT-EVALUATE" "CANNOT-EVALUATE (detector (3)" nonzero
 run_case "$SUT" "$TMP/diff-export-added" FAIL
 check "file list unreadable ⇒ CANNOT-EVAL" "CANNOT-EVALUATE (the PR file list" nonzero
+
+# --- and a read that SUCCEEDED while seeing nothing is could-not-see too, not a clean answer (#4986)
+run_case "$SUT" EMPTY "$TMP/files-plain"
+check "empty diff at exit 0 ⇒ CANNOT-EVAL" "EMPTY diff at exit 0" nonzero
+run_case "$SUT" "$TMP/diff-no-export" EMPTY
+check "empty file list ⇒ CANNOT-EVALUATE" "came back EMPTY at exit 0" nonzero
+run_case "$SUT" "$TMP/diff-no-export" "$TMP/files-plain" FAIL
+check "unreadable base ⇒ CANNOT-EVALUATE" "the base tree origin/main is unreadable" nonzero
 
 # --- falsifiability: every claim above must go red under a mutant that reverts it ------------------
 #
@@ -217,12 +244,14 @@ if mutate regex "s%^\$0 ~ entry.*%$LITERAL%"; then
 	expect_mutant "M1 regex literal returns" "CANNOT-EVALUATE (detector (3)" "the born-dead regex now goes LOUD, not green"
 fi
 
-if mutate status '/DETECTOR3_RC/d'; then
+# Detector (3)'s loudness is now three lines, not one — the two status tests plus the scope assert —
+# so reproducing the historic silent skip takes all three. M6 below isolates the scope assert alone.
+if mutate status '/DETECTOR3_RC/d' '/DETECTOR3_AWK_RC/d' '/EMPTY diff at exit 0/d'; then
 	run_case "$MUTANT" FAIL "$TMP/files-plain"
-	expect_mutant "M2 status test deleted" "not applicable" "without the status test an unrun detector reads as a clean skip"
+	expect_mutant "M2 detector (3) loudness deleted" "not applicable" "without them an unrun detector reads as a clean skip"
 fi
 
-if mutate asfiled "s%^\$0 ~ entry.*%$LITERAL%" '/DETECTOR3_RC/d'; then
+if mutate asfiled "s%^\$0 ~ entry.*%$LITERAL%" '/DETECTOR3_RC/d' '/DETECTOR3_AWK_RC/d' '/EMPTY diff at exit 0/d'; then
 	run_case "$MUTANT" "$TMP/diff-export-added" "$TMP/files-plain"
 	expect_mutant "M3 the code as filed (#4700)" "not applicable" "reproduces the filed defect: a clean skip over a real new export"
 fi
@@ -235,6 +264,24 @@ fi
 if mutate addedline 's%^in_entry .*%in_entry \&\& /^\\+[^+].*export/ { print }%'; then
 	run_case "$MUTANT" "$TMP/diff-export-added" "$TMP/files-plain"
 	expect_mutant "M5 one combined added-line regex" "not applicable" "[^+] eats the e of an unindented +export before .*export can match"
+fi
+
+# M6–M8: one guard deleted each, driven by that guard's own could-not-see fixture. Each must land
+# back on a `not applicable` skip — which is the behaviour #4986 filed, and the teeth of the three
+# assertions above.
+if mutate emptydiff '/EMPTY diff at exit 0/d'; then
+	run_case "$MUTANT" EMPTY "$TMP/files-plain"
+	expect_mutant "M6 empty-diff assert deleted" "not applicable" "an empty diff reads as 'this PR added no export'"
+fi
+
+if mutate emptyfiles '/came back EMPTY at exit 0/d'; then
+	run_case "$MUTANT" "$TMP/diff-no-export" EMPTY
+	expect_mutant "M7 empty-file-list assert deleted" "not applicable" "an empty file list reads as 'this PR added no new surface'"
+fi
+
+if mutate basetree '/the base tree origin/d'; then
+	run_case "$MUTANT" "$TMP/diff-no-export" "$TMP/files-plain" FAIL
+	expect_mutant "M8 base-tree assert deleted" "no .glossary/TERMS.md on base" "an unreadable base reads as a repo that never adopted the glossary"
 fi
 
 rm -rf "$TMP"
