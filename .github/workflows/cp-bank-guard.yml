@@ -1,0 +1,64 @@
+name: cp-bank-guard
+
+# The reader that makes an UNARMED §CP approval-watcher visible (#4754).
+#
+# Banking a control-plane PR and arming the watcher that notices its approval were two
+# independent acts, and the board state after a bank-without-arm was identical to a
+# bank-with-arm. PR #4742 sat approved-and-unenqueued for 8h34m and nothing anywhere went red;
+# a human on a routine pass caught it. The approval-watcher writes a durable tick ledger, but
+# nothing read it — and a surface that only ever writes its own trace can never notice that it
+# stopped writing.
+#
+# So this job is the OUTSIDE reader: `pipeline-cli cp-bank check` derives the banked §CP set
+# from the board and reds when that set is non-empty with no ledger tick inside the window. It
+# is a schedule, not a `pull_request` gate, because the failure it detects has nothing to do
+# with any PR's diff — it is a state of the board that appears between PRs.
+on:
+  schedule:
+    # Hourly at :41 — off the top of the hour (the GitHub scheduler congests on-the-hour crons).
+    # With the 2h default window a strand surfaces within ~3h instead of the 8h34m it took a
+    # human to notice.
+    - cron: "41 * * * *"
+  workflow_dispatch:
+    inputs:
+      window-hours:
+        description: "How stale the newest approval-watcher tick may be before a non-empty banked set reds"
+        type: string
+        default: "2"
+
+concurrency:
+  group: cp-bank-guard
+  cancel-in-progress: false
+
+permissions:
+  contents: read # checkout
+  issues: read # read the approval-watcher tick ledger + the repo label universe
+  pull-requests: read # derive the banked set off the board
+
+jobs:
+  check:
+    name: banked control-plane PRs have a ticking approval-watcher
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: pnpm/action-setup@v4.1.0
+
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version-file: package.json
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Exit 0 = green, 1 = RED (banked work with a missing or stale tick), 2 = UNKNOWN (the
+      # label does not exist in this repo, or an instant would not parse). Both non-zero states
+      # fail the job — an unanswered question is never a pass — and the report says which.
+      - name: Check every banked control-plane PR has a live approval-watcher
+        env:
+          # The CLI resolves the repo from GITHUB_REPOSITORY (auto-set) and reads via `gh api`;
+          # GH_TOKEN is what gh authenticates with.
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          node packages/pipeline-cli/src/bin.ts cp-bank check \
+            --window-hours "${{ inputs.window-hours || '2' }}"

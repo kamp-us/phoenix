@@ -107,6 +107,9 @@ export const registeredTools: ReadonlyArray<ToolRegistration> = [
 	tool("approval-watcher", () =>
 		import("./tools/approval-watcher/command.ts").then((m) => m.approvalWatcherCommand),
 	),
+	// #4754 — banking a §CP PR is one act that writes the label the watch set is derived from, and
+	// `check` is the outside reader that reds when that set is banked with no watcher ticking.
+	tool("cp-bank", () => import("./tools/cp-bank/command.ts").then((m) => m.cpBankCommand)),
 	tool("token-spend", () =>
 		import("./tools/token-spend/command.ts").then((m) => m.tokenSpendCommand),
 	),

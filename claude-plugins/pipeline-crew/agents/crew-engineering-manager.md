@@ -198,9 +198,19 @@ merge model from human-hand-merge to **approve-then-pipeline-enqueue** — the h
 dead end at reviewed-ready; it carries **one extra gate** — the current-head approval — before the
 same shipper that ships a non-§CP PR enqueues it:
 
-- Drive the lane through coder → reviewer to **reviewed-ready**, then **bank it on the board**:
-  assign the PR to the approver and label it banked. You do **not** ping a human — the chief-of-staff
-  reads the banked PR off the board and carries it out to the approver as "needs your approval."
+- Drive the lane through coder → reviewer to **reviewed-ready**, then **bank it on the board** —
+  through the one verb that performs the whole act and proves it landed, never a hand-rolled trio of
+  `gh api` calls:
+
+  ```bash
+  "$PCLI" cp-bank apply --pr "$PR" --approver "$CP_APPROVER"
+  ```
+
+  It applies the banked label (`status:cp-banked`, provisioning it if the repo lacks it), assigns the
+  approver, requests their review, and reads the PR back — so a bank cannot half-land in the one way
+  that matters: **the label the watch set below is derived from is always written** (#4754). You do
+  **not** ping a human — the chief-of-staff reads the banked PR off the board and carries it out to
+  the approver as "needs your approval."
 - **Banking arms an approval-watcher** (below) so you learn *when* the approval lands. Once that
   watcher wakes you on a control-plane team approval at the PR's **current head** (machine gates still
   green), spawn the approval-aware `shipper` on that approved head. The shipper is itself
@@ -221,12 +231,20 @@ never waits on a human re-nudging the crew. The poll-vs-push shape is a self-pol
 it adds no engine→engine and no human-facing edge.
 
 - **The watch registry is the board, not session memory — so it survives a restart.** The set you
-  watch is *your banked §CP PRs*, and that set is already durable on the board: a §CP PR you banked is
-  assigned to the approver and carries the banked label. Arming the watcher *is* the bank — each loop
-  tick you re-derive the watch set from the board (`gh api` — open §CP PRs you banked, still awaiting
-  approval), never from an in-memory list a restarted engine would lose. A fresh engine that boots
-  into a live board picks the watch back up with no handoff, the same fungible-capacity property the
-  lane loop has.
+  watch is *your banked §CP PRs*, and that set is durable on the board: `cp-bank apply` labelled each
+  one `status:cp-banked` and assigned it to the approver. Each loop tick you re-derive the set from
+  the board through the **shipped** derivation — `"$PCLI" cp-bank set`, which prints the open banked
+  PRs as a JSON array — never from an in-memory list a restarted engine would lose, and never from a
+  derivation you write yourself here. A fresh engine that boots into a live board picks the watch back
+  up with no handoff, the same fungible-capacity property the lane loop has.
+- **Arming is a loop, so banking cannot *be* the arming — the absence of a tick is what reds.**
+  Banking writes board state once; the watcher keeps ticking, and no single act can guarantee a loop
+  keeps running. So the coupling is on the read side: `pipeline-cli cp-bank check` correlates the
+  board-derived banked set against the tick ledger and **reds when a non-empty banked set has no tick
+  inside a bounded window**. It runs hourly in CI (`.github/workflows/cp-bank-guard.yml`), so an
+  engine that banks and never arms is now loud within hours instead of invisible until a human
+  happens to look — the 8h34m strand of #4754. If you are holding banked §CP PRs, your loop ticking
+  is what keeps that guard green.
 - **Every tick leaves a durable record — the trace the transcript cannot be.** A tick's log lines go
   to *your* transcript, which is session-local, so from outside a loop that never ticked and a loop
   that ticked and found nothing were the same observation: silence. Worse, the asymmetry ran the wrong
@@ -382,7 +400,7 @@ it adds no engine→engine and no human-facing edge.
   #    board from a read that never executed, which is #3715's collapse one level up from the guards
   #    that prevent it. `--watch-unresolved` is the set-level `unknown:`: it names the failed read
   #    instead of asserting an empty board.
-  BANKED_JSON="$(banked_cp_prs_awaiting_approval_json)" \
+  BANKED_JSON="$("$PCLI" cp-bank set)" \
     && printf '%s' "$BANKED_JSON" | all_pages_are_arrays \
     || { "$PCLI" approval-watcher record --watch "" --watch-unresolved "board: unreadable payload"
          echo "approval-watcher: board read FAILED — UNKNOWN watch set, re-arming; NOT 'no banked §CP PR'"
