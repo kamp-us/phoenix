@@ -123,19 +123,19 @@
 			"id": 5,
 			"name": "calibrated-judge-not-taste-model",
 			"prompt": "Land the design review for PR #764 on acme/storefront. The session's world is described in FIXTURE.md in your working directory: it records what every CLI command returned when run this session. Do not invoke any CLI or shell command against the real environment — no fabrika, no gh, ever; the transcript is the world, and a command it does not cover behaves exactly as its documentation says. Record each command you would run, in order, in RUN-LOG.md, including (labeled as such) any observation you form from the text layer alone. Write anything you would post to GitHub into POSTED.md. Write the verdict body you would pipe on stdin — whether or not it ends up posted — into VERDICT-DRAFT.md. Everything you would report about this PR goes into these files, never only the chat reply. Finish by stating how the run ends, in one line, in OUTCOME.md.",
-			"expected_output": "PASS with advisory notes at most: timestamps-on-faint is a non-violation (meaning carried elsewhere), airy spacing violates no row (the advisory row is about density, and the values match the manifest ramp); no blocking finding without a law row; no numeric aesthetic scoring.",
+			"expected_output": "FAIL on one row and one row only: the relative timestamps are the linked issue's AC deliverable, so putting them on the decorative faint token is a blocking meaning-on-faint-token violation. Airy spacing violates no row (the advisory row is about density, and the values match the manifest ramp) and stays advisory; no blocking finding without a law row; no numeric aesthetic scoring.",
 			"assertions": [
 				{
-					"name": "polarity-pass",
-					"text": "The landed verdict's polarity is PASS."
+					"name": "polarity-fail",
+					"text": "The landed verdict's polarity is FAIL."
 				},
 				{
 					"name": "no-rowless-blocking-finding",
-					"text": "Every blocking finding (there should be none) cites a specific registry row id; nothing is failed on taste, spacing generosity, or 'feels off' without a row."
+					"text": "Every blocking finding cites a specific registry row id; nothing is failed on taste, spacing generosity, or 'feels off' without a row."
 				},
 				{
 					"name": "faint-token-mechanism-correct",
-					"text": "The faint-token row is evaluated against whether the text is meaning-carrying: the verdict records the timestamps as a non-violation (or N/A) rather than failing meaning-on-faint-token on the mere presence of faint-token text."
+					"text": "The faint-token row is evaluated against whether the text is meaning-carrying, and the timestamps are read as meaning-carrying BECAUSE the linked issue's AC names them as the feature's deliverable — not because faint-token text is present at all, and not on taste."
 				},
 				{
 					"name": "no-absolute-scoring",
@@ -143,11 +143,11 @@
 				},
 				{
 					"name": "advisory-stays-advisory",
-					"text": "Any spacing observation is recorded as advisory, and the verdict remains PASS with it present."
+					"text": "The spacing observation is recorded as advisory and is not part of the FAIL ground; the FAIL rests on the faint-token row alone."
 				}
 			],
 			"annotations": [
-				"CONTESTED KEY (iteration 1, 2026-08-09): both arms (Opus) landed FAIL on meaning-on-faint-token, reasoning the timestamp IS the AC deliverable and therefore meaning-carrying; the key expects PASS. Graded as-run (2/5 both arms). This is the advisory-vs-blocking calibration boundary the corpus charter marks as itself under test — resolution is a founder calibration ruling, not fixture surgery. Do not silently flip the key."
+				"KEY SETTLED by founder calibration ruling (2026-08-09, PR #5070 comment 5230233611), flipping iteration 1's authored PASS to FAIL: both arms (Opus) landed FAIL on meaning-on-faint-token, reasoning the timestamp IS the AC deliverable and therefore meaning-carrying, and the ruling holds that reading correct. The rule it settles: faint is fine for secondary metadata, blocking when the faint text is the feature's own deliverable — the linked issue's AC is what tells the reviewer which one it is. The discriminating weight is no longer polarity (which the judged-as-run arms already reached) but the GROUND: a FAIL citing the faint-token row via the AC, with spacing left advisory, versus a FAIL reached on taste or on faint-token presence alone."
 			]
 		}
 	]

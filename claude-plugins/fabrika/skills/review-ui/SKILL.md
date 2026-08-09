@@ -90,7 +90,11 @@ verdict), or — unblessed, today's common case — the capture against each law
 checklist,
 one row at a time. Never a 1–10 score, never a holistic "feels off" FAIL. Per row record
 PASS / FAIL / N-A **with the pixel evidence named**; borderline is advisory, stated as such — the
-blocking/advisory boundary is calibrated by the eval corpus, not stretched in-session.
+blocking/advisory boundary is calibrated by the eval corpus, not stretched in-session. One point on
+that boundary is already settled and not yours to re-litigate (founder calibration ruling,
+2026-08-09): **faint styling is fine for secondary metadata, and blocking when the faint text is the
+feature's own deliverable** — the linked issue's acceptance criteria are what tell you which one you
+are looking at, so this needs no litigation in-session.
 
 Where the repo carries per-aspect taste skills (#3976), consult each by name on the advisory
 layer; their absence is a fact, not a gap. Follow-ups you notice leave through `/report`.
