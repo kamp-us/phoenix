@@ -3,10 +3,11 @@
 **Skill:** [`governance`](SKILL.md) · **Authoring brief:** [#4949](https://github.com/kamp-us/phoenix/issues/4949) · **Date:** 2026-08-09
 
 These verbs live in `packages/fabrika-cli/`, binary `fabrika`, grouped under a `governance`
-subcommand beside the `adr`, `build`, `epic`, `eval`, `plan`, `report`, `review`, `review-ui`,
-`ship`, `spend`, `triage`, `ui` and `wire` groups already registered in
-`packages/fabrika-cli/src/registry.ts`. The group name was confirmed free at authoring time by
-reading that file. The [CLI interface convention](../../docs/cli-interface-convention.md) governs
+subcommand beside the groups already registered in `packages/fabrika-cli/src/registry.ts` — at the
+time of writing `adr`, `build`, `epic`, `eval`, `hook`, `plan`, `report`, `review`, `review-ui`,
+`ship`, `spend`, `triage`, `ui` and `wire`, though that list grows most weeks, so **read the file
+rather than this sentence**. `governance` was confirmed free there against a freshly fetched
+`origin/main` immediately before this spec landed. The [CLI interface convention](../../docs/cli-interface-convention.md) governs
 these verbs; where this spec and that doc disagree, the doc wins and this spec is the bug.
 
 **`fabrika` calls `pipeline-cli` nowhere, and neither does the skill**
