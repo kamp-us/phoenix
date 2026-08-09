@@ -26,52 +26,78 @@ import type {RenderLeg, SurfaceRender} from "./render-verb.ts";
  */
 const UNREACHABLE_FLOOR = 400;
 
-export const captureRenderLeg: RenderLeg = (request) =>
-	Effect.gen(function* () {
-		const plan = yield* Effect.try({
-			try: () =>
-				buildCapturePlan(request.previewUrl, [parseSurfaceSpec(request.surface)], DEFAULT_VIEWPORT),
-			catch: (cause) => String(cause),
-		}).pipe(Effect.catch((reason) => Effect.succeed(reason)));
-		if (typeof plan === "string") {
-			return {_tag: "Failed", reason: plan} satisfies SurfaceRender;
-		}
+/**
+ * `captureShots` fails per-shot with `failed to capture <surface> at <url>` and per-run with
+ * `failed to launch chromium` / `failed to close chromium`. Only the per-shot one is a fact about
+ * the surface; the other two say the machinery never ran, which is UNKNOWN.
+ *
+ * Matched as an ALLOW-LIST on purpose: an unrecognised message falls to `Failed` (UNKNOWN), so a
+ * new failure mode in the capture module degrades to "could not tell" and can never become a proven
+ * accusation against the PR — a reviewer with no chromium installed must not be told a surface is
+ * dark-flagged or routeless (#4493).
+ */
+const NAVIGATION_FAILURE_PREFIX = "failed to capture ";
 
-		const captured = yield* captureShots(plan, request.outDir).pipe(
-			Effect.catch((error) => Effect.succeed(error.message)),
-		);
-		// A Playwright navigation failure — no route, a dead host, a timeout — is the unreachable
-		// arm; the machinery reports it as a capture failure naming the surface and its URL.
-		if (typeof captured === "string") {
-			return {_tag: "Unreachable", reason: captured} satisfies SurfaceRender;
-		}
-		const shot = captured[0];
-		if (shot === undefined) {
-			return {_tag: "Failed", reason: "the capture machinery returned no surface"} as SurfaceRender;
-		}
-		if (shot.status !== undefined && shot.status >= UNREACHABLE_FLOOR) {
-			return {_tag: "Unreachable", reason: `status ${shot.status}`} satisfies SurfaceRender;
-		}
-		const crash = shot.pageErrors.find(isRenderCrash);
-		if (crash !== undefined) {
-			return {_tag: "Crashed", firstError: crash.text} satisfies SurfaceRender;
-		}
-		const validity = validateCaptureBytes(shot.pngBytes);
-		if (validity._tag === "Invalid") {
-			return {_tag: "Invalid", detail: validity.reason} satisfies SurfaceRender;
-		}
-		return {
-			_tag: "Rendered",
-			entry: {
-				surface: request.surface,
-				path: shot.localPath,
-				width: validity.width,
-				height: validity.height,
-				sha256: sha256Hex(shot.pngBytes),
-				// `console.error` output is recorded, never a gate outcome — and this list is only ever
-				// written from a successfully-read error channel (v1's extractor returned empty on a
-				// parse failure, fusing "no crashes" with "never looked").
-				pageErrors: shot.pageErrors,
-			},
-		} satisfies SurfaceRender;
-	});
+/** The capture call, injectable so the classification below is testable without a browser. */
+export type CaptureShots = typeof captureShots;
+
+export const makeCaptureRenderLeg =
+	(capture: CaptureShots = captureShots): RenderLeg =>
+	(request) =>
+		Effect.gen(function* () {
+			const plan = yield* Effect.try({
+				try: () =>
+					buildCapturePlan(
+						request.previewUrl,
+						[parseSurfaceSpec(request.surface)],
+						DEFAULT_VIEWPORT,
+					),
+				catch: (cause) => String(cause),
+			}).pipe(Effect.catch((reason) => Effect.succeed(reason)));
+			if (typeof plan === "string") {
+				return {_tag: "Failed", reason: plan} satisfies SurfaceRender;
+			}
+
+			const captured = yield* capture(plan, request.outDir).pipe(
+				Effect.catch((error) => Effect.succeed(error.message)),
+			);
+			if (typeof captured === "string") {
+				return captured.startsWith(NAVIGATION_FAILURE_PREFIX)
+					? ({_tag: "Unreachable", reason: captured} satisfies SurfaceRender)
+					: ({_tag: "Failed", reason: captured} satisfies SurfaceRender);
+			}
+			const shot = captured[0];
+			if (shot === undefined) {
+				return {
+					_tag: "Failed",
+					reason: "the capture machinery returned no surface",
+				} as SurfaceRender;
+			}
+			if (shot.status !== undefined && shot.status >= UNREACHABLE_FLOOR) {
+				return {_tag: "Unreachable", reason: `status ${shot.status}`} satisfies SurfaceRender;
+			}
+			const crash = shot.pageErrors.find(isRenderCrash);
+			if (crash !== undefined) {
+				return {_tag: "Crashed", firstError: crash.text} satisfies SurfaceRender;
+			}
+			const validity = validateCaptureBytes(shot.pngBytes);
+			if (validity._tag === "Invalid") {
+				return {_tag: "Invalid", detail: validity.reason} satisfies SurfaceRender;
+			}
+			return {
+				_tag: "Rendered",
+				entry: {
+					surface: request.surface,
+					path: shot.localPath,
+					width: validity.width,
+					height: validity.height,
+					sha256: sha256Hex(shot.pngBytes),
+					// `console.error` output is recorded, never a gate outcome — and this list is only ever
+					// written from a successfully-read error channel (v1's extractor returned empty on a
+					// parse failure, fusing "no crashes" with "never looked").
+					pageErrors: shot.pageErrors,
+				},
+			} satisfies SurfaceRender;
+		});
+
+export const captureRenderLeg: RenderLeg = makeCaptureRenderLeg();
