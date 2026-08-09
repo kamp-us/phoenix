@@ -128,7 +128,7 @@ each meaning:
 | Seat | Import from | Shipped constant |
 |---|---|---|
 | `3` `5` `6` `7` `8` `9` `11` | `packages/fabrika-cli/src/report/codes.ts` | `EMPTY_STDIN`, `LEAKED_PATH`, `BARE_AT_PATH`, `NO_TARGET` (re-exported here as `ZERO_SCOPE`, the same rename `review` uses), `WRITE_UNKNOWN`, `READBACK_MISMATCH`, `PRECONDITION_UNKNOWN` |
-| `10` | `packages/fabrika-cli/src/triage/codes.ts` | `OFF_VOCABULARY`. The numeral is shared — `triage` re-exports `report`'s `CLASSIFIED` under this name — but import it **from `triage`**, because `report`'s `CLASSIFIED` means "the title or `--label` carries a type or priority classification" (`report file` only), which is not what this group proves. `review/codes.ts` imports it from `triage` for exactly this reason. |
+| `10` | `packages/fabrika-cli/src/triage/codes.ts` | `OFF_VOCABULARY`. **The seat is literally the same binding** — `triage/codes.ts` is `export const OFF_VOCABULARY = REPORT_CLASSIFIED`, so there is no numeric difference to hunt for. Import it **from `triage`** anyway, because that is where the meaning this group proves is named; `report`'s spelling, `CLASSIFIED`, means "the title or `--label` carries a type or priority classification" (`report file` only). `review/codes.ts` imports it from `triage` for exactly this reason. |
 | `12` `13` | `packages/fabrika-cli/src/review/codes.ts` | `STALE_HEAD`, `INCOMPLETE_SCAN` — imported because this group proves the same two facts |
 | `4` | declared locally as `DELIBERATE_GAP = 4` | the same shape `review/codes.ts` ships, so the gap is registered rather than silently absent |
 | `14` | this group's own | see below |
@@ -232,7 +232,7 @@ wrapper shape at `packages/fabrika-cli/src/review/authored.ts` and
 All three are additive; none changes how any existing marker, namespace or verdict reads. Each is a
 change to a surface this group does not own, so each names the file and the exact edit.
 
-**0. `ship`'s required-namespace vocabulary must admit `governance` — without this the whole
+**1. `ship`'s required-namespace vocabulary must admit `governance` — without this the whole
 fail-closed property is decoration.** `packages/fabrika-cli/src/review/classes.ts:118` declares
 `export const SHIP_NAMESPACES: ReadonlyArray<string> = SHIP_CLASS_NAMES.map((n) => `review-${n}`)`,
 and `packages/fabrika-cli/src/ship/gate-verb.ts:158` refuses any `--require` value outside it with
@@ -243,7 +243,7 @@ and it is false until this lands. Two edits, both additive:
 
 - `SHIP_NAMESPACES` becomes the `review-*` set **plus** the literal `governance`, so `--require
   governance` is admitted. The `review-*` derivation from `SHIP_CLASS_NAMES` is untouched.
-- `ship scope`'s printed namespace set (`shipNamespacesOf`) additionally emits `governance` when the
+- `ship scope`'s printed namespace set (`shipNamespacesOf`, `packages/fabrika-cli/src/review/classes.ts:113`) additionally emits `governance` when the
   PR's changed files touch any of this group's four roots — the same total function
   `governance scope` computes, so the two cannot disagree. Share the predicate rather than writing
   it twice.
@@ -254,7 +254,7 @@ no notion of which skill posted one. **This is not a second answer to an enforce
 enqueue conjunction stays `ship gate`'s alone. It is that enforcer being taught one more namespace,
 which is the only shape in which a derived-required namespace can actually be required.
 
-**1. The `verdict-marker` namespace class must admit `governance`.**
+**2. The `verdict-marker` namespace class must admit `governance`.**
 `packages/fabrika-cli/src/wire/verdict-marker.ts` today declares
 `const NAMESPACE = /^(review|check-epic-plan)(-[a-z0-9]+)*$/` and
 `const NAMESPACE_PREFIXES = ["review", "check-epic-plan"]`. A `governance` marker is **not
@@ -264,7 +264,7 @@ docblock names. Widen **both** constants to admit `governance`, the same additiv
 for the plan gate, and extend the format's round-trip and malformed fixtures with a `governance` row
 so `wire/conformance.ts` drives the new arm. Widening one constant and not the other is the defect.
 
-**2. A new registered format `governance-digest`.** One row in
+**3. A new registered format `governance-digest`.** One row in
 `packages/fabrika-cli/src/wire/registry.ts` plus a sibling schema module
 `packages/fabrika-cli/src/wire/governance-digest.ts` — never a branch inside a verb, which is that
 registry's stated law. Producer `governance`, consumer the front door
@@ -374,6 +374,7 @@ for the same portability reason `governance base` states below. That directory i
 | `governance scope: PR #<n>'s head is <live>, not <asked> — re-scope at <live> (ADR 0058).` | 12 | refusal |
 | `governance scope: <sha> carries <k> of the <m> files #<n> declares — refusing to derive from a short read (#3999).` | 13 | refusal |
 | `governance scope: root <name> is absent in this repository — the derivation covered <k> of 4 roots.` | 0 | notice |
+| `governance scope: partitioned <k> of <k> declared changed files at <sha> across 4 roots.` | 0 | notice |
 
 **Scope** — one PR's metadata and the changed-file list of one bound commit, count-checked against
 the declared total. Zero changed files is a refusal, never `not-required`: the whole value of a
@@ -578,13 +579,16 @@ present in a removed line and absent from every added line is `removed`; a NAME 
 different following text is `modified`.
 
 **What a guard-bearing file is, stated closed so two implementers build one verb.** A changed file is
-guard-bearing iff it satisfies at least one of: (a) it contains at least one anchor at the bound
-commit; (b) it is under `.github/workflows/`; (c) it is owned by a control-plane team row in
-`.github/CODEOWNERS`. Nothing else qualifies — in particular, "a file that looks important" is not a
-criterion, and the verb does not read file content beyond the anchor scan. Clause (c) reads
-CODEOWNERS **only to decide whether to print a `guard-file` row**; it computes no §CP verdict and
-prints no §CP value. Where CODEOWNERS is unreadable, clauses (a) and (b) still apply and the omission
-goes to stderr — the row list narrows, and `inReach` is unaffected because it counts anchors.
+guard-bearing iff it satisfies at least one of exactly two clauses: **(a)** it contains at least one
+anchor at the bound commit, or **(b)** it is under `.github/workflows/`. Nothing else qualifies — in
+particular, "a file that looks important" is not a criterion, and the verb does not read file content
+beyond the anchor scan.
+
+**A CODEOWNERS-ownership clause was considered and deliberately dropped.** It would have read
+`.github/CODEOWNERS` to decide whether to print a row, which (i) makes this verb depend on a file
+nothing else here needs, and (ii) is not closed — "a control-plane team row" has no mechanical
+definition without naming a team handle, so two implementers would build two verbs. Both remaining
+clauses are fully mechanical over the diff and the bound tree. This verb reads no CODEOWNERS.
 
 **Why the inventory is not in this verb.** v1's gate-invariant check kept a hardcoded prose list of
 what each gate promises, inside the reviewing skill — a copy of the guarded files, which drifts from
@@ -669,7 +673,7 @@ fabrika governance base 4321 [--path <repo-relative>] [--repo <owner/name>]
 | Flag | Type | Required | Default | Description |
 |---|---|---|---|---|
 | *(positional)* | integer | yes | — | the pull-request number whose merge-base is resolved |
-| `--path` | string, repeatable | no | this skill's `SKILL.md` and `contract.md` | a repo-relative path inside this skill's own directory to read at the merge-base; see the fence below |
+| `--path` | string, repeatable | no | `<skill-root>/SKILL.md` and `<skill-root>/contract.md`, where `<skill-root>` is the resolved directory below | a repo-relative path inside this skill's own directory to read at the merge-base; see the resolution and fence below |
 | `--repo` | string | no | resolved | the repository |
 
 **Output** — machine channel. First line: `base\t<merge-base-sha>\t<file-count>`. Then, per path, a
@@ -682,23 +686,34 @@ otherwise have to compute and interpolate, which the harness's isolation verifie
 convention rule 5: every documented invocation is a plain literal command string). Resolving a merge
 base and reading named paths at it is mechanical; judging by them is not.
 
-**`--path` is fenced to this skill's own directory, resolved rather than hardcoded.** A path is
-admitted iff it lies under a directory matching `*/skills/governance/` at any depth — in phoenix that
-is `claude-plugins/fabrika/skills/governance/`, and in a repo that homes its plugins elsewhere it is
-whatever that repo's install path is. **Do not hardcode phoenix's path**: this skill ships to other
-repositories, and a literal `claude-plugins/fabrika/` fence would refuse the self fence in every one
-of them — the failure a run of this spec surfaced. The fence itself is deliberate: this verb exists
-for the self fence, and a general "read any file at the merge-base" verb would be a second way to
-load instructions out of a tree, which is what the whole no-checkout posture exists to prevent.
-Nothing is checked out here either; the bytes come from the object database.
+**`--path` is fenced to this skill's own directory, and that directory is resolved, not hardcoded.**
+
+*Resolution, stated as an algorithm because two implementers must produce one verb.* At the bound
+merge-base, list the tracked paths matching `*/fabrika/skills/governance/SKILL.md` — the plugin
+segment is part of the pattern, deliberately, because a bare `*/skills/governance/` also matches a
+repo-root `skills/` tree or a symlinked v1 tree and would serve the wrong bytes as "this skill's own
+text". The **skill root** is that file's parent directory.
+
+- **Exactly one match** — that is the root; `--path` is admitted iff it lies under it.
+- **Zero matches** — refuse on `7`. There is no self fence to run, and falling back to a guessed
+  root is how a fence reads the wrong file while reporting success.
+- **More than one match** — refuse on `11`, naming every candidate. Which install is "this skill" is
+  genuinely unknown, and picking one is a coin flip the caller cannot see.
+
+**Do not hardcode phoenix's path.** This skill ships to other repositories, and a literal
+`claude-plugins/fabrika/` fence refuses the self fence in every one of them — a failure a graded run
+of this spec surfaced. The fence itself is deliberate: this verb exists for the self fence, and a
+general "read any file at the merge-base" verb would be a second way to load instructions out of a
+tree, which is what the whole no-checkout posture exists to prevent. Nothing is checked out here
+either; the bytes come from the object database.
 
 **Exit status**
 
 | Code | Trigger |
 |---|---|
-| `7` | the PR is proven absent (404) or closed; or every `--path` is proven absent at the merge-base — a self fence over no bytes |
+| `7` | the PR is proven absent (404) or closed; or the skill root resolved to **zero** matches; or every `--path` is proven absent at the merge-base — a self fence over no bytes |
 | `10` | a `--path` resolves outside this skill's own directory (a path not under a `*/skills/governance/` root) |
-| `11` | the merge base could not be resolved, or a path could not be read at it — the base rules are UNKNOWN, so no fallback to the head is taken |
+| `11` | the merge base could not be resolved, a path could not be read at it, or the skill root resolved to **more than one** candidate — the base rules are UNKNOWN, so no fallback to the head is taken |
 | `12` | the PR's head moved while the base was being resolved — re-run; a base paired with a head nobody judged is not a fence |
 
 **Errors**
@@ -707,26 +722,37 @@ Nothing is checked out here either; the bytes come from the object database.
 |---|---|---|
 | `governance base: PR #<n> not found in <repo>.` | 7 | refusal |
 | `governance base: none of the requested paths exist at merge-base <sha> — there is no base revision to judge by.` | 7 | refusal |
+| `governance base: no `*/fabrika/skills/governance/SKILL.md` at merge-base <sha> — this skill is not installed in the base revision, so there is no self fence to run.` | 7 | refusal |
+| `governance base: <n> candidate skill roots at merge-base <sha> (<list>) — which one is this skill is UNKNOWN; refusing to guess.` | 11 | refusal |
 | `governance base: --path "<v>" is outside this skill's own directory (<resolved>) — this verb reads only this skill's own text.` | 10 | refusal |
 | `governance base: cannot resolve the merge base of #<n>: <reason> — the base rules are UNKNOWN; refusing to judge by the head's.` | 11 | refusal |
 | `governance base: cannot read <path> at <sha>: <reason> — UNKNOWN.` | 11 | refusal |
 | `governance base: #<n>'s head moved to <live> while resolving — re-run.` | 12 | refusal |
 | `governance base: merge base of #<n> is <sha>.` | 0 | notice |
 
-**Scope** — one merge base and the named paths at it. Zero readable paths is a refusal: a self fence
-that reads nothing would silently fall back to judging by the head's rules, which is the exact
-failure the fence exists to prevent.
+**Scope** — one merge base, the resolved skill root, and the named paths at it. The resolution's
+scope line names the root it found, on stderr. **Zero scope is a refusal in both directions**: zero
+resolved roots is `7` and more than one is `11`, and zero readable paths is `7` — a self fence that
+reads nothing would silently fall back to judging by the head's rules, which is the exact failure
+the fence exists to prevent (ADR 0092).
 
 **Examples**
 
 ```
-$ fabrika governance base 4321
-base	8b1e0c4499ad72f635e0117a9bb2d3c058e7fa16	2
-file	claude-plugins/fabrika/skills/governance/SKILL.md	9812
+$ fabrika governance base 4321 --path claude-plugins/fabrika/skills/governance/SKILL.md
+base	8b1e0c4499ad72f635e0117a9bb2d3c058e7fa16	1
+file	claude-plugins/fabrika/skills/governance/SKILL.md	42
 ---
 name: governance
-description: The governance-corpus integrity gate — one judgement, asked of any diff…
+---
+
+# governance
 ```
+
+The `file` header's third field is the byte count that follows it, so a reader knows exactly where
+one file's bytes end and the next `file` header begins; with the default two paths, two `file`
+blocks follow the `base` line back to back, in the order the paths were resolved. There is no
+separator line — the byte count is the delimiter.
 
 ```
 $ fabrika governance base 4321 --path claude-plugins/fabrika/skills/review/SKILL.md
@@ -993,7 +1019,7 @@ The ranked rows arrive on **stdin** — one row per line in the `governance-dige
 
 | Flag | Type | Required | Default | Description |
 |---|---|---|---|---|
-| *(positional)* | integer | yes | — | the issue number of the durable readout artifact the front door reads |
+| *(positional)* | integer | yes | — | the issue number of the durable readout artifact the front door reads. **Not a constant**: resolve it from `$FABRIKA_GOVERNANCE_READOUT_ISSUE`, else the single open issue in the target repo titled exactly `Governance readout`; a caller may always pass it explicitly. Unset and unresolvable is exit `7` naming both lookups — never a guessed number, which would publish the digest onto somebody else's issue |
 | `--repo` | string | no | resolved | the repository |
 | `--json` | boolean | no | `false` | emit the result object |
 | stdin | text | yes | — | the ranked rows: `row\t<NNNN>\t<tension\|blast\|routine>\t<one-line note>`, highest consequence first |
@@ -1040,6 +1066,7 @@ rows in the same order, then compare the whole body through `normalizeForReadbac
 | `governance readout: the assembled body carries a machine-local path at line <k> (<class>) — cite it repo-relative.` | 5 | refusal |
 | `governance readout: the body is a bare "@" path reference — the rows never arrived. Send them on stdin.` | 6 | refusal |
 | `governance readout: issue #<n> not found in <repo> — the readout artifact is absent; front-door creates it (#4952).` | 7 | refusal |
+| `governance readout: no artifact issue given, `$FABRIKA_GOVERNANCE_READOUT_ISSUE` is unset, and <repo> has no open issue titled "Governance readout" — refusing to guess where the digest lands.` | 7 | refusal |
 | `governance readout: issue #<n> is closed — a readout nobody reads is not a readout.` | 7 | refusal |
 | `governance readout: row <k>'s kind "<v>" is outside tension/blast/routine.` | 10 | refusal |
 | `governance readout: row <k>'s id "<v>" is not a four-digit decision id.` | 10 | refusal |

@@ -30,9 +30,12 @@ make that checkable:
 
 - **Derived, not elected.** Nothing feeds the derivation and nothing can decline it. `review` reads
   the same fact off its own `harness` flag and routes here; it never decides whether you were needed.
-- **Fail-closed on absence.** `governance` is a required namespace in `fabrika ship gate`'s
-  conjunction, so a harness-touching diff carrying no current-head verdict is a **named refusal at
-  the enqueue seam** — not a reviewer's good intentions. Zero scope is itself a refusal (ADR 0092).
+- **Fail-closed on absence.** The refusal belongs at the enqueue seam, not to a reviewer's good
+  intentions: `governance` is a required namespace in `fabrika ship gate`'s conjunction, so a
+  harness-touching diff carrying no current-head verdict is **named absent and refused there**. Zero
+  scope is itself a refusal (ADR 0092). **Until `ship`'s required-namespace vocabulary admits
+  `governance` this property is specified and not yet enforced** ([contract.md](contract.md), the
+  first shipped-surface change) — say so rather than relying on it.
 - **Independent of who reviewed.** The predicate consults neither which skill ran nor what it
   concluded, so a `review` PASS discharges nothing and a `review` run that forgot to fire you leaves
   the namespace required — the omission surfaces as a refusal rather than as silence.
@@ -40,18 +43,21 @@ make that checkable:
   `claude-plugins/` and derives its own namespace. `claude-plugins/fabrika/` carries no CODEOWNERS
   row, so nothing else would catch it.
 
-<!-- anchor: HARNESS-IS-NOT-CP --> **Harness-touching is not §CP.** §CP asks *who must approve* and
-is answered from `.github/CODEOWNERS`, enforced by GitHub
-([§CP classification](../../docs/control-plane-classification.md)). Yours asks *is a governance
-verdict required*. The sets differ deliberately: the founder ruled `.decisions/` **out** of
-CODEOWNERS, so records get no code-owner review and this machine sweep is the guard that stays.
+<!-- anchor: HARNESS-IS-NOT-CP --> **Harness-touching is not §CP.** §CP asks *who must approve*, from
+`.github/CODEOWNERS`, enforced by GitHub
+([§CP classification](../../docs/control-plane-classification.md)); yours asks *is a verdict
+required*. The sets differ deliberately — the founder ruled `.decisions/` **out** of CODEOWNERS, so
+records get no code-owner review and this sweep is the guard that stays.
 
-**Say nothing about who must approve.** Not a verdict, not a hedged one, and not a "for the
-reader's orientation" note listing which paths CODEOWNERS owns — **naming the owned paths is
-computing the answer with a disclaimer stapled to it**, and a reader takes the paths and drops the
-caveat. Graded runs of this skill did exactly that. The whole safe sentence is: *this diff derives
-the governance namespace; whether it also needs a code-owner approval is a separate question
-CODEOWNERS answers* (#4227).
+**Say nothing about who must approve** — not a verdict, not a hedged one, not a "for orientation"
+note listing which paths CODEOWNERS owns. **Naming the owned paths is computing the answer with a
+disclaimer stapled on**, and readers keep the paths and drop the caveat; graded runs of this skill
+did exactly that. The whole safe sentence: *this diff derives the governance namespace; whether it
+needs a code-owner approval is a separate question CODEOWNERS answers* (#4227).
+
+**Carry the printed head into every later verb** — `--sha` on `sweep` and `guards` — so the whole
+judgement is one tree. Each verb otherwise re-resolves the live head on its own, and three reads
+straddling a push produce a confident verdict over text nobody judged.
 
 **Done when** the outcome token is read. `not-required` ends the run there.
 
@@ -63,7 +69,7 @@ not read?"* — before you look for a conflict. You cannot sweep for a question 
 **Where the diff adds or edits a decision record**, rank the corpus against it:
 
 ```bash
-fabrika governance sweep 4321 --record 0240
+fabrika governance sweep 4321 --record 0240 --sha 03135b91
 fabrika adr resolve 0164 0055
 ```
 
@@ -98,7 +104,7 @@ body names the sweep outcome or records that there was no record to sweep.
 ## 3 — The gate half: does this quietly weaken a guard
 
 ```bash
-fabrika governance guards 4321
+fabrika governance guards 4321 --sha 03135b91
 ```
 
 The question is narrow and catastrophic: does the edit **remove or soften** an invariant? A diff that
@@ -107,11 +113,11 @@ dropping the `@ <sha>` from a shipper's verdict matcher, so the staleness refusa
 guard is still there, still reads as a guard, and no longer guards.
 
 <!-- anchor: ANCHORED-INVARIANTS-NOT-A-COPIED-LIST --> `guards` reports removed or modified
-**anchored invariants** — the `<!-- anchor: NAME -->` tags the skills carry — and the guard-bearing
-files the diff touches. It reports no inventory of what the gates promise, deliberately: v1 kept
-that inventory as prose *inside the reviewing skill*, which is a copy, and a copy drifts from what it
-describes. Anchors live in the guarded file, so the list cannot rot while the guards move. An
-unanchored invariant is invisible to the scan, which is exactly the gap your reading covers.
+**anchored invariants** — the `<!-- anchor: NAME -->` tags skills carry — plus the guard-bearing
+files touched. It holds no inventory of what the gates promise, deliberately: v1 kept that inventory
+as prose *inside the reviewing skill*, and a copy drifts from what it describes. Anchors live in the
+guarded file, so the list cannot rot while the guards move. An unanchored invariant is invisible to
+the scan — exactly the gap your reading covers.
 
 **Evidence is the exact removed or softened line and the invariant it breaks.** Nothing weaker is
 evidence — "looks fine" is the verdict this half exists to stop being given.
@@ -119,6 +125,10 @@ evidence — "looks fine" is the verdict this half exists to stop being given.
 **An empty answer is an answer you write down.** Where the diff's reach holds no invariant, record
 *"no gate invariant is in this diff's reach"*. The check ran; it had nothing to weaken. An unwritten
 answer and an empty one are different facts, and only one is auditable.
+
+**A finding outside these two halves is routed, not judged here**: acceptance criteria and code
+quality to `review`, a rendered surface to `review-ui`, anything else worth tracking to `/report`.
+Routing one is a terminal; folding it into a governance verdict is not.
 
 **Where a weakening is real and no record authorizes it, the missing decision is part of the
 finding** — a reviewer-required ADR everyone agreed to and nobody filed is how an invariant narrowed
@@ -128,17 +138,20 @@ with no authorizing decision at all (#4000).
 
 ## 4 — The self fence
 
+`scope` printed `self false` ⇒ this step does not apply; record that and move on. `self true` ⇒ the
+diff edits this skill or its contract, and `base` serves this file's bytes at the merge-base:
+
 ```bash
 fabrika governance base 4321
 ```
 
-<!-- anchor: SELF-COVERING --> When `scope` prints `self true`, the diff edits this skill or its
-contract, and `base` serves this file's bytes at the merge-base. **Judge by those, not the head's** —
+<!-- anchor: SELF-COVERING --> **Judge by those, not the head's** —
 a bytes read that loads no instructions, the fabrika-native form of ADR 0052's BASE pin. A PR must
 not wave itself through by its own new rules, and here that is not hygiene: your own text is the
 guard under review. `self` changes which rules you judge by, never whether you judge.
 
-**Done when** the rules you applied are the base revision's, and the verdict says so.
+**Done when** either the verdict records `self false` and that this fence did not apply, or the rules
+you applied are the base revision's and the verdict says so.
 
 ## 5 — Emit one verdict, bound to what you saw
 
@@ -150,11 +163,10 @@ EOF
 ```
 
 <!-- anchor: API-UNCHANGED --> **The downstream API is the shipper's per-namespace PASS contract
-(ADR 0058), and it is unchanged.** The marker key is `(PR, namespace)` bound to the head SHA, and
-nothing in the enqueue decision asks which skill or session posted a namespace — which is exactly
-why one skill may emit several namespaces, and why a namespace may be filled by a skill that is not
-the diff's primary reviewer. The marker key stays as it is and this namespace rides the same
-channel as every other.
+(ADR 0058), unchanged.** The key is `(PR, namespace)` bound to the head SHA, and nothing in the
+enqueue decision asks which skill posted a namespace — which is why one skill may emit several, and
+why a namespace may be filled by a skill that is not the diff's primary reviewer. The key stays as
+it is; this namespace rides the same channel as every other.
 
 `post` is the only emit path — a hand-posted marker is how a false PASS shipped (#3173). `--sha` is
 the head you actually inspected; the verb re-resolves the live head at post time and refuses a moved
@@ -164,28 +176,32 @@ one. Re-review, never re-bind.
 
 ## 6 — Digest time: the readout that replaced the human gate
 
+`--since` is the day after the previous readout's last landing — read it off the artifact before you
+overwrite it, so consecutive digests neither overlap nor leave a gap. With no previous readout, pick
+the cadence's start and say which you used.
+
 ```bash
 fabrika governance digest --since 2026-08-02
 fabrika governance sweep --landed 0398
-fabrika governance readout 4952 <<'EOF'
+fabrika governance readout <<'EOF'
 row	0398	tension	sits against ADR 0173 on whether a pending required check blocks admission
 EOF
 ```
 
 Retiring the human gate on decision records was accepted **on one condition**: a periodic,
 non-blocking digest of what landed, ranked by this same judgement pointed at merged records. Without
-it, overrule-later is fiction, so this half is not optional. It is not a second judgement either —
-it is the corpus half asked of things that already merged, which is what `sweep --landed` is for.
+it, overrule-later is fiction. It is not a second judgement — it is the corpus half asked of things
+that already merged, which is what `sweep --landed` is for.
 
 **Rank on exactly two dimensions: tension with standing law, and blast radius.** A wider rubric is a
 different decision and is not authorized here. A row reads *"#NNNN touches merge policy and sits in
 tension with ADR MMMM; rest routine."*
 
-**The digest gates nothing.** It blocks no merge and holds no veto — it exists so someone who knows
-a decision landed can overrule it later. Your output is a **consumable artifact**: `readout` posts
-closed-vocabulary rows to the durable artifact and reads them back, and the front door surfaces them
+**The digest gates nothing** — no merge blocked, no veto — so that someone who knows a decision
+landed can overrule it later. Your output is a **consumable artifact**, not a display: `readout`
+posts closed-vocabulary rows and reads them back, and the front door surfaces them
 ([#4952](https://github.com/kamp-us/phoenix/issues/4952)). Keep the judgement in the artifact the
-receiver re-fetches, so the message itself steers nobody.
+receiver re-fetches, so the message steers nobody.
 
 **Where a standing ruling already settled a row's question, cite the ruling and drop the row** — a
 periodic sweep otherwise re-raises what a ruling killed, every cycle (#4481).
@@ -203,20 +219,23 @@ run ends as exactly one of:
 
 - **verdict PASS** — swept or hand-read, no contradiction and no weakening found.
 - **verdict FAIL** — a named contradiction or a named weakening, with the line and the invariant.
-- **UNKNOWN — could not determine** — a corpus, diff or commit that could not be read (exit `7`,
-  `11` or `13`), or a verb that could not run at all (`1`, `2`, `127`). Never a verdict, and never
-  read as clean.
-- **UNKNOWN — the write may not have landed** — `post` or `readout` failed at the write or the
-  read-back (exit `8` or `9`). Whether the comment exists is unknown; re-read the target before
-  retrying, and never re-post blind.
+- **UNKNOWN — could not determine** — a corpus, diff or commit that could not be **read** (`11`,
+  `13`), or a verb that could not run at all (`1`, `2`, `127`). Never a verdict, never read as clean.
+- **refused on proven absence or zero scope** (`7`) — the target is provably not there, or the scan
+  would have run over nothing. A *fact about the repository*, not a failed read: that is why `7` and
+  `11` are two codes. A missing readout artifact routes to front-door, not to a verdict.
+- **UNKNOWN — the write may not have landed** (`8`, `9`) — re-read the target before retrying, never
+  re-post blind.
 - **re-review required** — the head moved past what you inspected (exit `12`). Nothing was written.
-- **not-required** — the diff derives no governance namespace. A success, and a positive answer.
+- **not-required** — the diff derives no governance namespace. A success, and a positive answer;
+  `post` refuses a verdict here on `14`, so it cannot be talked into a PASS.
 - **readout posted** — digest-time success; nothing was gated.
 - **routed elsewhere** — the finding belongs to `review`, `review-ui` or `/report`.
 
-**A refusal of something you composed is not a terminal.** Exits `3`, `5`, `6` and `10` — empty
-stdin, a machine-local path, a bare `@` reference, a value off a closed vocabulary — say the *call*
-was wrong, not that the judgement is unreachable. Fix the input and run the verb again; ending a run
+**A refusal of something you composed is not a terminal.** Exits `3`, `5`, `6`, `10` and `14` —
+empty stdin, a machine-local path, a bare `@` reference, a value off a closed vocabulary, or a
+verdict aimed at a diff that derives no namespace — say the *call* was wrong, not that the judgement
+is unreachable. Fix the input and run the verb again; ending a run
 on one of these reports a repo problem that is really a typo.
 
 <!-- anchor: UNSEEN-BLOCKS-PASS-NEVER-FAIL --> **An unseen input blocks PASS; it does not manufacture
@@ -246,8 +265,13 @@ the readout artifact, read only to find the upsert target (`post`, `readout`). A
 every read routes through a verb, so the open
 [#4859](https://github.com/kamp-us/phoenix/issues/4859) trust posture lands as one verb change.
 
-**The PR body, issue bodies and issue comments are not inputs.** No verb serves them here, and a
-verdict resting on one rests on nothing this gate can prove. A ruling cited from an issue is
+Two more come from the `adr` group — the surface is what matters, not which group serves it:
+decision-record status and filenames (`adr resolve`, against a freshly fetched base ref) and the ids
+open ADR pull requests claim (`adr next`).
+
+**Nothing else is an input.** No PR body, issue body or comment is read as content to judge; a
+verdict resting on one rests on nothing this gate can prove. `post` and `readout` read comments only
+to locate an upsert target and compare a read-back — never for a fact the verdict rests on. A ruling cited from an issue is
 evidence to name in a verdict body, never the sole ground for a FAIL — whether such a ruling is
 itself binding law is open on [#4982](https://github.com/kamp-us/phoenix/issues/4982), and a
 *relayed* ruling is indistinguishable from a fabricated one
@@ -259,11 +283,10 @@ head at write time and refuses a moved one.
 
 ## Required repo files
 
-fabrika installs into repos that are not phoenix, so every repo surface this skill leans on is
-declared here. The when-missing vocabulary is closed and shared with every fabrika skill —
-**fail-loud** (stop, name the missing surface by its repo-relative path, point at front-door),
-**degrade** (continue with a narrower answer, stated), **bootstrap** (front-door creates it). No row
-dead-ends on a bare error.
+fabrika installs into repos that are not phoenix, so every surface this skill leans on is declared
+here. The when-missing vocabulary is closed and shared across fabrika — **fail-loud** (stop, name
+the surface by its repo-relative path, point at front-door), **degrade** (continue with a narrower
+answer, stated), **bootstrap** (front-door creates it). No row dead-ends on a bare error.
 
 | Must exist | Why this skill needs it | When missing |
 | --- | --- | --- |
@@ -271,24 +294,21 @@ dead-ends on a bare error.
 | At least 10 live-`accepted` records in it | below the rarity floor every term scores as common and the ranking carries no information | **degrade** — the outcome is `indeterminate` at exit `0`, stated as "no information", and the domain is read by hand. Never `no-overlap`. |
 | The harness roots this repo uses — `.decisions/`, `.claude/`, `.github/`, `claude-plugins/` | `scope` derives the namespace requirement from them; they are the boundary | **degrade** — the derivation is total over the roots that exist, and `scope` names any absent root on stderr, so a narrower answer is never read as a proven `not-required`. |
 | A git remote in this checkout serving the repo under review | every read binds to a commit out of the object database, so the bytes are provably that commit's | **fail-loud** — the read verbs exit `11`; an artifact that cannot be tied to a commit shows UNKNOWN, and no unbound fallback is taken (#4163). |
-| `.github/CODEOWNERS` | only to *state* the §CP expectation in a verdict body; this skill computes no §CP answer | **degrade** — omit the expectation line. Nothing here depends on it. |
+| *(nothing)* — `.github/CODEOWNERS` is **not** read by this skill | listed to close the question: no verb here reads it, `guards` deliberately dropped its ownership clause, and §CP is not this skill's answer to compute or to state | **not applicable** — its absence changes nothing here. |
 | A durable readout artifact — the issue the front door reads | `readout` upserts the digest there; a digest with nowhere to land is one nobody can overrule from | **bootstrap** — front-door creates it ([#4952](https://github.com/kamp-us/phoenix/issues/4952)); until it ships, `readout` exits `7` naming the absent target rather than posting the digest somewhere improvised. |
 
 ## Packaging — one listed skill
 
-#4897 delegated this choice here, so it is recorded rather than assumed. **Listed and
-model-invocable: no `disable-model-invocation`, no `context: fork`, both halves in this file.**
-User-invoked was not available — `review` §6 directs the model to fire this skill, and a user-only
-skill is model-unreachable and cannot join a stack. A called-only helper pays the same listing tax
-for less reach; `context: fork` would stop the stack mid-review. The tax is paid knowingly against a
-set near the listing ceiling. The halves share one file because they are one judgement with one
-rubric reached by one invocation, and the leaf rule promotes a *per-surface* leaf — there is one
-surface here.
+#4897 delegated this choice here, so it is recorded. **Listed and model-invocable — no
+`disable-model-invocation`, no `context: fork` — both halves in one file.** User-invoked was not
+available: `review` §6 directs the model to fire this skill, and a user-only skill is
+model-unreachable and cannot join a stack. A called-only helper pays the same listing tax for less
+reach, and `context: fork` would stop the stack mid-review; the tax is paid knowingly against a set
+near the ceiling. One file because this is one judgement with one rubric reached by one invocation,
+and the leaf rule promotes a *per-surface* leaf — there is one surface.
 
 ## Eval enumeration (leaf-rule obligation)
 
-Both halves live in one skill, so the suite enumerates them or one goes eval-blind: a
-corpus-contradiction case and a gate-weakening case at minimum; a `not-required` case; a `self: true`
-case that must judge at the merge-base; an UNKNOWN case where the corpus could not be read and PASS
-must be unreachable; and a digest-time case. Eval mechanics belong to
-[#4649](https://github.com/kamp-us/phoenix/issues/4649).
+Both halves in one skill, so the suite enumerates them or one goes eval-blind: corpus-contradiction,
+gate-weakening, `not-required`, `self: true` judged at the merge-base, an UNKNOWN where the corpus
+could not be read and PASS is unreachable, and a digest-time case. Mechanics: [#4649](https://github.com/kamp-us/phoenix/issues/4649).
