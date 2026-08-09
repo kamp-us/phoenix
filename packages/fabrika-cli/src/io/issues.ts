@@ -388,6 +388,13 @@ export interface CommentRecord {
 	readonly id: number;
 	readonly author: string;
 	readonly createdAt: string;
+	/**
+	 * When the body was last written.
+	 *
+	 * Ordering a verdict sweep by `createdAt` is #4200: a FAIL upserted into an older comment after
+	 * a PASS must win, and only the write stamp says so.
+	 */
+	readonly updatedAt: string;
 	readonly body: string;
 }
 
@@ -424,6 +431,7 @@ export const listComments = (
 					id: value.id,
 					author: isRecord(user) && typeof user.login === "string" ? user.login : "",
 					createdAt: typeof value.created_at === "string" ? value.created_at : "",
+					updatedAt: typeof value.updated_at === "string" ? value.updated_at : "",
 					body: typeof value.body === "string" ? value.body : "",
 				});
 			}

@@ -66,6 +66,7 @@ export const ALIGNED_GROUPS: Readonly<Record<string, SharedSeats>> = {
 	build: BUILD_SEATS,
 	triage: SHARED_SEATS,
 	review: SHARED_SEATS,
+	ship: SHARED_SEATS,
 };
 
 /**

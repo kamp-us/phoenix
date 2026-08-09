@@ -129,7 +129,13 @@ describe("listOpenMilestones", () => {
 
 describe("listComments", () => {
 	const comment = (id: number, login: string, body: string) =>
-		JSON.stringify({id, user: {login}, created_at: "2026-08-03T09:28:41Z", body});
+		JSON.stringify({
+			id,
+			user: {login},
+			created_at: "2026-08-03T09:28:41Z",
+			updated_at: "2026-08-03T10:00:00Z",
+			body,
+		});
 
 	it("reads every page, in order", async () => {
 		const shell = fakeShell([
@@ -139,8 +145,20 @@ describe("listComments", () => {
 		expect(result).toEqual({
 			_tag: "Ok",
 			value: [
-				{id: 1, author: "usirin", createdAt: "2026-08-03T09:28:41Z", body: "first"},
-				{id: 2, author: "cansirin", createdAt: "2026-08-03T09:28:41Z", body: "second"},
+				{
+					id: 1,
+					author: "usirin",
+					createdAt: "2026-08-03T09:28:41Z",
+					updatedAt: "2026-08-03T10:00:00Z",
+					body: "first",
+				},
+				{
+					id: 2,
+					author: "cansirin",
+					createdAt: "2026-08-03T09:28:41Z",
+					updatedAt: "2026-08-03T10:00:00Z",
+					body: "second",
+				},
 			],
 		});
 		expect(shell.calls[0]).toContain("--paginate");

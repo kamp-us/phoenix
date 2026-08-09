@@ -81,6 +81,43 @@ export const namespacesOf = (result: Partition): ReadonlyArray<string> =>
 	result.classes.map((entry) => namespaceOf(entry.name));
 
 /**
+ * The `ui` class, which `ship scope` derives **in addition to** the three above.
+ *
+ * It lives here rather than in a second copy under `ship/` so the two groups partition one map: v1
+ * printed the class set from one derivation and hand-copied it into another, and the copy dropped a
+ * class on a live PR (#4730). `review scope` does not print it — its rubric has no `ui` row — but
+ * the rows and their order are shared, which is the property that keeps ship and review from
+ * disagreeing about what a file is.
+ */
+export const SHIP_CLASS_NAMES = [...CLASS_NAMES, "ui"] as const;
+export type ShipClassName = (typeof SHIP_CLASS_NAMES)[number];
+
+/** A rendered frontend surface. Its own tests are code, not UI — they render nothing. */
+export const isUiSurface = (path: string): boolean =>
+	path.startsWith("apps/web/src/") && !/\.(?:test|spec)\.tsx?$/.test(path);
+
+export interface ShipPartition {
+	/** Only the classes actually present, in {@link SHIP_CLASS_NAMES} order. */
+	readonly classes: ReadonlyArray<{readonly name: ShipClassName; readonly files: number}>;
+	readonly scanned: number;
+}
+
+export const partitionWithUi = (files: ReadonlyArray<string>): ShipPartition => {
+	const base = partition(files);
+	const ui = files.filter(isUiSurface).length;
+	return {
+		classes: ui === 0 ? base.classes : [...base.classes, {name: "ui" as const, files: ui}],
+		scanned: base.scanned,
+	};
+};
+
+export const shipNamespacesOf = (result: ShipPartition): ReadonlyArray<string> =>
+	result.classes.map((entry) => `review-${entry.name}`);
+
+/** The closed namespace vocabulary `ship gate --require` admits. */
+export const SHIP_NAMESPACES: ReadonlyArray<string> = SHIP_CLASS_NAMES.map((n) => `review-${n}`);
+
+/**
  * The linked issue, from the PR body's first closing keyword.
  *
  * Every inflection of the three keywords is admitted — GitHub auto-closes on all of them, and a body

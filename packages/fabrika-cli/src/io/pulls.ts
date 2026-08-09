@@ -26,11 +26,21 @@ export interface PullRecord {
 	readonly changedFiles: number;
 	/** Issue comments on the PR, as the platform counts them. The verdict sweep's denominator. */
 	readonly comments: number;
+	/** A draft PR is open but ungateable — `ship scope` reports it, the write verbs refuse it. */
+	readonly draft: boolean;
+	/** Merged is not derivable from `state`: a merged PR reads `closed` (`ship reconcile`'s `landed`). */
+	readonly merged: boolean;
+	/** The base branch — whose queue regime, never this PR's history, decides `ship disarm`'s policy. */
+	readonly baseRef: string;
+	/** Whether a merge intent is currently parked on the PR (ADR 0198's armed state). */
+	readonly autoMerge: boolean;
+	/** The PR's author — the §CP cardinality table's `sole owner authored the PR` arm. */
+	readonly authorLogin: string;
 }
 
 const toPullRecord = (value: unknown): PullRecord | null => {
 	if (!isRecord(value)) return null;
-	const {number, state, head, body, changed_files: changedFiles, comments} = value;
+	const {number, state, head, base, body, changed_files: changedFiles, comments, user} = value;
 	const headSha = isRecord(head) && typeof head.sha === "string" ? head.sha : null;
 	if (typeof number !== "number" || typeof state !== "string" || headSha === null) return null;
 	if (typeof changedFiles !== "number") return null;
@@ -41,6 +51,11 @@ const toPullRecord = (value: unknown): PullRecord | null => {
 		body: typeof body === "string" ? body : "",
 		changedFiles,
 		comments: typeof comments === "number" ? comments : 0,
+		draft: value.draft === true,
+		merged: value.merged === true,
+		baseRef: isRecord(base) && typeof base.ref === "string" ? base.ref : "",
+		autoMerge: isRecord(value.auto_merge),
+		authorLogin: isRecord(user) && typeof user.login === "string" ? user.login : "",
 	};
 };
 
