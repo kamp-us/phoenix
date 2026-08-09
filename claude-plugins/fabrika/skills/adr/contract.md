@@ -18,13 +18,17 @@ The reason is the deletion test. A fabrika that calls `pipeline-cli` can never b
 replaces it — every call is a tether that keeps the old tree alive. Isolation costs a duplicated
 ranking during the transition; a tether costs the ability to ever delete anything.
 
-**`adr classify` was considered and deliberately not derived.** Classifying an ADR as control-plane
-by content is what `cp-classify` already does at the merge gate, and that gate is the authority. A
-fabrika copy of the guard vocabulary could tell an author "ordinary" while the gate says
-"control-plane" — two answers to a merge-gating question, which is worse than either a tether or a
-drifted ranking. The skill instead states the expectation (assume §CP, never reword to dodge the
-gate) and leaves the verdict where it is enforced. The incidents behind it, #4386 and #3416, were the
-*gate* misclassifying, so an author-side predictor would not have caught them anyway.
+**`adr classify` was considered and deliberately not derived.** The control-plane question is settled
+at the merge gate, and that gate is the authority. A fabrika copy of it could tell an author
+"ordinary" while the gate says "control-plane" — two answers to a merge-gating question, which is
+worse than either a tether or a drifted ranking. That reasoning holds under either model, and the two
+differ: v1's `cp-classify` classifies an ADR **by content** (its ADR-0164 probe, reached because no
+`.decisions/**` path matches its path pattern), while fabrika's ruled model is CODEOWNERS-only,
+three-valued, and has **no semantic detection**, so under it an ADR is not control plane — see
+[§CP classification](../../docs/control-plane-classification.md). Either way the skill states the
+expectation, never rewords to dodge the gate, and leaves the verdict where it is enforced. The
+incidents behind it, #4386 and #3416, were the *gate* misclassifying, so an author-side predictor
+would not have caught them anyway.
 
 ## Verb inventory
 
