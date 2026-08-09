@@ -18,8 +18,12 @@ hypothesis).
   **First measurement (2026-08-09, 6 evals × 2 arms):** the layer produced caveats no floor defect
   covered on eval-1 (`ac-not-checkable` on an unfalsifiable criterion) and eval-3
   (`dependency-implied-not-declared` on an undeclared ordering) — both real, neither a restatement.
-  Counter-evidence from the same runs: `FLIP-PARTIAL` has **no caveat emit path**, so a run that
-  forms caveats on that terminal drops them. That is H1's own falsifier firing on one terminal.
+  Counter-evidence from the same runs: `FLIP-PARTIAL` had **no caveat emit path**, so a run that
+  formed caveats on that terminal dropped them — H1's own falsifier firing on one terminal.
+  **Resolved** ([#5150](https://github.com/kamp-us/phoenix/issues/5150)): that terminal now routes
+  through step 4 as well, verdict before the `build note`, so no clean-floor terminal drops a
+  caveat. The measurement above stands on the two caveats that reached a reader, and the falsifier
+  no longer fires anywhere.
 - <!-- anchor: H2 --> **Scope-digest binding is the right drift key.** Claim: binding a verdict to
   the scanned child set makes staleness structural rather than detected. Falsified by: digests that
   churn on edits the floor does not read, making every verdict Stale. Seam: the digest's field list
