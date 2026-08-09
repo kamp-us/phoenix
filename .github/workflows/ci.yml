@@ -611,6 +611,15 @@ jobs:
       # Same script runs locally: `bash .claude/skills/ship-it/scripts/verify-chain-resolves.sh`.
       - run: bash .claude/skills/ship-it/scripts/verify-chain-resolves.sh
 
+      # Executable pin for Step 0's class parity (#4744): the printed class set must EQUAL
+      # `class-probe classify`'s. The harness landed with #4730's fix and then ran nowhere for a
+      # week — read by four static-lint corpora, executed by none — so it read as coverage while
+      # being unable to fail. Its own falsifiability is asserted in-file (three mutants, each
+      # required to red for its intended reason) and its scope is counted, so a deleted case reds
+      # rather than printing a vacuous OK. Hermetic: gh is stubbed, no network.
+      # Same script runs locally: `bash .claude/skills/ship-it/scripts/verify-step0-class-parity.sh`.
+      - run: bash .claude/skills/ship-it/scripts/verify-step0-class-parity.sh
+
       # Executable pin for Step 3z's precondition (#4830): the one ship-it step that mutates a live
       # PR — close→reopen — must fire ONLY in the dropped-trigger state and refuse without touching
       # the PR otherwise, including on an unreadable count. The precondition used to live in the
