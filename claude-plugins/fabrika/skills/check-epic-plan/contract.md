@@ -18,9 +18,10 @@ and an implementer needs none of those files to build these verbs.
 **The group name.** `plan` is this gate's, following the one-group-per-skill precedent (`build-ui`
 took `ui`, `build-epic` took `epic`, each reusing `build`'s verbs rather than sharing its group).
 The planner `plan-epic` ([#4712](https://github.com/kamp-us/phoenix/issues/4712), unauthored) takes
-its own group and may reuse these verbs the same way. **The `epic` group is an unimplemented
-spec** — `build-epic`'s contract describes it and no `src/epic/` exists — so nothing here allocates
-against it.
+its own group and may reuse these verbs the same way. **Nothing here allocates against the `epic`
+group.** (When this was written `epic` was an unimplemented spec with no `src/epic/`; it landed via
+[#5092](https://github.com/kamp-us/phoenix/issues/5092), so the premise is stale and the conclusion
+is not — `plan` is still unallocated, and no `epic` verb answers this gate's question.)
 
 **What fabrika already ships, reused — never respecified.** The claim is the **`build` group's,
 reused as landed verbs** ([`build`'s contract](../build/contract.md)) — the cross-contract shape
@@ -301,6 +302,18 @@ read one meaning for it; `ship` importing `review`'s private band is the shipped
 **`20`+ are this group's own.** Codes above the reserved band carry no cross-group *uniqueness*
 obligation (interface convention rule 3), and the alignment this group opts into is checked
 **base-only, never pairwise** (`exit-code-alignment.ts`: `occupied = allocatedCodes(base)`).
+
+**The `20`/`21` overlap with `build`, settled ([#5107](https://github.com/kamp-us/phoenix/issues/5107)).**
+This was written when `20`+ was free; the scope-admission fence has since taken `20` `OUT_OF_FOCUS`
+and `21` `AUDIENCE_NOT_AGENT`, both reachable from `fabrika build claim` — step 1 of this gate's
+skill. The overlap **stands**, and the rule that settles it is: *import a code when two groups prove
+the same fact; allocate freely when they do not.* `15` is imported because `plan flip` and
+`build claim` assert the identical fact (this session holds this issue's claim). `20`/`21` do not
+overlap in fact at all — lane admission is never something a `plan` verb proves, and a defective
+floor or a moved digest is never something a `build` verb proves — and an exit code is read off the
+command that produced it: [SKILL.md](SKILL.md) step 1 is total (`any other non-zero ends STOPPED`)
+and branches on `20`/`21` only off `plan flip` / `plan verdict`. Re-seating at `24`+ would also buy
+nothing, since `epic` already seats `20`–`24` over the same two `build` codes.
 
 | Code | Meaning | `read` | `check` | `flip` | `verdict` |
 |---|---|---|---|---|---|

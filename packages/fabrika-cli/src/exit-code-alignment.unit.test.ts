@@ -10,6 +10,7 @@ import {
 	codeTableGroupsIn,
 	UNALIGNED_GROUPS,
 } from "./exit-code-alignment.ts";
+import * as plan from "./plan/codes.ts";
 import * as report from "./report/codes.ts";
 import * as review from "./review/codes.ts";
 import * as ship from "./ship/codes.ts";
@@ -26,6 +27,7 @@ const SRC_DIR = fileURLToPath(new URL(".", import.meta.url));
 const TABLES: Readonly<Record<string, CodeTable>> = {
 	build,
 	epic,
+	plan,
 	report,
 	review,
 	ship,

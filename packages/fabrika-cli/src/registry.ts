@@ -19,6 +19,7 @@ import {adrCommand} from "./adr/command.ts";
 import {buildCommand} from "./build/command.ts";
 import {epicCommand} from "./epic/command.ts";
 import {evalCommand} from "./eval/command.ts";
+import {planCommand} from "./plan/command.ts";
 import {reportCommand} from "./report/command.ts";
 import {reviewCommand} from "./review/command.ts";
 import {shipCommand} from "./ship/command.ts";
@@ -35,6 +36,7 @@ export const registeredGroups: ReadonlyArray<VerbGroup> = [
 	buildCommand,
 	epicCommand,
 	evalCommand,
+	planCommand,
 	reportCommand,
 	reviewCommand,
 	shipCommand,
