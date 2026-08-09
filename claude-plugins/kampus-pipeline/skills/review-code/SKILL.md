@@ -826,7 +826,14 @@ The chain is the tail of the same
 probe LEADS it, EXECUTED, never asserted in prose, so the detector-blind `UNVERIFIABLE` branch is
 structurally unreachable when the glossary is absent. A fifth line,
 `glossary-freshness: CANNOT-EVALUATE (…)` at a non-zero exit, is the extraction's own fail-closed
-sentinel: fold it as `[UNVERIFIABLE]`, never as a not-applicable skip.
+sentinel: fold it as `[UNVERIFIABLE]`, never as a not-applicable skip. **A detector that could not
+RUN reaches that sentinel too**, and the reason it has to is that its silence is indistinguishable
+from a negative: detector (3) shipped with a regex awk refused to compile, exited 2 into a status
+nothing tested, and the gate printed its confident `not applicable` skip on 16 export-changing PRs
+over six weeks (#4700). So each detector's exit status is tested, and an unrun one is UNKNOWN. That
+the detectors can fire *at all* is pinned executably by
+[`scripts/verify-glossary-detector-fires.sh`](scripts/verify-glossary-detector-fires.sh) — a
+positive fixture, because a born-dead detector passes every test that only asserts the happy skip.
 
 Fold the result into the per-criterion table as one line, exactly like Step 3b's flag-gating facet —
 so the conjunctive verdict (Step 3) accounts for it like any other criterion:

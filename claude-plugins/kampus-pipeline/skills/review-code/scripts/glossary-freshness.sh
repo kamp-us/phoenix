@@ -29,6 +29,8 @@ REPO="$(kp_repo)" || cannot "target repo unresolved"
 # --paginate + streaming --jq so the full set past file #100 is seen (the API caps per_page at 100; #725)
 FILES_STATUS="$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" \
   --jq '.[] | "\(.status)\t\(.filename)"')"
+FILES_RC=$?
+[ "$FILES_RC" -eq 0 ] || cannot "the PR file list could not be read (gh api exited $FILES_RC) — detectors (1) and (2) would then scan an EMPTY file set and report no new surface"
 ADDED="$(printf '%s\n' "$FILES_STATUS" | awk -F'\t' '$1=="added"{print $2}')"
 
 # (1) a NEW feature folder: an added file under apps/web/worker/features/<dir>/... whose <dir>
@@ -52,9 +54,30 @@ done
 # CHANGES to expose a new name. This one is read from the diff hunk, not a path-status test:
 # inspect the diff of any touched public entry for an added `export …` line. Treat a public-entry
 # file with an added export as a new surface for this gate.
-PUBLIC_ENTRY_EXPORT_ADDED="$(gh pr diff "$PR" \
-  | awk '/^\+\+\+ b\/packages\/[^/]+\/src\/index\.(ts|tsx)$/{e=1;next}
-         /^\+\+\+ /{e=0} e && /^\+[^+].*\bexport\b/{print}')"
+#
+# Both patterns are awk STRINGS matched with `~`, never `/…/` regex literals, so the `/` inside a
+# bracket expression can never close the literal that contains it. The literal form is what left
+# this detector born-dead from the day it shipped: awk refused to compile `[^/]` inside `/…/`, exited
+# 2 into a status nobody tested, and the gate printed its clean skip for six weeks (#4700). `\b` is
+# gone for a second, independent reason found while fixing that one — one-true-awk (the macOS `awk
+# version 20200816` this gate runs on) does not implement it, so `\bexport\b` matched nothing even
+# with the class repaired; the explicit non-word-character alternation is the boundary instead.
+# SC2016 is declared, not waved off: this is LITERAL awk text, and shell-expanding its `$0` would
+# destroy the program. It is re-expanded nowhere — `awk "$DETECTOR3_AWK"` expands the variable, not
+# the `$0` inside its value.
+# shellcheck disable=SC2016
+DETECTOR3_AWK='
+BEGIN {
+  entry = "^\\+\\+\\+ b/packages/[^/]+/src/index\\.(ts|tsx)$"
+  expre = "(^|[^A-Za-z0-9_$])export([^A-Za-z0-9_$]|$)"
+}
+$0 ~ entry { in_entry = 1; next }
+/^\+\+\+ / { in_entry = 0; next }
+in_entry && /^\+/ && $0 ~ expre { print }
+'
+PUBLIC_ENTRY_EXPORT_ADDED="$(gh pr diff "$PR" | awk "$DETECTOR3_AWK")"
+DETECTOR3_RC=$?
+[ "$DETECTOR3_RC" -eq 0 ] || cannot "detector (3), the new-public-export scan, could not run — 'gh pr diff | awk' exited $DETECTOR3_RC; an unrun detector is UNKNOWN, never 'this PR added no export'"
 
 # the union: is there ANY new surface?
 NEW_SURFACE="$(printf '%s %s %s' "$NEW_FEATURE_DIRS" "$NEW_PACKAGES" "$PUBLIC_ENTRY_EXPORT_ADDED" | tr -s ' ')"
