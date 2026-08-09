@@ -178,6 +178,21 @@ interface BlankKeyed {
 	readonly clause: verdictMarker.Clause;
 }
 
+/**
+ * The same probe target for the whitespace `.trim()` strips beyond space/tab/LF/CR.
+ *
+ * These are the keys the exclusion missed while `Whitespace` was the four ASCII characters: each is
+ * blank to the retired runtime law, so each has to be blank here too or the two disagree.
+ */
+interface WideBlankKeyed {
+	readonly "\u00A0": verdictMarker.HeadSha;
+	readonly "\u000B": verdictMarker.HeadSha;
+	readonly "\u000C": verdictMarker.HeadSha;
+	readonly "\uFEFF": verdictMarker.HeadSha;
+	readonly "\u3000": verdictMarker.HeadSha;
+	readonly clause: verdictMarker.Clause;
+}
+
 describe("the witness binds the field name to that field's own type", () => {
 	it("admits a branded field, and only a branded field, of the value type", () => {
 		// The positive control. If `BrandedKeys` collapsed to `never` every probe below would pass
@@ -207,6 +222,29 @@ describe("the witness binds the field name to that field's own type", () => {
 		brandWitnesses<{readonly "": verdictMarker.HeadSha}>({"": true});
 
 		expect([blank, nonBlank]).toEqual([false, true]);
+	});
+
+	it("drops every key `trim()` calls blank, not just the four ASCII ones", () => {
+		const nbsp: Inhabits<"\u00A0", WideBlankKeyed> = false;
+		const verticalTab: Inhabits<"\u000B", WideBlankKeyed> = false;
+		const formFeed: Inhabits<"\u000C", WideBlankKeyed> = false;
+		const byteOrderMark: Inhabits<"\uFEFF", WideBlankKeyed> = false;
+		const ideographicSpace: Inhabits<"\u3000", WideBlankKeyed> = false;
+		// The positive control for this set, same role as the pair above.
+		const nonBlank: Inhabits<"clause", WideBlankKeyed> = true;
+
+		// @ts-expect-error — this compiled while `Whitespace` was the four ASCII characters, and the
+		// witness it built named nothing. Every key is blank, so the parameter type is now `never`.
+		brandWitnesses<{readonly "\u00A0": verdictMarker.HeadSha}>({"\u00A0": true});
+
+		expect([nbsp, verticalTab, formFeed, byteOrderMark, ideographicSpace, nonBlank]).toEqual([
+			false,
+			false,
+			false,
+			false,
+			false,
+			true,
+		]);
 	});
 
 	it("refuses the call shapes a row could otherwise get wrong", () => {

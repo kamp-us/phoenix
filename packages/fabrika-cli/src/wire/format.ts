@@ -114,7 +114,39 @@ export interface WireBrandWitness {
 /** `true` only for a *proper* subtype of `string` — a brand, or a literal union. Bare `string` is `false`. */
 type NarrowerThanString<A> = [A] extends [string] ? ([string] extends [A] ? false : true) : false;
 
-type Whitespace = " " | "\t" | "\n" | "\r";
+/**
+ * Exactly the code points `String.prototype.trim` strips, so {@link IsBlank} is not narrower than
+ * the runtime law it replaces: ECMAScript `WhiteSpace` (§12.2 — TAB, VT, FF, ZWNBSP, and every
+ * `Space_Separator`) plus `LineTerminator` (§12.3 — LF, CR, LS, PS). Enumerating them by hand is the
+ * only option at the type level, so the list was re-derived from the runtime rather than recalled:
+ * scanning every code point for one `trim()` removes yields these 25 and no others.
+ */
+type Whitespace =
+	| "\u0009"
+	| "\u000A"
+	| "\u000B"
+	| "\u000C"
+	| "\u000D"
+	| "\u0020"
+	| "\u00A0"
+	| "\u1680"
+	| "\u2000"
+	| "\u2001"
+	| "\u2002"
+	| "\u2003"
+	| "\u2004"
+	| "\u2005"
+	| "\u2006"
+	| "\u2007"
+	| "\u2008"
+	| "\u2009"
+	| "\u200A"
+	| "\u2028"
+	| "\u2029"
+	| "\u202F"
+	| "\u205F"
+	| "\u3000"
+	| "\uFEFF";
 
 /** `true` for the empty key and for one made only of whitespace — a name that names nothing. */
 type IsBlank<K extends string> = K extends ""
