@@ -230,23 +230,22 @@ wrapper shape at `packages/fabrika-cli/src/review/authored.ts` and
 ### Three shipped-surface changes this group requires
 
 All three are additive; none changes how any existing marker, namespace or verdict reads. Each is a
-change to a surface this group does not own, so each names the file and the exact edit.
+change to a surface this group does not own, so each names the file and the exact edit. **Two of the
+three have since landed**, via [#5206](https://github.com/kamp-us/phoenix/pull/5206) — they are kept
+here, in landed state, because they are still the surfaces this group's fail-closed property rests
+on. Change 3 is the only one still outstanding.
 
 **1. `ship`'s required-namespace vocabulary must admit `governance` — without this the whole
-fail-closed property is decoration.** `packages/fabrika-cli/src/review/classes.ts:118` declares
-`export const SHIP_NAMESPACES: ReadonlyArray<string> = SHIP_CLASS_NAMES.map((n) => `review-${n}`)`,
-and `packages/fabrika-cli/src/ship/gate-verb.ts:158` refuses any `--require` value outside it with
-`OFF_VOCABULARY`. So **`fabrika ship gate --require governance` is refused today**, which means a
-harness-touching diff can reach the enqueue seam with no governance verdict and nothing anywhere
-says no. The skill's "fail-closed on absence" property is a claim about `ship gate`'s conjunction,
-and it is false until this lands. Two edits, both additive:
-
-- `SHIP_NAMESPACES` becomes the `review-*` set **plus** the literal `governance`, so `--require
-  governance` is admitted. The `review-*` derivation from `SHIP_CLASS_NAMES` is untouched.
-- `ship scope`'s printed namespace set (`shipNamespacesOf`, `packages/fabrika-cli/src/review/classes.ts:113`) additionally emits `governance` when the
-  PR's changed files touch any of this group's four roots — the same total function
-  `governance scope` computes, so the two cannot disagree. Share the predicate rather than writing
-  it twice.
+fail-closed property is decoration. LANDED (#5206).**
+`packages/fabrika-cli/src/review/classes.ts:161` now declares `SHIP_NAMESPACES` as the `review-*`
+set derived from `SHIP_CLASS_NAMES` **plus** the literal `governance`, and `shipNamespacesOf`
+(`packages/fabrika-cli/src/review/classes.ts:149`) appends `governance` when the PR's changed files
+touch any of this group's four roots — the same total function `governance scope` computes, so the
+two cannot disagree. `packages/fabrika-cli/src/ship/gate-verb.ts:158` refuses any `--require` value
+outside `SHIP_NAMESPACES` with `OFF_VOCABULARY`, so **`fabrika ship gate --require governance` is
+admitted**: the skill's "fail-closed on absence" property — a claim about `ship gate`'s conjunction —
+is enforced, not merely specified. Why it was required: until it landed, a harness-touching diff
+could reach the enqueue seam with no governance verdict and nothing anywhere said no.
 
 `ship gate`'s resolution of a `governance` marker needs no change beyond this: it reads markers
 through the same `verdict-marker` format for every namespace, and the ADR 0058 key already carries
@@ -254,15 +253,17 @@ no notion of which skill posted one. **This is not a second answer to an enforce
 enqueue conjunction stays `ship gate`'s alone. It is that enforcer being taught one more namespace,
 which is the only shape in which a derived-required namespace can actually be required.
 
-**2. The `verdict-marker` namespace class must admit `governance`.**
-`packages/fabrika-cli/src/wire/verdict-marker.ts` today declares
-`const NAMESPACE = /^(review|check-epic-plan)(-[a-z0-9]+)*$/` and
-`const NAMESPACE_PREFIXES = ["review", "check-epic-plan"]`. A `governance` marker is **not
-representable**: `read`'s prefix gate turns it away as `Absent` before the regex is tested, so
-`emit` would compose bytes the format can never read back — the exact hazard that file's own
-docblock names. Widen **both** constants to admit `governance`, the same additive shape #5107 used
-for the plan gate, and extend the format's round-trip and malformed fixtures with a `governance` row
-so `wire/conformance.ts` drives the new arm. Widening one constant and not the other is the defect.
+**2. The `verdict-marker` namespace class must admit `governance`. LANDED (#5206), with one
+residual.** `packages/fabrika-cli/src/wire/verdict-marker.ts` now declares
+`const NAMESPACE = /^(review|check-epic-plan|governance)(-[a-z0-9]+)*$/` (`:73`) and
+`const NAMESPACE_PREFIXES = ["review", "check-epic-plan", "governance"]` (`:78`), so a `governance`
+marker **is** representable — `read`'s prefix gate admits it and the regex accepts it, instead of
+turning it away as `Absent` before the regex is tested and letting `emit` compose bytes the format
+can never read back. Both constants widened together, the same additive shape #5107 used for the
+plan gate; widening one and not the other would have been the defect. **The residual:** the
+registry's `verdict-marker` row (`packages/fabrika-cli/src/wire/registry.ts:68`) still carries only
+`review-code` round-trip and malformed fixtures, so `wire/conformance.ts` drives no `governance`
+arm — adding those fixture rows is what remains of this change.
 
 **3. A new registered format `governance-digest`.** One row in
 `packages/fabrika-cli/src/wire/registry.ts` plus a sibling schema module
