@@ -16,6 +16,7 @@ import {
 	encodeSpendRows,
 	LEDGER_ROW_VERSION,
 	type LedgerRow,
+	persistSpendRows,
 	readSpendLedger,
 } from "./ledger.ts";
 import type {RunSpend} from "./token-spend.ts";
@@ -214,6 +215,19 @@ describe("appendSpendLedger — append-only against a real temp directory", () =
 			const path = join(dir, "spend-ledger.jsonl");
 			await live(appendSpendLedger(path, []));
 			assert.strictEqual(existsSync(path), false);
+		});
+	});
+
+	it("persists with nothing to say, and says exactly one thing when it could not", async () => {
+		await withTempDir(async (dir) => {
+			const path = join(dir, "spend-ledger.jsonl");
+			assert.deepStrictEqual(await live(persistSpendRows(path, [row()])), []);
+
+			const occupied = join(dir, "occupied");
+			writeFileSync(occupied, "");
+			const notes = await live(persistSpendRows(join(occupied, "spend-ledger.jsonl"), [row()]));
+			assert.strictEqual(notes.length, 1);
+			assert.strictEqual(notes[0]?.includes(occupied), true);
 		});
 	});
 

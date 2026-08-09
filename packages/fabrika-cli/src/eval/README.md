@@ -535,7 +535,8 @@ fabrika eval run <evals.json> \
   --plugin-dir <the candidate skill's plugin dir> \
   --model <model> \
   [--arms with-skill,without-skill] [--json-schema <schema.json>] \
-  [--timeout-ms 900000] [--out ledger.json] [--capture-out capture.json] [--dry-run]
+  [--timeout-ms 900000] [--out ledger.json] [--capture-out capture.json] \
+  [--spend-ledger .fabrika/spend-ledger.jsonl] [--dry-run]
 ```
 
 One command runs a skill's whole eval set with nobody watching. Per (case × arm) it invokes
@@ -562,6 +563,25 @@ all: it is already the counted `NoModelTurns:zero-assistant-turns` failure above
 
 The figures come from `src/spend/token-spend.ts` through `classifyRunSpend`. No second sum is added
 here — this change in fact removes the runner's own second `reconstructSpend` call.
+
+### Where those rows survive ([#5009](https://github.com/kamp-us/phoenix/issues/5009))
+
+A spend row used to live only in the `--out` file the operator named, so every measurement was as
+durable as one shell history. Once the suite completes, the runner now appends its rows to a **spend
+ledger** — `.fabrika/spend-ledger.jsonl` by default, `--spend-ledger <path>` to put it elsewhere.
+The default is repo-relative and gitignored; the format and both halves of its contract live in
+[`../spend/ledger.ts`](../spend/ledger.ts).
+
+Three properties are the point:
+
+- **It is the only durable write, and it is on the completion path.** Nothing hooks session start,
+  session end, or a tool call — the epic's second no-go. A `--dry-run` spawns nothing and so records
+  nothing.
+- **A re-run appends.** The earlier suite's lines are still there, byte for byte; nothing truncates,
+  rewrites or repairs a line already on disk.
+- **It cannot change what the run reports.** A ledger that cannot be written is one line on stderr.
+  The exit code and the suite's outcome are untouched, because the measurement is a by-product of the
+  run and must never become a way for it to fail.
 
 **The two arms are `--plugin-dir` present or absent.** That is the whole difference in the argv, and
 it is the arm variable the /skill-creator methodology means by with-skill vs without-skill. Two flags
