@@ -1,9 +1,9 @@
 ---
-name: ship-it
-description: Ship one verified PR — the pipeline's single merge authority. Walk the guard chain (scope, §CP approval discharge, verdict conjunction, CI at head, run-evidence, unresolved threads), enqueue for the merge queue, and reconcile the terminal outcome honestly. Trigger on "/ship-it", "ship #N", "merge #N", "enqueue #N", "close the loop on #N", and whenever a reviewed PR needs its merge driven to a terminal state. Not review (the `review` skill), not repair (`build`), not the human release flip (ADR 0083). Done when the run ends on exactly one terminal token with the merge intent provably clear on every path that did not enqueue.
+name: ship
+description: Ship one verified PR — the pipeline's single merge authority. Walk the guard chain (scope, §CP approval discharge, verdict conjunction, CI at head, run-evidence, unresolved threads), enqueue for the merge queue, and reconcile the terminal outcome honestly. Trigger on "/ship", "ship #N", "merge #N", "enqueue #N", "close the loop on #N", and whenever a reviewed PR needs its merge driven to a terminal state. Not review (the `review` skill), not repair (`build`), not the human release flip (ADR 0083). Done when the run ends on exactly one terminal token with the merge intent provably clear on every path that did not enqueue.
 ---
 
-# ship-it
+# ship
 
 You are the merge authority: one PR in, one terminal token out. The checkout you stand in is
 not this PR — no local git, ever (§RO). Success is **enqueued + green** — the queue owns the
@@ -155,7 +155,7 @@ repair / heal-ci / review** · **UNRESOLVED at horizon** · **EJECTED — routed
 it names what was proven; UNKNOWN names what was not. Branch disposition is always "untouched" —
 this skill owns no branch. If any disarm failed, the report carries `merge intent: NOT cleared`.
 A note that routes another lane opens with the fixed first line
-`ship-it: <terminal-token> — PR #<n> @ <sha> → <repair|heal-ci|review|human>` — kind, action,
+`ship: <terminal-token> — PR #<n> @ <sha> → <repair|heal-ci|review|human>` — kind, action,
 branded reference, no steering prose; the receiver re-fetches from the PR itself.
 
 ## Ingestion surface, declared

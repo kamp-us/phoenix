@@ -1,5 +1,5 @@
 {
-	"skill_name": "ship-it",
+	"skill_name": "ship",
 	"note": "Fixtures are self-contained fictional-repo (acme/storefront) scenarios carrying literal verb outputs per contract.md; runs are offline (no gh) and executed on the pinned deployment model (Opus), per the standing founder ruling (2026-08-08). Assertions target closed vocabulary and mechanism fidelity, never presence.",
 	"evals": [
 		{

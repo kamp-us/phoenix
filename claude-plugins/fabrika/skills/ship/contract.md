@@ -1,10 +1,10 @@
-# `/ship-it` — derived CLI contract
+# `/ship` — derived CLI contract
 
-**Skill:** [`ship-it`](SKILL.md) · **Authoring brief:** [#4709](https://github.com/kamp-us/phoenix/issues/4709) · **Date:** 2026-08-08
+**Skill:** [`ship`](SKILL.md) · **Authoring brief:** [#4709](https://github.com/kamp-us/phoenix/issues/4709) · **Date:** 2026-08-08
 
 These verbs live in `packages/fabrika-cli/`, binary `fabrika`, grouped under a `ship`
 subcommand, beside the `adr`, `eval`, `report`, `review`, `triage` and `wire` groups already
-implemented there. (The skill directory is `ship-it`; the CLI group is `ship` so every
+implemented there. (The skill directory and the CLI group are both `ship`, so every
 invocation reads as a sentence — `fabrika ship enqueue`. One skill, one group; the mapping is
 stated here once.) The [CLI interface convention](../../docs/cli-interface-convention.md)
 governs them; where this spec and that doc disagree, the doc wins and this spec is the bug.
@@ -103,7 +103,7 @@ of them.
 v1's `ship-it` remains the live project-level skill at `claude-plugins/kampus-pipeline/skills/`
 (routed from `CLAUDE.md` / `DEVELOPMENT.md` as `.claude/skills/ship-it/`) until the cutover,
 which is separate, later work; until then nothing on `main` routes to this skill and it is
-reached as `/fabrika:ship-it`. The routing gap is the same one recorded for the sibling
+reached as `/fabrika:ship`. The routing gap is the same one recorded for the sibling
 rebuilds (#4761, #4829) and is noted in the authoring PR rather than patched from here.
 
 The same applies to the **heal seam**: the skill routes red CI to `heal-ci`, and no fabrika
@@ -1375,7 +1375,7 @@ lifecycle stage, and the durable record is the point (#1928: the silent dead shi
 
 ```
 $ fabrika ship note 4322 <<'EOF'
-ship-it: refused — head CI red at 9fe12ab0 (`unit tests` failure). Routed to heal-ci. Merge intent disarmed at site refuse.
+ship: refused — head CI red at 9fe12ab0 (`unit tests` failure). Routed to heal-ci. Merge intent disarmed at site refuse.
 EOF
 noted	https://github.com/kamp-us/phoenix/pull/4322#issuecomment-5155001122
 ```
