@@ -1,0 +1,60 @@
+/**
+ * `build tree` — the ground, proven from git state and one claim, and never repaired.
+ *
+ * Three assertions, each with its own code so a caller can act on which one failed: a linked worktree
+ * (`12`), a clean tree at a `--require-clean` open (`13`), and a checked-out branch carrying this
+ * claim's nonce (`14`). It **verifies and never provisions** — no create, no lock, no unlock, no
+ * remove. A verifier that could also repair is the self-provision path the incident record closes
+ * (the 2026-08-03 amendment on #4707).
+ *
+ * The skill re-runs this before every git mutation because the shell's cwd resets between calls, so a
+ * pass here is a fact about *this* invocation and nothing later.
+ */
+import {Effect} from "effect";
+import type {ChildProcessSpawner} from "effect/unstable/process";
+import {currentBranch} from "../io/issues.ts";
+import {answer, refuse, type VerbOutcome} from "../verb.ts";
+import {requireClaim, requireSession} from "./claim.ts";
+import {WRONG_LANE} from "./codes.ts";
+import {nonceOf, parseLaneBranch} from "./lane.ts";
+import {resolveTargetRepo} from "./target.ts";
+import {assertGround} from "./worktree.ts";
+
+const VERB = "build tree";
+
+export interface TreeOptions {
+	readonly requireClean: boolean;
+	/** Additionally prove the checked-out branch carries this claim's nonce — the pre-mutation posture. */
+	readonly issue: number | null;
+	readonly repo: string | null;
+	readonly env: Readonly<Record<string, string | undefined>>;
+}
+
+export const runTree = (
+	options: TreeOptions,
+): Effect.Effect<VerbOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
+	Effect.gen(function* () {
+		const ground = yield* assertGround(VERB, options.requireClean);
+		if (ground._tag === "Refused") return ground.outcome;
+		if (options.issue === null) return answer(ground.root);
+
+		const session = requireSession(VERB, options.env);
+		if (session._tag === "Refused") return session.outcome;
+
+		const resolved = yield* resolveTargetRepo(VERB, options.repo, options.env);
+		if (resolved._tag === "Refused") return resolved.outcome;
+
+		const held = yield* requireClaim(VERB, resolved.repo, options.issue, session.id);
+		if (held._tag === "Refused") return held.outcome;
+
+		const branch = yield* currentBranch;
+		const lane = branch === null ? null : parseLaneBranch(branch);
+		if (lane === null || nonceOf(held.marker.token) !== lane.nonce) {
+			return refuse(
+				WRONG_LANE,
+				`${VERB}: the checked-out branch "${branch ?? "(detached)"}" does not carry claim ${held.marker.token}'s nonce — wrong lane.`,
+				held.notes,
+			);
+		}
+		return answer(ground.root, held.notes);
+	});

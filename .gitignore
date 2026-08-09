@@ -9,8 +9,9 @@ node_modules
 
 dist
 build
-# the fabrika /build skill is source, not build output (#4707 rename collision)
+# `build` names a fabrika surface, not build output — both are source (#4707, #4988)
 !claude-plugins/fabrika/skills/build/
+!packages/fabrika-cli/src/build/
 *.tsbuildinfo
 .next
 

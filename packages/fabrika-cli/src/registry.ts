@@ -16,6 +16,7 @@
 import type {NodeServices} from "@effect/platform-node";
 import type {Command} from "effect/unstable/cli";
 import {adrCommand} from "./adr/command.ts";
+import {buildCommand} from "./build/command.ts";
 import {evalCommand} from "./eval/command.ts";
 import {reportCommand} from "./report/command.ts";
 import {reviewCommand} from "./review/command.ts";
@@ -29,6 +30,7 @@ export type VerbGroup = Command.Command<any, any, object, unknown, NodeServices.
 /** The registered groups, in the order they list under `--help`. */
 export const registeredGroups: ReadonlyArray<VerbGroup> = [
 	adrCommand,
+	buildCommand,
 	evalCommand,
 	reportCommand,
 	reviewCommand,
