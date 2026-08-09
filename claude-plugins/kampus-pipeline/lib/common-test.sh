@@ -513,18 +513,27 @@ else
 	# dirty tree is strictly worse than the bug this fix closes.
 	printf 'precious uncommitted work\n' > "$pin_left/UNCOMMITTED.txt"
 
-	# 26. The classifier separates the four states. A boolean "is it pinned" cannot, and the states
-	# have opposite handling — `other` co-checks-out, `primary` and `live-lane` refuse.
+	# 26. The classifier separates the five states. A boolean "is it pinned" cannot, and the states
+	# have opposite handling — `other` co-checks-out, `primary` and `live-lane` refuse, `dormant-lane`
+	# refuses unless it can PROVE the tree is finished. The two same-session reads below carry the
+	# IDENTICAL stamp and differ only in their beat: that is the #4868 fix in one assertion, since a
+	# discriminator that reads the id alone cannot tell them apart at all.
 	printf '%s\n' "$pin_sid" > "$tmp/pin/.git/worktrees/pin-left/kampus-lane"
+	kp_lane_beat "$tmp/pin/.git/worktrees/pin-left"
 	out_live="$(CLAUDE_CODE_SESSION_ID="$pin_sid" kp_branch_pin "$pin_lane" kp-feat)"
-	rm -f "$tmp/pin/.git/worktrees/pin-left/kampus-lane"
+	printf '%s\n' "$(($(date +%s) - 100000))" > "$tmp/pin/.git/worktrees/pin-left/kampus-lane.beat"
+	out_dormant="$(CLAUDE_CODE_SESSION_ID="$pin_sid" kp_branch_pin "$pin_lane" kp-feat)"
+	rm -f "$tmp/pin/.git/worktrees/pin-left/kampus-lane" "$tmp/pin/.git/worktrees/pin-left/kampus-lane.beat"
 	out_other="$(CLAUDE_CODE_SESSION_ID="$pin_sid" kp_branch_pin "$pin_lane" kp-feat)"
 	out_mine="$(CLAUDE_CODE_SESSION_ID="$pin_sid" kp_branch_pin "$pin_lane" kp-lane)"
 	out_free="$(CLAUDE_CODE_SESSION_ID="$pin_sid" kp_branch_pin "$pin_lane" kp-no-such-branch)"
 	out_primary="$(CLAUDE_CODE_SESSION_ID="$pin_sid" kp_branch_pin "$pin_lane" "$pin_base")"
 	if [ "$out_live" != "PIN=live-lane
 PINROOT=$pin_left" ]; then
-		fail "kp_branch_pin: a pinning tree stamped with MY lane must read live-lane: [$out_live]"
+		fail "kp_branch_pin: a pinning tree stamped with MY lane and BEATING must read live-lane: [$out_live]"
+	elif [ "$out_dormant" != "PIN=dormant-lane
+PINROOT=$pin_left" ]; then
+		fail "kp_branch_pin: the SAME stamp with a stale beat must read dormant-lane, not live-lane — a discriminator that cannot fall out of live-lane is stuck, not fail-closed (#4868): [$out_dormant]"
 	elif [ "$out_other" != "PIN=other
 PINROOT=$pin_left" ]; then
 		fail "kp_branch_pin: an unstamped pinning tree must read other: [$out_other]"
@@ -538,7 +547,7 @@ PINROOT=" ]; then
 PINROOT=$(cd "$tmp/pin" && pwd -P)" ]; then
 		fail "kp_branch_pin: a branch held by the primary checkout must read primary: [$out_primary]"
 	else
-		ok "kp_branch_pin separates free / mine / primary / live-lane / other"
+		ok "kp_branch_pin separates free / mine / primary / live-lane / dormant-lane / other"
 	fi
 
 	# 27. THE FALSIFICATION. The bare `git switch` the step used to run REFUSES here — that refusal is
@@ -609,6 +618,8 @@ PINROOT=$(cd "$tmp/pin" && pwd -P)" ]; then
 
 	# 31. A pinning tree stamped with THIS session is a sibling lane that may still be building on the
 	# branch; the rebase would move its HEAD mid-flight. Refuse, name the remedy, remove nothing.
+	# Deliberately left as it shipped: with no beat this is now the liveness-UNKNOWN read, and it must
+	# still refuse — this fixture has no remote, so the tree cannot be proved finished (#4868 AC1).
 	if ! git -C "$tmp/pin" worktree add -q -b kp-sib "$tmp/pin-sib" >/dev/null 2>&1; then
 		fail "fixture did not take: could not add the sibling-lane worktree — case 31 was NOT exercised"
 	else
@@ -624,6 +635,133 @@ PINROOT=$(cd "$tmp/pin" && pwd -P)" ]; then
 		else
 			ok "a branch held by a same-session sibling lane: refused, remedy named, nothing removed"
 		fi
+	fi
+fi
+
+# ---------------------------------------------------------------------------------------------
+# #4868 — the lane stamp's LIFECYCLE. A real remote, because "is this work anywhere but that tree?"
+# is the fact that separates a leftover tree it is safe to release from one holding the only copy.
+#
+# The bare repo is populated by FETCHING INTO IT from the working repo, never by pushing out of it:
+# the corpus lint reds on a bare push anywhere in a runnable block — and a `.sh` is runnable in
+# whole, comments included — with deliberately no pragma and no exempt list (#4213, ADR 0202). The
+# fixture only needs the objects and refs to exist over there, and a fetch puts them there.
+# ---------------------------------------------------------------------------------------------
+
+mkdir -p "$tmp/rel" "$tmp/rel-bare"
+rel_sid="kp-test-lane-rel"
+if ! git -C "$tmp/rel-bare" init -q --bare >/dev/null 2>&1 ||
+	! git -C "$tmp/rel" init -q --template='' >/dev/null 2>&1 ||
+	! git -C "$tmp/rel" -c user.name=kp-test -c user.email=kp-test@invalid commit -q --allow-empty -m r1 >/dev/null 2>&1 ||
+	! git -C "$tmp/rel" remote add origin "$tmp/rel-bare" >/dev/null 2>&1 ||
+	! git -C "$tmp/rel" worktree add -q -b rel-lane "$tmp/rel-lane" >/dev/null 2>&1 ||
+	! git -C "$tmp/rel" worktree add -q -b rel-feat "$tmp/rel-feat" >/dev/null 2>&1 ||
+	! git -C "$tmp/rel" worktree add -q -b rel-done "$tmp/rel-done" >/dev/null 2>&1 ||
+	! git -C "$tmp/rel-bare" fetch -q "$tmp/rel" rel-feat:refs/heads/rel-feat rel-done:refs/heads/rel-done >/dev/null 2>&1 ||
+	! git -C "$tmp/rel" fetch -q origin >/dev/null 2>&1; then
+	fail "fixture did not take: could not build the lane-lifecycle fixture — cases 32–36 were NOT exercised"
+else
+	rel_lane="$(cd "$tmp/rel-lane" && pwd -P)"
+	rel_feat="$(cd "$tmp/rel-feat" && pwd -P)"
+	rel_feat_admin="$tmp/rel/.git/worktrees/rel-feat"
+	rel_done_admin="$tmp/rel/.git/worktrees/rel-done"
+	err="$tmp/stderr"
+
+	# 32. A sibling lane that is genuinely LIVE — same session, and beating right now — is still
+	# refused, HEAD unmoved, nothing removed, stamp NOT retired. This is the property the fix must not
+	# trade away: the refusal is correct here (#4868 AC1).
+	printf '%s\n' "$rel_sid" > "$rel_feat_admin/kampus-lane"
+	kp_lane_beat "$rel_feat_admin"
+	CLAUDE_CODE_SESSION_ID="$rel_sid" kp_switch_head_branch "$rel_lane" rel-feat 2>"$err"; rc=$?
+	diag="$(cat "$err")"
+	if [ "$rc" -eq 0 ]; then
+		fail "a BEATING same-session sibling lane was co-checked-out — the guard was weakened into fail-open (#4868 AC1)"
+	elif [ "$(git -C "$rel_lane" symbolic-ref -q HEAD)" != "refs/heads/rel-lane" ]; then
+		fail "the live-lane refusal moved this lane's HEAD — a refusal must change nothing"
+	elif [ ! -f "$rel_feat_admin/kampus-lane" ]; then
+		fail "the live-lane refusal RETIRED a live lane's stamp — only a proven-finished tree may be released"
+	else
+		ok "a beating same-session sibling lane: still refused, HEAD unmoved, its stamp left alone"
+	fi
+
+	# 33. The refusal names a remedy THE REFUSING AGENT CAN RUN. The two it used to name could not be
+	# executed by anyone who could read it: `wt_preflight` refuses a sibling tree, and "wait for it to
+	# finish" never cleared while the stamp was written once and never moved (#4868 AC4).
+	if ! grep -qF 'REMEDY' <<< "$diag"; then
+		fail "the live-lane refusal names no remedy at all: [$diag]"
+	elif grep -qF "run this repair from that lane's worktree" <<< "$diag"; then
+		fail "the live-lane refusal still names the sibling-worktree remedy, which wt_preflight refuses: [$diag]"
+	elif ! grep -qF 're-run this same step' <<< "$diag"; then
+		fail "the live-lane refusal names no step the refusing agent can perform itself: [$diag]"
+	else
+		ok "the live-lane refusal names a remedy the refusing agent can execute (#4868 AC4)"
+	fi
+
+	# 34. Liveness unknown is NOT a licence. A stale beat over a tree holding uncommitted work is
+	# refused, the reason names the work, and nothing is retired — the beat is one of two signals and
+	# releasing takes both.
+	printf '%s\n' "$(($(date +%s) - 100000))" > "$rel_feat_admin/kampus-lane.beat"
+	printf 'precious uncommitted work\n' > "$rel_feat/UNCOMMITTED.txt"
+	CLAUDE_CODE_SESSION_ID="$rel_sid" kp_switch_head_branch "$rel_lane" rel-feat 2>"$err"; rc=$?
+	diag="$(cat "$err")"
+	if [ "$rc" -eq 0 ]; then
+		fail "a dormant lane's DIRTY tree was released — uncommitted work would have moved under it"
+	elif [ ! -f "$rel_feat_admin/kampus-lane" ]; then
+		fail "an unproven dormant lane's stamp was retired anyway"
+	elif ! grep -qF 'UNCOMMITTED' <<< "$diag"; then
+		fail "the dormant refusal does not name WHICH fact failed: [$diag]"
+	elif ! grep -qF 're-run this same step' <<< "$diag"; then
+		fail "the dormant refusal names no step the refusing agent can perform itself: [$diag]"
+	else
+		ok "a dormant lane holding uncommitted work: refused, reason named, stamp left alone"
+	fi
+
+	# 35. THE STATE THAT COULD NOT EXIST BEFORE (#4868 AC2). The tree is clean, on the branch tip, and
+	# that commit is on a remote — so a stale-beat same-session lane is provably finished with it and
+	# the pin resolves to the sanctioned co-checkout. The stamp is retired by RENAME, and the worktree
+	# and every file in it survive.
+	rm -f "$rel_feat/UNCOMMITTED.txt"
+	printf 'a file this tree keeps\n' > "$rel_feat/KEEP.txt"
+	git -C "$rel_feat" add KEEP.txt >/dev/null 2>&1
+	git -C "$rel_feat" -c user.name=kp-test -c user.email=kp-test@invalid commit -q -m keep >/dev/null 2>&1
+	git -C "$tmp/rel-bare" fetch -q "$tmp/rel" rel-feat:refs/heads/rel-feat >/dev/null 2>&1
+	git -C "$rel_feat" fetch -q origin >/dev/null 2>&1
+	CLAUDE_CODE_SESSION_ID="$rel_sid" kp_switch_head_branch "$rel_lane" rel-feat 2>"$err"; rc=$?
+	diag="$(cat "$err")"
+	if [ "$rc" -ne 0 ]; then
+		fail "a PROVABLY finished same-session lane still blocked the repair (rc=$rc): [$diag] — the positive branch is still unfalsifiable (#4868 AC2)"
+	elif [ "$(git -C "$rel_lane" symbolic-ref -q HEAD)" != "refs/heads/rel-feat" ]; then
+		fail "the release did not attach this lane to rel-feat — a DETACHED head makes verified-push resolve UNKNOWN"
+	elif [ -f "$rel_feat_admin/kampus-lane" ] || [ ! -f "$rel_feat_admin/kampus-lane.retired" ]; then
+		fail "the stamp was not retired by rename — the next repair reads the same stuck state again"
+	elif [ ! -f "$rel_feat/KEEP.txt" ]; then
+		fail "the released worktree's files are GONE — the release must remove nothing"
+	elif ! git -C "$tmp/rel" worktree list --porcelain | grep -qF "worktree $rel_feat"; then
+		fail "the released worktree was UNREGISTERED — the release must remove no worktree (#4868 AC5)"
+	else
+		ok "a finished same-session lane's leftover tree: pin released, stamp retired, worktree and files untouched (#4868 AC2/AC5)"
+	fi
+
+	# 36. The lane-finish seam, read from the other end: a retired stamp reads `other`, the ordinary
+	# leftover-tree state, so nothing has to be proved at all. This is what step8-claim-release.sh
+	# produces at the end of every run that stamped a tree.
+	printf '%s\n' "$rel_sid" > "$rel_done_admin/kampus-lane"
+	kp_lane_beat "$rel_done_admin"
+	out_before="$(CLAUDE_CODE_SESSION_ID="$rel_sid" kp_branch_pin "$rel_lane" rel-done)"
+	kp_lane_retire "$rel_done_admin"; rc=$?
+	out_after="$(CLAUDE_CODE_SESSION_ID="$rel_sid" kp_branch_pin "$rel_lane" rel-done)"
+	if [ "$rc" -ne 0 ]; then
+		fail "kp_lane_retire failed on a stamped worktree (rc=$rc)"
+	elif [ "$out_before" != "PIN=live-lane
+PINROOT=$(cd "$tmp/rel-done" && pwd -P)" ]; then
+		fail "kp_branch_pin: a beating same-session tree must read live-lane before it retires: [$out_before]"
+	elif [ "$out_after" != "PIN=other
+PINROOT=$(cd "$tmp/rel-done" && pwd -P)" ]; then
+		fail "kp_branch_pin: a RETIRED lane's tree must read other — retiring is what a finished lane does: [$out_after]"
+	elif [ -f "$rel_done_admin/kampus-lane.beat" ]; then
+		fail "kp_lane_retire left the beat file behind — a retired lane must leave no liveness residue"
+	else
+		ok "the lane-finish seam: retiring the stamp flips a same-session tree from live-lane to other"
 	fi
 fi
 

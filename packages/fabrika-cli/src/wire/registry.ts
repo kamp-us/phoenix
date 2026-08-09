@@ -16,7 +16,7 @@
  * registered without them — which is what makes the totality law inherited rather than re-written.
  */
 import * as acceptanceCriteria from "./acceptance-criteria.ts";
-import {brandWitness, type WireFormat} from "./format.ts";
+import {brandWitnesses, type WireFormat} from "./format.ts";
 import * as verdictMarker from "./verdict-marker.ts";
 
 export const registeredFormats: ReadonlyArray<WireFormat> = [
@@ -49,7 +49,7 @@ export const registeredFormats: ReadonlyArray<WireFormat> = [
 				},
 			],
 		},
-		brands: [brandWitness<acceptanceCriteria.CriterionText>("text")],
+		brands: brandWitnesses<acceptanceCriteria.AcceptanceCriterion>({text: true}),
 	},
 	{
 		key: "verdict-marker",
@@ -80,11 +80,7 @@ export const registeredFormats: ReadonlyArray<WireFormat> = [
 				},
 			],
 		},
-		brands: [
-			brandWitness<verdictMarker.HeadSha>("sha"),
-			brandWitness<verdictMarker.Clause>("clause"),
-			brandWitness<verdictMarker.Polarity>("polarity"),
-		],
+		brands: brandWitnesses<verdictMarker.VerdictMarker>({sha: true, clause: true, polarity: true}),
 	},
 ];
 
