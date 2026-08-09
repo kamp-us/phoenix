@@ -7,6 +7,7 @@ import type {Contribution} from "../../../worker/features/fate/views";
 import {toIso} from "../../fate/wire";
 import {formatAgoTR} from "../../lib/datetime";
 import {renderMarkdownInline} from "../../lib/markdown";
+import {Badge} from "../ui/Badge";
 import "./ContributionRow.css";
 
 export const ContributionView = view<Contribution>()({
@@ -42,16 +43,21 @@ export function ContributionRow({node, sandboxBadge = false}: ContributionRowPro
 	const c = useView(ContributionView, node);
 	const badge =
 		sandboxBadge && c.sandboxed ? (
-			<span className="kp-user-profile__badge" data-testid="incelemede-badge">
+			<Badge variant="info" className="kp-user-profile__badge" data-testid="incelemede-badge">
 				incelemede
-			</span>
+			</Badge>
 		) : null;
 
 	if (c.kind === "definition") {
 		return (
 			<li className="kp-user-profile__row" data-testid="contribution-definition">
 				<div className="kp-user-profile__row-head">
-					<span className="kp-user-profile__kind kp-user-profile__kind--definition">tanım</span>
+					<Badge
+						variant="secondary"
+						className="kp-user-profile__kind kp-user-profile__kind--definition"
+					>
+						tanım
+					</Badge>
 					{badge}
 					<Link to={`/sozluk/${c.termSlug}`} className="kp-user-profile__row-title">
 						{c.termTitle}
@@ -68,7 +74,9 @@ export function ContributionRow({node, sandboxBadge = false}: ContributionRowPro
 		return (
 			<li className="kp-user-profile__row" data-testid="contribution-post">
 				<div className="kp-user-profile__row-head">
-					<span className="kp-user-profile__kind kp-user-profile__kind--post">başlık</span>
+					<Badge variant="secondary" className="kp-user-profile__kind kp-user-profile__kind--post">
+						başlık
+					</Badge>
 					{badge}
 					<Link to={`/pano/${c.id}`} className="kp-user-profile__row-title">
 						{c.title}
@@ -87,7 +95,12 @@ export function ContributionRow({node, sandboxBadge = false}: ContributionRowPro
 		return (
 			<li className="kp-user-profile__row" data-testid="contribution-comment">
 				<div className="kp-user-profile__row-head">
-					<span className="kp-user-profile__kind kp-user-profile__kind--comment">yorum</span>
+					<Badge
+						variant="secondary"
+						className="kp-user-profile__kind kp-user-profile__kind--comment"
+					>
+						yorum
+					</Badge>
 					{badge}
 					<Link to={`/pano/${c.postId}`} className="kp-user-profile__row-title">
 						{c.postTitle}

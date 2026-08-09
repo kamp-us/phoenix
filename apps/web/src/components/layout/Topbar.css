@@ -58,6 +58,7 @@
 	color: var(--text-secondary);
 	border-radius: var(--r-sm);
 	text-decoration: none;
+	line-height: 1;
 }
 /* The divan glyph follows its link's role token (icon.css pins `--text-secondary` by
    default, so without this the parent hover/active color wouldn't reach it). */
@@ -97,7 +98,9 @@
 	gap: 6px;
 	width: 240px;
 	height: 24px;
-	padding: 0 8px;
+	/* Asymmetric on purpose: the trailing edge holds a ⌘K keycap, which carries its own
+	   box, so it needs half the breathing room the leading magnifier does. */
+	padding: 0 var(--s-1) 0 var(--s-2);
 	background: var(--surface);
 	border: 1px solid var(--border);
 	border-radius: var(--r-sm);
@@ -109,15 +112,27 @@
 	color: var(--text-muted);
 	flex-shrink: 0;
 }
-.kp-topbar__search input {
+.kp-topbar__search-field[data-scope="field"][data-part="root"] {
 	flex: 1;
+	min-width: 0;
+}
+.kp-topbar__search-field[data-scope="field"] [data-part="control"] {
+	--manti-field-height: var(--letter-size);
+	width: 100%;
 	border: 0;
 	background: transparent;
-	outline: none;
+	box-shadow: none;
+	padding: 0;
+}
+.kp-topbar__search-field[data-scope="field"][data-part="root"]:focus-within [data-part="control"] {
+	border-color: transparent;
+	box-shadow: none;
+}
+.kp-topbar__search-field[data-scope="field"] [data-part="input"] {
 	font: var(--t-body-sm);
 	min-width: 0;
 }
-.kp-topbar__search input::placeholder {
+.kp-topbar__search-field[data-scope="field"] [data-part="input"]::placeholder {
 	color: var(--text-faint);
 }
 .kp-topbar__search kbd {
@@ -129,8 +144,8 @@
 }
 
 .kp-topbar__btn {
-	height: 24px;
-	padding: 0 8px;
+	--manti-button-height: 24px;
+	--manti-button-padding-x: var(--s-2);
 	font: var(--t-body-sm);
 	font-weight: 500;
 	border: none;
@@ -145,6 +160,9 @@
 }
 
 .kp-topbar__user {
+	--manti-button-height: 26px;
+	--manti-button-padding-x: 6px;
+	min-width: 0;
 	display: inline-flex;
 	align-items: center;
 	gap: 6px;
@@ -184,23 +202,6 @@
 	align-self: center;
 }
 
-/* The status-zone unread bildirim signal (#2613) — the Bell glyph (ADR 0166) + count read
-   as "unread notifications" at a glance. A read-only signal: neutral role tokens, no accent,
-   no button/link chrome; the icon inherits the signal's color. */
-.kp-topbar__bildirim-signal {
-	display: inline-flex;
-	align-items: center;
-	gap: var(--s-1);
-	color: var(--text-secondary);
-}
-.kp-topbar__bildirim-signal .kp-icon {
-	color: inherit;
-}
-.kp-topbar__bildirim-count {
-	font: var(--t-meta);
-	color: var(--text-primary);
-}
-
 /* Accent-scarcity containment law (#2614, epic #2595). Under the nav-IA zone grammar the
    topbar holds ZERO accent fills: #2600 relocated the one promoted `+ gönderi` CTA to the
    pano Subnav, so no surviving topbar element may claim the accent budget (design-manifest
@@ -218,18 +219,51 @@
 	color: var(--text-primary);
 }
 
-/* The three-way theme picker (#2612) that replaces the tema toggle. In the user menu it
-   reads as a labeled settings row (label left, segmented control right); in the utility
-   zone the label is absent and the segmented control sits inline. The control is the
-   neutral `segmented` ToggleGroup, so it carries no accent fill (#2614 stays satisfied). */
-.kp-topbar__theme-row {
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-	gap: var(--s-3);
-	padding: var(--s-1) var(--s-2);
-}
-.kp-topbar__theme-label {
-	font: var(--t-body-sm);
-	color: var(--text-secondary);
+/* The three-way theme picker (#2612) that replaces the tema toggle. Here — the utility
+   zone, for a signed-out visitor — the label is absent and the segmented control sits
+   inline; the labeled settings row it becomes inside the account popover is styled in
+   UserMenu.css, next to the markup that builds it. Its height is the picker's own
+   concern (ThemeChoicePicker.css) — the default 42px track would overflow this 38px
+   bar, and both of the picker's homes are dense, so the fix belongs to the component
+   rather than to either host. */
+
+/* The desktop row cannot preserve nav, search, the three-way Manti theme control and
+   account affordance inside a narrow viewport. On mobile, keep every control reachable
+   and move only search to a full-width second row instead of overflowing the document. */
+@media (max-width: 640px) {
+	.kp-topbar {
+		height: auto;
+		min-height: var(--topbar-h);
+		flex-wrap: wrap;
+		gap: var(--s-1);
+		padding: var(--s-1) var(--s-2);
+	}
+
+	.kp-topbar__sep {
+		display: none;
+	}
+
+	.kp-topbar__spacer {
+		display: none;
+	}
+
+	.kp-topbar__nav a,
+	.kp-topbar__signal-link {
+		min-width: 0;
+		padding-inline: var(--s-2);
+	}
+
+	.kp-topbar .kp-theme-picker {
+		flex-shrink: 0;
+	}
+
+	.kp-topbar__search {
+		order: 1;
+		flex: 1 0 100%;
+		width: auto;
+	}
+
+	.kp-topbar__search kbd {
+		display: none;
+	}
 }

@@ -48,7 +48,7 @@ describe("MecmuaSubnavCta — mecmua primary action in the Subnav CTA slot (#260
 		renderCta();
 		const cta = screen.getByRole("button", {name: "yeni yazı"});
 		// Sanctioned primary-action treatment (#2586 taxonomy), not the utility filter/tab style.
-		expect(cta.className).toContain("kp-btn--primary");
+		expect(cta.getAttribute("data-variant")).toBe("primary");
 		expect(screen.queryByTestId("mecmua-editor")).toBeNull();
 		fireEvent.click(cta);
 		expect(screen.getByTestId("mecmua-editor")).toBeTruthy();

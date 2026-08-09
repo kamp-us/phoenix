@@ -34,7 +34,7 @@ describe("PanoSubnavCta — pano primary action in the Subnav CTA slot (#2600)",
 		renderCta();
 		const cta = screen.getByRole("button", {name: "yeni gönderi"});
 		// Sanctioned primary-action treatment (#2586 taxonomy), not the utility filter/tab style.
-		expect(cta.className).toContain("kp-btn--primary");
+		expect(cta.getAttribute("data-variant")).toBe("primary");
 		expect(screen.queryByTestId("pano-submit")).toBeNull();
 		fireEvent.click(cta);
 		expect(screen.getByTestId("pano-submit")).toBeTruthy();

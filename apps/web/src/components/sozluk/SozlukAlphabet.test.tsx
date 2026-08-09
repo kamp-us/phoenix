@@ -7,10 +7,16 @@
  * distinction and the single-char label ambiguity are both invisible to a screen
  * reader without these attributes.
  */
+import {readFileSync} from "node:fs";
+import {fileURLToPath} from "node:url";
 import {render} from "@testing-library/react";
 import {MemoryRouter} from "react-router";
 import {describe, expect, it} from "vitest";
 import {SozlukAlphabet} from "./Sozluk";
+
+const readSource = (rel: string): string =>
+	readFileSync(fileURLToPath(new URL(rel, import.meta.url)), "utf8");
+const SOZLUK_CSS = readSource("./Sozluk.css");
 
 function renderAlphabet(props: Parameters<typeof SozlukAlphabet>[0]) {
 	return render(
@@ -62,5 +68,12 @@ describe("SozlukAlphabet — A–Z index ARIA (#2169)", () => {
 		const active = container.querySelector(".kp-sozluk-alphabet__letter.is-active");
 		expect(active?.getAttribute("aria-current")).toBe("page");
 		expect(active?.getAttribute("aria-label")).toBe("A harfi");
+	});
+
+	it("centers the alphabet inside Subnav without duplicate padding or divider", () => {
+		expect(SOZLUK_CSS).toMatch(
+			/\.kp-subnav__filters\s+\.kp-sozluk-alphabet\s*\{[^}]*align-items:\s*center[^}]*height:\s*100%[^}]*padding-block:\s*0[^}]*border-bottom:\s*0/s,
+		);
+		expect(SOZLUK_CSS).toMatch(/\.kp-sozluk-alphabet__letter\s*\{[^}]*line-height:\s*1/s);
 	});
 });

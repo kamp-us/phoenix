@@ -1,12 +1,17 @@
+import {ArrowLeft} from "lucide-react";
 import * as React from "react";
 import {useFateClient} from "react-fate";
 import {Link, useNavigate} from "react-router";
 import {useSession} from "../auth/client";
 import {FirstContributionOnramp} from "../components/authorship/FirstContributionOnramp";
+import {Icon} from "../components/Icon";
 import {actorLabel} from "../components/moderation/actor-identity";
 import {PanoPostCardView} from "../components/pano/PanoPostCard";
+import {Alert} from "../components/ui/Alert";
 import {Button} from "../components/ui/Button";
 import {DraftRestoreBanner} from "../components/ui/DraftRestoreBanner";
+import {Input, Textarea} from "../components/ui/Form";
+import {ToggleGroup} from "../components/ui/ToggleGroup";
 import {useDraftSubmit} from "../fate/useDraftSubmit";
 import type {WireMessageOverrides} from "../fate/wireMessages";
 import {panoSubmitGate} from "../lib/panoSubmitGate";
@@ -103,9 +108,6 @@ export function PanoSubmitPage() {
 		prefillIfEmpty(title, meta.title, setTitle);
 		prefillIfEmpty(body, meta.description, setBody);
 	}
-	const urlRef = React.useRef<HTMLInputElement>(null);
-	const titleRef = React.useRef<HTMLInputElement>(null);
-
 	const draftValue = React.useMemo<PanoDraft>(
 		() => ({mode, url, title, body, tags: Array.from(selectedTags)}),
 		[mode, url, title, body, selectedTags],
@@ -130,15 +132,6 @@ export function PanoSubmitPage() {
 
 	const host = hostOf(url);
 	const showPreview = mode === "link" && host.length > 0;
-
-	function toggleTag(kind: string) {
-		setSelectedTags((prev) => {
-			const next = new Set(prev);
-			if (next.has(kind)) next.delete(kind);
-			else if (next.size < 3) next.add(kind);
-			return next;
-		});
-	}
 
 	const trimmedTitle = title.trim();
 	const titleTooShort = trimmedTitle.length > 0 && trimmedTitle.length < TITLE_MIN;
@@ -237,21 +230,26 @@ export function PanoSubmitPage() {
 			<div className="kp-page__inner">
 				<div className="kp-pano-submit">
 					<Link to="/pano" className="kp-pano-submit__back">
-						← akışa dön
+						<Icon icon={ArrowLeft} size={14} />
+						akışa dön
 					</Link>
 					<h1 className="kp-pano-submit__title">bir şey paylaş</h1>
 					<p className="kp-pano-submit__lede">
 						bağlantı, yazı, soru. self-promo da olur — bir kere açıkla niye paylaşıyorsun.
 					</p>
 
-					<div className="kp-pano-submit__toggle">
-						<button type="button" aria-pressed={mode === "link"} onClick={() => setMode("link")}>
-							link
-						</button>
-						<button type="button" aria-pressed={mode === "text"} onClick={() => setMode("text")}>
-							yazı
-						</button>
-					</div>
+					<ToggleGroup
+						className="kp-toggle-group kp-toggle-group--segmented kp-pano-submit__toggle"
+						size="sm"
+						items={[
+							{value: "link", label: "link"},
+							{value: "text", label: "yazı"},
+						]}
+						value={[mode]}
+						onValueChange={([next]) => {
+							if (next) setMode(next as Mode);
+						}}
+					/>
 
 					{draft.offered ? (
 						<DraftRestoreBanner onRestore={restoreDraft} onDismiss={draft.dismiss} />
@@ -262,19 +260,18 @@ export function PanoSubmitPage() {
 					<form className="kp-pano-submit__form" onSubmit={onSubmit}>
 						{mode === "link" ? (
 							<>
-								<div className="kp-pano-submit__field">
-									<label htmlFor="submit-url">URL</label>
-									<input
-										ref={urlRef}
-										id="submit-url"
-										data-testid="pano-submit-url"
-										type="url"
-										placeholder="https://overreacted.io/..."
-										value={url}
-										onChange={(e) => setUrl(e.currentTarget.value)}
-										onBlur={prefillFromUrl}
-									/>
-								</div>
+								<Input
+									className="kp-pano-submit__field"
+									id="submit-url"
+									data-testid="pano-submit-url"
+									type="url"
+									label="URL"
+									placeholder="https://overreacted.io/..."
+									value={url}
+									onChange={(e) => setUrl(e.currentTarget.value)}
+									onBlur={prefillFromUrl}
+									fullWidth
+								/>
 								{showPreview ? (
 									<div className="kp-pano-submit__url-preview">
 										<div className="fav">{host.charAt(0).toLowerCase()}</div>
@@ -287,55 +284,61 @@ export function PanoSubmitPage() {
 							</>
 						) : null}
 
-						<div className="kp-pano-submit__field">
-							<label htmlFor="submit-title">başlık</label>
-							<input
-								ref={titleRef}
-								id="submit-title"
-								data-testid="pano-submit-title"
-								type="text"
-								minLength={TITLE_MIN}
-								maxLength={TITLE_MAX + 50}
-								placeholder="en az 5 karakter"
-								value={title}
-								onChange={(e) => setTitle(e.currentTarget.value)}
-							/>
-							<span className="kp-pano-submit__hint">
-								{titleTooShort ? "5 karakterden az olamaz · " : ""}
-								{titleTooLong ? `en fazla ${TITLE_MAX} karakter · ` : ""}
-								{title.length}/{TITLE_MAX}
-							</span>
-						</div>
+						<Input
+							className="kp-pano-submit__field"
+							id="submit-title"
+							data-testid="pano-submit-title"
+							type="text"
+							label="başlık"
+							hint={
+								<>
+									{titleTooShort ? "5 karakterden az olamaz · " : ""}
+									{titleTooLong ? `en fazla ${TITLE_MAX} karakter · ` : ""}
+									{title.length}/{TITLE_MAX}
+								</>
+							}
+							minLength={TITLE_MIN}
+							maxLength={TITLE_MAX + 50}
+							placeholder="en az 5 karakter"
+							value={title}
+							onChange={(e) => setTitle(e.currentTarget.value)}
+							fullWidth
+						/>
 
 						{mode === "link" ? (
-							<div className="kp-pano-submit__field">
-								<label htmlFor="submit-context">bağlam (opsiyonel)</label>
-								<textarea
-									id="submit-context"
-									data-testid="pano-submit-body"
-									placeholder="bir kere açıkla niye paylaşıyorsun"
-									value={body}
-									onChange={(e) => setBody(e.currentTarget.value)}
-								/>
-							</div>
+							<Textarea
+								className="kp-pano-submit__field"
+								id="submit-context"
+								data-testid="pano-submit-body"
+								label="bağlam (opsiyonel)"
+								placeholder="bir kere açıkla niye paylaşıyorsun"
+								value={body}
+								onChange={(e) => setBody(e.currentTarget.value)}
+								fullWidth
+								resize="vertical"
+							/>
 						) : (
-							<div className="kp-pano-submit__field">
-								<label htmlFor="submit-body">
-									içerik{" "}
-									<span style={{color: "var(--text-faint)", fontWeight: 400}}>(opsiyonel)</span>
-								</label>
-								<textarea
-									id="submit-body"
-									data-testid="pano-submit-body"
-									style={{minHeight: 220}}
-									placeholder="markdown · ``` ``` kod bloğu"
-									value={body}
-									onChange={(e) => setBody(e.currentTarget.value)}
-								/>
-								<span className="kp-pano-submit__hint">
-									markdown · ``` ``` kod bloğu · {body.length}/{BODY_MAX}
-								</span>
-							</div>
+							<Textarea
+								className="kp-pano-submit__field kp-pano-submit__field--body"
+								id="submit-body"
+								data-testid="pano-submit-body"
+								label={
+									<>
+										içerik{" "}
+										<span style={{color: "var(--text-faint)", fontWeight: 400}}>(opsiyonel)</span>
+									</>
+								}
+								hint={
+									<>
+										markdown · ``` ``` kod bloğu · {body.length}/{BODY_MAX}
+									</>
+								}
+								placeholder="markdown · ``` ``` kod bloğu"
+								value={body}
+								onChange={(e) => setBody(e.currentTarget.value)}
+								fullWidth
+								resize="vertical"
+							/>
 						)}
 
 						<fieldset className="kp-pano-submit__field kp-pano-submit__fieldset">
@@ -348,23 +351,26 @@ export function PanoSubmitPage() {
 									gerekli
 								</span>
 							</legend>
-							<div className="kp-pano-submit__tagrow">
-								{TAGS.map((t) => {
-									const on = selectedTags.has(t.kind);
-									return (
-										<button
-											key={t.kind}
-											type="button"
-											data-testid={`pano-submit-tag-${t.cls}`}
-											className={`kp-tag kp-tag--${t.cls} ${on ? "is-on" : ""}`}
-											aria-pressed={on}
-											onClick={() => toggleTag(t.kind)}
+							<ToggleGroup
+								className="kp-toggle-group kp-pano-submit__tagrow"
+								size="sm"
+								multiple
+								value={Array.from(selectedTags)}
+								onValueChange={(next) => {
+									if (next.length <= 3) setSelectedTags(new Set(next));
+								}}
+								items={TAGS.map((tag) => ({
+									value: tag.kind,
+									label: (
+										<span
+											className={`kp-pano-submit__tag-label kp-tag--${tag.cls}`}
+											data-testid={`pano-submit-tag-${tag.cls}`}
 										>
-											{t.label}
-										</button>
-									);
-								})}
-							</div>
+											{tag.label}
+										</span>
+									),
+								}))}
+							/>
 							{/* The required-tag cue is the load-bearing affordance (#2575): it renders
 							    whenever a tag is missing — NOT gated on tagsAreSoleBlocker — so a cold user
 							    sees it before the rest of the form is perfect. tagsAreSoleBlocker only
@@ -379,25 +385,25 @@ export function PanoSubmitPage() {
 						</fieldset>
 
 						{error ? (
-							<p
-								className="kp-pano-submit__hint"
-								role="alert"
+							<Alert
+								variant="danger"
+								className="kp-alert--inline kp-pano-submit__hint"
 								data-testid="pano-submit-error"
 								style={{color: "var(--danger)"}}
 							>
 								{error}
-							</p>
+							</Alert>
 						) : null}
 
 						{draftSaved ? (
-							<p
-								className="kp-pano-submit__hint"
-								role="status"
+							<Alert
+								variant="success"
+								className="kp-alert--inline kp-pano-submit__hint"
 								data-testid="pano-submit-draft-saved"
 								style={{color: "var(--text-faint)"}}
 							>
 								taslak kaydedildi
-							</p>
+							</Alert>
 						) : null}
 
 						{submitDisabled && noTags ? (

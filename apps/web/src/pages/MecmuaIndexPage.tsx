@@ -14,6 +14,7 @@ import {BookOpenText} from "lucide-react";
 import {useEffect, useState} from "react";
 import {Link} from "react-router";
 import {Icon} from "../components/Icon";
+import {Alert} from "../components/ui/Alert";
 import {Card} from "../components/ui/Card";
 import {EmptyState} from "../components/ui/EmptyState";
 import {MetaRow} from "../components/ui/MetaRow";
@@ -100,9 +101,9 @@ function MecmuaIndexBody({state}: {state: FetchState}) {
 
 	if (state.kind === "error") {
 		return (
-			<p className="kp-mecmua-index__status" role="alert">
+			<Alert variant="danger" className="kp-alert--inline kp-mecmua-index__status">
 				yazılar yüklenemedi, tekrar dene.
-			</p>
+			</Alert>
 		);
 	}
 

@@ -1,0 +1,19 @@
+/* Keep Phoenix's existing inline-message geometry while Manti owns the semantic
+   role, variant, anatomy, and future accessibility behavior. Feature classes
+   continue to supply their established typography and color. */
+.kp-alert--inline[data-scope="alert"][data-part="root"] {
+	display: block;
+	padding: 0;
+	border: 0;
+	border-radius: 0;
+	background: transparent;
+	box-shadow: none;
+	color: inherit;
+}
+
+.kp-alert--inline[data-scope="alert"][data-part="root"] > [data-part="content"],
+.kp-alert--inline[data-scope="alert"][data-part="root"]
+	> [data-part="content"]
+	> [data-part="description"] {
+	display: contents;
+}

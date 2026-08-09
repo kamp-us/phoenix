@@ -15,6 +15,7 @@ import type {OpenReport} from "../../../worker/features/report/views";
 import {FlagGate} from "../../flags/FlagGate";
 import {PHOENIX_USER_BAN} from "../../flags/keys";
 import {BanControls} from "../moderation/BanControls";
+import {Button} from "../ui/Button";
 import {Surface} from "../ui/Card";
 import {
 	type ActorStanding,
@@ -141,24 +142,28 @@ export function ActorDrawer({
 			)}
 
 			<div className="kp-actor__hops">
-				<button
+				<Button
 					type="button"
+					variant="tertiary"
+					size="sm"
 					className="kp-actor__hop"
 					onClick={onHopKefil}
 					aria-current={chamber === "kefil" ? "true" : undefined}
 					data-testid="actor-hop-kefil"
 				>
 					kefil (V)
-				</button>
-				<button
+				</Button>
+				<Button
 					type="button"
+					variant="tertiary"
+					size="sm"
 					className="kp-actor__hop"
 					onClick={onHopModeration}
 					aria-current={chamber === "raporlar" ? "true" : undefined}
 					data-testid="actor-hop-moderation"
 				>
 					moderasyon (M)
-				</button>
+				</Button>
 			</div>
 		</Surface>
 	);

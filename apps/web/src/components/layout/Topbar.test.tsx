@@ -6,7 +6,7 @@
  */
 import {readFileSync} from "node:fs";
 import {fileURLToPath} from "node:url";
-import {fireEvent, render, screen, within} from "@testing-library/react";
+import {fireEvent, render, screen, waitFor, within} from "@testing-library/react";
 import {MemoryRouter} from "react-router";
 import {describe, expect, it, vi} from "vitest";
 import {Topbar} from "./Topbar";
@@ -139,6 +139,25 @@ describe("Topbar accent-scarcity containment law (#2614)", () => {
 		expect(temaHover?.body).toMatch(/color:\s*var\(--text-primary\)/);
 		expect(temaHover?.body).not.toMatch(/var\(--accent(-11)?\)/);
 	});
+
+	it("arama odağını yalnızca dış kabuk çizer; Manti kontrolü ikinci halka üretmez", () => {
+		const searchControlFocus = rules.find(
+			(r) =>
+				/kp-topbar__search-field/.test(r.selector) &&
+				/:focus-within/.test(r.selector) &&
+				/\[data-part="control"\]/.test(r.selector),
+		);
+		expect(searchControlFocus).toBeDefined();
+		expect(searchControlFocus?.body).toMatch(/border-color:\s*transparent/);
+		expect(searchControlFocus?.body).toMatch(/box-shadow:\s*none/);
+	});
+
+	it("kompakt üst çubuk butonu Manti'nin ortak min-height değerine esnemez", () => {
+		const compactButton = rules.find((r) => r.selector === ".kp-topbar__btn");
+		expect(compactButton).toBeDefined();
+		expect(compactButton?.body).toMatch(/--manti-button-height:\s*24px/);
+		expect(compactButton?.body).toMatch(/--manti-button-padding-x:\s*var\(--s-2\)/);
+	});
 });
 
 describe("Topbar status/signal zone (#2613)", () => {
@@ -225,7 +244,7 @@ describe("Topbar tema toggle → theme picker (#2612)", () => {
 		expect(screen.queryByRole("button", {name: "tema"})).toBeNull();
 	});
 
-	it("signed in: the theme picker lives in the user menu next to ayarlar", () => {
+	it("signed in: the same picker lives in the account popover next to ayarlar", async () => {
 		const onThemeChange = vi.fn();
 		render(
 			<MemoryRouter>
@@ -237,22 +256,69 @@ describe("Topbar tema toggle → theme picker (#2612)", () => {
 				/>
 			</MemoryRouter>,
 		);
-		// The picker is portaled inside the account menu — open it, then it appears.
+		// The Manti popover is portaled — open it, then the tema row appears.
 		fireEvent.click(screen.getByText("Elif"));
-		// `ayarlar` (the settings item) sits directly above the theme row — the picker is
-		// the next control in the account menu, not the topbar utility zone.
-		expect(screen.getByText("ayarlar")).toBeTruthy();
-		const row = screen.getByTestId("topbar-theme-row");
-		expect(within(row).getByText("tema")).toBeTruthy();
+		// `ayarlar` sits directly above the tema row. The panel's rows are real links,
+		// not menuitems: UserMenu is a Popover so the picker can keep radio semantics.
+		expect(await screen.findByRole("link", {name: "ayarlar"})).toBeTruthy();
+		const row = await screen.findByTestId("topbar-theme-row");
+		expect(row.textContent).toContain("tema");
+		// The active choice is a real aria-checked radio, not a ✓ glyph on a command.
 		const picker = within(row).getByTestId("topbar-theme-picker");
-		expect(within(picker).getByRole("button", {name: "koyu"}).getAttribute("aria-pressed")).toBe(
+		for (const label of ["açık", "koyu", "otomatik"]) {
+			expect(within(picker).getByRole("radio", {name: label})).toBeTruthy();
+		}
+		expect(within(picker).getByRole("radio", {name: "koyu"}).getAttribute("aria-checked")).toBe(
 			"true",
 		);
-		fireEvent.click(within(picker).getByRole("button", {name: "otomatik"}));
-		expect(onThemeChange).toHaveBeenLastCalledWith("auto");
+		fireEvent.click(within(picker).getByRole("radio", {name: "otomatik"}));
+		await waitFor(() => expect(onThemeChange).toHaveBeenLastCalledWith("auto"));
 	});
 
-	it("signed out: the same light/dark/auto picker is reachable in the topbar utility zone", () => {
+	// The picker's segmented track would otherwise stand 42px (its items' --tap-min floor +
+	// the track's 2px pad + 1px border) — taller than the 38px compact topbar it must sit
+	// inside, and taller than the popover's rows. It sizes itself down, in its own sheet, so
+	// BOTH homes get it; the two homes are portal-separated, so neither can style the other.
+	it("the picker sizes itself to a density token, in both of its homes", async () => {
+		const rule = cssRules(readSource("./ThemeChoicePicker.css")).find((r) =>
+			/kp-theme-picker/.test(r.selector),
+		);
+		expect(rule).toBeDefined();
+		// A density token, not a pinned px — it must ride compact/normal/spacious.
+		expect(rule?.body).toMatch(/min-height:\s*var\(--letter-size\)/);
+		// Unscoped to either host (no .kp-topbar / .kp-user-menu prefix), and specific enough
+		// to beat ToggleGroup.css's own 0-2-0 item rule without depending on import order.
+		expect(rule?.selector).not.toMatch(/kp-topbar|kp-user-menu/);
+		// ToggleGroup.css's `.kp-toggle-group [data-part="item"]` is 0-2-0; carrying BOTH
+		// classes puts this at 0-3-0, so the tie is decided by weight, not import order.
+		expect(rule?.selector).toMatch(/\.kp-theme-picker\b/);
+		expect(rule?.selector).toMatch(/\.kp-toggle-group\b/);
+		// Signed out the picker sits in the bar; signed in it rides the portaled popover,
+		// OUT of the bar — so the host-scoped sheets never reach it.
+		const {unmount} = render(
+			<MemoryRouter>
+				<Topbar nav={NAV} themeChoice="light" onThemeChange={() => {}} />
+			</MemoryRouter>,
+		);
+		expect(screen.getByTestId("topbar-theme-picker").closest(".kp-topbar")).not.toBeNull();
+		unmount();
+		render(
+			<MemoryRouter>
+				<Topbar
+					nav={NAV}
+					themeChoice="light"
+					onThemeChange={() => {}}
+					user={{name: "Elif", username: "elif"}}
+				/>
+			</MemoryRouter>,
+		);
+		fireEvent.click(screen.getByText("Elif"));
+		const inPopover = await screen.findByTestId("topbar-theme-picker");
+		expect(inPopover.closest(".kp-user-menu__popup")).not.toBeNull();
+		expect(inPopover.closest(".kp-topbar")).toBeNull();
+	});
+
+	it("signed out: the same light/dark/auto picker is reachable in the topbar utility zone", async () => {
 		const onThemeChange = vi.fn();
 		render(
 			<MemoryRouter>
@@ -262,10 +328,13 @@ describe("Topbar tema toggle → theme picker (#2612)", () => {
 		const utility = screen.getByTestId("topbar-zone-utility");
 		const picker = within(utility).getByTestId("topbar-theme-picker");
 		for (const label of ["açık", "koyu", "otomatik"]) {
-			expect(within(picker).getByRole("button", {name: label})).toBeTruthy();
+			expect(within(picker).getByRole("radio", {name: label})).toBeTruthy();
 		}
-		fireEvent.click(within(picker).getByRole("button", {name: "koyu"}));
-		expect(onThemeChange).toHaveBeenLastCalledWith("dark");
+		expect(within(picker).getByRole("radio", {name: "açık"}).getAttribute("aria-checked")).toBe(
+			"true",
+		);
+		fireEvent.click(within(picker).getByRole("radio", {name: "koyu"}));
+		await waitFor(() => expect(onThemeChange).toHaveBeenLastCalledWith("dark"));
 	});
 });
 

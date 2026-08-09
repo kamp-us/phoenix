@@ -10,6 +10,7 @@ import {Navigate} from "react-router";
 import {useSession} from "../auth/client";
 import {BildirimList} from "../components/bildirim/BildirimList";
 import {shouldRenderBildirimPage} from "../components/bildirim/bildirim";
+import {Alert} from "../components/ui/Alert";
 import {Screen} from "../fate/Screen";
 import {PHOENIX_BILDIRIM} from "../flags/keys";
 import {useFlag} from "../flags/useFlag";
@@ -47,11 +48,11 @@ export function BildirimlerPage() {
 				<Screen
 					fallback={<p className="kp-bildirim__loading">yükleniyor…</p>}
 					error={({code}) => (
-						<p className="kp-bildirim__error" role="alert">
+						<Alert variant="danger" className="kp-alert--inline kp-bildirim__error">
 							{code === "UNAUTHORIZED" || code === "FORBIDDEN"
 								? "bildirimlerini görmek için giriş yapmalısın."
 								: "bildirimler yüklenemedi, tekrar dene."}
-						</p>
+						</Alert>
 					)}
 				>
 					<BildirimList />

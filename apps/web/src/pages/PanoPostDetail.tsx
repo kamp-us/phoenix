@@ -10,6 +10,7 @@
  * Error routing is the call-site catch — see `.patterns/fate-mutations-client.md`.
  */
 import {toEntityId, type ViewData, type ViewEntity, type ViewSelection} from "@nkzw/fate";
+import {ArrowLeft} from "lucide-react";
 import * as React from "react";
 import {useFateClient, useLiveListView, useRequest, useView, type ViewRef, view} from "react-fate";
 import {Link, useLocation, useNavigate, useParams} from "react-router";
@@ -18,6 +19,7 @@ import {sandboxesNewContent} from "../../worker/features/kunye/standing";
 import {useSession} from "../auth/client";
 import {useMe} from "../auth/useMe";
 import {FirstContributionOnramp} from "../components/authorship/FirstContributionOnramp";
+import {Icon} from "../components/Icon";
 import {actorLabel} from "../components/moderation/actor-identity";
 import {CommentTreeNode, CommentTreeNodeView} from "../components/pano/CommentTreeNode";
 import {buildCommentTree, type CommentNode} from "../components/pano/commentTree";
@@ -27,9 +29,12 @@ import {
 	PanoPostHeaderVote,
 } from "../components/pano/PanoPostHeader";
 import {PanoPostSkeleton} from "../components/pano/PanoSkeleton";
+import {Alert} from "../components/ui/Alert";
+import {Kbd} from "../components/ui/atoms";
 import {Button} from "../components/ui/Button";
 import {Dialog} from "../components/ui/Dialog";
 import {EmptyState} from "../components/ui/EmptyState";
+import {Input, Textarea} from "../components/ui/Form";
 import type {ReportOutcome} from "../components/ui/ReportButton";
 import {
 	beginOptimisticCommentMembership,
@@ -189,7 +194,8 @@ export function PanoPostDetail() {
 		<div className="kp-page">
 			<div className="kp-page__inner">
 				<Link to="/pano" className="kp-pano-postpage__back">
-					← akışa dön
+					<Icon icon={ArrowLeft} size={14} />
+					akışa dön
 				</Link>
 				<Screen
 					fallback={<PanoPostSkeleton />}
@@ -326,31 +332,36 @@ function PostContentInner({post, idOrSlug}: {post: ViewRef<"Post">; idOrSlug: st
 				<PanoPostHeaderVote post={post} isAuthor={isAuthor} />
 				{editing ? (
 					<form className="kp-pano-edit-post" onSubmit={onEditSubmit}>
-						<input
+						<Input
 							className="kp-pano-edit-post__title"
+							aria-label="başlık"
 							value={editTitle}
 							onChange={(e) => setEditTitle(e.target.value)}
 							disabled={editInFlight}
 							data-testid="post-edit-title"
 							maxLength={TITLE_MAX + 50}
+							fullWidth
 						/>
-						<textarea
+						<Textarea
 							className="kp-pano-edit-post__body"
+							aria-label="içerik"
 							value={editBody}
 							onChange={(e) => setEditBody(e.target.value)}
 							disabled={editInFlight}
 							data-testid="post-edit-body"
 							maxLength={BODY_MAX + 100}
+							fullWidth
+							resize="vertical"
 						/>
 						{editError ? (
-							<p
-								className="kp-pano-edit-post__error"
-								role="alert"
+							<Alert
+								variant="danger"
+								className="kp-alert--inline kp-pano-edit-post__error"
 								data-testid="post-edit-error"
 								style={{color: "var(--danger)", font: "var(--t-meta)"}}
 							>
 								{editError}
-							</p>
+							</Alert>
 						) : null}
 						<div style={{display: "flex", gap: 6}}>
 							<Button
@@ -388,21 +399,17 @@ function PostContentInner({post, idOrSlug}: {post: ViewRef<"Post">; idOrSlug: st
 			</header>
 
 			{isAuthor ? (
-				<Dialog.Root open={confirmDelete} onOpenChange={setConfirmDelete}>
-					<Dialog.Popup>
-						<Dialog.Head
-							title="başlığı sil"
-							description="bu başlığı silmek istediğine emin misin? geri alınamaz."
-						/>
-						<Dialog.Body>
-							{deleteError ? (
-								<p role="alert" style={{color: "var(--danger)", font: "var(--t-meta)"}}>
-									{deleteError}
-								</p>
-							) : null}
-						</Dialog.Body>
-						<Dialog.Foot>
-							<Dialog.Close render={<Button variant="tertiary">vazgeç</Button>} />
+				<Dialog
+					open={confirmDelete}
+					onOpenChange={setConfirmDelete}
+					role="alertdialog"
+					title="başlığı sil"
+					description="bu başlığı silmek istediğine emin misin? geri alınamaz."
+					footer={({close}) => (
+						<>
+							<Button variant="tertiary" onClick={close}>
+								vazgeç
+							</Button>
 							<Button
 								variant="primary"
 								type="button"
@@ -411,9 +418,19 @@ function PostContentInner({post, idOrSlug}: {post: ViewRef<"Post">; idOrSlug: st
 							>
 								sil
 							</Button>
-						</Dialog.Foot>
-					</Dialog.Popup>
-				</Dialog.Root>
+						</>
+					)}
+				>
+					{deleteError ? (
+						<Alert
+							variant="danger"
+							className="kp-alert--inline"
+							style={{color: "var(--danger)", font: "var(--t-meta)"}}
+						>
+							{deleteError}
+						</Alert>
+					) : null}
+				</Dialog>
 			) : null}
 
 			<Comments
@@ -730,41 +747,45 @@ function Comments(props: CommentsProps) {
 					<LoadMoreButton loadNext={loadNext} />
 				</div>
 			) : null}
-			<Dialog.Root
+			<Dialog
 				open={confirmDeleteId != null}
+				role="alertdialog"
+				title="yorumu sil"
+				description="bu yorumu silmek istediğine emin misin? geri alınamaz."
 				onOpenChange={(open) => {
 					if (!open) {
 						setConfirmDeleteId(null);
 						setDeleteError(null);
 					}
 				}}
-			>
-				<Dialog.Popup>
-					<Dialog.Head
-						title="yorumu sil"
-						description="bu yorumu silmek istediğine emin misin? geri alınamaz."
-					/>
-					<Dialog.Body>
-						{deleteError ? (
-							<p role="alert" style={{color: "var(--danger)", font: "var(--t-meta)"}}>
-								{deleteError}
-							</p>
-						) : null}
-					</Dialog.Body>
-					<Dialog.Foot>
-						<Dialog.Close render={<Button variant="tertiary">vazgeç</Button>} />
+				footer={({close}) => (
+					<>
+						<Button variant="tertiary" onClick={close}>
+							vazgeç
+						</Button>
 						<Button
 							variant="primary"
 							type="button"
 							disabled={deleteInFlight}
+							loading={deleteInFlight}
 							data-testid="pano-comment-delete-confirm"
 							onClick={onDeleteConfirm}
 						>
 							{deleteInFlight ? "siliniyor…" : "sil"}
 						</Button>
-					</Dialog.Foot>
-				</Dialog.Popup>
-			</Dialog.Root>
+					</>
+				)}
+			>
+				{deleteError ? (
+					<Alert
+						variant="danger"
+						className="kp-alert--inline"
+						style={{color: "var(--danger)", font: "var(--t-meta)"}}
+					>
+						{deleteError}
+					</Alert>
+				) : null}
+			</Dialog>
 		</>
 	);
 }
@@ -892,9 +913,10 @@ function CommentComposer({
 
 	return (
 		<form className="kp-pano-comment-composer" onSubmit={onSubmit} data-testid={testId}>
-			<textarea
+			<Textarea
 				ref={textareaRef}
 				className="kp-pano-comment-composer__textarea"
+				aria-label={parentId ? "yanıt" : "yorum"}
 				placeholder={
 					signedIn
 						? "yorum yaz. markdown çalışır, ``` ``` kod bloğu çalışır."
@@ -906,19 +928,22 @@ function CommentComposer({
 				disabled={inFlight || !signedIn}
 				data-testid={parentId ? `pano-comment-reply-input-${parentId}` : "pano-comment-input"}
 				maxLength={COMMENT_BODY_MAX + 100}
+				fullWidth
+				resize="vertical"
 			/>
 			{error ? (
-				<p
-					role="alert"
+				<Alert
+					variant="danger"
+					className="kp-alert--inline"
 					data-testid="pano-comment-error"
 					style={{color: "var(--danger)", font: "var(--t-meta)"}}
 				>
 					{error}
-				</p>
+				</Alert>
 			) : null}
 			<div className="kp-pano-comment-composer__foot">
 				<span className="kp-pano-comment-composer__hint">
-					markdown · <kbd>⌘</kbd>+<kbd>↵</kbd>
+					markdown · <Kbd>⌘</Kbd>+<Kbd>↵</Kbd>
 				</span>
 				<div style={{display: "flex", gap: 6}}>
 					{onCancel ? (
@@ -990,27 +1015,31 @@ function CommentEditComposer({
 			onSubmit={submit}
 			data-testid={`pano-comment-edit-form-${localId}`}
 		>
-			<textarea
+			<Textarea
 				className="kp-pano-comment-composer__textarea"
+				aria-label="yorumu düzenle"
 				value={body}
 				onChange={(e) => setBody(e.target.value)}
 				onKeyDown={submitOnCmdEnter}
 				disabled={inFlight}
 				data-testid={`pano-comment-edit-input-${localId}`}
 				maxLength={COMMENT_BODY_MAX + 100}
+				fullWidth
+				resize="vertical"
 			/>
 			{error ? (
-				<p
-					role="alert"
+				<Alert
+					variant="danger"
+					className="kp-alert--inline"
 					data-testid={`pano-comment-edit-error-${localId}`}
 					style={{color: "var(--danger)", font: "var(--t-meta)"}}
 				>
 					{error}
-				</p>
+				</Alert>
 			) : null}
 			<div className="kp-pano-comment-composer__foot">
 				<span className="kp-pano-comment-composer__hint">
-					markdown · <kbd>⌘</kbd>+<kbd>↵</kbd>
+					markdown · <Kbd>⌘</Kbd>+<Kbd>↵</Kbd>
 				</span>
 				<div style={{display: "flex", gap: 6}}>
 					<Button variant="tertiary" size="sm" type="button" onClick={onCancel} disabled={inFlight}>

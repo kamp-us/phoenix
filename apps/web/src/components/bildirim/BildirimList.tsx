@@ -13,6 +13,7 @@ import {Link} from "react-router";
 import type {Notification, NotificationMarkReceipt} from "../../../worker/features/fate/views";
 import {useSession} from "../../auth/client";
 import {LoadMoreButton} from "../../fate/wire";
+import {Button} from "../ui/Button";
 import {bildirimCopy, bildirimTarget, rowUnread, targetLinkLabel} from "./bildirim";
 import {useBildirimUnread} from "./useBildirimUnread";
 
@@ -116,15 +117,18 @@ export function BildirimList() {
 		<>
 			<div className="kp-bildirim__masthead">
 				<span className="kp-bildirim__meta">{items.length} bildirim</span>
-				<button
+				<Button
 					type="button"
+					variant="secondary"
+					size="sm"
 					className="kp-topbar__btn"
 					onClick={onMarkAllRead}
 					disabled={markAllBusy || allMarked}
+					loading={markAllBusy}
 					data-testid="bildirim-mark-all"
 				>
 					{allMarked ? "tümü okundu" : "tümünü okundu say"}
-				</button>
+				</Button>
 			</div>
 			<ul className="kp-bildirim__list" data-testid="bildirim-list">
 				{items.map(({node}) => (
@@ -190,14 +194,16 @@ function BildirimRow({
 				</span>
 			)}
 			{unread ? (
-				<button
+				<Button
 					type="button"
+					variant="secondary"
+					size="sm"
 					className="kp-topbar__btn"
 					onClick={() => onMarkRead(data.id)}
 					data-testid={`bildirim-mark-${data.id}`}
 				>
 					okundu
-				</button>
+				</Button>
 			) : null}
 		</li>
 	);

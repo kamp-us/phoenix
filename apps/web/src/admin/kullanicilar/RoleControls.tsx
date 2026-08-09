@@ -23,6 +23,7 @@
 import {useState} from "react";
 import {useFateClient, view} from "react-fate";
 import type {RoleState, UserAdminRole} from "../../../worker/features/fate/views";
+import {Alert} from "../../components/ui/Alert";
 import {Button} from "../../components/ui/Button";
 import {codeOf} from "../../fate/wire";
 import {nextRole, roleActionLabel, roleOutcomeMessage} from "./role-controls";
@@ -78,14 +79,14 @@ export function RoleControls({userId, platformRole, onRoleChanged}: RoleControls
 				{roleActionLabel(platformRole, busy)}
 			</Button>
 			{message ? (
-				<p
-					className="kp-role__message"
-					role="status"
+				<Alert
+					variant="secondary"
+					className="kp-alert--inline kp-role__message"
 					aria-live="polite"
 					data-testid={`role-message-${userId}`}
 				>
 					{message}
-				</p>
+				</Alert>
 			) : null}
 		</div>
 	);

@@ -21,6 +21,7 @@ import {actorLabel} from "../moderation/actor-identity";
 import {MuteButton} from "../mute/MuteButton";
 import {useMutedMembers} from "../mute/useMemberMute";
 import {Tag, type TagKind} from "../ui/atoms";
+import {Button} from "../ui/Button";
 import {MetaRow} from "../ui/MetaRow";
 import {PostSaveButton, PostVoteWidget} from "./PanoPost";
 import "./PanoPost.css";
@@ -176,9 +177,9 @@ export function PanoPostCard({
 					{onHide ? (
 						<>
 							<MetaRow.Dot />
-							<button type="button" onClick={() => onHide(data.id)}>
+							<Button type="button" variant="link" size="sm" onClick={() => onHide(data.id)}>
 								gizle
-							</button>
+							</Button>
 						</>
 					) : null}
 				</MetaRow>

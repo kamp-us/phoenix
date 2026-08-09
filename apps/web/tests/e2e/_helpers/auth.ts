@@ -67,7 +67,7 @@ export async function signUp(page: Page, opts?: Partial<Credentials>): Promise<C
 
 	await page.getByLabel("görünen ad").fill(name);
 	await page.getByLabel("e-posta").fill(email);
-	await page.getByLabel("parola").fill(password);
+	await page.getByLabel("parola", {exact: true}).fill(password);
 	await page.getByRole("button", {name: /hesap aç/i}).click();
 
 	// Layout's effect navigates off /auth once session.data lands.
@@ -134,16 +134,17 @@ export async function completeBootstrap(page: Page): Promise<void> {
 }
 
 /**
- * Click the topbar user pill, then "Çıkış" in the menu. The user pill is the
- * Menu.Trigger that wraps an Avatar + the user's display name. Best-effort —
- * if the menu is already gone, we just no-op.
+ * Click the topbar user pill, then "çıkış" in the account popover. The pill is the
+ * Popover trigger wrapping an Avatar + the user's display name; the panel's rows are
+ * real links and a real button, NOT menu commands, so çıkış has the button role.
+ * Best-effort — if the panel is already gone, we just no-op.
  */
 export async function signOut(page: Page): Promise<void> {
 	// The user pill is a button containing the user's name text.
 	const pill = page.locator(".kp-topbar__user").first();
 	if (!(await pill.isVisible().catch(() => false))) return;
 	await pill.click();
-	await page.getByRole("menuitem", {name: /çıkış/i}).click();
+	await page.getByRole("button", {name: /çıkış/i}).click();
 	// Pill should disappear once session clears.
 	await expect(pill).toBeHidden({timeout: 5_000});
 }

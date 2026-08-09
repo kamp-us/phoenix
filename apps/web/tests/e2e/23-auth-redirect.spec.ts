@@ -45,7 +45,7 @@ test.describe("T17 auth-redirect with returnTo", () => {
 		// Sign A out via the topbar user pill.
 		const pill = page.locator(".kp-topbar__user").first();
 		await pill.click();
-		await page.getByRole("menuitem", {name: /çıkış/i}).click();
+		await page.getByRole("button", {name: /çıkış/i}).click();
 		await expect(page.locator(".kp-topbar__user")).toHaveCount(0, {timeout: 5_000});
 
 		// --- act: signed-out user navigates to the term + clicks vote --------
@@ -66,7 +66,7 @@ test.describe("T17 auth-redirect with returnTo", () => {
 		const emailB = `voter-${slug}@kamp.us`;
 		await page.getByLabel("görünen ad").fill("voter b");
 		await page.getByLabel("e-posta").fill(emailB);
-		await page.getByLabel("parola").fill("hunter222!");
+		await page.getByLabel("parola", {exact: true}).fill("hunter222!");
 		await page.getByRole("button", {name: /hesap aç/i}).click();
 
 		// Layout's effect navigates off /auth honoring `returnTo` (T17).

@@ -1,7 +1,7 @@
 {
 	"$schema-note": "Config for `pipeline-cli design-token-guard check` (issue #2170, ADR 0162 / design-system-manifest.md). Read as data by the guard in packages/pipeline-cli; edited from the app side because it grounds against apps/web/src/styles/**. Three bounded, documented allow-lists — see the guard README and the PR body for the model.",
-	"externalProperties": ["--collapsible-panel-height", "--swatch-color"],
-	"externalPropertiesNote": "Custom properties a var(--…) ref may resolve to that are NOT declared in any CSS file because they are injected at runtime — by a library (Base UI's Collapsible sets --collapsible-panel-height on the panel) or by our own JS inline style (Controls sets --swatch-color per theme dot). The undefined-ref check treats these as defined. Add a name here only when it is genuinely runtime-injected; a dead ref belongs in grandfatheredMissingTokens.",
+	"externalProperties": ["--swatch-color"],
+	"externalPropertiesNote": "Custom properties a var(--…) ref may resolve to that are NOT declared in any CSS file because they are injected at runtime — by our own JS inline style (Controls sets --swatch-color per theme dot). The undefined-ref check treats these as defined. Add a name here only when it is genuinely runtime-injected; a dead ref belongs in grandfatheredMissingTokens.",
 	"grandfatheredMissingTokens": [
 		"--t-h1",
 		"--t-h3",

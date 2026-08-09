@@ -5,7 +5,6 @@ packages:
 
 catalog:
   '@alchemy.run/better-auth': 2.0.0-beta.59
-  '@base-ui/react': ^1.4.1
   # Lockstep with better-auth 1.6.23 (the `^1.6.13` catalog pin resolves there):
   # api-key + core pinned to the EXACT version better-auth links transitively, so ONE
   # `@better-auth/core` lives in the tree. A stale `core: 1.6.10` left apps/web's direct
@@ -26,6 +25,8 @@ catalog:
   '@effect/vitest': 4.0.0-beta.92
   '@fontsource/ibm-plex-sans': 5.2.8
   '@fontsource/jetbrains-mono': 5.2.8
+  '@manti-ui/react': 0.9.0
+  '@manti-ui/styles': 0.9.0
   '@nkzw/fate': 1.3.1
   '@playwright/test': ^1.59.1
   '@sentry/cloudflare': 10.62.0

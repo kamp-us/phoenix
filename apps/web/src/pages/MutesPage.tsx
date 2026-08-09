@@ -12,6 +12,7 @@
 import {Navigate} from "react-router";
 import {useSession} from "../auth/client";
 import {MutedMembersList} from "../components/mute/MutedMembersList";
+import {Alert} from "../components/ui/Alert";
 import {Screen} from "../fate/Screen";
 import {MEMBER_MUTE} from "../flags/keys";
 import {useFlag} from "../flags/useFlag";
@@ -52,11 +53,11 @@ export function MutesPage() {
 				<Screen
 					fallback={<p className="kp-mutes__loading">yükleniyor…</p>}
 					error={({code}) => (
-						<p className="kp-mutes__error" role="alert">
+						<Alert variant="danger" className="kp-alert--inline kp-mutes__error">
 							{code === "UNAUTHORIZED" || code === "FORBIDDEN"
 								? "susturduklarını görmek için giriş yapmalısın."
 								: "susturduğun üyeler yüklenemedi, tekrar dene."}
-						</p>
+						</Alert>
 					)}
 				>
 					<MutedMembersList />

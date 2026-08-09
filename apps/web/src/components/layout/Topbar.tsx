@@ -1,16 +1,17 @@
-import {Gavel} from "lucide-react";
+import {Gavel, Search} from "lucide-react";
 import type * as React from "react";
-import {useEffect, useRef} from "react";
-import {Link, NavLink, useNavigate} from "react-router";
+import {useEffect} from "react";
+import {Link, NavLink} from "react-router";
 import {isSearchShortcut} from "../../lib/searchShortcut";
 import type {ThemeChoice} from "../../lib/theme";
 import {BildirimPopover} from "../bildirim/BildirimPopover";
 import {showUnreadBadge} from "../bildirim/bildirim";
 import {Icon} from "../Icon";
 import {Karma} from "../karma/Karma";
-import {Avatar} from "../ui/Avatar";
-import {Menu} from "../ui/Menu";
+import {Kbd} from "../ui/atoms";
+import {Input} from "../ui/Form";
 import {ThemeChoicePicker} from "./ThemeChoicePicker";
+import {UserMenu} from "./UserMenu";
 import "./Topbar.css";
 
 export type NavItem = {to: string; label: string};
@@ -84,16 +85,13 @@ export function Topbar({
 	 */
 	reserveSignedInSlots?: boolean;
 }) {
-	const navigate = useNavigate();
-	const searchInputRef = useRef<HTMLInputElement>(null);
-
-	// ⌘K (mac) / Ctrl+K (other) focuses search, backing the <kbd>⌘K</kbd> hint below.
+	// ⌘K (mac) / Ctrl+K (other) focuses search, backing the <Kbd>⌘K</Kbd> hint below.
 	// preventDefault overrides the browser's own ⌘/Ctrl+K (address-bar) binding.
 	useEffect(() => {
 		const onKeyDown = (e: KeyboardEvent) => {
 			if (!isSearchShortcut(e)) return;
 			e.preventDefault();
-			searchInputRef.current?.focus();
+			document.querySelector<HTMLInputElement>("#topbar-search")?.focus();
 		};
 		document.addEventListener("keydown", onKeyDown);
 		return () => document.removeEventListener("keydown", onKeyDown);
@@ -144,29 +142,22 @@ export function Topbar({
 				onSearchSubmit?.(input?.value ?? "");
 			}}
 		>
-			<svg
-				width="11"
-				height="11"
-				viewBox="0 0 24 24"
-				fill="none"
-				stroke="currentColor"
-				strokeWidth="2.4"
-				aria-hidden="true"
-			>
-				<circle cx="11" cy="11" r="7" />
-				<path d="m20 20-3.5-3.5" />
-			</svg>
+			{/* Drawn Lucide, not the hand-inlined magnifier this replaced: ADR 0166 §2 rules
+			    icons are drawn glyphs, and §4 floors them at 16 — below that a stroke muddies
+			    on a dark surface, which is exactly how the old 11px one read. */}
+			<Icon icon={Search} size={12} />
 			{/* key + defaultValue: uncontrolled so it stays editable, yet a query→query
 			    navigation re-seeds the echoed value by remounting with the new default. */}
-			<input
+			<Input
 				key={searchQuery}
-				ref={searchInputRef}
+				id="topbar-search"
+				className="kp-topbar__search-field"
 				name="q"
 				defaultValue={searchQuery}
 				placeholder="ara…"
 				aria-label="Ara"
 			/>
-			<kbd>⌘K</kbd>
+			<Kbd>⌘K</Kbd>
 		</form>
 	);
 	// The three-way theme picker (#2612) — the sole theme control. Signed-in ⇒ it lives in
@@ -195,36 +186,13 @@ export function Topbar({
 			<BildirimPopover to={bildirim.to} unread={bildirim.unread} />
 		) : null;
 	const userMenu = user ? (
-		<Menu.Root>
-			<Menu.Trigger className="kp-topbar__user">
-				<Avatar name={user.name} src={user.src} />
-				<span>{user.name}</span>
-				{/* No unread badge on the trigger: the count lives on the status-zone bell
-				    (`bildirimSignal`), its one lawful zone (#2613). */}
-			</Menu.Trigger>
-			<Menu.Popup align="end">
-				<Menu.Item
-					data-testid="topbar-profile-link"
-					onClick={() => navigate(user.username ? `/u/${user.username}` : "/profile")}
-				>
-					profil
-				</Menu.Item>
-				{bildirim ? (
-					<Menu.Item data-testid="topbar-bildirim-link" onClick={() => navigate(bildirim.to)}>
-						bildirimler
-					</Menu.Item>
-				) : null}
-				<Menu.Item onClick={() => navigate("/profile")}>ayarlar</Menu.Item>
-				{themePicker ? (
-					<div className="kp-topbar__theme-row" data-testid="topbar-theme-row">
-						<span className="kp-topbar__theme-label">tema</span>
-						{themePicker}
-					</div>
-				) : null}
-				<Menu.Separator />
-				<Menu.Item onClick={onLogout}>çıkış</Menu.Item>
-			</Menu.Popup>
-		</Menu.Root>
+		<UserMenu
+			user={user}
+			bildirim={bildirim}
+			themeChoice={themeChoice}
+			onThemeChange={onThemeChange}
+			onLogout={onLogout}
+		/>
 	) : null;
 	// The account slot: the real user menu once fate publishes it, else — when `__BOOT__`
 	// reserved a signed-in first paint — a fixed-geometry placeholder that holds the slot open

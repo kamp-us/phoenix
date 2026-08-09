@@ -22,6 +22,7 @@ import {useListView, useRequest, useView, type ViewRef, view} from "react-fate";
 import {Link} from "react-router";
 import type {Profile} from "../../../worker/features/fate/views";
 import {Screen} from "../../fate/Screen";
+import {Alert} from "../ui/Alert";
 import {EmptyState} from "../ui/EmptyState";
 import {ContributionRow, ContributionView} from "./ContributionRow";
 import {CONTRIBUTIONS_EMPTY, CONTRIBUTIONS_HEADING} from "./profileContributions";
@@ -96,9 +97,12 @@ export function ProfileContributionSignal({username}: {username: string}) {
 			fallback={<ProfileContributionSkeleton />}
 			error={({code}) => (
 				<SignalShell>
-					<p className="kp-signal__status kp-signal__status--error" role="alert">
+					<Alert
+						variant="danger"
+						className="kp-alert--inline kp-signal__status kp-signal__status--error"
+					>
 						katkılar yüklenemedi: {code.toLowerCase()}
-					</p>
+					</Alert>
 				</SignalShell>
 			)}
 		>

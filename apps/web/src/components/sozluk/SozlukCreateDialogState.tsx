@@ -10,7 +10,8 @@ import * as React from "react";
  * page un-`aria-hidden`, no error, still on `/sozluk`). Crucially NO `onOpenChange` reason
  * fires on that path — the state is destroyed by React unmounting the CTA, not dismissed via
  * `outside-press`/`escape` — which is how the closer is named: an absent dismiss reason ⇒
- * ancestor unmount (base-ui 1.4.1's `outsidePress` only fires on a real backdrop-targeted
+ * ancestor unmount (a dialog machine's outside-interaction callback only fires on a real
+ * backdrop-targeted
  * pointer event, which the trigger-only open cannot produce).
  *
  * The fix owns the open-state in a provider mounted ABOVE that unmounting boundary (the

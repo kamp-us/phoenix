@@ -70,16 +70,20 @@
 	margin-bottom: var(--s-2);
 }
 
-.kp-mecmua-editor__title-input {
+.kp-mecmua-editor__title-input[data-scope="field"] [data-part="control"] {
 	font: var(--t-h-feed);
 	color: var(--text-primary);
 	background: var(--surface);
 	border: 1px solid var(--border);
 	border-radius: var(--r-md);
-	padding: var(--s-2) var(--s-3);
 }
 
-.kp-mecmua-editor__title-input::placeholder {
+.kp-mecmua-editor__title-input[data-scope="field"] [data-part="input"] {
+	font: var(--t-h-feed);
+	color: var(--text-primary);
+}
+
+.kp-mecmua-editor__title-input[data-scope="field"] [data-part="input"]::placeholder {
 	color: var(--text-faint);
 }
 

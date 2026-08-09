@@ -11,12 +11,33 @@
 	font: var(--t-meta);
 	color: var(--text-muted);
 }
+.kp-footer__identity {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--s-2);
+	white-space: nowrap;
+}
 .kp-footer .brand {
 	color: var(--text-secondary);
 	font-weight: 600;
 }
 .kp-footer .brand .dot {
 	color: var(--accent);
+}
+.kp-footer__year {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--s-2);
+	color: var(--text-muted);
+	font-variant-numeric: tabular-nums;
+}
+.kp-footer__year::before {
+	content: "";
+	width: calc(var(--s-1) - 1px);
+	height: calc(var(--s-1) - 1px);
+	flex: none;
+	border-radius: 50%;
+	background: var(--text-faint);
 }
 .kp-footer a {
 	color: var(--text-secondary);

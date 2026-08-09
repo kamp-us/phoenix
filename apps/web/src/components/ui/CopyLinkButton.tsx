@@ -1,4 +1,5 @@
 import * as React from "react";
+import {Button} from "./Button";
 
 /**
  * Shared `paylaş` (share/copy-link) button — presentation + inline confirmation only.
@@ -127,8 +128,10 @@ export function CopyLinkButton({path, label = "paylaş", testId, className}: Cop
 	}
 
 	return (
-		<button
+		<Button
 			type="button"
+			variant="link"
+			size="sm"
 			className={className}
 			onClick={onClick}
 			data-testid={testId}
@@ -136,6 +139,6 @@ export function CopyLinkButton({path, label = "paylaş", testId, className}: Cop
 			data-copy-error={feedback === "error" ? "" : undefined}
 		>
 			{shareFeedbackLabel(feedback, label)}
-		</button>
+		</Button>
 	);
 }

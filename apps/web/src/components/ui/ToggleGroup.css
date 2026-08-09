@@ -1,18 +1,16 @@
-/* ToggleGroup — Base UI Toggle + ToggleGroup.
-   Used by: filter chips, alphabet bar, theme picker, density toggle, tag picker. */
-
-.kp-toggle-group {
+/* Phoenix toggle variants over Manti ToggleGroup's public anatomy. */
+.kp-toggle-group[data-scope="toggle-group"][data-part="root"] {
 	display: inline-flex;
 	flex-wrap: wrap;
 	gap: var(--s-1);
+	padding: 0;
+	background: transparent;
+	border: 0;
+	border-radius: 0;
 }
 
-/* Base toggle — must precede the variant overrides below so specificity ascends. */
-.kp-toggle {
-	display: inline-flex;
-	align-items: center;
-	justify-content: center;
-	gap: 4px;
+.kp-toggle-group [data-part="item"] {
+	min-height: var(--tap-min);
 	padding: 3px 10px;
 	font: var(--t-meta);
 	font-weight: 500;
@@ -20,77 +18,110 @@
 	background: transparent;
 	border: 1px solid var(--border-faint);
 	border-radius: var(--r-pill);
-	cursor: pointer;
-	user-select: none;
-	white-space: nowrap;
 }
-.kp-toggle:hover {
+.kp-toggle-group [data-part="item"]:hover {
 	color: var(--text-primary);
 	border-color: var(--border);
+	background: transparent;
 }
-.kp-toggle[data-pressed] {
+.kp-toggle-group [data-part="item"][data-state="on"] {
 	color: var(--accent-fg);
 	background: var(--accent-9);
 	border-color: var(--accent-9);
 	font-weight: 600;
 }
-/* Keyboard focus ring comes from the shared focus layer (global.css, #2169). */
-.kp-toggle:disabled,
-.kp-toggle[data-disabled] {
-	opacity: 0.4;
-	cursor: not-allowed;
-}
 
-/* "Segmented" variant — buttons share a track (sıkı/normal/ferah, light/dark). */
-.kp-toggle-group--segmented {
+.kp-toggle-group--segmented[data-scope="toggle-group"][data-part="root"] {
 	background: var(--surface-sunken);
 	border: 1px solid var(--border-faint);
 	border-radius: var(--r-md);
 	padding: 2px;
 	gap: 0;
 }
-.kp-toggle-group--segmented .kp-toggle {
-	/* min-height keeps the ≥36px hit area decoupled from the --t-meta glyph — the base
-	   .kp-toggle flex-centers, so the box pads up to the floor without inflating type (ADR 0162 §Tap target). */
-	min-height: var(--tap-min);
+.kp-toggle-group--segmented [data-part="item"] {
 	border-radius: var(--r-sm);
 	padding: 3px var(--s-2);
-	font: var(--t-meta);
 	border: 0;
 }
-.kp-toggle-group--segmented .kp-toggle[data-pressed] {
+.kp-toggle-group--segmented [data-part="item"][data-state="on"] {
 	background: var(--surface-raised);
 	color: var(--text-primary);
 }
 
-/* "Square" variant — alphabet bar */
-.kp-toggle-group--square {
-	gap: 2px;
-}
-.kp-toggle-group--square .kp-toggle {
-	width: var(--letter-size);
-	height: var(--letter-size);
+.kp-toggle-group--outline[data-scope="toggle-group"][data-part="root"] {
+	gap: 0;
 	padding: 0;
+	overflow: hidden;
+	background: transparent;
+	border: 1px solid var(--border);
 	border-radius: var(--r-sm);
-	font-weight: 500;
+}
+.kp-toggle-group--outline [data-part="item"] {
+	min-height: var(--subnav-h);
+	padding-inline: var(--s-3);
+	font: var(--t-body-sm);
+	color: var(--text-muted);
+	background: transparent;
+	border: 0;
+	border-radius: 0;
+}
+.kp-toggle-group--outline [data-part="item"]:hover {
+	color: var(--text-primary);
+	background: var(--surface-sunken);
+}
+.kp-toggle-group--outline [data-part="item"][data-state="on"] {
+	color: var(--accent-11);
+	background: transparent;
+	font-weight: 600;
+}
+.kp-toggle-group--outline [data-part="item"][data-state="on"]:hover {
+	color: var(--accent-11);
+	background: var(--surface-sunken);
 }
 
-/* "Swatch" variant — theme picker */
-.kp-toggle-group--swatch {
+/* Part of the primitive's variant API, not a call-site style: no surface uses --square
+   today, but entry-row-spine pins all four root variants at the base anatomy specificity,
+   so it stays available like any unused variant of a component library. */
+.kp-toggle-group--square[data-scope="toggle-group"][data-part="root"] {
+	gap: 2px;
+}
+.kp-toggle-group--square [data-part="item"] {
+	width: var(--letter-size);
+	height: var(--letter-size);
+	min-width: var(--letter-size);
+	min-height: var(--letter-size);
+	padding: 0;
+	border-radius: var(--r-sm);
+}
+
+.kp-toggle-group--swatch[data-scope="toggle-group"][data-part="root"] {
 	gap: var(--s-1);
 }
-.kp-toggle-group--swatch .kp-toggle {
+.kp-toggle-group--swatch [data-part="item"] {
 	width: 22px;
 	height: 22px;
+	min-width: 0;
+	min-height: 0;
 	padding: 0;
 	border-radius: 50%;
 	background: var(--swatch-color, var(--accent-9));
 	border: 2px solid transparent;
 }
-.kp-toggle-group--swatch .kp-toggle:hover {
+.kp-toggle-group--swatch [data-part="item"]:has(.kp-toggle__swatch) {
+	background: var(--swatch-color, var(--accent-9));
+}
+.kp-toggle-group--swatch [data-part="item"]:hover {
 	border-color: var(--border);
 }
-.kp-toggle-group--swatch .kp-toggle[data-pressed] {
+.kp-toggle-group--swatch [data-part="item"][data-state="on"] {
 	border-color: var(--text-primary);
 	background: var(--swatch-color, var(--accent-9));
+}
+.kp-toggle__swatch {
+	--swatch-color: var(--accent-9);
+	display: block;
+	width: 100%;
+	height: 100%;
+	border-radius: inherit;
+	background: var(--swatch-color);
 }

@@ -1,4 +1,5 @@
 import * as React from "react";
+import {Button, type ButtonProps} from "./Button";
 import "./CountToggle.css";
 
 /**
@@ -19,7 +20,7 @@ import "./CountToggle.css";
  * @slot icon Leading decorative glyph rendered before the label/count.
  */
 export interface CountToggleProps
-	extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, "children"> {
+	extends Omit<ButtonProps, "children" | "pressed" | "count" | "icon"> {
 	/** On/off state → `aria-pressed` + the accent-tinted pressed styling. */
 	pressed?: boolean;
 	/** Aggregate count rendered after the icon/label. Hidden when 0 unless `showZero`. */
@@ -49,12 +50,17 @@ export const CountToggle = React.forwardRef<HTMLButtonElement, CountToggleProps>
 		ref,
 	) {
 		const showCount = count != null && (showZero || count > 0);
+		const generatedId = React.useId();
+		const id = rest.id ?? `kp-count-toggle-${generatedId.replaceAll(":", "")}`;
+		React.useImperativeHandle(ref, () => document.getElementById(id) as HTMLButtonElement, [id]);
 		return (
-			<button
-				ref={ref}
+			<Button
+				id={id}
 				type={type}
+				variant="tertiary"
+				size="sm"
 				className={`kp-count-toggle ${className}`.trim()}
-				aria-pressed={pressed}
+				pressed={pressed}
 				{...rest}
 			>
 				{icon}
@@ -64,7 +70,7 @@ export const CountToggle = React.forwardRef<HTMLButtonElement, CountToggleProps>
 						{count}
 					</span>
 				) : null}
-			</button>
+			</Button>
 		);
 	},
 );

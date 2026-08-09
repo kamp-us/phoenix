@@ -36,8 +36,14 @@
 	border-right: 0;
 	cursor: pointer;
 }
-.kp-subnav__filter:hover {
+/* 0-4-0, and it has to be: the filters are `<Button variant="link">`, and Button.css
+   underlines that variant on hover at 0-3-0 — which outranks a bare `.kp-subnav__filter:hover`,
+   so the tabs underlined despite this rule saying otherwise. A tab is a destination affordance,
+   not prose; its active state is the accent underline below, and a hover underline reads as a
+   second, competing one. */
+.kp-subnav__filters .kp-subnav__filter:hover:not(:disabled) {
 	color: var(--text-primary);
+	text-decoration: none;
 }
 /* aria-pressed → sort toggles; aria-current → NavLink active route (kaydedilenler). */
 .kp-subnav__filter[aria-pressed="true"],
@@ -74,6 +80,13 @@
 .kp-subnav__cta {
 	display: inline-flex;
 	align-items: center;
+}
+.kp-subnav__cta .kp-btn:where([data-scope="button"][data-part="root"]) {
+	--manti-button-height: calc(var(--subnav-h) - var(--s-2));
+	--manti-button-padding-x: var(--s-3);
+	/* A leading `+` is optically lighter than a letter, so the default --s-2 gap on top of
+	   the padding reads as a glyph floating in space rather than a label with an icon. */
+	--manti-button-gap: var(--s-1);
 }
 
 /* Input slot (#2602) — a product-scoped on-demand utility box (sözlük go-to-or-create),

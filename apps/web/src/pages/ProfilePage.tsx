@@ -10,6 +10,7 @@ import {DeleteAccountDialog} from "../components/profile/DeleteAccountDialog";
 import {ProfileContributionSignal} from "../components/profile/ProfileContributionSignal";
 import {ProfileHeader} from "../components/profile/ProfileHeader";
 import {profileStandingLabel} from "../components/profile/profileStanding";
+import {Alert, Button, Input, ToggleGroup} from "../components/ui";
 import {type Density, useDensity} from "../lib/density";
 import {type ThemeChoice, useTheme} from "../lib/theme";
 import {useProfileStats} from "./useProfileStats";
@@ -184,25 +185,31 @@ export function ProfilePage() {
 					<div className="kp-profile__row">
 						<span className="label">görünen ad</span>
 						<span className="value">
-							<input
+							<Input
+								className="kp-profile__name-input"
+								aria-label="görünen ad"
 								value={draftName}
 								onChange={(e) => {
 									setDraftName(e.target.value);
 									setSaveState("idle");
 								}}
-								aria-invalid={saveState === "error"}
+								error={saveState === "error" ? "kaydedilemedi, tekrar dene" : undefined}
 								disabled={saveState === "saving"}
+								fullWidth
 							/>
-							{saveState === "error" && (
-								<span className="kp-profile__feedback error" role="alert">
-									kaydedilemedi, tekrar dene
-								</span>
-							)}
 							{saveState === "saved" && <span className="kp-profile__feedback ok">kaydedildi</span>}
 						</span>
-						<button type="button" className="edit-btn" onClick={onSaveName} disabled={!canSave}>
+						<Button
+							type="button"
+							variant="link"
+							size="sm"
+							className="edit-btn"
+							onClick={onSaveName}
+							disabled={!canSave}
+							loading={saveState === "saving"}
+						>
 							{saveState === "saving" ? "kaydediliyor…" : "kaydet"}
-						</button>
+						</Button>
 					</div>
 					<div className="kp-profile__row">
 						<span className="label">kullanıcı adı</span>
@@ -222,15 +229,17 @@ export function ProfilePage() {
 						{/* Interim per #75: a secure change-email flow must verify the new address by
 						    email before switching, but the worker has no email sender yet (#875).
 						    Disabled-with-hint until #875 lands — no silent inert button. */}
-						<button
+						<Button
 							type="button"
+							variant="link"
+							size="sm"
 							className="edit-btn"
 							data-testid="email-change-btn"
 							disabled
 							title="e-posta değiştirme henüz kullanılamıyor"
 						>
 							değiştir
-						</button>
+						</Button>
 					</div>
 				</section>
 
@@ -239,36 +248,37 @@ export function ProfilePage() {
 					<div className="kp-profile__row">
 						<span className="label">tema</span>
 						<span className="value">
-							<span className="kp-profile__theme-toggle">
-								{(["light", "dark", "auto"] as ThemeChoice[]).map((t) => (
-									<button
-										key={t}
-										type="button"
-										aria-pressed={themeChoice === t}
-										onClick={() => setThemeChoice(t)}
-									>
-										{t === "light" ? "açık" : t === "dark" ? "koyu" : "otomatik"}
-									</button>
-								))}
-							</span>
+							<ToggleGroup
+								className="kp-toggle-group kp-toggle-group--outline"
+								size="sm"
+								items={[
+									{value: "light", label: "açık"},
+									{value: "dark", label: "koyu"},
+									{value: "auto", label: "otomatik"},
+								]}
+								value={[themeChoice]}
+								onValueChange={([next]) => {
+									if (next) setThemeChoice(next as ThemeChoice);
+								}}
+							/>
 						</span>
 						<span />
 					</div>
 					<div className="kp-profile__row">
 						<span className="label">yoğunluk</span>
 						<span className="value">
-							<span className="kp-profile__theme-toggle">
-								{(["compact", "normal", "spacious"] as Density[]).map((d) => (
-									<button
-										key={d}
-										type="button"
-										aria-pressed={densityChoice === d}
-										onClick={() => setDensityChoice(d)}
-									>
-										{DENSITY_LABELS[d]}
-									</button>
-								))}
-							</span>
+							<ToggleGroup
+								className="kp-toggle-group kp-toggle-group--outline"
+								size="sm"
+								items={(["compact", "normal", "spacious"] as Density[]).map((density) => ({
+									value: density,
+									label: DENSITY_LABELS[density],
+								}))}
+								value={[densityChoice]}
+								onValueChange={([next]) => {
+									if (next) setDensityChoice(next as Density);
+								}}
+							/>
 						</span>
 						<span />
 					</div>
@@ -278,17 +288,24 @@ export function ProfilePage() {
 					<h3>oturum</h3>
 					<p>bu cihazda aktif. çıkış yaparak oturumu sonlandırabilirsin.</p>
 					<div className="kp-profile__danger">
-						<button type="button" onClick={onSignOut}>
+						<Button type="button" variant="secondary" size="sm" onClick={onSignOut}>
 							çıkış yap
-						</button>
-						<button type="button" onClick={onSignOutAll} disabled={revokingAll}>
+						</Button>
+						<Button
+							type="button"
+							variant="secondary"
+							size="sm"
+							onClick={onSignOutAll}
+							disabled={revokingAll}
+							loading={revokingAll}
+						>
 							{revokingAll ? "çıkış yapılıyor…" : "tüm cihazlardan çık"}
-						</button>
+						</Button>
 					</div>
 					{revokeAllError ? (
-						<p className="kp-profile__error" role="alert">
+						<Alert variant="danger" className="kp-alert--inline kp-profile__error">
 							{revokeAllError}
-						</p>
+						</Alert>
 					) : null}
 				</section>
 
@@ -300,14 +317,15 @@ export function ProfilePage() {
 						kaldırılır; aynı e-posta ileride yeniden kayıt olabilir. bu işlem geri alınamaz.
 					</p>
 					<div className="kp-profile__danger">
-						<button
+						<Button
 							type="button"
-							className="danger"
+							variant="primary"
+							size="sm"
 							data-testid="delete-account-btn"
 							onClick={() => setDeleteOpen(true)}
 						>
 							hesabı kaldır
-						</button>
+						</Button>
 					</div>
 				</section>
 			</div>

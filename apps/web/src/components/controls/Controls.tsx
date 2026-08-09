@@ -52,16 +52,20 @@ export function ThemePicker({
 	return (
 		<div className="kp-controls__group">
 			<span className="kp-controls__label">renk</span>
-			<ToggleGroup.Root
-				variant="swatch"
+			<ToggleGroup
+				variant="primary"
 				value={[value]}
 				onValueChange={(v) => v[0] && onChange(v[0] as ColorTheme)}
-				aria-label="Renk teması"
-			>
-				{(Object.keys(THEME_SWATCHES) as ColorTheme[]).map((t) => (
-					<ToggleGroup.Item key={t} value={t} aria-label={t} swatchColor={THEME_SWATCHES[t]} />
-				))}
-			</ToggleGroup.Root>
+				className="kp-toggle-group kp-toggle-group--swatch"
+				items={(Object.keys(THEME_SWATCHES) as ColorTheme[]).map((theme) => ({
+					value: theme,
+					label: (
+						<span className="kp-toggle__swatch" style={{backgroundColor: THEME_SWATCHES[theme]}}>
+							<span className="kp-visually-hidden">{theme}</span>
+						</span>
+					),
+				}))}
+			/>
 		</div>
 	);
 }
@@ -70,18 +74,16 @@ export function DensityToggle({value, onChange}: {value: Density; onChange: (v: 
 	return (
 		<div className="kp-controls__group">
 			<span className="kp-controls__label">yoğunluk</span>
-			<ToggleGroup.Root
-				variant="segmented"
+			<ToggleGroup
+				variant="primary"
 				value={[value]}
 				onValueChange={(v) => v[0] && onChange(v[0] as Density)}
-				aria-label="Yoğunluk"
-			>
-				{(Object.keys(DENSITY_LABELS) as Density[]).map((d) => (
-					<ToggleGroup.Item key={d} value={d}>
-						{DENSITY_LABELS[d]}
-					</ToggleGroup.Item>
-				))}
-			</ToggleGroup.Root>
+				className="kp-toggle-group kp-toggle-group--segmented"
+				items={(Object.keys(DENSITY_LABELS) as Density[]).map((density) => ({
+					value: density,
+					label: DENSITY_LABELS[density],
+				}))}
+			/>
 		</div>
 	);
 }
@@ -90,18 +92,16 @@ export function ModeToggle({value, onChange}: {value: Mode; onChange: (v: Mode) 
 	return (
 		<div className="kp-controls__group">
 			<span className="kp-controls__label">mod</span>
-			<ToggleGroup.Root
-				variant="segmented"
+			<ToggleGroup
+				variant="primary"
 				value={[value]}
 				onValueChange={(v) => v[0] && onChange(v[0] as Mode)}
-				aria-label="Renk modu"
-			>
-				{(Object.keys(MODE_LABELS) as Mode[]).map((m) => (
-					<ToggleGroup.Item key={m} value={m}>
-						{MODE_LABELS[m]}
-					</ToggleGroup.Item>
-				))}
-			</ToggleGroup.Root>
+				className="kp-toggle-group kp-toggle-group--segmented"
+				items={(Object.keys(MODE_LABELS) as Mode[]).map((mode) => ({
+					value: mode,
+					label: MODE_LABELS[mode],
+				}))}
+			/>
 		</div>
 	);
 }

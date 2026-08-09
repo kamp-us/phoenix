@@ -2,6 +2,7 @@ import {createContext, useContext, useState} from "react";
 import {Outlet} from "react-router";
 import type {SubnavFilter} from "../layout/Subnav";
 import {SubnavShell} from "../layout/SubnavShell";
+import {Button} from "../ui/Button";
 
 /**
  * The section-switcher content the routed divan page publishes UP into its persistent Subnav
@@ -37,15 +38,17 @@ function DivanSectionSwitcher({filters, activeFilter, onFilterChange}: DivanSubn
 	return (
 		<>
 			{filters.map((f) => (
-				<button
+				<Button
 					key={f.id}
 					type="button"
+					variant="link"
+					size="sm"
 					className="kp-subnav__filter"
-					aria-pressed={activeFilter === f.id}
+					pressed={activeFilter === f.id}
 					onClick={() => onFilterChange(f.id)}
 				>
 					{f.label}
-				</button>
+				</Button>
 			))}
 		</>
 	);

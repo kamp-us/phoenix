@@ -1,99 +1,136 @@
-/* Button — atom. Base UI Button only adds focusableWhenDisabled + render-as,
-   so we wrap it for the variants. */
-
-.kp-btn {
-	display: inline-flex;
-	align-items: center;
-	justify-content: center;
-	gap: 6px;
-	/* Tap-target floor (ADR 0162 pillar 4): the primitive owns the ≥36px hit area in
-	   both axes, so every consumer clears it without opting in — call sites no longer
-	   re-declare a per-instance --tap-min floor. min-height decouples the hit area from
-	   the glyph: the smaller --sm font shrinks the type, not the target, and the
-	   flex-centering above fills the box. This is the single floor. */
-	min-height: var(--tap-min);
+/* Phoenix visual contract over Manti's public Button anatomy. */
+.kp-btn:where([data-scope="button"][data-part="root"]) {
+	--manti-button-radius: var(--r-sm);
+	--manti-button-gap: 6px;
+	--manti-button-height: var(--tap-min);
+	--manti-button-padding-x: var(--s-3);
 	min-width: var(--tap-min);
-	padding: 5px var(--s-3);
 	font: var(--t-body-sm);
 	font-weight: 500;
-	border-radius: var(--r-sm);
-	border: 1px solid transparent;
 	cursor: pointer;
-	user-select: none;
-	white-space: nowrap;
 	transition:
 		background 80ms,
 		color 80ms,
 		border-color 80ms;
 }
-/* Keyboard focus ring comes from the shared focus layer (global.css, #2169). */
-.kp-btn:disabled {
-	opacity: 0.5;
-	cursor: not-allowed;
+
+/* Control leading, deliberately its own rule at the anatomy's own weight.
+ *
+ * `font` is a SHORTHAND: every `font: var(--t-body-sm)` a feature sheet sets on a button
+ * silently resets line-height to that type token's PROSE leading (1.45). Declaring
+ * line-height in the base rule above cannot stop it — `:where()` contributes zero
+ * specificity, so that whole selector is 0-1-0, a tie with any single feature class, which
+ * source order then hands to the feature sheet. That is why a dozen buttons across the app
+ * were silently back on paragraph leading.
+ *
+ * 0-3-0 is the deliberate level. It outranks every plain `.kp-feature-class` rule — the
+ * accidental case, which is the bug — while only tying with a call site that spelled out the
+ * full anatomy selector itself (`.kp-auth__submit[data-scope][data-part]`, which wants 1.2).
+ * Writing the anatomy selector IS the opt-out: a deliberate override still wins on order, an
+ * accidental one no longer does. Going higher would clobber the deliberate ones too.
+ *
+ * The value: a label is one line the flex box centers, so its line box should measure the
+ * text and nothing more — leaving the height to --manti-button-height alone. */
+.kp-btn[data-scope="button"][data-part="root"] {
+	line-height: 1;
 }
 
-.kp-btn--primary {
+.kp-btn:where([data-variant="primary"]) {
 	background: var(--accent-9);
 	color: var(--accent-fg);
 	border-color: var(--accent-9);
 	font-weight: 600;
 }
-.kp-btn--primary:hover:not(:disabled) {
+.kp-btn:where([data-variant="primary"]):hover:not(:disabled) {
 	filter: brightness(1.06);
 }
 
-.kp-btn--secondary {
+.kp-btn:where([data-variant="secondary"]) {
 	background: var(--surface-raised);
 	color: var(--text-primary);
 	border-color: var(--border);
 }
-.kp-btn--secondary:hover:not(:disabled) {
+.kp-btn:where([data-variant="secondary"]):hover:not(:disabled) {
 	background: var(--accent-faint);
 	border-color: var(--accent-soft);
 }
 
-.kp-btn--tertiary {
+.kp-btn:where([data-variant="tertiary"]) {
 	background: transparent;
 	color: var(--text-secondary);
 }
-.kp-btn--tertiary:hover:not(:disabled) {
+.kp-btn:where([data-variant="tertiary"]):hover:not(:disabled) {
 	background: var(--surface-raised);
 	color: var(--text-primary);
 }
 
-.kp-btn--danger {
+.kp-btn:where([data-variant="outline"]) {
+	background: transparent;
+	color: var(--text-secondary);
+	border-color: var(--border);
+	box-shadow: none;
+}
+.kp-btn:where([data-variant="outline"]):hover:not(:disabled) {
+	background: var(--accent-faint);
+	color: var(--accent);
+	border-color: var(--accent);
+}
+
+.kp-btn:where([data-variant="danger"]) {
 	background: transparent;
 	color: var(--danger);
+	border-color: transparent;
+	box-shadow: none;
 }
-.kp-btn--danger:hover:not(:disabled) {
-	background: var(--accent-9);
+.kp-btn:where([data-variant="danger"]):hover:not(:disabled) {
+	background: var(--danger);
 	color: var(--accent-fg);
 }
 
-.kp-btn--sm {
-	padding: 3px var(--s-2);
-	font: var(--t-meta);
+.kp-btn:where([data-variant="link"]) {
+	--manti-button-height: auto;
+	--manti-button-padding-x: 0px;
+	min-width: 0;
+	background: transparent;
+	border-color: transparent;
+	box-shadow: none;
+	color: var(--accent);
+	font: inherit;
+}
+/* The one variant that opts back out: a link button is auto-height and sits INSIDE running
+   text (`font: inherit` above says as much), so it has to keep the surrounding prose leading
+   rather than a control's. Spelled at 0-4-0 to clear the control-leading rule above — the
+   `font: inherit` alone would lose to it. */
+.kp-btn[data-scope="button"][data-part="root"]:where([data-variant="link"]) {
+	line-height: inherit;
+}
+.kp-btn:where([data-variant="link"]):hover:not(:disabled) {
+	background: transparent;
+	text-decoration: underline;
+}
+
+/* No padding-x here: sm has always carried the base value, so it tracks the base
+   rather than restating it and silently diverging when the base moves. */
+.kp-btn:where([data-size="sm"]) {
+	--manti-button-height: 30px;
+	font: var(--t-body-sm);
 	font-weight: 500;
 }
-.kp-btn--lg {
-	padding: 8px var(--s-4);
+.kp-btn:where([data-size="sm"][data-variant="link"]) {
+	--manti-button-padding-x: 0px;
+}
+.kp-btn:where([data-size="lg"]) {
+	--manti-button-padding-x: var(--s-4);
 	font: var(--t-body);
 	font-weight: 600;
 }
 
-.kp-btn--block {
-	width: 100%;
-}
-
-/* Pressed/toggle — the accent-tinted active state, carried on top of
-   [aria-pressed] so it is never color-alone (#2163). */
-.kp-btn--pressed {
+.kp-btn:where([aria-pressed="true"]) {
 	border-color: var(--accent);
 	background: var(--accent-faint);
 	color: var(--accent);
 }
 
-/* Leading icon slot — sizes the glyph to the text box. */
 .kp-btn__icon {
 	display: inline-flex;
 	align-items: center;
@@ -103,24 +140,7 @@
 	height: 1em;
 }
 
-/* Loading — the in-flight spinner replaces the leading icon; the label stays,
-   the control disables. The disabled dim is overridden so a busy button reads
-   as active-but-waiting, not unavailable. */
-.kp-btn--loading:disabled {
+.kp-btn[data-loading="true"]:disabled {
 	opacity: 1;
 	cursor: progress;
-}
-.kp-btn__spinner {
-	width: 0.85em;
-	height: 0.85em;
-	border: 2px solid currentColor;
-	border-right-color: transparent;
-	border-radius: var(--r-pill);
-	/* Neutralized by the global prefers-reduced-motion reset (global.css). */
-	animation: kp-btn-spin var(--motion-slow) linear infinite;
-}
-@keyframes kp-btn-spin {
-	to {
-		transform: rotate(360deg);
-	}
 }

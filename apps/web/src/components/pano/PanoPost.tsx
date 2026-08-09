@@ -1,4 +1,5 @@
 import {useFateClient} from "react-fate";
+import {Button} from "../ui/Button";
 import {useVoteFlash} from "../useVoteFlash";
 import {VoteTriangle} from "../VoteTriangle";
 import {PostSaveView, PostVoteView} from "./PanoPostHeader";
@@ -7,9 +8,8 @@ import "./PanoPost.css";
 
 /**
  * Presentational vote control; the parent owns the mutation + auth gate. `own`
- * marks the viewer's own content: the vote button is dropped (self-voting is
- * blocked, #2216) while the score still renders, so the affordance matches the
- * rule — the server guard is the invariant, this is the matching UX.
+ * marks the viewer's own content: the control remains visible for stable feed
+ * geometry, but is disabled because self-voting is blocked (#2216).
  */
 export function VoteControl({
 	count,
@@ -27,18 +27,20 @@ export function VoteControl({
 	const {flashing, endFlash} = useVoteFlash(count);
 	return (
 		<div className="kp-pano-post__vote">
-			{own ? null : (
-				<button
-					type="button"
-					className="kp-pano-post__vote-btn"
-					aria-pressed={pressed}
-					aria-label={pressed ? "Oyunu geri al" : "Yukarı oy"}
-					data-testid={testIdSuffix ? `post-vote-${testIdSuffix}` : undefined}
-					onClick={() => onToggle?.()}
-				>
-					<VoteTriangle />
-				</button>
-			)}
+			<Button
+				type="button"
+				variant="outline"
+				size="sm"
+				iconOnly
+				className="kp-pano-post__vote-btn"
+				pressed={pressed}
+				disabled={own}
+				aria-label={own ? "Kendi gönderine oy veremezsin" : pressed ? "Oyunu geri al" : "Yukarı oy"}
+				data-testid={testIdSuffix ? `post-vote-${testIdSuffix}` : undefined}
+				onClick={() => onToggle?.()}
+			>
+				<VoteTriangle />
+			</Button>
 			<span
 				className={`kp-pano-post__vote-count${flashing ? " kp-vote-flash" : ""}`}
 				onAnimationEnd={endFlash}
@@ -67,7 +69,7 @@ export function PostVoteWidget({
 	postId: string;
 	score: number;
 	myVote: boolean | null;
-	/** The viewer authored this post — drop the vote button (self-vote is blocked, #2216). */
+	/** The viewer authored this post — keep the vote visible but disabled (#2216). */
 	own?: boolean;
 }) {
 	const fate = useFateClient();
@@ -135,14 +137,16 @@ export function PostSaveButton({postId, isSaved}: {postId: string; isSaved: bool
 	});
 
 	return (
-		<button
+		<Button
 			type="button"
+			variant="link"
+			size="sm"
 			className="kp-pano-post__save"
-			aria-pressed={saved}
+			pressed={saved}
 			data-testid={`post-save-${postId}`}
 			onClick={onToggle}
 		>
 			{saved ? "kaydedildi" : "kaydet"}
-		</button>
+		</Button>
 	);
 }

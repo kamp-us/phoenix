@@ -13,12 +13,13 @@
  * boundary (ADR 0021's no-waterfalls contract). A since-deleted profile arrives as a
  * null handle and degrades to the bare "çaylak" label, never breaking the list.
  *
- * a11y: a real list of `<button>` rows (full keyboard path + visible focus + AA
+ * a11y: a real list of Manti Button rows (full keyboard path + visible focus + AA
  * contrast); the selected row carries `aria-current`; the pending counts are
  * text, never color; copy is lowercase Turkish.
  */
 import {useListView, useRequest, useView, type ViewRef, view} from "react-fate";
 import type {DivanCaylak} from "../../../worker/features/fate/views";
+import {Button} from "../ui/Button";
 import {CaylakIdentity} from "./CaylakIdentity";
 
 const ROSTER_PAGE_SIZE = 50;
@@ -80,8 +81,10 @@ function RosterRow({
 
 	return (
 		<li className="kp-divan__roster-item">
-			<button
+			<Button
 				type="button"
+				variant="tertiary"
+				block
 				className="kp-divan__roster-row"
 				onClick={() => onSelect(data.authorId)}
 				aria-current={selected ? "true" : undefined}
@@ -97,7 +100,7 @@ function RosterRow({
 					{data.totalCount} içerik · {data.definitionCount} tanım, {data.postCount} gönderi,{" "}
 					{data.commentCount} yorum
 				</span>
-			</button>
+			</Button>
 		</li>
 	);
 }

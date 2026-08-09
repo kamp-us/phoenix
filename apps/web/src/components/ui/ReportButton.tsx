@@ -1,4 +1,5 @@
 import * as React from "react";
+import {Button} from "./Button";
 
 /**
  * Shared `bildir` (report) button — presentation + inline confirmation only.
@@ -46,16 +47,19 @@ export function ReportButton({onReport, testId, className}: ReportButtonProps) {
 		state === "reported" ? "bildirildi" : state === "already" ? "zaten bildirildi" : "bildir";
 
 	return (
-		<button
+		<Button
 			type="button"
+			variant="link"
+			size="sm"
 			className={className}
 			onClick={onClick}
 			disabled={state === "busy" || done}
+			loading={state === "busy"}
 			aria-disabled={done}
 			data-testid={testId}
 			data-reported={done ? "" : undefined}
 		>
 			{label}
-		</button>
+		</Button>
 	);
 }

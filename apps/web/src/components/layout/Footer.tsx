@@ -6,10 +6,12 @@ export function Footer({children}: {children?: React.ReactNode}) {
 		<footer className="kp-footer">
 			{children ?? (
 				<>
-					<span className="brand">
-						kamp<span className="dot">.</span>us
+					<span className="kp-footer__identity">
+						<span className="brand">
+							kamp<span className="dot">.</span>us
+						</span>
+						<span className="kp-footer__year">2026</span>
 					</span>
-					<span>· 2026</span>
 					<span className="spacer" />
 					<a href="https://github.com/kamp-us" target="_blank" rel="noreferrer">
 						github

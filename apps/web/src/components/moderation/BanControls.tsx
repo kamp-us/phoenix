@@ -11,7 +11,7 @@
  * `ban-controls.ts` (unit-tested); this is the thin shell.
  *
  * a11y: a labelled region; a real `<form>` with a required `gerekçe` field + an
- * optional `datetime-local` expiry; real `<button>`s; the banned-state + outcome are
+ * optional `datetime-local` expiry; Manti Button actions; the banned-state + outcome are
  * text in `role="status"` live regions, never color; copy is lowercase Turkish.
  */
 import {useState} from "react";
@@ -19,7 +19,9 @@ import {useFateClient, view} from "react-fate";
 import type {BanState} from "../../../worker/features/fate/views";
 import {useImperativeView} from "../../fate/useImperativeView";
 import {codeOf} from "../../fate/wire";
+import {Alert} from "../ui/Alert";
 import {Button} from "../ui/Button";
+import {Input, Textarea} from "../ui/Form";
 import {
 	type BanView,
 	banExpiryLabel,
@@ -94,9 +96,14 @@ export function BanControls({userId}: {readonly userId: string}) {
 
 	return (
 		<section className="kp-ban" aria-label="yasaklama" data-testid="ban-controls">
-			<p className="kp-ban__status" role="status" aria-live="polite" data-testid="ban-status">
+			<Alert
+				variant="secondary"
+				className="kp-alert--inline kp-ban__status"
+				aria-live="polite"
+				data-testid="ban-status"
+			>
 				{current ? banStatusLabel(current) : "durum yükleniyor…"}
-			</p>
+			</Alert>
 			{expiryLabel !== null && (
 				<p className="kp-ban__expiry" data-testid="ban-expiry">
 					{expiryLabel}
@@ -115,26 +122,23 @@ export function BanControls({userId}: {readonly userId: string}) {
 				</Button>
 			) : (
 				<form className="kp-ban__form" onSubmit={onBan}>
-					<label className="kp-ban__field">
-						gerekçe
-						<textarea
-							className="kp-ban__reason"
-							value={reason}
-							onChange={(e) => setReason(e.target.value)}
-							required
-							data-testid="ban-reason"
-						/>
-					</label>
-					<label className="kp-ban__field">
-						süre bitişi (isteğe bağlı)
-						<input
-							type="datetime-local"
-							className="kp-ban__expiry-input"
-							value={expiry}
-							onChange={(e) => setExpiry(e.target.value)}
-							data-testid="ban-expiry-input"
-						/>
-					</label>
+					<Textarea
+						className="kp-ban__field kp-ban__reason"
+						label="gerekçe"
+						value={reason}
+						onChange={(e) => setReason(e.target.value)}
+						required
+						data-testid="ban-reason"
+						resize="vertical"
+					/>
+					<Input
+						type="datetime-local"
+						className="kp-ban__field kp-ban__expiry-input"
+						label="süre bitişi (isteğe bağlı)"
+						value={expiry}
+						onChange={(e) => setExpiry(e.target.value)}
+						data-testid="ban-expiry-input"
+					/>
 					<Button variant="danger" size="sm" type="submit" disabled={busy} data-testid="ban-button">
 						{busy ? "yasaklanıyor…" : "yasakla"}
 					</Button>
@@ -142,9 +146,14 @@ export function BanControls({userId}: {readonly userId: string}) {
 			)}
 
 			{message ? (
-				<p className="kp-ban__message" role="status" aria-live="polite" data-testid="ban-message">
+				<Alert
+					variant="secondary"
+					className="kp-alert--inline kp-ban__message"
+					aria-live="polite"
+					data-testid="ban-message"
+				>
 					{message}
-				</p>
+				</Alert>
 			) : null}
 		</section>
 	);

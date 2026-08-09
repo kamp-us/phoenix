@@ -18,7 +18,7 @@
 	background: var(--surface-raised);
 }
 
-.kp-email-delivery__field {
+.kp-email-delivery__field[data-scope="field"][data-part="root"] {
 	display: flex;
 	flex-direction: column;
 	gap: var(--s-1);
@@ -26,20 +26,21 @@
 	font: var(--t-body-sm);
 }
 
-.kp-email-delivery__user-input,
-.kp-email-delivery__reason {
+.kp-email-delivery__field[data-scope="field"] [data-part="control"] {
+	--manti-field-height: var(--tap-min);
 	min-height: var(--tap-min);
-	padding: var(--s-1) var(--s-2);
 	border: 1px solid var(--border-faint);
 	border-radius: var(--r-sm);
 	background: var(--surface);
 	color: var(--text-primary);
+}
+
+.kp-email-delivery__field[data-scope="field"] [data-part="input"] {
 	font: var(--t-body-sm);
 }
 
-.kp-email-delivery__reason {
+.kp-email-delivery__reason[data-scope="field"] {
 	min-width: 16rem;
-	resize: vertical;
 }
 
 .kp-email-delivery__table {

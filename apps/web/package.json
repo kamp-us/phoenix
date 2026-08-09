@@ -30,7 +30,6 @@
 	},
 	"dependencies": {
 		"@alchemy.run/better-auth": "catalog:",
-		"@base-ui/react": "catalog:",
 		"@better-auth/api-key": "catalog:",
 		"@better-auth/core": "catalog:",
 		"@effect/platform-bun": "catalog:",
@@ -45,6 +44,8 @@
 		"@kampus/composer": "workspace:*",
 		"@kampus/db-schema": "workspace:*",
 		"@kampus/fate-effect": "workspace:*",
+		"@manti-ui/react": "catalog:",
+		"@manti-ui/styles": "catalog:",
 		"@usirin/forge": "catalog:",
 		"alchemy": "catalog:",
 		"better-auth": "catalog:",

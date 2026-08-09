@@ -10,10 +10,13 @@
 	border-bottom: 1px solid var(--border);
 }
 
-.kp-profile-header__avatar {
+.kp-profile-header__avatar-wrap {
+	flex-shrink: 0;
+}
+
+.kp-profile-header__avatar[data-scope="avatar"][data-part="root"] {
 	width: 56px;
 	height: 56px;
-	flex-shrink: 0;
 	border-radius: var(--r-sm);
 	background: var(--surface);
 	color: var(--accent-11);
@@ -23,7 +26,7 @@
 	font: 600 22px var(--font-body);
 	overflow: hidden;
 }
-.kp-profile-header__avatar img {
+.kp-profile-header__avatar [data-part="image"] {
 	width: 100%;
 	height: 100%;
 	object-fit: cover;

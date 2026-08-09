@@ -1,7 +1,7 @@
 ---
 id: 0166
 title: "The canonical icon idiom — Lucide line-icons at native per-size stroke, monochrome role-token color, a drawn triangle vote glyph, and the function/affect/key-legend partition"
-status: proposed
+status: proposed; amended-in-part by [0240](0240-icon-dense-tier.md)
 date: 2026-07-06
 tags: [design, frontend, cohesiveness, icons, tokens, control-plane]
 ---

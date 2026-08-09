@@ -19,7 +19,9 @@
 import {Suspense, useState} from "react";
 import {useFateClient, useListView, useRequest, useView, type ViewRef, view} from "react-fate";
 import type {EmailDeliveryState, FailingAddress} from "../../../worker/features/fate/views";
+import {Alert} from "../../components/ui/Alert";
 import {Button} from "../../components/ui/Button";
+import {Input, Textarea} from "../../components/ui/Form";
 import {codeOf} from "../../fate/wire";
 import {FlagGate} from "../../flags/FlagGate";
 import {PHOENIX_EMAIL_DELIVERY_ADMIN} from "../../flags/keys";
@@ -76,14 +78,14 @@ function EmailDeliveryAdmin() {
 		>
 			<MarkForm onResult={(code, ok) => report("mark", code, ok)} />
 			{message ? (
-				<p
-					className="kp-email-delivery__message"
-					role="status"
+				<Alert
+					variant="secondary"
+					className="kp-alert--inline kp-email-delivery__message"
 					aria-live="polite"
 					data-testid="email-delivery-message"
 				>
 					{message}
-				</p>
+				</Alert>
 			) : null}
 			<Suspense fallback={<p className="kp-email-delivery__loading">yükleniyor…</p>}>
 				<FailingList key={reloadKey} onResult={(code, ok) => report("clear", code, ok)} />
@@ -126,26 +128,24 @@ function MarkForm({
 
 	return (
 		<form className="kp-email-delivery__form" onSubmit={onSubmit} aria-label="adres işaretle">
-			<label className="kp-email-delivery__field">
-				kullanıcı kimliği
-				<input
-					className="kp-email-delivery__user-input"
-					value={userId}
-					onChange={(e) => setUserId(e.target.value)}
-					required
-					data-testid="email-delivery-mark-user"
-				/>
-			</label>
-			<label className="kp-email-delivery__field">
-				gerekçe
-				<textarea
-					className="kp-email-delivery__reason"
-					value={reason}
-					onChange={(e) => setReason(e.target.value)}
-					required
-					data-testid="email-delivery-mark-reason"
-				/>
-			</label>
+			<Input
+				className="kp-email-delivery__field kp-email-delivery__user-input"
+				label="kullanıcı kimliği"
+				value={userId}
+				onChange={(e) => setUserId(e.target.value)}
+				required
+				fullWidth
+				data-testid="email-delivery-mark-user"
+			/>
+			<Textarea
+				className="kp-email-delivery__field kp-email-delivery__reason"
+				label="gerekçe"
+				value={reason}
+				onChange={(e) => setReason(e.target.value)}
+				required
+				resize="vertical"
+				data-testid="email-delivery-mark-reason"
+			/>
 			<Button
 				variant="danger"
 				size="sm"

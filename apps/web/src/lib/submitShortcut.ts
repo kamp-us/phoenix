@@ -1,6 +1,6 @@
 /**
  * The ⌘/Ctrl+Enter "gönder" shortcut every markdown composer advertises in its
- * footer hint. A `<textarea>` does not submit its form on ⌘/Ctrl+Enter natively,
+ * footer hint. A multiline text field does not submit its form on ⌘/Ctrl+Enter natively,
  * so the hint needs this handler to back it — keep the two together so the
  * affordance and its implementation can't drift apart again.
  */

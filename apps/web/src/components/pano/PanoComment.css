@@ -39,16 +39,6 @@
 	text-decoration: none;
 }
 
-.kp-comment__op {
-	padding: 1px 4px;
-	font: var(--t-micro);
-	font-weight: 700;
-	background: var(--accent-faint);
-	color: var(--accent);
-	border-radius: 2px;
-	text-transform: uppercase;
-}
-
 .kp-comment__upvote {
 	display: inline-flex;
 	align-items: center;

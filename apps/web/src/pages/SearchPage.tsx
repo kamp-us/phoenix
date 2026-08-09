@@ -13,6 +13,7 @@ import {useListView, useRequest} from "react-fate";
 import {useSearchParams} from "react-router";
 import {PanoPostCard, PanoPostCardView} from "../components/pano/PanoPostCard";
 import {TermRow, TermRowView} from "../components/sozluk/TermRow";
+import {Alert} from "../components/ui/Alert";
 import {Screen} from "../fate/Screen";
 import {LoadMoreButton} from "../fate/wire";
 import "./SearchPage.css";
@@ -41,9 +42,12 @@ export function SearchPage() {
 					<Screen
 						fallback={<p className="kp-search__rail">aranıyor…</p>}
 						error={({code}) => (
-							<p className="kp-search__rail kp-search__rail--error">
+							<Alert
+								variant="danger"
+								className="kp-alert--inline kp-search__rail kp-search__rail--error"
+							>
 								arama yapılamadı: {code.toLowerCase()}
-							</p>
+							</Alert>
 						)}
 					>
 						<SearchResults query={query} />

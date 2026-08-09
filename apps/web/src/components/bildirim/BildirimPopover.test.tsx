@@ -39,11 +39,11 @@ describe("BildirimPopover (#2787)", () => {
 		expect(screen.getByRole("status").textContent).toBe("3 okunmamış bildirim");
 	});
 
-	it("clicking the bell opens the popover with the reused list body", () => {
+	it("clicking the bell opens the popover with the reused list body", async () => {
 		renderPopover();
 		expect(screen.queryByTestId("topbar-bildirim-popover")).toBeNull();
 		fireEvent.click(screen.getByTestId("topbar-bildirim-badge"));
-		const popover = screen.getByTestId("topbar-bildirim-popover");
+		const popover = await screen.findByTestId("topbar-bildirim-popover");
 		expect(popover).toBeTruthy();
 		// The popover reuses BildirimList (stubbed here) as its body, under a "bildirimler" title.
 		expect(screen.getByTestId("bildirim-list-stub")).toBeTruthy();
@@ -51,10 +51,10 @@ describe("BildirimPopover (#2787)", () => {
 		expect(screen.getByTestId("topbar-bildirim-badge").getAttribute("aria-expanded")).toBe("true");
 	});
 
-	it("the footer links to the full /bildirimler center page (tümünü gör)", () => {
+	it("the footer links to the full /bildirimler center page (tümünü gör)", async () => {
 		renderPopover();
 		fireEvent.click(screen.getByTestId("topbar-bildirim-badge"));
-		const seeAll = screen.getByTestId("topbar-bildirim-see-all");
+		const seeAll = await screen.findByTestId("topbar-bildirim-see-all");
 		expect(seeAll.textContent).toBe("tümünü gör");
 		expect(seeAll.getAttribute("href")).toBe("/bildirimler");
 	});
@@ -62,8 +62,9 @@ describe("BildirimPopover (#2787)", () => {
 	it("closes on Escape", async () => {
 		renderPopover();
 		fireEvent.click(screen.getByTestId("topbar-bildirim-badge"));
-		const popover = screen.getByTestId("topbar-bildirim-popover");
-		fireEvent.keyDown(popover, {key: "Escape"});
+		await screen.findByTestId("topbar-bildirim-popover");
+		// Zag'ın dismissable-layer dinleyicisi Escape'i belge seviyesinde yakalar.
+		fireEvent.keyDown(document, {key: "Escape"});
 		await waitFor(() => expect(screen.queryByTestId("topbar-bildirim-popover")).toBeNull());
 	});
 

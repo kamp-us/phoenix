@@ -1,79 +1,61 @@
-/* Form — Base UI Form + Field primitives.
-   Provides label/control/error wiring + AA-correct aria-describedby out of the box. */
-
+/* Native form flow plus Phoenix visuals on Manti field anatomy. */
 .kp-form {
 	display: flex;
 	flex-direction: column;
 	gap: var(--s-3);
 }
 
-.kp-field {
-	display: flex;
-	flex-direction: column;
+[data-scope="field"][data-part="root"] {
 	gap: 4px;
 }
-
-.kp-field__label {
+[data-scope="field"][data-part="label"] {
 	font: var(--t-meta);
 	font-weight: 500;
 	color: var(--text-secondary);
 }
-
-.kp-field__hint {
+[data-scope="field"][data-part="hint"] {
 	font: var(--t-micro);
 	color: var(--text-faint);
 }
-
-.kp-field__error {
+[data-scope="field"][data-part="error"] {
 	font: var(--t-micro);
 	color: var(--danger);
 }
-
-.kp-input,
-.kp-textarea {
-	display: block;
-	width: 100%;
+[data-scope="field"][data-part="control"] {
+	--manti-field-padding-x: var(--s-2);
 	background: var(--surface-sunken);
-	color: var(--text-primary);
 	border: 1px solid var(--border-faint);
 	border-radius: var(--r-sm);
-	padding: 6px var(--s-2);
-	font: var(--t-body-sm);
-	outline: none;
-	transition:
-		border-color 80ms,
-		box-shadow 80ms;
+	color: var(--text-primary);
 }
-.kp-input:hover,
-.kp-textarea:hover {
+[data-scope="field"][data-part="control"]:hover {
 	border-color: var(--border);
 }
-.kp-input:focus,
-.kp-textarea:focus {
+/* Border tint only — the keyboard focus ring itself is the shared layer's, painted
+   on this same [data-part="control"] from global.css. */
+[data-scope="field"][data-part="root"]:focus-within [data-part="control"] {
 	border-color: var(--accent-9);
-	box-shadow: 0 0 0 1px var(--accent-9);
 }
-.kp-input[data-invalid],
-.kp-textarea[data-invalid] {
+[data-scope="field"][data-part="root"][data-invalid="true"] [data-part="control"] {
 	border-color: var(--danger);
 }
-.kp-input[data-invalid]:focus,
-.kp-textarea[data-invalid]:focus {
-	box-shadow: 0 0 0 1px var(--danger);
+[data-scope="field"][data-part="input"] {
+	font: var(--t-body-sm);
+	color: var(--text-primary);
 }
-.kp-input::placeholder,
-.kp-textarea::placeholder {
+[data-scope="field"][data-part="input"]::placeholder {
 	color: var(--text-faint);
 }
-
-.kp-textarea {
-	resize: vertical;
+.kp-field--semantic-required [data-part="required"] {
+	display: none;
+}
+[data-scope="field"][data-part="input"]:is(textarea) {
 	min-height: 80px;
 	font-family: var(--font-body);
 	line-height: 1.5;
 }
-
-.kp-textarea--mono {
+.kp-textarea--mono [data-part="input"],
+[data-scope="field"].kp-textarea--mono [data-part="input"] {
 	font-family: var(--font-mono);
 	font-size: 12px;
 }

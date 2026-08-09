@@ -2,32 +2,37 @@ import * as React from "react";
 import {ToggleGroup} from "../../../components/ui/ToggleGroup";
 import {defineExhibit} from "../exhibit";
 
-function ToggleGroupDemo({variant}: {variant?: "pill" | "segmented" | "square" | "swatch"}) {
+function ToggleGroupDemo({variant}: {variant?: "primary" | "secondary" | "tertiary"}) {
 	const [value, setValue] = React.useState<string[]>(["orta"]);
 	return (
-		<ToggleGroup.Root variant={variant} value={value} onValueChange={setValue}>
-			<ToggleGroup.Item value="sol">Sol</ToggleGroup.Item>
-			<ToggleGroup.Item value="orta">Orta</ToggleGroup.Item>
-			<ToggleGroup.Item value="sag">Sağ</ToggleGroup.Item>
-		</ToggleGroup.Root>
+		<ToggleGroup
+			variant={variant}
+			value={value}
+			onValueChange={setValue}
+			className="kp-toggle-group kp-toggle-group--segmented"
+			items={[
+				{value: "sol", label: "Sol"},
+				{value: "orta", label: "Orta"},
+				{value: "sag", label: "Sağ"},
+			]}
+		/>
 	);
 }
 
 export const toggleGroupExhibit = defineExhibit<React.ComponentProps<typeof ToggleGroupDemo>>({
 	id: "toggle-group",
 	title: "ToggleGroup",
-	summary: "A single-select toggle group with segment/pill/square variants — built on base-ui.",
+	summary: "Manti ToggleGroup with Phoenix's segmented token treatment.",
 	component: ToggleGroupDemo,
 	knobs: {
 		variant: {
 			kind: "enum",
 			label: "Appearance",
-			default: "segmented",
+			default: "primary",
 			options: [
-				{value: "pill", label: "Pill"},
-				{value: "segmented", label: "Segment"},
-				{value: "square", label: "Square"},
-				{value: "swatch", label: "Swatch"},
+				{value: "primary", label: "Primary"},
+				{value: "secondary", label: "Secondary"},
+				{value: "tertiary", label: "Tertiary"},
 			],
 		},
 	},

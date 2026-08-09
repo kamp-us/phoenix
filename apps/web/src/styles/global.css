@@ -38,8 +38,13 @@ button {
 	color: inherit;
 	background: none;
 	border: 0;
-	padding: 0;
 	cursor: pointer;
+}
+/* Keep the native reset away from every Manti anatomy button, not only the
+   Button component. ToggleGroup, Menu and other button-backed primitives own
+   their spacing through their own [data-scope][data-part] rules. */
+button:not([data-scope][data-part]) {
+	padding: 0;
 }
 
 input,
@@ -81,6 +86,22 @@ select {
 	--focus-ring-offset: 2px;
 }
 :where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+	outline: var(--focus-ring);
+	outline-offset: var(--focus-ring-offset);
+}
+
+/* Manti Field is a compound control, so the ring moves one level out rather than
+   disappearing: the inner input suppresses its own outline and the surrounding
+   [data-part="control"] paints the SAME shared token, so the field has exactly one
+   focus owner and it is still the ruled ring. Suppressing the inner outline without
+   the rule below would leave every Manti field with no keyboard affordance at all.
+   The reset is unlayered on purpose — it restates Manti's own layered input reset so
+   Phoenix's unlayered global rule cannot win the cascade and paint a double ring. */
+:where([data-scope="field"][data-part="input"]):focus-visible {
+	outline: none;
+	outline-offset: 0;
+}
+[data-scope="field"][data-part="root"]:has(:focus-visible) [data-part="control"] {
 	outline: var(--focus-ring);
 	outline-offset: var(--focus-ring-offset);
 }

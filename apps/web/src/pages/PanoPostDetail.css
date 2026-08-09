@@ -14,6 +14,11 @@
 	color: var(--accent);
 	text-decoration: none;
 }
+/* icon.css pins .kp-icon to --text-secondary, so without this the link's hover colour stops
+   at the label and the glyph stays grey. Same opt-in the topbar's divan link makes. */
+.kp-pano-postpage__back .kp-icon {
+	color: inherit;
+}
 
 .kp-pano-postpage__head {
 	display: grid;
@@ -29,6 +34,15 @@
 	margin: 0 0 4px;
 	letter-spacing: -0.005em;
 	color: var(--text-primary);
+}
+/* The incelemede badge trails the title inside the h1. It stays INLINE rather than making
+   the h1 a flex row, so a wrapping title carries it on the last line instead of parking it
+   beside the whole block; `middle` then centers the small cap against the big title's
+   x-height, where the default baseline alignment left it sitting low. The gap is scoped
+   here because the badge's other homes are MetaRows, which already space their children. */
+.kp-pano-postpage__title .kp-review-badge {
+	margin-inline-start: var(--s-2);
+	vertical-align: middle;
 }
 
 .kp-pano-postpage__url {
@@ -60,20 +74,24 @@
 	border: 1px solid var(--border);
 	border-radius: var(--r-sm);
 }
-.kp-pano-comment-composer__textarea {
+.kp-pano-comment-composer__textarea[data-scope="field"][data-part="root"] {
 	width: 100%;
-	min-height: 80px;
-	resize: vertical;
+}
+.kp-pano-comment-composer__textarea[data-scope="field"] [data-part="control"] {
+	width: 100%;
 	background: var(--surface);
 	border: 1px solid var(--border);
 	border-radius: var(--r-sm);
+	box-sizing: border-box;
+}
+.kp-pano-comment-composer__textarea[data-scope="field"] [data-part="input"] {
+	min-height: 80px;
 	padding: 6px 8px;
 	font: var(--t-mono);
 	color: var(--text-primary);
-	outline: none;
 	box-sizing: border-box;
 }
-.kp-pano-comment-composer__textarea:focus {
+.kp-pano-comment-composer__textarea[data-scope="field"]:focus-within [data-part="control"] {
 	border-color: var(--accent);
 }
 .kp-pano-comment-composer__foot {
@@ -100,29 +118,29 @@
 	flex-direction: column;
 	gap: var(--s-2);
 }
-.kp-pano-edit-post__title,
-.kp-pano-edit-post__body {
+.kp-pano-edit-post__title[data-scope="field"][data-part="root"],
+.kp-pano-edit-post__body[data-scope="field"][data-part="root"] {
 	width: 100%;
+}
+.kp-pano-edit-post__title[data-scope="field"] [data-part="control"],
+.kp-pano-edit-post__body[data-scope="field"] [data-part="control"] {
 	background: var(--surface);
 	border: 1px solid var(--border);
 	border-radius: var(--r-sm);
-	padding: 6px 8px;
 	color: var(--text-primary);
-	outline: none;
 	box-sizing: border-box;
 }
-.kp-pano-edit-post__title {
+.kp-pano-edit-post__title[data-scope="field"] [data-part="input"] {
 	font: var(--t-h-page);
 	font-weight: 600;
 	letter-spacing: -0.005em;
 }
-.kp-pano-edit-post__body {
+.kp-pano-edit-post__body[data-scope="field"] [data-part="input"] {
 	min-height: 120px;
-	resize: vertical;
 	font: var(--t-mono);
 }
-.kp-pano-edit-post__title:focus,
-.kp-pano-edit-post__body:focus {
+.kp-pano-edit-post__title[data-scope="field"]:focus-within [data-part="control"],
+.kp-pano-edit-post__body[data-scope="field"]:focus-within [data-part="control"] {
 	border-color: var(--accent);
 }
 

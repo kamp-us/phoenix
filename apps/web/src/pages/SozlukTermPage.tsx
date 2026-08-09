@@ -27,9 +27,11 @@ import {FirstContributionOnramp} from "../components/authorship/FirstContributio
 import {actorLabel} from "../components/moderation/actor-identity";
 import {DefinitionCard, DefinitionView} from "../components/sozluk/DefinitionCard";
 import {SozlukTermHeader, TermHeaderView} from "../components/sozluk/SozlukTermHeader";
-import {Skeleton} from "../components/ui/atoms";
+import {Alert} from "../components/ui/Alert";
+import {Kbd, Skeleton} from "../components/ui/atoms";
 import {Button} from "../components/ui/Button";
 import {DraftRestoreBanner} from "../components/ui/DraftRestoreBanner";
+import {Textarea} from "../components/ui/Form";
 import {Screen} from "../fate/Screen";
 import {useDraftSubmit} from "../fate/useDraftSubmit";
 import {useConfirmGone, useReadbackRefetch} from "../fate/useReadbackRefetch";
@@ -369,8 +371,6 @@ function Composer({
 		inFlight: isInFlight,
 		run,
 	} = useDraftSubmit({overrides: SOZLUK_OVERRIDES, redirectPath: () => `/sozluk/${slug}`});
-	const bodyRef = React.useRef<HTMLTextAreaElement>(null);
-
 	const draftValue = React.useMemo<DefinitionDraft>(() => ({body}), [body]);
 	const draft = useDraftAutosave({
 		route: `/sozluk/${slug}`,
@@ -475,9 +475,9 @@ function Composer({
 			{draft.offered ? (
 				<DraftRestoreBanner onRestore={restoreDraft} onDismiss={draft.dismiss} />
 			) : null}
-			<textarea
-				ref={bodyRef}
+			<Textarea
 				className="kp-sozluk-composer__textarea"
+				aria-label="tanım"
 				placeholder="markdown destekli. ```js ... ``` kod bloğu için. kişisel deneyim, örnek, hatıra; kuru sözlük tanımı zaten Wikipedia'da var."
 				value={body}
 				onChange={(e) => setBody(e.target.value)}
@@ -485,20 +485,25 @@ function Composer({
 				disabled={isInFlight}
 				data-testid="sozluk-composer-body"
 				maxLength={BODY_MAX + 100}
+				resize="vertical"
 			/>
 			{error ? (
-				<p className="kp-sozluk-composer__error" role="alert" data-testid="sozluk-composer-error">
+				<Alert
+					variant="danger"
+					className="kp-alert--inline kp-sozluk-composer__error"
+					data-testid="sozluk-composer-error"
+				>
 					{error}
-				</p>
+				</Alert>
 			) : null}
 			{tooLong ? (
-				<p className="kp-sozluk-composer__error" role="alert">
+				<Alert variant="danger" className="kp-alert--inline kp-sozluk-composer__error">
 					tanım en fazla {BODY_MAX} karakter olabilir ({body.length})
-				</p>
+				</Alert>
 			) : null}
 			<footer className="kp-sozluk-composer__foot">
 				<span className="kp-sozluk-composer__hint">
-					markdown · <kbd>⌘</kbd>+<kbd>↵</kbd> gönder
+					markdown · <Kbd>⌘</Kbd>+<Kbd>↵</Kbd> gönder
 				</span>
 				<span style={{display: "flex", gap: 6}}>
 					<Button

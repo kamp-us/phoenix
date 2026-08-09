@@ -53,27 +53,27 @@ function renderUnderUnmountingBoundary({withHoist}: {withHoist: boolean}) {
 }
 
 describe("SozlukSubnavCta — #3840 open-state survives an ancestor unmount", () => {
-	it("reproduces the #3600 artifact WITHOUT the hoist: an ancestor unmount vanishes the open dialog", () => {
+	it("reproduces the #3600 artifact WITHOUT the hoist: an ancestor unmount vanishes the open dialog", async () => {
 		const {remountSubtree} = renderUnderUnmountingBoundary({withHoist: false});
 		fireEvent.click(screen.getByRole("button", {name: /yeni tanım/i}));
-		expect(screen.getByLabelText("Terim")).toBeTruthy();
+		expect(await screen.findByLabelText(/Terim/)).toBeTruthy();
 
 		remountSubtree();
 
 		// The local `useState` was destroyed with the unmounted subtree — the dialog is gone,
 		// exactly the silent close #3600 pinned.
-		expect(screen.queryByLabelText("Terim")).toBeNull();
+		expect(screen.queryByLabelText(/Terim/)).toBeNull();
 	});
 
-	it("survives the same ancestor unmount WITH the hoist — the dialog stays open", () => {
+	it("survives the same ancestor unmount WITH the hoist — the dialog stays open", async () => {
 		const {remountSubtree} = renderUnderUnmountingBoundary({withHoist: true});
 		fireEvent.click(screen.getByRole("button", {name: /yeni tanım/i}));
-		expect(screen.getByLabelText("Terim")).toBeTruthy();
+		expect(await screen.findByLabelText(/Terim/)).toBeTruthy();
 
 		remountSubtree();
 
 		// `open` lives in the provider above the boundary, so the remounted CTA re-reads a
 		// surviving `true` — the dialog re-appears instead of vanishing.
-		expect(screen.getByLabelText("Terim")).toBeTruthy();
+		expect(await screen.findByLabelText(/Terim/)).toBeTruthy();
 	});
 });

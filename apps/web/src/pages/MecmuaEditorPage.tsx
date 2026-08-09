@@ -33,7 +33,9 @@ import {Link, useNavigate, useParams} from "react-router";
 import type {MecmuaPost} from "../../worker/features/fate/views";
 import {useSession} from "../auth/client";
 import {useMe} from "../auth/useMe";
+import {Alert} from "../components/ui/Alert";
 import {Button} from "../components/ui/Button";
+import {Input} from "../components/ui/Form";
 import {Screen} from "../fate/Screen";
 import {useDraftSubmit} from "../fate/useDraftSubmit";
 import {MECMUA_WRITE} from "../flags/keys";
@@ -132,9 +134,9 @@ function MecmuaDraftNotFound() {
 		<div className="kp-page">
 			<div className="kp-page__inner">
 				<div className="kp-mecmua-editor">
-					<p className="kp-mecmua-editor__notice" role="status">
+					<Alert variant="secondary" className="kp-alert--inline kp-mecmua-editor__notice">
 						taslak bulunamadı.
-					</p>
+					</Alert>
 					<Link to="/mecmua/yazilarim" className="kp-mecmua-editor__yazilarim-link">
 						yazılarıma dön
 					</Link>
@@ -230,20 +232,17 @@ function MecmuaEditor({initialTitle, initialBody}: {initialTitle: string; initia
 						</p>
 					</header>
 
-					<div className="kp-mecmua-editor__field">
-						<label className="kp-mecmua-editor__label" htmlFor="mecmua-title">
-							başlık
-						</label>
-						<input
-							id="mecmua-title"
-							className="kp-mecmua-editor__title-input"
-							data-testid="mecmua-editor-title"
-							type="text"
-							placeholder="yazının başlığı"
-							value={title}
-							onChange={(e) => setTitle(e.currentTarget.value)}
-						/>
-					</div>
+					<Input
+						id="mecmua-title"
+						className="kp-mecmua-editor__field kp-mecmua-editor__title-input"
+						data-testid="mecmua-editor-title"
+						type="text"
+						label="başlık"
+						placeholder="yazının başlığı"
+						value={title}
+						onChange={(e) => setTitle(e.currentTarget.value)}
+						fullWidth
+					/>
 
 					{/* The composer is a headless contenteditable region (no native label
 					    slot), so a fieldset/legend names the group around it. */}
@@ -253,23 +252,23 @@ function MecmuaEditor({initialTitle, initialBody}: {initialTitle: string; initia
 					</fieldset>
 
 					{error ? (
-						<p
-							className="kp-mecmua-editor__notice kp-mecmua-editor__notice--error"
-							role="alert"
+						<Alert
+							variant="danger"
+							className="kp-alert--inline kp-mecmua-editor__notice kp-mecmua-editor__notice--error"
 							data-testid="mecmua-editor-error"
 						>
 							{error}
-						</p>
+						</Alert>
 					) : null}
 
 					{notice ? (
-						<p
-							className="kp-mecmua-editor__notice"
-							role="status"
+						<Alert
+							variant="success"
+							className="kp-alert--inline kp-mecmua-editor__notice"
 							data-testid="mecmua-editor-notice"
 						>
 							{notice}
-						</p>
+						</Alert>
 					) : null}
 
 					<div className="kp-mecmua-editor__actions">

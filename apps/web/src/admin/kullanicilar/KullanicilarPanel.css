@@ -18,7 +18,7 @@
 	background: var(--surface-raised);
 }
 
-.kp-kullanicilar__field {
+.kp-kullanicilar__field[data-scope="field"][data-part="root"] {
 	display: flex;
 	flex-direction: column;
 	gap: var(--s-1);
@@ -26,14 +26,20 @@
 	font: var(--t-body-sm);
 }
 
-.kp-kullanicilar__search-input {
-	min-height: var(--tap-min);
+.kp-kullanicilar__search-input[data-scope="field"] {
 	min-width: 16rem;
-	padding: var(--s-1) var(--s-2);
+}
+
+.kp-kullanicilar__search-input[data-scope="field"] [data-part="control"] {
+	--manti-field-height: var(--tap-min);
+	min-height: var(--tap-min);
 	border: 1px solid var(--border-faint);
 	border-radius: var(--r-sm);
 	background: var(--surface);
 	color: var(--text-primary);
+}
+
+.kp-kullanicilar__search-input[data-scope="field"] [data-part="input"] {
 	font: var(--t-body-sm);
 }
 

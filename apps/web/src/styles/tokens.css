@@ -611,3 +611,100 @@
 	--comment-head-y: 12px;
 	--comment-foot-y: 14px;
 }
+
+/* ──────────── MANTI UI BRIDGE ────────────
+   Phoenix remains the visual source of truth. Manti consumes these aliases so
+   its behavior/renderers join the existing palette, density, typography,
+   elevation and motion systems instead of introducing a second design system.
+   Only Manti's documented semantic/scale/component tokens are overridden. */
+:root {
+	--manti-bg: var(--surface);
+	--manti-bg-subtle: var(--surface-sunken);
+	--manti-surface: var(--surface);
+	--manti-surface-raised: var(--surface-raised);
+	--manti-surface-sunken: var(--surface-sunken);
+	--manti-border: var(--border);
+	--manti-border-strong: var(--border-strong);
+	--manti-text: var(--text-primary);
+	--manti-text-muted: var(--text-secondary);
+	--manti-text-subtle: var(--text-muted);
+	--manti-text-on-accent: var(--accent-fg);
+	--manti-link: var(--link);
+	--manti-selection-bg: var(--accent-soft);
+	--manti-selection-text: var(--text-primary);
+	--manti-focus-ring: var(--accent);
+	--manti-focus-ring-width: 2px;
+	--manti-focus-ring-offset: 2px;
+
+	--manti-font-sans: var(--font-body);
+	--manti-font-mono: var(--font-mono);
+	--manti-text-xs: 11px;
+	--manti-text-sm: 13px;
+	--manti-text-base: 14px;
+	--manti-text-lg: 16px;
+	--manti-text-xl: 22px;
+	--manti-leading-tight: 1.25;
+	--manti-leading-snug: 1.35;
+	--manti-leading-normal: 1.5;
+
+	--manti-radius-xs: var(--r-sm);
+	--manti-radius-sm: var(--r-sm);
+	--manti-radius-md: var(--r-md);
+	--manti-radius-lg: var(--r-lg);
+	--manti-radius-xl: var(--r-lg);
+	--manti-radius-2xl: var(--r-lg);
+	--manti-radius-full: var(--r-pill);
+	--manti-radius-pill: var(--r-pill);
+	--manti-radius-thumb: var(--r-pill);
+
+	--manti-space-1: var(--s-1);
+	--manti-space-2: var(--s-2);
+	--manti-space-3: var(--s-3);
+	--manti-space-4: var(--s-4);
+	--manti-space-5: var(--s-5);
+	--manti-space-6: var(--s-6);
+	--manti-space-8: var(--s-8);
+	--manti-space-10: calc(var(--s-8) + var(--s-2));
+	--manti-space-12: calc(var(--s-8) + var(--s-4));
+	--manti-space-16: calc(var(--s-8) * 2);
+
+	--manti-control-height-sm: var(--tap-min);
+	--manti-control-height-md: var(--tap-min);
+	--manti-control-height-lg: 44px;
+	--manti-duration-fast: var(--motion-fast);
+	--manti-duration-base: var(--motion-base);
+	--manti-duration-slow: var(--motion-slow);
+	--manti-ease-smooth: var(--ease-emphasized);
+	--manti-ease-soft: var(--ease-standard);
+	--manti-overlay: var(--black-a40);
+
+	/* Component-level geometry preserves Phoenix's deliberately dense controls. */
+	--manti-button-radius: var(--r-sm);
+	--manti-card-radius: var(--r-md);
+	--manti-dialog-radius: var(--r-lg);
+	--manti-dialog-max-width: 425px;
+	--manti-menu-min-width: 160px;
+	--manti-tooltip-max-width: 280px;
+	--manti-popover-max-width: 390px;
+}
+
+/* Manti's semantic variant API stays intact while Phoenix's currently selected
+   accent theme supplies the actual primary paint. */
+[data-variant="primary"] {
+	--variant-solid: var(--accent);
+	--variant-solid-hover: color-mix(in oklab, var(--accent) 90%, white);
+	--variant-solid-active: color-mix(in oklab, var(--accent) 82%, black);
+	--variant-on-solid: var(--accent-fg);
+	--variant-soft-bg: var(--accent-faint);
+	--variant-soft-bg-hover: var(--accent-soft);
+	/* Manti 0.9.0 added the -active step to the soft tier. Unset, the pressed state falls
+	   back to Manti's OWN orange while -bg and -hover are already phoenix's accent — a
+	   half-themed control. One step past --accent-soft toward the solid, at the same 82%
+	   ratio --variant-solid-active uses. (--variant-fill/-fill-strong need no entry: Manti
+	   derives both off --variant-soft-bg, so they follow these for free.) */
+	--variant-soft-bg-active: color-mix(in oklab, var(--accent-soft) 82%, var(--accent));
+	--variant-soft-text: var(--link);
+	--variant-border: var(--accent-soft);
+	--variant-text: var(--link);
+	--variant-ring: var(--accent);
+}

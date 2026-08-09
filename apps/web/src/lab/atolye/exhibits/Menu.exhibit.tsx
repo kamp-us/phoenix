@@ -4,52 +4,42 @@ import {Menu} from "../../../components/ui/Menu";
 import {defineExhibit} from "../exhibit";
 
 function MenuDemo({
-	side,
-	align,
+	placement,
 	defaultOpen,
 }: {
-	side?: "top" | "right" | "bottom" | "left";
-	align?: "start" | "center" | "end";
+	placement?: "top-start" | "right-start" | "bottom-start" | "bottom-end";
 	defaultOpen?: boolean;
 }) {
 	return (
-		<Menu.Root defaultOpen={defaultOpen}>
-			<Menu.Trigger render={<Button variant="secondary">Menü</Button>} />
-			<Menu.Popup side={side} align={align}>
-				<Menu.Item>Profil</Menu.Item>
-				<Menu.Item shortcut="⌘K">Ara</Menu.Item>
-				<Menu.Separator />
-				<Menu.Item danger>Sil</Menu.Item>
-			</Menu.Popup>
-		</Menu.Root>
+		<Menu
+			defaultOpen={defaultOpen}
+			placement={placement}
+			trigger={<Button variant="secondary">Menü</Button>}
+			items={[
+				{value: "profile", label: "Profil"},
+				{value: "search", label: "Ara", shortcut: "⌘K"},
+				{type: "separator"},
+				{value: "delete", label: <span className="kp-menu-danger">Sil</span>},
+			]}
+		/>
 	);
 }
 
 export const menuExhibit = defineExhibit<React.ComponentProps<typeof MenuDemo>>({
 	id: "menu",
 	title: "Menu",
-	summary: "A dropdown menu with a shortcut, separator, and danger item — built on base-ui Menu.",
+	summary: "Manti Menu ile kısayol, ayırıcı ve Phoenix tehlike görünümü.",
 	component: MenuDemo,
 	knobs: {
-		side: {
+		placement: {
 			kind: "enum",
-			label: "Side",
-			default: "bottom",
+			label: "Placement",
+			default: "bottom-start",
 			options: [
-				{value: "top", label: "Top"},
-				{value: "right", label: "Right"},
-				{value: "bottom", label: "Bottom"},
-				{value: "left", label: "Left"},
-			],
-		},
-		align: {
-			kind: "enum",
-			label: "Align",
-			default: "start",
-			options: [
-				{value: "start", label: "Start"},
-				{value: "center", label: "Center"},
-				{value: "end", label: "End"},
+				{value: "top-start", label: "Top start"},
+				{value: "right-start", label: "Right start"},
+				{value: "bottom-start", label: "Bottom start"},
+				{value: "bottom-end", label: "Bottom end"},
 			],
 		},
 		defaultOpen: {kind: "boolean", label: "Start open", default: false},

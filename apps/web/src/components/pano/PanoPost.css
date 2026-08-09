@@ -35,6 +35,9 @@
 }
 
 .kp-pano-post__vote-btn {
+	--manti-button-height: 24px;
+	--manti-button-padding-x: 0px;
+	min-width: 24px;
 	width: 24px;
 	height: 24px; /* WCAG 2.5.8 24px min target (#2166) */
 	display: inline-flex;
@@ -54,6 +57,10 @@
 .kp-pano-post__vote-btn:hover {
 	color: var(--accent);
 	background: var(--accent-faint);
+}
+.kp-pano-post__vote-btn:disabled {
+	cursor: not-allowed;
+	opacity: 0.5;
 }
 .kp-pano-post__vote-btn[aria-pressed="true"] {
 	color: var(--accent);
@@ -150,6 +157,9 @@ a.kp-pano-post__site:hover {
 .kp-pano-post__save[aria-pressed="true"] {
 	color: var(--accent);
 	font-weight: 600;
+}
+.kp-pano-post__save:hover {
+	text-decoration: none;
 }
 /* Ring from the shared focus layer (global.css, #2169); tighter offset + rounded
    corner hug the compact save control. */

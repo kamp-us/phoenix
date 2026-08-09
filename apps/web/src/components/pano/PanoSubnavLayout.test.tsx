@@ -110,7 +110,7 @@ describe("PanoSubnavLayout — pano product Subnav zone through SubnavShell (#29
 		signedIn = true;
 		renderZone();
 		const cta = screen.getByRole("button", {name: "yeni gönderi"});
-		expect(cta.className).toContain("kp-btn--primary");
+		expect(cta.getAttribute("data-variant")).toBe("primary");
 	});
 
 	it("keeps the Subnav zone mounted across a within-pano navigation — no remount", () => {

@@ -35,10 +35,10 @@ test.describe("Topbar (signed out)", () => {
 		const picker = page.getByTestId("topbar-theme-picker");
 		await expect(picker).toBeVisible();
 
-		await picker.getByRole("button", {name: /^koyu$/i}).click();
+		await picker.getByRole("radio", {name: /^koyu$/i}).click();
 		await expect(html).toHaveAttribute("data-theme", "dark");
 
-		await picker.getByRole("button", {name: /^açık$/i}).click();
+		await picker.getByRole("radio", {name: /^açık$/i}).click();
 		await expect(html).toHaveAttribute("data-theme", "light");
 	});
 

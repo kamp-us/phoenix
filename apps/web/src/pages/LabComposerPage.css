@@ -47,25 +47,20 @@
 	padding: var(--s-4) 0 var(--s-3);
 }
 
-.kp-lab__label {
-	font: var(--t-meta);
-	font-weight: 600;
-	color: var(--text-secondary);
-}
-
-.kp-lab__textarea {
-	font: var(--t-mono);
-	color: var(--text-primary);
+.kp-lab__textarea[data-scope="field"] [data-part="control"] {
 	background: var(--surface-sunken);
 	border: 1px solid var(--border);
 	border-radius: var(--r-lg);
+}
+.kp-lab__textarea[data-scope="field"] [data-part="input"] {
+	font: var(--t-mono);
+	color: var(--text-primary);
 	padding: var(--s-2);
-	resize: vertical;
 	width: 100%;
 	box-sizing: border-box;
 }
 
-.kp-lab__btn {
+.kp-lab__btn[data-scope="button"][data-part="root"] {
 	align-self: flex-start;
 	font: var(--t-meta);
 	font-weight: 600;

@@ -14,6 +14,7 @@ import {useFateClient, view} from "react-fate";
 import type {AccountDeletionReceipt} from "../../../worker/features/fate/views";
 import {Button} from "../ui/Button";
 import {Dialog} from "../ui/Dialog";
+import {Input} from "../ui/Form";
 
 // Mirrors the worker's `ACCOUNT_DELETE_CONFIRMATION` (`Schema.Literal`); the user
 // types it verbatim and the mutation input re-validates it server-side.
@@ -71,53 +72,50 @@ export function DeleteAccountDialog({
 	}
 
 	return (
-		<Dialog.Root
+		<Dialog
 			open={open}
+			role="alertdialog"
+			title="hesabı kaldır"
+			description="bu işlem geri alınamaz. devam etmek için aşağıdaki ifadeyi yaz."
 			onOpenChange={(v) => {
 				if (!v) reset();
 				onOpenChange(v);
 			}}
-		>
-			<Dialog.Popup>
-				<Dialog.Head
-					title="hesabı kaldır"
-					description="bu işlem geri alınamaz. devam etmek için aşağıdaki ifadeyi yaz."
-				/>
-				<Dialog.Body>
-					<p className="kp-profile__confirm-phrase">
-						<code>{CONFIRMATION_PHRASE}</code>
-					</p>
-					<input
-						data-testid="delete-account-confirm-input"
-						className="kp-profile__confirm-input"
-						value={typed}
-						autoComplete="off"
-						aria-label="onay ifadesi"
-						placeholder={CONFIRMATION_PHRASE}
-						onChange={(e) => {
-							setTyped(e.currentTarget.value);
-							setError(null);
-						}}
-						disabled={pending}
-					/>
-					{error ? (
-						<p className="kp-profile__error" role="alert">
-							{error}
-						</p>
-					) : null}
-				</Dialog.Body>
-				<Dialog.Foot>
-					<Dialog.Close render={<Button variant="tertiary">vazgeç</Button>} />
+			footer={({close}) => (
+				<>
+					<Button variant="tertiary" onClick={close}>
+						vazgeç
+					</Button>
 					<Button
 						variant="danger"
 						data-testid="delete-account-confirm-btn"
 						disabled={!matches || pending}
+						loading={pending}
 						onClick={onConfirm}
 					>
 						{pending ? "kaldırılıyor…" : "hesabı kalıcı olarak kaldır"}
 					</Button>
-				</Dialog.Foot>
-			</Dialog.Popup>
-		</Dialog.Root>
+				</>
+			)}
+		>
+			<p className="kp-profile__confirm-phrase">
+				<code>{CONFIRMATION_PHRASE}</code>
+			</p>
+			<Input
+				data-testid="delete-account-confirm-input"
+				className="kp-profile__confirm-input"
+				label={<span className="kp-visually-hidden">onay ifadesi</span>}
+				value={typed}
+				autoComplete="off"
+				placeholder={CONFIRMATION_PHRASE}
+				onChange={(e) => {
+					setTyped(e.currentTarget.value);
+					setError(null);
+				}}
+				disabled={pending}
+				fullWidth
+				error={error}
+			/>
+		</Dialog>
 	);
 }

@@ -3,6 +3,7 @@
 // ever has it `true` for the author themselves — this is the shared render for the
 // post-detail + definition surfaces (the profile katkıların list has its own #1291
 // badge). State is carried by the word, not color alone (the AA-contrast tokens).
+import {Badge} from "./Badge";
 import "./ReviewBadge.css";
 
 /**
@@ -15,8 +16,8 @@ import "./ReviewBadge.css";
  */
 export function ReviewBadge() {
 	return (
-		<span className="kp-review-badge" data-testid="incelemede-badge">
+		<Badge variant="info" className="kp-review-badge" data-testid="incelemede-badge">
 			incelemede
-		</span>
+		</Badge>
 	);
 }

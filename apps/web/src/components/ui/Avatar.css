@@ -1,34 +1,28 @@
-/* Avatar — Base UI primitive wrapper. */
-
-.kp-avatar {
-	display: inline-grid;
-	place-items: center;
-	width: var(--avatar-size, 22px);
-	height: var(--avatar-size, 22px);
-	border-radius: var(--r-sm);
+/* Phoenix identity geometry over Manti Avatar's public anatomy. */
+.kp-avatar[data-scope="avatar"][data-part="root"] {
+	--manti-avatar-size: 22px;
+	--manti-avatar-radius: var(--r-sm);
 	background: var(--surface-raised);
+	border: 0;
 	color: var(--text-secondary);
 	font: var(--t-micro);
 	font-weight: 600;
 	font-family: var(--font-body);
 	letter-spacing: 0.02em;
-	overflow: hidden;
-	flex-shrink: 0;
-	user-select: none;
 }
 
-.kp-avatar__image {
+.kp-avatar[data-size="md"] {
+	--manti-avatar-size: 28px;
+}
+.kp-avatar[data-size="lg"] {
+	--manti-avatar-size: 36px;
+}
+.kp-avatar[data-size="xl"] {
+	--manti-avatar-size: 56px;
+}
+
+.kp-avatar [data-part="image"] {
 	width: 100%;
 	height: 100%;
 	object-fit: cover;
-}
-
-.kp-avatar--md {
-	--avatar-size: 28px;
-}
-.kp-avatar--lg {
-	--avatar-size: 36px;
-}
-.kp-avatar--xl {
-	--avatar-size: 56px;
 }

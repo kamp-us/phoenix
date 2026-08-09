@@ -1,0 +1,97 @@
+/* The topbar account popover (see UserMenu.tsx for why this is a Popover and not
+   a Menu). Role tokens only, no accent fill — the account affordance is not the
+   promoted action (accent-scarcity law, design-manifest §Nav IA). Focus is the
+   shared spacer ring from global.css, never a per-component outline. Kept in its
+   own scoped file so the panel styling is disjoint from the shared topbar sheet,
+   the same split BildirimPopover.css makes. */
+
+.kp-user-menu__popup {
+	display: flex;
+	flex-direction: column;
+	/* The dropdown floor the Menu this replaces carried; past it the tema row's
+	   segmented control is what sets the panel's real width. */
+	min-width: var(--manti-menu-min-width);
+	max-width: calc(100vw - var(--s-4));
+	padding: var(--s-1) 0;
+	gap: 0;
+	background: var(--surface-raised);
+	border: 1px solid var(--border);
+	border-radius: var(--r-md);
+	box-shadow: var(--shadow-dropdown);
+	backdrop-filter: none;
+}
+
+.kp-user-menu__nav {
+	display: flex;
+	flex-direction: column;
+}
+
+/* Rows are links (nav) or the Button primitive (çıkış) — flatten both to one shared row
+   box so the two element types are visually indistinguishable. `min-height: --tap-min`
+   holds the 36px floor (design-manifest Pillar 4) without inflating the label.
+   `justify-content` / `min-width` are here for the Button: Manti's own anatomy centers a
+   label in a --tap-min-wide box, and unlayered rules only outrank a layered one for the
+   properties they actually declare, so a row that wants left-aligned text must say so. */
+.kp-user-menu__item {
+	display: flex;
+	align-items: center;
+	justify-content: flex-start;
+	min-height: var(--tap-min);
+	min-width: 0;
+	padding: 0 var(--s-3);
+	border: 0;
+	border-radius: 0;
+	background: none;
+	font: var(--t-body-sm);
+	line-height: 1;
+	color: var(--text-primary);
+	text-align: left;
+	text-decoration: none;
+	cursor: pointer;
+}
+/* 0-4-0 is what this costs, and the reason is the çıkış row: it is a tertiary Button, and
+   `.kp-btn:where([data-variant="tertiary"]):hover:not(:disabled)` is 0-3-0 — it outranks a
+   bare `.kp-user-menu__item:hover` and paints --surface-raised, which is this panel's OWN
+   ground, so the row read as having no hover at all while its link siblings lit up. The
+   rows must share one hover, so it is declared above the variant's weight.
+   `text-decoration` is here because global.css underlines every `a:hover`, and a full-bleed
+   row is not body prose — the hover background already carries the affordance. */
+.kp-user-menu__popup .kp-user-menu__item:hover:not(:disabled) {
+	background: var(--accent-faint);
+	color: var(--text-primary);
+	text-decoration: none;
+}
+
+/* Only the width differs from a link row: a Button is inline-sized, and the row's hover
+   has to span the full panel like its siblings'. (The padding needed restating here while
+   this was a bare <button>, which global.css strips to `padding: 0`; going through the
+   Button primitive puts it outside that reset's `:not([data-scope][data-part])`.) */
+.kp-user-menu__item--action {
+	width: 100%;
+}
+
+/* The tema row: label left, segmented control right — a labeled settings row,
+   which is what a three-way choice is. The picker is the neutral `segmented`
+   ToggleGroup, so it carries no accent fill (#2614 stays satisfied).
+   Same --tap-min row box as its link siblings, so the panel keeps ONE rhythm: the
+   picker sizes itself below that (ThemeChoicePicker.css) and centers inside, rather
+   than pushing this row taller than every other one. */
+.kp-user-menu__theme-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--s-3);
+	min-height: var(--tap-min);
+	padding: 0 var(--s-3);
+}
+.kp-user-menu__theme-label {
+	font: var(--t-body-sm);
+	color: var(--text-secondary);
+}
+
+.kp-user-menu__sep {
+	height: 1px;
+	margin: var(--s-1) 0;
+	border: 0;
+	background: var(--border-faint);
+}

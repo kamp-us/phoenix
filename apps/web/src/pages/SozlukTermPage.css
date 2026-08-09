@@ -61,9 +61,19 @@
    cohesiveness; #2166). */
 .kp-sozluk-definition--top {
 	background: var(--surface-raised);
-	border-left: 2px solid var(--accent);
+	/* The marker is an INSET SHADOW, not a border-left. A one-sided border does not follow
+	   border-radius — across each rounded corner it tapers from 2px to the 0-width top/bottom
+	   border, so the bar overhangs the card's curve at both ends. An inset shadow is clipped
+	   by the radius, so the marker starts and stops exactly where the card does. The extra
+	   padding-left absorbs the 2px the border used to contribute, so no content shifts. */
+	box-shadow: inset 2px 0 0 0 var(--accent);
 	padding: var(--s-3);
-	margin: 0 -8px;
+	padding-left: calc(var(--s-3) + 2px);
+	/* No horizontal bleed. This used to be `margin: 0 -8px`, which pulled the one highlighted
+	   card 8px further left than every other card and than the header above it — the marker
+	   ended up outside the column's own edge and read as an overhang. The card now shares the
+	   column's edge; its padding indents the content instead, which is what a highlighted
+	   card's padding is for. */
 	border-radius: var(--r-sm);
 }
 .kp-sozluk-definition__vote {
@@ -72,6 +82,9 @@
 	align-items: center;
 }
 .kp-sozluk-definition__vote-btn {
+	--manti-button-height: var(--vote-w);
+	--manti-button-padding-x: 0px;
+	min-width: var(--vote-w);
 	width: 26px;
 	height: 26px;
 	display: inline-flex;
@@ -91,11 +104,16 @@
 .kp-sozluk-definition__vote-btn:hover {
 	color: var(--accent);
 	border-color: var(--accent);
+	background: var(--surface);
 }
 .kp-sozluk-definition__vote-btn[aria-pressed="true"] {
 	color: var(--accent-fg);
 	background: var(--accent);
 	border-color: var(--accent);
+}
+.kp-sozluk-definition__vote-btn:disabled {
+	cursor: not-allowed;
+	opacity: 0.5;
 }
 /* Ring from the shared focus layer (global.css, #2169); tighter offset hugs the
    compact vote control. */
@@ -164,21 +182,6 @@
 	color: var(--text-primary);
 }
 
-/* "more definitions" rule */
-.kp-sozluk-term__more {
-	font: var(--t-meta);
-	color: var(--text-muted);
-	text-align: center;
-	margin: var(--s-3) 0;
-}
-.kp-sozluk-term__more a {
-	color: var(--accent);
-	text-decoration: none;
-}
-.kp-sozluk-term__more a:hover {
-	text-decoration: underline;
-}
-
 /* Composer */
 .kp-sozluk-composer {
 	margin-top: var(--s-4);
@@ -198,20 +201,24 @@
 	font-weight: 600;
 	color: var(--text-primary);
 }
-.kp-sozluk-composer__textarea {
+.kp-sozluk-composer__textarea[data-scope="field"][data-part="root"] {
 	width: 100%;
-	min-height: 120px;
-	resize: vertical;
+}
+.kp-sozluk-composer__textarea[data-scope="field"] [data-part="control"] {
+	width: 100%;
 	background: var(--surface);
 	border: 1px solid var(--border);
 	border-radius: var(--r-sm);
+	box-sizing: border-box;
+}
+.kp-sozluk-composer__textarea[data-scope="field"] [data-part="input"] {
+	min-height: 120px;
 	padding: 8px;
 	font: var(--t-mono);
 	color: var(--text-primary);
-	outline: none;
 	box-sizing: border-box;
 }
-.kp-sozluk-composer__textarea:focus {
+.kp-sozluk-composer__textarea[data-scope="field"]:focus-within [data-part="control"] {
 	border-color: var(--accent);
 }
 .kp-sozluk-composer__foot {

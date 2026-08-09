@@ -101,6 +101,7 @@
 	border: 0;
 	cursor: pointer;
 	font: inherit;
+	line-height: 1;
 	padding: 0;
 }
 .kp-sozluk-alphabet__letter:hover {
@@ -115,6 +116,16 @@
 .kp-sozluk-alphabet__letter.is-empty {
 	color: var(--text-faint);
 	cursor: default;
+}
+
+/* The alphabet's standalone rhythm includes vertical padding + its own divider.
+   Inside the persistent Subnav those belong to the shell; remove the duplicate
+   vertical chrome and center the fixed-size letter cells in the bar. */
+.kp-subnav__filters .kp-sozluk-alphabet {
+	align-items: center;
+	height: 100%;
+	padding-block: 0;
+	border-bottom: 0;
 }
 
 /* Definition card */

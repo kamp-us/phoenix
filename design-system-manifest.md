@@ -207,10 +207,15 @@ migration of the live glyph surfaces to this idiom is a **separate downstream ch
 - **Stroke — native optical per-size.** Icons use Lucide's **native per-size** stroke scaling — the
   stroke thickens/thins with the glyph at each size. **Never** pin a constant `absoluteStrokeWidth`
   across sizes.
-- **Sizes — 16 / 20 / 24 on the 4px grid** (floor 16; below 16 muddies on dark). **16 (sm)** = dense
-  rows · inline · vote; **20 (md)** = standalone · nav · toolbar; **24 (lg)** = emphasis ·
-  empty-state (sparing). The **tap target is decoupled**: the glyph is centered in a **≥36px hit
-  area** (padding fills), honoring the 36px minimum **without inflating the glyph**.
+- **Sizes — 12 / 14 / 16 / 20 / 24** (ADR
+  [0240](https://github.com/kamp-us/phoenix/blob/main/.decisions/0240-icon-dense-tier.md) amends
+  0166 §4's 16/20/24). **16 (sm)** = dense rows · inline · vote; **20 (md)** = standalone · nav ·
+  toolbar; **24 (lg)** = emphasis · empty-state (sparing). **12 / 14 are the dense tier and are
+  legal ONLY beside a text label that already carries the meaning** (the topbar's 24px-tall search
+  box, an `--t-meta` back link) — an icon that is the only thing saying what it means, and any
+  icon-only control, stays at **≥16**, where its stroke is unambiguous on dark. The **tap target is
+  decoupled**: the glyph is centered in a **≥36px hit area** (padding fills), honoring the 36px
+  minimum **without inflating the glyph**.
 - **Color — monochrome, `stroke: currentColor`, role tokens only.** Default `--text-secondary`,
   hover `--text-primary`, active/on `--accent`, disabled `--text-muted`. The **one filled
   exception** is the active vote glyph (`--accent` fill). **No icon hardcodes a color.**

@@ -42,6 +42,10 @@ a.kp-tag:hover {
 }
 
 /* Kbd — keyboard hint */
+/* Phoenix keycap contract over Manti Kbd's public anatomy — the keycap look (mono face,
+   2px bottom rule) is phoenix's, so these unlayered declarations own the paint over
+   Manti's own layered `[data-scope=kbd]` defaults rather than driving its --manti-kbd-*
+   tokens. ADR 0166 §7: a key-legend is <kbd> typography, never an icon. */
 .kp-kbd {
 	display: inline-block;
 	padding: 0 4px;

@@ -10,6 +10,7 @@
 
 import {Composer, renderTestMarkdown, useComposerEditor} from "@kampus/composer";
 import {useState} from "react";
+import {Badge, Button, Textarea} from "../components/ui";
 import "./LabComposerPage.css";
 
 // The canonical render-test content is the shared `renderTestMarkdown` fixture the base
@@ -42,7 +43,10 @@ export function LabComposerPage() {
 			<div className="kp-lab__inner">
 				<header className="kp-lab__masthead">
 					<h1 className="kp-lab__title">
-						lab · composer <span className="kp-lab__badge">kalıcı</span>
+						lab · composer{" "}
+						<Badge variant="success" className="kp-lab__badge">
+							kalıcı
+						</Badge>
 					</h1>
 					<p className="kp-lab__lead">
 						tiptap StarterKit + native v3 markdown. paste markdown, düzenle, ve JSON → markdown
@@ -52,20 +56,26 @@ export function LabComposerPage() {
 				</header>
 
 				<section className="kp-lab__row" aria-label="markdown yükle">
-					<label className="kp-lab__label" htmlFor="lab-md-in">
-						markdown yapıştır
-					</label>
-					<textarea
+					<Textarea
 						id="lab-md-in"
 						className="kp-lab__textarea"
+						label="markdown yapıştır"
 						value={pasted}
 						onChange={(e) => setPasted(e.target.value)}
 						spellCheck={false}
 						rows={6}
+						resize="vertical"
+						fullWidth
 					/>
-					<button type="button" className="kp-lab__btn" onClick={loadPasted}>
+					<Button
+						type="button"
+						variant="primary"
+						size="sm"
+						className="kp-lab__btn"
+						onClick={loadPasted}
+					>
 						editöre yükle
-					</button>
+					</Button>
 				</section>
 
 				<div className="kp-lab__grid">

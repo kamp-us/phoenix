@@ -17,6 +17,7 @@ import {useListView, useRequest, useView, type ViewRef, view} from "react-fate";
 import {Link} from "react-router";
 import type {MecmuaPost} from "../../worker/features/fate/views";
 import {Icon} from "../components/Icon";
+import {Alert} from "../components/ui/Alert";
 import {Card} from "../components/ui/Card";
 import {EmptyState} from "../components/ui/EmptyState";
 import {MetaRow} from "../components/ui/MetaRow";
@@ -72,9 +73,9 @@ export function MecmuaFeedPage() {
 				<Screen
 					fallback={<p className="kp-mecmua-feed__status">yükleniyor…</p>}
 					error={({code}) => (
-						<p className="kp-mecmua-feed__status" role="alert">
+						<Alert variant="danger" className="kp-alert--inline kp-mecmua-feed__status">
 							akış yüklenemedi: {code.toLowerCase()}
-						</p>
+						</Alert>
 					)}
 				>
 					<MecmuaFeedList />
