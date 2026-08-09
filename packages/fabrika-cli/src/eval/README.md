@@ -162,7 +162,7 @@ spawns nothing itself, which is what makes it reproducible offline. That propert
 starts processes from `spawn-io.ts`. The reversal and its bounds are [ADR
 0236](../../../../.decisions/0236-eval-harness-gains-a-spawning-shell.md).
 
-`RunRow` is `{entry, grade, spend}` where `spend` is a **three-arm** `RunSpend` union — declared,
+`RunRow` is `{entry, grade, spend, provenance}` where `spend` is a **three-arm** `RunSpend` union — declared,
 with `classifyRunSpend` that produces it, in [`../spend/token-spend.ts`](../spend/token-spend.ts)
 next to the meter it wraps ([#5050](https://github.com/kamp-us/phoenix/issues/5050)):
 `{_tag: "Reconstructed", spend}` (the `token-spend` `StageSpend`), `{_tag: "NoBilledTurns"}`, or
@@ -194,6 +194,32 @@ Two modes, story-split:
 ```ts
 import {collectRuns, collectFromCapture, decodeCaptureManifest} from "./runner.ts";
 ```
+
+### What provenance a capture manifest carries ([#4996](https://github.com/kamp-us/phoenix/issues/4996))
+
+A ledger (`--out`) and a capture manifest (`--capture-out`) are not equally attributable, and the
+gap used to be silent. The ledger names the suite's skill, stage, model, CLI version and
+`recordedAt` on its header and repeats them on every spend row; the manifest is the file the
+scorecard and `collectFromCapture` actually read, and it survives on its own long after the ledger
+is gone. So each `CaptureRun` now carries the two facts a graded row cannot be re-derived without:
+
+| field | carried | why |
+|---|---|---|
+| `stage`, `inputRef` | yes | the join key onto the corpus's ground-truth label |
+| `model` | yes | the model the run was **pinned** to (`--model`) — the axis the scorecard compares along |
+| `arm` | yes | `with-skill` / `without-skill`, otherwise unrecoverable once both arms fold into one file |
+| `transcriptPath` | yes | but it points **outside the repo**, under the `claude` data root: machine-local and perishable |
+| skill name, CLI version, `recordedAt` | **no** | ledger-only; a manifest is a per-run artifact, not a suite record |
+
+`model` and `arm` are `null` on a manifest written before they existed, and an absent key decodes
+to `null` rather than failing — every already-written manifest stays readable. Read `null` as
+*unrecorded*, never as a claim about the run.
+
+The scorecard consumes this as a **preference, not a replacement**: `report.ts` buckets a row on
+the model the run recorded, and falls back to the model reconstructed from the transcript only
+when the row recorded none. That is what stops a row whose transcript is gone from bucketing as
+`(unknown)` — it degrades exactly to the old behaviour, and only for the rows that predate the
+field.
 
 Presenting the collected rows (the two-axis scorecard) is the report slice
 ([#1853](https://github.com/kamp-us/phoenix/issues/1853)), documented next.
@@ -269,7 +295,7 @@ total: a malformed body or a shape mismatch exits non-zero with a typed reason, 
     {
       "stage": "build",
       "surface": null,                        // "code" | "doc" on a `review` cell; null on every other stage
-      "model": "opus-4.8" | null,            // reconstructed from the transcript; null when unattributable
+      "model": "opus-4.8" | null,            // the run's recorded model, else the transcript's; null when neither
       "gradedRuns": 3,                        // pass-rate denominator (includes transcript-missing runs)
       "passedRuns": 2,
       "passRate": 0.6667,                     // the graded quality axis

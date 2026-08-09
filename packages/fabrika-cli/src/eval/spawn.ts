@@ -24,18 +24,18 @@
 import {Effect, Result} from "effect";
 import {classifyRunSpend, type RunSpend} from "../spend/token-spend.ts";
 import {STAGES} from "./corpus.ts";
-import type {CaptureManifest, CaptureRun, TranscriptLoader} from "./runner.ts";
+import {
+	type CaptureManifest,
+	type CaptureRun,
+	EVAL_ARMS,
+	type EvalArm,
+	type TranscriptLoader,
+} from "./runner.ts";
 import type {EvalTier} from "./skill-eval-set.ts";
 
-/**
- * The with/without methodology's arm variable is **skill availability**, and `--plugin-dir` is the
- * toggle: it loads the skill under test for that session only. `--disable-slash-commands` is NOT a
- * usable toggle — measured against a loaded plugin it short-circuits to `num_turns: 0`, `$0`,
- * `"Unknown command: …"` and never reaches the model (#4673 §4).
- */
-export const EVAL_ARMS = ["with-skill", "without-skill"] as const;
-
-export type EvalArm = (typeof EVAL_ARMS)[number];
+// The arm vocabulary lives with the `CaptureRun` schema that constrains it (`runner.ts`); it is
+// re-exported here because this is where its consumers have always imported it from.
+export {EVAL_ARMS, type EvalArm};
 
 /**
  * The minimum a case must offer to be run. Declared structurally rather than imported as
@@ -398,20 +398,28 @@ export const executeRuns = <RE, RL, RT>(args: {
  * eval set exercises one pipeline stage) and `inputRef` is the case id, which is what joins a run
  * to its corpus ground truth. A `Failed` run contributes nothing: an uncollected run cannot be
  * graded, and grading it would be the fabricated pass this whole guard exists to prevent.
+ *
+ * Each run also carries the model it was pinned to and the arm it belongs to, because the manifest
+ * is the artifact that outlives the ledger: a scorecard built from it alone would otherwise have to
+ * recover the model from a machine-local transcript, and would say `(unknown)` when that transcript
+ * is gone (#4996).
  */
-export const toCaptureManifest = (
-	stage: CaptureRun["stage"],
-	outcomes: ReadonlyArray<RunOutcome>,
-): CaptureManifest => ({
+export const toCaptureManifest = (args: {
+	readonly stage: CaptureRun["stage"];
+	readonly model: string;
+	readonly outcomes: ReadonlyArray<RunOutcome>;
+}): CaptureManifest => ({
 	version: 1,
-	runs: outcomes.flatMap((outcome) =>
+	runs: args.outcomes.flatMap((outcome) =>
 		outcome._tag === "Completed"
 			? [
 					{
-						stage,
+						stage: args.stage,
 						inputRef: outcome.caseId,
 						transcriptPath: outcome.transcriptPath,
 						artifact: outcome.artifact,
+						model: args.model,
+						arm: outcome.arm,
 					},
 				]
 			: [],
@@ -555,9 +563,9 @@ export const suiteExecuted = (summary: RunSummary): boolean =>
 
 /**
  * The runner's on-disk output: the ledger of every planned run's typed outcome, plus the capture
- * manifest folded out of the collectable ones. Both arms are in `runs`, each naming its own, so
- * with-skill and without-skill stay distinguishable after collection — `CaptureRun` has no arm
- * field and gains none.
+ * manifest folded out of the collectable ones. Both arms are in `runs`, each naming its own, and
+ * since #4996 each `CaptureRun` names its own arm and model too — so with-skill and without-skill
+ * stay distinguishable after collection even where only the manifest survives.
  */
 export interface RunLedger {
 	readonly version: 1;
@@ -588,7 +596,7 @@ export const buildLedger = (args: {
 	cliVersion: args.cliVersion,
 	recordedAt: args.recordedAt,
 	runs: args.outcomes,
-	capture: toCaptureManifest(args.stage, args.outcomes),
+	capture: toCaptureManifest(args),
 	spendRows: toSpendRows(args),
 	summary: summarizeRuns(args.outcomes),
 });

@@ -493,13 +493,17 @@ describe("toCaptureManifest — the existing collector consumes it unchanged", (
 				spend: classifyRunSpend(NO_BILLED_TRANSCRIPT),
 			}),
 		];
-		const capture = toCaptureManifest("triage", outcomes);
+		const capture = toCaptureManifest({stage: "triage", model: "sonnet", outcomes});
 		assert.strictEqual(capture.runs.length, 1);
 		assert.strictEqual(capture.runs[0]?.inputRef, 1);
 	});
 
 	it("what it writes round-trips through the existing decodeCaptureManifest", () => {
-		const capture = toCaptureManifest("triage", [completedRun()]);
+		const capture = toCaptureManifest({
+			stage: "triage",
+			model: "sonnet",
+			outcomes: [completedRun()],
+		});
 		const decoded = decodeCaptureManifest(captureToJson(capture));
 		assert.isTrue(Result.isSuccess(decoded));
 	});
@@ -528,12 +532,47 @@ describe("toCaptureManifest — the existing collector consumes it unchanged", (
 			collectFromCapture({
 				stage: "triage",
 				corpus,
-				capture: toCaptureManifest("triage", [outcome]),
+				capture: toCaptureManifest({stage: "triage", model: "sonnet", outcomes: [outcome]}),
 				loadTranscript: () => Effect.succeed(billedTranscript),
 			}),
 		);
 		assert.strictEqual(rows.length, 1);
 		assert.strictEqual(rows[0]?.grade.status, "pass");
+	});
+});
+
+/**
+ * #4996: the run's pinned provenance rides the manifest, which is the artifact that outlives the
+ * ledger. The fold is where the model and arm are still in hand, so it is where they are recorded.
+ */
+describe("toCaptureManifest — a manifest run names the model it was pinned to and its arm", () => {
+	it("stamps the suite's pinned model and each run's own arm onto its manifest row", () => {
+		const outcomes: ReadonlyArray<RunOutcome> = [
+			completedRun(),
+			completedRun({plan: plan({caseId: 2, arm: "without-skill"})}),
+		];
+		const capture = toCaptureManifest({stage: "triage", model: "opus-4.8", outcomes});
+		assert.deepStrictEqual(
+			capture.runs.map((run) => ({inputRef: run.inputRef, model: run.model, arm: run.arm})),
+			[
+				{inputRef: 1, model: "opus-4.8", arm: "with-skill"},
+				{inputRef: 2, model: "opus-4.8", arm: "without-skill"},
+			],
+		);
+	});
+
+	it("the provenance survives the JSON round-trip the collector reads", () => {
+		const capture = toCaptureManifest({
+			stage: "triage",
+			model: "opus-4.8",
+			outcomes: [completedRun({plan: plan({arm: "without-skill"})})],
+		});
+		const decoded = decodeCaptureManifest(captureToJson(capture));
+		assert.isTrue(Result.isSuccess(decoded));
+		if (Result.isSuccess(decoded)) {
+			assert.strictEqual(decoded.success.runs[0]?.model, "opus-4.8");
+			assert.strictEqual(decoded.success.runs[0]?.arm, "without-skill");
+		}
 	});
 });
 
