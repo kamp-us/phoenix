@@ -2,6 +2,8 @@
 
 **Skill:** [`build`](SKILL.md) · **Authoring brief:** [#4707](https://github.com/kamp-us/phoenix/issues/4707) · **Date:** 2026-08-08
 
+**Amended 2026-08-09** — the campaign-scope admission term ([ADR 0245](../../../../.decisions/0245-campaign-scope-fence-binds-both-seams.md), [#5013](https://github.com/kamp-us/phoenix/issues/5013)): a new [Scope admission](#scope-admission--the-campaign-fence-one-predicate-two-seams) section under shared conventions, two codes (`20`, `21`) in the shared exit matrix, and the consuming clauses in `build pick` and `build claim`.
+
 The verbs land in `packages/fabrika-cli/` under the `build` subcommand group, registered in
 `packages/fabrika-cli/src/registry.ts` like the shipped `adr`, `report`, `triage` and `wire`
 groups. The [CLI interface convention](../../docs/cli-interface-convention.md) governs every verb;
@@ -102,6 +104,92 @@ Every verb obeys these; stated once.
   always the verdict line — the ordering guarantee is the contract (see its block; v1 documented
   this idiom and then shipped it on the wrong stream).
 
+<a id="scope-admission--the-campaign-fence-one-predicate-two-seams"></a>
+### Scope admission — the campaign fence, one predicate, two seams
+
+**What it answers.** Whether an issue is inside the campaign in **exclusive focus**, and whether its
+audience is an agent. It is a different question from dependency eligibility (`build eligible` asks
+whether an issue's predecessors are done) and from priority (a home confers no band, ADR 0219): among
+admitted issues the ranking is unchanged, and a scope refusal never reads as blocked — `16` is
+`build eligible`'s alone, and no scope outcome borrows it. The ruling is
+[ADR 0245](../../../../.decisions/0245-campaign-scope-fence-binds-both-seams.md); this section is the
+term it asks this contract to carry.
+
+**One module, two call sites.** The predicate is computed in exactly one place —
+`packages/fabrika-cli/src/build/scope-admission.ts` — and **imported** by `build pick` and
+`build claim`. Neither seam re-derives it, and no verb exists whose only behaviour is relaying it
+(the wrapper shape ADR 0238 bans). A second implementation is banned outright: a board where the
+picker and the claim step disagree about what is in scope is worse than no fence at all.
+
+**Both seams, because the pool filter alone has a hole.** Filtering the offered pool is the browse
+path. An operator can hand a verb an issue number directly, and a directly-handed number passes
+through no pool — so the claim seam runs the same predicate before it writes any marker. Dropping
+either one is a hole: without the claim refusal the direct handoff is unfenced, without the pool
+filter every off-campaign issue is still offered and the refusal only arrives after an agent has
+chosen.
+
+**The inputs, and where each is read.**
+
+- **The declared focus** — the `## Focus` section of the repository's root `ROADMAP.md`. Its grammar
+  is canonical here, so an implementer needs no other document:
+
+  ```
+  | Milestone | Declared   |
+  |-----------|------------|
+  | #44       | 2026-08-09 |
+  ```
+
+  The table carries **at most one** data row. `Milestone` is `#<int>`, the milestone in exclusive
+  focus; `Declared` is the ISO `YYYY-MM-DD` date it was declared. A **missing section and a
+  present-but-empty table are the same well-formed default** — no focus is declared. More than one
+  data row, a milestone cell that is not `#<int>`, or a date that is not ISO is **malformed** (`4`),
+  and malformed is never read as "no focus".
+- **The issue's home** — the number of the open milestone the issue is homed in, as a string; or, for
+  an issue carrying a standing-lane label, that label.
+- **The issue's audience** — its `ready-for:` label.
+
+**The four outcomes — state words, never a boolean.** The predicate returns exactly one, and every
+refusal carries its reason:
+
+| Outcome | Trigger | Seat |
+|---|---|---|
+| `admitted` | a focus is declared and the issue's home is that milestone; or the issue carries a standing-lane label; or no focus is declared | kept in the pool · the claim proceeds |
+| `refused: out-of-focus` | a focus is declared, the issue's home is some other milestone or no milestone, and no standing-lane label exempts it | `20` |
+| `refused: audience-not-agent` | the issue carries a `ready-for:` label other than `ready-for:agent`, or carries none at all — absence is an unknown audience, never an agent audience (#4780) | `21` |
+| `unknown` | the declaration or the issue's home could not be read (`11`), or the declaration is malformed (`4`) | `11` / `4` |
+
+**The two refusals are separately named and separately seated**, never one collapsed "refused": they
+have different remedies (edit the focus row, or re-label the audience), and the per-issue exclusion
+reason `build pick` reports is derivable only if the outcome set keeps them apart.
+
+**The standing-lane exemption, named.** Exactly two labels — `wayfinder:backlog` and
+`axis:pipeline-hardening` (ADR 0208) — are **admitted on the scope axis whatever the declaration
+says**, and carrying no milestone is not an exclusion for them. A standing lane is milestone-less by
+design, so a fence keyed on milestone-presence alone would starve it. The exemption is the label
+match and nothing else: bare milestone-absence never confers it, and no third label inherits it
+without a founder ruling. The audience axis still applies to a standing-lane issue.
+
+**No declaration ⇒ inert and visible, never a refusal.** With no focus declared, every issue is
+admitted on the scope axis and **both seams say so on their scope line**: `focus: none declared —
+scope fence inert`. Declaring nothing is the off switch; a fence that refused on absence would wedge
+the pipeline the moment nobody had declared a focus, and an operator must be able to see from the
+run that the fence is off rather than infer it from an unshortened pool.
+
+**Unreadable ⇒ UNKNOWN, never admitted.** A declaration that cannot be read, and an issue whose home
+cannot be resolved, are `11`; a declaration that reads but does not parse is `4`. Neither ever
+resolves `admitted`, and neither borrows `20`/`21` — a fence that could not read its input has proven
+nothing, while `20` and `21` are proven refusals. Nor does a scope refusal borrow `11`. No new code
+is minted for "the read failed": the matrix already owns that meaning at `11`, and one meaning on two
+codes is the drift the matrix exists to prevent.
+
+**The override — explicit at the call, recorded on the issue.** `build claim --override "<reason>"`
+admits an issue the predicate refused, and writes the reason into the claim marker it posts, so the
+escape hatch costs one deliberate act and leaves a trace; a silent override is not one. **`build
+pick` takes no override**: the pool is the browse path, and an operator who means to work an
+out-of-focus issue names its number and overrides where the lane actually opens. **`build confirm`
+and `build release` never run the fence** — it decides what may *start*, so a focus row edited
+mid-lane must never strand a lane already running, and a release must never be gated on it.
+
 ### The shared exit matrix
 
 The one table every `build` verb allocates from — this matrix owns `code → meaning`; each verb's
@@ -139,6 +227,8 @@ range, exactly as `triage/codes.ts` itself states for `adr`.
 | `17` | proven: the push completed but the remote ref did not move |
 | `18` | proven: this tree's validation is red |
 | `19` | refused: the requested push is unsafe (detached HEAD, or a non-fast-forward without `--force-with-lease`) |
+| `20` | proven: scope-refused, out of focus — the issue's home is not the declared milestone and no standing-lane label exempts it |
+| `21` | proven: scope-refused, audience not agent — the issue's `ready-for:` label is not `ready-for:agent`, or is absent |
 | `127` | the verb never ran at all (unresolved binary — the shell's code, not this process's) |
 
 **`7` versus `11` is the split the whole group rests on** (the `wire` group's `ABSENT` vs
@@ -242,7 +332,8 @@ fabrika build pick [--repo <owner/name>] [--limit <n>]
 | `--repo` | string | no | the `origin` remote's `owner/name` | the repository whose issue board is read |
 | `--limit` | integer | no | `20` | maximum candidates to emit, after ranking |
 
-**Output** — machine. One JSON object: `{"pool": [...], "scanned": {"p0": n, "p1": n, "p2": n}}`.
+**Output** — machine. One JSON object:
+`{"pool": [...], "excluded": [...], "scanned": {"p0": n, "p1": n, "p2": n}, "focus": {...}}`.
 Each pool entry: `{"number", "title", "priority", "type", "home"}` — `home` is the open
 milestone's number as a string, or the standing-lane label (`wayfinder:backlog` /
 `axis:pipeline-hardening`) for a lane-exempt issue. Ranked `p0` → `p1` → `p2`, milestone order
@@ -250,12 +341,31 @@ within a bucket. **An empty pool is a fact and prints `{"pool": [], ...}` on exi
 0** with the scanned counts proving what was searched — never an empty stdout (interface
 convention rule 2).
 
+**Each scope-excluded issue is reported with its reason**, so a shortened or empty pool is auditable
+from the answer itself rather than only from the counts. Each `excluded` entry is
+`{"number", "home", "reason"}`, where `reason` is one of `out-of-focus` / `audience-not-agent` /
+`unreadable` — the outcome set of [scope admission](#scope-admission--the-campaign-fence-one-predicate-two-seams),
+one reason per outcome. The scanned counts alone cannot tell a working fence from a broken one; the
+reasons can. `focus` is `{"state": "declared", "milestone": "44"}` or `{"state": "none"}`, the same
+fact the stderr scope line carries.
+
 The filter, fail-closed on every axis:
 
 - `status:triaged` present, `status:` nothing-else;
-- **`ready-for:agent` present.** An issue with no `ready-for:` label is *excluded* — absence is an
-  unknown audience, never an agent audience (#4780). This is the negative test the brief's
-  acceptance criterion names.
+- **admitted by scope admission**, the shared predicate imported from
+  `packages/fabrika-cli/src/build/scope-admission.ts` — this verb re-derives nothing. It carries both
+  of that predicate's axes: the **scope axis** (an issue whose home is outside the declared focus is
+  excluded, with the two standing-lane labels — `wayfinder:backlog` and `axis:pipeline-hardening` —
+  admitted whatever the declaration says, because a standing lane is milestone-less by design and a
+  milestone-presence fence would starve it) and the **audience axis** (`ready-for:agent` present; an
+  issue with no `ready-for:` label is excluded, since absence is an unknown audience, never an agent
+  audience — #4780, the negative test the brief's acceptance criterion names). With **no focus
+  declared** the scope axis admits everything and the fence is reported inert on the scope line and
+  in `focus`; a **failed read of the declaration** makes the whole pool `11`, never an unfiltered
+  pool — an unfiltered pool on a failed read is the fail-open shape the fence exists to remove. An
+  individual issue whose home the listing named but the repository does not resolve is excluded with
+  reason `unreadable`, never admitted. This verb takes **no override**: overriding happens at
+  `build claim`, where the lane actually opens.
 - **unassigned.** Any assignee excludes — assignment is the one attribute that keeps a human's
   document out of this pool (#4764, #4693).
 - `type:` is one of `feature` / `chore` / `bug` / `investigation`. `type:decision` and `type:epic`
@@ -272,25 +382,42 @@ half). Here either every bucket was read in full or the answer is `11`.
 
 | Code | Trigger |
 |---|---|
-| `11` | any bucket read failed or came back truncated — the pool is UNKNOWN, never partial |
+| `4` | the `## Focus` declaration reads but does not parse — more than one row, a non-`#<int>` milestone, or a non-ISO date; the pool is UNKNOWN, never unfiltered |
+| `11` | any bucket read failed or came back truncated, or the focus declaration could not be read — the pool is UNKNOWN, never partial and never unfiltered |
 
-A malformed `--limit` is a plain usage error: `1`, per the reserved table.
+A malformed `--limit` is a plain usage error: `1`, per the reserved table. `20` and `21` are **not**
+reachable here: a scope refusal on the browse path is an exclusion with a reason, not the verb's
+verdict — the pool still answers on `0`. Those two codes are the claim seam's.
 
 **Errors**
 
 | Message (stderr) | Code | Kind |
 |---|---|---|
 | `build pick: cannot read the <bucket> bucket: <reason> — the pool is UNKNOWN, never partial.` | 11 | refusal |
+| `build pick: cannot read the "## Focus" declaration: <reason> — the pool is UNKNOWN, never unfiltered.` | 11 | refusal |
+| `build pick: the "## Focus" declaration does not parse: <detail> — the pool is UNKNOWN, and a malformed declaration is never read as "no focus".` | 4 | refusal |
 | `build pick: --limit "<value>" is not a positive integer.` | 1 | usage error |
 
-**Scope** — every open issue in `--repo` carrying `status:triaged`, read via paginated REST. The
-scope line on stderr names the per-bucket counts scanned, so an empty pool is auditable.
+**Scope** — every open issue in `--repo` carrying `status:triaged`, read via paginated REST, judged
+against the declared focus. The scope line on stderr names the per-bucket counts scanned **and the
+declaration** — `focus: #44 (declared 2026-08-09)`, or `focus: none declared — scope fence inert` —
+so an empty pool is auditable and a fence that is off is visible as off rather than inferred.
 
 **Examples**
 
 ```
 $ fabrika build pick
-{"pool":[{"number":4312,"title":"Editor loses focus after save","priority":"p1","type":"bug","home":"47"}],"scanned":{"p0":0,"p1":3,"p2":41}}
+{"pool":[{"number":4312,"title":"Editor loses focus after save","priority":"p1","type":"bug","home":"44"},{"number":4488,"title":"Prune the dead lane stamps","priority":"p2","type":"chore","home":"axis:pipeline-hardening"}],"excluded":[{"number":4290,"home":"39","reason":"out-of-focus"},{"number":4301,"home":"44","reason":"audience-not-agent"}],"scanned":{"p0":0,"p1":3,"p2":41},"focus":{"state":"declared","milestone":"44"}}
+```
+
+The standing-lane row is the exemption at work: #4488 carries no milestone and is admitted anyway,
+while #4290 — homed in milestone 39 — is excluded. With no declaration the fence is inert, and both
+the answer and the scope line say so:
+
+```
+$ fabrika build pick
+build pick: scanned p0=0 p1=3 p2=41 · focus: none declared — scope fence inert
+{"pool":[{"number":4290,"title":"Retire the legacy importer","priority":"p2","type":"chore","home":"39"}],"excluded":[],"scanned":{"p0":0,"p1":3,"p2":41},"focus":{"state":"none"}}
 ```
 
 ```
@@ -308,6 +435,10 @@ $ echo $?
 - #4926 — v1's pool truncated at 100 per bucket, unpaginated.
 - `step1-candidate-pool.sh` scar — a failed bucket read fail-opened to an empty bucket; here `11`.
 - ADR 0092 — the scanned counts on stderr are the zero-scope audit trail.
+- ADR 0245 / #5011 — the scope axis, and the rule that a pool filter alone is advice, not a fence.
+- ADR 0208 — the standing-lane exemption is exactly two labels; milestone-absence never confers it.
+- #5013 — the per-issue exclusion reason: scanned counts cannot separate a working fence from a
+  broken one.
 
 ---
 
@@ -412,24 +543,44 @@ shape ambiguous between comment ids and session ids and callers guessed (#4428).
 **Invocation**
 
 ```
-fabrika build claim 4312 [--repo <owner/name>]
+fabrika build claim 4312 [--repo <owner/name>] [--override <reason>]
 fabrika build confirm 4312 [--repo <owner/name>]
 fabrika build release 4312 [--repo <owner/name>]
 ```
 
-**Inputs** — identical for all three verbs:
+**Inputs** — the first two rows are identical for all three verbs; `--override` is `claim`'s alone:
 
 | Flag | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `<number>` | positional integer | yes | — | the issue (or, in repair, the PR) the claim concerns |
 | `--repo` | string | no | the `origin` remote's `owner/name` | the repository whose markers are read and written |
+| `--override` | string | no | — | claim an issue scope admission refused, naming why; the reason is written into the claim marker |
+
+**`claim` runs the scope fence before it writes anything.** After the target-open check and **before
+any marker is posted**, `claim` puts `<number>` through
+[scope admission](#scope-admission--the-campaign-fence-one-predicate-two-seams) — the same imported
+predicate `build pick` filters on, never a second derivation. A `refused: out-of-focus` is `20` and a
+`refused: audience-not-agent` is `21`, each named on stderr; an unreadable declaration or home is
+`11` and a malformed declaration is `4`, and neither ever proceeds. Nothing is written on any of the
+four: the issue carries no marker, so a refused claim leaves no trace to retract.
+
+This is the seam where the refusal has teeth. A pool filter is bypassed by an operator naming a
+number, and a number handed straight to `claim` passes through no pool — claiming is the moment work
+starts and the one moment every path goes through (ADR 0245). `--override "<reason>"` admits the
+issue anyway and appends the reason to the claim marker it posts, so the escape hatch costs one
+deliberate act and leaves a record on the issue; an empty `--override` value is a usage error (`1`),
+because an unexplained override is the silent one the rule forbids. `confirm` and `release` do not
+run the fence at all: it governs what may *start*, so a focus row edited mid-lane can neither strand
+a running lane nor block its release.
 
 The session id arrives from the environment (`CLAUDE_CODE_SESSION_ID`, named in `--help` with its
 unset behavior: unset is a usage error, exit `1` — a claim without an identity is not a claim).
 
 **Output** — machine, one JSON object:
 
-- `claim` on a win: `{"answer": "won", "number": 4312, "token": "build:<sid>:<uuid>"}`.
+- `claim` on a win: `{"answer": "won", "number": 4312, "token": "build:<sid>:<uuid>"}` — plus
+  `"override": "<reason>"` when the win came through `--override`, so the answer records the
+  exception as well as the marker does.
 - `confirm` when held: `{"answer": "mine", "number": 4312, "token": "..."}`.
 - `release` when released: `{"answer": "released", "number": 4312}`.
 
@@ -444,17 +595,25 @@ proven-foreign only; a missing session id is `1`; an unreadable marker set is `1
 
 | Code | Trigger |
 |---|---|
+| `4` | `claim` only: the `## Focus` declaration reads but does not parse — nothing was written |
 | `7` | the issue is proven absent (404) or closed |
 | `8` | the marker write failed — it may or may not have landed; re-run `confirm` before anything else |
 | `9` | the marker landed but the read-back does not match |
-| `11` | the marker set could not be read — ownership is UNKNOWN, never "unclaimed" |
+| `11` | the marker set could not be read — ownership is UNKNOWN, never "unclaimed"; or, `claim` only, the focus declaration or the issue's home could not be read — scope admission is UNKNOWN, never admitted |
 | `15` | proven: another session's earlier authorized marker wins (`claim`), holds (`confirm`), or `release` was asked for a token this session does not hold |
+| `20` | `claim` only, proven: the issue's home is outside the declared focus — no marker was written |
+| `21` | `claim` only, proven: the issue's audience is not an agent — no marker was written |
 
 **Errors**
 
 | Message (stderr) | Code | Kind |
 |---|---|---|
 | `build claim: issue #<n> is proven absent or closed.` | 7 | refusal |
+| `build claim: #<n> is homed in milestone <home>, outside the declared focus #<focus> — refusing before any marker; pass --override "<reason>" to claim it anyway.` | 20 | refusal |
+| `build claim: #<n> carries <audience>, not "ready-for:agent" — refusing before any marker; pass --override "<reason>" to claim it anyway.` (`<audience>` is the issue's `ready-for:` label, or the literal `no "ready-for:" label` when it carries none) | 21 | refusal |
+| `build claim: cannot read the "## Focus" declaration: <reason> — scope is UNKNOWN, never admitted; nothing was written.` | 11 | refusal |
+| `build claim: the "## Focus" declaration does not parse: <detail> — a malformed declaration is never read as "no focus"; nothing was written.` | 4 | refusal |
+| `build claim: --override was given with an empty reason — an override is recorded or it is not one.` | 1 | usage error |
 | `build claim: the marker write failed: <reason> — the claim state is UNKNOWN; run "fabrika build confirm <n>" before any further action.` | 8 | refusal |
 | `build claim: cannot read the claim markers on #<n>: <reason> — ownership is UNKNOWN, never "unclaimed".` | 11 | refusal |
 | `build claim: lost to <token> (posted <timestamp>, authorized).` | 15 | refusal |
@@ -469,14 +628,29 @@ separates unclaimed from foreign for a reader; the code deliberately does not, b
 action is identical. The same reading applies wherever a sibling verb's precondition says
 "claim confirmed (`15`/`11`)": an unclaimed target refuses on `15` with the no-claim message.
 
-**Scope** — one issue's comment markers, paginated in full. An unauthorized author's marker is
-counted and reported on stderr but never wins — content is not authority.
+**Scope** — one issue's comment markers, paginated in full, plus — for `claim` — that issue's home
+and audience against the declared focus. An unauthorized author's marker is counted and reported on
+stderr but never wins: content is not authority. `claim`'s scope line names the declaration it judged
+against (`focus: #44 (declared 2026-08-09)`, or `focus: none declared — scope fence inert`), so a
+run that claimed under an inert fence is readable as such afterwards.
 
 **Examples**
 
 ```
 $ fabrika build claim 4312
 {"answer":"won","number":4312,"token":"build:s-9f2e:c1a4d6f8-3b7e-4a19-9c2d-5e8f0a1b2c3d"}
+```
+
+```
+$ fabrika build claim 4290
+build claim: #4290 is homed in milestone 39, outside the declared focus #44 — refusing before any marker; pass --override "<reason>" to claim it anyway.
+$ echo $?
+20
+```
+
+```
+$ fabrika build claim 4290 --override "hotfix for the release blocker"
+{"answer":"won","number":4290,"token":"build:s-9f2e:c1a4d6f8-3b7e-4a19-9c2d-5e8f0a1b2c3d","override":"hotfix for the release blocker"}
 ```
 
 ```
@@ -496,6 +670,11 @@ $ echo $?
   encodes the conservative floor — `release` releases only this session's own token at its
   terminus — and does not pre-rule the delegation question; when #4145 rules, the change lands
   here.
+- ADR 0245 / #5011 — the claim seam is where the scope refusal acquires teeth: a directly-handed
+  number passes through no pool, and the override is a flag that leaves a record rather than prose in
+  a charter.
+- ADR 0210 — direction binds early, never at the end; the fence fires before a build starts, and
+  `confirm` / `release` are deliberately outside it.
 - v1 scars designed out: `step3-direct-claim.sh` exit-0-on-lost; `claim/command.ts:57` fused
   refusals; `claim/github.ts:229-231` where a transient permission-read failure silently demoted
   an authorized author (here that read failing is `11`, never a silent demotion).
