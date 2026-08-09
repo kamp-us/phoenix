@@ -403,7 +403,7 @@ absent or non-conforming. `topology` is the imported `readTopology` parse. `cycl
 | `4` | the epic body's `## Dependencies` is `Unparseable`; a ledger section appears more than once; a child's `**Stories:**` or `**Containment:**` field line appears more than once; or a **non-empty** `### User stories` list is not contiguous from 1 |
 | `7` | the epic is proven absent (404) or closed, or it has zero sub-issue children |
 | `10` | the issue is not a `type:epic` |
-| `11` | the epic, the sub-issue list, a child, or the `product-development-cycle.md` probe could not be read |
+| `11` | the epic, the sub-issue list, or a child could not be read (when this was written this row also named the `product-development-cycle.md` probe, so the premise is stale and the conclusion is not — the probe is total and answers `unknown` on a failed read, which the output schema above carries and `plan check` names in `skipped`; `11` stays reachable by the three reads named here) |
 
 An **absent** `## Dependencies` block is *not* `4` — it is defect `MISSING_DEPS_SECTION`, which
 `plan check` derives. `4` is the unparseable, duplicated and mis-numbered cases only.
