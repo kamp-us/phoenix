@@ -602,6 +602,13 @@ jobs:
       # Same script runs locally: `bash claude-plugins/kampus-pipeline/lib/common-test.sh`.
       - run: bash claude-plugins/kampus-pipeline/lib/common-test.sh
 
+      # The lane-lifecycle cases above are only worth their runtime if they can FAIL. #4868 was a
+      # check whose positive branch could never be false, and a suite can carry that same defect —
+      # so this reintroduces each blindness into a copy of the lib and requires the suite to go red
+      # for its own named reason. Hermetic: temp repos only, no network.
+      # Same script runs locally: `bash claude-plugins/kampus-pipeline/lib/verify-lane-lifecycle-mutants.sh`.
+      - run: bash claude-plugins/kampus-pipeline/lib/verify-lane-lifecycle-mutants.sh
+
       # Executable pin for ship-it's sourced chain (#4547): every function a step script
       # calls must be defined in-chain, and Step 2's §CP seam must pass the caller's
       # $CP_FLAG through to `verdict gate`. The extraction dropped three source lines and
