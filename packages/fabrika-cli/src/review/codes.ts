@@ -9,6 +9,13 @@
  * checked-in `/report` contract already sits behind its own binary on `7` and `11` (#4752), which is
  * why the shipped package is the authority and no prose copy is.
  *
+ * **`12`-`15` are this group's private band, and are deliberately not cleared against sibling
+ * groups.** `triage` seats `12`/`13` on its own two refusals; that is two namespaces, not one
+ * collision, because the `3`+ band carries no cross-group uniqueness obligation — see rule 3 of
+ * `../../../../claude-plugins/fabrika/docs/cli-interface-convention.md`, which also names the one
+ * condition that would change it. `../exit-code-alignment.ts` checks this band against the base
+ * only, matching that scope.
+ *
  * `0`, `1`, `2` and `127` are reserved by the interface convention (`../verb.ts`, `../bin.ts`).
  * `4` stays a deliberate gap — it is `report file`'s body-section seat, and no verb here performs
  * one; a row for it would be a meaning this group does not have.
