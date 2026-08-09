@@ -29,7 +29,7 @@ unrelated jobs, and the re-key forced the difference into the open:
 - **As a record.** A committed corpus row's own `stage` field says which pipeline produced the
   labeled artifact. The module's README states the label is what the baseline *actually produced*,
   and three rows in [`corpus/build.json`](../packages/fabrika-cli/src/eval/corpus/build.json) plus
-  three in [`corpus/review-code.json`](../packages/fabrika-cli/src/eval/corpus/review-code.json)
+  three in [`corpus/review.json`](../packages/fabrika-cli/src/eval/corpus/review.json)
   are genuine v1 artifacts (issues/PRs #1223, #106, #1032, #1199, #1294, #1115).
 
 Treating those as one thing gives two bad options. Retiring the rows throws away the only graded
@@ -163,7 +163,7 @@ re-key of `STAGES` — to those files.
   red them. Two things still can, and are the forcing constraints an implementing child inherits:
   retiring any row drops a group below its minimum (or removes a seed) and **must** amend that test
   in the same change, and renaming a manifest file breaks the test's exact
-  `["build.json", "review-code.json", "triage.json"]` filename list.
+  `["build.json", "review.json", "triage.json"]` filename list.
 - The test now also pins the ruling itself: it asserts `build.json`'s three rows are still keyed
   `write-code`. A future re-key attempt fails CI rather than quietly republishing a v1 measurement.
 - Consumers get a small standing obligation: never resolve a row's `stage` against `STAGES`. Only
@@ -187,3 +187,21 @@ Closes [#4977](https://github.com/kamp-us/phoenix/issues/4977). Unblocks
 - **recorded provenance (stage)** — a committed corpus row's own `stage` field: which pipeline
   actually produced the labeled artifact, frozen at record time. Not a pointer into `STAGES`, and
   never re-keyed.
+
+## Amendment (2026-08-09, #5082) — two stale corpus filenames corrected
+
+This entry was written against a corpus layout that had already changed. ADR 0243 collapsed the
+review stage to one key with a `surface` discriminator and renamed the manifest
+`corpus/review-code.json` to `corpus/review.json`; that landed on `main` a couple of hours before
+this entry did, which still carried the old filename in two places:
+
+- the link under "As a record.", which pointed at a path that no longer exists — a dead link that
+  reds the repo-wide `doc-links` gate on every pull request that runs it;
+- the `["build.json", "review-code.json", "triage.json"]` filename list under Consequences, which
+  described `corpus.data.unit.test.ts`'s exact-filename assertion inaccurately — that test asserts
+  `["build.json", "review.json", "triage.json"]`.
+
+Both now read `review.json`. **No decision or reasoning changed** — only two stale filenames. The
+ruling this entry records stands exactly as written: recorded provenance wins, and the old rows
+keep their original `review-code` stage keys, which is why `review-code` still appears throughout
+this entry as a recorded stage key.
