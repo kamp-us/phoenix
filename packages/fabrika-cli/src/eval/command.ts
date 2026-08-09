@@ -27,7 +27,7 @@ import {Console, Crypto, Effect, FileSystem, Path, Result} from "effect";
 import * as Schema from "effect/Schema";
 import {Argument, Command, Flag} from "effect/unstable/cli";
 import {leafCommand} from "../excess-operand.ts";
-import {decodeManifest, STAGES} from "./corpus.ts";
+import {decodeManifest, REVIEW_SURFACES, type ReviewSurface, STAGES} from "./corpus.ts";
 import {decodeIncidentProvenance} from "./incident-provenance.ts";
 import {
 	type BaselineKey,
@@ -136,8 +136,18 @@ const baselineModelFlag = Flag.string("baseline-model").pipe(
 	Flag.withDescription("the model of the baseline cell (paired with --baseline-stage)"),
 );
 
+const baselineSurfaceFlag = Flag.string("baseline-surface").pipe(
+	Flag.optional,
+	Flag.withDescription(
+		`the review surface of the baseline cell, required with --baseline-stage review (one of: ${REVIEW_SURFACES.join(", ")})`,
+	),
+);
+
 const isStage = (s: string): s is (typeof STAGES)[number] =>
 	(STAGES as ReadonlyArray<string>).includes(s);
+
+const isReviewSurface = (s: string): s is ReviewSurface =>
+	(REVIEW_SURFACES as ReadonlyArray<string>).includes(s);
 
 const report = leafCommand(
 	"report",
@@ -146,8 +156,9 @@ const report = leafCommand(
 		json: jsonFlag,
 		baselineStage: baselineStageFlag,
 		baselineModel: baselineModelFlag,
+		baselineSurface: baselineSurfaceFlag,
 	},
-	Effect.fn(function* ({rows, json, baselineStage, baselineModel}) {
+	Effect.fn(function* ({rows, json, baselineStage, baselineModel, baselineSurface}) {
 		const run = Effect.gen(function* () {
 			const fs = yield* FileSystem.FileSystem;
 			const text = yield* Effect.mapError(
@@ -163,7 +174,10 @@ const report = leafCommand(
 			}
 
 			// A --baseline-stage that isn't one of the known stages is a user error, not a silent
-			// no-baseline: fail loudly so a typo can't quietly drop the net-saving axis.
+			// no-baseline: fail loudly so a typo can't quietly drop the net-saving axis. The surface
+			// rules below are the same discipline one level down — a `review` baseline that names no
+			// surface names no single grading regime, so it cannot identify a baseline cell at all
+			// (ADR 0243 §4).
 			let baseline: BaselineKey | undefined;
 			if (baselineStage._tag === "Some") {
 				const stage = baselineStage.value;
@@ -173,7 +187,31 @@ const report = leafCommand(
 					);
 					return yield* Effect.sync(() => process.exit(GATE_FAIL_EXIT_CODE));
 				}
-				baseline = {stage, model: baselineModel._tag === "Some" ? baselineModel.value : null};
+				if (baselineSurface._tag === "Some" && stage !== "review") {
+					yield* Console.error(
+						`fabrika eval: --baseline-surface only applies to --baseline-stage review, not '${stage}'`,
+					);
+					return yield* Effect.sync(() => process.exit(GATE_FAIL_EXIT_CODE));
+				}
+				if (stage === "review" && baselineSurface._tag === "None") {
+					yield* Console.error(
+						`fabrika eval: --baseline-stage review needs --baseline-surface (${REVIEW_SURFACES.join(", ")}) — a review pass-rate is one grading regime, never an average of two`,
+					);
+					return yield* Effect.sync(() => process.exit(GATE_FAIL_EXIT_CODE));
+				}
+				const model = baselineModel._tag === "Some" ? baselineModel.value : null;
+				if (baselineSurface._tag === "Some") {
+					const surface = baselineSurface.value;
+					if (!isReviewSurface(surface)) {
+						yield* Console.error(
+							`fabrika eval: --baseline-surface '${surface}' is not a known review surface (${REVIEW_SURFACES.join(", ")})`,
+						);
+						return yield* Effect.sync(() => process.exit(GATE_FAIL_EXIT_CODE));
+					}
+					baseline = {stage, surface, model};
+				} else {
+					baseline = {stage, model};
+				}
 			}
 
 			const scorecard = buildScorecard(

@@ -147,12 +147,12 @@ decision ([#1576](https://github.com/kamp-us/phoenix/issues/1576)) consumes. It 
 runner's graded `{entry, grade, spend}` rows into a per-(stage × model) **scorecard** on the ADR
 0112 §4 two-axis gate, now graded:
 
-- **Quality axis** — a **pass-rate** per (stage × model) over the corpus (`passedRuns / gradedRuns`),
-  the graded generalization of ADR 0112 §3's binary-per-run oracle.
+- **Quality axis** — a **pass-rate** per (stage × surface × model) over the corpus
+  (`passedRuns / gradedRuns`), the graded generalization of ADR 0112 §3's binary-per-run oracle.
 - **Token axis** — the mean **billed** + **ex-cache-read** spend per run (ADR 0112 §2), plus the
   priced **repair-churn cost** (`repair-churn.ts`): the amortized true cost of one *accepted* run
   once the extra cycles a lower pass-rate forces are amortized in.
-- **Net saving vs a baseline** — when a `baseline` (stage × model) is named, each other cell's
+- **Net saving vs a baseline** — when a `baseline` cell is named, each other cell's
   `netSaving = baseline.billedPerRun − candidate.amortizedBilledPerRun`. A **negative** net saving is
   the epic's headline risk — a per-run token saving *eaten* by repair churn — rendered as
   `NET-NEGATIVE` in the table and `netNegative: true` in the JSON, so the crossover the
@@ -167,6 +167,22 @@ Pure + total: a `TranscriptMissing` run still counts toward the pass-rate but is
 spend mean, and a cell with **no** reconstructed spend reports a `null` token axis rather than a
 fabricated zero. `buildScorecard`, `renderTable`, `toJson`, and `decodeReportInput` are the exports.
 
+#### The cell key carries the review surface
+
+A pass-rate measures **one grading regime**, so the cell key is `(stage × surface × model)` and rows
+from different review surfaces are never aggregated into a single undifferentiated `review` number
+([ADR 0243 §4](../../../../.decisions/0243-review-eval-stage-surface-discriminator.md)). The
+exported `CellIdentity` states that as a type: a `review` cell carries a `ReviewSurface`, every other
+stage carries `null`, so a bare `review` cell is unrepresentable rather than merely unproduced. The
+mixed-surface PR of ADR 0243 §3 — one `inputRef`, one row per surface — therefore reports two cells,
+each rendering its own surface. A recorded v1 `review-code` row keeps its own cell and takes the
+surfaceless arm, because its stage key is provenance, not a live `review` row
+([#4977](https://github.com/kamp-us/phoenix/issues/4977)).
+
+The baseline resolves against that same key, so it selects **at most one** cell. `--baseline-stage
+review` therefore requires `--baseline-surface`: without one it names two graders, which is refused
+at the flag rather than resolved to whichever surface buckets first.
+
 ### The CLI surface
 
 ```bash
@@ -176,8 +192,9 @@ fabrika eval report <rows.json>
 # stable machine-readable JSON — a future gate / CI consumes this
 fabrika eval report <rows.json> --json
 
-# price net saving against a baseline (stage × model)
+# price net saving against a baseline (stage × surface × model)
 fabrika eval report <rows.json> --baseline-stage build --baseline-model opus-4.8
+fabrika eval report <rows.json> --baseline-stage review --baseline-surface code --baseline-model opus-4.8
 ```
 
 `<rows.json>` is a serialized `RunRow[]` — the array `collectRuns` emits. `decodeReportInput` is
@@ -189,10 +206,11 @@ total: a malformed body or a shape mismatch exits non-zero with a typed reason, 
 {
   "decisionRef": 1576,                       // the decision this evidence feeds — never made here
   "framing": "This scorecard is measurement feeding the model-tiering decision (#1576); …",
-  "baseline": { "stage": "build", "model": "opus-4.8" } | null,
+  "baseline": { "stage": "build", "surface": null, "model": "opus-4.8" } | null,
   "cells": [
     {
       "stage": "build",
+      "surface": null,                        // "code" | "doc" on a `review` cell; null on every other stage
       "model": "opus-4.8" | null,            // reconstructed from the transcript; null when unattributable
       "gradedRuns": 3,                        // pass-rate denominator (includes transcript-missing runs)
       "passedRuns": 2,
