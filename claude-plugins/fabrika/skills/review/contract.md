@@ -708,15 +708,25 @@ With `--json`: `{"outcome":"posted","namespace":…,"polarity":…,"sha":…,"up
    FAIL marker).
 4. **Leak-scan the assembled comment** (`report/leaks.ts`, imported) — an authored machine-local
    path is the `5` refusal.
-5. **Upsert one comment per namespace**: an existing comment by this bot whose first non-blank
-   line carries this namespace's marker is edited in place; otherwise a new comment is created.
-   One namespace, one comment, the marker its literal first line — a second marker stacked on
-   line 2 is un-anchored, resolves its namespace empty, and fail-closes a substantively-passing
-   PR (the live PR #2456 stall).
-6. **Read it back, unconditionally, from live PR state** — re-fetch the comment, hand its body to
-   the format's `read`, and require `Found` with exactly the four fields posted (compared through
-   `normalizeForReadback`). A read-back that trusts a carried variable instead of the live state
-   re-ships #3173's false PASS; the mismatch is the `9` refusal.
+5. **Upsert one comment per namespace, matched under the carrier this post uses**: an existing
+   comment by this bot that already carries this namespace **under this carrier** is edited in
+   place; otherwise a new comment is created. With `marker` the match key is the format's `read`
+   over the first non-blank line. With `--carrier advisory` it is the ADR-0151 pair — the advisory
+   first line plus the `Reviewed-head: @ <sha>` body line, read through `readAdvisory` — because
+   the advisory first line withholds the SHA, so the marker `read` can never match one and a
+   marker-keyed upsert would post a **second** advisory on every re-post. The two keys are
+   disjoint: a `marker` post never edits an advisory comment, and an `advisory` post never edits a
+   marker one. One namespace, one comment, the carrier's anchor on its literal first line — a
+   second marker stacked on line 2 is un-anchored, resolves its namespace empty, and fail-closes a
+   substantively-passing PR (the live PR #2456 stall).
+6. **Read it back, unconditionally, from live PR state**, under the same carrier — re-fetch the
+   comment and, with `marker`, hand its body to the format's `read` and require `Found` with
+   exactly the four fields posted; with `--carrier advisory`, require both ADR-0151 anchors —
+   `readAdvisory` yielding this namespace and a `Reviewed-head:` SHA equal to the one posted, since
+   the format's `read` calls an advisory `Malformed` by design. Either way the whole comment is
+   then compared against the bytes sent (through `normalizeForReadback`). A read-back that trusts a
+   carried variable instead of the live state re-ships #3173's false PASS; the mismatch is the `9`
+   refusal.
 
 **Exit status**
 
