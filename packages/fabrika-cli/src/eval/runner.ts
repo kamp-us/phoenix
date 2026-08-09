@@ -28,22 +28,57 @@ import {classifyRunSpend, type RunSpend} from "../spend/token-spend.ts";
 import {type CorpusEntry, type CorpusManifest, type LiveStage, STAGES} from "./corpus.ts";
 import {type Grade, gradeEntry} from "./oracle.ts";
 
-/** One graded run row: the corpus entry, its grade against the label, and its token spend. */
+/**
+ * The with/without methodology's arm variable is **skill availability**, and `--plugin-dir` is the
+ * toggle: it loads the skill under test for that session only. `--disable-slash-commands` is NOT a
+ * usable toggle — measured against a loaded plugin it short-circuits to `num_turns: 0`, `$0`,
+ * `"Unknown command: …"` and never reaches the model (#4673 §4).
+ *
+ * The vocabulary lives here, beside the `CaptureRun` schema that constrains it, so a manifest can
+ * name an arm without the collector depending on the executor built on top of it. `spawn.ts`
+ * re-exports it, so its consumers are unchanged.
+ */
+export const EVAL_ARMS = ["with-skill", "without-skill"] as const;
+
+export type EvalArm = (typeof EVAL_ARMS)[number];
+
+/**
+ * What a recorded run says about itself: the model it was pinned to, and the arm it belongs to.
+ *
+ * Both are nullable because a run recorded before this provenance existed attests neither, and a
+ * legacy row must keep collecting rather than fail (#4996). `null` means *unrecorded*, never
+ * "no model" — the scorecard reads it as "fall back to the transcript", not as a value to bucket on.
+ */
+export interface RunProvenance {
+	readonly model: string | null;
+	readonly arm: EvalArm | null;
+}
+
+/** The provenance of a run that recorded none — a legacy row, or a hand-assembled replay input. */
+export const NO_PROVENANCE: RunProvenance = {model: null, arm: null};
+
+/**
+ * One graded run row: the corpus entry, its grade against the label, its token spend, and the
+ * provenance of the run that produced it.
+ */
 export interface RunRow {
 	readonly entry: CorpusEntry;
 	readonly grade: Grade;
 	readonly spend: RunSpend;
+	readonly provenance: RunProvenance;
 }
 
 /**
  * One offline run input: a corpus entry paired with its captured transcript text + recorded
  * artifact. `transcript === null` means the transcript was not found — the run is still graded
  * against its label and counted (with `TranscriptMissing` spend), never dropped or crashed.
+ * An omitted `provenance` collects as `NO_PROVENANCE`.
  */
 export interface RunInput {
 	readonly entry: CorpusEntry;
 	readonly transcript: string | null;
 	readonly artifact: unknown;
+	readonly provenance?: RunProvenance;
 }
 
 /**
@@ -55,6 +90,7 @@ export const collectRun = (input: RunInput): RunRow => ({
 	entry: input.entry,
 	grade: gradeEntry(input.entry, input.artifact),
 	spend: classifyRunSpend(input.transcript),
+	provenance: input.provenance ?? NO_PROVENANCE,
 });
 
 /**
@@ -74,12 +110,20 @@ export const collectRuns = (inputs: ReadonlyArray<RunInput>): ReadonlyArray<RunR
  * `<parent-session-id>/subagents/agent-<id>.jsonl` (ADR 0112 §2), or a headless `claude -p` run's
  * `<claude-data-root>/projects/<cwd-slug>/<session-id>.jsonl` — a top-level session, so NOT under
  * `subagents/`. Both reconstruct through the same `token-spend` core.
+ *
+ * `model` and `arm` carry the run's own provenance onto the manifest, so a graded row keeps it after
+ * the ledger is gone (#4996). Both decode to `null` when the key is absent, which is what keeps
+ * every already-written manifest readable — an absent key is *unrecorded*, never a claim.
  */
 export const CaptureRun = Schema.Struct({
 	stage: Schema.Literals([...STAGES]),
 	inputRef: Schema.Int,
 	transcriptPath: Schema.String,
 	artifact: Schema.Unknown,
+	model: Schema.NullOr(Schema.String).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
+	arm: Schema.NullOr(Schema.Literals([...EVAL_ARMS])).pipe(
+		Schema.withDecodingDefault(Effect.succeed(null)),
+	),
 });
 
 export type CaptureRun = typeof CaptureRun.Type;
@@ -159,6 +203,7 @@ export const collectFromCapture = <R>(args: {
 				entry,
 				transcript: yield* args.loadTranscript(run.transcriptPath),
 				artifact: run.artifact,
+				provenance: {model: run.model, arm: run.arm},
 			});
 		}
 		return collectRuns(inputs);

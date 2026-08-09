@@ -1,15 +1,17 @@
 import {assert, describe, it} from "@effect/vitest";
+import {Result} from "effect";
 import type {StageSpend} from "../spend/token-spend.ts";
 import type {CorpusEntry} from "./corpus.ts";
 import {
 	buildScorecard,
 	type CellIdentity,
 	DECISION_POINTER,
+	decodeReportInput,
 	renderTable,
 	type ScorecardCell,
 	toJson,
 } from "./report.ts";
-import type {RunRow} from "./runner.ts";
+import type {RunProvenance, RunRow} from "./runner.ts";
 
 /** `true` iff `T` is a cell identity the report can key on — the type-level probe's operand. */
 type IsCell<T> = T extends CellIdentity ? true : false;
@@ -34,21 +36,36 @@ const spend = (billed: number, model: string): StageSpend => ({
 	model,
 });
 
+// A row that recorded no provenance — the pre-#4996 shape, which buckets off the transcript alone.
+const unrecorded: RunProvenance = {model: null, arm: null};
+
 // One graded run row: a pass/fail grade + a reconstructed spend at `billed` tokens on `model`.
-const row = (opts: {pass: boolean; billed: number; model: string; inputRef?: number}): RunRow => ({
+const row = (opts: {
+	pass: boolean;
+	billed: number;
+	model: string;
+	inputRef?: number;
+	provenance?: RunProvenance;
+}): RunRow => ({
 	entry: triageEntry(opts.inputRef ?? 1),
 	grade: opts.pass
 		? {status: "pass"}
 		: {status: "fail", mismatch: {_tag: "MalformedArtifact", reason: "x"}},
 	spend: {_tag: "Reconstructed", spend: spend(opts.billed, opts.model)},
+	provenance: opts.provenance ?? unrecorded,
 });
 
-const missingSpendRow = (opts: {pass: boolean; inputRef?: number}): RunRow => ({
+const missingSpendRow = (opts: {
+	pass: boolean;
+	inputRef?: number;
+	provenance?: RunProvenance;
+}): RunRow => ({
 	entry: triageEntry(opts.inputRef ?? 1),
 	grade: opts.pass
 		? {status: "pass"}
 		: {status: "fail", mismatch: {_tag: "MalformedArtifact", reason: "x"}},
 	spend: {_tag: "TranscriptMissing"},
+	provenance: opts.provenance ?? unrecorded,
 });
 
 const cellFor = (cells: ReadonlyArray<ScorecardCell>, model: string | null): ScorecardCell => {
@@ -81,6 +98,7 @@ const entryRow = (opts: {
 		? {status: "pass"}
 		: {status: "fail", mismatch: {_tag: "MalformedArtifact", reason: "x"}},
 	spend: {_tag: "Reconstructed", spend: spend(opts.billed, opts.model)},
+	provenance: unrecorded,
 });
 
 const reviewCellFor = (
@@ -326,6 +344,69 @@ describe("buildScorecard — the baseline resolves to exactly one cell under the
 			"a baseline that cannot name one grading regime must not resolve to an arbitrary surface",
 		);
 		for (const cell of sc.cells) assert.isNull(cell.netSaving);
+	});
+});
+
+/**
+ * #4996: the model a run was pinned to is a recorded fact; the transcript is a machine-local,
+ * perishable reconstruction of it. So the recorded value sources the bucket key and the
+ * reconstruction is only the fallback — otherwise a surviving row loses its model with its
+ * transcript and lands in `(unknown)`.
+ */
+describe("buildScorecard — the bucket key prefers the model the run recorded", () => {
+	it("a transcript-missing row with a recorded model keeps its model bucket, not `(unknown)`", () => {
+		const rows: ReadonlyArray<RunRow> = [
+			row({pass: true, billed: 100, model: "opus", provenance: {model: "opus", arm: "with-skill"}}),
+			missingSpendRow({pass: true, provenance: {model: "opus", arm: "without-skill"}}),
+		];
+		const sc = buildScorecard({rows});
+		assert.strictEqual(sc.cells.length, 1, "both rows belong to the same recorded-model cell");
+		const cell = cellFor(sc.cells, "opus");
+		assert.strictEqual(cell.gradedRuns, 2);
+		// The unmeasured run still stays out of the spend mean — it is attributed, not fabricated.
+		assert.strictEqual(cell.spend?.billedPerRun, 100);
+		assert.strictEqual(cell.spend?.transcriptMissingRuns, 1);
+		assert.isFalse(renderTable(sc).includes("(unknown)"));
+	});
+
+	it("the recorded model wins over a transcript that reconstructs to a different one", () => {
+		const rows: ReadonlyArray<RunRow> = [
+			row({
+				pass: true,
+				billed: 100,
+				model: "whatever-the-transcript-said",
+				provenance: {model: "opus-4.8", arm: "with-skill"},
+			}),
+		];
+		const sc = buildScorecard({rows});
+		assert.strictEqual(sc.cells[0]?.model, "opus-4.8");
+	});
+
+	it("a row that recorded nothing still buckets on its reconstructed model", () => {
+		const sc = buildScorecard({rows: [row({pass: true, billed: 100, model: "sonnet"})]});
+		assert.strictEqual(sc.cells[0]?.model, "sonnet");
+	});
+});
+
+describe("decodeReportInput — a rows file written before provenance existed still decodes", () => {
+	it("reads an absent `provenance` as unrecorded rather than failing the file", () => {
+		const legacy = JSON.stringify([
+			{
+				entry: {
+					stage: "triage",
+					inputRef: 1,
+					label: {type: "bug", priority: "p0", status: "triaged"},
+				},
+				grade: {status: "pass"},
+				spend: {_tag: "Reconstructed", spend: spend(100, "sonnet")},
+			},
+		]);
+		const decoded = decodeReportInput(legacy);
+		assert.isTrue(Result.isSuccess(decoded));
+		if (!Result.isSuccess(decoded)) return;
+		assert.deepStrictEqual(decoded.success[0]?.provenance, {model: null, arm: null});
+		// …and it still scores exactly as it did before, off the transcript's model.
+		assert.strictEqual(buildScorecard({rows: decoded.success}).cells[0]?.model, "sonnet");
 	});
 });
 

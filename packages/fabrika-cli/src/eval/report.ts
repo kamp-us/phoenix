@@ -25,11 +25,11 @@
  * A pass-rate measures ONE grading regime, so a cell is keyed by (stage × surface × model), not
  * stage alone: see `CellIdentity` and ADR 0243 §4.
  */
-import {Result} from "effect";
+import {Effect, Result} from "effect";
 import * as Schema from "effect/Schema";
 import {CorpusEntry, type ReviewSurface} from "./corpus.ts";
 import {priceModelSwap, repairChurnCost} from "./repair-churn.ts";
-import type {RunRow} from "./runner.ts";
+import {EVAL_ARMS, type RunRow} from "./runner.ts";
 
 /** The issue the report's evidence feeds — the tiering DECISION, which this report never makes. */
 export const DECISION_POINTER = 1576;
@@ -72,7 +72,10 @@ export type CellIdentity =
 
 /** The two-axis picture for one (stage × surface × model) cell of the scorecard. */
 export type ScorecardCell = CellIdentity & {
-	/** The model the runs used, reconstructed from the transcript; `null` when unattributable. */
+	/**
+	 * The model the runs used: the one the run recorded, else the one its transcript reconstructs
+	 * to. `null` only when neither attests one.
+	 */
 	readonly model: string | null;
 	/** Total graded runs in the cell (the pass-rate denominator; includes transcript-missing). */
 	readonly gradedRuns: number;
@@ -142,10 +145,20 @@ interface Bucket {
 	transcriptMissing: number;
 }
 
+/**
+ * Which model a row is bucketed under. The run's own recorded model wins over the one its
+ * transcript reconstructs to: the recorded value is what the run was *pinned* to, while the
+ * transcript is machine-local and perishable, so reconstruction is the fallback for a row that
+ * recorded nothing — not the source (#4996). A row with a recorded model therefore keeps its
+ * bucket even when its transcript is gone, instead of collapsing into `(unknown)`.
+ */
+const modelOf = (row: RunRow): string | null =>
+	row.provenance.model ?? (row.spend._tag === "Reconstructed" ? row.spend.spend.model : null);
+
 const bucketize = (rows: ReadonlyArray<RunRow>): ReadonlyArray<Bucket> => {
 	const byKey = new Map<string, Bucket>();
 	for (const row of rows) {
-		const model = row.spend._tag === "Reconstructed" ? row.spend.spend.model : null;
+		const model = modelOf(row);
 		const id = identityOf(row.entry);
 		const key = cellKey(id, model);
 		let bucket = byKey.get(key);
@@ -399,10 +412,20 @@ const GradeSchema = Schema.Union([
 	Schema.Struct({status: Schema.Literal("fail"), mismatch: MismatchSchema}),
 ]);
 
+// A rows file written before provenance existed carries no `provenance` key, and must keep decoding
+// — it degrades to the transcript-reconstruction bucketing that was the only source back then.
+const RunProvenanceSchema = Schema.Struct({
+	model: Schema.NullOr(Schema.String),
+	arm: Schema.NullOr(Schema.Literals([...EVAL_ARMS])),
+});
+
 const RunRowSchema = Schema.Struct({
 	entry: CorpusEntry,
 	grade: GradeSchema,
 	spend: RunSpendSchema,
+	provenance: RunProvenanceSchema.pipe(
+		Schema.withDecodingDefault(Effect.succeed({model: null, arm: null})),
+	),
 });
 
 /** The report's input file: the array of graded rows `collectRuns` emits, serialized to JSON. */
