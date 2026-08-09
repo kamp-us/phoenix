@@ -129,6 +129,23 @@ const mismatchOf = (
 	return bytes;
 };
 
+/**
+ * Whether a comment already holds this namespace's verdict **under this carrier** — step 5's
+ * upsert-match key.
+ *
+ * The key is per-carrier because the two carriers anchor on different bytes, and neither read can
+ * stand in for the other. An advisory withholds the SHA from its first line by design (ADR 0111), so
+ * `read` calls it `Malformed` and a marker-only match never finds a prior advisory: every §CP re-post
+ * created a second comment, against the one-namespace-one-comment invariant this step exists for
+ * (#4992). Matching per carrier also keeps the pair disjoint in the other direction — a marker post
+ * never edits an advisory comment, and vice versa.
+ */
+const carriesNamespace = (body: string, carrier: Carrier, namespace: string): boolean => {
+	if (carrier === "advisory") return readAdvisory(body)?.namespace === namespace;
+	const parsed = readMarker(body);
+	return parsed._tag === "Found" && parsed.value.namespace === namespace;
+};
+
 /** Steps 1, 2 and 5's reads failing is `11`: nothing was written, so the outcome is known-unwritten. */
 const unreadableMessage = (what: string, pr: number, reason: string): string =>
 	`${VERB}: cannot read ${what} for #${pr}: ${reason} — nothing was posted.`;
@@ -236,11 +253,10 @@ export const runPost = (
 		if (me._tag === "Failure") return unreadable("the authenticated user", pr, me.reason);
 		const comments = yield* listComments(repo, pr);
 		if (comments._tag === "Failure") return unreadable("the comments", pr, comments.reason);
-		const mine = comments.value.find((comment) => {
-			if (comment.author !== me.value) return false;
-			const parsed = readMarker(comment.body);
-			return parsed._tag === "Found" && parsed.value.namespace === namespace;
-		});
+		const mine = comments.value.find(
+			(comment) =>
+				comment.author === me.value && carriesNamespace(comment.body, carrier, namespace),
+		);
 
 		let landed: {readonly id: number; readonly url: string} | null = null;
 		let failure: string | null = null;

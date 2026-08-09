@@ -263,6 +263,85 @@ describe("runPost", () => {
 		expect(write).not.toContain(`advisory — ... @ ${HEAD}`);
 	});
 
+	it("edits the existing advisory comment on a re-post, and creates one when there is none", async () => {
+		const advisoryFor = (sha: string): string =>
+			`review-doc: advisory — blocking-set PR (manual merge)\n\nReviewed-head: @ ${sha}\n\n${BODY}`;
+		const advisoryOptions = {
+			...options,
+			carrier: "advisory",
+			clause: "blocking-set PR (manual merge)",
+		};
+
+		const fresh = fakeShell([
+			[PULL, pull()],
+			[FILES, files("src/cart.ts", "README.md")],
+			[USER, okOut("kampus-bot")],
+			[COMMENTS, comments()],
+			[CREATE, created],
+			[READBACK, commentBody(advisoryFor(HEAD))],
+		]);
+		const first = await Effect.runPromise(Effect.provide(runPost(advisoryOptions), fresh.layer));
+		expect(first.code).toBe(0);
+		expect(first.stdout).toContain("\tcreated\t");
+
+		const again = fakeShell([
+			[PULL, pull({comments: 1})],
+			[FILES, files("src/cart.ts", "README.md")],
+			[USER, okOut("kampus-bot")],
+			[COMMENTS, comments({id: 42, body: advisoryFor(OLD_HEAD), author: "kampus-bot"})],
+			[PATCH, okOut(JSON.stringify({html_url: URL}))],
+			[READBACK, commentBody(advisoryFor(HEAD))],
+		]);
+		const repost = await Effect.runPromise(Effect.provide(runPost(advisoryOptions), again.layer));
+		expect(repost.code).toBe(0);
+		expect(repost.stdout).toContain("\tedited\t");
+		expect(again.calls.some((call) => CREATE.test(call))).toBe(false);
+	});
+
+	it("never crosses the carriers: a marker post skips an advisory comment, and the reverse", async () => {
+		const advisory = `review-doc: advisory — blocking-set PR (manual merge)\n\nReviewed-head: @ ${OLD_HEAD}\n\n${BODY}`;
+		const overAdvisory = fakeShell([
+			[PULL, pull({comments: 1})],
+			[FILES, files("src/cart.ts", "README.md")],
+			[USER, okOut("kampus-bot")],
+			[COMMENTS, comments({id: 42, body: advisory, author: "kampus-bot"})],
+			[CREATE, created],
+			[READBACK, commentBody(`${MARKER}\n\n${BODY}`)],
+		]);
+		const marker = await Effect.runPromise(Effect.provide(runPost(options), overAdvisory.layer));
+		expect(marker.stdout).toContain("\tcreated\t");
+		expect(overAdvisory.calls.some((call) => PATCH.test(call))).toBe(false);
+
+		const overMarker = fakeShell([
+			[PULL, pull({comments: 1})],
+			[FILES, files("src/cart.ts", "README.md")],
+			[USER, okOut("kampus-bot")],
+			[
+				COMMENTS,
+				comments({
+					id: 42,
+					body: `review-doc: PASS @ ${OLD_HEAD} — older round`,
+					author: "kampus-bot",
+				}),
+			],
+			[CREATE, created],
+			[
+				READBACK,
+				commentBody(
+					`review-doc: advisory — blocking-set PR (manual merge)\n\nReviewed-head: @ ${HEAD}\n\n${BODY}`,
+				),
+			],
+		]);
+		const advisoryPost = await Effect.runPromise(
+			Effect.provide(
+				runPost({...options, carrier: "advisory", clause: "blocking-set PR (manual merge)"}),
+				overMarker.layer,
+			),
+		);
+		expect(advisoryPost.stdout).toContain("\tcreated\t");
+		expect(overMarker.calls.some((call) => PATCH.test(call))).toBe(false);
+	});
+
 	it("emits the record with --json", async () => {
 		const out = await run(happy(), {json: true});
 		expect(JSON.parse(out.stdout)).toMatchObject({
