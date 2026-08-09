@@ -20,6 +20,7 @@ import {buildCommand} from "./build/command.ts";
 import {evalCommand} from "./eval/command.ts";
 import {reportCommand} from "./report/command.ts";
 import {reviewCommand} from "./review/command.ts";
+import {shipCommand} from "./ship/command.ts";
 import {spendCommand} from "./spend/command.ts";
 import {triageCommand} from "./triage/command.ts";
 import {wireCommand} from "./wire/command.ts";
@@ -34,6 +35,7 @@ export const registeredGroups: ReadonlyArray<VerbGroup> = [
 	evalCommand,
 	reportCommand,
 	reviewCommand,
+	shipCommand,
 	spendCommand,
 	triageCommand,
 	wireCommand,
