@@ -14,7 +14,7 @@
  */
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import {diffRange} from "../io/git.ts";
+import {diffRange, diffRangePaths} from "../io/git.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {INCOMPLETE_SCAN, PRECONDITION_UNKNOWN} from "./codes.ts";
 import {filesInDiff} from "./diff.ts";
@@ -63,6 +63,20 @@ export const runDiff = (
 			);
 		}
 		const diff = served.value;
+
+		// The denominator is a second read of the SAME range under the SAME flags — `--name-only -z`
+		// emits exactly one path per `diff --git` entry, renames paired identically — so the proof
+		// compares one git computation against another. GitHub's `changed_files` is its own merge base
+		// and its own rename detection, so it is reported below and never refused on (#5139).
+		const listed = yield* diffRangePaths(head.base, head.sha);
+		if (listed._tag === "Failure") {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: cannot read the file list of the range ${head.base}...${head.sha} for #${pr}: ${listed.reason} — UNKNOWN.`,
+			);
+		}
+		const inRange = listed.value.length;
+
 		const seen = filesInDiff(diff);
 		const diagnostics = [
 			boundLine(VERB, head),
@@ -70,13 +84,18 @@ export const runDiff = (
 				VERB,
 				seen,
 				"file",
-				`${pull.changedFiles} declared, ${new TextEncoder().encode(diff).length} bytes`,
+				`${inRange} in the range per git, ${pull.changedFiles} declared by GitHub, ${new TextEncoder().encode(diff).length} bytes`,
 			),
 		];
-		if (seen < pull.changedFiles) {
+		if (inRange !== pull.changedFiles) {
+			diagnostics.push(
+				`${VERB}: git and GitHub disagree on #${pr}'s file count (${inRange} vs ${pull.changedFiles}) — different merge base and different rename detection; reported, never refused on (#5139).`,
+			);
+		}
+		if (seen < inRange) {
 			return refuse(
 				INCOMPLETE_SCAN,
-				`${VERB}: the diff at ${head.sha} carries ${seen} of #${pr}'s ${pull.changedFiles} declared files — refusing to serve a partial diff as the whole (#3925's class).`,
+				`${VERB}: the diff at ${head.sha} carries ${seen} of the ${inRange} files git reports for the same range ${head.base}...${head.sha} — both counts from git, so this diff is provably short; refusing to serve a partial diff as the whole (#3925's class).`,
 				diagnostics,
 			);
 		}

@@ -148,11 +148,13 @@ describe("the three-outcome binding", () => {
 });
 
 describe("the diff completeness proof", () => {
-	// The PR declares seven files; the commit carries two. Anything but a refusal judges 2/7.
+	// The range carries seven files; the served diff carries two. Both counts are git's, over the
+	// same range — anything but a refusal judges 2/7 (#5139).
 	const script: ReadonlyArray<readonly [RegExp, ExecResult]> = [
 		[PULL, pull({changedFiles: 7})],
 		...binding(),
 		[DIFF_AT(), okOut(DIFF)],
+		[PATHS_AT(), paths("src/cart.ts", "README.md", "c.ts", "d.ts", "e.ts", "f.ts", "g.ts")],
 	];
 
 	it("refuses a short diff on 13", async () => {
@@ -193,6 +195,7 @@ describe("the commit binding on the read verbs", () => {
 		[PULL, pull({changedFiles: 1})],
 		...binding(),
 		[DIFF_AT(), okOut(DIFF)],
+		[PATHS_AT(), paths("src/cart.ts")],
 		[RAW, okOut(MOVED_DIFF)],
 	];
 
