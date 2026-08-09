@@ -4,8 +4,9 @@
  *
  * **The overlap with `report` is re-exported, never re-typed** — the discipline `review/codes.ts`
  * states in full: an aligning group *imports* the base's constant, so a drift is unrepresentable
- * rather than merely detectable. This group shares nine seats over `3`-`11` and adds its own `12`-`19`
- * for facts about the lane — the tree, the claim, the push, the validators — that no writing verb has.
+ * rather than merely detectable. This group shares nine seats over `3`-`11` and adds its own `12`-`21`
+ * for facts about the lane — the tree, the claim, the push, the validators, and the two admission
+ * axes — that no writing verb has.
  *
  * `0`, `1`, `2` and `127` are reserved by the interface convention (`../verb.ts`, `../bin.ts`).
  */
@@ -69,3 +70,14 @@ export const REF_NOT_MOVED = 17;
 export const VALIDATION_RED = 18;
 /** Refused: the requested push is unsafe (detached HEAD, or non-fast-forward without a lease). */
 export const UNSAFE_PUSH = 19;
+/**
+ * Proven: not admitted on the **scope axis** — out of focus (ADR 0245).
+ *
+ * Campaign membership and nothing else. It is a sibling of {@link AUDIENCE_NOT_AGENT}, not the same
+ * question: the two have different remedies, so they never collapse onto one code. Nor does either
+ * borrow {@link BLOCKED} — a scope refusal is not blockedness — or {@link PRECONDITION_UNKNOWN}: `20`
+ * and `21` are *proven* refusals, while a read that failed has proven nothing.
+ */
+export const OUT_OF_FOCUS = 20;
+/** Proven: not admitted on the **audience axis** — the `ready-for:` label is not agent, or absent (#4780). */
+export const AUDIENCE_NOT_AGENT = 21;
