@@ -7,6 +7,7 @@ import {
 	decodeManifest,
 	encodeManifest,
 	REVIEW_SURFACES,
+	SKILL_RIGOR_CHECKS,
 	STAGES,
 } from "./corpus.ts";
 
@@ -41,6 +42,17 @@ const validManifest = {
 				surface: "doc",
 				inputRef: 1850,
 				label: {verdict: "FAIL", findings: ["broken link"]},
+			},
+			{
+				stage: "review",
+				surface: "skill",
+				inputRef: 5038,
+				label: {
+					verdict: "FAIL",
+					rigorFindings: [
+						{check: "trigger-description-quality", finding: "description under-claims"},
+					],
+				},
 			},
 		],
 		"ship-it": [{stage: "ship-it", inputRef: 1851, label: {merged: true, mergeSha: "deadbee"}}],
@@ -120,13 +132,17 @@ describe("CorpusEntry — a per-stage label-shape mismatch is rejected", () => {
 	});
 });
 
-// ADR 0243: the merge of review-code + review-doc into one `review` stage is exactly where the
-// module's unrepresentable-invalid guarantee is easiest to lose, because the two surfaces carry
-// genuinely different label shapes (`acFindings` vs `findings`). It now holds over the
+// ADR 0243: the merge of the v1 review gates into one `review` stage is exactly where the module's
+// unrepresentable-invalid guarantee is easiest to lose, because the three surfaces carry genuinely
+// different label shapes (`acFindings` vs `findings` vs `rigorFindings`). It now holds over the
 // (stage, surface) PAIR, and these prove it at both layers — the schema and the type.
 describe("review — a label mismatched to its surface stays unrepresentable", () => {
 	const docShapedLabel = {verdict: "PASS", findings: ["broken link"]};
 	const codeShapedLabel = {verdict: "PASS", acFindings: ["AC1 met"]};
+	const skillShapedLabel = {
+		verdict: "PASS",
+		rigorFindings: [{check: "fabrika-conventions", finding: "restates a sibling's behavior"}],
+	};
 
 	it("rejects a doc-shaped label under surface code", () => {
 		const result = decodeEntry({
@@ -168,12 +184,57 @@ describe("review — a label mismatched to its surface stays unrepresentable", (
 		assert.isTrue(Result.isFailure(result));
 	});
 
-	it("rejects a surface outside the two this lane defines", () => {
+	it("rejects a surface outside the three ADR 0243 names", () => {
+		const result = decodeEntry({
+			stage: "review",
+			surface: "design",
+			inputRef: 1,
+			label: codeShapedLabel,
+		});
+		assert.isTrue(Result.isFailure(result));
+	});
+
+	it("rejects a code-shaped label under surface skill", () => {
 		const result = decodeEntry({
 			stage: "review",
 			surface: "skill",
 			inputRef: 1,
 			label: codeShapedLabel,
+		});
+		assert.isTrue(Result.isFailure(result));
+	});
+
+	it("rejects a skill-shaped label under surface doc", () => {
+		const result = decodeEntry({
+			stage: "review",
+			surface: "doc",
+			inputRef: 1,
+			label: skillShapedLabel,
+		});
+		assert.isTrue(Result.isFailure(result));
+	});
+
+	it("rejects a rigor finding attributed to a check outside the rubric's closed set", () => {
+		const result = decodeEntry({
+			stage: "review",
+			surface: "skill",
+			inputRef: 1,
+			// The rubric assigns gate-invariant preservation to the `governance` skill and says it is
+			// never graded here — so no corpus row may attribute a finding to it (ADR 0243 §1a).
+			label: {
+				verdict: "FAIL",
+				rigorFindings: [{check: "gate-invariant-preservation", finding: "a guard was dropped"}],
+			},
+		});
+		assert.isTrue(Result.isFailure(result));
+	});
+
+	it("rejects a rigor finding that carries no check attribution", () => {
+		const result = decodeEntry({
+			stage: "review",
+			surface: "skill",
+			inputRef: 1,
+			label: {verdict: "FAIL", rigorFindings: [{finding: "a bare string finding"}]},
 		});
 		assert.isTrue(Result.isFailure(result));
 	});
@@ -201,10 +262,37 @@ describe("review — a label mismatched to its surface stays unrepresentable", (
 			inputRef: number;
 			label: {verdict: "PASS"; acFindings: ReadonlyArray<string>};
 		}> = false;
+		const skillWellFormed: Inhabits<{
+			stage: "review";
+			surface: "skill";
+			inputRef: number;
+			label: {
+				verdict: "PASS";
+				rigorFindings: ReadonlyArray<{check: "cross-skill-conflict"; finding: string}>;
+			};
+		}> = true;
+		const skillFlatFindings: Inhabits<{
+			stage: "review";
+			surface: "skill";
+			inputRef: number;
+			label: {verdict: "PASS"; findings: ReadonlyArray<string>};
+		}> = false;
+		const skillUnknownCheck: Inhabits<{
+			stage: "review";
+			surface: "skill";
+			inputRef: number;
+			label: {
+				verdict: "PASS";
+				rigorFindings: ReadonlyArray<{check: "gate-invariant-preservation"; finding: string}>;
+			};
+		}> = false;
 
 		assert.isTrue(wellFormed);
 		assert.isFalse(surfaceMismatched);
 		assert.isFalse(surfaceless);
+		assert.isTrue(skillWellFormed);
+		assert.isFalse(skillFlatFindings);
+		assert.isFalse(skillUnknownCheck);
 	});
 });
 
@@ -288,11 +376,22 @@ describe("recorded provenance — the v1 review rows survive the merge unrelabel
 	});
 });
 
-// The founder ruling on #4979 fenced the `skill` surface's entry shape out of the lane that built
-// this stage (#5038 designs it). Nothing here may quietly invent one.
-describe("the skill surface has no entry shape yet", () => {
-	it("REVIEW_SURFACES names only the two surfaces whose label shapes ADR 0243 fixes", () => {
-		assert.deepStrictEqual([...REVIEW_SURFACES], ["code", "doc"]);
+describe("the review surface vocabulary is ADR 0243's three", () => {
+	it("REVIEW_SURFACES names every surface whose label shape ADR 0243 fixes", () => {
+		assert.deepStrictEqual([...REVIEW_SURFACES], ["code", "doc", "skill"]);
+	});
+
+	it("SKILL_RIGOR_CHECKS names the rubric's four checks and excludes the governance one", () => {
+		assert.deepStrictEqual(
+			[...SKILL_RIGOR_CHECKS],
+			[
+				"behavioral-correctness",
+				"trigger-description-quality",
+				"cross-skill-conflict",
+				"fabrika-conventions",
+			],
+		);
+		assert.notInclude(SKILL_RIGOR_CHECKS as ReadonlyArray<string>, "gate-invariant-preservation");
 	});
 });
 

@@ -83,12 +83,54 @@ admits exactly one label shape:
 |---|---|---|
 | `review` | `code` | `{verdict, acFindings}` |
 | `review` | `doc` | `{verdict, findings}` |
-| `review` | `skill` | the skill rubric's own label shape |
+| `review` | `skill` | `{verdict, rigorFindings: {check, finding}[]}` (§1a) |
 
 A `review` entry whose label shape does not match its `surface` stays **unrepresentable** — the
 guarantee `corpus.ts` states for `stage` now holds for the `(stage, surface)` pair. `surface` is
 therefore required on a `review` entry and carries no default; a `review` entry with no `surface` is
 a decode failure, not a row graded by a fallback rubric.
+
+### 1a. Amendment, 2026-08-09 — the `skill` surface's label shape ([#5038](https://github.com/kamp-us/phoenix/issues/5038))
+
+The table above shipped with its third row open, because the founder ruling on
+[#4979](https://github.com/kamp-us/phoenix/issues/4979) fenced designing that shape out of the lane
+that built the stage. This amendment fills the cell; nothing else in the record changes.
+
+The shape is:
+
+```
+{ verdict, rigorFindings: ReadonlyArray<{check, finding}> }
+```
+
+where `check` is one of a closed four-value vocabulary transcribed from
+[`claude-plugins/fabrika/skills/review/rubrics/skill.md`](../claude-plugins/fabrika/skills/review/rubrics/skill.md):
+`behavioral-correctness`, `trigger-description-quality`, `cross-skill-conflict`,
+`fabrika-conventions`.
+
+**The one live question was flat findings versus per-check attribution, and it resolves to
+per-check.** Three reasons, in the order they carry weight:
+
+- **The source already carries the attribution.** The skill rubric is the only one of the three
+  whose checks are a *numbered, closed set* — `code`'s findings are per acceptance criterion and
+  `doc`'s are a hygiene checklist with no fixed partition, which is why both of those flatten to a
+  bare string array honestly. Flattening here would discard a distinction the rubric states, and no
+  consumer could recover it.
+- **It makes the rubric's own exclusion enforceable.** The rubric assigns gate-invariant
+  preservation to the `governance` skill and says it is "never graded here". With a closed `check`
+  vocabulary that omits it, a row attributing a finding to that check is *unrepresentable* — the
+  fence becomes a decode failure instead of a convention. A flat array cannot express the fence at
+  all, which is the same make-invalid-states-unrepresentable argument §6 uses to reject the superset
+  struct.
+- **It grades what a skill review is actually wrong about.** A right finding filed under the wrong
+  check is a real miss of the rubric, and the pair label is what lets the oracle see it. The grader
+  compares the *set of pairs*, in the same order-and-repeat-insensitive way the other two surfaces
+  compare their finding sets (ADR 0112 §3), so no new grading regime is introduced.
+
+**Not decided here, deliberately:** there is no recorded `review-skill` provenance key, because the
+v1 gate committed no rows under one — a provenance key is minted by history
+([#4977](https://github.com/kamp-us/phoenix/issues/4977)), never in advance. If the rubric later
+renumbers its checks, that is a change to this closed vocabulary and to the rows keyed by it, and it
+comes back through this record.
 
 ### 2. `gradeEntry` dispatches on the pair
 

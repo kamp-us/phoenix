@@ -36,15 +36,29 @@ export type LiveStage = (typeof STAGES)[number];
 
 /**
  * The review surfaces the one `review` stage fans into (ADR 0243 §1) — the axis that selects
- * both a review entry's label shape and its grader. The ADR names a third, `skill`, whose entry
- * shape is deliberately absent here: it has no designed label shape yet, and the founder ruling on
- * #4979 fenced designing one out of this lane, so it is #5038's. A surface with no entry shape is
- * not listed, because this tuple is what a consumer enumerates.
+ * both a review entry's label shape and its grader.
  */
-export const REVIEW_SURFACES = ["code", "doc"] as const;
+export const REVIEW_SURFACES = ["code", "doc", "skill"] as const;
 
 /** One review surface — the sub-discriminator of the `review` stage. */
 export type ReviewSurface = (typeof REVIEW_SURFACES)[number];
+
+/**
+ * The skill rubric's four rigor checks, as a closed vocabulary, in the order
+ * `claude-plugins/fabrika/skills/review/rubrics/skill.md` numbers them. The rubric's fifth
+ * candidate — gate-invariant preservation — is absent on purpose: that check is the `governance`
+ * skill's and the rubric says it is "never graded here", so a corpus row cannot attribute a
+ * finding to it. See ADR 0243 §1a.
+ */
+export const SKILL_RIGOR_CHECKS = [
+	"behavioral-correctness",
+	"trigger-description-quality",
+	"cross-skill-conflict",
+	"fabrika-conventions",
+] as const;
+
+/** One rigor check of the skill rubric. */
+export type SkillRigorCheck = (typeof SKILL_RIGOR_CHECKS)[number];
 
 /** A reproducible input identifier — an issue/PR number (ADR 0112 §1: pinned by identifier). */
 const InputRef = Schema.Int;
@@ -105,7 +119,23 @@ const ReviewDocLabel = Schema.Struct({
 });
 
 /**
- * The `review` stage's two members, each pinning `surface` to a literal and admitting exactly one
+ * The skill surface's oracle: the verdict plus findings that each name the rigor check they came
+ * from. This surface's rubric is the only one of the three whose checks are a numbered, closed set,
+ * so a flat `Array(String)` would throw away an attribution the source already carries — and would
+ * leave the rubric's governance exclusion unexpressible. See ADR 0243 §1a for the derivation.
+ */
+const ReviewSkillLabel = Schema.Struct({
+	verdict: Verdict,
+	rigorFindings: Schema.Array(
+		Schema.Struct({
+			check: Schema.Literals([...SKILL_RIGOR_CHECKS]),
+			finding: Schema.String,
+		}),
+	),
+});
+
+/**
+ * The `review` stage's three members, each pinning `surface` to a literal and admitting exactly one
  * label shape. `surface` is required and has no default: a `review` entry with no surface is a
  * decode failure, never a row a fallback rubric grades (ADR 0243 §1).
  */
@@ -121,6 +151,13 @@ const ReviewDocEntry = Schema.Struct({
 	surface: Schema.Literal("doc"),
 	inputRef: InputRef,
 	label: ReviewDocLabel,
+});
+
+const ReviewSkillEntry = Schema.Struct({
+	stage: Schema.Literal("review"),
+	surface: Schema.Literal("skill"),
+	inputRef: InputRef,
+	label: ReviewSkillLabel,
 });
 
 /**
@@ -141,10 +178,15 @@ const RecordedReviewDocEntry = Schema.Struct({
 	label: ReviewDocLabel,
 });
 
-/** Everything a manifest's `review` group admits: both live surfaces plus both recorded keys. */
+/**
+ * Everything a manifest's `review` group admits: all three live surfaces plus the two recorded
+ * keys. There is no recorded `review-skill` key, because the v1 gate recorded no rows under one —
+ * a provenance key is minted by history, never in advance (#4977).
+ */
 const ReviewGroupEntry = Schema.Union([
 	ReviewCodeEntry,
 	ReviewDocEntry,
+	ReviewSkillEntry,
 	RecordedReviewCodeEntry,
 	RecordedReviewDocEntry,
 ]);
@@ -170,6 +212,7 @@ export const CorpusEntry = Schema.Union([
 	RecordedWriteCodeEntry,
 	ReviewCodeEntry,
 	ReviewDocEntry,
+	ReviewSkillEntry,
 	RecordedReviewCodeEntry,
 	RecordedReviewDocEntry,
 	ShipItEntry,
