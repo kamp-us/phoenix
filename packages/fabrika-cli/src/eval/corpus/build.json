@@ -2,7 +2,7 @@
 	"version": 1,
 	"stages": {
 		"triage": [],
-		"write-code": [
+		"build": [
 			{
 				"stage": "write-code",
 				"inputRef": 1223,

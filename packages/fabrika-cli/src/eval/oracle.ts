@@ -81,7 +81,7 @@ const TriageArtifact = Schema.Struct({
 	priority: Priority,
 	status: Schema.String,
 });
-const WriteCodeArtifact = Schema.Struct({
+const BuildArtifact = Schema.Struct({
 	fixesRef: Schema.Int,
 	ciGreen: Schema.Boolean,
 	reviewVerdict: Verdict,
@@ -100,7 +100,7 @@ const ShipItArtifact = Schema.Struct({
 });
 
 const decodeTriage = Schema.decodeUnknownResult(TriageArtifact);
-const decodeWriteCode = Schema.decodeUnknownResult(WriteCodeArtifact);
+const decodeBuild = Schema.decodeUnknownResult(BuildArtifact);
 const decodeReviewCode = Schema.decodeUnknownResult(ReviewCodeArtifact);
 const decodeReviewDoc = Schema.decodeUnknownResult(ReviewDocArtifact);
 const decodeShipIt = Schema.decodeUnknownResult(ShipItArtifact);
@@ -124,14 +124,13 @@ const gradeTriage = (label: LabelOf<"triage">, artifact: unknown): Grade => {
 };
 
 /**
- * write-code passes iff the PR carries the labeled `Fixes #N` + CI green + an independent
+ * build passes iff the PR carries the labeled `Fixes #N` + CI green + an independent
  * `review-code: PASS` — i.e. the actual `{fixesRef, ciGreen, reviewVerdict}` equals the label
- * (ADR 0112 §3).
+ * (ADR 0112 §3). The recorded v1 `write-code` rows share this label shape, so they grade here too.
  */
-const gradeWriteCode = (label: LabelOf<"write-code">, artifact: unknown): Grade => {
-	const decoded = decodeWriteCode(artifact);
-	if (Result.isFailure(decoded))
-		return failMalformed(`write-code artifact: ${decoded.failure.message}`);
+const gradeBuild = (label: LabelOf<"build">, artifact: unknown): Grade => {
+	const decoded = decodeBuild(artifact);
+	if (Result.isFailure(decoded)) return failMalformed(`build artifact: ${decoded.failure.message}`);
 	const a = decoded.success;
 	return gradeFields([
 		...cmpScalar("fixesRef", a.fixesRef, label.fixesRef),
@@ -185,8 +184,9 @@ export const gradeEntry = (entry: CorpusEntry, artifact: unknown): Grade => {
 	switch (entry.stage) {
 		case "triage":
 			return gradeTriage(entry.label, artifact);
+		case "build":
 		case "write-code":
-			return gradeWriteCode(entry.label, artifact);
+			return gradeBuild(entry.label, artifact);
 		case "review-code":
 			return gradeReviewCode(entry.label, artifact);
 		case "review-doc":

@@ -18,12 +18,25 @@ slice ([#1848](https://github.com/kamp-us/phoenix/issues/1848)) shipped the corp
   decision artifact. It is a **discriminated union keyed on `stage`**, so a label whose
   shape doesn't match its stage is unrepresentable (make-invalid-states-unrepresentable):
   - `triage` → `{ type, priority, status }`
-  - `write-code` → `{ fixesRef, ciGreen, reviewVerdict }`
+  - `build` → `{ fixesRef, ciGreen, reviewVerdict }`
   - `review-code` → `{ verdict, acFindings }`
   - `review-doc` → `{ verdict, findings }`
   - `ship-it` → `{ merged, mergeSha }`
-- `CorpusManifest` — the frozen ground truth: entries grouped under per-stage keys, each
+- `CorpusManifest` — the frozen ground truth: entries grouped under **live** stage keys, each
   key admitting only that stage's entry (the second half of the unrepresentable guarantee).
+
+### Live stage key vs recorded provenance
+
+`STAGES` is the **live** vocabulary — what `--stage` accepts and what a manifest groups under.
+An entry's own `stage` is **provenance**: the stage that actually produced that row. The two
+coincide for anything measured from now on and differ for the rows the v1 pipeline recorded.
+
+The founder ruling on [#4977](https://github.com/kamp-us/phoenix/issues/4977) fixes what happens
+to those rows: they keep their original key, because re-keying them would republish a v1
+measurement as a fabrika one. So `build` is the live stage, `write-code` is not a stage any more,
+and the three rows in `corpus/build.json` are still keyed `write-code` — the decoder accepts that
+key on an already-recorded row and nowhere else. Read a record's stage key as *what was run*,
+never as a pointer into `STAGES`; joins (the runner, the scorecard) key on the live stage.
 - `decodeManifest(text)` — total: returns a typed `Result` failure (`malformed-json` or
   `schema-mismatch`) on bad input, never throws. `encodeManifest(manifest)` round-trips it.
 
@@ -40,7 +53,7 @@ a stage or call `gh` (that is the runner slice, #1851).
 An entry passes iff the observed `artifact` reproduces its known-good `label`, per stage (ADR 0112 §3):
 
 - `triage` — actual `{type, priority, status}` equals the label.
-- `write-code` — the PR carries the labeled `Fixes #N` + CI green + an independent `review-code: PASS`
+- `build` — the PR carries the labeled `Fixes #N` + CI green + an independent `review-code: PASS`
   (actual `{fixesRef, ciGreen, reviewVerdict}` equals the label).
 - `review-code` — actual verdict + AC-finding **set** match the label (findings compared order- and
   duplicate-insensitively).
@@ -142,7 +155,7 @@ fabrika eval report <rows.json>
 fabrika eval report <rows.json> --json
 
 # price net saving against a baseline (stage × model)
-fabrika eval report <rows.json> --baseline-stage write-code --baseline-model opus-4.8
+fabrika eval report <rows.json> --baseline-stage build --baseline-model opus-4.8
 ```
 
 `<rows.json>` is a serialized `RunRow[]` — the array `collectRuns` emits. `decodeReportInput` is
@@ -154,10 +167,10 @@ total: a malformed body or a shape mismatch exits non-zero with a typed reason, 
 {
   "decisionRef": 1576,                       // the decision this evidence feeds — never made here
   "framing": "This scorecard is measurement feeding the model-tiering decision (#1576); …",
-  "baseline": { "stage": "write-code", "model": "opus-4.8" } | null,
+  "baseline": { "stage": "build", "model": "opus-4.8" } | null,
   "cells": [
     {
-      "stage": "write-code",
+      "stage": "build",
       "model": "opus-4.8" | null,            // reconstructed from the transcript; null when unattributable
       "gradedRuns": 3,                        // pass-rate denominator (includes transcript-missing runs)
       "passedRuns": 2,
@@ -341,7 +354,7 @@ The frozen ground truth lives beside this module as one manifest per stage under
 [`corpus/`](./corpus) (issue [#1854](https://github.com/kamp-us/phoenix/issues/1854)):
 
 - [`corpus/triage.json`](./corpus/triage.json) — triage classifications
-- [`corpus/write-code.json`](./corpus/write-code.json) — write-code outcomes
+- [`corpus/build.json`](./corpus/build.json) — build outcomes (rows recorded by v1 `write-code`)
 - [`corpus/review-code.json`](./corpus/review-code.json) — review-code verdicts
 
 Each file is a `CorpusManifest` whose non-target stage arrays are empty, so it decodes
@@ -367,7 +380,7 @@ The corpus is governed by the **representative-task-set discipline** of ADR
 - **Selection — representative, stable, reproducible-from-id.** An entry is a real
   pipeline input chosen to be small and stable, pinned by its issue/PR **identifier** (never
   "a recent issue"). Each stage seeds the ADR 0112 §1 recorded input (triage
-  [#1227](https://github.com/kamp-us/phoenix/issues/1227), write-code
+  [#1227](https://github.com/kamp-us/phoenix/issues/1227), build
   [#1223](https://github.com/kamp-us/phoenix/issues/1223) →
   [#1224](https://github.com/kamp-us/phoenix/pull/1224), review-code
   [#1199](https://github.com/kamp-us/phoenix/pull/1199)) and adds entries spanning the
@@ -470,7 +483,7 @@ with no edits" is checked against the real shape rather than asserted.
 
 ```bash
 fabrika eval run <evals.json> \
-  --stage <triage|write-code|review-code|review-doc|ship-it> \
+  --stage <triage|build|review-code|review-doc|ship-it> \
   --plugin-dir <the candidate skill's plugin dir> \
   --model <model> \
   [--arms with-skill,without-skill] [--json-schema <schema.json>] \

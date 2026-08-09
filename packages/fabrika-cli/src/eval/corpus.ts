@@ -9,11 +9,16 @@
  * into a version-controlled ground truth. See ADR 0112.
  *
  * The one non-obvious shape: a corpus entry is a **discriminated union keyed on `stage`**,
- * so a label whose shape doesn't match its stage is *unrepresentable* — the write-code
+ * so a label whose shape doesn't match its stage is *unrepresentable* — the build
  * label `{fixesRef, ciGreen, reviewVerdict}` cannot sit under `stage: "triage"`, whose
  * only admissible label is `{type, priority, status}` (make-invalid-states-unrepresentable).
  * The manifest doubles the guarantee: it groups entries under per-stage keys whose value
  * schema is that stage's entry alone, so a mismatched entry can't even be filed.
+ *
+ * The second non-obvious shape: an entry's `stage` is **recorded provenance** — what actually
+ * produced the row — while a manifest's group key is the **live stage**. The two are the same
+ * for anything measured from now on and differ for the v1 rows the harness already carries.
+ * See the founder ruling on #4977.
  *
  * `decodeManifest` is total — it returns a typed `Result` failure on malformed JSON or a
  * schema mismatch, never a throw.
@@ -21,8 +26,11 @@
 import {Result} from "effect";
 import * as Schema from "effect/Schema";
 
-/** The five graded pipeline stages a corpus entry can label. */
-export const STAGES = ["triage", "write-code", "review-code", "review-doc", "ship-it"] as const;
+/** The live stage vocabulary: what `--stage` accepts and what a manifest groups entries under. */
+export const STAGES = ["triage", "build", "review-code", "review-doc", "ship-it"] as const;
+
+/** One live stage key. Distinct from an entry's `stage`, which may be a recorded v1 name. */
+export type LiveStage = (typeof STAGES)[number];
 
 /** A reproducible input identifier — an issue/PR number (ADR 0112 §1: pinned by identifier). */
 const InputRef = Schema.Int;
@@ -44,15 +52,30 @@ const TriageEntry = Schema.Struct({
 	}),
 });
 
-/** write-code's oracle: the issue it fixes, a green CI, and the review verdict its PR earned. */
-const WriteCodeEntry = Schema.Struct({
+/** build's oracle: the issue it fixes, a green CI, and the review verdict its PR earned. */
+const BuildLabel = Schema.Struct({
+	fixesRef: InputRef,
+	ciGreen: Schema.Boolean,
+	reviewVerdict: Verdict,
+});
+
+const BuildEntry = Schema.Struct({
+	stage: Schema.Literal("build"),
+	inputRef: InputRef,
+	label: BuildLabel,
+});
+
+/**
+ * A row the v1 `write-code` stage recorded, under the same label shape `build` now records.
+ * Its key stays `write-code` because that is what ran — a recorded stage key is provenance, not
+ * a pointer into the live vocabulary, and re-keying it would republish a v1 measurement as a
+ * fabrika one. See the founder ruling on #4977. Nothing new may be filed under it; the live key
+ * `build` is what a manifest groups both under.
+ */
+const RecordedWriteCodeEntry = Schema.Struct({
 	stage: Schema.Literal("write-code"),
 	inputRef: InputRef,
-	label: Schema.Struct({
-		fixesRef: InputRef,
-		ciGreen: Schema.Boolean,
-		reviewVerdict: Verdict,
-	}),
+	label: BuildLabel,
 });
 
 /** review-code's oracle: the verdict plus the acceptance-criteria findings it surfaced. */
@@ -91,7 +114,8 @@ const ShipItEntry = Schema.Struct({
  */
 export const CorpusEntry = Schema.Union([
 	TriageEntry,
-	WriteCodeEntry,
+	BuildEntry,
+	RecordedWriteCodeEntry,
 	ReviewCodeEntry,
 	ReviewDocEntry,
 	ShipItEntry,
@@ -100,15 +124,17 @@ export const CorpusEntry = Schema.Union([
 export type CorpusEntry = typeof CorpusEntry.Type;
 
 /**
- * The frozen, version-controlled ground truth: entries grouped under per-stage keys. Each
+ * The frozen, version-controlled ground truth: entries grouped under LIVE stage keys. Each
  * group's value schema is that stage's entry alone, so a mismatched entry cannot be filed
- * under the wrong stage — the second half of the unrepresentable-invalid guarantee.
+ * under the wrong stage — the second half of the unrepresentable-invalid guarantee. `build`
+ * additionally admits the recorded `write-code` rows, which share its label shape and keep their
+ * own provenance key.
  */
 export const CorpusManifest = Schema.Struct({
 	version: Schema.Int,
 	stages: Schema.Struct({
 		triage: Schema.Array(TriageEntry),
-		"write-code": Schema.Array(WriteCodeEntry),
+		build: Schema.Array(Schema.Union([BuildEntry, RecordedWriteCodeEntry])),
 		"review-code": Schema.Array(ReviewCodeEntry),
 		"review-doc": Schema.Array(ReviewDocEntry),
 		"ship-it": Schema.Array(ShipItEntry),
