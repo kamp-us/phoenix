@@ -350,11 +350,22 @@ in either direction. Retired or foreign ⇒ the ordinary `other`, which co-check
 
 **`dormant-lane` releases the pin only on positive proof, and the proof is the hand-clearing an
 operator used to perform per occurrence:** the tree is clean, its HEAD is the branch tip, and that
-commit is on a remote-tracking branch (`kp_lane_quiescent`). Only then is the stamp retired — one
-`mv` of a bookkeeping file. **No worktree is ever removed, no `--force` is ever used, and nothing is
-written into another tree's working files.** Two independent signals must both say "not working"
-before anything is released, which is why an idle-but-live lane (dirty tree, or commits not pushed)
-still blocks.
+commit is contained in `origin/<branch>` (`kp_lane_quiescent` — that branch's own upstream, not any
+`refs/remotes/*`, so a stale-forward ref cannot answer "safely on a remote" for work that is not).
+Only then is the stamp retired — one `mv` of a bookkeeping file. **No worktree is ever removed, no
+`--force` is ever used, and nothing is written into another tree's working files.**
+
+Two signals must both say "not working" before anything is released, so an idle lane with anything
+to lose — a dirty tree, or a commit that is nowhere else — still blocks. **That is not the same as
+"a live lane is never released", and the gap is exactly what the TTL trades.** A lane that is
+genuinely alive but has been git-quiet for longer than `$KP_LANE_BEAT_TTL`, with a clean tree sitting
+on the branch tip and pushed, satisfies all three facts and **is** released. Two things bound that:
+at the instant of release nothing unique lives in that tree, and the wrongly-retired lane then halts
+**fail-closed at its very next git op** — `lane_worktree` skips a retired stamp, so its
+`wt_preflight` resolves zero stamped trees and refuses instead of committing onto a moved ref. The
+cost is a broken lane run needing re-dispatch, not lost work. That is what raising or lowering the
+TTL buys: longer disrupts fewer live lanes and leaves more repairs blocked for longer, shorter the
+reverse.
 
 **Every refusal must name a remedy the refusing agent can execute.** The original `live-lane` refusal
 named two — "run this repair from that lane's worktree" and "wait for it to finish" — and the

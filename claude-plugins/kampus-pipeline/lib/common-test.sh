@@ -641,6 +641,11 @@ fi
 # ---------------------------------------------------------------------------------------------
 # #4868 — the lane stamp's LIFECYCLE. A real remote, because "is this work anywhere but that tree?"
 # is the fact that separates a leftover tree it is safe to release from one holding the only copy.
+#
+# The bare repo is populated by FETCHING INTO IT from the working repo, never by pushing out of it:
+# the corpus lint reds on a bare push anywhere in a runnable block — and a `.sh` is runnable in
+# whole, comments included — with deliberately no pragma and no exempt list (#4213, ADR 0202). The
+# fixture only needs the objects and refs to exist over there, and a fetch puts them there.
 # ---------------------------------------------------------------------------------------------
 
 mkdir -p "$tmp/rel" "$tmp/rel-bare"
@@ -652,7 +657,7 @@ if ! git -C "$tmp/rel-bare" init -q --bare >/dev/null 2>&1 ||
 	! git -C "$tmp/rel" worktree add -q -b rel-lane "$tmp/rel-lane" >/dev/null 2>&1 ||
 	! git -C "$tmp/rel" worktree add -q -b rel-feat "$tmp/rel-feat" >/dev/null 2>&1 ||
 	! git -C "$tmp/rel" worktree add -q -b rel-done "$tmp/rel-done" >/dev/null 2>&1 ||
-	! git -C "$tmp/rel" push -q origin rel-feat rel-done >/dev/null 2>&1 ||
+	! git -C "$tmp/rel-bare" fetch -q "$tmp/rel" rel-feat:refs/heads/rel-feat rel-done:refs/heads/rel-done >/dev/null 2>&1 ||
 	! git -C "$tmp/rel" fetch -q origin >/dev/null 2>&1; then
 	fail "fixture did not take: could not build the lane-lifecycle fixture — cases 32–36 were NOT exercised"
 else
@@ -719,7 +724,7 @@ else
 	printf 'a file this tree keeps\n' > "$rel_feat/KEEP.txt"
 	git -C "$rel_feat" add KEEP.txt >/dev/null 2>&1
 	git -C "$rel_feat" -c user.name=kp-test -c user.email=kp-test@invalid commit -q -m keep >/dev/null 2>&1
-	git -C "$rel_feat" push -q origin rel-feat >/dev/null 2>&1
+	git -C "$tmp/rel-bare" fetch -q "$tmp/rel" rel-feat:refs/heads/rel-feat >/dev/null 2>&1
 	git -C "$rel_feat" fetch -q origin >/dev/null 2>&1
 	CLAUDE_CODE_SESSION_ID="$rel_sid" kp_switch_head_branch "$rel_lane" rel-feat 2>"$err"; rc=$?
 	diag="$(cat "$err")"

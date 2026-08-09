@@ -511,8 +511,13 @@ kp_lane_quiescent() { # <my-worktree> <pin-root> <branch>
 		printf 'its HEAD (%s) is not the tip of %s (%s) — that tree is mid-flight\n' "$head" "$branch" "$tip"
 		return 1
 	fi
-	if [ -z "$(git -C "$mine" for-each-ref --contains "$head" --format='%(refname)' refs/remotes/ 2>/dev/null)" ]; then
-		printf 'its HEAD (%s) is on NO remote-tracking branch — that work exists only in that tree\n' "$head"
+	# Containment in THIS branch's own upstream, not in any `refs/remotes/*` — an unrelated
+	# remote-tracking ref that is stale-forward (it still names a commit an upstream force-push
+	# dropped) would answer "safely on a remote" for work that is no longer there, and this is the
+	# predicate that decides whether a pin is RELEASED, so its false positive is the fail-open one.
+	# An absent `origin/<branch>` makes `--is-ancestor` non-zero, which refuses — the safe direction.
+	if ! git -C "$mine" merge-base --is-ancestor "$head" "refs/remotes/origin/$branch" 2>/dev/null; then
+		printf 'its HEAD (%s) is not contained in origin/%s — that work exists only in that tree\n' "$head" "$branch"
 		return 1
 	fi
 	return 0
@@ -681,7 +686,7 @@ kp_switch_head_branch() {
 		# so by renaming one bookkeeping file — no worktree removed, no `--force`, not one byte
 		# written into that tree.
 		if ! why="$(kp_lane_quiescent "$wt" "$root" "$branch")"; then
-			printf 'kp_switch_head_branch REFUSED (fail-closed): %s is pinned by %s, a worktree stamped with THIS session'\''s lane id (%s) whose heartbeat is stale or absent — that lane is not provably alive, but it is not provably finished either: %s. Releasing the pin now could move the branch ref under work that exists nowhere else. REMEDY: re-run this same step yourself — no sibling tree, no human. It re-probes on every run and releases the pin by itself as soon as that tree is clean, sitting on the tip of %s, and pushed to a remote. If this same reason keeps printing, that tree holds work that is not yours to move — post THIS line on the PR and stop. Do NOT remove that worktree and do NOT `--force` anything. NOTHING was switched.\n' "$branch" "$root" "${CLAUDE_CODE_SESSION_ID:-<unset>}" "$why" "$branch" >&2
+			printf 'kp_switch_head_branch REFUSED (fail-closed): %s is pinned by %s, a worktree stamped with THIS session'\''s lane id (%s) whose heartbeat is stale or absent — that lane is not provably alive, but it is not provably finished either: %s. Releasing the pin now could move the branch ref under work that exists nowhere else. REMEDY: re-run this same step yourself — no sibling tree, no human. It re-probes on every run and releases the pin by itself as soon as that tree is clean, sitting on the tip of %s, and pushed to origin. If this same reason keeps printing, that tree holds work that is not yours to move — post THIS line on the PR and stop. Do NOT remove that worktree and do NOT `--force` anything. NOTHING was switched.\n' "$branch" "$root" "${CLAUDE_CODE_SESSION_ID:-<unset>}" "$why" "$branch" >&2
 			return 1
 		fi
 		common="$(git -C "$wt" rev-parse --git-common-dir 2>/dev/null)"
@@ -693,7 +698,7 @@ kp_switch_head_branch() {
 			printf 'kp_switch_head_branch REFUSED (fail-closed): %s is pinned by the dormant lane tree %s, which IS provably finished with it, but its lane stamp could not be retired (bookkeeping dir: %s). Releasing the pin without retiring the stamp would leave the next repair reading the same stuck state. REMEDY: re-run this step yourself; if it keeps failing here, the repo'\''s worktree bookkeeping under %s is not writable — post THIS line on the PR. Do NOT remove that worktree. NOTHING was switched.\n' "$branch" "$root" "${admin:-<not registered>}" "${common:-<unresolved>}" >&2
 			return 1
 		fi
-		printf 'kp_switch_head_branch: %s is pinned by %s, a same-session lane whose heartbeat is stale (%s) and whose tree is PROVABLY finished with it — clean, on the tip of %s, and that commit is on a remote-tracking branch. Retired its stamp (kampus-lane -> kampus-lane.retired, one bookkeeping file; the worktree and every file in it are untouched) and taking the sanctioned co-checkout.\n' "$branch" "$root" "${age:+${age}s ago}${age:-never beat}" "$branch" >&2
+		printf 'kp_switch_head_branch: %s is pinned by %s, a same-session lane whose heartbeat is stale (%s) and whose tree is PROVABLY finished with it — clean, on the tip of %s, and that commit is contained in origin/%s. Retired its stamp (kampus-lane -> kampus-lane.retired, one bookkeeping file; the worktree and every file in it are untouched) and taking the sanctioned co-checkout.\n' "$branch" "$root" "${age:+${age}s ago}${age:-never beat}" "$branch" "$branch" >&2
 		kp__co_checkout "$wt" "$branch" "$root" || return 1
 		;;
 	primary)
