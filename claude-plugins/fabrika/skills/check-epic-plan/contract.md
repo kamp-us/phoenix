@@ -219,25 +219,23 @@ the gap between deciding and writing is closed by re-deciding against a value th
 not by trusting a cached decision. It is the same shape `build-epic` uses when it threads
 `--commit <sha>` between its verbs.
 
-**Two additive edits to `verdict-marker.ts` are required**, stated so an implementer does not
-discover the second one mid-build:
+**The two additive edits to `verdict-marker.ts` this gate needs landed in #5107**, recorded here
+because the second one is easy to miss and stays load-bearing:
 
-1. `NAMESPACE` is `/^review(-[a-z0-9]+)*$/`; widen it to
-   `/^(review|check-epic-plan)(-[a-z0-9]+)*$/`.
-2. **`read()` gates on `namespace.startsWith("review")` before `NAMESPACE` is ever tested**, and
-   returns `Absent` when it fails. That gate must widen with the regex — otherwise the verb emits
-   a marker it can never read back, which collides head-on with its own `9` read-back guard.
+1. `NAMESPACE` is `/^(review|check-epic-plan)(-[a-z0-9]+)*$/`, widened from the `review`-only class.
+2. **`read()` gates on the namespace prefix before `NAMESPACE` is ever tested**, and returns
+   `Absent` when it fails. That gate widened with the regex (`NAMESPACE_PREFIXES = ["review",
+   "check-epic-plan"]`) — had it not, the verb would emit a marker it can never read back, which
+   collides head-on with its own `9` read-back guard.
 
-Two diagnostic strings in the same module become false once those land and are updated with them:
-the `Absent` reason `the first line does not open with a "review…:" namespace` and the
-`parseFields` reason `is not a "review" or "review-<gate>" namespace`. `MARKER_LINE`'s
-`[A-Za-z0-9_-]+` class already admits `check-epic-plan`, and the `HeadSha` brand's 7–40-hex bound
-already admits a 12-hex digest, so neither needs touching.
+The module's two diagnostic strings widened with them and already speak the plan gate's vocabulary.
+`MARKER_LINE`'s `[A-Za-z0-9_-]+` class already admitted `check-epic-plan`, and the `HeadSha` brand's
+7–40-hex bound already admits a 12-hex digest, so neither needed touching.
 
-Both code edits are additive: no existing marker's reading changes, and the
-`Absent`-versus-`Malformed` discrimination the module exists to protect is untouched. **Do not** instead reuse the `review`
-namespace — a plan verdict wearing a review namespace is precisely the family confusion the
-partition ruling removed (#4891).
+Both code edits were additive: no existing marker's reading changed, and the
+`Absent`-versus-`Malformed` discrimination the module exists to protect is untouched. The plan gate keeps its **own**
+namespace and **never** reuses `review` — a plan verdict wearing a review namespace is precisely the
+family confusion the partition ruling removed (#4891).
 
 `Current` / `Stale` / `Unbindable` are what a **later reader** of the posted marker resolves
 through `bindToHead`; they are not this run's arms. This run's own drift check is the `--digest`
