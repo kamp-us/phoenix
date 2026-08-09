@@ -1,13 +1,16 @@
 /**
- * `review diff` — the PR's diff bytes, read out of one commit, with truncation refused rather than
+ * `review diff` — the PR's diff bytes, read out of one commit, with a short read refused rather than
  * silently passed through.
  *
- * This verb is not a relay, and two proofs are why. **Completeness:** GitHub truncates large diffs at
- * the API tier, so a gate that judged the visible prefix as the whole PR is the #3925 blind-PASS
- * class one layer down; v1's `pr-diff.sh` was the relay, and nothing checked what it served.
- * **Provenance:** the bytes come from the object database at the bound commit (`head.ts`), never from
- * an endpoint that takes a PR number and no commit — see that module for why a SHA on the verdict is
- * not the same thing as bytes from that SHA (#5117).
+ * This verb is not a relay, and two proofs are why. **Completeness:** a diff carrying fewer files
+ * than the PR declares is refused, because a gate that judged the visible prefix as the whole PR is
+ * the #3925 blind-PASS class one layer down; v1's `pr-diff.sh` was the relay, and nothing checked
+ * what it served. This is not a guard against a truncating platform: the diff media type refuses an
+ * over-limit diff rather than serving a short one, and these bytes never come from it — see
+ * `diff.ts` for what the proof does and does not cover (#4993). **Provenance:** the bytes come from
+ * the object database at the bound commit via `diffRange`, never from an endpoint that takes a PR
+ * number and no commit — see `head.ts` for why a SHA on the verdict is not the same thing as bytes
+ * from that SHA (#5117).
  */
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";

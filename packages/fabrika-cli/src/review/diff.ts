@@ -2,14 +2,20 @@
  * The unified-diff walk: how many files the served diff actually carries, and where each added or
  * removed line sits.
  *
- * **The completeness proof is the file count, and only the file count.** GitHub truncates large
- * diffs at the API tier, and a gate that judged the visible prefix as the whole PR is the #3925
- * blind-PASS class one layer down — so the served diff's `diff --git` header count is compared
- * against the PR's declared `changed_files` and a short one is refused. It is deliberately not
- * compared against a literal truncation marker: the exact bytes GitHub emits for a truncated diff
- * are not verifiable from this repo, and an unverified marker string is a check that silently stops
- * matching (CLAUDE.md's grounding rule). The count is derivable from what the platform already
- * declares, so it is the proof this module makes.
+ * **The completeness proof is the file count, and only the file count.** The bytes are local
+ * `git diff <base>...<head>` at the bound commit (`diff-verb.ts`, #5117), so the proof compares the
+ * `diff --git` header count against the PR's declared `changed_files` and a short one is refused:
+ * serving a prefix as the whole PR is the #3925 blind-PASS class one layer down.
+ *
+ * No truncation marker is matched, because there is nothing to match. `application/vnd.github.diff`
+ * does not truncate — over its limits it refuses with HTTP 406 and `errors[].code = "too_large"`,
+ * under them it serves whole (live probe, recorded on #4993) — and these bytes do not come from
+ * that endpoint anyway. The earlier claim that GitHub truncates at the API tier was asserted from
+ * intuition and is false (CLAUDE.md's grounding rule).
+ *
+ * The count sees whole files only: a diff cut inside the last file's hunks still carries every
+ * header and passes. That is a stated bound of the proof, not a failure mode defended against — no
+ * producer for that shape is known.
  */
 
 const FILE_HEADER = /^diff --git a\/(.*) b\/(.*)$/;

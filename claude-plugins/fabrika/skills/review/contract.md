@@ -152,9 +152,9 @@ formed over one tree land on another (#3769 / #4338's class). It seats at both e
 at the emit seam (`review post`, where the live head has moved past the judged one) and at the
 read seam (`review scope` / `review diff`, where a `--sha` that is not the PR's head would have
 a human spend a review on a tree the PR has left — #5117). `13` is the
-incomplete-enumeration refusal: the read *succeeded* and is *provably short* — a diff the API
-truncated, a check-run page count below `total_count` — which is neither `11` (nothing failed)
-nor `7` (scope exists; it just was not all seen). Folding `13` into either would render a
+incomplete-enumeration refusal: the read *succeeded* and is *provably short* — a diff carrying
+fewer files than the PR declares, a check-run page count below `total_count` — which is neither
+`11` (nothing failed) nor `7` (scope exists; it just was not all seen). Folding `13` into either would render a
 half-seen PR as a fully-judged one, the exact class of #3925 (a gate PASSing on 100% upload
 failure) and #4060.
 
@@ -374,9 +374,16 @@ index 0b1c2d3..a1b2c3d 100644
 
 **Grounding**
 
-- GitHub's diff endpoints truncate large diffs silently at the API tier; a gate that judged the
-  visible prefix as the whole PR is the #3925 blind-PASS class one layer down. The `13` refusal
-  is the difference between "reviewed" and "reviewed what fit".
+- The `13` refusal is about a diff that arrives short, not about a platform that serves prefixes.
+  `application/vnd.github.diff` does **not** truncate: over its limits it refuses with HTTP `406`
+  and `errors[].code = "too_large"`, and under them it serves the diff whole — established by live
+  probe and recorded on #4993. This verb does not read that endpoint anyway; its bytes are local
+  `git diff <base>...<head>` at the bound commit (#5117). What `13` still buys is real: a range can
+  carry fewer files than the PR declares, and serving that prefix as the whole PR is the #3925
+  blind-PASS class one layer down.
+- The proof counts whole files, so it does not see a diff cut inside the last file's hunks — every
+  `diff --git` header is still present, and the count passes. That is a stated bound of the proof,
+  not a failure mode defended against: no producer for that shape is known.
 - The split test is honest: this verb is not a relay because its whole job is the completeness
   proof — v1's `pr-diff.sh` was the relay, and nothing checked what it served.
 - #5117 — the completeness proof says the read was not cut short; it says nothing about which
