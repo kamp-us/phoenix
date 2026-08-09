@@ -42,12 +42,7 @@ $ echo $?
 0
 ```
 
-```
-$ fabrika plan flip 820 --digest 4d90e1bb27ac
-{"answer":"flipped","epic":820,"digest":"4d90e1bb27ac","terminal":"flipped-all","children":[{"number":821,"observed":["p1","status:triaged","type:feature"],"result":"flipped"},{"number":822,"observed":["p2","status:triaged","type:chore"],"result":"flipped"}],"flipped":2,"already":0,"unchanged":0}
-$ echo $?
-0
-```
+The transcript ends here. Anything further is yours to decide and to record.
 
 ## The child issue bodies, as fetched
 

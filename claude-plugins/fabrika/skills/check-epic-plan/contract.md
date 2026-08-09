@@ -386,7 +386,7 @@ absent or non-conforming. `topology` is the imported `readTopology` parse. `cycl
 
 | Code | Trigger |
 |---|---|
-| `4` | the epic body's `## Dependencies` is `Unparseable`, a ledger section appears more than once, or `### User stories` is not contiguous from 1 |
+| `4` | the epic body's `## Dependencies` is `Unparseable`; a ledger section appears more than once; a child's `**Stories:**` or `**Containment:**` field line appears more than once; or a **non-empty** `### User stories` list is not contiguous from 1 |
 | `7` | the epic is proven absent (404) or closed, or it has zero sub-issue children |
 | `10` | the issue is not a `type:epic` |
 | `11` | the epic, the sub-issue list, a child, or the `product-development-cycle.md` probe could not be read |
@@ -400,6 +400,7 @@ An **absent** `## Dependencies` block is *not* `4` — it is defect `MISSING_DEP
 |---|---|---|
 | `plan read: #<n>'s ## Dependencies block is unparseable at line <l>: <text>` | 4 | refusal |
 | `plan read: #<n> carries <k> "<heading>" sections — a ledger with two of one section has no single meaning.` | 4 | refusal |
+| `plan read: #<n>'s child #<c> carries <k> "<field>" lines — a field declared twice has no single meaning.` | 4 | refusal |
 | `plan read: #<n>'s user stories are numbered <list> — a story list must run from 1 with no gaps or repeats.` | 4 | refusal |
 | `plan read: issue #<n> is proven absent or closed.` | 7 | refusal |
 | `plan read: #<n> has zero sub-issue children — there is no ledger to read (ADR 0092).` | 7 | refusal |
@@ -561,10 +562,13 @@ fabrika plan flip 4300 --digest 4d90e1bb27ac
 ```
 
 `children` enumerates **every** child of the epic, not only the planned ones, so the answer states
-the whole set the flip considered. `result` is closed: `flipped` (the child carried
-`status:planned`, the labels moved, and the re-read proves it) · `already` (the child was observed
+the whole set the flip considered. `result` is closed and **total over that set**: `flipped` (the
+child carried `status:planned`, the labels moved, and the re-read proves it) · `already` (observed
 `status:triaged` with no `status:planned` — an idempotent no-op, outside the write scope) ·
-`unchanged` (the child carried `status:planned` and the write did not take).
+`unchanged` (the child carried `status:planned` and the write did not take) · `not-planned` (the
+child carried neither label — a clean floor permits this, since `MISSING_LABEL` requires only *a*
+`status:` prefix and `NEEDS_TRIAGE_LABEL` bars only `status:needs-triage`, so a child may sit on
+some other `status:` value; the flip does not consider it and does not touch it).
 
 `terminal` is a closed token the skill reads rather than deriving from counters, and **it has
 exactly two values, because it only ever appears on the answer channel**: `flipped-all` (at least

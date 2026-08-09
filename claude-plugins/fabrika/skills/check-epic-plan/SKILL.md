@@ -37,10 +37,11 @@ fabrika build claim 4300
 ```
 
 Done when it answers `won`. Exit `15` is a proven loss with the winner named on stderr: end at
-`BACKED-OFF`. The verb takes the session identity from `CLAUDE_CODE_SESSION_ID`, and an unset one
-is exit `1` — a claim without an identity is not a claim. **Any other non-zero here (`1`, `8`, `9`,
-`11`) ends `STOPPED` with no note**: you hold no claim, and `build note` requires one, so there is
-nothing postable — report the code in the terminal line instead.
+`BACKED-OFF`. Exit `7` is a proven-absent or closed target: end at `PLAN-UNGATEABLE`. The verb takes
+the session identity from `CLAUDE_CODE_SESSION_ID`, and an unset one is exit `1` — a claim without
+an identity is not a claim. **Any other non-zero here (`1`, `8`, `9`, `11`) ends `STOPPED` with no
+note**: you hold no claim, and `build note` requires one, so there is nothing postable — report the
+code in the terminal line instead.
 
 ```bash
 fabrika plan read 4300
@@ -123,9 +124,9 @@ it with `report` and let the verdict stand.
 ## §TERM — terminal vocabulary
 
 End as exactly one. **Every case holds no branch and no checkout — there is nothing to push, leave
-local, or remove.** Release the claim with `fabrika build release 4300` on every terminal where you
-hold it — that is, all but `BACKED-OFF` and a `STOPPED` that ended at the claim itself. An
-unreleased claim is v1's unreclaimable-lock scar, which a human then clears by hand.
+local, or remove.** Release the claim with `fabrika build release 4300` on every terminal reached
+**after step 1 answered `won`** — if it never did, you hold nothing and there is nothing to release.
+An unreleased claim is v1's unreclaimable-lock scar, which a human then clears by hand.
 
 - `PLAN-CLEARED` — floor clean, `skipped` empty, children flipped, verdict posted.
 - `PLAN-CLEARED-PARTIAL` — as above, but a defect class could not be derived; the marker names it,
@@ -141,14 +142,18 @@ unreleased claim is v1's unreclaimable-lock scar, which a human then clears by h
   named with `fabrika build note`; the epic needs a human. Never reported as a gate failure.
 - `PLAN-UNGATEABLE` — `7` or `10`: the target is **proven** not gateable — absent or closed, not a
   `type:epic`, or it has zero children. Nothing was written. Proven, so not `STOPPED`.
-- `VERDICT-UNPROVEN` — `8` or `9`: the verdict comment landed, or may have landed, and could not be
-  proven. **Do not re-post** — a successor that re-posts duplicates a verdict. Report the code and
-  the comment id where one is known; it needs a human eye.
+- `WRITE-UNPROVEN` — `8` or `9` from **either** writing verb: a write landed, or may have landed,
+  and could not be proven — a half-written label set from `plan flip`, or a verdict comment from
+  `plan verdict`. **Do not repeat the write** — a successor that re-posts duplicates a verdict, and
+  one that re-flips writes over a state nobody has read. Report the code, the verb, and the comment
+  id where one is known; it needs a human eye.
 - `BACKED-OFF` — `15` at the claim: held by another lane. Nothing read, nothing written, nothing
   released.
-- `STOPPED` — `4`, `11`, `23`, or a claim whose state is UNKNOWN: nothing was written and no
-  verdict is posted. Post the state for a successor with `fabrika build note` **when you hold the
-  claim**; when the claim itself is what failed, report the code instead.
+- `STOPPED` — everything else that leaves the run UNKNOWN with nothing written: `4`, `11`, `23`, a
+  claim whose own state is UNKNOWN, a `15` from a verb after the claim was won (the claim moved
+  under you), and any `1`, `2` or `127` — a verb that could not run is never a verdict. Post the
+  state for a successor with `fabrika build note` **when you hold the claim**; when the claim itself
+  is what failed, report the code instead.
 
 Any cross-lane signal is closed-vocabulary — kind + action + the branded ref, no free prose; the
 receiver re-fetches from the artifact.
