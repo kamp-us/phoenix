@@ -504,7 +504,7 @@ describe("toCaptureManifest — the existing collector consumes it unchanged", (
 				triage: [
 					{stage: "triage", inputRef: 1, label: {type: "bug", priority: "p0", status: "triaged"}},
 				],
-				"write-code": [],
+				build: [],
 				"review-code": [],
 				"review-doc": [],
 				"ship-it": [],
@@ -576,9 +576,12 @@ describe("flag parsing", () => {
 		assert.strictEqual(parseArms(""), null);
 	});
 
-	it("accepts only real stage names", () => {
+	it("accepts only live stage names", () => {
+		assert.isTrue(isStageName("build"));
 		assert.isTrue(isStageName("review-code"));
 		assert.isFalse(isStageName("review-skill"));
+		// `write-code` survives only as a recorded row's provenance key (#4977) — never as a live stage.
+		assert.isFalse(isStageName("write-code"));
 	});
 });
 

@@ -2,7 +2,7 @@
 	"version": 1,
 	"stages": {
 		"triage": [],
-		"write-code": [],
+		"build": [],
 		"review-code": [
 			{
 				"stage": "review-code",

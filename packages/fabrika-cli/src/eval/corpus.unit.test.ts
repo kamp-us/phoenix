@@ -18,9 +18,9 @@ const validManifest = {
 		triage: [
 			{stage: "triage", inputRef: 1848, label: {type: "chore", priority: "p1", status: "triaged"}},
 		],
-		"write-code": [
+		build: [
 			{
-				stage: "write-code",
+				stage: "build",
 				inputRef: 1848,
 				label: {fixesRef: 1848, ciGreen: true, reviewVerdict: "PASS"},
 			},
@@ -58,7 +58,7 @@ describe("decodeManifest — a valid manifest per stage round-trips", () => {
 });
 
 describe("CorpusEntry — an unknown stage is rejected", () => {
-	it("rejects an entry whose stage is not one of the five", () => {
+	it("rejects an entry whose stage is neither a live stage nor a recorded one", () => {
 		const result = decodeEntry({stage: "deploy", inputRef: 1, label: {}});
 		assert.isTrue(Result.isFailure(result));
 	});
@@ -79,16 +79,16 @@ describe("CorpusEntry — an unknown stage is rejected", () => {
 });
 
 describe("CorpusEntry — a per-stage label-shape mismatch is rejected", () => {
-	it("rejects a write-code stage carrying a triage-shaped label", () => {
+	it("rejects a build stage carrying a triage-shaped label", () => {
 		const result = decodeEntry({
-			stage: "write-code",
+			stage: "build",
 			inputRef: 1848,
 			label: {type: "chore", priority: "p1", status: "triaged"},
 		});
 		assert.isTrue(Result.isFailure(result));
 	});
 
-	it("rejects a triage stage carrying a write-code-shaped label", () => {
+	it("rejects a triage stage carrying a build-shaped label", () => {
 		const result = decodeEntry({
 			stage: "triage",
 			inputRef: 1848,
@@ -104,6 +104,42 @@ describe("CorpusEntry — a per-stage label-shape mismatch is rejected", () => {
 			label: {verdict: "MAYBE", acFindings: []},
 		});
 		assert.isTrue(Result.isFailure(result));
+	});
+});
+
+// The founder ruling on #4977: a recorded row's stage key is provenance, so the decoder has to keep
+// reading `write-code` even though nothing live is named that any more.
+describe("recorded provenance — a v1 `write-code` row survives the re-key unrelabelled", () => {
+	const recorded = {
+		stage: "write-code",
+		inputRef: 1223,
+		label: {fixesRef: 1223, ciGreen: true, reviewVerdict: "PASS"},
+	};
+
+	it("decodes under the live `build` group without its own key changing", () => {
+		const manifest = {
+			...validManifest,
+			stages: {...validManifest.stages, build: [recorded]},
+		};
+		const result = decodeManifest(JSON.stringify(manifest));
+		assert.isTrue(Result.isSuccess(result));
+		if (Result.isSuccess(result)) {
+			assert.strictEqual(result.success.stages.build[0]?.stage, "write-code");
+		}
+	});
+
+	it("is still shape-checked — a triage-shaped label under it is rejected", () => {
+		const result = decodeEntry({
+			stage: "write-code",
+			inputRef: 1223,
+			label: {type: "chore", priority: "p1", status: "triaged"},
+		});
+		assert.isTrue(Result.isFailure(result));
+	});
+
+	it("is not a live stage — STAGES names `build` and not `write-code`", () => {
+		assert.include(STAGES as ReadonlyArray<string>, "build");
+		assert.notInclude(STAGES as ReadonlyArray<string>, "write-code");
 	});
 });
 

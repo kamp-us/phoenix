@@ -13,13 +13,22 @@ const cases = {
 		},
 		passing: {type: "chore", priority: "p1", status: "triaged"},
 	},
-	"write-code": {
+	build: {
 		entry: {
-			stage: "write-code",
+			stage: "build",
 			inputRef: 1848,
 			label: {fixesRef: 1848, ciGreen: true, reviewVerdict: "PASS"},
 		},
 		passing: {fixesRef: 1848, ciGreen: true, reviewVerdict: "PASS"},
+	},
+	// A recorded v1 row keeps its own stage key (#4977) and must still reach a grader.
+	"write-code": {
+		entry: {
+			stage: "write-code",
+			inputRef: 1223,
+			label: {fixesRef: 1223, ciGreen: true, reviewVerdict: "PASS"},
+		},
+		passing: {fixesRef: 1223, ciGreen: true, reviewVerdict: "PASS"},
 	},
 	"review-code": {
 		entry: {
@@ -71,8 +80,8 @@ describe("gradeEntry — a divergent artifact fails, carrying the observed-vs-ex
 		}
 	});
 
-	it("write-code: a lost review PASS fails with the reviewVerdict diff", () => {
-		const g = gradeEntry(cases["write-code"].entry, {
+	it("build: a lost review PASS fails with the reviewVerdict diff", () => {
+		const g = gradeEntry(cases.build.entry, {
 			fixesRef: 1848,
 			ciGreen: true,
 			reviewVerdict: "FAIL",

@@ -25,7 +25,7 @@
 import {Effect, Result} from "effect";
 import * as Schema from "effect/Schema";
 import {reconstructSpend, type StageSpend} from "../spend/token-spend.ts";
-import {type CorpusEntry, type CorpusManifest, STAGES} from "./corpus.ts";
+import {type CorpusEntry, type CorpusManifest, type LiveStage, STAGES} from "./corpus.ts";
 import {type Grade, gradeEntry} from "./oracle.ts";
 
 /**
@@ -162,9 +162,10 @@ export type TranscriptLoader<R = never> = (path: string) => Effect.Effect<string
  * (story 7 → story 6). Each capture run joins to its `CorpusEntry` by (stage, inputRef) for the
  * label; a run whose (stage, inputRef) has no matching corpus entry is skipped (no label to grade
  * against), and a run whose transcript the loader can't find is collected with `TranscriptMissing`.
+ * The join key is the LIVE stage — a recorded row's own provenance key never participates in it.
  */
 export const collectFromCapture = <R>(args: {
-	readonly stage: CorpusEntry["stage"];
+	readonly stage: LiveStage;
 	readonly corpus: CorpusManifest;
 	readonly capture: CaptureManifest;
 	readonly loadTranscript: TranscriptLoader<R>;

@@ -133,7 +133,7 @@ const corpus: CorpusManifest = {
 	version: 1,
 	stages: {
 		triage: [entryA, entryB],
-		"write-code": [],
+		build: [],
 		"review-code": [],
 		"review-doc": [],
 		"ship-it": [],
