@@ -105,6 +105,24 @@ describe("scanFile — flags GraphQL-path gh calls", () => {
 			1,
 		);
 	});
+
+	it("self-exempts fabrika's triage contract per FILE, leaving the rest of fabrika live", () => {
+		assert.isTrue(isSelfExempt("claude-plugins/fabrika/skills/triage/contract.md"));
+		assert.strictEqual(
+			scanFile(
+				"claude-plugins/fabrika/skills/triage/contract.md",
+				"`gh issue edit --add-label` rejects an unknown label client-side",
+			).length,
+			0,
+		);
+		// The exemption is plugin-qualified, so kampus-pipeline's own triage skill stays live.
+		assert.isFalse(isSelfExempt("claude-plugins/kampus-pipeline/skills/triage/contract.md"));
+		assert.isFalse(isSelfExempt("claude-plugins/fabrika/skills/triage/SKILL.md"));
+		assert.strictEqual(
+			scanFile("claude-plugins/fabrika/skills/triage/SKILL.md", "gh issue edit --add-label").length,
+			1,
+		);
+	});
 });
 
 describe("lintCorpus — scope + findings", () => {
