@@ -16,7 +16,7 @@
  */
 import {Result} from "effect";
 import * as Schema from "effect/Schema";
-import type {CorpusEntry, ReviewSurface} from "./corpus.ts";
+import {type CorpusEntry, type ReviewSurface, SKILL_RIGOR_CHECKS} from "./corpus.ts";
 
 /** A single field's disagreement between the observed artifact and the expected label. */
 export interface FieldMismatch {
@@ -95,6 +95,15 @@ const ReviewDocArtifact = Schema.Struct({
 	verdict: Verdict,
 	findings: Schema.Array(Schema.String),
 });
+const ReviewSkillArtifact = Schema.Struct({
+	verdict: Verdict,
+	rigorFindings: Schema.Array(
+		Schema.Struct({
+			check: Schema.Literals([...SKILL_RIGOR_CHECKS]),
+			finding: Schema.String,
+		}),
+	),
+});
 const ShipItArtifact = Schema.Struct({
 	merged: Schema.Boolean,
 	mergeSha: Schema.String,
@@ -104,13 +113,14 @@ const decodeTriage = Schema.decodeUnknownResult(TriageArtifact);
 const decodeBuild = Schema.decodeUnknownResult(BuildArtifact);
 const decodeReviewCode = Schema.decodeUnknownResult(ReviewCodeArtifact);
 const decodeReviewDoc = Schema.decodeUnknownResult(ReviewDocArtifact);
+const decodeReviewSkill = Schema.decodeUnknownResult(ReviewSkillArtifact);
 const decodeShipIt = Schema.decodeUnknownResult(ShipItArtifact);
 
 // Narrow `entry.label` by discriminating on `entry.stage` (CorpusEntry is a union on `stage`).
 type LabelOf<S extends CorpusEntry["stage"]> = Extract<CorpusEntry, {stage: S}>["label"];
 
 // The `review` stage carries a second discriminator, so its label narrows on the PAIR. Selecting a
-// review grader on `stage` alone is banned (ADR 0243 §2): it collapses two rubrics onto one grader.
+// review grader on `stage` alone is banned (ADR 0243 §2): it collapses three rubrics onto one.
 type ReviewLabelOf<S extends ReviewSurface> = Extract<
 	CorpusEntry,
 	{stage: "review"; surface: S}
@@ -174,9 +184,37 @@ const gradeReviewDoc = (label: ReviewLabelOf<"doc">, artifact: unknown): Grade =
 	]);
 };
 
+// A rigor finding is a (check, finding) pair, so the set it belongs to is a set of pairs. Rendering
+// each as `check: finding` makes the comparison the same set-equality the other surfaces get while
+// keeping the mismatch readable; the check names are a closed vocabulary with no `: `, so the
+// rendering is injective.
+const renderRigorFinding = (f: {readonly check: string; readonly finding: string}): string =>
+	`${f.check}: ${f.finding}`;
+
+/**
+ * The `skill` surface passes iff the actual verdict + rigor-finding set match the label, where a
+ * finding is graded together with the rubric check it was attributed to — a right finding filed
+ * under the wrong check is a miss, which is the attribution the pair label exists to hold
+ * (ADR 0243 §1a).
+ */
+const gradeReviewSkill = (label: ReviewLabelOf<"skill">, artifact: unknown): Grade => {
+	const decoded = decodeReviewSkill(artifact);
+	if (Result.isFailure(decoded))
+		return failMalformed(`review-skill artifact: ${decoded.failure.message}`);
+	const a = decoded.success;
+	return gradeFields([
+		...cmpScalar("verdict", a.verdict, label.verdict),
+		...cmpSet(
+			"rigorFindings",
+			a.rigorFindings.map(renderRigorFinding),
+			label.rigorFindings.map(renderRigorFinding),
+		),
+	]);
+};
+
 /**
  * Select a `review` entry's grader by its `surface`. This second narrowing is the whole point of
- * ADR 0243: with one `review` stage and no further key, the two rubrics would collapse onto one
+ * ADR 0243: with one `review` stage and no further key, the three rubrics would collapse onto one
  * grader silently. Each surface reaches its own grader and its own artifact schema.
  */
 const gradeReview = (entry: Extract<CorpusEntry, {stage: "review"}>, artifact: unknown): Grade => {
@@ -185,6 +223,8 @@ const gradeReview = (entry: Extract<CorpusEntry, {stage: "review"}>, artifact: u
 			return gradeReviewCode(entry.label, artifact);
 		case "doc":
 			return gradeReviewDoc(entry.label, artifact);
+		case "skill":
+			return gradeReviewSkill(entry.label, artifact);
 	}
 };
 

@@ -21,6 +21,7 @@ slice ([#1848](https://github.com/kamp-us/phoenix/issues/1848)) shipped the corp
   - `build` → `{ fixesRef, ciGreen, reviewVerdict }`
   - `review` + `surface: "code"` → `{ verdict, acFindings }`
   - `review` + `surface: "doc"` → `{ verdict, findings }`
+  - `review` + `surface: "skill"` → `{ verdict, rigorFindings: { check, finding }[] }`
   - `ship-it` → `{ merged, mergeSha }`
 - `CorpusManifest` — the frozen ground truth: entries grouped under **live** stage keys, each
   key admitting only that stage's entry (the second half of the unrepresentable guarantee).
@@ -29,20 +30,25 @@ slice ([#1848](https://github.com/kamp-us/phoenix/issues/1848)) shipped the corp
 
 The v1 review gates merged into one `review` skill, so the corpus keeps **one** `review` stage key
 and every review entry carries a `surface` that selects both its label shape and its grader ([ADR
-0243](../../../../.decisions/0243-review-eval-stage-surface-discriminator.md)). The two label shapes
-genuinely differ (`acFindings` vs `findings`), so the guarantee above now holds over the
-**`(stage, surface)` pair**: a `review` entry whose label doesn't match its surface is
+0243](../../../../.decisions/0243-review-eval-stage-surface-discriminator.md)). The three label
+shapes genuinely differ (`acFindings` vs `findings` vs `rigorFindings`), so the guarantee holds over
+the **`(stage, surface)` pair**: a `review` entry whose label doesn't match its surface is
 unrepresentable, and a `review` entry with **no** surface is a decode failure, never a row a
 fallback rubric grades. `gradeEntry` narrows the same way — `stage` to `review`, then `surface` to
-its own grader — because dispatching on `stage` alone is what would silently collapse two rubrics
+its own grader — because dispatching on `stage` alone is what would silently collapse three rubrics
 onto one grader. One PR reviewed on two surfaces is two rows sharing an `inputRef`, each graded by
 its own grader; that is the intended shape, not a duplicate.
 
-`REVIEW_SURFACES` names `code` and `doc`. ADR 0243 also names a `skill` surface, whose entry shape
-is deliberately **not** defined here: the founder ruling on
-[#4979](https://github.com/kamp-us/phoenix/issues/4979) split designing it into
-[#5038](https://github.com/kamp-us/phoenix/issues/5038), so that a build lane never fixes a schema
-as a side effect.
+`REVIEW_SURFACES` names all three: `code`, `doc` and `skill`.
+
+The `skill` surface's label is the one that is not a flat array of finding strings. Its findings each
+name the rubric check they came from, drawn from the closed vocabulary `SKILL_RIGOR_CHECKS` — the
+four numbered checks in
+[`rubrics/skill.md`](../../../../claude-plugins/fabrika/skills/review/rubrics/skill.md). That rubric
+is the only one of the three whose checks are a fixed set, and it hands gate-invariant preservation
+to the `governance` skill, so a row cannot attribute a finding to a check this surface does not own.
+[ADR 0243 §1a](../../../../.decisions/0243-review-eval-stage-surface-discriminator.md) records the
+derivation and why the findings are not flattened.
 
 ### Live stage key vs recorded provenance
 

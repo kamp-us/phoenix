@@ -128,11 +128,11 @@ describe("the live stage vocabulary is what fabrika eval accepts", {
 		const refused = fabrika("eval", "report", emptyRowsFile(), "--baseline-stage", "review");
 		expect(refused.code).not.toBe(0);
 		expect(refused.stderr).toContain("--baseline-stage review needs --baseline-surface");
-		expect(refused.stderr).toContain("code, doc");
+		expect(refused.stderr).toContain("code, doc, skill");
 	});
 
-	it("--baseline-surface skill is refused — the skill surface has no entry shape yet", () => {
-		const refused = fabrika(
+	it("--baseline-surface skill is accepted — it is one of ADR 0243's three surfaces", () => {
+		const accepted = fabrika(
 			"eval",
 			"report",
 			emptyRowsFile(),
@@ -141,8 +141,21 @@ describe("the live stage vocabulary is what fabrika eval accepts", {
 			"--baseline-surface",
 			"skill",
 		);
+		expect(accepted.code).toBe(0);
+	});
+
+	it("--baseline-surface names a surface outside the three and is refused", () => {
+		const refused = fabrika(
+			"eval",
+			"report",
+			emptyRowsFile(),
+			"--baseline-stage",
+			"review",
+			"--baseline-surface",
+			"design",
+		);
 		expect(refused.code).not.toBe(0);
-		expect(refused.stderr).toContain("'skill' is not a known review surface");
+		expect(refused.stderr).toContain("'design' is not a known review surface");
 	});
 
 	it("--baseline-surface on a non-review stage is refused", () => {

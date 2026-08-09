@@ -48,6 +48,28 @@ const cases = {
 		},
 		passing: {verdict: "FAIL", findings: ["broken link"]},
 	},
+	"review/skill": {
+		entry: {
+			stage: "review",
+			surface: "skill",
+			inputRef: 5038,
+			label: {
+				verdict: "FAIL",
+				rigorFindings: [
+					{check: "trigger-description-quality", finding: "description under-claims"},
+					{check: "fabrika-conventions", finding: "restates a sibling's behavior"},
+				],
+			},
+		},
+		// set-equal, reordered
+		passing: {
+			verdict: "FAIL",
+			rigorFindings: [
+				{check: "fabrika-conventions", finding: "restates a sibling's behavior"},
+				{check: "trigger-description-quality", finding: "description under-claims"},
+			],
+		},
+	},
 	// The recorded v1 review rows keep their own stage keys (#4977) and must still reach a grader.
 	"review-code": {
 		entry: {
@@ -146,6 +168,35 @@ describe("gradeEntry — a divergent artifact fails, carrying the observed-vs-ex
 		}
 	});
 
+	it("review/skill: a finding refiled under another check fails with the set diff", () => {
+		const g = gradeEntry(cases["review/skill"].entry, {
+			verdict: "FAIL",
+			rigorFindings: [
+				// Same two findings, one re-attributed to the wrong rubric check.
+				{check: "behavioral-correctness", finding: "description under-claims"},
+				{check: "fabrika-conventions", finding: "restates a sibling's behavior"},
+			],
+		});
+		assert.isTrue(isFail(g));
+		if (isFail(g) && g.mismatch._tag === "LabelMismatch") {
+			assert.deepStrictEqual(g.mismatch.fields, [
+				{
+					field: "rigorFindings",
+					observed: JSON.stringify([
+						"behavioral-correctness: description under-claims",
+						"fabrika-conventions: restates a sibling's behavior",
+					]),
+					expected: JSON.stringify([
+						"fabrika-conventions: restates a sibling's behavior",
+						"trigger-description-quality: description under-claims",
+					]),
+				},
+			]);
+		} else {
+			assert.fail("expected a LabelMismatch");
+		}
+	});
+
 	it("ship-it: a different merge SHA fails with the mergeSha diff", () => {
 		const g = gradeEntry(cases["ship-it"].entry, {merged: true, mergeSha: "cafef00"});
 		assert.isTrue(isFail(g));
@@ -190,11 +241,11 @@ describe("gradeEntry — total on a malformed or absent artifact (never throws)"
 
 /**
  * ADR 0243 §2 bans dispatching a review grade on `stage` alone, because with one `review` key and
- * no second discriminator the two rubrics collapse onto one grader — silently, since a `doc`
+ * no second discriminator the three rubrics collapse onto one grader — silently, since a `doc`
  * artifact graded by the `code` rubric would just look like a fail. These assert the collapse did
  * not happen: each surface reaches its OWN grader and its own artifact schema.
  */
-describe("gradeEntry — the two review surfaces do not share a grader", () => {
+describe("gradeEntry — the three review surfaces do not share a grader", () => {
 	it("a doc-shaped artifact under the code surface is malformed, not silently graded", () => {
 		const g = gradeEntry(cases["review/code"].entry, {verdict: "PASS", findings: ["AC1 met"]});
 		assert.isTrue(isFail(g));
@@ -214,6 +265,28 @@ describe("gradeEntry — the two review surfaces do not share a grader", () => {
 			if (g.mismatch._tag === "MalformedArtifact") {
 				assert.match(g.mismatch.reason, /^review-doc artifact:/);
 			}
+		}
+	});
+
+	it("a doc-shaped artifact under the skill surface is malformed, not silently graded", () => {
+		const g = gradeEntry(cases["review/skill"].entry, {verdict: "FAIL", findings: ["x"]});
+		assert.isTrue(isFail(g));
+		if (isFail(g)) {
+			assert.strictEqual(g.mismatch._tag, "MalformedArtifact");
+			if (g.mismatch._tag === "MalformedArtifact") {
+				assert.match(g.mismatch.reason, /^review-skill artifact:/);
+			}
+		}
+	});
+
+	it("a rigor finding attributed to the governance check is malformed, never graded", () => {
+		const g = gradeEntry(cases["review/skill"].entry, {
+			verdict: "FAIL",
+			rigorFindings: [{check: "gate-invariant-preservation", finding: "a guard was dropped"}],
+		});
+		assert.isTrue(isFail(g));
+		if (isFail(g)) {
+			assert.strictEqual(g.mismatch._tag, "MalformedArtifact");
 		}
 	});
 
