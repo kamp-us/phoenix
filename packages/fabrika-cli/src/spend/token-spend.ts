@@ -21,6 +21,11 @@
  *
  * Pure and total. A line that is not JSON, is not an assistant message, or carries no `usage` is
  * skipped rather than thrown on — a missed message undercounts, it never aborts a measurement.
+ *
+ * `classifyRunSpend` at the bottom is the other half of the same rule: what a transcript's spend
+ * *is* when it cannot be reconstructed. It reads as a spend rule, not an eval one, so it lives here
+ * with its own ingredients — every consumer (`eval/`, `spend read`) imports it from this one owner
+ * (#5050).
  */
 
 /** The four-component reconstruction of a run's billed token spend, plus its comparators. */
@@ -99,4 +104,27 @@ export const reconstructSpend = (transcript: string): StageSpend => {
 	const billed = input + cacheCreate + cacheRead + output;
 	const exCacheRead = input + cacheCreate + output;
 	return {input, cacheCreate, cacheRead, output, billed, exCacheRead, assistantTurns, model};
+};
+
+/**
+ * One run's token spend, as one of three distinct outcomes — never a nullable `StageSpend`, so a
+ * zero can never be fabricated where a measurement is missing.
+ *
+ * `NoBilledTurns` is the third: a transcript that exists and parses cleanly but carries **zero**
+ * billed assistant turns, which reconstructs to a genuine, well-formed zero indistinguishable from a
+ * free run. That is not hypothetical — a `claude -p` run whose skill failed to resolve writes
+ * exactly such a transcript, and `token-spend` reports all-zeros at exit 0 (measured on 2.1.220,
+ * #4673 §6). Folding it into `Reconstructed` would put the fabricated zero back that this union
+ * exists to keep out.
+ */
+export type RunSpend =
+	| {readonly _tag: "Reconstructed"; readonly spend: StageSpend}
+	| {readonly _tag: "NoBilledTurns"}
+	| {readonly _tag: "TranscriptMissing"};
+
+/** Resolve a transcript to one of the three `RunSpend` outcomes. Pure + total. */
+export const classifyRunSpend = (transcript: string | null): RunSpend => {
+	if (transcript === null) return {_tag: "TranscriptMissing"};
+	const spend = reconstructSpend(transcript);
+	return spend.assistantTurns === 0 ? {_tag: "NoBilledTurns"} : {_tag: "Reconstructed", spend};
 };

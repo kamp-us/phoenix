@@ -106,7 +106,9 @@ spawns nothing itself, which is what makes it reproducible offline. That propert
 starts processes from `spawn-io.ts`. The reversal and its bounds are [ADR
 0236](../../../../.decisions/0236-eval-harness-gains-a-spawning-shell.md).
 
-`RunRow` is `{entry, grade, spend}` where `spend` is a **three-arm** `RunSpend` union:
+`RunRow` is `{entry, grade, spend}` where `spend` is a **three-arm** `RunSpend` union — declared,
+with `classifyRunSpend` that produces it, in [`../spend/token-spend.ts`](../spend/token-spend.ts)
+next to the meter it wraps ([#5050](https://github.com/kamp-us/phoenix/issues/5050)):
 `{_tag: "Reconstructed", spend}` (the `token-spend` `StageSpend`), `{_tag: "NoBilledTurns"}`, or
 `{_tag: "TranscriptMissing"}`. None of the three can be mistaken for a genuinely free run — a
 **missing transcript is graded and counted, never a crash**, and a transcript that is present and

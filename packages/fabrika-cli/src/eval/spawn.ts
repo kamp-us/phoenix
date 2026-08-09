@@ -22,9 +22,9 @@
  * verdict is the one place a run is allowed to become a `CaptureRun`.
  */
 import {Effect, Result} from "effect";
+import {classifyRunSpend, type RunSpend} from "../spend/token-spend.ts";
 import {STAGES} from "./corpus.ts";
-import type {CaptureManifest, CaptureRun, RunSpend, TranscriptLoader} from "./runner.ts";
-import {classifyRunSpend} from "./runner.ts";
+import type {CaptureManifest, CaptureRun, TranscriptLoader} from "./runner.ts";
 import type {EvalTier} from "./skill-eval-set.ts";
 
 /**

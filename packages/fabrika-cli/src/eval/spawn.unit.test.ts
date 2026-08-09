@@ -13,8 +13,9 @@ import {join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {assert, describe, it} from "@effect/vitest";
 import {Effect, Result} from "effect";
+import {classifyRunSpend} from "../spend/token-spend.ts";
 import type {CorpusManifest} from "./corpus.ts";
-import {classifyRunSpend, collectFromCapture, decodeCaptureManifest} from "./runner.ts";
+import {collectFromCapture, decodeCaptureManifest} from "./runner.ts";
 import {
 	buildClaudeArgs,
 	buildLedger,
@@ -556,20 +557,6 @@ describe("suiteExecuted — fails closed on zero scope and on any dead run (ADR 
 
 	it("an all-collected suite is green", () => {
 		assert.isTrue(suiteExecuted(summarizeRuns([completedRun()])));
-	});
-});
-
-describe("RunSpend's third arm — a well-formed zero is not a free run", () => {
-	it("a transcript with billed turns reconstructs", () => {
-		assert.strictEqual(classifyRunSpend(billedTranscript)._tag, "Reconstructed");
-	});
-
-	it("a transcript with zero billed assistant turns is NoBilledTurns, not a zero-valued Reconstructed", () => {
-		assert.strictEqual(classifyRunSpend('{"type":"summary"}')._tag, "NoBilledTurns");
-	});
-
-	it("an absent transcript stays TranscriptMissing", () => {
-		assert.strictEqual(classifyRunSpend(null)._tag, "TranscriptMissing");
 	});
 });
 

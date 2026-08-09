@@ -1,5 +1,6 @@
 import {assert, describe, it} from "@effect/vitest";
 import {Effect, Result} from "effect";
+import type {RunSpend} from "../spend/token-spend.ts";
 import type {CorpusEntry, CorpusManifest} from "./corpus.ts";
 import {
 	type CaptureManifest,
@@ -8,7 +9,6 @@ import {
 	decodeCaptureManifest,
 	type RunInput,
 	type RunRow,
-	type RunSpend,
 } from "./runner.ts";
 
 // One assistant-message transcript line — the shape `token-spend` reconstructs spend from. `billed`
