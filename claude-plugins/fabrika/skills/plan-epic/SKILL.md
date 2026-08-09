@@ -79,11 +79,10 @@ the epic-moved check works without anyone remembering anything. Everything else 
 need they read back out of the run directory, which this verb writes — and the digest is recorded
 there too, so **nothing here survives only in your head**, this one included.
 
-`candidates` is the dedup read and it is **advisory**. Its `outcome` is three-valued and the arms
-are not interchangeable: `candidates` means the ranker found overlapping open issues and you should
-read them before minting a duplicate; `none` means the sweep **ran and found nothing**;
-`indeterminate` means the sweep **could not run**, so you know nothing either way. Reading
-`indeterminate` as `none` is how a planner re-mints work that already exists.
+`candidates` is the dedup read, **advisory**, and its `outcome` has three non-interchangeable arms:
+`candidates` (overlapping open issues — read them before minting a duplicate), `none` (the sweep ran
+and found nothing), `indeterminate` (the sweep could not run, so you know nothing). Reading
+`indeterminate` as `none` re-mints work that already exists.
 
 `20` is proven-stale ground and ends the run at `GROUND-STALE`. Nothing here can refresh a tree;
 syncing and planning again is a fresh run from step 1, not a loop inside this one.
@@ -138,6 +137,12 @@ its audience by omission (#4780). A **held** child is born `ready-for:human` *an
 same write (#4693): the label is the routing signal, the assignment is the enforced hold, and
 neither substitutes for the other.
 
+**Choosing that assignee is yours when the work belongs to the team, and not yours when it does
+not.** Pick from the repository's contributors and say in the child body why — a wrong pick is one
+re-assignment. But where the epic says the owner sits *outside* the roster you can see (a legal
+sign-off, a finance ruling, another team's call), naming someone anyway invents accountability, and
+that is what `NEEDS-INPUT` is for: ask, do not guess.
+
 Done when it answers `minted` with the child number and `linked: true`. The verb creates, records
 the child in the run manifest, links, then re-reads. `23` means the child **exists and is unlinked**: it names the number, and
 that number is what you report. Do not re-mint it.
@@ -184,9 +189,9 @@ file plan; you can. Sequence them, or say in `### Task-split rationale` why they
 fabrika ledger write 4300 --body-digest 8f2c1a90b4d7
 ```
 
-The staged plan and topology go into the epic body in one PATCH, and the verb re-reads and
-compares byte for byte. It resolves the plan region through the **verb-written enrichment
-marker**, not through where a block happens to sit, and it never cuts to end-of-body (#4879).
+The staged plan and topology go into the epic body in one PATCH, re-read and compared byte for
+byte. The verb resolves the plan region through the **verb-written enrichment marker**, not by
+position, and never cuts to end-of-body (#4879).
 
 `21` means the epic body moved under you: nothing was written; re-open from step 2. `22` means the
 region could not be resolved — a duplicated anchor, or a mode that disagrees with the body. Both
@@ -195,8 +200,8 @@ successor that re-mints them doubles the ledger.
 
 ## 7 — Hand to the gate
 
-Release the claim, then hand off. Clearing the floor and flipping children to pickable is
-`check-epic-plan`'s, and running it yourself is the two-answers defect:
+Release the claim, then hand off — clearing the floor and flipping children is
+`check-epic-plan`'s, and doing it yourself is the two-answers defect:
 
 ```bash
 fabrika build release 4300
@@ -254,11 +259,10 @@ epic — so read each code off the command that produced it and never off this l
   is a skipped step — mint the children, then re-run it — and a `10` naming an absent label or a
   closed milestone is a repository fact. Neither is a verdict on the epic; both land in `STOPPED`
   only if you cannot repair them.
-- `NEEDS-INPUT` — no verb refused; the run is **fully known and one human answer short**. The case
-  it exists for is an assignee for a `ready-for:human` child when nothing identifies the owner:
-  inventing who is accountable for a decision is worse than stopping. **A back-off, not UNKNOWN**,
-  which is why it is not `STOPPED`. Mint nothing rather than part of the set, state the one
-  question, post it with `fabrika build note`.
+- `NEEDS-INPUT` — no verb refused; the run is **fully known and one human answer short**. **A
+  back-off, not UNKNOWN**, which is why it is not `STOPPED`. Mint nothing rather than part of the
+  set — a half-minted epic with no topology and no plan in its body is a state a human has to
+  reconcile — then state the one question and post it with `fabrika build note`.
 - `BACKED-OFF` — `15` at the claim: held by another lane. Nothing read, written, or released.
 - `STOPPED` — everything else that leaves the run UNKNOWN: `3`, `11`, `12`, `13`, an unrepairable `4`/`5`/`6`/`25`, a `10` you cannot
   repair, `13` from `build tree`, a `15` after the claim was won, and any `1`, `2` or `127` from any verb.
