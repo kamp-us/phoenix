@@ -479,9 +479,17 @@ issue). Blocked and unknown produce no stdout — they are exits `16` and `11`.
 The derivation: resolve the parent epic (three-way — parent found / proven standalone /
 unreadable). For a child, read the parent ledger's `## Dependencies` topology and the states of
 every predecessor: a phase predecessor still open, or an open `requires:` edge, is a block, and
-the *first* blocking edge is named on stderr (#4244). Blockedness is **derived from the topology,
-never read off a label** — a label is a claim, the topology is the fact. The parent body arrives
-through the content gate.
+**every** blocking edge is named on stderr (#4244, #4920) — a lane learns everything it waits on
+from one call, not one edge per call. Blockedness is **derived from the topology, never read off a
+label** — a label is a claim, the topology is the fact. The parent body arrives through the content
+gate.
+
+**Every predecessor is read before the answer is seated**, so the answer never depends on the order
+the topology lists them in. A predecessor whose state could not be read is its **own reported row**
+on stderr, never counted closed: beside a *proven* open edge it leaves the verdict `16` (one proven
+open edge is proof of blockedness whatever else was unreadable) and is named there so the edge list
+is not read as complete; with nothing proven open it is `11`, because the blocking set is only
+complete when every predecessor's state is known.
 
 **The `## Dependencies` grammar — canonical here** (no wire module ships for it yet; when one
 lands in `packages/fabrika-cli/src/wire/`, it implements this section and this section becomes a
@@ -516,11 +524,14 @@ and the whole derivation refuses on `4` — "no parseable edges" is never read a
 | `build eligible: issue #<n> is proven absent or closed.` | 7 | refusal |
 | `build eligible: parent #<p> has no parseable "## Dependencies" block — eligibility cannot be derived, and "no edges found" is never read as "eligible".` | 4 | refusal |
 | `build eligible: cannot read <what>: <reason> — eligibility is UNKNOWN, never "eligible".` | 11 | refusal |
-| `build eligible: blocked by open <edge-kind> #<m>.` | 16 | refusal |
+| `build eligible: <n> predecessors could not be read — eligibility is UNKNOWN, never "eligible".` | 11 | refusal |
+| `build eligible: cannot read <edge-kind> predecessor #<m>: <reason> — its state is UNKNOWN, never counted closed.` | 11 or 16 | detail line, one per unread predecessor |
+| `build eligible: blocked by <n> open dependency edges: <edge-kind> #<m>, <edge-kind> #<k>.` | 16 | refusal |
 
 **Scope** — one issue, its parent (if any), and every predecessor the parent's topology names.
 The scope line on stderr counts the edges checked, so `eligible` is readable as "N edges, all
-closed", never as "no edges found".
+closed", never as "no edges found". An edge whose state could not be read is subtracted from that
+claim by its own stderr row, so "all closed" is never asserted over an edge nobody could see.
 
 **Examples**
 
@@ -531,7 +542,17 @@ $ fabrika build eligible 4312
 
 ```
 $ fabrika build eligible 4319
-build eligible: blocked by open requires: edge #4310.
+build eligible: scanned 2 dependency edges; parent #4300.
+build eligible: blocked by 2 open dependency edges: requires: #4310, requires: #4311.
+$ echo $?
+16
+```
+
+```
+$ fabrika build eligible 4321
+build eligible: scanned 2 dependency edges; parent #4300.
+build eligible: cannot read phase predecessor #4310: gh: Bad gateway (HTTP 502) — its state is UNKNOWN, never counted closed.
+build eligible: blocked by 1 open dependency edge: phase #4311.
 $ echo $?
 16
 ```
@@ -540,7 +561,9 @@ $ echo $?
 
 - #4244 — lane entry must refuse while a `requires:` member is open.
 - #4920 — the eligibility question needed a verb; prose-derived blockedness was re-derived
-  differently per session.
+  differently per session. Its acceptance also fixes two properties of the answer: a `blocked`
+  refusal names **every** open edge, and every unreadable input on the path is `11` with a test
+  pinning it, so no read failure anywhere can resolve to "eligible".
 - #4104 — `status:planned` children invisible to a label-driven picker; topology-derived here.
 - ADR 0092 — an unreadable predecessor is `11`, never a pass.
 

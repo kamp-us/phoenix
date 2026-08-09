@@ -51,7 +51,9 @@ it executes the whole loop itself. Then gate your choice:
 fabrika build eligible 4312
 ```
 
-Only `eligible` proceeds. `blocked` names the open dependency — take the next candidate.
+Only `eligible` proceeds. `blocked` (`16`) names every open dependency, so one call tells you the
+whole wait — take the next candidate. `11` is UNKNOWN, not a pass: something on the path could not
+be read, and it is named on stderr.
 
 ## 2 — Claim, and keep proving the claim
 

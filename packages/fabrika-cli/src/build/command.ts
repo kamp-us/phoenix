@@ -110,7 +110,7 @@ const eligible = leafCommand(
 	}),
 ).pipe(
 	Command.withDescription(
-		'One issue\'s dependency gate, derived from the parent ledger\'s "## Dependencies" topology and never read off a label. Prints {"answer":"eligible","number":n,"parent":n|null}; blocked and unknown print nothing. Exits 4 (the parent\'s "## Dependencies" block is absent or unparseable — "no parseable edges" is never "no edges"), 7 (the issue is proven absent or closed), 11 (the issue, parent or a predecessor could not be read — UNKNOWN, never "eligible"), 16 (proven blocked — the first open edge is named on stderr). Example: fabrika build eligible 4312',
+		'One issue\'s dependency gate, derived from the parent ledger\'s "## Dependencies" topology and never read off a label. Prints {"answer":"eligible","number":n,"parent":n|null}; blocked and unknown print nothing. Every predecessor is read before the answer is seated, so the verdict does not depend on the order the topology lists them in, and a predecessor that could not be read is named on stderr as its own row rather than counted closed. Exits 4 (the parent\'s "## Dependencies" block is absent or unparseable — "no parseable edges" is never "no edges"), 7 (the issue is proven absent or closed), 11 (the issue, parent or a predecessor could not be read, with nothing proven open — UNKNOWN, never "eligible"), 16 (proven blocked — EVERY open edge is named on stderr, alongside any predecessor that could not be read). Example: fabrika build eligible 4312',
 	),
 );
 
