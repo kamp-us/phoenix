@@ -252,8 +252,9 @@ contract's table.
 
 Each key is the surface's repo-root-relative path, or `null` when the convention path holds no
 file. `lawSource` is `"registry"` when the registry file exists, `"manifest-prose"` when only the
-manifest does — the skill writes this token into its PR body verbatim. `registry`, `inventory`
-and `goldenPointer` report **presence only**; parsing them is `ui law`'s and `ui golden`'s.
+manifest does — the skill writes this token into its PR body verbatim. `registry`, `inventory`,
+`goldenPointer` and `harness` report **presence only**; parsing them is `ui law`'s, `ui golden`'s
+and `ui render`'s.
 The manifest itself is the one surface whose absence refuses: without it there is no law at all.
 
 **Exit status** (beyond the universal four)
@@ -424,7 +425,7 @@ carries every surface's outcome — the code routes, the stderr enumerates.
 | `ui render: surface "<id>" is unreachable in this tree (<reason: no route | flag dark | gated tier>) — fix reachability, or drop it explicitly and carry the reason into the PR's Deviations (#4305).` | 15 | refusal |
 | `ui render: surface "<id>" captured invalid bytes (<detail>) — a capture nobody can open is not evidence (#3925's class).` | 16 | refusal |
 | `ui render: the render harness could not start: <reason> — every surface is UNKNOWN.` | 11 | refusal |
-| `ui render: the harness did not answer 200 on <readyPath> within 60s — every surface is UNKNOWN; server stderr tail: <tail>.` | 11 | refusal |
+| `ui render: the harness did not answer 200 on <readyPath> within the readiness bound — every surface is UNKNOWN; server stderr tail: <tail>.` | 11 | refusal |
 | `ui render: cannot determine the validity of <set>/<file>: <reason> — the capture is UNKNOWN, never valid.` | 11 | refusal |
 | `ui render: no design-harness.json at the repo root — this repo declares no headless render path; add one (see the harness config schema).` | 19 | refusal |
 | `ui render: design-harness.json exists but does not satisfy its schema: <first violation>.` | 4 | refusal |
