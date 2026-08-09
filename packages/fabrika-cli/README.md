@@ -1,13 +1,13 @@
 # @kampus/fabrika-cli
 
 The deterministic verb package [fabrika](../../claude-plugins/fabrika/) skills call.
-`fabrika <group> <verb> …` dispatches to a registered verb group. Seven groups are
+`fabrika <group> <verb> …` dispatches to a registered verb group. Eight groups are
 registered: `adr`, the six verbs the `/adr` skill's derived contract specifies; `report`,
 the three the `/report` contract specifies; `triage`, the intake-queue group the `/triage`
-contract specifies; `review`, the eight the `/review` contract specifies; `eval`, the
-graded-corpus harness the fabrika eval layer measures itself with; `spend`, what one
-fabrika run cost in tokens; and `wire`, which owns the byte-level formats two skills meet
-through on a GitHub artifact.
+contract specifies; `review`, the eight the `/review` contract specifies; `ship`, the
+thirteen the `/ship` contract specifies; `eval`, the graded-corpus harness the fabrika eval
+layer measures itself with; `spend`, what one fabrika run cost in tokens; and `wire`, which
+owns the byte-level formats two skills meet through on a GitHub artifact.
 
 ## Who it's for
 
@@ -268,6 +268,44 @@ verdict back. The group implements
   [`src/review/mutation.unit.test.ts`](./src/review/mutation.unit.test.ts) plants a
   counterexample per guard, breaks exactly that guard, and asserts the verb returns the
   specific wrong answer instead — a guard that cannot be shown failing is not demonstrated.
+
+## The `ship` group
+
+Everything the merge path needs off one pull request, plus the four writes that arm, watch,
+disarm and record it. The group implements
+[`claude-plugins/fabrika/skills/ship/contract.md`](../../claude-plugins/fabrika/skills/ship/contract.md).
+
+| Verb | What it answers |
+|---|---|
+| `ship scope` | head, lifecycle state, linked issue, artifact classes with their required namespaces, and the four-state §CP classification |
+| `ship cp-approval` | the ADR 0175 cardinality discharge — `discharge` / `stop` / `n/a`, from head-bound signals only |
+| `ship gate` | the verdict conjunction over every required namespace, advisory and native-review fold included |
+| `ship checks` | the head CI rollup, with the running-vs-wedged split and the zero-checkset facts |
+| `ship evidence` | the SHA-bound run-evidence bundle as `present` / `pending` / `absent` / `unknown` |
+| `ship threads` | every unresolved review thread, both pagination layers count-proved, with its class facts |
+| `ship resolve` | the sanctioned thread-resolution write, refusing any thread not positively bot-classed |
+| `ship enqueue` | the queue arm at a pinned head, method-flag-free by construction, proven landed |
+| `ship reconcile` | the bounded post-enqueue watch — `landed` / `ejected` / `unresolved` / `parked` |
+| `ship disarm` | the four-site merge-intent lifecycle (ADR 0198), read-back-verified |
+| `ship nudge` | the at-most-once dropped-trigger remedy, precondition re-derived here |
+| `ship note` | the durable stop-path comment, leak-scanned and read back |
+| `ship release` | dark-ship detection and the `status:awaiting-release` label |
+
+- **The §CP boundary is derived from `.github/CODEOWNERS` itself**, read at the base branch,
+  so this group and the merge gate read one artifact and cannot disagree. A *trivial* boundary
+  — no team-owned rows, or a row that covers everything — is a printed hold, never a
+  match-everything verdict; an *unreadable* one is `11` ([`src/ship/codeowners.ts`](./src/ship/codeowners.ts)).
+- **Three modules are extended rather than forked**: the class map and the check-run rollup
+  are the `review` group's own ([`src/review/classes.ts`](./src/review/classes.ts),
+  [`src/review/rollup.ts`](./src/review/rollup.ts)), and `normalizeForReadback` and the leak
+  predicate come from `report`. Ship and review cannot disagree about what a file is.
+- **`16` and `17` are this group's own proven refusals.** `16` is the write-side state guard —
+  the verb re-derives its own precondition and declines without touching the PR. `17` says the
+  nudge's close landed and its reopen is unconfirmed, a state so much worse than a failed write
+  that folding it into `8` would hide the one fact an operator must act on now.
+- **Exactly two verbs use GraphQL** (`threads`, `resolve`), because review-thread resolution
+  state has no REST equivalent. Every other verb is `gh api` REST, paginated, with the
+  platform's declared count carried beside what arrived.
 
 ## The `wire` group
 

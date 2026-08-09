@@ -11,6 +11,7 @@ import {
 } from "./exit-code-alignment.ts";
 import * as report from "./report/codes.ts";
 import * as review from "./review/codes.ts";
+import * as ship from "./ship/codes.ts";
 import * as triage from "./triage/codes.ts";
 import * as wire from "./wire/codes.ts";
 
@@ -25,6 +26,7 @@ const TABLES: Readonly<Record<string, CodeTable>> = {
 	build,
 	report,
 	review,
+	ship,
 	triage,
 	wire,
 };
