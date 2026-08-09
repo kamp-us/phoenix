@@ -149,7 +149,7 @@ package**, never from a sibling `contract.md`.
 | `7` | zero scope: the target is **proven absent (404)** or closed, the PR has zero changed files, the corpus holds zero decision records, the window holds zero landings, or the readout artifact is proven absent — a fail-closed refusal (ADR 0092) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `8` | the write itself failed — the outcome is **UNKNOWN** | — | — | — | — | ✓ | — | ✓ |
 | `9` | the write landed but the read-back does not match | — | — | — | — | ✓ | — | ✓ |
-| `10` | a supplied value is off the closed vocabulary — a bad `--polarity`, a `--sha` that is not a head SHA, an unparseable `--since`, a `--record` that is not a four-digit id, a `--path` outside this skill's own directory | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `10` | a supplied value is off the closed vocabulary — a bad `--polarity`, a `--sha` that is not a head SHA, an unparseable `--since`, a `--record` that is not a four-digit id, a `--path` outside this skill's own resolved directory | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `11` | a **precondition read failed** — nothing was written and the outcome is UNKNOWN | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `12` | refused: the `--sha` given is not the PR's head — a read taken over, or a verdict bound to, a tree that is no longer the PR | ✓ | ✓ | ✓ | ✓ | ✓ | — | — |
 | `13` | refused: the read completed but its scope is **provably incomplete** — a truncated changed-file list or diff, a comment enumeration short of its declared count | ✓ | ✓ | ✓ | — | — | ✓ | ✓ |
@@ -340,9 +340,10 @@ event — the one change to the corpus an `added`/`modified` pair cannot express
 `required` iff at least one changed path is under at least one root. **The directory is the unit of
 coverage, not the file type** — the v1 §CP definition learned this the hard way: an enumerated
 skill-dir list plus an any-depth `*.sh` clause left a non-`.sh` file beside a gated script
-proven-ordinary and auto-mergeable at zero approvals. `self` is true when any changed path is under
-`claude-plugins/fabrika/skills/governance/`, which is a subset of `claude-plugins/`, so this skill's
-own diff derives its own namespace by construction.
+proven-ordinary and auto-mergeable at zero approvals. `self` is true when any changed path is under a
+directory matching `*/skills/governance/` — **resolved, never hardcoded to phoenix's install path**,
+for the same portability reason `governance base` states below. That directory is always a subset of
+`claude-plugins/`, so this skill's own diff derives its own namespace by construction.
 
 **This is not the §CP answer and the verb says so on stderr**, once, on every run:
 `governance scope: this is the governance-namespace derivation, not a §CP classification — §CP is CODEOWNERS' answer.`
@@ -665,7 +666,7 @@ fabrika governance base 4321 [--path <repo-relative>] [--repo <owner/name>]
 | Flag | Type | Required | Default | Description |
 |---|---|---|---|---|
 | *(positional)* | integer | yes | — | the pull-request number whose merge-base is resolved |
-| `--path` | string, repeatable | no | this skill's `SKILL.md` and `contract.md` | a repo-relative path under `claude-plugins/fabrika/skills/governance/` to read at the merge-base |
+| `--path` | string, repeatable | no | this skill's `SKILL.md` and `contract.md` | a repo-relative path inside this skill's own directory to read at the merge-base; see the fence below |
 | `--repo` | string | no | resolved | the repository |
 
 **Output** — machine channel. First line: `base\t<merge-base-sha>\t<file-count>`. Then, per path, a
@@ -678,10 +679,14 @@ otherwise have to compute and interpolate, which the harness's isolation verifie
 convention rule 5: every documented invocation is a plain literal command string). Resolving a merge
 base and reading named paths at it is mechanical; judging by them is not.
 
-**`--path` is fenced to this skill's own directory.** A path outside
-`claude-plugins/fabrika/skills/governance/` is a `10` refusal. The fence is deliberate: this verb
-exists for the self fence, and a general "read any file at the merge-base" verb would be a second way
-to load instructions out of a tree — the thing the whole no-checkout posture exists to prevent.
+**`--path` is fenced to this skill's own directory, resolved rather than hardcoded.** A path is
+admitted iff it lies under a directory matching `*/skills/governance/` at any depth — in phoenix that
+is `claude-plugins/fabrika/skills/governance/`, and in a repo that homes its plugins elsewhere it is
+whatever that repo's install path is. **Do not hardcode phoenix's path**: this skill ships to other
+repositories, and a literal `claude-plugins/fabrika/` fence would refuse the self fence in every one
+of them — the failure a run of this spec surfaced. The fence itself is deliberate: this verb exists
+for the self fence, and a general "read any file at the merge-base" verb would be a second way to
+load instructions out of a tree, which is what the whole no-checkout posture exists to prevent.
 Nothing is checked out here either; the bytes come from the object database.
 
 **Exit status**
@@ -689,7 +694,7 @@ Nothing is checked out here either; the bytes come from the object database.
 | Code | Trigger |
 |---|---|
 | `7` | the PR is proven absent (404) or closed; or every `--path` is proven absent at the merge-base — a self fence over no bytes |
-| `10` | a `--path` resolves outside `claude-plugins/fabrika/skills/governance/` |
+| `10` | a `--path` resolves outside this skill's own directory (a path not under a `*/skills/governance/` root) |
 | `11` | the merge base could not be resolved, or a path could not be read at it — the base rules are UNKNOWN, so no fallback to the head is taken |
 | `12` | the PR's head moved while the base was being resolved — re-run; a base paired with a head nobody judged is not a fence |
 
@@ -699,7 +704,7 @@ Nothing is checked out here either; the bytes come from the object database.
 |---|---|---|
 | `governance base: PR #<n> not found in <repo>.` | 7 | refusal |
 | `governance base: none of the requested paths exist at merge-base <sha> — there is no base revision to judge by.` | 7 | refusal |
-| `governance base: --path "<v>" is outside claude-plugins/fabrika/skills/governance/ — this verb reads only this skill's own text.` | 10 | refusal |
+| `governance base: --path "<v>" is outside this skill's own directory (<resolved>) — this verb reads only this skill's own text.` | 10 | refusal |
 | `governance base: cannot resolve the merge base of #<n>: <reason> — the base rules are UNKNOWN; refusing to judge by the head's.` | 11 | refusal |
 | `governance base: cannot read <path> at <sha>: <reason> — UNKNOWN.` | 11 | refusal |
 | `governance base: #<n>'s head moved to <live> while resolving — re-run.` | 12 | refusal |
@@ -722,7 +727,7 @@ description: The governance-corpus integrity gate — one judgement, asked of an
 
 ```
 $ fabrika governance base 4321 --path claude-plugins/fabrika/skills/review/SKILL.md
-governance base: --path "claude-plugins/fabrika/skills/review/SKILL.md" is outside claude-plugins/fabrika/skills/governance/ — this verb reads only this skill's own text.
+governance base: --path "claude-plugins/fabrika/skills/review/SKILL.md" is outside this skill's own directory (claude-plugins/fabrika/skills/governance/) — this verb reads only this skill's own text.
 $ echo $?
 10
 ```
