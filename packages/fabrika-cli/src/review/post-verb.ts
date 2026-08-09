@@ -1,10 +1,10 @@
 /**
  * `review post` — the single sanctioned verdict emit.
  *
- * Six steps, each gating the next: recompute the class set, re-resolve the live head, compose the
- * first line through the wire format's `emit` (stamping the write-recency line under it), leak-scan
- * the assembled comment, upsert **one comment per namespace**, and read it back unconditionally from
- * live PR state.
+ * Six steps, each gating the next: re-resolve the live head, recompute the class set at the commit
+ * the verdict binds, compose the first line through the wire format's `emit` (stamping the
+ * write-recency line under it), leak-scan the assembled comment, upsert **one comment per
+ * namespace**, and read it back unconditionally from live PR state.
  *
  * Every one of those is a scar. #3173's hand-rolled `gh api` emit posted a literal path and
  * self-reported a false PASS, which is why the read-back re-fetches instead of trusting a carried
@@ -13,11 +13,17 @@
  * is `bindToHead`'s `Stale` arm applied at the write seam, where its absence costs the most. And the
  * marker is the comment's **literal first line** — a second marker stacked on line 2 is un-anchored,
  * resolves its namespace empty, and fail-closes a substantively-passing PR (the PR #2456 stall).
+ *
+ * The head re-resolve runs **before** the recompute, and the recompute reads at the bound commit
+ * (`head.ts`, #5122). `12` labels the tree; only the binding makes the derived set provably that
+ * tree's — the two are separate reads, and a force-push that rewinds back onto `--sha` passes `12`
+ * clean while the PR-number file endpoint serves some other head's list.
  */
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
+import {diffRangePaths} from "../io/git.ts";
 import {createComment, getComment, listComments} from "../io/issues.ts";
-import {listPullFiles, patchComment, viewerLogin} from "../io/pulls.ts";
+import {patchComment, viewerLogin} from "../io/pulls.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {normalizeForReadback} from "../report/compose.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
@@ -38,6 +44,7 @@ import {
 	STALE_HEAD,
 	WRITE_UNKNOWN,
 } from "./codes.ts";
+import {bindHead, boundLine} from "./head.ts";
 import {badNumber, openPull, resolveTargetRepo, scannedLine} from "./target.ts";
 import {latestByWriteRecency, stampIso, withWrittenAt} from "./write-recency.ts";
 
@@ -216,25 +223,30 @@ export const runPost = (
 		if (target._tag === "Refused") return target.outcome;
 		const live = target.pull.headSha;
 
-		// Step 1 — recompute the class set this run derived, and refuse a namespace outside it.
-		const listed = yield* listPullFiles(repo, pr);
+		// Step 1 — the verdict binds the tree it was formed over, or it is re-reviewed, never re-bound.
+		if (!prefixMatch(live, inspected)) {
+			return refuse(
+				STALE_HEAD,
+				`${VERB}: the live head is ${live}, not ${inspected} — the tree you judged is gone; re-review at ${live} (ADR 0058).`,
+			);
+		}
+
+		// Step 2 — recompute the class set at the bound commit, and refuse a namespace outside it.
+		const bound = yield* bindHead(VERB, repo, pr, target.pull, options.sha);
+		if (bound._tag === "Refused") return bound.outcome;
+		const head = bound.head;
+		const listed = yield* diffRangePaths(head.base, head.sha);
 		if (listed._tag === "Failure") return unreadable("the changed-file list", pr, listed.reason);
 		const derived = namespacesOf(partition(listed.value));
-		const diagnostics = [scannedLine(VERB, listed.value.length, "changed file")];
+		const diagnostics = [
+			boundLine(VERB, head),
+			scannedLine(VERB, listed.value.length, "changed file"),
+		];
 		const namespace = options.namespace.trim().toLowerCase();
 		if (!derived.includes(namespace)) {
 			return refuse(
 				OFF_VOCABULARY,
 				`${VERB}: --namespace ${namespace} is not derived by #${pr}'s diff (present: ${derived.join(", ")}) — a gate never emits a namespace it did not judge.`,
-				diagnostics,
-			);
-		}
-
-		// Step 2 — the verdict binds the tree it was formed over, or it is re-reviewed, never re-bound.
-		if (!prefixMatch(live, inspected)) {
-			return refuse(
-				STALE_HEAD,
-				`${VERB}: the live head is ${live}, not ${inspected} — the tree you judged is gone; re-review at ${live} (ADR 0058).`,
 				diagnostics,
 			);
 		}

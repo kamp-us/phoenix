@@ -14,10 +14,25 @@ import {
 	WRITE_UNKNOWN,
 	ZERO_SCOPE,
 } from "./codes.ts";
-import {comments, files, HEAD, OLD_HEAD, pull} from "./fixtures.test-support.ts";
+import {
+	BASE,
+	binding,
+	comments,
+	files,
+	HEAD,
+	OLD_HEAD,
+	PATHS_AT,
+	paths,
+	pull,
+} from "./fixtures.test-support.ts";
 import {runPost} from "./post-verb.ts";
 
 const PULL = /^gh api repos\/o\/r\/pulls\/4321$/;
+/**
+ * The unbound endpoint this verb no longer reads, scripted with a **skill-only** list — so a read
+ * that drifts back to it derives `review-skill` where the bound commit derives code and doc, and
+ * every case below fails on a wrong answer rather than on a missing script.
+ */
 const FILES = /^gh api --paginate repos\/o\/r\/pulls\/4321\/files/;
 const USER = /^gh api user --jq \.login$/;
 const COMMENTS = /^gh api --paginate repos\/o\/r\/issues\/4321\/comments/;
@@ -58,7 +73,9 @@ const options = {
 
 const happy = (): ReadonlyArray<readonly [RegExp, ExecResult]> => [
 	[PULL, pull()],
-	[FILES, files("src/cart.ts", "README.md")],
+	...binding(),
+	[PATHS_AT(), paths("src/cart.ts", "README.md")],
+	[FILES, files("skills/deploy/SKILL.md")],
 	[USER, okOut("kampus-bot")],
 	[COMMENTS, comments()],
 	[CREATE, created],
@@ -90,7 +107,9 @@ describe("runPost", () => {
 	it("edits this namespace's existing comment instead of stacking a second one", async () => {
 		const shell = fakeShell([
 			[PULL, pull({comments: 1})],
-			[FILES, files("src/cart.ts", "README.md")],
+			...binding(),
+			[PATHS_AT(), paths("src/cart.ts", "README.md")],
+			[FILES, files("skills/deploy/SKILL.md")],
 			[USER, okOut("kampus-bot")],
 			[
 				COMMENTS,
@@ -119,7 +138,9 @@ describe("runPost", () => {
 	it("stamps the write-recency line on the comment it edits, too", async () => {
 		const shell = fakeShell([
 			[PULL, pull({comments: 1})],
-			[FILES, files("src/cart.ts", "README.md")],
+			...binding(),
+			[PATHS_AT(), paths("src/cart.ts", "README.md")],
+			[FILES, files("skills/deploy/SKILL.md")],
 			[USER, okOut("kampus-bot")],
 			[COMMENTS, comments({id: 42, body: `review-doc: FAIL @ ${OLD_HEAD} — older round`})],
 			[PATCH, okOut(JSON.stringify({html_url: URL}))],
@@ -136,7 +157,9 @@ describe("runPost", () => {
 	it("edits the NEWEST comment in the namespace when two of this author's already exist", async () => {
 		const shell = fakeShell([
 			[PULL, pull({comments: 2})],
-			[FILES, files("src/cart.ts", "README.md")],
+			...binding(),
+			[PATHS_AT(), paths("src/cart.ts", "README.md")],
+			[FILES, files("skills/deploy/SKILL.md")],
 			[USER, okOut("kampus-bot")],
 			[
 				COMMENTS,
@@ -169,7 +192,9 @@ describe("runPost", () => {
 	it("ranks by the write-recency stamp, not by when the comment slot was opened", async () => {
 		const shell = fakeShell([
 			[PULL, pull({comments: 2})],
-			[FILES, files("src/cart.ts", "README.md")],
+			...binding(),
+			[PATHS_AT(), paths("src/cart.ts", "README.md")],
+			[FILES, files("skills/deploy/SKILL.md")],
 			[USER, okOut("kampus-bot")],
 			[
 				COMMENTS,
@@ -197,7 +222,9 @@ describe("runPost", () => {
 	it("does not edit another author's comment in the same namespace", async () => {
 		const shell = fakeShell([
 			[PULL, pull({comments: 1})],
-			[FILES, files("src/cart.ts", "README.md")],
+			...binding(),
+			[PATHS_AT(), paths("src/cart.ts", "README.md")],
+			[FILES, files("skills/deploy/SKILL.md")],
 			[USER, okOut("kampus-bot")],
 			[COMMENTS, comments({id: 42, body: MARKER, author: "someone-else"})],
 			[CREATE, created],
@@ -287,7 +314,8 @@ describe("runPost", () => {
 	it("refuses a failed precondition read on 11, with nothing posted", async () => {
 		const shell = fakeShell([
 			[PULL, pull()],
-			[FILES, errOut("gh: Bad gateway (HTTP 502)")],
+			...binding(),
+			[PATHS_AT(), errOut("fatal: bad revision")],
 		]);
 		const out = await Effect.runPromise(Effect.provide(runPost(options), shell.layer));
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
@@ -298,7 +326,9 @@ describe("runPost", () => {
 	it("reports a failed write as 8 — UNKNOWN whether the verdict landed", async () => {
 		const out = await run([
 			[PULL, pull()],
-			[FILES, files("src/cart.ts", "README.md")],
+			...binding(),
+			[PATHS_AT(), paths("src/cart.ts", "README.md")],
+			[FILES, files("skills/deploy/SKILL.md")],
 			[USER, okOut("kampus-bot")],
 			[COMMENTS, comments()],
 			[CREATE, errOut("gh: timeout")],
@@ -312,7 +342,9 @@ describe("runPost", () => {
 	it("refuses on 9 when the read-back does not yield this marker (#3173)", async () => {
 		const out = await run([
 			[PULL, pull()],
-			[FILES, files("src/cart.ts", "README.md")],
+			...binding(),
+			[PATHS_AT(), paths("src/cart.ts", "README.md")],
+			[FILES, files("skills/deploy/SKILL.md")],
 			[USER, okOut("kampus-bot")],
 			[COMMENTS, comments()],
 			[CREATE, created],
@@ -326,7 +358,9 @@ describe("runPost", () => {
 	it("reads back from LIVE state — a garbled SHA on the PR reds even though the write returned ok", async () => {
 		const out = await run([
 			[PULL, pull()],
-			[FILES, files("src/cart.ts", "README.md")],
+			...binding(),
+			[PATHS_AT(), paths("src/cart.ts", "README.md")],
+			[FILES, files("skills/deploy/SKILL.md")],
 			[USER, okOut("kampus-bot")],
 			[COMMENTS, comments()],
 			[CREATE, created],
@@ -340,7 +374,9 @@ describe("runPost", () => {
 		const advisory = `review-doc: advisory — blocking-set PR (manual merge)\n\nReviewed-head: @ ${HEAD}\n\n${BODY}`;
 		const shell = fakeShell([
 			[PULL, pull()],
-			[FILES, files("src/cart.ts", "README.md")],
+			...binding(),
+			[PATHS_AT(), paths("src/cart.ts", "README.md")],
+			[FILES, files("skills/deploy/SKILL.md")],
 			[USER, okOut("kampus-bot")],
 			[COMMENTS, comments()],
 			[CREATE, created],
@@ -370,7 +406,9 @@ describe("runPost", () => {
 
 		const fresh = fakeShell([
 			[PULL, pull()],
-			[FILES, files("src/cart.ts", "README.md")],
+			...binding(),
+			[PATHS_AT(), paths("src/cart.ts", "README.md")],
+			[FILES, files("skills/deploy/SKILL.md")],
 			[USER, okOut("kampus-bot")],
 			[COMMENTS, comments()],
 			[CREATE, created],
@@ -382,7 +420,9 @@ describe("runPost", () => {
 
 		const again = fakeShell([
 			[PULL, pull({comments: 1})],
-			[FILES, files("src/cart.ts", "README.md")],
+			...binding(),
+			[PATHS_AT(), paths("src/cart.ts", "README.md")],
+			[FILES, files("skills/deploy/SKILL.md")],
 			[USER, okOut("kampus-bot")],
 			[COMMENTS, comments({id: 42, body: advisoryFor(OLD_HEAD), author: "kampus-bot"})],
 			[PATCH, okOut(JSON.stringify({html_url: URL}))],
@@ -398,7 +438,9 @@ describe("runPost", () => {
 		const advisory = `review-doc: advisory — blocking-set PR (manual merge)\n\nReviewed-head: @ ${OLD_HEAD}\n\n${BODY}`;
 		const overAdvisory = fakeShell([
 			[PULL, pull({comments: 1})],
-			[FILES, files("src/cart.ts", "README.md")],
+			...binding(),
+			[PATHS_AT(), paths("src/cart.ts", "README.md")],
+			[FILES, files("skills/deploy/SKILL.md")],
 			[USER, okOut("kampus-bot")],
 			[COMMENTS, comments({id: 42, body: advisory, author: "kampus-bot"})],
 			[CREATE, created],
@@ -410,7 +452,9 @@ describe("runPost", () => {
 
 		const overMarker = fakeShell([
 			[PULL, pull({comments: 1})],
-			[FILES, files("src/cart.ts", "README.md")],
+			...binding(),
+			[PATHS_AT(), paths("src/cart.ts", "README.md")],
+			[FILES, files("skills/deploy/SKILL.md")],
 			[USER, okOut("kampus-bot")],
 			[
 				COMMENTS,
@@ -463,7 +507,9 @@ describe("runPost", () => {
 	it("uses `once` to prove the read-back is a SECOND fetch, not the write's echo", async () => {
 		const out = await run([
 			[PULL, pull()],
-			[FILES, files("src/cart.ts", "README.md")],
+			...binding(),
+			[PATHS_AT(), paths("src/cart.ts", "README.md")],
+			[FILES, files("skills/deploy/SKILL.md")],
 			[USER, okOut("kampus-bot")],
 			[COMMENTS, comments()],
 			[CREATE, created],
@@ -471,5 +517,83 @@ describe("runPost", () => {
 			[READBACK, errOut("never reached")],
 		]);
 		expect(out.code).toBe(0);
+	});
+});
+
+/**
+ * The provenance fence (#5122).
+ *
+ * The derived namespace set is documented as both floor and ceiling for what this verb may emit, so
+ * recomputing it from the PR-number endpoint admits a namespace this run never derived and refuses
+ * one it did — and it does so at exit 0, with a posted verdict. `12` labels the tree the verdict
+ * claims; only the binding makes the set provably that tree's.
+ */
+describe("runPost recomputes its namespace set at the bound commit", () => {
+	it("derives the set from the bound commit, never from the PR-number endpoint", async () => {
+		const shell = fakeShell(happy());
+		const out = await Effect.runPromise(Effect.provide(runPost(options), shell.layer));
+		expect(out.code).toBe(0);
+		expect(shell.calls).toContain(
+			`git diff --no-ext-diff --no-color --find-renames --src-prefix=a/ --dst-prefix=b/ --name-only -z ${BASE}...${HEAD}`,
+		);
+		expect(shell.calls.some((call) => call.includes("pulls/4321/files"))).toBe(false);
+	});
+
+	// The fail-OPEN direction: `review-skill` is derived only by the endpoint's list, so an unbound
+	// recompute POSTS it — a verdict filling a namespace this run never judged, at exit 0.
+	it("refuses a namespace only the unbound endpoint derives, and writes nothing", async () => {
+		const shell = fakeShell(happy());
+		const out = await Effect.runPromise(
+			Effect.provide(runPost({...options, namespace: "review-skill"}), shell.layer),
+		);
+		expect(out.code).toBe(OFF_VOCABULARY);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toBe(
+			"review post: --namespace review-skill is not derived by #4321's diff (present: review-code, review-doc) — a gate never emits a namespace it did not judge.",
+		);
+		expect(shell.calls.some((call) => CREATE.test(call) || PATCH.test(call))).toBe(false);
+	});
+
+	// The hole `12` cannot close, and the reason binding had to be added underneath it rather than
+	// swapped in for it: the head moved forward and was force-pushed back onto the recorded SHA, so
+	// the live head prefix-matches `--sha` and step 1 passes clean — while the PR-number endpoint
+	// still answers with the intermediate head's file list.
+	it("derives the REWOUND commit's set even though the live head matches --sha", async () => {
+		const shell = fakeShell(happy());
+		const out = await Effect.runPromise(
+			Effect.provide(runPost({...options, namespace: "review-doc"}), shell.layer),
+		);
+		expect(out.code).toBe(0);
+		expect(out.stdout).toContain(`\t${HEAD}\t`);
+		expect(shell.calls.some((call) => call.includes("pulls/4321/files"))).toBe(false);
+	});
+
+	it("names the commit the set was derived at on stderr", async () => {
+		const out = await run(happy());
+		expect(out.stderr[0]).toBe(
+			`review post: bound to ${HEAD} (base ${BASE}) — read from the object database, nothing checked out.`,
+		);
+	});
+
+	it("refuses on 11 when the commit cannot be bound, rather than deriving an unbound set", async () => {
+		const shell = fakeShell([
+			[PULL, pull()],
+			[/^git remote -v$/, okOut("origin\tgit@github.com:someone/else.git (fetch)\n")],
+			[FILES, files("skills/deploy/SKILL.md")],
+		]);
+		const out = await Effect.runPromise(Effect.provide(runPost(options), shell.layer));
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stdout).toBe("");
+		expect(shell.calls.some((call) => CREATE.test(call) || PATCH.test(call))).toBe(false);
+	});
+
+	// The `12` seat is `review post`'s own, ahead of the binding — the binding is added underneath it.
+	it("keeps the 12 refusal on a forward-moved head, before any commit is bound", async () => {
+		const shell = fakeShell(happy());
+		const out = await Effect.runPromise(
+			Effect.provide(runPost({...options, sha: OLD_HEAD}), shell.layer),
+		);
+		expect(out.code).toBe(STALE_HEAD);
+		expect(shell.calls.some((call) => call.startsWith("git diff"))).toBe(false);
 	});
 });
