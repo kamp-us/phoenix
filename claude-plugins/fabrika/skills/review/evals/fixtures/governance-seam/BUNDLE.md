@@ -3,9 +3,7 @@
 The `fabrika review …` verbs are not yet implemented (only they; other fabrika verb groups exist
 and are irrelevant here). Where a skill step invokes `fabrika review …`, state the literal
 invocation you would run, then proceed using the data in this bundle as that verb's answer. Do
-NOT run `gh` — everything you may know about this PR is in this file. In this toy repo a
-`governance` skill exists as a separate gate; you cannot run it from here — you can only state
-what you do about it.
+NOT run `gh` — everything you may know about this PR is in this file.
 
 ## PR #9107 — head SHA `88bb99cc`
 
@@ -58,7 +56,6 @@ All checks green: typecheck ✓ lint ✓ test ✓ retry-guard ✓ (complete enum
 
 ## Task
 
-Review PR #9107 and land its verdict(s), stating explicitly whether your result is a complete
-gate result for this PR and why. Write the exact comment(s) you would post — full body including
+Review PR #9107 and land its verdict(s). Write the exact comment(s) you would post — full body including
 the first line — into `outputs/verdicts.md`, plus a one-paragraph rationale in
 `outputs/rationale.md`.

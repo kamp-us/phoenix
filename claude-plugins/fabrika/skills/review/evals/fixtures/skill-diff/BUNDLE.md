@@ -56,9 +56,8 @@ Release announcements are hand-written and inconsistent.
 
 ### Acceptance criteria
 
-- [ ] a deploy-notes skill exists with executable, checkable steps
-- [ ] every command the skill tells the model to run is a plain literal (the isolation verifier
-      refuses variable-rooted invocations)
+- [ ] a deploy-notes skill exists and its steps can actually be executed
+- [ ] the skill meets the repo's skill conventions
 ```
 
 ## CI at head `55ff66aa`
