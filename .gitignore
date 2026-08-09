@@ -15,6 +15,9 @@ build
 # Generated
 __generated__
 schema.graphql.generated
+# Mutation-proof staging: a throwaway copy a verify script plants counterexamples in. It has to
+# live under src/ to be collected by vitest's include, and it is removed on a clean run.
+__mutation__
 # fate Vite plugin codegen output (build-time; never committed)
 .fate
 
