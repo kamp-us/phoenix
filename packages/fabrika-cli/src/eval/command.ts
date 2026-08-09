@@ -413,6 +413,9 @@ const runCommand = leafCommand(
 				stage: opts.stage,
 				model: opts.model,
 				cliVersion: yield* claudeVersion(),
+				// Read here rather than in the core: `buildLedger` stays a pure function of its inputs,
+				// which is what lets the unit tier assert an exact recorded row.
+				recordedAt: new Date().toISOString(),
 				outcomes,
 			});
 
