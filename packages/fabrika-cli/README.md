@@ -393,6 +393,7 @@ over the meter the `eval` verbs already price runs with — it adds no second su
 | Verb | Answers |
 |---|---|
 | `spend read` | one run's billed token spend, its four `usage` components, the ex-cache-read comparator, its billed turn count and its model |
+| `spend rollup` | what **all** of fabrika's recorded runs cost, summed out of the durable ledger and broken down by day, by skill and by stage-and-arm |
 
 Three behaviours are worth knowing before you call it:
 
@@ -422,6 +423,58 @@ row shape evolves through.
 
 The module imports from `spend/` and `io/` only — never `eval/` — so a reader of the ledger
 does not drag in the eval harness that writes it.
+
+### `spend rollup` — the epic's acceptance test, as one command
+
+```bash
+fabrika spend rollup                                    # everything recorded so far
+fabrika spend rollup --since 2026-08-01 --until 2026-08-09
+fabrika spend rollup --json
+```
+
+This is the one output epic [#4779](https://github.com/kamp-us/phoenix/issues/4779) exists to
+produce ([#5010](https://github.com/kamp-us/phoenix/issues/5010)): a number a human or an agent
+reads on demand. It reads persisted rows only — it spawns nothing, re-parses no transcript, and
+slows no lane. `--ledger` points it at a ledger other than the default; `--since`/`--until` are
+**inclusive at both edges**, and a bare `YYYY-MM-DD` widens to that whole UTC day, so
+`--until 2026-08-09` means "through the 9th" rather than "up to its midnight".
+
+stdout is one record per line, the first field naming the kind:
+
+```
+billed        <n>          exCacheRead <n>   assistantTurns <n>
+runs          <n>          measuredRuns <n>
+skipped       <n>          skippedMalformed <n>   skippedNewerVersion <n>
+undatedRows   <n>
+day        <YYYY-MM-DD>        <billed> <exCacheRead> <assistantTurns> <runs> <measuredRuns>
+skill      <name>              …
+stage-arm  <stage> <arm>       …
+```
+
+Four things about it are load-bearing:
+
+- **Every number it could not count is a number it reports.** The unread-line counts ride on the
+  answer itself (and in `--json`), not just on stderr, because a total that quietly omits 40
+  unreadable lines is worse than an error — it is wrong and looks whole. `undatedRows` is the same
+  rule for a bounded window: a row whose timestamp does not parse cannot be *proven* inside the
+  window, so it is excluded and counted rather than silently kept or dropped.
+- **The skipped count is split, because the two halves ask for opposite things.**
+  `skippedMalformed` is damage — those measurements are gone. `skippedNewerVersion` is intact data
+  written by a newer row shape: the rows are still there and the fix is to upgrade this CLI.
+  Reporting both as one "40 lines lost" is a false alarm in one direction and a missed data loss in
+  the other.
+- **Four refusals, none of them a zero.** `3` is no ledger at that path (nothing recorded yet), `4`
+  is a ledger that could not be read (the spend is UNKNOWN), `5` is one read in full that yielded no
+  rows at all, and `6` is a ledger that *does* hold rows where the given window selects none — an
+  empty window is a different fact from an empty ledger, so it gets its own code. Each refuses with
+  empty stdout.
+- **It cannot gate.** No threshold flag, no budget option, and no exit code that varies with the
+  size of a total — the no-gate ruling on epic #4779, asserted by a test that an arbitrarily large
+  total still exits `0`.
+
+The core is [`src/spend/rollup.ts`](./src/spend/rollup.ts), pure and total: it sums a
+`readSpendLedger` result over a resolved window and groups it three ways.
+[`src/spend/rollup-verb.ts`](./src/spend/rollup-verb.ts) is the IO around it.
 
 ## Development
 

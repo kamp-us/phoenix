@@ -10,7 +10,9 @@ import {Effect} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
 import {leafCommand} from "../excess-operand.ts";
 import type {VerbOutcome} from "../verb.ts";
+import {DEFAULT_SPEND_LEDGER_PATH} from "./ledger.ts";
 import {runRead} from "./read-verb.ts";
+import {runRollup} from "./rollup-verb.ts";
 
 /** Write the outcome and exit on its code — stdout is the answer, everything else is stderr. */
 const emit = (outcome: VerbOutcome): Effect.Effect<void> =>
@@ -39,7 +41,52 @@ const read = leafCommand(
 	),
 );
 
+const rollup = leafCommand(
+	"rollup",
+	{
+		// `--ledger`, not `--spend-ledger`: inside `fabrika spend rollup` the group name is already
+		// said, and the description names the writer's flag so the pairing stays findable.
+		ledger: Flag.string("ledger").pipe(
+			Flag.withDefault(DEFAULT_SPEND_LEDGER_PATH),
+			Flag.withDescription(
+				`the durable spend ledger to read — the file \`fabrika eval run --spend-ledger\` appends to (default: ${DEFAULT_SPEND_LEDGER_PATH})`,
+			),
+		),
+		since: Flag.string("since").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"inclusive lower bound — an ISO-8601 instant, or a bare YYYY-MM-DD meaning that UTC day's first millisecond",
+			),
+		),
+		until: Flag.string("until").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"inclusive upper bound — an ISO-8601 instant, or a bare YYYY-MM-DD meaning through that whole UTC day",
+			),
+		),
+		json: Flag.boolean("json").pipe(
+			Flag.withDescription("emit the same answer as JSON on stdout instead of the line grammar"),
+		),
+	},
+	Effect.fn(function* ({ledger, since, until, json}) {
+		yield* emit(
+			yield* runRollup({
+				ledger,
+				since: since._tag === "Some" ? since.value : null,
+				until: until._tag === "Some" ? until.value : null,
+				json,
+			}),
+		);
+	}),
+).pipe(
+	Command.withDescription(
+		"What fabrika's runs cost, summed out of the durable spend ledger — the one command that answers it from persisted data, spawning nothing and re-parsing no transcript. stdout is one record per line, first field naming the kind: billed, exCacheRead, assistantTurns, runs, measuredRuns, then skipped/skippedMalformed/skippedNewerVersion/undatedRows, then one `day`, `skill` and `stage-arm` line per bucket. The skipped counts ride on the answer so a partially-unreadable ledger can never present as a quietly smaller total, and they are split because a malformed line is data loss while a newer-version line means upgrade this CLI. --since/--until bound the window (inclusive; a bare YYYY-MM-DD widens to the whole UTC day), --json emits the same answer as an object. Exits 3 (no ledger there — nothing recorded yet), 4 (the ledger could not be read — the spend is UNKNOWN, never zero), 5 (read in full, no rows at all), 6 (rows exist but this window selects none). No threshold, no budget flag, and no exit code that varies with a spend magnitude. Example: fabrika spend rollup --since 2026-08-01",
+	),
+);
+
 export const spendCommand = Command.make("spend").pipe(
-	Command.withSubcommands([read]),
-	Command.withDescription("Read what one fabrika run cost, in tokens, from its transcript"),
+	Command.withSubcommands([read, rollup]),
+	Command.withDescription(
+		"Read what fabrika's runs cost, in tokens — one run from its transcript, or all of them from the durable ledger",
+	),
 );

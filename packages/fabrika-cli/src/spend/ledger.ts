@@ -45,11 +45,33 @@ export interface LedgerRow {
 	readonly spend: RunSpend;
 }
 
+/**
+ * Why an unreadable line splits in two rather than staying one number (#5010): the two halves ask
+ * the operator for opposite things. A `malformed` line is damage — bytes that will never decode, so
+ * that measurement is gone. A `newerVersion` line is intact data this build is too old to read, so
+ * the rows are still there and the action is to upgrade the CLI. One counter reported both as "40
+ * lines lost", which is a false alarm in one direction and a missed data loss in the other.
+ *
+ * A `v` *below* the current one counts as malformed on purpose: v1 is the first shape ever written,
+ * so there is no older ledger for such a line to have come from.
+ */
+export interface LedgerSkips {
+	/** Lines that will never decode — a truncated tail, a partial write, corruption. Data loss. */
+	readonly malformed: number;
+	/** Well-formed lines stamped with a `v` this build does not know. Upgrade, not damage. */
+	readonly newerVersion: number;
+}
+
 /** What a read of the ledger text found, and how much of it it could not read. */
 export interface LedgerRead {
 	readonly rows: ReadonlyArray<LedgerRow>;
-	/** Lines that were present but unreadable. Reported, never silently folded into "no rows". */
+	/**
+	 * Lines that were present but unreadable — `malformed + newerVersion`. Reported, never silently
+	 * folded into "no rows"; kept as the sum so a caller that only needs "how much did I miss" does
+	 * not have to add the halves back up.
+	 */
 	readonly skipped: number;
+	readonly skips: LedgerSkips;
 }
 
 /**
@@ -127,11 +149,23 @@ const decodeSpend = (value: unknown): RunSpend | null => {
 	return {_tag: "Reconstructed", spend};
 };
 
-const decodeRow = (line: string): LedgerRow | null => {
+/** One line's three outcomes — the same split {@link LedgerSkips} reports. */
+type LineRead =
+	| {readonly _tag: "Row"; readonly row: LedgerRow}
+	| {readonly _tag: "NewerVersion"}
+	| {readonly _tag: "Malformed"};
+
+const MALFORMED: LineRead = {_tag: "Malformed"};
+const NEWER_VERSION: LineRead = {_tag: "NewerVersion"};
+
+const decodeLine = (line: string): LineRead => {
 	const decoded = Result.try({try: (): unknown => JSON.parse(line), catch: () => null});
-	if (Result.isFailure(decoded)) return null;
+	if (Result.isFailure(decoded)) return MALFORMED;
 	const parsed = decoded.success;
-	if (!isRecord(parsed) || parsed.v !== LEDGER_ROW_VERSION) return null;
+	if (!isRecord(parsed)) return MALFORMED;
+	const version = num(parsed.v);
+	if (version !== null && version > LEDGER_ROW_VERSION) return NEWER_VERSION;
+	if (version !== LEDGER_ROW_VERSION) return MALFORMED;
 	const skillName = str(parsed.skillName);
 	const stage = str(parsed.stage);
 	const caseId = num(parsed.caseId);
@@ -150,11 +184,14 @@ const decodeRow = (line: string): LedgerRow | null => {
 		recordedAt === null ||
 		spend === null
 	) {
-		return null;
+		return MALFORMED;
 	}
 	const cliVersion = parsed.cliVersion;
-	if (cliVersion !== null && typeof cliVersion !== "string") return null;
-	return {skillName, stage, caseId, arm, model, sessionId, cliVersion, recordedAt, spend};
+	if (cliVersion !== null && typeof cliVersion !== "string") return MALFORMED;
+	return {
+		_tag: "Row",
+		row: {skillName, stage, caseId, arm, model, sessionId, cliVersion, recordedAt, spend},
+	};
 };
 
 /**
@@ -168,18 +205,17 @@ const decodeRow = (line: string): LedgerRow | null => {
  */
 export const readSpendLedger = (text: string): LedgerRead => {
 	const rows: Array<LedgerRow> = [];
-	let skipped = 0;
+	let malformed = 0;
+	let newerVersion = 0;
 	for (const line of text.split("\n")) {
 		const trimmed = line.trim();
 		if (trimmed.length === 0) continue;
-		const row = decodeRow(trimmed);
-		if (row === null) {
-			skipped += 1;
-			continue;
-		}
-		rows.push(row);
+		const read = decodeLine(trimmed);
+		if (read._tag === "Row") rows.push(read.row);
+		else if (read._tag === "NewerVersion") newerVersion += 1;
+		else malformed += 1;
 	}
-	return {rows, skipped};
+	return {rows, skipped: malformed + newerVersion, skips: {malformed, newerVersion}};
 };
 
 /**
