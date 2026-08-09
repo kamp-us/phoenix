@@ -105,5 +105,10 @@ printf '%s\n' "$CLAUDE_CODE_SESSION_ID" > "$GITDIR/kampus-lane" || {
 	echo "write-code preflight FAILED: could not stamp the lane at $GITDIR/kampus-lane — no later git mutation could be verified as mine." >&2
 	exit 1
 }
+# Open the stamp's LIFECYCLE at the same moment, not just its identity (#4868). The id is shared by
+# every sibling lane of this session, so on its own it can never tell a live lane from a leftover
+# tree; the beat is what a later reader measures, and `wt_preflight` refreshes it before every git
+# mutation this lane makes. `step8-claim-release.sh` closes the lifecycle by retiring the stamp.
+kp_lane_beat "$GITDIR"
 echo "write-code preflight CONFIRMED (LOUD): in a LINKED worktree at $WT (git-dir != common-dir), stamped for lane $CLAUDE_CODE_SESSION_ID — worktree identity established from git plumbing, INDEPENDENT of \$WORKTREE_ROOT (${WORKTREE_ROOT:+set}${WORKTREE_ROOT:-unset}) and \$CLAUDE_CODE_AGENT (${CLAUDE_CODE_AGENT:-unset}), both of which may misreport. Anchor EVERY Edit/Write and git op to this \$WT (absolute) — never a primary-checkout path." >&2
 printf 'GITDIR=%s\nCOMMON=%s\nWT=%s\n' "$GITDIR" "$COMMON" "$WT"

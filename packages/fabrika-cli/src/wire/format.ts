@@ -96,23 +96,130 @@ export interface WireFixtures {
 	readonly malformed: NonEmptyReadonlyArray<WireMalformedFixture>;
 }
 
-/** A field of the format's value whose type is a brand rather than a bare `string`. */
-export interface WireBrandWitness {
-	readonly field: string;
-}
+const WITNESSED: unique symbol = Symbol("wire brand witness");
 
 /**
- * Declare that `field` carries the brand `A` — and make weakening `A` a compile error.
+ * A field of the format's value whose type is a brand rather than a bare `string`.
  *
- * A brand is a proper subtype of `string`, so `string extends A` is false for it and the parameter
- * is an ordinary `string`. Weaken the brand to bare `string` and the parameter becomes `never`, so
- * the row itself stops compiling (`TS2345`). That is the whole mechanism: the counterexample is not
- * a hand-written `@ts-expect-error` per brand — which is why `Clause` had none while `HeadSha` did
- * — it is the registry row every format must fill.
+ * Unforgeable on purpose. {@link WITNESSED} is a module-private `unique symbol`, so a hand-written
+ * `{field: "sha"}` is not a witness and {@link brandWitnesses} is the only way to build one. Without
+ * that, the per-field coverage that function enforces would be a convention a row could opt out of
+ * by hand-rolling the array — and a guard a row can opt out of is the shape of defect #4969 is about.
  */
-export const brandWitness = <A extends string>(
-	field: string extends A ? never : string,
-): WireBrandWitness => ({field});
+export interface WireBrandWitness {
+	readonly field: string;
+	readonly [WITNESSED]: true;
+}
+
+/** `true` only for a *proper* subtype of `string` — a brand, or a literal union. Bare `string` is `false`. */
+type NarrowerThanString<A> = [A] extends [string] ? ([string] extends [A] ? false : true) : false;
+
+/**
+ * Exactly the code points `String.prototype.trim` strips, so {@link IsBlank} is not narrower than
+ * the runtime law it replaces: ECMAScript `WhiteSpace` (§12.2 — TAB, VT, FF, ZWNBSP, and every
+ * `Space_Separator`) plus `LineTerminator` (§12.3 — LF, CR, LS, PS). Enumerating them by hand is the
+ * only option at the type level, so the list was re-derived from the runtime rather than recalled:
+ * scanning every code point for one `trim()` removes yields these 25 and no others.
+ */
+type Whitespace =
+	| "\u0009"
+	| "\u000A"
+	| "\u000B"
+	| "\u000C"
+	| "\u000D"
+	| "\u0020"
+	| "\u00A0"
+	| "\u1680"
+	| "\u2000"
+	| "\u2001"
+	| "\u2002"
+	| "\u2003"
+	| "\u2004"
+	| "\u2005"
+	| "\u2006"
+	| "\u2007"
+	| "\u2008"
+	| "\u2009"
+	| "\u200A"
+	| "\u2028"
+	| "\u2029"
+	| "\u202F"
+	| "\u205F"
+	| "\u3000"
+	| "\uFEFF";
+
+/** `true` for the empty key and for one made only of whitespace — a name that names nothing. */
+type IsBlank<K extends string> = K extends ""
+	? true
+	: K extends `${Whitespace}${infer Rest}`
+		? IsBlank<Rest>
+		: false;
+
+/**
+ * The fields of `V` whose type is a proper subtype of `string`.
+ *
+ * This is the binding the old `brandWitness<A>(field)` lacked (#4969): `A` was supplied at the call
+ * site and appeared nowhere but in a guard on a plain `string` parameter, so it asserted only "the
+ * type I named is not bare `string`" — true of any surviving brand anywhere in the module. Here the
+ * brand is *derived from the field*, so naming one brand while witnessing another is not a mistake
+ * to catch, it is unrepresentable; and a field name that is not a key of `V` is not in this union at
+ * all. Weaken a brand to bare `string` and its key leaves the union, so the row stops compiling.
+ *
+ * A blank or whitespace-only key is excluded too, so "a witness names no field" is unrepresentable
+ * rather than merely unlikely — that half of the retired `brandsNamed` runtime law is carried here.
+ */
+export type BrandedKeys<V> = {
+	[K in keyof V]-?: NarrowerThanString<V[K]> extends true
+		? K extends string
+			? IsBlank<K> extends true
+				? never
+				: K
+			: K
+		: never;
+}[keyof V] &
+	string;
+
+/**
+ * Every branded field of `V`, each acknowledged by name — a witness per field, not per row.
+ *
+ * A mapped type over {@link BrandedKeys} makes each key **required**, so omitting one is `TS2741`
+ * and naming a non-branded or non-existent field is an excess property. That settles the coverage
+ * question the type used to leave open: `brands` needed only *one* witness, so weakening any other
+ * branded field on the same format was caught by nothing.
+ *
+ * `never` when `V` has no branded field, which makes such a call unwritable rather than a row with
+ * an empty `brands` — zero scope is a refusal (ADR 0092).
+ */
+export type WireBrandWitnesses<V> = [BrandedKeys<V>] extends [never]
+	? never
+	: {readonly [K in BrandedKeys<V>]: true};
+
+/**
+ * Build a row's `brands` from its value type — the compile-time half of the conformance laws.
+ *
+ * **The residue, stated rather than implied (#4969).** The row still chooses which `V` to name, and
+ * nothing binds that choice to the row's own `emit`/`read`: {@link WireFormat} is stated over bytes
+ * so one array can hold formats whose values have nothing in common, and that erasure is what would
+ * have to go to close the last gap. So this device enforces *field ↔ brand* agreement and per-field
+ * coverage, and takes *which value type a row names* on trust.
+ *
+ * A second residue, for the same reason: excess-property checking is *freshness*-based, so an
+ * argument hoisted into a `const` before the call skips it and a stray key rides through. Every
+ * registry row passes the object literal inline, which is the form that is checked.
+ */
+export const brandWitnesses = <V>(
+	witnessed: WireBrandWitnesses<V>,
+): NonEmptyReadonlyArray<WireBrandWitness> => {
+	const [first, ...rest] = Object.keys(witnessed).map(
+		(field): WireBrandWitness => ({field, [WITNESSED]: true}),
+	);
+	if (first === undefined) {
+		// Unreachable through the parameter type, which is `never` for a `V` with no branded field.
+		// A silently empty `brands` would be the zero-scope pass ADR 0092 forbids, so it throws.
+		throw new Error("brandWitnesses was handed no branded field to witness");
+	}
+	return [first, ...rest];
+};
 
 /**
  * A registered format: its identity, its wiring, and its bytes.

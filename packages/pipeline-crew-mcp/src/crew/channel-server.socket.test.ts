@@ -21,6 +21,7 @@ import {Effect, Exit, Layer, Ref} from "effect";
 import {type ChannelNotificationPayload, ChannelSink} from "../edge/index.ts";
 import {Dialer, type InboxEnvelope} from "../peer/index.ts";
 import {stampFromMillis} from "../protocol/index.ts";
+import {SUBPROCESS_TEST_TIMEOUT_MS} from "../test-budget.ts";
 import {
 	crewSocketDialerLayer,
 	inboxServerSocketLayer,
@@ -57,7 +58,9 @@ const leaveStaleSocket = (socketPath: string): Effect.Effect<void> =>
 		});
 	});
 
-describe("crew/channel-server — REAL unix-socket inbox transport", () => {
+describe("crew/channel-server — REAL unix-socket inbox transport", {
+	timeout: SUBPROCESS_TEST_TIMEOUT_MS,
+}, () => {
 	it.live(
 		"a valid IntakePing crosses the socket, returns an InboxAck, and wakes the recipient",
 		() =>

@@ -81,6 +81,34 @@ A consequence: a **mixed** test (one unconditional assert plus a separate, rarel
 guarded assert) is deliberately **under-reported** — the rule is fail-safe, preferring a
 missed edge over a false alarm, the same bias the sibling GritQL gates take.
 
+## The type-level sibling — a probe that compiles either way proves nothing
+
+The same vacuous pass exists one level up, where no lint rule can see it: a **type-level probe**
+asserts a claim about types, and if the claim is mis-stated the probe simply compiles anyway and
+`pnpm typecheck` goes green over nothing. That is how the defect in #4969 survived its own
+counterexample — `brandWitness<A>(field)` left `A` unbound to `field`, so a row naming one brand on a
+field carrying another type-checked clean.
+
+Write the probe so the expected answer sits on the **right of an `=`**, and pin a well-formed case to
+the opposite value as a **positive control**:
+
+```ts
+type Inhabits<K extends string, V> = K extends BrandedKeys<V> ? true : false;
+
+// the positive control — reds if `BrandedKeys` ever collapses to `never` and passes everything
+const branded: Inhabits<"clause", VerdictMarker> = true;
+const bareString: Inhabits<"namespace", VerdictMarker> = false;
+```
+
+An `=` is deliberate: a wrong claim reds with `TS2322` at the line that states it, whereas a
+`type _ = Assert<…>` constraint reports against the alias and is easy to satisfy by widening.
+
+**Then verify the probe binds, by flipping and reverting.** Flip each expected value, run
+`pnpm typecheck`, confirm a real `TS2322` at each flipped line, revert. A probe you have not flipped
+is decoration — there is no red-first step in a type-level test, so this is the only evidence that it
+can fail at all. `@ts-expect-error` counterexamples are self-verifying by comparison: an unused one
+reds as `TS2578`, so a green run is already proof each suppressed error is real.
+
 ## Scope and suppression
 
 - **Test files only.** Registered through `biome.jsonc`'s existing test `overrides` block
