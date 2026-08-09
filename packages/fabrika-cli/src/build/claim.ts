@@ -37,6 +37,12 @@ const AUTHORIZED = new Set(["admin", "maintain", "write"]);
  */
 const MARKER_RE = /^build-claim:\s*(build:[^\s·]+)\s*(?:·.*)?$/m;
 
+/** An admission override: the lane it is taken for, and why. Both required — see `readOverride`. */
+export interface ClaimOverride {
+	readonly lane: string;
+	readonly reason: string;
+}
+
 /**
  * The marker body, with an admission override recorded beneath it when one was used.
  *
@@ -45,10 +51,14 @@ const MARKER_RE = /^build-claim:\s*(build:[^\s·]+)\s*(?:·.*)?$/m;
  * parses. On a second line the escape hatch leaves the trace ADR 0245 asks for and the marker grammar
  * is untouched.
  */
-export const composeMarker = (token: string, at: string, override: string | null = null): string =>
+export const composeMarker = (
+	token: string,
+	at: string,
+	override: ClaimOverride | null = null,
+): string =>
 	override === null
 		? `build-claim: ${token} · ${at}`
-		: `build-claim: ${token} · ${at}\nbuild-claim-override: ${override}`;
+		: `build-claim: ${token} · ${at}\nbuild-claim-override: ${override.lane} · ${override.reason}`;
 
 /** The token a comment body claims, or `null` when it carries no marker. */
 export const readMarkerToken = (body: string): string | null => {

@@ -25,8 +25,14 @@ is not — `plan` is still unallocated, and no `epic` verb answers this gate's q
 
 **What fabrika already ships, reused — never respecified.** The claim is the **`build` group's,
 reused as landed verbs** ([`build`'s contract](../build/contract.md)) — the cross-contract shape
-`build-ui` sanctioned: this gate claims the epic with `fabrika build claim`, releases it with
-`fabrika build release`, and posts a successor note with `fabrika build note`. **No second lock is
+`build-ui` sanctioned: this gate claims the epic with `fabrika build claim --purpose gate`, releases
+it with `fabrika build release`, and posts a successor note with `fabrika build note`. The purpose is
+part of the reuse, not a detail of it: `build claim`'s audience axis asks whether an agent should
+pick the issue up to *build*, and an epic earns `ready-for:agent` only after it has been planned and
+gated, so a `gate` claim is admitted without it (founder ruling,
+[#5175](https://github.com/kamp-us/phoenix/issues/5175)). The scope axis is unchanged by the purpose,
+and `--override` stays the exception it was — it now has to name its lane as well as its reason.
+**No second lock is
 derived**, and v1's `epic-lock` is why: its `acquire` short-circuits on a held label *before* any
 liveness probe, so a dead holder's lock is never reclaimed and a human clears it by hand — which is
 also why the skill releases on every terminal where it holds the claim (§TERM), never only on the
@@ -305,8 +311,10 @@ obligation (interface convention rule 3), and the alignment this group opts into
 **The `20`/`21` overlap with `build`, settled ([#5107](https://github.com/kamp-us/phoenix/issues/5107)).**
 This was written when `20`+ was free; the scope-admission fence has since taken `20` `OUT_OF_FOCUS`
 and `21` `AUDIENCE_NOT_AGENT`, both reachable from `fabrika build claim` — step 1 of this gate's
-skill. The overlap **stands**, and the rule that settles it is: *import a code when two groups prove
-the same fact; allocate freely when they do not.* `15` is imported because `plan flip` and
+skill. `21` is no longer among them: step 1 claims with `--purpose gate`, and the audience axis binds
+build-purpose claims only (#5175), so the only admission refusal this gate can meet is `20`. The
+overlap is therefore narrower than when it was settled, and it **stands**, on the same rule: *import
+a code when two groups prove the same fact; allocate freely when they do not.* `15` is imported because `plan flip` and
 `build claim` assert the identical fact (this session holds this issue's claim). `20`/`21` do not
 overlap in fact at all — lane admission is never something a `plan` verb proves, and a defective
 floor or a moved digest is never something a `build` verb proves — and an exit code is read off the

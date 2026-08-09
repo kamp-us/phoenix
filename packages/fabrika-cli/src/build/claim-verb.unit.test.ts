@@ -8,6 +8,7 @@ import {
 	AUDIENCE_NOT_AGENT,
 	BAD_SECTIONS,
 	CLAIM_NOT_MINE,
+	OFF_VOCABULARY,
 	OUT_OF_FOCUS,
 	PRECONDITION_UNKNOWN,
 	READBACK_MISMATCH,
@@ -56,7 +57,9 @@ const options = {
 	>,
 	uuid: LANE_UUID,
 	at: "2026-08-09T00:00:00Z",
+	purpose: "build",
 	override: null as string | null,
+	overrideLane: null as string | null,
 };
 
 const run = (
@@ -85,6 +88,7 @@ describe("runClaim", () => {
 		expect(JSON.parse(out.stdout)).toEqual({
 			answer: "won",
 			number: 4312,
+			purpose: "build",
 			token: `build:s-9f2e:${LANE_UUID}`,
 		});
 	});
@@ -290,21 +294,24 @@ describe("runClaim — the admission test runs before any marker is written", ()
 		expect(shell.calls.some((line) => POST.test(line))).toBe(false);
 	});
 
-	it("claims a refused issue under --override, recording the reason on the marker and in the answer", async () => {
+	it("claims a refused issue under --override, recording the lane and reason on the marker and in the answer", async () => {
 		const {out, shell} = await claimWith(OUT_OF_CAMPAIGN, FOCUSED, {
 			override: "hotfix for the release blocker",
+			overrideLane: "build-epic",
 		});
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout)).toEqual({
 			answer: "won",
 			number: 4312,
+			purpose: "build",
 			token: `build:s-9f2e:${LANE_UUID}`,
-			override: "hotfix for the release blocker",
+			override: {lane: "build-epic", reason: "hotfix for the release blocker"},
 		});
 		expect(
 			shell.calls.some(
 				(line) =>
-					POST.test(line) && line.includes("build-claim-override: hotfix for the release blocker"),
+					POST.test(line) &&
+					line.includes("build-claim-override: build-epic · hotfix for the release blocker"),
 			),
 		).toBe(true);
 	});
@@ -313,14 +320,41 @@ describe("runClaim — the admission test runs before any marker is written", ()
 		const {out, shell} = await claimWith(
 			CLAIMABLE,
 			fakeFs({files: {[DEFAULT_ROADMAP]: null}, unprobeable: [DEFAULT_ROADMAP]}),
-			{override: "I know what I am doing"},
+			{override: "I know what I am doing", overrideLane: "build-epic"},
 		);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(shell.calls.some((line) => POST.test(line))).toBe(false);
 	});
 
 	it("refuses an empty --override reason on 1 — an override is recorded or it is not one", async () => {
-		const {out, shell} = await claimWith(OUT_OF_CAMPAIGN, FOCUSED, {override: "  "});
+		const {out, shell} = await claimWith(OUT_OF_CAMPAIGN, FOCUSED, {
+			override: "  ",
+			overrideLane: "build-epic",
+		});
+		expect(out.code).toBe(FAILED);
+		expect(shell.calls.some((line) => POST.test(line))).toBe(false);
+	});
+
+	it("refuses an --override that names no lane on 1 — the escape hatch says who took it (#5175)", async () => {
+		const {out, shell} = await claimWith(OUT_OF_CAMPAIGN, FOCUSED, {
+			override: "hotfix for the release blocker",
+		});
+		expect(out.code).toBe(FAILED);
+		expect(out.stderr.some((line) => line.includes("--override-lane"))).toBe(true);
+		expect(shell.calls.some((line) => POST.test(line))).toBe(false);
+	});
+
+	it("refuses a blank --override-lane on 1 — whitespace names no lane", async () => {
+		const {out, shell} = await claimWith(OUT_OF_CAMPAIGN, FOCUSED, {
+			override: "hotfix for the release blocker",
+			overrideLane: "   ",
+		});
+		expect(out.code).toBe(FAILED);
+		expect(shell.calls.some((line) => POST.test(line))).toBe(false);
+	});
+
+	it("refuses an --override-lane with no --override on 1 — a lane names no override alone", async () => {
+		const {out, shell} = await claimWith(CLAIMABLE, FOCUSED, {overrideLane: "build-epic"});
 		expect(out.code).toBe(FAILED);
 		expect(shell.calls.some((line) => POST.test(line))).toBe(false);
 	});
@@ -373,6 +407,83 @@ describe("runClaim — the admission test runs before any marker is written", ()
 		expect(confirmed.code).toBe(0);
 		const released = await run(runRelease, script, {}, FOCUSED);
 		expect(released.code).toBe(0);
+	});
+});
+
+/**
+ * The purpose axis (#5175): the audience fence binds a build claim only.
+ *
+ * The epic below is the census shape the ruling rests on — homed in the campaign, `type:epic`, and
+ * carrying no `ready-for:` label at all, because an epic earns one only after it is planned and
+ * gated. Every case runs that one issue and varies nothing but the purpose.
+ */
+describe("runClaim — the purpose axis", () => {
+	const FOCUSED = fakeFs({files: {[DEFAULT_ROADMAP]: focusTable(44)}});
+
+	const claimWith = (target: ExecResult, overrides: Partial<typeof options> = {}) => {
+		const shell = fakeShell([
+			[ISSUE, target],
+			[POST, POSTED],
+			[GET_COMMENT, ECHO],
+			[COMMENTS, comments({id: 9001, body: MINE})],
+			[perm("agent"), okOut("write\n")],
+		]);
+		return Effect.runPromise(
+			Effect.provide(runClaim({...options, ...overrides}), Layer.merge(shell.layer, FOCUSED.layer)),
+		).then((out) => ({out, shell}));
+	};
+
+	const UNLABELLED_EPIC = issue({
+		milestone: {number: 44},
+		labels: labelled("type:epic", "p1", "status:triaged"),
+	});
+	const OUT_OF_CAMPAIGN_EPIC = issue({
+		milestone: {number: 39},
+		labels: labelled("type:epic", "p1", "status:triaged"),
+	});
+
+	it("keeps the fence with no purpose passed — 21, and no marker written", async () => {
+		const {out, shell} = await claimWith(UNLABELLED_EPIC);
+		expect(out.code).toBe(AUDIENCE_NOT_AGENT);
+		expect(shell.calls.some((line) => POST.test(line))).toBe(false);
+		expect(out.stderr.some((line) => line.includes("audience not agent"))).toBe(true);
+	});
+
+	it("keeps the fence under an explicit --purpose build — the default is not the only path", async () => {
+		const {out, shell} = await claimWith(UNLABELLED_EPIC, {purpose: "build"});
+		expect(out.code).toBe(AUDIENCE_NOT_AGENT);
+		expect(shell.calls.some((line) => POST.test(line))).toBe(false);
+	});
+
+	for (const purpose of ["plan", "gate"] as const) {
+		it(`admits the same epic under --purpose ${purpose} — past the audience axis, no override`, async () => {
+			const {out} = await claimWith(UNLABELLED_EPIC, {purpose});
+			expect(out.code).toBe(0);
+			expect(JSON.parse(out.stdout)).toEqual({
+				answer: "won",
+				number: 4312,
+				purpose,
+				token: `build:s-9f2e:${LANE_UUID}`,
+			});
+			expect(out.stderr.some((line) => line.includes("the audience axis does not bind"))).toBe(
+				true,
+			);
+		});
+	}
+
+	for (const purpose of ["plan", "gate", "build"] as const) {
+		it(`still refuses an out-of-focus epic on 20 under --purpose ${purpose} — scope is untouched`, async () => {
+			const {out, shell} = await claimWith(OUT_OF_CAMPAIGN_EPIC, {purpose});
+			expect(out.code).toBe(OUT_OF_FOCUS);
+			expect(shell.calls.some((line) => POST.test(line))).toBe(false);
+		});
+	}
+
+	it("refuses an off-enum purpose on 10 — never a silent fallback to build", async () => {
+		const {out, shell} = await claimWith(UNLABELLED_EPIC, {purpose: "planning"});
+		expect(out.code).toBe(OFF_VOCABULARY);
+		expect(out.stderr.some((line) => line.includes("plan | gate | build"))).toBe(true);
+		expect(shell.calls.some((line) => POST.test(line))).toBe(false);
 	});
 });
 
