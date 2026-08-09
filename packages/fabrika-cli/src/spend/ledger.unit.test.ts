@@ -161,6 +161,26 @@ describe("readSpendLedger — tolerant of anything a partial write can leave beh
 		assert.strictEqual(read.skipped, 1);
 	});
 
+	it("keeps damage and a newer row version apart — they ask the operator for opposite things", () => {
+		const newer = JSON.stringify({...JSON.parse(encodeSpendRows([row()]).trim()), v: 99});
+		const read = readSpendLedger(`not json at all\n${newer}\n${encodeSpendRows([row()])}`);
+		assert.strictEqual(read.rows.length, 1);
+		assert.deepStrictEqual(read.skips, {malformed: 1, newerVersion: 1});
+		assert.strictEqual(read.skipped, 2);
+	});
+
+	it("counts a version BELOW the current one as damage — v1 is the first shape ever written", () => {
+		const older = JSON.stringify({...JSON.parse(encodeSpendRows([row()]).trim()), v: 0});
+		assert.deepStrictEqual(readSpendLedger(`${older}\n`).skips, {malformed: 1, newerVersion: 0});
+	});
+
+	it("keeps `skipped` the sum of its halves, so a caller that only wants the gap still gets it", () => {
+		const newer = JSON.stringify({...JSON.parse(encodeSpendRows([row()]).trim()), v: 7});
+		const read = readSpendLedger(`${newer}\n${newer}\nhalf a row`);
+		assert.strictEqual(read.skipped, read.skips.malformed + read.skips.newerVersion);
+		assert.deepStrictEqual(read.skips, {malformed: 1, newerVersion: 2});
+	});
+
 	it("counts blank lines as nothing at all — a trailing newline is not a skip", () => {
 		const read = readSpendLedger(`${encodeSpendRows([row()])}\n   \n`);
 		assert.strictEqual(read.rows.length, 1);
@@ -168,7 +188,11 @@ describe("readSpendLedger — tolerant of anything a partial write can leave beh
 	});
 
 	it("reads an empty ledger as no rows and no skips, never as a failure", () => {
-		assert.deepStrictEqual(readSpendLedger(""), {rows: [], skipped: 0});
+		assert.deepStrictEqual(readSpendLedger(""), {
+			rows: [],
+			skipped: 0,
+			skips: {malformed: 0, newerVersion: 0},
+		});
 	});
 });
 
