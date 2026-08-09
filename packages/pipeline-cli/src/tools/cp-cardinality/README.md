@@ -63,6 +63,22 @@ The decision word (`discharge` | `stop`) goes to **stdout**; a human reason goes
 **stderr**. Exit is **0 on `discharge`, 1 on `stop`**, so the gate bash fails closed with
 `… && carry-on || STOP`.
 
+## The exit codes — 0 and 1 are the only verdicts
+
+| exit | meaning | how a caller reads it |
+| --- | --- | --- |
+| `0` | `discharge` | the decision ran and discharged |
+| `1` | `stop` | the decision ran and stopped — the **definite** "no current-head signal" |
+| `4` | the invocation was malformed (an unrecognized flag) or stdin was never read | **UNKNOWN** — no decision was made |
+| anything else | the tool never ran (127 = shim off PATH, a crash) | **UNKNOWN** |
+
+**Read a stop off an exact `1`, never off "non-zero".** There is no `--pr` and no `--head`; a
+caller that invented them died on effect-cli's old usage-error exit 1 and recorded a definite
+"no approval at current head" for four §CP PRs that were approved at their exact heads — a decision
+that never ran, transcribed as a verdict ([#5072](https://github.com/kamp-us/phoenix/issues/5072)).
+Seating a malformed invocation on `4` (`BAD_INVOCATION_EXIT_CODE`, the same never-ran band as
+`STDIN_READ_FAILED_EXIT_CODE`) is what makes an exit table safe to write.
+
 **The caller owns roster validity — this core cannot recover it.** A bare
 `MEMBERS="$(gh api … --jq …)"` does not fail loudly: `gh` skips `--jq` on an error response and
 writes the error body to **stdout**, so the capture is a one-line JSON blob and this tool is handed

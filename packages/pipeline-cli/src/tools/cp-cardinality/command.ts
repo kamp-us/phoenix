@@ -12,6 +12,11 @@
  * to **stderr**. Exit code mirrors the decision: 0 on `discharge`, 1 on `stop`, so the gate
  * bash can `pipeline-cli cp-cardinality decide … && carry-on || STOP` and fail closed.
  *
+ * **Those two are the ONLY verdict codes; anything else means no decision was made.** A malformed
+ * invocation exits `BAD_INVOCATION_EXIT_CODE` (4, `exit-codes.ts`) and an unread pipe exits
+ * `STDIN_READ_FAILED_EXIT_CODE` (4) — never 1. A caller that reads a stop off "non-zero" instead of
+ * off an exact `1` transcribes its own bad call as a definite "no approval at current head" (#5072).
+ *
  * IO here (the thin bin); the whole ADR-0175 branch lives in `cp-cardinality.ts` (the pure,
  * unit-tested core). ship-it owns the `gh api` REST resolution of the members roster, the PR
  * author/head, and the two SHA-bound signals — the integration half this tool never touches.

@@ -87,11 +87,16 @@ IO injected so the `EAGAIN` path is testable, lives in
 
 A classifier verb that can clear a hold — `cp-classify`, `guard-content-probe` — seats its
 **proven-ordinary** verdict on `PROVEN_ORDINARY_EXIT_CODE` from
-[`src/exit-codes.ts`](./src/exit-codes.ts), never on `1`. `1` is what effect-cli returns for a
-usage error and what a module-load failure surfaces as; `127` is the shell's missing-binary code.
-A verdict sharing either is unreadable as proof — `[ $? -ne 0 ]` then reads "the tool never ran"
-as "the tool ran and proved it ordinary". This is the verdict-side twin of the stdin rule above
-(#4208, #4219).
+[`src/exit-codes.ts`](./src/exit-codes.ts), never on `1`. `1` is what a module-load failure
+surfaces as; `127` is the shell's missing-binary code. A verdict sharing either is unreadable as
+proof — `[ $? -ne 0 ]` then reads "the tool never ran" as "the tool ran and proved it ordinary".
+This is the verdict-side twin of the stdin rule above (#4208, #4219).
+
+A **malformed invocation** — an unrecognized flag, a typo'd subcommand — is the third way to never
+run, and the router seats it on `BAD_INVOCATION_EXIT_CODE` (`4`, the same never-ran band as
+`STDIN_READ_FAILED_EXIT_CODE`) rather than leaving it on effect-cli's default `1`. It used to land
+on `1`, which is `cp-cardinality decide`'s `stop`: a caller that passed flags the verb never
+accepted recorded four approved §CP PRs as definite stops from a decision that never ran (#5072).
 
 The exit code discriminates verdicts **only once the verb has run**, so a caller asserts on the
 **stdout state word** and treats every other value, including the empty string a failure to
