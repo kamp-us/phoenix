@@ -18,8 +18,81 @@
  * producer for that shape is known.
  */
 
-const FILE_HEADER = /^diff --git a\/(.*) b\/(.*)$/;
+/**
+ * Both header forms git emits, per side. A path holding a non-ASCII byte (`core.quotePath`, on by
+ * default), a backslash, or a double quote is written `"a/…"` with C-style escapes, and the two
+ * sides quote independently — a rename to a Turkish name gives `diff --git a/plain.ts "b/ünlü.ts"`.
+ * Matching only the bare form made a quoted file invisible: it undercounted the completeness proof
+ * AND handed that file's hunk lines to the previous file (#5159).
+ */
+const FILE_HEADER =
+	/^diff --git (?:"a\/((?:[^"\\]|\\.)*)"|a\/(.*)) (?:"b\/((?:[^"\\]|\\.)*)"|b\/(.*))$/;
 const HUNK_HEADER = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/;
+
+const NAMED_ESCAPES: Readonly<Record<string, number>> = {
+	a: 0x07,
+	b: 0x08,
+	f: 0x0c,
+	n: 0x0a,
+	r: 0x0d,
+	t: 0x09,
+	v: 0x0b,
+	"\\": 0x5c,
+	'"': 0x22,
+};
+const OCTAL_DIGIT = /^[0-7]$/;
+
+/**
+ * A quoted header path back to the real name.
+ *
+ * Git escapes byte by byte, so one `ç` arrives as `\303\247` — the escapes decode into a byte buffer
+ * that is UTF-8 decoded once at the end. Decoding each escape to its own character instead would
+ * yield mojibake, and `tierMHits` matches `TEST_FILE` against this name, so a name that does not
+ * resolve is a blind scan rather than a cosmetic defect.
+ */
+const unquoteCStyle = (body: string): string => {
+	const utf8 = new TextEncoder();
+	const bytes: number[] = [];
+	for (let i = 0; i < body.length; i += 1) {
+		const ch = body[i] ?? "";
+		if (ch !== "\\") {
+			bytes.push(...utf8.encode(ch));
+			continue;
+		}
+		const next = body[i + 1] ?? "";
+		const named = NAMED_ESCAPES[next];
+		if (named !== undefined) {
+			bytes.push(named);
+			i += 1;
+			continue;
+		}
+		if (OCTAL_DIGIT.test(next)) {
+			let digits = "";
+			while (digits.length < 3 && OCTAL_DIGIT.test(body[i + 1 + digits.length] ?? "")) {
+				digits += body[i + 1 + digits.length] ?? "";
+			}
+			bytes.push(Number.parseInt(digits, 8) & 0xff);
+			i += digits.length;
+			continue;
+		}
+		// An escape git does not emit. Take the character literally: a review gate that reports a
+		// slightly-off path beats one that throws on a diff it cannot parse.
+		bytes.push(...utf8.encode(next));
+		i += 1;
+	}
+	return new TextDecoder().decode(new Uint8Array(bytes));
+};
+
+/** The `a/` and `b/` paths off a `diff --git` header, whichever of the two forms each side took. */
+const headerPaths = (line: string): {readonly before: string; readonly after: string} | null => {
+	const header = FILE_HEADER.exec(line);
+	if (header === null) return null;
+	const [, quotedBefore, bareBefore, quotedAfter, bareAfter] = header;
+	return {
+		before: quotedBefore === undefined ? (bareBefore ?? "") : unquoteCStyle(quotedBefore),
+		after: quotedAfter === undefined ? (bareAfter ?? "") : unquoteCStyle(quotedAfter),
+	};
+};
 
 /** How many files the served diff carries — the numerator of the completeness proof. */
 export const filesInDiff = (diff: string): number =>
@@ -47,10 +120,9 @@ export const changedLines = (diff: string): ReadonlyArray<DiffLine> => {
 	let oldLine = 0;
 	let newLine = 0;
 	for (const raw of diff.split("\n")) {
-		const header = FILE_HEADER.exec(raw);
+		const header = headerPaths(raw);
 		if (header !== null) {
-			const before = header[1] ?? "";
-			const after = header[2] ?? "";
+			const {before, after} = header;
 			file = after === "/dev/null" || after === "" ? before : after;
 			oldLine = 0;
 			newLine = 0;
