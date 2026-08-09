@@ -3,9 +3,13 @@
  * files, and the `self` / `harness` flags.
  *
  * The refusals are the point: the partition is total over **what was read**, so the verb exists to
- * make sure it is never run over less than everything. A zero-file PR reds (v1's `class-probe` read
- * 0 files and classified `has-code` exit 0 — #4060), and a file list short of the declared count reds
- * rather than partitioning a truncated read (#3999).
+ * make sure it is never run over less than everything. A PR GitHub reports as having zero changed
+ * files reds on `7` (v1's `class-probe` read 0 files and classified `has-code` exit 0 — #4060), and
+ * a git read that comes back empty reds on `13` — either way there is nothing to partition (#3999).
+ *
+ * Empty is the whole of it. This path list IS the scope, so no second count of the same range exists
+ * to call it short against, and GitHub's `changed_files` is not one: a disagreement with it is
+ * reported and never refused on (#5154 — the reason is at the check below).
  *
  * The file list is read at the **bound commit** (`head.ts`), and the head this verb prints is that
  * same commit. The namespace set is documented as both floor and ceiling, so a list drawn from a
