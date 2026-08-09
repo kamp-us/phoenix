@@ -9,6 +9,8 @@ node_modules
 
 dist
 build
+# the fabrika /build skill is source, not build output (#4707 rename collision)
+!claude-plugins/fabrika/skills/build/
 *.tsbuildinfo
 .next
 
