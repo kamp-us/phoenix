@@ -1,8 +1,8 @@
 /**
- * `fabrika capture` — the CI-/skill-callable surface (ADR 0165, #2247),
+ * `design-capture capture` — the CI-/skill-callable surface (ADR 0165, #2247),
  * driven by the review-design skill (#2246):
  *
- *   node packages/fabrika-cli/src/capture/bin.ts capture \
+ *   node packages/design-capture/src/bin.ts capture \
  *     --preview-url https://pr-123.web.kamp.us \
  *     --surface "/sozluk" [--surface "/sozluk:empty" ...] \
  *     --out <dir> \
@@ -22,18 +22,24 @@ import {readFileSync, writeFileSync} from "node:fs";
 import {fileURLToPath} from "node:url";
 import {NodeRuntime, NodeServices} from "@effect/platform-node";
 import {DoormanClientLive, resolveApiKey} from "@kampus/depo";
+import {
+	applyBlessing,
+	blessSurface,
+	captureAndUpload,
+	loadGoldenPointer,
+	parseBlessDecisions,
+	parseCandidateSet,
+	parseSurfaceSpec,
+	renderBlessingGallery,
+	renderCandidateSet,
+	renderCrashFailure,
+	serializeCandidateSet,
+	serializeGoldenPointer,
+} from "@kampus/fabrika-cli/capture";
 import {Config, Console, Effect, Layer, Redacted} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
-import {applyBlessing, parseBlessDecisions, renderBlessingGallery} from "./blessing-surface.ts";
-import {renderCandidateSet} from "./candidate-render.ts";
-import {parseCandidateSet, serializeCandidateSet} from "./candidate-set.ts";
-import {loadGoldenPointer, serializeGoldenPointer} from "./golden-fs.ts";
-import {blessSurface} from "./golden-pointer.ts";
 import {storeGolden} from "./golden-store.ts";
-import {captureAndUpload} from "./orchestrate.ts";
-import {renderCrashFailure} from "./page-errors.ts";
-import {parseSurfaceSpec} from "./plan.ts";
 
 const previewUrlFlag = Flag.string("preview-url").pipe(
 	Flag.withDescription("the per-PR preview-deploy base URL to capture over"),
@@ -75,7 +81,7 @@ const capture = Command.make(
 		// goes to stderr as a loud operator signal without perturbing the contract.
 		const crash = renderCrashFailure(records);
 		if (crash !== null) {
-			yield* Console.error(`fabrika capture: render FAILED — ${crash}`);
+			yield* Console.error(`design-capture: render FAILED — ${crash}`);
 		}
 	}),
 ).pipe(Command.withDescription("Capture a PR's changed surfaces over its preview and host them"));
@@ -123,7 +129,7 @@ const bless = Command.make(
 		});
 		writeFileSync(pointer, serializeGoldenPointer(next));
 		yield* Console.log(
-			`fabrika capture: blessed ${surface} → depo ${sha256}.png (${blessedDate}) → ${pointer}`,
+			`design-capture: blessed ${surface} → depo ${sha256}.png (${blessedDate}) → ${pointer}`,
 		);
 	}),
 ).pipe(
@@ -173,11 +179,11 @@ const parseForcedFlag = (token: string): readonly [string, boolean] => {
 					.trim()
 					.toLowerCase();
 	if (key.length === 0) {
-		throw new Error(`fabrika capture: --flag must be "<key>=on|off", got: ${token}`);
+		throw new Error(`design-capture: --flag must be "<key>=on|off", got: ${token}`);
 	}
 	if (raw === "on" || raw === "true" || raw === "1") return [key, true];
 	if (raw === "off" || raw === "false" || raw === "0") return [key, false];
-	throw new Error(`fabrika capture: --flag value must be on/off, got: ${token}`);
+	throw new Error(`design-capture: --flag value must be on/off, got: ${token}`);
 };
 
 // The depo write layer for the store leg — DoormanClientLive over fetch. Golden bytes
@@ -265,13 +271,13 @@ const blessSet = Command.make(
 		});
 		writeFileSync(pointer, serializeGoldenPointer(result.pointer));
 		for (const b of result.blessed) {
-			yield* Console.log(`fabrika capture: blessed ${b.surfaceId} → depo ${b.sha256}.png`);
+			yield* Console.log(`design-capture: blessed ${b.surfaceId} → depo ${b.sha256}.png`);
 		}
 		for (const surfaceId of result.redlined) {
-			yield* Console.log(`fabrika capture: redlined ${surfaceId} (not blessed)`);
+			yield* Console.log(`design-capture: redlined ${surfaceId} (not blessed)`);
 		}
 		yield* Console.log(
-			`fabrika capture: committed ${result.blessed.length} golden(s) (${blessedDate}) → ${pointer}`,
+			`design-capture: committed ${result.blessed.length} golden(s) (${blessedDate}) → ${pointer}`,
 		);
 	}),
 ).pipe(
@@ -280,7 +286,7 @@ const blessSet = Command.make(
 	),
 );
 
-const cli = Command.make("fabrika-capture").pipe(
+const cli = Command.make("design-capture").pipe(
 	Command.withSubcommands([capture, bless, renderCandidates, gallery, blessSet]),
 	Command.withDescription(
 		"Playwright-capture + golden-baseline (store/resolve/diff) for the review-design gate (ADR 0165/0183)",

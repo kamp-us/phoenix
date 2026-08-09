@@ -1233,8 +1233,9 @@ to render→look→fix:
   surface returns `null`, which is your "no reference, skip" signal — never an error), and
   `resolveGoldenUrl(pointer, surfaceId)` → the immutable depo image URL to **look at beside** your
   rendered capture. `loadGoldenPointer(POINTER)` gives the in-memory pointer; `blessedSurfaces(pointer)`
-  and `resolveGoldenEntry(pointer, surfaceId)` list/inspect the blessed set. These are real
-  `@kampus/fabrika-cli/capture` exports — call them; do **not** re-derive the pointer parse or the depo URL.
+  and `resolveGoldenEntry(pointer, surfaceId)` list/inspect the blessed set. These are real exports —
+  the pointer/diff ones from `@kampus/fabrika-cli/capture`, the two depo resolvers from phoenix's
+  `@kampus/design-capture` — so call them; do **not** re-derive the pointer parse or the depo URL.
 - **Look, golden beside rendered.** Judge composition/gestalt with the golden as the target, not free
   taste — does the assembled surface *read as* its blessed reference (balance, rhythm, hierarchy,
   placement)? If you want the objective magnitude/region signal, run the **same** deterministic diff

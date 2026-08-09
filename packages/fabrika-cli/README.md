@@ -541,16 +541,23 @@ golden bytes stay in depo and the pointer naming them stays in the consuming rep
 ([ADR 0183](../../.decisions/0183-golden-screen-storage-depo-git-pointer.md)) — this package
 ships the machine, never a repo's goldens.
 
-Two consequences worth knowing before you install it:
+Three consequences worth knowing before you install it:
 
 - **`@playwright/test` is a hard dependency**, inherited from the machinery, so a fabrika
   install pulls it in even for a caller that never captures. The browser binary is still a
   separate `playwright install chromium`, so the capture path fails loudly on a machine
   without it rather than silently.
-- **The capture bin is invoked by path** — `node packages/fabrika-cli/src/capture/bin.ts
-  capture …` — not by `fabrika <group> <verb>`. Wrapping it in a `ui` verb group is
-  [#5061](https://github.com/kamp-us/phoenix/issues/5061)'s work; this move deliberately
-  changed no behavior.
+- **Storing golden bytes is an injected `StoreLeg`, not a dependency.** A repo's goldens live
+  in its own asset store, so anything naming a host or a credential stayed with the consuming
+  repo — phoenix keeps that half in `packages/design-capture/`. This package owns the shape and
+  the diff, never the store. It is also what keeps the package installable: a published artifact
+  may depend only on what a clean registry resolves
+  ([ADR 0201](../../.decisions/0201-pipeline-tenant-phoenix-first.md) §3), and phoenix's depo client is
+  private.
+- **The capture bin is still phoenix's** — `node packages/design-capture/src/bin.ts capture …`,
+  unchanged. It is a v1 caller, not the adopter-facing surface; the adopter-facing surface is the
+  `ui` verb group, which is [#5061](https://github.com/kamp-us/phoenix/issues/5061)'s work. This
+  move deliberately changed no behavior.
 
 ## Development
 

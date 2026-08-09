@@ -15,7 +15,6 @@
 import {Effect} from "effect";
 import {assembleCandidateSet, type CandidateSet, type RenderedCandidate} from "./candidate-set.ts";
 import {type CapturedSurface, CaptureError, type CaptureOptions, captureShots} from "./capture.ts";
-import type {StoredGolden} from "./golden-store.ts";
 import {buildCapturePlan, DEFAULT_VIEWPORT, type Shot, type Viewport} from "./plan.ts";
 import {
 	type PrioritySurfaceParams,
@@ -34,7 +33,18 @@ export type CaptureLeg = (
 ) => Effect.Effect<readonly CapturedSurface[], CaptureError>;
 
 /**
- * The injected depo store leg — PUT candidate bytes, get back `{ sha256, url }`. Its
+ * What a store leg returns: the content-address stem the golden pointer records, and the
+ * immutable URL the bytes are readable at. The *store itself* is the consuming repo's — a
+ * repo's goldens live in its own asset store — so this package owns only the shape, never a
+ * host or a credential (issue #5063).
+ */
+export interface StoredGolden {
+	readonly sha256: string;
+	readonly url: string;
+}
+
+/**
+ * The injected store leg — PUT candidate bytes, get back `{ sha256, url }`. Its
  * error/requirement channels are the caller's (the bin provides the real
  * `storeGolden` + depo layer; the test injects a fake with neither), so this module's
  * `renderCandidateSet` stays parametric over both and needs no service at its edge.

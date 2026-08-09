@@ -444,8 +444,9 @@ bin, the `epic-ledger` / `leak-guard` idiom), invoked as a thin bin.
 if #2247 lands a different package name/flags, this reference updates in lockstep, ADR 0165's four
 implementation legs land to match):
 
-- **Module:** `@kampus/fabrika-cli/capture` at `packages/fabrika-cli/src/capture/`, run as `node
-  packages/fabrika-cli/src/capture/bin.ts capture …` (the `pipeline-cli` / `node src/bin.ts` idiom).
+- **Module:** the capture machinery is `@kampus/fabrika-cli/capture` at
+  `packages/fabrika-cli/src/capture/`; the bin that drives it is phoenix's, run as `node
+  packages/design-capture/src/bin.ts capture …` (the `pipeline-cli` / `node src/bin.ts` idiom).
 - **Input:** the preview URL, the route+state surface list (Step 1), an output dir for the PNG bytes,
   and the target `repository_id` (for the upload).
 - **Output (stdout JSON):** one record per captured surface —
@@ -497,8 +498,9 @@ package Step 2 captures with; if it later exposes a dedicated golden-diff bin th
 in lockstep, as Step 2's capture-seam note does):
 
 - **Resolve the golden** — `resolveGoldenBytes(pointer, surfaceId)` ties the committed pointer to the
-  blessed bytes: `loadGoldenPointer("packages/design-capture/golden-pointer.json")` → `resolveGoldenBytes`
-  (pointer → depo URL → bytes). An **unblessed** surface resolves to `null` (already excluded by Step
+  blessed bytes: `loadGoldenPointer("packages/design-capture/golden-pointer.json")` (fabrika's
+  `@kampus/fabrika-cli/capture`) → `resolveGoldenBytes` (phoenix's `@kampus/design-capture`, which
+  owns the depo half — pointer → depo URL → bytes). An **unblessed** surface resolves to `null` (already excluded by Step
   1's intersection); a **depo fetch fault** is an error — the *can't-gate* branch below, never a FAIL.
 - **The candidate bytes** are the surface's captured `localPath` PNG from Step 2.
 - **Diff** — `diffRasters(golden, candidate, {masks, channelThreshold})` returns the structured

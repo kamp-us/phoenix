@@ -49,13 +49,10 @@
 		"prepublishOnly": "pnpm run build",
 		"typecheck": "tsgo -p tsconfig.json",
 		"test": "vitest run",
-		"cli": "node src/bin.ts",
-		"capture": "node src/capture/bin.ts capture",
-		"golden-bless": "node src/capture/bin.ts golden-bless"
+		"cli": "node src/bin.ts"
 	},
 	"dependencies": {
 		"@effect/platform-node": "catalog:",
-		"@kampus/depo": "workspace:*",
 		"@playwright/test": "catalog:",
 		"effect": "catalog:"
 	},

@@ -25,7 +25,7 @@ done
 [ "${#SURFACE_ARGS[@]}" -gt 0 ] || { echo "capture-surfaces.sh: no surfaces given — nothing to capture." >&2; exit 2; }
 
 OUT="$(mktemp -d)"
-node packages/fabrika-cli/src/capture/bin.ts capture \
+node packages/design-capture/src/bin.ts capture \
   --preview-url "$PREVIEW_URL" \
   "${SURFACE_ARGS[@]}" \
   --out "$OUT" \
