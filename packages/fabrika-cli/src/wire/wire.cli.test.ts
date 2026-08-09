@@ -9,10 +9,8 @@
 import {execFileSync} from "node:child_process";
 import {fileURLToPath} from "node:url";
 import {describe, expect, it} from "vitest";
+import {SUBPROCESS_TEST_TIMEOUT_MS} from "../test-budget.ts";
 import {ABSENT} from "./codes.ts";
-
-/** One spawn costs ~2.3s on a CI runner; 20s clears the measured 2.69× contention band (#4847). */
-const SUBPROCESS_TEST_TIMEOUT_MS = 20_000;
 
 const BIN = fileURLToPath(new URL("../bin.ts", import.meta.url));
 

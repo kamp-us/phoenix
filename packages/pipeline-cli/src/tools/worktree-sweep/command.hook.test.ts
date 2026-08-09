@@ -313,7 +313,7 @@ describe("worktree-sweep --execute — SessionStart cadence against a REAL git r
 		assert.isFalse(existsSync(deadOwnedWt), "the dead-owner control must still be reclaimed");
 		assert.include(stdout, "live-session");
 		assert.include(stdout, "owner-unknown");
-	}, 30_000);
+	});
 
 	// The #4001 regression, end to end: LIVE_SID stands in for a crew pane that is STILL RUNNING and
 	// has spawned many trees. A tree it launched, whose occupant finished long ago, must become
@@ -344,7 +344,7 @@ describe("worktree-sweep --execute — SessionStart cadence against a REAL git r
 		assert.include(stdout, "launcher-alive");
 
 		git(mainRepo, "worktree", "remove", freshWt);
-	}, 30_000);
+	});
 
 	// The fail-closed half of the presence gate: with no readable registry there is no way to prove
 	// any owner dead, so the sweep must remove NOTHING — not fall back to the age signal.
@@ -364,7 +364,7 @@ describe("worktree-sweep --execute — SessionStart cadence against a REAL git r
 		assert.include(stdout, "registry UNRESOLVED");
 
 		git(mainRepo, "worktree", "remove", wt);
-	}, 30_000);
+	});
 
 	// #3654: a tree whose working dir was cleaned out from under it (a dead session's temp root)
 	// leaves stale `.git/worktrees/<id>` metadata that `git worktree list` keeps surfacing. The

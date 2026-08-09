@@ -15,6 +15,7 @@ import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {assert, describe, it} from "@effect/vitest";
 import {Effect} from "effect";
+import {SUBPROCESS_TEST_TIMEOUT_MS} from "../test-budget.ts";
 import {
 	canonicalizeGitCommonDir,
 	RendezvousResolutionError,
@@ -35,7 +36,9 @@ const makeRepo = (label: string): string => {
 	return root;
 };
 
-describe("canonicalizeGitCommonDir — the relative-to-cwd trap (ADR 0197)", () => {
+describe("canonicalizeGitCommonDir — the relative-to-cwd trap (ADR 0197)", {
+	timeout: SUBPROCESS_TEST_TIMEOUT_MS,
+}, () => {
 	it("resolves the bare `.git` reading against the main checkout it was read from", () => {
 		assert.strictEqual(canonicalizeGitCommonDir(".git", "/repo"), "/repo/.git");
 	});
@@ -47,7 +50,9 @@ describe("canonicalizeGitCommonDir — the relative-to-cwd trap (ADR 0197)", () 
 	});
 });
 
-describe("resolveRendezvous — one repo, one rendezvous", () => {
+describe("resolveRendezvous — one repo, one rendezvous", {
+	timeout: SUBPROCESS_TEST_TIMEOUT_MS,
+}, () => {
 	it.effect("converges from the repo root, a nested subdir, and a linked worktree", () =>
 		Effect.gen(function* () {
 			const root = makeRepo("converge");
@@ -107,7 +112,9 @@ describe("resolveRendezvous — one repo, one rendezvous", () => {
 	);
 });
 
-describe("rendezvousSocketPathFor — the key is the only input", () => {
+describe("rendezvousSocketPathFor — the key is the only input", {
+	timeout: SUBPROCESS_TEST_TIMEOUT_MS,
+}, () => {
 	it("honors XDG_RUNTIME_DIR when set", () => {
 		const previous = process.env.XDG_RUNTIME_DIR;
 		process.env.XDG_RUNTIME_DIR = "/run/user/501";

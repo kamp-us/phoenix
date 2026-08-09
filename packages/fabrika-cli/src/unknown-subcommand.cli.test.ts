@@ -11,9 +11,7 @@
 import {execFileSync} from "node:child_process";
 import {fileURLToPath} from "node:url";
 import {describe, expect, it} from "vitest";
-
-/** Spawning under a loaded machine outruns vitest's 5s default (the #4014 false red). */
-const SUBPROCESS_TEST_TIMEOUT_MS = 30_000;
+import {SUBPROCESS_TEST_TIMEOUT_MS} from "./test-budget.ts";
 
 const BIN = fileURLToPath(new URL("./bin.ts", import.meta.url));
 

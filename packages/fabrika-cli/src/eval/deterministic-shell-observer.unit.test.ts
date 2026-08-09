@@ -4,6 +4,7 @@ import {join} from "node:path";
 import {NodeServices} from "@effect/platform-node";
 import {assert, describe, it} from "@effect/vitest";
 import {Effect} from "effect";
+import {SUBPROCESS_TEST_TIMEOUT_MS} from "../test-budget.ts";
 import {observeShellCommand} from "./deterministic-shell-observer.ts";
 import {
 	type DeterministicCommand,
@@ -11,14 +12,6 @@ import {
 	summarizeEvalRows,
 	type TieredEvalCase,
 } from "./deterministic-tier.ts";
-
-/**
- * These suites spawn real children, and a spawn costs far more than vitest's 5s default budget
- * under this repo's normal operating condition (many worktree agents at once). A generous upper
- * bound still fails decisively on a genuinely hung child; raising the global default instead would
- * blunt the 5s budget the pure suites are correctly held to.
- */
-const SUBPROCESS_TEST_TIMEOUT_MS = 60_000;
 
 /** Run an effect against the real Node platform — these suites are about the real OS boundary. */
 const live = <A>(effect: Effect.Effect<A, never, NodeServices.NodeServices>): Promise<A> =>
