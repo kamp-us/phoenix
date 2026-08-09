@@ -114,6 +114,15 @@ export interface WireBrandWitness {
 /** `true` only for a *proper* subtype of `string` — a brand, or a literal union. Bare `string` is `false`. */
 type NarrowerThanString<A> = [A] extends [string] ? ([string] extends [A] ? false : true) : false;
 
+type Whitespace = " " | "\t" | "\n" | "\r";
+
+/** `true` for the empty key and for one made only of whitespace — a name that names nothing. */
+type IsBlank<K extends string> = K extends ""
+	? true
+	: K extends `${Whitespace}${infer Rest}`
+		? IsBlank<Rest>
+		: false;
+
 /**
  * The fields of `V` whose type is a proper subtype of `string`.
  *
@@ -123,16 +132,25 @@ type NarrowerThanString<A> = [A] extends [string] ? ([string] extends [A] ? fals
  * brand is *derived from the field*, so naming one brand while witnessing another is not a mistake
  * to catch, it is unrepresentable; and a field name that is not a key of `V` is not in this union at
  * all. Weaken a brand to bare `string` and its key leaves the union, so the row stops compiling.
+ *
+ * A blank or whitespace-only key is excluded too, so "a witness names no field" is unrepresentable
+ * rather than merely unlikely — that half of the retired `brandsNamed` runtime law is carried here.
  */
 export type BrandedKeys<V> = {
-	[K in keyof V]-?: NarrowerThanString<V[K]> extends true ? K : never;
+	[K in keyof V]-?: NarrowerThanString<V[K]> extends true
+		? K extends string
+			? IsBlank<K> extends true
+				? never
+				: K
+			: K
+		: never;
 }[keyof V] &
 	string;
 
 /**
  * Every branded field of `V`, each acknowledged by name — a witness per field, not per row.
  *
- * A mapped type over {@link BrandedKeys} makes each key **required**, so omitting one is `TS2345`
+ * A mapped type over {@link BrandedKeys} makes each key **required**, so omitting one is `TS2741`
  * and naming a non-branded or non-existent field is an excess property. That settles the coverage
  * question the type used to leave open: `brands` needed only *one* witness, so weakening any other
  * branded field on the same format was caught by nothing.
@@ -152,6 +170,10 @@ export type WireBrandWitnesses<V> = [BrandedKeys<V>] extends [never]
  * so one array can hold formats whose values have nothing in common, and that erasure is what would
  * have to go to close the last gap. So this device enforces *field ↔ brand* agreement and per-field
  * coverage, and takes *which value type a row names* on trust.
+ *
+ * A second residue, for the same reason: excess-property checking is *freshness*-based, so an
+ * argument hoisted into a `const` before the call skips it and a stray key rides through. Every
+ * registry row passes the object literal inline, which is the form that is checked.
  */
 export const brandWitnesses = <V>(
 	witnessed: WireBrandWitnesses<V>,

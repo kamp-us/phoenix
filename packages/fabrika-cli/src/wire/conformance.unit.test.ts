@@ -167,6 +167,17 @@ interface WeakenedMarker {
 	readonly clause: string;
 }
 
+/**
+ * A branded field keyed by a name that names nothing, alongside a real one.
+ *
+ * Written as a synthetic type rather than probed on `VerdictMarker`: that type has no blank key, so
+ * a probe against it would answer `false` before and after the exclusion and bind nothing.
+ */
+interface BlankKeyed {
+	readonly "": verdictMarker.HeadSha;
+	readonly clause: verdictMarker.Clause;
+}
+
 describe("the witness binds the field name to that field's own type", () => {
 	it("admits a branded field, and only a branded field, of the value type", () => {
 		// The positive control. If `BrandedKeys` collapsed to `never` every probe below would pass
@@ -183,6 +194,19 @@ describe("the witness binds the field name to that field's own type", () => {
 		const afterWeakening: Inhabits<"clause", WeakenedMarker> = false;
 
 		expect([beforeWeakening, afterWeakening]).toEqual([true, false]);
+	});
+
+	it("drops a key that names no field, so a blank witness is unwritable", () => {
+		const blank: Inhabits<"", BlankKeyed> = false;
+		// The positive control for this pair: without it a `BrandedKeys` collapsed to `never` would
+		// satisfy the line above for the wrong reason.
+		const nonBlank: Inhabits<"clause", BlankKeyed> = true;
+
+		// @ts-expect-error — the counterexample itself: this compiled before the exclusion and yielded
+		// a witness naming nothing. Every key is blank, so the parameter type is now `never`.
+		brandWitnesses<{readonly "": verdictMarker.HeadSha}>({"": true});
+
+		expect([blank, nonBlank]).toEqual([false, true]);
 	});
 
 	it("refuses the call shapes a row could otherwise get wrong", () => {

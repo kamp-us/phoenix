@@ -14,9 +14,10 @@
  * for a drift — the findings below refuse at test time.
  *
  * There is deliberately **no** law over `brands` here. There was one, checking the witnesses named
- * distinct non-blank fields; `brandWitnesses` made it unfalsifiable — the field names are object
- * keys of the row's own value type, and `WireBrandWitness` is unforgeable — and a law that cannot
- * fail is the vacuous pass this module exists to forbid, so it went with the gap it covered (#4969).
+ * distinct non-blank fields, and `brandWitnesses` made both halves unfalsifiable: distinct, because
+ * the witnesses are keys of one object literal (`TS1117`) mapped one-per-key; non-blank, because
+ * `BrandedKeys` drops a blank or whitespace-only key, so such a witness cannot be written. A law
+ * that cannot fail is the vacuous pass this module exists to forbid, so it went (#4969).
  *
  * Zero scope is a refusal, not a pass (ADR 0092): a suite that iterated an empty registry would run
  * no assertions and report green, which is the vacuous pass the law exists to forbid.
