@@ -250,7 +250,7 @@ verdict back. The group implements
 | `review criteria` | the linked issue's acceptance-criteria block, through the registered wire format |
 | `review ci` | the live check-run rollup at a head, fail-closed on incomplete enumeration |
 | `review verdicts` | every verdict marker on the PR, each with its `current` / `stale` / `unbindable` binding |
-| `review deviations` | the PR body's `## Deviations` state, its entries, and the Tier-M token scan over the diff |
+| `review deviations` | the PR body's `## Deviations` state, its entries, and the Tier-M token scan over the diff at the bound commit |
 | `review post` | the single sanctioned verdict emit — compose, bind, one comment per namespace, read back |
 | `review append-criterion` | one reviewer-authored criterion appended under ADR 0079's four fences |
 

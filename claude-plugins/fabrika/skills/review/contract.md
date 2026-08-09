@@ -48,8 +48,9 @@ the same tracked debt the sibling contracts carry.)
   structural read of the same facts. Dropping the worktree also removes the #3607 /tmp-collision
   and #4544 fixed-name-scratch classes by construction, and closes the self-review instruction
   hole without a denylist: a head that is never checked out is a head whose instructions are
-  never loaded. **The read verbs' commit binding does not reverse this** (#5117): `review scope`
-  and `review diff` fetch the PR head and read the artifact out of the **object database**
+  never loaded. **The commit binding does not reverse this** (#5117, #5122): `review scope`,
+  `review diff`, `review deviations` and `review post`'s namespace recompute fetch the PR head
+  and read the artifact out of the **object database**
   (`git diff <base>...<head>`), which writes objects and no working tree. Nothing is checked out,
   so no head instruction file is ever on disk to be loaded — a diff that adds a worktree or a
   checkout is still the wrong fix and should be red at review.
@@ -162,16 +163,19 @@ failure) and #4060.
 criterion) — authored text is refusable because the author can fix it. Their fixes are opposite
 (redact-and-resend vs send-the-bytes), which is why they stay two codes, exactly as in `report`.
 
-### The read verbs bind to a commit before they read (#5117)
+### The read verbs bind to a commit before they read (#5117, #5122)
 
-`review scope` and `review diff` serve the artifact a whole review is formed over, so **the bytes
-have to come from a named commit, not from an endpoint that takes a pull-request number and no
-commit at all.** The platform's PR reads are the second thing: a push landing between scoping and
-reading serves the *new* head's artifact under the *old* head's SHA, and the result is a
-well-formed, confident verdict over code nobody judged. `review post`'s `12` cannot close that —
-it fires after the judging, and a rewind that lands back on the recorded SHA passes it clean.
+`review scope`, `review diff` and `review deviations` serve the artifact a whole review is formed
+over, so **the bytes have to come from a named commit, not from an endpoint that takes a
+pull-request number and no commit at all.** The platform's PR reads are the second thing: a push
+landing between scoping and reading serves the *new* head's artifact under the *old* head's SHA,
+and the result is a well-formed, confident verdict over code nobody judged. `review post`'s `12`
+cannot close that — it fires after the judging, and a rewind that lands back on the recorded SHA
+passes it clean. So `review post` binds too, at the one read that is not the head re-resolve: the
+file list its derived namespace set comes from.
 
-Both verbs therefore take an optional `--sha` and run one shared binding step first
+The three read verbs therefore take an optional `--sha`, `review post` binds to the `--sha` it
+already requires, and all four run one shared binding step
 (`packages/fabrika-cli/src/review/head.ts`) before any artifact read:
 
 1. An explicit `--sha` must be **the PR's head**, or the verb refuses on `12`. Malformed is `10`.
@@ -181,14 +185,21 @@ Both verbs therefore take an optional `--sha` and run one shared binding step fi
    verifies still names the wrong tree. The base ref must resolve too, since a diff is a range.
    Any of these unmet is `11`, naming what is UNKNOWN. There is no permissive fallback to the
    PR-number endpoints: unbindable is a refusal, never a plausible value.
-3. The artifact is then read with `git diff <base>...<head>` — bytes for `review diff`, the
-   `--name-only -z` path list for `review scope` — under flags that pin the output to the two
-   commits rather than to the invoking user's `~/.gitconfig` (`--no-ext-diff`, explicit
-   `a/`/`b/` prefixes).
+3. The artifact is then read with `git diff <base>...<head>` — bytes for `review diff` and
+   `review deviations`'s Tier-M scan, the `--name-only -z` path list for `review scope` and
+   `review post`'s namespace recompute — under flags that pin the output to the two commits
+   rather than to the invoking user's `~/.gitconfig` (`--no-ext-diff`, explicit `a/`/`b/`
+   prefixes).
 
-Both verbs print the bound commit and its base on stderr, and `review scope`'s `scoped` line
-prints **the commit it read the files out of**, so the head named and the files partitioned are
-never two different trees.
+Every one of them prints the bound commit and its base on stderr, and `review scope`'s `scoped`
+line prints **the commit it read the files out of**, so the head named and the files partitioned
+are never two different trees.
+
+**`review post` binds underneath its `12`, not instead of it.** The stale-head refusal stays this
+verb's first step and keeps its own message: `12` is what says the verdict's tree is gone. The
+binding is what makes the namespace set provably the bound tree's — a separate property, since a
+force-push that rewinds back onto `--sha` passes `12` clean while the PR-number file endpoint
+still answers with some other head's list.
 
 **Nothing is checked out.** A fetch writes objects, not a working tree, so this binding and the
 no-head-worktree decision above hold together rather than trading off.
@@ -633,7 +644,7 @@ review-doc	PASS	03135b91	current	5154902211
 **Invocation**
 
 ```
-fabrika review deviations 4321 [--repo <owner/name>] [--json]
+fabrika review deviations 4321 [--sha <head>] [--repo <owner/name>] [--json]
 ```
 
 **Inputs**
@@ -641,6 +652,7 @@ fabrika review deviations 4321 [--repo <owner/name>] [--json]
 | Flag | Type | Required | Default | Description |
 |---|---|---|---|---|
 | *(positional)* | integer | yes | — | the pull-request number |
+| `--sha` | string | no | the PR's live head | the head to read the diff at; see the binding step above |
 | `--repo` | string | no | resolved | the repository |
 | `--json` | boolean | no | `false` | emit the result object |
 
@@ -676,21 +688,21 @@ v1's prose (ADR 0238). An entry's optional label is one of `1`–`7`:
 The classes overlap; the label is a routing hint, not the disclosure — a gate matches an
 entry's substance, never its label. An entry carrying no recognizable label prints `-`.
 
-The Tier-M scan reads the same diff `review diff` serves and inherits its completeness proof:
-a truncated diff is refused here on `13`, because an under-reported hit list beside a `None.`
-reads as a checked-clean disclosure that was never checked.
-
-It does **not** yet inherit the commit binding above: this verb still reads the PR-number diff
-endpoint, so its hit list is bound to no commit. Tracked as #5122 rather than folded in silently —
-the same is true of `review post`'s namespace recompute, whose own `12` narrows but does not close
-the window.
+The Tier-M scan reads the same diff `review diff` serves and inherits both of its proofs. Its
+**completeness** proof: a truncated diff is refused here on `13`, because an under-reported hit
+list beside a `None.` reads as a checked-clean disclosure that was never checked. Its **commit
+binding** (#5122): the bytes come from the object database at the bound commit, because a hit list
+read at a head nobody scoped is under- or over-reported against the disclosure it is printed
+beside — and it fails open, answering `none-declared` at exit 0.
 
 **Exit status**
 
 | Code | Trigger |
 |---|---|
 | `7` | the PR is proven absent (404) |
-| `11` | the PR body or the diff could not be read — the disclosure state is UNKNOWN |
+| `10` | `--sha` is not a head SHA |
+| `11` | the PR body or the diff could not be read, or the commit could not be bound — the disclosure state is UNKNOWN |
+| `12` | `--sha` is not the PR's head — re-scope, never re-bind |
 | `13` | the diff for the Tier-M scan is provably incomplete — a partial scan must not print beside a `None.` |
 
 **Errors**
@@ -698,10 +710,14 @@ the window.
 | Message (stderr) | Code | Kind |
 |---|---|---|
 | `review deviations: PR #<n> not found in <repo>.` | 7 | refusal |
+| `review deviations: --sha "<v>" is not a head SHA — expected 7–40 hex characters.` | 10 | refusal |
+| `review deviations: PR #<n>'s head is <live>, not <sha> — the tree you scoped is not the one under review; re-scope at <live> (ADR 0058).` | 12 | refusal |
+| `review deviations: <what> — the artifact cannot be bound to a commit, so what it shows is UNKNOWN.` | 11 | refusal |
 | `review deviations: cannot read #<n>'s body or diff: <reason> — the disclosure state is UNKNOWN, never "none".` | 11 | refusal |
 | `review deviations: the diff for #<n> is truncated (<k> of <m> files) — refusing a partial Tier-M scan beside a disclosure claim.` | 13 | refusal |
 
-**Scope** — one PR body's `## Deviations` section plus the head diff for the Tier-M token scan.
+**Scope** — one PR body's `## Deviations` section plus the bound commit's diff for the Tier-M
+token scan.
 Whether the PR *owes* the section, and whether an entry's substance covers a finding (Tier R),
 are the skill's judgment; this verb reports states and facts, never the §DEV verdict row.
 
@@ -764,14 +780,17 @@ With `--json`: `{"outcome":"posted","namespace":…,"polarity":…,"sha":…,"up
 
 **What the operation does, in order — each step gates the next.**
 
-1. **Recompute the class set** (the same partition `review scope` prints) and refuse a
-   `--namespace` outside it on `10`. This is the disjointness guarantee made structural: v1 got
-   "a gate never emits another gate's marker" free from one-skill-per-namespace; under one owner
-   the emit path itself enforces it, so a namespace this run did not derive cannot be filled
-   even by a confused caller.
-2. **Re-resolve the live head.** `--sha` not prefix-matching it is the `12` refusal: a verdict
+1. **Re-resolve the live head.** `--sha` not prefix-matching it is the `12` refusal: a verdict
    formed over a moved-past tree is re-reviewed, never re-bound. This is `bindToHead`'s `Stale`
    arm applied at the write seam, where its absence costs the most.
+2. **Recompute the class set at the bound commit** (the same partition `review scope` prints,
+   read through the shared binding step above) and refuse a `--namespace` outside it on `10`.
+   This is the disjointness guarantee made structural: v1 got "a gate never emits another gate's
+   marker" free from one-skill-per-namespace; under one owner the emit path itself enforces it,
+   so a namespace this run did not derive cannot be filled even by a confused caller. The set is
+   documented as both floor and ceiling, which is why it is derived from `--sha`'s commit and not
+   from the PR-number file endpoint: `12` above proves the tree is still the live one, not that
+   the list came from it (#5122).
 3. **Compose the first line through the wire format's `emit`**
    (`verdict-marker.ts`, imported — fields `namespace`/`polarity`/`sha`/`clause`), or with
    `--carrier advisory` the fixed advisory line with the `Reviewed-head: @ <sha>` body line;
@@ -810,7 +829,7 @@ With `--json`: `{"outcome":"posted","namespace":…,"polarity":…,"sha":…,"up
 | `8` | the create/edit failed — UNKNOWN whether a comment landed |
 | `9` | the comment landed but the read-back does not yield this marker |
 | `10` | `--namespace` off the wire format's class or outside this PR's derived set; a bad `--polarity`; `--carrier advisory` with `--polarity FAIL` |
-| `11` | a precondition read failed — the PR, its files (for the class set), or the live head |
+| `11` | a precondition read failed — the PR, the live head, or the commit binding / bound file list the class set is derived from |
 | `12` | the live head moved past `--sha` — re-review at the new head, never re-bind |
 
 **Errors**
@@ -830,9 +849,9 @@ With `--json`: `{"outcome":"posted","namespace":…,"polarity":…,"sha":…,"up
 | `review post: create/edit failed: <reason> — UNKNOWN whether the verdict landed; run \`fabrika review verdicts <n>\` before retrying.` | 8 | refusal |
 | `review post: posted, but the read-back does not yield this marker (<wire reason>) — the PR may carry a garbled verdict; inspect comment <id>.` | 9 | refusal |
 
-**Scope** — one PR: its file list (step 1), its live head (step 2), its comments (steps 5–6),
-plus the caller's stdin. Steps 1, 2 and 5's reads failing is `11` — nothing written, outcome
-known-unwritten.
+**Scope** — one PR: its live head (step 1), the bound commit's file list (step 2), its comments
+(steps 5–6), plus the caller's stdin. Steps 1, 2 and 5's reads failing is `11` — nothing written,
+outcome known-unwritten.
 
 **Examples**
 

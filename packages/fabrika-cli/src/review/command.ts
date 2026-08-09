@@ -166,13 +166,21 @@ const verdicts = leafCommand(
 
 const deviations = leafCommand(
 	"deviations",
-	{pr: prArg, repo: repoFlag, json: jsonFlag},
-	Effect.fn(function* ({pr, repo, json}) {
-		yield* emit(yield* runDeviations({pr, repo: Option.getOrNull(repo), json, env: process.env}));
+	{pr: prArg, sha: boundShaFlag, repo: repoFlag, json: jsonFlag},
+	Effect.fn(function* ({pr, sha, repo, json}) {
+		yield* emit(
+			yield* runDeviations({
+				pr,
+				sha: Option.getOrNull(sha),
+				repo: Option.getOrNull(repo),
+				json,
+				env: process.env,
+			}),
+		);
 	}),
 ).pipe(
 	Command.withDescription(
-		"Report the PR body's `## Deviations` state — found | none-declared | absent | malformed, three distinct facts — with its entries and the Tier-M token scan over the head diff. First stdout line is `deviations\\t<state>`, then one `entry\\t<class-label-or-->\\t<first-line-of-Said>` line per entry and one `tier-m\\t<kind>\\t<file>:<line>\\t<token>` line per hit. Exits 7 (PR proven absent), 11 (the body or diff could not be read — the disclosure state is UNKNOWN, never `none`), 13 (a partial diff must not print a partial scan beside a disclosure claim). Example: fabrika review deviations 4321",
+		"Report the PR body's `## Deviations` state — found | none-declared | absent | malformed, three distinct facts — with its entries and the Tier-M token scan over the diff at the bound commit. First stdout line is `deviations\\t<state>`, then one `entry\\t<class-label-or-->\\t<first-line-of-Said>` line per entry and one `tier-m\\t<kind>\\t<file>:<line>\\t<token>` line per hit. Exits 7 (PR proven absent), 10 (--sha is not a head SHA), 11 (the body or diff could not be read, or the commit could not be bound — the disclosure state is UNKNOWN, never `none`), 12 (--sha is not the PR's head — re-scope, never re-bind), 13 (a partial diff must not print a partial scan beside a disclosure claim). Example: fabrika review deviations 4321 --sha 03135b91",
 	),
 );
 
@@ -229,7 +237,7 @@ const post = leafCommand(
 	}),
 ).pipe(
 	Command.withDescription(
-		'Post the verdict on STDIN as ONE comment for this namespace — recompute the class set, re-resolve the live head, compose the first line through the `verdict-marker` wire format, leak-scan the assembled comment, upsert, and read it back from live state. Prints `posted\\t<namespace>\\t<polarity>\\t<sha>\\t<created|edited>\\t<comment-url>`. Exits 3 (empty stdin — an empty verdict reads as UNGATED), 5 (machine-local path in the assembled comment), 6 (bare @ reference), 7 (PR absent or closed), 8 (the create/edit failed — UNKNOWN), 9 (read-back does not yield this marker), 10 (namespace this diff did not derive, bad polarity, or advisory with FAIL), 11 (a precondition read failed — nothing was posted), 12 (the live head moved past --sha — re-review, never re-bind). Example: fabrika review post 4321 --namespace review-doc --polarity PASS --sha 03135b91 --clause "guide matches shipped behavior" < verdict.md',
+		'Post the verdict on STDIN as ONE comment for this namespace — re-resolve the live head, recompute the class set at the bound commit, compose the first line through the `verdict-marker` wire format, leak-scan the assembled comment, upsert, and read it back from live state. Prints `posted\\t<namespace>\\t<polarity>\\t<sha>\\t<created|edited>\\t<comment-url>`. Exits 3 (empty stdin — an empty verdict reads as UNGATED), 5 (machine-local path in the assembled comment), 6 (bare @ reference), 7 (PR absent or closed), 8 (the create/edit failed — UNKNOWN), 9 (read-back does not yield this marker), 10 (namespace this diff did not derive, bad polarity, or advisory with FAIL), 11 (a precondition read failed, or the commit could not be bound — nothing was posted), 12 (the live head moved past --sha — re-review, never re-bind). Example: fabrika review post 4321 --namespace review-doc --polarity PASS --sha 03135b91 --clause "guide matches shipped behavior" < verdict.md',
 	),
 );
 

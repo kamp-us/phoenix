@@ -243,6 +243,104 @@ describe("the commit binding on the read verbs", () => {
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout)).toMatchObject({head: HEAD, namespaces: ["review-doc"]});
 	});
+
+	// #5122's half: the same unbound read, at the two seams #5117 left behind. Both mutants die
+	// fail-OPEN — a checked-clean disclosure and a posted verdict, each at exit 0.
+	const SUPPRESSING_DIFF = `diff --git a/src/cart.ts b/src/cart.ts
+--- a/src/cart.ts
++++ b/src/cart.ts
+@@ -10,1 +10,2 @@
+ const items = read();
++// @ts-expect-error the types are wrong
+diff --git a/README.md b/README.md
+--- a/README.md
++++ b/README.md
+@@ -1,1 +1,2 @@
+ # phoenix
++a line
+`;
+
+	const deviationsScript: ReadonlyArray<readonly [RegExp, ExecResult]> = [
+		[PULL, pull()],
+		...binding(),
+		[DIFF_AT(), okOut(SUPPRESSING_DIFF)],
+		[RAW, okOut(DIFF)],
+	];
+
+	it("scans the bound commit's bytes for Tier-M tokens", async () => {
+		const {runDeviations} = await import("./deviations-verb.ts");
+		const out = await withShell(
+			runDeviations({pr: 4321, sha: HEAD, repo: null, json: false, env: ENV}),
+			deviationsScript,
+		);
+		expect(out.code).toBe(0);
+		expect(out.stdout).toContain("tier-m\tsuppression");
+	});
+
+	it("MUTANT: reading the PR-number diff prints a clean scan beside a `None.` that is false", async () => {
+		await mutate<typeof import("../io/git.ts")>("../io/git.ts", () => ({
+			diffRange: () => Effect.succeed({_tag: "Ok" as const, value: DIFF}),
+		}));
+		const {runDeviations} = await import("./deviations-verb.ts");
+		const out = await withShell(
+			runDeviations({pr: 4321, sha: HEAD, repo: null, json: false, env: ENV}),
+			deviationsScript,
+		);
+		expect(out.code).toBe(0);
+		expect(out.stdout).toBe("deviations\tnone-declared\n");
+	});
+
+	const postOptions = {
+		pr: 4321,
+		namespace: "review-skill",
+		polarity: "PASS",
+		sha: HEAD,
+		clause: "guide matches shipped behavior",
+		carrier: "marker",
+		repo: null,
+		json: false,
+		env: ENV,
+		stdin: Effect.succeed<StdinRead>({_tag: "Text", text: "the table\n"}),
+		now: NOW,
+	};
+	const postScript: ReadonlyArray<readonly [RegExp, ExecResult]> = [
+		[PULL, pull({changedFiles: 1})],
+		...binding(),
+		[PATHS_AT(), paths("src/cart.ts")],
+		[FILES, files("skills/deploy/SKILL.md")],
+		[USER, okOut("kampus-bot")],
+		[COMMENTS, comments()],
+		[CREATE, okOut(JSON.stringify({id: 1, html_url: "https://example.test/c/1"}))],
+		[
+			READBACK,
+			okOut(
+				JSON.stringify({
+					body: `review-skill: PASS @ ${HEAD} — guide matches shipped behavior\n\nthe table\n\n${STAMP}`,
+				}),
+			),
+		],
+	];
+
+	it("refuses a namespace the bound commit's file list does not derive", async () => {
+		const {runPost} = await import("./post-verb.ts");
+		const shell = fakeShell(postScript);
+		const out = await Effect.runPromise(Effect.provide(runPost(postOptions), shell.layer));
+		expect(out.code).toBe(10);
+		expect(shell.calls.some((call) => CREATE.test(call))).toBe(false);
+	});
+
+	it("MUTANT: reading the PR-number file list POSTS a namespace this run never derived", async () => {
+		await mutate<typeof import("../io/git.ts")>("../io/git.ts", () => ({
+			diffRangePaths: () =>
+				Effect.succeed({_tag: "Ok" as const, value: ["skills/deploy/SKILL.md"]}),
+		}));
+		const {runPost} = await import("./post-verb.ts");
+		const shell = fakeShell(postScript);
+		const out = await Effect.runPromise(Effect.provide(runPost(postOptions), shell.layer));
+		expect(out.code).toBe(0);
+		expect(out.stdout).toContain("posted\treview-skill\tPASS");
+		expect(shell.calls.some((call) => CREATE.test(call))).toBe(true);
+	});
 });
 
 describe("the leak predicate over the assembled verdict", () => {
@@ -262,7 +360,9 @@ describe("the leak predicate over the assembled verdict", () => {
 	};
 	const script: ReadonlyArray<readonly [RegExp, ExecResult]> = [
 		[PULL, pull()],
-		[FILES, files("src/cart.ts", "README.md")],
+		...binding(),
+		[PATHS_AT(), paths("src/cart.ts", "README.md")],
+		[FILES, files("skills/deploy/SKILL.md")],
 		[USER, okOut("kampus-bot")],
 		[COMMENTS, comments()],
 		[CREATE, okOut(JSON.stringify({id: 1, html_url: "https://example.test/c/1"}))],
@@ -314,7 +414,9 @@ describe("normalizeForReadback's trailing-newline step", () => {
 	};
 	const script: ReadonlyArray<readonly [RegExp, ExecResult]> = [
 		[PULL, pull()],
-		[FILES, files("src/cart.ts", "README.md")],
+		...binding(),
+		[PATHS_AT(), paths("src/cart.ts", "README.md")],
+		[FILES, files("skills/deploy/SKILL.md")],
 		[USER, okOut("kampus-bot")],
 		[COMMENTS, comments()],
 		[CREATE, okOut(JSON.stringify({id: 1, html_url: "https://example.test/c/1"}))],
