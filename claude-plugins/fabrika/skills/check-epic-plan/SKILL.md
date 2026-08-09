@@ -90,9 +90,13 @@ counters. `nothing-to-flip` is a **clean gate that changed nothing**, which is n
 as one that made children pickable.
 
 A non-zero exit prints no answer at all, so read the refusal on stderr: `22` is a partial flip and
-the verb names there the children that did not move — those refs, not a per-child table it never
-printed, are what you post. `21` means the plan moved under you between the check and the flip;
-nothing was written, so re-check rather than retry.
+the verb names there the children that did not move — **those refs are the whole of what you post,
+and you claim nothing about what any child carries now**, in a table or in prose. Nothing in this
+run read that back: the `22` refusal carries the un-flipped refs and no observed labels, and `plan
+read`'s `children[].labels` are pre-flip — they were read at step 1, before the write. So any
+statement about a child's label state *after* the flip is invented rather than observed, and the
+ban is on the claim, not on the format that carries it. `21` means the plan moved under you between
+the check and the flip; nothing was written, so re-check rather than retry.
 
 ## 4 — Post the verdict, bound to the scope you scanned
 
@@ -139,7 +143,8 @@ An unreleased claim is v1's unreclaimable-lock scar, which a human then clears b
 - `PLAN-MOVED` — `21`: the plan changed between the check and a writing verb. Nothing was written
   and no verdict is posted; re-check from step 2.
 - `FLIP-PARTIAL` — `22`: the floor was clean and some children did not move. Post the refs the verb
-  named with `fabrika build note`; the epic needs a human. Never reported as a gate failure.
+  named with `fabrika build note` — refs only, no claim about what any child carries now (step 3);
+  the epic needs a human. Never reported as a gate failure.
 - `PLAN-UNGATEABLE` — `7` or `10`: the target is **proven** not gateable — absent or closed, not a
   `type:epic`, or it has zero children. Nothing was written. Proven, so not `STOPPED`.
 - `WRITE-UNPROVEN` — `8` or `9` from **either** writing verb: a write landed, or may have landed,

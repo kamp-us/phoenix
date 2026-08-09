@@ -33,6 +33,19 @@ hypothesis).
   Falsified by: epics that ping-pong between the lanes without converging. Seam: `SKILL.md` step 2's
   terminal.
 
+## Defects the eval runs surfaced
+
+A searchable home for findings that would otherwise live only in an issue comment, which GitHub's
+search API does not index.
+
+- <!-- anchor: D1 --> **Post-flip label state was assertable on `FLIP-PARTIAL`**
+  ([#5151](https://github.com/kamp-us/phoenix/issues/5151)). Step 3 banned a fabricated per-child
+  *table* and not the *claim*, so both arms of eval-4 stated what un-flipped children carried after
+  the flip — state no surface in the run had read back. Found in iteration 2 of the eval runs, after
+  eval-4's assertion 5 was repaired (iteration 1 could not see it); held unpatched under the
+  authoring session's freeze rule so the benchmark stayed honest, then bounded in `SKILL.md` step 3
+  with a pointer on the `FLIP-PARTIAL` terminal. The bound's reasoning lives at step 3, not here.
+
 ## Open questions — carried open, not answered
 
 This skill proposes, never resolves; a ruling enters through report → triage.
