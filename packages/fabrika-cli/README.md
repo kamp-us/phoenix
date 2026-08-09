@@ -245,8 +245,8 @@ verdict back. The group implements
 
 | Verb | What it answers |
 |---|---|
-| `review scope` | head SHA, linked issue, the code / doc / skill partition of the changed files, and the `self` / `harness` flags |
-| `review diff` | the diff bytes, with truncation refused rather than passed through |
+| `review scope` | head SHA, linked issue, the code / doc / skill partition of the changed files, and the `self` / `harness` flags — the list read at the printed commit, never beside it |
+| `review diff` | the diff bytes at the bound commit, with truncation refused rather than passed through |
 | `review criteria` | the linked issue's acceptance-criteria block, through the registered wire format |
 | `review ci` | the live check-run rollup at a head, fail-closed on incomplete enumeration |
 | `review verdicts` | every verdict marker on the PR, each with its `current` / `stale` / `unbindable` binding |

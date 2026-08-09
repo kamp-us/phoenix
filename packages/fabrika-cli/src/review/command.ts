@@ -52,27 +52,55 @@ const prArg = Argument.integer("pr").pipe(
 	Argument.withDescription("the pull-request number to read"),
 );
 
+/**
+ * The read verbs' `--sha`: the head the caller scoped, asserted so the answer's provenance is the
+ * caller's claim and not whatever the endpoint happened to serve. Omitted, the verb binds to the
+ * PR's live head — which is still read out of the object database, so the answer names its commit
+ * either way.
+ */
+const boundShaFlag = Flag.string("sha").pipe(
+	Flag.optional,
+	Flag.withDescription(
+		"the head to read the artifact at (default: the PR's live head); the verb reads it out of the object database and refuses when it is not the PR's head",
+	),
+);
+
 const scope = leafCommand(
 	"scope",
-	{pr: prArg, repo: repoFlag, json: jsonFlag},
-	Effect.fn(function* ({pr, repo, json}) {
-		yield* emit(yield* runScope({pr, repo: Option.getOrNull(repo), json, env: process.env}));
+	{pr: prArg, sha: boundShaFlag, repo: repoFlag, json: jsonFlag},
+	Effect.fn(function* ({pr, sha, repo, json}) {
+		yield* emit(
+			yield* runScope({
+				pr,
+				sha: Option.getOrNull(sha),
+				repo: Option.getOrNull(repo),
+				json,
+				env: process.env,
+			}),
+		);
 	}),
 ).pipe(
 	Command.withDescription(
-		"Partition a PR's changed files into the code / doc / skill artifact classes and report its head SHA, linked issue and self / harness flags. First stdout line is `scoped\\t<head-sha>\\t<issue>`, then one `class\\t<name>\\t<files>` line per present class and the two flag lines; the scanned count is on stderr. Exits 7 (PR absent, closed, or zero changed files — ADR 0092, #4060), 11 (the PR or its file list could not be read — the scope is UNKNOWN), 13 (the file list is provably short of the declared count). Example: fabrika review scope 4321",
+		"Partition a PR's changed files into the code / doc / skill artifact classes and report its head SHA, linked issue and self / harness flags. The file list is read out of the object database at the bound commit, so the printed head and the partitioned files are the same tree. First stdout line is `scoped\\t<head-sha>\\t<issue>`, then one `class\\t<name>\\t<files>` line per present class and the two flag lines; the bound commit and the scanned count are on stderr. Exits 7 (PR absent, closed, or zero changed files — ADR 0092, #4060), 10 (--sha is not a head SHA), 11 (the PR could not be read, or the commit could not be bound — the scope is UNKNOWN), 12 (--sha is not the PR's head — re-scope, never re-bind), 13 (the commit carries fewer files than the PR declares). Example: fabrika review scope 4321 --sha 03135b91",
 	),
 );
 
 const diff = leafCommand(
 	"diff",
-	{pr: prArg, repo: repoFlag},
-	Effect.fn(function* ({pr, repo}) {
-		yield* emit(yield* runDiff({pr, repo: Option.getOrNull(repo), env: process.env}));
+	{pr: prArg, sha: boundShaFlag, repo: repoFlag},
+	Effect.fn(function* ({pr, sha, repo}) {
+		yield* emit(
+			yield* runDiff({
+				pr,
+				sha: Option.getOrNull(sha),
+				repo: Option.getOrNull(repo),
+				env: process.env,
+			}),
+		);
 	}),
 ).pipe(
 	Command.withDescription(
-		"Serve a PR's unified diff bytes on stdout, refusing a truncated one rather than passing it through as the whole. No --json: the diff is the object. Exits 7 (PR absent, closed, or zero changed files), 11 (the diff could not be read — UNKNOWN), 13 (the served diff carries fewer files than the PR declares — #3925's class). Example: fabrika review diff 4321",
+		"Serve a PR's unified diff bytes on stdout, read out of the object database at the bound commit and refusing a truncated one rather than passing it through as the whole. Nothing is checked out. No --json: the diff is the object. Exits 7 (PR absent, closed, or zero changed files), 10 (--sha is not a head SHA), 11 (the diff could not be read, or the commit could not be bound — UNKNOWN), 12 (--sha is not the PR's head — re-review, never re-bind), 13 (the diff carries fewer files than the PR declares — #3925's class). Example: fabrika review diff 4321 --sha 03135b91",
 	),
 );
 

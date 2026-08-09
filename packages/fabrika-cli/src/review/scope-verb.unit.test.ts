@@ -1,30 +1,66 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeShell} from "../fakes.test-support.ts";
+import {errOut, fakeShell, okOut} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
-import {INCOMPLETE_SCAN, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
-import {files, HEAD, pull} from "./fixtures.test-support.ts";
+import {
+	INCOMPLETE_SCAN,
+	OFF_VOCABULARY,
+	PRECONDITION_UNKNOWN,
+	STALE_HEAD,
+	ZERO_SCOPE,
+} from "./codes.ts";
+import {
+	BASE,
+	binding,
+	files,
+	HEAD,
+	OLD_HEAD,
+	PATHS_AT,
+	paths,
+	pull,
+} from "./fixtures.test-support.ts";
 import {runScope} from "./scope-verb.ts";
 
 const PULL = /^gh api repos\/o\/r\/pulls\/4321$/;
+/** The unbound endpoint this verb no longer reads — scripted so a regression has a list to serve. */
 const FILES = /^gh api --paginate repos\/o\/r\/pulls\/4321\/files/;
 
 const options = {
 	pr: 4321,
+	sha: null as string | null,
 	repo: null,
 	json: false,
 	env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,
 };
 
+const shell = (
+	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
+	overrides: Partial<typeof options> = {},
+) => {
+	const fake = fakeShell(script);
+	return {
+		fake,
+		out: Effect.runPromise(Effect.provide(runScope({...options, ...overrides}), fake.layer)),
+	};
+};
+
 const run = (
 	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
 	overrides: Partial<typeof options> = {},
-) =>
-	Effect.runPromise(Effect.provide(runScope({...options, ...overrides}), fakeShell(script).layer));
+) => shell(script, overrides).out;
 
-const happy = (): ReadonlyArray<readonly [RegExp, ExecResult]> => [
-	[PULL, pull()],
-	[FILES, files("src/cart.ts", "README.md")],
+/**
+ * The green path. The PR-number files endpoint is scripted too, and deliberately answers a
+ * *different* file set — so a read that drifts back to it derives `review-doc` where the bound
+ * commit derives both classes, instead of failing loudly.
+ */
+const happy = (
+	shape: Parameters<typeof pull>[0] = {},
+): ReadonlyArray<readonly [RegExp, ExecResult]> => [
+	[PULL, pull(shape)],
+	...binding(),
+	[PATHS_AT(), paths("src/cart.ts", "README.md")],
+	[FILES, files("docs/moved.md", "docs/also.md")],
 ];
 
 describe("runScope", () => {
@@ -55,16 +91,16 @@ describe("runScope", () => {
 	});
 
 	it("prints `-` for a PR with no closing keyword, never a fabricated issue", async () => {
-		const out = await run([
-			[PULL, pull({body: "relates to #4287"})],
-			[FILES, files("a.ts", "b.ts")],
-		]);
+		const out = await run(happy({body: "relates to #4287"}));
 		expect(out.stdout.split("\n")[0]).toBe(`scoped\t${HEAD}\t-`);
 	});
 
-	it("reports what it scanned against what was declared", async () => {
+	it("reports the commit it bound to, then what it scanned against what was declared", async () => {
 		const out = await run(happy());
-		expect(out.stderr[0]).toBe("review scope: scanned 2 changed files; 2 declared.");
+		expect(out.stderr[0]).toBe(
+			`review scope: bound to ${HEAD} (base ${BASE}) — read from the object database, nothing checked out.`,
+		);
+		expect(out.stderr[1]).toBe("review scope: scanned 2 changed files; 2 declared.");
 	});
 
 	it("refuses a PR proven absent on 7", async () => {
@@ -96,23 +132,26 @@ describe("runScope", () => {
 	it("refuses an unreadable file list on 11 — the partition would be over unknown scope", async () => {
 		const out = await run([
 			[PULL, pull()],
-			[FILES, errOut("gh: Bad gateway (HTTP 502)")],
+			[PATHS_AT(), errOut("fatal: bad revision")],
+			...binding(),
 		]);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toContain("the scope is UNKNOWN");
 	});
 
 	it("refuses a provably short file list on 13, distinct from 11 and 7", async () => {
 		const out = await run([
 			[PULL, pull({changedFiles: 9})],
-			[FILES, files("a.ts", "b.md")],
+			...binding(),
+			[PATHS_AT(), paths("a.ts", "b.md")],
 		]);
 		expect(out.code).toBe(INCOMPLETE_SCAN);
 		expect(out.code).not.toBe(PRECONDITION_UNKNOWN);
 		expect(out.code).not.toBe(ZERO_SCOPE);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toBe(
-			"review scope: file list shows 2 of 9 declared files — refusing to partition a truncated read (#3999).",
+			`review scope: ${HEAD} carries 2 of the 9 files #4321 declares — refusing to partition a short read (#3999).`,
 		);
 	});
 
@@ -122,5 +161,58 @@ describe("runScope", () => {
 			Effect.provide(runScope({...options, env: {}}), fakeShell([]).layer),
 		);
 		expect(out.code).toBe(1);
+	});
+});
+
+/**
+ * The provenance fence (#5117).
+ *
+ * The namespace set is documented as both floor and ceiling, so this list is not one input among
+ * many — a list drawn from a later commit derives a namespace nobody judged, or drops one. Every
+ * case here fails if the read reverts to the PR-number endpoint, which the fixture scripts with a
+ * doc-only file set.
+ */
+describe("runScope binds its file list to the commit it prints", () => {
+	it("partitions the bound commit's files, never the PR-number endpoint's", async () => {
+		const {fake, out} = shell(happy());
+		const result = await out;
+		expect(result.stdout).toContain("class\tcode\t1");
+		expect(result.stdout).not.toContain("class\tdoc\t2");
+		expect(fake.calls).toContain(
+			`git diff --no-ext-diff --no-color --find-renames --src-prefix=a/ --dst-prefix=b/ --name-only -z ${BASE}...${HEAD}`,
+		);
+		expect(fake.calls.some((c) => c.includes("pulls/4321/files"))).toBe(false);
+	});
+
+	it("prints the head it actually read the files out of", async () => {
+		const {out} = shell(happy(), {sha: HEAD});
+		const result = await out;
+		expect(result.stdout.split("\n")[0]).toBe(`scoped\t${HEAD}\t4287`);
+	});
+
+	it("refuses on 12 when --sha is not the PR's head", async () => {
+		const {fake, out} = shell(happy(), {sha: OLD_HEAD});
+		const result = await out;
+		expect(result.code).toBe(STALE_HEAD);
+		expect(result.stdout).toBe("");
+		expect(result.stderr.at(-1)).toContain("re-scope at");
+		expect(fake.calls.some((c) => c.startsWith("git diff"))).toBe(false);
+	});
+
+	it("refuses a --sha that is not a head SHA on 10", async () => {
+		const out = await run(happy(), {sha: "origin/main"});
+		expect(out.code).toBe(OFF_VOCABULARY);
+		expect(out.stderr.at(-1)).toContain("is not a head SHA");
+	});
+
+	it("refuses on 11 when the commit cannot be bound, rather than partitioning an unbound list", async () => {
+		const out = await run([
+			[PULL, pull()],
+			[/^git remote -v$/, okOut("origin\tgit@github.com:someone/else.git (fetch)\n")],
+		]);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stderr.at(-1)).toBe(
+			"review scope: no git remote in this checkout serves o/r — the artifact cannot be bound to a commit, so what it shows is UNKNOWN.",
+		);
 	});
 });
