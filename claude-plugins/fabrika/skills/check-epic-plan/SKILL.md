@@ -118,7 +118,7 @@ the "only emit path" rule was contradicted, and a run that formed caveats there 
 from the digest and neither a floor trigger ([`contract.md`](contract.md), `flip-neutral`), so the
 digest you carried still binds and this verb still re-derives a clean floor after a `22`. **Order on
 that terminal: this verdict first, then `fabrika build note` with the un-flipped refs.** The note's
-body is free prose — no closed-kind check, no digest binding, no leak scan — so it carries refs and
+body is free prose — no closed-kind check, no digest binding — so it carries refs and
 never caveats, and posting the verdict first is what keeps the rule below true.
 
 Your caveat text is authored prose reaching a public surface, so `5` and `6` are live: the verb
