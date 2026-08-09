@@ -886,8 +886,8 @@ skill carries (#3709), and the verb does not pretend otherwise.
 | `ledger topology: not in a linked worktree — the run manifest is unreachable.` | 12 | refusal |
 | `ledger topology: this session does not hold #<n>'s claim.` | 15 | refusal |
 
-**Scope** — the run manifest's whole child set and every declared line. **Zero scope reds on `7`**:
-an empty manifest means no child was minted this run, and rendering a topology over no children
+**Scope** — the run manifest's whole child set and every declared line, plus one read of the epic for the shared preconditions. It writes nothing. **Zero scope reds on `7`**:
+an empty manifest means the epic has no children at all — none retained by the seed and none minted since — and rendering a topology over no children
 would produce a `## Dependencies` block the gate reads as an epic every one of whose children is
 orphaned. It is `7` rather than `24` because nothing was validated — a refused scope is not an
 invalid topology, the same split `plan check` makes when it seats a childless epic on `7` instead
@@ -1092,7 +1092,7 @@ exists for, so the refusal narrows to the minted set rather than the whole manif
 | `7` | the epic or the child is proven absent or closed |
 | `8` | a leg was attempted and its outcome could not be proven — UNKNOWN |
 | `9` | the legs landed and the child does not read back closed and unlinked |
-| `10` | the issue is not a `type:epic`; `--child` is not a sub-issue of it; or `--child` is in this run's manifest |
+| `10` | the issue is not a `type:epic`; `--child` is not a sub-issue of it; or `--child`'s manifest line carries `"mintedThisRun":true` |
 | `11` | a precondition read failed — **nothing was written** |
 | `12` | this process is not in a linked worktree |
 | `15` | this session does not hold the epic's claim |
