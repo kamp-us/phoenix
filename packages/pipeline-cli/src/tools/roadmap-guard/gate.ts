@@ -48,10 +48,10 @@ const readRoadmap = (
 	});
 
 /**
- * The CI gate: parse `ROADMAP.md`'s `## Arcs`/`## Campaigns` tables, read the live
- * milestone projection, and judge I1–I5 (extended to campaign rows + the active↔done
- * lifecycle symmetry, #2660). Succeeds only on a passing verdict; every non-pass —
- * including zero-scope — is a `CheckFailed`.
+ * The CI gate: parse `ROADMAP.md`'s `## Arcs`/`## Campaigns`/`## Focus` tables, read the
+ * live milestone projection, and judge I1–I6 (extended to campaign rows, the active↔done
+ * lifecycle symmetry #2660, and the declared focus #5012). Succeeds only on a passing
+ * verdict; every non-pass — including zero-scope — is a `CheckFailed`.
  */
 export const checkRoadmap = (
 	root: string,
@@ -62,9 +62,9 @@ export const checkRoadmap = (
 > =>
 	Effect.gen(function* () {
 		const md = yield* readRoadmap(root);
-		const {arcs, campaigns} = parseRoadmap(md);
+		const {arcs, campaigns, focus} = parseRoadmap(md);
 		const milestones = yield* (yield* Milestones).list();
-		const verdict = judge(arcs, campaigns, milestones);
+		const verdict = judge(arcs, campaigns, milestones, focus);
 		if (verdict.pass) {
 			yield* Console.log(renderReport(verdict));
 			return;
