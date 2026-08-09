@@ -115,9 +115,15 @@ not a compromise:
   second skill and **not** a predecessor to be ported: it is this same skill under its superseded name."
 
 So the two readings converge on one artifact. 0144's sentence is superseded in part — the capture step
-is a **leg of the visual gate**, never a standalone skill — and 0144 itself is untouched: an ADR is a
-dated record of what was decided then, and the `depo` row in `TERMS.md` already points at `review-ui`
-as depo's first consumer, which stays true under this reading.
+is a **leg of the visual gate**, never a standalone skill — **and 0144 says so at its own end.** An
+ADR's *decision text* is inviolate, but its *status line* is exactly where a moved reading is
+recorded, and the corpus already carries the mechanism for a single displaced clause:
+[0011](0011-drizzle-context-service.md) and [0029](0029-worker-runtime-servicemap.md) both read
+`status: superseded-in-part by […]` with every word of their decision text intact. 0144 gets the same
+treatment — the status line plus a one-line note at the superseded clause — so a reader landing on
+that clause, the likeliest path to this collision, is told the reading moved instead of resolving it
+to the standalone sense. depo's own decision stands, and the `depo` row in `TERMS.md` still points at
+`review-ui` as depo's first consumer, which stays true under this reading.
 
 ## Consequences
 
@@ -125,9 +131,11 @@ as depo's first consumer, which stays true under this reading.
   `review` rows carry their superseded reading in the `Not` column, pointing here.
 - A reader of any pre-#4904 ticket, ADR or skill doc that says `build` or `review` has one place to
   learn that the word moved and what it used to mean.
-- No landed ADR is edited. ADR 0079's "all four `review-*`" and ADR 0226's "the four review gate
-  templates" stay as written; they describe v1, which is frozen and still on disk. This entry is the
-  bridge, not a retraction.
+- **No landed ADR's decision text is edited — the status line of the one superseded ADR is.** ADR 0144
+  gains `status: superseded-in-part by [0242]` plus a note at the superseded clause: the additive shape
+  the `adr` skill sanctions, and the same mechanism 0011 and 0029 use. ADR 0079's "all four `review-*`"
+  and ADR 0226's "the four review gate templates" stay untouched — nothing supersedes them; they
+  describe v1, which is frozen and still on disk. This entry is the bridge, not a retraction.
 - The register alone would not have carried this. Every future redefinition of a live noun needs the
   same pair — a row for the new reading, a dated entry for the change.
 - Nothing here re-opens a ruling. Every name is founder-fixed on #4891 and transcribed by #4904; this
