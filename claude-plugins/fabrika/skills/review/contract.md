@@ -703,12 +703,18 @@ v1's prose (ADR 0238). An entry's optional label is one of `1`–`7`:
 The classes overlap; the label is a routing hint, not the disclosure — a gate matches an
 entry's substance, never its label. An entry carrying no recognizable label prints `-`.
 
-The Tier-M scan reads the same diff `review diff` serves and inherits both of its proofs. Its
-**completeness** proof: a truncated diff is refused here on `13`, because an under-reported hit
-list beside a `None.` reads as a checked-clean disclosure that was never checked. Its **commit
-binding** (#5122): the bytes come from the object database at the bound commit, because a hit list
-read at a head nobody scoped is under- or over-reported against the disclosure it is printed
-beside — and it fails open, answering `none-declared` at exit 0.
+The Tier-M scan reads the same diff `review diff` serves and applies both of its proofs to it. Its
+**completeness** proof is the one `review diff` states: the denominator is a second read of the same
+range — `git diff --name-only -z`, one path per `diff --git` entry — so both counts come from git
+under one set of flags. That makes it a **cardinality** test and nothing more: it establishes that
+the scanned bytes carry at least as many entries as the `--name-only` read lists, not that the two
+reads name the same files, and not that the range is the right range — a fault that shortens both
+reads alike stays invisible to it. A scan short of that denominator is refused on `13`, because an
+under-reported hit list beside a `None.` reads as a checked-clean disclosure that was never checked.
+GitHub's declared `changed_files` is read and reported beside the two counts as a cross-check that
+never refuses. Its **commit binding** (#5122): the bytes come from the object database at the bound
+commit, because a hit list read at a head nobody scoped is under- or over-reported against the
+disclosure it is printed beside — and it fails open, answering `none-declared` at exit 0.
 
 **Exit status**
 
@@ -718,7 +724,7 @@ beside — and it fails open, answering `none-declared` at exit 0.
 | `10` | `--sha` is not a head SHA |
 | `11` | the PR body or the diff could not be read, or the commit could not be bound — the disclosure state is UNKNOWN |
 | `12` | `--sha` is not the PR's head — re-scope, never re-bind |
-| `13` | the diff for the Tier-M scan is provably incomplete — a partial scan must not print beside a `None.` |
+| `13` | the Tier-M scan is provably incomplete — the diff scanned at the bound commit carries fewer files than the file list git reports for the same range, and a partial scan must not print beside a `None.` |
 
 **Errors**
 
@@ -729,10 +735,13 @@ beside — and it fails open, answering `none-declared` at exit 0.
 | `review deviations: PR #<n>'s head is <live>, not <sha> — the tree you scoped is not the one under review; re-scope at <live> (ADR 0058).` | 12 | refusal |
 | `review deviations: <what> — the artifact cannot be bound to a commit, so what it shows is UNKNOWN.` | 11 | refusal |
 | `review deviations: cannot read #<n>'s body or diff: <reason> — the disclosure state is UNKNOWN, never "none".` | 11 | refusal |
-| `review deviations: the diff for #<n> is truncated (<k> of <m> files) — refusing a partial Tier-M scan beside a disclosure claim.` | 13 | refusal |
+| `review deviations: cannot read the file list of the range <base>...<head> for #<n>: <reason> — the disclosure state is UNKNOWN, never "none".` | 11 | refusal |
+| `review deviations: the scan at <sha> covers <k> of the <m> files git lists for the same range <base>...<head> — both counts from git, so these bytes are provably short of the range they were read from; refusing a partial Tier-M scan beside a disclosure claim.` | 13 | refusal |
 
-**Scope** — one PR body's `## Deviations` section plus the bound commit's diff for the Tier-M
-token scan.
+**Scope** — one PR body's `## Deviations` section plus the bound commit's diff for the Tier-M token
+scan, completeness-checked against the file list git reports for the same range. The bound commit,
+the scanned file count, that range count and GitHub's declared changed-file count (reported as a
+cross-check, never refused on) go to stderr on the answer path.
 Whether the PR *owes* the section, and whether an entry's substance covers a finding (Tier R),
 are the skill's judgment; this verb reports states and facts, never the §DEV verdict row.
 
@@ -759,6 +768,10 @@ tier-m	removed-assertion	src/cart.test.ts:14	expect(renderTotal(10)).toBe("10.00
 - "A `deviation-disclosure: PASS` means 'nothing undisclosed that this gate could see'" — the M
   tier is exactly what this gate *can* see deterministically; the verb is that clause's
   mechanical floor.
+- #5157 — the completeness denominator is a second local-git read of the same range, not GitHub's
+  declared `changed_files`: GitHub computes over its own merge base with its own rename detection,
+  which counts two files where git's list carries one path. So the disagreement is reported in the
+  diagnostics and never refused on, and the `13` rests on git alone.
 
 ---
 
