@@ -98,7 +98,7 @@ navigation is the same defect as a blocked first paint, arriving later.
 | `prefers-reduced-motion` | honored by the shared layer, not per component | LAW — manifest, Design-sync authority (the behavioral spine is code-authoritative) |
 | Shipped reduced-motion baseline | `animation-duration: 0.01ms`, `animation-iteration-count: 1`, `transition-duration: 0.01ms`, `scroll-behavior: auto` — global reset in [`global.css`](https://github.com/kamp-us/phoenix/blob/main/apps/web/src/styles/global.css) | LAW — global.css |
 | Hover motion | gated behind `@media (hover: hover) and (pointer: fine)` | CRAFT |
-| Meaning carried by motion | never motion alone — the state must also be readable when motion is off | LAW — Pillar 4, "never signal state or meaning by color alone" (the same rule, one modality over) |
+| Meaning carried by motion | never motion alone — the state must also be readable when motion is off | LAW — Pillar 4, "never signal state or meaning by motion alone" (the manifest's own prohibition, per ADR 0223 — no longer an analogy to the colour rule) |
 | Focus ring during motion | `--focus-ring` + `--focus-ring-offset`, never a hand-rolled per-component `outline` | LAW — Pillar 4 |
 
 **Known divergence (surface, do not resolve locally).** The adopted craft holds that reduced
