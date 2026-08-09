@@ -57,13 +57,15 @@ export const SHARED_SEATS: SharedSeats = {
  *
  * `review` and `triage` leave `4` a deliberate gap because neither performs a section check;
  * `build pr` does — a body with no `## Deviations` block is that same fact — so the seat is claimed
- * rather than re-invented one code higher.
+ * rather than re-invented one code higher. `epic` claims the identical nine: `epic open` reads the
+ * same fact off an epic body with no parseable planned ledger.
  */
 export const BUILD_SEATS: SharedSeats = {...SHARED_SEATS, BAD_SECTIONS: "BAD_SECTIONS"};
 
 /** The groups that align to {@link ALIGNMENT_BASE}, each with the seats it claims to share. */
 export const ALIGNED_GROUPS: Readonly<Record<string, SharedSeats>> = {
 	build: BUILD_SEATS,
+	epic: BUILD_SEATS,
 	triage: SHARED_SEATS,
 	review: SHARED_SEATS,
 	ship: SHARED_SEATS,
