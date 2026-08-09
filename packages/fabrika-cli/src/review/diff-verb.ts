@@ -3,9 +3,9 @@
  * silently passed through.
  *
  * This verb is not a relay, and two proofs are why. **Completeness:** a diff carrying fewer files
- * than the PR declares is refused, because a gate that judged the visible prefix as the whole PR is
- * the #3925 blind-PASS class one layer down; v1's `pr-diff.sh` was the relay, and nothing checked
- * what it served. This is not a guard against a truncating platform: the diff media type refuses an
+ * than git lists for the same range is refused, because a gate that judged the visible prefix as the
+ * whole PR is the #3925 blind-PASS class one layer down; v1's `pr-diff.sh` was the relay, and
+ * nothing checked what it served. This is not a guard against a truncating platform: the diff media type refuses an
  * over-limit diff rather than serving a short one, and these bytes never come from it — see
  * `diff.ts` for what the proof does and does not cover (#4993). **Provenance:** the bytes come from
  * the object database at the bound commit via `diffRange`, never from an endpoint that takes a PR
@@ -64,9 +64,10 @@ export const runDiff = (
 		}
 		const diff = served.value;
 
-		// The denominator is a second read of the SAME range under the SAME flags — `--name-only -z`
-		// emits exactly one path per `diff --git` entry, renames paired identically — so the proof
-		// compares one git computation against another. GitHub's `changed_files` is its own merge base
+		// Both operands of the refusal below come from git over the SAME range under the SAME flags —
+		// `--name-only -z` emits exactly one path per `diff --git` entry, renames paired identically —
+		// so rename pairing and merge-base choice cancel instead of being compared across systems. What
+		// that does and does not prove is in `diff.ts`. GitHub's `changed_files` is its own merge base
 		// and its own rename detection, so it is reported below and never refused on (#5139).
 		const listed = yield* diffRangePaths(head.base, head.sha);
 		if (listed._tag === "Failure") {

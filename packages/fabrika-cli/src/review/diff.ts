@@ -3,9 +3,19 @@
  * removed line sits.
  *
  * **The completeness proof is the file count, and only the file count.** The bytes are local
- * `git diff <base>...<head>` at the bound commit (`diff-verb.ts`, #5117), so the proof compares the
- * `diff --git` header count against the PR's declared `changed_files` and a short one is refused:
- * serving a prefix as the whole PR is the #3925 blind-PASS class one layer down.
+ * `git diff <base>...<head>` at the bound commit (`diff-verb.ts`, #5117), and the denominator is a
+ * second read of that same range — `git diff --name-only -z`, which emits one path per `diff --git`
+ * entry — so both counts come from git over one range under one set of flags, and rename pairing and
+ * merge-base choice cancel instead of being compared across systems (#5139). GitHub's declared
+ * `changed_files` is still read and reported beside them, and never refused on: it is a third
+ * party's answer over its own merge base and its own rename detection.
+ *
+ * What that proves is narrow, and worth stating at its real precision: the scanned bytes carry **at
+ * least as many** entries as the `--name-only` read lists. It is a cardinality test, never an
+ * entry-identity one — it does not establish that the two reads name the same files, and it does not
+ * establish that the range is the right range, so a fault that shortens both reads alike stays
+ * invisible to it. A short count is refused because serving a prefix as the whole PR is the #3925
+ * blind-PASS class one layer down.
  *
  * No truncation marker is matched, because there is nothing to match. `application/vnd.github.diff`
  * does not truncate — over its limits it refuses with HTTP 406 and `errors[].code = "too_large"`,
