@@ -325,11 +325,18 @@ jobs:
             # unregistered format, a hand-edited generated region), so a law homed only
             # under `packages/**` would be half-blind in the direction it is most
             # needed: the registry-side edit runs it, the doc-side edit skips it.
+            # `claude-plugins/fabrika/hooks.json` is listed for the same reason as the v1
+            # hooks dir above: the fabrika hook surface's golden test reads that file and
+            # runs the argv it declares (envelope.golden.test.ts). Without it, an edit to
+            # the declaration — the one place a hook command can stop being a plain
+            # literal, or start naming something outside fabrika — skips the only gate
+            # that would catch it.
             packages:
               - 'packages/**'
               - 'infra/**'
               - 'claude-plugins/kampus-pipeline/hooks/**'
               - 'claude-plugins/fabrika/docs/**'
+              - 'claude-plugins/fabrika/hooks.json'
               - 'pnpm-workspace.yaml'
               - 'tsconfig*.json'
               - 'pnpm-lock.yaml'
