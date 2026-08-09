@@ -114,8 +114,17 @@ export const partitionWithUi = (files: ReadonlyArray<string>): ShipPartition => 
 export const shipNamespacesOf = (result: ShipPartition): ReadonlyArray<string> =>
 	result.classes.map((entry) => `review-${entry.name}`);
 
-/** The closed namespace vocabulary `ship gate --require` admits. */
-export const SHIP_NAMESPACES: ReadonlyArray<string> = SHIP_CLASS_NAMES.map((n) => `review-${n}`);
+/**
+ * The closed namespace vocabulary `ship gate --require` admits.
+ *
+ * Wider than the review classes, and additively so: `governance` is a namespace no file class
+ * derives, but a namespace `ship gate` cannot require is one that only fires when a session
+ * remembers to fire it (#5199).
+ */
+export const SHIP_NAMESPACES: ReadonlyArray<string> = [
+	...SHIP_CLASS_NAMES.map((n) => `review-${n}`),
+	"governance",
+];
 
 /**
  * The linked issue, from the PR body's first closing keyword.

@@ -564,7 +564,7 @@ answer this contract bans.
 | Code | Trigger |
 |---|---|
 | `7` | the PR is proven absent (404) or closed |
-| `10` | a `--require` value is not a known review namespace |
+| `10` | a `--require` value is not a known gateable namespace |
 | `11` | the comments, reviews, or ACL could not be read — the conjunction is UNKNOWN, never `blocked`, never `satisfied` |
 | `13` | the comment enumeration is provably short of the declared count, or the review read — for which the platform declares no count — never reached a terminal page |
 
@@ -574,7 +574,7 @@ answer this contract bans.
 |---|---|---|
 | `ship gate: PR #<n> not found in <repo>.` | 7 | refusal |
 | `ship gate: PR #<n> is closed — nothing to gate.` | 7 | refusal |
-| `ship gate: --require <v> is not a review namespace (known: review-code, review-doc, review-skill, review-ui).` | 10 | refusal |
+| `ship gate: --require <v> is not a gateable namespace (known: review-code, review-doc, review-skill, review-ui, governance).` | 10 | refusal |
 | `ship gate: cannot read <what> for #<n>: <reason> — the conjunction is UNKNOWN.` | 11 | refusal |
 | `ship gate: received <k> of <m> comments — refusing the partial resolution.` | 13 | refusal |
 | `ship gate: the review read never reached a terminal page — pagination is unexhausted, so the native-review fold would rest on a truncated set; refusing the partial resolution.` | 13 | refusal |

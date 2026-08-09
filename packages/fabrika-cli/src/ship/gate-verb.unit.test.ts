@@ -191,7 +191,20 @@ describe("runGate", () => {
 	it("refuses an off-vocabulary --require on 10", async () => {
 		const out = await run([[PULL, pull()]], {require: ["review-vibes"]});
 		expect(out.code).toBe(OFF_VOCABULARY);
-		expect(out.stderr.at(-1)).toContain("is not a review namespace");
+		expect(out.stderr.at(-1)).toContain("is not a gateable namespace");
+	});
+
+	it("admits --require governance and gates on it like any other namespace (#5199)", async () => {
+		const out = await run(
+			[
+				[PULL, pull()],
+				[COMMENTS, comments()],
+				[REVIEWS, reviews()],
+			],
+			{require: ["governance"]},
+		);
+		expect(out.code).not.toBe(OFF_VOCABULARY);
+		expect(out.stdout).toBe([`gate\tblocked\t${HEAD}`, "ns\tgovernance\tabsent\t-", ""].join("\n"));
 	});
 
 	it("refuses a truncated comment sweep on 13", async () => {

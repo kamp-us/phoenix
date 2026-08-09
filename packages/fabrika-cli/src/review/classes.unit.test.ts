@@ -1,5 +1,12 @@
 import {describe, expect, it} from "vitest";
-import {classOf, linkedIssueOf, namespacesOf, partition} from "./classes.ts";
+import {
+	classOf,
+	linkedIssueOf,
+	namespacesOf,
+	partition,
+	SHIP_CLASS_NAMES,
+	SHIP_NAMESPACES,
+} from "./classes.ts";
 
 describe("classOf", () => {
 	it("puts every claude-plugins and .claude path in skill", () => {
@@ -60,6 +67,14 @@ describe("partition", () => {
 	it("derives one namespace per present class, as a set the caller cannot forget", () => {
 		expect(namespacesOf(partition(["a.ts", "b.md"]))).toEqual(["review-code", "review-doc"]);
 		expect(namespacesOf(partition(["b.md"]))).toEqual(["review-doc"]);
+	});
+});
+
+describe("SHIP_NAMESPACES", () => {
+	it("still admits every review class, and now governance too (#5199)", () => {
+		for (const name of SHIP_CLASS_NAMES) expect(SHIP_NAMESPACES).toContain(`review-${name}`);
+		expect(SHIP_NAMESPACES).toContain("governance");
+		expect(SHIP_NAMESPACES).toHaveLength(SHIP_CLASS_NAMES.length + 1);
 	});
 });
 
