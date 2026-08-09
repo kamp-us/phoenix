@@ -119,7 +119,7 @@ Stated once rather than repeated per block.
 
 ### The shared exit taxonomy
 
-All six verbs allocate from one internal table (`packages/fabrika-cli/src/governance/codes.ts`), so
+All seven verbs allocate from one internal table (`packages/fabrika-cli/src/governance/codes.ts`), so
 a code means one thing across *this group*. Every shared seat is **imported**, never restated as a
 numeral — a restated numeral is a second source that can drift silently, and an import cannot.
 Import exactly as `packages/fabrika-cli/src/review/codes.ts` does, from the modules that actually own
@@ -128,7 +128,7 @@ each meaning:
 | Seat | Import from | Shipped constant |
 |---|---|---|
 | `3` `5` `6` `7` `8` `9` `11` | `packages/fabrika-cli/src/report/codes.ts` | `EMPTY_STDIN`, `LEAKED_PATH`, `BARE_AT_PATH`, `NO_TARGET` (re-exported here as `ZERO_SCOPE`, the same rename `review` uses), `WRITE_UNKNOWN`, `READBACK_MISMATCH`, `PRECONDITION_UNKNOWN` |
-| `10` | `packages/fabrika-cli/src/triage/codes.ts` | `OFF_VOCABULARY` — **not** `report`'s `10`, which is `CLASSIFIED` ("the title or `--label` carries a type or priority classification", `report file` only) and means something else entirely |
+| `10` | `packages/fabrika-cli/src/triage/codes.ts` | `OFF_VOCABULARY`. The numeral is shared — `triage` re-exports `report`'s `CLASSIFIED` under this name — but import it **from `triage`**, because `report`'s `CLASSIFIED` means "the title or `--label` carries a type or priority classification" (`report file` only), which is not what this group proves. `review/codes.ts` imports it from `triage` for exactly this reason. |
 | `12` `13` | `packages/fabrika-cli/src/review/codes.ts` | `STALE_HEAD`, `INCOMPLETE_SCAN` — imported because this group proves the same two facts |
 | `4` | declared locally as `DELIBERATE_GAP = 4` | the same shape `review/codes.ts` ships, so the gap is registered rather than silently absent |
 | `14` | this group's own | see below |
@@ -187,15 +187,17 @@ locally and do not import it** — an implementer who imports `14` from `review`
 
 ### The commit binding runs before every read (#5117, #5122, #4163)
 
-`governance scope`, `governance sweep` and `governance guards` serve the artifact a governance
-verdict is formed over, so **the bytes come from a named commit, not from an endpoint that takes a
-pull-request number and no commit at all.** A push landing between scoping and reading otherwise
-serves the new head's artifact under the old head's SHA, and the result is a confident verdict over
-text nobody judged. All three run one shared binding step
+`governance scope`, `governance sweep`, `governance guards` and `governance base` serve the artifact
+a governance verdict is formed over, so **the bytes come from a named commit, not from an endpoint
+that takes a pull-request number and no commit at all.** A push landing between scoping and reading
+otherwise serves the new head's artifact under the old head's SHA, and the result is a confident
+verdict over text nobody judged. All four run one shared binding step
 (`packages/fabrika-cli/src/governance/head.ts`, modelled on the shipped
 `packages/fabrika-cli/src/review/head.ts` and importing `bindHead` from it) before any artifact read:
 
 1. An explicit `--sha` must be **the PR's head**, or the verb refuses on `12`. Malformed is `10`.
+   `governance base` takes no `--sha`: it resolves the merge base itself and re-resolves the live
+   head, and its `12` refuses when that head moved mid-resolve.
 2. A configured git remote must serve the target repo, `pull/<pr>/head` must **fetch**, the commit
    must resolve in the object database, and `git rev-parse` must resolve it to *itself*. The base ref
    must resolve too, since a diff is a range. Any of these unmet is `11`, naming what is UNKNOWN.
@@ -390,7 +392,7 @@ record	0240	added	.decisions/0240-only-landed-adrs-may-be-cited.md
 
 ```
 $ fabrika governance scope 4400 --json
-{"outcome":"not-required","head":"9f2c1a77b0e4d3586a1c9042bb7731ee5c0d18af","roots":[],"self":false,"records":[],"scanned":6}
+{"outcome":"not-required","head":"9f2c1a77b0e4d3586a1c9042bb7731ee5c0d18af","roots":[],"self":false,"base":"c4e0aa1b7f39d2860b5417ce9a0d3f7712bb64e8","records":[],"scanned":6}
 ```
 
 **Grounding**
