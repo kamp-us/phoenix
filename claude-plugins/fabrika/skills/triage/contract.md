@@ -25,7 +25,7 @@ makes the implementer guess ([#4734](https://github.com/kamp-us/phoenix/issues/4
 |---|---|---|
 | `triage queue` | the claimable `status:needs-triage` queue, with the count it scanned | paginating a label query and separating a proven-empty queue from a failed read is mechanical; which issue to take is judgment |
 | `triage claim` | take a session-scoped claim on one issue, proven by read-back | a marker write plus an earliest-claim tiebreak is a protocol, not a decision |
-| `triage provenance` | was this issue filed by an agent or hand-typed by a human | a structural marker test over a fetched body — an empty body fails closed to `human`, an unreadable one refuses rather than guessing; what to *do* about a human filing stays in the skill |
+| `triage provenance` | was this issue reported by an agent or hand-typed by a human | a structural marker test over a fetched body, plus a membership test over the configured operator set — an empty body fails closed to `human`, an unreadable one refuses rather than guessing; what to *do* about a human filing stays in the skill |
 | `triage homes` | the assignable homes — open milestones joined to their ROADMAP rows, plus the standing lanes | the join and the open-milestone filter are mechanical; picking which home fits is judgment |
 | `triage split` | create one split child, once, keyed on the parent back-reference | idempotency keyed on a durable reference is mechanical; deciding a report *is* a bundle is judgment |
 | `triage enrich` | replace the body with your rewrite — or, for an epic, your pitch — over a preserved, leak-redacted original | envelope assembly, redaction and read-back are mechanical; what the rewrite says is judgment |
@@ -333,9 +333,9 @@ $ fabrika triage queue --json
 
 - ADR 0092 — a read whose scope is zero reds rather than answering. v1's `list-queue.sh` had no such
   check and its empty output *was* the sweep's termination test.
-- v1 `list-queue.sh` prints `(.user.login)` on every row — the filer. ADR 0159 makes authorship
-  unusable, since every report-filed issue shows the same account. This verb omits it, and
-  `triage provenance` answers the question that field pretends to.
+- v1 `list-queue.sh` prints `(.user.login)` on every row — the filer. A bare login on a queue row is
+  not a provenance verdict: it takes the footer *and* the configured operator set to reach one, which
+  is `triage provenance`'s job. This verb omits the column and defers to that verb.
 - v1 paginated neither this read nor `list-open-milestones.sh`; the latter silently capped home
   candidates at GitHub's default 30 while "nothing fits" routed to a standing lane or a kill.
 
@@ -496,10 +496,25 @@ fabrika triage provenance 4312 [--repo <owner/name>] [--json]
 | `--json` | boolean | no | `false` | emit the result object |
 
 **Output** — machine channel. One line: `agent` or `human`. With `--json`, an object with keys
-`outcome`, `marker` (boolean — was the agent footer present), and `reason`.
+`outcome`, `marker` (boolean — was the agent footer present), `operator` (boolean — was the author a
+configured operator account), and `reason`. `marker` and `operator` stay separate fields because
+they are separate facts: an `agent` answer with `marker: false` is the ruling below firing, and a
+caller chasing the emitter gap needs to see which one decided.
 
-**The signal is the agent footer, not the author.** Every report-filed issue shows the same account,
-so authorship carries no information (ADR 0159).
+**Two agent signals, and the second one is config-bound.** ADR 0159 made the footer the signal
+because every filing showed the same account, so authorship carried no information. The founder's
+2026-08-09 ruling on #4619 narrows that: a filing authored by an account in the **operator set** is
+agent-reported whether or not the footer is present, because footer-absence there reflects the
+emitter gap #4619 tracks, not a human author. Footer-absence from **any other author** is unchanged
+— still human-owned, still never auto-closed.
+
+**The operator set is an input, resolved from `$FABRIKA_OPERATOR_ACCOUNTS`** (comma- or
+whitespace-separated logins, a leading `@` tolerated, compared case-insensitively). It is a *set*
+rather than one account because the operator runs more than one, and it is configuration rather than
+a literal in source because a GitHub handle baked into a released package is an operator identity
+leaking into a shared artifact (#2393) — and a set nobody can widen without a release. **Unset or
+blank yields the empty set**, which reduces the verb to ADR 0159's footer-only rule: a missing config
+can never make a filing newly close-eligible.
 
 **The footer's shape, from the emitter.** `report file` composes it with `renderFooter`
 (`packages/fabrika-cli/src/report/compose.ts`), which emits `` `---\n<sub>` `` then the present fields
@@ -533,14 +548,19 @@ land on `human`, which is the protected one. The divergence is stated so a later
 | `triage provenance: issue #<n> not found in <repo>.` | 7 | refusal |
 | `triage provenance: cannot read #<n> in <repo>: <reason> — the provenance is UNKNOWN; refusing to default it.` | 11 | refusal |
 | `triage provenance: #<n> has an empty body — answering human (fail-closed).` | 0 | notice |
+| `triage provenance: #<n> in <repo> — the author is a configured operator account, so the filing is agent-reported whether or not the footer is present (#4619 ruling).` | 0 | notice |
 
-**Scope** — one issue body, read as typed JSON rather than through `jq -r .body`, which errors on the
-unescaped control characters GitHub issue bodies carry and yields empty in a loop.
+**Scope** — one issue's body and its author login, read as typed JSON rather than through
+`jq -r .body`, which errors on the unescaped control characters GitHub issue bodies carry and yields
+empty in a loop. A payload carrying no author reads as the empty login, which is never a member of
+the operator set — so an unreadable author degrades to the footer-only rule, the protected direction.
 
 **A present-but-empty body answers `human`; an unreadable one refuses.** Those are different facts
 and this verb keeps them apart. An empty body is a measurement: the body is there, it carries no
 footer, and the protective reading of "no footer" is `human`, because the only irreversible act
-downstream is a kill. The stderr notice says the answer was defaulted, so a caller can tell a
+downstream is a kill. The author is tested **first**, so an operator's empty-bodied filing answers
+`agent` — the ruling is about who filed it, not how much it says, and `--confirm` is still the guard
+on the close. The stderr notice says the answer was defaulted, so a caller can tell a
 measured `human` from a fail-closed one. An **unreadable** body is not a measurement at all, and
 answering `human` over it would be a verdict manufactured from a failed read — the same fusion the
 `7`/`11` split exists to prevent. The protection survives either way: `triage kill` refuses on a
@@ -560,12 +580,23 @@ human
 
 ```
 $ fabrika triage provenance 4312 --json
-{"outcome":"agent","marker":true,"reason":"the 'Filed by an agent' marker is present in the body"}
+{"outcome":"agent","marker":true,"operator":false,"reason":"the 'Filed by an agent' marker is present in the body"}
+```
+
+```
+$ FABRIKA_OPERATOR_ACCOUNTS=<operator-login> fabrika triage provenance 5111
+agent
 ```
 
 **Grounding**
 
-- ADR 0159 — filing provenance, not authorship, is the signal.
+- ADR 0159 — filing provenance, not authorship, is the signal. Its premise, that authorship is
+  unusable because every filing shows one shared account, is what the #4619 ruling narrows: the
+  operator's own account is now a *positive* agent signal, and only that account.
+- Founder ruling on #4619, 2026-08-09 — an issue filed under the operator's own account is
+  agent-reported and close-eligible, footer or no footer; unchanged for a genuine third-party human
+  filing. It settles a live cost: filings were parked at `status:needs-info` on footer-absence alone
+  and then closed by hand anyway (#5098, #5111).
 - v1 has **no tool for this at all**: "never close a human-filed issue" is 48 lines of prose across
   `SKILL.md` and `close-not-planned.md`, with nothing computing it, while `list-queue.sh` puts the
   meaningless filer login in front of the agent on every row. The highest-stakes, least-reversible
@@ -1610,12 +1641,16 @@ caller can read as one: exit `13`, with a message naming what to do. An earlier 
 distinct protection on each half; a spec that implements one and drops the other has narrowed an
 accepted decision.
 
-1. **Footer absent ⇒ human-owned ⇒ PROTECTED.** The verb runs the `triage provenance` predicate
-   itself rather than trusting the caller to have run it — including its anchored line match. A
-   `human` answer, including the fail-closed default on an **empty** body, refuses on exit `12`. An
-   **unreadable** body is exit `11`, not a `human` verdict: the kill is refused either way, but a
-   caller must never be told the issue was measured as human-filed when nothing was measured.
-2. **Footer present ⇒ eligible *after confirmation*, and "the confirmation step IS the guard."**
+1. **No agent signal ⇒ human-owned ⇒ PROTECTED.** The verb runs the `triage provenance` predicate
+   itself rather than trusting the caller to have run it — the anchored footer match **and** the
+   operator-account test, both from the one definition. A `human` answer — no footer *and* an author
+   outside `$FABRIKA_OPERATOR_ACCOUNTS`, including the fail-closed default on an **empty** body —
+   refuses on exit `12`. When the operator set is unconfigured the refusal carries a stderr notice
+   saying so, because otherwise "the config is empty" and "this really is a human filing" produce an
+   identical refusal. An **unreadable** body is exit `11`, not a `human` verdict: the kill is refused
+   either way, but a caller must never be told the issue was measured as human-filed when nothing was
+   measured.
+2. **An agent signal ⇒ eligible *after confirmation*, and "the confirmation step IS the guard."**
    A human-invoked `/report` also emits the footer, so footer presence alone is **not** licence to
    close — ADR 0159 reserves a confirmation-free close-sweep as an explicitly re-opened question.
    `--confirm` is that step made structural: without it the verb refuses on exit `13`, so an
@@ -1638,7 +1673,7 @@ location, with the leak matcher literally named for comments.
 | `8` | one of the four writes failed — the message names what did and did not land |
 | `9` | the writes landed but the read-back does not show a not-planned close |
 | `11` | the issue body, the duplicate, or the label set could not be read — no kill was attempted |
-| `12` | refused: the issue is human-filed |
+| `12` | refused: the issue is human-filed — no agent footer and no operator author |
 | `13` | refused: agent-filed and close-eligible, but `--confirm` was absent (ADR 0159) |
 
 **Errors**
@@ -1660,6 +1695,7 @@ location, with the leak matcher literally named for comments.
 | `triage kill: applying closed-by-triage to #<n> failed: <reason> — the fold and the reason comment landed; #<n> is still OPEN and invisible to the kill audit. Apply the label by hand, or delete the landed comments and re-run.` | 8 | refusal |
 | `triage kill: closing #<n> failed: <reason> — the fold, the reason and closed-by-triage all landed; #<n> is still OPEN and fully annotated. Close it by hand with state_reason=not_planned, or delete the landed comments and re-run.` | 8 | refusal |
 | `triage kill: closed, but the read-back shows state_reason=<observed>, not not_planned — #<n> reads as done rather than killed.` | 9 | refusal |
+| `triage kill: no operator accounts are configured (FABRIKA_OPERATOR_ACCOUNTS is unset), so a footerless filing reads human whoever authored it.` | 12 | notice |
 | `triage kill: redacted <k> machine-local path(s) from the folded duplicate body.` | 0 | notice |
 
 **Write order is the auditability guarantee.** Fold the duplicate content, post the reason comment,
@@ -1676,8 +1712,8 @@ comments are live, re-running duplicates them". An earlier revision covered only
 read-back asserts `state` is `closed` **and** `state_reason` is `not_planned`, because a plain
 `closed` reads as "done", not "killed".
 
-**Scope** — one issue and its body, the repository's label set, plus the surviving issue when
-`--duplicate-of` is given.
+**Scope** — one issue with its body and author login, the repository's label set, plus the surviving
+issue when `--duplicate-of` is given.
 
 **Examples**
 
@@ -1713,7 +1749,8 @@ $ fabrika triage kill 4312 --confirm --json < reason.md
   public comment with no leak pass, while `fetch-original.sh:30` redacts on the other path. One
   emitter, always redacting, removes the asymmetry.
 - ADR 0159 / v1 Step 5 — human-filed issues are never auto-closed. v1 stated it in 48 lines of prose
-  and computed it nowhere.
+  and computed it nowhere. The #4619 ruling narrows *who counts as human-filed*, not the protection:
+  a footerless filing from a non-operator is as protected as it ever was.
 - v1 `audit-kills.sh` — the compensating control for the whole kill path — reads one unpaginated
   page, so it goes blind past 30 kills with no truncation signal. This spec does not re-mint that
   verb; the audit belongs to a board surface, and the fail-closed write order above is what makes a

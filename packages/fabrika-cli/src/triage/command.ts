@@ -107,7 +107,7 @@ const kill = leafCommand(
 	}),
 ).pipe(
 	Command.withDescription(
-		"Close an agent-filed issue not-planned over four gated writes — the optional redacted duplicate fold, the reason from STDIN, the closed-by-triage label, then the close — and read back that it says not_planned. Prints `killed\\t<number>\\t<foldedInto|none>`. Exits 3 (empty stdin), 5 (machine-local path in the reason), 6 (bare @ reference), 7 (issue absent or closed, duplicate absent or closed, or no closed-by-triage label), 8 (a write failed — UNKNOWN), 9 (read-back is not a not-planned close), 11 (a precondition read failed), 12 (human-filed), 13 (unconfirmed). Example: fabrika triage kill 4312 --confirm --duplicate-of 4290 < reason.md",
+		"Close an agent-filed issue not-planned over four gated writes — the optional redacted duplicate fold, the reason from STDIN, the closed-by-triage label, then the close — and read back that it says not_planned. Prints `killed\\t<number>\\t<foldedInto|none>`. Exits 3 (empty stdin), 5 (machine-local path in the reason), 6 (bare @ reference), 7 (issue absent or closed, duplicate absent or closed, or no closed-by-triage label), 8 (a write failed — UNKNOWN), 9 (read-back is not a not-planned close), 11 (a precondition read failed), 12 (human-filed — no agent footer and no operator author, see $FABRIKA_OPERATOR_ACCOUNTS), 13 (unconfirmed). Example: fabrika triage kill 4312 --confirm --duplicate-of 4290 < reason.md",
 	),
 );
 
@@ -304,7 +304,7 @@ const provenance = leafCommand(
 	}),
 ).pipe(
 	Command.withDescription(
-		"Say whether an issue was filed by an agent or typed by a human, from the agent footer rather than the author — every report-filed issue shows the same account (ADR 0159). Prints `agent` or `human`; an empty body answers `human` fail-closed, an unreadable one refuses. Exits 7 (issue proven absent), 11 (unreadable — the provenance is UNKNOWN, never `human`). Example: fabrika triage provenance 4312",
+		"Say whether an issue was reported by an agent or typed by a human. Two agent signals: the anchored `Filed by an agent` footer (ADR 0159), or an author in the operator set named by $FABRIKA_OPERATOR_ACCOUNTS — an operator's own filing is agent-reported footer or not (#4619 ruling). Prints `agent` or `human`; with no operator set configured this is the footer-only rule, a footerless non-operator filing answers `human`, an empty body answers `human` fail-closed, an unreadable one refuses. Exits 7 (issue proven absent), 11 (unreadable — the provenance is UNKNOWN, never `human`). Example: fabrika triage provenance 4312",
 	),
 );
 

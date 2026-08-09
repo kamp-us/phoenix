@@ -151,6 +151,14 @@ export interface IssueRecord {
 	readonly labels: ReadonlyArray<string>;
 	readonly url: string;
 	/**
+	 * The filing account's login, or `""` when the payload carried none.
+	 *
+	 * `""` is the fail-closed value on purpose: the provenance predicate reads this field, and an
+	 * empty login can never be a member of the configured operator set, so an unreadable author
+	 * falls back to the footer-only test — the protected direction.
+	 */
+	readonly author: string;
+	/**
 	 * The assigned milestone's number, or `null` for an unhomed issue.
 	 *
 	 * A home write cannot be proven from the labels, so a read-back that does not carry this field
@@ -163,7 +171,7 @@ export interface IssueRecord {
 
 const toIssueRecord = (value: unknown): IssueRecord | null => {
 	if (!isRecord(value)) return null;
-	const {number, title, body, state, labels, html_url: url, milestone, state_reason} = value;
+	const {number, title, body, state, labels, html_url: url, milestone, state_reason, user} = value;
 	if (typeof number !== "number" || typeof title !== "string" || typeof url !== "string") {
 		return null;
 	}
@@ -178,6 +186,7 @@ const toIssueRecord = (value: unknown): IssueRecord | null => {
 		state: typeof state === "string" ? state : "",
 		labels: names as ReadonlyArray<string>,
 		url,
+		author: isRecord(user) && typeof user.login === "string" ? user.login : "",
 		milestone:
 			isRecord(milestone) && typeof milestone.number === "number" ? milestone.number : null,
 		stateReason: typeof state_reason === "string" ? state_reason : null,

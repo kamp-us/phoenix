@@ -6,9 +6,10 @@
  * HTTP 200 with `[]` — so the label's existence is checked against the repository's label set and a
  * typo reds on {@link ZERO_SCOPE} rather than reporting the queue drained.
  *
- * The filer login the read this replaces printed on every row is deliberately absent: every
- * report-filed issue shows the same account, so it carries no information (ADR 0159). `triage
- * provenance` answers the question that field pretends to.
+ * The filer login the read this replaces printed on every row is deliberately absent: a bare login
+ * is not a provenance verdict — reaching one takes the agent footer *and* the configured operator
+ * set, which is `./provenance.ts`'s job. `triage provenance` answers the question that field
+ * pretends to.
  */
 import {Effect} from "effect";
 import {listLabels, openQueueIssues, type QueueIssue, resolveRepo} from "../io/issues.ts";
