@@ -18,3 +18,4 @@ This directory is the home; the docs themselves land as the foundation epic's la
 | [authoring-brief contract](authoring-brief-contract.md) | the boot document a stateless `/skill-creator` session works from | #4655 |
 | [wire formats](wire-formats.md) | the index of the byte-level agreements two skills meet through — format → owner module → producers/consumers, with the protocol narrative and none of the shape | #4945 |
 | [§CP classification](control-plane-classification.md) | the ruled control-plane model every §CP-computing verb implements and every §CP-mentioning skill is held to — CODEOWNERS as single source, three-valued, `UNKNOWN` fails closed, no semantic detection | #4932 |
+| [hook surface](hook-surface.md) | which piece of v1's Claude Code hook layer enters fabrika and in what form — the grading-record format, plus one recorded verdict per graded v1 piece | #5076 |
