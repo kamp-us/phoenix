@@ -11,6 +11,7 @@ import {
 	UNALIGNED_GROUPS,
 } from "./exit-code-alignment.ts";
 import * as hook from "./hook/codes.ts";
+import * as ledger from "./ledger/codes.ts";
 import * as plan from "./plan/codes.ts";
 import * as report from "./report/codes.ts";
 import * as review from "./review/codes.ts";
@@ -31,6 +32,7 @@ const TABLES: Readonly<Record<string, CodeTable>> = {
 	build,
 	epic,
 	hook,
+	ledger,
 	plan,
 	report,
 	review,

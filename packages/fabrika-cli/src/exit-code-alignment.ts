@@ -98,6 +98,7 @@ export const ALIGNED_GROUPS: Readonly<Record<string, SharedSeats>> = {
 	build: BUILD_SEATS,
 	hook: HOOK_SEATS,
 	epic: BUILD_SEATS,
+	ledger: BUILD_SEATS,
 	plan: BUILD_SEATS,
 	triage: SHARED_SEATS,
 	review: SHARED_SEATS,
