@@ -24,25 +24,9 @@
  */
 import {Effect, Result} from "effect";
 import * as Schema from "effect/Schema";
-import {reconstructSpend, type StageSpend} from "../spend/token-spend.ts";
+import {classifyRunSpend, type RunSpend} from "../spend/token-spend.ts";
 import {type CorpusEntry, type CorpusManifest, type LiveStage, STAGES} from "./corpus.ts";
 import {type Grade, gradeEntry} from "./oracle.ts";
-
-/**
- * One run's token spend, as one of three distinct outcomes — never a nullable `StageSpend`, so a
- * zero can never be fabricated where a measurement is missing.
- *
- * `NoBilledTurns` is the third: a transcript that exists and parses cleanly but carries **zero**
- * billed assistant turns, which reconstructs to a genuine, well-formed zero indistinguishable from a
- * free run. That is not hypothetical — a `claude -p` run whose skill failed to resolve writes
- * exactly such a transcript, and `token-spend` reports all-zeros at exit 0 (measured on 2.1.220,
- * #4673 §6). Folding it into `Reconstructed` would put the fabricated zero back that this union
- * exists to keep out.
- */
-export type RunSpend =
-	| {readonly _tag: "Reconstructed"; readonly spend: StageSpend}
-	| {readonly _tag: "NoBilledTurns"}
-	| {readonly _tag: "TranscriptMissing"};
 
 /** One graded run row: the corpus entry, its grade against the label, and its token spend. */
 export interface RunRow {
@@ -72,13 +56,6 @@ export const collectRun = (input: RunInput): RunRow => ({
 	grade: gradeEntry(input.entry, input.artifact),
 	spend: classifyRunSpend(input.transcript),
 });
-
-/** Resolve a transcript to one of the three `RunSpend` outcomes. Pure + total. */
-export const classifyRunSpend = (transcript: string | null): RunSpend => {
-	if (transcript === null) return {_tag: "TranscriptMissing"};
-	const spend = reconstructSpend(transcript);
-	return spend.assistantTurns === 0 ? {_tag: "NoBilledTurns"} : {_tag: "Reconstructed", spend};
-};
 
 /**
  * Offline/replay entry point (story 6): collect a graded `{entry, grade, spend}` row per supplied

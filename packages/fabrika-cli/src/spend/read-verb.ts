@@ -7,14 +7,13 @@
  * The three refusals below are the point of the verb. A measurement that cannot be made must not
  * resolve to a plausible zero, so "the transcript is not there", "the transcript could not be read"
  * and "the transcript was read in full and billed nothing" stay three distinct exit codes — the same
- * split `../eval/runner.ts` draws with its `RunSpend` union, which is why the classification is
- * borrowed from there rather than restated.
+ * split `token-spend.ts`'s `RunSpend` union draws, which is why the classification is borrowed from
+ * there rather than restated.
  */
 import {Effect, type FileSystem, Result} from "effect";
-import {classifyRunSpend} from "../eval/runner.ts";
 import {exists, readFile} from "../io/fs.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
-import type {StageSpend} from "./token-spend.ts";
+import {classifyRunSpend, type StageSpend} from "./token-spend.ts";
 
 const VERB = "fabrika spend read";
 
