@@ -534,6 +534,49 @@ The core is [`src/spend/rollup.ts`](./src/spend/rollup.ts), pure and total: it s
 `readSpendLedger` result over a resolved window and groups it three ways.
 [`src/spend/rollup-verb.ts`](./src/spend/rollup-verb.ts) is the IO around it.
 
+## The `ui` group
+
+What the visual modality adds to a construction lane — the verbs
+[`build-ui`](../../claude-plugins/fabrika/skills/build-ui/SKILL.md) drives
+([#5061](https://github.com/kamp-us/phoenix/issues/5061), spec:
+[`contract.md`](../../claude-plugins/fabrika/skills/build-ui/contract.md)). The lane mechanics are
+the `build` group's, reused as-is; this group is only what rendering adds.
+
+```
+ui manifest                                   # the repo's design surfaces, by convention
+ui law                                        # the typed prohibition registry, schema-validated
+ui render --out after --surface /pano         # render + capture one validated PNG per surface
+ui golden --surface /pano [--candidate <png>]  # resolve the blessed golden, diff a candidate
+ui evidence --pr 4318 --before before --after after   # upload, verify, post, read back
+```
+
+Four things about it are load-bearing:
+
+- **A verb's ceiling is the golden diff.** No `ui` verb emits a PASS/FAIL token, a composition
+  score, or any judgement over pixels — the rendered-surface verdict is `review-ui`'s gate
+  ([#4718](https://github.com/kamp-us/phoenix/issues/4718)), and everything that *looks* at an image
+  is the skill's, not a verb's (founder ruling, 2026-08-09). `ui golden` measures; it never decides.
+- **Everything the group reads is a convention path in the repo it runs in** —
+  `design-system-manifest.md`, `design-prohibitions.json`, `design-harness.json`,
+  `packages/design-capture/golden-pointer.json` — never a hardcoded URL. That is what makes the
+  group portable: phoenix is one instance of a repo it reads, not the repo it knows.
+- **The headless browser is provisioned by installing the package.** `postinstall` runs
+  [`scripts/provision-browser.mjs`](./scripts/provision-browser.mjs), so no operator and no agent
+  ever runs a browser-install step by hand. It is best-effort and never fails the install; it skips
+  when the browser is already there, when `PLAYWRIGHT_BROWSERS_PATH` names a managed install, when
+  `CI` is set (CI images bake their own), or on `FABRIKA_SKIP_BROWSER_PROVISION=1`. A run that then
+  finds no browser exits `11` **carrying the exact remediation command** — never a silent skip.
+- **Absence is answered three ways, never one.** A missing manifest is `12` (un-bootstrapped, route
+  to front-door), a missing registry is `13` (the law is untyped, prose is the source), and an
+  unreadable one is `11` (UNKNOWN) — the skill's prose fallback is legal only in the middle case.
+  The same split runs through `ui golden`: a pointer that could not be read is never an empty
+  blessed set ([#4501](https://github.com/kamp-us/phoenix/issues/4501)).
+
+`ui render` and `ui evidence` both guard the lane precondition (`18` proven-not-mine, `11`
+unreadable); `ui manifest`, `ui law` and `ui golden` are pure reads and take none. Evidence is
+all-or-nothing: one failed upload or upload-verification is `17` with **nothing posted**
+([#3925](https://github.com/kamp-us/phoenix/issues/3925)).
+
 ## The capture machinery
 
 Not a verb group — a **library subpath**, `@kampus/fabrika-cli/capture`. It is the
@@ -555,9 +598,9 @@ ships the machine, never a repo's goldens.
 Three consequences worth knowing before you install it:
 
 - **`@playwright/test` is a hard dependency**, inherited from the machinery, so a fabrika
-  install pulls it in even for a caller that never captures. The browser binary is still a
-  separate `playwright install chromium`, so the capture path fails loudly on a machine
-  without it rather than silently.
+  install pulls it in even for a caller that never captures. The browser binary rides the
+  install too — see [the `ui` group](#the-ui-group)'s provisioning note — and a run on a machine
+  where that did not complete fails loudly, with the remediation command, rather than silently.
 - **Storing golden bytes is an injected `StoreLeg`, not a dependency.** A repo's goldens live
   in its own asset store, so anything naming a host or a credential stayed with the consuming
   repo — phoenix keeps that half in `packages/design-capture/`. This package owns the shape and
@@ -567,8 +610,8 @@ Three consequences worth knowing before you install it:
   private.
 - **The capture bin is still phoenix's** — `node packages/design-capture/src/bin.ts capture …`,
   unchanged. It is a v1 caller, not the adopter-facing surface; the adopter-facing surface is the
-  `ui` verb group, which is [#5061](https://github.com/kamp-us/phoenix/issues/5061)'s work. This
-  move deliberately changed no behavior.
+  `ui` verb group ([#5061](https://github.com/kamp-us/phoenix/issues/5061)) — see
+  [the `ui` group](#the-ui-group). This move deliberately changed no behavior.
 
 ## Development
 

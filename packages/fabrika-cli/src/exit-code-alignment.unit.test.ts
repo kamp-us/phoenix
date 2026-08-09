@@ -16,6 +16,7 @@ import * as review from "./review/codes.ts";
 import * as reviewUi from "./review-ui/codes.ts";
 import * as ship from "./ship/codes.ts";
 import * as triage from "./triage/codes.ts";
+import * as ui from "./ui/codes.ts";
 import * as wire from "./wire/codes.ts";
 
 const SRC_DIR = fileURLToPath(new URL(".", import.meta.url));
@@ -34,6 +35,7 @@ const TABLES: Readonly<Record<string, CodeTable>> = {
 	"review-ui": reviewUi,
 	ship,
 	triage,
+	ui,
 	wire,
 };
 
