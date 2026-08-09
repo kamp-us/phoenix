@@ -302,6 +302,30 @@ describe("validateLedger — each defect type", () => {
 		// a childless epic produces the zero-scope=fail self-assertion (ADR 0092)
 		for (const t of typesOf(ledger({epic: epic({stories: []}), children: []}))) produced.add(t);
 
+		// the pool-barrier pair (#4693): an unobserved assignee slot, and a `ready-for:human`
+		// child whose slot is observed and empty
+		for (const t of typesOf(
+			ledger({
+				epic: epic({dependencies: graph({nodes: [101], edges: []})}),
+				children: [child(101, {assignees: undefined})],
+			}),
+		)) {
+			produced.add(t);
+		}
+		for (const t of typesOf(
+			ledger({
+				epic: epic({dependencies: graph({nodes: [101], edges: []})}),
+				children: [
+					child(101, {
+						labels: ["type:feature", "p1", "status:planned", "ready-for:human"],
+						assignees: [],
+					}),
+				],
+			}),
+		)) {
+			produced.add(t);
+		}
+
 		for (const t of DEFECT_TYPES) {
 			assert.isTrue(produced.has(t), `expected defect type ${t} to be producible`);
 		}
@@ -491,5 +515,92 @@ describe("validateLedger — zero-scope=fail self-assertion (ADR 0092)", () => {
 		const types = validateLedger(l).map((d) => d.type);
 		assert.notInclude(types, "ZERO_SCOPE");
 		assert.include(types, "ZERO_AC");
+	});
+});
+
+/**
+ * The pool barrier (#4693), tested as single-field mutants off one clean baseline.
+ *
+ * Each case changes exactly one field of `heldBaseline()` and asserts the WHOLE defect
+ * list — not `include` — so a mutant that died for some unrelated reason fails the
+ * assertion instead of scoring as caught. The baseline's own zero-defect assertion is
+ * what makes that reading valid.
+ */
+const HELD_LABELS = ["type:feature", "p1", "status:planned", "ready-for:human"];
+
+const heldLedger = (assignees: ReadonlyArray<string> | undefined): EpicLedger =>
+	ledger({
+		epic: epic({stories: [1], dependencies: graph({nodes: [101], edges: []})}),
+		children: [child(101, {labels: HELD_LABELS, assignees})],
+	});
+
+const heldBaseline = (): EpicLedger => heldLedger(["a-human"]);
+
+describe("validateLedger — the write-code pool barrier (#4693)", () => {
+	it("baseline: a `ready-for:human` child that IS assigned is clean", () => {
+		assert.deepStrictEqual(validateLedger(heldBaseline()), []);
+	});
+
+	it("mutant 1 — drop the assignee: HELD_CHILD_UNASSIGNED, and nothing else", () => {
+		assert.deepStrictEqual(validateLedger(heldLedger([])), [
+			{
+				type: "HELD_CHILD_UNASSIGNED",
+				message:
+					"Child #101 is `ready-for:human` but has no assignee; the flip would put it in `write-code`'s candidate pool, which selects `.assignee == null` (#4693).",
+				refs: [101],
+			},
+		]);
+	});
+
+	it("mutant 2 — unobserve the assignee slot: UNVERIFIABLE_ASSIGNEE, and nothing else", () => {
+		assert.deepStrictEqual(validateLedger(heldLedger(undefined)), [
+			{
+				type: "UNVERIFIABLE_ASSIGNEE",
+				message:
+					'Child #101 carries no observation of its assignee slot, so the pool barrier could not be checked; an unread field is UNKNOWN, never "unassigned is fine" (ADR 0092).',
+				refs: [101],
+			},
+		]);
+	});
+
+	it("mutant 3 — unobserve the slot on an agent-audience child: still UNVERIFIABLE, never a skip", () => {
+		// The defect class this closes: a check that cannot see what it is looking for must not
+		// return a plausible value. Absence of `ready-for:human` is NOT a licence to stop looking,
+		// because the label itself is part of what went unread on a narrowed payload.
+		const mutant = ledger({
+			epic: epic({stories: [1], dependencies: graph({nodes: [101], edges: []})}),
+			children: [child(101, {assignees: undefined})],
+		});
+		assert.deepStrictEqual(
+			validateLedger(mutant).map((d) => d.type),
+			["UNVERIFIABLE_ASSIGNEE"],
+		);
+	});
+
+	it("no false positive: an unassigned agent-audience child is clean (it is meant to be picked)", () => {
+		const l = ledger({
+			epic: epic({stories: [1], dependencies: graph({nodes: [101], edges: []})}),
+			children: [
+				child(101, {
+					labels: ["type:feature", "p1", "status:planned", "ready-for:agent"],
+					assignees: [],
+				}),
+			],
+		});
+		assert.deepStrictEqual(validateLedger(l), []);
+	});
+
+	it("the barrier has scope on every ledger: it is checked per child, not per brief", () => {
+		// AC3's scope predicate. A guard scoped to "find the brief issues" would have zero scope
+		// until briefs exist and would red on itself (ADR 0092); this one's scope is the ledger's
+		// children, which `ZERO_SCOPE` already guarantees is non-empty whenever the floor runs.
+		const l = ledger({
+			epic: epic({stories: [1], dependencies: graph({nodes: [101, 102], edges: []})}),
+			children: [child(101, {assignees: undefined}), child(102, {assignees: undefined})],
+		});
+		assert.deepStrictEqual(
+			validateLedger(l).map((d) => d.refs[0]),
+			[101, 102],
+		);
 	});
 });

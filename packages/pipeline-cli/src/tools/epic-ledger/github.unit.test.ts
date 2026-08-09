@@ -19,11 +19,15 @@ const epicJson = {
 	].join("\n"),
 };
 
-const childJson = (number: number, body: string, labels: string[]) => ({
+// `assignees: []` is what REST actually returns for an unassigned issue — the key is
+// always present. A fixture that omitted it would be decoding a payload GitHub does not
+// send, and would quietly exercise the unobserved-slot path instead of the real one.
+const childJson = (number: number, body: string, labels: string[], assignees: string[] = []) => ({
 	number,
 	title: `child #${number}`,
 	labels: labels.map((name) => ({name})),
 	body,
+	assignees: assignees.map((login) => ({login})),
 });
 
 describe("decodeEpicLedger — the GitHub trust boundary", () => {
@@ -69,6 +73,43 @@ describe("decodeEpicLedger — the GitHub trust boundary", () => {
 			assert.deepStrictEqual(ledger.epic.stories, []);
 			assert.strictEqual(ledger.children[0]?.acceptanceCriteriaCount, 0);
 			assert.strictEqual(ledger.children[0]?.stories, undefined);
+		}),
+	);
+
+	// The three states of the assignee slot (#4693). The decode is where "unassigned" and
+	// "never read" stop being the same value, so it is where they get separate tests.
+	it.effect("an assigned child decodes its logins; an unassigned one decodes an empty list", () =>
+		Effect.gen(function* () {
+			const ledger = yield* decodeEpicLedger({
+				epic: epicJson,
+				children: [
+					childJson(101, "**Stories:** 1\n- [ ] ac", ["type:feature"], ["a-human"]),
+					childJson(102, "**Stories:** 2\n- [ ] ac", ["type:feature"]),
+				],
+			});
+			assert.deepStrictEqual(ledger.children[0]?.assignees, ["a-human"]);
+			assert.deepStrictEqual(ledger.children[1]?.assignees, []);
+		}),
+	);
+
+	it.effect("an absent or null `assignees` key decodes to UNOBSERVED, never to unassigned", () =>
+		Effect.gen(function* () {
+			const {assignees: _absent, ...noKey} = childJson(101, "**Stories:** 1\n- [ ] ac", [
+				"type:feature",
+			]);
+			const ledger = yield* decodeEpicLedger({
+				epic: epicJson,
+				children: [noKey, {...childJson(102, "**Stories:** 2\n- [ ] ac", []), assignees: null}],
+			});
+			assert.strictEqual(ledger.children[0]?.assignees, undefined);
+			assert.strictEqual(ledger.children[1]?.assignees, undefined);
+			// and the floor says so out loud rather than passing the narrowed payload
+			assert.deepStrictEqual(
+				validateLedger(ledger)
+					.filter((d) => d.type === "UNVERIFIABLE_ASSIGNEE")
+					.map((d) => d.refs[0]),
+				[101, 102],
+			);
 		}),
 	);
 

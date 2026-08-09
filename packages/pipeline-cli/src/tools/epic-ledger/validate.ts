@@ -29,6 +29,14 @@ const PRIORITY_LABELS = ["p0", "p1", "p2"] as const;
 const NEEDS_TRIAGE_LABEL = "status:needs-triage";
 const FEATURE_LABEL = "type:feature";
 
+/**
+ * The audience label a child carries when a *human* picks it up — a fabrika authoring
+ * brief being the case that forced it (#4693, founder ruling #4780). Its counterpart
+ * `ready-for:agent` needs no check: an agent-audience child is *supposed* to reach the
+ * pool.
+ */
+const HELD_FOR_HUMAN_LABEL = "ready-for:human";
+
 const hasPrefixedLabel = (labels: ReadonlyArray<string>, prefix: string): boolean =>
 	labels.some((l) => l.startsWith(prefix));
 
@@ -175,6 +183,28 @@ export const validateLedger = (ledger: EpicLedger): ReadonlyArray<Defect> => {
 			defects.push({
 				type: "MISSING_CONTAINMENT",
 				message: `Child #${child.number} is \`type:feature\` but carries no \`**Containment:**\` marker; every feature child must declare \`flag (default-off)\` or \`exempt (<reason>)\` (ADR 0091).`,
+				refs: [child.number],
+			});
+		}
+
+		// The pool barrier (#4693). The flip below this gate is unconditional by design and
+		// stays that way: it makes every `status:planned` child `status:triaged`. So the only
+		// attribute that can keep a child out of `write-code`'s candidate pool is the one the
+		// flip never touches — the assignee (`step1-candidate-pool.sh` selects
+		// `.assignee == null`). Checking it here is what makes a PASS carry information: the
+		// gate exposes a child only after verifying its board state matches its declared
+		// audience. The scope is every child in the ledger, so it is non-empty on the first
+		// run and on every run (zero children already returned `ZERO_SCOPE` above).
+		if (child.assignees === undefined) {
+			defects.push({
+				type: "UNVERIFIABLE_ASSIGNEE",
+				message: `Child #${child.number} carries no observation of its assignee slot, so the pool barrier could not be checked; an unread field is UNKNOWN, never "unassigned is fine" (ADR 0092).`,
+				refs: [child.number],
+			});
+		} else if (child.labels.includes(HELD_FOR_HUMAN_LABEL) && child.assignees.length === 0) {
+			defects.push({
+				type: "HELD_CHILD_UNASSIGNED",
+				message: `Child #${child.number} is \`${HELD_FOR_HUMAN_LABEL}\` but has no assignee; the flip would put it in \`write-code\`'s candidate pool, which selects \`.assignee == null\` (#4693).`,
 				refs: [child.number],
 			});
 		}
