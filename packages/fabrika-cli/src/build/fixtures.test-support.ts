@@ -88,6 +88,10 @@ export const candidates = (
 		),
 	);
 
+/** A `ROADMAP.md` whose `## Focus` table declares one milestone — the fence, switched on. */
+export const focusTable = (milestone: number, declared = "2026-08-09"): string =>
+	`# Roadmap\n\n## Focus\n\n| Milestone | Declared |\n|-----------|------------|\n| #${milestone} | ${declared} |\n\n## Arcs\n`;
+
 /** The claim marker body a session posts. */
 export const marker = (session: string, uuid: string): string =>
 	`build-claim: build:${session}:${uuid} · 2026-08-09T00:00:00Z`;

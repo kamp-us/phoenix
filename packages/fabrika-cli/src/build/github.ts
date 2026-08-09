@@ -16,7 +16,7 @@ import {
 	type Existence,
 	httpStatusOf,
 	present,
-	splitJsonArrays,
+	scanJsonPages,
 	unknown,
 } from "../io/issues.ts";
 import {isRecord, parseJson} from "../io/json.ts";
@@ -56,6 +56,12 @@ const toCandidate = (value: unknown): CandidateIssue | null => {
  * Typed JSON rather than a `--jq` projection: the filter reads five axes off each row, and a `jq`
  * filter that errors mid-stream on one odd entry shortens the list silently — which is exactly the
  * truncation the caller refuses on.
+ *
+ * `--paginate` asks for every page; **this read proves it got them.** A stream that stops mid-page —
+ * a killed `gh`, a severed transport, a `jq` that died between rows — leaves stdout ending inside a
+ * value, and a scan that only collects the pages that *closed* returns a short list on exit 0: a
+ * partial board that reads as the whole board. Unaccounted bytes are therefore a failure here, which
+ * the pool seats as `11`.
  */
 export const listLabelled = (
 	repo: string,
@@ -68,8 +74,10 @@ export const listLabelled = (
 			`repos/${repo}/issues?state=open&labels=${encodeURIComponent(labels.join(","))}&per_page=100`,
 		]);
 		if (!r.ok) return fail(r.reason);
+		const scanned = scanJsonPages(r.stdout);
+		if (scanned.truncated !== null) return fail(scanned.truncated);
 		const rows: CandidateIssue[] = [];
-		for (const page of splitJsonArrays(r.stdout)) {
+		for (const page of scanned.pages) {
 			const parsed = parseJson(page);
 			if (!Array.isArray(parsed)) {
 				return fail("`gh api` exited 0 but its output is not a list of issues");
@@ -244,8 +252,10 @@ export const listReviews = (
 			`repos/${repo}/pulls/${pr}/reviews?per_page=100`,
 		]);
 		if (!r.ok) return fail(r.reason);
+		const scanned = scanJsonPages(r.stdout);
+		if (scanned.truncated !== null) return fail(scanned.truncated);
 		const rows: ReviewRecord[] = [];
-		for (const page of splitJsonArrays(r.stdout)) {
+		for (const page of scanned.pages) {
 			const parsed = parseJson(page);
 			if (!Array.isArray(parsed)) {
 				return fail("`gh api` exited 0 but its output is not a list of reviews");

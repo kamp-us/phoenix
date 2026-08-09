@@ -13,15 +13,27 @@
  *
  * A loser retracts its **own** marker and nothing else — never another lane's, which is the one write
  * this protocol must never make.
+ *
+ * **`claim` runs the admission test before it writes anything; `confirm` and `release` never run it.**
+ * The fence decides what may *start* (ADR 0245), so a focus row edited mid-lane must not strand a
+ * running lane or block its release. Claiming is the one moment every path goes through — a number
+ * handed straight to `claim` passes through no pool — which is why the refusal has teeth here and is
+ * advice at the pool.
  */
-import {Effect} from "effect";
+import {Effect, type FileSystem} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import {createComment, deleteComment, getComment} from "../io/issues.ts";
+import {createComment, deleteComment, getComment, type IssueRecord} from "../io/issues.ts";
 import {normalizeForReadback} from "../report/compose.ts";
-import {answer, refuse, type VerbOutcome} from "../verb.ts";
+import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {composeMarker, readMarkerToken, requireSession, resolveOwnership} from "./claim.ts";
 import {CLAIM_NOT_MINE, PRECONDITION_UNKNOWN, READBACK_MISMATCH, WRITE_UNKNOWN} from "./codes.ts";
 import {composeToken} from "./lane.ts";
+import {
+	admissionOf,
+	admissionRefusal,
+	focusScopeLine,
+	readDeclaredFocus,
+} from "./scope-admission.ts";
 import {openIssue, resolveTargetRepo} from "./target.ts";
 
 export interface ClaimOptions {
@@ -32,16 +44,23 @@ export interface ClaimOptions {
 	readonly uuid: string;
 	/** The marker's human-readable ISO-8601 timestamp. The tiebreak uses GitHub's `created_at`. */
 	readonly at: string;
+	/** Why this run claims an issue the admission test refused, or `null` for the ordinary path. */
+	readonly override: string | null;
 }
 
-export type ProtocolOptions = Omit<ClaimOptions, "uuid" | "at">;
+export type ProtocolOptions = Omit<ClaimOptions, "uuid" | "at" | "override">;
 
 const preflight = (
 	verb: string,
 	options: ProtocolOptions,
 ): Effect.Effect<
 	| {readonly _tag: "Refused"; readonly outcome: VerbOutcome}
-	| {readonly _tag: "Ready"; readonly repo: string; readonly session: string},
+	| {
+			readonly _tag: "Ready";
+			readonly repo: string;
+			readonly session: string;
+			readonly issue: IssueRecord;
+	  },
 	never,
 	ChildProcessSpawner.ChildProcessSpawner
 > =>
@@ -58,22 +77,63 @@ const preflight = (
 				`${verb}: cannot read #${options.number}: ${reason} — ownership is UNKNOWN, never "unclaimed".`,
 		);
 		if (target._tag === "Refused") return {_tag: "Refused" as const, outcome: target.outcome};
-		return {_tag: "Ready" as const, repo: resolved.repo, session: session.id};
+		return {
+			_tag: "Ready" as const,
+			repo: resolved.repo,
+			session: session.id,
+			issue: target.issue,
+		};
 	});
 
 const CLAIM = "build claim";
 
 export const runClaim = (
 	options: ClaimOptions,
-): Effect.Effect<VerbOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
+): Effect.Effect<
+	VerbOutcome,
+	never,
+	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem
+> =>
 	Effect.gen(function* () {
+		if (options.override !== null && options.override.trim() === "") {
+			return refuse(
+				FAILED,
+				`${CLAIM}: --override was given with an empty reason — an override is recorded or it is not one.`,
+			);
+		}
 		const ready = yield* preflight(CLAIM, options);
 		if (ready._tag === "Refused") return ready.outcome;
 		const {repo, session} = ready;
 		const {number} = options;
 
+		const read = yield* readDeclaredFocus();
+		if (read._tag === "Unreadable") {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${CLAIM}: cannot read the "## Focus" declaration: ${read.reason} — scope is UNKNOWN, never admitted; nothing was written.`,
+			);
+		}
+		const scopeLine = focusScopeLine(CLAIM, read.focus);
+		const admission = admissionOf(read.focus, ready.issue);
+		const refusal = admissionRefusal(CLAIM, admission);
+		// An override answers a PROVEN refusal. UNKNOWN has proven nothing, so there is nothing to
+		// override — a fence that could not read its input must not be talked past by a flag.
+		const overridable = admission._tag === "OutOfFocus" || admission._tag === "AudienceNotAgent";
+		if (refusal !== null && !(overridable && options.override !== null)) {
+			return {
+				...refusal,
+				stderr: [
+					scopeLine,
+					...refusal.stderr,
+					`${CLAIM}: nothing was written — #${number} carries no marker from this run${
+						overridable ? '; pass --override "<reason>" to claim it anyway' : ""
+					}.`,
+				],
+			};
+		}
+
 		const token = composeToken(session, options.uuid);
-		const body = composeMarker(token, options.at);
+		const body = composeMarker(token, options.at, options.override);
 		const posted = yield* createComment(repo, number, body);
 		if (posted._tag === "Failure") {
 			return refuse(
@@ -92,10 +152,13 @@ export const runClaim = (
 
 		// The checkpoint: posting DETECTS a race, this re-read RESOLVES it.
 		const {ownership, unauthorized} = yield* resolveOwnership(repo, number, session);
-		const notes = unauthorized.map(
-			(marker) =>
-				`${CLAIM}: comment ${marker.commentId} carries a claim marker from "${marker.author}", who holds no write permission — counted, never a winner.`,
-		);
+		const notes = [
+			scopeLine,
+			...unauthorized.map(
+				(marker) =>
+					`${CLAIM}: comment ${marker.commentId} carries a claim marker from "${marker.author}", who holds no write permission — counted, never a winner.`,
+			),
+		];
 		if (ownership._tag === "Unknown") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
@@ -104,7 +167,15 @@ export const runClaim = (
 			);
 		}
 		if (ownership._tag === "Mine") {
-			return answer(JSON.stringify({answer: "won", number, token}), notes);
+			return answer(
+				JSON.stringify({
+					answer: "won",
+					number,
+					token,
+					...(options.override === null ? {} : {override: options.override}),
+				}),
+				notes,
+			);
 		}
 
 		// Lost, or shadowed by an unauthorized-only thread: retract this run's OWN marker, nothing else.
