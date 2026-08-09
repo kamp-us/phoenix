@@ -159,7 +159,7 @@ export const runGate = (
 		if (offVocabulary !== undefined) {
 			return refuse(
 				OFF_VOCABULARY,
-				`${VERB}: --require ${offVocabulary} is not a review namespace (known: ${SHIP_NAMESPACES.join(", ")}).`,
+				`${VERB}: --require ${offVocabulary} is not a gateable namespace (known: ${SHIP_NAMESPACES.join(", ")}).`,
 			);
 		}
 

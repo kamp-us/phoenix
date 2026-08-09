@@ -2,7 +2,7 @@
  * The `review-ui` namespace against the registered `verdict-marker` wire format.
  *
  * The implementation ticket flagged "one registry-side enum addition" as owed. It is not: the
- * format gates the namespace with a **pattern**, `^(review|check-epic-plan)(-[a-z0-9]+)*$`, not a
+ * format gates the namespace with a **pattern**, `^(review|check-epic-plan|governance)(-[a-z0-9]+)*$`, not a
  * closed vocabulary, and `review-ui` already satisfies it. This test is that finding held in place —
  * a future narrowing of the pattern reds here rather than silently making this group's every
  * verdict unreadable.

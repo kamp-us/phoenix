@@ -65,6 +65,26 @@ describe("runScope", () => {
 		expect(out.stdout).toContain("class\tui\t1");
 	});
 
+	it("prints governance beside the class namespaces when the diff touches a governance root", async () => {
+		const out = await run([
+			[PULL, pull()],
+			[FILES, files(".decisions/0244-corpus-review.md", "README.md")],
+			[OWNERS, okOut(CODEOWNERS)],
+		]);
+		expect(out.stdout).toContain("namespace\tgovernance");
+		// One class here, so the whole namespace block is exactly these two lines, in this order.
+		expect(out.stdout).toContain(["namespace\treview-doc", "namespace\tgovernance"].join("\n"));
+	});
+
+	it("prints no governance line for a diff under no governance root", async () => {
+		const out = await run([
+			[PULL, pull()],
+			[FILES, files("apps/web/src/App.tsx", "README.md")],
+			[OWNERS, okOut(CODEOWNERS)],
+		]);
+		expect(out.stdout).not.toContain("governance");
+	});
+
 	it("reports a merged PR as an ANSWER, not a refusal", async () => {
 		const out = await run([
 			[PULL, pull({merged: true, state: "closed", changedFiles: 1})],

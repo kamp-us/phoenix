@@ -146,6 +146,50 @@ describe("read — the check-epic-plan namespace", () => {
 	});
 });
 
+/**
+ * The governance namespace, widened additively (#5199).
+ *
+ * `ship scope` already derives `governance` as a required namespace, so a format that cannot carry
+ * it leaves every governance-root PR permanently `blocked` at `ship gate` with no second door. The
+ * cases below are the two halves of that claim: the namespace round-trips, and every reading this
+ * format already gave is byte-for-byte unchanged — the widening may only *add* readable markers.
+ */
+describe("read — the governance namespace", () => {
+	it("round-trips a governance verdict through emit and read", () => {
+		const result = read(
+			emit({namespace: "governance", polarity: "PASS", sha: sha(HEAD), clause: text("clean")}),
+		);
+		expect(result._tag).toBe("Found");
+		if (result._tag !== "Found") return;
+		expect(result.value.namespace).toBe("governance");
+		expect(result.value.sha).toBe(HEAD);
+	});
+
+	it("reads a hand-written governance marker, the only door until `governance post` exists", () => {
+		expect(read(`**governance: PASS @ ${HEAD} — corpus clean**\n`)._tag).toBe("Found");
+	});
+
+	it("leaves every namespace this format already read exactly as it read them", () => {
+		for (const namespace of ["review", "review-code", "review-doc", "review-skill", "review-ui"]) {
+			const parsed = read(`${namespace}: PASS @ ${HEAD} — merge-ready\n`);
+			expect(parsed._tag).toBe("Found");
+			expect(parsed._tag === "Found" ? parsed.value.namespace : "").toBe(namespace);
+		}
+		expect(read(`check-epic-plan: FAIL @ ${HEAD} — 1 defect\n`)._tag).toBe("Found");
+		expect(read(`review_code: PASS @ ${HEAD} — merge-ready\n`)._tag).toBe("Malformed");
+		expect(read(`reviewcode: PASS @ ${HEAD} — merge-ready\n`)._tag).toBe("Malformed");
+		expect(read(`ship: PASS @ ${HEAD} — done\n`)._tag).toBe("Absent");
+	});
+
+	it("still answers Absent for a namespace that only rhymes with this one", () => {
+		expect(read(`govern: PASS @ ${HEAD} — done\n`)._tag).toBe("Absent");
+	});
+
+	it("answers Malformed, never Found, for a governance namespace that drifted", () => {
+		expect(read(`governance_corpus: PASS @ ${HEAD} — done\n`)._tag).toBe("Malformed");
+	});
+});
+
 describe("read — Malformed: the drifts a lenient reader answers `PASS` for", () => {
 	const DRIFTS = [
 		drift("no SHA at all", "review-code: PASS — merge-ready"),
