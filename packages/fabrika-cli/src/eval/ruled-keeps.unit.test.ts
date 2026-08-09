@@ -3,6 +3,8 @@ import {Result} from "effect";
 import type {IncidentProvenance} from "./incident-provenance.ts";
 import {
 	decodeRuledKeeps,
+	publishedFigure,
+	publishedFigureViolations,
 	type RuledKeeps,
 	renderKeeps,
 	ruledKeepsViolations,
@@ -161,6 +163,57 @@ describe("summarize", () => {
 			covered: 1,
 			uncovered: 1,
 		});
+	});
+});
+
+describe("publishedFigure", () => {
+	it("is computed from the rows, so it moves when membership moves", () => {
+		const one = decode(file([member(1)]));
+		const two = decode(
+			file([
+				member(1),
+				member(2),
+				{...member(4180), status: "pending", pendingReason: "retracted"},
+			]),
+		);
+		assert.strictEqual(publishedFigure(one), "1 members plus 0 pending");
+		assert.strictEqual(publishedFigure(two), "2 members plus 1 pending");
+	});
+});
+
+describe("publishedFigureViolations", () => {
+	const figure = "66 members plus 1 pending";
+
+	it("holds on a surface that publishes the derived figure and no discredited one", () => {
+		assert.deepStrictEqual(
+			publishedFigureViolations("doc.md", `The corpus is ${figure} today.`, figure),
+			[],
+		);
+	});
+
+	it("reds when the surface publishes a figure the enumeration no longer supports", () => {
+		const violations = publishedFigureViolations(
+			"doc.md",
+			"The corpus is 65 members plus 2 pending today.",
+			figure,
+		);
+		assert.deepStrictEqual(violations, [
+			"doc.md: does not publish the enumerated figure '66 members plus 1 pending'",
+		]);
+	});
+
+	it("reds on a copy of the discredited cardinality even beside the right figure", () => {
+		const violations = publishedFigureViolations(
+			"doc.md",
+			`Pull rows from the 74-issue KEEP corpus. The corpus is ${figure}.`,
+			figure,
+		);
+		assert.deepStrictEqual(violations, ["doc.md: asserts the discredited '74-issue KEEP corpus'"]);
+	});
+
+	it("does not red on the ruling's size being narrated as superseded history", () => {
+		const text = `#4642 published its size as 74; the enumeration says ${figure}.`;
+		assert.deepStrictEqual(publishedFigureViolations("doc.md", text, figure), []);
 	});
 });
 

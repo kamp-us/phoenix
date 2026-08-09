@@ -54,11 +54,18 @@ brief that says "rebuild this" has specified nothing; the fields below are the s
 
 ### 3. Incidents — what the rebuild must not regress
 
-The rows from the **74-issue KEEP corpus** that bear on this skill, each as a number plus the
-one-line behavior it records. The corpus is the fabrika eval feedstock ruled at 74 on
-[#4642](https://github.com/kamp-us/phoenix/issues/4642) (the per-issue verdict table lives on
-[#4634](https://github.com/kamp-us/phoenix/issues/4634)); it is the pipeline's observed scar tissue,
-kept precisely because each row is a real incident encodable as a regression case.
+The rows from the **ruled KEEP corpus** that bear on this skill, each as a number plus the
+one-line behavior it records. The corpus is the fabrika eval feedstock — the pipeline's observed
+scar tissue, kept precisely because each row is a real incident encodable as a regression case —
+and it is a file you **read**, not a join you re-run:
+[`ruled-keeps.json`](../../../packages/fabrika-cli/src/eval/incident-corpus/ruled-keeps.json)
+enumerates it at **66 members plus 1 pending**, and `fabrika eval keeps` prints it with the cases
+that already pin each row.
+[#4642](https://github.com/kamp-us/phoenix/issues/4642) ruled the corpus and published its size as
+74; that figure double-counts the 7 borderline items, and the enumeration supersedes it
+([#4823](https://github.com/kamp-us/phoenix/issues/4823)). #4642 and the per-issue verdict table on
+[#4634](https://github.com/kamp-us/phoenix/issues/4634) remain the enumeration's provenance, which
+`ruled-keeps.json` records in its own `derivation`.
 
 This is the field that makes a stateless session safe. Without it the session re-derives the skill
 from its purpose alone and silently re-opens every hole the v1 skill closed the hard way — which is
@@ -67,7 +74,7 @@ the one thing a first-principles rebuild is most likely to do.
 Two rules keep the field honest:
 
 - **Cite by number, with the behavior stated.** "See the corpus" is not a list. A session cannot
-  open 74 issues and guess which four are its own.
+  open the whole corpus and guess which four are its own.
 - **A skill with no corpus rows says so explicitly.** An empty list and an unwritten list read the
   same on the page and mean opposite things.
 
@@ -223,7 +230,7 @@ doc, and this example pre-commits none of `/adr`'s design.
 (181 lines, plus `scripts/`). Reference only — read it for the problem and the scars, not for the
 shape. Do not port its scripts (#4638).
 
-**Incidents this rebuild must not regress** (74-issue KEEP corpus, #4642):
+**Incidents this rebuild must not regress** (ruled KEEP corpus, `ruled-keeps.json`; #4642):
 
 | Issue | Recorded behavior |
 |---|---|
