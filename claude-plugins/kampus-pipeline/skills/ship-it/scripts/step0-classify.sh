@@ -153,4 +153,4 @@ if [ -z "$CLASS_OUT" ]; then
 fi
 # One class word per line, `has-ui` last when the diff renders a surface — the probe's own emission
 # order, passed through unaltered. Carry THIS set into Step 2 (which re-derives it from the same verb).
-printf '%s\n' "$CLASS_OUT"
+printf '%s\n' "$CLASS_OUT" | grep -v '^has-code$'
