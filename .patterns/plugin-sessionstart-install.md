@@ -70,13 +70,46 @@ The chain is asserted end to end by `packages/pipeline-cli/src/pin-dispatch.hook
 
 **Why the fail-open is non-negotiable (#1050 / #777):** a worktree-creation hook fires with a stripped PATH on a fresh/stale tree, possibly before any install ran. If that hook *crashed* instead of no-op'ing, it would abort the spawn for **all lanes** through the shared `.git/hooks` — the #787/#788/#789 incident class. The fail-open wrapper is the single thing standing between a not-yet-installed CLI and an all-lanes spawn abort. The resilience lives in the **wrapper**, not in each guard — the consolidated `pipeline-cli` dropped the old per-guard `bin.run.ts`/`preflight.ts` stale-tree shim precisely because the wrapper (CLI-absent → no-op) + the bundled-deps install (CLI-present → deps already resolved) replace it.
 
+## The long-running sweep is dispatched, never run inline (#4998)
+
+`SessionStart` hooks run **on the critical path to the first message**, so a hook that scans is a
+hook that makes every launch and resume wait. The orphaned-worktree sweep used to be wired inline as
+`guard.sh worktree-sweep --execute` and cost 52–66s on a checkout with 255 registered worktrees —
+paid at every launch, on a result nothing at session start reads, and growing with the worktree set.
+
+So the entry is `hooks/worktree-sweep-detach.sh`, which dispatches and returns (0.03s):
+
+```
+SessionStart → worktree-sweep-detach.sh    report the previous run, launch, exit 0   (0.03s)
+                    │  nohup, stdin </dev/null, stdout+stderr → the log
+                    ▼
+               worktree-sweep-run.sh        guard.sh worktree-sweep --execute        (detached)
+                    │
+                    ├── ${DATA}/worktree-sweep.log      the run's full output (truncated per run)
+                    ├── ${DATA}/worktree-sweep.status   `running <ts>` → `exit <rc> <ts>`
+                    └── ${DATA}/worktree-sweep.failed.log   kept only when rc != 0
+```
+
+Three properties make the split safe, and none is incidental:
+
+- **The child must not hold the hook's stdout pipe.** A hook runner that reads that pipe to EOF
+  waits for every process holding it — so a backgrounded child inheriting stdout re-blocks the
+  session with no visible symptom. The redirect to the log is what prevents it; its stdin is
+  `/dev/null` for the same reason, so it never competes for the hook payload.
+- **The output is recorded, not dropped.** A guard that quietly stops running is worse than a slow
+  one, so the run's status is written before and after, and the *next* session start prints a loud
+  stderr line when the previous run failed or never recorded an exit.
+- **The fail-open invariant is unchanged (#1050).** Every refusal path in the dispatcher drains
+  stdin and exits 0, and the sweep itself still goes through `guard.sh`, so the version gate and
+  the non-`--force` classifier are untouched.
+
 ## hooks.json — matchers mirror `.claude/settings.json`
 
 The plugin's `hooks.json` (registered via plugin.json's `"hooks": "./hooks.json"`) carries the same matcher→guard map as phoenix's `.claude/settings.json`, so enabling the plugin changes the *invocation path* (installed CLI) without changing *coverage*:
 
 | Event | Matcher | Dispatch |
 |---|---|---|
-| SessionStart | `startup\|resume` | `install.sh`, then `guard.sh spawn-guard freshness` |
+| SessionStart | `startup\|resume` | `install.sh`, then `guard.sh spawn-guard freshness`, then `worktree-sweep-detach.sh` |
 | PreToolUse | `Read\|Edit\|Write` | `guard.sh worktree-guard pre-file` |
 | PreToolUse | `Bash` | `guard.sh worktree-guard pre-bash` |
 | PreToolUse | `EnterWorktree` | `guard.sh worktree-guard pre-enter` |
