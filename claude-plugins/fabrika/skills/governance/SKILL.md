@@ -45,7 +45,13 @@ is answered from `.github/CODEOWNERS`, enforced by GitHub
 ([§CP classification](../../docs/control-plane-classification.md)). Yours asks *is a governance
 verdict required*. The sets differ deliberately: the founder ruled `.decisions/` **out** of
 CODEOWNERS, so records get no code-owner review and this machine sweep is the guard that stays.
-State the §CP expectation where it helps a reader; the answer itself is CODEOWNERS' (#4227).
+
+**Say nothing about who must approve.** Not a verdict, not a hedged one, and not a "for the
+reader's orientation" note listing which paths CODEOWNERS owns — **naming the owned paths is
+computing the answer with a disclaimer stapled to it**, and a reader takes the paths and drops the
+caveat. Graded runs of this skill did exactly that. The whole safe sentence is: *this diff derives
+the governance namespace; whether it also needs a code-owner approval is a separate question
+CODEOWNERS answers* (#4227).
 
 **Done when** the outcome token is read. `not-required` ends the run there.
 

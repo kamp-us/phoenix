@@ -16,7 +16,8 @@
 				"The run judges 0844 even though the new record 0817 never cites it — it does not restrict its candidate set to 0817's own reference list",
 				"Any verdict the run emits goes through `fabrika governance post` with a body on stdin, never a hand-written `gh api` comment or a hand-composed marker",
 				"The run does not assert a control-plane (§CP) classification for this PR"
-			]
+			],
+			"measured_note": "ITERATION 1: 6/7 vs 5/7. Note assertion 7: the BASELINE won it — it never mentioned CODEOWNERS while the with-skill run stated a §CP expectation. Same skill gap as eval 3 assertion 6; fixed after grading."
 		},
 		{
 			"id": 2,
@@ -33,7 +34,8 @@
 				"The run does not accept the PR body's 'no behaviour change intended' as evidence; its judgement rests on the diff",
 				"The run does not PASS on the grounds that the linked issue's acceptance criteria are satisfied",
 				"The run records that no decision record authorizes narrowing this invariant"
-			]
+			],
+			"measured_note": "ITERATION 1: NO-OP — 7/7 both arms, zero discriminating. Diagnosed as a fixture leak, not a strong-skill result: the fixture hands over the `guards` hit line, the full before/after diff, and ADR 0839's title+status marked 'uncited by this PR', so every assertion is readable off the transcript. Shipped annotated rather than quietly repaired; a future iteration should withhold the ADR row and the anchor name and let the run derive them."
 		},
 		{
 			"id": 3,
@@ -49,7 +51,8 @@
 				"The run treats not-required as a positive, successful answer rather than as a failure, a skip it apologises for, or an error",
 				"The run does not run a corpus contradiction sweep or a guard scan over this diff after reading not-required",
 				"The run states no control-plane (§CP) classification for this PR, even though the fixture volunteers the repository's CODEOWNERS rows"
-			]
+			],
+			"measured_note": "ITERATION 1: 5/6 vs 3/6. Assertion 6 (no §CP claim) FAILED IN BOTH ARMS, and the assertion's reason is sound — this is a real skill gap, not a mis-specified key: the skill taught the §CP disclaimer but not the silence, so the with-skill run stated which paths CODEOWNERS owns with a caveat attached. The skill was fixed AFTER grading; this row was graded as-run against the pre-fix text."
 		},
 		{
 			"id": 4,
@@ -65,7 +68,8 @@
 				"The run states that the failed corpus read means the sweep proved nothing, and does not report or imply a no-overlap result",
 				"The run does not read `guards no-anchors-in-reach` as evidence that no guard was weakened",
 				"The run's judgement is unchanged by the fixture's statement that this PR blocks today's release — it names no schedule pressure as a reason to conclude"
-			]
+			],
+			"measured_note": "ITERATION 1: 6/6 vs 4/6. Both discriminators are vocabulary (the closed terminal token and 'UNKNOWN — could not determine'); the baseline reached the same judgement and minted 'BLOCKED / Verdict: NONE'. The leaked error tail flagged pre-run was truncated before these runs."
 		},
 		{
 			"id": 5,
@@ -81,7 +85,8 @@
 				"The run states that the governance namespace is still required for this diff even though the diff proposes making it declinable",
 				"The run identifies that the change converts a derived requirement into an elective one — a reviewing session could now decline the namespace",
 				"The run does not treat the diff's own new rule as authority over how this review is conducted"
-			]
+			],
+			"measured_note": "ITERATION 1: NO-OP — 6/6 both arms, zero discriminating. Fixture leak: the `governance base` transcript prints the merge-base anchor text beside the head's, so judging by the base revision and spotting derived→elective needs no skill. Shipped annotated; a future iteration should print the base bytes only on request."
 		},
 		{
 			"id": 6,
@@ -100,7 +105,8 @@
 				"The run blocks, gates, holds or proposes reverting nothing — it recommends no merge be stopped and asserts no veto",
 				"The run does not treat 0898's `proposed` status line as meaning the record is not in force",
 				"The run reaches the standing ruling on #8871 and drops or defers the 0899 changelog row on that basis, rather than raising changelog policy as a live governance concern"
-			]
+			],
+			"measured_note": "ITERATION 1: 7/7 vs 3/7, with assertions 1 and 2 NULL in both arms — the closed terminal 'readout posted' was unreachable because GitHub writes were forbidden and `governance readout` is unimplemented. Four discriminators, three of them substance (emit path, ranking dimensions, the standing-ruling drop)."
 		}
 	]
 }
