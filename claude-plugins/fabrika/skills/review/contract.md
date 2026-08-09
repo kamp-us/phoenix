@@ -128,9 +128,9 @@ sibling contract.md — the checked-in `/report` contract is behind its own bina
 | `7` | zero scope: the target is **proven absent (404)** or closed, the PR has zero changed files or zero declared check runs, or a required block is proven absent or malformed — a fail-closed refusal | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `8` | the write itself failed — the outcome is **UNKNOWN** | — | — | — | — | — | — | ✓ | ✓ |
 | `9` | the write landed but the read-back does not match | — | — | — | — | — | — | ✓ | ✓ |
-| `10` | a supplied classification value is off the closed vocabulary — a namespace outside this PR's derived class set, a bad polarity or carrier, a `--sha` that is not a head SHA | ✓ | ✓ | — | — | — | — | ✓ | — |
+| `10` | a supplied classification value is off the closed vocabulary — a namespace outside this PR's derived class set, a bad polarity or carrier, a `--sha` that is not a head SHA | ✓ | ✓ | — | — | — | ✓ | ✓ | — |
 | `11` | a **precondition read failed** — nothing was written and the outcome is UNKNOWN | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `12` | refused: the `--sha` given is not the PR's head — a read taken over, or a verdict bound to, a tree that is no longer the PR | ✓ | ✓ | — | — | — | — | ✓ | — |
+| `12` | refused: the `--sha` given is not the PR's head — a read taken over, or a verdict bound to, a tree that is no longer the PR | ✓ | ✓ | — | — | — | ✓ | ✓ | — |
 | `13` | refused: the read was completed but its scope is **provably incomplete** — a truncated file list or diff, a check-run enumeration short of `total_count` | ✓ | ✓ | — | ✓ | ✓ | ✓ | — | — |
 | `14` | refused: the invoking token resolves below `write`, or the ACL lookup failed — authorization denied, fail-closed (ADR 0055) | — | — | — | — | — | — | — | ✓ |
 | `15` | refused: the write would drop or mutate an existing row — the append-only fence | — | — | — | — | — | — | — | ✓ |
