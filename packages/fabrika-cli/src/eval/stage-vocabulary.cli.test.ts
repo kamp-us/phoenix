@@ -111,8 +111,53 @@ describe("the live stage vocabulary is what fabrika eval accepts", {
 		});
 	}
 
-	it("--baseline-stage review is accepted", () => {
-		const accepted = fabrika("eval", "report", emptyRowsFile(), "--baseline-stage", "review");
+	it("--baseline-stage review is accepted when it names a surface", () => {
+		const accepted = fabrika(
+			"eval",
+			"report",
+			emptyRowsFile(),
+			"--baseline-stage",
+			"review",
+			"--baseline-surface",
+			"code",
+		);
 		expect(accepted.code).toBe(0);
+	});
+
+	// A `review` baseline with no surface names two graders, so it identifies no cell — refused at
+	// the flag rather than resolved to whichever surface happens to bucket first (ADR 0243 §4).
+	it("--baseline-stage review with no --baseline-surface is refused, naming the surfaces", () => {
+		const refused = fabrika("eval", "report", emptyRowsFile(), "--baseline-stage", "review");
+		expect(refused.code).not.toBe(0);
+		expect(refused.stderr).toContain("--baseline-stage review needs --baseline-surface");
+		expect(refused.stderr).toContain("code, doc");
+	});
+
+	it("--baseline-surface skill is refused — the skill surface has no entry shape yet", () => {
+		const refused = fabrika(
+			"eval",
+			"report",
+			emptyRowsFile(),
+			"--baseline-stage",
+			"review",
+			"--baseline-surface",
+			"skill",
+		);
+		expect(refused.code).not.toBe(0);
+		expect(refused.stderr).toContain("'skill' is not a known review surface");
+	});
+
+	it("--baseline-surface on a non-review stage is refused", () => {
+		const refused = fabrika(
+			"eval",
+			"report",
+			emptyRowsFile(),
+			"--baseline-stage",
+			"build",
+			"--baseline-surface",
+			"code",
+		);
+		expect(refused.code).not.toBe(0);
+		expect(refused.stderr).toContain("--baseline-surface only applies to --baseline-stage review");
 	});
 });

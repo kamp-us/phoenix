@@ -21,10 +21,13 @@
  * (a `TranscriptMissing` run) still COUNT toward the grade (pass-rate) and are reported as such
  * — a cell's spend is the mean over its reconstructed runs, and a cell with zero reconstructed
  * spends reports a null token axis rather than a fabricated zero.
+ *
+ * A pass-rate measures ONE grading regime, so a cell is keyed by (stage × surface × model), not
+ * stage alone: see `CellIdentity` and ADR 0243 §4.
  */
 import {Result} from "effect";
 import * as Schema from "effect/Schema";
-import {CorpusEntry} from "./corpus.ts";
+import {CorpusEntry, type ReviewSurface} from "./corpus.ts";
 import {priceModelSwap, repairChurnCost} from "./repair-churn.ts";
 import type {RunRow} from "./runner.ts";
 
@@ -55,9 +58,20 @@ export interface CellChurn {
 	readonly amortizedBilledPerRun: number;
 }
 
-/** One (stage × model) cell of the scorecard — the graded two-axis picture for that pair. */
-export interface ScorecardCell {
-	readonly stage: CorpusEntry["stage"];
+/**
+ * Which grading regime a cell's rows came from — the non-model half of the bucket key.
+ *
+ * A `review` cell MUST name the surface whose grader produced it, and every other stage carries no
+ * surface, so a bare `review` cell is unrepresentable rather than merely unproduced (ADR 0243 §4).
+ * A recorded v1 key (`review-code`) is provenance, not a live `review` row, so it takes the
+ * surfaceless arm (#4977).
+ */
+export type CellIdentity =
+	| {readonly stage: "review"; readonly surface: ReviewSurface}
+	| {readonly stage: Exclude<CorpusEntry["stage"], "review">; readonly surface: null};
+
+/** The two-axis picture for one (stage × surface × model) cell of the scorecard. */
+export type ScorecardCell = CellIdentity & {
 	/** The model the runs used, reconstructed from the transcript; `null` when unattributable. */
 	readonly model: string | null;
 	/** Total graded runs in the cell (the pass-rate denominator; includes transcript-missing). */
@@ -82,28 +96,43 @@ export interface ScorecardCell {
 	readonly netSaving: number | null;
 	/** True iff `netSaving` is a real number below zero — the unambiguous net-negative flag. */
 	readonly netNegative: boolean;
-}
+};
 
-/** The whole scorecard: the framing pointer plus one cell per (stage × model). */
+/** The whole scorecard: the framing pointer plus one cell per (stage × surface × model). */
 export interface Scorecard {
 	/** The decision this evidence feeds (#1576) — the report never makes it. */
 	readonly decisionRef: number;
 	readonly framing: string;
-	/** The (stage × model) chosen as the per-run baseline saving is measured against, if any. */
-	readonly baseline: {readonly stage: string; readonly model: string | null} | null;
+	/** The cell chosen as the per-run baseline saving is measured against, if any. */
+	readonly baseline: (CellIdentity & {readonly model: string | null}) | null;
 	readonly cells: ReadonlyArray<ScorecardCell>;
 }
 
-/** Which (stage × model) to price the other cells' net saving against. */
+/**
+ * Which cell to price the other cells' net saving against. `surface` is what makes this select at
+ * most one cell: omit it on a non-review stage, and name it on `review`, where a surfaceless key
+ * matches no cell rather than picking a grading regime arbitrarily.
+ */
 export interface BaselineKey {
 	readonly stage: CorpusEntry["stage"];
+	readonly surface?: ReviewSurface;
 	readonly model: string | null;
 }
 
-const cellKey = (stage: string, model: string | null): string => `${stage} ${model ?? ""}`;
+const identityOf = (entry: CorpusEntry): CellIdentity =>
+	entry.stage === "review"
+		? {stage: "review", surface: entry.surface}
+		: {stage: entry.stage, surface: null};
+
+// NUL-separated so no stage/surface/model value can spell a neighbouring key and merge two cells.
+const cellKey = (id: CellIdentity, model: string | null): string =>
+	`${id.stage}\u0000${id.surface ?? ""}\u0000${model ?? ""}`;
+
+const sameCell = (a: {id: CellIdentity; model: string | null}, b: BaselineKey): boolean =>
+	a.id.stage === b.stage && a.id.surface === (b.surface ?? null) && a.model === (b.model ?? null);
 
 interface Bucket {
-	readonly stage: CorpusEntry["stage"];
+	readonly id: CellIdentity;
 	readonly model: string | null;
 	graded: number;
 	passed: number;
@@ -117,11 +146,12 @@ const bucketize = (rows: ReadonlyArray<RunRow>): ReadonlyArray<Bucket> => {
 	const byKey = new Map<string, Bucket>();
 	for (const row of rows) {
 		const model = row.spend._tag === "Reconstructed" ? row.spend.spend.model : null;
-		const key = cellKey(row.entry.stage, model);
+		const id = identityOf(row.entry);
+		const key = cellKey(id, model);
 		let bucket = byKey.get(key);
 		if (bucket === undefined) {
 			bucket = {
-				stage: row.entry.stage,
+				id,
 				model,
 				graded: 0,
 				passed: 0,
@@ -173,14 +203,15 @@ const spendOf = (bucket: Bucket): CellSpend | null =>
 export const buildScorecard = (args: {
 	readonly rows: ReadonlyArray<RunRow>;
 	readonly baseline?: BaselineKey;
-	readonly tokensPerRepairCycle?: (cell: {stage: string; model: string | null}) => number;
+	readonly tokensPerRepairCycle?: (cell: CellIdentity & {model: string | null}) => number;
 }): Scorecard => {
 	const buckets = bucketize(args.rows);
 	const baseline = args.baseline;
+	// Bucket keys are unique on (stage, surface, model) and `sameCell` compares that whole key, so
+	// this finds at most one bucket: a `review` baseline naming no surface matches nothing rather
+	// than silently adopting one of the two graders as the baseline.
 	const baselineBucket =
-		baseline === undefined
-			? undefined
-			: buckets.find((b) => b.stage === baseline.stage && b.model === (baseline.model ?? null));
+		baseline === undefined ? undefined : buckets.find((b) => sameCell(b, baseline));
 	const baselineSpend = baselineBucket !== undefined ? spendOf(baselineBucket) : null;
 
 	const cells = buckets.map((bucket): ScorecardCell => {
@@ -193,8 +224,7 @@ export const buildScorecard = (args: {
 
 		if (spend !== null) {
 			const repairCycle =
-				args.tokensPerRepairCycle?.({stage: bucket.stage, model: bucket.model}) ??
-				spend.billedPerRun;
+				args.tokensPerRepairCycle?.({...bucket.id, model: bucket.model}) ?? spend.billedPerRun;
 			const priced = repairChurnCost({
 				passRate,
 				tokensPerRun: spend.billedPerRun,
@@ -210,10 +240,7 @@ export const buildScorecard = (args: {
 					amortizedBilledPerRun: c.amortizedTokensPerRun,
 				};
 
-				const isBaselineCell =
-					baselineBucket !== undefined &&
-					bucket.stage === baselineBucket.stage &&
-					bucket.model === baselineBucket.model;
+				const isBaselineCell = bucket === baselineBucket;
 				if (baselineSpend !== null && !isBaselineCell) {
 					const swap = priceModelSwap({
 						baselineTokensPerRun: baselineSpend.billedPerRun,
@@ -232,7 +259,7 @@ export const buildScorecard = (args: {
 		}
 
 		return {
-			stage: bucket.stage,
+			...bucket.id,
 			model: bucket.model,
 			gradedRuns: bucket.graded,
 			passedRuns: bucket.passed,
@@ -248,9 +275,7 @@ export const buildScorecard = (args: {
 		decisionRef: DECISION_POINTER,
 		framing: DECISION_FRAMING,
 		baseline:
-			baselineBucket !== undefined
-				? {stage: baselineBucket.stage, model: baselineBucket.model}
-				: null,
+			baselineBucket !== undefined ? {...baselineBucket.id, model: baselineBucket.model} : null,
 		cells,
 	};
 };
@@ -277,8 +302,8 @@ const signedNum = (n: number | null): string => {
 
 /**
  * Render the human-readable table the founder reads to decide #1576 (`token-spend`/`ship-digest`
- * reporter idiom). One row per (stage × model): pass-rate, per-run billed + ex-cache-read spend,
- * churn-amortized billed, and net saving vs the baseline. A net-negative cell is marked
+ * reporter idiom). One row per (stage × surface × model): pass-rate, per-run billed + ex-cache-read
+ * spend, churn-amortized billed, and net saving vs the baseline. A net-negative cell is marked
  * `NET-NEGATIVE` unambiguously — the epic's headline risk made impossible to miss. The framing
  * line states this is evidence for #1576, never a recommendation.
  */
@@ -287,15 +312,17 @@ export const renderTable = (scorecard: Scorecard): string => {
 	lines.push("fabrika eval scorecard — graded two-axis gate (pass-rate × net-token cost)");
 	lines.push(scorecard.framing);
 	if (scorecard.baseline !== null) {
+		const surface = scorecard.baseline.surface === null ? "" : ` (${scorecard.baseline.surface})`;
 		lines.push(
-			`baseline: ${scorecard.baseline.stage} × ${scorecard.baseline.model ?? "(unknown model)"} ` +
-				"— net saving is measured against this cell",
+			`baseline: ${scorecard.baseline.stage}${surface} × ` +
+				`${scorecard.baseline.model ?? "(unknown model)"} — net saving is measured against this cell`,
 		);
 	}
 	lines.push("");
 
 	const header = [
 		"stage",
+		"surface",
 		"model",
 		"pass-rate",
 		"billed/run",
@@ -306,6 +333,7 @@ export const renderTable = (scorecard: Scorecard): string => {
 	];
 	const rows = scorecard.cells.map((cell) => [
 		cell.stage,
+		cell.surface ?? "—",
 		cell.model ?? "(unknown)",
 		`${pct(cell.passRate)} (${cell.passedRuns}/${cell.gradedRuns})`,
 		cell.spend === null ? "—" : num(cell.spend.billedPerRun),
