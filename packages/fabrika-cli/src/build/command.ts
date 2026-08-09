@@ -28,6 +28,7 @@ import {runNote} from "./note-verb.ts";
 import {runPick} from "./pick-verb.ts";
 import {runPr} from "./pr-verb.ts";
 import {runPush} from "./push-verb.ts";
+import {ADMISSION_EXIT_CODES} from "./scope-admission.ts";
 import {runScratch} from "./scratch-verb.ts";
 import {runTree} from "./tree-verb.ts";
 import {runVerdicts} from "./verdicts-verb.ts";
@@ -97,7 +98,7 @@ const pick = leafCommand(
 	}),
 ).pipe(
 	Command.withDescription(
-		'The ranked candidate pool: status:triaged + ready-for:agent + unassigned, every bucket paginated in full. Prints {"pool":[…],"scanned":{"p0":n,"p1":n,"p2":n}}; an empty pool is a fact on exit 0, readable against the scanned counts. Exits 1 (--limit is not a positive integer), 11 (any bucket read failed — the pool is UNKNOWN, never partial). Example: fabrika build pick --limit 5',
+		'The ranked candidate pool: status:triaged + unassigned + admitted by the shared admission test (scope axis against the ROADMAP.md "## Focus" declaration, audience axis on ready-for:agent), every bucket paginated in full. Prints {"pool":[…],"excluded":[{"number","home","reason"}],"scanned":{"p0":n,"p1":n,"p2":n},"focus":{…}}; each excluded issue names which axis refused it, and an empty pool is a fact on exit 0, readable against the scanned counts. Exits 1 (--limit is not a positive integer), 4 (the "## Focus" declaration reads but does not parse — never read as "no focus"), 11 (any bucket read failed or came back truncated, or the declaration could not be read — the pool is UNKNOWN, never partial and never unfiltered). Example: fabrika build pick --limit 5',
 	),
 );
 
@@ -113,10 +114,24 @@ const eligible = leafCommand(
 	),
 );
 
+/** The admission codes as `--help` prose, enumerated from the module rather than restated (ADR 0245). */
+const admissionExits = ADMISSION_EXIT_CODES.map(
+	({code, condition}) => `${code} (${condition})`,
+).join(", ");
+
 const claim = leafCommand(
 	"claim",
-	{number: issueArg, repo: repoFlag},
-	Effect.fn(function* ({number, repo}) {
+	{
+		number: issueArg,
+		override: Flag.string("override").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"claim an issue the admission test refused on either axis, naming why; the reason is written into the claim marker",
+			),
+		),
+		repo: repoFlag,
+	},
+	Effect.fn(function* ({number, override, repo}) {
 		yield* emit(
 			yield* runClaim({
 				number,
@@ -124,12 +139,13 @@ const claim = leafCommand(
 				env: process.env,
 				uuid: randomUUID(),
 				at: new Date().toISOString(),
+				override: Option.getOrNull(override),
 			}),
 		);
 	}),
 ).pipe(
 	Command.withDescription(
-		'Race the earliest AUTHORIZED claim marker on an issue: post this session\'s token (build:<CLAUDE_CODE_SESSION_ID>:<uuid>), re-read, and win or name the winner. Authorization is the author\'s repository permission (ADR 0055) — marker text confers nothing. Prints {"answer":"won","number":n,"token":"…"}. A lost race retracts this run\'s own marker and exits 15, never 0; an unset CLAUDE_CODE_SESSION_ID is 1. Exits 7 (issue proven absent or closed), 8 (the marker write failed — UNKNOWN; run confirm), 9 (the marker landed but does not read back), 11 (the marker set could not be read — ownership is UNKNOWN, never "unclaimed"), 15 (proven lost). Example: fabrika build claim 4312',
+		`Race the earliest AUTHORIZED claim marker on an issue: post this session's token (build:<CLAUDE_CODE_SESSION_ID>:<uuid>), re-read, and win or name the winner. Authorization is the author's repository permission (ADR 0055) — marker text confers nothing. The admission test runs FIRST, before any marker is written, so a refused claim leaves no trace to retract; --override "<reason>" admits a proven refusal and records the reason on the marker, and an UNKNOWN admission is never overridable. Prints {"answer":"won","number":n,"token":"…"}, plus "override" when one was used. A lost race retracts this run's own marker and exits 15, never 0; an unset CLAUDE_CODE_SESSION_ID, or an empty --override reason, is 1. Exits 7 (issue proven absent or closed), 8 (the marker write failed — UNKNOWN; run confirm), 9 (the marker landed but does not read back), 15 (proven lost), and from the admission test: ${admissionExits}. Example: fabrika build claim 4312`,
 	),
 );
 

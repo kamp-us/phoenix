@@ -348,18 +348,51 @@ export const listOpenMilestones = (repo: string): Shell<Attempt<ReadonlyArray<Mi
 	});
 
 /**
- * Split `gh api --paginate`'s concatenated top-level JSON values back into one string per page.
+ * The pages a paginated read produced, or the proof that its output stopped mid-flight.
+ *
+ * `Truncated` exists because the alternative is a partial answer that reads as a complete one: a
+ * paginated read whose stdout ends inside a page yields *fewer* rows and no error at all, so a caller
+ * that only ever sees pages cannot tell "the board holds three issues" from "the read died after
+ * three". A caller that receives `Truncated` seats it as UNKNOWN.
+ */
+export interface JsonPages {
+	/** Every page that closed. Complete pages stay readable even when a later one is cut short. */
+	readonly pages: ReadonlyArray<string>;
+	/** Why the output does not end on a page boundary, or `null` when every byte was accounted for. */
+	readonly truncated: string | null;
+}
+
+/**
+ * Split `gh api --paginate`'s concatenated top-level JSON values back into one string per page, and
+ * say so when the output does not end on a page boundary.
  *
  * `--paginate` emits `[…][…]` with no separator, which `JSON.parse` rejects outright — so a
  * single-parse read would fail on exactly the responses pagination exists to reach. Bracket depth is
  * counted outside string literals only, so a `[` inside a comment body cannot split a page.
+ *
+ * Truncation is **everything the scan could not account for**, not an end-of-input special case: an
+ * unclosed value, an unterminated string, a stray `]`, or any non-whitespace byte sitting outside a
+ * completed page. Testing the leftovers rather than the final depth is what makes a half-written page
+ * in the *middle* of the stream as visible as one at its end.
  */
-export const splitJsonArrays = (stdout: string): ReadonlyArray<string> => {
+/** Non-whitespace characters in `[from, to)` — bytes no closed page accounts for. */
+const countOutsideWhitespace = (text: string, from: number, to: number): number => {
+	let count = 0;
+	for (let i = from; i < to; i++) {
+		if (!/\s/.test(text[i] ?? "")) count++;
+	}
+	return count;
+};
+
+export const scanJsonPages = (stdout: string): JsonPages => {
 	const pages: string[] = [];
 	let depth = 0;
 	let start = -1;
 	let inString = false;
 	let escaped = false;
+	/** The index just past the last closed page — everything before it is accounted for. */
+	let closed = 0;
+	let stray = 0;
 	for (let i = 0; i < stdout.length; i++) {
 		const c = stdout[i];
 		if (inString) {
@@ -375,13 +408,29 @@ export const splitJsonArrays = (stdout: string): ReadonlyArray<string> => {
 		} else if (c === "]" || c === "}") {
 			depth--;
 			if (depth === 0 && start >= 0) {
+				stray += countOutsideWhitespace(stdout, closed, start);
 				pages.push(stdout.slice(start, i + 1));
+				closed = i + 1;
 				start = -1;
+			} else if (depth < 0) {
+				depth = 0;
+				stray++;
 			}
 		}
 	}
-	return pages;
+	stray += countOutsideWhitespace(stdout, closed, stdout.length);
+	return {
+		pages,
+		truncated:
+			stray === 0
+				? null
+				: `the paginated output does not end on a page boundary — ${pages.length} complete page(s), then ${stray} byte(s) of an incomplete one`,
+	};
 };
+
+/** The complete pages alone, for a read whose caller does not seat truncation itself. */
+export const splitJsonArrays = (stdout: string): ReadonlyArray<string> =>
+	scanJsonPages(stdout).pages;
 
 /** One issue comment, as a claim scan reads it. */
 export interface CommentRecord {

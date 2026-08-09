@@ -14,6 +14,7 @@ import {
 	parseTabRows,
 	patchIssueBody,
 	removeLabel,
+	scanJsonPages,
 	setMilestone,
 	splitJsonArrays,
 } from "./issues.ts";
@@ -50,6 +51,36 @@ describe("splitJsonArrays", () => {
 
 	it("does not split on an escaped quote inside a string", () => {
 		expect(splitJsonArrays('[{"body":"a \\" ] b"}]')).toEqual(['[{"body":"a \\" ] b"}]']);
+	});
+});
+
+describe("scanJsonPages — a read that stopped mid-flight says so", () => {
+	it("accounts for every byte of a whole read, whitespace between pages included", () => {
+		expect(scanJsonPages("[1]\n[2]\n")).toEqual({pages: ["[1]", "[2]"], truncated: null});
+	});
+
+	it("reports an unclosed page — the shape a killed `gh` leaves behind", () => {
+		const scanned = scanJsonPages('[{"number":1},{"num');
+		expect(scanned.pages).toEqual([]);
+		expect(scanned.truncated).toContain("does not end on a page boundary");
+	});
+
+	it("keeps the complete pages AND reports the cut-short one after them", () => {
+		const scanned = scanJsonPages('[{"number":1}][{"num');
+		expect(scanned.pages).toEqual(['[{"number":1}]']);
+		expect(scanned.truncated).not.toBeNull();
+	});
+
+	it("reports a stray closing bracket rather than swallowing it", () => {
+		expect(scanJsonPages("[1]]").truncated).not.toBeNull();
+	});
+
+	it("reports an unterminated string, where the cut fell inside a body", () => {
+		expect(scanJsonPages('[{"body":"half a sen').truncated).not.toBeNull();
+	});
+
+	it("reads empty output as zero pages, not as truncation", () => {
+		expect(scanJsonPages("")).toEqual({pages: [], truncated: null});
 	});
 });
 
