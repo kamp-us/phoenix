@@ -286,6 +286,7 @@ systematic layer — a11y is a property of the shared primitives, not a per-comp
   per-component `outline` in place of the shared spacer ring (`--focus-ring`).
 - **Never** fall below the 36px tap-target minimum hit area.
 - **Never** signal state or meaning by color alone.
+- **Never** signal state or meaning by motion alone.
 
 ---
 
