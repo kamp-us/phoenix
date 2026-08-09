@@ -163,6 +163,14 @@ flowchart LR
 
 Two more skills serve the docs rather than the chain: [`adr`](./.claude/skills/adr/SKILL.md) records a decision in `.decisions/`, and [`deslop-comments`](./.claude/skills/deslop-comments/SKILL.md) cuts comments that bury the code.
 
+### fabrika — the replacement pipeline, growing beside this one
+
+The chain above is **v1**. Its replacement, **fabrika**, is being rebuilt from first principles as its own plugin under [`claude-plugins/fabrika/`](./claude-plugins/fabrika/): it re-implements v1's work instead of calling into it, so v1 stays deletable (ADR [0238](./.decisions/0238-fabrika-reimplements-v1-never-calls-it.md)).
+
+The skills that have landed live in [`claude-plugins/fabrika/skills/`](./claude-plugins/fabrika/skills/), one directory per skill — **that directory is the list.** Get the current set the way you get the ADRs (ADR [0129](./.decisions/0129-adr-discovery-is-the-claude-md-contract.md)): `ls claude-plugins/fabrika/skills/` for the names, each `SKILL.md`'s frontmatter for its one-line description. Nothing here freezes that list into a table, because the set is still filling one authoring session at a time and a copy would be stale before you read it.
+
+Two things before you map a fabrika skill onto the v1 table above: the nouns moved — `build` is the text-construction skill and `review` is a single skill, not v1's `review-*` family (ADR [0242](./.decisions/0242-fabrika-skill-nouns-redefine-build-and-review.md)) — and the conventions every fabrika skill is held to live in [`claude-plugins/fabrika/docs/`](./claude-plugins/fabrika/docs/README.md).
+
 ## Ops runbooks
 
 When the running system breaks, the procedures live in **[ops/](./ops/README.md)** — a peer
