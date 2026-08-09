@@ -174,3 +174,21 @@ review-appended acceptance criterion after round 2 is frozen — note it, do not
 - **CI redness** — `ci.yml` owns it. `build check` predicts it in-tree; the gate's answer wins.
 - Follow-up observations leave through `/report` the moment you see them — never through scope
   creep in this PR.
+
+## Required repo files
+
+fabrika installs into repos that are not phoenix, so every repo surface this skill leans on is
+declared here: what must exist, why this skill needs it, and the one named outcome when it is
+absent. The when-missing vocabulary is closed — **fail-loud** (stop, name the missing surface by
+its repo-relative path, point at front-door), **degrade** (continue with a narrower answer,
+stated), **bootstrap** (front-door creates it) — and it is the same table in every fabrika skill,
+so one reader parses all of them. Front-door is the onboarding surface designed in
+[#4952](https://github.com/kamp-us/phoenix/issues/4952); until it ships, a fail-loud stop names
+the surface and files the gap. No row here dead-ends on a bare error.
+
+| Must exist | Why this skill needs it | When missing |
+| --- | --- | --- |
+| The board label taxonomy — `status:triaged`, `ready-for:agent`, one of `type:feature`/`chore`/`bug`/`investigation`, `p0`–`p2`, plus an open milestone or a standing-lane label | `build pick` filters and ranks on exactly these, fail-closed on every axis ([`contract.md`](contract.md), `build pick`) | **bootstrap** — `build pick` prints an empty pool at exit `0` with its per-bucket scanned counts, never silence; the run ends `BACKED-OFF` naming the absent labels, and creating the taxonomy is front-door's. |
+| The `package.json` scripts `typecheck` and `lint:worktree` | `build check --surface code` runs exactly `pnpm typecheck` and `pnpm lint:worktree` in this tree, cache bypassed | **fail-loud** — a validator that cannot be executed is exit `11`, UNKNOWN, never green; the run stops naming the absent `package.json` script and points at front-door. |
+| The prose placement homes — `README`, `DEVELOPMENT.md`, `.decisions/`, `.patterns/`, `reports/`, `.glossary/LANGUAGE.md` | [`references/prose.md`](references/prose.md)'s one-home rule places every prose fact in exactly one of them | **degrade** — write into the homes that exist and disclose the substituted home in the PR's `## Deviations`; a home is never invented silently — specified here. |
+| `.github/workflows/ci.yml` | It is the superseding authority over `build check`'s in-tree prediction ([`contract.md`](contract.md), `build check` grounding) | **degrade** — with no CI gate to supersede it, `build check`'s green is the only evidence the PR carries, and the PR says so in its `## Deviations` — specified here. |
