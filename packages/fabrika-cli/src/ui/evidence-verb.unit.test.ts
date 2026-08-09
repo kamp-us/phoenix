@@ -12,9 +12,12 @@ import {
 } from "../build/fixtures.test-support.ts";
 import {fakeShell, okOut} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
+import {isBareAtReference} from "../report/leaks.ts";
 import {
 	BAD_SECTIONS,
+	CAPTURE_INVALID,
 	LANE_NOT_MINE,
+	LEAKED_PATH,
 	PRECONDITION_UNKNOWN,
 	READBACK_MISMATCH,
 	UPLOAD_FAILED,
@@ -294,5 +297,65 @@ describe("runEvidence", () => {
 		const outcome = await run(script(), {files: withoutPng});
 		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
 		expect(outcome.stderr.at(-1)).toContain("nothing was uploaded or posted");
+	});
+
+	it("refuses on 16 when a capture no longer hashes to its manifest sha256, uploading nothing", async () => {
+		const tampered = files();
+		tampered[`${SCRATCH}/after/pano.png`] = encodePng(2, 2, solid(2, 2, [255, 0, 0, 255]));
+		const uploaded: string[] = [];
+		const shell = fakeShell(script());
+		const outcome = await Effect.runPromise(
+			Effect.provide(
+				runEvidence({
+					...options,
+					attachmentUpload: (_repo, target) => {
+						uploaded.push(target.fileName);
+						return Effect.succeed<Upload>({
+							_tag: "Ok",
+							url: "https://github.com/user-attachments/assets/x",
+						});
+					},
+				}),
+				Layer.merge(shell.layer, fakeBytesFs({files: tampered}).layer),
+			),
+		);
+		expect(outcome.code).toBe(CAPTURE_INVALID);
+		expect(uploaded).toEqual([]);
+		expect(shell.calls.some((line) => line.includes("--method POST"))).toBe(false);
+	});
+
+	it("refuses a machine-local path in the composed comment on 5, and posts nothing", async () => {
+		const shell = fakeShell(script());
+		const outcome = await Effect.runPromise(
+			Effect.provide(
+				runEvidence({
+					...options,
+					attachmentUpload: (_repo, target) =>
+						Effect.succeed<Upload>({
+							_tag: "Ok",
+							url: `/Users/someone/captures/${target.fileName}`,
+						}),
+				}),
+				Layer.merge(shell.layer, fakeBytesFs({files: files()}).layer),
+			),
+		);
+		expect(outcome.code).toBe(LEAKED_PATH);
+		expect(outcome.stdout).toBe("");
+		expect(shell.calls.some((line) => line.includes("--method POST"))).toBe(false);
+	});
+
+	// Seat 6 is the #3086 backstop, and `runEvidence` cannot reach it: `composeEvidence` always leads
+	// with its own `**UI evidence**` header, so the composed body's first token is never an `@` path —
+	// including when an upload leg hands back an `@` path in place of a URL. What is testable, and
+	// what this pins, is that the predicate the seat rides on refuses the #3086 body while no body the
+	// verb composes trips it. Whether the seat should move onto each upload URL instead is #5170.
+	it("keeps the composed comment out of seat 6's bare @ path refusal", () => {
+		expect(isBareAtReference("@/tmp/ui-evidence.md")).toBe(true);
+		expect(isBareAtReference(EXPECTED_BODY)).toBe(false);
+		expect(
+			isBareAtReference(
+				composeEvidence([{surface: "/pano", before: null, after: "@/tmp/after-pano.png"}], HEAD),
+			),
+		).toBe(false);
 	});
 });
