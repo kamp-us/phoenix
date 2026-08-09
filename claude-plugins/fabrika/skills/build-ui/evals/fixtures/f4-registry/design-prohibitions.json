@@ -1,0 +1,31 @@
+{
+	"rows": [
+		{
+			"id": "muted-carries-meaning",
+			"pillar": "color",
+			"class": "blocking",
+			"machineCheck": "vlm",
+			"source": "design-system-manifest.md#semantic-tokens",
+			"statement": "Meaning-carrying text never sits on --text-muted.",
+			"counterexample": "An unread-count badge styled with --text-muted."
+		},
+		{
+			"id": "focus-ring-required",
+			"pillar": "interaction",
+			"class": "blocking",
+			"machineCheck": "verb",
+			"source": "design-system-manifest.md#semantic-tokens",
+			"statement": "Every interactive control shows a :focus-visible ring using --focus-ring.",
+			"counterexample": "A filter chip with outline: none and no replacement ring."
+		},
+		{
+			"id": "single-accent-per-view",
+			"pillar": "color",
+			"class": "advisory",
+			"machineCheck": "none",
+			"source": "design-system-manifest.md#semantic-tokens",
+			"statement": "Prefer at most one accent-colored element per view.",
+			"counterexample": "Three accent buttons competing in one toolbar."
+		}
+	]
+}

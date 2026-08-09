@@ -174,3 +174,23 @@ Cap at round 3 → `ESCALATED`.
 - **The rendered verdict** — `review-ui`'s gate owns PASS/FAIL over what you built. Your
   render→look→fix predicts it; the gate decides.
 - Follow-up observations leave through `/report` the moment you see them — never scope creep.
+
+## Required repo files
+
+fabrika installs into repos that are not phoenix, so every repo surface this skill leans on is
+declared here: what must exist, why this skill needs it, and the one named outcome when it is
+absent. The when-missing vocabulary is closed — **fail-loud** (stop, name the missing surface by
+its repo-relative path, point at front-door), **degrade** (continue with a narrower answer,
+stated), **bootstrap** (front-door creates it) — and it is the same table in every fabrika skill,
+so one reader parses all of them. Front-door is the onboarding surface designed in
+[#4952](https://github.com/kamp-us/phoenix/issues/4952); until it ships, a fail-loud stop names
+the surface and files the gap. No row here dead-ends on a bare error.
+
+| Must exist | Why this skill needs it | When missing |
+| --- | --- | --- |
+| `design-system-manifest.md` at the repo root | `fabrika ui manifest` resolves the repo's design law from it, and this skill carries none of its own ([`contract.md`](contract.md), the design-surface conventions) | **fail-loud** — exit `12` ends the session at `BLOCKED-NO-MANIFEST` with no branch cut; the run names `design-system-manifest.md` and points at front-door's bootstrap, and no design language is improvised. |
+| `design-prohibitions.json` beside the manifest | `fabrika ui law` reads its typed rows as the generation-time law | **degrade** — exit `13` falls back to the manifest's prose prohibitions at the same force, and the PR body carries `LAW-SOURCE: manifest-prose` so the worse addressability is on the record — specified here. |
+| `design-system-inventory.md` | `fabrika ui manifest` resolves it as the component inventory step 2 selects from | **degrade** — reported as `null`, a fact and never an error; with no inventory there is nothing to select from, and the PR's `## Deviations` names what was built by hand instead — specified here. |
+| A golden pointer — `packages/design-capture/golden-pointer.json` where present, else `design-goldens.json` at the root | `fabrika ui golden` answers whether a surface is blessed, and `--candidate` gets the diff signal the look loop steers by | **degrade** — no goldens means every surface is unblessed, which is a fact; the pillars are then the only anchor and the loop steers without a diff signal — specified here. |
+| `design-harness.json`, declaring the dev-server `command` and `url` this tree renders at | `fabrika ui render` starts that server to capture every before/after surface, and captures are the only evidence this skill attaches | **degrade** — exit `19` (no harness declared at all) drops the render loop, and every uncapturable surface is named in the PR's `## Deviations` with its proven code; never judge from CSS alone as if you looked — specified here. |
+| A dev server that actually comes ready — `design-harness.json`'s `command` starting and its `readyPath` answering 200 | `ui render` waits on that readiness before it captures, and kills the server on exit | **fail-loud** — a declared server that never comes ready is exit `11`, UNKNOWN, never an empty capture set read as "nothing to show"; the run stops naming `design-harness.json`'s `command` and points at front-door. |
