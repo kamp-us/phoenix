@@ -317,10 +317,19 @@ jobs:
             # ADR 0180. Without this, a change to a hook script skips `packages`, so the
             # blocking handler test never runs, and a broken hook ships green: exactly
             # the #2925 gap (a hook built to a fabricated payload passed every gate).
+            #
+            # `claude-plugins/fabrika/docs/**` is listed so a DOC-ONLY edit runs the
+            # wire-formats index law (index-doc.unit.test.ts), which reconciles that
+            # doc against `packages/fabrika-cli/src/wire/registry.ts` — #4968. The doc
+            # is where two of the three drift shapes are introduced (a section for an
+            # unregistered format, a hand-edited generated region), so a law homed only
+            # under `packages/**` would be half-blind in the direction it is most
+            # needed: the registry-side edit runs it, the doc-side edit skips it.
             packages:
               - 'packages/**'
               - 'infra/**'
               - 'claude-plugins/kampus-pipeline/hooks/**'
+              - 'claude-plugins/fabrika/docs/**'
               - 'pnpm-workspace.yaml'
               - 'tsconfig*.json'
               - 'pnpm-lock.yaml'

@@ -11,6 +11,9 @@
  * A new format lands as a sibling schema module plus one row here — never as a branch inside a
  * verb.
  *
+ * The index doc's per-format table is rendered from these rows too (`./index-doc.ts`), so the page
+ * projects the registry instead of restating it by hand.
+ *
  * A row also carries what `./conformance.ts` judges it by: the fixtures its laws are driven from and
  * the brands its value is built from. Both are required by {@link WireFormat}, so a format cannot be
  * registered without them — which is what makes the totality law inherited rather than re-written.
@@ -25,6 +28,7 @@ export const registeredFormats: ReadonlyArray<WireFormat> = [
 		key: "acceptance-criteria",
 		purpose:
 			"the checkbox contract a gate grades a PR against, carried on a sub-issue body under `### Acceptance criteria`",
+		module: "packages/fabrika-cli/src/wire/acceptance-criteria.ts",
 		producers: ["triage", "build-epic"],
 		consumers: ["build", "review"],
 		emit: acceptanceCriteria.emitFromFields,
@@ -56,6 +60,7 @@ export const registeredFormats: ReadonlyArray<WireFormat> = [
 		key: "verdict-marker",
 		purpose:
 			"the SHA-bound first line of a gate's verdict comment on a PR — namespace, polarity, the head the reviewer inspected, and the human clause",
+		module: "packages/fabrika-cli/src/wire/verdict-marker.ts",
 		producers: ["review", "check-epic-plan"],
 		consumers: ["build", "ship"],
 		emit: verdictMarker.emitFromFields,
@@ -87,6 +92,7 @@ export const registeredFormats: ReadonlyArray<WireFormat> = [
 		key: "slice-handoff",
 		purpose:
 			"the dispatch brief an epic conductor hands one freshly-forked implementer — the slice's contract, its ground, and the format's own byte-fixed rules",
+		module: "packages/fabrika-cli/src/wire/slice-handoff.ts",
 		producers: ["build-epic"],
 		consumers: ["build"],
 		emit: sliceHandoff.emitFromFields,
