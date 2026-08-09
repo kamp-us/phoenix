@@ -30,6 +30,14 @@ export interface CapturedSurface {
 	readonly pngBytes: Uint8Array;
 	/** Runtime errors thrown into the page during this render — the #2594 crash signal. */
 	readonly pageErrors: readonly PageError[];
+	/**
+	 * The navigation's HTTP status, absent when the navigation served no response.
+	 *
+	 * Playwright resolves `goto` on a 404 like any other response, so a gate that only sees pixels
+	 * judges an error page as composition. Carried so a caller can seat "unreachable" as its own
+	 * proven outcome instead of inferring it from an image.
+	 */
+	readonly status?: number;
 }
 
 /** A Playwright launch/navigation/screenshot/write failure — surfaced, never swallowed. */
@@ -116,7 +124,10 @@ export const captureShots = (
 									pageErrors.push(toPageError("console.error", msg.text()));
 							});
 							try {
-								await page.goto(shot.url, {waitUntil: "networkidle", timeout: navigationTimeoutMs});
+								const response = await page.goto(shot.url, {
+									waitUntil: "networkidle",
+									timeout: navigationTimeoutMs,
+								});
 								// A clip crops to the changed region; Playwright rejects clip + fullPage
 								// together, so a clipped shot is never full-page.
 								const buffer = await page.screenshot(
@@ -134,6 +145,7 @@ export const captureShots = (
 									fileName: shot.fileName,
 									pngBytes: new Uint8Array(buffer),
 									pageErrors,
+									...(response === null ? {} : {status: response.status()}),
 								};
 							} finally {
 								await context.close();

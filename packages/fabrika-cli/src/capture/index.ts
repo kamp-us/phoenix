@@ -82,6 +82,8 @@ export {
 	parseSurfaceSpec,
 	surfaceFileName,
 } from "./plan.ts";
+export type {CaptureValidity, PngHeader} from "./png.ts";
+export {decodePngHeader, validateCaptureBytes} from "./png.ts";
 export type {
 	PrioritySurfaceKey,
 	PrioritySurfaceParams,
@@ -93,7 +95,13 @@ export {
 	resolvePrioritySurfaces,
 	substituteRouteParams,
 } from "./priority-surfaces.ts";
-export {resolvePreviewUrl} from "./resolve.ts";
+export type {AnnouncementRead, PreviewAnnouncement} from "./resolve.ts";
+export {
+	announcedApps,
+	isPreviewAnnouncement,
+	readPreviewAnnouncement,
+	resolvePreviewUrl,
+} from "./resolve.ts";
 export type {
 	RawUploadResponse,
 	UploadAssetOptions,

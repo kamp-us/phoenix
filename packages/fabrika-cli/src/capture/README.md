@@ -79,6 +79,16 @@ const records = yield* captureAndUpload({
   `<!-- preview-deploy:web -->` anchor (deploy.yml / ci.yml). **Keyed off the app
   anchor, not the first `workers.dev` URL** — a blind first-match would return the
   wrong app's URL the moment a second app's preview line appears.
+- `readPreviewAnnouncement(commentBody, app)` reads the same block for a caller that
+  must **bind the preview to a head**: it returns the URL *and* the deployed head SHA,
+  is domain-agnostic (an adopter's preview is not on `workers.dev`), and splits
+  `Malformed` from `NoApp` so an unreadable announcement can never resolve to "no
+  preview". `announcedApps` / `isPreviewAnnouncement` are its two probes. The
+  `review-ui render` verb refuses on the SHA mismatch: pixels of an old tree must not
+  bind a new head (ADR 0058).
+- `validateCaptureBytes(pngBytes)` is the capture-validity check — zero bytes,
+  undecodable, or zero area — over the PNG header alone (`decodePngHeader`), so it stays
+  pure and codec-free. A capture nobody can open is not evidence.
 
 Pure cores also exported for reuse/testing: `parseSurfaceSpec`,
 `buildCapturePlan`, `joinPreviewUrl`, `surfaceFileName`, `mergeRecord`,

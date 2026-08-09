@@ -1,15 +1,18 @@
 # @kampus/fabrika-cli
 
 The deterministic verb package [fabrika](../../claude-plugins/fabrika/) skills call.
-`fabrika <group> <verb> …` dispatches to a registered verb group. Ten groups are
-registered: `adr`, the six verbs the `/adr` skill's derived contract specifies; `report`,
+`fabrika <group> <verb> …` dispatches to a registered verb group. The registered groups are
+`adr`, the six verbs the `/adr` skill's derived contract specifies; `report`,
 the three the `/report` contract specifies; `triage`, the intake-queue group the `/triage`
 contract specifies; `build`, the fourteen the `/build` contract specifies; `epic`, the
-eight the `/build-epic` contract specifies; `review`, the eight the `/review` contract
-specifies; `ship`, the thirteen the `/ship` contract specifies; `eval`, the graded-corpus
+eight the `/build-epic` contract specifies; `plan`, the epic-plan gate's; `review`, the eight
+the `/review` contract specifies; `review-ui`, the three the `/review-ui` contract specifies
+(capture a PR's preview, emit the `review-ui` verdict, or post a typed blocker note);
+`ship`, the thirteen the `/ship` contract specifies; `eval`, the graded-corpus
 harness the fabrika eval layer measures itself with; `spend`, what one fabrika run cost in
 tokens; and `wire`, which owns the byte-level formats two skills meet through on a GitHub
-artifact.
+artifact. `fabrika --help` lists them from the registry, so that index is never a second
+hand-maintained list.
 
 ## Who it's for
 
