@@ -310,7 +310,11 @@ namespaces it derived before, unchanged. Those paths already carry a file class,
 second, orthogonal question about the same files rather than a fifth class — and the predicate
 is the one `governance scope` computes, shared as code so the two cannot disagree. A namespace
 `ship gate` can require but `ship scope` never names would be admissible-but-unreachable, which
-is the fail-open half of the same gap (#5199).
+is the fail-open half of the same gap (#5199). The third leg is the reader: the `verdict-marker`
+format admits the `governance` namespace, so a posted `governance: PASS @ <sha> — <clause>` from
+an authorized author satisfies it at `ship gate` like any `review-*` marker. Required, emitted
+and readable move together — a required namespace no marker can carry blocks every
+governance-root PR permanently, which is the fail-**closed** half of the same gap (#5199).
 
 **The `cp` line** is the four-state routing input (see "Considered and deliberately not
 derived"), and its source is the **enforced artifact itself**: `.github/CODEOWNERS`, read at run

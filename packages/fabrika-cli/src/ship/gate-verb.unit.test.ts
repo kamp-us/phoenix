@@ -207,12 +207,12 @@ describe("runGate", () => {
 		expect(out.stdout).toBe([`gate\tblocked\t${HEAD}`, "ns\tgovernance\tabsent\t-", ""].join("\n"));
 	});
 
-	// The gap this pins is deliberate and still open: `verdict-marker`'s NAMESPACE_PREFIXES is
-	// `["review", "check-epic-plan"]`, so a governance marker is turned away before its regex is
-	// tested and the namespace can never read anything but `absent`. Widening that constant is
-	// #5199's surface change 2; when it lands this test reds, which is the point — the alternative
-	// is a fail-open gate that silently starts passing (#5199).
-	it("still reads a posted governance PASS as absent — the marker format cannot carry it yet", async () => {
+	// This was the round-2 tripwire, asserting the same posted marker read `absent` while
+	// `verdict-marker`'s NAMESPACE_PREFIXES could not carry the namespace. #5199's surface change 2
+	// widened it, so the true behaviour is the one asserted now: an authorized, head-bound
+	// `governance` PASS satisfies the namespace. Without this the gate requires `governance` (from
+	// `ship scope`) and nothing can ever satisfy it — a permanent block on every governance-root PR.
+	it("satisfies the namespace from a posted governance PASS marker (#5199 surface change 2)", async () => {
 		const out = await run(
 			[
 				[PULL, pull({comments: 1})],
@@ -222,7 +222,24 @@ describe("runGate", () => {
 			],
 			{require: ["governance"]},
 		);
-		expect(out.stdout).toBe([`gate\tblocked\t${HEAD}`, "ns\tgovernance\tabsent\t-", ""].join("\n"));
+		expect(out.stdout).toBe(
+			[`gate\tsatisfied\t${HEAD}`, "ns\tgovernance\tpass\tmarker", ""].join("\n"),
+		);
+	});
+
+	it("blocks on a posted governance FAIL rather than passing it — the widening carries both polarities", async () => {
+		const out = await run(
+			[
+				[PULL, pull({comments: 1})],
+				[COMMENTS, comments({id: 1, body: marker("governance", "FAIL", HEAD)})],
+				[REVIEWS, reviews()],
+				[ACL, okOut("write")],
+			],
+			{require: ["governance"]},
+		);
+		expect(out.stdout).toBe(
+			[`gate\tblocked\t${HEAD}`, "ns\tgovernance\tfail\tmarker", ""].join("\n"),
+		);
 	});
 
 	it("refuses a truncated comment sweep on 13", async () => {

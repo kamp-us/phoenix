@@ -59,7 +59,8 @@ fabrika ship gate 4321 --sha 03135b91 --require review-code --require review-ski
 `--require` is repeated verbatim from `scope`'s printed namespace set — the verb refuses a
 cleared answer that does not cover exactly that set (#4520). `blocked` naming a FAIL → route to
 repair (`build`) and stop. `blocked` naming absence → the namespace was never gated at this
-head; route to `review` and stop. Absence and staleness are refusals, never passes (#3944, ADR
+head; route to the gate that owns it — `review` for every `review-*` namespace, the `governance`
+skill for `governance` — and stop. Absence and staleness are refusals, never passes (#3944, ADR
 0058).
 
 ## 4 — CI at the head, and only at the head

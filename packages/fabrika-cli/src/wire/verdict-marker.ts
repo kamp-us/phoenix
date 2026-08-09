@@ -44,7 +44,10 @@ export type Clause = string & {readonly [CLAUSE]: true};
 export type Polarity = "PASS" | "FAIL";
 
 export interface VerdictMarker {
-	/** The gate that formed the verdict: `review`, `review-<gate>`, or `check-epic-plan`. */
+	/**
+	 * The gate that formed the verdict: `review`, `review-<gate>`, `check-epic-plan`, or
+	 * `governance`.
+	 */
 	readonly namespace: string;
 	readonly polarity: Polarity;
 	readonly sha: HeadSha;
@@ -57,18 +60,22 @@ const SHA_MIN = 7;
 const SHA_MAX = 40;
 
 /**
- * The gates this format serves: the `review` family, and `check-epic-plan`.
+ * The gates this format serves: the `review` family, `check-epic-plan`, and `governance`.
  *
- * Widened additively for the plan gate (#5107) — no existing marker's reading changes. A plan verdict
- * deliberately does **not** reuse the `review` namespace: a plan verdict wearing a review namespace is
- * the family confusion the partition ruling removed (#4891).
+ * Each widening is additive — no existing marker's reading changes — and each namespace is its own
+ * family rather than a `review-<gate>` member, because a verdict wearing another gate's namespace is
+ * the family confusion the partition ruling removed (#4891). `governance` is admitted here (#5199)
+ * ahead of the verb that will emit it: `ship scope` already derives it as a required namespace, so a
+ * format that cannot carry it makes every governance-root PR permanently `blocked` at `ship gate`.
+ * Nothing here grants emission authority — `review post` still refuses any namespace this PR's diff
+ * did not derive, and `governance` is not in that image.
  */
-const NAMESPACE = /^(review|check-epic-plan)(-[a-z0-9]+)*$/;
+const NAMESPACE = /^(review|check-epic-plan|governance)(-[a-z0-9]+)*$/;
 /**
  * The prefixes {@link read}'s first gate admits, which must widen with {@link NAMESPACE} or the
  * format can emit a marker it can never read back — the gate runs *before* the regex is ever tested.
  */
-const NAMESPACE_PREFIXES = ["review", "check-epic-plan"];
+const NAMESPACE_PREFIXES = ["review", "check-epic-plan", "governance"];
 const HEX = /^[0-9a-f]+$/;
 
 /** The conforming separator between the SHA and the clause; the ASCII dashes are read tolerantly. */
@@ -138,13 +145,13 @@ export const read = (artifact: string): VerdictMarkerRead => {
 		return {
 			_tag: "Absent",
 			reason:
-				'the first line does not open with a "review…:" or "check-epic-plan…:" namespace — no marker of this format',
+				'the first line does not open with a "review…:", "check-epic-plan…:" or "governance…:" namespace — no marker of this format',
 		};
 	}
 	const evidence = `first line: "${line.trim()}"`;
 	if (!NAMESPACE.test(namespace)) {
 		return malformed(
-			`the gate namespace "${namespace}" is not kebab-case "review", "review-<gate>" or "check-epic-plan"`,
+			`the gate namespace "${namespace}" is not kebab-case "review", "review-<gate>", "check-epic-plan" or "governance"`,
 			evidence,
 		);
 	}
@@ -283,7 +290,7 @@ export const parseFields = (fields: string): VerdictMarkerFields => {
 	if (!NAMESPACE.test(namespace)) {
 		return {
 			_tag: "Unusable",
-			reason: `"${namespace}" is not a "review", "review-<gate>" or "check-epic-plan" namespace`,
+			reason: `"${namespace}" is not a "review", "review-<gate>", "check-epic-plan" or "governance" namespace`,
 		};
 	}
 	const polarity = polarityOf((seen.get("polarity") ?? "").trim());

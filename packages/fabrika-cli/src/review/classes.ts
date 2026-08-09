@@ -1,5 +1,6 @@
 /**
- * The artifact-class partition of a PR's changed files, and the two flags derived beside it.
+ * The artifact-class partition of a PR's changed files, and the flags derived beside it — `self` and
+ * `harness` on the review partition, `governance` on the ship one.
  *
  * The map is a **fixed path partition** so two runs cannot disagree, and it is **total**: a file the
  * map cannot place is `code`, never dropped. An unclassified file silently excluded from every
@@ -97,7 +98,9 @@ export const isUiSurface = (path: string): boolean =>
 	path.startsWith("apps/web/src/") && !/\.(?:test|spec)\.tsx?$/.test(path);
 
 /**
- * The four roots a diff derives the `governance` namespace over.
+ * The four roots a diff derives the `governance` namespace over, per the root table in
+ * `claude-plugins/fabrika/skills/governance/contract.md` — the source of truth for these values, so a
+ * fifth root lands in both places.
  *
  * The `harness` flag's three-root list above is deliberately left alone rather than reused: these
  * four add `.decisions/`, the decision corpus, and widening `harness` to match would change what
