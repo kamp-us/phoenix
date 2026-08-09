@@ -48,7 +48,11 @@ the same tracked debt the sibling contracts carry.)
   structural read of the same facts. Dropping the worktree also removes the #3607 /tmp-collision
   and #4544 fixed-name-scratch classes by construction, and closes the self-review instruction
   hole without a denylist: a head that is never checked out is a head whose instructions are
-  never loaded.
+  never loaded. **The read verbs' commit binding does not reverse this** (#5117): `review scope`
+  and `review diff` fetch the PR head and read the artifact out of the **object database**
+  (`git diff <base>...<head>`), which writes objects and no working tree. Nothing is checked out,
+  so no head instruction file is ever on disk to be loaded — a diff that adds a worktree or a
+  checkout is still the wrong fix and should be red at review.
 - **A dead-link / ADR-index / skill-frontmatter checker.** `doc-links.yml`,
   `decisions-index.yml`, and `ci.yml`'s `validate-skills.sh` step already gate each. The rubrics
   state the expectation; the verdict stays where it is enforced.
@@ -123,9 +127,9 @@ sibling contract.md — the checked-in `/report` contract is behind its own bina
 | `7` | zero scope: the target is **proven absent (404)** or closed, the PR has zero changed files or zero declared check runs, or a required block is proven absent or malformed — a fail-closed refusal | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `8` | the write itself failed — the outcome is **UNKNOWN** | — | — | — | — | — | — | ✓ | ✓ |
 | `9` | the write landed but the read-back does not match | — | — | — | — | — | — | ✓ | ✓ |
-| `10` | a supplied classification value is off the closed vocabulary — a namespace outside this PR's derived class set, a bad polarity or carrier | — | — | — | — | — | — | ✓ | — |
+| `10` | a supplied classification value is off the closed vocabulary — a namespace outside this PR's derived class set, a bad polarity or carrier, a `--sha` that is not a head SHA | ✓ | ✓ | — | — | — | — | ✓ | — |
 | `11` | a **precondition read failed** — nothing was written and the outcome is UNKNOWN | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `12` | refused: the live head moved past the inspected `--sha` — the verdict binds a tree that is no longer the PR | — | — | — | — | — | — | ✓ | — |
+| `12` | refused: the `--sha` given is not the PR's head — a read taken over, or a verdict bound to, a tree that is no longer the PR | ✓ | ✓ | — | — | — | — | ✓ | — |
 | `13` | refused: the read was completed but its scope is **provably incomplete** — a truncated file list or diff, a check-run enumeration short of `total_count` | ✓ | ✓ | — | ✓ | ✓ | ✓ | — | — |
 | `14` | refused: the invoking token resolves below `write`, or the ACL lookup failed — authorization denied, fail-closed (ADR 0055) | — | — | — | — | — | — | — | ✓ |
 | `15` | refused: the write would drop or mutate an existing row — the append-only fence | — | — | — | — | — | — | — | ✓ |
@@ -143,8 +147,11 @@ absence: a 404 is a fact about the repository, an unreachable GitHub is not a fa
 anything) and not `1` (which would fuse an unreachable GitHub with a bad flag).
 
 **`12` and `13` are this group's own proven refusals**, in the band `triage` used for its
-kill-guards. `12` is the stale-at-post refusal — the one code whose absence would let a verdict
-formed over one tree land on another (#3769 / #4338's class, at the emit seam). `13` is the
+kill-guards. `12` is the stale-head refusal — the one code whose absence would let a verdict
+formed over one tree land on another (#3769 / #4338's class). It seats at both ends of a review:
+at the emit seam (`review post`, where the live head has moved past the judged one) and at the
+read seam (`review scope` / `review diff`, where a `--sha` that is not the PR's head would have
+a human spend a review on a tree the PR has left — #5117). `13` is the
 incomplete-enumeration refusal: the read *succeeded* and is *provably short* — a diff the API
 truncated, a check-run page count below `total_count` — which is neither `11` (nothing failed)
 nor `7` (scope exists; it just was not all seen). Folding `13` into either would render a
@@ -154,6 +161,37 @@ failure) and #4060.
 **`5` and `6` apply only to text the caller just wrote** (a verdict body, an appended
 criterion) — authored text is refusable because the author can fix it. Their fixes are opposite
 (redact-and-resend vs send-the-bytes), which is why they stay two codes, exactly as in `report`.
+
+### The read verbs bind to a commit before they read (#5117)
+
+`review scope` and `review diff` serve the artifact a whole review is formed over, so **the bytes
+have to come from a named commit, not from an endpoint that takes a pull-request number and no
+commit at all.** The platform's PR reads are the second thing: a push landing between scoping and
+reading serves the *new* head's artifact under the *old* head's SHA, and the result is a
+well-formed, confident verdict over code nobody judged. `review post`'s `12` cannot close that —
+it fires after the judging, and a rewind that lands back on the recorded SHA passes it clean.
+
+Both verbs therefore take an optional `--sha` and run one shared binding step first
+(`packages/fabrika-cli/src/review/head.ts`) before any artifact read:
+
+1. An explicit `--sha` must be **the PR's head**, or the verb refuses on `12`. Malformed is `10`.
+2. A configured git remote in this checkout must serve the target repo, `pull/<pr>/head` must
+   fetch, the commit must resolve in the **object database**, and `git rev-parse` must resolve it
+   to *itself* — a local ref or tag spelled as hex resolves elsewhere, which is how a name that
+   verifies still names the wrong tree. The base ref must resolve too, since a diff is a range.
+   Any of these unmet is `11`, naming what is UNKNOWN. There is no permissive fallback to the
+   PR-number endpoints: unbindable is a refusal, never a plausible value.
+3. The artifact is then read with `git diff <base>...<head>` — bytes for `review diff`, the
+   `--name-only -z` path list for `review scope` — under flags that pin the output to the two
+   commits rather than to the invoking user's `~/.gitconfig` (`--no-ext-diff`, explicit
+   `a/`/`b/` prefixes).
+
+Both verbs print the bound commit and its base on stderr, and `review scope`'s `scoped` line
+prints **the commit it read the files out of**, so the head named and the files partitioned are
+never two different trees.
+
+**Nothing is checked out.** A fetch writes objects, not a working tree, so this binding and the
+no-head-worktree decision above hold together rather than trading off.
 
 ### Read-backs compare normalized text, not bytes
 
@@ -175,7 +213,7 @@ message says so (#3785 is the incident where review prose tripped the guard).
 **Invocation**
 
 ```
-fabrika review scope 4321 [--repo <owner/name>] [--json]
+fabrika review scope 4321 [--sha <head>] [--repo <owner/name>] [--json]
 ```
 
 **Inputs**
@@ -183,10 +221,12 @@ fabrika review scope 4321 [--repo <owner/name>] [--json]
 | Flag | Type | Required | Default | Description |
 |---|---|---|---|---|
 | *(positional)* | integer | yes | — | the pull-request number to scope |
+| `--sha` | string | no | the PR's live head | the head to read the changed files at; see the binding step above |
 | `--repo` | string | no | resolved | the repository |
 | `--json` | boolean | no | `false` | emit the result object |
 
-**Output** — machine channel. First line: `scoped\t<head-sha>\t<issue-number>`. Then one line per
+**Output** — machine channel. First line: `scoped\t<head-sha>\t<issue-number>`, where the head is
+the commit the file list was actually read out of. Then one line per
 present class — `class\t<name>\t<file-count>` where `<name>` is one of `code`, `doc`, `skill` —
 then two flag lines `self\t<true|false>` and `harness\t<true|false>`.
 
@@ -222,7 +262,9 @@ only reports it.
 | Code | Trigger |
 |---|---|
 | `7` | the PR is proven absent (404), or closed, or has **zero changed files** — a review over nothing (ADR 0092; #4060) |
-| `11` | the PR or its file list could not be read — the scope is UNKNOWN |
+| `10` | `--sha` is not a head SHA |
+| `11` | the PR could not be read, or the commit could not be bound — the scope is UNKNOWN |
+| `12` | `--sha` is not the PR's head — re-scope at the head, never partition a tree the PR has left |
 | `13` | the changed-file enumeration is provably short (received < declared count) |
 
 **Errors**
@@ -232,12 +274,17 @@ only reports it.
 | `review scope: PR #<n> not found in <repo>.` | 7 | refusal |
 | `review scope: PR #<n> is closed — nothing to review.` | 7 | refusal |
 | `review scope: PR #<n> has zero changed files — refusing to derive an empty review (ADR 0092, #4060).` | 7 | refusal |
+| `review scope: --sha "<v>" is not a head SHA — expected 7–40 hex characters.` | 10 | refusal |
 | `review scope: cannot read PR #<n> in <repo>: <reason> — the scope is UNKNOWN.` | 11 | refusal |
-| `review scope: file list shows <k> of <m> declared files — refusing to partition a truncated read (#3999).` | 13 | refusal |
+| `review scope: <what> — the artifact cannot be bound to a commit, so what it shows is UNKNOWN.` | 11 | refusal |
+| `review scope: cannot read the changed files of #<n> at <sha>: <reason> — the scope is UNKNOWN.` | 11 | refusal |
+| `review scope: PR #<n>'s head is <live>, not <asked> — the tree you scoped is not the one under review; re-scope at <live> (ADR 0058).` | 12 | refusal |
+| `review scope: <sha> carries <k> of the <m> files #<n> declares — refusing to partition a short read (#3999).` | 13 | refusal |
 
-**Scope** — one PR's metadata and changed-file list, paginated, count-checked against the
-declared total. The class partition is total over what was read; the refusals exist so it is
-never run over less than everything.
+**Scope** — one PR's metadata, and the changed-file list of one bound commit, count-checked
+against the declared total. The class partition is total over what was read; the refusals exist so
+it is never run over less than everything, and never over a different tree than the head it
+prints.
 
 **Examples**
 
@@ -264,6 +311,9 @@ $ fabrika review scope 4321 --json
 - v1's `classify-skills-only.sh` prints nothing on its code-PR branch and falls off the end (the
   S10 else-less classifier) — every outcome here is a token.
 - ADR 0052 — `self` is the input the skill's BASE-revision fence keys on.
+- #5117 — the file list is the namespace set's only input, and the set is both floor and ceiling:
+  a list read at a later commit than the printed head derives a namespace nobody judged, or drops
+  one. The list and the head are one commit or the verb refuses.
 
 ---
 
@@ -272,7 +322,7 @@ $ fabrika review scope 4321 --json
 **Invocation**
 
 ```
-fabrika review diff 4321 [--repo <owner/name>]
+fabrika review diff 4321 [--sha <head>] [--repo <owner/name>]
 ```
 
 **Inputs**
@@ -280,19 +330,22 @@ fabrika review diff 4321 [--repo <owner/name>]
 | Flag | Type | Required | Default | Description |
 |---|---|---|---|---|
 | *(positional)* | integer | yes | — | the pull-request number |
+| `--sha` | string | no | the PR's live head | the head to read the diff at; see the binding step above |
 | `--repo` | string | no | resolved | the repository |
 
-**Output** — machine channel. The unified diff bytes, exactly as the platform serves them. There
-is no empty answer: a PR with zero changed files is `review scope`'s `7`, and this verb reds the
-same way. No `--json`: the diff is the object.
+**Output** — machine channel. The unified diff bytes, read out of the object database at the bound
+commit. There is no empty answer: a PR with zero changed files is `review scope`'s `7`, and this
+verb reds the same way. No `--json`: the diff is the object.
 
 **Exit status**
 
 | Code | Trigger |
 |---|---|
 | `7` | the PR is proven absent (404) or closed, or has zero changed files — the same refusal `review scope` makes, so neither verb serves a review over nothing |
-| `11` | the diff could not be read — UNKNOWN |
-| `13` | the diff is provably incomplete — the platform's truncation markers are present, or the file count in the diff is short of the PR's declared count |
+| `10` | `--sha` is not a head SHA |
+| `11` | the diff could not be read, or the commit could not be bound — UNKNOWN |
+| `12` | `--sha` is not the PR's head — re-review at the head, never judge a tree the PR has left |
+| `13` | the diff is provably incomplete — the file count in the diff at the bound commit is short of the PR's declared count |
 
 **Errors**
 
@@ -301,11 +354,14 @@ same way. No `--json`: the diff is the object.
 | `review diff: PR #<n> not found in <repo>.` | 7 | refusal |
 | `review diff: PR #<n> is closed — nothing to review.` | 7 | refusal |
 | `review diff: PR #<n> has zero changed files — refusing to serve an empty diff as a reviewable one (ADR 0092).` | 7 | refusal |
-| `review diff: cannot read the diff for #<n>: <reason> — UNKNOWN.` | 11 | refusal |
-| `review diff: the diff for #<n> is truncated (<k> of <m> files) — refusing to serve a partial diff as the whole (#3925's class).` | 13 | refusal |
+| `review diff: --sha "<v>" is not a head SHA — expected 7–40 hex characters.` | 10 | refusal |
+| `review diff: <what> — the artifact cannot be bound to a commit, so what it shows is UNKNOWN.` | 11 | refusal |
+| `review diff: cannot read the diff for #<n> at <sha>: <reason> — UNKNOWN.` | 11 | refusal |
+| `review diff: PR #<n>'s head is <live>, not <asked> — the tree you scoped is not the one under review; re-scope at <live> (ADR 0058).` | 12 | refusal |
+| `review diff: the diff at <sha> carries <k> of #<n>'s <m> declared files — refusing to serve a partial diff as the whole (#3925's class).` | 13 | refusal |
 
-**Scope** — one PR's diff, completeness-checked against the PR's declared changed-file count. The
-scanned byte and file counts go to stderr on the answer path.
+**Scope** — one commit's diff, completeness-checked against the PR's declared changed-file count.
+The bound commit, and the scanned byte and file counts, go to stderr on the answer path.
 
 **Examples**
 
@@ -323,6 +379,9 @@ index 0b1c2d3..a1b2c3d 100644
   is the difference between "reviewed" and "reviewed what fit".
 - The split test is honest: this verb is not a relay because its whole job is the completeness
   proof — v1's `pr-diff.sh` was the relay, and nothing checked what it served.
+- #5117 — the completeness proof says the read was not cut short; it says nothing about which
+  commit the bytes came from. A verdict's whole value is that it binds a tree, so the bytes are
+  read at a commit rather than stamped with one afterwards.
 
 ---
 
@@ -613,6 +672,11 @@ entry's substance, never its label. An entry carrying no recognizable label prin
 The Tier-M scan reads the same diff `review diff` serves and inherits its completeness proof:
 a truncated diff is refused here on `13`, because an under-reported hit list beside a `None.`
 reads as a checked-clean disclosure that was never checked.
+
+It does **not** yet inherit the commit binding above: this verb still reads the PR-number diff
+endpoint, so its hit list is bound to no commit. Tracked as #5122 rather than folded in silently —
+the same is true of `review post`'s namespace recompute, whose own `12` narrows but does not close
+the window.
 
 **Exit status**
 

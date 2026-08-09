@@ -25,13 +25,17 @@ import type {ExecResult} from "../io/exec.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {APPEND_ONLY, INCOMPLETE_SCAN, LEAKED_PATH, READBACK_MISMATCH} from "./codes.ts";
 import {
+	binding,
 	checkRuns,
 	comments,
 	DIFF,
+	DIFF_AT,
 	files,
 	HEAD,
 	issue,
 	OLD_HEAD,
+	PATHS_AT,
+	paths,
 	pull,
 } from "./fixtures.test-support.ts";
 
@@ -62,6 +66,7 @@ afterEach(() => {
 	vi.resetModules();
 	vi.doUnmock("./rollup.ts");
 	vi.doUnmock("./diff.ts");
+	vi.doUnmock("../io/git.ts");
 	vi.doUnmock("./append.ts");
 	vi.doUnmock("../wire/verdict-marker.ts");
 	vi.doUnmock("../report/leaks.ts");
@@ -143,15 +148,16 @@ describe("the three-outcome binding", () => {
 });
 
 describe("the diff completeness proof", () => {
-	// The PR declares seven files; the platform served two. Anything but a refusal judges 2/7.
+	// The PR declares seven files; the commit carries two. Anything but a refusal judges 2/7.
 	const script: ReadonlyArray<readonly [RegExp, ExecResult]> = [
 		[PULL, pull({changedFiles: 7})],
-		[RAW, okOut(DIFF)],
+		...binding(),
+		[DIFF_AT(), okOut(DIFF)],
 	];
 
-	it("refuses a truncated diff on 13", async () => {
+	it("refuses a short diff on 13", async () => {
 		const {runDiff} = await import("./diff-verb.ts");
-		const out = await withShell(runDiff({pr: 4321, repo: null, env: ENV}), script);
+		const out = await withShell(runDiff({pr: 4321, sha: null, repo: null, env: ENV}), script);
 		expect(out.code).toBe(INCOMPLETE_SCAN);
 		expect(out.stdout).toBe("");
 	});
@@ -159,9 +165,83 @@ describe("the diff completeness proof", () => {
 	it("MUTANT: a file count that always matches serves the partial diff as the whole (#3925)", async () => {
 		await mutate<typeof import("./diff.ts")>("./diff.ts", () => ({filesInDiff: () => 7}));
 		const {runDiff} = await import("./diff-verb.ts");
-		const out = await withShell(runDiff({pr: 4321, repo: null, env: ENV}), script);
+		const out = await withShell(runDiff({pr: 4321, sha: null, repo: null, env: ENV}), script);
 		expect(out.code).toBe(0);
 		expect(out.stdout).toBe(DIFF);
+	});
+});
+
+/**
+ * The provenance binding (#5117) — the guard whose absence is invisible from inside.
+ *
+ * A drifted read does not error and does not look short: the served artifact is well-formed, the
+ * completeness proof passes, and the verdict carries a SHA. The mutants below restore exactly the
+ * unbound read each verb used to make, and pin the plausible wrong answer that comes back — the
+ * other head's bytes, and a namespace set derived from files the printed commit does not contain.
+ */
+describe("the commit binding on the read verbs", () => {
+	/** What the PR-number endpoints serve once a push has landed: a different head's artifact. */
+	const MOVED_DIFF = `diff --git a/src/other.ts b/src/other.ts
+--- a/src/other.ts
++++ b/src/other.ts
+@@ -1,1 +1,2 @@
+ const x = 1;
++const y = 2;
+`;
+
+	const diffScript: ReadonlyArray<readonly [RegExp, ExecResult]> = [
+		[PULL, pull({changedFiles: 1})],
+		...binding(),
+		[DIFF_AT(), okOut(DIFF)],
+		[RAW, okOut(MOVED_DIFF)],
+	];
+
+	it("serves the bound commit's bytes", async () => {
+		const {runDiff} = await import("./diff-verb.ts");
+		const out = await withShell(runDiff({pr: 4321, sha: HEAD, repo: null, env: ENV}), diffScript);
+		expect(out.code).toBe(0);
+		expect(out.stdout).toBe(DIFF);
+	});
+
+	it("MUTANT: reading the PR-number diff endpoint serves another head's bytes under this SHA", async () => {
+		await mutate<typeof import("../io/git.ts")>("../io/git.ts", () => ({
+			diffRange: () => Effect.succeed({_tag: "Ok" as const, value: MOVED_DIFF}),
+		}));
+		const {runDiff} = await import("./diff-verb.ts");
+		const out = await withShell(runDiff({pr: 4321, sha: HEAD, repo: null, env: ENV}), diffScript);
+		expect(out.code).toBe(0);
+		expect(out.stdout).toBe(MOVED_DIFF);
+		expect(out.stdout).not.toBe(DIFF);
+	});
+
+	const scopeScript: ReadonlyArray<readonly [RegExp, ExecResult]> = [
+		[PULL, pull({changedFiles: 1})],
+		...binding(),
+		[PATHS_AT(), paths("src/cart.ts")],
+		[FILES, files("docs/moved.md")],
+	];
+
+	it("partitions the bound commit's file list", async () => {
+		const {runScope} = await import("./scope-verb.ts");
+		const out = await withShell(
+			runScope({pr: 4321, sha: HEAD, repo: null, json: true, env: ENV}),
+			scopeScript,
+		);
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({head: HEAD, namespaces: ["review-code"]});
+	});
+
+	it("MUTANT: reading the PR-number file list derives a namespace the printed head never had", async () => {
+		await mutate<typeof import("../io/git.ts")>("../io/git.ts", () => ({
+			diffRangePaths: () => Effect.succeed({_tag: "Ok" as const, value: ["docs/moved.md"]}),
+		}));
+		const {runScope} = await import("./scope-verb.ts");
+		const out = await withShell(
+			runScope({pr: 4321, sha: HEAD, repo: null, json: true, env: ENV}),
+			scopeScript,
+		);
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({head: HEAD, namespaces: ["review-doc"]});
 	});
 });
 
@@ -339,19 +419,23 @@ nothing yet.
 describe("the short-read refusal on the changed-file list", () => {
 	const script: ReadonlyArray<readonly [RegExp, ExecResult]> = [
 		[PULL, pull({changedFiles: 9})],
-		[FILES, files("src/cart.ts", "README.md")],
+		...binding(),
+		[PATHS_AT(), paths("src/cart.ts", "README.md")],
 	];
 
-	it("refuses a partition over a truncated read on 13", async () => {
+	it("refuses a partition over a short read on 13", async () => {
 		const {runScope} = await import("./scope-verb.ts");
-		const out = await withShell(runScope({pr: 4321, repo: null, json: false, env: ENV}), script);
+		const out = await withShell(
+			runScope({pr: 4321, sha: null, repo: null, json: false, env: ENV}),
+			script,
+		);
 		expect(out.code).toBe(INCOMPLETE_SCAN);
 	});
 
 	it("MUTANT: a file list that reports the declared count partitions 2 of 9 files as the whole", async () => {
-		await mutate<typeof import("../io/pulls.ts")>("../io/pulls.ts", (actual) => ({
-			listPullFiles: (repo: string, pr: number) =>
-				Effect.map(actual.listPullFiles(repo, pr), (attempt) =>
+		await mutate<typeof import("../io/git.ts")>("../io/git.ts", (actual) => ({
+			diffRangePaths: (base: string, head: string) =>
+				Effect.map(actual.diffRangePaths(base, head), (attempt) =>
 					attempt._tag === "Ok"
 						? {
 								_tag: "Ok" as const,
@@ -361,16 +445,20 @@ describe("the short-read refusal on the changed-file list", () => {
 				),
 		}));
 		const {runScope} = await import("./scope-verb.ts");
-		const out = await withShell(runScope({pr: 4321, repo: null, json: false, env: ENV}), script);
+		const out = await withShell(
+			runScope({pr: 4321, sha: null, repo: null, json: false, env: ENV}),
+			script,
+		);
 		expect(out.code).toBe(0);
 		expect(out.stdout).toContain("scoped\t");
 	});
 
 	it("proves the harness itself is live — an unscripted call still fails loudly", async () => {
 		const {runScope} = await import("./scope-verb.ts");
-		const out = await withShell(runScope({pr: 4321, repo: null, json: false, env: ENV}), [
-			[PULL, errOut("gh: Bad gateway (HTTP 502)")],
-		]);
+		const out = await withShell(
+			runScope({pr: 4321, sha: null, repo: null, json: false, env: ENV}),
+			[[PULL, errOut("gh: Bad gateway (HTTP 502)")]],
+		);
 		expect(out.code).not.toBe(0);
 	});
 });

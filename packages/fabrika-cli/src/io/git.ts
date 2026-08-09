@@ -65,6 +65,95 @@ export const remotes: Shell<ReadonlyArray<string>> = Effect.gen(function* () {
 		: [];
 });
 
+/**
+ * The first remote in `git remote -v` output whose URL names `repo`, or `null`.
+ *
+ * Matched on the parsed `owner/name` rather than on the URL text so the SSH and HTTPS spellings of
+ * one repository are one answer, and case-insensitively because GitHub's own names are.
+ */
+export const matchRemote = (remoteV: string, repo: string): string | null => {
+	const want = repo.trim().toLowerCase();
+	for (const line of remoteV.split("\n")) {
+		const [name, rest] = line.split("\t");
+		if (name === undefined || rest === undefined) continue;
+		const url = rest.replace(/\s*\((fetch|push)\)\s*$/, "");
+		if (parseOwnerRepo(url)?.toLowerCase() === want) return name.trim();
+	}
+	return null;
+};
+
+/** The configured remote serving `repo`, or `null` when this checkout serves some other repository. */
+export const remoteFor = (repo: string): Shell<string | null> =>
+	Effect.gen(function* () {
+		const r = yield* execCapture("git", ["remote", "-v"]);
+		return r.ok ? matchRemote(r.stdout, repo) : null;
+	});
+
+/** Fetch one ref from a remote into the object database. No ref is checked out. */
+export const fetchRef = (remote: string, ref: string): Shell<Attempt<void>> =>
+	Effect.gen(function* () {
+		const r = yield* execCapture("git", ["fetch", "--quiet", remote, ref]);
+		return r.ok ? ok<void>(undefined) : fail(r.reason);
+	});
+
+/**
+ * Resolve `rev` to the full object name of a commit, from the object database.
+ *
+ * `^{commit}` is what makes the answer a commit rather than whatever object the name happens to
+ * reach, and `--verify` is what makes an unresolvable name an error instead of an echo.
+ */
+export const resolveCommit = (rev: string, qualifier = ""): Shell<Attempt<string>> =>
+	Effect.gen(function* () {
+		const r = yield* execCapture("git", ["rev-parse", "--verify", "--quiet", `${rev}^{commit}`]);
+		if (!r.ok) return fail(`cannot resolve ${rev} to a commit${qualifier}`);
+		const sha = r.stdout.trim();
+		return isObjectName(sha)
+			? ok(sha)
+			: fail(`git resolved ${rev} to "${sha}", which is not an object name`);
+	});
+
+/**
+ * The flags every diff read below is taken under, so the bytes depend on the two commits and not on
+ * the invoking user's `~/.gitconfig`.
+ *
+ * `--no-ext-diff` refuses a configured external differ, and the explicit prefixes defeat
+ * `diff.noprefix` / `diff.mnemonicPrefix` — under either, the `diff --git a/… b/…` header the
+ * completeness proof and the Tier-M walk parse (`../review/diff.ts`) simply stops appearing.
+ */
+const DIFF_FLAGS = [
+	"--no-ext-diff",
+	"--no-color",
+	"--find-renames",
+	"--src-prefix=a/",
+	"--dst-prefix=b/",
+];
+
+/**
+ * The unified diff between the merge base of `base` and `head`, and `head` — read from the object
+ * database, with nothing checked out.
+ *
+ * Three dots, because that is the range a pull request *is*: what the head adds since it diverged,
+ * never the base branch's own later commits.
+ */
+export const diffRange = (base: string, head: string): Shell<Attempt<string>> =>
+	Effect.gen(function* () {
+		const r = yield* execCapture("git", ["diff", ...DIFF_FLAGS, `${base}...${head}`]);
+		return r.ok ? ok(r.stdout) : fail(r.reason);
+	});
+
+/** The paths that diff changes, NUL-separated so a path no name grammar survives still arrives whole. */
+export const diffRangePaths = (base: string, head: string): Shell<Attempt<ReadonlyArray<string>>> =>
+	Effect.gen(function* () {
+		const r = yield* execCapture("git", [
+			"diff",
+			...DIFF_FLAGS,
+			"--name-only",
+			"-z",
+			`${base}...${head}`,
+		]);
+		return r.ok ? ok(r.stdout.split("\0").filter((p) => p !== "")) : fail(r.reason);
+	});
+
 /** The default `--repo`: `owner/name` off the `origin` remote's URL. */
 export const originRepo: Shell<Attempt<string>> = Effect.gen(function* () {
 	const r = yield* execCapture("git", ["remote", "get-url", "origin"]);
@@ -85,21 +174,14 @@ export const originRepo: Shell<Attempt<string>> = Effect.gen(function* () {
 export const fetchAndResolve = (base: string): Shell<Attempt<string>> =>
 	Effect.gen(function* () {
 		const split = splitRemoteRef(base, yield* remotes);
-		const fetched = yield* split === null
-			? execCapture("git", ["fetch", "--quiet"])
-			: execCapture("git", ["fetch", "--quiet", split.remote, split.ref]);
-		if (!fetched.ok) return fail(fetched.reason);
-		const resolved = yield* execCapture("git", [
-			"rev-parse",
-			"--verify",
-			"--quiet",
-			`${base}^{commit}`,
-		]);
-		if (!resolved.ok) return fail(`cannot resolve ${base} to a commit after fetching`);
-		const sha = resolved.stdout.trim();
-		return isObjectName(sha)
-			? ok(sha)
-			: fail(`git resolved ${base} to "${sha}", which is not an object name`);
+		if (split === null) {
+			const all = yield* execCapture("git", ["fetch", "--quiet"]);
+			if (!all.ok) return fail(all.reason);
+		} else {
+			const fetched = yield* fetchRef(split.remote, split.ref);
+			if (fetched._tag === "Failure") return fetched;
+		}
+		return yield* resolveCommit(base, " after fetching");
 	});
 
 /**
