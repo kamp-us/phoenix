@@ -119,6 +119,29 @@ describe("getIssue carries the two facets a read-back cannot prove from labels",
 		);
 		expect(result).toMatchObject({_tag: "Present", value: {milestone: null, stateReason: null}});
 	});
+
+	it("reads the filing account's login — the provenance predicate's second signal", async () => {
+		const body = JSON.stringify({
+			number: 7,
+			title: "t",
+			html_url: "u",
+			state: "open",
+			labels: [],
+			user: {login: "some-account"},
+		});
+		const result = await run(
+			Effect.provide(getIssue("kamp-us/phoenix", 7), fakeShell([[/gh api/, okOut(body)]]).layer),
+		);
+		expect(result).toMatchObject({_tag: "Present", value: {author: "some-account"}});
+	});
+
+	it("reads a missing author as the empty login, which is never an operator account", async () => {
+		const body = JSON.stringify({number: 7, title: "t", html_url: "u", state: "open", labels: []});
+		const result = await run(
+			Effect.provide(getIssue("kamp-us/phoenix", 7), fakeShell([[/gh api/, okOut(body)]]).layer),
+		);
+		expect(result).toMatchObject({_tag: "Present", value: {author: ""}});
+	});
 });
 
 describe("listOpenMilestones", () => {

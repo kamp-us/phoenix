@@ -4,9 +4,10 @@
  * This is the group's only irreversible act on a public board, which shapes every decision below:
  * no precondition resolves to a plausible value, and no write runs before all of them are proven.
  *
- * **Two guards, and they are different guards (ADR 0159).** A missing footer means the issue is
- * human-owned and the verb refuses outright; a present footer makes it *eligible*, not closeable — a
- * human-invoked `/report` emits the same footer, so `--confirm` is the confirmation step made
+ * **Two guards, and they are different guards (ADR 0159, as narrowed by the #4619 ruling).** A
+ * filing with no agent signal — no footer *and* no operator author — is human-owned and the verb
+ * refuses outright; an agent signal makes it *eligible*, not closeable — a human-invoked `/report`
+ * emits the same footer, so `--confirm` is the confirmation step made
  * structural. That is why `--confirm` is optional at the parser and refused at the verb: a
  * parser-required flag's absence is a usage error, indistinguishable from a typo, while ADR 0159's
  * confirmation is a decision whose absence must be a proven refusal a caller can read as one.
@@ -39,7 +40,7 @@ import {
 	WRITE_UNKNOWN,
 	ZERO_SCOPE,
 } from "./codes.ts";
-import {provenanceOf} from "./provenance.ts";
+import {OPERATOR_ACCOUNTS_ENV, provenanceOf, resolveOperatorAccounts} from "./provenance.ts";
 import {scannedLine} from "./scope.ts";
 
 /** The label a kill is audited by. Its absence in the repo is a zero-scope refusal, not a create. */
@@ -114,19 +115,31 @@ export const runKill = (
 			return refuse(ZERO_SCOPE, `triage kill: issue #${issue} is already closed.`);
 		}
 
+		const operators = resolveOperatorAccounts(options.env);
+		const provenance = provenanceOf(target.value, operators);
+
+		// Only worth saying when emptiness is what decided the answer; an operator-authored filing is
+		// agent-reported however little its body says, so the fail-closed line would misreport it.
 		const emptyBodyNotice =
-			target.value.body.trim() === ""
+			target.value.body.trim() === "" && provenance === "human"
 				? [
 						`triage kill: #${issue} has an empty body — reading its provenance as human (fail-closed).`,
 					]
 				: [];
 
-		const provenance = provenanceOf(target.value.body);
 		if (provenance === "human") {
+			// An unset operator set makes every footerless filing read human, including the operator's
+			// own — the refusal is correct but its cause is invisible, so name the config that decides it.
+			const unconfiguredNotice =
+				operators.size === 0
+					? [
+							`triage kill: no operator accounts are configured (${OPERATOR_ACCOUNTS_ENV} is unset), so a footerless filing reads human whoever authored it.`,
+						]
+					: [];
 			return refuse(
 				HUMAN_FILED,
 				`triage kill: #${issue} is human-filed — refusing to close it. Park it with questions instead.`,
-				emptyBodyNotice,
+				[...emptyBodyNotice, ...unconfiguredNotice],
 			);
 		}
 
