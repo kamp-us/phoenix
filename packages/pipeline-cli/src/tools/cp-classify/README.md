@@ -45,7 +45,7 @@ The exit code discriminates the four states **only once the verb has run.** It c
 | a hold state (`control-plane` / `content-undetermined` / `unknown`) | 0 | the state word |
 | `not-control-plane` | 3 | `not-control-plane` |
 | unread stdin (`STDIN_READ_FAILED_EXIT_CODE`, #3924) | 4 | *(empty)* |
-| a bad flag (effect-cli usage error) | 1 | the help text — **no state word** |
+| a bad flag (`BAD_INVOCATION_EXIT_CODE`, #5072) | 4 | the help text — **no state word** |
 | a missing binary | 127 | *(empty)* |
 
 **The sanctioned idiom is a positive match on the stdout state word** — what all three rewired
@@ -71,8 +71,8 @@ fi
 §CP change to the ordinary branch; `&&` simply stays silent, so the BLOCKING line the caller was
 relying on never appears. Both fail **open**.
 
-`not-control-plane` therefore carries its own exit code, **3** — one that neither effect-cli's
-usage error (1) nor a missing binary (127) nor an unread stdin (4) produces. An exact
+`not-control-plane` therefore carries its own exit code, **3** — one that neither a malformed
+invocation (4) nor a missing binary (127) nor an unread stdin (4) produces. An exact
 `[ "$rc" -eq 3 ]` test is positive proof; `[ "$rc" -ne 0 ]` is not. This is the
 `STDIN_READ_FAILED_EXIT_CODE` convention (`../../read-stdin.ts`, #3924) applied to the verdict
 itself: *"the tool never ran"* must never be readable as an answer. Note that a pipe hides the
