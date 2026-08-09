@@ -87,4 +87,32 @@ describe("the live stage vocabulary is what fabrika eval accepts", {
 		const accepted = fabrika("eval", "report", rows, "--baseline-stage", "build");
 		expect(accepted.code).toBe(0);
 	});
+
+	it("--stage review is accepted", () => {
+		const run = evalRun("review");
+		expect(run.code).toBe(0);
+		expect(run.stderr).not.toMatch(/not a known stage/);
+	});
+
+	for (const v1 of ["review-code", "review-doc"]) {
+		it(`--stage ${v1} is refused, naming the stages that do exist`, () => {
+			const run = evalRun(v1);
+			expect(run.code).not.toBe(0);
+			expect(run.stderr).toContain(`--stage '${v1}' is not a known stage`);
+			// The refusal names the live vocabulary, and the v1 key is not offered back inside it.
+			expect(run.stderr).toContain("(triage, build, review, ship-it)");
+			expect(run.stderr).not.toMatch(/\([^)]*review-(code|doc)/);
+		});
+
+		it(`--baseline-stage ${v1} is refused`, () => {
+			const refused = fabrika("eval", "report", emptyRowsFile(), "--baseline-stage", v1);
+			expect(refused.code).not.toBe(0);
+			expect(refused.stderr).toContain(`--baseline-stage '${v1}' is not a known stage`);
+		});
+	}
+
+	it("--baseline-stage review is accepted", () => {
+		const accepted = fabrika("eval", "report", emptyRowsFile(), "--baseline-stage", "review");
+		expect(accepted.code).toBe(0);
+	});
 });

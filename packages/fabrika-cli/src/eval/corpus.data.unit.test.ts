@@ -16,7 +16,7 @@ const decodeFile = (name: string) =>
 
 describe("committed corpus — every manifest decodes clean (a malformed corpus cannot land)", () => {
 	it("finds the three per-stage manifests on disk", () => {
-		assert.deepStrictEqual(manifestFiles, ["build.json", "review-code.json", "triage.json"]);
+		assert.deepStrictEqual(manifestFiles, ["build.json", "review.json", "triage.json"]);
 	});
 
 	for (const name of manifestFiles) {
@@ -32,7 +32,7 @@ describe("committed corpus — meaningful pass-rate, not n=1 (seed + ≥2 per st
 	const expected = [
 		{file: "triage.json", stage: "triage", seed: 1227, min: 3},
 		{file: "build.json", stage: "build", seed: 1223, min: 3},
-		{file: "review-code.json", stage: "review-code", seed: 1199, min: 3},
+		{file: "review.json", stage: "review", seed: 1199, min: 3},
 	] as const;
 
 	for (const {file, stage, seed, min} of expected) {
@@ -62,6 +62,21 @@ describe("committed corpus — the recorded v1 rows keep their provenance (#4977
 				rows.map((row) => row.stage),
 				["write-code", "write-code", "write-code"],
 			);
+		}
+	});
+
+	it("review.json's rows are still keyed review-code under the live `review` group", () => {
+		const result = decodeFile("review.json");
+		assert.isTrue(Result.isSuccess(result));
+		if (Result.isSuccess(result)) {
+			const rows = result.success.stages.review;
+			assert.isAtLeast(rows.length, 3);
+			assert.deepStrictEqual(
+				rows.map((row) => row.stage),
+				["review-code", "review-code", "review-code"],
+			);
+			// A recorded row carries no `surface` — that is a live-schema field (ADR 0243 §5).
+			assert.isFalse(rows.some((row) => "surface" in row));
 		}
 	});
 });

@@ -3,7 +3,7 @@
 	"stages": {
 		"triage": [],
 		"build": [],
-		"review-code": [
+		"review": [
 			{
 				"stage": "review-code",
 				"inputRef": 1199,
@@ -41,7 +41,6 @@
 				}
 			}
 		],
-		"review-doc": [],
 		"ship-it": []
 	}
 }

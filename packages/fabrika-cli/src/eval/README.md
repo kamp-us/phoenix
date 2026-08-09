@@ -19,11 +19,30 @@ slice ([#1848](https://github.com/kamp-us/phoenix/issues/1848)) shipped the corp
   shape doesn't match its stage is unrepresentable (make-invalid-states-unrepresentable):
   - `triage` → `{ type, priority, status }`
   - `build` → `{ fixesRef, ciGreen, reviewVerdict }`
-  - `review-code` → `{ verdict, acFindings }`
-  - `review-doc` → `{ verdict, findings }`
+  - `review` + `surface: "code"` → `{ verdict, acFindings }`
+  - `review` + `surface: "doc"` → `{ verdict, findings }`
   - `ship-it` → `{ merged, mergeSha }`
 - `CorpusManifest` — the frozen ground truth: entries grouped under **live** stage keys, each
   key admitting only that stage's entry (the second half of the unrepresentable guarantee).
+
+### The `review` stage's surface sub-discriminator
+
+The v1 review gates merged into one `review` skill, so the corpus keeps **one** `review` stage key
+and every review entry carries a `surface` that selects both its label shape and its grader ([ADR
+0243](../../../../.decisions/0243-review-eval-stage-surface-discriminator.md)). The two label shapes
+genuinely differ (`acFindings` vs `findings`), so the guarantee above now holds over the
+**`(stage, surface)` pair**: a `review` entry whose label doesn't match its surface is
+unrepresentable, and a `review` entry with **no** surface is a decode failure, never a row a
+fallback rubric grades. `gradeEntry` narrows the same way — `stage` to `review`, then `surface` to
+its own grader — because dispatching on `stage` alone is what would silently collapse two rubrics
+onto one grader. One PR reviewed on two surfaces is two rows sharing an `inputRef`, each graded by
+its own grader; that is the intended shape, not a duplicate.
+
+`REVIEW_SURFACES` names `code` and `doc`. ADR 0243 also names a `skill` surface, whose entry shape
+is deliberately **not** defined here: the founder ruling on
+[#4979](https://github.com/kamp-us/phoenix/issues/4979) split designing it into
+[#5038](https://github.com/kamp-us/phoenix/issues/5038), so that a build lane never fixes a schema
+as a side effect.
 
 ### Live stage key vs recorded provenance
 
@@ -35,8 +54,11 @@ The founder ruling on [#4977](https://github.com/kamp-us/phoenix/issues/4977) fi
 to those rows: they keep their original key, because re-keying them would republish a v1
 measurement as a fabrika one. So `build` is the live stage, `write-code` is not a stage any more,
 and the three rows in `corpus/build.json` are still keyed `write-code` — the decoder accepts that
-key on an already-recorded row and nowhere else. Read a record's stage key as *what was run*,
-never as a pointer into `STAGES`; joins (the runner, the scorecard) key on the live stage.
+key on an already-recorded row and nowhere else. The same holds for the review merge: `review` is
+the live stage, `review-code` and `review-doc` are not stages any more, and the rows in
+`corpus/review.json` keep their `review-code` key and carry **no** `surface`, since `surface` is a
+live-schema field. Read a record's stage key as *what was run*, never as a pointer into `STAGES`;
+joins (the runner, the scorecard) key on the live stage.
 - `decodeManifest(text)` — total: returns a typed `Result` failure (`malformed-json` or
   `schema-mismatch`) on bad input, never throws. `encodeManifest(manifest)` round-trips it.
 
@@ -55,9 +77,9 @@ An entry passes iff the observed `artifact` reproduces its known-good `label`, p
 - `triage` — actual `{type, priority, status}` equals the label.
 - `build` — the PR carries the labeled `Fixes #N` + CI green + an independent `review-code: PASS`
   (actual `{fixesRef, ciGreen, reviewVerdict}` equals the label).
-- `review-code` — actual verdict + AC-finding **set** match the label (findings compared order- and
-  duplicate-insensitively).
-- `review-doc` — actual verdict + doc-finding set match the label.
+- `review` / `code` — actual verdict + AC-finding **set** match the label (findings compared order-
+  and duplicate-insensitively).
+- `review` / `doc` — actual verdict + doc-finding set match the label.
 - `ship-it` — actual `{merged, mergeSha}` equals the label.
 
 The grade is a typed value, never a throw:
@@ -355,7 +377,7 @@ The frozen ground truth lives beside this module as one manifest per stage under
 
 - [`corpus/triage.json`](./corpus/triage.json) — triage classifications
 - [`corpus/build.json`](./corpus/build.json) — build outcomes (rows recorded by v1 `write-code`)
-- [`corpus/review-code.json`](./corpus/review-code.json) — review-code verdicts
+- [`corpus/review.json`](./corpus/review.json) — review verdicts (rows recorded by v1 `review-code`)
 
 Each file is a `CorpusManifest` whose non-target stage arrays are empty, so it decodes
 clean on its own and validates through `fabrika eval check`. Every entry is
@@ -483,7 +505,7 @@ with no edits" is checked against the real shape rather than asserted.
 
 ```bash
 fabrika eval run <evals.json> \
-  --stage <triage|build|review-code|review-doc|ship-it> \
+  --stage <triage|build|review|ship-it> \
   --plugin-dir <the candidate skill's plugin dir> \
   --model <model> \
   [--arms with-skill,without-skill] [--json-schema <schema.json>] \

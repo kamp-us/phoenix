@@ -16,7 +16,7 @@
  */
 import {Result} from "effect";
 import * as Schema from "effect/Schema";
-import type {CorpusEntry} from "./corpus.ts";
+import type {CorpusEntry, ReviewSurface} from "./corpus.ts";
 
 /** A single field's disagreement between the observed artifact and the expected label. */
 export interface FieldMismatch {
@@ -70,7 +70,8 @@ const cmpSet = (
 	return equal ? [] : [{field, observed: JSON.stringify(o), expected: JSON.stringify(e)}];
 };
 
-// Artifact schemas mirror each stage's frozen label shape in corpus.ts (#1848) — the OBSERVED
+// Artifact schemas mirror each stage's frozen label shape in corpus.ts (#1848) — and, for `review`,
+// each SURFACE's, since that is the level the label shape is fixed at (ADR 0243 §1). The OBSERVED
 // decision artifact is the same shape as the EXPECTED label. Kept separate (not exported from
 // corpus.ts) because artifact and label are distinct concepts sharing a shape, not one type.
 const Verdict = Schema.Literals(["PASS", "FAIL"]);
@@ -108,6 +109,13 @@ const decodeShipIt = Schema.decodeUnknownResult(ShipItArtifact);
 // Narrow `entry.label` by discriminating on `entry.stage` (CorpusEntry is a union on `stage`).
 type LabelOf<S extends CorpusEntry["stage"]> = Extract<CorpusEntry, {stage: S}>["label"];
 
+// The `review` stage carries a second discriminator, so its label narrows on the PAIR. Selecting a
+// review grader on `stage` alone is banned (ADR 0243 §2): it collapses two rubrics onto one grader.
+type ReviewLabelOf<S extends ReviewSurface> = Extract<
+	CorpusEntry,
+	{stage: "review"; surface: S}
+>["label"];
+
 // See ADR 0112 §3 for every oracle definition below — do not re-invent a rubric.
 
 /** triage passes iff the actual `{type, priority, status}` equals the label (ADR 0112 §3). */
@@ -139,8 +147,11 @@ const gradeBuild = (label: LabelOf<"build">, artifact: unknown): Grade => {
 	]);
 };
 
-/** review-code passes iff the actual verdict + AC-finding set match the label (ADR 0112 §3). */
-const gradeReviewCode = (label: LabelOf<"review-code">, artifact: unknown): Grade => {
+/**
+ * The `code` surface passes iff the actual verdict + AC-finding set match the label (ADR 0112 §3).
+ * The recorded v1 `review-code` rows share this label shape, so they grade here too.
+ */
+const gradeReviewCode = (label: ReviewLabelOf<"code">, artifact: unknown): Grade => {
 	const decoded = decodeReviewCode(artifact);
 	if (Result.isFailure(decoded))
 		return failMalformed(`review-code artifact: ${decoded.failure.message}`);
@@ -151,8 +162,8 @@ const gradeReviewCode = (label: LabelOf<"review-code">, artifact: unknown): Grad
 	]);
 };
 
-/** review-doc passes iff the actual verdict + doc-finding set match the label (ADR 0112 §3). */
-const gradeReviewDoc = (label: LabelOf<"review-doc">, artifact: unknown): Grade => {
+/** The `doc` surface passes iff the actual verdict + doc-finding set match the label (ADR 0112 §3). */
+const gradeReviewDoc = (label: ReviewLabelOf<"doc">, artifact: unknown): Grade => {
 	const decoded = decodeReviewDoc(artifact);
 	if (Result.isFailure(decoded))
 		return failMalformed(`review-doc artifact: ${decoded.failure.message}`);
@@ -161,6 +172,20 @@ const gradeReviewDoc = (label: LabelOf<"review-doc">, artifact: unknown): Grade 
 		...cmpScalar("verdict", a.verdict, label.verdict),
 		...cmpSet("findings", a.findings, label.findings),
 	]);
+};
+
+/**
+ * Select a `review` entry's grader by its `surface`. This second narrowing is the whole point of
+ * ADR 0243: with one `review` stage and no further key, the two rubrics would collapse onto one
+ * grader silently. Each surface reaches its own grader and its own artifact schema.
+ */
+const gradeReview = (entry: Extract<CorpusEntry, {stage: "review"}>, artifact: unknown): Grade => {
+	switch (entry.surface) {
+		case "code":
+			return gradeReviewCode(entry.label, artifact);
+		case "doc":
+			return gradeReviewDoc(entry.label, artifact);
+	}
 };
 
 /** ship-it passes iff the actual `{merged, mergeSha}` equals the label (ADR 0112 §3). */
@@ -177,8 +202,9 @@ const gradeShipIt = (label: LabelOf<"ship-it">, artifact: unknown): Grade => {
 
 /**
  * Grade one corpus entry's actual run `artifact` against its known-good `label`. Pure + total:
- * the per-stage grader is selected by the entry's `stage` discriminator, and an artifact that
- * fails its stage's shape grades `fail` with a stated reason rather than throwing. See ADR 0112 §3.
+ * the grader is selected by the entry's `stage` discriminator — and, for `review`, by the
+ * `(stage, surface)` pair (ADR 0243 §2) — and an artifact that fails its shape grades `fail` with a
+ * stated reason rather than throwing. See ADR 0112 §3.
  */
 export const gradeEntry = (entry: CorpusEntry, artifact: unknown): Grade => {
 	switch (entry.stage) {
@@ -187,6 +213,8 @@ export const gradeEntry = (entry: CorpusEntry, artifact: unknown): Grade => {
 		case "build":
 		case "write-code":
 			return gradeBuild(entry.label, artifact);
+		case "review":
+			return gradeReview(entry, artifact);
 		case "review-code":
 			return gradeReviewCode(entry.label, artifact);
 		case "review-doc":
