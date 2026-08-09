@@ -138,6 +138,24 @@ comments including prior verdict markers, and CI check-run output. All of it is 
 verbs (ADR 0055). Every read above routes through a verb, so the open #4859 trust posture lands as
 one verb change.
 
+## Required repo files
+
+fabrika installs into repos that are not phoenix, so every repo surface this skill leans on is
+declared here: what must exist, why this skill needs it, and the one named outcome when it is
+absent. The when-missing vocabulary is closed — **fail-loud** (stop, name the missing surface by
+its repo-relative path, point at front-door), **degrade** (continue with a narrower answer,
+stated), **bootstrap** (front-door creates it) — and it is the same table in every fabrika skill,
+so one reader parses all of them. Front-door is the onboarding surface designed in
+[#4952](https://github.com/kamp-us/phoenix/issues/4952); until it ships, a fail-loud stop names
+the surface and files the gap. No row here dead-ends on a bare error.
+
+| Must exist | Why this skill needs it | When missing |
+| --- | --- | --- |
+| The class-map roots — `claude-plugins/**`, `.claude/**`, `skills/**`, any file named `SKILL.md`, and `*.md` elsewhere | `review scope` partitions the changed files into the `skill`/`doc`/`code` classes that derive the namespace set ([`contract.md`](contract.md), the class map) | **degrade** — the partition is total with `code` as the residual, so a repo homing its skills outside `claude-plugins/**` still partitions through the `skills/**` and bare-`SKILL.md` rows; nothing is dropped, and an unplaceable file is judged under the code rubric. |
+| The linked issue's `### Acceptance criteria` block | `review criteria` grades against it, and nothing else is the contract | **fail-loud** — `review criteria` exits `7` naming the issue and the wire reason (`absent` vs `malformed`), no criterion is invented, and the run points at front-door. |
+| The PR body's `## Deviations` section | `review deviations` matches the disclosure against the head diff's Tier-M scan | **fail-loud** — on a PR that owes the section, `absent` is malformed and fails the verdict closed; the run names the missing `## Deviations` heading and points at front-door. |
+| A CI check rollup at the head — `.github/workflows/` | `review ci` is the code class's execution evidence; this skill re-runs no check itself | **fail-loud** — zero declared check runs is exit `7`, refusing green over an empty enumeration (ADR 0092), and an unreadable enumeration is `11`, UNKNOWN, never green; the run names `.github/workflows/` and points at front-door. |
+
 ## Eval enumeration (leaf-rule obligation)
 
 The rubric leaves are files, so the eval suite enumerates per-surface cases or a surface goes

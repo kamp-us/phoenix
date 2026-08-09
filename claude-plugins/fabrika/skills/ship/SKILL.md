@@ -176,6 +176,24 @@ second answer (ADR 0238). Open decisions you surface, never resolve: the entry-r
 signal (#4758), the banked-vs-FAIL'd board distinction (#4103), the §CP repair-entry state
 (#4555).
 
+## Required repo files
+
+fabrika installs into repos that are not phoenix, so every repo surface this skill leans on is
+declared here: what must exist, why this skill needs it, and the one named outcome when it is
+absent. The when-missing vocabulary is closed — **fail-loud** (stop, name the missing surface by
+its repo-relative path, point at front-door), **degrade** (continue with a narrower answer,
+stated), **bootstrap** (front-door creates it) — and it is the same table in every fabrika skill,
+so one reader parses all of them. Front-door is the onboarding surface designed in
+[#4952](https://github.com/kamp-us/phoenix/issues/4952); until it ships, a fail-loud stop names
+the surface and files the gap. No row here dead-ends on a bare error.
+
+| Must exist | Why this skill needs it | When missing |
+| --- | --- | --- |
+| `.github/CODEOWNERS`, carrying a control-plane team row | `ship scope`'s §CP classification and `ship cp-approval`'s roster both derive from it, read at `origin/main` | **fail-loud** — an unreadable boundary is exit `11`, never "ordinary"; a trivial or empty one is the printed `unknown` hold, and a zero-member roster is `stop zero-owners`. The run names `.github/CODEOWNERS` and points at front-door. |
+| A merge queue enabled on the PR's base branch | `ship enqueue` arms the queue's auto-merge; the queue, never this skill, performs the merge | **fail-loud** — a base with no queue has no arm to enter, so refuse before `ship enqueue` and end `refused — no merge queue on <base>`; `reconcile`'s `parked` covers only a queue-governed base. The run names the base branch and points at front-door — specified here. |
+| `.github/workflows/ci.yml`, gating the `merge_group` ref | `ship checks` reads its result at the head, and the queue awaits that context on `merge_group` before it merges | **fail-loud** — with no workflows at the head `ship checks` reports `facts workflows:0 runs:0` at rollup `pending` and never green, so the run stops rather than enqueue behind no gate; it names `.github/workflows/ci.yml` and points at front-door. |
+| The `status:awaiting-release` label | `ship release` is the dark-ship seam and the label is the whole action (ADR 0083) | **fail-loud** — a label write or its read-back failing is exit `8`/`9`, never `queued`; the run escalates that a real dark ship may be missing from the release queue, names the `status:awaiting-release` label, and points at front-door. |
+
 ## Eval enumeration (leaf-rule obligation)
 
 No rubric leaves; the eval suite enumerates the terminal vocabulary instead: an ordinary green
