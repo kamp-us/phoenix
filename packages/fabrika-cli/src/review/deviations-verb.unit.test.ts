@@ -10,7 +10,17 @@ import {
 	ZERO_SCOPE,
 } from "./codes.ts";
 import {runDeviations} from "./deviations-verb.ts";
-import {BASE, binding, DIFF, DIFF_AT, HEAD, OLD_HEAD, pull} from "./fixtures.test-support.ts";
+import {
+	BASE,
+	binding,
+	DIFF,
+	DIFF_AT,
+	HEAD,
+	OLD_HEAD,
+	PATHS_AT,
+	paths,
+	pull,
+} from "./fixtures.test-support.ts";
 
 const PULL = /^gh api repos\/o\/r\/pulls\/4321$/;
 /** The unbound endpoint this verb no longer reads — scripted so a regression has bytes to serve. */
@@ -54,19 +64,36 @@ const run = (
 	overrides: Partial<typeof options> = {},
 ) => shell(script, overrides).out;
 
-/** The green path: the bound range serves `diff`, and the PR-number endpoint serves `endpoint`. */
+/**
+ * The green path: the bound range serves `diff`, the same range's `--name-only` read serves
+ * `inRange` (the completeness denominator), and the PR-number endpoint serves `endpoint`.
+ */
 const scripted = (
 	diff: string,
 	endpoint: string,
 	shape: Parameters<typeof pull>[0] = {},
+	inRange: ReadonlyArray<string> = ["src/cart.ts", "README.md"],
 ): ReadonlyArray<readonly [RegExp, ExecResult]> => [
 	[PULL, pull(shape)],
 	...binding(),
 	[DIFF_AT(), okOut(diff)],
+	[PATHS_AT(), paths(...inRange)],
 	[RAW, okOut(endpoint)],
 ];
 
 const happy = (shape: Parameters<typeof pull>[0] = {}) => scripted(DIFF, DIFF, shape);
+
+/** A rename git pairs into ONE `diff --git` entry — the shape GitHub may count as two files. */
+const RENAME_DIFF = `diff --git a/src/old.ts b/src/new.ts
+similarity index 96%
+rename from src/old.ts
+rename to src/new.ts
+--- a/src/old.ts
++++ b/src/new.ts
+@@ -1,1 +1,2 @@
+ const x = 1;
++const y = 2;
+`;
 
 describe("runDeviations", () => {
 	it("prints none-declared for a `None.` body with a clean diff", async () => {
@@ -103,11 +130,26 @@ describe("runDeviations", () => {
 		expect(out.stdout).toBe("deviations\tabsent\n");
 	});
 
-	it("refuses a truncated diff on 13 — a partial scan must not print beside a claim", async () => {
-		const out = await run(happy({changedFiles: 9}));
+	it("refuses a diff short of the range's own file list on 13 — a partial scan must not print beside a claim", async () => {
+		const out = await run(scripted(DIFF, DIFF, {}, ["src/cart.ts", "README.md", "src/dropped.ts"]));
 		expect(out.code).toBe(INCOMPLETE_SCAN);
 		expect(out.stdout).toBe("");
-		expect(out.stderr.at(-1)).toContain("refusing a partial Tier-M scan beside a disclosure claim");
+		expect(out.stderr.at(-1)).toBe(
+			`review deviations: the scan at ${HEAD} covers 2 of the 3 files git lists for the same range ${BASE}...${HEAD} — both counts from git, so these bytes are provably short of the range they were read from; refusing a partial Tier-M scan beside a disclosure claim.`,
+		);
+	});
+
+	it("refuses on 11 when the range's file list cannot be read, rather than scanning against nothing", async () => {
+		const out = await run([
+			[PULL, pull()],
+			...binding(),
+			[DIFF_AT(), okOut(DIFF)],
+			[PATHS_AT(), errOut("fatal: bad revision")],
+		]);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toContain("cannot read the file list of the range");
+		expect(out.stderr.at(-1)).toContain('the disclosure state is UNKNOWN, never "none"');
 	});
 
 	it("refuses a PR proven absent on 7", async () => {
@@ -126,6 +168,38 @@ describe("runDeviations", () => {
 			expect(out.stdout).toBe("");
 			expect(out.stderr.at(-1)).toContain('the disclosure state is UNKNOWN, never "none"');
 		}
+	});
+});
+
+/**
+ * The single-source fence (#5157).
+ *
+ * The exit-`13` denominator is git's own count over the bound range, not GitHub's `changed_files`.
+ * Each case fails if the denominator drifts back across the system boundary, where a rename git
+ * pairs into one entry and the platform declares two.
+ */
+describe("runDeviations proves its scan complete against git's own count", () => {
+	const renamed = () => scripted(RENAME_DIFF, RENAME_DIFF, {changedFiles: 2}, ["src/new.ts"]);
+
+	it("scans a rename git paired into one entry, though GitHub declares it as two files", async () => {
+		const out = await run(renamed());
+		expect(out.code).toBe(0);
+		expect(out.stdout).toBe("deviations\tnone-declared\n");
+	});
+
+	it("reports the git-vs-GitHub disagreement on stderr instead of refusing on it", async () => {
+		const out = await run(renamed());
+		expect(out.stderr.at(-1)).toBe(
+			"review deviations: git and GitHub disagree on #4321's file count (1 vs 2) — different merge base and different rename detection; reported, never refused on (#5157).",
+		);
+	});
+
+	it("takes the denominator from the same range as the diff it scans", async () => {
+		const {fake, out} = shell(happy());
+		await out;
+		expect(fake.calls).toContain(
+			`git diff --no-ext-diff --no-color --find-renames --src-prefix=a/ --dst-prefix=b/ --name-only -z ${BASE}...${HEAD}`,
+		);
 	});
 });
 
@@ -173,7 +247,9 @@ describe("runDeviations binds its Tier-M scan to a commit", () => {
 		expect(out.stderr[0]).toBe(
 			`review deviations: bound to ${HEAD} (base ${BASE}) — read from the object database, nothing checked out.`,
 		);
-		expect(out.stderr[1]).toBe("review deviations: scanned 2 files; 2 declared.");
+		expect(out.stderr[1]).toBe(
+			"review deviations: scanned 2 files; 2 in the range per git, 2 declared by GitHub.",
+		);
 	});
 
 	it("refuses on 12 when --sha is not the PR's head, scanning nothing", async () => {
