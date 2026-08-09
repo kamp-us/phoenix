@@ -29,8 +29,8 @@ An argument that is a PR number is repair mode — skip to **Repair**.
 
 ## 1 — Prove the ground, then pick
 
-Lane mechanics are the `build` group's verbs, shared verbatim — tree, pick, claim, confirm,
-issue, branch, scratch, check, push, pr, note, verdicts, release ([`../build/contract.md`](../build/contract.md)).
+Lane mechanics are the `build` group's verbs, shared verbatim — tree, pick, eligible, claim,
+confirm, issue, branch, scratch, check, push, pr, note, verdicts, release ([`../build/contract.md`](../build/contract.md)).
 This skill adds only the `ui` group ([`contract.md`](contract.md)); nothing here re-derives a lane rule.
 
 ```bash
@@ -85,13 +85,14 @@ Branch (`fabrika build branch <n> --slug <slug>`), then capture the **before** s
 surface you are about to change, while the tree still renders it:
 
 ```bash
-fabrika ui render --out before --surface /pano --surface /pano:signed-in
+fabrika ui render --out before --surface /pano --surface /pano/yeni
 ```
 
-You name the surfaces — route, optionally `:state` — because you know what you are changing; no
-tool guesses them from the diff. A surface that cannot render is a **proven outcome, never a
+You name the surfaces — bare routes; a `:state` suffix is reserved grammar and refused (exit
+10) — because you know what you are changing; no tool guesses them from the diff. A surface that cannot render is a **proven outcome, never a
 silent skip**: exit 14 (crashed), 15 (unreachable — dark flag, gated tier, missing route), 16
-(invalid capture). #3232 shipped its design FAIL behind a dark flag precisely because the render
+(invalid capture) — and exit 19 (this repo declares no render harness at all) is the same
+honesty rule at repo scope: name it in Deviations, never judge from CSS alone as if you looked. #3232 shipped its design FAIL behind a dark flag precisely because the render
 loop degraded silently; here you either fix reachability, or drop the surface **explicitly** and
 carry the reason into the PR's Deviations. A first-render surface has no before — say so with
 `--first-render <surface>`, don't fake one.
@@ -147,8 +148,8 @@ the evidence state is loud: captures attached, or every uncapturable surface nam
 with its proven render code — a dark-flagged surface ships with its render gap on the record,
 and `review-ui`'s gate owns whether that is acceptable; only *silent* evidence absence is
 forbidden); `BLOCKED-NO-MANIFEST` (no design law in this repo — no branch cut, routed to
-front-door's bootstrap); `BACKED-OFF` (claim lost, blocked, wrong modality, or empty pool —
-branch removed, or never cut); `ESCALATED` (repair cap reached, or evidence provably
+front-door's bootstrap); `BACKED-OFF` (claim lost or lane proven not yours — a `ui` verb's
+exit 18 included — blocked, wrong modality, or empty pool; branch removed, or never cut); `ESCALATED` (repair cap reached, or evidence provably
 unattachable after the PR opened — branch pushed at its last verified head, escalation note
 posted); `STOPPED` (isolation or verdict UNKNOWN — branch left
 local, state named). This skill has **no success-without-PR terminal**: a constructed surface

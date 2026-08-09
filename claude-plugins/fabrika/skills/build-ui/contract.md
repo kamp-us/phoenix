@@ -128,15 +128,15 @@ the established doctrine (`triage`'s own `codes.ts` states it for `adr`).
 | `0` | the answer is on stdout |
 | `1` | usage error, or the verb failed to run |
 | `2` | no implementation could be resolved (`packages/fabrika-cli/src/bin.ts`) |
-| `3` | stdin was read and held nothing |
+| `3` | stdin was read and held nothing — the aligned seat, reserved: no `ui` verb reads stdin today, and the seat stays empty rather than reused (a gap is cheaper than a collision, `report/codes.ts`) |
 | `4` | a required section is missing, malformed, empty, or out of place — in a document a verb derives from (here: a registry or pointer file that exists but does not parse) |
 | `5` | the authored text carries a machine-local path, unredacted |
 | `6` | the authored text is a bare `@` path reference — not redactable |
 | `7` | zero scope: the target is **proven** absent or closed, or there is nothing to judge |
 | `8` | a write was attempted and its outcome could not be proven — UNKNOWN |
 | `9` | the write landed but the read-back does not match; the artifact needs a human |
-| `10` | a value off its closed vocabulary — a semantic refusal, never a malformed-flag usage error, which is `1` |
-| `11` | a required read or execution failed — nothing was written, no outcome is proven |
+| `10` | a value off its closed vocabulary or naming grammar (a non-kebab set name, a reserved `:state` surface) — a semantic refusal on a *value*, as in the sibling `build` matrix's `10`; a malformed *flag* stays `1` |
+| `11` | a required read or execution failed — no outcome is proven. A deliberate, stated widening of the report seat (which covers precondition reads only): here it also seats a harness that never became ready and a capture whose validity could not be determined, because both leave the render UNKNOWN in exactly the way a failed read leaves a target UNKNOWN |
 | `12` | proven: no design manifest exists at the repo's convention path — the repo is un-bootstrapped; the route is front-door (#4952) |
 | `13` | proven: the manifest exists but no typed prohibition registry does — the law is untyped, prose is the fallback source |
 | `14` | proven: a surface rendered with an uncaught page error — the render is red |
@@ -270,7 +270,7 @@ The manifest itself is the one surface whose absence refuses: without it there i
 | `ui manifest: no design manifest at design-system-manifest.md — this repo is not set up for UI construction. Run /fabrika: front-door's bootstrap drafts one from the repo's own CSS and pages (#4952). Never improvise a design language.` | 12 | refusal |
 | `ui manifest: cannot probe <path>: <reason> — presence is UNKNOWN, never "absent".` | 11 | refusal |
 
-**Scope** — the four convention paths against the repo root. Not a judging verb; presence is the
+**Scope** — the five convention paths against the repo root. Not a judging verb; presence is the
 supplied fact, and the one refusal (`12`) exists because "no manifest" must route, not report.
 
 **Examples**
@@ -357,7 +357,7 @@ $ fabrika ui law
 **Invocation**
 
 ```
-fabrika ui render --out before --surface /pano --surface /pano:signed-in [--first-render <surface>]…
+fabrika ui render --out before --surface /pano --surface /pano/yeni [--first-render <surface>]…
 ```
 
 **Inputs**
@@ -385,8 +385,8 @@ implementations guessing differently.
 **The mechanism, in order.** Resolve the lane (shared conventions; the set dir is
 `build scratch`'s allocation for this lane, `<scratch>/<set>/`). Read `design-harness.json`
 (absent `19`, malformed `4`). Start `command` from the repo root; poll `<url><readyPath>` until
-HTTP 200, up to 60s (`11` on timeout, with the server's stderr tail in the message); on any
-exit, kill the started process tree. For each `--surface`, in a headless browser at the
+HTTP 200, up to the schema row's readiness bound (`11` on timeout, with the server's stderr tail
+in the message); on any exit, kill the started process tree. For each `--surface`, in a headless browser at the
 config's viewport: navigate to `<url><route>`; an HTTP status ≥ 400 or a failed navigation is
 **unreachable** (`15`); an uncaught page exception during render is **crashed** (`14`);
 otherwise screenshot the full page to `<set>/<route-slug>.png` (slug: `/` → `-`, leading
@@ -424,9 +424,12 @@ carries every surface's outcome — the code routes, the stderr enumerates.
 | `ui render: surface "<id>" is unreachable in this tree (<reason: no route | flag dark | gated tier>) — fix reachability, or drop it explicitly and carry the reason into the PR's Deviations (#4305).` | 15 | refusal |
 | `ui render: surface "<id>" captured invalid bytes (<detail>) — a capture nobody can open is not evidence (#3925's class).` | 16 | refusal |
 | `ui render: the render harness could not start: <reason> — every surface is UNKNOWN.` | 11 | refusal |
+| `ui render: the harness did not answer 200 on <readyPath> within 60s — every surface is UNKNOWN; server stderr tail: <tail>.` | 11 | refusal |
+| `ui render: cannot determine the validity of <set>/<file>: <reason> — the capture is UNKNOWN, never valid.` | 11 | refusal |
 | `ui render: no design-harness.json at the repo root — this repo declares no headless render path; add one (see the harness config schema).` | 19 | refusal |
 | `ui render: design-harness.json exists but does not satisfy its schema: <first violation>.` | 4 | refusal |
 | `ui render: --surface "<id>" carries a :state suffix — states are a reserved grammar, not yet realized; render the bare route.` | 10 | refusal |
+| `ui render: --out "<value>" is not a kebab-case set name.` | 10 | refusal |
 | `ui render: this session does not hold the claim the checked-out branch names (<detail>) — the lane is not yours.` | 18 | refusal |
 
 **Scope** — exactly the `--surface` operands, no more: the verb never scans the diff. Zero
@@ -467,7 +470,7 @@ fabrika ui golden --surface /pano --candidate <path>
 | Flag | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `--surface` | string | yes | — | the surface id whose blessed golden to resolve |
-| `--candidate` | string | no | — | a candidate PNG to diff against the golden, resolved against the invocation cwd (the canonical input is the absolute `path` from a `ui render` answer); without it the verb only resolves |
+| `--candidate` | string | no | — | a candidate PNG to diff against the golden; a relative path resolves against `FABRIKA_INVOCATION_DIR` (the delivery layer resets process cwd to the repo root — interface convention, Delivery), though the canonical input is the absolute `path` from a `ui render` answer; without it the verb only resolves |
 
 **The pointer schema — canonical here.** The golden pointer file is one JSON object:
 `{"store": "<base URL>", "surfaces": {"<surface-id>": {"sha256": "<hex>"}}}`. `store` is the
@@ -479,7 +482,8 @@ implementation treats a pointer with surfaces but no `store` as malformed (`4`).
 
 **The diff — defined here so two implementers compute one number.** Dimensions must match; a
 dimension mismatch is reported as `{"magnitude": 1, "regions": [], "dimensionMismatch": true}` —
-maximal signal, not an error. Otherwise: a pixel *differs* when the maximum absolute per-channel
+maximal signal, not an error; the `dimensionMismatch` key appears **only** in that shape, absent
+from every matched-dimension diff. Otherwise: a pixel *differs* when the maximum absolute per-channel
 delta (RGBA, 0–255) exceeds 10; `magnitude` is differing pixels ÷ total pixels, rounded to 3
 decimals. `regions` is the bounding boxes of 8-connected components of differing pixels, boxes
 closer than 16px merged, largest-area first, capped at 20 (the cap stated on stderr when hit).
@@ -520,16 +524,18 @@ $ fabrika ui golden --surface /pano
 
 ```
 $ fabrika ui golden --surface /pano
-{"surface":"/pano","blessed":true,"golden":{"sha256":"9c41f2…","path":"/tmp/fabrika-build/s-9f2e/4312-c1a4d6f8/goldens/pano.png"},"diff":null}
+{"surface":"/pano","blessed":true,"golden":{"sha256":"9c41f2…","path":"/tmp/fabrika-ui-goldens/9c41f2….png"},"diff":null}
 ```
 
 ```
 $ fabrika ui golden --surface /pano --candidate /tmp/fabrika-build/s-9f2e/4312-c1a4d6f8/after/pano.png
-{"surface":"/pano","blessed":true,"golden":{"sha256":"9c41f2…","path":"/tmp/fabrika-build/s-9f2e/4312-c1a4d6f8/goldens/pano.png"},"diff":{"magnitude":0.031,"regions":[{"x":120,"y":840,"w":420,"h":96}]}}
+{"surface":"/pano","blessed":true,"golden":{"sha256":"9c41f2…","path":"/tmp/fabrika-ui-goldens/9c41f2….png"},"diff":{"magnitude":0.031,"regions":[{"x":120,"y":840,"w":420,"h":96}]}}
 ```
 
-(The golden's `path` is the fetched bytes cached under the lane scratch dir's `goldens/` leaf —
-derivable: the allocator's dir plus the surface slug.)
+(The golden's `path` is the fetched bytes cached content-addressed under the OS temp root —
+`<OS temp>/fabrika-ui-goldens/<sha256>.png` — derivable from the sha alone. The cache is
+lane-independent by design: `ui golden` stays a pure read with no lane precondition, and a
+content-addressed file is write-once, so concurrent lanes cannot clobber each other.)
 
 **Grounding**
 
@@ -571,7 +577,10 @@ verify each upload individually, before anything posts** — the two-tier store:
 
 1. **Store tier** — when the harness config declares `evidenceStore`: `PUT` each PNG
    content-addressed (`<store>/<sha256>.png`, the golden-store idiom of ADR 0183), then `GET`
-   the same URL back and hash-compare. Any failed PUT, GET, or hash mismatch is `17`.
+   the same URL back and hash-compare. Any failed PUT, GET, or hash mismatch is `17`. (The
+   tier choice reads `design-harness.json` here too: an absent file selects the attachment
+   tier — no harness config is a fact, not an error, at evidence time; a file that exists but
+   violates its schema is `4`, same whole-file rule as in `ui render`.)
 2. **Attachment tier** — no `evidenceStore` declared: upload each PNG through GitHub's
    user-attachment endpoint, then probe every returned URL (`HEAD`, expect 200). Any failed
    upload or probe is `17`. Two facts about this tier stated rather than hidden: the endpoint
@@ -588,14 +597,17 @@ predicates (`5`/`6`); post it; re-read it through `normalizeForReadback` (`9` on
 re-run after a fix posts a **new** comment at the new head — comments are append-only evidence,
 never edited in place.
 
-Preconditions: the lane precondition of the shared conventions (`18`/`11`) against the PR's
-number, PR open (`7`).
+Preconditions: the lane precondition of the shared conventions (`18`/`11`) — the claim is the
+one **the checked-out branch names** (the issue number in first-ship mode, the PR number in
+resume mode), never "a claim on `--pr`". Additionally the verb resolves `--pr`'s current head
+branch and refuses on `18` when it is not the checked-out lane branch — an evidence comment on
+another lane's PR is a cross-lane write. PR open (`7`).
 
 **Exit status** (beyond the universal four)
 
 | Code | Trigger |
 |---|---|
-| `4` | an after-surface has no before and no `firstRender` mark, a named capture set is missing/empty, or a set's `manifest.json` is absent or unparseable |
+| `4` | an after-surface has no before and no `firstRender` mark, a named capture set is missing/empty, a set's `manifest.json` is absent or unparseable, or `design-harness.json` exists but violates its schema |
 | `5` | the composed comment carries a machine-local path |
 | `6` | the composed comment is a bare `@` path reference — not redactable |
 | `7` | the PR is proven absent, closed, or merged |
@@ -661,5 +673,6 @@ scratch`'s allocator, `lawSource` from the presence table); sibling verbs guard 
 preconditions identically (`render` and `evidence` guard the lane on the same `18`/`11` and
 validate captures with the same `16`; `manifest`, `law` and `render` read the same convention
 table; `evidence` runs the same posting guards as the `build` writing verbs, on the same
-seats). The render→evidence seam persists through `<set>/manifest.json`, so no value crosses it
-by memory.
+seats — "the same posting guards" means the posting seats `5`/`6`/`8`/`9`; the claim guard is
+deliberately `ui`-local `18` where `build` uses `15`). The render→evidence seam persists through
+`<set>/manifest.json`, so no value crosses it by memory.
