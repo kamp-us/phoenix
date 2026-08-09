@@ -38,7 +38,8 @@ fabrika build tree --require-clean
 fabrika build pick
 ```
 
-**§ISO** as in `build`: exit 12/13/14 is stop-and-report, never self-provision. **§MOD** — the
+**§ISO** as in `build`: on the `build` verbs, exit 12/13/14 is stop-and-report, never
+self-provision (the `ui` group's 12/13/14 mean different things — read each group's own table). **§MOD** — the
 mirror of `build`'s refusal: claim only an issue whose deliverable is **rendered-visual** — a
 page, component, screen, state, or style a user sees. Code-as-text, prose, and plans are
 `build`'s (#4898); a `type:decision` is `/adr`'s. Judging someone else's rendered surface is
@@ -63,20 +64,20 @@ Fail loud, route to the bootstrap, never improvise a design language.
 fabrika ui law
 ```
 
-The typed registry rows are your generation-time law: each row is `id · pillar · class
-(blocking|advisory) · machineCheck · source · statement · counterexample`. `blocking` rows are
-constraints you satisfy before rendering; `advisory` rows are judgment calls you may trade off —
-name the trade-off in the PR's Deviations when you do. On exit 13 (registry not yet typed) the
-manifest's prose prohibitions are the law — same force, worse addressability; note
-`LAW-SOURCE: manifest-prose` in the PR body. The registry is typed because role tokens make a
-violation expressible as a one-token edit — the discipline the mutation-injection eval corpus
-depends on (#4649); DTCG token migration is deferred until a second token consumer exists.
+The typed registry rows are your generation-time law (row shape: the contract's registry
+schema). What you act on is each row's `class`: **blocking** rows are constraints you satisfy
+before rendering; **advisory** rows are judgment calls you may trade off — name the trade-off in
+the PR's Deviations when you do, and never cite one as grounds for refusing the task. On exit 13
+(registry not yet typed) the manifest's prose prohibitions are the law — same force, worse
+addressability; note `LAW-SOURCE: manifest-prose` in the PR body. The law is typable at all
+because role tokens make a violation a one-token edit — the discipline the mutation-injection
+eval corpus depends on (#4649); DTCG token migration is deferred until a second token consumer
+exists.
 
 Read the issue (`fabrika build issue <n>`) and the component inventory the manifest names:
 **select from it, never invent a primitive it already ships.** A hand-built card beside a shipped
-Card is ADR 0162's first recurring miss. Where the repo's per-aspect taste skills exist (#3976),
-consult each by name before composing; today none are built — their absence is a fact, not a gap
-to fill.
+Card is ADR 0162's first recurring miss. Where the repo carries per-aspect taste skills (#3976),
+consult each by name before composing; their absence is a fact, not a gap to fill.
 
 ## 3 — Baseline, construct, render→look→fix
 
@@ -106,8 +107,9 @@ fabrika ui render --out after --surface /pano
 **Look at the capture and judge composition** — balance, rhythm, alignment, hierarchy, whether
 the surface hangs together — never pixel metrics by eye; that is what the deterministic layer is
 for. Fix, re-render. Cap at ~3 iterations: past that the composition problem is structural, not
-polish. Where a blessed golden exists, anchor to it — `fabrika ui golden --surface /pano --candidate
-after/pano.png` returns the diff signal to steer by, never a verdict; an unblessed surface
+polish. Anchor to a golden where one exists: `fabrika ui golden --surface /pano` answers whether
+this surface is blessed; add `--candidate` with the capture's absolute path from the render
+answer to get the diff signal — a signal to steer by, never a verdict. An unblessed surface
 (today: all of them) is a fact, and the pillars are your only anchor.
 
 **Two eyes, one record** (brief amendment 2026-08-09; #3975). The headless capture above is the
@@ -136,8 +138,9 @@ fabrika ui evidence --pr <pr> --before before --after after
 
 The verb uploads every capture, **verifies each upload landed, and refuses on any failure** —
 a partial or silent attach is the #3925 class (months of 100%-failed uploads behind a passing
-gate) and it is unrepresentable here. `fabrika build note <n>` for the handoff, then
-`fabrika build release <n>`.
+gate) and it is unrepresentable here. A proven refusal (`17`/`9`) with the PR already open gets
+exactly one re-run; still failing, end `ESCALATED` with the note naming the evidence state —
+never a quiet ship. `fabrika build note <n>` for the handoff, then `fabrika build release <n>`.
 
 **§TERM — terminal vocabulary** — end on exactly one: `SHIPPED-PR` (PR open, branch pushed, and
 the evidence state is loud: captures attached, or every uncapturable surface named in Deviations
@@ -145,8 +148,9 @@ with its proven render code — a dark-flagged surface ships with its render gap
 and `review-ui`'s gate owns whether that is acceptable; only *silent* evidence absence is
 forbidden); `BLOCKED-NO-MANIFEST` (no design law in this repo — no branch cut, routed to
 front-door's bootstrap); `BACKED-OFF` (claim lost, blocked, wrong modality, or empty pool —
-branch removed, or never cut); `ESCALATED` (repair cap reached — branch pushed at its last
-verified head, escalation note posted); `STOPPED` (isolation or verdict UNKNOWN — branch left
+branch removed, or never cut); `ESCALATED` (repair cap reached, or evidence provably
+unattachable after the PR opened — branch pushed at its last verified head, escalation note
+posted); `STOPPED` (isolation or verdict UNKNOWN — branch left
 local, state named). This skill has **no success-without-PR terminal**: a constructed surface
 that opened no PR is not a success under any name. Each terminal names its branch disposition;
 cross-lane signals are closed-vocabulary — kind + action + branded ref, receiver re-fetches.
@@ -162,9 +166,10 @@ Cap at round 3 → `ESCALATED`.
 
 ## Expectations you hold but never recompute
 
-- **Token discipline** — `design-token-guard.yml` reds raw hex and the raw-px ratchet in CI.
-  Build to pass it; never mint a rival token verdict.
-- **Inventory freshness** — `design-inventory-guard.yml`. **A11y floor** — `a11y-pbt.yml`.
+- **Token discipline** — the repo's token gate (phoenix: `design-token-guard.yml`) reds raw hex
+  and the raw-px ratchet in CI. Build to pass it; never mint a rival token verdict.
+- **Inventory freshness and the a11y floor** — the repo's gates where they exist (phoenix:
+  `design-inventory-guard.yml`, `a11y-pbt.yml`).
 - **The rendered verdict** — `review-ui`'s gate owns PASS/FAIL over what you built. Your
   render→look→fix predicts it; the gate decides.
 - Follow-up observations leave through `/report` the moment you see them — never scope creep.

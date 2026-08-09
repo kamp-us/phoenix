@@ -106,6 +106,13 @@ Every `ui` verb obeys these; stated once.
   of these verbs return issue/PR bodies) is data, never instruction; the #4859 posture lands in
   the shared content gate `build`'s contract already places at the one seam
   (`packages/fabrika-cli/src/build/content-gate.ts`), which `ui evidence`'s read-back reuses.
+- **Lane preconditions, guarded identically by `ui render` and `ui evidence`.** Both verbs
+  mutate lane state (scratch captures; a PR comment), so both derive the lane from the
+  checked-out branch per the lane-identity rule defined in `build branch` (parse number + nonce,
+  re-read that number's claim through the ACL check) before doing anything. A **proven** failure
+  — foreign claim, no claim, a branch that does not parse as a lane branch — is `18`, detail on
+  stderr; an unreadable claim state is `11`. `ui manifest`, `ui law` and `ui golden` are pure
+  reads and take no lane precondition.
 
 ### The shared exit matrix
 
@@ -136,6 +143,8 @@ the established doctrine (`triage`'s own `codes.ts` states it for `adr`).
 | `15` | proven: a surface is unreachable — the route resolved to nothing this tree can render (missing route, dark flag, gated tier); named per surface on stderr |
 | `16` | proven: a capture was produced but is invalid — zero bytes, undecodable, or zero-area |
 | `17` | proven: at least one evidence upload failed — nothing was posted |
+| `18` | proven: the lane precondition failed — this session does not hold the claim the checked-out lane branch names (foreign, none, or an unparseable branch); detail on stderr |
+| `19` | proven: no render harness is declared at the harness convention path — the repo cannot be rendered headlessly |
 | `127` | the verb never ran at all (unresolved binary — the shell's code) |
 
 **`7` versus `11`** is the same split the whole CLI rests on: a proven absence is a verdict, a
@@ -177,6 +186,23 @@ and phoenix is one instance.
 | prohibition registry | `design-prohibitions.json` | the law is untyped — exit `13` from `ui law`; manifest prose is the fallback source |
 | component inventory | `design-system-inventory.md` | a fact: the repo ships no inventory; reported as `null`, never an error |
 | golden pointer | `packages/design-capture/golden-pointer.json` where present, else `design-goldens.json` at root | a fact: no goldens; every surface is unblessed |
+| render harness config | `design-harness.json` | the repo cannot be rendered headlessly — exit `19` from `ui render`; reported as `null` by `ui manifest` |
+
+### The harness config schema — canonical here
+
+`design-harness.json` is one JSON object telling the `ui` group how this repo renders and where
+evidence lives — the portable replacement for v1's phoenix-hardcoded "alchemy dev" knowledge:
+
+| Key | Type | Required | Meaning |
+|---|---|---|---|
+| `command` | string | yes | the shell command that starts the repo's dev server, run from the repo root; `ui render` starts it, waits for readiness, and kills it on exit |
+| `url` | string | yes | the base URL the server listens on (e.g. `http://127.0.0.1:5173`); surfaces resolve as `<url><route>` |
+| `readyPath` | string | no (default `/`) | path polled for HTTP 200 to detect readiness; not ready within 60s is `11` |
+| `viewport` | object `{width, height}` | no (default `{1280, 900}`) | the capture viewport in CSS px |
+| `evidenceStore` | string | no | base URL of a content-addressed evidence store (the ADR 0144/0183 idiom); see `ui evidence` for the two-tier upload protocol |
+
+A file that exists but violates this schema is `4` from `ui render` — same whole-file rule as the
+registry.
 
 ### The registry schema — canonical here
 
@@ -220,6 +246,7 @@ contract's table.
  "registry": "design-prohibitions.json",
  "inventory": "design-system-inventory.md",
  "goldenPointer": "packages/design-capture/golden-pointer.json",
+ "harness": "design-harness.json",
  "lawSource": "registry"}
 ```
 
@@ -250,7 +277,7 @@ supplied fact, and the one refusal (`12`) exists because "no manifest" must rout
 
 ```
 $ fabrika ui manifest
-{"manifest":"design-system-manifest.md","registry":null,"inventory":"design-system-inventory.md","goldenPointer":"packages/design-capture/golden-pointer.json","lawSource":"manifest-prose"}
+{"manifest":"design-system-manifest.md","registry":null,"inventory":"design-system-inventory.md","goldenPointer":"packages/design-capture/golden-pointer.json","harness":"design-harness.json","lawSource":"manifest-prose"}
 ```
 
 ```
@@ -338,8 +365,13 @@ fabrika ui render --out before --surface /pano --surface /pano:signed-in [--firs
 | Flag | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `--out` | string | yes | — | kebab-case capture-set name; captures land under the lane scratch dir (`build scratch`'s allocator) in `<set>/` |
-| `--surface` | string, repeatable | yes (≥1) | — | a surface id: `<route>[:<state>]`; zero surfaces is a usage error (`1`) — no tool guesses surfaces from a diff |
+| `--surface` | string, repeatable | yes (≥1) | — | a surface id: a bare route (`/pano`); zero surfaces is a usage error (`1`) — no tool guesses surfaces from a diff |
 | `--first-render` | string, repeatable | no | — | a listed surface that has no pre-change state; recorded as `firstRender: true`, exempted from before/after pairing |
+
+A surface id is a bare route in v1 of this grammar. A `:state` suffix is **reserved and refused
+on `10`** — realizing a named state (a cookie, a fixture, a script) needs its own convention,
+deferred until a consumer demands it; refusing now keeps the grammar extensible without two
+implementations guessing differently.
 
 **Output** — machine. One JSON object on full success only:
 
@@ -350,22 +382,36 @@ fabrika ui render --out before --surface /pano --surface /pano:signed-in [--firs
 ]}
 ```
 
-The verb renders each surface in **this tree** over the local harness (dev worker, empty local
-store, headless browser), writes one PNG per surface, and **validates every capture before
-answering**: file exists, non-zero bytes, decodable, non-zero area. Exit 0 requires **every**
-requested surface captured and valid — a partial capture set is one of the proven refusals
-below, with every surface's individual outcome on stderr, so the skill drops a surface only by
-re-invoking without it: the drop is the skill's explicit act, on the record, never the tool's
-silent tolerance.
+**The mechanism, in order.** Resolve the lane (shared conventions; the set dir is
+`build scratch`'s allocation for this lane, `<scratch>/<set>/`). Read `design-harness.json`
+(absent `19`, malformed `4`). Start `command` from the repo root; poll `<url><readyPath>` until
+HTTP 200, up to 60s (`11` on timeout, with the server's stderr tail in the message); on any
+exit, kill the started process tree. For each `--surface`, in a headless browser at the
+config's viewport: navigate to `<url><route>`; an HTTP status ≥ 400 or a failed navigation is
+**unreachable** (`15`); an uncaught page exception during render is **crashed** (`14`);
+otherwise screenshot the full page to `<set>/<route-slug>.png` (slug: `/` → `-`, leading
+stripped, `/` root → `root`). Validate every capture: file exists, non-zero bytes, decodable
+PNG, non-zero area (`16` on any failure). **Write the set manifest** `<set>/manifest.json` —
+byte-identical to the stdout JSON — so `ui evidence` reads the set without re-deriving it; the
+manifest is part of the answer, and a set without one is not a set.
+
+Exit 0 requires **every** requested surface captured and valid — a partial capture set is one of
+the proven refusals below, with every surface's individual outcome on stderr, so the skill drops
+a surface only by re-invoking without it: the drop is the skill's explicit act, on the record,
+never the tool's silent tolerance.
 
 **Exit status** (beyond the universal four)
 
 | Code | Trigger |
 |---|---|
-| `11` | the harness could not start, or a capture's validity could not be determined — the render is UNKNOWN |
+| `4` | `design-harness.json` exists but violates its schema |
+| `10` | `--out` is not kebab-case, or a `--surface` carries the reserved `:state` suffix |
+| `11` | the harness did not become ready, a capture's validity could not be determined, or the claim state could not be read — the render is UNKNOWN |
 | `14` | proven: at least one surface threw an uncaught page error during render |
-| `15` | proven: at least one surface is unreachable — no route, dark flag, gated tier; each named on stderr |
+| `15` | proven: at least one surface is unreachable — status ≥ 400 or failed navigation (no route, dark flag, gated tier); each named on stderr |
 | `16` | proven: at least one capture was produced but is invalid (zero bytes, undecodable, zero area) |
+| `18` | proven: the lane precondition failed (shared conventions) |
+| `19` | proven: no `design-harness.json` at the convention path |
 
 When outcomes mix, the reported code is the smallest applicable of `14`/`15`/`16` and stderr
 carries every surface's outcome — the code routes, the stderr enumerates.
@@ -378,6 +424,10 @@ carries every surface's outcome — the code routes, the stderr enumerates.
 | `ui render: surface "<id>" is unreachable in this tree (<reason: no route | flag dark | gated tier>) — fix reachability, or drop it explicitly and carry the reason into the PR's Deviations (#4305).` | 15 | refusal |
 | `ui render: surface "<id>" captured invalid bytes (<detail>) — a capture nobody can open is not evidence (#3925's class).` | 16 | refusal |
 | `ui render: the render harness could not start: <reason> — every surface is UNKNOWN.` | 11 | refusal |
+| `ui render: no design-harness.json at the repo root — this repo declares no headless render path; add one (see the harness config schema).` | 19 | refusal |
+| `ui render: design-harness.json exists but does not satisfy its schema: <first violation>.` | 4 | refusal |
+| `ui render: --surface "<id>" carries a :state suffix — states are a reserved grammar, not yet realized; render the bare route.` | 10 | refusal |
+| `ui render: this session does not hold the claim the checked-out branch names (<detail>) — the lane is not yours.` | 18 | refusal |
 
 **Scope** — exactly the `--surface` operands, no more: the verb never scans the diff. Zero
 operands is `1`, so "rendered nothing, found nothing wrong" is unrepresentable (ADR 0092).
@@ -417,15 +467,28 @@ fabrika ui golden --surface /pano --candidate <path>
 | Flag | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `--surface` | string | yes | — | the surface id whose blessed golden to resolve |
-| `--candidate` | string | no | — | a candidate PNG to diff against the golden; without it the verb only resolves |
+| `--candidate` | string | no | — | a candidate PNG to diff against the golden, resolved against the invocation cwd (the canonical input is the absolute `path` from a `ui render` answer); without it the verb only resolves |
+
+**The pointer schema — canonical here.** The golden pointer file is one JSON object:
+`{"store": "<base URL>", "surfaces": {"<surface-id>": {"sha256": "<hex>"}}}`. `store` is the
+content-addressed byte store's base URL (phoenix's instance: depo, per ADR 0183); golden bytes
+for a surface resolve as `GET <store>/<sha256>.png`, and the fetched bytes must hash to the
+pointer's sha (a mismatch is `11` — the store is answering wrongly, trust nothing). Phoenix's
+shipped pointer predates the `store` key while the corpus is empty (`{"surfaces": {}}`); the
+implementation treats a pointer with surfaces but no `store` as malformed (`4`).
+
+**The diff — defined here so two implementers compute one number.** Dimensions must match; a
+dimension mismatch is reported as `{"magnitude": 1, "regions": [], "dimensionMismatch": true}` —
+maximal signal, not an error. Otherwise: a pixel *differs* when the maximum absolute per-channel
+delta (RGBA, 0–255) exceeds 10; `magnitude` is differing pixels ÷ total pixels, rounded to 3
+decimals. `regions` is the bounding boxes of 8-connected components of differing pixels, boxes
+closer than 16px merged, largest-area first, capped at 20 (the cap stated on stderr when hit).
 
 **Output** — machine. One JSON object. Unblessed (the common case — the corpus is empty today):
 `{"surface": "/pano", "blessed": false, "golden": null, "diff": null}` on exit 0 — **a missing
-golden is a fact, not a failure**. Blessed without `--candidate`: `blessed: true` plus
-`golden: {"sha256": "…", "path": "<abs cached path>"}`. With `--candidate`:
-`diff: {"magnitude": 0.031, "regions": [{"x":…,"y":…,"w":…,"h":…}]}` — **a signal to steer by,
-never a verdict**; no threshold lives in this verb and no PASS/FAIL token ever appears in its
-output.
+golden is a fact, not a failure**. Blessed without `--candidate`: `blessed: true` plus the
+resolved golden. With `--candidate`: the diff object too — **a signal to steer by, never a
+verdict**; no threshold lives in this verb and no PASS/FAIL token ever appears in its output.
 
 **Exit status** (beyond the universal four)
 
@@ -448,12 +511,25 @@ after a successful pointer read: v1's blessed-surface probe resolved an **unread
 an empty set with `|| true` (`step4d-blessed-surfaces.sh:9-11`, tracked as #4501) — the exact
 fail-open this verb's `4`/`11` rows exist to refuse.
 
-**Example**
+**Examples**
 
 ```
 $ fabrika ui golden --surface /pano
 {"surface":"/pano","blessed":false,"golden":null,"diff":null}
 ```
+
+```
+$ fabrika ui golden --surface /pano
+{"surface":"/pano","blessed":true,"golden":{"sha256":"9c41f2…","path":"/tmp/fabrika-build/s-9f2e/4312-c1a4d6f8/goldens/pano.png"},"diff":null}
+```
+
+```
+$ fabrika ui golden --surface /pano --candidate /tmp/fabrika-build/s-9f2e/4312-c1a4d6f8/after/pano.png
+{"surface":"/pano","blessed":true,"golden":{"sha256":"9c41f2…","path":"/tmp/fabrika-build/s-9f2e/4312-c1a4d6f8/goldens/pano.png"},"diff":{"magnitude":0.031,"regions":[{"x":120,"y":840,"w":420,"h":96}]}}
+```
+
+(The golden's `path` is the fetched bytes cached under the lane scratch dir's `goldens/` leaf —
+derivable: the allocator's dir plus the surface slug.)
 
 **Grounding**
 
@@ -484,32 +560,51 @@ fabrika ui evidence --pr 4318 --before before --after after
 **Output** — machine.
 `{"answer": "attached", "pr": 4318, "commentId": 512347, "head": "03135b91", "surfaces": 2}`.
 
-The protocol, in order: pair every after-capture with its before (a `firstRender` surface pairs
-with nothing and is labeled *new surface*; an after-surface with neither a before nor a
-`firstRender` mark is `4` — an unexplained missing baseline is a hole in the evidence, not a
-layout choice); upload every PNG; **verify every upload individually — any failure is `17` and
-nothing is posted**, because evidence is all-or-nothing: a comment showing three of five
-surfaces reads as "this is what changed" and lies by omission; compose one markdown comment —
-per surface, before|after side by side (or *new surface*), **bound to the PR's current head SHA
-in the comment text**; scan it with the imported leak predicates (`5`/`6`); post it; re-read it
-through `normalizeForReadback` (`9` on mismatch). A re-run after a fix posts a **new** comment at
-the new head — comments are append-only evidence, never edited in place.
+The protocol, in order. **Read both capture sets through their manifests** —
+`<set>/manifest.json`, written by `ui render`; a named set with no manifest, or a manifest that
+does not parse, is `4` (a set without its manifest is not a set). Pair every after-capture with
+its before by surface id (a `firstRender` surface pairs with nothing and is labeled *new
+surface*; an after-surface with neither a before nor a `firstRender` mark is `4` — an
+unexplained missing baseline is a hole in the evidence, not a layout choice). Re-validate every
+paired PNG against its manifest sha (`16` on mismatch or invalidity). **Upload every PNG and
+verify each upload individually, before anything posts** — the two-tier store:
 
-Preconditions: the lane's claim confirmed on the PR's number (`15`-class via the `build` group's
-claim protocol), PR open (`7`).
+1. **Store tier** — when the harness config declares `evidenceStore`: `PUT` each PNG
+   content-addressed (`<store>/<sha256>.png`, the golden-store idiom of ADR 0183), then `GET`
+   the same URL back and hash-compare. Any failed PUT, GET, or hash mismatch is `17`.
+2. **Attachment tier** — no `evidenceStore` declared: upload each PNG through GitHub's
+   user-attachment endpoint, then probe every returned URL (`HEAD`, expect 200). Any failed
+   upload or probe is `17`. Two facts about this tier stated rather than hidden: the endpoint
+   is **undocumented** (the ADR 0165 durability caveat rides along — hosted copies are
+   display-grade, the set manifest in the lane scratch is the durable record), and it is an
+   upload API, not an issues read/write, so it sits **outside** skill-conventions §11's
+   REST-porcelain scope while every issue/PR read and write in this verb stays inside it.
+
+Any failure in either tier is `17`, aggregated, **nothing posted** — evidence is all-or-nothing:
+a comment showing three of five surfaces reads as "this is what changed" and lies by omission.
+Then compose one markdown comment — per surface, before|after side by side (or *new surface*),
+**bound to the PR's current head SHA in the comment text**; scan it with the imported leak
+predicates (`5`/`6`); post it; re-read it through `normalizeForReadback` (`9` on mismatch). A
+re-run after a fix posts a **new** comment at the new head — comments are append-only evidence,
+never edited in place.
+
+Preconditions: the lane precondition of the shared conventions (`18`/`11`) against the PR's
+number, PR open (`7`).
 
 **Exit status** (beyond the universal four)
 
 | Code | Trigger |
 |---|---|
-| `4` | an after-surface has no before and no `firstRender` mark, or a named capture set is missing/empty |
+| `4` | an after-surface has no before and no `firstRender` mark, a named capture set is missing/empty, or a set's `manifest.json` is absent or unparseable |
 | `5` | the composed comment carries a machine-local path |
+| `6` | the composed comment is a bare `@` path reference — not redactable |
 | `7` | the PR is proven absent, closed, or merged |
 | `8` | the comment post failed — it may or may not have landed; re-read the PR before re-running |
 | `9` | the comment landed but does not read back as sent |
 | `11` | a precondition read failed (claim, PR head, capture set) — nothing was uploaded or posted |
-| `16` | proven: a capture in a named set is invalid — evidence nobody can open is not evidence |
-| `17` | proven: at least one upload failed — **nothing was posted**; every failed surface named on stderr |
+| `16` | proven: a capture in a named set is invalid or does not match its manifest sha — evidence nobody can open is not evidence |
+| `17` | proven: at least one upload or upload-verification failed — **nothing was posted**; every failed surface named on stderr |
+| `18` | proven: the lane precondition failed (shared conventions) |
 
 **Errors**
 
@@ -517,6 +612,9 @@ claim protocol), PR open (`7`).
 |---|---|---|
 | `ui evidence: after-surface "<id>" has no before capture and no firstRender mark — an unexplained missing baseline is a hole in the evidence.` | 4 | refusal |
 | `ui evidence: upload failed for <n> of <m> captures (<first surface>: <reason>) — refusing to post partial evidence; a gallery missing its failures is #3925.` | 17 | refusal |
+| `ui evidence: the composed comment is a bare @ path reference — write the evidence, not a pointer to it.` | 6 | refusal |
+| `ui evidence: set "<set>" has no manifest.json — a set without its manifest is not a set; re-run ui render.` | 4 | refusal |
+| `ui evidence: this session does not hold the claim on #<n> (<detail>) — the lane is not yours.` | 18 | refusal |
 | `ui evidence: the composed comment carries a machine-local path: <first hit>.` | 5 | refusal |
 | `ui evidence: PR #<n> is proven absent, closed, or merged.` | 7 | refusal |
 | `ui evidence: the post failed: <reason> — it may or may not have landed; re-read the PR before re-running.` | 8 | refusal |
@@ -560,6 +658,8 @@ contract itself uses for the shipped wire modules. The three hand-checks: every 
 outcome was walked per verb (mixed render outcomes route by smallest code with full enumeration
 on stderr); every example value derives from stated rules (the scratch-dir path from `build
 scratch`'s allocator, `lawSource` from the presence table); sibling verbs guard shared
-preconditions identically (`render` and `evidence` validate captures with the same `16`;
-`manifest` and `law` read the same convention table; `evidence` runs the same posting guards as
-the `build` writing verbs, on the same seats).
+preconditions identically (`render` and `evidence` guard the lane on the same `18`/`11` and
+validate captures with the same `16`; `manifest`, `law` and `render` read the same convention
+table; `evidence` runs the same posting guards as the `build` writing verbs, on the same
+seats). The render→evidence seam persists through `<set>/manifest.json`, so no value crosses it
+by memory.
