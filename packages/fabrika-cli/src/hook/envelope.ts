@@ -23,6 +23,12 @@ export interface Envelope {
 	readonly cwd: string;
 	/** Every key the harness actually sent, in arrival order. The per-event half of the shape. */
 	readonly fields: ReadonlyArray<string>;
+	/**
+	 * The parsed envelope itself. The per-event fields stay untyped here on purpose — a hook that
+	 * needs one (`tool_input.model`, say) reads it off this record and states its own shape, so this
+	 * module never grows an event-by-event schema it cannot capture evidence for.
+	 */
+	readonly payload: Record<string, unknown>;
 }
 
 export type EnvelopeRead =
@@ -83,6 +89,7 @@ export const classifyEnvelope = (text: string): EnvelopeRead => {
 			session: record.session_id as string,
 			cwd: record.cwd as string,
 			fields: Object.keys(record),
+			payload: record,
 		},
 	};
 };

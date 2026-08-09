@@ -455,8 +455,9 @@ its one interim dispatch-failure policy point live in
 |---|---|
 | `hook check` | whether the envelope on stdin is one fabrika can act on — `conforms\t<hook_event_name>\t<field-count>` |
 | `hook codes` | the exit taxonomy every verb in the group allocates from |
+| `hook spawn` | whether the subagent spawn on stdin may run on the model it asked for — the `PreToolUse` permission decision, denying an off-allowlist model |
 
-Two things shape it:
+Three things shape it:
 
 - **Three failures, three codes.** "Stdin held nothing" (`3`), "bytes arrived and are provably
   not an envelope" (`12`) and "fd 0 could not be read" (`13`) are different claims, and fusing
@@ -465,6 +466,11 @@ Two things shape it:
   envelopes committed at `src/hook/__fixtures__/`, with their capture method and harness version
   beside them (ADR 0180). The golden test runs the argv it reads out of the committed
   `hooks.json`, so a green test cannot be exercising a verb the surface does not declare.
+- **`hook spawn` is a decision, wrapped thinly.** The allow / allow-inherit / deny outcome is a pure
+  function of `(requested model, WORKFLOW_MODEL pin)` in [`src/hook/spawn.ts`](./src/hook/spawn.ts),
+  over the one model vocabulary in [`src/models.ts`](./src/models.ts) — the allowlist, the harness
+  alias map and the committed default pin, which are one table because the request is canonicalized
+  through the aliases *before* the allowlist sees it.
 
 ## The `spend` group
 

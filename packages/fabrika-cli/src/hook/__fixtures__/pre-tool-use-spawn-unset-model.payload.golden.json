@@ -1,0 +1,17 @@
+{
+	"session_id": "fa171a3b-98a0-4226-acd9-328ba5e931e7",
+	"transcript_path": "/Users/<operator>/.claude/projects/-private-tmp-spawn-capture/fa171a3b-98a0-4226-acd9-328ba5e931e7.jsonl",
+	"cwd": "/private/tmp/spawn-capture",
+	"prompt_id": "774c7713-a4e1-4e43-9be8-01d15b2c4a45",
+	"permission_mode": "acceptEdits",
+	"effort": { "level": "medium" },
+	"hook_event_name": "PreToolUse",
+	"tool_name": "Agent",
+	"tool_input": {
+		"description": "Say OK",
+		"prompt": "reply with the single word OK",
+		"subagent_type": "general-purpose",
+		"run_in_background": false
+	},
+	"tool_use_id": "toolu_01G4y5JtRQ718NJB6TEvys6c"
+}
