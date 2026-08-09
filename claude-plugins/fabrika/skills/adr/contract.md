@@ -60,9 +60,10 @@ Every verb below obeys these; they are stated once rather than repeated per bloc
   run. `127` = the verb never ran. `3` and up are each verb's own proven outcomes.
 - **A non-zero exit is UNKNOWN.** No verb prints a partial or permissive answer on a non-zero exit;
   a caller reads the status before the bytes.
-- **GitHub reads go through `gh api` REST, never GraphQL** — the org's Projects-classic integration
-  breaks GraphQL — and every list read pages. A pull request that adds its `.decisions/` file past
-  file #100 still claims its number (#725).
+- **GitHub access follows [skill conventions §11 — REST, never GraphQL](../../docs/skill-conventions.md#11-github-access-is-rest-never-graphql)**
+  — REST, paginated. The reason lives there, not here. What is local to this group: a pull request
+  that adds its `.decisions/` file past file #100 still claims its number (#725), so the paginate
+  half is load-bearing for `adr next`.
 
 ---
 

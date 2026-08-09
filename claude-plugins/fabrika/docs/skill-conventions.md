@@ -285,6 +285,37 @@ evals.
 > [#4891](https://github.com/kamp-us/phoenix/issues/4891) (2026-08-08, in-session), the leaf rule
 > and the eval-enumeration obligation recorded with it.
 
+## 11. GitHub access is REST, never GraphQL
+
+**Every GitHub read and write a fabrika skill or verb makes goes through `gh api` REST, and every
+list read paginates.** This section is where that rule lives; a skill contract cites it and does not
+restate it.
+
+The forcing reason is the org, not taste: kamp-us runs a legacy Projects-classic integration, and
+GraphQL issue and pull-request queries break against it. That rules out the porcelain that silently
+takes the GraphQL path — the projects noun, the `pr`/`issue` edit verbs, the explicit GraphQL
+transport — in favour of the REST form (`gh api repos/…`, `gh api -X PATCH repos/…`). Pagination is
+a **separate** scar riding along: an unpaginated list read returns a plausible first page instead of
+an error, so a verb that reads one page and reports a count reports a wrong one with nothing marking
+it wrong.
+
+**It is single-sourced here because it is a platform fact with an expiry.** The integration is not
+permanent. Stated once, its retirement is one paragraph edited; stated per contract, it is a rule
+every copy can drift from while each author assumes some other copy is authoritative.
+
+**Where it is enforced today — stated so nobody assumes coverage it does not have.** The
+`skill-gh-lint` job ([`.github/workflows/skill-gh-lint.yml`](../../../.github/workflows/skill-gh-lint.yml),
+matchers in [`lint.ts`](../../../packages/pipeline-cli/src/tools/gh-phoenix/lint.ts)) reds on a
+GraphQL-path `gh` invocation anywhere in the corpus it walks and fails closed on zero scope
+([ADR 0092](../../../.decisions/0092-gates-fail-closed-on-zero-scope.md)). That walk is rooted at
+`claude-plugins/kampus-pipeline/`, so **fabrika's own corpus is outside its scope** — here the rule
+is prose held by review, not machine-checked. Extending the walk is its own change; this doc does
+not assume it.
+
+> Source: the org's Projects-classic constraint, carried through v1 as a per-skill standing
+> invariant. Five fabrika contracts each restated it before this section existed
+> ([#4929](https://github.com/kamp-us/phoenix/issues/4929)); they now cite it.
+
 ## What these conventions deliberately do not cover
 
 - **What a verb owes its caller** — `--help` discoverability, output contracts, usage examples —
