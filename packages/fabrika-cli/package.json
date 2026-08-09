@@ -20,7 +20,8 @@
 		"./package.json": "./package.json"
 	},
 	"files": [
-		"dist"
+		"dist",
+		"scripts"
 	],
 	"engines": {
 		"node": ">=24"
@@ -46,6 +47,7 @@
 	},
 	"scripts": {
 		"build": "tsc -p tsconfig.build.json",
+		"postinstall": "node ./scripts/provision-browser.mjs",
 		"prepublishOnly": "pnpm run build",
 		"typecheck": "tsgo -p tsconfig.json",
 		"test": "vitest run",

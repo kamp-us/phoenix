@@ -74,6 +74,18 @@ export const BUILD_SEATS: SharedSeats = {...SHARED_SEATS, BAD_SECTIONS: "BAD_SEC
  */
 export const REVIEW_UI_SEATS: SharedSeats = {...SHARED_SEATS, MALFORMED_DOCUMENT: "BAD_SECTIONS"};
 
+/**
+ * `ui`'s seats: `build`'s nine minus the stdin seat.
+ *
+ * No `ui` verb reads stdin, and rather than seat a second meaning on `3` the group holds it empty as
+ * `DELIBERATE_GAP` — so the shared-seat map cannot claim it, and the private-code check reads `3` as
+ * occupied by the base alone.
+ */
+export const UI_SEATS: SharedSeats = (() => {
+	const {EMPTY_STDIN: _stdin, ...rest} = BUILD_SEATS;
+	return rest;
+})();
+
 /** The groups that align to {@link ALIGNMENT_BASE}, each with the seats it claims to share. */
 export const ALIGNED_GROUPS: Readonly<Record<string, SharedSeats>> = {
 	build: BUILD_SEATS,
@@ -83,6 +95,7 @@ export const ALIGNED_GROUPS: Readonly<Record<string, SharedSeats>> = {
 	review: SHARED_SEATS,
 	"review-ui": REVIEW_UI_SEATS,
 	ship: SHARED_SEATS,
+	ui: UI_SEATS,
 };
 
 /**

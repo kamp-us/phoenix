@@ -21,6 +21,17 @@ import {resolveTargetRepo} from "./target.ts";
 
 const VERB = "build scratch";
 
+/**
+ * The lane's namespace, exported so a sibling group that writes into this lane's scratch derives the
+ * path rather than restating the formula — the `ui` group's capture sets land under it.
+ */
+export const laneScratchDir = (
+	tmpRoot: string,
+	session: string,
+	number: number,
+	nonce: string,
+): string => `${tmpRoot.replace(/\/+$/, "")}/fabrika-build/${session}/${number}-${nonce}`;
+
 export interface ScratchOptions {
 	readonly number: number;
 	readonly slug: string;
@@ -62,8 +73,7 @@ export const runScratch = (
 			);
 		}
 
-		const root = options.tmpRoot.replace(/\/+$/, "");
-		const dir = `${root}/fabrika-build/${session.id}/${number}-${nonce}`;
+		const dir = laneScratchDir(options.tmpRoot, session.id, number, nonce);
 		const fs = yield* FileSystem.FileSystem;
 		const made: string | null = yield* fs.makeDirectory(dir, {recursive: true}).pipe(
 			Effect.as(null),

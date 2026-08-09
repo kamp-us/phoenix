@@ -26,6 +26,7 @@ import {reviewUiCommand} from "./review-ui/command.ts";
 import {shipCommand} from "./ship/command.ts";
 import {spendCommand} from "./spend/command.ts";
 import {triageCommand} from "./triage/command.ts";
+import {uiCommand} from "./ui/command.ts";
 import {wireCommand} from "./wire/command.ts";
 
 /** A registered verb group: a top-level `Command` whose name is the `fabrika <name>` selector. */
@@ -44,5 +45,6 @@ export const registeredGroups: ReadonlyArray<VerbGroup> = [
 	shipCommand,
 	spendCommand,
 	triageCommand,
+	uiCommand,
 	wireCommand,
 ];
