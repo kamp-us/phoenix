@@ -24,7 +24,7 @@ import {permissionFor, viewerLogin} from "../io/pulls.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {read as readCriteria} from "../wire/acceptance-criteria.ts";
-import {appendOnly, criterionRow, insertAfterLastCheckbox} from "./append.ts";
+import {appendOnly, criterionRow, grewByOne, insertAfterLastCriterion} from "./append.ts";
 import {type AuthoredSurface, leakRefusal, readAuthored} from "./authored.ts";
 import {
 	ACL_DENIED,
@@ -157,10 +157,22 @@ export const runAppendCriterion = (
 				: answer(`escalated-frozen\t${issue}\t${round}`, diagnostics);
 		}
 
-		// Fence 2 — append-only, proven against the old bytes before anything is sent.
+		// Fence 2 — append-only, proven twice before anything is sent: against the old bytes, and
+		// against what the registered format reads back out of the composed body.
 		const row = criterionRow(authored.text, pr, round);
-		const composed = insertAfterLastCheckbox(target.value.body, row);
-		if (composed === null || appendOnly(target.value.body, composed)._tag === "Violates") {
+		const last = before[before.length - 1]?.text ?? "";
+		const composed = insertAfterLastCriterion(target.value.body, last, row);
+		const composedBlock = composed === null ? null : readCriteria(composed);
+		const wouldGrow = grewByOne(
+			before,
+			composedBlock !== null && composedBlock._tag === "Found" ? composedBlock.value : null,
+			authored.text,
+		);
+		if (
+			composed === null ||
+			appendOnly(target.value.body, composed)._tag === "Violates" ||
+			!wouldGrow
+		) {
 			return refuse(
 				APPEND_ONLY,
 				`${VERB}: the append would drop or mutate an existing row — refusing (append-only fence).`,
@@ -181,12 +193,7 @@ export const runAppendCriterion = (
 		const back = yield* getIssue(repo, issue);
 		const reread = back._tag === "Present" ? readCriteria(back.value.body) : null;
 		const after = reread !== null && reread._tag === "Found" ? reread.value : null;
-		const grew =
-			after !== null &&
-			after.length === before.length + 1 &&
-			before.every((criterion, index) => after[index]?.text === criterion.text) &&
-			after[before.length]?.text.includes(authored.text.trim()) === true;
-		if (!grew) {
+		if (!grewByOne(before, after, authored.text) || after === null) {
 			return refuse(
 				READBACK_MISMATCH,
 				`${VERB}: read-back does not show the prior rows plus this one — inspect #${issue}.`,

@@ -76,9 +76,15 @@ const labelOf = (lead: string): string | null => {
 	return numeric?.[1] ?? null;
 };
 
-/** The `**Said:**` field's first line, or `null` when the bullet carries no `Said` at all. */
+/**
+ * The `**Said:**` field's first line, or `null` when the bullet carries no `Said` at all.
+ *
+ * The emphasis is admitted on both sides of the colon: the canonical §DEV entry writes `**Said:**`,
+ * closing the bold *after* the punctuation, so a pattern anchored only on `**Said**:` would leave the
+ * closer at the head of every value it read.
+ */
 const saidOf = (text: string): string | null => {
-	const at = /\*{0,2}said\*{0,2}\s*:/i.exec(text);
+	const at = /\*{0,2}said\*{0,2}\s*:\s*\*{0,2}/i.exec(text);
 	if (at === null) return null;
 	const rest = text.slice(at.index + at[0].length);
 	const end = /\*{0,2}(?:did|why|disposition)\*{0,2}\s*:/i.exec(rest);
