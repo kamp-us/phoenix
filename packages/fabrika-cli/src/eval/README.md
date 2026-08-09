@@ -68,6 +68,56 @@ joins (the runner, the scorecard) key on the live stage.
 - `decodeManifest(text)` — total: returns a typed `Result` failure (`malformed-json` or
   `schema-mismatch`) on bad input, never throws. `encodeManifest(manifest)` round-trips it.
 
+## Stage-admission rule — a stage exists when its skill does
+
+`STAGES` is not a plan of the fabrika skill set. It is a record of what this harness can actually
+grade, so a name enters it when **both** of these are already true, and not before:
+
+1. **Its skill exists** — there is a `SKILL.md` for it under
+   [`claude-plugins/fabrika/skills/`](../../../../claude-plugins/fabrika/skills), so
+   `fabrika eval run --stage <name>` has something real to spawn.
+2. **There is something to grade under it** — committed ground truth (a corpus entry, or an eval
+   set) that a grader arm can score, landing in the same change as the stage key.
+
+Admitting a name earlier buys a permanently-empty manifest key and a grader arm nothing can reach,
+and the vocabulary then describes stages nobody runs — the drift epic
+[#4960](https://github.com/kamp-us/phoenix/issues/4960) exists to remove. So growth is per-skill and
+demand-driven: the change that authors a skill's first cases is the change that adds its `STAGES`
+member, its `CorpusManifest` key and its `oracle.ts` grader arm, together.
+
+`stage-admission.data.unit.test.ts` is the enforcement — a `STAGES` member with no grader arm, no
+manifest key, or no skill on disk turns the suite red, and an empty `STAGES` is a failure rather than
+a vacuous pass (ADR [0092](../../../../.decisions/0092-gates-fail-closed-on-zero-scope.md)).
+
+A stage key and its skill's directory name need not be identical; `ship-it` is the one that differs
+today (its skill is `ship`). Renaming it is deliberately not this harness's call — #4960 leaves
+`ship-it` alone pending the lane that owns skill naming.
+
+### Fabrika surfaces that deliberately have no stage today
+
+Named here so the gap reads as a decision rather than an oversight:
+
+- `build-ui` — the skill exists, but no ground truth has been committed for a rendered-visual build,
+  so clause 2 is unmet. It is admitted the moment its first cases land.
+- `review-ui` — the same shape: the skill exists, its ground truth does not.
+- `governance` — no skill exists yet. `review`'s skill rubric hands gate-invariant preservation to
+  it, so the name is referenced before the skill is written; clause 1 is unmet.
+- `check-epic-plan` — no skill exists yet. Plan review is `review`'s explicit non-scope, and until
+  the skill is authored there is nothing to spawn.
+- `build-epic`, `report`, `adr` — authored skills with no committed ground truth, so clause 2 is
+  unmet for them too. They are not excluded on principle; nobody has recorded a baseline yet.
+
+### Stages carrying zero committed corpus entries
+
+A stage that is admitted but ungraded is a **recorded choice**, not an oversight, and it is listed
+here so a reader can tell the two apart. The data test keeps this list honest in both directions: a
+stage that drops to zero entries without being listed turns the suite red, and so does a stage
+listed here that actually carries entries.
+
+- `ship-it` — admitted before this rule was written, and no `ship` run has been recorded as ground
+  truth yet. It stays in the vocabulary because `--stage ship-it` is accepted and its grader is
+  reachable; its pass-rate is simply undefined until entries land.
+
 ## The graded oracle ([#1849](https://github.com/kamp-us/phoenix/issues/1849))
 
 `gradeEntry(entry, artifact): Grade` (`oracle.ts`) is the per-corpus-entry quality grade. ADR
