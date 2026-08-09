@@ -15,6 +15,7 @@ import {readStdin} from "../io/stdin.ts";
 import type {VerbOutcome} from "../verb.ts";
 import {runCheck} from "./check-verb.ts";
 import {runCodes} from "./codes-verb.ts";
+import {runSpawn} from "./spawn-verb.ts";
 
 /** Write the outcome and exit on its code — stdout is the answer, everything else is stderr. */
 const emitOutcome = (outcome: VerbOutcome): Effect.Effect<void> =>
@@ -40,6 +41,25 @@ const check = leafCommand(
 	),
 );
 
+const spawn = leafCommand(
+	"spawn",
+	{},
+	Effect.fn(function* () {
+		yield* emitOutcome(
+			yield* runSpawn({
+				stdin: Effect.sync(readStdin),
+				// The one env read in the group. It configures the decision; it locates nothing
+				// (cli-interface-convention rule 5), and an absent value is a decided branch, not a failure.
+				pin: process.env.WORKFLOW_MODEL ?? null,
+			}),
+		);
+	}),
+).pipe(
+	Command.withDescription(
+		"Decide whether the subagent spawn on STDIN may run on the model it asked for. Stdout is the PreToolUse permission-decision object, whose systemMessage names the allowlist, the requested model, its canonical id and the resolved pin. An off-allowlist model is denied (ADR 0092). Exits 3 (stdin held nothing), 12 (not a hook envelope), 13 (fd 0 unreadable — UNKNOWN), 14 (a harness event this verb does not judge). Example: fabrika hook spawn",
+	),
+);
+
 const codes = leafCommand(
 	"codes",
 	{json: jsonFlag},
@@ -57,6 +77,7 @@ export const hookCommand = Command.make("hook").pipe(
 		// One leaf per line, so concurrent slices append at distinct lines rather than all editing one.
 		check,
 		codes,
+		spawn,
 	]),
 	Command.withDescription(
 		"Own fabrika's Claude Code hook surface — read the harness envelope a hook is handed on stdin and say whether it is one fabrika can act on",

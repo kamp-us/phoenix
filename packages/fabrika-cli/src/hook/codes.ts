@@ -45,6 +45,15 @@ export const MALFORMED_ENVELOPE = 12;
  */
 export const ENVELOPE_UNKNOWN = 13;
 
+/**
+ * A readable envelope arrived, and it is not the event this verb judges.
+ *
+ * Kept apart from {@link MALFORMED_ENVELOPE} because the envelope is fine — the *routing* is wrong,
+ * which is a declaration bug (a hook wired to an event its verb does not answer), not a bad payload.
+ * Seating both on one code would let a mis-wired hook read as a harness that sends garbage.
+ */
+export const WRONG_EVENT = 14;
+
 /** The verb never ran (unresolved binary). The shell's, not this process's — no constant owns it. */
 const NEVER_RAN = 127;
 
@@ -65,5 +74,6 @@ export const HOOK_EXIT_TABLE: ReadonlyArray<ExitCodeRow> = [
 		meaning: "stdin held bytes that are not a harness hook envelope",
 	},
 	{code: ENVELOPE_UNKNOWN, meaning: "fd 0 could not be read — UNKNOWN, never malformed"},
+	{code: WRONG_EVENT, meaning: "the envelope is a harness event this verb does not judge"},
 	{code: NEVER_RAN, meaning: "the verb never ran (unresolved binary)"},
 ];
