@@ -84,12 +84,14 @@ const provide = <A, E>(
 ): Effect.Effect<A, E | RepoResolutionError> =>
 	effect.pipe(Effect.provide(GithubLive.pipe(Layer.provide(mockSpawner(responses)))));
 
-const issue = (number: number, body: string, labels: string[]) =>
+const issue = (number: number, body: string, labels: string[], assignees: string[] = []) =>
 	JSON.stringify({
 		number,
 		title: `#${number}`,
 		labels: labels.map((name) => ({name})),
 		body,
+		// present-and-empty, as REST returns for an unassigned issue (#4693)
+		assignees: assignees.map((login) => ({login})),
 	});
 
 const EPIC_BODY = [
