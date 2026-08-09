@@ -6,6 +6,8 @@ import {decodeIncidentProvenance} from "./incident-provenance.ts";
 import {
 	decodeRuledKeeps,
 	KEEP_VERDICT,
+	publishedFigure,
+	publishedFigureViolations,
 	ruledKeepsViolations,
 	summarize,
 	withCoverage,
@@ -122,6 +124,36 @@ describe("ruled KEEP corpus — the corpus README points at the enumeration", ()
 
 	it("names the committed enumeration and the corrected figure", () => {
 		assert.include(readme(), "ruled-keeps.json");
-		assert.include(readme(), "66");
+		assert.include(readme(), publishedFigure(keeps()));
+	});
+});
+
+/**
+ * The corpus publishes its size to artifacts outside this package — the fabrika authoring-brief
+ * contract tells a brief author which incident rows to cite — so a check confined to the package
+ * would go green while the page an author actually reads still said 74 (#4823, and #4838 for the
+ * same defect one file over). Each surface is read by path: an unreadable surface throws, because
+ * "could not read it" and "it carries no stale figure" are different facts.
+ */
+describe("ruled KEEP corpus — every published cardinality is derived from the enumeration", () => {
+	const SURFACES = [
+		"./incident-corpus/README.md",
+		"../../../../claude-plugins/fabrika/docs/authoring-brief-contract.md",
+	];
+
+	it("checks a non-empty set of surfaces — zero scope reds (ADR 0092)", () => {
+		assert.isAbove(SURFACES.length, 0);
+	});
+
+	it("no surface publishes a figure the enumeration does not support", () => {
+		const figure = publishedFigure(keeps());
+		const violations = SURFACES.flatMap((surface) =>
+			publishedFigureViolations(
+				surface,
+				readFileSync(fileURLToPath(new URL(surface, import.meta.url)), "utf8"),
+				figure,
+			),
+		);
+		assert.deepStrictEqual(violations, []);
 	});
 });
