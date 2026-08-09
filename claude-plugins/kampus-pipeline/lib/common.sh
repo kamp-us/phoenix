@@ -375,6 +375,15 @@ kp_pcli() {
 	printf '%s\n' "$pcli"
 }
 
+# The head-handle resolver's own status, chosen ABOVE `kp__scratch`'s 2/3/4/5/6 taxonomy (and clear
+# of 126/127) so the two can never collide: the namespace opened fine, it just holds no handle file.
+# It and 5 (namespace never opened) are the ONLY two statuses that mean "nothing was materialized";
+# every other non-zero from a `head-env.sh` means the resolver COULD NOT LOOK, which is UNKNOWN and
+# must never be read as a clean no-op (§ZS, ADR 0092; #4972/#5193). Defined once here because all
+# three review gates carry their own `head-env.sh` / `teardown-head.sh` pair and must not diverge.
+# shellcheck disable=SC2034  # read by the sourcing script, not by this file
+KP_HEAD_HANDLE_ABSENT=20
+
 # The per-run scratch namespace for <slug> (§SP, #3718). `open` is the run's first write of
 # scratch state; `path` re-derives it in every later call. Both print the absolute directory.
 kp_scratch_open() { kp__scratch "open" "$1"; }

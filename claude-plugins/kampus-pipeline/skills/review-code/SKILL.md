@@ -396,6 +396,18 @@ in-shell trap can reach — is `pipeline-cli worktree-sweep --execute` (#2785): 
 leaked `review-head-*` tree that is clean + idle + unlocked, **without** `--force` (a dirty /
 active / locked one is KEPT — the #2240 liveness guard), so nothing accumulates unbounded.
 
+**Teardown's exit status carries information — a non-zero one means a tree is probably still on the
+primary.** It exits 0 only when it actually removed the tree + ref, or when nothing was materialized
+(the scratch namespace was never opened, or it holds no handle). Every *other* way the handle read
+can fail — the CLI unresolvable, no session id, a foreign namespace, a handle that exists but names
+no tree — now exits **non-zero** and names the cause on stderr, because "I could not look" is
+UNKNOWN, never "nothing to do" (§ZS, ADR 0092). It used to answer no-op for all of them, so the gate
+reported success on the exact runs it leaked (#4972 / #5193). Two consequences for you: read a
+non-zero teardown as a real leak and say so in your run ledger, and remember that a teardown
+registered as your shell's `EXIT` trap makes its status the shell's status. The behaviour is
+re-derived, not asserted, by
+`bash ./.claude/.pipeline/skills/shared/scripts/teardown-head-fail-closed-proof.sh`.
+
 **The in-worktree typecheck is authoritative** (ADR
 [0067](https://github.com/kamp-us/phoenix/blob/main/.decisions/0067-sparse-typecheck-bootstrap.md),
 reversing ADR 0060's deferred-to-CI workaround). The cone-minus-denylist worktree carries
