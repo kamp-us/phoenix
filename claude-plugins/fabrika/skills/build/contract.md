@@ -670,8 +670,8 @@ proven-foreign only; a missing session id is `1`; an unreadable marker set is `1
 | Message (stderr) | Code | Kind |
 |---|---|---|
 | `build claim: issue #<n> is proven absent or closed.` | 7 | refusal |
-| `build claim: #<n> is homed in milestone <home>, outside the declared focus #<focus> — refusing before any marker; pass --override "<reason>" to claim it anyway.` | 20 | refusal |
-| `build claim: #<n> carries <audience>, not "ready-for:agent" — refusing before any marker; pass --override "<reason>" to claim it anyway.` (`<audience>` is the issue's `ready-for:` label, or the literal `no "ready-for:" label` when it carries none) | 21 | refusal |
+| `build claim: #<n> is homed in milestone <home>, outside the declared focus #<focus> — refusing before any marker; pass --override "<reason>" --override-lane "<lane>" to claim it anyway.` | 20 | refusal |
+| `build claim: #<n> carries <audience>, not "ready-for:agent" — refusing before any marker; pass --override "<reason>" --override-lane "<lane>" to claim it anyway.` (`<audience>` is the issue's `ready-for:` label, or the literal `no "ready-for:" label` when it carries none) | 21 | refusal |
 | `build claim: cannot read the "## Focus" declaration: <reason> — scope is UNKNOWN, never admitted; nothing was written.` | 11 | refusal |
 | `build claim: the "## Focus" declaration does not parse: <detail> — a malformed declaration is never read as "no focus"; nothing was written.` | 4 | refusal |
 | `build claim: --override was given with an empty reason — an override is recorded or it is not one.` | 1 | usage error |
@@ -712,7 +712,7 @@ $ fabrika build claim 4300 --purpose gate
 
 ```
 $ fabrika build claim 4290
-build claim: #4290 is homed in milestone 39, outside the declared focus #44 — refusing before any marker; pass --override "<reason>" to claim it anyway.
+build claim: #4290 is homed in milestone 39, outside the declared focus #44 — refusing before any marker; pass --override "<reason>" --override-lane "<lane>" to claim it anyway.
 $ echo $?
 20
 ```
