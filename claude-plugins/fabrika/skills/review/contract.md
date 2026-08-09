@@ -356,7 +356,7 @@ verb reds the same way. No `--json`: the diff is the object.
 | `10` | `--sha` is not a head SHA |
 | `11` | the diff could not be read, or the commit could not be bound — UNKNOWN |
 | `12` | `--sha` is not the PR's head — re-review at the head, never judge a tree the PR has left |
-| `13` | the diff is provably incomplete — the file count in the diff at the bound commit is short of the PR's declared count |
+| `13` | the diff is provably incomplete — the file count in the diff at the bound commit is short of the file list git reports for the same range |
 
 **Errors**
 
@@ -369,10 +369,11 @@ verb reds the same way. No `--json`: the diff is the object.
 | `review diff: <what> — the artifact cannot be bound to a commit, so what it shows is UNKNOWN.` | 11 | refusal |
 | `review diff: cannot read the diff for #<n> at <sha>: <reason> — UNKNOWN.` | 11 | refusal |
 | `review diff: PR #<n>'s head is <live>, not <asked> — the tree you scoped is not the one under review; re-scope at <live> (ADR 0058).` | 12 | refusal |
-| `review diff: the diff at <sha> carries <k> of #<n>'s <m> declared files — refusing to serve a partial diff as the whole (#3925's class).` | 13 | refusal |
+| `review diff: the diff at <sha> carries <k> of the <m> files git reports for the same range <base>...<head> — both counts from git, so this diff is provably short; refusing to serve a partial diff as the whole (#3925's class).` | 13 | refusal |
 
-**Scope** — one commit's diff, completeness-checked against the PR's declared changed-file count.
-The bound commit, and the scanned byte and file counts, go to stderr on the answer path.
+**Scope** — one commit's diff, completeness-checked against the file list git reports for the same
+range. The bound commit, the scanned byte and file counts, and GitHub's declared changed-file count
+(reported as a cross-check, never refused on) go to stderr on the answer path.
 
 **Examples**
 
@@ -389,9 +390,17 @@ index 0b1c2d3..a1b2c3d 100644
   `application/vnd.github.diff` does **not** truncate: over its limits it refuses with HTTP `406`
   and `errors[].code = "too_large"`, and under them it serves the diff whole — established by live
   probe and recorded on #4993. This verb does not read that endpoint anyway; its bytes are local
-  `git diff <base>...<head>` at the bound commit (#5117). What `13` still buys is real: a range can
-  carry fewer files than the PR declares, and serving that prefix as the whole PR is the #3925
-  blind-PASS class one layer down.
+  `git diff <base>...<head>` at the bound commit (#5117), and its denominator is a second read of
+  that same range — `git diff --name-only -z`, one path per `diff --git` entry — so both counts come
+  from git under one set of flags rather than from two systems (#5139). GitHub's declared
+  `changed_files` is still read and reported beside them as a cross-check that never refuses; it is a
+  third party's answer over its own merge base and its own rename detection. What `13` still buys is
+  real: the served bytes can carry fewer files than git lists for that range, and serving that prefix
+  as the whole PR is the #3925 blind-PASS class one layer down.
+- State the guarantee at its real precision: the proof is a **cardinality** test, never an
+  entry-identity one. It establishes that the scanned bytes carry at least as many entries as the
+  `--name-only` read lists — not that the two reads name the same files, and not that the range is
+  the right range. A fault that shortens both reads alike stays invisible to it.
 - The proof counts whole files, so it does not see a diff cut inside the last file's hunks — every
   `diff --git` header is still present, and the count passes. That is a stated bound of the proof,
   not a failure mode defended against: no producer for that shape is known.
