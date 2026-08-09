@@ -1,12 +1,13 @@
 # @kampus/fabrika-cli
 
 The deterministic verb package [fabrika](../../claude-plugins/fabrika/) skills call.
-`fabrika <group> <verb> …` dispatches to a registered verb group. Six groups are
+`fabrika <group> <verb> …` dispatches to a registered verb group. Seven groups are
 registered: `adr`, the six verbs the `/adr` skill's derived contract specifies; `report`,
 the three the `/report` contract specifies; `triage`, the intake-queue group the `/triage`
 contract specifies; `review`, the eight the `/review` contract specifies; `eval`, the
-graded-corpus harness the fabrika eval layer measures itself with; and `wire`, which owns
-the byte-level formats two skills meet through on a GitHub artifact.
+graded-corpus harness the fabrika eval layer measures itself with; `spend`, what one
+fabrika run cost in tokens; and `wire`, which owns the byte-level formats two skills meet
+through on a GitHub artifact.
 
 ## Who it's for
 
@@ -343,6 +344,31 @@ The token meter these verbs price runs with is fabrika's own
 *specified* by ADR 0112 §2, not chosen, so the two implementations are held to one ruler by
 a committed transcript fixture both packages' unit tiers assert against —
 `src/spend/fixtures/one-ruler/`.
+
+## The `spend` group
+
+What one fabrika run cost, in tokens, read from its transcript. The group is the CLI surface
+over the meter the `eval` verbs already price runs with — it adds no second sum
+([#5007](https://github.com/kamp-us/phoenix/issues/5007), epic
+[#4779](https://github.com/kamp-us/phoenix/issues/4779)).
+
+| Verb | Answers |
+|---|---|
+| `spend read` | one run's billed token spend, its four `usage` components, the ex-cache-read comparator, its billed turn count and its model |
+
+Three behaviours are worth knowing before you call it:
+
+- **The cache-read share stays its own number.** It dominates `billed` and grows with turn
+  count, which makes it the context-bloat signal; folding it into one total is what hides the
+  thing the measurement exists to show.
+- **"I could not measure it" is never a zero.** Exit `3` is a transcript that is provably not
+  there, `4` is one that could not be read (or whose absence could not be established — the
+  spend is UNKNOWN), and `5` is a transcript read in full that carries zero billed assistant
+  turns. That third state is a real transcript a failed run writes, and reporting it as a
+  measured zero would price a broken run as a free one.
+- **It cannot block anything.** No threshold, no budget flag, and no exit code that varies
+  with a spend magnitude — the no-gate ruling on epic #4779, asserted by a test that a
+  very large total still exits `0` rather than left as a note here.
 
 ## Development
 
