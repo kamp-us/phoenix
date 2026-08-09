@@ -22,28 +22,31 @@ function withoutComments(source: string): string {
 	return source.replaceAll(/\/\*[\s\S]*?\*\//g, "").replaceAll(/\/\/.*$/gm, "");
 }
 
-describe("Manti UI adoption guard", () => {
-	it("does not render raw interactive form controls in production TSX", () => {
-		const offenders = productionTsxFiles(sourceRoot)
-			.filter((path) => nativeControlPattern.test(withoutComments(readFileSync(path, "utf8"))))
-			.map((path) => relative(sourceRoot, path));
+const files = productionTsxFiles(sourceRoot);
 
-		expect(offenders).toEqual([]);
+function offendersMatching(pattern: RegExp): string[] {
+	return files
+		.filter((path) => pattern.test(withoutComments(readFileSync(path, "utf8"))))
+		.map((path) => relative(sourceRoot, path));
+}
+
+describe("Manti UI adoption guard", () => {
+	// Without this, a directory rename or a changed `import.meta.dirname` base makes
+	// the walk return [], every offender list is empty, and all three cases pass having
+	// scanned nothing (ADR 0092 — a guard fails closed on zero scope).
+	it("scans a non-empty production TSX surface", () => {
+		expect(files.length).toBeGreaterThan(0);
+	});
+
+	it("does not render raw interactive form controls in production TSX", () => {
+		expect(offendersMatching(nativeControlPattern)).toEqual([]);
 	});
 
 	it("routes visible alert regions through the Manti Alert primitive", () => {
-		const offenders = productionTsxFiles(sourceRoot)
-			.filter((path) => rawAlertRolePattern.test(withoutComments(readFileSync(path, "utf8"))))
-			.map((path) => relative(sourceRoot, path));
-
-		expect(offenders).toEqual([]);
+		expect(offendersMatching(rawAlertRolePattern)).toEqual([]);
 	});
 
 	it("uses Manti NumberInput instead of a generic numeric Input", () => {
-		const offenders = productionTsxFiles(sourceRoot)
-			.filter((path) => genericNumberInputPattern.test(withoutComments(readFileSync(path, "utf8"))))
-			.map((path) => relative(sourceRoot, path));
-
-		expect(offenders).toEqual([]);
+		expect(offendersMatching(genericNumberInputPattern)).toEqual([]);
 	});
 });
