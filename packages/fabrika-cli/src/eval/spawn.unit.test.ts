@@ -505,8 +505,7 @@ describe("toCaptureManifest — the existing collector consumes it unchanged", (
 					{stage: "triage", inputRef: 1, label: {type: "bug", priority: "p0", status: "triaged"}},
 				],
 				build: [],
-				"review-code": [],
-				"review-doc": [],
+				review: [],
 				"ship-it": [],
 			},
 		};
@@ -578,10 +577,13 @@ describe("flag parsing", () => {
 
 	it("accepts only live stage names", () => {
 		assert.isTrue(isStageName("build"));
-		assert.isTrue(isStageName("review-code"));
+		assert.isTrue(isStageName("review"));
 		assert.isFalse(isStageName("review-skill"));
-		// `write-code` survives only as a recorded row's provenance key (#4977) — never as a live stage.
+		// `write-code` and the two v1 review keys survive only as a recorded row's provenance key
+		// (#4977) — never as live stages. The surfaces are a sub-key of `review`, not stages (ADR 0243).
 		assert.isFalse(isStageName("write-code"));
+		assert.isFalse(isStageName("review-code"));
+		assert.isFalse(isStageName("review-doc"));
 	});
 });
 

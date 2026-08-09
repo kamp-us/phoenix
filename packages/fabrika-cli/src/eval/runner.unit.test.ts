@@ -134,8 +134,7 @@ const corpus: CorpusManifest = {
 	stages: {
 		triage: [entryA, entryB],
 		build: [],
-		"review-code": [],
-		"review-doc": [],
+		review: [],
 		"ship-it": [],
 	},
 };

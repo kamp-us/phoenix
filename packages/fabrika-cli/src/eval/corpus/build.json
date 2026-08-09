@@ -19,8 +19,7 @@
 				"label": { "fixesRef": 1032, "ciGreen": true, "reviewVerdict": "PASS" }
 			}
 		],
-		"review-code": [],
-		"review-doc": [],
+		"review": [],
 		"ship-it": []
 	}
 }

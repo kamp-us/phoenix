@@ -13,7 +13,9 @@
  * label `{fixesRef, ciGreen, reviewVerdict}` cannot sit under `stage: "triage"`, whose
  * only admissible label is `{type, priority, status}` (make-invalid-states-unrepresentable).
  * The manifest doubles the guarantee: it groups entries under per-stage keys whose value
- * schema is that stage's entry alone, so a mismatched entry can't even be filed.
+ * schema is that stage's entry alone, so a mismatched entry can't even be filed. The single
+ * `review` stage extends that guarantee one level down: it discriminates again on `surface`,
+ * so the guarantee holds over the `(stage, surface)` pair. See ADR 0243.
  *
  * The second non-obvious shape: an entry's `stage` is **recorded provenance** — what actually
  * produced the row — while a manifest's group key is the **live stage**. The two are the same
@@ -27,10 +29,22 @@ import {Result} from "effect";
 import * as Schema from "effect/Schema";
 
 /** The live stage vocabulary: what `--stage` accepts and what a manifest groups entries under. */
-export const STAGES = ["triage", "build", "review-code", "review-doc", "ship-it"] as const;
+export const STAGES = ["triage", "build", "review", "ship-it"] as const;
 
 /** One live stage key. Distinct from an entry's `stage`, which may be a recorded v1 name. */
 export type LiveStage = (typeof STAGES)[number];
+
+/**
+ * The review surfaces the one `review` stage fans into (ADR 0243 §1) — the axis that selects
+ * both a review entry's label shape and its grader. The ADR names a third, `skill`, whose entry
+ * shape is deliberately absent here: it has no designed label shape yet, and the founder ruling on
+ * #4979 fenced designing one out of this lane, so it is #5038's. A surface with no entry shape is
+ * not listed, because this tuple is what a consumer enumerates.
+ */
+export const REVIEW_SURFACES = ["code", "doc"] as const;
+
+/** One review surface — the sub-discriminator of the `review` stage. */
+export type ReviewSurface = (typeof REVIEW_SURFACES)[number];
 
 /** A reproducible input identifier — an issue/PR number (ADR 0112 §1: pinned by identifier). */
 const InputRef = Schema.Int;
@@ -78,25 +92,62 @@ const RecordedWriteCodeEntry = Schema.Struct({
 	label: BuildLabel,
 });
 
-/** review-code's oracle: the verdict plus the acceptance-criteria findings it surfaced. */
-const ReviewCodeEntry = Schema.Struct({
-	stage: Schema.Literal("review-code"),
-	inputRef: InputRef,
-	label: Schema.Struct({
-		verdict: Verdict,
-		acFindings: Schema.Array(Schema.String),
-	}),
+/** The code surface's oracle: the verdict plus the acceptance-criteria findings it surfaced. */
+const ReviewCodeLabel = Schema.Struct({
+	verdict: Verdict,
+	acFindings: Schema.Array(Schema.String),
 });
 
-/** review-doc's oracle: the verdict plus the doc findings it surfaced. */
+/** The doc surface's oracle: the verdict plus the doc findings it surfaced. */
+const ReviewDocLabel = Schema.Struct({
+	verdict: Verdict,
+	findings: Schema.Array(Schema.String),
+});
+
+/**
+ * The `review` stage's two members, each pinning `surface` to a literal and admitting exactly one
+ * label shape. `surface` is required and has no default: a `review` entry with no surface is a
+ * decode failure, never a row a fallback rubric grades (ADR 0243 §1).
+ */
+const ReviewCodeEntry = Schema.Struct({
+	stage: Schema.Literal("review"),
+	surface: Schema.Literal("code"),
+	inputRef: InputRef,
+	label: ReviewCodeLabel,
+});
+
 const ReviewDocEntry = Schema.Struct({
+	stage: Schema.Literal("review"),
+	surface: Schema.Literal("doc"),
+	inputRef: InputRef,
+	label: ReviewDocLabel,
+});
+
+/**
+ * The rows the v1 `review-code` / `review-doc` gates recorded, under the label shapes their
+ * surfaces now carry. They keep their own stage keys for the same reason `write-code` does — a
+ * recorded stage key is provenance, and they carry no `surface`, which is a live-schema field. The
+ * live key `review` is what a manifest groups all four under.
+ */
+const RecordedReviewCodeEntry = Schema.Struct({
+	stage: Schema.Literal("review-code"),
+	inputRef: InputRef,
+	label: ReviewCodeLabel,
+});
+
+const RecordedReviewDocEntry = Schema.Struct({
 	stage: Schema.Literal("review-doc"),
 	inputRef: InputRef,
-	label: Schema.Struct({
-		verdict: Verdict,
-		findings: Schema.Array(Schema.String),
-	}),
+	label: ReviewDocLabel,
 });
+
+/** Everything a manifest's `review` group admits: both live surfaces plus both recorded keys. */
+const ReviewGroupEntry = Schema.Union([
+	ReviewCodeEntry,
+	ReviewDocEntry,
+	RecordedReviewCodeEntry,
+	RecordedReviewDocEntry,
+]);
 
 /** ship-it's oracle: whether the PR merged and the head SHA it merged. */
 const ShipItEntry = Schema.Struct({
@@ -109,8 +160,9 @@ const ShipItEntry = Schema.Struct({
 });
 
 /**
- * One labeled corpus input — a discriminated union on `stage`. Decoding selects the member
- * by its `stage` literal, so a label shape that doesn't belong to that stage is rejected.
+ * One labeled corpus input — a discriminated union on `stage`, and on `(stage, surface)` for the
+ * `review` stage. Decoding selects the member by those literals, so a label shape that doesn't
+ * belong to that stage — or, under `review`, to that surface — is rejected.
  */
 export const CorpusEntry = Schema.Union([
 	TriageEntry,
@@ -118,6 +170,8 @@ export const CorpusEntry = Schema.Union([
 	RecordedWriteCodeEntry,
 	ReviewCodeEntry,
 	ReviewDocEntry,
+	RecordedReviewCodeEntry,
+	RecordedReviewDocEntry,
 	ShipItEntry,
 ]);
 
@@ -126,17 +180,16 @@ export type CorpusEntry = typeof CorpusEntry.Type;
 /**
  * The frozen, version-controlled ground truth: entries grouped under LIVE stage keys. Each
  * group's value schema is that stage's entry alone, so a mismatched entry cannot be filed
- * under the wrong stage — the second half of the unrepresentable-invalid guarantee. `build`
- * additionally admits the recorded `write-code` rows, which share its label shape and keep their
- * own provenance key.
+ * under the wrong stage — the second half of the unrepresentable-invalid guarantee. `build` and
+ * `review` additionally admit the recorded v1 rows, which share their label shapes and keep their
+ * own provenance keys.
  */
 export const CorpusManifest = Schema.Struct({
 	version: Schema.Int,
 	stages: Schema.Struct({
 		triage: Schema.Array(TriageEntry),
 		build: Schema.Array(Schema.Union([BuildEntry, RecordedWriteCodeEntry])),
-		"review-code": Schema.Array(ReviewCodeEntry),
-		"review-doc": Schema.Array(ReviewDocEntry),
+		review: Schema.Array(ReviewGroupEntry),
 		"ship-it": Schema.Array(ShipItEntry),
 	}),
 });

@@ -30,13 +30,32 @@ const cases = {
 		},
 		passing: {fixesRef: 1223, ciGreen: true, reviewVerdict: "PASS"},
 	},
-	"review-code": {
+	"review/code": {
 		entry: {
-			stage: "review-code",
+			stage: "review",
+			surface: "code",
 			inputRef: 1849,
 			label: {verdict: "PASS", acFindings: ["AC1 met", "AC2 met"]},
 		},
 		passing: {verdict: "PASS", acFindings: ["AC2 met", "AC1 met"]}, // set-equal, reordered
+	},
+	"review/doc": {
+		entry: {
+			stage: "review",
+			surface: "doc",
+			inputRef: 1850,
+			label: {verdict: "FAIL", findings: ["broken link"]},
+		},
+		passing: {verdict: "FAIL", findings: ["broken link"]},
+	},
+	// The recorded v1 review rows keep their own stage keys (#4977) and must still reach a grader.
+	"review-code": {
+		entry: {
+			stage: "review-code",
+			inputRef: 1199,
+			label: {verdict: "PASS", acFindings: ["AC1 met"]},
+		},
+		passing: {verdict: "PASS", acFindings: ["AC1 met"]},
 	},
 	"review-doc": {
 		entry: {
@@ -96,8 +115,8 @@ describe("gradeEntry — a divergent artifact fails, carrying the observed-vs-ex
 		}
 	});
 
-	it("review-code: a dropped AC finding fails with the set diff", () => {
-		const g = gradeEntry(cases["review-code"].entry, {
+	it("review/code: a dropped AC finding fails with the set diff", () => {
+		const g = gradeEntry(cases["review/code"].entry, {
 			verdict: "PASS",
 			acFindings: ["AC1 met"],
 		});
@@ -115,8 +134,8 @@ describe("gradeEntry — a divergent artifact fails, carrying the observed-vs-ex
 		}
 	});
 
-	it("review-doc: a changed verdict fails with the verdict diff", () => {
-		const g = gradeEntry(cases["review-doc"].entry, {verdict: "PASS", findings: ["broken link"]});
+	it("review/doc: a changed verdict fails with the verdict diff", () => {
+		const g = gradeEntry(cases["review/doc"].entry, {verdict: "PASS", findings: ["broken link"]});
 		assert.isTrue(isFail(g));
 		if (isFail(g) && g.mismatch._tag === "LabelMismatch") {
 			assert.deepStrictEqual(g.mismatch.fields, [
@@ -161,10 +180,62 @@ describe("gradeEntry — total on a malformed or absent artifact (never throws)"
 	});
 
 	it("grades fail when an artifact carries an out-of-range verdict literal", () => {
-		const g = gradeEntry(cases["review-code"].entry, {verdict: "MAYBE", acFindings: []});
+		const g = gradeEntry(cases["review/code"].entry, {verdict: "MAYBE", acFindings: []});
 		assert.isTrue(isFail(g));
 		if (isFail(g)) {
 			assert.strictEqual(g.mismatch._tag, "MalformedArtifact");
 		}
+	});
+});
+
+/**
+ * ADR 0243 §2 bans dispatching a review grade on `stage` alone, because with one `review` key and
+ * no second discriminator the two rubrics collapse onto one grader — silently, since a `doc`
+ * artifact graded by the `code` rubric would just look like a fail. These assert the collapse did
+ * not happen: each surface reaches its OWN grader and its own artifact schema.
+ */
+describe("gradeEntry — the two review surfaces do not share a grader", () => {
+	it("a doc-shaped artifact under the code surface is malformed, not silently graded", () => {
+		const g = gradeEntry(cases["review/code"].entry, {verdict: "PASS", findings: ["AC1 met"]});
+		assert.isTrue(isFail(g));
+		if (isFail(g)) {
+			assert.strictEqual(g.mismatch._tag, "MalformedArtifact");
+			if (g.mismatch._tag === "MalformedArtifact") {
+				assert.match(g.mismatch.reason, /^review-code artifact:/);
+			}
+		}
+	});
+
+	it("a code-shaped artifact under the doc surface is malformed, not silently graded", () => {
+		const g = gradeEntry(cases["review/doc"].entry, {verdict: "FAIL", acFindings: ["broken link"]});
+		assert.isTrue(isFail(g));
+		if (isFail(g)) {
+			assert.strictEqual(g.mismatch._tag, "MalformedArtifact");
+			if (g.mismatch._tag === "MalformedArtifact") {
+				assert.match(g.mismatch.reason, /^review-doc artifact:/);
+			}
+		}
+	});
+
+	it("the same inputRef on two surfaces grades independently (a mixed-surface PR, ADR 0243 §3)", () => {
+		const inputRef = 4979;
+		const code: CorpusEntry = {
+			stage: "review",
+			surface: "code",
+			inputRef,
+			label: {verdict: "PASS", acFindings: ["AC1 met"]},
+		};
+		const doc: CorpusEntry = {
+			stage: "review",
+			surface: "doc",
+			inputRef,
+			label: {verdict: "FAIL", findings: ["broken link"]},
+		};
+		assert.deepStrictEqual(gradeEntry(code, {verdict: "PASS", acFindings: ["AC1 met"]}), {
+			status: "pass",
+		});
+		assert.deepStrictEqual(gradeEntry(doc, {verdict: "FAIL", findings: ["broken link"]}), {
+			status: "pass",
+		});
 	});
 });

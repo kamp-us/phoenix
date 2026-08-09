@@ -19,8 +19,7 @@
 			}
 		],
 		"build": [],
-		"review-code": [],
-		"review-doc": [],
+		"review": [],
 		"ship-it": []
 	}
 }
