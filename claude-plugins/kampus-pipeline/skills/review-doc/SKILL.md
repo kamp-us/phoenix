@@ -452,6 +452,19 @@ abort between Bash calls (which no in-shell trap can reach) is `pipeline-cli wor
 --execute` (#2785): it reclaims a leaked `review-doc-head-*` tree only when clean + idle +
 unlocked, **without** `--force` (dirty / active / locked is KEPT — the #2240 liveness guard).
 
+**Teardown's exit status carries information — a non-zero one means a ref (and, under `--worktree`, a
+tree) is probably still on the primary.** It exits 0 only when it actually removed them, or when
+nothing was materialized (the scratch namespace was never opened, or it holds no handle). Every
+*other* way the handle read can fail — the CLI unresolvable, no session id, a foreign namespace, a
+handle that exists but names nothing — now exits **non-zero** and names the cause on stderr, because
+"I could not look" is UNKNOWN, never "nothing to do" (§ZS, ADR 0092). It used to answer no-op for all
+of them, and in this gate it hit that branch on *every* run: it exec'd its sibling directly and the
+sibling is committed non-executable, so the read died 126 and reported success while leaking (#5193 /
+#4972). Two consequences for you: read a non-zero teardown as a real leak and say so in your run
+ledger, and remember that the trap above makes teardown's status your shell's status. The behaviour
+is re-derived, not asserted, by
+`bash ./.claude/.pipeline/skills/shared/scripts/teardown-head-fail-closed-proof.sh`.
+
 Never `git checkout` / `git switch` / `gh pr checkout` in the checkout you were launched in —
 not even `git -C`-scoped to your own worktree (the harness cwd-reset would still land a bare one
 on the shared primary and detach the human's `main`, #2270/#1103; §RO is the single source).
