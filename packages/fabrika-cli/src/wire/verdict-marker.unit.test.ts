@@ -112,6 +112,40 @@ describe("read — Absent", () => {
 	});
 });
 
+/**
+ * The plan gate's namespace, widened additively (#5107).
+ *
+ * The pair below is the point: `read` gates on the namespace **prefix** before `NAMESPACE` is ever
+ * tested, so widening only the regex leaves the format able to emit a marker it can never read back.
+ * Revert either edit and the round-trip case reds while the `review` cases stay green — which is
+ * exactly how the defect would have shipped.
+ */
+describe("read — the check-epic-plan namespace", () => {
+	const DIGEST = "4d90e1bb27ac";
+
+	it("round-trips a plan verdict through emit and read", () => {
+		const text = clause("2 children scanned, floor clean");
+		const sha = headSha(DIGEST);
+		expect(text).not.toBeNull();
+		expect(sha).not.toBeNull();
+		if (text === null || sha === null) return;
+		const result = read(emit({namespace: "check-epic-plan", polarity: "PASS", sha, clause: text}));
+		expect(result._tag).toBe("Found");
+		if (result._tag !== "Found") return;
+		expect(result.value.namespace).toBe("check-epic-plan");
+		expect(result.value.sha).toBe(DIGEST);
+	});
+
+	it("still answers Absent for a namespace that reaches for neither family", () => {
+		expect(read(`checkout: PASS @ ${DIGEST} — done\n`)._tag).toBe("Absent");
+	});
+
+	it("leaves the review family's reading untouched", () => {
+		expect(read(`review-code: PASS @ ${HEAD} — merge-ready\n`)._tag).toBe("Found");
+		expect(read(`review_code: PASS @ ${HEAD} — merge-ready\n`)._tag).toBe("Malformed");
+	});
+});
+
 describe("read — Malformed: the drifts a lenient reader answers `PASS` for", () => {
 	const DRIFTS = [
 		drift("no SHA at all", "review-code: PASS — merge-ready"),

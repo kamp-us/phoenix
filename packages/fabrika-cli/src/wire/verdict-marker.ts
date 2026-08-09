@@ -44,7 +44,7 @@ export type Clause = string & {readonly [CLAUSE]: true};
 export type Polarity = "PASS" | "FAIL";
 
 export interface VerdictMarker {
-	/** The gate that formed the verdict: `review`, or `review-<gate>`. */
+	/** The gate that formed the verdict: `review`, `review-<gate>`, or `check-epic-plan`. */
 	readonly namespace: string;
 	readonly polarity: Polarity;
 	readonly sha: HeadSha;
@@ -56,7 +56,19 @@ export type VerdictMarkerRead = WireRead<VerdictMarker>;
 const SHA_MIN = 7;
 const SHA_MAX = 40;
 
-const NAMESPACE = /^review(-[a-z0-9]+)*$/;
+/**
+ * The gates this format serves: the `review` family, and `check-epic-plan`.
+ *
+ * Widened additively for the plan gate (#5107) — no existing marker's reading changes. A plan verdict
+ * deliberately does **not** reuse the `review` namespace: a plan verdict wearing a review namespace is
+ * the family confusion the partition ruling removed (#4891).
+ */
+const NAMESPACE = /^(review|check-epic-plan)(-[a-z0-9]+)*$/;
+/**
+ * The prefixes {@link read}'s first gate admits, which must widen with {@link NAMESPACE} or the
+ * format can emit a marker it can never read back — the gate runs *before* the regex is ever tested.
+ */
+const NAMESPACE_PREFIXES = ["review", "check-epic-plan"];
 const HEX = /^[0-9a-f]+$/;
 
 /** The conforming separator between the SHA and the clause; the ASCII dashes are read tolerantly. */
@@ -121,16 +133,18 @@ export const read = (artifact: string): VerdictMarkerRead => {
 
 	const matched = MARKER_LINE.exec(line);
 	const namespace = matched?.[2]?.toLowerCase() ?? "";
-	if (matched === undefined || matched === null || !namespace.startsWith("review")) {
+	const reaches = NAMESPACE_PREFIXES.some((prefix) => namespace.startsWith(prefix));
+	if (matched === undefined || matched === null || !reaches) {
 		return {
 			_tag: "Absent",
-			reason: 'the first line does not open with a "review…:" namespace — no marker of this format',
+			reason:
+				'the first line does not open with a "review…:" or "check-epic-plan…:" namespace — no marker of this format',
 		};
 	}
 	const evidence = `first line: "${line.trim()}"`;
 	if (!NAMESPACE.test(namespace)) {
 		return malformed(
-			`the gate namespace "${namespace}" is not kebab-case "review" or "review-<gate>"`,
+			`the gate namespace "${namespace}" is not kebab-case "review", "review-<gate>" or "check-epic-plan"`,
 			evidence,
 		);
 	}
@@ -269,7 +283,7 @@ export const parseFields = (fields: string): VerdictMarkerFields => {
 	if (!NAMESPACE.test(namespace)) {
 		return {
 			_tag: "Unusable",
-			reason: `"${namespace}" is not a "review" or "review-<gate>" namespace`,
+			reason: `"${namespace}" is not a "review", "review-<gate>" or "check-epic-plan" namespace`,
 		};
 	}
 	const polarity = polarityOf((seen.get("polarity") ?? "").trim());

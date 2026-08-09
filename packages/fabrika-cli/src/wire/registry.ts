@@ -56,7 +56,7 @@ export const registeredFormats: ReadonlyArray<WireFormat> = [
 		key: "verdict-marker",
 		purpose:
 			"the SHA-bound first line of a gate's verdict comment on a PR — namespace, polarity, the head the reviewer inspected, and the human clause",
-		producers: ["review"],
+		producers: ["review", "check-epic-plan"],
 		consumers: ["build", "ship"],
 		emit: verdictMarker.emitFromFields,
 		read: verdictMarker.readToLines,

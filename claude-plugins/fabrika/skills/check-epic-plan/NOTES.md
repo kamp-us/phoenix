@@ -56,4 +56,4 @@ This skill proposes, never resolves; a ruling enters through report → triage.
 Model-invoked entry skill, one directory, no leaf skills. The caveat kinds are a closed vocabulary
 in `SKILL.md` rather than a rubric leaf — the leaf rule's two-consumer bar is unmet. Eval obligation
 rides that choice: this skill's eval suite enumerates the gate's own cases, which it does across the
-six in [`evals/evals.json`](evals/evals.json).
+ten in [`evals/evals.json`](evals/evals.json).
