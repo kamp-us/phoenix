@@ -521,14 +521,16 @@ nothing yet.
 	});
 });
 
-describe("the short-read refusal on the changed-file list", () => {
+describe("the empty-read refusal on the changed-file list", () => {
+	// git reports no paths while GitHub declares nine: the emptiness refuses, the disagreement does
+	// not (#5154).
 	const script: ReadonlyArray<readonly [RegExp, ExecResult]> = [
 		[PULL, pull({changedFiles: 9})],
 		...binding(),
-		[PATHS_AT(), paths("src/cart.ts", "README.md")],
+		[PATHS_AT(), paths()],
 	];
 
-	it("refuses a partition over a short read on 13", async () => {
+	it("refuses a partition over an empty read on 13", async () => {
 		const {runScope} = await import("./scope-verb.ts");
 		const out = await withShell(
 			runScope({pr: 4321, sha: null, repo: null, json: false, env: ENV}),
@@ -537,15 +539,12 @@ describe("the short-read refusal on the changed-file list", () => {
 		expect(out.code).toBe(INCOMPLETE_SCAN);
 	});
 
-	it("MUTANT: a file list that reports the declared count partitions 2 of 9 files as the whole", async () => {
+	it("MUTANT: a file list padded past empty partitions phantom files as the whole", async () => {
 		await mutate<typeof import("../io/git.ts")>("../io/git.ts", (actual) => ({
 			diffRangePaths: (base: string, head: string) =>
 				Effect.map(actual.diffRangePaths(base, head), (attempt) =>
-					attempt._tag === "Ok"
-						? {
-								_tag: "Ok" as const,
-								value: [...attempt.value, ...Array.from({length: 7}, (_, i) => `pad-${i}.ts`)],
-							}
+					attempt._tag === "Ok" && attempt.value.length === 0
+						? {_tag: "Ok" as const, value: ["pad-0.ts"]}
 						: attempt,
 				),
 		}));

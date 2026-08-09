@@ -100,7 +100,7 @@ describe("runScope", () => {
 		expect(out.stderr[0]).toBe(
 			`review scope: bound to ${HEAD} (base ${BASE}) — read from the object database, nothing checked out.`,
 		);
-		expect(out.stderr[1]).toBe("review scope: scanned 2 changed files; 2 declared.");
+		expect(out.stderr[1]).toBe("review scope: scanned 2 changed files; 2 declared by GitHub.");
 	});
 
 	it("refuses a PR proven absent on 7", async () => {
@@ -140,18 +140,14 @@ describe("runScope", () => {
 		expect(out.stderr.at(-1)).toContain("the scope is UNKNOWN");
 	});
 
-	it("refuses a provably short file list on 13, distinct from 11 and 7", async () => {
-		const out = await run([
-			[PULL, pull({changedFiles: 9})],
-			...binding(),
-			[PATHS_AT(), paths("a.ts", "b.md")],
-		]);
+	it("refuses an empty file list on 13, distinct from 11 and 7", async () => {
+		const out = await run([[PULL, pull({changedFiles: 9})], ...binding(), [PATHS_AT(), paths()]]);
 		expect(out.code).toBe(INCOMPLETE_SCAN);
 		expect(out.code).not.toBe(PRECONDITION_UNKNOWN);
 		expect(out.code).not.toBe(ZERO_SCOPE);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toBe(
-			`review scope: ${HEAD} carries 2 of the 9 files #4321 declares — refusing to partition a short read (#3999).`,
+			`review scope: git reports no changed files for the range ${BASE}...${HEAD}, so ${HEAD} has nothing to partition — refusing to scope an empty read (#3999).`,
 		);
 	});
 
@@ -161,6 +157,50 @@ describe("runScope", () => {
 			Effect.provide(runScope({...options, env: {}}), fakeShell([]).layer),
 		);
 		expect(out.code).toBe(1);
+	});
+});
+
+/**
+ * The single-source fence (#5154).
+ *
+ * The file list git returns for the bound range IS the scope; GitHub's `changed_files` has its own
+ * merge base and its own rename detection, so it is reported and never refused on. Each case here
+ * fails if the exit-`13` refusal drifts back onto that declared count.
+ */
+describe("runScope never refuses on GitHub's declared count", () => {
+	/** git pairs the rename into one `--name-only` path; GitHub counts the delete and the add. */
+	const renamed: ReadonlyArray<readonly [RegExp, ExecResult]> = [
+		[PULL, pull({changedFiles: 2})],
+		...binding(),
+		[PATHS_AT(), paths("src/new.ts")],
+	];
+
+	it("scopes a rename git paired into one path, though GitHub declares two files", async () => {
+		const out = await run(renamed);
+		expect(out.code).toBe(0);
+		expect(out.stdout).toContain(`scoped\t${HEAD}\t4287`);
+		expect(out.stdout).toContain("class\tcode\t1");
+	});
+
+	it("reports the git-vs-GitHub disagreement on stderr instead of refusing on it", async () => {
+		const out = await run(renamed);
+		expect(out.stderr).toContain(
+			"review scope: git and GitHub disagree on #4321's file count (1 vs 2) — different merge base and different rename detection; reported, never refused on (#5154).",
+		);
+	});
+
+	it("keeps GitHub's count visible in the scanned diagnostic", async () => {
+		const out = await run(renamed);
+		expect(out.stderr[1]).toBe("review scope: scanned 1 changed file; 2 declared by GitHub.");
+	});
+
+	it("scopes a list LONGER than GitHub declares, which the old inequality also let through", async () => {
+		const out = await run([
+			[PULL, pull({changedFiles: 1})],
+			...binding(),
+			[PATHS_AT(), paths("src/cart.ts", "README.md")],
+		]);
+		expect(out.code).toBe(0);
 	});
 });
 

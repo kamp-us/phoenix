@@ -61,15 +61,24 @@ export const runScope = (
 				`${VERB}: cannot read the changed files of #${pr} at ${head.sha}: ${listed.reason} — the scope is UNKNOWN.`,
 			);
 		}
+		// This list IS the scope, so there is no second local count to prove it against — and
+		// GitHub's `changed_files` is not one: a rename git pairs into a single `--name-only` path
+		// while GitHub counts two files, so it is reported below and never refused on (#5154). The
+		// short read git alone establishes — an empty list — still refuses.
 		const files = listed.value;
 		const diagnostics = [
 			boundLine(VERB, head),
-			scannedLine(VERB, files.length, "changed file", `${pull.changedFiles} declared`),
+			scannedLine(VERB, files.length, "changed file", `${pull.changedFiles} declared by GitHub`),
 		];
-		if (files.length < pull.changedFiles) {
+		if (files.length !== pull.changedFiles) {
+			diagnostics.push(
+				`${VERB}: git and GitHub disagree on #${pr}'s file count (${files.length} vs ${pull.changedFiles}) — different merge base and different rename detection; reported, never refused on (#5154).`,
+			);
+		}
+		if (files.length === 0) {
 			return refuse(
 				INCOMPLETE_SCAN,
-				`${VERB}: ${head.sha} carries ${files.length} of the ${pull.changedFiles} files #${pr} declares — refusing to partition a short read (#3999).`,
+				`${VERB}: git reports no changed files for the range ${head.base}...${head.sha}, so ${head.sha} has nothing to partition — refusing to scope an empty read (#3999).`,
 				diagnostics,
 			);
 		}
