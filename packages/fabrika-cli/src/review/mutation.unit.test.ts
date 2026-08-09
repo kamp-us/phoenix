@@ -49,6 +49,10 @@ const PATCH = /^gh api --method PATCH repos\/o\/r\/issues\/4287 -f body=/;
 
 const ENV = {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>;
 
+/** The pinned write instant, and the stamp `review post` emits from it under every verdict body. */
+const NOW = Effect.succeed(Date.parse("2026-08-09T06:30:00.412Z"));
+const STAMP = "Verdict-written: 2026-08-09T06:30:00Z";
+
 const withShell = <A>(
 	effect: Effect.Effect<A, never, ChildProcessSpawner.ChildProcessSpawner>,
 	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
@@ -174,6 +178,7 @@ describe("the leak predicate over the assembled verdict", () => {
 		json: false,
 		env: ENV,
 		stdin: Effect.succeed<StdinRead>({_tag: "Text", text: LEAKY}),
+		now: NOW,
 	};
 	const script: ReadonlyArray<readonly [RegExp, ExecResult]> = [
 		[PULL, pull()],
@@ -185,7 +190,7 @@ describe("the leak predicate over the assembled verdict", () => {
 			READBACK,
 			okOut(
 				JSON.stringify({
-					body: `review-doc: PASS @ ${HEAD} — guide matches shipped behavior\n\n${LEAKY}`,
+					body: `review-doc: PASS @ ${HEAD} — guide matches shipped behavior\n\n${LEAKY}\n\n${STAMP}`,
 				}),
 			),
 		],
@@ -225,6 +230,7 @@ describe("normalizeForReadback's trailing-newline step", () => {
 		json: false,
 		env: ENV,
 		stdin: Effect.succeed<StdinRead>({_tag: "Text", text: "the table\n"}),
+		now: NOW,
 	};
 	const script: ReadonlyArray<readonly [RegExp, ExecResult]> = [
 		[PULL, pull()],
@@ -236,7 +242,7 @@ describe("normalizeForReadback's trailing-newline step", () => {
 			READBACK,
 			okOut(
 				JSON.stringify({
-					body: `review-doc: PASS @ ${HEAD} — guide matches shipped behavior   \n\nthe table\n\n\n`,
+					body: `review-doc: PASS @ ${HEAD} — guide matches shipped behavior   \n\nthe table\n\n${STAMP}\n\n\n`,
 				}),
 			),
 		],

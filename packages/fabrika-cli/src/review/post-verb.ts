@@ -2,8 +2,9 @@
  * `review post` — the single sanctioned verdict emit.
  *
  * Six steps, each gating the next: recompute the class set, re-resolve the live head, compose the
- * first line through the wire format's `emit`, leak-scan the assembled comment, upsert **one comment
- * per namespace**, and read it back unconditionally from live PR state.
+ * first line through the wire format's `emit` (stamping the write-recency line under it), leak-scan
+ * the assembled comment, upsert **one comment per namespace**, and read it back unconditionally from
+ * live PR state.
  *
  * Every one of those is a scar. #3173's hand-rolled `gh api` emit posted a literal path and
  * self-reported a false PASS, which is why the read-back re-fetches instead of trusting a carried
@@ -38,6 +39,7 @@ import {
 	WRITE_UNKNOWN,
 } from "./codes.ts";
 import {badNumber, openPull, resolveTargetRepo, scannedLine} from "./target.ts";
+import {latestByWriteRecency, stampIso, withWrittenAt} from "./write-recency.ts";
 
 const VERB = "review post";
 
@@ -62,6 +64,8 @@ export interface PostOptions {
 	readonly json: boolean;
 	readonly env: Readonly<Record<string, string | undefined>>;
 	readonly stdin: Effect.Effect<StdinRead>;
+	/** The wall clock the write-recency stamp is taken from — a port so a test can pin the instant. */
+	readonly now: Effect.Effect<number>;
 }
 
 interface Posted {
@@ -242,7 +246,10 @@ export const runPost = (
 				: emitMarker({namespace, polarity: polarity as Polarity, sha: inspected, clause});
 		const below =
 			carrier === "advisory" ? `${reviewedHeadLine(inspected)}\n\n${authored.text}` : authored.text;
-		const composed = `${firstLine}\n${below}`;
+		// The stamp goes on here, before the leak scan and before the body is used as the read-back
+		// comparand, so the bytes that are scanned, posted and compared are one string — and so both
+		// the create and the edit path carry it by construction rather than by remembering to.
+		const composed = withWrittenAt(`${firstLine}\n${below}`, stampIso(yield* options.now));
 
 		// Step 4 — the scan runs over the ASSEMBLED comment, so nothing this verb appended escapes it.
 		const leaked = leakRefusal(SURFACE, composed);
@@ -253,9 +260,14 @@ export const runPost = (
 		if (me._tag === "Failure") return unreadable("the authenticated user", pr, me.reason);
 		const comments = yield* listComments(repo, pr);
 		if (comments._tag === "Failure") return unreadable("the comments", pr, comments.reason);
-		const mine = comments.value.find(
-			(comment) =>
-				comment.author === me.value && carriesNamespace(comment.body, carrier, namespace),
+		// The NEWEST match, by write-recency — the same end of the order the resolver reads from. The
+		// list arrives oldest-first, so taking the first match edited the comment least likely to be
+		// in force, and the edit landed where nobody reads (#5048).
+		const mine = latestByWriteRecency(
+			comments.value.filter(
+				(comment) =>
+					comment.author === me.value && carriesNamespace(comment.body, carrier, namespace),
+			),
 		);
 
 		let landed: {readonly id: number; readonly url: string} | null = null;

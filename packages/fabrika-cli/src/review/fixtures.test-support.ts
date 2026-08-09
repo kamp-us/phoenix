@@ -39,14 +39,14 @@ export const checkRuns = (
 ): ExecResult => okOut(JSON.stringify({total_count: declared, check_runs: runs}));
 
 export const comments = (
-	...rows: ReadonlyArray<{id: number; body: string; author?: string}>
+	...rows: ReadonlyArray<{id: number; body: string; author?: string; createdAt?: string}>
 ): ExecResult =>
 	okOut(
 		JSON.stringify(
 			rows.map((row) => ({
 				id: row.id,
 				user: {login: row.author ?? "kampus-bot"},
-				created_at: "2026-08-08T00:00:00Z",
+				created_at: row.createdAt ?? "2026-08-08T00:00:00Z",
 				body: row.body,
 			})),
 		),
