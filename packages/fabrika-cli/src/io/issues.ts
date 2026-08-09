@@ -437,9 +437,18 @@ export const scanJsonPages = (stdout: string): JsonPages => {
 	};
 };
 
-/** The complete pages alone, for a read whose caller does not seat truncation itself. */
-export const splitJsonArrays = (stdout: string): ReadonlyArray<string> =>
-	scanJsonPages(stdout).pages;
+/**
+ * The pages of a paginated read, or the failure a truncated one is.
+ *
+ * This is the only sanctioned way to consume {@link scanJsonPages} from a list read: it discharges
+ * `truncated` on the caller's behalf, so no reader can receive the pages while dropping the proof
+ * that they are not all of them (#5127). Its predecessor returned `.pages` alone and every caller
+ * silently answered short.
+ */
+export const pagedJson = (stdout: string): Attempt<ReadonlyArray<string>> => {
+	const scanned = scanJsonPages(stdout);
+	return scanned.truncated === null ? ok(scanned.pages) : fail(scanned.truncated);
+};
 
 /** One issue comment, as a claim scan reads it. */
 export interface CommentRecord {
@@ -462,6 +471,10 @@ export interface CommentRecord {
  * The bodies arrive as typed JSON rather than through `--jq .body`: a body carrying an unescaped
  * control character makes `jq -r` error mid-stream, which inside a loop reads back as an empty
  * comment rather than as a failure.
+ *
+ * A truncated read is a failure here for the same reason, one step further out: the claim resolver
+ * reads its markers through this call, and a short comment list would let an unreadable marker set
+ * refuse as a *proven* loss — retracting a marker that had in fact won (#5127).
  */
 export const listComments = (
 	repo: string,
@@ -474,8 +487,10 @@ export const listComments = (
 			`repos/${repo}/issues/${issue}/comments?per_page=100`,
 		]);
 		if (!r.ok) return fail(r.reason);
+		const pages = pagedJson(r.stdout);
+		if (pages._tag === "Failure") return pages;
 		const out: CommentRecord[] = [];
-		for (const page of splitJsonArrays(r.stdout)) {
+		for (const page of pages.value) {
 			const parsed = parseJson(page);
 			if (!Array.isArray(parsed)) {
 				return fail("`gh api` exited 0 but its output is not a list of comments");

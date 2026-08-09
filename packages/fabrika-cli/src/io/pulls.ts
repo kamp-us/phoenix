@@ -14,7 +14,7 @@
 import {Effect} from "effect";
 import {execCapture} from "./exec.ts";
 import {type Attempt, fail, ok, type Shell} from "./git.ts";
-import {absent, type Existence, httpStatusOf, present, splitJsonArrays, unknown} from "./issues.ts";
+import {absent, type Existence, httpStatusOf, pagedJson, present, unknown} from "./issues.ts";
 import {isRecord, parseJson} from "./json.ts";
 
 export interface PullRecord {
@@ -87,8 +87,10 @@ export const listPullFiles = (repo: string, pr: number): Shell<Attempt<ReadonlyA
 			`repos/${repo}/pulls/${pr}/files?per_page=100`,
 		]);
 		if (!r.ok) return fail(r.reason);
+		const pages = pagedJson(r.stdout);
+		if (pages._tag === "Failure") return pages;
 		const files: string[] = [];
-		for (const page of splitJsonArrays(r.stdout)) {
+		for (const page of pages.value) {
 			const parsed = parseJson(page);
 			if (!Array.isArray(parsed)) {
 				return fail("`gh api` exited 0 but its output is not a list of changed files");
@@ -143,9 +145,11 @@ export const listCheckRuns = (repo: string, sha: string): Shell<Attempt<CheckRun
 			`repos/${repo}/commits/${sha}/check-runs?per_page=100`,
 		]);
 		if (!r.ok) return fail(r.reason);
+		const pages = pagedJson(r.stdout);
+		if (pages._tag === "Failure") return pages;
 		const runs: CheckRun[] = [];
 		let declared: number | null = null;
-		for (const page of splitJsonArrays(r.stdout)) {
+		for (const page of pages.value) {
 			const parsed = parseJson(page);
 			if (!isRecord(parsed) || !Array.isArray(parsed.check_runs)) {
 				return fail("`gh api` exited 0 but its output is not a check-run rollup");

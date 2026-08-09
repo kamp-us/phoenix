@@ -63,6 +63,17 @@ export const comments = (
 		),
 	);
 
+/**
+ * The same response, cut off before its last comment closes — what a killed `gh --paginate` leaves
+ * on stdout, and the read a claim must never resolve ownership from.
+ */
+export const truncatedComments = (
+	...rows: ReadonlyArray<{id: number; body: string; author?: string; createdAt?: string}>
+): ExecResult => {
+	const whole = comments(...rows).stdout;
+	return okOut(whole.slice(0, whole.lastIndexOf("}")));
+};
+
 /** One paged `issues?labels=…` response, as the candidate pool reads it. */
 export const candidates = (
 	...rows: ReadonlyArray<{
