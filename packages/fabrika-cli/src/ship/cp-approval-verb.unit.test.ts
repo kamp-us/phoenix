@@ -13,6 +13,7 @@ import {
 	OTHER_HEAD,
 	pull,
 	reviews,
+	unexhaustedPage,
 } from "./fixtures.test-support.ts";
 
 const PULL = /^gh api repos\/o\/r\/pulls\/4321$/;
@@ -20,7 +21,7 @@ const FILES = /^gh api --paginate repos\/o\/r\/pulls\/4321\/files/;
 const OWNERS = /contents\/\.github\/CODEOWNERS/;
 const COMPARE = /^gh api repos\/o\/r\/compare\//;
 const ROSTER = /^gh api --paginate orgs\/kamp-us\/teams\/control-plane\/members/;
-const REVIEWS = /^gh api --paginate repos\/o\/r\/pulls\/4321\/reviews/;
+const REVIEWS = /^gh api -i repos\/o\/r\/pulls\/4321\/reviews/;
 const COMMENTS = /^gh api --paginate repos\/o\/r\/issues\/4321\/comments/;
 
 const members = (...logins: ReadonlyArray<string>): ExecResult =>
@@ -73,6 +74,22 @@ describe("runCpApproval", () => {
 			[REVIEWS, reviews({login: "cansirin", state: "APPROVED", commit: HEAD})],
 		]);
 		expect(out.stdout).toBe(`cp-approval\tdischarge\tmember-approval:cansirin@${HEAD}\n`);
+	});
+
+	it("refuses an unexhausted review read on 13 — an approval could sit on an unread page", async () => {
+		const out = await run([
+			[PULL, pull({author: "usirin"})],
+			[FILES, CP_FILES],
+			[OWNERS, okOut(CODEOWNERS)],
+			[COMPARE, okOut("0")],
+			[ROSTER, members("usirin", "cansirin")],
+			[REVIEWS, unexhaustedPage()],
+		]);
+		expect(out.code).toBe(INCOMPLETE_SCAN);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toBe(
+			"ship cp-approval: the review read never reached a terminal page — pagination is unexhausted, so an approval could sit on a page nobody read; refusing the partial sweep.",
+		);
 	});
 
 	it("does NOT discharge on an approval bound to a superseded head (#3769)", async () => {

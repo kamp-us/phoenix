@@ -169,8 +169,22 @@ export const runCpApproval = (
 		if (reviewed._tag === "Failure") {
 			return unknownRead(`#${pr}'s reviews`, reviewed.reason, diagnostics);
 		}
-		diagnostics.push(scannedLine(VERB, reviewed.value.length, "review"));
-		const approver = latestPerAuthor(reviewed.value).find(
+		diagnostics.push(
+			scannedLine(
+				VERB,
+				reviewed.value.reviews.length,
+				"review",
+				reviewed.value.exhausted ? "pagination exhausted" : "pagination NOT exhausted",
+			),
+		);
+		if (!reviewed.value.exhausted) {
+			return refuse(
+				INCOMPLETE_SCAN,
+				`${VERB}: the review read never reached a terminal page — pagination is unexhausted, so an approval could sit on a page nobody read; refusing the partial sweep.`,
+				diagnostics,
+			);
+		}
+		const approver = latestPerAuthor(reviewed.value.reviews).find(
 			(review) =>
 				review.state === "APPROVED" &&
 				review.login !== pull.authorLogin &&

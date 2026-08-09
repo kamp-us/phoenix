@@ -82,10 +82,13 @@ You never re-run, re-trigger, or locally reproduce a check — CI's verdict is C
 fabrika ship evidence 4321 --sha 03135b91
 ```
 
-`present` → continue. `pending` → wait or stop; pending is not absent (#3991). `absent` (proven:
-producer exists, run completed, nothing published) → disarm, note, stop. `unknown` (the lookup
-completed but cannot bind this head), or the verb refusing with a failed read — either way the
-answer does not exist: stop without a verdict; a failed read is never "no bundle" (#3716).
+`present` → continue. `pending` → wait or stop; pending is not absent (#3991), and a run that
+completed seconds ago with nothing listed yet is pending, not a CI gap. `failed` → the bundle
+binds this head and attests a failing run: that is a **verdict**, so route the failure, disarm,
+note, stop — never treat it as an unreadable answer. `absent` (proven: producer exists, a run
+completed outside the freshness window, nothing published) → disarm, note, stop. `unknown` (the
+lookup completed but cannot bind this head), or the verb refusing with a failed read — either way
+the answer does not exist: stop without a verdict; a failed read is never "no bundle" (#3716).
 
 ## 6 — Unresolved threads: the one judgment
 
@@ -122,7 +125,10 @@ fabrika ship reconcile 4321
 ```
 
 `enqueue` is the only step that arms an intent, and it never passes a merge-method flag — the
-queue owns the method (a `--squash` no-ops the enqueue silently). `reconcile`'s terminals are
+queue owns the method (a `--squash` no-ops the enqueue silently). It asserts a **definite**
+`mergeable_state` before it arms and refuses `11` if the value stays indefinite: GitHub happily
+arms a conflicted PR, so an unknown read is never green. That refusal is not a stall — it means
+mergeability is unknown, so stop and say so; nothing was armed. `reconcile`'s terminals are
 the run's terminals: `landed` → step 8. `ejected` → `disarm --site ejected`, note, route to
 repair; re-entry is rebase → re-review → fresh gate pass, never a re-enqueue on old verdicts.
 `unresolved` → report it in those words with the horizon; still-queued at the horizon is
@@ -189,7 +195,7 @@ the surface and files the gap. No row here dead-ends on a bare error.
 
 | Must exist | Why this skill needs it | When missing |
 | --- | --- | --- |
-| `.github/CODEOWNERS`, carrying a control-plane team row | `ship scope`'s §CP classification and `ship cp-approval`'s roster both derive from it, read at `origin/main` | **fail-loud** — an unreadable boundary is exit `11`, never "ordinary"; a trivial or empty one is the printed `unknown` hold, and a zero-member roster is `stop zero-owners`. The run names `.github/CODEOWNERS` and points at front-door. |
+| `.github/CODEOWNERS`, carrying a control-plane team row | `ship scope`'s §CP classification and `ship cp-approval`'s roster both derive from it, read at the PR's base ref — the branch the PR targets, never a literal trunk name | **fail-loud** — an unreadable boundary is exit `11`, never "ordinary"; a trivial or empty one is the printed `unknown` hold, and a zero-member roster is `stop zero-owners`. The run names `.github/CODEOWNERS` and points at front-door. |
 | A merge queue enabled on the PR's base branch | `ship enqueue` arms the queue's auto-merge; the queue, never this skill, performs the merge | **fail-loud** — a base with no queue has no arm to enter, so refuse before `ship enqueue` and end `refused — no merge queue on <base>`; `reconcile`'s `parked` covers only a queue-governed base. The run names the base branch and points at front-door — specified here. |
 | `.github/workflows/ci.yml`, gating the `merge_group` ref | `ship checks` reads its result at the head, and the queue awaits that context on `merge_group` before it merges | **fail-loud** — with no workflows at the head `ship checks` reports `facts workflows:0 runs:0` at rollup `pending` and never green, so the run stops rather than enqueue behind no gate; it names `.github/workflows/ci.yml` and points at front-door. |
 | The `status:awaiting-release` label | `ship release` is the dark-ship seam and the label is the whole action (ADR 0083) | **fail-loud** — a label write or its read-back failing is exit `8`/`9`, never `queued`; the run escalates that a real dark ship may be missing from the release queue, names the `status:awaiting-release` label, and points at front-door. |

@@ -3,12 +3,20 @@ import {describe, expect, it} from "vitest";
 import {errOut, fakeShell, okOut} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {INCOMPLETE_SCAN, OFF_VOCABULARY, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
-import {comments, ENV, HEAD, OTHER_HEAD, pull, reviews} from "./fixtures.test-support.ts";
+import {
+	comments,
+	ENV,
+	HEAD,
+	OTHER_HEAD,
+	pull,
+	reviews,
+	unexhaustedPage,
+} from "./fixtures.test-support.ts";
 import {inForce, runGate} from "./gate-verb.ts";
 
 const PULL = /^gh api repos\/o\/r\/pulls\/4321$/;
 const COMMENTS = /^gh api --paginate repos\/o\/r\/issues\/4321\/comments/;
-const REVIEWS = /^gh api --paginate repos\/o\/r\/pulls\/4321\/reviews/;
+const REVIEWS = /^gh api -i repos\/o\/r\/pulls\/4321\/reviews/;
 const ACL = /^gh api repos\/o\/r\/collaborators\/[^ ]+\/permission/;
 
 const options = {
@@ -192,6 +200,19 @@ describe("runGate", () => {
 			[COMMENTS, comments({id: 1, body: "hi"})],
 		]);
 		expect(out.code).toBe(INCOMPLETE_SCAN);
+	});
+
+	// Reviews declare no total, so the completeness proof is a terminal page with no `next` link.
+	it("refuses an unexhausted review read on 13 — pagination is the reviews' only proof", async () => {
+		const out = await run([
+			[PULL, pull()],
+			[COMMENTS, comments()],
+			[REVIEWS, unexhaustedPage()],
+		]);
+		expect(out.code).toBe(INCOMPLETE_SCAN);
+		expect(out.stderr.at(-1)).toBe(
+			"ship gate: the review read never reached a terminal page — pagination is unexhausted, so the native-review fold would rest on a truncated set; refusing the partial resolution.",
+		);
 	});
 
 	it("refuses a closed PR on 7", async () => {

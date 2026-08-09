@@ -196,7 +196,21 @@ export const runGate = (
 		if (reviewed._tag === "Failure") {
 			return refuse(PRECONDITION_UNKNOWN, unreadable("the reviews", reviewed.reason), diagnostics);
 		}
-		diagnostics.push(scannedLine(VERB, reviewed.value.length, "review"));
+		diagnostics.push(
+			scannedLine(
+				VERB,
+				reviewed.value.reviews.length,
+				"review",
+				reviewed.value.exhausted ? "pagination exhausted" : "pagination NOT exhausted",
+			),
+		);
+		if (!reviewed.value.exhausted) {
+			return refuse(
+				INCOMPLETE_SCAN,
+				`${VERB}: the review read never reached a terminal page — pagination is unexhausted, so the native-review fold would rest on a truncated set; refusing the partial resolution.`,
+				diagnostics,
+			);
+		}
 
 		// The ACL is resolved once per distinct author, and a lookup FAILURE is fail-closed: the
 		// namespace is UNKNOWN, never `absent` (ADR 0055).
@@ -228,7 +242,7 @@ export const runGate = (
 			candidates.push(claim);
 		}
 
-		const fold = foldedReview(reviewed.value, bound);
+		const fold = foldedReview(reviewed.value.reviews, bound);
 		const verdicts: NamespaceVerdict[] = required.map((name) => {
 			const own = candidates.filter((claim) => claim.namespace === name);
 			const pool = name === "review-code" && fold !== null ? [...own, fold] : own;

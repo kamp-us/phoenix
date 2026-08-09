@@ -17,12 +17,23 @@ section names what the v1 counterpart gets wrong and what this spec does instead
 defers to one, and none is invoked.
 
 **Substrate.** Effect CLI verbs on the `@effect/platform-node` seam the sibling groups use.
-GitHub access through the `gh api` REST shape — with **one sanctioned GraphQL exception**, stated
-because the REST-only rule needs its boundary written down: review-thread resolution state
-(`reviewThreads.isResolved`) and the `resolveReviewThread` mutation have no REST equivalent, and
-the org's GraphQL breakage is live-verified Projects-scoped, not blanket. Exactly two verbs use
-GraphQL (`ship threads`, `ship resolve`); every other verb is REST. Named because a spec that
-leaves the substrate open makes the implementer guess (#4734).
+GitHub access through the `gh api` REST shape — with **two sanctioned carves**, both stated
+because the REST-only rule needs its boundary written down, and neither widening past the verbs
+named here.
+
+1. **The GraphQL exception — `ship threads` and `ship resolve`, and no other verb.** Review-thread
+   resolution state (`reviewThreads.isResolved`) and the `resolveReviewThread` mutation have no
+   REST equivalent, and the org's GraphQL breakage is live-verified Projects-scoped, not blanket.
+   Exactly two verbs issue a GraphQL request; every other verb is REST.
+2. **The auto-merge porcelain carve — `ship enqueue` and `ship disarm`, and no other verb.**
+   Enabling and disabling auto-merge have **no REST surface at all**, so both go through `gh`'s own
+   `gh pr merge --auto` / `--disable-auto` porcelain ([ruled on
+   #5067](https://github.com/kamp-us/phoenix/issues/5067#issuecomment-5233120953)). Without this
+   carve the Substrate clause forbade the only way `ship enqueue` can do the arming the same
+   contract requires of it. It is named as a **porcelain** carve, not a second GraphQL exception:
+   this spec issues no auto-merge GraphQL mutation of its own, and the carve does not license one.
+
+Named because a spec that leaves the substrate open makes the implementer guess (#4734).
 
 ## Verb inventory
 
@@ -32,7 +43,7 @@ leaves the substrate open makes the implementer guess (#4734).
 | `ship cp-approval` | the ADR 0175 cardinality discharge: `discharge` / `stop` / `n/a` from head-bound signals only | the roster-cardinality case split and head-binding are a transcription of a ruled table; nothing in it is judgment (#2435 is what judgment did) |
 | `ship gate` | the verdict conjunction: every required namespace's in-force, current-head verdict, §CP advisory resolution and native-review fold included | in-force resolution (write-stamp ordering, staleness, authorization) is mechanical; what to do with `blocked` is judgment |
 | `ship checks` | the head CI rollup — green/red/pending with the running/wedged split and the zero-checkset facts; `--wait` adds the bounded settle poll | latest-per-context dedupe, status vocabulary, and a budgeted poll are mechanical; the wedge remedy is a human's |
-| `ship evidence` | the SHA-bound run-evidence bundle read as four states: present / pending / absent / unknown | the lookup chain and the positive-evidence rules for each state are mechanical; none of it is judgment |
+| `ship evidence` | the SHA-bound run-evidence bundle read as five states: present / pending / failed / absent / unknown | the lookup chain and the positive-evidence rules for each state are mechanical; none of it is judgment |
 | `ship threads` | every unresolved review thread, fully paginated, with per-thread class facts | pagination, count proof, and author-type classification are mechanical; nit-vs-substantive is THE retained judgment and never enters this verb |
 | `ship resolve` | the sanctioned thread-resolution write: rationale reply, resolve mutation, read-back — refusing any thread not positively bot-classed | the protocol and the bot-only structural anchor are mechanical; deciding a bot thread is a nit is the skill's |
 | `ship enqueue` | arm the queue's auto-merge at a pinned head, method-flag-free by construction, and prove the arm landed | the arm, its error discrimination, and the entry read are mechanical; whether the PR should ship was settled by the gates |
@@ -61,7 +72,8 @@ inline, the same tracked debt the sibling contracts carry.)
   CODEOWNERS plus the ruleset, server-side, and stays there. `ship scope`'s `cp` line is not a
   second verdict on that gated question — it is the routing input the skill's own law (the ADR
   0135 approval-aware path) cannot run without, and it is **derived from `.github/CODEOWNERS`
-  itself** (the artifact the gate enforces, read from `origin/main` — see the verb block), so
+  itself** (the artifact the gate enforces, read from **the PR's base ref** — the branch the PR
+  targets; see the verb block), so
   there is no second vocabulary to drift. It **holds on a trivial or empty boundary rather
   than matching everything** — the match-everything sentinel is the #4336 adopter-repo
   incident and the #4401 empty-capture class — and a *failed* boundary read is the `11`
@@ -137,9 +149,23 @@ Stated once rather than repeated per block.
   malformed `--sha` is a usage error, never a matches-everything pattern — v1's
   `case "$H" in "$SHA"*)` collapsed to `*` on an empty capture, twice, in two different
   scripts (#4223; the native-fold's unguarded `CURRENT_HEAD`).
-- **Every list read paginates and reports its scanned count** on stderr — changed files, check
-  runs, reviews, comments, threads, timeline events. Received short of declared is the `13`
-  refusal, never a narrower answer (#4193's 30-of-N timeline; v1's 100-thread silent cap). Any
+- **Every list read paginates, reports its scanned count on stderr, and carries a completeness
+  proof** — changed files, check runs, reviews, comments, threads, timeline events. **Which proof
+  depends on what the platform declares, and a verb never prints a denominator it cannot derive**
+  ([ruled on #5067](https://github.com/kamp-us/phoenix/issues/5067#issuecomment-5233120953)):
+  - **A declared count, where one exists.** Changed files, check runs, workflow runs, artifacts,
+    issue comments and review threads all arrive with a total the platform states, so received
+    short of declared is the `13` refusal, never a narrower answer (#4193's 30-of-N timeline;
+    v1's 100-thread silent cap).
+  - **Exhausted pagination, where none exists.** The PR's **reviews** and its **timeline** arrive
+    as bare arrays with no total at all, so `received <k> of <m>` over them has no derivable
+    `<m>` — any `<m>` printed beside them was invented, and an invented denominator proves
+    nothing. Their proof is a **terminal page carrying no `rel="next"` link**: seeing one is
+    positive evidence every page is held, and a read that ends without one is the same `13`
+    refusal. These reads walk pages explicitly and read the `Link` header rather than using
+    `--paginate`, which concatenates bodies and drops the headers the proof lives in.
+
+  Any
   aggregate computed over a paginated read is computed **after** the pages are joined — v1's
   per-page `group_by` picked a stale approval from page 1 and its per-page `length` printed
   `0\n0` (#725's class, live in two v1 scripts).
@@ -188,7 +214,7 @@ authority.
 | `10` | a supplied classification value is off the closed vocabulary — an unknown `--require` namespace, a bad `--site` | `gate`, `disarm` |
 | `11` | a **precondition read failed** — nothing was proven and (for a write) nothing was written | all |
 | `12` | refused: the live head moved past the inspected `--sha` — a mutation formed over a tree that is no longer the PR | `enqueue`, `nudge` |
-| `13` | refused: a read completed but its scope is **provably incomplete** — received short of declared | `scope`, `cp-approval`, `gate`, `checks`, `evidence`, `threads`, `nudge`, `release`, `reconcile` |
+| `13` | refused: a read completed but its scope is **provably incomplete** — received short of a declared count, or (where the platform declares none) pagination never reached a terminal page | `scope`, `cp-approval`, `gate`, `checks`, `evidence`, `threads`, `nudge`, `release`, `reconcile` |
 | `14`, `15` | *(deliberate gaps — `review`'s ACL and append-only seats; no verb here performs either)* | — |
 | `16` | refused: the target is **proven not in the state this write acts on** — nothing was mutated | `resolve`, `nudge` |
 | `17` | refused: the nudge's close landed and the reopen is **unconfirmed — the PR may be left closed**; a human re-opens before anything else happens | `nudge` |
@@ -278,9 +304,14 @@ proven, so: the verb reds on `7`'s vacuous-conjunction arm below) — a merge ga
 gates is vacuously green (#2765).
 
 **The `cp` line** is the four-state routing input (see "Considered and deliberately not
-derived"), and its source is the **enforced artifact itself**: `.github/CODEOWNERS`, read
-from `origin/main` at run time (#981 — a PR must not reclassify itself). A changed path
-covered by a CODEOWNERS row whose owner is the control-plane team (the `@<org>/<team>` owner
+derived"), and its source is the **enforced artifact itself**: `.github/CODEOWNERS`, read at run
+time from **the PR's base ref — the branch the PR targets** ([ruled on
+#5067](https://github.com/kamp-us/phoenix/issues/5067#issuecomment-5233160017), founder-direct).
+Naming a trunk branch literally was the bug: the base ref *is* that branch in this repo, and it is
+the honest generalization in an adopter repo whose trunk is called something else. The #981
+property — a PR must not reclassify itself — holds unchanged, because the base ref is never the
+PR's head. A changed path
+covered by a CODEOWNERS row whose owner is a control-plane team (the `@<org>/<team>` owners
 those rows carry — `@kamp-us/control-plane` in this repo, parsed, never hardcoded) is
 `control-plane`; `.decisions/**` present with no owned-path match → `content-undetermined`
 (an obligation to hold, not a verdict — #4134's guard-touching ADR had zero path matches);
@@ -317,7 +348,7 @@ not this verb's.
 | `ship scope: file list shows <k> of <m> declared files — refusing to partition a truncated read.` | 13 | refusal |
 
 **Scope** — one PR's metadata and changed-file list, paginated and count-checked, plus one
-boundary read from `origin/main`. The partition is total over what was read.
+boundary read from the PR's base ref. The partition is total over what was read.
 
 **Examples**
 
@@ -350,7 +381,7 @@ $ echo $?
   not five comment lines ("born dead" is the v1 scar's own phrase).
 - #4216 — a failed file read once answered "no §CP, no classes present" in one stroke; here it
   is `11`.
-- #981 / #4336 / #4401 — boundary from `origin/main`, trivial/empty boundary is a hold.
+- #981 / #4336 / #4401 — boundary from the PR's base ref, trivial/empty boundary is a hold.
 - #663 / #644 / #912 / #2470 — the class-map deadlock family: every changed file maps to a
   class, every class to a namespace some gate can actually emit; the map is shared code with
   `review scope`, so ship and review cannot disagree about what a file is.
@@ -389,13 +420,20 @@ approval is never spent on a head that must move (#4477).
 
 With `--json`: `{"outcome":…,"mechanism":…,"sha":…,"roster":<n>,"baseDrift":<k|0>}`.
 
-**The decision is the ADR 0175 cardinality table, verbatim:** roster = the control-plane
-team's members, read fresh via the REST team-members endpoint
-(`/orgs/<org>/teams/<team>/members`, paginated), where `<org>/<team>` is the owner parsed
-from `.github/CODEOWNERS`' control-plane rows — the same derivation `ship scope` uses, one
-shared module, so the roster this verb consults is the team the merge gate actually asks
-(`@kamp-us/control-plane` in this repo, never hardcoded). N=0 → `stop` `zero-owners` (an empty roster is a proven
-stop; an *unreadable* roster is the `11` refusal, never a stop). A CODEOWNERS parse yielding
+**The decision is the ADR 0175 cardinality table, verbatim:** roster = **the union of the members
+of every team the CODEOWNERS control-plane rows name**, read fresh via the REST team-members
+endpoint (`/orgs/<org>/teams/<team>/members`, paginated) once per named team, where each
+`<org>/<team>` is an owner parsed from `.github/CODEOWNERS`' control-plane rows — the same
+derivation `ship scope` uses, one shared module, so the roster this verb consults is the set the
+merge gate actually asks (`@kamp-us/control-plane` is the only such team in this repo, never
+hardcoded). **The union is not a fabrika policy — it is GitHub's own any-listed-owner semantics**
+([ruled on #5067](https://github.com/kamp-us/phoenix/issues/5067#issuecomment-5233188966),
+founder-direct): GitHub discharges a CODEOWNERS row when *any* listed owner approves, so a roster
+narrower than the union would refuse approvals the merge gate accepts, and fabrika mirrors the
+platform here rather than adding a rule of its own.
+N=0 → `stop` `zero-owners` (an empty roster is a proven
+stop; an *unreadable* roster for **any** named team is the `11` refusal, never a stop — a union
+missing one arm is not a smaller union, it is an unknown one). A CODEOWNERS parse yielding
 no control-plane team owner at all is N=0 — `stop` `zero-owners`, the
 adopter-repo-without-a-team case — while an unreadable CODEOWNERS is `11`. N=1 and the sole owner authored the PR → discharge only on the
 sole owner's head-bound self-approval marker comment (`control-plane-self-approval @ <sha>`,
@@ -417,7 +455,7 @@ class, live in v1's approval scan).
 |---|---|
 | `7` | the PR is proven absent (404) or closed |
 | `11` | the CODEOWNERS boundary, the roster, the reviews, the marker comments, or the live head could not be read — the discharge is UNKNOWN, never `stop`, never `awaiting approval` (#4223) |
-| `13` | the review or comment enumeration is provably short of the declared count |
+| `13` | the changed-file or comment enumeration is provably short of the declared count, or the review read — for which the platform declares no count — never reached a terminal page |
 
 **Errors**
 
@@ -426,10 +464,13 @@ class, live in v1's approval scan).
 | `ship cp-approval: PR #<n> not found in <repo>.` | 7 | refusal |
 | `ship cp-approval: PR #<n> is closed — nothing to discharge.` | 7 | refusal |
 | `ship cp-approval: cannot read <what>: <reason> — the discharge is UNRESOLVED, not "awaiting approval" (#4223).` | 11 | refusal |
-| `ship cp-approval: received <k> of <m> <reviews|comments> — refusing the partial sweep.` | 13 | refusal |
+| `ship cp-approval: received <k> of <m> changed files — refusing the partial sweep.` | 13 | refusal |
+| `ship cp-approval: received <k> of <m> comments — refusing the partial sweep.` | 13 | refusal |
+| `ship cp-approval: the review read never reached a terminal page — pagination is unexhausted, so an approval could sit on a page nobody read; refusing the partial sweep.` | 13 | refusal |
 
-**Scope** — the control-plane team roster, the PR's reviews and comments (paginated,
-count-checked), and the live head. `n/a` is a proven answer computed from the same `cp`
+**Scope** — the control-plane team roster (the union over every named team), the PR's changed
+files and comments (paginated, count-checked) and its reviews (paginated to exhaustion), and the
+live head. `n/a` is a proven answer computed from the same `cp`
 derivation `ship scope` prints (one shared module).
 
 **Examples**
@@ -525,7 +566,7 @@ answer this contract bans.
 | `7` | the PR is proven absent (404) or closed |
 | `10` | a `--require` value is not a known review namespace |
 | `11` | the comments, reviews, or ACL could not be read — the conjunction is UNKNOWN, never `blocked`, never `satisfied` |
-| `13` | the comment or review enumeration is provably short of the declared count |
+| `13` | the comment enumeration is provably short of the declared count, or the review read — for which the platform declares no count — never reached a terminal page |
 
 **Errors**
 
@@ -535,11 +576,12 @@ answer this contract bans.
 | `ship gate: PR #<n> is closed — nothing to gate.` | 7 | refusal |
 | `ship gate: --require <v> is not a review namespace (known: review-code, review-doc, review-skill, review-ui).` | 10 | refusal |
 | `ship gate: cannot read <what> for #<n>: <reason> — the conjunction is UNKNOWN.` | 11 | refusal |
-| `ship gate: received <k> of <m> <comments|reviews> — refusing the partial resolution.` | 13 | refusal |
+| `ship gate: received <k> of <m> comments — refusing the partial resolution.` | 13 | refusal |
+| `ship gate: the review read never reached a terminal page — pagination is unexhausted, so the native-review fold would rest on a truncated set; refusing the partial resolution.` | 13 | refusal |
 | `ship gate: #<n> carries a §CP advisory with a [FAIL] row — an invalid emission (ADR 0226); treated as fail, report it.` | 0 | notice |
 
-**Scope** — one PR's verdict comments and native reviews, paginated and count-checked, each
-candidate ACL-resolved. The verdict-marker and advisory grammars are the registered wire
+**Scope** — one PR's verdict comments (paginated, count-checked) and native reviews (paginated to
+exhaustion), each candidate ACL-resolved. The verdict-marker and advisory grammars are the registered wire
 formats (`packages/fabrika-cli/src/wire/verdict-marker.ts`, `src/review/advisory.ts`) —
 imported, never re-parsed; a hand-rolled marker regex is the drift the registry ended.
 
@@ -600,8 +642,10 @@ fabrika ship checks 4321 --sha 03135b91 [--wait] [--budget-seconds 600] [--caden
 of latest-per-context check-run lines that follow (gating and informational both), the line
 channel's own completeness proof. Then one line per check run, latest-per-context:
 `<name>\t<success|failure|neutral|cancelled|skipped|timed_out|action_required|in_progress|queued|stale>\t<gating|informational>`.
-Last line: `facts\tworkflows:<n>\truns:<n>` — `workflows` counts the repository's workflows
-whose triggers match this PR's events; `runs` counts the total workflow runs recorded at this
+Last line: `facts\tworkflows:<n>\truns:<n>` — `workflows` counts the repository's **active**
+workflows (the inventory's `state == "active"` rows, nothing more: no trigger matching, no YAML
+parser — [ruled on
+#5067](https://github.com/kamp-us/phoenix/issues/5067#issuecomment-5233120953)); `runs` counts the total workflow runs recorded at this
 head across all workflows, **pre-dedupe** (which is why it can exceed the `run` line count:
 that one counts latest-per-context check-run rows). These are the zero-checkset
 discriminators (`no-runs` requires workflows ≥ 1 and runs = 0 at this head: Actions exist
@@ -719,14 +763,17 @@ fabrika ship evidence 4321 --sha 03135b91 [--repo <owner/name>] [--json]
 | `--json` | boolean | no | `false` | emit the result object |
 
 **Output** — machine channel. First line:
-`evidence\t<present|pending|absent|unknown>\t<sha>`. Then the evidence tuple, always:
+`evidence\t<present|pending|failed|absent|unknown>\t<sha>`. Then the evidence tuple, always:
 `lookup\trun:<id|->\tartifact:<id|->\tstatus:<status|->` — every claim carries the lookup
 evidence that makes it falsifiable from the report. On `present`, one line per manifest
-check: `check\t<name>\t<status-string>`.
+check: `check\t<name>\t<status-string>` — and the same lines on `failed`, which is a bundle that
+was read, so its checks are exactly what makes the answer falsifiable.
 
 With `--json`: `{"outcome":…,"sha":…,"run":…,"artifact":…,"checks":[{name,status}…]}`.
 
-**The four states carry positive-evidence rules, verbatim from the #3991 law:**
+**The five states carry positive-evidence rules, verbatim from the #3991 law** (the fifth,
+`failed`, [ruled on
+#5067](https://github.com/kamp-us/phoenix/issues/5067#issuecomment-5233120953))**:**
 
 - `present` — the artifact fetched, unzipped (magic-number-checked: a 503 body saved as
   `.zip` is not a bundle, #3716), schema-version understood, `manifest.commit` exactly
@@ -736,15 +783,31 @@ With `--json`: `{"outcome":…,"sha":…,"run":…,"artifact":…,"checks":[{nam
   and `checks[]` of `{name, status}` (ADR 0054). `checks[]` entries carry a string `status`
   field, **not** a boolean `pass` — the wire shape is the producer's, and prose that says
   "boolean" ships a parser that reads everything falsy (#4392).
-- `pending` — a producer run for this head exists and has not completed, or completed so
-  recently the artifact is not yet listed. **Pending is not absent** — reporting it absent
-  invents a CI gap (#3913).
+- `pending` — a producer run for this head exists and has not completed, **or** it completed
+  **within the freshness window** and lists no `run-evidence` artifact. **Pending is not absent** —
+  reporting it absent invents a CI gap (#3913).
 - `absent` — positive evidence only: no producer workflow exists in the repo (the
   foreign-repo degradation, confirmed by a successful workflow-inventory read, never by a
-  failed one), or a completed run published nothing, or the artifact is expired.
+  failed one), or no producer run exists at this head at all, or a run completed **outside the
+  freshness window** and lists no `run-evidence` artifact, or the artifact is expired.
+- `failed` — the artifact fetched and parsed, `manifest.commit` is exactly `--sha`, and at
+  least one `checks[]` entry did not pass. The bundle is about **this** tree and it attests a
+  failing run; the failing check names go to stderr. This is deliberately **not** `unknown`:
+  widening `unknown` to cover it would make one word mean both "cannot bind this head" and
+  "binds this head definitively", which is the opposite of the case it would be admitting.
 - `unknown` — the lookup chain completed but the answer cannot bind this head: schema
   version unrecognized, or `manifest.commit` ≠ `--sha` (a bundle about some other tree is
   not evidence about this one). A *failed* read is not `unknown` — it is `11`.
+
+**The freshness window is 120 seconds, and the clock it reads is named** ([ruled on
+#5067](https://github.com/kamp-us/phoenix/issues/5067#issuecomment-5233120953)). "A completed
+producer run listing zero artifacts" is two different facts wearing one shape — a producer that
+published nothing, and a producer whose upload has not surfaced in the artifact listing yet — and
+without a window they collapse onto the wrong side of the pending-is-not-absent law. So: compare
+the run's own `completed_at` against **the local clock at read time**; within 120s the missing
+artifact is listing lag and the answer is `pending`, outside it the run published nothing and the
+answer is `absent`. A run reporting no `completed_at` at all has nothing to compare, so it cannot
+be shown fresh and reads `absent`. Which side a run fell on, with both operands, goes to stderr.
 
 Transient-vs-absent is decided during the fetch (retry with backoff on 5xx, stderr captured,
 never discarded — the swallowed 503 stderr is how #3716 shipped), and a transient that
@@ -788,9 +851,18 @@ evidence	pending	9fe12ab0
 lookup	run:9182736999	artifact:-	status:in_progress
 ```
 
+```
+$ fabrika ship evidence 4323 --sha 7c31a0de
+evidence	failed	7c31a0de
+lookup	run:9182737111	artifact:2211334999	status:completed
+check	typecheck	success
+check	unit	failure
+```
+
 **Grounding**
 
-- #3991 / #3913 — the four-state split and the pending-is-not-absent law.
+- #3991 / #3913 — the state split and the pending-is-not-absent law; #5067's clause 6 is what
+  keeps the second honest, by giving the listing lag a window instead of a coin flip.
 - #3716 / #3693 — retries, captured stderr, the zip magic check; a 503 body reported as "no
   bundle" for a bundle present the whole time.
 - #4392 — `checks[]` `status` is a string on the wire; the contract says so, so the parser
@@ -850,7 +922,8 @@ one comment, unpaginated: a 101st unresolved human thread was invisible to the m
 |---|---|---|
 | `ship threads: PR #<n> not found in <repo>.` | 7 | refusal |
 | `ship threads: cannot read #<n>'s review threads: <reason> — UNKNOWN, never zero.` | 11 | refusal |
-| `ship threads: received <k> of <m> <threads|comments> — refusing the partial sweep.` | 13 | refusal |
+| `ship threads: received <k> of <m> threads — refusing the partial sweep.` | 13 | refusal |
+| `ship threads: received <k> of <m> comments on thread <id> — refusing the partial sweep.` | 13 | refusal |
 
 **Scope** — every review thread on the PR with `isResolved: false`, both pagination layers
 count-checked, every comment author's `__typename` read.
@@ -1013,7 +1086,28 @@ With `--json`: `{"outcome":"enqueued","sha":…,"entry":"queued"|"settling"}`.
 queue owns the method, and v1's documented hazard is that a `--squash` alongside `--auto`
 conflicts with the queue and no-ops the enqueue silently at exit 0. The verb re-resolves the
 live head first and refuses `12` on drift — the enqueue is the one action every gate's
-`--sha` was protecting; arming at a moved head ships a tree nobody verified. After the arm,
+`--sha` was protecting; arming at a moved head ships a tree nobody verified.
+
+**A definite `mergeable_state` is asserted BEFORE the arm** ([ruled on
+#5067](https://github.com/kamp-us/phoenix/issues/5067#issuecomment-5233191264)). The precondition
+sits here and not in the post-arm confirm step, which already owns a different question (whether
+the intent parked) and where an assertion would arrive after the write it was meant to prevent.
+The residual window it closes is measured, not assumed: **probed live, GitHub accepts the arm on a
+conflicted PR under a queue-governed base and parks the intent on it** — no platform-side refusal,
+`mergeable_state` unchanged at `dirty` — so without this precondition a PR that cannot merge is
+armed and reported as `enqueued … settling`, indistinguishable from a healthy arm.
+
+The assertion and its indefinite-value handling are **one unit, and neither ships without the
+other**: `mergeable` is computed lazily by GitHub, so a `null` / `unknown` read is routine and is
+**not an answer**. An indefinite read is re-read up to **3 times, 2 seconds apart**; if it is
+*still* indefinite the answer is UNKNOWN and the verb refuses `11` with nothing armed. A gate that
+read the indefinite value as green would be worse than no gate — a read that could not produce a
+definite answer must never resolve to one. A read that *fails* is likewise `11`, never a pass.
+What the verb does **not** do is judge the definite value: a definite `dirty` is an answer, and the
+arm proceeds to its own error discrimination on `8`. Definiteness is the precondition; the
+platform's verdict on mergeability is not this verb's to overrule.
+
+After the arm,
 the verb reads the PR back: `auto_merge: null` **post-enqueue is expected** (the queue
 consumes the intent) and is never read as a jam — the jam discriminator is the arm's error
 response, quoted verbatim on `8`.
@@ -1024,7 +1118,7 @@ response, quoted verbatim on `8`.
 |---|---|
 | `7` | the PR is proven absent (404), closed, or already merged (an idempotent success belongs to `ship scope`'s answer, not to an arm) |
 | `8` | the arm request, or its confirming post-arm read-back, failed — the error quoted; whether an intent is parked is UNKNOWN, so the caller runs `ship disarm --site refuse` before stopping |
-| `11` | the live head could not be read — nothing was armed |
+| `11` | the live head could not be read, the mergeability could not be read, or the mergeability was still indefinite after the polls — nothing was armed |
 | `12` | the live head moved past `--sha` — every verdict upstream bound a tree that is gone; re-enter at step 1 |
 
 **Errors**
@@ -1034,11 +1128,16 @@ response, quoted verbatim on `8`.
 | `ship enqueue: PR #<n> not found in <repo>.` | 7 | refusal |
 | `ship enqueue: PR #<n> is <closed|merged> — nothing to enqueue.` | 7 | refusal |
 | `ship enqueue: cannot read #<n>'s live head: <reason> — nothing was armed.` | 11 | refusal |
+| `ship enqueue: cannot read #<n>'s mergeability: <reason> — nothing was armed.` | 11 | refusal |
+| `ship enqueue: #<n>'s mergeable_state is still indefinite after <k> polls — mergeability is UNKNOWN, never green; nothing was armed.` | 11 | refusal |
+| `ship enqueue: mergeable_state is <state> (mergeable: <true|false>) — a definite read; arming.` | 0 | notice |
+| `ship enqueue: the confirming timeline read never reached a terminal page — the entry is unproven, so this answers settling.` | 0 | notice |
 | `ship enqueue: the live head is <live>, gates ran at <sha> — refusing to arm a tree nobody verified.` | 12 | refusal |
 | `ship enqueue: the arm failed: "<error>" — whether an intent is parked is UNKNOWN; disarm before stopping.` | 8 | refusal |
 | `ship enqueue: the arm was sent and the confirming read-back failed: <reason> — whether an intent is parked is UNKNOWN; disarm before stopping.` | 8 | refusal |
 
-**Scope** — one PR's live head, one arm request, one read-back of the PR's merge state.
+**Scope** — one PR's live head, its mergeability (re-read until definite or refused), one arm
+request, one read-back of the PR's merge state.
 
 **Examples**
 
@@ -1056,6 +1155,8 @@ enqueued	03135b91	queued
 - `auto_merge: null` post-enqueue is expected (v1 step 5's law); the jam discriminator is the
   error string, so the false-jam re-arm loop is unreachable.
 - ADR 0198 — this is the only verb that arms; every other path is a disarm site.
+- #5067 clause 8 / #5144 — the pre-arm mergeability precondition and its probe: the arm is not
+  refused by the platform on a conflicted PR, so the gate is load-bearing rather than redundant.
 
 ---
 
@@ -1097,8 +1198,10 @@ event **not paired** with a `merged` event — the queue consuming an entry emit
 removal ≤1s before the merge, and reading the bare removal is the #4155 false-ejection.
 `queued` on a live entry or an `added_to_merge_queue` newer than any removal. Anything
 unreadable in a poll classifies that poll `pending` — a miss can only keep polling, never
-mint `landed` or `ejected` (the fail-safe direction). The timeline read paginates; a 30-event
-first page read as the whole history is #4193.
+mint `landed` or `ejected` (the fail-safe direction). The timeline read paginates **to a terminal
+page**, and a read that never reaches one refuses `13` rather than polling on: a 30-event first
+page read as the whole history is #4193, and an unexhausted read is that same hole with the
+pages joined.
 
 **The horizon is stated, not defended:** default 16×30s ≈ 7.5 minutes of dwell against a
 measured queue dwell of 5–10 minutes; `unresolved` at the horizon is the expected outcome of
@@ -1113,7 +1216,7 @@ text carries the pairing).
 |---|---|
 | `7` | the PR is proven absent (404) |
 | `11` | every poll in the budget failed to read — the outcome is UNKNOWN, distinct from `unresolved` (which is a *successful* observation of a still-queued PR) |
-| `13` | a timeline enumeration is provably short and the classification would rest on it |
+| `13` | the timeline read — for which the platform declares no count — never reached a terminal page, and the classification would rest on it |
 
 **Errors**
 
@@ -1121,7 +1224,7 @@ text carries the pairing).
 |---|---|---|
 | `ship reconcile: PR #<n> not found in <repo>.` | 7 | refusal |
 | `ship reconcile: every poll failed to read #<n>: <last reason> — the outcome is UNKNOWN, not "unresolved".` | 11 | refusal |
-| `ship reconcile: received <k> of <m> timeline events — refusing to classify over a truncated history.` | 13 | refusal |
+| `ship reconcile: the timeline read never reached a terminal page — pagination is unexhausted; refusing to classify over a truncated history.` | 13 | refusal |
 
 **Scope** — one PR's merge state, timeline (paginated), and the base branch's recent
 commits, re-read per poll.
@@ -1272,7 +1375,7 @@ verified, CI re-trigger now the platform's. With `--json`: `{"outcome":"nudged",
 | `7` | the PR is proven absent (404) |
 | `11` | a precondition read failed — nothing was proven, nothing touched |
 | `12` | the live head moved past `--sha` — the zero-runs state being remedied belongs to a tree that is gone |
-| `13` | the timeline read for the reopened-event count is provably short — an undercounted history must not license a second nudge |
+| `13` | the timeline read for the reopened-event count never reached a terminal page — the platform declares no count for it, and an unexhausted history must not license a second nudge |
 | `16` | proven: not in the dropped-trigger state (runs exist / no workflows / PR not open), or this head was already nudged once |
 | `17` | the close landed and the reopen is unconfirmed — **the PR may be closed; reopen it by hand before anything else** |
 | `8` | the close itself failed — nothing changed state |
@@ -1286,7 +1389,7 @@ verified, CI re-trigger now the platform's. With `--json`: `{"outcome":"nudged",
 | `ship nudge: the live head is <live>, not <sha> — the state you diagnosed is another tree's.` | 12 | refusal |
 | `ship nudge: #<n> is not in the dropped-trigger state (<why>) — refusing to touch it (#4816).` | 16 | refusal |
 | `ship nudge: head <sha> was already nudged (<k> reopened events since push) — a second nudge is escalation, not retry.` | 16 | refusal |
-| `ship nudge: received <k> of <m> timeline events — refusing to count reopens over a truncated history.` | 13 | refusal |
+| `ship nudge: the timeline read never reached a terminal page — pagination is unexhausted; refusing to count reopens over a truncated history.` | 13 | refusal |
 | `ship nudge: the close failed: <reason> — nothing changed state.` | 8 | refusal |
 | `ship nudge: the close landed and the reopen is UNCONFIRMED: <reason> — PR #<n> may be CLOSED. Reopen it by hand now.` | 17 | refusal |
 
@@ -1417,7 +1520,7 @@ With `--json`: `{"outcome":…,"flagKey":…,"issue":<n|null>}`.
 diff adds a flag declaration (a `FlagshipFlag(` / `defaultVariation:` addition in the flag
 registry module, `apps/web/worker/features/flagship/resources.ts`); (b) the PR body carries a
 `Flag:` / `Flag key:` line with a kebab-case key (heading/bold tolerated); (c) the body names
-a key **declared in that same registry file at `main`** inside a gating-context line
+a key **declared in that same registry file at the PR's base ref** inside a gating-context line
 (fence-stripped, whole-token, gating-word-scoped — the context scoping is what keeps a prose
 mention of an old flag from minting a phantom release). The linked
 issue's inherited `Containment:` stamp is **never** read — it describes the epic, not this
@@ -1446,7 +1549,7 @@ v1's unverified label POST could report a release queued that no human would eve
 | `ship release: label read-back does not show status:awaiting-release on #<issue> — inspect it.` | 9 | refusal |
 | `ship release: received <k> of <m> declared files — refusing to scan a truncated diff for flag signals.` | 13 | refusal |
 
-**Scope** — one PR's diff and body, the flag registry file at `main`, one linked issue's
+**Scope** — one PR's diff and body, the flag registry file at the PR's base ref, one linked issue's
 labels; one label write with read-back.
 
 **Examples**
@@ -1473,6 +1576,24 @@ release	queued	sozluk-vote-widget
   silent-miss shapes this verb's `8`/`9`/`11` exist for.
 
 ---
+
+## Where the eight under-determined clauses were ruled
+
+[#5067](https://github.com/kamp-us/phoenix/issues/5067) collected eight clauses this spec left
+under-determined and closed them. Each is cited at its own site above; the index is here so a later
+reader can tell a **founder-direct** ruling from an **agent-delegated** one without re-reading the
+thread, which is the one thing the inline citations cannot show at a glance.
+
+| Clause | Ruled | Grade |
+|---|---|---|
+| 1 — the completeness proof for reads with no declared count | [comment 5233120953](https://github.com/kamp-us/phoenix/issues/5067#issuecomment-5233120953) | agent-delegated |
+| 2 — what `facts workflows:<n>` counts | [comment 5233120953](https://github.com/kamp-us/phoenix/issues/5067#issuecomment-5233120953) | agent-delegated |
+| 3 — the auto-merge porcelain carve in Substrate | [comment 5233120953](https://github.com/kamp-us/phoenix/issues/5067#issuecomment-5233120953) | agent-delegated |
+| 4 — the ref the CODEOWNERS read uses | [comment 5233160017](https://github.com/kamp-us/phoenix/issues/5067#issuecomment-5233160017) | **founder-direct** |
+| 5 — `failed` as the fifth evidence state | [comment 5233120953](https://github.com/kamp-us/phoenix/issues/5067#issuecomment-5233120953) | agent-delegated |
+| 6 — the 120s freshness window and its clock | [comment 5233120953](https://github.com/kamp-us/phoenix/issues/5067#issuecomment-5233120953) | agent-delegated |
+| 7 — the roster when CODEOWNERS names more than one team | [comment 5233188966](https://github.com/kamp-us/phoenix/issues/5067#issuecomment-5233188966) | **founder-direct** |
+| 8 — the pre-arm mergeability precondition | [comment 5233191264](https://github.com/kamp-us/phoenix/issues/5067#issuecomment-5233191264) | agent-delegated |
 
 ## The eval-enumeration obligation (leaf rule)
 

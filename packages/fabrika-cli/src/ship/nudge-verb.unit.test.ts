@@ -3,6 +3,7 @@ import {describe, expect, it} from "vitest";
 import {errOut, fakeShell, okOut, once} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {
+	INCOMPLETE_SCAN,
 	NUDGE_REOPEN_UNCONFIRMED,
 	PRECONDITION_UNKNOWN,
 	PROVEN_NOT_IN_STATE,
@@ -15,6 +16,7 @@ import {
 	OTHER_HEAD,
 	pull,
 	timeline,
+	unexhaustedPage,
 	workflows,
 } from "./fixtures.test-support.ts";
 import {runNudge} from "./nudge-verb.ts";
@@ -24,7 +26,7 @@ const RUNS = /^gh api --paginate repos\/o\/r\/commits\/[0-9a-f]+\/check-runs/;
 const STATUS = /^gh api repos\/o\/r\/commits\/[0-9a-f]+\/status$/;
 const WORKFLOWS = /^gh api --paginate repos\/o\/r\/actions\/workflows/;
 const COMMIT_DATE = /^gh api repos\/o\/r\/commits\/[0-9a-f]+ --jq \.commit\.committer\.date$/;
-const TIMELINE = /^gh api --paginate repos\/o\/r\/issues\/4321\/timeline/;
+const TIMELINE = /^gh api -i repos\/o\/r\/issues\/4321\/timeline/;
 const CLOSE = /^gh api --method PATCH repos\/o\/r\/pulls\/4321 -f state=closed$/;
 const REOPEN = /^gh api --method PATCH repos\/o\/r\/pulls\/4321 -f state=open$/;
 
@@ -132,5 +134,19 @@ describe("runNudge", () => {
 		]);
 		expect(out.code).toBe(NUDGE_REOPEN_UNCONFIRMED);
 		expect(out.stderr.at(-1)).toContain("PR #4321 may be CLOSED. Reopen it by hand now.");
+	});
+
+	it("refuses an unexhausted timeline on 13 — an undercounted history licenses a second nudge", async () => {
+		const shell = fakeShell([
+			[PULL, pull()],
+			...preconditionsMet.filter(([pattern]) => pattern !== TIMELINE),
+			[TIMELINE, unexhaustedPage()],
+		]);
+		const out = await Effect.runPromise(Effect.provide(runNudge(options), shell.layer));
+		expect(out.code).toBe(INCOMPLETE_SCAN);
+		expect(out.stderr.at(-1)).toBe(
+			"ship nudge: the timeline read never reached a terminal page — pagination is unexhausted; refusing to count reopens over a truncated history.",
+		);
+		expect(shell.calls.some((line) => line.includes("--method PATCH"))).toBe(false);
 	});
 });

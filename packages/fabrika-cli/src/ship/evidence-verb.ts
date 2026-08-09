@@ -1,5 +1,5 @@
 /**
- * `ship evidence` — the SHA-bound run-evidence bundle, read as four states.
+ * `ship evidence` — the SHA-bound run-evidence bundle, read as five states.
  *
  * Every claim carries the lookup evidence that makes it falsifiable from the report: the `lookup`
  * line names the run, the artifact and the run's status, so a reader can re-derive the answer
@@ -9,6 +9,10 @@
  * invents a CI gap, #3913) and a **failed read is not absent** (a 503 body reported as "no
  * run-evidence bundle" for a bundle present the whole time, #3716 — which is why the fetch checks
  * the zip magic number rather than trusting the file's name).
+ *
+ * `failed` is the fifth state and is deliberately not folded into `unknown`: a bundle that binds
+ * this head and attests a failing run is the most *definite* answer this verb can produce, while
+ * `unknown` means the opposite — "cannot bind this head". One word cannot mean both.
  */
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
@@ -41,6 +45,27 @@ const SCHEMA_VERSION = 1;
 
 /** The conclusions a bundle's `checks[]` entry may carry and still attest a passing run. */
 const PASSING = new Set(["success", "neutral", "skipped"]);
+
+/**
+ * How long after a run completes its artifact may still be missing from the listing and read
+ * `pending` rather than `absent`.
+ *
+ * Artifact listing lags the run's own completion, so "completed, zero artifacts" is two different
+ * facts wearing one shape: a producer that published nothing, and a producer whose upload has not
+ * surfaced yet. Without a window they collapse, and the collapse lands on the wrong side of the
+ * pending-is-not-absent law (#3913) — a listing lag reported as a CI gap. The clock is the **local
+ * clock at read time**, compared against the run's own `completed_at`; both are named in the
+ * contract so a reader can re-derive which side of the line a run fell on.
+ */
+const FRESH_COMPLETION_SECONDS = 120;
+
+/** Whether a completed run finished recently enough that a missing artifact is listing lag. */
+export const withinFreshnessWindow = (completedAt: string | null, nowMs: number): boolean => {
+	if (completedAt === null) return false;
+	const finished = Date.parse(completedAt);
+	if (Number.isNaN(finished)) return false;
+	return nowMs - finished <= FRESH_COMPLETION_SECONDS * 1000;
+};
 
 export interface ManifestCheck {
 	readonly name: string;
@@ -181,8 +206,21 @@ export const runEvidence = (
 			);
 		}
 		const artifact = artifacts.value.artifacts.find((entry) => entry.name === ARTIFACT_NAME);
-		if (artifact === undefined || artifact.expired) {
-			return emit("absent", run.id, artifact?.id ?? null, run.status, []);
+		if (artifact === undefined) {
+			// The two facts "published nothing" and "upload not listed yet" wear the same shape; the
+			// freshness window is what tells them apart, and inside it `pending` is the honest answer.
+			const fresh = withinFreshnessWindow(run.completedAt, Date.now());
+			diagnostics.push(
+				`${VERB}: run ${run.id} completed at ${run.completedAt ?? NULL_TOKEN} and lists no ${ARTIFACT_NAME} artifact — ${
+					fresh
+						? `within the ${FRESH_COMPLETION_SECONDS}s freshness window against the local clock, so this is listing lag: pending.`
+						: `outside the ${FRESH_COMPLETION_SECONDS}s freshness window against the local clock, so the run published nothing: absent.`
+				}`,
+			);
+			return emit(fresh ? "pending" : "absent", run.id, null, run.status, []);
+		}
+		if (artifact.expired) {
+			return emit("absent", run.id, artifact.id, run.status, []);
 		}
 
 		const scratch = yield* makeScratchDirectory;
@@ -221,7 +259,7 @@ export const runEvidence = (
 					.map((check) => check.name)
 					.join(", ")}) — it attests a run, not a passing one.`,
 			);
-			return emit("unknown", run.id, artifact.id, run.status, manifest.checks);
+			return emit("failed", run.id, artifact.id, run.status, manifest.checks);
 		}
 		return emit("present", run.id, artifact.id, run.status, manifest.checks);
 	});
