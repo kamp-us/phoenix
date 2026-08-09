@@ -10,7 +10,16 @@ import {
 	ZERO_SCOPE,
 } from "./codes.ts";
 import {runDiff} from "./diff-verb.ts";
-import {binding, DIFF, DIFF_AT, HEAD, OLD_HEAD, pull} from "./fixtures.test-support.ts";
+import {
+	binding,
+	DIFF,
+	DIFF_AT,
+	HEAD,
+	OLD_HEAD,
+	PATHS_AT,
+	paths,
+	pull,
+} from "./fixtures.test-support.ts";
 
 const PULL = /^gh api repos\/o\/r\/pulls\/4321$/;
 /** The unbound endpoint this verb no longer reads — scripted so a regression has bytes to serve. */
@@ -48,16 +57,33 @@ const run = (
 	overrides: Partial<typeof options> = {},
 ) => shell(script, overrides).out;
 
-/** The whole green path: the PR read, the four binding reads, and the diff at the bound commit. */
+/**
+ * The whole green path: the PR read, the four binding reads, the diff at the bound commit, and the
+ * `--name-only` read of the SAME range that the completeness proof is taken against.
+ */
 const green = (
 	diff: string = DIFF,
 	shape: Parameters<typeof pull>[0] = {},
+	inRange: ReadonlyArray<string> = ["src/cart.ts", "README.md"],
 ): ReadonlyArray<readonly [RegExp, ExecResult]> => [
 	[PULL, pull(shape)],
 	...binding(),
 	[DIFF_AT(), okOut(diff)],
+	[PATHS_AT(), paths(...inRange)],
 	[RAW, okOut(MOVED_DIFF)],
 ];
+
+/** A rename git pairs into ONE `diff --git` entry — the shape GitHub may count as two files. */
+const RENAME_DIFF = `diff --git a/src/old.ts b/src/new.ts
+similarity index 96%
+rename from src/old.ts
+rename to src/new.ts
+--- a/src/old.ts
++++ b/src/new.ts
+@@ -1,1 +1,2 @@
+ const x = 1;
++const y = 2;
+`;
 
 describe("runDiff", () => {
 	it("serves the diff bytes exactly as the object database holds them", async () => {
@@ -71,17 +97,31 @@ describe("runDiff", () => {
 		expect(out.stderr[0]).toBe(
 			`review diff: bound to ${HEAD} (base 0f1e2d3c4b5a69788796a5b4c3d2e1f009182736) — read from the object database, nothing checked out.`,
 		);
-		expect(out.stderr[1]).toContain("scanned 2 files; 2 declared");
+		expect(out.stderr[1]).toContain(
+			"scanned 2 files; 2 in the range per git, 2 declared by GitHub",
+		);
 		expect(out.stderr[1]).toContain("bytes");
 	});
 
-	it("refuses a diff short of the declared count on 13 rather than serving the prefix as the whole", async () => {
-		const out = await run(green(DIFF, {changedFiles: 7}));
+	it("refuses a diff short of the range's own file list on 13 rather than serving the prefix as the whole", async () => {
+		const out = await run(green(DIFF, {}, ["src/cart.ts", "README.md", "src/dropped.ts"]));
 		expect(out.code).toBe(INCOMPLETE_SCAN);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toBe(
-			`review diff: the diff at ${HEAD} carries 2 of #4321's 7 declared files — refusing to serve a partial diff as the whole (#3925's class).`,
+			`review diff: the diff at ${HEAD} carries 2 of the 3 files git reports for the same range 0f1e2d3c4b5a69788796a5b4c3d2e1f009182736...${HEAD} — both counts from git, so this diff is provably short; refusing to serve a partial diff as the whole (#3925's class).`,
 		);
+	});
+
+	it("refuses on 11 when the range's file list cannot be read, rather than proving completeness against nothing", async () => {
+		const out = await run([
+			[PULL, pull()],
+			...binding(),
+			[DIFF_AT(), okOut(DIFF)],
+			[PATHS_AT(), errOut("fatal: bad revision")],
+		]);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toContain("cannot read the file list of the range");
 	});
 
 	it("makes the same zero-file refusal `review scope` does, so neither serves a review over nothing", async () => {
@@ -102,6 +142,36 @@ describe("runDiff", () => {
 		expect(unreadable.code).toBe(PRECONDITION_UNKNOWN);
 		expect(unreadable.stdout).toBe("");
 		expect(unreadable.stderr.at(-1)).toContain("UNKNOWN");
+	});
+});
+
+/**
+ * The single-source fence (#5139).
+ *
+ * Both operands of the exit-`13` inequality are produced by git over one range under one set of
+ * flags. Each case here fails if the denominator drifts back to GitHub's `changed_files`, whose
+ * merge base and rename detection are its own.
+ */
+describe("runDiff proves completeness against git's own count", () => {
+	it("serves a rename git paired into one entry, though GitHub declares it as two files", async () => {
+		const out = await run(green(RENAME_DIFF, {changedFiles: 2}, ["src/new.ts"]));
+		expect(out.code).toBe(0);
+		expect(out.stdout).toBe(RENAME_DIFF);
+	});
+
+	it("reports the git-vs-GitHub disagreement on stderr instead of refusing on it", async () => {
+		const out = await run(green(RENAME_DIFF, {changedFiles: 2}, ["src/new.ts"]));
+		expect(out.stderr.at(-1)).toBe(
+			"review diff: git and GitHub disagree on #4321's file count (1 vs 2) — different merge base and different rename detection; reported, never refused on (#5139).",
+		);
+	});
+
+	it("takes both counts from the same range, and never from the PR's declared count", async () => {
+		const {fake, out} = shell(green());
+		await out;
+		expect(fake.calls).toContain(
+			`git diff --no-ext-diff --no-color --find-renames --src-prefix=a/ --dst-prefix=b/ --name-only -z 0f1e2d3c4b5a69788796a5b4c3d2e1f009182736...${HEAD}`,
+		);
 	});
 });
 
