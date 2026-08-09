@@ -658,9 +658,11 @@ jobs:
       # existing package entry point (#4700). It shipped born-dead: the awk regex would not compile,
       # its exit status was never tested, and the gate printed a clean `not applicable` skip for six
       # weeks. A born-dead detector is invisible to any suite that only asserts the happy skip, so
-      # this harness asserts a MATCH, and carries five mutants — one per claim the fix rests on — so
-      # an assertion that stopped having teeth reds here rather than passing quietly. Hermetic: gh,
-      # git and the CLI shim are stubbed, no network.
+      # this harness asserts a MATCH, and carries eight mutants — one per claim the fix rests on — so
+      # an assertion that stopped having teeth reds here rather than passing quietly. It also pins the
+      # sibling class (#4986): three reads whose failure or empty result used to reach a clean skip,
+      # each driven by the could-not-see state that produced it. Hermetic: gh, git and the CLI shim
+      # are stubbed, no network.
       # Same script runs locally: `bash .claude/skills/review-code/scripts/verify-glossary-detector-fires.sh`.
       - run: bash .claude/skills/review-code/scripts/verify-glossary-detector-fires.sh
 
