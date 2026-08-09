@@ -343,9 +343,9 @@ event — the one change to the corpus an `added`/`modified` pair cannot express
 `required` iff at least one changed path is under at least one root. **The directory is the unit of
 coverage, not the file type** — the v1 §CP definition learned this the hard way: an enumerated
 skill-dir list plus an any-depth `*.sh` clause left a non-`.sh` file beside a gated script
-proven-ordinary and auto-mergeable at zero approvals. `self` is true when any changed path is under a
-directory matching `*/skills/governance/` — **resolved, never hardcoded to phoenix's install path**,
-for the same portability reason `governance base` states below. That directory is always a subset of
+proven-ordinary and auto-mergeable at zero approvals. `self` is true when any changed path is under the
+resolved skill root — the same `*/fabrika/skills/governance/SKILL.md` resolution `governance base`
+states below, plugin segment included, **never hardcoded to phoenix's install path**. That directory is always a subset of
 `claude-plugins/`, so this skill's own diff derives its own namespace by construction.
 
 **This is not the §CP answer and the verb says so on stderr**, once, on every run:
@@ -712,7 +712,7 @@ either; the bytes come from the object database.
 | Code | Trigger |
 |---|---|
 | `7` | the PR is proven absent (404) or closed; or the skill root resolved to **zero** matches; or every `--path` is proven absent at the merge-base — a self fence over no bytes |
-| `10` | a `--path` resolves outside this skill's own directory (a path not under a `*/skills/governance/` root) |
+| `10` | a `--path` resolves outside the resolved skill root (see the resolution above) |
 | `11` | the merge base could not be resolved, a path could not be read at it, or the skill root resolved to **more than one** candidate — the base rules are UNKNOWN, so no fallback to the head is taken |
 | `12` | the PR's head moved while the base was being resolved — re-run; a base paired with a head nobody judged is not a fence |
 
@@ -722,7 +722,7 @@ either; the bytes come from the object database.
 |---|---|---|
 | `governance base: PR #<n> not found in <repo>.` | 7 | refusal |
 | `governance base: none of the requested paths exist at merge-base <sha> — there is no base revision to judge by.` | 7 | refusal |
-| `governance base: no `*/fabrika/skills/governance/SKILL.md` at merge-base <sha> — this skill is not installed in the base revision, so there is no self fence to run.` | 7 | refusal |
+| ``governance base: no `*/fabrika/skills/governance/SKILL.md` at merge-base <sha> — this skill is not installed in the base revision, so there is no self fence to run.`` | 7 | refusal |
 | `governance base: <n> candidate skill roots at merge-base <sha> (<list>) — which one is this skill is UNKNOWN; refusing to guess.` | 11 | refusal |
 | `governance base: --path "<v>" is outside this skill's own directory (<resolved>) — this verb reads only this skill's own text.` | 10 | refusal |
 | `governance base: cannot resolve the merge base of #<n>: <reason> — the base rules are UNKNOWN; refusing to judge by the head's.` | 11 | refusal |
@@ -741,7 +741,7 @@ the fence exists to prevent (ADR 0092).
 ```
 $ fabrika governance base 4321 --path claude-plugins/fabrika/skills/governance/SKILL.md
 base	8b1e0c4499ad72f635e0117a9bb2d3c058e7fa16	1
-file	claude-plugins/fabrika/skills/governance/SKILL.md	42
+file	claude-plugins/fabrika/skills/governance/SKILL.md	39
 ---
 name: governance
 ---
@@ -1010,7 +1010,7 @@ above falls on `2026-08-09` — `0240` lands on `2026-08-08` and would be inside
 **Invocation**
 
 ```
-fabrika governance readout 4952 [--repo <owner/name>] [--json]
+fabrika governance readout [<issue>] [--repo <owner/name>] [--json]
 ```
 
 The ranked rows arrive on **stdin** — one row per line in the `governance-digest` line grammar.
@@ -1019,7 +1019,7 @@ The ranked rows arrive on **stdin** — one row per line in the `governance-dige
 
 | Flag | Type | Required | Default | Description |
 |---|---|---|---|---|
-| *(positional)* | integer | yes | — | the issue number of the durable readout artifact the front door reads. **Not a constant**: resolve it from `$FABRIKA_GOVERNANCE_READOUT_ISSUE`, else the single open issue in the target repo titled exactly `Governance readout`; a caller may always pass it explicitly. Unset and unresolvable is exit `7` naming both lookups — never a guessed number, which would publish the digest onto somebody else's issue |
+| *(positional)* | integer | no | resolved, see below | the issue number of the durable readout artifact the front door reads. **Not a constant**: resolve it from `$FABRIKA_GOVERNANCE_READOUT_ISSUE`, else the single open issue in the target repo titled exactly `Governance readout`; a caller may always pass it explicitly. Unset and unresolvable is exit `7` naming both lookups — never a guessed number, which would publish the digest onto somebody else's issue |
 | `--repo` | string | no | resolved | the repository |
 | `--json` | boolean | no | `false` | emit the result object |
 | stdin | text | yes | — | the ranked rows: `row\t<NNNN>\t<tension\|blast\|routine>\t<one-line note>`, highest consequence first |
@@ -1066,7 +1066,7 @@ rows in the same order, then compare the whole body through `normalizeForReadbac
 | `governance readout: the assembled body carries a machine-local path at line <k> (<class>) — cite it repo-relative.` | 5 | refusal |
 | `governance readout: the body is a bare "@" path reference — the rows never arrived. Send them on stdin.` | 6 | refusal |
 | `governance readout: issue #<n> not found in <repo> — the readout artifact is absent; front-door creates it (#4952).` | 7 | refusal |
-| `governance readout: no artifact issue given, `$FABRIKA_GOVERNANCE_READOUT_ISSUE` is unset, and <repo> has no open issue titled "Governance readout" — refusing to guess where the digest lands.` | 7 | refusal |
+| ``governance readout: no artifact issue given, `$FABRIKA_GOVERNANCE_READOUT_ISSUE` is unset, and <repo> has no open issue titled "Governance readout" — refusing to guess where the digest lands.`` | 7 | refusal |
 | `governance readout: issue #<n> is closed — a readout nobody reads is not a readout.` | 7 | refusal |
 | `governance readout: row <k>'s kind "<v>" is outside tension/blast/routine.` | 10 | refusal |
 | `governance readout: row <k>'s id "<v>" is not a four-digit decision id.` | 10 | refusal |
