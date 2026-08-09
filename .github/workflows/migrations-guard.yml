@@ -12,6 +12,8 @@ name: migrations-guard
 # this gate is what makes that drift visible.
 on:
   pull_request:
+  push:
+    branches: [main]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

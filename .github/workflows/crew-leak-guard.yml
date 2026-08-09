@@ -11,6 +11,8 @@ name: crew-leak-guard
 # in. The scan lives once in pipeline-cli's `leak-guard sweep`, never re-grepped here.
 on:
   pull_request:
+  push:
+    branches: [main]
 
 # contents:read is all it needs; default-deny every other scope (CodeQL least-privilege).
 permissions:

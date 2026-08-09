@@ -20,6 +20,8 @@ name: unresolved-threads-guard
 # PR (the §CP hole this closes); promoting it to required makes the block enforced. The
 # `merge_group` no-op below keeps it safe to promote without wedging the queue (see there).
 on:
+  # No `push: main` (#5085): the guard reads a PR's own review threads. There is no PR
+  # number on a `push`, so the check has nothing to evaluate off `main`.
   pull_request:
   # If this is later promoted to a required check, the merge queue will await it on the
   # batched `merge_group` ref. There is no PR number on that event, and ADR 0158's

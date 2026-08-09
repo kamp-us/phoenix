@@ -23,6 +23,9 @@
 name: run-evidence
 
 on:
+  # No `push: main` (#5085): this is not a repo-wide gate — it is a per-PR-head evidence
+  # producer, and its consumers key on the PR head SHA. A `main` run would publish an
+  # artifact no gate ever fetches.
   pull_request:
   # The merge queue awaits the run-evidence gate on the batched `merge_group` ref
   # before it can merge; without this trigger the bundle never runs on the batch and

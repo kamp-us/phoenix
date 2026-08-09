@@ -20,6 +20,9 @@ permissions:
   contents: read
 
 on:
+  # No `push: main` (#5085): this scan's scope IS the diff — `merge-base..HEAD`, the PR's
+  # own net-new commits — so a `main` run would re-scan the triaged #2325 history baseline
+  # and red every time.
   pull_request:
   # `scan PR commits for secrets` is intended as a branch-protection-REQUIRED status
   # check, so the merge queue awaits it on the batched `merge_group` ref before it can
