@@ -78,9 +78,9 @@ Every verb obeys these; stated once.
   beside a failure invites reading the bytes without the status.
 - **Common inputs.** `--repo <owner/name>` (default: resolved from the `origin` remote). `--json`
   is the default and only output mode where a shape is JSON; line-grammar verbs say so. GitHub
-  reads go through `gh api` REST, never GraphQL (the org's Projects-classic integration breaks
-  GraphQL), and **every list read paginates** — a truncated page is the un-paginated scar this
-  group exists to close (#4926; v1's `per_page=100` comment reads in `stepR1-verdicts.sh`).
+  access per [skill conventions §11 — REST, never GraphQL](../../docs/skill-conventions.md#11-github-access-is-rest-never-graphql)
+  — the paginate half is what this group most depends on: a truncated page is the un-paginated scar
+  it exists to close (#4926; v1's `per_page=100` comment reads in `stepR1-verdicts.sh`).
 - **The content gate.** Every externally-authorable byte a verb returns — issue bodies, comments,
   PR bodies, review text — passes through one shared module,
   `packages/fabrika-cli/src/build/content-gate.ts`, before it reaches stdout. Today the gate is

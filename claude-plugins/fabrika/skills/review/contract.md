@@ -14,9 +14,9 @@ their semantics and their scars — each Grounding section names what the v1 cou
 and what this spec does instead — but no clause defers to one, and none is invoked.
 
 **Substrate.** Effect CLI verbs on the `@effect/platform-node` seam the sibling groups use;
-GitHub access through the same `gh api` REST shape, never GraphQL (the org's Projects-classic
-integration breaks GraphQL issue queries). Named because a spec that leaves the substrate open
-makes the implementer guess (#4734).
+GitHub access per
+[skill conventions §11 — REST, never GraphQL](../../docs/skill-conventions.md#11-github-access-is-rest-never-graphql).
+Named because a spec that leaves the substrate open makes the implementer guess (#4734).
 
 ## Verb inventory
 

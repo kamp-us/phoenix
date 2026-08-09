@@ -14,10 +14,10 @@ their scars — each Grounding section names what the v1 counterpart gets wrong 
 instead — but no clause defers to one, and none is invoked.
 
 **Substrate.** These verbs are Effect CLI verbs on the `@effect/platform-node` seam already used by
-the sibling groups; GitHub access goes through the same `gh api` REST shape, never GraphQL (the org's
-Projects-classic integration breaks GraphQL issue queries). Named here because
-`cli-interface-convention.md` states no substrate and a spec that leaves it open makes the
-implementer guess ([#4734](https://github.com/kamp-us/phoenix/issues/4734)).
+the sibling groups; GitHub access per
+[skill conventions §11 — REST, never GraphQL](../../docs/skill-conventions.md#11-github-access-is-rest-never-graphql).
+Named here because `cli-interface-convention.md` states no substrate and a spec that leaves it open
+makes the implementer guess ([#4734](https://github.com/kamp-us/phoenix/issues/4734)).
 
 ## Verb inventory
 
