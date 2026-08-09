@@ -65,8 +65,6 @@ const pagedEnvelope = (
 		: ok({declared, entries});
 };
 
-// ── reviews and approvals ────────────────────────────────────────────────────────────────────────
-
 export interface ReviewRecord {
 	readonly login: string;
 	readonly state: string;
@@ -136,8 +134,6 @@ export const listTeamMembers = (
 		return present<ReadonlyArray<string>>(logins);
 	});
 
-// ── repository content at a ref ──────────────────────────────────────────────────────────────────
-
 /**
  * One file's bytes at a ref, through the raw media type.
  *
@@ -157,8 +153,6 @@ export const readFileAtRef = (repo: string, path: string, ref: string): Shell<Ex
 		}
 		return present(r.stdout);
 	});
-
-// ── CI surfaces ──────────────────────────────────────────────────────────────────────────────────
 
 /** One check run at a head, with the two fields the wedge split needs beyond name/status. */
 export interface ShipCheckRun {
@@ -283,8 +277,6 @@ export const countCommitStatuses = (repo: string, sha: string): Shell<Attempt<nu
 			: fail("`gh api` exited 0 but the status rollup declares no total_count");
 	});
 
-// ── run evidence ─────────────────────────────────────────────────────────────────────────────────
-
 export interface WorkflowRun {
 	readonly id: number;
 	readonly name: string;
@@ -387,8 +379,6 @@ export const makeScratchDirectory: Shell<Attempt<string>> = Effect.gen(function*
 	return path === "" ? fail("`mktemp -d` exited 0 but named no directory") : ok(path);
 });
 
-// ── timeline, commits, queue regime ──────────────────────────────────────────────────────────────
-
 export interface TimelineEvent {
 	readonly event: string;
 	readonly createdAt: string;
@@ -487,8 +477,6 @@ export const isQueueGoverned = (repo: string, branch: string): Shell<Attempt<boo
 		return ok(parsed.some((rule) => isRecord(rule) && rule.type === "merge_queue"));
 	});
 
-// ── writes ───────────────────────────────────────────────────────────────────────────────────────
-
 /**
  * Arm the queue's auto-merge at the verified head.
  *
@@ -530,8 +518,6 @@ export const setPullState = (repo: string, pr: number, state: string): Shell<Att
 		]);
 		return r.ok ? ok(undefined) : fail(r.reason);
 	});
-
-// ── the sanctioned GraphQL exception ─────────────────────────────────────────────────────────────
 
 export interface ThreadComment {
 	readonly author: string;
