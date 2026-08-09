@@ -41,3 +41,11 @@ This ADR brutally narrows imge → **depo** (Turkish "depot/warehouse") and reco
 ## Vocabulary impact
 
 Renames **imge → depo**. **depo** = kampus's internal asset store / CDN (R2-backed, `depo.kamp.us`, internal callers only, capability-URL public reads). The glossary `imge` row (`.glossary/TERMS.md`) and the architecture-vocab line (`.glossary/LANGUAGE.md`) are updated to `depo` in this PR (short, unambiguous rename — inlined per the adr skill's vocabulary step rather than deferred).
+
+## Qualifying note — 2026-08-09: which `review-ui` this ADR means
+
+The `## Consequences` bullet above coins **`review-ui`** for depo's *producer*: the Playwright step that captures UI screenshots on UI-affecting PRs and embeds them via `depo put`. The fabrika skill corpus later took the same spelling for a different thing — its **visual-review gate**, which judges rendered surfaces against the four-pillars design law (ADR [0242](0242-fabrika-skill-nouns-redefine-build-and-review.md) §4).
+
+The two names **coexist, and neither supersedes the other** — founder ruling, option (a), 2026-08-08, recorded on epic [#4904](https://github.com/kamp-us/phoenix/issues/4904). fabrika keeps `review-ui` for its gate; this ADR keeps `status: accepted`, and the Consequences bullet stands as written. So read `review-ui` **in this file** as depo's producer, and read it anywhere else as fabrika's gate.
+
+depo's producer skill was never built as a standalone. Its capture-and-embed function landed instead as a leg of the fabrika gate, over the `@kampus/design-capture` seam (ADR [0183](0183-golden-screen-storage-depo-git-pointer.md)). depo's own role is unchanged by that: depo is still only the sink.
