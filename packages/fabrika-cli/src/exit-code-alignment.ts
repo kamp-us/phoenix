@@ -52,8 +52,18 @@ export const SHARED_SEATS: SharedSeats = {
 	PRECONDITION_UNKNOWN: "PRECONDITION_UNKNOWN",
 };
 
+/**
+ * `build`'s seats: the same eight, plus `report file`'s body-section seat.
+ *
+ * `review` and `triage` leave `4` a deliberate gap because neither performs a section check;
+ * `build pr` does — a body with no `## Deviations` block is that same fact — so the seat is claimed
+ * rather than re-invented one code higher.
+ */
+export const BUILD_SEATS: SharedSeats = {...SHARED_SEATS, BAD_SECTIONS: "BAD_SECTIONS"};
+
 /** The groups that align to {@link ALIGNMENT_BASE}, each with the seats it claims to share. */
 export const ALIGNED_GROUPS: Readonly<Record<string, SharedSeats>> = {
+	build: BUILD_SEATS,
 	triage: SHARED_SEATS,
 	review: SHARED_SEATS,
 };
