@@ -639,6 +639,16 @@ jobs:
       # Same script runs locally: `bash .claude/skills/review-code/scripts/verify-glossary-detector-fires.sh`.
       - run: bash .claude/skills/review-code/scripts/verify-glossary-detector-fires.sh
 
+      # Executable pin for triage's apply-triage wrapper (#4936): every argument it is given reaches
+      # the verb, or it refuses non-zero having spawned the verb zero times. The wrapper took `-ge 3`
+      # and forwarded only `$1 $2 $3`, so the documented `--status needs-info` was accepted, dropped,
+      # and exited 0 having stamped `status:triaged` — the pickable label — on an issue a triager was
+      # deliberately holding. The assertions are on the verb's ARGV, not on a clean exit, because a
+      # clean exit is what the defect already produced; five mutants keep them from going toothless.
+      # Hermetic: the verb is a stub, no network, no issue mutated.
+      # Same script runs locally: `bash .claude/skills/triage/scripts/verify-apply-triage-args.sh`.
+      - run: bash .claude/skills/triage/scripts/verify-apply-triage-args.sh
+
       # Gate-path drift guard (issue #720): assert the five CONTROL_PLANE_RE= copies
       # in ship-it/review-code/review-doc/review-skill/gh-issue-intake-formats are
       # byte-identical to the §CP canonical line, and that .claude/skills resolves to

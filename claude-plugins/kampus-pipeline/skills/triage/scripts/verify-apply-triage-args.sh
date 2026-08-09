@@ -71,7 +71,9 @@ run_case() {   # $1 = script under test, $2… = the invocation's arguments
 	shift
 	: > "$LOG"
 	ERR="$TMP/err"
-	OUT="$(PCLI_LOG="$LOG" CLAUDE_PLUGIN_ROOT="$PLUGIN" bash "$script" "$@" 2>"$ERR")"
+	# The wrapper's own stdout is the verb's, which the stub does not print — the recorded argv is
+	# the observation, so stdout is parked in a file rather than captured.
+	PCLI_LOG="$LOG" CLAUDE_PLUGIN_ROOT="$PLUGIN" bash "$script" "$@" >"$TMP/out" 2>"$ERR"
 	RC=$?
 	ARGV="$(cat "$LOG")"
 	ERRTEXT="$(cat "$ERR")"
