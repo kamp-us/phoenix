@@ -151,6 +151,11 @@ portability ruling; #5049 is where required-environment declarations live as a c
 - **Default path (required): the headless harness.** `ui render` needs a local dev server for
   the tree and a headless browser. This path is what works in agent sessions and CI, and it is
   the **only** source of evidence captures — its validation (`16`) is what makes a PNG a record.
+  **The browser dependency ships with the verb package** (founder preference, 2026-08-09:
+  default-available beats install-a-thing): installing `@kampus/fabrika-cli` provisions the
+  headless browser; no operator or agent ever runs a separate browser-install step by hand. A
+  missing or broken browser provision at run time is `11` with the exact remediation command in
+  the message — never a silent skip.
 - **Interactive path (optional): the connected Chrome browser.** When the session's tool surface
   carries the `claude-in-chrome` tools, the *skill* may drive the live browser for the
   look-and-fix loop. **Detection is tool-surface presence, decided by the model at the seam it

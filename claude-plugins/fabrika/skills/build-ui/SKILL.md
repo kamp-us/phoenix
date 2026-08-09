@@ -114,9 +114,11 @@ after/pano.png` returns the diff signal to steer by, never a verdict; an unbless
 default path and the only *record*: portable, validated, what evidence attaches. When — and only
 when — this session's tool surface carries the `claude-in-chrome` tools, you may additionally
 drive the connected live browser for the look-and-fix loop: navigate the surface, inspect states
-interactively, iterate faster than capture round-trips allow. Detection is tool presence, nothing
-else — no env var, no config; when the Chrome tools are absent you use the default path and say
-nothing, because a missing optional eye is not a deviation. Chrome screenshots never substitute
+interactively, iterate faster than capture round-trips allow — and **prefer it for the looking
+when it is present**: what is already connected beats anything that would need installing.
+Detection is tool presence, nothing else — no env var, no config; when the Chrome tools are
+absent you use the default path and say nothing, because a missing optional eye is not a
+deviation. Chrome screenshots never substitute
 for `fabrika ui render` captures in evidence: the verb's validation is what makes a capture a
 record.
 
@@ -137,8 +139,11 @@ a partial or silent attach is the #3925 class (months of 100%-failed uploads beh
 gate) and it is unrepresentable here. `fabrika build note <n>` for the handoff, then
 `fabrika build release <n>`.
 
-**§TERM — terminal vocabulary** — end on exactly one: `SHIPPED-PR` (PR open, branch pushed,
-evidence attached); `BLOCKED-NO-MANIFEST` (no design law in this repo — no branch cut, routed to
+**§TERM — terminal vocabulary** — end on exactly one: `SHIPPED-PR` (PR open, branch pushed, and
+the evidence state is loud: captures attached, or every uncapturable surface named in Deviations
+with its proven render code — a dark-flagged surface ships with its render gap on the record,
+and `review-ui`'s gate owns whether that is acceptable; only *silent* evidence absence is
+forbidden); `BLOCKED-NO-MANIFEST` (no design law in this repo — no branch cut, routed to
 front-door's bootstrap); `BACKED-OFF` (claim lost, blocked, wrong modality, or empty pool —
 branch removed, or never cut); `ESCALATED` (repair cap reached — branch pushed at its last
 verified head, escalation note posted); `STOPPED` (isolation or verdict UNKNOWN — branch left
