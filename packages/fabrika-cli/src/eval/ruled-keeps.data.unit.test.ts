@@ -129,15 +129,18 @@ describe("ruled KEEP corpus — the corpus README points at the enumeration", ()
 });
 
 /**
- * The corpus publishes its size to artifacts outside this package — the fabrika authoring-brief
- * contract tells a brief author which incident rows to cite — so a check confined to the package
- * would go green while the page an author actually reads still said 74 (#4823, and #4838 for the
- * same defect one file over). Each surface is read by path: an unreadable surface throws, because
- * "could not read it" and "it carries no stale figure" are different facts.
+ * The corpus publishes its size to artifacts outside this package — the glossary entry a brief
+ * author reads first, then the fabrika authoring-brief contract that tells them which incident rows
+ * to cite — so a check confined to the package would go green while the page an author actually
+ * reads still said 74 (#4823, and #4838 for the same defect one file over). The surface list is the
+ * check: a page missing from it is unguarded however sound the assertion, so every page that
+ * publishes the size belongs here. Each surface is read by path: an unreadable surface throws,
+ * because "could not read it" and "it carries no stale figure" are different facts.
  */
 describe("ruled KEEP corpus — every published cardinality is derived from the enumeration", () => {
 	const SURFACES = [
 		"./incident-corpus/README.md",
+		"../../../../.glossary/TERMS.md",
 		"../../../../claude-plugins/fabrika/docs/authoring-brief-contract.md",
 	];
 
