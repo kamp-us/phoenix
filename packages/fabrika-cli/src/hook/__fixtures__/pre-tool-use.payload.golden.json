@@ -1,0 +1,12 @@
+{
+	"session_id": "62716539-7eaa-4bb3-9586-bd35941e1a3a",
+	"transcript_path": "/Users/<operator>/.claude/projects/-private-tmp-hook-capture/62716539-7eaa-4bb3-9586-bd35941e1a3a.jsonl",
+	"cwd": "/private/tmp/hook-capture",
+	"prompt_id": "2679fe8e-ca56-4a20-ba4d-e751014468b8",
+	"permission_mode": "auto",
+	"effort": { "level": "medium" },
+	"hook_event_name": "PreToolUse",
+	"tool_name": "Bash",
+	"tool_input": { "command": "echo capture-probe", "description": "Echo capture-probe" },
+	"tool_use_id": "toolu_015KunD2zfoqvkpfU3mmYRBP"
+}

@@ -86,9 +86,17 @@ export const UI_SEATS: SharedSeats = (() => {
 	return rest;
 })();
 
+/**
+ * `hook`'s seats: one. It shares only `EMPTY_STDIN` — the same fact, an fd 0 read that held nothing
+ * — and everything else it speaks is about a harness envelope rather than about a write, so its two
+ * private codes sit above the base's whole table instead of claiming a seat in it.
+ */
+export const HOOK_SEATS: SharedSeats = {EMPTY_STDIN: "EMPTY_STDIN"};
+
 /** The groups that align to {@link ALIGNMENT_BASE}, each with the seats it claims to share. */
 export const ALIGNED_GROUPS: Readonly<Record<string, SharedSeats>> = {
 	build: BUILD_SEATS,
+	hook: HOOK_SEATS,
 	epic: BUILD_SEATS,
 	plan: BUILD_SEATS,
 	triage: SHARED_SEATS,

@@ -10,8 +10,10 @@ the `/review` contract specifies; `review-ui`, the three the `/review-ui` contra
 (capture a PR's preview, emit the `review-ui` verdict, or post a typed blocker note);
 `ship`, the thirteen the `/ship` contract specifies; `eval`, the graded-corpus
 harness the fabrika eval layer measures itself with; `spend`, what one fabrika run cost in
-tokens; and `wire`, which owns the byte-level formats two skills meet through on a GitHub
-artifact. `fabrika --help` lists them from the registry, so that index is never a second
+tokens; `wire`, which owns the byte-level formats two skills meet through on a GitHub
+artifact; and `hook`, which reads the envelope Claude Code writes to a hook's stdin — the group
+[fabrika's hook surface](../../claude-plugins/fabrika/hooks.json) declares against.
+`fabrika --help` lists them from the registry, so that index is never a second
 hand-maintained list.
 
 ## Who it's for
@@ -440,6 +442,29 @@ The token meter these verbs price runs with is fabrika's own
 *specified* by ADR 0112 §2, not chosen, so the two implementations are held to one ruler by
 a committed transcript fixture both packages' unit tiers assert against —
 `src/spend/fixtures/one-ruler/`.
+
+## The `hook` group
+
+The envelope Claude Code writes to a hook's stdin, read once here instead of in every hook.
+This is the group [fabrika's hook surface](../../claude-plugins/fabrika/hooks.json) declares
+against ([#5074](https://github.com/kamp-us/phoenix/issues/5074)); the surface's convention and
+its one interim dispatch-failure policy point live in
+[`claude-plugins/fabrika/docs/hook-surface.md`](../../claude-plugins/fabrika/docs/hook-surface.md).
+
+| Verb | Answers |
+|---|---|
+| `hook check` | whether the envelope on stdin is one fabrika can act on — `conforms\t<hook_event_name>\t<field-count>` |
+| `hook codes` | the exit taxonomy every verb in the group allocates from |
+
+Two things shape it:
+
+- **Three failures, three codes.** "Stdin held nothing" (`3`), "bytes arrived and are provably
+  not an envelope" (`12`) and "fd 0 could not be read" (`13`) are different claims, and fusing
+  any two lets an unread pipe pass for a bad payload (ADR 0092).
+- **The required fields are captured, not assumed.** They are the keys present in both real
+  envelopes committed at `src/hook/__fixtures__/`, with their capture method and harness version
+  beside them (ADR 0180). The golden test runs the argv it reads out of the committed
+  `hooks.json`, so a green test cannot be exercising a verb the surface does not declare.
 
 ## The `spend` group
 
