@@ -1,6 +1,7 @@
 import {fileURLToPath} from "node:url";
 import {describe, expect, it} from "vitest";
 import * as build from "./build/codes.ts";
+import * as epic from "./epic/codes.ts";
 import {
 	ALIGNED_GROUPS,
 	ALIGNMENT_BASE,
@@ -24,6 +25,7 @@ const SRC_DIR = fileURLToPath(new URL(".", import.meta.url));
  */
 const TABLES: Readonly<Record<string, CodeTable>> = {
 	build,
+	epic,
 	report,
 	review,
 	ship,
