@@ -51,6 +51,14 @@ const row = (overrides: Partial<LedgerRow> = {}): LedgerRow => ({
 	...overrides,
 });
 
+/**
+ * Widened deliberately. `LEDGER_ROW_VERSION` carries a literal type, so testing it through the
+ * constant itself is a tautology today and a `TS2367` "no overlap" error after a bump — and a
+ * typecheck error tells the bumper nothing about what to do. Widening keeps the below-current guard
+ * a runtime comparison, so the bump lands as a red test carrying its instructions.
+ */
+const CURRENT_VERSION: number = LEDGER_ROW_VERSION;
+
 const withTempDir = async (body: (dir: string) => Promise<void>): Promise<void> => {
 	const dir = mkdtempSync(join(tmpdir(), "fabrika-spend-ledger-"));
 	try {
@@ -169,9 +177,18 @@ describe("readSpendLedger — tolerant of anything a partial write can leave beh
 		assert.strictEqual(read.skipped, 2);
 	});
 
-	it("counts a version BELOW the current one as damage — v1 is the first shape ever written", () => {
-		const older = JSON.stringify({...JSON.parse(encodeSpendRows([row()]).trim()), v: 0});
-		assert.deepStrictEqual(readSpendLedger(`${older}\n`).skips, {malformed: 1, newerVersion: 0});
+	it("stops calling a below-current row damage the moment an older shape can exist (#5116)", () => {
+		const older = JSON.stringify({
+			...JSON.parse(encodeSpendRows([row()]).trim()),
+			v: CURRENT_VERSION - 1,
+		});
+		const {skips} = readSpendLedger(`${older}\n`);
+		assert.strictEqual(skips.newerVersion, 0);
+		assert.strictEqual(
+			skips.malformed,
+			CURRENT_VERSION === 1 ? 1 : 0,
+			`LEDGER_ROW_VERSION is ${CURRENT_VERSION}, so a v${CURRENT_VERSION - 1} line is an intact row written by an older shape — and readSpendLedger still counts it under \`malformed\`, which tells the operator their measurements are damaged while dropping real spend out of the roll-up. Decide it in the bumping change: decode the older shape into a LedgerRow, or count it under a skip of its own that rollup.ts and rollup-verb.ts both render. This guard goes green again by itself once either lands.`,
+		);
 	});
 
 	it("keeps `skipped` the sum of its halves, so a caller that only wants the gap still gets it", () => {
