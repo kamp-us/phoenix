@@ -2,13 +2,21 @@
  * `build eligible` — one issue's dependency gate, **derived from the parent's topology, never read off
  * a label**. A label is a claim; the topology is the fact (#4104, #4920).
  *
- * Three outcomes and no fourth: `eligible` on stdout, a named blocking edge on `16`, and UNKNOWN on
- * `11`. A parent whose `## Dependencies` block is absent or unparseable is `4` — "no parseable edges"
- * is never read as "no edges", because a topology nobody could read proves nothing about blockedness.
+ * Three outcomes and no fourth: `eligible` on stdout, **every** named blocking edge on `16`, and
+ * UNKNOWN on `11`. A parent whose `## Dependencies` block is absent or unparseable is `4` — "no
+ * parseable edges" is never read as "no edges", because a topology nobody could read proves nothing
+ * about blockedness.
  *
  * A ledger-local ref (`C<int>`) names a child that has not been filed yet, so it blocks: unfiled work
  * is open work, and the alternative — treating it as satisfied — is the fail-open this verb exists to
  * remove.
+ *
+ * **Every predecessor is scanned before the answer is seated, so the answer does not depend on the
+ * order the topology happens to list them in.** One *proven* open edge is proof of blockedness
+ * whatever else could not be read, so a predecessor read that failed alongside it downgrades neither
+ * the verdict nor its edge list — it is named on stderr as its own unread row instead. With nothing
+ * proven open, an unread predecessor is `11`: the set of blocking edges is only complete when every
+ * predecessor's state is known.
  */
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
@@ -88,24 +96,38 @@ export const runEligible = (
 			"dependency edge",
 			`parent #${parent.value}`,
 		);
+		const open: string[] = [];
+		const unread: string[] = [];
 		for (const {kind, ref} of predecessors) {
 			if (ref._tag === "Local") {
-				return refuse(BLOCKED, `${VERB}: blocked by open ${kind} edge ${renderRef(ref)}.`, [
-					scope,
-					`${VERB}: ${renderRef(ref)} is a ledger-local id — it names work not yet filed, which is open.`,
-				]);
+				open.push(`${kind} ${renderRef(ref)} (unfiled, so open)`);
+				continue;
 			}
 			const state = yield* getIssue(repo, ref.number);
 			if (state._tag === "Unknown") {
-				return refuse(
-					PRECONDITION_UNKNOWN,
-					`${VERB}: cannot read predecessor #${ref.number}: ${state.reason} — eligibility is UNKNOWN, never "eligible".`,
-					[scope],
+				unread.push(
+					`${VERB}: cannot read ${kind} predecessor #${ref.number}: ${state.reason} — its state is UNKNOWN, never counted closed.`,
 				);
+				continue;
 			}
-			if (state._tag === "Absent" || state.value.state === "open") {
-				return refuse(BLOCKED, `${VERB}: blocked by open ${kind} edge #${ref.number}.`, [scope]);
-			}
+			if (state._tag === "Absent" || state.value.state === "open")
+				open.push(`${kind} #${ref.number}`);
+		}
+
+		const plural = (n: number, noun: string) => `${n} ${noun}${n === 1 ? "" : "s"}`;
+		if (open.length > 0) {
+			return refuse(
+				BLOCKED,
+				`${VERB}: blocked by ${plural(open.length, "open dependency edge")}: ${open.join(", ")}.`,
+				[scope, ...unread],
+			);
+		}
+		if (unread.length > 0) {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: ${plural(unread.length, "predecessor")} could not be read — eligibility is UNKNOWN, never "eligible".`,
+				[scope, ...unread],
+			);
 		}
 
 		return answer(JSON.stringify({answer: "eligible", number, parent: parent.value}), [scope]);
