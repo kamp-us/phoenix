@@ -408,6 +408,21 @@ Three behaviours are worth knowing before you call it:
   with a spend magnitude — the no-gate ruling on epic #4779, asserted by a test that a
   very large total still exits `0` rather than left as a note here.
 
+### The spend ledger
+
+`spend read` prices one transcript on demand; the ledger is where measured runs *survive*
+([#5009](https://github.com/kamp-us/phoenix/issues/5009)). `fabrika eval run` appends one
+**JSON Lines** row per completed run to `.fabrika/spend-ledger.jsonl` (repo-relative,
+gitignored, `--spend-ledger` overrides it) once the suite finishes — each line carrying that
+run's spend and the identity of the work it measured. The core is
+[`src/spend/ledger.ts`](./src/spend/ledger.ts): `appendSpendLedger` writes, `readSpendLedger`
+reads back the well-formed rows **and the count of lines it skipped**, so a truncated tail
+costs one line rather than the file. Every line stamps its own `v`, which is the seam a later
+row shape evolves through.
+
+The module imports from `spend/` and `io/` only — never `eval/` — so a reader of the ledger
+does not drag in the eval harness that writes it.
+
 ## Development
 
 ```bash

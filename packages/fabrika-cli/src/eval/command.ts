@@ -27,6 +27,7 @@ import {Console, Crypto, Effect, FileSystem, Path, Result} from "effect";
 import * as Schema from "effect/Schema";
 import {Argument, Command, Flag} from "effect/unstable/cli";
 import {leafCommand} from "../excess-operand.ts";
+import {DEFAULT_SPEND_LEDGER_PATH, persistSpendRows} from "../spend/ledger.ts";
 import {decodeManifest, REVIEW_SURFACES, type ReviewSurface, STAGES} from "./corpus.ts";
 import {decodeIncidentProvenance} from "./incident-provenance.ts";
 import {
@@ -351,6 +352,13 @@ const dryRunFlag = Flag.boolean("dry-run").pipe(
 	Flag.withDescription("print the argv of every planned run and spawn nothing"),
 );
 
+const spendLedgerFlag = Flag.string("spend-ledger").pipe(
+	Flag.withDefault(DEFAULT_SPEND_LEDGER_PATH),
+	Flag.withDescription(
+		`append one spend line per completed run here — the durable ledger the roll-up reads (default: ${DEFAULT_SPEND_LEDGER_PATH})`,
+	),
+);
+
 /**
  * `run` — execute an eval set unattended and emit the capture manifest the existing collector reads.
  *
@@ -373,6 +381,7 @@ const runCommand = leafCommand(
 		timeoutMs: timeoutFlag,
 		out: ledgerOutFlag,
 		captureOut: captureOutFlag,
+		spendLedger: spendLedgerFlag,
 		dryRun: dryRunFlag,
 	},
 	Effect.fn(function* (opts) {
@@ -456,6 +465,14 @@ const runCommand = leafCommand(
 				recordedAt: new Date().toISOString(),
 				outcomes,
 			});
+
+			// The one durable write, on the completion path and nowhere else: the suite has finished, so
+			// every row here measures work that already happened. A ledger that cannot be written is
+			// reported and nothing more — the measurement is a by-product of the run, so failing to
+			// record it must never change what the run reports (epic #4779's no-gate ruling).
+			for (const note of yield* persistSpendRows(opts.spendLedger, ledger.spendRows)) {
+				yield* Console.error(`fabrika eval: ${note}`);
+			}
 
 			if (opts.out._tag === "Some") yield* fs.writeFileString(opts.out.value, ledgerToJson(ledger));
 			if (opts.captureOut._tag === "Some") {
