@@ -22,7 +22,7 @@ Named because a spec that leaves the substrate open makes the implementer guess 
 
 | Verb | Purpose | Split test |
 |---|---|---|
-| `review scope` | the PR's head SHA, linked issue, artifact-class partition of its changed files, and the `self` / `harness` flags | partitioning paths against a fixed class map and failing closed on a truncated file list is mechanical; what to do with each class is judgment |
+| `review scope` | the PR's head SHA, linked issue, artifact-class partition of its changed files, and the `self` / `harness` flags | partitioning paths against a fixed class map and failing closed on an empty file list is mechanical; what to do with each class is judgment |
 | `review diff` | the PR's diff bytes, with truncation refused rather than silently passed through | fetching and proving completeness is mechanical; reading the diff is the whole judgment layer |
 | `review criteria` | the linked issue's acceptance-criteria block, read through the registered `acceptance-criteria` wire format | fetch + registered parse + checkbox states are mechanical; grading a criterion is judgment |
 | `review ci` | the live CI check-run rollup at a head, fail-closed on incomplete enumeration | classifying check runs and proving the enumeration complete is mechanical (#4552, #3999); weighing a red check is judgment |
@@ -276,7 +276,7 @@ only reports it.
 | `10` | `--sha` is not a head SHA |
 | `11` | the PR could not be read, or the commit could not be bound — the scope is UNKNOWN |
 | `12` | `--sha` is not the PR's head — re-scope at the head, never partition a tree the PR has left |
-| `13` | the changed-file enumeration is provably short (received < declared count) |
+| `13` | git reports no changed files for the bound commit's range — an empty read, with nothing to partition |
 
 **Errors**
 
@@ -290,12 +290,13 @@ only reports it.
 | `review scope: <what> — the artifact cannot be bound to a commit, so what it shows is UNKNOWN.` | 11 | refusal |
 | `review scope: cannot read the changed files of #<n> at <sha>: <reason> — the scope is UNKNOWN.` | 11 | refusal |
 | `review scope: PR #<n>'s head is <live>, not <asked> — the tree you scoped is not the one under review; re-scope at <live> (ADR 0058).` | 12 | refusal |
-| `review scope: <sha> carries <k> of the <m> files #<n> declares — refusing to partition a short read (#3999).` | 13 | refusal |
+| `review scope: git reports no changed files for the range <base>...<sha>, so <sha> has nothing to partition — refusing to scope an empty read (#3999).` | 13 | refusal |
 
-**Scope** — one PR's metadata, and the changed-file list of one bound commit, count-checked
-against the declared total. The class partition is total over what was read; the refusals exist so
-it is never run over less than everything, and never over a different tree than the head it
-prints.
+**Scope** — one PR's metadata, and the path list git reports for one bound commit's range. That
+list is the scope itself, so it has no second count to be checked against: it is refused when
+**empty**, and GitHub's declared changed-file count is reported beside it as a cross-check that
+never refuses. The class partition is total over what was read; the refusals exist so it is never
+run over less than everything, and never over a different tree than the head it prints.
 
 **Examples**
 
@@ -325,6 +326,11 @@ $ fabrika review scope 4321 --json
 - #5117 — the file list is the namespace set's only input, and the set is both floor and ceiling:
   a list read at a later commit than the printed head derives a namespace nobody judged, or drops
   one. The list and the head are one commit or the verb refuses.
+- #5154 — this verb has no second count of the range, because the list it reads *is* the scope, and
+  GitHub's `changed_files` cannot stand in for one: it is a different computation over its own merge
+  base with its own rename pairing, which counts two files where git's list carries one path. So the
+  disagreement is reported and never refused on, and the only short read git alone establishes — an
+  empty one — is the `13`.
 
 ---
 
