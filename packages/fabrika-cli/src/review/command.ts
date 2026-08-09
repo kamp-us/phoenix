@@ -195,6 +195,7 @@ const post = leafCommand(
 				json,
 				env: process.env,
 				stdin: Effect.sync(readStdin),
+				now: Effect.sync(() => Date.now()),
 			}),
 		);
 	}),

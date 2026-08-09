@@ -30,7 +30,17 @@ const URL = "https://example.test/pull/4321#issuecomment-5154902211";
 const MARKER = `review-doc: PASS @ ${HEAD} — guide matches shipped behavior`;
 
 const created = okOut(JSON.stringify({id: 5154902211, html_url: URL}));
-const commentBody = (body: string): ExecResult => okOut(JSON.stringify({body}));
+
+/** The instant every run below writes its verdict at, so the stamp the verb emits is predictable. */
+const NOW = Date.parse("2026-08-09T06:30:00.412Z");
+const STAMP = "Verdict-written: 2026-08-09T06:30:00Z";
+
+/**
+ * A read-back of `body` as the verb will have posted it — stamped, since the stamp is part of the
+ * bytes the verb sends and therefore part of what its whole-comment comparison expects back.
+ */
+const commentBody = (body: string): ExecResult =>
+	okOut(JSON.stringify({body: `${body.replace(/\s+$/, "")}\n\n${STAMP}`}));
 
 const options = {
 	pr: 4321,
@@ -43,6 +53,7 @@ const options = {
 	json: false,
 	env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,
 	stdin: Effect.succeed<StdinRead>({_tag: "Text", text: BODY}),
+	now: Effect.succeed(NOW),
 };
 
 const happy = (): ReadonlyArray<readonly [RegExp, ExecResult]> => [
@@ -96,6 +107,91 @@ describe("runPost", () => {
 		expect(out.code).toBe(0);
 		expect(out.stdout).toContain("\tedited\t");
 		expect(shell.calls.some((call) => CREATE.test(call))).toBe(false);
+	});
+
+	it("stamps the write-recency line on the comment it creates", async () => {
+		const shell = fakeShell(happy());
+		await Effect.runPromise(Effect.provide(runPost(options), shell.layer));
+		const write = shell.calls.find((call) => CREATE.test(call)) ?? "";
+		expect(write).toContain(STAMP);
+	});
+
+	it("stamps the write-recency line on the comment it edits, too", async () => {
+		const shell = fakeShell([
+			[PULL, pull({comments: 1})],
+			[FILES, files("src/cart.ts", "README.md")],
+			[USER, okOut("kampus-bot")],
+			[COMMENTS, comments({id: 42, body: `review-doc: FAIL @ ${OLD_HEAD} — older round`})],
+			[PATCH, okOut(JSON.stringify({html_url: URL}))],
+			[READBACK, commentBody(`${MARKER}\n\n${BODY}`)],
+		]);
+		await Effect.runPromise(Effect.provide(runPost(options), shell.layer));
+		const write = shell.calls.find((call) => PATCH.test(call)) ?? "";
+		expect(write).toContain(STAMP);
+	});
+
+	// The pre-#5048 upsert took the FIRST match, and the list arrives oldest-first — so on a namespace
+	// that already holds two of this author's comments it edited the one the resolver is least likely
+	// to be reading, and reported success.
+	it("edits the NEWEST comment in the namespace when two of this author's already exist", async () => {
+		const shell = fakeShell([
+			[PULL, pull({comments: 2})],
+			[FILES, files("src/cart.ts", "README.md")],
+			[USER, okOut("kampus-bot")],
+			[
+				COMMENTS,
+				comments(
+					{
+						id: 42,
+						createdAt: "2026-08-09T03:46:59Z",
+						body: `review-doc: FAIL @ ${OLD_HEAD} — the older duplicate`,
+					},
+					{
+						id: 77,
+						createdAt: "2026-08-09T04:05:28Z",
+						body: `review-doc: FAIL @ ${OLD_HEAD} — the newer duplicate`,
+					},
+				),
+			],
+			[PATCH, okOut(JSON.stringify({html_url: URL}))],
+			[READBACK, commentBody(`${MARKER}\n\n${BODY}`)],
+		]);
+		const out = await Effect.runPromise(Effect.provide(runPost(options), shell.layer));
+		expect(out.code).toBe(0);
+		expect(out.stdout).toContain("\tedited\t");
+		expect(shell.calls.find((call) => PATCH.test(call))).toContain("/issues/comments/77 ");
+		expect(shell.calls.some((call) => CREATE.test(call))).toBe(false);
+	});
+
+	// The case slot-creation time gets backwards, and the reason the stamp is the key: comment 42's
+	// slot is the older one, but its verdict was REWRITTEN into that slot after 77 was created. A PATCH
+	// leaves `created_at` where it was, so only the stamp can say 42 now carries the later verdict.
+	it("ranks by the write-recency stamp, not by when the comment slot was opened", async () => {
+		const shell = fakeShell([
+			[PULL, pull({comments: 2})],
+			[FILES, files("src/cart.ts", "README.md")],
+			[USER, okOut("kampus-bot")],
+			[
+				COMMENTS,
+				comments(
+					{
+						id: 42,
+						createdAt: "2026-08-09T03:46:59Z",
+						body: `review-doc: FAIL @ ${OLD_HEAD} — re-posted in place\n\nVerdict-written: 2026-08-09T05:10:00Z`,
+					},
+					{
+						id: 77,
+						createdAt: "2026-08-09T04:05:28Z",
+						body: `review-doc: FAIL @ ${OLD_HEAD} — the newer slot, older verdict`,
+					},
+				),
+			],
+			[PATCH, okOut(JSON.stringify({html_url: URL}))],
+			[READBACK, commentBody(`${MARKER}\n\n${BODY}`)],
+		]);
+		const out = await Effect.runPromise(Effect.provide(runPost(options), shell.layer));
+		expect(out.code).toBe(0);
+		expect(shell.calls.find((call) => PATCH.test(call))).toContain("/issues/comments/42 ");
 	});
 
 	it("does not edit another author's comment in the same namespace", async () => {
