@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Drive the `@kampus/design-capture` helper over the preview deploy (the seam; #2247 owns the
+# Drive the `@kampus/fabrika-cli/capture` helper over the preview deploy (the seam; #2247 owns the
 # Playwright + upload mechanics) and print its stdout JSON array of
 # { surface, route, state, localPath, hostedUrl, uploadError, pageErrors }.
 #
@@ -25,7 +25,7 @@ done
 [ "${#SURFACE_ARGS[@]}" -gt 0 ] || { echo "capture-surfaces.sh: no surfaces given — nothing to capture." >&2; exit 2; }
 
 OUT="$(mktemp -d)"
-node packages/design-capture/src/bin.ts capture \
+node packages/fabrika-cli/src/capture/bin.ts capture \
   --preview-url "$PREVIEW_URL" \
   "${SURFACE_ARGS[@]}" \
   --out "$OUT" \

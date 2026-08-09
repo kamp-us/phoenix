@@ -1,6 +1,11 @@
 /**
- * @kampus/design-capture — the Playwright-capture + GitHub user-attachments
- * upload helper the review-design gate drives (ADR 0165, epic #1966).
+ * `@kampus/fabrika-cli/capture` — the screenshot/render/golden-diff machinery the
+ * design gates drive (ADR 0165, epic #1966). It lives here, on fabrika's release
+ * train, so an adopter repo gets it with fabrika instead of depending on a
+ * phoenix-published package (founder ruling on #5061, issue #5063). The
+ * repo-specific DATA is NOT here: golden bytes live in depo and the pointer that
+ * names them stays per-repo (`packages/design-capture/golden-pointer.json` in
+ * phoenix), per ADR 0183.
  *
  * The seam #2246 codes against: `captureAndUpload(request)` →
  * `Effect<CaptureRecord[], CaptureError, HttpClient>`, each record

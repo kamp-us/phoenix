@@ -82,7 +82,7 @@ export const storeGolden = (input: {
 
 /** A depo GET failure — a non-2xx status, a transport fault, or a body-read fault. */
 export class GoldenFetchError extends Schema.TaggedErrorClass<GoldenFetchError>()(
-	"@kampus/design-capture/GoldenFetchError",
+	"@kampus/fabrika-cli/capture/GoldenFetchError",
 	{
 		message: Schema.String,
 		cause: Schema.optional(Schema.Unknown),

@@ -27,13 +27,13 @@ export interface Surface {
  */
 export const parseSurfaceSpec = (token: string): Surface => {
 	if (token.length === 0) {
-		throw new Error("design-capture: empty --surface token");
+		throw new Error("fabrika capture: empty --surface token");
 	}
 	const colon = token.indexOf(":");
 	const route = colon === -1 ? token : token.slice(0, colon);
 	const rawState = colon === -1 ? "" : token.slice(colon + 1);
 	if (route.length === 0) {
-		throw new Error(`design-capture: --surface token has no route: ${token}`);
+		throw new Error(`fabrika capture: --surface token has no route: ${token}`);
 	}
 	return {surface: token, route, state: rawState.length === 0 ? null : rawState};
 };
@@ -98,10 +98,10 @@ export const joinPreviewUrl = (previewUrl: string, route: string): string => {
 	try {
 		base = new URL(previewUrl);
 	} catch {
-		throw new Error(`design-capture: preview URL is not a valid absolute URL: ${previewUrl}`);
+		throw new Error(`fabrika capture: preview URL is not a valid absolute URL: ${previewUrl}`);
 	}
 	if (base.protocol !== "http:" && base.protocol !== "https:") {
-		throw new Error(`design-capture: preview URL must be http(s), got ${base.protocol}`);
+		throw new Error(`fabrika capture: preview URL must be http(s), got ${base.protocol}`);
 	}
 	const path = route.startsWith("/") ? route : `/${route}`;
 	return new URL(path, base).toString();
@@ -145,12 +145,12 @@ export const buildCapturePlan = (
 	viewport: Viewport = DEFAULT_VIEWPORT,
 ): readonly Shot[] => {
 	if (surfaces.length === 0) {
-		throw new Error("design-capture: no surfaces to capture — refusing to build an empty plan");
+		throw new Error("fabrika capture: no surfaces to capture — refusing to build an empty plan");
 	}
 	const seen = new Set<string>();
 	for (const s of surfaces) {
 		if (seen.has(s.surface)) {
-			throw new Error(`design-capture: duplicate surface ${s.surface} — surfaces must be unique`);
+			throw new Error(`fabrika capture: duplicate surface ${s.surface} — surfaces must be unique`);
 		}
 		seen.add(s.surface);
 	}

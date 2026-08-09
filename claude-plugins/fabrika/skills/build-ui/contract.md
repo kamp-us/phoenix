@@ -13,16 +13,24 @@ every verb; where this spec and that doc disagree, the doc wins and this spec is
 art — the three UI branches in v1 `write-code`, `design-token-guard`, `design-inventory` — was
 **read** for semantics and scars and none is invoked, wrapped, or deferred to.
 
-**The `packages/design-capture/` boundary, stated because it is the one judgment call.** ADR 0238
-bans `pipeline-cli` and `claude-plugins/kampus-pipeline/`. `packages/design-capture/` is neither:
-it is the ADR 0183 golden/capture machinery, a plain workspace package, and the brief's own
-charter keeps its bless flow as the built path goldens grow through. The `ui` verbs' behavior is
-fully specified below, self-contained; an implementer **may import `@kampus/design-capture` as a
-library** the way `build`'s verbs import fabrika's own `wire` modules — importing a workspace
-package is not invoking v1 — but every scar this spec designs out (the `never`-typed upload
-channel, the silent `hostedUrls` projection, the fail-open pointer probe) binds **regardless of
-whether the implementation imports or reimplements**. A verdict this spec assigns to a failure
-may not be traded away for an upstream API's tolerance of that failure.
+**The capture-machinery boundary — no longer a judgment call.** The golden/capture machinery is
+**fabrika's own**: it lives at `packages/fabrika-cli/src/capture/`, exported as the
+`@kampus/fabrika-cli/capture` subpath, moved out of phoenix's `packages/design-capture` by founder
+ruling (#5061 → #5063) so it ships on fabrika's release train instead of an adopter depending on a
+phoenix package. So the `ui` verbs **import it**, the way they import fabrika's own `wire` modules
+— not "may import a workspace package," and never a reimplementation of the same machinery a
+second time.
+
+What did **not** move is the repo-specific **data**: the blessed golden bytes (in depo) and the
+pointer that names them, which stays per-repo at `packages/design-capture/golden-pointer.json`
+(ADR 0183) with `design-goldens.json` at the root as the fallback — the probe order below is
+unchanged by the move. Machinery is fabrika's; goldens are the consuming repo's.
+
+The import does not soften a single verdict: every scar this spec designs out (the `never`-typed
+upload channel, the silent `hostedUrls` projection, the fail-open pointer probe) binds **regardless
+of whether the implementation imports or reimplements**, and now that the machinery is fabrika's
+own, fixing one of those scars upstream is in scope rather than an external constraint. A verdict
+this spec assigns to a failure may not be traded away for an upstream API's tolerance of it.
 
 **Lane mechanics are the `build` group's, reused — never respecified:** `tree`, `pick`,
 `eligible`, `claim`/`confirm`/`release`, `issue`, `branch`, `scratch`, `check`, `push`, `pr`,
@@ -647,7 +655,7 @@ $ fabrika ui evidence --pr 4318 --before before --after after
 **Grounding**
 
 - #3925 — months of 100%-failed uploads behind a passing gate. The upstream upload channel is
-  typed `never` and silently projects failures away (`packages/design-capture/src/upload.ts:9-13`,
+  typed `never` and silently projects failures away (`packages/fabrika-cli/src/capture/upload.ts:9-13`,
   `orchestrate.ts:104-105`); ADR 0165 accepted that for the *review* side's verdict. This verb is
   the *construction* side's attach, and here a failed upload is `17`, aggregated, fail-closed —
   the one behavior this contract most exists to pin.

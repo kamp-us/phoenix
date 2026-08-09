@@ -4,12 +4,12 @@
  * Renders the composed UI surface of the app over a running local `alchemy dev`
  * build and writes per-surface PNG(s) to disk, honoring the dev-override cookie
  * (flag-gated UI) and an empty local D1 (designed-empty states), with capture-side
- * crop/downscale under a documented budget. Reuses `@kampus/design-capture`'s
+ * crop/downscale under a documented budget. Reuses `@kampus/fabrika-cli/capture`'s
  * `captureShots`/`buildCapturePlan`/viewport primitives as the Playwright leg —
  * it adds local-build targeting on top, it does not re-implement browser capture.
  *
  * On top of render, it attaches the before/after captures to a UI PR as SHA-bound
- * evidence (#2964): two renderLocal passes → uploaded via design-capture's upload
+ * evidence (#2964): two renderLocal passes → uploaded via fabrika capture's upload
  * leg → PR-attachment markdown bound to the PR head SHA.
  */
 export type {

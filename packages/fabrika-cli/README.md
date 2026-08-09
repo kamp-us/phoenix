@@ -523,6 +523,35 @@ The core is [`src/spend/rollup.ts`](./src/spend/rollup.ts), pure and total: it s
 `readSpendLedger` result over a resolved window and groups it three ways.
 [`src/spend/rollup-verb.ts`](./src/spend/rollup-verb.ts) is the IO around it.
 
+## The capture machinery
+
+Not a verb group — a **library subpath**, `@kampus/fabrika-cli/capture`. It is the
+screenshot / render / golden-diff machinery `build-ui` and `review-ui` drive: shoot a
+surface over a preview or a local build, store and resolve a blessed golden, and diff
+rendered-vs-golden. Its own docs are [`src/capture/README.md`](./src/capture/README.md).
+
+```ts
+import {captureAndUpload, diffRasters, loadGoldenPointer} from "@kampus/fabrika-cli/capture";
+```
+
+It moved here from phoenix's `packages/design-capture` by founder ruling
+([#5063](https://github.com/kamp-us/phoenix/issues/5063)), so an adopter gets it with
+fabrika rather than through a second release train. **The repo-specific data did not move**:
+golden bytes stay in depo and the pointer naming them stays in the consuming repo
+([ADR 0183](../../.decisions/0183-golden-screen-storage-depo-git-pointer.md)) — this package
+ships the machine, never a repo's goldens.
+
+Two consequences worth knowing before you install it:
+
+- **`@playwright/test` is a hard dependency**, inherited from the machinery, so a fabrika
+  install pulls it in even for a caller that never captures. The browser binary is still a
+  separate `playwright install chromium`, so the capture path fails loudly on a machine
+  without it rather than silently.
+- **The capture bin is invoked by path** — `node packages/fabrika-cli/src/capture/bin.ts
+  capture …` — not by `fabrika <group> <verb>`. Wrapping it in a `ui` verb group is
+  [#5061](https://github.com/kamp-us/phoenix/issues/5061)'s work; this move deliberately
+  changed no behavior.
+
 ## Development
 
 ```bash

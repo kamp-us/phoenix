@@ -4,7 +4,7 @@
  * The render→look→fix inner loop (#2965) runs two capture passes over the local
  * `alchemy dev` build — a pre-edit baseline and the post-edit result (renderLocal,
  * #2963). This entry pairs those passes by surface, uploads each PNG through the
- * design-capture upload leg, and renders the PR-attachment markdown bound to the PR
+ * fabrika capture upload leg, and renders the PR-attachment markdown bound to the PR
  * head SHA — the same SHA-bound, hosted-evidence convention review-design emits
  * (ADR 0058 SHA-binding, ADR 0165 evidence-hosting).
  *
@@ -15,13 +15,13 @@
  * decision path: a failed upload degrades one embed to its `uploadError` diagnostic,
  * it never loses the paired evidence and never fails the effect.
  */
-import type {CapturedSurface, UploadAssetOptions, UploadOutcome} from "@kampus/design-capture";
+import type {CapturedSurface, UploadAssetOptions, UploadOutcome} from "@kampus/fabrika-cli/capture";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
 
 /**
  * The injected upload leg — `uploadAsset`'s shape. Its error/requirement channels
- * are the caller's: the bin wires the real `@kampus/design-capture` `uploadAsset`
+ * are the caller's: the bin wires the real `@kampus/fabrika-cli/capture` `uploadAsset`
  * (`E = never`, `R = HttpClient`), the unit test injects a fake with neither, so
  * this module stays parametric over both and needs no service at its edge (the same
  * `StoreLeg` seam candidate-render uses).

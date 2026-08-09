@@ -34,7 +34,7 @@ export interface CapturedSurface {
 
 /** A Playwright launch/navigation/screenshot/write failure — surfaced, never swallowed. */
 export class CaptureError extends Schema.TaggedErrorClass<CaptureError>()(
-	"@kampus/design-capture/CaptureError",
+	"@kampus/fabrika-cli/capture/CaptureError",
 	{
 		message: Schema.String,
 		cause: Schema.optional(Schema.Unknown),
