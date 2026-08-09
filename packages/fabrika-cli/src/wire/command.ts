@@ -12,17 +12,21 @@
  * **Every leaf is declared with `leafCommand`, never a bare `Command.make`** — the bare form
  * silently opts out of the excess-operand guard, which `../excess-operand.unit.test.ts` reds on.
  */
-import {Effect} from "effect";
+import {fileURLToPath} from "node:url";
+import {Effect, type FileSystem, type Path, Result} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
 import {leafCommand} from "../excess-operand.ts";
+import {readFile, writeFile} from "../io/fs.ts";
 import {readStdin} from "../io/stdin.ts";
 import type {VerbOutcome} from "../verb.ts";
 import {runCheck} from "./check-verb.ts";
 import {runCodes} from "./codes-verb.ts";
 import {runEmit} from "./emit-verb.ts";
 import {runFormats} from "./formats-verb.ts";
+import {DOC_PATH} from "./index-doc.ts";
+import {type DocRead, type DocSave, runIndex} from "./index-verb.ts";
 import {runRead} from "./read-verb.ts";
-import {registeredKeys} from "./registry.ts";
+import {registeredFormats, registeredKeys} from "./registry.ts";
 
 /** Write the outcome and exit on its code — stdout is the answer, everything else is stderr. */
 const emitOutcome = (outcome: VerbOutcome): Effect.Effect<void> =>
@@ -104,6 +108,57 @@ const check = leafCommand(
 	),
 );
 
+/**
+ * The doc's location on disk, resolved from this module rather than from the process's cwd — the
+ * verb answers about the checkout it ships in, wherever `fabrika` was invoked from.
+ */
+const indexDocFile = (): string =>
+	fileURLToPath(new URL(`../../../../${DOC_PATH}`, import.meta.url));
+
+const readIndexDoc: Effect.Effect<DocRead, never, FileSystem.FileSystem> = Effect.gen(function* () {
+	const read = yield* Effect.result(readFile(indexDocFile()));
+	return Result.isFailure(read)
+		? ({_tag: "Failed", reason: read.failure.reason} satisfies DocRead)
+		: ({_tag: "Text", text: read.success} satisfies DocRead);
+});
+
+const saveIndexDoc = (
+	markdown: string,
+): Effect.Effect<DocSave, never, FileSystem.FileSystem | Path.Path> =>
+	Effect.gen(function* () {
+		const written = yield* Effect.result(writeFile(indexDocFile(), markdown));
+		return Result.isFailure(written)
+			? ({_tag: "Failed", reason: written.failure.reason} satisfies DocSave)
+			: ({_tag: "Saved"} satisfies DocSave);
+	});
+
+const index = leafCommand(
+	"index",
+	{
+		write: Flag.boolean("write").pipe(
+			Flag.withDescription(
+				"render the doc's generated region from the registry again, instead of only reporting on it",
+			),
+		),
+		json: jsonFlag,
+	},
+	Effect.fn(function* ({write, json}) {
+		yield* emitOutcome(
+			yield* runIndex<FileSystem.FileSystem | Path.Path>({
+				write,
+				json,
+				formats: registeredFormats,
+				doc: readIndexDoc,
+				save: saveIndexDoc,
+			}),
+		);
+	}),
+).pipe(
+	Command.withDescription(
+		"Reconcile the wire-formats index doc with the registry — and, with --write, render its generated region from the registry rather than by hand. Stdout is the single line `index\\t<agrees|written>\\t<registered>\\t<documented>`. Exits 4 (the index and the registry disagree — a registered format with no section, a section for no registered format, or a stale generated region), 6 (the doc could not be read or written — UNKNOWN, never a disagreement), 7 (zero scope: an empty registry, an empty doc, no generated region, or no format sections — never a vacuous pass). Example: fabrika wire index --write",
+	),
+);
+
 export const wireCommand = Command.make("wire").pipe(
 	Command.withSubcommands([
 		// One leaf per line, so concurrent slices append at distinct lines rather than all editing
@@ -113,8 +168,9 @@ export const wireCommand = Command.make("wire").pipe(
 		emit,
 		read,
 		check,
+		index,
 	]),
 	Command.withDescription(
-		"Own the byte-level formats two skills meet through on a GitHub artifact — compose them, read them back totally (found / absent / malformed), and check one without reading its fields",
+		"Own the byte-level formats two skills meet through on a GitHub artifact — compose them, read them back totally (found / absent / malformed), check one without reading its fields, and keep the index doc rendered from the registry",
 	),
 );

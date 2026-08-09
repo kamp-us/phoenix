@@ -27,7 +27,7 @@ interface DescribedCommand extends Omit<CommandNode, "subcommands"> {
 
 const group: DescribedCommand = wireCommand;
 const leaves = group.subcommands.flatMap((set) => set.commands);
-const LEAF_NAMES = ["codes", "formats", "emit", "read", "check"];
+const LEAF_NAMES = ["codes", "formats", "emit", "read", "check", "index"];
 
 const describedBy = (name: string): string =>
 	leaves.find((leaf) => leaf.name === name)?.description ?? "";
@@ -41,7 +41,7 @@ const flagHelp = (name: string): string => {
 };
 
 describe("the wire group's help", () => {
-	it("registers the five flat leaves and no sub-group", () => {
+	it("registers the flat leaves and no sub-group", () => {
 		expect(leaves.map((leaf) => leaf.name)).toEqual(LEAF_NAMES);
 		for (const leaf of leaves) expect(leaf.subcommands.flatMap((set) => set.commands)).toEqual([]);
 	});
@@ -58,7 +58,7 @@ describe("the wire group's help", () => {
 	});
 
 	it("states the stdout shape for every verb that prints one", () => {
-		for (const name of ["codes", "formats", "read", "check"]) {
+		for (const name of ["codes", "formats", "read", "check", "index"]) {
 			expect(describedBy(name)).toMatch(/stdout/i);
 		}
 	});

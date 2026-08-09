@@ -64,6 +64,7 @@ const toyRead = (artifact: string): WireReadLines => {
 const TOY_FORMAT: WireFormat = {
 	key: "toy",
 	purpose: "a conforming format that exists only to be broken",
+	module: "packages/fabrika-cli/src/wire/toy.ts",
 	producers: ["nobody"],
 	consumers: ["nobody"],
 	emit: (fields) => ({_tag: "Composed", bytes: `toy: ${fields.trim()}\n`}),

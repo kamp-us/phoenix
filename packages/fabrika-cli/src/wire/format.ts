@@ -233,6 +233,13 @@ export interface WireFormat {
 	readonly key: string;
 	/** One line: what agreement this format encodes. */
 	readonly purpose: string;
+	/**
+	 * The repo-relative path of the schema module that owns these bytes.
+	 *
+	 * Carried on the row so the index doc's owner-module link is rendered from the registry rather
+	 * than typed beside it — see `./index-doc.ts` (#4968).
+	 */
+	readonly module: string;
 	/** Who writes these bytes. */
 	readonly producers: ReadonlyArray<string>;
 	/** Who reads them. */

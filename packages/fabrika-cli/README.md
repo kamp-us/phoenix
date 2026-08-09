@@ -365,6 +365,7 @@ formats used to live as prose in a skill body, which is why fabrika could not pi
 | `wire emit` | the format's bytes, composed from the fields on stdin |
 | `wire read` | the format's fields, read out of the artifact on stdin |
 | `wire check` | whether the artifact on stdin carries a conforming block, without the fields |
+| `wire index` | whether the index doc agrees with the registry — and, with `--write`, the doc's generated table, rendered from it |
 
 Three properties are worth knowing before you call them:
 
@@ -392,6 +393,13 @@ Three properties are worth knowing before you call them:
   rule, or a sentence outside every section reads `Malformed` rather than `Found` — coordination
   output that cannot steer its receiver past the artifact
   ([`slice-handoff.ts`](./src/wire/slice-handoff.ts)).
+- **The index doc's per-format table is generated, not typed.** `claude-plugins/fabrika/docs/wire-formats.md`
+  used to carry a hand-copied projection of each row's owner module, producers and consumers, which
+  is a second source of truth that agrees until someone lands a format and forgets a line. The table
+  is now rendered from the registry by `wire index --write` and reconciled by `wire index`, which
+  reds on a registered format with no section, a section for no registered format, and a stale
+  region ([`index-doc.ts`](./src/wire/index-doc.ts), #4968). The protocol narrative under each
+  heading stays hand-written — it is the half no row holds.
 - **A registered format is a conforming format.** A registry row carries the fixtures its laws
   are driven from and the brands its value is built from, and both are required by the row
   type — so adding a format means filling them in, and
