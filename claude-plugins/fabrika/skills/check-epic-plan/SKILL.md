@@ -95,7 +95,9 @@ and you claim nothing about what any child carries now**, in a table or in prose
 run read that back: the `22` refusal carries the un-flipped refs and no observed labels, and `plan
 read`'s `children[].labels` are pre-flip — they were read at step 1, before the write. So any
 statement about a child's label state *after* the flip is invented rather than observed, and the
-ban is on the claim, not on the format that carries it. `21` means the plan moved under you between
+ban is on the claim, not on the format that carries it. A `22` is still a **clean floor**, so it
+does not skip step 4 — post the verdict there first, then those refs (`FLIP-PARTIAL`). `21` means
+the plan moved under you between
 the check and the flip; nothing was written, so re-check rather than retry.
 
 ## 4 — Post the verdict, bound to the scope you scanned
@@ -109,6 +111,15 @@ EOF
 The verb **derives its own polarity** from the floor it re-runs — you supply the digest and the
 caveats, never the verdict. It is the only emit path and it reads its own comment back. Done when
 it answers `posted` with a comment id.
+
+**Every clean floor comes through here, `FLIP-PARTIAL` included** — that terminal is the one place
+the "only emit path" rule was contradicted, and a run that formed caveats there dropped them
+(#5150). A partial flip writes only `status:planned` / `status:triaged` on a subset, both excluded
+from the digest and neither a floor trigger ([`contract.md`](contract.md), `flip-neutral`), so the
+digest you carried still binds and this verb still re-derives a clean floor after a `22`. **Order on
+that terminal: this verdict first, then `fabrika build note` with the un-flipped refs.** The note's
+body is free prose — no closed-kind check, no digest binding — so it carries refs and
+never caveats, and posting the verdict first is what keeps the rule below true.
 
 Your caveat text is authored prose reaching a public surface, so `5` and `6` are live: the verb
 refuses a caveat carrying a machine-local path or a bare `@` reference. **Redact it and re-run, or
@@ -142,9 +153,10 @@ An unreleased claim is v1's unreclaimable-lock scar, which a human then clears b
   success, not a back-off.
 - `PLAN-MOVED` — `21`: the plan changed between the check and a writing verb. Nothing was written
   and no verdict is posted; re-check from step 2.
-- `FLIP-PARTIAL` — `22`: the floor was clean and some children did not move. Post the refs the verb
-  named with `fabrika build note` — refs only, no claim about what any child carries now (step 3);
-  the epic needs a human. Never reported as a gate failure.
+- `FLIP-PARTIAL` — `22`: the floor was clean and some children did not move. Post the verdict with
+  any caveats (step 4), **then** the refs the verb named with `fabrika build note` — refs only, no
+  claim about what any child carries now (step 3); the epic needs a human. Never reported as a gate
+  failure.
 - `PLAN-UNGATEABLE` — `7` or `10`: the target is **proven** not gateable — absent or closed, not a
   `type:epic`, or it has zero children. Nothing was written. Proven, so not `STOPPED`.
 - `WRITE-UNPROVEN` — `8` or `9` from **either** writing verb: a write landed, or may have landed,
