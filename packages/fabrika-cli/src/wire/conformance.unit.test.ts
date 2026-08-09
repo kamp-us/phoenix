@@ -9,8 +9,9 @@
  */
 import {describe, expect, it} from "vitest";
 import {conformFormat, conformRegistry, describeFindings, LAWS} from "./conformance.ts";
-import {brandWitness, type WireFormat, type WireReadLines} from "./format.ts";
+import {type BrandedKeys, brandWitnesses, type WireFormat, type WireReadLines} from "./format.ts";
 import {registeredFormats} from "./registry.ts";
+import type * as verdictMarker from "./verdict-marker.ts";
 
 describe("the registry conforms", () => {
 	// `it.each` over an emptied registry would run zero assertions and report green, so scope is
@@ -45,7 +46,12 @@ describe("the registry conforms", () => {
  * here is the checker.
  */
 declare const TOY: unique symbol;
-type ToyValue = string & {readonly [TOY]: true};
+type ToyText = string & {readonly [TOY]: true};
+
+interface ToyValue {
+	readonly value: ToyText;
+	readonly checked: boolean;
+}
 
 const toyRead = (artifact: string): WireReadLines => {
 	const line = artifact.trim();
@@ -67,7 +73,7 @@ const TOY_FORMAT: WireFormat = {
 		absent: "prose that reaches for nothing\n",
 		malformed: [{drift: "the key drifted", artifact: "toyish: alpha\n"}],
 	},
-	brands: [brandWitness<ToyValue>("value")],
+	brands: brandWitnesses<ToyValue>({value: true}),
 };
 
 const broken = (mutation: Partial<WireFormat>): WireFormat => ({...TOY_FORMAT, ...mutation});
@@ -133,11 +139,6 @@ describe("the laws bite — each mutation is caught", () => {
 		expect(lawsBrokenBy(format)).toContain(LAWS.driftIsMalformed);
 	});
 
-	it("catches a padded brand declaration", () => {
-		const format = broken({brands: [{field: "value"}, {field: "value"}]});
-		expect(lawsBrokenBy(format)).toContain(LAWS.brandsNamed);
-	});
-
 	it("catches two rows registered under one key", () => {
 		const report = conformRegistry([TOY_FORMAT, broken({purpose: "the shadowing row"})]);
 		expect(report._tag).toBe("Scanned");
@@ -146,17 +147,137 @@ describe("the laws bite — each mutation is caught", () => {
 	});
 });
 
-describe("brand weakening is caught at compile time, not here", () => {
+/**
+ * The compile-time tier: the probes are `tsc`'s answers, pinned as values so they cannot pass
+ * vacuously.
+ *
+ * `Inhabits` is written as an assignment rather than a `extends true` constraint on purpose: the
+ * expected value sits on the right of an `=`, so flipping it reds with `TS2322` at the line that
+ * states the claim. A probe that compiles either way proves nothing, which is exactly what the old
+ * `brandWitness<A>` counterexample turned out to be — `A` was free, so it type-checked while naming
+ * a brand the field did not carry (#4969).
+ */
+type Inhabits<K extends string, V> = K extends BrandedKeys<V> ? true : false;
+
+/** `Clause` weakened to bare `string` — the counterexample, without touching the real module. */
+interface WeakenedMarker {
+	readonly namespace: string;
+	readonly polarity: verdictMarker.Polarity;
+	readonly sha: verdictMarker.HeadSha;
+	readonly clause: string;
+}
+
+/**
+ * A branded field keyed by a name that names nothing, alongside a real one.
+ *
+ * Written as a synthetic type rather than probed on `VerdictMarker`: that type has no blank key, so
+ * a probe against it would answer `false` before and after the exclusion and bind nothing.
+ */
+interface BlankKeyed {
+	readonly "": verdictMarker.HeadSha;
+	readonly clause: verdictMarker.Clause;
+}
+
+/**
+ * The same probe target for the whitespace `.trim()` strips beyond space/tab/LF/CR.
+ *
+ * These are the keys the exclusion missed while `Whitespace` was the four ASCII characters: each is
+ * blank to the retired runtime law, so each has to be blank here too or the two disagree.
+ */
+interface WideBlankKeyed {
+	readonly "\u00A0": verdictMarker.HeadSha;
+	readonly "\u000B": verdictMarker.HeadSha;
+	readonly "\u000C": verdictMarker.HeadSha;
+	readonly "\uFEFF": verdictMarker.HeadSha;
+	readonly "\u3000": verdictMarker.HeadSha;
+	readonly clause: verdictMarker.Clause;
+}
+
+describe("the witness binds the field name to that field's own type", () => {
+	it("admits a branded field, and only a branded field, of the value type", () => {
+		// The positive control. If `BrandedKeys` collapsed to `never` every probe below would pass
+		// for the wrong reason, and this line is what reds when it does.
+		const branded: Inhabits<"clause", verdictMarker.VerdictMarker> = true;
+		const bareString: Inhabits<"namespace", verdictMarker.VerdictMarker> = false;
+		const notAField: Inhabits<"summary", verdictMarker.VerdictMarker> = false;
+
+		expect([branded, bareString, notAField]).toEqual([true, false, false]);
+	});
+
+	it("drops a field whose brand was weakened to bare string", () => {
+		const beforeWeakening: Inhabits<"clause", verdictMarker.VerdictMarker> = true;
+		const afterWeakening: Inhabits<"clause", WeakenedMarker> = false;
+
+		expect([beforeWeakening, afterWeakening]).toEqual([true, false]);
+	});
+
+	it("drops a key that names no field, so a blank witness is unwritable", () => {
+		const blank: Inhabits<"", BlankKeyed> = false;
+		// The positive control for this pair: without it a `BrandedKeys` collapsed to `never` would
+		// satisfy the line above for the wrong reason.
+		const nonBlank: Inhabits<"clause", BlankKeyed> = true;
+
+		// @ts-expect-error — the counterexample itself: this compiled before the exclusion and yielded
+		// a witness naming nothing. Every key is blank, so the parameter type is now `never`.
+		brandWitnesses<{readonly "": verdictMarker.HeadSha}>({"": true});
+
+		expect([blank, nonBlank]).toEqual([false, true]);
+	});
+
+	it("drops every key `trim()` calls blank, not just the four ASCII ones", () => {
+		const nbsp: Inhabits<"\u00A0", WideBlankKeyed> = false;
+		const verticalTab: Inhabits<"\u000B", WideBlankKeyed> = false;
+		const formFeed: Inhabits<"\u000C", WideBlankKeyed> = false;
+		const byteOrderMark: Inhabits<"\uFEFF", WideBlankKeyed> = false;
+		const ideographicSpace: Inhabits<"\u3000", WideBlankKeyed> = false;
+		// The positive control for this set, same role as the pair above.
+		const nonBlank: Inhabits<"clause", WideBlankKeyed> = true;
+
+		// @ts-expect-error — this compiled while `Whitespace` was the four ASCII characters, and the
+		// witness it built named nothing. Every key is blank, so the parameter type is now `never`.
+		brandWitnesses<{readonly "\u00A0": verdictMarker.HeadSha}>({"\u00A0": true});
+
+		expect([nbsp, verticalTab, formFeed, byteOrderMark, ideographicSpace, nonBlank]).toEqual([
+			false,
+			false,
+			false,
+			false,
+			false,
+			true,
+		]);
+	});
+
+	it("refuses the call shapes a row could otherwise get wrong", () => {
+		const witnessed = brandWitnesses<verdictMarker.VerdictMarker>({
+			sha: true,
+			clause: true,
+			polarity: true,
+		});
+
+		brandWitnesses<verdictMarker.VerdictMarker>({
+			sha: true,
+			clause: true,
+			polarity: true,
+			// @ts-expect-error — `namespace` is bare `string`, so it is not a branded key to witness.
+			namespace: true,
+		});
+		// @ts-expect-error — a witness per branded field, not one per row: `clause` is missing.
+		brandWitnesses<verdictMarker.VerdictMarker>({sha: true, polarity: true});
+		// @ts-expect-error — weakened to bare `string`, `clause` is no longer a field this can witness.
+		brandWitnesses<WeakenedMarker>({sha: true, clause: true, polarity: true});
+
+		expect(witnessed.map((witness) => witness.field)).toEqual(["sha", "clause", "polarity"]);
+	});
+
+	it("refuses a value type with no branded field — zero scope is not an empty brands list", () => {
+		// @ts-expect-error — the parameter type is `never`, so the call is unwritable (ADR 0092). The
+		// runtime throw below is what a caller that reached it anyway gets: a refusal, never `[]`.
+		expect(() => brandWitnesses<{readonly onlyBare: string}>({})).toThrow(/no branded field/);
+	});
+
 	it("declares a brand witness for every registered format", () => {
 		for (const format of registeredFormats) {
 			expect(format.brands.length, `${format.key} declares no brand`).toBeGreaterThan(0);
 		}
-	});
-
-	it("refuses a witness for a field typed as bare string", () => {
-		// @ts-expect-error — `string extends string`, so the parameter collapses to `never`. This is
-		// the counterexample every brand inherits by being declared on a row (`format.ts`).
-		const weakened = brandWitness<string>("clause");
-		expect(weakened.field).toBe("clause");
 	});
 });
