@@ -76,7 +76,13 @@ export const runDisarm = (
 		if (pull.merged) return emit("kept", "merged");
 
 		const events = yield* pullTimeline(repo, pr);
-		if (events._tag === "Ok" && queueStateOf(events.value) === "queued") {
+		// The `live-queued` keep rests on a POSITIVE reading, so it needs the pagination proof too: an
+		// unexhausted read is treated exactly like an unreadable one, never as evidence of a state.
+		if (
+			events._tag === "Ok" &&
+			events.value.exhausted &&
+			queueStateOf(events.value.events) === "queued"
+		) {
 			return emit("kept", "live-queued");
 		}
 

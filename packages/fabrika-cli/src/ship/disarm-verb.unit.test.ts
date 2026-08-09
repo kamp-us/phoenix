@@ -8,7 +8,7 @@ import {ENV, pull, timeline} from "./fixtures.test-support.ts";
 import {ADDED, REMOVED} from "./queue.ts";
 
 const PULL = /^gh api repos\/o\/r\/pulls\/4321$/;
-const TIMELINE = /^gh api --paginate repos\/o\/r\/issues\/4321\/timeline/;
+const TIMELINE = /^gh api -i repos\/o\/r\/issues\/4321\/timeline/;
 const RULES = /^gh api repos\/o\/r\/rules\/branches\/main$/;
 const DISABLE = /^gh pr merge 4321 --repo o\/r --disable-auto$/;
 

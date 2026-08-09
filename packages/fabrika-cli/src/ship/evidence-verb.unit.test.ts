@@ -16,11 +16,17 @@ const DOWNLOAD = /^sh -c gh api repos\/o\/r\/actions\/artifacts\/\d+\/zip/;
 const MAGIC = /^sh -c head -c 2 /;
 const UNZIP = /^sh -c unzip -p /;
 
-const runsAt = (...rows: ReadonlyArray<{id: number; name: string; status: string}>): ExecResult =>
+const runsAt = (
+	...rows: ReadonlyArray<{id: number; name: string; status: string; completedAt?: string | null}>
+): ExecResult =>
 	okOut(
 		JSON.stringify({
 			total_count: rows.length,
-			workflow_runs: rows.map((row) => ({...row, conclusion: "success"})),
+			workflow_runs: rows.map(({completedAt, ...row}) => ({
+				...row,
+				conclusion: "success",
+				completed_at: completedAt === undefined ? new Date().toISOString() : completedAt,
+			})),
 		}),
 	);
 
@@ -124,6 +130,69 @@ describe("runEvidence", () => {
 		]);
 		expect(out.code).toBe(0);
 		expect(out.stdout.split("\n")[0]).toBe(`evidence\tabsent\t${HEAD}`);
+	});
+
+	// Clause 6: "completed, zero artifacts" is two facts in one shape. The 120s window against the
+	// local clock is what separates a listing lag from a producer that published nothing.
+	it("reports pending for a JUST-completed run with zero artifacts — listing lag, not a CI gap", async () => {
+		const out = await run([
+			[PULL, pull()],
+			[COMMIT, okOut(HEAD)],
+			[WORKFLOW, okOut(".github/workflows/run-evidence.yml")],
+			[RUNS, runsAt({id: 9182736450, name: "run-evidence", status: "completed"})],
+			[ARTIFACTS, artifactsFor()],
+		]);
+		expect(out.code).toBe(0);
+		expect(out.stdout.split("\n")[0]).toBe(`evidence\tpending\t${HEAD}`);
+		expect(out.stderr.some((line) => line.includes("listing lag: pending."))).toBe(true);
+	});
+
+	it("reports absent once that run is older than the window — the producer published nothing", async () => {
+		const out = await run([
+			[PULL, pull()],
+			[COMMIT, okOut(HEAD)],
+			[WORKFLOW, okOut(".github/workflows/run-evidence.yml")],
+			[
+				RUNS,
+				runsAt({
+					id: 9182736450,
+					name: "run-evidence",
+					status: "completed",
+					completedAt: "2026-08-08T00:00:00Z",
+				}),
+			],
+			[ARTIFACTS, artifactsFor()],
+		]);
+		expect(out.code).toBe(0);
+		expect(out.stdout.split("\n")[0]).toBe(`evidence\tabsent\t${HEAD}`);
+		expect(out.stderr.some((line) => line.includes("published nothing: absent."))).toBe(true);
+	});
+
+	it("reports absent when the run never reports a completion time at all", async () => {
+		const out = await run([
+			[PULL, pull()],
+			[COMMIT, okOut(HEAD)],
+			[WORKFLOW, okOut(".github/workflows/run-evidence.yml")],
+			[
+				RUNS,
+				runsAt({id: 9182736450, name: "run-evidence", status: "completed", completedAt: null}),
+			],
+			[ARTIFACTS, artifactsFor()],
+		]);
+		expect(out.stdout.split("\n")[0]).toBe(`evidence\tabsent\t${HEAD}`);
+	});
+
+	// Clause 5: `failed` is the most DEFINITE answer this verb has; `unknown` means the opposite.
+	it("reports failed for a bundle that binds this head and attests a failing run", async () => {
+		const out = await run([
+			...upToArtifact,
+			[UNZIP, okOut(manifest(HEAD, [{name: "unit", status: "failure"}]))],
+		]);
+		expect(out.code).toBe(0);
+		expect(out.stdout.split("\n")[0]).toBe(`evidence\tfailed\t${HEAD}`);
+		expect(out.stderr.some((line) => line.includes("it attests a run, not a passing one"))).toBe(
+			true,
+		);
 	});
 
 	it("reports unknown when the bundle attests another tree", async () => {

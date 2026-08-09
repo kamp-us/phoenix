@@ -1,9 +1,9 @@
 /**
  * Reading the §CP boundary once, for the two verbs that need it.
  *
- * The ref is the PR's **base branch**, not the PR — a PR must not reclassify itself (#981). The
- * contract names `origin/main`; the base ref is that same branch in this repo and the honest
- * generalization in an adopter repo whose trunk is named something else.
+ * The ref is the PR's **base branch**, not the PR — a PR must not reclassify itself (#981), and not
+ * a literal trunk name either: the base ref is that same branch in this repo and the honest
+ * generalization in an adopter repo whose trunk is called something else (#5067 clause 4).
  *
  * A **proven-absent** CODEOWNERS (404) is an empty row set, which classifies as the `unknown` hold.
  * A **failed read** is neither — it is the caller's `11`, the distinction v1 collapsed when a failed

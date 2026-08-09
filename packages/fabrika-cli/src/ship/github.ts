@@ -7,9 +7,12 @@
  *   explicit `Failure`, never an empty string flowing onward as "nothing found" — roughly a third of
  *   v1's captures skipped this, and every scar in that family (#4216, #4223, #3716) is the same
  *   omission wearing a different symptom.
- * - **Every list read pages, and returns what the platform declared beside what it received.** A
- *   caller that cannot see both numbers cannot refuse a truncated read, and a truncated read that
- *   answers anyway is a verdict over unknown scope.
+ * - **Every list read pages, and returns its own completeness proof beside what it received.** A
+ *   caller that cannot see the proof cannot refuse a truncated read, and a truncated read that
+ *   answers anyway is a verdict over unknown scope. Which proof depends on what the platform
+ *   declares: an envelope read (`total_count`) proves completeness by the declared count; a bare-array
+ *   read (reviews, timeline) declares no count at all, so its proof is **exhausted pagination** — a
+ *   terminal page carrying no `rel="next"` link.
  *
  * REST throughout, with the one sanctioned GraphQL exception at the bottom: review-thread resolution
  * state and the resolve mutation have no REST equivalent.
@@ -34,6 +37,63 @@ const pagedArray = (stdout: string): Attempt<ReadonlyArray<unknown>> => {
 	}
 	return ok(out);
 };
+
+/** What a bare-array read holds, beside the one fact that says whether it holds all of it. */
+export interface PagedProof {
+	readonly entries: ReadonlyArray<unknown>;
+	/** True only when a terminal page arrived carrying no `rel="next"` link. */
+	readonly exhausted: boolean;
+}
+
+/** How many pages a bare-array read will walk before it gives up and reports non-exhaustion. */
+const PAGE_CAP = 50;
+
+const NEXT_LINK = /<[^>]*>\s*;\s*rel="next"/i;
+
+/** `-i` output is status line + headers, a blank line, then the body. */
+const splitResponse = (raw: string): {headers: string; body: string} | null => {
+	const boundary = /\r?\n\r?\n/.exec(raw);
+	if (boundary === null) return null;
+	return {
+		headers: raw.slice(0, boundary.index),
+		body: raw.slice(boundary.index + boundary[0].length),
+	};
+};
+
+const declaresNextPage = (headers: string): boolean =>
+	headers
+		.split(/\r?\n/)
+		.some((line) => line.toLowerCase().startsWith("link:") && NEXT_LINK.test(line));
+
+/**
+ * A list read whose completeness proof is **exhausted pagination**, not a declared count.
+ *
+ * Reviews and timeline events arrive as bare arrays and the platform declares no `total_count` for
+ * either, so a `received <k> of <m>` refusal over them has no derivable `<m>` — any number printed
+ * there was invented, and an invented denominator is a completeness proof that proves nothing. What
+ * the platform *does* declare is the `Link` header: a terminal page carries no `rel="next"`, and
+ * seeing one is positive proof the caller holds every page. Reaching the page cap with a `next`
+ * still outstanding is the caller's `13`.
+ *
+ * The pages are walked explicitly rather than through `--paginate` for exactly that reason —
+ * `--paginate` concatenates the bodies and drops the headers, so the proof would not survive the
+ * read.
+ */
+const pagedWithLinkProof = (path: string): Shell<Attempt<PagedProof>> =>
+	Effect.gen(function* () {
+		const entries: unknown[] = [];
+		for (let page = 1; page <= PAGE_CAP; page++) {
+			const r = yield* execCapture("gh", ["api", "-i", `${path}?per_page=100&page=${page}`]);
+			if (!r.ok) return fail(r.reason);
+			const split = splitResponse(r.stdout);
+			if (split === null) return fail("`gh api -i` exited 0 but printed no headers");
+			const parsed = parseJson(split.body);
+			if (!Array.isArray(parsed)) return fail("`gh api` exited 0 but its output is not a list");
+			entries.push(...parsed);
+			if (!declaresNextPage(split.headers)) return ok({entries, exhausted: true});
+		}
+		return ok({entries, exhausted: false});
+	});
 
 /** A `{total_count, <key>: []}` envelope, paged: entries accumulate, the declared total is page 1's. */
 const pagedEnvelope = (
@@ -69,27 +129,24 @@ export interface ReviewRecord {
 	readonly submittedAt: string;
 }
 
+export interface ReviewRead {
+	readonly reviews: ReadonlyArray<ReviewRecord>;
+	/** The completeness proof: a terminal page carrying no `rel="next"`. Reviews declare no count. */
+	readonly exhausted: boolean;
+}
+
 /**
  * Every review on the PR, paged and **un-reduced**.
  *
  * Latest-per-author is computed by the caller after the pages are joined, never per page: v1's
  * per-page `group_by` could surface a page-1 stale approval past a page-2 revocation (#725's class).
  */
-export const listReviews = (
-	repo: string,
-	pr: number,
-): Shell<Attempt<ReadonlyArray<ReviewRecord>>> =>
+export const listReviews = (repo: string, pr: number): Shell<Attempt<ReviewRead>> =>
 	Effect.gen(function* () {
-		const r = yield* execCapture("gh", [
-			"api",
-			"--paginate",
-			`repos/${repo}/pulls/${pr}/reviews?per_page=100`,
-		]);
-		if (!r.ok) return fail(r.reason);
-		const paged = pagedArray(r.stdout);
+		const paged = yield* pagedWithLinkProof(`repos/${repo}/pulls/${pr}/reviews`);
 		if (paged._tag === "Failure") return paged;
 		const reviews: ReviewRecord[] = [];
-		for (const value of paged.value) {
+		for (const value of paged.value.entries) {
 			if (!isRecord(value) || typeof value.state !== "string") {
 				return fail("`gh api` exited 0 but one entry is not a review");
 			}
@@ -100,7 +157,7 @@ export const listReviews = (
 				submittedAt: str(value.submitted_at),
 			});
 		}
-		return ok(reviews);
+		return ok({reviews, exhausted: paged.value.exhausted});
 	});
 
 /** One team's members, paged. A 404 is proven — the team does not exist in this org. */
@@ -279,6 +336,8 @@ export interface WorkflowRun {
 	readonly name: string;
 	readonly status: string;
 	readonly conclusion: string | null;
+	/** When the run finished, or `null` while it has not — the freshness window's left operand. */
+	readonly completedAt: string | null;
 }
 
 /** The runs at exactly this head — `head_sha` match only, never a name or a date heuristic. */
@@ -305,6 +364,7 @@ export const listRunsAtHead = (
 				name: str(value.name),
 				status: str(value.status),
 				conclusion: typeof value.conclusion === "string" ? value.conclusion : null,
+				completedAt: typeof value.completed_at === "string" ? value.completed_at : null,
 			});
 		}
 		return ok({declared: enveloped.value.declared, runs});
@@ -381,33 +441,30 @@ export interface TimelineEvent {
 	readonly createdAt: string;
 }
 
+export interface TimelineRead {
+	readonly events: ReadonlyArray<TimelineEvent>;
+	/** The completeness proof: a terminal page carrying no `rel="next"`. The timeline declares no count. */
+	readonly exhausted: boolean;
+}
+
 /**
- * The PR's timeline, paged.
+ * The PR's timeline, paged, with the pagination-exhaustion proof its callers refuse on.
  *
- * A 30-event first page read as the whole history is #4193; `--paginate` is what makes the ejection
- * classification and the reopened count honest.
+ * A 30-event first page read as the whole history is #4193; walking to a terminal page with no
+ * `next` link is what makes the ejection classification and the reopened count honest.
  */
-export const pullTimeline = (
-	repo: string,
-	pr: number,
-): Shell<Attempt<ReadonlyArray<TimelineEvent>>> =>
+export const pullTimeline = (repo: string, pr: number): Shell<Attempt<TimelineRead>> =>
 	Effect.gen(function* () {
-		const r = yield* execCapture("gh", [
-			"api",
-			"--paginate",
-			`repos/${repo}/issues/${pr}/timeline?per_page=100`,
-		]);
-		if (!r.ok) return fail(r.reason);
-		const paged = pagedArray(r.stdout);
+		const paged = yield* pagedWithLinkProof(`repos/${repo}/issues/${pr}/timeline`);
 		if (paged._tag === "Failure") return paged;
 		const events: TimelineEvent[] = [];
-		for (const value of paged.value) {
+		for (const value of paged.value.entries) {
 			if (!isRecord(value) || typeof value.event !== "string") {
 				return fail("`gh api` exited 0 but one entry is not a timeline event");
 			}
 			events.push({event: value.event, createdAt: str(value.created_at)});
 		}
-		return ok(events);
+		return ok({events, exhausted: paged.value.exhausted});
 	});
 
 /**
@@ -475,12 +532,42 @@ export const isQueueGoverned = (repo: string, branch: string): Shell<Attempt<boo
 	});
 
 /**
+ * What GitHub says about whether this PR can merge — **and whether it has said anything yet**.
+ *
+ * `mergeable` is computed lazily: the first read after a push routinely returns `null` with
+ * `mergeable_state: "unknown"` while the background job runs. That is the platform declining to
+ * answer, not an answer, so the two are kept apart here and the caller polls rather than reading the
+ * indefinite value as green.
+ */
+export interface Mergeability {
+	readonly mergeable: boolean | null;
+	readonly state: string;
+}
+
+/** `mergeable: null` or `mergeable_state: "unknown"` — the platform has not computed it yet. */
+export const isIndefinite = (read: Mergeability): boolean =>
+	read.mergeable === null || read.state === "" || read.state === "unknown";
+
+export const readMergeability = (repo: string, pr: number): Shell<Attempt<Mergeability>> =>
+	Effect.gen(function* () {
+		const r = yield* execCapture("gh", ["api", `repos/${repo}/pulls/${pr}`]);
+		if (!r.ok) return fail(r.reason);
+		const parsed = parseJson(r.stdout);
+		if (!isRecord(parsed)) return fail("`gh api` exited 0 but its output is not a pull request");
+		return ok({
+			mergeable: typeof parsed.mergeable === "boolean" ? parsed.mergeable : null,
+			state: str(parsed.mergeable_state),
+		});
+	});
+
+/**
  * Arm the queue's auto-merge at the verified head.
  *
  * **There is no merge-method flag to pass, by construction.** The queue owns the method, and v1's
  * documented hazard is that a `--squash` alongside `--auto` conflicts with the queue and no-ops the
- * enqueue silently at exit 0. The arm has no REST surface — enabling auto-merge is a GraphQL
- * mutation — so it goes through `gh`'s own porcelain, which is not this group's GraphQL exception.
+ * enqueue silently at exit 0. The arm has no REST surface at all, so it goes through `gh`'s own
+ * porcelain — the contract's auto-merge porcelain carve, which covers `ship enqueue` and
+ * `ship disarm` and nothing else, and which is not the group's GraphQL exception.
  */
 export const armAutoMerge = (repo: string, pr: number): Shell<Attempt<void>> =>
 	Effect.gen(function* () {

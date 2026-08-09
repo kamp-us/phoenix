@@ -2,15 +2,15 @@ import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {errOut, fakeShell, okOut} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
-import {PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
-import {ENV, pull, timeline} from "./fixtures.test-support.ts";
+import {INCOMPLETE_SCAN, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
+import {ENV, pull, timeline, unexhaustedPage} from "./fixtures.test-support.ts";
 import {ADDED, MERGED, REMOVED} from "./queue.ts";
 import {runReconcile} from "./reconcile-verb.ts";
 
 const PULL = /^gh api repos\/o\/r\/pulls\/4321$/;
 const RULES = /^gh api repos\/o\/r\/rules\/branches\/main$/;
 const SUBJECTS = /^gh api repos\/o\/r\/commits\?sha=main/;
-const TIMELINE = /^gh api --paginate repos\/o\/r\/issues\/4321\/timeline/;
+const TIMELINE = /^gh api -i repos\/o\/r\/issues\/4321\/timeline/;
 
 // One poll, zero cadence: the classification is what is under test, not the sleep.
 const options = {pr: 4321, polls: 1, cadenceSeconds: 0, repo: null, json: false, env: ENV};
@@ -118,6 +118,20 @@ describe("runReconcile", () => {
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toContain('the outcome is UNKNOWN, not "unresolved"');
+	});
+
+	it("refuses an unexhausted timeline on 13 — a truncated history classifies nothing", async () => {
+		const out = await run([
+			[PULL, pull()],
+			[RULES, withQueue],
+			[SUBJECTS, noSubjects],
+			[TIMELINE, unexhaustedPage()],
+		]);
+		expect(out.code).toBe(INCOMPLETE_SCAN);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toBe(
+			"ship reconcile: the timeline read never reached a terminal page — pagination is unexhausted; refusing to classify over a truncated history.",
+		);
 	});
 
 	it("refuses a PR proven absent on 7", async () => {

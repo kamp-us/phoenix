@@ -2,14 +2,14 @@ import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {errOut, fakeShell, okOut} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
-import {STALE_HEAD, WRITE_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
+import {PRECONDITION_UNKNOWN, STALE_HEAD, WRITE_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {runEnqueue} from "./enqueue-verb.ts";
 import {ENV, HEAD, OTHER_HEAD, pull, timeline} from "./fixtures.test-support.ts";
 import {ADDED} from "./queue.ts";
 
 const PULL = /^gh api repos\/o\/r\/pulls\/4321$/;
 const ARM = /^gh pr merge 4321 --repo o\/r --auto$/;
-const TIMELINE = /^gh api --paginate repos\/o\/r\/issues\/4321\/timeline/;
+const TIMELINE = /^gh api -i repos\/o\/r\/issues\/4321\/timeline/;
 
 const options = {pr: 4321, sha: HEAD, repo: null, json: false, env: ENV};
 
@@ -67,6 +67,38 @@ describe("runEnqueue", () => {
 		expect(out.code).toBe(WRITE_UNKNOWN);
 		expect(out.stderr.at(-1)).toContain('the arm failed: "Pull request is in unstable status"');
 		expect(out.stderr.at(-1)).toContain("disarm before stopping");
+	});
+
+	// Probed live: GitHub ACCEPTS the arm on a conflicted PR under a queue-governed base and parks the
+	// intent, so nothing but this precondition stands between `dirty` and a parked intent reported as
+	// a healthy enqueue.
+	it("refuses on 11 when mergeability stays indefinite — an unknown read is never green", async () => {
+		const shell = fakeShell([[PULL, pull({mergeable: null, mergeableState: "unknown"})]]);
+		const out = await Effect.runPromise(Effect.provide(runEnqueue(options), shell.layer));
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toBe(
+			"ship enqueue: #4321's mergeable_state is still indefinite after 3 polls — mergeability is UNKNOWN, never green; nothing was armed.",
+		);
+		expect(shell.calls.some((line) => line.startsWith("gh pr merge"))).toBe(false);
+	}, 20_000);
+
+	it("arms on a definite mergeable_state, whatever that state says", async () => {
+		const shell = fakeShell([
+			[PULL, pull({mergeable: false, mergeableState: "dirty"})],
+			[ARM, okOut("")],
+			[TIMELINE, timeline()],
+		]);
+		const out = await Effect.runPromise(Effect.provide(runEnqueue(options), shell.layer));
+		expect(out.code).toBe(0);
+		expect(shell.calls).toContain("gh pr merge 4321 --repo o/r --auto");
+	});
+
+	it("refuses on 11 when the mergeability read itself fails — nothing was armed", async () => {
+		const shell = fakeShell([[PULL, errOut("gh: Bad gateway (HTTP 502)")]]);
+		const out = await Effect.runPromise(Effect.provide(runEnqueue(options), shell.layer));
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(shell.calls.some((line) => line.startsWith("gh pr merge"))).toBe(false);
 	});
 
 	it("refuses on 8 when the confirming read-back fails", async () => {

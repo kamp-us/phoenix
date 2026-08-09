@@ -21,6 +21,9 @@ export interface PullShape {
 	readonly base?: string;
 	readonly autoMerge?: boolean;
 	readonly author?: string;
+	/** `null` is the platform's lazy "not computed yet" — an indefinite read, never an answer. */
+	readonly mergeable?: boolean | null;
+	readonly mergeableState?: string;
 }
 
 export const pull = (shape: PullShape = {}): ExecResult =>
@@ -37,6 +40,8 @@ export const pull = (shape: PullShape = {}): ExecResult =>
 			merged: shape.merged ?? false,
 			auto_merge: shape.autoMerge === true ? {enabled_by: {login: "usirin"}} : null,
 			user: {login: shape.author ?? "usirin"},
+			mergeable: shape.mergeable === undefined ? true : shape.mergeable,
+			mergeable_state: shape.mergeableState ?? "blocked",
 		}),
 	);
 
@@ -101,10 +106,30 @@ export const comments = (
 		),
 	);
 
+/**
+ * A `gh api -i` response: status line, headers, blank line, body.
+ *
+ * The bare-array reads prove completeness by **exhausted pagination**, so their fixtures have to
+ * carry the header that proof reads. Omitting the `Link` header is a terminal page (the platform
+ * sends none when there is only one); `next` present is a page still outstanding.
+ */
+export const httpPage = (body: string, options: {next?: boolean} = {}): ExecResult =>
+	okOut(
+		[
+			"HTTP/2.0 200 OK",
+			"content-type: application/json",
+			...(options.next === true
+				? ['link: <https://api.github.com/next?page=2>; rel="next", <https://x>; rel="last"']
+				: []),
+			"",
+			body,
+		].join("\r\n"),
+	);
+
 export const reviews = (
 	...rows: ReadonlyArray<{login: string; state: string; commit: string; at?: string}>
 ): ExecResult =>
-	okOut(
+	httpPage(
 		JSON.stringify(
 			rows.map((row) => ({
 				user: {login: row.login},
@@ -116,7 +141,10 @@ export const reviews = (
 	);
 
 export const timeline = (...rows: ReadonlyArray<{event: string; at: string}>): ExecResult =>
-	okOut(JSON.stringify(rows.map((row) => ({event: row.event, created_at: row.at}))));
+	httpPage(JSON.stringify(rows.map((row) => ({event: row.event, created_at: row.at}))));
+
+/** The same page, but declaring a `next` — the read that can never prove it is complete. */
+export const unexhaustedPage = (): ExecResult => httpPage("[]", {next: true});
 
 export const threadPage = (
 	declared: number,

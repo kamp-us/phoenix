@@ -17,6 +17,7 @@ import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {
+	INCOMPLETE_SCAN,
 	NUDGE_REOPEN_UNCONFIRMED,
 	PRECONDITION_UNKNOWN,
 	PROVEN_NOT_IN_STATE,
@@ -104,7 +105,13 @@ export const runNudge = (
 		if (pushed._tag === "Failure") return unreadable(`the push date of ${bound}`, pushed.reason);
 		const events = yield* pullTimeline(repo, pr);
 		if (events._tag === "Failure") return unreadable(`#${pr}'s timeline`, events.reason);
-		const reopens = reopensSince(events.value, pushed.value);
+		if (!events.value.exhausted) {
+			return refuse(
+				INCOMPLETE_SCAN,
+				`${VERB}: the timeline read never reached a terminal page — pagination is unexhausted; refusing to count reopens over a truncated history.`,
+			);
+		}
+		const reopens = reopensSince(events.value.events, pushed.value);
 		if (reopens >= 1) {
 			return refuse(
 				PROVEN_NOT_IN_STATE,

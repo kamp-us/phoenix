@@ -16,7 +16,7 @@
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
-import {PRECONDITION_UNKNOWN} from "./codes.ts";
+import {INCOMPLETE_SCAN, PRECONDITION_UNKNOWN} from "./codes.ts";
 import {branchSubjects, isQueueGoverned, pullTimeline} from "./github.ts";
 import {landedOnBase, queueStateOf} from "./queue.ts";
 import {badNumber, resolvePull, resolveTargetRepo} from "./target.ts";
@@ -37,7 +37,9 @@ export interface ReconcileOptions {
 type Poll =
 	| {readonly _tag: "Terminal"; readonly outcome: Reconciled}
 	| {readonly _tag: "Watched"; readonly queued: boolean}
-	| {readonly _tag: "Unreadable"; readonly reason: string};
+	| {readonly _tag: "Unreadable"; readonly reason: string}
+	/** The timeline read never reached a terminal page — distinct from unreadable, and not pollable. */
+	| {readonly _tag: "Truncated"};
 
 export const runReconcile = (
 	options: ReconcileOptions,
@@ -79,7 +81,8 @@ export const runReconcile = (
 			if (events._tag === "Failure") {
 				return {_tag: "Unreadable", reason: events.reason} satisfies Poll;
 			}
-			const state = queueStateOf(events.value);
+			if (!events.value.exhausted) return {_tag: "Truncated"} satisfies Poll;
+			const state = queueStateOf(events.value.events);
 			if (state === "ejected") return {_tag: "Terminal", outcome: "ejected"} satisfies Poll;
 			return {_tag: "Watched", queued: state === "queued"} satisfies Poll;
 		});
@@ -91,6 +94,12 @@ export const runReconcile = (
 		for (let used = 1; used <= options.polls; used++) {
 			const result = yield* poll;
 			if (result._tag === "Terminal") return emit(json, result.outcome, used, horizon);
+			if (result._tag === "Truncated") {
+				return refuse(
+					INCOMPLETE_SCAN,
+					`${VERB}: the timeline read never reached a terminal page — pagination is unexhausted; refusing to classify over a truncated history.`,
+				);
+			}
 			if (result._tag === "Unreadable") {
 				unreadable += 1;
 				lastReason = result.reason;
