@@ -14,6 +14,8 @@ name: roadmap-guard
 # it to the four triggers.
 on:
   # Block a PR that drifts ROADMAP.md ↔ milestones.
+  # No `push: main` (#5085): the scan is repo-wide, but the `milestone` event and the weekly
+  # schedule below already cover post-merge drift, so a `main` run would add no coverage.
   pull_request:
   # Re-check when a milestone is created/edited/closed/reopened/deleted — the projection
   # side of the contract just moved.

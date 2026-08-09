@@ -11,6 +11,8 @@ name: fanout-guard
 # closed on zero discovered mutations (ADR 0092). The scan lives once in the tool.
 on:
   pull_request:
+  push:
+    branches: [main]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
