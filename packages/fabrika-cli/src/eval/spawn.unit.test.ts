@@ -31,9 +31,11 @@ import {
 	planEvalRuns,
 	type RunnableCase,
 	type RunOutcome,
+	renderLedger,
 	suiteExecuted,
 	summarizeRuns,
 	toCaptureManifest,
+	totalSpend,
 } from "./spawn.ts";
 
 const CASES: ReadonlyArray<RunnableCase> = [
@@ -109,12 +111,15 @@ const billedTranscript = JSON.stringify({
 	},
 });
 
+/** Parses cleanly, carries no assistant turn: the well-formed zero `NoBilledTurns` exists to name. */
+const NO_BILLED_TRANSCRIPT = '{"type":"summary"}';
+
 const completedRun = (over: Partial<Parameters<typeof classifyRun>[0]> = {}): RunOutcome =>
 	classifyRun({
 		plan: plan(),
 		exec: exited(resultStdout()),
 		transcriptPath: "/data/projects/x/s.jsonl",
-		assistantTurns: 3,
+		spend: classifyRunSpend(billedTranscript),
 		...over,
 	});
 
@@ -252,7 +257,7 @@ describe("classifyRun — the synthesized failure signal for a silent green (#46
 			plan: plan(),
 			exec: exited(SILENT_GREEN_STDOUT, 0),
 			transcriptPath: "/data/projects/x/s.jsonl",
-			assistantTurns: 0,
+			spend: classifyRunSpend(NO_BILLED_TRANSCRIPT),
 		});
 		assert.strictEqual(outcome._tag, "Failed");
 		if (outcome._tag !== "Failed") return;
@@ -266,7 +271,7 @@ describe("classifyRun — the synthesized failure signal for a silent green (#46
 			plan: plan(),
 			exec: exited(resultStdout({num_turns: 0, result: "ok"})),
 			transcriptPath: "/t.jsonl",
-			assistantTurns: 4,
+			spend: classifyRunSpend(billedTranscript),
 		});
 		assert.strictEqual(outcome._tag, "Failed");
 	});
@@ -276,7 +281,7 @@ describe("classifyRun — the synthesized failure signal for a silent green (#46
 			plan: plan(),
 			exec: exited(resultStdout({modelUsage: {}})),
 			transcriptPath: "/t.jsonl",
-			assistantTurns: 4,
+			spend: classifyRunSpend(billedTranscript),
 		});
 		assert.strictEqual(outcome._tag, "Failed");
 		if (outcome._tag !== "Failed" || outcome.failure._tag !== "NoModelTurns") return;
@@ -288,7 +293,7 @@ describe("classifyRun — the synthesized failure signal for a silent green (#46
 			plan: plan(),
 			exec: exited(resultStdout()),
 			transcriptPath: "/t.jsonl",
-			assistantTurns: 0,
+			spend: classifyRunSpend(NO_BILLED_TRANSCRIPT),
 		});
 		assert.strictEqual(outcome._tag, "Failed");
 		if (outcome._tag !== "Failed" || outcome.failure._tag !== "NoModelTurns") return;
@@ -300,7 +305,7 @@ describe("classifyRun — the synthesized failure signal for a silent green (#46
 			plan: plan({jsonSchema: '{"type":"object"}'}),
 			exec: exited(resultStdout()),
 			transcriptPath: "/t.jsonl",
-			assistantTurns: 4,
+			spend: classifyRunSpend(billedTranscript),
 		});
 		assert.strictEqual(outcome._tag, "Failed");
 		if (outcome._tag !== "Failed" || outcome.failure._tag !== "NoModelTurns") return;
@@ -312,7 +317,7 @@ describe("classifyRun — the synthesized failure signal for a silent green (#46
 			plan: plan({jsonSchema: '{"type":"object"}'}),
 			exec: exited(resultStdout({structured_output: {verdict: "ok"}})),
 			transcriptPath: "/t.jsonl",
-			assistantTurns: 4,
+			spend: classifyRunSpend(billedTranscript),
 		});
 		assert.strictEqual(outcome._tag, "Completed");
 		if (outcome._tag !== "Completed") return;
@@ -326,7 +331,7 @@ describe("classifyRun — a dying run is a typed counted outcome, never a crash"
 			plan: plan(),
 			exec: {_tag: "SpawnFailed", detail: "ENOENT: claude not found"},
 			transcriptPath: null,
-			assistantTurns: null,
+			spend: classifyRunSpend(null),
 		});
 		assert.strictEqual(outcome._tag, "Failed");
 		if (outcome._tag !== "Failed") return;
@@ -338,7 +343,7 @@ describe("classifyRun — a dying run is a typed counted outcome, never a crash"
 			plan: plan(),
 			exec: {_tag: "TimedOut", boundMs: 900_000},
 			transcriptPath: null,
-			assistantTurns: null,
+			spend: classifyRunSpend(null),
 		});
 		assert.strictEqual(outcome._tag, "Failed");
 		if (outcome._tag !== "Failed" || outcome.failure._tag !== "TimedOut") return;
@@ -350,7 +355,7 @@ describe("classifyRun — a dying run is a typed counted outcome, never a crash"
 			plan: plan(),
 			exec: exited("<html>gateway error</html>", 1),
 			transcriptPath: "/t.jsonl",
-			assistantTurns: 4,
+			spend: classifyRunSpend(billedTranscript),
 		});
 		assert.strictEqual(outcome._tag, "Failed");
 		if (outcome._tag !== "Failed") return;
@@ -362,7 +367,7 @@ describe("classifyRun — a dying run is a typed counted outcome, never a crash"
 			plan: plan(),
 			exec: exited(resultStdout({is_error: true, subtype: "error_during_execution"})),
 			transcriptPath: "/t.jsonl",
-			assistantTurns: 4,
+			spend: classifyRunSpend(billedTranscript),
 		});
 		assert.strictEqual(outcome._tag, "Failed");
 		if (outcome._tag !== "Failed") return;
@@ -374,7 +379,7 @@ describe("classifyRun — a dying run is a typed counted outcome, never a crash"
 			plan: plan(),
 			exec: exited(resultStdout()),
 			transcriptPath: null,
-			assistantTurns: null,
+			spend: classifyRunSpend(null),
 		});
 		assert.strictEqual(outcome._tag, "Failed");
 		if (outcome._tag !== "Failed") return;
@@ -446,6 +451,7 @@ describe("executeRuns — the suite completes, against a stubbed executor", () =
 			stage: "triage",
 			model: "sonnet",
 			cliVersion: "2.1.220",
+			recordedAt: "2026-08-09T00:00:00Z",
 			outcomes,
 		});
 		assert.strictEqual(ledger.summary.byArm["with-skill"].completed, 1);
@@ -483,7 +489,7 @@ describe("toCaptureManifest — the existing collector consumes it unchanged", (
 				plan: plan({caseId: 2}),
 				exec: exited(SILENT_GREEN_STDOUT),
 				transcriptPath: "/t.jsonl",
-				assistantTurns: 0,
+				spend: classifyRunSpend(NO_BILLED_TRANSCRIPT),
 			}),
 		];
 		const capture = toCaptureManifest("triage", outcomes);
@@ -516,7 +522,7 @@ describe("toCaptureManifest — the existing collector consumes it unchanged", (
 				resultStdout({structured_output: {type: "bug", priority: "p0", status: "triaged"}}),
 			),
 			transcriptPath: "/t.jsonl",
-			assistantTurns: 3,
+			spend: classifyRunSpend(billedTranscript),
 		});
 		const rows = Effect.runSync(
 			collectFromCapture({
@@ -543,7 +549,7 @@ describe("suiteExecuted — fails closed on zero scope and on any dead run (ADR 
 				plan: plan({caseId: 2}),
 				exec: {_tag: "TimedOut", boundMs: 1},
 				transcriptPath: null,
-				assistantTurns: null,
+				spend: classifyRunSpend(null),
 			}),
 		];
 		assert.isFalse(suiteExecuted(summarizeRuns(outcomes)));
@@ -565,6 +571,144 @@ describe("RunSpend's third arm — a well-formed zero is not a free run", () => 
 
 	it("an absent transcript stays TranscriptMissing", () => {
 		assert.strictEqual(classifyRunSpend(null)._tag, "TranscriptMissing");
+	});
+});
+
+/**
+ * #5008: the reconstructed spend stops being thrown away. The suite below drives the whole path —
+ * stubbed executor, stubbed transcript loader, no model call and no spawn — and its centre of gravity
+ * is the states that are NOT a number: a run whose transcript went missing and a run that billed
+ * nothing must each stay their own recorded state rather than collapse into a measured zero.
+ */
+describe("recorded spend — every completed run's number, attributed to the run that produced it", () => {
+	const ONE_RULER = readFileSync(
+		fileURLToPath(new URL("../spend/fixtures/one-ruler/transcript.jsonl", import.meta.url)),
+		"utf8",
+	);
+	const ONE_RULER_EXPECTED = JSON.parse(
+		readFileSync(
+			fileURLToPath(new URL("../spend/fixtures/one-ruler/expected.json", import.meta.url)),
+			"utf8",
+		),
+	) as {billed: number; exCacheRead: number};
+
+	const suite = {
+		skillName: "probe",
+		stage: "triage",
+		model: "sonnet",
+		cliVersion: "2.1.220",
+		recordedAt: "2026-08-09T00:00:00Z",
+	} as const;
+
+	const ledgerOver = (loadTranscript: () => Effect.Effect<string | null>) => {
+		const plans = Effect.runSync(
+			planEvalRuns({
+				cases: [CASES[0] as RunnableCase],
+				arms: BOTH_ARMS,
+				model: suite.model,
+				pluginDir: "/candidate",
+				jsonSchema: null,
+				sessionId: (id, arm) => Effect.succeed(`${id}-${arm}`),
+			}),
+		);
+		const outcomes = Effect.runSync(
+			executeRuns({
+				plans,
+				executor: () => Effect.succeed(exited(resultStdout())),
+				locateTranscript: (sessionId) => Effect.succeed(`/data/${sessionId}.jsonl`),
+				loadTranscript,
+			}),
+		);
+		return buildLedger({...suite, outcomes});
+	};
+
+	it("carries every attribution field on each completed run's row", () => {
+		const ledger = ledgerOver(() => Effect.succeed(ONE_RULER));
+		assert.strictEqual(ledger.spendRows.length, 2);
+		assert.deepStrictEqual(ledger.spendRows[0], {
+			skillName: "probe",
+			stage: "triage",
+			caseId: 1,
+			arm: "with-skill",
+			model: "sonnet",
+			sessionId: "1-with-skill",
+			cliVersion: "2.1.220",
+			recordedAt: "2026-08-09T00:00:00Z",
+			spend: classifyRunSpend(ONE_RULER),
+		});
+		assert.strictEqual(ledger.spendRows[1]?.arm, "without-skill");
+	});
+
+	it("takes its figures from the shared one-ruler meter rather than a second sum", () => {
+		const row = ledgerOver(() => Effect.succeed(ONE_RULER)).spendRows[0];
+		assert.strictEqual(row?.spend._tag, "Reconstructed");
+		if (row?.spend._tag !== "Reconstructed") return;
+		assert.strictEqual(row.spend.spend.billed, ONE_RULER_EXPECTED.billed);
+		assert.strictEqual(row.spend.spend.exCacheRead, ONE_RULER_EXPECTED.exCacheRead);
+	});
+
+	it("records a completed run whose transcript went missing as TranscriptMissing, never a zero", () => {
+		const ledger = ledgerOver(() => Effect.succeed(null));
+		assert.strictEqual(ledger.spendRows.length, 2);
+		assert.strictEqual(ledger.spendRows[0]?.spend._tag, "TranscriptMissing");
+		assert.strictEqual(totalSpend(ledger.spendRows).measured, 0);
+		assert.strictEqual(totalSpend(ledger.spendRows).transcriptMissing, 2);
+	});
+
+	it("keeps a zero-billed-turn run its own state — counted as a dead run, never a spend row", () => {
+		const ledger = ledgerOver(() => Effect.succeed('{"type":"summary"}'));
+		assert.deepStrictEqual(ledger.spendRows, []);
+		assert.strictEqual(ledger.summary.byFailure["NoModelTurns:zero-assistant-turns"], 2);
+	});
+
+	it("gives a failed run no spend row at all", () => {
+		const ledger = buildLedger({
+			...suite,
+			outcomes: [
+				completedRun({spend: classifyRunSpend(ONE_RULER)}),
+				classifyRun({
+					plan: plan({caseId: 2}),
+					exec: {_tag: "TimedOut", boundMs: 1},
+					transcriptPath: null,
+					spend: classifyRunSpend(null),
+				}),
+			],
+		});
+		assert.strictEqual(ledger.spendRows.length, 1);
+		assert.strictEqual(ledger.spendRows[0]?.caseId, 1);
+	});
+
+	it("totals only the measured rows and names the ones it could not measure", () => {
+		const rows = buildLedger({
+			...suite,
+			outcomes: [
+				completedRun({spend: classifyRunSpend(ONE_RULER)}),
+				completedRun({plan: plan({caseId: 2}), spend: classifyRunSpend(null)}),
+			],
+		}).spendRows;
+		assert.deepStrictEqual(totalSpend(rows), {
+			measured: 1,
+			noBilledTurns: 0,
+			transcriptMissing: 1,
+			billed: ONE_RULER_EXPECTED.billed,
+			exCacheRead: ONE_RULER_EXPECTED.exCacheRead,
+		});
+	});
+
+	it("prints per-run billed and ex-cache-read figures plus a suite total", () => {
+		const rendered = renderLedger(ledgerOver(() => Effect.succeed(ONE_RULER)));
+		assert.include(rendered, `billed ${ONE_RULER_EXPECTED.billed}`);
+		assert.include(rendered, `ex-cache-read ${ONE_RULER_EXPECTED.exCacheRead}`);
+		assert.include(rendered, `spend: billed ${ONE_RULER_EXPECTED.billed * 2}`);
+		assert.include(rendered, `ex-cache-read ${ONE_RULER_EXPECTED.exCacheRead * 2}`);
+		assert.include(rendered, "2 measured run(s)");
+	});
+
+	it("says a run's spend is unmeasured rather than printing it as 0", () => {
+		const rendered = renderLedger(ledgerOver(() => Effect.succeed(null)));
+		assert.include(rendered, "billed n/a (transcript missing)");
+		assert.notInclude(rendered, "billed 0");
+		assert.include(rendered, "0 measured run(s)");
 	});
 });
 

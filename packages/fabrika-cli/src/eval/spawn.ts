@@ -22,9 +22,9 @@
  * verdict is the one place a run is allowed to become a `CaptureRun`.
  */
 import {Effect, Result} from "effect";
-import {reconstructSpend} from "../spend/token-spend.ts";
 import {STAGES} from "./corpus.ts";
-import type {CaptureManifest, CaptureRun, TranscriptLoader} from "./runner.ts";
+import type {CaptureManifest, CaptureRun, RunSpend, TranscriptLoader} from "./runner.ts";
+import {classifyRunSpend} from "./runner.ts";
 import type {EvalTier} from "./skill-eval-set.ts";
 
 /**
@@ -239,6 +239,12 @@ export type RunOutcome =
 			readonly artifact: unknown;
 			readonly numTurns: number;
 			readonly totalCostUsd: number | null;
+			/**
+			 * What the run's transcript reconstructed to. The three-arm union is reused verbatim rather
+			 * than narrowed to a `StageSpend`, so a transcript that could not be read stays visibly
+			 * unmeasured instead of arriving in the ledger as a zero somebody would read as free.
+			 */
+			readonly spend: RunSpend;
 	  }
 	| {
 			readonly _tag: "Failed";
@@ -263,9 +269,9 @@ const failed = (plan: PlannedRun, failure: RunFailure): RunOutcome => ({
  * `Unknown command:` prefix names the actual cause, so it is reported ahead of the `num_turns === 0`
  * that always accompanies it.
  *
- * `assistantTurns` is the transcript's own reconstruction (`reconstructSpend`), passed in rather
- * than computed here so this stays pure; `null` means no transcript was read yet, which is not
- * itself a signal — `TranscriptNotFound` covers that separately.
+ * `assistantTurns` is the transcript's own reconstruction, passed in rather than computed here so
+ * this stays pure; `null` means no transcript was read yet, which is not itself a signal —
+ * `TranscriptNotFound` covers that separately.
  */
 const noModelTurns = (args: {
 	readonly result: HeadlessResult;
@@ -298,6 +304,16 @@ const noModelTurns = (args: {
 };
 
 /**
+ * The billed-turn count a `RunSpend` attests, or `null` when there is no transcript to attest one.
+ * Deriving it from the union rather than taking it alongside is what makes a count that disagrees
+ * with the spend it was measured from unrepresentable.
+ */
+const billedTurns = (spend: RunSpend): number | null => {
+	if (spend._tag === "TranscriptMissing") return null;
+	return spend._tag === "NoBilledTurns" ? 0 : spend.spend.assistantTurns;
+};
+
+/**
  * Classify one executed run. This is the fail-closed seam: only a run that survives every check
  * becomes `Completed`, and only a `Completed` run reaches the capture manifest.
  */
@@ -305,7 +321,7 @@ export const classifyRun = (args: {
 	readonly plan: PlannedRun;
 	readonly exec: ExecutorResult;
 	readonly transcriptPath: string | null;
-	readonly assistantTurns: number | null;
+	readonly spend: RunSpend;
 }): RunOutcome => {
 	const {plan, exec} = args;
 	if (exec._tag === "SpawnFailed") return failed(plan, {_tag: "SpawnFailed", detail: exec.detail});
@@ -325,7 +341,7 @@ export const classifyRun = (args: {
 	const silentGreen = noModelTurns({
 		result,
 		schemaRequested: plan.jsonSchema !== null,
-		assistantTurns: args.assistantTurns,
+		assistantTurns: billedTurns(args.spend),
 	});
 	if (silentGreen !== null) {
 		return failed(plan, {_tag: "NoModelTurns", ...silentGreen});
@@ -347,6 +363,7 @@ export const classifyRun = (args: {
 		artifact: result.hasStructuredOutput ? result.structuredOutput : null,
 		numTurns: result.numTurns,
 		totalCostUsd: result.totalCostUsd,
+		spend: args.spend,
 	};
 };
 
@@ -370,14 +387,7 @@ export const executeRuns = <RE, RL, RT>(args: {
 			const transcriptPath = yield* args.locateTranscript(plan.sessionId);
 			const transcript =
 				transcriptPath === null ? null : yield* args.loadTranscript(transcriptPath);
-			outcomes.push(
-				classifyRun({
-					plan,
-					exec,
-					transcriptPath,
-					assistantTurns: transcript === null ? null : reconstructSpend(transcript).assistantTurns,
-				}),
-			);
+			outcomes.push(classifyRun({plan, exec, transcriptPath, spend: classifyRunSpend(transcript)}));
 		}
 		return outcomes;
 	});
@@ -407,6 +417,94 @@ export const toCaptureManifest = (
 			: [],
 	),
 });
+
+/**
+ * One completed run's reconstructed spend plus the identity of the run that produced it — the
+ * epic's **spend row** (#4779). Every attribution field is copied onto the row rather than left on
+ * the ledger header, because a row is meant to survive on its own: the persistence slice appends
+ * these one per line, and a line that cannot name what it measured is a number with no unit of work.
+ *
+ * `stage` here is **provenance** — the key this run was recorded under, never a pointer into the
+ * live stage table (#4977). A recorded row keeps the key it was written with, and is never re-keyed.
+ */
+export interface SpendRow {
+	readonly skillName: string;
+	readonly stage: CaptureRun["stage"];
+	readonly caseId: number;
+	readonly arm: EvalArm;
+	/** The model the run was pinned to, which is the axis a scorecard compares along. */
+	readonly model: string;
+	readonly sessionId: string;
+	readonly cliVersion: string | null;
+	/** ISO-8601 UTC, supplied by the shell — the core mints no time of its own. */
+	readonly recordedAt: string;
+	readonly spend: RunSpend;
+}
+
+/**
+ * The spend rows of a suite: one per **completed** run. A `Failed` run contributes none — it produced
+ * no measurable work, and a row for it would be a zero standing where a measurement never happened.
+ */
+export const toSpendRows = (args: {
+	readonly skillName: string;
+	readonly stage: CaptureRun["stage"];
+	readonly model: string;
+	readonly cliVersion: string | null;
+	readonly recordedAt: string;
+	readonly outcomes: ReadonlyArray<RunOutcome>;
+}): ReadonlyArray<SpendRow> =>
+	args.outcomes.flatMap((outcome) =>
+		outcome._tag === "Completed"
+			? [
+					{
+						skillName: args.skillName,
+						stage: args.stage,
+						caseId: outcome.caseId,
+						arm: outcome.arm,
+						model: args.model,
+						sessionId: outcome.sessionId,
+						cliVersion: args.cliVersion,
+						recordedAt: args.recordedAt,
+						spend: outcome.spend,
+					},
+				]
+			: [],
+	);
+
+/**
+ * A suite's summed spend, alongside the count of rows that contributed nothing to it. The two
+ * unmeasured counts are part of the total, not a footnote: a bare `billed` says nothing about how
+ * many runs it covers, and a reader who cannot see the gap will read it as covering all of them.
+ */
+export interface SuiteSpend {
+	readonly measured: number;
+	readonly noBilledTurns: number;
+	readonly transcriptMissing: number;
+	readonly billed: number;
+	readonly exCacheRead: number;
+}
+
+export const totalSpend = (rows: ReadonlyArray<SpendRow>): SuiteSpend => {
+	let measured = 0;
+	let noBilledTurns = 0;
+	let transcriptMissing = 0;
+	let billed = 0;
+	let exCacheRead = 0;
+	for (const row of rows) {
+		if (row.spend._tag === "NoBilledTurns") {
+			noBilledTurns += 1;
+			continue;
+		}
+		if (row.spend._tag === "TranscriptMissing") {
+			transcriptMissing += 1;
+			continue;
+		}
+		measured += 1;
+		billed += row.spend.spend.billed;
+		exCacheRead += row.spend.spend.exCacheRead;
+	}
+	return {measured, noBilledTurns, transcriptMissing, billed, exCacheRead};
+};
 
 /** The counted shape of a suite: how many ran, how many died, and of what. */
 export interface RunSummary {
@@ -467,8 +565,11 @@ export interface RunLedger {
 	readonly stage: CaptureRun["stage"];
 	readonly model: string;
 	readonly cliVersion: string | null;
+	/** When the suite was recorded, ISO-8601 UTC — stamped once and copied onto every spend row. */
+	readonly recordedAt: string;
 	readonly runs: ReadonlyArray<RunOutcome>;
 	readonly capture: CaptureManifest;
+	readonly spendRows: ReadonlyArray<SpendRow>;
 	readonly summary: RunSummary;
 }
 
@@ -477,6 +578,7 @@ export const buildLedger = (args: {
 	readonly stage: CaptureRun["stage"];
 	readonly model: string;
 	readonly cliVersion: string | null;
+	readonly recordedAt: string;
 	readonly outcomes: ReadonlyArray<RunOutcome>;
 }): RunLedger => ({
 	version: 1,
@@ -484,8 +586,10 @@ export const buildLedger = (args: {
 	stage: args.stage,
 	model: args.model,
 	cliVersion: args.cliVersion,
+	recordedAt: args.recordedAt,
 	runs: args.outcomes,
 	capture: toCaptureManifest(args.stage, args.outcomes),
+	spendRows: toSpendRows(args),
 	summary: summarizeRuns(args.outcomes),
 });
 
@@ -514,18 +618,41 @@ export const ledgerToJson = (ledger: RunLedger): string => `${JSON.stringify(led
 export const captureToJson = (capture: CaptureManifest): string =>
 	`${JSON.stringify(capture, null, 2)}\n`;
 
+/**
+ * The two figures for one run, or the named reason there are none. An unmeasured run reads
+ * `n/a (…)` rather than `0`, because the whole point of the three-arm union is that those are
+ * different facts and a rendered `0` would erase the difference at the last step.
+ */
+const renderRunSpend = (spend: RunSpend): string => {
+	if (spend._tag === "TranscriptMissing") return "billed n/a (transcript missing)";
+	if (spend._tag === "NoBilledTurns") return "billed n/a (no billed turns)";
+	return `billed ${spend.spend.billed}, ex-cache-read ${spend.spend.exCacheRead}`;
+};
+
+/** The suite total, and the gap it does not cover. A suite that measured nothing prints no figures. */
+const renderSuiteSpend = (total: SuiteSpend): string => {
+	const unmeasured = [
+		total.transcriptMissing > 0 ? `${total.transcriptMissing} transcript-missing` : null,
+		total.noBilledTurns > 0 ? `${total.noBilledTurns} no-billed-turns` : null,
+	].filter((part) => part !== null);
+	const gap = unmeasured.length === 0 ? "" : ` (${unmeasured.join(", ")})`;
+	if (total.measured === 0) return `  spend: unmeasured — 0 measured run(s)${gap}`;
+	return `  spend: billed ${total.billed} · ex-cache-read ${total.exCacheRead} over ${total.measured} measured run(s)${gap}`;
+};
+
 /** A one-line-per-run human rendering, so an operator sees which arm died of what without a jq. */
 export const renderLedger = (ledger: RunLedger): string => {
 	const lines = [
 		`fabrika eval run: ${ledger.skillName} · stage ${ledger.stage} · model ${ledger.model}`,
 		...ledger.runs.map((outcome) =>
 			outcome._tag === "Completed"
-				? `  case ${outcome.caseId} [${outcome.arm}] ok — ${outcome.numTurns} turns, transcript ${outcome.transcriptPath}`
+				? `  case ${outcome.caseId} [${outcome.arm}] ok — ${outcome.numTurns} turns, ${renderRunSpend(outcome.spend)}, transcript ${outcome.transcriptPath}`
 				: `  case ${outcome.caseId} [${outcome.arm}] FAILED — ${outcome.failure._tag}${
 						outcome.failure._tag === "NoModelTurns" ? `:${outcome.failure.signal}` : ""
 					}`,
 		),
 		`  planned ${ledger.summary.planned} · collected ${ledger.summary.completed} · failed ${ledger.summary.failed}`,
+		renderSuiteSpend(totalSpend(ledger.spendRows)),
 	];
 	return lines.join("\n");
 };

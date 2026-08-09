@@ -496,6 +496,25 @@ locates the pinned session's transcript, classifies the run, and folds the colle
 **capture manifest** `collectFromCapture` already consumes. Grading, spend reconstruction and the
 scorecard are all pre-existing code paths — this verb adds no oracle, no meter and no renderer.
 
+### What each run cost, attributed to the run ([#5008](https://github.com/kamp-us/phoenix/issues/5008))
+
+The runner already reconstructed every run's transcript to detect a silent green and then threw the
+number away. It now keeps it. Each completed run carries its `RunSpend` on its outcome, and the
+ledger's `spendRows` hold one **spend row** per completed run — the spend plus the identity fabrika
+already had for it: skill, stage, case id, arm, model, session id, CLI version, and the suite's
+`recordedAt` stamp. A `Failed` run gets no row; a row's `stage` is provenance — the key the row was
+written under — never a pointer into the live stage table (#4977).
+
+The three-arm `RunSpend` union is reused verbatim, so the states that are not a number stay
+distinguishable to the last layer. `renderLedger` prints per-run `billed` / `ex-cache-read` and a
+suite total, and it prints `n/a (transcript missing)` — never `0` — for a run it could not measure. A
+suite that measured nothing prints `spend: unmeasured`, because a `billed 0` total reads exactly like
+a suite that genuinely cost nothing. A run whose transcript bills zero turns never reaches a row at
+all: it is already the counted `NoModelTurns:zero-assistant-turns` failure above.
+
+The figures come from `src/spend/token-spend.ts` through `classifyRunSpend`. No second sum is added
+here — this change in fact removes the runner's own second `reconstructSpend` call.
+
 **The two arms are `--plugin-dir` present or absent.** That is the whole difference in the argv, and
 it is the arm variable the /skill-creator methodology means by with-skill vs without-skill. Two flags
 are deliberately never emitted: `--no-session-persistence` (it suppresses the transcript this path
