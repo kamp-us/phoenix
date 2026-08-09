@@ -267,6 +267,7 @@ diff --git a/README.md b/README.md
 		[PULL, pull()],
 		...binding(),
 		[DIFF_AT(), okOut(SUPPRESSING_DIFF)],
+		[PATHS_AT(), paths("src/cart.ts", "README.md")],
 		[RAW, okOut(DIFF)],
 	];
 

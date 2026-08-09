@@ -16,7 +16,7 @@
  */
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import {diffRange} from "../io/git.ts";
+import {diffRange, diffRangePaths} from "../io/git.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {INCOMPLETE_SCAN, PRECONDITION_UNKNOWN} from "./codes.ts";
 import {readDeviations} from "./deviations.ts";
@@ -68,15 +68,42 @@ export const runDeviations = (
 			return refuse(PRECONDITION_UNKNOWN, unreadable(pr, served.reason));
 		}
 		const diff = served.value;
+
+		// Both operands of the refusal below come from git over the SAME range under the SAME flags:
+		// `--name-only -z` emits one path per `diff --git` entry, so rename pairing and merge-base
+		// choice cancel instead of being compared across systems. What that proves is narrow and worth
+		// stating plainly — the scanned bytes carry every entry this second read lists. It does not
+		// prove the range is the right one, and a fault that shortens both reads alike is invisible to
+		// it. GitHub's `changed_files` is a third party's answer over its own base and its own rename
+		// detection, so it is reported in the diagnostics and never refused on (#5157).
+		const listed = yield* diffRangePaths(head.base, head.sha);
+		if (listed._tag === "Failure") {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: cannot read the file list of the range ${head.base}...${head.sha} for #${pr}: ${listed.reason} — the disclosure state is UNKNOWN, never "none".`,
+			);
+		}
+		const inRange = listed.value.length;
+
 		const seen = filesInDiff(diff);
 		const diagnostics = [
 			boundLine(VERB, head),
-			scannedLine(VERB, seen, "file", `${pull.changedFiles} declared`),
+			scannedLine(
+				VERB,
+				seen,
+				"file",
+				`${inRange} in the range per git, ${pull.changedFiles} declared by GitHub`,
+			),
 		];
-		if (seen < pull.changedFiles) {
+		if (inRange !== pull.changedFiles) {
+			diagnostics.push(
+				`${VERB}: git and GitHub disagree on #${pr}'s file count (${inRange} vs ${pull.changedFiles}) — different merge base and different rename detection; reported, never refused on (#5157).`,
+			);
+		}
+		if (seen < inRange) {
 			return refuse(
 				INCOMPLETE_SCAN,
-				`${VERB}: the diff for #${pr} is truncated (${seen} of ${pull.changedFiles} files) — refusing a partial Tier-M scan beside a disclosure claim.`,
+				`${VERB}: the scan at ${head.sha} covers ${seen} of the ${inRange} files git lists for the same range ${head.base}...${head.sha} — both counts from git, so these bytes are provably short of the range they were read from; refusing a partial Tier-M scan beside a disclosure claim.`,
 				diagnostics,
 			);
 		}
