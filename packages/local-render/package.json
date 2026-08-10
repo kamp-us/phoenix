@@ -8,7 +8,7 @@
 		".": "./src/index.ts"
 	},
 	"scripts": {
-		"typecheck": "tsgo -p tsconfig.json",
+		"typecheck": "tsc -p tsconfig.json",
 		"test": "vitest run --project unit",
 		"test:unit": "vitest run --project unit",
 		"render": "node src/bin.ts render"
@@ -23,7 +23,6 @@
 		"@effect/tsgo": "catalog:",
 		"@effect/vitest": "catalog:",
 		"@types/node": "catalog:",
-		"@typescript/native-preview": "catalog:",
 		"typescript": "catalog:",
 		"vitest": "catalog:"
 	}

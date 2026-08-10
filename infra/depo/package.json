@@ -8,7 +8,7 @@
 		"destroy:depo": "alchemy destroy depo.ts",
 		"deploy:doorman": "alchemy deploy doorman.ts",
 		"destroy:doorman": "alchemy destroy doorman.ts",
-		"typecheck": "tsgo -p tsconfig.json",
+		"typecheck": "tsc -p tsconfig.json",
 		"test": "vitest run"
 	},
 	"dependencies": {
@@ -23,7 +23,6 @@
 		"@effect/tsgo": "catalog:",
 		"@effect/vitest": "catalog:",
 		"@types/node": "catalog:",
-		"@typescript/native-preview": "catalog:",
 		"typescript": "catalog:",
 		"vitest": "catalog:"
 	},

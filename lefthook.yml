@@ -148,9 +148,9 @@ pre-push:
   parallel: false
   commands:
     typecheck:
-      # tsgo across the workspace (the same `pnpm typecheck` CI runs); a type error fails
+      # tsc across the workspace (the same `pnpm typecheck` CI runs); a type error fails
       # closed and blocks the push. Docs-only fast-path (#3130): a push whose diff vs
-      # origin/main touches ONLY non-code paths (markdown/docs) has nothing tsgo checks, so
+      # origin/main touches ONLY non-code paths (markdown/docs) has nothing tsc checks, so
       # it skips the whole-repo run — mirroring the change-scoping the sibling `unit-changed`
       # leg gets from `--changed origin/main`. Fail-SAFE: any changed path not recognized as
       # docs — or a diff that can't be computed (origin/main unfetched) — runs the full

@@ -80,6 +80,6 @@ The content-address key (`<sha256>.<ext>`) and allowlist (PNG / JPEG / WebP) mir
 
 ```bash
 pnpm --filter @kampus/depo test        # vitest unit tier
-pnpm --filter @kampus/depo typecheck   # tsgo
+pnpm --filter @kampus/depo typecheck   # tsc
 pnpm --filter @kampus/depo build       # tsc → dist/
 ```

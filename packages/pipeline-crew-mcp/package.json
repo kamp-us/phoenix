@@ -11,7 +11,7 @@
 		".": "./src/index.ts"
 	},
 	"scripts": {
-		"typecheck": "tsgo -p tsconfig.json",
+		"typecheck": "tsc -p tsconfig.json",
 		"test": "vitest run",
 		"cli": "node src/bin.ts"
 	},
@@ -25,7 +25,6 @@
 		"@effect/vitest": "catalog:",
 		"@types/node": "catalog:",
 		"@types/proper-lockfile": "catalog:",
-		"@typescript/native-preview": "catalog:",
 		"typescript": "catalog:",
 		"vitest": "catalog:"
 	},

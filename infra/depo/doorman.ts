@@ -20,6 +20,7 @@ import * as Alchemy from "alchemy";
 import {RuntimeContext} from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import DoormanLive, {Doorman} from "./worker/index.ts";
 
 export default Alchemy.Stack(
@@ -31,5 +32,5 @@ export default Alchemy.Stack(
 	Effect.gen(function* () {
 		const worker = yield* Doorman;
 		return {url: worker.url};
-	}).pipe(Effect.provide(DoormanLive), Effect.provide(RuntimeContext.phantom)),
+	}).pipe(Effect.provide(DoormanLive.pipe(Layer.provide(RuntimeContext.phantom)))),
 );

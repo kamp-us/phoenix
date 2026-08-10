@@ -24,7 +24,6 @@
 		"@kampus/fabrika-cli": "workspace:*",
 		"@effect/language-service": "catalog:",
 		"@effect/tsgo": "catalog:",
-		"@typescript/native-preview": "catalog:",
 		"lefthook": "catalog:",
 		"turbo": "catalog:",
 		"typescript": "catalog:"

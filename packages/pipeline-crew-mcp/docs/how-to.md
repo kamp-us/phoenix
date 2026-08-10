@@ -133,7 +133,7 @@ fail-closed preconditions instead.
 1. **Typecheck and test the package:**
 
    ```bash
-   pnpm --filter @kampus/pipeline-crew-mcp typecheck   # tsgo
+   pnpm --filter @kampus/pipeline-crew-mcp typecheck   # tsc
    pnpm --filter @kampus/pipeline-crew-mcp test         # @effect/vitest suite
    ```
 

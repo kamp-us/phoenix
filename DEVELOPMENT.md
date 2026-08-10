@@ -9,7 +9,7 @@ This is the builder's door. For what kamp.us *is* — the products and the ethos
 ```bash
 pnpm install
 pnpm dev          # vite (SPA + HMR) + alchemy dev (worker on local workerd)
-pnpm typecheck    # effect-tsgo across project references
+pnpm typecheck    # tsc (Effect-patched) across project references
 pnpm deploy       # vite build + alchemy deploy (use --stage <name> for isolation)
 ```
 
@@ -27,7 +27,7 @@ pnpm deploy       # vite build + alchemy deploy (use --stage <name> for isolatio
 | DB | Drizzle on D1 | `Drizzle` is a worker-level singleton; feature code calls its `run`/`batch` capability methods. |
 | Live state | `LiveDO` on `state.storage` KV | One Durable Object fans out SSE. State is KV — subscriber rows + a per-connection counter. No DO SQL, no DO migrations. |
 | Frontend | React 19 + Vite 8 + react-fate | Components declare views; one batched `useRequest` per screen; declarative mutations; live views over SSE. |
-| Type-check | `@effect/tsgo` | Fast `tsc` plus Effect's LSP. |
+| Type-check | `typescript@7` + `@effect/tsgo` | One compiler: the native `tsc`, patched at install with Effect's language service so its diagnostics reach the CLI gate (ADR [0271](./.decisions/0271-one-compiler-effect-patched-tsc.md)). |
 | Lint / format | Biome 2 | Tabs, 100 col, no bracket spacing. |
 | Package manager | pnpm 10 (workspace catalog) | All commands use `pnpm`; `pnpm dlx`, never `npx`. |
 
@@ -87,7 +87,7 @@ apps/web/
 | `pnpm dev:worker` | Just `alchemy dev` (worker only). |
 | `pnpm build` | `vite build` into `dist/client`. |
 | `pnpm deploy` | `pnpm build && alchemy deploy`. Append `--stage <name>` for an isolated worker + D1 + DO. |
-| `pnpm typecheck` | `effect-tsgo` across project references. |
+| `pnpm typecheck` | `tsc` (Effect-patched) across project references. |
 | `pnpm test` | Integration suite — boots the stack on local workerd in `globalSetup`, runs the black-box HTTP suite against it. |
 | `pnpm lint` | `biome check .`. |
 | `pnpm format` | `biome check --write .`. |
@@ -115,7 +115,7 @@ CI runs the base build (`ci.yml` — Biome lint/format, `pnpm typecheck`, the in
 
 | Guard | What it checks | What trips it |
 |---|---|---|
-| [`ci`](./.github/workflows/ci.yml) | The base build: Biome lint + format, `pnpm typecheck` (effect-tsgo), the integration suite, the deploy-preview e2e. | A lint/format violation, a type error, a failing test, or a red preview e2e. |
+| [`ci`](./.github/workflows/ci.yml) | The base build: Biome lint + format, `pnpm typecheck` (Effect-patched `tsc`), the integration suite, the deploy-preview e2e. | A lint/format violation, a type error, a failing test, or a red preview e2e. |
 | [`leak-guard`](./.github/workflows/leak-guard.yml) | Changed doc **and shell** surfaces (markdown, `.decisions/`/`.patterns/`, and `.sh`) carry no machine-local/home path or operator PII (the no-local-paths rule). | A `~/`, `/Users/…`, vault, or sibling-repo path — or an operator email — in a changed doc or script. |
 | [`gitleaks`](./.github/workflows/gitleaks.yml) | The PR's new commits for committed secrets (API keys, tokens, private keys). | A credential committed anywhere in the diff. |
 | [`crew-leak-guard`](./.github/workflows/crew-leak-guard.yml) | The `claude-plugins/pipeline-crew` tree for any personal-data class (local paths, emails, tmux pane ids, memory refs). | Re-personalizing a crew def with real operator data. |

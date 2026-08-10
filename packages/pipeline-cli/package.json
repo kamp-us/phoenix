@@ -30,7 +30,7 @@
 	"scripts": {
 		"build": "tsc -p tsconfig.build.json",
 		"prepublishOnly": "tsc -p tsconfig.build.json",
-		"typecheck": "tsgo -p tsconfig.json",
+		"typecheck": "tsc -p tsconfig.json",
 		"test": "vitest run",
 		"cli": "node src/bin.ts"
 	},
@@ -44,7 +44,6 @@
 		"@effect/tsgo": "catalog:",
 		"@effect/vitest": "catalog:",
 		"@types/node": "catalog:",
-		"@typescript/native-preview": "catalog:",
 		"typescript": "catalog:",
 		"vitest": "catalog:"
 	},
