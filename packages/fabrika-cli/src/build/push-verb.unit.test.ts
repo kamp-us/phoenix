@@ -1,9 +1,10 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeShell, okOut} from "../fakes.test-support.ts";
+import {errOut, fakeShell, okOut, once} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {
 	CLAIM_NOT_MINE,
+	HEAD_DROPS_REMOTE,
 	PRECONDITION_UNKNOWN,
 	REF_NOT_MOVED,
 	UNSAFE_PUSH,
@@ -32,6 +33,9 @@ const UPSTREAM = /^git rev-parse --abbrev-ref --symbolic-full-name /;
 const LS_REMOTE = /^git ls-remote origin /;
 const PUSH = /^git push /;
 const ANCESTOR = /^git merge-base --is-ancestor /;
+const PRESENT = /^git rev-parse --verify --quiet /;
+const FETCH = /^git fetch /;
+const LOG = /^git log /;
 
 const LANE = `build/4312-editor-focus-loss-${NONCE}`;
 
@@ -43,10 +47,13 @@ const LANE_OK: ReadonlyArray<readonly [RegExp, ExecResult]> = [
 	[PERM, okOut("write\n")],
 	[HEAD_SHA, okOut(`${HEAD}\n`)],
 	[UPSTREAM, errOut("fatal: no upstream")],
+	// The remote head is in this object database, so the containment test has both commits.
+	[PRESENT, okOut(`${OLD_HEAD}\n`)],
 ];
 
 const options = {
 	forceWithLease: false,
+	dropRemoteCommits: false,
 	repo: null,
 	env: {CLAUDE_PIPELINE_REPO: "o/r", CLAUDE_CODE_SESSION_ID: "s-9f2e"} as Record<
 		string,
@@ -163,6 +170,7 @@ describe("runPush", () => {
 			[PERM, okOut("write\n")],
 			[HEAD_SHA, okOut(`${HEAD}\n`)],
 			[UPSTREAM, okOut("origin/umut/fix-focus\n")],
+			[PRESENT, okOut(`${HEAD}\n`)],
 			[/^git remote$/, okOut("origin\n")],
 			[LS_REMOTE, okOut(`${HEAD}\trefs/heads/umut/fix-focus\n`)],
 			[ANCESTOR, okOut("")],
@@ -171,6 +179,83 @@ describe("runPush", () => {
 		const out = await Effect.runPromise(Effect.provide(runPush(options), shell.layer));
 		expect(out.code).toBe(0);
 		expect(shell.calls).toContain("git push origin HEAD:refs/heads/umut/fix-focus");
+	});
+
+	// The repair path mandates --force-with-lease, and the lease is blind to THIS lane dropping the
+	// remote's own commits — so these four are the containment contract (#5222).
+	it("refuses on 23 when the force-path head does not contain the remote head, and pushes nothing", async () => {
+		const shell = fakeShell([
+			...LANE_OK,
+			[/^git remote$/, okOut("origin\n")],
+			[LS_REMOTE, okOut(`${OLD_HEAD}\trefs/heads/${LANE}\n`)],
+			[ANCESTOR, errOut("")],
+			[LOG, okOut("a1b2c3d restore the 20 workflow triggers\ne4f5a6b fix the focus loss\n")],
+			[PUSH, okOut("")],
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(runPush({...options, forceWithLease: true}), shell.layer),
+		);
+		expect(out.code).toBe(HEAD_DROPS_REMOTE);
+		expect(out.stdout).toBe("");
+		expect(shell.calls.some((line) => PUSH.test(line))).toBe(false);
+		const said = out.stderr.at(-1) ?? "";
+		expect(said).toContain(`does not contain origin/${LANE} (${OLD_HEAD})`);
+		expect(said).toContain("a1b2c3d restore the 20 workflow triggers");
+		expect(said).toContain("--drop-remote-commits");
+	});
+
+	it("publishes the dropping head only when --drop-remote-commits says so, and says it did", async () => {
+		const shell = fakeShell([
+			...LANE_OK,
+			[/^git remote$/, okOut("origin\n")],
+			[once(LS_REMOTE), okOut(`${OLD_HEAD}\trefs/heads/${LANE}\n`)],
+			[LS_REMOTE, okOut(`${HEAD}\trefs/heads/${LANE}\n`)],
+			[ANCESTOR, errOut("")],
+			[PUSH, okOut("")],
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runPush({...options, forceWithLease: true, dropRemoteCommits: true}),
+				shell.layer,
+			),
+		);
+		expect(out.code).toBe(0);
+		expect(out.stdout.trimEnd().split("\n").at(-1)).toBe("PUSH-VERDICT: MOVED");
+		expect(out.stderr.some((line) => line.includes("--drop-remote-commits given"))).toBe(true);
+	});
+
+	it("refuses on 11 when the remote head is unreadable locally — UNKNOWN, never 'not contained'", async () => {
+		const shell = fakeShell([
+			...LANE_OK.filter(([pattern]) => pattern !== PRESENT),
+			[/^git remote$/, okOut("origin\n")],
+			[LS_REMOTE, okOut(`${OLD_HEAD}\trefs/heads/${LANE}\n`)],
+			[PRESENT, errOut("")],
+			[FETCH, errOut("fatal: could not read from remote repository")],
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(runPush({...options, forceWithLease: true}), shell.layer),
+		);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stdout).toBe("");
+		expect(shell.calls.some((line) => PUSH.test(line))).toBe(false);
+		expect(shell.calls.some((line) => FETCH.test(line))).toBe(true);
+		expect(out.stderr.at(-1)).toContain("cannot prove containment");
+	});
+
+	it("still pushes on the force path when the head DOES contain the remote head", async () => {
+		const out = await run(
+			[
+				...LANE_OK,
+				[/^git remote$/, okOut("origin\n")],
+				[once(LS_REMOTE), okOut(`${OLD_HEAD}\trefs/heads/${LANE}\n`)],
+				[LS_REMOTE, okOut(`${HEAD}\trefs/heads/${LANE}\n`)],
+				[ANCESTOR, okOut("")],
+				[PUSH, okOut("")],
+			],
+			{forceWithLease: true},
+		);
+		expect(out.code).toBe(0);
+		expect(out.stdout.trimEnd().split("\n").at(-1)).toBe("PUSH-VERDICT: MOVED");
 	});
 
 	it("refuses a branch that is not a lane branch on 14", async () => {

@@ -90,3 +90,16 @@ export const AUDIENCE_NOT_AGENT = 21;
  * the diff or extend a validator (#5229).
  */
 export const UNCLASSIFIED_DIFF = 22;
+/**
+ * Proven: the local head does not contain the published remote head — this push would drop commits.
+ *
+ * A *proven* refusal about the two commits, so it sits with `17`/`19`/`20`/`21` and never on
+ * {@link PRECONDITION_UNKNOWN}, which is reserved for a read that failed. Its own seat rather than
+ * `19`'s because the remedy differs: `19` says "pass the lease", this one says "rebase, or say you
+ * mean it" — collapsing them would make the fix instruction ambiguous (#5222).
+ *
+ * Overlapping `epic`'s own `23` is the same safe overlap `20`/`21` already rely on — the rule is
+ * `plan/codes.ts`'s: import a code when two groups prove the *same* fact, and an exit code is
+ * otherwise read off the command that produced it. No `epic` verb can prove a push's containment.
+ */
+export const HEAD_DROPS_REMOTE = 23;

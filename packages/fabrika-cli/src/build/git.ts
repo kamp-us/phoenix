@@ -17,9 +17,11 @@ import {execCapture} from "../io/exec.ts";
 import {
 	type Attempt,
 	fail,
+	fetchRef,
 	isObjectName,
 	ok,
 	remotes,
+	resolveCommit,
 	type Shell,
 	splitRemoteRef,
 } from "../io/git.ts";
@@ -105,6 +107,52 @@ export const remoteSha = (remote: string, ref: string): Shell<Attempt<string | n
 		return isObjectName(sha)
 			? ok(sha)
 			: fail(`\`git ls-remote\` printed "${first}", not a ref row`);
+	});
+
+/**
+ * Make `sha` readable from this object database, fetching `<remote>/<ref>` once if it is not, and
+ * answer whether it now is.
+ *
+ * {@link isAncestor} needs both commits present locally, and a repair lane's published head can be a
+ * commit this clone has never held. A missing object is UNKNOWN — never "not an ancestor" — so this
+ * answers presence and leaves the conclusion to the caller.
+ */
+export const ensureCommitPresent = (remote: string, ref: string, sha: string): Shell<boolean> =>
+	Effect.gen(function* () {
+		const present = (yield* resolveCommit(sha))._tag === "Ok";
+		if (present) return true;
+		yield* fetchRef(remote, ref);
+		return (yield* resolveCommit(sha))._tag === "Ok";
+	});
+
+/** How many dropped commits a refusal names before it truncates. */
+const DROPPED_SHOWN = 10;
+
+/**
+ * The commits reachable from `remoteHead` and not from `local` — exactly what a force push drops.
+ *
+ * Reported as text for a human to read in the refusal, so a failure to enumerate degrades to an empty
+ * list rather than to a second failure mode: the containment verdict is already proven by then.
+ */
+export const commitsDropped = (
+	local: string,
+	remoteHead: string,
+): Shell<{readonly lines: ReadonlyArray<string>; readonly truncated: boolean}> =>
+	Effect.gen(function* () {
+		const r = yield* execCapture("git", [
+			"log",
+			"--no-decorate",
+			"--format=%h %s",
+			`-n`,
+			`${DROPPED_SHOWN + 1}`,
+			`${local}..${remoteHead}`,
+		]);
+		if (!r.ok) return {lines: [], truncated: false};
+		const lines = r.stdout
+			.split("\n")
+			.map((l) => l.trim())
+			.filter((l) => l !== "");
+		return {lines: lines.slice(0, DROPPED_SHOWN), truncated: lines.length > DROPPED_SHOWN};
 	});
 
 /** Whether `ancestor` is reachable from `descendant` — the fast-forward test. */

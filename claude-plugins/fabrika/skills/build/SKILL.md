@@ -174,7 +174,10 @@ UNKNOWN exit means the verdict state is unread — never "nothing to fix" (#4105
 on the same branch (`fabrika build tree --issue 4310`, then `fabrika build branch --resume
 4310`), re-validate
 with `fabrika build check --surface <yours>`, push with `fabrika build push --force-with-lease`,
-answer the findings in a `fabrika build note` naming each one addressed, release. A
+answer the findings in a `fabrika build note` naming each one addressed, release. Exit `23` on that
+push means your head **drops commits the PR already published** — `build branch --resume` again so
+you rebuild on the published head, never `--drop-remote-commits`, which is for a rewrite you
+actually intend (#5222). A
 review-appended acceptance criterion after round 2 is frozen — note it, do not chase it.
 
 ## Expectations you hold but never recompute

@@ -302,14 +302,26 @@ const push = leafCommand(
 				"permit a non-fast-forward update of this lane's own branch — repair resubmission only (default: false)",
 			),
 		),
+		dropRemoteCommits: Flag.boolean("drop-remote-commits").pipe(
+			Flag.withDescription(
+				"publish a head that does NOT contain the published remote head, dropping its commits — a deliberate history rewrite (default: false)",
+			),
+		),
 		repo: repoFlag,
 	},
-	Effect.fn(function* ({forceWithLease, repo}) {
-		yield* emit(yield* runPush({forceWithLease, repo: Option.getOrNull(repo), env: process.env}));
+	Effect.fn(function* ({dropRemoteCommits, forceWithLease, repo}) {
+		yield* emit(
+			yield* runPush({
+				forceWithLease,
+				dropRemoteCommits,
+				repo: Option.getOrNull(repo),
+				env: process.env,
+			}),
+		);
 	}),
 ).pipe(
 	Command.withDescription(
-		"Publish the lane's branch and INDEPENDENTLY confirm the remote ref moved, by reading it back with git ls-remote. The whole report is stdout, single-stream, so `tail -1` of stdout on exit 0 is always `PUSH-VERDICT: MOVED`. Exits 8 (pushed, but the remote ref could not be re-read — the outcome is UNKNOWN), 11 (the lane's claim could not be read — nothing was pushed), 12 (not in a linked worktree), 14 (the checked-out branch is not this lane's), 15 (the claim is held by another session), 17 (proven: the remote ref did not move), 19 (refused before pushing: detached HEAD, or non-fast-forward without --force-with-lease). Example: fabrika build push",
+		"Publish the lane's branch and INDEPENDENTLY confirm the remote ref moved, by reading it back with git ls-remote. The whole report is stdout, single-stream, so `tail -1` of stdout on exit 0 is always `PUSH-VERDICT: MOVED`. Before pushing, the local head must CONTAIN the published remote head — on the force path too, where --force-with-lease proves nothing about this lane's own dropped commits. Exits 8 (pushed, but the remote ref could not be re-read — the outcome is UNKNOWN), 11 (the lane's claim could not be read, or containment could not be proven — nothing was pushed), 12 (not in a linked worktree), 14 (the checked-out branch is not this lane's), 15 (the claim is held by another session), 17 (proven: the remote ref did not move), 19 (refused before pushing: detached HEAD, or non-fast-forward without --force-with-lease), 23 (proven: the local head drops the remote head's commits — rebase, or pass --drop-remote-commits). Example: fabrika build push",
 	),
 );
 
