@@ -127,6 +127,10 @@ Stated in the brief itself, so the session reads its own deliverable rather than
 - **Linked back to the brief issue** — `Fixes #<brief>` in the PR body, so the brief closes on merge
   and the authored artifact is traceable to the document it was authored from.
 - **No skill enters fabrika by any other path** ([#4637-C](https://github.com/kamp-us/phoenix/issues/4637)).
+- **No line target, and no sizing acceptance criterion.** Sizing is `skill-conventions.md` §2's
+  structural split — `SKILL.md` routes, `contract.md` carries the depth — which the gate judges case
+  by case; a number in a brief would be a second source of truth for a rule that deliberately has
+  none ([#4701](https://github.com/kamp-us/phoenix/issues/4701#issuecomment-5234580426)).
 
 **Where the session's job ends.** The PR carries the skill and the *specification* of the verbs it
 needs. Implementing those verbs is downstream `write-code` work against that spec — "the crew

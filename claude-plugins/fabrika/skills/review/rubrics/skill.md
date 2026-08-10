@@ -29,8 +29,10 @@ is a finding even when each file reads well alone.
 ## 4 — fabrika conventions (skills under `claude-plugins/fabrika/`)
 
 Hold the skill to `claude-plugins/fabrika/docs/skill-conventions.md` — the two-layer split (a
-deterministic step in prose belongs in a verb), the 7–140 line band met by omission rather than
-deleted judgement, single-home facts, closed-vocabulary coordination, declared ingestion surface
+deterministic step in prose belongs in a verb), sizing as the routing/depth split rather than a
+line count — a `SKILL.md` that inlines what its `contract.md` owns is over-long however few lines it
+is, and shortness reached by deleting judgement is not conformance — single-home facts,
+closed-vocabulary coordination, declared ingestion surface
 and capability set — and its contract to `cli-interface-convention.md` Part 2's completeness
 test. A restated sibling behavior (rather than an imported module or a cited section) is drift
 waiting to happen; name it.

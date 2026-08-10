@@ -35,18 +35,24 @@ scripts rather than typed, tested verbs.
 
 ## 2. Sizing — the tiny wrapper
 
-**7–140 lines, median ~75.** A fabrika `SKILL.md` that runs past the band is not "thorough", it is
-un-split: the overflow is deterministic content that should have become a verb (§1) or reference
-that should have moved behind a pointer (§5).
+**`SKILL.md` is a routing and orientation surface; depth lives in `contract.md`.** The skill says
+what the thing is, when to fire it, and where each step's detail lives — the detail itself sits
+behind the pointer. **A `SKILL.md` that inlines what its contract owns is the defect**, and that is
+the same un-split failure §1 names: the overflow is deterministic content that should have become a
+verb, or reference that should have moved behind a pointer (§5).
 
-The band is not an aesthetic preference. It is the measured shape of the SOTA reference's 41
-skills, against which v1's own skills trend **300–600** lines (its `wayfinder` is 579). That gap is
-the discipline v1 lacked, stated as a number so it can be checked instead of felt.
+**There is no line count.** Concision is judged case by case against that split — never "how long is
+it", always "does this paragraph belong here or in the contract". A skill that has honoured the
+split is short as a consequence, not as a target, and shortness reached by deleting judgement is not
+conformance.
 
 Finer division is not free, and §3 is the ledger for what it costs.
 
-> Source: [#4644](https://github.com/kamp-us/phoenix/issues/4644) survey finding (measured across
-> the reference at `2ab9580`), adopt-list item 3.
+> Source: founder-delegated ruling on
+> [#4701](https://github.com/kamp-us/phoenix/issues/4701#issuecomment-5234580426), jointly with
+> [#5219](https://github.com/kamp-us/phoenix/issues/5219), deleting the prior 7–140 line band drawn
+> from the [#4644](https://github.com/kamp-us/phoenix/issues/4644) survey: it was unenforceable by
+> the ruled gate, which judges qualitatively, and violated by most of the landed corpus.
 
 ## 3. Invocation-axis economics
 
