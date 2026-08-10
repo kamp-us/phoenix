@@ -16,16 +16,18 @@
  * The one caller-asserted input is `--cp`, and it reaches **every** resolution in one run — v1
  * passed it to the gate and not the native fold, and a discharged FAIL stayed in force forever
  * (#4049). The fold living inside this verb is what makes that seam unrepresentable.
+ *
+ * `governance` is the one namespace the caller cannot decline: see {@link requiredWithFloor}.
  */
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {type CommentRecord, listComments} from "../io/issues.ts";
-import {permissionFor} from "../io/pulls.ts";
+import {listPullFiles, permissionFor} from "../io/pulls.ts";
 import {readAdvisory} from "../review/advisory.ts";
-import {SHIP_NAMESPACES} from "../review/classes.ts";
+import {SHIP_NAMESPACES, touchesGovernanceRoot} from "../review/classes.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {read as readMarker} from "../wire/verdict-marker.ts";
-import {INCOMPLETE_SCAN, OFF_VOCABULARY, PRECONDITION_UNKNOWN} from "./codes.ts";
+import {INCOMPLETE_SCAN, OFF_VOCABULARY, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {listReviews, type ReviewRecord} from "./github.ts";
 import {
 	badNumber,
@@ -101,6 +103,28 @@ const candidateOf = (comment: CommentRecord, cp: boolean): Candidate | null => {
 };
 
 /**
+ * The set this verb gates on: the caller's namespaces, plus the floor the diff itself derives.
+ *
+ * `--require` was caller-asserted end to end — `ship scope` printed `governance` on a
+ * governance-root diff and the gate then believed whatever the session typed, so leaving the flag
+ * off turned the requirement off and a fabrika-tree PR shipped with no governance verdict at all
+ * (#5036). A namespace the diff derives is not the caller's to drop, so it is added here whether or
+ * not it was passed: the omission stops being discouraged and becomes unrepresentable.
+ *
+ * The floor is `governance` only. Deriving the `review-*` set here too would be a second answer to
+ * what `ship scope` already prints, and widening it is its own decision — the caller's assertion
+ * stands for those, unchanged.
+ */
+export const requiredWithFloor = (
+	requested: ReadonlyArray<string>,
+	files: ReadonlyArray<string>,
+): {readonly required: ReadonlyArray<string>; readonly floored: ReadonlyArray<string>} => {
+	const distinct = new Set(requested);
+	const floored = touchesGovernanceRoot(files) && !distinct.has("governance") ? ["governance"] : [];
+	return {required: [...distinct, ...floored], floored};
+};
+
+/**
  * The in-force verdict for one namespace: head-bound candidates first, then newest write stamp.
  *
  * Exported so the ordering is testable without a PR: the two rules interact, and "head-bound
@@ -148,14 +172,14 @@ export const runGate = (
 		const bound = inspectedSha(VERB, options.sha);
 		if (typeof bound !== "string") return bound;
 
-		const required = [...new Set(options.require)];
-		if (required.length === 0) {
+		const requested = [...new Set(options.require)];
+		if (requested.length === 0) {
 			return refuse(
 				OFF_VOCABULARY,
 				`${VERB}: --require is mandatory — a merge gated on zero namespaces is vacuously green (#2765).`,
 			);
 		}
-		const offVocabulary = required.find((name) => !SHIP_NAMESPACES.includes(name));
+		const offVocabulary = requested.find((name) => !SHIP_NAMESPACES.includes(name));
 		if (offVocabulary !== undefined) {
 			return refuse(
 				OFF_VOCABULARY,
@@ -177,13 +201,45 @@ export const runGate = (
 		if (target._tag === "Refused") return target.outcome;
 		const pull = target.pull;
 
-		const commented = yield* listComments(repo, pr);
-		if (commented._tag === "Failure") {
-			return refuse(PRECONDITION_UNKNOWN, unreadable("the comments", commented.reason));
+		const listed = yield* listPullFiles(repo, pr);
+		if (listed._tag === "Failure") {
+			return refuse(PRECONDITION_UNKNOWN, unreadable("the changed-file list", listed.reason));
 		}
 		const diagnostics = [
-			scannedLine(VERB, commented.value.length, "comment", `${pull.comments} declared`),
+			scannedLine(VERB, listed.value.length, "changed file", `${pull.changedFiles} declared`),
 		];
+		if (listed.value.length < pull.changedFiles) {
+			return refuse(
+				INCOMPLETE_SCAN,
+				`${VERB}: received ${listed.value.length} of ${pull.changedFiles} changed files — refusing to derive the required floor from a truncated read.`,
+				diagnostics,
+			);
+		}
+		if (listed.value.length === 0) {
+			return refuse(
+				ZERO_SCOPE,
+				`${VERB}: PR #${pr} has zero changed files — a conjunction over an empty diff proves nothing (ADR 0092).`,
+				diagnostics,
+			);
+		}
+		const {required, floored} = requiredWithFloor(requested, listed.value);
+		if (floored.length > 0) {
+			diagnostics.push(
+				`${VERB}: #${pr}'s diff touches a governance root, so governance is required whether or not it was passed — the diff's floor, not the caller's option (#5036).`,
+			);
+		}
+
+		const commented = yield* listComments(repo, pr);
+		if (commented._tag === "Failure") {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				unreadable("the comments", commented.reason),
+				diagnostics,
+			);
+		}
+		diagnostics.push(
+			scannedLine(VERB, commented.value.length, "comment", `${pull.comments} declared`),
+		);
 		if (commented.value.length < pull.comments) {
 			return refuse(
 				INCOMPLETE_SCAN,

@@ -33,9 +33,10 @@ make that checkable:
 - **Fail-closed on absence.** The refusal belongs at the enqueue seam, not to a reviewer's good
   intentions: `governance` is a required namespace in `fabrika ship gate`'s conjunction, so a
   harness-touching diff carrying no current-head verdict is **named absent and refused there**. Zero
-  scope is itself a refusal (ADR 0092). **Until `ship`'s required-namespace vocabulary admits
-  `governance` this property is specified and not yet enforced** ([contract.md](contract.md), the
-  first shipped-surface change) — say so rather than relying on it.
+  scope is itself a refusal (ADR 0092). This is now enforced end to end: `ship`'s vocabulary admits
+  the namespace (#5206) and `ship gate` **raises the requirement from the diff itself**, so passing
+  `--require governance` is not the caller's choice to make (#5036) — see
+  [contract.md](contract.md), shipped-surface changes 1 and 1b.
 - **Independent of who reviewed.** The predicate consults neither which skill ran nor what it
   concluded, so a `review` PASS discharges nothing and a `review` run that forgot to fire you leaves
   the namespace required — the omission surfaces as a refusal rather than as silence.

@@ -93,7 +93,7 @@ const gate = leafCommand(
 		require: Flag.string("require").pipe(
 			Flag.atLeast(1),
 			Flag.withDescription(
-				"a required review namespace; repeat the flag once per namespace, exactly as `ship scope` printed them",
+				"a required review namespace; repeat the flag once per namespace, exactly as `ship scope` printed them. The set is a floor the verb may raise, never a ceiling: a governance-root diff requires `governance` whether or not it is passed (#5036)",
 			),
 		),
 		cp: Flag.boolean("cp").pipe(
@@ -111,7 +111,7 @@ const gate = leafCommand(
 	}),
 ).pipe(
 	Command.withDescription(
-		"Resolve the verdict conjunction over every required namespace at one head. First stdout line is `gate\\t<satisfied|blocked>\\t<sha>`, then one `ns\\t<namespace>\\t<pass|fail|absent|stale>\\t<marker|advisory|review-fold|->` line per required namespace, in the order required; `satisfied` iff every one reads pass, and the coverage of the required set is asserted before that word is printed (#4520). In-force resolution is head-bound-first then by write stamp (#4189/#4200), ACL-gated fail-closed (ADR 0055). Both `absent` and `stale` block (#3944). Exits 7 (PR proven absent or closed), 10 (a --require value is not a gateable namespace), 11 (comments, reviews or the ACL could not be read — the conjunction is UNKNOWN, never blocked and never satisfied), 13 (the comment enumeration is provably short of the declared count, or the review read — which the platform gives no count for — never reached a terminal page with no `next` link). Example: fabrika ship gate 4321 --sha 03135b91 --require review-code --require review-doc",
+		"Resolve the verdict conjunction over every required namespace at one head. First stdout line is `gate\\t<satisfied|blocked>\\t<sha>`, then one `ns\\t<namespace>\\t<pass|fail|absent|stale>\\t<marker|advisory|review-fold|->` line per required namespace, in the order required; `satisfied` iff every one reads pass, and the coverage of the required set is asserted before that word is printed (#4520). In-force resolution is head-bound-first then by write stamp (#4189/#4200), ACL-gated fail-closed (ADR 0055). Both `absent` and `stale` block (#3944). The required set is a floor the verb raises from the diff itself: a PR touching `.decisions/`, `.claude/`, `.github/` or `claude-plugins/` gates on `governance` whether or not --require named it, so no session can turn the requirement off by omission (#5036). Exits 7 (PR proven absent or closed, or the diff has zero changed files), 10 (a --require value is not a gateable namespace), 11 (the changed-file list, comments, reviews or the ACL could not be read — the conjunction is UNKNOWN, never blocked and never satisfied), 13 (the changed-file or comment enumeration is provably short of the declared count, or the review read — which the platform gives no count for — never reached a terminal page with no `next` link). Example: fabrika ship gate 4321 --sha 03135b91 --require review-code --require review-doc",
 	),
 );
 
