@@ -37,15 +37,26 @@ export const declarationLinesIn = (text: string): ReadonlyArray<string> =>
 
 export type CatalogRead =
 	| {readonly _tag: "Ok"; readonly catalog: Readonly<Record<string, string>> | null}
+	/** The reader could not comprehend the manifest's catalog — UNKNOWN, never a pin and never `null`. */
 	| {readonly _tag: "Unparseable"; readonly reason: string};
 
+/** Enough of an offending line to find it, on one line and clamped. */
+const lineEcho = (line: string): string =>
+	line
+		.trim()
+		.replace(/[\t\n\r]+/g, " ")
+		.slice(0, 80);
+
 /**
- * The manifest's top-level `catalog:` map.
+ * The manifest's top-level `catalog:` map, as a block map of scalar pins.
  *
  * `catalog: null` is the **degrade** path, not a failure: a repo that pins nothing centrally is a
- * fact about that repo, so every declaration reports `unpinned` at exit `0`. Only a manifest that
- * does not parse is UNKNOWN — the `7`/`11` split, applied to a file: a missing key is a verdict, an
- * unreadable document is a verdict about nothing.
+ * fact about that repo, so every declaration reports `unpinned` at exit `0`. Every other shape this
+ * reader cannot comprehend — a flow map (`catalog: {…}`), a nested sub-map under a key, a
+ * named-catalog `catalogs:` block — is UNKNOWN, **not** the degrade path: it is a map that is there
+ * and was not read, so answering `unpinned` would be a confident wrong answer where the caller
+ * deserves a refusal (#5361). The `7`/`11` split, applied to a file: a missing key is a verdict, a
+ * document this reader could not read is a verdict about nothing.
  */
 export const parseCatalog = (text: string): CatalogRead => {
 	const lines = text.split("\n");
@@ -54,8 +65,22 @@ export const parseCatalog = (text: string): CatalogRead => {
 			return {_tag: "Unparseable", reason: `line ${at + 1} indents with a tab, which YAML forbids`};
 		}
 	}
-	const start = lines.findIndex((line) => /^catalog:\s*(#.*)?$/.test(line));
+	const named = lines.findIndex((line) => /^catalogs:/.test(line));
+	if (named !== -1) {
+		return {
+			_tag: "Unparseable",
+			reason: `line ${named + 1} opens a named-catalog "catalogs:" block, which this reader does not interpret`,
+		};
+	}
+	const start = lines.findIndex((line) => /^catalog:/.test(line));
 	if (start === -1) return {_tag: "Ok", catalog: null};
+	const header = lines[start] ?? "";
+	if (!/^catalog:\s*(#.*)?$/.test(header)) {
+		return {
+			_tag: "Unparseable",
+			reason: `line ${start + 1} carries "catalog:" with inline content (\`${lineEcho(header)}\`), which this reader does not interpret`,
+		};
+	}
 
 	const catalog: Record<string, string> = {};
 	for (let at = start + 1; at < lines.length; at += 1) {
@@ -69,7 +94,17 @@ export const parseCatalog = (text: string): CatalogRead => {
 				reason: `line ${at + 1} sits under catalog: and is not a key/value pair`,
 			};
 		}
-		catalog[m[1].replace(/^['"]|['"]$/g, "")] = m[2].replace(/^['"]|['"]$/g, "");
+		const version = m[2].replace(/^['"]|['"]$/g, "");
+		// An empty value heads a nested sub-map, whose children then land as sibling keys; a `{`/`[`
+		// value is a flow collection. Either way the key's pin is not this line, and storing "" would
+		// compare unequal to every declared version and report `moved` against a pin nobody wrote.
+		if (version === "" || version.startsWith("{") || version.startsWith("[")) {
+			return {
+				_tag: "Unparseable",
+				reason: `line ${at + 1} sits under catalog: and pins no version (\`${lineEcho(line)}\`)`,
+			};
+		}
+		catalog[m[1].replace(/^['"]|['"]$/g, "")] = version;
 	}
 	return {_tag: "Ok", catalog};
 };

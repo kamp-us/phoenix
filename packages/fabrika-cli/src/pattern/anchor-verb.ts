@@ -5,9 +5,10 @@
  * A separate verb rather than a mode of `pattern drift` because the git half and the dependency half
  * go stale independently. **An unreadable manifest is UNKNOWN and never `unpinned`:** the two are one
  * keystroke apart in consequence — `unpinned` says the repo does not carry this dependency, and a
- * failed read says nothing at all. A manifest that is genuinely absent, or that parses and carries no
- * `catalog:` map, is the degrade path instead: every declaration reports `unpinned` at exit `0` with
- * the absence named on stderr.
+ * failed read says nothing at all. A manifest that is genuinely absent, or that carries no `catalog:`
+ * key at all, is the degrade path instead: every declaration reports `unpinned` at exit `0` with the
+ * absence named on stderr. A manifest that *does* carry a catalog this reader cannot comprehend is
+ * UNKNOWN, never that degrade path — see `parseCatalog`.
  */
 import {Effect, type FileSystem, Result} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
@@ -159,7 +160,7 @@ export const runAnchor = (
 			if (parsed._tag === "Unparseable") {
 				return refuse(
 					PRECONDITION_UNKNOWN,
-					`pattern anchor: ${manifest} at ${base} does not parse as YAML: ${parsed.reason} — every pin is UNKNOWN, never "unpinned".`,
+					`pattern anchor: cannot read the catalog in ${manifest} at ${base}: ${parsed.reason} — every pin is UNKNOWN, never "unpinned".`,
 				);
 			}
 			if (parsed.catalog === null) degraded = `${manifest} at ${sha} carries no catalog: map`;

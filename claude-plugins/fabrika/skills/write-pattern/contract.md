@@ -505,8 +505,16 @@ fabrika pattern anchor worker-queue-retry [--dir <path>] [--manifest <path>] [--
    yields `@nkzw/fate` and `1.3.1`, where a first-`@` split would yield an empty package name. A token
    with no `@`, or whose split yields an empty half, is reported `malformed` and counted, never
    guessed at.
-3. **Resolve the pin.** Look `<package>` up as a key of the manifest's top-level `catalog:` map. A key
-   that is absent is `unpinned`.
+3. **Resolve the pin.** Look `<package>` up as a key of the manifest's top-level `catalog:` map, read
+   as a block map of scalar pins. A key that is absent is `unpinned`.
+
+   **A catalog that is there and could not be read is exit `11`, never `unpinned`.** Three shapes are
+   outside what this reader comprehends — a flow map (`catalog: {…}`), a nested sub-map under a key,
+   and a named-catalog `catalogs:` block — and each of them parses as YAML, so none can be told apart
+   from a real read by parse success alone. Answering anyway produced two confident wrong answers:
+   the flow map and `catalogs:` both read as *no catalog at all* (`unpinned` for every declaration),
+   and the sub-map pinned its key to the empty string, which compares unequal to every declared
+   version and reported `moved` against a pin nobody wrote (#5361). All three refuse instead.
 4. **Compare.** `<version>` against the pinned value, **byte for byte**, with no semver
    interpretation. A doc's anchor records the version its author actually read; accepting a range
    would silently bless a version nobody checked, which is the whole failure the line exists to catch.
@@ -570,14 +578,16 @@ With `--json`, one object with keys `outcome`, `declared`, `moved`, `unpinned`, 
 |---|---|---|
 | `pattern anchor: cannot fetch <ref>: <reason> — the outcome is UNKNOWN, never "matched".` | 11 | refusal |
 | `pattern anchor: cannot read <manifest> at <ref>: <reason> — every pin is UNKNOWN, never "unpinned".` | 11 | refusal |
-| `pattern anchor: <manifest> at <ref> does not parse as YAML: <reason> — every pin is UNKNOWN, never "unpinned".` | 11 | refusal |
+| `pattern anchor: cannot read the catalog in <manifest> at <ref>: <reason> — every pin is UNKNOWN, never "unpinned".` | 11 | refusal |
 | `pattern anchor: no doc for slug "<slug>" under <dir>, in the working tree or at <ref>.` | 12 | refusal |
 | `pattern anchor: slug "<slug>" is not kebab-case (lowercase letters, digits and single hyphens).` | 1 | usage error |
 
-**A manifest that reads but does not parse is UNKNOWN too** (exit `11`), for the same reason. A
-manifest that parses and carries **no `catalog:` map** is the degrade path instead: every declaration
-reports `unpinned` at exit `0` with the absence named on stderr, because a repo that pins nothing
-centrally is a fact about that repo rather than a failed read.
+**A manifest that reads but whose catalog this verb could not read is UNKNOWN too** (exit `11`), for
+the same reason — including the three comprehensible-YAML shapes in step 3. A manifest that carries
+**no `catalog:` key at all** is the degrade path instead: every declaration reports `unpinned` at exit
+`0` with the absence named on stderr, because a repo that pins nothing centrally is a fact about that
+repo rather than a failed read. The two are not interchangeable: the degrade line names an absence,
+so it is never printed for a manifest that does carry a catalog.
 
 **An unreadable manifest is UNKNOWN and never `unpinned`.** The two are one keystroke apart in
 consequence: `unpinned` says the repo does not carry this dependency, and a failed read says nothing
