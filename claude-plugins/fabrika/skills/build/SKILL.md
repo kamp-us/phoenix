@@ -64,9 +64,10 @@ fabrika build claim 4312
 `won` prints your token; `lost` names the winner — that lane is theirs, back off. **§SCOPE** — exit
 `20` (out of focus) or `21` (audience not agent) means the fence refused before writing any marker,
 including on a number handed straight to you: end the run naming the code, and **never override on
-your own authority**. `--override "<reason>"` is the operator's act, taken only when they ask for it
-in so many words, and the reason it records is theirs, not a rationale you compose. Before **every**
-later mutation addressed to an issue or PR number, re-confirm:
+your own authority**. `--override "<reason>" --override-lane "<lane>"` (both flags required) is the
+operator's act, taken only when they ask for it in so many words, and the reason it records is
+theirs, not a rationale you compose. Before **every** later mutation addressed to an issue or PR
+number, re-confirm:
 
 ```bash
 fabrika build confirm 4312

@@ -198,9 +198,11 @@ nothing, while `20` and `21` are proven refusals. Nor does a scope refusal borro
 is minted for "the read failed": the matrix already owns that meaning at `11`, and one meaning on two
 codes is the drift the matrix exists to prevent.
 
-**The override — explicit at the call, recorded on the issue.** `build claim --override "<reason>"`
-admits an issue the predicate refused, and writes the reason into the claim marker it posts, so the
-escape hatch costs one deliberate act and leaves a trace; a silent override is not one. **`build
+**The override — explicit at the call, recorded on the issue.** `build claim --override "<reason>"
+--override-lane "<lane>"` admits an issue the predicate refused, and writes **both** fields — the
+lane and the reason — into the claim marker it posts, so the escape hatch costs one deliberate act
+and names who took it; a silent or unattributed override is not one. The two flags are required
+together (the `claim` block below): either one alone is a usage error, not a claim. **`build
 pick` takes no override**: the pool is the browse path, and an operator who means to work an
 out-of-focus issue names its number and overrides where the lane actually opens. **`build confirm`
 and `build release` never run the fence** — it decides what may *start*, so a focus row edited
