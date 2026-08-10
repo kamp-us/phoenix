@@ -102,7 +102,11 @@ first-free would answer `0238`.
 | `1` | usage error, or the verb failed to run |
 | `3` | `--base` could not be fetched, so the merged set is UNKNOWN |
 | `4` | the open pull requests could not be enumerated, so the in-flight set is UNKNOWN |
-| `5` | `--dir` was read and held zero `NNNN-slug.md` records — zero scope |
+| `6` | `--dir` could not be read at the fetched `--base`, so the merged set is UNKNOWN |
+
+`5` is a **vacated** seat, not a free one: it meant "read and empty — refusing" until #5254 made that
+state an answer, and re-seating a new meaning on it would hand a caller pinned to the old reading a
+wrong answer under a familiar number.
 
 **Errors**
 
@@ -111,7 +115,7 @@ first-free would answer `0238`.
 | `adr next: cannot fetch <ref>: <reason> — the merged set is UNKNOWN. Re-run; do not answer from the local tree.` | 3 | refusal |
 | `adr next: cannot enumerate open pull requests in <repo>: <reason> — the in-flight set is UNKNOWN, never "nothing reserved". Re-run; do not fall back to the on-disk id.` | 4 | refusal |
 | `adr next: cannot read PR #<n>'s file list: <reason> — the in-flight set is INCOMPLETE, so it is UNKNOWN.` | 4 | refusal |
-| `adr next: scanned <dir> at <ref>, 0 decision records — refusing to answer (ADR 0092).` | 5 | refusal |
+| `adr next: cannot read <dir> at <ref>: <reason> — the merged set is UNKNOWN, never "0 records".` | 6 | refusal |
 | `adr next: <dir> holds a record with an unparseable id: <name>` | 1 | refusal |
 
 **Scope** — every `NNNN-slug.md` under `--dir` **as of the fetched `--base`**, plus every open pull
@@ -121,9 +125,11 @@ produced the answer.
 
 The two halves fail differently, and the difference is load-bearing:
 
-- **Zero records is a failed read, not an answer.** This repo always has decision records, so an
-  empty scan means the wrong directory or a broken read, and answering `0001` would collide with
-  every existing record.
+- **An empty merged set is a fact, and the answer is `0001`.** The read itself proves the directory:
+  the merged set is read as `git ls-tree <base-sha>:<dir>`, which fails outright when `<dir>` is not
+  in the tree, so a listing that comes back empty is a directory that **exists and holds nothing** —
+  a repo adopting fabrika on day one. Only a directory that could not be read is UNKNOWN, and that is
+  exit `6`. The two states never share a code (#5254).
 - **An empty in-flight set is a fact — but only on exit 0.** No open ADR pull request is a normal
   state. An in-flight set that could not be read is exit 4 and prints nothing on stdout, because a
   caller that reads an empty set as "nothing reserved" silently falls back to the on-disk id, which
@@ -139,6 +145,14 @@ $ fabrika adr next
 ```
 $ fabrika adr next --json
 {"id":"0240","mergedMax":"0236","inFlight":["0237","0239"],"baseRef":"origin/main","baseSha":"49a22902d1e0c7b3f5a8e4126b9d0f3c7a1e5b82"}
+```
+
+An adopting repo whose `.decisions/` exists and holds no records — the merged set is empty, no open
+pull request claims an id, so `max(∅ ∪ ∅) + 1` is the first id:
+
+```
+$ fabrika adr next
+0001
 ```
 
 ```
@@ -163,7 +177,11 @@ $ echo $?
   `max(union) + 1` answers `0238`. **The divergence is real and needs an ADR that amends 0074 rather
   than a spec that quietly outvotes it** — an implementer should not resolve this alone. Tracked on
   #3779.
-- ADR 0092 — zero scope reds; an empty record scan is a refusal, not `0001`.
+- ADR 0092 — zero scope reds **for a gate**, whose empty scan means it checked nothing. An allocator
+  is not a gate, and 0092's own Consequences ask a legitimately-empty scope to be made explicit
+  rather than refused. A repo adopting fabrika has an empty `.decisions/` by definition, and refusing
+  there left its first ADR unmintable on the documented path (#5254, against the #4776 ruling that
+  working in a foreign repo is a release criterion).
 - **The residual race is real and this verb does not close it.** Two authors between the same pair of
   invocations still collide. CI's `decisions-index validate` job reds the second-to-merge PR in
   CI, and the skill's step 6 re-check catches it for the caller's own id before the PR opens. A verb
@@ -330,7 +348,9 @@ were enumerated, and no one holds this id. It is never what a failed read prints
 | `1` | usage error, or the verb failed to run |
 | `3` | `--base` could not be fetched, so every state is UNKNOWN |
 | `4` | the open pull requests could not be enumerated, so `absent` cannot be distinguished from `in-flight` |
-| `5` | `--dir` was read and held zero `NNNN-slug.md` records — zero scope |
+| `6` | `--dir` could not be read at the fetched `--base`, so every state is UNKNOWN |
+
+`5` is vacated here for the same reason it is under `adr next`.
 
 **Errors**
 
@@ -338,13 +358,14 @@ were enumerated, and no one holds this id. It is never what a failed read prints
 |---|---|---|
 | `adr resolve: cannot fetch <ref>: <reason> — every state is UNKNOWN, never "absent".` | 3 | refusal |
 | `adr resolve: cannot enumerate open pull requests in <repo>: <reason> — "absent" is indistinguishable from "in-flight", so it is UNKNOWN.` | 4 | refusal |
-| `adr resolve: scanned <dir> at <ref>, 0 decision records — refusing to answer (ADR 0092).` | 5 | refusal |
+| `adr resolve: cannot read <dir> at <ref>: <reason> — every state is UNKNOWN, never "absent".` | 6 | refusal |
 | `adr resolve: id "<id>" is not four zero-padded digits.` | 1 | usage error |
 | `adr resolve: <dir> at <ref> holds two records for id <id>: <a>, <b>` | 1 | refusal |
 
 **Scope** — every `NNNN-slug.md` under `--dir` at the fetched `--base`, plus every open pull request
-in `--repo` that adds a `.decisions/NNNN-*.md` file. Zero records is a failed read and reds, for the
-same reason it does in `adr next`. The scope line goes to stderr, naming the base SHA and both counts.
+in `--repo` that adds a `.decisions/NNNN-*.md` file. Zero records is a fact and answers `absent` for
+every id no open pull request holds, for the same reason it answers in `adr next`. The scope line
+goes to stderr, naming the base SHA and both counts.
 
 **Examples**
 
@@ -383,7 +404,7 @@ $ echo $?
 - #1777 — a guessed slug is a dead link. A slug is not derivable from a title (0048 is
   `ship-it-merge-actor`, not `single-merge-authority`), so this verb prints the real filename and the
   caller uses it verbatim.
-- ADR 0092 — zero scope reds.
+- ADR 0092 — zero scope reds for a gate; see `adr next`'s Grounding for why this verb is not one.
 
 ---
 
@@ -604,7 +625,8 @@ prefix and a terminating period, and no other rewording.
 | `1` | usage error, or the verb failed to run |
 | `3` | the corpus could not be read, so the outcome is UNKNOWN |
 | `4` | `--new` names an id or path with no readable ADR |
-| `5` | `--dir` was read and held zero `NNNN-slug.md` records — zero scope |
+
+`5` is vacated here for the same reason it is under `adr next`.
 
 **Errors**
 
@@ -612,13 +634,19 @@ prefix and a terminating period, and no other rewording.
 |---|---|---|
 | `adr sweep: cannot read <dir>: <reason> — the outcome is UNKNOWN, never "no-overlap".` | 3 | refusal |
 | `adr sweep: no readable ADR for --new <value>.` | 4 | refusal |
-| `adr sweep: scanned <dir>, 0 decision records — refusing to answer (ADR 0092).` | 5 | refusal |
 
 **Scope** — every live-accepted record under `--dir` that `--new` does not already cite. The scope
 line goes to stderr naming the corpus size and the in-scope count, because the outcome is only
 readable against them: `indeterminate` fires when the live-accepted corpus is below the rarity floor
 of 10 — the floor counts that corpus, not the in-scope subset — and a caller that cannot see the
 count cannot tell that from a clean sweep.
+
+**A readable-but-empty `--dir` is that floor at its limit and answers `indeterminate`**, with the
+below-the-floor `reason` reading `0 record(s)`. It needs no case of its own: a corpus of nothing
+carries no information for the same reason a corpus of three does not. Only a corpus that could not
+be read is UNKNOWN, and that is exit `3`. Note `--new` still has to name a readable ADR — against an
+empty `--dir` an `NNNN` id form resolves to nothing and refuses `4`, so a fresh adopter passes the
+path to their draft.
 
 **Examples**
 
@@ -666,7 +694,7 @@ $ echo $?
 
 **Grounding**
 
-- ADR 0092 — zero scope reds.
+- ADR 0092 — zero scope reds for a gate; see `adr next`'s Grounding for why this verb is not one.
 - v1's `adr-sweep` is worth reading before implementing this, for two scars it already carries: it
   exits `1` whenever it *has* a shortlist (so a caller reads its informative case as a failure), and
   its `--json` payload goes to stderr leaving stdout empty (#4723). fabrika repeats neither — all

@@ -1,13 +1,7 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {errOut, fakeShell, okOut, tree} from "../fakes.test-support.ts";
-import {
-	BASE_UNFETCHABLE,
-	DIR_UNREADABLE,
-	IN_FLIGHT_UNKNOWN,
-	runNext,
-	ZERO_SCOPE,
-} from "./next-verb.ts";
+import {BASE_UNFETCHABLE, DIR_UNREADABLE, IN_FLIGHT_UNKNOWN, runNext} from "./next-verb.ts";
 
 const SHA = "49a22902d1e0c7b3f5a8e4126b9d0f3c7a1e5b82";
 
@@ -85,16 +79,27 @@ describe("runNext", () => {
 		expect(out.stdout).toBe("");
 	});
 
-	it("refuses on zero scope rather than answering 0001", async () => {
-		const out = await run([[/^git ls-tree/, okOut("")]]);
-		expect(out.code).toBe(ZERO_SCOPE);
-		expect(out.stdout).toBe("");
-		expect(out.stderr.at(-1)).toContain("ADR 0092");
+	// A fresh adopter's `.decisions/` is empty by definition, and `git ls-tree <sha>:<dir>` fails
+	// outright on a directory that is not in the tree — so an empty listing PROVES an existing,
+	// empty directory and mints `0001` (#5254).
+	it("answers 0001 on a readable-but-empty --dir, with no open PR claiming an id", async () => {
+		const out = await run([
+			[/^git ls-tree/, okOut("")],
+			[/^gh api --paginate repos\/[^ ]+\/pulls\?/, okOut("")],
+		]);
+		expect(out.code).toBe(0);
+		expect(out.stdout).toBe("0001\n");
+		expect(out.stderr.join("\n")).toContain("0 decision records");
 	});
 
-	// The two states below are both non-zero and must stay on different codes: an unreadable
-	// directory is a PROVEN refusal, so it may not share `1` with a verb that failed to run
-	// (#4208, #4219, #4736), and it may not be confused with the empty directory that answers 5.
+	it("unions an empty --dir with the in-flight set rather than restarting at 0001", async () => {
+		const out = await run([[/^git ls-tree/, okOut("")]]);
+		expect(out.code).toBe(0);
+		expect(out.stdout).toBe("0240\n");
+	});
+
+	// An unreadable directory is a PROVEN refusal, so it may not share `1` with a verb that failed
+	// to run (#4208, #4219, #4736), and it must stay distinct from the empty directory that answers.
 	it("refuses an unreadable --dir on its own proven code, not on 1", async () => {
 		const out = await run([[/^git ls-tree/, errOut("fatal: not a tree object")]]);
 		expect(out.code).toBe(DIR_UNREADABLE);
@@ -108,7 +113,8 @@ describe("runNext", () => {
 	it("keeps an unreadable --dir distinguishable from an empty one", async () => {
 		const unreadable = await run([[/^git ls-tree/, errOut("fatal: not a tree object")]]);
 		const empty = await run([[/^git ls-tree/, okOut("")]]);
-		expect(unreadable.code).not.toBe(empty.code);
+		expect(unreadable.code).toBe(DIR_UNREADABLE);
+		expect(empty.code).toBe(0);
 	});
 
 	it("refuses a record whose id cannot be parsed", async () => {

@@ -4,6 +4,10 @@
  * **All three outcomes are answers and all three exit 0.** A caller must never read its own
  * shortlist as a failed run, which is precisely the mistake v1's `adr-sweep` makes by exiting 1 on
  * the one case it was asked to produce; and `--json` goes to **stdout**, not stderr (#4723).
+ *
+ * A readable-but-empty `--dir` is the rarity floor at its limit, so it answers `indeterminate` and
+ * needs no case of its own; only an unreadable corpus is UNKNOWN. `5` stays vacated — see
+ * `next-verb.ts`'s `DIR_UNREADABLE` (#5254).
  */
 import {Effect, type FileSystem, Result} from "effect";
 import {readDir, readFile} from "../io/fs.ts";
@@ -15,8 +19,6 @@ import {renderEntry, type SweepCandidate, sweep} from "./sweep.ts";
 export const CORPUS_UNREADABLE = 3;
 /** `--new` names an id or path with no readable ADR. */
 export const NO_SUBJECT = 4;
-/** `--dir` was read and held zero records — zero scope (ADR 0092). */
-export const ZERO_SCOPE = 5;
 
 export interface SweepOptions {
 	/** A four-digit id already in `--dir`, or a path to the draft file. */
@@ -41,12 +43,6 @@ export const runSweep = (
 			);
 		}
 		const {records} = partitionRecordNames(listing.success);
-		if (records.length === 0) {
-			return refuse(
-				ZERO_SCOPE,
-				`adr sweep: scanned ${root}, 0 decision records — refusing to answer (ADR 0092).`,
-			);
-		}
 
 		const corpus: SweepCandidate[] = [];
 		for (const file of records) {

@@ -27,9 +27,7 @@ import {
 export const BASE_UNFETCHABLE = 3;
 /** The open pull requests could not be enumerated, so `absent` cannot be told from `in-flight`. */
 export const IN_FLIGHT_UNKNOWN = 4;
-/** `--dir` was read and held zero records — zero scope (ADR 0092). */
-export const ZERO_SCOPE = 5;
-/** `--dir` could not be read at the fetched base ref, so every state is UNKNOWN. See `next-verb.ts`'s `DIR_UNREADABLE` for why this is a `3`+ code and not `1`. */
+/** `--dir` could not be read at the fetched base ref, so every state is UNKNOWN. See `next-verb.ts`'s `DIR_UNREADABLE` for why this is a `3`+ code and not `1`, and why `5` stays vacated. */
 export const DIR_UNREADABLE = 6;
 
 export interface ResolveOptions {
@@ -77,16 +75,7 @@ export const runResolve = (options: ResolveOptions): Shell<VerbOutcome> =>
 					`adr resolve: cannot read ${dir} at ${base}: ${e.reason} — every state is UNKNOWN, never "absent".`,
 				);
 			}
-			if (e._tag === "UnparseableId") {
-				return refuse(
-					FAILED,
-					`adr resolve: ${dir} holds a record with an unparseable id: ${e.file}`,
-				);
-			}
-			return refuse(
-				ZERO_SCOPE,
-				`adr resolve: scanned ${dir} at ${base}, 0 decision records — refusing to answer (ADR 0092).`,
-			);
+			return refuse(FAILED, `adr resolve: ${dir} holds a record with an unparseable id: ${e.file}`);
 		}
 		const mergedSet = merged.value;
 

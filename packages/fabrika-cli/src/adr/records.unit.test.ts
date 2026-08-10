@@ -41,7 +41,7 @@ describe("partitionRecordNames", () => {
 		expect(unparseable).toEqual(["12-too-short.md"]);
 	});
 
-	it("is empty for an empty listing — zero scope is the caller's refusal, not a silent pass", () => {
+	it("is empty for an empty listing — the caller reads that as a fresh corpus", () => {
 		expect(partitionRecordNames([]).records).toEqual([]);
 	});
 });

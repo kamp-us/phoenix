@@ -66,7 +66,7 @@ const next = leafCommand(
 	}),
 ).pipe(
 	Command.withDescription(
-		"The next unused ADR id — max(fetched merged set ∪ open-PR claims) + 1. Prints `0240`; --json adds mergedMax/inFlight/baseSha. Exits 3 (base unfetchable), 4 (in-flight unknown), 5 (zero scope). Example: fabrika adr next",
+		"The next unused ADR id — max(fetched merged set ∪ open-PR claims) + 1. Prints `0240`; --json adds mergedMax/inFlight/baseSha. An empty-and-readable --dir is a fresh corpus and answers 0001. Exits 3 (base unfetchable), 4 (in-flight unknown), 6 (--dir unreadable). Example: fabrika adr next",
 	),
 );
 
@@ -138,7 +138,7 @@ const resolve = leafCommand(
 	}),
 ).pipe(
 	Command.withDescription(
-		"Resolve ids to their real filename and state against a fetched base ref — one `<state>\\t<file>\\t<detail>` line per id, state ∈ live|landed|in-flight|absent. Exits 3 (base unfetchable), 4 (in-flight unknown), 5 (zero scope). Example: fabrika adr resolve 0164 0023",
+		"Resolve ids to their real filename and state against a fetched base ref — one `<state>\\t<file>\\t<detail>` line per id, state ∈ live|landed|in-flight|absent. An empty-and-readable --dir answers absent. Exits 3 (base unfetchable), 4 (in-flight unknown), 6 (--dir unreadable). Example: fabrika adr resolve 0164 0023",
 	),
 );
 
@@ -190,7 +190,7 @@ const sweepCmd = leafCommand(
 	}),
 ).pipe(
 	Command.withDescription(
-		"Rank the uncited live-accepted ADRs this one may contradict. First stdout line is the outcome token — shortlist | no-overlap | indeterminate — and ALL THREE exit 0; a shortlist adds one `<id>\\t<score>\\t<file>\\t<title>` line per entry. Exits 3 (corpus unreadable), 4 (no readable --new), 5 (zero scope). Example: fabrika adr sweep --new 0240",
+		"Rank the uncited live-accepted ADRs this one may contradict. First stdout line is the outcome token — shortlist | no-overlap | indeterminate — and ALL THREE exit 0; a shortlist adds one `<id>\\t<score>\\t<file>\\t<title>` line per entry. An empty-and-readable --dir answers indeterminate. Exits 3 (corpus unreadable), 4 (no readable --new). Example: fabrika adr sweep --new 0240",
 	),
 );
 
