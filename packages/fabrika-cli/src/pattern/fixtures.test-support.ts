@@ -22,7 +22,8 @@ fixture manifest pins at a different version, and one the manifest does not carr
 /** `.../fixtures/anchored/plain-doc.md` — a doc that claims no anchor at all. */
 export const PLAIN_DOC = `# Plain doc
 
-A doc carrying no anchor declaration, so \`pattern anchor\` answers \`unanchored\`.
+The fixture behind \`pattern anchor\`'s \`unanchored\` outcome: a doc that declares no dependency anchor
+at all, which is the common case and a fact rather than a fault.
 `;
 
 /** `.../fixtures/anchored/workspace.yaml` — pins `acme-queue`, carries no `@acme/retry`. */
