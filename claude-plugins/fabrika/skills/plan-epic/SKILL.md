@@ -49,9 +49,18 @@ A plan is only as good as the ground it was derived from (#3330). Claim first �
 `build`'s, reused, not a second lock:
 
 ```bash
-fabrika build claim 4300
+fabrika build claim 4300 --purpose plan
 fabrika build tree --require-clean
 ```
+
+`--purpose plan` is not optional here. The audience axis (`ready-for:agent`) asks whether an agent
+should pick the issue up to **build**, and an epic earns that label only *after* this skill has
+planned it and the gate has passed it — so fencing the planner on it is circular, and the founder
+ruled the fence binds build-purpose claims only
+([#5175](https://github.com/kamp-us/phoenix/issues/5175)). A `plan` claim is admitted without the
+label; the scope axis still binds, so an out-of-focus epic is still exit `20`. Never reach for
+`--override` to get past the audience axis — that is the fail-open convention the purpose exists to
+remove.
 
 Work in **the epic's worktree, never the primary checkout** (#4934, #4167): `12` and `13` end
 `STOPPED`. `build tree` is called **without** `--issue` — that flag proves the branch carries the
@@ -59,9 +68,11 @@ claim's nonce, and this skill cuts no branch.
 
 Done when the claim answers `won`. **Read these codes off `build claim`, whose numbers above `11`
 are its own group's:** `15` is a proven loss (`BACKED-OFF`); `7` is a proven-absent or closed epic
-(`EPIC-UNPLANNABLE`); `20` or `21` is a proven admission refusal (`EPIC-NOT-ADMITTED`) — report
-which axis, and do not route around it with an override. Any other non-zero ends `STOPPED` with no
-note: you hold no claim, and `build note` requires one.
+(`EPIC-UNPLANNABLE`); `20` is a proven admission refusal on the scope axis (`EPIC-NOT-ADMITTED`) —
+report the axis, and do not route around it with an override. Exit `21` is no longer reachable at
+this step, because a `plan` claim is not bound by the audience axis. Any other non-zero ends
+`STOPPED` with no note — including `10`, an off-enum `--purpose`, which refuses rather than falling
+back to `build`: you hold no claim, and `build note` requires one.
 
 ## 2 — Open the run
 
@@ -238,10 +249,10 @@ epic — so read each code off the command that produced it and never off this l
 - `GROUND-STALE` — `20` from `ledger open`: the worktree is proven behind `origin/main`. **A
   back-off, terminal here** — nothing read into a plan, nothing written, no children. Refreshing
   the tree is outside this skill's capabilities and is a fresh run.
-- `EPIC-NOT-ADMITTED` — `20` or `21` from **`build claim`**: proven not admitted on the scope or
-  audience axis. **A back-off**; nothing read, nothing written, no claim held. Report which axis.
-  Whether a planning claim should face the audience fence is open (#5175) — bypassing it with the
-  override is not your answer to give.
+- `EPIC-NOT-ADMITTED` — `20` from **`build claim`**: proven not admitted on the scope axis. **A
+  back-off**; nothing read, nothing written, no claim held. Name the axis. `21` is not among this
+  skill's codes: step 1 claims with `--purpose plan`, and the audience axis binds build-purpose
+  claims only (#5175). Bypassing the scope axis with the override is not your answer to give.
 - `CHILD-ORPHANED` — `23` or `26` from `ledger child`: a child was created and something after the
   create could not be proven. **A back-off holding a real artifact.** On `23` the link is unproven
   and the child is in the run manifest, so name it from there. On `26` the manifest write itself
