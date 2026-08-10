@@ -1,0 +1,4 @@
+# Fixture manifest for `pattern anchor`'s examples. Not a real workspace.
+catalog:
+  acme-queue: 4.2.0
+  acme-telemetry: 9.9.1
