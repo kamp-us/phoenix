@@ -606,6 +606,56 @@ The group emits the `governance` namespace through the shipped
 [`verdict-marker`](src/wire/verdict-marker.ts) format and publishes its digest through
 [`governance-digest`](src/wire/governance-digest.ts).
 
+## The `pattern` group
+
+The contract is the `write-pattern` skill's derived CLI contract, landing with
+[PR #5333](https://github.com/kamp-us/phoenix/pull/5333) at
+`claude-plugins/fabrika/skills/write-pattern/contract.md`. A **pattern doc** is one flat
+`<slug>.md` under a doc directory (`.patterns` by default), registered by one row in that
+directory's `index.md`.
+
+| Verb | Answers |
+|---|---|
+| `pattern corpus` | the library at a base ref: every doc, its registration, its section, its last-touching commit |
+| `pattern drift` | whether the in-repo source a doc cites moved since the doc was last written |
+| `pattern anchor` | whether the dependency version a doc declares still matches what the workspace pins |
+| `pattern new` | scaffolds `<dir>/<slug>.md` from the canonical template |
+| `pattern register` | inserts the doc's row into `<dir>/index.md` under a named section |
+
+Five properties are worth knowing before you call them:
+
+- **Every outcome exits `0`, including the empty ones.** `corpus` answers `absent` for a directory
+  that is not in the tree and `none` for one that is and holds nothing; `drift` answers
+  `unanchored`; `anchor` answers `unanchored`. Exit `7` is deliberately unseated — no verb here
+  judges over a corpus, so none has a vacuous pass to prevent, and refusing on an empty library
+  would leave a repo adopting fabrika unable to write its first pattern doc
+  ([#5254](https://github.com/kamp-us/phoenix/issues/5254)).
+- **`unanchored` is not a clearance.** It says the doc cites nothing the verb can follow, so drift
+  there is *unanswerable* — read the source by hand. Reporting it as `current` would be a clean pass
+  over nothing, the shape ADR [0092](../../.decisions/0092-gates-fail-closed-on-zero-scope.md)
+  forbids; the group says so in vocabulary rather than in an exit code, because a verb that refused
+  would break the pipe its answer crosses.
+- **Registration is three-valued.** `unknown` — the index is absent, or holds no markdown table —
+  is its own value, because rendering it as `unregistered` would report a defect the verb never
+  proved and send a caller to add rows to a file that cannot hold them. A doc counts as registered
+  only when a table row's **first cell** links its filename; a mention in prose is not a
+  registration.
+- **An unresolved citation is counted, never a finding.** Pattern prose legitimately cites external
+  dependency source trees, and such a path is indistinguishable from a deleted in-repo one by
+  resolution alone. `drift` names each on stderr and excludes it from the moved set, inheriting
+  `pointer-guard`'s `.patterns/**` exclusion rather than repeating the false positive it escaped.
+- **`register` proves its diff before it writes.** The index is hand-curated, carries prose between
+  its tables, and is edited by lanes this verb cannot see, so an insertion that changed any line
+  beyond the new row aborts on `14` with nothing written — and the row is read back after.
+
+The two reads are deliberately different: `corpus`, `drift` and `anchor` read at a fetched `--base`,
+because the question they answer is what the repository already holds; `new` and `register` write the
+**working tree**. A doc created by `new` is therefore invisible to `corpus` until it is committed.
+
+This group is an authoring surface: it emits no verdict marker, joins no gate or ship namespace,
+registers no wire format, needs no repository token and writes to no board surface. A `.patterns/*.md`
+diff gates on the doc review namespace like any other doc change.
+
 ## The `wire` group
 
 A **wire format** is the byte-level agreement two skills meet through on a GitHub artifact —
