@@ -119,14 +119,19 @@ module plus one row plus its narrative section — rather than half-built inside
 shape currently written out in `claude-plugins/fabrika/skills/triage/contract.md` moves into the
 module on that slice or a second one; it stays where it is until there is a module to hold it.
 
-**Remedy (c) is deferred, and [#4712](https://github.com/kamp-us/phoenix/issues/4712) is its
-decider.** #4892 offered a third remedy: make the envelope independent of any splicer's anchor set.
-This ADR deliberately does not take it. It changes the *failure mode* — a drift now reds a fixture
-test instead of breaking the seam quietly — and that is the property worth having. Whether the anchor
-relationship dissolves entirely depends on where fabrika's own `plan-epic` writes its plan, which is
-#4712's decision (live as Q5 on [#4890](https://github.com/kamp-us/phoenix/issues/4890), riding map
-[#4891](https://github.com/kamp-us/phoenix/issues/4891)). Taking (c) here would decide #4712's
-question from the wrong seat.
+**Remedy (c) is moot — [#4712](https://github.com/kamp-us/phoenix/issues/4712) already dissolved the
+coupling.** #4892 offered a third remedy: make the `--epic` envelope independent of any splicer's
+anchor set. There is nothing left to take. #4712 closed by shipping
+`claude-plugins/fabrika/skills/plan-epic/contract.md`, which rules that *the plan region is located
+by the enrichment marker, never by position*, and states the consequence outright — with the marker
+doing the detecting, appending the plan below the brief envelope breaks no detector, so **#4892's
+remedy (c) is thereby moot**. The contract left the write-up to this ADR rather than pre-empting it,
+so here it is, verified at the owner module rather than taken on the contract's word: detection is
+`MARKER_RE` in `packages/fabrika-cli/src/triage/enrich.ts`, a whole-line-anchored multiline pattern
+matched at its **first** occurrence, so the read asks nothing about where anything sits and no
+splicer anchor set can reach the answer. What remains between fabrika and `epic-splice` is the byte
+agreement this ADR pins with a fixture — a conformance obligation, not an anchor dependency — and it
+is the fixture, not a position argument, that turns a future drift into a red test.
 
 **[#4879](https://github.com/kamp-us/phoenix/issues/4879) is untouched.** It is a live destructive
 defect *in* v1's splicer, re-homed to `axis:pipeline-hardening` under the 2026-08-07 ruling. This ADR
