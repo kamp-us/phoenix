@@ -515,6 +515,50 @@ This group applies no label, closes nothing, opens no pull request, emits no ver
 pushes nothing. Nothing it records can block a merge — a session state that gated one would make
 every interrupted session a blocked one.
 
+## The `governance` group
+
+The contract is
+[`claude-plugins/fabrika/skills/governance/contract.md`](../../claude-plugins/fabrika/skills/governance/contract.md).
+The **governance namespace** is derived from a PR's diff — required when any changed path sits under
+one of four harness roots (`.decisions/`, `.claude/`, `.github/`, `claude-plugins/`) — and this group
+answers the mechanical half of the judgment a governance verdict rests on.
+
+| Verb | Answers |
+|---|---|
+| `governance scope` | whether the diff derives the namespace, over which roots, with the bound head, the `self` flag and the records in the diff |
+| `governance sweep` | the uncited live-`accepted` records whose domain a subject touches, ranked, for a subject in a bound commit or in the corpus |
+| `governance guards` | the anchored invariants the bound diff removes or modifies, and the guard-bearing files it touches |
+| `governance base` | this skill's own text at a PR's merge base — the self fence's bytes |
+| `governance post` | the single sanctioned emit of the `governance` namespace verdict |
+| `governance digest` | the decision records that landed in a window, with each landing commit and its anchor delta |
+| `governance readout` | the digest-publishing protocol: compose, upsert, read back |
+
+Five properties are worth knowing before you call them:
+
+- **This is not the §CP answer, and `governance scope` says so on stderr on every run.** fabrika's
+  §CP model is CODEOWNERS-only with no semantic detection, so a second answer here could contradict a
+  merge-gating verdict. What this derives is a separate namespace whose *verdict* is the skill's
+  judgment.
+- **Nothing is re-derived that already ships.** The root list and its predicate come from
+  [`review/classes.ts`](src/review/classes.ts) — one derivation, read by `ship scope`, `ship gate`'s
+  required-set floor and `governance scope` alike; the ranking core comes from
+  [`adr/sweep.ts`](src/adr/sweep.ts); the commit binding, the leak predicate and the read-back
+  normalizer are all imports.
+- **No outcome here is a clearance.** `sweep`'s `no-overlap` carries that sentence verbatim in its
+  `reason`, and `guards`'s `no-anchors-in-reach` is the mechanical floor reporting its own silence: a
+  guard weakened in prose carrying no anchor is invisible to the scan by construction.
+- **The anchor inventory lives in the guarded file.** An anchor is the `<!-- anchor: NAME -->` comment
+  a skill already carries, so the set cannot rot while the guards move — which is the whole design
+  difference from v1's hardcoded prose list inside the reviewing skill.
+- **The readout gates nothing.** `governance readout` writes one comment and nothing else: no label,
+  no PR, and no exit code meaning "the corpus is in a bad state", because a digest that could red
+  would be the human gate the [#4927](https://github.com/kamp-us/phoenix/issues/4927) ruling retired
+  under a new name.
+
+The group emits the `governance` namespace through the shipped
+[`verdict-marker`](src/wire/verdict-marker.ts) format and publishes its digest through
+[`governance-digest`](src/wire/governance-digest.ts).
+
 ## The `wire` group
 
 A **wire format** is the byte-level agreement two skills meet through on a GitHub artifact —

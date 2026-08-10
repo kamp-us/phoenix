@@ -20,6 +20,7 @@
  */
 import * as acceptanceCriteria from "./acceptance-criteria.ts";
 import {brandWitnesses, type WireFormat} from "./format.ts";
+import * as governanceDigest from "./governance-digest.ts";
 import * as grillAnswer from "./grill-answer.ts";
 import * as grillRuling from "./grill-ruling.ts";
 import * as grillSupersede from "./grill-supersede.ts";
@@ -66,7 +67,7 @@ export const registeredFormats: ReadonlyArray<WireFormat> = [
 		purpose:
 			"the SHA-bound first line of a gate's verdict comment on a PR — namespace, polarity, the head the reviewer inspected, and the human clause",
 		module: "packages/fabrika-cli/src/wire/verdict-marker.ts",
-		producers: ["review", "check-epic-plan"],
+		producers: ["review", "check-epic-plan", "governance"],
 		consumers: ["build", "ship"],
 		emit: verdictMarker.emitFromFields,
 		read: verdictMarker.readToLines,
@@ -88,6 +89,10 @@ export const registeredFormats: ReadonlyArray<WireFormat> = [
 				{
 					drift: "the polarity is not PASS or FAIL",
 					artifact: "review-code: APPROVED @ 03135b91 — merge-ready\n",
+				},
+				{
+					drift: "the governance namespace is not kebab-case",
+					artifact: "governance_digest: PASS @ 03135b91 — no contradiction, no weakening\n",
 				},
 			],
 		},
@@ -338,6 +343,63 @@ export const registeredFormats: ReadonlyArray<WireFormat> = [
 			sealedAt: true,
 			groundDigest: true,
 		}),
+	},
+	{
+		key: "governance-digest",
+		purpose:
+			"the periodic, non-blocking readout of the decision records that landed in a window — each row an id, one of three closed kinds, and a one-line pointer note",
+		module: "packages/fabrika-cli/src/wire/governance-digest.ts",
+		producers: ["governance"],
+		consumers: ["front-door"],
+		emit: governanceDigest.emitFromFields,
+		read: governanceDigest.readToLines,
+		fixtures: {
+			roundTrip: {
+				fields: [
+					"row\t0398\ttension\tsits against ADR 0173 on whether a pending required check blocks admission",
+					"row\t0401\tblast\tevery cache key in the system gains a tenant component",
+					"row\t0396\troutine\tno tension found",
+				].join("\n"),
+				values: [
+					"0398",
+					"tension",
+					"sits against ADR 0173 on whether a pending required check blocks admission",
+					"0401",
+					"blast",
+					"0396",
+					"routine",
+				],
+			},
+			absent: "Reading through the landings now — nothing here reaches for the block.\n",
+			malformed: [
+				{
+					drift: "the heading level drifted",
+					artifact:
+						"### Governance readout\n\n```governance-digest\nrow\t0398\troutine\tno tension found\n```\n",
+				},
+				{
+					drift: "the fence holds prose instead of rows",
+					artifact:
+						"## Governance readout\n\n```governance-digest\nNothing much landed this week.\n```\n",
+				},
+				{
+					drift: "a row's kind is off the closed set",
+					artifact:
+						"## Governance readout\n\n```governance-digest\nrow\t0398\turgent\tsits against ADR 0173\n```\n",
+				},
+				{
+					drift: "a row's id is not a four-digit decision id",
+					artifact:
+						"## Governance readout\n\n```governance-digest\nrow\t398\troutine\tno tension found\n```\n",
+				},
+				{
+					drift: "a row carries a fourth field",
+					artifact:
+						"## Governance readout\n\n```governance-digest\nrow\t0398\troutine\tno tension found\tand more\n```\n",
+				},
+			],
+		},
+		brands: brandWitnesses<governanceDigest.DigestRow>({id: true, kind: true, note: true}),
 	},
 ];
 

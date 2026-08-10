@@ -198,11 +198,23 @@ export const SPIKE_SEATS: SharedSeats = {
 	READ_OR_EXEC_UNKNOWN: "PRECONDITION_UNKNOWN",
 };
 
+/**
+ * `governance`'s seats: the same eight `triage` and `review` claim, under the base's own readings.
+ *
+ * It reaches for {@link SHARED_SEATS} rather than a map of its own because every name and every
+ * reading matches — including `4`, which it holds as a `DELIBERATE_GAP` for the same reason `review`
+ * does: no verb here composes body sections. Its private band is `12`-`14`, and only `14` is
+ * genuinely its own — `12` and `13` are `review`'s constants, imported because this group proves the
+ * same two facts.
+ */
+export const GOVERNANCE_SEATS: SharedSeats = SHARED_SEATS;
+
 /** The groups that align to {@link ALIGNMENT_BASE}, each with the seats it claims to share. */
 export const ALIGNED_GROUPS: Readonly<Record<string, SharedSeats>> = {
 	adr: ADR_SEATS,
 	build: BUILD_SEATS,
 	eval: EVAL_SEATS,
+	governance: GOVERNANCE_SEATS,
 	hook: HOOK_SEATS,
 	epic: BUILD_SEATS,
 	grill: GRILL_SEATS,

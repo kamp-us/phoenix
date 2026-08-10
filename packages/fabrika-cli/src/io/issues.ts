@@ -222,6 +222,14 @@ export interface IssueRecord {
 	readonly milestone: number | null;
 	/** `completed` / `not_planned` on a closed issue, `null` otherwise. A kill's read-back reads it. */
 	readonly stateReason: string | null;
+	/**
+	 * Issue comments, as the platform counts them — the denominator a completeness proof divides by.
+	 *
+	 * `0` when the payload carried none, which is the same fail-closed direction the rest of this
+	 * record takes: a caller comparing an enumeration against it then proves nothing rather than
+	 * proving a short read from a count that was never there.
+	 */
+	readonly comments: number;
 }
 
 const toIssueRecord = (value: unknown): IssueRecord | null => {
@@ -245,6 +253,7 @@ const toIssueRecord = (value: unknown): IssueRecord | null => {
 		milestone:
 			isRecord(milestone) && typeof milestone.number === "number" ? milestone.number : null,
 		stateReason: typeof state_reason === "string" ? state_reason : null,
+		comments: typeof value.comments === "number" ? value.comments : 0,
 	};
 };
 
