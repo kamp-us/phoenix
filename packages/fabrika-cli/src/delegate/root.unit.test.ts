@@ -7,6 +7,7 @@ import {
 	globToRegExp,
 	manifestWorkspaceGlobs,
 	matchesWorkspaceGlobs,
+	originOf,
 	pnpmWorkspaceGlobs,
 } from "./root.ts";
 
@@ -148,5 +149,53 @@ describe("discoverRepoRoot", () => {
 		});
 		const root = await run(discoverRepoRoot("/consumer/src").pipe(Effect.provide(fs.layer)));
 		expect(root).toBe("/consumer");
+	});
+});
+
+describe("originOf", () => {
+	const checkout = (root: string) => ({
+		[`${root}/package.json`]: '{"name":"phoenix"}',
+		[`${root}/pnpm-workspace.yaml`]: "packages:\n  - packages/*\n",
+		[`${root}/packages/fabrika-cli/package.json`]: '{"name":"@kampus/fabrika-cli"}',
+	});
+
+	it("names the checkout a source copy belongs to", async () => {
+		const fs = fakeFs({files: checkout("/repo")});
+		const origin = await run(originOf("/repo/packages/fabrika-cli").pipe(Effect.provide(fs.layer)));
+		expect(origin).toEqual({_tag: "checkout", root: "/repo"});
+	});
+
+	it("never reports a package as its OWN checkout — the walk starts above it", async () => {
+		const fs = fakeFs({files: {"/loose/thing/package.json": '{"name":"thing"}'}});
+		const origin = await run(originOf("/loose/thing").pipe(Effect.provide(fs.layer)));
+		expect(origin).toEqual({_tag: "no-checkout"});
+	});
+
+	/**
+	 * `pnpm add --global` writes a `package.json` beside the global `node_modules`, so a plain
+	 * ancestor walk answers "checkout" here and the refusal would swallow the delegation the whole
+	 * feature exists for.
+	 */
+	it("answers no-checkout for an install under node_modules, manifest above it or not", async () => {
+		const fs = fakeFs({
+			files: {
+				"/usr/local/pnpm/global/5/package.json": '{"name":"global"}',
+				"/usr/local/pnpm/global/5/node_modules/@kampus/fabrika-cli/package.json": "{}",
+			},
+		});
+		const origin = await run(
+			originOf("/usr/local/pnpm/global/5/node_modules/@kampus/fabrika-cli").pipe(
+				Effect.provide(fs.layer),
+			),
+		);
+		expect(origin).toEqual({_tag: "no-checkout"});
+	});
+
+	it("FAILS rather than answering no-checkout when an ancestor cannot be probed", async () => {
+		const fs = fakeFs({files: {}, unprobeable: ["/repo/packages/package.json"]});
+		const outcome = await run(
+			originOf("/repo/packages/fabrika-cli").pipe(Effect.provide(fs.layer), Effect.result),
+		);
+		expect(outcome._tag).toBe("Failure");
 	});
 });

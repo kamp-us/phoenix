@@ -1,0 +1,7 @@
+{
+	"session_id": "62716539-7eaa-4bb3-9586-bd35941e1a3a",
+	"transcript_path": "/Users/<operator>/.claude/projects/-private-tmp-hook-capture/62716539-7eaa-4bb3-9586-bd35941e1a3a.jsonl",
+	"cwd": "/private/tmp/hook-capture",
+	"hook_event_name": "SessionStart",
+	"source": "startup"
+}

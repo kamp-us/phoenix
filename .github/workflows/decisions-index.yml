@@ -9,6 +9,8 @@ name: decisions-index
 # a SessionStart hook (#1728), with `ls .decisions/` + frontmatter as the fallback.
 on:
   pull_request:
+  push:
+    branches: [main]
 
 permissions:
   contents: read

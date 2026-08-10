@@ -14,8 +14,22 @@ const options = {
 	env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,
 };
 
-const issueJson = (body: string) =>
-	JSON.stringify({number: 4312, title: "t", html_url: "u", state: "open", labels: [], body});
+/** A placeholder operator set — these tests measure the mechanism, never a real login. */
+const OPERATOR_ENV = {
+	CLAUDE_PIPELINE_REPO: "o/r",
+	FABRIKA_OPERATOR_ACCOUNTS: "operator-account",
+} as Record<string, string | undefined>;
+
+const issueJson = (body: string, author = "someone-else") =>
+	JSON.stringify({
+		number: 4312,
+		title: "t",
+		html_url: "u",
+		state: "open",
+		labels: [],
+		body,
+		user: {login: author},
+	});
 
 const run = (
 	script: ReadonlyArray<readonly [RegExp, ReturnType<typeof okOut>]>,
@@ -64,6 +78,43 @@ describe("runProvenance", () => {
 		const out = await run([[ISSUE, okOut(issueJson(AGENT_BODY))]], {json: true});
 		expect(JSON.parse(out.stdout)).toMatchObject({outcome: "agent", marker: true});
 		expect(out.stderr.join("")).not.toContain('"outcome"');
+	});
+
+	it("answers `agent` for a FOOTERLESS filing by a configured operator account (#4619)", async () => {
+		const out = await run([[ISSUE, okOut(issueJson("no footer here\n", "operator-account"))]], {
+			env: OPERATOR_ENV,
+		});
+		expect(out.code).toBe(ANSWER);
+		expect(out.stdout).toBe("agent\n");
+		expect(out.stderr.join("\n")).toContain("operator account");
+	});
+
+	it("still answers `human` for a footerless filing by any other author", async () => {
+		const out = await run([[ISSUE, okOut(issueJson("no footer here\n", "cansirin"))]], {
+			env: OPERATOR_ENV,
+		});
+		expect(out.code).toBe(ANSWER);
+		expect(out.stdout).toBe("human\n");
+	});
+
+	it("marks the operator answer in --json, keeping the footer fact separate from it", async () => {
+		const out = await run([[ISSUE, okOut(issueJson("no footer here\n", "operator-account"))]], {
+			env: OPERATOR_ENV,
+			json: true,
+		});
+		expect(JSON.parse(out.stdout)).toMatchObject({
+			outcome: "agent",
+			marker: false,
+			operator: true,
+		});
+	});
+
+	it("answers `agent` for an EMPTY body from an operator — the ruling, not the fail-closed default", async () => {
+		const out = await run([[ISSUE, okOut(issueJson("   \n", "operator-account"))]], {
+			env: OPERATOR_ENV,
+		});
+		expect(out.code).toBe(ANSWER);
+		expect(out.stdout).toBe("agent\n");
 	});
 
 	it("refuses when no target repo resolves", async () => {

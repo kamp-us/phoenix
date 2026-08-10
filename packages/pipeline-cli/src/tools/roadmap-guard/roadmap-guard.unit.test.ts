@@ -1,14 +1,16 @@
 /**
  * Pure-core tests for `roadmap-guard` (#2648, roadmap map #2620): the parse of
- * ROADMAP.md's `## Arcs`/`## Campaigns` tables and the I1–I5 verdict (each invariant's
- * pass + every failure mode, plus the zero-scope fail-closed of ADR 0092 and the
- * active↔done state symmetry of #2660). No IO — the `gh api`/filesystem seam is crossed
- * in `gate.ts`/`github.ts`.
+ * ROADMAP.md's `## Arcs`/`## Campaigns`/`## Focus` tables and the I1–I6 verdict (each
+ * invariant's pass + every failure mode, plus the zero-scope fail-closed of ADR 0092, the
+ * active↔done state symmetry of #2660, and the declared focus of #5012). No IO — the
+ * `gh api`/filesystem seam is crossed in `gate.ts`/`github.ts`.
  */
 import {describe, expect, it} from "@effect/vitest";
 import {
+	type FocusRow,
 	judge,
 	type Milestone,
+	parseFocus,
 	parseMilestoneCell,
 	parseRoadmap,
 	parseSectionRows,
@@ -32,6 +34,10 @@ const ms = (number: number, state: "open" | "closed", title = `m${number}`): Mil
 	number,
 	state,
 	title,
+});
+const focusRow = (milestone: number | null, declaredAt = "2026-08-09"): FocusRow => ({
+	milestone,
+	declaredAt,
 });
 
 // A well-formed roadmap: one active arc + queued arcs (some with lazy pins) + one active
@@ -272,6 +278,80 @@ describe("judge — I5 active↔done state symmetry (the campaign lifecycle, #26
 	});
 });
 
+describe("judge — I6 the declared focus is honest (#5012)", () => {
+	// The four reds the declaration is guarded against, plus the two readings of "nothing
+	// declared" that must stay legal — absence and emptiness are the same well-formed default.
+	const i6 = (v: ReturnType<typeof judge>): ReadonlyArray<string> =>
+		v.pass || v.reason === "zero-scope"
+			? []
+			: v.violations.filter((x) => x.code === "I6").map((x) => x.message);
+
+	it("PASSES with NO focus row at all — no exclusive focus declared is the default", () => {
+		const v = judge(goodArcs, goodCampaigns, goodMilestones, []);
+		expect(v.pass).toBe(true);
+		if (v.pass) expect(v.focusCount).toBe(0);
+	});
+
+	it("PASSES an omitted focus argument identically (an absent `## Focus` section)", () => {
+		expect(judge(goodArcs, goodCampaigns, goodMilestones).pass).toBe(true);
+	});
+
+	it("PASSES one focus row over an open milestone claimed by an ACTIVE campaign", () => {
+		const v = judge(goodArcs, goodCampaigns, goodMilestones, [focusRow(27)]);
+		expect(v.pass).toBe(true);
+		if (v.pass) expect(v.focusCount).toBe(1);
+	});
+
+	it("PASSES one focus row over an open milestone claimed by the ACTIVE arc", () => {
+		expect(judge(goodArcs, goodCampaigns, goodMilestones, [focusRow(17)]).pass).toBe(true);
+	});
+
+	it("FAILS I6 on MORE THAN ONE focus row", () => {
+		const messages = i6(
+			judge(goodArcs, goodCampaigns, goodMilestones, [focusRow(17), focusRow(27)]),
+		);
+		expect(messages.some((m) => m.includes("AT MOST ONE focus row"))).toBe(true);
+	});
+
+	it("FAILS I6 when the focus milestone DOES NOT RESOLVE", () => {
+		const messages = i6(judge(goodArcs, goodCampaigns, goodMilestones, [focusRow(99)]));
+		expect(messages).toEqual([
+			"focus row (declared 2026-08-09) pins milestone #99, which does not exist",
+		]);
+	});
+
+	it("FAILS I6 when the focus row carries no `#N` pin at all", () => {
+		const messages = i6(judge(goodArcs, goodCampaigns, goodMilestones, [focusRow(null)]));
+		expect(messages.some((m) => m.includes("pins no milestone by number"))).toBe(true);
+	});
+
+	it("FAILS I6 when the focus milestone is CLOSED", () => {
+		const messages = i6(
+			judge(
+				[arc("Now", 17, "active"), arc("Old", 18, "done")],
+				[],
+				[ms(17, "open"), ms(18, "closed")],
+				[focusRow(18)],
+			),
+		);
+		expect(messages.some((m) => m.includes("which is closed"))).toBe(true);
+	});
+
+	it("FAILS I6 when the focus milestone is claimed by NO ACTIVE arc or campaign row", () => {
+		// #24 is pinned by a QUEUED arc — pinned, open, and still not a legal focus.
+		const messages = i6(judge(goodArcs, goodCampaigns, goodMilestones, [focusRow(24)]));
+		expect(messages).toEqual([
+			'focus row (declared 2026-08-09) pins milestone #24 ("m24"), which is claimed by no active arc or campaign row',
+		]);
+	});
+
+	it("still fails ZERO-SCOPE ahead of I6 — a focus row never buys a vacuous pass (ADR 0092)", () => {
+		const v = judge([], goodCampaigns, [], [focusRow(27)]);
+		expect(v.pass).toBe(false);
+		if (!v.pass) expect(v.reason).toBe("zero-scope");
+	});
+});
+
 describe("judge — row-state well-formedness (backstops I1/I2)", () => {
 	it("FLAGS an unrecognized arc state", () => {
 		const v = judge(
@@ -375,6 +455,12 @@ describe("parseSectionRows + parseRoadmap", () => {
 		"|----------|-----------|-------|",
 		"| Mentor Audit | #27 | active |",
 		"",
+		"## Focus",
+		"",
+		"| Milestone | Declared |",
+		"|-----------|----------|",
+		"| #27 | 2026-08-09 |",
+		"",
 		"## Standing lanes",
 		"",
 		"Not a table.",
@@ -398,9 +484,13 @@ describe("parseSectionRows + parseRoadmap", () => {
 		]);
 	});
 
+	it("parses the focus table into at most one row with its pin + declared-at date", () => {
+		expect(parseRoadmap(md).focus).toEqual([{milestone: 27, declaredAt: "2026-08-09"}]);
+	});
+
 	it("the parsed roadmap PASSES judge against a matching milestone projection", () => {
-		const {arcs, campaigns} = parseRoadmap(md);
-		const v = judge(arcs, campaigns, [ms(17, "open"), ms(24, "open"), ms(27, "open")]);
+		const {arcs, campaigns, focus} = parseRoadmap(md);
+		const v = judge(arcs, campaigns, [ms(17, "open"), ms(24, "open"), ms(27, "open")], focus);
 		expect(v.pass).toBe(true);
 	});
 
@@ -410,5 +500,35 @@ describe("parseSectionRows + parseRoadmap", () => {
 			"## Arcs\n\n| Arc | Milestone | State |\n|-|-|-|\n| A | #1 | active |",
 		);
 		expect(campaigns).toEqual([]);
+	});
+});
+
+describe("parseFocus — absence and emptiness both mean NO exclusive focus (#5012)", () => {
+	it("returns [] for an ABSENT `## Focus` section", () => {
+		expect(parseFocus("# Roadmap\n\n## Arcs\n\n| Arc | Milestone | State |\n|-|-|-|\n")).toEqual(
+			[],
+		);
+	});
+
+	it("returns [] for a PRESENT but header-only `## Focus` table", () => {
+		expect(parseFocus("## Focus\n\n| Milestone | Declared |\n|-----------|----------|\n")).toEqual(
+			[],
+		);
+	});
+
+	it("returns [] for a `## Focus` section carrying prose and no table", () => {
+		expect(parseFocus("## Focus\n\nNo exclusive focus is declared right now.\n")).toEqual([]);
+	});
+
+	it("keeps a dated row with NO pin so I6 can red on it, rather than reading it as no focus", () => {
+		const rows = parseFocus("## Focus\n\n| Milestone | Declared |\n|-|-|\n| | 2026-08-09 |\n");
+		expect(rows).toEqual([{milestone: null, declaredAt: "2026-08-09"}]);
+	});
+
+	it("parses every row so I6 sees the over-declaration rather than only the first", () => {
+		const rows = parseFocus(
+			"## Focus\n\n| Milestone | Declared |\n|-|-|\n| #44 | 2026-08-09 |\n| #27 | 2026-08-01 |\n",
+		);
+		expect(rows.length).toBe(2);
 	});
 });

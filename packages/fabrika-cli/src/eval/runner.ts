@@ -24,42 +24,61 @@
  */
 import {Effect, Result} from "effect";
 import * as Schema from "effect/Schema";
-import {reconstructSpend, type StageSpend} from "../spend/token-spend.ts";
-import {type CorpusEntry, type CorpusManifest, STAGES} from "./corpus.ts";
+import {classifyRunSpend, type RunSpend} from "../spend/token-spend.ts";
+import {type CorpusEntry, type CorpusManifest, type LiveStage, STAGES} from "./corpus.ts";
 import {type Grade, gradeEntry} from "./oracle.ts";
 
 /**
- * One run's token spend, as one of three distinct outcomes — never a nullable `StageSpend`, so a
- * zero can never be fabricated where a measurement is missing.
+ * The with/without methodology's arm variable is **skill availability**, and `--plugin-dir` is the
+ * toggle: it loads the skill under test for that session only. `--disable-slash-commands` is NOT a
+ * usable toggle — measured against a loaded plugin it short-circuits to `num_turns: 0`, `$0`,
+ * `"Unknown command: …"` and never reaches the model (#4673 §4).
  *
- * `NoBilledTurns` is the third: a transcript that exists and parses cleanly but carries **zero**
- * billed assistant turns, which reconstructs to a genuine, well-formed zero indistinguishable from a
- * free run. That is not hypothetical — a `claude -p` run whose skill failed to resolve writes
- * exactly such a transcript, and `token-spend` reports all-zeros at exit 0 (measured on 2.1.220,
- * #4673 §6). Folding it into `Reconstructed` would put the fabricated zero back that this union
- * exists to keep out.
+ * The vocabulary lives here, beside the `CaptureRun` schema that constrains it, so a manifest can
+ * name an arm without the collector depending on the executor built on top of it. `spawn.ts`
+ * re-exports it, so its consumers are unchanged.
  */
-export type RunSpend =
-	| {readonly _tag: "Reconstructed"; readonly spend: StageSpend}
-	| {readonly _tag: "NoBilledTurns"}
-	| {readonly _tag: "TranscriptMissing"};
+export const EVAL_ARMS = ["with-skill", "without-skill"] as const;
 
-/** One graded run row: the corpus entry, its grade against the label, and its token spend. */
+export type EvalArm = (typeof EVAL_ARMS)[number];
+
+/**
+ * What a recorded run says about itself: the model it was pinned to, and the arm it belongs to.
+ *
+ * Both are nullable because a run recorded before this provenance existed attests neither, and a
+ * legacy row must keep collecting rather than fail (#4996). `null` means *unrecorded*, never
+ * "no model" — the scorecard reads it as "fall back to the transcript", not as a value to bucket on.
+ */
+export interface RunProvenance {
+	readonly model: string | null;
+	readonly arm: EvalArm | null;
+}
+
+/** The provenance of a run that recorded none — a legacy row, or a hand-assembled replay input. */
+export const NO_PROVENANCE: RunProvenance = {model: null, arm: null};
+
+/**
+ * One graded run row: the corpus entry, its grade against the label, its token spend, and the
+ * provenance of the run that produced it.
+ */
 export interface RunRow {
 	readonly entry: CorpusEntry;
 	readonly grade: Grade;
 	readonly spend: RunSpend;
+	readonly provenance: RunProvenance;
 }
 
 /**
  * One offline run input: a corpus entry paired with its captured transcript text + recorded
  * artifact. `transcript === null` means the transcript was not found — the run is still graded
  * against its label and counted (with `TranscriptMissing` spend), never dropped or crashed.
+ * An omitted `provenance` collects as `NO_PROVENANCE`.
  */
 export interface RunInput {
 	readonly entry: CorpusEntry;
 	readonly transcript: string | null;
 	readonly artifact: unknown;
+	readonly provenance?: RunProvenance;
 }
 
 /**
@@ -71,14 +90,8 @@ export const collectRun = (input: RunInput): RunRow => ({
 	entry: input.entry,
 	grade: gradeEntry(input.entry, input.artifact),
 	spend: classifyRunSpend(input.transcript),
+	provenance: input.provenance ?? NO_PROVENANCE,
 });
-
-/** Resolve a transcript to one of the three `RunSpend` outcomes. Pure + total. */
-export const classifyRunSpend = (transcript: string | null): RunSpend => {
-	if (transcript === null) return {_tag: "TranscriptMissing"};
-	const spend = reconstructSpend(transcript);
-	return spend.assistantTurns === 0 ? {_tag: "NoBilledTurns"} : {_tag: "Reconstructed", spend};
-};
 
 /**
  * Offline/replay entry point (story 6): collect a graded `{entry, grade, spend}` row per supplied
@@ -97,12 +110,20 @@ export const collectRuns = (inputs: ReadonlyArray<RunInput>): ReadonlyArray<RunR
  * `<parent-session-id>/subagents/agent-<id>.jsonl` (ADR 0112 §2), or a headless `claude -p` run's
  * `<claude-data-root>/projects/<cwd-slug>/<session-id>.jsonl` — a top-level session, so NOT under
  * `subagents/`. Both reconstruct through the same `token-spend` core.
+ *
+ * `model` and `arm` carry the run's own provenance onto the manifest, so a graded row keeps it after
+ * the ledger is gone (#4996). Both decode to `null` when the key is absent, which is what keeps
+ * every already-written manifest readable — an absent key is *unrecorded*, never a claim.
  */
 export const CaptureRun = Schema.Struct({
 	stage: Schema.Literals([...STAGES]),
 	inputRef: Schema.Int,
 	transcriptPath: Schema.String,
 	artifact: Schema.Unknown,
+	model: Schema.NullOr(Schema.String).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
+	arm: Schema.NullOr(Schema.Literals([...EVAL_ARMS])).pipe(
+		Schema.withDecodingDefault(Effect.succeed(null)),
+	),
 });
 
 export type CaptureRun = typeof CaptureRun.Type;
@@ -162,9 +183,10 @@ export type TranscriptLoader<R = never> = (path: string) => Effect.Effect<string
  * (story 7 → story 6). Each capture run joins to its `CorpusEntry` by (stage, inputRef) for the
  * label; a run whose (stage, inputRef) has no matching corpus entry is skipped (no label to grade
  * against), and a run whose transcript the loader can't find is collected with `TranscriptMissing`.
+ * The join key is the LIVE stage — a recorded row's own provenance key never participates in it.
  */
 export const collectFromCapture = <R>(args: {
-	readonly stage: CorpusEntry["stage"];
+	readonly stage: LiveStage;
 	readonly corpus: CorpusManifest;
 	readonly capture: CaptureManifest;
 	readonly loadTranscript: TranscriptLoader<R>;
@@ -181,6 +203,7 @@ export const collectFromCapture = <R>(args: {
 				entry,
 				transcript: yield* args.loadTranscript(run.transcriptPath),
 				artifact: run.artifact,
+				provenance: {model: run.model, arm: run.arm},
 			});
 		}
 		return collectRuns(inputs);

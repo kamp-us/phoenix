@@ -732,9 +732,25 @@ The verb adds the `type:` / priority / `status:triaged` labels and drops the que
 in one envelope (ADR 0190; `packages/pipeline-cli/src/tools/tracker/`). Dropping the queue
 label is idempotent: a `404 "Label does not exist"` when the issue never carried
 `status:needs-triage` (a pre-bootstrap issue predating the label) is tolerated, since the
-goal — issue out of the queue — is met either way. Pass `--status <stage>` to target a
-different lifecycle stage (e.g. `needs-info`); it defaults to `triaged`. Don't hand-roll
+goal — issue out of the queue — is met either way. Don't hand-roll
 the REST label calls — that inline envelope is exactly what the adoption lint (#3254) flags.
+
+`--status <stage>` targets a different lifecycle stage; it defaults to `triaged`. Which
+positionals go with it is the stage's own contract, not a free choice — the
+park stage `needs-info` ([Step 5](#step-5--the-human-vs-agent-judgment-who-never-gets-auto-closed))
+carries **no** type and **no** priority, so it takes the bare-`<N>` form:
+
+```bash
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/triage/scripts/apply-triage.sh" <N> --status needs-info
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/triage/scripts/apply-triage.sh" <N> <type> <priority> --status <classified-stage>
+```
+
+**Every argument you pass reaches the verb, or the script refuses (exit 2) — there is no
+partial application.** An unrecognized flag, a `--status` with no stage, a fourth positional,
+and a `--status needs-info` alongside a type and a priority are all fatal, loudly, before any
+label is written. That refusal is the point: the earlier wrapper took the documented
+`--status` and silently dropped it, stamping `status:triaged` — the *pickable* label — on an
+issue a triager was deliberately trying to hold (#4936).
 
 `status:triaged` is an explicit signature only *you* apply — it tells write-code the
 issue was actually reviewed. Never let a type label alone stand in for it; a

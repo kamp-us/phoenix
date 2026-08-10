@@ -125,7 +125,11 @@ Done when the verb read back exactly one `type:`, one `p`, `status:triaged`, `re
 fabrika triage provenance 4312
 ```
 
-Provenance, not authorship, decides what may be closed (ADR 0159) — every filing shows one author.
+Provenance decides what may be closed, and it has **two agent signals**: the `Filed by an agent`
+footer (ADR 0159), or an author in the operator set `$FABRIKA_OPERATOR_ACCOUNTS` names — the
+operator's own filing is agent-reported footer or not, because footer-absence there is the emitter
+gap, not a human author (founder ruling on #4619, 2026-08-09). Footer-absence from anyone else is
+still human-owned.
 
 - **`human`** you cannot act on → park it; it leaves the queue on `status:needs-info`, **never
   closed**. When in doubt treat it as human: ignoring a person costs more than a cheap agent issue.

@@ -31,3 +31,21 @@ PCLI="$(kp_pcli)" || exit 127
 # --session carries the token we owned the work under (the orchestrator's delegated token on the
 # orchestrated path), because that is the token the marker itself carries.
 "$PCLI" claim release --issue "$N" --session "$MY_CLAIM"
+rc=$?
+
+# The run held TWO things, and both outlived it: the claim on the issue, and the lane stamp on this
+# worktree. An unretired stamp is why a finished lane's leftover tree read as a sibling still
+# building and blocked every later repair on its branch, permanently (#4868). Retire it here, the
+# same "last act of the run that held it" seam, and only once the claim release actually succeeded —
+# a failed release means the run is not over.
+if [ "$rc" -eq 0 ]; then
+	if lane="$(lane_worktree 2>/dev/null)" && gd="$(git -C "$lane" rev-parse --absolute-git-dir 2>/dev/null)" &&
+		kp_lane_retire "$gd"; then
+		echo "write-code Step 8: retired this lane's stamp ($gd/kampus-lane -> kampus-lane.retired). The worktree and its files are untouched; a later repair on this branch now reads it as a leftover tree, not as a lane still building." >&2
+	else
+		# NOT fatal, and deliberately so: the claim IS released, and an unretired stamp degrades to
+		# the liveness-unknown path, which still resolves once the tree is provably finished.
+		echo "write-code Step 8: could not retire this lane's stamp (lane=${lane:-<unresolved>}). The claim WAS released. A later repair on this branch will have to prove this tree finished instead of reading it as retired." >&2
+	fi
+fi
+exit "$rc"

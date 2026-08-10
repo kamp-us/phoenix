@@ -14,10 +14,10 @@ their scars — each Grounding section names what the v1 counterpart gets wrong 
 instead — but no clause defers to one, and none is invoked.
 
 **Substrate.** These verbs are Effect CLI verbs on the `@effect/platform-node` seam already used by
-the sibling groups; GitHub access goes through the same `gh api` REST shape, never GraphQL (the org's
-Projects-classic integration breaks GraphQL issue queries). Named here because
-`cli-interface-convention.md` states no substrate and a spec that leaves it open makes the
-implementer guess ([#4734](https://github.com/kamp-us/phoenix/issues/4734)).
+the sibling groups; GitHub access per
+[skill conventions §11 — REST, never GraphQL](../../docs/skill-conventions.md#11-github-access-is-rest-never-graphql).
+Named here because `cli-interface-convention.md` states no substrate and a spec that leaves it open
+makes the implementer guess ([#4734](https://github.com/kamp-us/phoenix/issues/4734)).
 
 ## Verb inventory
 
@@ -25,7 +25,7 @@ implementer guess ([#4734](https://github.com/kamp-us/phoenix/issues/4734)).
 |---|---|---|
 | `triage queue` | the claimable `status:needs-triage` queue, with the count it scanned | paginating a label query and separating a proven-empty queue from a failed read is mechanical; which issue to take is judgment |
 | `triage claim` | take a session-scoped claim on one issue, proven by read-back | a marker write plus an earliest-claim tiebreak is a protocol, not a decision |
-| `triage provenance` | was this issue filed by an agent or hand-typed by a human | a structural marker test over a fetched body — an empty body fails closed to `human`, an unreadable one refuses rather than guessing; what to *do* about a human filing stays in the skill |
+| `triage provenance` | was this issue reported by an agent or hand-typed by a human | a structural marker test over a fetched body, plus a membership test over the configured operator set — an empty body fails closed to `human`, an unreadable one refuses rather than guessing; what to *do* about a human filing stays in the skill |
 | `triage homes` | the assignable homes — open milestones joined to their ROADMAP rows, plus the standing lanes | the join and the open-milestone filter are mechanical; picking which home fits is judgment |
 | `triage split` | create one split child, once, keyed on the parent back-reference | idempotency keyed on a durable reference is mechanical; deciding a report *is* a bundle is judgment |
 | `triage enrich` | replace the body with your rewrite — or, for an epic, your pitch — over a preserved, leak-redacted original | envelope assembly, redaction and read-back are mechanical; what the rewrite says is judgment |
@@ -333,9 +333,9 @@ $ fabrika triage queue --json
 
 - ADR 0092 — a read whose scope is zero reds rather than answering. v1's `list-queue.sh` had no such
   check and its empty output *was* the sweep's termination test.
-- v1 `list-queue.sh` prints `(.user.login)` on every row — the filer. ADR 0159 makes authorship
-  unusable, since every report-filed issue shows the same account. This verb omits it, and
-  `triage provenance` answers the question that field pretends to.
+- v1 `list-queue.sh` prints `(.user.login)` on every row — the filer. A bare login on a queue row is
+  not a provenance verdict: it takes the footer *and* the configured operator set to reach one, which
+  is `triage provenance`'s job. This verb omits the column and defers to that verb.
 - v1 paginated neither this read nor `list-open-milestones.sh`; the latter silently capped home
   candidates at GitHub's default 30 while "nothing fits" routed to a standing lane or a kill.
 
@@ -496,10 +496,25 @@ fabrika triage provenance 4312 [--repo <owner/name>] [--json]
 | `--json` | boolean | no | `false` | emit the result object |
 
 **Output** — machine channel. One line: `agent` or `human`. With `--json`, an object with keys
-`outcome`, `marker` (boolean — was the agent footer present), and `reason`.
+`outcome`, `marker` (boolean — was the agent footer present), `operator` (boolean — was the author a
+configured operator account), and `reason`. `marker` and `operator` stay separate fields because
+they are separate facts: an `agent` answer with `marker: false` is the ruling below firing, and a
+caller chasing the emitter gap needs to see which one decided.
 
-**The signal is the agent footer, not the author.** Every report-filed issue shows the same account,
-so authorship carries no information (ADR 0159).
+**Two agent signals, and the second one is config-bound.** ADR 0159 made the footer the signal
+because every filing showed the same account, so authorship carried no information. The founder's
+2026-08-09 ruling on #4619 narrows that: a filing authored by an account in the **operator set** is
+agent-reported whether or not the footer is present, because footer-absence there reflects the
+emitter gap #4619 tracks, not a human author. Footer-absence from **any other author** is unchanged
+— still human-owned, still never auto-closed.
+
+**The operator set is an input, resolved from `$FABRIKA_OPERATOR_ACCOUNTS`** (comma- or
+whitespace-separated logins, a leading `@` tolerated, compared case-insensitively). It is a *set*
+rather than one account because the operator runs more than one, and it is configuration rather than
+a literal in source because a GitHub handle baked into a released package is an operator identity
+leaking into a shared artifact (#2393) — and a set nobody can widen without a release. **Unset or
+blank yields the empty set**, which reduces the verb to ADR 0159's footer-only rule: a missing config
+can never make a filing newly close-eligible.
 
 **The footer's shape, from the emitter.** `report file` composes it with `renderFooter`
 (`packages/fabrika-cli/src/report/compose.ts`), which emits `` `---\n<sub>` `` then the present fields
@@ -533,14 +548,19 @@ land on `human`, which is the protected one. The divergence is stated so a later
 | `triage provenance: issue #<n> not found in <repo>.` | 7 | refusal |
 | `triage provenance: cannot read #<n> in <repo>: <reason> — the provenance is UNKNOWN; refusing to default it.` | 11 | refusal |
 | `triage provenance: #<n> has an empty body — answering human (fail-closed).` | 0 | notice |
+| `triage provenance: #<n> in <repo> — the author is a configured operator account, so the filing is agent-reported whether or not the footer is present (#4619 ruling).` | 0 | notice |
 
-**Scope** — one issue body, read as typed JSON rather than through `jq -r .body`, which errors on the
-unescaped control characters GitHub issue bodies carry and yields empty in a loop.
+**Scope** — one issue's body and its author login, read as typed JSON rather than through
+`jq -r .body`, which errors on the unescaped control characters GitHub issue bodies carry and yields
+empty in a loop. A payload carrying no author reads as the empty login, which is never a member of
+the operator set — so an unreadable author degrades to the footer-only rule, the protected direction.
 
 **A present-but-empty body answers `human`; an unreadable one refuses.** Those are different facts
 and this verb keeps them apart. An empty body is a measurement: the body is there, it carries no
 footer, and the protective reading of "no footer" is `human`, because the only irreversible act
-downstream is a kill. The stderr notice says the answer was defaulted, so a caller can tell a
+downstream is a kill. The author is tested **first**, so an operator's empty-bodied filing answers
+`agent` — the ruling is about who filed it, not how much it says, and `--confirm` is still the guard
+on the close. The stderr notice says the answer was defaulted, so a caller can tell a
 measured `human` from a fail-closed one. An **unreadable** body is not a measurement at all, and
 answering `human` over it would be a verdict manufactured from a failed read — the same fusion the
 `7`/`11` split exists to prevent. The protection survives either way: `triage kill` refuses on a
@@ -560,12 +580,23 @@ human
 
 ```
 $ fabrika triage provenance 4312 --json
-{"outcome":"agent","marker":true,"reason":"the 'Filed by an agent' marker is present in the body"}
+{"outcome":"agent","marker":true,"operator":false,"reason":"the 'Filed by an agent' marker is present in the body"}
+```
+
+```
+$ FABRIKA_OPERATOR_ACCOUNTS=<operator-login> fabrika triage provenance 5111
+agent
 ```
 
 **Grounding**
 
-- ADR 0159 — filing provenance, not authorship, is the signal.
+- ADR 0159 — filing provenance, not authorship, is the signal. Its premise, that authorship is
+  unusable because every filing shows one shared account, is what the #4619 ruling narrows: the
+  operator's own account is now a *positive* agent signal, and only that account.
+- Founder ruling on #4619, 2026-08-09 — an issue filed under the operator's own account is
+  agent-reported and close-eligible, footer or no footer; unchanged for a genuine third-party human
+  filing. It settles a live cost: filings were parked at `status:needs-info` on footer-absence alone
+  and then closed by hand anyway (#5098, #5111).
 - v1 has **no tool for this at all**: "never close a human-filed issue" is 48 lines of prose across
   `SKILL.md` and `close-not-planned.md`, with nothing computing it, while `list-queue.sh` puts the
   meaningless filer login in front of the agent on every row. The highest-stakes, least-reversible
@@ -938,6 +969,7 @@ original:
 
 ---
 
+<!-- fabrika:enriched issue=<N> mode=rewrite -->
 <details>
 <summary>Original report (verbatim)</summary>
 
@@ -958,6 +990,7 @@ original, where `<PITCH>` is stdin verbatim:
 
 `plan-epic` appends its plan and dependency topology below.
 
+<!-- fabrika:enriched issue=<N> mode=wrap -->
 <details>
 <summary>Original brief (verbatim)</summary>
 
@@ -965,6 +998,10 @@ original, where `<PITCH>` is stdin verbatim:
 
 </details>
 ```
+
+**The `<!-- fabrika:enriched … -->` line is the re-enrich marker**, described in full under the
+detector below. It renders as nothing, it is the boundary between the region this verb owns and the
+bytes it must never touch, and it carries the issue number it was written on.
 
 An epic's original is consumed verbatim by the downstream planning step, so a **rewrite** above it
 would fork the brief — which is why this mode never takes one. **A pitch is not a rewrite**: it is
@@ -981,7 +1018,7 @@ verbatim (`packages/pipeline-cli/src/tools/epic-splice/epic-splice.ts:48-51`), s
 above is an anchor it can cut on, and the wrapped original is untouched bytes either way. What
 `plan-epic` *does* change is where the wrap sits: `## Plan (plan-epic)` and `## Dependencies` both
 land **below** it, so this mode's envelope stops being terminal the moment the epic is planned. The
-re-enrich detector below is position-independent in this mode for exactly that reason; a re-enrich
+re-enrich detector below tests position nowhere, in either mode, for exactly that reason; a re-enrich
 replaces the pitch and the header from fresh stdin and preserves the wrap — and everything under it —
 unchanged, exactly as the default mode replaces a rewrite.
 
@@ -1029,75 +1066,135 @@ This verb refuses only what it can refuse about text the caller just wrote — e
 machine-local path (`5`), a bare `@` reference (`6`) — and **adds no exit code**: `--epic` reaching
 those three is the removal of a restriction, not a new outcome.
 
-**The re-enrich detector matches the envelope's shape, not the summary line alone — and the shape
-differs by mode.** Default mode's wrap is terminal and stays terminal, so that mode keys on
-terminality: a body counts as already-enriched only when the `<details>` block whose summary is the
-literal `<summary>Original report (verbatim)</summary>` is the **last** block in the body and closes
-at end-of-body. A body that carries that summary line anywhere else is treated as a **first**
-enrichment and wrapped, never replaced. Nothing downstream disturbs that shape — `epic-splice` is
-`plan-epic`'s and runs only on epics.
+**The re-enrich detector is the marker this verb writes — one rule, mode-independent** (founder
+ruling on [#4866](https://github.com/kamp-us/phoenix/issues/4866), 2026-08-08, option (b)). A body
+counts as already-enriched **when, and only when, it carries a marker line bound to this issue**:
 
-**`--epic` mode's detector is position-independent, because terminality is false there by design.**
-Once `plan-epic` runs, `## Plan (plan-epic)` and `## Dependencies` sit *below* the wrap
-(`epic-splice.ts:128-130` appends the first-time deps block at end-of-body under `depsCount === 0`;
-`plan-epic` Step 2 writes the plan "below the untouched brief"). A terminality test would therefore
-stop matching on **every planned epic**, and the "first enrichment ⇒ wrap" rule would then re-wrap
-the pitch, the header, the plan, the topology and the previous envelope inside a fresh
-`Original brief (verbatim)` block — compounding per run, and labelling the authored plan as the
-reporter's own text, which is the provenance boundary this envelope exists to keep sharp. So this
-mode keys on the envelope's own headers instead. A body counts as already-enriched only when **all
-three** hold:
+```
+<!-- fabrika:enriched issue=<N> mode=<rewrite|wrap> -->
+```
 
-- it opens at byte 0 with the exact heading `## Pitch`;
-- it carries the exact top-level heading `## Epic — awaiting plan`;
-- the first `<summary>Original brief (verbatim)</summary>` line in the body sits **below** that
-  heading.
+matched **anchored to a whole line**, never as a substring — a filing that *mentions* the marker in
+prose is an ordinary filing here, and reading its prose as a marker would overwrite the reporter's
+own text above the mention.
 
-Where the `<details>` block sits relative to end-of-body is not tested at all.
+**This supersedes the two shape-based detectors this section specified before the ruling** — default
+mode's terminality-plus-`Original report (verbatim)` test, and `--epic`'s three envelope anchors. The
+reasoning that produced them is not withdrawn: each was correct about its own mode, and the
+`--epic` rule's position-independence was itself the ruled fix to a real compounding bug
+([#4850](https://github.com/kamp-us/phoenix/issues/4850)) — once `plan-epic` runs,
+`## Plan (plan-epic)` and `## Dependencies` sit *below* the wrap
+(`epic-splice.ts:128-130`; `plan-epic` Step 2 writes the plan "below the untouched brief"), so a
+terminality test stops matching on every planned epic. What the ruling settles is that **both** were
+mode-scoped and keyed on disjoint literals, so neither could recognise the other mode's envelope. A
+re-run in the other mode therefore fell through to "first enrichment ⇒ wrap" and nested the whole
+existing envelope — pitch, header, plan, topology and the previous provenance boundary — inside a
+fresh block, compounding per run and labelling authored content as the reporter's own text. That path
+is ordinary rather than exotic: `triage apply`'s owned-facet table owns `^type:`, so re-classifying an
+enriched issue to `type:epic` and re-enriching with `--epic` is a supported sequence with no guard
+between its steps.
 
-**On a match this mode replaces the authored region only — byte 0 up to the opening `<details>` — and
-preserves that block *and every byte below it* verbatim.** Preserving the block alone would be the
-same destruction by a shorter route: it would delete the plan and the dependency topology
-`plan-epic` wrote underneath. Default mode's match is the same rule where "everything below" is
-empty.
+A marker is written by this verb and by nothing else, so presence *is* the answer, whichever mode
+wrote it and whichever mode is re-running. The class dies for every marker-bearing body rather than
+for one axis of it.
 
-**The quote-protection is preserved; it moved from terminality onto the authored prefix.** The strict
-form is required for the same reason `triage provenance` pins its footer match, but the failure
-direction is worse: provenance fails *open* toward a wrong verdict, while a loose re-enrich detector
-fails *destructively* — "replace everything above the opening `<details>`" applied to an issue that
-merely **quotes** an enrichment envelope (a bug report about this very format, a pasted body)
-silently deletes every line above the paste, on a public issue, irreversibly. In this repo an issue
-pasting a fabrika envelope is an ordinary filing, not an exotic one. Both anchors hold that line: a
-quoting body carries the reporter's own framing prose above the paste, so it fails default mode's
-terminality test *and* fails `--epic`'s byte-0 `## Pitch` test. The `--epic` anchors were checked
-against the implementation rather than inherited: `epic-splice` cuts only on `## Dependencies` and
+**The marker is also the boundary.** It sits on its own line immediately above the opening
+`<details>`, so "is this enriched?" and "where does the authored region end?" are the same read.
+Nothing has to locate a `<details>` opener or a summary literal — which is precisely what made the
+retired detectors mode-scoped. **On a match the verb replaces the authored region only — byte 0 up to
+the marker — and preserves the marker's line onward, the block *and every byte below it*, verbatim**
+(it re-emits a fresh marker carrying the mode that just wrote the region). Preserving the block alone
+would be the same destruction by a shorter route: it would delete the plan and the dependency
+topology `plan-epic` wrote underneath. Default mode's match is the same rule where "everything below"
+is empty.
+
+**The split is on the FIRST marker in the body.** The verb always writes its own marker *above* the
+preserved region, so a marker carried *inside* preserved content — a quoted envelope, a foreign paste
+that was wrapped — is always the later one and can never be mistaken for the boundary.
+
+**Legacy is a self-healing migration, and is meant to be deleted.** On meeting a **pre-marker**
+wrapped body the verb recognises the two v1 envelope shapes below — default mode's terminality test,
+and `--epic`'s three anchors — **does not double-wrap**, and **stamps the marker in passing**. Every
+body that branch can match therefore converts on its next enrichment and never returns to it. It is
+one-time code that retires with v1-backlog absorption (founder mandate, map #4891); an implementation
+keeps it separable so retiring it is a delete rather than an excavation. The shapes are used **only**
+for a body carrying no marker at all — a body whose marker binds *another* issue short-circuits ahead
+of them, so the legacy door cannot re-admit the impersonation the binding exists to refuse.
+
+### The two v1 envelope shapes — legacy recognisers only, never the detector
+
+Restated here **only** as what the legacy branch recognises, so the clause above resolves against a
+specification rather than a label, and so the retirement has something to delete. These are **not**
+the detector: detection is marker presence, and it is mode-independent. They decide nothing about a
+marker-bearing body — a body whose marker binds *another* issue short-circuits ahead of them
+(`detect`, `enrich.ts:95-107`) — and they are consulted **only** for a body carrying no marker at
+all. Their whole purpose is that a **pre-marker** body is preserved rather than double-wrapped. Both
+live in exactly one place, `packages/fabrika-cli/src/triage/enrich-legacy.ts`, whose retirement is a
+whole-file delete plus the injected `legacyPreserved` argument at `detect`'s call sites.
+
+**v1 default mode — terminality plus the report literal.** All three conditions hold: the body
+carries a line that is exactly `<summary>Original report (verbatim)</summary>`; that line's
+`<details>` opener sits immediately above it, blank lines aside; and the body's **last non-blank
+line** is `</details>`, so the block closes at end of body. The preserved region is that opener line
+onward, to end of body.
+
+**v1 `--epic` mode — three anchors, position-independent** (#4850's ruled option (a)). All three
+conditions hold: the body's **first** line is exactly `## Pitch`; the body carries the exact line
+`## Epic — awaiting plan`; and the first `<summary>Original brief (verbatim)</summary>` line sits
+**below** that header. The preserved region is that summary's `<details>` opener line onward, to end
+of body.
+
+Every line test above compares the line with trailing whitespace stripped, and each anchor resolves
+to its **first** occurrence in the body.
+
+**The quote-protection is preserved, and it moved onto the binding.** The strict form is required for
+the same reason `triage provenance` pins its footer match, but the failure direction is worse:
+provenance fails *open* toward a wrong verdict, while a loose re-enrich detector fails
+*destructively* — "replace everything above the boundary" applied to an issue that merely **quotes**
+an enrichment envelope (a bug report about this very format, a pasted body) silently deletes every
+line above the paste, on a public issue, irreversibly. In this repo an issue pasting a fabrika
+envelope is an ordinary filing, not an exotic one.
+
+**The issue number bound into the marker is what holds that line, and it holds a strictly wider one
+than the anchors did.** A pasted envelope carries the marker of the issue it was written on, so on
+*any other* issue it reads as **fresh** and is wrapped rather than partially overwritten — whatever
+the paste's shape, and wherever in the body it sits. That covers both the quote-impersonation case
+the retired anchors defended against **and** the residual the section previously had to state as
+uncovered: a body whose *first* bytes are a raw paste of a complete envelope. That case was
+byte-indistinguishable from an enriched body under any content-derived test, and terminality did not
+cover it either (a paste that ends the body is terminal). The section named the answer at the time —
+*"if it ever bites the answer is a marker the verb writes and a paste does not, never a weaker
+anchor"* — and this is that answer.
+
+The `--epic` anchors, which the legacy branch still uses as recognisers, were checked against the
+implementation rather than inherited: `epic-splice` cuts only on `## Dependencies` and
 `## Plan (plan-epic)` (`epic-splice.ts:48-51`), so `## Pitch` and `## Epic — awaiting plan` are bytes
-it can never touch, and they survive every plan and re-plan.
+it can never touch, and they survive every plan and re-plan. The same holds of the marker: it is
+neither of those two headings, so `epic-splice` preserves it verbatim through every plan and re-plan.
 
 **That survival is pinned executably, not only argued.** `epic-splice`'s unit tests
 (`packages/pipeline-cli/src/tools/epic-splice/epic-splice.unit.test.ts`, the *fabrika `--epic`
 envelope survives the splice* block) run a real envelope through a first-time plan and a re-plan and
-assert that the `<details>` block stops being terminal, that the three anchors still hold, that the
-wrapped original survives byte-for-byte, and that the summary line never doubles. Three negatives pin
-the quote-protection to the same anchors: a body that quotes an envelope below its own framing prose,
-a pitch that quotes the summary line above the header, and a pitched body carrying no header are each
-rejected. Change an anchor and those tests go red, which is what keeps this section from drifting back
-into an assumption.
+assert that the `<details>` block stops being terminal, that the anchors still hold, that the wrapped
+original survives byte-for-byte, and that the summary line never doubles. The marker rule is pinned
+the same way on the verb's own side, in `packages/fabrika-cli/src/triage/enrich.unit.test.ts`, which
+reproduces the **retired** detectors in-test as controls: the cross-mode re-run they miss is asserted
+to be recognised here, a pasted envelope bound to another issue is asserted to read as fresh, and a
+legacy body is asserted to be recognised, preserved and stamped. Change the rule and those tests go
+red, which is what keeps this section from drifting back into an assumption.
 
-**The residual case, stated rather than assumed away:** a body whose *first* bytes are a raw paste of
-a complete epic envelope is byte-indistinguishable from an enriched epic and will be read as one.
-Terminality did not cover that case either — a paste that ends the body is terminal — so this trades
-no protection away; it is the limit of any content-derived test, and if it ever bites the answer is a
-marker the verb writes and a paste does not, never a weaker anchor.
-
-**Idempotency, stated as the other write verbs state theirs.** Re-running `enrich` on an
-already-enriched issue **converges**: it replaces the authored region from fresh stdin and leaves the
-preserved original — and, under `--epic`, every byte below it — unchanged, so a second pass produces
-the same body as the first, nesting never accumulates, and "the innermost original" is not a case
-that arises. This holds for a **planned** epic body, which is the case the position-independent
-detector exists for. No branch here refuses, so the exit-status and error tables are unchanged and
-the **adds no exit code** statement above stands. This is the rule's only statement in this spec; the
-Scope section below states the scope and does not restate it.
+**Idempotency, stated as the other write verbs state theirs — and now unconditional.** Re-running
+`enrich` on an already-enriched issue **converges**: it replaces the authored region from fresh stdin
+and leaves the marker's line onward — the preserved original and every byte below it — unchanged, so
+a second pass produces the same body as the first, nesting never accumulates, and "the innermost
+original" is not a case that arises. This holds over a **planned** epic body (the position axis,
+#4850) and it holds when the re-run's mode **differs** from the mode that wrote the envelope (the
+mode axis, #4866) — the two qualifications the sentence previously needed. The one case it does not
+claim is a body carrying no marker and matching neither v1 shape, which is a *first* enrichment by
+definition rather than a re-run. No branch here refuses, so the exit-status and error tables are
+unchanged and the **adds no exit code** statement above stands: the marker is a body-composition
+change, not a refusal branch. This is the rule's only statement in this spec; the Scope section below
+states the scope and does not restate it.
 
 **Redaction is asymmetric and deliberate.** The **preserved original** is foreign content: any
 machine-local path in it is masked to its class root, counted, and reported on stderr with its line
@@ -1112,7 +1209,7 @@ else's leak, and preserving it unredacted re-commits that leak into a public iss
 | `3` | stdin was read and held nothing — the rewrite, or the pitch with `--epic` |
 | `5` | the **authored** text carries a machine-local path — the rewrite, or the pitch with `--epic` |
 | `6` | the **authored** text is a bare `@` path reference — the rewrite, or the pitch with `--epic` |
-| `7` | the issue is proven absent (404) |
+| `7` | the issue is proven absent (404), or it was read and its body is empty — a read that succeeded over nothing |
 | `8` | the `PATCH` failed — UNKNOWN whether the body changed |
 | `9` | the body was written but the read-back does not match |
 | `11` | the issue body could not be read — there is no original to preserve |
@@ -1123,6 +1220,7 @@ else's leak, and preserving it unredacted re-commits that leak into a public iss
 |---|---|---|
 | `triage enrich: no body on stdin — pipe the rewritten body in (with --epic, the pitch's five fields).` | 3 | refusal |
 | `triage enrich: issue #<n> not found in <repo>.` | 7 | refusal |
+| `triage enrich: #<n> has an empty body — there is no original to preserve, and an empty one must never be preserved as though it were the record.` | 7 | refusal |
 | `triage enrich: cannot read #<n> in <repo>: <reason> — refusing to write an envelope over an original that was never read.` | 11 | refusal |
 | `triage enrich: the text you sent on stdin carries a machine-local path at line <k> (<class>) — rewrite it repo-relative. The preserved original is redacted automatically; this refusal is about the text you wrote.` | 5 | refusal |
 | `triage enrich: stdin is a bare "@" path reference — the text never arrived. Send its bytes, not its path.` | 6 | refusal |
@@ -1131,7 +1229,8 @@ else's leak, and preserving it unredacted re-commits that leak into a public iss
 | `triage enrich: body written but the read-back does not match — inspect #<n> before continuing.` | 9 | refusal |
 
 **Scope** — one issue body, plus the caller's stdin: the rewrite, or the pitch with `--epic`. An
-issue proven absent is `7`; a body that could not be read is `11`. Neither ever degrades to an empty
+issue proven absent is `7`; a body that could not be read is `11`; a body that *was* read and is
+empty is `7`, a read that succeeded over nothing. None of the three ever degrades to an empty
 original preserved as though it were the record — which is the failure that would quietly delete a
 report while printing `enriched`. Re-enrichment is covered above, under the detector.
 
@@ -1171,6 +1270,12 @@ $ fabrika triage enrich 4312 --json < enriched.md
   hit `ARG_MAX` on a large enrichment. Stdin and an in-process envelope remove both.
 - v1's `PATCH` had no read-back, while the skill's own Step 0 names last-write-wins body clobbering
   as the reason its claim exists.
+- Founder ruling #4866 (2026-08-08), option (b) — the re-enrich detector is a verb-written marker
+  rather than envelope-shape inspection, with the issue number bound into it and a self-healing
+  legacy migration. It supersedes the two shape-based detectors this section carried, on evidence
+  from investigation #4896 (map #4891). The wrap-last unification (option (c)) stays on the table as
+  within-brief design for fabrika's `plan-epic` (#4712); if it is adopted later the marker becomes
+  redundant insurance, and nothing here has to be undone.
 - Founder ruling #3909 / §PITCH — lane-entering work becomes pickable only carrying a pitch, and
   `pitch-guard` scopes **every** triaged `type:epic`. This verb is the group's only body-writing
   verb, so `--epic` reading the pitch on stdin is the epic's one path to that section; an earlier
@@ -1459,10 +1564,10 @@ it.
 
 | Message (stderr) | Code | Kind |
 |---|---|---|
-| `triage park: no questions on stdin — a parked issue must say what would unblock it.` | 3 | refusal |
+| `triage park: no body on stdin — a parked issue must say what would unblock it: pipe the questions in.` | 3 | refusal |
 | `triage park: issue #<n> not found in <repo>.` | 7 | refusal |
-| `triage park: the questions carry a machine-local path at line <k> (<class>) — rewrite it repo-relative.` | 5 | refusal |
-| `triage park: the questions are a bare "@" path reference — they never arrived. Send them on stdin.` | 6 | refusal |
+| `triage park: the questions text carries a machine-local path at line <k> (<class>) — rewrite it repo-relative.` | 5 | refusal |
+| `triage park: the questions text is a bare "@" path reference — the body never arrived. Send it on stdin.` | 6 | refusal |
 | `triage park: label status:needs-info does not exist in <repo> — refusing to write, because the API would create it (#4285).` | 7 | refusal |
 | `triage park: cannot read <what> in <repo>: <reason> — nothing was written; the park is UNKNOWN.` | 11 | refusal |
 | `triage park: the questions comment on #<n> failed: <reason> — nothing was labelled and #<n> is unchanged. Re-run.` | 8 | refusal |
@@ -1536,12 +1641,16 @@ caller can read as one: exit `13`, with a message naming what to do. An earlier 
 distinct protection on each half; a spec that implements one and drops the other has narrowed an
 accepted decision.
 
-1. **Footer absent ⇒ human-owned ⇒ PROTECTED.** The verb runs the `triage provenance` predicate
-   itself rather than trusting the caller to have run it — including its anchored line match. A
-   `human` answer, including the fail-closed default on an **empty** body, refuses on exit `12`. An
-   **unreadable** body is exit `11`, not a `human` verdict: the kill is refused either way, but a
-   caller must never be told the issue was measured as human-filed when nothing was measured.
-2. **Footer present ⇒ eligible *after confirmation*, and "the confirmation step IS the guard."**
+1. **No agent signal ⇒ human-owned ⇒ PROTECTED.** The verb runs the `triage provenance` predicate
+   itself rather than trusting the caller to have run it — the anchored footer match **and** the
+   operator-account test, both from the one definition. A `human` answer — no footer *and* an author
+   outside `$FABRIKA_OPERATOR_ACCOUNTS`, including the fail-closed default on an **empty** body —
+   refuses on exit `12`. When the operator set is unconfigured the refusal carries a stderr notice
+   saying so, because otherwise "the config is empty" and "this really is a human filing" produce an
+   identical refusal. An **unreadable** body is exit `11`, not a `human` verdict: the kill is refused
+   either way, but a caller must never be told the issue was measured as human-filed when nothing was
+   measured.
+2. **An agent signal ⇒ eligible *after confirmation*, and "the confirmation step IS the guard."**
    A human-invoked `/report` also emits the footer, so footer presence alone is **not** licence to
    close — ADR 0159 reserves a confirmation-free close-sweep as an explicitly re-opened question.
    `--confirm` is that step made structural: without it the verb refuses on exit `13`, so an
@@ -1564,19 +1673,19 @@ location, with the leak matcher literally named for comments.
 | `8` | one of the four writes failed — the message names what did and did not land |
 | `9` | the writes landed but the read-back does not show a not-planned close |
 | `11` | the issue body, the duplicate, or the label set could not be read — no kill was attempted |
-| `12` | refused: the issue is human-filed |
+| `12` | refused: the issue is human-filed — no agent footer and no operator author |
 | `13` | refused: agent-filed and close-eligible, but `--confirm` was absent (ADR 0159) |
 
 **Errors**
 
 | Message (stderr) | Code | Kind |
 |---|---|---|
-| `triage kill: no reason on stdin — refusing an unauditable kill.` | 3 | refusal |
+| `triage kill: no body on stdin — refusing an unauditable kill: pipe the reason in.` | 3 | refusal |
 | `triage kill: issue #<n> not found in <repo>.` | 7 | refusal |
 | `triage kill: issue #<n> is already closed.` | 7 | refusal |
 | `triage kill: --duplicate-of #<m> is closed — refusing to fold this issue's content into a closed issue where nobody will read it.` | 7 | refusal |
 | `triage kill: the reason carries a machine-local path at line <k> (<class>) — rewrite it repo-relative.` | 5 | refusal |
-| `triage kill: the reason is a bare "@" path reference — it never arrived. Send it on stdin.` | 6 | refusal |
+| `triage kill: the reason is a bare "@" path reference — the body never arrived. Send it on stdin.` | 6 | refusal |
 | `triage kill: label closed-by-triage does not exist in <repo> — refusing a kill that would be invisible to the audit.` | 7 | refusal |
 | `triage kill: cannot read #<n> in <repo>: <reason> — the provenance test has no evidence; refusing to close on a body that was never read.` | 11 | refusal |
 | `triage kill: #<n> is human-filed — refusing to close it. Park it with questions instead.` | 12 | refusal |
@@ -1586,6 +1695,7 @@ location, with the leak matcher literally named for comments.
 | `triage kill: applying closed-by-triage to #<n> failed: <reason> — the fold and the reason comment landed; #<n> is still OPEN and invisible to the kill audit. Apply the label by hand, or delete the landed comments and re-run.` | 8 | refusal |
 | `triage kill: closing #<n> failed: <reason> — the fold, the reason and closed-by-triage all landed; #<n> is still OPEN and fully annotated. Close it by hand with state_reason=not_planned, or delete the landed comments and re-run.` | 8 | refusal |
 | `triage kill: closed, but the read-back shows state_reason=<observed>, not not_planned — #<n> reads as done rather than killed.` | 9 | refusal |
+| `triage kill: no operator accounts are configured (FABRIKA_OPERATOR_ACCOUNTS is unset), so a footerless filing reads human whoever authored it.` | 12 | notice |
 | `triage kill: redacted <k> machine-local path(s) from the folded duplicate body.` | 0 | notice |
 
 **Write order is the auditability guarantee.** Fold the duplicate content, post the reason comment,
@@ -1602,8 +1712,8 @@ comments are live, re-running duplicates them". An earlier revision covered only
 read-back asserts `state` is `closed` **and** `state_reason` is `not_planned`, because a plain
 `closed` reads as "done", not "killed".
 
-**Scope** — one issue and its body, the repository's label set, plus the surviving issue when
-`--duplicate-of` is given.
+**Scope** — one issue with its body and author login, the repository's label set, plus the surviving
+issue when `--duplicate-of` is given.
 
 **Examples**
 
@@ -1639,7 +1749,8 @@ $ fabrika triage kill 4312 --confirm --json < reason.md
   public comment with no leak pass, while `fetch-original.sh:30` redacts on the other path. One
   emitter, always redacting, removes the asymmetry.
 - ADR 0159 / v1 Step 5 — human-filed issues are never auto-closed. v1 stated it in 48 lines of prose
-  and computed it nowhere.
+  and computed it nowhere. The #4619 ruling narrows *who counts as human-filed*, not the protection:
+  a footerless filing from a non-operator is as protected as it ever was.
 - v1 `audit-kills.sh` — the compensating control for the whole kill path — reads one unpaginated
   page, so it goes blind past 30 kills with no truncation signal. This spec does not re-mint that
   verb; the audit belongs to a board surface, and the fail-closed write order above is what makes a

@@ -11,6 +11,8 @@ name: pointer-guard
 # pipeline-cli's `pointer-guard check` mode — the scan lives once in the tool.
 on:
   pull_request:
+  push:
+    branches: [main]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

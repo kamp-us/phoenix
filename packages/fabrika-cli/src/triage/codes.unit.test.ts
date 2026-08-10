@@ -1,5 +1,7 @@
 import {describe, expect, it} from "vitest";
+import {checkAlignment, SHARED_SEATS} from "../exit-code-alignment.ts";
 import * as report from "../report/codes.ts";
+import * as codes from "./codes.ts";
 import {
 	BARE_AT_PATH,
 	DELIBERATE_GAP,
@@ -44,6 +46,16 @@ describe("the two codes this group adds", () => {
 	it("seats the unconfirmed-kill refusal on its own code", () => {
 		expect(UNCONFIRMED).toBe(13);
 		expect(UNCONFIRMED).not.toBe(HUMAN_FILED);
+	});
+
+	/**
+	 * The pairwise checks above name one `report` constant each, so a *new* code added upstream at
+	 * `12` or `13` would land on top of this group and every one of them would stay green. This reads
+	 * the base's occupied seats off its exports instead, which is the only form that covers a code
+	 * nobody has written yet (#4924).
+	 */
+	it("clears every seat `report` occupies, read from its exports and not a list", () => {
+		expect(checkAlignment(report, codes, SHARED_SEATS).collisions).toEqual([]);
 	});
 });
 

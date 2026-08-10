@@ -22,6 +22,7 @@ import type {VerbOutcome} from "../verb.ts";
 import {runApply} from "./apply-verb.ts";
 import {DEFAULT_TTL_MINUTES, runClaim} from "./claim-verb.ts";
 import {runCodes} from "./codes-verb.ts";
+import {runEnrich} from "./enrich-verb.ts";
 import {AUDIENCES, PRIORITIES, STANDING_LANES, TYPES} from "./facets.ts";
 import {DEFAULT_ROADMAP, runHomes} from "./homes-verb.ts";
 import {runKill} from "./kill-verb.ts";
@@ -106,7 +107,7 @@ const kill = leafCommand(
 	}),
 ).pipe(
 	Command.withDescription(
-		"Close an agent-filed issue not-planned over four gated writes — the optional redacted duplicate fold, the reason from STDIN, the closed-by-triage label, then the close — and read back that it says not_planned. Prints `killed\\t<number>\\t<foldedInto|none>`. Exits 3 (empty stdin), 5 (machine-local path in the reason), 6 (bare @ reference), 7 (issue absent or closed, duplicate absent or closed, or no closed-by-triage label), 8 (a write failed — UNKNOWN), 9 (read-back is not a not-planned close), 11 (a precondition read failed), 12 (human-filed), 13 (unconfirmed). Example: fabrika triage kill 4312 --confirm --duplicate-of 4290 < reason.md",
+		"Close an agent-filed issue not-planned over four gated writes — the optional redacted duplicate fold, the reason from STDIN, the closed-by-triage label, then the close — and read back that it says not_planned. Prints `killed\\t<number>\\t<foldedInto|none>`. Exits 3 (empty stdin), 5 (machine-local path in the reason), 6 (bare @ reference), 7 (issue absent or closed, duplicate absent or closed, or no closed-by-triage label), 8 (a write failed — UNKNOWN), 9 (read-back is not a not-planned close), 11 (a precondition read failed), 12 (human-filed — no agent footer and no operator author, see $FABRIKA_OPERATOR_ACCOUNTS), 13 (unconfirmed). Example: fabrika triage kill 4312 --confirm --duplicate-of 4290 < reason.md",
 	),
 );
 
@@ -303,7 +304,7 @@ const provenance = leafCommand(
 	}),
 ).pipe(
 	Command.withDescription(
-		"Say whether an issue was filed by an agent or typed by a human, from the agent footer rather than the author — every report-filed issue shows the same account (ADR 0159). Prints `agent` or `human`; an empty body answers `human` fail-closed, an unreadable one refuses. Exits 7 (issue proven absent), 11 (unreadable — the provenance is UNKNOWN, never `human`). Example: fabrika triage provenance 4312",
+		"Say whether an issue was reported by an agent or typed by a human. Two agent signals: the anchored `Filed by an agent` footer (ADR 0159), or an author in the operator set named by $FABRIKA_OPERATOR_ACCOUNTS — an operator's own filing is agent-reported footer or not (#4619 ruling). Prints `agent` or `human`; with no operator set configured this is the footer-only rule, a footerless non-operator filing answers `human`, an empty body answers `human` fail-closed, an unreadable one refuses. Exits 7 (issue proven absent), 11 (unreadable — the provenance is UNKNOWN, never `human`). Example: fabrika triage provenance 4312",
 	),
 );
 
@@ -328,6 +329,41 @@ const homes = leafCommand(
 	),
 );
 
+/**
+ * The rewrite — or, with `--epic`, the pitch — arrives on **stdin only**, for `split`'s reason above.
+ * `--epic` is a mode on this verb rather than a second verb because both compose the same envelope
+ * around the same preserved original; only the authored region above the marker differs.
+ */
+const enrich = leafCommand(
+	"enrich",
+	{
+		issue: Argument.integer("issue").pipe(Argument.withDescription("the issue to enrich")),
+		epic: Flag.boolean("epic").pipe(
+			Flag.withDescription(
+				"wrap the original under a fixed header and head a pitch above it; stdin carries the pitch's five field lines, not a rewrite",
+			),
+		),
+		repo: repoFlag,
+		json: jsonFlag,
+	},
+	Effect.fn(function* ({issue, epic, repo, json}) {
+		yield* emit(
+			yield* runEnrich({
+				issue,
+				epic,
+				repo: Option.getOrNull(repo),
+				json,
+				env: process.env,
+				stdin: Effect.sync(readStdin),
+			}),
+		);
+	}),
+).pipe(
+	Command.withDescription(
+		"Replace an issue body with the rewrite on STDIN above the preserved, leak-redacted original — or with --epic, a pitch above the original under a fixed header. A prior enrichment is recognised by the marker this verb writes, bound to this issue number, so a re-run in EITHER mode replaces the authored region instead of nesting a second envelope. Prints `enriched\\t<number>\\t<redactions>`. Exits 3 (empty stdin), 5 (machine-local path in the authored text), 6 (bare @ reference), 7 (issue absent, or its body is empty — no original to preserve), 8 (the PATCH failed — UNKNOWN), 9 (read-back mismatch), 11 (the issue could not be read). Example: fabrika triage enrich 4312 < enriched.md",
+	),
+);
+
 export const triageCommand = Command.make("triage").pipe(
 	Command.withSubcommands([
 		// One leaf per line, so five in-flight slices append at five distinct lines rather than all
@@ -341,6 +377,7 @@ export const triageCommand = Command.make("triage").pipe(
 		queue,
 		provenance,
 		homes,
+		enrich,
 	]),
 	Command.withDescription(
 		"Take one intake-queue issue from arrival to a triaged, homed transition — or park it, split it, or close it not-planned — over reads that page and writes that are read back",

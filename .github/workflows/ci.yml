@@ -317,10 +317,26 @@ jobs:
             # ADR 0180. Without this, a change to a hook script skips `packages`, so the
             # blocking handler test never runs, and a broken hook ships green: exactly
             # the #2925 gap (a hook built to a fabricated payload passed every gate).
+            #
+            # `claude-plugins/fabrika/docs/**` is listed so a DOC-ONLY edit runs the
+            # wire-formats index law (index-doc.unit.test.ts), which reconciles that
+            # doc against `packages/fabrika-cli/src/wire/registry.ts` — #4968. The doc
+            # is where two of the three drift shapes are introduced (a section for an
+            # unregistered format, a hand-edited generated region), so a law homed only
+            # under `packages/**` would be half-blind in the direction it is most
+            # needed: the registry-side edit runs it, the doc-side edit skips it.
+            # `claude-plugins/fabrika/hooks.json` is listed for the same reason as the v1
+            # hooks dir above: the fabrika hook surface's golden test reads that file and
+            # runs the argv it declares (envelope.golden.test.ts). Without it, an edit to
+            # the declaration — the one place a hook command can stop being a plain
+            # literal, or start naming something outside fabrika — skips the only gate
+            # that would catch it.
             packages:
               - 'packages/**'
               - 'infra/**'
               - 'claude-plugins/kampus-pipeline/hooks/**'
+              - 'claude-plugins/fabrika/docs/**'
+              - 'claude-plugins/fabrika/hooks.json'
               - 'pnpm-workspace.yaml'
               - 'tsconfig*.json'
               - 'pnpm-lock.yaml'
@@ -602,6 +618,13 @@ jobs:
       # Same script runs locally: `bash claude-plugins/kampus-pipeline/lib/common-test.sh`.
       - run: bash claude-plugins/kampus-pipeline/lib/common-test.sh
 
+      # The lane-lifecycle cases above are only worth their runtime if they can FAIL. #4868 was a
+      # check whose positive branch could never be false, and a suite can carry that same defect —
+      # so this reintroduces each blindness into a copy of the lib and requires the suite to go red
+      # for its own named reason. Hermetic: temp repos only, no network.
+      # Same script runs locally: `bash claude-plugins/kampus-pipeline/lib/verify-lane-lifecycle-mutants.sh`.
+      - run: bash claude-plugins/kampus-pipeline/lib/verify-lane-lifecycle-mutants.sh
+
       # Executable pin for ship-it's sourced chain (#4547): every function a step script
       # calls must be defined in-chain, and Step 2's §CP seam must pass the caller's
       # $CP_FLAG through to `verdict gate`. The extraction dropped three source lines and
@@ -611,6 +634,24 @@ jobs:
       # Same script runs locally: `bash .claude/skills/ship-it/scripts/verify-chain-resolves.sh`.
       - run: bash .claude/skills/ship-it/scripts/verify-chain-resolves.sh
 
+      # Executable pin for Step 0's class parity (#4744): the printed class set must EQUAL
+      # `class-probe classify`'s. The harness landed with #4730's fix and then ran nowhere for a
+      # week — read by four static-lint corpora, executed by none — so it read as coverage while
+      # being unable to fail. Its own falsifiability is asserted in-file (three mutants, each
+      # required to red for its intended reason) and its scope is counted, so a deleted case reds
+      # rather than printing a vacuous OK. Hermetic: gh is stubbed, no network.
+      # Same script runs locally: `bash .claude/skills/ship-it/scripts/verify-step0-class-parity.sh`.
+      - run: bash .claude/skills/ship-it/scripts/verify-step0-class-parity.sh
+
+      # Executable pin for Step 3z's precondition (#4830): the one ship-it step that mutates a live
+      # PR — close→reopen — must fire ONLY in the dropped-trigger state and refuse without touching
+      # the PR otherwise, including on an unreadable count. The precondition used to live in the
+      # caller's prose, and a mis-read branch close→reopened a green PR (#4816). The harness carries
+      # its own mutant, so an assertion that stopped having teeth reds here rather than passing
+      # quietly. Hermetic: gh and the CLI shim are stubbed, no network.
+      # Same script runs locally: `bash .claude/skills/ship-it/scripts/verify-step3z-precondition.sh`.
+      - run: bash .claude/skills/ship-it/scripts/verify-step3z-precondition.sh
+
       # Executable pin for plan-epic's round-trip race detector (#4596): a CLEAN splice whose
       # `## Dependencies` block is the body's last section — the standard first-time layout —
       # must exit 0, while ANY in-block difference must still exit 1 with the racer verdict. The
@@ -619,6 +660,28 @@ jobs:
       # would trade it for a silent miss. Hermetic: gh is stubbed, no network.
       # Same script runs locally: `bash .claude/skills/plan-epic/scripts/verify-roundtrip-diff.sh`.
       - run: bash .claude/skills/plan-epic/scripts/verify-roundtrip-diff.sh
+
+      # Positive pin for review-code's glossary-freshness detector (3) — a new public export on an
+      # existing package entry point (#4700). It shipped born-dead: the awk regex would not compile,
+      # its exit status was never tested, and the gate printed a clean `not applicable` skip for six
+      # weeks. A born-dead detector is invisible to any suite that only asserts the happy skip, so
+      # this harness asserts a MATCH, and carries eight mutants — one per claim the fix rests on — so
+      # an assertion that stopped having teeth reds here rather than passing quietly. It also pins the
+      # sibling class (#4986): three reads whose failure or empty result used to reach a clean skip,
+      # each driven by the could-not-see state that produced it. Hermetic: gh, git and the CLI shim
+      # are stubbed, no network.
+      # Same script runs locally: `bash .claude/skills/review-code/scripts/verify-glossary-detector-fires.sh`.
+      - run: bash .claude/skills/review-code/scripts/verify-glossary-detector-fires.sh
+
+      # Executable pin for triage's apply-triage wrapper (#4936): every argument it is given reaches
+      # the verb, or it refuses non-zero having spawned the verb zero times. The wrapper took `-ge 3`
+      # and forwarded only `$1 $2 $3`, so the documented `--status needs-info` was accepted, dropped,
+      # and exited 0 having stamped `status:triaged` — the pickable label — on an issue a triager was
+      # deliberately holding. The assertions are on the verb's ARGV, not on a clean exit, because a
+      # clean exit is what the defect already produced; five mutants keep them from going toothless.
+      # Hermetic: the verb is a stub, no network, no issue mutated.
+      # Same script runs locally: `bash .claude/skills/triage/scripts/verify-apply-triage-args.sh`.
+      - run: bash .claude/skills/triage/scripts/verify-apply-triage-args.sh
 
       # Gate-path drift guard (issue #720): assert the five CONTROL_PLANE_RE= copies
       # in ship-it/review-code/review-doc/review-skill/gh-issue-intake-formats are

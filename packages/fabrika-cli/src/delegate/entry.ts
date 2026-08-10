@@ -13,6 +13,7 @@ import {VERSION} from "../version.ts";
 import {declaredVersion, probeLocalInstall} from "./local.ts";
 import {
 	DEBUG_ENV,
+	foreignCheckoutRefusal,
 	GLOBAL_WARNING_DISABLED_ENV,
 	globalWarning,
 	resolve,
@@ -21,7 +22,7 @@ import {
 	spawnDelegate,
 	traceLine,
 } from "./resolve.ts";
-import {discoverRepoRoot} from "./root.ts";
+import {discoverRepoRoot, originOf} from "./root.ts";
 
 /** The running copy's own root could not be canonicalized — fatal, never a fallback. */
 export class RealPathFailed extends Schema.TaggedErrorClass<RealPathFailed>()(
@@ -62,13 +63,21 @@ const program = Effect.gen(function* () {
 				(cause) => new RealPathFailed({path: own, reason: cause.message}),
 			),
 		);
+	// Both walks stay on the `E` channel, so an ancestor that cannot be probed ends the run with the
+	// diagnostic below. An unreadable origin must never soften into "no checkout", which reads as the
+	// global install and re-opens the branch #4956 closed.
+	const selfOrigin = yield* originOf(selfPackageRoot);
 	const invocationDir = process.cwd();
 	const repoRoot = yield* discoverRepoRoot(invocationDir);
 	const local = repoRoot === undefined ? undefined : yield* probeLocalInstall(repoRoot);
-	const resolution = resolve({selfPackageRoot, repoRoot, local});
+	const resolution = resolve({selfPackageRoot, selfOrigin, repoRoot, local});
 
 	if (process.env[DEBUG_ENV] !== undefined) console.error(traceLine(selfPackageRoot, resolution));
 
+	if (resolution._tag === "refuse-foreign-checkout") {
+		console.error(foreignCheckoutRefusal(resolution));
+		return {_tag: "exited", status: 2} as const;
+	}
 	if (resolution._tag === "run-here") return undefined;
 	if (resolution._tag === "warn-and-run-here") {
 		if (process.env[GLOBAL_WARNING_DISABLED_ENV] === undefined) {
@@ -132,7 +141,7 @@ export const delegateOrRunHere = async (): Promise<void> => {
 	}
 	console.error(
 		`fabrika: could not resolve which copy to run.\n` +
-			`  looked for a repo root above: ${process.cwd()}\n` +
+			`  looked for a repo root above your cwd (${process.cwd()}) and above the invoked copy (${packageRootUrl.href})\n` +
 			`  stopped at: ${outcome.failed}\n` +
 			`  cause: ${outcome.reason}`,
 	);

@@ -1,4 +1,4 @@
-import {DESKTOP_VIEWPORT, MOBILE_VIEWPORT, parseSurfaceSpec} from "@kampus/design-capture";
+import {DESKTOP_VIEWPORT, MOBILE_VIEWPORT, parseSurfaceSpec} from "@kampus/fabrika-cli/capture";
 import {describe, expect, it} from "vitest";
 import {
 	buildLocalShots,
@@ -132,7 +132,7 @@ describe("buildLocalShots", () => {
 		expect(shots[0]!.viewport).toEqual(MOBILE_VIEWPORT);
 	});
 
-	it("inherits design-capture's empty/duplicate guards", () => {
+	it("inherits fabrika capture's empty/duplicate guards", () => {
 		expect(() => buildLocalShots(DEFAULT_LOCAL_BASE, [])).toThrow(/no surfaces/);
 		expect(() =>
 			buildLocalShots(DEFAULT_LOCAL_BASE, [parseSurfaceSpec("/x"), parseSurfaceSpec("/x")]),

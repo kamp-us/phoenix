@@ -6,7 +6,7 @@
  * the paired evidence and never fails the effect. The impure upload leg is injected
  * — no live network.
  */
-import type {CapturedSurface, UploadAssetOptions, UploadOutcome} from "@kampus/design-capture";
+import type {CapturedSurface, UploadAssetOptions, UploadOutcome} from "@kampus/fabrika-cli/capture";
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {

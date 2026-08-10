@@ -32,6 +32,16 @@ import * as Schema from "effect/Schema";
  * repo that has a cycle doc (ADR 0091, formats §2). It sits in the child-content
  * cluster next to its marker-shaped sibling `MISSING_LABEL`, after the
  * story-coverage defects.
+ *
+ * The last two are the pool-barrier pair (#4693). `HELD_CHILD_UNASSIGNED` is the
+ * barrier itself: a `ready-for:human` child whose assignee slot is empty enters
+ * `write-code`'s candidate pool the moment the gate flips it. `UNVERIFIABLE_ASSIGNEE`
+ * is the case where the barrier could not be *checked* — the ledger carries no
+ * observation of the child's assignee slot at all — and it is deliberately a defect
+ * rather than a skip: an unread field is UNKNOWN, never "this child is fine"
+ * (ADR 0092 §ZS). They trail the list because they are the newest widening; the
+ * unverifiable one precedes the substantive one, so when both could fire the root
+ * cause reads first.
  */
 export const DEFECT_TYPES = [
 	"ZERO_SCOPE",
@@ -46,6 +56,8 @@ export const DEFECT_TYPES = [
 	"MISSING_LABEL",
 	"MISSING_CONTAINMENT",
 	"NEEDS_TRIAGE_LABEL",
+	"UNVERIFIABLE_ASSIGNEE",
+	"HELD_CHILD_UNASSIGNED",
 ] as const;
 
 export const DefectType = Schema.Literals(DEFECT_TYPES);

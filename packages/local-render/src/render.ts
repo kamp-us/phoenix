@@ -2,7 +2,7 @@
  * The thin orchestration of the local render-and-capture harness: resolve the
  * local base, build the dev-override cookie + the crop/downscale plan (all pure,
  * `plan.ts`), then drive the capture leg over it. The Playwright leg is the
- * injected seam — `@kampus/design-capture`'s `captureShots` by default — so the
+ * injected seam — `@kampus/fabrika-cli/capture`'s `captureShots` by default — so the
  * orchestration is unit-tested with a fake leg (no real browser), the exact
  * pure-core + injected-impure-leg idiom the capture package already follows.
  *
@@ -18,13 +18,13 @@ import {
 	captureShots,
 	type Shot,
 	type Surface,
-} from "@kampus/design-capture";
+} from "@kampus/fabrika-cli/capture";
 import {Effect} from "effect";
 import {buildLocalShots, buildOverrideCookies, resolveLocalBase} from "./plan.ts";
 
 /**
  * The injected Playwright capture leg — the `captureShots` shape. Defaulted to
- * `@kampus/design-capture`'s real leg; the unit test injects a fake to prove the
+ * `@kampus/fabrika-cli/capture`'s real leg; the unit test injects a fake to prove the
  * orchestration without a browser.
  */
 export type CaptureLeg = (
@@ -47,7 +47,7 @@ export interface LocalRenderRequest {
 	/** Override the longest-edge downscale budget (default {@link LONGEST_EDGE_BUDGET}). */
 	readonly budget?: number;
 	/** Viewport to render each surface at (default desktop). */
-	readonly viewport?: import("@kampus/design-capture").Viewport;
+	readonly viewport?: import("@kampus/fabrika-cli/capture").Viewport;
 	/** Per-navigation timeout in ms, passed through to the capture leg. */
 	readonly navigationTimeoutMs?: number;
 }

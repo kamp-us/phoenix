@@ -1,0 +1,164 @@
+/**
+ * `build pick` — the ranked candidate pool. A filter over a paged listing; the *choice* stays the
+ * skill's.
+ *
+ * The filter is fail-closed on every axis, and two of them are negative tests rather than positive
+ * ones:
+ *
+ * - **The admission test decides both the scope and audience axes**, imported from
+ *   [`./scope-admission.ts`](./scope-admission.ts) and re-derived nowhere (ADR 0245). An issue with
+ *   no `ready-for:` label is excluded — absence is an unknown audience, never an agent audience
+ *   (#4780) — and one homed outside the declared focus is excluded with its own reason.
+ * - **Any assignee excludes.** Assignment is the one attribute that keeps a human's live document out
+ *   of an agent's pool (#4764, #4693).
+ *
+ * **Either every bucket was read in full, or the answer is `11`.** v1's pool printed nothing for a
+ * failed bucket and kept going, so a `gh` 5xx on the p0 bucket read as "no p0s"
+ * (`step1-candidate-pool.sh:12-13`); a bucket whose paginated output stops mid-page is the same fact
+ * and lands on the same code. An unreadable focus declaration refuses the whole pool too — an
+ * unfiltered pool on a failed read is the fail-open shape the fence exists to remove. An empty pool
+ * is still a fact and prints on exit 0 with the scanned counts and the per-issue exclusion reasons
+ * beside it, which is what makes it auditable rather than merely plausible (ADR 0092).
+ */
+import {Effect, type FileSystem} from "effect";
+import type {ChildProcessSpawner} from "effect/unstable/process";
+import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
+import {BAD_SECTIONS, PRECONDITION_UNKNOWN} from "./codes.ts";
+import {type CandidateIssue, listLabelled} from "./github.ts";
+import {
+	admissionOf,
+	exclusionReasonOf,
+	focusReport,
+	focusScopeLine,
+	homeOf,
+	readDeclaredFocus,
+} from "./scope-admission.ts";
+import {resolveTargetRepo} from "./target.ts";
+
+const VERB = "build pick";
+
+/** The priority buckets, in the order the spine reads them. */
+const BUCKETS = ["p0", "p1", "p2"] as const;
+type Bucket = (typeof BUCKETS)[number];
+
+/** The four types an agent lane may take. `type:decision` and `type:epic` never enter. */
+const TYPES = new Set(["type:feature", "type:chore", "type:bug", "type:investigation"]);
+
+export interface PickOptions {
+	readonly repo: string | null;
+	readonly limit: number;
+	readonly env: Readonly<Record<string, string | undefined>>;
+}
+
+interface PoolEntry {
+	readonly number: number;
+	readonly title: string;
+	readonly priority: Bucket;
+	readonly type: string;
+	readonly home: string | null;
+}
+
+/** One issue the admission test kept out, with the axis that refused it (#5013). */
+interface ExclusionEntry {
+	readonly number: number;
+	readonly home: string | null;
+	readonly reason: NonNullable<ReturnType<typeof exclusionReasonOf>>;
+}
+
+/**
+ * The axes that are this verb's own — board hygiene, not admission.
+ *
+ * The audience axis is deliberately absent: it lives in the admission test with the scope axis, so an
+ * issue it excludes can be *reported* with its reason instead of vanishing from the pool unexplained.
+ */
+export const isCandidate = (issue: CandidateIssue): boolean => {
+	if (issue.isPullRequest || issue.assigned) return false;
+	const status = issue.labels.filter((label) => label.startsWith("status:"));
+	if (status.length !== 1 || status[0] !== "status:triaged") return false;
+	return issue.labels.filter((label) => label.startsWith("type:")).every((t) => TYPES.has(t));
+};
+
+const typeOf = (issue: CandidateIssue): string =>
+	issue.labels.find((label) => TYPES.has(label))?.slice("type:".length) ?? "";
+
+/** Milestone order inside a bucket: homed before unhomed, lower milestone first, then oldest number. */
+const rankWithinBucket = (a: PoolEntry, b: PoolEntry): number => {
+	const homeA = a.home === null ? Number.POSITIVE_INFINITY : Number.parseInt(a.home, 10);
+	const homeB = b.home === null ? Number.POSITIVE_INFINITY : Number.parseInt(b.home, 10);
+	const keyA = Number.isNaN(homeA) ? Number.POSITIVE_INFINITY : homeA;
+	const keyB = Number.isNaN(homeB) ? Number.POSITIVE_INFINITY : homeB;
+	return keyA === keyB ? a.number - b.number : keyA - keyB;
+};
+
+export const runPick = (
+	options: PickOptions,
+): Effect.Effect<
+	VerbOutcome,
+	never,
+	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem
+> =>
+	Effect.gen(function* () {
+		if (!Number.isInteger(options.limit) || options.limit <= 0) {
+			return refuse(FAILED, `${VERB}: --limit "${options.limit}" is not a positive integer.`);
+		}
+		const resolved = yield* resolveTargetRepo(VERB, options.repo, options.env);
+		if (resolved._tag === "Refused") return resolved.outcome;
+
+		const read = yield* readDeclaredFocus();
+		if (read._tag === "Unreadable") {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: cannot read the "## Focus" declaration: ${read.reason} — the pool is UNKNOWN, never unfiltered.`,
+			);
+		}
+		const focus = read.focus;
+		if (focus._tag === "Malformed") {
+			return refuse(
+				BAD_SECTIONS,
+				`${VERB}: the "## Focus" declaration does not parse: ${focus.reason} — the pool is UNKNOWN, and a malformed declaration is never read as "no focus".`,
+			);
+		}
+
+		const scanned: Record<Bucket, number> = {p0: 0, p1: 0, p2: 0};
+		const pool: PoolEntry[] = [];
+		const excluded: ExclusionEntry[] = [];
+		for (const bucket of BUCKETS) {
+			const listed = yield* listLabelled(resolved.repo, ["status:triaged", bucket]);
+			if (listed._tag === "Failure") {
+				return refuse(
+					PRECONDITION_UNKNOWN,
+					`${VERB}: cannot read the ${bucket} bucket: ${listed.reason} — the pool is UNKNOWN, never partial.`,
+				);
+			}
+			scanned[bucket] = listed.value.length;
+			const entries: PoolEntry[] = [];
+			for (const issue of listed.value.filter(isCandidate)) {
+				const reason = exclusionReasonOf(admissionOf(focus, issue));
+				if (reason !== null) {
+					excluded.push({number: issue.number, home: homeOf(issue), reason});
+					continue;
+				}
+				entries.push({
+					number: issue.number,
+					title: issue.title,
+					priority: bucket,
+					type: typeOf(issue),
+					home: homeOf(issue),
+				});
+			}
+			pool.push(...entries.sort(rankWithinBucket));
+		}
+
+		return answer(
+			JSON.stringify({
+				pool: pool.slice(0, options.limit),
+				excluded,
+				scanned,
+				focus: focusReport(focus),
+			}),
+			[
+				`${VERB}: scanned p0 ${scanned.p0}, p1 ${scanned.p1}, p2 ${scanned.p2} in ${resolved.repo}; ${pool.length} candidate(s) survived the filter, ${excluded.length} excluded by the admission test.`,
+				focusScopeLine(VERB, focus),
+			],
+		);
+	});

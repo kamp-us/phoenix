@@ -7,5 +7,5 @@
 		"allowImportingTsExtensions": true,
 		"types": ["node"]
 	},
-	"include": ["src", "vitest.config.ts"]
+	"include": ["src"]
 }

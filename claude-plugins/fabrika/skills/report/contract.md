@@ -84,8 +84,8 @@ Every verb below obeys these; they are stated once rather than repeated per bloc
   run. `127` = the verb never ran. `3` and up are each verb's own proven outcomes.
 - **A non-zero exit is UNKNOWN.** No verb prints a partial or permissive answer on a non-zero exit;
   a caller reads the status before the bytes.
-- **GitHub reads and writes go through `gh api` REST, never GraphQL** — the org's Projects-classic
-  integration breaks GraphQL issue queries — and every list read pages.
+- **GitHub access follows [skill conventions §11 — REST, never GraphQL](../../docs/skill-conventions.md#11-github-access-is-rest-never-graphql)**
+  — REST, paginated, reads and writes alike. The reason lives there, not here.
 
 ### The shared exit taxonomy for the two writing verbs
 

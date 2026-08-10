@@ -9,12 +9,18 @@ node_modules
 
 dist
 build
+# `build` names a fabrika surface, not build output — both are source (#4707, #4988)
+!claude-plugins/fabrika/skills/build/
+!packages/fabrika-cli/src/build/
 *.tsbuildinfo
 .next
 
 # Generated
 __generated__
 schema.graphql.generated
+# Mutation-proof staging: a throwaway copy a verify script plants counterexamples in. It has to
+# live under src/ to be collected by vitest's include, and it is removed on a clean run.
+__mutation__
 # fate Vite plugin codegen output (build-time; never committed)
 .fate
 
@@ -48,6 +54,10 @@ apps/web/tests/e2e/.auth
 
 # Local scratch (uncommitted explorations)
 /.scratch/
+
+# fabrika's durable spend ledger — one appended JSON line per completed eval run (#5009).
+# Per-machine measurement evidence, written by `fabrika eval run`; never committed.
+/.fabrika/
 
 # pipeline-cli data dir: where the SessionStart install.sh drops the installed
 # @kampus/pipeline-cli (deps bundled) the guard hooks resolve (ADR 0103, #1003).

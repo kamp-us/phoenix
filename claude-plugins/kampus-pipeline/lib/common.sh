@@ -375,6 +375,15 @@ kp_pcli() {
 	printf '%s\n' "$pcli"
 }
 
+# The head-handle resolver's own status, chosen ABOVE `kp__scratch`'s 2/3/4/5/6 taxonomy (and clear
+# of 126/127) so the two can never collide: the namespace opened fine, it just holds no handle file.
+# It and 5 (namespace never opened) are the ONLY two statuses that mean "nothing was materialized";
+# every other non-zero from a `head-env.sh` means the resolver COULD NOT LOOK, which is UNKNOWN and
+# must never be read as a clean no-op (§ZS, ADR 0092; #4972/#5193). Defined once here because all
+# three review gates carry their own `head-env.sh` / `teardown-head.sh` pair and must not diverge.
+# shellcheck disable=SC2034  # read by the sourcing script, not by this file
+KP_HEAD_HANDLE_ABSENT=20
+
 # The per-run scratch namespace for <slug> (§SP, #3718). `open` is the run's first write of
 # scratch state; `path` re-derives it in every later call. Both print the absolute directory.
 kp_scratch_open() { kp__scratch "open" "$1"; }
@@ -422,30 +431,154 @@ kp__phys() { # <path> — its physical form, or the path itself when the directo
 	(cd -P "$1" 2>/dev/null && pwd -P) || printf '%s\n' "$1"
 }
 
+# ---------------------------------------------------------------------------------------------
+# THE LANE STAMP'S LIFECYCLE (#4868). The stamp used to be written once and never touched again,
+# which made "is that tree a lane still building?" unanswerable: every sibling subagent of one
+# session stamps the SAME id (the #4500 finding recorded under `lane_worktree` below), so a
+# finished lane's leftover tree was byte-identical to a live one and the `live-lane` branch could
+# never be false. Identity is not liveness. So the stamp now has three lifecycle files, all in a
+# worktree's PRIVATE per-worktree git dir (outside the working tree, never committed, unique per
+# worktree) — and the pin classifier reads the lifecycle, never the id alone:
+#
+#   kampus-lane          identity — WHICH lane proved this tree (step4-preflight.sh, once)
+#   kampus-lane.beat     liveness — WHEN that lane last moved git here (wt_preflight, every mutation)
+#   kampus-lane.retired  finished — the lane released it (step8-claim-release.sh, or a proven release)
+#
+# The retired name is the pre-existing operator convention `lane_worktree`'s glob already skips; what
+# is new is that a lane now produces one itself, so the routine case stops being permanent.
+# ---------------------------------------------------------------------------------------------
+
+kp__lane_admin() { # <common-git-dir> <physical-worktree-root> — the repo's private bookkeeping dir
+	# for that worktree (`<common>/worktrees/<name>`), which is where its lane files live. Empty and
+	# non-zero when no registration names that root.
+	local common="$1" want="$2" gd r
+	for gd in "$common"/worktrees/*/gitdir; do
+		[ -f "$gd" ] || continue
+		r="$(cat "$gd")"
+		[ "$(kp__phys "${r%/.git}")" = "$want" ] || continue
+		printf '%s\n' "${gd%/gitdir}"
+		return 0
+	done
+	return 1
+}
+
+kp_lane_beat() { # <per-worktree-git-dir> — record that this lane is working, NOW.
+	# Called from `wt_preflight`, i.e. immediately before every git mutation this lane makes, so a
+	# lane that is doing anything at all leaves a fresh beat. Best-effort on purpose: a beat that
+	# cannot be written must never block the mutation, because a MISSING beat is read as
+	# liveness-unknown (the conservative side), never as liveness-proven.
+	local gd="${1:-}"
+	[ -n "$gd" ] && [ -f "$gd/kampus-lane" ] || return 0
+	date +%s > "$gd/kampus-lane.beat" 2>/dev/null
+	return 0
+}
+
+kp_lane_beat_age() { # <per-worktree-git-dir> — seconds since that lane last proved it was working.
+	# No readable beat ⇒ nothing on stdout and non-zero: the age is UNKNOWN, never 0 (§ZS) — 0 would
+	# read as "just now", the permissive answer.
+	local beat now
+	beat="$(cat "${1:-}/kampus-lane.beat" 2>/dev/null)" || return 1
+	case "$beat" in '' | *[!0-9]*) return 1 ;; esac
+	now="$(date +%s)"
+	case "$now" in '' | *[!0-9]*) return 1 ;; esac
+	printf '%d\n' "$((now - beat))"
+}
+
+kp_lane_retire() { # <per-worktree-git-dir> — this lane is finished with its tree; retire its stamp.
+	# Renames ONE file inside the repo's private worktree bookkeeping. It removes no worktree, uses no
+	# `--force`, and writes nothing into any working tree — the leftover files stay exactly as they
+	# are. Idempotent: an already-retired or never-stamped lane is a clean no-op.
+	local gd="${1:-}"
+	[ -n "$gd" ] || return 1
+	[ -f "$gd/kampus-lane" ] || return 0
+	mv -f "$gd/kampus-lane" "$gd/kampus-lane.retired" || return 1
+	rm -f "$gd/kampus-lane.beat"
+	return 0
+}
+
+# Is the tree at <pin-root> PROVABLY done with <branch> — nothing lost if the ref moves under it?
+# Three independent, read-only facts, ALL required; this is the hand-clearing an operator has had to
+# perform per occurrence, encoded. It writes nothing anywhere. stdout is the reason the proof FAILED
+# (empty on success), so a refusal can name which fact was missing rather than "it is pinned".
+kp_lane_quiescent() { # <my-worktree> <pin-root> <branch>
+	local mine="$1" root="$2" branch="$3" dirty head tip
+	if ! dirty="$(git -C "$root" status --porcelain 2>/dev/null)"; then
+		printf 'its working tree cannot be read at all (`git -C %s status` failed)\n' "$root"
+		return 1
+	fi
+	if [ -n "$dirty" ]; then
+		printf 'it holds UNCOMMITTED work (`git -C %s status --porcelain` is not empty)\n' "$root"
+		return 1
+	fi
+	head="$(git -C "$root" rev-parse --verify HEAD 2>/dev/null)"
+	tip="$(git -C "$mine" rev-parse --verify "refs/heads/$branch" 2>/dev/null)"
+	if [ -z "$head" ] || [ -z "$tip" ]; then
+		printf 'its HEAD or the tip of %s could not be resolved\n' "$branch"
+		return 1
+	fi
+	if [ "$head" != "$tip" ]; then
+		printf 'its HEAD (%s) is not the tip of %s (%s) — that tree is mid-flight\n' "$head" "$branch" "$tip"
+		return 1
+	fi
+	# Containment in THIS branch's own upstream, not in any `refs/remotes/*` — an unrelated
+	# remote-tracking ref that is stale-forward (it still names a commit an upstream force-push
+	# dropped) would answer "safely on a remote" for work that is no longer there, and this is the
+	# predicate that decides whether a pin is RELEASED, so its false positive is the fail-open one.
+	# An absent `origin/<branch>` makes `--is-ancestor` non-zero, which refuses — the safe direction.
+	if ! git -C "$mine" merge-base --is-ancestor "$head" "refs/remotes/origin/$branch" 2>/dev/null; then
+		printf 'its HEAD (%s) is not contained in origin/%s — that work exists only in that tree\n' "$head" "$branch"
+		return 1
+	fi
+	return 0
+}
+
+# The SANCTIONED co-checkout: put MY lane on <branch> while another tree still holds it. It leaves
+# that tree's files untouched and removes nothing; its HEAD follows the branch ref from here on.
+kp__co_checkout() { # <my-worktree> <branch> <pin-root>
+	printf 'kp_switch_head_branch: %s is pinned by worktree %s — not this lane, not the primary checkout. Taking the SANCTIONED co-checkout in MY lane (%s): `git switch --ignore-other-worktrees`. That tree is left in place and its files are untouched; no worktree is removed. Its HEAD will follow the branch ref once this repair rebases.\n' "$2" "$3" "$1" >&2
+	if ! git -C "$1" switch --ignore-other-worktrees "$2" >&2; then
+		printf 'kp_switch_head_branch: the sanctioned co-checkout of %s into %s failed (git'\''s error is above) — the pin is NOT what blocked it. REMEDY: resolve what git named in %s and re-run this step. Do NOT detach HEAD to work around it: a detached repair skips the rebase onto origin/main and `verified-push` resolves a detached HEAD to UNKNOWN and pushes nothing. NOTHING was switched.\n' "$2" "$1" "$1" >&2
+		return 1
+	fi
+	return 0
+}
+
 # WHICH worktree holds <branch> checked out right now — the classifier repair R2 routes on when a
 # leftover build lane still pins the PR's head branch (#4826). Prints exactly two lines:
 #
-#   PIN=free|mine|primary|live-lane|other
+#   PIN=free|mine|primary|live-lane|dormant-lane|other
 #   PINROOT=<absolute worktree root>          (empty only for `free`)
 #
-# The four non-free states are NOT interchangeable, which is the whole reason this is a classifier
+# The five non-free states are NOT interchangeable, which is the whole reason this is a classifier
 # and not a boolean: co-checking-out a branch (`git switch --ignore-other-worktrees`) leaves the
 # pinning tree's FILES untouched but lets a later rebase move the branch ref under its HEAD. That is
 # harmless for a finished lane's leftover tree (`other`), and it is exactly the #2270
 # primary-checkout-corruption class for the shared primary tree (`primary`) or a lane that may still
 # be building on it (`live-lane`).
 #
-# `live-lane` is keyed on the ONLY liveness evidence available here: the pinning tree's own
-# `kampus-lane` stamp equalling THIS session's id, i.e. a sibling lane of the very session now
-# repairing. A foreign session's stamp proves nothing either way and resolves `other` — stated
-# plainly rather than dressed up as a liveness check, because the mitigation for it is that the
-# co-checkout removes nothing and writes nothing into that tree.
+# THE SAME-SESSION TREE SPLITS IN TWO, AND THE SPLIT IS THE POINT (#4868). A stamp equal to this
+# session's id says only that a SIBLING LANE proved that tree — it cannot say whether that lane is
+# still building, because every sibling subagent of one session shares $CLAUDE_CODE_SESSION_ID (the
+# measured #4500 finding recorded under `lane_worktree`). Keyed on identity alone the `live-lane`
+# branch was true for every same-session tree forever, which is not fail-closed, it is stuck. So the
+# liveness evidence is the stamp's LIFECYCLE, which the lane itself moves:
+#
+#   live-lane     stamped by this session AND beating within $KP_LANE_BEAT_TTL — a lane that moved
+#                 git here recently. REFUSE: the rebase would move its HEAD mid-flight.
+#   dormant-lane  stamped by this session, but the beat is stale or absent — liveness UNKNOWN, stated
+#                 as its own state instead of guessed either way. `kp_switch_head_branch` then has to
+#                 PROVE the tree is finished (`kp_lane_quiescent`) before it may release the pin.
+#
+# A finished lane retires its own stamp (step8), so the routine case never reaches either: it reads
+# `other`. A foreign session's stamp proves nothing either way and also resolves `other` — the
+# mitigation for it is that the co-checkout removes nothing and writes nothing into that tree.
 #
 # A read it cannot complete is UNKNOWN and returns non-zero with nothing on stdout — never `free`,
 # which is the permissive branch (§ZS, ADR 0092).
 kp_branch_pin() {
 	local mine="$1" branch="$2"
-	local common list line cur primary="" hits="" mine_p hit_p state gd r stamp
+	local common list line cur primary="" hits="" mine_p hit_p state r stamp admin age
+	local ttl="${KP_LANE_BEAT_TTL:-900}"
 	local NL='
 '
 	if [ -z "$mine" ] || [ -z "$branch" ]; then
@@ -504,16 +637,21 @@ EOF
 		state="primary"
 	else
 		state="other"
-		for gd in "$common"/worktrees/*/gitdir; do
-			[ -f "$gd" ] || continue
-			r="$(cat "$gd")"
-			[ "$(kp__phys "${r%/.git}")" = "$hit_p" ] || continue
-			stamp="$(cat "${gd%/gitdir}/kampus-lane" 2>/dev/null)"
+		admin="$(kp__lane_admin "$common" "$hit_p")"
+		if [ -n "$admin" ]; then
+			stamp="$(cat "$admin/kampus-lane" 2>/dev/null)"
 			if [ -n "${CLAUDE_CODE_SESSION_ID:-}" ] && [ "$stamp" = "$CLAUDE_CODE_SESSION_ID" ]; then
-				state="live-lane"
+				# Identity got us this far; only the beat can say live from left-behind. An
+				# unreadable beat is UNKNOWN, so it lands in `dormant-lane` — which still refuses
+				# until the tree is PROVED finished, never in `other`, which co-checks-out at once.
+				age="$(kp_lane_beat_age "$admin")"
+				if [ -n "$age" ] && [ "$age" -lt "$ttl" ]; then
+					state="live-lane"
+				else
+					state="dormant-lane"
+				fi
 			fi
-			break
-		done
+		fi
 	fi
 	printf 'PIN=%s\nPINROOT=%s\n' "$state" "$hit_p"
 }
@@ -530,7 +668,7 @@ EOF
 # is what produced the improvisations in the first place, one of which silently dropped the rebase
 # onto latest `main` and the `verified-push` verification.
 kp_switch_head_branch() {
-	local wt="$1" branch="$2" pin state root
+	local wt="$1" branch="$2" pin state root common admin why age
 	if ! pin="$(kp_branch_pin "$wt" "$branch")"; then
 		printf 'kp_switch_head_branch: the pin state of %s is UNKNOWN (see above), so the sanctioned path cannot be chosen. REMEDY: re-run from your own lane once `git worktree list` reads cleanly. NOTHING was switched.\n' "$branch" >&2
 		return 1
@@ -548,18 +686,40 @@ kp_switch_head_branch() {
 		fi
 		;;
 	other)
-		printf 'kp_switch_head_branch: %s is pinned by worktree %s — not this lane, not the primary checkout. Taking the SANCTIONED co-checkout in MY lane (%s): `git switch --ignore-other-worktrees`. That tree is left in place and its files are untouched; no worktree is removed. Its HEAD will follow the branch ref once this repair rebases.\n' "$branch" "$root" "$wt" >&2
-		if ! git -C "$wt" switch --ignore-other-worktrees "$branch" >&2; then
-			printf 'kp_switch_head_branch: the sanctioned co-checkout of %s into %s failed (git'\''s error is above) — the pin is NOT what blocked it. REMEDY: resolve what git named in %s and re-run this step. Do NOT detach HEAD to work around it: a detached repair skips the rebase onto origin/main and `verified-push` resolves a detached HEAD to UNKNOWN and pushes nothing. NOTHING was switched.\n' "$branch" "$wt" "$wt" >&2
+		kp__co_checkout "$wt" "$branch" "$root" || return 1
+		;;
+	dormant-lane)
+		# Liveness unknown, so nothing is assumed in either direction: the pin is released only on
+		# POSITIVE proof that the tree has nothing left to lose, and the refusal below is what the
+		# unproven case gets. This is the one path that can retire another lane's stamp, and it does
+		# so by renaming one bookkeeping file — no worktree removed, no `--force`, not one byte
+		# written into that tree.
+		if ! why="$(kp_lane_quiescent "$wt" "$root" "$branch")"; then
+			printf 'kp_switch_head_branch REFUSED (fail-closed): %s is pinned by %s, a worktree stamped with THIS session'\''s lane id (%s) whose heartbeat is stale or absent — that lane is not provably alive, but it is not provably finished either: %s. Releasing the pin now could move the branch ref under work that exists nowhere else. REMEDY: re-run this same step yourself — no sibling tree, no human. It re-probes on every run and releases the pin by itself as soon as that tree is clean, sitting on the tip of %s, and pushed to origin. If this same reason keeps printing, that tree holds work that is not yours to move — post THIS line on the PR and stop. Do NOT remove that worktree and do NOT `--force` anything. NOTHING was switched.\n' "$branch" "$root" "${CLAUDE_CODE_SESSION_ID:-<unset>}" "$why" "$branch" >&2
 			return 1
 		fi
+		common="$(git -C "$wt" rev-parse --git-common-dir 2>/dev/null)"
+		case "$common" in /*) ;; *) common="$wt/$common" ;; esac
+		common="$(cd "$common" 2>/dev/null && pwd -P)"
+		admin="$(kp__lane_admin "$common" "$root")"
+		age="$(kp_lane_beat_age "$admin")" # read BEFORE the retire below deletes the beat file
+		if [ -z "$admin" ] || ! kp_lane_retire "$admin"; then
+			printf 'kp_switch_head_branch REFUSED (fail-closed): %s is pinned by the dormant lane tree %s, which IS provably finished with it, but its lane stamp could not be retired (bookkeeping dir: %s). Releasing the pin without retiring the stamp would leave the next repair reading the same stuck state. REMEDY: re-run this step yourself; if it keeps failing here, the repo'\''s worktree bookkeeping under %s is not writable — post THIS line on the PR. Do NOT remove that worktree. NOTHING was switched.\n' "$branch" "$root" "${admin:-<not registered>}" "${common:-<unresolved>}" >&2
+			return 1
+		fi
+		printf 'kp_switch_head_branch: %s is pinned by %s, a same-session lane whose heartbeat is stale (%s) and whose tree is PROVABLY finished with it — clean, on the tip of %s, and that commit is contained in origin/%s. Retired its stamp (kampus-lane -> kampus-lane.retired, one bookkeeping file; the worktree and every file in it are untouched) and taking the sanctioned co-checkout.\n' "$branch" "$root" "${age:+${age}s ago}${age:-never beat}" "$branch" "$branch" >&2
+		kp__co_checkout "$wt" "$branch" "$root" || return 1
 		;;
 	primary)
 		printf 'kp_switch_head_branch REFUSED (fail-closed): %s is checked out in the PRIMARY checkout %s. Co-checking it out here would let this repair'\''s rebase move the branch ref under the shared primary tree (the #2270 primary-corruption class). REMEDY: release %s in that checkout (`git switch <some other branch>`), then re-run this step. Do NOT remove any worktree. NOTHING was switched.\n' "$branch" "$root" "$branch" >&2
 		return 1
 		;;
 	live-lane)
-		printf 'kp_switch_head_branch REFUSED (fail-closed): %s is checked out in %s, a worktree stamped with THIS session'\''s lane id (%s) — a sibling lane that may still be building on it. The rebase would move its HEAD mid-flight. REMEDY: run this repair from that lane'\''s worktree, or wait for it to finish and re-run. Do NOT remove that worktree — it can hold uncommitted work. NOTHING was switched.\n' "$branch" "$root" "${CLAUDE_CODE_SESSION_ID:-<unset>}" >&2
+		# The remedies this used to name were both unreachable from the refusing agent — `wt_preflight`
+		# refuses a sibling tree, and "wait" never cleared while the stamp was written once and never
+		# moved (#4868). Both are now real: the beat goes stale on its own, and a finishing lane retires
+		# its stamp, so re-running IS the way forward and it is a step this agent can take.
+		printf 'kp_switch_head_branch REFUSED (fail-closed): %s is checked out in %s, a worktree stamped with THIS session'\''s lane id (%s) whose heartbeat is FRESH — a sibling lane that moved git there in the last %ss and is building on it right now. The rebase would move its HEAD mid-flight. REMEDY: re-run this same step yourself in a few minutes — no sibling tree, no human. It clears by itself two ways: a lane retires its stamp when it finishes, and a lane that stops beating drops to liveness-unknown, where this step releases the pin as soon as that tree is provably clean, at the branch tip and pushed. Do NOT remove that worktree — it can hold uncommitted work. NOTHING was switched.\n' "$branch" "$root" "${CLAUDE_CODE_SESSION_ID:-<unset>}" "${KP_LANE_BEAT_TTL:-900}" >&2
 		return 1
 		;;
 	*)
@@ -692,5 +852,10 @@ wt_preflight() {   # MANDATED before every git commit/push/branch op — fail-cl
   case "$RES_COMMON" in /*) ;; *) RES_COMMON="$(pwd -P)/$RES_COMMON" ;; esac
   RES_COMMON="$(cd "$RES_COMMON" && pwd -P)"
   [ "$RES_GITDIR" != "$RES_COMMON" ] || { echo "wt_preflight FAILED (fail-closed): this lane's stamp resolved to the PRIMARY checkout ($WT) — git-dir == common-dir. Refusing to mutate." >&2; return 1; }
+  # BEAT — this runs immediately before every git mutation this lane makes, which is exactly what
+  # makes it liveness evidence rather than another identity check: a lane doing work leaves a fresh
+  # beat, a lane that has stopped stops leaving one. `kp_branch_pin` reads it to tell a sibling lane
+  # still building from a finished lane's leftover tree, which the shared session id cannot (#4868).
+  kp_lane_beat "$RES_GITDIR"
   echo "wt_preflight OK: mutating my lane at $WT (git-dir $RES_GITDIR)"
 }

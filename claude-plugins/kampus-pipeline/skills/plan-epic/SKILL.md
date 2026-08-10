@@ -533,6 +533,29 @@ relocation *is* the #754 guard) and prints the created `{number,id}`:
   <EPIC> "<sharp single-unit title>" type:feature p2 "<path/to/child-spec.json>"
 ```
 
+#### A child a human picks up is born held (the optional 6th argument)
+
+Most children are agent work and want no assignee — `write-code` picking them up *is* the plan
+working. A few are not: a **fabrika authoring brief** is authored by a human session through
+`/skill-creator`, and a coder that picks one up implements the skill through a door founder ruling
+[#4637-C](https://github.com/kamp-us/phoenix/issues/4637) closed. For those, pass the login of the
+human it is held for as a 6th argument:
+
+```bash
+# a held child: assigned AND `ready-for:human`, both inside the same atomic create
+"${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/plan-epic/scripts/create-child.sh" \
+  <EPIC> "Authoring brief: <skill>" type:feature p1 "<path/to/child-spec.json>" <login>
+```
+
+**Why the barrier is the assignee and not a label** ([#4693](https://github.com/kamp-us/phoenix/issues/4693)):
+`review-plan` flips **every** `status:planned` child to `status:triaged`, so no label the planner
+withholds survives that gate. The assignee does — it is the one child attribute the flip never
+touches, and it is what `write-code`'s picker selects on (`.assignee == null`). The `ready-for:human`
+label rides along not as a second barrier but to make the first one **checkable**: the plan gate
+reds `HELD_CHILD_UNASSIGNED` on a `ready-for:human` child with an empty assignee slot, so a held
+child that lost its assignee blocks the flip for the whole epic instead of quietly joining the pool.
+One argument sets both, so a planner cannot apply half of it.
+
 Capture both `number` and `id` from the create — Step 4 links by the `id`, so you won't need
 to re-fetch it. **Link the child as a native sub-issue (Step 4) immediately after this create** —
 the sooner the epic registers the child, the narrower the window a re-dispatch has to reconcile.

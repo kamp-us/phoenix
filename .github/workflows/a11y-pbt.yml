@@ -11,6 +11,8 @@ name: a11y-pbt
 # third enforcement rung, above the deterministic CSS lint (design-token-guard.yml).
 on:
   pull_request:
+  push:
+    branches: [main]
 
 # Least-privilege GITHUB_TOKEN: the job only checks out + reads the repo and runs
 # the suite, which fails via the vitest exit code — it posts no check-run/status/PR

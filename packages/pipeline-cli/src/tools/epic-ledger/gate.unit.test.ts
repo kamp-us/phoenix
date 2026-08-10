@@ -155,4 +155,71 @@ describe("runGate — the deterministic review-plan gate action (#164)", () => {
 			assert.match(r.comments[0]?.body ?? "", /Scanned scope: 0 child\(ren\) — —/);
 		}),
 	);
+
+	// The pool barrier (#4693). The flip stays unconditional — the gate still flips EVERY
+	// planned child on a clean ledger — so what carries the information is the ledger being
+	// clean in the first place. A child held for a human with an empty assignee slot is a
+	// hard defect, so the whole flip does not happen, and the sibling child stays planned
+	// too: the barrier can never be half-applied.
+	it.effect("a `ready-for:human` child with no assignee blocks the flip for the whole epic", () =>
+		Effect.gen(function* () {
+			const held = ledger({
+				epic: epic({
+					number: 500,
+					stories: [1],
+					dependencies: {present: true, nodes: [501, 502], edges: []},
+				}),
+				children: [
+					child(501, {labels: ["type:feature", "p1", "status:planned"], stories: [1]}),
+					child(502, {
+						labels: ["type:feature", "p1", "status:planned", "ready-for:human"],
+						stories: [1],
+						assignees: [],
+					}),
+				],
+			});
+			const rec = yield* Ref.make(emptyRecord());
+			const verdict = yield* runGate(500).pipe(Effect.provide(fakeGithub(held, rec)));
+			const r = yield* Ref.get(rec);
+
+			assert.strictEqual(verdict._tag, "fail");
+			if (verdict._tag === "fail") {
+				assert.deepStrictEqual(
+					verdict.defects.map((d) => d.type),
+					["HELD_CHILD_UNASSIGNED"],
+				);
+				assert.deepStrictEqual(verdict.defects[0]?.refs, [502]);
+			}
+			assert.deepStrictEqual(r.flips, []);
+			assert.match(r.comments[0]?.body ?? "", /HELD_CHILD_UNASSIGNED/);
+		}),
+	);
+
+	it.effect("the same epic PASSES and flips both children once the held child is assigned", () =>
+		Effect.gen(function* () {
+			const assigned = ledger({
+				epic: epic({
+					number: 500,
+					stories: [1],
+					dependencies: {present: true, nodes: [501, 502], edges: []},
+				}),
+				children: [
+					child(501, {labels: ["type:feature", "p1", "status:planned"], stories: [1]}),
+					child(502, {
+						labels: ["type:feature", "p1", "status:planned", "ready-for:human"],
+						stories: [1],
+						assignees: ["a-human"],
+					}),
+				],
+			});
+			const rec = yield* Ref.make(emptyRecord());
+			const verdict = yield* runGate(500).pipe(Effect.provide(fakeGithub(assigned, rec)));
+			const r = yield* Ref.get(rec);
+
+			assert.strictEqual(verdict._tag, "pass");
+			// the flip is UNCHANGED: still every planned child, held one included — the assignee
+			// it now carries is what keeps it out of the pool, not a skipped flip.
+			assert.deepStrictEqual(r.flips, [501, 502]);
+		}),
+	);
 });

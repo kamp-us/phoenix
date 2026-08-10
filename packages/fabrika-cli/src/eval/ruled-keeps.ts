@@ -148,6 +148,50 @@ export const ruledKeepsViolations = (keeps: RuledKeeps): ReadonlyArray<string> =
 	return violations;
 };
 
+/**
+ * The corpus size as the enumeration itself computes it — the one phrase every artifact that
+ * publishes this cardinality must carry verbatim.
+ *
+ * A published figure written as a literal is a second source of truth: the enumeration moves, the
+ * prose does not, and the reader gets a plausible number instead of an error (#4482, the class this
+ * corpus exists to record). Deriving the phrase from `rows` is what lets `publishedFigureViolations`
+ * red on drift rather than on a spelling.
+ */
+export const publishedFigure = (keeps: RuledKeeps): string => {
+	const members = keeps.rows.filter((row) => row.status === "member").length;
+	return `${members} members plus ${keeps.rows.length - members} pending`;
+};
+
+/**
+ * Phrasings that assert a corpus size the enumeration disproves. These are the exact strings the
+ * 74 was published as in-tree; the deny-list catches a copy of one, while the *positive* half of
+ * the check — the derived figure must be present — is what catches a figure that merely went stale.
+ */
+export const DISCREDITED_FIGURES: ReadonlyArray<string> = [
+	"74-issue KEEP corpus",
+	"74 KEEP",
+	"ruled at 74",
+];
+
+/**
+ * Check one artifact that publishes the corpus size against the enumeration. An empty array means
+ * the surface agrees with the file; each string names one way it does not.
+ */
+export const publishedFigureViolations = (
+	surface: string,
+	text: string,
+	figure: string,
+): ReadonlyArray<string> => {
+	const violations: string[] = [];
+	if (!text.includes(figure)) {
+		violations.push(`${surface}: does not publish the enumerated figure '${figure}'`);
+	}
+	for (const stale of DISCREDITED_FIGURES) {
+		if (text.includes(stale)) violations.push(`${surface}: asserts the discredited '${stale}'`);
+	}
+	return violations;
+};
+
 /** A row joined with the corpus coverage the provenance ledger reports for it. */
 export interface CoveredRow {
 	readonly row: KeepRow;

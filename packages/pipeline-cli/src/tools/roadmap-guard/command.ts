@@ -2,25 +2,26 @@
  * The `roadmap-guard` tool — `pipeline-cli roadmap-guard check [--root <d>]`.
  *
  * The CI surface for the "ROADMAP.md ↔ GitHub-milestone sync is guarded, not vigilance"
- * ruling (roadmap map #2620, founder #2628). Parses ROADMAP.md's `## Arcs`/`## Campaigns`
- * tables (the sole parsed surface) and validates them against the live milestone
- * projection, fail-closed:
+ * ruling (roadmap map #2620, founder #2628). Parses ROADMAP.md's
+ * `## Arcs`/`## Campaigns`/`## Focus` tables (the sole parsed surface) and validates them
+ * against the live milestone projection, fail-closed:
  *
- *   pipeline-cli roadmap-guard check            # CI gate: exit non-zero on any I1–I5 drift
+ *   pipeline-cli roadmap-guard check            # CI gate: exit non-zero on any I1–I6 drift
  *   pipeline-cli roadmap-guard check --root <d> # point at a specific repo root (else: walk up)
  *
- * Invariants (I1–I5, extended to campaign rows; see `roadmap-guard.ts`): I1 arc/campaign
+ * Invariants (I1–I6, extended to campaign rows; see `roadmap-guard.ts`): I1 arc/campaign
  * pinned to an existing milestone by number (a queued arc may defer its pin); I2 exactly
  * one active arc; I3 no unclaimed open milestone; I4 fail-closed on zero scope (ADR 0092);
  * I5 active↔done state symmetry — an active row's milestone is open, a done row's closed
- * (the campaign lifecycle guard, #2660).
+ * (the campaign lifecycle guard, #2660); I6 the declared focus is at most one row over an
+ * open, actively-claimed milestone (#5012 — absence and emptiness are the legal default).
  *
  * The pure decision lives in `roadmap-guard.ts` (unit-tested exhaustively); the file read
  * + `gh api` milestone fetch in `gate.ts`/`github.ts`. `MilestonesLive` is baked in with
  * `Command.provide(...)` so the registered command's residual requirement is the Node
  * platform union (the registry seam, epic #994).
  *
- * Exit-code contract: 0 = clean, any non-zero = failure — a gate failure (I1–I4 drift;
+ * Exit-code contract: 0 = clean, any non-zero = failure — a gate failure (I1–I6 drift;
  * report on stderr), an IO failure (ROADMAP.md unreadable), and a `gh`/repo failure all
  * exit non-zero, undistinguished. `CheckFailed` is caught inside the handler so the
  * contract survives folding into the shared `pipeline-cli` bin.
@@ -80,7 +81,7 @@ const check = Command.make(
 export const roadmapGuardCommand = Command.make("roadmap-guard").pipe(
 	Command.withSubcommands([check]),
 	Command.withDescription(
-		"Fail-closed gate: ROADMAP.md ↔ GitHub-milestone sync (I1–I5, #2620/#2632/#2660)",
+		"Fail-closed gate: ROADMAP.md ↔ GitHub-milestone sync (I1–I6, #2620/#2632/#2660/#5012)",
 	),
 	Command.provide(MilestonesLive),
 );

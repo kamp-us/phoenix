@@ -1,0 +1,29 @@
+{
+	"description": "fabrika's hook surface. Every command is a plain literal `fabrika <group> <verb>` string — no $VAR, no substitution, no wrapper script — and calls only verbs implemented in packages/fabrika-cli (cli-interface-convention rules 5 and 6; ADR 0232, ADR 0238). The convention, and the one dispatch-failure policy point, are in docs/hook-surface.md. Inert until the plugin is enabled.",
+	"hooks": {
+		"PreToolUse": [
+			{
+				"matcher": "Task|Workflow",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "fabrika hook spawn",
+						"timeout": 10
+					}
+				]
+			}
+		],
+		"SessionStart": [
+			{
+				"matcher": "startup|resume",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "fabrika hook check",
+						"timeout": 10
+					}
+				]
+			}
+		]
+	}
+}

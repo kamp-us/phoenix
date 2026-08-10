@@ -104,6 +104,20 @@ Campaigns are bounded, milestone-backed pushes that run *concurrently* with the 
 
 **Mentor Audit** — a security & architecture audit wave (the staff-mentor findings: the karma double-bump race, per-actor rate limiting, ops runbooks, `SECURITY.md`, …). To be solved ASAP; drains via the platform lane alongside Geçit.
 
+## Focus
+
+The one milestone in **exclusive focus**: the campaign an execution engine may open lanes against. The `## Campaigns` table above cannot answer this — campaigns run concurrently and many are `active` at once. This section can, and it is data rather than prose, so an agent reads the focus instead of waiting for a ruling to reach it.
+
+| Milestone | Declared |
+|-----------|----------|
+| #44 | 2026-08-09 |
+
+**The grammar.** Columns are `Milestone | Declared`, in that order. `Milestone` pins the focus **by number** (`#N`) — the same row→milestone-by-number binding `## Arcs` and `## Campaigns` use, and the one link to the operational projection. `Declared` is the ISO date (`YYYY-MM-DD`) the focus was declared. The table carries **at most one row**: exclusive focus admits exactly one milestone.
+
+**Absence and emptiness both mean no exclusive focus is declared.** A missing `## Focus` section and a present-but-empty one are the same well-formed default, and every consumer reads them the same way — nothing is out of scope, everything stays admissible. Neither is ever a refusal: a fence that refused on absence would wedge the pipeline the moment nobody had declared a focus (founder ruling on #5011 — an empty `## Focus` admits everything).
+
+**Guarded.** `roadmap-guard` invariant **I6** keeps the declaration honest: at most one row, whose milestone resolves, is open, and is claimed by an `active` arc or campaign row above. Reading the declaration at the pick and claim seams is separate work (#5015, #5016); this section is the surface those read.
+
 ## Dependencies
 
 The explicit cross-item dependency declaration that drives the diagram at the top of this file. Each row is one directed edge **Blocker → Blocks**: the `Blocker` must land before the `Blocks` node can proceed. An endpoint is either an arc/campaign **name** from the tables above (which binds the edge to that state-styled node) or an **external reference** — an issue `#N`, an `ADR NNNN`, or a not-yet-tabled arc — which renders as a dashed `external` node. This section is additive and is **not** the pinned Campaigns-table contract; it lives in its own section so the Campaigns grammar (`Campaign | Milestone | State`) is untouched.

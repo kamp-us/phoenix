@@ -17,13 +17,16 @@ import {join} from "node:path";
 import {NodeFileSystem} from "@effect/platform-node";
 import {assert, describe, it} from "@effect/vitest";
 import {Context, Effect, Layer} from "effect";
+import {SUBPROCESS_TEST_TIMEOUT_MS} from "../test-budget.ts";
 import {resolveRendezvous} from "../tracker/index.ts";
 import {CrewTracker, crewTrackerHostOrDialLayer} from "./tracker.ts";
 
 const hostOrDial = (socketPath: string) =>
 	crewTrackerHostOrDialLayer(socketPath).pipe(Layer.provide(NodeFileSystem.layer));
 
-describe("crew rendezvous — two cwds of one repo, one live registry", () => {
+describe("crew rendezvous — two cwds of one repo, one live registry", {
+	timeout: SUBPROCESS_TEST_TIMEOUT_MS,
+}, () => {
 	it.live("a peer announced from the repo root is discovered from a nested subdir", () =>
 		Effect.gen(function* () {
 			const root = realpathSync(mkdtempSync(join(tmpdir(), "rendezvous-e2e-")));

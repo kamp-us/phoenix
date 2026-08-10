@@ -16,23 +16,21 @@ import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {createComment, getIssue, listLabels, resolveRepo} from "../io/issues.ts";
 import type {StdinRead} from "../io/stdin.ts";
-import {isBareAtReference, scanBody} from "../report/leaks.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
-import {
-	BARE_AT_PATH,
-	EMPTY_STDIN,
-	LEAKED_PATH,
-	PRECONDITION_UNKNOWN,
-	READBACK_MISMATCH,
-	WRITE_UNKNOWN,
-	ZERO_SCOPE,
-} from "./codes.ts";
+import {type AuthoredSurface, leakRefusal, readAuthored} from "./authored.ts";
+import {PRECONDITION_UNKNOWN, READBACK_MISMATCH, WRITE_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {applyChanges} from "./facet-writes.ts";
 import {parkedFacets, planReconcile, renderShape, shapeViolations} from "./facets.ts";
 import {scannedLine} from "./scope.ts";
 
 /** The one label a park writes. Its absence is a `7`, because the API would otherwise mint it. */
 const NEEDS_INFO = "status:needs-info";
+
+const SURFACE: AuthoredSurface = {
+	verb: "triage park",
+	noun: "the questions text",
+	emptyHint: "a parked issue must say what would unblock it: pipe the questions in.",
+};
 
 export interface ParkOptions {
 	readonly issue: number;
@@ -67,35 +65,13 @@ export const runPark = (
 		}
 		const repo = repoAttempt.value;
 
-		const read = yield* options.stdin;
-		if (read._tag === "Failed") {
-			return refuse(
-				FAILED,
-				`triage park: could not read stdin: ${read.reason} — the questions are UNKNOWN, never empty.`,
-			);
-		}
-		const questions = read._tag === "NoStdin" ? "" : read.text;
-		if (questions.trim() === "") {
-			return refuse(
-				EMPTY_STDIN,
-				"triage park: no questions on stdin — a parked issue must say what would unblock it.",
-			);
-		}
-		if (isBareAtReference(questions)) {
-			return refuse(
-				BARE_AT_PATH,
-				'triage park: the questions are a bare "@" path reference — they never arrived. Send them on stdin.',
-			);
-		}
-		// Authored text, so a leak is refusable rather than redactable: the caller can fix it, and
-		// the loop on a refusal is redact-and-re-send.
-		const leak = scanBody(questions).leaks[0];
-		if (leak !== undefined) {
-			return refuse(
-				LEAKED_PATH,
-				`triage park: the questions carry a machine-local path at line ${leak.line} (${leak.class}) — rewrite it repo-relative.`,
-			);
-		}
+		const authored = readAuthored(SURFACE, yield* options.stdin);
+		if (authored._tag === "Refused") return authored.outcome;
+		const questions = authored.text;
+
+		// The questions are posted verbatim, so scanning them here is scanning the composed body.
+		const leaked = leakRefusal(SURFACE, questions);
+		if (leaked !== null) return leaked;
 
 		const target = yield* getIssue(repo, issue);
 		if (target._tag === "Absent") {

@@ -11,11 +11,12 @@ import {
 	listComments,
 	listOpenMilestones,
 	openQueueIssues,
+	pagedJson,
 	parseTabRows,
 	patchIssueBody,
 	removeLabel,
+	scanJsonPages,
 	setMilestone,
-	splitJsonArrays,
 } from "./issues.ts";
 
 const run = <A>(effect: Effect.Effect<A, never, never>) => Effect.runPromise(effect);
@@ -38,18 +39,60 @@ describe("parseTabRows — shape before interpretation", () => {
 	});
 });
 
-describe("splitJsonArrays", () => {
+describe("pagedJson", () => {
 	it("splits the concatenated pages `--paginate` emits, which JSON.parse rejects whole", () => {
 		expect(() => JSON.parse("[1][2]")).toThrow();
-		expect(splitJsonArrays("[1][2]")).toEqual(["[1]", "[2]"]);
+		expect(pagedJson("[1][2]")).toEqual({_tag: "Ok", value: ["[1]", "[2]"]});
 	});
 
 	it("does not split on a bracket inside a string — a body may contain one", () => {
-		expect(splitJsonArrays('[{"body":"see [1] and ]"}]')).toEqual(['[{"body":"see [1] and ]"}]']);
+		expect(pagedJson('[{"body":"see [1] and ]"}]')).toEqual({
+			_tag: "Ok",
+			value: ['[{"body":"see [1] and ]"}]'],
+		});
 	});
 
 	it("does not split on an escaped quote inside a string", () => {
-		expect(splitJsonArrays('[{"body":"a \\" ] b"}]')).toEqual(['[{"body":"a \\" ] b"}]']);
+		expect(pagedJson('[{"body":"a \\" ] b"}]')).toEqual({
+			_tag: "Ok",
+			value: ['[{"body":"a \\" ] b"}]'],
+		});
+	});
+
+	it("fails on a read that stopped mid-page rather than handing back the pages that closed", () => {
+		const result = pagedJson('[{"id":1}][{"id');
+		expect(result._tag).toBe("Failure");
+		expect(result).toMatchObject({reason: expect.stringContaining("page boundary")});
+	});
+});
+
+describe("scanJsonPages — a read that stopped mid-flight says so", () => {
+	it("accounts for every byte of a whole read, whitespace between pages included", () => {
+		expect(scanJsonPages("[1]\n[2]\n")).toEqual({pages: ["[1]", "[2]"], truncated: null});
+	});
+
+	it("reports an unclosed page — the shape a killed `gh` leaves behind", () => {
+		const scanned = scanJsonPages('[{"number":1},{"num');
+		expect(scanned.pages).toEqual([]);
+		expect(scanned.truncated).toContain("does not end on a page boundary");
+	});
+
+	it("keeps the complete pages AND reports the cut-short one after them", () => {
+		const scanned = scanJsonPages('[{"number":1}][{"num');
+		expect(scanned.pages).toEqual(['[{"number":1}]']);
+		expect(scanned.truncated).not.toBeNull();
+	});
+
+	it("reports a stray closing bracket rather than swallowing it", () => {
+		expect(scanJsonPages("[1]]").truncated).not.toBeNull();
+	});
+
+	it("reports an unterminated string, where the cut fell inside a body", () => {
+		expect(scanJsonPages('[{"body":"half a sen').truncated).not.toBeNull();
+	});
+
+	it("reads empty output as zero pages, not as truncation", () => {
+		expect(scanJsonPages("")).toEqual({pages: [], truncated: null});
 	});
 });
 
@@ -87,6 +130,29 @@ describe("getIssue carries the two facets a read-back cannot prove from labels",
 			Effect.provide(getIssue("kamp-us/phoenix", 7), fakeShell([[/gh api/, okOut(body)]]).layer),
 		);
 		expect(result).toMatchObject({_tag: "Present", value: {milestone: null, stateReason: null}});
+	});
+
+	it("reads the filing account's login — the provenance predicate's second signal", async () => {
+		const body = JSON.stringify({
+			number: 7,
+			title: "t",
+			html_url: "u",
+			state: "open",
+			labels: [],
+			user: {login: "some-account"},
+		});
+		const result = await run(
+			Effect.provide(getIssue("kamp-us/phoenix", 7), fakeShell([[/gh api/, okOut(body)]]).layer),
+		);
+		expect(result).toMatchObject({_tag: "Present", value: {author: "some-account"}});
+	});
+
+	it("reads a missing author as the empty login, which is never an operator account", async () => {
+		const body = JSON.stringify({number: 7, title: "t", html_url: "u", state: "open", labels: []});
+		const result = await run(
+			Effect.provide(getIssue("kamp-us/phoenix", 7), fakeShell([[/gh api/, okOut(body)]]).layer),
+		);
+		expect(result).toMatchObject({_tag: "Present", value: {author: ""}});
 	});
 });
 
@@ -129,7 +195,13 @@ describe("listOpenMilestones", () => {
 
 describe("listComments", () => {
 	const comment = (id: number, login: string, body: string) =>
-		JSON.stringify({id, user: {login}, created_at: "2026-08-03T09:28:41Z", body});
+		JSON.stringify({
+			id,
+			user: {login},
+			created_at: "2026-08-03T09:28:41Z",
+			updated_at: "2026-08-03T10:00:00Z",
+			body,
+		});
 
 	it("reads every page, in order", async () => {
 		const shell = fakeShell([
@@ -139,8 +211,20 @@ describe("listComments", () => {
 		expect(result).toEqual({
 			_tag: "Ok",
 			value: [
-				{id: 1, author: "usirin", createdAt: "2026-08-03T09:28:41Z", body: "first"},
-				{id: 2, author: "cansirin", createdAt: "2026-08-03T09:28:41Z", body: "second"},
+				{
+					id: 1,
+					author: "usirin",
+					createdAt: "2026-08-03T09:28:41Z",
+					updatedAt: "2026-08-03T10:00:00Z",
+					body: "first",
+				},
+				{
+					id: 2,
+					author: "cansirin",
+					createdAt: "2026-08-03T09:28:41Z",
+					updatedAt: "2026-08-03T10:00:00Z",
+					body: "second",
+				},
 			],
 		});
 		expect(shell.calls[0]).toContain("--paginate");
@@ -161,6 +245,16 @@ describe("listComments", () => {
 			),
 		);
 		expect(result._tag).toBe("Failure");
+	});
+
+	it("refuses a read that stopped mid-page — never the comments that arrived before the cut", async () => {
+		const whole = `[${comment(1, "usirin", "first")}][${comment(2, "cansirin", "second")}]`;
+		const cut = whole.slice(0, whole.lastIndexOf("second") + 3);
+		const result = await run(
+			Effect.provide(listComments("kamp-us/phoenix", 1), fakeShell([[/gh api/, okOut(cut)]]).layer),
+		);
+		expect(result._tag).toBe("Failure");
+		expect(result).toMatchObject({reason: expect.stringContaining("page boundary")});
 	});
 });
 

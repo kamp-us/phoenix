@@ -95,12 +95,11 @@ const createLedgerArgs = (repo: string): ReadonlyArray<string> => [
 ];
 
 /**
- * Resolve the ledger issue: an explicit number wins, then `$PIPELINE_APPROVAL_WATCHER_LEDGER`,
- * then the label search, and only then provisioning. Auto-provisioning is deliberate and bounded
- * to one issue ever — the alternative is a first tick that has nowhere to write and therefore
- * silently records nothing, which is the defect this tool exists to remove.
+ * Locate the ledger issue WITHOUT creating one: an explicit number wins, then
+ * `$PIPELINE_APPROVAL_WATCHER_LEDGER`, then the label search — and `null` when none exists.
+ * The read path stops here (a guard must not mint board state); only `resolveLedger` provisions.
  */
-const resolveLedger = Effect.fn("ApprovalWatcher.resolveLedger")(function* (
+const findLedger = Effect.fn("ApprovalWatcher.findLedger")(function* (
 	repo: string,
 	explicit: number | null,
 ) {
@@ -108,8 +107,20 @@ const resolveLedger = Effect.fn("ApprovalWatcher.resolveLedger")(function* (
 	const fromEnv = Number(process.env.PIPELINE_APPROVAL_WATCHER_LEDGER ?? "");
 	if (Number.isInteger(fromEnv) && fromEnv > 0) return fromEnv;
 	const found = yield* decodeIssues(yield* json(searchLedgerArgs(repo)));
-	const first = found[0];
-	if (first !== undefined) return first.number;
+	return found[0]?.number ?? null;
+});
+
+/**
+ * Resolve the ledger issue, provisioning one if none exists. Auto-provisioning is deliberate and
+ * bounded to one issue ever — the alternative is a first tick that has nowhere to write and
+ * therefore silently records nothing, which is the defect this tool exists to remove.
+ */
+const resolveLedger = Effect.fn("ApprovalWatcher.resolveLedger")(function* (
+	repo: string,
+	explicit: number | null,
+) {
+	const existing = yield* findLedger(repo, explicit);
+	if (existing !== null) return existing;
 	// The label may or may not exist; a 422 here is "already exists", which is not a failure.
 	yield* runGh(createLabelArgs(repo)).pipe(
 		Effect.catchTag("@kampus/gh-io/GhCommandError", () => Effect.void),
@@ -179,6 +190,39 @@ const ticks = Effect.fn("ApprovalWatcher.ticks")(function* (
 	return {ledger, records} satisfies TicksResult;
 });
 
+/**
+ * The ledger's liveness as an OUTSIDE reader sees it — the single-sourced answer to "has the
+ * watcher ticked, and when?" (#4754). Both non-`ticked` arms are a proven absence, not an
+ * unknown: the ledger auto-provisions on the first `record`, so no ledger and a ledger with no
+ * record both establish that no tick has ever run.
+ */
+export type LedgerLiveness =
+	| {readonly _tag: "no-ledger"}
+	| {readonly _tag: "no-record"; readonly ledger: number}
+	| {readonly _tag: "ticked"; readonly ledger: number; readonly lastAt: string};
+
+/**
+ * The newest tick instant across the ledger, NOT the last comment's — coalescing patches an
+ * older comment and bumps its `lastAt`, so recency lives in the max, never in comment order.
+ */
+const liveness = Effect.fn("ApprovalWatcher.liveness")(function* (
+	repo: string,
+	explicitLedger: number | null,
+) {
+	const ledger = yield* findLedger(repo, explicitLedger);
+	if (ledger === null) return {_tag: "no-ledger"} satisfies LedgerLiveness;
+	const records = (yield* ledgerComments(repo, ledger))
+		.map((c) => parseTick(c.body))
+		.filter((r): r is TickRecord => r !== null);
+	let lastAt: string | null = null;
+	for (const record of records) {
+		if (lastAt === null || record.lastAt > lastAt) lastAt = record.lastAt;
+	}
+	return (
+		lastAt === null ? {_tag: "no-record", ledger} : {_tag: "ticked", ledger, lastAt}
+	) satisfies LedgerLiveness;
+});
+
 type Fault = RepoResolutionError | GhCommandError | GhParseError | Schema.SchemaError;
 
 /**
@@ -190,6 +234,7 @@ export class ApprovalWatcher extends Context.Service<
 	{
 		readonly record: (ledger: number | null, tick: TickInput) => Effect.Effect<RecordResult, Fault>;
 		readonly ticks: (ledger: number | null, limit: number) => Effect.Effect<TicksResult, Fault>;
+		readonly liveness: (ledger: number | null) => Effect.Effect<LedgerLiveness, Fault>;
 	}
 >()("@kampus/approval-watcher/ApprovalWatcher") {}
 
@@ -209,6 +254,8 @@ export const ApprovalWatcherLive: Layer.Layer<
 				repo.pipe(Effect.flatMap((r) => withSpawner(record(r, ledger, tick)))),
 			ticks: (ledger: number | null, limit: number) =>
 				repo.pipe(Effect.flatMap((r) => withSpawner(ticks(r, ledger, limit)))),
+			liveness: (ledger: number | null) =>
+				repo.pipe(Effect.flatMap((r) => withSpawner(liveness(r, ledger)))),
 		};
 	}),
 );

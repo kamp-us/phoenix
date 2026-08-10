@@ -18,7 +18,7 @@
  * code no failure-to-run produces — on the one proven-ordinary verdict. The exit code discriminates
  * the two verdicts ONLY ONCE THE VERB HAS RUN; it says nothing about whether it ran, so a caller
  * must assert on the stdout state word (`[ "$GC_STATE" = "not-guard-touching" ]`), never on mere
- * non-zero. `… && echo BLOCKING` is UNSAFE — it emits nothing on a usage error (1), a
+ * non-zero. `… && echo BLOCKING` is UNSAFE — it emits nothing on a malformed invocation (4), a
  * module-not-found from a nested cwd (1), or a missing binary (127), so a probe that never ran
  * reads as an ordinary ADR (#4219). See the README's "How to call this safely".
  *

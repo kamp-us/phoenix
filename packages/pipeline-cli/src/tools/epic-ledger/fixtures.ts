@@ -14,6 +14,9 @@ export const child = (number: number, overrides: Partial<ChildIssue> = {}): Chil
 	// MISSING_CONTAINMENT under the default `cycleDocPresent: true`; tests that want
 	// a missing/`none` marker set `containment` (or override to `undefined`) explicitly.
 	containment: "exempt",
+	// Observed-and-unassigned by default: the ordinary agent-audience child. A test that
+	// wants the unobserved slot (`UNVERIFIABLE_ASSIGNEE`) overrides to `undefined`.
+	assignees: [],
 	...overrides,
 });
 

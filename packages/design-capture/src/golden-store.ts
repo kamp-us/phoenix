@@ -11,8 +11,16 @@
  *     bytes: pointer → depo URL → bytes (or `null` for an unblessed surface).
  *
  * The diff then compares these fetched golden bytes against the candidate render
- * (`golden-diff.ts`). Impure by design (network + depo); the decision logic stays
- * in the pure cores.
+ * (`@kampus/fabrika-cli/capture`'s `golden-diff`). Impure by design (network + depo);
+ * the decision logic stays in the pure cores.
+ *
+ * This module is phoenix's, while the machinery it feeds is fabrika's (#5063): every
+ * line here names a kamp.us host or a kamp.us credential, so it is exactly the
+ * "repo-specific data" half the founder ruling keeps per-repo. It also could not ship
+ * inside the published fabrika package even if we wanted it to — `@kampus/depo` is
+ * private, and a published artifact may depend only on what a clean registry resolves
+ * (ADR 0201 §3). An adopter repo writes its goldens to its own store and passes it in
+ * as fabrika's injected `StoreLeg`.
  */
 import {
 	type DigestError,
@@ -25,11 +33,11 @@ import {
 	type UnsupportedMediaType,
 	type UploadFailed,
 } from "@kampus/depo";
+import type {GoldenPointer, StoredGolden} from "@kampus/fabrika-cli/capture";
+import {resolveGoldenEntry} from "@kampus/fabrika-cli/capture";
 import {Effect, Schema} from "effect";
 import * as HttpClient from "effect/unstable/http/HttpClient";
 import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest";
-import type {GoldenPointer} from "./golden-pointer.ts";
-import {resolveGoldenEntry} from "./golden-pointer.ts";
 
 /**
  * Resolve a surface-id to its current golden's immutable depo URL, or `null` when
@@ -43,11 +51,7 @@ export const resolveGoldenUrl = (pointer: GoldenPointer, surfaceId: string): str
 	return entry === null ? null : publicUrl(`${entry.sha256}.png`);
 };
 
-/** A stored golden: the content-address stem for the pointer + its immutable depo URL. */
-export interface StoredGolden {
-	readonly sha256: string;
-	readonly url: string;
-}
+export type {StoredGolden};
 
 /**
  * PUT a blessed golden PNG to depo and return its `{ sha256, url }`. A

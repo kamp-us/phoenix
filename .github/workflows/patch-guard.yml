@@ -12,6 +12,8 @@ name: patch-guard
 # .patterns/dependency-patch-behavior-pins.md. The scan lives once in the tool.
 on:
   pull_request:
+  push:
+    branches: [main]
 
 # Least-privilege GITHUB_TOKEN: the job only checks out + reads the repo and runs the
 # guard, which fails via exit code — it posts no check-run/status/PR comment — so

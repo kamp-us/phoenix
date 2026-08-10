@@ -11,8 +11,18 @@ name: doc-links
 # the in-house tool re-implemented. Scope stays git-tracked-only (the `git ls-files`
 # list fed via `--files-from`), and the gate is fail-closed on zero scope per ADR
 # 0092 (the explicit non-empty guard below — lychee itself exits 0 on an empty input).
+#
+# The scan is repo-wide, so it must also run on `main` (#5085). Two PRs can each be
+# green alone and red only in combination — a rename in one, a link to the old name in
+# the other. With a `pull_request`-only trigger nothing evaluates that pair until the
+# next unrelated PR opens, which then goes red for a break its author did not cause.
+# The `push` trigger charges the break to the commit that introduced it. This holds for
+# every repo-wide gate here, not just this one; the audit of which workflows got the
+# trigger and which stayed PR-only is `.patterns/repo-wide-gates-run-on-main.md`.
 on:
   pull_request:
+  push:
+    branches: [main]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

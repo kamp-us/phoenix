@@ -104,10 +104,14 @@ fabrika adr resolve 0240
 Your own id, one last time: `absent` means nobody claimed it while you wrote; `in-flight` means
 another lane opened its PR first, so renumber now.
 
-**Expect this PR to route as control plane.** No `.decisions/**` path matches the control-plane
-pattern, so `cp-classify` decides it on content at the gate — and 84% of the corpus comes back
-guard-touching. **That gate is the authority; do not predict it and never reword the ADR to change
-its verdict.** A false §CP costs one approval, a false ordinary reaches `main` with none (#4386,
-#3416). If you think it misfired, say so on the PR (#2617).
+**How this PR routes depends on which model is live, so expect either.** v1's gate decides it on
+content: no `.decisions/**` path matches its control-plane pattern, so `cp-classify` falls to its
+ADR-0164 content probe, and 84% of the corpus comes back guard-touching — expect control plane.
+fabrika's ruled model is CODEOWNERS-only with no semantic detection at all, and `.decisions/`
+deliberately carries no row, so under it an ADR is not control plane
+([§CP classification](../../docs/control-plane-classification.md)). **Whichever answers, that gate is
+the authority; do not predict it and never reword the ADR to change its verdict.** A false §CP costs
+one approval, a false ordinary reaches `main` with none (#4386, #3416). If you think it misfired, say
+so on the PR (#2617).
 
 Report the path and the vocabulary outcome; do not summarize the body.

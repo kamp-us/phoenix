@@ -11,6 +11,8 @@ name: codeowners-cp
 # regex also reds the build.
 on:
   pull_request:
+  push:
+    branches: [main]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

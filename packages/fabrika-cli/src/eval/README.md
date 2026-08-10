@@ -18,14 +18,105 @@ slice ([#1848](https://github.com/kamp-us/phoenix/issues/1848)) shipped the corp
   decision artifact. It is a **discriminated union keyed on `stage`**, so a label whose
   shape doesn't match its stage is unrepresentable (make-invalid-states-unrepresentable):
   - `triage` → `{ type, priority, status }`
-  - `write-code` → `{ fixesRef, ciGreen, reviewVerdict }`
-  - `review-code` → `{ verdict, acFindings }`
-  - `review-doc` → `{ verdict, findings }`
+  - `build` → `{ fixesRef, ciGreen, reviewVerdict }`
+  - `review` + `surface: "code"` → `{ verdict, acFindings }`
+  - `review` + `surface: "doc"` → `{ verdict, findings }`
+  - `review` + `surface: "skill"` → `{ verdict, rigorFindings: { check, finding }[] }`
   - `ship-it` → `{ merged, mergeSha }`
-- `CorpusManifest` — the frozen ground truth: entries grouped under per-stage keys, each
+- `CorpusManifest` — the frozen ground truth: entries grouped under **live** stage keys, each
   key admitting only that stage's entry (the second half of the unrepresentable guarantee).
+
+### The `review` stage's surface sub-discriminator
+
+The v1 review gates merged into one `review` skill, so the corpus keeps **one** `review` stage key
+and every review entry carries a `surface` that selects both its label shape and its grader ([ADR
+0243](../../../../.decisions/0243-review-eval-stage-surface-discriminator.md)). The three label
+shapes genuinely differ (`acFindings` vs `findings` vs `rigorFindings`), so the guarantee holds over
+the **`(stage, surface)` pair**: a `review` entry whose label doesn't match its surface is
+unrepresentable, and a `review` entry with **no** surface is a decode failure, never a row a
+fallback rubric grades. `gradeEntry` narrows the same way — `stage` to `review`, then `surface` to
+its own grader — because dispatching on `stage` alone is what would silently collapse three rubrics
+onto one grader. One PR reviewed on two surfaces is two rows sharing an `inputRef`, each graded by
+its own grader; that is the intended shape, not a duplicate.
+
+`REVIEW_SURFACES` names all three: `code`, `doc` and `skill`.
+
+The `skill` surface's label is the one that is not a flat array of finding strings. Its findings each
+name the rubric check they came from, drawn from the closed vocabulary `SKILL_RIGOR_CHECKS` — the
+four numbered checks in
+[`rubrics/skill.md`](../../../../claude-plugins/fabrika/skills/review/rubrics/skill.md). That rubric
+is the only one of the three whose checks are a fixed set, and it hands gate-invariant preservation
+to the `governance` skill, so a row cannot attribute a finding to a check this surface does not own.
+[ADR 0243 §1a](../../../../.decisions/0243-review-eval-stage-surface-discriminator.md) records the
+derivation and why the findings are not flattened.
+
+### Live stage key vs recorded provenance
+
+`STAGES` is the **live** vocabulary — what `--stage` accepts and what a manifest groups under.
+An entry's own `stage` is **provenance**: the stage that actually produced that row. The two
+coincide for anything measured from now on and differ for the rows the v1 pipeline recorded.
+
+The founder ruling on [#4977](https://github.com/kamp-us/phoenix/issues/4977) fixes what happens
+to those rows: they keep their original key, because re-keying them would republish a v1
+measurement as a fabrika one. So `build` is the live stage, `write-code` is not a stage any more,
+and the three rows in `corpus/build.json` are still keyed `write-code` — the decoder accepts that
+key on an already-recorded row and nowhere else. The same holds for the review merge: `review` is
+the live stage, `review-code` and `review-doc` are not stages any more, and the rows in
+`corpus/review.json` keep their `review-code` key and carry **no** `surface`, since `surface` is a
+live-schema field. Read a record's stage key as *what was run*, never as a pointer into `STAGES`;
+joins (the runner, the scorecard) key on the live stage.
 - `decodeManifest(text)` — total: returns a typed `Result` failure (`malformed-json` or
   `schema-mismatch`) on bad input, never throws. `encodeManifest(manifest)` round-trips it.
+
+## Stage-admission rule — a stage exists when its skill does
+
+`STAGES` is not a plan of the fabrika skill set. It is a record of what this harness can actually
+grade, so a name enters it when **both** of these are already true, and not before:
+
+1. **Its skill exists** — there is a `SKILL.md` for it under
+   [`claude-plugins/fabrika/skills/`](../../../../claude-plugins/fabrika/skills), so
+   `fabrika eval run --stage <name>` has something real to spawn.
+2. **There is something to grade under it** — committed ground truth (a corpus entry, or an eval
+   set) that a grader arm can score, landing in the same change as the stage key.
+
+Admitting a name earlier buys a permanently-empty manifest key and a grader arm nothing can reach,
+and the vocabulary then describes stages nobody runs — the drift epic
+[#4960](https://github.com/kamp-us/phoenix/issues/4960) exists to remove. So growth is per-skill and
+demand-driven: the change that authors a skill's first cases is the change that adds its `STAGES`
+member, its `CorpusManifest` key and its `oracle.ts` grader arm, together.
+
+`stage-admission.data.unit.test.ts` is the enforcement — a `STAGES` member with no grader arm, no
+manifest key, or no skill on disk turns the suite red, and an empty `STAGES` is a failure rather than
+a vacuous pass (ADR [0092](../../../../.decisions/0092-gates-fail-closed-on-zero-scope.md)).
+
+A stage key and its skill's directory name need not be identical; `ship-it` is the one that differs
+today (its skill is `ship`). Renaming it is deliberately not this harness's call — #4960 leaves
+`ship-it` alone pending the lane that owns skill naming.
+
+### Fabrika surfaces that deliberately have no stage today
+
+Named here so the gap reads as a decision rather than an oversight:
+
+- `build-ui` — the skill exists, but no ground truth has been committed for a rendered-visual build,
+  so clause 2 is unmet. It is admitted the moment its first cases land.
+- `review-ui` — the same shape: the skill exists, its ground truth does not.
+- `governance` — no skill exists yet. `review`'s skill rubric hands gate-invariant preservation to
+  it, so the name is referenced before the skill is written; clause 1 is unmet.
+- `check-epic-plan` — no skill exists yet. Plan review is `review`'s explicit non-scope, and until
+  the skill is authored there is nothing to spawn.
+- `build-epic`, `report`, `adr` — authored skills with no committed ground truth, so clause 2 is
+  unmet for them too. They are not excluded on principle; nobody has recorded a baseline yet.
+
+### Stages carrying zero committed corpus entries
+
+A stage that is admitted but ungraded is a **recorded choice**, not an oversight, and it is listed
+here so a reader can tell the two apart. The data test keeps this list honest in both directions: a
+stage that drops to zero entries without being listed turns the suite red, and so does a stage
+listed here that actually carries entries.
+
+- `ship-it` — admitted before this rule was written, and no `ship` run has been recorded as ground
+  truth yet. It stays in the vocabulary because `--stage ship-it` is accepted and its grader is
+  reachable; its pass-rate is simply undefined until entries land.
 
 ## The graded oracle ([#1849](https://github.com/kamp-us/phoenix/issues/1849))
 
@@ -40,11 +131,11 @@ a stage or call `gh` (that is the runner slice, #1851).
 An entry passes iff the observed `artifact` reproduces its known-good `label`, per stage (ADR 0112 §3):
 
 - `triage` — actual `{type, priority, status}` equals the label.
-- `write-code` — the PR carries the labeled `Fixes #N` + CI green + an independent `review-code: PASS`
+- `build` — the PR carries the labeled `Fixes #N` + CI green + an independent `review-code: PASS`
   (actual `{fixesRef, ciGreen, reviewVerdict}` equals the label).
-- `review-code` — actual verdict + AC-finding **set** match the label (findings compared order- and
-  duplicate-insensitively).
-- `review-doc` — actual verdict + doc-finding set match the label.
+- `review` / `code` — actual verdict + AC-finding **set** match the label (findings compared order-
+  and duplicate-insensitively).
+- `review` / `doc` — actual verdict + doc-finding set match the label.
 - `ship-it` — actual `{merged, mergeSha}` equals the label.
 
 The grade is a typed value, never a throw:
@@ -71,7 +162,9 @@ spawns nothing itself, which is what makes it reproducible offline. That propert
 starts processes from `spawn-io.ts`. The reversal and its bounds are [ADR
 0236](../../../../.decisions/0236-eval-harness-gains-a-spawning-shell.md).
 
-`RunRow` is `{entry, grade, spend}` where `spend` is a **three-arm** `RunSpend` union:
+`RunRow` is `{entry, grade, spend, provenance}` where `spend` is a **three-arm** `RunSpend` union — declared,
+with `classifyRunSpend` that produces it, in [`../spend/token-spend.ts`](../spend/token-spend.ts)
+next to the meter it wraps ([#5050](https://github.com/kamp-us/phoenix/issues/5050)):
 `{_tag: "Reconstructed", spend}` (the `token-spend` `StageSpend`), `{_tag: "NoBilledTurns"}`, or
 `{_tag: "TranscriptMissing"}`. None of the three can be mistaken for a genuinely free run — a
 **missing transcript is graded and counted, never a crash**, and a transcript that is present and
@@ -102,6 +195,32 @@ Two modes, story-split:
 import {collectRuns, collectFromCapture, decodeCaptureManifest} from "./runner.ts";
 ```
 
+### What provenance a capture manifest carries ([#4996](https://github.com/kamp-us/phoenix/issues/4996))
+
+A ledger (`--out`) and a capture manifest (`--capture-out`) are not equally attributable, and the
+gap used to be silent. The ledger names the suite's skill, stage, model, CLI version and
+`recordedAt` on its header and repeats them on every spend row; the manifest is the file the
+scorecard and `collectFromCapture` actually read, and it survives on its own long after the ledger
+is gone. So each `CaptureRun` now carries the two facts a graded row cannot be re-derived without:
+
+| field | carried | why |
+|---|---|---|
+| `stage`, `inputRef` | yes | the join key onto the corpus's ground-truth label |
+| `model` | yes | the model the run was **pinned** to (`--model`) — the axis the scorecard compares along |
+| `arm` | yes | `with-skill` / `without-skill`, otherwise unrecoverable once both arms fold into one file |
+| `transcriptPath` | yes | but it points **outside the repo**, under the `claude` data root: machine-local and perishable |
+| skill name, CLI version, `recordedAt` | **no** | ledger-only; a manifest is a per-run artifact, not a suite record |
+
+`model` and `arm` are `null` on a manifest written before they existed, and an absent key decodes
+to `null` rather than failing — every already-written manifest stays readable. Read `null` as
+*unrecorded*, never as a claim about the run.
+
+The scorecard consumes this as a **preference, not a replacement**: `report.ts` buckets a row on
+the model the run recorded, and falls back to the model reconstructed from the transcript only
+when the row recorded none. That is what stops a row whose transcript is gone from bucketing as
+`(unknown)` — it degrades exactly to the old behaviour, and only for the rows that predate the
+field.
+
 Presenting the collected rows (the two-axis scorecard) is the report slice
 ([#1853](https://github.com/kamp-us/phoenix/issues/1853)), documented next.
 
@@ -112,12 +231,12 @@ decision ([#1576](https://github.com/kamp-us/phoenix/issues/1576)) consumes. It 
 runner's graded `{entry, grade, spend}` rows into a per-(stage × model) **scorecard** on the ADR
 0112 §4 two-axis gate, now graded:
 
-- **Quality axis** — a **pass-rate** per (stage × model) over the corpus (`passedRuns / gradedRuns`),
-  the graded generalization of ADR 0112 §3's binary-per-run oracle.
+- **Quality axis** — a **pass-rate** per (stage × surface × model) over the corpus
+  (`passedRuns / gradedRuns`), the graded generalization of ADR 0112 §3's binary-per-run oracle.
 - **Token axis** — the mean **billed** + **ex-cache-read** spend per run (ADR 0112 §2), plus the
   priced **repair-churn cost** (`repair-churn.ts`): the amortized true cost of one *accepted* run
   once the extra cycles a lower pass-rate forces are amortized in.
-- **Net saving vs a baseline** — when a `baseline` (stage × model) is named, each other cell's
+- **Net saving vs a baseline** — when a `baseline` cell is named, each other cell's
   `netSaving = baseline.billedPerRun − candidate.amortizedBilledPerRun`. A **negative** net saving is
   the epic's headline risk — a per-run token saving *eaten* by repair churn — rendered as
   `NET-NEGATIVE` in the table and `netNegative: true` in the JSON, so the crossover the
@@ -132,6 +251,22 @@ Pure + total: a `TranscriptMissing` run still counts toward the pass-rate but is
 spend mean, and a cell with **no** reconstructed spend reports a `null` token axis rather than a
 fabricated zero. `buildScorecard`, `renderTable`, `toJson`, and `decodeReportInput` are the exports.
 
+#### The cell key carries the review surface
+
+A pass-rate measures **one grading regime**, so the cell key is `(stage × surface × model)` and rows
+from different review surfaces are never aggregated into a single undifferentiated `review` number
+([ADR 0243 §4](../../../../.decisions/0243-review-eval-stage-surface-discriminator.md)). The
+exported `CellIdentity` states that as a type: a `review` cell carries a `ReviewSurface`, every other
+stage carries `null`, so a bare `review` cell is unrepresentable rather than merely unproduced. The
+mixed-surface PR of ADR 0243 §3 — one `inputRef`, one row per surface — therefore reports two cells,
+each rendering its own surface. A recorded v1 `review-code` row keeps its own cell and takes the
+surfaceless arm, because its stage key is provenance, not a live `review` row
+([#4977](https://github.com/kamp-us/phoenix/issues/4977)).
+
+The baseline resolves against that same key, so it selects **at most one** cell. `--baseline-stage
+review` therefore requires `--baseline-surface`: without one it names two graders, which is refused
+at the flag rather than resolved to whichever surface buckets first.
+
 ### The CLI surface
 
 ```bash
@@ -141,8 +276,9 @@ fabrika eval report <rows.json>
 # stable machine-readable JSON — a future gate / CI consumes this
 fabrika eval report <rows.json> --json
 
-# price net saving against a baseline (stage × model)
-fabrika eval report <rows.json> --baseline-stage write-code --baseline-model opus-4.8
+# price net saving against a baseline (stage × surface × model)
+fabrika eval report <rows.json> --baseline-stage build --baseline-model opus-4.8
+fabrika eval report <rows.json> --baseline-stage review --baseline-surface code --baseline-model opus-4.8
 ```
 
 `<rows.json>` is a serialized `RunRow[]` — the array `collectRuns` emits. `decodeReportInput` is
@@ -154,11 +290,12 @@ total: a malformed body or a shape mismatch exits non-zero with a typed reason, 
 {
   "decisionRef": 1576,                       // the decision this evidence feeds — never made here
   "framing": "This scorecard is measurement feeding the model-tiering decision (#1576); …",
-  "baseline": { "stage": "write-code", "model": "opus-4.8" } | null,
+  "baseline": { "stage": "build", "surface": null, "model": "opus-4.8" } | null,
   "cells": [
     {
-      "stage": "write-code",
-      "model": "opus-4.8" | null,            // reconstructed from the transcript; null when unattributable
+      "stage": "build",
+      "surface": null,                        // "code" | "doc" on a `review` cell; null on every other stage
+      "model": "opus-4.8" | null,            // the run's recorded model, else the transcript's; null when neither
       "gradedRuns": 3,                        // pass-rate denominator (includes transcript-missing runs)
       "passedRuns": 2,
       "passRate": 0.6667,                     // the graded quality axis
@@ -341,8 +478,8 @@ The frozen ground truth lives beside this module as one manifest per stage under
 [`corpus/`](./corpus) (issue [#1854](https://github.com/kamp-us/phoenix/issues/1854)):
 
 - [`corpus/triage.json`](./corpus/triage.json) — triage classifications
-- [`corpus/write-code.json`](./corpus/write-code.json) — write-code outcomes
-- [`corpus/review-code.json`](./corpus/review-code.json) — review-code verdicts
+- [`corpus/build.json`](./corpus/build.json) — build outcomes (rows recorded by v1 `write-code`)
+- [`corpus/review.json`](./corpus/review.json) — review verdicts (rows recorded by v1 `review-code`)
 
 Each file is a `CorpusManifest` whose non-target stage arrays are empty, so it decodes
 clean on its own and validates through `fabrika eval check`. Every entry is
@@ -367,7 +504,7 @@ The corpus is governed by the **representative-task-set discipline** of ADR
 - **Selection — representative, stable, reproducible-from-id.** An entry is a real
   pipeline input chosen to be small and stable, pinned by its issue/PR **identifier** (never
   "a recent issue"). Each stage seeds the ADR 0112 §1 recorded input (triage
-  [#1227](https://github.com/kamp-us/phoenix/issues/1227), write-code
+  [#1227](https://github.com/kamp-us/phoenix/issues/1227), build
   [#1223](https://github.com/kamp-us/phoenix/issues/1223) →
   [#1224](https://github.com/kamp-us/phoenix/pull/1224), review-code
   [#1199](https://github.com/kamp-us/phoenix/pull/1199)) and adds entries spanning the
@@ -470,11 +607,12 @@ with no edits" is checked against the real shape rather than asserted.
 
 ```bash
 fabrika eval run <evals.json> \
-  --stage <triage|write-code|review-code|review-doc|ship-it> \
+  --stage <triage|build|review|ship-it> \
   --plugin-dir <the candidate skill's plugin dir> \
   --model <model> \
   [--arms with-skill,without-skill] [--json-schema <schema.json>] \
-  [--timeout-ms 900000] [--out ledger.json] [--capture-out capture.json] [--dry-run]
+  [--timeout-ms 900000] [--out ledger.json] [--capture-out capture.json] \
+  [--spend-ledger .fabrika/spend-ledger.jsonl] [--dry-run]
 ```
 
 One command runs a skill's whole eval set with nobody watching. Per (case × arm) it invokes
@@ -482,6 +620,60 @@ One command runs a skill's whole eval set with nobody watching. Per (case × arm
 locates the pinned session's transcript, classifies the run, and folds the collectable ones into the
 **capture manifest** `collectFromCapture` already consumes. Grading, spend reconstruction and the
 scorecard are all pre-existing code paths — this verb adds no oracle, no meter and no renderer.
+
+### The `--model` contract ([#5158](https://github.com/kamp-us/phoenix/issues/5158))
+
+`--model` is **required** and its value is **normalized, not policed**. The spelling you pass is
+canonicalized through fabrika's one alias table ([`../models.ts`](../models.ts)) before it reaches a
+planned run, so `--model <alias>` and `--model <its canonical id>` are the same run, the same argv,
+and — because the ledger and capture manifest record the canonical spelling — the same scorecard
+cell. That is the whole change: there is **no allowlist**, **no default**, and **no rejection**. A
+model the table has never heard of canonicalizes to itself and runs exactly as named, which is what
+keeps [#4680](https://github.com/kamp-us/phoenix/issues/4680)'s model-churn re-run contract (ADR
+0236 §2) intact — a new model can be evaluated the day it exists, without editing this package.
+`fabrika eval report --baseline-model` is normalized the same way, so a baseline named in either
+spelling still matches the cell it means. The ruling behind this is
+[#5148](https://github.com/kamp-us/phoenix/issues/5148) (option B), and the table lives in one place
+by ADR [0238](../../../../.decisions/0238-fabrika-reimplements-v1-never-calls-it.md) — nothing under
+`src/eval/` declares a second copy.
+
+### What each run cost, attributed to the run ([#5008](https://github.com/kamp-us/phoenix/issues/5008))
+
+The runner already reconstructed every run's transcript to detect a silent green and then threw the
+number away. It now keeps it. Each completed run carries its `RunSpend` on its outcome, and the
+ledger's `spendRows` hold one **spend row** per completed run — the spend plus the identity fabrika
+already had for it: skill, stage, case id, arm, model, session id, CLI version, and the suite's
+`recordedAt` stamp. A `Failed` run gets no row; a row's `stage` is provenance — the key the row was
+written under — never a pointer into the live stage table (#4977).
+
+The three-arm `RunSpend` union is reused verbatim, so the states that are not a number stay
+distinguishable to the last layer. `renderLedger` prints per-run `billed` / `ex-cache-read` and a
+suite total, and it prints `n/a (transcript missing)` — never `0` — for a run it could not measure. A
+suite that measured nothing prints `spend: unmeasured`, because a `billed 0` total reads exactly like
+a suite that genuinely cost nothing. A run whose transcript bills zero turns never reaches a row at
+all: it is already the counted `NoModelTurns:zero-assistant-turns` failure above.
+
+The figures come from `src/spend/token-spend.ts` through `classifyRunSpend`. No second sum is added
+here — this change in fact removes the runner's own second `reconstructSpend` call.
+
+### Where those rows survive ([#5009](https://github.com/kamp-us/phoenix/issues/5009))
+
+A spend row used to live only in the `--out` file the operator named, so every measurement was as
+durable as one shell history. Once the suite completes, the runner now appends its rows to a **spend
+ledger** — `.fabrika/spend-ledger.jsonl` by default, `--spend-ledger <path>` to put it elsewhere.
+The default is repo-relative and gitignored; the format and both halves of its contract live in
+[`../spend/ledger.ts`](../spend/ledger.ts).
+
+Three properties are the point:
+
+- **It is the only durable write, and it is on the completion path.** Nothing hooks session start,
+  session end, or a tool call — the epic's second no-go. A `--dry-run` spawns nothing and so records
+  nothing.
+- **A re-run appends.** The earlier suite's lines are still there, byte for byte; nothing truncates,
+  rewrites or repairs a line already on disk.
+- **It cannot change what the run reports.** A ledger that cannot be written is one line on stderr.
+  The exit code and the suite's outcome are untouched, because the measurement is a by-product of the
+  run and must never become a way for it to fail.
 
 **The two arms are `--plugin-dir` present or absent.** That is the whole difference in the argv, and
 it is the arm variable the /skill-creator methodology means by with-skill vs without-skill. Two flags

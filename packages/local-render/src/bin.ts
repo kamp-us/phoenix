@@ -17,7 +17,7 @@
  * Mechanical-tooling idiom (`effect/unstable/cli`, pure core + thin bin).
  */
 import {NodeRuntime, NodeServices} from "@effect/platform-node";
-import {parseSurfaceSpec} from "@kampus/design-capture";
+import {parseSurfaceSpec} from "@kampus/fabrika-cli/capture";
 import {Console, Effect, Option} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
 import {DEFAULT_LOCAL_BASE, parseFlagOverride, parseRegionSpec} from "./plan.ts";

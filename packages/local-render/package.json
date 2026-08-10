@@ -2,7 +2,7 @@
 	"name": "@kampus/local-render",
 	"version": "0.0.0",
 	"private": true,
-	"description": "Local render-and-capture harness (#2963, epic #2953) — renders the composed UI surface over a running local `alchemy dev` build and writes per-surface PNGs, honoring the dev-override cookie + an empty local D1, with capture-side crop/downscale under a documented budget. Reuses @kampus/design-capture's Playwright capture leg, adds local-build targeting on top.",
+	"description": "Local render-and-capture harness (#2963, epic #2953) — renders the composed UI surface over a running local `alchemy dev` build and writes per-surface PNGs, honoring the dev-override cookie + an empty local D1, with capture-side crop/downscale under a documented budget. Reuses @kampus/fabrika-cli/capture's Playwright capture leg, adds local-build targeting on top.",
 	"type": "module",
 	"exports": {
 		".": "./src/index.ts"
@@ -15,7 +15,7 @@
 	},
 	"dependencies": {
 		"@effect/platform-node": "catalog:",
-		"@kampus/design-capture": "workspace:*",
+		"@kampus/fabrika-cli": "workspace:*",
 		"@playwright/test": "catalog:",
 		"effect": "catalog:"
 	},

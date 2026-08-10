@@ -198,9 +198,19 @@ merge model from human-hand-merge to **approve-then-pipeline-enqueue** — the h
 dead end at reviewed-ready; it carries **one extra gate** — the current-head approval — before the
 same shipper that ships a non-§CP PR enqueues it:
 
-- Drive the lane through coder → reviewer to **reviewed-ready**, then **bank it on the board**:
-  assign the PR to the approver and label it banked. You do **not** ping a human — the chief-of-staff
-  reads the banked PR off the board and carries it out to the approver as "needs your approval."
+- Drive the lane through coder → reviewer to **reviewed-ready**, then **bank it on the board** —
+  through the one verb that performs the whole act and proves it landed, never a hand-rolled trio of
+  `gh api` calls:
+
+  ```bash
+  "$PCLI" cp-bank apply --pr "$PR" --approver "$CP_APPROVER"
+  ```
+
+  It applies the banked label (`status:cp-banked`, provisioning it if the repo lacks it), assigns the
+  approver, requests their review, and reads the PR back — so a bank cannot half-land in the one way
+  that matters: **the label the watch set below is derived from is always written** (#4754). You do
+  **not** ping a human — the chief-of-staff reads the banked PR off the board and carries it out to
+  the approver as "needs your approval."
 - **Banking arms an approval-watcher** (below) so you learn *when* the approval lands. Once that
   watcher wakes you on a control-plane team approval at the PR's **current head** (machine gates still
   green), spawn the approval-aware `shipper` on that approved head. The shipper is itself
@@ -221,12 +231,20 @@ never waits on a human re-nudging the crew. The poll-vs-push shape is a self-pol
 it adds no engine→engine and no human-facing edge.
 
 - **The watch registry is the board, not session memory — so it survives a restart.** The set you
-  watch is *your banked §CP PRs*, and that set is already durable on the board: a §CP PR you banked is
-  assigned to the approver and carries the banked label. Arming the watcher *is* the bank — each loop
-  tick you re-derive the watch set from the board (`gh api` — open §CP PRs you banked, still awaiting
-  approval), never from an in-memory list a restarted engine would lose. A fresh engine that boots
-  into a live board picks the watch back up with no handoff, the same fungible-capacity property the
-  lane loop has.
+  watch is *your banked §CP PRs*, and that set is durable on the board: `cp-bank apply` labelled each
+  one `status:cp-banked` and assigned it to the approver. Each loop tick you re-derive the set from
+  the board through the **shipped** derivation — `"$PCLI" cp-bank set`, which prints the open banked
+  PRs as a JSON array — never from an in-memory list a restarted engine would lose, and never from a
+  derivation you write yourself here. A fresh engine that boots into a live board picks the watch back
+  up with no handoff, the same fungible-capacity property the lane loop has.
+- **Arming is a loop, so banking cannot *be* the arming — the absence of a tick is what reds.**
+  Banking writes board state once; the watcher keeps ticking, and no single act can guarantee a loop
+  keeps running. So the coupling is on the read side: `pipeline-cli cp-bank check` correlates the
+  board-derived banked set against the tick ledger and **reds when a non-empty banked set has no tick
+  inside a bounded window**. It runs hourly in CI (`.github/workflows/cp-bank-guard.yml`), so an
+  engine that banks and never arms is now loud within hours instead of invisible until a human
+  happens to look — the 8h34m strand of #4754. If you are holding banked §CP PRs, your loop ticking
+  is what keeps that guard green.
 - **Every tick leaves a durable record — the trace the transcript cannot be.** A tick's log lines go
   to *your* transcript, which is session-local, so from outside a loop that never ticked and a loop
   that ticked and found nothing were the same observation: silence. Worse, the asymmetry ran the wrong
@@ -271,6 +289,17 @@ it adds no engine→engine and no human-facing edge.
   green. The §CP unblock logic lives once — in ship-it / `cp-cardinality` — and both the watcher and
   the shipper read that single source, so the trigger fires exactly when the enqueue would discharge
   and no second copy of the §CP discharge forks into this def.
+
+  **What "re-used, never re-derived" covers is the DECISION, not the signals.** `cp-cardinality
+  decide` is a pure function over a roster and two booleans: it takes `--author`,
+  `--non-author-approval-at-head`, `--self-approval-at-head` and the roster on stdin, and resolves
+  nothing over the network — every caller derives the two current-head signals itself. This def used
+  to say the call "resolves the active approver set and the SHA-bound signal flags itself — do NOT
+  re-derive either here", which is false against the shipped CLI, and a seat following it had to
+  invent `--pr`/`--head` to pass the PR and head at all (#5072). So the block below derives the two
+  signals and shows the call literally; `ship-it`'s
+  [`step0-cp-approval.sh`](../../kampus-pipeline/skills/ship-it/scripts/step0-cp-approval.sh) derives
+  the same two for the shipper. Keep those two in step — neither decides.
 - **Every live input the discharge predicate consumes resolves to UNKNOWN when its read could not
   execute — never to a definite answer (fail closed).** This is a rule over the *predicate*, not a
   list of the reads that have failed historically: a tick may interpret an input only after proving
@@ -291,12 +320,13 @@ it adds no engine→engine and no human-facing edge.
   further out), **VERIFIED HEAD** (`.commit_id == $HEAD`, ADR 0058) — and the same disposition on
   failure. Only the assertion differs.
 
-  **The block below is the tick's guards, and only its guards** — it ends where the discharge begins.
-  Proving the inputs is this def's job; *deciding* on them is not, because the decision is ship-it's
-  §CP gate via `cp-cardinality` (the bullet above) and no second copy of it may fork into this def.
-  So the block assembles no approver set, derives no signal flags, and fires nothing — the
-  per-approver membership read above is stated as a rule rather than copied here, since it runs where
-  the approver set is assembled, inside that single-source discharge.
+  **The block below is one PR's whole tick — guards, then the discharge, written out.** The guards
+  prove every input; the discharge derives the two signals and hands the decision to
+  `cp-cardinality`. It is literal and runnable on purpose: a def that *describes* a tool's flags
+  instead of *showing* the call drifts from the shipped interface silently, and the drift surfaces as
+  a false verdict rather than a visible error — a seat reading the old prose invented `--pr`/`--head`,
+  the CLI refused them, and the refusal was recorded as a definite "no approval at current head"
+  (#5072). Copy the call; do not paraphrase it.
 
   ```bash
   # §CLI — resolve the shim by path; `pipeline-cli` is NOT on PATH (ADR 0207; #3314).
@@ -353,23 +383,80 @@ it adds no engine→engine and no human-facing edge.
     *) unknown "machine gates" "checks exit $rc"; return 0 ;;     # 2, 127, crash — the read never ran
   esac
 
-  # → GUARDS END HERE. Every input is proven readable and the gates are proven green, so hand the
-  #   tick to the single-source discharge (the bullet above): ship-it's §CP gate, run through
-  #   `pipeline-cli cp-cardinality decide` on the proven $HEAD / $AUTHOR / $MEMBERS_JSON / $REVIEWS.
-  #   That call resolves the active approver set and the SHA-bound signal flags itself — do NOT
-  #   re-derive either here, which is what forks a second copy of the discharge into this def.
-  #   Read its verdict off its OWN codes: 0 discharges (fire the shipper), 1 is the definite stop;
-  #   every other non-zero means the decision never ran (e.g. exit 4, the unread-stdin code) and is
-  #   this tick's UNKNOWN — never read a stop off "non-zero" (the collision #4204 fixed in
-  #   cp-classify).
-  #
-  #   Transcribe that verdict into the tick record with the SAME three-way vocabulary the guards
-  #   use — `note fired` on 0, `note "definite-stop:no approval at current head"` on 1, and
-  #   `note "unknown:cp-cardinality exit $rc"` on anything else. It is a transcription of the
-  #   branch taken, never a second copy of the decision (#4292).
+  # → GUARDS END HERE. Every input is proven readable and the gates are proven green. What follows
+  #   is the discharge: derive the two current-head signals, then hand the DECISION to the single
+  #   source, `pipeline-cli cp-cardinality decide`. Its whole interface is `--author`,
+  #   `--non-author-approval-at-head`, `--self-approval-at-head` and the roster on stdin — there is
+  #   no `--pr` and no `--head` (#5072).
+
+  # 6. SIGNAL 1 — a current-head APPROVED review by an ACTIVE control-plane member who is NOT the
+  #    author. Pipe the proven payload into REAL `jq`. `gh api --jq` takes no `--arg`: writing
+  #    `gh api … --jq '…' --arg h "$HEAD"` makes gh consume the extras as positional args, error to
+  #    stderr, and yield an EMPTY string that a caller reads as "no approvers" — the same false
+  #    definite one read further out (#5072).
+  APPROVERS="$(printf '%s' "$REVIEWS" | jq -r -s --arg h "$HEAD" \
+    'add | group_by(.user.login) | map(max_by(.submitted_at))
+     | map(select(.state == "APPROVED" and .commit_id == $h) | .user.login) | .[]')" \
+    || { unknown "approver derivation" "jq failed on the reviews payload"; return 0; }
+
+  # Membership is the SHARED three-way read (§CPREAD-APPROVAL's `cp_team_membership`), never a
+  # `--jq '.state'` of your own: `absent` is a definite non-member, a non-zero exit is UNKNOWN. An
+  # UNKNOWN probe must not under-count into a stop that reads as "awaiting approval", so it is
+  # recorded and the scan continues — a later approver proving `active` still discharges honestly.
+  CPREAD="$(dirname "$(dirname "$PCLI")")/skills/shared/scripts/cp-read.sh"
+  NON_AUTHOR_APPROVAL_AT_HEAD=false; MEMBERSHIP_UNKNOWN=false
+  for u in $APPROVERS; do
+    [ "$u" = "$AUTHOR" ] && continue                  # a self-approval is never signal 1 (ADR 0175)
+    if M="$(bash "$CPREAD" "${REPO%%/*}" team-membership "$u" 2>/dev/null)"; then
+      case "$M" in *CP_MEMBERSHIP=active*) NON_AUTHOR_APPROVAL_AT_HEAD=true; break ;; esac
+    else
+      MEMBERSHIP_UNKNOWN=true
+    fi
+  done
+  if [ "$NON_AUTHOR_APPROVAL_AT_HEAD" = false ] && [ "$MEMBERSHIP_UNKNOWN" = true ]; then
+    unknown "approver membership" "at least one probe failed"; return 0
+  fi
+
+  # 7. SIGNAL 2 — the sole-owner self-approval marker, ADR 0175's ONLY N==1 discharge. Derived just
+  #    in that shape, so a normal multi-member tick makes no extra read; cp-cardinality ignores this
+  #    flag whenever N>1, so not deriving it there loses nothing.
+  SELF_APPROVAL_AT_HEAD=false
+  MEMBERS="$(printf '%s' "$MEMBERS_JSON" | jq -r -s 'add | .[].login')" \
+    || { unknown roster "jq failed on the roster payload"; return 0; }
+  if [ "$MEMBERS" = "$AUTHOR" ]; then                 # exactly one member, and it is the author
+    MARKER="$(gh api --paginate "repos/$REPO/issues/$PR/comments?per_page=100" 2>/dev/null \
+      | jq -r -s --arg a "$AUTHOR" 'add
+        | map(select(.user.login == $a and (.body | test("(?i)^\\s*\\**\\s*control-plane-self-approval\\b"))))
+        | last | .body // ""')" \
+      || { unknown "self-approval marker" "unreadable comment payload"; return 0; }
+    SELF_SHA="$(printf '%s\n' "$MARKER" \
+      | grep -ioE 'control-plane-self-approval[[:space:]]*@?[[:space:]]*[0-9a-f]{7,40}' \
+      | grep -ioE '[0-9a-f]{7,40}' | tail -n1)"
+    # Guard 1 proved $HEAD is 40-hex, so this prefix match cannot degenerate into "binds any head";
+    # the empty $SELF_SHA case is still excluded explicitly, because that is the other half (#4223).
+    case "$SELF_SHA" in "") : ;; *) case "$HEAD" in "$SELF_SHA"*) SELF_APPROVAL_AT_HEAD=true ;; esac ;; esac
+  fi
+
+  # 8. THE DECISION — roster on stdin, a signal flag passed only when that signal is present at head.
+  #    cp-cardinality selects which signal its branch requires; this block never re-decides.
+  printf '%s\n' "$MEMBERS" | "$PCLI" cp-cardinality decide --author "$AUTHOR" \
+    $([ "$NON_AUTHOR_APPROVAL_AT_HEAD" = true ] && printf -- '--non-author-approval-at-head') \
+    $([ "$SELF_APPROVAL_AT_HEAD" = true ] && printf -- '--self-approval-at-head') >/dev/null 2>&1
+  rc=$?
+  # ENUMERATE the verdict codes; everything else is UNKNOWN. 0 and 1 are the ONLY codes that carry a
+  # decision — 4 is a malformed invocation or an unread stdin (`BAD_INVOCATION_EXIT_CODE` /
+  # `STDIN_READ_FAILED_EXIT_CODE`), 127 is a shim off PATH, anything else is a crash. Reading a stop
+  # off `!= 0` is what recorded four approved §CP PRs as definite stops (#5072).
+  case "$rc" in
+    0) note fired
+       echo "approval-watcher #$PR: §CP discharged at $HEAD — fire the shipper" ;;
+    1) note "definite-stop:no approval at current head"
+       echo "approval-watcher #$PR: no approval at current head (read OK, definite)" ;;
+    *) unknown "cp-cardinality" "decide exit $rc" ;;
+  esac
   ```
 
-  The block above is one PR's guards. The **tick** frames it: re-derive the watch set from the board,
+  The block above is one PR's tick — `tick_one_pr`. The **tick** frames it: re-derive the watch set from the board,
   run the guards + discharge per PR, then write the tick's one durable record — including when the
   derived set is empty, which is the case that most needs recording, and when the derivation itself
   could not be read, which must not land as that same empty.
@@ -382,7 +469,7 @@ it adds no engine→engine and no human-facing edge.
   #    board from a read that never executed, which is #3715's collapse one level up from the guards
   #    that prevent it. `--watch-unresolved` is the set-level `unknown:`: it names the failed read
   #    instead of asserting an empty board.
-  BANKED_JSON="$(banked_cp_prs_awaiting_approval_json)" \
+  BANKED_JSON="$("$PCLI" cp-bank set)" \
     && printf '%s' "$BANKED_JSON" | all_pages_are_arrays \
     || { "$PCLI" approval-watcher record --watch "" --watch-unresolved "board: unreadable payload"
          echo "approval-watcher: board read FAILED — UNKNOWN watch set, re-arming; NOT 'no banked §CP PR'"
@@ -396,8 +483,12 @@ it adds no engine→engine and no human-facing edge.
 
   The exit-code idiom is the shipped one, not a new invention: `STDIN_READ_FAILED_EXIT_CODE = 4`
   in [`packages/pipeline-cli/src/read-stdin.ts`](../../../packages/pipeline-cli/src/read-stdin.ts) —
-  "distinct from a gate's own verdict codes: the input was never read." So a tool's verdict codes are
-  the only codes you read a verdict off; any other non-zero is a read that never happened.
+  "distinct from a gate's own verdict codes: the input was never read." Its invocation-side twin is
+  `BAD_INVOCATION_EXIT_CODE` in
+  [`packages/pipeline-cli/src/exit-codes.ts`](../../../packages/pipeline-cli/src/exit-codes.ts), the
+  same 4: the router seats every unrecognized flag there so a refused call can no longer land on the
+  1 that means `stop`. So a tool's verdict codes are the only codes you read a verdict off; any other
+  non-zero is a call that never decided.
 
   **Log "read failed" distinctly from a definite non-firing answer, and name which read failed.**
   They are different facts with the same non-firing outcome, and collapsing them makes a GitHub

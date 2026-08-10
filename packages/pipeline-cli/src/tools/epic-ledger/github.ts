@@ -42,12 +42,27 @@ const GithubLabel = Schema.Struct({
 /** A null/absent issue body normalizes to the empty string before parsing. */
 const GithubBody = Schema.optionalKey(Schema.NullOr(Schema.String));
 
+/** A GitHub assignee as REST returns it (`{login, ...}`); only `login` is read. */
+const GithubAssignee = Schema.Struct({
+	login: Schema.String,
+});
+
+/**
+ * The assignee slot, decoded so an **absent** key stays distinguishable from an
+ * empty one. `repos/{repo}/issues/{n}` always returns `assignees`, so the absent
+ * case means the payload was narrowed (a `--jq` projection, a fixture, a future
+ * refactor) — and the check downstream must say UNKNOWN rather than read the
+ * silence as "unassigned" (#4693).
+ */
+const GithubAssignees = Schema.optionalKey(Schema.NullOr(Schema.Array(GithubAssignee)));
+
 /** The raw GitHub issue fields the ledger needs, lenient on everything else. */
 const GithubIssue = Schema.Struct({
 	number: Schema.Number,
 	title: Schema.String,
 	body: GithubBody,
 	labels: Schema.Array(GithubLabel),
+	assignees: GithubAssignees,
 });
 
 /** The untrusted input: the epic issue plus its linked sub-issues' JSON. */
@@ -64,6 +79,10 @@ const bodyOf = (body: string | null | undefined): string => body ?? "";
 const labelNames = (labels: ReadonlyArray<{readonly name: string}>): ReadonlyArray<string> =>
 	labels.map((l) => l.name);
 
+const assigneeLogins = (
+	assignees: ReadonlyArray<{readonly login: string}> | null | undefined,
+): ReadonlyArray<string> | undefined => assignees?.map((a) => a.login);
+
 const toLedger = (input: GithubEpicInput): EpicLedger => ({
 	epic: {
 		number: input.epic.number,
@@ -79,6 +98,7 @@ const toLedger = (input: GithubEpicInput): EpicLedger => ({
 		acceptanceCriteriaCount: countAcceptanceCriteria(bodyOf(child.body)),
 		stories: parseChildStories(bodyOf(child.body)),
 		containment: parseChildContainment(bodyOf(child.body)),
+		assignees: assigneeLogins(child.assignees),
 	})),
 	// Pure decode cannot probe GitHub, so cross-epic refs and the cycle-doc presence
 	// are left unresolved here; the IO boundary (`loadEpicLedger`) resolves and

@@ -101,6 +101,12 @@ const options = {
 	stdin: Effect.succeed<StdinRead>({_tag: "Text", text: REASON}),
 };
 
+/** A placeholder operator set — these tests measure the mechanism, never a real login. */
+const OPERATOR_ENV = {
+	CLAUDE_PIPELINE_REPO: "o/r",
+	FABRIKA_OPERATOR_ACCOUNTS: "operator-account",
+} as Record<string, string | undefined>;
+
 /** The whole sequence green: precondition read, label set, three writes, a not-planned read-back. */
 const happy = (): ReadonlyArray<readonly [RegExp, ExecResult]> => [
 	[firstCallOnly(ISSUE), issue()],
@@ -181,6 +187,55 @@ describe("runKill", () => {
 		const {out} = await runWith([[firstCallOnly(ISSUE), issue({body: ""})], ...happy().slice(1)]);
 		expect(out.code).toBe(HUMAN_FILED);
 		expect(out.stderr.join("\n")).toContain("fail-closed");
+	});
+
+	it("names the unset operator config on a 12, so the cause of the refusal is readable", async () => {
+		const {out} = await runWith([
+			[firstCallOnly(ISSUE), issue({body: "I typed this myself."})],
+			...happy().slice(1),
+		]);
+		expect(out.stderr.join("\n")).toContain("FABRIKA_OPERATOR_ACCOUNTS");
+	});
+
+	it("kills a FOOTERLESS filing authored by a configured operator account (#4619)", async () => {
+		const {out, calls} = await runWith(
+			[
+				[
+					firstCallOnly(ISSUE),
+					issue({body: "no footer at all", user: {login: "operator-account"}}),
+				],
+				[ISSUE, killed],
+				...happy().slice(2),
+			],
+			{env: OPERATOR_ENV},
+		);
+		expect(out.code).toBe(0);
+		expect(calls.filter((c) => CLOSE.test(c))).toHaveLength(1);
+	});
+
+	it("still refuses a footerless filing by any OTHER author, operator set configured", async () => {
+		const {out, calls} = await runWith(
+			[
+				[firstCallOnly(ISSUE), issue({body: "no footer at all", user: {login: "cansirin"}})],
+				...happy().slice(1),
+			],
+			{env: OPERATOR_ENV},
+		);
+		expect(out.code).toBe(HUMAN_FILED);
+		expect(calls.some((c) => CLOSE.test(c))).toBe(false);
+	});
+
+	it("drops the empty-body fail-closed notice when the operator author decided the answer", async () => {
+		const {out} = await runWith(
+			[
+				[firstCallOnly(ISSUE), issue({body: "", user: {login: "operator-account"}})],
+				[ISSUE, killed],
+				...happy().slice(2),
+			],
+			{env: OPERATOR_ENV},
+		);
+		expect(out.code).toBe(0);
+		expect(out.stderr.join("\n")).not.toContain("fail-closed");
 	});
 
 	it("refuses an UNREADABLE body on 11, never as a human verdict", async () => {
@@ -288,22 +343,27 @@ describe("runKill", () => {
 
 	// --- the authored reason -------------------------------------------------------------------
 
-	it("refuses an empty-but-read stdin on 3 — an unauditable kill", async () => {
+	it("refuses an empty-but-read stdin on 3, and says how many bytes it read", async () => {
 		const {out} = await runWith(happy(), {
 			stdin: Effect.succeed({_tag: "Text", text: "   "} satisfies StdinRead),
 		});
 		expect(out.code).toBe(EMPTY_STDIN);
 		expect(out.stderr.at(-1)).toBe(
-			"triage kill: no reason on stdin — refusing an unauditable kill.",
+			"triage kill: no body on stdin — refusing an unauditable kill: pipe the reason in.",
 		);
+		// The byte count is what tells a read-but-empty pipe (3) from an unread one (1).
+		expect(out.stderr[0]).toBe("triage kill: stdin was read and held 3 byte(s).");
 	});
 
-	it("refuses a FAILED stdin read as UNKNOWN, never as an empty reason", async () => {
+	it("refuses a FAILED stdin read on 1, never on the empty code", async () => {
 		const {out} = await runWith(happy(), {
 			stdin: Effect.succeed({_tag: "Failed", reason: "EAGAIN"} satisfies StdinRead),
 		});
 		expect(out.code).toBe(1);
-		expect(out.stderr.at(-1)).toContain("never empty");
+		expect(out.code).not.toBe(EMPTY_STDIN);
+		expect(out.stderr.at(-1)).toBe(
+			"triage kill: could not read stdin: EAGAIN — the reason is UNKNOWN, never empty.",
+		);
 	});
 
 	it("refuses a bare @ reason on 6 — masking a placeholder never terminates", async () => {
@@ -311,17 +371,37 @@ describe("runKill", () => {
 			stdin: Effect.succeed({_tag: "Text", text: "@/tmp/reason.md"} satisfies StdinRead),
 		});
 		expect(out.code).toBe(BARE_AT_PATH);
+		expect(out.stderr.at(-1)).toBe(
+			'triage kill: the reason is a bare "@" path reference — the body never arrived. Send it on stdin.',
+		);
 	});
 
-	it("refuses a machine-local path in the authored reason on 5", async () => {
+	it("seats a reason that is BOTH a bare @ and a leak on 6 — the bare @ is tested first", async () => {
+		const {out} = await runWith(happy(), {
+			stdin: Effect.succeed({
+				_tag: "Text",
+				text: "@/Users/someone/notes/why.md",
+			} satisfies StdinRead),
+		});
+		expect(out.code).toBe(BARE_AT_PATH);
+		expect(out.code).not.toBe(LEAKED_PATH);
+	});
+
+	it("refuses a machine-local path in the authored reason on 5, listing every hit", async () => {
 		const {out, calls} = await runWith(happy(), {
 			stdin: Effect.succeed({
 				_tag: "Text",
-				text: "see /Users/someone/notes/why.md",
+				text: "see /Users/someone/notes/why.md\nand /Users/someone/notes/how.md",
 			} satisfies StdinRead),
 		});
 		expect(out.code).toBe(LEAKED_PATH);
-		expect(out.stderr.at(-1)).toContain("at line 1 (absolute home root)");
+		expect(out.stderr.at(-1)).toBe(
+			"triage kill: the reason carries a machine-local path at line 1 (absolute home root) — rewrite it repo-relative.",
+		);
+		expect(out.stderr.slice(0, -1)).toEqual([
+			"  line 1, absolute home root",
+			"  line 2, absolute home root",
+		]);
 		expect(calls.some((c) => CLOSE.test(c))).toBe(false);
 	});
 

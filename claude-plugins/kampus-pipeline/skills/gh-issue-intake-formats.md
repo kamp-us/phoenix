@@ -1373,7 +1373,7 @@ runs the shared entry point, which cannot hand back a fail-open no:
 ```bash
 # stdout, in order: the §CP scope line, `CP_STATE=<state>`, then `BLOCKING (…)` on every state but
 # `not-control-plane`. Assert on the CP_STATE word — an exit code discriminates outcomes only once
-# the script has RUN, so `… || ordinary` fail-opens on a usage error (1) or a missing binary (127).
+# the script has RUN, so `… || ordinary` fail-opens on a bad invocation (4) or a missing binary (127).
 bash ./.claude/.pipeline/skills/shared/scripts/cp-classify-entry.sh "$REPO" "$PR"
 ```
 
@@ -1399,13 +1399,13 @@ probe unchanged, so this widens no over-match (#2617).
 
 **The exit code discriminates the four states only once the verb has RUN — so a consumer asserts
 on the stdout state word, never on a bare non-zero.** Both naive exit-status shapes are **UNSAFE
-and must not be used**: `… || ordinary` fires on an effect-cli usage error (exit 1, help text on
+and must not be used**: `… || ordinary` fires on a malformed invocation (exit 4, help text on
 stdout, no state word) and on a missing binary (exit 127) exactly as it does on the real verdict,
 routing a §CP change to the ordinary branch; `… && echo BLOCKING` simply emits nothing when the
 verb never ran, so the BLOCKING line the caller relied on never appears. Both fail **open**, and a
 `pipeline-cli` that does not resolve is live here — a bare `pipeline-cli` exits 127 when the shim
 is off `PATH`. That is why `not-control-plane` carries its own exit code **3**, which neither a
-usage error (1), a missing binary (127), nor an unread stdin (4, #3924) produces: an exact
+bad invocation (4, #5072), a missing binary (127), nor an unread stdin (4, #3924) produces: an exact
 `[ "$rc" -eq 3 ]` is proof, `[ "$rc" -ne 0 ]` is not. Every wired consumer below uses the
 state-word form above; a new one that does not is not wired correctly.
 
@@ -1886,8 +1886,16 @@ verb result** at the call site. Read the two apart this way, and never collapse 
 |---|---|---|
 | `"$PCLI" …` exits **127**, or the message names a *path* that does not exist | The CLI **never ran** — resolution failure | **UNKNOWN.** Never clean, never a negative verdict. Re-resolve or route the blocker up. |
 | Exit **1** with `Cannot find module` / `MODULE_NOT_FOUND` naming a `…/pipeline-cli/src/bin.ts` path, and **empty stdout** | The CLI **never ran** — a cwd-relative `node …/src/bin.ts` invocation from a dir that is not the repo root | **UNKNOWN**, exactly as for 127 — even though the exit code collides with several verbs' ordinary "negative" result. This is the collision the ban above exists to remove; if you see it, the call site is non-canonical, not the answer negative (#4236). |
+| Exit **4** | The verb **never decided** — either a malformed invocation (`BAD_INVOCATION_EXIT_CODE`: an unrecognized flag, a typo'd subcommand) or an unread stdin (`STDIN_READ_FAILED_EXIT_CODE`, #3924) | **UNKNOWN.** One never-ran band, deliberately one number. A refused call used to exit `1` — which is `cp-cardinality decide`'s `stop` — so a caller transcribed its own bad flags as a definite "no approval at current head" for four approved §CP PRs (#5072). |
 | Any other non-zero exit | The verb **ran** and returned its own documented contract (e.g. `2` findings / `3` zero scope) | Read it as that verb's result. |
 | Exit 0 | The verb ran and passed | Read it as that verb's result. |
+
+**Read a verb's verdict off its OWN enumerated codes, never off "non-zero".** A verb publishes which
+codes carry a decision (`cp-cardinality decide`: `0` discharge, `1` stop, and nothing else);
+everything outside that set is UNKNOWN. And when a def or a skill tells an agent to *call* a verb,
+show the literal invocation rather than describing its flags — prose that describes an interface
+drifts from the shipped one silently, and the drift lands as a false verdict instead of a visible
+error (#5072).
 
 **A 127 is a PATH/resolution gap. It is NOT worktree teardown.** Teardown is progressive and has
 its own two signatures, in sequence: **exit 1 with `ENOENT` on a file that provably exists on

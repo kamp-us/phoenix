@@ -13,6 +13,7 @@ import {NodeFileSystem, NodeSocket} from "@effect/platform-node";
 import {assert, describe, it} from "@effect/vitest";
 import {Effect, Layer} from "effect";
 import {RpcClient, RpcSerialization} from "effect/unstable/rpc";
+import {SUBPROCESS_TEST_TIMEOUT_MS} from "../test-budget.ts";
 import {rendezvousSocketPathFor, TrackerRegistry, trackerServerLayer} from "../tracker/index.ts";
 import {ensureTrackerRunning, tryBecomeTracker} from "./ensure-tracker.ts";
 
@@ -36,7 +37,7 @@ const clientLayer = (socketPath: string) =>
 const reap = (pid: number | undefined) =>
 	pid === undefined ? Effect.void : Effect.try(() => process.kill(pid)).pipe(Effect.ignore);
 
-describe("tryBecomeTracker — the bind-outcome core", () => {
+describe("tryBecomeTracker — the bind-outcome core", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}, () => {
 	it.effect("start-if-absent: an unbound socket is won ('started') and served afterward", () => {
 		const socketPath = freshSocketPath();
 		return Effect.gen(function* () {
@@ -68,7 +69,9 @@ describe("tryBecomeTracker — the bind-outcome core", () => {
 	);
 });
 
-describe("ensureTrackerRunning — the detached standing process", () => {
+describe("ensureTrackerRunning — the detached standing process", {
+	timeout: SUBPROCESS_TEST_TIMEOUT_MS,
+}, () => {
 	// `it.live`, not `it.effect`: this spawns a real detached node process and polls the socket with
 	// real-time `Effect.sleep` — the default TestClock would freeze that poll (sleep never elapses).
 	it.live(
@@ -107,6 +110,5 @@ describe("ensureTrackerRunning — the detached standing process", () => {
 				Effect.ensuring(Effect.sync(() => rmSync(projectDir, {recursive: true, force: true}))),
 			);
 		},
-		30_000,
 	); // two real detached node child spawns (each ~1-3s of node + TS + Effect startup)
 });

@@ -5,9 +5,9 @@
 import {cleanup} from "@testing-library/react";
 import {afterEach} from "vitest";
 
-// Manti'nin Zag/Floating UI tabanlı katmanları gerçek tarayıcıda bulunan bu iki
-// API'yi kullanır. jsdom bunları sağlamadığı için istemci test ortamında davranışı
-// etkisiz ama arayüzü doğru iki küçük uyumluluk katmanı kuruyoruz.
+// Manti's Zag/Floating UI layers use these two browser APIs, which jsdom does not
+// provide. These are behaviourally inert shims with the right interface, enough to
+// let the client test tier mount those components.
 if (typeof globalThis.PointerEvent === "undefined") {
 	class PointerEventShim extends MouseEvent {
 		readonly pointerType: string;

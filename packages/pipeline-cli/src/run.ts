@@ -16,7 +16,8 @@
  */
 import {NodeRuntime, NodeServices} from "@effect/platform-node";
 import {Effect, Result} from "effect";
-import {Command} from "effect/unstable/cli";
+import {CliError, Command} from "effect/unstable/cli";
+import {BAD_INVOCATION_EXIT_CODE} from "./exit-codes.ts";
 import {registeredTools} from "./registry.ts";
 import {dispatch} from "./router.ts";
 import {
@@ -63,4 +64,14 @@ const cli = Command.make("pipeline-cli").pipe(
 	Command.withDescription("The pipeline tooling router — `pipeline-cli <tool> …` (epic #994)"),
 );
 
-cli.pipe(Command.run({version: VERSION}), Effect.provide(NodeServices.layer), NodeRuntime.runMain);
+cli.pipe(
+	Command.run({version: VERSION}),
+	// A parse failure is "the verb never ran", so it must not land on the exit code some verb uses
+	// for a verdict. effect-cli fails with a `CliError` (after printing help) and `runMain` would
+	// exit 1 — which `cp-cardinality decide` uses for `stop`. See `BAD_INVOCATION_EXIT_CODE` (#5072).
+	Effect.catchIf(CliError.isCliError, () =>
+		Effect.sync(() => process.exit(BAD_INVOCATION_EXIT_CODE)),
+	),
+	Effect.provide(NodeServices.layer),
+	NodeRuntime.runMain,
+);

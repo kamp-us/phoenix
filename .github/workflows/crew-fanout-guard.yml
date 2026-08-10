@@ -11,6 +11,8 @@ name: crew-fanout-guard
 # boundary, ADR 0189/0196. The scan lives once in pipeline-cli's `crew-fanout-guard check`.
 on:
   pull_request:
+  push:
+    branches: [main]
 
 # contents:read is all it needs; default-deny every other scope (CodeQL least-privilege).
 permissions:

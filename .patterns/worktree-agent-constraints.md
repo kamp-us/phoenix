@@ -318,6 +318,62 @@ not evidence and is not part of the predicate** — a live agent's tree can be t
 <expected-tip>`, a compare-and-swap: a ref that moved since the probe fails the update instead of
 silently taking the new commits.
 
+## The lane stamp has a LIFECYCLE — identity, then a beat, then retirement
+
+A second, unrelated stamp lives in the same git admin dir as the `kampus-owner.json` above, and
+conflating them wastes a debugging session: `kampus-owner.json` is the **harness launcher's** stamp
+that the worktree *sweep* reads, while **`kampus-lane` is the pipeline's own** — written by
+`write-code`'s opening preflight, read by `wt_preflight` to answer "which tree is mine" and by
+`kp_branch_pin` to answer "is another lane using this branch". Both live in
+`claude-plugins/kampus-pipeline/lib/common.sh`.
+
+**A stamp that is only an identity cannot answer a liveness question.** Every sibling subagent of one
+dispatching session shares `$CLAUDE_CODE_SESSION_ID`, and nothing else in the process env
+distinguishes them (measured — `$CLAUDE_PID` included, #4500). So "the pinning tree's stamp equals my
+session id" is true for a lane still building **and** for the leftover tree of one that finished
+hours ago. Keyed on that alone the pin classifier's `live-lane` branch could never be false, and
+every repair on a branch whose build worktree still existed was refused with no way forward (#4868) —
+worktrees are not released on lane finish, so that is the routine case, not the edge.
+
+The fix is that the stamp now has three files and the lane itself moves them:
+
+| file | written by | means |
+| --- | --- | --- |
+| `kampus-lane` | the opening preflight, once | **which** lane proved this tree |
+| `kampus-lane.beat` | `wt_preflight`, before every git mutation | **when** that lane last did anything |
+| `kampus-lane.retired` | `step8-claim-release.sh`, the run's last act | the lane is **done** with this tree |
+
+`kp_branch_pin` reads the lifecycle, never the id alone: same-session **and** beating within
+`$KP_LANE_BEAT_TTL` (900s) ⇒ `live-lane`, which still refuses. Same-session with a stale or absent
+beat ⇒ `dormant-lane` — liveness genuinely **unknown**, stated as its own state rather than guessed
+in either direction. Retired or foreign ⇒ the ordinary `other`, which co-checks-out.
+
+**`dormant-lane` releases the pin only on positive proof, and the proof is the hand-clearing an
+operator used to perform per occurrence:** the tree is clean, its HEAD is the branch tip, and that
+commit is contained in `origin/<branch>` (`kp_lane_quiescent` — that branch's own upstream, not any
+`refs/remotes/*`, so a stale-forward ref cannot answer "safely on a remote" for work that is not).
+Only then is the stamp retired — one `mv` of a bookkeeping file. **No worktree is ever removed, no
+`--force` is ever used, and nothing is written into another tree's working files.**
+
+Two signals must both say "not working" before anything is released, so an idle lane with anything
+to lose — a dirty tree, or a commit that is nowhere else — still blocks. **That is not the same as
+"a live lane is never released", and the gap is exactly what the TTL trades.** A lane that is
+genuinely alive but has been git-quiet for longer than `$KP_LANE_BEAT_TTL`, with a clean tree sitting
+on the branch tip and pushed, satisfies all three facts and **is** released. Two things bound that:
+at the instant of release nothing unique lives in that tree, and the wrongly-retired lane then halts
+**fail-closed at its very next git op** — `lane_worktree` skips a retired stamp, so its
+`wt_preflight` resolves zero stamped trees and refuses instead of committing onto a moved ref. The
+cost is a broken lane run needing re-dispatch, not lost work. That is what raising or lowering the
+TTL buys: longer disrupts fewer live lanes and leaves more repairs blocked for longer, shorter the
+reverse.
+
+**Every refusal must name a remedy the refusing agent can execute.** The original `live-lane` refusal
+named two — "run this repair from that lane's worktree" and "wait for it to finish" — and the
+refusing agent could perform neither: `wt_preflight` fails closed on a sibling tree, and a stamp
+written once never went stale. A fail-closed stop with no reachable way forward is what pushes agents
+into improvising past the guard (the detached-HEAD repair of #4826), so treat "the remedy is
+executable by whoever reads it" as part of the guard, not as message polish.
+
 ## Why these constraints exist (and where the real fix lives)
 
 The self-mod classifier exists to keep an autonomous agent from rewriting the

@@ -256,8 +256,14 @@ yourself — the validator is the single source of truth, and re-judging it in p
 reintroduces exactly the non-determinism this gate removes. The action's verdict *is* the
 gate's verdict.
 
-- **`pass`** → every `status:planned` child is now `status:triaged` (pickable), and a PASS
+- **`pass`** → every `status:planned` child is now `status:triaged`, and a PASS
   verdict comment is on the epic. Go to Step 2 (the soft-advisor) to *annotate* that pass.
+  **Triaged is not the same as pickable.** `write-code`'s picker also requires
+  `.assignee == null`, so a child the planner **held for a human** — a fabrika authoring brief,
+  born assigned and `ready-for:human` — is flipped like any other and still stays out of the
+  pool. That barrier is the assignee precisely because your flip does not touch it; what the
+  floor adds is the *check* that it is really there (`HELD_CHILD_UNASSIGNED`, and
+  `UNVERIFIABLE_ASSIGNEE` when the slot could not be read at all — #4693).
 - **`fail`** → a FAIL verdict listing each defect is on the epic; **no child was flipped**.
   Skip Step 2 (the soft-advisor only annotates a PASS — there's nothing to annotate on a
   FAIL) and go to [the convergence loop](#the-re-plan-convergence-loop).

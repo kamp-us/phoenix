@@ -1,7 +1,12 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {errOut, type FakeShell, fakeShell, faultingShell, okOut} from "../fakes.test-support.ts";
-import {fetchAndResolve, isObjectName, parseOwnerRepo, splitRemoteRef} from "./git.ts";
+import {fetchAndResolve, isObjectName, matchRemote, parseOwnerRepo, splitRemoteRef} from "./git.ts";
+
+const REMOTE_V = `origin\tgit@github.com:kamp-us/phoenix.git (fetch)
+origin\tgit@github.com:kamp-us/phoenix.git (push)
+upstream\thttps://github.com/someone/fork.git (fetch)
+upstream\thttps://github.com/someone/fork.git (push)`;
 
 describe("isObjectName", () => {
 	it("accepts a 40-hex sha and rejects anything else", () => {
@@ -27,6 +32,19 @@ describe("parseOwnerRepo", () => {
 		expect(parseOwnerRepo("git@github.com:kamp-us/phoenix.git")).toBe("kamp-us/phoenix");
 		expect(parseOwnerRepo("https://github.com/kamp-us/phoenix.git\n")).toBe("kamp-us/phoenix");
 		expect(parseOwnerRepo("https://github.com/kamp-us/phoenix")).toBe("kamp-us/phoenix");
+	});
+});
+
+describe("matchRemote", () => {
+	it("names the remote serving a repo, in either URL spelling and either case", () => {
+		expect(matchRemote(REMOTE_V, "kamp-us/phoenix")).toBe("origin");
+		expect(matchRemote(REMOTE_V, "Kamp-Us/Phoenix")).toBe("origin");
+		expect(matchRemote(REMOTE_V, "someone/fork")).toBe("upstream");
+	});
+
+	it("is null when this checkout serves some other repository — never a guess", () => {
+		expect(matchRemote(REMOTE_V, "other/thing")).toBeNull();
+		expect(matchRemote("", "kamp-us/phoenix")).toBeNull();
 	});
 });
 

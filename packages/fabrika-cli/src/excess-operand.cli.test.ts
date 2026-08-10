@@ -19,13 +19,7 @@ import {join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {describe, expect, it} from "vitest";
 import {BASE_UNFETCHABLE} from "./adr/resolve-verb.ts";
-
-/**
- * One spawn costs ~2.3s on a CI runner. The contention factor measured between two runs of this file
- * 24 minutes apart was **2.69×** (#4847), so a ceiling is only a margin if it clears that band: 20s
- * is ~8× the per-spawn baseline, while still failing a genuinely wedged spawn well inside the job.
- */
-const SUBPROCESS_TEST_TIMEOUT_MS = 20_000;
+import {SUBPROCESS_TEST_TIMEOUT_MS} from "./test-budget.ts";
 
 const BIN = fileURLToPath(new URL("./bin.ts", import.meta.url));
 

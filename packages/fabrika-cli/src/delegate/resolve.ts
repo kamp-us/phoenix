@@ -1,19 +1,22 @@
 /**
  * Decide, and then act on, which copy of `fabrika` serves this invocation.
  *
- * The decision is a pure function of four facts — where the running copy lives, whether there is a
- * repo root, what the root's install probe said, and what the root manifest declares — so every
+ * The decision is a pure function of four facts — where the running copy lives, *which checkout it
+ * belongs to*, whether the cwd has a repo root, and what that root's install probe said — so every
  * branch is testable without a filesystem.
  *
- * **Every branch ends in a working CLI, and only one of them is silent.** No repo root at all runs
- * the global with no warning, deliberately, so global-only invocations still work. A repo root whose
- * local install is missing or corrupt runs the global too, but *says so loudly* — that pairing is
- * the whole design: tiers that can only be right or loudly absent are fine; tiers that can be
- * quietly wrong are the defect (#4784).
+ * **No branch is both silent and wrong.** No repo root at all runs the global with no warning,
+ * deliberately, so global-only invocations still work. A repo root whose local install is missing or
+ * corrupt runs the global too, but *says so loudly* — that pairing is the whole design: tiers that
+ * can only be right or loudly absent are fine; tiers that can be quietly wrong are the defect
+ * (#4784). One tier used to be quietly wrong against that rule and is now a refusal: a copy invoked
+ * out of a *different checkout* is not a global install, and delegating it answered from a tree the
+ * caller never named (#4956).
  */
 import {Effect} from "effect";
 import {ChildProcess, type ChildProcessSpawner} from "effect/unstable/process";
 import type {LocalInstall, LocalProbe} from "./local.ts";
+import type {SelfOrigin} from "./root.ts";
 
 /**
  * The child's recursion guard, passed as a **flag** rather than an environment variable so it is
@@ -38,26 +41,79 @@ export type Resolution =
 			readonly _tag: "warn-and-run-here";
 			readonly repoRoot: string;
 			readonly reason: string;
+	  }
+	| {
+			readonly _tag: "refuse-foreign-checkout";
+			readonly selfPackageRoot: string;
+			/** The checkout the invoked copy belongs to — never equal to {@link repoRoot}. */
+			readonly selfCheckout: string;
+			readonly repoRoot: string;
+			/** The install the cwd's repo would have answered from, named so the refusal is checkable. */
+			readonly wouldHaveRun: LocalInstall;
 	  };
 
 export interface ResolveInput {
 	/** The real path of the package root the running bin belongs to. */
 	readonly selfPackageRoot: string;
+	/** Which checkout, if any, {@link selfPackageRoot} belongs to. */
+	readonly selfOrigin: SelfOrigin;
 	/** `undefined` when the cwd is in no repo at all — the one silent branch. */
 	readonly repoRoot: string | undefined;
 	readonly local: LocalProbe | undefined;
 }
 
-/** Which copy serves this invocation. Total over the four states; there is no fallthrough. */
-export const resolve = ({selfPackageRoot, repoRoot, local}: ResolveInput): Resolution => {
+/** Which copy serves this invocation. Total over the five states; there is no fallthrough. */
+export const resolve = ({
+	selfPackageRoot,
+	selfOrigin,
+	repoRoot,
+	local,
+}: ResolveInput): Resolution => {
 	if (repoRoot === undefined) return {_tag: "run-here", why: "the cwd is not inside a repo"};
 	if (local === undefined || local._tag === "absent")
 		return {_tag: "warn-and-run-here", repoRoot, reason: "it has no local install"};
 	if (local._tag === "corrupt") return {_tag: "warn-and-run-here", repoRoot, reason: local.reason};
 	if (local.install.packageRoot === selfPackageRoot)
 		return {_tag: "run-here", why: "the repo-local install is this copy"};
+	// Only a copy that belongs to NO checkout is the global install this delegation was designed for.
+	// A copy from another checkout reaches the same comparison and used to be indistinguishable from
+	// it (#4956) — the refusal is placed here, on the delegate branch alone, so the two loud branches
+	// above keep their behaviour and their text exactly.
+	if (selfOrigin._tag === "checkout" && selfOrigin.root !== repoRoot)
+		return {
+			_tag: "refuse-foreign-checkout",
+			selfPackageRoot,
+			selfCheckout: selfOrigin.root,
+			repoRoot,
+			wouldHaveRun: local.install,
+		};
 	return {_tag: "delegate", to: local.install};
 };
+
+/**
+ * The refusal's text: both checkouts, the answer it declined to give, and the two ways out.
+ *
+ * Naming the install it *would* have run is what makes the refusal auditable rather than a bare
+ * "no" — a reader who expected the delegation can see precisely which copy the cwd resolved to.
+ */
+export const foreignCheckoutRefusal = ({
+	selfPackageRoot,
+	selfCheckout,
+	repoRoot,
+	wouldHaveRun,
+}: {
+	readonly selfPackageRoot: string;
+	readonly selfCheckout: string;
+	readonly repoRoot: string;
+	readonly wouldHaveRun: LocalInstall;
+}): string =>
+	[
+		"fabrika: refusing to run — the copy you invoked and your cwd are in different checkouts.",
+		`  invoked copy: ${selfPackageRoot} (checkout ${selfCheckout})`,
+		`  cwd checkout: ${repoRoot}, which resolves ${wouldHaveRun.binPath} (v${wouldHaveRun.version})`,
+		"  Delegating would have answered from a checkout you did not name.",
+		`  Re-run with the cwd inside ${selfCheckout}, or pass ${SKIP_INFER_FLAG} to make the copy you named serve this invocation.`,
+	].join("\n");
 
 export interface WarningInput {
 	readonly repoRoot: string;
@@ -95,6 +151,8 @@ export const traceLine = (selfPackageRoot: string, resolution: Resolution): stri
 			return `fabrika: global at ${selfPackageRoot} — delegating to the repo-local install at ${resolution.to.packageRoot} (${resolution.to.binPath}, v${resolution.to.version})`;
 		case "warn-and-run-here":
 			return `fabrika: running here, at ${selfPackageRoot} — repo root ${resolution.repoRoot}, but ${resolution.reason}`;
+		case "refuse-foreign-checkout":
+			return `fabrika: refusing — ${selfPackageRoot} is in checkout ${resolution.selfCheckout}, the cwd is in ${resolution.repoRoot}`;
 		case "run-here":
 			return `fabrika: running here, at ${selfPackageRoot} — ${resolution.why}`;
 	}

@@ -11,7 +11,7 @@
 import {readFileSync} from "node:fs";
 import {fileURLToPath} from "node:url";
 import {assert, describe, it} from "@effect/vitest";
-import {reconstructSpend, type StageSpend} from "./token-spend.ts";
+import {classifyRunSpend, reconstructSpend, type StageSpend} from "./token-spend.ts";
 
 const read = (name: string): string =>
 	readFileSync(fileURLToPath(new URL(`./fixtures/one-ruler/${name}`, import.meta.url)), "utf8");
@@ -61,5 +61,32 @@ describe("reconstructSpend — total over anything a transcript can hold", () =>
 		assert.strictEqual(spend.cacheRead, 0);
 		assert.strictEqual(spend.cacheCreate, 0);
 		assert.strictEqual(spend.billed, 4);
+	});
+});
+
+describe("RunSpend's third arm — a well-formed zero is not a free run", () => {
+	const billedTranscript = JSON.stringify({
+		message: {
+			role: "assistant",
+			model: "claude-sonnet-5",
+			usage: {
+				input_tokens: 2,
+				cache_creation_input_tokens: 32_122,
+				cache_read_input_tokens: 0,
+				output_tokens: 19,
+			},
+		},
+	});
+
+	it("a transcript with billed turns reconstructs", () => {
+		assert.strictEqual(classifyRunSpend(billedTranscript)._tag, "Reconstructed");
+	});
+
+	it("a transcript with zero billed assistant turns is NoBilledTurns, not a zero-valued Reconstructed", () => {
+		assert.strictEqual(classifyRunSpend('{"type":"summary"}')._tag, "NoBilledTurns");
+	});
+
+	it("an absent transcript stays TranscriptMissing", () => {
+		assert.strictEqual(classifyRunSpend(null)._tag, "TranscriptMissing");
 	});
 });

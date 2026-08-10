@@ -4,13 +4,13 @@
  * dev-override cookie that un-gates flag-gated surfaces locally, and compute the
  * crop/downscale directive that keeps captured images under the vision-loop
  * budget. No browser, no network — this is the unit-tested selection logic; the
- * impure Playwright leg (`@kampus/design-capture`'s `captureShots`) is driven
+ * impure Playwright leg (`@kampus/fabrika-cli/capture`'s `captureShots`) is driven
  * over the plan this produces (see `render.ts`).
  *
- * Local-build targeting, not preview targeting: `@kampus/design-capture` shoots
+ * Local-build targeting, not preview targeting: `@kampus/fabrika-cli/capture` shoots
  * a *deployed* preview URL and `@kampus/audit-run` a *deployed* stage — nothing
  * targeted a local `alchemy dev` build. This adds that targeting on top of
- * design-capture's plan/viewport/capture primitives without re-implementing
+ * fabrika capture's plan/viewport/capture primitives without re-implementing
  * browser capture.
  */
 import {
@@ -21,7 +21,7 @@ import {
 	type Shot,
 	type Surface,
 	type Viewport,
-} from "@kampus/design-capture";
+} from "@kampus/fabrika-cli/capture";
 
 /**
  * The default localhost base the composed UI surface is served from under
@@ -224,7 +224,7 @@ export interface LocalShotOptions {
 }
 
 /**
- * Build the local capture plan: reuse `@kampus/design-capture`'s `buildCapturePlan`
+ * Build the local capture plan: reuse `@kampus/fabrika-cli/capture`'s `buildCapturePlan`
  * (URL join, filesystem-safe name, empty/duplicate guards) over the local `base`,
  * then attach each surface's crop/downscale directive. One {@link Shot} per surface.
  */

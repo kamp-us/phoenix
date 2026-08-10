@@ -134,6 +134,14 @@ const SELF_EXEMPT_SUFFIXES = [
 	"/skills/write-code/repair.md",
 	"/skills/gh-issue-intake-formats.md",
 	"/packages/pipeline-cli/src/tools/gh-phoenix/README.md",
+	// The one finding the #5004 widening surfaced, and it is prose, not a call: the passage
+	// names `gh issue edit --add-label` to explain why an implementer must NOT reach for it
+	// (that porcelain rejects an unknown label client-side, which would make the contract's
+	// vocabulary precondition look redundant and invite dropping it — after which the REST
+	// call starts minting labels). Naming the forbidden form is the explanation, so the file
+	// is exempt at whole-file granularity, plugin-qualified — never a `fabrika/`- or
+	// `skills/`-wide exemption, which would silently drop future files from a live lint.
+	"/fabrika/skills/triage/contract.md",
 ] as const;
 
 const normalize = (path: string): string => `/${path.replace(/\\/g, "/").replace(/^\/+/, "")}`;

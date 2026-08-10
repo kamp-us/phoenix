@@ -62,6 +62,14 @@ export type Containment = (typeof Containment)["Type"];
  * tolerant-read rule; `validateLedger` flags a `type:feature` child whose marker
  * is `"none"`/`undefined` as `MISSING_CONTAINMENT`, but only when the repo has a
  * cycle doc (ADR 0091).
+ *
+ * `assignees` is the child's assignee slot — the one attribute the gate's label
+ * flip does not touch, and therefore the only barrier that survives it (#4693).
+ * It is a **three-state** field on purpose: a list of logins is an observed,
+ * assigned child; `[]` is an observed, unassigned one; and `undefined` is
+ * **unobserved** — the REST payload carried no `assignees` key, so the ledger has
+ * no fact to check. `undefined` is never read as "unassigned" or as "fine": it is
+ * `UNVERIFIABLE_ASSIGNEE`.
  */
 export const ChildIssue = Schema.Struct({
 	number: Schema.Number,
@@ -70,6 +78,7 @@ export const ChildIssue = Schema.Struct({
 	acceptanceCriteriaCount: Schema.Number,
 	stories: Schema.optional(Schema.Array(Schema.Number)),
 	containment: Schema.optional(Containment),
+	assignees: Schema.optional(Schema.Array(Schema.String)),
 });
 export type ChildIssue = (typeof ChildIssue)["Type"];
 

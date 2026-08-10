@@ -43,9 +43,9 @@ should carry its case before the week is out.
 
 If the incident is one of the ruled KEEP issues, **read `ruled-keeps.json`** — or run
 `fabrika eval keeps incident-corpus/ruled-keeps.json`, which prints each row with the eval cases
-that already pin it. Membership is **66**, plus one pending row
-([#4180](https://github.com/kamp-us/phoenix/issues/4180), whose sweep verdict the
-[#4642](https://github.com/kamp-us/phoenix/issues/4642) ruling retracted and never replaced). Cite
+that already pin it. The corpus is **66 members plus 1 pending** — the pending row is
+[#4180](https://github.com/kamp-us/phoenix/issues/4180), whose sweep verdict the
+[#4642](https://github.com/kamp-us/phoenix/issues/4642) ruling retracted and never replaced. Cite
 the enumeration in the case's `verification`.
 
 Do **not** re-run the two-artifact join by hand. That join — a `KEEP-AS-EVAL` row on the

@@ -31,9 +31,10 @@
 [data-scope="field"][data-part="control"]:hover {
 	border-color: var(--border);
 }
+/* Border tint only — the keyboard focus ring itself is the shared layer's, painted
+   on this same [data-part="control"] from global.css. */
 [data-scope="field"][data-part="root"]:focus-within [data-part="control"] {
 	border-color: var(--accent-9);
-	box-shadow: 0 0 0 1px var(--accent-9);
 }
 [data-scope="field"][data-part="root"][data-invalid="true"] [data-part="control"] {
 	border-color: var(--danger);

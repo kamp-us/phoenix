@@ -8,6 +8,7 @@
 import {execFile} from "node:child_process";
 import {fileURLToPath} from "node:url";
 import {assert, describe, it} from "@effect/vitest";
+import {SUBPROCESS_TEST_TIMEOUT_MS} from "./test-budget.ts";
 
 const BIN = fileURLToPath(new URL("./bin.ts", import.meta.url));
 
@@ -28,7 +29,9 @@ const run = (...args: readonly string[]): Promise<RunResult> =>
 		});
 	});
 
-describe("bin.ts — the session subcommand declares --instance (#3445)", () => {
+describe("bin.ts — the session subcommand declares --instance (#3445)", {
+	timeout: SUBPROCESS_TEST_TIMEOUT_MS,
+}, () => {
 	it("session --help lists --instance, so the flag bind.ts bakes parses instead of aborting", async () => {
 		const {code, stdout} = await run("session", "--help");
 		assert.strictEqual(code, 0, "session --help exits 0");
@@ -40,5 +43,5 @@ describe("bin.ts — the session subcommand declares --instance (#3445)", () => 
 		// the pre-existing flags still render — the additive change didn't drop them.
 		assert.match(stdout, /--role/, "the --role flag is still declared");
 		assert.match(stdout, /--project-root/, "the --project-root flag is still declared");
-	}, 30_000);
+	});
 });

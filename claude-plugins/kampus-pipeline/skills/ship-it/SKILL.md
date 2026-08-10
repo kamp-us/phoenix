@@ -1280,18 +1280,31 @@ loop:
 ```bash
 # Hand it the `HEAD_SHA=` the empty-checkset probe printed — the nudge counts `reopened` events since
 # THAT commit, so a guessed head would mis-count them and re-nudge a head already nudged once.
-# stdout: one terminal line — `nudged (close→reopen) …` or `unverified (no runs fired …)` — plus
-# `INTENT_UNCLEARED=<0|1>`. Both are successful declines and exit 0; read the terminal word.
+# stdout: one terminal line — `nudged (close→reopen) …`, `unverified (no runs fired …)`, or
+# `refused (not the dropped-trigger state: …) — no nudge` — plus `INTENT_UNCLEARED=<0|1>`. All three
+# are successful declines and exit 0; read the terminal word.
 bash ./.claude/.pipeline/skills/ship-it/scripts/step3z-dropped-trigger.sh <owner/repo> <pr number> <HEAD_SHA>
 ```
+
+**The script asserts this branch itself, and a third terminal outcome is its refusal (#4830).** The
+classification above is *prose*: it happens in your head, and if you reach Step 3z from any other
+state the remedy would close→reopen a live PR and leave a durable comment claiming a dropped trigger
+that never happened (PR #4816 — a head with 45 contexts and 33 runs, nudged anyway). So the script
+re-derives `CONTEXTS` / `NWF` / `NRUNS` at the head instead of trusting the branch that called it,
+and prints `refused (not the dropped-trigger state: CONTEXTS=<n> NWF=<n> NRUNS=<n>) — no nudge`
+**without touching the PR** — no close→reopen, no comment — whenever the state does not hold. An
+**unreadable** number refuses on the same line (`…=unreadable`): an unknown is never a confirmed
+zero, which is the whole of the class this closes (#4482). A refusal here means the *dispatch* was
+wrong, not the PR: re-read Step 3's branch list against the numbers the refusal names.
 
 The nudge **never bypasses verification** — it only restores the *missing runs*. A nudged PR
 is handed back to the normal gate on the next invocation; the merge still requires a
 current-head PASS (Step 2), green gating checks (Step 3), **and** a commit-bound, all-`pass`
 run-evidence bundle (Step 3.5, guard 2). The close→reopen re-triggers CI; it does not advance
-the merge by itself. Like Step 3's red and Step 2's FAIL, both Step 3z outcomes —
-`nudged (close→reopen) …` and `unverified (no runs fired — nudge exhausted …)` — are a
-**successful run that declines to merge**, not an error.
+the merge by itself. Like Step 3's red and Step 2's FAIL, all three Step 3z outcomes —
+`nudged (close→reopen) …`, `unverified (no runs fired — nudge exhausted …)` and
+`refused (not the dropped-trigger state: …) — no nudge` — are a **successful run that declines to
+merge**, not an error.
 
 ---
 
@@ -2030,9 +2043,12 @@ check-runs read returned nothing interpretable; an unreadable head is never a gr
 the dropped-trigger outcomes (Step 3z):
 `nudged (close→reopen) — CI re-triggered, not yet merge-ready` (the head SHA had zero workflow
 runs; ship-it close→reopened it once to re-emit the trigger, posted a durable PR outcome comment,
-and stopped — re-dispatch after CI settles) or `unverified (no runs fired — nudge exhausted,
+and stopped — re-dispatch after CI settles), `unverified (no runs fired — nudge exhausted,
 producer may be stuck)` (already nudged once and still zero runs → handed to a human, with a
-durable PR outcome comment), `no linked issue`, or a run-evidence refusal (Step 3.5):
+durable PR outcome comment) or `refused (not the dropped-trigger state: CONTEXTS=<n> NWF=<n>
+NRUNS=<n>) — no nudge` (the remedy was reached from a head that is not in the state it remedies, or
+one of those numbers was unreadable — the PR is left untouched, #4830), `no linked issue`, or a
+run-evidence refusal (Step 3.5):
 `unverified (run-evidence artifact unreachable — transient upstream error, …)`,
 `unverified (no run-evidence bundle)`, `unverified (unsupported bundle schemaVersion: <v>)`,
 `unverified (stale run-evidence bundle: …)`, or `run-evidence checks failed (<names>)`. A

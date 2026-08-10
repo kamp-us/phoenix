@@ -1,0 +1,244 @@
+/**
+ * The pull-request surface the `review` verbs read and write: one PR's metadata, its changed-file
+ * list, its diff bytes, the check runs at a commit, the invoking token's identity and repository
+ * permission, and the comment edit an upsert needs.
+ *
+ * The `issues.ts` disciplines hold here unchanged — `gh api` REST and never GraphQL, every list read
+ * paged, absent split from unreadable through {@link Existence}, and a shape that is not what was
+ * asked for treated as a failure rather than an empty result.
+ *
+ * **Every list read returns what it received alongside what the platform declared.** A review whose
+ * scope was silently truncated is a review over unknown scope, and the only way a caller can refuse
+ * that is to be handed both numbers. The reads below never narrow to the received list alone.
+ */
+import {Effect} from "effect";
+import {execCapture} from "./exec.ts";
+import {type Attempt, fail, ok, type Shell} from "./git.ts";
+import {absent, type Existence, httpStatusOf, pagedJson, present, unknown} from "./issues.ts";
+import {isRecord, parseJson} from "./json.ts";
+
+export interface PullRecord {
+	readonly number: number;
+	readonly state: string;
+	readonly headSha: string;
+	readonly body: string;
+	/** What the platform says the PR changes — the denominator every completeness proof divides by. */
+	readonly changedFiles: number;
+	/** Issue comments on the PR, as the platform counts them. The verdict sweep's denominator. */
+	readonly comments: number;
+	/** A draft PR is open but ungateable — `ship scope` reports it, the write verbs refuse it. */
+	readonly draft: boolean;
+	/** Merged is not derivable from `state`: a merged PR reads `closed` (`ship reconcile`'s `landed`). */
+	readonly merged: boolean;
+	/** The base branch — whose queue regime, never this PR's history, decides `ship disarm`'s policy. */
+	readonly baseRef: string;
+	/** Whether a merge intent is currently parked on the PR (ADR 0198's armed state). */
+	readonly autoMerge: boolean;
+	/** The PR's author — the §CP cardinality table's `sole owner authored the PR` arm. */
+	readonly authorLogin: string;
+}
+
+const toPullRecord = (value: unknown): PullRecord | null => {
+	if (!isRecord(value)) return null;
+	const {number, state, head, base, body, changed_files: changedFiles, comments, user} = value;
+	const headSha = isRecord(head) && typeof head.sha === "string" ? head.sha : null;
+	if (typeof number !== "number" || typeof state !== "string" || headSha === null) return null;
+	if (typeof changedFiles !== "number") return null;
+	return {
+		number,
+		state,
+		headSha,
+		body: typeof body === "string" ? body : "",
+		changedFiles,
+		comments: typeof comments === "number" ? comments : 0,
+		draft: value.draft === true,
+		merged: value.merged === true,
+		baseRef: isRecord(base) && typeof base.ref === "string" ? base.ref : "",
+		autoMerge: isRecord(value.auto_merge),
+		authorLogin: isRecord(user) && typeof user.login === "string" ? user.login : "",
+	};
+};
+
+/** One pull request, probed three ways — the 404 that seats a proven refusal is split from a 5xx. */
+export const getPullRequest = (repo: string, pr: number): Shell<Existence<PullRecord>> =>
+	Effect.gen(function* () {
+		const r = yield* execCapture("gh", ["api", `repos/${repo}/pulls/${pr}`]);
+		if (!r.ok) {
+			return httpStatusOf(r.reason) === 404 ? absent<PullRecord>() : unknown<PullRecord>(r.reason);
+		}
+		const record = toPullRecord(parseJson(r.stdout));
+		return record === null
+			? unknown<PullRecord>("`gh api` exited 0 but its output is not a pull request")
+			: present(record);
+	});
+
+/**
+ * Every changed path on the PR, paged.
+ *
+ * Read as typed JSON rather than through `--jq .filename`: the count of entries is the completeness
+ * proof, and a `jq` filter that errors mid-stream on one odd entry would shorten the list silently —
+ * which is the truncation the caller is trying to detect.
+ */
+export const listPullFiles = (repo: string, pr: number): Shell<Attempt<ReadonlyArray<string>>> =>
+	Effect.gen(function* () {
+		const r = yield* execCapture("gh", [
+			"api",
+			"--paginate",
+			`repos/${repo}/pulls/${pr}/files?per_page=100`,
+		]);
+		if (!r.ok) return fail(r.reason);
+		const pages = pagedJson(r.stdout);
+		if (pages._tag === "Failure") return pages;
+		const files: string[] = [];
+		for (const page of pages.value) {
+			const parsed = parseJson(page);
+			if (!Array.isArray(parsed)) {
+				return fail("`gh api` exited 0 but its output is not a list of changed files");
+			}
+			for (const value of parsed) {
+				if (!isRecord(value) || typeof value.filename !== "string") {
+					return fail("`gh api` exited 0 but one entry is not a changed file");
+				}
+				files.push(value.filename);
+			}
+		}
+		return ok(files);
+	});
+
+/** The unified diff bytes, served by the platform's diff media type. */
+export const getPullDiff = (repo: string, pr: number): Shell<Attempt<string>> =>
+	Effect.gen(function* () {
+		const r = yield* execCapture("gh", [
+			"api",
+			"-H",
+			"Accept: application/vnd.github.diff",
+			`repos/${repo}/pulls/${pr}`,
+		]);
+		return r.ok ? ok(r.stdout) : fail(r.reason);
+	});
+
+/** One check run at a commit. `conclusion` is `null` until `status` reaches `completed`. */
+export interface CheckRun {
+	readonly name: string;
+	readonly status: string;
+	readonly conclusion: string | null;
+}
+
+export interface CheckRunPage {
+	/** What the platform declared at this commit — the denominator the `13` refusal compares against. */
+	readonly declared: number;
+	readonly runs: ReadonlyArray<CheckRun>;
+}
+
+/**
+ * The check runs at one commit, paged, carrying the platform's own `total_count` beside them.
+ *
+ * `--paginate` concatenates one `{total_count, check_runs}` object per page, so the runs accumulate
+ * across pages while the declared total is read from the first — a later page's total is the same
+ * number, and taking the first keeps a zero-run trailing page from lowering it.
+ */
+export const listCheckRuns = (repo: string, sha: string): Shell<Attempt<CheckRunPage>> =>
+	Effect.gen(function* () {
+		const r = yield* execCapture("gh", [
+			"api",
+			"--paginate",
+			`repos/${repo}/commits/${sha}/check-runs?per_page=100`,
+		]);
+		if (!r.ok) return fail(r.reason);
+		const pages = pagedJson(r.stdout);
+		if (pages._tag === "Failure") return pages;
+		const runs: CheckRun[] = [];
+		let declared: number | null = null;
+		for (const page of pages.value) {
+			const parsed = parseJson(page);
+			if (!isRecord(parsed) || !Array.isArray(parsed.check_runs)) {
+				return fail("`gh api` exited 0 but its output is not a check-run rollup");
+			}
+			if (declared === null) {
+				if (typeof parsed.total_count !== "number") {
+					return fail("`gh api` exited 0 but the check-run rollup declares no total_count");
+				}
+				declared = parsed.total_count;
+			}
+			for (const value of parsed.check_runs) {
+				if (
+					!isRecord(value) ||
+					typeof value.name !== "string" ||
+					typeof value.status !== "string"
+				) {
+					return fail("`gh api` exited 0 but one entry is not a check run");
+				}
+				runs.push({
+					name: value.name,
+					status: value.status,
+					conclusion: typeof value.conclusion === "string" ? value.conclusion : null,
+				});
+			}
+		}
+		return declared === null
+			? fail("`gh api` exited 0 and printed no check-run rollup at all")
+			: ok({declared, runs});
+	});
+
+/** Whether a commit exists in the repository — the proven-absent half of `review ci`'s `7`. */
+export const commitExists = (repo: string, sha: string): Shell<Existence<string>> =>
+	Effect.gen(function* () {
+		const r = yield* execCapture("gh", ["api", `repos/${repo}/commits/${sha}`, "--jq", ".sha"]);
+		if (!r.ok) {
+			return httpStatusOf(r.reason) === 404 ? absent<string>() : unknown<string>(r.reason);
+		}
+		const resolved = r.stdout.trim();
+		return resolved === ""
+			? unknown<string>("`gh api` exited 0 but named no commit")
+			: present(resolved);
+	});
+
+/** The login the invoking token authenticates as — half of the ACL lookup, and the upsert's key. */
+export const viewerLogin: Shell<Attempt<string>> = Effect.gen(function* () {
+	const r = yield* execCapture("gh", ["api", "user", "--jq", ".login"]);
+	if (!r.ok) return fail(r.reason);
+	const login = r.stdout.trim();
+	return login === "" ? fail("`gh api` exited 0 but named no login") : ok(login);
+});
+
+/**
+ * One collaborator's repository permission — `admin` / `maintain` / `write` / `triage` / `read`.
+ *
+ * A 404 is a **proven** answer here (the login is not a collaborator, so it holds no permission) and
+ * is deliberately not folded into the unreadable arm: the fence above it refuses either way, but the
+ * two refusals say different true things.
+ */
+export const permissionFor = (repo: string, login: string): Shell<Existence<string>> =>
+	Effect.gen(function* () {
+		const r = yield* execCapture("gh", [
+			"api",
+			`repos/${repo}/collaborators/${login}/permission`,
+			"--jq",
+			".permission",
+		]);
+		if (!r.ok) {
+			return httpStatusOf(r.reason) === 404 ? absent<string>() : unknown<string>(r.reason);
+		}
+		const permission = r.stdout.trim();
+		return permission === ""
+			? unknown<string>("`gh api` exited 0 but named no permission")
+			: present(permission);
+	});
+
+/** Replace one issue comment's body — the edit half of the one-comment-per-namespace upsert. */
+export const patchComment = (repo: string, id: number, body: string): Shell<Attempt<string>> =>
+	Effect.gen(function* () {
+		const r = yield* execCapture("gh", [
+			"api",
+			"--method",
+			"PATCH",
+			`repos/${repo}/issues/comments/${id}`,
+			"-f",
+			`body=${body}`,
+		]);
+		if (!r.ok) return fail(r.reason);
+		const parsed = parseJson(r.stdout);
+		return isRecord(parsed) && typeof parsed.html_url === "string"
+			? ok(parsed.html_url)
+			: fail("`gh api` exited 0 but its output is not an edited comment");
+	});

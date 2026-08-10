@@ -2,30 +2,26 @@
 	"name": "@kampus/design-capture",
 	"version": "0.0.0",
 	"private": true,
-	"description": "Playwright-capture + GitHub user-attachments upload helper for the review-design gate (ADR 0165, epic #1966) — shoots a UI PR's changed surfaces over its per-PR preview deploy and hosts the PNGs as GitHub attachments for the SHA-bound verdict",
+	"description": "phoenix's per-repo half of the golden-screen loop (ADR 0183): the depo store/fetch boundary for golden bytes, the committed golden-pointer.json, and the CLI the review-design gate drives. The portable capture/render/diff machinery is @kampus/fabrika-cli/capture (#5063).",
 	"type": "module",
 	"exports": {
-		".": "./src/index.ts"
+		".": "./src/golden-store.ts"
 	},
 	"scripts": {
 		"typecheck": "tsgo -p tsconfig.json",
-		"test": "vitest run --project unit",
-		"test:unit": "vitest run --project unit",
 		"capture": "node src/bin.ts capture",
 		"golden-bless": "node src/bin.ts golden-bless"
 	},
 	"dependencies": {
 		"@effect/platform-node": "catalog:",
 		"@kampus/depo": "workspace:*",
-		"@playwright/test": "catalog:",
+		"@kampus/fabrika-cli": "workspace:*",
 		"effect": "catalog:"
 	},
 	"devDependencies": {
 		"@effect/tsgo": "catalog:",
-		"@effect/vitest": "catalog:",
 		"@types/node": "catalog:",
 		"@typescript/native-preview": "catalog:",
-		"typescript": "catalog:",
-		"vitest": "catalog:"
+		"typescript": "catalog:"
 	}
 }

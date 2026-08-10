@@ -27,7 +27,8 @@ import {Console, Crypto, Effect, FileSystem, Path, Result} from "effect";
 import * as Schema from "effect/Schema";
 import {Argument, Command, Flag} from "effect/unstable/cli";
 import {leafCommand} from "../excess-operand.ts";
-import {decodeManifest, STAGES} from "./corpus.ts";
+import {DEFAULT_SPEND_LEDGER_PATH, persistSpendRows} from "../spend/ledger.ts";
+import {decodeManifest, REVIEW_SURFACES, type ReviewSurface, STAGES} from "./corpus.ts";
 import {decodeIncidentProvenance} from "./incident-provenance.ts";
 import {
 	type BaselineKey,
@@ -133,11 +134,23 @@ const baselineStageFlag = Flag.string("baseline-stage").pipe(
 
 const baselineModelFlag = Flag.string("baseline-model").pipe(
 	Flag.optional,
-	Flag.withDescription("the model of the baseline cell (paired with --baseline-stage)"),
+	Flag.withDescription(
+		"the model of the baseline cell (paired with --baseline-stage) — normalized the same way as --model, so an alias still matches the cell recorded under its canonical id",
+	),
+);
+
+const baselineSurfaceFlag = Flag.string("baseline-surface").pipe(
+	Flag.optional,
+	Flag.withDescription(
+		`the review surface of the baseline cell, required with --baseline-stage review (one of: ${REVIEW_SURFACES.join(", ")})`,
+	),
 );
 
 const isStage = (s: string): s is (typeof STAGES)[number] =>
 	(STAGES as ReadonlyArray<string>).includes(s);
+
+const isReviewSurface = (s: string): s is ReviewSurface =>
+	(REVIEW_SURFACES as ReadonlyArray<string>).includes(s);
 
 const report = leafCommand(
 	"report",
@@ -146,8 +159,9 @@ const report = leafCommand(
 		json: jsonFlag,
 		baselineStage: baselineStageFlag,
 		baselineModel: baselineModelFlag,
+		baselineSurface: baselineSurfaceFlag,
 	},
-	Effect.fn(function* ({rows, json, baselineStage, baselineModel}) {
+	Effect.fn(function* ({rows, json, baselineStage, baselineModel, baselineSurface}) {
 		const run = Effect.gen(function* () {
 			const fs = yield* FileSystem.FileSystem;
 			const text = yield* Effect.mapError(
@@ -163,7 +177,10 @@ const report = leafCommand(
 			}
 
 			// A --baseline-stage that isn't one of the known stages is a user error, not a silent
-			// no-baseline: fail loudly so a typo can't quietly drop the net-saving axis.
+			// no-baseline: fail loudly so a typo can't quietly drop the net-saving axis. The surface
+			// rules below are the same discipline one level down — a `review` baseline that names no
+			// surface names no single grading regime, so it cannot identify a baseline cell at all
+			// (ADR 0243 §4).
 			let baseline: BaselineKey | undefined;
 			if (baselineStage._tag === "Some") {
 				const stage = baselineStage.value;
@@ -173,7 +190,31 @@ const report = leafCommand(
 					);
 					return yield* Effect.sync(() => process.exit(GATE_FAIL_EXIT_CODE));
 				}
-				baseline = {stage, model: baselineModel._tag === "Some" ? baselineModel.value : null};
+				if (baselineSurface._tag === "Some" && stage !== "review") {
+					yield* Console.error(
+						`fabrika eval: --baseline-surface only applies to --baseline-stage review, not '${stage}'`,
+					);
+					return yield* Effect.sync(() => process.exit(GATE_FAIL_EXIT_CODE));
+				}
+				if (stage === "review" && baselineSurface._tag === "None") {
+					yield* Console.error(
+						`fabrika eval: --baseline-stage review needs --baseline-surface (${REVIEW_SURFACES.join(", ")}) — a review pass-rate is one grading regime, never an average of two`,
+					);
+					return yield* Effect.sync(() => process.exit(GATE_FAIL_EXIT_CODE));
+				}
+				const model = baselineModel._tag === "Some" ? baselineModel.value : null;
+				if (baselineSurface._tag === "Some") {
+					const surface = baselineSurface.value;
+					if (!isReviewSurface(surface)) {
+						yield* Console.error(
+							`fabrika eval: --baseline-surface '${surface}' is not a known review surface (${REVIEW_SURFACES.join(", ")})`,
+						);
+						return yield* Effect.sync(() => process.exit(GATE_FAIL_EXIT_CODE));
+					}
+					baseline = {stage, surface, model};
+				} else {
+					baseline = {stage, model};
+				}
 			}
 
 			const scorecard = buildScorecard(
@@ -272,7 +313,7 @@ const pluginDirFlag = Flag.string("plugin-dir").pipe(
 
 const modelFlag = Flag.string("model").pipe(
 	Flag.withDescription(
-		"the model every run is pinned to — required, because a scorecard is only comparable when it names one",
+		"the model every run is pinned to — required, because a scorecard is only comparable when it names one; a known alias is normalized to its canonical id, anything else runs as given",
 	),
 );
 
@@ -313,6 +354,13 @@ const dryRunFlag = Flag.boolean("dry-run").pipe(
 	Flag.withDescription("print the argv of every planned run and spawn nothing"),
 );
 
+const spendLedgerFlag = Flag.string("spend-ledger").pipe(
+	Flag.withDefault(DEFAULT_SPEND_LEDGER_PATH),
+	Flag.withDescription(
+		`append one spend line per completed run here — the durable ledger the roll-up reads (default: ${DEFAULT_SPEND_LEDGER_PATH})`,
+	),
+);
+
 /**
  * `run` — execute an eval set unattended and emit the capture manifest the existing collector reads.
  *
@@ -335,6 +383,7 @@ const runCommand = leafCommand(
 		timeoutMs: timeoutFlag,
 		out: ledgerOutFlag,
 		captureOut: captureOutFlag,
+		spendLedger: spendLedgerFlag,
 		dryRun: dryRunFlag,
 	},
 	Effect.fn(function* (opts) {
@@ -413,8 +462,19 @@ const runCommand = leafCommand(
 				stage: opts.stage,
 				model: opts.model,
 				cliVersion: yield* claudeVersion(),
+				// Read here rather than in the core: `buildLedger` stays a pure function of its inputs,
+				// which is what lets the unit tier assert an exact recorded row.
+				recordedAt: new Date().toISOString(),
 				outcomes,
 			});
+
+			// The one durable write, on the completion path and nowhere else: the suite has finished, so
+			// every row here measures work that already happened. A ledger that cannot be written is
+			// reported and nothing more — the measurement is a by-product of the run, so failing to
+			// record it must never change what the run reports (epic #4779's no-gate ruling).
+			for (const note of yield* persistSpendRows(opts.spendLedger, ledger.spendRows)) {
+				yield* Console.error(`fabrika eval: ${note}`);
+			}
 
 			if (opts.out._tag === "Some") yield* fs.writeFileString(opts.out.value, ledgerToJson(ledger));
 			if (opts.captureOut._tag === "Some") {

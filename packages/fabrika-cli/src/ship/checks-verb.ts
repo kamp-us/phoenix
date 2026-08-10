@@ -1,0 +1,243 @@
+/**
+ * `ship checks` — the head CI rollup, with the running-vs-wedged split and the zero-checkset facts.
+ *
+ * The rollup itself is **the shipped `review ci` module, extended rather than forked**
+ * (`../review/rollup.ts`): same bucket rules, same fail-closed direction on the ambiguous rows. This
+ * group adds two things on top — the wedge diagnosis and the ADR 0061 informational carve-out — and
+ * both live in that same module so a second copy cannot drift the way v1's two `jq` copies did.
+ *
+ * `no-runs` is a **positively evidenced** state, not an empty read: workflows ≥ 1 and zero runs at
+ * this head means Actions exist and none fired, which is the dropped-trigger state `ship nudge`
+ * re-derives for itself. Zero workflows *and* zero runs is the foreign-repo case and reads
+ * `pending`, never green.
+ */
+import {Clock, Effect} from "effect";
+import type {ChildProcessSpawner} from "effect/unstable/process";
+import {commitExists} from "../io/pulls.ts";
+import {isInformational, isStalled, rollupOf, statusOf} from "../review/rollup.ts";
+import {answer, refuse, type VerbOutcome} from "../verb.ts";
+import {INCOMPLETE_SCAN, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
+import {
+	countWorkflowRuns,
+	latestPerContext,
+	listShipCheckRuns,
+	listWorkflows,
+	type ShipCheckRun,
+} from "./github.ts";
+import {
+	badNumber,
+	inspectedSha,
+	prefixMatch,
+	resolvePull,
+	resolveTargetRepo,
+	scannedLine,
+} from "./target.ts";
+
+const VERB = "ship checks";
+
+export type ChecksRollup = "green" | "red" | "pending" | "wedged" | "no-runs";
+export type Settle = "settled" | "budget-exhausted" | "head-moved";
+
+export interface ChecksOptions {
+	readonly pr: number;
+	readonly sha: string;
+	readonly wait: boolean;
+	readonly budgetSeconds: number;
+	readonly cadenceSeconds: number;
+	readonly wedgeDwellSeconds: number;
+	readonly repo: string | null;
+	readonly json: boolean;
+	readonly env: Readonly<Record<string, string | undefined>>;
+}
+
+export interface Sample {
+	readonly runs: ReadonlyArray<ShipCheckRun>;
+	readonly workflows: number;
+	readonly runCount: number;
+}
+
+/**
+ * The whole answer over one sample.
+ *
+ * `stalled` is passed in rather than computed here because the dwell is a property of the *watch*,
+ * not of the sample: a single read cannot tell a check that queued a second ago from one wedged for
+ * an hour.
+ */
+export const rollupFor = (sample: Sample, wedged: ReadonlyArray<string>): ChecksRollup => {
+	if (wedged.length > 0) return "wedged";
+	if (sample.runs.length === 0) {
+		return sample.workflows >= 1 && sample.runCount === 0 ? "no-runs" : "pending";
+	}
+	return rollupOf(sample.runs.filter((run) => !isInformational(run.name)));
+};
+
+export const runChecks = (
+	options: ChecksOptions,
+): Effect.Effect<VerbOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
+	Effect.gen(function* () {
+		const {pr, json} = options;
+		const bad = badNumber(VERB, "a pull-request number", pr);
+		if (bad !== null) return bad;
+		const bound = inspectedSha(VERB, options.sha);
+		if (typeof bound !== "string") return bound;
+
+		const resolved = yield* resolveTargetRepo(VERB, options.repo, options.env);
+		if (resolved._tag === "Refused") return resolved.outcome;
+		const repo = resolved.repo;
+
+		const unreadable = (what: string, reason: string): string =>
+			`${VERB}: cannot enumerate ${what} at ${bound}: ${reason} — CI state is UNKNOWN, never green.`;
+
+		const target = yield* resolvePull(VERB, repo, pr, {
+			unknownMessage: (reason) => unreadable("the pull request", reason),
+		});
+		if (target._tag === "Refused") return target.outcome;
+
+		const at = yield* commitExists(repo, bound);
+		if (at._tag === "Absent") {
+			return refuse(ZERO_SCOPE, `${VERB}: no commit ${bound} on PR #${pr}.`);
+		}
+		if (at._tag === "Unknown") {
+			return refuse(PRECONDITION_UNKNOWN, unreadable("the commit", at.reason));
+		}
+
+		const diagnostics: string[] = [];
+		if (!prefixMatch(target.pull.headSha, bound)) {
+			diagnostics.push(
+				`${VERB}: the live head is ${target.pull.headSha}, you are enumerating ${bound} — the head moved.`,
+			);
+		}
+
+		/** One full read of the head's CI surface. Every leg's exit status is read before its bytes. */
+		const sample = Effect.gen(function* () {
+			const enumerated = yield* listShipCheckRuns(repo, bound);
+			if (enumerated._tag === "Failure") {
+				return refuse(
+					PRECONDITION_UNKNOWN,
+					unreadable("the check runs", enumerated.reason),
+					diagnostics,
+				);
+			}
+			const {declared, runs} = enumerated.value;
+			if (runs.length < declared) {
+				return refuse(
+					INCOMPLETE_SCAN,
+					`${VERB}: received ${runs.length} of ${declared} declared check runs at ${bound} — refusing the partial enumeration.`,
+					diagnostics,
+				);
+			}
+			const workflows = yield* listWorkflows(repo);
+			if (workflows._tag === "Failure") {
+				return refuse(
+					PRECONDITION_UNKNOWN,
+					unreadable("the workflow inventory", workflows.reason),
+					diagnostics,
+				);
+			}
+			const runCount = yield* countWorkflowRuns(repo, bound);
+			if (runCount._tag === "Failure") {
+				return refuse(
+					PRECONDITION_UNKNOWN,
+					unreadable("the workflow runs", runCount.reason),
+					diagnostics,
+				);
+			}
+			return {
+				runs: latestPerContext(runs),
+				workflows: workflows.value,
+				runCount: runCount.value,
+			} satisfies Sample;
+		});
+
+		const render = (
+			read: Sample,
+			rollup: ChecksRollup,
+			wedged: ReadonlyArray<string>,
+			settle: Settle | null,
+		): VerbOutcome => {
+			const scope = [
+				...diagnostics,
+				scannedLine(
+					VERB,
+					read.runs.length,
+					"check run",
+					`${read.runCount} workflow runs at this head`,
+				),
+				...(wedged.length === 0
+					? []
+					: [
+							`${VERB}: stranded past the dwell: ${wedged.join(", ")} — the cancel-and-rerun lever is an operator's (#3999).`,
+						]),
+			];
+			if (json) {
+				return answer(
+					JSON.stringify({
+						outcome: "checks",
+						sha: bound,
+						rollup,
+						checks: read.runs.map((run) => ({
+							name: run.name,
+							status: statusOf(run),
+							gating: !isInformational(run.name),
+						})),
+						workflows: read.workflows,
+						runs: read.runCount,
+						settle,
+					}),
+					scope,
+				);
+			}
+			return answer(
+				[
+					...(settle === null ? [] : [`settle\t${settle}`]),
+					`checks\t${bound}\t${rollup}`,
+					`run\t${read.runs.length}`,
+					...read.runs.map(
+						(run) =>
+							`${run.name}\t${statusOf(run)}\t${isInformational(run.name) ? "informational" : "gating"}`,
+					),
+					`facts\tworkflows:${read.workflows}\truns:${read.runCount}`,
+				].join("\n"),
+				scope,
+			);
+		};
+
+		const first = yield* sample;
+		if ("code" in first) return first;
+		if (!options.wait) return render(first, rollupFor(first, []), [], null);
+
+		// The budget is WALL CLOCK, call latency included — v1 counted only its sleeps and silently
+		// overran the budget it claimed to hold.
+		const startedAt = yield* Clock.currentTimeMillis;
+		const stalledSince = new Map<string, number>();
+		let read = first;
+		for (;;) {
+			const now = yield* Clock.currentTimeMillis;
+			for (const run of read.runs) {
+				if (isStalled(run)) {
+					if (!stalledSince.has(run.name)) stalledSince.set(run.name, now);
+				} else stalledSince.delete(run.name);
+			}
+			const wedged = [...stalledSince.entries()]
+				.filter(([, since]) => now - since >= options.wedgeDwellSeconds * 1000)
+				.map(([name]) => name);
+			const rollup = rollupFor(read, wedged);
+			if (rollup !== "pending") return render(read, rollup, wedged, "settled");
+			if (now - startedAt >= options.budgetSeconds * 1000) {
+				return render(read, rollup, wedged, "budget-exhausted");
+			}
+			yield* Effect.sleep(`${options.cadenceSeconds} seconds`);
+
+			const moved = yield* resolvePull(VERB, repo, pr, {
+				unknownMessage: (reason) => unreadable("the pull request", reason),
+			});
+			if (moved._tag === "Refused") return moved.outcome;
+			if (!prefixMatch(moved.pull.headSha, bound)) {
+				// The answer is about a tree the PR no longer is (#1928's secondary).
+				return render(read, rollupFor(read, wedged), wedged, "head-moved");
+			}
+			const next = yield* sample;
+			if ("code" in next) return next;
+			read = next;
+		}
+	});

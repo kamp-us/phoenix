@@ -16,9 +16,19 @@
 import type {NodeServices} from "@effect/platform-node";
 import type {Command} from "effect/unstable/cli";
 import {adrCommand} from "./adr/command.ts";
+import {buildCommand} from "./build/command.ts";
+import {epicCommand} from "./epic/command.ts";
 import {evalCommand} from "./eval/command.ts";
+import {hookCommand} from "./hook/command.ts";
+import {planCommand} from "./plan/command.ts";
 import {reportCommand} from "./report/command.ts";
+import {reviewCommand} from "./review/command.ts";
+import {reviewUiCommand} from "./review-ui/command.ts";
+import {shipCommand} from "./ship/command.ts";
+import {spendCommand} from "./spend/command.ts";
 import {triageCommand} from "./triage/command.ts";
+import {uiCommand} from "./ui/command.ts";
+import {wireCommand} from "./wire/command.ts";
 
 /** A registered verb group: a top-level `Command` whose name is the `fabrika <name>` selector. */
 export type VerbGroup = Command.Command<any, any, object, unknown, NodeServices.NodeServices>;
@@ -26,7 +36,17 @@ export type VerbGroup = Command.Command<any, any, object, unknown, NodeServices.
 /** The registered groups, in the order they list under `--help`. */
 export const registeredGroups: ReadonlyArray<VerbGroup> = [
 	adrCommand,
+	buildCommand,
+	epicCommand,
 	evalCommand,
+	hookCommand,
+	planCommand,
 	reportCommand,
+	reviewCommand,
+	reviewUiCommand,
+	shipCommand,
+	spendCommand,
 	triageCommand,
+	uiCommand,
+	wireCommand,
 ];

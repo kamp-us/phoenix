@@ -1,5 +1,6 @@
 import {assert, describe, it} from "@effect/vitest";
 import {Effect, Result} from "effect";
+import type {RunSpend} from "../spend/token-spend.ts";
 import type {CorpusEntry, CorpusManifest} from "./corpus.ts";
 import {
 	type CaptureManifest,
@@ -8,7 +9,6 @@ import {
 	decodeCaptureManifest,
 	type RunInput,
 	type RunRow,
-	type RunSpend,
 } from "./runner.ts";
 
 // One assistant-message transcript line — the shape `token-spend` reconstructs spend from. `billed`
@@ -133,9 +133,8 @@ const corpus: CorpusManifest = {
 	version: 1,
 	stages: {
 		triage: [entryA, entryB],
-		"write-code": [],
-		"review-code": [],
-		"review-doc": [],
+		build: [],
+		review: [],
 		"ship-it": [],
 	},
 };
@@ -150,12 +149,16 @@ describe("collectFromCapture — capture-manifest fold against the corpus (story
 					inputRef: 100,
 					transcriptPath: "session-x/subagents/agent-a.jsonl",
 					artifact: entryA.label,
+					model: "opus-4.8",
+					arm: "with-skill",
 				},
 				{
 					stage: "triage",
 					inputRef: 200,
 					transcriptPath: "session-x/subagents/agent-b.jsonl",
 					artifact: {type: "feature", priority: "p2", status: "triaged"}, // diverges → fail
+					model: "opus-4.8",
+					arm: "without-skill",
 				},
 			],
 		};
@@ -175,6 +178,9 @@ describe("collectFromCapture — capture-manifest fold against the corpus (story
 		assert.strictEqual(rows[0]?.grade.status, "pass");
 		assert.strictEqual(rows[1]?.grade.status, "fail");
 		assert.strictEqual(rows[0]?.spend._tag, "Reconstructed");
+		// The manifest's recorded provenance rides onto the graded row (#4996).
+		assert.deepStrictEqual(rows[0]?.provenance, {model: "opus-4.8", arm: "with-skill"});
+		assert.deepStrictEqual(rows[1]?.provenance, {model: "opus-4.8", arm: "without-skill"});
 	});
 
 	it("a capture run whose transcript the loader can't find folds in with TranscriptMissing", () => {
@@ -186,6 +192,8 @@ describe("collectFromCapture — capture-manifest fold against the corpus (story
 					inputRef: 100,
 					transcriptPath: "gone.jsonl",
 					artifact: entryA.label,
+					model: "opus-4.8",
+					arm: "with-skill",
 				},
 			],
 		};
@@ -206,7 +214,15 @@ describe("collectFromCapture — capture-manifest fold against the corpus (story
 		const capture: CaptureManifest = {
 			version: 1,
 			runs: [
-				{stage: "triage", inputRef: 999, transcriptPath: "x.jsonl", artifact: {}}, // no entry #999
+				// no entry #999
+				{
+					stage: "triage",
+					inputRef: 999,
+					transcriptPath: "x.jsonl",
+					artifact: {},
+					model: "opus-4.8",
+					arm: "with-skill",
+				},
 			],
 		};
 		const rows = Effect.runSync(
@@ -232,6 +248,52 @@ describe("decodeCaptureManifest — total on malformed input (never throws)", ()
 		if (Result.isSuccess(result)) {
 			assert.strictEqual(result.success.runs.length, 1);
 		}
+	});
+
+	// #4996: provenance was added to a format that already had files on disk. A manifest written
+	// before it must still decode and still collect — it degrades to what it always did (the model
+	// recovered from the transcript), rather than failing.
+	it("a manifest with no recorded model or arm decodes, reading both as unrecorded", () => {
+		const result = decodeCaptureManifest(
+			JSON.stringify({
+				version: 1,
+				runs: [{stage: "triage", inputRef: 100, transcriptPath: "a.jsonl", artifact: {}}],
+			}),
+		);
+		assert.isTrue(Result.isSuccess(result));
+		if (Result.isSuccess(result)) {
+			assert.strictEqual(result.success.runs[0]?.model, null);
+			assert.strictEqual(result.success.runs[0]?.arm, null);
+		}
+	});
+
+	it("a legacy manifest still collects, with the row carrying no recorded provenance", () => {
+		const decoded = decodeCaptureManifest(
+			JSON.stringify({
+				version: 1,
+				runs: [
+					{
+						stage: "triage",
+						inputRef: 100,
+						transcriptPath: "session-x/subagents/agent-a.jsonl",
+						artifact: entryA.label,
+					},
+				],
+			}),
+		);
+		assert.isTrue(Result.isSuccess(decoded));
+		if (!Result.isSuccess(decoded)) return;
+		const rows = Effect.runSync(
+			collectFromCapture({
+				stage: "triage",
+				corpus,
+				capture: decoded.success,
+				loadTranscript: () => Effect.succeed(transcript(10, 5, 100, 20)),
+			}),
+		);
+		assert.strictEqual(rows.length, 1);
+		assert.strictEqual(rows[0]?.grade.status, "pass");
+		assert.deepStrictEqual(rows[0]?.provenance, {model: null, arm: null});
 	});
 
 	it("returns a typed malformed-json failure on a non-JSON body", () => {

@@ -13,6 +13,7 @@ import {NodeFileSystem, NodeSocket} from "@effect/platform-node";
 import {assert, describe, it} from "@effect/vitest";
 import {Effect, Exit, Layer} from "effect";
 import {RpcClient, RpcSerialization} from "effect/unstable/rpc";
+import {SUBPROCESS_TEST_TIMEOUT_MS} from "../test-budget.ts";
 import {TrackerRegistry} from "./group.ts";
 import {rendezvousSocketPathFor} from "./rendezvous.ts";
 import {isTrackerAddressInUse, trackerServerLayer} from "./server.ts";
@@ -22,7 +23,9 @@ import {isTrackerAddressInUse, trackerServerLayer} from "./server.ts";
 const hostedTracker = (socketPath: string) =>
 	trackerServerLayer(socketPath).pipe(Layer.provide(NodeFileSystem.layer));
 
-describe("tracker socket path — derived from the canonical repo key", () => {
+describe("tracker socket path — derived from the canonical repo key", {
+	timeout: SUBPROCESS_TEST_TIMEOUT_MS,
+}, () => {
 	it("is deterministic in the repo key", () => {
 		assert.strictEqual(
 			rendezvousSocketPathFor("/repo/.git"),
@@ -35,7 +38,9 @@ describe("tracker socket path — derived from the canonical repo key", () => {
 	});
 });
 
-describe("tracker served surface — control-plane only", () => {
+describe("tracker served surface — control-plane only", {
+	timeout: SUBPROCESS_TEST_TIMEOUT_MS,
+}, () => {
 	it("serves exactly the six registry kinds and no message-relay kind", () => {
 		assert.deepStrictEqual([...TrackerRegistry.requests.keys()].sort(), [
 			"AnnouncePresence",
@@ -59,7 +64,9 @@ const socketClientLayer = (socketPath: string) =>
 		Layer.provide([NodeSocket.layerNet({path: socketPath}), RpcSerialization.layerNdjson]),
 	);
 
-describe("tracker over a unix socket — RpcServer round-trip", () => {
+describe("tracker over a unix socket — RpcServer round-trip", {
+	timeout: SUBPROCESS_TEST_TIMEOUT_MS,
+}, () => {
 	it.effect("announce then lookup round-trips over layerProtocolSocketServer", () => {
 		const socketPath = join(tmpdir(), `crew-test-${randomUUID().slice(0, 8)}.sock`);
 		return Effect.gen(function* () {
@@ -99,37 +106,35 @@ const leaveStaleSocket = (socketPath: string): Effect.Effect<void> =>
 		});
 	});
 
-describe("tracker stale-socket crash recovery (#3280)", () => {
+describe("tracker stale-socket crash recovery (#3280)", {
+	timeout: SUBPROCESS_TEST_TIMEOUT_MS,
+}, () => {
 	// `it.live`: spawns a real child + SIGKILLs it, so it needs real time, not the frozen TestClock.
-	it.live(
-		"reclaims a crashed host's stale socket and re-hosts the tracker",
-		() => {
-			const socketPath = join(tmpdir(), `crew-stale-${randomUUID().slice(0, 8)}.sock`);
-			return Effect.gen(function* () {
-				// Strand the stale socket BEFORE the tracker layer is built — the layer runs reclaim at
-				// build time, so building it must observe the crashed host's orphaned file, not a clean path.
-				yield* leaveStaleSocket(socketPath);
-				assert.isTrue(
-					existsSync(socketPath),
-					"expected a stale socket file after the simulated crash",
-				);
-				// Build the server FIRST so it reclaims the stale file and is listening, THEN dial a client
-				// (the production sequencing: `crewTrackerHostOrDialLayer` provides the client onto the
-				// hosted server). A successful round-trip proves the reclaim re-hosted the tracker.
-				yield* Layer.build(hostedTracker(socketPath));
-				const result = yield* Effect.gen(function* () {
-					const client = yield* RpcClient.make(TrackerRegistry);
-					yield* client.AnnouncePresence({
-						peer: "inbox://peer-a",
-						role: "builder",
-					});
-					return yield* client.LookupRole({role: "builder"});
-				}).pipe(Effect.provide(socketClientLayer(socketPath)));
-				assert.strictEqual(result.peers[0]?.peer, "inbox://peer-a");
-			}).pipe(Effect.scoped);
-		},
-		20_000,
-	); // a real node child spawn + SIGKILL + rebind (node + TS + Effect startup)
+	it.live("reclaims a crashed host's stale socket and re-hosts the tracker", () => {
+		const socketPath = join(tmpdir(), `crew-stale-${randomUUID().slice(0, 8)}.sock`);
+		return Effect.gen(function* () {
+			// Strand the stale socket BEFORE the tracker layer is built — the layer runs reclaim at
+			// build time, so building it must observe the crashed host's orphaned file, not a clean path.
+			yield* leaveStaleSocket(socketPath);
+			assert.isTrue(
+				existsSync(socketPath),
+				"expected a stale socket file after the simulated crash",
+			);
+			// Build the server FIRST so it reclaims the stale file and is listening, THEN dial a client
+			// (the production sequencing: `crewTrackerHostOrDialLayer` provides the client onto the
+			// hosted server). A successful round-trip proves the reclaim re-hosted the tracker.
+			yield* Layer.build(hostedTracker(socketPath));
+			const result = yield* Effect.gen(function* () {
+				const client = yield* RpcClient.make(TrackerRegistry);
+				yield* client.AnnouncePresence({
+					peer: "inbox://peer-a",
+					role: "builder",
+				});
+				return yield* client.LookupRole({role: "builder"});
+			}).pipe(Effect.provide(socketClientLayer(socketPath)));
+			assert.strictEqual(result.peers[0]?.peer, "inbox://peer-a");
+		}).pipe(Effect.scoped);
+	}); // a real node child spawn + SIGKILL + rebind (node + TS + Effect startup)
 
 	it.effect(
 		"leaves a LIVE socket intact — a second bind still gets EADDRINUSE (dial, not reclaim)",

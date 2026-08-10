@@ -16,8 +16,8 @@
  * failure-to-run produces — on the one proven-ordinary verdict. The exit code discriminates the
  * four states ONLY ONCE THE VERB HAS RUN; it says nothing about whether it ran, so a caller must
  * assert on the stdout state word (`[ "$CP_STATE" = "not-control-plane" ]`), never on mere
- * non-zero. `… || ordinary` is UNSAFE: it fires on a usage error (1) and a missing binary (127)
- * alike. See the README's "How to call this safely" for the observed failure modes.
+ * non-zero. `… || ordinary` is UNSAFE: it fires on a malformed invocation (4) and a missing binary
+ * (127) alike. See the README's "How to call this safely" for the observed failure modes.
  *
  * `content-undetermined` is an OBLIGATION, not a verdict: resolve it by running the existing
  * `guard-content-probe` verb over each listed `.decisions/**` file at the PR head (ADR 0164). It is

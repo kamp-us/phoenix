@@ -1171,7 +1171,7 @@ as Step 4b (`git diff --name-only origin/main...HEAD | grep -q '^apps/web/src/'`
 **The loop — render → look → fix:**
 
 1. **Render** the composed surface over a running local `alchemy dev` build via the
-   render-and-capture harness (#2963, the `@kampus/design-capture` local-render leg): it targets
+   render-and-capture harness (#2963, the `@kampus/fabrika-cli/capture` local-render leg): it targets
    the local worker, renders against an **empty local D1** (designed-empty states are in scope — no
    seeding, per the founder v1 non-goal + security guard), honors the dev-override cookie so
    flag-gated UI renders, and writes a **cropped/downscaled** PNG of the changed region. Don't
@@ -1225,7 +1225,7 @@ bash ./.claude/.pipeline/skills/write-code/scripts/step4d-blessed-surfaces.sh   
 ```
 
 **The reference-anchored loop — consume the seam, never re-implement the diff.** For each blessed
-changed surface, resolve its golden through the `@kampus/design-capture` golden seam (the *one* notion
+changed surface, resolve its golden through the `@kampus/fabrika-cli/capture` golden seam (the *one* notion
 of "the golden for this surface", shared with the review side) and add a **compare-to-reference** leg
 to render→look→fix:
 
@@ -1233,8 +1233,9 @@ to render→look→fix:
   surface returns `null`, which is your "no reference, skip" signal — never an error), and
   `resolveGoldenUrl(pointer, surfaceId)` → the immutable depo image URL to **look at beside** your
   rendered capture. `loadGoldenPointer(POINTER)` gives the in-memory pointer; `blessedSurfaces(pointer)`
-  and `resolveGoldenEntry(pointer, surfaceId)` list/inspect the blessed set. These are real
-  `@kampus/design-capture` exports — call them; do **not** re-derive the pointer parse or the depo URL.
+  and `resolveGoldenEntry(pointer, surfaceId)` list/inspect the blessed set. These are real exports —
+  the pointer/diff ones from `@kampus/fabrika-cli/capture`, the two depo resolvers from phoenix's
+  `@kampus/design-capture` — so call them; do **not** re-derive the pointer parse or the depo URL.
 - **Look, golden beside rendered.** Judge composition/gestalt with the golden as the target, not free
   taste — does the assembled surface *read as* its blessed reference (balance, rhythm, hierarchy,
   placement)? If you want the objective magnitude/region signal, run the **same** deterministic diff
@@ -1527,7 +1528,7 @@ gate FAIL by itself (§DEV), and the heading is the one part of the obligation a
 ### Attach before/after composition captures (UI diffs only) — the #2964 evidence-attach
 
 When Step 4d fired (a UI diff), attach **before/after** composed-surface captures to the PR via the
-evidence-attach capability (#2964, the `@kampus/design-capture`
+evidence-attach capability (#2964, the `@kampus/fabrika-cli/capture`
 `captureAndUpload`/`hostedUrls` leg): it takes a pre-edit baseline and post-edit result over the
 local build, uploads them, and emits **SHA-bound** PR-attachment markdown bound to the pushed PR
 head — the same convention `review-design`'s evidence path uses (ADR

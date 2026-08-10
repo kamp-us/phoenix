@@ -16,6 +16,8 @@ name: design-inventory-guard
 # scan lives once in `pipeline-cli design-inventory` (the readme-guard / design-token-guard idiom).
 on:
   pull_request:
+  push:
+    branches: [main]
 
 # Least-privilege GITHUB_TOKEN: the job checks out + reads the repo and runs the guard, which
 # fails via exit code — it posts no check-run/status/PR comment — so contents:read is all it needs.

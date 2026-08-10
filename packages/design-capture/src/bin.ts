@@ -22,18 +22,24 @@ import {readFileSync, writeFileSync} from "node:fs";
 import {fileURLToPath} from "node:url";
 import {NodeRuntime, NodeServices} from "@effect/platform-node";
 import {DoormanClientLive, resolveApiKey} from "@kampus/depo";
+import {
+	applyBlessing,
+	blessSurface,
+	captureAndUpload,
+	loadGoldenPointer,
+	parseBlessDecisions,
+	parseCandidateSet,
+	parseSurfaceSpec,
+	renderBlessingGallery,
+	renderCandidateSet,
+	renderCrashFailure,
+	serializeCandidateSet,
+	serializeGoldenPointer,
+} from "@kampus/fabrika-cli/capture";
 import {Config, Console, Effect, Layer, Redacted} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
-import {applyBlessing, parseBlessDecisions, renderBlessingGallery} from "./blessing-surface.ts";
-import {renderCandidateSet} from "./candidate-render.ts";
-import {parseCandidateSet, serializeCandidateSet} from "./candidate-set.ts";
-import {loadGoldenPointer, serializeGoldenPointer} from "./golden-fs.ts";
-import {blessSurface} from "./golden-pointer.ts";
 import {storeGolden} from "./golden-store.ts";
-import {captureAndUpload} from "./orchestrate.ts";
-import {renderCrashFailure} from "./page-errors.ts";
-import {parseSurfaceSpec} from "./plan.ts";
 
 const previewUrlFlag = Flag.string("preview-url").pipe(
 	Flag.withDescription("the per-PR preview-deploy base URL to capture over"),

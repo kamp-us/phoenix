@@ -43,7 +43,7 @@
  * `Effect.orElseSucceed`; the `git` shell-outs stay raw `execFileSync` (a subprocess boundary
  * the platform services do not cover) and keep their per-line `biome-ignore lint/plugin` —
  * lifting those into `Effect.try` only to re-collapse the error to the same fallback is noise,
- * not the failure-modeling `no-raw-try-catch` targets (the design-capture/upload.ts precedent).
+ * not the failure-modeling `no-raw-try-catch` targets (the capture upload.ts precedent).
  */
 import {execFileSync} from "node:child_process";
 import {Console, Effect, FileSystem, Option, Path} from "effect";

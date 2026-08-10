@@ -26,6 +26,8 @@ export class WriteFailed extends Schema.TaggedErrorClass<WriteFailed>()("fabrika
 	reason: Schema.String,
 }) {}
 
+const NEWLINE = 0x0a;
+
 /** Base names in `path`. A directory that could not be listed FAILS; it never resolves to `[]`. */
 export const readDir = (
 	path: string,
@@ -59,6 +61,41 @@ export const exists = (path: string): Effect.Effect<boolean, ReadFailed, FileSys
 		return yield* fs.exists(path);
 	}).pipe(
 		Effect.catchTag("PlatformError", (cause) => new ReadFailed({path, reason: cause.message})),
+	);
+
+/**
+ * Append `text` to `path`, creating the file and its parent directory when they are absent.
+ *
+ * The `"a+"` open flag is the guarantee that matters: every write lands at the end of whatever is
+ * already there, so a re-run adds to a line-oriented file rather than truncating it, and nothing on
+ * disk is rewritten. The one thing done beyond that is healing a missing final newline: a file whose
+ * last write was cut short ends mid-line, and appending straight onto it would fuse the new text
+ * into the damaged line and lose both. A reader can skip one damaged line; it cannot recover a good
+ * one that was glued to it.
+ */
+export const appendFile = (
+	path: string,
+	text: string,
+): Effect.Effect<void, WriteFailed, FileSystem.FileSystem | Path.Path> =>
+	Effect.gen(function* () {
+		const fs = yield* FileSystem.FileSystem;
+		const pathService = yield* Path.Path;
+		yield* fs.makeDirectory(pathService.dirname(path), {recursive: true});
+		yield* Effect.scoped(
+			Effect.gen(function* () {
+				const file = yield* fs.open(path, {flag: "a+"});
+				const size = (yield* file.stat).size;
+				let separator = "";
+				if (size > 0n) {
+					yield* file.seek(size - 1n, "start");
+					const last = yield* file.readAlloc(1);
+					if (last._tag === "Some" && last.value[0] !== NEWLINE) separator = "\n";
+				}
+				yield* file.writeAll(new TextEncoder().encode(`${separator}${text}`));
+			}),
+		);
+	}).pipe(
+		Effect.catchTag("PlatformError", (cause) => new WriteFailed({path, reason: cause.message})),
 	);
 
 /** Write `text` to `path`, creating its parent directory. */

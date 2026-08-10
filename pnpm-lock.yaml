@@ -846,9 +846,9 @@ importers:
       '@kampus/depo':
         specifier: workspace:*
         version: link:../depo
-      '@playwright/test':
-        specifier: 'catalog:'
-        version: 1.59.1
+      '@kampus/fabrika-cli':
+        specifier: workspace:*
+        version: link:../fabrika-cli
       effect:
         specifier: 'catalog:'
         version: 4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)
@@ -856,9 +856,6 @@ importers:
       '@effect/tsgo':
         specifier: 'catalog:'
         version: 0.5.2
-      '@effect/vitest':
-        specifier: 'catalog:'
-        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
       '@types/node':
         specifier: 'catalog:'
         version: 25.6.2
@@ -868,15 +865,15 @@ importers:
       typescript:
         specifier: 'catalog:'
         version: 6.0.3
-      vitest:
-        specifier: 'catalog:'
-        version: 4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
 
   packages/fabrika-cli:
     dependencies:
       '@effect/platform-node':
         specifier: 'catalog:'
         version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(ioredis@5.10.1)
+      '@playwright/test':
+        specifier: 'catalog:'
+        version: 1.59.1
       effect:
         specifier: 'catalog:'
         version: 4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)
@@ -1050,9 +1047,9 @@ importers:
       '@effect/platform-node':
         specifier: 'catalog:'
         version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(ioredis@5.10.1)
-      '@kampus/design-capture':
+      '@kampus/fabrika-cli':
         specifier: workspace:*
-        version: link:../design-capture
+        version: link:../fabrika-cli
       '@playwright/test':
         specifier: 'catalog:'
         version: 1.59.1

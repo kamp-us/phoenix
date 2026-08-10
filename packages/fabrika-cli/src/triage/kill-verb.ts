@@ -4,9 +4,10 @@
  * This is the group's only irreversible act on a public board, which shapes every decision below:
  * no precondition resolves to a plausible value, and no write runs before all of them are proven.
  *
- * **Two guards, and they are different guards (ADR 0159).** A missing footer means the issue is
- * human-owned and the verb refuses outright; a present footer makes it *eligible*, not closeable — a
- * human-invoked `/report` emits the same footer, so `--confirm` is the confirmation step made
+ * **Two guards, and they are different guards (ADR 0159, as narrowed by the #4619 ruling).** A
+ * filing with no agent signal — no footer *and* no operator author — is human-owned and the verb
+ * refuses outright; an agent signal makes it *eligible*, not closeable — a human-invoked `/report`
+ * emits the same footer, so `--confirm` is the confirmation step made
  * structural. That is why `--confirm` is optional at the parser and refused at the verb: a
  * parser-required flag's absence is a usage error, indistinguishable from a typo, while ADR 0159's
  * confirmation is a decision whose absence must be a proven refusal a caller can read as one.
@@ -28,24 +29,28 @@ import {
 	resolveRepo,
 } from "../io/issues.ts";
 import type {StdinRead} from "../io/stdin.ts";
-import {isBareAtReference, renderLeaks, scanBody} from "../report/leaks.ts";
+import {scanBody} from "../report/leaks.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
+import {type AuthoredSurface, leakRefusal, readAuthored} from "./authored.ts";
 import {
-	BARE_AT_PATH,
-	EMPTY_STDIN,
 	HUMAN_FILED,
-	LEAKED_PATH,
 	PRECONDITION_UNKNOWN,
 	READBACK_MISMATCH,
 	UNCONFIRMED,
 	WRITE_UNKNOWN,
 	ZERO_SCOPE,
 } from "./codes.ts";
-import {provenanceOf} from "./provenance.ts";
+import {OPERATOR_ACCOUNTS_ENV, provenanceOf, resolveOperatorAccounts} from "./provenance.ts";
 import {scannedLine} from "./scope.ts";
 
 /** The label a kill is audited by. Its absence in the repo is a zero-scope refusal, not a create. */
 export const KILL_LABEL = "closed-by-triage";
+
+const SURFACE: AuthoredSurface = {
+	verb: "triage kill",
+	noun: "the reason",
+	emptyHint: "refusing an unauditable kill: pipe the reason in.",
+};
 
 export interface KillOptions {
 	readonly issue: number;
@@ -88,37 +93,13 @@ export const runKill = (
 		}
 		const repo = repoAttempt.value;
 
-		const read = yield* options.stdin;
-		if (read._tag === "Failed") {
-			return refuse(
-				FAILED,
-				`triage kill: could not read stdin: ${read.reason} — the reason is UNKNOWN, never empty.`,
-			);
-		}
-		const reason = read._tag === "NoStdin" ? "" : read.text;
-		if (reason.trim() === "") {
-			return refuse(EMPTY_STDIN, "triage kill: no reason on stdin — refusing an unauditable kill.");
-		}
+		const authored = readAuthored(SURFACE, yield* options.stdin);
+		if (authored._tag === "Refused") return authored.outcome;
+		const reason = authored.text;
 
-		if (isBareAtReference(reason)) {
-			return refuse(
-				BARE_AT_PATH,
-				'triage kill: the reason is a bare "@" path reference — it never arrived. Send it on stdin.',
-			);
-		}
-
-		// The reason is authored text, so a leak in it is refusable — the author can fix it. The
-		// duplicate's body below is foreign content being preserved, so it is redacted instead. That
-		// asymmetry is the whole of the leak design (`../report/leaks.ts`).
-		const reasonScan = scanBody(reason);
-		const firstLeak = reasonScan.leaks[0];
-		if (firstLeak !== undefined) {
-			return refuse(
-				LEAKED_PATH,
-				`triage kill: the reason carries a machine-local path at line ${firstLeak.line} (${firstLeak.class}) — rewrite it repo-relative.`,
-				renderLeaks(reasonScan.leaks),
-			);
-		}
+		// The reason is posted verbatim, so scanning it here is scanning the composed body.
+		const leaked = leakRefusal(SURFACE, reason);
+		if (leaked !== null) return leaked;
 
 		const target = yield* getIssue(repo, issue);
 		if (target._tag === "Absent") {
@@ -134,19 +115,31 @@ export const runKill = (
 			return refuse(ZERO_SCOPE, `triage kill: issue #${issue} is already closed.`);
 		}
 
+		const operators = resolveOperatorAccounts(options.env);
+		const provenance = provenanceOf(target.value, operators);
+
+		// Only worth saying when emptiness is what decided the answer; an operator-authored filing is
+		// agent-reported however little its body says, so the fail-closed line would misreport it.
 		const emptyBodyNotice =
-			target.value.body.trim() === ""
+			target.value.body.trim() === "" && provenance === "human"
 				? [
 						`triage kill: #${issue} has an empty body — reading its provenance as human (fail-closed).`,
 					]
 				: [];
 
-		const provenance = provenanceOf(target.value.body);
 		if (provenance === "human") {
+			// An unset operator set makes every footerless filing read human, including the operator's
+			// own — the refusal is correct but its cause is invisible, so name the config that decides it.
+			const unconfiguredNotice =
+				operators.size === 0
+					? [
+							`triage kill: no operator accounts are configured (${OPERATOR_ACCOUNTS_ENV} is unset), so a footerless filing reads human whoever authored it.`,
+						]
+					: [];
 			return refuse(
 				HUMAN_FILED,
 				`triage kill: #${issue} is human-filed — refusing to close it. Park it with questions instead.`,
-				emptyBodyNotice,
+				[...emptyBodyNotice, ...unconfiguredNotice],
 			);
 		}
 
@@ -197,6 +190,8 @@ export const runKill = (
 			);
 		}
 
+		// The duplicate's body is foreign content being preserved, so it is redacted rather than
+		// refused — the asymmetry `./authored.ts` states.
 		const foldScan = scanBody(target.value.body);
 		const redactions = duplicate === null ? 0 : foldScan.leaks.length;
 		const redactionNotice =

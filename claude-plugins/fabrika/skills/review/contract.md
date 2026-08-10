@@ -1,0 +1,1015 @@
+# `/review` — derived CLI contract
+
+**Skill:** [`review`](SKILL.md) · **Authoring brief:** [#4959](https://github.com/kamp-us/phoenix/issues/4959) · **Date:** 2026-08-08
+
+These verbs live in `packages/fabrika-cli/`, binary `fabrika`, grouped under a `review`
+subcommand, beside the `adr`, `eval`, `report`, `triage` and `wire` groups already implemented
+there. The [CLI interface convention](../../docs/cli-interface-convention.md) governs them; where
+this spec and that doc disagree, the doc wins and this spec is the bug.
+
+**`fabrika` calls `pipeline-cli` nowhere, and neither does the skill**
+([ADR 0238](../../../../.decisions/0238-fabrika-reimplements-v1-never-calls-it.md)). Every verb
+below is implemented from scratch. v1's four review gates and their 62 `scripts/` were read for
+their semantics and their scars — each Grounding section names what the v1 counterpart gets wrong
+and what this spec does instead — but no clause defers to one, and none is invoked.
+
+**Substrate.** Effect CLI verbs on the `@effect/platform-node` seam the sibling groups use;
+GitHub access per
+[skill conventions §11 — REST, never GraphQL](../../docs/skill-conventions.md#11-github-access-is-rest-never-graphql).
+Named because a spec that leaves the substrate open makes the implementer guess (#4734).
+
+## Verb inventory
+
+| Verb | Purpose | Split test |
+|---|---|---|
+| `review scope` | the PR's head SHA, linked issue, artifact-class partition of its changed files, and the `self` / `harness` flags | partitioning paths against a fixed class map and failing closed on an empty file list is mechanical; what to do with each class is judgment |
+| `review diff` | the PR's diff bytes, with truncation refused rather than silently passed through | fetching and proving completeness is mechanical; reading the diff is the whole judgment layer |
+| `review criteria` | the linked issue's acceptance-criteria block, read through the registered `acceptance-criteria` wire format | fetch + registered parse + checkbox states are mechanical; grading a criterion is judgment |
+| `review ci` | the live CI check-run rollup at a head, fail-closed on incomplete enumeration | classifying check runs and proving the enumeration complete is mechanical (#4552, #3999); weighing a red check is judgment |
+| `review verdicts` | every verdict marker on the PR, per namespace, each with its `Current` / `Stale` / `Unbindable` binding against the live head | comment sweep + registered parse + `bindToHead` is mechanical; what a stale marker means for this round is judgment |
+| `review deviations` | the PR body's `## Deviations` section state (found / absent / malformed), its entries, and the Tier-M token scan over the diff | section detection and token scanning are mechanical; matching entry *substance* against findings is judgment (Tier R) |
+| `review post` | the single sanctioned verdict emit: compose through the `verdict-marker` wire format, bind to the inspected head at post time, post one comment per namespace, read it back | marker composition, head re-resolution, leak scan and read-back are a protocol; the polarity and clause are judgment |
+| `review append-criterion` | append one reviewer-authored acceptance criterion to the linked issue under the four fences (append-only · ACL-gated fail-closed · frozen after round 3), with provenance tag | the fences and the diff-guarded append are mechanical (ADR 0079); whether a finding is in-scope is judgment |
+
+### Considered and deliberately not derived
+
+Each is a real proposal someone could make again. (Conventions §7 homes these in a plugin-root
+`.out-of-scope/`, which no fabrika skill has bootstrapped yet; until it exists they live inline,
+the same tracked debt the sibling contracts carry.)
+
+- **A typecheck / lint / test execution verb, or any head worktree.** Typecheck, lint, unit
+  tests, secret scan, leak scan and unresolved-thread accounting are required CI gates
+  (`.github/workflows/ci.yml`, `gitleaks.yml`, `leak-guard.yml`,
+  `unresolved-threads-guard.yml`). A fabrika copy could only agree redundantly or contradict an
+  enforced verdict, and a local re-run has returned another worktree's cached green three times
+  in one session (#4106). v1's ADR 0067 made the in-worktree typecheck authoritative; that
+  posture is **deliberately not carried** — the brief's scope rule ("no second answer to
+  anything a CI gate already enforces") supersedes it for fabrika, and `review ci` is the
+  structural read of the same facts. Dropping the worktree also removes the #3607 /tmp-collision
+  and #4544 fixed-name-scratch classes by construction, and closes the self-review instruction
+  hole without a denylist: a head that is never checked out is a head whose instructions are
+  never loaded. **The commit binding does not reverse this** (#5117, #5122): `review scope`,
+  `review diff`, `review deviations` and `review post`'s namespace recompute fetch the PR head
+  and read the artifact out of the **object database**
+  (`git diff <base>...<head>`), which writes objects and no working tree. Nothing is checked out,
+  so no head instruction file is ever on disk to be loaded — a diff that adds a worktree or a
+  checkout is still the wrong fix and should be red at review.
+- **A dead-link / ADR-index / skill-frontmatter checker.** `doc-links.yml`,
+  `decisions-index.yml`, and `ci.yml`'s `validate-skills.sh` step already gate each. The rubrics
+  state the expectation; the verdict stays where it is enforced.
+- **A control-plane classifier.** `cp-classify` routes §CP membership and CODEOWNERS enforces it
+  at merge (#4227 is the cost of a second opinion). `review post` takes the carrier as an
+  **input** (`--carrier advisory`); it never computes the §CP verdict.
+- **A `review trivial` verb or namespace.** Triviality is a *mode* of the skill (founder ruling,
+  #4891): it changes which judgment runs, not which namespaces are emitted, and v1's
+  `review-trivial` already proved the mode needs no fourth namespace. Nothing mechanical is left
+  once the fan-out is skipped.
+- **A second parser for the AC block or the verdict marker.** Both are registered wire formats
+  (`packages/fabrika-cli/src/wire/registry.ts`); `review criteria` and `review post` / `review
+  verdicts` import `read` / `emit` from `acceptance-criteria.ts` and `verdict-marker.ts`. A
+  hand-rolled marker regex is the #3173 incident and the drift the registry landed to end.
+- **A governance sweep.** The ADR contradiction sweep and gate-invariant preservation (v1
+  `review-doc`'s sweep, `review-skill`'s rigor check 4) are the `governance` skill's, guarding
+  from outside (#4949). The skill invokes it at the seam; this group computes nothing for it.
+
+### Nothing here recomputes an enforced answer
+
+Every question this group answers is ungated today. The enforced ones — typecheck/lint/tests,
+leaks, secrets, dead links, ADR-index integrity, skill frontmatter validity, thread accounting,
+§CP membership — are listed above with the workflow file that owns each, and this spec computes
+no second verdict on any of them.
+
+### The name situation
+
+No v1 skill is named bare `review`, so this skill has no direct name collision — unlike
+`/triage` and `/report`. The four v1 gates (`review-code`, `review-doc`, `review-skill`,
+`review-trivial`) remain live project-level skills until the cutover, which is separate, later
+work; until then nothing on `main` routes to this skill and it is reached as `/fabrika:review`.
+The routing gap is recorded in the authoring PR rather than patched from here.
+
+## Shared conventions
+
+Stated once rather than repeated per block.
+
+- **Answer channel: machine.** Stdout carries the answer and nothing else; scope lines, refusal
+  reasons and progress go to stderr. Every "nothing found" case prints a state word — empty
+  stdout is byte-identical to a verb that never ran, and v1's callers consumed exactly that as a
+  proven negative (the S10 else-less classifier; #4060's zero-file `has-code`).
+- **Common inputs.** `--repo <owner/name>` (default: `$CLAUDE_PIPELINE_REPO`, else
+  `$GITHUB_REPOSITORY`, else the `origin` remote; none resolvable → exit 1 — the resolution
+  chain the shipped `report`/`triage` groups already use, inherited for one config surface
+  rather than a second vocabulary). `--json` swaps the line grammar for one object with the
+  named keys.
+- **Every list read paginates and reports its scanned count** on stderr — comments, check runs,
+  changed files. A verdict driven by a silently truncated read is a verdict over unknown scope
+  (#3999's pagination-honesty rule, applied group-wide).
+- **A non-zero exit is UNKNOWN.** No verb prints a partial or permissive answer on a non-zero
+  exit (`packages/fabrika-cli/src/verb.ts`'s answer-channel rule).
+
+### The shared exit taxonomy
+
+All eight verbs allocate from one internal table, so a code means one thing across *this group*.
+Repo-wide the same number does not — `adr` allocates per verb, `wire`'s `3`–`8` are its own —
+but where this group's codes overlap **`report`'s and `triage`'s writing verbs** (`3`, `5`, `6`,
+`7`, `8`, `9`, `11`) they match them deliberately, code for code, read from the **shipped
+package** (`packages/fabrika-cli/src/report/codes.ts`, `src/triage/codes.ts`), never from a
+sibling contract.md — the checked-in `/report` contract is behind its own binary on `7` and `11`
+(#4752), which is exactly why prose copies are not the authority.
+
+| Code | Meaning | scope | diff | criteria | ci | verdicts | deviations | post | append-criterion |
+|---|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
+| `0` | the answer is on stdout | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `1` | usage error, unresolvable repo, or the verb failed to run | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `2` | no implementation could be resolved | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `3` | stdin was read and held nothing | — | — | — | — | — | — | ✓ | ✓ |
+| `4` | *(deliberate gap — kept as the body-section seat `report file` uses; no verb here performs one)* | — | — | — | — | — | — | — | — |
+| `5` | the **authored** text carries a machine-local path | — | — | — | — | — | — | ✓ | ✓ |
+| `6` | the **authored** text is a bare `@` path reference — not redactable | — | — | — | — | — | — | ✓ | ✓ |
+| `7` | zero scope: the target is **proven absent (404)** or closed, the PR has zero changed files or zero declared check runs, or a required block is proven absent or malformed — a fail-closed refusal | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `8` | the write itself failed — the outcome is **UNKNOWN** | — | — | — | — | — | — | ✓ | ✓ |
+| `9` | the write landed but the read-back does not match | — | — | — | — | — | — | ✓ | ✓ |
+| `10` | a supplied classification value is off the closed vocabulary — a namespace outside this PR's derived class set, a bad polarity or carrier, a `--sha` that is not a head SHA | ✓ | ✓ | — | — | — | ✓ | ✓ | — |
+| `11` | a **precondition read failed** — nothing was written and the outcome is UNKNOWN | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `12` | refused: the `--sha` given is not the PR's head — a read taken over, or a verdict bound to, a tree that is no longer the PR | ✓ | ✓ | — | — | — | ✓ | ✓ | — |
+| `13` | refused: the read was completed but its scope is **provably incomplete** — a truncated file list or diff, a check-run enumeration short of `total_count` | ✓ | ✓ | — | ✓ | ✓ | ✓ | — | — |
+| `14` | refused: the invoking token resolves below `write`, or the ACL lookup failed — authorization denied, fail-closed (ADR 0055) | — | — | — | — | — | — | — | ✓ |
+| `15` | refused: the write would drop or mutate an existing row — the append-only fence | — | — | — | — | — | — | — | ✓ |
+| `127` | the verb never ran (unresolved binary) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+
+**This matrix owns what a code *means*; the per-verb tables own what *triggers* it.** Every verb
+can return `0`, `1`, `2` and `127` with the meanings above, stated here and nowhere else; the
+per-verb "Exit status" tables enumerate only that verb's own proven outcomes, `3` and up, phrased
+as that verb's trigger. (The one-fact-one-home rule; the `/triage` contract already shipped the
+ten-places drift this prevents.)
+
+**`11` is the shipped `PRECONDITION_UNKNOWN`** (`report/codes.ts`), matched rather than
+reinvented: a read the verb needed failed, so nothing is proven — not `7` (which is *proven*
+absence: a 404 is a fact about the repository, an unreachable GitHub is not a fact about
+anything) and not `1` (which would fuse an unreachable GitHub with a bad flag).
+
+**`12` and `13` are this group's own proven refusals**, in the band `triage` used for its
+kill-guards. `12` is the stale-head refusal — the one code whose absence would let a verdict
+formed over one tree land on another (#3769 / #4338's class). It seats at both ends of a review:
+at the emit seam (`review post`, where the live head has moved past the judged one) and at the
+read seam (`review scope` / `review diff`, where a `--sha` that is not the PR's head would have
+a human spend a review on a tree the PR has left — #5117). `13` is the
+incomplete-enumeration refusal: the read *succeeded* and is *provably short* — a diff carrying
+fewer files than the PR declares, a check-run page count below `total_count` — which is neither
+`11` (nothing failed) nor `7` (scope exists; it just was not all seen). Folding `13` into either would render a
+half-seen PR as a fully-judged one, the exact class of #3925 (a gate PASSing on 100% upload
+failure) and #4060.
+
+**`5` and `6` apply only to text the caller just wrote** (a verdict body, an appended
+criterion) — authored text is refusable because the author can fix it. Their fixes are opposite
+(redact-and-resend vs send-the-bytes), which is why they stay two codes, exactly as in `report`.
+
+### The read verbs bind to a commit before they read (#5117, #5122)
+
+`review scope`, `review diff` and `review deviations` serve the artifact a whole review is formed
+over, so **the bytes have to come from a named commit, not from an endpoint that takes a
+pull-request number and no commit at all.** The platform's PR reads are the second thing: a push
+landing between scoping and reading serves the *new* head's artifact under the *old* head's SHA,
+and the result is a well-formed, confident verdict over code nobody judged. `review post`'s `12`
+cannot close that — it fires after the judging, and a rewind that lands back on the recorded SHA
+passes it clean. So `review post` binds too, at the one read that is not the head re-resolve: the
+file list its derived namespace set comes from.
+
+The three read verbs therefore take an optional `--sha`, `review post` binds to the `--sha` it
+already requires, and all four run one shared binding step
+(`packages/fabrika-cli/src/review/head.ts`) before any artifact read:
+
+1. An explicit `--sha` must be **the PR's head**, or the verb refuses on `12`. Malformed is `10`.
+2. A configured git remote in this checkout must serve the target repo, `pull/<pr>/head` must
+   fetch, the commit must resolve in the **object database**, and `git rev-parse` must resolve it
+   to *itself* — a local ref or tag spelled as hex resolves elsewhere, which is how a name that
+   verifies still names the wrong tree. The base ref must resolve too, since a diff is a range.
+   Any of these unmet is `11`, naming what is UNKNOWN. There is no permissive fallback to the
+   PR-number endpoints: unbindable is a refusal, never a plausible value.
+3. The artifact is then read with `git diff <base>...<head>` — bytes for `review diff` and
+   `review deviations`'s Tier-M scan, the `--name-only -z` path list for `review scope` and
+   `review post`'s namespace recompute — under flags that pin the output to the two commits
+   rather than to the invoking user's `~/.gitconfig` (`--no-ext-diff`, explicit `a/`/`b/`
+   prefixes).
+
+Every one of them prints the bound commit and its base on stderr, and `review scope`'s `scoped`
+line prints **the commit it read the files out of**, so the head named and the files partitioned
+are never two different trees.
+
+**`review post` binds underneath its `12`, not instead of it.** The stale-head refusal stays this
+verb's first step and keeps its own message: `12` is what says the verdict's tree is gone. The
+binding is what makes the namespace set provably the bound tree's — a separate property, since a
+force-push that rewinds back onto `--sha` passes `12` clean while the PR-number file endpoint
+still answers with some other head's list.
+
+**Nothing is checked out.** A fetch writes objects, not a working tree, so this binding and the
+no-head-worktree decision above hold together rather than trading off.
+
+### Read-backs compare normalized text, not bytes
+
+Every write verb re-reads its target and compares through **`normalizeForReadback` from
+`packages/fabrika-cli/src/report/compose.ts`** — import it; its third step (strip trailing
+newlines) is the one a re-derivation drops, and dropping it fires exit `9` on clean runs.
+
+### Machine-local path detection
+
+`review post` and `review append-criterion` share the leak predicate **already implemented** at
+`packages/fabrika-cli/src/report/leaks.ts` — import it, never re-derive it. A verdict body that
+must *cite* a leak found in the diff cites it by class root or repo-relative form; the refusal
+message says so (#3785 is the incident where review prose tripped the guard).
+
+---
+
+## `review scope`
+
+**Invocation**
+
+```
+fabrika review scope 4321 [--sha <head>] [--repo <owner/name>] [--json]
+```
+
+**Inputs**
+
+| Flag | Type | Required | Default | Description |
+|---|---|---|---|---|
+| *(positional)* | integer | yes | — | the pull-request number to scope |
+| `--sha` | string | no | the PR's live head | the head to read the changed files at; see the binding step above |
+| `--repo` | string | no | resolved | the repository |
+| `--json` | boolean | no | `false` | emit the result object |
+
+**Output** — machine channel. First line: `scoped\t<head-sha>\t<issue-number>`, where the head is
+the commit the file list was actually read out of. Then one line per
+present class — `class\t<name>\t<file-count>` where `<name>` is one of `code`, `doc`, `skill` —
+then two flag lines `self\t<true|false>` and `harness\t<true|false>`.
+
+With `--json`, an object with keys `outcome`, `head` (full 40-hex), `issue` (integer or `null`),
+`classes` (array of `{name, files}`), `self` (boolean), `harness` (boolean), `scanned` (changed
+files seen), and `namespaces` (array — the derived namespace per present class, e.g.
+`["review-code","review-doc"]`).
+
+**The class map is a fixed path partition, stated here so two runs cannot disagree:**
+
+| Class | Paths |
+|---|---|
+| `skill` | `claude-plugins/**` (SKILL.md, rubric/reference files, contract specs), `.claude/**` agent and skill definitions, `skills/**`, and any file named `SKILL.md` wherever it sits — the last two rows are what keep the map honest on a repo that homes its skills elsewhere (found live by an eval run: a toy repo's `skills/deploy-notes/SKILL.md` partitioned to `doc` under the first two rows alone) |
+| `doc` | `*.md` outside `claude-plugins/**` — `.decisions/`, `.patterns/`, `.glossary/`, `reports/`, `README`/`DEVELOPMENT`, docs directories |
+| `code` | everything else — source, tests, config, workflows, manifests |
+
+Every changed file maps to exactly one class, `code` the residual — a file the map cannot place
+is `code`, never dropped, because an unclassified file silently excluded from every rubric is a
+review that never saw it. `self` is true when any changed path is under
+`claude-plugins/fabrika/skills/review/`. `harness` is true when any changed path is under
+exactly `.claude/`, `.github/`, or `claude-plugins/` — this repo's governance surface, a closed
+three-root list of its own. The class map's two portability rows (`skills/**`, any `SKILL.md`)
+deliberately do **not** set it: they classify a foreign repo's skill text for the rubric, while
+`harness` marks *this* harness. The *decision* of what governance does with the flag belongs to
+the `governance` skill; the flag only makes the seam mechanical.
+
+**The linked issue** is resolved from the PR body's closing keywords (`Fixes/Closes/Resolves
+#N`), first match; `null` when none — the skill decides what an issueless PR means, this verb
+only reports it.
+
+**Exit status**
+
+| Code | Trigger |
+|---|---|
+| `7` | the PR is proven absent (404), or closed, or has **zero changed files** — a review over nothing (ADR 0092; #4060) |
+| `10` | `--sha` is not a head SHA |
+| `11` | the PR could not be read, or the commit could not be bound — the scope is UNKNOWN |
+| `12` | `--sha` is not the PR's head — re-scope at the head, never partition a tree the PR has left |
+| `13` | git reports no changed files for the bound commit's range — an empty read, with nothing to partition |
+
+**Errors**
+
+| Message (stderr) | Code | Kind |
+|---|---|---|
+| `review scope: PR #<n> not found in <repo>.` | 7 | refusal |
+| `review scope: PR #<n> is closed — nothing to review.` | 7 | refusal |
+| `review scope: PR #<n> has zero changed files — refusing to derive an empty review (ADR 0092, #4060).` | 7 | refusal |
+| `review scope: --sha "<v>" is not a head SHA — expected 7–40 hex characters.` | 10 | refusal |
+| `review scope: cannot read PR #<n> in <repo>: <reason> — the scope is UNKNOWN.` | 11 | refusal |
+| `review scope: <what> — the artifact cannot be bound to a commit, so what it shows is UNKNOWN.` | 11 | refusal |
+| `review scope: cannot read the changed files of #<n> at <sha>: <reason> — the scope is UNKNOWN.` | 11 | refusal |
+| `review scope: PR #<n>'s head is <live>, not <asked> — the tree you scoped is not the one under review; re-scope at <live> (ADR 0058).` | 12 | refusal |
+| `review scope: git reports no changed files for the range <base>...<sha>, so <sha> has nothing to partition — refusing to scope an empty read (#3999).` | 13 | refusal |
+
+**Scope** — one PR's metadata, and the path list git reports for one bound commit's range. That
+list is the scope itself, so it has no second count to be checked against: it is refused when
+**empty**, and GitHub's declared changed-file count is reported beside it as a cross-check that
+never refuses. The class partition is total over what was read; the refusals exist so it is never
+run over less than everything, and never over a different tree than the head it prints.
+
+**Examples**
+
+```
+$ fabrika review scope 4321
+scoped	03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c	4287
+class	code	3
+class	doc	1
+self	false
+harness	false
+```
+
+```
+$ fabrika review scope 4321 --json
+{"outcome":"scoped","head":"03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c","issue":4287,"classes":[{"name":"code","files":3},{"name":"doc","files":1}],"self":false,"harness":false,"scanned":4,"namespaces":["review-code","review-doc"]}
+```
+
+**Grounding**
+
+- #4060 — v1's `class-probe` read 0 files and silently classified `has-code` exit 0; the zero-file
+  case here is a `7` refusal.
+- #3170 — one namespace filled on a mixed diff; `namespaces` is printed as a set precisely so the
+  emission checklist is machine-derived, not remembered.
+- v1's `classify-skills-only.sh` prints nothing on its code-PR branch and falls off the end (the
+  S10 else-less classifier) — every outcome here is a token.
+- ADR 0052 — `self` is the input the skill's BASE-revision fence keys on.
+- #5117 — the file list is the namespace set's only input, and the set is both floor and ceiling:
+  a list read at a later commit than the printed head derives a namespace nobody judged, or drops
+  one. The list and the head are one commit or the verb refuses.
+- #5154 — this verb has no second count of the range, because the list it reads *is* the scope, and
+  GitHub's `changed_files` cannot stand in for one: it is a different computation over its own merge
+  base with its own rename pairing, which counts two files where git's list carries one path. So the
+  disagreement is reported and never refused on, and the only short read git alone establishes — an
+  empty one — is the `13`.
+
+---
+
+## `review diff`
+
+**Invocation**
+
+```
+fabrika review diff 4321 [--sha <head>] [--repo <owner/name>]
+```
+
+**Inputs**
+
+| Flag | Type | Required | Default | Description |
+|---|---|---|---|---|
+| *(positional)* | integer | yes | — | the pull-request number |
+| `--sha` | string | no | the PR's live head | the head to read the diff at; see the binding step above |
+| `--repo` | string | no | resolved | the repository |
+
+**Output** — machine channel. The unified diff bytes, read out of the object database at the bound
+commit. There is no empty answer: a PR with zero changed files is `review scope`'s `7`, and this
+verb reds the same way. No `--json`: the diff is the object.
+
+**Exit status**
+
+| Code | Trigger |
+|---|---|
+| `7` | the PR is proven absent (404) or closed, or has zero changed files — the same refusal `review scope` makes, so neither verb serves a review over nothing |
+| `10` | `--sha` is not a head SHA |
+| `11` | the diff could not be read, or the commit could not be bound — UNKNOWN |
+| `12` | `--sha` is not the PR's head — re-review at the head, never judge a tree the PR has left |
+| `13` | the diff is provably incomplete — the file count in the diff at the bound commit is short of the file list git reports for the same range |
+
+**Errors**
+
+| Message (stderr) | Code | Kind |
+|---|---|---|
+| `review diff: PR #<n> not found in <repo>.` | 7 | refusal |
+| `review diff: PR #<n> is closed — nothing to review.` | 7 | refusal |
+| `review diff: PR #<n> has zero changed files — refusing to serve an empty diff as a reviewable one (ADR 0092).` | 7 | refusal |
+| `review diff: --sha "<v>" is not a head SHA — expected 7–40 hex characters.` | 10 | refusal |
+| `review diff: <what> — the artifact cannot be bound to a commit, so what it shows is UNKNOWN.` | 11 | refusal |
+| `review diff: cannot read the diff for #<n> at <sha>: <reason> — UNKNOWN.` | 11 | refusal |
+| `review diff: PR #<n>'s head is <live>, not <asked> — the tree you scoped is not the one under review; re-scope at <live> (ADR 0058).` | 12 | refusal |
+| `review diff: the diff at <sha> carries <k> of the <m> files git reports for the same range <base>...<head> — both counts from git, so this diff is provably short; refusing to serve a partial diff as the whole (#3925's class).` | 13 | refusal |
+
+**Scope** — one commit's diff, completeness-checked against the file list git reports for the same
+range. The bound commit, the scanned byte and file counts, and GitHub's declared changed-file count
+(reported as a cross-check, never refused on) go to stderr on the answer path.
+
+**Examples**
+
+```
+$ fabrika review diff 4321 | head -3
+diff --git a/apps/web/src/cart.ts b/apps/web/src/cart.ts
+index 0b1c2d3..a1b2c3d 100644
+--- a/apps/web/src/cart.ts
+```
+
+**Grounding**
+
+- The `13` refusal is about a diff that arrives short, not about a platform that serves prefixes.
+  `application/vnd.github.diff` does **not** truncate: over its limits it refuses with HTTP `406`
+  and `errors[].code = "too_large"`, and under them it serves the diff whole — established by live
+  probe and recorded on #4993. This verb does not read that endpoint anyway; its bytes are local
+  `git diff <base>...<head>` at the bound commit (#5117), and its denominator is a second read of
+  that same range — `git diff --name-only -z`, one path per `diff --git` entry — so both counts come
+  from git under one set of flags rather than from two systems (#5139). GitHub's declared
+  `changed_files` is still read and reported beside them as a cross-check that never refuses; it is a
+  third party's answer over its own merge base and its own rename detection. What `13` still buys is
+  real: the served bytes can carry fewer files than git lists for that range, and serving that prefix
+  as the whole PR is the #3925 blind-PASS class one layer down.
+- State the guarantee at its real precision: the proof is a **cardinality** test, never an
+  entry-identity one. It establishes that the scanned bytes carry at least as many entries as the
+  `--name-only` read lists — not that the two reads name the same files, and not that the range is
+  the right range. A fault that shortens both reads alike stays invisible to it.
+- The proof counts whole files, so it does not see a diff cut inside the last file's hunks — every
+  `diff --git` header is still present, and the count passes. That is a stated bound of the proof,
+  not a failure mode defended against: no producer for that shape is known.
+- The split test is honest: this verb is not a relay because its whole job is the completeness
+  proof — v1's `pr-diff.sh` was the relay, and nothing checked what it served.
+- #5117 — the completeness proof says the read was not cut short; it says nothing about which
+  commit the bytes came from. A verdict's whole value is that it binds a tree, so the bytes are
+  read at a commit rather than stamped with one afterwards.
+
+---
+
+## `review criteria`
+
+**Invocation**
+
+```
+fabrika review criteria 4287 [--repo <owner/name>] [--json]
+```
+
+**Inputs**
+
+| Flag | Type | Required | Default | Description |
+|---|---|---|---|---|
+| *(positional)* | integer | yes | — | the issue number carrying the acceptance-criteria block |
+| `--repo` | string | no | resolved | the repository |
+| `--json` | boolean | no | `false` | emit the result object |
+
+**Output** — machine channel. First line: `criteria\t<count>`. Then one line per criterion —
+`<checked|open>\t<text>` — the same line grammar `wire read --format acceptance-criteria`
+prints, because it **is** that read: the verb fetches the issue body and hands it to the
+registered format's `read` (`packages/fabrika-cli/src/wire/acceptance-criteria.ts`), importing
+the module. No second parser.
+
+With `--json`: `{"outcome":"criteria","issue":<n>,"count":<n>,"criteria":[{"text":…,"checked":…}…]}`.
+
+The count is never `0`: the wire format holds a conforming block's criteria as a non-empty
+array — a heading with zero checkbox rows reads `Malformed`, so "a gradeable contract with
+nothing in it" is unrepresentable and lands on `7` like any other malformed block.
+
+An issue's open/closed state is deliberately **not** a precondition here, asymmetric with
+`review append-criterion` (which refuses a closed target): reading the contract off a closed
+issue is a legitimate re-review case, while writing to one buries the row where nobody looks.
+The state is reported on stderr as a notice so the caller sees it.
+
+**Exit status**
+
+| Code | Trigger |
+|---|---|
+| `7` | the issue is proven absent (404); **or** the body was read and the AC block is proven absent or malformed — reported with the wire distinction on stderr, never invented around |
+| `11` | the issue could not be read — whether a block exists is UNKNOWN |
+
+**`Absent` and `Malformed` share `7` but never share a message.** Both are fail-closed refusals
+of the same judgment ("there is no gradeable contract here"), and the skill's response to both is
+the same routing (a finding about the issue, not licence to invent criteria) — but the stderr
+names which, with the wire reason verbatim, because their *repairs* differ (write the block vs
+fix the drift).
+
+**Errors**
+
+| Message (stderr) | Code | Kind |
+|---|---|---|
+| `review criteria: issue #<n> not found in <repo>.` | 7 | refusal |
+| `review criteria: #<n> carries no acceptance-criteria block — absent: <wire reason>. Grade nothing; the contract is missing.` | 7 | refusal |
+| `review criteria: #<n>'s acceptance-criteria block is malformed: <wire reason> — a drifted heading is a defect to report, not "there were none".` | 7 | refusal |
+| `review criteria: cannot read #<n> in <repo>: <reason> — whether a block exists is UNKNOWN.` | 11 | refusal |
+
+**Scope** — one issue body, read as typed JSON (never `jq -r .body`, which errors on the control
+characters GitHub bodies carry and yields empty in a loop).
+
+**Examples**
+
+```
+$ fabrika review criteria 4287
+criteria	2
+open	the first retry delay equals `base`
+open	the retry guide documents the delay table
+```
+
+**Grounding**
+
+- The registry row names `review` as this format's consumer; this verb is that row discharged.
+- The near-miss window (`NEAR_MISS_EDITS = 3`) is the format's own; a drifted heading reds as
+  malformed here rather than reading as "no criteria" — the wire module's design carried to the
+  fetch seam.
+
+---
+
+## `review ci`
+
+**Invocation**
+
+```
+fabrika review ci 4321 [--sha <head>] [--repo <owner/name>] [--json]
+```
+
+**Inputs**
+
+| Flag | Type | Required | Default | Description |
+|---|---|---|---|---|
+| *(positional)* | integer | yes | — | the pull-request number |
+| `--sha` | string | no | the PR's live head | the head to enumerate check runs at; give the inspected head so the answer binds to what is being judged |
+| `--repo` | string | no | resolved | the repository |
+| `--json` | boolean | no | `false` | emit the result object |
+
+**Output** — machine channel. First line: `ci\t<sha>\t<green|red|pending>`. Second line:
+`check\t<count>` — the number of check-run lines that follow, so the line channel carries its
+own completeness proof. Then one line per check run —
+`<name>\t<success|failure|neutral|cancelled|skipped|timed_out|action_required|in_progress|queued>` —
+so a red or still-running check is in the gate's context by name, not as a rollup boolean.
+
+With `--json`: `{"outcome":"ci","sha":…,"rollup":…,"checks":[{name,status}…],"scanned":<n>,"declared":<m>}`.
+
+**The rollup is total over the status vocabulary, fail-closed on the ambiguous rows:** `red`
+when any completed run concluded `failure`, `timed_out`, `action_required` or `cancelled` (a
+cancelled check proved nothing, and "proved nothing" must not read green); `pending` when none
+red and any run is `queued`/`in_progress`; `green` only when every declared run completed and
+each concluded `success`, `neutral` or `skipped` (the two conclusions GitHub defines as
+non-blocking). No status falls outside these three buckets; an unrecognized conclusion string
+is `red`, never silently dropped.
+
+If `--sha` is given and does not prefix-match the PR's live head, a stderr notice names both —
+the caller is enumerating a head that has moved, which is a fact worth seeing at the read even
+though the `12` stale-refusal seat belongs to `review post`, the write seam.
+
+**Exit status**
+
+| Code | Trigger |
+|---|---|
+| `7` | the PR or the `--sha` is proven absent — no commit to enumerate; **or zero check runs are declared at the commit** — a vacuous green is the ADR 0092 fail-open and is refused |
+| `11` | the check-run read failed — CI state is UNKNOWN, never `green` |
+| `13` | entries received < declared `total_count` — the enumeration is provably incomplete and is never read as "no red checks" |
+
+**Errors**
+
+| Message (stderr) | Code | Kind |
+|---|---|---|
+| `review ci: PR #<n> not found in <repo>.` | 7 | refusal |
+| `review ci: no commit <sha> on PR #<n> in <repo>.` | 7 | refusal |
+| `review ci: zero check runs declared at <sha> — refusing to report green over an empty enumeration (ADR 0092).` | 7 | refusal |
+| `review ci: cannot enumerate check runs at <sha>: <reason> — CI state is UNKNOWN, never green.` | 11 | refusal |
+| `review ci: received <k> of <m> declared check runs at <sha> — refusing the partial enumeration (#3999).` | 13 | refusal |
+| `review ci: the live head is <live>, you are enumerating at <sha> — the head moved; a verdict still binds only what was inspected.` | 0 | notice |
+
+**Scope** — the check runs at one commit, paginated, count-verified against `total_count`.
+
+**Examples**
+
+```
+$ fabrika review ci 4321 --sha 03135b91
+ci	03135b91	green
+check	3
+lint / format / typecheck	success
+unit tests	success
+leak-guard	success
+```
+
+**Grounding**
+
+- #4552 — the CI-at-head read was dispatch-prompt-dependent in v1; a gate ruled on a live RED
+  check as a prose question because one sentence was omitted. This verb is that read made
+  structural.
+- #3999 / ship-it's pagination-honesty rule — received < declared is an explicit refusal, the
+  same shape reused rather than a divergent second CI read.
+
+---
+
+## `review verdicts`
+
+**Invocation**
+
+```
+fabrika review verdicts 4321 [--repo <owner/name>] [--json]
+```
+
+**Inputs**
+
+| Flag | Type | Required | Default | Description |
+|---|---|---|---|---|
+| *(positional)* | integer | yes | — | the pull-request number |
+| `--repo` | string | no | resolved | the repository |
+| `--json` | boolean | no | `false` | emit the result object |
+
+**Output** — machine channel. First line: `verdicts\t<live-head>\t<count>`, where `<count>` is
+the number of marker-bearing comments found (`0` is a valid, proven answer: the PR carries no
+verdict). Then one line per marker, newest first:
+`<namespace>\t<polarity>\t<marker-sha>\t<current|stale|unbindable>\t<comment-id>`. Advisory
+carriers (a `Reviewed-head: @ <sha>` body line under an advisory first line) print with polarity
+`ADVISORY` and the body-bound SHA. Malformed markers — bytes reaching for the format that fail
+it — print as `malformed\t-\t-\t-\t<comment-id>` with the wire reason on stderr: **a drifted
+marker is surfaced as a defect, never dropped from the sweep** (a dropped row is how a FAIL'd PR
+reads as unreviewed, #4103/#4105).
+
+With `--json`: `{"outcome":"verdicts","head":…,"markers":[{namespace,polarity,sha,binding,commentId}…],"malformed":[{commentId,reason}…],"scanned":<comments>}`.
+
+**Binding is computed here, per marker, against the live head** — `bindToHead` from
+`packages/fabrika-cli/src/wire/verdict-marker.ts`, imported. That module's `Binding` type has
+zero non-test callers today; this verb is its first consumer surface, and the three outcomes
+reach stdout as three tokens. A head this verb cannot resolve prints `unbindable` on every row —
+never `current`, never `stale` — because a comparison that could not be made is not a negative
+result (ADR 0058).
+
+Each comment's **first non-blank line** is what is read (the format's anchoring rule); a marker
+quoted further down a body is not a marker, which is why one comment carries one namespace.
+
+**Exit status**
+
+| Code | Trigger |
+|---|---|
+| `7` | the PR is proven absent (404) |
+| `11` | the comment list could not be read — whether verdicts exist is UNKNOWN, never `0` |
+| `13` | the comment enumeration is provably short of the declared count |
+
+**Errors**
+
+| Message (stderr) | Code | Kind |
+|---|---|---|
+| `review verdicts: PR #<n> not found in <repo>.` | 7 | refusal |
+| `review verdicts: cannot read #<n>'s comments: <reason> — whether verdicts exist is UNKNOWN, never zero.` | 11 | refusal |
+| `review verdicts: received <k> of <m> comments — refusing the partial sweep.` | 13 | refusal |
+| `review verdicts: comment <id> reaches for a marker and fails the format: <wire reason>.` | 0 | notice |
+
+**Scope** — every issue comment on the PR, paginated and count-checked; each body's first
+non-blank line tested through the registered format's `read`, imported. The live head resolution
+that feeds `bindToHead` is part of this verb's read — its failure is the all-rows-`unbindable`
+answer, not an exit, because the markers themselves were seen and are reportable facts.
+
+**Examples**
+
+```
+$ fabrika review verdicts 4321
+verdicts	03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c	2
+review-code	PASS	0b1c2d3e	stale	5154891644
+review-doc	PASS	03135b91	current	5154902211
+```
+
+**Grounding**
+
+- #4520 — a dropped namespace read as a pass; the sweep prints every marker it saw, and a short
+  read refuses rather than narrowing.
+- #3769 / #4338 — staleness read as current; the binding column is the three-outcome type on the
+  wire, computed against the live head at read time.
+- `wire check` exits 0 on a stale PASS by construction (binding is deliberately not a property of
+  the bytes); this verb is the caller-side half the type was designed for, so no consumer needs
+  to fold the three outcomes to use them.
+
+---
+
+## `review deviations`
+
+**Invocation**
+
+```
+fabrika review deviations 4321 [--sha <head>] [--repo <owner/name>] [--json]
+```
+
+**Inputs**
+
+| Flag | Type | Required | Default | Description |
+|---|---|---|---|---|
+| *(positional)* | integer | yes | — | the pull-request number |
+| `--sha` | string | no | the PR's live head | the head to read the diff at; see the binding step above |
+| `--repo` | string | no | resolved | the repository |
+| `--json` | boolean | no | `false` | emit the result object |
+
+**Output** — machine channel. First line: `deviations\t<found|none-declared|absent|malformed>`.
+On `found`, one line per entry: `entry\t<class-label-or-->\t<first-line-of-Said>` (the null
+token is the ASCII hyphen `-`, the same one `review verdicts` uses). Then the
+Tier-M scan over the head diff, one line per hit:
+`tier-m\t<suppression|removed-assertion>\t<file>:<line>\t<token>` — the mechanically-detectable
+§DEV classes (an in-diff `biome-ignore` / `@ts-expect-error` / `test.skip` / `.only`; a deleted
+assertion line), each a fact the judgment layer matches against the disclosed entries.
+
+`none-declared` is the literal `None.` body; `absent` is **no `## Deviations` heading at all**;
+`malformed` is a heading whose section fits neither shape. The three stay distinct on the wire
+because the skill's verdict vocabulary depends on the distinction: absent-on-owing fails closed,
+`None.` is a checked claim, and this verb is what makes the claim checkable — a `None.` printed
+beside a non-empty Tier-M list is a falsified disclosure the caller can see in one read.
+
+With `--json`: `{"outcome":…,"entries":[{label,said}…],"tierM":[{kind,file,line,token}…]}`.
+
+**The class-label vocabulary is this contract's, enumerated closed** — never a pointer into
+v1's prose (ADR 0238). An entry's optional label is one of `1`–`7`:
+
+| Label | Class |
+|---|---|
+| `1` | scope narrowing |
+| `2` | governing-ADR departure (including narrowing an invariant that lives only in skill prose, with no amending ADR in the diff) |
+| `3` | known defect left unfixed |
+| `4` | declined guidance |
+| `5` | guard or gate bypassed |
+| `6` | pre-existing test or fixture changed |
+| `7` | out-of-scope change |
+
+The classes overlap; the label is a routing hint, not the disclosure — a gate matches an
+entry's substance, never its label. An entry carrying no recognizable label prints `-`.
+
+The Tier-M scan reads the same diff `review diff` serves and applies both of its proofs to it. Its
+**completeness** proof is the one `review diff` states: the denominator is a second read of the same
+range — `git diff --name-only -z`, one path per `diff --git` entry — so both counts come from git
+under one set of flags. That makes it a **cardinality** test and nothing more: it establishes that
+the scanned bytes carry at least as many entries as the `--name-only` read lists, not that the two
+reads name the same files, and not that the range is the right range — a fault that shortens both
+reads alike stays invisible to it. A scan short of that denominator is refused on `13`, because an
+under-reported hit list beside a `None.` reads as a checked-clean disclosure that was never checked.
+GitHub's declared `changed_files` is read and reported beside the two counts as a cross-check that
+never refuses. Its **commit binding** (#5122): the bytes come from the object database at the bound
+commit, because a hit list read at a head nobody scoped is under- or over-reported against the
+disclosure it is printed beside — and it fails open, answering `none-declared` at exit 0.
+
+**Exit status**
+
+| Code | Trigger |
+|---|---|
+| `7` | the PR is proven absent (404) |
+| `10` | `--sha` is not a head SHA |
+| `11` | the PR body or the diff could not be read, or the commit could not be bound — the disclosure state is UNKNOWN |
+| `12` | `--sha` is not the PR's head — re-scope, never re-bind |
+| `13` | the Tier-M scan is provably incomplete — the diff scanned at the bound commit carries fewer files than the file list git reports for the same range, and a partial scan must not print beside a `None.` |
+
+**Errors**
+
+| Message (stderr) | Code | Kind |
+|---|---|---|
+| `review deviations: PR #<n> not found in <repo>.` | 7 | refusal |
+| `review deviations: --sha "<v>" is not a head SHA — expected 7–40 hex characters.` | 10 | refusal |
+| `review deviations: PR #<n>'s head is <live>, not <sha> — the tree you scoped is not the one under review; re-scope at <live> (ADR 0058).` | 12 | refusal |
+| `review deviations: <what> — the artifact cannot be bound to a commit, so what it shows is UNKNOWN.` | 11 | refusal |
+| `review deviations: cannot read #<n>'s body or diff: <reason> — the disclosure state is UNKNOWN, never "none".` | 11 | refusal |
+| `review deviations: cannot read the file list of the range <base>...<head> for #<n>: <reason> — the disclosure state is UNKNOWN, never "none".` | 11 | refusal |
+| `review deviations: the scan at <sha> covers <k> of the <m> files git lists for the same range <base>...<head> — both counts from git, so these bytes are provably short of the range they were read from; refusing a partial Tier-M scan beside a disclosure claim.` | 13 | refusal |
+
+**Scope** — one PR body's `## Deviations` section plus the bound commit's diff for the Tier-M token
+scan, completeness-checked against the file list git reports for the same range. The bound commit,
+the scanned file count, that range count and GitHub's declared changed-file count (reported as a
+cross-check, never refused on) go to stderr on the answer path.
+Whether the PR *owes* the section, and whether an entry's substance covers a finding (Tier R),
+are the skill's judgment; this verb reports states and facts, never the §DEV verdict row.
+
+**Examples**
+
+```
+$ fabrika review deviations 4321
+deviations	none-declared
+```
+
+```
+$ fabrika review deviations 4322
+deviations	found
+entry	6	replaced the two-decimal rendering assertion
+tier-m	removed-assertion	src/cart.test.ts:14	expect(renderTotal(10)).toBe("10.00")
+```
+
+**Grounding**
+
+- gh-issue-intake-formats §DEV (v1) — the four fields, seven classes and M/R/D tiers this verb
+  arms; read for semantics, reimplemented here (ADR 0238). Its canonical Tier-M scan was
+  specified as a shared script that **no gate actually calls** (the S8 scar) and its heading
+  detection is triplicated in awk across three surfaces; one verb ends both.
+- "A `deviation-disclosure: PASS` means 'nothing undisclosed that this gate could see'" — the M
+  tier is exactly what this gate *can* see deterministically; the verb is that clause's
+  mechanical floor.
+- #5157 — the completeness denominator is a second local-git read of the same range, not GitHub's
+  declared `changed_files`: GitHub computes over its own merge base with its own rename detection,
+  which counts two files where git's list carries one path. So the disagreement is reported in the
+  diagnostics and never refused on, and the `13` rests on git alone.
+
+---
+
+## `review post`
+
+**Invocation**
+
+```
+fabrika review post 4321 --namespace review-code --polarity PASS --sha 03135b91 --clause "merge-ready" [--carrier marker|advisory] [--repo <owner/name>] [--json]
+```
+
+The verdict body arrives on **stdin only** — no `--body`, no `--body-file`, for the reason the
+sibling write verbs give: a path flag is how a machine-local path reaches a public surface while
+the poster reads success.
+
+**Inputs**
+
+| Flag | Type | Required | Default | Description |
+|---|---|---|---|---|
+| *(positional)* | integer | yes | — | the pull-request number |
+| `--namespace` | string | yes | — | the namespace this verdict fills; must match the wire format's class and be in this PR's derived class set |
+| `--polarity` | enum | yes | — | `PASS` or `FAIL` — a third token is not a polarity |
+| `--sha` | string | yes | — | the head the reviewer actually inspected (7–40 lowercase hex) |
+| `--clause` | string | yes | — | the human clause; blank is not a clause |
+| `--carrier` | enum | no | `marker` | `marker` (first-line SHA-bound marker) or `advisory` (§CP: advisory first line, `Reviewed-head: @ <sha>` in the body). `advisory` is a PASS path only |
+| `--repo` | string | no | resolved | the repository |
+| `--json` | boolean | no | `false` | emit the result object |
+| stdin | markdown | yes | — | the verdict body below the first line: per-criterion table, findings, the §DEV row |
+
+**Output** — machine channel. One line:
+`posted\t<namespace>\t<polarity>\t<sha>\t<created|edited>\t<comment-url>` — the fifth field says
+whether the upsert created a fresh comment or edited this namespace's existing one.
+With `--json`: `{"outcome":"posted","namespace":…,"polarity":…,"sha":…,"upsert":"created"|"edited","carrier":…,"commentUrl":…}`.
+
+**What the operation does, in order — each step gates the next.**
+
+1. **Re-resolve the live head.** `--sha` not prefix-matching it is the `12` refusal: a verdict
+   formed over a moved-past tree is re-reviewed, never re-bound. This is `bindToHead`'s `Stale`
+   arm applied at the write seam, where its absence costs the most.
+2. **Recompute the class set at the bound commit** (the same partition `review scope` prints,
+   read through the shared binding step above) and refuse a `--namespace` outside it on `10`.
+   This is the disjointness guarantee made structural: v1 got "a gate never emits another gate's
+   marker" free from one-skill-per-namespace; under one owner the emit path itself enforces it,
+   so a namespace this run did not derive cannot be filled even by a confused caller. The set is
+   documented as both floor and ceiling, which is why it is derived from `--sha`'s commit and not
+   from the PR-number file endpoint: `12` above proves the tree is still the live one, not that
+   the list came from it (#5122).
+3. **Compose the first line through the wire format's `emit`**
+   (`verdict-marker.ts`, imported — fields `namespace`/`polarity`/`sha`/`clause`), or with
+   `--carrier advisory` the fixed advisory line with the `Reviewed-head: @ <sha>` body line;
+   `advisory` with `--polarity FAIL` is a `10` refusal (ADR 0226 — a §CP FAIL posts the ordinary
+   FAIL marker).
+4. **Leak-scan the assembled comment** (`report/leaks.ts`, imported) — an authored machine-local
+   path is the `5` refusal.
+5. **Upsert one comment per namespace, matched under the carrier this post uses**: an existing
+   comment by this bot that already carries this namespace **under this carrier** is edited in
+   place; otherwise a new comment is created. With `marker` the match key is the format's `read`
+   over the first non-blank line. With `--carrier advisory` it is the ADR-0151 pair — the advisory
+   first line plus the `Reviewed-head: @ <sha>` body line, read through `readAdvisory` — because
+   the advisory first line withholds the SHA, so the marker `read` can never match one and a
+   marker-keyed upsert would post a **second** advisory on every re-post. The two keys are
+   disjoint: a `marker` post never edits an advisory comment, and an `advisory` post never edits a
+   marker one. One namespace, one comment, the carrier's anchor on its literal first line — a
+   second marker stacked on line 2 is un-anchored, resolves its namespace empty, and fail-closes a
+   substantively-passing PR (the live PR #2456 stall).
+6. **Read it back, unconditionally, from live PR state**, under the same carrier — re-fetch the
+   comment and, with `marker`, hand its body to the format's `read` and require `Found` with
+   exactly the four fields posted; with `--carrier advisory`, require both ADR-0151 anchors —
+   `readAdvisory` yielding this namespace and a `Reviewed-head:` SHA equal to the one posted, since
+   the format's `read` calls an advisory `Malformed` by design. Either way the whole comment is
+   then compared against the bytes sent (through `normalizeForReadback`). A read-back that trusts a
+   carried variable instead of the live state re-ships #3173's false PASS; the mismatch is the `9`
+   refusal.
+
+**Exit status**
+
+| Code | Trigger |
+|---|---|
+| `3` | stdin was read and held nothing — an empty verdict body would read as UNGATED |
+| `5` | the assembled comment carries a machine-local path |
+| `6` | the body is a bare `@` path reference — the body never arrived |
+| `7` | the PR is proven absent (404) or closed |
+| `8` | the create/edit failed — UNKNOWN whether a comment landed |
+| `9` | the comment landed but the read-back does not yield this marker |
+| `10` | `--namespace` off the wire format's class or outside this PR's derived set; a bad `--polarity`; `--carrier advisory` with `--polarity FAIL` |
+| `11` | a precondition read failed — the PR, the live head, or the commit binding / bound file list the class set is derived from |
+| `12` | the live head moved past `--sha` — re-review at the new head, never re-bind |
+
+**Errors**
+
+| Message (stderr) | Code | Kind |
+|---|---|---|
+| `review post: no body on stdin — an empty verdict reads as UNGATED; pipe the verdict body in.` | 3 | refusal |
+| `review post: the body is a bare "@" path reference — the body never arrived. Send its bytes on stdin.` | 6 | refusal |
+| `review post: PR #<n> not found in <repo>.` | 7 | refusal |
+| `review post: PR #<n> is closed — a verdict on a closed PR gates nothing.` | 7 | refusal |
+| `review post: --polarity must be PASS or FAIL — got "<v>". A third token is not a polarity.` | 10 | refusal |
+| `review post: --namespace <ns> is not derived by #<n>'s diff (present: <set>) — a gate never emits a namespace it did not judge.` | 10 | refusal |
+| `review post: --carrier advisory is a PASS path only (ADR 0226) — post the FAIL marker instead.` | 10 | refusal |
+| `review post: the live head is <live>, not <sha> — the tree you judged is gone; re-review at <live> (ADR 0058).` | 12 | refusal |
+| `review post: the assembled comment carries a machine-local path at line <k> (<class>) — cite it repo-relative or by class root.` | 5 | refusal |
+| `review post: cannot read <what> for #<n>: <reason> — nothing was posted.` | 11 | refusal |
+| `review post: create/edit failed: <reason> — UNKNOWN whether the verdict landed; run \`fabrika review verdicts <n>\` before retrying.` | 8 | refusal |
+| `review post: posted, but the read-back does not yield this marker (<wire reason>) — the PR may carry a garbled verdict; inspect comment <id>.` | 9 | refusal |
+
+**Scope** — one PR: its live head (step 1), the bound commit's file list (step 2), its comments
+(steps 5–6), plus the caller's stdin. Steps 1, 2 and 5's reads failing is `11` — nothing written,
+outcome known-unwritten.
+
+**Examples**
+
+```
+$ fabrika review post 4321 --namespace review-doc --polarity PASS --sha 03135b91 --clause "guide matches shipped behavior" < verdict.md
+posted	review-doc	PASS	03135b91	created	https://github.com/kamp-us/phoenix/pull/4321#issuecomment-5154902211
+```
+
+```
+$ fabrika review post 4321 --namespace review-skill --polarity PASS --sha 03135b91 --clause "ok" < verdict.md
+review post: --namespace review-skill is not derived by #4321's diff (present: review-code, review-doc) — a gate never emits a namespace it did not judge.
+$ echo $?
+10
+```
+
+**Grounding**
+
+- #3173 — a hand-rolled `gh api` emit posted a literal path and self-reported a false PASS; this
+  verb is the single sanctioned path, and the unconditional live-state read-back is v1
+  §READBACK's one good idea kept.
+- #3945 — the classifier forced a contract-forbidden posting form; a first-class verb with stdin
+  is the shape that never needs one.
+- #4285's class at the emit seam — the closed `--polarity` / namespace-set enums stop a
+  well-formed-looking wrong write before it lands.
+- v1 emitted through four per-gate scripts with three conventions and one gate (trivial) skipping
+  read-back entirely (S2/S6); one verb, one protocol, no skippable branch.
+- ADR 0151 / §ADVISORY — the advisory carrier's fixed shape; ADR 0226 — advisory is PASS-only.
+
+---
+
+## `review append-criterion`
+
+**Invocation**
+
+```
+fabrika review append-criterion 4287 --pr 4321 --round 1 [--repo <owner/name>] [--json]
+```
+
+The criterion text arrives on **stdin** — one checkbox row's text, without the leading `- [ ]`.
+
+**Inputs**
+
+| Flag | Type | Required | Default | Description |
+|---|---|---|---|---|
+| *(positional)* | integer | yes | — | the linked issue receiving the criterion |
+| `--pr` | integer | yes | — | the PR whose review round produced the finding — half the provenance tag |
+| `--round` | integer | yes | — | this review round's number; at or past the freeze (3) the verb escalates instead of appending |
+| `--repo` | string | no | resolved | the repository |
+| `--json` | boolean | no | `false` | emit the result object |
+| stdin | markdown | yes | — | the criterion text |
+
+**Output** — machine channel. One line: `appended\t<issue>\t<row-count-after>`, or
+`escalated-frozen\t<issue>\t<round>` when `--round` ≥ 3 — the escalation comment landed and the
+AC did **not** (fence 4: append-rate stays bounded by fix-rate; a finding raised at the freeze
+routes to a human). Both are proven answers at exit 0, discriminated by the token.
+
+With `--json`: `{"outcome":…,"issue":…,"rows":…,"round":…,"acl":"write+"}`.
+
+**The four fences, enforced in this order:**
+
+1. **ACL-gated, fail-closed** (ADR 0055): resolve the invoking token's repository permission;
+   below `write`, or any ACL lookup failure, refuses — authority comes from the ACL check, never
+   from the text being plausible.
+2. **Append-only**: the new body is the old body plus exactly one row (`- [ ] <text>
+   <!-- ac:review pr:#<pr> round:<round> -->`) under the existing conforming heading; a diff
+   guard refuses any write that would drop or mutate a prior byte.
+3. **Frozen at round K = 3**: `--round` ≥ 3 posts the escalation comment instead of appending.
+4. **In-scope-only is the caller's** (the trace-to-stated-goal test is judgment); the provenance
+   tag is what makes a routed row auditable after the fact.
+
+The row enters the **next** review cycle's conjunctive verdict; the verb does not touch the PR.
+
+**Exit status**
+
+| Code | Trigger |
+|---|---|
+| `3` | stdin was read and held nothing |
+| `5` | the criterion text carries a machine-local path |
+| `6` | the text is a bare `@` path reference |
+| `7` | the issue is proven absent (404) or closed; or its body carries no conforming acceptance-criteria block to append under (the wire read's `Absent`/`Malformed`, distinguished on stderr) |
+| `8` | the body PATCH, or on the frozen path the escalation comment, failed — UNKNOWN; the message names which |
+| `9` | the write landed but the read-back does not show exactly the old rows plus this one |
+| `11` | the issue body, the ACL, or the block could not be read — nothing was written |
+| `14` | refused: the invoking token resolves below `write`, or the ACL lookup failed (ADR 0055, fail-closed) — an authorization denial, never mistakable for an absent target |
+| `15` | refused: the composed write would drop or mutate an existing row — the append-only fence |
+
+**Errors**
+
+| Message (stderr) | Code | Kind |
+|---|---|---|
+| `review append-criterion: no criterion on stdin.` | 3 | refusal |
+| `review append-criterion: the criterion carries a machine-local path at line <k> (<class>) — rewrite it repo-relative.` | 5 | refusal |
+| `review append-criterion: the criterion is a bare "@" path reference — the text never arrived. Send it on stdin.` | 6 | refusal |
+| `review append-criterion: issue #<n> not found in <repo>.` | 7 | refusal |
+| `review append-criterion: issue #<n> is closed — an appended row there enters no cycle; file the finding instead.` | 7 | refusal |
+| `review append-criterion: #<n> carries no conforming acceptance-criteria block (<absent|malformed>: <wire reason>) — nothing to append under.` | 7 | refusal |
+| `review append-criterion: token resolves below write on <repo>, or the ACL could not be read — refusing the append (ADR 0055, fail-closed).` | 14 | refusal |
+| `review append-criterion: cannot read <what>: <reason> — nothing was written.` | 11 | refusal |
+| `review append-criterion: the append would drop or mutate an existing row — refusing (append-only fence).` | 15 | refusal |
+| `review append-criterion: PATCH failed: <reason> — UNKNOWN whether the row landed; re-read #<n> before retrying.` | 8 | refusal |
+| `review append-criterion: the escalation comment failed: <reason> — UNKNOWN whether it landed; nothing was appended either way. Re-run.` | 8 | refusal |
+| `review append-criterion: read-back does not show the prior rows plus this one — inspect #<n>.` | 9 | refusal |
+
+**Scope** — one issue body (through the registered AC format), the invoking token's ACL, and on
+the frozen path one comment write. The read-back re-reads the block through the same format and
+compares row-by-row.
+
+**Examples**
+
+```
+$ printf 'a regression test covers qty > 1' | fabrika review append-criterion 4287 --pr 4321 --round 1
+appended	4287	3
+```
+
+```
+$ printf 'anything' | fabrika review append-criterion 4287 --pr 4321 --round 3
+escalated-frozen	4287	3
+```
+
+**Grounding**
+
+- ADR 0079 — reviewer-authored acceptance criteria: routed binary, appended under fences, frozen
+  at K = N = 3; v1's `reviewer-append-ac.sh` was mandated at four call sites and called at none
+  (the S8 scar) — a first-class verb is the difference between a fence and a fence description.
+- ADR 0055 — authority from the ACL check; a below-write author or a failed lookup skips the
+  append entirely, fail-closed.
+
+---
+
+## The eval-enumeration obligation (leaf rule)
+
+Stated once, in [`SKILL.md`](SKILL.md)'s "Eval enumeration" section — the single home #4891's
+obligation lives in. This spec adds nothing to it; the eval mechanics belong to #4649.

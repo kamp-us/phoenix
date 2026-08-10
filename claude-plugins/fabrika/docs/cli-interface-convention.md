@@ -108,6 +108,52 @@ exit taxonomy, and the verdict-vs-invocation rule proven in v1 at
   dependency, a repo-local install it could not execute — and has something specific to say about
   it. Seating that on `1` would make it indistinguishable from a typo in a flag ([#4666](https://github.com/kamp-us/phoenix/issues/4666)).
 
+- **The `3`+ band is scoped to the verb group that seats it. A code above the reserved band means one
+  thing *within* its group and carries no cross-group uniqueness obligation.** Two shipped shapes are
+  both correct, and a group picks by whether its verbs share refusal meanings:
+
+  - **Per verb, no shared table** — the `3`+ row above read literally. `adr` allocates each verb's
+    codes in that verb's own module and ships no `codes.ts`, so `3` is `BASE_UNFETCHABLE` under
+    `adr next`, `NO_SUBJECT` under `adr relate`, `ALREADY_EXISTS` under `adr new`, and
+    `CORPUS_UNREADABLE` under `adr sweep`.
+  - **Per group, one shared table** — `report`, `triage`, `review` and `wire` each ship a
+    `<group>/codes.ts` that every verb in the group allocates from, so a code means one thing across
+    the group whichever verb produced it. That is a **tightening** a group chooses, not a further
+    obligation this rule imposes.
+
+  Neither shape reaches across a group boundary.
+  [`triage/codes.ts`](../../../packages/fabrika-cli/src/triage/codes.ts) seats `12` as *the issue is
+  human-filed*; [`review/codes.ts`](../../../packages/fabrika-cli/src/review/codes.ts) seats `12` as
+  *the live head moved past the inspected `--sha`*. Those are two namespaces, not one collision.
+
+- **The `report` ↔ `triage` ↔ `review` code-for-code alignment is a deliberate, bounded courtesy —
+  not a repo-wide namespace.** Those three groups hold `3`, `5`, `6`, `7`, `8`, `9`, `10` and `11` on
+  one meaning each, and `triage` and `review` *import* the constants from `report` rather than
+  restating numerals, so a drift there is unrepresentable rather than merely detectable. The reason is
+  one caller commonly driving all three in a single sweep.
+  [`exit-code-alignment.ts`](../../../packages/fabrika-cli/src/exit-code-alignment.ts) mechanizes
+  exactly that scope and no more: it checks each aligning group against the **base** and never
+  pairwise against a sibling. Above the shared overlap each group's private band is its own —
+  `review`'s `12`–`15` and `triage`'s `12`–`13` are not required to clear each other, and do not.
+
+  [`wire/codes.ts`](../../../packages/fabrika-cli/src/wire/codes.ts) is the shipped counter-example.
+  It aligns to nothing, and is *registered* as unaligned with its reason so the exemption carries
+  information instead of reading as an oversight. It legitimately reuses `4`, `5`, `6` and `8` —
+  `MALFORMED` / `EMPTY_ARTIFACT` / `ARTIFACT_UNKNOWN` / `UNUSABLE_FIELDS` against `report`'s
+  `BAD_SECTIONS` / `LEAKED_PATH` / `BARE_AT_PATH` / `WRITE_UNKNOWN` — and reuses `3` and `7` besides.
+  Under a cross-group clearance rule `wire` would be the largest violation in the package. It is not a
+  violation at all.
+
+- **One condition would turn a cross-group reuse into a defect: a reader that resolves an exit code
+  without knowing which group produced it.** None exists today, and the interface is what keeps it
+  that way. Every invocation names its group (`fabrika <group> <verb> …`, rule 5); each `--help`
+  enumerates only the codes that verb can reach; and the runtime taxonomy verb is per group —
+  `fabrika triage codes` prints `TRIAGE_EXIT_TABLE`, `fabrika wire codes` prints `WIRE_EXIT_TABLE`,
+  with no cross-group table and no shared lookup. Add such a reader — a dispatcher, a shared decoder,
+  a wrapper that maps a numeral to a meaning before it knows the group — and cross-group clearance
+  becomes a real obligation to encode. Until then, re-seating a shipped code to clear a sibling buys
+  nothing and breaks that group's own symmetry.
+
 - A verb whose result crosses a pipe keeps its exit code binary (`0` / non-zero) and puts the
   discriminator in a stdout state word: a meaningful code does not survive `xargs`.
 
