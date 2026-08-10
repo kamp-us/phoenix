@@ -25,8 +25,12 @@ Every kill is auditable and reversible. Always:
    #33, which already tracks this hang" or "The function this references was removed in #30;
    no longer applicable"). One sentence of real reasoning, so the maintainer reviewing kills
    can judge it.
-3. Apply `closed-by-triage` so every kill shows up in one query.
-4. Close as **not planned** (state `closed`, reason `not_planned`).
+3. Apply `closed-by-triage` to record that **triage** executed this kill. The label is provenance,
+   not coverage — it says *who*, never *whether* (ADR
+   [0256](https://github.com/kamp-us/phoenix/blob/main/.decisions/0256-kill-audit-keys-on-the-not-planned-close.md)).
+   Never apply it to a close triage did not execute.
+4. Close as **not planned** (state `closed`, reason `not_planned`). This close is what makes the kill
+   auditable — see the audit below.
 
 ```bash
 # step 1 only when closing as a duplicate of #M. Both scripts resolve the SAME §SP per-run scratch
@@ -43,9 +47,18 @@ The scripts live in [`scripts/`](scripts/) alongside the rest of this skill's ex
 extraction contract and the `set -uo pipefail`-without-`-e` rationale are in
 [`SKILL.md` § The extracted scripts](./SKILL.md#the-extracted-scripts).
 
-The maintainer audits all kills with one query, so over-closing is caught and reopened
-cheaply:
+The maintainer's kill audit is an audit of **every not-planned close, whoever executed it** — the
+close is the audit's key, and `closed-by-triage` reads as a provenance column on the rows triage
+killed (ADR
+[0256](https://github.com/kamp-us/phoenix/blob/main/.decisions/0256-kill-audit-keys-on-the-not-planned-close.md)).
+That is what lets over-closing be caught and reopened cheaply whoever ran the close:
 
 ```bash
 "${CLAUDE_PLUGIN_ROOT:-claude-plugins/kampus-pipeline}/skills/triage/scripts/audit-kills.sh"
 ```
+
+**The script itself is not re-keyed yet**, so read its output for what it currently is: triage's own
+labelled kills, first page only. The re-key onto `state_reason=not_planned` travels with the same
+query's pagination repair ([#4928](https://github.com/kamp-us/phoenix/issues/4928)) — until then the
+audit under-reports in both directions ([#5280](https://github.com/kamp-us/phoenix/issues/5280) is
+the re-key).

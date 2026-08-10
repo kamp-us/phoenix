@@ -1727,6 +1727,20 @@ comments are live, re-running duplicates them". An earlier revision covered only
 read-back asserts `state` is `closed` **and** `state_reason` is `not_planned`, because a plain
 `closed` reads as "done", not "killed".
 
+**`closed-by-triage` is provenance, and the refusal on its absence stands for a different reason
+(ADR [0256](https://github.com/kamp-us/phoenix/blob/main/.decisions/0256-kill-audit-keys-on-the-not-planned-close.md)).**
+The kill audit's key is the not-planned close itself, so the label no longer carries coverage — it
+records that **triage** was the actor. The exit-`7` refusal on the label's absence is therefore
+**unchanged in behaviour and changed in rationale**: the kill would not be *invisible* (the close is
+the key), it would be **unattributable** — a triage kill that cannot carry its stamp is
+indistinguishable from a founder-session close, which is the confusion the label exists to prevent.
+Two consequences bind this verb. It gains **no** actor flag and **no** courtesy stamp: a non-triage
+actor's kill does not run this verb and must not carry the label, and it stays auditable through the
+close plus its reason comment. And the two shipped strings above that still read *"invisible to the
+audit"* (the exit-`7` refusal and the exit-`8` label-write failure) are reworded when the v1 audit
+query is re-keyed and paginated ([#4928](https://github.com/kamp-us/phoenix/issues/4928)) — the codes
+and the write order do not move.
+
 **Scope** — one issue with its body and author login, the repository's label set, plus the surviving
 issue when `--duplicate-of` is given.
 
@@ -1767,9 +1781,12 @@ $ fabrika triage kill 4312 --confirm --json < reason.md
   and computed it nowhere. The #4619 ruling narrows *who counts as human-filed*, not the protection:
   a footerless filing from a non-operator is as protected as it ever was.
 - v1 `audit-kills.sh` — the compensating control for the whole kill path — reads one unpaginated
-  page, so it goes blind past 30 kills with no truncation signal. This spec does not re-mint that
-  verb; the audit belongs to a board surface, and the fail-closed write order above is what makes a
-  kill auditable at the moment it happens.
+  page, so it goes blind past 30 kills with no truncation signal, and it keys on the label, so it
+  cannot see a kill any other actor executed (ADR
+  [0256](https://github.com/kamp-us/phoenix/blob/main/.decisions/0256-kill-audit-keys-on-the-not-planned-close.md)
+  re-keys it onto the close). This spec does not re-mint that verb; the audit belongs to a board
+  surface, and the fail-closed write order above is what makes a kill auditable at the moment it
+  happens.
 
 ---
 
