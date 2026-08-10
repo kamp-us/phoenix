@@ -79,6 +79,20 @@ them as history, not as a choice on offer:
 - **Why no options.** `set` in a sourced file runs in the *caller's* shell, so the options persist
   and change every subsequent command in that session — including commands the script's author
   never saw.
+- **A sourced file must default EVERY read, because it inherits options it did not choose.** Setting
+  no options is not the same as running without them: the caller's `set -u` is in force inside the
+  sourced body, so one undefaulted `$VAR` aborts the caller's shell *at the read* — before the
+  script's scope line, before any clause completes, before a refusal can name itself. The caller
+  then sees a reasonless non-zero, which is indistinguishable from the guard running and refusing,
+  and the state that fires it can be the ordinary one (`iso_preflight` read `$WORKTREE_ROOT` bare,
+  and that variable is unset on every local agent run, so its green branch was unreachable —
+  [#4591](https://github.com/kamp-us/phoenix/issues/4591)). Defaulting is not the fail-open it looks
+  like *provided the defaulted signal can only tighten the answer*: check that the variable appears
+  only in clauses that arm a refusal, and that the permissive branch rests on something else.
+- **Report an absent signal three ways, not two.** `${VAR:+set}` renders unset and exported-blank
+  identically, which erases the difference between "I checked and the answer is no" and "I could not
+  check". When a guard's conclusion turns on a signal, print `${VAR+d}${VAR:+v}`'s three cases so
+  the log says which one it saw.
 - **What ADR 0232 settled.** Sourcing a skill script at an agent's top-level command is banned
   (the harness's isolation verifier refuses `.` itself, by any path form), the sourced class
   converts to executed scripts, and *leave-state-in-the-caller's-shell* is retired as a design
@@ -219,6 +233,13 @@ grep -q "$needle" "${files[@]-}"
   [#4473](https://github.com/kamp-us/phoenix/pull/4473)).
 - `claude-plugins/kampus-pipeline/skills/validate-gate-path-drift.sh` — the `[ -f "$sh" ]`
   unmatched-glob idiom (rule 4).
+- `claude-plugins/kampus-pipeline/skills/shared/scripts/iso-preflight.sh` — the sourced-class
+  defaulting rule above. Pinned by
+  `claude-plugins/kampus-pipeline/skills/shared/scripts/iso-preflight-setu-proof.sh`, which stands
+  the guard up in a sandbox primary / linked-worktree / symlinked-primary matrix under a
+  `set -uo pipefail` sourcing caller across all three states of each signal, and asserts the guard
+  reached its answer rather than merely returning the expected status
+  ([#4591](https://github.com/kamp-us/phoenix/issues/4591)).
 - `claude-plugins/kampus-pipeline/lib/common.sh` — `kp_skill_shell_surfaces`, the
   surface resolver both cycle validators consume through `< <(…)` (rule 6). Pinned by
   `lib/common-test.sh`, which forces a partial `find` failure with an unreadable

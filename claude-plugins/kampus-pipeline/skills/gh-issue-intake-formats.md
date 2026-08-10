@@ -1765,6 +1765,22 @@ sibling (it *always* expects isolation and additionally must branch the session 
 refuses the standalone-on-primary case via its Non-isolated fallback); it is a deliberate,
 documented specialization of this same contract, not a fourth drifting copy.
 
+**Two facts about *how it answers*, which #4591 had to restore before either could be relied on.**
+The guard is sourced into callers that `set -u` (`review-code`/`review-trivial`'s
+`materialize-head.sh`) as well as callers that set no options (`ship-it`'s `step0-preflight.sh`), so
+**every read in it is defaulted** — an undefaulted one aborted the sourcing shell *at the read*,
+which is a reasonless non-zero from a guard that never ran and is indistinguishable from one that
+ran and refused. Defaulting cannot fail it open, because the two env signals only ever **arm** the
+refusal: the pass comes from `git-dir != common-dir`, which no env var can forge. And the scope line
+reports each signal **three ways** — a value, `empty(exported-blank)`, `UNSET(never-exported)` —
+because "I checked and this is not an isolated spawn" and "I could not check" are the same exit
+status but not the same claim. Re-derive both, plus the LOUD refusal and the standalone branch, over
+a sandbox primary/linked/symlinked matrix:
+
+```bash
+bash ./.claude/.pipeline/skills/shared/scripts/iso-preflight-setu-proof.sh
+```
+
 ---
 
 ## SHARED. The extracted shared scripts — executed by literal path, answers on stdout (epic #4435)
