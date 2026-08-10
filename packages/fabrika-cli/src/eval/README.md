@@ -339,11 +339,19 @@ claude-plugins/fabrika/reports/eval/<date>.json
   sits — and was not attempted. The path is fabrika's while `Scorecard` lives in this package; the
   two rulings agree, because [#4777](https://github.com/kamp-us/phoenix/issues/4777) is what moved
   the eval harness here.
-- **The bytes are `toJson` output, unchanged** — exactly the stable JSON shape documented above, with
-  no wrapper object, no added keys and no second serializer. A consumer decodes a committed file with
-  the same reader it would use on `--json` output.
-- **`<date>` is the run's UTC date, `YYYY-MM-DD`** — which is what makes a lexicographic sort of the
-  directory a chronological sort of the series.
+- **The format is the existing `Scorecard` type** — that much is ruled. What `toJson` emits *today*
+  is exactly the stable JSON shape documented above and nothing else: no wrapper object, no added
+  keys, no second serializer. Read that as a **description of the current serializer, not a
+  prohibition on what a committed file may carry** — [#4637](https://github.com/kamp-us/phoenix/issues/4637)
+  ruling 4 requires pins the `Scorecard` type does not have, and reconciling the two is
+  [#4680](https://github.com/kamp-us/phoenix/issues/4680)'s lane (first entry in the not-decided list
+  below). What is settled is that the scorecard **body** is `toJson` output, so a consumer reads a
+  committed file's cells with the same reader it would use on `--json` output.
+- **`<date>` is *proposed* as the run's UTC date, `YYYY-MM-DD`** — a proposal from this unit, not a
+  ruling. The 2026-08-02 ruling says `<date>.json` and nothing more; #4637 says only "dated". The
+  argument for it: a lexicographic sort of the directory is then a chronological sort of the series.
+  [#4680](https://github.com/kamp-us/phoenix/issues/4680) owns filename mechanics and confirms or
+  replaces it.
 
 Nothing writes one of these files yet, which is expected: the artifact class is defined, its first
 producer is not built. Three issues divide the work, and the definition being written down **here**
@@ -361,11 +369,29 @@ authoritative topology stays in epic [#4649](https://github.com/kamp-us/phoenix/
 `## Dependencies` block, which the intake formats contract makes its only home, so this table can
 never become a second source that drifts from it.
 
-**Deliberately not decided here**, so no lane finds its call pre-made: what a second run on the same
-date does to the filename ([#4680](https://github.com/kamp-us/phoenix/issues/4680)'s series
-mechanics), the shape and namespace of a per-run eval-result record
-([#4769](https://github.com/kamp-us/phoenix/issues/4769)), and the definitions of `dispersion` and
-the two-week decline ([#4766](https://github.com/kamp-us/phoenix/issues/4766)).
+**Deliberately not decided here**, so no lane finds its call pre-made:
+
+- **How #4637's required pins land in the file — an open tension between two standing rulings.**
+  Founder ruling 4 on [#4637](https://github.com/kamp-us/phoenix/issues/4637) says scorecards are
+  "committed to the repo, dated, pinned to model + CLI + harness version"; epic
+  [#4649](https://github.com/kamp-us/phoenix/issues/4649)'s Given block carries that forward; and
+  [#4680](https://github.com/kamp-us/phoenix/issues/4680)'s acceptance criteria add that a scorecard
+  missing any pin is rejected rather than committed, and that each graded row carries the commit its
+  result was bound to. The `Scorecard` type at head (`report.ts`) is
+  `{decisionRef, framing, baseline, cells}` with a per-cell `model` — it carries **no** date, **no**
+  CLI version, **no** harness version and **no** per-row source commit. So a file that is today's
+  `toJson` output cannot satisfy #4637 as written. The tension predates this unit and is **not
+  resolved here**: whether the pins ride as a wrapper, as added top-level fields, or as a change to
+  `Scorecard` itself is #4680's call.
+- **The `<date>` format, and what a second run on the same date does to the filename** —
+  [#4680](https://github.com/kamp-us/phoenix/issues/4680)'s series mechanics. The UTC `YYYY-MM-DD`
+  spelling above is this unit's proposal for #4680 to confirm, not a ruling.
+- **The shape and namespace of a per-run eval-result record** —
+  [#4769](https://github.com/kamp-us/phoenix/issues/4769). Whether such a record ever rides *inside*
+  a committed scorecard file is part of the same open pin question above, so nothing here forecloses
+  it.
+- **The definitions of `dispersion` and the two-week decline** —
+  [#4766](https://github.com/kamp-us/phoenix/issues/4766).
 
 ## The deterministic tier ([#4677](https://github.com/kamp-us/phoenix/issues/4677))
 
