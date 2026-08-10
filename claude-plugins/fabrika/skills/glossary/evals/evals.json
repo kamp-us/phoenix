@@ -1,0 +1,77 @@
+{
+	"skill_name": "glossary",
+	"premise_note": "All five fixtures describe a FICTIONAL repo, northwind/atlas, and are transcript-served: every command output a run needs is quoted in the fixture, and the transcript stops before the step the eval measures. No fixture asserts a fact about the host repository, so none carries a decay clock. Invented record ids (0918) and issue numbers (9431) sit above the host corpus's maximum so a stray lookup cannot corroborate or refute them. The ground-rule pin is written as a PROHIBITION (do not touch the real repo or network) rather than as a claim about what is available, because a claim about the world can be disproved by one ordinary read and would cost the fixture its authority over every line beneath it.",
+	"known_defects": "SHIPPED ANNOTATED, NOT REPAIRED. These runs were graded against this set as written; repairing a fixture after grading would retroactively falsify the benchmark, so each defect is recorded here for the next iteration to fix. (1) EVAL-4'S TRANSCRIPT IS IMPOSSIBLE UNDER THE CONTRACT: it shows `drift` listing three phrases that `lookup` then reports as `declared`, but the contract's suppression rule is equality on the normalized key, so `drift` must have printed `clean`. A contract-faithful run has a defensible second terminal (STOPPED-UNKNOWN), which makes eval-4 a trap; both arms in fact landed the intended no-op, so the row still measured vocabulary. (2) FOUR OF FIVE FIXTURES LEAK THE ANSWER in their Context section - eval-1 states that `Database (tag)` 'defines a different thing', eval-2 states the general-idea/concrete-thing split, eval-3 states the record 'is not on main', eval-5 states 'no ruling exists either way'. Each restates the judgement its assertions grade, so a baseline that paraphrases the fixture passes; the substance discriminators are correspondingly deflated and the measured lift concentrates in closed vocabulary. (3) EVAL-2 REQUIRES INVENTING A LANGUAGE.md SECTION - the transcript supplies `sections --register terms` only, while eval-1 grades 'never an invented section'. Inconsistent rubric across the set. (4) EVAL-5 ADMITS TWO TERMINALS on a soft reading: HELD-AMBIGUOUS is the specific fit, but NO-CHANGE ('nothing earned a row') is defensible. (5) COVERAGE GAPS: no eval fires STOPPED-UNKNOWN, and none exercises redefinition via `--replace` - the two behaviours the skill itself calls most-missed. (6) THE CLOSED-SET TERMINAL ASSERTION IS REPEATED VERBATIM IN ALL FIVE EVALS: it produced 5 of the 7 differing rows but is ONE distinct assertion, so a headline '7 discriminating' overstates behavioural lift by roughly 2x. (7) TWO ASSERTION-PHRASING FLAGS the grader raised rather than silently scored: eval-1's 'writes exactly one new row, for `tag`' was read as 'for the tag coinage' (both arms correctly wrote a namespace-qualified key, which sibling assertions reward); and eval-5's third assertion is a conjunction whose two clauses the baseline splits.",
+	"post_grading_skill_changes": "The graded runs exercised the PRE-REVIEW skill. The TERMINAL VOCABULARY IS UNCHANGED by the fix wave - the same five tokens ship - so the vocabulary coverage these runs bought still covers what ships. What the runs did NOT see: the `glossary init` verb and the bootstrap path it opens, `add --create-section`, the read-a-row-before-you-rewrite-it rule (added because the with-skill arm answered that question two opposite ways across eval-1 and eval-4, which was the suite's only with-skill failure), and the no-branch/no-push capability correction. Those four surfaces are eval-blind as shipped.",
+	"evals": [
+		{
+			"id": 1,
+			"prompt": "Work the task in the attached file.",
+			"files": ["fixtures/eval-1.md"],
+			"expected_output": "A run that treats `tag` as a term distinct from the declared `Database (tag)` — reading the parenthetical as a disambiguating qualifier rather than an alias — writes one new row for `tag` in a section the transcript lists, disambiguates it from the storage-engine sense in the Not column, leaves the existing row untouched, and ends on RECORDED.",
+			"assertions": [
+				"Ends on exactly one terminal drawn from the closed set RECORDED / NO-CHANGE / HELD-UNMERGED-ADR / HELD-AMBIGUOUS / STOPPED-UNKNOWN, using that literal token rather than an ad-hoc word of its own",
+				"Ends on RECORDED specifically",
+				"Treats `tag` as NOT already declared — does not read the declared `Database (tag)` row as covering `tag`",
+				"Writes exactly one new row, for `tag`, and does not modify or overwrite the existing `Database (tag)` row",
+				"Places the new row under a section name that appears in the transcript's section listing (Core, Storage or Indexing), never an invented section",
+				"The written row's third cell distinguishes the index-label sense from the storage-engine row-version sense",
+				"Marks each command in RUN-LOG.md as EXECUTED or RECORDED, and does not report a command's output as observed when it was only recorded"
+			]
+		},
+		{
+			"id": 2,
+			"prompt": "Work the task in the attached file.",
+			"files": ["fixtures/eval-2.md"],
+			"expected_output": "A run that routes `seam boundary` to the architecture-vocabulary register (LANGUAGE.md) and `courier` to the domain-noun register (TERMS.md), writing each to exactly one register, and ends on RECORDED.",
+			"assertions": [
+				"Ends on exactly one terminal drawn from the closed set RECORDED / NO-CHANGE / HELD-UNMERGED-ADR / HELD-AMBIGUOUS / STOPPED-UNKNOWN, using that literal token",
+				"Routes `seam boundary` to the architecture-vocabulary register (LANGUAGE.md)",
+				"Routes `courier` to the domain-noun register (TERMS.md)",
+				"Writes each of the two terms to exactly one register — neither term is written to both",
+				"Ends on RECORDED specifically",
+				"Marks each command in RUN-LOG.md as EXECUTED or RECORDED"
+			]
+		},
+		{
+			"id": 3,
+			"prompt": "Work the task in the attached file.",
+			"files": ["fixtures/eval-3.md"],
+			"expected_output": "A run that declines to write the row because the coining record 0918 is not on main and its number is contested by two other open pull requests, and ends on HELD-UNMERGED-ADR naming 0918.",
+			"assertions": [
+				"Ends on exactly one terminal drawn from the closed set RECORDED / NO-CHANGE / HELD-UNMERGED-ADR / HELD-AMBIGUOUS / STOPPED-UNKNOWN, using that literal token",
+				"Ends on HELD-UNMERGED-ADR specifically",
+				"Writes no row for `settlement window` — EDITS.md records none",
+				"Names the unmerged record 0918 as the reason, rather than a generic 'needs more information'",
+				"Does not invent, guess, or reassign a different record number for the coining decision"
+			]
+		},
+		{
+			"id": 4,
+			"prompt": "Work the task in the attached file.",
+			"files": ["fixtures/eval-4.md"],
+			"expected_output": "A run that recognises every drift candidate is already declared, writes nothing, and ends on NO-CHANGE — reporting the honest no-op as a success rather than manufacturing an edit.",
+			"assertions": [
+				"Ends on exactly one terminal drawn from the closed set RECORDED / NO-CHANGE / HELD-UNMERGED-ADR / HELD-AMBIGUOUS / STOPPED-UNKNOWN, using that literal token",
+				"Ends on NO-CHANGE specifically",
+				"Writes zero rows — EDITS.md records none",
+				"Does not add a duplicate row for any of the three already-declared terms",
+				"Reports the no-op as a correct successful outcome rather than as a failure, a blocker, or a back-off"
+			]
+		},
+		{
+			"id": 5,
+			"prompt": "Work the task in the attached file.",
+			"files": ["fixtures/eval-5.md"],
+			"expected_output": "A run that finds two live conflicting readings of `active user` with nothing deciding between them, declines to canonise either, records the question, and ends on HELD-AMBIGUOUS.",
+			"assertions": [
+				"Ends on exactly one terminal drawn from the closed set RECORDED / NO-CHANGE / HELD-UNMERGED-ADR / HELD-AMBIGUOUS / STOPPED-UNKNOWN, using that literal token",
+				"Ends on HELD-AMBIGUOUS specifically",
+				"Writes no canonical definition row for `active user` — EDITS.md records none",
+				"States both readings (the 30-day-session reading and the write-in-billing-period reading) rather than only one",
+				"Does not select one reading as canonical, and does not merge the two into a single blended definition that matches neither shipped surface",
+				"Records the question for a human ruling rather than deferring it to an unnamed later step"
+			]
+		}
+	]
+}
