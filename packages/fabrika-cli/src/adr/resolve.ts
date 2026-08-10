@@ -4,7 +4,7 @@
  * All four states are answers and every one is a positive token: `absent` on exit 0 means *proven
  * absent against a current tree* — the fetch succeeded, the records were read, the open pull
  * requests were enumerated, and no one holds this id. It is never what a failed read prints; a
- * failed read exits 3 or 4 with nothing on stdout.
+ * failed read exits 11, 17 or 18 with nothing on stdout.
  */
 import {isLive} from "./records.ts";
 

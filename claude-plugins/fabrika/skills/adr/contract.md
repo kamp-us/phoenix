@@ -180,7 +180,7 @@ $ fabrika adr next
 $ fabrika adr next --repo kamp-us/nonexistent
 adr next: cannot enumerate open pull requests in kamp-us/nonexistent: HTTP 404 — the in-flight set is UNKNOWN, never "nothing reserved". Re-run; do not fall back to the on-disk id.
 $ echo $?
-4
+18
 ```
 
 **Grounding**
@@ -300,7 +300,7 @@ $ fabrika adr new 0240 only-landed-adrs-may-be-cited
 $ fabrika adr new 0126 ambient-adr-discovery
 adr new: .decisions/0126-ambient-adr-discovery.md already exists — refusing to overwrite.
 $ echo $?
-3
+12
 ```
 
 **Grounding**
@@ -409,7 +409,7 @@ in-flight	0239-campaign-milestones-close-with-their-arc.md	PR #4711
 $ fabrika adr resolve 0164 --base origin/nonexistent
 adr resolve: cannot fetch origin/nonexistent: couldn't find remote ref — every state is UNKNOWN, never "absent".
 $ echo $?
-3
+17
 ```
 
 **Grounding**
@@ -512,7 +512,7 @@ $ fabrika adr amend-in-part 0023 --by 0240
 $ fabrika adr supersede 0126 --by 9999
 adr supersede: no record for --by id 9999 under .decisions — refusing to write a dead link.
 $ echo $?
-4
+13
 ```
 
 **Grounding**
@@ -522,7 +522,7 @@ $ echo $?
 - ADR 0023's live status line — three appended `amended-in-part by` links prove the list is real and
   the append is not hypothetical.
 - The immutability rule: never edit an accepted ADR's decision text; supersede it, or amend it in
-  part on the status line alone. Exit 6 is that rule made mechanical rather than remembered.
+  part on the status line alone. Exit `15` is that rule made mechanical rather than remembered.
 
 ---
 
