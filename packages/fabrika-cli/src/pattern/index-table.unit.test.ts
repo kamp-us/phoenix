@@ -142,4 +142,32 @@ describe("cellText", () => {
 	it("strips newlines as well as tabs", () => {
 		expect(cellText("a\nb")).toBe("a b");
 	});
+
+	it("escapes the backslash before the pipe, so the escape character cannot be forged", () => {
+		expect(cellText("a\\|b")).toBe("a\\\\\\|b");
+	});
+
+	/**
+	 * `cellText` and `rowCells` are an exact inverse pair, and the backslash arm is what makes that
+	 * true: escaping only `|` would let a cell ending in `\` read as escaping the delimiter after
+	 * it, which is a value smuggling in a column separator (#5364). Every case here renders a
+	 * three-cell row that must still split into exactly three cells.
+	 */
+	it.each([
+		"plain",
+		"",
+		"a | b",
+		"ends with a backslash \\",
+		"\\",
+		"|",
+		"double \\\\ backslash",
+		"already escaped \\| pipe",
+		"escaped backslash then pipe \\\\|",
+		"escaped pipe then backslash \\|\\",
+		"trailing bare pipe |",
+		"\\|",
+	])("round-trips %j through cellText and rowCells", (value) => {
+		const row = composeRow("a-b", value, "read when");
+		expect(rowCells(row)).toEqual(["[a-b.md](./a-b.md)", value.trim(), "read when"]);
+	});
 });
