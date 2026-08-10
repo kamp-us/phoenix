@@ -17,8 +17,8 @@
  *
  * There is deliberately no `CI` skip (#5169): it fired *before* the presence check below, so it was
  * load-bearing only on a CI image with no chromium — exactly the case the criterion above must
- * cover. CI pays the download once per cache key, not once per job; see the browser cache in
- * `.github/workflows/ci.yml`.
+ * cover. CI keeps the repeat cost off the clock with a browser cache restored before the install
+ * (`.github/workflows/ci.yml`), not with a skip.
  */
 import {spawnSync} from "node:child_process";
 import {existsSync} from "node:fs";
@@ -41,9 +41,14 @@ try {
 }
 if (installed) skip("chromium is already provisioned");
 
+// 120s, not the 10 minutes this carried before, and the number is measured (#5169). The download
+// itself is ~2s for 173MB on both a GitHub hosted runner and a dev machine; what actually costs time
+// is playwright 1.59.1 hanging in `extract-zip` *after* the bytes land, which never recovers (#5343).
+// A timeout sized for a slow download therefore bought nothing and spent 10 minutes per install site
+// proving it. 120s is ~60x the measured download and caps a hung install at a bounded cost.
 const result = spawnSync("pnpm", ["exec", "playwright", "install", "chromium"], {
 	stdio: "inherit",
-	timeout: 10 * 60 * 1000,
+	timeout: 120 * 1000,
 });
 if (result.status !== 0) {
 	process.stderr.write(
