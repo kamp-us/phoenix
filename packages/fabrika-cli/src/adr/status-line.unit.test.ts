@@ -69,7 +69,7 @@ describe("diffBeyondStatusLine — the assertion the implementation owes", () =>
 		).toBeNull();
 	});
 
-	it("counts a second edited line — this is what aborts the write with exit 6", () => {
+	it("counts a second edited line — this is what aborts the write with exit 15", () => {
 		expect(
 			diffBeyondStatusLine(
 				before,

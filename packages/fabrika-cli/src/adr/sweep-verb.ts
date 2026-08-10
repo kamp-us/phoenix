@@ -6,19 +6,14 @@
  * the one case it was asked to produce; and `--json` goes to **stdout**, not stderr (#4723).
  *
  * A readable-but-empty `--dir` is the rarity floor at its limit, so it answers `indeterminate` and
- * needs no case of its own; only an unreadable corpus is UNKNOWN. `5` stays vacated — see
- * `next-verb.ts`'s `DIR_UNREADABLE` (#5254).
+ * needs no case of its own; only an unreadable corpus is UNKNOWN.
  */
 import {Effect, type FileSystem, Result} from "effect";
 import {readDir, readFile} from "../io/fs.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
+import {DIR_UNREADABLE, NO_SUBJECT} from "./codes.ts";
 import {idFromFile, isFourDigitId, partitionRecordNames} from "./records.ts";
 import {renderEntry, type SweepCandidate, sweep} from "./sweep.ts";
-
-/** The corpus could not be read, so the outcome is UNKNOWN. */
-export const CORPUS_UNREADABLE = 3;
-/** `--new` names an id or path with no readable ADR. */
-export const NO_SUBJECT = 4;
 
 export interface SweepOptions {
 	/** A four-digit id already in `--dir`, or a path to the draft file. */
@@ -38,7 +33,7 @@ export const runSweep = (
 		const listing = yield* Effect.result(readDir(root));
 		if (Result.isFailure(listing)) {
 			return refuse(
-				CORPUS_UNREADABLE,
+				DIR_UNREADABLE,
 				`adr sweep: cannot read ${root}: the directory could not be listed — the outcome is UNKNOWN, never "no-overlap".`,
 			);
 		}
@@ -51,7 +46,7 @@ export const runSweep = (
 			// silently ranking against the rest would answer from a corpus nobody scanned.
 			if (Result.isFailure(text)) {
 				return refuse(
-					CORPUS_UNREADABLE,
+					DIR_UNREADABLE,
 					`adr sweep: cannot read ${root}: ${file} could not be read — the outcome is UNKNOWN, never "no-overlap".`,
 				);
 			}

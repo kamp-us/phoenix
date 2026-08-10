@@ -1,7 +1,8 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {errOut, fakeShell, okOut, tree} from "../fakes.test-support.ts";
-import {BASE_UNFETCHABLE, DIR_UNREADABLE, IN_FLIGHT_UNKNOWN, runNext} from "./next-verb.ts";
+import {BASE_UNFETCHABLE, DIR_UNREADABLE, IN_FLIGHT_UNKNOWN} from "./codes.ts";
+import {runNext} from "./next-verb.ts";
 
 const SHA = "49a22902d1e0c7b3f5a8e4126b9d0f3c7a1e5b82";
 

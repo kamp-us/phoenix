@@ -177,7 +177,7 @@ Three behaviours are worth knowing before you call them:
   and citing one as settled law is the failure this split exists to prevent.
 - **`supersede` / `amend-in-part` assert a one-line diff before writing.** An accepted ADR's
   decision text is immutable, so a rewrite that would touch any line but `status:` aborts
-  with exit 6 and writes nothing.
+  with exit 15 and writes nothing.
 
 ## The `report` group
 
@@ -232,8 +232,8 @@ Three properties of that substrate are worth knowing before the verbs arrive:
   so a code means one thing across this group. Where it overlaps the two `report` writing
   verbs — `3`, `5`, `6`, `7`, `8`, `9`, `10`, `11` — the meanings match **code for code**, so
   a caller driving both groups in one sweep reads one meaning. That alignment does not extend
-  repo-wide: `adr` allocates per verb, and `report dedup`'s own `3`/`4` mean something else
-  again.
+  repo-wide: `report dedup`'s own `3`/`4` are *queue unreadable* / *search index unreadable*
+  ([#5296](https://github.com/kamp-us/phoenix/issues/5296)).
 - **`4` is a deliberate gap.** It once fused "the target issue is proven absent" with "the
   target issue could not be read". `7` and `11` took the halves, and the slot is left
   unallocated rather than compacted — a gap is cheaper than a collision, and it keeps the
@@ -490,9 +490,9 @@ Three behaviours are worth knowing before you call it:
 - **The cache-read share stays its own number.** It dominates `billed` and grows with turn
   count, which makes it the context-bloat signal; folding it into one total is what hides the
   thing the measurement exists to show.
-- **"I could not measure it" is never a zero.** Exit `3` is a transcript that is provably not
-  there, `4` is one that could not be read (or whose absence could not be established — the
-  spend is UNKNOWN), and `5` is a transcript read in full that carries zero billed assistant
+- **"I could not measure it" is never a zero.** Exit `7` is a transcript that is provably not
+  there, `11` is one that could not be read (or whose absence could not be established — the
+  spend is UNKNOWN), and `12` is a transcript read in full that carries zero billed assistant
   turns. That third state is a real transcript a failed run writes, and reporting it as a
   measured zero would price a broken run as a free one.
 - **It cannot block anything.** No threshold, no budget flag, and no exit code that varies
@@ -553,9 +553,9 @@ Four things about it are load-bearing:
   written by a newer row shape: the rows are still there and the fix is to upgrade this CLI.
   Reporting both as one "40 lines lost" is a false alarm in one direction and a missed data loss in
   the other.
-- **Four refusals, none of them a zero.** `3` is no ledger at that path (nothing recorded yet), `4`
-  is a ledger that could not be read (the spend is UNKNOWN), `5` is one read in full that yielded no
-  rows at all, and `6` is a ledger that *does* hold rows where the given window selects none — an
+- **Four refusals, none of them a zero.** `7` is no ledger at that path (nothing recorded yet), `11`
+  is a ledger that could not be read (the spend is UNKNOWN), `12` is one read in full that yielded no
+  rows at all, and `13` is a ledger that *does* hold rows where the given window selects none — an
   empty window is a different fact from an empty ledger, so it gets its own code. Each refuses with
   empty stdout.
 - **It cannot gate.** No threshold flag, no budget option, and no exit code that varies with the

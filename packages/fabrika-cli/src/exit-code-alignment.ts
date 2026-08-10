@@ -29,7 +29,7 @@
  * {@link coverageGaps} takes the registered names and reds on any it cannot classify.
  */
 
-import {existsSync, readdirSync, realpathSync} from "node:fs";
+import {existsSync, readdirSync, readFileSync, realpathSync} from "node:fs";
 import {join} from "node:path";
 
 /** The group whose table every aligning group seats itself against. */
@@ -110,8 +110,29 @@ export const EVAL_SEATS: SharedSeats = {
 	ZERO_SCOPE: "NO_TARGET",
 };
 
+/**
+ * `adr`'s seats: two. Its verbs read decision records off disk rather than writing to GitHub, so
+ * most of the base's table is about facts they cannot establish. What they do establish is that the
+ * record a caller named is not there, and that the read which would have proven it failed.
+ */
+export const ADR_SEATS: SharedSeats = {
+	NO_SUBJECT: "NO_TARGET",
+	DIR_UNREADABLE: "PRECONDITION_UNKNOWN",
+};
+
+/**
+ * `spend`'s seats: the same two as `adr`, on the same reading — the measured input is not there, and
+ * the read that would have proven it failed. The names are the group's own because the target is an
+ * input it measures rather than one it writes.
+ */
+export const SPEND_SEATS: SharedSeats = {
+	INPUT_ABSENT: "NO_TARGET",
+	INPUT_UNREADABLE: "PRECONDITION_UNKNOWN",
+};
+
 /** The groups that align to {@link ALIGNMENT_BASE}, each with the seats it claims to share. */
 export const ALIGNED_GROUPS: Readonly<Record<string, SharedSeats>> = {
+	adr: ADR_SEATS,
 	build: BUILD_SEATS,
 	eval: EVAL_SEATS,
 	hook: HOOK_SEATS,
@@ -122,6 +143,7 @@ export const ALIGNED_GROUPS: Readonly<Record<string, SharedSeats>> = {
 	review: SHARED_SEATS,
 	"review-ui": REVIEW_UI_SEATS,
 	ship: SHARED_SEATS,
+	spend: SPEND_SEATS,
 	status: SHARED_SEATS,
 	ui: UI_SEATS,
 };
@@ -139,16 +161,14 @@ export const UNALIGNED_GROUPS: Readonly<Record<string, string>> = {
  * The registered groups that ship no `<group>/codes.ts` at all, and the tracked reason each is
  * still unchecked.
  *
- * This is an admission, not an exemption: neither entry is a decision that a group table is
- * unwarranted, only a record that these two allocate their codes per-verb and nobody has re-seated
- * them yet. Listing them is what lets {@link coverageGaps} treat *any other* untabled group as the
- * failure it is, instead of the silence that hid `eval`.
+ * **Empty is the goal state, and it is where this stands: `adr` and `spend` were its only two
+ * entries and both now ship a table (#5294).** The registry stays because it is what lets
+ * {@link coverageGaps} treat an untabled group as the failure it is instead of the silence that hid
+ * `eval` — a future group that ships before its table is recorded here with the issue tracking it,
+ * never left out. An entry is an admission, never an exemption: nothing here is a decision that a
+ * group table is unwarranted.
  */
-export const UNTABLED_GROUPS: Readonly<Record<string, string>> = {
-	adr: "allocates proven codes per-verb (relate-verb's NO_SUBJECT is 3, sweep-verb's is 4) rather than from a group table — #5294",
-	spend:
-		"allocates proven codes per-verb across read-verb and rollup-verb rather than from a group table — #5294",
-};
+export const UNTABLED_GROUPS: Readonly<Record<string, string>> = {};
 
 /** Every group this module has an answer for, whichever of the three registries holds it. */
 export const classifiedGroups = (): ReadonlySet<string> =>
@@ -309,5 +329,31 @@ export const codeTableGroupsIn = (srcDir: string): readonly string[] => {
 		.filter((entry) => entry.isDirectory())
 		.map((entry) => entry.name)
 		.filter((name) => existsSync(join(root, name, "codes.ts")))
+		.sort();
+};
+
+/**
+ * The exit-code constants a group's verb modules declare **themselves**, as `<file>: <NAME>`.
+ *
+ * A group with a table owes an empty answer here. Reading the module namespaces cannot establish
+ * that — an import and a declaration are the same export once the module is loaded — so this reads
+ * the source, which is the only place the difference survives. That difference is the whole defect:
+ * `adr` shipped a `NO_SUBJECT` in two verb files on two numbers (#5294).
+ *
+ * The read is `*-verb.ts` only and shape-based, so a code seated in a non-verb module of the same
+ * group is outside what it can see. The whole result is sorted, not each file's share of it —
+ * `readdirSync` order is not guaranteed, so a per-file sort would leave the list unordered.
+ */
+export const verbLocalCodesIn = (groupDir: string): readonly string[] => {
+	const root = realpathSync(groupDir);
+	return readdirSync(root)
+		.filter((name) => name.endsWith("-verb.ts"))
+		.flatMap((name) =>
+			[
+				...readFileSync(join(root, name), "utf8").matchAll(
+					/^export const ([A-Z][A-Z0-9_]*) = \d/gm,
+				),
+			].map((match) => `${name}: ${match[1]}`),
+		)
 		.sort();
 };

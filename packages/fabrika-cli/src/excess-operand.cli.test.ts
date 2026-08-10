@@ -18,7 +18,7 @@ import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {describe, expect, it} from "vitest";
-import {BASE_UNFETCHABLE} from "./adr/resolve-verb.ts";
+import {BASE_UNFETCHABLE} from "./adr/codes.ts";
 import {SUBPROCESS_TEST_TIMEOUT_MS} from "./test-budget.ts";
 
 const BIN = fileURLToPath(new URL("./bin.ts", import.meta.url));

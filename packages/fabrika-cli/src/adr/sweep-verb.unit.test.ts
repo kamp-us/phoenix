@@ -1,7 +1,8 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {type FakeFs, fakeFs, record} from "../fakes.test-support.ts";
-import {CORPUS_UNREADABLE, NO_SUBJECT, runSweep} from "./sweep-verb.ts";
+import {DIR_UNREADABLE, NO_SUBJECT} from "./codes.ts";
+import {runSweep} from "./sweep-verb.ts";
 
 const dir = ".decisions";
 
@@ -76,7 +77,7 @@ describe("runSweep", () => {
 
 	it("refuses an unreadable corpus — UNKNOWN, never no-overlap", async () => {
 		const out = await run(fakeFs({dirs: {[dir]: null}}));
-		expect(out.code).toBe(CORPUS_UNREADABLE);
+		expect(out.code).toBe(DIR_UNREADABLE);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toContain('never "no-overlap"');
 	});
@@ -85,7 +86,7 @@ describe("runSweep", () => {
 		const files: Record<string, string | null> = corpus();
 		files[`${dir}/0105-x.md`] = null;
 		const out = await run(fsWith(files));
-		expect(out.code).toBe(CORPUS_UNREADABLE);
+		expect(out.code).toBe(DIR_UNREADABLE);
 		expect(out.stdout).toBe("");
 	});
 

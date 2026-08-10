@@ -1,14 +1,14 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {type FakeFs, fakeFs} from "../fakes.test-support.ts";
-import {encodeSpendRows, type LedgerRow} from "./ledger.ts";
 import {
-	LEDGER_ABSENT,
-	LEDGER_HOLDS_NO_ROWS,
-	LEDGER_UNREADABLE,
-	runRollup,
+	INPUT_ABSENT,
+	INPUT_UNREADABLE,
+	NOTHING_MEASURED,
 	WINDOW_SELECTED_NO_ROWS,
-} from "./rollup-verb.ts";
+} from "./codes.ts";
+import {encodeSpendRows, type LedgerRow} from "./ledger.ts";
+import {runRollup} from "./rollup-verb.ts";
 import type {RunSpend} from "./token-spend.ts";
 
 const PATH = "/repo/.fabrika/spend-ledger.jsonl";
@@ -207,7 +207,7 @@ describe("spend rollup — the refusals", () => {
 	it("refuses a ledger that is provably not there, with empty stdout", async () => {
 		const out = await run(fakeFs({files: {}}));
 
-		expect(out.code).toBe(LEDGER_ABSENT);
+		expect(out.code).toBe(INPUT_ABSENT);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toContain("nothing has been recorded yet");
 	});
@@ -215,7 +215,7 @@ describe("spend rollup — the refusals", () => {
 	it("refuses an unreadable ledger as UNKNOWN, never as absent and never as a zero", async () => {
 		const out = await run(fakeFs({files: {[PATH]: null}, unprobeable: [PATH]}));
 
-		expect(out.code).toBe(LEDGER_UNREADABLE);
+		expect(out.code).toBe(INPUT_UNREADABLE);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toContain("UNKNOWN");
 	});
@@ -223,14 +223,14 @@ describe("spend rollup — the refusals", () => {
 	it("refuses an empty ledger rather than answering a fabricated zero total", async () => {
 		const out = await run(withText(""));
 
-		expect(out.code).toBe(LEDGER_HOLDS_NO_ROWS);
+		expect(out.code).toBe(NOTHING_MEASURED);
 		expect(out.stdout).toBe("");
 	});
 
 	it("refuses a ledger whose every line is unreadable, and says how many were lost", async () => {
 		const out = await run(withText("half a row\nanother half\n"));
 
-		expect(out.code).toBe(LEDGER_HOLDS_NO_ROWS);
+		expect(out.code).toBe(NOTHING_MEASURED);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.join("\n")).toContain("2 ledger line(s) could NOT be read");
 	});
@@ -244,7 +244,7 @@ describe("spend rollup — the refusals", () => {
 	});
 
 	it("seats all four outcomes above the reserved codes, distinct from each other", () => {
-		const codes = [LEDGER_ABSENT, LEDGER_UNREADABLE, LEDGER_HOLDS_NO_ROWS, WINDOW_SELECTED_NO_ROWS];
+		const codes = [INPUT_ABSENT, INPUT_UNREADABLE, NOTHING_MEASURED, WINDOW_SELECTED_NO_ROWS];
 		for (const code of codes) expect(code).toBeGreaterThanOrEqual(3);
 		expect(new Set(codes).size).toBe(4);
 	});
@@ -260,7 +260,7 @@ describe("spend rollup — the refusals", () => {
 	it("refuses under --json too — a refusal never puts a payload on stdout", async () => {
 		const out = await run(withText(""), {json: true});
 
-		expect(out.code).toBe(LEDGER_HOLDS_NO_ROWS);
+		expect(out.code).toBe(NOTHING_MEASURED);
 		expect(out.stdout).toBe("");
 	});
 });

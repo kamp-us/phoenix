@@ -66,7 +66,7 @@ const next = leafCommand(
 	}),
 ).pipe(
 	Command.withDescription(
-		"The next unused ADR id — max(fetched merged set ∪ open-PR claims) + 1. Prints `0240`; --json adds mergedMax/inFlight/baseSha. An empty-and-readable --dir is a fresh corpus and answers 0001. Exits 3 (base unfetchable), 4 (in-flight unknown), 6 (--dir unreadable). Example: fabrika adr next",
+		"The next unused ADR id — max(fetched merged set ∪ open-PR claims) + 1. Prints `0240`; --json adds mergedMax/inFlight/baseSha. An empty-and-readable --dir is a fresh corpus and answers 0001. Exits 11 (--dir unreadable), 17 (base unfetchable), 18 (in-flight unknown). Example: fabrika adr next",
 	),
 );
 
@@ -120,7 +120,7 @@ const newCmd = leafCommand(
 	}),
 ).pipe(
 	Command.withDescription(
-		"Scaffold .decisions/NNNN-slug.md from the canonical template. Prints the path written. Exits 3 (path exists — never overwritten), 4 (bad id or slug). Example: fabrika adr new 0240 only-landed-adrs-may-be-cited",
+		"Scaffold .decisions/NNNN-slug.md from the canonical template. Prints the path written. Exits 12 (path exists — never overwritten); a bad id or slug is a usage error and exits 1. Example: fabrika adr new 0240 only-landed-adrs-may-be-cited",
 	),
 );
 
@@ -138,7 +138,7 @@ const resolve = leafCommand(
 	}),
 ).pipe(
 	Command.withDescription(
-		"Resolve ids to their real filename and state against a fetched base ref — one `<state>\\t<file>\\t<detail>` line per id, state ∈ live|landed|in-flight|absent. An empty-and-readable --dir answers absent. Exits 3 (base unfetchable), 4 (in-flight unknown), 6 (--dir unreadable). Example: fabrika adr resolve 0164 0023",
+		"Resolve ids to their real filename and state against a fetched base ref — one `<state>\\t<file>\\t<detail>` line per id, state ∈ live|landed|in-flight|absent. An empty-and-readable --dir answers absent. Exits 11 (--dir unreadable), 17 (base unfetchable), 18 (in-flight unknown). Example: fabrika adr resolve 0164 0023",
 	),
 );
 
@@ -154,7 +154,7 @@ const supersede = leafCommand(
 	}),
 ).pipe(
 	Command.withDescription(
-		"Rewrite an older ADR's status: line to `superseded by [NNNN](NNNN-slug.md)` — that line and nothing else. Prints `<path>\\t<new status>`. Exits 3 (no such id), 4 (no --by record), 5 (no single status: line), 6 (diff touched another line — nothing written), 7 (already superseded). Example: fabrika adr supersede 0126 --by 0240",
+		"Rewrite an older ADR's status: line to `superseded by [NNNN](NNNN-slug.md)` — that line and nothing else. Prints `<path>\\t<new status>`. Exits 7 (no such id), 13 (no --by record), 14 (no single status: line), 15 (diff touched another line — nothing written), 16 (already superseded). Example: fabrika adr supersede 0126 --by 0240",
 	),
 );
 
@@ -190,7 +190,7 @@ const sweepCmd = leafCommand(
 	}),
 ).pipe(
 	Command.withDescription(
-		"Rank the uncited live-accepted ADRs this one may contradict. First stdout line is the outcome token — shortlist | no-overlap | indeterminate — and ALL THREE exit 0; a shortlist adds one `<id>\\t<score>\\t<file>\\t<title>` line per entry. An empty-and-readable --dir answers indeterminate. Exits 3 (corpus unreadable), 4 (no readable --new). Example: fabrika adr sweep --new 0240",
+		"Rank the uncited live-accepted ADRs this one may contradict. First stdout line is the outcome token — shortlist | no-overlap | indeterminate — and ALL THREE exit 0; a shortlist adds one `<id>\\t<score>\\t<file>\\t<title>` line per entry. An empty-and-readable --dir answers indeterminate. Exits 7 (no readable --new), 11 (corpus unreadable). Example: fabrika adr sweep --new 0240",
 	),
 );
 

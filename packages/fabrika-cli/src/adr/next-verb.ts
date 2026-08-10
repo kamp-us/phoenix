@@ -11,24 +11,8 @@ import {Effect} from "effect";
 import {originRepo, type Shell} from "../io/git.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {loadInFlight, loadMerged} from "./base-ref.ts";
+import {BASE_UNFETCHABLE, DIR_UNREADABLE, IN_FLIGHT_UNKNOWN} from "./codes.ts";
 import {allocate} from "./next.ts";
-
-/** `--base` could not be fetched, so the merged set is UNKNOWN. */
-export const BASE_UNFETCHABLE = 3;
-/** The open pull requests could not be enumerated, so the in-flight set is UNKNOWN. */
-export const IN_FLIGHT_UNKNOWN = 4;
-/**
- * `--dir` could not be read at the fetched base ref, so the merged set is UNKNOWN.
- *
- * This is a proven outcome, so it takes a `3`+ code and not `1`: a caller that saw a refusal share
- * the failure-to-invoke code could not tell "the directory is not there at that ref" from "the verb
- * never ran" (#4208, #4219, #4736). `resolve` seats the same state on the same number.
- *
- * `5` is a **vacated** seat across this group, not a free one: it meant "read and empty — refusing"
- * until #5254 made that state an answer, and re-seating a new meaning on it would hand a caller
- * pinned to the old reading a wrong answer under a familiar number.
- */
-export const DIR_UNREADABLE = 6;
 
 export interface NextOptions {
 	readonly dir: string;

@@ -14,6 +14,7 @@ import {Effect} from "effect";
 import {originRepo, type Shell} from "../io/git.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {loadInFlight, loadMerged, readMergedRecord} from "./base-ref.ts";
+import {BASE_UNFETCHABLE, DIR_UNREADABLE, IN_FLIGHT_UNKNOWN} from "./codes.ts";
 import {isFourDigitId} from "./records.ts";
 import {
 	indexInFlight,
@@ -22,13 +23,6 @@ import {
 	renderResolution,
 	resolveId,
 } from "./resolve.ts";
-
-/** `--base` could not be fetched, so every state is UNKNOWN. */
-export const BASE_UNFETCHABLE = 3;
-/** The open pull requests could not be enumerated, so `absent` cannot be told from `in-flight`. */
-export const IN_FLIGHT_UNKNOWN = 4;
-/** `--dir` could not be read at the fetched base ref, so every state is UNKNOWN. See `next-verb.ts`'s `DIR_UNREADABLE` for why this is a `3`+ code and not `1`, and why `5` stays vacated. */
-export const DIR_UNREADABLE = 6;
 
 export interface ResolveOptions {
 	readonly ids: ReadonlyArray<string>;

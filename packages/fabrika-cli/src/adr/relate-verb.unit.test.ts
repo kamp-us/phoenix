@@ -1,15 +1,8 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {type FakeFs, fakeFs} from "../fakes.test-support.ts";
-import {
-	ALREADY_SUPERSEDED,
-	MULTI_LINE_DIFF,
-	NO_BY,
-	NO_STATUS_LINE,
-	NO_SUBJECT,
-	type RelateOptions,
-	runRelate,
-} from "./relate-verb.ts";
+import {ALREADY_SUPERSEDED, MULTI_LINE_DIFF, NO_BY, NO_STATUS_LINE, NO_SUBJECT} from "./codes.ts";
+import {type RelateOptions, runRelate} from "./relate-verb.ts";
 
 const rec = (id: string, status: string): string =>
 	`---\nid: ${id}\ntitle: Title ${id}\nstatus: ${status}\ndate: 2026-01-01\ntags: []\n---\n\n# ${id} — Title ${id}\n\n## Decision\n\n**A thing.**\n`;
@@ -174,7 +167,7 @@ describe("runRelate — amend-in-part", () => {
 	});
 });
 
-describe("exit 6 — the one-line-diff assertion, driven through the verb", () => {
+describe("exit 15 — the one-line-diff assertion, driven through the verb", () => {
 	/**
 	 * A record whose frontmatter is `\n`-terminated while its body is `\r\n`-terminated. The rewrite
 	 * splits on `/\r?\n/` and re-joins with the one ending `\r\n` it sees in the text, so every
@@ -197,8 +190,8 @@ describe("exit 6 — the one-line-diff assertion, driven through the verb", () =
 
 describe("the exit codes are the contract's", () => {
 	it("seats every proven refusal on 3+, never on 1 or 127", () => {
-		expect([NO_SUBJECT, NO_BY, NO_STATUS_LINE, MULTI_LINE_DIFF, ALREADY_SUPERSEDED]).toEqual([
-			3, 4, 5, 6, 7,
-		]);
+		const codes = [NO_SUBJECT, NO_BY, NO_STATUS_LINE, MULTI_LINE_DIFF, ALREADY_SUPERSEDED];
+		for (const code of codes) expect(code).toBeGreaterThanOrEqual(3);
+		expect(new Set(codes).size).toBe(codes.length);
 	});
 });

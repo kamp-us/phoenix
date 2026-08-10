@@ -131,15 +131,14 @@ Stated once rather than repeated per block.
 
 **All nine verbs allocate from one internal table**, so a code means one thing across *this group*.
 That is a property of this group and not of `fabrika`, and the difference matters to anyone driving
-more than one group: **repo-wide the same number does not mean the same thing.** `adr` allocates
-per verb — across its five verbs `3` is `ALREADY_EXISTS`, `NO_SUBJECT`, `CORPUS_UNREADABLE` and,
-twice, `BASE_UNFETCHABLE` — and inside `report` itself, `dedup`'s `3` is *the queue could not be
-read* while `file`'s and `note`'s `3` is *stdin was read and held nothing*.
+more than one group: **repo-wide the same number does not mean the same thing.** Inside `report`
+itself, `dedup`'s `3` is *the queue could not be read* while `file`'s and `note`'s `3` is *stdin was
+read and held nothing* — one group, one number, two meanings (#5296).
 
 Where this group's codes overlap **`report`'s two writing verbs** (`3`, `5`, `6`, `7`, `8`, `9`,
 `10`, `11`) they match them **deliberately**, code for code, so a caller driving `report` and `triage`
-in one sweep reads one meaning. `adr` does not participate in that alignment, and neither does
-`report dedup` — the one cross-group difference a caller of both will actually hit is `dedup`'s
+in one sweep reads one meaning. `report dedup` does not participate in it — the one cross-group
+difference a caller of both will actually hit is `dedup`'s
 `3` = *queue unreadable* / `4` = *search index unreadable*. This spec calls `dedup` (the `--exclude`
 extension below), so that difference is named here rather than left to be discovered at a call site.
 

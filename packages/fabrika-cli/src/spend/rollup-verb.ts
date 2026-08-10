@@ -16,6 +16,12 @@
 import {Effect, type FileSystem, Result} from "effect";
 import {exists, readFile} from "../io/fs.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
+import {
+	INPUT_ABSENT,
+	INPUT_UNREADABLE,
+	NOTHING_MEASURED,
+	WINDOW_SELECTED_NO_ROWS,
+} from "./codes.ts";
 import {readSpendLedger} from "./ledger.ts";
 import {
 	type ResolvedWindow,
@@ -26,15 +32,6 @@ import {
 } from "./rollup.ts";
 
 const VERB = "fabrika spend rollup";
-
-/** No ledger at that path. A proven absence — nothing has been recorded yet. */
-export const LEDGER_ABSENT = 3;
-/** The ledger could not be read, or its absence could not be established. UNKNOWN. */
-export const LEDGER_UNREADABLE = 4;
-/** The ledger was read in full and yielded no rows — empty, or every line unreadable. */
-export const LEDGER_HOLDS_NO_ROWS = 5;
-/** The ledger holds rows; this window selects none of them. Distinct from an empty ledger. */
-export const WINDOW_SELECTED_NO_ROWS = 6;
 
 export interface RollupOptions {
 	/** Path to the durable spend ledger. */
@@ -119,12 +116,12 @@ export const runRollup = (
 			const probe = yield* Effect.result(exists(path));
 			if (Result.isFailure(probe) || probe.success) {
 				return refuse(
-					LEDGER_UNREADABLE,
+					INPUT_UNREADABLE,
 					`${VERB}: cannot read the ledger at ${path}: ${text.failure.reason} — the spend is UNKNOWN, never zero.`,
 				);
 			}
 			return refuse(
-				LEDGER_ABSENT,
+				INPUT_ABSENT,
 				`${VERB}: no spend ledger at ${path} — nothing has been recorded yet.`,
 			);
 		}
@@ -133,7 +130,7 @@ export const runRollup = (
 		const skipped = {total: read.skipped, ...read.skips};
 		if (read.rows.length === 0) {
 			return refuse(
-				LEDGER_HOLDS_NO_ROWS,
+				NOTHING_MEASURED,
 				`${VERB}: ${path} was read in full and yielded no rows — nothing to sum.`,
 				[`${VERB}: ${skippedNote(skipped)}`],
 			);

@@ -1,5 +1,6 @@
 import {fileURLToPath} from "node:url";
 import {describe, expect, it} from "vitest";
+import * as adr from "./adr/codes.ts";
 import * as build from "./build/codes.ts";
 import * as epic from "./epic/codes.ts";
 import * as evalCodes from "./eval/codes.ts";
@@ -22,6 +23,7 @@ import * as report from "./report/codes.ts";
 import * as review from "./review/codes.ts";
 import * as reviewUi from "./review-ui/codes.ts";
 import * as ship from "./ship/codes.ts";
+import * as spend from "./spend/codes.ts";
 import * as status from "./status/codes.ts";
 import * as triage from "./triage/codes.ts";
 import * as ui from "./ui/codes.ts";
@@ -35,6 +37,7 @@ const SRC_DIR = fileURLToPath(new URL(".", import.meta.url));
  * nobody registered reds here instead of shipping unchecked.
  */
 const TABLES: Readonly<Record<string, CodeTable>> = {
+	adr,
 	build,
 	epic,
 	eval: evalCodes,
@@ -45,6 +48,7 @@ const TABLES: Readonly<Record<string, CodeTable>> = {
 	review,
 	"review-ui": reviewUi,
 	ship,
+	spend,
 	status,
 	triage,
 	ui,
@@ -110,11 +114,11 @@ describe("the coverage scan can see a group that ships no table", () => {
 
 /**
  * The untabled record is an admission of a tracked gap, not a way to opt out of the guard: each
- * entry must name a reason, and none may be a group that already carries a table.
+ * entry must name a reason, and none may be a group that already carries a table. It is empty today
+ * (#5294) — the covered state, and the one state that needs no reason.
  */
 describe("the untabled groups are genuinely untabled", () => {
 	it("states a reason for each", () => {
-		expect(Object.keys(UNTABLED_GROUPS).length).toBeGreaterThan(0);
 		for (const reason of Object.values(UNTABLED_GROUPS)) expect(reason).not.toEqual("");
 	});
 

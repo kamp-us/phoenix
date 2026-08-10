@@ -8,13 +8,9 @@
 import {Effect, type FileSystem, type Path, Result} from "effect";
 import {exists, writeFile} from "../io/fs.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
+import {ALREADY_EXISTS} from "./codes.ts";
 import {isFourDigitId, isKebabSlug} from "./records.ts";
 import {parseTags, recordFilename, renderTemplate, titleFromSlug} from "./template.ts";
-
-/** The target path already exists — refused, never overwritten. */
-export const ALREADY_EXISTS = 3;
-/** `<id>` is not four digits, or `<slug>` is not kebab-case. */
-export const BAD_ARGUMENT = 4;
 
 export interface NewOptions {
 	readonly id: string;
@@ -32,12 +28,15 @@ export const runNew = (
 ): Effect.Effect<VerbOutcome, never, FileSystem.FileSystem | Path.Path> =>
 	Effect.gen(function* () {
 		const {id, slug, dir, status, date, json} = options;
+		// A malformed id or slug is a usage error, so it exits 1 with the rest of them — `adr resolve`
+		// already refuses a non-four-digit id there, and one fact on two numbers is the defect the
+		// group table ends (#5294).
 		if (!isFourDigitId(id)) {
-			return refuse(BAD_ARGUMENT, `adr new: id "${id}" is not four zero-padded digits.`);
+			return refuse(FAILED, `adr new: id "${id}" is not four zero-padded digits.`);
 		}
 		if (!isKebabSlug(slug)) {
 			return refuse(
-				BAD_ARGUMENT,
+				FAILED,
 				`adr new: slug "${slug}" is not kebab-case (lowercase letters, digits and single hyphens).`,
 			);
 		}

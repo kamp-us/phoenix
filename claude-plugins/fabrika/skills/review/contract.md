@@ -109,8 +109,9 @@ Stated once rather than repeated per block.
 ### The shared exit taxonomy
 
 All eight verbs allocate from one internal table, so a code means one thing across *this group*.
-Repo-wide the same number does not — `adr` allocates per verb, `wire`'s `3`–`8` are its own —
-but where this group's codes overlap **`report`'s and `triage`'s writing verbs** (`3`, `5`, `6`,
+Repo-wide the same number does not — `wire`'s `3`–`8` are its own, and `report dedup`'s `3`/`4` are
+*queue unreadable* / *search index unreadable* (#5296) — but where this group's codes overlap
+**`report`'s and `triage`'s writing verbs** (`3`, `5`, `6`,
 `7`, `8`, `9`, `11`) they match them deliberately, code for code, read from the **shipped
 package** (`packages/fabrika-cli/src/report/codes.ts`, `src/triage/codes.ts`), never from a
 sibling contract.md — the checked-in `/report` contract is behind its own binary on `7` and `11`

@@ -8,19 +8,9 @@
 import {Effect, type FileSystem, type Path, Result} from "effect";
 import {readDir, readFile, writeFile} from "../io/fs.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
+import {ALREADY_SUPERSEDED, MULTI_LINE_DIFF, NO_BY, NO_STATUS_LINE, NO_SUBJECT} from "./codes.ts";
 import {idFromFile, partitionRecordNames} from "./records.ts";
 import {type Relationship, rewriteStatus} from "./status-line.ts";
-
-/** `<id>` has no record under `--dir`. */
-export const NO_SUBJECT = 3;
-/** `--by` has no record under `--dir` — the link would be dead on arrival. */
-export const NO_BY = 4;
-/** `<id>`'s frontmatter has no single rewritable `status:` line. */
-export const NO_STATUS_LINE = 5;
-/** The rewrite would have changed a line other than `status:` — aborted before writing. */
-export const MULTI_LINE_DIFF = 6;
-/** `<id>` is already `superseded by …`, so it is not amendable or re-supersedable. */
-export const ALREADY_SUPERSEDED = 7;
 
 export interface RelateOptions {
 	readonly relationship: Relationship;
