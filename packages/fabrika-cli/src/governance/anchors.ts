@@ -15,6 +15,22 @@
 const ANCHOR = /<!--\s*anchor:\s*([A-Z][A-Z0-9-]*)\s*-->/;
 const FILE_HEADER = /^diff --git a\/(.+?) b\/(.+)$/;
 const HUNK_HEADER = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/;
+const INLINE_CODE = /`[^`]*`/g;
+
+/**
+ * The line with its inline-code spans blanked out — an anchor tag inside backticks is *documentation
+ * of the pattern*, not an anchor. Without this the scan counts the governance skill's own sentence
+ * describing the tag as a twelfth anchor of eleven, which inflates the `anchors-in-reach` denominator
+ * and would report a phantom `modified` the day that sentence is reworded — both landing on the
+ * self-editing PR the fence exists for (#5199).
+ *
+ * The blanking is length-preserving on purpose: every index into the masked text is an index into the
+ * original, so a caller matches here and still slices the real bytes. Position, not line-start, is the
+ * discriminator — real anchors sit after a list bullet and after a heading too, so a line-start rule
+ * would drop genuine anchors, which is a worse defect than the one being fixed.
+ */
+const maskInlineCode = (text: string): string =>
+	text.replace(INLINE_CODE, (span) => " ".repeat(span.length));
 
 /** One anchored invariant the diff removes or changes. */
 export interface AnchorHit {
@@ -32,14 +48,14 @@ interface AnchorSighting {
 }
 
 const sightingOf = (text: string, line: number): AnchorSighting | null => {
-	const matched = ANCHOR.exec(text);
+	const matched = ANCHOR.exec(maskInlineCode(text));
 	if (matched?.[1] === undefined) return null;
 	return {name: matched[1], rest: text.slice(matched.index + matched[0].length).trim(), line};
 };
 
 /** How many anchors a file's bytes carry — the `anchors-in-reach` denominator, per file. */
 export const anchorsIn = (text: string): number =>
-	text.split("\n").filter((line) => ANCHOR.test(line)).length;
+	text.split("\n").filter((line) => ANCHOR.test(maskInlineCode(line))).length;
 
 /** The destination path of one `diff --git` header, or `null` when the line is not one. */
 export const changedFileOf = (line: string): string | null => FILE_HEADER.exec(line)?.[2] ?? null;

@@ -1,5 +1,9 @@
+import {readFileSync} from "node:fs";
+import {fileURLToPath} from "node:url";
 import {describe, expect, it} from "vitest";
 import {anchorsIn, filesInDiff, isGuardBearing, scanAnchors} from "./anchors.ts";
+
+const GOVERNANCE_SKILL = "claude-plugins/fabrika/skills/governance/SKILL.md";
 
 const diff = (...lines: ReadonlyArray<string>): string => `${lines.join("\n")}\n`;
 
@@ -62,6 +66,18 @@ describe("scanAnchors", () => {
 		expect(hits).toEqual([{kind: "removed", name: "G", file: "a.md", line: 10}]);
 	});
 
+	it("reports NO phantom hit when the edited line only DESCRIBES the tag inside backticks", () => {
+		expect(
+			scanAnchors(
+				diff(
+					...file("skills/governance/SKILL.md"),
+					"-`guards` reports the `<!-- anchor: NAME -->` tags skills carry",
+					"+`guards` reports the `<!-- anchor: NAME -->` tags a skill carries",
+				),
+			),
+		).toEqual([]);
+	});
+
 	it("finds nothing in a diff that carries no anchor at all", () => {
 		expect(scanAnchors(diff(...file("src/cart.ts"), "-const a = 1;", "+const a = 2;"))).toEqual([]);
 	});
@@ -74,6 +90,22 @@ describe("anchorsIn", () => {
 
 	it("counts none in a file with no anchor, which is the `no-anchors-in-reach` floor", () => {
 		expect(anchorsIn("# a doc\n\nprose\n")).toBe(0);
+	});
+
+	it("does NOT count a tag inside backticks — a skill documenting the pattern is not an anchor", () => {
+		expect(anchorsIn("the `<!-- anchor: NAME -->` tags skills carry\n")).toBe(0);
+	});
+
+	it("counts an anchor after a bullet and after a heading — position is not the discriminator", () => {
+		expect(anchorsIn("- <!-- anchor: H1 --> a claim\n## Open <!-- anchor: Q1 -->\n")).toBe(2);
+	});
+
+	it("counts the governance skill's own eleven anchors, not the twelve a raw scan sees", () => {
+		const skill = readFileSync(
+			fileURLToPath(new URL(`../../../../${GOVERNANCE_SKILL}`, import.meta.url)),
+			"utf8",
+		);
+		expect(anchorsIn(skill)).toBe(11);
 	});
 });
 
