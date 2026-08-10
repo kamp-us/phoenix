@@ -105,7 +105,33 @@ describe("runAnchor", () => {
 	it("refuses a manifest that does not parse as YAML", async () => {
 		const out = await run([[/^git show \w+:\S+\.yaml$/, okOut("catalog:\n\tacme-queue: 4.2.0\n")]]);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
-		expect(out.stderr.at(-1)).toContain("does not parse as YAML");
+		expect(out.stderr.at(-1)).toContain("indents with a tab");
+	});
+
+	// #5361's three shapes, at the exit code a caller actually reads. Each parses as YAML and each
+	// carries a catalog the reader does not comprehend, so the verb refuses instead of answering —
+	// and in particular never claims the manifest "carries no catalog: map".
+	const manifest = (yaml: string): Script => [[/^git show \w+:\S+\.yaml$/, okOut(yaml)]];
+
+	it("refuses an inline flow map instead of answering `unpinned`", async () => {
+		const out = await run(manifest("catalog: {acme-queue: 4.2.0}\n"));
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.join("\n")).not.toContain("carries no catalog: map");
+	});
+
+	it("refuses a nested sub-map instead of answering `moved` against an empty pin", async () => {
+		const out = await run(manifest("catalog:\n  acme-queue:\n    version: 4.2.0\n"));
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toContain("pins no version");
+	});
+
+	it("refuses a named-catalog block instead of reading it as no catalog at all", async () => {
+		const out = await run(manifest("catalogs:\n  default:\n    acme-queue: 4.2.0\n"));
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.join("\n")).not.toContain("carries no catalog: map");
 	});
 
 	// The degrade path: a repo that pins nothing centrally is a fact about that repo, not a failure.
