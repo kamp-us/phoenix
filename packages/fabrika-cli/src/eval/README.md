@@ -676,6 +676,51 @@ An unedited authoring-session output shape is committed under
 [`fixtures/skill-creator/`](./fixtures/skill-creator) and is what the unit tests decode, so "decodes
 with no edits" is checked against the real shape rather than asserted.
 
+### Trigger coverage is part of the eval set ([#4750](https://github.com/kamp-us/phoenix/issues/4750))
+
+An eval set grades what a skill does **once invoked**. Whether it is ever invoked is a separate
+question, and it is not rhetorical: measured on `/report`, precision held at 100% while recall stayed
+between 0% and 11% across five description rewrites, so a skill can be green here and still almost
+never fire.
+
+**The convention: a skill's eval set includes trigger coverage.** It is a property of the *set*, not
+a fourth part of the ship gate — §8 part 3 already requires the set to be green at the bar, so the
+number has exactly one home and it is this surface.
+[`skill-conventions.md`](../../../../claude-plugins/fabrika/docs/skill-conventions.md) §8 keeps the
+three parts it was founder-ruled with and restates none of this. Ruled 2026-08-10 on #4750 and
+recorded in [ADR
+0249](../../../../.decisions/0249-skill-trigger-coverage-lives-in-the-eval-set.md), which carries the
+full derivation; an earlier split that would have put a routing-path check into `skill-conventions.md`
+is superseded there.
+
+**User-only skills are exempt, and the exemption is stated.** A skill with `disable-model-invocation`
+puts no `description` into model context, so there is nothing to trigger and no trigger coverage is
+owed. The precedent is live, not hypothetical: the `front-door` authoring session
+([#4952](https://github.com/kamp-us/phoenix/issues/4952)) skipped the description optimizer for
+exactly that stated reason and its gate accepted the deviation.
+
+Three constraints come with the convention. They are stated here rather than left in ADR 0249 because
+dropping any one turns the number into a gate that reds a working skill:
+
+- **Measure in deployment context.** A trigger score taken without the project's own routing
+  instructions loaded measures an environment the skill never ships into. The behavioural eval's
+  baseline arm — no skill at all — behaved correctly purely by reading `CLAUDE.md`, so for that class
+  of skill the routing instruction is the trigger mechanism and the description is not.
+- **Price one-step skills separately.** Where the model can simply do the task itself, no description
+  reaches a recall floor — no should-fire query ever got above 1/3 under any of the five rewrites.
+  Demanding a recall number there reds a working skill and points its author at prose that is not the
+  cause; the honest question for that class is whether a routing path reaches the skill at all.
+- **Keep precision in the bar.** Precision is the half that held — 100% across all five iterations and
+  all ten near-miss queries, including the noun-sense trap. A recall-only bar would have failed the
+  working half while missing that the discriminating half works.
+
+**No check enforces this today, and `fabrika eval cases` is not it.** Trigger coverage adds no
+required field to the authored format above, which is still decoded exactly as a session emits it —
+this is the requirement an authoring session writes its set *against*, ahead of the mechanics that
+will measure it. The model-invoked skills already on `main` are not exempted by the ruling, and
+whether they are retro-measured or explicitly grandfathered is open on
+[#5245](https://github.com/kamp-us/phoenix/issues/5245) — not answered here.
+
 ## `fabrika eval run` — executing an eval set unattended (#4676)
 
 ```bash
