@@ -1006,6 +1006,51 @@ no `origin`, which degrades rather than blocks.
    sixteen of those nineteen that a successor can observe (see *What `read` re-derives*). Nonces,
    comment ids and SHAs are declared in the header as grammar-conforming
    placeholders, which is the *no example value* branch of the rule rather than a claimed derivation.
+8. **Every outcome the verb can reach has a code** — walked below one verb at a time, over *states*
+   rather than over codes, because check 3 can only see what the tables already wrote down. The
+   universal seats are reachable from all four and are named once here instead of in every row: `1`
+   for a usage error or a verb that failed to run, `2` for an implementation that could not be
+   resolved, `127` for a verb that never ran. The walk was re-run against the shipped verbs
+   ([`src/handoff/`](../../../../packages/fabrika-cli/src/handoff/), #5025), so the codes below are
+   the ones the group actually seats rather than the ones this spec once intended.
+
+   - **`capture`.** The ground derived is `0` — `git.upstream: null`, `git.reachable: "unknown"` and
+     `board.pull: null` are values *inside* that answer, not outcomes of their own. The issue proven
+     absent is `7`. The default-branch read, any `git` read, and the pull-request or check-run read
+     failing are `11` each. A target repo that neither `--repo` nor the environment resolves is `1`:
+     nothing was read, so nothing was proven. The verb writes nothing, so no write, read-back or pack
+     state is reachable from it at all.
+   - **`take`.** A `--nonce` outside `^[0-9a-f]{8}$` is `1`. An fd 0 read that **failed** is `1` and
+     says the body is UNKNOWN — the base seats a failed read there in as many words
+     ([`src/report/codes.ts`](../../../../packages/fabrika-cli/src/report/codes.ts)) — while a pipe
+     that held nothing and a TTY with nothing piped in are both `3`. A section missing, out of order
+     or empty, and content outside the closed set, are `4`. A bare `@` reference is `6` and a
+     machine-local path is `5`, whichever half carried it. An unresolvable repo is `1`; the issue
+     absent is `7` and its read failing is `11`. The default-branch read, the capture, and the comment
+     page `supersedes` rests on are `11` when any fails. Work unreachable without
+     `--declare-unreachable` is `12`, whichever of the four messages prints. The comment write failing
+     is `8`, and the read-back **differing or not completing** is `9`. The pack sealed is `0`.
+   - **`read`.** An unresolvable repo is `1`; the issue absent is `7` and its read failing is `11`. A
+     comment page, a permission read, the packed branch resolving to neither a commit nor a proven
+     absence, and the live re-derivation are `11` when any fails. The latest pack failing to parse, or
+     its `groundDigest` disagreeing with the fields it labels, is `14`. All three `pack` tokens are
+     `0`, and everything the answer distinguishes below them — `drift.packedBranch`, `drift.state`,
+     each field's own state, each `disregarded` reason — is a closed-set value inside one answer
+     rather than a further outcome. One consequence worth stating: `packedBranch: "unknown"` is
+     refused as `11` before an answer is composed, so it is a member of that closed set the JSON never
+     prints.
+   - **`claim`.** A `--nonce` outside the grammar is `1`, and so is an unresolvable repo. The issue
+     absent is `7` and its read failing is `11`; a comment page or a permission read that did not
+     complete is `11`. No sealed pack is `13`, a malformed latest pack is `14`, and a pack another
+     nonce holds is `15`. A pack **this** nonce already holds is `0` (`resumed`, and no second comment
+     is posted). The write failing is `8`, its read-back differing or not completing is `9`, and the
+     claim landing and reading back is `0` (`held`).
+
+   The walk finds no reachable state without a code, so nothing is added to the matrix. What it adds
+   is the two states that seat on the universal `1` and were written down nowhere: a target repo that
+   does not resolve, and an fd 0 read that failed. Both are *the verb failed to run* rather than an
+   outcome the verb proved, which is why `1` is the right seat and why naming them is the whole point
+   of check 8 — a state the spec never mentions is exactly the one check 3 cannot see.
 
 **Every value a later verb needs arrives as an argument.** `--nonce` is authored by the caller and
 passed to `take` and `claim`, never inferred; `--issue` addresses every verb; `--base` is threaded
