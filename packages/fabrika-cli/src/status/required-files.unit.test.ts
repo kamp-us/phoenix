@@ -37,6 +37,13 @@ describe("the `## Required repo files` reader", () => {
 				?.surfaceId,
 		).toBe("-");
 	});
+
+	// #5298: an absent id token sets the id column and decides nothing else.
+	it("still classifies the subject of a row with no id token, so its presence stays the probe's answer", () => {
+		const rows = parseRequiredFiles(table("| `ROADMAP.md` | why | **degrade** — n |"));
+		expect(rows?.[0]?.surfaceId).toBe("-");
+		expect(rows?.[0]?.subject).toEqual({_tag: "Path", path: "ROADMAP.md"});
+	});
 });
 
 describe("the disposition is read by cell position, never by scanning for a bolded token", () => {

@@ -467,8 +467,12 @@ skill's own text states *"it is the same table in every fabrika skill, so one re
 them."* This verb is that reader.
 
 <a id="surface-ids"></a>**Surface ids are declared, never inferred.** A row's id is the
-`` `id:<slug>` `` token in its first cell; `<slug>` is `[a-z0-9-]+`. A row with no id token is
-reported with id `-` and presence `unknown`, detail `row carries no id: token`. **No slug is derived
+`` `id:<slug>` `` token in its first cell; `<slug>` is `[a-z0-9-]+`. A row with no id token reports
+id `-`, and that is the whole of what an absent id decides: **the id column and `<presence>` are
+independent**. The probe still runs, so an id-less row's `<presence>` and `<detail>` carry what the
+probe proved, exactly as on a row that has an id. Coupling the two would report every row on the
+current tree `unknown` — no landed skill carries an id token — leaving a detection verb that names
+no gap it can act on, and making the example below unproducible (#5298). **No slug is derived
 from prose** — a rule that kebab-cased a cell would turn "The board label taxonomy — `status:triaged`,
 …" into `the-board-label-taxonomy`, two implementers would ship two id sets, and a reworded cell
 would silently break every documented invocation. The ids this group itself needs are fixed in
@@ -533,9 +537,11 @@ in this state today (`adr`, `report`, `triage`), so it is the common path, not a
 `--skill` naming something not in the roster emits the same shape with detail `not in the roster`.
 
 The header is `satisfied` only when every declared surface is `present` **and** no skill is
-`undeclared` **and** nothing is `unprobeable`; `gaps` when anything is `missing`, `undeclared` or
-`unprobeable`; `unknown` when the roster itself could not be read. **`gaps` and `unknown` are
-different answers** — the first is proven.
+`undeclared` **and** nothing is `unprobeable` **and** nothing is `unknown`; `gaps` when anything is
+`missing`, `undeclared`, `unprobeable` or `unknown`; `unknown` when the roster itself could not be
+read. A row set that is entirely `unknown` is `gaps` by that rule: an unperformed probe is not a
+present surface, and scoring it clean is the fail-open this verb exists to remove. **`gaps` and
+`unknown` are different answers** — the first is proven.
 
 <a id="multiply-declared"></a>**One surface declared by several skills** — the label taxonomy is
 declared by `build`, `build-epic` and this skill — emits **one row per declaring skill**, so no
