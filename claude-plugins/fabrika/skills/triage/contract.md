@@ -11,7 +11,11 @@ that doc disagree, the doc wins and this spec is the bug.
 ([ADR 0238](../../../../.decisions/0238-fabrika-reimplements-v1-never-calls-it.md)). Every verb below
 is implemented from scratch here. v1's tools and its 18 `scripts/` were read for their semantics and
 their scars — each Grounding section names what the v1 counterpart gets wrong and what this spec does
-instead — but no clause defers to one, and none is invoked.
+instead — but no clause defers to one, and none is invoked. Two edges are sanctioned and are not
+calls: a CI gate stays the authority on its own question, so this spec expects `pitch-guard`'s answer
+rather than recomputing it; and where both programs must agree on the same bytes, fabrika owns the
+wire format and the other side conforms by pinning fabrika's golden fixture in a test (ADR
+[0251](../../../../.decisions/0251-shared-formats-are-pinned-not-reimplemented.md)).
 
 **Substrate.** These verbs are Effect CLI verbs on the `@effect/platform-node` seam already used by
 the sibling groups; GitHub access per
@@ -1012,10 +1016,13 @@ red), and this is the only verb in the group that writes a body. An earlier revi
 here at all, which left an epic **structurally unable to carry the section a CI guard fires on** at
 the very label `triage apply` writes.
 
-**Nothing this mode adds can reach the brief.** `plan-epic` splices around it: `epic-splice` anchors
-on the exact headings `## Dependencies` and `## Plan (plan-epic)` and preserves every other byte
-verbatim (`packages/pipeline-cli/src/tools/epic-splice/epic-splice.ts:48-51`), so neither heading
-above is an anchor it can cut on, and the wrapped original is untouched bytes either way. What
+**Nothing this mode adds can reach the brief.** A planner splices around the envelope: it anchors on
+the exact headings `## Dependencies` and `## Plan (plan-epic)` and preserves every other byte
+verbatim, so neither heading above is an anchor it can cut on, and the wrapped original is untouched
+bytes either way. That is an agreement rather than a coincidence — the envelope is a wire format
+fabrika owns, and a splicer conforms to it by pinning fabrika's golden fixture in a test of its own
+(ADR [0251](../../../../.decisions/0251-shared-formats-are-pinned-not-reimplemented.md)), so a
+reworded anchor set reds a test on the side that reworded. What
 `plan-epic` *does* change is where the wrap sits: `## Plan (plan-epic)` and `## Dependencies` both
 land **below** it, so this mode's envelope stops being terminal the moment the epic is planned. The
 re-enrich detector below tests position nowhere, in either mode, for exactly that reason; a re-enrich
@@ -1083,8 +1090,8 @@ mode's terminality-plus-`Original report (verbatim)` test, and `--epic`'s three 
 reasoning that produced them is not withdrawn: each was correct about its own mode, and the
 `--epic` rule's position-independence was itself the ruled fix to a real compounding bug
 ([#4850](https://github.com/kamp-us/phoenix/issues/4850)) — once `plan-epic` runs,
-`## Plan (plan-epic)` and `## Dependencies` sit *below* the wrap
-(`epic-splice.ts:128-130`; `plan-epic` Step 2 writes the plan "below the untouched brief"), so a
+`## Plan (plan-epic)` and `## Dependencies` sit *below* the wrap (`plan-epic` Step 2 writes the plan
+"below the untouched brief", and a first-time plan with no topology yet appends at end of body), so a
 terminality test stops matching on every planned epic. What the ruling settles is that **both** were
 mode-scoped and keyed on disjoint literals, so neither could recognise the other mode's envelope. A
 re-run in the other mode therefore fell through to "first enrichment ⇒ wrap" and nested the whole
@@ -1166,18 +1173,22 @@ cover it either (a paste that ends the body is terminal). The section named the 
 *"if it ever bites the answer is a marker the verb writes and a paste does not, never a weaker
 anchor"* — and this is that answer.
 
-The `--epic` anchors, which the legacy branch still uses as recognisers, were checked against the
-implementation rather than inherited: `epic-splice` cuts only on `## Dependencies` and
-`## Plan (plan-epic)` (`epic-splice.ts:48-51`), so `## Pitch` and `## Epic — awaiting plan` are bytes
-it can never touch, and they survive every plan and re-plan. The same holds of the marker: it is
-neither of those two headings, so `epic-splice` preserves it verbatim through every plan and re-plan.
+The `--epic` anchors, which the legacy branch still uses as recognisers, survive a plan because a
+splicer cuts only on `## Dependencies` and `## Plan (plan-epic)`: `## Pitch` and
+`## Epic — awaiting plan` are bytes it never touches, and so is the marker, which is neither of those
+two headings. That is the splicer's obligation to this format rather than a fact fabrika inherits —
+which side owes which is settled in ADR
+[0251](../../../../.decisions/0251-shared-formats-are-pinned-not-reimplemented.md).
 
-**That survival is pinned executably, not only argued.** `epic-splice`'s unit tests
-(`packages/pipeline-cli/src/tools/epic-splice/epic-splice.unit.test.ts`, the *fabrika `--epic`
-envelope survives the splice* block) run a real envelope through a first-time plan and a re-plan and
-assert that the `<details>` block stops being terminal, that the anchors still hold, that the wrapped
-original survives byte-for-byte, and that the summary line never doubles. The marker rule is pinned
-the same way on the verb's own side, in `packages/fabrika-cli/src/triage/enrich.unit.test.ts`, which
+**That survival is pinned executably, not only argued.** A splicer's unit tests run a real envelope
+through a first-time plan and a re-plan and assert that the `<details>` block stops being terminal,
+that the anchors still hold, that the wrapped original survives byte-for-byte, and that the summary
+line never doubles. Under ADR 0251 the envelope those tests run is fabrika's committed golden
+fixture, so a rewording here reds them; the block presently lives in
+`packages/pipeline-cli/src/tools/epic-splice/epic-splice.unit.test.ts` with a hand-copied envelope
+and is scheduled to split — fixture and detector to fabrika, preservation assertions to the splicer.
+The marker rule is pinned on the verb's own side, in
+`packages/fabrika-cli/src/triage/enrich.unit.test.ts`, which
 reproduces the **retired** detectors in-test as controls: the cross-mode re-run they miss is asserted
 to be recognised here, a pasted envelope bound to another issue is asserted to read as fresh, and a
 legacy body is asserted to be recognised, preserved and stamped. Change the rule and those tests go
