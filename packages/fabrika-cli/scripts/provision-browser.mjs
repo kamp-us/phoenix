@@ -11,14 +11,12 @@
  * `pnpm install` for everyone over a capability only one verb needs, and the run-time story is
  * already fail-closed and actionable: `ui render` exits `11` naming the exact remediation command.
  *
- * Two skips, each a real provisioning state rather than a convenience:
+ * Three skips, each a real provisioning state rather than a convenience:
  *   - `FABRIKA_SKIP_BROWSER_PROVISION=1` — the explicit opt-out.
  *   - `PLAYWRIGHT_BROWSERS_PATH` set — a managed/prebaked install already owns the browsers.
- *
- * There is deliberately no `CI` skip (#5169): it fired *before* the presence check below, so it was
- * load-bearing only on a CI image with no chromium — exactly the case the criterion above must
- * cover. CI keeps the repeat cost off the clock with a browser cache restored before the install
- * (`.github/workflows/ci.yml`), not with a skip.
+ *   - `CI` set with no prebaked path — CI images bake their own browsers, and a ~130MB download in
+ *     every job of every workflow is a cost no job asked for. The run-time `11` covers the case
+ *     where a CI job really did need it.
  */
 import {spawnSync} from "node:child_process";
 import {existsSync} from "node:fs";
@@ -31,6 +29,7 @@ const skip = (reason) => {
 if (process.env.FABRIKA_SKIP_BROWSER_PROVISION === "1") skip("FABRIKA_SKIP_BROWSER_PROVISION=1");
 if ((process.env.PLAYWRIGHT_BROWSERS_PATH ?? "") !== "")
 	skip("PLAYWRIGHT_BROWSERS_PATH names a managed install");
+if ((process.env.CI ?? "") !== "") skip("CI images prebake their browsers");
 
 let installed = false;
 try {
@@ -41,14 +40,9 @@ try {
 }
 if (installed) skip("chromium is already provisioned");
 
-// 120s, not the 10 minutes this carried before, and the number is measured (#5169). The download
-// itself is ~2s for 173MB on both a GitHub hosted runner and a dev machine; what actually costs time
-// is playwright 1.59.1 hanging in `extract-zip` *after* the bytes land, which never recovers (#5343).
-// A timeout sized for a slow download therefore bought nothing and spent 10 minutes per install site
-// proving it. 120s is ~60x the measured download and caps a hung install at a bounded cost.
 const result = spawnSync("pnpm", ["exec", "playwright", "install", "chromium"], {
 	stdio: "inherit",
-	timeout: 120 * 1000,
+	timeout: 10 * 60 * 1000,
 });
 if (result.status !== 0) {
 	process.stderr.write(
