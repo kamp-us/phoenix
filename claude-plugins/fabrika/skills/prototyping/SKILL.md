@@ -40,9 +40,9 @@ nothing here writes one down as settled.
 **§CAP — capability set.** A repo-scoped token, and **a shell that executes arbitrary commands you
 wrote** — the widest capability any fabrika skill declares, and the reason every other bound here is
 tight. `spike run` executes with the workspace as the working directory and hands the child a
-**scrubbed environment** — a fixed allowlist (`PATH`, `HOME`, `LANG`, `LC_ALL`, `TZ`, `TMPDIR`) plus
-whatever `--env` passes, everything else dropped, and naming a credential variable in `--env`
-refused rather than honoured — so a prototype cannot spend your credentials by inheriting them. The write surface is the spike issue
+**scrubbed environment** — a fixed allowlist (`PATH`, `HOME`, `LANG`, `LC_ALL`, `TZ`, `TMPDIR`),
+plus whatever `--env` passes, plus `SPIKE_WORKSPACE`; everything else is dropped, and naming a
+credential variable in `--env` is refused rather than honoured — so a prototype cannot spend your credentials by inheriting them. The write surface is the spike issue
 (its body, the `prototyping:spike` label, its comments, closing it) and the run workspace — plus
 **the removal of paths the spike itself authored into the repo tree**, named by a `17` and nothing
 else in the tree, because otherwise the one act `DISPOSAL-REFUSED` asks for has no licence. This
@@ -190,7 +190,9 @@ case states the **workspace's** disposition instead.
 - `DISPOSAL-REFUSED` — `15`, `16`, `17`, or `21`: the decision is not captured, the workspace
   survived removal, the tree moved, or the log moved after the capture. **The guard working, not an
   error to route around** — the tree case is the one this skill most exists to catch, so read the
-  named paths and remove what the spike authored. *Workspace: live.*
+  named paths and clear them: remove what the spike authored, and restore what it did not. The
+  check cannot tell the two apart, deliberately, so a diff that turns out to be someone else's work
+  is still yours to settle before the workspace can go. *Workspace: live.*
 - `NO-EVIDENCE-TO-CAPTURE` — `14`: the log is empty, so nothing could ground a decision. Run
   something, or abandon the spike with `spike dispose --forfeit`. *Workspace: live.*
 - `UNAUTHORIZED` — `19`: the capture author does not hold `write` or better, so a decision recorded
@@ -202,8 +204,9 @@ case states the **workspace's** disposition instead.
 - `STOPPED` — `1`, `2`, `4`, `7`, `11`, `12`, `13`, `18`, `127`: the run could not proceed and
   nothing was written. Three of these are not "unknown" and you say which you hit: `4` is a corrupt
   artifact on disk — a manifest or evidence log that does not parse, which no re-run repairs; `7` is
-  a proven repository fact whose way forward the refusal names (a missing label routes to
-  front-door's bootstrap, an already-closed spike needs no capture); `12` is **proven** no workspace.
+  a proven repository fact whose way forward the refusal names — a missing label routes to
+  front-door's bootstrap, and a closed spike carrying **no** marker for this run has nothing to
+  supersede (a closed spike *with* a stale marker is not `7`: `spike capture` supersedes it); `12` is **proven** no workspace.
   *Workspace: unchanged — proven absent on `12`, and on the rest possibly still live, so say which
   rather than assuming it was never made.*
 

@@ -659,10 +659,13 @@ marker, which is the whole of this verb's re-entry story:
   and the spike is finished.
 - **A marker whose `evidenceDigest` equals the one just computed** — exit `0` reporting the existing
   `commentId`; the verb only ensures the issue is closed. A re-run after a failed close is safe and
-  does not double-post.
+  does not double-post. **The stdin it just read is discarded on this branch, and the answer says
+  so** — re-wording a decision without recording a new run changes nothing, and a caller who meant
+  to revise must run something first so the digest moves.
 - **A marker whose `evidenceDigest` differs** — runs were recorded after that decision was written,
-  so post a **superseding** capture comment carrying the current digest, re-close if the spike was
-  closed, and exit `0`. This holds whether the spike is open or closed, and it is what makes
+  so post a **superseding** capture comment carrying the current digest, close the spike, and exit
+  `0` — **closed either way**, because a captured decision on an open spike is the `15` this verb
+  exists to clear, not a state it may leave behind. This holds whether the spike is open or closed, and it is what makes
   `spike dispose`'s `21` a state with a way out rather than a trap: `21` says the record is stale,
   and re-running this verb is what makes it current.
 - **No marker at all, and the spike is open** — the ordinary first capture.
@@ -784,8 +787,9 @@ The answer names no path: there is nothing left to point at.
 leaving only the tree comparison and the removal below, so an orphaned workspace from a `20` is
 always collectable. Otherwise: **recompute
 `treeDigest` at the manifest's `treeRoot` and compare it to the manifest's** — a mismatch is `17`,
-with a count-and-first-path summary line **and then every differing status line** on stderr — so the
-removal licence covers all of them, not just the first — and **nothing is removed and nothing is
+with the refusal message below — a count-and-first-path summary — **followed on stderr by every
+differing status line**, so the removal licence covers all of them and not just the first. The
+Errors table states the message; the enumeration is the detail that follows it. And **nothing is removed and nothing is
 posted**, so the
 leak stays inspectable. This runs first, before any state read and before any write, deliberately:
 it is the cheap local check, and ordering it first is what keeps a `17` — the refusal this verb most
@@ -799,7 +803,9 @@ decision was captured, so the decision no longer covers the log. **This comparis
 exists, `--forfeit` or not, and before the forfeit write** — forfeiting a spike whose recorded
 decision has gone stale would bury the staleness rather than surface it. The way out is
 `spike capture`, which supersedes a stale marker and exits `0` — so `21` is a detour, never a dead
-end. With
+end. One corner is a **human** escalation rather than a loop: if the author's permission has since
+dropped below `write`, `capture` refuses `19` and `21` therefore stands, so someone holding `write`
+runs the capture. The refusal says so rather than leaving a caller to discover it. With
 `--forfeit`, compose the forfeit note, leak-scan it (`5` / `6`), post it (`8` / `9`) and close the
 spike. Finally remove the workspace directory recursively, then **re-probe it and refuse `16` if it
 is still present**. A removal nobody checked is the self-report class again, one directory down.
@@ -831,7 +837,7 @@ they are independent questions.
 |---|---|---|
 | `spike dispose: spike #<n> carries no captured decision — disposing now destroys what a decision would rest on. Capture it, or pass --forfeit to abandon it on the record.` | 15 | refusal |
 | `spike dispose: the working tree changed since the spike opened (<count> paths, first: <path>) — the workspace is intact and NOT removed.` | 17 | refusal |
-| `spike dispose: the evidence log moved after the decision was captured (<n> runs now, <m> at capture) — re-run spike capture to supersede the stale decision, then dispose. Nothing was removed.` | 21 | refusal |
+| `spike dispose: the evidence log moved after the decision was captured (<n> runs now, <m> at capture) — re-run spike capture to supersede the stale decision, then dispose. If capture refuses on 19, someone holding write must run it. Nothing was removed.` | 21 | refusal |
 | `spike dispose: the workspace <resolved> is still present after removal — disposal is UNPROVEN, and this spike is not disposed.` | 16 | refusal |
 | `spike dispose: no workspace for nonce <nonce> — it was already disposed, or never opened.` | 12 | refusal |
 | `spike dispose: <path> exists but does not satisfy the manifest schema: <first violation> — refusing the whole file.` | 4 | refusal |
@@ -859,6 +865,8 @@ $ fabrika spike dispose --nonce 7f3a9c21
 ```
 $ fabrika spike dispose --nonce 7f3a9c21
 spike dispose: the working tree changed since the spike opened (2 paths, first: apps/agenda/src/query-probe.ts) — the workspace is intact and NOT removed.
+spike dispose:   ?? apps/agenda/src/query-probe.ts
+spike dispose:   ?? apps/agenda/src/fixtures/seed-2500.json
 $ echo $?
 17
 ```
