@@ -386,10 +386,10 @@ never become a second source that drifts from it.
 - **The `<date>` format, and what a second run on the same date does to the filename** —
   [#4680](https://github.com/kamp-us/phoenix/issues/4680)'s series mechanics. The UTC `YYYY-MM-DD`
   spelling above is this unit's proposal for #4680 to confirm, not a ruling.
-- **The shape and namespace of a per-run eval-result record** —
-  [#4769](https://github.com/kamp-us/phoenix/issues/4769). Whether such a record ever rides *inside*
-  a committed scorecard file is part of the same open pin question above, so nothing here forecloses
-  it.
+- ~~**The shape and namespace of a per-run eval-result record**~~ — settled by ADR
+  [0253](../../../../.decisions/0253-eval-record-is-an-eval-namespaced-pr-comment.md), below. The
+  record is a PR comment, so it never rides inside a committed scorecard file; the pin question above
+  is unaffected.
 - **The definitions of `dispersion` and the two-week decline** —
   [#4766](https://github.com/kamp-us/phoenix/issues/4766).
 
@@ -891,6 +891,27 @@ arithmetic from there, not from the issue bodies, which still state it in prose.
 - **The co-gate ships observe-only.** #4681's `below-bar` reds on the 90% bar alone; the trend
   answer is advisory until a later ADR arms it against a real recorded series (the founder guardrail
   on #4766).
+
+## The eval record ([#4769](https://github.com/kamp-us/phoenix/issues/4769))
+
+What the graded axis (#4678) leaves behind for #4681 to verify and #4680 to aggregate is specified in
+ADR [0253](../../../../.decisions/0253-eval-record-is-an-eval-namespaced-pr-comment.md); build
+against it, not against the issue bodies, which still leave all three values unnamed.
+
+- **It is a PR comment**, one per `(head, cell)`, latest in-force wins — never a committed file.
+  Committing it moves the head it binds to, and the reviewer has no push authority anyway. So #4680
+  is **parse-and-commit**: it reads these comments and derives the committed scorecard rows.
+- **Its namespace is `eval`** — a root of its own, in a sibling wire-format module
+  (`src/wire/eval-record.ts` plus one registry row, per ADR 0241). `verdict-marker.ts` is not widened,
+  so no `ship gate` verdict scan can ever read an eval record as a gate verdict.
+- **Its outcome token is `RECORDED | UNRECORDABLE`, not a polarity.** A below-bar run is `RECORDED`
+  with a below-bar number. The 90% bar is #4681's to apply and appears nowhere in the record.
+- **A run that returns no verdict is a `NoVerdict`** over four reasons — `no-output`, `unparseable`,
+  `timed-out`, `invocation-failed`. It stays in `runs`, never counts in `passed`, is counted in
+  `noVerdict`, and is not retried inside the five.
+- **Two spellings, two levels, on purpose.** The cell aggregate is `gradedRuns` / `passedRuns` /
+  `passRate`, matching `ScorecardCell`; the per-case block is `runs` / `passed` / `dispersion`,
+  matching ADR 0252 §1.
 
 ## Out of scope
 
