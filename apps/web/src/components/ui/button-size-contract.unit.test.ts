@@ -56,9 +56,14 @@ function declares(body: string, property: string): boolean {
 	return new RegExp(`(^|[;{\\s])${property}\\s*:`).test(body);
 }
 
-/** A fixed px box — the sizing that loses to the contract's floors. `100%`/`auto` is layout. */
+/** A definite box — both axes at a fixed length. `100%`/`auto` is layout, not sizing. */
 function declaresFixedBox(body: string): boolean {
-	return /(^|[;{\s])(width|height)\s*:\s*\d+px/.test(body);
+	const definite = (axis: string) => {
+		const value = new RegExp(`(?:^|[;{\\s])${axis}\\s*:\\s*([^;]+)`).exec(body)?.[1]?.trim();
+		return value !== undefined && !/%|auto|inherit|content$/.test(value);
+	};
+
+	return definite("width") && definite("height");
 }
 
 /** The rule targets the button itself only when the class sits in the selector's last compound. */
