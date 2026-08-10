@@ -50,6 +50,27 @@ echo-passable, because eval-3's transcript prints the state words they assert; 2
 passable by ignorance, since a baseline that has never heard of `grill-ruled:` cannot emit one. All
 four are kept as regression cover and none is counted as a discriminator.
 
+## The rest of the ruled shape (do not re-argue)
+
+`SKILL.md` keeps the two ruled facts that change what a run does — `grilling` is the quintet's
+shared primitive, and the smallest path (`grilling` → `graduate`, no map) is first-class. These
+three are settled context rather than run-time instruction, and each is already enforced somewhere
+that bites; they are kept here so nobody re-opens them:
+
+- **One preserved human seam, no second gate** — [#4631](https://github.com/kamp-us/phoenix/issues/4631).
+  `grilling:session` is an issue-shape marker, the same class as v1's `wayfinder:map` — not a
+  pipeline state, not pickable, and deliberately not a member of `SHIP_NAMESPACES`. `SKILL.md`'s
+  `NO-SECOND-GATE` anchor carries the operative rule; `contract.md` declines the merge-gating verdict
+  a widening would need.
+- **fabrika reimplements v1 and never calls it** — ADR
+  [0238](../../../../.decisions/0238-fabrika-reimplements-v1-never-calls-it.md). It bites in
+  `contract.md`'s opening: no verb invokes anything under `claude-plugins/kampus-pipeline/` or
+  `packages/pipeline-cli/`, and every v1 module named in a **Grounding** block is cited as a scar to
+  design out, never as a dependency.
+- **The content-ingestion trust posture is open** at
+  [#4859](https://github.com/kamp-us/phoenix/issues/4859). Nothing in this skill writes it down as
+  settled; `SKILL.md` §ING states the seam and declares the second, non-verb-mediated tier.
+
 ## The design fork that was decided, and why it is recorded
 
 An earlier draft split ruled questions into `ruled-direct` (a bare marker, "authored directly") and

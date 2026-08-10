@@ -297,6 +297,31 @@ priority label, and `grill open` composes its title from `--topic` without ever 
 verb runs no such check at all, on either the title or the label path, so the condition is
 unreachable rather than merely unused.
 
+#### Terminal seating — which code lands on which §TERM terminal
+
+The closed set of terminal names is the skill's ([`SKILL.md`](SKILL.md) §TERM); the seating is this
+matrix's, because it is a total function of the code above and belongs with the codes rather than
+restated beside them. Every **non-zero** code seats on exactly one terminal.
+
+| Terminal | Codes | What it means for the run |
+|---|---|---|
+| `SESSION-OPENED` | `0` from `grill open`, or `grill read` reporting `empty` | the session exists and holds no questions; the next act is a round |
+| `ROUND-POSTED` | `0` from `grill round` | its decision questions await him |
+| `FACT-ANSWERED` | `0` from `grill answer` | the decision frontier is unchanged |
+| `RULING-RECORDED` | `0` from `grill rule` | report it as `ruled` and as no more than that |
+| `AWAITING-FOUNDER` | `0` from `grill read`, frontier `awaiting-founder` | at least one decision question is `open`, `unattested` or `stale`, and the run stops |
+| `FACTS-PENDING` | `0` from `grill read`, frontier `facts-pending` | nothing awaits him, but the caller's own fact work is unfinished |
+| `FRONTIER-CLEAR` | `0` from `grill read`, frontier `clear` | every decision question reads `ruled`; the trail is ready for `graduate` |
+| `INPUT-REFUSED` | `3`, `4`, `5`, `6` | an input the caller supplied is **proven** malformed — the round, the finding, the authorization, or the `--topic` — and nothing was written. Fix and re-run; this is not UNKNOWN |
+| `SESSION-UNRESOLVED` | `7`, `16` | the session could not be named — absent, unlabelled, or ambiguous. Nothing was written |
+| `RECORD-REFUSED` | `12`, `13`, `14`, `15`, `17`, `18` | a writing verb refused on a clause. Nothing was recorded and every question stays exactly as it was — the seam working, not an error to route around |
+| `WRITE-UNPROVEN` | `8`, `9` | a write may or may not have landed. Re-read before re-writing |
+| `STOPPED` | `1`, `2`, `11`, `127` | the run is UNKNOWN with nothing written |
+
+`10` is the deliberate gap above: unreachable, so it seats on no terminal by design. `0` is
+disambiguated by which verb produced it and, for `grill read`, by the `frontier` token — which is
+why four of the seven zero-exit rows above name a token rather than a verb alone.
+
 <!-- anchor: KIND-MISMATCH-IS-NOT-GRAMMAR --> **Why a kind mismatch is `17` and not `4`.** Answering
 a decision question, or ruling a fact question, is not a defect in the *input document* — the finding
 or authorization may be perfectly well-formed. `4` is imported from the base as *a required section
@@ -854,14 +879,20 @@ $ echo $?
 
 ## Required repo files (verb-level)
 
+fabrika installs into repos that are not phoenix. The **when-missing** vocabulary is closed and is
+the same in every fabrika skill, so one reader parses all of them: **fail-loud** (stop, name the
+surface by its repo-relative path, point at front-door), **degrade** (continue with a narrower
+answer, stated), **bootstrap** (front-door creates it — [#4952](https://github.com/kamp-us/phoenix/issues/4952)).
+
 | Must exist | Why | When missing |
 | --- | --- | --- |
 | `gh` authenticated to `--repo` with `issues: write` | every verb reads or writes an issue or comment over REST | **fail-loud** — `11` before any write, `8` after one; never a silent empty answer |
 | The `grilling:session` label | `grill open` applies it on mint and resumes on it | **bootstrap** (front-door, #4952); until then `grill open` exits `7` naming the label |
-| `repos/<repo>/collaborators/<login>/permission` readable | clause 1 of every ruling (ADR 0055) | **fail-loud** — `11`. Never `open`, never `ruled` |
+| `repos/<repo>/collaborators/<login>/permission` readable | clause 1 of every ruling (ADR 0055) | **fail-loud** — `11`, and every question's state is UNKNOWN: never `open`, never `ruled`. The load-bearing row — a degrade here would silently license the exact failure the skill exists to prevent |
 
 Nothing else. No `.decisions/`, no `.patterns/`, no CODEOWNERS, no merge-queue configuration, no
-design manifest: this group opens no pull request and gates no merge.
+design manifest: this group opens no pull request and gates no merge. Stated explicitly, because an
+absent row reads as nobody checked.
 
 ## Completeness self-test
 
