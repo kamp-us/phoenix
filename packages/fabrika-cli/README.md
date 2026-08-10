@@ -709,9 +709,16 @@ Four things about it are load-bearing:
 - **The headless browser is provisioned by installing the package.** `postinstall` runs
   [`scripts/provision-browser.mjs`](./scripts/provision-browser.mjs), so no operator and no agent
   ever runs a browser-install step by hand. It is best-effort and never fails the install; it skips
-  when the browser is already there, when `PLAYWRIGHT_BROWSERS_PATH` names a managed install, when
-  `CI` is set (CI images bake their own), or on `FABRIKA_SKIP_BROWSER_PROVISION=1`. A run that then
-  finds no browser exits `11` **carrying the exact remediation command** — never a silent skip.
+  when the browser is already there, when `PLAYWRIGHT_BROWSERS_PATH` names a managed install, or on
+  `FABRIKA_SKIP_BROWSER_PROVISION=1`. There is deliberately no `CI` skip: it pre-empted the presence
+  check, so it only ever fired on a CI image with *no* chromium — the one case the criterion has to
+  cover ([#5169](https://github.com/kamp-us/phoenix/issues/5169)). CI keeps the repeat cost off the
+  clock with a `~/.cache/ms-playwright` cache restored before `pnpm install`, not with a skip. A run
+  that then finds no browser exits `11` **carrying the exact remediation command** — never a silent
+  skip. **Provisioning cannot currently succeed on a machine with no browser at all**: playwright
+  1.59.1 downloads the archive and then hangs unzipping it
+  ([#5343](https://github.com/kamp-us/phoenix/issues/5343)), so the install is bounded by a 120s
+  timeout and the `11` remediation path is what you land on.
 - **Absence is answered three ways, never one.** A missing manifest is `12` (un-bootstrapped, route
   to front-door), a missing registry is `13` (the law is untyped, prose is the source), and an
   unreadable one is `11` (UNKNOWN) — the skill's prose fallback is legal only in the middle case.
