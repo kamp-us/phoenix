@@ -664,10 +664,14 @@ marker, which is the whole of this verb's re-entry story:
   so post a **superseding** capture comment carrying the current digest, re-close if the spike was
   closed, and exit `0`. This holds whether the spike is open or closed, and it is what makes
   `spike dispose`'s `21` a state with a way out rather than a trap: `21` says the record is stale,
-  and re-running this verb is what makes it current. Compose the comment per [the comment grammar](#the-comment-grammar--canonical-here),
-transcribing the run table from `evidence.jsonl`; post it (`8` unproven); read it back through
-`normalizeForReadback` (`9` on mismatch); close the spike (`8` if the close is unproven, with the
-message stating that the decision **did** land).
+  and re-running this verb is what makes it current.
+- **No marker at all, and the spike is open** — the ordinary first capture.
+
+**Every branch that posts, posts the same way.** Compose the comment per [the comment
+grammar](#the-comment-grammar--canonical-here), transcribing the run table from `evidence.jsonl`;
+post it (`8` unproven); read it back through `normalizeForReadback` (`9` on mismatch); close the
+spike (`8` if the close is unproven, with the message stating that the decision **did** land). The
+idempotent branch is the one exception: it posts nothing and only ensures the close.
 
 **Exit status** (beyond the universal four)
 
