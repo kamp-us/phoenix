@@ -241,3 +241,175 @@ export const readFileAt = (sha: string, path: string): Shell<Attempt<string>> =>
 		const r = yield* execCapture("git", ["show", `${sha}:${path}`]);
 		return r.ok ? ok(r.stdout) : fail(r.reason);
 	});
+
+// ---------------------------------------------------------------------------------------------
+// The `governance` group's reads, appended as one block so a later verb slice extends the file here
+// rather than colliding with the range reads above (#5199).
+// ---------------------------------------------------------------------------------------------
+
+/** One changed path and the single letter git gives its change. */
+export interface ChangedPath {
+	/** `A`, `M`, `D`, `R<score>`, `C<score>`, `T` — git's own letter, never normalized here. */
+	readonly status: string;
+	/** For a rename or copy this is the **destination**, which is the path that now exists. */
+	readonly path: string;
+}
+
+/**
+ * Split a NUL-separated `--name-status` stream into rows.
+ *
+ * A rename or copy emits three fields (`R100`, source, destination) where every other change emits
+ * two, so the walk is stateful rather than a chunk-of-two. Getting that wrong shifts every later row
+ * by one field, which reads back as a well-formed change list naming the wrong paths.
+ */
+export const parseNameStatus = (stdout: string): ReadonlyArray<ChangedPath> => {
+	const fields = stdout.split("\0").filter((f) => f !== "");
+	const rows: ChangedPath[] = [];
+	for (let i = 0; i < fields.length; ) {
+		const status = fields[i] ?? "";
+		const renamed = status.startsWith("R") || status.startsWith("C");
+		const path = fields[i + (renamed ? 2 : 1)];
+		if (path === undefined) break;
+		rows.push({status, path});
+		i += renamed ? 3 : 2;
+	}
+	return rows;
+};
+
+/** The changed paths of `base...head` with their change letters. */
+export const diffRangeStatuses = (
+	base: string,
+	head: string,
+): Shell<Attempt<ReadonlyArray<ChangedPath>>> =>
+	Effect.gen(function* () {
+		const r = yield* execCapture("git", [
+			"diff",
+			...DIFF_FLAGS,
+			"--name-status",
+			"-z",
+			`${base}...${head}`,
+		]);
+		return r.ok ? ok(parseNameStatus(r.stdout)) : fail(r.reason);
+	});
+
+/** Every tracked path at `sha`, recursively — how a fenced skill root is resolved without a checkout. */
+export const listTreePaths = (sha: string): Shell<Attempt<ReadonlyArray<string>>> =>
+	Effect.gen(function* () {
+		const r = yield* execCapture("git", ["ls-tree", "-r", "--name-only", "-z", sha]);
+		return r.ok ? ok(r.stdout.split("\0").filter((p) => p !== "")) : fail(r.reason);
+	});
+
+/** The merge base of two commits, as a full object name. */
+export const mergeBase = (a: string, b: string): Shell<Attempt<string>> =>
+	Effect.gen(function* () {
+		const r = yield* execCapture("git", ["merge-base", a, b]);
+		if (!r.ok) return fail(r.reason);
+		const sha = r.stdout.trim();
+		return isObjectName(sha) ? ok(sha) : fail(`git named no merge base (got "${sha}")`);
+	});
+
+/** One commit on the walked ref: its object name and its committer date. */
+export interface CommitRow {
+	readonly sha: string;
+	/** `YYYY-MM-DD`, taken from the committer date in UTC. */
+	readonly date: string;
+}
+
+/**
+ * The UTC calendar day of a strict-ISO instant, or `null` when it is not one.
+ *
+ * git's `%cI` carries the committer's own offset, so the day is read after normalizing to UTC — a
+ * `--date=…-local` format would answer differently on two machines and make one window enumerate
+ * two different sets.
+ */
+export const utcDayOf = (iso: string): string | null => {
+	const at = Date.parse(iso.trim());
+	return Number.isNaN(at) ? null : (new Date(at).toISOString().slice(0, 10) ?? null);
+};
+
+/**
+ * The commits on `ref` inside an inclusive `YYYY-MM-DD` window that touch `dir`, oldest first.
+ *
+ * The bounds are stamped `Z` on purpose: bare dates make git read the caller's local zone, so the
+ * same window would enumerate different commits on two machines.
+ */
+export const logCommitsTouching = (
+	ref: string,
+	since: string,
+	until: string,
+	dir: string,
+): Shell<Attempt<ReadonlyArray<CommitRow>>> =>
+	Effect.gen(function* () {
+		const r = yield* execCapture("git", [
+			"log",
+			"--reverse",
+			"--format=%H%x09%cI",
+			`--since=${since}T00:00:00Z`,
+			`--until=${until}T23:59:59Z`,
+			ref,
+			"--",
+			dir,
+		]);
+		if (!r.ok) return fail(r.reason);
+		const rows: CommitRow[] = [];
+		for (const line of r.stdout.split("\n")) {
+			if (line.trim() === "") continue;
+			const [sha, stamp] = line.split("\t");
+			const date = stamp === undefined ? null : utcDayOf(stamp);
+			if (sha === undefined || date === null) return fail(`unreadable log line "${line}"`);
+			rows.push({sha, date});
+		}
+		return ok(rows);
+	});
+
+/** The paths one commit changes under `dir`, with their change letters. */
+export const commitStatuses = (
+	sha: string,
+	dir: string,
+): Shell<Attempt<ReadonlyArray<ChangedPath>>> =>
+	Effect.gen(function* () {
+		const r = yield* execCapture("git", [
+			"show",
+			...DIFF_FLAGS,
+			"--name-status",
+			"-z",
+			"--format=",
+			sha,
+			"--",
+			dir,
+		]);
+		return r.ok ? ok(parseNameStatus(r.stdout)) : fail(r.reason);
+	});
+
+/** One commit's own unified diff, under the same config-proof flags every range read uses. */
+export const commitDiff = (sha: string): Shell<Attempt<string>> =>
+	Effect.gen(function* () {
+		const r = yield* execCapture("git", ["show", ...DIFF_FLAGS, "--format=", sha]);
+		return r.ok ? ok(r.stdout) : fail(r.reason);
+	});
+
+/** Whether this clone is shallow — the precondition a window walk's completeness rests on. */
+export const isShallowClone: Shell<Attempt<boolean>> = Effect.gen(function* () {
+	const r = yield* execCapture("git", ["rev-parse", "--is-shallow-repository"]);
+	return r.ok ? ok(r.stdout.trim() === "true") : fail(r.reason);
+});
+
+/**
+ * The dates of `ref`'s parentless commits, in UTC `YYYY-MM-DD`.
+ *
+ * In a shallow clone the graft boundary *is* a parentless commit, so these are the dates a window
+ * has to clear to be provably complete.
+ */
+export const parentlessCommitDates = (ref: string): Shell<Attempt<ReadonlyArray<string>>> =>
+	Effect.gen(function* () {
+		const r = yield* execCapture("git", ["log", "--max-parents=0", "--format=%cI", ref]);
+		if (!r.ok) return fail(r.reason);
+		const days: string[] = [];
+		for (const line of r.stdout.split("\n")) {
+			if (line.trim() === "") continue;
+			const day = utcDayOf(line);
+			if (day === null) return fail(`unreadable boundary date "${line.trim()}"`);
+			days.push(day);
+		}
+		return ok(days);
+	});

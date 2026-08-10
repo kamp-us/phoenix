@@ -15,6 +15,7 @@ import {
 	UNTABLED_GROUPS,
 	ZeroCoverageScope,
 } from "./exit-code-alignment.ts";
+import * as governance from "./governance/codes.ts";
 import * as grill from "./grill/codes.ts";
 import * as handoff from "./handoff/codes.ts";
 import * as hook from "./hook/codes.ts";
@@ -45,6 +46,7 @@ const TABLES: Readonly<Record<string, CodeTable>> = {
 	build,
 	epic,
 	eval: evalCodes,
+	governance,
 	grill,
 	handoff,
 	hook,

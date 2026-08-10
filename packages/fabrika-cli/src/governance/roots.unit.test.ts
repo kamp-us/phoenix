@@ -1,0 +1,90 @@
+import {describe, expect, it} from "vitest";
+import {GOVERNANCE_ROOTS} from "../review/classes.ts";
+import {changeOf, deriveScope, recordsIn} from "./roots.ts";
+
+const changed = (...rows: ReadonlyArray<readonly [string, string]>) =>
+	rows.map(([status, path]) => ({status, path}));
+
+describe("changeOf", () => {
+	it("maps git's letters onto the three-word vocabulary", () => {
+		expect(changeOf("A")).toBe("added");
+		expect(changeOf("M")).toBe("modified");
+		expect(changeOf("D")).toBe("deleted");
+	});
+
+	it("reads a rename as `added` — its path is the destination, which did not exist before", () => {
+		expect(changeOf("R100")).toBe("added");
+		expect(changeOf("C85")).toBe("added");
+	});
+});
+
+describe("recordsIn", () => {
+	it("names each four-digit record the diff carries, with what the diff does to it", () => {
+		expect(
+			recordsIn(
+				changed(["A", ".decisions/0240-only-landed-adrs-may-be-cited.md"], ["M", "src/a.ts"]),
+			),
+		).toEqual([
+			{id: "0240", change: "added", path: ".decisions/0240-only-landed-adrs-may-be-cited.md"},
+		]);
+	});
+
+	it("reports a deleted record — the one corpus change added/modified cannot express", () => {
+		expect(recordsIn(changed(["D", ".decisions/0099-gone.md"]))[0]?.change).toBe("deleted");
+	});
+
+	it("skips a lettered variant, which no sibling verb's four-digit `--record` addresses", () => {
+		expect(recordsIn(changed(["M", ".decisions/0034a-live-fan-out-options.md"]))).toEqual([]);
+	});
+});
+
+describe("deriveScope", () => {
+	it("requires the namespace when any path is under any root, and tallies only touched roots", () => {
+		const result = deriveScope(
+			changed(
+				["A", ".decisions/0240-x.md"],
+				["M", "claude-plugins/fabrika/skills/review/SKILL.md"],
+				["M", "src/a.ts"],
+			),
+			[],
+		);
+		expect(result.required).toBe(true);
+		expect(result.roots).toEqual([
+			{name: ".decisions/", files: 1},
+			{name: "claude-plugins/", files: 1},
+		]);
+		expect(result.scanned).toBe(3);
+	});
+
+	it("does not require it for a diff under no root", () => {
+		expect(deriveScope(changed(["M", "src/a.ts"]), []).required).toBe(false);
+	});
+
+	it("reads the root list from `review/classes.ts` rather than a second copy", () => {
+		const each = GOVERNANCE_ROOTS.map(
+			(root) => deriveScope(changed(["M", `${root}x`]), []).required,
+		);
+		expect(each).toEqual(GOVERNANCE_ROOTS.map(() => true));
+	});
+
+	it("sets `self` when a changed path is under the resolved skill root", () => {
+		const root = "claude-plugins/fabrika/skills/governance/";
+		expect(deriveScope(changed(["M", `${root}SKILL.md`]), [root]).self).toBe(true);
+		expect(
+			deriveScope(changed(["M", "claude-plugins/fabrika/skills/review/SKILL.md"]), [root]).self,
+		).toBe(false);
+	});
+
+	it("flags `self` under an AMBIGUOUS install rather than skipping the fence", () => {
+		const roots = ["a/fabrika/skills/governance/", "b/fabrika/skills/governance/"];
+		expect(deriveScope(changed(["M", "b/fabrika/skills/governance/SKILL.md"]), roots).self).toBe(
+			true,
+		);
+	});
+
+	it("leaves `self` false when no install resolved — there is nothing to be under", () => {
+		expect(
+			deriveScope(changed(["M", "claude-plugins/fabrika/skills/governance/SKILL.md"]), []).self,
+		).toBe(false);
+	});
+});
