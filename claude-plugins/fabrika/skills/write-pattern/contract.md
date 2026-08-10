@@ -697,7 +697,7 @@ retroactively would fail in every repo that is not this one.
 | Message (stderr) | Code | Kind |
 |---|---|---|
 | `pattern new: <path> already exists — refusing to overwrite.` | 13 | refusal |
-| `pattern new: cannot determine whether <path> exists: <reason> — UNKNOWN, never "absent"; nothing written.` | 11 | refusal |
+| `pattern new: cannot check <path>: <reason> — nothing was written.` | 11 | refusal |
 | `pattern new: slug "<slug>" is not kebab-case (lowercase letters, digits and single hyphens).` | 1 | usage error |
 | `pattern new: --anchor "<value>" is not <pkg>@<version>.` | 1 | usage error |
 | `pattern new: cannot write <path>: <reason> — whether anything landed is UNKNOWN.` | 8 | refusal |
@@ -822,7 +822,9 @@ mechanical rather than remembered, and it is the deterministic test the implemen
 | `pattern register: <dir>/index.md is absent — the doc at <dir>/<slug>.md is written and unregistered; front-door bootstraps the index.` | 15 | refusal |
 | `pattern register: <dir>/index.md holds no parseable markdown table — the doc at <dir>/<slug>.md is written and unregistered; front-door bootstraps the index.` | 15 | refusal |
 | `pattern register: no doc at <dir>/<slug>.md — refusing to register a row pointing at nothing.` | 12 | refusal |
-| `pattern register: cannot read <path>: <reason> — UNKNOWN, never "absent"; nothing written.` | 11 | refusal |
+| `pattern register: cannot check <dir>/index.md: <reason> — nothing was written.` | 11 | refusal |
+| `pattern register: cannot read <dir>/index.md: <reason> — nothing was written.` | 11 | refusal |
+| `pattern register: cannot check <dir>/<slug>.md: <reason> — nothing was written.` | 11 | refusal |
 | `pattern register: slug "<slug>" is not kebab-case (lowercase letters, digits and single hyphens).` | 1 | usage error |
 | `pattern register: no section "<section>" in <dir>/index.md (present: <a>, <b>, …).` | 10 | refusal |
 | `pattern register: "<section>" matches <n> headings in <dir>/index.md — ambiguous, nothing written.` | 16 | refusal |
