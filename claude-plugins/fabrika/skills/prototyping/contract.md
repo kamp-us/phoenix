@@ -299,9 +299,12 @@ rather than prose. Each posted comment's **first line** is an HTML comment and n
 <!-- fabrika:spike forfeit nonce=7f3a9c21 runs=3 -->
 ```
 
-**A spike is `captured` when at least one of its comments has a first line matching the capture
-marker.** A forfeit marker never satisfies it — otherwise `15` would be bypassable by forfeiting
-twice — and no other comment on the issue is read for any purpose.
+**A spike is `captured` when a comment's first line matches the capture marker carrying *this run's
+nonce*** — `<!-- fabrika:spike capture nonce=<nonce>` — and where more than one matches, **the
+newest by creation time is the one that counts**. Matching on the nonce is what stops another run's
+marker answering for this one; naming the newest is what makes `21`'s comparison single-valued once
+a supersede has happened. A forfeit marker never satisfies it — otherwise `15` would be bypassable
+by forfeiting twice — and no other comment on the issue is read for any purpose.
 
 **The three composed bodies.** The two *comments* are exactly their marker line, a blank line, then
 the content below. **The issue body carries no marker** — an issue is found by its
@@ -373,7 +376,7 @@ fabrika spike open --question <text> --kind <logic|ui> [--ticket <n>] [--nonce <
 **Output** — machine. One JSON object:
 
 ```json
-{"spike":9310,"nonce":"7f3a9c21","kind":"logic","workspace":"/private/tmp/fabrika-spike/7f3a9c21","treeDigest":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"}
+{"spike":9310,"nonce":"7f3a9c21","kind":"logic","workspace":"/tmp/fabrika-spike/7f3a9c21","treeDigest":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"}
 ```
 
 There is no empty answer: the verb either mints a spike or refuses.
@@ -396,10 +399,12 @@ it.
 
 **A provisional manifest is a real, reachable state, so both verbs that can meet it define their
 behaviour against it.** Re-entry (`--nonce`) against a manifest still carrying `spike: null` does
-**not** answer it unchanged: the verb re-reads the repository for an open `prototyping:spike` issue
-whose body carries this nonce and completes the manifest from it — which is what makes `20`'s named
-way forward actually work rather than loop. Finding no such issue is `12`: the workspace names
-nothing and the run starts over. And `spike dispose` against `spike: null` skips the issue half
+**not** answer it unchanged: the verb lists the repository's open issues carrying the
+`prototyping:spike` label (`GET /repos/<owner>/<repo>/issues?labels=prototyping:spike&state=open`,
+paginated per skill-conventions §11), finds the one whose body carries this nonce, and completes the
+manifest from it — which is what makes `20`'s named way forward work rather than loop. A failure of
+that listing read is `11`; the manifest stays provisional and nothing is lost. Finding no such issue
+among the results is `12`: the workspace names nothing and the run starts over. And `spike dispose` against `spike: null` skips the issue half
 entirely — no `15`, no `21`, no forfeit — performing only the tree comparison and the removal, so an
 orphaned workspace is always collectable.
 
@@ -417,7 +422,7 @@ orphaned workspace is always collectable.
 | `8` | the issue create was attempted and its outcome could not be proven |
 | `9` | the issue landed but its title, body or label set does not read back as sent |
 | `10` | `--nonce` is off-grammar, or `--kind` is outside `logic`/`ui` |
-| `11` | the repository root, the temp root, the label set, or the tree state could not be read — nothing was minted |
+| `11` | the repository root, the temp root, the label set, the tree state, or — on re-entry against a provisional manifest — the open-spike listing could not be read; nothing was minted |
 | `12` | proven: `--nonce` was given for re-entry and no workspace exists for it |
 | `13` | proven: the derived workspace path resolves inside the repository working tree |
 | `18` | proven: a workspace exists for this nonce under a different question or kind |
@@ -449,7 +454,7 @@ scope over a corpus.
 
 ```
 $ fabrika spike open --question "does better-auth mint a single-use token without a new table?" --kind logic
-{"spike":9310,"nonce":"7f3a9c21","kind":"logic","workspace":"/private/tmp/fabrika-spike/7f3a9c21","treeDigest":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"}
+{"spike":9310,"nonce":"7f3a9c21","kind":"logic","workspace":"/tmp/fabrika-spike/7f3a9c21","treeDigest":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"}
 ```
 
 ```
@@ -647,11 +652,19 @@ seats `7`; any other read failure is `unknown` and seats `11`** — the two are 
 is the read where that distinction is easiest to lose. Resolve the authenticated author's repository
 permission and refuse `19` below `write` (`11` if the permission read itself fails — UNKNOWN, never a
 grant); **the ACL gate precedes every write on every path, the idempotent one included**, because a
-close is a write and authority is checked before writes rather than around them. Then **run the
-idempotency check**: a spike already carrying a capture marker with this same `evidenceDigest` is
-exit `0` reporting the existing `commentId`, and the verb then only ensures the issue is closed — so
-a re-run after a failed close is safe and does not double-post. A spike closed **without** a matching
-capture marker is `7`. Compose the comment per [the comment grammar](#the-comment-grammar--canonical-here),
+close is a write and authority is checked before writes rather than around them. Then branch on the newest matching capture
+marker, which is the whole of this verb's re-entry story:
+
+- **No capture marker for this nonce, and the spike is closed** — `7`: there is nothing to supersede
+  and the spike is finished.
+- **A marker whose `evidenceDigest` equals the one just computed** — exit `0` reporting the existing
+  `commentId`; the verb only ensures the issue is closed. A re-run after a failed close is safe and
+  does not double-post.
+- **A marker whose `evidenceDigest` differs** — runs were recorded after that decision was written,
+  so post a **superseding** capture comment carrying the current digest, re-close if the spike was
+  closed, and exit `0`. This holds whether the spike is open or closed, and it is what makes
+  `spike dispose`'s `21` a state with a way out rather than a trap: `21` says the record is stale,
+  and re-running this verb is what makes it current. Compose the comment per [the comment grammar](#the-comment-grammar--canonical-here),
 transcribing the run table from `evidence.jsonl`; post it (`8` unproven); read it back through
 `normalizeForReadback` (`9` on mismatch); close the spike (`8` if the close is unproven, with the
 message stating that the decision **did** land).
@@ -664,7 +677,7 @@ message stating that the decision **did** land).
 | `4` | the manifest or the evidence log exists but does not parse |
 | `5` | the decision carries a machine-local path |
 | `6` | the decision is a bare `@` path reference |
-| `7` | proven: `<spike>` is absent, or closed without a matching capture marker |
+| `7` | proven: `<spike>` is absent, or is closed and carries no capture marker for this nonce at all — there is nothing to supersede |
 | `8` | the comment post or the close was attempted and its outcome could not be proven |
 | `9` | the comment landed but does not read back as sent |
 | `10` | `--nonce` is off-grammar |
@@ -686,7 +699,8 @@ message stating that the decision **did** land).
 | `spike capture: <path> exists but does not satisfy the <manifest\|evidence log> schema: <first violation> — refusing the whole file.` | 4 | refusal |
 | `spike capture: no workspace for nonce <nonce> — the evidence a decision would rest on is gone.` | 12 | refusal |
 | `spike capture: --nonce "<value>" is not eight lowercase hex characters.` | 10 | refusal |
-| `spike capture: spike #<n> is proven absent, or closed without a capture marker.` | 7 | refusal |
+| `spike capture: spike #<n> is proven absent — nothing to capture onto; check the number.` | 7 | refusal |
+| `spike capture: spike #<n> is closed and carries no capture marker for nonce <nonce> — there is nothing to supersede. Open a new spike for a new question.` | 7 | refusal |
 | `spike capture: <login> holds <permission> on <repo>, below write — a decision recorded here would carry no authority (ADR 0055).` | 19 | refusal |
 | `spike capture: cannot read <what>: <reason> — nothing was posted, and authority is UNKNOWN, never granted.` | 11 | refusal |
 | `spike capture: the comment post failed: <reason> — it may or may not have landed; read spike #<n> before re-running.` | 8 | refusal |
@@ -761,9 +775,14 @@ fabrika spike dispose --nonce <8hex> [--forfeit] [--repo <owner>/<repo>]
 
 The answer names no path: there is nothing left to point at.
 
-**The mechanism, in order.** Read the manifest (`12` absent, `4` malformed). **Recompute
+**The mechanism, in order.** Read the manifest (`12` absent, `4` malformed). **A manifest carrying
+`spike: null` skips the issue half entirely** — no `15`, no `21`, no forfeit, no GitHub read at all —
+leaving only the tree comparison and the removal below, so an orphaned workspace from a `20` is
+always collectable. Otherwise: **recompute
 `treeDigest` at the manifest's `treeRoot` and compare it to the manifest's** — a mismatch is `17`,
-with the differing status lines on stderr, and **nothing is removed and nothing is posted**, so the
+with a count-and-first-path summary line **and then every differing status line** on stderr — so the
+removal licence covers all of them, not just the first — and **nothing is removed and nothing is
+posted**, so the
 leak stays inspectable. This runs first, before any state read and before any write, deliberately:
 it is the cheap local check, and ordering it first is what keeps a `17` — the refusal this verb most
 exists for — from ever destroying the leak it just found. It does **not** make every non-zero exit
@@ -771,10 +790,12 @@ write-free: `8`, `9` and `16` all sit past the `--forfeit` write or past the rem
 so in its own row. Then resolve the spike's state: without `--forfeit`, a spike that is not
 closed carrying a **capture marker** is `15`, because destroying an uncaptured spike erases what a
 decision would have rested on. With a capture marker present, recompute `evidenceDigest` and compare
-it to the digest in that marker — a mismatch is `21`: runs were recorded after the decision was
-captured, so the decision no longer covers the log. **This comparison runs whenever a capture marker
+it to the digest in the **newest** such marker — a mismatch is `21`: runs were recorded after the
+decision was captured, so the decision no longer covers the log. **This comparison runs whenever a capture marker
 exists, `--forfeit` or not, and before the forfeit write** — forfeiting a spike whose recorded
-decision has gone stale would bury the staleness rather than surface it. With
+decision has gone stale would bury the staleness rather than surface it. The way out is
+`spike capture`, which supersedes a stale marker and exits `0` — so `21` is a detour, never a dead
+end. With
 `--forfeit`, compose the forfeit note, leak-scan it (`5` / `6`), post it (`8` / `9`) and close the
 spike. Finally remove the workspace directory recursively, then **re-probe it and refuse `16` if it
 is still present**. A removal nobody checked is the self-report class again, one directory down.
@@ -797,7 +818,7 @@ they are independent questions.
 | `12` | proven: no workspace exists for this nonce — already disposed, or never opened |
 | `15` | proven: the spike is not closed carrying a capture marker, and `--forfeit` was not given |
 | `16` | proven: the workspace was removed and is still present on re-probe |
-| `17` | proven: the working tree does not match what `spike open` recorded — nothing was removed |
+| `17` | proven: the working tree does not match what `spike open` recorded — nothing was removed. The guard cannot tell a path the spike authored from one anything else wrote, and that is deliberate; restore or remove the named paths either way, then re-run |
 | `21` | proven: the evidence log's digest differs from the one in the capture marker |
 
 **Errors**
@@ -806,7 +827,7 @@ they are independent questions.
 |---|---|---|
 | `spike dispose: spike #<n> carries no captured decision — disposing now destroys what a decision would rest on. Capture it, or pass --forfeit to abandon it on the record.` | 15 | refusal |
 | `spike dispose: the working tree changed since the spike opened (<count> paths, first: <path>) — the workspace is intact and NOT removed.` | 17 | refusal |
-| `spike dispose: the evidence log moved after the decision was captured (<n> runs now, <m> at capture) — re-capture, or forfeit. Nothing was removed.` | 21 | refusal |
+| `spike dispose: the evidence log moved after the decision was captured (<n> runs now, <m> at capture) — re-run spike capture to supersede the stale decision, then dispose. Nothing was removed.` | 21 | refusal |
 | `spike dispose: the workspace <resolved> is still present after removal — disposal is UNPROVEN, and this spike is not disposed.` | 16 | refusal |
 | `spike dispose: no workspace for nonce <nonce> — it was already disposed, or never opened.` | 12 | refusal |
 | `spike dispose: <path> exists but does not satisfy the manifest schema: <first violation> — refusing the whole file.` | 4 | refusal |

@@ -40,8 +40,9 @@ nothing here writes one down as settled.
 **§CAP — capability set.** A repo-scoped token, and **a shell that executes arbitrary commands you
 wrote** — the widest capability any fabrika skill declares, and the reason every other bound here is
 tight. `spike run` executes with the workspace as the working directory and hands the child a
-**scrubbed environment**: no `GH_TOKEN`, no `GITHUB_TOKEN`, no `*_TOKEN`/`*_SECRET`/`*_KEY`, so a
-prototype cannot spend your credentials by inheriting them. The write surface is the spike issue
+**scrubbed environment** — a fixed allowlist (`PATH`, `HOME`, `LANG`, `LC_ALL`, `TZ`, `TMPDIR`) plus
+whatever `--env` passes, everything else dropped, and naming a credential variable in `--env`
+refused rather than honoured — so a prototype cannot spend your credentials by inheriting them. The write surface is the spike issue
 (its body, the `prototyping:spike` label, its comments, closing it) and the run workspace — plus
 **the removal of paths the spike itself authored into the repo tree**, named by a `17` and nothing
 else in the tree, because otherwise the one act `DISPOSAL-REFUSED` asks for has no licence. This
@@ -112,12 +113,10 @@ self-reports of a restored state were false twice and silently destroyed what th
 preserve (#4111); a prototype exists to produce evidence, so a skill accepting "it worked" as its
 output has produced nothing, and #3148 is what that costs downstream.
 
-<!-- anchor: RAN-AND-ANSWERED-NO --> **Two answers an exit code would collapse into one.** `spike
-run` exits `0` when it *ran the command and recorded the outcome*, whatever the command itself
-returned — the command's status rides in the payload as `commandExit`. So `0` with `commandExit: 1`
-is **the prototype ran and answered no**, which is a real answer and often the one you wanted. A
-non-zero `spike run` is **the prototype could not run**, which answers nothing. Never read the second
-as the first: a failed spike that reports "no" is how an unfounded decision ships looking evidenced.
+<!-- anchor: RAN-AND-ANSWERED-NO --> **Read `commandExit`, not the verb's exit, for the answer.** A
+`spike run` that exits `0` carrying `commandExit: 1` is **the prototype ran and answered no** — a
+real answer, often the one you wanted. Never read a non-zero `spike run` as that: a failed spike
+reported as "no" is how an unfounded decision ships looking evidenced.
 
 Every run is recorded; nothing is overwritten.
 
@@ -145,11 +144,10 @@ fabrika spike dispose --nonce 7f3a9c21
 ```
 
 <!-- anchor: DISPOSAL-IS-CHECKED-NOT-INTENDED --> **This is what makes "throwaway" a property rather
-than a promise.** The verb compares the repo tree against the state `spike open` recorded — a
-difference is `17`, proven, naming the paths — then removes the workspace and **re-probes that it is
-gone**, refusing on `16` if it survives. It refuses to run at all on a spike whose decision is not
-captured (`15`), because destroying an uncaptured spike is the #4111 shape exactly: erasing what you
-claimed to preserve.
+than a promise** — the verb checks the tree, the removal, and the decision rather than trusting any
+of the three ([`contract.md`](contract.md)). It refuses on a spike whose decision is not captured
+(`15`), because destroying an uncaptured spike is the #4111 shape exactly: erasing what you claimed
+to preserve.
 
 **`--forfeit` abandons a spike that never produced an answer; it does not relax the tree check.**
 Whether a decision was reached and whether the throwaway stayed thrown away are independent
@@ -225,12 +223,13 @@ them here and see that they were demoted.
 
 Every code the contract seats reaches exactly one row above. Every non-zero terminal wrote nothing to
 the spike issue, with two stated exceptions: `WRITE-UNPROVEN`, where whether the write landed is the
-open question; and a `16` or `21` reached on the `--forfeit` path, where the forfeit note landed
-before the removal that then failed.
+open question; and a `16` reached on the `--forfeit` path, where the forfeit note landed before the
+removal that then failed.
 
 <!-- anchor: A-TERMINAL-IS-AN-EXIT-YOU-READ --> **Name a terminal from an exit code you actually
-read, never from one you reasoned your way to.** Every row above is keyed to a code, and a code you
-predicted is not a code you observed — `DISPOSED` in particular claims the workspace is *proven*
+read, never from one you reasoned your way to.** Every row above **that names a code** is keyed to
+it — `NOT-EMPIRICAL` and `NOT-ONE-QUESTION` are the two declines taken before any verb runs and name
+none — and a code you predicted is not a code you observed — `DISPOSED` in particular claims the workspace is *proven*
 gone, which is a claim only `spike dispose`'s own `0` can support. If you could not run the verb,
 say which state you are actually in and that the terminal is **pending**, naming the code you expect
 and why. This is the same rule as §3's, one step later and much easier to break: a run that has

@@ -26,7 +26,7 @@
 				},
 				{
 					"id": "1e",
-					"text": "OUTCOME.md names exactly one terminal, and that terminal is a verbatim member of the SKILL.md §TERM closed set (DISPOSED, NOT-EMPIRICAL, NOT-ONE-QUESTION, DISPOSAL-REFUSED, NO-EVIDENCE-TO-CAPTURE, UNAUTHORIZED, WRITE-UNPROVEN, STOPPED). An ad-hoc word fails even if its meaning is right, and a mid-run state (a spike opened, a run recorded, a decision captured) is not a terminal."
+					"text": "OUTCOME.md names exactly one terminal, and that terminal is a verbatim member of the SKILL.md §TERM closed set (DISPOSED, FORFEITED, NOT-EMPIRICAL, NOT-ONE-QUESTION, DISPOSAL-REFUSED, NO-EVIDENCE-TO-CAPTURE, UNAUTHORIZED, WRITE-UNPROVEN, STOPPED). An ad-hoc word fails even if its meaning is right, and a mid-run state (a spike opened, a run recorded, a decision captured) is not a terminal."
 				},
 				{
 					"id": "1f",
