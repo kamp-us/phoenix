@@ -41,6 +41,9 @@ does not exist yet — rather than missing; check the registry before assuming a
 | `verdict-marker` | [`packages/fabrika-cli/src/wire/verdict-marker.ts`](../../../packages/fabrika-cli/src/wire/verdict-marker.ts) | `review`, `check-epic-plan` | `build`, `ship` |
 | `slice-handoff` | [`packages/fabrika-cli/src/wire/slice-handoff.ts`](../../../packages/fabrika-cli/src/wire/slice-handoff.ts) | `build-epic` | `build` |
 | `map-ticket` | [`packages/fabrika-cli/src/wire/map-ticket.ts`](../../../packages/fabrika-cli/src/wire/map-ticket.ts) | `map` | `map` |
+| `grill-ruling` | [`packages/fabrika-cli/src/wire/grill-ruling.ts`](../../../packages/fabrika-cli/src/wire/grill-ruling.ts) | `grilling` | `grilling` |
+| `grill-answer` | [`packages/fabrika-cli/src/wire/grill-answer.ts`](../../../packages/fabrika-cli/src/wire/grill-answer.ts) | `grilling` | `grilling` |
+| `grill-supersede` | [`packages/fabrika-cli/src/wire/grill-supersede.ts`](../../../packages/fabrika-cli/src/wire/grill-supersede.ts) | `grilling` | `grilling` |
 <!-- fabrika:wire-index:end -->
 
 ### `acceptance-criteria`
@@ -93,6 +96,39 @@ disregarded with the mismatch reported, not silently dropped and not silently co
 The nonce is the filing run's, not a session's, for the reason recorded at #5028 and #4516: a
 session id is pane-constant and shared across sibling subagents, so two lanes of one charting run
 would key onto one namespace and each would read the other's marker as its own.
+
+### `grill-ruling`
+
+This is the first line of the comment that records a founder ruling on one grilling question, and it
+is the only marker a reader may resolve to `ruled`. The agreement it closes is an authority one: a
+comment claiming a decision is byte-indistinguishable from one carrying it, because every crew agent
+writes to GitHub as the same account, so nothing in the prose can settle who decided. The marker
+therefore carries no claim about itself at all — it names a question and the digest of the round text
+it answered, and the reader settles authority against repository permissions and against a dated
+authorization comment beside it. The digest is what keeps the ruling honest over time: re-word the
+question and the recomputed digest differs, so the ruling stops counting and the question is open
+again. A ruling that drifted out from under the founder must never keep reading as his.
+
+### `grill-answer`
+
+This is the same three fields under a different key, and the difference in key is the whole point.
+These bytes are the agent's own record of a fact it established, never a ruling, and a reader that
+resolves a founder decision looks for the other key and finds nothing here. Keeping them apart as two
+formats rather than one polarity field means a reader never has to parse a field to learn which kind
+of authority it is holding — which is exactly the mistake a shared format invites the first time
+someone reads the key and stops. Its digest is informational: it records which text was answered so a
+later reader can see the question moved, and it never changes the state.
+
+### `grill-supersede`
+
+This is the comment that retires questions, one line per question, written after the round that
+replaced them. It asserts no answer at all — only that a question is no longer the one the session
+turns on — which is why it is a third format rather than a flag on the other two. It exists because a
+re-worded question is un-ruled and would otherwise hold the frontier open forever, so a session in
+which anything was ever re-worded could never finish. Two details carry weight. Its digest is the
+**retired** question's round, captured at retirement, because the marker's job is to record which text
+was removed. And the record is a **new comment, never an edit** to the round it retires: editing that
+round would change text its digest covers, breaking every ruling bound to it.
 
 ## Adding a format
 

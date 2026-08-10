@@ -19,6 +19,7 @@ import {adrCommand} from "./adr/command.ts";
 import {buildCommand} from "./build/command.ts";
 import {epicCommand} from "./epic/command.ts";
 import {evalCommand} from "./eval/command.ts";
+import {grillCommand} from "./grill/command.ts";
 import {hookCommand} from "./hook/command.ts";
 import {ledgerCommand} from "./ledger/command.ts";
 import {mapCommand} from "./map/command.ts";
@@ -42,6 +43,7 @@ export const registeredGroups: ReadonlyArray<VerbGroup> = [
 	buildCommand,
 	epicCommand,
 	evalCommand,
+	grillCommand,
 	hookCommand,
 	ledgerCommand,
 	mapCommand,

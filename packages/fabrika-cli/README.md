@@ -397,6 +397,42 @@ and the topology between them is GitHub's **native issue-dependency edges** — 
   base's `10` is unreachable here rather than merely unused
   ([`src/map/codes.ts`](./src/map/codes.ts)).
 
+## The `grill` group
+
+The contract is
+[`claude-plugins/fabrika/skills/grilling/contract.md`](../../claude-plugins/fabrika/skills/grilling/contract.md).
+A **grilling session** is one GitHub issue carrying the `grilling:session` label; rounds of
+questions, the answers an agent establishes and the rulings the founder makes all live in its
+comments.
+
+| Verb | Answers |
+|---|---|
+| `grill open` | opens, or resumes, the session issue for a topic — `created` says which |
+| `grill round` | validates one round read from stdin, posts it, and returns its number, digest, ids and comment ids |
+| `grill answer` | records an agent-established answer to a `fact` question, behind a kind guard |
+| `grill rule` | records a founder ruling, refusing without a verbatim dated authorization |
+| `grill read` | per-question state, ACL-resolved and digest-checked, plus the frontier token and every disregarded marker |
+
+Four properties are worth knowing before you call them:
+
+- **A recorded ruling is bound to an authority, not to a string.** Every marker's author is
+  resolved against repository permissions
+  ([ADR 0055](../../.decisions/0055-acl-sourced-review-authz.md)), and a permission read that
+  *fails* is UNKNOWN, never a demotion. No verb decides authority from what a comment says
+  about itself.
+- **A ruling is bound to the text it ruled.** The round digest covers the round's question text
+  and nothing else, so re-wording a question makes the recomputed digest differ and `grill read`
+  reports it `stale` — un-ruled again. That neutrality rests on a prohibition: no verb ever edits
+  an existing comment.
+- **All four frontier tokens exit `0`.** `awaiting-founder`, `facts-pending`, `clear` and `empty`
+  are four answers. An open frontier is this skill working, not a failure.
+- **A malformed marker is visible, never absent.** `grill read` never refuses on marker content:
+  a marker that is malformed, unauthorized or bound to nothing is a `disregarded` row at exit `0`.
+  Refusing would let one bad comment suppress the whole frontier answer.
+
+This group records no merge-gating verdict and computes no second answer to control-plane
+membership, pitch approval or triage classification — each is already enforced at its own gate.
+
 ## The `wire` group
 
 A **wire format** is the byte-level agreement two skills meet through on a GitHub artifact —
