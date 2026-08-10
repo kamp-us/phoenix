@@ -19,8 +19,18 @@ prevent, one level up: the spec that never gets written because nobody was at th
 **What that costs, stated.** The description is ~730 characters of always-in-context load, on every
 turn, forever — the price of discovery, paid whether or not the skill fires.
 
-**What is not claimed.** Nothing here argues the description is well-tuned. The trigger-optimizer
-measurement is reported in the authoring handoff.
+**What the trigger optimizer measured.** Five iterations over a 20-query set (9 should-trigger, 11
+should-not, the negatives deliberately including both homonym senses and all four sibling ideation
+skills). Best train **7/13**, best test **4/7**, precision **100%** in every iteration, recall
+0–11%. The tool returned the **original** description as `best_description` — none of its four
+rewrites beat it, so the original is kept. That is the tenth consecutive fabrika skill to measure
+flat here, which is why this is budgeted as a compliance measurement rather than a tuning step.
+
+The trigger set was **not human-reviewed** — no operator was live during the run — so treat the
+queries as this session's judgment about what a real ask looks like, not as a ratified set.
+
+**What is not claimed.** Nothing here argues the description is well-tuned; only that optimization
+did not improve it.
 
 ## The name, and why this contract does not re-open it
 

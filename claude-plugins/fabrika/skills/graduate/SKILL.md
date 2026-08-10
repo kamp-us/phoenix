@@ -48,9 +48,11 @@ sibling reader already resolved against the ACL** (ADR 0055) — you never promo
 because it reads like one.
 
 **§CAP — capability set.** A shell and a repo-scoped token. The write surface is exactly two
-things: one new issue carrying `status:needs-triage`, and one marker comment on the source. It cuts
-no branch, pushes nothing, opens no pull request, merges nothing, and — load-bearing — it **writes no `type:`,
-priority or milestone label and closes nothing** (ADR 0246). Closing a source is
+things — three on the same-spec branch: one new issue carrying `status:needs-triage`, one marker
+comment on the source, and, when step 3 finds the spec already filed, one note comment on **that**
+issue (one this skill did not create). It cuts no branch, pushes nothing, opens no pull request,
+merges nothing, and — load-bearing — it **writes no `type:`, priority or milestone label and closes
+nothing** (ADR 0246). Closing a source is
 `pipeline-cli tracker graduate`, a different verb in a different CLI that does the opposite of
 this skill.
 
@@ -61,9 +63,12 @@ fabrika graduate read 9412
 fabrika graduate trail 9412 > trail.json
 ```
 
-Read first. If it reports `graduated`, the spec already exists — report its number and stop at
-`ALREADY-GRADUATED`. Filing a second spec for one trail is the failure this check exists to catch,
-and it is cheaper to catch here than at step 5's refusal.
+Read first, and **read the `emissions` array, not just `state`.** Each emission names the refs it
+covered. If one already covers the decisions you are about to file, the spec exists — report its
+number and stop at `ALREADY-GRADUATED`. If the emissions cover only *part* of the trail, say which
+issues already exist and carry on with the remainder: `state` reads `graduated` as soon as anything
+has been filed, so stopping on that word alone would strand exactly the remainder the split path
+exists to serve. Catching a true duplicate here is cheaper than at step 5's refusal.
 
 <!-- anchor: NEVER-WRITE-ON-AN-ASSUMED-READ --> **`ungraduated` is something you read, never
 something you assume.** If this call did not run, or exited non-zero, the source's graduation state
@@ -76,8 +81,8 @@ marker you could not see, not a licence to skip the read.
 
 Then the trail. One call, whichever surface the work came from: the verb dispatches on the source's
 own label — a `grilling` session or a `wayfinding` map — and normalizes both into one trail. It
-prints a `readiness` token from a closed set and a `trailDigest` that binds what you are about to
-synthesize. Keep its output; step 4 needs the file.
+prints a `readiness` token from a closed set and a `trailDigest` over the whole trail. Keep its
+output; step 4 needs the file.
 
 **The short path is first-class.** Work plannable in one session skips `wayfinding` entirely:
 `grilling` → `graduate` → one issue. There is no map, and nothing here needs one. A design that
@@ -120,7 +125,7 @@ fabrika report dedup --query "moderation weight earned per account not inherited
 
 Three outcomes, and only one is about your spec: `candidates` (open each and judge it yourself),
 `none` (a real answer), `indeterminate` (too few distinctive keywords — re-query, this is a
-non-check). A non-zero exit is UNKNOWN, never `none`.
+non-check). A non-zero exit is never `none` — read the code, and let §UNK band it.
 
 **When a candidate is the same spec, do not file a twin.** Add what it lacks and stop at
 `NOTE-ADDED`:
@@ -152,9 +157,10 @@ Weight decay on a clock — no decision yet, tracked on the session.
 SPEC
 ```
 
-Add `--decisions R1.1,R1.2` when step 2 split the trail; leave it off and the spec carries every
-decision on the trail. Either way the spec digest is taken over what actually got rendered, which is
-what lets the remainder graduate later.
+Add `--decisions` once per ref when step 2 split the trail — `--decisions R1.1 --decisions R1.2`,
+repeated rather than comma-joined, because a map ref contains a space (`#9301 R1.2`). Leave it off
+and the spec carries every decision on the trail. Either way the spec digest is taken over what
+actually got rendered, which is what lets the remainder graduate later.
 
 You author **three** sections. The verb renders the fourth — `## Decisions` — from the trail, each
 entry carrying its source id and a provenance word from a closed set: `ruled` (the founder's, ACL
@@ -181,15 +187,17 @@ fabrika graduate emit 9412 --spec spec.md --title "Cap moderation weight per top
 
 Files exactly one issue carrying `status:needs-triage` and nothing else — no type, no priority, no
 milestone; **triage owns all of that and this skill computes no second answer to it** — then posts a
-marker on the source binding the trail digest to the issue it emitted. The source stays **open**.
+marker on the source binding the spec digest — the decisions this body actually carries — and the
+refs it covers, to the issue it emitted. The source stays **open**.
 
 **The title is type-neutral.** *"Cap moderation weight per topic"* names the work; `feat:` or
 `bug:` or `p1` types it, and a title that classifies is refused. Name what the spec is about and let
 triage decide what it is — a hand-typed classification is indistinguishable from a triaged one, so
 a guess here corrupts the signal triage runs on.
 
-A second emission against the same trail digest is refused, naming the issue that already exists.
-That refusal is the one-issue guarantee surviving a re-run, a crash, or a second session.
+A second emission of the **same decision set** is refused, naming the issue that already exists —
+that is the one-issue guarantee surviving a re-run, a crash, or a second session. A *different*
+subset of the same trail is not refused: that is how the remainder graduates.
 
 **Done when** exit `0` prints the issue number and the marker id — or the run stops on a refusal
 with nothing filed.
