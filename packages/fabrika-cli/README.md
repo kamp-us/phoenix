@@ -610,11 +610,10 @@ The group emits the `governance` namespace through the shipped
 
 ## The `pattern` group
 
-The contract is the `write-pattern` skill's derived CLI contract, landing with
-[PR #5333](https://github.com/kamp-us/phoenix/pull/5333) at
-`claude-plugins/fabrika/skills/write-pattern/contract.md`. A **pattern doc** is one flat
-`<slug>.md` under a doc directory (`.patterns` by default), registered by one row in that
-directory's `index.md`.
+The contract these five implement is
+[`claude-plugins/fabrika/skills/write-pattern/contract.md`](../../claude-plugins/fabrika/skills/write-pattern/contract.md).
+A **pattern doc** is one flat `<slug>.md` under a doc directory (`.patterns` by default),
+registered by one row in that directory's `index.md`.
 
 | Verb | Answers |
 |---|---|
