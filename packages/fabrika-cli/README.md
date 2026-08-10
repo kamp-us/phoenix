@@ -11,7 +11,8 @@ the `/review` contract specifies; `review-ui`, the three the `/review-ui` contra
 `ship`, the thirteen the `/ship` contract specifies; `eval`, the graded-corpus
 harness the fabrika eval layer measures itself with; `spend`, what one fabrika run cost in
 tokens; `wire`, which owns the byte-level formats two skills meet through on a GitHub
-artifact; and `hook`, which reads the envelope Claude Code writes to a hook's stdin — the group
+artifact; `status`, the six the `/fabrika` front door's contract specifies (what state the
+factory is in); and `hook`, which reads the envelope Claude Code writes to a hook's stdin — the group
 [fabrika's hook surface](../../claude-plugins/fabrika/hooks.json) declares against.
 `fabrika --help` lists them from the registry, so that index is never a second
 hand-maintained list.
@@ -564,6 +565,41 @@ Four things about it are load-bearing:
 The core is [`src/spend/rollup.ts`](./src/spend/rollup.ts), pure and total: it sums a
 `readSpendLedger` result over a resolved window and groups it three ways.
 [`src/spend/rollup-verb.ts`](./src/spend/rollup-verb.ts) is the IO around it.
+
+## The `status` group
+
+What state the factory is in — the six verbs
+[`front-door`](../../claude-plugins/fabrika/skills/front-door/SKILL.md) drives
+([#5214](https://github.com/kamp-us/phoenix/issues/5214), spec:
+[`contract.md`](../../claude-plugins/fabrika/skills/front-door/contract.md)).
+
+```
+status open                       # the composite four-field readout the skill injects
+status config                     # which declared repo surfaces exist here — the detection verb
+status menu                       # the landed skill roster, derived from the skills tree
+status readout                    # the landed-decision digest, as published
+status board                      # counts of the board's decided buckets
+status bootstrap readout-artifact # create one missing surface, then read it back
+```
+
+Three things about it are load-bearing:
+
+- **The three-state law.** Every field, row and bucket is a live value, a **proven negative**
+  (`empty` / `absent` / `missing` / `unprobeable` / `malformed`), or **`unknown`** with its reason —
+  and the third never renders as the second. An absent label is `unknown`, never `0`; an
+  unregistered decoder is `unknown`, never `absent`.
+- **`status open` is total.** It is injected before a session reads a token, and
+  [`src/verb.ts`](./src/verb.ts)'s `refuse()` hardcodes empty stdout — so a refusal would leave the
+  front door silent on exactly the cold start it exists for. Every source it cannot read becomes a
+  field state; its one refusal seat is a bad `--field`. It composes by **importing** the sibling
+  cores, never by spawning a verb and reading its exit code.
+- **`7` and `11` are the pair.** `7` is an **explicitly passed** `--skills-dir` proven absent; `11`
+  is a failed read. An *implicitly* resolved roster holding zero skills is neither — it is `empty`
+  at exit `0`.
+
+The roster resolves in three tiers — an explicit `--skills-dir`, the installed plugin's own skills
+tree, then `claude-plugins/fabrika/skills` in-repo — and prints which one served
+([`src/status/roster.ts`](./src/status/roster.ts)).
 
 ## The `ui` group
 

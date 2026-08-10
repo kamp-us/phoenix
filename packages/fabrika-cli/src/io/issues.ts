@@ -118,6 +118,32 @@ export const openIssuesWithLabel = (
 	});
 
 /**
+ * Open issues in `repo` whose title is **exactly** `title`, paged, pull requests filtered out.
+ *
+ * Matched over the issues endpoint rather than through the search index on purpose: search is
+ * eventually consistent and caps its result set, so a durable artifact created moments ago can read
+ * back as absent — and "absent" is the one answer an artifact lookup must never get wrong.
+ */
+export const openIssuesTitled = (
+	repo: string,
+	title: string,
+): Shell<Attempt<ReadonlyArray<IssueRow>>> =>
+	Effect.gen(function* () {
+		const r = yield* execCapture("gh", [
+			"api",
+			"--paginate",
+			`repos/${repo}/issues?state=open&per_page=100`,
+			"--jq",
+			'.[] | select(.pull_request | not) | "\\(.number)\t\\(.title)"',
+		]);
+		if (!r.ok) return fail(r.reason);
+		const rows = parseIssueRows(r.stdout);
+		return rows === null
+			? fail("`gh api` exited 0 but its output is not a list of issue rows")
+			: ok(rows.filter((row) => row.title === title));
+	});
+
+/**
  * The search index's open issues for `tokens`.
  *
  * GitHub AND-joins search terms, which is why the caller caps the token list — an over-long query
@@ -243,6 +269,60 @@ export const createIssue = (
 			return fail("`gh api` exited 0 but its output is not a created issue");
 		}
 		return ok({number: parsed.number, url: parsed.html_url});
+	});
+
+/**
+ * Create an issue carrying **no** label — the durable-artifact shape.
+ *
+ * Separate from {@link createIssue} rather than a nullable parameter: an artifact issue is not
+ * intake, and a stray label on it would put it in a queue something else drains.
+ */
+export const createUnlabelledIssue = (
+	repo: string,
+	title: string,
+	body: string,
+): Shell<Attempt<CreatedIssue>> =>
+	Effect.gen(function* () {
+		const r = yield* execCapture("gh", [
+			"api",
+			"--method",
+			"POST",
+			`repos/${repo}/issues`,
+			"-f",
+			`title=${title}`,
+			"-f",
+			`body=${body}`,
+		]);
+		if (!r.ok) return fail(r.reason);
+		const parsed = parseJson(r.stdout);
+		if (
+			!isRecord(parsed) ||
+			typeof parsed.number !== "number" ||
+			typeof parsed.html_url !== "string"
+		) {
+			return fail("`gh api` exited 0 but its output is not a created issue");
+		}
+		return ok({number: parsed.number, url: parsed.html_url});
+	});
+
+/** Create one repository label with GitHub's default colour and a description naming its creator. */
+export const createLabel = (
+	repo: string,
+	name: string,
+	description: string,
+): Shell<Attempt<void>> =>
+	Effect.gen(function* () {
+		const r = yield* execCapture("gh", [
+			"api",
+			"--method",
+			"POST",
+			`repos/${repo}/labels`,
+			"-f",
+			`name=${name}`,
+			"-f",
+			`description=${description}`,
+		]);
+		return r.ok ? ok(undefined) : fail(r.reason);
 	});
 
 export interface CreatedComment {

@@ -1,0 +1,222 @@
+/**
+ * `status open` — the composite front-door readout: four fields, each with its own state, source
+ * and freshness.
+ *
+ * **This verb has no zero-scope seat and no failed-read seat at all.** It is the command the skill
+ * injects before the session reads a token, and `../verb.ts`'s `refuse()` hardcodes empty stdout —
+ * so a front door that refused would be silent on exactly the cold start it exists for. Every
+ * source it cannot read becomes a *field state*. Its only refusal is a bad `--field`.
+ *
+ * **It composes by importing the sibling verbs' pure cores, never by spawning a verb and reading
+ * its exit code.** A composite that mapped sibling exit codes would be the package's first
+ * cross-group code reader, which would turn every legitimate code reuse into a defect. The mapping
+ * from a core's outcome to a field state is the table below, stated rather than left to the
+ * implementer, because that mapping *is* the group's purpose: keeping proven-empty apart from
+ * unread.
+ *
+ * **No aggregate state, deliberately.** A roll-up over four independently-sourced fields would need
+ * a rule for "three fine, one unknown", and every such rule either hides the unknown or drowns the
+ * three.
+ */
+import {answer, refuse, type VerbOutcome} from "../verb.ts";
+import type {BoardRead} from "./board-verb.ts";
+import {boardState} from "./board-verb.ts";
+import {OFF_VOCABULARY} from "./codes.ts";
+import {configState, countsOf, type SurfaceRow} from "./config-verb.ts";
+import {type AsOf, asOfToken, detail, noAsOf, row} from "./fields.ts";
+import {menuState} from "./menu-verb.ts";
+import {type ReadoutRead, readingOf} from "./readout-verb.ts";
+import type {RosterRead} from "./roster.ts";
+
+const VERB = "status open";
+
+/** The closed `--field` vocabulary. Any other value is off-vocabulary. */
+export const FIELDS = ["menu", "config", "board", "readout"] as const;
+export type FieldName = (typeof FIELDS)[number];
+
+export interface Field {
+	readonly name: FieldName;
+	readonly state: string;
+	readonly detail: string;
+	readonly source: string;
+	readonly asOf: AsOf;
+}
+
+/** `unknown` is in every field's closed set — that is what makes this verb total. */
+export const UNKNOWN = "unknown";
+
+const rosterSource = (roster: RosterRead): string => roster.display;
+
+export const menuField = (roster: RosterRead, asOf: AsOf): Field =>
+	roster._tag === "Resolved"
+		? {
+				name: "menu",
+				state: menuState(roster.skills.length),
+				detail:
+					roster.skills.length === 0
+						? `no skills in ${roster.tier} roster`
+						: `${roster.skills.length} skills`,
+				source: rosterSource(roster),
+				asOf,
+			}
+		: {
+				name: "menu",
+				state: UNKNOWN,
+				detail: detail(
+					roster._tag === "Failed" ? roster.reason : "the named --skills-dir is not there",
+				),
+				source: rosterSource(roster),
+				asOf: noAsOf,
+			};
+
+/**
+ * The one row worth naming: a roster that resolved and holds **zero** skills is `gaps`, never
+ * `satisfied`. "Every declared surface is present" is vacuously true over zero surfaces, and
+ * rendering the fresh install this skill onboards as fine is the exact fail-open of #4060.
+ */
+export const configField = (
+	roster: RosterRead,
+	surfaces: ReadonlyArray<SurfaceRow>,
+	asOf: AsOf,
+): Field => {
+	if (roster._tag !== "Resolved") {
+		return {
+			name: "config",
+			state: UNKNOWN,
+			detail: detail(
+				roster._tag === "Failed" ? roster.reason : "the named --skills-dir is not there",
+			),
+			source: rosterSource(roster),
+			asOf: noAsOf,
+		};
+	}
+	if (roster.skills.length === 0) {
+		return {
+			name: "config",
+			state: "gaps",
+			detail: "empty roster — nothing declared, nothing proven",
+			source: roster.display,
+			asOf,
+		};
+	}
+	const counts = countsOf(surfaces);
+	return {
+		name: "config",
+		state: configState(surfaces, roster.skills.length),
+		detail: `${counts.declaredSkills} declared, ${counts.missing} missing, ${counts.undeclaredSkills} undeclared`,
+		source: roster.display,
+		asOf,
+	};
+};
+
+export const boardField = (read: BoardRead): Field => {
+	if (read._tag === "Failed") {
+		return {
+			name: "board",
+			state: UNKNOWN,
+			detail: detail(`${read.reason} — a failed read, not zero issues`),
+			source: read.repo,
+			asOf: noAsOf,
+		};
+	}
+	const state = boardState(read.buckets);
+	const first = read.buckets.find((bucket) => bucket.name === "needs-triage");
+	const second = read.buckets.find((bucket) => bucket.name === "triaged");
+	if (state === "counted") {
+		return {
+			name: "board",
+			state,
+			detail: `${first?.count ?? 0} needs-triage, ${second?.count ?? 0} triaged`,
+			source: read.repo,
+			asOf: read.buckets[0]?.asOf ?? noAsOf,
+		};
+	}
+	const unknown = read.buckets.filter((bucket) => bucket.count === null);
+	return {
+		name: "board",
+		state: UNKNOWN,
+		detail: detail(
+			`${unknown.map((bucket) => bucket.name).join(",")}: ${unknown[0]?.detail ?? "unreadable"}`,
+		),
+		source: read.repo,
+		asOf: noAsOf,
+	};
+};
+
+/**
+ * **A proven-absent artifact is `absent` inside the composite, never `unknown`** — an absence the
+ * repository proves is a fact. Only a failed *read* is `unknown`, which is why an unregistered
+ * decoder lands there: an unbuilt decoder proves nothing about whether a digest exists.
+ */
+export const readoutField = (read: ReadoutRead): Field => {
+	const reading = readingOf(read);
+	if (reading !== null) {
+		return {
+			name: "readout",
+			state: reading.state,
+			detail: reading.detail,
+			source: reading.source,
+			asOf: reading.asOf,
+		};
+	}
+	return {
+		name: "readout",
+		state: UNKNOWN,
+		detail: detail(
+			read._tag === "NoFormat"
+				? "the governance-digest format is not registered — a failed read, not an absent digest"
+				: read._tag === "Unfetchable"
+					? `${read.reason} — a failed read, not an absent digest`
+					: "the digest could not be read",
+		),
+		source:
+			read._tag === "Unfetchable" && read.issue !== null
+				? `${read.repo}#${read.issue}`
+				: read._tag === "NoFormat"
+					? "unknown"
+					: read.repo,
+		asOf: noAsOf,
+	};
+};
+
+export const isFieldName = (value: string): value is FieldName =>
+	(FIELDS as ReadonlyArray<string>).includes(value);
+
+/** The one refusal seat this verb has. */
+export const badFieldRefusal = (value: string): VerbOutcome =>
+	refuse(OFF_VOCABULARY, `${VERB}: --field "${value}" is not one of ${FIELDS.join(", ")}.`);
+
+export interface OpenInput {
+	readonly fields: ReadonlyArray<Field>;
+	readonly json: boolean;
+	/** The notice line's scope half — the roster, its tier and the repo the reads resolved to. */
+	readonly scope: string;
+}
+
+export const runOpen = ({fields, json, scope}: OpenInput): VerbOutcome => {
+	const unknown = fields.filter((field) => field.state === UNKNOWN).length;
+	const notice = `${VERB}: ${scope}; ${fields.length} field(s) rendered, ${unknown} unknown.`;
+	if (json) {
+		return answer(
+			`${JSON.stringify({
+				outcome: "open",
+				fields: fields.map((field) => ({
+					name: field.name,
+					state: field.state,
+					detail: field.detail,
+					source: field.source,
+					asOf: field.asOf.at,
+					asOfKind: field.asOf.kind,
+				})),
+			})}\n`,
+			[notice],
+		);
+	}
+	const lines = [
+		row("open", String(fields.length)),
+		...fields.map((field) =>
+			row("field", field.name, field.state, field.detail, field.source, asOfToken(field.asOf)),
+		),
+	];
+	return answer(`${lines.join("\n")}\n`, [notice]);
+};

@@ -17,6 +17,7 @@ import * as report from "./report/codes.ts";
 import * as review from "./review/codes.ts";
 import * as reviewUi from "./review-ui/codes.ts";
 import * as ship from "./ship/codes.ts";
+import * as status from "./status/codes.ts";
 import * as triage from "./triage/codes.ts";
 import * as ui from "./ui/codes.ts";
 import * as wire from "./wire/codes.ts";
@@ -38,6 +39,7 @@ const TABLES: Readonly<Record<string, CodeTable>> = {
 	review,
 	"review-ui": reviewUi,
 	ship,
+	status,
 	triage,
 	ui,
 	wire,

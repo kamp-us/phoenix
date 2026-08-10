@@ -104,6 +104,7 @@ export const ALIGNED_GROUPS: Readonly<Record<string, SharedSeats>> = {
 	review: SHARED_SEATS,
 	"review-ui": REVIEW_UI_SEATS,
 	ship: SHARED_SEATS,
+	status: SHARED_SEATS,
 	ui: UI_SEATS,
 };
 
