@@ -118,13 +118,13 @@ export const runTake = (
 			const problem = asserted.problem;
 			if (problem._tag === "Empty" && problem.heading === "## Unsure") {
 				return refuse(
-					4,
+					BAD_SECTIONS,
 					`${VERB}: ## Unsure is empty — a successor reads an empty Unsure as certainty. Write what you did not resolve, or say that you resolved everything.`,
 				);
 			}
 			if (problem._tag === "Outside") {
 				return refuse(
-					4,
+					BAD_SECTIONS,
 					`${VERB}: content outside the four sections (${problem.heading}) — the section set is closed so a successor can tell the format's words from someone else's.`,
 				);
 			}
