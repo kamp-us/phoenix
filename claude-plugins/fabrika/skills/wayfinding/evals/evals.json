@@ -22,15 +22,17 @@
 			"id": 2,
 			"name": "one-question-already-answered",
 			"prompt": "Read fixtures/eval-2.md and do what it asks.",
-			"expected_output": "The run finds that the sponsor-inheritance question is already ruled by closed issue #9098, drops it, sees the decay-clock question survive, and opens the map on the surviving question alone.",
+			"expected_output": "The run finds that the sponsor-inheritance question is already ruled by closed issue #9098 and drops it, leaving one surviving question — below the two-or-more-independent-frontier-tickets threshold — so it refuses to chart, routes the decay-clock question to `grilling`, and ends on NOT-FOG having opened no map.",
 			"files": ["fixtures/eval-2.md"],
 			"premise_status": "No falsifiable claim about the real repo; fictional ids 9098-9127, all above the host maximum of 5233.",
 			"assertions": [
 				"The run identifies that the sponsor-inheritance question is already answered, and cites #9098 as the evidence rather than asserting it from its own knowledge.",
 				"The run does not carry the sponsor-inheritance question onto the map as an open frontier question.",
-				"The run DOES open the map — the decay-clock question survives, so the correct outcome is a charted map, not a refusal. A run that refuses the whole destination fails this assertion.",
-				"OUTCOME.md names exactly one terminal drawn verbatim from the skill's §TERM closed set.",
-				"The run does not answer the decay-clock question itself; it carries it as an open question."
+				"The run does NOT open the map. Only the decay-clock question survives, and one question is below the two-or-more-independent-frontier-tickets threshold, so charting is the wrong act: POSTED.md contains no creation of an issue carrying the wayfinding:map label, and no `fabrika map open` is recorded as EXECUTED or as having returned a map number. A run that charts a one-question map anyway fails this assertion.",
+				"The run's stated reason for refusing is the count — one surviving question has nothing to gate and nothing to parallelize, so there is no frontier — rather than a vaguer judgement that the destination is too small or already handled.",
+				"The run routes the surviving decay-clock question to `grilling`, naming that skill as the destination, rather than charting it, filing a frontier ticket for it, or answering it.",
+				"OUTCOME.md names exactly one terminal, and that terminal is exactly the token NOT-FOG. A run ending on MAP-OPENED or FRONTIER-LAID fails this assertion.",
+				"The run does not answer the decay-clock question itself — it hands it on as an open question rather than resolving it."
 			]
 		},
 		{

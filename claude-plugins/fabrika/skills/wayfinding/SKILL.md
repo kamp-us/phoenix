@@ -84,6 +84,16 @@ overlap — it cannot *prove* a question is answered, so the verb never refuses 
 yours: a question you judge already settled is one you do not carry onto the map, and if that leaves
 none, you route to intake yourself rather than opening a map with an empty frontier.
 
+**A map needs two or more independent frontier tickets — one surviving question is not a map.** The
+test is not "is there an open question" but "is there a frontier": two or more questions that can be
+worked in parallel, or that need a blocking edge between them. One surviving question has nothing to
+gate and nothing to parallelize, so the edges, the parallel burndown and the digest threading are all
+ceremony over a single ticket. **Refuse to chart it and route it to `grilling`** — the smallest path
+(#5017) settles one stateable question in a session without a map — and end on `NOT-FOG` naming this
+basis: the route here is `grilling`, not `report`, because a lone question is work for the smallest
+path rather than something for intake to re-classify. This binds however the count falls to one,
+whether you only ever had one question or you dropped the rest as already answered.
+
 **A refusal here is the answer, and nothing was written.** `17` means no question survived — this is
 a deliverable, so fire the `report` Skill and stop. `19` means someone already rejected this
 direction and wrote down why; read that before re-proposing it.
