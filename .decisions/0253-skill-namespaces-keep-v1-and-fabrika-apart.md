@@ -187,7 +187,11 @@ directory.** `.claude/skills` and `.claude/agents` are load paths; `.claude/.pip
 
 - Discharges the decision half of
   [#4829](https://github.com/kamp-us/phoenix/issues/4829). `claude-plugins/fabrika/skills/report/contract.md`
-  is corrected to point here in the same PR; the mechanical follow-ups are filed separately.
+  is corrected to point here in the same PR.
+- The mechanical follow-ups this choice implies are filed separately:
+  [#5276](https://github.com/kamp-us/phoenix/issues/5276) holds the one-change retirement of §3 step
+  3, and [#5275](https://github.com/kamp-us/phoenix/issues/5275) covers the `DEVELOPMENT.md` path
+  pins that neither #4761 nor #4762 scopes.
 - The routing-pin half — repo docs that reference a skill by a `.claude/skills/...` filesystem path
   rather than by name — is [#4761](https://github.com/kamp-us/phoenix/issues/4761) /
   [#4762](https://github.com/kamp-us/phoenix/issues/4762) and is not touched here.
