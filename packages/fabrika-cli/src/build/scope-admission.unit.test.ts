@@ -7,7 +7,10 @@ import {
 	type Admission,
 	admissionOf,
 	admissionRefusal,
+	audienceAxisBinds,
 	audienceAxisOf,
+	CLAIM_PURPOSES,
+	DEFAULT_CLAIM_PURPOSE,
 	DEFAULT_ROADMAP,
 	exclusionReasonOf,
 	type Focus,
@@ -15,6 +18,8 @@ import {
 	focusScopeLine,
 	homeOf,
 	type IssueFacts,
+	parseClaimPurpose,
+	purposeScopeLine,
 	readDeclaredFocus,
 	readFocus,
 	STANDING_LANE_LABELS,
@@ -172,6 +177,56 @@ describe("admissionOf", () => {
 		expect(out._tag === "Admitted" && out.scope).toEqual({_tag: "Inert"});
 		expect(focusScopeLine("build pick", noFocus)).toContain("none declared — scope fence inert");
 		expect(focusReport(noFocus)).toEqual({state: "none"});
+	});
+
+	/**
+	 * The purpose axis (#5175). Every case varies the purpose over one unlabelled, in-focus issue —
+	 * the epic shape the ruling rests on — so what changes is only which question the claim asks.
+	 */
+	describe("purpose", () => {
+		const unlabelled = issue({labels: ["status:triaged", "type:epic"]});
+
+		it("defaults to build, so an omitted purpose keeps the fence", () => {
+			expect(DEFAULT_CLAIM_PURPOSE).toBe("build");
+			expect(admissionOf(declared, unlabelled)._tag).toBe("AudienceNotAgent");
+			expect(admissionOf(declared, unlabelled, DEFAULT_CLAIM_PURPOSE)._tag).toBe(
+				"AudienceNotAgent",
+			);
+		});
+
+		for (const purpose of ["plan", "gate"] as const) {
+			it(`admits the same issue under ${purpose}, and still reports the audience it saw`, () => {
+				const out = admissionOf(declared, unlabelled, purpose);
+				expect(out._tag).toBe("Admitted");
+				expect(out._tag === "Admitted" && out.audience).toEqual({_tag: "NotAgent", label: null});
+				expect(audienceAxisBinds(purpose)).toBe(false);
+			});
+		}
+
+		for (const purpose of CLAIM_PURPOSES) {
+			it(`leaves the scope axis alone under ${purpose} — out of focus is still 20`, () => {
+				const out = admissionOf(declared, issue({milestone: 24}), purpose);
+				expect(out._tag).toBe("OutOfFocus");
+				expect(admissionRefusal("build claim", out)?.code).toBe(OUT_OF_FOCUS);
+			});
+		}
+
+		it("reads only the three named purposes — an off-enum value is null, never build", () => {
+			expect(CLAIM_PURPOSES.map(parseClaimPurpose)).toEqual([...CLAIM_PURPOSES]);
+			expect(parseClaimPurpose("planning")).toBeNull();
+			expect(parseClaimPurpose("")).toBeNull();
+			expect(parseClaimPurpose("BUILD")).toBeNull();
+		});
+
+		it("says on the purpose line whether the audience axis bound this claim", () => {
+			const audience = audienceAxisOf(unlabelled);
+			expect(purposeScopeLine("build claim", "build", audience)).toContain(
+				"the audience axis binds",
+			);
+			expect(purposeScopeLine("build claim", "gate", audience)).toContain(
+				"the audience axis does not bind a gate claim (#5175)",
+			);
+		});
 	});
 
 	it("resolves a malformed declaration to UNKNOWN at 4, never to admitted", () => {

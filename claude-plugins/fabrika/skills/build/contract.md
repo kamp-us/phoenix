@@ -115,7 +115,8 @@ from two separate questions, computed together and answered together:
   names campaign membership and nothing else. Refusal is `20`.
 - **The audience axis** — is the issue's `ready-for:` label `ready-for:agent`? This axis is older
   than the fence (#4780); `build pick` already carried it, and ADR 0245 asks for the scope axis to
-  be added **beside** it, not folded into it. Refusal is `21`.
+  be added **beside** it, not folded into it. Refusal is `21`, and it binds a **build-purpose** claim
+  only (see `build claim`'s `--purpose`, #5175).
 
 **Keep the two names apart.** *Scope admission* is a different question from the audience axis (who
 the work is for), from dependency eligibility (`build eligible` asks whether an issue's predecessors
@@ -197,9 +198,11 @@ nothing, while `20` and `21` are proven refusals. Nor does a scope refusal borro
 is minted for "the read failed": the matrix already owns that meaning at `11`, and one meaning on two
 codes is the drift the matrix exists to prevent.
 
-**The override — explicit at the call, recorded on the issue.** `build claim --override "<reason>"`
-admits an issue the predicate refused, and writes the reason into the claim marker it posts, so the
-escape hatch costs one deliberate act and leaves a trace; a silent override is not one. **`build
+**The override — explicit at the call, recorded on the issue.** `build claim --override "<reason>"
+--override-lane "<lane>"` admits an issue the predicate refused, and writes **both** fields — the
+lane and the reason — into the claim marker it posts, so the escape hatch costs one deliberate act
+and names who took it; a silent or unattributed override is not one. The two flags are required
+together (the `claim` block below): either one alone is a usage error, not a claim. **`build
 pick` takes no override**: the pool is the browse path, and an operator who means to work an
 out-of-focus issue names its number and overrides where the lane actually opens. **`build confirm`
 and `build release` never run the fence** — it decides what may *start*, so a focus row edited
@@ -581,18 +584,21 @@ shape ambiguous between comment ids and session ids and callers guessed (#4428).
 **Invocation**
 
 ```
-fabrika build claim 4312 [--repo <owner/name>] [--override <reason>]
+fabrika build claim 4312 [--repo <owner/name>] [--purpose plan|gate|build]
+                         [--override <reason> --override-lane <lane>]
 fabrika build confirm 4312 [--repo <owner/name>]
 fabrika build release 4312 [--repo <owner/name>]
 ```
 
-**Inputs** — the first two rows are identical for all three verbs; `--override` is `claim`'s alone:
+**Inputs** — the first two rows are identical for all three verbs; the last three are `claim`'s alone:
 
 | Flag | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `<number>` | positional integer | yes | — | the issue (or, in repair, the PR) the claim concerns |
 | `--repo` | string | no | the `origin` remote's `owner/name` | the repository whose markers are read and written |
-| `--override` | string | no | — | claim an issue the admission test refused on either axis, naming why; the reason is written into the claim marker |
+| `--purpose` | `plan` \| `gate` \| `build` | no | `build` | why this lane claims; the audience axis binds `build` only (#5175). An off-enum value is `10`, never a fallback |
+| `--override` | string | no | — | claim an issue the admission test refused on either axis, naming why; requires `--override-lane` |
+| `--override-lane` | string | no | — | the lane the override is taken for; refused without `--override`. Lane and reason are both written into the claim marker |
 
 **`claim` runs the fence before it writes anything.** After the target-open check and **before
 any marker is posted**, `claim` puts `<number>` through the
@@ -603,12 +609,29 @@ module `build pick` filters on, both axes, never a second derivation. A `refused
 `11` and a malformed declaration is `4`, and neither ever proceeds. Nothing is written on any of the
 four: the issue carries no marker, so a refused claim leaves no trace to retract.
 
+**The purpose decides whether the audience axis binds — it never enters either axis.** `--purpose`
+says why this lane claims: `build` (the default) is bound by both axes, while `plan` and `gate` are
+bound by the scope axis alone. The audience axis asks whether an agent should pick the issue up to
+*build*, and an epic earns `ready-for:agent` only after it has been planned and gated, so fencing
+the planner and the gate on it is circular (founder ruling,
+[#5175](https://github.com/kamp-us/phoenix/issues/5175); 19 of 20 open epics carried no such label).
+The purpose rides **beside** the two axes rather than widening either — each axis still reads the
+issue exactly as it did, and only the composition consults the purpose, which is the shape ADR 0245's
+repair round settled. A `21` is therefore reachable under `--purpose build` only, and `20` is
+reachable under every purpose. `claim`'s purpose line names which reading applied, and the audience
+it saw either way, so a claim admitted over a non-agent audience is readable as one afterwards.
+
 This is the seam where the refusal has teeth. A pool filter is bypassed by an operator naming a
 number, and a number handed straight to `claim` passes through no pool — claiming is the moment work
-starts and the one moment every path goes through (ADR 0245). `--override "<reason>"` admits the
-issue anyway and appends the reason to the claim marker it posts, so the escape hatch costs one
-deliberate act and leaves a record on the issue; an empty `--override` value is a usage error (`1`),
-because an unexplained override is the silent one the rule forbids. `confirm` and `release` do not
+starts and the one moment every path goes through (ADR 0245). `--override "<reason>"
+--override-lane "<lane>"` admits the issue anyway and appends both fields to the claim marker it
+posts, so the escape hatch costs one deliberate act and leaves a record on the issue naming who took
+it and why. **Both fields are required together**: an empty reason, a missing or blank lane, and a
+lane with no override are each a usage error (`1`), because an override that names neither is
+indistinguishable from routine use — which is how a fail-closed fence rots fail-open by convention
+(#5175). The override is for a *proven* refusal an operator means to take; it is not the way a
+plan- or gate-purpose lane gets past the audience axis, which `--purpose` now answers directly.
+`confirm` and `release` do not
 run the fence at all: it governs what may *start*, so a focus row edited mid-lane can neither strand
 a running lane nor block its release.
 
@@ -617,9 +640,9 @@ unset behavior: unset is a usage error, exit `1` — a claim without an identity
 
 **Output** — machine, one JSON object:
 
-- `claim` on a win: `{"answer": "won", "number": 4312, "token": "build:<sid>:<uuid>"}` — plus
-  `"override": "<reason>"` when the win came through `--override`, so the answer records the
-  exception as well as the marker does.
+- `claim` on a win: `{"answer": "won", "number": 4312, "token": "build:<sid>:<uuid>", "purpose":
+  "build"}` — plus `"override": {"lane": "<lane>", "reason": "<reason>"}` when the win came through
+  `--override`, so the answer records the exception as well as the marker does.
 - `confirm` when held: `{"answer": "mine", "number": 4312, "token": "..."}`.
 - `release` when released: `{"answer": "released", "number": 4312}`.
 
@@ -638,21 +661,25 @@ proven-foreign only; a missing session id is `1`; an unreadable marker set is `1
 | `7` | the issue is proven absent (404) or closed |
 | `8` | the marker write failed — it may or may not have landed; re-run `confirm` before anything else |
 | `9` | the marker landed but the read-back does not match |
+| `10` | `claim` only: `--purpose` is off the `plan` \| `gate` \| `build` enum — a refusal, never a fallback to `build` |
 | `11` | the marker set could not be read — ownership is UNKNOWN, never "unclaimed"; or, `claim` only, the focus declaration or the issue's home could not be read — scope admission is UNKNOWN, never admitted |
 | `15` | proven: another session's earlier authorized marker wins (`claim`), holds (`confirm`), or `release` was asked for a token this session does not hold |
 | `20` | `claim` only, proven: the issue's home is outside the declared focus — no marker was written |
-| `21` | `claim` only, proven: the issue's audience is not an agent — no marker was written |
+| `21` | `claim --purpose build` only (the default), proven: the issue's audience is not an agent — no marker was written |
 
 **Errors**
 
 | Message (stderr) | Code | Kind |
 |---|---|---|
 | `build claim: issue #<n> is proven absent or closed.` | 7 | refusal |
-| `build claim: #<n> is homed in milestone <home>, outside the declared focus #<focus> — refusing before any marker; pass --override "<reason>" to claim it anyway.` | 20 | refusal |
-| `build claim: #<n> carries <audience>, not "ready-for:agent" — refusing before any marker; pass --override "<reason>" to claim it anyway.` (`<audience>` is the issue's `ready-for:` label, or the literal `no "ready-for:" label` when it carries none) | 21 | refusal |
+| `build claim: #<n> is homed in milestone <home>, outside the declared focus #<focus> — refusing before any marker; pass --override "<reason>" --override-lane "<lane>" to claim it anyway.` | 20 | refusal |
+| `build claim: #<n> carries <audience>, not "ready-for:agent" — refusing before any marker; pass --override "<reason>" --override-lane "<lane>" to claim it anyway.` (`<audience>` is the issue's `ready-for:` label, or the literal `no "ready-for:" label` when it carries none) | 21 | refusal |
 | `build claim: cannot read the "## Focus" declaration: <reason> — scope is UNKNOWN, never admitted; nothing was written.` | 11 | refusal |
 | `build claim: the "## Focus" declaration does not parse: <detail> — a malformed declaration is never read as "no focus"; nothing was written.` | 4 | refusal |
 | `build claim: --override was given with an empty reason — an override is recorded or it is not one.` | 1 | usage error |
+| `build claim: --override was given without a lane — pass --override-lane "<lane>" so the escape hatch names who took it.` | 1 | usage error |
+| `build claim: --override-lane was given without --override — a lane names no override on its own.` | 1 | usage error |
+| `build claim: --purpose "<value>" is not one of plan \| gate \| build — an unrecognised purpose refuses, and never falls back to build.` | 10 | usage error |
 | `build claim: the marker write failed: <reason> — the claim state is UNKNOWN; run "fabrika build confirm <n>" before any further action.` | 8 | refusal |
 | `build claim: cannot read the claim markers on #<n>: <reason> — ownership is UNKNOWN, never "unclaimed".` | 11 | refusal |
 | `build claim: lost to <token> (posted <timestamp>, authorized).` | 15 | refusal |
@@ -677,19 +704,24 @@ run that claimed under an inert fence is readable as such afterwards.
 
 ```
 $ fabrika build claim 4312
-{"answer":"won","number":4312,"token":"build:s-9f2e:c1a4d6f8-3b7e-4a19-9c2d-5e8f0a1b2c3d"}
+{"answer":"won","number":4312,"token":"build:s-9f2e:c1a4d6f8-3b7e-4a19-9c2d-5e8f0a1b2c3d","purpose":"build"}
+```
+
+```
+$ fabrika build claim 4300 --purpose gate
+{"answer":"won","number":4300,"token":"build:s-9f2e:c1a4d6f8-3b7e-4a19-9c2d-5e8f0a1b2c3d","purpose":"gate"}
 ```
 
 ```
 $ fabrika build claim 4290
-build claim: #4290 is homed in milestone 39, outside the declared focus #44 — refusing before any marker; pass --override "<reason>" to claim it anyway.
+build claim: #4290 is homed in milestone 39, outside the declared focus #44 — refusing before any marker; pass --override "<reason>" --override-lane "<lane>" to claim it anyway.
 $ echo $?
 20
 ```
 
 ```
-$ fabrika build claim 4290 --override "hotfix for the release blocker"
-{"answer":"won","number":4290,"token":"build:s-9f2e:c1a4d6f8-3b7e-4a19-9c2d-5e8f0a1b2c3d","override":"hotfix for the release blocker"}
+$ fabrika build claim 4290 --override "hotfix for the release blocker" --override-lane build-epic
+{"answer":"won","number":4290,"token":"build:s-9f2e:c1a4d6f8-3b7e-4a19-9c2d-5e8f0a1b2c3d","purpose":"build","override":{"lane":"build-epic","reason":"hotfix for the release blocker"}}
 ```
 
 ```

@@ -33,15 +33,25 @@ The planner and this gate must not interleave on one epic, so claim it before re
 the claim is `build`'s, reused, not a second lock:
 
 ```bash
-fabrika build claim 4300
+fabrika build claim 4300 --purpose gate
 ```
+
+`--purpose gate` is not optional here. The audience axis (`ready-for:agent`) asks whether an agent
+should pick the issue up to **build**, and an epic earns that label only *after* it has been planned
+and gated — so fencing this gate on it is circular, and the founder ruled the fence binds
+build-purpose claims only ([#5175](https://github.com/kamp-us/phoenix/issues/5175)). A `gate` claim
+is admitted without the label; the scope axis still binds, so an out-of-focus epic is still exit
+`20`. Never reach for `--override` to get past the audience axis — that is the fail-open convention
+the purpose exists to remove.
 
 Done when it answers `won`. Exit `15` is a proven loss with the winner named on stderr: end at
 `BACKED-OFF`. Exit `7` is a proven-absent or closed target: end at `PLAN-UNGATEABLE`. The verb takes
 the session identity from `CLAUDE_CODE_SESSION_ID`, and an unset one is exit `1` — a claim without
-an identity is not a claim. **Any other non-zero here (`1`, `8`, `9`, `11`) ends `STOPPED` with no
-note**: you hold no claim, and `build note` requires one, so there is nothing postable — report the
-code in the terminal line instead.
+an identity is not a claim. **Any other non-zero here (`1`, `8`, `9`, `10`, `11`, `20`) ends
+`STOPPED` with no note**: you hold no claim, and `build note` requires one, so there is nothing
+postable — report the code in the terminal line instead. `10` is an off-enum `--purpose`, and `20`
+is a proven out-of-focus epic. Exit `21` is no longer reachable at this step, because a `gate` claim
+is not bound by the audience axis.
 
 ```bash
 fabrika plan read 4300

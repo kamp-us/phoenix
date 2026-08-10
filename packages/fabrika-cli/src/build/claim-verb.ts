@@ -25,13 +25,30 @@ import type {ChildProcessSpawner} from "effect/unstable/process";
 import {createComment, deleteComment, getComment, type IssueRecord} from "../io/issues.ts";
 import {normalizeForReadback} from "../report/compose.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
-import {composeMarker, readMarkerToken, requireSession, resolveOwnership} from "./claim.ts";
-import {CLAIM_NOT_MINE, PRECONDITION_UNKNOWN, READBACK_MISMATCH, WRITE_UNKNOWN} from "./codes.ts";
+import {
+	type ClaimOverride,
+	composeMarker,
+	readMarkerToken,
+	requireSession,
+	resolveOwnership,
+} from "./claim.ts";
+import {
+	CLAIM_NOT_MINE,
+	OFF_VOCABULARY,
+	PRECONDITION_UNKNOWN,
+	READBACK_MISMATCH,
+	WRITE_UNKNOWN,
+} from "./codes.ts";
 import {composeToken} from "./lane.ts";
 import {
 	admissionOf,
 	admissionRefusal,
+	audienceAxisOf,
+	CLAIM_PURPOSES,
+	DEFAULT_CLAIM_PURPOSE,
 	focusScopeLine,
+	parseClaimPurpose,
+	purposeScopeLine,
 	readDeclaredFocus,
 } from "./scope-admission.ts";
 import {openIssue, resolveTargetRepo} from "./target.ts";
@@ -44,11 +61,55 @@ export interface ClaimOptions {
 	readonly uuid: string;
 	/** The marker's human-readable ISO-8601 timestamp. The tiebreak uses GitHub's `created_at`. */
 	readonly at: string;
+	/** Why this lane claims — `plan` | `gate` | `build`, as typed. Off-enum refuses (#5175). */
+	readonly purpose: string;
 	/** Why this run claims an issue the admission test refused, or `null` for the ordinary path. */
 	readonly override: string | null;
+	/** The lane an override is taken for — required with an override, refused without one. */
+	readonly overrideLane: string | null;
 }
 
-export type ProtocolOptions = Omit<ClaimOptions, "uuid" | "at" | "override">;
+export type ProtocolOptions = Omit<
+	ClaimOptions,
+	"uuid" | "at" | "purpose" | "override" | "overrideLane"
+>;
+
+const CLAIM = "build claim";
+
+type OverrideRead =
+	| {readonly _tag: "Refused"; readonly outcome: VerbOutcome}
+	| {readonly _tag: "Read"; readonly override: ClaimOverride | null};
+
+/**
+ * The override's two required fields, read before anything is written.
+ *
+ * An override is the fence's escape hatch, and an escape hatch that records nothing is how the fence
+ * rots fail-open by convention — so a reason without a lane, a lane without a reason, and a blank
+ * either is a usage refusal rather than a claim with a thin trace (#5175).
+ */
+const readOverride = (reason: string | null, lane: string | null): OverrideRead => {
+	const refusal = (message: string): OverrideRead => ({
+		_tag: "Refused",
+		outcome: refuse(FAILED, `${CLAIM}: ${message}`),
+	});
+	if (reason === null && lane === null) return {_tag: "Read", override: null};
+	if (reason === null) {
+		return refusal(
+			"--override-lane was given without --override — a lane names no override on its own.",
+		);
+	}
+	if (reason.trim() === "") {
+		return refusal(
+			"--override was given with an empty reason — an override is recorded or it is not one.",
+		);
+	}
+	if (lane === null || lane.trim() === "") {
+		return refusal(
+			'--override was given without a lane — pass --override-lane "<lane>" so the escape hatch names who took it.',
+		);
+	}
+	return {_tag: "Read", override: {lane: lane.trim(), reason: reason.trim()}};
+};
 
 const preflight = (
 	verb: string,
@@ -85,8 +146,6 @@ const preflight = (
 		};
 	});
 
-const CLAIM = "build claim";
-
 export const runClaim = (
 	options: ClaimOptions,
 ): Effect.Effect<
@@ -95,12 +154,17 @@ export const runClaim = (
 	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem
 > =>
 	Effect.gen(function* () {
-		if (options.override !== null && options.override.trim() === "") {
+		const purpose = parseClaimPurpose(options.purpose);
+		if (purpose === null) {
 			return refuse(
-				FAILED,
-				`${CLAIM}: --override was given with an empty reason — an override is recorded or it is not one.`,
+				OFF_VOCABULARY,
+				`${CLAIM}: --purpose "${options.purpose}" is not one of ${CLAIM_PURPOSES.join(" | ")} — an unrecognised purpose refuses, and never falls back to ${DEFAULT_CLAIM_PURPOSE}.`,
 			);
 		}
+		const overrideRead = readOverride(options.override, options.overrideLane);
+		if (overrideRead._tag === "Refused") return overrideRead.outcome;
+		const override = overrideRead.override;
+
 		const ready = yield* preflight(CLAIM, options);
 		if (ready._tag === "Refused") return ready.outcome;
 		const {repo, session} = ready;
@@ -114,26 +178,30 @@ export const runClaim = (
 			);
 		}
 		const scopeLine = focusScopeLine(CLAIM, read.focus);
-		const admission = admissionOf(read.focus, ready.issue);
+		const purposeLine = purposeScopeLine(CLAIM, purpose, audienceAxisOf(ready.issue));
+		const admission = admissionOf(read.focus, ready.issue, purpose);
 		const refusal = admissionRefusal(CLAIM, admission);
 		// An override answers a PROVEN refusal. UNKNOWN has proven nothing, so there is nothing to
 		// override — a fence that could not read its input must not be talked past by a flag.
 		const overridable = admission._tag === "OutOfFocus" || admission._tag === "AudienceNotAgent";
-		if (refusal !== null && !(overridable && options.override !== null)) {
+		if (refusal !== null && !(overridable && override !== null)) {
 			return {
 				...refusal,
 				stderr: [
 					scopeLine,
+					purposeLine,
 					...refusal.stderr,
 					`${CLAIM}: nothing was written — #${number} carries no marker from this run${
-						overridable ? '; pass --override "<reason>" to claim it anyway' : ""
+						overridable
+							? '; pass --override "<reason>" --override-lane "<lane>" to claim it anyway'
+							: ""
 					}.`,
 				],
 			};
 		}
 
 		const token = composeToken(session, options.uuid);
-		const body = composeMarker(token, options.at, options.override);
+		const body = composeMarker(token, options.at, override);
 		const posted = yield* createComment(repo, number, body);
 		if (posted._tag === "Failure") {
 			return refuse(
@@ -154,6 +222,7 @@ export const runClaim = (
 		const {ownership, unauthorized} = yield* resolveOwnership(repo, number, session);
 		const notes = [
 			scopeLine,
+			purposeLine,
 			...unauthorized.map(
 				(marker) =>
 					`${CLAIM}: comment ${marker.commentId} carries a claim marker from "${marker.author}", who holds no write permission — counted, never a winner.`,
@@ -172,7 +241,8 @@ export const runClaim = (
 					answer: "won",
 					number,
 					token,
-					...(options.override === null ? {} : {override: options.override}),
+					purpose,
+					...(override === null ? {} : {override}),
 				}),
 				notes,
 			);

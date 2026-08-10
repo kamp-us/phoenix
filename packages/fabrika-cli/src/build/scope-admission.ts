@@ -12,6 +12,9 @@
  * answering both questions at once is the shape the contract's repair round removed; every outcome
  * below therefore carries **both** axis verdicts, so a caller can never lose one behind the other.
  *
+ * A claim's {@link ClaimPurpose} rides **beside** those axes: it decides whether the audience axis
+ * *binds* this claim, and it never enters either axis's own reading (#5175).
+ *
  * The core is pure and total, and this module is **imported** by the pool and claim seams rather than
  * invoked through a relaying verb (the wrapper shape ADR 0238 bans). Only {@link readDeclaredFocus}
  * touches IO.
@@ -182,6 +185,29 @@ export const scopeAxisOf = (focus: ParsedFocus, issue: IssueFacts): ScopeAxis =>
 	return {_tag: "OutOfFocus", focus: focus.milestone, home: homeOf(issue)};
 };
 
+/**
+ * Why a lane claims — `plan`, `gate`, or `build`. A closed enum, never a policy map.
+ *
+ * The audience axis answers "should an agent pick this up to **build**", and an epic only earns
+ * `ready-for:agent` *after* it has been planned and gated — so fencing the planner and the gate on it
+ * is circular (founder ruling, #5175: 19 of 20 open epics carried no such label). Purpose is how a
+ * claim says which question it is asking, and it is deliberately a third input rather than a widening
+ * of either axis: {@link scopeAxisOf} and {@link audienceAxisOf} read an issue exactly as before, and
+ * only {@link admissionOf}'s composition consults the purpose.
+ */
+export const CLAIM_PURPOSES = ["plan", "gate", "build"] as const;
+export type ClaimPurpose = (typeof CLAIM_PURPOSES)[number];
+
+/** The purpose a claim carries when none is named — behaviour-preserving, so the fence stays on. */
+export const DEFAULT_CLAIM_PURPOSE: ClaimPurpose = "build";
+
+/** The named purpose, or `null` for a value off the enum — a caller refuses, never falls back. */
+export const parseClaimPurpose = (value: string): ClaimPurpose | null =>
+	CLAIM_PURPOSES.find((purpose) => purpose === value) ?? null;
+
+/** Only a build-purpose claim is bound by the audience axis (#5175). Scope binds every purpose. */
+export const audienceAxisBinds = (purpose: ClaimPurpose): boolean => purpose === "build";
+
 /** Absence is an unknown audience, never an agent audience (#4780). */
 export const audienceAxisOf = (issue: IssueFacts): AudienceAxis =>
 	issue.labels.includes(READY_FOR_AGENT)
@@ -218,8 +244,15 @@ export type Admission =
  * campaign in focus its audience label is not the thing to fix, and reporting the audience first would
  * send an operator to re-label work that the scope fence would refuse again. The unreported axis is
  * still on the outcome.
+ *
+ * `purpose` decides only whether an audience refusal is *seated*; the audience verdict itself is read
+ * and reported either way, so a `plan`/`gate` claim admitted over a non-agent audience still says so.
  */
-export const admissionOf = (focus: Focus, issue: IssueFacts): Admission => {
+export const admissionOf = (
+	focus: Focus,
+	issue: IssueFacts,
+	purpose: ClaimPurpose = DEFAULT_CLAIM_PURPOSE,
+): Admission => {
 	if (focus._tag === "Malformed") {
 		return {
 			_tag: "Unknown",
@@ -230,7 +263,9 @@ export const admissionOf = (focus: Focus, issue: IssueFacts): Admission => {
 	const scope = scopeAxisOf(focus, issue);
 	const audience = audienceAxisOf(issue);
 	if (scope._tag === "OutOfFocus") return {_tag: "OutOfFocus", scope, audience};
-	if (audience._tag === "NotAgent") return {_tag: "AudienceNotAgent", scope, audience};
+	if (audience._tag === "NotAgent" && audienceAxisBinds(purpose)) {
+		return {_tag: "AudienceNotAgent", scope, audience};
+	}
 	return {_tag: "Admitted", scope, audience};
 };
 
@@ -273,9 +308,24 @@ export const ADMISSION_EXIT_CODES: ReadonlyArray<{
 	},
 	{
 		code: AUDIENCE_NOT_AGENT,
-		condition: `proven: not admitted on the audience axis — the issue's ${READY_FOR_PREFIX} label is not ${READY_FOR_AGENT}, or is absent`,
+		condition: `proven: not admitted on the audience axis — the issue's ${READY_FOR_PREFIX} label is not ${READY_FOR_AGENT}, or is absent; reachable only under purpose build`,
 	},
 ];
+
+/** The purpose line the claim seam prints, so an exempted audience is read rather than inferred. */
+export const purposeScopeLine = (
+	verb: string,
+	purpose: ClaimPurpose,
+	audience: AudienceAxis,
+): string => {
+	const carried =
+		audience._tag === "Agent"
+			? READY_FOR_AGENT
+			: (audience.label ?? `no ${READY_FOR_PREFIX} label`);
+	return audienceAxisBinds(purpose)
+		? `${verb}: purpose: ${purpose} — the audience axis binds; this issue carries ${carried}.`
+		: `${verb}: purpose: ${purpose} — the audience axis does not bind a ${purpose} claim (#5175); this issue carries ${carried}.`;
+};
 
 /** The scope line both seams print, so an operator sees the fence's state rather than inferring it. */
 export const focusScopeLine = (verb: string, focus: Focus): string => {
