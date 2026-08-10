@@ -133,10 +133,10 @@ first-free would answer `0238`.
 
 | Message (stderr) | Code | Kind |
 |---|---|---|
-| `adr next: cannot fetch <ref>: <reason> — the merged set is UNKNOWN. Re-run; do not answer from the local tree.` | 3 | refusal |
-| `adr next: cannot enumerate open pull requests in <repo>: <reason> — the in-flight set is UNKNOWN, never "nothing reserved". Re-run; do not fall back to the on-disk id.` | 4 | refusal |
-| `adr next: cannot read PR #<n>'s file list: <reason> — the in-flight set is INCOMPLETE, so it is UNKNOWN.` | 4 | refusal |
-| `adr next: cannot read <dir> at <ref>: <reason> — the merged set is UNKNOWN, never "0 records".` | 6 | refusal |
+| `adr next: cannot fetch <ref>: <reason> — the merged set is UNKNOWN. Re-run; do not answer from the local tree.` | 17 | refusal |
+| `adr next: cannot enumerate open pull requests in <repo>: <reason> — the in-flight set is UNKNOWN, never "nothing reserved". Re-run; do not fall back to the on-disk id.` | 18 | refusal |
+| `adr next: cannot read PR #<n>'s file list: <reason> — the in-flight set is INCOMPLETE, so it is UNKNOWN.` | 18 | refusal |
+| `adr next: cannot read <dir> at <ref>: <reason> — the merged set is UNKNOWN, never "0 records".` | 11 | refusal |
 | `adr next: <dir> holds a record with an unparseable id: <name>` | 1 | refusal |
 
 **Scope** — every `NNNN-slug.md` under `--dir` **as of the fetched `--base`**, plus every open pull
@@ -281,9 +281,9 @@ merge-time bookkeeping (`Closes #N`, blocks cleared, the vocabulary-impact outco
 
 | Message (stderr) | Code | Kind |
 |---|---|---|
-| `adr new: <path> already exists — refusing to overwrite.` | 3 | refusal |
-| `adr new: id "<id>" is not four zero-padded digits.` | 4 | usage error |
-| `adr new: slug "<slug>" is not kebab-case (lowercase letters, digits and single hyphens).` | 4 | usage error |
+| `adr new: <path> already exists — refusing to overwrite.` | 12 | refusal |
+| `adr new: id "<id>" is not four zero-padded digits.` | 1 | usage error |
+| `adr new: slug "<slug>" is not kebab-case (lowercase letters, digits and single hyphens).` | 1 | usage error |
 | `adr new: cannot write <path>: <reason>` | 1 | refusal |
 
 **Scope** — not a judging verb. It writes exactly one file and never edits another. It does not check
@@ -370,15 +370,15 @@ were enumerated, and no one holds this id. It is never what a failed read prints
 | `17` | `--base` could not be fetched, so every state is UNKNOWN |
 | `18` | the open pull requests could not be enumerated, so `absent` cannot be distinguished from `in-flight` |
 
-`5` is vacated here for the same reason it is under `adr next`.
+`5` is vacated here for the group-wide reason above; no verb re-seats it.
 
 **Errors**
 
 | Message (stderr) | Code | Kind |
 |---|---|---|
-| `adr resolve: cannot fetch <ref>: <reason> — every state is UNKNOWN, never "absent".` | 3 | refusal |
-| `adr resolve: cannot enumerate open pull requests in <repo>: <reason> — "absent" is indistinguishable from "in-flight", so it is UNKNOWN.` | 4 | refusal |
-| `adr resolve: cannot read <dir> at <ref>: <reason> — every state is UNKNOWN, never "absent".` | 6 | refusal |
+| `adr resolve: cannot fetch <ref>: <reason> — every state is UNKNOWN, never "absent".` | 17 | refusal |
+| `adr resolve: cannot enumerate open pull requests in <repo>: <reason> — "absent" is indistinguishable from "in-flight", so it is UNKNOWN.` | 18 | refusal |
+| `adr resolve: cannot read <dir> at <ref>: <reason> — every state is UNKNOWN, never "absent".` | 11 | refusal |
 | `adr resolve: id "<id>" is not four zero-padded digits.` | 1 | usage error |
 | `adr resolve: <dir> at <ref> holds two records for id <id>: <a>, <b>` | 1 | refusal |
 
@@ -485,11 +485,11 @@ verb never touches. This assertion is the deterministic test the implementation 
 
 | Message (stderr) | Code | Kind |
 |---|---|---|
-| `adr supersede: no record for id <id> under <dir>.` | 3 | refusal |
-| `adr supersede: no record for --by id <by> under <dir> — refusing to write a dead link.` | 4 | refusal |
-| `adr supersede: <path> has no single frontmatter status: line to rewrite.` | 5 | refusal |
-| `adr supersede: rewrite would have changed <n> line(s) beyond status: — aborted, nothing written.` | 6 | refusal |
-| `adr amend-in-part: <path> is already "superseded by …" — a superseded ADR is not amendable.` | 7 | refusal |
+| `adr supersede: no record for id <id> under <dir>.` | 7 | refusal |
+| `adr supersede: no record for --by id <by> under <dir> — refusing to write a dead link.` | 13 | refusal |
+| `adr supersede: <path> has no single frontmatter status: line to rewrite.` | 14 | refusal |
+| `adr supersede: rewrite would have changed <n> line(s) beyond status: — aborted, nothing written.` | 15 | refusal |
+| `adr amend-in-part: <path> is already "superseded by …" — a superseded ADR is not amendable.` | 16 | refusal |
 
 Each message is prefixed with the invoked verb name, so `adr amend-in-part` says `adr amend-in-part`.
 
@@ -646,14 +646,14 @@ prefix and a terminating period, and no other rewording.
 | `7` | `--new` names an id or path with no readable ADR |
 | `11` | the corpus could not be read, so the outcome is UNKNOWN |
 
-`5` is vacated here for the same reason it is under `adr next`.
+`5` is vacated here for the group-wide reason above; no verb re-seats it.
 
 **Errors**
 
 | Message (stderr) | Code | Kind |
 |---|---|---|
-| `adr sweep: cannot read <dir>: <reason> — the outcome is UNKNOWN, never "no-overlap".` | 3 | refusal |
-| `adr sweep: no readable ADR for --new <value>.` | 4 | refusal |
+| `adr sweep: cannot read <dir>: <reason> — the outcome is UNKNOWN, never "no-overlap".` | 11 | refusal |
+| `adr sweep: no readable ADR for --new <value>.` | 7 | refusal |
 
 **Scope** — every live-accepted record under `--dir` that `--new` does not already cite. The scope
 line goes to stderr naming the corpus size and the in-scope count, because the outcome is only

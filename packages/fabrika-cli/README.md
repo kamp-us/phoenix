@@ -490,9 +490,9 @@ Three behaviours are worth knowing before you call it:
 - **The cache-read share stays its own number.** It dominates `billed` and grows with turn
   count, which makes it the context-bloat signal; folding it into one total is what hides the
   thing the measurement exists to show.
-- **"I could not measure it" is never a zero.** Exit `3` is a transcript that is provably not
-  there, `4` is one that could not be read (or whose absence could not be established — the
-  spend is UNKNOWN), and `5` is a transcript read in full that carries zero billed assistant
+- **"I could not measure it" is never a zero.** Exit `7` is a transcript that is provably not
+  there, `11` is one that could not be read (or whose absence could not be established — the
+  spend is UNKNOWN), and `12` is a transcript read in full that carries zero billed assistant
   turns. That third state is a real transcript a failed run writes, and reporting it as a
   measured zero would price a broken run as a free one.
 - **It cannot block anything.** No threshold, no budget flag, and no exit code that varies

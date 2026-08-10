@@ -323,6 +323,15 @@ export const checkAlignment = (
  * cannot see (#5213). Paths resolve physically — a `..` folded across the repo's `.claude/skills`
  * symlink resolves somewhere else entirely.
  */
+export const codeTableGroupsIn = (srcDir: string): readonly string[] => {
+	const root = realpathSync(srcDir);
+	return readdirSync(root, {withFileTypes: true})
+		.filter((entry) => entry.isDirectory())
+		.map((entry) => entry.name)
+		.filter((name) => existsSync(join(root, name, "codes.ts")))
+		.sort();
+};
+
 /**
  * The exit-code constants a group's verb modules declare **themselves**, as `<file>: <NAME>`.
  *
@@ -330,23 +339,21 @@ export const checkAlignment = (
  * that — an import and a declaration are the same export once the module is loaded — so this reads
  * the source, which is the only place the difference survives. That difference is the whole defect:
  * `adr` shipped a `NO_SUBJECT` in two verb files on two numbers (#5294).
+ *
+ * The read is `*-verb.ts` only and shape-based, so a code seated in a non-verb module of the same
+ * group is outside what it can see. The whole result is sorted, not each file's share of it —
+ * `readdirSync` order is not guaranteed, so a per-file sort would leave the list unordered.
  */
 export const verbLocalCodesIn = (groupDir: string): readonly string[] => {
 	const root = realpathSync(groupDir);
 	return readdirSync(root)
 		.filter((name) => name.endsWith("-verb.ts"))
 		.flatMap((name) =>
-			[...readFileSync(join(root, name), "utf8").matchAll(/^export const ([A-Z][A-Z0-9_]*) = \d/gm)]
-				.map((match) => `${name}: ${match[1]}`)
-				.sort(),
-		);
-};
-
-export const codeTableGroupsIn = (srcDir: string): readonly string[] => {
-	const root = realpathSync(srcDir);
-	return readdirSync(root, {withFileTypes: true})
-		.filter((entry) => entry.isDirectory())
-		.map((entry) => entry.name)
-		.filter((name) => existsSync(join(root, name, "codes.ts")))
+			[
+				...readFileSync(join(root, name), "utf8").matchAll(
+					/^export const ([A-Z][A-Z0-9_]*) = \d/gm,
+				),
+			].map((match) => `${name}: ${match[1]}`),
+		)
 		.sort();
 };
