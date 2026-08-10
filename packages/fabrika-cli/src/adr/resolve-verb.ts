@@ -14,7 +14,14 @@ import {Effect} from "effect";
 import {originRepo, type Shell} from "../io/git.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {loadInFlight, loadMerged, readMergedRecord} from "./base-ref.ts";
-import {BASE_UNFETCHABLE, DIR_UNREADABLE, IN_FLIGHT_UNKNOWN} from "./codes.ts";
+import {
+	BASE_UNFETCHABLE,
+	DIR_UNREADABLE,
+	DUPLICATE_ID,
+	IN_FLIGHT_UNKNOWN,
+	ORIGIN_REPO_UNRESOLVABLE,
+	UNPARSEABLE_RECORD_ID,
+} from "./codes.ts";
 import {isFourDigitId} from "./records.ts";
 import {
 	indexInFlight,
@@ -47,8 +54,8 @@ export const runResolve = (options: ResolveOptions): Shell<VerbOutcome> =>
 			const resolved = yield* originRepo;
 			if (resolved._tag === "Failure") {
 				return refuse(
-					FAILED,
-					`adr resolve: cannot resolve --repo from the origin remote: ${resolved.reason}`,
+					ORIGIN_REPO_UNRESOLVABLE,
+					`adr resolve: cannot resolve --repo from the origin remote: ${resolved.reason} — "absent" is indistinguishable from "in-flight", so it is UNKNOWN.`,
 				);
 			}
 			repo = resolved.value;
@@ -69,7 +76,10 @@ export const runResolve = (options: ResolveOptions): Shell<VerbOutcome> =>
 					`adr resolve: cannot read ${dir} at ${base}: ${e.reason} — every state is UNKNOWN, never "absent".`,
 				);
 			}
-			return refuse(FAILED, `adr resolve: ${dir} holds a record with an unparseable id: ${e.file}`);
+			return refuse(
+				UNPARSEABLE_RECORD_ID,
+				`adr resolve: ${dir} holds a record with an unparseable id: ${e.file}`,
+			);
 		}
 		const mergedSet = merged.value;
 
@@ -83,7 +93,7 @@ export const runResolve = (options: ResolveOptions): Shell<VerbOutcome> =>
 		if ("duplicate" in duplicates) {
 			const {id, files} = duplicates.duplicate;
 			return refuse(
-				FAILED,
+				DUPLICATE_ID,
 				`adr resolve: ${dir} at ${base} holds two records for id ${id}: ${files[0]}, ${files[1]}`,
 			);
 		}
@@ -98,7 +108,10 @@ export const runResolve = (options: ResolveOptions): Shell<VerbOutcome> =>
 			}
 			const record = yield* readMergedRecord(mergedSet.sha, dir, file, id);
 			if (record === null) {
-				return refuse(FAILED, `adr resolve: cannot read ${dir}/${file} at ${mergedSet.sha}`);
+				return refuse(
+					DIR_UNREADABLE,
+					`adr resolve: cannot read ${dir}/${file} at ${mergedSet.sha} — every state is UNKNOWN, never "absent".`,
+				);
 			}
 			records.push(record);
 		}
@@ -107,7 +120,7 @@ export const runResolve = (options: ResolveOptions): Shell<VerbOutcome> =>
 		if ("duplicate" in indexed) {
 			const {id, files} = indexed.duplicate;
 			return refuse(
-				FAILED,
+				DUPLICATE_ID,
 				`adr resolve: ${dir} at ${base} holds two records for id ${id}: ${files[0]}, ${files[1]}`,
 			);
 		}

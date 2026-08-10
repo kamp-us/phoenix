@@ -1,7 +1,14 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {errOut, fakeShell, okOut, record, tree} from "../fakes.test-support.ts";
-import {BASE_UNFETCHABLE, DIR_UNREADABLE, IN_FLIGHT_UNKNOWN} from "./codes.ts";
+import {
+	BASE_UNFETCHABLE,
+	DIR_UNREADABLE,
+	DUPLICATE_ID,
+	IN_FLIGHT_UNKNOWN,
+	ORIGIN_REPO_UNRESOLVABLE,
+	UNPARSEABLE_RECORD_ID,
+} from "./codes.ts";
 import {runResolve} from "./resolve-verb.ts";
 
 const SHA = "49a22902d1e0c7b3f5a8e4126b9d0f3c7a1e5b82";
@@ -142,15 +149,48 @@ describe("runResolve", () => {
 		expect(out.stderr.at(-1)).toBe('adr resolve: id "0034a" is not four zero-padded digits.');
 	});
 
-	it("refuses when a requested record cannot be read at the base ref", async () => {
+	// The existing seat, not a new one — see `DIR_UNREADABLE`'s docblock in `codes.ts`.
+	it("refuses a requested record it cannot read on the directory seat, not on 1", async () => {
 		const out = await run([[/show .*0164-guard\.md$/, errOut("fatal: path does not exist")]]);
-		expect(out.code).toBe(1);
+		expect(out.code).toBe(DIR_UNREADABLE);
+		expect(out.code).not.toBe(1);
 		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toContain("cannot read .decisions/0164-guard.md");
 	});
 
-	it("refuses two records claiming one id rather than picking one", async () => {
+	it("refuses two records claiming one id on its own proven code, not on 1", async () => {
 		const out = await run([[/^git ls-tree/, okOut(tree("0164-a.md", "0164-b.md"))]]);
-		expect(out.code).toBe(1);
+		expect(out.code).toBe(DUPLICATE_ID);
+		expect(out.code).not.toBe(1);
+		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toContain("holds two records for id 0164");
+	});
+
+	it("refuses a record whose id cannot be parsed on its own proven code, not on 1", async () => {
+		const out = await run([[/^git ls-tree/, okOut(tree("0164-guard.md", "12-bad.md"))]]);
+		expect(out.code).toBe(UNPARSEABLE_RECORD_ID);
+		expect(out.code).not.toBe(1);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toContain("unparseable id: 12-bad.md");
+	});
+
+	it("refuses an unresolvable origin remote on its own proven code, not on 1", async () => {
+		const out = await run([
+			[/^git remote get-url origin$/, errOut("fatal: No such remote 'origin'")],
+		]);
+		expect(out.code).toBe(ORIGIN_REPO_UNRESOLVABLE);
+		expect(out.code).not.toBe(1);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toContain("cannot resolve --repo from the origin remote");
+	});
+
+	// The three states this verb used to fuse onto `1` — a caller that branches on the status can now
+	// tell a malformed filename from a duplicated id from a bad argument.
+	it("keeps the unparseable, duplicate and usage refusals on three different codes", async () => {
+		const unparseable = await run([[/^git ls-tree/, okOut(tree("0164-guard.md", "12-bad.md"))]]);
+		const duplicate = await run([[/^git ls-tree/, okOut(tree("0164-a.md", "0164-b.md"))]]);
+		const usage = await run([], {ids: ["0034a"]});
+		expect(new Set([unparseable.code, duplicate.code, usage.code]).size).toBe(3);
+		expect(usage.code).toBe(1);
 	});
 });

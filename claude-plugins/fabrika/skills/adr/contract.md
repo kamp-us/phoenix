@@ -76,6 +76,9 @@ Every verb below obeys these; they are stated once rather than repeated per bloc
   | `16` | `<id>` is already `superseded by …` | | | | ✓ | |
   | `17` | `--base` could not be fetched, so the merged set is UNKNOWN | ✓ | ✓ | | | |
   | `18` | the open pull requests could not be enumerated | ✓ | ✓ | | | |
+  | `19` | a record under `--dir` has a filename with no readable id | ✓ | ✓ | | | |
+  | `20` | two records under `--dir` claim one id | | ✓ | | | |
+  | `21` | `--repo` was not given and the `origin` remote could not be read | ✓ | ✓ | | | |
 
   `7` and `11` are the two seats this group shares with `report`'s table, code for code, so a caller
   driving both reads one meaning: the target is not there, and the read that would have proven it
@@ -128,6 +131,8 @@ first-free would answer `0238`.
 | `11` | `--dir` could not be read at the fetched `--base`, so the merged set is UNKNOWN |
 | `17` | `--base` could not be fetched, so the merged set is UNKNOWN |
 | `18` | the open pull requests could not be enumerated, so the in-flight set is UNKNOWN |
+| `19` | a record under `--dir` has a filename with no readable id |
+| `21` | `--repo` was not given and the `origin` remote could not be read, so the in-flight set is UNKNOWN |
 
 **Errors**
 
@@ -137,7 +142,8 @@ first-free would answer `0238`.
 | `adr next: cannot enumerate open pull requests in <repo>: <reason> — the in-flight set is UNKNOWN, never "nothing reserved". Re-run; do not fall back to the on-disk id.` | 18 | refusal |
 | `adr next: cannot read PR #<n>'s file list: <reason> — the in-flight set is INCOMPLETE, so it is UNKNOWN.` | 18 | refusal |
 | `adr next: cannot read <dir> at <ref>: <reason> — the merged set is UNKNOWN, never "0 records".` | 11 | refusal |
-| `adr next: <dir> holds a record with an unparseable id: <name>` | 1 | refusal |
+| `adr next: <dir> holds a record with an unparseable id: <name>` | 19 | refusal |
+| `adr next: cannot resolve --repo from the origin remote: <reason> — the in-flight set is UNKNOWN.` | 21 | refusal |
 
 **Scope** — every `NNNN-slug.md` under `--dir` **as of the fetched `--base`**, plus every open pull
 request in `--repo` that *adds* a `.decisions/NNNN-*.md` file. The scope line goes to stderr on every
@@ -369,6 +375,9 @@ were enumerated, and no one holds this id. It is never what a failed read prints
 | `11` | `--dir` could not be read at the fetched `--base`, so every state is UNKNOWN |
 | `17` | `--base` could not be fetched, so every state is UNKNOWN |
 | `18` | the open pull requests could not be enumerated, so `absent` cannot be distinguished from `in-flight` |
+| `19` | a record under `--dir` has a filename with no readable id |
+| `20` | two records under `--dir` claim one id, so every state over it would be arbitrary |
+| `21` | `--repo` was not given and the `origin` remote could not be read, so `absent` cannot be distinguished from `in-flight` |
 
 `5` is vacated here for the group-wide reason above; no verb re-seats it.
 
@@ -379,8 +388,11 @@ were enumerated, and no one holds this id. It is never what a failed read prints
 | `adr resolve: cannot fetch <ref>: <reason> — every state is UNKNOWN, never "absent".` | 17 | refusal |
 | `adr resolve: cannot enumerate open pull requests in <repo>: <reason> — "absent" is indistinguishable from "in-flight", so it is UNKNOWN.` | 18 | refusal |
 | `adr resolve: cannot read <dir> at <ref>: <reason> — every state is UNKNOWN, never "absent".` | 11 | refusal |
+| `adr resolve: cannot read <dir>/<file> at <sha> — every state is UNKNOWN, never "absent".` | 11 | refusal |
 | `adr resolve: id "<id>" is not four zero-padded digits.` | 1 | usage error |
-| `adr resolve: <dir> at <ref> holds two records for id <id>: <a>, <b>` | 1 | refusal |
+| `adr resolve: <dir> at <ref> holds two records for id <id>: <a>, <b>` | 20 | refusal |
+| `adr resolve: <dir> holds a record with an unparseable id: <name>` | 19 | refusal |
+| `adr resolve: cannot resolve --repo from the origin remote: <reason> — "absent" is indistinguishable from "in-flight", so it is UNKNOWN.` | 21 | refusal |
 
 **Scope** — every `NNNN-slug.md` under `--dir` at the fetched `--base`, plus every open pull request
 in `--repo` that adds a `.decisions/NNNN-*.md` file. Zero records is a fact and answers `absent` for

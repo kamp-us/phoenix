@@ -67,7 +67,7 @@ const next = leafCommand(
 ).pipe(
 	Command.withShortDescription("The next unused ADR id, merged set and open-PR claims folded."),
 	Command.withDescription(
-		"The next unused ADR id — max(fetched merged set ∪ open-PR claims) + 1. Prints `0240`; --json adds mergedMax/inFlight/baseSha. An empty-and-readable --dir is a fresh corpus and answers 0001. Exits 11 (--dir unreadable), 17 (base unfetchable), 18 (in-flight unknown). Example: fabrika adr next",
+		"The next unused ADR id — max(fetched merged set ∪ open-PR claims) + 1. Prints `0240`; --json adds mergedMax/inFlight/baseSha. An empty-and-readable --dir is a fresh corpus and answers 0001. Exits 11 (--dir unreadable), 17 (base unfetchable), 18 (in-flight unknown), 19 (a record filename with no readable id), 21 (origin remote unresolvable). Example: fabrika adr next",
 	),
 );
 
@@ -141,7 +141,7 @@ const resolve = leafCommand(
 ).pipe(
 	Command.withShortDescription("Resolve ADR ids to their real filename and state at a base ref."),
 	Command.withDescription(
-		"Resolve ids to their real filename and state against a fetched base ref — one `<state>\\t<file>\\t<detail>` line per id, state ∈ live|landed|in-flight|absent. An empty-and-readable --dir answers absent. Exits 11 (--dir unreadable), 17 (base unfetchable), 18 (in-flight unknown). Example: fabrika adr resolve 0164 0023",
+		"Resolve ids to their real filename and state against a fetched base ref — one `<state>\\t<file>\\t<detail>` line per id, state ∈ live|landed|in-flight|absent. An empty-and-readable --dir answers absent. Exits 11 (--dir or one of its records unreadable), 17 (base unfetchable), 18 (in-flight unknown), 19 (a record filename with no readable id), 20 (two records for one id), 21 (origin remote unresolvable). Example: fabrika adr resolve 0164 0023",
 	),
 );
 
