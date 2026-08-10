@@ -320,6 +320,53 @@ total: a malformed body or a shape mismatch exits non-zero with a typed reason, 
 The shape is stable: field names + nesting are the contract, and `toJson` is a thin projection of
 the in-memory `Scorecard` so the JSON and the type never drift.
 
+### The committed scorecard series ([#4765](https://github.com/kamp-us/phoenix/issues/4765))
+
+Everything above is the **in-memory** scorecard and its serialization. A *committed* scorecard is
+one file per eval run, and the founder ruled its storage, location and format on
+[#4765](https://github.com/kamp-us/phoenix/issues/4765) (2026-08-02):
+
+```
+claude-plugins/fabrika/reports/eval/<date>.json
+```
+
+- **Committed, not a PR comment.** The trend co-gate of
+  [#4680](https://github.com/kamp-us/phoenix/issues/4680) reads a **series**, and only a committed
+  series accumulates anything to read back.
+- **Colocated with the fabrika plugin**, not the repo-root `reports/`, so fabrika stays
+  self-contained. Keeping these files out of a plugin install is not achievable by placement — an
+  install is a shallow clone of the whole repository, so a consumer receives every path wherever it
+  sits — and was not attempted. The path is fabrika's while `Scorecard` lives in this package; the
+  two rulings agree, because [#4777](https://github.com/kamp-us/phoenix/issues/4777) is what moved
+  the eval harness here.
+- **The bytes are `toJson` output, unchanged** — exactly the stable JSON shape documented above, with
+  no wrapper object, no added keys and no second serializer. A consumer decodes a committed file with
+  the same reader it would use on `--json` output.
+- **`<date>` is the run's UTC date, `YYYY-MM-DD`** — which is what makes a lexicographic sort of the
+  directory a chronological sort of the series.
+
+Nothing writes one of these files yet, which is expected: the artifact class is defined, its first
+producer is not built. Three issues divide the work, and the definition being written down **here**
+is what lets them proceed in any order without inventing a second on-disk shape between them:
+
+| issue | its role in the series |
+|---|---|
+| [#4679](https://github.com/kamp-us/phoenix/issues/4679) | writes the **first** file — the v1 cost baseline on the corpus |
+| [#4680](https://github.com/kamp-us/phoenix/issues/4680) | owns the **series mechanics** — how runs are committed and how the trend co-gate reads them back |
+| [#4681](https://github.com/kamp-us/phoenix/issues/4681) | **reads** the series in the merge gate (the ruled bar + the trend flag) |
+
+The build order across the four eval-layer children is **#4678 → #4680 → #4681**, with **#4679 an
+independent producer that #4681 also blocks on**. The order is stated here for a reader; the
+authoritative topology stays in epic [#4649](https://github.com/kamp-us/phoenix/issues/4649)'s
+`## Dependencies` block, which the intake formats contract makes its only home, so this table can
+never become a second source that drifts from it.
+
+**Deliberately not decided here**, so no lane finds its call pre-made: what a second run on the same
+date does to the filename ([#4680](https://github.com/kamp-us/phoenix/issues/4680)'s series
+mechanics), the shape and namespace of a per-run eval-result record
+([#4769](https://github.com/kamp-us/phoenix/issues/4769)), and the definitions of `dispersion` and
+the two-week decline ([#4766](https://github.com/kamp-us/phoenix/issues/4766)).
+
 ## The deterministic tier ([#4677](https://github.com/kamp-us/phoenix/issues/4677))
 
 The no-model half of the fabrika eval layer (epic
