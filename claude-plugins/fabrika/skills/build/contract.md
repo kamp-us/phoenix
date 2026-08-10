@@ -4,6 +4,8 @@
 
 **Amended 2026-08-09** — the campaign-scope admission term ([ADR 0245](../../../../.decisions/0245-campaign-scope-fence-binds-both-seams.md), [#5013](https://github.com/kamp-us/phoenix/issues/5013)): a new [admission test](#admission-test--scope-admission-and-the-audience-axis) section under shared conventions — scope admission composed with the pre-existing `ready-for:` audience axis, two named axes rather than one widened term — two codes (`20`, `21`) in the shared exit matrix, and the consuming clauses in `build pick` and `build claim`.
 
+**Amended 2026-08-10** — the third file class in `build check` ([#5229](https://github.com/kamp-us/phoenix/issues/5229)): a changed file matching neither the code nor the markdown pattern is now named rather than dropped out of both filters, so a diff nothing validates refuses on a new code (`22`) instead of greening, and a green over a partly-unvalidatable diff carries the files it did not cover.
+
 The verbs land in `packages/fabrika-cli/` under the `build` subcommand group, registered in
 `packages/fabrika-cli/src/registry.ts` like the shipped `adr`, `report`, `triage` and `wire`
 groups. The [CLI interface convention](../../docs/cli-interface-convention.md) governs every verb;
@@ -247,6 +249,7 @@ range, exactly as `triage/codes.ts` itself states for `adr`.
 | `19` | refused: the requested push is unsafe (detached HEAD, or a non-fast-forward without `--force-with-lease`) |
 | `20` | proven: not admitted on the scope axis, out of focus — the issue's home is not the declared milestone and no standing-lane label exempts it |
 | `21` | proven: not admitted on the audience axis, audience not agent — the issue's `ready-for:` label is not `ready-for:agent`, or is absent |
+| `22` | proven: every changed file falls outside all three surfaces' validators — there is nothing to run, so the verdict is a refusal, never a green |
 | `127` | the verb never ran at all (unresolved binary — the shell's code, not this process's) |
 
 **`7` versus `11` is the split the whole group rests on** (the `wire` group's `ABSENT` vs
@@ -981,8 +984,12 @@ fabrika build check --surface code
 | `--surface` | enum: `code` \| `prose` \| `plan` | yes | — | the surface whose validators run; the skill names it, this verb anchors it |
 
 **Output** — machine. On green, one JSON object:
-`{"verdict": "green", "surface": "code", "tree": "<abs tree root>", "ran": ["pnpm typecheck", "pnpm lint:worktree"]}`.
+`{"verdict": "green", "surface": "code", "tree": "<abs tree root>", "ran": ["pnpm typecheck", "pnpm lint:worktree"], "unvalidated": []}`.
 Red and unknown produce no stdout (`18` / `11`), diagnostics on stderr verbatim from the runners.
+
+`unvalidated` is always present and lists the changed files **this verdict does not cover** — the
+class no surface validates (`.yml`, `.sh`, `.sql`, `.css`, …). A non-empty list beside a green is the
+honest reading of a mixed diff, and the same line is repeated on stderr.
 
 Per surface:
 
@@ -1001,6 +1008,14 @@ The surface anchor: the verb diffs the branch against its base and refuses a sur
 match the diff (`--surface prose` over changed `.ts` files is `10`) — the skill's judgment is
 taken, then checked against the tree, never silently accepted.
 
+**Three file classes, because two cannot express "unvalidatable".** The anchor sorts each changed
+file into code, markdown, or **neither** — the third class is named, not an absence. A diff that is
+*wholly* the third class (only `.github/workflows/*.yml`, only `*.sh`) refuses on `22` under **every**
+surface: no validator covers those files, so any verdict would be a green over an unread tree. The
+remedy is to split the diff or extend a validator, never to rename the surface — widening the code
+pattern to swallow `.yml` was considered and rejected, because it would claim `pnpm typecheck`
+validated a shell script (#5229).
+
 Preconditions: a linked worktree (`12`), the lane's branch checked out (`14`).
 
 **Exit status** (beyond the universal four)
@@ -1014,6 +1029,7 @@ Preconditions: a linked worktree (`12`), the lane's branch checked out (`14`).
 | `14` | proven: the checked-out branch is not this lane's (lane-identity rule) |
 | `15` | proven: the lane's claim is held by another session |
 | `18` | proven red — the failing runner and its diagnostics are on stderr |
+| `22` | proven: no changed file falls in any surface's validators — nothing to run, never a green |
 
 **Errors**
 
@@ -1025,20 +1041,26 @@ Preconditions: a linked worktree (`12`), the lane's branch checked out (`14`).
 | `build check: --surface prose, but the diff is 14 .ts files — the surface is provably wrong.` | 10 | refusal |
 | `build check: the diff against <base> is empty — nothing to validate (ADR 0092).` | 7 | refusal |
 | `build check: red — <runner> failed; diagnostics above.` | 18 | refusal |
+| `build check: no surface validates any of the <n> changed file(s) (<files>) — there is nothing here to run, so the verdict is a refusal, never green.` | 22 | refusal |
 
 **Scope** — this tree's diff against the branch base. A zero-file diff is `7` — zero scope, never
-a green (ADR 0092).
+a green (ADR 0092). A diff no surface validates is `22` — the same rule one step further in: a file
+the verb cannot classify is a file it cannot check, and an unchecked file never counts toward a
+green. A green's `unvalidated` list is what keeps the partial case honest.
 
 **Example**
 
 ```
 $ fabrika build check --surface code
-{"verdict":"green","surface":"code","tree":"/private/var/folders/…/build-4312","ran":["pnpm typecheck","pnpm lint:worktree"]}
+{"verdict":"green","surface":"code","tree":"/private/var/folders/…/build-4312","ran":["pnpm typecheck","pnpm lint:worktree"],"unvalidated":["scripts/deploy.sh"]}
 ```
 
 **Grounding**
 
 - #4106 / #4887 — the cross-tree cache false green; cache bypass is the design, not an option.
+- #5229 — two extension patterns and no third class: a workflow-only diff greened under `--surface
+  prose` having opened no file, and refused under `--surface code` with a message pointing at the
+  branch that greened. `22` and `unvalidated` are the two halves of that fix.
 - v1's discipline was prose-only (`SKILL.md:895-935`, exact-CI-command mandate with no
   enforcement); here the command set is the verb's, not the agent's memory.
 - ADR 0092 — zero diff is a refusal, not a vacuous green.
