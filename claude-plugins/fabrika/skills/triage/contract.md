@@ -85,7 +85,7 @@ the analogous collision as "dormant only by configuration — `.claude/settings.
 `"kampus-pipeline@kampus": false`". **That reasoning does not hold.** `.claude/skills` is a symlink to
 `claude-plugins/kampus-pipeline/skills`, so v1's skills load as *project-level* skills and the plugin
 toggle does not stop them: a live session's roster carries both `adr` and `fabrika:adr`, and both
-`report` and `fabrika:report`. Settled by [ADR 0253](../../../../.decisions/0253-skill-namespaces-keep-v1-and-fabrika-apart.md)
+`report` and `fabrika:report`. Settled by [ADR 0255](../../../../.decisions/0255-skill-namespaces-keep-v1-and-fabrika-apart.md)
 (filed as #4829); the adjacent routing-pin half is #4761.
 
 What the ADR measured sharpens this: the two never share a name — the loader namespaces plugin

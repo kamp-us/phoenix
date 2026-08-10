@@ -1,12 +1,12 @@
 ---
-id: 0253
+id: 0255
 title: v1 and fabrika skills coexist under separate namespaces; the `.claude/skills` symlink is the retirement lever
 status: accepted
 date: 2026-08-10
 tags: [fabrika, skills, plugin, pipeline, vocabulary]
 ---
 
-# 0253 — v1 and fabrika skills coexist under separate namespaces; the `.claude/skills` symlink is the retirement lever
+# 0255 — v1 and fabrika skills coexist under separate namespaces; the `.claude/skills` symlink is the retirement lever
 
 **What this decides:** during the fabrika rebuild wave a v1 skill and its fabrika rebuild both stay
 loaded. They do not share a name — the loader namespaces them apart — so the bare name keeps meaning

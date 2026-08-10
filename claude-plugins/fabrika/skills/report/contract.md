@@ -29,7 +29,7 @@ available yet" as though it were the skill's own behaviour.
 **One skill named `report` already exists** at `claude-plugins/kampus-pipeline/skills/report/`, and
 it is model-invoked with an overlapping trigger list. This paragraph used to say the collision was
 "dormant only by configuration" because `.claude/settings.json` has `"kampus-pipeline@kampus": false`.
-**That was wrong twice over, and [ADR 0253](../../../../.decisions/0253-skill-namespaces-keep-v1-and-fabrika-apart.md)
+**That was wrong twice over, and [ADR 0255](../../../../.decisions/0255-skill-namespaces-keep-v1-and-fabrika-apart.md)
 settles it.** `.claude/skills` is a symlink into the v1 tree, so v1's skills load as *project-level*
 skills and the toggle never reaches them — both sets are live in one roster today. But they never
 share a name: the loader namespaces plugin skills, so the bare `report` is always v1's and this one
