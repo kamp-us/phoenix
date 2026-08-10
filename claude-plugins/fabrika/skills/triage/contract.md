@@ -85,10 +85,14 @@ the analogous collision as "dormant only by configuration — `.claude/settings.
 `"kampus-pipeline@kampus": false`". **That reasoning does not hold.** `.claude/skills` is a symlink to
 `claude-plugins/kampus-pipeline/skills`, so v1's skills load as *project-level* skills and the plugin
 toggle does not stop them: a live session's roster carries both `adr` and `fabrika:adr`, and both
-`report` and `fabrika:report`. Filed as #4829; the adjacent routing-pin half is #4761.
+`report` and `fabrika:report`. Settled by [ADR 0255](../../../../.decisions/0255-skill-namespaces-keep-v1-and-fabrika-apart.md)
+(filed as #4829); the adjacent routing-pin half is #4761.
 
-So this collision is **stronger** than `report`'s (same name, same plugin-relative role, nearly
-identical triggers) and its stated mitigation is inert. Two things follow, and neither is optional:
+What the ADR measured sharpens this: the two never share a name — the loader namespaces plugin
+skills, so the bare `triage` is always v1's. What overlaps is the **description**, and this pair's
+overlap is the corpus's worst (same plugin-relative role, nearly identical triggers). So the stated
+mitigation is the right one, and it has to be load-bearing here. Two things follow, and neither is
+optional:
 
 - **This skill is model-invoked deliberately** (conventions §3): triage must fire when someone says
   "triage the queue" without naming a plugin, and other skills must be able to reach it. It therefore

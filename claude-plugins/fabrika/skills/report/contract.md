@@ -27,13 +27,17 @@ a tracked blocker rather than a surprise, and so an eval run cannot quietly grad
 available yet" as though it were the skill's own behaviour.
 
 **One skill named `report` already exists** at `claude-plugins/kampus-pipeline/skills/report/`, and
-it is model-invoked with an overlapping trigger list. The collision is dormant only by
-configuration — `.claude/settings.json` has `"kampus-pipeline@kampus": false`, and fabrika has no
-marketplace entry — which is not a design property. **These two skills must never be model-invoked
-at the same time**; this skill's description is deliberately differentiated (it names the guarded
-posting path and the three dedup outcomes, which v1's cannot) so a model loading both has a
-discriminator, but differentiation is a mitigation and not the fix. Retiring v1's description
-belongs to the cutover, not to this brief, which treats v1 as a frozen baseline.
+it is model-invoked with an overlapping trigger list. This paragraph used to say the collision was
+"dormant only by configuration" because `.claude/settings.json` has `"kampus-pipeline@kampus": false`.
+**That was wrong twice over, and [ADR 0255](../../../../.decisions/0255-skill-namespaces-keep-v1-and-fabrika-apart.md)
+settles it.** `.claude/skills` is a symlink into the v1 tree, so v1's skills load as *project-level*
+skills and the toggle never reaches them — both sets are live in one roster today. But they never
+share a name: the loader namespaces plugin skills, so the bare `report` is always v1's and this one
+is reached as `fabrika:report`. What actually overlaps is the **description**, which is what a model
+invokes off. So this skill's description is deliberately differentiated (it names the guarded posting
+path and the three dedup outcomes, which v1's cannot), its eval set is what establishes the
+differentiation works (ADR 0249), and retiring v1 is one cutover edit that drops the whole v1 roster
+at once — not this brief's, which treats v1 as a frozen baseline.
 
 ## Verb inventory
 
