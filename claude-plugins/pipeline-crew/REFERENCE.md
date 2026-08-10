@@ -15,7 +15,7 @@ docs, out of scope here.
 ## Agent-def frontmatter contract
 
 Each crew def is a top-level Claude Code agent (`claude --agent crew-<role>`). Every def
-carries the **same five frontmatter keys**; all are present in all four defs.
+carries the **same four frontmatter keys**; all are present in all four defs.
 
 | Key | Type | Contract |
 |---|---|---|
@@ -23,31 +23,52 @@ carries the **same five frontmatter keys**; all are present in all four defs.
 | `description` | string (quoted) | The routing prose: what the agent is for, its typical triggers, and an explicit "Do NOT use it to…" negative. Single-quoted YAML; inner apostrophes are doubled (`''`). |
 | `model` | string | Always `inherit` — a spawned session runs on the tier of the session that launched it (the tier is set at launch via the config's `roles.<role>.tier`, not hardcoded in the def). |
 | `color` | string | The session's display color — one per role (see the roster below). |
-| `tools` | string[] | The hard allowlist of callable tools. A tool absent here is uncallable even if its MCP server is connected. Every def lists the channel tool by its full MCP token (below). A name the CLI cannot grant is dropped **silently**, so what may appear here is fenced — see [`SPAWN-SCOPE.md`](SPAWN-SCOPE.md). |
 
-### The channel tool token — mandatory in every `tools:` allowlist
+**There is no fifth key: none of the four declares `tools:`.** A def with no `tools:` key parses
+as `inherit` (`packages/pipeline-crew-mcp/src/standup/toolset-assert.ts`), and the CLI grants that
+seat its full default toolset, MCP tools included — the founder ruling on
+[#5253](https://github.com/kamp-us/phoenix/issues/5253) /
+[#5260](https://github.com/kamp-us/phoenix/issues/5260). `tools:` is still a valid key, and where a
+def *does* declare one it is a hard allowlist: a tool absent from it is uncallable even if its MCP
+server is connected, and a name the CLI cannot grant is dropped **silently**, so what may appear
+there is fenced — see [`SPAWN-SCOPE.md`](SPAWN-SCOPE.md). The only crew def that still declares one
+is the `crew-investigator` **subagent** def (`tools: ["Read", "Bash"]`), which is not a launched
+seat and is out of the roster below.
 
-Every def's `tools:` array carries the crew channel-send tool by its exact MCP token:
+### The channel tool tokens — inherited by the four seats, not allowlisted
+
+The four seats declare no `tools:`, so the crew server's tools reach them with the rest of the
+inherited toolset; no def names a channel token in frontmatter. The tokens still matter — they are
+the names the tools appear under, and the names a def that *does* declare an allowlist must spell
+exactly:
 
 ```
 mcp___kampus_pipeline-crew-mcp__channel_send
+mcp___kampus_pipeline-crew-mcp__channel_kinds
+mcp___kampus_pipeline-crew-mcp__channel_claim   (the engine's, by charter)
 ```
 
-The token is derived, not guessed: `mcp__` + the server name `@kampus/pipeline-crew-mcp`
-sanitized (`[^a-zA-Z0-9_-]` → `_`, so `@`/`/` become `_`, hyphens preserved) + `__` +
-`channel_send`. The leading `_` of the sanitized name makes the join a **triple** underscore.
-A wrong string fails closed (present-but-uncallable). Single source: [`CHANNEL-TOOL.md`](CHANNEL-TOOL.md).
+Each token is derived, not guessed: `mcp__` + the server name `@kampus/pipeline-crew-mcp`
+sanitized (`[^a-zA-Z0-9_-]` → `_`, so `@`/`/` become `_`, hyphens preserved) + `__` + the tool
+name. The leading `_` of the sanitized name makes the join a **triple** underscore. A wrong string
+fails closed (present-but-uncallable). Single source: [`CHANNEL-TOOL.md`](CHANNEL-TOOL.md).
 
-Every def carries the discovery token `mcp___kampus_pipeline-crew-mcp__channel_kinds` alongside it,
-derived the same way — a seat that can send but cannot resolve a kind's shape rediscovers every
-payload by rejected send. The pair is **mandatory** and the launcher refuses a stand-up whose seat
-def drops either one (see [`CHANNEL-TOOL.md`](CHANNEL-TOOL.md)).
-
-The **engineering-manager** (the one engine) carries a **third** channel token on top of that pair —
-`mcp___kampus_pipeline-crew-mcp__channel_claim` — which claims a tracker resource before it opens a
-lane (cross-engine deconfliction, a real lock rather than a relayed message). Only the engine lists
-it; the three bridges carry the mandatory pair alone. Why it needs its own tool:
+**What now guarantees a seat can call them — stated straight.** For a keyless seat the omission
+failure is gone by construction: there is no allowlist for a channel token to be missing from, and
+that omission is exactly what the #3483 cutover failure was. What is *also* gone is the launch-time
+check that covered it — `missingSeatChannelTools` returns `[]` for an `inherit` def by
+construction, so stand-up asserts nothing about these four seats' channel tools; it declines to
+look. The guarantee is therefore **different, and on the launch-time axis weaker**: the remaining
+way a seat boots without the tools is server-side (#3753), and that is caught after boot by the
+boot-window rule (wait, re-check, then **file it**), not before launch. A def that re-adds a
+`tools:` allowlist re-opens the omission path and must list the tokens above — the launcher's
+refusal applies to a declared allowlist, never to `inherit`. Full derivation:
 [`CHANNEL-TOOL.md`](CHANNEL-TOOL.md).
+
+`channel_claim` — the engine's tracker-resource lock, taken before it opens a lane (cross-engine
+deconfliction, a real lock rather than a relayed message) — is likewise no longer distinguished in
+frontmatter: all four seats are granted it, and only the engineering-manager's charter tells it to
+call one. Why it needs its own tool: [`CHANNEL-TOOL.md`](CHANNEL-TOOL.md).
 
 ### Per-def frontmatter values
 
@@ -55,15 +76,16 @@ The exact shipped values, matching each def head:
 
 | Def file | `name` | `color` | `tools` |
 |---|---|---|---|
-| [`agents/crew-cartographer.md`](agents/crew-cartographer.md) | `crew-cartographer` | `green` | `Read`, `Bash`, `Task`, `channel_send`, `channel_kinds` |
-| [`agents/crew-intake-desk.md`](agents/crew-intake-desk.md) | `crew-intake-desk` | `yellow` | `Read`, `Bash`, `Task`, `channel_send`, `channel_kinds` |
-| [`agents/crew-engineering-manager.md`](agents/crew-engineering-manager.md) | `crew-engineering-manager` | `cyan` | `Task`, `Bash`, `Read`, `channel_send`, `channel_claim`, `channel_kinds` |
-| [`agents/crew-chief-of-staff.md`](agents/crew-chief-of-staff.md) | `crew-chief-of-staff` | `magenta` | `Read`, `Bash`, `Task`, `channel_send`, `channel_kinds` |
+| [`agents/crew-cartographer.md`](agents/crew-cartographer.md) | `crew-cartographer` | `green` | *(no key — `inherit`)* |
+| [`agents/crew-intake-desk.md`](agents/crew-intake-desk.md) | `crew-intake-desk` | `yellow` | *(no key — `inherit`)* |
+| [`agents/crew-engineering-manager.md`](agents/crew-engineering-manager.md) | `crew-engineering-manager` | `cyan` | *(no key — `inherit`)* |
+| [`agents/crew-chief-of-staff.md`](agents/crew-chief-of-staff.md) | `crew-chief-of-staff` | `magenta` | *(no key — `inherit`)* |
 
-Each `channel_*` above is the full `mcp___kampus_pipeline-crew-mcp__<tool>` token, abbreviated in
-this table for width. All four carry the mandatory `channel_send` + `channel_kinds` pair; only the
-engineering-manager (the one engine) adds `channel_claim` (see the channel-token subsection above).
-`model` is `inherit` for all four.
+No launched seat declares `tools:`, so all four get the CLI's full default toolset — every session
+tool plus the crew server's `channel_send`, `channel_kinds` and `channel_claim` (see the
+channel-token subsection above). What a seat may *do* with a granted tool is its charter's rule,
+not its frontmatter's: [`SPAWN-SCOPE.md`](SPAWN-SCOPE.md) is where the spawn scope of each role is
+stated and enforced. `model` is `inherit` for all four.
 
 The `Task` tool marks a role that **spawns subagents**: the three spawning roles
 (cartographer, intake-desk, engineering-manager) carry it; the chief-of-staff, which only
