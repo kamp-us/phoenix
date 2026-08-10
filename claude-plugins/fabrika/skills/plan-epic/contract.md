@@ -155,12 +155,9 @@ gate's reader is authoritative and this composer is held to it by the imported m
 
 ## Dependencies
 
-### Phase 1
-- #4301 — label schema bootstrap
-- #4302 — formats contract doc
-
-### Phase 2
-- #4303 — the queue view (requires: #4301)
+- phase 1: #4301, #4302
+- phase 2: #4303
+- #4303 requires: #4301
 ```
 
 **The plan region is located by the enrichment marker, never by position.** Detection is the
@@ -215,11 +212,19 @@ emitted **only** when the cycle-doc probe reads `present` — v1's documented sp
 the field entirely while its skill body required it, so an author following the template dropped
 it on every child and the tolerant read made "forgot" indistinguishable from "no cycle doc".
 
-**`## Dependencies` — the rendered block.** `### Phase <n>` headings in ascending order; one
-`- #<ref> — <label>` row per child, ascending within a phase; the separator is an **em dash**
-surrounded by single spaces; a `requires:` clause is parenthesized at end of line with
-comma-separated refs. The block ends with a trailing blank line so a later heading stays
-separated. The label text after the em dash is human-legible and not load-bearing.
+**`## Dependencies` — the rendered block.** Exactly the two line forms `readTopology` parses, and
+nothing else: one `- phase <n>: #<ref>[, #<ref>…]` row per phase, phases ascending and members
+ascending within a row, then one `- #<ref> requires: #<ref>[, #<ref>…]` row per child that declares
+a prerequisite, ascending by subject. There is no `###` heading inside the section, no label column
+and no parenthesized clause — `readTopology` breaks at the first heading of any level
+(`ANY_HEADING_RE`, `packages/fabrika-cli/src/build/dependencies.ts:47,84`), so a `### Phase <n>`
+line would end the scan on the line after `## Dependencies` and the block would read back as zero
+edges: a well-formed, plausible, always-wrong answer the gate then reads as an epic every one of
+whose children is orphaned. The block ends with a trailing blank line so a later heading stays
+separated. The illustrated block above is the round trip this grammar buys — pasted into
+`readTopology` it parses to the three edges it depicts (`phase 1: #4301, #4302`, `phase 2: #4303`,
+`#4303 requires: #4301`), never the empty set, which is what lets `ledger topology` stage instead of
+refusing on `24`.
 
 ## The body digest
 
@@ -597,6 +602,7 @@ splices.
 | `ledger draft: stdin held nothing — there is no plan to stage.` | 3 | refusal |
 | `ledger draft: the plan block is missing section(s): <list>.` | 4 | refusal |
 | `ledger draft: the plan block carries <k> "<heading>" sections — a plan with two of one section has no single meaning.` | 4 | refusal |
+| `ledger draft: the plan block's sections are out of order: "<current>" appears after "<previous>".` | 4 | refusal |
 | `ledger draft: the plan block does not open with "## Plan (plan-epic)".` | 4 | refusal |
 | `ledger draft: user stories are numbered <list> — a story list must run from 1 with no gaps or repeats.` | 4 | refusal |
 | `ledger draft: the plan declares zero user stories — an ordered list is what carries them, and a bullet or an "S<n>" label parses as none.` | 4 | refusal |
@@ -743,7 +749,7 @@ link, deliberately** — see step 5.
 | Code | Trigger |
 |---|---|
 | `3` | stdin was read and held nothing |
-| `4` | the composed body's fields or sections do not parse: a malformed `**Stories:**` value, an absent or malformed `### Acceptance criteria`, zero criteria, or a `type:feature` child whose `**Containment:**` is missing, unset or `none` while `cycleDoc` is `present` |
+| `4` | the composed body's fields or sections do not parse: a field line present more than once, a malformed `**Stories:**` value, an absent or malformed `### Acceptance criteria`, zero criteria, or a `type:feature` child whose `**Containment:**` is missing, unset or `none` while `cycleDoc` is `present` |
 | `5` | the composed body carries a machine-local path |
 | `6` | the composed body is a bare `@` path reference |
 | `7` | the epic is proven absent or closed |
@@ -761,6 +767,7 @@ link, deliberately** — see step 5.
 | Message (stderr) | Code | Kind |
 |---|---|---|
 | `ledger child: stdin held nothing — there is no child body to compose.` | 3 | refusal |
+| `ledger child: **<field>:** appears <k> times — a child field line has one value, and the gate refuses a duplicate.` | 4 | refusal |
 | `ledger child: **Stories:** value does not conform: "<v>" — bare integers or "none".` | 4 | refusal |
 | `ledger child: acceptance criteria read as <absent\|malformed> — a child with no checkable criteria is not buildable.` | 4 | refusal |
 | `ledger child: type:feature child needs **Containment:** flag or exempt — got "<v>", and the cycle doc is present.` | 4 | refusal |
