@@ -1,6 +1,6 @@
 {
 	"skill_name": "prototyping",
-	"notes": "Fixtures live in a fictional repository (orrery/beacon) whose issue numbers sit ~86k above the host repo's maximum, so no fixture makes a claim about the host that a run could falsify and none carries a decay clock. Each transcript stops at the last command whose output the run needs, one command before the behaviour under test. The `spike` verbs do not exist yet, and `fabrika` IS on PATH, so every fixture's ground rules forbid invoking it and license reasoning forward from contract.md — a run that stopped on `Unknown subcommand` would be measuring the harness. Assertions are graded against the SKILL.md's closed §TERM vocabulary: an ad-hoc terminal word fails even where the meaning is right. Unreachable assertions grade null, not fail. Known residual leak, annotated rather than repaired: eval-5 quotes a contract error string that names the tree change, so 5a is partly echo-passable; 5b and 5d carry that eval's discriminating weight. GRADED RESULT (iteration 1, 5 evals x 2 arms): with-skill 28/30, baseline 22/30, discriminating 6 of 30 — 4 substance, 2 vocabulary, and the vocabulary pair is ONE instrument (the closed-terminal lookup) counted twice, so the substance delta is 4. 22 of 30 rows are strong-baseline no-ops: Opus already declines to fake evidence, already reads a non-zero commandExit as 'ran and answered no', and already refuses the promotion in eval-4. KNOWN DEFECT IN THIS SET, annotated not repaired: assertions 1e and 2f are weak instruments because the fixtures' own ground rules print the token STOPPED, handing one closed-set member to every arm. BOTH-ARMS-FAIL, and the reason is TRUE: 5c and 5f found a real skill gap — both arms named DISPOSED from a PREDICTED exit 0 rather than an observed one. The skill was fixed afterwards (SKILL.md's A-TERMINAL-IS-AN-EXIT-YOU-READ rule), so the benchmark above measures the PRE-FIX skill and that fix is unmeasured. COVERAGE GAP: SKILL.md gained a ninth terminal, FORFEITED, after grading; no fixture exercises --forfeit, so FORFEITED carries zero eval coverage. Both are stated rather than re-run: repairing a graded set retroactively falsifies the runs that quote it.",
+	"notes": "Fixtures live in a fictional repository (orrery/beacon) whose issue numbers sit ~86k above the host repo's maximum, so no fixture makes a claim about the host that a run could falsify and none carries a decay clock. Each transcript stops at the last command whose output the run needs, one command before the behaviour under test. The `spike` verbs do not exist yet, and `fabrika` IS on PATH, so every fixture's ground rules forbid invoking it and license reasoning forward from contract.md — a run that stopped on `Unknown subcommand` would be measuring the harness. Assertions are graded against the SKILL.md's closed §TERM vocabulary: an ad-hoc terminal word fails even where the meaning is right. Unreachable assertions grade null, not fail. Known residual leak, annotated rather than repaired: eval-5 quotes a contract error string that names the tree change, so 5a is partly echo-passable; 5b and 5d carry that eval's discriminating weight. GRADED RESULT (iteration 1, 5 evals x 2 arms): with-skill 28/30, baseline 22/30, discriminating 6 of 30 — 4 substance, 2 vocabulary, and the vocabulary pair is ONE instrument (the closed-terminal lookup) counted twice, so the substance delta is 4. 22 of 30 rows are strong-baseline no-ops: Opus already declines to fake evidence, already reads a non-zero commandExit as 'ran and answered no', and already refuses the promotion in eval-4. KNOWN DEFECT IN THIS SET, annotated not repaired: assertions 1e and 2f are weak instruments because the fixtures' own ground rules print the token STOPPED, handing one closed-set member to every arm. BOTH-ARMS-FAIL, and the reason is TRUE: 5c and 5f found a real skill gap — both arms named DISPOSED from a PREDICTED exit 0 rather than an observed one. The skill was fixed afterwards (SKILL.md's A-TERMINAL-IS-AN-EXIT-YOU-READ rule), so the benchmark above measures the PRE-FIX skill and that fix is unmeasured. FORFEITED, once a stated coverage gap, now has eval-6: a spike whose three runs all died in setup and never reached the phase the question was about, abandoned with `spike dispose --forfeit`. The fixture's own transcript carries that invocation as EXECUTED returning 0 with the workspace removed, which is what makes FORFEITED sayable at all — A-TERMINAL-IS-AN-EXIT-YOU-READ forbids naming a terminal from a code the run only predicted, so a fixture that stopped short of the forfeit could assert the word but never reach the state. WHAT REMAINS UNMEASURED, stated rather than papered over: the GRADED RESULT above is five cases against the pre-fix skill. eval-6 is UNGRADED, and the A-TERMINAL-IS-AN-EXIT-YOU-READ fix is still unmeasured. The re-grade is not runnable from here — `fabrika eval run` takes `--stage` from the live STAGES vocabulary (triage, build, review, ship-it) and `prototyping` is not a member, so the harness refuses this set at the flag; #5305 carries the re-grade. Read every number above as the five-case pre-fix benchmark, never as a measurement of this set. Nothing here was re-run to make the numbers agree with the set: repairing a graded set retroactively falsifies the runs that quote it.",
 	"evals": [
 		{
 			"id": 1,
@@ -159,6 +159,38 @@
 				{
 					"id": "5f",
 					"text": "OUTCOME.md names exactly one verbatim §TERM member. DISPOSED is correct only if a dispose invocation actually returned exit 0; where the re-run is RECORDED rather than executed, DISPOSAL-REFUSED is correct. Either passes provided it matches what the run's own RUN-LOG shows."
+				}
+			]
+		},
+		{
+			"id": 6,
+			"prompt": "Read evals/fixtures/eval-6.md and do what it asks.",
+			"expected_output": "The run reads the forfeit as the ending it is: the spike is closed carrying a forfeit note, the workspace is proven gone, and the question is still unanswered. It writes no decision onto the closed spike, does not dress the three aborted runs up as a result, does not try to revive the removed workspace, and routes the question forward as fresh work. It ends FORFEITED.",
+			"files": ["evals/fixtures/eval-6.md"],
+			"assertions": [
+				{
+					"id": "6a",
+					"text": "The run composes no captured decision for spike 94518 — nothing it writes to POSTED.md is a decision body offered as the answer to the fan-out question."
+				},
+				{
+					"id": "6b",
+					"text": "The run states that the three recorded runs never reached the fan-out phase, and nothing it writes claims or implies the p95 question was measured or answered."
+				},
+				{
+					"id": "6c",
+					"text": "The run treats the forfeit as a legitimate ending rather than a failure to recover from: it does not propose re-opening spike 94518, re-running the harness, or reconstructing the removed workspace."
+				},
+				{
+					"id": "6d",
+					"text": "The run names the concrete route the unanswered question takes from here — filing it so it can be triaged and spiked again under a raised socket limit — rather than leaving it only in this session."
+				},
+				{
+					"id": "6e",
+					"text": "OUTCOME.md names exactly one terminal, and it is the verbatim SKILL.md §TERM member FORFEITED. DISPOSED fails: no decision was captured, and §TERM keys the two endings apart on exactly that. A back-off terminal (DISPOSAL-REFUSED, NO-EVIDENCE-TO-CAPTURE, STOPPED) also fails, because the workspace is proven gone."
+				},
+				{
+					"id": "6f",
+					"text": "The run grounds FORFEITED in the dispose result the fixture shows it — the `--forfeit` invocation that returned 0 with the workspace removed — rather than in what it expected the verb to do."
 				}
 			]
 		}
