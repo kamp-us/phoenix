@@ -30,11 +30,16 @@ established by measurement rather than left as preserved uncertainty. It was mea
 Two independent observations, both taken 2026-08-10 against Claude Code 2.1.226.
 
 **1. The loader namespaces plugin skills and refuses to namespace anything else.** Read out of the
-shipped CLI: the plugin skill loader builds each skill's name as `<plugin>:<skill>`, and the
-frontmatter validator rejects a non-plugin skill whose `name` contains a colon — the message is
-verbatim *"names must not contain ':' (reserved for plugin namespacing)"*. A project-level skill
-therefore **cannot** carry a namespaced name, and a plugin skill **always** does. The two name-spaces
-are disjoint by construction, so no bare name is ever contested.
+shipped CLI: the Skill tool's own instruction text says verbatim *"Plugin skills use
+`plugin:skill`."*, and the skill-name validator says verbatim that *"Skill names match the skill's
+directory name (or 'plugin:skill' for plugin-qualified skills)"* — a filesystem skill's name is
+derived from its directory, and the colon spelling is reserved for the plugin-qualified form. Do
+**not** go looking for the familiar *"names must not contain ':' (reserved for plugin namespacing)"*
+rejection under skills: that message occurs at exactly two sites in the shipped binary and both are
+on the **agent** path (`parseAgentFromMarkdown` and the agent parse-error helper). A project-level
+skill therefore **cannot** carry a namespaced name, and a plugin skill **always** does. The two
+name-spaces are disjoint by construction, so no bare name is contested — save through the opt-in
+`fallback` frontmatter field, which no skill in this repo declares.
 
 **2. A live phoenix session's roster carries both sets, under both spellings.** The roster of a real
 session in this repo lists bare `adr`, `plan-epic`, `report`, `triage`, `write-code`, `review-code`
