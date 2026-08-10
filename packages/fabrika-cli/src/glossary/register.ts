@@ -107,7 +107,14 @@ const ANY_HEADING = /^#{1,2}[ \t]+\S/;
 
 const isTableLine = (line: string): boolean => line.trim().startsWith("|");
 
-/** Split a table row into cells, honouring `\|` as a literal pipe rather than a delimiter. */
+/**
+ * Split a table row into cells, honouring `\|` as a literal pipe and `\\` as a literal backslash.
+ *
+ * The backslash arm is the half that makes this the exact inverse of {@link escapeCell}. Without it
+ * the escape is incomplete in the classic direction: a cell whose own text ends in a backslash would
+ * fuse with the delimiter that follows it, so a value could smuggle in a column separator that
+ * `escapeCell` believed it had neutralized.
+ */
 export const splitCells = (line: string): ReadonlyArray<string> => {
 	let text = line.trim();
 	if (text.startsWith("|")) text = text.slice(1);
@@ -116,8 +123,8 @@ export const splitCells = (line: string): ReadonlyArray<string> => {
 	let cell = "";
 	for (let i = 0; i < text.length; i += 1) {
 		const ch = text[i] as string;
-		if (ch === "\\" && text[i + 1] === "|") {
-			cell += "|";
+		if (ch === "\\" && (text[i + 1] === "|" || text[i + 1] === "\\")) {
+			cell += text[i + 1] as string;
 			i += 1;
 			continue;
 		}
@@ -218,14 +225,20 @@ export const parseRegister = (text: string): ParseResult => {
 	return {_tag: "Parsed", value: {sections, rows, orphanRows, headings}};
 };
 
-/**
- * A cell's text as one table cell: newlines become single spaces, and a literal `|` is escaped, so a
- * row stays one line and cannot grow a column.
- */
+/** A cell's text as one line: newlines become single spaces, so a row cannot grow a line. */
 export const flattenCell = (text: string): string => text.replace(/\r\n|\r|\n/g, " ").trim();
 
-/** A literal `|` written so it stays content: the one character that could otherwise grow a column. */
-export const escapeCell = (text: string): string => text.replace(/\|/g, "\\|");
+/**
+ * A cell's text written so it stays content: `|` cannot grow a column, and the escape character
+ * itself cannot be forged.
+ *
+ * **The backslash is escaped FIRST, and that order is the whole correctness of the pair.** Escaping
+ * only `|` leaves the encoding ambiguous — a cell ending in `\` would render as `…\ |`, and its own
+ * trailing backslash would then read as escaping the delimiter that follows. `splitCells` is the
+ * exact inverse and unescapes both.
+ */
+export const escapeCell = (text: string): string =>
+	text.replace(/\\/g, "\\\\").replace(/\|/g, "\\|");
 
 export const normalizeCell = (text: string): string => escapeCell(flattenCell(text));
 

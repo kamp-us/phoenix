@@ -1,5 +1,6 @@
 import {describe, expect, it} from "vitest";
 import {
+	escapeCell,
 	normalizeCell,
 	normalizeKey,
 	overlaps,
@@ -70,6 +71,21 @@ describe("overlaps", () => {
 describe("splitCells", () => {
 	it("splits on unescaped pipes and unescapes the rest", () => {
 		expect(splitCells("| a | b\\|c | |")).toEqual(["a", "b|c", ""]);
+	});
+
+	/**
+	 * `escapeCell` and `splitCells` are an exact inverse pair, and the backslash arm is what makes
+	 * that true: escaping only `|` would let a cell ending in `\` read as escaping the delimiter
+	 * after it, which is a value smuggling in a column separator.
+	 */
+	it.each([
+		"plain",
+		"a | b",
+		"ends with a backslash \\",
+		"already escaped \\| pipe",
+		"double \\\\ backslash",
+	])("round-trips %j through escape and split", (value) => {
+		expect(splitCells(renderRow([escapeCell(value), "x", ""]))).toEqual([value, "x", ""]);
 	});
 });
 
