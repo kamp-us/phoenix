@@ -23,14 +23,7 @@ import {addBlockedBy, addSubIssue, internalId} from "../io/edges.ts";
 import {createComment, createUnlabelledIssue, getIssue, patchIssueBody} from "../io/issues.ts";
 import {normalizeForReadback} from "../report/compose.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
-import {
-	digestOf,
-	isKind,
-	KINDS,
-	parseBody,
-	renderFrontierRow,
-	spliceSection,
-} from "./body.ts";
+import {digestOf, isKind, KINDS, parseBody, renderFrontierRow, spliceSection} from "./body.ts";
 import {
 	ALREADY_DESCOPED,
 	EDGE_UNRESOLVABLE,
@@ -74,14 +67,14 @@ export const runTicket = (
 	Effect.gen(function* () {
 		const question = options.question.trim();
 		if (question === "") {
-			return refuse(FAILED, `${VERB}: --question is empty — refusing to file a ticket asking nothing.`);
+			return refuse(
+				FAILED,
+				`${VERB}: --question is empty — refusing to file a ticket asking nothing.`,
+			);
 		}
 		const kind = options.kind.trim();
 		if (!isKind(kind)) {
-			return refuse(
-				FAILED,
-				`${VERB}: --kind "${kind}" is not one of ${KINDS.join(", ")}.`,
-			);
+			return refuse(FAILED, `${VERB}: --kind "${kind}" is not one of ${KINDS.join(", ")}.`);
 		}
 		const nonce = options.nonce();
 		if (!isNonce(nonce)) {
@@ -252,7 +245,10 @@ export const runTicket = (
 		}
 
 		const landed = yield* getIssue(repo, options.map);
-		if (landed._tag !== "Present" || normalizeForReadback(landed.value.body) !== normalizeForReadback(next)) {
+		if (
+			landed._tag !== "Present" ||
+			normalizeForReadback(landed.value.body) !== normalizeForReadback(next)
+		) {
 			return refuse(
 				READBACK_MISMATCH,
 				`${VERB}: wrote #${options.map}'s body and the read-back differs — the ticket #${child} exists and the map needs fixing by hand.`,

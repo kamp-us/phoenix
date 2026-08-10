@@ -101,7 +101,11 @@ export const addSubIssue = (repo: string, parent: number, childId: number): Shel
 	});
 
 /** Record that `issue` waits on the issue whose internal id is `blockerId`. */
-export const addBlockedBy = (repo: string, issue: number, blockerId: number): Shell<Attempt<void>> =>
+export const addBlockedBy = (
+	repo: string,
+	issue: number,
+	blockerId: number,
+): Shell<Attempt<void>> =>
 	Effect.gen(function* () {
 		const r = yield* execCapture("gh", [
 			"api",

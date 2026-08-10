@@ -17,7 +17,7 @@
  * so without a retiring path it would hold the frontier forever and `graduate` could never run.
  */
 
-import {Effect, FileSystem} from "effect";
+import {Effect, type FileSystem} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {readFile} from "../io/fs.ts";
 import {closeCompleted, createComment, getIssue, patchIssueBody} from "../io/issues.ts";
@@ -26,19 +26,13 @@ import {appendOnly} from "../review/append.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {
 	digestOf,
-	normalizeSection,
 	type OutOfScopeEntry,
 	parseBody,
 	renderFrontierRow,
 	renderOutOfScope,
 	spliceSection,
 } from "./body.ts";
-import {
-	ALREADY_DESCOPED,
-	BAD_SECTIONS,
-	READBACK_MISMATCH,
-	WRITE_UNKNOWN,
-} from "./codes.ts";
+import {ALREADY_DESCOPED, BAD_SECTIONS, READBACK_MISMATCH, WRITE_UNKNOWN} from "./codes.ts";
 import {
 	digestFresh,
 	leakFree,
@@ -80,7 +74,10 @@ export const runDescope = (
 	Effect.gen(function* () {
 		const direction = options.direction.trim();
 		if (direction === "") {
-			return refuse(FAILED, `${VERB}: --direction is empty — refusing to reject an unnamed direction.`);
+			return refuse(
+				FAILED,
+				`${VERB}: --direction is empty — refusing to reject an unnamed direction.`,
+			);
 		}
 
 		const read = yield* readFile(options.reason).pipe(
@@ -146,14 +143,25 @@ export const runDescope = (
 			reason: reason.replace(/\.$/, ""),
 			recordedAt: options.now().toISOString().slice(0, 10),
 		};
-		const previous = normalizeSection(found.value.body.sections[4] ?? "");
-		const composed = [...found.value.body.outOfScope.map(renderOutOfScope), renderOutOfScope(entry)]
-			.join("\n");
-		const fence = appendOnly(previous, composed);
-		if (fence._tag === "Violates") {
+		const priorEntries = found.value.body.outOfScope.map(renderOutOfScope);
+		const composed = [...priorEntries, renderOutOfScope(entry)].join("\n");
+		// The fence compares RENDERED entries, not the raw section bytes, and the empty case is its own
+		// arm: `appendOnly` counts lines, and an empty section splits to one empty line, so a first
+		// entry would read as "the composed section has 1 line, expected 2" and refuse the ordinary
+		// opening write.
+		const violation =
+			priorEntries.length === 0
+				? composed === renderOutOfScope(entry)
+					? null
+					: "the composed section is not exactly this one entry"
+				: (() => {
+						const fence = appendOnly(priorEntries.join("\n"), composed);
+						return fence._tag === "Violates" ? fence.reason : null;
+					})();
+		if (violation !== null) {
 			return refuse(
 				READBACK_MISMATCH,
-				`${VERB}: the composed out-of-scope section is not the old one plus this entry (${fence.reason}) — nothing was written.`,
+				`${VERB}: the composed out-of-scope section is not the old one plus this entry (${violation}) — nothing was written.`,
 			);
 		}
 

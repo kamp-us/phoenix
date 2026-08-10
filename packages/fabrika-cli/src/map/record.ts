@@ -28,11 +28,7 @@ export const QUESTION_ID = /^R\d+\.\d+$/;
  * `null` when the intermediate body no longer parses, which a caller seats as a refusal rather than
  * writing bytes it cannot read back.
  */
-export const applyRecord = (
-	body: MapBody,
-	ticket: number,
-	entry: DecisionEntry,
-): string | null => {
+export const applyRecord = (body: MapBody, ticket: number, entry: DecisionEntry): string | null => {
 	const withoutRow = spliceSection(
 		body,
 		"Frontier",

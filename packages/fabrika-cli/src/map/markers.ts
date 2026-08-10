@@ -19,10 +19,9 @@
  */
 
 import {
-	emit as emitTicketMarker,
 	nonce as brandNonce,
+	emit as emitTicketMarker,
 	read as readTicketFormat,
-	reaches,
 } from "../wire/map-ticket.ts";
 import type {Kind} from "./body.ts";
 

@@ -14,7 +14,7 @@
  * every lane shares (#3709).
  */
 
-import {Effect, FileSystem} from "effect";
+import {Effect, type FileSystem} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {readFile} from "../io/fs.ts";
 import {createComment, getComment} from "../io/issues.ts";
@@ -59,7 +59,10 @@ export const runFinding = (
 		}
 		const outcome = options.outcome.trim();
 		if (!isOutcome(outcome)) {
-			return refuse(FAILED, `${VERB}: --outcome "${outcome}" is not one of ${OUTCOMES.join(", ")}.`);
+			return refuse(
+				FAILED,
+				`${VERB}: --outcome "${outcome}" is not one of ${OUTCOMES.join(", ")}.`,
+			);
 		}
 		if (outcome === "answered" && options.finding === null) {
 			return refuse(
@@ -100,7 +103,13 @@ export const runFinding = (
 		const found = yield* requireMapForState(VERB, repo, options.map);
 		if (found._tag === "Refused") return found.outcome;
 
-		const resolved = yield* requireTicket(VERB, repo, options.map, found.value.body, options.ticket);
+		const resolved = yield* requireTicket(
+			VERB,
+			repo,
+			options.map,
+			found.value.body,
+			options.ticket,
+		);
 		if (resolved._tag === "Refused") return resolved.outcome;
 		const {ticket} = resolved.value;
 

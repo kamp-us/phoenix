@@ -66,7 +66,8 @@ export const read = (artifact: string): MapTicketRead => {
 	if (line === null || !reaches(artifact)) {
 		return {
 			_tag: "Absent",
-			reason: 'the first non-blank line does not open with "map-ticket:" — no marker of this format',
+			reason:
+				'the first non-blank line does not open with "map-ticket:" — no marker of this format',
 		};
 	}
 	const evidence = `first line: "${line.trim()}"`;
@@ -139,7 +140,10 @@ export const parseFields = (fields: string): MapTicketFields => {
 
 	const missing = KEYS.filter((key) => (seen.get(key) ?? "").trim() === "");
 	if (missing.length > 0) {
-		return {_tag: "Unusable", reason: `no value for ${missing.join(", ")} — every field is required`};
+		return {
+			_tag: "Unusable",
+			reason: `no value for ${missing.join(", ")} — every field is required`,
+		};
 	}
 	const map = (seen.get("map") ?? "").trim().replace(/^#/, "");
 	if (!/^\d+$/.test(map)) {

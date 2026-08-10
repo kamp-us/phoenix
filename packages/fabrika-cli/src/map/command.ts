@@ -254,19 +254,34 @@ const record = leafCommand(
 		),
 		ruledOn: Flag.integer("ruled-on").pipe(
 			Flag.optional,
-			Flag.withDescription("the grilling session the ruling was recorded in; required for a forked decision"),
+			Flag.withDescription(
+				"the grilling session the ruling was recorded in; required for a forked decision",
+			),
 		),
 		spike: Flag.integer("spike").pipe(
 			Flag.optional,
-			Flag.withDescription("the prototyping spike whose captured decision this records; required for a forked prototype"),
+			Flag.withDescription(
+				"the prototyping spike whose captured decision this records; required for a forked prototype",
+			),
 		),
 		questionId: Flag.string("question-id").pipe(
 			Flag.optional,
-			Flag.withDescription("the question id in that session, matching R<round>.<n>; required with --ruled-on"),
+			Flag.withDescription(
+				"the question id in that session, matching R<round>.<n>; required with --ruled-on",
+			),
 		),
 		repo: repoFlag,
 	},
-	Effect.fn(function* ({map, digest, ticket: number, finding: path, ruledOn, spike, questionId, repo}) {
+	Effect.fn(function* ({
+		map,
+		digest,
+		ticket: number,
+		finding: path,
+		ruledOn,
+		spike,
+		questionId,
+		repo,
+	}) {
 		yield* emit(
 			yield* runRecord({
 				map,

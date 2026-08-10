@@ -25,13 +25,7 @@ import {
 	TICKET_UNKNOWN,
 	WRITE_UNKNOWN,
 } from "./codes.ts";
-import {
-	digestFresh,
-	notTerminal,
-	requireMap,
-	requireTicket,
-	targetRepo,
-} from "./guards.ts";
+import {digestFresh, notTerminal, requireMap, requireTicket, targetRepo} from "./guards.ts";
 import {composeForkMarker} from "./markers.ts";
 
 /** The label a `grilling` session issue carries. A plain label read, never a second reader. */
@@ -62,7 +56,13 @@ export const runFork = (
 		const stale = digestFresh(VERB, options.map, found.value.body, options.digest);
 		if (stale !== null) return stale;
 
-		const resolved = yield* requireTicket(VERB, repo, options.map, found.value.body, options.ticket);
+		const resolved = yield* requireTicket(
+			VERB,
+			repo,
+			options.map,
+			found.value.body,
+			options.ticket,
+		);
 		if (resolved._tag === "Refused") return resolved.outcome;
 		const {ticket} = resolved.value;
 
@@ -71,7 +71,8 @@ export const runFork = (
 
 		// Which flag is admitted is decided by the ticket's kind, not by the caller: `decision` takes
 		// `--session`, `prototype` takes `--spike`, and `research` takes neither — it is laned.
-		const wanted = ticket.kind === "decision" ? "session" : ticket.kind === "prototype" ? "spike" : null;
+		const wanted =
+			ticket.kind === "decision" ? "session" : ticket.kind === "prototype" ? "spike" : null;
 		const given =
 			options.session !== null && options.spike !== null
 				? "both"
@@ -148,7 +149,9 @@ export const runFork = (
 		if (guard !== null) return guard;
 
 		const rows = reread.value.body.frontier
-			.map((row) => renderFrontierRow(row.ticket === options.ticket ? {...row, forkedTo: routed} : row))
+			.map((row) =>
+				renderFrontierRow(row.ticket === options.ticket ? {...row, forkedTo: routed} : row),
+			)
 			.join("\n");
 		const next = spliceSection(reread.value.body, "Frontier", rows);
 		const written = yield* patchIssueBody(repo, options.map, next);

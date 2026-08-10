@@ -17,12 +17,7 @@ import {createComment, getComment} from "../io/issues.ts";
 import {normalizeForReadback} from "../report/compose.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {KIND_MISMATCH, LANE_NOT_MINE, READBACK_MISMATCH, WRITE_UNKNOWN} from "./codes.ts";
-import {
-	notTerminal,
-	requireMapForState,
-	requireTicket,
-	targetRepo,
-} from "./guards.ts";
+import {notTerminal, requireMapForState, requireTicket, targetRepo} from "./guards.ts";
 import {composeLaneMarker, isNonce} from "./markers.ts";
 
 export interface LaneOptions {
@@ -105,7 +100,10 @@ export const runLane = (
 		// The POST's own response is the server echoing the request; the lane is only held once the
 		// marker reads back, which is the read-back `epic-lock` never performed on its own stamp.
 		const landed = yield* getComment(repo, posted.value.id);
-		if (landed._tag === "Failure" || normalizeForReadback(landed.value) !== normalizeForReadback(body)) {
+		if (
+			landed._tag === "Failure" ||
+			normalizeForReadback(landed.value) !== normalizeForReadback(body)
+		) {
 			return refuse(
 				READBACK_MISMATCH,
 				`${VERB}: posted the lane claim on #${options.ticket} and the read-back differs — the comment exists and needs a human.`,

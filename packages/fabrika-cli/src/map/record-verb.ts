@@ -15,7 +15,7 @@
  * UNKNOWN, never assumed `ruled`. The research and spike paths are unaffected.
  */
 
-import {Effect, FileSystem} from "effect";
+import {Effect, type FileSystem} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {readFile} from "../io/fs.ts";
 import {closeCompleted, getIssue, patchIssueBody} from "../io/issues.ts";
@@ -62,7 +62,10 @@ export const runRecord = (
 	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem
 > =>
 	Effect.gen(function* () {
-		if (options.ruledOn !== null && (options.questionId === null || !QUESTION_ID.test(options.questionId))) {
+		if (
+			options.ruledOn !== null &&
+			(options.questionId === null || !QUESTION_ID.test(options.questionId))
+		) {
 			return refuse(
 				FAILED,
 				`${VERB}: --ruled-on requires --question-id matching R<round>.<n>; got "${options.questionId ?? ""}".`,
@@ -100,7 +103,13 @@ export const runRecord = (
 		const stale = digestFresh(VERB, options.map, found.value.body, options.digest);
 		if (stale !== null) return stale;
 
-		const resolved = yield* requireTicket(VERB, repo, options.map, found.value.body, options.ticket);
+		const resolved = yield* requireTicket(
+			VERB,
+			repo,
+			options.map,
+			found.value.body,
+			options.ticket,
+		);
 		if (resolved._tag === "Refused") return resolved.outcome;
 		const {ticket} = resolved.value;
 
@@ -114,7 +123,10 @@ export const runRecord = (
 			);
 		}
 
-		let entry: DecisionEntry = {text: finding, authority: {_tag: "Finding", ticket: options.ticket}};
+		let entry: DecisionEntry = {
+			text: finding,
+			authority: {_tag: "Finding", ticket: options.ticket},
+		};
 		if (ticket.state === "forked") {
 			if (ticket.kind === "decision") {
 				if (options.ruledOn === null) {

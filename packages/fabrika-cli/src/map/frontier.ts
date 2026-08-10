@@ -22,12 +22,12 @@ import {permissionFor} from "../io/pulls.ts";
 import {type Kind, type MapBody, parseBody} from "./body.ts";
 import {
 	type Outcome,
+	reachesForTicketMarker,
 	readFindingMarker,
 	readForkMarker,
 	readLaneMarker,
 	readRetiredMarker,
 	readTicketMarker,
-	reachesForTicketMarker,
 } from "./markers.ts";
 
 /** The label a map is found by. `map open` applies it on mint; nothing else touches it. */
@@ -260,7 +260,8 @@ const resolveChild = (
 				value: {
 					ticket: child,
 					reason: "unauthorized" as const,
-					detail: "every map-ticket marker on this child is from an author with no write permission",
+					detail:
+						"every map-ticket marker on this child is from an author with no write permission",
 				},
 			};
 		}
@@ -382,7 +383,8 @@ export type FrontierToken = "awaiting-founder" | "lanes-pending" | "clear" | "em
 export const frontierToken = (tickets: ReadonlyArray<Ticket>): FrontierToken => {
 	if (tickets.length === 0) return "empty";
 	const awaiting = tickets.some(
-		(ticket) => ticket.kind === "decision" && (ticket.state === "open" || ticket.state === "forked"),
+		(ticket) =>
+			ticket.kind === "decision" && (ticket.state === "open" || ticket.state === "forked"),
 	);
 	if (awaiting) return "awaiting-founder";
 	return tickets.every((ticket) => isTerminal(ticket.state)) ? "clear" : "lanes-pending";

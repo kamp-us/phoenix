@@ -94,7 +94,8 @@ export const runOpen = (
 			);
 		}
 
-		const leaked = leakFree(VERB, "destination", destination) ?? leakFree(VERB, "question", lines.join("\n"));
+		const leaked =
+			leakFree(VERB, "destination", destination) ?? leakFree(VERB, "question", lines.join("\n"));
 		if (leaked !== null) return leaked;
 
 		const questions = lines.filter(isQuestion);
@@ -239,13 +240,14 @@ export const runOpen = (
 			mismatch = "the landed body differs from what was composed";
 		} else {
 			const reparsed = parseBody(landed.value.body);
-			if (reparsed._tag === "Malformed") mismatch = `the landed body does not parse: ${reparsed.reason}`;
+			if (reparsed._tag === "Malformed")
+				mismatch = `the landed body does not parse: ${reparsed.reason}`;
 			else landedBody = reparsed.value;
 		}
 		if (mismatch !== null || landedBody === null) {
 			return refuse(
 				READBACK_MISMATCH,
-					`${VERB}: created #${created.value.number} but the read-back is wrong: ${mismatch ?? "the landed body could not be re-parsed"}. The map exists and needs fixing by hand.`,
+				`${VERB}: created #${created.value.number} but the read-back is wrong: ${mismatch ?? "the landed body could not be re-parsed"}. The map exists and needs fixing by hand.`,
 				[scope],
 			);
 		}

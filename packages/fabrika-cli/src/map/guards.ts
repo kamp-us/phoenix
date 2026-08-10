@@ -93,7 +93,9 @@ export const requireMap = (
 		const read = yield* readMap(repo, map);
 		if (read._tag === "Map") return {_tag: "Ok" as const, value: read};
 		if (read._tag === "Absent") {
-			return refused(refuse(NO_TARGET, `${verb}: #${map} does not exist, or is not a wayfinding map.`));
+			return refused(
+				refuse(NO_TARGET, `${verb}: #${map} does not exist, or is not a wayfinding map.`),
+			);
 		}
 		if (read._tag === "Malformed") {
 			return refused(

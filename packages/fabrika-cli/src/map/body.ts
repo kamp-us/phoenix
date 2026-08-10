@@ -26,7 +26,8 @@ export type SectionName = (typeof SECTIONS)[number];
 /** What clears a frontier ticket. A fourth value is a drift, not a kind. */
 export const KINDS = ["research", "prototype", "decision"] as const;
 export type Kind = (typeof KINDS)[number];
-export const isKind = (value: string): value is Kind => (KINDS as readonly string[]).includes(value);
+export const isKind = (value: string): value is Kind =>
+	(KINDS as readonly string[]).includes(value);
 
 /** One `## Frontier` row, as the body renders it. */
 export interface FrontierRow {
@@ -207,17 +208,18 @@ export const parseBody = (raw: string): BodyRead => {
 		};
 	}
 
-	const spans = found.map(
-		(entry, i): readonly [number, number] => [
-			entry.bodyStart,
-			i + 1 < found.length ? (found[i + 1]?.headingStart ?? text.length) : text.length,
-		],
-	);
+	const spans = found.map((entry, i): readonly [number, number] => [
+		entry.bodyStart,
+		i + 1 < found.length ? (found[i + 1]?.headingStart ?? text.length) : text.length,
+	]);
 	const sections = spans.map(([start, end]) => text.slice(start, end));
 
 	const decisionsRaw = bulletEntries(sections[1] ?? "");
 	if (decisionsRaw === null) {
-		return {_tag: "Malformed", reason: "a `## Decisions` line is neither an entry nor a continuation"};
+		return {
+			_tag: "Malformed",
+			reason: "a `## Decisions` line is neither an entry nor a continuation",
+		};
 	}
 	const decisions: DecisionEntry[] = [];
 	for (const entry of decisionsRaw) {
@@ -249,7 +251,10 @@ export const parseBody = (raw: string): BodyRead => {
 
 	const outRaw = bulletEntries(sections[4] ?? "");
 	if (outRaw === null) {
-		return {_tag: "Malformed", reason: "an `## Out of scope` line is neither an entry nor a continuation"};
+		return {
+			_tag: "Malformed",
+			reason: "an `## Out of scope` line is neither an entry nor a continuation",
+		};
 	}
 	const outOfScope: OutOfScopeEntry[] = [];
 	for (const entry of outRaw) {
@@ -316,10 +321,7 @@ export const spliceSection = (body: MapBody, section: SectionName, next: string)
 };
 
 /** The body `map open` mints: the destination, one fog bullet per question, three empty sections. */
-export const renderMintBody = (
-	destination: string,
-	questions: ReadonlyArray<string>,
-): string =>
+export const renderMintBody = (destination: string, questions: ReadonlyArray<string>): string =>
 	[
 		"## Destination",
 		destination,
