@@ -335,12 +335,21 @@
 	gap: 2px;
 }
 
+/* The square is set through the button's own size contract, not bare width/height: Manti applies
+   `min-height: var(--manti-button-height)` and Button.css a `min-width: var(--tap-min)` (36px), both
+   of which outrank a plain declaration — 28×28 rendered ≥36×30 until these were set (#5227). 28 is
+   under the 36px tap floor for the same reason the pano/sözlük vote buttons are: WCAG 2.5.8's 24px
+   target governs a dense vote control (#2166). */
 .kp-divan__upvote {
+	--manti-button-height: 28px;
+	--manti-button-padding-x: 0px;
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
+	min-width: 28px;
 	width: 28px;
 	height: 28px;
+	padding: 0;
 	border: 1px solid var(--border);
 	border-radius: var(--r-sm);
 	background: var(--surface);
