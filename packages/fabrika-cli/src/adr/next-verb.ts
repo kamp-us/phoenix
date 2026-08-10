@@ -9,9 +9,15 @@
  */
 import {Effect} from "effect";
 import {originRepo, type Shell} from "../io/git.ts";
-import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
+import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {loadInFlight, loadMerged} from "./base-ref.ts";
-import {BASE_UNFETCHABLE, DIR_UNREADABLE, IN_FLIGHT_UNKNOWN} from "./codes.ts";
+import {
+	BASE_UNFETCHABLE,
+	DIR_UNREADABLE,
+	IN_FLIGHT_UNKNOWN,
+	ORIGIN_REPO_UNRESOLVABLE,
+	UNPARSEABLE_RECORD_ID,
+} from "./codes.ts";
 import {allocate} from "./next.ts";
 
 export interface NextOptions {
@@ -30,8 +36,8 @@ export const runNext = (options: NextOptions): Shell<VerbOutcome> =>
 			const resolved = yield* originRepo;
 			if (resolved._tag === "Failure") {
 				return refuse(
-					FAILED,
-					`adr next: cannot resolve --repo from the origin remote: ${resolved.reason}`,
+					ORIGIN_REPO_UNRESOLVABLE,
+					`adr next: cannot resolve --repo from the origin remote: ${resolved.reason} — the in-flight set is UNKNOWN.`,
 				);
 			}
 			repo = resolved.value;
@@ -52,7 +58,10 @@ export const runNext = (options: NextOptions): Shell<VerbOutcome> =>
 					`adr next: cannot read ${dir} at ${base}: ${e.reason} — the merged set is UNKNOWN, never "0 records".`,
 				);
 			}
-			return refuse(FAILED, `adr next: ${dir} holds a record with an unparseable id: ${e.file}`);
+			return refuse(
+				UNPARSEABLE_RECORD_ID,
+				`adr next: ${dir} holds a record with an unparseable id: ${e.file}`,
+			);
 		}
 
 		const inFlight = yield* loadInFlight(repo, dir);

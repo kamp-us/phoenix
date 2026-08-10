@@ -1,7 +1,13 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {errOut, fakeShell, okOut, tree} from "../fakes.test-support.ts";
-import {BASE_UNFETCHABLE, DIR_UNREADABLE, IN_FLIGHT_UNKNOWN} from "./codes.ts";
+import {
+	BASE_UNFETCHABLE,
+	DIR_UNREADABLE,
+	IN_FLIGHT_UNKNOWN,
+	ORIGIN_REPO_UNRESOLVABLE,
+	UNPARSEABLE_RECORD_ID,
+} from "./codes.ts";
 import {runNext} from "./next-verb.ts";
 
 const SHA = "49a22902d1e0c7b3f5a8e4126b9d0f3c7a1e5b82";
@@ -118,10 +124,22 @@ describe("runNext", () => {
 		expect(empty.code).toBe(0);
 	});
 
-	it("refuses a record whose id cannot be parsed", async () => {
+	it("refuses a record whose id cannot be parsed, on its own proven code", async () => {
 		const out = await run([[/^git ls-tree/, okOut(tree("0234-a.md", "12-bad.md"))]]);
-		expect(out.code).toBe(1);
+		expect(out.code).toBe(UNPARSEABLE_RECORD_ID);
+		expect(out.code).not.toBe(1);
+		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toContain("unparseable id: 12-bad.md");
+	});
+
+	it("refuses an unresolvable origin remote on its own proven code, not on 1", async () => {
+		const out = await run([
+			[/^git remote get-url origin$/, errOut("fatal: No such remote 'origin'")],
+		]);
+		expect(out.code).toBe(ORIGIN_REPO_UNRESOLVABLE);
+		expect(out.code).not.toBe(1);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toContain("cannot resolve --repo from the origin remote");
 	});
 
 	it("refuses when git resolves the base to something that is not an object name", async () => {

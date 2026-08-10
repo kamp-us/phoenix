@@ -63,3 +63,29 @@ export const ALREADY_SUPERSEDED = 16;
 export const BASE_UNFETCHABLE = 17;
 /** The open pull requests could not be enumerated, so the in-flight set is UNKNOWN. */
 export const IN_FLIGHT_UNKNOWN = 18;
+
+/**
+ * A record under `--dir` has a filename this group cannot read an id from.
+ *
+ * One seat for `adr next` and `adr resolve` on {@link DIR_UNREADABLE}'s precedent: both say the same
+ * thing about the same directory, and the caller's remedy is the filename either way. A seat per verb
+ * would make the remedy look like it depended on which verb happened to find it.
+ */
+export const UNPARSEABLE_RECORD_ID = 19;
+
+/**
+ * Two records under `--dir` claim one id, so every answer over that id would be arbitrary.
+ *
+ * `adr resolve` proves this at two call sites — over the whole listing, and again over the records it
+ * read statuses for — and they are one fact, so they share the seat.
+ */
+export const DUPLICATE_ID = 20;
+
+/**
+ * `--repo` was not given and the `origin` remote could not be read, so the in-flight set is UNKNOWN.
+ *
+ * Its own seat rather than {@link DIR_UNREADABLE}'s for that seat's own stated reason: this reads
+ * something else — the git remote — and it is the precondition of the in-flight half, not of the
+ * record directory. Not `1`, which would fuse a missing remote with a bad flag.
+ */
+export const ORIGIN_REPO_UNRESOLVABLE = 21;
