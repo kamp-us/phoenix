@@ -34,6 +34,35 @@ Three things, all of them checkable by someone who was not there:
 An incident that fails any of the three is not silently dropped. It goes in `declined` with the
 reason, so the omission is visible and reversible.
 
+### And a fourth: it has to be observable in something a run produced
+
+Harness and platform breakages are **not** eval material. Ruled on
+[#4824](https://github.com/kamp-us/phoenix/issues/4824) and recorded as ADR
+[0257](../../../../../.decisions/0257-platform-incidents-enter-only-as-artifact-checks.md):
+
+> An incident is eval-bar material iff the failing behaviour is observable in an artifact a skill or
+> CLI run produces (a verdict, an exit status, a written file) — such cases enter at the
+> **deterministic CLI tier only**, never as spawn-a-skill graded cases; incidents whose failing
+> behaviour lives in platform mechanics the harness cannot stage (merge-queue semantics, worktree
+> provisioning, cache reuse, CI check arming) are **out of the eval bar** and route to CI guards /
+> regression tests instead.
+
+Where a platform failure was followed by an **agent's response**, the case is written about the
+response and never about the breakage that triggered it — "the merge queue wedged" is not a case, "the
+shipper discharged its guards by hand" is the candidate — and it is still admitted only on the test
+above. Apply the rule **per row as you author**; the "~22 harness/platform items" figure in the sweep
+report is a candidate from one read-only pass, not a bucket to trust.
+
+The tier does the enforcing for you. `deriveTier` returns `graded` for any case with a judgment
+assertion, so if you cannot word a platform-originated case's expectations mechanically, that derived
+`graded` is the signal the incident is **out of scope** — not a licence to file it graded. Decline it
+with the reason and route it to a CI guard or a regression test.
+
+This does not widen milestone #44's completion condition: "the #4637-B bar green at 1.0 scope" means
+1.0 over the corpus admissible under this rule. Origin of the question:
+[#4634](https://github.com/kamp-us/phoenix/issues/4634) calibration flag 6; the enumeration that scopes
+it: [#4823](https://github.com/kamp-us/phoenix/issues/4823).
+
 ## Who authors it, and when
 
 The agent or seat that **resolved** the incident writes the case — the diagnosis is at its
