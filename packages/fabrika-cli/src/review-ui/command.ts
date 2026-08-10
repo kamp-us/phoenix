@@ -85,6 +85,7 @@ const render = leafCommand(
 		);
 	}),
 ).pipe(
+	Command.withShortDescription("Capture the named surfaces from a PR's preview deployment."),
 	Command.withDescription(
 		"Capture the named surfaces from a PR's announced preview deployment at the inspected head, one validated PNG per surface, and write the set manifest. Prints one JSON object: the set, the PR, the head, the preview URL, and one capture record per surface (path, dimensions, sha256, page errors); every surface's outcome is enumerated on stderr. Full success is the only exit 0. Exits 1 (zero --surface operands), 7 (PR absent or closed), 10 (--out is not kebab-case, or a --surface carries the reserved :state suffix), 11 (a read failed, the preview comment is malformed or names several apps, or a capture's validity is undeterminable), 12 (the preview deploys a head that is not the PR's live head — stale preview), 13 (a surface threw during render), 14 (a surface is unreachable), 15 (a capture is invalid), 16 (no preview-deploy comment — the CANT-SEE route). Example: fabrika review-ui render --pr 4321 --out judged --surface /pano",
 	),
@@ -137,6 +138,7 @@ const post = leafCommand(
 		);
 	}),
 ).pipe(
+	Command.withShortDescription("Post the review-ui verdict on stdin as one comment."),
 	Command.withDescription(
 		'Post the review-ui verdict on STDIN as ONE comment for this namespace — re-resolve the live head, read the evidence set through its manifest, re-validate every capture, verify-upload every capture BEFORE anything posts, compose the first line through the `verdict-marker` wire format, leak-scan, upsert, and read it back from live state. There is no --namespace: this group emits review-ui and nothing else. Prints one JSON object. Exits 3 (empty stdin), 4 (the evidence set has no readable manifest.json, or design-harness.json violates its schema), 5 (machine-local path in the assembled comment), 6 (bare @ reference), 7 (PR absent or closed), 8 (the create/edit failed — UNKNOWN), 9 (read-back does not yield this marker), 10 (bad --polarity or --carrier, or advisory with FAIL), 11 (a precondition read failed — nothing uploaded or posted), 12 (the live head moved past --sha, or the set was rendered at another head), 15 (a capture fails its manifest sha), 17 (an evidence upload or its verification failed — nothing was posted). Example: fabrika review-ui post 4321 --polarity FAIL --sha 03135b91 --clause "changes-requested" --evidence judged < verdict.md',
 	),
@@ -156,6 +158,7 @@ const note = leafCommand(
 		);
 	}),
 ).pipe(
+	Command.withShortDescription("Post a blocker note when the surfaces cannot be seen."),
 	Command.withDescription(
 		"Post the blocker note on STDIN as one new comment — the typed non-verdict write for a proven can't-see or escalation state. Append-only (a dated fact is never edited in place), leak-scanned, and read back. A body whose first line parses as a verdict marker or an advisory carrier is refused: a verdict goes through review-ui post. Prints one JSON object. Exits 3 (empty stdin), 5 (machine-local path), 6 (bare @ reference), 7 (PR absent or closed), 8 (the post failed — UNKNOWN), 9 (the comment does not read back as sent), 10 (the body is verdict-shaped), 11 (a precondition read failed — nothing was posted). Example: fabrika review-ui note 4321 < blocker.md",
 	),

@@ -104,6 +104,7 @@ const check = leafCommand(
 		);
 	}),
 ).pipe(
+	Command.withShortDescription("Validate a corpus manifest against the schema."),
 	Command.withDescription(
 		"Validate a corpus manifest file against the schema (exit non-zero on a bad one)",
 	),
@@ -233,6 +234,7 @@ const report = leafCommand(
 		);
 	}),
 ).pipe(
+	Command.withShortDescription("Render the graded two-axis eval scorecard."),
 	Command.withDescription(
 		"Render the graded two-axis scorecard (pass-rate + token spend + churn cost per stage×model) — evidence for #1576, not a recommendation",
 	),
@@ -295,6 +297,7 @@ const cases = leafCommand(
 		);
 	}),
 ).pipe(
+	Command.withShortDescription("Validate an eval set and print each case's execution tier."),
 	Command.withDescription(
 		"Validate a /skill-creator-authored eval set and print each case's derived execution tier (exit non-zero with a named reason on a bad one)",
 	),
@@ -502,6 +505,7 @@ const runCommand = leafCommand(
 		);
 	}),
 ).pipe(
+	Command.withShortDescription("Execute a skill's eval set unattended, both arms."),
 	Command.withDescription(
 		"Execute a skill's eval set unattended (both arms) and emit the capture manifest the existing collector consumes — for an operator's shell or a review-skill spawn, never a CI job (#4676)",
 	),
@@ -589,6 +593,7 @@ const keeps = leafCommand(
 		);
 	}),
 ).pipe(
+	Command.withShortDescription("Print the ruled KEEP corpus of eval feedstock."),
 	Command.withDescription(
 		"Print the ruled KEEP corpus — the committed enumeration of the fabrika eval feedstock, with each row's derivation and the eval cases that pin it (#4823)",
 	),

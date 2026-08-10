@@ -93,6 +93,7 @@ const menu = leafCommand(
 		yield* emit(runMenu({roster, asOf: readNow(instant(new Date())), json}));
 	}),
 ).pipe(
+	Command.withShortDescription("The landed skill roster, derived from the installed plugin."),
 	Command.withDescription(
 		"List the landed skill roster, derived from the installed plugin's skills tree rather than from a committed file. First stdout line is `menu\\t<ready|empty>\\t<count>\\t<as-of>`, then one `skill\\t<name>\\t<invocation>\\t<model|user>\\t<description>` line each. An implicitly-resolved roster holding zero skills is `empty` at exit 0. Exits 7 (an explicitly passed --skills-dir is proven absent), 11 (the resolved roster could not be read — UNKNOWN, never empty). Example: fabrika status menu",
 	),
@@ -127,6 +128,7 @@ const config = leafCommand(
 		yield* emit(runConfig({roster, surfaces, json}));
 	}),
 ).pipe(
+	Command.withShortDescription("Which repo surfaces the landed skills need, and which exist."),
 	Command.withDescription(
 		"Report which repo surfaces every landed skill declares it needs and whether each is present here — the detection verb (#4952). First stdout line is `config\\t<satisfied|gaps|unknown>\\t<declared>\\t<missing>\\t<undeclared>\\t<off-vocabulary>`, then one `surface\\t…` line per declared row. A skill with no `## Required repo files` section emits one `undeclared` row, never zero. Exits 7 (an explicitly passed --skills-dir is proven absent), 11 (the roster or a SKILL.md inside it could not be read — the declaration set is UNKNOWN). Example: fabrika status config",
 	),
@@ -149,6 +151,7 @@ const board = leafCommand(
 		yield* emit(runBoard({read: yield* readBoard(target.value, () => new Date()), json}));
 	}),
 ).pipe(
+	Command.withShortDescription("The board's decided buckets, each with its own freshness."),
 	Command.withDescription(
 		"Count the board's decided buckets over named REST endpoints — needs-triage, triaged, in-flight and one per priority — each with its own freshness. An absent label renders `unknown` with detail `label absent`, never 0. First stdout line is `board\\t<counted|unknown>\\t<bucket-count>`, then one `bucket\\t…` line each. Exits 11 (the repository could not be read at all — every bucket is UNKNOWN). Example: fabrika status board",
 	),
@@ -182,6 +185,7 @@ const readout = leafCommand(
 		yield* emit(runReadout({read, json}));
 	}),
 ).pipe(
+	Command.withShortDescription("The landed-decision digest from the durable artifact."),
 	Command.withDescription(
 		"Display the landed-decision digest published in the durable artifact, decoded through the registered governance-digest wire format. This verb ranks nothing. First stdout line is `readout\\t<found|absent|malformed>\\t<row-count>\\t<source>\\t<as-of>`, then the digest's own rows. A closed or absent artifact is `absent` at exit 0. Exits 10 (the positional is not a positive issue number), 11 (the artifact could not be fetched, its updated_at was unreadable, or the format is not registered — UNKNOWN, never absent). Example: fabrika status readout",
 	),
@@ -217,6 +221,7 @@ const bootstrap = leafCommand(
 		);
 	}),
 ).pipe(
+	Command.withShortDescription("Create one missing repo surface and read it back."),
 	Command.withDescription(
 		"Create one missing repo surface from this group's own buildable-surface registry and read it back. The content of a file surface arrives on STDIN — the write, the collision guard and the read-back are this verb's; what the file says is the skill's. A target already present is `exists` at exit 0 and nothing is written. Stdout is the single line `bootstrap\\t<created|exists>\\t<surface-id>\\t<target>\\t<readback>`. Exits 3 (stdin held nothing), 5 (the content carries a machine-local path), 6 (the content is a bare @ path reference), 8 (the write failed — UNKNOWN), 9 (the read-back differs), 10 (--path resolves outside the repository root), 11 (the existence probe failed — nothing was written), 12 (the surface is not in the registry). Example: fabrika status bootstrap readout-artifact",
 	),
@@ -293,6 +298,7 @@ const open = leafCommand(
 		yield* emit(runOpen({fields, json, scope: `${rosterScope}; repo ${repoName}`}));
 	}),
 ).pipe(
+	Command.withShortDescription("The composite front-door readout: menu, config, board, readout."),
 	Command.withDescription(
 		"The composite front-door readout: four fields — menu, config, board, readout — each with its own state, source and freshness. Every unreadable source becomes a field state, so this verb has no zero-scope seat and no failed-read seat: it is injected before the session reads a token and a refusal would write zero bytes. First stdout line is `open\\t<field-count>`, then one `field\\t<name>\\t<state>\\t<detail>\\t<source>\\t<as-of>` line each. Exits 10 (--field is off the closed vocabulary). Example: fabrika status open",
 	),

@@ -36,6 +36,7 @@ const check = leafCommand(
 		yield* emitOutcome(yield* runCheck({json, stdin: Effect.sync(readStdin)}));
 	}),
 ).pipe(
+	Command.withShortDescription("Whether the hook envelope on stdin is one fabrika can read."),
 	Command.withDescription(
 		"Say whether the harness hook envelope on STDIN is one fabrika can read. Stdout is the single line `conforms\\t<hook_event_name>\\t<field-count>`. The bytes judged are on stderr on every path. Exits 3 (stdin was read and held nothing), 12 (bytes arrived and are provably not a hook envelope), 13 (fd 0 could not be read — UNKNOWN, never malformed). Example: fabrika hook check",
 	),
@@ -55,6 +56,7 @@ const spawn = leafCommand(
 		);
 	}),
 ).pipe(
+	Command.withShortDescription("Whether the spawn on stdin may use the model it asked for."),
 	Command.withDescription(
 		"Decide whether the subagent spawn on STDIN may run on the model it asked for. Stdout is the PreToolUse permission-decision object, whose systemMessage names the allowlist, the requested model, its canonical id and the resolved pin. An off-allowlist model is denied (ADR 0092). Exits 3 (stdin held nothing), 12 (not a hook envelope), 13 (fd 0 unreadable — UNKNOWN), 14 (a harness event this verb does not judge). Example: fabrika hook spawn",
 	),
@@ -67,6 +69,7 @@ const codes = leafCommand(
 		yield* emitOutcome(runCodes({json}));
 	}),
 ).pipe(
+	Command.withShortDescription("Print the exit taxonomy this group allocates from."),
 	Command.withDescription(
 		"Print the exit taxonomy every verb in this group allocates from. Stdout is one `<code>\\t<meaning>` line per code. Reads nothing and always exits 0. Example: fabrika hook codes",
 	),

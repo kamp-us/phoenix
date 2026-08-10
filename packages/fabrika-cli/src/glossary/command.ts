@@ -66,6 +66,7 @@ const init = leafCommand(
 		yield* emit(yield* runInit({register, dir, json, cwd: process.cwd()}));
 	}),
 ).pipe(
+	Command.withShortDescription("Create a register file that does not exist yet."),
 	Command.withDescription(
 		"Create a register file that does not exist, so a fresh repo is not a dead end. Prints `created\\t<path>`, or the JSON object {action, path, register}. Exits 8 (the write failed, the outcome is UNKNOWN), 9 (written and the read-back does not match the template), 10 (--register both, or an off-enum value), 11 (a precondition read failed, nothing was written), 12 (the register already exists — refused, never overwritten). Example: fabrika glossary init --register terms",
 	),
@@ -92,6 +93,7 @@ const drift = leafCommand(
 		yield* emit(yield* runDrift({register, dir, paths, limit, json, cwd: process.cwd()}));
 	}),
 ).pipe(
+	Command.withShortDescription("The surfaces that moved since the register last changed."),
 	Command.withDescription(
 		"The surfaces that moved since the register last changed, and the candidate coinages in them. Prints `drift`, `clean` or `bootstrap` on the first line — all three on exit 0 — then one `<phrase>\\t<hits>\\t<first-surface>` line per candidate. Exits 4 (the table structure is unparseable, so the declared set is UNKNOWN), 7 (--paths matched 0 tracked files), 10 (off-enum --register), 11 (--dir could not be read, or the range could not be computed). Example: fabrika glossary drift --register terms",
 	),
@@ -112,6 +114,7 @@ const lookup = leafCommand(
 		yield* emit(yield* runLookup({terms, register, dir, json, cwd: process.cwd()}));
 	}),
 ).pipe(
+	Command.withShortDescription("Whether a term is already declared, and what overlaps it."),
 	Command.withDescription(
 		'Whether a term is already declared, and what overlaps it. Prints one `<state>\\t<register>\\t<section>\\t<matched>` line per term, in argument order — `declared`, `collision` and `absent` are all answers on exit 0. Exits 1 (no term given), 4 (a selected register has no parseable term table), 10 (off-enum --register), 11 (a selected register could not be read, so every state is UNKNOWN). Example: fabrika glossary lookup "front door" --register both',
 	),
@@ -124,6 +127,7 @@ const sections = leafCommand(
 		yield* emit(yield* runSections({register, dir, json, cwd: process.cwd()}));
 	}),
 ).pipe(
+	Command.withShortDescription("The live section names of a register."),
 	Command.withDescription(
 		'The live section names of a register, so a caller reads them rather than recalling a list that rots. Prints one `<register>\\t<section>\\t<rows>` line per section in file order, or the single line `-\\tbootstrap\\t0` for a register that is absent or has no heading yet. Exits 4 (table rows under no "## " heading), 10 (off-enum --register), 11 (the register could not be read). Example: fabrika glossary sections --register terms',
 	),
@@ -189,6 +193,7 @@ const add = leafCommand(
 		);
 	}),
 ).pipe(
+	Command.withShortDescription("Insert or replace one row, alphabetically placed."),
 	Command.withDescription(
 		'Insert or replace one row, alphabetically placed and byte-preserving everywhere else. Prints `<action>\\t<path>\\t<section>\\t<line>`. Exits 3 (stdin held nothing), 4 (no parseable table under --section), 8/9 (the write failed, the read-back differs), 10 (--register both or an off-enum value), 11 (a precondition read failed — nothing was written), 12 (already declared without --replace, or --replace on an absent term), 13 (--section names no heading), 14 (the composed row cannot be a well-formed table row), 15 (the edit would have changed a line outside the target row — aborted). Example: printf \'The board product.\' | fabrika glossary add "pano" --register terms --section "Core / shape" --definition-file -',
 	),
@@ -211,6 +216,9 @@ const check = leafCommand(
 		yield* emit(yield* runCheck({register, dir, decisions, json, cwd: process.cwd()}));
 	}),
 ).pipe(
+	Command.withShortDescription(
+		"The shape, duplicate, ordering and citation defects in a register.",
+	),
 	Command.withDescription(
 		"Row-shape, duplicate-key, cross-register, ordering and citation-liveness defects in a register. Prints `clean`, `defects` or `bootstrap` on the first line — all three on exit 0 — then one `<kind>\\t<register>\\t<section>\\t<term>\\t<detail>` line per finding. Machine-local paths and dead links are deliberately not computed: a merge-blocking gate already decides each. Exits 4 (no parseable term table), 7 (a selected register is present and holds 0 rows), 10 (off-enum --register), 11 (a selected register could not be read). Example: fabrika glossary check --register both",
 	),
