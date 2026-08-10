@@ -122,6 +122,17 @@ Stated in the brief itself, so the session reads its own deliverable rather than
   restated as constraint 4 of the [decomposition-dispatch contract](https://github.com/kamp-us/phoenix/issues/4650#issuecomment-5150265328)).
   A session booting from the brief alone reads this here or not at all, so every brief states it —
   and because the gate is `skill-reviewer`, nothing waits on fabrika's own `/review-skill`.
+- **The calibration inputs are handed over, and the hand-off is written down as it happens.**
+  `skill-reviewer` is a generic upstream `plugin-dev` agent that applies its own rubric and is handed
+  fabrika's conventions by nothing ([#4701](https://github.com/kamp-us/phoenix/issues/4701)), so the
+  session hands it [`skill-conventions.md`](skill-conventions.md) and a landed sibling skill, and
+  **names those inputs in the PR body during step 5.5** rather than reconstructing them at PR-open
+  time. The acceptance criterion asks for the **record**, not the act — *"the PR records which
+  calibration inputs `skill-reviewer` was handed"* — because the record is what a reader can check;
+  that closes a forgotten hand-off, not an untrue one
+  ([ADR 0270](../../../.decisions/0270-calibration-record-is-written-at-the-handoff.md), where the
+  price of verb-mediating it instead is recorded). Briefs already minted carry the older *"was
+  handed … as calibration"* wording and are read at this same evidence class.
 - **One pull request**, carrying the authored `SKILL.md` **and** the derived contract spec
   (`contract.md` beside it, per the CLI interface convention's Part 2).
 - **Linked back to the brief issue** — `Fixes #<brief>` in the PR body, so the brief closes on merge
@@ -220,8 +231,9 @@ point: a session can tell an unbootable brief from a bootable one before it star
 3. Every incident is a number **and** a one-line behavior; an empty list is written as empty.
 4. Every prior-art verb is named, with what it computes and — where known — what it gets wrong.
 5. Both convention docs are linked, and neither is summarised.
-6. The output contract is stated in the brief, not assumed — including its filing half: the
-   handoff mints the implementation ticket and names its number.
+6. The output contract is stated in the brief, not assumed — including its filing half (the
+   handoff mints the implementation ticket and names its number) and its calibration half (the PR
+   records which inputs `skill-reviewer` was handed).
 
 ## What a brief deliberately does not carry
 
