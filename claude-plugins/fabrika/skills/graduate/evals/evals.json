@@ -167,8 +167,9 @@
 				},
 				{
 					"id": "5.6",
-					"text": "Provenance is assigned faithfully: #9505 is labelled ruled; #9507 and #9509 are labelled established.",
-					"leak": "The fixture's trail JSON prints each entry's provenance word, so the ruled/established split is transcribable without the skill. Kept as regression cover; not a discriminator."
+					"text": "Provenance is assigned faithfully: the ruled entry (ref `#9301 R1.2`, a session ruling relayed onto the map) is labelled ruled; #9507 and #9509 are labelled established.",
+					"leak": "The fixture's trail JSON prints each entry's provenance word, so the ruled/established split is transcribable without the skill. Kept as regression cover; not a discriminator.",
+					"note": "KEY DEFECT, found by the grader and fixed after the graded runs: this clause previously named #9505 as the ruled entry, a ref that no longer exists in the fixture — it was renumbered to #9301 R1.2 during the pre-run repair (a map TICKET cannot resolve to `ruled`; only a ## Decisions entry citing a session ruling can). Both arms were graded generously against the intent and passed. The graded runs therefore scored the old wording."
 				},
 				{
 					"id": "5.7",

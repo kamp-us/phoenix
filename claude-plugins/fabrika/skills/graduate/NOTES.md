@@ -145,6 +145,48 @@ half-written, which is out of scope for this contract.
 
 ## Eval coverage, and what it does not reach
 
-Recorded after the runs; see the authoring handoff on
-[#5103](https://github.com/kamp-us/phoenix/issues/5103) for the measured numbers, the discriminating
-count, and the terminals no fixture exercises.
+Five evals, 31 assertions, two arms. **with-skill 30/30; baseline 22/30.** Discriminating: **8 raw,
+4 distinct** — the terminal-token assertion is one property restated once per eval, so counting rows
+would overstate behavioural lift by 5×. One of the four is vocabulary (the baseline judged every
+situation correctly and minted `BLOCKED`, `SPECIFIED`, `Already graduated` instead of the closed
+tokens); three are substance: the spec body's four-section shape, **who writes `## Decisions`** (the
+baseline hand-authored the whole body including that section — the skill's central integrity claim,
+and the one a baseline simply does not have), and remainder handling on a two-subject trail.
+
+Cost: **+47% tokens, +36% wall-clock** against baseline. That is the skill's price and it belongs
+beside the pass rate.
+
+**A 30/30 is not a clean bill of health.** It means the keys are calibrated to this skill's own
+vocabulary and are not probing past it. The two findings below both came from outside the
+scorecard.
+
+**What no fixture exercises:** `TRAIL-EMPTY`, `SPEC-COMPOSED`, `SOURCE-UNRESOLVED`, `INPUT-REFUSED`,
+`WRITE-UNPROVEN`, `STOPPED` and `NOTE-ADDED` (7 of 11 terminals); the `empty` readiness token; a
+`disregardedEntries` row; a malformed emission marker; and — because both landed after the runs —
+the `--decisions` subset path and the second-run remainder.
+
+**Annotated leaks, kept as regression cover and not counted as discriminators:** 1.4, 3.5 and 5.6
+(each fixture's trail JSON prints the provenance word per ref, so provenance faithfulness is
+transcription), 4.3 (#9491 is printed verbatim), and 2.3 (both unresolved refs are spelled out in
+prose). Disputed and kept as real: 2.6 — the fixture prints the bare token `stale`, and the reading
+that it means *previously answered, now un-ruled, and more dangerous than `open` because a skim
+reads it as settled* is nowhere in the fixture.
+
+**A key defect the grader caught:** assertion 5.6 named `#9505` as the ruled entry, a ref that no
+longer exists — the pre-run fixture repair renumbered it to `#9301 R1.2`, because a map *ticket*
+cannot resolve to `ruled` and only a `## Decisions` entry citing a session ruling can. Both arms
+were graded generously against the intent and passed; the clause is repaired in `evals.json` and
+the graded runs scored the old wording.
+
+## The second thing the scorecard was blind to
+
+Asked to read all ten runs side by side, the grader found the skill answering one question **two
+different ways**. The fixtures for evals 1, 3 and 5 never run `graduate read`. In all three the
+with-skill arm recorded the command, assumed `ungraduated`, and filed on that assumption. In eval-2,
+facing the identical gap, it refused to assume.
+
+So the rule read as *assume the precondition when assuming lets you write; refuse when it does not
+matter* — which is exactly backwards, and eval-4 is the case that proves it: a trail can read `ready`
+and already be graduated, and nothing but the read distinguishes them. Fixed by the
+`NEVER-WRITE-ON-AN-ASSUMED-READ` anchor in `SKILL.md` §1, which names the temptation directly. The
+fix landed after the runs, so no graded assertion covers it.

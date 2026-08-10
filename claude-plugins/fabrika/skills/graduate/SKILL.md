@@ -65,6 +65,15 @@ Read first. If it reports `graduated`, the spec already exists — report its nu
 `ALREADY-GRADUATED`. Filing a second spec for one trail is the failure this check exists to catch,
 and it is cheaper to catch here than at step 5's refusal.
 
+<!-- anchor: NEVER-WRITE-ON-AN-ASSUMED-READ --> **`ungraduated` is something you read, never
+something you assume.** If this call did not run, or exited non-zero, the source's graduation state
+is UNKNOWN and you stop — you do not proceed to compose or emit on the assumption that it is
+probably fine. The temptation is specific and worth naming: assuming `ungraduated` is the one
+assumption that lets the lane continue, so it is the one you will be most inclined to make, and the
+case where it is false is exactly the case this step exists for — a trail that reads `ready` and has
+already been filed looks identical from the trail alone. `emit`'s `15` refusal is a backstop for a
+marker you could not see, not a licence to skip the read.
+
 Then the trail. One call, whichever surface the work came from: the verb dispatches on the source's
 own label — a `grilling` session or a `wayfinding` map — and normalizes both into one trail. It
 prints a `readiness` token from a closed set and a `trailDigest` that binds what you are about to
