@@ -202,6 +202,39 @@ export const listDir = (sha: string, dir: string): Shell<Attempt<ReadonlyArray<s
 		);
 	});
 
+/**
+ * The working tree's root, from the current directory.
+ *
+ * A directory that is not a repository fails rather than answering the current directory: a
+ * containment test taken against a guessed root is a test about nothing.
+ */
+export const repoRoot: Shell<Attempt<string>> = Effect.gen(function* () {
+	const r = yield* execCapture("git", ["rev-parse", "--show-toplevel"]);
+	if (!r.ok) return fail(r.reason);
+	const root = r.stdout.trim();
+	return root === "" ? fail("`git rev-parse --show-toplevel` named no root") : ok(root);
+});
+
+/**
+ * The working tree's whole status at `root`, ignored paths included.
+ *
+ * `--ignored=matching` is not the default invocation and is deliberate: a build cache, a
+ * `node_modules/`, a `.env` all land on ignored paths, so a status blind to them would report a
+ * tree as unchanged over exactly the writes a disposability check exists to find.
+ */
+export const treeStatus = (root: string): Shell<Attempt<string>> =>
+	Effect.gen(function* () {
+		const r = yield* execCapture("git", [
+			"-C",
+			root,
+			"status",
+			"--porcelain=v1",
+			"--untracked-files=all",
+			"--ignored=matching",
+		]);
+		return r.ok ? ok(r.stdout) : fail(r.reason);
+	});
+
 /** One file's contents at `sha`. */
 export const readFileAt = (sha: string, path: string): Shell<Attempt<string>> =>
 	Effect.gen(function* () {
