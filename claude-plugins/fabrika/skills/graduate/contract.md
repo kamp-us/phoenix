@@ -859,6 +859,17 @@ $ echo $?
   sits at `3`+.
 - v1's `graduate-map.sh` docblock claims it is fully-graduated-only while nothing in the script
   tests it, so it closes whatever number it is handed. This verb closes nothing at all.
+- v1's `epic-splice` / `epic-lock` — the concurrent-writer pair, recorded here because an absent row
+  reads as nobody checked. Both exist because `plan-epic` rewrites one live epic body in place, and
+  both carry the same scar: the guard does not live where the write does. `epic-splice` ships only
+  the pure text transform, leaving the optimistic `updated_at` recheck and the abort-retry PATCH in
+  skill prose (`epic-splice/epic-splice.ts:10-12`), so a caller can splice without ever rechecking;
+  `epic-lock` acquires by two non-atomic writes, so a failed claim POST leaves `status:planning`
+  held on the epic for a human to clear (`epic-lock/command.ts:63-66`). **Neither scar has a surface
+  in this group.** No verb here read-modify-writes an existing body — every write is a create (a new
+  issue, its label set, and a new comment on the source), so there is nothing to clobber and no lock
+  to take. The one repeat hazard that does remain, filing the same spec twice, is answered by the
+  emission marker and the `15` digest refusal above rather than by a lock.
 - #3086 — a machine-local path in a posted body. Both the body and the title are scanned.
 
 ---
