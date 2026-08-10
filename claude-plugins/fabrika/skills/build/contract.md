@@ -997,10 +997,23 @@ beside a green is the honest reading of a mixed diff, and the same line is repea
 The list is a **disclosure, not a second validator run**: `--surface code` names the markdown it
 skipped and does not scan it. Running the markdown validators there would make the surface guess at
 file classes, which the anchor exists to refuse — so the remedy for a mixed diff that needs its
-markdown read is a **second run at `--surface prose`**, which the anchor admits (#5301). Each run is
-green for what it read and names what it did not; between them nothing in the diff goes unread.
-`unvalidated: []` therefore means every changed file was read by a validator that passed, and
-nothing weaker (#5288).
+markdown read is a **second run at a markdown surface**: `--surface prose`, or `--surface plan` when
+the markdown is an epic ledger, since `plan` runs the prose validators too. Either admits a mixed
+diff (#5301). Each run is green for what it read and names what it did not; between them nothing in
+the diff goes unread.
+
+`unvalidated: []` therefore means every changed file was read by **every** validator its class gets
+and all of them passed — nothing weaker (#5288), and true at the validator level rather than only at
+the file-open level (#5304). Two facts hold that promise up:
+
+- **A class one surface claims, it validates whole.** `prose` and `plan` both cover `markdown`, so
+  both run the leak scan and the link resolver; `plan` adds the `## Dependencies` grammar on top.
+  `plan` used to run the grammar *instead*, and greened a ledger with `unvalidated: []` while the
+  leak scan had never opened it.
+- **A file that cannot be read refuses.** Only a file the tree no longer holds — a deletion the diff
+  still counts — may be skipped, and only because absence is proven. Any other read fault (a
+  permission or IO error) is a read that did not execute, so it refuses on `11` naming the file. One
+  catch-all fused the two and skipped both.
 
 Per surface:
 
@@ -1011,9 +1024,11 @@ Per surface:
 - **prose** — changed markdown files: every relative link resolves against this tree; no
   machine-local path (the imported `leaks.ts` predicate); every fabrika-doc reference cited by id
   exists.
-- **plan** — the changed ledger's `## Dependencies` block parses under the canonical grammar
-  (defined in `build eligible`): issue refs (`#<int>`) resolve to real issues, ledger-local refs
-  (`C<int>`) resolve within the ledger, and no child is its own predecessor.
+- **plan** — everything `prose` runs, plus the changed ledger's `## Dependencies` block parsing
+  under the canonical grammar (defined in `build eligible`): issue refs (`#<int>`) resolve to real
+  issues, ledger-local refs (`C<int>`) resolve within the ledger, and no child is its own
+  predecessor. A ledger is markdown, so the markdown validators are its baseline and the grammar is
+  the specialization on top.
 
 The surface anchor: the verb diffs the branch against its base and refuses a surface whose own file
 class the diff does not contain (`--surface prose` over a diff with no markdown is `10`) — the
@@ -1044,7 +1059,7 @@ Preconditions: a linked worktree (`12`), the lane's branch checked out (`14`).
 |---|---|
 | `7` | the diff against the branch base is empty — nothing to validate, zero scope |
 | `10` | `--surface` is off-enum, or the diff contains none of the file classes that surface's validators open |
-| `11` | a validator could not be executed, or the lane's claim could not be read — the verdict is UNKNOWN, never green |
+| `11` | a validator could not be executed, a changed file could not be read for a reason other than absence, or the lane's claim could not be read — the verdict is UNKNOWN, never green |
 | `12` | proven: not in a linked worktree |
 | `14` | proven: the checked-out branch is not this lane's (lane-identity rule) |
 | `15` | proven: the lane's claim is held by another session |
@@ -1057,6 +1072,7 @@ Preconditions: a linked worktree (`12`), the lane's branch checked out (`14`).
 |---|---|---|
 | `build check: <runner> could not be executed: <reason> — the verdict is UNKNOWN, never green.` | 11 | refusal |
 | `build check: cannot read the claim markers on #<n>: <reason> — the lane is UNKNOWN.` | 11 | refusal |
+| `build check: cannot read <file> (<reason>) — it is in the diff and is not absent, so the verdict is UNKNOWN, never green.` | 11 | refusal |
 | `build check: #<n> is held by <token>, not this session.` | 15 | refusal |
 | `build check: --surface prose, but the diff changes no markdown file — the surface is provably wrong.` | 10 | refusal |
 | `build check: the diff against <base> is empty — nothing to validate (ADR 0092).` | 7 | refusal |
@@ -1090,6 +1106,10 @@ $ fabrika build check --surface code
 - #5301 — the disclosure was honest but there was still nowhere to send the markdown: `--surface
   prose` refused whenever one code file was present, so a mixed diff's prose was unscannable under
   every surface. The anchor now refuses an absent class rather than a present other one.
+- #5304 — the green's disclosure was true at the file-open level and false at the validator level: a
+  catch-all `PlatformError` skipped a file nothing could open, and `plan` claimed the whole `markdown`
+  class while running only the grammar. A read that did not execute now refuses on `11`, and a
+  surface that claims a class runs every validator that class gets.
 - v1's discipline was prose-only (`SKILL.md:895-935`, exact-CI-command mandate with no
   enforcement); here the command set is the verb's, not the agent's memory.
 - ADR 0092 — zero diff is a refusal, not a vacuous green.
