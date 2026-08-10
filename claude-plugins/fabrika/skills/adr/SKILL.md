@@ -56,8 +56,11 @@ None of its three outcomes is a clearance:
 - **`no-overlap`** — nothing mechanically adjacent was left to open, **never** that there is no
   contradiction: an ADR disagreeing with yours about what a label *means*, sharing no distinctive
   vocabulary, never appears at all. Read the domain by hand.
-- **`indeterminate`** — the run carries no information: your draft yielded no distinctive terms, or
-  the corpus is too small to rank rarity against. Say which, and read by hand regardless.
+- **`indeterminate`** — the run carries no information: your draft yielded no distinctive term — one
+  every live-accepted ADR carries is not distinctive — or the corpus is too small to rank rarity
+  against. Distinctiveness is a property of your draft against the corpus, not of what it overlaps,
+  so a draft whose vocabulary is entirely its own is maximally distinctive and lands on `no-overlap`
+  instead. Say which fired, and read by hand regardless.
 
 Resolve each real hit in step 4 — supersede where this ADR replaces it outright, amend-in-part where
 the rest still stands. Where you only refine your own earlier ADR's mechanics and its ruling holds,

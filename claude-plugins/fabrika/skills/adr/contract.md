@@ -505,6 +505,72 @@ fabrika adr sweep --new 0240 [--dir <path>] [--limit <n>] [--json]
 | `--limit` | integer | no | `8` | how many shortlist entries to emit |
 | `--json` | boolean | no | `false` | emit the sweep result as one JSON object on **stdout** |
 
+**Ranking** — the score is a computation, and this is it. Two implementers who read this section
+compute the same number to the last printed digit; nothing below is left to judgment.
+
+1. **The corpus and the two populations.** Every `NNNN-slug.md` file under `--dir` is read, and that
+   count is `scanned`. The **live-accepted corpus** `L` is every scanned record whose frontmatter
+   `status:` is live (`accepted` or `amended-in-part …`, per the shared conventions), minus the
+   subject's own record when the subject sits in `--dir`. `N = |L|`. The **in-scope** set is `L`
+   minus every record whose id the subject already cites, a citation being any four-digit token
+   anywhere in the subject's file text. `L` is the rarity denominator **and** the population the
+   rarity floor of 10 counts — the whole live-accepted corpus, *before* citations are excluded. The
+   in-scope set is only what gets ranked, and it is what `inScope` reports.
+2. **Decision-bearing text**, taken the same way for the subject and for each record in `L`: the
+   frontmatter `title:`, the `**What this decides:**` gloss up to its first blank line, and the
+   `## Decision` section — frontmatter stripped, and nothing from `## Context` or `## Consequences`.
+   Those two narrate why a decision was taken and what it costs; two ADRs contradict each other in
+   what they *decide*, so ranking on decision text is what stops a shared war story scoring as a
+   shared ruling. A record with no `## Decision` heading contributes its whole body instead, so a
+   nonstandard record is rankable rather than silently invisible.
+3. **Tokenizer.** Lowercase the text, split it on every run of characters outside `[a-z0-9]`, and
+   keep the tokens of length ≥ 3 that are neither purely numeric (a bare number is an id, not a
+   term) nor a stopword. Each document's terms are a **set**: a term counts once per record however
+   often it occurs, so the score carries no term-frequency component.
+4. **Stopwords** — exactly this list, and nothing domain-specific. Repo jargon needs no list: a term
+   every record uses has a rarity weight near zero and contributes nothing on its own.
+
+   ```
+   a about above after again against all also although always am an and any are as at be because
+   been before being below between both but by can cannot could did do does doing done down during
+   each either else even ever every few for from further had has have having her here hers him his
+   how however if in instead into is it its itself just less let like made make makes many may
+   might more most much must never new no nor not now of off on once one only or other our out over
+   own per rather same shall she should since so some still such than that the their them then
+   there these they this those though through thus to too two under until up upon use used uses
+   using very was way we well were what when where whether which while who whom whose why will with
+   within without would yet you your
+   ```
+
+5. **Rarity.** `df(t)` is how many records of `L` carry term `t`. For each subject term `t` with
+   `df(t) < N`, the weight is `idf(t) = ln(N / max(df(t), 1))`. A term with `df(t) = N` is dropped:
+   carried by every record, it discriminates nothing. A term with `df(t) = 0` is kept at `ln(N)` —
+   maximally rare, scoring against nobody, which is what separates the two silent outcomes below.
+6. **Score.** Each in-scope record scores the sum of `idf(t)` over the subject terms it carries.
+   A record scoring `0` is dropped rather than shortlisted at zero.
+7. **Order and cut.** Descending score, ties broken by ascending numeric id; `--limit` then takes
+   the first `n` of that order.
+8. **Rounding.** A score is rounded to two decimals as `round(score × 100) / 100` (halves away from
+   zero) and printed with exactly two decimals, so `2.3` prints `2.30`.
+
+**This ratifies the shipped function rather than replacing it.**
+[`packages/fabrika-cli/src/adr/sweep.ts`](../../../../packages/fabrika-cli/src/adr/sweep.ts) already
+computes exactly the above; the spec was unspecified and the implementation was not, so the
+implementation is what got written down (ADR
+[0247](../../../../.decisions/0247-a-spec-example-value-is-derivable-or-absent.md)). Where the two
+ever disagree, this section is the contract and the implementation is the bug.
+
+**The three outcomes, disjoint by construction.**
+
+- **`indeterminate`** — the run carries no information: either `N` is below the rarity floor of 10,
+  or the subject yielded no distinctive term at all. **Distinctiveness is a property of the subject
+  against the corpus, never of its overlap**: a subject term is distinctive when at least one record
+  of `L` lacks it (`df(t) < N`). So a subject whose every term is *absent* from the corpus is
+  maximally distinctive and never lands here — it reaches `no-overlap`.
+- **`no-overlap`** — the subject had distinctive terms and no uncited live-accepted record shares
+  one, so every in-scope record scored `0`. Never read as a clearance.
+- **`shortlist`** — at least one in-scope record scored above `0`.
+
 **Output** — the first line is the outcome token alone: `shortlist`, `no-overlap` or `indeterminate`.
 On `shortlist`, one tab-separated line per entry follows — `<id>`, `<score>`, `<file>`, `<title>`.
 The reason for a `no-overlap` or `indeterminate`, and the scope line, go to stderr.
@@ -514,8 +580,21 @@ a caller must never read its own shortlist as a failed run — which is precisel
 `adr-sweep` makes by exiting `1` on the one case it was asked to produce.
 
 With `--json`, one object on stdout with keys `outcome` (the token), `entries` (an array of
-`{id, score, file, title}`, empty unless `outcome` is `shortlist`), `reason` (the explanatory string
-for `no-overlap` and `indeterminate`, else `null`), `scanned`, `inScope` and `cited`.
+`{id, score, file, title}`, empty unless `outcome` is `shortlist`), `reason` (the string below, or
+`null`), `scanned`, `inScope` and `cited`.
+
+**The `reason` string is fixed text, byte for byte** — a caller may grep it, so it is pinned to the
+same precision as every stderr message in the Errors table. `<N>` is the live-accepted count.
+
+| Outcome | `reason` |
+|---|---|
+| `indeterminate`, below the floor | `the live-accepted corpus holds <N> record(s), below the rarity floor of 10 — every term looks common, so a clean sweep here is degenerate rather than clean` |
+| `indeterminate`, no distinctive terms | `the subject yielded no distinctive terms against the live-accepted corpus — nothing to rank, so the run carries no information` |
+| `no-overlap` | `no uncited live-accepted record shares a distinctive term with the subject — this is not a clearance: an ADR that disagrees about what a label means shares no vocabulary and never appears here` |
+| `shortlist` | `null` |
+
+The same sentence is what reaches stderr on either channel, as `adr sweep: <reason>.` — the verb's
+prefix and a terminating period, and no other rewording.
 
 **Exit status**
 
@@ -538,22 +617,49 @@ for `no-overlap` and `indeterminate`, else `null`), `scanned`, `inScope` and `ci
 **Scope** — every live-accepted record under `--dir` that `--new` does not already cite. The scope
 line goes to stderr naming the corpus size and the in-scope count, because the outcome is only
 readable against them: `indeterminate` fires when the live-accepted corpus is below the rarity floor
-of 10, and a caller that cannot see the count cannot tell that from a clean sweep.
+of 10 — the floor counts that corpus, not the in-scope subset — and a caller that cannot see the
+count cannot tell that from a clean sweep.
 
 **Examples**
 
+A score is relative to the corpus it was computed against, so an example that prints one names a
+**committed** corpus rather than the live `.decisions/`, whose scores would be stale the next time a
+record lands (ADR [0247](../../../../.decisions/0247-a-spec-example-value-is-derivable-or-absent.md)).
+Both examples run against fixtures in this skill's tree and reproduce byte for byte; the scope line
+each writes to stderr is not shown.
+
 ```
-$ fabrika adr sweep --new 0240
+$ fabrika adr sweep --new claude-plugins/fabrika/skills/adr/evals/fixtures/0240-only-landed-adrs-may-be-cited.md --dir claude-plugins/fabrika/skills/adr/evals/fixtures/sweep-corpus
 shortlist
-0233	15.11	0233-decision-shell-enforcement-review-skill-criterion.md	New decision-computing shell is caught by a review-skill criterion row
-0160	13.46	0160-ref-transaction-guard-refuses-diverging-primary-main.md	A git reference-transaction guard refuses a diverging refs/heads/main ref-move
+0101	17.03	0101-citations-resolve-against-the-base-ref.md	A citation resolves against the fetched base ref, never the local working tree
+0103	11.74	0103-an-unmerged-pull-request-leaves-no-record.md	A pull request that never merges leaves no record behind
+0102	9.43	0102-a-reviewer-resolves-every-reference.md	A reviewer resolves every reference in the pull request under review
+0104	4.61	0104-superseded-records-keep-their-file.md	A superseded record keeps its file and gains a status line
+0107	2.30	0107-every-push-runs-the-test-suite.md	Every push runs the whole test suite
+0110	2.30	0110-diagnostics-go-to-stderr.md	Diagnostics go to stderr, answers to stdout
 $ echo $?
 0
 ```
 
+Four of that corpus's ten records — `0105`, `0106`, `0108`, `0109` — are absent, and the absence is
+the ranking working: each shares exactly one term with the subject, `decision`, which all ten records
+carry (`df = N`), so its weight is dropped and the record scores `0`. The tail is the arithmetic in
+the open: `0107` shares only `time` and `0110` only `lands`, each held by one record of ten, so both
+score `ln(10 / 1) = 2.302…` → `2.30` and tie, and the tie breaks toward the lower id.
+
 ```
 $ fabrika adr sweep --new 0240 --dir claude-plugins/fabrika/skills/adr/evals/fixtures/small-corpus
 indeterminate
+$ echo $?
+0
+```
+
+That corpus holds three live-accepted records, so it is below the rarity floor and the run is
+indeterminate rather than clean. With `--json` the same run carries the pinned `reason`:
+
+```
+$ fabrika adr sweep --new 0240 --dir claude-plugins/fabrika/skills/adr/evals/fixtures/small-corpus --json
+{"outcome":"indeterminate","entries":[],"reason":"the live-accepted corpus holds 3 record(s), below the rarity floor of 10 — every term looks common, so a clean sweep here is degenerate rather than clean","scanned":4,"inScope":3,"cited":0}
 $ echo $?
 0
 ```
@@ -567,6 +673,8 @@ $ echo $?
   three outcomes exit `0` here, and `--json` goes to stdout per rule 2. Read it as a list of mistakes
   already made, not as an implementation to copy.
 - The ranking is a lexical/rarity score over decision-bearing text, capped at 8, excluding the
-  subject's own citations. `indeterminate` fires when the subject yields no distinctive terms or the
-  live-accepted corpus is below the rarity floor of 10 — a small corpus makes every term look common,
-  so silence there is degenerate rather than clean.
+  subject's own citations — written out step by step under **Ranking** above, because the earlier
+  one-line gloss printed example scores nobody could re-derive from it
+  ([#4735](https://github.com/kamp-us/phoenix/issues/4735)).
+- ADR [0247](../../../../.decisions/0247-a-spec-example-value-is-derivable-or-absent.md) — an
+  example value is derivable or absent, and this verb's shipped ranking is ratified as the spec.
