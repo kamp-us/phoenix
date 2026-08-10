@@ -152,7 +152,8 @@ second signal, and the provenance predicate stays two-signal.
 **The module, the fixture, the registry row and the two conformance tests land as one follow-up
 slice, not here.** ADR 0241 stages a format with its first consumer; both consumers already shipped
 (`report file` composes, `triage provenance` reads), so the staging condition is met and the slice is
-unblocked. This ADR is the ruling; the code is filed separately, exactly as ADR 0251 filed
+unblocked. This ADR is the ruling; the code is filed as
+[#5284](https://github.com/kamp-us/phoenix/issues/5284), exactly as ADR 0251 filed
 [#5249](https://github.com/kamp-us/phoenix/issues/5249) for the envelope. The two shape
 restatements in `claude-plugins/fabrika/skills/report/contract.md` and
 `claude-plugins/fabrika/skills/triage/contract.md` move into the module on that slice — they stay
