@@ -309,7 +309,7 @@ that test belongs in the skill, not the CLI.
 
 ### Completeness test
 
-A spec is complete when all six hold. Each is checkable by reading the spec alone, which is the
+A spec is complete when all seven hold. Each is checkable by reading the spec alone, which is the
 point: an implementer can tell an unfinished spec from a finished one before starting.
 
 1. Every flag has a type and, if optional, a default.
@@ -320,6 +320,19 @@ point: an implementer can tell an unfinished spec from a finished one before sta
 6. No clause defers to a v1 script, another skill's prose, or the authoring session. Deferral is the
    [#4638](https://github.com/kamp-us/phoenix/issues/4638) failure: the spec is the contract, so a
    spec that points elsewhere has not derived one.
+7. **Every value an example prints is derivable from the spec.** A verb that emits a computed value
+   specifies the computation — every input to it, down to the tie-break and the rounding — or prints
+   no example value. Where the value also depends on data outside the spec, the example names data a
+   reader can hold fixed, such as a committed fixture, rather than a corpus that moves under it.
+
+   Checks 1–6 are all *presence* tests, and a spec can pass every one of them while leaving its core
+   uninvented: `adr sweep` declared its flags, its shapes, its codes, its errors and its scope, and
+   printed two example scores derived from a ranking function the spec never gave. Two implementers
+   read that and ship two different verbs, each skill's judgment layer tuned against a ranking that
+   moves under it ([#4735](https://github.com/kamp-us/phoenix/issues/4735), ADR
+   [0247](../../../.decisions/0247-a-spec-example-value-is-derivable-or-absent.md)). An example that
+   *looks* verifiable and is not is worse than no example, because a reader treats the number as a
+   contract.
 
 ### Worked example
 
