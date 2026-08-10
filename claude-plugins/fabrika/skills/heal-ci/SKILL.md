@@ -208,8 +208,9 @@ read or an unverified write (`8`, `11`, `13`) ends `UNKNOWN`, and so does a verb
 ran wrongly (`1`, `2`, `127`). The two rerun-record codes (`9`, `16`) are the exception that earns
 its own terminal above, because a proven rerun with no record is the one state a later session must
 not mistake for a fresh head. A leak refusal on your own note (`5`, `6`) is yours to rewrite and
-re-post, citing the path repo-relative; after two refused attempts, stop and escalate rather than
-rewriting a third time.
+re-post, citing the path repo-relative; a successful re-post lands on whichever terminal the run was
+already headed for. After two refused attempts, stop on `REFUSED — note carries a machine-local
+path`, so the third attempt has a name rather than falling off the mapping.
 
 Every terminal that names a stall on one PR posts its reason durably with `fabrika heal-ci note`
 before the run ends. Four do not, each for a stated reason: `ATTENDED` and `NOT-OPEN` (no strand to

@@ -398,7 +398,7 @@ moving it.
 | 5 | `linkage-refused` | the diff derives ≥1 namespace whose merge seam requires a linked issue, the body carries neither `Fixes #N` nor `Part of #N`, **and** it carries some other reference form |
 | 6 | `blocked-human` | a control-plane approval is outstanding at this head, or ≥1 unresolved review thread has a non-`Bot` participant |
 | 7 | `attended` | **any positive signal of motion**: an owner whose last activity is inside `--dwell-minutes`, a live merge-queue entry, an armed merge intent, or a gating rollup of `pending` — CI running at this head *is* the PR moving |
-| 8 | `claim-stale` | an owner signal exists and either its last activity is older than `--dwell-minutes`, or the head is more than `--drift-commits` behind the base (`behindBase`) |
+| 8 | `claim-stale` | an owner signal exists and arm 7 did not fire — the claim is there and nothing shows it live. The stderr notice names which of the three proved it: activity older than `--dwell-minutes`, a head more than `--drift-commits` behind the base (`behindBase`), or an activity timestamp that could not be read at all |
 | 9 | `gated-unshipped` | no owner signal, and every required namespace holds an in-force `pass` verdict at this head (`inForce`) |
 | 10 | `ungated` | no owner signal, and ≥1 required namespace holds no in-force verdict at this head |
 
@@ -416,10 +416,13 @@ abandoned. `pending` belongs in arm 7 for the same reason: a run in flight is mo
 **Totality, proved over all ten arms.** Reaching arm 7 means the PR is open, not wedged,
 surface-complete-or-skipped, not red, linkage-clean and human-unblocked, so its rollup is one of
 `green`, `pending`, `no-runs` or `none`. Arm 7 takes every case carrying any positive signal —
-`pending` included. What remains has no positive signal, and arms 8–10 partition it exhaustively:
-either an owner signal exists (arm 8) or it does not, and where it does not, the required-namespace
-set either holds an in-force verdict for every member (arm 9) or fails to for at least one
-(arm 10). A PR with **zero** required namespaces satisfies arm 9 vacuously and reads
+`pending` included. What remains has no positive signal, and arms 8–10 partition it exhaustively on one Boolean:
+**an owner signal either exists or it does not.** Where it exists, arm 8 takes it unconditionally —
+arm 8 is the whole owner-exists complement of arm 7, not a subset of it, which matters because an
+owner whose activity timestamp is *unreadable* is neither provably live nor provably old and must
+still land somewhere. Reading unknown as stale is the fail-safe direction: a false strand costs one
+look, a false `attended` is the incident. Where no owner signal exists, the required-namespace set
+either holds an in-force verdict for every member (arm 9) or fails to for at least one (arm 10). A PR with **zero** required namespaces satisfies arm 9 vacuously and reads
 `gated-unshipped` with `gates none-required` — correctly, since nothing gates it and nobody is
 shipping it. No input reaches the end of the chain unclassified.
 
@@ -505,7 +508,7 @@ $ echo $?
 **Invocation**
 
 ```
-fabrika heal-ci sweep [--min-age-minutes 30] [--limit 200] [--include-attended] [--dwell-minutes 45] [--repo <owner/name>] [--json]
+fabrika heal-ci sweep [--min-age-minutes 30] [--limit 200] [--include-attended] [--dwell-minutes 45] [--wedge-dwell-minutes 20] [--drift-commits 10] [--repo <owner/name>] [--json]
 ```
 
 **Inputs**
@@ -657,8 +660,9 @@ call made with a token that lacks admin, which is most of them, leaving the whol
 
 **`no-requirements` is a proven answer at exit `0`** — a base branch with no protection rule and
 no ruleset requiring a status context genuinely gates nothing, which is the ordinary state of a
-fresh or foreign repository. It is not a gap and not a failure. A protection surface that cannot
-be **read** is `11`.
+fresh or foreign repository. It is not a gap and not a failure. A protection surface that cannot be read **for any reason other
+than this token's permission** — a transport failure, a 5xx — is `11`; a permission denial is the
+`unprobeable` answer above, not a failed read.
 
 **The comparison, precisely.** The declared set is the union of the base branch's
 `required_status_checks.contexts` and every `required_status_checks` rule in a repository ruleset
@@ -867,7 +871,7 @@ class	<context>	<transient|logic|unclassified>	<signature-id>	<matched-line>
 `<context>` is the name from the `==== context … ====` header the block came from, or `-` when
 stdin carried a bare body with no framing. On `unclassified` the last two fields are both `-`; the
 field count never varies.
-With `--json`: `{"outcome":"classified","count":<n>,"contexts":[{"context":…,"class":…,"signature":…,"line":<n|null>,"excerpt":…}…]}`.
+With `--json`: `{"outcome":"classified","count":<n>,"contexts":[{"context":…,"class":…,"signature":…,"line":<n|null>}…]}`.
 
 **This verb consumes the framed multi-context stream, so nothing splits it by hand.** `heal-ci
 logs` emits N contexts and this verb emits N `class` lines, in the order received — `fabrika
