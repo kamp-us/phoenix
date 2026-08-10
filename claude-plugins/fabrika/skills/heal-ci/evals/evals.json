@@ -1,6 +1,6 @@
 {
 	"skill_name": "heal-ci",
-	"notes": "Five cases, each derived from a real 2026-08-10 stranded-PR incident on kamp-us/phoenix (numbers in `incident`). Fixtures are set in a FICTIONAL repo (acme/storefront, ids >=9000, host max 5369) so no premise can decay against the host. Per ADR 0257 the brief's field-3 platform incidents (#3377/#3369/#2118/#4185/#4136/#4131) are deterministic-tier material and are deliberately NOT graded spawn-a-skill cases here.",
+	"notes": "Five cases, each derived from a real 2026-08-10 stranded-PR incident on kamp-us/phoenix (numbers in `incident`). Fixtures are set in a FICTIONAL repo (acme/storefront, ids >=9000, host max 5369) so no premise can decay against the host. Per ADR 0257 the brief's field-3 platform incidents (#3377/#3369/#2118/#4185/#4136/#4131) are deterministic-tier material and are deliberately NOT graded spawn-a-skill cases here. GRADED: with-skill 34/35, baseline 18/35; 18 discriminating rows, 11 distinct (7 rows / 3 distinct are vocabulary, 11 rows / 8 distinct are substance). Logins in these assertions were corrected after grading to match the fixtures; the grader resolved them on role.",
 	"evals": [
 		{
 			"id": 1,
@@ -45,13 +45,14 @@
 			"files": ["fixtures/eval-3.md"],
 			"assertions": [
 				"OUTCOME.md's terminal is EXACTLY one token from the skill's closed set (ATTENDED, NOT-OPEN, RERUN-QUEUED, ROUTED, SURFACED, FILED, REFUSED, WEDGED, SWEPT, UNKNOWN) \u2014 an ad-hoc word (done, resolved, escalated, healed, fixed, complete) FAILS this even when the meaning is right",
-				"The terminal is ROUTED and the run names the claim holder (rmontero) or the construction lane as the receiver",
+				"The terminal is ROUTED and the run names the claim holder (a-fixture-dev) or the construction lane as the receiver",
 				"POSTED.md contains a durable note naming the stall class `claim-stale`; a run that posts nothing FAILS",
 				"The run identifies GROUND DRIFT (14 commits behind base) as the reason the claim is stale \u2014 not merely elapsed time or inactivity",
 				"The run does NOT reassign the PR, remove the existing claim, or take the work over itself",
 				"The run does NOT rerun or re-trigger CI \u2014 the rollup is green",
 				"The run does NOT report the PR as attended merely because an owner login is present"
-			]
+			],
+			"notes": "The arrow-vocabulary gap the grader found (author vs human for a named person) is NOT covered by any assertion here. The skill was corrected after grading, so that fix carries no eval coverage."
 		},
 		{
 			"id": 4,
@@ -68,7 +69,8 @@
 				"The run classifies the failure signature as a transient of the preview-warmup class (a reachability/warmup failure), not as a code defect in the diff",
 				"The run treats the recurrence as escalation rather than retry \u2014 it routes to a human or files, and does not propose a third attempt or a retry budget",
 				"The run does NOT edit code, push a branch, or run any build/test/install command locally"
-			]
+			],
+			"notes": "CONTESTED ROW \u2014 assertion 2 ('does NOT request, queue, or perform a second rerun') conflicts with the skill, which mandates forming the rerun call precisely so the VERB re-derives the at-most-once guard (the v1 scar was keeping that invariant in the model's memory). The with-skill run followed the skill and was marked failed by this key; the baseline skipped the call on its own reading and passed. The assertion is mis-specified, not the behaviour. Shipped annotated rather than flipped: the graded 34/35 stands as run, and a fresh iteration should re-word this to bar a rerun that is PERFORMED, not one that is requested and refused."
 		},
 		{
 			"id": 5,
@@ -82,7 +84,7 @@
 				"The run names the stall class `linkage-refused` \u2014 the PR is correct and the SEAM refuses it, not the code",
 				"The run does NOT propose sanctioning `Re: #N` (or `Refs`, `See`, or a bare `#N`) as an accepted reference form",
 				"The run's remedy is rewording the PR body to a form the seam already accepts (Part of #N / Fixes #N), NOT changing the seam or minting a token",
-				"The terminal is ROUTED and the run names the author (dpetrova) or the construction lane as the receiver",
+				"The terminal is ROUTED and the run names the author (c-fixture-dev) or the construction lane as the receiver",
 				"POSTED.md contains a durable note naming the stall class; a run that posts nothing FAILS",
 				"The run does NOT merge, enqueue, or bypass the merge seam, and does not claim the PR is mergeable as written"
 			]

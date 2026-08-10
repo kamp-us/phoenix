@@ -69,10 +69,16 @@ the PR yourself — a detector converts a strand into claimable work and normal 
 (ADR 0205, founder ruling #3532). Post the class with `fabrika heal-ci note` and end.
 
 **Naming a lane is not dispatching it.** The note's arrow names *whose work this is* so a puller
-can recognise it; it summons nobody. The mapping is fixed, so two runs on one strand write the same
-arrow: `ungated` → **review**, `gated-unshipped` → **ship**, `claim-stale` → **the claim holder**
-by login, or **build** when the claim carries none. Where the next move is genuinely nobody's, the
-arrow is `nobody` — an answer, not a gap.
+can recognise it; it summons nobody. The arrow is a **lookup with no judgment in it**, so two runs
+over one strand write the same word: `ungated` → **review**, `gated-unshipped` → **ship**,
+`claim-stale` → **author** when the claim holder is this PR's author and **human** when they are
+anyone else, and `nobody` where the next move is genuinely no lane's — an answer, not a gap.
+
+**The arrow is a lane, never a person, and the login always goes in the body.** The six words are a
+closed set with no seat for a login, so a named individual reaches the reader through the note's
+text while the arrow stays `author` or `human`. Splitting those two — the routing word machine-read,
+the identity human-read — is what keeps the first line parseable; writing a login into it produces
+a seventh value every receiver would have to special-case.
 
 **Attendedness is never keyed on the linked issue.** One of the two stranded PRs carried a closing
 reference to a triaged, prioritised, milestoned, *assigned* issue and stranded identically — a
