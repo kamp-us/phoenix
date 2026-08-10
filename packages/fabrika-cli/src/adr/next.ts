@@ -31,9 +31,9 @@ export interface Allocation {
 /**
  * Allocate the next id from the merged set unioned with the in-flight set.
  *
- * Both inputs are required to be non-empty *facts*: the caller refuses on zero merged records
- * (ADR 0092) and refuses on an in-flight set it could not read, so an empty `inFlight` reaching
- * here means "no open ADR pull request", never "the read failed".
+ * Both inputs are *facts*: the caller refuses on any set it could not read, so an empty one reaching
+ * here means "nothing there", never "the read failed". Two empty sets are the fresh-adopter case and
+ * allocate `0001` (see `base-ref.ts`).
  */
 export const allocate = (
 	mergedIds: ReadonlyArray<string>,

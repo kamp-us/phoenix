@@ -1,7 +1,7 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {type FakeFs, fakeFs, record} from "../fakes.test-support.ts";
-import {CORPUS_UNREADABLE, NO_SUBJECT, runSweep, ZERO_SCOPE} from "./sweep-verb.ts";
+import {CORPUS_UNREADABLE, NO_SUBJECT, runSweep} from "./sweep-verb.ts";
 
 const dir = ".decisions";
 
@@ -89,11 +89,18 @@ describe("runSweep", () => {
 		expect(out.stdout).toBe("");
 	});
 
-	it("refuses on zero scope", async () => {
-		const out = await run(fakeFs({dirs: {[dir]: ["README.md"]}}));
-		expect(out.code).toBe(ZERO_SCOPE);
-		expect(out.stdout).toBe("");
-		expect(out.stderr.at(-1)).toContain("ADR 0092");
+	// A readable-but-empty corpus is the rarity floor at its limit, not a failed read — the fresh
+	// adopter sweeping their very first draft gets an answer (#5254).
+	it("answers indeterminate against a readable-but-empty --dir", async () => {
+		const io = fakeFs({
+			dirs: {[dir]: []},
+			files: {"drafts/0001-draft.md": record("0001", "proposed", "reticulate the splines")},
+		});
+		const out = await run(io, {new: "drafts/0001-draft.md"});
+		expect(out.code).toBe(0);
+		expect(out.stdout).toBe("indeterminate\n");
+		expect(out.stderr.join("\n")).toContain("rarity floor");
+		expect(out.stderr[0]).toContain("0 decision records");
 	});
 
 	it("refuses when --new names no readable ADR", async () => {

@@ -20,6 +20,12 @@ at `0150` while origin is at `0151` cannot mint a duplicate.
 **A non-zero exit is UNKNOWN, never "nothing reserved."** Re-run it. Falling back to the highest id
 on disk is what minted ADR 0198 from two lanes at once, and 0114 and 0123 before it (#3779).
 
+**An empty `.decisions/` is not one of those cases — it answers `0001` and exits 0.** A repo adopting
+fabrika has no records on day one, and that is a fact the verb reports, not a read it failed. Only a
+directory it could not read at all refuses (exit 6). If `.decisions/` does not exist yet, create it
+and re-run; a repo with no decision directory at all is a setup question for
+[front-door](../front-door/SKILL.md).
+
 ## 2 — Write the decision
 
 ```bash

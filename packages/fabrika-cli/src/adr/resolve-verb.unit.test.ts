@@ -1,13 +1,7 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {errOut, fakeShell, okOut, record, tree} from "../fakes.test-support.ts";
-import {
-	BASE_UNFETCHABLE,
-	DIR_UNREADABLE,
-	IN_FLIGHT_UNKNOWN,
-	runResolve,
-	ZERO_SCOPE,
-} from "./resolve-verb.ts";
+import {BASE_UNFETCHABLE, DIR_UNREADABLE, IN_FLIGHT_UNKNOWN, runResolve} from "./resolve-verb.ts";
 
 const SHA = "49a22902d1e0c7b3f5a8e4126b9d0f3c7a1e5b82";
 const AMEND_LIST =
@@ -106,10 +100,22 @@ describe("runResolve", () => {
 		expect(out.stderr.at(-1)).toContain("indistinguishable from");
 	});
 
-	it("refuses on zero scope", async () => {
-		const out = await run([[/^git ls-tree/, okOut("")]]);
-		expect(out.code).toBe(ZERO_SCOPE);
-		expect(out.stdout).toBe("");
+	// An empty `.decisions/` is a fresh adopter's normal state, and nobody holds the id there —
+	// which is exactly what `absent` says (#5254).
+	it("answers absent against a readable-but-empty --dir", async () => {
+		const out = await run([
+			[/^git ls-tree/, okOut("")],
+			[/^gh api --paginate repos\/[^ ]+\/pulls\?/, okOut("")],
+		]);
+		expect(out.code).toBe(0);
+		expect(out.stdout).toBe("absent\t-\t-\n");
+		expect(out.stderr.join("\n")).toContain("0 decision records");
+	});
+
+	it("still reports an in-flight id against an empty --dir", async () => {
+		const out = await run([[/^git ls-tree/, okOut("")]], {ids: ["0239"]});
+		expect(out.code).toBe(0);
+		expect(out.stdout).toBe("in-flight\t0239-campaign-milestones.md\tPR #4711\n");
 	});
 
 	it("refuses an unreadable --dir on its own proven code, not on 1", async () => {
@@ -125,7 +131,8 @@ describe("runResolve", () => {
 	it("keeps an unreadable --dir distinguishable from an empty one", async () => {
 		const unreadable = await run([[/^git ls-tree/, errOut("fatal: not a tree object")]]);
 		const empty = await run([[/^git ls-tree/, okOut("")]]);
-		expect(unreadable.code).not.toBe(empty.code);
+		expect(unreadable.code).toBe(DIR_UNREADABLE);
+		expect(empty.code).toBe(0);
 	});
 
 	it("refuses an id that is not four zero-padded digits", async () => {

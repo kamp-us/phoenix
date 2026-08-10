@@ -4,8 +4,13 @@
  *
  * The halves fail differently and the difference is load-bearing:
  *
- * - **Zero merged records is a failed read, not an answer.** This repo always has decision records,
- *   so an empty scan means the wrong directory or a broken read (ADR 0092).
+ * - **An empty merged set is a fact, not a failed read.** The read itself proves the directory:
+ *   `git ls-tree <sha>:<dir>` fails outright when `<dir>` is not in the tree, so a listing that
+ *   comes back empty is a directory that exists and holds nothing — a repo adopting fabrika on day
+ *   one, whose first id is `0001`. Only `DirUnreadable` is UNKNOWN. ADR 0092's zero-scope refusal
+ *   governs *gates* scanning for violations, where an empty scan means nothing was checked; an
+ *   allocator's empty corpus is 0092's own "legitimately-empty scope", which it asks to be made
+ *   explicit rather than refused (#5254).
  * - **An empty in-flight set is a fact — but only on a successful read.** No open ADR pull request
  *   is a normal state; an in-flight set that could not be read is a refusal, because a caller that
  *   reads an empty set as "nothing reserved" falls back to the on-disk id, which is exactly the
@@ -20,7 +25,6 @@ import type {InFlightRecord, MergedRecord} from "./resolve.ts";
 export type MergedFailure =
 	| {readonly _tag: "FetchFailed"; readonly reason: string}
 	| {readonly _tag: "DirUnreadable"; readonly reason: string}
-	| {readonly _tag: "ZeroScope"; readonly sha: string}
 	| {readonly _tag: "UnparseableId"; readonly file: string};
 
 export interface MergedSet {
@@ -47,7 +51,6 @@ export const loadMerged = (base: string, dir: string): Shell<MergedOutcome> =>
 		const {records, unparseable} = partitionRecordNames(listed.value);
 		const bad = unparseable[0];
 		if (bad !== undefined) return {_tag: "Err", error: {_tag: "UnparseableId", file: bad}};
-		if (records.length === 0) return {_tag: "Err", error: {_tag: "ZeroScope", sha: resolved.value}};
 		return {
 			_tag: "Ok",
 			value: {
