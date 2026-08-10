@@ -1,8 +1,8 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {errOut, fakeShell, okOut} from "../fakes.test-support.ts";
-import {NO_TARGET} from "./codes.ts";
-import {QUEUE_UNREADABLE, runDedup, SEARCH_UNREADABLE} from "./dedup-verb.ts";
+import {NO_TARGET, QUEUE_UNREADABLE, SEARCH_UNREADABLE} from "./codes.ts";
+import {runDedup} from "./dedup-verb.ts";
 
 const LABELS = /repos\/o\/r\/labels/;
 const QUEUE = /repos\/o\/r\/issues\?state=open/;

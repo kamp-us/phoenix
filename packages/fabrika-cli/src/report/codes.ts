@@ -43,3 +43,15 @@ export const CLASSIFIED = 10;
  * `1`, which would fuse an unreachable GitHub with a bad flag.
  */
 export const PRECONDITION_UNKNOWN = 11;
+/**
+ * The intake queue could not be read, so the outcome is UNKNOWN. `report dedup` only.
+ *
+ * Seated here rather than in `dedup-verb.ts`, where it sat on `3` and meant a second thing the group
+ * already spoke for (#5296). The number is the jump it looks like: `12`-`26` are densely allocated as
+ * *private* codes by the groups that align to this table, and a base seat inside that range reds
+ * every group holding it — so `27` is the lowest number that collides with nothing. The band beyond
+ * is not reserved; the alignment check is what keeps a later group off these two.
+ */
+export const QUEUE_UNREADABLE = 27;
+/** The search index could not be read, so the outcome is UNKNOWN. `report dedup` only. */
+export const SEARCH_UNREADABLE = 28;

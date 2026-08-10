@@ -131,16 +131,16 @@ Stated once rather than repeated per block.
 
 **All nine verbs allocate from one internal table**, so a code means one thing across *this group*.
 That is a property of this group and not of `fabrika`, and the difference matters to anyone driving
-more than one group: **repo-wide the same number does not mean the same thing.** Inside `report`
-itself, `dedup`'s `3` is *the queue could not be read* while `file`'s and `note`'s `3` is *stdin was
-read and held nothing* — one group, one number, two meanings (#5296).
+more than one group: **repo-wide the same number does not mean the same thing.** `wire`'s `3` is
+*the format's block is provably not in the artifact*, where `report`'s and this group's is *stdin was
+read and held nothing*.
 
 Where this group's codes overlap **`report`'s two writing verbs** (`3`, `5`, `6`, `7`, `8`, `9`,
 `10`, `11`) they match them **deliberately**, code for code, so a caller driving `report` and `triage`
-in one sweep reads one meaning. `report dedup` does not participate in it — the one cross-group
-difference a caller of both will actually hit is `dedup`'s
-`3` = *queue unreadable* / `4` = *search index unreadable*. This spec calls `dedup` (the `--exclude`
-extension below), so that difference is named here rather than left to be discovered at a call site.
+in one sweep reads one meaning. This spec calls `report dedup` (the `--exclude` extension below), and
+that verb reads from the same `report` table: `7` when `--label` is absent, `27`/`28` when the queue
+or the search index could not be read
+([#5296](https://github.com/kamp-us/phoenix/issues/5296)).
 
 | Code | Meaning | queue | claim | prov | homes | split | enrich | apply | park | kill |
 |---|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
@@ -1806,12 +1806,11 @@ fabrika report dedup --query "sozluk definition editor loses focus" --exclude 43
 Everything else — the tokenizer, the two sources, the three outcome tokens — is unchanged from the
 implemented verb at `packages/fabrika-cli/src/report/dedup.ts` and its verb wrapper
 `dedup-verb.ts`. **This change adds no exit code, no error, and no output shape**: `candidates`,
-`none` and `indeterminate` all still exit 0, and the existing `1` / `3` / `4` / `7` are untouched.
+`none` and `indeterminate` all still exit 0, and the existing `1` / `7` / `27` / `28` are untouched.
 
-**`dedup`'s codes are its own, and they do not follow this group's table.** Its `3` is *the queue
-could not be read* and its `4` is *the search index could not be read* — the one cross-group
-difference named in the shared taxonomy above. A caller invoking `triage` verbs and this one in the
-same sweep reads them from two tables, deliberately: this extension does not renumber a shipped verb.
+**`dedup`'s codes come from the `report` table, not this group's.** `7` is a missing `--label`, and
+`27`/`28` are the queue and the search index read failing — numbers no `triage` verb speaks, so a
+caller invoking both in one sweep never has to ask which table a code came from.
 
 **Behaviour.** The excluded number is filtered from both the queue half and the search half **after**
 retrieval and **before** scoring and the cap, so excluding an issue never changes the rank order of

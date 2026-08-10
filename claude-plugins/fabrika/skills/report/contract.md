@@ -241,10 +241,15 @@ server-side on title *or* body, so it is kept regardless.
 |---|---|
 | `0` | an outcome token was produced on stdout |
 | `1` | usage error, the target repo could not be resolved, or the verb failed to run |
-| `3` | the intake queue could not be read, so the outcome is UNKNOWN |
-| `4` | the search index could not be read, so the outcome is UNKNOWN |
+| `7` | `--label` does not exist in `--repo`, so the queue half would scan nothing |
+| `27` | the intake queue could not be read, so the outcome is UNKNOWN |
+| `28` | the search index could not be read, so the outcome is UNKNOWN |
 
-**When both reads fail, exit `3`.** The queue is the load-bearing half — it is the one that catches
+`27` and `28` sit above the writing verbs' `3`-`11` band because they are this group's codes too, and
+a code means one thing per group: `3` is an empty stdin and `4` is a bad section set, whichever verb
+produced them ([#5296](https://github.com/kamp-us/phoenix/issues/5296)).
+
+**When both reads fail, exit `27`.** The queue is the load-bearing half — it is the one that catches
 an issue filed seconds ago — so its failure is the one reported, and the stderr line names both
 failures so neither is hidden by the precedence.
 
@@ -252,17 +257,23 @@ failures so neither is hidden by the precedence.
 
 | Message (stderr) | Code | Kind |
 |---|---|---|
-| `report dedup: cannot read the <label> queue in <repo>: <reason> — the outcome is UNKNOWN, never "none".` | 3 | refusal |
-| `report dedup: cannot read the search index for <repo>: <reason> — the outcome is UNKNOWN, never "none".` | 4 | refusal |
+| `report dedup: cannot read the label set of <repo>: <reason> — whether the <label> queue exists is UNKNOWN, and so is the outcome.` | 27 | refusal |
+| `report dedup: cannot read the <label> queue in <repo>: <reason> — the outcome is UNKNOWN, never "none".` | 27 | refusal |
+| `report dedup: cannot read the search index for <repo>: <reason> — the outcome is UNKNOWN, never "none".` | 28 | refusal |
+| `report dedup: <repo> has no "<label>" label — the queue half would scan nothing, so the outcome is UNKNOWN, never "none". Create the label, or pass the one this repo uses.` | 7 | refusal |
 | `report dedup: --query is empty.` | 1 | usage error |
+| `report dedup: --limit <n> is negative.` | 1 | usage error |
 | `report dedup: cannot resolve a target repo — set CLAUDE_PIPELINE_REPO, or run inside a checkout whose origin remote resolves.` | 1 | refusal |
+
+When the queue read fails and the search read fails together, the queue line carries
+` (the search index also failed: <reason>)` before its em dash.
 
 **Scope** — this verb **supplies an input; it does not judge**, so an empty result is a fact rather
 than a failed read, and it says so here once. The two halves are read for different reasons: the
 label queue is read-after-write consistent and catches an issue filed seconds ago, while the search
 index is eventually consistent — it lags fresh issues but reaches older open issues that have
 already left the queue. An empty intake queue is a normal state, so `none` at exit 0 is an answer;
-a queue or index that could not be read is exit 3 or 4 with **nothing** on stdout. The scope line
+a queue or index that could not be read is exit 27 or 28 with **nothing** on stdout. The scope line
 goes to stderr on every run, naming both source counts, the tokens actually used, and whether the
 list was truncated.
 
@@ -294,10 +305,13 @@ $ fabrika report dedup --query "retry helper abort reason" --json
 
 ```
 $ fabrika report dedup --query "retry helper abort reason" --repo kamp-us/nonexistent
-report dedup: cannot read the status:needs-triage queue in kamp-us/nonexistent: HTTP 404 — the outcome is UNKNOWN, never "none".
+report dedup: cannot read the label set of kamp-us/nonexistent: HTTP 404 — whether the status:needs-triage queue exists is UNKNOWN, and so is the outcome.
 $ echo $?
-3
+27
 ```
+
+The label-set read runs before either source read, so it is the one an unreachable repo fails on —
+the queue message needs a repo whose labels *did* read.
 
 **Grounding**
 

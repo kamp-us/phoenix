@@ -134,8 +134,9 @@ exit taxonomy, and the verdict-vs-invocation rule proven in v1 at
   - **Per verb, no shared table** — the `3`+ row above read literally. Permitted, and today shipped
     nowhere: `adr` was the standing example until its five verbs seated `NO_SUBJECT` on two numbers
     and `3` on four meanings, which is what the shape costs when a group's verbs *do* share refusal
-    meanings (#5294). What survives of it is `report dedup`, whose two codes sit outside its group's
-    table — the residue tracked by #5296.
+    meanings (#5294). `report dedup` was the last residue and is gone too: its two codes moved into
+    the group table, and a check over every verb file now reds on the shape
+    ([#5296](https://github.com/kamp-us/phoenix/issues/5296)).
   - **Per group, one shared table** — `report`, `triage`, `review`, `adr`, `spend` and `wire` each ship a
     `<group>/codes.ts` that every verb in the group allocates from, so a code means one thing across
     the group whichever verb produced it. That is a **tightening** a group chooses, not a further

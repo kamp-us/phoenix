@@ -14,18 +14,14 @@ import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {listLabels, openIssuesWithLabel, resolveRepo, searchOpenIssues} from "../io/issues.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
-import {NO_TARGET} from "./codes.ts";
+import {NO_TARGET, QUEUE_UNREADABLE, SEARCH_UNREADABLE} from "./codes.ts";
 import {rank, renderCandidate, tokenize} from "./dedup.ts";
 
-/** The intake queue could not be read, so the outcome is UNKNOWN. */
-export const QUEUE_UNREADABLE = 3;
-/** The search index could not be read, so the outcome is UNKNOWN. */
-export const SEARCH_UNREADABLE = 4;
 /**
  * `--label` does not exist in `--repo`, so the queue half has **no scope** — and a scope of zero
  * cannot produce a proven negative.
  *
- * Not in the contract's exit table, and reported as a spec defect on #4752: a missing label is not
+ * Reported as a spec defect on #4752: a missing label is not
  * a transport error, so `GET /issues?labels=<missing>` answers HTTP 200 with `[]` and never reaches
  * {@link QUEUE_UNREADABLE}. It lands on the success path, where an empty queue is read as a fact,
  * and the verb prints `none` — a proven negative over nothing scanned, which ADR 0092 forbids. The

@@ -1,3 +1,6 @@
+import {mkdirSync, mkdtempSync, writeFileSync} from "node:fs";
+import {tmpdir} from "node:os";
+import {join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {describe, expect, it} from "vitest";
 import * as adr from "./adr/codes.ts";
@@ -13,6 +16,7 @@ import {
 	coverageGaps,
 	UNALIGNED_GROUPS,
 	UNTABLED_GROUPS,
+	verbSeatedExitCodes,
 	ZeroCoverageScope,
 } from "./exit-code-alignment.ts";
 import * as glossary from "./glossary/codes.ts";
@@ -143,6 +147,60 @@ describe("the untabled groups are genuinely untabled", () => {
 			...Object.keys(UNALIGNED_GROUPS),
 		]);
 		expect(Object.keys(UNTABLED_GROUPS).filter((name) => aligned.has(name))).toEqual([]);
+	});
+});
+
+/**
+ * The per-verb seat, pinned (#5296). `checkAlignment` reads a table's module namespace, so a code a
+ * verb file declares for itself is invisible to it — which is how the base group came to seat two
+ * meanings on `3` and two on `4` inside its own table.
+ */
+describe("no verb file seats an exit code its group's table does not", () => {
+	const onDisk = codeTableGroupsIn(SRC_DIR);
+
+	/** A throwaway source root: `<group>/codes.ts` plus whatever verb files a case needs. */
+	const stub = (verbs: Readonly<Record<string, string>>): string => {
+		const root = mkdtempSync(join(tmpdir(), "verb-seat-"));
+		mkdirSync(join(root, "ghost"));
+		writeFileSync(join(root, "ghost", "codes.ts"), "export const ZERO_SCOPE = 7;\n");
+		for (const [name, source] of Object.entries(verbs))
+			writeFileSync(join(root, "ghost", name), source);
+		return root;
+	};
+
+	it("reads verb files at all — a scan over nothing is a failure, not a pass (ADR 0092)", () => {
+		expect(verbSeatedExitCodes(SRC_DIR, onDisk).scanned).toBeGreaterThan(0);
+	});
+
+	it("finds none in any group that ships a table", () => {
+		expect(verbSeatedExitCodes(SRC_DIR, onDisk).seated).toEqual([]);
+	});
+
+	it("reds on a constant a verb file declares and refuses with", () => {
+		const root = stub({
+			"thing-verb.ts": "export const QUEUE_UNREADABLE = 3;\nrefuse(QUEUE_UNREADABLE, 'nope');\n",
+		});
+		expect(verbSeatedExitCodes(root, ["ghost"]).seated).toEqual([
+			"ghost/thing-verb.ts: QUEUE_UNREADABLE",
+		]);
+	});
+
+	it("reds on a bare number handed straight to `refuse`", () => {
+		const root = stub({"thing-verb.ts": "refuse(12, 'nope');\n"});
+		expect(verbSeatedExitCodes(root, ["ghost"]).seated).toEqual(["ghost/thing-verb.ts: 12"]);
+	});
+
+	it("passes a numeric constant the file never refuses with — a round count is not a seat", () => {
+		const root = stub({
+			"thing-verb.ts":
+				"const FREEZE_ROUND = 3;\nif (round >= FREEZE_ROUND) refuse(ZERO_SCOPE, 'x');\n",
+		});
+		expect(verbSeatedExitCodes(root, ["ghost"]).seated).toEqual([]);
+	});
+
+	it("throws rather than reporting none when there is nothing to scan (ADR 0092)", () => {
+		expect(() => verbSeatedExitCodes(SRC_DIR, [])).toThrow(ZeroCoverageScope);
+		expect(() => verbSeatedExitCodes(stub({}), ["ghost"])).toThrow(ZeroCoverageScope);
 	});
 });
 

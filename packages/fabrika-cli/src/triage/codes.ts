@@ -12,8 +12,8 @@
  * `triage` in one sweep reads one meaning and a drift between the two is unrepresentable rather than
  * merely detectable (`../review/codes.ts` set the precedent; `../exit-code-alignment.ts` owns the
  * policy and checks the direction an import cannot cover — that the codes added below clear
- * `report`'s whole table). That alignment does **not** extend repo-wide: `report dedup`'s own
- * `3`/`4` are *queue unreadable* / *search index unreadable* (#5296).
+ * `report`'s whole table). That alignment does **not** extend repo-wide: `wire` allocates `3`-`6`
+ * for facts about an artifact, so its `3` is *the format's block is provably not in it*.
  *
  * **`4` is a deliberate gap, not a free slot.** It once held "the target issue does not exist, or is
  * not readable" — a proven fact and an unknown fused into one code. {@link ZERO_SCOPE} and

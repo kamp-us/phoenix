@@ -475,3 +475,63 @@ export const verbLocalCodesIn = (groupDir: string): readonly string[] => {
 		)
 		.sort();
 };
+
+/** What a scan for verb-seated exit codes read, and what it found. Empty `seated` is the goal state. */
+export interface VerbSeatScan {
+	/** `*-verb.ts` files actually read. Zero proves nothing and is a throw, never an all-clear. */
+	readonly scanned: number;
+	/** `<group>/<file>: <operand>` for each `refuse(...)` whose code the file seats itself. */
+	readonly seated: readonly string[];
+}
+
+/** `refuse(<code>` — the first argument, across the line break the formatter puts after the paren. */
+const REFUSE_CODE = /\brefuse\(\s*([A-Za-z_$][\w$]*|\d+)/g;
+
+/** A numeric `const` the file declares, exported or not — the shape a verb-seated code takes. */
+const LOCAL_NUMBER = /^(?:export )?const ([A-Za-z_$][\w$]*)\s*=\s*-?\d/gm;
+
+/**
+ * Every exit code a verb file seats **itself** rather than naming from its group's table, over the
+ * groups that ship a table. That is `report dedup`'s defect: two codes declared in `dedup-verb.ts`,
+ * invisible to {@link checkAlignment} because it reads the table's module namespace, and colliding
+ * with the base's own `3` and `4` for two years of nobody reading both files at once (#5296).
+ *
+ * A code is seated here when `refuse(...)` is handed a numeric literal, or a name the same file
+ * declares as a number. That is deliberately narrower than {@link verbLocalCodesIn}'s shape-only
+ * read, which cannot be the repo-wide check: `review`'s `FREEZE_ROUND` and `triage`'s
+ * `DEFAULT_TTL_MINUTES` are numeric constants a verb file is entitled to declare, and only their use
+ * as an exit code would make them a seat. Reading the source is still the only way — an import and a
+ * declaration are the same export once the module is loaded.
+ *
+ * Throws on a scan that read no verb file. An all-clear over nothing is the vacuous pass ADR 0092
+ * forbids, and it is the shape a mistyped source root would produce first.
+ */
+export const verbSeatedExitCodes = (srcDir: string, groups: readonly string[]): VerbSeatScan => {
+	if (groups.length === 0) {
+		throw new ZeroCoverageScope("no verb group was named — nothing to scan (ADR 0092)");
+	}
+
+	const root = realpathSync(srcDir);
+	const seated = new Set<string>();
+	let scanned = 0;
+
+	for (const group of groups) {
+		const dir = join(root, group);
+		for (const file of readdirSync(dir).filter((name) => name.endsWith("-verb.ts"))) {
+			scanned += 1;
+			const source = readFileSync(join(dir, file), "utf8");
+			const local = new Set([...source.matchAll(LOCAL_NUMBER)].map((match) => match[1]));
+			for (const [, operand] of source.matchAll(REFUSE_CODE)) {
+				if (operand === undefined) continue;
+				if (/^\d+$/.test(operand) || local.has(operand)) seated.add(`${group}/${file}: ${operand}`);
+			}
+		}
+	}
+
+	if (scanned === 0) {
+		throw new ZeroCoverageScope(
+			`no *-verb.ts was found under ${srcDir} — nothing to scan (ADR 0092)`,
+		);
+	}
+	return {scanned, seated: [...seated].sort()};
+};
