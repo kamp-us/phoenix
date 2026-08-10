@@ -223,6 +223,24 @@ export const SPIKE_SEATS: SharedSeats = {
  */
 export const GOVERNANCE_SEATS: SharedSeats = SHARED_SEATS;
 
+/**
+ * `pattern`'s seats: four, the narrowest claim of any aligning group.
+ *
+ * Its verbs read a doc library and write two files, so most of the base's table is about facts they
+ * cannot establish. What they do establish is the four that mean the same thing wherever they are
+ * proven — a failed write, a mismatched read-back, an off-vocabulary value, a precondition that could
+ * not be read. `7` is deliberately **not** claimed and not held as a gap: no verb here judges over a
+ * corpus, so it has no vacuous pass to prevent, and an empty or absent doc directory is a fact it
+ * reports at exit `0` (#5254). The seats are imported from `build`, which re-exports the base's
+ * values unchanged and already carries `OFF_VOCABULARY` under that name.
+ */
+export const PATTERN_SEATS: SharedSeats = {
+	WRITE_UNKNOWN: "WRITE_UNKNOWN",
+	READBACK_MISMATCH: "READBACK_MISMATCH",
+	OFF_VOCABULARY: "CLASSIFIED",
+	PRECONDITION_UNKNOWN: "PRECONDITION_UNKNOWN",
+};
+
 /** The groups that align to {@link ALIGNMENT_BASE}, each with the seats it claims to share. */
 export const ALIGNED_GROUPS: Readonly<Record<string, SharedSeats>> = {
 	adr: ADR_SEATS,
@@ -236,6 +254,7 @@ export const ALIGNED_GROUPS: Readonly<Record<string, SharedSeats>> = {
 	handoff: HANDOFF_SEATS,
 	ledger: BUILD_SEATS,
 	map: MAP_SEATS,
+	pattern: PATTERN_SEATS,
 	plan: BUILD_SEATS,
 	triage: SHARED_SEATS,
 	review: SHARED_SEATS,

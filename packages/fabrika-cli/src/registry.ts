@@ -26,6 +26,7 @@ import {handoffCommand} from "./handoff/command.ts";
 import {hookCommand} from "./hook/command.ts";
 import {ledgerCommand} from "./ledger/command.ts";
 import {mapCommand} from "./map/command.ts";
+import {patternCommand} from "./pattern/command.ts";
 import {planCommand} from "./plan/command.ts";
 import {reportCommand} from "./report/command.ts";
 import {reviewCommand} from "./review/command.ts";
@@ -54,6 +55,7 @@ export const registeredGroups: ReadonlyArray<VerbGroup> = [
 	hookCommand,
 	ledgerCommand,
 	mapCommand,
+	patternCommand,
 	planCommand,
 	reportCommand,
 	reviewCommand,
