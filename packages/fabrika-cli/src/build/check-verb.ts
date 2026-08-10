@@ -14,6 +14,9 @@
  * makes reading the issue, and a verb that guessed it from file extensions would be wrong exactly on
  * the mixed diffs where the answer matters. The verb takes the skill's answer and refuses one the diff
  * provably contradicts.
+ *
+ * **Green means "the validators ran and passed", never "I could not tell."** See {@link classifyDiff}
+ * for the third file class that keeps that distinction representable (#5229).
  */
 import {Effect, FileSystem} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
@@ -21,7 +24,13 @@ import {execCapture} from "../io/exec.ts";
 import {scanBody} from "../report/leaks.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {requireSession} from "./claim.ts";
-import {OFF_VOCABULARY, PRECONDITION_UNKNOWN, VALIDATION_RED, ZERO_SCOPE} from "./codes.ts";
+import {
+	OFF_VOCABULARY,
+	PRECONDITION_UNKNOWN,
+	UNCLASSIFIED_DIFF,
+	VALIDATION_RED,
+	ZERO_SCOPE,
+} from "./codes.ts";
 import {predecessorsOf, readTopology, renderRef, sameRef} from "./dependencies.ts";
 import {changedFiles, mergeBase} from "./git.ts";
 import {defaultBranch} from "./github.ts";
@@ -49,10 +58,44 @@ export interface CheckOptions {
 	readonly env: Readonly<Record<string, string | undefined>>;
 }
 
+/**
+ * The changed files split three ways, with `unvalidated` the file class **no** surface validates.
+ *
+ * That third bucket is the point. Filtering with the two regexes and reading nothing off what fell
+ * out of both made "matched neither" an absence, and an absence cannot be refused: a `.yml`/`.sh`
+ * diff produced an empty markdown list, zero validator iterations and a green that had opened no
+ * file (#5229). Named, it is a state the verb can act on.
+ */
+export interface DiffClasses {
+	readonly code: ReadonlyArray<string>;
+	readonly markdown: ReadonlyArray<string>;
+	readonly unvalidated: ReadonlyArray<string>;
+}
+
+export const classifyDiff = (files: ReadonlyArray<string>): DiffClasses => ({
+	code: files.filter((f) => CODE_RE.test(f)),
+	markdown: files.filter((f) => MARKDOWN_RE.test(f)),
+	unvalidated: files.filter((f) => !CODE_RE.test(f) && !MARKDOWN_RE.test(f)),
+});
+
+/**
+ * Why no surface can validate this diff at all, or `null`.
+ *
+ * Checked **before** {@link surfaceMismatch}, so a wholly-unvalidatable diff refuses with the honest
+ * reason under every surface — including `code`, whose old "the diff changes no code file" was a true
+ * sentence pointing at the wrong remedy (it invites `--surface prose`, the branch that greened).
+ */
+export const unvalidatableDiff = (files: ReadonlyArray<string>): string | null => {
+	const {code, markdown, unvalidated} = classifyDiff(files);
+	if (code.length > 0 || markdown.length > 0) return null;
+	const shown = unvalidated.slice(0, 5).join(", ");
+	const rest = unvalidated.length > 5 ? `, +${unvalidated.length - 5} more` : "";
+	return `no surface validates any of the ${unvalidated.length} changed file(s) (${shown}${rest})`;
+};
+
 /** Why `--surface` provably contradicts the diff, or `null`. */
 export const surfaceMismatch = (surface: Surface, files: ReadonlyArray<string>): string | null => {
-	const code = files.filter((f) => CODE_RE.test(f));
-	const markdown = files.filter((f) => MARKDOWN_RE.test(f));
+	const {code, markdown} = classifyDiff(files);
 	if (surface === "prose" && code.length > 0) {
 		return `--surface prose, but the diff is ${code.length} ${code.length === 1 ? "code file" : "code files"}`;
 	}
@@ -192,10 +235,28 @@ export const runCheck = (
 				scope,
 			);
 		}
+		const unvalidatable = unvalidatableDiff(files);
+		if (unvalidatable !== null) {
+			return refuse(
+				UNCLASSIFIED_DIFF,
+				`${VERB}: ${unvalidatable} — there is nothing here to run, so the verdict is a refusal, never green.`,
+				scope,
+			);
+		}
 		const mismatch = surfaceMismatch(surface as Surface, files);
 		if (mismatch !== null) {
 			return refuse(OFF_VOCABULARY, `${VERB}: ${mismatch} — the surface is provably wrong.`, scope);
 		}
+		const {markdown, unvalidated} = classifyDiff(files);
+		// A green over a partly-unvalidatable diff has to carry what it skipped, on both channels:
+		// #5187 greened over 25 workflow files whose `ran` line was true and misleading at once (#5229).
+		const noted =
+			unvalidated.length === 0
+				? scope
+				: [
+						...scope,
+						`${VERB}: ${unvalidated.length} changed file(s) no surface validates — NOT covered by this verdict: ${unvalidated.join(", ")}.`,
+					];
 
 		if (surface === "code") {
 			const ran: string[] = [];
@@ -206,15 +267,17 @@ export const runCheck = (
 					return refuse(
 						VALIDATION_RED,
 						`${VERB}: red — ${runner.label} failed; diagnostics above.`,
-						[...scope, result.reason],
+						[...noted, result.reason],
 					);
 				}
 			}
-			return answer(JSON.stringify({verdict: "green", surface, tree: lane.root, ran}), scope);
+			return answer(
+				JSON.stringify({verdict: "green", surface, tree: lane.root, ran, unvalidated}),
+				noted,
+			);
 		}
 
 		const fs = yield* FileSystem.FileSystem;
-		const markdown = files.filter((file) => MARKDOWN_RE.test(file));
 		const defects: string[] = [];
 		for (const file of markdown) {
 			const path = `${lane.root}/${file}`;
@@ -243,7 +306,7 @@ export const runCheck = (
 			return refuse(
 				VALIDATION_RED,
 				`${VERB}: red — the ${surface} validators failed; diagnostics above.`,
-				[...scope, ...defects],
+				[...noted, ...defects],
 			);
 		}
 		return answer(
@@ -252,7 +315,8 @@ export const runCheck = (
 				surface,
 				tree: lane.root,
 				ran: [surface === "prose" ? "markdown link + leak scan" : "## Dependencies grammar"],
+				unvalidated,
 			}),
-			scope,
+			noted,
 		);
 	});

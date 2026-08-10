@@ -81,3 +81,12 @@ export const UNSAFE_PUSH = 19;
 export const OUT_OF_FOCUS = 20;
 /** Proven: not admitted on the **audience axis** — the `ready-for:` label is not agent, or absent (#4780). */
 export const AUDIENCE_NOT_AGENT = 21;
+/**
+ * Proven: every changed file falls outside all three surfaces' validators — nothing is checkable.
+ *
+ * A *proven* refusal like `20`/`21`, not a borrowed {@link PRECONDITION_UNKNOWN}: the diff read
+ * succeeded and the classification is complete, so the fact established is about the tree, not about
+ * a read that failed. Its own seat because the caller's remedy is unique — widen no surface, split
+ * the diff or extend a validator (#5229).
+ */
+export const UNCLASSIFIED_DIFF = 22;

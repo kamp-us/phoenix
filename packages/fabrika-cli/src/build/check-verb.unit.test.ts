@@ -2,10 +2,11 @@ import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
 import {errOut, fakeFs, fakeShell, okOut} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
-import {runCheck, surfaceMismatch} from "./check-verb.ts";
+import {classifyDiff, runCheck, surfaceMismatch} from "./check-verb.ts";
 import {
 	OFF_VOCABULARY,
 	PRECONDITION_UNKNOWN,
+	UNCLASSIFIED_DIFF,
 	VALIDATION_RED,
 	WRONG_LANE,
 	ZERO_SCOPE,
@@ -70,6 +71,22 @@ describe("surfaceMismatch — the anchor, not a second classifier", () => {
 	});
 });
 
+describe("classifyDiff — matched-neither is a bucket, not an absence", () => {
+	it("names the files no surface validates", () => {
+		expect(classifyDiff([".github/workflows/ci.yml", "scripts/x.sh", "a.ts", "R.md"])).toEqual({
+			code: ["a.ts"],
+			markdown: ["R.md"],
+			unvalidated: [".github/workflows/ci.yml", "scripts/x.sh"],
+		});
+	});
+
+	it("puts every file in exactly one bucket", () => {
+		const files = ["a.tsx", "b.mjs", "c.json", "d.md", "e.mdx", "f.sql", "g.css", "LICENSE"];
+		const {code, markdown, unvalidated} = classifyDiff(files);
+		expect([...code, ...markdown, ...unvalidated].sort()).toEqual([...files].sort());
+	});
+});
+
 describe("runCheck", () => {
 	it("runs the exact CI commands with the cache bypassed, and reports what ran", async () => {
 		const shell = fakeShell([
@@ -87,6 +104,7 @@ describe("runCheck", () => {
 			surface: "code",
 			tree: "/repo/trees/lane-a",
 			ran: ["pnpm typecheck --force", "pnpm lint:worktree"],
+			unvalidated: [],
 		});
 		expect(shell.calls).toContain("pnpm typecheck --force");
 	});
@@ -179,6 +197,59 @@ describe("runCheck", () => {
 		);
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout).verdict).toBe("green");
+	});
+
+	// The #5229 regression: before the third bucket existed, this exact diff returned
+	// {"verdict":"green","surface":"prose","ran":["markdown link + leak scan"]} having opened no file.
+	const WORKFLOW_ONLY = okOut(".github/workflows/ship.yml\nclaude-plugins/x/foo.sh\n");
+
+	it("refuses a wholly-unvalidatable diff on 22 under --surface prose — the false green", async () => {
+		const out = await run([...LANE_OK, [DIFF, WORKFLOW_ONLY]], {surface: "prose"});
+		expect(out.code).toBe(UNCLASSIFIED_DIFF);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toBe(
+			"build check: no surface validates any of the 2 changed file(s) (.github/workflows/ship.yml, claude-plugins/x/foo.sh) — there is nothing here to run, so the verdict is a refusal, never green.",
+		);
+	});
+
+	it("refuses the same diff on 22 under --surface plan", async () => {
+		const out = await run([...LANE_OK, [DIFF, WORKFLOW_ONLY]], {surface: "plan"});
+		expect(out.code).toBe(UNCLASSIFIED_DIFF);
+	});
+
+	it("refuses the same diff on 22 under --surface code, naming the honest reason", async () => {
+		const shell = fakeShell([...LANE_OK, [DIFF, WORKFLOW_ONLY]]);
+		const out = await Effect.runPromise(
+			Effect.provide(runCheck(options), Layer.merge(shell.layer, fakeFs({}).layer)),
+		);
+		expect(out.code).toBe(UNCLASSIFIED_DIFF);
+		expect(out.stderr.at(-1)).toContain("no surface validates any of the 2 changed file(s)");
+		expect(out.stderr.at(-1)).not.toContain("changes no code file");
+		expect(shell.calls).not.toContain("pnpm typecheck --force");
+	});
+
+	it("discloses the unvalidated files on a partly-unvalidatable prose green (the #5187 shape)", async () => {
+		const out = await run(
+			[...LANE_OK, [DIFF, okOut("docs/guide.md\n.github/workflows/ship.yml\n")]],
+			{surface: "prose"},
+			{"/repo/trees/lane-a/docs/guide.md": "nothing to resolve here\n"},
+		);
+		expect(out.code).toBe(0);
+		const verdict = JSON.parse(out.stdout);
+		expect(verdict.verdict).toBe("green");
+		expect(verdict.unvalidated).toEqual([".github/workflows/ship.yml"]);
+		expect(out.stderr.some((line) => line.includes("NOT covered by this verdict"))).toBe(true);
+	});
+
+	it("discloses the unvalidated files on a partly-unvalidatable code green", async () => {
+		const out = await run([
+			...LANE_OK,
+			[DIFF, okOut("apps/web/src/App.tsx\nscripts/deploy.sh\n")],
+			[TYPECHECK, okOut("")],
+			[LINT, okOut("")],
+		]);
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).unvalidated).toEqual(["scripts/deploy.sh"]);
 	});
 
 	it("reds a plan diff whose Dependencies block does not parse", async () => {
