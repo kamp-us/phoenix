@@ -174,7 +174,7 @@ being stale is exactly the failure this skill exists to prevent.
 **`pack` is a closed set of three and all three exit `0`.** `none` means the issue carries no sealed
 pack — a **fact**, and the ordinary state of most issues; work the issue from its own artifacts and
 end `NO-PACK`. `sealed` means a pack is there and unclaimed. `claimed` means a claim marker holds
-it: when `claim.nonce` is **not** this run's, end `PACK-HELD-ELSEWHERE` rather than firing a write
+it: when `heldBy.claimNonce` is **not** this run's, end `PACK-HELD-ELSEWHERE` rather than firing a write
 verb you already know will refuse; when it **is** yours, you are re-entering your own claim, and
 `claim` will answer `resumed` without posting again.
 
@@ -232,7 +232,7 @@ nothing, and removes nothing, so there is never a disposition to state.
   gone, or its pull request already merged or closed. **A success, not an error** — the pack did its
   job by telling you the ground moved. Work the issue fresh and say what the pack claimed.
 - `PACK-HELD-ELSEWHERE` — **another** run holds it. Two ways, and say which — `15` from `claim`, or
-  `read` at `0` reporting `claimed` whose `claim.nonce` is not this run's. Do not duplicate the work.
+  `read` at `0` reporting `claimed` whose `heldBy.claimNonce` is not this run's. Do not duplicate the work.
 - `WORK-UNREACHABLE` — `12`: the work is not reachable by a successor and nothing was posted. Push
   it outside this skill and re-run, or re-run declaring the loss.
 - `PACK-UNREADABLE` — `14`: a sealed pack exists and does not parse. This needs a human; never guess

@@ -7,7 +7,7 @@ primary database"**, open, labels `p1`, `type:feature`.
 
 ```
 $ fabrika handoff read --issue 9473
-{"issue":9473,"pack":"none","comment":null,"nonce":null,"sealedAt":null,"author":null,"asserted":null,"ground":null,"drift":null,"claim":null,"disregarded":[],"scanned":{"comments":9}}
+{"issue":9473,"pack":"none","packComment":null,"packNonce":null,"sealedAt":null,"author":null,"asserted":null,"ground":null,"drift":null,"heldBy":null,"disregarded":[],"scanned":{"comments":9}}
 ```
 
 ## The last three of the nine comments on #9473
