@@ -27,13 +27,13 @@ worked down over several weeks and now reads clear. It is time to get the work s
 
 ```
 $ fabrika graduate trail 9502
-{"source":9502,"kind":"map","readiness":"ready","trailDigest":"c48b06d5a71f","decisions":[{"ref":"#9505","provenance":"ruled","text":"A conflict is resolved last-writer-wins, with the loser kept as a shadow copy."},{"ref":"#9507","provenance":"established","text":"The client already carries a monotonic clock suitable for ordering edits."},{"ref":"#9509","provenance":"established","text":"No current endpoint accepts a batch of edits; sync would need one."}],"unresolved":[],"outOfScope":[{"direction":"operational transform for text fields","reason":"the editing surface is form fields, not prose, so OT buys nothing for the shape of edit we actually have","recordedAt":"2026-07-30"}],"counts":{"ruled":1,"established":2,"unresolved":0}}
+{"source":9502,"kind":"map","readiness":"ready","trailDigest":"c48b06d5a71f","decisions":[{"ref":"#9301 R1.2","provenance":"ruled","text":"A conflict is resolved last-writer-wins, with the loser kept as a shadow copy."},{"ref":"#9507","provenance":"established","text":"The client already carries a monotonic clock suitable for ordering edits."},{"ref":"#9509","provenance":"established","text":"No current endpoint accepts a batch of edits; sync would need one."}],"unresolved":[],"outOfScope":[{"direction":"operational transform for text fields","reason":"the editing surface is form fields, not prose, so OT buys nothing for the shape of edit we actually have","recordedAt":"2026-07-30"}],"counts":{"ruled":1,"established":2,"unresolved":0}}
 ```
 
 ```
 $ fabrika report dedup --query "offline sync conflict resolution last writer wins batch edit endpoint"
 candidates
-#9312	Batch edit endpoint for the mobile client
+9312	both	5	Batch edit endpoint for the mobile client
 ```
 
 Issue #9312 reads, in full:

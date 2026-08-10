@@ -21,8 +21,7 @@
 ## The situation
 
 You are working in the `northwind/atlas` repository. A grilling session on session-token handling
-just wrapped. There is **no wayfinding map** — this work was small enough to plan in one session,
-so it went straight from grilling to here.
+just wrapped.
 
 The founder has asked you to turn the session into the ticket that gets built.
 

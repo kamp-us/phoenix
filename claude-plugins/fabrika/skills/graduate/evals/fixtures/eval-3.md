@@ -20,9 +20,8 @@
 
 ## The situation
 
-You are working in the `northwind/atlas` repository. A long grilling session covered two things
-that came up together: how search results are ranked, and how the search index gets rebuilt. Both
-are now resolved. Nobody has said whether these are one piece of work or two.
+You are working in the `northwind/atlas` repository. A long grilling session on search just wrapped
+and every question on it is resolved.
 
 ## What every command in this session has returned so far
 

@@ -72,6 +72,52 @@ group's own call, so "is this ruled" has exactly one answer in the codebase.
 this group cannot be implemented until both land. That is stated in the contract and carried in the
 implementation ticket rather than left for a coder to discover.
 
+## Why the spec carries no pre-drafted pitch
+
+The quintet ruling ([#5017](https://github.com/kamp-us/phoenix/issues/5017) comment 5229701965)
+says a lane-entering spec's pitch stamp stays a founder seat and that this skill **may** pre-draft
+the five fields. May, not must — and this contract does not.
+
+The reason is that there is nowhere to put them that does not break something else. The spec body
+is four sections and `graduate compose` refuses any authored section outside the three it takes
+(`4`), so a pre-drafted pitch would need either a fifth section, a `--pitch` flag, or a second
+artifact. All three widen the emitted issue past *one spec issue at `status:needs-triage`*, and the
+first two put agent-authored fields next to the machine-rendered `## Decisions` section, which is
+the one part of the body a downstream reader is supposed to be able to trust without the transcript.
+
+A first draft of the `SKILL.md` told the model to pre-draft the pitch anyway. That was an
+instruction with no verb behind it — the skill ordering an artifact the contract cannot carry — and
+the skill-reviewer pass caught it. Recorded here rather than silently dropped, because the ruling
+does permit the pre-draft and a later session may want to add it deliberately: doing so means
+deciding where the fields live and how they stay visibly agent-authored, not just adding a flag.
+
+## The defect a graded run found that three reviewers did not
+
+Worth recording in full, because it is the sharpest instance here of the rule that a reviewer
+confirms a thing is written down while a run has to actually do it.
+
+`SKILL.md` §2 tells a caller whose trail spans two buildable things to file the coherent whole and
+name the remainder in `## Out of scope`. The first revision had `graduate emit` bind its marker to
+the **trail** digest — every decision on the trail. The eval-3 with-skill run followed both rules
+and noticed they contradict: since the digest covers the decisions it *didn't* file, the `15`
+refusal would reject a second run over the remainder forever. **The mechanism guaranteeing
+one-issue-per-invocation was the same mechanism stranding every leftover**, so a deliberately split
+trail could never be finished.
+
+Three review passes — a narrative reviewer, a mechanical matrix audit, and a premise-verification
+pass — all cleared it. None had to *use* the rule.
+
+The fix is that the marker binds the **spec** digest, taken over the decisions actually rendered
+into the filed spec, with `graduate compose --decisions` naming the subset. A remainder then
+graduates as its own spec; a true duplicate of the same decision set is still refused. The algorithm
+is unchanged, so when a spec carries the whole trail the two digests coincide by construction.
+
+**Disclosure: this fix landed after the graded runs.** The runs measured the skill as it read
+before it, so their pass rate does not cover the `--decisions` path or the second-run remainder
+case. A next iteration should exercise both directly. This is the same shape as `grilling`'s own
+liveness bug (a re-worded question holding the frontier forever, making `clear` unreachable and
+`graduate` unrunnable) — also found by a run rather than a reviewer.
+
 ## What is deliberately conservative in the unsafe direction
 
 One, and it is named in the contract at `MALFORMED-IS-NOT-UNGRADUATED`. A source whose only emission

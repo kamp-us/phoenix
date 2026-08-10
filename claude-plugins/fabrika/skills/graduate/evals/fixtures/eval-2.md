@@ -34,7 +34,6 @@ $ fabrika graduate trail 9455
 The two unresolved questions read, on the session:
 
 - **R2.2** — After how many failed charges is a subscription suspended rather than retried?
-- **R1.2** — Does a soft decline consume a retry attempt, or is it free? *(this was ruled in round 1,
-  then the question was re-worded in round 2)*
+- **R1.2** — Does a soft decline consume a retry attempt, or is it free?
 
 That is everything that has been run.

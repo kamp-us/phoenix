@@ -47,18 +47,41 @@ Each is imported, not restated, because a transcription drifts and a pointer to 
   invokes `fabrika report dedup` directly at its step 3. A `graduate dedup` wrapper relaying that
   answer is what ADR 0238 forbids, so there is none.
 - [`src/report/compose.ts`](../../../../packages/fabrika-cli/src/report/compose.ts) —
-  `renderFooter` and `normalizeForReadback`. Read-backs compare normalized, never byte-identical.
+  `normalizeForReadback`. Read-backs compare normalized, never byte-identical.
 - [`src/verb.ts`](../../../../packages/fabrika-cli/src/verb.ts) `answer` / `refuse`, and the `emit`
   adapter each group copies.
+
+**`renderFooter` is NOT reused, and the reason is a shape mismatch rather than a preference.** Its
+`FooterFields` is `{session, model, branch, timestamp}` and it renders `Filed by an agent · …`; it
+carries no field for the source issue or the trail digest, which are the two things this group's
+footer exists to record. This group specifies its own footer renderer below, with byte-exact output
+because the read-back at `9` compares against it.
 
 **The two sibling resolvers this group imports, and why importing beats re-parsing.**
 
 - `src/grill/` — the `grill read` resolver: the four ruling clauses, the ACL resolution, the
   digest comparison, and the closed `state` set (`open`, `answered`, `ruled`, `unattested`,
   `stale`, `superseded`), specified at [`../grilling/contract.md`](../grilling/contract.md).
-- `src/map/` — the `map read` resolver: the per-ticket closed `state` set (`open`, `lane-held`,
-  `lane-closed`, `forked`, `graduated`, `retired`) and the frontier token, specified at
+- `src/map/` — **two** pieces, and the distinction is load-bearing: the **body parser**, which
+  parses the map's five sections including `## Decisions`, and the per-ticket state resolution
+  (`open`, `lane-held`, `lane-closed`, `forked`, `graduated`, `retired`). Both specified at
   [`../wayfinding/contract.md`](../wayfinding/contract.md).
+
+<!-- anchor: MAP-DECISIONS-COME-FROM-THE-BODY --> **A map's decisions come from its `## Decisions`
+section, not from its ticket states**, and this group depends on the map **module**, not on `map
+read`'s stdout. `map read`'s output object returns `tickets[]`, `outOfScope[]`, `counts` and the
+frontier token but **no array of the map's `## Decisions` entries** — so a design that read this
+group's decisions off that JSON could not produce a `ruled` row at all, and every founder ruling
+recorded on a map would render as an agent's finding, which is precisely the #4227 failure this
+skill exists to prevent. The body parser does parse that section (the five-section floor is what
+`map read` validates), so the entries are available to an importer even though the verb does not
+surface them. Stated explicitly because the difference between *importing a module* and *consuming
+a sibling verb's stdout* is invisible until it produces a wrong provenance.
+
+**Each map `## Decisions` entry carries its own authority citation**, which is what makes the
+provenance derivable rather than guessed: `— ruled on #<session> <question-id>` for a founder ruling
+relayed from a `grilling` session, and `— from #<ticket>` for a research finding. An entry with
+neither is malformed by that contract's own rule and is reported, never defaulted.
 
 `graduate trail` **calls those resolvers rather than parsing either artifact itself.** This is the
 load-bearing reuse decision on the page, so here is the argument. Whether a question is `ruled` is
@@ -77,12 +100,20 @@ nothing here should be read as describing present behaviour.
 **Read for its shape, NOT imported.**
 [`src/report/file-verb.ts`](../../../../packages/fabrika-cli/src/report/file-verb.ts) is the model
 for the whole-transaction shape — local checks before any network call, leak scan *after*
-composition so appended bytes cannot escape, read-back before success. It cannot be called here:
-`readbackMismatch` is hardwired to `report`'s label-exactly-one rule and to
-[`src/report/compose.ts`](../../../../packages/fabrika-cli/src/report/compose.ts)'s
-`REQUIRED_SECTIONS`, which is the **six intake headings**, hardcoded and not parameterized. A spec
-body carries four different headings, so `report file` would refuse every body this group composes
-(`4`). This group therefore owns its own section constant and its own read-back assertions.
+composition so appended bytes cannot escape, read-back before success. **Neither its verb nor its
+read-back helper can be called here**, and both blockers are the same `REQUIRED_SECTIONS` fact
+wearing two hats: `runFile` validates the body against
+[`src/report/compose.ts`](../../../../packages/fabrika-cli/src/report/compose.ts)'s six intake
+headings, and `readbackMismatch` re-asserts those same six headings on the landed issue *and*
+asserts report's own `Filed by an agent` footer marker — which this group's footer deliberately does
+not carry. Importing it would refuse every spec this group files, twice over. So this group owns its
+section constant, its orchestration, and its own read-back assertions, spelled out below.
+
+**This group's read-back, stated because it is not inherited.** After the create, `graduate emit`
+re-reads the issue and asserts all four, comparing with `normalizeForReadback` rather than byte-for-
+byte: the body carries the four spec headings in order; the body ends with this group's footer line;
+the title equals `--title` as given; and the label set is **exactly** `["status:needs-triage"]`. Any
+miss is `9`.
 
 <!-- anchor: REPORT-SECTIONS-NOT-WIDENED --> **`report`'s `REQUIRED_SECTIONS` is deliberately NOT
 widened**, and the distinction matters because ADR 0246 says this skill "files through the existing
@@ -139,8 +170,8 @@ Moderation weight is unbounded, so one vouched account can outvote a whole topic
 Weight is earned per account and capped per topic; the vote table carries the cap.
 
 ## Decisions
-- Weight is earned per account, never inherited from a kefil. — **ruled** · #9412 R2.3
-- The vote table has no per-account weight column today. — **established** · #9412 R2.1
+- Weight is earned per account, never inherited from a kefil. — **ruled** · R2.3
+- The vote table has no per-account weight column today. — **established** · R2.1
 
 ## Out of scope
 Weight decay on a clock — no decision yet, still open on #9412.
@@ -159,8 +190,20 @@ the separation is structural: the provenance word and the source id are rendered
 output the model never touches, so a mislabelled decision is not something an agent can produce by
 being careless. The three sections the model *does* author carry no authority claims at all.
 
-**Each `## Decisions` entry is `- <text> — **<provenance>** · #<source> <ref>`**, where `provenance`
-is from a closed set of two:
+**Each `## Decisions` entry is `- <text> — **<provenance>** · <ref>`**, where `ref` is the trail
+row's own `ref` field verbatim and `provenance` is from a closed set of two. The source issue is
+**not** repeated per line — it is in the footer once, and repeating it made a map-sourced line read
+as two issue numbers in a row (`· #9502 #9505`).
+
+**`ref` is shaped by the source kind**, and a reader tells them apart by shape alone:
+
+| Source | `ref` shape | Example |
+|---|---|---|
+| `grilling` | `R<round>.<n>` — the question id | `R2.3` |
+| `map`, from a graduated ticket | `#<ticket>` | `#9505` |
+| `map`, from a `## Decisions` line relaying a session ruling | `#<session> <question-id>` | `#9301 R1.2` |
+
+The provenance words:
 
 | Word | Means | Resolved from |
 |---|---|---|
@@ -171,9 +214,18 @@ There is no third word, and in particular there is no word for *inferred*. A dec
 and nobody established is not on the trail — it is an open question, and it makes the trail
 `blocked` (see `graduate trail`).
 
-**The footer** is appended by `graduate emit` using `renderFooter`, after the sections and a blank
-line, and names the source issue and the trail digest. That backlink is what makes the emitted issue
-traceable to the trail it was synthesized from without the transcript.
+**The footer** is appended by `graduate emit`, after the sections and a blank line, in this exact
+shape — one line, newline-terminated:
+
+```
+Graduated from #9412 · trail a1b2c3d4e5f6 · 2026-08-09T18:36:48Z
+```
+
+`#<source>` is the issue the trail was read from, `trail <digest>` is the 12-hex trail digest, and
+the timestamp is ISO-8601 UTC. That backlink is what makes the emitted issue traceable to the trail
+it was synthesized from without the transcript. It is rendered by this group's own renderer, not by
+`report`'s `renderFooter`, for the reason stated above; the bytes are fixed here because the
+read-back at `9` compares against them.
 
 ## The emission marker
 
@@ -223,11 +275,32 @@ version of this list has been wrong in a sibling draft. It needs, and CI reds wi
 **Stated, not yet enforced.** All of it lands with the implementation. Until then nothing in the
 shipped package recognizes the key, and no claim on this page describes present behaviour.
 
-## The trail digest, and its neutrality invariant
+## The two digests, and the neutrality invariant
 
-The digest is the first 12 characters of the lowercase hex SHA-256 of the trail's **decision entries
-only** — for each entry in trail order, its `ref`, its `provenance` word and its `text`, joined by
-`\n`, LF-normalized, with trailing whitespace stripped per line.
+**One algorithm, two scopes.** The digest of a set of decision entries is the first 12 characters of
+the lowercase hex SHA-256 of, for each entry in trail order, its `ref`, its `provenance` word and its
+`text`, joined by `\n`, LF-normalized, with trailing whitespace stripped per line.
+
+| Name | Scope | Who computes it |
+|---|---|---|
+| **trail digest** | **every** decision on the trail | `graduate trail`, printed as `trailDigest` |
+| **spec digest** | only the decisions **rendered into the filed spec** | `graduate compose` (into the footer) and `graduate emit` (re-derived from the body) |
+
+When a spec carries the whole trail the two are **equal by construction**, because the algorithm and
+the entry order are the same and the sets are the same.
+
+<!-- anchor: THE-MARKER-BINDS-THE-SPEC-NOT-THE-TRAIL --> **The emission marker binds the SPEC digest,
+and that is what keeps a remainder reachable.** An earlier revision bound the trail digest, and a
+graded eval run found the consequence three review passes had missed: `SKILL.md` §2 tells a caller
+whose trail spans two buildable things to file the coherent whole and name the remainder in
+`## Out of scope` — but if the marker bound the *trail*, the `15` refusal would then reject a second
+run over that remainder forever. The mechanism guaranteeing one-issue-per-invocation would be the
+same mechanism stranding every leftover, and `graduate` could never finish a trail it deliberately
+split. Binding the rendered subset instead means a remainder graduates as its own spec at its own
+digest, while a genuine duplicate of the same decision set is still refused.
+
+Two specs from one trail may overlap partially; their digests differ, so both are admitted. That is
+deliberate — refusing a partial overlap would strand the remainder again, one step further out.
 
 <!-- anchor: DIGEST-NEUTRALITY --> **Named invariant — the digest is neutral to every write this
 group makes.** It covers no comment, no marker, no label, no issue metadata, and nothing on the
@@ -262,6 +335,14 @@ Every `graduate` verb obeys these; stated once rather than repeated per block.
   "the verb never ran".
 - **A 404 is a verdict; anything else is UNKNOWN.** A missing source issue is `7`. An unreachable or
   erroring GitHub is `11` before any write and `8` after one.
+- **Widening stated — `7` covers a missing READ target here, not only a write target.** The base
+  seats `7 NO_TARGET` as *the write target does not exist* (`--label` in the repo, or `--issue`),
+  and `graduate emit` uses it in exactly that sense. `graduate trail` and `graduate read` write
+  nothing at all, and they seat `7` on a source issue that does not exist. The widening is from
+  *write target* to *named target*: in every case `7` still means **the thing this invocation named
+  is proven absent**, which is what a caller branches on, and it stays distinct from `11` (the read
+  could not complete) and from `12` (the target exists but is not a trail surface). Stated because
+  an undeclared re-meaning of an imported constant is the drift the import exists to stop.
 - **Common inputs.** `--repo <owner/name>` (default: resolved from the `origin` remote) on every
   verb. There is no `--json` flag: the answer channel is already one JSON object.
 - **GitHub access follows [skill conventions §11 — REST, never GraphQL](../../docs/skill-conventions.md#11-github-access-is-rest-never-graphql)**,
@@ -291,21 +372,22 @@ triggers. `0`, `1`, `2` and `127` are stated **here and only here**, and every v
 | `4` | `BAD_SECTIONS` — an authored section is missing, out of order, or empty | — | ✓ | ✓ | — |
 | `5` | `LEAKED_PATH` — the text carries a machine-local path | — | ✓ | ✓ | — |
 | `6` | `BARE_AT_PATH` — the text is a bare `@` path reference | — | ✓ | ✓ | — |
-| `7` | `NO_TARGET` — the source issue, or the `status:needs-triage` label, does not exist | ✓ | — | ✓ | ✓ |
+| `7` | `NO_TARGET` — the named target does not exist: the source issue (`trail`, `read`, `emit`), or the `status:needs-triage` label (`emit` only) | ✓ | — | ✓ | ✓ |
 | `8` | `WRITE_UNKNOWN` — the write failed, so the outcome is UNKNOWN | — | — | ✓ | — |
 | `9` | `READBACK_MISMATCH` — the write landed, the read-back differs | — | — | ✓ | — |
-| `10` | `CLASSIFIED` — the title or a label carries a type or priority | — | ✓ | ✓ | — |
+| `10` | `CLASSIFIED` — the title or a label carries a type or priority | — | — | ✓ | — |
 | `11` | `PRECONDITION_UNKNOWN` — a precondition read failed; nothing written | ✓ | ✓ | ✓ | ✓ |
 | `12` | `SOURCE_UNRECOGNIZED` — the issue carries neither source label | ✓ | — | ✓ | ✓ |
 | `13` | `TRAIL_BLOCKED` — the trail holds an unresolved decision | — | ✓ | ✓ | — |
-| `14` | `DIGEST_UNBINDABLE` — the trail could not be digested | — | ✓ | ✓ | — |
+| `14` | `DIGEST_UNBINDABLE` — a decision entry is missing a digested field (`ref`, `provenance` or `text`), or `--trail` carries no 12-hex digest | — | ✓ | ✓ | — |
 | `15` | `ALREADY_GRADUATED` — this trail digest already emitted an issue | — | — | ✓ | — |
 | `16` | `TRAIL_EMPTY` — the trail holds zero decisions | — | ✓ | ✓ | — |
 | `17` | `DECISIONS_AUTHORED` — the stdin body carries a `## Decisions` heading | — | ✓ | — | — |
+| `18` | `DECISIONS_STALE` — the spec's `## Decisions` section does not match the trail re-derived at emit time | — | — | ✓ | — |
 
 **`3`–`11` are imported from
 [`src/report/codes.ts`](../../../../packages/fabrika-cli/src/report/codes.ts)**, not restated as
-numerals, so a drift is unrepresentable rather than merely detectable. `12`–`17` are the group's own
+numerals, so a drift is unrepresentable rather than merely detectable. `12`–`18` are the group's own
 and clear the base's occupied seats; they carry **no** cross-group uniqueness obligation, so
 `review`'s `12` and this group's `12` are two namespaces rather than a collision.
 
@@ -322,14 +404,15 @@ terminal.
 
 | Terminal | Codes | What it means for the run |
 |---|---|---|
-| `TRAIL-READ` | `0` from `graduate trail`, readiness `ready` | the trail is resolved and synthesis may proceed |
+| `TRAIL-READ` | `0` from `graduate trail` readiness `ready`; `0` from `graduate read` reporting `ungraduated` | a read completed and nothing blocks synthesis — the trail is resolved, or the source has not graduated yet |
 | `TRAIL-BLOCKED` | `0` from `graduate trail` readiness `blocked`; `13` | an unresolved decision remains — the seam working. Name it and stop |
 | `TRAIL-EMPTY` | `0` from `graduate trail` readiness `empty`; `16` | there is nothing to synthesize yet |
 | `SPEC-COMPOSED` | `0` from `graduate compose` | a body exists and nothing has been filed |
 | `SPEC-FILED` | `0` from `graduate emit` | one spec issue exists at `status:needs-triage`; the lane ends |
 | `ALREADY-GRADUATED` | `0` from `graduate read` reporting `graduated`; `15` | the spec already exists. Report its number; this is a success |
+| `NOTE-ADDED` | **no `graduate` code** — `0` from the sibling `fabrika report note` | step 3 found the same spec already filed and added what it lacked. A write happened, so this is not `STOPPED`; no spec was filed, so it is not `SPEC-FILED`. Listed here because a terminal reachable from the skill and seated on no code of this group would otherwise read as an omission |
 | `SOURCE-UNRESOLVED` | `7`, `12` | the source could not be named — absent, or carrying neither source label. Nothing was written |
-| `INPUT-REFUSED` | `3`, `4`, `5`, `6`, `10`, `17` | an input the caller supplied is **proven** malformed and nothing was written. Fix and re-run; this is not UNKNOWN |
+| `INPUT-REFUSED` | `3`, `4`, `5`, `6`, `10`, `17`, `18` | an input the caller supplied is **proven** malformed and nothing was written. Fix and re-run; this is not UNKNOWN |
 | `WRITE-UNPROVEN` | `8`, `9` | a write may or may not have landed. Re-read before re-writing |
 | `STOPPED` | `1`, `2`, `11`, `14`, `127` | the run is UNKNOWN with nothing written |
 
@@ -340,7 +423,7 @@ terminal.
 1. `src/registry.ts` — add `graduateCommand` to `registeredGroups`. Alphabetical order is the
    `--help` order, so it sorts after `eval` and before `hook`.
 2. `src/exit-code-alignment.ts` — add `graduate` to `ALIGNED_GROUPS`. Its value is a `SharedSeats`
-   map keyed by this group's own export names, and **none of the four shipped maps fits**: this
+   map keyed by this group's own export names, and **none of the five shipped maps fits**: this
    group seats `4` as `BAD_SECTIONS` (so `BUILD_SEATS` is closest) but names `7` `NO_TARGET` and
    `10` `CLASSIFIED` with no `ZERO_SCOPE`/`OFF_VOCABULARY` aliases. A new `GRADUATE_SEATS` constant
    is authored in that same file.
@@ -375,7 +458,7 @@ a merge of two trails, and guessing which one is live would be judgment inside a
 **Output** — machine. One JSON object; every key below is always present:
 
 ```json
-{"source":9412,"kind":"grilling","readiness":"ready","trailDigest":"a1b2c3d4e5f6","decisions":[{"ref":"R2.3","provenance":"ruled","text":"Weight is earned per account, never inherited from a kefil."},{"ref":"R2.1","provenance":"established","text":"The vote table has no per-account weight column today."}],"unresolved":[],"outOfScope":[],"counts":{"ruled":1,"established":1,"unresolved":0}}
+{"source":9412,"kind":"grilling","readiness":"ready","trailDigest":"a1b2c3d4e5f6","decisions":[{"ref":"R2.3","provenance":"ruled","text":"Weight is earned per account, never inherited from a kefil."},{"ref":"R2.1","provenance":"established","text":"The vote table has no per-account weight column today."}],"unresolved":[],"outOfScope":[],"disregardedEntries":[],"counts":{"ruled":1,"established":1,"unresolved":0}}
 ```
 
 | Key | Type | Meaning |
@@ -387,6 +470,7 @@ a merge of two trails, and guessing which one is live would be judgment inside a
 | `decisions` | array | one object per resolved decision, in trail order, each with `ref`, `provenance` and `text` |
 | `unresolved` | array | one object per decision still open, each with `ref` and `state` — the resolver's own state word, verbatim |
 | `outOfScope` | array | for a map source, the `outOfScope` entries the resolver returned, each with `direction`, `reason` and `recordedAt`; always `[]` for a `grilling` source, which has no such section |
+| `disregardedEntries` | array | for a map source, every `## Decisions` entry whose authority citation did not parse, each with `text` and `detail`; always `[]` for a `grilling` source. A non-empty array with a `ready` readiness is legitimate and means the spec will omit those entries — read it before composing |
 | `counts` | object | `ruled`, `established` and `unresolved` |
 
 **How `readiness` is computed**, in this order:
@@ -399,22 +483,34 @@ a merge of two trails, and guessing which one is live would be judgment inside a
 `frontier` token**, and the difference is the reason this key exists. `frontier: clear` on a map
 means every ticket is `graduated` or `retired` — a map whose every ticket was *retired* into the
 out-of-scope section reads `clear` and carries **nothing to synthesize**, which is `empty` here, not
-`ready`. The tokens also differ in arity and vocabulary (`awaiting-founder` / `lanes-pending` /
-`facts-pending` have no counterpart here, because this verb does not care *who* owes the answer,
-only whether one exists). Mapping one onto the other would file an empty spec on a fully-descoped
+`ready`. The tokens also differ in arity and vocabulary: a map's `awaiting-founder` / `lanes-pending` and a
+session's `awaiting-founder` / `facts-pending` all collapse to `blocked` here, because this verb
+does not care *who* owes the answer, only whether one is outstanding. Mapping one onto the other would file an empty spec on a fully-descoped
 map.
 
 **Which resolver states map to what:**
 
-| Source | Resolver state | Here |
+For a `grilling` source, every row comes from a question's resolved state. For a `map` source,
+`decisions` come from the map's **`## Decisions` section** and `unresolved` comes from its
+**ticket states** — two different parts of the artifact, which is why the map rows below name a
+source part rather than a state word alone.
+
+| Source | Read from | Here |
 |---|---|---|
-| `grilling` | `ruled` | a `decisions` entry, provenance `ruled` |
-| `grilling` | `answered` | a `decisions` entry, provenance `established` |
-| `grilling` | `open`, `unattested`, `stale` | an `unresolved` entry carrying that word |
-| `grilling` | `superseded` | omitted entirely — a retired question is neither a decision nor an open one |
-| `map` | `graduated` | a `decisions` entry, provenance `established`; a map `## Decisions` line citing `— ruled on #<session> <id>` is provenance `ruled` |
-| `map` | `retired` | omitted from `decisions`; its direction appears in `outOfScope` |
-| `map` | `open`, `lane-held`, `lane-closed`, `forked` | an `unresolved` entry carrying that word |
+| `grilling` | question state `ruled` | a `decisions` entry, provenance `ruled`, `ref` = the question id, `text` = the question's decided text |
+| `grilling` | question state `answered` | a `decisions` entry, provenance `established`, `ref` = the question id |
+| `grilling` | question state `open`, `unattested`, `stale` | an `unresolved` entry carrying that word |
+| `grilling` | question state `superseded` | omitted entirely — a retired question is neither a decision nor an open one |
+| `map` | a `## Decisions` entry citing `— ruled on #<session> <id>` | a `decisions` entry, provenance `ruled`, `ref` = `#<session> <id>`, `text` = the entry's prose with the citation stripped |
+| `map` | a `## Decisions` entry citing `— from #<ticket>` | a `decisions` entry, provenance `established`, `ref` = `#<ticket>`, `text` = the entry's prose with the citation stripped |
+| `map` | a `## Decisions` entry citing neither | **not** a decision — it lands in `disregardedEntries` (see below) and never defaults to `established` |
+| `map` | ticket state `open`, `lane-held`, `lane-closed`, `forked` | an `unresolved` entry carrying that word |
+| `map` | ticket state `graduated` | omitted — its answer is already a `## Decisions` entry, and counting both would double it |
+| `map` | ticket state `retired` | omitted from `decisions`; the section's own entries appear in `outOfScope` |
+
+**`text` excludes the citation**, on both map rows, because the citation is rendered separately as
+`ref` — leaving it in would print the authority twice and, worse, would fold it into the digest
+where a later re-citation would read as a changed decision.
 
 **Errors**
 
@@ -437,7 +533,7 @@ readable against them. **Zero decisions is a fact** (`empty`); a read that could
 
 ```
 $ fabrika graduate trail 9412
-{"source":9412,"kind":"grilling","readiness":"blocked","trailDigest":"a1b2c3d4e5f6","decisions":[{"ref":"R2.1","provenance":"established","text":"The vote table has no per-account weight column today."}],"unresolved":[{"ref":"R2.2","state":"open"}],"outOfScope":[],"counts":{"ruled":0,"established":1,"unresolved":1}}
+{"source":9412,"kind":"grilling","readiness":"blocked","trailDigest":"4e2f8a0b6c13","decisions":[{"ref":"R2.1","provenance":"established","text":"The vote table has no per-account weight column today."}],"unresolved":[{"ref":"R2.2","state":"open"}],"outOfScope":[],"disregardedEntries":[],"counts":{"ruled":0,"established":1,"unresolved":1}}
 $ echo $?
 0
 ```
@@ -498,9 +594,11 @@ SPEC
 | `--trail` | path | yes | — | a file holding the exact JSON object `graduate trail` printed; its `decisions` render the `## Decisions` section |
 | stdin | markdown | yes | — | the three authored sections — `## Problem`, `## Solution`, `## Out of scope` — in that order |
 
-**Output** — **prose channel**, declared here because it differs from the group default: stdout is
-the composed markdown body, byte-exact, ready to pass to `graduate emit --spec`. It is not JSON, and
-nothing else lands on stdout. There is no empty answer: a body that cannot be composed is a refusal.
+**Output** — **machine channel**, with a shape that differs from the group default: stdout is the
+composed markdown body, byte-exact, ready to pass to `graduate emit --spec`. It is machine and not
+prose under rule 2's own test — the bytes are *fed to another command*, not grepped for a state
+word — and the fixed four-section document is the declared shape. It is not JSON, nothing else
+lands on stdout, and there is no empty answer: a body that cannot be composed is a refusal.
 
 **Behaviour.** Validates the three authored sections against the floor, refuses a `## Decisions`
 heading on stdin (`17`), renders `## Decisions` from `--trail`'s `decisions` array in trail order,
@@ -519,10 +617,10 @@ skipped the skill's own step 2.
 | `graduate compose: sections are out of order — "<heading>" follows "<heading>".` | 4 | refusal |
 | `graduate compose: the body carries a machine-local path: <path> — refusing to compose it into a spec.` | 5 | refusal |
 | `graduate compose: the body is a bare @ path reference — not redactable, refusing to compose it.` | 6 | refusal |
-| `graduate compose: the body classifies the work ("<term>") — type and priority are triage's (ADR 0246).` | 10 | refusal |
 | `graduate compose: cannot read --trail <path>: <reason> — nothing was composed.` | 11 | refusal |
 | `graduate compose: --trail <path> reports readiness "blocked" — <n> decision(s) unresolved: <refs>. Refusing to synthesize a spec over a decision nobody made.` | 13 | refusal |
 | `graduate compose: --trail <path> does not carry a 12-hex trailDigest — the spec could not be bound to a trail.` | 14 | refusal |
+| `graduate compose: --trail <path> carries a decision with no <field> — it cannot be digested.` | 14 | refusal |
 | `graduate compose: --trail <path> holds zero decisions — there is nothing to synthesize.` | 16 | refusal |
 | `graduate compose: stdin carries a "## Decisions" heading — that section is rendered from the trail, never authored.` | 17 | refusal |
 
@@ -550,8 +648,8 @@ Moderation weight is unbounded, so one vouched account can outvote a whole topic
 Weight is earned per account and capped per topic; the vote table carries the cap.
 
 ## Decisions
-- Weight is earned per account, never inherited from a kefil. — **ruled** · #9412 R2.3
-- The vote table has no per-account weight column today. — **established** · #9412 R2.1
+- Weight is earned per account, never inherited from a kefil. — **ruled** · R2.3
+- The vote table has no per-account weight column today. — **established** · R2.1
 
 ## Out of scope
 Weight decay on a clock — no decision yet, still open on #9412.
@@ -596,9 +694,19 @@ fabrika graduate emit 9412 --spec spec.md --title "Cap moderation weight per top
 
 **Behaviour, in this order.** Re-derives the trail from `<source>` (the same dispatch
 `graduate trail` performs) and re-computes the digest; reads the source's emission markers; refuses
-at `15` if one already binds this digest; validates the spec body's four sections; leak-scans body
-and title; creates the issue; applies **exactly** `status:needs-triage`; reads the issue back; then
-posts the marker on the source.
+at `15` if one already binds this digest; validates the spec body's four sections; **re-renders
+`## Decisions` from its own re-derived trail and refuses at `18` if the spec's section does not
+match it byte for byte after LF-normalization**; leak-scans body and title; creates the issue;
+applies **exactly** `status:needs-triage`; reads the issue back; then posts the marker on the
+source.
+
+<!-- anchor: THE-BODY-MUST-MATCH-THE-TRAIL-IT-BINDS --> **Why emit re-renders rather than trusting
+`--spec`.** Without this check a caller can compose against trail A and emit against a source that
+has since moved to trail B: the marker would bind digest B while the filed body carried A's
+decisions, so the `15` refusal would guard a trail the issue does not actually state, and the whole
+#4227 property — that the emitted `## Decisions` section IS the resolved trail — would hold only by
+luck. The section is machine-rendered at both ends, so a mismatch means the source moved between
+compose and emit; re-composing is the fix, and `18` says so.
 
 <!-- anchor: WRITE-ORDERING-IS-AN-INVARIANT --> **Write ordering is an invariant, not an
 implementation detail.** The spec issue is created **first** and the marker second, because an
@@ -616,7 +724,7 @@ positional, and everything else is re-derived from the source itself.
 **Output** — machine. One JSON object; every key always present:
 
 ```json
-{"source":9412,"issue":9520,"url":"https://github.com/<owner>/<repo>/issues/9520","trailDigest":"a1b2c3d4e5f6","labels":["status:needs-triage"],"marker":5234567892}
+{"source":9412,"issue":9520,"url":"https://github.com/<owner>/<repo>/issues/9520","specDigest":"a1b2c3d4e5f6","labels":["status:needs-triage"],"marker":5234567892}
 ```
 
 | Key | Type | Meaning |
@@ -624,7 +732,7 @@ positional, and everything else is re-derived from the source itself.
 | `source` | integer | the source issue number |
 | `issue` | integer | the spec issue this call filed |
 | `url` | string | the spec issue's HTML URL |
-| `trailDigest` | string | the 12-hex digest bound into the marker |
+| `specDigest` | string | the 12-hex spec digest bound into the marker — equal to the trail digest exactly when the spec covers every decision on the trail |
 | `labels` | array | always exactly `["status:needs-triage"]` — present so a reader never infers the absence of board state from an absent key |
 | `marker` | integer | the id of the marker comment on the source |
 
@@ -633,6 +741,8 @@ positional, and everything else is re-derived from the source itself.
 | Message (stderr) | Code | Kind |
 |---|---|---|
 | `graduate emit: --spec <path> is missing section "<heading>".` | 4 | refusal |
+| `graduate emit: --spec <path> has sections out of order — "<heading>" follows "<heading>".` | 4 | refusal |
+| `graduate emit: --spec <path> has an empty section "<heading>".` | 4 | refusal |
 | `graduate emit: the spec carries a machine-local path: <path> — refusing to file it.` | 5 | refusal |
 | `graduate emit: the spec is a bare @ path reference — not redactable, refusing to file it.` | 6 | refusal |
 | `graduate emit: #<n> does not exist.` | 7 | refusal |
@@ -644,9 +754,10 @@ positional, and everything else is re-derived from the source itself.
 | `graduate emit: cannot read #<n>: <reason> — whether this trail was already graduated is UNKNOWN. Nothing was filed.` | 11 | refusal |
 | `graduate emit: #<n> carries neither grilling:session nor wayfinding:map — there is no trail to bind this spec to.` | 12 | refusal |
 | `graduate emit: #<n>'s trail reports readiness "blocked" — <n> decision(s) unresolved: <refs>. Nothing was filed.` | 13 | refusal |
-| `graduate emit: #<n>'s trail could not be digested: <reason> — the emission binding is UNKNOWN. Nothing was filed.` | 14 | refusal |
+| `graduate emit: #<n>'s trail carries a decision with no <field> — it cannot be digested, so the emission binding is UNKNOWN. Nothing was filed.` | 14 | refusal |
 | `graduate emit: #<n> already graduated this trail into #<m> at digest <hex> — refusing to file a second spec for one trail.` | 15 | refusal |
 | `graduate emit: #<n>'s trail holds zero decisions — there is nothing to file.` | 16 | refusal |
+| `graduate emit: --spec <path>'s ## Decisions section does not match #<n>'s trail as it reads now — the source moved after the spec was composed. Re-run graduate trail and graduate compose.` | 18 | refusal |
 
 **Scope** — the source issue and every comment on it, paginated, to re-derive the trail and read
 existing markers; plus one label existence read. An unpaginated comment read would miss an older
@@ -657,7 +768,7 @@ hygiene. A read that could not complete is `11` and files nothing.
 
 ```
 $ fabrika graduate emit 9412 --spec spec.md --title "Cap moderation weight per topic"
-{"source":9412,"issue":9520,"url":"https://github.com/<owner>/<repo>/issues/9520","trailDigest":"a1b2c3d4e5f6","labels":["status:needs-triage"],"marker":5234567892}
+{"source":9412,"issue":9520,"url":"https://github.com/<owner>/<repo>/issues/9520","specDigest":"a1b2c3d4e5f6","labels":["status:needs-triage"],"marker":5234567892}
 ```
 
 ```
@@ -707,20 +818,22 @@ fabrika graduate read 9412 [--repo <owner/name>]
 **Output** — machine. One JSON object; every key always present:
 
 ```json
-{"source":9412,"state":"graduated","emissions":[{"issue":9520,"trailDigest":"a1b2c3d4e5f6","emittedAt":"2026-08-09T18:36:48Z","comment":5234567892}],"disregarded":[],"scanned":{"comments":14}}
+{"source":9412,"state":"graduated","emissions":[{"issue":9520,"specDigest":"a1b2c3d4e5f6","emittedAt":"2026-08-09T18:36:48Z","comment":5234567892}],"disregarded":[],"scanned":{"comments":14}}
 ```
 
 | Key | Type | Meaning |
 |---|---|---|
 | `source` | integer | the source issue number |
 | `state` | string | closed set — `graduated` when at least one marker parsed, `ungraduated` when none did |
-| `emissions` | array | one object per parsed marker, oldest first, each with `issue`, `trailDigest`, `emittedAt` and `comment` |
+| `emissions` | array | one object per parsed marker, oldest first, each with `issue`, `specDigest`, `emittedAt` and `comment` |
 | `disregarded` | array | every purported marker not counted: `comment`, `reason` (closed set — `malformed`), and `detail` |
 | `scanned` | object | `comments` — the number read |
 
-**`emissions` may hold more than one row**, and that is a fact rather than a defect: a source whose
-trail grew after an emission can legitimately graduate again at a new digest. `graduate emit`
-refuses only a repeat of the **same** digest, so the array records the sequence.
+**`emissions` may hold more than one row**, and that is a fact rather than a defect. Two ways a
+source legitimately graduates more than once: its trail grew after an emission, and — the ordinary
+case — one run filed a coherent cluster while a later run graduated the remainder. `graduate emit`
+refuses only a repeat of the **same spec** digest, so the array records the sequence, and a reader
+can see which parts of a trail have been specified and which have not.
 
 <!-- anchor: READ-NEVER-REFUSES-ON-CONTENT --> **This verb never refuses on marker content.** A
 malformed marker is **data** — reported in `disregarded` at exit `0`, never a refusal. Refusing
