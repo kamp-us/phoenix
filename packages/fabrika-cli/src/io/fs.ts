@@ -64,6 +64,24 @@ export const exists = (path: string): Effect.Effect<boolean, ReadFailed, FileSys
 	);
 
 /**
+ * Whether `path` is a directory.
+ *
+ * Separate from {@link exists} because "is there a file *under* this?" is not answerable by probing
+ * the child: on a non-directory parent the platform raises `ENOTDIR` rather than answering absent,
+ * so a caller enumerating a tree must ask about the entry itself. Like every read here, a probe that
+ * could not be performed FAILS; it never answers `false`.
+ */
+export const isDirectory = (
+	path: string,
+): Effect.Effect<boolean, ReadFailed, FileSystem.FileSystem> =>
+	Effect.gen(function* () {
+		const fs = yield* FileSystem.FileSystem;
+		return (yield* fs.stat(path)).type === "Directory";
+	}).pipe(
+		Effect.catchTag("PlatformError", (cause) => new ReadFailed({path, reason: cause.message})),
+	);
+
+/**
  * Append `text` to `path`, creating the file and its parent directory when they are absent.
  *
  * The `"a+"` open flag is the guarantee that matters: every write lands at the end of whatever is
