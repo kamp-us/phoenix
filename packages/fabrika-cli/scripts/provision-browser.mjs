@@ -11,12 +11,14 @@
  * `pnpm install` for everyone over a capability only one verb needs, and the run-time story is
  * already fail-closed and actionable: `ui render` exits `11` naming the exact remediation command.
  *
- * Three skips, each a real provisioning state rather than a convenience:
+ * Two skips, each a real provisioning state rather than a convenience:
  *   - `FABRIKA_SKIP_BROWSER_PROVISION=1` — the explicit opt-out.
  *   - `PLAYWRIGHT_BROWSERS_PATH` set — a managed/prebaked install already owns the browsers.
- *   - `CI` set with no prebaked path — CI images bake their own browsers, and a ~130MB download in
- *     every job of every workflow is a cost no job asked for. The run-time `11` covers the case
- *     where a CI job really did need it.
+ *
+ * There is deliberately no `CI` skip (#5169): it fired *before* the presence check below, so it was
+ * load-bearing only on a CI image with no chromium — exactly the case the criterion above must
+ * cover. CI pays the download once per cache key, not once per job; see the browser cache in
+ * `.github/workflows/ci.yml`.
  */
 import {spawnSync} from "node:child_process";
 import {existsSync} from "node:fs";
@@ -29,7 +31,6 @@ const skip = (reason) => {
 if (process.env.FABRIKA_SKIP_BROWSER_PROVISION === "1") skip("FABRIKA_SKIP_BROWSER_PROVISION=1");
 if ((process.env.PLAYWRIGHT_BROWSERS_PATH ?? "") !== "")
 	skip("PLAYWRIGHT_BROWSERS_PATH names a managed install");
-if ((process.env.CI ?? "") !== "") skip("CI images prebake their browsers");
 
 let installed = false;
 try {
