@@ -1307,7 +1307,7 @@ skip for that surface, never a block.
 - **A skill** — a `skills/**/SKILL.md` or its supporting files → read
   [`../author-skill/SKILL.md`](../author-skill/SKILL.md) and write in the house idiom (the frontmatter
   `name`/`description` contract, the prose-first body, the imported writing-craft house rules) toward
-  `review-skill`'s four rigor checks, so the gate passes on the first pass.
+  `review-skill`'s rigor checks, so the gate passes on the first pass.
 
 This is a **self-check, not a gate — the split-role firewall holds** exactly as it does for
 Steps 4c/4d. Reading the writing-craft skills to shape your own prose before you push is the

@@ -133,6 +133,25 @@ needs. Implementing those verbs is downstream `write-code` work against that spe
 implements the contract from there", per the workflow ruling. A session that also implements its
 verbs has left its lane; a session that emits no contract spec has skipped its deliverable.
 
+**Who files the implementation ticket: this session, at handoff.** The lane ends at the spec, but
+the *hand-off* is the session's, and it is not complete until the implementation ticket exists and
+the handoff names its number
+([ADR 0248](../../../.decisions/0248-authoring-session-mints-the-implementation-ticket.md)). Nothing
+mints it by machine — a machine-minted ticket is un-sized, un-priced work entering the build pool
+without passing triage, which is the second door #4637-C closed. The session is the filer because it
+holds the context: it just derived the verb inventory and ran the split test, so it can name what is
+to be built without a second reader reconstructing it from the spec.
+
+The ticket carries, at minimum: the skill it serves, the repo-relative path of its `contract.md`,
+the verb inventory, and any sequencing dependency on the verb package existing. It goes through
+triage like any other issue; the session files it and stops.
+
+**It is checked, not merely asked for.** `review-skill` lists this as a criterion on a PR that adds
+or changes a `contract.md`: the implementation ticket must exist, be open, and be named in the PR
+body or the handoff comment. The brief's own `Fixes #<brief>` line does **not** satisfy it — that is
+a done-signal for the brief, not the hand-off. This is why "someone will file it" is not a plan: the
+seam has already failed twice by depending on somebody noticing (#4725, #4748).
+
 ## A brief is not write-code work
 
 A brief issue must never enter the `write-code` candidate pool. If it does, a coder agent picks it
@@ -197,7 +216,8 @@ point: a session can tell an unbootable brief from a bootable one before it star
 3. Every incident is a number **and** a one-line behavior; an empty list is written as empty.
 4. Every prior-art verb is named, with what it computes and — where known — what it gets wrong.
 5. Both convention docs are linked, and neither is summarised.
-6. The output contract is stated in the brief, not assumed.
+6. The output contract is stated in the brief, not assumed — including its filing half: the
+   handoff mints the implementation ticket and names its number.
 
 ## What a brief deliberately does not carry
 
@@ -262,4 +282,5 @@ Read these for semantics and scars; specify fabrika's own. Derive nothing for wo
 opening the PR (runbook step 5.5). Then one PR carrying `claude-plugins/fabrika/skills/adr/SKILL.md`
 and `claude-plugins/fabrika/skills/adr/contract.md`, with `Fixes #<this brief>` in the body and the
 review pass. The verbs the contract specifies are implemented downstream by `write-code`, against
-that spec. No skill enters fabrika by any other path (#4637-C).
+that spec — and this session's handoff files that implementation ticket and names its number in the
+PR body (ADR 0248). No skill enters fabrika by any other path (#4637-C).
