@@ -21,8 +21,22 @@ import type {ChildProcessSpawner} from "effect/unstable/process";
 import {currentBranch} from "../io/issues.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {requireSession} from "./claim.ts";
-import {PRECONDITION_UNKNOWN, REF_NOT_MOVED, UNSAFE_PUSH, WRITE_UNKNOWN} from "./codes.ts";
-import {headSha, isAncestor, push, remoteSha, upstreamOf} from "./git.ts";
+import {
+	HEAD_DROPS_REMOTE,
+	PRECONDITION_UNKNOWN,
+	REF_NOT_MOVED,
+	UNSAFE_PUSH,
+	WRITE_UNKNOWN,
+} from "./codes.ts";
+import {
+	commitsDropped,
+	ensureCommitPresent,
+	headSha,
+	isAncestor,
+	push,
+	remoteSha,
+	upstreamOf,
+} from "./git.ts";
 import {requireLane} from "./lane-guard.ts";
 import {resolveTargetRepo} from "./target.ts";
 
@@ -30,6 +44,8 @@ const VERB = "build push";
 
 export interface PushOptions {
 	readonly forceWithLease: boolean;
+	/** Publish a head that drops the remote's commits anyway — a deliberate rewrite, never a default. */
+	readonly dropRemoteCommits: boolean;
 	readonly repo: string | null;
 	readonly env: Readonly<Record<string, string | undefined>>;
 }
@@ -76,13 +92,45 @@ export const runPush = (
 				lane.notes,
 			);
 		}
-		if (before.value !== null && !options.forceWithLease) {
-			const fastForward = yield* isAncestor(before.value, local.value);
-			if (!fastForward) {
+		const notes = [...lane.notes];
+
+		// The containment test runs on BOTH paths, and that is the whole fix (#5222). It used to be
+		// guarded by `!forceWithLease`, so the repair path — which mandates the lease — got no
+		// containment evidence at all: `--force-with-lease` defends the ref against ANOTHER writer,
+		// never against this lane's own head having dropped the remote's commits, and a bare lease is
+		// refreshed by any fetch the lane already ran, so it cannot refuse the drop either. The verb's
+		// own success test (remote === local) then reported the drop as `MOVED`.
+		if (before.value !== null) {
+			if (!(yield* ensureCommitPresent(remote, ref, before.value))) {
+				return refuse(
+					PRECONDITION_UNKNOWN,
+					`${VERB}: cannot prove containment — ${remote}/${ref} is at ${before.value}, which this checkout does not hold and could not fetch. Nothing was pushed.`,
+					notes,
+				);
+			}
+			const contains = yield* isAncestor(before.value, local.value);
+			if (!contains && !options.forceWithLease) {
 				return refuse(
 					UNSAFE_PUSH,
 					`${VERB}: non-fast-forward — pass --force-with-lease only for this lane's own repair resubmission.`,
-					lane.notes,
+					notes,
+				);
+			}
+			if (!contains && !options.dropRemoteCommits) {
+				const dropped = yield* commitsDropped(local.value, before.value);
+				return refuse(
+					HEAD_DROPS_REMOTE,
+					`${VERB}: the local head does not contain ${remote}/${ref} (${before.value}) — this push would DROP ${
+						dropped.lines.length === 0
+							? "commits the remote holds and this head does not"
+							: `${dropped.lines.join("; ")}${dropped.truncated ? "; …" : ""}`
+					}. Rebase onto the published head, or pass --drop-remote-commits to rewrite it deliberately.`,
+					notes,
+				);
+			}
+			if (!contains) {
+				notes.push(
+					`${VERB}: --drop-remote-commits given — publishing a head that drops ${remote}/${ref} (${before.value}).`,
 				);
 			}
 		}
@@ -93,7 +141,7 @@ export const runPush = (
 			return refuse(
 				WRITE_UNKNOWN,
 				`${VERB}: pushed, but the remote ref could not be re-read: ${after.reason} — the outcome is UNKNOWN.`,
-				lane.notes,
+				notes,
 			);
 		}
 		if (after.value !== local.value) {
@@ -101,7 +149,7 @@ export const runPush = (
 				REF_NOT_MOVED,
 				`${VERB}: the remote ref did not move (remote ${after.value ?? "absent"} ≠ local ${local.value}).`,
 				[
-					...lane.notes,
+					...notes,
 					...(pushed._tag === "Failure" ? [`${VERB}: git push reported: ${pushed.reason}.`] : []),
 				],
 			);
@@ -112,6 +160,6 @@ export const runPush = (
 				`remote ref read back: ${after.value}`,
 				"PUSH-VERDICT: MOVED",
 			].join("\n"),
-			lane.notes,
+			notes,
 		);
 	});

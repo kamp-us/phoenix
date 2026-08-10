@@ -250,6 +250,7 @@ range, exactly as `triage/codes.ts` itself states for `adr`.
 | `20` | proven: not admitted on the scope axis, out of focus — the issue's home is not the declared milestone and no standing-lane label exempts it |
 | `21` | proven: not admitted on the audience axis, audience not agent — the issue's `ready-for:` label is not `ready-for:agent`, or is absent |
 | `22` | proven: every changed file falls outside all three surfaces' validators — there is nothing to run, so the verdict is a refusal, never a green |
+| `23` | proven: the local head does not contain the published remote head — the push would drop its commits |
 | `127` | the verb never ran at all (unresolved binary — the shell's code, not this process's) |
 
 **`7` versus `11` is the split the whole group rests on** (the `wire` group's `ABSENT` vs
@@ -1074,7 +1075,7 @@ $ fabrika build check --surface code
 **Invocation**
 
 ```
-fabrika build push [--force-with-lease]
+fabrika build push [--force-with-lease] [--drop-remote-commits]
 ```
 
 **Inputs**
@@ -1082,6 +1083,7 @@ fabrika build push [--force-with-lease]
 | Flag | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `--force-with-lease` | boolean | no | `false` | permit a non-fast-forward update of this lane's own branch (repair resubmission) |
+| `--drop-remote-commits` | boolean | no | `false` | publish a head that does **not** contain the published remote head — a deliberate history rewrite |
 
 **Output** — machine, **single-stream: the entire report is stdout**, and the last line is always
 exactly one of:
@@ -1109,6 +1111,28 @@ Refusals before any push (`19`): HEAD is detached; or the update is non-fast-for
 `--force` flag does not exist here, and there is no `--no-verify` (#4159: the ban is enforced by
 the flag not existing).
 
+**Containment is proven on every path, the force path included (`23`).** Whenever the target ref
+already exists, the local head must **contain** the SHA a live `git ls-remote` just read off it —
+`git merge-base --is-ancestor <remote head> <local head>`. On the plain path that is the
+fast-forward test and its failure is `19`; on the force path its failure is `23`, and a lane that
+means the rewrite says so with `--drop-remote-commits`, which publishes anyway and records the
+drop on stderr.
+
+`--force-with-lease` does not cover this and cannot: a lease compares the remote against what this
+clone last saw of it, so it defends the ref against **another** writer, never against **this**
+lane's own head having dropped the remote's commits — and a bare lease is "trivially defeated" by
+any `git fetch` the lane already ran (`git push`'s own documentation), which the repair path does.
+With the ancestry test formerly guarded by `!--force-with-lease`, the documented repair invocation
+had no containment evidence at all and the verb's success test (remote SHA equals the lane's own
+head) reported the drop as `MOVED` (#5222).
+
+The remote head must be **in this object database** for the ancestry test to mean anything, and a
+repair lane's published head may be a commit this clone has never held. So the verb probes for it
+and fetches `<remote>/<ref>` once if it is absent; if it is still absent, containment is **UNKNOWN**
+and the refusal is `11` — never `23`, which is a *proven* fact about two commits it holds. This is
+also why the read is a live `ls-remote` rather than a remote-tracking ref: a tracking ref a
+preceding fetch in the same lane already refreshed proves nothing about what is published.
+
 Preconditions: a linked worktree (`12`), the lane's branch (`14`).
 
 **Exit status** (beyond the universal four)
@@ -1116,12 +1140,13 @@ Preconditions: a linked worktree (`12`), the lane's branch (`14`).
 | Code | Trigger |
 |---|---|
 | `8` | the push was attempted but the remote ref could not be re-read — the outcome is UNKNOWN (the matrix's `8`: an attempted write whose outcome cannot be proven) |
-| `11` | the lane's claim could not be read — nothing was pushed |
+| `11` | the lane's claim could not be read, or the remote head could not be made readable so containment is UNKNOWN — nothing was pushed |
 | `12` | proven: not in a linked worktree |
 | `14` | proven: the checked-out branch is not this lane's (lane-identity rule) |
 | `15` | proven: the lane's claim is held by another session — nothing was pushed |
 | `17` | proven: the remote ref did not move |
 | `19` | refused before pushing: detached HEAD, or non-fast-forward without `--force-with-lease` |
+| `23` | proven: the local head does not contain the published remote head — the push would drop its commits |
 
 **Errors**
 
@@ -1129,6 +1154,8 @@ Preconditions: a linked worktree (`12`), the lane's branch (`14`).
 |---|---|---|
 | `build push: HEAD is detached — refusing to guess a branch.` | 19 | refusal |
 | `build push: non-fast-forward — pass --force-with-lease only for this lane's own repair resubmission.` | 19 | refusal |
+| `build push: the local head does not contain <remote>/<ref> (<sha>) — this push would DROP <commits>. Rebase onto the published head, or pass --drop-remote-commits to rewrite it deliberately.` | 23 | refusal |
+| `build push: cannot prove containment — <remote>/<ref> is at <sha>, which this checkout does not hold and could not fetch. Nothing was pushed.` | 11 | refusal |
 | `build push: the remote ref did not move (remote <sha> ≠ local <sha>).` | 17 | refusal |
 | `build push: pushed, but the remote ref could not be re-read: <reason> — the outcome is UNKNOWN.` | 8 | refusal |
 
@@ -1150,6 +1177,11 @@ PUSH-VERDICT: MOVED
   refusal removes the case instead of guarding it.
 - #4159 — `--no-verify` unenforceable as prose; here unrepresentable.
 - #4540 — `--force-with-lease` as the only force shape protects the remote against a stale local.
+- #5222 — the ancestry test was guarded by `!--force-with-lease`, so the repair path, which mandates
+  the lease, got no containment check; `23` and the explicit `--drop-remote-commits` escape close it.
+- #5263 — the same gap reproduced on v1 from a stale *local branch ref*: the rebase is clean, the
+  bare lease is defeated by the lane's own fetch, and the verdict is `MOVED`. Containment against a
+  live remote read is the only test that catches it.
 
 ---
 
