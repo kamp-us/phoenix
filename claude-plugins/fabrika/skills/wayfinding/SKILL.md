@@ -50,6 +50,12 @@ issue. This skill cuts no branch, pushes nothing, opens no pull request, merges 
 map, and writes no `type:`, `status:` or priority label — including `wayfinder:backlog`, which no
 verb here applies.
 
+**One asymmetry worth knowing before it surprises you.** A proposal often arrives as a comment on
+the map, and no verb here comments on the map — the write surface covers comments on frontier
+tickets only. So when the answer to someone is "that is already out of scope, and here is why", the
+reply leaves through **you**, in this run's own output, not through a verb. Say the reasoning back
+to them; do not manufacture a write to carry it.
+
 <!-- anchor: NO-SECOND-GATE --> **This adds no second human gate** (#4631). `wayfinding:map` is an
 issue-shape marker, the same class as v1's `wayfinder:map` — not a pipeline state, not pickable, and
 not a member of `SHIP_NAMESPACES`, so nothing recorded here can block a merge. Frontier tickets
@@ -292,8 +298,15 @@ never anything to push, leave local, or remove.
   and the run names the open decisions so he can answer without reading the map.
 - `FRONTIER-CLEAR` — `map read` at `0` reporting `clear`. The natural next step is the model firing
   `graduate` to synthesize one spec issue.
-- `NOT-FOG` — `17`: proven, no supplied question survives. Fire the `report` Skill and stop.
-- `ALREADY-DESCOPED` — `19`: already on the record as rejected. Read the recorded reasoning.
+- `NOT-FOG` — the destination is a deliverable, not fog. Fire the `report` Skill and stop. Reached
+  two ways, and **say which**: `map open` refused with `17`, or you read the board yourself, every
+  question was already settled, and you never called it. The second is the route step 1 prescribes
+  when the evidence is already in front of you, and it is not a lesser ending — but a terminal
+  naming an exit code you never observed is a claim you cannot support, so state the basis you have.
+- `ALREADY-DESCOPED` — the direction is on the record as rejected. Relay the recorded reasoning.
+  Same two routes — `19` from a verb, or your own read of `map read`'s `outOfScope` entries; name
+  which. Never re-descope a rejection under fresh wording: a second entry for one rejection cannot
+  be removed.
 - `MAP-MOVED` — `12`: the body moved since your `--digest`. Re-read and re-apply — the guard
   working, not an error to route around.
 - `MISROUTED` — `20`: the ticket's kind does not admit this verb — a decision cannot be laned, a

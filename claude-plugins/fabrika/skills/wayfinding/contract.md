@@ -683,7 +683,8 @@ forward without re-reading between calls.
 | `12` | the recomputed body digest differs from `--digest` |
 | `13` | a `--blocks` or `--blocked-by` target is not a ticket of this map |
 | `14` | an edge would cycle, or an edge write could not be bound to an internal id |
-| `18` | a `--blocks` or `--blocked-by` target already graduated |
+| `18` | a `--blocks` or `--blocked-by` target already left the frontier |
+| `19` | the question restates a direction already recorded out of scope on this map |
 
 **Errors**
 
@@ -694,7 +695,8 @@ forward without re-reading between calls.
 | `map ticket: --blocks <t> would close a cycle (<a> -> <b> -> <a>) — refusing to make a frontier no run can drain.` | 14 | refusal |
 | `map ticket: cannot resolve <t>'s internal id: <reason> — an edge POST takes the id, never the number. Resolved before the create, so nothing was written.` | 14 | refusal |
 | `map ticket: filed #<c> and the sub-issue LINK to #<n> did NOT land — the ticket exists and is not on the map. Link it before charting on.` | 8 | refusal |
-| `map ticket: --blocked-by <t> already graduated — a cleared question cannot gate an open one.` | 18 | refusal |
+| `map ticket: --blocked-by <t> already left the frontier — a cleared question cannot gate an open one.` | 18 | refusal |
+| `map ticket: "<question>" restates a direction recorded out of scope on #<n> (<date>) — nothing was written. Read the recorded reasoning before charting it.` | 19 | refusal |
 
 **Scope** — the map's existing children and their edges, to validate every edge target and to detect
 a cycle. Zero children is a fact when no edge flag was passed, and is `13` when one was.
@@ -1208,6 +1210,8 @@ would make the rejection unreadable, it is a map entry; if it would survive the 
 | `8` / `9` | the write failed, or the read-back differs |
 | `11` | a precondition read failed; nothing was written |
 | `12` | the body moved since `--digest` |
+| `13` | `--ticket` was given and is not a frontier ticket of this map |
+| `18` | `--ticket` was given and has already left the frontier |
 | `19` | this direction is already recorded out of scope on this map |
 
 **Errors**
