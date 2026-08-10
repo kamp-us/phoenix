@@ -385,12 +385,13 @@
 	text-transform: lowercase;
 }
 
+/* Geometry only — the variant owns the colours. Manti paints a variant as a PAIR
+   (`background: var(--variant-solid); color: var(--variant-on-solid)`), so a class that
+   overrode half of it left the other half's fill showing underneath (#5228). */
 .kp-divan__badge {
 	font: var(--t-meta);
 	padding: 1px 6px;
 	border-radius: var(--r-pill);
-	border: 1px solid var(--border);
-	color: var(--text-muted);
 }
 
 .kp-divan__preview {
@@ -498,8 +499,6 @@
 	font: var(--t-meta);
 	padding: 1px 6px;
 	border-radius: var(--r-pill);
-	border: 1px solid var(--border);
-	color: var(--text-muted);
 }
 
 .kp-triage__age {

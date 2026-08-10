@@ -29,9 +29,9 @@ import type {Tier} from "../../../worker/features/kunye/standing";
 import {Screen} from "../../fate/Screen";
 import {codeOf} from "../../fate/wire";
 import {Alert} from "../ui/Alert";
-import {Badge} from "../ui/Badge";
 import {Button} from "../ui/Button";
 import {ReportButton, type ReportOutcome} from "../ui/ReportButton";
+import {ReviewBadge} from "../ui/ReviewBadge";
 import {VoteTriangle} from "../VoteTriangle";
 import {CaylakIdentityById, IdentityFallback} from "./CaylakIdentity";
 import {
@@ -278,9 +278,7 @@ function BacklogItemRow({node}: {readonly node: ViewRef<"DivanBacklogItem">}) {
 			<div className="kp-divan__item-body">
 				<div className="kp-divan__item-meta">
 					<span className="kp-divan__kind">{itemKindLabel(data.kind)}</span>
-					<Badge variant="info" className="kp-divan__badge" data-testid="incelemede-badge">
-						incelemede
-					</Badge>
+					<ReviewBadge />
 				</div>
 				<p className="kp-divan__preview">{data.preview || "(boş)"}</p>
 			</div>
