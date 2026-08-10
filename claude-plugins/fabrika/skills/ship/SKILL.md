@@ -57,11 +57,14 @@ fabrika ship gate 4321 --sha 03135b91 --require review-code --require review-ski
 ```
 
 `--require` is repeated verbatim from `scope`'s printed namespace set — the verb refuses a
-cleared answer that does not cover exactly that set (#4520). `blocked` naming a FAIL → route to
-repair (`build`) and stop. `blocked` naming absence → the namespace was never gated at this
-head; route to the gate that owns it — `review` for every `review-*` namespace, the `governance`
-skill for `governance` — and stop. Absence and staleness are refusals, never passes (#3944, ADR
-0058).
+cleared answer that does not cover exactly that set (#4520). It is a **floor, not a ceiling**: a
+diff touching `.decisions/`, `.claude/`, `.github/` or `claude-plugins/` gates on `governance`
+whether or not you passed it, because the verb re-derives that requirement from the diff itself
+(#5036) — so an `ns governance` line you did not ask for is the gate working, not a bug. `blocked`
+naming a FAIL → route to repair (`build`) and stop. `blocked` naming absence → the namespace was
+never gated at this head; route to the gate that owns it — `review` for every `review-*` namespace,
+the `governance` skill for `governance` — and stop. Absence and staleness are refusals, never
+passes (#3944, ADR 0058).
 
 ## 4 — CI at the head, and only at the head
 

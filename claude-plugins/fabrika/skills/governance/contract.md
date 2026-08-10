@@ -229,11 +229,11 @@ wrapper shape at `packages/fabrika-cli/src/review/authored.ts` and
 
 ### Three shipped-surface changes this group requires
 
-All three are additive; none changes how any existing marker, namespace or verdict reads. Each is a
-change to a surface this group does not own, so each names the file and the exact edit. **Two of the
-three have since landed**, via [#5206](https://github.com/kamp-us/phoenix/pull/5206) — they are kept
-here, in landed state, because they are still the surfaces this group's fail-closed property rests
-on. Change 3 is the only one still outstanding.
+All are additive; none changes how any existing marker, namespace or verdict reads. Each is a
+change to a surface this group does not own, so each names the file and the exact edit. **Changes 1
+and 2 landed** via [#5206](https://github.com/kamp-us/phoenix/pull/5206) and **1b** via #5036 — they
+are kept here, in landed state, because they are still the surfaces this group's fail-closed
+property rests on. Change 3 is the only one still outstanding.
 
 **1. `ship`'s required-namespace vocabulary must admit `governance` — without this the whole
 fail-closed property is decoration. LANDED (#5206).**
@@ -252,6 +252,24 @@ through the same `verdict-marker` format for every namespace, and the ADR 0058 k
 no notion of which skill posted one. **This is not a second answer to an enforced question** — the
 enqueue conjunction stays `ship gate`'s alone. It is that enforcer being taught one more namespace,
 which is the only shape in which a derived-required namespace can actually be required.
+
+**1b. …and requiring it must not be optional. LANDED (#5036).** Admitting the namespace left one
+hole: `--require` was caller-asserted, so a session that simply never passed
+`--require governance` shipped a governance-root diff with no governance verdict, and the gate
+called that `satisfied`. `packages/fabrika-cli/src/ship/gate-verb.ts` now reads the PR's own
+changed-file list and raises the required set from it (`requiredWithFloor`) through the **same**
+`touchesGovernanceRoot` predicate `governance scope` and `ship scope` use — one derivation, three
+readers. So the requirement is a property of the diff, not of what a session remembered to type.
+
+**The founder ruled this instead of a §CP row** ([veto on
+#5036](https://github.com/kamp-us/phoenix/issues/5036#issuecomment-5234614633), 2026-08-10):
+`claude-plugins/fabrika/**` gets **no** CODEOWNERS row and **no** §CP-boundary widening. The model
+is *machine gate plus human awareness, not a human click* — this floor blocks the enqueue, and the
+§CP digest readout (producer: this skill; display: the front door, #4952) carries every fabrika-tree
+landing to the founder. **Visibility after landing replaces blocking before it**, with the limit
+recorded rather than glossed: the readout makes a gate-weakening landing *visible*, not
+*impossible* (#5216 is one the machine chain missed). `.github/**` — CODEOWNERS included — and
+everything the existing §CP boundary already covers stay §CP, enforced server-side regardless.
 
 **2. The `verdict-marker` namespace class must admit `governance`. LANDED (#5206), with one
 residual.** `packages/fabrika-cli/src/wire/verdict-marker.ts` now declares

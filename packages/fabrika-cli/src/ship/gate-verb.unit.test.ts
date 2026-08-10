@@ -6,18 +6,28 @@ import {INCOMPLETE_SCAN, OFF_VOCABULARY, PRECONDITION_UNKNOWN, ZERO_SCOPE} from 
 import {
 	comments,
 	ENV,
+	files,
 	HEAD,
 	OTHER_HEAD,
 	pull,
 	reviews,
 	unexhaustedPage,
 } from "./fixtures.test-support.ts";
-import {inForce, runGate} from "./gate-verb.ts";
+import {inForce, requiredWithFloor, runGate} from "./gate-verb.ts";
 
 const PULL = /^gh api repos\/o\/r\/pulls\/4321$/;
+const FILES = /^gh api --paginate repos\/o\/r\/pulls\/4321\/files/;
 const COMMENTS = /^gh api --paginate repos\/o\/r\/issues\/4321\/comments/;
 const REVIEWS = /^gh api -i repos\/o\/r\/pulls\/4321\/reviews/;
 const ACL = /^gh api repos\/o\/r\/collaborators\/[^ ]+\/permission/;
+
+/** The default two-file diff, under no governance root — the floor stays off unless a test asks. */
+const ORDINARY = [FILES, files("apps/web/src/a.ts", "apps/web/src/b.ts")] as const;
+/** A fabrika-tree diff: `claude-plugins/` is one of the four governance roots. */
+const FABRIKA_TREE = [
+	FILES,
+	files("claude-plugins/fabrika/skills/ship/SKILL.md", "apps/web/src/b.ts"),
+] as const;
 
 const options = {
 	pr: 4321,
@@ -29,11 +39,17 @@ const options = {
 	env: ENV,
 };
 
+/**
+ * `ORDINARY` is appended, not prepended: `fakeShell` resolves on the FIRST matching pattern, so a
+ * test that scripts its own file list still wins and every other test reads an ordinary diff.
+ */
 const run = (
 	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
 	overrides: Partial<typeof options> = {},
 ) =>
-	Effect.runPromise(Effect.provide(runGate({...options, ...overrides}), fakeShell(script).layer));
+	Effect.runPromise(
+		Effect.provide(runGate({...options, ...overrides}), fakeShell([...script, ORDINARY]).layer),
+	);
 
 const marker = (namespace: string, polarity: string, sha: string): string =>
 	`${namespace}: ${polarity} @ ${sha} — the clause`;
@@ -266,5 +282,125 @@ describe("runGate", () => {
 	it("refuses a closed PR on 7", async () => {
 		const out = await run([[PULL, pull({state: "closed"})]]);
 		expect(out.code).toBe(ZERO_SCOPE);
+	});
+
+	it("refuses a truncated changed-file read on 13 — the floor may not rest on it", async () => {
+		const out = await run([
+			[PULL, pull({changedFiles: 9})],
+			[FILES, files("claude-plugins/fabrika/skills/ship/SKILL.md")],
+		]);
+		expect(out.code).toBe(INCOMPLETE_SCAN);
+		expect(out.stdout).toBe("");
+	});
+
+	it("refuses a zero-file diff on 7 — a conjunction over an empty diff proves nothing", async () => {
+		const out = await run([
+			[PULL, pull({changedFiles: 0})],
+			[FILES, files()],
+		]);
+		expect(out.code).toBe(ZERO_SCOPE);
+	});
+});
+
+// The #5036 unit: `--require` was caller-asserted end to end, so a fabrika-tree PR shipped with no
+// governance verdict simply by never passing the flag. The floor is what makes that unrepresentable.
+describe("runGate — the governance floor (#5036)", () => {
+	it("requires governance on a fabrika-tree diff the caller never asked to gate on it", async () => {
+		const out = await run(
+			[
+				[PULL, pull({comments: 1})],
+				FABRIKA_TREE,
+				[COMMENTS, comments({id: 1, body: marker("review-skill", "PASS", HEAD)})],
+				[REVIEWS, reviews()],
+				[ACL, okOut("write")],
+			],
+			{require: ["review-skill"]},
+		);
+		expect(out.code).toBe(0);
+		expect(out.stdout).toBe(
+			[
+				`gate\tblocked\t${HEAD}`,
+				"ns\treview-skill\tpass\tmarker",
+				"ns\tgovernance\tabsent\t-",
+				"",
+			].join("\n"),
+		);
+		expect(
+			out.stderr.some((line) => line.includes("the diff's floor, not the caller's option")),
+		).toBe(true);
+	});
+
+	it("satisfies the floored namespace from a posted governance PASS", async () => {
+		const out = await run(
+			[
+				[PULL, pull({comments: 2})],
+				FABRIKA_TREE,
+				[
+					COMMENTS,
+					comments(
+						{id: 1, body: marker("review-skill", "PASS", HEAD)},
+						{id: 2, body: marker("governance", "PASS", HEAD)},
+					),
+				],
+				[REVIEWS, reviews()],
+				[ACL, okOut("write")],
+			],
+			{require: ["review-skill"]},
+		);
+		expect(out.stdout).toBe(
+			[
+				`gate\tsatisfied\t${HEAD}`,
+				"ns\treview-skill\tpass\tmarker",
+				"ns\tgovernance\tpass\tmarker",
+				"",
+			].join("\n"),
+		);
+	});
+
+	it("counts the floored namespace in --json `required`, so coverage cannot narrow silently", async () => {
+		const out = await run(
+			[[PULL, pull()], FABRIKA_TREE, [COMMENTS, comments()], [REVIEWS, reviews()]],
+			{require: ["review-skill"], json: true},
+		);
+		expect(JSON.parse(out.stdout)).toMatchObject({outcome: "blocked", required: 2});
+	});
+
+	it("leaves a diff under no governance root gated exactly as before", async () => {
+		const out = await run(
+			[
+				[PULL, pull({comments: 1})],
+				ORDINARY,
+				[COMMENTS, comments({id: 1, body: marker("review-code", "PASS", HEAD)})],
+				[REVIEWS, reviews()],
+				[ACL, okOut("write")],
+			],
+			{require: ["review-code"]},
+		);
+		expect(out.stdout).toBe(
+			[`gate\tsatisfied\t${HEAD}`, "ns\treview-code\tpass\tmarker", ""].join("\n"),
+		);
+	});
+});
+
+describe("requiredWithFloor", () => {
+	it("adds governance on a governance-root diff", () => {
+		const result = requiredWithFloor(
+			["review-skill"],
+			["claude-plugins/fabrika/skills/ship/SKILL.md"],
+		);
+		expect(result.required).toEqual(["review-skill", "governance"]);
+		expect(result.floored).toEqual(["governance"]);
+	});
+
+	it("adds nothing when the caller already asked for it — the floor never duplicates", () => {
+		const result = requiredWithFloor(["governance"], [".decisions/0001-a.md"]);
+		expect(result.required).toEqual(["governance"]);
+		expect(result.floored).toEqual([]);
+	});
+
+	it("leaves an ordinary diff's required set untouched", () => {
+		const result = requiredWithFloor(["review-code"], ["apps/web/src/a.ts"]);
+		expect(result.required).toEqual(["review-code"]);
+		expect(result.floored).toEqual([]);
 	});
 });

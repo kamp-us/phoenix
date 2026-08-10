@@ -526,7 +526,7 @@ fabrika ship gate 4321 --sha 03135b91 --require review-code [--require review-do
 |---|---|---|---|---|
 | *(positional)* | integer | yes | — | the pull-request number |
 | `--sha` | string | yes | — | the head every verdict must bind to |
-| `--require` | string, repeatable | yes (≥1) | — | a required namespace; repeat the flag once per namespace, exactly as `ship scope` printed them |
+| `--require` | string, repeatable | yes (≥1) | — | a required namespace; repeat the flag once per namespace, exactly as `ship scope` printed them. A **floor the verb may raise**, never a ceiling (see the governance floor below) |
 | `--cp` | boolean | no | `false` | resolve §CP advisory carriers for the code namespace; pass iff `ship cp-approval` discharged |
 | `--repo` | string | no | resolved | the repository |
 | `--json` | boolean | no | `false` | emit the result object |
@@ -546,6 +546,26 @@ affirmative answer carries its own proof: before `satisfied` is printed, the ver
 namespace lines cover exactly the distinct required set — a plausible value with silently
 narrowed coverage is the defect's signature, so the assertion runs *before* the answer is
 believed, not after.
+
+**The `governance` requirement is the diff's floor, not the caller's option.** The verb reads the
+PR's changed-file list itself, and a diff with at least one path under `.decisions/`, `.claude/`,
+`.github/` or `claude-plugins/` gates on `governance` **whether or not `--require` named it** — the
+same predicate `ship scope` prints the namespace from, shared as code, so the two cannot disagree.
+Every other namespace stays caller-asserted; the floor only ever *adds*, so a diff under none of the
+four roots requires exactly what it required before. When the floor fires, a stderr notice names it.
+
+This is the whole ruling on #5036, and it is what a §CP row would otherwise have had to enforce.
+`claude-plugins/fabrika/**` is deliberately **not** control-plane — no CODEOWNERS row, no boundary
+widening ([founder veto, #5036](https://github.com/kamp-us/phoenix/issues/5036#issuecomment-5234614633),
+2026-08-10). The protection is this machine floor plus the §CP digest readout that carries every
+fabrika-tree landing to a human: **visibility after landing replaces blocking before it**, and the
+trade is explicit — the readout makes a gate-weakening landing *visible*, not *impossible* (#5216 is
+a live instance of the machine chain missing one). `.github/**`, CODEOWNERS included, and everything
+the existing §CP boundary already covers stay §CP, unchanged and enforced server-side regardless.
+
+The floor is `governance` only. Deriving the whole `review-*` set here would be a second answer to
+what `ship scope` already prints, and widening it is its own decision — recorded as considered, not
+silently taken.
 
 **In-force resolution, per namespace:** candidates are this namespace's verdict comments,
 head-bound first (a live-head-bound verdict strictly outranks recency — #4189), then ordered
@@ -576,10 +596,10 @@ answer this contract bans.
 
 | Code | Trigger |
 |---|---|
-| `7` | the PR is proven absent (404) or closed |
+| `7` | the PR is proven absent (404) or closed, or its diff has zero changed files — a conjunction over an empty diff proves nothing (ADR 0092) |
 | `10` | a `--require` value is not a known gateable namespace |
-| `11` | the comments, reviews, or ACL could not be read — the conjunction is UNKNOWN, never `blocked`, never `satisfied` |
-| `13` | the comment enumeration is provably short of the declared count, or the review read — for which the platform declares no count — never reached a terminal page |
+| `11` | the changed-file list, comments, reviews, or ACL could not be read — the conjunction is UNKNOWN, never `blocked`, never `satisfied` |
+| `13` | the changed-file or comment enumeration is provably short of the declared count, or the review read — for which the platform declares no count — never reached a terminal page |
 
 **Errors**
 
@@ -587,13 +607,17 @@ answer this contract bans.
 |---|---|---|
 | `ship gate: PR #<n> not found in <repo>.` | 7 | refusal |
 | `ship gate: PR #<n> is closed — nothing to gate.` | 7 | refusal |
+| `ship gate: PR #<n> has zero changed files — a conjunction over an empty diff proves nothing (ADR 0092).` | 7 | refusal |
 | `ship gate: --require <v> is not a gateable namespace (known: review-code, review-doc, review-skill, review-ui, governance).` | 10 | refusal |
 | `ship gate: cannot read <what> for #<n>: <reason> — the conjunction is UNKNOWN.` | 11 | refusal |
+| `ship gate: received <k> of <m> changed files — refusing to derive the required floor from a truncated read.` | 13 | refusal |
 | `ship gate: received <k> of <m> comments — refusing the partial resolution.` | 13 | refusal |
 | `ship gate: the review read never reached a terminal page — pagination is unexhausted, so the native-review fold would rest on a truncated set; refusing the partial resolution.` | 13 | refusal |
+| `ship gate: #<n>'s diff touches a governance root, so governance is required whether or not it was passed — the diff's floor, not the caller's option (#5036).` | 0 | notice |
 | `ship gate: #<n> carries a §CP advisory with a [FAIL] row — an invalid emission (ADR 0226); treated as fail, report it.` | 0 | notice |
 
-**Scope** — one PR's verdict comments (paginated, count-checked) and native reviews (paginated to
+**Scope** — one PR's changed-file list (paginated, count-checked — the floor may not rest on a
+truncated read), its verdict comments (paginated, count-checked) and native reviews (paginated to
 exhaustion), each candidate ACL-resolved. The verdict-marker and advisory grammars are the registered wire
 formats (`packages/fabrika-cli/src/wire/verdict-marker.ts`, `src/review/advisory.ts`) —
 imported, never re-parsed; a hand-rolled marker regex is the drift the registry ended.
@@ -615,8 +639,19 @@ $ echo $?
 0
 ```
 
+```
+$ fabrika ship gate 4323 --sha 7c31a0de --require review-skill
+ship gate: #4323's diff touches a governance root, so governance is required whether or not it was passed — the diff's floor, not the caller's option (#5036).
+gate	blocked	7c31a0de
+ns	review-skill	pass	marker
+ns	governance	absent	-
+```
+
 **Grounding**
 
+- #5036 — the governance floor. `--require` was caller-asserted end to end, so a fabrika-tree PR
+  shipped with no governance verdict simply by never passing the flag; the founder vetoed making
+  the tree §CP and ruled the machine floor instead.
 - #4520 — the repeated-flag collapse and the coverage assertion; both layers here.
 - #3944 / #3982 — the set-level absence check is not expressible as N separate reads; one verb
   owns the conjunction.
