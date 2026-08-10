@@ -2,7 +2,7 @@ import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
 import {errOut, fakeFs, fakeShell, okOut} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
-import {classifyDiff, notCoveredBy, runCheck, surfaceMismatch} from "./check-verb.ts";
+import {classifyDiff, notCoveredBy, runCheck, SURFACES, surfaceMismatch} from "./check-verb.ts";
 import {
 	OFF_VOCABULARY,
 	PRECONDITION_UNKNOWN,
@@ -58,16 +58,24 @@ const run = (
 	);
 
 describe("surfaceMismatch — the anchor, not a second classifier", () => {
-	it("refuses --surface prose over changed code files", () => {
-		expect(surfaceMismatch("prose", ["a.ts", "b.ts"])).toContain("2 code files");
+	it("refuses --surface prose over a diff with no markdown file", () => {
+		expect(surfaceMismatch("prose", ["a.ts", "b.ts"])).toContain("no markdown file");
 	});
 
 	it("refuses --surface code over a diff with no code file", () => {
 		expect(surfaceMismatch("code", ["README.md"])).toContain("no code file");
 	});
 
-	it("accepts a mixed diff under --surface code", () => {
-		expect(surfaceMismatch("code", ["a.ts", "README.md"])).toBeNull();
+	it("refuses --surface plan over a diff with no markdown file", () => {
+		expect(surfaceMismatch("plan", ["a.ts"])).toContain("no markdown file");
+	});
+
+	// #5301: the anchor refuses an ABSENT class, never a present other one — the asymmetry that left a
+	// mixed diff's markdown with no surface to run under.
+	it("accepts a mixed diff under every surface", () => {
+		for (const surface of SURFACES) {
+			expect(surfaceMismatch(surface, ["a.ts", "README.md"])).toBeNull();
+		}
 	});
 });
 
@@ -153,13 +161,13 @@ describe("runCheck", () => {
 		);
 	});
 
-	it("refuses a surface the diff provably contradicts on 10", async () => {
+	it("refuses --surface prose on 10 over a diff with no markdown at all", async () => {
 		const out = await run([...LANE_OK, [DIFF, okOut("apps/web/src/App.tsx\nsrc/x.ts\n")]], {
 			surface: "prose",
 		});
 		expect(out.code).toBe(OFF_VOCABULARY);
 		expect(out.stderr.at(-1)).toBe(
-			"build check: --surface prose, but the diff is 2 code files — the surface is provably wrong.",
+			"build check: --surface prose, but the diff changes no markdown file — the surface is provably wrong.",
 		);
 	});
 
@@ -364,5 +372,64 @@ describe("runCheck", () => {
 			},
 		);
 		expect(out.code).toBe(0);
+	});
+});
+
+// The #5301 regression, one leg per surface. `["a.ts", "README.md"]` is the repo's most common diff
+// shape, and it had no invocation that opened the markdown: `code` never reads it, `plan` runs the
+// grammar check, and `prose` refused on 10 because a code file was present. The leak scan and the
+// link resolver never ran over a mixed diff under any surface.
+describe("a mixed code+markdown diff — every surface has a runnable answer", () => {
+	const MIXED = okOut("apps/web/src/App.tsx\nREADME.md\n");
+
+	it("scans the markdown under --surface prose, reding on its machine-local path", async () => {
+		const out = await run(
+			[...LANE_OK, [DIFF, MIXED]],
+			{surface: "prose"},
+			{
+				"/repo/trees/lane-a/README.md": "run it from /Users/someone/phoenix\n",
+			},
+		);
+		expect(out.code).toBe(VALIDATION_RED);
+		expect(out.stderr.some((line) => line.includes("machine-local path"))).toBe(true);
+	});
+
+	it("greens under --surface prose, disclosing the code file it did not read", async () => {
+		const out = await run(
+			[...LANE_OK, [DIFF, MIXED]],
+			{surface: "prose"},
+			{
+				"/repo/trees/lane-a/README.md": "see [the contract](./other.md)\n",
+				"/repo/trees/lane-a/other.md": "here\n",
+			},
+		);
+		expect(out.code).toBe(0);
+		const verdict = JSON.parse(out.stdout);
+		expect(verdict.ran).toEqual(["markdown link + leak scan"]);
+		expect(verdict.unvalidated).toEqual(["apps/web/src/App.tsx"]);
+	});
+
+	it("runs the CI commands under --surface code, disclosing the markdown it did not read", async () => {
+		const out = await run([...LANE_OK, [DIFF, MIXED], [TYPECHECK, okOut("")], [LINT, okOut("")]], {
+			surface: "code",
+		});
+		expect(out.code).toBe(0);
+		const verdict = JSON.parse(out.stdout);
+		expect(verdict.ran).toEqual(["pnpm typecheck --force", "pnpm lint:worktree"]);
+		expect(verdict.unvalidated).toEqual(["README.md"]);
+	});
+
+	it("runs the grammar check under --surface plan, disclosing the code file", async () => {
+		const out = await run(
+			[...LANE_OK, [DIFF, MIXED]],
+			{surface: "plan"},
+			{
+				"/repo/trees/lane-a/README.md": "## Dependencies\n\n- phase 1: #12\n",
+			},
+		);
+		expect(out.code).toBe(0);
+		const verdict = JSON.parse(out.stdout);
+		expect(verdict.ran).toEqual(["## Dependencies grammar"]);
+		expect(verdict.unvalidated).toEqual(["apps/web/src/App.tsx"]);
 	});
 });
