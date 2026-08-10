@@ -16,7 +16,8 @@
  * provably contradicts.
  *
  * **Green means "the validators ran and passed", never "I could not tell."** See {@link classifyDiff}
- * for the third file class that keeps that distinction representable (#5229).
+ * for the third file class that keeps that distinction representable (#5229), and
+ * {@link notCoveredBy} for the per-surface coverage the green's `unvalidated` list reports (#5288).
  */
 import {Effect, FileSystem} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
@@ -59,24 +60,57 @@ export interface CheckOptions {
 }
 
 /**
- * The changed files split three ways, with `unvalidated` the file class **no** surface validates.
+ * The changed files split three ways, with `unvalidatable` the file class **no** surface validates.
  *
  * That third bucket is the point. Filtering with the two regexes and reading nothing off what fell
  * out of both made "matched neither" an absence, and an absence cannot be refused: a `.yml`/`.sh`
  * diff produced an empty markdown list, zero validator iterations and a green that had opened no
  * file (#5229). Named, it is a state the verb can act on.
+ *
+ * `unvalidatable` is a property of the **tree** — no surface covers these files. Whether *this* run
+ * covered a file is a narrower question, and {@link notCoveredBy} is the one that answers it; the two
+ * were the same word once, which is how a markdown file could sit outside a `--surface code` green's
+ * disclosure while the field's own documentation said it listed everything the verdict missed (#5288).
  */
 export interface DiffClasses {
 	readonly code: ReadonlyArray<string>;
 	readonly markdown: ReadonlyArray<string>;
-	readonly unvalidated: ReadonlyArray<string>;
+	readonly unvalidatable: ReadonlyArray<string>;
 }
 
 export const classifyDiff = (files: ReadonlyArray<string>): DiffClasses => ({
 	code: files.filter((f) => CODE_RE.test(f)),
 	markdown: files.filter((f) => MARKDOWN_RE.test(f)),
-	unvalidated: files.filter((f) => !CODE_RE.test(f) && !MARKDOWN_RE.test(f)),
+	unvalidatable: files.filter((f) => !CODE_RE.test(f) && !MARKDOWN_RE.test(f)),
 });
+
+/** The file classes each surface's validators actually open. `unvalidatable` is in no surface's. */
+const COVERS: Record<Surface, ReadonlyArray<keyof DiffClasses>> = {
+	code: ["code"],
+	prose: ["markdown"],
+	plan: ["markdown"],
+};
+
+/**
+ * The changed files this surface's validators do not read — what a green must disclose.
+ *
+ * A superset of the `unvalidatable` bucket, and the extra members are the whole point: `--surface
+ * code` ran typecheck and `lint:worktree` over a `["a.ts", "README.md"]` diff, neither of which reads
+ * markdown (`lint:worktree` filters `.md` out by extension), and greened with an empty disclosure —
+ * which affirmatively reads as "nothing uncovered". `--surface plan` did the same to code files.
+ * Reporting coverage per surface answers both with one rule instead of two (#5288).
+ *
+ * Disclosing is deliberately not validating: running the markdown validators under `--surface code`
+ * would make the surface guess at file classes, which the anchor exists to refuse.
+ */
+export const notCoveredBy = (
+	surface: Surface,
+	files: ReadonlyArray<string>,
+): ReadonlyArray<string> => {
+	const classes = classifyDiff(files);
+	const covered = new Set(COVERS[surface].flatMap((bucket) => classes[bucket]));
+	return files.filter((file) => !covered.has(file));
+};
 
 /**
  * Why no surface can validate this diff at all, or `null`.
@@ -86,11 +120,11 @@ export const classifyDiff = (files: ReadonlyArray<string>): DiffClasses => ({
  * sentence pointing at the wrong remedy (it invites `--surface prose`, the branch that greened).
  */
 export const unvalidatableDiff = (files: ReadonlyArray<string>): string | null => {
-	const {code, markdown, unvalidated} = classifyDiff(files);
+	const {code, markdown, unvalidatable} = classifyDiff(files);
 	if (code.length > 0 || markdown.length > 0) return null;
-	const shown = unvalidated.slice(0, 5).join(", ");
-	const rest = unvalidated.length > 5 ? `, +${unvalidated.length - 5} more` : "";
-	return `no surface validates any of the ${unvalidated.length} changed file(s) (${shown}${rest})`;
+	const shown = unvalidatable.slice(0, 5).join(", ");
+	const rest = unvalidatable.length > 5 ? `, +${unvalidatable.length - 5} more` : "";
+	return `no surface validates any of the ${unvalidatable.length} changed file(s) (${shown}${rest})`;
 };
 
 /** Why `--surface` provably contradicts the diff, or `null`. */
@@ -247,15 +281,17 @@ export const runCheck = (
 		if (mismatch !== null) {
 			return refuse(OFF_VOCABULARY, `${VERB}: ${mismatch} — the surface is provably wrong.`, scope);
 		}
-		const {markdown, unvalidated} = classifyDiff(files);
-		// A green over a partly-unvalidatable diff has to carry what it skipped, on both channels:
-		// #5187 greened over 25 workflow files whose `ran` line was true and misleading at once (#5229).
+		const {markdown} = classifyDiff(files);
+		// A partial green has to carry what it skipped, on both channels: #5187 greened over 25 workflow
+		// files whose `ran` line was true and misleading at once (#5229), and a `--surface code` green
+		// then did the same to markdown while reporting an empty list (#5288).
+		const unvalidated = notCoveredBy(surface as Surface, files);
 		const noted =
 			unvalidated.length === 0
 				? scope
 				: [
 						...scope,
-						`${VERB}: ${unvalidated.length} changed file(s) no surface validates — NOT covered by this verdict: ${unvalidated.join(", ")}.`,
+						`${VERB}: ${unvalidated.length} changed file(s) --surface ${surface} does not validate — NOT covered by this verdict: ${unvalidated.join(", ")}.`,
 					];
 
 		if (surface === "code") {
