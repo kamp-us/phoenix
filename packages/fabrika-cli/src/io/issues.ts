@@ -169,6 +169,35 @@ export const searchOpenIssues = (
 			: ok(rows);
 	});
 
+/**
+ * The search index's issues for `tokens`, **open and closed**, paged.
+ *
+ * The sibling of {@link searchOpenIssues}, kept separate rather than parameterised because the two
+ * answer different questions and the wrong one is silently plausible: an open-only scan reports a
+ * question that was charted and closed as new, which is #4154/#4148's scar. A caller asking "has
+ * anyone answered this already?" needs the closed half; one asking "is there an open duplicate?" does
+ * not.
+ */
+export const searchIssues = (
+	repo: string,
+	tokens: ReadonlyArray<string>,
+): Shell<Attempt<ReadonlyArray<IssueRow>>> =>
+	Effect.gen(function* () {
+		const q = `repo:${repo} is:issue ${tokens.join(" ")}`;
+		const r = yield* execCapture("gh", [
+			"api",
+			"--paginate",
+			`search/issues?q=${encodeURIComponent(q)}&per_page=100`,
+			"--jq",
+			'.items[] | "\\(.number)\t\\(.title)"',
+		]);
+		if (!r.ok) return fail(r.reason);
+		const rows = parseIssueRows(r.stdout);
+		return rows === null
+			? fail("`gh api` exited 0 but its output is not a list of issue rows")
+			: ok(rows);
+	});
+
 export interface IssueRecord {
 	readonly number: number;
 	readonly title: string;
@@ -704,6 +733,28 @@ export const closeNotPlanned = (repo: string, issue: number): Shell<Attempt<void
 			"state=closed",
 			"-f",
 			"state_reason=not_planned",
+		]);
+		return r.ok ? ok(undefined) : fail(r.reason);
+	});
+
+/**
+ * Close an issue as `completed` — the close spelling for work that reached an answer.
+ *
+ * Separate from {@link closeNotPlanned} rather than a parameter: the two are opposite claims about
+ * the same issue, and a caller that could pass the wrong one silently records "we decided not to"
+ * over "we answered it".
+ */
+export const closeCompleted = (repo: string, issue: number): Shell<Attempt<void>> =>
+	Effect.gen(function* () {
+		const r = yield* execCapture("gh", [
+			"api",
+			"--method",
+			"PATCH",
+			`repos/${repo}/issues/${issue}`,
+			"-f",
+			"state=closed",
+			"-f",
+			"state_reason=completed",
 		]);
 		return r.ok ? ok(undefined) : fail(r.reason);
 	});

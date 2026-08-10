@@ -17,6 +17,7 @@ import {
 } from "./exit-code-alignment.ts";
 import * as hook from "./hook/codes.ts";
 import * as ledger from "./ledger/codes.ts";
+import * as map from "./map/codes.ts";
 import * as plan from "./plan/codes.ts";
 import {registeredGroups} from "./registry.ts";
 import * as report from "./report/codes.ts";
@@ -43,6 +44,7 @@ const TABLES: Readonly<Record<string, CodeTable>> = {
 	eval: evalCodes,
 	hook,
 	ledger,
+	map,
 	plan,
 	report,
 	review,
