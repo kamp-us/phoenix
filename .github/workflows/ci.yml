@@ -457,31 +457,6 @@ jobs:
           node-version-file: package.json
           cache: pnpm
 
-      # `@kampus/fabrika-cli`'s `postinstall` provisions chromium so no operator or agent ever
-      # hand-runs a browser install (#5061), and pnpm runs a workspace member's `postinstall` on
-      # EVERY `pnpm install --frozen-lockfile` — including "Already up to date" — so all five
-      # hosted-runner install jobs would each pay the ~170MB download. Restoring the browser dir
-      # BEFORE the install is what makes the script's presence check hit and skip, so the download
-      # is paid once per cache key instead of once per job. Keyed on `pnpm-workspace.yaml` (which
-      # carries the `@playwright/test` catalog pin) so a version bump re-downloads exactly once;
-      # `restore-keys` falls back to the newest prior cache, which still satisfies the presence
-      # check whenever the pin didn't move. The script deliberately has no `CI` skip — that skip
-      # pre-empted its own presence check and broke #5061's criterion (#5169). `e2e` needs none of
-      # this: its container prebakes /ms-playwright and sets PLAYWRIGHT_BROWSERS_PATH, which the
-      # script skips on one line earlier.
-      #
-      # This cache is INERT until #5343 is fixed: playwright 1.59.1 hangs in `extract-zip` after the
-      # bytes land, so nothing is ever extracted and the key saves an empty directory. It is kept
-      # rather than deferred because it is the mechanism the moment provisioning can succeed, and
-      # keeping it is what stops that becoming a per-job cost then.
-      - name: Cache Playwright browsers
-        uses: actions/cache@v4.2.3
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-workspace.yaml') }}
-          restore-keys: |
-            playwright-${{ runner.os }}-
-
       - run: pnpm install --frozen-lockfile
 
       # `biome check` is lint + format in one pass (tabs/100-col/no-bracket-spacing).
@@ -535,15 +510,6 @@ jobs:
         with:
           node-version-file: package.json
           cache: pnpm
-
-      # See the `check` job's Playwright browser cache.
-      - name: Cache Playwright browsers
-        uses: actions/cache@v4.2.3
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-workspace.yaml') }}
-          restore-keys: |
-            playwright-${{ runner.os }}-
 
       - run: pnpm install --frozen-lockfile
 
@@ -601,15 +567,6 @@ jobs:
           node-version-file: package.json
           cache: pnpm
 
-      # See the `check` job's Playwright browser cache.
-      - name: Cache Playwright browsers
-        uses: actions/cache@v4.2.3
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-workspace.yaml') }}
-          restore-keys: |
-            playwright-${{ runner.os }}-
-
       - run: pnpm install --frozen-lockfile
 
       - run: pnpm --filter './packages/**' --filter @kampus/infra run test
@@ -630,15 +587,6 @@ jobs:
         with:
           node-version-file: package.json
           cache: pnpm
-
-      # See the `check` job's Playwright browser cache.
-      - name: Cache Playwright browsers
-        uses: actions/cache@v4.2.3
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-workspace.yaml') }}
-          restore-keys: |
-            playwright-${{ runner.os }}-
 
       - run: pnpm install --frozen-lockfile
 
@@ -821,15 +769,6 @@ jobs:
         with:
           node-version-file: package.json
           cache: pnpm
-
-      # See the `check` job's Playwright browser cache.
-      - name: Cache Playwright browsers
-        uses: actions/cache@v4.2.3
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-workspace.yaml') }}
-          restore-keys: |
-            playwright-${{ runner.os }}-
 
       - run: pnpm install --frozen-lockfile
 
