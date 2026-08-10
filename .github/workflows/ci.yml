@@ -885,11 +885,13 @@ jobs:
     timeout-minutes: 25
     # Run in the Playwright-maintained image: chromium + headless-shell + ffmpeg
     # and all system deps are PREBAKED at /ms-playwright (PLAYWRIGHT_BROWSERS_PATH
-    # is set in the image), so there's no `playwright install` download — which
-    # hangs deterministically on the hosted runner (#522). Tag MUST match the
-    # locked @playwright/test version (1.59.1) or the browsers won't match.
+    # is set in the image), so there's no `playwright install` download to pay for
+    # in this job at all (it hung deterministically at 1.59.1 — #522/#5343, fixed by
+    # the bump below, but a ~170MB download per run is still cost this job doesn't
+    # need). Tag MUST match the locked @playwright/test version (1.62.1) or the
+    # browsers won't match.
     container:
-      image: mcr.microsoft.com/playwright:v1.59.1-jammy
+      image: mcr.microsoft.com/playwright:v1.62.1-jammy
     permissions:
       contents: read
       pull-requests: read # read the sticky preview-deploy comment for URL + D1 id
