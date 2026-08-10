@@ -146,8 +146,12 @@ seats as `CLASSIFIED`; the value is the base's either way, so the alignment hold
 **Alignment.** `pattern` aligns to the `report` base, importing `WRITE_UNKNOWN`,
 `READBACK_MISMATCH`, `OFF_VOCABULARY` and `PRECONDITION_UNKNOWN` from `build/codes.ts` rather than
 restating numerals, so a drift is unrepresentable rather than merely detectable. The alignment buys
-something real: the skill directs `fabrika build check --surface prose` over its own diff, so one
-caller drives `build` and `pattern` in a single run and needs one meaning per code. The rule the
+something real, though not what an earlier draft claimed: this skill does **not** drive
+`fabrika build check`. What it shares with `build` is the failure *vocabulary* — a failed write, a
+mismatched read-back, an off-vocabulary value, a precondition that could not be read — and those
+four facts mean the same thing wherever they are proven. A conductor sweeping a doc lane across both
+groups reads one meaning per code, and a code that meant two things across a sweep is the defect the
+courtesy exists to prevent. The rule the
 group follows is `ledger`'s: **import a code when two groups prove the same fact; allocate freely
 when they do not.** Registering a `pattern/codes.ts` obliges a matching row in the exit-code
 alignment registry and its module map — a group listed nowhere is drift, and the alignment test reds
@@ -164,7 +168,7 @@ oversight:
 | `6` `BARE_AT_PATH` | follows from `3` — nothing here composes a body from authored input |
 | `7` `ZERO_SCOPE` | **the important one.** No verb here judges over a corpus, so none has a vacuous pass to prevent. An empty or absent `.patterns/` is a *fact* this group reports at exit `0`, and refusing there would leave a repo adopting fabrika unable to write its first pattern doc on the documented path — the first-run dead-end the portability rules forbid, and the same correction #5254 applied to `adr next`. Where a question genuinely cannot be answered, the group says so in **vocabulary** — `unanchored`, `unknown` — never by falling silent. |
 
-**Private codes are group-local.** `12`–`15` mean what this table says within `pattern` and carry no
+**Private codes are group-local.** `12`–`16` mean what this table says within `pattern` and carry no
 cross-group obligation; `build` seats `12` as `NOT_A_WORKTREE` and `review` seats it as `STALE_HEAD`,
 and those are three namespaces rather than one collision.
 
@@ -507,11 +511,18 @@ fabrika pattern anchor worker-queue-retry [--dir <path>] [--manifest <path>] [--
    interpretation. A doc's anchor records the version its author actually read; accepting a range
    would silently bless a version nobody checked, which is the whole failure the line exists to catch.
 5. **Outcome**, by this precedence: `unborn` if the doc is present in the working tree and absent at
-   `--base`; else `moved` if any declaration moved; else `unpinned` if any is unpinned **or
-   malformed**; else `matched` if there is at least one declaration; else `unanchored`.
+   `--base`; else `moved` if any declaration moved; else **`malformed`** if any failed to
+   parse; else `unpinned` if any package is absent from the manifest; else `matched` if there is at
+   least one declaration; else `unanchored`.
+
+   **`malformed` is its own outcome and does not fold into `unpinned`.** They ask opposite things of
+   a caller: `unpinned` says this repo no longer carries the dependency, which is a question about
+   whether the doc still applies at all; `malformed` says the anchor line is mistyped, which is a
+   one-line repair. Folding the second into the first points a typo at the same remedy as a dropped
+   dependency.
 
    **`unanchored` therefore fires only when the doc carries no `> Derived from ` line at all** — not
-   merely when none parsed. That is what keeps step 2's malformed case from reading as clean.
+   merely when none parsed. That is what keeps step 1's near-miss case from reading as clean.
 
 **`unborn` mirrors `pattern drift` deliberately.** Both verbs take the same positional `<slug>` and
 the skill runs them back to back, so one tree state must not produce two different verdicts: a
@@ -521,13 +532,20 @@ working tree *and* none at `--base` is exit `12`.
 **Output** — machine channel.
 
 ```
-anchor	<matched|moved|unpinned|unanchored|unborn>	<declared>	<moved>	<unpinned>	<malformed>
+anchor	<matched|moved|malformed|unpinned|unanchored|unborn>	<declared>	<moved>	<unpinned>	<malformed>
 pkg	<package>	<declared-version>	<pinned-version>	<matched|moved|unpinned|malformed>
 ```
 
+**`<declared>` counts every `> Derived from ` line, malformed ones included**, so it is always
+`<moved> + <unpinned> + <malformed> + <matched>` and a reader can check the header against itself.
+Counting only the well-formed ones would hide the very lines this verb exists to surface.
+
 One `pkg` line per declaration, in the order they appear in the doc. `<pinned-version>` is `-` when
-the package is not a catalog key; on a `malformed` token both version fields are `-` and `<package>`
-carries the raw token.
+the package is not a catalog key. On a `malformed` declaration **both version fields are `-` and
+`<package>` carries the line's text after `> Derived from `, with tabs and newlines stripped and
+clamped to 120 characters** — the line is malformed precisely because no `<pkg>@<version>` token can
+be split out of it, so there is nothing narrower to print and a truncated echo is what lets a reader
+find the line.
 
 **`unanchored` is a fact, not a fault.** Most pattern docs describe in-repo shapes and are anchored to
 no dependency at all — a minority of this repo's docs carry a declaration (22 of 83 at the time of
@@ -873,8 +891,9 @@ against the shipped code rather than assumed:
 - A `.patterns/*.md` diff classifies as the **doc** surface, so a pull request from this skill gates
   on the doc review namespace. `.patterns/` is **not** a governance root, unlike `.decisions/`, so a
   pattern-doc pull request does not carry the governance namespace an ADR does.
-- The skill's own diff is checked with `fabrika build check --surface prose`, whose validators are the
-  markdown-link and leak scans — the two questions this contract deliberately does not answer.
+- The two questions this contract deliberately does not answer are answered for a `.patterns/` diff
+  by the repo's own link and leak gates, named at the head of this spec. No verb here re-answers them
+  and this skill invokes nothing to do so.
 
 Stated here to close the question rather than leave it to be rediscovered: no verb in this group
 needs a repository token, and none writes to any board surface.

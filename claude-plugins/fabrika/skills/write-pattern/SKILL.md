@@ -30,6 +30,17 @@ rationale, and never re-derive it here. A dated measurement belongs in `reports/
 Material that belongs elsewhere ends at `ROUTED-ELSEWHERE` with the surface named. You do not write
 into the other surfaces from here.
 
+**Routing needs a real destination, and this is the tiebreak the ordering above would otherwise
+lose.** "This is a *why*" is not by itself a route: ask whether the material would actually be
+recorded on the surface you are naming, against *that* surface's own bar. A rationale already carried
+where it lives — a comment at the line, a test name that states it — has a home, and a rationale too
+small to earn its own record has none. Neither is routed; both are `DECLINED-BELOW-BAR`, naming what
+already carries it. And if the target surface does not exist in this repo, say so rather than routing
+into a directory nobody will create.
+
+Route when another surface genuinely owns it. Decline when nothing does. A skill that routes
+everything with a *why* in it never declines anything, and declining is the job.
+
 **This comes first, and the order is load-bearing.** The admission bar below judges whether a
 *pattern* is worth a doc; it has nothing to say about material that was never a pattern. Ask the bar
 first and an ADR's rationale gets declined as "below bar" — a true statement about the wrong
@@ -105,6 +116,8 @@ What each answer asks of you:
   this verb stops at a count.
 - **`moved`** — re-read the shape at the **new** pin, then rewrite the anchor line. Bumping the line
   over prose you did not re-read is precisely the lie the line exists to catch.
+- **`malformed`** — the anchor line is mistyped, not the dependency gone. A one-line repair; do not
+  read it as the dependency having been dropped.
 - **`unpinned`** — this repo no longer carries that dependency. Decide whether the doc still
   describes anything here, and route it out if it does not.
 - **`unborn`** — nothing to measure from yet. Read the source.
@@ -146,10 +159,11 @@ between them, so they cannot drift apart.
 ## 6 — Register it, or nobody finds it
 
 ```bash
-fabrika pattern register worker-queue-retry --section "<a heading that exists in this repo's index>" --topic "Retry and backoff on the worker queue" --read-when "Adding a queue consumer, or changing a retry policy"
+fabrika pattern register worker-queue-retry --section "Index — services" --topic "Retry and backoff on the worker queue" --read-when "Adding a queue consumer, or changing a retry policy"
 ```
 
-Inserts the row under a section heading that must already exist in the index (exit `10` names the
+The section name above is sample data — pass one this repo's index actually carries. The row goes
+under a heading that must already exist there (exit `10` names the
 ones that do; exit `16` means your heading matched more than one and the index needs disambiguating,
 not your flag). Registering a doc that already has a row is a no-op that answers `already`.
 
@@ -189,16 +203,16 @@ it needs most.
 | Terminal | Kind | Meaning and tree disposition |
 |---|---|---|
 | `PATTERN-RECORDED` | success | every verb answered `0`; a new doc exists and carries an index row; both files left edited, uncommitted |
-| `RECORDED-UNREGISTERED` | success | the doc is written and could **not** be registered (`10`, `14`, `15`, `16`) — the index is absent, unparseable or ambiguous. Name the doc's path and the reason; the work is not lost, and the row lands once an index exists |
+| `RECORDED-UNREGISTERED` | success | the doc is written and could **not** be registered: the index is absent or unparseable (`15`), the named section is ambiguous (`16`), or the insertion would have touched more than its own row (`14`). Name the doc's path and which it was; the work is not lost and the row lands once the index can take it. **`10` is not a terminal on its own** — it prints every section that does exist, so correct `--section` and re-run step 6; land here only if none of them fits |
 | `PATTERN-REGROUNDED` | success | every verb answered `0`; an existing doc now matches the source it describes; edits left uncommitted |
-| `DECLINED-BELOW-BAR` | success | reached at `0`; the material fails the index's admission bar; **nothing written**, tree as found |
+| `DECLINED-BELOW-BAR` | success | reached at `0`; the material fails the index's admission bar (step 2), **or** step 1's tiebreak found it has no destination — a *why* already carried where it lives, or too small to earn a record anywhere. Name which; **nothing written**, tree as found |
 | `ROUTED-ELSEWHERE` | success | reached at `0`; the material belongs to another surface, named; **nothing written here** |
 | `HALTED-REFUSED` | back-off | a verb **proved** a refusal this session could not correct (`12`, `13`) before anything was written; tree as found |
 | `HALTED-UNKNOWN` | back-off | a verb could not establish the answer (`1`, `2`, `8`, `9`, `11`, `127`). Tree as found, **except** after `8` or `9`, where a write was already attempted — name the path so a human can look |
 
 A non-zero exit is never the permissive reading. It splits two ways, and the split is the point:
-`1`, `2`, `8`, `9`, `11` and `127` are **UNKNOWN** — nothing was established, so re-run once. `12`
-through `16` are **proven** refusals; re-running changes nothing and the fix is to correct the input
+`1`, `2`, `8`, `9`, `11` and `127` are **UNKNOWN** — nothing was established, so re-run once. `10`
+and `12` through `16` are **proven** refusals; re-running changes nothing and the fix is to correct the input
 or accept the narrower ending. Improvising past a verb that refused is how a session writes a doc
 against a corpus it never read.
 
@@ -214,8 +228,10 @@ falsifying. Authority arrives only from what the source does.
 
 ## Capability declaration
 
-Reads the repo tree at a resolved ref. Writes exactly two paths, `.patterns/<slug>.md` and
-`.patterns/index.md`. No network calls, no GitHub writes, no branch push, no merge-queue access. It
+Reads the repo tree at a resolved ref, which means one network call — `corpus`, `drift` and
+`anchor` fetch the base ref before reading it. Writes exactly two paths, `.patterns/<slug>.md` and
+`.patterns/index.md`. No GitHub reads or writes, no repository token, no branch push, no
+merge-queue access. It
 does not open the pull request; the surrounding flow does, and the doc gate reviews it.
 
 ## Required repo files
@@ -236,7 +252,7 @@ answer, stated), **bootstrap** (front-door creates it). No row dead-ends on a ba
 
 **No board surface is read at all** — no label, no issue, no pull request — so no row above covers
 one and this skill needs no repository token. Stated here rather than as a table row, because the
-third column's vocabulary is closed and a sixth row would have had to invent a fourth word.
+third column's vocabulary is closed and a row for it would have had to invent a fourth word.
 
 ## Packaging — one listed skill
 
