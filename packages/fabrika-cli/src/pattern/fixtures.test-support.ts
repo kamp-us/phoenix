@@ -6,70 +6,50 @@
  * output. Scripting **those bytes** reproduces the examples through the same seam production uses,
  * and it does so without a checkout: a test that shelled out to a real repository would be asserting
  * against that repository's history rather than against the spec.
+ *
+ * The bytes are read FROM the fixture files, never copied beside them (#5362). A copy is a fact that
+ * goes stale without telling anyone — `PLAIN_DOC` shipped 93 bytes against a 179-byte file and
+ * nothing red — so the file on disk is the one source, and a fixture that moved or emptied fails the
+ * read loudly rather than scripting the seam with nothing.
+ *
+ * What each fixture is for is stated in the fixture's own opening prose; read the file rather than a
+ * gloss of it here.
  */
-
-/** `.../fixtures/anchored/worker-queue-retry.md` — two declarations, one moved, one unpinned. */
-export const ANCHORED_DOC = `# Worker queue retry
-
-The fixture behind \`pattern anchor\`'s \`moved\` outcome. It declares two anchors: one whose package the
-fixture manifest pins at a different version, and one the manifest does not carry at all.
-
-> Derived from \`acme-queue@4.1.0\` — re-verify on pin bump.
-
-> Derived from \`@acme/retry@2.0.0\` — re-verify on pin bump.
-`;
-
-/** `.../fixtures/anchored/plain-doc.md` — a doc that claims no anchor at all. */
-export const PLAIN_DOC = `# Plain doc
-
-The fixture behind \`pattern anchor\`'s \`unanchored\` outcome: a doc that declares no dependency anchor
-at all, which is the common case and a fact rather than a fault.
-`;
-
-/** `.../fixtures/anchored/workspace.yaml` — pins `acme-queue`, carries no `@acme/retry`. */
-export const FIXTURE_MANIFEST = `# Fixture manifest for \`pattern anchor\`'s examples. Not a real workspace.
-catalog:
-  acme-queue: 4.2.0
-  acme-telemetry: 9.9.1
-`;
-
-/** `.../fixtures/unanchored-doc/worker-queue-retry.md` — every pointer deliberately unfollowable. */
-export const UNANCHORED_DOC = `# Worker queue retry
-
-The fixture behind \`pattern drift\`'s \`unanchored\` outcome: a doc that cites no repo-root-relative
-path this verb can follow, so drift here is unanswerable rather than clean.
-
-Every pointer below is deliberately unfollowable — a bare basename, an app-relative fragment, and a
-glob — which is exactly the ambiguous shorthand the derivation leaves alone.
-
-- \`retry.ts\`
-- \`worker/queue/retry.ts\`
-- \`src/**/*.test.ts\`
-`;
-
-/** `.../fixtures/three-sections/index.md` — three sections, so the `present:` list is exact. */
-export const THREE_SECTIONS_INDEX = `# Patterns
-
-A three-section index fixture, so \`pattern register\`'s refusal example prints an exact list.
-
-## Index — services
-
-| Doc | Topic | Read when |
-|---|---|---|
-| [cache-invalidation.md](./cache-invalidation.md) | Cache keys and invalidation order | Touching a cached read |
-
-## Index — edge
-
-| Doc | Topic | Read when |
-|---|---|---|
-| [edge-session-cookies.md](./edge-session-cookies.md) | Session cookie parse and re-issue | Changing session handling |
-
-## Index — observability
-
-| Doc | Topic | Read when |
-|---|---|---|
-| [tracing-span-names.md](./tracing-span-names.md) | Span naming convention | Naming a new span |
-`;
+import {readFileSync} from "node:fs";
+import {fileURLToPath} from "node:url";
 
 /** The three fixture directory paths the contract's examples pass to `--dir`. */
 export const FIXTURES = "claude-plugins/fabrika/skills/write-pattern/evals/fixtures";
+
+/**
+ * An empty read is a failed read, never fixture bytes — `""` scripted onto the seam satisfies every
+ * assertion vacuously (ADR 0092). Kept separate from the read so the refusal is provable without an
+ * empty file in the tree.
+ */
+export const nonEmptyFixture = (relativePath: string, bytes: string): string => {
+	if (bytes.trim() === "") {
+		throw new Error(
+			`fixture ${FIXTURES}/${relativePath} read as empty — refusing to script the git seam with nothing`,
+		);
+	}
+	return bytes;
+};
+
+/**
+ * Resolved from this module rather than from the process cwd, the way the `wire` group resolves its
+ * committed index doc — the fixtures live in the checkout this file ships in, wherever vitest ran.
+ */
+export const fixtureBytes = (relativePath: string): string =>
+	nonEmptyFixture(
+		relativePath,
+		readFileSync(
+			fileURLToPath(new URL(`../../../../${FIXTURES}/${relativePath}`, import.meta.url)),
+			"utf8",
+		),
+	);
+
+export const ANCHORED_DOC = fixtureBytes("anchored/worker-queue-retry.md");
+export const PLAIN_DOC = fixtureBytes("anchored/plain-doc.md");
+export const FIXTURE_MANIFEST = fixtureBytes("anchored/workspace.yaml");
+export const UNANCHORED_DOC = fixtureBytes("unanchored-doc/worker-queue-retry.md");
+export const THREE_SECTIONS_INDEX = fixtureBytes("three-sections/index.md");
