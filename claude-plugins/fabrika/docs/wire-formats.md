@@ -44,6 +44,7 @@ does not exist yet — rather than missing; check the registry before assuming a
 | `grill-ruling` | [`packages/fabrika-cli/src/wire/grill-ruling.ts`](../../../packages/fabrika-cli/src/wire/grill-ruling.ts) | `grilling` | `grilling` |
 | `grill-answer` | [`packages/fabrika-cli/src/wire/grill-answer.ts`](../../../packages/fabrika-cli/src/wire/grill-answer.ts) | `grilling` | `grilling` |
 | `grill-supersede` | [`packages/fabrika-cli/src/wire/grill-supersede.ts`](../../../packages/fabrika-cli/src/wire/grill-supersede.ts) | `grilling` | `grilling` |
+| `handoff-pack` | [`packages/fabrika-cli/src/wire/handoff-pack.ts`](../../../packages/fabrika-cli/src/wire/handoff-pack.ts) | `handoff` | `handoff` |
 <!-- fabrika:wire-index:end -->
 
 ### `acceptance-criteria`
@@ -129,6 +130,22 @@ which anything was ever re-worded could never finish. Two details carry weight. 
 **retired** question's round, captured at retirement, because the marker's job is to record which text
 was removed. And the record is a **new comment, never an edit** to the round it retires: editing that
 round would change text its digest covers, breaking every ruling bound to it.
+
+### `handoff-pack`
+
+This is one session's handoff to the next, as a single comment, and it crosses the widest boundary in
+the corpus: the two sides share no memory, no worktree and possibly no machine. That is why it is
+registered rather than kept private to its group — the three-answer read is what the boundary needs,
+because a malformed pack read as an absent one tells a successor nobody handed off and it starts the
+work over. Its shape is two halves under one marker. The four asserted sections are the model's own
+words and are labelled as assertion, so a consumer cannot mistake them for a derived fact; the single
+proven section holds one fenced JSON object the verb derived itself, which is what keeps a successor
+from inheriting the previous session's premise. The section set is **closed**, and that is the whole
+injection defence: an extra heading or a sentence appended after the fence is a refusal, because an
+artifact whose section set is open can steer its receiver past the artifact and the receiver has no
+way to tell the format's own words from someone else's. Its digest is over the proven half's fields
+rather than over the comment text, and a reader recomputes it — a pack comment is editable by its
+author, so two printed copies of a number nobody recomputes can drift with nothing marking it.
 
 ## Adding a format
 

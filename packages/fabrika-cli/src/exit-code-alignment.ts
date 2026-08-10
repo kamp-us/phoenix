@@ -114,6 +114,19 @@ export const GRILL_SEATS: SharedSeats = {
 };
 
 /**
+ * `handoff`'s seats: the same eight `grill` claims, so the map is reused rather than retyped.
+ *
+ * The two groups reach the identical set from different directions: both name `7` `NO_TARGET` (an
+ * issue proven absent, the base's own reading rather than a widening), and both hold `10` empty
+ * because no verb in either accepts a label flag, writes a classification, or composes a title. The
+ * `10` gap seat is deliberately **absent** from this map — on the `UI_SEATS` precedent, keying it as
+ * `DELIBERATE_GAP` would look up a name the base does not have, yield a `SeatDrift`, and red the
+ * suite. `handoff`'s `4` is the base's seat with a stated widening (content outside its closed
+ * section set), which keeps the base's name and number and grows the trigger set fail-closed.
+ */
+export const HANDOFF_SEATS: SharedSeats = GRILL_SEATS;
+
+/**
  * `hook`'s seats: one. It shares only `EMPTY_STDIN` — the same fact, an fd 0 read that held nothing
  * — and everything else it speaks is about a harness envelope rather than about a write, so its two
  * private codes sit above the base's whole table instead of claiming a seat in it.
@@ -193,6 +206,7 @@ export const ALIGNED_GROUPS: Readonly<Record<string, SharedSeats>> = {
 	hook: HOOK_SEATS,
 	epic: BUILD_SEATS,
 	grill: GRILL_SEATS,
+	handoff: HANDOFF_SEATS,
 	ledger: BUILD_SEATS,
 	map: MAP_SEATS,
 	plan: BUILD_SEATS,

@@ -242,3 +242,57 @@ export const patchComment = (repo: string, id: number, body: string): Shell<Atte
 			? ok(parsed.html_url)
 			: fail("`gh api` exited 0 but its output is not an edited comment");
 	});
+
+/** One pull request as a branch lookup sees it — enough to pick the newest and state what it is. */
+export interface BranchPull {
+	readonly number: number;
+	readonly state: string;
+	/** Non-null once it merged. `state` alone reads `closed` either way. */
+	readonly mergedAt: string | null;
+	readonly headSha: string;
+	readonly createdAt: string;
+}
+
+/**
+ * Every pull request whose head ref is `branch`, in any state, paged.
+ *
+ * `state=all` is load-bearing: a caller asking "what pull request does this work sit on" is often
+ * asking about one that already closed, and an open-only read would answer `none` over it.
+ */
+export const pullsForBranch = (
+	repo: string,
+	branch: string,
+): Shell<Attempt<ReadonlyArray<BranchPull>>> =>
+	Effect.gen(function* () {
+		const owner = repo.split("/")[0] ?? "";
+		const r = yield* execCapture("gh", [
+			"api",
+			"--paginate",
+			`repos/${repo}/pulls?state=all&per_page=100&head=${encodeURIComponent(`${owner}:${branch}`)}`,
+		]);
+		if (!r.ok) return fail(r.reason);
+		const pages = pagedJson(r.stdout);
+		if (pages._tag === "Failure") return pages;
+		const out: BranchPull[] = [];
+		for (const page of pages.value) {
+			const parsed = parseJson(page);
+			if (!Array.isArray(parsed)) {
+				return fail("`gh api` exited 0 but its output is not a list of pull requests");
+			}
+			for (const value of parsed) {
+				const head = isRecord(value) ? value.head : null;
+				const sha = isRecord(head) && typeof head.sha === "string" ? head.sha : null;
+				if (!isRecord(value) || typeof value.number !== "number" || sha === null) {
+					return fail("`gh api` exited 0 but one entry is not a pull request");
+				}
+				out.push({
+					number: value.number,
+					state: typeof value.state === "string" ? value.state : "",
+					mergedAt: typeof value.merged_at === "string" ? value.merged_at : null,
+					headSha: sha,
+					createdAt: typeof value.created_at === "string" ? value.created_at : "",
+				});
+			}
+		}
+		return ok(out);
+	});
