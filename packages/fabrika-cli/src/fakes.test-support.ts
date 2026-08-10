@@ -24,11 +24,28 @@ const notFound = (method: string, path: string) =>
 		}),
 	);
 
+const denied = (method: string, path: string) =>
+	Effect.fail(
+		PlatformError.systemError({
+			_tag: "PermissionDenied",
+			module: "FileSystem",
+			method,
+			pathOrDescriptor: path,
+		}),
+	);
+
 export interface FakeFsOptions {
 	/** Directory path → base names. An absent or `null` entry makes the directory unreadable. */
 	readonly dirs?: Readonly<Record<string, ReadonlyArray<string> | null>>;
-	/** File path → contents. An absent or `null` entry makes the file unreadable. */
+	/** File path → contents. An absent or `null` entry makes the file **absent** (`NotFound`). */
 	readonly files?: Readonly<Record<string, string | null>>;
+	/**
+	 * Paths whose read fails for a reason other than absence — `PermissionDenied`.
+	 *
+	 * Distinct from an absent file on purpose: a caller that folds the two together turns "I could
+	 * not open it" into "it was deleted", which is the fail-open direction (#5304).
+	 */
+	readonly unreadable?: ReadonlyArray<string>;
 	/** Paths whose writes fail. */
 	readonly unwritable?: ReadonlyArray<string>;
 	/** Paths whose existence check itself fails — distinct from a path that is absent. */
@@ -57,6 +74,7 @@ export const fakeFs = (options: FakeFsOptions): FakeFs => {
 					: Effect.succeed([...names]);
 			},
 			readFileString: (path: string) => {
+				if (options.unreadable?.includes(path) === true) return denied("readFileString", path);
 				const text = files[path];
 				return text === undefined || text === null
 					? notFound("readFileString", path)

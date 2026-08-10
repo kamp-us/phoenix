@@ -117,8 +117,9 @@ Loop construct → check until green. `red` rows name the diagnostics; fix them 
 primary.
 
 A green names the files it did not read in `unvalidated`. When that list holds a file class another
-surface validates — markdown beside your code, most often — run `build check` again at that surface;
-one run per class present is what leaves nothing in the diff unread (#5301).
+surface validates, run `build check` again there: markdown beside your code — the common case — goes
+to `--surface prose`, or `--surface plan` if that markdown is an epic ledger, which runs the prose
+validators too. One run per class present is what leaves nothing in the diff unread (#5301, #5304).
 
 ## 5 — Push verified, open the PR through the guard
 

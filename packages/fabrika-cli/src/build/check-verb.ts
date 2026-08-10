@@ -17,7 +17,8 @@
  *
  * **Green means "the validators ran and passed", never "I could not tell."** See {@link classifyDiff}
  * for the third file class that keeps that distinction representable (#5229), and
- * {@link notCoveredBy} for the per-surface coverage the green's `unvalidated` list reports (#5288).
+ * {@link notCoveredBy} for the per-surface coverage the green's `unvalidated` list reports (#5288),
+ * and {@link readMarkdown} for the file the verb could not open (#5304).
  */
 import {Effect, FileSystem} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
@@ -84,12 +85,26 @@ export const classifyDiff = (files: ReadonlyArray<string>): DiffClasses => ({
 	unvalidatable: files.filter((f) => !CODE_RE.test(f) && !MARKDOWN_RE.test(f)),
 });
 
-/** The file classes each surface's validators actually open. `unvalidatable` is in no surface's. */
+/**
+ * The file classes each surface's validators actually open. `unvalidatable` is in no surface's.
+ *
+ * Two surfaces claiming one class is only sound while both run **every** validator that class gets.
+ * The markdown loop in {@link runCheck} is where that holds: it runs the leak scan and the link
+ * resolver over every markdown file whatever the surface, and adds {@link PLAN_GRAMMAR} on top.
+ * `plan` used to run the grammar *instead*, so a ledger greened with `unvalidated: []` while the
+ * leak scan had never opened it — a disclosure true at the file-open level and false at the
+ * validator level (#5304).
+ */
 const COVERS: Record<Surface, ReadonlyArray<keyof DiffClasses>> = {
 	code: ["code"],
 	prose: ["markdown"],
 	plan: ["markdown"],
 };
+
+/** Every markdown file gets these, under either markdown surface. */
+const MARKDOWN_SCAN = "markdown link + leak scan";
+/** `plan` runs this **on top of** {@link MARKDOWN_SCAN}; it is a specialization, not a substitute. */
+const PLAN_GRAMMAR = "## Dependencies grammar";
 
 /**
  * The changed files this surface's validators do not read — what a green must disclose.
@@ -214,6 +229,41 @@ const planDefects = (file: string, text: string): ReadonlyArray<string> => {
 	return defects;
 };
 
+/** A changed markdown file resolves three ways, and only the middle one is safe to skip. */
+type MarkdownRead =
+	| {readonly _tag: "Read"; readonly text: string}
+	| {readonly _tag: "Absent"}
+	| {readonly _tag: "Unreadable"; readonly reason: string};
+
+/**
+ * Read a changed markdown file, keeping "it is gone" apart from "I could not open it".
+ *
+ * Absence is the one fault a green may absorb: a file the diff lists and the tree no longer holds
+ * was deleted, and there is nothing left to validate. Every other fault is a read that did not
+ * execute, so it proves nothing and must refuse — the same 404-vs-5xx split `codes.ts` states for
+ * {@link ZERO_SCOPE} against {@link PRECONDITION_UNKNOWN}. One `catchTag("PlatformError")` fused
+ * them and skipped both, so a permission or IO fault dropped a file out of validation while
+ * `unvalidated` stayed empty (#5304).
+ *
+ * `reason._tag === "NotFound"` is the proof, not a guess: `@effect/platform-node-shared`'s
+ * `handleErrnoException` maps `ENOENT` to `NotFound` and `EACCES` to `PermissionDenied`, and
+ * effect's own `FileSystem.exists` narrows on this exact field.
+ */
+const readMarkdown = (
+	fs: FileSystem.FileSystem,
+	path: string,
+): Effect.Effect<MarkdownRead, never> =>
+	fs.readFileString(path).pipe(
+		Effect.map((text): MarkdownRead => ({_tag: "Read", text})),
+		Effect.catchTag("PlatformError", (error) =>
+			Effect.succeed<MarkdownRead>(
+				error.reason._tag === "NotFound"
+					? {_tag: "Absent"}
+					: {_tag: "Unreadable", reason: error.reason._tag},
+			),
+		),
+	);
+
 export const runCheck = (
 	options: CheckOptions,
 ): Effect.Effect<
@@ -320,18 +370,18 @@ export const runCheck = (
 		const defects: string[] = [];
 		for (const file of markdown) {
 			const path = `${lane.root}/${file}`;
-			const text = yield* fs.readFileString(path).pipe(
-				Effect.map((t) => ({ok: true, t}) as {ok: boolean; t: string}),
-				Effect.catchTag("PlatformError", () => Effect.succeed({ok: false, t: ""})),
-			);
-			if (!text.ok) continue; // a deleted file has nothing to validate; the diff still counted it.
-			if (surface !== "prose") {
-				defects.push(...planDefects(file, text.t));
-				continue;
+			const read = yield* readMarkdown(fs, path);
+			if (read._tag === "Absent") continue;
+			if (read._tag === "Unreadable") {
+				return refuse(
+					PRECONDITION_UNKNOWN,
+					`${VERB}: cannot read ${file} (${read.reason}) — it is in the diff and is not absent, so the verdict is UNKNOWN, never green.`,
+					noted,
+				);
 			}
-			defects.push(...leakDefects(file, text.t));
+			defects.push(...leakDefects(file, read.text));
 			const dir = path.slice(0, path.lastIndexOf("/"));
-			for (const target of linkTargets(text.t)) {
+			for (const target of linkTargets(read.text)) {
 				const absolute = normalizePath(
 					target.startsWith("/") ? `${lane.root}${target}` : `${dir}/${target}`,
 				);
@@ -340,6 +390,7 @@ export const runCheck = (
 					.pipe(Effect.catchTag("PlatformError", () => Effect.succeed(false)));
 				if (!there) defects.push(`${file} links to "${target}", which does not resolve`);
 			}
+			if (surface === "plan") defects.push(...planDefects(file, read.text));
 		}
 		if (defects.length > 0) {
 			return refuse(
@@ -353,7 +404,7 @@ export const runCheck = (
 				verdict: "green",
 				surface,
 				tree: lane.root,
-				ran: [surface === "prose" ? "markdown link + leak scan" : "## Dependencies grammar"],
+				ran: surface === "plan" ? [MARKDOWN_SCAN, PLAN_GRAMMAR] : [MARKDOWN_SCAN],
 				unvalidated,
 			}),
 			noted,

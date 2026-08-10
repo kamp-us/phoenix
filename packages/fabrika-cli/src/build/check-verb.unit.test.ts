@@ -49,11 +49,12 @@ const run = (
 	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
 	overrides: Partial<typeof options> = {},
 	files: Record<string, string> = {},
+	unreadable: ReadonlyArray<string> = [],
 ) =>
 	Effect.runPromise(
 		Effect.provide(
 			runCheck({...options, ...overrides}),
-			Layer.merge(fakeShell(script).layer, fakeFs({files}).layer),
+			Layer.merge(fakeShell(script).layer, fakeFs({files, unreadable}).layer),
 		),
 	);
 
@@ -429,7 +430,85 @@ describe("a mixed code+markdown diff — every surface has a runnable answer", (
 		);
 		expect(out.code).toBe(0);
 		const verdict = JSON.parse(out.stdout);
-		expect(verdict.ran).toEqual(["## Dependencies grammar"]);
+		expect(verdict.ran).toEqual(["markdown link + leak scan", "## Dependencies grammar"]);
 		expect(verdict.unvalidated).toEqual(["apps/web/src/App.tsx"]);
+	});
+});
+
+// #5304, hole 1. `catchTag("PlatformError")` caught every platform fault and `continue` skipped the
+// file, so a permission or IO fault left `unvalidated` empty over a file nothing opened.
+describe("a changed markdown file the verb cannot open", () => {
+	const GUIDE = "/repo/trees/lane-a/docs/guide.md";
+
+	it("refuses on 11 under --surface prose, naming the file and the reason", async () => {
+		const out = await run([...LANE_OK, [DIFF, okOut("docs/guide.md\n")]], {surface: "prose"}, {}, [
+			GUIDE,
+		]);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toBe(
+			"build check: cannot read docs/guide.md (PermissionDenied) — it is in the diff and is not absent, so the verdict is UNKNOWN, never green.",
+		);
+	});
+
+	it("refuses on 11 under --surface plan too — the same read, the same polarity", async () => {
+		const out = await run([...LANE_OK, [DIFF, okOut("plans/epic.md\n")]], {surface: "plan"}, {}, [
+			"/repo/trees/lane-a/plans/epic.md",
+		]);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stdout).toBe("");
+	});
+
+	it("still greens over a file the diff lists and the tree no longer holds", async () => {
+		const out = await run(
+			[...LANE_OK, [DIFF, okOut("docs/gone.md\ndocs/here.md\n")]],
+			{surface: "prose"},
+			{"/repo/trees/lane-a/docs/here.md": "nothing to resolve here\n"},
+		);
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).unvalidated).toEqual([]);
+	});
+});
+
+// #5304, hole 2. `prose` and `plan` both claim the `markdown` class; the claim is only true while
+// both run every validator that class gets, so `plan` runs the leak scan and the link resolver on
+// top of the grammar rather than instead of it.
+describe("--surface plan covers the markdown class it claims", () => {
+	it("reds a plan ledger carrying a machine-local path", async () => {
+		const out = await run(
+			[...LANE_OK, [DIFF, okOut("plans/epic.md\n")]],
+			{surface: "plan"},
+			{
+				"/repo/trees/lane-a/plans/epic.md":
+					"## Dependencies\n\n- phase 1: #12\n\nRun it from /Users/someone/phoenix\n",
+			},
+		);
+		expect(out.code).toBe(VALIDATION_RED);
+		expect(out.stderr.some((line) => line.includes("machine-local path"))).toBe(true);
+	});
+
+	it("reds a plan ledger whose relative link does not resolve", async () => {
+		const out = await run(
+			[...LANE_OK, [DIFF, okOut("plans/epic.md\n")]],
+			{surface: "plan"},
+			{
+				"/repo/trees/lane-a/plans/epic.md":
+					"## Dependencies\n\n- phase 1: #12\n\nsee [the brief](./missing.md)\n",
+			},
+		);
+		expect(out.code).toBe(VALIDATION_RED);
+		expect(out.stderr.some((line) => line.includes("does not resolve"))).toBe(true);
+	});
+
+	it("earns its empty unvalidated list — the green names both validators that ran", async () => {
+		const out = await run(
+			[...LANE_OK, [DIFF, okOut("plans/epic.md\n")]],
+			{surface: "plan"},
+			{"/repo/trees/lane-a/plans/epic.md": "## Dependencies\n\n- phase 1: #12\n"},
+		);
+		expect(out.code).toBe(0);
+		const verdict = JSON.parse(out.stdout);
+		expect(verdict.unvalidated).toEqual([]);
+		expect(verdict.ran).toEqual(["markdown link + leak scan", "## Dependencies grammar"]);
 	});
 });
