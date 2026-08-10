@@ -826,6 +826,27 @@ else.
   the days-scale expectation from the [#4637](https://github.com/kamp-us/phoenix/issues/4637)
   ruling, and how a case is corrected rather than rewritten.
 
+## `dispersion` and the two-week decline criterion ([#4766](https://github.com/kamp-us/phoenix/issues/4766))
+
+Both values the graded axis (#4678) and the trend co-gate (#4680) depend on are specified in ADR
+[0252](../../../../.decisions/0252-grading-chain-dispersion-and-decline-criterion.md); build the
+arithmetic from there, not from the issue bodies, which still state it in prose.
+
+- **`dispersion`** is `min(passed, runs − passed)` over the graded axis's five runs — an integer
+  count of minority verdicts, `0`–`2` at five runs. It rides the eval-result artifact and the
+  scorecard row beside `runs` and `passed`, and it **gates nothing**.
+- **A "two-week decline"** is, on one `(stage × surface × model)` cell's pass-rate series over the
+  committed scorecards: a mean drop of **more than** `0.05` between two non-overlapping 7-day halves
+  of the trailing 14 days, with at least 3 points in each half. Fewer points is `insufficient-data` —
+  a third answer, never `steady`. Both clauses are strict: one regressing case out of twenty is a
+  drop of exactly `0.05` and is `steady`, so compare the rounded (4dp) difference with `>`, not `≥`.
+- **You cannot build the trend read yet.** Ordering the series needs a per-scorecard timestamp and
+  `Scorecard` (`report.ts`) carries none. ADR 0252 names `recordedAt` as the spelling for the date
+  pin #4680's AC1 must add; until that lands, the criterion is specified but not computable.
+- **The co-gate ships observe-only.** #4681's `below-bar` reds on the 90% bar alone; the trend
+  answer is advisory until a later ADR arms it against a real recorded series (the founder guardrail
+  on #4766).
+
 ## Out of scope
 
 **Making the tiering call** is [#1576](https://github.com/kamp-us/phoenix/issues/1576), a
