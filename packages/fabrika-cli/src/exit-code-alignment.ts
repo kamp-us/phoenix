@@ -127,6 +127,20 @@ export const GRILL_SEATS: SharedSeats = {
 export const HANDOFF_SEATS: SharedSeats = GRILL_SEATS;
 
 /**
+ * `glossary`'s seats: `build`'s nine minus the two leak seats.
+ *
+ * The group deliberately claims neither `5` nor `6`: machine-local paths in a register are decided by
+ * the merge-blocking leak gate over changed markdown, and dead internal links by the repo-wide link
+ * gate, and a second answer here could report clean while one of those reds. `5` carries
+ * {@link GAP_EXPORT} in the group's table and `6` is held by prose alone, so the private-code check
+ * reads both as occupied by the base.
+ */
+export const GLOSSARY_SEATS: SharedSeats = (() => {
+	const {LEAKED_PATH: _leak, BARE_AT_PATH: _bare, ...rest} = BUILD_SEATS;
+	return rest;
+})();
+
+/**
  * `hook`'s seats: one. It shares only `EMPTY_STDIN` — the same fact, an fd 0 read that held nothing
  * — and everything else it speaks is about a harness envelope rather than about a write, so its two
  * private codes sit above the base's whole table instead of claiming a seat in it.
@@ -217,6 +231,7 @@ export const ALIGNED_GROUPS: Readonly<Record<string, SharedSeats>> = {
 	governance: GOVERNANCE_SEATS,
 	hook: HOOK_SEATS,
 	epic: BUILD_SEATS,
+	glossary: GLOSSARY_SEATS,
 	grill: GRILL_SEATS,
 	handoff: HANDOFF_SEATS,
 	ledger: BUILD_SEATS,

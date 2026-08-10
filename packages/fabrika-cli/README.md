@@ -515,6 +515,53 @@ This group applies no label, closes nothing, opens no pull request, emits no ver
 pushes nothing. Nothing it records can block a merge — a session state that gated one would make
 every interrupted session a blocked one.
 
+## The `glossary` group
+
+The contract is
+[`claude-plugins/fabrika/skills/glossary/contract.md`](../../claude-plugins/fabrika/skills/glossary/contract.md).
+A **register** is one of the two markdown files the repo's canonical vocabulary lives in —
+`.glossary/TERMS.md` for the domain nouns and `.glossary/LANGUAGE.md` for the architecture
+vocabulary — and every verb here resolves it against the **target** repo's root, never against the
+installed plugin.
+
+| Verb | Answers |
+|---|---|
+| `glossary init` | creates a register that does not exist, so a fresh repo is not a dead end |
+| `glossary drift` | the surfaces that moved since a register last changed, and the candidate coinages in them |
+| `glossary lookup` | whether a term is already declared, and what overlaps it |
+| `glossary sections` | the live section names of a register, and each one's row count |
+| `glossary add` | inserts or replaces one row, alphabetically placed and byte-preserving elsewhere |
+| `glossary check` | row-shape, duplicate-key, cross-register, ordering and citation-liveness defects |
+
+Five properties are worth knowing before you call them:
+
+- **Absent and present-and-empty are different facts and never share a code.** An absent register
+  is `bootstrap` on exit `0` — day one in an adopting repo
+  ([#4776](https://github.com/kamp-us/phoenix/issues/4776)) — while a register that is present and
+  holds zero rows reds `check` on `7`, because a scan of nothing must never report `clean`
+  (ADR [0092](../../.decisions/0092-gates-fail-closed-on-zero-scope.md)). A register that could not
+  be *read* is `11` throughout.
+- **The whole first cell is one key.** `Database (tag)` and `tag` are different terms that
+  *overlap*; a parenthetical is a disambiguating qualifier, not an alias, and splitting one produced
+  three false duplicates the last time it was tried
+  ([#4206](https://github.com/kamp-us/phoenix/issues/4206)). `lookup` reports the overlap and leaves
+  the judgement to the skill.
+- **`add` changes one line and proves it.** It asserts the composed text differs from the original in
+  exactly its own splice before writing (`15` aborts with nothing written), then re-reads the row
+  that landed and refuses on `9` when it is not what was composed — a different fact from a write
+  that failed, which is `8`.
+- **Suppression is equality on the normalized key.** v1 suppressed a drift candidate when a declared
+  term contained it *or* it contained a declared term, which against a 226-row register measured
+  about 10% precision ([#4481](https://github.com/kamp-us/phoenix/issues/4481)). And the tokenizer is
+  Unicode-classed rather than ASCII, so the Turkish product nouns the glossary exists for are visible
+  at all.
+- **Two defect classes are deliberately not computed.** Machine-local paths in a register and dead
+  internal links are each decided by a merge-blocking gate, so `check` states the expectation and
+  leaves the verdict where it is enforced — a second answer could report `clean` while the gate reds.
+  Exit seats `5` and `6` are held empty for exactly that reason rather than left unallocated.
+
+This group reaches no network and touches no GitHub artifact: every read is the local tree. It gates
+no merge and emits no verdict, so it registers in no verdict namespace and no wire format.
 ## The `governance` group
 
 The contract is

@@ -53,8 +53,12 @@ export interface SweepResult {
 /**
  * A plain English stopword list. Repo-generic jargon needs no list — a term every record uses
  * has an inverse document frequency near zero and contributes nothing to a score on its own.
+ *
+ * Exported because `../glossary/candidates.ts` filters against the same set: two term-extraction
+ * surfaces that each carried their own copy would drift apart. It imports **this and nothing else**
+ * — {@link tokenize} beside it is ASCII-only, which is the defect the drift verb exists to avoid.
  */
-const STOPWORDS = new Set(
+export const STOPWORDS = new Set(
 	`a about above after again against all also although always am an and any are as at be because
 	been before being below between both but by can cannot could did do does doing done down during
 	each either else even ever every few for from further had has have having her here hers him his
