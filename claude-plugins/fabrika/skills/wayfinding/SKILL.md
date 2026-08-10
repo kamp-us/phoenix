@@ -308,11 +308,14 @@ never anything to push, leave local, or remove.
   and the run names the open decisions so he can answer without reading the map.
 - `FRONTIER-CLEAR` — `map read` at `0` reporting `clear`. The natural next step is the model firing
   `graduate` to synthesize one spec issue.
-- `NOT-FOG` — the destination is a deliverable, not fog. Fire the `report` Skill and stop. Reached
-  two ways, and **say which**: `map open` refused with `17`, or you read the board yourself, every
-  question was already settled, and you never called it. The second is the route step 1 prescribes
-  when the evidence is already in front of you, and it is not a lesser ending — but a terminal
-  naming an exit code you never observed is a claim you cannot support, so state the basis you have.
+- `NOT-FOG` — the destination is not fog. Reached **three ways**, and **say which**, because the
+  action differs: `map open` refused with `17`, or you read the board yourself and every question was
+  already settled and you never called it — both mean a deliverable, so fire the `report` Skill and
+  stop; or you read the board and exactly one question survived, below the two-or-more-independent-
+  frontier-tickets threshold, so you refused to chart — that one is work for the smallest path, so it
+  routes to `grilling`, not `report` (step 1). A route you read yourself is not a lesser ending — but
+  a terminal naming an exit code you never observed is a claim you cannot support, so state the basis
+  you have.
 - `ALREADY-DESCOPED` — the direction is on the record as rejected. Relay the recorded reasoning.
   Same two routes — `19` from a verb, or your own read of `map read`'s `outOfScope` entries; name
   which. Never re-descope a rejection under fresh wording: a second entry for one rejection cannot
