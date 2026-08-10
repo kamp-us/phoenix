@@ -310,7 +310,7 @@ that test belongs in the skill, not the CLI.
 
 ### Completeness test
 
-A spec is complete when all seven hold. Each is checkable by reading the spec alone, which is the
+A spec is complete when all eight hold. Each is checkable by reading the spec alone, which is the
 point: an implementer can tell an unfinished spec from a finished one before starting.
 
 1. Every flag has a type and, if optional, a default.
@@ -334,6 +334,24 @@ point: an implementer can tell an unfinished spec from a finished one before sta
    [0247](../../../.decisions/0247-a-spec-example-value-is-derivable-or-absent.md)). An example that
    *looks* verifiable and is not is worse than no example, because a reader treats the number as a
    contract.
+8. **Every outcome the verb can reach has a code.** Walk the verb's *states* and check each one names
+   a code. This is check 3 run backwards — 3 walks the codes and asks what produces each, so it can
+   only see what the spec already wrote down, and a state the spec never mentioned is invisible to it.
+
+   A reachable state no row names does not stay merely undocumented. It lands on `1`, which rule 3
+   reserves for a failure to invoke, so the spec's silence hands the caller a **proven** refusal it
+   cannot tell from a broken binary — or it pushes the implementer into minting a number the spec
+   never assigned, after which two implementations of one spec disagree about what that number means.
+   `adr next` and `adr resolve` were specified with a code for an unfetchable `--base` and a code for
+   a `--dir` that read empty, and none for the `--dir` that could not be read at all; the spec passed
+   checks 1–6, and the state shipped on `1`
+   ([#4736](https://github.com/kamp-us/phoenix/issues/4736) — the verdict-versus-invocation collision
+   of [#4208](https://github.com/kamp-us/phoenix/issues/4208) /
+   [#4219](https://github.com/kamp-us/phoenix/issues/4219)).
+
+   Checks 7 and 8 are the **outcome-completeness** pair, and they are the two directions the presence
+   tests cannot cover: 7 that the spec derives every value it prints, 8 that it names every outcome it
+   can reach.
 
 ### Worked example
 
