@@ -40,6 +40,7 @@ does not exist yet — rather than missing; check the registry before assuming a
 | `acceptance-criteria` | [`packages/fabrika-cli/src/wire/acceptance-criteria.ts`](../../../packages/fabrika-cli/src/wire/acceptance-criteria.ts) | `triage`, `build-epic` | `build`, `review` |
 | `verdict-marker` | [`packages/fabrika-cli/src/wire/verdict-marker.ts`](../../../packages/fabrika-cli/src/wire/verdict-marker.ts) | `review`, `check-epic-plan` | `build`, `ship` |
 | `slice-handoff` | [`packages/fabrika-cli/src/wire/slice-handoff.ts`](../../../packages/fabrika-cli/src/wire/slice-handoff.ts) | `build-epic` | `build` |
+| `map-ticket` | [`packages/fabrika-cli/src/wire/map-ticket.ts`](../../../packages/fabrika-cli/src/wire/map-ticket.ts) | `map` | `map` |
 <!-- fabrika:wire-index:end -->
 
 ### `acceptance-criteria`
@@ -78,6 +79,20 @@ own words from someone else's. So the section set is closed and the rules text i
 module, and a brief carrying anything outside them reads as drifted rather than as a brief with
 extra advice. Its paths are machine-local by construction, which is also why a brief is consumed in
 session and never posted to a public surface.
+
+### `map-ticket`
+
+This is how a wayfinding frontier ticket says which map it belongs to. The load-bearing field is the
+map number, and it is load-bearing because the alternative already exists and is not trustworthy: a
+ticket is linked to its map by a native sub-issue edge, and **anyone with write access can add that
+edge to anything**. A reader that derived the frontier from edges alone would count a stranger's
+issue as one of the map's open questions, and it would look perfectly well-formed doing it. So the
+marker is the claim and the edge is only the link; a ticket whose marker names a different map is
+disregarded with the mismatch reported, not silently dropped and not silently counted.
+
+The nonce is the filing run's, not a session's, for the reason recorded at #5028 and #4516: a
+session id is pane-constant and shared across sibling subagents, so two lanes of one charting run
+would key onto one namespace and each would read the other's marker as its own.
 
 ## Adding a format
 

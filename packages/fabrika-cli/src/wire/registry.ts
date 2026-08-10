@@ -20,6 +20,7 @@
  */
 import * as acceptanceCriteria from "./acceptance-criteria.ts";
 import {brandWitnesses, type WireFormat} from "./format.ts";
+import * as mapTicket from "./map-ticket.ts";
 import * as sliceHandoff from "./slice-handoff.ts";
 import * as verdictMarker from "./verdict-marker.ts";
 
@@ -136,6 +137,38 @@ export const registeredFormats: ReadonlyArray<WireFormat> = [
 			],
 		},
 		brands: brandWitnesses<sliceHandoff.SliceHandoff>({id: true, branch: true, base: true}),
+	},
+	{
+		key: "map-ticket",
+		purpose:
+			"the first line of a wayfinding frontier ticket's opening comment — the map it belongs to, what clears it, and the run nonce that filed it",
+		module: "packages/fabrika-cli/src/wire/map-ticket.ts",
+		producers: ["map"],
+		consumers: ["map"],
+		emit: mapTicket.emitFromFields,
+		read: mapTicket.readToLines,
+		fixtures: {
+			roundTrip: {
+				fields: "map: 9140\nkind: research\nnonce: 7f3a9c21\n",
+				values: ["9140", "research", "7f3a9c21"],
+			},
+			absent: "Picking this one up — will report back once the source read lands.\n",
+			malformed: [
+				{
+					drift: "the kind is off the closed set",
+					artifact: "map-ticket: #9140 · investigation · 7f3a9c21\n",
+				},
+				{
+					drift: "the lane key is a human-readable label two runs would collide on",
+					artifact: "map-ticket: #9140 · research · run-1\n",
+				},
+				{
+					drift: "the map field is missing, so the ticket names no map",
+					artifact: "map-ticket: research · 7f3a9c21\n",
+				},
+			],
+		},
+		brands: brandWitnesses<mapTicket.MapTicketMarker>({kind: true, nonce: true}),
 	},
 ];
 

@@ -8,7 +8,8 @@ contract specifies; `build`, the fourteen the `/build` contract specifies; `epic
 eight the `/build-epic` contract specifies; `plan`, the epic-plan gate's; `review`, the eight
 the `/review` contract specifies; `review-ui`, the three the `/review-ui` contract specifies
 (capture a PR's preview, emit the `review-ui` verdict, or post a typed blocker note);
-`ship`, the thirteen the `/ship` contract specifies; `eval`, the graded-corpus
+`ship`, the thirteen the `/ship` contract specifies; `map`, the eight the `/wayfinding`
+contract specifies (chart one destination's fog, and drain its frontier); `eval`, the graded-corpus
 harness the fabrika eval layer measures itself with; `spend`, what one fabrika run cost in
 tokens; `wire`, which owns the byte-level formats two skills meet through on a GitHub
 artifact; `status`, the six the `/fabrika` front door's contract specifies (what state the
@@ -353,6 +354,48 @@ lane verb does not.
   loop: a SHA is content-addressed, so an amend or rebase makes the old verdict `unbindable`
   against the new graph rather than quietly stale, and `status` re-derives every binding against
   the live graph on each read.
+
+## The `map` group
+
+Charting one destination's fog. The group implements
+[`claude-plugins/fabrika/skills/wayfinding/contract.md`](../../claude-plugins/fabrika/skills/wayfinding/contract.md).
+The map is a GitHub issue carrying `wayfinding:map`; its frontier is that issue's **sub-issues**,
+and the topology between them is GitHub's **native issue-dependency edges** — never prose in a body.
+
+| Verb | What it answers |
+|---|---|
+| `map open` | the map for a destination — minted or resumed, refusing one that is not fog |
+| `map read` | the whole state: five sections, one row per frontier ticket, the frontier token, the digest |
+| `map ticket` | one frontier ticket, filed and linked and edged and spliced onto the map, as one act |
+| `map lane` | a research lane on one ticket, claimed under this run's nonce |
+| `map finding` | a lane closed with an outcome from a closed set of three |
+| `map fork` | where a question is being answered instead — a `grilling` session or a `prototyping` spike |
+| `map record` | the lockstep: the answer under `## Decisions`, the row off the frontier, the ticket closed |
+| `map descope` | a rejected direction appended to the never-graduating out-of-scope section |
+
+- **A line's section is not its state.** State is resolved from the ticket's marker, its `state` on
+  GitHub and its edges; the body rows are re-rendered from that answer
+  ([`src/map/frontier.ts`](./src/map/frontier.ts)). v1 encoded state as which heading a bullet sat
+  under, in a body no shipped tool wrote, and then had to read "tolerantly" to cope with its own
+  drift.
+- **All four frontier tokens exit `0`.** `awaiting-founder`, `lanes-pending`, `clear` and `empty` are
+  four answers. A frontier holding open questions is the skill working, and seating it on a non-zero
+  code would make `[ $? -ne 0 ]` read "the fog is not cleared yet" as "the verb never ran".
+- **Every body write is a compare-and-set slice.** `--digest` guards the write and the write replaces
+  one section's bytes, so a concurrent edit to another section survives even when the guard admits
+  the write ([`src/map/body.ts`](./src/map/body.ts)).
+- **Lane traffic goes to the ticket, never to the map body.** `map finding` writes a comment and
+  releases the lane; only `map record` touches the body, so a parallel burndown sees one body write
+  per *resolution* rather than one per lane event.
+- **The lane key is the caller's run nonce**, eight lowercase hex, passed explicitly. A session id is
+  pane-constant and shared across sibling subagents, so two lanes of one run would key onto one
+  namespace and each would read the other's claim as its own.
+- **A `404` on a dependency read is a verdict about the issue, not about its edges**
+  ([`src/io/edges.ts`](./src/io/edges.ts)). Every edge read is preceded by an existence read, every
+  list pages, and an empty read that cannot be *proven* empty is `11` — never an empty frontier.
+- **`10` is a deliberate gap.** No `map` verb accepts a label flag or writes a classification, so the
+  base's `10` is unreachable here rather than merely unused
+  ([`src/map/codes.ts`](./src/map/codes.ts)).
 
 ## The `wire` group
 

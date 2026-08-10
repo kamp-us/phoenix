@@ -130,6 +130,19 @@ export const SPEND_SEATS: SharedSeats = {
 	INPUT_UNREADABLE: "PRECONDITION_UNKNOWN",
 };
 
+/**
+ * `map`'s seats: `build`'s nine minus the classification seat, under the base's own names.
+ *
+ * None of the shipped maps fits, which is why this one is written rather than reused: the eight-seat
+ * maps key on `ZERO_SCOPE` and `OFF_VOCABULARY`, `HOOK_SEATS` shares only the stdin seat, and `map`
+ * names `7` `NO_TARGET` and holds `10` as `DELIBERATE_GAP` — no `map` verb accepts a label flag or
+ * writes a classification, so the base's `10` is unreachable here and cannot be claimed at all.
+ */
+export const MAP_SEATS: SharedSeats = (() => {
+	const {OFF_VOCABULARY: _classified, ZERO_SCOPE: _zero, ...rest} = BUILD_SEATS;
+	return {...rest, NO_TARGET: "NO_TARGET"};
+})();
+
 /** The groups that align to {@link ALIGNMENT_BASE}, each with the seats it claims to share. */
 export const ALIGNED_GROUPS: Readonly<Record<string, SharedSeats>> = {
 	adr: ADR_SEATS,
@@ -138,6 +151,7 @@ export const ALIGNED_GROUPS: Readonly<Record<string, SharedSeats>> = {
 	hook: HOOK_SEATS,
 	epic: BUILD_SEATS,
 	ledger: BUILD_SEATS,
+	map: MAP_SEATS,
 	plan: BUILD_SEATS,
 	triage: SHARED_SEATS,
 	review: SHARED_SEATS,
