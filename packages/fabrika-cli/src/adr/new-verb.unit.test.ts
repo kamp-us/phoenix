@@ -1,7 +1,9 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {type FakeFs, fakeFs} from "../fakes.test-support.ts";
-import {ALREADY_EXISTS, BAD_ARGUMENT, type NewOptions, runNew} from "./new-verb.ts";
+import {FAILED} from "../verb.ts";
+import {ALREADY_EXISTS} from "./codes.ts";
+import {type NewOptions, runNew} from "./new-verb.ts";
 
 const options: NewOptions = {
 	id: "0240",
@@ -50,13 +52,13 @@ describe("runNew", () => {
 
 	it("refuses an id that is not four zero-padded digits", async () => {
 		const out = await run(fakeFs({}), {id: "240"});
-		expect(out.code).toBe(BAD_ARGUMENT);
+		expect(out.code).toBe(FAILED);
 		expect(out.stderr.at(-1)).toBe('adr new: id "240" is not four zero-padded digits.');
 	});
 
 	it("refuses a slug that is not kebab-case", async () => {
 		const out = await run(fakeFs({}), {slug: "Not Kebab"});
-		expect(out.code).toBe(BAD_ARGUMENT);
+		expect(out.code).toBe(FAILED);
 		expect(out.stderr.at(-1)).toContain("is not kebab-case");
 	});
 

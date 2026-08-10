@@ -3,7 +3,8 @@ import {fileURLToPath} from "node:url";
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {type FakeFs, fakeFs} from "../fakes.test-support.ts";
-import {NO_BILLED_TURNS, runRead, TRANSCRIPT_ABSENT, TRANSCRIPT_UNREADABLE} from "./read-verb.ts";
+import {INPUT_ABSENT, INPUT_UNREADABLE, NOTHING_MEASURED} from "./codes.ts";
+import {runRead} from "./read-verb.ts";
 import {reconstructSpend} from "./token-spend.ts";
 
 const PATH = "/runs/one-ruler.jsonl";
@@ -91,7 +92,7 @@ describe("spend read — the refusals", () => {
 	it("refuses a transcript that is provably not there, with empty stdout", async () => {
 		const out = await run(fakeFs({files: {}}));
 
-		expect(out.code).toBe(TRANSCRIPT_ABSENT);
+		expect(out.code).toBe(INPUT_ABSENT);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toContain(PATH);
 	});
@@ -99,21 +100,21 @@ describe("spend read — the refusals", () => {
 	it("refuses an unreadable transcript as UNKNOWN, never as absent and never as a zero", async () => {
 		const out = await run(fakeFs({files: {[PATH]: null}, unprobeable: [PATH]}));
 
-		expect(out.code).toBe(TRANSCRIPT_UNREADABLE);
+		expect(out.code).toBe(INPUT_UNREADABLE);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toContain("UNKNOWN");
 	});
 
 	it("seats both unreadable states above the reserved codes, distinct from each other", () => {
-		expect(TRANSCRIPT_ABSENT).toBeGreaterThanOrEqual(3);
-		expect(TRANSCRIPT_UNREADABLE).toBeGreaterThanOrEqual(3);
-		expect(new Set([TRANSCRIPT_ABSENT, TRANSCRIPT_UNREADABLE, NO_BILLED_TURNS]).size).toBe(3);
+		expect(INPUT_ABSENT).toBeGreaterThanOrEqual(3);
+		expect(INPUT_UNREADABLE).toBeGreaterThanOrEqual(3);
+		expect(new Set([INPUT_ABSENT, INPUT_UNREADABLE, NOTHING_MEASURED]).size).toBe(3);
 	});
 
 	it("refuses a transcript with zero billed assistant turns as its own state", async () => {
 		const out = await run(withText('{"type":"summary"}'));
 
-		expect(out.code).toBe(NO_BILLED_TURNS);
+		expect(out.code).toBe(NOTHING_MEASURED);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toContain("zero billed assistant turns");
 	});
@@ -121,14 +122,14 @@ describe("spend read — the refusals", () => {
 	it("refuses an empty transcript the same way — read in full, nothing billed", async () => {
 		const out = await run(withText(""));
 
-		expect(out.code).toBe(NO_BILLED_TURNS);
+		expect(out.code).toBe(NOTHING_MEASURED);
 		expect(out.stdout).toBe("");
 	});
 
 	it("refuses under --json too — a refusal never puts a payload on stdout", async () => {
 		const out = await run(withText('{"type":"summary"}'), true);
 
-		expect(out.code).toBe(NO_BILLED_TURNS);
+		expect(out.code).toBe(NOTHING_MEASURED);
 		expect(out.stdout).toBe("");
 	});
 });

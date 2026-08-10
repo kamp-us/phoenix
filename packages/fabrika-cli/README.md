@@ -177,7 +177,7 @@ Three behaviours are worth knowing before you call them:
   and citing one as settled law is the failure this split exists to prevent.
 - **`supersede` / `amend-in-part` assert a one-line diff before writing.** An accepted ADR's
   decision text is immutable, so a rewrite that would touch any line but `status:` aborts
-  with exit 6 and writes nothing.
+  with exit 15 and writes nothing.
 
 ## The `report` group
 

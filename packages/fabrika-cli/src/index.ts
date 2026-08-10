@@ -2,11 +2,12 @@
  * The package's library surface: the pure verb cores, so a consumer (or a test) can compute an
  * outcome without spawning the bin. The CLI itself is `bin.ts`.
  *
- * The verbs are exported as namespaces, not flattened: each one owns a set of exit-code constants
- * whose *names* deliberately repeat across verbs (`ZERO_SCOPE`, `NO_SUBJECT`), because the contract
- * assigns each verb its own codes. Flattening would collide them.
+ * The verbs are exported as namespaces, not flattened: a name means one thing inside its group and
+ * carries no cross-group uniqueness obligation, so flattening would collide two groups' tables.
+ * Within a group the codes come from one `<group>/codes.ts` (#5294).
  */
 export * as BaseRef from "./adr/base-ref.ts";
+export * as AdrCodes from "./adr/codes.ts";
 export * as AdrNew from "./adr/new-verb.ts";
 export * as Allocation from "./adr/next.ts";
 export * as AdrNext from "./adr/next-verb.ts";

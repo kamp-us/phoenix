@@ -57,7 +57,32 @@ Every verb below obeys these; they are stated once rather than repeated per bloc
   from the `origin` remote) is the repository whose open pull requests form the in-flight set.
   `--json` swaps the line grammar for one JSON object with the named keys given per verb.
 - **Reserved exit codes.** `0` = the answer is on stdout. `1` = usage error, or the verb failed to
-  run. `127` = the verb never ran. `3` and up are each verb's own proven outcomes.
+  run. `127` = the verb never ran. `3` and up are proven outcomes.
+- **One exit table for the whole group.** Every verb allocates from
+  [`adr/codes.ts`](../../../../packages/fabrika-cli/src/adr/codes.ts), so a code means one thing
+  whichever verb produced it. Each verb's block below lists only the codes it can reach; none of them
+  re-seats a number.
+
+  | Code | Meaning | next | resolve | new | supersede / amend-in-part | sweep |
+  |---|---|:--:|:--:|:--:|:--:|:--:|
+  | `0` | the answer is on stdout | ✓ | ✓ | ✓ | ✓ | ✓ |
+  | `1` | usage error, or the verb failed to run | ✓ | ✓ | ✓ | ✓ | ✓ |
+  | `7` | the record the caller named is not there | | | | ✓ | ✓ |
+  | `11` | the record directory could not be read, so the outcome is UNKNOWN | ✓ | ✓ | | | ✓ |
+  | `12` | the target path already exists — refused, never overwritten | | | ✓ | | |
+  | `13` | `--by` has no record under `--dir` | | | | ✓ | |
+  | `14` | `<id>` has no single rewritable `status:` line | | | | ✓ | |
+  | `15` | the rewrite would have touched another line — nothing written | | | | ✓ | |
+  | `16` | `<id>` is already `superseded by …` | | | | ✓ | |
+  | `17` | `--base` could not be fetched, so the merged set is UNKNOWN | ✓ | ✓ | | | |
+  | `18` | the open pull requests could not be enumerated | ✓ | ✓ | | | |
+
+  `7` and `11` are the two seats this group shares with `report`'s table, code for code, so a caller
+  driving both reads one meaning: the target is not there, and the read that would have proven it
+  failed. **`5` is a vacated seat, never a free one** — it meant "the record directory was read and
+  is empty, refusing" until #5254 and #5297 made that state an answer, and a new meaning there would
+  hand a caller pinned to the old reading a wrong answer under a familiar number. The group's own
+  band starts at `12`, which puts it out of reach.
 - **A non-zero exit is UNKNOWN.** No verb prints a partial or permissive answer on a non-zero exit;
   a caller reads the status before the bytes.
 - **GitHub access follows [skill conventions §11 — REST, never GraphQL](../../docs/skill-conventions.md#11-github-access-is-rest-never-graphql)**
@@ -100,13 +125,9 @@ first-free would answer `0238`.
 |---|---|
 | `0` | the id was produced on stdout |
 | `1` | usage error, or the verb failed to run |
-| `3` | `--base` could not be fetched, so the merged set is UNKNOWN |
-| `4` | the open pull requests could not be enumerated, so the in-flight set is UNKNOWN |
-| `6` | `--dir` could not be read at the fetched `--base`, so the merged set is UNKNOWN |
-
-`5` is a **vacated** seat, not a free one: it meant "read and empty — refusing" until #5254 made that
-state an answer, and re-seating a new meaning on it would hand a caller pinned to the old reading a
-wrong answer under a familiar number.
+| `11` | `--dir` could not be read at the fetched `--base`, so the merged set is UNKNOWN |
+| `17` | `--base` could not be fetched, so the merged set is UNKNOWN |
+| `18` | the open pull requests could not be enumerated, so the in-flight set is UNKNOWN |
 
 **Errors**
 
@@ -129,9 +150,9 @@ The two halves fail differently, and the difference is load-bearing:
   the merged set is read as `git ls-tree <base-sha>:<dir>`, which fails outright when `<dir>` is not
   in the tree, so a listing that comes back empty is a directory that **exists and holds nothing** —
   a repo adopting fabrika on day one. Only a directory that could not be read is UNKNOWN, and that is
-  exit `6`. The two states never share a code (#5254).
+  exit `11`. The two states never share a code (#5254).
 - **An empty in-flight set is a fact — but only on exit 0.** No open ADR pull request is a normal
-  state. An in-flight set that could not be read is exit 4 and prints nothing on stdout, because a
+  state. An in-flight set that could not be read is exit `18` and prints nothing on stdout, because a
   caller that reads an empty set as "nothing reserved" silently falls back to the on-disk id, which
   is exactly the collision this verb removes.
 
@@ -253,9 +274,8 @@ merge-time bookkeeping (`Closes #N`, blocks cleared, the vocabulary-impact outco
 | Code | Trigger |
 |---|---|
 | `0` | the file was written and its path is on stdout |
-| `1` | usage error, or the verb failed to run |
-| `3` | the target path already exists — refused, never overwritten |
-| `4` | `<id>` is not four digits, or `<slug>` is not kebab-case |
+| `1` | usage error, or the verb failed to run — including `<id>` that is not four digits and `<slug>` that is not kebab-case |
+| `12` | the target path already exists — refused, never overwritten |
 
 **Errors**
 
@@ -346,9 +366,9 @@ were enumerated, and no one holds this id. It is never what a failed read prints
 |---|---|
 | `0` | a state line was produced for every id given |
 | `1` | usage error, or the verb failed to run |
-| `3` | `--base` could not be fetched, so every state is UNKNOWN |
-| `4` | the open pull requests could not be enumerated, so `absent` cannot be distinguished from `in-flight` |
-| `6` | `--dir` could not be read at the fetched `--base`, so every state is UNKNOWN |
+| `11` | `--dir` could not be read at the fetched `--base`, so every state is UNKNOWN |
+| `17` | `--base` could not be fetched, so every state is UNKNOWN |
+| `18` | the open pull requests could not be enumerated, so `absent` cannot be distinguished from `in-flight` |
 
 `5` is vacated here for the same reason it is under `adr next`.
 
@@ -396,7 +416,7 @@ $ echo $?
 
 - #4296 — PR #4293 cited unlanded ADR 0219 and every gate passed on the dead citation. `in-flight` is
   a distinct state precisely so a caller can refuse to cite it.
-- #4163 — a review gate declared a merged ADR nonexistent. A stale tree must exit 3, never print
+- #4163 — a review gate declared a merged ADR nonexistent. A stale tree must exit `17`, never print
   `absent`.
 - #4338 — a stale checkout applied a withdrawn ADR 86 minutes after the withdrawal landed. The
   `detail` field carries the frontmatter `status:` verbatim, so a withdrawn or superseded ADR reads
@@ -445,7 +465,7 @@ The written value resolves `--by`'s slug **off disk**, never from its title:
 
 **The one-line invariant, enforced in code.** The verb reads the file, rewrites exactly the
 `status:` line, and asserts before writing that the resulting text differs from the original on that
-line alone. A diff of any other line is a bug and aborts the write with exit 6. An accepted ADR's
+line alone. A diff of any other line is a bug and aborts the write with exit `15`. An accepted ADR's
 decision text is immutable; the relationship is named in the *newer* ADR's `## Context`, which this
 verb never touches. This assertion is the deterministic test the implementation owes.
 
@@ -455,11 +475,11 @@ verb never touches. This assertion is the deterministic test the implementation 
 |---|---|
 | `0` | the status line was rewritten and the result is on stdout |
 | `1` | usage error, or the verb failed to run |
-| `3` | `<id>` has no record under `--dir` |
-| `4` | `--by` has no record under `--dir` — the link would be dead on arrival |
-| `5` | `<id>`'s frontmatter has no single rewritable `status:` line |
-| `6` | the rewrite would have changed a line other than `status:` — aborted before writing |
-| `7` | `<id>` is already `superseded by …`, so it is not amendable or re-supersedable |
+| `7` | `<id>` has no record under `--dir` |
+| `13` | `--by` has no record under `--dir` — the link would be dead on arrival |
+| `14` | `<id>`'s frontmatter has no single rewritable `status:` line |
+| `15` | the rewrite would have changed a line other than `status:` — aborted before writing |
+| `16` | `<id>` is already `superseded by …`, so it is not amendable or re-supersedable |
 
 **Errors**
 
@@ -498,7 +518,7 @@ $ echo $?
 **Grounding**
 
 - #1777 — the recurring dead-link FAIL. Resolving `--by`'s slug off disk, and refusing when it has no
-  record, is why exit 4 exists.
+  record, is why exit `13` exists.
 - ADR 0023's live status line — three appended `amended-in-part by` links prove the list is real and
   the append is not hypothetical.
 - The immutability rule: never edit an accepted ADR's decision text; supersede it, or amend it in
@@ -623,8 +643,8 @@ prefix and a terminating period, and no other rewording.
 |---|---|
 | `0` | an outcome token was produced on stdout |
 | `1` | usage error, or the verb failed to run |
-| `3` | the corpus could not be read, so the outcome is UNKNOWN |
-| `4` | `--new` names an id or path with no readable ADR |
+| `7` | `--new` names an id or path with no readable ADR |
+| `11` | the corpus could not be read, so the outcome is UNKNOWN |
 
 `5` is vacated here for the same reason it is under `adr next`.
 
@@ -644,8 +664,8 @@ count cannot tell that from a clean sweep.
 **A readable-but-empty `--dir` is that floor at its limit and answers `indeterminate`**, with the
 below-the-floor `reason` reading `0 record(s)`. It needs no case of its own: a corpus of nothing
 carries no information for the same reason a corpus of three does not. Only a corpus that could not
-be read is UNKNOWN, and that is exit `3`. Note `--new` still has to name a readable ADR — against an
-empty `--dir` an `NNNN` id form resolves to nothing and refuses `4`, so a fresh adopter passes the
+be read is UNKNOWN, and that is exit `11`. Note `--new` still has to name a readable ADR — against an
+empty `--dir` an `NNNN` id form resolves to nothing and refuses `7`, so a fresh adopter passes the
 path to their draft.
 
 **Examples**

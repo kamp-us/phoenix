@@ -112,11 +112,12 @@ exit taxonomy, and the verdict-vs-invocation rule proven in v1 at
   thing *within* its group and carries no cross-group uniqueness obligation.** Two shipped shapes are
   both correct, and a group picks by whether its verbs share refusal meanings:
 
-  - **Per verb, no shared table** — the `3`+ row above read literally. `adr` allocates each verb's
-    codes in that verb's own module and ships no `codes.ts`, so `3` is `BASE_UNFETCHABLE` under
-    `adr next`, `NO_SUBJECT` under `adr relate`, `ALREADY_EXISTS` under `adr new`, and
-    `CORPUS_UNREADABLE` under `adr sweep`.
-  - **Per group, one shared table** — `report`, `triage`, `review` and `wire` each ship a
+  - **Per verb, no shared table** — the `3`+ row above read literally. Permitted, and today shipped
+    nowhere: `adr` was the standing example until its five verbs seated `NO_SUBJECT` on two numbers
+    and `3` on four meanings, which is what the shape costs when a group's verbs *do* share refusal
+    meanings (#5294). What survives of it is `report dedup`, whose two codes sit outside its group's
+    table — the residue tracked by #5296.
+  - **Per group, one shared table** — `report`, `triage`, `review`, `adr`, `spend` and `wire` each ship a
     `<group>/codes.ts` that every verb in the group allocates from, so a code means one thing across
     the group whichever verb produced it. That is a **tightening** a group chooses, not a further
     obligation this rule imposes.

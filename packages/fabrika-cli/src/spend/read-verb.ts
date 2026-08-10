@@ -13,16 +13,10 @@
 import {Effect, type FileSystem, Result} from "effect";
 import {exists, readFile} from "../io/fs.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
+import {INPUT_ABSENT, INPUT_UNREADABLE, NOTHING_MEASURED} from "./codes.ts";
 import {classifyRunSpend, type StageSpend} from "./token-spend.ts";
 
 const VERB = "fabrika spend read";
-
-/** The path holds no transcript. A proven negative — the file is not there. */
-export const TRANSCRIPT_ABSENT = 3;
-/** The transcript could not be read, or its absence could not be established. UNKNOWN. */
-export const TRANSCRIPT_UNREADABLE = 4;
-/** The transcript was read in full and carries zero billed assistant turns. */
-export const NO_BILLED_TURNS = 5;
 
 export interface ReadOptions {
 	/** Path to the run's JSONL transcript. */
@@ -55,7 +49,7 @@ export const runRead = (
 			const probe = yield* Effect.result(exists(path));
 			if (Result.isFailure(probe) || probe.success) {
 				return refuse(
-					TRANSCRIPT_UNREADABLE,
+					INPUT_UNREADABLE,
 					`${VERB}: cannot read ${path}: ${text.failure.reason} — the spend is UNKNOWN, never zero.`,
 				);
 			}
@@ -63,11 +57,11 @@ export const runRead = (
 
 		const classified = classifyRunSpend(Result.isFailure(text) ? null : text.success);
 		if (classified._tag === "TranscriptMissing") {
-			return refuse(TRANSCRIPT_ABSENT, `${VERB}: no transcript at ${path} — nothing to measure.`);
+			return refuse(INPUT_ABSENT, `${VERB}: no transcript at ${path} — nothing to measure.`);
 		}
 		if (classified._tag === "NoBilledTurns") {
 			return refuse(
-				NO_BILLED_TURNS,
+				NOTHING_MEASURED,
 				`${VERB}: ${path} was read in full and carries zero billed assistant turns — a well-formed zero, not a measured spend.`,
 			);
 		}
