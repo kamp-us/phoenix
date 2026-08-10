@@ -36,6 +36,7 @@ const read = leafCommand(
 		yield* emit(yield* runRead({transcript, json}));
 	}),
 ).pipe(
+	Command.withShortDescription("One run's billed token spend, from its transcript."),
 	Command.withDescription(
 		"One run's billed token spend, reconstructed from its transcript (ADR 0112 §2). First stdout line is `spend\\t<billed>\\t<assistantTurns>`, then one `<field>\\t<value>` line each for input, cacheCreate, cacheRead, output, exCacheRead and model — the cache-read share stays its own number because it is the context-bloat signal. --json emits the same eight fields as an object. Exits 7 (no transcript at that path — a proven absence), 11 (the transcript could not be read, or its absence could not be established — the spend is UNKNOWN, never zero), 12 (read in full and carrying zero billed assistant turns — a well-formed zero, not a measured spend). No threshold, no budget flag, and no exit code that varies with a spend magnitude. Example: fabrika spend read agent-3f9c1d2b.jsonl",
 	),
@@ -79,6 +80,7 @@ const rollup = leafCommand(
 		);
 	}),
 ).pipe(
+	Command.withShortDescription("What fabrika's runs cost, from the durable spend ledger."),
 	Command.withDescription(
 		"What fabrika's runs cost, summed out of the durable spend ledger — the one command that answers it from persisted data, spawning nothing and re-parsing no transcript. stdout is one record per line, first field naming the kind: billed, exCacheRead, assistantTurns, runs, measuredRuns, then skipped/skippedMalformed/skippedNewerVersion/undatedRows, then one `day`, `skill` and `stage-arm` line per bucket. The skipped counts ride on the answer so a partially-unreadable ledger can never present as a quietly smaller total, and they are split because a malformed line is data loss while a newer-version line means upgrade this CLI. --since/--until bound the window (inclusive; a bare YYYY-MM-DD widens to the whole UTC day), --json emits the same answer as an object. Exits 7 (no ledger there — nothing recorded yet), 11 (the ledger could not be read — the spend is UNKNOWN, never zero), 12 (read in full, no rows at all), 13 (rows exist but this window selects none). No threshold, no budget flag, and no exit code that varies with a spend magnitude. Example: fabrika spend rollup --since 2026-08-01",
 	),

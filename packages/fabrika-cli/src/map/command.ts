@@ -93,6 +93,7 @@ const open = leafCommand(
 		);
 	}),
 ).pipe(
+	Command.withShortDescription("Mint or resume the map for a destination."),
 	Command.withDescription(
 		'Mint or resume the map for a destination, reading the caller\'s open questions from STDIN one per line. Prints {"map":n,"created":bool,"destination":"…","questions":k,"answeredCandidates":[…],"digest":"…","scanned":{…}}. Exits 3 (stdin held no question), 4 (an existing map\'s body does not parse), 5/6 (machine-local path, bare @ reference), 7 (no wayfinding:map label), 8/9 (create or label write failed, read-back differs), 11 (the map search or a board read failed — nothing written), 16 (two or more open maps match), 17 (no supplied line is stated as a question), 19 (already recorded out of scope). Example: printf \'does a suspended account keep its weight?\\n\' | fabrika map open --destination "how moderation weight is earned"',
 	),
@@ -105,6 +106,7 @@ const read = leafCommand(
 		yield* emit(yield* runRead({map, repo: Option.getOrNull(repo), env: process.env}));
 	}),
 ).pipe(
+	Command.withShortDescription("The map's whole state, section by section."),
 	Command.withDescription(
 		'The map\'s whole state: five sections, one row per frontier ticket with a closed-set state, the frontier token and the body digest. Prints {"map":n,"frontier":"awaiting-founder|lanes-pending|clear|empty","digest":"…","destination":"…","tickets":[…],"outOfScope":[…],"fog":k,"counts":{…},"disregarded":[…],"scanned":{…}} — all four frontier tokens exit 0. Exits 4 (the body does not hold the five sections in order), 7 (no such map), 11 (a child, edge or comment read failed — the frontier is UNKNOWN, never empty). Example: fabrika map read 9140',
 	),
@@ -149,6 +151,7 @@ const ticket = leafCommand(
 		);
 	}),
 ).pipe(
+	Command.withShortDescription("File a frontier ticket and splice its row onto the map."),
 	Command.withDescription(
 		'File a frontier ticket, link it as a sub-issue, set its blocking edges and splice its row onto the map — one act, preconditions resolved before anything is written. Prints {"map":n,"ticket":c,"kind":"…","blockedBy":[…],"blocking":[…],"digest":"…"}. Exits 4 (the map body does not parse), 5/6 (leak), 7 (no such map), 8/9 (a write failed, read-back differs), 11 (a precondition read failed), 12 (the body moved since --digest), 13 (an edge target is not a ticket of this map), 14 (the edge would cycle, or an id could not be resolved), 18 (an edge target already left the frontier), 19 (the question restates a rejected direction). Example: fabrika map ticket 9140 --digest a1b2c3d4e5f6 --kind research --question "does better-auth mint a single-use token without a new table?"',
 	),
@@ -163,6 +166,7 @@ const lane = leafCommand(
 		);
 	}),
 ).pipe(
+	Command.withShortDescription("Claim a research lane on one ticket."),
 	Command.withDescription(
 		'Claim a research lane on one ticket, keyed on the run nonce. Prints {"map":n,"ticket":t,"nonce":"…","lane":"held|resumed"}. Exits 7 (no such map), 8/9 (the claim write failed, read-back differs), 11 (the comment read failed — whether a lane is held is UNKNOWN, never free), 13 (not a ticket of this map), 15 (another nonce holds the lane), 18 (the ticket already left the frontier), 20 (a decision ticket is routed, never researched). Example: fabrika map lane 9140 --ticket 9143 --nonce 7f3a9c21',
 	),
@@ -199,6 +203,7 @@ const finding = leafCommand(
 		);
 	}),
 ).pipe(
+	Command.withShortDescription("Close a lane with an outcome, writing on the ticket."),
 	Command.withDescription(
 		'Close a lane with an outcome from a closed set, writing on the TICKET and never on the map body. Prints {"map":n,"ticket":t,"outcome":"…","comment":id,"lane":"released"}. Exits 4 (--outcome answered with no --finding, or an empty finding), 5/6 (leak), 7 (no such map), 8/9 (the comment write failed, read-back differs), 11 (a precondition read failed), 13 (not a ticket of this map), 15 (this nonce does not hold the lane), 18 (the ticket already left the frontier), 20 (a decision has no lane). Example: fabrika map finding 9140 --ticket 9143 --nonce 7f3a9c21 --outcome no-evidence',
 	),
@@ -238,6 +243,7 @@ const fork = leafCommand(
 		);
 	}),
 ).pipe(
+	Command.withShortDescription("Record that a ticket's question is being answered elsewhere."),
 	Command.withDescription(
 		'Record that a ticket\'s question is being answered elsewhere — a decision in a grilling session, an empirical question in a prototyping spike. Which flag is admitted is decided by the ticket\'s kind, not by the caller. Prints {"map":n,"ticket":t,"session|spike":s,"state":"forked","digest":"…"}. Exits 4 (the map body does not parse), 5/6 (leak), 7 (no such map), 8/9 (a write failed, read-back differs), 11 (a precondition read failed), 12 (the body moved), 13 (not a ticket of this map, or --session is not a grilling session), 18 (already left the frontier), 20 (the kind does not admit this route). Example: fabrika map fork 9140 --digest a1b2c3d4e5f6 --ticket 9144 --session 9301',
 	),
@@ -297,6 +303,7 @@ const record = leafCommand(
 		);
 	}),
 ).pipe(
+	Command.withShortDescription("Land the answer and retire the ticket in one write."),
 	Command.withDescription(
 		'The lockstep: the answer lands under `## Decisions` and the ticket\'s row leaves `## Frontier` in ONE body write, then the sub-issue closes. Prints {"map":n,"ticket":t,"recorded":"— from #t","closed":true,"digest":"…"}. Exits 4 (the body does not parse, or --finding is empty), 5/6 (leak), 7 (no such map), 8/9 (a write failed, read-back differs), 11 (a precondition read failed — including a forked decision, whose ruling state only the grill reader may resolve), 12 (the body moved), 13 (not a ticket of this map, or its ruling does not read ruled), 18 (already left the frontier), 21 (the lane returned unreachable, so there is no answer to record). Example: fabrika map record 9140 --digest a1b2c3d4e5f6 --ticket 9143 --finding finding.md',
 	),
@@ -336,6 +343,7 @@ const descope = leafCommand(
 		);
 	}),
 ).pipe(
+	Command.withShortDescription("Append a rejected direction to the out-of-scope section."),
 	Command.withDescription(
 		'Append a rejected direction and its reasoning to the never-graduating out-of-scope section, optionally retiring the frontier ticket that asked it. Prints {"map":n,"direction":"…","entries":k,"digest":"…"}. Exits 4 (the body does not parse, or --reason is empty), 5/6 (leak), 7 (no such map), 8/9 (the write failed, read-back differs or the section did not grow by exactly one), 11 (a precondition read failed), 12 (the body moved), 13 (--ticket is not a ticket of this map), 18 (--ticket already left the frontier), 19 (already out of scope). Example: fabrika map descope 9140 --digest a1b2c3d4e5f6 --direction "a per-topic weight multiplier" --reason reason.md',
 	),

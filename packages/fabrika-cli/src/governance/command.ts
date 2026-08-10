@@ -76,6 +76,7 @@ const scope = leafCommand(
 		);
 	}),
 ).pipe(
+	Command.withShortDescription("Whether this PR's diff requires the governance namespace."),
 	Command.withDescription(
 		"Derive whether this PR's diff requires the governance namespace, over which of the four harness roots, at the bound head. Prints `governance\\t<required|not-required>\\t<head>`, then a `root` line per touched root, `self`, and a `record` line per decision record in the diff. This is NOT a §CP classification — §CP is CODEOWNERS' answer, and the verb says so on stderr every run. Exits 7 (the PR is absent, closed, or has zero changed files), 10 (--sha is not a head SHA), 11 (the PR or the commit binding could not be read — the derivation is UNKNOWN, never not-required), 12 (--sha is not the PR's head), 13 (the changed-file enumeration is provably short). Example: fabrika governance scope 4321",
 	),
@@ -125,6 +126,7 @@ const sweep = leafCommand(
 		);
 	}),
 ).pipe(
+	Command.withShortDescription("Rank the live records whose domain this subject touches."),
 	Command.withDescription(
 		"Rank the uncited live-accepted records whose decision domain the subject touches, reading the subject out of a bound commit or out of the corpus. All three outcomes — shortlist, no-overlap, indeterminate — exit 0 and none of them is a clearance. Exits 7 (--dir holds zero records, or the PR is absent or closed), 10 (a non-four-digit id, a --sha that is not a head SHA, a negative --limit, or both a PR and --landed), 11 (the subject or a corpus member could not be read — an incomplete corpus is UNKNOWN), 12 (--sha is not the PR's head), 13 (the changed-file list proving the record is in this PR is provably short). Example: fabrika governance sweep 4321 --record 0240",
 	),
@@ -145,6 +147,7 @@ const guards = leafCommand(
 		);
 	}),
 ).pipe(
+	Command.withShortDescription("The anchored invariants this diff removes or modifies."),
 	Command.withDescription(
 		"Scan the bound diff for anchored invariants it removes or modifies, and report the guard-bearing files it touches. Prints `guards\\t<hits|no-anchor-change|no-anchors-in-reach>\\t<anchors-in-reach>` then an `anchor` line per hit and a `guard-file` line per touched guard-bearing file. no-anchors-in-reach is the scan reporting its own silence, never a clearance. Exits 7 (the PR is absent, closed, or empty), 10 (--sha is not a head SHA), 11 (the diff could not be read — UNKNOWN, never no-anchor-change), 12 (--sha is not the PR's head), 13 (the diff is provably incomplete). Example: fabrika governance guards 4321",
 	),
@@ -166,6 +169,7 @@ const base = leafCommand(
 		yield* emit(yield* runBase({pr, path, repo: Option.getOrNull(repo), env: process.env}));
 	}),
 ).pipe(
+	Command.withShortDescription("This skill's own text at a PR's merge base."),
 	Command.withDescription(
 		"Read this skill's own text at the merge base of a PR that edits it — the self fence's bytes, as a pasteable literal. Prints `base\\t<merge-base>\\t<file-count>` then a `file\\t<path>\\t<byte-count>` header and that file's bytes per path; the byte count is the delimiter, there is no separator line. Exits 7 (the PR is absent or closed, the skill root resolved to zero matches, or every --path is absent at the merge base), 10 (a --path outside the resolved skill root), 11 (the merge base or a path could not be read, or the skill root resolved to more than one candidate), 12 (the head moved while the base was being resolved). Example: fabrika governance base 4321",
 	),
@@ -202,6 +206,7 @@ const post = leafCommand(
 		);
 	}),
 ).pipe(
+	Command.withShortDescription("Post the governance verdict on stdin as one comment."),
 	Command.withDescription(
 		'Post the governance verdict read from STDIN: compose through the verdict-marker format, re-resolve the head, re-derive the namespace at the bound commit, leak-scan, upsert one comment, read it back. The namespace is fixed — there is no --namespace, so this verb cannot be aimed at another gate\'s. Prints `posted\\tgovernance\\t<polarity>\\t<sha>\\t<created|edited>\\t<url>`. Exits 3 (stdin held nothing), 5/6 (a machine-local path, a bare @ reference), 7 (the PR is absent or closed), 8/9 (the write was unproven, the read-back differs), 10 (a bad --polarity, --sha or blank --clause), 11 (a precondition read failed — nothing was posted), 12 (the head moved past --sha), 14 (the diff derives no governance namespace). Example: fabrika governance post 4321 --polarity PASS --sha 03135b91 --clause "no contradiction, no weakening" < verdict.md',
 	),
@@ -237,6 +242,7 @@ const digest = leafCommand(
 		);
 	}),
 ).pipe(
+	Command.withShortDescription("The decision records that landed in a window."),
 	Command.withDescription(
 		"List the decision records that landed in a window, each with its status as written, its landing commit, and that commit's anchor delta. `none` is a PROVEN answer at exit 0 — the window was walked and nothing landed. This verb ranks nothing: tension and blast radius are judgment. Exits 7 (--dir is absent or holds zero records), 10 (a malformed date, or --until before --since), 11 (--base could not be fetched or a landing commit could not be read — UNKNOWN, never none), 13 (a shallow clone whose graft boundary falls inside the window). Example: fabrika governance digest --since 2026-08-02",
 	),
@@ -266,6 +272,7 @@ const readout = leafCommand(
 		);
 	}),
 ).pipe(
+	Command.withShortDescription("Publish the ranked rows on stdin to the durable readout."),
 	Command.withDescription(
 		"Publish the ranked rows read from STDIN onto the durable readout artifact: compose through the governance-digest format, leak-scan, upsert the one comment, read it back in order. It gates nothing — there is no outcome here meaning the corpus is in a bad state. Prints `readout\\t<issue>\\t<rows>\\t<created|edited>\\t<url>`. Exits 3 (stdin held nothing), 5/6 (a machine-local path, a bare @ reference), 7 (the artifact is absent, closed, or unresolvable), 8/9 (the write was unproven, the read-back differs), 10 (a row's kind or id is off the vocabulary), 11 (the issue or its comments could not be read — nothing was written), 13 (the comment enumeration is provably short). Example: printf 'row\\t0240\\troutine\\tno tension found\\n' | fabrika governance readout 4952",
 	),

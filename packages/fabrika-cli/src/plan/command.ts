@@ -55,6 +55,7 @@ const read = leafCommand(
 		yield* emit(yield* runRead({number, repo: Option.getOrNull(repo), env: process.env}));
 	}),
 ).pipe(
+	Command.withShortDescription("The epic, its children and its parsed ledger."),
 	Command.withDescription(
 		'Fetch the epic and its native sub-issue children, parse the ledger, and print it as one object: {"answer":"read","epic":n,"children":[…],"epicStories":[…],"cycleDoc":"present|absent|unknown","topology":{…},"digest":"…"}. Fetch and registered parses only — no judgment. Each child carries the three-state assignee slot (assigneesObserved false and assignees null when the payload carried no assignees key), the acceptance-criteria token uncollapsed, and its **Stories:**/**Containment:** fields. Exits 4 (a ledger section or field line appears twice, the ## Dependencies block is unparseable, or a non-empty ### User stories list is not contiguous from 1), 7 (the epic is proven absent or closed, or it has zero sub-issue children), 10 (the issue is not a type:epic), 11 (the epic, the sub-issue list or a child could not be read). Example: fabrika plan read 4300',
 	),
@@ -67,6 +68,7 @@ const check = leafCommand(
 		yield* emit(yield* runCheck({number, repo: Option.getOrNull(repo), env: process.env}));
 	}),
 ).pipe(
+	Command.withShortDescription("The deterministic floor over the thirteen hard defect types."),
 	Command.withDescription(
 		'The deterministic floor over the thirteen hard defect types — the whole pass/fail decision. BOTH arms exit 0 and the discriminator is the "answer" state word (clean | defective); a defective floor is this verb\'s answer, never its refusal, and the guard against acting on one lives at `plan flip`\'s own re-gate. "skipped" names a class that could not be derived (today only MISSING_CONTAINMENT, and only when the cycle-doc probe failed) — it never makes the floor clean by omission. Exits 4 (the ledger grammar refused), 7 (zero scope), 10 (the issue is not a type:epic), 11 (a read the floor depends on failed — the floor is UNKNOWN, not clean). Example: fabrika plan check 4300',
 	),
@@ -79,6 +81,7 @@ const flip = leafCommand(
 		yield* emit(yield* runFlip({number, digest, repo: Option.getOrNull(repo), env: process.env}));
 	}),
 ).pipe(
+	Command.withShortDescription("Flip every planned child to triaged, re-gating first."),
 	Command.withDescription(
 		'Flip every status:planned child to status:triaged, re-gating first, and report the OBSERVED result per child — flipped | already | unchanged | not-planned, read back from GitHub, never asserted from intent. status:triaged is added before status:planned is removed, always, so a child caught mid-write still carries a status: label. Zero planned children is an answer with terminal "nothing-to-flip", not a refusal. Exits 4 (the grammar refused during the re-gate), 7 (zero children), 8 (a write was attempted and no re-read could prove its outcome), 10 (not a type:epic, or --digest is not 12 lowercase hex), 11 (a read failed — nothing was written), 15 (this session does not hold the epic\'s claim), 20 (the re-gate derived hard defects), 21 (the plan moved since the check), 22 (at least one child is unchanged — the refs are on stderr), 23 (a label the flip must write is absent from the repo taxonomy — refused, never created, #4285). Example: fabrika plan flip 4300 --digest 4d90e1bb27ac',
 	),
@@ -110,6 +113,7 @@ const verdict = leafCommand(
 		);
 	}),
 ).pipe(
+	Command.withShortDescription("Post the plan gate's verdict, bound to the scope digest."),
 	Command.withDescription(
 		'Post the gate\'s verdict comment, bound to the scope digest, and read it back. Prints {"answer":"posted","epic":n,"polarity":"PASS","digest":"…","skipped":[],"comment":id,"caveats":k}. The polarity is DERIVED by re-running the floor — a caller never supplies it. Optional stdin carries advisory caveats, one per line, "caveat: <kind> #<ref> — <text>", over the closed set ac-not-checkable | brief-fidelity | slice-too-broad | dependency-implied-not-declared; an empty stdin is an ordinary answer. Exits 4 (the grammar refused), 5/6 (the authored caveats carry a machine-local path, or are a bare @ path reference), 7 (zero children), 8 (posted and unprovable — UNKNOWN), 9 (posted but the read-back does not match), 10 (--digest malformed, not a type:epic, --polarity disagrees with the derived floor, an off-set caveat kind, or a caveat naming a ref outside the scanned set), 11 (a read failed — nothing was posted), 15 (this session does not hold the epic\'s claim), 21 (the plan moved since the check). Example: fabrika plan verdict 4300 --digest 4d90e1bb27ac < caveats.md',
 	),

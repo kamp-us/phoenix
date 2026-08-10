@@ -72,6 +72,7 @@ const capture = leafCommand(
 		);
 	}),
 ).pipe(
+	Command.withShortDescription("Derive the ground state: branch, head, tree, issue and PR."),
 	Command.withDescription(
 		'Derive the ground state — branch, head, reachability, tree, base, issue and pull-request state — as one JSON object, writing nothing and reading no comments. Prints {"issue":n,"repo":"…","capturedAt":"…","git":{…},"board":{…},"groundDigest":"…"}. Exits 7 (no such issue), 11 (a git or board read failed — the ground is UNKNOWN, never clean). Example: fabrika handoff capture --issue 5021',
 	),
@@ -105,6 +106,7 @@ const take = leafCommand(
 		);
 	}),
 ).pipe(
+	Command.withShortDescription("Compose, post and read back the sealed handoff pack."),
 	Command.withDescription(
 		'Compose the pack from the four asserted sections on STDIN plus a fresh capture, leak-scan it, post it as one marker-bearing comment, and read it back. Prints {"issue":n,"packComment":c,"packNonce":"…","sealedAt":"…","groundDigest":"…","reachable":"…","supersedes":c|null}. Exits 3 (stdin held nothing), 4 (a section is missing, out of order, empty, or content sits outside the closed set), 5/6 (machine-local path, bare @ reference), 7 (no such issue), 8/9 (the comment write failed, read-back differs), 11 (the capture or a precondition read failed — nothing written), 12 (the work is unreachable by a successor and --declare-unreachable was not given). Example: printf \'## Intent\\nWiden the fanout guard.\\n\\n## Established\\nA failing case is committed.\\n\\n## Next act\\nFollow one level of helper call.\\n\\n## Unsure\\nWhether one level is enough.\\n\' | fabrika handoff take --issue 5021 --nonce 7f3a9c21',
 	),
@@ -124,6 +126,7 @@ const read = leafCommand(
 		);
 	}),
 ).pipe(
+	Command.withShortDescription("Resolve the latest sealed pack and report its drift."),
 	Command.withDescription(
 		'Resolve the latest sealed pack, parse its two halves, re-derive the ground against the PACKED branch, and report the drift field by field. Prints {"issue":n,"pack":"none|sealed|claimed","packComment":…,"packNonce":…,"sealedAt":…,"author":…,"asserted":…,"ground":{"packed":"…"},"drift":{"packedBranch":"resolves|gone|unknown","state":"none|moved|unknown","fields":[…]},"heldBy":…,"disregarded":[…],"scanned":{…}} — all three pack tokens exit 0. Exits 7 (no such issue), 11 (a comment read, a permission read or the live re-derivation failed), 14 (the latest sealed pack does not parse, or its groundDigest disagrees with the fields it labels). Example: fabrika handoff read --issue 5021',
 	),
@@ -144,6 +147,7 @@ const claim = leafCommand(
 		);
 	}),
 ).pipe(
+	Command.withShortDescription("Claim the latest sealed pack for this run."),
 	Command.withDescription(
 		'Claim the latest sealed pack, keyed on the run nonce. Prints {"issue":n,"packComment":c,"claimNonce":"…","claim":"held|resumed","claimedAt":"…","claimComment":c}. Exits 7 (no such issue), 8/9 (the claim write failed, read-back differs), 11 (a comment or permission read failed — nothing written), 13 (no sealed pack to claim), 14 (the latest pack does not parse), 15 (another nonce holds it). Example: fabrika handoff claim --issue 5021 --nonce 4b8e2f01',
 	),

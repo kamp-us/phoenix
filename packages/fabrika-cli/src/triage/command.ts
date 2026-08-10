@@ -64,6 +64,7 @@ const codes = leafCommand(
 		yield* emit(runCodes({json}));
 	}),
 ).pipe(
+	Command.withShortDescription("Print the exit taxonomy this group allocates from."),
 	Command.withDescription(
 		"Print the exit taxonomy every verb in this group allocates from, one `<code>\\t<meaning>` line per code. Reads nothing and always exits 0. Example: fabrika triage codes",
 	),
@@ -106,6 +107,7 @@ const kill = leafCommand(
 		);
 	}),
 ).pipe(
+	Command.withShortDescription("Close an agent-filed issue not-planned, with a reason."),
 	Command.withDescription(
 		"Close an agent-filed issue not-planned over four gated writes — the optional redacted duplicate fold, the reason from STDIN, the closed-by-triage label, then the close — and read back that it says not_planned. Prints `killed\\t<number>\\t<foldedInto|none>`. Exits 3 (empty stdin), 5 (machine-local path in the reason), 6 (bare @ reference), 7 (issue absent or closed, duplicate absent or closed, or no closed-by-triage label), 8 (a write failed — UNKNOWN), 9 (read-back is not a not-planned close), 11 (a precondition read failed), 12 (human-filed — no agent footer and no operator author, see $FABRIKA_OPERATOR_ACCOUNTS), 13 (unconfirmed). Example: fabrika triage kill 4312 --confirm --duplicate-of 4290 < reason.md",
 	),
@@ -143,6 +145,7 @@ const split = leafCommand(
 		);
 	}),
 ).pipe(
+	Command.withShortDescription("Create one child of a bundled report, exactly once."),
 	Command.withDescription(
 		'Create one child of a bundled report from the body on STDIN, exactly once, and cross-link the parent. Prints `<created|reused>\\t<number>\\t<url>`; both outcomes exit 0. Exits 3 (empty stdin), 5 (machine-local path), 6 (bare @ reference), 7 (parent absent, or the queue label does not exist), 8 (create failed — UNKNOWN), 9 (read-back mismatch), 11 (a precondition read failed — never a silent create). Example: fabrika triage split 4312 --title "Editor loses focus after save" < child.md',
 	),
@@ -200,6 +203,7 @@ const apply = leafCommand(
 		);
 	}),
 ).pipe(
+	Command.withShortDescription("Stamp the whole triaged transition as one reconcile."),
 	Command.withDescription(
 		"Stamp the whole triaged transition — type, priority, audience, status and home — as ONE owned-facet reconcile, then read the end state back positively. Exactly one of --home / --lane. Prints `triaged\\t<n>\\t<type>\\t<priority>\\t<ready-for>\\t<home>`. Exits 7 (no such issue, or a label this run would write does not exist), 8 (a write failed — UNKNOWN), 9 (read-back mismatch), 10 (off-vocabulary value, or a non-open milestone), 11 (a precondition read failed). Example: fabrika triage apply 4312 --type bug --priority p2 --ready-for agent --home 47",
 	),
@@ -220,6 +224,7 @@ const park = leafCommand(
 		);
 	}),
 ).pipe(
+	Command.withShortDescription("Demote an issue to needs-info with the questions on stdin."),
 	Command.withDescription(
 		"Demote an issue to status:needs-info with the questions on STDIN, clearing every priced facet — type, priority, audience, lane and milestone. The comment is posted BEFORE the labels move. Prints `parked\\t<n>\\t<comment-url>`. Exits 3 (empty stdin), 5 (machine-local path), 6 (bare @ reference), 7 (no such issue, or status:needs-info does not exist), 8 (a write failed — UNKNOWN), 9 (read-back mismatch), 11 (a precondition read failed). Example: fabrika triage park 4290 < questions.md",
 	),
@@ -251,6 +256,7 @@ const claim = leafCommand(
 		);
 	}),
 ).pipe(
+	Command.withShortDescription("Take a session-scoped claim on one issue."),
 	Command.withDescription(
 		'Take a session-scoped claim on one issue, proven by re-reading the markers back. Prints `won` or `lost\\t<holder-session-id>` — both are proven answers and both exit 0. Exits 1 (CLAUDE_CODE_SESSION_ID unset), 7 (no such issue, or it is closed), 8 (marker POST failed — UNKNOWN), 9 (marker absent on read-back, or a conceded marker could not be deleted), 11 (the issue or its comments could not be read — never "won"). Example: fabrika triage claim 4312',
 	),
@@ -285,6 +291,7 @@ const queue = leafCommand(
 		);
 	}),
 ).pipe(
+	Command.withShortDescription("The claimable intake queue, oldest first."),
 	Command.withDescription(
 		"List the claimable intake queue, oldest first. First stdout line is the outcome token — queued | empty — and a queued list adds one `<number>\\t<age-days>\\t<title>` line per issue; the scanned count is on stderr. Exits 7 (--label does not exist, so the queue would scan nothing), 11 (the queue read failed — UNKNOWN, never `empty`). Example: fabrika triage queue --limit 20",
 	),
@@ -303,6 +310,7 @@ const provenance = leafCommand(
 		);
 	}),
 ).pipe(
+	Command.withShortDescription("Whether an issue was reported by an agent or a human."),
 	Command.withDescription(
 		"Say whether an issue was reported by an agent or typed by a human. Two agent signals: the anchored `Filed by an agent` footer (ADR 0159), or an author in the operator set named by $FABRIKA_OPERATOR_ACCOUNTS — an operator's own filing is agent-reported footer or not (#4619 ruling). Prints `agent` or `human`; with no operator set configured this is the footer-only rule, a footerless non-operator filing answers `human`, an empty body answers `human` fail-closed, an unreadable one refuses. Exits 7 (issue proven absent), 11 (unreadable — the provenance is UNKNOWN, never `human`). Example: fabrika triage provenance 4312",
 	),
@@ -324,6 +332,7 @@ const homes = leafCommand(
 		yield* emit(yield* runHomes({roadmap, repo: Option.getOrNull(repo), json, env: process.env}));
 	}),
 ).pipe(
+	Command.withShortDescription("The assignable homes: open milestones and standing lanes."),
 	Command.withDescription(
 		"List the assignable homes: every OPEN milestone joined to its roadmap arc/campaign row by `#<number>`, plus the two standing lanes. First stdout line is `homes`, then one `<kind>\\t<key>\\t<label>` line per candidate. Exits 7 (zero open milestones, or the roadmap parsed to 0 arc rows), 11 (the milestone list or the roadmap could not be read). Example: fabrika triage homes",
 	),
@@ -359,6 +368,7 @@ const enrich = leafCommand(
 		);
 	}),
 ).pipe(
+	Command.withShortDescription("Replace an issue body with the rewrite on stdin."),
 	Command.withDescription(
 		"Replace an issue body with the rewrite on STDIN above the preserved, leak-redacted original — or with --epic, a pitch above the original under a fixed header. A prior enrichment is recognised by the marker this verb writes, bound to this issue number, so a re-run in EITHER mode replaces the authored region instead of nesting a second envelope. Prints `enriched\\t<number>\\t<redactions>`. Exits 3 (empty stdin), 5 (machine-local path in the authored text), 6 (bare @ reference), 7 (issue absent, or its body is empty — no original to preserve), 8 (the PATCH failed — UNKNOWN), 9 (read-back mismatch), 11 (the issue could not be read). Example: fabrika triage enrich 4312 < enriched.md",
 	),

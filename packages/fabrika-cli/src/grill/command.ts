@@ -77,6 +77,7 @@ const open = leafCommand(
 		yield* emit(yield* runOpen({topic, repo: Option.getOrNull(repo), env: process.env}));
 	}),
 ).pipe(
+	Command.withShortDescription("Open, or resume, the session issue for a topic."),
 	Command.withDescription(
 		'Open, or resume, the session issue for a topic. Prints {"session":n,"topic":"…","created":true|false,"url":"…"}. Topic matching is exact under NFC + case folding + whitespace collapse, never fuzzy. Exits 5 (machine-local path in --topic), 6 (bare @ reference), 7 (the grilling:session label does not exist), 8 (the create or the label write failed — UNKNOWN), 9 (read-back mismatch), 11 (the search could not complete, so "none" is unproven), 16 (more than one open session matches). Example: fabrika grill open --topic "sozluk moderation model"',
 	),
@@ -107,6 +108,7 @@ const round = leafCommand(
 		);
 	}),
 ).pipe(
+	Command.withShortDescription("Validate one round of questions on stdin and post it."),
 	Command.withDescription(
 		'Validate one round read from STDIN against the grammar, post it, and print {"session":n,"round":n,"digest":"…","questions":[…],"supersedes":[…],"comment":n,"supersedeComment":n|null}. The round number is derived, never supplied. Exits 3 (empty stdin), 4 (grammar), 5 (machine-local path), 6 (bare @ reference), 7 (no such session), 8 (a write failed — UNKNOWN), 9 (read-back mismatch), 11 (the existing rounds could not be read), 13 (--supersedes names no question), 14 (the round holding a superseded question could not be digested), 18 (already superseded). Example: fabrika grill round 9412 --supersedes R1.4 < round.md',
 	),
@@ -136,6 +138,7 @@ const answerCmd = leafCommand(
 		);
 	}),
 ).pipe(
+	Command.withShortDescription("Record an agent-established answer to a fact question."),
 	Command.withDescription(
 		'Record an agent-established answer to a fact question. Prints {"session":n,"question":"R2.1","kind":"fact","comment":n,"recordedAs":"agent"}. Exits 4 (--finding is empty), 5 (machine-local path), 6 (bare @ reference), 7 (no such session), 8 (the write failed — UNKNOWN), 9 (read-back mismatch), 11 (the rounds could not be read), 13 (the id names no question), 14 (the round could not be digested), 17 (the id is a decision question), 18 (superseded). Example: fabrika grill answer 9412 R2.1 --finding finding.md',
 	),
@@ -167,6 +170,7 @@ const rule = leafCommand(
 		);
 	}),
 ).pipe(
+	Command.withShortDescription("Record a founder ruling, with its verbatim authorization."),
 	Command.withDescription(
 		'Record a founder ruling, refusing without a verbatim dated authorization. Writes the authorization comment FIRST and the marker second, then prints {"session":n,"question":"R2.3","digest":"…","authorization":n,"marker":n,"resolvesTo":"ruled"}. Exits 5 (machine-local path), 6 (bare @ reference), 7 (no such session), 8 (a write failed — UNKNOWN), 9 (read-back mismatch), 11 (a precondition read failed), 12 (the invoking token is below write), 13 (the id names no question), 14 (the round could not be digested), 15 (--authorization missing, empty or undated), 17 (the id is a fact question), 18 (superseded). Example: fabrika grill rule 9412 R2.3 --authorization authorization.md',
 	),
@@ -179,6 +183,7 @@ const read = leafCommand(
 		yield* emit(yield* runRead({session, repo: Option.getOrNull(repo), env: process.env}));
 	}),
 ).pipe(
+	Command.withShortDescription("The whole session state and its frontier."),
 	Command.withDescription(
 		'Read the whole session state: {"session":n,"frontier":"awaiting-founder|facts-pending|clear|empty","questions":[…],"disregarded":[…],"counts":{…},"scanned":{…}}. All four frontier tokens exit 0 — an open frontier is this skill working. Never refuses on marker content: a malformed, unauthorized or unbindable marker is a disregarded row at exit 0. Exits 7 (no such session), 11 (a comment or permission read could not complete, so every state is UNKNOWN). Example: fabrika grill read 9412',
 	),

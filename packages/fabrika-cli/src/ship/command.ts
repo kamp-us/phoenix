@@ -64,6 +64,7 @@ const scope = leafCommand(
 		yield* emit(yield* runScope({pr, repo: Option.getOrNull(repo), json, env: process.env}));
 	}),
 ).pipe(
+	Command.withShortDescription("A PR's head, lifecycle, linked issue, classes and CP state."),
 	Command.withDescription(
 		"Report one PR's head, lifecycle state, linked issue, artifact classes with the review namespaces they require, and the four-state §CP classification derived from .github/CODEOWNERS at the base branch. First stdout line is `scoped\\t<head>\\t<open|draft|merged|closed>\\t<fixes:n|part-of:n|->`, then one `class\\t<name>\\t<files>` line per present class, one `namespace\\t<ns>` line per required namespace, `cp\\t<state>` and `files\\t<n>`. A merged, draft or closed PR is an ANSWER, not a refusal. Exits 7 (PR proven absent, zero changed files, or a non-empty diff deriving zero namespaces — a vacuous conjunction, #2765), 11 (the PR, its file list or the §CP boundary could not be read — the scope is UNKNOWN), 13 (the file list is provably short of the declared count). Example: fabrika ship scope 4321",
 	),
@@ -78,6 +79,7 @@ const cpApproval = leafCommand(
 		);
 	}),
 ).pipe(
+	Command.withShortDescription("Whether the control-plane approval is discharged at a head."),
 	Command.withDescription(
 		"Discharge the ADR 0175 §CP cardinality table at one head: `cp-approval\\t<discharge|stop|n/a>\\t<mechanism>`. The roster is the control-plane team parsed off .github/CODEOWNERS, read fresh; every discharge signal is head-bound, so a stale approval on a superseded head never counts (#3769). A failed read is UNRESOLVED, never `stop` and never `awaiting-approval` (#4223). A stderr notice fires when the banked head is behind the base, so the approval is not spent on a head that must move (#4477). Exits 7 (PR proven absent or closed), 11 (the boundary, roster, reviews, markers or live head could not be read), 13 (the comment enumeration is provably short of the declared count, or the review read — which the platform gives no count for — never reached a terminal page with no `next` link). Example: fabrika ship cp-approval 4321 --sha 03135b91",
 	),
@@ -110,6 +112,7 @@ const gate = leafCommand(
 		);
 	}),
 ).pipe(
+	Command.withShortDescription("The verdict conjunction over every required namespace."),
 	Command.withDescription(
 		"Resolve the verdict conjunction over every required namespace at one head. First stdout line is `gate\\t<satisfied|blocked>\\t<sha>`, then one `ns\\t<namespace>\\t<pass|fail|absent|stale>\\t<marker|advisory|review-fold|->` line per required namespace, in the order required; `satisfied` iff every one reads pass, and the coverage of the required set is asserted before that word is printed (#4520). In-force resolution is head-bound-first then by write stamp (#4189/#4200), ACL-gated fail-closed (ADR 0055). Both `absent` and `stale` block (#3944). The required set is a floor the verb raises from the diff itself: a PR touching `.decisions/`, `.claude/`, `.github/` or `claude-plugins/` gates on `governance` whether or not --require named it, so no session can turn the requirement off by omission (#5036). Exits 7 (PR proven absent or closed, or the diff has zero changed files), 10 (a --require value is not a gateable namespace), 11 (the changed-file list, comments, reviews or the ACL could not be read — the conjunction is UNKNOWN, never blocked and never satisfied), 13 (the changed-file or comment enumeration is provably short of the declared count, or the review read — which the platform gives no count for — never reached a terminal page with no `next` link). Example: fabrika ship gate 4321 --sha 03135b91 --require review-code --require review-doc",
 	),
@@ -165,6 +168,7 @@ const checks = leafCommand(
 		);
 	}),
 ).pipe(
+	Command.withShortDescription("Roll up the head CI, latest run per context."),
 	Command.withDescription(
 		"Roll up the head CI from REST check-runs, latest-per-context. First stdout line is `checks\\t<sha>\\t<green|red|pending|wedged|no-runs>`, then `run\\t<count>`, one `<name>\\t<status>\\t<gating|informational>` line per run, and `facts\\tworkflows:<n>\\truns:<n>` — the zero-checkset discriminators. With --wait a `settle\\t<settled|budget-exhausted|head-moved>` line leads the emission. The rollup is fail-closed on the ambiguous rows and the informational carve-out is ADR 0061's denylist; a wedge is diagnosed and named, and the cancel-and-rerun lever stays an operator's (#3999). Exits 7 (PR or --sha proven absent), 11 (the check-run or workflow read failed — CI state is UNKNOWN, never green), 13 (entries received < declared). Example: fabrika ship checks 4321 --sha 03135b91 --wait",
 	),
@@ -179,6 +183,7 @@ const evidence = leafCommand(
 		);
 	}),
 ).pipe(
+	Command.withShortDescription("Read the SHA-bound run-evidence bundle."),
 	Command.withDescription(
 		"Read the SHA-bound run-evidence bundle as five states. First stdout line is `evidence\\t<present|pending|failed|absent|unknown>\\t<sha>`, then `lookup\\trun:<id|->\\tartifact:<id|->\\tstatus:<status|->` — the evidence that makes the claim falsifiable — then one `check\\t<name>\\t<status>` line per manifest entry. `failed` is a bundle that binds this head and attests a failing run; `unknown` means the opposite — the answer cannot bind this head. Pending is not absent (#3913): a completed run with zero artifacts reads `pending` within 120s of its `completed_at` against the local clock and `absent` outside it. A failed read is not absent either (#3716), and the fetched artifact's zip magic number is checked before anything parses it. Exits 7 (PR or --sha proven absent), 11 (the run list, artifact list or artifact content could not be read after retries), 13 (a run or artifact enumeration is provably short). Example: fabrika ship evidence 4321 --sha 03135b91",
 	),
@@ -191,6 +196,7 @@ const threads = leafCommand(
 		yield* emit(yield* runThreads({pr, repo: Option.getOrNull(repo), json, env: process.env}));
 	}),
 ).pipe(
+	Command.withShortDescription("Every unresolved review thread with its class facts."),
 	Command.withDescription(
 		"List every unresolved review thread with its class facts, both pagination layers count-proved. First stdout line is `threads\\t<count>` — 0 is a proven answer — then one `thread\\t<id>\\t<bot|human>\\t<path:line|pr-level>\\t<author>\\t<excerpt>` line each. A thread is `bot` only when EVERY comment author is a GraphQL Bot; everything else is human by construction, with no login-suffix inference and no allowlist. This is the sanctioned GraphQL exception — thread resolution state has no REST equivalent. Exits 7 (PR proven absent), 11 (the thread read failed or fails shape validation — UNKNOWN, never zero), 13 (a thread or comment enumeration is provably short). Example: fabrika ship threads 4321",
 	),
@@ -219,6 +225,7 @@ const resolve = leafCommand(
 		);
 	}),
 ).pipe(
+	Command.withShortDescription("Resolve one bot-classed review thread with a rationale."),
 	Command.withDescription(
 		"Resolve ONE bot-classed review thread: re-derive its live state and class, leak-scan the rationale on STDIN, post the rationale as a reply, fire the resolve mutation, and read both back. Prints `resolved\\t<thread-id>\\t<comment-url>`. The rationale arrives on stdin only — a path flag is how a machine-local path reaches a public surface while the poster reads success. Exits 3 (no rationale — a silent resolve is unauditable), 5 (machine-local path in the rationale), 6 (bare @ reference), 7 (PR or thread proven absent), 8 (the reply, the mutation or the confirming re-read failed — UNKNOWN what landed), 9 (the read-back does not show it resolved with the rationale), 11 (the thread's state could not be re-derived — nothing was written), 16 (proven: already resolved, or not positively bot-classed — a human objection is theirs to resolve). Example: fabrika ship resolve 4321 --thread PRRT_kwDOLxx1 < rationale.md",
 	),
@@ -231,6 +238,7 @@ const enqueue = leafCommand(
 		yield* emit(yield* runEnqueue({pr, sha, repo: Option.getOrNull(repo), json, env: process.env}));
 	}),
 ).pipe(
+	Command.withShortDescription("Arm the merge queue at a pinned head and prove it landed."),
 	Command.withDescription(
 		"Arm the merge queue's auto-merge at a pinned head and prove the arm landed. Prints `enqueued\\t<sha>\\t<queued|settling>` — `settling` is the normal race, not a failure. There is NO merge-method flag by construction: the queue owns the method, and a method flag alongside the arm silently no-ops the enqueue at exit 0. `auto_merge: null` post-enqueue is expected and is never read as a jam. Before the arm, a DEFINITE `mergeable_state` is asserted: `mergeable` is computed lazily so an indefinite value is polled, and if it is still indefinite it is UNKNOWN and refuses — GitHub accepts the arm on a conflicted PR under a queue-governed base, so nothing else stands between `dirty` and a parked intent. Exits 7 (PR proven absent, closed or already merged), 8 (the arm or its confirming read-back failed — whether an intent is parked is UNKNOWN, so run `fabrika ship disarm --site refuse` before stopping), 11 (the live head or the mergeability could not be read, or mergeability stayed indefinite — nothing was armed), 12 (the live head moved past --sha — refusing to arm a tree nobody verified). Example: fabrika ship enqueue 4321 --sha 03135b91",
 	),
@@ -264,6 +272,7 @@ const reconcile = leafCommand(
 		);
 	}),
 ).pipe(
+	Command.withShortDescription("Watch a queued PR to a terminal classification."),
 	Command.withDescription(
 		"Watch a queued PR to a terminal classification. Prints `reconcile\\t<landed|ejected|unresolved|parked>\\t<polls-used>\\t<horizon-seconds>` — all four are proven answers at exit 0, so no loop shape around this verb can launder an ejection into a success (#4557). `landed` on merged:true or a base-branch squash whose subject ENDS with `(#<pr>)`; `ejected` only on a removal NOT paired with a merge (#4155); `unresolved` means still-queued at the horizon, the expected outcome of a healthy long dwell; `parked` means the arm never entered a queue on a queue-governed base. Exits 7 (PR proven absent), 11 (every poll failed to read — UNKNOWN, distinct from `unresolved`), 13 (the timeline read — which the platform gives no count for — never reached a terminal page with no `next` link). Example: fabrika ship reconcile 4321",
 	),
@@ -285,6 +294,7 @@ const disarm = leafCommand(
 		yield* emit(yield* runDisarm({pr, site, repo: Option.getOrNull(repo), json, env: process.env}));
 	}),
 ).pipe(
+	Command.withShortDescription("Clear or deliberately keep a parked merge intent."),
 	Command.withDescription(
 		"Clear or deliberately keep a parked merge intent at one ADR 0198 lifecycle site. Prints `disarm\\t<kept|disarmed>\\t<site>\\t<reason>`, where kept reasons are the closed set merged | live-queued | not-armed | pre-queue-regime and the disarmed reason is `cleared`, proven by re-reading auto_merge after the write — the disable call's own exit status fuses failure with nothing-armed and is never trusted. An unreadable armed-state reads armed and an unreadable queue regime reads queue-governed; a live queue entry is never disturbed. There is no 7 seat: a disarm aimed at a merged or absent PR answers `kept`. Exits 8 (the re-read cannot confirm the intent is clear — report `merge intent: NOT cleared`), 10 (--site is not one of the four sites), 11 (the armed-state read failed before any write). Example: fabrika ship disarm 4321 --site preflight",
 	),
@@ -297,6 +307,7 @@ const nudge = leafCommand(
 		yield* emit(yield* runNudge({pr, sha, repo: Option.getOrNull(repo), json, env: process.env}));
 	}),
 ).pipe(
+	Command.withShortDescription("Remedy a dropped CI trigger by close then reopen, once."),
 	Command.withDescription(
 		"Remedy a dropped CI trigger by close→reopen, at most once per head, after re-deriving the precondition itself. Prints `nudged\\t<sha>`. The verb trusts nothing it was told: zero check runs, zero commit statuses, at least one workflow and an open PR are all re-read here, because a mis-dispatched nudge once close→reopened a live green head (#4816). The head ref is untouched by construction, so SHA-bound verdicts survive. Exits 7 (PR proven absent), 8 (the close failed — nothing changed state), 11 (a precondition read failed — nothing was proven, nothing touched), 12 (the live head moved past --sha), 13 (the timeline read never reached a terminal page with no `next` link — the platform gives no count for it, and an unexhausted history must not license a second nudge), 16 (proven not in the dropped-trigger state, or this head was already nudged), 17 (THE CLOSE LANDED AND THE REOPEN IS UNCONFIRMED — the PR may be closed; reopen it by hand now). Example: fabrika ship nudge 4322 --sha 9fe12ab0",
 	),
@@ -317,6 +328,7 @@ const note = leafCommand(
 		);
 	}),
 ).pipe(
+	Command.withShortDescription("Post the durable stop-path note on stdin to the PR."),
 	Command.withDescription(
 		"Post the durable stop-path note on STDIN as a new PR comment, leak-scanned and read back. Prints `noted\\t<comment-url>`. Stop-path notes are a history, not a state — each run's refusal is its own record — and a note on a closed or merged PR is legal, because refusals happen at every lifecycle stage and the durable record is the point (#1928). Exits 3 (no body on stdin — a silent stop is the defect), 5 (machine-local path), 6 (bare @ reference), 7 (PR proven absent), 8 (the create or its confirming re-read failed — UNKNOWN whether it landed), 9 (it landed and the read-back does not match), 11 (the PR could not be read — nothing was posted). Example: fabrika ship note 4322 < stop.md",
 	),
@@ -329,6 +341,7 @@ const release = leafCommand(
 		yield* emit(yield* runRelease({pr, repo: Option.getOrNull(repo), json, env: process.env}));
 	}),
 ).pipe(
+	Command.withShortDescription("Detect a dark ship and queue its issue for release."),
 	Command.withDescription(
 		"Detect a dark ship over the PR itself and queue its linked issue for release. Prints `release\\t<queued|n/a|no-issue>\\t<flag-key|->`. Three ground-truth signals, any one sufficient: the diff adds a flag declaration, the body carries a `Flag:` line, or the body names a key declared in the registry at the base branch inside a gating-context line. The linked issue's inherited `Containment:` stamp is NEVER read — it describes the epic, not this PR (#1257). `no-issue` is its own answer, never folded into n/a: a dark ship the release queue cannot see is the hazard this prevents. Agents deploy, humans release — this ends at the label (ADR 0083). Exits 7 (PR proven absent), 8 (the label write or its re-read failed — escalate), 9 (it landed and the read-back does not show it), 11 (the diff, body, registry or linked issue could not be read — dark-ship-ness is UNKNOWN, never n/a), 13 (the changed-file enumeration is provably short). Example: fabrika ship release 4321",
 	),

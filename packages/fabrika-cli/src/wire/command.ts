@@ -55,6 +55,7 @@ const codes = leafCommand(
 		yield* emitOutcome(runCodes({json}));
 	}),
 ).pipe(
+	Command.withShortDescription("Print the exit taxonomy this group allocates from."),
 	Command.withDescription(
 		"Print the exit taxonomy every verb in this group allocates from. Stdout is one `<code>\\t<meaning>` line per code. Reads nothing and always exits 0. Example: fabrika wire codes",
 	),
@@ -67,6 +68,7 @@ const formats = leafCommand(
 		yield* emitOutcome(runFormats({json}));
 	}),
 ).pipe(
+	Command.withShortDescription("List the registered wire formats, from the registry."),
 	Command.withDescription(
 		"List the registered wire formats, derived from the registry rather than from a hand-written list. First stdout line is `formats\\t<n>`, then one `<key>\\t<purpose>\\t<producers>\\t<consumers>` line per format. Exits 7 (no format is registered — a listing over zero rows is not an answer). Example: fabrika wire formats",
 	),
@@ -79,6 +81,7 @@ const emit = leafCommand(
 		yield* emitOutcome(yield* runEmit({format, json, stdin: Effect.sync(readStdin)}));
 	}),
 ).pipe(
+	Command.withShortDescription("Compose a format's bytes from the fields on stdin."),
 	Command.withDescription(
 		"Compose a format's bytes from the fields on STDIN — for acceptance-criteria, one criterion per line, optionally prefixed `[x]` or `[ ]`. The composed block is the stdout answer and round-trips through `wire read`. Exits 5 (stdin was read and held nothing), 6 (stdin could not be read — UNKNOWN), 7 (--format names no registered format), 8 (the fields hold no usable criterion). Example: fabrika wire emit --format acceptance-criteria < criteria.txt",
 	),
@@ -91,6 +94,7 @@ const read = leafCommand(
 		yield* emitOutcome(yield* runRead({format, json, stdin: Effect.sync(readStdin)}));
 	}),
 ).pipe(
+	Command.withShortDescription("Read a format's block out of the artifact on stdin."),
 	Command.withDescription(
 		"Read a format's block out of the artifact on STDIN and print its fields. The read is total: `found` is the only outcome on stdout, and it never carries zero fields. First stdout line is `found\\t<format>\\t<count>`, then one field line each. Exits 3 (proven absent — nothing in the artifact reaches for the block), 4 (present and malformed — the reason and the offending bytes are on stderr), 5 (stdin was read and held nothing), 6 (the artifact could not be read — UNKNOWN, never absent), 7 (--format names no registered format). Example: fabrika wire read --format acceptance-criteria < issue-body.md",
 	),
@@ -103,6 +107,7 @@ const check = leafCommand(
 		yield* emitOutcome(yield* runCheck({format, json, stdin: Effect.sync(readStdin)}));
 	}),
 ).pipe(
+	Command.withShortDescription("Whether the artifact on stdin carries a conforming block."),
 	Command.withDescription(
 		"Say whether the artifact on STDIN carries a conforming block for this format, without printing its fields. The scope judged — lines, bytes and format — is on stderr on every path, so a verdict is never reported over unstated scope. Stdout is the single line `conforms\\t<format>\\t<count>`. Exits 3 (proven absent), 4 (present and malformed), 5 (stdin was read and held nothing), 6 (the artifact could not be read — UNKNOWN), 7 (--format names no registered format — zero scope, never a vacuous pass). Example: fabrika wire check --format acceptance-criteria < issue-body.md",
 	),
@@ -154,6 +159,7 @@ const index = leafCommand(
 		);
 	}),
 ).pipe(
+	Command.withShortDescription("Reconcile the wire-formats index doc with the registry."),
 	Command.withDescription(
 		"Reconcile the wire-formats index doc with the registry — and, with --write, render its generated region from the registry rather than by hand. Stdout is the single line `index\\t<agrees|written>\\t<registered>\\t<documented>`. Exits 4 (the index and the registry disagree — a registered format with no section, a section for no registered format, or a stale generated region), 6 (the doc could not be read or written — UNKNOWN, never a disagreement), 7 (zero scope: an empty registry, an empty doc, no generated region, or no format sections — never a vacuous pass). Example: fabrika wire index --write",
 	),

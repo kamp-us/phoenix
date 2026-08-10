@@ -28,10 +28,29 @@ discoverability is first-class), sharpened by the [#4635](https://github.com/kam
 survey of the v1 CLI, which found root help lists every tool with a purpose and a citation while
 per-tool help documents subcommands and exit codes inline.
 
-- Every verb, every subcommand, and every flag carries a one-line description. A flag with no
-  description is an undocumented input.
+- Every verb, every subcommand, and every flag carries a description. A flag with no description is
+  an undocumented input.
+- **Two audiences read a verb's help, so a verb declares two descriptions, not one.** The parent
+  group's `SUBCOMMANDS` list is scanned by a human choosing a verb; the verb's own `DESCRIPTION`
+  block is read by whoever is about to call it. They want opposite things, and one string cannot be
+  both:
+  - the **short** description (`Command.withShortDescription`) is the list row — **one sentence**
+    saying what the verb answers, no output shape, no exit codes, no example. The renderer neither
+    wraps nor truncates it, so it must fit one terminal line beside the padded name column; the
+    budget and the checks are `packages/fabrika-cli/src/short-description.ts`, asserted for every
+    registered leaf by `short-description.unit.test.ts`.
+  - the **long** description (`Command.withDescription`) is the verb-level contract below.
+
+  Reusing the long form as the list row is the defect this split fixes: `fabrika ship --help` emitted
+  rows of 1171, 1043 and 1029 characters as single unwrapped lines, so a wrapped continuation was
+  indistinguishable from the next verb's row and the founder could not read the output at all
+  ([#5208](https://github.com/kamp-us/phoenix/issues/5208)). `withShortDescription` **adds** a field
+  and the renderer falls back to `description` when it is absent, so nothing is truncated and the
+  contract below is untouched.
 - `--help` states, for the verb: what it answers, its output **shape** (rule 2), its exit codes
-  (rule 3), and at least one example (rule 5).
+  (rule 3), and at least one example (rule 5). This is the **long** description's job — the "one
+  line" rule above governs the list row, not this block, and the two stop contradicting each other
+  once they are separate strings.
 - The index of verbs is **derived from the registry**, never hand-maintained. v1's
   `pipeline-cli commands compact` is the working precedent: it reads name + description off the same
   `Command` objects the router dispatches on, so a new verb appears automatically and a verb shipped

@@ -84,6 +84,7 @@ const tree = leafCommand(
 		);
 	}),
 ).pipe(
+	Command.withShortDescription("Prove the ground is a linked worktree, clean and this lane's."),
 	Command.withDescription(
 		"Prove the ground: a linked worktree, optionally clean, optionally this lane's. Prints the tree root's absolute path on stdout. Verifies and NEVER provisions — it creates, locks, unlocks and removes nothing (the spawner owns the tree's lifecycle). Exits 11 (with --issue: the claim state could not be read — the lane is UNKNOWN), 12 (proven: not in a linked worktree), 13 (proven: uncommitted changes at a --require-clean open), 14 (proven: the checked-out branch does not carry this claim's nonce), 15 (proven: the claim on --issue is foreign). Example: fabrika build tree --require-clean",
 	),
@@ -102,6 +103,7 @@ const pick = leafCommand(
 		yield* emit(yield* runPick({repo: Option.getOrNull(repo), limit, env: process.env}));
 	}),
 ).pipe(
+	Command.withShortDescription("The ranked pool of issues this lane may pick up."),
 	Command.withDescription(
 		'The ranked candidate pool: status:triaged + unassigned + admitted by the shared admission test (scope axis against the ROADMAP.md "## Focus" declaration, audience axis on ready-for:agent), every bucket paginated in full. Prints {"pool":[…],"excluded":[{"number","home","reason"}],"scanned":{"p0":n,"p1":n,"p2":n},"focus":{…}}; each excluded issue names which axis refused it, and an empty pool is a fact on exit 0, readable against the scanned counts. Exits 1 (--limit is not a positive integer), 4 (the "## Focus" declaration reads but does not parse — never read as "no focus"), 11 (any bucket read failed or came back truncated, or the declaration could not be read — the pool is UNKNOWN, never partial and never unfiltered). Example: fabrika build pick --limit 5',
 	),
@@ -114,6 +116,7 @@ const eligible = leafCommand(
 		yield* emit(yield* runEligible({number, repo: Option.getOrNull(repo), env: process.env}));
 	}),
 ).pipe(
+	Command.withShortDescription("Whether one issue's dependency gate is open."),
 	Command.withDescription(
 		'One issue\'s dependency gate, derived from the parent ledger\'s "## Dependencies" topology and never read off a label. Prints {"answer":"eligible","number":n,"parent":n|null}; blocked and unknown print nothing. Every predecessor is read before the answer is seated, so the verdict does not depend on the order the topology lists them in, and a predecessor that could not be read is named on stderr as its own row rather than counted closed. Exits 4 (the parent\'s "## Dependencies" block is absent or unparseable — "no parseable edges" is never "no edges"), 7 (the issue is proven absent or closed), 11 (the issue, parent or a predecessor could not be read, with nothing proven open — UNKNOWN, never "eligible"), 16 (proven blocked — EVERY open edge is named on stderr, alongside any predecessor that could not be read). Example: fabrika build eligible 4312',
 	),
@@ -163,6 +166,7 @@ const claim = leafCommand(
 		);
 	}),
 ).pipe(
+	Command.withShortDescription("Race the claim marker on an issue and win it or name the winner."),
 	Command.withDescription(
 		`Race the earliest AUTHORIZED claim marker on an issue: post this session's token (build:<CLAUDE_CODE_SESSION_ID>:<uuid>), re-read, and win or name the winner. Authorization is the author's repository permission (ADR 0055) — marker text confers nothing. The admission test runs FIRST, before any marker is written, so a refused claim leaves no trace to retract. --purpose says why this lane claims (${CLAIM_PURPOSES.join(" | ")}, default ${DEFAULT_CLAIM_PURPOSE}): the audience axis (${READY_FOR_AGENT}) binds a build claim only, because an epic earns that label AFTER it is planned and gated (#5175); the scope axis binds every purpose, and an off-enum --purpose refuses on 10 rather than falling back. --override "<reason>" admits a proven refusal and REQUIRES --override-lane "<lane>"; both are recorded on the marker, and an UNKNOWN admission is never overridable. Prints {"answer":"won","number":n,"token":"…","purpose":"…"}, plus "override":{"lane","reason"} when one was used. A lost race retracts this run's own marker and exits 15, never 0; an unset CLAUDE_CODE_SESSION_ID, an empty --override reason, an --override with no lane, or an --override-lane with no override, is 1. Exits 7 (issue proven absent or closed), 8 (the marker write failed — UNKNOWN; run confirm), 9 (the marker landed but does not read back), 10 (--purpose is off-enum), 15 (proven lost), and from the admission test: ${admissionExits}. Example: fabrika build claim 4312 --purpose gate`,
 	),
@@ -175,6 +179,7 @@ const confirm = leafCommand(
 		yield* emit(yield* runConfirm({number, repo: Option.getOrNull(repo), env: process.env}));
 	}),
 ).pipe(
+	Command.withShortDescription("Re-prove this session still holds the claim."),
 	Command.withDescription(
 		'Re-prove this session still holds the claim, before a mutation. Prints {"answer":"mine","number":n,"token":"…"}. Exits 1 (CLAUDE_CODE_SESSION_ID unset), 7 (issue proven absent or closed), 11 (the marker set could not be read — UNKNOWN, never "unclaimed"), 15 (proven: held by another session, or no claim exists — the detail is on stderr). Example: fabrika build confirm 4312',
 	),
@@ -187,6 +192,7 @@ const release = leafCommand(
 		yield* emit(yield* runRelease({number, repo: Option.getOrNull(repo), env: process.env}));
 	}),
 ).pipe(
+	Command.withShortDescription("Retract this session's own claim marker."),
 	Command.withDescription(
 		'Retract this session\'s OWN claim marker, and only its own. Prints {"answer":"released","number":n}. Exits 1 (CLAUDE_CODE_SESSION_ID unset), 7 (issue proven absent or closed), 8 (the retraction failed — UNKNOWN), 11 (the marker set could not be read), 15 (this session holds no claim — refusing to release another lane\'s). Example: fabrika build release 4312',
 	),
@@ -199,6 +205,7 @@ const issue = leafCommand(
 		yield* emit(yield* runIssue({number, repo: Option.getOrNull(repo), env: process.env}));
 	}),
 ).pipe(
+	Command.withShortDescription("The claimed issue's body and acceptance criteria."),
 	Command.withDescription(
 		'The claimed issue\'s body and acceptance criteria, through the content gate. Prints one JSON object with number, title, state, labels, body and criteria; criteria.state is found | absent | malformed — three facts the imported wire read keeps apart, so a drifted heading never reads as "no acceptance criteria". Exits 7 (issue proven absent or closed), 11 (the issue could not be read — its content is UNKNOWN). Example: fabrika build issue 4312',
 	),
@@ -240,6 +247,7 @@ const branch = leafCommand(
 		);
 	}),
 ).pipe(
+	Command.withShortDescription("Cut or resume the lane's branch off a freshly fetched base."),
 	Command.withDescription(
 		"Cut (or resume) the lane's nonce branch off a FRESHLY FETCHED base, never a stale local ref. Prints the checked-out branch name: build/<number>-<slug>-<nonce> in create mode, build/pr-<pr>-<nonce> in resume mode, where <nonce> is the first 8 hex of the current claim token's UUID. The branch name IS the lane record — there is no stamp file. Exits 7 (--resume's PR is proven absent, closed or merged), 10 (--slug is not kebab-case, exceeds 5 words, or is flag-shaped), 11 (the fetch failed, or the claim state could not be read), 12 (proven: not in a linked worktree), 15 (proven: the claim is foreign). Example: fabrika build branch 4312 --slug editor-focus-loss",
 	),
@@ -266,6 +274,7 @@ const scratch = leafCommand(
 		);
 	}),
 ).pipe(
+	Command.withShortDescription("The per-lane scratch directory path."),
 	Command.withDescription(
 		"The per-lane scratch path, allocated fail-closed: <temp root>/fabrika-build/<session-id>/<issue>-<claim-nonce>/<slug>, one absolute path on stdout, the directory created if absent. The claim nonce is what keys the namespace per LANE rather than per session, so two lanes of one session cannot clobber each other. The printed path is machine-local and must never reach a posted artifact. Exits 1 (the directory could not be created, or CLAUDE_CODE_SESSION_ID is unset), 10 (--slug carries a path separator or is not kebab-case), 11 (the claim state could not be read), 15 (proven: the claim is foreign). Example: fabrika build scratch 4312 --slug notes",
 	),
@@ -285,6 +294,9 @@ const check = leafCommand(
 		yield* emit(yield* runCheck({surface, repo: Option.getOrNull(repo), env: process.env}));
 	}),
 ).pipe(
+	Command.withShortDescription(
+		"Run this surface's validators here, with the build cache bypassed.",
+	),
 	Command.withDescription(
 		'Run this surface\'s validators in this tree, with the build cache BYPASSED — a cache hit from another worktree has returned another tree\'s green. Prints {"verdict":"green","surface":"…","tree":"…","ran":[…]}; red and unknown print nothing. This verb predicts; ci.yml decides, and supersedes it where they disagree. Exits 7 (the diff against the base is empty — zero scope, ADR 0092), 10 (--surface is off-enum or provably mismatches the diff), 11 (a validator could not be executed, or the lane\'s claim could not be read — UNKNOWN, never green), 12 (not in a linked worktree), 14 (the checked-out branch is not this lane\'s), 15 (the lane\'s claim is held by another session), 18 (proven red). Example: fabrika build check --surface code',
 	),
@@ -320,6 +332,7 @@ const push = leafCommand(
 		);
 	}),
 ).pipe(
+	Command.withShortDescription("Push the lane's branch and confirm the remote ref moved."),
 	Command.withDescription(
 		"Publish the lane's branch and INDEPENDENTLY confirm the remote ref moved, by reading it back with git ls-remote. The whole report is stdout, single-stream, so `tail -1` of stdout on exit 0 is always `PUSH-VERDICT: MOVED`. Before pushing, the local head must CONTAIN the published remote head — on the force path too, where --force-with-lease proves nothing about this lane's own dropped commits. Exits 8 (pushed, but the remote ref could not be re-read — the outcome is UNKNOWN), 11 (the lane's claim could not be read, or containment could not be proven — nothing was pushed), 12 (not in a linked worktree), 14 (the checked-out branch is not this lane's), 15 (the claim is held by another session), 17 (proven: the remote ref did not move), 19 (refused before pushing: detached HEAD, or non-fast-forward without --force-with-lease), 23 (proven: the local head drops the remote head's commits — rebase, or pass --drop-remote-commits). Example: fabrika build push",
 	),
@@ -348,6 +361,7 @@ const pr = leafCommand(
 		);
 	}),
 ).pipe(
+	Command.withShortDescription("Open the PR from the body on stdin, guarded and read back."),
 	Command.withDescription(
 		'Open the PR from the body on STDIN, refusing the known defect shapes before any write, with a read-back through normalizeForReadback. Prints {"answer":"opened",…}, or {"answer":"existing",…} on exit 0 when this head branch already has an open PR — an idempotent re-run is an answer, not a duplicate. Exits 3 (stdin held nothing), 4 ("## Deviations" missing or empty, or the closing-keyword line is absent, duplicated, mistargeted, or contradicts --partial), 5 (machine-local path), 6 (bare @ reference), 7 (issue proven absent or closed), 8 (the create failed — UNKNOWN; re-run), 9 (landed but does not read back), 10 (the body asserts a control-plane, type or priority classification — those verdicts are the gate\'s and triage\'s), 11 (a precondition read failed), 12 (not in a linked worktree), 14 (the head branch is not this lane\'s), 15 (this session does not hold the claim). Example: fabrika build pr 4312 < body.md',
 	),
@@ -372,6 +386,7 @@ const note = leafCommand(
 		);
 	}),
 ).pipe(
+	Command.withShortDescription("Post the progress or handoff note on stdin."),
 	Command.withDescription(
 		'Post the progress or handoff note on STDIN, leak-guarded and read back. When the number resolves to a PR the note is stamped with that PR\'s head SHA at post time, so a reader can see a note predates a later push. Runs ONLY the posting guards — never the tree assertions — so a stop-report stays postable from a refused tree. Prints {"answer":"posted","number":n,"commentId":n,"head":"…"|null}. Exits 3 (stdin held nothing), 5 (machine-local path), 6 (bare @ reference), 7 (target proven absent or closed), 8 (the write failed — UNKNOWN), 9 (posted but does not read back), 11 (a precondition read failed), 15 (this session does not hold the claim). Example: fabrika build note 4310 < round-2.md',
 	),
@@ -389,6 +404,7 @@ const verdicts = leafCommand(
 		yield* emit(yield* runVerdicts({pr: number, repo: Option.getOrNull(repo), env: process.env}));
 	}),
 ).pipe(
+	Command.withShortDescription("The latest gate verdict per namespace at a PR's live head."),
 	Command.withDescription(
 		'The paginated, current-head, per-gate verdict fold on a PR: every comment and every review, the latest marker per gate namespace bound to the live head, native reviews as their OWN row kind (never coerced), the 120-second FAIL round count, capReached, and the criteria frozen after round 2. Prints one JSON object with head, rows, rounds, capReached and frozenCriteria; {"rows":[]} on exit 0 is a proven "no verdicts", readable against the scope line. A stale marker prints as stale, never dropped. Exits 7 (PR proven absent or closed), 11 (the head, any comment page or any review page could not be read — UNKNOWN, never "none"). Example: fabrika build verdicts --pr 4310',
 	),
