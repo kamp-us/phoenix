@@ -54,3 +54,11 @@ directory was empty; it is harmless and can go with any later change.
 - **No dependency on v1.** fabrika calls `pipeline-cli` nowhere — not from a skill, not from a verb.
   Its own verbs live in `packages/fabrika-cli/`. v1 is a reference to read, never a runtime to call,
   because a fabrika that calls the old tree can never be the thing that replaces it.
+
+  The rule is **re-implement calls, pin formats** (ADR
+  [0251](../../.decisions/0251-shared-formats-are-pinned-not-reimplemented.md)). Where fabrika and
+  another program must agree on the same bytes on a GitHub artifact, neither side can re-implement
+  its way out: fabrika owns that wire format and commits its canonical bytes as a golden fixture, and
+  the other side conforms by pinning the fixture in a test of its own. Nothing about that is a call,
+  and it points the dependency at fabrika rather than away from it. Tests follow the same line — a
+  test asserting a fabrika property lives in `packages/fabrika-cli/`.
