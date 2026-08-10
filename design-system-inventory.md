@@ -224,7 +224,7 @@ _Source: apps/web/src/components/ui/ReportButton.tsx_
 
 _Source: apps/web/src/components/ui/ReviewBadge.tsx_
 
-**When to use:** The incelemede in-review badge. Reach for it on a çaylak's OWN sandboxed content (post-detail, definition) to signal it is pending review — the `sandboxed` wire flag is owner-scoped, so only the author sees it. The profile katkıların list has its own #1291 badge; don't reuse this there.
+**When to use:** Every "incelemede" (pending review) badge, wherever it renders — the author's own sandboxed content (post-detail, definition, profile katkıların) and the divan review queue. Never hand-roll a second one; a feature class over a raw `Badge` variant is how the divan chip ended up grey-on-blue (#5228).
 
 **Slots:**
 - `none` — Fixed copy; no children slot.
