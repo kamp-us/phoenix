@@ -15,6 +15,7 @@ import {
 	UNTABLED_GROUPS,
 	ZeroCoverageScope,
 } from "./exit-code-alignment.ts";
+import * as grill from "./grill/codes.ts";
 import * as hook from "./hook/codes.ts";
 import * as ledger from "./ledger/codes.ts";
 import * as map from "./map/codes.ts";
@@ -42,6 +43,7 @@ const TABLES: Readonly<Record<string, CodeTable>> = {
 	build,
 	epic,
 	eval: evalCodes,
+	grill,
 	hook,
 	ledger,
 	map,

@@ -94,6 +94,26 @@ export const UI_SEATS: SharedSeats = (() => {
 })();
 
 /**
+ * `grill`'s seats: `build`'s nine, minus the classification seat and under this group's own names.
+ *
+ * None of the shipped maps fits, which is why this one is written out. `grill` names `7` `NO_TARGET` —
+ * a session issue or a label that is proven absent, the base's own reading rather than a widening —
+ * so it cannot claim `ZERO_SCOPE`. And it holds `10` as `DELIBERATE_GAP` because no verb in the group
+ * accepts a label flag, writes a `type:` or priority label, or classifies the title it composes, so it
+ * cannot claim `OFF_VOCABULARY` either.
+ */
+export const GRILL_SEATS: SharedSeats = {
+	EMPTY_STDIN: "EMPTY_STDIN",
+	BAD_SECTIONS: "BAD_SECTIONS",
+	LEAKED_PATH: "LEAKED_PATH",
+	BARE_AT_PATH: "BARE_AT_PATH",
+	NO_TARGET: "NO_TARGET",
+	WRITE_UNKNOWN: "WRITE_UNKNOWN",
+	READBACK_MISMATCH: "READBACK_MISMATCH",
+	PRECONDITION_UNKNOWN: "PRECONDITION_UNKNOWN",
+};
+
+/**
  * `hook`'s seats: one. It shares only `EMPTY_STDIN` — the same fact, an fd 0 read that held nothing
  * — and everything else it speaks is about a harness envelope rather than about a write, so its two
  * private codes sit above the base's whole table instead of claiming a seat in it.
@@ -150,6 +170,7 @@ export const ALIGNED_GROUPS: Readonly<Record<string, SharedSeats>> = {
 	eval: EVAL_SEATS,
 	hook: HOOK_SEATS,
 	epic: BUILD_SEATS,
+	grill: GRILL_SEATS,
 	ledger: BUILD_SEATS,
 	map: MAP_SEATS,
 	plan: BUILD_SEATS,

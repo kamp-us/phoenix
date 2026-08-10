@@ -20,6 +20,9 @@
  */
 import * as acceptanceCriteria from "./acceptance-criteria.ts";
 import {brandWitnesses, type WireFormat} from "./format.ts";
+import * as grillAnswer from "./grill-answer.ts";
+import * as grillRuling from "./grill-ruling.ts";
+import * as grillSupersede from "./grill-supersede.ts";
 import * as mapTicket from "./map-ticket.ts";
 import * as sliceHandoff from "./slice-handoff.ts";
 import * as verdictMarker from "./verdict-marker.ts";
@@ -169,6 +172,112 @@ export const registeredFormats: ReadonlyArray<WireFormat> = [
 			],
 		},
 		brands: brandWitnesses<mapTicket.MapTicketMarker>({kind: true, nonce: true}),
+	},
+	{
+		key: "grill-ruling",
+		purpose:
+			"the first line of the comment recording a founder ruling on one grilling question — the question id, the round digest it binds, and when it was stamped",
+		module: "packages/fabrika-cli/src/wire/grill-ruling.ts",
+		producers: ["grilling"],
+		consumers: ["grilling"],
+		emit: grillRuling.emitFromFields,
+		read: grillRuling.readToLines,
+		fixtures: {
+			roundTrip: {
+				fields: "question: R2.3\ndigest: a1b2c3d4e5f6\nat: 2026-08-09T18:36:48Z\n",
+				values: ["R2.3", "a1b2c3d4e5f6", "2026-08-09T18:36:48Z"],
+			},
+			absent: "Noted — I'll take this one to him directly and report back.\n",
+			malformed: [
+				{
+					drift: "the question id is not R<round>.<n>",
+					artifact: "grill-ruled: 2.3 @ a1b2c3d4e5f6 · 2026-08-09T18:36:48Z\n",
+				},
+				{
+					drift: "the marker is bound to no round digest",
+					artifact: "grill-ruled: R2.3 · 2026-08-09T18:36:48Z\n",
+				},
+				{
+					drift: "the digest is not 12 lowercase hex",
+					artifact: "grill-ruled: R2.3 @ A1B2C3D4E5F6 · 2026-08-09T18:36:48Z\n",
+				},
+				{
+					drift: "the timestamp is not an ISO-8601 UTC instant",
+					artifact: "grill-ruled: R2.3 @ a1b2c3d4e5f6 · yesterday evening\n",
+				},
+			],
+		},
+		brands: brandWitnesses<grillRuling.GrillRuling>({question: true, digest: true, at: true}),
+	},
+	{
+		key: "grill-answer",
+		purpose:
+			"the first line of the comment recording the agent's own established answer to a grilling fact question — never a ruling, and never read as one",
+		module: "packages/fabrika-cli/src/wire/grill-answer.ts",
+		producers: ["grilling"],
+		consumers: ["grilling"],
+		emit: grillAnswer.emitFromFields,
+		read: grillAnswer.readToLines,
+		fixtures: {
+			roundTrip: {
+				fields: "question: R2.1\ndigest: a1b2c3d4e5f6\nat: 2026-08-09T18:36:48Z\n",
+				values: ["R2.1", "a1b2c3d4e5f6", "2026-08-09T18:36:48Z"],
+			},
+			absent: "Checked the schema — there is no weight column today.\n",
+			malformed: [
+				{
+					drift: "the question id is not R<round>.<n>",
+					artifact:
+						"grill-answered: round two, question one @ a1b2c3d4e5f6 · 2026-08-09T18:36:48Z\n",
+				},
+				{
+					drift: "the marker is bound to no round digest",
+					artifact: "grill-answered: R2.1 · 2026-08-09T18:36:48Z\n",
+				},
+				{
+					drift: "the timestamp carries no zone",
+					artifact: "grill-answered: R2.1 @ a1b2c3d4e5f6 · 2026-08-09 18:36:48\n",
+				},
+			],
+		},
+		brands: brandWitnesses<grillAnswer.GrillAnswer>({question: true, digest: true, at: true}),
+	},
+	{
+		key: "grill-supersede",
+		purpose:
+			"the comment retiring one or more grilling questions, one line per question, each naming the digest of the round it retired and the round that replaced it",
+		module: "packages/fabrika-cli/src/wire/grill-supersede.ts",
+		producers: ["grilling"],
+		consumers: ["grilling"],
+		emit: grillSupersede.emitFromFields,
+		read: grillSupersede.readToLines,
+		fixtures: {
+			roundTrip: {
+				fields: "R1.4 @ 7c1d4a9b2e60 · round 2 · 2026-08-09T18:36:48Z\n",
+				values: ["R1.4", "7c1d4a9b2e60", "round 2", "2026-08-09T18:36:48Z"],
+			},
+			absent: "Re-asking this one next round, it was worded too broadly.\n",
+			malformed: [
+				{
+					drift: "the retiring round field is missing",
+					artifact: "grill-superseded: R1.4 @ 7c1d4a9b2e60 · 2026-08-09T18:36:48Z\n",
+				},
+				{
+					drift: "the digest is not 12 lowercase hex",
+					artifact: "grill-superseded: R1.4 @ notadigest · round 2 · 2026-08-09T18:36:48Z\n",
+				},
+				{
+					drift: "one entry of several drifted",
+					artifact:
+						"grill-superseded: R1.4 @ 7c1d4a9b2e60 · round 2 · 2026-08-09T18:36:48Z\ngrill-superseded: R1.5 @ 7c1d4a9b2e60 · round two · 2026-08-09T18:36:48Z\n",
+				},
+			],
+		},
+		brands: brandWitnesses<grillSupersede.SupersedeEntry>({
+			question: true,
+			digest: true,
+			at: true,
+		}),
 	},
 ];
 
