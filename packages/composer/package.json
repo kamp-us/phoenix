@@ -8,7 +8,7 @@
 		".": "./src/index.ts"
 	},
 	"scripts": {
-		"typecheck": "tsgo -p tsconfig.json",
+		"typecheck": "tsc -p tsconfig.json",
 		"test": "vitest run"
 	},
 	"dependencies": {
@@ -29,7 +29,6 @@
 		"@types/node": "catalog:",
 		"@types/react": "catalog:",
 		"@types/react-dom": "catalog:",
-		"@typescript/native-preview": "catalog:",
 		"jsdom": "catalog:",
 		"react": "catalog:",
 		"react-dom": "catalog:",

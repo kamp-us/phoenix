@@ -73,7 +73,7 @@ pipeline-tooling idiom, mirroring `@kampus/pipeline-cli`):
 ```bash
 # run one live crew session (stdio MCP server + channel peer) for a standing role
 pnpm --filter @kampus/pipeline-crew-mcp cli session --role engineering-manager
-pnpm --filter @kampus/pipeline-crew-mcp typecheck  # tsgo typecheck
+pnpm --filter @kampus/pipeline-crew-mcp typecheck  # tsc typecheck
 pnpm --filter @kampus/pipeline-crew-mcp test       # @effect/vitest suite
 ```
 

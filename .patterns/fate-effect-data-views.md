@@ -38,7 +38,7 @@ export type Term = Entity<typeof TermView, {definitions?: Array<Definition>}>;
 
 ## Why a class (the TS2883 story)
 
-fate's `dataView()` return type is `DataView<Item> & {readonly [dataViewFieldsKey]: Fields}`, and neither `DataView` nor the symbol is exported from `@nkzw/fate/server`. In a composite tsgo project (the worker is one) an **exported** raw view const therefore trips the declaration-nameability checks — TS2883 ("inferred type cannot be named without a reference to … not portable") plus TS4023 for the symbol. The pre-package dodge annotated views with `SourceDefinition<Item>["view"]`, which is nameable but **erases the literal field map**, killing `Entity<>` and forcing the hand-rolled `EntityOf` restatement.
+fate's `dataView()` return type is `DataView<Item> & {readonly [dataViewFieldsKey]: Fields}`, and neither `DataView` nor the symbol is exported from `@nkzw/fate/server`. In a composite `tsc` project (the worker is one) an **exported** raw view const therefore trips the declaration-nameability checks — TS2883 ("inferred type cannot be named without a reference to … not portable") plus TS4023 for the symbol. The pre-package dodge annotated views with `SourceDefinition<Item>["view"]`, which is nameable but **erases the literal field map**, killing `Entity<>` and forcing the hand-rolled `EntityOf` restatement.
 
 The class factory keeps both properties at once:
 

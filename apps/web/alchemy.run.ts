@@ -36,6 +36,7 @@ import * as Alchemy from "alchemy";
 import {RuntimeContext} from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import {PhoenixDb} from "./worker/db/resources.ts";
 import {resolveStateMode} from "./worker/env.ts";
 import {isProductionDeploy} from "./worker/environment.ts";
@@ -159,7 +160,6 @@ export default Alchemy.Stack(
 			accountId: db.accountId,
 		};
 	}).pipe(
-		Effect.provide(PhoenixLive),
 		// `PhoenixLive` leaks a `RuntimeContext` requirement into this stack program:
 		// beta.59 colors DO storage/RPC and the `send_email` binding's `.send` with
 		// `RuntimeContext` (ADR 0124), and alchemy's `.make<Req>` type does not subtract
@@ -169,6 +169,6 @@ export default Alchemy.Stack(
 		// (`Layer.empty`) erases the false requirement here without shadowing that real
 		// provision. `Providers` then clears via the stack's `providers` config. Deploy
 		// proof rides #1615.
-		Effect.provide(RuntimeContext.phantom),
+		Effect.provide(PhoenixLive.pipe(Layer.provide(RuntimeContext.phantom))),
 	),
 );

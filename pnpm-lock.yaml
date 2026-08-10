@@ -40,8 +40,8 @@ catalogs:
       specifier: 4.0.0-beta.92
       version: 4.0.0-beta.92
     '@effect/tsgo':
-      specifier: ^0.5.2
-      version: 0.5.2
+      specifier: ^0.36.4
+      version: 0.36.4
     '@effect/vitest':
       specifier: 4.0.0-beta.92
       version: 4.0.0-beta.92
@@ -105,9 +105,6 @@ catalogs:
     '@types/react-dom':
       specifier: ^19.2.3
       version: 19.2.3
-    '@typescript/native-preview':
-      specifier: ^7.0.0-dev.20260509.2
-      version: 7.0.0-dev.20260509.2
     '@usirin/forge':
       specifier: ^0.2.0
       version: 0.2.0
@@ -169,8 +166,8 @@ catalogs:
       specifier: ^2.9.14
       version: 2.10.3
     typescript:
-      specifier: ^6.0.3
-      version: 6.0.3
+      specifier: ^7.0.2
+      version: 7.0.2
     vite:
       specifier: ^8.0.16
       version: 8.1.5
@@ -210,13 +207,10 @@ importers:
         version: 0.85.1
       '@effect/tsgo':
         specifier: 'catalog:'
-        version: 0.5.2
+        version: 0.36.4
       '@kampus/fabrika-cli':
         specifier: workspace:*
         version: link:packages/fabrika-cli
-      '@typescript/native-preview':
-        specifier: 'catalog:'
-        version: 7.0.0-dev.20260509.2
       lefthook:
         specifier: 'catalog:'
         version: 2.1.9
@@ -225,7 +219,7 @@ importers:
         version: 2.10.3
       typescript:
         specifier: 'catalog:'
-        version: 6.0.3
+        version: 7.0.2
 
   apps/web:
     dependencies:
@@ -270,7 +264,7 @@ importers:
         version: 0.9.0
       '@nkzw/fate':
         specifier: 'catalog:'
-        version: 1.3.1(patch_hash=e0af930dd67d32efc5463f43c35824fc35d9b9558716831f9cec3764017cf40c)(@trpc/client@11.17.0(@trpc/server@11.17.0(typescript@6.0.3))(typescript@6.0.3))(drizzle-orm@1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3))(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
+        version: 1.3.1(patch_hash=e0af930dd67d32efc5463f43c35824fc35d9b9558716831f9cec3764017cf40c)(@trpc/client@11.17.0(@trpc/server@11.17.0(typescript@7.0.2))(typescript@7.0.2))(drizzle-orm@1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3))(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
       '@sentry/cloudflare':
         specifier: 'catalog:'
         version: 10.62.0(@cloudflare/workers-types@4.20260629.1)
@@ -309,7 +303,7 @@ importers:
         version: 19.2.6(react@19.2.6)
       react-fate:
         specifier: 'catalog:'
-        version: 1.3.1(patch_hash=6333650bb56ba24c05dc81b19328e014d9b510316cf349d8a05cdd1b7b0efc2b)(@trpc/client@11.17.0(@trpc/server@11.17.0(typescript@6.0.3))(typescript@6.0.3))(drizzle-orm@1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
+        version: 1.3.1(patch_hash=6333650bb56ba24c05dc81b19328e014d9b510316cf349d8a05cdd1b7b0efc2b)(@trpc/client@11.17.0(@trpc/server@11.17.0(typescript@7.0.2))(typescript@7.0.2))(drizzle-orm@1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
       react-router:
         specifier: 'catalog:'
         version: 7.18.1(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
@@ -325,7 +319,7 @@ importers:
         version: 0.27.0(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))
       '@effect/tsgo':
         specifier: 'catalog:'
-        version: 0.5.2
+        version: 0.36.4
       '@effect/vitest':
         specifier: 'catalog:'
         version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
@@ -362,9 +356,6 @@ importers:
       '@types/react-dom':
         specifier: 'catalog:'
         version: 19.2.3(@types/react@19.2.14)
-      '@typescript/native-preview':
-        specifier: 'catalog:'
-        version: 7.0.0-dev.20260509.2
       '@vitejs/plugin-react':
         specifier: 'catalog:'
         version: 6.0.2(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
@@ -382,7 +373,7 @@ importers:
         version: 26.1.0
       typescript:
         specifier: 'catalog:'
-        version: 6.0.3
+        version: 7.0.2
       vite:
         specifier: 'catalog:'
         version: 8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)
@@ -404,19 +395,16 @@ importers:
         version: 4.20260629.1
       '@effect/tsgo':
         specifier: 'catalog:'
-        version: 0.5.2
+        version: 0.36.4
       '@effect/vitest':
         specifier: 'catalog:'
         version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
       '@types/node':
         specifier: 'catalog:'
         version: 25.6.2
-      '@typescript/native-preview':
-        specifier: 'catalog:'
-        version: 7.0.0-dev.20260509.2
       typescript:
         specifier: 'catalog:'
-        version: 6.0.3
+        version: 7.0.2
       vitest:
         specifier: 'catalog:'
         version: 4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
@@ -444,19 +432,16 @@ importers:
         version: 4.20260629.1
       '@effect/tsgo':
         specifier: 'catalog:'
-        version: 0.5.2
+        version: 0.36.4
       '@effect/vitest':
         specifier: 'catalog:'
         version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
       '@types/node':
         specifier: 'catalog:'
         version: 25.6.2
-      '@typescript/native-preview':
-        specifier: 'catalog:'
-        version: 7.0.0-dev.20260509.2
       typescript:
         specifier: 'catalog:'
-        version: 6.0.3
+        version: 7.0.2
       vitest:
         specifier: 'catalog:'
         version: 4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
@@ -487,22 +472,19 @@ importers:
         version: 4.20260629.1
       '@effect/tsgo':
         specifier: 'catalog:'
-        version: 0.5.2
+        version: 0.36.4
       '@effect/vitest':
         specifier: 'catalog:'
         version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
       '@types/node':
         specifier: 'catalog:'
         version: 25.6.2
-      '@typescript/native-preview':
-        specifier: 'catalog:'
-        version: 7.0.0-dev.20260509.2
       alchemy:
         specifier: 'catalog:'
         version: 2.0.0-beta.59(patch_hash=204bf3117812a8a49610d2657951bba0c304d2b712f5767e02dcbd2c5536e8bc)(234b374c9d508cf92321aefc5efec8fe)
       typescript:
         specifier: 'catalog:'
-        version: 6.0.3
+        version: 7.0.2
       vitest:
         specifier: 'catalog:'
         version: 4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
@@ -527,19 +509,16 @@ importers:
         version: 4.20260629.1
       '@effect/tsgo':
         specifier: 'catalog:'
-        version: 0.5.2
+        version: 0.36.4
       '@effect/vitest':
         specifier: 'catalog:'
         version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
       '@types/node':
         specifier: 'catalog:'
         version: 25.6.2
-      '@typescript/native-preview':
-        specifier: 'catalog:'
-        version: 7.0.0-dev.20260509.2
       typescript:
         specifier: 'catalog:'
-        version: 6.0.3
+        version: 7.0.2
       vitest:
         specifier: 'catalog:'
         version: 4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
@@ -564,19 +543,16 @@ importers:
         version: 4.20260629.1
       '@effect/tsgo':
         specifier: 'catalog:'
-        version: 0.5.2
+        version: 0.36.4
       '@effect/vitest':
         specifier: 'catalog:'
         version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
       '@types/node':
         specifier: 'catalog:'
         version: 25.6.2
-      '@typescript/native-preview':
-        specifier: 'catalog:'
-        version: 7.0.0-dev.20260509.2
       typescript:
         specifier: 'catalog:'
-        version: 6.0.3
+        version: 7.0.2
       vitest:
         specifier: 'catalog:'
         version: 4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
@@ -604,19 +580,16 @@ importers:
         version: 4.20260629.1
       '@effect/tsgo':
         specifier: 'catalog:'
-        version: 0.5.2
+        version: 0.36.4
       '@effect/vitest':
         specifier: 'catalog:'
         version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
       '@types/node':
         specifier: 'catalog:'
         version: 25.6.2
-      '@typescript/native-preview':
-        specifier: 'catalog:'
-        version: 7.0.0-dev.20260509.2
       typescript:
         specifier: 'catalog:'
-        version: 6.0.3
+        version: 7.0.2
       vitest:
         specifier: 'catalog:'
         version: 4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
@@ -632,19 +605,16 @@ importers:
     devDependencies:
       '@effect/tsgo':
         specifier: 'catalog:'
-        version: 0.5.2
+        version: 0.36.4
       '@effect/vitest':
         specifier: 'catalog:'
         version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
       '@types/node':
         specifier: 'catalog:'
         version: 25.6.2
-      '@typescript/native-preview':
-        specifier: 'catalog:'
-        version: 7.0.0-dev.20260509.2
       typescript:
         specifier: 'catalog:'
-        version: 6.0.3
+        version: 7.0.2
       vitest:
         specifier: 'catalog:'
         version: 4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
@@ -657,16 +627,13 @@ importers:
     devDependencies:
       '@effect/tsgo':
         specifier: 'catalog:'
-        version: 0.5.2
+        version: 0.36.4
       '@types/node':
         specifier: 'catalog:'
         version: 25.6.2
-      '@typescript/native-preview':
-        specifier: 'catalog:'
-        version: 7.0.0-dev.20260509.2
       typescript:
         specifier: 'catalog:'
-        version: 6.0.3
+        version: 7.0.2
       vitest:
         specifier: 'catalog:'
         version: 4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
@@ -685,19 +652,16 @@ importers:
         version: 4.20260629.1
       '@effect/tsgo':
         specifier: 'catalog:'
-        version: 0.5.2
+        version: 0.36.4
       '@effect/vitest':
         specifier: 'catalog:'
         version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
       '@types/node':
         specifier: 'catalog:'
         version: 25.6.2
-      '@typescript/native-preview':
-        specifier: 'catalog:'
-        version: 7.0.0-dev.20260509.2
       typescript:
         specifier: 'catalog:'
-        version: 6.0.3
+        version: 7.0.2
       vitest:
         specifier: 'catalog:'
         version: 4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
@@ -722,7 +686,7 @@ importers:
     devDependencies:
       '@effect/tsgo':
         specifier: 'catalog:'
-        version: 0.5.2
+        version: 0.36.4
       '@testing-library/dom':
         specifier: 'catalog:'
         version: 10.4.1
@@ -738,9 +702,6 @@ importers:
       '@types/react-dom':
         specifier: 'catalog:'
         version: 19.2.3(@types/react@19.2.14)
-      '@typescript/native-preview':
-        specifier: 'catalog:'
-        version: 7.0.0-dev.20260509.2
       jsdom:
         specifier: 'catalog:'
         version: 26.1.0
@@ -752,7 +713,7 @@ importers:
         version: 19.2.6(react@19.2.6)
       typescript:
         specifier: 'catalog:'
-        version: 6.0.3
+        version: 7.0.2
       vitest:
         specifier: 'catalog:'
         version: 4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
@@ -771,19 +732,16 @@ importers:
         version: 4.20260629.1
       '@effect/tsgo':
         specifier: 'catalog:'
-        version: 0.5.2
+        version: 0.36.4
       '@effect/vitest':
         specifier: 'catalog:'
         version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
       '@types/node':
         specifier: 'catalog:'
         version: 25.6.2
-      '@typescript/native-preview':
-        specifier: 'catalog:'
-        version: 7.0.0-dev.20260509.2
       typescript:
         specifier: 'catalog:'
-        version: 6.0.3
+        version: 7.0.2
       vitest:
         specifier: 'catalog:'
         version: 4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
@@ -796,16 +754,13 @@ importers:
     devDependencies:
       '@effect/tsgo':
         specifier: 'catalog:'
-        version: 0.5.2
+        version: 0.36.4
       '@types/node':
         specifier: 'catalog:'
         version: 25.6.2
-      '@typescript/native-preview':
-        specifier: 'catalog:'
-        version: 7.0.0-dev.20260509.2
       typescript:
         specifier: 'catalog:'
-        version: 6.0.3
+        version: 7.0.2
       vitest:
         specifier: 'catalog:'
         version: 4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
@@ -821,19 +776,16 @@ importers:
     devDependencies:
       '@effect/tsgo':
         specifier: 'catalog:'
-        version: 0.5.2
+        version: 0.36.4
       '@effect/vitest':
         specifier: 'catalog:'
         version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
       '@types/node':
         specifier: 'catalog:'
         version: 25.6.2
-      '@typescript/native-preview':
-        specifier: 'catalog:'
-        version: 7.0.0-dev.20260509.2
       typescript:
         specifier: 'catalog:'
-        version: 6.0.3
+        version: 7.0.2
       vitest:
         specifier: 'catalog:'
         version: 4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
@@ -855,16 +807,13 @@ importers:
     devDependencies:
       '@effect/tsgo':
         specifier: 'catalog:'
-        version: 0.5.2
+        version: 0.36.4
       '@types/node':
         specifier: 'catalog:'
         version: 25.6.2
-      '@typescript/native-preview':
-        specifier: 'catalog:'
-        version: 7.0.0-dev.20260509.2
       typescript:
         specifier: 'catalog:'
-        version: 6.0.3
+        version: 7.0.2
 
   packages/fabrika-cli:
     dependencies:
@@ -880,19 +829,16 @@ importers:
     devDependencies:
       '@effect/tsgo':
         specifier: 'catalog:'
-        version: 0.5.2
+        version: 0.36.4
       '@effect/vitest':
         specifier: 'catalog:'
         version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
       '@types/node':
         specifier: 'catalog:'
         version: 25.6.2
-      '@typescript/native-preview':
-        specifier: 'catalog:'
-        version: 7.0.0-dev.20260509.2
       typescript:
         specifier: 'catalog:'
-        version: 6.0.3
+        version: 7.0.2
       vitest:
         specifier: 'catalog:'
         version: 4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
@@ -901,23 +847,20 @@ importers:
     dependencies:
       '@nkzw/fate':
         specifier: 'catalog:'
-        version: 1.3.1(patch_hash=e0af930dd67d32efc5463f43c35824fc35d9b9558716831f9cec3764017cf40c)(@trpc/client@11.17.0(@trpc/server@11.17.0(typescript@6.0.3))(typescript@6.0.3))(drizzle-orm@1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3))(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
+        version: 1.3.1(patch_hash=e0af930dd67d32efc5463f43c35824fc35d9b9558716831f9cec3764017cf40c)(@trpc/client@11.17.0(@trpc/server@11.17.0(typescript@7.0.2))(typescript@7.0.2))(drizzle-orm@1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3))(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
       effect:
         specifier: 'catalog:'
         version: 4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)
     devDependencies:
       '@effect/tsgo':
         specifier: 'catalog:'
-        version: 0.5.2
+        version: 0.36.4
       '@types/node':
         specifier: 'catalog:'
         version: 25.6.2
-      '@typescript/native-preview':
-        specifier: 'catalog:'
-        version: 7.0.0-dev.20260509.2
       typescript:
         specifier: 'catalog:'
-        version: 6.0.3
+        version: 7.0.2
       vitest:
         specifier: 'catalog:'
         version: 4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
@@ -933,19 +876,16 @@ importers:
     devDependencies:
       '@effect/tsgo':
         specifier: 'catalog:'
-        version: 0.5.2
+        version: 0.36.4
       '@effect/vitest':
         specifier: 'catalog:'
         version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
       '@types/node':
         specifier: 'catalog:'
         version: 25.6.2
-      '@typescript/native-preview':
-        specifier: 'catalog:'
-        version: 7.0.0-dev.20260509.2
       typescript:
         specifier: 'catalog:'
-        version: 6.0.3
+        version: 7.0.2
       vitest:
         specifier: 'catalog:'
         version: 4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
@@ -976,22 +916,19 @@ importers:
         version: 4.20260629.1
       '@effect/tsgo':
         specifier: 'catalog:'
-        version: 0.5.2
+        version: 0.36.4
       '@effect/vitest':
         specifier: 'catalog:'
         version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
       '@types/node':
         specifier: 'catalog:'
         version: 25.6.2
-      '@typescript/native-preview':
-        specifier: 'catalog:'
-        version: 7.0.0-dev.20260509.2
       alchemy:
         specifier: 'catalog:'
         version: 2.0.0-beta.59(patch_hash=204bf3117812a8a49610d2657951bba0c304d2b712f5767e02dcbd2c5536e8bc)(234b374c9d508cf92321aefc5efec8fe)
       typescript:
         specifier: 'catalog:'
-        version: 6.0.3
+        version: 7.0.2
       vitest:
         specifier: 'catalog:'
         version: 4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
@@ -1025,19 +962,16 @@ importers:
         version: 4.20260629.1
       '@effect/tsgo':
         specifier: 'catalog:'
-        version: 0.5.2
+        version: 0.36.4
       '@effect/vitest':
         specifier: 'catalog:'
         version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
       '@types/node':
         specifier: 'catalog:'
         version: 25.6.2
-      '@typescript/native-preview':
-        specifier: 'catalog:'
-        version: 7.0.0-dev.20260509.2
       typescript:
         specifier: 'catalog:'
-        version: 6.0.3
+        version: 7.0.2
       vitest:
         specifier: 'catalog:'
         version: 4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
@@ -1059,19 +993,16 @@ importers:
     devDependencies:
       '@effect/tsgo':
         specifier: 'catalog:'
-        version: 0.5.2
+        version: 0.36.4
       '@effect/vitest':
         specifier: 'catalog:'
         version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
       '@types/node':
         specifier: 'catalog:'
         version: 25.6.2
-      '@typescript/native-preview':
-        specifier: 'catalog:'
-        version: 7.0.0-dev.20260509.2
       typescript:
         specifier: 'catalog:'
-        version: 6.0.3
+        version: 7.0.2
       vitest:
         specifier: 'catalog:'
         version: 4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
@@ -1087,19 +1018,16 @@ importers:
     devDependencies:
       '@effect/tsgo':
         specifier: 'catalog:'
-        version: 0.5.2
+        version: 0.36.4
       '@effect/vitest':
         specifier: 'catalog:'
         version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
       '@types/node':
         specifier: 'catalog:'
         version: 25.6.2
-      '@typescript/native-preview':
-        specifier: 'catalog:'
-        version: 7.0.0-dev.20260509.2
       typescript:
         specifier: 'catalog:'
-        version: 6.0.3
+        version: 7.0.2
       vitest:
         specifier: 'catalog:'
         version: 4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
@@ -1127,22 +1055,19 @@ importers:
         version: 4.20260629.1
       '@effect/tsgo':
         specifier: 'catalog:'
-        version: 0.5.2
+        version: 0.36.4
       '@effect/vitest':
         specifier: 'catalog:'
         version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
       '@types/node':
         specifier: 'catalog:'
         version: 25.6.2
-      '@typescript/native-preview':
-        specifier: 'catalog:'
-        version: 7.0.0-dev.20260509.2
       alchemy:
         specifier: 'catalog:'
         version: 2.0.0-beta.59(patch_hash=204bf3117812a8a49610d2657951bba0c304d2b712f5767e02dcbd2c5536e8bc)(234b374c9d508cf92321aefc5efec8fe)
       typescript:
         specifier: 'catalog:'
-        version: 6.0.3
+        version: 7.0.2
       vitest:
         specifier: 'catalog:'
         version: 4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
@@ -1161,19 +1086,16 @@ importers:
     devDependencies:
       '@effect/tsgo':
         specifier: 'catalog:'
-        version: 0.5.2
+        version: 0.36.4
       '@effect/vitest':
         specifier: 'catalog:'
         version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
       '@types/node':
         specifier: 'catalog:'
         version: 25.6.2
-      '@typescript/native-preview':
-        specifier: 'catalog:'
-        version: 7.0.0-dev.20260509.2
       typescript:
         specifier: 'catalog:'
-        version: 6.0.3
+        version: 7.0.2
       vitest:
         specifier: 'catalog:'
         version: 4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
@@ -1195,19 +1117,16 @@ importers:
     devDependencies:
       '@effect/tsgo':
         specifier: 'catalog:'
-        version: 0.5.2
+        version: 0.36.4
       '@effect/vitest':
         specifier: 'catalog:'
         version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
       '@types/node':
         specifier: 'catalog:'
         version: 25.6.2
-      '@typescript/native-preview':
-        specifier: 'catalog:'
-        version: 7.0.0-dev.20260509.2
       typescript:
         specifier: 'catalog:'
-        version: 6.0.3
+        version: 7.0.2
       vitest:
         specifier: 'catalog:'
         version: 4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
@@ -1226,7 +1145,7 @@ importers:
     devDependencies:
       '@effect/tsgo':
         specifier: 'catalog:'
-        version: 0.5.2
+        version: 0.36.4
       '@effect/vitest':
         specifier: 'catalog:'
         version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
@@ -1236,12 +1155,9 @@ importers:
       '@types/proper-lockfile':
         specifier: 'catalog:'
         version: 4.1.4
-      '@typescript/native-preview':
-        specifier: 'catalog:'
-        version: 7.0.0-dev.20260509.2
       typescript:
         specifier: 'catalog:'
-        version: 6.0.3
+        version: 7.0.2
       vitest:
         specifier: 'catalog:'
         version: 4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
@@ -1275,22 +1191,19 @@ importers:
         version: 4.20260629.1
       '@effect/tsgo':
         specifier: 'catalog:'
-        version: 0.5.2
+        version: 0.36.4
       '@effect/vitest':
         specifier: 'catalog:'
         version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
       '@types/node':
         specifier: 'catalog:'
         version: 25.6.2
-      '@typescript/native-preview':
-        specifier: 'catalog:'
-        version: 7.0.0-dev.20260509.2
       alchemy:
         specifier: 'catalog:'
         version: 2.0.0-beta.59(patch_hash=204bf3117812a8a49610d2657951bba0c304d2b712f5767e02dcbd2c5536e8bc)(234b374c9d508cf92321aefc5efec8fe)
       typescript:
         specifier: 'catalog:'
-        version: 6.0.3
+        version: 7.0.2
       vitest:
         specifier: 'catalog:'
         version: 4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
@@ -1299,19 +1212,16 @@ importers:
     devDependencies:
       '@effect/tsgo':
         specifier: 'catalog:'
-        version: 0.5.2
+        version: 0.36.4
       '@effect/vitest':
         specifier: 'catalog:'
         version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
       '@types/node':
         specifier: 'catalog:'
         version: 25.6.2
-      '@typescript/native-preview':
-        specifier: 'catalog:'
-        version: 7.0.0-dev.20260509.2
       typescript:
         specifier: 'catalog:'
-        version: 6.0.3
+        version: 7.0.2
       vitest:
         specifier: 'catalog:'
         version: 4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
@@ -1758,43 +1668,43 @@ packages:
     peerDependencies:
       effect: ^4.0.0-beta.92
 
-  '@effect/tsgo-darwin-arm64@0.5.2':
-    resolution: {integrity: sha512-GGlnLSbHNASNcGxr96qzZyifvMPb/jFYPk8sNptG9flZJgjqxybrxL/1qrS1MAwG8APgD1BkkL1NuSuAofg46Q==}
+  '@effect/tsgo-darwin-arm64@0.36.4':
+    resolution: {integrity: sha512-oOcWdKQucNch6G4CvidHEzmfgeKEPMvFcz+DXuKGonBLwVHX+i1VYGbZwccEOoiitOg7eWVl4e8S0qKMXg3/gg==}
     cpu: [arm64]
     os: [darwin]
 
-  '@effect/tsgo-darwin-x64@0.5.2':
-    resolution: {integrity: sha512-nBhPST7ZV3aJLh0vRN84ah/Ot2MyPyDax2EbvPSfJJealmUPUxi5HYOVdaY7w96lgNhmUsG9p0dLBHePK6OZmw==}
+  '@effect/tsgo-darwin-x64@0.36.4':
+    resolution: {integrity: sha512-4QZh0n/nUoTI7sp4o7gDEviJ/jXH+IFTVqIyQ2w2fqqPoOvaGl9bVoR/2f9j/67hvY4DHcXKaccpmyoRYhaYsw==}
     cpu: [x64]
     os: [darwin]
 
-  '@effect/tsgo-linux-arm64@0.5.2':
-    resolution: {integrity: sha512-ofkPn1thptZCxcoycCJOL18FIeqc92u1xg/k2Z6v2WpyTFXXM2m8DVKro6WVOJ88izq2NkaqF3TssUhX6wWxJA==}
+  '@effect/tsgo-linux-arm64@0.36.4':
+    resolution: {integrity: sha512-aOv+wVbZWgBt9PGXPA874qgw151GrzkWqaswe+4TXjhdw/M4i35PCUH5T+uaQj3FnQ1NWiPqHIGfNBRjf3xG6w==}
     cpu: [arm64]
     os: [linux]
 
-  '@effect/tsgo-linux-arm@0.5.2':
-    resolution: {integrity: sha512-+4xV9rltFIUGPYGQvqnwsfylDeKZCQiYQHjLw1GrY8ZdVDAKWZM4z/fW4durf+WZcQsu9myS46wbgY6wMzapHw==}
+  '@effect/tsgo-linux-arm@0.36.4':
+    resolution: {integrity: sha512-10oTUnOK/RCfmTMFvMndNIfk61uviyYBRpbxhDd/SiU6DYCmWlnZ/xhGmgyj5uiysOiFNsp3NKxT0d9y4uAz8g==}
     cpu: [arm]
     os: [linux]
 
-  '@effect/tsgo-linux-x64@0.5.2':
-    resolution: {integrity: sha512-V6sHIZlKQv693ABb9REX0RzIvzyCbNg2uP5+4MXwetlSxz8pmeAUCpraAQLXBkKlYL5rG9kMIobDFU9A88Nqig==}
+  '@effect/tsgo-linux-x64@0.36.4':
+    resolution: {integrity: sha512-+BuwiG5d8dLNrrN1PB5GA3gRkBwvlUYmMkm/XkttaLnppp9jePFkB8CgAiNV8j290q7BVO2nQjao5aPkVwmluw==}
     cpu: [x64]
     os: [linux]
 
-  '@effect/tsgo-win32-arm64@0.5.2':
-    resolution: {integrity: sha512-duderlpvUtI25NON88K9ii9vpOmJoCF7On2lh8wY6LXMSXw6whRJSppuhkJp9b5MxSCw85tC0om0bveAoQMtlQ==}
+  '@effect/tsgo-win32-arm64@0.36.4':
+    resolution: {integrity: sha512-HsW90wbMWOeorUeNMdTqTcMZIDcCXdkeFGXTUkx9K1R21fXSw+QEdPtTmEyKsRMXEH4vqek/HQa0yMkUT0CJzA==}
     cpu: [arm64]
     os: [win32]
 
-  '@effect/tsgo-win32-x64@0.5.2':
-    resolution: {integrity: sha512-MCFRUI54cHuvZmnn//rOqu+ShrVSqgr2gIctPfa3L40GNUnAZ2fx/3diGZV7uSysZRMKnrz+zgGtcSM/36W6Og==}
+  '@effect/tsgo-win32-x64@0.36.4':
+    resolution: {integrity: sha512-q4j1q0ESYxxookjA0ECz/84DEH2MsP51K0aZb3uXKfxagHDASPoWDcVu4BJTcwrK5kdZzvw9QrCPjAXe9WZqng==}
     cpu: [x64]
     os: [win32]
 
-  '@effect/tsgo@0.5.2':
-    resolution: {integrity: sha512-LEKmx1rwP1j3l9mPW6Bx8VIdGKW+uEvvML89z4xiWnPC+h/uFm3y6FGHULop9Kl09Ybwn2TVuZzVPSZLj+ydmg==}
+  '@effect/tsgo@0.36.4':
+    resolution: {integrity: sha512-fNmdUV6FgXnvIcG18AVS1SRXt7z9jsyBh5CKuJYmTsE+DgbLaWF0CevKHx7hQPcidDWRVmdJYfU66Jvc/ZEt6w==}
     hasBin: true
 
   '@effect/vitest@4.0.0-beta.92':
@@ -3015,52 +2925,125 @@ packages:
   '@types/ws@8.18.1':
     resolution: {integrity: sha512-ThVF6DCVhA8kUGy+aazFQ4kXQ7E1Ty7A3ypFOe0IcJV8O/M511G99AW24irKrW56Wt44yG9+ij8FaqoBGkuBXg==}
 
-  '@typescript/native-preview-darwin-arm64@7.0.0-dev.20260509.2':
-    resolution: {integrity: sha512-oG9KahiCpx4q70Ood/rRJhYio4oIMHEHfX0g0LhfenlSIjIonitZWjUmUVG9N9q1ev9QWcM8pWpDrGGP0Osp3Q==}
+  '@typescript/typescript-aix-ppc64@7.0.2':
+    resolution: {integrity: sha512-MTKKkWB7p/0E9xi1d1tHtZ5PiLkGEMIq88pK2CubZjOsLtYTLqhgIgi6zepFa+9GHZ6h05NMCkQxGKiPXMxXtQ==}
+    engines: {node: '>=16.20.0'}
+    cpu: [ppc64]
+    os: [aix]
+
+  '@typescript/typescript-darwin-arm64@7.0.2':
+    resolution: {integrity: sha512-gowzar9MwS/aRWp6f3a4KUqzRjAZjOsmGNCM6LcTgXum+dBfgsBVMN+AgvOCCbguXyick6LJhpBszxMebJ8syA==}
     engines: {node: '>=16.20.0'}
     cpu: [arm64]
     os: [darwin]
 
-  '@typescript/native-preview-darwin-x64@7.0.0-dev.20260509.2':
-    resolution: {integrity: sha512-xdEkp23Gu8I7PJCMmSMYtSLX76NKODWj74AoWFPi6MM59ICsjnTSqZf/HmXKSvuNZ5MGb4CMpP3c40dLjGB2PQ==}
+  '@typescript/typescript-darwin-x64@7.0.2':
+    resolution: {integrity: sha512-SZ9xZInqApNlNGc9s0W1VSsktYSOe9cFqNOIqmN1Gs8SmkjKZYFt017G4VwPxASInODuAdbTW7sXiFUf893RgA==}
     engines: {node: '>=16.20.0'}
     cpu: [x64]
     os: [darwin]
 
-  '@typescript/native-preview-linux-arm64@7.0.0-dev.20260509.2':
-    resolution: {integrity: sha512-rd+bMRtUAFBClOAKi9p2rOu6jPmnrjZVljoFyxHw+6bIRLerEQlxP+nIH1olC3HOZPyZ6/x75WtfzTHYeqffiQ==}
+  '@typescript/typescript-freebsd-arm64@7.0.2':
+    resolution: {integrity: sha512-W5NH4y/J0plIIS5b2xvTEkU7JFxyqdMAOgf+Ilhl0vHQXKO5dZoxd+C/jEtq56c4F3wk71RB4BMRQ2XdI+bwYQ==}
+    engines: {node: '>=16.20.0'}
+    cpu: [arm64]
+    os: [freebsd]
+
+  '@typescript/typescript-freebsd-x64@7.0.2':
+    resolution: {integrity: sha512-UMGDx5sTpzNw3WiPebH7l90IWfJggEd+egHt/q6p7/Cm3zqoV7VxkGXt+3DxPIw8CcmvAB0j3sVVfbhX+M4Tpw==}
+    engines: {node: '>=16.20.0'}
+    cpu: [x64]
+    os: [freebsd]
+
+  '@typescript/typescript-linux-arm64@7.0.2':
+    resolution: {integrity: sha512-Qh4eU4/y3yDjnfjjyPYihMj5/ODIlmt+Bzu17OI+fiSRDW57QmU5SiN63exPRNJPKUzcc1INa1NXdrJ+MqHjUQ==}
     engines: {node: '>=16.20.0'}
     cpu: [arm64]
     os: [linux]
 
-  '@typescript/native-preview-linux-arm@7.0.0-dev.20260509.2':
-    resolution: {integrity: sha512-ar5HN/V/4HLF4FZCoVVFj+ET1Soi758hb4WhhzYQfSUXQ/bpVGUGP86JAy8EhVMoeN6qxqWet93MkLSszJOIVg==}
+  '@typescript/typescript-linux-arm@7.0.2':
+    resolution: {integrity: sha512-gffT3xPz9sR7j/YJExkyPntrI0P2EP9XbOyWzth2/Gs0RstK+90RBcO0ncXoXy/beYll1SXw846Nf2zdnEz0QQ==}
     engines: {node: '>=16.20.0'}
     cpu: [arm]
     os: [linux]
 
-  '@typescript/native-preview-linux-x64@7.0.0-dev.20260509.2':
-    resolution: {integrity: sha512-lB26mGzdolYIZiOdBII8roVJCxCUR8zkYszvvHyjB1IPs7d5fmOhT6OzI1zYPYujiSRJi4HVYM1iXTcIfp7KDg==}
+  '@typescript/typescript-linux-loong64@7.0.2':
+    resolution: {integrity: sha512-uEHck9i8hoAzXPiYRib1O7miOnz23SxIeVl6F4LXox+qov1K35jHcEW6VHKvZI+pyvl7fZEP4MCU5LYvIq1GuQ==}
+    engines: {node: '>=16.20.0'}
+    cpu: [loong64]
+    os: [linux]
+
+  '@typescript/typescript-linux-mips64el@7.0.2':
+    resolution: {integrity: sha512-R4KvAMnE43W5Qeqb0Ly56O3mWMWIAgsMyz36DCaycd5nbg/9kzm0liw3JocfRqyJY0KPmzFjbswozXyW0DnIYA==}
+    engines: {node: '>=16.20.0'}
+    cpu: [mips64el]
+    os: [linux]
+
+  '@typescript/typescript-linux-ppc64@7.0.2':
+    resolution: {integrity: sha512-DORx5b3sd/4S7eayxm4FQv+A7CrkUIGRaHiwI8oiHTAI1fAPWhF4J0vAlkC8biAlHSVVwxMQ3tjZ2/DVbnQiiA==}
+    engines: {node: '>=16.20.0'}
+    cpu: [ppc64]
+    os: [linux]
+
+  '@typescript/typescript-linux-riscv64@7.0.2':
+    resolution: {integrity: sha512-wf0jqEDOjrPRnKwYRyyJDRo11KMbvMFrU+q4zqKyChODBzvlkbhNQfKvLxQCcwTpdDaXSHZTVuh0JoCrKCUMHQ==}
+    engines: {node: '>=16.20.0'}
+    cpu: [riscv64]
+    os: [linux]
+
+  '@typescript/typescript-linux-s390x@7.0.2':
+    resolution: {integrity: sha512-IkwJc3L7yhytWd/ewjyxNDfOmswCm9GWMJT/ue/dU4aZNbwZeYAetq42VyLmsmSjvoX7z74X6ZaYCtzAr0EuGw==}
+    engines: {node: '>=16.20.0'}
+    cpu: [s390x]
+    os: [linux]
+
+  '@typescript/typescript-linux-x64@7.0.2':
+    resolution: {integrity: sha512-EYdf2cNg7rgCWJnxCdJ+F3V39O8ihb37eHAu1LK8oAFizgTQbPOK7zHHXbPt8rX24COqODXeI3sIf0fCXG7H/A==}
     engines: {node: '>=16.20.0'}
     cpu: [x64]
     os: [linux]
 
-  '@typescript/native-preview-win32-arm64@7.0.0-dev.20260509.2':
-    resolution: {integrity: sha512-gH3UmtyxHiRNEP0LgQXCVlB5+ZN/U+/Z7jM/zULQtTOxIIFK3Y4b8gbGLvP7uW3u2cqYOg2hc2nuN8OdsCmOig==}
+  '@typescript/typescript-netbsd-arm64@7.0.2':
+    resolution: {integrity: sha512-+polYF4MF04aPpO5FTkHran9yUQDSXqy5GiSDKpsll5jy3l3+g9QLhpf39T+ePtefhXLOGrLl0QIjkQP6VnelA==}
+    engines: {node: '>=16.20.0'}
+    cpu: [arm64]
+    os: [netbsd]
+
+  '@typescript/typescript-netbsd-x64@7.0.2':
+    resolution: {integrity: sha512-8YIT0EHM/3dq10ZOVF/A7pc/YSMtbcecct4rWtexrnSCHOPcpC2KTLXfTCR6vDpnSiY12heNb1GiN/wu+T/FyA==}
+    engines: {node: '>=16.20.0'}
+    cpu: [x64]
+    os: [netbsd]
+
+  '@typescript/typescript-openbsd-arm64@7.0.2':
+    resolution: {integrity: sha512-APT8+ClYnuYm1u9+kgGXoMj2VzWzcymwh2gNSQVySHfkRDGOTVkoWLjCmOQSaO+PoqQ57B0flRp9SA+7GnnkzQ==}
+    engines: {node: '>=16.20.0'}
+    cpu: [arm64]
+    os: [openbsd]
+
+  '@typescript/typescript-openbsd-x64@7.0.2':
+    resolution: {integrity: sha512-yX7s+Q0Dln0Dt9tEzZsAjXXR/+ytBM7AlglaqyeMPxQszJ1JhlJdZ6jLA+IzldHtflX81em7lDao1xXu+aRRkg==}
+    engines: {node: '>=16.20.0'}
+    cpu: [x64]
+    os: [openbsd]
+
+  '@typescript/typescript-sunos-x64@7.0.2':
+    resolution: {integrity: sha512-dLJDGaLZ1D4HPQn62u1n8mBDkJREwMsAkCdkwd4Ieqw+x3TUyTsqY0YiBCtE6H6OzzgGk3iuZ3vFWRS+E8/d1g==}
+    engines: {node: '>=16.20.0'}
+    cpu: [x64]
+    os: [sunos]
+
+  '@typescript/typescript-win32-arm64@7.0.2':
+    resolution: {integrity: sha512-Gyl1Vy6OsWesLzmq+EP0Fb7b4Nid5232AvcA2SFcdYreldpNtYFFofPjnt62y9hQy7VTaZp65ICJjuAQRaVcIQ==}
     engines: {node: '>=16.20.0'}
     cpu: [arm64]
     os: [win32]
 
-  '@typescript/native-preview-win32-x64@7.0.0-dev.20260509.2':
-    resolution: {integrity: sha512-kZV0Vh64hp10saOghPlFZE1qahonqvRgU3iubt8pUY4XLe8IQIofwWCN5vzNNeULE4W4mRtAJbHuvP/muOFomw==}
+  '@typescript/typescript-win32-x64@7.0.2':
+    resolution: {integrity: sha512-0BQ3HkAHHlKLSp1qRvf3SUhGpGsDuhB/jgFw75guyqbxJqEaS0Cw/VFO8i2nHglJUzQCRtMMR/IBAKE3ETMC4g==}
     engines: {node: '>=16.20.0'}
     cpu: [x64]
     os: [win32]
-
-  '@typescript/native-preview@7.0.0-dev.20260509.2':
-    resolution: {integrity: sha512-JAJpEX0yBaEle2zzbX5z9QAhmEfML1SyQafLwbKCdcOtnkGdk5xD8NKIVxq+nTwYjRwuV7kKnQ+fqU3gpWY0qQ==}
-    engines: {node: '>=16.20.0'}
-    hasBin: true
 
   '@usirin/forge@0.2.0':
     resolution: {integrity: sha512-5LR9EGF+TafLAEeleT4xupm/4Quzf149Nhurekefg8JyQVJ/++PwbYGkga1MOTYYzATLfIJbBw/V1oagUkyuJA==}
@@ -4673,9 +4656,9 @@ packages:
     resolution: {integrity: sha512-8ZiHFm91orbSAe2PSAiSVBVko18pbhbiB3U9GglSzF/zCGkR+rxpHx6sEMCUm4kxY4LjDIUGgCfUMtwfZfjfUA==}
     engines: {node: '>=20'}
 
-  typescript@6.0.3:
-    resolution: {integrity: sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw==}
-    engines: {node: '>=14.17'}
+  typescript@7.0.2:
+    resolution: {integrity: sha512-8FYau96o3NKOhbjKi/qNvG/W5jhzxkbdm5sj9AbZ/5T5sWqn3hJgLfGx27sRKZWTvyzCP8dLRBTf5tBTSRVUNA==}
+    engines: {node: '>=16.20.0'}
     hasBin: true
 
   ulidx@2.4.1:
@@ -5414,36 +5397,36 @@ snapshots:
     transitivePeerDependencies:
       - pg-native
 
-  '@effect/tsgo-darwin-arm64@0.5.2':
+  '@effect/tsgo-darwin-arm64@0.36.4':
     optional: true
 
-  '@effect/tsgo-darwin-x64@0.5.2':
+  '@effect/tsgo-darwin-x64@0.36.4':
     optional: true
 
-  '@effect/tsgo-linux-arm64@0.5.2':
+  '@effect/tsgo-linux-arm64@0.36.4':
     optional: true
 
-  '@effect/tsgo-linux-arm@0.5.2':
+  '@effect/tsgo-linux-arm@0.36.4':
     optional: true
 
-  '@effect/tsgo-linux-x64@0.5.2':
+  '@effect/tsgo-linux-x64@0.36.4':
     optional: true
 
-  '@effect/tsgo-win32-arm64@0.5.2':
+  '@effect/tsgo-win32-arm64@0.36.4':
     optional: true
 
-  '@effect/tsgo-win32-x64@0.5.2':
+  '@effect/tsgo-win32-x64@0.36.4':
     optional: true
 
-  '@effect/tsgo@0.5.2':
+  '@effect/tsgo@0.36.4':
     optionalDependencies:
-      '@effect/tsgo-darwin-arm64': 0.5.2
-      '@effect/tsgo-darwin-x64': 0.5.2
-      '@effect/tsgo-linux-arm': 0.5.2
-      '@effect/tsgo-linux-arm64': 0.5.2
-      '@effect/tsgo-linux-x64': 0.5.2
-      '@effect/tsgo-win32-arm64': 0.5.2
-      '@effect/tsgo-win32-x64': 0.5.2
+      '@effect/tsgo-darwin-arm64': 0.36.4
+      '@effect/tsgo-darwin-x64': 0.36.4
+      '@effect/tsgo-linux-arm': 0.36.4
+      '@effect/tsgo-linux-arm64': 0.36.4
+      '@effect/tsgo-linux-x64': 0.36.4
+      '@effect/tsgo-win32-arm64': 0.36.4
+      '@effect/tsgo-win32-x64': 0.36.4
 
   '@effect/vitest@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))':
     dependencies:
@@ -5829,9 +5812,9 @@ snapshots:
 
   '@neon-rs/load@0.0.4': {}
 
-  '@nkzw/fate@1.3.1(patch_hash=e0af930dd67d32efc5463f43c35824fc35d9b9558716831f9cec3764017cf40c)(@trpc/client@11.17.0(@trpc/server@11.17.0(typescript@6.0.3))(typescript@6.0.3))(drizzle-orm@1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3))(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))':
+  '@nkzw/fate@1.3.1(patch_hash=e0af930dd67d32efc5463f43c35824fc35d9b9558716831f9cec3764017cf40c)(@trpc/client@11.17.0(@trpc/server@11.17.0(typescript@7.0.2))(typescript@7.0.2))(drizzle-orm@1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3))(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))':
     dependencies:
-      '@trpc/client': 11.17.0(@trpc/server@11.17.0(typescript@6.0.3))(typescript@6.0.3)
+      '@trpc/client': 11.17.0(@trpc/server@11.17.0(typescript@7.0.2))(typescript@7.0.2)
       superjson: 2.2.6
       zod: 4.4.3
     optionalDependencies:
@@ -6413,14 +6396,14 @@ snapshots:
       '@tiptap/extensions': 3.27.3(@tiptap/core@3.27.3(@tiptap/pm@3.27.3))(@tiptap/pm@3.27.3)
       '@tiptap/pm': 3.27.3
 
-  '@trpc/client@11.17.0(@trpc/server@11.17.0(typescript@6.0.3))(typescript@6.0.3)':
+  '@trpc/client@11.17.0(@trpc/server@11.17.0(typescript@7.0.2))(typescript@7.0.2)':
     dependencies:
-      '@trpc/server': 11.17.0(typescript@6.0.3)
-      typescript: 6.0.3
+      '@trpc/server': 11.17.0(typescript@7.0.2)
+      typescript: 7.0.2
 
-  '@trpc/server@11.17.0(typescript@6.0.3)':
+  '@trpc/server@11.17.0(typescript@7.0.2)':
     dependencies:
-      typescript: 6.0.3
+      typescript: 7.0.2
 
   '@turbo/darwin-64@2.10.3':
     optional: true
@@ -6487,36 +6470,65 @@ snapshots:
     dependencies:
       '@types/node': 25.6.2
 
-  '@typescript/native-preview-darwin-arm64@7.0.0-dev.20260509.2':
+  '@typescript/typescript-aix-ppc64@7.0.2':
     optional: true
 
-  '@typescript/native-preview-darwin-x64@7.0.0-dev.20260509.2':
+  '@typescript/typescript-darwin-arm64@7.0.2':
     optional: true
 
-  '@typescript/native-preview-linux-arm64@7.0.0-dev.20260509.2':
+  '@typescript/typescript-darwin-x64@7.0.2':
     optional: true
 
-  '@typescript/native-preview-linux-arm@7.0.0-dev.20260509.2':
+  '@typescript/typescript-freebsd-arm64@7.0.2':
     optional: true
 
-  '@typescript/native-preview-linux-x64@7.0.0-dev.20260509.2':
+  '@typescript/typescript-freebsd-x64@7.0.2':
     optional: true
 
-  '@typescript/native-preview-win32-arm64@7.0.0-dev.20260509.2':
+  '@typescript/typescript-linux-arm64@7.0.2':
     optional: true
 
-  '@typescript/native-preview-win32-x64@7.0.0-dev.20260509.2':
+  '@typescript/typescript-linux-arm@7.0.2':
     optional: true
 
-  '@typescript/native-preview@7.0.0-dev.20260509.2':
-    optionalDependencies:
-      '@typescript/native-preview-darwin-arm64': 7.0.0-dev.20260509.2
-      '@typescript/native-preview-darwin-x64': 7.0.0-dev.20260509.2
-      '@typescript/native-preview-linux-arm': 7.0.0-dev.20260509.2
-      '@typescript/native-preview-linux-arm64': 7.0.0-dev.20260509.2
-      '@typescript/native-preview-linux-x64': 7.0.0-dev.20260509.2
-      '@typescript/native-preview-win32-arm64': 7.0.0-dev.20260509.2
-      '@typescript/native-preview-win32-x64': 7.0.0-dev.20260509.2
+  '@typescript/typescript-linux-loong64@7.0.2':
+    optional: true
+
+  '@typescript/typescript-linux-mips64el@7.0.2':
+    optional: true
+
+  '@typescript/typescript-linux-ppc64@7.0.2':
+    optional: true
+
+  '@typescript/typescript-linux-riscv64@7.0.2':
+    optional: true
+
+  '@typescript/typescript-linux-s390x@7.0.2':
+    optional: true
+
+  '@typescript/typescript-linux-x64@7.0.2':
+    optional: true
+
+  '@typescript/typescript-netbsd-arm64@7.0.2':
+    optional: true
+
+  '@typescript/typescript-netbsd-x64@7.0.2':
+    optional: true
+
+  '@typescript/typescript-openbsd-arm64@7.0.2':
+    optional: true
+
+  '@typescript/typescript-openbsd-x64@7.0.2':
+    optional: true
+
+  '@typescript/typescript-sunos-x64@7.0.2':
+    optional: true
+
+  '@typescript/typescript-win32-arm64@7.0.2':
+    optional: true
+
+  '@typescript/typescript-win32-x64@7.0.2':
+    optional: true
 
   '@usirin/forge@0.2.0':
     dependencies:
@@ -8061,9 +8073,9 @@ snapshots:
       react: 19.2.6
       scheduler: 0.27.0
 
-  react-fate@1.3.1(patch_hash=6333650bb56ba24c05dc81b19328e014d9b510316cf349d8a05cdd1b7b0efc2b)(@trpc/client@11.17.0(@trpc/server@11.17.0(typescript@6.0.3))(typescript@6.0.3))(drizzle-orm@1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)):
+  react-fate@1.3.1(patch_hash=6333650bb56ba24c05dc81b19328e014d9b510316cf349d8a05cdd1b7b0efc2b)(@trpc/client@11.17.0(@trpc/server@11.17.0(typescript@7.0.2))(typescript@7.0.2))(drizzle-orm@1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)):
     dependencies:
-      '@nkzw/fate': 1.3.1(patch_hash=e0af930dd67d32efc5463f43c35824fc35d9b9558716831f9cec3764017cf40c)(@trpc/client@11.17.0(@trpc/server@11.17.0(typescript@6.0.3))(typescript@6.0.3))(drizzle-orm@1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3))(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
+      '@nkzw/fate': 1.3.1(patch_hash=e0af930dd67d32efc5463f43c35824fc35d9b9558716831f9cec3764017cf40c)(@trpc/client@11.17.0(@trpc/server@11.17.0(typescript@7.0.2))(typescript@7.0.2))(drizzle-orm@1.0.0-rc.4(@cloudflare/workers-types@4.20260629.1)(@effect/sql-d1@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@effect/sql-pg@4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.1)(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3))(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
       react: 19.2.6
       react-dom: 19.2.6(react@19.2.6)
     transitivePeerDependencies:
@@ -8302,7 +8314,28 @@ snapshots:
     dependencies:
       tagged-tag: 1.0.0
 
-  typescript@6.0.3: {}
+  typescript@7.0.2:
+    optionalDependencies:
+      '@typescript/typescript-aix-ppc64': 7.0.2
+      '@typescript/typescript-darwin-arm64': 7.0.2
+      '@typescript/typescript-darwin-x64': 7.0.2
+      '@typescript/typescript-freebsd-arm64': 7.0.2
+      '@typescript/typescript-freebsd-x64': 7.0.2
+      '@typescript/typescript-linux-arm': 7.0.2
+      '@typescript/typescript-linux-arm64': 7.0.2
+      '@typescript/typescript-linux-loong64': 7.0.2
+      '@typescript/typescript-linux-mips64el': 7.0.2
+      '@typescript/typescript-linux-ppc64': 7.0.2
+      '@typescript/typescript-linux-riscv64': 7.0.2
+      '@typescript/typescript-linux-s390x': 7.0.2
+      '@typescript/typescript-linux-x64': 7.0.2
+      '@typescript/typescript-netbsd-arm64': 7.0.2
+      '@typescript/typescript-netbsd-x64': 7.0.2
+      '@typescript/typescript-openbsd-arm64': 7.0.2
+      '@typescript/typescript-openbsd-x64': 7.0.2
+      '@typescript/typescript-sunos-x64': 7.0.2
+      '@typescript/typescript-win32-arm64': 7.0.2
+      '@typescript/typescript-win32-x64': 7.0.2
 
   ulidx@2.4.1:
     dependencies:

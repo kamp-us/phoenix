@@ -986,7 +986,7 @@ Three consequences worth knowing before you install it:
 
 ```bash
 pnpm --filter @kampus/fabrika-cli test        # vitest
-pnpm --filter @kampus/fabrika-cli typecheck   # tsgo
+pnpm --filter @kampus/fabrika-cli typecheck   # tsc
 pnpm --filter @kampus/fabrika-cli build       # tsc -> dist/, for the published tarball only
 ```
 
@@ -994,8 +994,8 @@ pnpm --filter @kampus/fabrika-cli build       # tsc -> dist/, for the published 
 types natively, so an edit to `src/` is live on the next invocation — which is the entire point of
 the workspace `devDependencies` line in the root `package.json`. `build` emits `dist/` for the
 published tarball and nothing else reads it; see the publish note above for why the two halves
-differ. `tsc` and not `tsgo`: the repo carries no bundler, and the artifact consumers install comes
-off the stable compiler.
+differ. Emit and type-check now run the same binary — the stable native `tsc` (ADR 0271) — so the
+published artifact and the gate can no longer disagree about the compiler.
 
 A verb is a **pure function of its dependencies** — the `*-verb.ts` modules compute a
 `VerbOutcome` (exit code, stdout, stderr) and never write a stream or exit. The Effect CLI

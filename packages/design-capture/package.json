@@ -8,7 +8,7 @@
 		".": "./src/golden-store.ts"
 	},
 	"scripts": {
-		"typecheck": "tsgo -p tsconfig.json",
+		"typecheck": "tsc -p tsconfig.json",
 		"capture": "node src/bin.ts capture",
 		"golden-bless": "node src/bin.ts golden-bless"
 	},
@@ -21,7 +21,6 @@
 	"devDependencies": {
 		"@effect/tsgo": "catalog:",
 		"@types/node": "catalog:",
-		"@typescript/native-preview": "catalog:",
 		"typescript": "catalog:"
 	}
 }

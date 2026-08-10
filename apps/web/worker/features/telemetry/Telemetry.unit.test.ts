@@ -124,7 +124,7 @@ describe("toDataPoint — fixed positional AE schema (ADR 0153)", () => {
 });
 
 describe("Telemetry.emit", () => {
-	it("emits the positionally-mapped data point through the write client", () => {
+	it.effect("emits the positionally-mapped data point through the write client", () => {
 		const sink: Cloudflare.AnalyticsEngine.DataPoint[] = [];
 		return Effect.gen(function* () {
 			const telemetry = yield* Telemetry;
@@ -144,7 +144,7 @@ describe("Telemetry.emit", () => {
 		);
 	});
 
-	it("swallows a DatasetError — emit still succeeds, never fails the caller (S4)", () =>
+	it.effect("swallows a DatasetError — emit still succeeds, never fails the caller (S4)", () =>
 		Effect.gen(function* () {
 			const telemetry = yield* Telemetry;
 			const exit = yield* Effect.exit(
@@ -155,21 +155,25 @@ describe("Telemetry.emit", () => {
 			Effect.provide(
 				TelemetryLive.pipe(Layer.provide(Layer.mergeAll(failingClient, inertRuntimeContext))),
 			),
-		));
+		),
+	);
 
-	it("contains a DEFECT in the write path — emit still succeeds (seam-level S4, #2085)", () =>
-		// The whole point of moving containment into the seam: a defect (a die, a sync
-		// throw) inside emit must NOT propagate to the caller. `Effect.ignore` would let
-		// this exit die; `Effect.ignoreCause` swallows the whole Cause, so emit succeeds.
-		Effect.gen(function* () {
-			const telemetry = yield* Telemetry;
-			const exit = yield* Effect.exit(
-				telemetry.emit({feature: "reaction", action: "react", surface: "sozluk"}),
-			);
-			assert.strictEqual(Exit.isSuccess(exit), true);
-		}).pipe(
-			Effect.provide(
-				TelemetryLive.pipe(Layer.provide(Layer.mergeAll(dyingClient, inertRuntimeContext))),
+	it.effect(
+		"contains a DEFECT in the write path — emit still succeeds (seam-level S4, #2085)",
+		() =>
+			// The whole point of moving containment into the seam: a defect (a die, a sync
+			// throw) inside emit must NOT propagate to the caller. `Effect.ignore` would let
+			// this exit die; `Effect.ignoreCause` swallows the whole Cause, so emit succeeds.
+			Effect.gen(function* () {
+				const telemetry = yield* Telemetry;
+				const exit = yield* Effect.exit(
+					telemetry.emit({feature: "reaction", action: "react", surface: "sozluk"}),
+				);
+				assert.strictEqual(Exit.isSuccess(exit), true);
+			}).pipe(
+				Effect.provide(
+					TelemetryLive.pipe(Layer.provide(Layer.mergeAll(dyingClient, inertRuntimeContext))),
+				),
 			),
-		));
+	);
 });

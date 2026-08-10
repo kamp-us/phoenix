@@ -1,10 +1,9 @@
 // Idempotent postinstall wrapper for `effect-tsgo patch` (issue #1800).
 //
-// `@effect/tsgo`'s `patch` command (dist/effect-tsgo.js) swaps the vendored
-// TypeScript-Go binary at
-//   node_modules/.pnpm/@typescript+native-preview-<plat>/.../lib/<tsgo>
+// `@effect/tsgo`'s `patch` command swaps the native TypeScript binary at
+//   node_modules/.pnpm/@typescript+typescript-<plat>-<arch>/.../lib/<tsc>
 // for the Effect Language Service build, backing up whatever is currently there
-// to `<tsgo>.original`, then `<tsgo>.original.1`, `.2`, … It NEVER prunes those
+// to `<tsc>.original`, then `<tsc>.original.1`, `.2`, … It NEVER prunes those
 // backups, so every `pnpm install` (which runs the root `postinstall`) accretes
 // one more numbered backup until patch's own guard trips with
 //   "Too many backup files exist (over 100)"
@@ -13,8 +12,11 @@
 // The fix (ADR 0038 tier-1 — work around it in our own code, no dependency
 // patch): before patching, restore a clean unpatched binary and delete the
 // accumulated backup litter, so the backup counter never climbs. Net steady
-// state after every install: exactly one `<tsgo>` (patched) and one
-// `<tsgo>.original` (pristine), never a growing pile.
+// state after every install: exactly one `<tsc>` (patched) and one
+// `<tsc>.original` (pristine), never a growing pile.
+//
+// The patch target is the stable `typescript` compiler, not the retired
+// `@typescript/native-preview` preview channel — see ADR 0271.
 //
 // Runs mid-install with zero workspace deps — Node builtins only.
 
@@ -25,25 +27,25 @@ import {basename, dirname, join} from "node:path";
 
 const require = createRequire(join(process.cwd(), "noop.js"));
 
-// Resolve the native-preview platform lib dir the way effect-tsgo itself does
-// (getNativePreviewBinaryPath): from the meta package to the per-platform
-// package's lib/. If native-preview isn't installed we simply skip cleanup and
-// let `effect-tsgo patch` report its own diagnostic.
-function resolveTsgoBinaryPath() {
-	const metaPkg = require.resolve("@typescript/native-preview/package.json");
+// Resolve the platform lib dir the way effect-tsgo itself does: from the
+// `typescript` meta package to the per-platform package's lib/. If typescript
+// isn't installed we simply skip cleanup and let `effect-tsgo patch` report its
+// own diagnostic.
+function resolveCompilerBinaryPath() {
+	const metaPkg = require.resolve("typescript/package.json");
 	const platRequire = createRequire(metaPkg);
-	const platformPkg = `@typescript/native-preview-${process.platform}-${process.arch}`;
+	const platformPkg = `@typescript/typescript-${process.platform}-${process.arch}`;
 	const platformPkgJson = platRequire.resolve(`${platformPkg}/package.json`);
-	const binaryName = process.platform === "win32" ? "tsgo.exe" : "tsgo";
+	const binaryName = process.platform === "win32" ? "tsc.exe" : "tsc";
 	return join(dirname(platformPkgJson), "lib", binaryName);
 }
 
 function pruneBackups() {
 	let targetPath;
 	try {
-		targetPath = resolveTsgoBinaryPath();
+		targetPath = resolveCompilerBinaryPath();
 	} catch {
-		// native-preview not resolvable yet — nothing to prune; patch will speak.
+		// typescript not resolvable yet — nothing to prune; patch will speak.
 		return;
 	}
 
@@ -81,7 +83,7 @@ function pruneBackups() {
 		}
 	}
 	if (removed > 0) {
-		console.log(`patch-effect-tsgo: pruned ${removed} stale tsgo backup file(s) in ${dir}`);
+		console.log(`patch-effect-tsgo: pruned ${removed} stale ${name} backup file(s) in ${dir}`);
 	}
 }
 
