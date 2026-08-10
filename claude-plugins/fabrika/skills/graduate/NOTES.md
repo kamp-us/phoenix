@@ -172,7 +172,8 @@ scorecard.
 
 **What no fixture exercises:** `TRAIL-EMPTY`, `SPEC-COMPOSED`, `SOURCE-UNRESOLVED`, `INPUT-REFUSED`,
 `WRITE-UNPROVEN`, `STOPPED` and `NOTE-ADDED` (7 of 11 terminals); the `empty` readiness token; a
-`disregardedEntries` row; a malformed emission marker; and — because both landed after the runs —
+malformed emission marker; a map `## Decisions` entry citing neither authority (`4` on `trail`);
+and — because they landed after the runs —
 the `--decisions` subset path and the second-run remainder.
 
 **Annotated leaks, kept as regression cover and not counted as discriminators:** 1.4, 3.5 and 5.6

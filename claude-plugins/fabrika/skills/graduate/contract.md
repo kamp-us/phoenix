@@ -53,7 +53,7 @@ Each is imported, not restated, because a transcription drifts and a pointer to 
 
 **`renderFooter` is NOT reused, and the reason is a shape mismatch rather than a preference.** Its
 `FooterFields` is `{session, model, branch, timestamp}` and it renders `Filed by an agent · …`; it
-carries no field for the source issue or the trail digest, which are the two things this group's
+carries no field for the source issue or the spec digest, which are the two things this group's
 footer exists to record. This group specifies its own footer renderer below, with byte-exact output
 because the read-back at `9` compares against it.
 
@@ -195,6 +195,15 @@ row's own `ref` field verbatim and `provenance` is from a closed set of two. The
 **not** repeated per line — it is in the footer once, and repeating it made a map-sourced line read
 as two issue numbers in a row (`· #9502 #9505`).
 
+<!-- anchor: THE-DECISIONS-LINE-IS-PARSEABLE-BACK --> **The line is written so `graduate emit` can
+recover the ref from it**, which matters because that parse is what says which subset a spec covers.
+The rule is exact: a decision line matches `^- (?P<text>.+) — \*\*(?P<provenance>ruled|established)\*\* · (?P<ref>.+)$`,
+and `ref` is everything after the **last** ` · ` that follows the bolded provenance token. Anchoring
+on the bolded token — a closed two-member set — is what keeps the parse unambiguous when the text
+itself contains an em dash or a `·`, and it lets a ref carry a space and a `#` (`#9301 R1.2`)
+without quoting. A line in the `## Decisions` section that does not match is `18`: the section is
+machine-rendered at both ends, so a line that will not parse means the body was edited by hand.
+
 **`ref` is shaped by the source kind**, and a reader tells them apart by shape alone:
 
 | Source | `ref` shape | Example |
@@ -273,7 +282,7 @@ digest refusal exists to prevent.
 guarded by a separate prefix gate that runs before it is ever tested (`:78`), and a non-member
 returns `Absent` rather than `Malformed` — so a widening that missed either constant would emit
 markers it can never read back, the hazard that file's own docblock names. An emission is also not a
-verdict: it carries no `PASS`/`FAIL` polarity and binds a trail digest rather than a head SHA.
+verdict: it carries no `PASS`/`FAIL` polarity and binds a spec digest rather than a head SHA.
 
 <!-- anchor: WIRE-FORMAT-COST --> **What the new format costs**, stated in full because a short
 version of this list has been wrong in a sibling draft. It needs, and CI reds without:
@@ -302,7 +311,7 @@ the lowercase hex SHA-256 of, for each entry in trail order, its `ref`, its `pro
 | Name | Scope | Who computes it |
 |---|---|---|
 | **trail digest** | **every** decision on the trail | `graduate trail`, printed as `trailDigest` |
-| **spec digest** | only the decisions **rendered into the filed spec** | `graduate compose` (into the footer) and `graduate emit` (re-derived from the body) |
+| **spec digest** | only the decisions **rendered into the filed spec** | `graduate emit` alone — re-derived from the refs in the body it was handed. `compose` neither computes nor prints it; its answer is the four sections and no footer |
 
 When a spec carries the whole trail the two are **equal by construction**, because the algorithm and
 the entry order are the same and the sets are the same.
@@ -403,7 +412,7 @@ triggers. `0`, `1`, `2` and `127` are stated **here and only here**, and every v
 | `15` | `ALREADY_GRADUATED` — this **spec** digest already emitted an issue | — | — | ✓ | — |
 | `16` | `TRAIL_EMPTY` — the trail holds zero decisions | — | ✓ | ✓ | — |
 | `17` | `DECISIONS_AUTHORED` — the stdin body carries a `## Decisions` heading | — | ✓ | — | — |
-| `18` | `DECISIONS_STALE` — the spec's `## Decisions` section does not match the trail re-derived at emit time | — | — | ✓ | — |
+| `18` | `DECISIONS_STALE` — a ref the spec carries is absent from the re-derived trail, or its provenance or text has changed; or a `## Decisions` line does not parse | — | — | ✓ | — |
 
 **`3`–`11` are imported from
 [`src/report/codes.ts`](../../../../packages/fabrika-cli/src/report/codes.ts)**, not restated as
@@ -424,12 +433,12 @@ terminal.
 
 | Terminal | Codes | What it means for the run |
 |---|---|---|
-| `TRAIL-READ` | `0` from `graduate trail` readiness `ready`; `0` from `graduate read` reporting `ungraduated` | a read completed and nothing blocks synthesis — the trail is resolved, or the source has not graduated yet |
+| `TRAIL-READ` | `0` from `graduate trail` readiness `ready`; `0` from `graduate read` when **no existing emission covers the subset about to be filed** — whether that is `ungraduated`, or `graduated` with `covers` naming only other refs | a read completed and nothing blocks synthesis |
 | `TRAIL-BLOCKED` | `0` from `graduate trail` readiness `blocked`; `13` | an unresolved decision remains — the seam working. Name it and stop |
 | `TRAIL-EMPTY` | `0` from `graduate trail` readiness `empty`; `16` | there is nothing to synthesize yet |
 | `SPEC-COMPOSED` | `0` from `graduate compose` | a body exists and nothing has been filed |
 | `SPEC-FILED` | `0` from `graduate emit` | one spec issue exists at `status:needs-triage`; the lane ends |
-| `ALREADY-GRADUATED` | `0` from `graduate read` reporting `graduated`; `15` | the spec already exists. Report its number; this is a success |
+| `ALREADY-GRADUATED` | `0` from `graduate read` when an existing emission's `covers` **already includes the subset about to be filed**; `15` | that spec already exists. Report its number; this is a success |
 | `NOTE-ADDED` | **no `graduate` code** — `0` from the sibling `fabrika report note` | step 3 found the same spec already filed and added what it lacked. A write happened, so this is not `STOPPED`; no spec was filed, so it is not `SPEC-FILED`. Listed here because a terminal reachable from the skill and seated on no code of this group would otherwise read as an omission |
 | `SOURCE-UNRESOLVED` | `7`, `12` | the source could not be named — absent, or carrying neither source label. Nothing was written |
 | `INPUT-REFUSED` | `3`, `4`, `5`, `6`, `10`, `17`, `18` | an input the caller supplied is **proven** malformed and nothing was written. Fix and re-run; this is not UNKNOWN |
@@ -437,6 +446,12 @@ terminal.
 | `STOPPED` | `1`, `2`, `11`, `14`, `127` | the run is UNKNOWN with nothing written |
 
 `0` is disambiguated by which verb produced it and, for `graduate trail`, by the `readiness` token.
+
+<!-- anchor: GRADUATED-IS-NOT-A-TERMINAL-BY-ITSELF --> **`state: graduated` alone does not seat a
+terminal, and that is deliberate.** It goes true as soon as *anything* has been filed from the
+source, so seating it directly on `ALREADY-GRADUATED` would stop every second run over a
+deliberately split trail — the stranded remainder, reappearing at the terminal layer after being
+designed out of the digest layer. The seat turns on `covers`, not on `state`.
 
 **Registration burden the implementer inherits — four distinct edits, none implied by the others.**
 
@@ -538,7 +553,7 @@ where a later re-citation would read as a changed decision.
 | `graduate trail: #<n> does not exist.` | 7 | refusal |
 | `graduate trail: #<n> carries neither grilling:session nor wayfinding:map — there is no trail to read.` | 12 | refusal |
 | `graduate trail: #<n> carries both grilling:session and wayfinding:map — refusing to guess which trail is live.` | 12 | refusal |
-| `graduate trail: #<n>'s map body does not parse into the five sections, or holds a ## Decisions entry citing neither an authority nor a ticket — the trail is UNKNOWN. Fix the map.` | 4 | refusal |
+| `graduate trail: #<n>'s map body does not parse into the five sections, or holds a ## Decisions entry citing neither an authority nor a ticket — this is proven malformed, not unknown. Fix the map and re-run.` | 4 | refusal |
 | `graduate trail: cannot read #<n>: <reason> — the trail is UNKNOWN, never empty and never ready.` | 11 | refusal |
 | `graduate trail: the resolver could not resolve <login>'s permission: <reason> — a ruling's authority is UNKNOWN, never granted.` | 11 | refusal |
 
@@ -648,8 +663,7 @@ skipped the skill's own step 2.
 | `graduate compose: --trail <path> does not carry a 12-hex trailDigest — the spec could not be bound to a trail.` | 14 | refusal |
 | `graduate compose: --trail <path> carries a decision with no <field> — it cannot be digested.` | 14 | refusal |
 | `graduate compose: --trail <path> holds zero decisions — there is nothing to synthesize.` | 16 | refusal |
-| `graduate compose: --decisions names <ref>, which is not a decision on this trail.` | 13 | refusal |
-| `graduate compose: --decisions names <ref>, which is unresolved on this trail — an unresolved question is not a decision to specify.` | 13 | refusal |
+| `graduate compose: --decisions names <ref>, which is not a decision on this trail — the refs on it are <list>.` | 4 | refusal |
 | `graduate compose: --decisions selected zero decisions — there is nothing to synthesize.` | 16 | refusal |
 | `graduate compose: stdin carries a "## Decisions" heading — that section is rendered from the trail, never authored.` | 17 | refusal |
 
@@ -728,8 +742,14 @@ spec covers; re-derives the trail from `<source>` (the same dispatch `graduate t
 it or its provenance or text has changed** (refs on the trail but *absent from the spec* are the
 remainder and are legal); computes the **spec digest** over the re-derived entries for exactly those
 refs; reads the source's emission markers and refuses at `15` if one already binds that spec digest;
-leak-scans body and title; creates the issue; applies **exactly** `status:needs-triage`; reads the
-issue back; then posts the marker carrying the digest and the covered refs.
+**appends the footer** carrying that digest; leak-scans the **composed whole, footer included**;
+creates the issue; applies **exactly** `status:needs-triage`; reads the issue back; then posts the
+marker carrying the digest and the covered refs.
+
+The footer is appended **before** the leak scan, never after, for the reason `report file` does the
+same: bytes added after a scan are bytes nobody scanned, and this footer interpolates a source
+number and a digest. Ordering it after the scan would reopen #3086 on the one line this group adds
+itself.
 
 <!-- anchor: EIGHTEEN-IS-PER-REF-NOT-WHOLE-SECTION --> **`18` compares ref by ref, never the whole
 section.** A whole-section equality check against the re-derived trail would fail every deliberately
@@ -798,7 +818,9 @@ positional, and everything else is re-derived from the source itself.
 | `graduate emit: #<n>'s trail carries a decision with no <field> — it cannot be digested, so the emission binding is UNKNOWN. Nothing was filed.` | 14 | refusal |
 | `graduate emit: #<n> already graduated this decision set into #<m> at spec digest <hex> — refusing to file the same spec twice. A DIFFERENT subset of the trail may still be graduated.` | 15 | refusal |
 | `graduate emit: #<n>'s trail holds zero decisions — there is nothing to file.` | 16 | refusal |
-| `graduate emit: --spec <path>'s ## Decisions section does not match #<n>'s trail as it reads now — the source moved after the spec was composed. Re-run graduate trail and graduate compose.` | 18 | refusal |
+| `graduate emit: --spec <path> carries <ref>, which is no longer on #<n>'s trail — the source moved after the spec was composed. Re-run graduate trail and graduate compose.` | 18 | refusal |
+| `graduate emit: --spec <path> carries <ref>, whose <provenance|text> on #<n> has changed since the spec was composed. Re-run graduate trail and graduate compose.` | 18 | refusal |
+| `graduate emit: --spec <path> has a ## Decisions line that does not parse: <line>. That section is machine-rendered, so a line this shape means the body was hand-edited.` | 18 | refusal |
 
 **Scope** — the source issue and every comment on it, paginated, to re-derive the trail and read
 existing markers; plus one label existence read. An unpaginated comment read would miss an older
@@ -814,7 +836,7 @@ $ fabrika graduate emit 9412 --spec spec.md --title "Cap moderation weight per t
 
 ```
 $ fabrika graduate emit 9412 --spec spec.md --title "Cap moderation weight per topic"
-graduate emit: #9412 already graduated this trail into #9520 at digest a1b2c3d4e5f6 — refusing to file a second spec for one trail.
+graduate emit: #9412 already graduated this decision set into #9520 at spec digest a1b2c3d4e5f6 — refusing to file the same spec twice. A DIFFERENT subset of the trail may still be graduated.
 $ echo $?
 15
 ```
