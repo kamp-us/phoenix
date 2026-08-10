@@ -62,7 +62,8 @@ becoming a channel that steers the receiver.
 
 **§CAP — capability set.** A repo-scoped token, and **read access to the local repository** — refs,
 commits, `git status`, and the contents of tracked files, which a successor needs to re-verify what
-a pack claims. No command execution beyond those reads. The write surface is exactly two comments on
+a pack claims. No command execution beyond those reads, the `gh` REST reads §ING names, and the
+four `fabrika handoff` verbs themselves. The write surface is exactly two comments on
 an issue that already exists: the pack, and the claim. This skill files no issue, applies no label
 of any kind, edits no issue body, cuts no branch, **pushes nothing**, opens no pull request, merges
 nothing, and closes nothing. It cannot create work; that limit is structural, not a promise.
@@ -156,7 +157,9 @@ file never blocks a pack — it is reported and is not work a successor is being
 
 ## 4 — On the other side: read what you were handed
 
-A fresh session continuing work it did not start starts here.
+A fresh session continuing work it did not start starts here. Read first with no `--base`; if the
+pack's proven half names a different `git.base.branch`, re-read passing that value, or the base row
+reports drift your flag caused rather than drift the work has.
 
 ```bash
 fabrika handoff read --issue 5021
@@ -170,8 +173,10 @@ being stale is exactly the failure this skill exists to prevent.
 
 **`pack` is a closed set of three and all three exit `0`.** `none` means the issue carries no sealed
 pack — a **fact**, and the ordinary state of most issues; work the issue from its own artifacts and
-end `NO-PACK`. `sealed` means a pack is there and unclaimed. `claimed` means someone already holds
-it — end `PACK-HELD-ELSEWHERE` rather than firing a write verb you already know will refuse.
+end `NO-PACK`. `sealed` means a pack is there and unclaimed. `claimed` means a claim marker holds
+it: when `claim.nonce` is **not** this run's, end `PACK-HELD-ELSEWHERE` rather than firing a write
+verb you already know will refuse; when it **is** yours, you are re-entering your own claim, and
+`claim` will answer `resumed` without posting again.
 
 **A pack the verb disregarded is reported, never hidden.** A pack whose author does not resolve to
 write access lands in `disregarded` with its reason rather than being silently absent. A permission
@@ -191,9 +196,16 @@ none, that is itself the most useful thing the pack told you.
 fabrika handoff claim --issue 5021 --nonce 4b8e2f01
 ```
 
-A compare-and-set on the pack's claim marker. Without it, a pack somebody read and abandoned is
-byte-identical to one nobody has opened, and two seats resume the same work — which is the crew
-reality this skill was filed out of (#5283).
+**A claim says you are doing this pack's work — not merely that you read it.** Claim when you intend
+to continue, and do not claim a pack you are about to abandon: a claim on work nobody should pick up
+fences a third session off free ground. Re-running `claim` with the nonce that already holds it
+answers `resumed` and posts nothing, so re-entry is safe.
+
+Without a claim, a pack somebody read and abandoned is byte-identical to one nobody has opened, and
+two seats resume the same work — the crew reality this skill was filed out of (#5283).
+
+Author a run nonce for this side too — **eight lowercase hex characters**, yours, not the pack's.
+Reusing the pack's nonce would make the compare-and-set compare a value with itself.
 
 <!-- anchor: CLAIM-KEY-IS-THE-RUN-NONCE --> **Claim with this run's nonce, never a session id.** A
 session id is pane-constant rather than per-run and sibling subagents of one parent share it (#4516,
@@ -219,16 +231,20 @@ nothing, and removes nothing, so there is never a disposition to state.
 - `PACK-STALE` — `read` at `0` whose drift makes the pack's `## Next act` impossible: the branch is
   gone, or its pull request already merged or closed. **A success, not an error** — the pack did its
   job by telling you the ground moved. Work the issue fresh and say what the pack claimed.
-- `PACK-HELD-ELSEWHERE` — another run holds it. Two ways, and say which — `15` from `claim`, or
-  `read` at `0` reporting `claimed`. Do not duplicate the work.
+- `PACK-HELD-ELSEWHERE` — **another** run holds it. Two ways, and say which — `15` from `claim`, or
+  `read` at `0` reporting `claimed` whose `claim.nonce` is not this run's. Do not duplicate the work.
 - `WORK-UNREACHABLE` — `12`: the work is not reachable by a successor and nothing was posted. Push
   it outside this skill and re-run, or re-run declaring the loss.
 - `PACK-UNREADABLE` — `14`: a sealed pack exists and does not parse. This needs a human; never guess
   what a malformed pack meant, and never treat it as absent.
 - `NOT-A-HANDOFF` — no exit code; your own judgment from step 1. Say which of the two you found —
   work that is done (fire `ship`) or work not yet in flight (nothing to pack).
-- `INPUT-REFUSED` — `3`, `4`, `5`, `6`: your asserted half is **proven** malformed. Fix it and
-  re-run; this is not UNKNOWN.
+- `INPUT-REFUSED` — `3`, `4`: your asserted half is **proven** malformed. Fix it and re-run; this
+  is not UNKNOWN.
+- `LEAK-REFUSED` — `5`, `6`: the composed document carries a machine-local path or a bare `@`
+  reference. Proven, and the refusal names **which half** carried it. If it was your asserted half,
+  edit it and re-run; if it was the derived ground state, editing stdin will not clear it — the
+  offending value is a branch or label name, so rename it or stop.
 - `TARGET-UNRESOLVED` — `7`: the issue does not exist.
 - `WRITE-UNPROVEN` — `8`, `9`: the comment may or may not have landed, or read back differently.
   Re-read before re-posting; the refusal names what needs a human.
@@ -283,7 +299,7 @@ every fabrika skill, so one reader parses all of them. Front-door is
 
 | Must exist | Why this skill needs it | When missing |
 | --- | --- | --- |
-| A GitHub repository reachable over `gh` REST, with a token carrying `issues: write` | the pack and the claim are comments on an issue, and the issue is the only place a successor sharing nothing with this session can find them ([`contract.md`](contract.md), all four verbs) | **fail-loud** — `11` before any write, `8` after one; end `STOPPED` and name the repo. There is no local fallback: a pack on this machine's disk is a pack the successor cannot reach, which is the defect this skill is built against |
+| A GitHub repository reachable over `gh` REST, with a token carrying `issues: write` | the pack and the claim are comments on an issue, and the issue is the only place a successor sharing nothing with this session can find them ([`contract.md`](contract.md), all four verbs) | **fail-loud** — `11` before any write (end `STOPPED`), `8` after one (end `WRITE-UNPROVEN`); name the repo. There is no local fallback: a pack on this machine's disk is a pack the successor cannot reach, which is the defect this skill is built against |
 | A git working tree — the repo root resolves, and `git status` and `git rev-parse` answer | the proven half is derived from it, and the successor's drift check re-derives it ([`contract.md`](contract.md), `handoff capture` / `handoff read`) | **fail-loud** — `11`. A tree state that cannot be read is UNKNOWN, never "clean"; a pack asserting reachable work it could not verify is the one thing this skill must not post |
 | A remote named `origin` the branch can be compared against | reachability is what makes a pack usable — an unpushed head is invisible to a successor ([`contract.md`](contract.md), `handoff capture`, the `reachable` field) | **degrade** — with no upstream, `capture` reports `reachable: "unknown"` and both counts `null`, and `take` refuses `12` unless `--declare-unreachable` is given. The pack may still be taken; what it may not do is claim a reachability it could not prove |
 | Readable collaborator permissions — `repos/<repo>/collaborators/<login>/permission` | resolves a pack's author before a successor acts on it (ADR 0055, [`contract.md`](contract.md), `handoff read`) | **fail-loud** — `11`. A permission read that fails is UNKNOWN, never a grant. The load-bearing row: degrading here would let anyone with a GitHub account write a document a successor acts on |

@@ -140,7 +140,7 @@ One comment. The marker line, then the asserted half, then the proven half — i
 nothing else:
 
 ```markdown
-<!-- fabrika:handoff pack nonce=7f3a9c21 sealedAt=2026-08-09T18:36:48Z groundDigest=368842989186 -->
+<!-- fabrika:handoff pack nonce=7f3a9c21 sealedAt=2026-08-09T18:36:48Z groundDigest=f9d0814b89b4 -->
 
 ## Intent
 Make the fanout guard classify a mutation that writes through a helper.
@@ -157,7 +157,7 @@ Whether one level is enough. I did not survey how deep the real call chains go.
 
 ## Ground state — proven
 ```json
-{"issue":5021,"repo":"kamp-us/phoenix","capturedAt":"2026-08-09T18:36:48Z","git":{"branch":"umut/fanout-helper","head":"4f1c8a2b9d3e5607182934abcdef5566778899aa","upstream":"origin/umut/fanout-helper","reachable":"pushed","aheadBy":0,"behindBy":2,"base":{"branch":"main","head":"11223344556677889900aabbccddeeff00112233"},"tree":{"state":"clean","trackedModified":0,"untracked":0}},"board":{"issue":{"state":"open","labels":["p2","type:chore"]},"pull":{"number":5290,"state":"open","head":"4f1c8a2b9d3e5607182934abcdef5566778899aa","checks":"failing"}},"groundDigest":"368842989186"}
+{"issue":5021,"repo":"kamp-us/phoenix","capturedAt":"2026-08-09T18:36:48Z","git":{"branch":"umut/fanout-helper","head":"4f1c8a2b9d3e5607182934abcdef5566778899aa","upstream":"origin/umut/fanout-helper","reachable":"pushed","aheadBy":0,"behindBy":0,"base":{"branch":"main","head":"11223344556677889900aabbccddeeff00112233"},"tree":{"state":"clean","trackedModified":0,"untracked":0}},"board":{"issue":{"state":"open","labels":["p2","type:chore"]},"pull":{"number":5290,"state":"open","head":"4f1c8a2b9d3e5607182934abcdef5566778899aa","checks":"failing"}},"groundDigest":"f9d0814b89b4"}
 ```
 ```
 
@@ -186,7 +186,7 @@ premise-inheritance (#4133) the two-half split exists to prevent.
 One line, the first line of the comment:
 
 ```
-<!-- fabrika:handoff pack nonce=7f3a9c21 sealedAt=2026-08-09T18:36:48Z groundDigest=368842989186 -->
+<!-- fabrika:handoff pack nonce=7f3a9c21 sealedAt=2026-08-09T18:36:48Z groundDigest=f9d0814b89b4 -->
 ```
 
 and the claim, the first line of its own separate comment:
@@ -233,7 +233,7 @@ undigested ones (`capturedAt`, `groundDigest`). Every field's derivation:
 | 8 | `git.behindBy` | the left count of the same command | integer, or `null` when `upstream` is `null` |
 | 9 | `git.base.branch` | `--base`, defaulting to the repository's default branch from the `getIssue` repo payload | string |
 | 10 | `git.base.head` | `git rev-parse <base.branch>` | 40 lowercase hex |
-| 11 | `git.tree.state` | `clean` when `git status --porcelain=v1 --untracked-files=all` prints nothing; `dirty` otherwise | `clean` / `dirty` |
+| 11 | `git.tree.state` | `clean` when `git status --porcelain=v1 --untracked-files=all` prints nothing; `dirty` otherwise | `clean` / `dirty` — **`dirty` may reflect untracked files only**; `trackedModified` is the field the reachability guard reads |
 | 12 | `git.tree.trackedModified` | count of porcelain lines whose status is not `??` | integer |
 | 13 | `git.tree.untracked` | count of porcelain lines whose status is `??` | integer |
 | 14 | `board.issue.state` | the issue payload's `state` | `open` / `closed` |
@@ -254,7 +254,7 @@ same case for the same reason. Conflating the two is how a guard vouches for a t
 
 **The digest pre-image is the nineteen numbered fields, in that order**, one per line as
 `<path>=<json>` where `<json>` is the field's JSON encoding (`null` for an absent one, and all four
-`board.pull.*` lines carry `null` when `board.pull` is), LF-joined with a trailing newline.
+`board.pull.*` lines carry `null` when `board.pull` is), LF-joined. (A trailing newline is normalised away by `normalizeForReadback` before hashing, so it changes nothing either way.)
 `groundDigest` is `bodyDigest` of that string. For the worked example above the pre-image is exactly:
 
 ```
@@ -265,7 +265,7 @@ git.head="4f1c8a2b9d3e5607182934abcdef5566778899aa"
 git.upstream="origin/umut/fanout-helper"
 git.reachable="pushed"
 git.aheadBy=0
-git.behindBy=2
+git.behindBy=0
 git.base.branch="main"
 git.base.head="11223344556677889900aabbccddeeff00112233"
 git.tree.state="clean"
@@ -288,15 +288,37 @@ group applies no label and closes nothing; 16–19 are pull-request fields no co
 can move. One honest qualification on row 15: the claim is that **no write of this group's** moves a
 digested field, and a host repository whose own automation relabels in response to a comment can
 move it anyway. That is someone else's write, but it is drift a successor will see, so the invariant
-is stated against this group's writes rather than against the world. Therefore a successor's drift check never fires on the handoff's own footprint, and
-`drift: "none"` is a statement about the *work* rather than an artefact of the recording. `capturedAt`
+is stated against this group's writes rather than against the world. Therefore a successor's drift check never fires on the handoff's own footprint — a fortiori, since
+the compared sixteen are a strict subset of the digested nineteen — and `drift: "none"` is a
+statement about the *work* rather than an artefact of the recording. `capturedAt`
 is excluded for a different reason — it differs on every derivation by construction, so digesting or
 comparing it would make drift permanently `moved`. Every exclusion is drift you can no longer
 detect, so the set is held to those two. The implementation owes a deterministic test that `take`
 followed immediately by `read` yields `drift: "none"`.
 
-**The compared set is the same nineteen fields.** `read`'s drift is a field-by-field comparison over
-exactly the digest pre-image, so the digest and the drift can never disagree about what counts.
+### What `read` re-derives, and why it is not simply "the ground again"
+
+<!-- anchor: READ-DERIVES-AGAINST-THE-PACKED-BRANCH --> **`read` re-derives rows 3–10 against the
+pack's own `git.branch`, never against the successor's `HEAD`.** A successor is by construction a
+different checkout — usually a fresh worktree sitting on the default branch — so deriving `git.head`
+from `HEAD` would report the successor's own location as drift and mark ten rows moved on a
+perfectly current pack. So `read` resolves `<packed branch>`, `<packed branch>@{u}` and the
+merge-base against that ref, and `board.pull` is selected by the **packed** branch's head ref rather
+than by whatever is checked out.
+
+**The compared set is therefore sixteen of the nineteen, not all of them.** Rows 11–13 — the three
+`git.tree.*` fields — are a property of the *working copy that took the pack*, not of the work, and
+no successor can observe them. Comparing them across machines is meaningless, so they are digested
+(the pack attests the tree it was taken from) and **not compared**. The digest set and the compared
+set are deliberately different sizes, and that difference is restated wherever the compared set is named.
+
+**`drift` carries three keys — `packedBranch`, `state` and `fields`. `packedBranch` is a closed
+set of three:** `resolves`
+(the packed branch still names a commit), `gone` (it is proven absent), `unknown` (the ref read
+failed). It is not a field row because it is not a comparison — it is the precondition every row
+3–10 comparison rests on, and when it is `gone` those eight rows are reported with `live: null` and
+`state: "moved"`. It is also what makes the skill's `PACK-STALE` "the branch is gone" leg
+observable; without it no field reports branch existence at all.
 
 ## Shared conventions
 
@@ -457,7 +479,7 @@ fabrika handoff capture --issue 5021 [--base main] [--repo <owner/name>]
 **Output** — machine. One JSON object, the ground state specified above:
 
 ```json
-{"issue":5021,"repo":"kamp-us/phoenix","capturedAt":"2026-08-09T18:36:48Z","git":{"branch":"umut/fanout-helper","head":"4f1c8a2b9d3e5607182934abcdef5566778899aa","upstream":"origin/umut/fanout-helper","reachable":"pushed","aheadBy":0,"behindBy":2,"base":{"branch":"main","head":"11223344556677889900aabbccddeeff00112233"},"tree":{"state":"clean","trackedModified":0,"untracked":0}},"board":{"issue":{"state":"open","labels":["p2","type:chore"]},"pull":{"number":5290,"state":"open","head":"4f1c8a2b9d3e5607182934abcdef5566778899aa","checks":"failing"}},"groundDigest":"368842989186"}
+{"issue":5021,"repo":"kamp-us/phoenix","capturedAt":"2026-08-09T18:36:48Z","git":{"branch":"umut/fanout-helper","head":"4f1c8a2b9d3e5607182934abcdef5566778899aa","upstream":"origin/umut/fanout-helper","reachable":"pushed","aheadBy":0,"behindBy":0,"base":{"branch":"main","head":"11223344556677889900aabbccddeeff00112233"},"tree":{"state":"clean","trackedModified":0,"untracked":0}},"board":{"issue":{"state":"open","labels":["p2","type:chore"]},"pull":{"number":5290,"state":"open","head":"4f1c8a2b9d3e5607182934abcdef5566778899aa","checks":"failing"}},"groundDigest":"f9d0814b89b4"}
 ```
 
 **There is no empty answer.** A repository always has a git state and an issue always has a state,
@@ -495,7 +517,7 @@ and here it would license a pack asserting reachable work that is not reachable.
 
 ```
 $ fabrika handoff capture --issue 5021
-{"issue":5021,"repo":"kamp-us/phoenix","capturedAt":"2026-08-09T18:36:48Z","git":{"branch":"umut/fanout-helper","head":"4f1c8a2b9d3e5607182934abcdef5566778899aa","upstream":"origin/umut/fanout-helper","reachable":"pushed","aheadBy":0,"behindBy":2,"base":{"branch":"main","head":"11223344556677889900aabbccddeeff00112233"},"tree":{"state":"clean","trackedModified":0,"untracked":0}},"board":{"issue":{"state":"open","labels":["p2","type:chore"]},"pull":{"number":5290,"state":"open","head":"4f1c8a2b9d3e5607182934abcdef5566778899aa","checks":"failing"}},"groundDigest":"368842989186"}
+{"issue":5021,"repo":"kamp-us/phoenix","capturedAt":"2026-08-09T18:36:48Z","git":{"branch":"umut/fanout-helper","head":"4f1c8a2b9d3e5607182934abcdef5566778899aa","upstream":"origin/umut/fanout-helper","reachable":"pushed","aheadBy":0,"behindBy":0,"base":{"branch":"main","head":"11223344556677889900aabbccddeeff00112233"},"tree":{"state":"clean","trackedModified":0,"untracked":0}},"board":{"issue":{"state":"open","labels":["p2","type:chore"]},"pull":{"number":5290,"state":"open","head":"4f1c8a2b9d3e5607182934abcdef5566778899aa","checks":"failing"}},"groundDigest":"f9d0814b89b4"}
 $ echo $?
 0
 ```
@@ -543,12 +565,15 @@ Reads the four asserted sections from stdin.
 **Output** — machine. One JSON object:
 
 ```json
-{"issue":5021,"packComment":9234567891,"nonce":"7f3a9c21","sealedAt":"2026-08-09T18:36:48Z","groundDigest":"368842989186","reachable":"pushed","supersedes":null}
+{"issue":5021,"packComment":9234567891,"packNonce":"7f3a9c21","sealedAt":"2026-08-09T18:36:48Z","groundDigest":"f9d0814b89b4","reachable":"pushed","supersedes":null}
 ```
 
-<!-- anchor: PACK-IS-A-TOKEN-PACKCOMMENT-IS-AN-ID --> **`packComment` is a comment id; the bare key
-`pack` is reserved group-wide for `read`'s three-value state token.** One key never carries two
-types across a group, or a caller diffing on it compares an integer with a word.
+<!-- anchor: PACK-IS-A-TOKEN-PACKCOMMENT-IS-AN-ID --> **One key, one meaning, group-wide.** `pack` is only ever `read`'s three-value state token and
+`claim` only ever `claim`'s two-value one; ids and nonces are always qualified by what they belong
+to — `packComment` / `claimComment`, `packNonce` / `claimNonce` — and the pack's holder is `heldBy`,
+an object, never the token key `claim`. Inside `disregarded` a row carries `kind` so its `comment`
+is unambiguous. The rule is that a caller diffing any key across two verbs compares the same thing;
+the bare `comment`, `nonce` and `claim` this originally used each broke it in a different way.
 
 `supersedes` is the comment id of the previous sealed pack on this issue, or `null` when this is the
 first. It is reported rather than acted on: nothing is edited or closed, and `read` resolves the
@@ -569,7 +594,10 @@ pack rather than inferring an empty field.
 3. **The issue exists.** Otherwise `7`.
 4. **A fresh capture is taken.** A failed derivation is `11`, and nothing is written.
 5. **The work is reachable** — `git.reachable` is `pushed` and `git.tree.trackedModified` is `0`.
-   Otherwise `12`, unless `--declare-unreachable` was given. **`git.tree.untracked` does not
+   Otherwise `12`, unless `--declare-unreachable` was given. **Which of the four `12` rows is
+   printed depends on which legs failed** — an absent upstream (`reachable: "unknown"`) gets its own
+   message and its own remedy, because "commit and push" is the wrong instruction there and
+   `aheadBy` is `null` so the joint message could not even render. **`git.tree.untracked` does not
    participate**: an untracked file is not work a pack points at, and blocking on one would refuse
    every session with a stray scratch file.
 6. **The composed document — marker, asserted half and proven half — carries no machine-local path
@@ -619,6 +647,9 @@ reads back differently is `9`, naming the comment id so a human can inspect it.
 | `handoff take: posted #<c> and the read-back differs — the pack may be truncated. Read #<c> before re-taking.` | 9 | refusal |
 | `handoff take: cannot derive the ground state: <reason> — nothing was written and the pack would have asserted a ground it could not prove.` | 11 | refusal |
 | `handoff take: <k> commit(s) are not pushed and <m> tracked file(s) are modified — a successor cannot see either. Commit and push outside this skill and re-run, or re-run with --declare-unreachable to record the loss.` | 12 | refusal |
+| `handoff take: <k> commit(s) are not pushed — a successor cannot see them. Push outside this skill and re-run, or re-run with --declare-unreachable to record the loss.` | 12 | refusal |
+| `handoff take: <m> tracked file(s) are modified — a successor cannot see them. Commit and push outside this skill and re-run, or re-run with --declare-unreachable to record the loss.` | 12 | refusal |
+| `handoff take: <branch> has no upstream, so whether a successor can reach it is UNKNOWN. Set an upstream and re-run, or re-run with --declare-unreachable to record the loss.` | 12 | refusal |
 
 **Scope** — the ground `capture` scans, plus the issue's existing comments to resolve `supersedes`,
 paginated. The scope line on stderr names the comment count scanned. **Zero prior packs is a fact**
@@ -629,7 +660,7 @@ and `supersedes` is never guessed.
 
 ```
 $ printf '## Intent\nWiden the fanout guard.\n\n## Established\nThe guard reads one file only; a failing case is committed.\n\n## Next act\nFollow one level of local helper call, then re-run the case.\n\n## Unsure\nWhether one level is enough.\n' | fabrika handoff take --issue 5021 --nonce 7f3a9c21
-{"issue":5021,"packComment":9234567891,"nonce":"7f3a9c21","sealedAt":"2026-08-09T18:36:48Z","groundDigest":"368842989186","reachable":"pushed","supersedes":null}
+{"issue":5021,"packComment":9234567891,"packNonce":"7f3a9c21","sealedAt":"2026-08-09T18:36:48Z","groundDigest":"f9d0814b89b4","reachable":"pushed","supersedes":null}
 $ echo $?
 0
 ```
@@ -677,13 +708,13 @@ fabrika handoff read --issue 5021 [--base main] [--repo <owner/name>]
 **Output** — machine. One JSON object. A `sealed` pack whose ground has moved:
 
 ```json
-{"issue":5021,"pack":"sealed","comment":9234567891,"nonce":"7f3a9c21","sealedAt":"2026-08-09T18:36:48Z","author":"usirin","asserted":{"intent":"Widen the fanout guard.","established":"The guard reads one file only; a failing case is committed.","nextAct":"Follow one level of local helper call, then re-run the case.","unsure":"Whether one level is enough."},"ground":{"packed":"368842989186","live":"aa10b7c4d3e9"},"drift":{"state":"moved","fields":[{"field":"git.head","packed":"4f1c8a2b9d3e5607182934abcdef5566778899aa","live":"7ab3419e0c25d8f6041a2b3c4d5e6f7089abcdef","state":"moved"},{"field":"board.pull.checks","packed":"failing","live":"passing","state":"moved"}]},"claim":null,"disregarded":[],"scanned":{"comments":14}}
+{"issue":5021,"pack":"sealed","packComment":9234567891,"packNonce":"7f3a9c21","sealedAt":"2026-08-09T18:36:48Z","author":"usirin","asserted":{"intent":"Widen the fanout guard.","established":"The guard reads one file only; a failing case is committed.","nextAct":"Follow one level of local helper call, then re-run the case.","unsure":"Whether one level is enough."},"ground":{"packed":"f9d0814b89b4"},"drift":{"packedBranch":"resolves","state":"moved","fields":[{"field":"git.head","packed":"4f1c8a2b9d3e5607182934abcdef5566778899aa","live":"7ab3419e0c25d8f6041a2b3c4d5e6f7089abcdef","state":"moved"},{"field":"board.pull.head","packed":"4f1c8a2b9d3e5607182934abcdef5566778899aa","live":"7ab3419e0c25d8f6041a2b3c4d5e6f7089abcdef","state":"moved"},{"field":"board.pull.checks","packed":"failing","live":"passing","state":"moved"}]},"heldBy":null,"disregarded":[],"scanned":{"comments":14}}
 ```
 
 A `claimed` pack, which is the third token and needs its own shape shown:
 
 ```json
-{"issue":5021,"pack":"claimed","comment":9234567891,"nonce":"7f3a9c21","sealedAt":"2026-08-09T18:36:48Z","author":"usirin","asserted":{"intent":"Widen the fanout guard.","established":"The guard reads one file only; a failing case is committed.","nextAct":"Follow one level of local helper call, then re-run the case.","unsure":"Whether one level is enough."},"ground":{"packed":"368842989186","live":"368842989186"},"drift":{"state":"none","fields":[]},"claim":{"nonce":"4b8e2f01","claimedAt":"2026-08-09T19:02:11Z","comment":9234599999,"by":"usirin"},"disregarded":[],"scanned":{"comments":15}}
+{"issue":5021,"pack":"claimed","packComment":9234567891,"packNonce":"7f3a9c21","sealedAt":"2026-08-09T18:36:48Z","author":"usirin","asserted":{"intent":"Widen the fanout guard.","established":"The guard reads one file only; a failing case is committed.","nextAct":"Follow one level of local helper call, then re-run the case.","unsure":"Whether one level is enough."},"ground":{"packed":"f9d0814b89b4"},"drift":{"packedBranch":"resolves","state":"none","fields":[]},"heldBy":{"claimNonce":"4b8e2f01","claimedAt":"2026-08-09T19:02:11Z","claimComment":9234599999,"by":"usirin"},"disregarded":[],"scanned":{"comments":15}}
 ```
 
 **`pack` is a closed set of three, and all three exit `0`:**
@@ -691,20 +722,29 @@ A `claimed` pack, which is the third token and needs its own shape shown:
 | Token | Meaning |
 |---|---|
 | `none` | the issue carries no sealed pack this verb will honour — a **fact**, and the ordinary state of most issues |
-| `sealed` | the latest pack parsed and carries no claim; `claim` is `null` |
-| `claimed` | the latest pack parsed and a claim marker holds it; `claim` carries `nonce`, `claimedAt`, the claim's `comment` id, and the resolved `by` login |
+| `sealed` | the latest pack parsed and carries no claim; `heldBy` is `null` |
+| `claimed` | the latest pack parsed and a claim marker holds it; `heldBy` carries `claimNonce`, `claimedAt`, `claimComment` and the resolved `by` login |
 
-When `pack` is `none`, `comment`, `nonce`, `sealedAt`, `author`, `asserted`, `ground`, `drift` and
-`claim` are all `null`, and `disregarded` says whether anything was *nearly* a pack. `scanned` is
+When `pack` is `none`, `packComment`, `packNonce`, `sealedAt`, `author`, `asserted`, `ground`, `drift` and
+`heldBy` are all `null`, and `disregarded` says whether anything was *nearly* a pack. `scanned` is
 present on every answer and names the reads the verdict rests on.
+
+<!-- anchor: ONE-SUMMARY-NOT-TWO --> **`ground` carries only `packed` — the digest the pack
+attested at seal time — and there is deliberately no `live` counterpart.** A live digest would have
+to be taken over some set, and neither choice works: over the nineteen it folds in the successor's
+own working-copy rows, so it would differ while `drift.state` said `none`; over the sixteen it is
+not comparable to `packed` at all. Two top-level summaries that can disagree, with nothing saying
+which wins, is worse than one. `drift` is the comparison; `ground.packed` is the attestation `read`
+re-checks against the fields it parsed.
 
 **`drift.state` is a closed set of three**, and is the **worst** of the per-field states: `none` when
 every field compared equal, `moved` when at least one differs, `unknown` when any field's live value
 could not be derived — though in practice a failed re-derivation is `11` for the whole call, so
 `unknown` is reachable only for a field a future derivation makes optional. `fields` lists **only**
-the fields whose state is not `same`, each with `packed`, `live` and its own `state`. The compared
-set is exactly the nineteen digest pre-image fields, so the drift and the digest can never disagree
-about what counts.
+the fields whose state is not `same`, each with `packed`, `live` and its own `state` — itself a
+closed set of three, `same` / `moved` / `unknown`, the per-field twin of the document-level token. The compared
+set is the **sixteen** observable fields of the nineteen — rows 11–13 are digested but not
+compared, per *What `read` re-derives* above.
 
 <!-- anchor: DRIFT-IS-NEVER-OPTIONAL --> **There is no way to read a pack without its drift.** The
 two were one verb from the start, because a caller who could skip the second call would sometimes
@@ -718,11 +758,20 @@ acts on — the highest-leverage read-to-write path in the quintet. An author wh
 older packs; a permission read that **fails** is `11` for the whole call, never a grant (ADR 0055).
 
 **`disregarded`** is an array, empty when nothing was disregarded, of every marker-bearing comment
-this verb did not honour as the current pack: `comment` (its id), `reason` (a closed set —
-`unauthorized`, `superseded`), and `detail`, a human-readable string. It is **bounded by the walk**:
+this verb did not honour as the current pack: `kind` (`pack` or `claim`, so the id is never
+ambiguous), `comment` (that artifact's id), `reason` (a closed set — `unauthorized`, `superseded`),
+and `detail`, a human-readable string. It is **bounded by the walk**:
 the verb reports only what it inspected on its way to the answer — packs newer than the one it
 honoured, and any claim naming a superseded pack — never an unbounded history of every pack an issue
 has ever carried.
+
+<!-- anchor: THE-DIGEST-IS-RECHECKED-ON-READ --> **`read` recomputes the packed digest from the
+nineteen fields it parsed out of the proven half, and compares it against both printed copies** —
+the one in the marker and the one in the JSON. Any disagreement between the three is `14`. Without
+this the digest is decorative on the read path: a pack comment is editable by its author and by
+anyone with write access, so two copies of a number nobody recomputes can drift with nothing marking
+it. It is also the only check that catches a truncated or edited proven half independently of the
+write-time read-back, which no successor was present for.
 
 <!-- anchor: A-MALFORMED-LATEST-PACK-REFUSES --> **A malformed pack is `14` and never `none`, and
 never a `disregarded` row.** The `WireRead` three-valued read is what makes the distinction
@@ -739,7 +788,7 @@ pack is not read, and the refusal names the comment a human must look at.
 | `0` | the pack state, its two halves and the drift are on stdout |
 | `7` | the issue does not exist |
 | `11` | a comment read, a permission read, or the live re-derivation failed |
-| `14` | the latest sealed pack does not parse |
+| `14` | the latest sealed pack does not parse, or its `groundDigest` disagrees with the fields it labels |
 
 **Errors**
 
@@ -747,12 +796,13 @@ pack is not read, and the refusal names the comment a human must look at.
 |---|---|---|
 | `handoff read: #<n> does not exist in <repo>.` | 7 | refusal |
 | `handoff read: comment #<c> carries a handoff marker and does not parse (<detail>) — refusing to report no pack over a pack that exists. Read #<c>.` | 14 | refusal |
+| `handoff read: comment #<c>'s groundDigest does not match the proven half it labels (marker <a>, body <b>, recomputed <d>) — the pack was edited after it was sealed. Read #<c>.` | 14 | refusal |
 | `handoff read: cannot page #<n>'s comments: <reason> — whether a pack exists is UNKNOWN, never none.` | 11 | refusal |
 | `handoff read: cannot resolve <login>'s permission: <reason> — a permission read that failed is UNKNOWN, never a grant.` | 11 | refusal |
 | `handoff read: cannot re-derive the ground state: <reason> — the pack was found and the drift is UNKNOWN, so it is not reported as unchanged.` | 11 | refusal |
 
 **Scope** — every comment on the issue, paged to exhaustion, plus one ACL read per distinct pack
-author, plus the full ground re-derivation. The scope line on stderr names the comment count and the
+author, plus the full ground re-derivation when a pack was honoured (on the `none` path there is nothing to compare against, and `ground` and `drift` are `null`). The scope line on stderr names the comment count and the
 number disregarded. **Zero comments is a fact** (`pack: "none"`); a page that could not be fetched is
 `11`, never an empty comment list — an unpaginated read that missed the newest pack would report
 `none` over a pack that exists, which is the fail-open direction.
@@ -761,7 +811,7 @@ number disregarded. **Zero comments is a fact** (`pack: "none"`); a page that co
 
 ```
 $ fabrika handoff read --issue 5021
-{"issue":5021,"pack":"none","comment":null,"nonce":null,"sealedAt":null,"author":null,"asserted":null,"ground":null,"drift":null,"claim":null,"disregarded":[],"scanned":{"comments":3}}
+{"issue":5021,"pack":"none","packComment":null,"packNonce":null,"sealedAt":null,"author":null,"asserted":null,"ground":null,"drift":null,"heldBy":null,"disregarded":[],"scanned":{"comments":3}}
 $ echo $?
 0
 ```
@@ -811,11 +861,11 @@ fabrika handoff claim --issue 5021 --nonce 4b8e2f01 [--repo <owner/name>]
 **Output** — machine. One JSON object:
 
 ```json
-{"issue":5021,"packComment":9234567891,"nonce":"4b8e2f01","claim":"held","claimedAt":"2026-08-09T19:02:11Z","comment":9234599999}
+{"issue":5021,"packComment":9234567891,"claimNonce":"4b8e2f01","claim":"held","claimedAt":"2026-08-09T19:02:11Z","claimComment":9234599999}
 ```
 
 `claim` is a closed set of two: `held` (this nonce now holds it) and `resumed` (this nonce already
-held it — a re-run is not an error, and no second comment is posted, so `comment` names the original
+held it — a re-run is not an error, and no second comment is posted, so `claimComment` names the original
 claim).
 
 <!-- anchor: CLAIM-KEY-IS-THE-RUN-NONCE --> **The claim key is the caller's run nonce, never a
@@ -839,7 +889,7 @@ it to state, and which no verb can force.
 | `8` / `9` | the claim write failed, or its read-back differs |
 | `11` | a comment read or a permission read failed; nothing was written |
 | `13` | the issue carries no sealed pack to claim |
-| `14` | the latest sealed pack does not parse |
+| `14` | the latest sealed pack does not parse, or its `groundDigest` disagrees with the fields it labels |
 | `15` | another nonce holds the latest pack's claim |
 
 **Errors**
@@ -854,8 +904,13 @@ it to state, and which no verb can force.
 | `handoff claim: #<n>'s latest pack (comment #<c>) does not parse (<detail>) — refusing to claim a pack whose contents are UNKNOWN.` | 14 | refusal |
 | `handoff claim: pack #<c> is held by <other> since <iso> — refusing to open a second claim on one pack.` | 15 | refusal |
 
-**Scope** — every comment on the issue, paged to exhaustion, plus one ACL read per distinct claim
-author. A claim by an author who does not resolve to `write` or above is not a claim. **A permission
+**Scope** — every comment on the issue, paged to exhaustion, plus one ACL read per distinct **pack**
+author and one per distinct **claim** author. A claim by an author who does not resolve to `write` or
+above is not a claim, and — stated because the two verbs must not disagree — **`claim` resolves
+*which* comment is the latest sealed pack by exactly the rule `read` uses**, skipping packs whose
+author does not resolve to `write`. Were only `read` to apply the ACL, an unauthorized newest pack
+would have `read` honour one comment and `claim` target another, in the very sequence the skill
+mandates. **A permission
 read that fails is `11` for the whole run**, never a demotion that would silently free someone else's
 claim.
 
@@ -863,7 +918,7 @@ claim.
 
 ```
 $ fabrika handoff claim --issue 5021 --nonce 4b8e2f01
-{"issue":5021,"packComment":9234567891,"nonce":"4b8e2f01","claim":"held","claimedAt":"2026-08-09T19:02:11Z","comment":9234599999}
+{"issue":5021,"packComment":9234567891,"claimNonce":"4b8e2f01","claim":"held","claimedAt":"2026-08-09T19:02:11Z","claimComment":9234599999}
 $ echo $?
 0
 ```
@@ -873,7 +928,7 @@ nothing:
 
 ```
 $ fabrika handoff claim --issue 5021 --nonce 4b8e2f01
-{"issue":5021,"packComment":9234567891,"nonce":"4b8e2f01","claim":"resumed","claimedAt":"2026-08-09T19:02:11Z","comment":9234599999}
+{"issue":5021,"packComment":9234567891,"claimNonce":"4b8e2f01","claim":"resumed","claimedAt":"2026-08-09T19:02:11Z","claimComment":9234599999}
 $ echo $?
 0
 ```
@@ -947,8 +1002,9 @@ no `origin`, which degrades rather than blocks.
    implementable while `graduate` is still unmerged.
 7. **Every value an example prints is derivable from the spec** — the nineteen ground fields each
    name their derivation, the digest's pre-image is printed literally for the worked example so the
-   digest is computable rather than asserted, and `drift` is a field-by-field comparison over that
-   same nineteen. Nonces, comment ids and SHAs are declared in the header as grammar-conforming
+   digest is computable rather than asserted, and `drift` is a field-by-field comparison over the
+   sixteen of those nineteen that a successor can observe (see *What `read` re-derives*). Nonces,
+   comment ids and SHAs are declared in the header as grammar-conforming
    placeholders, which is the *no example value* branch of the rule rather than a claimed derivation.
 
 **Every value a later verb needs arrives as an argument.** `--nonce` is authored by the caller and
