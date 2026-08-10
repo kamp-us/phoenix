@@ -21,13 +21,16 @@
  * two-artifact join every consumer used to re-run by hand.
  *
  * Thin IO shell over the pure cores (the `token-spend` / `readme-guard` idiom): read the file,
- * decode, render. An unreadable path and a malformed/mismatched input both exit non-zero.
+ * decode, render. Every refusal seats on `./codes.ts` — an unreadable path exits `FAILED`, an
+ * outcome the verb proved exits on its own code.
  */
 import {Console, Crypto, Effect, FileSystem, Path, Result} from "effect";
 import * as Schema from "effect/Schema";
 import {Argument, Command, Flag} from "effect/unstable/cli";
 import {leafCommand} from "../excess-operand.ts";
 import {DEFAULT_SPEND_LEDGER_PATH, persistSpendRows} from "../spend/ledger.ts";
+import {FAILED} from "../verb.ts";
+import {INTEGRITY_VIOLATION, MALFORMED_DOCUMENT, RUNS_NOT_EXECUTED, ZERO_SCOPE} from "./codes.ts";
 import {decodeManifest, REVIEW_SURFACES, type ReviewSurface, STAGES} from "./corpus.ts";
 import {decodeIncidentProvenance} from "./incident-provenance.ts";
 import {
@@ -60,8 +63,6 @@ import {
 } from "./spawn.ts";
 import {claudeExecutor, claudeVersion, locateTranscript, readTranscript} from "./spawn-io.ts";
 
-const GATE_FAIL_EXIT_CODE = 1;
-
 // A named manifest path that could not be read — a hard error (exit 1), not a skip.
 class ManifestUnreadable extends Schema.TaggedErrorClass<ManifestUnreadable>()(
 	"ManifestUnreadable",
@@ -89,7 +90,7 @@ const check = leafCommand(
 				yield* Console.error(
 					`fabrika eval: ${manifest} is not a valid corpus manifest (${result.failure.reason}): ${result.failure.message}`,
 				);
-				return yield* Effect.sync(() => process.exit(GATE_FAIL_EXIT_CODE));
+				return yield* Effect.sync(() => process.exit(MALFORMED_DOCUMENT));
 			}
 			yield* Console.log(`fabrika eval: ${manifest} is a valid corpus manifest.`);
 		});
@@ -97,7 +98,7 @@ const check = leafCommand(
 			Effect.catchTag("ManifestUnreadable", (e) =>
 				Effect.gen(function* () {
 					yield* Console.error(`fabrika eval: cannot read manifest ${e.path}`);
-					return yield* Effect.sync(() => process.exit(GATE_FAIL_EXIT_CODE));
+					return yield* Effect.sync(() => process.exit(FAILED));
 				}),
 			),
 		);
@@ -173,7 +174,7 @@ const report = leafCommand(
 				yield* Console.error(
 					`fabrika eval: ${rows} is not a valid runner-rows file (${decoded.failure.reason}): ${decoded.failure.message}`,
 				);
-				return yield* Effect.sync(() => process.exit(GATE_FAIL_EXIT_CODE));
+				return yield* Effect.sync(() => process.exit(MALFORMED_DOCUMENT));
 			}
 
 			// A --baseline-stage that isn't one of the known stages is a user error, not a silent
@@ -188,19 +189,19 @@ const report = leafCommand(
 					yield* Console.error(
 						`fabrika eval: --baseline-stage '${stage}' is not a known stage (${STAGES.join(", ")})`,
 					);
-					return yield* Effect.sync(() => process.exit(GATE_FAIL_EXIT_CODE));
+					return yield* Effect.sync(() => process.exit(FAILED));
 				}
 				if (baselineSurface._tag === "Some" && stage !== "review") {
 					yield* Console.error(
 						`fabrika eval: --baseline-surface only applies to --baseline-stage review, not '${stage}'`,
 					);
-					return yield* Effect.sync(() => process.exit(GATE_FAIL_EXIT_CODE));
+					return yield* Effect.sync(() => process.exit(FAILED));
 				}
 				if (stage === "review" && baselineSurface._tag === "None") {
 					yield* Console.error(
 						`fabrika eval: --baseline-stage review needs --baseline-surface (${REVIEW_SURFACES.join(", ")}) — a review pass-rate is one grading regime, never an average of two`,
 					);
-					return yield* Effect.sync(() => process.exit(GATE_FAIL_EXIT_CODE));
+					return yield* Effect.sync(() => process.exit(FAILED));
 				}
 				const model = baselineModel._tag === "Some" ? baselineModel.value : null;
 				if (baselineSurface._tag === "Some") {
@@ -209,7 +210,7 @@ const report = leafCommand(
 						yield* Console.error(
 							`fabrika eval: --baseline-surface '${surface}' is not a known review surface (${REVIEW_SURFACES.join(", ")})`,
 						);
-						return yield* Effect.sync(() => process.exit(GATE_FAIL_EXIT_CODE));
+						return yield* Effect.sync(() => process.exit(FAILED));
 					}
 					baseline = {stage, surface, model};
 				} else {
@@ -226,7 +227,7 @@ const report = leafCommand(
 			Effect.catchTag("RowsUnreadable", (e) =>
 				Effect.gen(function* () {
 					yield* Console.error(`fabrika eval: cannot read runner-rows file ${e.path}`);
-					return yield* Effect.sync(() => process.exit(GATE_FAIL_EXIT_CODE));
+					return yield* Effect.sync(() => process.exit(FAILED));
 				}),
 			),
 		);
@@ -263,7 +264,7 @@ const cases = leafCommand(
 				yield* Console.error(
 					`fabrika eval: ${path} is not a valid skill eval set (${result.failure.reason}): ${result.failure.message}`,
 				);
-				return yield* Effect.sync(() => process.exit(GATE_FAIL_EXIT_CODE));
+				return yield* Effect.sync(() => process.exit(MALFORMED_DOCUMENT));
 			}
 			const set = result.success;
 			// A schema-valid set with zero cases would report green while checking nothing — the
@@ -272,7 +273,7 @@ const cases = leafCommand(
 				yield* Console.error(
 					`fabrika eval: ${path} is not a usable skill eval set (empty-set): it decodes, but carries zero eval cases (ADR 0092 — zero scope reds)`,
 				);
-				return yield* Effect.sync(() => process.exit(GATE_FAIL_EXIT_CODE));
+				return yield* Effect.sync(() => process.exit(ZERO_SCOPE));
 			}
 			const counts = tierCounts(set);
 			yield* Console.log(
@@ -288,7 +289,7 @@ const cases = leafCommand(
 			Effect.catchTag("EvalSetUnreadable", (e) =>
 				Effect.gen(function* () {
 					yield* Console.error(`fabrika eval: cannot read eval set ${e.path}`);
-					return yield* Effect.sync(() => process.exit(GATE_FAIL_EXIT_CODE));
+					return yield* Effect.sync(() => process.exit(FAILED));
 				}),
 			),
 		);
@@ -398,27 +399,27 @@ const runCommand = leafCommand(
 				yield* Console.error(
 					`fabrika eval: ${opts.path} is not a valid skill eval set (${decoded.failure.reason}): ${decoded.failure.message}`,
 				);
-				return yield* Effect.sync(() => process.exit(GATE_FAIL_EXIT_CODE));
+				return yield* Effect.sync(() => process.exit(MALFORMED_DOCUMENT));
 			}
 			const set = decoded.success;
 			if (set.cases.length === 0) {
 				yield* Console.error(
 					`fabrika eval: ${opts.path} carries zero eval cases — refusing to report a green suite that ran nothing (ADR 0092)`,
 				);
-				return yield* Effect.sync(() => process.exit(GATE_FAIL_EXIT_CODE));
+				return yield* Effect.sync(() => process.exit(ZERO_SCOPE));
 			}
 			if (!isStageName(opts.stage)) {
 				yield* Console.error(
 					`fabrika eval: --stage '${opts.stage}' is not a known stage (${STAGES.join(", ")})`,
 				);
-				return yield* Effect.sync(() => process.exit(GATE_FAIL_EXIT_CODE));
+				return yield* Effect.sync(() => process.exit(FAILED));
 			}
 			const arms = parseArms(opts.arms);
 			if (arms === null) {
 				yield* Console.error(
 					`fabrika eval: --arms '${opts.arms}' names something that is not an arm (${EVAL_ARMS.join(", ")})`,
 				);
-				return yield* Effect.sync(() => process.exit(GATE_FAIL_EXIT_CODE));
+				return yield* Effect.sync(() => process.exit(FAILED));
 			}
 
 			let jsonSchema: string | null = null;
@@ -488,14 +489,14 @@ const runCommand = leafCommand(
 				yield* Console.error(
 					`fabrika eval: ${ledger.summary.failed} of ${ledger.summary.planned} run(s) did not execute — ${JSON.stringify(ledger.summary.byFailure)}`,
 				);
-				return yield* Effect.sync(() => process.exit(GATE_FAIL_EXIT_CODE));
+				return yield* Effect.sync(() => process.exit(RUNS_NOT_EXECUTED));
 			}
 		});
 		yield* run.pipe(
 			Effect.catchTag("EvalSetUnreadable", (e) =>
 				Effect.gen(function* () {
 					yield* Console.error(`fabrika eval: cannot read ${e.path}`);
-					return yield* Effect.sync(() => process.exit(GATE_FAIL_EXIT_CODE));
+					return yield* Effect.sync(() => process.exit(FAILED));
 				}),
 			),
 		);
@@ -547,14 +548,14 @@ const keeps = leafCommand(
 				yield* Console.error(
 					`fabrika eval: ${opts.path} is not a valid ruled-KEEP enumeration (${decoded.failure.reason}): ${decoded.failure.message}`,
 				);
-				return yield* Effect.sync(() => process.exit(GATE_FAIL_EXIT_CODE));
+				return yield* Effect.sync(() => process.exit(MALFORMED_DOCUMENT));
 			}
 			const violations = ruledKeepsViolations(decoded.success);
 			if (violations.length > 0) {
 				yield* Console.error(
 					`fabrika eval: ${opts.path} decodes but breaks its own integrity rules:\n${violations.map((v) => `  - ${v}`).join("\n")}`,
 				);
-				return yield* Effect.sync(() => process.exit(GATE_FAIL_EXIT_CODE));
+				return yield* Effect.sync(() => process.exit(INTEGRITY_VIOLATION));
 			}
 
 			const ledgerPath =
@@ -570,7 +571,7 @@ const keeps = leafCommand(
 				yield* Console.error(
 					`fabrika eval: ${ledgerPath} is not a valid provenance ledger (${ledger.failure.reason}): ${ledger.failure.message}`,
 				);
-				return yield* Effect.sync(() => process.exit(GATE_FAIL_EXIT_CODE));
+				return yield* Effect.sync(() => process.exit(MALFORMED_DOCUMENT));
 			}
 
 			const covered = withCoverage(decoded.success, ledger.success);
@@ -582,7 +583,7 @@ const keeps = leafCommand(
 			Effect.catchTag("KeepsUnreadable", (e) =>
 				Effect.gen(function* () {
 					yield* Console.error(`fabrika eval: cannot read ${e.path}`);
-					return yield* Effect.sync(() => process.exit(GATE_FAIL_EXIT_CODE));
+					return yield* Effect.sync(() => process.exit(FAILED));
 				}),
 			),
 		);

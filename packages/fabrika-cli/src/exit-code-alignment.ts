@@ -20,6 +20,13 @@
  * Not every group aligns. `wire` allocates `3`-`6` for entirely different facts and is right to —
  * see {@link UNALIGNED_GROUPS}, which lists it rather than omitting it, because an omission is
  * indistinguishable from a group nobody registered.
+ *
+ * **What the guard scans is the shipped verb registry, not the tables on disk (#5213).** Scoping
+ * the coverage check to directories that hold a `codes.ts` made the group with the loosest exit
+ * discipline the one it could not see: `eval` shipped no table, so it was absent from the scan and
+ * absent from both registries, and the check stayed green over it. A group is now checked because
+ * `registry.ts` ships it, so the only way to leave one unchecked is to not ship it at all —
+ * {@link coverageGaps} takes the registered names and reds on any it cannot classify.
  */
 
 import {existsSync, readdirSync, realpathSync} from "node:fs";
@@ -93,9 +100,20 @@ export const UI_SEATS: SharedSeats = (() => {
  */
 export const HOOK_SEATS: SharedSeats = {EMPTY_STDIN: "EMPTY_STDIN"};
 
+/**
+ * `eval`'s seats: two. Its verbs neither read stdin nor write anything, so most of the base's table
+ * is about facts they cannot establish; what they do establish is that a named JSON artifact is
+ * malformed, and that a decoded eval set carries nothing to run.
+ */
+export const EVAL_SEATS: SharedSeats = {
+	MALFORMED_DOCUMENT: "BAD_SECTIONS",
+	ZERO_SCOPE: "NO_TARGET",
+};
+
 /** The groups that align to {@link ALIGNMENT_BASE}, each with the seats it claims to share. */
 export const ALIGNED_GROUPS: Readonly<Record<string, SharedSeats>> = {
 	build: BUILD_SEATS,
+	eval: EVAL_SEATS,
 	hook: HOOK_SEATS,
 	epic: BUILD_SEATS,
 	ledger: BUILD_SEATS,
@@ -109,11 +127,90 @@ export const ALIGNED_GROUPS: Readonly<Record<string, SharedSeats>> = {
 
 /**
  * The groups that deliberately do **not** align, and the reason each is exempt. A group listed here
- * is a decision; a group listed nowhere is drift, which is what
- * {@link codeTableGroupsIn} exists to surface.
+ * is a decision; a group listed nowhere is drift, which is what {@link coverageGaps} exists to
+ * surface.
  */
 export const UNALIGNED_GROUPS: Readonly<Record<string, string>> = {
 	wire: "3-6 are ABSENT / MALFORMED / EMPTY_ARTIFACT / ARTIFACT_UNKNOWN — a different vocabulary about artifacts, not about writes",
+};
+
+/**
+ * The registered groups that ship no `<group>/codes.ts` at all, and the tracked reason each is
+ * still unchecked.
+ *
+ * This is an admission, not an exemption: neither entry is a decision that a group table is
+ * unwarranted, only a record that these two allocate their codes per-verb and nobody has re-seated
+ * them yet. Listing them is what lets {@link coverageGaps} treat *any other* untabled group as the
+ * failure it is, instead of the silence that hid `eval`.
+ */
+export const UNTABLED_GROUPS: Readonly<Record<string, string>> = {
+	adr: "allocates proven codes per-verb (relate-verb's NO_SUBJECT is 3, sweep-verb's is 4) rather than from a group table — #5294",
+	spend:
+		"allocates proven codes per-verb across read-verb and rollup-verb rather than from a group table — #5294",
+};
+
+/** Every group this module has an answer for, whichever of the three registries holds it. */
+export const classifiedGroups = (): ReadonlySet<string> =>
+	new Set([
+		ALIGNMENT_BASE,
+		...Object.keys(ALIGNED_GROUPS),
+		...Object.keys(UNALIGNED_GROUPS),
+		...Object.keys(UNTABLED_GROUPS),
+	]);
+
+/** What a scan of the shipped registry against this module's registries turned up. */
+export interface CoverageGaps {
+	/**
+	 * Groups classified nowhere here — shipped by the registry, carrying a table on disk, or both.
+	 * Non-empty means the guard is blind to one, which is the defect it exists to red on.
+	 */
+	readonly unclassified: readonly string[];
+	/** Groups classified here that the registry no longer ships — a stale registration. */
+	readonly unshipped: readonly string[];
+	/** Groups recorded as untabled that do ship a `codes.ts` — the record is out of date. */
+	readonly untabledWithTable: readonly string[];
+	/** Groups classified as base/aligned/unaligned that ship no `codes.ts` to check. */
+	readonly tableMissing: readonly string[];
+}
+
+/** A scan that had nothing to scan, so its all-clear would mean nothing (ADR 0092). */
+export class ZeroCoverageScope extends Error {}
+
+/**
+ * Every gap between what `registry.ts` ships and what this module classifies. Empty arrays are the
+ * covered state.
+ *
+ * Takes the registered names rather than importing the registry so this module stays loadable
+ * without constructing the whole CLI; the caller passes `registeredGroups.map((g) => g.name)`.
+ *
+ * Throws on an empty scan on either side. An all-clear derived from nothing is the vacuous pass ADR
+ * 0092 forbids, and it is the shape that would return here first: a registry that failed to load
+ * would report zero groups and therefore zero gaps.
+ */
+export const coverageGaps = (input: {
+	readonly registered: readonly string[];
+	readonly onDisk: readonly string[];
+}): CoverageGaps => {
+	if (input.registered.length === 0) {
+		throw new ZeroCoverageScope("no verb groups were registered — nothing to check (ADR 0092)");
+	}
+	if (input.onDisk.length === 0) {
+		throw new ZeroCoverageScope("no `<group>/codes.ts` was found on disk (ADR 0092)");
+	}
+
+	const registered = new Set(input.registered);
+	const onDisk = new Set(input.onDisk);
+	const classified = classifiedGroups();
+	const untabled = new Set(Object.keys(UNTABLED_GROUPS));
+
+	return {
+		unclassified: [...new Set([...input.registered, ...input.onDisk])]
+			.filter((name) => !classified.has(name))
+			.sort(),
+		unshipped: [...classified].filter((name) => !registered.has(name)).sort(),
+		untabledWithTable: [...untabled].filter((name) => onDisk.has(name)).sort(),
+		tableMissing: [...classified].filter((name) => !untabled.has(name) && !onDisk.has(name)).sort(),
+	};
 };
 
 /**
@@ -200,9 +297,10 @@ export const checkAlignment = (
 };
 
 /**
- * The `<group>/codes.ts` tables that actually exist on disk, so a new group is a registry failure
- * rather than an unchecked table. Paths resolve physically — a `..` folded across the repo's
- * `.claude/skills` symlink resolves somewhere else entirely.
+ * The `<group>/codes.ts` tables that actually exist on disk — one of {@link coverageGaps}'s two
+ * inputs, and on its own never the scan's scope: a group with no table is exactly what this read
+ * cannot see (#5213). Paths resolve physically — a `..` folded across the repo's `.claude/skills`
+ * symlink resolves somewhere else entirely.
  */
 export const codeTableGroupsIn = (srcDir: string): readonly string[] => {
 	const root = realpathSync(srcDir);
