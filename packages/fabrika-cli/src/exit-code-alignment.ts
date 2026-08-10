@@ -163,6 +163,28 @@ export const MAP_SEATS: SharedSeats = (() => {
 	return {...rest, NO_TARGET: "NO_TARGET"};
 })();
 
+/**
+ * `spike`'s seats: all nine, under this group's own names.
+ *
+ * The only group to claim the base's whole `3`-`11` table with no `DELIBERATE_GAP` — every seat is
+ * reached by some verb, which is what leaves `12`+ entirely to facts about a throwaway workspace.
+ * Two names differ deliberately: `MALFORMED_RECORD` reads the base's section fact over a whole
+ * on-disk record, and `READ_OR_EXEC_UNKNOWN` is a documented **superset** of the base's — it also
+ * covers a child process that could not be executed, which is an attempt rather than a read, and a
+ * number cannot say so on its own (see this module's header).
+ */
+export const SPIKE_SEATS: SharedSeats = {
+	EMPTY_STDIN: "EMPTY_STDIN",
+	MALFORMED_RECORD: "BAD_SECTIONS",
+	LEAKED_PATH: "LEAKED_PATH",
+	BARE_AT_PATH: "BARE_AT_PATH",
+	ZERO_SCOPE: "NO_TARGET",
+	WRITE_UNKNOWN: "WRITE_UNKNOWN",
+	READBACK_MISMATCH: "READBACK_MISMATCH",
+	OFF_VOCABULARY: "CLASSIFIED",
+	READ_OR_EXEC_UNKNOWN: "PRECONDITION_UNKNOWN",
+};
+
 /** The groups that align to {@link ALIGNMENT_BASE}, each with the seats it claims to share. */
 export const ALIGNED_GROUPS: Readonly<Record<string, SharedSeats>> = {
 	adr: ADR_SEATS,
@@ -179,6 +201,7 @@ export const ALIGNED_GROUPS: Readonly<Record<string, SharedSeats>> = {
 	"review-ui": REVIEW_UI_SEATS,
 	ship: SHARED_SEATS,
 	spend: SPEND_SEATS,
+	spike: SPIKE_SEATS,
 	status: SHARED_SEATS,
 	ui: UI_SEATS,
 };

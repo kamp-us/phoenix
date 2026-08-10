@@ -116,6 +116,84 @@ export const appendFile = (
 		Effect.catchTag("PlatformError", (cause) => new WriteFailed({path, reason: cause.message})),
 	);
 
+/**
+ * The physically resolved `path` — symlinks followed, `.` and `..` folded.
+ *
+ * Load-bearing for any containment test: on macOS `/tmp` is a symlink to `/private/tmp`, so a
+ * lexical prefix comparison and a resolved one give different answers about whether a path sits
+ * inside a tree.
+ */
+export const realPath = (path: string): Effect.Effect<string, ReadFailed, FileSystem.FileSystem> =>
+	Effect.gen(function* () {
+		const fs = yield* FileSystem.FileSystem;
+		return yield* fs.realPath(path);
+	}).pipe(
+		Effect.catchTag("PlatformError", (cause) => new ReadFailed({path, reason: cause.message})),
+	);
+
+/** Create `path` and any missing parent. Already-present is success, not an error. */
+export const makeDirectory = (
+	path: string,
+): Effect.Effect<void, WriteFailed, FileSystem.FileSystem> =>
+	Effect.gen(function* () {
+		const fs = yield* FileSystem.FileSystem;
+		yield* fs.makeDirectory(path, {recursive: true});
+	}).pipe(
+		Effect.catchTag("PlatformError", (cause) => new WriteFailed({path, reason: cause.message})),
+	);
+
+/**
+ * Remove `path` and everything under it.
+ *
+ * `force` makes an already-absent path a success: a caller that re-runs a disposal has nothing to
+ * remove and that is the goal state, not a fault. Whether the removal actually took is a separate
+ * question every caller must ask with {@link exists} — this call landing is not evidence the
+ * directory is gone.
+ */
+export const removeAll = (path: string): Effect.Effect<void, WriteFailed, FileSystem.FileSystem> =>
+	Effect.gen(function* () {
+		const fs = yield* FileSystem.FileSystem;
+		yield* fs.remove(path, {recursive: true, force: true});
+	}).pipe(
+		Effect.catchTag("PlatformError", (cause) => new WriteFailed({path, reason: cause.message})),
+	);
+
+/**
+ * Append `text` to `path` verbatim, creating the parent directory — for a line-oriented log whose
+ * **bytes** a digest is taken over.
+ *
+ * Deliberately not {@link appendFile}, which heals a missing final newline. That healing is right for
+ * a log a human reads and wrong for one a digest covers: it inserts a byte the digest would then
+ * account for, so two readers of the same appended record could compute two numbers. Here the
+ * caller's own grammar guarantees each write ends in `\n`, so there is nothing to heal.
+ */
+export const appendText = (
+	path: string,
+	text: string,
+): Effect.Effect<void, WriteFailed, FileSystem.FileSystem | Path.Path> =>
+	Effect.gen(function* () {
+		const fs = yield* FileSystem.FileSystem;
+		const pathService = yield* Path.Path;
+		yield* fs.makeDirectory(pathService.dirname(path), {recursive: true});
+		yield* fs.writeFileString(path, text, {flag: "a"});
+	}).pipe(
+		Effect.catchTag("PlatformError", (cause) => new WriteFailed({path, reason: cause.message})),
+	);
+
+/** Write raw bytes to `path`, creating its parent directory — for content a digest is taken over. */
+export const writeBytes = (
+	path: string,
+	data: Uint8Array,
+): Effect.Effect<void, WriteFailed, FileSystem.FileSystem | Path.Path> =>
+	Effect.gen(function* () {
+		const fs = yield* FileSystem.FileSystem;
+		const pathService = yield* Path.Path;
+		yield* fs.makeDirectory(pathService.dirname(path), {recursive: true});
+		yield* fs.writeFile(path, data);
+	}).pipe(
+		Effect.catchTag("PlatformError", (cause) => new WriteFailed({path, reason: cause.message})),
+	);
+
 /** Write `text` to `path`, creating its parent directory. */
 export const writeFile = (
 	path: string,

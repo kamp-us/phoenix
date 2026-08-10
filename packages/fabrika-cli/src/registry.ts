@@ -29,6 +29,7 @@ import {reviewCommand} from "./review/command.ts";
 import {reviewUiCommand} from "./review-ui/command.ts";
 import {shipCommand} from "./ship/command.ts";
 import {spendCommand} from "./spend/command.ts";
+import {spikeCommand} from "./spike/command.ts";
 import {statusCommand} from "./status/command.ts";
 import {triageCommand} from "./triage/command.ts";
 import {uiCommand} from "./ui/command.ts";
@@ -53,6 +54,7 @@ export const registeredGroups: ReadonlyArray<VerbGroup> = [
 	reviewUiCommand,
 	shipCommand,
 	spendCommand,
+	spikeCommand,
 	statusCommand,
 	triageCommand,
 	uiCommand,

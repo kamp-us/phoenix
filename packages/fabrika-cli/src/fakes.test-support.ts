@@ -52,6 +52,18 @@ export interface FakeFsOptions {
 	readonly unprobeable?: ReadonlyArray<string>;
 	/** Symlink path → the path it really is. Anything unlisted is its own real path. */
 	readonly real?: Readonly<Record<string, string>>;
+	/**
+	 * Directories that exist without holding a listed file — a workspace root, say.
+	 *
+	 * Separate from {@link FakeFsOptions.dirs}, which answers `readDirectory`: a caller asking
+	 * whether a directory is *there* is asking a different question from one asking what is in it,
+	 * and a fake that answered the first from the second would make an unlistable directory absent.
+	 */
+	readonly directories?: ReadonlyArray<string>;
+	/** Paths whose removal fails — distinct from a removal that lands and leaves the path behind. */
+	readonly unremovable?: ReadonlyArray<string>;
+	/** Paths a removal is scripted to NOT actually remove, so the re-probe has something to catch. */
+	readonly survivesRemoval?: ReadonlyArray<string>;
 }
 
 export interface FakeFs {
@@ -65,6 +77,8 @@ export const fakeFs = (options: FakeFsOptions): FakeFs => {
 	const dirs: Record<string, ReadonlyArray<string> | null> = {...options.dirs};
 	const files: Record<string, string | null> = {...options.files};
 	const written = new Map<string, string>();
+	const directories = new Set(options.directories ?? []);
+	const decoder = new TextDecoder();
 	const layer = Layer.merge(
 		FileSystem.layerNoop({
 			readDirectory: (path: string) => {
@@ -83,13 +97,43 @@ export const fakeFs = (options: FakeFsOptions): FakeFs => {
 			exists: (path: string) =>
 				options.unprobeable?.includes(path) === true
 					? notFound("exists", path)
-					: Effect.succeed(Object.hasOwn(files, path) && files[path] !== null),
-			makeDirectory: () => Effect.void,
+					: Effect.succeed(
+							(Object.hasOwn(files, path) && files[path] !== null) || directories.has(path),
+						),
+			makeDirectory: (path: string) => {
+				if (options.unwritable?.includes(path) === true) return notFound("makeDirectory", path);
+				directories.add(path);
+				return Effect.void;
+			},
 			realPath: (path: string) => Effect.succeed(options.real?.[path] ?? path),
-			writeFileString: (path: string, data: string) => {
+			remove: (path: string) => {
+				if (options.unremovable?.includes(path) === true) return denied("remove", path);
+				if (options.survivesRemoval?.includes(path) === true) return Effect.void;
+				directories.delete(path);
+				for (const key of Object.keys(files)) {
+					if (key === path || key.startsWith(`${path}/`)) delete files[key];
+				}
+				return Effect.void;
+			},
+			writeFileString: (
+				path: string,
+				data: string,
+				opts?: {readonly flag?: string | undefined},
+			) => {
 				if (options.unwritable?.includes(path) === true) return notFound("writeFileString", path);
-				files[path] = data;
-				written.set(path, data);
+				// An append flag appends here too, because a caller that appends and one that overwrites
+				// leave different bytes on disk and a fake that flattened them would hide the difference.
+				const appending = opts?.flag?.startsWith("a") === true;
+				const next = appending ? `${files[path] ?? ""}${data}` : data;
+				files[path] = next;
+				written.set(path, next);
+				return Effect.void;
+			},
+			writeFile: (path: string, data: Uint8Array) => {
+				if (options.unwritable?.includes(path) === true) return notFound("writeFile", path);
+				const text = decoder.decode(data);
+				files[path] = text;
+				written.set(path, text);
 				return Effect.void;
 			},
 		}),

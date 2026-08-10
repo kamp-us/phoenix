@@ -433,6 +433,48 @@ Four properties are worth knowing before you call them:
 This group records no merge-gating verdict and computes no second answer to control-plane
 membership, pitch approval or triage classification — each is already enforced at its own gate.
 
+## The `spike` group
+
+The contract is
+[`claude-plugins/fabrika/skills/prototyping/contract.md`](../../claude-plugins/fabrika/skills/prototyping/contract.md).
+A **spike** is one GitHub issue carrying the `prototyping:spike` label, bound to a throwaway
+workspace that lives under the OS temp root — **never inside the repository** — and keyed on a
+per-run nonce.
+
+| Verb | Answers |
+|---|---|
+| `spike open` | mints the spike issue and this run's workspace, and binds the two in a manifest |
+| `spike run` | executes one command in the workspace and appends an immutable evidence record |
+| `spike capture` | posts the decision plus the log's own run table, reads it back, and closes the spike |
+| `spike dispose` | proves the tree is unchanged and the capture still covers the log, removes the workspace, and proves it is gone |
+| `spike status` | one run's spike state, workspace presence and evidence count |
+
+Five properties are worth knowing before you call them:
+
+- **"Ran and answered no" and "could not run" are opposite answers.** `spike run` exits `0`
+  whatever the command returned — the command's own status rides in the payload as `commandExit`
+  — and exits `11` only when the command could not be executed at all. This is the one place in
+  the group where the exit code and the answer are deliberately about different things.
+- **The key is a per-run nonce, minted from a cryptographic source.** No verb reads
+  `CLAUDE_CODE_SESSION_ID` or any session variable, and no verb asks a caller to invent a value,
+  so two concurrent spikes cannot collide on a workspace ([#4544](https://github.com/kamp-us/phoenix/issues/4544)).
+- **Disposability is a property, not an intention.** `spike open` records a digest of
+  `git status --porcelain=v1 --untracked-files=all --ignored=matching`, and `spike dispose`
+  recomputes it *before* it removes or posts anything — so a leak refuses on `17` with the
+  workspace intact. `--ignored=matching` is load-bearing: a build cache or a `node_modules/` is
+  exactly where a prototype writes.
+- **A decision with no recorded run is a self-report.** `spike capture` reds on a log holding zero
+  runs (`14`, ADR [0092](../../.decisions/0092-gates-fail-closed-on-zero-scope.md)), and the
+  comment it posts transcribes each run's command and status rather than summarising them.
+- **`spike status` is near-total on purpose.** Its consumer is a session resuming cold, so an
+  absent workspace is a **fact** at exit `0` while the same absence is a refusal (`12`) in the
+  mutating verbs. The bound is still ADR 0092: an unparseable record is `4` and an unreadable
+  state is `11`.
+
+This group gates no merge, judges no pull request and emits no verdict, so it registers in no
+verdict namespace and no wire format — a `spike` marker there would be one `wire read` could never
+read back.
+
 ## The `wire` group
 
 A **wire format** is the byte-level agreement two skills meet through on a GitHub artifact —

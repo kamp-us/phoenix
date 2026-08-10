@@ -15,7 +15,7 @@
  * fault (`gh` absent from `PATH`) arrives as a `PlatformError` and folds into the same record, so
  * `E` is `never` and the status lives in `ok`.
  */
-import {Effect, Stream} from "effect";
+import {Duration, Effect, Stream} from "effect";
 import {ChildProcess, type ChildProcessSpawner} from "effect/unstable/process";
 
 export interface ExecResult {
@@ -34,6 +34,148 @@ const collect = (stream: Stream.Stream<Uint8Array, unknown>): Effect.Effect<stri
 	Stream.decodeText(stream).pipe(
 		Stream.mkString,
 		Effect.orElseSucceed(() => ""),
+	);
+
+/**
+ * What one **recorded** run of an arbitrary command produced — a second reading of this seam, for a
+ * caller that must tell "ran and answered no" from "could not run".
+ *
+ * `execCapture` above fuses those two: a non-zero exit and a spawn fault both arrive as `ok: false`,
+ * which is right for `git`/`gh` (a failed read is a failed read) and wrong for a prototype, where
+ * the command's own status **is** the observation. So the three outcomes are separate constructors
+ * here and the caller cannot collapse them by accident.
+ */
+export type ChildOutcome =
+	| {
+			readonly _tag: "Ran";
+			/** The child's own status, or `null` when it was killed at the timeout. */
+			readonly exitCode: number | null;
+			readonly timedOut: boolean;
+			readonly stdout: Uint8Array;
+			readonly stderr: Uint8Array;
+			/** Either stream reached the capture bound and the remainder was discarded. */
+			readonly truncated: boolean;
+	  }
+	| {readonly _tag: "Unstartable"; readonly reason: string};
+
+export interface ChildRequest {
+	readonly file: string;
+	readonly args: ReadonlyArray<string>;
+	readonly cwd: string;
+	/** The child's whole environment. Nothing is inherited: what is not here does not reach it. */
+	readonly env: Readonly<Record<string, string>>;
+	readonly timeoutSeconds: number;
+	/** Bytes captured per stream before capture stops and `truncated` is set. */
+	readonly captureBytes: number;
+}
+
+/** The seam a recording caller injects, so a timeout and an unstartable binary are both testable. */
+export type ChildRunner = (
+	request: ChildRequest,
+) => Effect.Effect<ChildOutcome, never, ChildProcessSpawner.ChildProcessSpawner>;
+
+const captureBounded = (
+	stream: Stream.Stream<Uint8Array, unknown>,
+	bound: number,
+): Effect.Effect<{readonly bytes: Uint8Array; readonly truncated: boolean}> =>
+	Effect.gen(function* () {
+		const parts: Uint8Array[] = [];
+		let total = 0;
+		let truncated = false;
+		yield* Stream.runForEach(stream, (chunk) =>
+			Effect.sync(() => {
+				const room = bound - total;
+				if (room <= 0) {
+					truncated = chunk.length > 0 || truncated;
+					return;
+				}
+				if (chunk.length > room) {
+					parts.push(chunk.subarray(0, room));
+					total = bound;
+					truncated = true;
+					return;
+				}
+				parts.push(chunk);
+				total += chunk.length;
+			}),
+		).pipe(Effect.orElseSucceed(() => undefined));
+		const bytes = new Uint8Array(total);
+		let at = 0;
+		for (const part of parts) {
+			bytes.set(part, at);
+			at += part.length;
+		}
+		return {bytes, truncated};
+	});
+
+/**
+ * Execute one command in `cwd` under exactly `env`, capturing both streams to a byte bound.
+ *
+ * `detached: true` puts the child in its own process group, which is what makes the timeout able to
+ * take its descendants with it: a prototype that spawns a dev server and hangs leaves the server
+ * running if only the direct child is signalled. The group kill is attempted first and the handle's
+ * own kill is the fallback, because a spawner that did not honour `detached` still has a child to
+ * signal.
+ */
+export const execRecord: ChildRunner = (request) =>
+	Effect.scoped(
+		Effect.gen(function* () {
+			const handle = yield* ChildProcess.make(request.file, [...request.args], {
+				cwd: request.cwd,
+				env: {...request.env},
+				extendEnv: false,
+				detached: true,
+			});
+			const killGroup: Effect.Effect<void> = Effect.try({
+				try: () => globalThis.process.kill(-handle.pid, "SIGKILL"),
+				catch: () => "the process group could not be signalled" as const,
+			}).pipe(
+				Effect.catchCause(() =>
+					handle.kill({killSignal: "SIGKILL"}).pipe(Effect.orElseSucceed(() => undefined)),
+				),
+				Effect.asVoid,
+			);
+			const streams = Effect.all(
+				[
+					captureBounded(handle.stdout, request.captureBytes),
+					captureBounded(handle.stderr, request.captureBytes),
+				],
+				{concurrency: "unbounded"},
+			);
+			const exit = handle.exitCode.pipe(
+				Effect.map((code): number | null => code),
+				Effect.orElseSucceed((): number | null => null),
+				Effect.timeoutOption(Duration.seconds(request.timeoutSeconds)),
+			);
+			const [captured, status] = yield* Effect.all([streams, exit], {concurrency: "unbounded"});
+			const [out, err] = captured;
+			if (status._tag === "None") {
+				yield* killGroup;
+				return {
+					_tag: "Ran" as const,
+					exitCode: null,
+					timedOut: true,
+					stdout: out.bytes,
+					stderr: err.bytes,
+					truncated: out.truncated || err.truncated,
+				};
+			}
+			return {
+				_tag: "Ran" as const,
+				exitCode: status.value,
+				timedOut: false,
+				stdout: out.bytes,
+				stderr: err.bytes,
+				truncated: out.truncated || err.truncated,
+			};
+		}),
+	).pipe(
+		Effect.catchTag("PlatformError", (cause) =>
+			Effect.succeed({
+				_tag: "Unstartable" as const,
+				reason: firstLine(cause.message) || `could not run ${request.file}`,
+			}),
+		),
 	);
 
 /** Run a command, capturing stdout; a non-zero exit and a spawn fault are both data, never a throw. */
