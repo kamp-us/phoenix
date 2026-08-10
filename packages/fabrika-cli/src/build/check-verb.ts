@@ -127,19 +127,22 @@ export const unvalidatableDiff = (files: ReadonlyArray<string>): string | null =
 	return `no surface validates any of the ${unvalidatable.length} changed file(s) (${shown}${rest})`;
 };
 
-/** Why `--surface` provably contradicts the diff, or `null`. */
+/**
+ * Why `--surface` provably contradicts the diff, or `null`.
+ *
+ * One rule for all three surfaces, read straight off {@link COVERS}: a surface is refused when the
+ * diff holds **none** of the file classes its validators open. `prose` used to refuse on the
+ * *presence* of a code file instead, and that asymmetry left the repo's most common diff shape — one
+ * `.ts` plus one `.md` — with no invocation that opened the markdown at all: `code` never reads it,
+ * `plan` runs the wrong validator, and `prose` refused on `10`. The leak scan and the link resolver
+ * simply did not run (#5301). The presence of another class is not a contradiction; it is what
+ * `unvalidated` discloses.
+ */
 export const surfaceMismatch = (surface: Surface, files: ReadonlyArray<string>): string | null => {
-	const {code, markdown} = classifyDiff(files);
-	if (surface === "prose" && code.length > 0) {
-		return `--surface prose, but the diff is ${code.length} ${code.length === 1 ? "code file" : "code files"}`;
-	}
-	if (surface === "code" && code.length === 0) {
-		return "--surface code, but the diff changes no code file";
-	}
-	if (surface === "plan" && markdown.length === 0) {
-		return "--surface plan, but the diff changes no markdown file";
-	}
-	return null;
+	const classes = classifyDiff(files);
+	const covered = COVERS[surface].flatMap((bucket) => classes[bucket]);
+	if (covered.length > 0) return null;
+	return `--surface ${surface}, but the diff changes no ${COVERS[surface].join("/")} file`;
 };
 
 /** The machine-local paths a prose file carries, as defect lines. */

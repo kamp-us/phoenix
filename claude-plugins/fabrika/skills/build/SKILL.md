@@ -116,6 +116,10 @@ fabrika build check --surface code
 Loop construct → check until green. `red` rows name the diagnostics; fix them here, never in the
 primary.
 
+A green names the files it did not read in `unvalidated`. When that list holds a file class another
+surface validates — markdown beside your code, most often — run `build check` again at that surface;
+one run per class present is what leaves nothing in the diff unread (#5301).
+
 ## 5 — Push verified, open the PR through the guard
 
 ```bash

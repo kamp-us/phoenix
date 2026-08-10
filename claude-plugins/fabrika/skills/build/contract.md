@@ -69,7 +69,7 @@ second answer to a gated question can contradict the gate (interface convention 
 **Considered and not derived: a surface classifier.** Naming the surface (code / prose / plan) is
 a judgment the skill makes reading the issue; a verb that guessed it from file extensions would be
 wrong exactly on the mixed PRs where the answer matters. `build check` takes the skill's answer as
-`--surface` and validates it against the diff (a `--surface prose` run over changed `.ts` files
+`--surface` and validates it against the diff (a `--surface prose` run over a diff with no markdown
 refuses) — an anchor, not a second classifier.
 
 ## Shared conventions
@@ -997,8 +997,10 @@ beside a green is the honest reading of a mixed diff, and the same line is repea
 The list is a **disclosure, not a second validator run**: `--surface code` names the markdown it
 skipped and does not scan it. Running the markdown validators there would make the surface guess at
 file classes, which the anchor exists to refuse — so the remedy for a mixed diff that needs its
-markdown read is a second run, not a wider surface. `unvalidated: []` therefore means every changed
-file was read by a validator that passed, and nothing weaker (#5288).
+markdown read is a **second run at `--surface prose`**, which the anchor admits (#5301). Each run is
+green for what it read and names what it did not; between them nothing in the diff goes unread.
+`unvalidated: []` therefore means every changed file was read by a validator that passed, and
+nothing weaker (#5288).
 
 Per surface:
 
@@ -1013,17 +1015,26 @@ Per surface:
   (defined in `build eligible`): issue refs (`#<int>`) resolve to real issues, ledger-local refs
   (`C<int>`) resolve within the ledger, and no child is its own predecessor.
 
-The surface anchor: the verb diffs the branch against its base and refuses a surface that does not
-match the diff (`--surface prose` over changed `.ts` files is `10`) — the skill's judgment is
-taken, then checked against the tree, never silently accepted.
+The surface anchor: the verb diffs the branch against its base and refuses a surface whose own file
+class the diff does not contain (`--surface prose` over a diff with no markdown is `10`) — the
+skill's judgment is taken, then checked against the tree, never silently accepted.
+
+**The anchor refuses an absent class, never a present other one.** One rule holds for all three
+surfaces, so a mixed code+markdown diff is runnable under every one of them: `code` runs the CI
+commands and names the markdown, `prose` scans the markdown and names the code, `plan` checks the
+ledger grammar and names the code. `prose` used to refuse on the *presence* of a code file, which
+left the repo's most common diff shape — one `.ts` plus one `.md` — with no invocation that opened
+the markdown at all, so the leak scan and the link resolver never ran on it (#5301). The presence of
+another class is not a contradiction with the surface; it is exactly what `unvalidated` discloses.
 
 **Three file classes, because two cannot express "unvalidatable".** The anchor sorts each changed
 file into code, markdown, or **neither** — the third class is named, not an absence. A diff that is
 *wholly* the third class (only `.github/workflows/*.yml`, only `*.sh`) refuses on `22` under **every**
 surface: no validator covers those files, so any verdict would be a green over an unread tree. The
-remedy is to split the diff or extend a validator, never to rename the surface — widening the code
+remedy is to extend a validator to cover the class, never to rename the surface — widening the code
 pattern to swallow `.yml` was considered and rejected, because it would claim `pnpm typecheck`
-validated a shell script (#5229).
+validated a shell script (#5229). "Split the diff" is not offered as a remedy anywhere here: a lane
+cannot split a diff it has already written (#5301).
 
 Preconditions: a linked worktree (`12`), the lane's branch checked out (`14`).
 
@@ -1032,7 +1043,7 @@ Preconditions: a linked worktree (`12`), the lane's branch checked out (`14`).
 | Code | Trigger |
 |---|---|
 | `7` | the diff against the branch base is empty — nothing to validate, zero scope |
-| `10` | `--surface` is off-enum, or provably mismatches the diff |
+| `10` | `--surface` is off-enum, or the diff contains none of the file classes that surface's validators open |
 | `11` | a validator could not be executed, or the lane's claim could not be read — the verdict is UNKNOWN, never green |
 | `12` | proven: not in a linked worktree |
 | `14` | proven: the checked-out branch is not this lane's (lane-identity rule) |
@@ -1047,7 +1058,7 @@ Preconditions: a linked worktree (`12`), the lane's branch checked out (`14`).
 | `build check: <runner> could not be executed: <reason> — the verdict is UNKNOWN, never green.` | 11 | refusal |
 | `build check: cannot read the claim markers on #<n>: <reason> — the lane is UNKNOWN.` | 11 | refusal |
 | `build check: #<n> is held by <token>, not this session.` | 15 | refusal |
-| `build check: --surface prose, but the diff is 14 .ts files — the surface is provably wrong.` | 10 | refusal |
+| `build check: --surface prose, but the diff changes no markdown file — the surface is provably wrong.` | 10 | refusal |
 | `build check: the diff against <base> is empty — nothing to validate (ADR 0092).` | 7 | refusal |
 | `build check: red — <runner> failed; diagnostics above.` | 18 | refusal |
 | `build check: no surface validates any of the <n> changed file(s) (<files>) — there is nothing here to run, so the verdict is a refusal, never green.` | 22 | refusal |
@@ -1076,6 +1087,9 @@ $ fabrika build check --surface code
   `["a.ts", "README.md"]` greened with an empty list: the markdown had a validator, just not the one
   that ran. Scoping the list to the surface closes it, and the mirrored `--surface plan` case, with
   one rule.
+- #5301 — the disclosure was honest but there was still nowhere to send the markdown: `--surface
+  prose` refused whenever one code file was present, so a mixed diff's prose was unscannable under
+  every surface. The anchor now refuses an absent class rather than a present other one.
 - v1's discipline was prose-only (`SKILL.md:895-935`, exact-CI-command mandate with no
   enforcement); here the command set is the verb's, not the agent's memory.
 - ADR 0092 — zero diff is a refusal, not a vacuous green.
