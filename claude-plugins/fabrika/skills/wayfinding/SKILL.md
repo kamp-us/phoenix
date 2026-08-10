@@ -86,13 +86,22 @@ none, you route to intake yourself rather than opening a map with an empty front
 
 **A map needs two or more independent frontier tickets — one surviving question is not a map.** The
 test is not "is there an open question" but "is there a frontier": two or more questions that can be
-worked in parallel, or that need a blocking edge between them. One surviving question has nothing to
-gate and nothing to parallelize, so the edges, the parallel burndown and the digest threading are all
-ceremony over a single ticket. **Refuse to chart it and route it to `grilling`** — the smallest path
-(#5017) settles one stateable question in a session without a map — and end on `NOT-FOG` naming this
-basis: the route here is `grilling`, not `report`, because a lone question is work for the smallest
-path rather than something for intake to re-classify. This binds however the count falls to one,
-whether you only ever had one question or you dropped the rest as already answered.
+worked in parallel, or that need a blocking edge between them. **Independent means answering one does
+not already answer the other**: "does weight decay?" and "on what clock does it decay?" are one
+question wearing two titles, so merge such a pair into the question underneath and **re-count before
+you apply the threshold**. The threshold is an honest post-merge count, never the number of lines you
+happened to type. One surviving question has nothing to gate and nothing to parallelize, so the
+edges, the parallel burndown and the digest threading are all ceremony over a single ticket.
+
+**Refuse to chart it, and route the survivor by its kind** — the same triangle step 5 routes on, not
+a blanket handoff. A **decision** — a product or direction choice — goes to `grilling`, the smallest
+path (#5017) settling one stateable question in a session without a map. An **empirical** question,
+one only *running* something settles, goes to `prototyping`. A **research** question, one a subagent
+can settle by reading, you simply answer: dispatch a lane and hand the findings to whoever asked — no
+map, no skill, no ruling needed. Then end on `NOT-FOG` naming which of the three you took and this
+basis: a lone question is work for the smallest path rather than something for intake to re-classify,
+so none of the three is `report`. This binds however the count falls to one, whether you only ever
+had one question, you merged near-duplicates, or you dropped the rest as already answered.
 
 **A refusal here is the answer, and nothing was written.** `17` means no question survived — this is
 a deliverable, so fire the `report` Skill and stop. `19` means someone already rejected this
@@ -308,12 +317,15 @@ never anything to push, leave local, or remove.
   and the run names the open decisions so he can answer without reading the map.
 - `FRONTIER-CLEAR` — `map read` at `0` reporting `clear`. The natural next step is the model firing
   `graduate` to synthesize one spec issue.
-- `NOT-FOG` — the destination is not fog. Reached **three ways**, and **say which**, because the
-  action differs: `map open` refused with `17`, or you read the board yourself and every question was
-  already settled and you never called it — both mean a deliverable, so fire the `report` Skill and
-  stop; or you read the board and exactly one question survived, below the two-or-more-independent-
-  frontier-tickets threshold, so you refused to chart — that one is work for the smallest path, so it
-  routes to `grilling`, not `report` (step 1). A route you read yourself is not a lesser ending — but
+- `NOT-FOG` — the destination is not fog. Reached **five ways**, and **say which**, because the
+  action differs. Two mean a deliverable, and both fire the `report` Skill and stop: `map open`
+  refused with `17`, or you read the board yourself, found every question already settled, and never
+  called it. The other three are the lone-survivor case — you read the board and exactly one
+  *independent* question survived step 1's merge-and-re-count, below the two-or-more threshold, so
+  you refused to chart. That one is work for the smallest path, so it never routes to `report`; it
+  routes by its kind, on the same triangle as step 5: a **decision** to `grilling`, an **empirical**
+  question to `prototyping`, and a **research** question to no skill at all — answer it yourself with
+  a lane and hand the findings back (step 1). A route you read yourself is not a lesser ending — but
   a terminal naming an exit code you never observed is a claim you cannot support, so state the basis
   you have.
 - `ALREADY-DESCOPED` — the direction is on the record as rejected. Relay the recorded reasoning.
