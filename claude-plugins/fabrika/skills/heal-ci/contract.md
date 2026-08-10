@@ -649,14 +649,31 @@ set; that number is `producing + extra`.
 
 With `--json`: `{"outcome":…,"sha":…,"required":[{"name":…,"state":…}…],"extra":[…],"counts":{"required":<n>,"producing":<n>,"extra":<n>}}`.
 
-**`unprobeable` is the permission answer, and it is not `no-requirements`.** Reading branch
-protection or a repository ruleset needs more than an ordinary repo-scoped token carries, so a
-`403`/permission-denied on that surface is routine rather than exceptional. It is a proven fact
-about **the token**, not about the repository: the verb answers `unprobeable` at exit `0`, prints
-`required:-` on its facts line, and emits no `required` rows. Collapsing it into `no-requirements`
-would tell an adopter their repo gates nothing when it may gate everything — the single most
-dangerous wrong answer this verb can give. Collapsing it into `11` would fail every `diagnose`
-call made with a token that lacks admin, which is most of them, leaving the whole skill inert.
+**`unprobeable` is the permission answer, and it is not `no-requirements`.** The two halves of the
+declared set do not read alike, and the difference is load-bearing — **probed live against
+`kamp-us/phoenix` with a `repo`-scoped token (scopes `repo`, `workflow`, `read:org`, no `admin`)
+rather than assumed**:
+
+- `GET /repos/{repo}/branches/{base}/protection` answered **`404 "Branch not protected"`**. That
+  status is returned **both** when a branch genuinely has no protection **and** when the caller
+  lacks the admin permission to see it. It is ambiguous by construction, so **a 404 here is never,
+  on its own, evidence of anything** — treating it as `no-requirements` is the proven-absent /
+  could-not-read collapse this contract refuses everywhere else.
+- `GET /repos/{repo}/rulesets` answered with the **full ruleset list at ordinary `repo` scope**, no
+  admin required.
+
+So the rulesets read is what carries the answer, and the rules are:
+
+- **`no-requirements`** needs a **successful** rulesets read returning zero rules that require a
+  status context for this base, *and* the protection endpoint's 404. Both, never the 404 alone.
+- **`unprobeable`** is when the rulesets read itself is permission-denied, or when the protection
+  404 is the only signal and the rulesets read did not complete. The verb answers at exit `0`,
+  prints `required:-` on its facts line, and emits no `required` rows.
+
+Collapsing `unprobeable` into `no-requirements` would tell an adopter their repo gates nothing when
+it may gate everything — the single most dangerous wrong answer this verb can give. Collapsing it
+into `11` would fail every `diagnose` call made with a token that cannot see protection, leaving
+the whole skill inert on the common case.
 
 **`no-requirements` is a proven answer at exit `0`** — a base branch with no protection rule and
 no ruleset requiring a status context genuinely gates nothing, which is the ordinary state of a
