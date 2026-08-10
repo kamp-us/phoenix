@@ -2,7 +2,7 @@ import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
 import {errOut, fakeFs, fakeShell, okOut} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
-import {classifyDiff, runCheck, surfaceMismatch} from "./check-verb.ts";
+import {classifyDiff, notCoveredBy, runCheck, surfaceMismatch} from "./check-verb.ts";
 import {
 	OFF_VOCABULARY,
 	PRECONDITION_UNKNOWN,
@@ -76,14 +76,37 @@ describe("classifyDiff — matched-neither is a bucket, not an absence", () => {
 		expect(classifyDiff([".github/workflows/ci.yml", "scripts/x.sh", "a.ts", "R.md"])).toEqual({
 			code: ["a.ts"],
 			markdown: ["R.md"],
-			unvalidated: [".github/workflows/ci.yml", "scripts/x.sh"],
+			unvalidatable: [".github/workflows/ci.yml", "scripts/x.sh"],
 		});
 	});
 
 	it("puts every file in exactly one bucket", () => {
 		const files = ["a.tsx", "b.mjs", "c.json", "d.md", "e.mdx", "f.sql", "g.css", "LICENSE"];
-		const {code, markdown, unvalidated} = classifyDiff(files);
-		expect([...code, ...markdown, ...unvalidated].sort()).toEqual([...files].sort());
+		const {code, markdown, unvalidatable} = classifyDiff(files);
+		expect([...code, ...markdown, ...unvalidatable].sort()).toEqual([...files].sort());
+	});
+});
+
+describe("notCoveredBy — a green discloses what THIS surface did not read", () => {
+	it("names the markdown a code run skipped", () => {
+		expect(notCoveredBy("code", ["a.ts", "README.md"])).toEqual(["README.md"]);
+	});
+
+	it("names the code a plan run skipped — the symmetric case, same rule", () => {
+		expect(notCoveredBy("plan", ["a.ts", "plans/epic.md"])).toEqual(["a.ts"]);
+	});
+
+	it("is empty only when the surface read every changed file", () => {
+		expect(notCoveredBy("code", ["a.ts", "b.tsx"])).toEqual([]);
+		expect(notCoveredBy("prose", ["docs/a.md"])).toEqual([]);
+	});
+
+	it("still carries the class no surface validates", () => {
+		expect(notCoveredBy("code", ["a.ts", "scripts/deploy.sh"])).toEqual(["scripts/deploy.sh"]);
+	});
+
+	it("reports in diff order, so the list reads against the diff it came from", () => {
+		expect(notCoveredBy("code", ["R.md", "a.ts", "x.sh"])).toEqual(["R.md", "x.sh"]);
 	});
 });
 
@@ -250,6 +273,62 @@ describe("runCheck", () => {
 		]);
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout).unvalidated).toEqual(["scripts/deploy.sh"]);
+	});
+
+	// The #5288 regression. README.md landed in the markdown bucket, so the green listed nothing — and
+	// an empty `unvalidated` reads as "nothing uncovered" over a file no runner opened (`lint:worktree`
+	// filters `.md` out by extension).
+	it("names the markdown a --surface code green did not read", async () => {
+		const out = await run(
+			[
+				...LANE_OK,
+				[DIFF, okOut("apps/web/src/App.tsx\nREADME.md\n")],
+				[TYPECHECK, okOut("")],
+				[LINT, okOut("")],
+			],
+			{},
+			{"/repo/trees/lane-a/README.md": "nothing to resolve here\n"},
+		);
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).unvalidated).toEqual(["README.md"]);
+		expect(out.stderr).toContain(
+			"build check: 1 changed file(s) --surface code does not validate — NOT covered by this verdict: README.md.",
+		);
+	});
+
+	it("names the code a --surface plan green did not read — same rule, mirrored", async () => {
+		const shell = fakeShell([...LANE_OK, [DIFF, okOut("apps/web/src/App.tsx\nplans/epic.md\n")]]);
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runCheck({...options, surface: "plan"}),
+				Layer.merge(
+					shell.layer,
+					fakeFs({
+						files: {"/repo/trees/lane-a/plans/epic.md": "## Dependencies\n\n- phase 1: #12\n"},
+					}).layer,
+				),
+			),
+		);
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).unvalidated).toEqual(["apps/web/src/App.tsx"]);
+		expect(shell.calls).not.toContain("pnpm typecheck --force");
+	});
+
+	// Disclosing is not validating: --surface code names the markdown it skipped and stays green over
+	// content the prose validators would red. Widening the surface to scan it is the fix #5288 declined.
+	it("discloses the skipped markdown without scanning it", async () => {
+		const out = await run(
+			[
+				...LANE_OK,
+				[DIFF, okOut("apps/web/src/App.tsx\ndocs/guide.md\n")],
+				[TYPECHECK, okOut("")],
+				[LINT, okOut("")],
+			],
+			{},
+			{"/repo/trees/lane-a/docs/guide.md": "run it from /Users/someone/phoenix\n"},
+		);
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).unvalidated).toEqual(["docs/guide.md"]);
 	});
 
 	it("reds a plan diff whose Dependencies block does not parse", async () => {

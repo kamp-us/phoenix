@@ -988,9 +988,17 @@ fabrika build check --surface code
 `{"verdict": "green", "surface": "code", "tree": "<abs tree root>", "ran": ["pnpm typecheck", "pnpm lint:worktree"], "unvalidated": []}`.
 Red and unknown produce no stdout (`18` / `11`), diagnostics on stderr verbatim from the runners.
 
-`unvalidated` is always present and lists the changed files **this verdict does not cover** — the
-class no surface validates (`.yml`, `.sh`, `.sql`, `.css`, …). A non-empty list beside a green is the
-honest reading of a mixed diff, and the same line is repeated on stderr.
+`unvalidated` is always present and lists the changed files **this verdict does not cover** —
+computed against *this* surface's validators, so it holds both the class no surface validates
+(`.yml`, `.sh`, `.sql`, `.css`, …) and the class another surface would have read. Markdown under
+`--surface code` is the common case, and its mirror is code under `--surface plan`. A non-empty list
+beside a green is the honest reading of a mixed diff, and the same line is repeated on stderr.
+
+The list is a **disclosure, not a second validator run**: `--surface code` names the markdown it
+skipped and does not scan it. Running the markdown validators there would make the surface guess at
+file classes, which the anchor exists to refuse — so the remedy for a mixed diff that needs its
+markdown read is a second run, not a wider surface. `unvalidated: []` therefore means every changed
+file was read by a validator that passed, and nothing weaker (#5288).
 
 Per surface:
 
@@ -1043,17 +1051,19 @@ Preconditions: a linked worktree (`12`), the lane's branch checked out (`14`).
 | `build check: the diff against <base> is empty — nothing to validate (ADR 0092).` | 7 | refusal |
 | `build check: red — <runner> failed; diagnostics above.` | 18 | refusal |
 | `build check: no surface validates any of the <n> changed file(s) (<files>) — there is nothing here to run, so the verdict is a refusal, never green.` | 22 | refusal |
+| `build check: <n> changed file(s) --surface <surface> does not validate — NOT covered by this verdict: <files>.` | 0 | scope note beside a green |
 
 **Scope** — this tree's diff against the branch base. A zero-file diff is `7` — zero scope, never
 a green (ADR 0092). A diff no surface validates is `22` — the same rule one step further in: a file
 the verb cannot classify is a file it cannot check, and an unchecked file never counts toward a
-green. A green's `unvalidated` list is what keeps the partial case honest.
+green. A green's `unvalidated` list is what keeps the partial case honest — and it is scoped to the
+surface that ran, so a file another surface would have read counts as uncovered here too.
 
 **Example**
 
 ```
 $ fabrika build check --surface code
-{"verdict":"green","surface":"code","tree":"/private/var/folders/…/build-4312","ran":["pnpm typecheck","pnpm lint:worktree"],"unvalidated":["scripts/deploy.sh"]}
+{"verdict":"green","surface":"code","tree":"/private/var/folders/…/build-4312","ran":["pnpm typecheck","pnpm lint:worktree"],"unvalidated":["README.md","scripts/deploy.sh"]}
 ```
 
 **Grounding**
@@ -1062,6 +1072,10 @@ $ fabrika build check --surface code
 - #5229 — two extension patterns and no third class: a workflow-only diff greened under `--surface
   prose` having opened no file, and refused under `--surface code` with a message pointing at the
   branch that greened. `22` and `unvalidated` are the two halves of that fix.
+- #5288 — `unvalidated` was computed from the third class alone, so `--surface code` over
+  `["a.ts", "README.md"]` greened with an empty list: the markdown had a validator, just not the one
+  that ran. Scoping the list to the surface closes it, and the mirrored `--surface plan` case, with
+  one rule.
 - v1's discipline was prose-only (`SKILL.md:895-935`, exact-CI-command mandate with no
   enforcement); here the command set is the verb's, not the agent's memory.
 - ADR 0092 — zero diff is a refusal, not a vacuous green.
