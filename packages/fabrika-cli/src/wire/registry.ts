@@ -19,6 +19,7 @@
  * registered without them — which is what makes the totality law inherited rather than re-written.
  */
 import * as acceptanceCriteria from "./acceptance-criteria.ts";
+import * as evalRecord from "./eval-record.ts";
 import {brandWitnesses, type WireFormat} from "./format.ts";
 import * as governanceDigest from "./governance-digest.ts";
 import * as grillAnswer from "./grill-answer.ts";
@@ -97,6 +98,59 @@ export const registeredFormats: ReadonlyArray<WireFormat> = [
 			],
 		},
 		brands: brandWitnesses<verdictMarker.VerdictMarker>({sha: true, clause: true, polarity: true}),
+	},
+	{
+		key: "eval-record",
+		purpose:
+			"the head-bound measurement a graded review run leaves on a PR — one cell's pass rate, its per-run verdicts and dispersion, and the model/CLI/harness it was measured at",
+		module: "packages/fabrika-cli/src/wire/eval-record.ts",
+		producers: ["review"],
+		consumers: ["ship"],
+		emit: evalRecord.emitFromFields,
+		read: evalRecord.readToLines,
+		fixtures: {
+			roundTrip: {
+				fields: [
+					"outcome: RECORDED",
+					"sha: 03135b91",
+					"clause: review/skill 0.6667 (2/3 cases, 0 unmeasured)",
+					"payload:",
+					'{"sha":"03135b91","recordedAt":"2026-08-10T04:08:00Z","cell":{"stage":"review","surface":"skill","model":"claude-opus-4-6"},"pins":{"model":"claude-opus-4-6","cli":"2.1.220","harness":"fabrika 0.1.0"},"gradedRuns":3,"passedRuns":2,"passRate":0.6667,"cases":[{"caseId":11,"verdict":"pass","runs":5,"passed":4,"noVerdict":0,"dispersion":1,"perRun":["pass","pass","fail","pass","pass"]},{"caseId":12,"verdict":"pass","runs":5,"passed":3,"noVerdict":1,"dispersion":2,"perRun":["pass","fail","pass","no-verdict:timed-out","pass"]},{"caseId":13,"verdict":"fail","runs":5,"passed":1,"noVerdict":0,"dispersion":1,"perRun":["fail","fail","pass","fail","fail"]}]}',
+				].join("\n"),
+				values: [
+					"RECORDED",
+					"03135b91",
+					"review/skill 0.6667 (2/3 cases, 0 unmeasured)",
+					"2026-08-10T04:08:00Z",
+					"claude-opus-4-6",
+					"2.1.220",
+					"fabrika 0.1.0",
+					"no-verdict:timed-out",
+				],
+			},
+			absent: "Ran the set locally and it looked fine to me — no notes.\n",
+			malformed: [
+				{
+					drift: "the outcome is spelled as a gate polarity",
+					artifact: "eval: PASS @ 03135b91 — review/skill 0.95\n",
+				},
+				{
+					drift: "the record carries no payload, so its number cannot be read",
+					artifact: "eval: RECORDED @ 03135b91 — review/skill 0.95\n",
+				},
+				{
+					drift: "a case's stored dispersion disagrees with the runs beside it",
+					artifact:
+						'eval: RECORDED @ 03135b91 — review/skill 1\n\n```json\n{"sha":"03135b91","recordedAt":"2026-08-10T04:08:00Z","cell":{"stage":"review","surface":"skill","model":"m"},"pins":{"model":"m","cli":"c","harness":"h"},"gradedRuns":1,"passedRuns":1,"passRate":1,"cases":[{"caseId":1,"verdict":"pass","runs":5,"passed":3,"noVerdict":0,"dispersion":0,"perRun":["pass","pass","pass","fail","fail"]}]}\n```\n',
+				},
+				{
+					drift: "an UNRECORDABLE record reports a real denominator",
+					artifact:
+						'eval: UNRECORDABLE @ 03135b91 — nothing measured\n\n```json\n{"sha":"03135b91","recordedAt":"2026-08-10T04:08:00Z","cell":{"stage":"review","surface":"skill","model":"m"},"pins":{"model":"m","cli":"c","harness":"h"},"gradedRuns":1,"passedRuns":1,"passRate":1,"cases":[]}\n```\n',
+				},
+			],
+		},
+		brands: brandWitnesses<evalRecord.EvalRecord>({outcome: true, sha: true, clause: true}),
 	},
 	{
 		key: "slice-handoff",

@@ -828,13 +828,14 @@ describe("no CI workflow invokes the model-spawning runner (#4649 ruling)", () =
 		assert.isAbove(readdirSync(workflows).filter((f) => f.endsWith(".yml")).length, 0);
 	});
 
-	// Both spellings, so the ruling survives the rename: v1's `eval-harness run` and fabrika's
-	// `eval run` are the same forbidden invocation, and a workflow written against either reds.
-	it("no workflow calls the runner under either verb name", () => {
+	// Every spelling, so the ruling survives a rename: v1's `eval-harness run`, fabrika's `eval run`,
+	// and the graded axis's `eval graded` (#4678) are the same forbidden invocation, and a workflow
+	// written against any of them reds.
+	it("no workflow calls a model-spawning verb under any of its names", () => {
 		const offenders = readdirSync(workflows)
 			.filter((f) => f.endsWith(".yml") || f.endsWith(".yaml"))
 			.filter((f) =>
-				/(eval-harness|fabrika(-cli)?\s+eval)\s+run\b/.test(
+				/(eval-harness|fabrika(-cli)?\s+eval)\s+(run|graded)\b/.test(
 					readFileSync(join(workflows, f), "utf8"),
 				),
 			);

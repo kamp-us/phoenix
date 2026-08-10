@@ -53,3 +53,14 @@ export const INTEGRITY_VIOLATION = 12;
  * never this code.
  */
 export const RUNS_NOT_EXECUTED = 13;
+
+/**
+ * Proven: the graded axis ran and produced no measurement at all — every run of every case returned
+ * no verdict, so the record it emitted is `UNRECORDABLE`.
+ *
+ * Its own seat, and deliberately not a failure of the verb: the record is on stdout and is meant to
+ * be posted. This says only that there is no number in it, which the merge gate must be able to tell
+ * apart from a below-bar number (ADR 0253 §2). A below-bar run exits `0` — whether a rate clears the
+ * ruled bar is #4681's judgement and never this verb's.
+ */
+export const NO_MEASUREMENT = 14;

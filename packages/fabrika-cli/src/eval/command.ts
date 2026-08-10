@@ -1,14 +1,15 @@
 /**
- * The `eval` verb group — `fabrika eval check|report|cases|run|keeps`.
+ * The `eval` verb group — `fabrika eval check|report|cases|run|graded|keeps`.
  *
  * The graded-corpus apparatus for adjudicating a stochastic model swap per stage (epic
- * #1842), plus the ingestion of `/skill-creator`-authored eval sets (epic #4649). Five live
+ * #1842), plus the ingestion of `/skill-creator`-authored eval sets (epic #4649). Six live
  * surfaces:
  *
  *   fabrika eval check <manifest>   # decode a corpus manifest; exit non-zero on a bad one
  *   fabrika eval report <rows>      # the graded two-axis scorecard over runner rows
  *   fabrika eval cases <path>       # decode an authored eval set; exit non-zero on a bad one
  *   fabrika eval run <path>         # execute an eval set unattended, emit the capture manifest
+ *   fabrika eval graded <path>      # five runs per graded case, the median, and the head-bound record
  *   fabrika eval keeps <path>       # print the ruled KEEP corpus and what already pins each row
  *
  * `check` (issue #1848) validates the on-disk corpus format. `report` (issue #1853) is the
@@ -17,7 +18,9 @@
  * cost — as a human table (default) or stable JSON (`--json`), the evidence the model-tiering
  * decision (#1576) consumes. It presents measurement, never a recommendation. `cases` (issue
  * #4674) validates a `/skill-creator` `evals/evals.json` and prints the tier each case derives to.
- * `keeps` (issue #4823) prints the ruled KEEP corpus — the enumeration that replaced the
+ * `graded` (issue #4678) is the judgment tier: it runs each graded case five times through the
+ * grader the case's authoring session defined, takes the median, and emits the head-bound eval
+ * record. `keeps` (issue #4823) prints the ruled KEEP corpus — the enumeration that replaced the
  * two-artifact join every consumer used to re-run by hand.
  *
  * Thin IO shell over the pure cores (the `token-spend` / `readme-guard` idiom): read the file,
@@ -30,8 +33,26 @@ import {Argument, Command, Flag} from "effect/unstable/cli";
 import {leafCommand} from "../excess-operand.ts";
 import {DEFAULT_SPEND_LEDGER_PATH, persistSpendRows} from "../spend/ledger.ts";
 import {FAILED} from "../verb.ts";
-import {INTEGRITY_VIOLATION, MALFORMED_DOCUMENT, RUNS_NOT_EXECUTED, ZERO_SCOPE} from "./codes.ts";
+import {VERSION} from "../version.ts";
+import {emit as emitEvalRecord} from "../wire/eval-record.ts";
+import {
+	INTEGRITY_VIOLATION,
+	MALFORMED_DOCUMENT,
+	NO_MEASUREMENT,
+	RUNS_NOT_EXECUTED,
+	ZERO_SCOPE,
+} from "./codes.ts";
 import {decodeManifest, REVIEW_SURFACES, type ReviewSurface, STAGES} from "./corpus.ts";
+import {
+	buildEvalRecord,
+	candidateOutputOf,
+	composeGraderPrompt,
+	GRADED_RUNS,
+	gradableCase,
+	graderResponseOf,
+	readGraderVerdict,
+	runGradedAxis,
+} from "./graded-axis.ts";
 import {decodeIncidentProvenance} from "./incident-provenance.ts";
 import {
 	type BaselineKey,
@@ -511,6 +532,203 @@ const runCommand = leafCommand(
 	),
 );
 
+const surfaceFlag = Flag.string("surface").pipe(
+	Flag.optional,
+	Flag.withDescription(
+		`the review surface being graded, required with --stage review (one of: ${REVIEW_SURFACES.join(", ")}) — a pass rate measures one grading regime`,
+	),
+);
+
+const shaFlag = Flag.string("sha").pipe(
+	Flag.withDescription(
+		"the head commit the review ran against — the record is bound to it, and a record bound to nothing attests no tree",
+	),
+);
+
+const harnessFlag = Flag.string("harness").pipe(
+	Flag.withDefault(VERSION),
+	Flag.withDescription(
+		`the harness version the measurement is pinned to (#4637 ruling 4; default: ${VERSION})`,
+	),
+);
+
+const runsFlag = Flag.integer("runs").pipe(
+	Flag.withDefault(GRADED_RUNS),
+	Flag.withDescription(
+		`how many times each graded case is executed before the median is taken (default: ${GRADED_RUNS}, the ruled count)`,
+	),
+);
+
+const recordOutFlag = Flag.string("out").pipe(
+	Flag.optional,
+	Flag.withDescription("also write the record's bytes here; they always go to stdout"),
+);
+
+/**
+ * `graded` — run a skill's graded cases five times each, take the median, and emit the head-bound
+ * eval record (#4678).
+ *
+ * Its supported invocation sites are an operator's shell and the `review` stage on a PR that changes
+ * a skill. **No CI workflow invokes it**, for `run`'s reason above: the founder ruling on #4649
+ * removed model-in-the-loop execution from CI on a **cost** constraint — no credits for model runs
+ * inside the CI provider — recorded as a cost constraint and not a principle, so a future reader
+ * knows what would have to change to revisit it. CI's leg is #4681, which verifies that the record
+ * exists, is bound to the head, and clears the bar; it runs no model.
+ *
+ * The exit code reports **whether a measurement exists**, never whether it was good. A below-bar
+ * rate exits `0` with its number in the record, because the ruled bar is #4681's judgement.
+ */
+const graded = leafCommand(
+	"graded",
+	{
+		path: evalSetArg,
+		stage: stageFlag,
+		surface: surfaceFlag,
+		model: modelFlag,
+		pluginDir: pluginDirFlag,
+		sha: shaFlag,
+		harness: harnessFlag,
+		runs: runsFlag,
+		timeoutMs: timeoutFlag,
+		out: recordOutFlag,
+	},
+	Effect.fn(function* (opts) {
+		const run = Effect.gen(function* () {
+			const fs = yield* FileSystem.FileSystem;
+			const text = yield* Effect.mapError(
+				fs.readFileString(opts.path),
+				() => new EvalSetUnreadable({path: opts.path}),
+			);
+			const decoded = decodeSkillEvalSet(text);
+			if (Result.isFailure(decoded)) {
+				yield* Console.error(
+					`fabrika eval: ${opts.path} is not a valid skill eval set (${decoded.failure.reason}): ${decoded.failure.message}`,
+				);
+				return yield* Effect.sync(() => process.exit(MALFORMED_DOCUMENT));
+			}
+			if (!isStageName(opts.stage)) {
+				yield* Console.error(
+					`fabrika eval: --stage '${opts.stage}' is not a known stage (${STAGES.join(", ")})`,
+				);
+				return yield* Effect.sync(() => process.exit(FAILED));
+			}
+			let surface: ReviewSurface | null = null;
+			if (opts.surface._tag === "Some") {
+				if (!isReviewSurface(opts.surface.value)) {
+					yield* Console.error(
+						`fabrika eval: --surface '${opts.surface.value}' is not a known review surface (${REVIEW_SURFACES.join(", ")})`,
+					);
+					return yield* Effect.sync(() => process.exit(FAILED));
+				}
+				surface = opts.surface.value;
+			}
+			if (opts.stage === "review" && surface === null) {
+				yield* Console.error(
+					"fabrika eval: --stage review needs --surface — a review pass rate is one grading regime, never an average of two (ADR 0243 §4)",
+				);
+				return yield* Effect.sync(() => process.exit(FAILED));
+			}
+
+			const cases = decoded.success.cases
+				.filter((evalCase) => evalCase.tier === "graded")
+				.map(gradableCase);
+			// A set with no graded case has nothing for this axis to measure. Reporting a green over it
+			// is the zero-scope pass ADR 0092 forbids; reporting an UNRECORDABLE record would claim a
+			// measurement was attempted and died, which is a different and untrue fact.
+			if (cases.length === 0) {
+				yield* Console.error(
+					`fabrika eval: ${opts.path} carries no graded case — the graded axis measured nothing (ADR 0092)`,
+				);
+				return yield* Effect.sync(() => process.exit(ZERO_SCOPE));
+			}
+
+			const crypto = yield* Crypto.Crypto;
+			const executor = claudeExecutor({timeoutMs: opts.timeoutMs});
+			const invoke = (
+				evalCase: ReturnType<typeof gradableCase>,
+				prompt: string,
+				pluginDir: string | null,
+			) =>
+				Effect.gen(function* () {
+					const sessionId = yield* Effect.orDie(crypto.randomUUIDv4);
+					return yield* executor({
+						caseId: evalCase.id,
+						tier: "graded",
+						arm: "with-skill",
+						sessionId,
+						prompt,
+						model: opts.model,
+						pluginDir,
+						jsonSchema: null,
+					});
+				});
+
+			const results = yield* runGradedAxis({
+				cases,
+				runs: opts.runs,
+				runOnce: ({evalCase}) =>
+					Effect.gen(function* () {
+						const candidate = candidateOutputOf(
+							yield* invoke(evalCase, evalCase.prompt, opts.pluginDir),
+						);
+						if (candidate._tag !== "Output") return candidate;
+						// The grader loads no plugin: it judges what the candidate produced against the
+						// authored expectations, and running the skill again inside the grader would make
+						// the judgement depend on a second execution nobody scored.
+						return readGraderVerdict(
+							graderResponseOf(
+								yield* invoke(
+									evalCase,
+									composeGraderPrompt({evalCase, candidateOutput: candidate.text}),
+									null,
+								),
+							),
+						);
+					}),
+			});
+
+			const built = buildEvalRecord({
+				sha: opts.sha,
+				recordedAt: new Date().toISOString(),
+				cell: {stage: opts.stage, surface, model: opts.model},
+				pins: {
+					model: opts.model,
+					cli: (yield* claudeVersion()) ?? "unknown",
+					harness: opts.harness,
+				},
+				results,
+			});
+			if (built._tag === "Unusable") {
+				yield* Console.error(`fabrika eval: cannot record this run — ${built.reason}`);
+				return yield* Effect.sync(() => process.exit(FAILED));
+			}
+
+			const bytes = emitEvalRecord(built.record);
+			if (opts.out._tag === "Some") yield* fs.writeFileString(opts.out.value, bytes);
+			yield* Console.log(bytes);
+			if (built.record.outcome === "UNRECORDABLE") {
+				yield* Console.error(
+					`fabrika eval: every run of all ${results.length} graded case(s) returned no verdict — the record is UNRECORDABLE, which is not a below-bar number`,
+				);
+				return yield* Effect.sync(() => process.exit(NO_MEASUREMENT));
+			}
+		});
+		yield* run.pipe(
+			Effect.catchTag("EvalSetUnreadable", (e) =>
+				Effect.gen(function* () {
+					yield* Console.error(`fabrika eval: cannot read ${e.path}`);
+					return yield* Effect.sync(() => process.exit(FAILED));
+				}),
+			),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Run a skill's graded cases five times and record the median."),
+	Command.withDescription(
+		"Run each graded case five times through the authored grader, take the median, and emit the head-bound eval record — for an operator's shell or a review-stage spawn, never a CI job (#4678)",
+	),
+);
+
 // A named enumeration/ledger path that could not be read — a hard error (exit 1), not a skip.
 class KeepsUnreadable extends Schema.TaggedErrorClass<KeepsUnreadable>()("KeepsUnreadable", {
 	path: Schema.String,
@@ -600,8 +818,8 @@ const keeps = leafCommand(
 );
 
 export const evalCommand = Command.make("eval").pipe(
-	Command.withSubcommands([check, report, cases, runCommand, keeps]),
+	Command.withSubcommands([check, report, cases, runCommand, graded, keeps]),
 	Command.withDescription(
-		"Graded per-stage corpus + scorecard + authored-eval-set ingestion + the unattended runner + the ruled KEEP enumeration (#1848, #1853, #4674, #4676, #4823)",
+		"Graded per-stage corpus + scorecard + authored-eval-set ingestion + the unattended runner + the five-run graded axis + the ruled KEEP enumeration (#1848, #1853, #4674, #4676, #4678, #4823)",
 	),
 );
