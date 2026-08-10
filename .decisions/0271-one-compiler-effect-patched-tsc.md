@@ -48,9 +48,14 @@ This is why the collapse is a *retarget of the patch*, not a swap to stock `tsc`
    `tsc -b tsconfig.worker.json tsconfig.node.json && tsc -p tsconfig.app.json --composite false`.
 3. `scripts/patch-effect-tsgo.mjs` — the #1800 backup-pruning wrapper (ADR
    [0038](0038-dependency-patches-local-only.md) tier-1) — keeps its job and changes its target: it now
-   resolves `typescript`'s per-platform package instead of native-preview's. The accretion failure
-   it exists to prevent is unchanged, because `patch` still backs up to `<bin>.original`,
-   `.original.1`, … and still never prunes.
+   resolves `typescript`'s per-platform package instead of native-preview's. Its original failure
+   mode is gone, though: read from the pinned `@effect/tsgo@0.36.4`'s `dist/effect-tsgo.cjs`, the
+   only backup `patch` writes is a single `<bin>.original`, and when one already exists it renames
+   the live binary to a `<bin>.<uuid>.patched` quarantine that its own cleanup list removes — the
+   `.original.1`, `.2`, … accretion and its "Too many backup files exist" abort live only in the
+   `0.5.x` line this upgrade leaves behind. So the wrapper is now a **regression guard**, not a live
+   fix: it costs one restore plus a directory scan per install and holds the steady state at one
+   `<tsc>` (patched) + one `<tsc>.original` (pristine) if a future version reintroduces accretion.
 4. The root `tsconfig.json` `plugins` entry stays. It does not activate the diagnostics — the patched
    binary does — but it is what configures them (`includeSuggestionsInTsc: false`) and what the
    editor LSP reads.

@@ -2,18 +2,23 @@
 //
 // `@effect/tsgo`'s `patch` command swaps the native TypeScript binary at
 //   node_modules/.pnpm/@typescript+typescript-<plat>-<arch>/.../lib/<tsc>
-// for the Effect Language Service build, backing up whatever is currently there
-// to `<tsc>.original`, then `<tsc>.original.1`, `.2`, … It NEVER prunes those
-// backups, so every `pnpm install` (which runs the root `postinstall`) accretes
-// one more numbered backup until patch's own guard trips with
+// for the Effect Language Service build. In the `0.5.x` line this wrapper was
+// written against, it backed up to `<tsc>.original`, then `<tsc>.original.1`,
+// `.2`, … and NEVER pruned, so every `pnpm install` (which runs the root
+// `postinstall`) accreted one more numbered backup until patch's own
 //   "Too many backup files exist (over 100)"
-// and aborts the install — the exact failure #1800 hit at 101 backups (~3 GB).
+// guard aborted the install — the failure #1800 hit at 101 backups (~3 GB).
 //
-// The fix (ADR 0038 tier-1 — work around it in our own code, no dependency
-// patch): before patching, restore a clean unpatched binary and delete the
-// accumulated backup litter, so the backup counter never climbs. Net steady
-// state after every install: exactly one `<tsc>` (patched) and one
-// `<tsc>.original` (pristine), never a growing pile.
+// The pinned `@effect/tsgo@0.36.4` no longer does that: read from its
+// `dist/effect-tsgo.cjs`, the only backup it writes is a single
+// `<tsc>.original`, and when one already exists it renames the live binary to a
+// `<tsc>.<uuid>.patched` quarantine that its own cleanup list removes; neither
+// the numbered-backup path nor that guard string is in the bundle. So this is
+// now a REGRESSION GUARD rather than a live fix (ADR 0038 tier-1 — work around
+// it in our own code, no dependency patch): restoring the pristine binary and
+// sweeping leftover backup litter before patching pins the steady state at
+// exactly one `<tsc>` (patched) + one `<tsc>.original` (pristine), whichever
+// backup scheme the tool uses.
 //
 // The patch target is the stable `typescript` compiler, not the retired
 // `@typescript/native-preview` preview channel — see ADR 0271.
