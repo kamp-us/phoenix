@@ -20,9 +20,11 @@ the artifact, and it was free in the registry when this was written.
 in the `SKILL.md`.
 
 **This is a standalone group with no cross-contract reuse.** It borrows no sibling's verbs. The
-`wayfinding` skill is *one caller* and its contract is on an unmerged pull request
-([#5242](https://github.com/kamp-us/phoenix/pull/5242)); referencing an unlanded sibling would be a
-race, so the caller seam below is stated **from this side only** and holds for any caller.
+`wayfinding` skill ([#5242](https://github.com/kamp-us/phoenix/pull/5242), landed) is *one caller*
+and directs the model here for an empirical frontier question — but the caller seam below is stated
+**from this side only**, and deliberately so: `prototyping` is standalone-first (#5017), so a seam
+defined by one caller's shape would be wrong for every other. Nothing here depends on that
+contract's verbs, which is what keeps the two independently implementable.
 
 **What fabrika already ships, reused by import — never respecified:**
 
