@@ -998,6 +998,60 @@ against it, not against the issue bodies, which still leave all three values unn
   disagrees with its own run counts — so a claim of ten graded cases over two blocks, or over none,
   is `Malformed` rather than a plausible measurement nobody took.
 
+## The v1 cost baseline ([#4679](https://github.com/kamp-us/phoenix/issues/4679))
+
+`cost-baseline.ts` is phase 1 of the ruled cost axis: **fabrika spend on the incident corpus at or
+below what v1 spent on the same corpus** ([#4637](https://github.com/kamp-us/phoenix/issues/4637)
+ruling 3). The same artifact is the published fabrika-vs-v1 comparison on identical inputs.
+
+It mints **no meter**. Every figure is folded out of spend-ledger rows
+[`../spend/token-spend.ts`](../spend/token-spend.ts) already reconstructed (ADR 0112 §2) and
+[`../spend/ledger.ts`](../spend/ledger.ts) already persisted; the only arithmetic here is addition and
+a division by the run count.
+
+**The v1 arm needs no adapter code** — `eval run`'s with-skill arm loads whatever `--plugin-dir`
+names, so pointing it at `claude-plugins/kampus-pipeline` runs the v1 suite through the identical
+harness. The recorded baseline carries that plugin dir, which is what makes it reproducible by
+someone other than its author.
+
+**The comparable unit is the corpus-level total.** No stage key is shared by both arms after the
+partition (v1's five review skills land on fabrika's one, `write-code` splits in two, three v1 skills
+have no counterpart), so a stage-keyed row cannot be the ceiling; per-run figures ride along as
+context.
+
+Two refusals, both the harness's standing rule that an unmeasured number is never fabricated:
+
+- **Zero measured runs is refused, never a baseline of zero** (ADR 0092). A ledger of nothing but
+  `TranscriptMissing` describes a suite nobody could measure, and a `0` reads exactly like a free one.
+- **Rows from two models, or two CLI versions, are refused.** They are two experiments; a baseline
+  that names one misstates the other by an unknown amount. An alias and its canonical id are one
+  model, normalized through [`../models.ts`](../models.ts).
+
+The comparison answers with its **exit code**, and its third seat is the point:
+
+```bash
+fabrika eval baseline record  --ledger <jsonl> --corpus <ruled-keeps.json> --corpus-revision <sha> \
+                              --cases <evals.json> --plugin-dir <dir> --harness-revision <sha> --out <file>
+fabrika eval baseline compare <baseline.json> --ledger <jsonl>
+```
+
+| exit | verdict | meaning |
+|---|---|---|
+| `0` | `at-or-below` | inside the phase-1 ceiling — a tie passes, the bar is `≤` |
+| `15` | `above` | a cost regression against v1 on the same corpus |
+| `16` | `incomparable` | the two sides did not price the same work (different case count, different model, or nothing measured) |
+
+`incomparable` is never read as a pass — it is what stops a candidate that quietly ran a smaller case
+set from reading as a cheaper one.
+
+**Phase 2 — absolute per-stage budgets — is deferred** until roughly three months of fabrika's own p95
+data exist (#4637). Nothing here introduces one, and `PHASE_2_DEFERRAL` is required on every recorded
+baseline so the artifact states it without a cross-read.
+
+The run site, the full reproduction procedure and which pin comes from where live in
+[`claude-plugins/fabrika/docs/cost-baseline.md`](../../../../claude-plugins/fabrika/docs/cost-baseline.md);
+this section is the module's shape, not a second copy of the method.
+
 ## Out of scope
 
 **Making the tiering call** is [#1576](https://github.com/kamp-us/phoenix/issues/1576), a
