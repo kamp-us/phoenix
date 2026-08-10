@@ -232,8 +232,10 @@ Three properties of that substrate are worth knowing before the verbs arrive:
 - **All nine verbs allocate from one table** ([`src/triage/codes.ts`](./src/triage/codes.ts)),
   so a code means one thing across this group. Where it overlaps the two `report` writing
   verbs — `3`, `5`, `6`, `7`, `8`, `9`, `10`, `11` — the meanings match **code for code**, so
-  a caller driving both groups in one sweep reads one meaning. That alignment does not extend
-  repo-wide: `report dedup`'s own `3`/`4` are *queue unreadable* / *search index unreadable*
+  a caller driving both groups in one sweep reads one meaning. `report dedup` used to break that
+  inside its own group, seating *queue unreadable* / *search index unreadable* on `3`/`4` from a verb
+  file the alignment check could not see; they are `27`/`28` in the group table now, and a check over
+  every verb file keeps the next one from hiding the same way
   ([#5296](https://github.com/kamp-us/phoenix/issues/5296)).
 - **`4` is a deliberate gap.** It once fused "the target issue is proven absent" with "the
   target issue could not be read". `7` and `11` took the halves, and the slot is left

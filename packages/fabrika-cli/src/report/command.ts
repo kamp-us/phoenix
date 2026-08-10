@@ -89,7 +89,7 @@ const dedup = leafCommand(
 ).pipe(
 	Command.withShortDescription("Rank the open issues that may already cover an observation."),
 	Command.withDescription(
-		'Rank the open issues that may already cover an observation. First stdout line is the outcome token — candidates | none | indeterminate — and ALL THREE exit 0; a candidates list adds one `<number>\\t<source>\\t<score>\\t<title>` line per entry. Exits 3 (queue unreadable), 4 (search index unreadable), 7 (--label does not exist, so the queue half would scan nothing). Example: fabrika report dedup --query "retry helper swallows the abort reason" --exclude 4312',
+		'Rank the open issues that may already cover an observation. First stdout line is the outcome token — candidates | none | indeterminate — and ALL THREE exit 0; a candidates list adds one `<number>\\t<source>\\t<score>\\t<title>` line per entry. Exits 7 (--label does not exist, so the queue half would scan nothing), 27 (queue unreadable), 28 (search index unreadable). Example: fabrika report dedup --query "retry helper swallows the abort reason" --exclude 4312',
 	),
 );
 
