@@ -839,3 +839,18 @@ export const issueTimeline = (
 			rows.map((row, i) => ({number: numbers[i] as number, isPullRequest: row[1] === "true"})),
 		);
 	});
+
+/**
+ * The repository's default branch.
+ *
+ * Its own read because the single-issue payload carries none: `repos/{repo}/issues/{n}` returns no
+ * `repository` object, so a caller defaulting a base branch "off the issue payload" would be reading
+ * a field that is not there.
+ */
+export const repoDefaultBranch = (repo: string): Shell<Attempt<string>> =>
+	Effect.gen(function* () {
+		const r = yield* execCapture("gh", ["api", `repos/${repo}`, "--jq", ".default_branch"]);
+		if (!r.ok) return fail(r.reason);
+		const name = r.stdout.trim();
+		return name === "" ? fail("`gh api` exited 0 but named no default branch") : ok(name);
+	});

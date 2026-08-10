@@ -16,6 +16,7 @@ import {
 	ZeroCoverageScope,
 } from "./exit-code-alignment.ts";
 import * as grill from "./grill/codes.ts";
+import * as handoff from "./handoff/codes.ts";
 import * as hook from "./hook/codes.ts";
 import * as ledger from "./ledger/codes.ts";
 import * as map from "./map/codes.ts";
@@ -45,6 +46,7 @@ const TABLES: Readonly<Record<string, CodeTable>> = {
 	epic,
 	eval: evalCodes,
 	grill,
+	handoff,
 	hook,
 	ledger,
 	map,
