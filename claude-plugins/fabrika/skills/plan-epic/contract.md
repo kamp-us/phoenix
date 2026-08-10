@@ -33,9 +33,15 @@ two never meet: no verb here reads or writes an `epic` run ledger.
 
 **What fabrika already ships, reused — never respecified.** The claim is the **`build` group's,
 reused as landed verbs** ([`build`'s contract](../build/contract.md)) — the cross-contract shape
-`build-ui` sanctioned: this skill claims the epic with `fabrika build claim`, proves its worktree
-with `fabrika build tree`, releases with `fabrika build release`, and posts a successor note with
-`fabrika build note`. **No second lock is derived**, and v1's `epic-lock` is why: all five of its
+`build-ui` sanctioned: this skill claims the epic with `fabrika build claim --purpose plan`, proves
+its worktree with `fabrika build tree`, releases with `fabrika build release`, and posts a successor
+note with `fabrika build note`. The purpose is part of the reuse, not a detail of it: `build claim`'s
+audience axis asks whether an agent should pick the issue up to *build*, and an epic earns
+`ready-for:agent` only after this skill has planned it and the gate has passed it, so a `plan` claim
+is admitted without it (founder ruling,
+[#5175](https://github.com/kamp-us/phoenix/issues/5175)). The scope axis is unchanged by the purpose,
+so `20` stays reachable and `21` does not, and `--override` stays the exception it was.
+**No second lock is derived**, and v1's `epic-lock` is why: all five of its
 distinct outcomes collapse onto exit `1`
 (`packages/pipeline-cli/src/tools/epic-lock/command.ts:26,43-47`), it `POST`s the
 `status:planning` label *before* the claim comment so a failed claim leaves a held label with no
