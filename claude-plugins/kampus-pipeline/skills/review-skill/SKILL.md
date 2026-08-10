@@ -1,6 +1,6 @@
 ---
 name: review-skill
-description: Verify a skill PR against its linked issue's acceptance criteria — plus a skill-specific rigor checklist (behavioral correctness, trigger/description quality, cross-skill conflict/shadowing, gate-invariant preservation) — before it merges. The behavioral-artifact sibling of review-code/review-doc in the configured target repo's pipeline. Trigger on "review this skill PR", "review-skill #N", "gate the skill PR", "verify the skill on #N before merge", "run review-skill", "does this skill PR meet its acceptance criteria", or whenever you're asked to confirm a `skills/**` PR actually satisfies the issue it claims to close and does not weaken a gate. This is the skill-class verification stage of the issue-intake pipeline: it consumes the skill PRs `write-code` opens and verifies them one criterion at a time plus the four rigor checks, evidence-based from reading the diff (no test-running). Emits a namespaced, SHA-bound `review-skill: PASS @ <sha> — merge-ready` / `review-skill: FAIL @ <sha> — changes-requested` comment marker (never a native review — ADR 0058), upserted on the (PR, gate-namespace, head, run) key; for BLOCKING-set skill PRs (a gate-critical skill, or any `.claude`/`.github` path) it is advisory only; it never merges; it never emits a `review-code` or `review-doc` marker.
+description: Verify a skill PR against its linked issue's acceptance criteria — plus a skill-specific rigor checklist (behavioral correctness, trigger/description quality, cross-skill conflict/shadowing, gate-invariant preservation, and — on a fabrika contract PR — that the contract's implementation ticket exists and is named) — before it merges. The behavioral-artifact sibling of review-code/review-doc in the configured target repo's pipeline. Trigger on "review this skill PR", "review-skill #N", "gate the skill PR", "verify the skill on #N before merge", "run review-skill", "does this skill PR meet its acceptance criteria", or whenever you're asked to confirm a `skills/**` PR actually satisfies the issue it claims to close and does not weaken a gate. This is the skill-class verification stage of the issue-intake pipeline: it consumes the skill PRs `write-code` opens and verifies them one criterion at a time plus the rigor checks, evidence-based from reading the diff (no test-running). Emits a namespaced, SHA-bound `review-skill: PASS @ <sha> — merge-ready` / `review-skill: FAIL @ <sha> — changes-requested` comment marker (never a native review — ADR 0058), upserted on the (PR, gate-namespace, head, run) key; for BLOCKING-set skill PRs (a gate-critical skill, or any `.claude`/`.github` path) it is advisory only; it never merges; it never emits a `review-code` or `review-doc` marker.
 ---
 
 # review-skill
@@ -427,7 +427,8 @@ whether the skill is *well-formed and behaviorally sound* — the skill-class eq
 regardless of what the AC say**. A skill can satisfy its issue and still misfire, shadow
 another skill, or quietly weaken a gate. Each check is PASS / FAIL with diff evidence, and **a
 rigor FAIL fails the gate** the same as an AC FAIL — the overall verdict is conjunctive across
-*both* lists. These are the four checks the existing gates structurally miss (ADR 0073 §1):
+*both* lists. Checks 1–4 are the ones the existing gates structurally miss (ADR 0073 §1); check 5
+is scoped to fabrika contract PRs (ADR 0248):
 
 1. **Behavioral correctness.** Does the instruction *produce the intended agent behavior*,
    beyond "meets the issue's ACs"? Trace the changed steps as an agent would execute them: do
@@ -480,6 +481,25 @@ rigor FAIL fails the gate** the same as an AC FAIL — the overall verdict is co
    removed/softened line and the invariant it breaks. For a **non**-gate-critical skill PR
    (nothing in §CP), this check is "no gate invariant is in the diff's reach" — record it PASS
    with that evidence; the check still runs, it just has nothing to weaken.
+5. **Contract implementation ticket — scoped to fabrika contract PRs (ADR 0248).** A fabrika
+   authoring session's lane ends at the spec, so its `contract.md` specifies verbs nobody has built
+   yet, and the **only** route into the build pool is an open issue. The session owes that ticket at
+   handoff; you are what checks it. Scope this check off the PR's **changed-file list**:
+   - **In scope** — the diff adds or changes a `claude-plugins/fabrika/skills/*/contract.md`.
+     Assert an implementation ticket for **these** verbs **exists, is open, and is named** in the PR
+     body or the handoff comment, and read the ticket to confirm it routes to this contract (the
+     skill it serves + its verb inventory). A `Fixes #<brief>` line does **not** satisfy this: it
+     closes the authoring brief, which is a done-signal, not the hand-off. Neither does a bare issue
+     number that turns out to track something else. FAIL with the contract path + what the named
+     issue actually covers.
+   - **Out of scope** — the diff carries no such `contract.md`. Record PASS with that evidence; the
+     check ran and had nothing to assert.
+   - **File list unreadable** — UNKNOWN, and UNKNOWN **fails** (ADR 0092). Never read a file list
+     you could not fetch as "no contract touched."
+
+   You never file the ticket yourself and you never merge on its absence: a machine-minted ticket is
+   un-triaged work entering the build pool, the second door ADR 0248 refuses. Your job is to demand
+   it.
 
 Build the rigor findings into the same evidence shape as the AC table:
 
@@ -487,19 +507,20 @@ Build the rigor findings into the same evidence shape as the AC table:
 - [PASS] Behavioral correctness — the new Step R2 fold reads exactly the enumerated findings (skills/write-code/SKILL.md:619–636)
 - [FAIL] Gate-invariant preservation — diff drops the `@ <sha>` from ship-it's matcher (Step 2, line NNN) → SHA-staleness refusal no longer fires
 - [PASS] Cross-skill conflict — review-skill marker token is disjoint from review-code/review-doc (§VERDICT)
+- [PASS] Contract implementation ticket — out of scope, no fabrika `contract.md` in the diff's 8 files
 ```
 
 ---
 
 ## Step 4b — Specialist fan-out + route-don't-grade (ADR 0079)
 
-The AC checklist (Step 3) and the four rigor checks (Step 4) catch what the issue *named*
+The AC checklist (Step 3) and the rigor checks (Step 4) catch what the issue *named*
 and the four behavioral failures ADR 0073 enumerated; together they are still blind to a
 real, in-scope behavioral defect the issue's AC never named — a path through the changed
-instruction that misbehaves yet trips none of the four named rigor checks. This gate fans out
+instruction that misbehaves yet trips none of the named rigor checks. This gate fans out
 skill-class specialists to surface such a finding and **routes** it into the converging AC
 work-list, exactly as `review-code` does for code. **The fan-out is additive — it feeds
-*additional* findings into the route step; the four-check rigor checklist (Step 4), including
+*additional* findings into the route step; the rigor checklist (Step 4), including
 gate-invariant-preservation, is preserved in full, not replaced.**
 
 **This is one logic with four call sites — [`../shared/specialist-fan-out.md`](../shared/specialist-fan-out.md)
@@ -523,7 +544,7 @@ re-derive the route decision, the tag fields, or the fences here.** Only the *cl
   handle that the changed instruction leaves unspecified (an error branch with no described
   handling, a mode the description admits but no step covers).
 
-These extend, never replace, the four rigor checks. Each yields zero or more **findings** (a
+These extend, never replace, the rigor checks. Each yields zero or more **findings** (a
 concrete defect with its skill-text site) that feed the route step; the fan-out emits no
 verdict.
 
@@ -677,6 +698,7 @@ Verified PR #<PR> against the acceptance criteria of #<ISSUE> + the skill-rigor 
 - [PASS] Trigger / description quality — <evidence>
 - [PASS] Cross-skill conflict / shadowing — <evidence>
 - [PASS] Gate-invariant preservation — <evidence / "no gate invariant in diff's reach">
+- [PASS] Contract implementation ticket — <the named open ticket / "out of scope, no fabrika contract.md in the diff">
 
 Read the PR head (§HEAD): all skill text under review sourced from `<HEAD_SHA>` via
 `$REVIEW_WT/skills/...`, never the launched checkout's working copy.
@@ -746,6 +768,7 @@ Verified against #<ISSUE>'s acceptance criteria + the skill-rigor checklist — 
 - [PASS] Trigger / description quality — <evidence>
 - [PASS] Cross-skill conflict / shadowing — <evidence>
 - [PASS] Gate-invariant preservation — <evidence: invariants walked, none weakened>
+- [PASS] Contract implementation ticket — <the named open ticket / "out of scope, no fabrika contract.md in the diff">
 ```
 
 Upsert it the same way as the pass/fail paths — `mktemp` the verdict file (the PR number alone
@@ -863,7 +886,7 @@ cannot. See the shared contract for the full post-path enumeration proving no pa
 A single invocation gates one skill PR end to end: config-pin yourself to the base (mandatory,
 ADR 0052), classify blocking vs non-blocking via the canonical §CP set (Step 0), resolve the
 PR ↔ issue (Step 1), read the diff + the head's skill text from the isolated worktree (Step 2),
-verify each acceptance criterion (Step 3) and run the four-check skill-rigor checklist
+verify each acceptance criterion (Step 3) and run the skill-rigor checklist
 (Step 4), fan out the skill-class specialists and route their findings (Step 4b — in-scope
 appends an AC, out-of-scope to `report`, ADR 0079), then land the verdict — namespaced
 `review-skill: PASS` (non-blocking) or the canonical advisory line (blocking) on a full pass,

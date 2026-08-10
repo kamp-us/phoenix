@@ -1,6 +1,6 @@
 ---
 name: author-skill
-description: "The authoring-side guide for writing a new kampus skill in the house idiom — the complement to the review-skill gate. Read it before you write a `skills/**/SKILL.md`. It covers the SKILL.md shape (frontmatter name/description contract, prose-first body), the house rules imported from the writing-craft manifest (no Python, no `sources/` tree, no second validator — review-skill already gates), how to author toward review-skill's four rigor checks so the gate passes on the first pass, the gate-skill house-style exemption, and the §CP destination re-check. Trigger on \"author a new skill\", \"write a kampus skill\", \"how do I add a skill\", \"what shape should this SKILL.md be\", \"run author-skill\", or whenever you are about to create or substantially rewrite a `skills/**` skill and need the house conventions. This is a reference guide, not a pipeline stage: it never picks issues, opens PRs, or merges — write-code does the building, review-skill does the gating, this tells you how to write the artifact in between."
+description: "The authoring-side guide for writing a new kampus skill in the house idiom — the complement to the review-skill gate. Read it before you write a `skills/**/SKILL.md`. It covers the SKILL.md shape (frontmatter name/description contract, prose-first body), the house rules imported from the writing-craft manifest (no Python, no `sources/` tree, no second validator — review-skill already gates), how to author toward review-skill's rigor checks so the gate passes on the first pass, the gate-skill house-style exemption, and the §CP destination re-check. Trigger on \"author a new skill\", \"write a kampus skill\", \"how do I add a skill\", \"what shape should this SKILL.md be\", \"run author-skill\", or whenever you are about to create or substantially rewrite a `skills/**` skill and need the house conventions. This is a reference guide, not a pipeline stage: it never picks issues, opens PRs, or merges — write-code does the building, review-skill does the gating, this tells you how to write the artifact in between."
 ---
 
 # author-skill
@@ -8,7 +8,7 @@ description: "The authoring-side guide for writing a new kampus skill in the hou
 You are about to write a **kampus skill** — a `SKILL.md` under `skills/**` that an agent
 loads and follows as a procedure. This guide is the authoring-side complement to
 [`review-skill`](../review-skill/SKILL.md): review-skill *gates* a skill PR against its
-issue's acceptance criteria plus four rigor checks; this tells you how to write the skill so
+issue's acceptance criteria plus the rigor checks; this tells you how to write the skill so
 it passes that gate on the first pass, in the house idiom. Read it before you create or
 substantially rewrite a `SKILL.md`.
 
@@ -67,10 +67,10 @@ malformed or vague one makes the skill silently unroutable. Write it as concrete
 conditions: what the skill is, then the phrases and situations it should fire on. This is
 also rigor check #2 (below), so getting it right here is getting it right for the gate.
 
-## Author toward review-skill's four rigor checks
+## Author toward review-skill's rigor checks
 
-review-skill verifies your PR against its issue's acceptance criteria **and** four rigor
-checks, conjunctively — any one failing fails the gate. Write to satisfy all four up front:
+review-skill verifies your PR against its issue's acceptance criteria **and** the rigor
+checks, conjunctively — any one failing fails the gate. Write to satisfy them up front:
 
 1. **Behavioral correctness.** Does the instruction *produce the intended behavior* when an
    agent follows it literally? Write concrete, ordered steps a fresh agent can execute
@@ -89,6 +89,12 @@ checks, conjunctively — any one failing fails the gate. Write to satisfy all f
    drop a SHA binding, remove a fail-closed assertion, loosen a denylist. This is the most
    serious verdict the gate lands; if you are editing a gate skill, name the invariant you
    are preserving and prove the edit keeps it.
+5. **Contract implementation ticket** — only if your PR carries a fabrika `contract.md`. The
+   contract specifies verbs nobody has built yet, and an open issue is the only route into the
+   build pool, so your handoff files that ticket and names its number in the PR body
+   (ADR [0248](https://github.com/kamp-us/phoenix/blob/main/.decisions/0248-authoring-session-mints-the-implementation-ticket.md)).
+   `Fixes #<brief>` does not count — it closes the brief, which is a done-signal, not the
+   hand-off. A PR with no fabrika `contract.md` is out of this check's scope.
 
 ## The gate-skill house-style exemption
 
@@ -149,5 +155,5 @@ Confirm `validate-skills.sh` passes locally. If your skill is a **pipeline stage
 step in the report → triage → … → ship-it flow), add a one-line row to the skills table in
 the plugin [`README.md`](../../README.md); an **ambient** skill (a guide or standalone tool,
 like this one) is discovered by the harness's `skills/*/SKILL.md` scan and needs no README
-row. Then hand the PR to `review-skill` — it gates the four rigor checks above; you do not
+row. Then hand the PR to `review-skill` — it gates the rigor checks above; you do not
 review your own skill.
