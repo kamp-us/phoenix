@@ -1,8 +1,8 @@
 /**
- * The `eval` verb group — `fabrika eval check|report|cases|run|graded|keeps`.
+ * The `eval` verb group — `fabrika eval check|report|cases|run|graded|keeps|baseline`.
  *
  * The graded-corpus apparatus for adjudicating a stochastic model swap per stage (epic
- * #1842), plus the ingestion of `/skill-creator`-authored eval sets (epic #4649). Six live
+ * #1842), plus the ingestion of `/skill-creator`-authored eval sets (epic #4649). Seven live
  * surfaces:
  *
  *   fabrika eval check <manifest>   # decode a corpus manifest; exit non-zero on a bad one
@@ -11,6 +11,7 @@
  *   fabrika eval run <path>         # execute an eval set unattended, emit the capture manifest
  *   fabrika eval graded <path>      # five runs per graded case, the median, and the head-bound record
  *   fabrika eval keeps <path>       # print the ruled KEEP corpus and what already pins each row
+ *   fabrika eval baseline …         # record the v1 cost baseline, and answer the phase-1 ceiling
  *
  * `check` (issue #1848) validates the on-disk corpus format. `report` (issue #1853) is the
  * top of the vertical slice: it reads the runner's graded `{entry, grade, spend}` rows and
@@ -21,7 +22,8 @@
  * `graded` (issue #4678) is the judgment tier: it runs each graded case five times through the
  * grader the case's authoring session defined, takes the median, and emits the head-bound eval
  * record. `keeps` (issue #4823) prints the ruled KEEP corpus — the enumeration that replaced the
- * two-artifact join every consumer used to re-run by hand.
+ * two-artifact join every consumer used to re-run by hand. `baseline` (issue #4679) records the
+ * committed v1 cost baseline from measured spend rows and answers the phase-1 ceiling against it.
  *
  * Thin IO shell over the pure cores (the `token-spend` / `readme-guard` idiom): read the file,
  * decode, render. Every refusal seats on `./codes.ts` — an unreadable path exits `FAILED`, an
@@ -31,11 +33,18 @@ import {Console, Crypto, Effect, FileSystem, Path, Result} from "effect";
 import * as Schema from "effect/Schema";
 import {Argument, Command, Flag} from "effect/unstable/cli";
 import {leafCommand} from "../excess-operand.ts";
-import {DEFAULT_SPEND_LEDGER_PATH, persistSpendRows} from "../spend/ledger.ts";
+import {
+	DEFAULT_SPEND_LEDGER_PATH,
+	type LedgerRow,
+	persistSpendRows,
+	readSpendLedger,
+} from "../spend/ledger.ts";
 import {FAILED} from "../verb.ts";
 import {VERSION} from "../version.ts";
 import {emit as emitEvalRecord} from "../wire/eval-record.ts";
 import {
+	ABOVE_BASELINE,
+	BASELINE_INCOMPARABLE,
 	INTEGRITY_VIOLATION,
 	MALFORMED_DOCUMENT,
 	NO_MEASUREMENT,
@@ -43,6 +52,15 @@ import {
 	ZERO_SCOPE,
 } from "./codes.ts";
 import {decodeManifest, REVIEW_SURFACES, type ReviewSurface, STAGES} from "./corpus.ts";
+import {
+	buildCostBaseline,
+	compareToBaseline,
+	costBaselineToJson,
+	decodeCostBaseline,
+	foldLedgerRows,
+	renderBaselineComparison,
+	renderCostBaseline,
+} from "./cost-baseline.ts";
 import {
 	buildEvalRecord,
 	candidateOutputOf,
@@ -836,9 +854,294 @@ const keeps = leafCommand(
 	),
 );
 
-export const evalCommand = Command.make("eval").pipe(
-	Command.withSubcommands([check, report, cases, runCommand, graded, keeps]),
+// A named cost-baseline input that could not be read — a hard error (exit 1), not a skip.
+class BaselineInputUnreadable extends Schema.TaggedErrorClass<BaselineInputUnreadable>()(
+	"BaselineInputUnreadable",
+	{path: Schema.String},
+) {}
+
+const ledgerFlag = Flag.string("ledger").pipe(
+	Flag.withDescription(
+		"path to the spend ledger (JSONL) whose rows are folded — the durable file `eval run --spend-ledger` appends to",
+	),
+);
+
+const ledgerArmFlag = Flag.string("arm").pipe(
+	Flag.withDefault("with-skill"),
+	Flag.withDescription(
+		`which arm's rows to fold (${EVAL_ARMS.join(", ")}); the v1 baseline is the with-skill arm run against the v1 plugin dir`,
+	),
+);
+
+const ledgerSkillFlag = Flag.string("skill").pipe(
+	Flag.optional,
+	Flag.withDescription(
+		"fold only rows recorded under this skill name (default: every row in scope)",
+	),
+);
+
+/** Rows a baseline or candidate fold is taken over — the arm, and optionally the skill, the caller named. */
+const selectRows = (
+	rows: ReadonlyArray<LedgerRow>,
+	arm: string,
+	skill: string | null,
+): ReadonlyArray<LedgerRow> =>
+	rows.filter((row) => row.arm === arm && (skill === null || row.skillName === skill));
+
+const readLedgerRows = Effect.fn(function* (path: string, arm: string, skill: string | null) {
+	const fs = yield* FileSystem.FileSystem;
+	const text = yield* Effect.mapError(
+		fs.readFileString(path),
+		() => new BaselineInputUnreadable({path}),
+	);
+	const read = readSpendLedger(text);
+	// The unread lines are reported rather than folded into "no rows": a total that silently omits
+	// damaged lines is wrong and looks right, which is the whole discipline of `spend/rollup.ts`.
+	if (read.skipped > 0) {
+		yield* Console.error(
+			`fabrika eval: ${path} — ${read.skipped} line(s) unread (${read.skips.malformed} malformed, ${read.skips.newerVersion} newer-version); they are absent from every figure below`,
+		);
+	}
+	return selectRows(read.rows, arm, skill);
+});
+
+const suiteFlag = Flag.string("suite").pipe(
+	Flag.withDefault("v1"),
+	Flag.withDescription("which suite was measured — the baseline arm of the published SOTA proof"),
+);
+
+const corpusFlag = Flag.string("corpus").pipe(
+	Flag.withDescription(
+		"path to the ruled-KEEP enumeration (incident-corpus/ruled-keeps.json) — its member/pending counts are read, never asserted",
+	),
+);
+
+const corpusRevisionFlag = Flag.string("corpus-revision").pipe(
+	Flag.withDescription("the commit the corpus files were read at — the pin AC2 requires"),
+);
+
+const casesFlag = Flag.string("cases").pipe(
+	Flag.withDescription(
+		"path to the authored eval set that was executed (incident-corpus/evals.json)",
+	),
+);
+
+const baselinePluginDirFlag = Flag.string("plugin-dir").pipe(
+	Flag.withDescription(
+		"the repo-relative plugin dir the measured arm loaded — the adapter AC5 asks the artifact to record",
+	),
+);
+
+const harnessRevisionFlag = Flag.string("harness-revision").pipe(
+	Flag.withDescription(
+		"the commit the harness ran from — the harness version pin (a commit pins it exactly; the package semver has never moved)",
+	),
+);
+
+const recordedAtFlag = Flag.string("recorded-at").pipe(
+	Flag.optional,
+	Flag.withDescription("ISO-8601 UTC stamp for the artifact (default: now)"),
+);
+
+const baselineOutFlag = Flag.string("out").pipe(
+	Flag.optional,
+	Flag.withDescription(
+		"write the baseline JSON here — the committed series lives under claude-plugins/fabrika/reports/eval/",
+	),
+);
+
+/**
+ * `baseline record` — fold a v1 run's spend rows into the committed, dated cost baseline (#4679).
+ *
+ * Every figure comes from rows `token-spend` already reconstructed; the verb adds no meter. The pins
+ * it cannot derive are flags, and the two it can — model and CLI version — are read off the rows, so
+ * a baseline cannot claim a model its runs did not use.
+ */
+const baselineRecord = leafCommand(
+	"record",
+	{
+		ledger: ledgerFlag,
+		arm: ledgerArmFlag,
+		skill: ledgerSkillFlag,
+		suite: suiteFlag,
+		corpus: corpusFlag,
+		corpusRevision: corpusRevisionFlag,
+		cases: casesFlag,
+		pluginDir: baselinePluginDirFlag,
+		harnessRevision: harnessRevisionFlag,
+		recordedAt: recordedAtFlag,
+		out: baselineOutFlag,
+		json: jsonFlag,
+	},
+	Effect.fn(function* (opts) {
+		const run = Effect.gen(function* () {
+			const fs = yield* FileSystem.FileSystem;
+
+			const corpusText = yield* Effect.mapError(
+				fs.readFileString(opts.corpus),
+				() => new BaselineInputUnreadable({path: opts.corpus}),
+			);
+			const keepsFile = decodeRuledKeeps(corpusText);
+			if (Result.isFailure(keepsFile)) {
+				yield* Console.error(
+					`fabrika eval: ${opts.corpus} is not a valid ruled-KEEP enumeration (${keepsFile.failure.reason}): ${keepsFile.failure.message}`,
+				);
+				return yield* Effect.sync(() => process.exit(MALFORMED_DOCUMENT));
+			}
+
+			const casesText = yield* Effect.mapError(
+				fs.readFileString(opts.cases),
+				() => new BaselineInputUnreadable({path: opts.cases}),
+			);
+			const set = decodeSkillEvalSet(casesText);
+			if (Result.isFailure(set)) {
+				yield* Console.error(
+					`fabrika eval: ${opts.cases} is not a valid skill eval set (${set.failure.reason}): ${set.failure.message}`,
+				);
+				return yield* Effect.sync(() => process.exit(MALFORMED_DOCUMENT));
+			}
+
+			const rows = yield* readLedgerRows(
+				opts.ledger,
+				opts.arm,
+				opts.skill._tag === "Some" ? opts.skill.value : null,
+			);
+			const built = buildCostBaseline({
+				rows,
+				pins: {
+					suite: opts.suite,
+					recordedAt:
+						opts.recordedAt._tag === "Some" ? opts.recordedAt.value : new Date().toISOString(),
+					corpus: {
+						path: opts.corpus,
+						revision: opts.corpusRevision,
+						members: keepsFile.success.rows.filter((row) => row.status === "member").length,
+						pending: keepsFile.success.rows.filter((row) => row.status === "pending").length,
+						cases: set.success.cases.length,
+					},
+					harness: {
+						runner: "fabrika eval run",
+						pluginDir: opts.pluginDir,
+						arm: opts.arm,
+						revision: opts.harnessRevision,
+					},
+				},
+			});
+			if (Result.isFailure(built)) {
+				yield* Console.error(`fabrika eval: ${built.failure.reason}: ${built.failure.message}`);
+				return yield* Effect.sync(() =>
+					process.exit(built.failure.reason === "no-rows" ? ZERO_SCOPE : MALFORMED_DOCUMENT),
+				);
+			}
+
+			const baseline = built.success;
+			if (opts.out._tag === "Some") {
+				yield* fs.writeFileString(opts.out.value, costBaselineToJson(baseline));
+			}
+			yield* Console.log(opts.json ? costBaselineToJson(baseline) : renderCostBaseline(baseline));
+		});
+		yield* run.pipe(
+			Effect.catchTag("BaselineInputUnreadable", (e) =>
+				Effect.gen(function* () {
+					yield* Console.error(`fabrika eval: cannot read ${e.path}`);
+					return yield* Effect.sync(() => process.exit(FAILED));
+				}),
+			),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Record the dated v1 cost baseline from measured spend rows."),
 	Command.withDescription(
-		"Graded per-stage corpus + scorecard + authored-eval-set ingestion + the unattended runner + the five-run graded axis + the ruled KEEP enumeration (#1848, #1853, #4674, #4676, #4678, #4823)",
+		"Fold a measured run's spend-ledger rows into the committed, dated cost baseline — pinned to corpus revision, run count, model, CLI and harness version (#4679)",
+	),
+);
+
+const baselineArg = Argument.string("baseline").pipe(
+	Argument.withDescription("path to a committed cost baseline JSON file"),
+);
+
+/**
+ * `baseline compare` — the mechanical phase-1 answer: is this spend at or below the v1 baseline?
+ *
+ * The exit code is the answer, so a caller never has to parse prose: `0` at-or-below,
+ * `ABOVE_BASELINE` above, `BASELINE_INCOMPARABLE` when the two sides did not price the same work.
+ * The third seat is what keeps "could not compare" from ever reading as a pass.
+ */
+const baselineCompare = leafCommand(
+	"compare",
+	{
+		baseline: baselineArg,
+		ledger: ledgerFlag,
+		arm: ledgerArmFlag,
+		skill: ledgerSkillFlag,
+		json: jsonFlag,
+	},
+	Effect.fn(function* (opts) {
+		const run = Effect.gen(function* () {
+			const fs = yield* FileSystem.FileSystem;
+			const text = yield* Effect.mapError(
+				fs.readFileString(opts.baseline),
+				() => new BaselineInputUnreadable({path: opts.baseline}),
+			);
+			const decoded = decodeCostBaseline(text);
+			if (Result.isFailure(decoded)) {
+				yield* Console.error(
+					`fabrika eval: ${opts.baseline} is not a valid cost baseline (${decoded.failure.reason}): ${decoded.failure.message}`,
+				);
+				return yield* Effect.sync(() => process.exit(MALFORMED_DOCUMENT));
+			}
+
+			const rows = yield* readLedgerRows(
+				opts.ledger,
+				opts.arm,
+				opts.skill._tag === "Some" ? opts.skill.value : null,
+			);
+			const fold = foldLedgerRows(rows);
+			// A candidate that cannot be folded is INCOMPARABLE, not a failure to invoke: the baseline
+			// was read and the question was asked, and the honest answer is that no ceiling verdict
+			// exists over these rows.
+			if (Result.isFailure(fold)) {
+				yield* Console.error(`fabrika eval: INCOMPARABLE — ${fold.failure.message}`);
+				return yield* Effect.sync(() => process.exit(BASELINE_INCOMPARABLE));
+			}
+
+			const comparison = compareToBaseline(decoded.success, fold.success);
+			yield* Console.log(
+				opts.json
+					? `${JSON.stringify(comparison, null, 2)}\n`
+					: renderBaselineComparison(comparison),
+			);
+			if (comparison.verdict === "at-or-below") return;
+			return yield* Effect.sync(() =>
+				process.exit(comparison.verdict === "above" ? ABOVE_BASELINE : BASELINE_INCOMPARABLE),
+			);
+		});
+		yield* run.pipe(
+			Effect.catchTag("BaselineInputUnreadable", (e) =>
+				Effect.gen(function* () {
+					yield* Console.error(`fabrika eval: cannot read ${e.path}`);
+					return yield* Effect.sync(() => process.exit(FAILED));
+				}),
+			),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Answer whether spend is at or below the v1 cost baseline."),
+	Command.withDescription(
+		"Compare measured spend against a committed cost baseline over the same corpus — exit 0 at-or-below, 15 above, 16 incomparable (#4679)",
+	),
+);
+
+const baseline = Command.make("baseline").pipe(
+	Command.withSubcommands([baselineRecord, baselineCompare]),
+	Command.withDescription(
+		"The v1 cost baseline on the incident corpus and the phase-1 ceiling comparison against it (#4679)",
+	),
+);
+
+export const evalCommand = Command.make("eval").pipe(
+	Command.withSubcommands([check, report, cases, runCommand, graded, keeps, baseline]),
+	Command.withDescription(
+		"Graded per-stage corpus + scorecard + authored-eval-set ingestion + the unattended runner + the five-run graded axis + the ruled KEEP enumeration + the v1 cost baseline (#1848, #1853, #4674, #4676, #4678, #4823, #4679)",
 	),
 );

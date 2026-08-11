@@ -64,3 +64,22 @@ export const RUNS_NOT_EXECUTED = 13;
  * ruled bar is #4681's judgement and never this verb's.
  */
 export const NO_MEASUREMENT = 14;
+
+/**
+ * Proven: the candidate's spend on the corpus is ABOVE the recorded v1 baseline (#4679).
+ *
+ * A judged outcome, so it gets its own seat rather than {@link MALFORMED_DOCUMENT}'s — the artifacts
+ * were both readable and the ceiling was applied. It is the phase-1 answer #4637 ruling 3 asks for,
+ * and it is deliberately distinct from {@link BASELINE_INCOMPARABLE} below.
+ */
+export const ABOVE_BASELINE = 15;
+
+/**
+ * Proven: the two sides did not price the same work, so no ceiling answer exists.
+ *
+ * Separate from {@link ABOVE_BASELINE} because the remedies are opposite: an above-baseline run is a
+ * cost regression to fix, while an incomparable pair is a measurement to redo. Collapsing them would
+ * let a candidate that ran a different case set read as a cost failure, or — worse the other way —
+ * let a caller treat "could not compare" as a pass.
+ */
+export const BASELINE_INCOMPARABLE = 16;
