@@ -339,23 +339,25 @@ claude-plugins/fabrika/reports/eval/<date>.json
   sits — and was not attempted. The path is fabrika's while `Scorecard` lives in this package; the
   two rulings agree, because [#4777](https://github.com/kamp-us/phoenix/issues/4777) is what moved
   the eval harness here.
-- **The format is the existing `Scorecard` type** — that much is ruled. What `toJson` emits *today*
-  is exactly the stable JSON shape documented above and nothing else: no wrapper object, no added
-  keys, no second serializer. Read that as a **description of the current serializer, not a
-  prohibition on what a committed file may carry** — [#4637](https://github.com/kamp-us/phoenix/issues/4637)
-  ruling 4 requires pins the `Scorecard` type does not have, and reconciling the two is
-  [#4680](https://github.com/kamp-us/phoenix/issues/4680)'s lane (first entry in the not-decided list
-  below). What is settled is that the scorecard **body** is `toJson` output, so a consumer reads a
-  committed file's cells with the same reader it would use on `--json` output.
-- **`<date>` is *proposed* as the run's UTC date, `YYYY-MM-DD`** — a proposal from this unit, not a
-  ruling. The 2026-08-02 ruling says `<date>.json` and nothing more; #4637 says only "dated". The
-  argument for it: a lexicographic sort of the directory is then a chronological sort of the series.
-  [#4680](https://github.com/kamp-us/phoenix/issues/4680) owns filename mechanics and confirms or
-  replaces it.
+- **The format is the existing `Scorecard` type, widened by the pins** — #4680 resolved the tension
+  the ruling left open, and it resolved it as a **superset**: a committed file keeps `decisionRef`,
+  `framing`, `baseline` and `cells`, and each cell keeps the `stage` / `surface` / `model` /
+  `gradedRuns` / `passedRuns` / `passRate` spellings, so a consumer still reads a committed file's
+  cells with the reader it would use on `--json` output. What is added is what #4637 ruling 4 requires
+  and the type had nowhere to put: a top-level `recordedAt`, and per cell a `pins` triple, a `source`
+  naming the eval record's head, an `outcome`, `unmeasuredCases` and the case list. `baseline` is
+  always `null` — a graded scorecard names no spend baseline. See
+  [The committed scorecard, the trend co-gate and the model-churn re-run](#the-committed-scorecard-the-trend-co-gate-and-the-model-churn-re-run-4680)
+  below for the shape and the refusals.
+- **`<date>` is the run's UTC date, `YYYY-MM-DD`** — confirmed by #4680, on the argument this unit
+  proposed it with: a lexicographic listing of the directory is a chronological listing of the series.
+  A **second run on the same date takes `-2`, `-3` …** (`2026-08-11-2.json`) rather than overwriting,
+  because a committed point is never mutated — the same append-only discipline the corpus is governed
+  by. Ordering is by `recordedAt` first, so a same-day suffix never reorders the series.
 
-Nothing writes one of these files yet, which is expected: the artifact class is defined, its first
-producer is not built. Three issues divide the work, and the definition being written down **here**
-is what lets them proceed in any order without inventing a second on-disk shape between them:
+`fabrika eval scorecard` writes one of these files (below). Three issues divide the work, and the
+definition being written down **here** is what lets them proceed in any order without inventing a
+second on-disk shape between them:
 
 | issue | its role in the series |
 |---|---|
@@ -371,7 +373,7 @@ never become a second source that drifts from it.
 
 **Deliberately not decided here**, so no lane finds its call pre-made:
 
-- **How #4637's required pins land in the file — an open tension between two standing rulings.**
+- ~~**How #4637's required pins land in the file — an open tension between two standing rulings.**~~
   Founder ruling 4 on [#4637](https://github.com/kamp-us/phoenix/issues/4637) says scorecards are
   "committed to the repo, dated, pinned to model + CLI + harness version"; epic
   [#4649](https://github.com/kamp-us/phoenix/issues/4649)'s Given block carries that forward; and
@@ -382,16 +384,115 @@ never become a second source that drifts from it.
   CLI version, **no** harness version and **no** per-row source commit. So a file that is today's
   `toJson` output cannot satisfy #4637 as written. The tension predates this unit and is **not
   resolved here**: whether the pins ride as a wrapper, as added top-level fields, or as a change to
-  `Scorecard` itself is #4680's call.
-- **The `<date>` format, and what a second run on the same date does to the filename** —
-  [#4680](https://github.com/kamp-us/phoenix/issues/4680)'s series mechanics. The UTC `YYYY-MM-DD`
-  spelling above is this unit's proposal for #4680 to confirm, not a ruling.
+  `Scorecard` itself is #4680's call. **Settled by #4680:** they ride as added fields, per cell for
+  the triple and per file for the date, as the widened-superset bullet above records.
+- ~~**The `<date>` format, and what a second run on the same date does to the filename**~~ — settled
+  by #4680: the UTC `YYYY-MM-DD` spelling, with a `-2`, `-3` … suffix for a second run that day.
 - ~~**The shape and namespace of a per-run eval-result record**~~ — settled by ADR
   [0253](../../../../.decisions/0253-eval-record-is-an-eval-namespaced-pr-comment.md), below. The
   record is a PR comment, so it never rides inside a committed scorecard file; the pin question above
   is unaffected.
-- **The definitions of `dispersion` and the two-week decline** —
-  [#4766](https://github.com/kamp-us/phoenix/issues/4766).
+- ~~**The definitions of `dispersion` and the two-week decline**~~ — settled by ADR
+  [0252](../../../../.decisions/0252-grading-chain-dispersion-and-decline-criterion.md), which #4680
+  implements below.
+
+## The committed scorecard, the trend co-gate and the model-churn re-run ([#4680](https://github.com/kamp-us/phoenix/issues/4680))
+
+Three verbs sit on the series described above: one writes a file into it, one reads the series for a
+trend, and one adjudicates a candidate model against it.
+
+```bash
+# commit one run's eval records as a dated, pinned scorecard
+fabrika eval scorecard <record.md>... [--series-dir <dir>] [--out <path>] [--recorded-at <iso>] [--json]
+
+# report the two-week trend per cell over the committed series — observe-only
+fabrika eval trend [--series-dir <dir>] [--json]
+
+# re-run a named model over a skill's eval set and state the deltas against the series
+fabrika eval churn <evals.json> --model <m> --stage <s> [--surface <s>] --plugin-dir <d> --sha <sha> [--series-dir <dir>] [--out <record>] [--json]
+fabrika eval churn --model <m> --record <record.md> [--series-dir <dir>] [--json]   # adjudicate a run that already happened
+```
+
+### The graded numbers are sourced, never produced here
+
+A scorecard's graded rows come from the **head-bound eval records** the review stage recorded
+([#4678](https://github.com/kamp-us/phoenix/issues/4678)) — the `<record.md>` arguments above are the
+bytes `fabrika eval graded --out` wrote. Production moved to the review stage on the #4649 cost ruling
+(no credits for model runs in CI); consumption, comparison and the trend did not move. So **no CI job
+produces a graded number**, and every committed number cites the commit it was measured at.
+
+`gradedRuns` counts **cases, not invocations** (founder ruling on
+[#5258](https://github.com/kamp-us/phoenix/issues/5258)): a case is run five times and the median
+collapses those into one verdict before it reaches a scorecard. An **unmeasured** case is excluded
+from the rate and carried as `unmeasuredCases`, because a cell that graded three of four cases reports
+`3/3 = 1.0` and the field is the only thing keeping the dead case visible. An `UNRECORDABLE` cell is a
+run that measured nothing — kept in the file so **broken stays distinguishable from absent**, and
+given no point in the trend series, because a `0.0` there would manufacture the decline the co-gate
+looks for.
+
+### Three refusals, which are the artifact's precondition
+
+`fabrika eval scorecard` exits `17` (`NOT_COMMITTABLE`) and writes nothing when:
+
+- **a pin is blank** — model, CLI or harness. A scorecard that cannot say what it was measured on is
+  not comparable to the next one, which is the whole point of pinning it (#4637 ruling 4);
+- **a cell cites no eval record** — an unsourced number cannot be checked back to a tree;
+- **the target file already exists** — a committed point is appended to, never rewritten.
+
+Zero records exits `7` (`ZERO_SCOPE`), and a record that does not read exits `4`
+(`MALFORMED_DOCUMENT`). The same checks run again on the way *back in*: `decodeCommittedScorecard`
+re-derives every aggregate from the cell's own case list, so a file whose stored counts contradict
+its cases is refused rather than counted as a point of the series.
+
+### What counts as a point of the series
+
+A member of the series is a file named `<YYYY-MM-DD>.json`, or `<YYYY-MM-DD>-<n>.json` for a second
+run that day — the names `seriesFileName` produces, and nothing else. `trend` and `churn` select
+members by that name, never by `*.json`, and `isSeriesFileName` is the exact inverse of the writer so
+the two cannot drift (a unit test re-derives it rather than asserting a list).
+
+The directory is **shared**, which is what makes the rule load-bearing rather than tidy:
+`claude-plugins/fabrika/reports/eval/` also holds the dated **cost baselines** of
+[#4679](https://github.com/kamp-us/phoenix/issues/4679) (`baseline-v1-<date>.json`), and any later
+dated artifact of the eval layer will land there too. Under a `*.json` read every one of those is a
+malformed scorecard, so a neighbouring file takes the whole series down. Under the naming rule it
+cannot. A file that *is* named as a member and does not decode is still a hard refusal — that is a
+corrupt point, not a neighbour, and skipping it would drop a measurement from the trend. A JSON file
+in the directory that is not a member is named on stderr, so a scorecard written there under some
+other name is visible rather than silently absent.
+
+No bar appears anywhere in these three verbs. Whether a rate clears the ruled 90% is
+[#4681](https://github.com/kamp-us/phoenix/issues/4681)'s judgement.
+
+### The trend co-gate is observe-only
+
+The criterion is ADR [0252](../../../../.decisions/0252-grading-chain-dispersion-and-decline-criterion.md)
+§3's and is not restated here: one series per `(stage × surface × model)` cell, a 14-day window
+anchored on the newest point and split at 7 days, at least 3 points per half, and `declining` iff the
+half-means drop by **more than** `0.05` **and** the halves do not overlap. Both clauses are strict, so
+a drop of exactly five points is `steady` — that boundary row is the fixture
+`trend.unit.test.ts` exists for.
+
+`fabrika eval trend` **exits `0` on all three answers**, per the #4766 founder guardrail that the
+criterion may not red a PR before it has been watched against a real series. A non-zero exit from this
+verb means the series could not be *read*, never that a trend was found. `insufficient-data` is
+reported as itself and never folded into `steady`.
+
+### The model-churn re-run states deltas and recommends nothing
+
+`fabrika eval churn` is the contract as one verb rather than a remembered procedure: it re-runs the
+named model through the **same** five-run graded axis the review stage records with, then diffs the
+resulting cell against the most recent committed point for that cell under every other model measured
+there. Two numbers produced by two protocols would not be a comparison, which is why the re-run shares
+`graded`'s path rather than copying it.
+
+A comparison whose two sides graded **different numbers of cases** is marked `NOT LIKE-FOR-LIKE` with
+its reason: a thinner sample clears a bar the fuller one would not, and publishing that delta as
+settled is the gap [#5407](https://github.com/kamp-us/phoenix/issues/5407) records on the cost side.
+
+The output states deltas and names no winner — selecting a model is the founder's call over this
+evidence, exactly as the scorecard's own framing already declares. `--record` adjudicates a run that
+already happened and spawns nothing, which is the mode to use anywhere a model may not be run.
 
 ## The deterministic tier ([#4677](https://github.com/kamp-us/phoenix/issues/4677))
 

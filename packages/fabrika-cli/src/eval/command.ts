@@ -41,16 +41,31 @@ import {
 } from "../spend/ledger.ts";
 import {FAILED} from "../verb.ts";
 import {VERSION} from "../version.ts";
-import {emit as emitEvalRecord} from "../wire/eval-record.ts";
+import {
+	type EvalRecord,
+	emit as emitEvalRecord,
+	read as readEvalRecord,
+} from "../wire/eval-record.ts";
 import {
 	ABOVE_BASELINE,
 	BASELINE_INCOMPARABLE,
 	INTEGRITY_VIOLATION,
 	MALFORMED_DOCUMENT,
 	NO_MEASUREMENT,
+	NOT_COMMITTABLE,
 	RUNS_NOT_EXECUTED,
 	ZERO_SCOPE,
 } from "./codes.ts";
+import {
+	buildCommittedScorecard,
+	type CommittedScorecard,
+	decodeCommittedScorecard,
+	isSeriesFileName,
+	renderCommittedScorecard,
+	SERIES_DIR,
+	seriesFileName,
+	toJson as toCommittedJson,
+} from "./committed-scorecard.ts";
 import {decodeManifest, REVIEW_SURFACES, type ReviewSurface, STAGES} from "./corpus.ts";
 import {
 	buildCostBaseline,
@@ -71,6 +86,7 @@ import {
 	runGradedAxis,
 } from "./graded-axis.ts";
 import {decodeIncidentProvenance} from "./incident-provenance.ts";
+import {churnToJson, compareToSeries, renderChurn} from "./model-churn.ts";
 import {
 	type BaselineKey,
 	buildScorecard,
@@ -100,6 +116,7 @@ import {
 	suiteExecuted,
 } from "./spawn.ts";
 import {claudeExecutor, claudeVersion, locateTranscript, readTranscript} from "./spawn-io.ts";
+import {readTrend, renderTrend, trendToJson} from "./trend.ts";
 
 // A named manifest path that could not be read — a hard error (exit 1), not a skip.
 class ManifestUnreadable extends Schema.TaggedErrorClass<ManifestUnreadable>()(
@@ -574,6 +591,190 @@ const recordOutFlag = Flag.string("out").pipe(
 	Flag.withDescription("also write the record's bytes here; they always go to stdout"),
 );
 
+/** Narrow `--stage`, or exit: a flag naming something that is not a stage is the operator's mistake. */
+const resolveStage = (stage: string) =>
+	Effect.gen(function* () {
+		if (isStageName(stage)) return stage;
+		yield* Console.error(
+			`fabrika eval: --stage '${stage}' is not a known stage (${STAGES.join(", ")})`,
+		);
+		return yield* Effect.sync(() => process.exit(FAILED));
+	});
+
+/**
+ * Narrow `--surface` against `--stage`, or exit.
+ *
+ * A `review` run with no surface names two graders, so it identifies no single grading regime and is
+ * refused at the flag rather than resolved to whichever one buckets first (ADR 0243 §4).
+ */
+const resolveSurface = (
+	stage: string,
+	surface: {readonly _tag: "Some"; readonly value: string} | {readonly _tag: "None"},
+) =>
+	Effect.gen(function* () {
+		let resolved: ReviewSurface | null = null;
+		if (surface._tag === "Some") {
+			if (!isReviewSurface(surface.value)) {
+				yield* Console.error(
+					`fabrika eval: --surface '${surface.value}' is not a known review surface (${REVIEW_SURFACES.join(", ")})`,
+				);
+				return yield* Effect.sync(() => process.exit(FAILED));
+			}
+			resolved = surface.value;
+		}
+		if (stage === "review" && resolved === null) {
+			yield* Console.error(
+				"fabrika eval: --stage review needs --surface — a review pass rate is one grading regime, never an average of two (ADR 0243 §4)",
+			);
+			return yield* Effect.sync(() => process.exit(FAILED));
+		}
+		return resolved;
+	});
+
+interface GradedRunRequest {
+	readonly path: string;
+	readonly stage: string;
+	readonly surface: ReviewSurface | null;
+	readonly model: string;
+	readonly pluginDir: string;
+	readonly sha: string;
+	readonly harness: string;
+	readonly timeoutMs: number;
+	/** Where the record's bytes are also written, or `null`. They always reach the console. */
+	readonly out: string | null;
+	/** Where the bytes go on the console — stdout for `graded`, stderr where stdout carries a table. */
+	readonly log: (bytes: string) => Effect.Effect<void>;
+}
+
+/**
+ * Run one skill's graded cases five times each, take the median, and produce the head-bound record.
+ *
+ * Shared by `graded` and `churn` so a re-run under a candidate model is the *same* measurement the
+ * review stage records — a second copy of this would be a second protocol, and the whole point of the
+ * churn contract is that the two numbers are comparable.
+ *
+ * Every exit here is a fact about the eval set, and each one still leaves a record: an unreadable set,
+ * a nonconforming set and a set with no graded case each emit an explicit `UNRECORDABLE` naming which
+ * it was (founder ruling, #4678 comment 5247447078). Silence would reach the gate as `missing`, which
+ * is byte-identical to a review that never ran the axis.
+ */
+const produceGradedRecord = (request: GradedRunRequest) =>
+	Effect.gen(function* () {
+		const fs = yield* FileSystem.FileSystem;
+		const cli = (yield* claudeVersion()) ?? "unknown";
+		const pins = {model: request.model, cli, harness: request.harness};
+		const cell = {stage: request.stage, surface: request.surface, model: request.model};
+
+		const emitRecord = (record: EvalRecord) =>
+			Effect.gen(function* () {
+				const bytes = emitEvalRecord(record);
+				if (request.out !== null) yield* fs.writeFileString(request.out, bytes);
+				yield* request.log(bytes);
+			});
+
+		const recordNoMeasurement = (noMeasurement: string, code: number) =>
+			Effect.gen(function* () {
+				const built = buildEvalRecord({
+					sha: request.sha,
+					recordedAt: new Date().toISOString(),
+					cell,
+					pins,
+					results: [],
+					noMeasurement,
+				});
+				if (built._tag === "Unusable") {
+					yield* Console.error(`fabrika eval: cannot record this run — ${built.reason}`);
+					return yield* Effect.sync(() => process.exit(FAILED));
+				}
+				yield* emitRecord(built.record);
+				yield* Console.error(`fabrika eval: ${noMeasurement} — recorded UNRECORDABLE`);
+				return yield* Effect.sync(() => process.exit(code));
+			});
+
+		const read = yield* Effect.result(fs.readFileString(request.path));
+		if (Result.isFailure(read)) {
+			return yield* recordNoMeasurement(`${request.path} could not be read`, FAILED);
+		}
+		const decoded = decodeSkillEvalSet(read.success);
+		if (Result.isFailure(decoded)) {
+			return yield* recordNoMeasurement(
+				`${request.path} is not a valid skill eval set (${decoded.failure.reason}): ${decoded.failure.message}`,
+				MALFORMED_DOCUMENT,
+			);
+		}
+
+		const cases = decoded.success.cases
+			.filter((evalCase) => evalCase.tier === "graded")
+			.map(gradableCase);
+		if (cases.length === 0) {
+			return yield* recordNoMeasurement(`${request.path} carries no graded case`, ZERO_SCOPE);
+		}
+
+		const crypto = yield* Crypto.Crypto;
+		const executor = claudeExecutor({timeoutMs: request.timeoutMs});
+		const invoke = (
+			evalCase: ReturnType<typeof gradableCase>,
+			prompt: string,
+			pluginDir: string | null,
+		) =>
+			Effect.gen(function* () {
+				const sessionId = yield* Effect.orDie(crypto.randomUUIDv4);
+				return yield* executor({
+					caseId: evalCase.id,
+					tier: "graded",
+					arm: "with-skill",
+					sessionId,
+					prompt,
+					model: request.model,
+					pluginDir,
+					jsonSchema: null,
+				});
+			});
+
+		const results = yield* runGradedAxis({
+			cases,
+			runOnce: ({evalCase}) =>
+				Effect.gen(function* () {
+					const candidate = candidateOutputOf(
+						yield* invoke(evalCase, evalCase.prompt, request.pluginDir),
+					);
+					if (candidate._tag !== "Output") return candidate;
+					// The grader loads no plugin: it judges what the candidate produced against the
+					// authored expectations, and running the skill again inside the grader would make the
+					// judgement depend on a second execution nobody scored.
+					return readGraderVerdict(
+						graderResponseOf(
+							yield* invoke(
+								evalCase,
+								composeGraderPrompt({evalCase, candidateOutput: candidate.text}),
+								null,
+							),
+						),
+					);
+				}),
+		});
+
+		const built = buildEvalRecord({
+			sha: request.sha,
+			recordedAt: new Date().toISOString(),
+			cell,
+			pins,
+			results,
+		});
+		if (built._tag === "Unusable") {
+			yield* Console.error(`fabrika eval: cannot record this run — ${built.reason}`);
+			return yield* Effect.sync(() => process.exit(FAILED));
+		}
+		yield* emitRecord(built.record);
+		if (built.record.outcome === "UNRECORDABLE") {
+			yield* Console.error(
+				`fabrika eval: every run of all ${results.length} graded case(s) returned no verdict — the record is UNRECORDABLE, which is not a below-bar number`,
+			);
+			return yield* Effect.sync(() => process.exit(NO_MEASUREMENT));
+		}
+		return built.record;
+	});
+
 /**
  * `graded` — run a skill's graded cases five times each, take the median, and emit the head-bound
  * eval record (#4678).
@@ -608,156 +809,23 @@ const graded = leafCommand(
 		out: recordOutFlag,
 	},
 	Effect.fn(function* (opts) {
-		const run = Effect.gen(function* () {
-			const fs = yield* FileSystem.FileSystem;
-			// The invocation is validated *before* the set is read, so the two kinds of failure stay
-			// apart: a bad --stage/--surface is the operator's own mistake and records nothing, while
-			// every refusal below is a fact about the eval set and therefore leaves a record.
-			if (!isStageName(opts.stage)) {
-				yield* Console.error(
-					`fabrika eval: --stage '${opts.stage}' is not a known stage (${STAGES.join(", ")})`,
-				);
-				return yield* Effect.sync(() => process.exit(FAILED));
-			}
-			let surface: ReviewSurface | null = null;
-			if (opts.surface._tag === "Some") {
-				if (!isReviewSurface(opts.surface.value)) {
-					yield* Console.error(
-						`fabrika eval: --surface '${opts.surface.value}' is not a known review surface (${REVIEW_SURFACES.join(", ")})`,
-					);
-					return yield* Effect.sync(() => process.exit(FAILED));
-				}
-				surface = opts.surface.value;
-			}
-			if (opts.stage === "review" && surface === null) {
-				yield* Console.error(
-					"fabrika eval: --stage review needs --surface — a review pass rate is one grading regime, never an average of two (ADR 0243 §4)",
-				);
-				return yield* Effect.sync(() => process.exit(FAILED));
-			}
-
-			const cli = (yield* claudeVersion()) ?? "unknown";
-			const pins = {model: opts.model, cli, harness: opts.harness};
-			const cell = {stage: opts.stage, surface, model: opts.model};
-			/**
-			 * Emit the `UNRECORDABLE` record for a run that never reached a case, then exit on `code`.
-			 *
-			 * Founder ruling (#4678 comment 5247447078): a set that could not be read, one that does not
-			 * conform, and one carrying no graded case each emit an **explicit** record naming which it
-			 * was. Silence reaches #4681 as `missing`, which is byte-identical to a review that never ran
-			 * the axis — the exact ambiguity ADR 0253 Amendment 1 exists to remove. The exit code is
-			 * unchanged, so a caller still tells the three apart without parsing the record.
-			 */
-			const recordNoMeasurement = (noMeasurement: string, code: number) =>
-				Effect.gen(function* () {
-					const built = buildEvalRecord({
-						sha: opts.sha,
-						recordedAt: new Date().toISOString(),
-						cell,
-						pins,
-						results: [],
-						noMeasurement,
-					});
-					if (built._tag === "Unusable") {
-						yield* Console.error(`fabrika eval: cannot record this run — ${built.reason}`);
-						return yield* Effect.sync(() => process.exit(FAILED));
-					}
-					const bytes = emitEvalRecord(built.record);
-					if (opts.out._tag === "Some") yield* fs.writeFileString(opts.out.value, bytes);
-					yield* Console.log(bytes);
-					yield* Console.error(`fabrika eval: ${noMeasurement} — recorded UNRECORDABLE`);
-					return yield* Effect.sync(() => process.exit(code));
-				});
-
-			const read = yield* Effect.result(fs.readFileString(opts.path));
-			if (Result.isFailure(read)) {
-				return yield* recordNoMeasurement(`${opts.path} could not be read`, FAILED);
-			}
-			const decoded = decodeSkillEvalSet(read.success);
-			if (Result.isFailure(decoded)) {
-				return yield* recordNoMeasurement(
-					`${opts.path} is not a valid skill eval set (${decoded.failure.reason}): ${decoded.failure.message}`,
-					MALFORMED_DOCUMENT,
-				);
-			}
-
-			const cases = decoded.success.cases
-				.filter((evalCase) => evalCase.tier === "graded")
-				.map(gradableCase);
-			// A set with no graded case has nothing for this axis to measure, so reporting a green over
-			// it is the zero-scope pass ADR 0092 forbids. It records rather than exits silent, for
-			// `recordNoMeasurement`'s reason.
-			if (cases.length === 0) {
-				return yield* recordNoMeasurement(`${opts.path} carries no graded case`, ZERO_SCOPE);
-			}
-
-			const crypto = yield* Crypto.Crypto;
-			const executor = claudeExecutor({timeoutMs: opts.timeoutMs});
-			const invoke = (
-				evalCase: ReturnType<typeof gradableCase>,
-				prompt: string,
-				pluginDir: string | null,
-			) =>
-				Effect.gen(function* () {
-					const sessionId = yield* Effect.orDie(crypto.randomUUIDv4);
-					return yield* executor({
-						caseId: evalCase.id,
-						tier: "graded",
-						arm: "with-skill",
-						sessionId,
-						prompt,
-						model: opts.model,
-						pluginDir,
-						jsonSchema: null,
-					});
-				});
-
-			const results = yield* runGradedAxis({
-				cases,
-				runOnce: ({evalCase}) =>
-					Effect.gen(function* () {
-						const candidate = candidateOutputOf(
-							yield* invoke(evalCase, evalCase.prompt, opts.pluginDir),
-						);
-						if (candidate._tag !== "Output") return candidate;
-						// The grader loads no plugin: it judges what the candidate produced against the
-						// authored expectations, and running the skill again inside the grader would make
-						// the judgement depend on a second execution nobody scored.
-						return readGraderVerdict(
-							graderResponseOf(
-								yield* invoke(
-									evalCase,
-									composeGraderPrompt({evalCase, candidateOutput: candidate.text}),
-									null,
-								),
-							),
-						);
-					}),
-			});
-
-			const built = buildEvalRecord({
-				sha: opts.sha,
-				recordedAt: new Date().toISOString(),
-				cell,
-				pins,
-				results,
-			});
-			if (built._tag === "Unusable") {
-				yield* Console.error(`fabrika eval: cannot record this run — ${built.reason}`);
-				return yield* Effect.sync(() => process.exit(FAILED));
-			}
-
-			const bytes = emitEvalRecord(built.record);
-			if (opts.out._tag === "Some") yield* fs.writeFileString(opts.out.value, bytes);
-			yield* Console.log(bytes);
-			if (built.record.outcome === "UNRECORDABLE") {
-				yield* Console.error(
-					`fabrika eval: every run of all ${results.length} graded case(s) returned no verdict — the record is UNRECORDABLE, which is not a below-bar number`,
-				);
-				return yield* Effect.sync(() => process.exit(NO_MEASUREMENT));
-			}
+		// The invocation is validated *before* the set is read, so the two kinds of failure stay apart:
+		// a bad --stage/--surface is the operator's own mistake and records nothing, while every refusal
+		// inside the run is a fact about the eval set and therefore leaves a record.
+		const stage = yield* resolveStage(opts.stage);
+		const surface = yield* resolveSurface(opts.stage, opts.surface);
+		yield* produceGradedRecord({
+			path: opts.path,
+			stage,
+			surface,
+			model: opts.model,
+			pluginDir: opts.pluginDir,
+			sha: opts.sha,
+			harness: opts.harness,
+			timeoutMs: opts.timeoutMs,
+			out: opts.out._tag === "Some" ? opts.out.value : null,
+			log: Console.log,
 		});
-		yield* run;
 	}),
 ).pipe(
 	Command.withShortDescription("Run a skill's graded cases five times and record the median."),
@@ -938,9 +1006,42 @@ const harnessRevisionFlag = Flag.string("harness-revision").pipe(
 	),
 );
 
+/** One committed file of the series, paired with the name the trend orders ties by. */
+interface SeriesFile {
+	readonly fileName: string;
+	readonly scorecard: CommittedScorecard;
+}
+// A named path that could not be read — a hard error (exit 1), not a skip.
+class PathUnreadable extends Schema.TaggedErrorClass<PathUnreadable>()("PathUnreadable", {
+	path: Schema.String,
+}) {}
+
+const recordArg = Argument.string("record").pipe(
+	Argument.withDescription(
+		"path to a head-bound eval record — the bytes `fabrika eval graded --out` wrote",
+	),
+	Argument.atLeast(1),
+);
+
+const seriesDirFlag = Flag.string("series-dir").pipe(
+	Flag.withDefault(SERIES_DIR),
+	Flag.withDescription(
+		`the committed scorecard series directory (default: ${SERIES_DIR}) — one dated file per run`,
+	),
+);
+
+const scorecardOutFlag = Flag.string("out").pipe(
+	Flag.optional,
+	Flag.withDescription(
+		"write the scorecard here instead of the dated file the series directory would take",
+	),
+);
+
 const recordedAtFlag = Flag.string("recorded-at").pipe(
 	Flag.optional,
-	Flag.withDescription("ISO-8601 UTC stamp for the artifact (default: now)"),
+	Flag.withDescription(
+		"ISO-8601 UTC stamp for the artifact (default: now) — on a scorecard, the series' ordering key",
+	),
 );
 
 const baselineOutFlag = Flag.string("out").pipe(
@@ -1139,9 +1240,341 @@ const baseline = Command.make("baseline").pipe(
 	),
 );
 
-export const evalCommand = Command.make("eval").pipe(
-	Command.withSubcommands([check, report, cases, runCommand, graded, keeps, baseline]),
+/** Read one eval record file, or exit: an unreadable or nonconforming record commits nothing. */
+const readRecordFile = (path: string) =>
+	Effect.gen(function* () {
+		const fs = yield* FileSystem.FileSystem;
+		const text = yield* Effect.mapError(fs.readFileString(path), () => new PathUnreadable({path}));
+		const result = readEvalRecord(text);
+		if (result._tag === "Found") return result.value;
+		// `Absent` and `Malformed` are one refusal here on purpose: either way this file carries no
+		// number a scorecard may cite, and the reason says which it was.
+		yield* Console.error(
+			`fabrika eval: ${path} carries no readable eval record (${result._tag.toLowerCase()}): ${result.reason}`,
+		);
+		return yield* Effect.sync(() => process.exit(MALFORMED_DOCUMENT));
+	});
+
+/**
+ * `scorecard` — commit one run's eval records as a dated, pinned scorecard (#4680).
+ *
+ * The graded numbers are **not produced here**. They arrive as the head-bound records the review stage
+ * recorded (#4678), and this verb digests them into the file the trend co-gate reads back — production
+ * moved to the review stage on the #4649 cost ruling, consumption did not move anywhere.
+ *
+ * A scorecard that cannot say what it was measured on is not comparable to the next one, so an
+ * incomplete pin exits `NOT_COMMITTABLE` and writes nothing. That refusal is the artifact's
+ * precondition, which is why it is a refusal and not a warning.
+ */
+const scorecard = leafCommand(
+	"scorecard",
+	{
+		record: recordArg,
+		seriesDir: seriesDirFlag,
+		out: scorecardOutFlag,
+		recordedAt: recordedAtFlag,
+		json: jsonFlag,
+	},
+	Effect.fn(function* (opts) {
+		const run = Effect.gen(function* () {
+			const fs = yield* FileSystem.FileSystem;
+			const path = yield* Path.Path;
+
+			const records: Array<EvalRecord> = [];
+			for (const file of opts.record) records.push(yield* readRecordFile(file));
+
+			const built = buildCommittedScorecard({
+				recordedAt:
+					opts.recordedAt._tag === "Some" ? opts.recordedAt.value : new Date().toISOString(),
+				records,
+			});
+			if (built._tag === "Rejected") {
+				yield* Console.error(`fabrika eval: refusing to commit this scorecard — ${built.reason}`);
+				return yield* Effect.sync(() =>
+					process.exit(built.rejection === "zero-scope" ? ZERO_SCOPE : NOT_COMMITTABLE),
+				);
+			}
+
+			let target: string;
+			if (opts.out._tag === "Some") {
+				target = opts.out.value;
+			} else {
+				yield* fs.makeDirectory(opts.seriesDir, {recursive: true});
+				const taken = yield* fs.readDirectory(opts.seriesDir);
+				target = path.join(opts.seriesDir, seriesFileName(built.scorecard.recordedAt, taken));
+			}
+			// A committed point is never rewritten — the corpus's append-only discipline, applied to the
+			// series the trend reads: an overwritten file silently changes a measurement already read.
+			if (yield* fs.exists(target)) {
+				yield* Console.error(
+					`fabrika eval: ${target} already exists — a committed scorecard is appended to the series, never rewritten`,
+				);
+				return yield* Effect.sync(() => process.exit(NOT_COMMITTABLE));
+			}
+			yield* fs.writeFileString(target, toCommittedJson(built.scorecard));
+
+			yield* Console.log(
+				opts.json
+					? toCommittedJson(built.scorecard)
+					: `${renderCommittedScorecard(built.scorecard)}\n\ncommitted to ${target}`,
+			);
+		});
+		yield* run.pipe(
+			Effect.catchTag("PathUnreadable", (e) =>
+				Effect.gen(function* () {
+					yield* Console.error(`fabrika eval: cannot read ${e.path}`);
+					return yield* Effect.sync(() => process.exit(FAILED));
+				}),
+			),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Commit a run's eval records as a dated, pinned scorecard."),
 	Command.withDescription(
-		"Graded per-stage corpus + scorecard + authored-eval-set ingestion + the unattended runner + the five-run graded axis + the ruled KEEP enumeration + the v1 cost baseline (#1848, #1853, #4674, #4676, #4678, #4823, #4679)",
+		"Digest head-bound eval records into the dated, pinned scorecard the series accumulates — a missing pin or an unsourced row is rejected rather than committed (#4680)",
+	),
+);
+
+/**
+ * Read every committed scorecard in the series directory, or exit.
+ *
+ * Members are selected by `isSeriesFileName`, never by `*.json`: the directory is shared with the
+ * eval layer's other dated artifacts — the cost baselines of #4679 sit right beside the series — and
+ * globbing every JSON there made each of those a malformed scorecard that took `trend` and `churn`
+ * down. A name that *is* a member and does not decode still refuses, because that is a corrupt point
+ * of the series rather than a neighbour.
+ */
+const readSeries = (dir: string) =>
+	Effect.gen(function* () {
+		const fs = yield* FileSystem.FileSystem;
+		const path = yield* Path.Path;
+		if (!(yield* fs.exists(dir))) return [] as ReadonlyArray<SeriesFile>;
+		const entries = yield* Effect.mapError(
+			fs.readDirectory(dir),
+			() => new PathUnreadable({path: dir}),
+		);
+		const names = entries.filter(isSeriesFileName).sort();
+		// Named on stderr rather than passed over in silence: a scorecard written into the directory
+		// under some other name is invisible to the trend, and this is the one line that says so.
+		const ignored = entries.filter((name) => name.endsWith(".json") && !isSeriesFileName(name));
+		if (ignored.length > 0) {
+			yield* Console.error(
+				`fabrika eval: ${dir} — ${ignored.length} JSON file(s) are not series points and were skipped (${ignored.sort().join(", ")}); a point of the series is named <YYYY-MM-DD>[-N].json`,
+			);
+		}
+		const files: Array<SeriesFile> = [];
+		for (const name of names) {
+			const full = path.join(dir, name);
+			const text = yield* Effect.mapError(
+				fs.readFileString(full),
+				() => new PathUnreadable({path: full}),
+			);
+			const decoded = decodeCommittedScorecard(text);
+			if (Result.isFailure(decoded)) {
+				yield* Console.error(
+					`fabrika eval: ${full} is not a committable scorecard (${decoded.failure.reason}): ${decoded.failure.message}`,
+				);
+				return yield* Effect.sync(() => process.exit(MALFORMED_DOCUMENT));
+			}
+			files.push({fileName: name, scorecard: decoded.success});
+		}
+		return files as ReadonlyArray<SeriesFile>;
+	});
+
+/**
+ * `trend` — the two-week decline co-gate over the committed series (#4680, ADR 0252 §3).
+ *
+ * **Observe-only** (#4766 founder guardrail): all three answers exit `0`, so this can never red a PR
+ * before the criterion has been watched against a real series. Arming it is a separate, later ADR. A
+ * non-zero exit here means the verb could not *read* the series, never that a trend was found.
+ *
+ * `insufficient-data` is reported as itself and never folded into `steady` — a window nobody can read
+ * is unknown, and calling it healthy is the zero-scope green ADR 0092 forbids.
+ */
+const trend = leafCommand(
+	"trend",
+	{seriesDir: seriesDirFlag, json: jsonFlag},
+	Effect.fn(function* (opts) {
+		const run = Effect.gen(function* () {
+			const readings = readTrend(yield* readSeries(opts.seriesDir));
+			yield* Console.log(opts.json ? trendToJson(readings) : renderTrend(readings));
+		});
+		yield* run.pipe(
+			Effect.catchTag("PathUnreadable", (e) =>
+				Effect.gen(function* () {
+					yield* Console.error(`fabrika eval: cannot read ${e.path}`);
+					return yield* Effect.sync(() => process.exit(FAILED));
+				}),
+			),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Report the two-week trend over the committed scorecard series."),
+	Command.withDescription(
+		"Report `declining | steady | insufficient-data` per cell over the committed scorecard series — observe-only, so it never changes an exit status (#4680, ADR 0252)",
+	),
+);
+
+const churnSetArg = Argument.string("path").pipe(
+	Argument.withDescription(
+		"the eval set to re-run under the named model — omit it only when --record names an already-recorded run",
+	),
+	Argument.optional,
+);
+
+const churnRecordFlag = Flag.string("record").pipe(
+	Flag.optional,
+	Flag.withDescription(
+		"adjudicate this already-recorded eval record instead of re-running the set (spawns no model)",
+	),
+);
+
+const optionalStageFlag = Flag.string("stage").pipe(
+	Flag.optional,
+	Flag.withDescription(
+		`the stage the re-run measures, required unless --record is given (one of: ${STAGES.join(", ")})`,
+	),
+);
+
+const optionalPluginDirFlag = Flag.string("plugin-dir").pipe(
+	Flag.optional,
+	Flag.withDescription("the candidate skill's plugin directory, required unless --record is given"),
+);
+
+const optionalShaFlag = Flag.string("sha").pipe(
+	Flag.optional,
+	Flag.withDescription("the head commit the re-run is bound to, required unless --record is given"),
+);
+
+/**
+ * `churn` — re-run a named model over a skill's eval set and diff it against the pinned series (#4680).
+ *
+ * This is the model-churn contract as one verb rather than a remembered procedure: a new model is
+ * adjudicated by re-running the suite under it and comparing the numbers, so the switch is decided on
+ * measurement. The re-run goes through the **same** five-run graded axis the review stage records with,
+ * because two numbers produced by two protocols are not a comparison.
+ *
+ * `--record` adjudicates a run that already happened, which is the mode to use where a model may not be
+ * spawned — CI has no credits for model runs (#4649), so nothing here belongs in a workflow.
+ *
+ * **The output states deltas and recommends nothing.** Selecting a model is the founder's call over
+ * this evidence, exactly as the scorecard's own framing already declares.
+ */
+const churn = leafCommand(
+	"churn",
+	{
+		path: churnSetArg,
+		record: churnRecordFlag,
+		model: modelFlag,
+		stage: optionalStageFlag,
+		surface: surfaceFlag,
+		pluginDir: optionalPluginDirFlag,
+		sha: optionalShaFlag,
+		harness: harnessFlag,
+		timeoutMs: timeoutFlag,
+		seriesDir: seriesDirFlag,
+		out: recordOutFlag,
+		json: jsonFlag,
+	},
+	Effect.fn(function* (opts) {
+		const run = Effect.gen(function* () {
+			const usage = (reason: string) =>
+				Effect.gen(function* () {
+					yield* Console.error(`fabrika eval: ${reason}`);
+					return yield* Effect.sync(() => process.exit(FAILED));
+				});
+
+			let record: EvalRecord;
+			if (opts.record._tag === "Some") {
+				if (opts.path._tag === "Some") {
+					return yield* usage(
+						"--record adjudicates a run that already happened, so it takes no eval-set path — pass one or the other",
+					);
+				}
+				record = yield* readRecordFile(opts.record.value);
+			} else {
+				if (opts.path._tag === "None") {
+					return yield* usage(
+						"name the eval set to re-run, or pass --record to adjudicate a run that already happened",
+					);
+				}
+				if (
+					opts.stage._tag === "None" ||
+					opts.pluginDir._tag === "None" ||
+					opts.sha._tag === "None"
+				) {
+					return yield* usage(
+						"a re-run needs --stage, --plugin-dir and --sha — the record it produces is bound to that head",
+					);
+				}
+				const stage = yield* resolveStage(opts.stage.value);
+				const surface = yield* resolveSurface(opts.stage.value, opts.surface);
+				record = yield* produceGradedRecord({
+					path: opts.path.value,
+					stage,
+					surface,
+					model: opts.model,
+					pluginDir: opts.pluginDir.value,
+					sha: opts.sha.value,
+					harness: opts.harness,
+					timeoutMs: opts.timeoutMs,
+					out: opts.out._tag === "Some" ? opts.out.value : null,
+					// The deltas are this verb's stdout, so the record — evidence in its own right — goes
+					// to stderr rather than into the middle of the table.
+					log: Console.error,
+				});
+			}
+
+			// The candidate scorecard is built through the same refusals a committed one is: a re-run
+			// whose pins are incomplete is not comparable to the series either, which is the whole point.
+			const built = buildCommittedScorecard({
+				recordedAt: new Date().toISOString(),
+				records: [record],
+			});
+			if (built._tag === "Rejected") {
+				yield* Console.error(`fabrika eval: this re-run is not comparable — ${built.reason}`);
+				return yield* Effect.sync(() =>
+					process.exit(built.rejection === "zero-scope" ? ZERO_SCOPE : NOT_COMMITTABLE),
+				);
+			}
+
+			const comparison = compareToSeries({
+				model: opts.model,
+				candidate: built.scorecard,
+				series: yield* readSeries(opts.seriesDir),
+			});
+			yield* Console.log(opts.json ? churnToJson(comparison) : renderChurn(comparison));
+		});
+		yield* run.pipe(
+			Effect.catchTag("PathUnreadable", (e) =>
+				Effect.gen(function* () {
+					yield* Console.error(`fabrika eval: cannot read ${e.path}`);
+					return yield* Effect.sync(() => process.exit(FAILED));
+				}),
+			),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Re-run a named model and diff it against the pinned series."),
+	Command.withDescription(
+		"Re-run a skill's graded cases under a named model and state the per-cell deltas against the pinned scorecard series — evidence for a model switch, never a recommendation (#4680)",
+	),
+);
+
+export const evalCommand = Command.make("eval").pipe(
+	Command.withSubcommands([
+		check,
+		report,
+		cases,
+		runCommand,
+		graded,
+		keeps,
+		baseline,
+		scorecard,
+		trend,
+		churn,
+	]),
+	Command.withDescription(
+		"Graded per-stage corpus + scorecard + authored-eval-set ingestion + the unattended runner + the five-run graded axis + the ruled KEEP enumeration + the v1 cost baseline + the committed scorecard series, its trend co-gate and the model-churn re-run (#1848, #1853, #4674, #4676, #4678, #4823, #4679, #4680)",
 	),
 );
