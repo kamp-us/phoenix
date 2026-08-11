@@ -31,10 +31,10 @@ $ git rev-parse HEAD
 
 $ fabrika eval run claude-plugins/fabrika/skills/deploy-notes/evals/evals.json --stage review --plugin-dir claude-plugins/fabrika --model claude-opus-4-6
 fabrika eval run: deploy-notes · stage review · model claude-opus-4-6
-  case 1 [with-skill] ok — 6 turns, billed 41230, ex-cache-read 8120, transcript /Users/op/.claude/projects/-work-widgets/3f7a1c28-5b9d-4e60-8a12-c4d6e9f0b135.jsonl
-  case 1 [without-skill] ok — 5 turns, billed 32100, ex-cache-read 7050, transcript /Users/op/.claude/projects/-work-widgets/8c2e5a91-7d34-4f18-9b60-2a5c8e1d7f40.jsonl
-  case 2 [with-skill] ok — 4 turns, billed 28410, ex-cache-read 6900, transcript /Users/op/.claude/projects/-work-widgets/b15d0e73-2a86-4c95-81f7-6e3b9d2a4c08.jsonl
-  case 2 [without-skill] ok — 4 turns, billed 27980, ex-cache-read 6410, transcript /Users/op/.claude/projects/-work-widgets/6a94f2b0-c1d7-4835-9e26-0f8b3a7c5d19.jsonl
+  case 1 [with-skill] ok — 6 turns, billed 41230, ex-cache-read 8120, transcript <claude-data-root>/projects/-work-widgets/3f7a1c28-5b9d-4e60-8a12-c4d6e9f0b135.jsonl
+  case 1 [without-skill] ok — 5 turns, billed 32100, ex-cache-read 7050, transcript <claude-data-root>/projects/-work-widgets/8c2e5a91-7d34-4f18-9b60-2a5c8e1d7f40.jsonl
+  case 2 [with-skill] ok — 4 turns, billed 28410, ex-cache-read 6900, transcript <claude-data-root>/projects/-work-widgets/b15d0e73-2a86-4c95-81f7-6e3b9d2a4c08.jsonl
+  case 2 [without-skill] ok — 4 turns, billed 27980, ex-cache-read 6410, transcript <claude-data-root>/projects/-work-widgets/6a94f2b0-c1d7-4835-9e26-0f8b3a7c5d19.jsonl
   planned 4 · collected 4 · failed 0
   (suite spend summary trimmed from this transcript)
 
