@@ -853,6 +853,84 @@ the only file in the module that imports `node:child_process`. The reversal that
 module could previously not spawn anything) and its bounds are recorded in [ADR
 0236](../../../../.decisions/0236-eval-harness-gains-a-spawning-shell.md).
 
+## The graded axis ([#4678](https://github.com/kamp-us/phoenix/issues/4678))
+
+The model-bearing half of the eval layer, and the seam `deterministic-tier.ts` defers to. A case with
+even one judgment assertion cannot be read off an exit status, so it runs **five times** and takes the
+**median** (founder ruling 4 on [#4637](https://github.com/kamp-us/phoenix/issues/4637)).
+
+```bash
+fabrika eval graded <evals.json> \
+  --stage review --surface skill --model <model> \
+  --plugin-dir <the changed skill's plugin dir> --sha <the head under review> \
+  [--harness <version>] [--timeout-ms 900000] [--out record.md]
+```
+
+`graded-axis.ts` is the **pure** core — the protocol, the median, the record construction — driven by
+the unit tier through a stubbed grader, so no unit test spends a cent. The verb is its only IO, and it
+starts no process of its own: it reuses `spawn-io.ts`'s executor, which stays the module's single
+process boundary.
+
+### The grading is reused, not invented
+
+Each run is two invocations: the case's own prompt against the candidate skill, then a **grader**
+handed that output plus the case's authored `expected_output` and `expectations` **verbatim**
+(`composeGraderPrompt`). So the ruled five runs cost **ten model spawns per graded case**, at a
+default 15-minute timeout each — and the count is deliberately **not a flag** on the verb: a record
+produced at fewer runs carries the same token, clause and rate as a ruled one, so no consumer could
+tell. `runGradedAxis`'s `runs` parameter stays for the unit tier, which drives 2-, 3- and 4-run sets
+to make the even-split rule testable. No rubric is declared here, so the judgment a case receives in a review is
+the judgment its authoring session defined. A unit test holds that open: it strips the case's own text
+and the fixed instruction block out of a composed prompt and asserts nothing is left.
+
+### What the median throws away is kept
+
+- **`dispersion`** is `min(passed, runs − passed)` (ADR
+  [0252](../../../../.decisions/0252-grading-chain-dispersion-and-decline-criterion.md) §1), and the
+  five per-run verdicts ride beside it, so a 3-of-5 pass is legible as a different fact from a 5-of-5
+  one. It is recorded and read; it gates nothing.
+- **An even split resolves down.** At five runs the tie never arises, but the function is total over
+  any run count and a half-failing set has not shown the case passes — rounding a tie up would be the
+  median quietly defaulting to a pass.
+- **A run that returns no verdict is a `NoVerdict`** over four reasons — `no-output`, `unparseable`,
+  `timed-out`, `invocation-failed` (ADR
+  [0253](../../../../.decisions/0253-eval-record-is-an-eval-namespaced-pr-comment.md) §4). It stays in
+  `runs`, never counts in `passed`, is counted in `noVerdict`, and is **never retried inside the
+  five**: a retry replaces a measurement with a re-measurement and silently changes what the median
+  measured. A case whose every run returned no verdict is `unmeasured` — absent from both sides of the
+  pass rate, because counting it as a failure publishes a number nobody took.
+
+### One aggregation path, one cell spelling
+
+Graded rows are `EvalRow`s and fold through `summarizeEvalRows` — the same aggregator the
+deterministic tier uses — rather than a second one. `gradedCellAggregate` returns
+`gradedRuns` / `passedRuns` / `passRate` typed as a `Pick` of `ScorecardCell`, so the scorecard
+spelling is bound by the compiler rather than by convention. One graded **case** is one graded run at
+cell level; the five executions behind it live in the case block.
+
+### Where it runs, and what it leaves behind
+
+Its supported sites are an operator's shell and the **`review` stage** on a PR that changes a skill
+(`claude-plugins/fabrika/skills/review/SKILL.md` step 3a). **No CI workflow invokes it**, for
+`run`'s reason: the founder ruling on epic [#4649](https://github.com/kamp-us/phoenix/issues/4649)
+removed model-in-the-loop execution from CI on a **cost** constraint — there are no credits for model
+runs inside the CI provider — recorded as a cost constraint, *not a principle*, so a future reader
+knows what would have to change to revisit it. A unit test reds if any workflow ever calls it.
+
+Because the answer no longer returns into a CI job, it is **left behind**: `buildEvalRecord` composes
+the head-bound eval record (`../wire/eval-record.ts`, ADR 0253) the review posts as a PR comment, and
+CI's later leg ([#4681](https://github.com/kamp-us/phoenix/issues/4681)) verifies that record instead
+of reproducing the run. A record is emitted on **every** outcome, so `missing`, `stale`, `below-bar`
+and `unrecordable` stay four distinguishable states for that verifier — **including the runs that
+never reached a case**: an unreadable set (exit `1`), one that does not conform (`4`) and one with no
+graded case (`7`) each emit an `UNRECORDABLE` record whose clause names which it was, on the founder
+ruling at [#4678 comment 5247447078](https://github.com/kamp-us/phoenix/issues/4678#issuecomment-5247447078)
+(explicit beats implicit for error cases). Silence there would reach #4681 as `missing`, byte-identical
+to a review that never ran the axis. A bad `--stage`/`--surface` is the operator's own mistake, not a
+fact about the set, so it is validated first and records nothing. The exit code says only whether
+a measurement exists — a below-bar rate exits `0`, because whether a rate clears the ruled bar is
+#4681's judgement and appears nowhere in this module.
+
 ## The fabrika incident corpus ([#4675](https://github.com/kamp-us/phoenix/issues/4675))
 
 `incident-corpus/` is a **second, separate** body of ground truth, and the name matters: the
@@ -912,6 +990,13 @@ against it, not against the issue bodies, which still leave all three values unn
 - **Two spellings, two levels, on purpose.** The cell aggregate is `gradedRuns` / `passedRuns` /
   `passRate`, matching `ScorecardCell`; the per-case block is `runs` / `passed` / `dispersion`,
   matching ADR 0252 §1.
+- **`unmeasuredCases` rides beside the cell aggregate**, because it is the one fact that aggregate
+  cannot express: a cell that graded three of four cases reports `3/3 = 1.0`, and without the field
+  #4680's committed row hides the case that never ran.
+- **Both levels are re-derived on read.** `read` refuses a record whose `gradedRuns` / `passedRuns` /
+  `unmeasuredCases` disagree with its own case blocks, exactly as it refuses a `dispersion` that
+  disagrees with its own run counts — so a claim of ten graded cases over two blocks, or over none,
+  is `Malformed` rather than a plausible measurement nobody took.
 
 ## Out of scope
 
@@ -919,5 +1004,10 @@ against it, not against the issue bodies, which still leave all three values unn
 separate `type:decision` — the harness supplies the graded evidence, the human decides.
 
 **The tier protocols.** `run` executes and collects; it does not implement the deterministic tier's
-mechanical checks (#4677) or the graded tier's 5-run median (#4678), and it renders no scorecard
-series (#4680).
+mechanical checks (#4677) or the graded tier's 5-run median (`graded-axis.ts`, documented above), and
+it renders no scorecard series (#4680).
+
+**Committing a scorecard, and the merge bar.** The graded axis emits a per-run PR comment and
+nothing else: aggregating those records into the committed scorecard series is
+[#4680](https://github.com/kamp-us/phoenix/issues/4680), and reading a rate against the ruled 90% bar
+is [#4681](https://github.com/kamp-us/phoenix/issues/4681). Neither number is judged here.
