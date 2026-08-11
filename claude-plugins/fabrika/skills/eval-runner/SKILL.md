@@ -191,24 +191,27 @@ Every run ends as exactly one of these, and every one of them leaves the branch 
   conforming. `eval post` exit `0`; covers a graded axis that exited `0` or `14`.
 - **RECORD-LOCAL** — a record exists and is not posted; its bytes are at a named repo-relative
   path and you name what is owed. Covers no-PR-yet, and every `eval post` refusal that leaves the
-  record intact and unwritten: `17` (no such PR, or closed) and `11` (a precondition read failed —
-  nothing was written) owe **the post**; `5` (the bytes carry a machine-local path) owes **a
+  record intact and unwritten: `17` (no such PR, or closed) owes **the post on the PR that carries
+  this head**, which is not the one you asked for; `11` (a precondition read failed — nothing was
+  written) owes **the post**; `5` (the bytes carry a machine-local path) owes **a
   redaction, then the post**; `16` (the comment sweep came back short, so the upsert could not be
   proven) owes **a re-post once the sweep is complete**; `15` (the head moved) owes **a re-run at
   the new head** — never a re-post, because a record binds the tree it measured and is never
   re-bound. `3` / `4` / `6` mean the bytes you piped were not a record at all: the emitted record,
   if a run produced one, is still on disk, and that is this terminal too.
 - **SUITE-INCOMPLETE** — a back-off: the suite produced no postable record. `eval run` exit `13`
-  (planned runs did not all execute, and the ledger names which), or `eval graded` exiting `1`
-  because no record could be composed from what ran. Nothing posted.
+  (planned runs did not all execute, and the ledger names which); `eval graded` exit `7`, where
+  the set carries no graded case at all, which you reach only *after* step 3 has spent on every
+  case in both arms; or `eval graded` exit `1`, where the runs completed and no record could be
+  composed from them. Nothing posted, and the spend already made is real — say so.
 - **POST-UNKNOWN** — the post's outcome is unknown. Exit `8`: the write may or may not have
   landed — re-run `eval post` with the same bytes, whose upsert either edits what landed or
   creates what did not. Exit `9`: a comment landed and did **not** read back as this record, so
   **inspect the comment id the verb names before re-running** — a garbled comment does not match
   the upsert key, and a blind re-run would create a second comment for one `(head, cell)`.
-- **NOT-RUN** — refused before anything was measured: a malformed or zero-case set, a set with no
-  graded case, an unresolvable head, an unreadable plugin dir, or a refused request. Nothing
-  spawned, nothing spent, no record to owe.
+- **NOT-RUN** — refused before anything was measured: a malformed or zero-case set, an
+  unresolvable head, an unreadable plugin dir, or a refused request. Nothing spawned, nothing
+  spent, no record to owe.
 
 ## Eval enumeration (leaf-rule obligation)
 
