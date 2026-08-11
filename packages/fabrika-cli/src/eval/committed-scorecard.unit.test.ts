@@ -14,6 +14,7 @@ import {
 	buildCommittedScorecard,
 	type CommittedCell,
 	decodeCommittedScorecard,
+	isSeriesFileName,
 	seriesFileName,
 	toJson,
 } from "./committed-scorecard.ts";
@@ -202,6 +203,27 @@ describe("seriesFileName", () => {
 		expect(seriesFileName("2026-08-11T09:00:00Z", ["2026-08-11.json", "2026-08-11-2.json"])).toBe(
 			"2026-08-11-3.json",
 		);
+	});
+});
+
+describe("isSeriesFileName is the inverse of seriesFileName", () => {
+	// Re-derived rather than asserted against a hand-written list: the admission test and the name
+	// generator are one fact, and a list would be a second copy of it that can drift.
+	it("admits every name the writer can produce, over a whole day of same-date runs", () => {
+		const taken: Array<string> = [];
+		for (let run = 0; run < 12; run += 1) {
+			const name = seriesFileName("2026-08-11T01:02:03Z", taken);
+			expect(isSeriesFileName(name)).toBe(true);
+			taken.push(name);
+		}
+	});
+
+	it("does not admit the eval layer's other dated artifacts sharing the directory", () => {
+		// The real neighbour: #4679's cost baseline lands in the same directory as the series.
+		expect(isSeriesFileName("baseline-v1-2026-08-11.json")).toBe(false);
+		expect(isSeriesFileName("README.md")).toBe(false);
+		expect(isSeriesFileName("2026-08-11.json.bak")).toBe(false);
+		expect(isSeriesFileName("notes-2026-08-11.json")).toBe(false);
 	});
 });
 

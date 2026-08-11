@@ -432,17 +432,34 @@ looks for.
 
 ### Three refusals, which are the artifact's precondition
 
-`fabrika eval scorecard` exits `15` (`NOT_COMMITTABLE`) and writes nothing when:
+`fabrika eval scorecard` exits `17` (`NOT_COMMITTABLE`) and writes nothing when:
 
 - **a pin is blank** — model, CLI or harness. A scorecard that cannot say what it was measured on is
   not comparable to the next one, which is the whole point of pinning it (#4637 ruling 4);
 - **a cell cites no eval record** — an unsourced number cannot be checked back to a tree;
 - **the target file already exists** — a committed point is appended to, never rewritten.
 
-Zero records exits `11` (`ZERO_SCOPE`), and a record that does not read exits `4`
+Zero records exits `7` (`ZERO_SCOPE`), and a record that does not read exits `4`
 (`MALFORMED_DOCUMENT`). The same checks run again on the way *back in*: `decodeCommittedScorecard`
 re-derives every aggregate from the cell's own case list, so a file whose stored counts contradict
 its cases is refused rather than counted as a point of the series.
+
+### What counts as a point of the series
+
+A member of the series is a file named `<YYYY-MM-DD>.json`, or `<YYYY-MM-DD>-<n>.json` for a second
+run that day — the names `seriesFileName` produces, and nothing else. `trend` and `churn` select
+members by that name, never by `*.json`, and `isSeriesFileName` is the exact inverse of the writer so
+the two cannot drift (a unit test re-derives it rather than asserting a list).
+
+The directory is **shared**, which is what makes the rule load-bearing rather than tidy:
+`claude-plugins/fabrika/reports/eval/` also holds the dated **cost baselines** of
+[#4679](https://github.com/kamp-us/phoenix/issues/4679) (`baseline-v1-<date>.json`), and any later
+dated artifact of the eval layer will land there too. Under a `*.json` read every one of those is a
+malformed scorecard, so a neighbouring file takes the whole series down. Under the naming rule it
+cannot. A file that *is* named as a member and does not decode is still a hard refusal — that is a
+corrupt point, not a neighbour, and skipping it would drop a measurement from the trend. A JSON file
+in the directory that is not a member is named on stderr, so a scorecard written there under some
+other name is visible rather than silently absent.
 
 No bar appears anywhere in these three verbs. Whether a rate clears the ruled 90% is
 [#4681](https://github.com/kamp-us/phoenix/issues/4681)'s judgement.
