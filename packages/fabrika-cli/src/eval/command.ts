@@ -12,6 +12,7 @@
  *   fabrika eval graded <path>      # five runs per graded case, the median, and the head-bound record
  *   fabrika eval keeps <path>       # print the ruled KEEP corpus and what already pins each row
  *   fabrika eval baseline …         # record the v1 cost baseline, and answer the phase-1 ceiling
+ *   fabrika eval post <pr>          # commit one head-bound record onto a PR, upserted per (head, cell)
  *
  * `check` (issue #1848) validates the on-disk corpus format. `report` (issue #1853) is the
  * top of the vertical slice: it reads the runner's graded `{entry, grade, spend}` rows and
@@ -33,13 +34,14 @@ import {Console, Crypto, Effect, FileSystem, Path, Result} from "effect";
 import * as Schema from "effect/Schema";
 import {Argument, Command, Flag} from "effect/unstable/cli";
 import {leafCommand} from "../excess-operand.ts";
+import {readStdin} from "../io/stdin.ts";
 import {
 	DEFAULT_SPEND_LEDGER_PATH,
 	type LedgerRow,
 	persistSpendRows,
 	readSpendLedger,
 } from "../spend/ledger.ts";
-import {FAILED} from "../verb.ts";
+import {FAILED, type VerbOutcome} from "../verb.ts";
 import {VERSION} from "../version.ts";
 import {
 	type EvalRecord,
@@ -87,6 +89,7 @@ import {
 } from "./graded-axis.ts";
 import {decodeIncidentProvenance} from "./incident-provenance.ts";
 import {churnToJson, compareToSeries, renderChurn} from "./model-churn.ts";
+import {runPost} from "./post-verb.ts";
 import {
 	type BaselineKey,
 	buildScorecard,
@@ -1561,6 +1564,62 @@ const churn = leafCommand(
 	),
 );
 
+/** Write the outcome and exit on its code — stdout is the answer, everything else is stderr. */
+const emit = (outcome: VerbOutcome): Effect.Effect<void> =>
+	Effect.sync(() => {
+		for (const line of outcome.stderr) process.stderr.write(`${line}\n`);
+		if (outcome.stdout !== "") process.stdout.write(outcome.stdout);
+		process.exit(outcome.code);
+	});
+
+const repoFlag = Flag.string("repo").pipe(
+	Flag.optional,
+	Flag.withDescription(
+		"the target owner/name (default: $CLAUDE_PIPELINE_REPO, else $GITHUB_REPOSITORY, else the origin remote)",
+	),
+);
+
+const resultJsonFlag = Flag.boolean("json").pipe(
+	Flag.withDescription("emit the result object on stdout instead of the line grammar"),
+);
+
+/**
+ * `post` — commit one head-bound eval record onto a PR as a comment (#5411).
+ *
+ * The record arrives on **stdin only** — no `--body`, no `--body-file`, and no `--sha` or `--cell`
+ * either. A path flag is how a machine-local path reaches a public surface while the poster reads
+ * success, and a flag repeating a payload field is a second home the two can drift between: the
+ * record is already a self-contained artifact carrying every value this verb needs.
+ */
+const post = leafCommand(
+	"post",
+	{
+		pr: Argument.integer("pr").pipe(
+			Argument.withDescription("the pull request the record lands on"),
+		),
+		repo: repoFlag,
+		json: resultJsonFlag,
+	},
+	Effect.fn(function* ({pr, repo, json}) {
+		yield* emit(
+			yield* runPost({
+				pr,
+				repo: repo._tag === "Some" ? repo.value : null,
+				json,
+				env: process.env,
+				stdin: Effect.sync(readStdin),
+			}),
+		);
+	}),
+).pipe(
+	Command.withShortDescription(
+		"Post the eval record on stdin onto a PR, upserted per (head, cell).",
+	),
+	Command.withDescription(
+		"Post the head-bound eval record on STDIN as ONE comment per (head, cell) — read stdin through the `eval-record` wire format, resolve the PR, compare the record's sha against the live head, leak-scan the bytes, sweep the comments count-checked, upsert, and read the comment back from live PR state. Prints `posted\\t<RECORDED|UNRECORDABLE>\\t<sha>\\t<cell>\\t<created|edited>\\t<comment-url>`. Exits 3 (empty stdin), 4 (stdin does not read as an eval record), 5 (machine-local path in the record), 6 (bare @ reference), 8 (the create/edit failed — UNKNOWN), 9 (the read-back does not yield this record), 11 (a precondition read failed — nothing was posted), 18 (the record's sha is not the PR's live head — re-run the suite, never re-bind), 19 (the comment sweep is provably short), 20 (the PR is absent or closed). Example: fabrika eval graded evals.json --stage triage --model <model> --plugin-dir claude-plugins/fabrika --sha 03135b91 | fabrika eval post 9041",
+	),
+);
+
 export const evalCommand = Command.make("eval").pipe(
 	Command.withSubcommands([
 		check,
@@ -1573,8 +1632,9 @@ export const evalCommand = Command.make("eval").pipe(
 		scorecard,
 		trend,
 		churn,
+		post,
 	]),
 	Command.withDescription(
-		"Graded per-stage corpus + scorecard + authored-eval-set ingestion + the unattended runner + the five-run graded axis + the ruled KEEP enumeration + the v1 cost baseline + the committed scorecard series, its trend co-gate and the model-churn re-run (#1848, #1853, #4674, #4676, #4678, #4823, #4679, #4680)",
+		"Graded per-stage corpus + scorecard + authored-eval-set ingestion + the unattended runner + the five-run graded axis + the ruled KEEP enumeration + the v1 cost baseline + the committed scorecard series, its trend co-gate, the model-churn re-run and the record emit (#1848, #1853, #4674, #4676, #4678, #4823, #4679, #4680, #5411)",
 	),
 );

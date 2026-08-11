@@ -7,7 +7,7 @@
  * exactly what the convention reserves it for: a usage error (a flag naming something that is not a
  * stage, a surface, or an arm) and a read that failed before the verb could judge anything.
  *
- * The two shared seats are **imported from the base, never re-typed** — the discipline
+ * The shared seats are **imported from the base, never re-typed** — the discipline
  * `../review-ui/codes.ts` states, and the reason `../exit-code-alignment.ts` can check them. `12`
  * and up are this group's own.
  *
@@ -16,7 +16,13 @@
 
 import {
 	BAD_SECTIONS as REPORT_BAD_SECTIONS,
+	BARE_AT_PATH as REPORT_BARE_AT_PATH,
+	EMPTY_STDIN as REPORT_EMPTY_STDIN,
+	LEAKED_PATH as REPORT_LEAKED_PATH,
 	NO_TARGET as REPORT_NO_TARGET,
+	PRECONDITION_UNKNOWN as REPORT_PRECONDITION_UNKNOWN,
+	READBACK_MISMATCH as REPORT_READBACK_MISMATCH,
+	WRITE_UNKNOWN as REPORT_WRITE_UNKNOWN,
 } from "../report/codes.ts";
 
 /**
@@ -36,6 +42,21 @@ export const MALFORMED_DOCUMENT = REPORT_BAD_SECTIONS;
  * outcome with its own seat rather than a green with a caveat on stderr.
  */
 export const ZERO_SCOPE = REPORT_NO_TARGET;
+
+/**
+ * The write-path seats, imported from the base with its meanings unchanged (`eval post`, #5411).
+ *
+ * They arrive as a block because they arrived with one verb: until `post` the group neither read
+ * stdin nor wrote anything, so every fact these name was unreachable here. Each keeps the base's
+ * name as well as its number, which is what lets `../exit-code-alignment.ts` record the claim that
+ * the two meanings are one rather than merely that the two numbers match.
+ */
+export const EMPTY_STDIN = REPORT_EMPTY_STDIN;
+export const LEAKED_PATH = REPORT_LEAKED_PATH;
+export const BARE_AT_PATH = REPORT_BARE_AT_PATH;
+export const WRITE_UNKNOWN = REPORT_WRITE_UNKNOWN;
+export const READBACK_MISMATCH = REPORT_READBACK_MISMATCH;
+export const PRECONDITION_UNKNOWN = REPORT_PRECONDITION_UNKNOWN;
 
 /**
  * Proven: the ruled-KEEP enumeration decodes but breaks its own integrity rules.
@@ -93,3 +114,30 @@ export const BASELINE_INCOMPARABLE = 16;
  * is a precondition of the artifact, not a field a writer may leave out (#4637 ruling 4).
  */
 export const NOT_COMMITTABLE = 17;
+
+/**
+ * Proven: the record's `sha` is not the PR's live head, so the tree it measured is gone.
+ *
+ * A measurement is re-run at the new head, never re-bound to it — re-binding would publish a number
+ * taken over one tree as if it had been taken over another. `../review/codes.ts` seats the same fact
+ * on `12`; this group's `12` is {@link INTEGRITY_VIOLATION}, so cross-group divergence above `11` is
+ * the doctrine and the refusal is re-seated here rather than imported (ADR 0253).
+ */
+export const STALE_HEAD = 18;
+
+/**
+ * Proven: the comment enumeration is short of the count the platform declared.
+ *
+ * Its own seat because the upsert's match is then *unprovable* rather than negative: a sweep that
+ * missed the comment this record owes an edit to would create a second one, and two comments on one
+ * `(head, cell)` is exactly what ADR 0253's key forbids.
+ */
+export const INCOMPLETE_SCAN = 19;
+
+/**
+ * Proven: the pull request is absent (404) or closed, so a record has no home there.
+ *
+ * Deliberately not {@link ZERO_SCOPE}: this group widened `7` to *the eval set carries zero cases*,
+ * and one number may not carry two facts inside one group.
+ */
+export const TARGET_ABSENT = 20;
