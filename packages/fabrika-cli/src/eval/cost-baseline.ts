@@ -307,10 +307,9 @@ export const compareToBaseline = (
 	return {
 		...both,
 		verdict: delta <= 0 ? "at-or-below" : "above",
-		reason:
-			delta <= 0
-				? `candidate billed ${Math.round(-delta).toLocaleString("en-US")} token(s) under the baseline over ${baseline.runs.cases} case(s)`
-				: `candidate billed ${Math.round(delta).toLocaleString("en-US")} token(s) over the baseline over ${baseline.runs.cases} case(s)`,
+		// `Math.abs` before rounding, not after negating: an exact tie negates to `-0`, which formats
+		// as "-0 tokens under" and reads like a defect in the arithmetic rather than a clean pass.
+		reason: `candidate billed ${Math.round(Math.abs(delta)).toLocaleString("en-US")} token(s) ${delta <= 0 ? "under" : "over"} the baseline over ${baseline.runs.cases} case(s)`,
 		deltaBilled: delta,
 	};
 };
@@ -339,8 +338,13 @@ export const decodeCostBaseline = (
 		),
 	);
 
+/**
+ * Tab-indented, unlike `report.ts`'s `toJson`: this output is *committed*, so it is formatted the way
+ * biome formats committed JSON. A two-space file reds `pnpm lint` the moment it lands, and the fix
+ * would then be to reformat by hand every time a baseline is recorded.
+ */
 export const costBaselineToJson = (baseline: CostBaseline): string =>
-	`${JSON.stringify(baseline, null, 2)}\n`;
+	`${JSON.stringify(baseline, null, "\t")}\n`;
 
 const num = (n: number): string => Math.round(n).toLocaleString("en-US");
 

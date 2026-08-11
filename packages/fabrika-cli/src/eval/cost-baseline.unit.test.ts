@@ -197,7 +197,11 @@ describe("compareToBaseline — the phase-1 ceiling question", () => {
 
 	it("an exact tie is at-or-below — the ruled bar is ≤, not <", () => {
 		const candidate = value(foldLedgerRows([measured(1, 300, 100), measured(2, 300, 100)]));
-		assert.strictEqual(compareToBaseline(baseline, candidate).verdict, "at-or-below");
+		const verdict = compareToBaseline(baseline, candidate);
+		assert.strictEqual(verdict.verdict, "at-or-below");
+		// A tie reads "0 tokens under", never "-0" — the negated zero that reads like a defect.
+		assert.include(verdict.reason, "0 token(s) under");
+		assert.notInclude(verdict.reason, "-0");
 	});
 
 	it("dearer on the same corpus is above", () => {
