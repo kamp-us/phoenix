@@ -18,11 +18,9 @@ recorded for epic [#4649](https://github.com/kamp-us/phoenix/issues/4649).
 
 The run machine is therefore interchangeable, and that is the whole reason nothing here is personal:
 the procedure, the corpus, the runner and the verbs are all resident in the repo, so any clone can
-produce the same artifact. This is ADR
-[0273](../../../.decisions/0273-fabrika-ships-as-an-installed-plugin-from-day-one.md)'s rule applied
-to the runner — *a fabrika skill may depend only on inputs it can obtain by opening the repo it is
-installed into* — which is why the outputs land on committed files and PR comments and never on a
-home-directory path.
+produce the same artifact. This is ADR 0273's rule applied to the runner — *a fabrika skill may
+depend only on inputs it can obtain by opening the repo it is installed into* — which is why the
+outputs land on committed files and PR comments and never on a home-directory path.
 
 **Packaging the invocation as a repo-level skill is not this lane's.** The runner's shape is designed
 by [#4678](https://github.com/kamp-us/phoenix/issues/4678)'s lane, per the intake note on
