@@ -77,9 +77,15 @@ retried there (ADR 0253 §4); a legitimate retry wraps the whole five-run block 
 a fresh record. All five `no-verdict` makes a case `unmeasured`; zero measured cases makes the
 record `UNRECORDABLE` — read that as UNKNOWN, never as a zero.
 
-The record's bytes are on stdout, head-bound to your `--sha`, pinned to model + CLI + harness.
-`UNRECORDABLE` is the group's one sanctioned non-zero-with-stdout exit (`14`): the bytes are
-there, and step 5 posts them. Done when you hold the emitted bytes.
+The record's bytes are on stdout, head-bound to your `--sha`, pinned to model + CLI + harness —
+and they are there on **every** exit this verb reaches, not only `0`. `14` is the
+all-`no-verdict` `UNRECORDABLE`; `1` (the set could not be read), `4` (it decodes and does not
+conform) and `7` (it carries no graded case) each emit their **own** `UNRECORDABLE` naming which
+it was, and step 5 posts those exactly like any other record (founder ruling
+[#4678](https://github.com/kamp-us/phoenix/issues/4678) comment 5247447078; `recordNoMeasurement`
+in `packages/fabrika-cli/src/eval/command.ts`). The one exit that leaves nothing to post is a
+record that could not be **composed** — `1` with `cannot record this run` on stderr. Done when you
+hold the emitted bytes, or know the verb had none to give.
 
 ## 5 — Post on every outcome
 
@@ -112,9 +118,9 @@ The rows file is the run-row collection this session's `eval run` produced (or a
 you name); the verb turns rows into a two-axis scorecard with a baseline delta and recommends
 nothing. The committed series under `claude-plugins/fabrika/reports/eval/` is the downstream
 parse-and-commit consumer of your posted records
-([#4680](https://github.com/kamp-us/phoenix/issues/4680)); read it, never write it — the file
-shape and its pins are #4680's reserved call. Done when the numbers are reported without a
-verdict attached.
+([#4680](https://github.com/kamp-us/phoenix/issues/4680), shipped as `fabrika eval scorecard`);
+read it, and leave the writing to that verb — never hand-write a series file. Done when the
+numbers are reported without a verdict attached.
 
 ## The seam with `/review`
 
@@ -162,7 +168,7 @@ stop names the surface and files the gap. No row here dead-ends on a bare error.
 
 | Must exist | Why this skill needs it | When missing |
 | --- | --- | --- |
-| The target skill's `evals/evals.json` | every run verb decodes it; it is the set under measurement | **fail-loud** — unreadable is exit `1` naming the path, a decodable-but-invalid set is `4` with the reason, and a set carrying zero cases is `7` (ADR 0092); nothing spawns, and the run names the file and points at front-door. |
+| The target skill's `evals/evals.json` | every run verb decodes it; it is the set under measurement | **fail-loud** — unreadable is exit `1` naming the path, a decodable-but-invalid set is `4` with the reason, and a set carrying zero cases is `7` (ADR 0092); nothing spawns, and the run names the file and points at front-door. From `eval graded` those three exits also **emit a postable `UNRECORDABLE`** (step 4); from `eval cases` they emit none. |
 | The target skill's directory, passed as `--plugin-dir` | the `with-skill` arm measures the skill as installed | **fail-loud** — the spawn plan refuses an unreadable plugin dir before any model starts, naming the path. |
 | A git checkout whose `HEAD` resolves | the record binds the commit the skill's bytes were read from | **fail-loud** — no head, no `--sha`, no record: step 2 stops before any spawn and names the checkout. |
 | A pull request on the forge carrying the pinned head | the record's home is a PR comment (ADR 0253) | **degrade** — the RECORD-LOCAL terminal: the bytes wait at a named repo-relative path and the post is owed when a PR carries this head. |
@@ -188,30 +194,32 @@ merge, no labels, no branch mutation.
 Every run ends as exactly one of these, and every one of them leaves the branch **untouched**:
 
 - **RECORD-POSTED** — the record (either token) is a PR comment at the pinned head, read back
-  conforming. `eval post` exit `0`; covers a graded axis that exited `0` or `14`.
+  conforming. `eval post` exit `0`; covers a graded axis that exited `0` or `14`, **and** its
+  `1` / `4` / `7` no-measurement exits, each of which emits its own postable `UNRECORDABLE`.
 - **RECORD-LOCAL** — a record exists and is not posted; its bytes are at a named repo-relative
   path and you name what is owed. Covers no-PR-yet, and every `eval post` refusal that leaves the
-  record intact and unwritten: `17` (no such PR, or closed) owes **the post on the PR that carries
+  record intact and unwritten: `20` (no such PR, or closed) owes **the post on the PR that carries
   this head**, which is not the one you asked for; `11` (a precondition read failed — nothing was
   written) owes **the post**; `5` (the bytes carry a machine-local path) owes **a
-  redaction, then the post**; `16` (the comment sweep came back short, so the upsert could not be
-  proven) owes **a re-post once the sweep is complete**; `15` (the head moved) owes **a re-run at
+  redaction, then the post**; `19` (the comment sweep came back short, so the upsert could not be
+  proven) owes **a re-post once the sweep is complete**; `18` (the head moved) owes **a re-run at
   the new head** — never a re-post, because a record binds the tree it measured and is never
   re-bound. `3` / `4` / `6` mean the bytes you piped were not a record at all: the emitted record,
   if a run produced one, is still on disk, and that is this terminal too.
 - **SUITE-INCOMPLETE** — a back-off: the suite produced no postable record. `eval run` exit `13`
-  (planned runs did not all execute, and the ledger names which); `eval graded` exit `7`, where
-  the set carries no graded case at all, which you reach only *after* step 3 has spent on every
-  case in both arms; or `eval graded` exit `1`, where the runs completed and no record could be
-  composed from them. Nothing posted, and the spend already made is real — say so.
+  (planned runs did not all execute, and the ledger names which); or `eval graded` exit `1` in its
+  **cannot-compose** form — `cannot record this run` on stderr and no bytes on stdout, the one
+  graded exit that owes no post. Nothing posted, and the spend already made is real — say so.
 - **POST-UNKNOWN** — the post's outcome is unknown. Exit `8`: the write may or may not have
   landed — re-run `eval post` with the same bytes, whose upsert either edits what landed or
   creates what did not. Exit `9`: a comment landed and did **not** read back as this record, so
   **inspect the comment id the verb names before re-running** — a garbled comment does not match
   the upsert key, and a blind re-run would create a second comment for one `(head, cell)`.
-- **NOT-RUN** — refused before anything was measured: a malformed or zero-case set, an
-  unresolvable head, an unreadable plugin dir, or a refused request. Nothing spawned, nothing
-  spent, no record to owe.
+- **NOT-RUN** — refused before anything was measured *and before a record was emitted*: step 1's
+  `eval cases` refusing a malformed or zero-case set, an unresolvable head, an unreadable plugin
+  dir, or a refused request. Nothing spawned, nothing spent, no record to owe. Reaching the same
+  malformed or zero-case set through `eval graded` is **not** this terminal — that verb emits an
+  `UNRECORDABLE` naming which it was, and you owe the post (RECORD-POSTED).
 
 ## Eval enumeration (leaf-rule obligation)
 

@@ -10,10 +10,12 @@ that doc disagree, the doc wins and this spec is the bug.
 **Implementation ticket:** [#5411](https://github.com/kamp-us/phoenix/issues/5411) — `eval post`
 is specified here and does not exist yet.
 
-**Sequencing dependency, stated rather than hidden:** the reused group and the `eval-record` wire
-format land with PR [#5401](https://github.com/kamp-us/phoenix/pull/5401) (#4678's lane). This
-contract was authored against that PR's head (`59ce3b3a`) and is implementable only after it
-merges; the implementation ticket carries the same dependency.
+**Sequencing dependency, discharged:** the reused group and the `eval-record` wire format landed
+with PR [#5401](https://github.com/kamp-us/phoenix/pull/5401) (#4678's lane), squashed as
+`c1ec3937`. This contract was first authored against that PR's **pre-repair** head `59ce3b3a` and
+is re-derived here against the merged shape — which is a different shape, not a formality: the
+record payload's `unmeasuredCases` field and the group's `15`/`16`/`17` seats both arrived after
+`59ce3b3a`. Read every claim below against `packages/fabrika-cli/` on `main`.
 
 **`fabrika` calls `pipeline-cli` nowhere, and neither does the skill**
 ([ADR 0238](../../../../.decisions/0238-fabrika-reimplements-v1-never-calls-it.md)). GitHub
@@ -28,9 +30,10 @@ access per
 
 ### Reused, not respecified
 
-The six shipped `eval` verbs are this skill's deterministic layer, reused as landed —
-`check` · `cases` · `run` · `graded` · `report` (the group's sixth verb, `keeps`, prints the
-ruled-KEEP corpus and is not part of this skill's path)
+Five shipped `eval` verbs are this skill's deterministic layer, reused as landed —
+`check` · `cases` · `run` · `graded` · `report`. The group ships six more that this skill's path
+does not touch: `keeps` (the ruled-KEEP corpus), `baseline record` / `baseline compare` (#5404's
+cost ceiling), and `scorecard` / `trend` / `churn` (#5415's committed series and co-gate)
 (`packages/fabrika-cli/src/eval/command.ts`, seats in `src/eval/codes.ts`, mechanics in
 `src/eval/graded-axis.ts` and `src/eval/spawn.ts`, record format in `src/wire/eval-record.ts`,
 registered as `eval-record` in `src/wire/registry.ts`). A pointer to code cannot drift the way
@@ -53,9 +56,10 @@ the same tracked debt the sibling contracts carry.)
   both already specified elsewhere.
 - **A scorecard-commit verb writing `claude-plugins/fabrika/reports/eval/`.** The series file's
   shape, filename mechanics, and the #4637-ruling-4 pins reconciliation are
-  [#4680](https://github.com/kamp-us/phoenix/issues/4680)'s reserved call — the freeze-lift gate.
-  A runner-side writer would pre-decide it. This skill reads the series; the parse-and-commit
-  half is #4680's.
+  [#4680](https://github.com/kamp-us/phoenix/issues/4680)'s call — the freeze-lift gate. A
+  runner-side writer would pre-decide it. It has since **landed as `fabrika eval scorecard`**
+  (PR #5415), which changes nothing here: this skill still reads the series and never writes it,
+  and the writer it defers to is now a shipped verb rather than a pending one.
 - **A bar or gate verb.** The 100% floor, the 90% per-stage bar and the trend co-gate belong to
   the merge gate ([#4681](https://github.com/kamp-us/phoenix/issues/4681)); dispersion is
   recorded and never gates (ADR 0252). The runner emitting a PASS/FAIL is the exact polarity the
@@ -83,8 +87,17 @@ the same tracked debt the sibling contracts carry.)
 `eval post` allocates from the shipped group table (`packages/fabrika-cli/src/eval/codes.ts`) —
 never from a sibling contract's prose. Universal codes `0` / `1` / `2` / `127` carry the
 convention doc's meanings and are stated only here. Shared base seats are imported from
-`report/codes.ts` — `3`, `5`, `6`, `8`, `9` and `11`, each carrying the base meaning unchanged; the group's private band
-holds `12`–`14`, so this verb's own refusals seat at `15`, `16` and `17`. The group's `7`
+`report/codes.ts` — `3`, `5`, `6`, `8`, `9` and `11`, each carrying the base meaning unchanged.
+
+**The three new seats are derived from the tables as merged, never assumed.** `report/codes.ts`
+(the base every aligning group must clear — `exit-code-alignment.ts`) occupies
+`3`–`11`, `27` and `28`; the `eval` group holds `4` and `7` as shared seats and `12`–`17` as its
+own — `12` `INTEGRITY_VIOLATION`, `13` `RUNS_NOT_EXECUTED`, `14` `NO_MEASUREMENT`, `15`
+`ABOVE_BASELINE` (#5404), `16` `BASELINE_INCOMPARABLE` (#5404), `17` `NOT_COMMITTABLE` (#5415). The
+lowest three numbers free of both tables are therefore **`18`, `19` and `20`**, and that is where
+this verb's own refusals seat. An earlier draft of this contract seated them at `15`/`16`/`17`,
+which #5404 and #5415 have since occupied — re-derive against the shipped tables before trusting
+any number here. The group's `7`
 (`ZERO_SCOPE` — a set carrying no cases) is **not** reused for this verb's absent-target refusal:
 the base meaning and the group's widened meaning are different facts, and one number may not
 carry both inside one group.
@@ -98,9 +111,9 @@ carry both inside one group.
 | `8` | the create/edit failed — UNKNOWN whether a comment landed | import `WRITE_UNKNOWN` |
 | `9` | the comment landed but the read-back does not yield this record | import `READBACK_MISMATCH` |
 | `11` | a precondition read failed — nothing was written, the outcome is UNKNOWN | import `PRECONDITION_UNKNOWN` |
-| `15` | `STALE_HEAD` — the record's `sha` is not the PR's live head; re-run at the head, never re-bind | new seat |
-| `16` | `INCOMPLETE_SCAN` — the comment enumeration is provably short of the declared count, so the upsert match is unprovable | new seat |
-| `17` | `TARGET_ABSENT` — the PR is proven absent (404) or closed | new seat |
+| `18` | `STALE_HEAD` — the record's `sha` is not the PR's live head; re-run at the head, never re-bind | new seat |
+| `19` | `INCOMPLETE_SCAN` — the comment enumeration is provably short of the declared count, so the upsert match is unprovable | new seat |
+| `20` | `TARGET_ABSENT` — the PR is proven absent (404) or closed | new seat |
 
 ---
 
@@ -144,15 +157,15 @@ With `--json`:
    (the first non-blank line does not reach for the format) and `Malformed` (it reaches and
    fails, including every payload re-derivation the module refuses on) are both the `4` refusal
    with the wire reason verbatim on stderr. Empty stdin is `3`; a bare `@` path is `6`.
-2. **Resolve the PR.** Proven absent (404) or closed is `17` — a fresh seat, because this group's `7` already means *the eval set carries zero cases* and one number may not carry two facts inside one group. An unreadable PR is `11`.
+2. **Resolve the PR.** Proven absent (404) or closed is `20` — a fresh seat, because this group's `7` already means *the eval set carries zero cases* and one number may not carry two facts inside one group. An unreadable PR is `11`.
 3. **Compare the record's `sha` against the PR's live head** (prefix match, the format's own
-   binding relation). Not the live head is the `15` refusal: a record bound to a tree the PR has
+   binding relation). Not the live head is the `18` refusal: a record bound to a tree the PR has
    left is re-run at the new head, never re-bound — the stale-head class at the emit seam.
 4. **Leak-scan the record's bytes** — the predicate at
    `packages/fabrika-cli/src/report/leaks.ts`, imported. A machine-local path is `5`. A capture
    manifest's `transcriptPath` pasted into a record body is the expected offender.
 5. **Sweep the PR's comments, paginated and count-checked**, testing each body's first non-blank
-   line through the format's `read`. Received short of the declared count is `16` — a short
+   line through the format's `read`. Received short of the declared count is `19` — a short
    sweep could create a duplicate where an edit was owed. A comment that reaches for the format
    and fails it is surfaced as a stderr notice with its comment id, never silently dropped.
 6. **Upsert on the `(head, cell)` key** (ADR 0253: one comment per `(head, cell)`, latest in
@@ -177,9 +190,9 @@ With `--json`:
 | `8` | the create/edit failed — UNKNOWN whether a comment landed |
 | `9` | the comment landed but the read-back does not yield this record byte-conforming |
 | `11` | the PR, its live head, or its comment list could not be read — nothing was written |
-| `15` | the record's `sha` is not the PR's live head — re-run the suite at the head, never re-bind the record |
-| `16` | the comment enumeration is provably short of the declared count — the upsert match is unprovable, and a blind create could shadow an edit |
-| `17` | the PR is proven absent (404) or closed — a record has no home here |
+| `18` | the record's `sha` is not the PR's live head — re-run the suite at the head, never re-bind the record |
+| `19` | the comment enumeration is provably short of the declared count — the upsert match is unprovable, and a blind create could shadow an edit |
+| `20` | the PR is proven absent (404) or closed — a record has no home here |
 
 **Errors**
 
@@ -189,13 +202,13 @@ With `--json`:
 | `eval post: stdin does not read as an eval record (absent or malformed: <wire reason>) — post the emitted bytes, never a hand-assembled comment.` | 4 | refusal |
 | `eval post: the record carries a machine-local path at line <k> (<class>) — a transcriptPath is machine-local and perishable; strip it (ADR 0273).` | 5 | refusal |
 | `eval post: the body is a bare "@" path reference — the record never arrived. Pipe its bytes on stdin.` | 6 | refusal |
-| `eval post: PR #<n> not found in <repo>.` | 17 | refusal |
-| `eval post: PR #<n> is closed — a record there enters no series; post on the PR that carries this head.` | 17 | refusal |
+| `eval post: PR #<n> not found in <repo>.` | 20 | refusal |
+| `eval post: PR #<n> is closed — a record there enters no series; post on the PR that carries this head.` | 20 | refusal |
 | `eval post: create/edit failed: <reason> — UNKNOWN whether the record landed; sweep the PR's comments before retrying.` | 8 | refusal |
 | `eval post: posted, but the read-back does not yield this record (<wire reason>) — the PR may carry a garbled record; inspect comment <id> before re-running, since a garbled comment does not match the upsert key.` | 9 | refusal |
 | `eval post: cannot read <what> for #<n>: <reason> — nothing was posted.` | 11 | refusal |
-| `eval post: PR #<n>'s head is <live>, not <sha> — the tree this record measured is gone; re-run the suite at <live>, never re-bind (ADR 0253).` | 15 | refusal |
-| `eval post: received <k> of <m> declared comments on #<n> — refusing the partial sweep; a blind create could shadow the edit this record owes.` | 16 | refusal |
+| `eval post: PR #<n>'s head is <live>, not <sha> — the tree this record measured is gone; re-run the suite at <live>, never re-bind (ADR 0253).` | 18 | refusal |
+| `eval post: received <k> of <m> declared comments on #<n> — refusing the partial sweep; a blind create could shadow the edit this record owes.` | 19 | refusal |
 | `eval post: comment <id> reaches for the eval-record format and fails it: <wire reason>.` | 0 | notice |
 
 **Scope** — one PR: its metadata and live head, its full comment list (paginated,
@@ -221,7 +234,7 @@ $ fabrika eval post 9041 --json < record.txt
 $ fabrika eval post 9041 < record.txt
 eval post: PR #9041's head is 7be402c1, not 03135b91 — the tree this record measured is gone; re-run the suite at 7be402c1, never re-bind (ADR 0253).
 $ echo $?
-15
+18
 ```
 
 (The comment URLs and numbers above are sample data, not real targets.)
@@ -233,13 +246,13 @@ $ echo $?
 - #3173's class — a hand-rolled `gh api` emit posted garbage and self-reported success; one
   sanctioned emit path with an unconditional live-state read-back is the cure, the same shape
   `review post` ships.
-- #3769 / #4338's class — staleness read as current; the `15` refusal keeps a measured tree and
+- #3769 / #4338's class — staleness read as current; the `18` refusal keeps a measured tree and
   a live tree from being conflated at the write seam.
 - #4679 comment 5247166010 / 5247171842 — results land on portable surfaces only; this verb is
   the portable-surface write, and its leak scan is what keeps a machine-local `transcriptPath`
   out of it.
 - `review post` (the sibling emit verb) seats its stale-head refusal on `12`; this group's `12`
-  is `INTEGRITY_VIOLATION`, so the same fact seats locally at `15` — cross-group divergence
+  is `INTEGRITY_VIOLATION`, so the same fact seats locally at `18` — cross-group divergence
   above `11` is the doctrine, and the shared refusal is deliberately re-seated, not imported.
 
 ---
@@ -251,7 +264,7 @@ row of its own:
 
 | Must exist | Why this group needs it | When missing |
 | --- | --- | --- |
-| A pull request on the resolved repo carrying the record's head | the record's storage is a PR comment (ADR 0253) | **degrade** — the skill's `RECORD-LOCAL` terminal: the bytes wait at a stated repo-relative path; `eval post` itself simply refuses `17` on a PR that is not there. |
+| A pull request on the resolved repo carrying the record's head | the record's storage is a PR comment (ADR 0253) | **degrade** — the skill's `RECORD-LOCAL` terminal: the bytes wait at a stated repo-relative path; `eval post` itself simply refuses `20` on a PR that is not there. |
 
 ## The eval-enumeration obligation (leaf rule)
 

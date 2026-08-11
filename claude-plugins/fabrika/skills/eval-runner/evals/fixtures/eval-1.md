@@ -71,6 +71,7 @@ eval: RECORDED @ 4f2a9c1e5b7d3a80c6e2f194d8b0a35c7e9f1b2d — review/skill 1 (2/
   "gradedRuns": 2,
   "passedRuns": 2,
   "passRate": 1,
+  "unmeasuredCases": 0,
   "cases": [
     {
       "caseId": 3,
