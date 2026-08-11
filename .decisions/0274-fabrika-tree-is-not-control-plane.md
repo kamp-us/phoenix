@@ -65,11 +65,12 @@ The ruling has four parts, as ruled:
    `claude-plugins/fabrika/`. **That non-coverage is this decision, not an oversight**, and it is not
    to be closed by a hand-widening.
 2. **The substituted control is the machine gate plus after-the-fact visibility, not a human click.**
-   The `governance` namespace becomes a requirement the diff derives rather than the caller asserts —
-   a fabrika-tree diff gates on `governance` whether or not the shipping session asked for it — and
-   the §CP digest readout carries every fabrika-tree landing to the founder. The two halves are one
+   The `governance` namespace is a requirement the diff derives rather than the caller asserts — a
+   fabrika-tree diff gates on `governance` whether or not the shipping session asked for it — and the
+   §CP digest readout is to carry every fabrika-tree landing to the founder. The two halves are one
    control: the gate is what holds a change, the readout is what makes a change that got through
-   visible.
+   visible. Both halves are ruled, and the blocking half is ruled to be **CI-enforced** — see
+   `## Records` for where enforcement actually stands.
 3. **Unchanged and explicitly kept §CP:** `.github/**` including `.github/CODEOWNERS`, and everything
    the existing matcher already covers. The platform enforces those regardless of anything here.
 4. **The accepted limit, recorded so nobody re-derives it as a defect.** The machine chain missed
@@ -117,12 +118,13 @@ The ruling has four parts, as ruled:
   `governance` to the required set whenever the diff touches a governance root, and the root list in
   [`packages/fabrika-cli/src/review/classes.ts`](../packages/fabrika-cli/src/review/classes.ts)
   (`.decisions/`, `.claude/`, `.github/`, `claude-plugins/`) covers the fabrika tree by prefix.
-- **Enforcement status as of 2026-08-11: the substituted control is not yet machine-binding.** A
-  missing `governance` verdict yields a `blocked` answer at exit 0, no workflow under
-  `.github/workflows/` invokes `fabrika ship gate`, and the `Governance readout` artifact the digest
-  half reads does not exist yet — so today the stop is skill prose, not a gate. This is a gap in
-  implementation, not a qualification of the ruling above; it is filed separately through the report
-  seam.
+- **The substituted control is ruled-to-become-binding, not in force as written.** As of 2026-08-11
+  the `governance` floor does not bind at the machine level, and the founder ruled that it must —
+  CI reads the governance verdict on fabrika-tree diffs and reds without it; prose discipline in the
+  ship skill is not the design (#5036 comment `5247639303`). The gap is tracked at
+  [#5408](https://github.com/kamp-us/phoenix/issues/5408). That hardening does not reopen the §CP
+  question and does not revise the accepted "visible, not impossible" limit above — it makes the
+  blocking half real.
 - No vocabulary impact: this decides merge authority over already-named concepts (§CP, the
   `governance` verdict, the digest readout), and coins nothing. `governance` already carries its row
   in [`.glossary/TERMS.md`](../.glossary/TERMS.md).
