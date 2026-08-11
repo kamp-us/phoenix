@@ -83,3 +83,13 @@ export const ABOVE_BASELINE = 15;
  * let a caller treat "could not compare" as a pass.
  */
 export const BASELINE_INCOMPARABLE = 16;
+
+/**
+ * Proven: a scorecard was assembled and is not committable — a pin is blank, a cell cites no eval
+ * record, or two cells claim one cell key.
+ *
+ * Its own seat rather than {@link MALFORMED_DOCUMENT} because the artifact is well-formed and the
+ * remedy is upstream: the run that produced the records has to name what it was measured on. The pin
+ * is a precondition of the artifact, not a field a writer may leave out (#4637 ruling 4).
+ */
+export const NOT_COMMITTABLE = 17;
