@@ -863,7 +863,7 @@ even one judgment assertion cannot be read off an exit status, so it runs **five
 fabrika eval graded <evals.json> \
   --stage review --surface skill --model <model> \
   --plugin-dir <the changed skill's plugin dir> --sha <the head under review> \
-  [--runs 5] [--harness <version>] [--timeout-ms 900000] [--out record.md]
+  [--harness <version>] [--timeout-ms 900000] [--out record.md]
 ```
 
 `graded-axis.ts` is the **pure** core — the protocol, the median, the record construction — driven by
@@ -875,7 +875,11 @@ process boundary.
 
 Each run is two invocations: the case's own prompt against the candidate skill, then a **grader**
 handed that output plus the case's authored `expected_output` and `expectations` **verbatim**
-(`composeGraderPrompt`). No rubric is declared here, so the judgment a case receives in a review is
+(`composeGraderPrompt`). So the ruled five runs cost **ten model spawns per graded case**, at a
+default 15-minute timeout each — and the count is deliberately **not a flag** on the verb: a record
+produced at fewer runs carries the same token, clause and rate as a ruled one, so no consumer could
+tell. `runGradedAxis`'s `runs` parameter stays for the unit tier, which drives 2-, 3- and 4-run sets
+to make the even-split rule testable. No rubric is declared here, so the judgment a case receives in a review is
 the judgment its authoring session defined. A unit test holds that open: it strips the case's own text
 and the fixed instruction block out of a composed prompt and asserts nothing is left.
 
@@ -917,7 +921,13 @@ Because the answer no longer returns into a CI job, it is **left behind**: `buil
 the head-bound eval record (`../wire/eval-record.ts`, ADR 0253) the review posts as a PR comment, and
 CI's later leg ([#4681](https://github.com/kamp-us/phoenix/issues/4681)) verifies that record instead
 of reproducing the run. A record is emitted on **every** outcome, so `missing`, `stale`, `below-bar`
-and `unrecordable` stay four distinguishable states for that verifier. The exit code says only whether
+and `unrecordable` stay four distinguishable states for that verifier — **including the runs that
+never reached a case**: an unreadable set (exit `1`), one that does not conform (`4`) and one with no
+graded case (`7`) each emit an `UNRECORDABLE` record whose clause names which it was, on the founder
+ruling at [#4678 comment 5247447078](https://github.com/kamp-us/phoenix/issues/4678#issuecomment-5247447078)
+(explicit beats implicit for error cases). Silence there would reach #4681 as `missing`, byte-identical
+to a review that never ran the axis. A bad `--stage`/`--surface` is the operator's own mistake, not a
+fact about the set, so it is validated first and records nothing. The exit code says only whether
 a measurement exists — a below-bar rate exits `0`, because whether a rate clears the ruled bar is
 #4681's judgement and appears nowhere in this module.
 
@@ -980,6 +990,13 @@ against it, not against the issue bodies, which still leave all three values unn
 - **Two spellings, two levels, on purpose.** The cell aggregate is `gradedRuns` / `passedRuns` /
   `passRate`, matching `ScorecardCell`; the per-case block is `runs` / `passed` / `dispersion`,
   matching ADR 0252 §1.
+- **`unmeasuredCases` rides beside the cell aggregate**, because it is the one fact that aggregate
+  cannot express: a cell that graded three of four cases reports `3/3 = 1.0`, and without the field
+  #4680's committed row hides the case that never ran.
+- **Both levels are re-derived on read.** `read` refuses a record whose `gradedRuns` / `passedRuns` /
+  `unmeasuredCases` disagree with its own case blocks, exactly as it refuses a `dispersion` that
+  disagrees with its own run counts — so a claim of ten graded cases over two blocks, or over none,
+  is `Malformed` rather than a plausible measurement nobody took.
 
 ## Out of scope
 

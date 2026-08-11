@@ -351,6 +351,12 @@ export type EvalRecordBuild =
  * would reach the verifier as `missing`, reddening for the wrong reason and destroying the number
  * #4680's trend reads. `missing`, `stale`, `below-bar` and `unrecordable` stay four distinguishable
  * states, and none of them is judged here: the 90% bar is #4681's and appears nowhere in this module.
+ *
+ * That extends to the runs that never reached a case: an eval set that could not be read, one that
+ * does not conform, and one carrying no graded case each record `UNRECORDABLE` naming *which* of
+ * them it was, via `noMeasurement` (founder ruling, #4678 comment 5247447078 — explicit beats
+ * implicit for error cases). Silence there would reach #4681 as `missing`, indistinguishable from a
+ * review that never ran the axis at all.
  */
 export const buildEvalRecord = (args: {
 	readonly sha: string;
@@ -358,6 +364,8 @@ export const buildEvalRecord = (args: {
 	readonly cell: EvalRecordCell;
 	readonly pins: EvalRecordPins;
 	readonly results: ReadonlyArray<GradedCaseResult>;
+	/** Why nothing was measured, when the axis never reached a case. Only read on `UNRECORDABLE`. */
+	readonly noMeasurement?: string;
 }): EvalRecordBuild => {
 	const sha = headSha(args.sha);
 	if (sha === null) {
@@ -380,7 +388,7 @@ export const buildEvalRecord = (args: {
 	const text = makeClause(
 		outcome === "RECORDED"
 			? `${args.cell.stage}/${surface} ${aggregate.passRate} (${aggregate.passedRuns}/${aggregate.gradedRuns} cases, ${unmeasured} unmeasured)`
-			: `${args.cell.stage}/${surface} no measurement — ${unmeasured} case(s) returned no verdict`,
+			: `${args.cell.stage}/${surface} no measurement — ${args.noMeasurement ?? `${unmeasured} case(s) returned no verdict`}`,
 	);
 	if (text === null) {
 		// Unreachable: every branch above composes a non-blank clause from literals.
@@ -398,6 +406,7 @@ export const buildEvalRecord = (args: {
 				cell: args.cell,
 				pins: args.pins,
 				...aggregate,
+				unmeasuredCases: unmeasured,
 				cases: args.results.map(caseBlock),
 			},
 		},

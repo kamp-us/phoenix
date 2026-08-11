@@ -50,6 +50,7 @@ const RECORD: EvalRecord = {
 		pins: {model: "claude-opus-4-6", cli: "2.1.220", harness: "fabrika 0.1.0"},
 		gradedRuns: 2,
 		passedRuns: 1,
+		unmeasuredCases: 0,
 		passRate: 0.5,
 		cases: [
 			{
@@ -82,6 +83,28 @@ const refusal = (artifact: string): {tag: string; reason: string} => {
 const withPayload = (payload: unknown, marker = `eval: RECORDED @ ${HEAD} — a clause`): string =>
 	`${marker}\n\n\`\`\`json\n${JSON.stringify(payload)}\n\`\`\`\n`;
 
+/** One passing and one failing case — the honest cell aggregate is `1/2 = 0.5`, 0 unmeasured. */
+const TWO_CASES = [
+	{
+		caseId: 1,
+		verdict: "pass",
+		runs: 5,
+		passed: 4,
+		noVerdict: 0,
+		dispersion: 1,
+		perRun: ["pass", "pass", "fail", "pass", "pass"],
+	},
+	{
+		caseId: 2,
+		verdict: "fail",
+		runs: 5,
+		passed: 0,
+		noVerdict: 0,
+		dispersion: 0,
+		perRun: ["fail", "fail", "fail", "fail", "fail"],
+	},
+];
+
 const payloadOf = (over: Record<string, unknown> = {}): Record<string, unknown> => ({
 	sha: HEAD,
 	recordedAt: "2026-08-10T04:08:00Z",
@@ -89,6 +112,7 @@ const payloadOf = (over: Record<string, unknown> = {}): Record<string, unknown> 
 	pins: {model: "m", cli: "c", harness: "h"},
 	gradedRuns: 1,
 	passedRuns: 1,
+	unmeasuredCases: 0,
 	passRate: 1,
 	cases: [
 		{
@@ -178,9 +202,45 @@ describe("a record that drifted is Malformed — never a measurement nobody took
 	});
 
 	it("refuses a pass rate its own denominator contradicts", () => {
-		const {tag, reason} = refusal(withPayload(payloadOf({gradedRuns: 2, passedRuns: 1})));
+		const {tag, reason} = refusal(
+			withPayload(payloadOf({gradedRuns: 2, passedRuns: 1, passRate: 1, cases: TWO_CASES})),
+		);
 		expect(tag).toBe("Malformed");
 		expect(reason).toContain("passRate");
+	});
+
+	// The cell half of the re-derivation promise. Both of these read back `Found` before the fix that
+	// added it, publishing a figure the record's own case blocks contradict (review-code on #5401).
+	it("refuses a cell aggregate its own case blocks contradict", () => {
+		const {tag, reason} = refusal(
+			withPayload(payloadOf({gradedRuns: 10, passedRuns: 10, passRate: 1, cases: TWO_CASES})),
+		);
+		expect(tag).toBe("Malformed");
+		expect(reason).toContain("gradedRuns");
+	});
+
+	it("refuses graded cases claimed over an empty cases array", () => {
+		const {tag, reason} = refusal(
+			withPayload(payloadOf({gradedRuns: 10, passedRuns: 10, passRate: 1, cases: []})),
+		);
+		expect(tag).toBe("Malformed");
+		expect(reason).toContain("0 graded case(s)");
+	});
+
+	it("refuses an unmeasuredCases count the case blocks contradict", () => {
+		const {tag, reason} = refusal(
+			withPayload(
+				payloadOf({
+					gradedRuns: 2,
+					passedRuns: 1,
+					passRate: 0.5,
+					unmeasuredCases: 1,
+					cases: TWO_CASES,
+				}),
+			),
+		);
+		expect(tag).toBe("Malformed");
+		expect(reason).toContain("unmeasuredCases");
 	});
 
 	it("refuses a case whose passed and no-verdict counts exceed its runs", () => {
@@ -230,6 +290,7 @@ describe("RECORDED and UNRECORDABLE are about whether a measurement exists", () 
 				payloadOf({
 					gradedRuns: 0,
 					passedRuns: 0,
+					unmeasuredCases: 1,
 					passRate: 0,
 					cases: [
 						{
@@ -260,7 +321,7 @@ describe("RECORDED and UNRECORDABLE are about whether a measurement exists", () 
 
 	it("accepts a below-bar rate — the bar belongs to the merge gate, not the record", () => {
 		const result = read(
-			withPayload(payloadOf({gradedRuns: 10, passedRuns: 1, passRate: 0.1, cases: []})),
+			withPayload(payloadOf({gradedRuns: 2, passedRuns: 1, passRate: 0.5, cases: TWO_CASES})),
 		);
 		expect(result._tag).toBe("Found");
 	});

@@ -87,8 +87,11 @@ Two things about the agreement are deliberate and easy to undo by accident. Its 
 `RECORDED` or `UNRECORDABLE` and never a pass/fail polarity: a polarity would have to mean *pass
 against what*, and the only candidate is the merge bar, which belongs to the gate and not to the
 measurement. And every aggregate it carries is re-derived from the numbers beside it when it is read
-— the pass rate against its own denominator, each case's dispersion against its own run counts — so
-a record cannot publish a figure its own contents contradict. A run that produced no measurement at
+— each case's dispersion against its own run counts, and the cell's graded, passing and unmeasured
+case counts against the case blocks themselves, with the pass rate against that denominator — so a
+record cannot publish a figure its own contents contradict, at either level. A record claiming ten
+graded cases over two case blocks, or over none at all, is refused rather than read back. A run that
+produced no measurement at
 all says so rather than reporting a zero, because a zero somebody measured and a zero nobody measured
 are the two facts the reader most needs to keep apart.
 

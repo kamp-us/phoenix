@@ -2,11 +2,17 @@
  * The `eval-record` document — what one graded review run leaves behind, bound to the head it ran
  * against.
  *
- *     eval: RECORDED @ 03135b91 — review/skill 0.95 (19/20 runs, dispersion 1)
+ *     eval: RECORDED @ 03135b91 — review/skill 0.95 (19/20 cases, 1 unmeasured)
  *
  *     ```json
  *     { "sha": …, "recordedAt": …, "cell": …, "pins": …, "gradedRuns": …, "cases": [ … ] }
  *     ```
+ *
+ * The clause counts **cases, not invocations** — one graded case is one graded run at cell level, and
+ * the five executions behind it live in its case block. Counting invocations would double-count
+ * variance: a flaky 3-of-5 case would contribute three wins instead of one pass, which is what taking
+ * a median was for. Ruled on #5258; ADR 0253 §5's `19/20 runs` example is wrong and is corrected
+ * there, not here.
  *
  * ADR 0253 fixes every choice here — the `eval` root, the `RECORDED | UNRECORDABLE` token instead of
  * a polarity, the PR-comment home, and the field inventory. Two of its rules are the ones a future
@@ -16,8 +22,10 @@
  *   only candidate is the 90% bar that belongs to the merge gate (#4681). A marker spelled with one
  *   is `Malformed`, so the bar cannot re-enter through the record.
  * - **A stored aggregate whose inputs are absent is a number nobody can check** (ADR 0252 §1). Every
- *   aggregate here is re-derived from the fields beside it and refused when it disagrees, so a record
- *   cannot publish a `dispersion` or a `passRate` its own case blocks contradict.
+ *   aggregate here is re-derived from the fields beside it and refused when it disagrees — the case
+ *   block's `dispersion` from its own run counts, and the cell's `gradedRuns` / `passedRuns` /
+ *   `unmeasuredCases` / `passRate` from the case blocks themselves. So a record cannot publish a
+ *   figure its own contents contradict, in either direction.
  *
  * The head binding is **reused, not re-invented**: `HeadSha`, `Clause` and `bindToHead` come from
  * `./verdict-marker.ts`, so there is one notion of "bound to a head" in the package. What is new is
@@ -26,7 +34,14 @@
  */
 
 import type {NonEmptyReadonlyArray, WireEmit, WireRead, WireReadLines} from "./format.ts";
-import {CLAUSE_SEPARATOR, type Clause, clause, type HeadSha, headSha} from "./verdict-marker.ts";
+import {
+	CLAUSE_SEPARATOR,
+	type Clause,
+	clause,
+	type HeadSha,
+	headSha,
+	sameHead,
+} from "./verdict-marker.ts";
 
 declare const RECORDED_AT: unique symbol;
 
@@ -92,6 +107,10 @@ export interface EvalCaseBlock {
  * The two levels use two spellings on purpose (ADR 0253 §5): `gradedRuns` / `passedRuns` / `passRate`
  * are the *cell* aggregate and match `ScorecardCell`, so #4680 commits a row without renaming
  * anything; `runs` / `passed` / `dispersion` are the *case* block and match ADR 0252 §1.
+ *
+ * `unmeasuredCases` is carried as its own integer rather than left to prose, because it is the one
+ * fact `gradedRuns` / `passedRuns` cannot express: a cell that graded three of four cases reports
+ * `3/3 = 1.0`, and without this field the committed row (#4680) hides the case that never ran.
  */
 export interface EvalRecordPayload {
 	readonly sha: HeadSha;
@@ -100,6 +119,7 @@ export interface EvalRecordPayload {
 	readonly pins: EvalRecordPins;
 	readonly gradedRuns: number;
 	readonly passedRuns: number;
+	readonly unmeasuredCases: number;
 	readonly passRate: number;
 	readonly cases: ReadonlyArray<EvalCaseBlock>;
 }
@@ -229,7 +249,7 @@ const readPayload = (text: string, outcome: EvalOutcome, markerSha: HeadSha): Pa
 
 	const sha = headSha(stringField(parsed, "sha") ?? "");
 	if (sha === null) return {_tag: "No", reason: "the payload names no head SHA"};
-	if (!sha.startsWith(markerSha) && !markerSha.startsWith(sha)) {
+	if (!sameHead(sha, markerSha)) {
 		return {
 			_tag: "No",
 			reason: `the payload is bound to ${sha} and the marker to ${markerSha} — one record, one head`,
@@ -269,9 +289,13 @@ const readPayload = (text: string, outcome: EvalOutcome, markerSha: HeadSha): Pa
 
 	const gradedRuns = numberField(parsed, "gradedRuns");
 	const passedRuns = numberField(parsed, "passedRuns");
+	const unmeasuredCases = numberField(parsed, "unmeasuredCases");
 	const passRate = numberField(parsed, "passRate");
-	if (gradedRuns === null || passedRuns === null || passRate === null) {
-		return {_tag: "No", reason: "the payload is missing one of gradedRuns, passedRuns, passRate"};
+	if (gradedRuns === null || passedRuns === null || unmeasuredCases === null || passRate === null) {
+		return {
+			_tag: "No",
+			reason: "the payload is missing one of gradedRuns, passedRuns, unmeasuredCases, passRate",
+		};
 	}
 	const casesRaw = parsed.cases;
 	if (!Array.isArray(casesRaw)) return {_tag: "No", reason: "the payload carries no cases array"};
@@ -280,6 +304,31 @@ const readPayload = (text: string, outcome: EvalOutcome, markerSha: HeadSha): Pa
 		const block = readCaseBlock(raw, index);
 		if (typeof block === "string") return {_tag: "No", reason: block};
 		cases.push(block);
+	}
+
+	// The cell aggregate is re-derived from the case blocks, exactly as `readCaseBlock` re-derives a
+	// case's dispersion from its runs. Without this the cell half of the promise above was false: a
+	// record claiming 10/10 over blocks summing to 1/2 — or over an EMPTY `cases` array — read back
+	// Found, publishing a measurement nobody took as if it had been checked (review-code on #5401).
+	const gradedCases = cases.filter((block) => block.verdict !== "unmeasured");
+	const derivedPassed = gradedCases.filter((block) => block.verdict === "pass").length;
+	if (gradedRuns !== gradedCases.length) {
+		return {
+			_tag: "No",
+			reason: `gradedRuns is ${gradedRuns}; the case blocks carry ${gradedCases.length} graded case(s)`,
+		};
+	}
+	if (passedRuns !== derivedPassed) {
+		return {
+			_tag: "No",
+			reason: `passedRuns is ${passedRuns}; the case blocks carry ${derivedPassed} passing case(s)`,
+		};
+	}
+	if (unmeasuredCases !== cases.length - gradedCases.length) {
+		return {
+			_tag: "No",
+			reason: `unmeasuredCases is ${unmeasuredCases}; the case blocks carry ${cases.length - gradedCases.length}`,
+		};
 	}
 
 	// The token and the denominator are one fact: `RECORDED` over nothing is the vacuous green ADR
@@ -310,6 +359,7 @@ const readPayload = (text: string, outcome: EvalOutcome, markerSha: HeadSha): Pa
 			pins: {model: pinModel, cli: pinCli, harness: pinHarness},
 			gradedRuns,
 			passedRuns,
+			unmeasuredCases,
 			passRate,
 			cases,
 		},
@@ -420,7 +470,7 @@ export const renderRecord = (record: EvalRecord): NonEmptyReadonlyArray<string> 
 	`recordedAt\t${record.payload.recordedAt}`,
 	`cell\t${record.payload.cell.stage}\t${record.payload.cell.surface ?? ""}\t${record.payload.cell.model}`,
 	`pins\t${record.payload.pins.model}\t${record.payload.pins.cli}\t${record.payload.pins.harness}`,
-	`rate\t${record.payload.passedRuns}/${record.payload.gradedRuns}\t${record.payload.passRate}`,
+	`rate\t${record.payload.passedRuns}/${record.payload.gradedRuns}\t${record.payload.passRate}\tunmeasured ${record.payload.unmeasuredCases}`,
 	...record.payload.cases.map(
 		(block) =>
 			`case\t${block.caseId}\t${block.verdict}\t${block.passed}/${block.runs}\tnoVerdict ${block.noVerdict}\tdispersion ${block.dispersion}\t${block.perRun.join(",")}`,

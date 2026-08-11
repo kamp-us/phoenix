@@ -267,6 +267,25 @@ describe("the record is head-bound and written on every outcome", () => {
 		expect(built.record.clause).toContain("no measurement");
 	});
 
+	// The founder ruling on #4678 (comment 5247447078): a run that never reached a case still records,
+	// naming which failure it was, so #4681 can tell a broken eval set from a review that never ran.
+	it("records UNRECORDABLE naming why, for a run that never reached a case", () => {
+		const built = buildEvalRecord({
+			sha: HEAD,
+			recordedAt: "2026-08-10T04:08:00Z",
+			cell,
+			pins,
+			results: [],
+			noMeasurement: "evals.json carries no graded case",
+		});
+		expect(built._tag).toBe("Record");
+		if (built._tag !== "Record") return;
+		expect(built.record.outcome).toBe("UNRECORDABLE");
+		expect(built.record.payload.gradedRuns).toBe(0);
+		expect(built.record.payload.cases).toEqual([]);
+		expect(built.record.clause).toContain("carries no graded case");
+	});
+
 	it("refuses to build a record bound to something that is not a head", () => {
 		const built = buildEvalRecord({
 			sha: "HEAD~1",

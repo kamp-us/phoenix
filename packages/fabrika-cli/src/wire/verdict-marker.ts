@@ -223,7 +223,15 @@ export type Binding =
 	| {readonly _tag: "Stale"; readonly markerSha: HeadSha; readonly head: HeadSha}
 	| {readonly _tag: "Unbindable"; readonly reason: string};
 
-/** Either side may be abbreviated, so the match is a prefix in whichever direction is shorter. */
+/**
+ * Whether two head SHAs name the same commit. Either side may be abbreviated, so the match is a
+ * prefix in whichever direction is shorter.
+ *
+ * Exported because {@link bindToHead} is not the only caller: `eval-record.ts` asks the same question
+ * of a payload against its own marker line. One copy, so the prefix rule cannot drift between them.
+ */
+export const sameHead = (a: HeadSha, b: HeadSha): boolean => a.startsWith(b) || b.startsWith(a);
+
 export const bindToHead = (marker: VerdictMarker, head: string): Binding => {
 	const resolved = headSha(head);
 	if (resolved === null) {
@@ -232,8 +240,7 @@ export const bindToHead = (marker: VerdictMarker, head: string): Binding => {
 			reason: `"${head.trim()}" is not a head SHA — the marker's binding cannot be judged`,
 		};
 	}
-	const current = marker.sha.startsWith(resolved) || resolved.startsWith(marker.sha);
-	return current
+	return sameHead(marker.sha, resolved)
 		? {_tag: "Current", sha: marker.sha}
 		: {_tag: "Stale", markerSha: marker.sha, head: resolved};
 };

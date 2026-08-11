@@ -47,7 +47,6 @@ import {
 	buildEvalRecord,
 	candidateOutputOf,
 	composeGraderPrompt,
-	GRADED_RUNS,
 	gradableCase,
 	graderResponseOf,
 	readGraderVerdict,
@@ -552,13 +551,6 @@ const harnessFlag = Flag.string("harness").pipe(
 	),
 );
 
-const runsFlag = Flag.integer("runs").pipe(
-	Flag.withDefault(GRADED_RUNS),
-	Flag.withDescription(
-		`how many times each graded case is executed before the median is taken (default: ${GRADED_RUNS}, the ruled count)`,
-	),
-);
-
 const recordOutFlag = Flag.string("out").pipe(
 	Flag.optional,
 	Flag.withDescription("also write the record's bytes here; they always go to stdout"),
@@ -577,6 +569,12 @@ const recordOutFlag = Flag.string("out").pipe(
  *
  * The exit code reports **whether a measurement exists**, never whether it was good. A below-bar
  * rate exits `0` with its number in the record, because the ruled bar is #4681's judgement.
+ *
+ * **The run count is not a flag.** Five is the ruled count (#4637 ruling 4), and a record produced at
+ * one run is indistinguishable at the gate from one produced at five — same token, same clause shape,
+ * same rate — so a flag would make the ruled protocol optional at no cost to the record, under the
+ * exact cost pressure that makes cutting it tempting. `runGradedAxis`'s `runs` parameter stays for the
+ * unit tier; re-adding a flag needs #4681 asserting `every case.runs === GRADED_RUNS` first.
  */
 const graded = leafCommand(
 	"graded",
@@ -588,24 +586,15 @@ const graded = leafCommand(
 		pluginDir: pluginDirFlag,
 		sha: shaFlag,
 		harness: harnessFlag,
-		runs: runsFlag,
 		timeoutMs: timeoutFlag,
 		out: recordOutFlag,
 	},
 	Effect.fn(function* (opts) {
 		const run = Effect.gen(function* () {
 			const fs = yield* FileSystem.FileSystem;
-			const text = yield* Effect.mapError(
-				fs.readFileString(opts.path),
-				() => new EvalSetUnreadable({path: opts.path}),
-			);
-			const decoded = decodeSkillEvalSet(text);
-			if (Result.isFailure(decoded)) {
-				yield* Console.error(
-					`fabrika eval: ${opts.path} is not a valid skill eval set (${decoded.failure.reason}): ${decoded.failure.message}`,
-				);
-				return yield* Effect.sync(() => process.exit(MALFORMED_DOCUMENT));
-			}
+			// The invocation is validated *before* the set is read, so the two kinds of failure stay
+			// apart: a bad --stage/--surface is the operator's own mistake and records nothing, while
+			// every refusal below is a fact about the eval set and therefore leaves a record.
 			if (!isStageName(opts.stage)) {
 				yield* Console.error(
 					`fabrika eval: --stage '${opts.stage}' is not a known stage (${STAGES.join(", ")})`,
@@ -629,17 +618,59 @@ const graded = leafCommand(
 				return yield* Effect.sync(() => process.exit(FAILED));
 			}
 
+			const cli = (yield* claudeVersion()) ?? "unknown";
+			const pins = {model: opts.model, cli, harness: opts.harness};
+			const cell = {stage: opts.stage, surface, model: opts.model};
+			/**
+			 * Emit the `UNRECORDABLE` record for a run that never reached a case, then exit on `code`.
+			 *
+			 * Founder ruling (#4678 comment 5247447078): a set that could not be read, one that does not
+			 * conform, and one carrying no graded case each emit an **explicit** record naming which it
+			 * was. Silence reaches #4681 as `missing`, which is byte-identical to a review that never ran
+			 * the axis — the exact ambiguity ADR 0253 Amendment 1 exists to remove. The exit code is
+			 * unchanged, so a caller still tells the three apart without parsing the record.
+			 */
+			const recordNoMeasurement = (noMeasurement: string, code: number) =>
+				Effect.gen(function* () {
+					const built = buildEvalRecord({
+						sha: opts.sha,
+						recordedAt: new Date().toISOString(),
+						cell,
+						pins,
+						results: [],
+						noMeasurement,
+					});
+					if (built._tag === "Unusable") {
+						yield* Console.error(`fabrika eval: cannot record this run — ${built.reason}`);
+						return yield* Effect.sync(() => process.exit(FAILED));
+					}
+					const bytes = emitEvalRecord(built.record);
+					if (opts.out._tag === "Some") yield* fs.writeFileString(opts.out.value, bytes);
+					yield* Console.log(bytes);
+					yield* Console.error(`fabrika eval: ${noMeasurement} — recorded UNRECORDABLE`);
+					return yield* Effect.sync(() => process.exit(code));
+				});
+
+			const read = yield* Effect.result(fs.readFileString(opts.path));
+			if (Result.isFailure(read)) {
+				return yield* recordNoMeasurement(`${opts.path} could not be read`, FAILED);
+			}
+			const decoded = decodeSkillEvalSet(read.success);
+			if (Result.isFailure(decoded)) {
+				return yield* recordNoMeasurement(
+					`${opts.path} is not a valid skill eval set (${decoded.failure.reason}): ${decoded.failure.message}`,
+					MALFORMED_DOCUMENT,
+				);
+			}
+
 			const cases = decoded.success.cases
 				.filter((evalCase) => evalCase.tier === "graded")
 				.map(gradableCase);
-			// A set with no graded case has nothing for this axis to measure. Reporting a green over it
-			// is the zero-scope pass ADR 0092 forbids; reporting an UNRECORDABLE record would claim a
-			// measurement was attempted and died, which is a different and untrue fact.
+			// A set with no graded case has nothing for this axis to measure, so reporting a green over
+			// it is the zero-scope pass ADR 0092 forbids. It records rather than exits silent, for
+			// `recordNoMeasurement`'s reason.
 			if (cases.length === 0) {
-				yield* Console.error(
-					`fabrika eval: ${opts.path} carries no graded case — the graded axis measured nothing (ADR 0092)`,
-				);
-				return yield* Effect.sync(() => process.exit(ZERO_SCOPE));
+				return yield* recordNoMeasurement(`${opts.path} carries no graded case`, ZERO_SCOPE);
 			}
 
 			const crypto = yield* Crypto.Crypto;
@@ -665,7 +696,6 @@ const graded = leafCommand(
 
 			const results = yield* runGradedAxis({
 				cases,
-				runs: opts.runs,
 				runOnce: ({evalCase}) =>
 					Effect.gen(function* () {
 						const candidate = candidateOutputOf(
@@ -690,12 +720,8 @@ const graded = leafCommand(
 			const built = buildEvalRecord({
 				sha: opts.sha,
 				recordedAt: new Date().toISOString(),
-				cell: {stage: opts.stage, surface, model: opts.model},
-				pins: {
-					model: opts.model,
-					cli: (yield* claudeVersion()) ?? "unknown",
-					harness: opts.harness,
-				},
+				cell,
+				pins,
 				results,
 			});
 			if (built._tag === "Unusable") {
@@ -713,14 +739,7 @@ const graded = leafCommand(
 				return yield* Effect.sync(() => process.exit(NO_MEASUREMENT));
 			}
 		});
-		yield* run.pipe(
-			Effect.catchTag("EvalSetUnreadable", (e) =>
-				Effect.gen(function* () {
-					yield* Console.error(`fabrika eval: cannot read ${e.path}`);
-					return yield* Effect.sync(() => process.exit(FAILED));
-				}),
-			),
-		);
+		yield* run;
 	}),
 ).pipe(
 	Command.withShortDescription("Run a skill's graded cases five times and record the median."),
