@@ -1,12 +1,12 @@
 ---
-id: 0101
+id: 0901
 title: A citation resolves against the fetched base ref, never the local working tree
 status: accepted
 date: 2026-08-01
 tags: [decisions, gates]
 ---
 
-# 0101 — A citation resolves against the fetched base ref, never the local working tree
+# 0901 — A citation resolves against the fetched base ref, never the local working tree
 
 **What this decides:** Every citation is resolved against a freshly fetched base ref.
 

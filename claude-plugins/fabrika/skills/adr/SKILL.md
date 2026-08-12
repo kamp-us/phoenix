@@ -6,7 +6,7 @@ description: Record one architecture decision as a `.decisions/NNNN-slug.md` fil
 # adr
 
 One decision per file; the pull request adds nothing but that file plus the status-line edits it
-implies, because discovery is the CLAUDE.md contract and there is no index. Examples run id `0240`.
+implies, because discovery is the CLAUDE.md contract and there is no index. Examples run id `0940`.
 
 ## 1 — Claim the number
 
@@ -29,7 +29,7 @@ and re-run; a repo with no decision directory at all is a setup question for
 ## 2 — Write the decision
 
 ```bash
-fabrika adr new 0240 only-landed-adrs-may-be-cited
+fabrika adr new 0940 only-landed-adrs-may-be-cited
 ```
 
 Scaffolds the frontmatter and section skeleton; the slug is kebab-case, at most 5 words.
@@ -52,7 +52,7 @@ questions** — *"may an open issue exist without a milestone?"* — not as a su
 for a question you cannot phrase. Then rank the uncited live-accepted ADRs your domain touches:
 
 ```bash
-fabrika adr sweep --new 0240
+fabrika adr sweep --new 0940
 ```
 
 None of its three outcomes is a clearance:
@@ -88,10 +88,10 @@ every gate passed on a dead citation (#4296). **A non-zero exit is UNKNOWN, neve
 **Use the filename it prints** — 0048 is `ship-it-merge-actor`, not `single-merge-authority`.
 
 ```bash
-fabrika adr supersede 0126 --by 0240
+fabrika adr supersede 0126 --by 0940
 ```
 
-Where the rest of that ADR still stands, `fabrika adr amend-in-part 0023 --by 0240` instead.
+Where the rest of that ADR still stands, `fabrika adr amend-in-part 0023 --by 0940` instead.
 Either verb touches the `status:` line and nothing else — an accepted ADR's decision text is
 immutable, so name the relationship in your own `## Context` rather than editing theirs.
 
@@ -107,7 +107,7 @@ Land on **exactly one** outcome; the explicit "none" separates *considered it* f
 ## 6 — Check, then report
 
 ```bash
-fabrika adr resolve 0240
+fabrika adr resolve 0940
 ```
 
 Your own id, one last time: `absent` means nobody claimed it while you wrote; `in-flight` means

@@ -22,10 +22,10 @@ describe("recordsIn", () => {
 	it("names each four-digit record the diff carries, with what the diff does to it", () => {
 		expect(
 			recordsIn(
-				changed(["A", ".decisions/0240-only-landed-adrs-may-be-cited.md"], ["M", "src/a.ts"]),
+				changed(["A", ".decisions/0940-only-landed-adrs-may-be-cited.md"], ["M", "src/a.ts"]),
 			),
 		).toEqual([
-			{id: "0240", change: "added", path: ".decisions/0240-only-landed-adrs-may-be-cited.md"},
+			{id: "0940", change: "added", path: ".decisions/0940-only-landed-adrs-may-be-cited.md"},
 		]);
 	});
 
@@ -42,7 +42,7 @@ describe("deriveScope", () => {
 	it("requires the namespace when any path is under any root, and tallies only touched roots", () => {
 		const result = deriveScope(
 			changed(
-				["A", ".decisions/0240-x.md"],
+				["A", ".decisions/0940-x.md"],
 				["M", "claude-plugins/fabrika/skills/review/SKILL.md"],
 				["M", "src/a.ts"],
 			),

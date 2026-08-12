@@ -7,7 +7,7 @@ import {runDigest} from "./digest-verb.ts";
 
 const BASE_SHA = "0f1e2d3c4b5a69788796a5b4c3d2e1f009182736";
 const LANDING = "1f8e83b1aa04f7e2c9d8b1640a5c22e9f01b7d3c";
-const PATH = ".decisions/0240-only-landed-adrs-may-be-cited.md";
+const PATH = ".decisions/0940-only-landed-adrs-may-be-cited.md";
 
 const REMOTES = [/^git remote$/, okOut("origin\n")] as const;
 const FETCH = [/^git fetch --quiet origin main$/, okOut("")] as const;
@@ -35,8 +35,8 @@ const COMMIT_DIFF = [
 	),
 ] as const;
 const SHOW = [
-	new RegExp(`^git show ${LANDING}:\\.decisions/0240`),
-	okOut(record("0240", "accepted")),
+	new RegExp(`^git show ${LANDING}:\\.decisions/0940`),
+	okOut(record("0940", "accepted")),
 ] as const;
 
 const options = {
@@ -73,14 +73,14 @@ describe("runDigest", () => {
 		expect(out.stdout).toBe(
 			[
 				"digest\tlanded\t1",
-				"landed\t0240\taccepted\t1f8e83b1\t2026-08-08\t1\tA decision about 0240",
+				"landed\t0940\taccepted\t1f8e83b1\t2026-08-08\t1\tA decision about 0940",
 				"",
 			].join("\n"),
 		);
 	});
 
 	it("reports `status:` verbatim rather than interpreting it (#4388)", async () => {
-		const out = await run([...happy.slice(0, 8), [SHOW[0], okOut(record("0240", "proposed"))]]);
+		const out = await run([...happy.slice(0, 8), [SHOW[0], okOut(record("0940", "proposed"))]]);
 		expect(out.stdout).toContain("\tproposed\t");
 	});
 

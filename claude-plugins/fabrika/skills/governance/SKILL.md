@@ -70,7 +70,7 @@ not read?"* — before you look for a conflict. You cannot sweep for a question 
 **Where the diff adds or edits a decision record**, rank the corpus against it:
 
 ```bash
-fabrika governance sweep 4321 --record 0240 --sha 03135b91
+fabrika governance sweep 4321 --record 0940 --sha 03135b91
 fabrika adr resolve 0164 0055
 ```
 

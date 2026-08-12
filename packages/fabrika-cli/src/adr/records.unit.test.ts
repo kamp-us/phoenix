@@ -14,7 +14,7 @@ import {
 
 describe("idFromFile", () => {
 	it("reads the NNNN prefix", () => {
-		expect(idFromFile("0240-only-landed-adrs-may-be-cited.md")).toBe("0240");
+		expect(idFromFile("0940-only-landed-adrs-may-be-cited.md")).toBe("0940");
 	});
 
 	it("keeps the letter suffix the real corpus carries", () => {
@@ -23,8 +23,8 @@ describe("idFromFile", () => {
 
 	it("is null for a name that is not a record", () => {
 		expect(idFromFile("index.md")).toBeNull();
-		expect(idFromFile("0240.md")).toBeNull();
-		expect(idFromFile("0240-Not_Kebab.md")).toBeNull();
+		expect(idFromFile("0940.md")).toBeNull();
+		expect(idFromFile("0940-Not_Kebab.md")).toBeNull();
 	});
 });
 
@@ -73,13 +73,13 @@ describe("isLive", () => {
 
 describe("isSuperseded", () => {
 	it("matches the superseded-by form", () => {
-		expect(isSuperseded("superseded by [0240](0240-x.md)")).toBe(true);
+		expect(isSuperseded("superseded by [0940](0940-x.md)")).toBe(true);
 		expect(isSuperseded("superseded")).toBe(true);
 	});
 
 	it("does not match superseded-in-part or an amend list", () => {
-		expect(isSuperseded("superseded-in-part by [0240](0240-x.md)")).toBe(false);
-		expect(isSuperseded("amended-in-part by [0240](0240-x.md)")).toBe(false);
+		expect(isSuperseded("superseded-in-part by [0940](0940-x.md)")).toBe(false);
+		expect(isSuperseded("amended-in-part by [0940](0940-x.md)")).toBe(false);
 	});
 });
 
@@ -113,7 +113,7 @@ body`;
 
 describe("argument shapes", () => {
 	it("accepts only four zero-padded digits as an id", () => {
-		expect(isFourDigitId("0240")).toBe(true);
+		expect(isFourDigitId("0940")).toBe(true);
 		expect(isFourDigitId("240")).toBe(false);
 		expect(isFourDigitId("0034a")).toBe(false);
 	});

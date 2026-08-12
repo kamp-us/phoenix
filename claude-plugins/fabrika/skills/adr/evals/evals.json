@@ -35,8 +35,8 @@
 			"id": 3,
 			"name": "no-overlap-is-not-no-contradiction",
 			"grounding": "A shortlist detects lexical adjacency only; treating a clean result as proof of no contradiction is how two live accepted ADRs end up ruling opposite ways on one question.",
-			"prompt": "I've got a draft ADR sitting at claude-plugins/fabrika/skills/adr/evals/fixtures/0240-only-landed-adrs-may-be-cited.md \u2014 haven't moved it into .decisions/ yet. Run the contradiction sweep against it and tell me whether I'm clear to open the PR.",
-			"files": ["fixtures/0240-only-landed-adrs-may-be-cited.md"],
+			"prompt": "I've got a draft ADR sitting at claude-plugins/fabrika/skills/adr/evals/fixtures/0940-only-landed-adrs-may-be-cited.md \u2014 haven't moved it into .decisions/ yet. Run the contradiction sweep against it and tell me whether I'm clear to open the PR.",
+			"files": ["fixtures/0940-only-landed-adrs-may-be-cited.md"],
 			"expected_output": "The run enumerates what the draft decides as questions, runs the sweep, and refuses to read a clean or indeterminate sweep result as proof that no live ADR contradicts the draft. It opens the shortlist entries rather than reporting their scores.",
 			"assertions": [
 				"Enumerates what the draft ADR decides as explicit questions, not as a summary",
@@ -65,7 +65,7 @@
 			"id": 5,
 			"name": "indeterminate-carries-no-information",
 			"grounding": "The sweep reports indeterminate when it had nothing to key on \u2014 a degenerate silence. Reading it as a clean sweep is how a young or thin corpus launders a non-result into a clearance.",
-			"prompt": "Before I move this repo onto our ADR flow, sanity-check it: run the contradiction sweep for the draft 0240 against claude-plugins/fabrika/skills/adr/evals/fixtures/small-corpus and tell me if it's clear.",
+			"prompt": "Before I move this repo onto our ADR flow, sanity-check it: run the contradiction sweep for the draft 0940 against claude-plugins/fabrika/skills/adr/evals/fixtures/small-corpus and tell me if it's clear.",
 			"files": ["fixtures/small-corpus/"],
 			"expected_output": "The run reports the sweep came back INDETERMINATE, names why (only 3 live-accepted ADRs, below the rarity floor of 10), refuses to read that as a clearance, and reads the small corpus by hand instead.",
 			"assertions": [

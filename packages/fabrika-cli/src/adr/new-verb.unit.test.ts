@@ -6,7 +6,7 @@ import {ALREADY_EXISTS} from "./codes.ts";
 import {type NewOptions, runNew} from "./new-verb.ts";
 
 const options: NewOptions = {
-	id: "0240",
+	id: "0940",
 	slug: "only-landed-adrs-may-be-cited",
 	dir: ".decisions",
 	status: "accepted",
@@ -24,17 +24,17 @@ describe("runNew", () => {
 		const fs = fakeFs({});
 		const out = await run(fs);
 		expect(out.code).toBe(0);
-		expect(out.stdout).toBe(".decisions/0240-only-landed-adrs-may-be-cited.md\n");
-		expect(fs.written.get(".decisions/0240-only-landed-adrs-may-be-cited.md")).toContain(
-			"id: 0240",
+		expect(out.stdout).toBe(".decisions/0940-only-landed-adrs-may-be-cited.md\n");
+		expect(fs.written.get(".decisions/0940-only-landed-adrs-may-be-cited.md")).toContain(
+			"id: 0940",
 		);
 	});
 
 	it("--json carries path, id and slug", async () => {
 		const out = await run(fakeFs({}), {json: true});
 		expect(JSON.parse(out.stdout)).toEqual({
-			path: ".decisions/0240-only-landed-adrs-may-be-cited.md",
-			id: "0240",
+			path: ".decisions/0940-only-landed-adrs-may-be-cited.md",
+			id: "0940",
 			slug: "only-landed-adrs-may-be-cited",
 		});
 	});
@@ -63,7 +63,7 @@ describe("runNew", () => {
 	});
 
 	it("refuses — rather than reporting success — when the write itself fails", async () => {
-		const fs = fakeFs({unwritable: [".decisions/0240-only-landed-adrs-may-be-cited.md"]});
+		const fs = fakeFs({unwritable: [".decisions/0940-only-landed-adrs-may-be-cited.md"]});
 		const out = await run(fs);
 		expect(out.code).toBe(1);
 		expect(out.stdout).toBe("");
@@ -71,7 +71,7 @@ describe("runNew", () => {
 	});
 
 	it("refuses an existence probe that FAILED, rather than reading it as 'absent' and writing", async () => {
-		const fs = fakeFs({unprobeable: [".decisions/0240-only-landed-adrs-may-be-cited.md"]});
+		const fs = fakeFs({unprobeable: [".decisions/0940-only-landed-adrs-may-be-cited.md"]});
 		const out = await run(fs);
 		expect(out.code).toBe(1);
 		expect(out.stdout).toBe("");
@@ -81,9 +81,9 @@ describe("runNew", () => {
 	it("uses --title and --tags when given", async () => {
 		const fs = fakeFs({});
 		await run(fs, {title: "A real title", tags: "decisions,gates"});
-		const written = fs.written.get(".decisions/0240-only-landed-adrs-may-be-cited.md") ?? "";
+		const written = fs.written.get(".decisions/0940-only-landed-adrs-may-be-cited.md") ?? "";
 		expect(written).toContain("title: A real title");
 		expect(written).toContain("tags: [decisions, gates]");
-		expect(written).toContain("# 0240 — A real title");
+		expect(written).toContain("# 0940 — A real title");
 	});
 });

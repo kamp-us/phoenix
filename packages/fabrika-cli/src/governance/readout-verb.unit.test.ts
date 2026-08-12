@@ -26,7 +26,7 @@ const CREATE = /^gh api --method POST repos\/o\/r\/issues\/4952\/comments/;
 const READ_BACK = /^gh api repos\/o\/r\/issues\/comments\/(\d+)$/;
 
 const URL = "https://github.com/o/r/issues/4952#issuecomment-5229900001";
-const ROWS = "row\t0240\ttension\tsits against ADR 0058\nrow\t0238\troutine\tno tension found\n";
+const ROWS = "row\t0940\ttension\tsits against ADR 0058\nrow\t0238\troutine\tno tension found\n";
 
 const composed = (rows = ROWS): string => {
 	const parsed = parseFields(rows);
@@ -133,7 +133,7 @@ describe("runReadout", () => {
 			Effect.provide(
 				runReadout({
 					...options,
-					stdin: Effect.succeed({_tag: "Text", text: "row\t0240\turgent\tnote\n"}),
+					stdin: Effect.succeed({_tag: "Text", text: "row\t0940\turgent\tnote\n"}),
 				}),
 				fake.layer,
 			),
@@ -157,7 +157,7 @@ describe("runReadout", () => {
 
 	it("refuses a machine-local path in a note on 5", async () => {
 		const out = await run(happy(), {
-			stdin: Effect.succeed({_tag: "Text", text: "row\t0240\troutine\tsee ~/notes/x.md\n"}),
+			stdin: Effect.succeed({_tag: "Text", text: "row\t0940\troutine\tsee ~/notes/x.md\n"}),
 		});
 		expect(out.code).toBe(LEAKED_PATH);
 	});
@@ -195,7 +195,7 @@ describe("runReadout", () => {
 
 	it("refuses a read-back whose rows came back in a DIFFERENT order — a digest is ranked", async () => {
 		const reversed = composed(
-			"row\t0238\troutine\tno tension found\nrow\t0240\ttension\tsits against ADR 0058\n",
+			"row\t0238\troutine\tno tension found\nrow\t0940\ttension\tsits against ADR 0058\n",
 		);
 		const out = await run(
 			happy([CREATE, landed()], [READ_BACK, okOut(JSON.stringify({body: reversed}))]),

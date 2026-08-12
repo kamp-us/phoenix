@@ -1,12 +1,12 @@
 ---
-id: 0103
+id: 0903
 title: A pull request that never merges leaves no record behind
 status: accepted
 date: 2026-08-01
 tags: [decisions, pipeline]
 ---
 
-# 0103 — A pull request that never merges leaves no record behind
+# 0903 — A pull request that never merges leaves no record behind
 
 **What this decides:** Only a merged pull request contributes a record to the repository.
 

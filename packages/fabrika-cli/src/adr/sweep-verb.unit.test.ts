@@ -16,14 +16,14 @@ const corpus = (): Record<string, string> => {
 			i < 3 ? "reticulate the splines" : "gate the thing",
 		);
 	}
-	files[`${dir}/0240-subject.md`] = record("0240", "proposed", "reticulate the splines");
+	files[`${dir}/0940-subject.md`] = record("0940", "proposed", "reticulate the splines");
 	return files;
 };
 
 const fsWith = (files: Record<string, string | null>) =>
 	fakeFs({dirs: {[dir]: Object.keys(files).map((p) => p.slice(dir.length + 1))}, files});
 
-const options = {new: "0240", dir, limit: 8, json: false};
+const options = {new: "0940", dir, limit: 8, json: false};
 
 const run = (fs: FakeFs, overrides: Partial<typeof options> = {}) =>
 	Effect.runPromise(Effect.provide(runSweep({...options, ...overrides}), fs.layer));
@@ -51,7 +51,7 @@ describe("runSweep", () => {
 
 	it("exits 0 on no-overlap, with the reason on stderr", async () => {
 		const files = corpus();
-		files[`${dir}/0240-subject.md`] = record("0240", "proposed", "marzipan bicycle telemetry");
+		files[`${dir}/0940-subject.md`] = record("0940", "proposed", "marzipan bicycle telemetry");
 		const out = await run(fsWith(files));
 		expect(out.code).toBe(0);
 		expect(out.stdout).toBe("no-overlap\n");
@@ -61,7 +61,7 @@ describe("runSweep", () => {
 	it("exits 0 on indeterminate below the rarity floor", async () => {
 		const files = {
 			[`${dir}/0100-x.md`]: record("0100", "accepted", "anything"),
-			[`${dir}/0240-subject.md`]: record("0240", "proposed", "anything"),
+			[`${dir}/0940-subject.md`]: record("0940", "proposed", "anything"),
 		};
 		const out = await run(fsWith(files));
 		expect(out.code).toBe(0);

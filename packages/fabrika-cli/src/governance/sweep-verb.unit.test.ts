@@ -8,7 +8,7 @@ import {runSweep} from "./sweep-verb.ts";
 
 const PULL = /^gh api repos\/o\/r\/pulls\/4321$/;
 const DIR = ".decisions";
-const SUBJECT_PATH = ".decisions/0240-only-landed-adrs-may-be-cited.md";
+const SUBJECT_PATH = ".decisions/0940-only-landed-adrs-may-be-cited.md";
 
 /** Twelve members, so the corpus clears the imported rarity floor of ten. */
 const names = Array.from({length: 12}, (_, i) => `${String(i + 1).padStart(4, "0")}-a-decision.md`);
@@ -124,12 +124,12 @@ describe("runSweep in --record mode", () => {
 		[STATUS_AT(), statuses(["A", SUBJECT_PATH])],
 		[
 			SHOW_AT(HEAD, SUBJECT_PATH),
-			okOut(record("0240", "proposed", "Only landed ADRs may be cited.")),
+			okOut(record("0940", "proposed", "Only landed ADRs may be cited.")),
 		],
 	];
 
 	it("reads the subject at the BOUND commit and ranks against the corpus", async () => {
-		const out = await run(scripted, {pr: 4321, record: "0240"});
+		const out = await run(scripted, {pr: 4321, record: "0940"});
 		expect(out.code).toBe(0);
 		expect(out.stderr[0]).toContain(`bound to ${HEAD}`);
 	});
@@ -137,30 +137,30 @@ describe("runSweep in --record mode", () => {
 	it("refuses when the bound commit carries no such record on 11", async () => {
 		const out = await run(
 			[[PULL, pull({changedFiles: 1})], ...binding(), [STATUS_AT(), statuses(["M", "src/a.ts"])]],
-			{pr: 4321, record: "0240"},
+			{pr: 4321, record: "0940"},
 		);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
-		expect(out.stderr.at(-1)).toContain("carries no decision record 0240");
+		expect(out.stderr.at(-1)).toContain("carries no decision record 0940");
 	});
 
 	it("refuses a short changed-file read on 13", async () => {
 		const out = await run(
 			[[PULL, pull({changedFiles: 9})], ...binding(), [STATUS_AT(), statuses(["A", SUBJECT_PATH])]],
-			{pr: 4321, record: "0240"},
+			{pr: 4321, record: "0940"},
 		);
 		expect(out.code).toBe(INCOMPLETE_SCAN);
-		expect(out.stderr.at(-1)).toContain("refusing to prove 0240 is in this PR from a short read");
+		expect(out.stderr.at(-1)).toContain("refusing to prove 0940 is in this PR from a short read");
 	});
 
 	it("refuses an absent PR on 7", async () => {
-		const out = await run([[PULL, errOut("gh: Not Found (HTTP 404)")]], {pr: 4321, record: "0240"});
+		const out = await run([[PULL, errOut("gh: Not Found (HTTP 404)")]], {pr: 4321, record: "0940"});
 		expect(out.code).toBe(ZERO_SCOPE);
 	});
 });
 
 describe("runSweep's usage fence", () => {
 	it("refuses both a PR and --landed, and neither, on 10", async () => {
-		expect((await run([], {pr: 4321, record: "0240", landed: "0240"})).code).toBe(OFF_VOCABULARY);
+		expect((await run([], {pr: 4321, record: "0940", landed: "0940"})).code).toBe(OFF_VOCABULARY);
 		expect((await run([], {})).code).toBe(OFF_VOCABULARY);
 	});
 

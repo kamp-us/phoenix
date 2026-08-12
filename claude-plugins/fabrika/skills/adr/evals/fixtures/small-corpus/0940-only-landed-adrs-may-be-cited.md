@@ -1,12 +1,12 @@
 ---
-id: 0240
+id: 0940
 title: An ADR may cite only an ADR that has landed on the base ref
 status: proposed
 date: 2026-08-01
 tags: [decisions, gates, pipeline]
 ---
 
-# 0240 — An ADR may cite only an ADR that has landed on the base ref
+# 0940 — An ADR may cite only an ADR that has landed on the base ref
 
 **What this decides:** When one ADR references another, the referenced ADR has to already be merged
 on the base branch. Citing an ADR that only exists inside somebody's open pull request is not

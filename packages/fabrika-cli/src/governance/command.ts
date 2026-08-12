@@ -128,7 +128,7 @@ const sweep = leafCommand(
 ).pipe(
 	Command.withShortDescription("Rank the live records whose domain this subject touches."),
 	Command.withDescription(
-		"Rank the uncited live-accepted records whose decision domain the subject touches, reading the subject out of a bound commit or out of the corpus. All three outcomes — shortlist, no-overlap, indeterminate — exit 0 and none of them is a clearance. Exits 7 (--dir holds zero records, or the PR is absent or closed), 10 (a non-four-digit id, a --sha that is not a head SHA, a negative --limit, or both a PR and --landed), 11 (the subject or a corpus member could not be read — an incomplete corpus is UNKNOWN), 12 (--sha is not the PR's head), 13 (the changed-file list proving the record is in this PR is provably short). Example: fabrika governance sweep 4321 --record 0240",
+		"Rank the uncited live-accepted records whose decision domain the subject touches, reading the subject out of a bound commit or out of the corpus. All three outcomes — shortlist, no-overlap, indeterminate — exit 0 and none of them is a clearance. Exits 7 (--dir holds zero records, or the PR is absent or closed), 10 (a non-four-digit id, a --sha that is not a head SHA, a negative --limit, or both a PR and --landed), 11 (the subject or a corpus member could not be read — an incomplete corpus is UNKNOWN), 12 (--sha is not the PR's head), 13 (the changed-file list proving the record is in this PR is provably short). Example: fabrika governance sweep 4321 --record 0940",
 	),
 );
 
@@ -274,7 +274,7 @@ const readout = leafCommand(
 ).pipe(
 	Command.withShortDescription("Publish the ranked rows on stdin to the durable readout."),
 	Command.withDescription(
-		"Publish the ranked rows read from STDIN onto the durable readout artifact: compose through the governance-digest format, leak-scan, upsert the one comment, read it back in order. It gates nothing — there is no outcome here meaning the corpus is in a bad state. Prints `readout\\t<issue>\\t<rows>\\t<created|edited>\\t<url>`. Exits 3 (stdin held nothing), 5/6 (a machine-local path, a bare @ reference), 7 (the artifact is absent, closed, or unresolvable), 8/9 (the write was unproven, the read-back differs), 10 (a row's kind or id is off the vocabulary), 11 (the issue or its comments could not be read — nothing was written), 13 (the comment enumeration is provably short). Example: printf 'row\\t0240\\troutine\\tno tension found\\n' | fabrika governance readout 4952",
+		"Publish the ranked rows read from STDIN onto the durable readout artifact: compose through the governance-digest format, leak-scan, upsert the one comment, read it back in order. It gates nothing — there is no outcome here meaning the corpus is in a bad state. Prints `readout\\t<issue>\\t<rows>\\t<created|edited>\\t<url>`. Exits 3 (stdin held nothing), 5/6 (a machine-local path, a bare @ reference), 7 (the artifact is absent, closed, or unresolvable), 8/9 (the write was unproven, the read-back differs), 10 (a row's kind or id is off the vocabulary), 11 (the issue or its comments could not be read — nothing was written), 13 (the comment enumeration is provably short). Example: printf 'row\\t0940\\troutine\\tno tension found\\n' | fabrika governance readout 4952",
 	),
 );
 

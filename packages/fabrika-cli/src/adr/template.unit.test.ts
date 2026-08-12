@@ -2,7 +2,7 @@ import {describe, expect, it} from "vitest";
 import {parseTags, recordFilename, renderTemplate, titleFromSlug} from "./template.ts";
 
 const rendered = renderTemplate({
-	id: "0240",
+	id: "0940",
 	slug: "only-landed-adrs-may-be-cited",
 	title: "An ADR may cite only an ADR that has landed on the base ref",
 	status: "accepted",
@@ -12,7 +12,7 @@ const rendered = renderTemplate({
 
 describe("renderTemplate", () => {
 	it("substitutes the five frontmatter fields", () => {
-		expect(rendered).toContain("id: 0240");
+		expect(rendered).toContain("id: 0940");
 		expect(rendered).toContain(
 			"title: An ADR may cite only an ADR that has landed on the base ref",
 		);
@@ -23,7 +23,7 @@ describe("renderTemplate", () => {
 
 	it("repeats the title verbatim in the H1", () => {
 		expect(rendered).toContain(
-			"# 0240 — An ADR may cite only an ADR that has landed on the base ref",
+			"# 0940 — An ADR may cite only an ADR that has landed on the base ref",
 		);
 	});
 
@@ -68,6 +68,6 @@ describe("defaults", () => {
 	});
 
 	it("builds the record filename", () => {
-		expect(recordFilename("0240", "a-b")).toBe("0240-a-b.md");
+		expect(recordFilename("0940", "a-b")).toBe("0940-a-b.md");
 	});
 });

@@ -49,7 +49,7 @@ const happy = (
 ];
 
 const GOVERNING = happy(
-	["A", ".decisions/0240-only-landed-adrs-may-be-cited.md"],
+	["A", ".decisions/0940-only-landed-adrs-may-be-cited.md"],
 	["M", "claude-plugins/fabrika/skills/review/SKILL.md"],
 );
 
@@ -63,7 +63,7 @@ describe("runScope", () => {
 				"root\t.decisions/\t1",
 				"root\tclaude-plugins/\t1",
 				"self\tfalse",
-				"record\t0240\tadded\t.decisions/0240-only-landed-adrs-may-be-cited.md",
+				"record\t0940\tadded\t.decisions/0940-only-landed-adrs-may-be-cited.md",
 				"",
 			].join("\n"),
 		);
@@ -88,7 +88,7 @@ describe("runScope", () => {
 			base: BASE,
 			self: false,
 			scanned: 2,
-			records: [{id: "0240", change: "added"}],
+			records: [{id: "0940", change: "added"}],
 		});
 	});
 
@@ -113,8 +113,8 @@ describe("runScope", () => {
 		const out = await run([
 			[PULL, pull({changedFiles: 1})],
 			...binding(),
-			[STATUS_AT(), statuses(["M", ".decisions/0240-x.md"])],
-			[TREE_AT(), treeOf(".decisions/0240-x.md", "src/cart.ts")],
+			[STATUS_AT(), statuses(["M", ".decisions/0940-x.md"])],
+			[TREE_AT(), treeOf(".decisions/0940-x.md", "src/cart.ts")],
 		]);
 		expect(out.stderr).toContain(
 			"governance scope: root .claude/ is absent in this repository — the derivation covered 1 of 4 roots.",

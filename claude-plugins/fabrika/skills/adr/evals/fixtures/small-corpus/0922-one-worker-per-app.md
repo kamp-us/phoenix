@@ -1,12 +1,12 @@
 ---
-id: 0002
+id: 0922
 title: Each app ships as its own worker with its own stack
 status: accepted
 date: 2026-08-01
 tags: [platform]
 ---
 
-# 0002 — Each app ships as its own worker with its own stack
+# 0922 — Each app ships as its own worker with its own stack
 
 **What this decides:** Each app ships as its own worker with its own stack.
 

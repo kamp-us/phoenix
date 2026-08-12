@@ -885,13 +885,13 @@ printed byte reproduces:
 $ fabrika glossary check --register terms --dir claude-plugins/fabrika/skills/glossary/evals/fixtures/registers --decisions claude-plugins/fabrika/skills/glossary/evals/fixtures/decisions
 defects
 duplicate-key	terms	Products (domains)	pano	also declared in "Core / shape"
-citation-superseded	terms	Core / shape	worker	cites 0044, status "superseded by [0144](0144-depo-internal-asset-store.md)"
+citation-superseded	terms	Core / shape	worker	cites 0950, status "superseded by [0951](0951-depo-internal-asset-store.md)"
 $ echo $?
 0
 ```
 
 The fixture register plants exactly those two defects: `pano` is declared under both `Core / shape`
-and `Products (domains)`, and the `worker` row cites `0044`, whose fixture record carries a
+and `Products (domains)`, and the `worker` row cites `0950`, whose fixture record carries a
 superseded status line. `depo` and `sozluk` are clean rows, so the finding list is the whole verdict
 rather than a truncation.
 

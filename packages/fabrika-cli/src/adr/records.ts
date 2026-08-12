@@ -11,7 +11,7 @@
 
 /** A record filename plus its full text — the unit every pure function here consumes. */
 export interface AdrFile {
-	/** Base name only, e.g. `0240-only-landed-adrs-may-be-cited.md`. */
+	/** Base name only, e.g. `0940-only-landed-adrs-may-be-cited.md`. */
 	readonly file: string;
 	/** The file's full UTF-8 contents. */
 	readonly text: string;

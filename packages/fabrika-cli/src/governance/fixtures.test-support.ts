@@ -44,7 +44,7 @@ export const SHOW_AT = (sha: string, path: string): RegExp =>
 
 /** A tree that carries all four governance roots plus one install of this skill. */
 export const FULL_TREE: ReadonlyArray<string> = [
-	".decisions/0240-only-landed-adrs-may-be-cited.md",
+	".decisions/0940-only-landed-adrs-may-be-cited.md",
 	".claude/settings.json",
 	".github/workflows/ci.yml",
 	"claude-plugins/fabrika/skills/governance/SKILL.md",

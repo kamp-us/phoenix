@@ -1,12 +1,12 @@
 ---
-id: 0107
+id: 0907
 title: Every push runs the whole test suite
 status: accepted
 date: 2026-08-01
 tags: [platform]
 ---
 
-# 0107 — Every push runs the whole test suite
+# 0907 — Every push runs the whole test suite
 
 **What this decides:** Continuous integration runs everything, every time.
 

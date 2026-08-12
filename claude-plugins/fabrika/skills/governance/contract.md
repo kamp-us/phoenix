@@ -407,7 +407,7 @@ governance	required	03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c
 root	.decisions/	1
 root	claude-plugins/	2
 self	false
-record	0240	added	.decisions/0240-only-landed-adrs-may-be-cited.md
+record	0940	added	.decisions/0940-only-landed-adrs-may-be-cited.md
 ```
 
 ```
@@ -438,8 +438,8 @@ $ fabrika governance scope 4400 --json
 **Invocation**
 
 ```
-fabrika governance sweep 4321 --record 0240 [--sha <head>] [--dir <path>] [--limit <n>] [--repo <owner/name>] [--json]
-fabrika governance sweep --landed 0240 [--dir <path>] [--limit <n>] [--json]
+fabrika governance sweep 4321 --record 0940 [--sha <head>] [--dir <path>] [--limit <n>] [--repo <owner/name>] [--json]
+fabrika governance sweep --landed 0940 [--dir <path>] [--limit <n>] [--json]
 ```
 
 **Inputs**
@@ -460,7 +460,7 @@ fabrika governance sweep --landed 0240 [--dir <path>] [--limit <n>] [--json]
 `<id>\t<score to 2dp>\t<file>\t<title>`.
 
 With `--json`:
-`{"outcome":…,"subject":"0240","entries":[{"id","score","file","title"}…],"reason":null|"…","scanned":<n>,"inScope":<n>,"cited":<n>}`.
+`{"outcome":…,"subject":"0940","entries":[{"id","score","file","title"}…],"reason":null|"…","scanned":<n>,"inScope":<n>,"cited":<n>}`.
 
 <a id="sweep-all-three-are-answers"></a>
 **All three outcomes exit 0 and all three are answers.** `no-overlap` is a distinct token, never an
@@ -520,19 +520,19 @@ exit 0, which is a different fact and stays a different answer.
 **Examples**
 
 ```
-$ fabrika governance sweep 4321 --record 0240
+$ fabrika governance sweep 4321 --record 0940
 shortlist
 0058	11.42	0058-sha-bound-verdict-contract.md	Gate verdicts are SHA-bound and one-per-gate
 0164	7.08	0164-guard-relaxing-adr-cp-gate.md	A guard-relaxing ADR is control-plane
 ```
 
 ```
-$ fabrika governance sweep --landed 0240 --json
-{"outcome":"no-overlap","subject":"0240","entries":[],"reason":"no uncited live-accepted record shares a distinctive term with the subject — this is not a clearance: a record that disagrees about what a label means shares no vocabulary and never appears here","scanned":241,"inScope":232,"cited":9}
+$ fabrika governance sweep --landed 0940 --json
+{"outcome":"no-overlap","subject":"0940","entries":[],"reason":"no uncited live-accepted record shares a distinctive term with the subject — this is not a clearance: a record that disagrees about what a label means shares no vocabulary and never appears here","scanned":241,"inScope":232,"cited":9}
 ```
 
 ```
-$ fabrika governance sweep --landed 0240 --dir claude-plugins/fabrika/skills/governance/evals/fixtures/small-corpus
+$ fabrika governance sweep --landed 0940 --dir claude-plugins/fabrika/skills/governance/evals/fixtures/small-corpus
 governance sweep: only 4 live-accepted records in claude-plugins/fabrika/skills/governance/evals/fixtures/small-corpus (rarity needs at least 10) — the run carries no information.
 indeterminate
 $ echo $?
@@ -999,7 +999,7 @@ the window and the commit count, because `none` is only readable against them.
 $ fabrika governance digest --since 2026-08-02
 digest	landed	2
 landed	0238	accepted	aab2adea	2026-08-06	0	fabrika reimplements v1, never calls it
-landed	0240	accepted	1f8e83b1	2026-08-08	2	Only landed ADRs may be cited
+landed	0940	accepted	1f8e83b1	2026-08-08	2	Only landed ADRs may be cited
 ```
 
 ```
@@ -1008,7 +1008,7 @@ $ fabrika governance digest --since 2026-08-09 --until 2026-08-09 --json
 ```
 
 The window is inclusive at both ends, so this second example is `none` only because neither landing
-above falls on `2026-08-09` — `0240` lands on `2026-08-08` and would be inside a window ending there.
+above falls on `2026-08-09` — `0940` lands on `2026-08-08` and would be inside a window ending there.
 
 **Grounding**
 
@@ -1100,12 +1100,12 @@ upserted, so a reader always finds exactly one current readout rather than an ap
 **Examples**
 
 ```
-$ printf 'row\t0240\ttension\tsits against ADR 0058 on whether a verdict may bind an unread head\nrow\t0238\troutine\tno tension found\n' | fabrika governance readout 4952
+$ printf 'row\t0940\ttension\tsits against ADR 0058 on whether a verdict may bind an unread head\nrow\t0238\troutine\tno tension found\n' | fabrika governance readout 4952
 readout	4952	2	edited	https://github.com/kamp-us/phoenix/issues/4952#issuecomment-5229900001
 ```
 
 ```
-$ printf 'row\t0240\troutine\tno tension found\n' | fabrika governance readout 4952 --json
+$ printf 'row\t0940\troutine\tno tension found\n' | fabrika governance readout 4952 --json
 {"outcome":"readout","issue":4952,"rows":1,"upsert":"edited","commentUrl":"https://github.com/kamp-us/phoenix/issues/4952#issuecomment-5229900001"}
 ```
 

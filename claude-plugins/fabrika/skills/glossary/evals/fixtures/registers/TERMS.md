@@ -9,7 +9,7 @@ citation to a superseded decision — so `glossary check` has something to find.
 | Term | Definition | Not |
 |---|---|---|
 | pano | The board product. Planted duplicate: also declared under Products (domains). | |
-| worker | The single edge worker serving the app and the API. Cites 0044. | "server" |
+| worker | The single edge worker serving the app and the API. Cites 0950. | "server" |
 
 ## Products (domains)
 

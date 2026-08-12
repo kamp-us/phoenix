@@ -1,12 +1,12 @@
 ---
-id: 0003
+id: 0923
 title: Modules use named exports only
 status: accepted
 date: 2026-08-01
 tags: [platform]
 ---
 
-# 0003 — Modules use named exports only
+# 0923 — Modules use named exports only
 
 **What this decides:** Modules use named exports only.
 

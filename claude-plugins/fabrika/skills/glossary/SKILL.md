@@ -148,7 +148,7 @@ before merge — three lanes each derived `0253` (#5278) — so a row citing an 
 dead link the day it lands. Resolve the citation rather than assuming it:
 
 ```bash
-fabrika adr resolve 0240
+fabrika adr resolve 0940
 ```
 
 Cite only `live` or `landed`. On `in-flight` or `absent`, end on `HELD-UNMERGED-ADR` and say which

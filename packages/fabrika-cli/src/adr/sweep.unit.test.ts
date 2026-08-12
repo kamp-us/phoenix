@@ -46,7 +46,7 @@ describe("citedIds", () => {
 describe("sweep", () => {
 	it("is indeterminate below the rarity floor, and says so on the reason channel", () => {
 		const result = sweep(
-			{id: "0240", text: rec("0240", "proposed", "anything").text},
+			{id: "0940", text: rec("0940", "proposed", "anything").text},
 			corpus().slice(0, 3),
 			8,
 		);
@@ -57,7 +57,7 @@ describe("sweep", () => {
 
 	it("is indeterminate when the subject yields no distinctive terms", () => {
 		const result = sweep(
-			{id: "0240", text: "---\nstatus: proposed\n---\n\n## Decision\n\n."},
+			{id: "0940", text: "---\nstatus: proposed\n---\n\n## Decision\n\n."},
 			corpus(),
 			8,
 		);
@@ -66,8 +66,8 @@ describe("sweep", () => {
 	});
 
 	it("is no-overlap when nothing shares a distinctive term — an answer, not an empty shortlist", () => {
-		const subject = rec("0240", "proposed", "marzipan bicycle telemetry");
-		const result = sweep({id: "0240", text: subject.text}, corpus(), 8);
+		const subject = rec("0940", "proposed", "marzipan bicycle telemetry");
+		const result = sweep({id: "0940", text: subject.text}, corpus(), 8);
 		expect(result.outcome).toBe("no-overlap");
 		expect(result.entries).toEqual([]);
 		expect(result.reason).toContain("not a clearance");
@@ -77,8 +77,8 @@ describe("sweep", () => {
 		const c = corpus();
 		c[0] = rec("0100", "accepted", "reticulate the splines carefully");
 		c[1] = rec("0101", "accepted", "reticulate nothing at all");
-		const subject = rec("0240", "proposed", "reticulate the splines");
-		const result = sweep({id: "0240", text: subject.text}, c, 8);
+		const subject = rec("0940", "proposed", "reticulate the splines");
+		const result = sweep({id: "0940", text: subject.text}, c, 8);
 		expect(result.outcome).toBe("shortlist");
 		expect(result.entries.map((e) => e.id)).toEqual(["0100", "0101"]);
 		expect(result.entries[0]?.score).toBeGreaterThan(result.entries[1]?.score ?? 0);
@@ -92,10 +92,10 @@ describe("sweep", () => {
 		c[1] = rec("0101", "superseded by [0100](0100-slug.md)", "reticulate the splines");
 		c[2] = rec("0102", "accepted", "reticulate the splines");
 		const subject = {
-			id: "0240",
-			text: rec("0240", "proposed", "reticulate the splines, as 0102 already says").text,
+			id: "0940",
+			text: rec("0940", "proposed", "reticulate the splines, as 0102 already says").text,
 		};
-		const result = sweep(subject, [...c, rec("0240", "proposed", "reticulate the splines")], 8);
+		const result = sweep(subject, [...c, rec("0940", "proposed", "reticulate the splines")], 8);
 		expect(result.entries.map((e) => e.id)).toEqual(["0100"]);
 		expect(result.cited).toBe(1);
 	});
@@ -105,7 +105,7 @@ describe("sweep", () => {
 		for (let i = 0; i < 5; i += 1)
 			c[i] = rec(`01${String(i).padStart(2, "0")}`, "accepted", "reticulate splines");
 		const result = sweep(
-			{id: "0240", text: rec("0240", "proposed", "reticulate splines").text},
+			{id: "0940", text: rec("0940", "proposed", "reticulate splines").text},
 			c,
 			3,
 		);
@@ -118,7 +118,7 @@ describe("sweep", () => {
 		for (let i = 0; i < 5; i += 1)
 			c[i] = rec(`01${String(i).padStart(2, "0")}`, "accepted", "reticulate splines");
 		const result = sweep(
-			{id: "0240", text: rec("0240", "proposed", "reticulate splines").text},
+			{id: "0940", text: rec("0940", "proposed", "reticulate splines").text},
 			c,
 			8,
 		);

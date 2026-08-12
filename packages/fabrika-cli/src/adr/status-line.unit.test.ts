@@ -4,12 +4,12 @@ import {diffBeyondStatusLine, nextStatusValue, parseLinks, rewriteStatus} from "
 const file = (status: string, body = "## Decision\n\n**A thing.**\n"): string =>
 	`---\nid: 0023\ntitle: A title\nstatus: ${status}\ndate: 2026-01-01\ntags: []\n---\n\n# 0023 — A title\n\n${body}`;
 
-const by = {id: "0240", file: "0240-only-landed-adrs-may-be-cited.md"};
+const by = {id: "0940", file: "0940-only-landed-adrs-may-be-cited.md"};
 
 describe("nextStatusValue", () => {
 	it("supersede replaces whatever was there", () => {
 		expect(nextStatusValue("supersede", "accepted", by)).toBe(
-			"superseded by [0240](0240-only-landed-adrs-may-be-cited.md)",
+			"superseded by [0940](0940-only-landed-adrs-may-be-cited.md)",
 		);
 	});
 
@@ -17,7 +17,7 @@ describe("nextStatusValue", () => {
 		const existing =
 			"amended-in-part by [0025](0025-split-livedo-connection-topic.md), [0028](0028-effect-durable-object-model.md), [0037](0037-unified-void-aligned-live-do.md)";
 		expect(nextStatusValue("amend-in-part", existing, by)).toBe(
-			`${existing}, [0240](0240-only-landed-adrs-may-be-cited.md)`,
+			`${existing}, [0940](0940-only-landed-adrs-may-be-cited.md)`,
 		);
 	});
 
@@ -29,13 +29,13 @@ describe("nextStatusValue", () => {
 	});
 
 	it("re-adding a link already in the list is a no-op", () => {
-		const existing = "amended-in-part by [0240](0240-only-landed-adrs-may-be-cited.md)";
+		const existing = "amended-in-part by [0940](0940-only-landed-adrs-may-be-cited.md)";
 		expect(nextStatusValue("amend-in-part", existing, by)).toBe(existing);
 	});
 
 	it("amend-in-part over a plain accepted status starts the list", () => {
 		expect(nextStatusValue("amend-in-part", "accepted", by)).toBe(
-			"amended-in-part by [0240](0240-only-landed-adrs-may-be-cited.md)",
+			"amended-in-part by [0940](0940-only-landed-adrs-may-be-cited.md)",
 		);
 	});
 });
@@ -54,7 +54,7 @@ describe("diffBeyondStatusLine — the assertion the implementation owes", () =>
 	const before = lines.join("\n");
 	const rewrite = (mutate: (l: string[]) => void, newline = "\n"): string => {
 		const l = [...lines];
-		l[2] = "status: superseded by [0240](0240-x.md)";
+		l[2] = "status: superseded by [0940](0940-x.md)";
 		mutate(l);
 		return l.join(newline);
 	};
@@ -106,7 +106,7 @@ describe("rewriteStatus — the one-line-diff invariant", () => {
 		const b = outcome.text.split("\n");
 		expect(b.length).toBe(a.length);
 		expect(a.filter((line, i) => line !== b[i])).toHaveLength(1);
-		expect(b[3]).toBe("status: superseded by [0240](0240-only-landed-adrs-may-be-cited.md)");
+		expect(b[3]).toBe("status: superseded by [0940](0940-only-landed-adrs-may-be-cited.md)");
 	});
 
 	it("preserves the trailing newline", () => {

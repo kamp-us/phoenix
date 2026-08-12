@@ -1,12 +1,12 @@
 ---
-id: 0110
+id: 0910
 title: Diagnostics go to stderr, answers to stdout
 status: accepted
 date: 2026-08-01
 tags: [platform]
 ---
 
-# 0110 — Diagnostics go to stderr, answers to stdout
+# 0910 — Diagnostics go to stderr, answers to stdout
 
 **What this decides:** Only the answer lands on stdout.
 

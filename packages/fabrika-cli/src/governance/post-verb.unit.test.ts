@@ -56,7 +56,7 @@ const governing = (
 ): ReadonlyArray<readonly [RegExp, ExecResult]> => [
 	[PULL, pull()],
 	...binding(),
-	[PATHS_AT(), paths(".decisions/0240-x.md", "src/cart.ts")],
+	[PATHS_AT(), paths(".decisions/0940-x.md", "src/cart.ts")],
 	[VIEWER, okOut("kampus-bot\n")],
 	[COMMENTS, comments()],
 	...extra,
@@ -75,7 +75,7 @@ describe("runPost", () => {
 		const out = await run([
 			[PULL, pull()],
 			...binding(),
-			[PATHS_AT(), paths(".decisions/0240-x.md", "src/cart.ts")],
+			[PATHS_AT(), paths(".decisions/0940-x.md", "src/cart.ts")],
 			[VIEWER, okOut("kampus-bot\n")],
 			[COMMENTS, comments({id: 77, body: composed("older\n")})],
 			[PATCH, okOut(JSON.stringify({html_url: URL}))],

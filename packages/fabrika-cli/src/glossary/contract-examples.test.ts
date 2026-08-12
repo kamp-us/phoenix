@@ -85,7 +85,7 @@ describe("glossary check, against the committed fixture register and decisions",
 		expect(out.stdout).toBe(
 			`defects
 duplicate-key\tterms\tProducts (domains)\tpano\talso declared in "Core / shape"
-citation-superseded\tterms\tCore / shape\tworker\tcites 0044, status "superseded by [0144](0144-depo-internal-asset-store.md)"
+citation-superseded\tterms\tCore / shape\tworker\tcites 0950, status "superseded by [0951](0951-depo-internal-asset-store.md)"
 `,
 		);
 	});

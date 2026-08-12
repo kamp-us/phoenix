@@ -122,7 +122,7 @@ const newCmd = leafCommand(
 ).pipe(
 	Command.withShortDescription("Scaffold a new ADR file from the canonical template."),
 	Command.withDescription(
-		"Scaffold .decisions/NNNN-slug.md from the canonical template. Prints the path written. Exits 12 (path exists — never overwritten); a bad id or slug is a usage error and exits 1. Example: fabrika adr new 0240 only-landed-adrs-may-be-cited",
+		"Scaffold .decisions/NNNN-slug.md from the canonical template. Prints the path written. Exits 12 (path exists — never overwritten); a bad id or slug is a usage error and exits 1. Example: fabrika adr new 0940 only-landed-adrs-may-be-cited",
 	),
 );
 
@@ -158,7 +158,7 @@ const supersede = leafCommand(
 ).pipe(
 	Command.withShortDescription("Mark an older ADR superseded by this one."),
 	Command.withDescription(
-		"Rewrite an older ADR's status: line to `superseded by [NNNN](NNNN-slug.md)` — that line and nothing else. Prints `<path>\\t<new status>`. Exits 7 (no such id), 13 (no --by record), 14 (no single status: line), 15 (diff touched another line — nothing written), 16 (already superseded). Example: fabrika adr supersede 0126 --by 0240",
+		"Rewrite an older ADR's status: line to `superseded by [NNNN](NNNN-slug.md)` — that line and nothing else. Prints `<path>\\t<new status>`. Exits 7 (no such id), 13 (no --by record), 14 (no single status: line), 15 (diff touched another line — nothing written), 16 (already superseded). Example: fabrika adr supersede 0126 --by 0940",
 	),
 );
 
@@ -171,7 +171,7 @@ const amendInPart = leafCommand(
 ).pipe(
 	Command.withShortDescription("Add this ADR to an older one's amended-in-part list."),
 	Command.withDescription(
-		"Append this ADR to an older one's `amended-in-part by` list, in id order, preserving the links already there. Prints `<path>\\t<new status>`. Same exit codes as supersede. Example: fabrika adr amend-in-part 0023 --by 0240",
+		"Append this ADR to an older one's `amended-in-part by` list, in id order, preserving the links already there. Prints `<path>\\t<new status>`. Same exit codes as supersede. Example: fabrika adr amend-in-part 0023 --by 0940",
 	),
 );
 
@@ -196,7 +196,7 @@ const sweepCmd = leafCommand(
 ).pipe(
 	Command.withShortDescription("Rank the live ADRs this one may contradict."),
 	Command.withDescription(
-		"Rank the uncited live-accepted ADRs this one may contradict. First stdout line is the outcome token — shortlist | no-overlap | indeterminate — and ALL THREE exit 0; a shortlist adds one `<id>\\t<score>\\t<file>\\t<title>` line per entry. An empty-and-readable --dir answers indeterminate. Exits 7 (no readable --new), 11 (corpus unreadable). Example: fabrika adr sweep --new 0240",
+		"Rank the uncited live-accepted ADRs this one may contradict. First stdout line is the outcome token — shortlist | no-overlap | indeterminate — and ALL THREE exit 0; a shortlist adds one `<id>\\t<score>\\t<file>\\t<title>` line per entry. An empty-and-readable --dir answers indeterminate. Exits 7 (no readable --new), 11 (corpus unreadable). Example: fabrika adr sweep --new 0940",
 	),
 );
 

@@ -1,12 +1,12 @@
 ---
-id: 0109
+id: 0909
 title: One worker serves the single-page app and its API
 status: accepted
 date: 2026-08-01
 tags: [platform]
 ---
 
-# 0109 — One worker serves the single-page app and its API
+# 0909 — One worker serves the single-page app and its API
 
 **What this decides:** The static bundle and the API share one deployment.
 

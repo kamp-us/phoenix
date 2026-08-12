@@ -222,7 +222,7 @@ $ echo $?
 **Invocation**
 
 ```
-fabrika adr new 0240 only-landed-adrs-may-be-cited [--dir <path>] [--status <text>] [--date <YYYY-MM-DD>] [--title <text>] [--tags <a,b>] [--json]
+fabrika adr new 0940 only-landed-adrs-may-be-cited [--dir <path>] [--status <text>] [--date <YYYY-MM-DD>] [--title <text>] [--tags <a,b>] [--json]
 ```
 
 **Inputs**
@@ -298,8 +298,8 @@ whether the id is claimed; that is `adr next` and `adr resolve`.
 **Examples**
 
 ```
-$ fabrika adr new 0240 only-landed-adrs-may-be-cited
-.decisions/0240-only-landed-adrs-may-be-cited.md
+$ fabrika adr new 0940 only-landed-adrs-may-be-cited
+.decisions/0940-only-landed-adrs-may-be-cited.md
 ```
 
 ```
@@ -407,7 +407,7 @@ landed	0164-guard-relaxing-adr-cp-gate.md	proposed
 ```
 
 ```
-$ fabrika adr resolve 0023 0240
+$ fabrika adr resolve 0023 0940
 live	0023-live-views-sse-livedo.md	amended-in-part by [0025](0025-split-livedo-connection-topic.md), [0028](0028-effect-durable-object-model.md), [0037](0037-unified-void-aligned-live-do.md)
 absent	-	-
 ```
@@ -448,11 +448,11 @@ nothing else**.
 **Invocation**
 
 ```
-fabrika adr supersede 0126 --by 0240 [--dir <path>]
+fabrika adr supersede 0126 --by 0940 [--dir <path>]
 ```
 
 ```
-fabrika adr amend-in-part 0023 --by 0240 [--dir <path>]
+fabrika adr amend-in-part 0023 --by 0940 [--dir <path>]
 ```
 
 **Inputs**
@@ -511,13 +511,13 @@ reads one more, the record for `--by`, to resolve its slug.
 **Examples**
 
 ```
-$ fabrika adr supersede 0126 --by 0240
-.decisions/0126-ambient-adr-discovery.md	superseded by [0240](0240-only-landed-adrs-may-be-cited.md)
+$ fabrika adr supersede 0126 --by 0940
+.decisions/0126-ambient-adr-discovery.md	superseded by [0940](0940-only-landed-adrs-may-be-cited.md)
 ```
 
 ```
-$ fabrika adr amend-in-part 0023 --by 0240
-.decisions/0023-live-views-sse-livedo.md	amended-in-part by [0025](0025-split-livedo-connection-topic.md), [0028](0028-effect-durable-object-model.md), [0037](0037-unified-void-aligned-live-do.md), [0240](0240-only-landed-adrs-may-be-cited.md)
+$ fabrika adr amend-in-part 0023 --by 0940
+.decisions/0023-live-views-sse-livedo.md	amended-in-part by [0025](0025-split-livedo-connection-topic.md), [0028](0028-effect-durable-object-model.md), [0037](0037-unified-void-aligned-live-do.md), [0940](0940-only-landed-adrs-may-be-cited.md)
 ```
 
 ```
@@ -546,7 +546,7 @@ Ranks the uncited live-accepted ADRs whose decision domain the subject touches. 
 **Invocation**
 
 ```
-fabrika adr sweep --new 0240 [--dir <path>] [--limit <n>] [--json]
+fabrika adr sweep --new 0940 [--dir <path>] [--limit <n>] [--json]
 ```
 
 **Inputs**
@@ -689,26 +689,26 @@ Both examples run against fixtures in this skill's tree and reproduce byte for b
 each writes to stderr is not shown.
 
 ```
-$ fabrika adr sweep --new claude-plugins/fabrika/skills/adr/evals/fixtures/0240-only-landed-adrs-may-be-cited.md --dir claude-plugins/fabrika/skills/adr/evals/fixtures/sweep-corpus
+$ fabrika adr sweep --new claude-plugins/fabrika/skills/adr/evals/fixtures/0940-only-landed-adrs-may-be-cited.md --dir claude-plugins/fabrika/skills/adr/evals/fixtures/sweep-corpus
 shortlist
-0101	17.03	0101-citations-resolve-against-the-base-ref.md	A citation resolves against the fetched base ref, never the local working tree
-0103	11.74	0103-an-unmerged-pull-request-leaves-no-record.md	A pull request that never merges leaves no record behind
-0102	9.43	0102-a-reviewer-resolves-every-reference.md	A reviewer resolves every reference in the pull request under review
-0104	4.61	0104-superseded-records-keep-their-file.md	A superseded record keeps its file and gains a status line
-0107	2.30	0107-every-push-runs-the-test-suite.md	Every push runs the whole test suite
-0110	2.30	0110-diagnostics-go-to-stderr.md	Diagnostics go to stderr, answers to stdout
+0901	17.03	0901-citations-resolve-against-the-base-ref.md	A citation resolves against the fetched base ref, never the local working tree
+0903	11.74	0903-an-unmerged-pull-request-leaves-no-record.md	A pull request that never merges leaves no record behind
+0902	9.43	0902-a-reviewer-resolves-every-reference.md	A reviewer resolves every reference in the pull request under review
+0904	4.61	0904-superseded-records-keep-their-file.md	A superseded record keeps its file and gains a status line
+0907	2.30	0907-every-push-runs-the-test-suite.md	Every push runs the whole test suite
+0910	2.30	0910-diagnostics-go-to-stderr.md	Diagnostics go to stderr, answers to stdout
 $ echo $?
 0
 ```
 
-Four of that corpus's ten records — `0105`, `0106`, `0108`, `0109` — are absent, and the absence is
+Four of that corpus's ten records — `0905`, `0906`, `0908`, `0909` — are absent, and the absence is
 the ranking working: each shares exactly one term with the subject, `decision`, which all ten records
 carry (`df = N`), so its weight is dropped and the record scores `0`. The tail is the arithmetic in
-the open: `0107` shares only `time` and `0110` only `lands`, each held by one record of ten, so both
+the open: `0907` shares only `time` and `0910` only `lands`, each held by one record of ten, so both
 score `ln(10 / 1) = 2.302…` → `2.30` and tie, and the tie breaks toward the lower id.
 
 ```
-$ fabrika adr sweep --new 0240 --dir claude-plugins/fabrika/skills/adr/evals/fixtures/small-corpus
+$ fabrika adr sweep --new 0940 --dir claude-plugins/fabrika/skills/adr/evals/fixtures/small-corpus
 indeterminate
 $ echo $?
 0
@@ -718,7 +718,7 @@ That corpus holds three live-accepted records, so it is below the rarity floor a
 indeterminate rather than clean. With `--json` the same run carries the pinned `reason`:
 
 ```
-$ fabrika adr sweep --new 0240 --dir claude-plugins/fabrika/skills/adr/evals/fixtures/small-corpus --json
+$ fabrika adr sweep --new 0940 --dir claude-plugins/fabrika/skills/adr/evals/fixtures/small-corpus --json
 {"outcome":"indeterminate","entries":[],"reason":"the live-accepted corpus holds 3 record(s), below the rarity floor of 10 — every term looks common, so a clean sweep here is degenerate rather than clean","scanned":4,"inScope":3,"cited":0}
 $ echo $?
 0

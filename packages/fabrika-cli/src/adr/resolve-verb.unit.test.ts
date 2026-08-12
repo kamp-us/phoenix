@@ -64,13 +64,13 @@ describe("runResolve", () => {
 	});
 
 	it("reports a proven-absent id as absent, on exit 0", async () => {
-		const out = await run([], {ids: ["0240"]});
+		const out = await run([], {ids: ["0940"]});
 		expect(out.code).toBe(0);
 		expect(out.stdout).toBe("absent\t-\t-\n");
 	});
 
 	it("answers one line per id, in argument order", async () => {
-		expect((await run([], {ids: ["0164", "0240"]})).stdout).toBe(
+		expect((await run([], {ids: ["0164", "0940"]})).stdout).toBe(
 			"landed\t0164-guard.md\tproposed\nabsent\t-\t-\n",
 		);
 	});
