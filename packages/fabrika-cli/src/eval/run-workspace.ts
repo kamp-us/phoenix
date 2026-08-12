@@ -8,8 +8,10 @@
  *
  * The fix is to stage rather than inherit. Each run gets a fresh directory holding **only** the
  * fixture material its own case declares in the authored `files` field, at the same relative path the
- * case's prompt reads (`evals/cases/eval-<n>.md`), and nothing else. What was never copied cannot be
- * read, so isolation is a property of the directory rather than of the candidate's restraint.
+ * case's prompt reads (`fixtures/eval-<n>.md`), and nothing else. What was never copied cannot be
+ * read, so isolation is a property of the directory rather than of the candidate's restraint. A case
+ * whose declared material cannot all be staged is `Unstageable` and scores nothing — the directory is
+ * the only thing the candidate can read, so a partial one measures a question nobody asked.
  *
  * The staging *decision* is pure ({@link stagingPlan}, {@link runDirName}); {@link stageRunWorkspace}
  * is the only part that touches a filesystem, through the services
@@ -27,11 +29,20 @@ export const EVAL_SET_FILE = "evals.json";
 export interface RefusedFixture {
 	readonly path: string;
 	readonly reason: string;
+	/**
+	 * Whether the refusal leaves the run unmeasurable.
+	 *
+	 * The answer key is the one entry a case may declare and still run without: withholding it is the
+	 * whole point, and every other fixture it named is still there. Every other refusal means the
+	 * candidate will be told to read material that is not in its directory, which is a run that cannot
+	 * measure what it claims to — so it blocks (#5434).
+	 */
+	readonly blocking: boolean;
 }
 
 /** What a case's declared `files` resolve to: what gets copied, and what was refused and why. */
 export interface StagingPlan {
-	/** Skill-root-relative paths, staged at the same relative path so the authored prompt resolves. */
+	/** Authored relative paths, staged at the same relative path so the authored prompt resolves. */
 	readonly staged: ReadonlyArray<string>;
 	readonly refused: ReadonlyArray<RefusedFixture>;
 }
@@ -41,12 +52,22 @@ const segmentsOf = (file: string): ReadonlyArray<string> => file.split(/[\\/]/);
 const isAbsolute = (file: string): boolean =>
 	file.startsWith("/") || file.startsWith("\\") || /^[A-Za-z]:[\\/]/.test(file);
 
-const refusalReason = (file: string): string | null => {
-	if (file.trim() === "") return "the entry is blank";
-	if (isAbsolute(file)) return "an absolute path would stage material from outside the eval set";
-	if (segmentsOf(file).includes("..")) return "a `..` segment would escape the run directory";
+const refusalOf = (file: string): Omit<RefusedFixture, "path"> | null => {
+	if (file.trim() === "") return {reason: "the entry is blank", blocking: true};
+	if (isAbsolute(file)) {
+		return {
+			reason: "an absolute path would stage material from outside the eval set",
+			blocking: true,
+		};
+	}
+	if (segmentsOf(file).includes("..")) {
+		return {reason: "a `..` segment would escape the run directory", blocking: true};
+	}
 	if (segmentsOf(file).at(-1) === EVAL_SET_FILE) {
-		return `${EVAL_SET_FILE} is the authored answer key — a candidate never gets it`;
+		return {
+			reason: `${EVAL_SET_FILE} is the authored answer key — a candidate never gets it`,
+			blocking: false,
+		};
 	}
 	return null;
 };
@@ -54,17 +75,17 @@ const refusalReason = (file: string): string | null => {
 /**
  * Resolve a case's declared `files` into what may be staged.
  *
- * A refusal drops one entry and never fails the run: a case that names an unstageable path still gets
- * an isolated directory, and fails on its own terms with the refusal on stderr — which is the honest
- * outcome. Silently widening the directory to satisfy such an entry is the one thing this cannot do.
+ * Silently widening the run directory to satisfy a refused entry is the one thing this cannot do; a
+ * blocking refusal instead makes the run {@link RunWorkspace.Unstageable}, so the run records no
+ * verdict rather than a scored one taken in a directory missing what the prompt reads.
  */
 export const stagingPlan = (files: ReadonlyArray<string>): StagingPlan => {
 	const staged: Array<string> = [];
 	const refused: Array<RefusedFixture> = [];
 	for (const file of files) {
-		const reason = refusalReason(file);
-		if (reason !== null) {
-			refused.push({path: file, reason});
+		const refusal = refusalOf(file);
+		if (refusal !== null) {
+			refused.push({path: file, ...refusal});
 			continue;
 		}
 		if (!staged.includes(file)) staged.push(file);
@@ -101,10 +122,14 @@ export type RunWorkspace =
  *
  * Scoped: the directory is removed when the caller's scope closes, so isolation does not trade the
  * answer-key hole for a working-tree-pollution one.
+ *
+ * A declared fixture that cannot be staged returns `Unstageable`, never a `Staged` directory missing
+ * it: the candidate would be spawned into a tree without the material its prompt names, and the
+ * verdict it produced would still be counted by `medianVerdict` and `dispersion` (#5434).
  */
 export const stageRunWorkspace = (args: {
-	/** The directory the authored `files` are relative to — where `evals/cases/…` resolves from. */
-	readonly skillRoot: string;
+	/** The authored eval set's own path — the two candidate bases below are derived from it. */
+	readonly setPath: string;
 	readonly caseId: number;
 	readonly run: number;
 	readonly sessionId: string;
@@ -114,6 +139,25 @@ export const stageRunWorkspace = (args: {
 		const fs = yield* FileSystem.FileSystem;
 		const path = yield* Path.Path;
 		const where = `case ${args.caseId} run ${args.run}`;
+		// The corpus authors two conventions and neither is wrong, so the base is found rather than
+		// assumed — set-directory-relative (`fixtures/…`) first, then skill-root-relative
+		// (`evals/fixtures/…`). Assuming one silently failed to copy for every set using the other.
+		const setDir = path.dirname(args.setPath);
+		const bases = [setDir, path.dirname(setDir)];
+
+		const plan = stagingPlan(args.files);
+		for (const refusal of plan.refused) {
+			yield* Console.error(
+				`fabrika eval: ${where}: not staging ${refusal.path} — ${refusal.reason}`,
+			);
+		}
+		const blocked = plan.refused.filter((refusal) => refusal.blocking);
+		if (blocked.length > 0) {
+			return {
+				_tag: "Unstageable",
+				detail: blocked.map((r) => `${r.path} (${r.reason})`).join("; "),
+			};
+		}
 
 		const parent = yield* Effect.result(fs.makeTempDirectoryScoped({prefix: "fabrika-graded-"}));
 		if (Result.isFailure(parent)) {
@@ -125,20 +169,26 @@ export const stageRunWorkspace = (args: {
 			return {_tag: "Unstageable", detail: made.failure.message};
 		}
 
-		const plan = stagingPlan(args.files);
-		for (const refusal of plan.refused) {
-			yield* Console.error(
-				`fabrika eval: ${where}: not staging ${refusal.path} — ${refusal.reason}`,
-			);
-		}
 		for (const file of plan.staged) {
 			const to = path.join(dir, file);
+			let from: string | null = null;
+			for (const base of bases) {
+				const candidate = path.join(base, file);
+				if (yield* fs.exists(candidate).pipe(Effect.orElseSucceed(() => false))) {
+					from = candidate;
+					break;
+				}
+			}
+			if (from === null) {
+				return {
+					_tag: "Unstageable",
+					detail: `${file} resolves under none of ${bases.join(", ")}`,
+				};
+			}
 			yield* Effect.ignore(fs.makeDirectory(path.dirname(to), {recursive: true}));
-			const copied = yield* Effect.result(fs.copy(path.join(args.skillRoot, file), to));
+			const copied = yield* Effect.result(fs.copy(from, to));
 			if (Result.isFailure(copied)) {
-				yield* Console.error(
-					`fabrika eval: ${where}: could not stage ${file} — ${copied.failure.message}`,
-				);
+				return {_tag: "Unstageable", detail: `${file}: ${copied.failure.message}`};
 			}
 		}
 		return {_tag: "Staged", dir};

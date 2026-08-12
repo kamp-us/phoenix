@@ -720,10 +720,6 @@ const produceGradedRecord = (request: GradedRunRequest) =>
 		}
 
 		const crypto = yield* Crypto.Crypto;
-		const path = yield* Path.Path;
-		// A case's authored `files` are skill-root-relative (`evals/cases/eval-<n>.md`) and the set
-		// lives at `<skill-root>/evals/evals.json`, so a run stages from two levels above the set.
-		const skillRoot = path.dirname(path.dirname(request.path));
 
 		// The executor is built per invocation, not once for the axis: `cwd` is what makes a run's
 		// directory its own, so an executor shared across the five would re-share the directory (#5437).
@@ -756,7 +752,7 @@ const produceGradedRecord = (request: GradedRunRequest) =>
 					Effect.gen(function* () {
 						const sessionId = yield* Effect.orDie(crypto.randomUUIDv4);
 						const workspace = yield* stageRunWorkspace({
-							skillRoot,
+							setPath: request.path,
 							caseId: evalCase.id,
 							run,
 							sessionId,

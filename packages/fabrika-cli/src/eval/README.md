@@ -1049,14 +1049,26 @@ legible on disk — copies in **only** the paths that case's authored `files` fi
 same relative path the prompt reads, and feeds it through `claudeExecutor`'s existing `cwd`. The
 directory is removed when the run's scope closes.
 
+**The base a `files` entry resolves against is found, not assumed.** The corpus writes two
+conventions and neither is wrong: at the time this became the field's first consumer, 65 of the 92
+authored entries were relative to the set's own directory (`fixtures/eval-1.md`) and 17 to the skill
+root (`evals/fixtures/eval-1.md`, `evals/cases/eval-1.md`). So each entry is looked up under the set
+directory first and the skill root second, and staged at the **authored** relative path either way,
+which is what the prompt reads. (10 entries — `check-epic-plan`'s bare `eval-<n>.md`, whose files
+live under `evals/fixtures/` — resolve under neither, and are therefore `Unstageable` below rather
+than silently absent: [#5457](https://github.com/kamp-us/phoenix/issues/5457).)
+
 Three properties are deliberate:
 
 - **The answer key is refused by name**, not merely left uncopied: a case that declared
-  `evals/evals.json` would still not get it, and neither an absolute path nor one with a `..`
-  segment is staged.
-- **A run that cannot be isolated does not run.** `stageRunWorkspace` answers `Unstageable`, and the
-  verb records `no-verdict:invocation-failed` rather than falling back to the inherited tree — the
-  fallback would silently restore both defects.
+  `evals/evals.json` would still not get it. It is also the **only** refusal a run survives —
+  withholding it is the point, and everything else the case declared is still there.
+- **A run that cannot be isolated does not run, and a run missing its declared material is not
+  isolated.** `stageRunWorkspace` answers `Unstageable` — for a fixture that resolves under no base,
+  a copy that fails, an absolute path, or a `..` segment — and the verb records
+  `no-verdict:invocation-failed` rather than falling back to the inherited tree or spawning into a
+  directory short of what the prompt names. Either fallback would let a run nobody could isolate
+  reach `medianVerdict` and `dispersion` as a scored verdict.
 - **The grader is unchanged.** It is handed `expected_output` and the expectations in-process by
   `composeGraderPrompt`, stages nothing, and needs no directory of its own. `dispersion` and
   `medianVerdict` are untouched; this restores the independence they already assumed.

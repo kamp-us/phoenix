@@ -43,10 +43,17 @@ const gradableCase: GradableCase = {
 	files: [FIXTURE],
 };
 
-/** A skill root shaped like a real one: the authored set beside the case material it points at. */
+/**
+ * A skill root shaped like a real one: the authored set beside the case material it points at.
+ *
+ * It carries the same file under **both** authored conventions — skill-root-relative
+ * `evals/cases/eval-1.md` and set-directory-relative `fixtures/eval-1.md` — because the corpus uses
+ * both and a run has to resolve either (#5434).
+ */
 const makeSkillRoot = (): string => {
 	const root = mkdtempSync(join(tmpdir(), "fabrika-skill-"));
 	mkdirSync(join(root, "evals", "cases"), {recursive: true});
+	mkdirSync(join(root, "evals", "fixtures"), {recursive: true});
 	writeFileSync(
 		join(root, "evals", EVAL_SET_FILE),
 		JSON.stringify({
@@ -56,8 +63,11 @@ const makeSkillRoot = (): string => {
 	);
 	writeFileSync(join(root, "evals", "cases", "eval-1.md"), FIXTURE_BODY);
 	writeFileSync(join(root, "evals", "cases", "eval-2.md"), "another case's fixture material");
+	writeFileSync(join(root, "evals", "fixtures", "eval-1.md"), FIXTURE_BODY);
 	return root;
 };
+
+const setPathOf = (skillRoot: string): string => join(skillRoot, "evals", EVAL_SET_FILE);
 
 /** Every path under `dir`, relative and slash-normalised — what a candidate could reach. */
 const treeOf = (dir: string): ReadonlyArray<string> =>
@@ -77,12 +87,15 @@ describe("which declared fixtures may be staged", () => {
 		const plan = stagingPlan([FIXTURE, `evals/${EVAL_SET_FILE}`]);
 		expect(plan.staged).toEqual([FIXTURE]);
 		expect(plan.refused.map((refusal) => refusal.path)).toEqual([`evals/${EVAL_SET_FILE}`]);
+		// Withholding the answer key is the point, so it is the one refusal a run survives.
+		expect(plan.refused.map((refusal) => refusal.blocking)).toEqual([false]);
 	});
 
-	it("refuses paths that would reach outside the run directory", () => {
+	it("refuses paths that would reach outside the run directory, and blocks the run", () => {
 		const plan = stagingPlan(["/etc/passwd", "../evals/cases/eval-2.md", "  ", "C:\\keys.json"]);
 		expect(plan.staged).toEqual([]);
 		expect(plan.refused).toHaveLength(4);
+		expect(plan.refused.every((refusal) => refusal.blocking)).toBe(true);
 	});
 
 	it("stages a repeated entry once", () => {
@@ -110,7 +123,7 @@ describe("the five graded runs of one case", () => {
 	 * Drive the real axis with a stub that stages, snapshots what it was handed, and only then writes
 	 * a deliverable — the shape a candidate leaves behind, and what the next run must not be able to see.
 	 */
-	const stageFiveRuns = () =>
+	const stageFiveRuns = (evalCase: GradableCase = gradableCase) =>
 		live(
 			Effect.gen(function* () {
 				const fs = yield* FileSystem.FileSystem;
@@ -121,13 +134,13 @@ describe("the five graded runs of one case", () => {
 					readonly staged: ReadonlyArray<string>;
 					readonly bytes: string;
 				}> = [];
-				yield* runGradedAxis({
-					cases: [gradableCase],
+				const results = yield* runGradedAxis({
+					cases: [evalCase],
 					runOnce: ({evalCase, run}) =>
 						Effect.scoped(
 							Effect.gen(function* () {
 								const workspace = yield* stageRunWorkspace({
-									skillRoot,
+									setPath: setPathOf(skillRoot),
 									caseId: evalCase.id,
 									run,
 									sessionId: `session-${run}`,
@@ -152,12 +165,12 @@ describe("the five graded runs of one case", () => {
 							}),
 						),
 				});
-				return observed;
+				return {observed, results};
 			}),
 		);
 
 	it("each execute in their own fresh directory, with no sibling run's deliverables in it", async () => {
-		const observed = await stageFiveRuns();
+		const {observed} = await stageFiveRuns();
 
 		expect(observed).toHaveLength(5);
 		expect(new Set(observed.map((run) => run.dir)).size).toBe(5);
@@ -169,7 +182,7 @@ describe("the five graded runs of one case", () => {
 	});
 
 	it("hold the case's own fixture at the path its authored prompt reads, and nothing else", async () => {
-		const observed = await stageFiveRuns();
+		const {observed} = await stageFiveRuns();
 
 		for (const run of observed) {
 			expect(run.staged).toEqual(["evals", "evals/cases", FIXTURE]);
@@ -180,8 +193,65 @@ describe("the five graded runs of one case", () => {
 	});
 
 	it("are removed when the run's scope closes, so isolation leaves nothing behind", async () => {
-		const observed = await stageFiveRuns();
+		const {observed} = await stageFiveRuns();
 
 		for (const run of observed) expect(existsSync(run.dir)).toBe(false);
+	});
+
+	// The majority convention in the corpus: `files` relative to the set's own directory, not the
+	// skill root. Both must resolve, or the base this consumer picked silently decides which sets run.
+	it("resolve a set-directory-relative fixture as well as a skill-root-relative one", async () => {
+		const {observed} = await stageFiveRuns({...gradableCase, files: ["fixtures/eval-1.md"]});
+
+		expect(observed).toHaveLength(5);
+		for (const run of observed) {
+			expect(run.staged).toEqual(["fixtures", "fixtures/eval-1.md"]);
+			expect(run.bytes).toBe(FIXTURE_BODY);
+		}
+	});
+
+	/**
+	 * The compounding half of #5434: a fixture that cannot be staged used to leave a `Staged` empty
+	 * directory, so the candidate was spawned without the material its prompt names and the verdict it
+	 * produced was still counted. The run must reach `Unstageable` instead, and land in the median as
+	 * `unmeasured`.
+	 */
+	it("score nothing when a declared fixture resolves under no base", async () => {
+		const {observed, results} = await stageFiveRuns({
+			...gradableCase,
+			files: ["fixtures/no-such-case.md"],
+		});
+
+		expect(observed).toEqual([]);
+		expect(results).toHaveLength(1);
+		expect(results[0]?.verdict).toBe("unmeasured");
+		expect(results[0]?.noVerdict).toBe(5);
+		expect(results[0]?.passed).toBe(0);
+	});
+
+	it("score nothing when a declared fixture would escape the run directory", async () => {
+		const {observed, results} = await stageFiveRuns({
+			...gradableCase,
+			files: [FIXTURE, "../evals/cases/eval-2.md"],
+		});
+
+		expect(observed).toEqual([]);
+		expect(results[0]?.verdict).toBe("unmeasured");
+		expect(results[0]?.noVerdict).toBe(5);
+	});
+
+	// The one refusal a run survives: the case still has everything else it declared.
+	it("still run when the case declares the answer key, which is withheld", async () => {
+		const {observed, results} = await stageFiveRuns({
+			...gradableCase,
+			files: [FIXTURE, `evals/${EVAL_SET_FILE}`],
+		});
+
+		expect(observed).toHaveLength(5);
+		expect(results[0]?.verdict).toBe("pass");
+		for (const run of observed) {
+			expect(run.staged).not.toContain(`evals/${EVAL_SET_FILE}`);
+			expect(run.bytes).not.toContain("answer key");
+		}
 	});
 });
