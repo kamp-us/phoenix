@@ -9,24 +9,46 @@
 # on an AGENT sourcing at its top-level command, which the isolation verifier refuses. The agent
 # reads the same four values off `materialize-head.sh`'s stdout instead.
 #
-# The namespace is per-run and per-session (§SP, #3718), which is what keeps a SIBLING reviewer's
-# tree out of reach — the failure a `git worktree list` re-derivation on a shared leaf name walks
-# straight into, pinning the wrong head (#1807). Exits non-zero with EMPTY stdout when it cannot
-# print a handle, so a caller's `.` fails loudly instead of reading the base tree — and the status is
-# WHICH cause fired: 5 / $KP_HEAD_HANDLE_ABSENT mean nothing was materialized, anything else means
-# the resolver could not look (see `KP_HEAD_HANDLE_ABSENT` in ../../../lib/common.sh).
+# usage: head-env.sh <pr>
+#
+# The namespace is per-run, per-session AND per-PR (§SP, #3718). The PR key is load-bearing, not
+# symmetry with the sibling gates: a session-only key does not discriminate at the one moment it
+# has to, because the normal drain fans several `review-code` runs inside ONE session — they then
+# shared a single `head.env`, the last `materialize-head.sh` won, and every earlier reviewer
+# silently re-pointed at the winner's tree (#5416). Callers pass the PR they were invoked for, so
+# a caller asking for PR N can never be handed a handle describing PR M — the slug separates them,
+# and `kp_head_handle_names_pr` refuses the leftovers of any way one still could.
+#
+# Exits non-zero with EMPTY stdout when it cannot print a TRUSTWORTHY handle, so a caller's `.`
+# fails loudly instead of reading the base tree — and the status is WHICH cause fired: 5 /
+# $KP_HEAD_HANDLE_ABSENT mean nothing was materialized, anything else (a mismatched handle
+# included) means the resolver could not hand over an answer, which is UNKNOWN (see
+# `KP_HEAD_HANDLE_ABSENT` in ../../../lib/common.sh).
 set -uo pipefail
 # shellcheck source=../../../lib/common.sh disable=SC1007,SC1091
 . "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
 
-DIR="$(kp_scratch_path review-code-head)"
+[ "$#" -ge 1 ] || { echo "usage: head-env.sh <pr>" >&2; exit 2; }
+PR="$1"
+
+DIR="$(kp_scratch_path "review-code-head-$PR")"
 RC=$?
 # Propagate `kp_scratch_path`'s own status instead of flattening it to 1: teardown-head.sh decides
 # no-op-vs-error from this number, and a flattened 1 made "namespace never opened" (5) look the same
 # as "the CLI never ran" (127) — #4972.
 [ "$RC" -eq 0 ] || exit "$RC"
 [ -f "$DIR/head.env" ] || {
-  echo "head-env.sh: namespace $DIR holds no head.env — materialize-head.sh never ran (or was aborted) in THIS session, so nothing was materialized. NEVER fall back to the launched checkout's working copy (§HEAD, #793)." >&2
+  echo "head-env.sh: namespace $DIR holds no head.env — materialize-head.sh never ran for PR $PR (or was aborted) in THIS session, so nothing was materialized. NEVER fall back to the launched checkout's working copy (§HEAD, #793)." >&2
   exit "$KP_HEAD_HANDLE_ABSENT"
 }
+# Verify the handle DESCRIBES this PR before handing its path out. Read it in a subshell so the
+# check cannot leak the handle's values into this script's own environment and answer itself.
+(
+  # shellcheck disable=SC1090,SC1091  # the run-unique handle resolved just above
+  . "$DIR/head.env" || {
+    echo "head-env.sh: $DIR/head.env exists but could not be read — unreachable is not absent." >&2
+    exit 1
+  }
+  kp_head_handle_names_pr "$PR" "$DIR/head.env"
+) || exit 1
 printf '%s\n' "$DIR/head.env"
