@@ -384,6 +384,51 @@ kp_pcli() {
 # shellcheck disable=SC2034  # read by the sourcing script, not by this file
 KP_HEAD_HANDLE_ABSENT=20
 
+# Assert an ALREADY-SOURCED head handle describes the PR its reader was invoked for, and refuse
+# loudly when it does not. Defined once here for the same reason `KP_HEAD_HANDLE_ABSENT` is: all
+# three review gates read a head handle and must not diverge on what makes one trustworthy.
+#
+# `${REVIEW_WT:?…}` was the only guard the consumers had, and it fires when the handle is ABSENT,
+# never when it is WRONG — so a handle describing PR M satisfied every reader asking for PR N. A
+# reviewer then typechecked a sibling PR's tree and bound the verdict to its own live head SHA,
+# which the post-time SHA cross-check and ADR 0058 staleness both pass: a wrong-tree green is
+# indistinguishable from a right-tree green (#5416). Keying the slug by PR is what stops the
+# handles colliding; this is the belt-and-braces that makes a collision that got through UNKNOWN
+# instead of silent.
+#
+# The operands come from the handle FILE — the `HANDLE_PR` stamp `materialize-head.sh` wrote and
+# the PR-stamped names `pipeline-cli review-head materialize` mints (`review-head-<pr>-<id>`,
+# `refs/pr/<pr>-<nonce>`) — never re-derived from the argument under test, so a mismatch can
+# actually print. An unstamped handle is a refusal too: it is a handle whose PR cannot be
+# established, which is UNKNOWN, never "close enough" (§ZS, ADR 0092).
+# usage: kp_head_handle_names_pr <pr> <handle-path-for-the-message>
+kp_head_handle_names_pr() {
+	local pr="$1" handle="${2:-<handle>}"
+	if [ -z "${HANDLE_PR:-}" ]; then
+		printf 'head handle %s carries no HANDLE_PR stamp — its PR cannot be established, so it may describe ANOTHER PR. Refusing (§ZS; #5416).\n' "$handle" >&2
+		return 1
+	fi
+	if [ "$HANDLE_PR" != "$pr" ]; then
+		printf 'head handle %s describes PR %s, but this caller was invoked for PR %s — refusing to act on a SIBLING reviewer'"'"'s tree (#5416).\n' "$handle" "$HANDLE_PR" "$pr" >&2
+		return 1
+	fi
+	case "${REVIEW_WT:-}" in
+		'' | */review-head-"$pr"-*) ;;
+		*)
+			printf 'head handle %s stamps PR %s but names worktree %s, which is not PR %s'"'"'s tree — refusing (#5416).\n' "$handle" "$pr" "$REVIEW_WT" "$pr" >&2
+			return 1
+			;;
+	esac
+	case "${PR_REF:-}" in
+		'' | refs/pr/"$pr"-*) ;;
+		*)
+			printf 'head handle %s stamps PR %s but names ref %s, which is not PR %s'"'"'s ref — refusing (#5416).\n' "$handle" "$pr" "$PR_REF" "$pr" >&2
+			return 1
+			;;
+	esac
+	return 0
+}
+
 # The per-run scratch namespace for <slug> (§SP, #3718). `open` is the run's first write of
 # scratch state; `path` re-derives it in every later call. Both print the absolute directory.
 kp_scratch_open() { kp__scratch "open" "$1"; }

@@ -357,6 +357,20 @@ values also persist to a per-run §SP handle that this skill's *own later script
 in-process via [`scripts/head-env.sh`](scripts/head-env.sh) — in-script sourcing of a sibling script
 stays sanctioned; only the `.` at your top-level command is banned.
 
+**That handle is keyed by PR, and every consumer passes the PR it was invoked for.** This is why
+each fence below carries `"$PR"`. The key used to be the session alone, and a fanned drain runs
+several `review-code` gates inside **one** session — so they shared a single `head.env`, the last
+materialization won, and an earlier reviewer typechecked a **sibling PR's tree** while binding its
+verdict to its own correctly-read live head SHA. Every existing detector passes that: the marker's
+SHA *is* the PR's head, so the post-time cross-check and ADR 0058 staleness both agree, and a
+wrong-tree green is indistinguishable from a right-tree green (#5416). The same key is what stops
+[`scripts/teardown-head.sh`](scripts/teardown-head.sh) `rm -rf`ing a sibling's live tree. Belt and
+braces: the handle records the PR it was written for, and every consumer refuses — loudly, as
+UNKNOWN, never as a skip — when the handle it resolved does not describe its own PR. All of that is
+re-derived, not asserted, by
+`bash ./.claude/.pipeline/skills/review-code/scripts/verify-head-handle-pr-keyed.sh` — including a
+mutant that puts the constant slug back and collides the two PRs again.
+
 The cross-fork case needs no special branch: `pull/$PR/head` is the GitHub-provided ref for
 the PR head whether it lives on this repo or a fork, so the single `git fetch` above covers
 both — and because it lands in `$PR_REF` (not your working tree) and the denylist is removed
@@ -367,7 +381,7 @@ an output), run the repo's commands **inside the review worktree** — behavior 
 running beats behavior inferred from a diff:
 
 ```bash
-bash ./.claude/.pipeline/skills/review-code/scripts/worktree-checks.sh
+bash ./.claude/.pipeline/skills/review-code/scripts/worktree-checks.sh "$PR"
 ```
 
 Scoping a test to the criterion is fine when the SHA-bound run-evidence bundle (Step 2) corroborates
@@ -379,7 +393,7 @@ degrade block below: run the FULL unit project, never a subset.
 just the happy path:**
 
 ```bash
-bash ./.claude/.pipeline/skills/review-code/scripts/teardown-head.sh
+bash ./.claude/.pipeline/skills/review-code/scripts/teardown-head.sh "$PR"
 ```
 
 It is the review's own `rm -rf` of a detached, already-pushed throwaway
@@ -387,7 +401,7 @@ it materialized itself (safe — it holds no branch and no unpushed work), so ru
 the review is exiting `FAIL` or aborting after a typecheck/lint error; a leaked `review-head-*`
 tree accumulates on the shared primary otherwise (#2785). To catch a mid-block error inside a
 single Bash call, register the script as a trap right after materialization:
-`trap 'bash ./.claude/.pipeline/skills/review-code/scripts/teardown-head.sh' EXIT` —
+`trap 'bash ./.claude/.pipeline/skills/review-code/scripts/teardown-head.sh "$PR"' EXIT` —
 and note the trap belongs to **your** shell, not to any extracted script: none of them installs an
 `EXIT` trap, because under bash 3.2 the trap's last command becomes the script's exit status and
 would launder a `set -u` abort into exit 0 (#4476, class #4479). And the
@@ -415,7 +429,7 @@ the full build inputs, so the typecheck bootstrap is whole — run it and treat 
 the typecheck signal:
 
 ```bash
-bash ./.claude/.pipeline/skills/review-code/scripts/worktree-typecheck.sh
+bash ./.claude/.pipeline/skills/review-code/scripts/worktree-typecheck.sh "$PR"
 ```
 
 CI and the SHA-bound run-evidence bundle (below) are now **corroboration**, not the sole
@@ -516,7 +530,7 @@ gate exists to prevent. On the degrade path therefore:
   past a degraded verification.
 
   ```bash
-  bash ./.claude/.pipeline/skills/review-code/scripts/full-unit-project.sh
+  bash ./.claude/.pipeline/skills/review-code/scripts/full-unit-project.sh "$PR"
   ```
 
 - **If — and only if — the full unit project genuinely cannot run** (an environment fault
