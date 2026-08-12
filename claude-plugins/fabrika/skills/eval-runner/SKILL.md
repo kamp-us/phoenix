@@ -22,14 +22,19 @@ that produces them (#4679, same ruling) — a cost constraint, recorded as one. 
 the CI half mechanically; honouring it here is yours.
 
 **Plain, not worktree-isolated** — the second half of the same run site, stated because it was left
-implicit and three lanes paid for it (#5406). A worktree-isolated session's harness guard refuses
-**any** Bash command containing the token `eval`, wherever it sits: `fabrika eval cases`,
-`fabrika eval run`, `fabrika eval graded`, `fabrika eval baseline …`, and even
-`node packages/fabrika-cli/src/bin.ts eval …` — the match is on the word, not on the shell builtin,
-so an argument spelled `eval` is refused exactly like a command. This is not a new constraint on
-top of #4679; it is what #4679's "any operator machine, portable surfaces" already meant, now
-written where the reader who needs it will see it. If you are in an isolated worktree, you are not
-at this skill's run site — the measurement is a **hand-off**, not something to route around.
+implicit and three lanes paid for it (#5406). What has been *observed*, and only that: in
+worktree-isolated sessions the harness refused `fabrika eval cases --help`, `fabrika eval --help`,
+and `node packages/fabrika-cli/src/bin.ts eval cases --help` — the last of those a form where
+`eval` is an argument rather than a shell builtin (#5406). Observed in the other direction as well:
+a worktree-isolated session later ran several commands carrying the same token without a refusal
+(#5458). The guard belongs to the agent harness, not to this repo, and its rule is not readable
+from here — so no mechanism is stated, and none should be inferred. Treat the refusal as one you
+**cannot predict and must not design around**; an unpredictable refusal is a worse thing to depend
+on than a deterministic one, which makes the run-site rule stronger rather than weaker. This is not
+a new constraint on top of #4679; it is what #4679's "any operator machine, portable surfaces"
+already meant, now written where the reader who needs it will see it. If you are in an isolated
+worktree, you are not at this skill's run site — the measurement is a **hand-off**, not something
+to route around.
 
 A lane that hit the refusal before this was written down moved each command into a script file and
 ran the file. Recorded so nobody re-derives it, and bounded in the same breath: that is a way to get

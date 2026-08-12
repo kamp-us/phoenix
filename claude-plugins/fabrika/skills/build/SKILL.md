@@ -189,14 +189,16 @@ review-appended acceptance criterion after round 2 is frozen — note it, do not
 
 - **Control-plane membership** — decided by CODEOWNERS at the merge gate. You never classify.
 - **You cannot run `fabrika eval …` from a lane, and that is the design.** You are in a worktree by
-  construction (step 4 proves it before every mutation), and a worktree-isolated session's harness
-  guard refuses any Bash command carrying the token `eval` — position-blind, so a script path or an
-  argument spelled `eval` is refused too. The measurement belongs to `eval-runner`, whose run site
-  is a plain non-worktree session (#4679, #5406). So a needed measurement is a **hand-off**: say
-  what needs measuring and stop, the same way you stop for anything outside your tree. It is not a
-  blocker to hack around, and it is never a licence to substitute reasoning about correctness for
-  the measurement — three lanes made that substitution in two days, which pushes verification onto
-  the reviewer or onto nobody (#5406).
+  construction (step 4 proves it before every mutation), and worktree-isolated sessions have been
+  refused on `fabrika eval …` invocations, including a form where `eval` sat in an argument rather
+  than as a shell builtin (#5406). The guard is the agent harness's, not this repo's, its rule is
+  not readable from here, and the refusals have **not** been consistent across sessions (#5458) — so
+  it is a refusal you cannot predict and must not design around. The measurement belongs to
+  `eval-runner`, whose run site is a plain non-worktree session (#4679, #5406). So a needed
+  measurement is a **hand-off**: say what needs measuring and stop, the same way you stop for
+  anything outside your tree. It is not a blocker to hack around, and it is never a licence to
+  substitute reasoning about correctness for the measurement — three lanes made that substitution
+  in two days, which pushes verification onto the reviewer or onto nobody (#5406).
 - **Leak scanning of changed files** — `leak-guard.yml` in CI. Your verbs guard only what you post.
 - **CI redness** — `ci.yml` owns it. `build check` predicts it in-tree; the gate's answer wins.
 - Follow-up observations leave through `/report` the moment you see them — never through scope
