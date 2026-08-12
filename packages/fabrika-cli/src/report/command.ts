@@ -159,6 +159,7 @@ const note = leafCommand(
 
 export const reportCommand = Command.make("report").pipe(
 	Command.withSubcommands([dedup, fileCmd, note]),
+	Command.withShortDescription("File one follow-up observation into the intake queue."),
 	Command.withDescription(
 		"File one follow-up observation into the intake queue: check for a duplicate, then compose and post it over a guarded path that refuses a leak, an empty body, or a hand-applied classification",
 	),

@@ -428,6 +428,7 @@ export const buildCommand = Command.make("build").pipe(
 		note,
 		verdicts,
 	]),
+	Command.withShortDescription("Drive one construction lane from issue pick to open PR."),
 	Command.withDescription(
 		"Drive one construction lane end to end — prove the tree, pick and claim the issue, cut the branch, validate the tree, push, open the PR, and read the verdicts back",
 	),
