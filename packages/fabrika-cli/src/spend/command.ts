@@ -88,6 +88,7 @@ const rollup = leafCommand(
 
 export const spendCommand = Command.make("spend").pipe(
 	Command.withSubcommands([read, rollup]),
+	Command.withShortDescription("Read what fabrika's runs cost, in tokens."),
 	Command.withDescription(
 		"Read what fabrika's runs cost, in tokens — one run from its transcript, or all of them from the durable ledger",
 	),

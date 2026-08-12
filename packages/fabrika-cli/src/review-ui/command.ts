@@ -171,6 +171,7 @@ export const reviewUiCommand = Command.make("review-ui").pipe(
 		post,
 		note,
 	]),
+	Command.withShortDescription("Judge a UI pull request over its preview deployment."),
 	Command.withDescription(
 		"Judge a UI pull request over its preview deployment — capture the named surfaces at the inspected head, and emit the review-ui verdict or a typed blocker note through the one sanctioned write path",
 	),

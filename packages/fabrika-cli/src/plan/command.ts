@@ -127,6 +127,7 @@ export const planCommand = Command.make("plan").pipe(
 		flip,
 		verdict,
 	]),
+	Command.withShortDescription("Gate an epic's plan before its children build."),
 	Command.withDescription(
 		"Gate an epic's plan: read its ledger, derive the deterministic floor, flip its planned children into the build pool, and post the verdict bound to the scope digest",
 	),

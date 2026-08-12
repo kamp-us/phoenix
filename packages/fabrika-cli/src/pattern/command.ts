@@ -166,6 +166,7 @@ const register = leafCommand(
 
 export const patternCommand = Command.make("pattern").pipe(
 	Command.withSubcommands([corpus, drift, anchor, create, register]),
+	Command.withShortDescription("Read and write the pattern library."),
 	Command.withDescription(
 		"Read and write the pattern library: the corpus at a base ref, whether a doc's cited source or declared dependency pin moved, and the two writes that scaffold a doc and register its row",
 	),

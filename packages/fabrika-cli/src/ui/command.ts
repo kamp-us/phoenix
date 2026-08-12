@@ -181,6 +181,7 @@ export const uiCommand = Command.make("ui").pipe(
 		golden,
 		evidence,
 	]),
+	Command.withShortDescription("What the visual modality adds to a construction lane."),
 	Command.withDescription(
 		"What the visual modality adds to a construction lane — resolve the design surfaces and the typed law, render and validate surface captures, diff them against the blessed goldens, and attach the evidence to the PR",
 	),

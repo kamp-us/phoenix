@@ -176,6 +176,7 @@ export const wireCommand = Command.make("wire").pipe(
 		check,
 		index,
 	]),
+	Command.withShortDescription("Own the byte-level formats two skills meet through."),
 	Command.withDescription(
 		"Own the byte-level formats two skills meet through on a GitHub artifact — compose them, read them back totally (found / absent / malformed), check one without reading its fields, and keep the index doc rendered from the registry",
 	),

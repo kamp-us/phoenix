@@ -233,6 +233,7 @@ export const ledgerCommand = Command.make("ledger").pipe(
 		write,
 		supersede,
 	]),
+	Command.withShortDescription("Author an epic's plan and its children."),
 	Command.withDescription(
 		"Author an epic's plan: open the run on proven-fresh ground, stage the plan block, mint each child born complete and linked, declare the dependency topology, and splice both into the epic body",
 	),
