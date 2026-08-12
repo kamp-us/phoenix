@@ -240,6 +240,35 @@ describe("the five graded runs of one case", () => {
 		expect(results[0]?.noVerdict).toBe(5);
 	});
 
+	/**
+	 * The other door onto the same defect: a case that declares **nothing** used to get a `Staged`
+	 * empty directory and score out of it, silently — a `pass`/`fail` no reader could tell from a
+	 * measurement. 22 of the corpus's graded cases are this shape and their prompts name material by
+	 * path, so an absent declaration must reach `unmeasured` too.
+	 */
+	it("score nothing when the case declares no `files` at all", async () => {
+		const {observed, results} = await stageFiveRuns({...gradableCase, files: null});
+
+		expect(observed).toEqual([]);
+		expect(results).toHaveLength(1);
+		expect(results[0]?.verdict).toBe("unmeasured");
+		expect(results[0]?.noVerdict).toBe(5);
+		expect(results[0]?.passed).toBe(0);
+	});
+
+	// The other side of that rule, and why it is keyed on the declaration rather than on emptiness: an
+	// authored `files: []` IS a claim — this case needs no material — so an empty directory is right.
+	it("run in an empty directory when the case declares it needs no material", async () => {
+		const {observed, results} = await stageFiveRuns({...gradableCase, files: []});
+
+		expect(observed).toHaveLength(5);
+		expect(results[0]?.verdict).toBe("pass");
+		for (const run of observed) {
+			expect(run.staged).toEqual([]);
+			expect(run.bytes).toBe("");
+		}
+	});
+
 	// The one refusal a run survives: the case still has everything else it declared.
 	it("still run when the case declares the answer key, which is withheld", async () => {
 		const {observed, results} = await stageFiveRuns({

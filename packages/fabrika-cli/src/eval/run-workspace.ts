@@ -13,6 +13,15 @@
  * whose declared material cannot all be staged is `Unstageable` and scores nothing — the directory is
  * the only thing the candidate can read, so a partial one measures a question nobody asked.
  *
+ * The same rule reaches the case that declares **nothing**, and the distinction it turns on is
+ * declared-none versus never-declared. `files: []` is the author stating this case needs no material,
+ * so an empty directory is exactly right and the run scores. An **absent** `files` key states nothing,
+ * and 22 of the corpus's graded cases at this writing are absent-key cases whose prompts name material
+ * by path — so an empty directory is a directory provably short of what the prompt reads, and it is
+ * `Unstageable`. Absence of a declaration is not evidence that a case is self-contained, and the
+ * failure it would otherwise produce is the silent one: a `pass`/`fail` indistinguishable in the
+ * record from a measurement (#5434).
+ *
  * The staging *decision* is pure ({@link stagingPlan}, {@link runDirName}); {@link stageRunWorkspace}
  * is the only part that touches a filesystem, through the services
  * [.patterns/effect-platform-access.md](../../../../.patterns/effect-platform-access.md) names.
@@ -125,7 +134,8 @@ export type RunWorkspace =
  *
  * A declared fixture that cannot be staged returns `Unstageable`, never a `Staged` directory missing
  * it: the candidate would be spawned into a tree without the material its prompt names, and the
- * verdict it produced would still be counted by `medianVerdict` and `dispersion` (#5434).
+ * verdict it produced would still be counted by `medianVerdict` and `dispersion` (#5434). An
+ * **undeclared** `files` (`null`) returns `Unstageable` for the same reason, one step earlier.
  */
 export const stageRunWorkspace = (args: {
 	/** The authored eval set's own path — the two candidate bases below are derived from it. */
@@ -133,19 +143,28 @@ export const stageRunWorkspace = (args: {
 	readonly caseId: number;
 	readonly run: number;
 	readonly sessionId: string;
-	readonly files: ReadonlyArray<string>;
+	/** `null` when the case never declared the key — see the undeclared rule at the top of this file. */
+	readonly files: ReadonlyArray<string> | null;
 }): Effect.Effect<RunWorkspace, never, FileSystem.FileSystem | Path.Path | Scope.Scope> =>
 	Effect.gen(function* () {
 		const fs = yield* FileSystem.FileSystem;
 		const path = yield* Path.Path;
 		const where = `case ${args.caseId} run ${args.run}`;
+		const declared = args.files;
+		if (declared === null) {
+			return {
+				_tag: "Unstageable",
+				detail:
+					"the case declares no `files` — an absent declaration is not a claim that the case is self-contained, so what its prompt reads cannot be staged (author `files: []` to state it needs none)",
+			};
+		}
 		// The corpus authors two conventions and neither is wrong, so the base is found rather than
 		// assumed — set-directory-relative (`fixtures/…`) first, then skill-root-relative
 		// (`evals/fixtures/…`). Assuming one silently failed to copy for every set using the other.
 		const setDir = path.dirname(args.setPath);
 		const bases = [setDir, path.dirname(setDir)];
 
-		const plan = stagingPlan(args.files);
+		const plan = stagingPlan(declared);
 		for (const refusal of plan.refused) {
 			yield* Console.error(
 				`fabrika eval: ${where}: not staging ${refusal.path} — ${refusal.reason}`,

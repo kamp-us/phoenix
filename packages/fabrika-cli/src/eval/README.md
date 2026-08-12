@@ -1073,6 +1073,19 @@ Three properties are deliberate:
   `composeGraderPrompt`, stages nothing, and needs no directory of its own. `dispersion` and
   `medianVerdict` are untouched; this restores the independence they already assumed.
 
+**An absent `files` key is not a declaration that a case is self-contained.** The decoder keeps
+absent and `[]` apart (`files: ReadonlyArray<string> | null`) because they are different claims:
+`[]` says this case needs no material, so an empty directory is exactly right and the run scores; an
+absent key says nothing, so there is nothing to stage from and the run is `Unstageable`. The
+distinction is load-bearing rather than pedantic — of the 31 graded cases declaring no `files` at
+this writing, 9 (`report`, `adr`) write `files: []` and are genuinely self-contained, while 22
+(`review` 7, `review-ui` 5, `ship` 5, `triage` 5) omit the key entirely and their prompts name
+material by path (`fixtures/mixed-diff/BUNDLE.md`, `FIXTURE.md`, un-substituted `{FIXTURE}`
+placeholders). Those 22 report `unmeasured` until their `files` are authored, which is the loud
+failure; the alternative is the silent one this rule exists to remove — a `pass`/`fail` taken in an
+empty directory, indistinguishable in the record from a measurement
+([#5464](https://github.com/kamp-us/phoenix/issues/5464)).
+
 ## The fabrika incident corpus ([#4675](https://github.com/kamp-us/phoenix/issues/4675))
 
 `incident-corpus/` is a **second, separate** body of ground truth, and the name matters: the
