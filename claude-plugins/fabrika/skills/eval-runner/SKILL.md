@@ -16,10 +16,26 @@ machine can read it**: the PR-comment record, and repo-relative files inside the
 under a home directory is a defect, not a convenience (ADR 0273, on PR #5375 and not yet on
 `main`) — including when an operator asks for one.
 
-<!-- anchor: RUN-SITE-IS-AN-OPERATOR-SESSION --> **Run site: an agent session on an operator's
-machine.** CI reads the artifacts these runs produce and never spawns the model that produces
-them (#4679, same ruling) — a cost constraint, recorded as one. The package enforces the CI half
-mechanically; honouring it here is yours.
+<!-- anchor: RUN-SITE-IS-AN-OPERATOR-SESSION --> **Run site: a plain (non-worktree) agent session
+on an operator's machine.** CI reads the artifacts these runs produce and never spawns the model
+that produces them (#4679, same ruling) — a cost constraint, recorded as one. The package enforces
+the CI half mechanically; honouring it here is yours.
+
+**Plain, not worktree-isolated** — the second half of the same run site, stated because it was left
+implicit and three lanes paid for it (#5406). A worktree-isolated session's harness guard refuses
+**any** Bash command containing the token `eval`, wherever it sits: `fabrika eval cases`,
+`fabrika eval run`, `fabrika eval graded`, `fabrika eval baseline …`, and even
+`node packages/fabrika-cli/src/bin.ts eval …` — the match is on the word, not on the shell builtin,
+so an argument spelled `eval` is refused exactly like a command. This is not a new constraint on
+top of #4679; it is what #4679's "any operator machine, portable surfaces" already meant, now
+written where the reader who needs it will see it. If you are in an isolated worktree, you are not
+at this skill's run site — the measurement is a **hand-off**, not something to route around.
+
+A lane that hit the refusal before this was written down moved each command into a script file and
+ran the file. Recorded so nobody re-derives it, and bounded in the same breath: that is a way to get
+a byte out of a wedged shell, **not** a sanctioned run site for a graded run. A graded record
+carries the head it measured and the session that produced it; producing one from a worktree lane
+through a script file is a run at the wrong site, whatever it prints.
 
 <!-- anchor: MEASURE-NEVER-JUDGE --> **You measure; you never judge.** The record's token is
 `RECORDED` or `UNRECORDABLE` — no polarity, no bar (ADR 0253). A below-bar median is `RECORDED`

@@ -64,9 +64,12 @@ the same tracked debt the sibling contracts carry.)
   the merge gate ([#4681](https://github.com/kamp-us/phoenix/issues/4681)); dispersion is
   recorded and never gates (ADR 0252). The runner emitting a PASS/FAIL is the exact polarity the
   `eval-record` format refuses by construction.
-- **A CI entry point.** Eval and baseline runs execute in an agent session on an operator's
-  machine, never in CI (#4679 comment 5247166010); the package reds any workflow that invokes
-  the model-bearing verbs. CI's leg is reading artifacts, and that is #4681's.
+- **A CI entry point.** Eval and baseline runs execute in a plain (non-worktree) agent session on
+  an operator's machine, never in CI (#4679 comment 5247166010); the package reds any workflow that
+  invokes the model-bearing verbs. CI's leg is reading artifacts, and that is #4681's. The
+  non-worktree half is enforced by nothing here and cannot be: a worktree-isolated session's harness
+  guard refuses any command carrying the token `eval` (#5406), so the run simply never happens
+  there. The skill's `RUN-SITE-IS-AN-OPERATOR-SESSION` anchor carries the reader-facing statement.
 - **A conductor verb sequencing the suite.** Which sets to run, at which head, at what cost, and
   whether to retry a whole five-run block is judgment — the skill's whole remaining job. A
   sequencing verb would be a script deciding what a session should.
