@@ -1,8 +1,8 @@
 /**
- * The `eval` verb group — `fabrika eval check|report|cases|run|graded|keeps|baseline`.
+ * The `eval` verb group — `fabrika eval check|report|cases|run|graded|keeps|baseline|…|gate`.
  *
  * The graded-corpus apparatus for adjudicating a stochastic model swap per stage (epic
- * #1842), plus the ingestion of `/skill-creator`-authored eval sets (epic #4649). Seven live
+ * #1842), plus the ingestion of `/skill-creator`-authored eval sets (epic #4649). The live
  * surfaces:
  *
  *   fabrika eval check <manifest>   # decode a corpus manifest; exit non-zero on a bad one
@@ -13,6 +13,7 @@
  *   fabrika eval keeps <path>       # print the ruled KEEP corpus and what already pins each row
  *   fabrika eval baseline …         # record the v1 cost baseline, and answer the phase-1 ceiling
  *   fabrika eval post <pr>          # commit one head-bound record onto a PR, upserted per (head, cell)
+ *   fabrika eval gate <pr>          # decide the ruled merge bar and name the reason for each red
  *
  * `check` (issue #1848) validates the on-disk corpus format. `report` (issue #1853) is the
  * top of the vertical slice: it reads the runner's graded `{entry, grade, spend}` rows and
@@ -25,6 +26,9 @@
  * record. `keeps` (issue #4823) prints the ruled KEEP corpus — the enumeration that replaced the
  * two-artifact join every consumer used to re-run by hand. `baseline` (issue #4679) records the
  * committed v1 cost baseline from measured spend rows and answers the phase-1 ceiling against it.
+ * `gate` (issue #4681) is the top of the layer: it decides every leg of the ruled #4637-B bar over a
+ * pull request — verifying the head-bound graded record rather than running it — so a CI job only
+ * relays an exit code.
  *
  * Thin IO shell over the pure cores (the `token-spend` / `readme-guard` idiom): read the file,
  * decode, render. Every refusal seats on `./codes.ts` — an unreadable path exits `FAILED`, an
@@ -60,9 +64,6 @@ import {
 } from "./codes.ts";
 import {
 	buildCommittedScorecard,
-	type CommittedScorecard,
-	decodeCommittedScorecard,
-	isSeriesFileName,
 	renderCommittedScorecard,
 	SERIES_DIR,
 	seriesFileName,
@@ -78,6 +79,8 @@ import {
 	renderBaselineComparison,
 	renderCostBaseline,
 } from "./cost-baseline.ts";
+import {DEFAULT_FLOOR_CASES, DEFAULT_FLOOR_COMMANDS} from "./floor-commands.ts";
+import {runGate} from "./gate-verb.ts";
 import {
 	buildEvalRecord,
 	candidateOutputOf,
@@ -104,6 +107,7 @@ import {
 	ruledKeepsViolations,
 	withCoverage,
 } from "./ruled-keeps.ts";
+import {readSeriesFiles} from "./series-io.ts";
 import {decodeSkillEvalSet, tierCounts} from "./skill-eval-set.ts";
 import {
 	buildClaudeArgs,
@@ -1009,11 +1013,6 @@ const harnessRevisionFlag = Flag.string("harness-revision").pipe(
 	),
 );
 
-/** One committed file of the series, paired with the name the trend orders ties by. */
-interface SeriesFile {
-	readonly fileName: string;
-	readonly scorecard: CommittedScorecard;
-}
 // A named path that could not be read — a hard error (exit 1), not a skip.
 class PathUnreadable extends Schema.TaggedErrorClass<PathUnreadable>()("PathUnreadable", {
 	path: Schema.String,
@@ -1341,47 +1340,29 @@ const scorecard = leafCommand(
 /**
  * Read every committed scorecard in the series directory, or exit.
  *
- * Members are selected by `isSeriesFileName`, never by `*.json`: the directory is shared with the
- * eval layer's other dated artifacts — the cost baselines of #4679 sit right beside the series — and
- * globbing every JSON there made each of those a malformed scorecard that took `trend` and `churn`
- * down. A name that *is* a member and does not decode still refuses, because that is a corrupt point
- * of the series rather than a neighbour.
+ * The membership rule and the decode live in `series-io.ts`, shared with the merge gate (#4681); what
+ * stays here is this group's disposition of its three answers — an unreadable path exits `FAILED`, a
+ * corrupt member exits `MALFORMED_DOCUMENT`, and a neighbouring JSON file is named on stderr rather
+ * than passed over in silence, because a scorecard written under some other name is invisible to the
+ * trend and this is the one line that says so.
  */
 const readSeries = (dir: string) =>
 	Effect.gen(function* () {
-		const fs = yield* FileSystem.FileSystem;
-		const path = yield* Path.Path;
-		if (!(yield* fs.exists(dir))) return [] as ReadonlyArray<SeriesFile>;
-		const entries = yield* Effect.mapError(
-			fs.readDirectory(dir),
-			() => new PathUnreadable({path: dir}),
-		);
-		const names = entries.filter(isSeriesFileName).sort();
-		// Named on stderr rather than passed over in silence: a scorecard written into the directory
-		// under some other name is invisible to the trend, and this is the one line that says so.
-		const ignored = entries.filter((name) => name.endsWith(".json") && !isSeriesFileName(name));
-		if (ignored.length > 0) {
+		const read = yield* readSeriesFiles(dir);
+		if (read._tag === "Unreadable")
+			return yield* Effect.fail(new PathUnreadable({path: read.path}));
+		if (read._tag === "Malformed") {
 			yield* Console.error(
-				`fabrika eval: ${dir} — ${ignored.length} JSON file(s) are not series points and were skipped (${ignored.sort().join(", ")}); a point of the series is named <YYYY-MM-DD>[-N].json`,
+				`fabrika eval: ${read.path} is not a committable scorecard (${read.reason})`,
+			);
+			return yield* Effect.sync(() => process.exit(MALFORMED_DOCUMENT));
+		}
+		if (read.ignored.length > 0) {
+			yield* Console.error(
+				`fabrika eval: ${dir} — ${read.ignored.length} JSON file(s) are not series points and were skipped (${read.ignored.join(", ")}); a point of the series is named <YYYY-MM-DD>[-N].json`,
 			);
 		}
-		const files: Array<SeriesFile> = [];
-		for (const name of names) {
-			const full = path.join(dir, name);
-			const text = yield* Effect.mapError(
-				fs.readFileString(full),
-				() => new PathUnreadable({path: full}),
-			);
-			const decoded = decodeCommittedScorecard(text);
-			if (Result.isFailure(decoded)) {
-				yield* Console.error(
-					`fabrika eval: ${full} is not a committable scorecard (${decoded.failure.reason}): ${decoded.failure.message}`,
-				);
-				return yield* Effect.sync(() => process.exit(MALFORMED_DOCUMENT));
-			}
-			files.push({fileName: name, scorecard: decoded.success});
-		}
-		return files as ReadonlyArray<SeriesFile>;
+		return read.files;
 	});
 
 /**
@@ -1620,6 +1601,102 @@ const post = leafCommand(
 	),
 );
 
+const gatePrArg = Argument.integer("pr").pipe(
+	Argument.withDescription(
+		"the pull request under gate — its head, changed paths and eval records are all read from it",
+	),
+	Argument.optional,
+);
+
+const gateHeadFlag = Flag.string("head").pipe(
+	Flag.optional,
+	Flag.withDescription("offline mode: the head commit under gate, in place of a pull request"),
+);
+
+const gateChangedFlag = Flag.string("changed").pipe(
+	Flag.optional,
+	Flag.withDescription("offline mode: a file of newline-separated changed paths"),
+);
+
+const gateRecordFlag = Flag.string("record").pipe(
+	Flag.atLeast(0),
+	Flag.withDescription(
+		"offline mode: an eval record file to verify against the head (repeatable, no network)",
+	),
+);
+
+const floorCasesFlag = Flag.string("floor-cases").pipe(
+	Flag.withDefault(DEFAULT_FLOOR_CASES),
+	Flag.withDescription(
+		`the incident corpus the regression floor runs (default: ${DEFAULT_FLOOR_CASES})`,
+	),
+);
+
+const floorCommandsFlag = Flag.string("floor-commands").pipe(
+	Flag.withDefault(DEFAULT_FLOOR_COMMANDS),
+	Flag.withDescription(
+		`the arming sidecar naming each floor case's command (default: ${DEFAULT_FLOOR_COMMANDS})`,
+	),
+);
+
+const gateBaselineFlag = Flag.string("baseline").pipe(
+	Flag.optional,
+	Flag.withDescription(
+		"the committed v1 cost baseline (default: the newest baseline-v1-*.json in the series directory)",
+	),
+);
+
+/**
+ * `gate` — the ruled #4637-B bar as one answer a CI job relays (#4681).
+ *
+ * Every input is resolved here, so no part of the decision is reachable from a workflow file: which
+ * paths make the graded suite apply, which eval record is in force at the head, whether a rate clears
+ * the bar, and whether an incident case is armed to run.
+ *
+ * It spawns processes and never a model. The graded leg **verifies** the head-bound record the review
+ * stage recorded rather than running the suite (the #4649 cost ruling), which is why `missing` and
+ * `stale` are red conditions in their own right.
+ */
+const gate = leafCommand(
+	"gate",
+	{
+		pr: gatePrArg,
+		repo: repoFlag,
+		head: gateHeadFlag,
+		changed: gateChangedFlag,
+		record: gateRecordFlag,
+		floorCases: floorCasesFlag,
+		floorCommands: floorCommandsFlag,
+		seriesDir: seriesDirFlag,
+		baseline: gateBaselineFlag,
+		ledger: spendLedgerFlag,
+		json: resultJsonFlag,
+	},
+	Effect.fn(function* (opts) {
+		yield* emit(
+			yield* runGate({
+				pr: opts.pr._tag === "Some" ? opts.pr.value : null,
+				repo: opts.repo._tag === "Some" ? opts.repo.value : null,
+				head: opts.head._tag === "Some" ? opts.head.value : null,
+				changed: opts.changed._tag === "Some" ? opts.changed.value : null,
+				records: opts.record,
+				floorCases: opts.floorCases,
+				floorCommands: opts.floorCommands,
+				seriesDir: opts.seriesDir,
+				baseline: opts.baseline._tag === "Some" ? opts.baseline.value : null,
+				ledger: opts.ledger,
+				json: opts.json,
+				env: process.env,
+			}),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Decide the ruled #4637-B merge bar over a pull request."),
+	Command.withDescription(
+		"Decide every leg of the ruled bar and name the reason for each red: the 100% incident-regression floor (executed here, no model), the 90% graded rate VERIFIED off the head-bound eval record the review stage recorded, and spend at or below the committed v1 baseline. The trend co-gate is reported and never gates (ADR 0252 §4). Fails closed on zero scope (ADR 0092). Exits 7 (zero scope — no changed path, no deterministic case, a corpus case the sidecar accounts for neither way, or an UNRECORDABLE record), 15 (spend above the v1 baseline, or incomparable), 18 (stale — the newest record is bound to an older commit), 21 (missing — no eval record for the head), 22 (below-bar — a recorded rate under 0.9), 23 (regression-floor — an armed incident case did not pass). Example: fabrika eval gate 5432",
+	),
+);
+
 export const evalCommand = Command.make("eval").pipe(
 	Command.withSubcommands([
 		check,
@@ -1633,8 +1710,9 @@ export const evalCommand = Command.make("eval").pipe(
 		trend,
 		churn,
 		post,
+		gate,
 	]),
 	Command.withDescription(
-		"Graded per-stage corpus + scorecard + authored-eval-set ingestion + the unattended runner + the five-run graded axis + the ruled KEEP enumeration + the v1 cost baseline + the committed scorecard series, its trend co-gate, the model-churn re-run and the record emit (#1848, #1853, #4674, #4676, #4678, #4823, #4679, #4680, #5411)",
+		"Graded per-stage corpus + scorecard + authored-eval-set ingestion + the unattended runner + the five-run graded axis + the ruled KEEP enumeration + the v1 cost baseline + the committed scorecard series, its trend co-gate, the model-churn re-run, the record emit and the ruled merge bar (#1848, #1853, #4674, #4676, #4678, #4823, #4679, #4680, #5411, #4681)",
 	),
 );
