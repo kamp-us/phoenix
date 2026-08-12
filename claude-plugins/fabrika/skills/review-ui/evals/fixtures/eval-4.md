@@ -12,7 +12,7 @@ The repo has `design-system-manifest.md` at root and a typed `design-prohibition
 
 - `fabrika review scope` → exit 0, stdout:
   ```
-  scoped	50aa31de6f7a8b9c0d1e2f3a4b5c6d7e8f901234	741
+  scoped	50aa31de6f7a8b9c0d1e2f3a4b5c6d7e8f901234	fixes:741
   class	code	2
   class	doc	1
   self	false

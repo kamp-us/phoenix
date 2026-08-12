@@ -4,7 +4,7 @@ import {errOut, fakeShell, okOut} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {INCOMPLETE_SCAN, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {CODEOWNERS, ENV, files, HEAD, pull} from "./fixtures.test-support.ts";
-import {issueRefOf, runScope} from "./scope-verb.ts";
+import {runScope} from "./scope-verb.ts";
 
 const PULL = /^gh api repos\/o\/r\/pulls\/4321$/;
 const FILES = /^gh api --paginate repos\/o\/r\/pulls\/4321\/files/;
@@ -18,21 +18,16 @@ const run = (
 ) =>
 	Effect.runPromise(Effect.provide(runScope({...options, ...overrides}), fakeShell(script).layer));
 
-describe("issueRefOf", () => {
-	it("prefers a closing keyword", () => {
-		expect(issueRefOf("Fixes #4287\n\nPart of #4000")).toEqual({kind: "fixes", number: 4287});
-	});
-
-	it("falls back to an explicit `Part of` — an intentional partial split, not a missing link", () => {
-		expect(issueRefOf("Part of #4000")).toEqual({kind: "part-of", number: 4000});
-	});
-
-	it("reports none rather than guessing", () => {
-		expect(issueRefOf("see #4000")).toEqual({kind: "none", number: null});
-	});
-});
-
 describe("runScope", () => {
+	it("renders a partial split as `part-of:<n>` — the marker resolves at this seam as it does at review's", async () => {
+		const out = await run([
+			[PULL, pull({body: "does things\n\nPart of #4000\n"})],
+			[FILES, files("apps/web/worker/cart.ts", "README.md")],
+			[OWNERS, okOut(CODEOWNERS)],
+		]);
+		expect(out.stdout.split("\n")[0]).toBe(`scoped\t${HEAD}\topen\tpart-of:4000`);
+	});
+
 	it("prints one derivation: state, issue ref, classes, the namespaces they require, cp and count", async () => {
 		const out = await run([
 			[PULL, pull()],

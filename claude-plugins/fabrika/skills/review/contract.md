@@ -236,14 +236,16 @@ fabrika review scope 4321 [--sha <head>] [--repo <owner/name>] [--json]
 | `--repo` | string | no | resolved | the repository |
 | `--json` | boolean | no | `false` | emit the result object |
 
-**Output** — machine channel. First line: `scoped\t<head-sha>\t<issue-number>`, where the head is
-the commit the file list was actually read out of. Then one line per
+**Output** — machine channel. First line: `scoped\t<head-sha>\t<fixes:n|part-of:n|->`, where the
+head is the commit the file list was actually read out of and the third field is the issue
+reference — the same token `ship scope` prints. Then one line per
 present class — `class\t<name>\t<file-count>` where `<name>` is one of `code`, `doc`, `skill` —
 then two flag lines `self\t<true|false>` and `harness\t<true|false>`.
 
-With `--json`, an object with keys `outcome`, `head` (full 40-hex), `issue` (integer or `null`),
-`classes` (array of `{name, files}`), `self` (boolean), `harness` (boolean), `scanned` (changed
-files seen), and `namespaces` (array — the derived namespace per present class, e.g.
+With `--json`, an object with keys `outcome`, `head` (full 40-hex), `issue` (an object
+`{kind, number}` where `kind` is `fixes` / `part-of` / `none` and `number` is an integer, or `null`
+on `none`), `classes` (array of `{name, files}`), `self` (boolean), `harness` (boolean), `scanned`
+(changed files seen), and `namespaces` (array — the derived namespace per present class, e.g.
 `["review-code","review-doc"]`).
 
 **The class map is a fixed path partition, stated here so two runs cannot disagree:**
@@ -264,9 +266,18 @@ deliberately do **not** set it: they classify a foreign repo's skill text for th
 `harness` marks *this* harness. The *decision* of what governance does with the flag belongs to
 the `governance` skill; the flag only makes the seam mechanical.
 
-**The linked issue** is resolved from the PR body's closing keywords (`Fixes/Closes/Resolves
-#N`), first match; `null` when none — the skill decides what an issueless PR means, this verb
-only reports it.
+**The issue reference** is resolved from the PR body in two passes, and the kinds are reported
+apart rather than collapsed. First the closing keywords (`Fixes/Closes/Resolves #N`), first match
+⇒ `fixes:<n>`; failing that, an explicit `Part of #N` ⇒ `part-of:<n>`; failing both, `-` /
+`{kind: "none"}`. The second pass exists because `build --partial` emits `Part of #N` **by
+contract**, so a partial-split PR this gate must grade was reported issueless while `ship scope`
+called the same body linked (#5446). Both kinds name the issue whose acceptance criteria bind the
+PR; only `fixes` auto-closes it on merge, which is why the kinds stay distinct. This derivation is
+shared code with `ship scope` (`packages/fabrika-cli/src/review/classes.ts`) — one definition, two
+verbs — and it does not widen `linkedIssueOf`, which stays closing-keyword-only.
+
+`none` is a fact, not a verdict: what a genuinely issueless PR means is the skill's decision, and
+the skill states it (`SKILL.md` step 2).
 
 **Exit status**
 
@@ -302,7 +313,7 @@ run over less than everything, and never over a different tree than the head it 
 
 ```
 $ fabrika review scope 4321
-scoped	03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c	4287
+scoped	03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c	fixes:4287
 class	code	3
 class	doc	1
 self	false
@@ -310,8 +321,17 @@ harness	false
 ```
 
 ```
+$ fabrika review scope 4322
+scoped	6f7b834bcf1cf16fc465389d8f45cc21bd23a3fe	part-of:5434
+class	code	5
+class	doc	1
+self	false
+harness	false
+```
+
+```
 $ fabrika review scope 4321 --json
-{"outcome":"scoped","head":"03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c","issue":4287,"classes":[{"name":"code","files":3},{"name":"doc","files":1}],"self":false,"harness":false,"scanned":4,"namespaces":["review-code","review-doc"]}
+{"outcome":"scoped","head":"03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c","issue":{"kind":"fixes","number":4287},"classes":[{"name":"code","files":3},{"name":"doc","files":1}],"self":false,"harness":false,"scanned":4,"namespaces":["review-code","review-doc"]}
 ```
 
 **Grounding**
@@ -323,6 +343,9 @@ $ fabrika review scope 4321 --json
 - v1's `classify-skills-only.sh` prints nothing on its code-PR branch and falls off the end (the
   S10 else-less classifier) — every outcome here is a token.
 - ADR 0052 — `self` is the input the skill's BASE-revision fence keys on.
+- #5446 — `ship scope` read `Part of #N` and this verb did not, so the shape `build --partial`
+  emits by contract was linked to the shipper and issueless to the gate, leaving the
+  acceptance-criteria step with no issue to grade and the skill with no stated behaviour for it.
 - #5117 — the file list is the namespace set's only input, and the set is both floor and ceiling:
   a list read at a later commit than the printed head derives a namespace nobody judged, or drops
   one. The list and the head are one commit or the verb refuses.

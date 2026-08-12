@@ -69,7 +69,7 @@ describe("runScope", () => {
 		expect(out.code).toBe(0);
 		expect(out.stdout).toBe(
 			[
-				`scoped\t${HEAD}\t4287`,
+				`scoped\t${HEAD}\tfixes:4287`,
 				"class\tcode\t1",
 				"class\tdoc\t1",
 				"self\tfalse",
@@ -84,17 +84,44 @@ describe("runScope", () => {
 		expect(JSON.parse(out.stdout)).toMatchObject({
 			outcome: "scoped",
 			head: HEAD,
-			issue: 4287,
+			issue: {kind: "fixes", number: 4287},
 			scanned: 2,
 			namespaces: ["review-code", "review-doc"],
 		});
 	});
 
-	it("prints `-` for a PR with no closing keyword, never a fabricated issue", async () => {
+	it("prints `-` for a PR with neither marker, never a fabricated issue", async () => {
 		const out = await run(happy({body: "relates to #4287"}));
 		expect(out.stdout.split("\n")[0]).toBe(`scoped\t${HEAD}\t-`);
 	});
+});
 
+/**
+ * The partial-split fence (#5446).
+ *
+ * `build --partial` emits `Part of #N` by contract and `ship scope` reads it, so a `NULL` here left
+ * the gate's acceptance-criteria step with no issue to grade against and no instruction for the
+ * state. These cases fail if `review scope` drifts back to the closing keyword alone.
+ */
+describe("runScope reads the partial-split marker its own builder emits", () => {
+	it("reports the issue a `Part of #N` body names, and marks it non-closing", async () => {
+		const out = await run(happy({body: "does things\n\nPart of #5434\nPart of #5437\n"}));
+		expect(out.code).toBe(0);
+		expect(out.stdout.split("\n")[0]).toBe(`scoped\t${HEAD}\tpart-of:5434`);
+	});
+
+	it("carries the kind into --json, so the caller can tell a close from a split", async () => {
+		const out = await run(happy({body: "Part of #5434"}), {json: true});
+		expect(JSON.parse(out.stdout)).toMatchObject({issue: {kind: "part-of", number: 5434}});
+	});
+
+	it("still prefers the closing keyword when a body carries both markers", async () => {
+		const out = await run(happy({body: "Fixes #4287\n\nPart of #4000"}));
+		expect(out.stdout.split("\n")[0]).toBe(`scoped\t${HEAD}\tfixes:4287`);
+	});
+});
+
+describe("runScope refusals and diagnostics", () => {
 	it("reports the commit it bound to, then what it scanned against what was declared", async () => {
 		const out = await run(happy());
 		expect(out.stderr[0]).toBe(
@@ -178,7 +205,7 @@ describe("runScope never refuses on GitHub's declared count", () => {
 	it("scopes a rename git paired into one path, though GitHub declares two files", async () => {
 		const out = await run(renamed);
 		expect(out.code).toBe(0);
-		expect(out.stdout).toContain(`scoped\t${HEAD}\t4287`);
+		expect(out.stdout).toContain(`scoped\t${HEAD}\tfixes:4287`);
 		expect(out.stdout).toContain("class\tcode\t1");
 	});
 
@@ -227,7 +254,7 @@ describe("runScope binds its file list to the commit it prints", () => {
 	it("prints the head it actually read the files out of", async () => {
 		const {out} = shell(happy(), {sha: HEAD});
 		const result = await out;
-		expect(result.stdout.split("\n")[0]).toBe(`scoped\t${HEAD}\t4287`);
+		expect(result.stdout.split("\n")[0]).toBe(`scoped\t${HEAD}\tfixes:4287`);
 	});
 
 	it("refuses on 12 when --sha is not the PR's head", async () => {

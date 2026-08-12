@@ -19,7 +19,7 @@ import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {diffRangePaths} from "../io/git.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
-import {linkedIssueOf, namespacesOf, partition} from "./classes.ts";
+import {issueRefOf, namespacesOf, partition, renderIssueRef} from "./classes.ts";
 import {INCOMPLETE_SCAN, PRECONDITION_UNKNOWN} from "./codes.ts";
 import {bindHead, boundLine} from "./head.ts";
 import {badNumber, openPull, resolveTargetRepo, scannedLine} from "./target.ts";
@@ -88,7 +88,7 @@ export const runScope = (
 		}
 
 		const result = partition(files);
-		const issue = linkedIssueOf(pull.body);
+		const issue = issueRefOf(pull.body);
 		if (json) {
 			return answer(
 				JSON.stringify({
@@ -106,7 +106,7 @@ export const runScope = (
 		}
 		return answer(
 			[
-				`scoped\t${head.sha}\t${issue ?? NULL_TOKEN}`,
+				`scoped\t${head.sha}\t${renderIssueRef(issue, NULL_TOKEN)}`,
 				...result.classes.map((entry) => `class\t${entry.name}\t${entry.files}`),
 				`self\t${result.self}`,
 				`harness\t${result.harness}`,

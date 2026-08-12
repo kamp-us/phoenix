@@ -14,7 +14,7 @@
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {listPullFiles} from "../io/pulls.ts";
-import {linkedIssueOf, partitionWithUi, shipNamespacesOf} from "../review/classes.ts";
+import {issueRefOf, partitionWithUi, renderIssueRef, shipNamespacesOf} from "../review/classes.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {readBoundary} from "./boundary.ts";
 import {classify} from "./codeowners.ts";
@@ -33,26 +33,6 @@ export interface ScopeOptions {
 /** `open` / `draft` / `merged` / `closed` — four lifecycle words over two REST fields. */
 const lifecycleOf = (merged: boolean, draft: boolean, state: string): string =>
 	merged ? "merged" : state !== "open" ? "closed" : draft ? "draft" : "open";
-
-/** `fixes:<n>` from a closing keyword, else an explicit `Part of #N`, else nothing. */
-const PART_OF = /\bpart of\b[ \t]*:?[ \t]*#(\d+)/i;
-
-export interface IssueRef {
-	readonly kind: "fixes" | "part-of" | "none";
-	readonly number: number | null;
-}
-
-export const issueRefOf = (body: string): IssueRef => {
-	const closing = linkedIssueOf(body);
-	if (closing !== null) return {kind: "fixes", number: closing};
-	const part = PART_OF.exec(body);
-	return part?.[1] === undefined
-		? {kind: "none", number: null}
-		: {kind: "part-of", number: Number.parseInt(part[1], 10)};
-};
-
-const renderIssueRef = (ref: IssueRef): string =>
-	ref.number === null ? NULL_TOKEN : `${ref.kind}:${ref.number}`;
 
 export const runScope = (
 	options: ScopeOptions,
@@ -138,7 +118,7 @@ export const runScope = (
 		}
 		return answer(
 			[
-				`scoped\t${pull.headSha}\t${state}\t${renderIssueRef(issue)}`,
+				`scoped\t${pull.headSha}\t${state}\t${renderIssueRef(issue, NULL_TOKEN)}`,
 				...partition.classes.map((entry) => `class\t${entry.name}\t${entry.files}`),
 				...namespaces.map((namespace) => `namespace\t${namespace}`),
 				`cp\t${cp}`,

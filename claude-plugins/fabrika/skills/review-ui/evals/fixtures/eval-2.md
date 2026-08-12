@@ -12,7 +12,7 @@ The repo has `design-system-manifest.md` at root; no `design-prohibitions.json`.
 
 - `fabrika review scope` → exit 0, stdout:
   ```
-  scoped	b83d10ff2a3b4c5d6e7f8091a2b3c4d5e6f70812	720
+  scoped	b83d10ff2a3b4c5d6e7f8091a2b3c4d5e6f70812	fixes:720
   class	code	3
   self	false
   harness	false
