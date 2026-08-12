@@ -722,7 +722,7 @@ printf 'the read is total\n[x] the registry is the seam\n' \
   | node src/bin.ts wire check --format acceptance-criteria
 ```
 
-## The `eval` group
+## The `eval` group — printed `grade`
 
 The eval harness, moved here from v1 by founder ruling
 ([#4777](https://github.com/kamp-us/phoenix/issues/4777)) so that "the existing report and
@@ -730,14 +730,21 @@ scorecard path" the eval-layer children are specced against is a fabrika path ra
 call into `pipeline-cli` that ADR 0238 forbids. Its own docs are
 [`src/eval/README.md`](./src/eval/README.md).
 
+**`grade` is an alias of `eval`** (founder ruling on
+[#5461](https://github.com/kamp-us/phoenix/issues/5461)): both spellings resolve to the same
+command, `eval` keeps working for every existing caller, and `grade` is the spelling
+agent-facing text prints — because a graded-run command spelled `eval` was refused before
+execution in a worktree-isolated session while the `grade` spelling ran (run-verified
+2026-08-12). It is declared at the group's row in [`src/registry.ts`](./src/registry.ts).
+
 | Verb | Answers |
 |---|---|
-| `eval check` | whether a corpus manifest matches the schema |
-| `eval report` | the graded two-axis scorecard (pass-rate × net-token cost) over runner rows |
-| `eval cases` | whether an authored eval set decodes, and the tier each case derives to |
-| `eval run` | executes an eval set unattended on both arms and emits the capture manifest |
+| `grade check` | whether a corpus manifest matches the schema |
+| `grade report` | the graded two-axis scorecard (pass-rate × net-token cost) over runner rows |
+| `grade cases` | whether an authored eval set decodes, and the tier each case derives to |
+| `grade run` | executes an eval set unattended on both arms and emits the capture manifest |
 
-`eval run` is the one verb that spawns a model. Its supported callers are an operator's
+`grade run` is the one verb that spawns a model. Its supported callers are an operator's
 shell and a `review-skill` spawn — **never a CI job**, on the cost constraint the founder
 ruled on epic #4649, which `src/eval/spawn.unit.test.ts` asserts rather than states.
 
@@ -805,7 +812,7 @@ Three behaviours are worth knowing before you call it:
 ### The spend ledger
 
 `spend read` prices one transcript on demand; the ledger is where measured runs *survive*
-([#5009](https://github.com/kamp-us/phoenix/issues/5009)). `fabrika eval run` appends one
+([#5009](https://github.com/kamp-us/phoenix/issues/5009)). `fabrika grade run` appends one
 **JSON Lines** row per completed run to `.fabrika/spend-ledger.jsonl` (repo-relative,
 gitignored, `--spend-ledger` overrides it) once the suite finishes — each line carrying that
 run's spend and the identity of the work it measured. The core is

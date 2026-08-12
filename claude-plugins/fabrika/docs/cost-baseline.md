@@ -42,7 +42,7 @@ the **thing measured**, never as a thing depended on.
 
 ## The v1 arm is the same runner with a different plugin dir
 
-This is the adapter, and it needs no code: `fabrika eval run`'s with-skill arm loads whatever
+This is the adapter, and it needs no code: `fabrika grade run`'s with-skill arm loads whatever
 `--plugin-dir` names, so pointing it at the v1 plugin runs the v1 suite unattended through the
 identical harness, the identical transcript reconstruction and the identical ledger.
 
