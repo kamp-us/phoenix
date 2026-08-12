@@ -37,8 +37,8 @@
 set -uo pipefail
 HERE="$(CDPATH= cd -P -- "$(dirname -- "$0")" && pwd -P)"
 PLUGIN="$(CDPATH= cd -P -- "$HERE/../../.." && pwd -P)"
-# shellcheck source=../../../lib/common.sh
-. "$PLUGIN/lib/common.sh"
+# shellcheck source=../../../lib/common.sh disable=SC1007,SC1091
+. "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
 PCLI="$(kp_pcli)" || exit 127
 
 FAILED=0
