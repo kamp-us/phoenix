@@ -38,6 +38,17 @@ small to earn its own record has none. Neither is routed; both are `DECLINED-BEL
 already carries it. And if the target surface does not exist in this repo, say so rather than routing
 into a directory nobody will create.
 
+**The already-carried decline is bounded to single-home material.** Before you decline on it, count
+the sites the material spans — the places a reader meets it, not the places its *why* happens to be
+written down. One site is a home and the decline stands. **Two or more and the decline is not
+available to you**: the recurrence is itself the pattern signal, and a comment at each site carries
+the *why* at that site while saying nothing about the shape a reader meets across all of them. That
+material falls through to the admission bar below and is decided there, on the merits. The bar's
+first criterion is *used in 2+ places*; declining a repetition here for being locally commented
+would put the very material that criterion was written for out of its reach. Falling through is not
+admission — the bar still declines it if it is short. Single-home material, and material too small
+to earn a record anywhere, decline here exactly as before.
+
 Route when another surface genuinely owns it. Decline when nothing does. A skill that routes
 everything with a *why* in it never declines anything, and declining is the job.
 
@@ -205,7 +216,7 @@ it needs most.
 | `PATTERN-RECORDED` | success | every verb answered `0`; a new doc exists and carries an index row; both files left edited, uncommitted |
 | `RECORDED-UNREGISTERED` | success | the doc is written and could **not** be registered: the index is absent or unparseable (`15`), the named section is ambiguous (`16`), or the insertion would have touched more than its own row (`14`). Name the doc's path and which it was; the work is not lost and the row lands once the index can take it. **`10` is not a terminal on its own** — it prints every section that does exist, so correct `--section` and re-run step 6; land here only if none of them fits |
 | `PATTERN-REGROUNDED` | success | every verb answered `0`; an existing doc now matches the source it describes; edits left uncommitted |
-| `DECLINED-BELOW-BAR` | success | reached at `0`; the material fails the index's admission bar (step 2), **or** step 1's tiebreak found it has no destination — a *why* already carried where it lives, or too small to earn a record anywhere. Name which; **nothing written**, tree as found |
+| `DECLINED-BELOW-BAR` | success | reached at `0`; the material fails the index's admission bar (step 2), **or** step 1's tiebreak found it has no destination — a *why* already carried at its single home, or too small to earn a record anywhere. Name which; **nothing written**, tree as found |
 | `ROUTED-ELSEWHERE` | success | reached at `0`; the material belongs to another surface, named; **nothing written here** |
 | `HALTED-REFUSED` | back-off | a verb **proved** a refusal this session could not correct (`12`, `13`) before anything was written; tree as found |
 | `HALTED-UNKNOWN` | back-off | a verb could not establish the answer (`1`, `2`, `8`, `9`, `11`, `127`). Tree as found, **except** after `8` or `9`, where a write was already attempted — name the path so a human can look |
