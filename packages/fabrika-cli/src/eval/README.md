@@ -1086,6 +1086,52 @@ failure; the alternative is the silent one this rule exists to remove — a `pas
 empty directory, indistinguishable in the record from a measurement
 ([#5464](https://github.com/kamp-us/phoenix/issues/5464)).
 
+### Which session produced which run ([#5439](https://github.com/kamp-us/phoenix/issues/5439))
+
+The run directory above makes identity legible while the run is alive, and the directory is removed
+when its scope closes. That left the recorded number un-traceable: a session id was minted, spent on
+`--session-id` so the transcript would be locatable, and then dropped. Anyone asking which of a
+case's five runs produced which artifact had to sort artifacts by file mtime — an inference two
+separate investigations made and had to flag as one, and one that stops working the moment two runs
+land in the same second.
+
+`run-manifest.ts` gives it a landing place. Whenever `graded` (or `churn`) writes its record to
+`--out`, it writes a **sidecar manifest** beside those bytes at the same path with a `.runs.json`
+extension, one row per `(case × run)`:
+
+```jsonc
+{
+  "sha": "…",                       // the head the record attests
+  "recordedAt": "2026-08-12T18:26:39.118Z",
+  "cell": {"stage": "build", "surface": null, "model": "claude-opus-4-8"},
+  "runs": [
+    {"caseId": 1, "run": 1, "sessionId": "…", "model": "claude-opus-4-8", "verdict": "pass"}
+  ]
+}
+```
+
+Four decisions carry it:
+
+- **Beside the record, not inside it.** The record's field inventory is governed by ADR
+  [0253](../../../../.decisions/0253-eval-record-is-an-eval-namespaced-pr-comment.md), so a field
+  there is an amendment question. Nothing in `run-manifest.ts` widens `EvalCaseBlock` or
+  `EvalRecordPayload`, and `RunOnce` still returns a bare `RunVerdict`.
+- **It follows `--out` rather than a flag of its own.** The whole defect is that identity was
+  separable from the number, so a run that persists a record persists its sessions in the same act.
+  With no `--out` the record is not durable either, and there is nothing to sit beside.
+- **Checked against the record, not trusted.** `runManifestDisagreement` re-derives the join — one
+  row per run, numbered `1…runs`, each carrying the same token the record's `perRun` carries in that
+  position — and a disagreement writes **nothing** and says why. Naming the wrong session is worse
+  than naming none, because a reader cannot tell. Zero rows against a non-empty case list is a
+  disagreement, never a vacuous pass (ADR 0092).
+- **No transcript path and no working directory.** Both are absolute, machine-local and perishable,
+  and this file is meant to be committed. The session id is the durable key: it is what the
+  transcript is named after, so a reader on the same machine can still find it, and a reader
+  elsewhere at least knows exactly which session to ask for.
+
+A run that **died** keeps its row — the run that produced nothing is the one a later reader most
+needs named, so an `UNRECORDABLE` record still gets its manifest.
+
 ## The fabrika incident corpus ([#4675](https://github.com/kamp-us/phoenix/issues/4675))
 
 `incident-corpus/` is a **second, separate** body of ground truth, and the name matters: the
