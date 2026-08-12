@@ -6,6 +6,8 @@
  * own case list are each rejected rather than committed. The pin-completeness rejection is #4680's
  * fourth acceptance criterion, so it is exercised once per pin rather than once in total.
  */
+import {existsSync, readdirSync, readFileSync} from "node:fs";
+import {dirname, join} from "node:path";
 import {Result} from "effect";
 import {describe, expect, it} from "vitest";
 import type {EvalRecord, EvalRecordPins} from "../wire/eval-record.ts";
@@ -15,6 +17,7 @@ import {
 	type CommittedCell,
 	decodeCommittedScorecard,
 	isSeriesFileName,
+	SERIES_DIR,
 	seriesFileName,
 	toJson,
 } from "./committed-scorecard.ts";
@@ -224,6 +227,46 @@ describe("isSeriesFileName is the inverse of seriesFileName", () => {
 		expect(isSeriesFileName("README.md")).toBe(false);
 		expect(isSeriesFileName("2026-08-11.json.bak")).toBe(false);
 		expect(isSeriesFileName("notes-2026-08-11.json")).toBe(false);
+	});
+});
+
+/**
+ * Emit-then-format is a no-op: the emitter's bytes already ARE the formatter's bytes.
+ *
+ * Asserting "the output contains a tab" would pass on any output biome still wants to rewrite. This
+ * asserts the property that actually ends the recurrence, and it is checkable because CI runs
+ * `biome check .` over the whole repo: every committed series file below is, at HEAD, exactly what
+ * biome produces. Re-emitting one through `toJson` and getting the same bytes back is therefore the
+ * proof PR #5426's reviewer had to construct by hand — re-derived here on every run, for every point
+ * of the series, instead of once per scorecard forever (#5428).
+ *
+ * Fail-closed on an empty directory (ADR 0092): a series with no member would pass this vacuously.
+ */
+describe("a freshly emitted scorecard needs no formatter pass", () => {
+	const repoRoot = (): string => {
+		let dir = import.meta.dirname;
+		while (!existsSync(join(dir, "pnpm-workspace.yaml"))) {
+			const up = dirname(dir);
+			if (up === dir) throw new Error("could not locate the repo root from the test file");
+			dir = up;
+		}
+		return dir;
+	};
+
+	const seriesDir = join(repoRoot(), SERIES_DIR);
+	const members = readdirSync(seriesDir).filter(isSeriesFileName);
+
+	it("finds committed series points to check", () => {
+		expect(members.length).toBeGreaterThan(0);
+	});
+
+	it.each(members)("re-emits %s exactly as biome formatted it", (member) => {
+		const committed = readFileSync(join(seriesDir, member), "utf8");
+		const decoded = decodeCommittedScorecard(committed);
+		if (Result.isFailure(decoded)) {
+			throw new Error(`${member} is not a readable series point: ${decoded.failure.message}`);
+		}
+		expect(toJson(decoded.success)).toBe(committed);
 	});
 });
 
