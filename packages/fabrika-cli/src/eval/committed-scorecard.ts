@@ -216,9 +216,14 @@ export const buildCommittedScorecard = (args: {
 	};
 };
 
-/** The committed bytes. One trailing newline, so the file is a well-formed text file. */
+/**
+ * The committed bytes. One trailing newline, so the file is a well-formed text file.
+ *
+ * Tab-indented for the reason `cost-baseline.ts`'s `costBaselineToJson` states: this output is
+ * *committed*, so it is written the way biome formats committed JSON.
+ */
 export const toJson = (scorecard: CommittedScorecard): string =>
-	`${JSON.stringify(scorecard, null, 2)}\n`;
+	`${JSON.stringify(scorecard, null, "\t")}\n`;
 
 const CaseSchema = Schema.Struct({
 	caseId: Schema.Int,
