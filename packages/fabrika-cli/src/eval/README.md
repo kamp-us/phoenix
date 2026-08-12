@@ -1032,6 +1032,35 @@ fact about the set, so it is validated first and records nothing. The exit code 
 a measurement exists — a below-bar rate exits `0`, because whether a rate clears the ruled bar is
 #4681's judgement and appears nowhere in this module.
 
+### Each run gets its own staged directory ([#5434](https://github.com/kamp-us/phoenix/issues/5434), [#5437](https://github.com/kamp-us/phoenix/issues/5437))
+
+A candidate used to **inherit** the verb process's working directory — nothing was staged. Two
+consequences fell out of that one fact. The authored `evals.json` carries every case's
+`expected_output` and assertion list, and the cases' own prompts (`Read evals/cases/eval-<n>.md`)
+only resolve from the directory that holds it, so the answer key sat one relative path from the
+candidate. And all five runs of a case shared that directory, so run N could read run N−1's
+deliverables — measured on the `write-pattern` case-1 lane, where 3 of 5 runs saw a prior verdict
+and run 5 wrote nothing of its own. `dispersion` (ADR 0252 §1) counts runs it assumes are
+independent, so that run measured **at most 2 independent samples, not 5**.
+
+`run-workspace.ts` stages instead. Per `(case, run)` it makes a scoped temp directory named
+`case<id>-run<n>-<session-id>` — the session id the same spawn is pinned to, so run identity is
+legible on disk — copies in **only** the paths that case's authored `files` field declares, at the
+same relative path the prompt reads, and feeds it through `claudeExecutor`'s existing `cwd`. The
+directory is removed when the run's scope closes.
+
+Three properties are deliberate:
+
+- **The answer key is refused by name**, not merely left uncopied: a case that declared
+  `evals/evals.json` would still not get it, and neither an absolute path nor one with a `..`
+  segment is staged.
+- **A run that cannot be isolated does not run.** `stageRunWorkspace` answers `Unstageable`, and the
+  verb records `no-verdict:invocation-failed` rather than falling back to the inherited tree — the
+  fallback would silently restore both defects.
+- **The grader is unchanged.** It is handed `expected_output` and the expectations in-process by
+  `composeGraderPrompt`, stages nothing, and needs no directory of its own. `dispersion` and
+  `medianVerdict` are untouched; this restores the independence they already assumed.
+
 ## The fabrika incident corpus ([#4675](https://github.com/kamp-us/phoenix/issues/4675))
 
 `incident-corpus/` is a **second, separate** body of ground truth, and the name matters: the
