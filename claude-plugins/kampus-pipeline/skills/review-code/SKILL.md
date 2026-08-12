@@ -429,8 +429,43 @@ the full build inputs, so the typecheck bootstrap is whole — run it and treat 
 the typecheck signal:
 
 ```bash
+# stdout IS the attestation — one `TURBO-ATTESTATION: … verdict=RAN …` line. Nothing on stdout means
+# the typecheck did NOT attest, which is UNKNOWN and never a pass.
 bash ./.claude/.pipeline/skills/review-code/scripts/worktree-typecheck.sh "$PR"
 ```
+
+**Its exit status is not the signal — the attestation line is (#4887).** turbo's cache key is
+repo-relative content only (no path, no checkout identity) and a linked worktree shares the primary
+checkout's cache directory, so a bare `pnpm typecheck` here can exit 0 in milliseconds having
+**replayed** an entry a *sibling* tree produced at a *different* commit. Measured on this repo: two
+forced runs attest `executed=31 replayed=0`, and the same command without the force flag immediately
+after reports `replayed=31` — a green that says nothing about the head under review. #5416's per-PR
+head handle fixed the neighbouring defect (the gate resolving a sibling's *tree*) and does not reach
+this one; a correctly-pinned tree still reads the shared cache. So the script forces a real run
+**and** re-reads turbo's own per-task `cache.status` to prove it, refusing a replay instead of
+passing on it. That is worth doing whatever
+[#4106](https://github.com/kamp-us/phoenix/issues/4106) concludes about whether a hit can also be
+*wrong*: it makes the gate say **which** signal it consumed.
+
+**Paste the attestation line into the verdict** as the typecheck evidence — `TURBO-ATTESTATION:
+task=typecheck verdict=RAN turbo=2.10.3 tasks=31 executed=31 replayed=0`. It names repo-relative
+turbo task ids only, so it carries no machine-local path into a public artifact (§SP).
+
+**Any *other* turbo-cached task you consume as evidence goes through the same script.** `test` and
+`lint` are `"cache": true` in `turbo.json` too, so a reviewer who runs `pnpm -C "$REVIEW_WT" test` to
+verify a criterion inherits the identical hole. Run it attested instead, and cite its line the same
+way:
+
+```bash
+bash ./.claude/.pipeline/skills/review-code/scripts/attested-turbo-run.sh "$PR" test
+```
+
+Two checks are *not* turbo-driven and need no attestation: `pnpm lint:worktree` (a direct
+`node scripts/biome-worktree.mjs` run) and `full-unit-project.sh`'s `pnpm -C … test:unit` (vitest in
+`apps/web`, not a root turbo task). The claim itself is re-derived, not asserted, by
+`bash ./.claude/.pipeline/skills/review-code/scripts/verify-turbo-attestation.sh "$PR"` — its
+fixture leg pins the RAN / REPLAYED / zero-scope judgements, and its live leg runs this typecheck
+path **twice against the same tree** and requires both runs to attest `RAN`.
 
 CI and the SHA-bound run-evidence bundle (below) are now **corroboration**, not the sole
 signal. Only when the in-worktree typecheck genuinely cannot run (e.g. an environment fault
@@ -1279,6 +1314,9 @@ Verified PR #<PR> against the acceptance criteria of #<ISSUE>, one at a time:
 <$BUNDLE_LINE — the `Run-evidence bundle:` line from `run-evidence read`, pasted verbatim; on a
 non-`present` state append "— verified from diff + worktree run">
 
+<the `TURBO-ATTESTATION:` line from each attested turbo run, pasted verbatim (Step 2); if the
+in-worktree typecheck could not run at all, say that instead — never omit both>
+
 Read the PR head (§HEAD): all files under review sourced from `<HEAD_SHA>` via `$REVIEW_WT` /
 `git show "$PR_REF:<path>"`, never the launched checkout's working copy.
 
@@ -1384,6 +1422,8 @@ Verified PR #<PR> against the acceptance criteria of #<ISSUE>, one at a time —
 - [PASS] <criterion 2> — <evidence>
 
 <$BUNDLE_LINE, pasted verbatim; on a non-`present` state append "— verified from diff + worktree run">
+
+<the `TURBO-ATTESTATION:` line from each attested turbo run, pasted verbatim (Step 2)>
 ```
 
 ---
@@ -1445,6 +1485,8 @@ Verified PR #<PR> against the acceptance criteria of #<ISSUE>, one at a time:
 
 <$BUNDLE_LINE, pasted verbatim — it already names the failing suites on a `present` state; on a
 non-`present` state append "— verified from diff + worktree run">
+
+<the `TURBO-ATTESTATION:` line from each attested turbo run, pasted verbatim (Step 2)>
 
 
 Failing criteria above must be addressed before this PR can merge. The PR stays open
