@@ -141,3 +141,31 @@ export const INCOMPLETE_SCAN = 19;
  * and one number may not carry two facts inside one group.
  */
 export const TARGET_ABSENT = 20;
+
+/**
+ * Proven: the merge gate found no eval record at all for the head under gate (#4681).
+ *
+ * The other half of {@link STALE_HEAD}, and separate from it because the two name different skips.
+ * A stale record says the review ran and the tree moved; this says the review step never left
+ * anything, which is the path a forgotten step takes. Neither may read as "nothing to check" — the
+ * gate's whole guarantee is that absence reds (founder ruling on #4649).
+ */
+export const MISSING_RESULT = 21;
+
+/**
+ * Proven: a recorded graded pass rate at the head under gate is under the ruled 90% (#4637 ruling 2).
+ *
+ * Its own seat rather than {@link NO_MEASUREMENT}'s: that one says the run produced no number, this
+ * one says it produced a number below the bar, and the remedies are opposite. The trend co-gate
+ * never reaches this seat — it ships observe-only (ADR 0252 §4).
+ */
+export const BELOW_BAR = 22;
+
+/**
+ * Proven: an armed incident-derived case did not pass, so the 100% regression floor is broken.
+ *
+ * Executed in CI with no model in the loop, and seated apart from {@link BELOW_BAR} because the
+ * floor admits no tolerance and no quarantine while the graded bar is a rate — collapsing them
+ * would let a caller treat one regressing incident case as a percentage-point dip.
+ */
+export const REGRESSION_FLOOR = 23;

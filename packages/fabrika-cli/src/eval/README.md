@@ -1153,6 +1153,134 @@ The run site, the full reproduction procedure and which pin comes from where liv
 [`claude-plugins/fabrika/docs/cost-baseline.md`](../../../../claude-plugins/fabrika/docs/cost-baseline.md);
 this section is the module's shape, not a second copy of the method.
 
+## The merge gate ([#4681](https://github.com/kamp-us/phoenix/issues/4681))
+
+The ruled [#4637](https://github.com/kamp-us/phoenix/issues/4637)-B bar, decided by **one verb** so
+that the CI job relaying it holds no part of the decision (ADR
+[0228](../../../../.decisions/0228-scripts-relay-never-derive.md)). `gate.ts` is the pure judgement,
+`gate-verb.ts` the IO shell, and
+[`.github/workflows/fabrika-eval-gate.yml`](../../../../.github/workflows/fabrika-eval-gate.yml) the
+one-line relay.
+
+```bash
+fabrika eval gate 5432                       # over a pull request: head, changed paths, records all read from it
+fabrika eval gate --head <sha> --changed changed.txt --record result.md   # offline: no network, no credential
+```
+
+### CI does not run the evals; CI verifies that the review did
+
+No model executes here and no model credential is needed. The founder ruled on
+[#4649](https://github.com/kamp-us/phoenix/issues/4649#issuecomment-5153280445) that model runs stay
+out of CI — **the recorded reason is cost, not principle** — so the graded leg reads back the
+head-bound eval record the review stage left (#4678, ADR 0253) and compares a string and a number.
+That is why `missing` and `stale` are red conditions in their own right: they are the two ways the
+review step can be skipped by forgetting, and absence that passes is the guarantee this epic exists
+to restore.
+
+The legs that never needed a model still execute: the deterministic regression floor runs its armed
+cases once through the tier, and the spend leg folds ledger rows a meter already reconstructed.
+
+### The six reds, each on its own seat
+
+| exit | reason | what it means |
+|---|---|---|
+| `7` | `zero-scope` | no changed path, no deterministic case, a corpus case the sidecar accounts for neither way, or a record that measured nothing |
+| `15` | `over-baseline` | spend above the committed v1 baseline — or `incomparable`, which is never a pass |
+| `18` | `stale` | the newest recorded result is bound to an older commit; the measurement is re-run at the new head, never re-bound |
+| `21` | `missing` | no eval record for the head under gate |
+| `22` | `below-bar` | a recorded graded rate under the ruled `0.9` |
+| `23` | `regression-floor` | an armed incident case did not pass — 100%, no tolerance, no quarantine |
+
+Every red is printed; the highest-precedence one seats `$?`. Four seats are reused rather than
+re-invented: `7`, `15` and `18` already mean exactly these facts elsewhere in this group.
+
+**The trend is reported and gates nothing** (ADR 0252 §4, the #4766 guardrail): it rides as an
+advisory line and never changes an exit status. Arming it is a later ADR's edit to `judgeGraded`.
+
+### `missing` and `stale` name their cure and its run site
+
+Both are **recoverable states with a named next action**, and neither is a blocker the build lane
+that tripped it can clear. The harness's worktree-isolation guard refuses the eval runner inside a
+lane outright ([#5406](https://github.com/kamp-us/phoenix/issues/5406) — not this repo's code and not
+fixable here), so **a graded run executes in a plain, non-worktree session**. A lane that hits either
+red **hands the measurement off**; a red that said only "re-run the suite" would be naming a cure the
+lane structurally cannot perform, which is why both details carry the site.
+
+### A leg that measured nothing is never reported as a leg that passed
+
+`LegVerdict` has **three** states — `measured`, `unmeasured`, `red` — and the summary line names
+every unmeasured leg instead of absorbing it:
+
+```
+floor: NOT MEASURED — no incident case is armed to run yet, ...
+graded: NOT MEASURED — n/a — this change touches no fabrika skill, ...
+spend: NOT MEASURED — not-priced — no candidate spend ledger ...
+gate: NOT FULLY MEASURED — nothing red, and 3 of 4 leg(s) measured NOTHING, so this is not a
+statement that the bar is met. NOT MEASURED: ... Measured and met: scope.
+```
+
+`gate: GREEN — all N leg(s) of the ruled bar were measured and met` is reachable **only** when every
+leg measured. The check-run `name:` in the workflow follows the same rule: it states what the job
+enforces **today** (the graded 90% at head), not what the ruled bar says, because a green check
+advertising an enforcement nobody performed is the #4604 shape arriving from the reporting side.
+Today the floor runs no case and CI prices no spend, so **the graded leg is the only enforced one**;
+rename the job when a leg is armed, never before.
+
+### The trigger split lives in the verb, not in the workflow
+
+The job runs on **every** pull request with no `paths:` filter, so the deterministic tier — and with
+it the foreign-root-install portability case — sits in the always-run set behind no conditional
+trigger. Whether the **graded** leg applies is `changedSkills`, the verb's own filter over the PR's
+changed files, anchored on `claude-plugins/fabrika/skills/`.
+
+That filter is the one #4604 got wrong on the v1 side: a `packages/`-anchored list that never reached
+a skills directory, so a skill change matched nothing and the gate reported green. `changedSkills`
+takes its prefixes as a parameter for exactly that reason — `gate.unit.test.ts` runs the same
+decision twice over one changed-path set and asserts that the mis-scoped run turns a `missing` red
+into a pass. The property held is not that the filter matches, but that a wrong one is visible as the
+difference between a red and a green.
+
+### The arming sidecar, and why the floor is honest about what it cannot run
+
+`runDeterministicTier` takes its `resolveCommand` from the caller and the authored eval format has no
+command field by design (#4674), so a case's CLI-layer command is committed **beside** the corpus in
+[`incident-corpus/commands.json`](incident-corpus/commands.json), decoded by `floor-commands.ts`. A
+row is a discriminated union on `status`, on `ruled-keeps.ts`'s precedent: an `armed` row carries the
+command, a `pending` row carries **required** prose quoting what is owed.
+
+Three rules follow, and the middle one is the load-bearing distinction:
+
+- **Every deterministic case must appear under one status or the other**, or the gate reds
+  `zero-scope`. A case added to the corpus with no arming decision would otherwise leave the floor
+  silently. A data test asserts the same completeness at commit time.
+- **An all-pending floor reports rather than reds — as `NOT MEASURED`, never as a pass.** That is
+  *not* the quarantine the ruled floor forbids: nothing failing is being excluded, because none of
+  these cases has ever been runnable. Zero scope is a corpus the gate could not see; this is a corpus
+  it can see, whose every case carries a written statement of what it needs. But no incident
+  regression can red a floor that runs nothing, so the leg is `unmeasured` and the summary says so on
+  every run — that is what keeps it from being forgotten.
+- **An armed case that does not pass reds**, including `uncheckable` and `flake` — the tier's own
+  aggregator already refuses to tolerate either.
+
+Today **every** case is `pending`: the corpus's assertions were authored as prose a grader reads, so
+`readExpectation` cannot read most of them, and no CLI-layer command exists for any case. Arming them
+is [#5431](https://github.com/kamp-us/phoenix/issues/5431), which carries the per-case evidence.
+
+Each row's `pendingReason` names the **concrete owed work**, not just the ticket, because a deferral
+whose cure would not cure is a silence with extra words. For an unreadable assertion that work is
+**re-wording the expectation in [`incident-corpus/evals.json`](incident-corpus/evals.json)** so it
+quotes an observable, plus an `armed` row here carrying the command. It is **never** a `corrections`
+entry in `provenance.json`: that array is an append-only re-diagnosis ledger (see the corpus README)
+and `readExpectation` reads only the assertion text, so a correction there would leave the case
+exactly as unrunnable as it found it.
+
+### Spend
+
+A missing candidate ledger is **not** a red — the ledger is a suite run's artifact and CI runs no
+suite, so its absence means no spend was measured on this change, reported by name rather than folded
+into a pass. A ledger with no committed baseline to price it against is the other way round and reds:
+a measurement with no ceiling cannot be judged.
+
 ## Out of scope
 
 **Making the tiering call** is [#1576](https://github.com/kamp-us/phoenix/issues/1576), a
@@ -1165,4 +1293,4 @@ it renders no scorecard series (#4680).
 **Committing a scorecard, and the merge bar.** The graded axis emits a per-run PR comment and
 nothing else: aggregating those records into the committed scorecard series is
 [#4680](https://github.com/kamp-us/phoenix/issues/4680), and reading a rate against the ruled 90% bar
-is [#4681](https://github.com/kamp-us/phoenix/issues/4681). Neither number is judged here.
+is the merge gate documented above. Neither number is judged by `run` or by `graded`.

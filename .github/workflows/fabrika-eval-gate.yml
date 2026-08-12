@@ -1,0 +1,60 @@
+name: fabrika-eval-gate
+
+# The ruled #4637-B bar as a merge gate (#4681): the 100% incident-regression floor, the 90% graded
+# rate, and spend at or below the committed v1 baseline. The whole decision lives in
+# `fabrika eval gate` and this job only relays its exit code — a script relays a verb's answer and
+# never derives the decision (ADR 0228). Nothing here decides which paths count as a skill change,
+# which eval record is in force, or whether a rate clears the bar; the verb reads the PR's head,
+# changed paths and eval records itself.
+#
+# It runs on EVERY pull request with no `paths:` filter, which is what puts the deterministic tier —
+# and with it the foreign-root-install portability case — in the always-run set, behind no
+# conditional trigger. The graded suite still applies to skill changes only, but that is the verb's
+# own path filter over the PR's changed files, tested against the directory it must cover, rather
+# than a YAML condition nobody can red (the #4604 shape, where a path filter matching nothing
+# presented as a pass).
+#
+# No model runs here and no model credential is needed: the graded leg VERIFIES the head-bound eval
+# record the review stage recorded (the founder's cost ruling on #4649) and never runs the suite.
+on:
+  pull_request:
+
+# Least-privilege GITHUB_TOKEN: the job checks out the repo and reads the PR's metadata, changed
+# files and comments; it posts no check-run, status or comment and fails via exit code alone.
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  gate:
+    # The name states what the job ENFORCES TODAY, not what the ruled bar says. The floor runs no
+    # incident case until #5431 arms one and CI runs no suite to price spend against, so a name
+    # promising those two would be a green check advertising an enforcement nobody performed — the
+    # #4604 shape. Rename it when a leg is actually armed, never before.
+    name: "fabrika eval gate: graded 90% enforced at head; floor + spend report, not yet enforced"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: pnpm/action-setup@v4.1.0
+
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version-file: package.json
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Exits 0 when every leg of the bar is met. Each red names its reason and seats its own code:
+      # 7 zero scope, 15 spend above the v1 baseline (or incomparable), 18 stale (the newest record
+      # is bound to an older commit), 21 missing (no record for this head), 22 below the 90% bar,
+      # 23 an armed incident case did not pass. See #4681.
+      - name: Decide the ruled bar
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CLAUDE_PIPELINE_REPO: ${{ github.repository }}
+        run: node packages/fabrika-cli/src/bin.ts eval gate ${{ github.event.pull_request.number }}
