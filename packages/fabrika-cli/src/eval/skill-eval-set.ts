@@ -135,7 +135,14 @@ export interface SkillEvalCase {
 	readonly name: string | null;
 	readonly prompt: string;
 	readonly expectedOutput: string | null;
-	readonly files: ReadonlyArray<string>;
+	/**
+	 * The authored `files`, or `null` when the case never wrote the key.
+	 *
+	 * Absent and `[]` are **not** collapsed, because they are different claims: `[]` is the author
+	 * saying this case needs no material, while an absent key says nothing at all — and a graded run
+	 * cannot be staged from silence (`./run-workspace.ts`, #5434).
+	 */
+	readonly files: ReadonlyArray<string> | null;
 	readonly assertions: ReadonlyArray<SkillEvalAssertion>;
 	readonly tier: EvalTier;
 }
@@ -235,7 +242,7 @@ export const decodeSkillEvalSet = (
 					name: null,
 					prompt: authored.prompt,
 					expectedOutput: authored.expected_output ?? null,
-					files: authored.files ?? [],
+					files: authored.files ?? null,
 					assertions,
 					tier: deriveTier(assertions),
 				};

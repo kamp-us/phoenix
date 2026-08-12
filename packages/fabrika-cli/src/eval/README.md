@@ -1032,6 +1032,60 @@ fact about the set, so it is validated first and records nothing. The exit code 
 a measurement exists — a below-bar rate exits `0`, because whether a rate clears the ruled bar is
 #4681's judgement and appears nowhere in this module.
 
+### Each run gets its own staged directory ([#5434](https://github.com/kamp-us/phoenix/issues/5434), [#5437](https://github.com/kamp-us/phoenix/issues/5437))
+
+A candidate used to **inherit** the verb process's working directory — nothing was staged. Two
+consequences fell out of that one fact. The authored `evals.json` carries every case's
+`expected_output` and assertion list, and the cases' own prompts (`Read evals/cases/eval-<n>.md`)
+only resolve from the directory that holds it, so the answer key sat one relative path from the
+candidate. And all five runs of a case shared that directory, so run N could read run N−1's
+deliverables — measured on the `write-pattern` case-1 lane, where 3 of 5 runs saw a prior verdict
+and run 5 wrote nothing of its own. `dispersion` (ADR 0252 §1) counts runs it assumes are
+independent, so that run measured **at most 2 independent samples, not 5**.
+
+`run-workspace.ts` stages instead. Per `(case, run)` it makes a scoped temp directory named
+`case<id>-run<n>-<session-id>` — the session id the same spawn is pinned to, so run identity is
+legible on disk — copies in **only** the paths that case's authored `files` field declares, at the
+same relative path the prompt reads, and feeds it through `claudeExecutor`'s existing `cwd`. The
+directory is removed when the run's scope closes.
+
+**The base a `files` entry resolves against is found, not assumed.** The corpus writes two
+conventions and neither is wrong: at the time this became the field's first consumer, 65 of the 92
+authored entries were relative to the set's own directory (`fixtures/eval-1.md`) and 17 to the skill
+root (`evals/fixtures/eval-1.md`, `evals/cases/eval-1.md`). So each entry is looked up under the set
+directory first and the skill root second, and staged at the **authored** relative path either way,
+which is what the prompt reads. (10 entries — `check-epic-plan`'s bare `eval-<n>.md`, whose files
+live under `evals/fixtures/` — resolve under neither, and are therefore `Unstageable` below rather
+than silently absent: [#5457](https://github.com/kamp-us/phoenix/issues/5457).)
+
+Three properties are deliberate:
+
+- **The answer key is refused by name**, not merely left uncopied: a case that declared
+  `evals/evals.json` would still not get it. It is also the **only** refusal a run survives —
+  withholding it is the point, and everything else the case declared is still there.
+- **A run that cannot be isolated does not run, and a run missing its declared material is not
+  isolated.** `stageRunWorkspace` answers `Unstageable` — for a fixture that resolves under no base,
+  a copy that fails, an absolute path, or a `..` segment — and the verb records
+  `no-verdict:invocation-failed` rather than falling back to the inherited tree or spawning into a
+  directory short of what the prompt names. Either fallback would let a run nobody could isolate
+  reach `medianVerdict` and `dispersion` as a scored verdict.
+- **The grader is unchanged.** It is handed `expected_output` and the expectations in-process by
+  `composeGraderPrompt`, stages nothing, and needs no directory of its own. `dispersion` and
+  `medianVerdict` are untouched; this restores the independence they already assumed.
+
+**An absent `files` key is not a declaration that a case is self-contained.** The decoder keeps
+absent and `[]` apart (`files: ReadonlyArray<string> | null`) because they are different claims:
+`[]` says this case needs no material, so an empty directory is exactly right and the run scores; an
+absent key says nothing, so there is nothing to stage from and the run is `Unstageable`. The
+distinction is load-bearing rather than pedantic — of the 31 graded cases declaring no `files` at
+this writing, 9 (`report`, `adr`) write `files: []` and are genuinely self-contained, while 22
+(`review` 7, `review-ui` 5, `ship` 5, `triage` 5) omit the key entirely and their prompts name
+material by path (`fixtures/mixed-diff/BUNDLE.md`, `FIXTURE.md`, un-substituted `{FIXTURE}`
+placeholders). Those 22 report `unmeasured` until their `files` are authored, which is the loud
+failure; the alternative is the silent one this rule exists to remove — a `pass`/`fail` taken in an
+empty directory, indistinguishable in the record from a measurement
+([#5464](https://github.com/kamp-us/phoenix/issues/5464)).
+
 ## The fabrika incident corpus ([#4675](https://github.com/kamp-us/phoenix/issues/4675))
 
 `incident-corpus/` is a **second, separate** body of ground truth, and the name matters: the

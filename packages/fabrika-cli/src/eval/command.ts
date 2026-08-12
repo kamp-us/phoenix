@@ -87,6 +87,7 @@ import {
 	composeGraderPrompt,
 	gradableCase,
 	graderResponseOf,
+	type RunVerdict,
 	readGraderVerdict,
 	runGradedAxis,
 } from "./graded-axis.ts";
@@ -107,6 +108,7 @@ import {
 	ruledKeepsViolations,
 	withCoverage,
 } from "./ruled-keeps.ts";
+import {stageRunWorkspace} from "./run-workspace.ts";
 import {readSeriesFiles} from "./series-io.ts";
 import {decodeSkillEvalSet, tierCounts} from "./skill-eval-set.ts";
 import {
@@ -718,47 +720,80 @@ const produceGradedRecord = (request: GradedRunRequest) =>
 		}
 
 		const crypto = yield* Crypto.Crypto;
-		const executor = claudeExecutor({timeoutMs: request.timeoutMs});
-		const invoke = (
-			evalCase: ReturnType<typeof gradableCase>,
-			prompt: string,
-			pluginDir: string | null,
-		) =>
-			Effect.gen(function* () {
-				const sessionId = yield* Effect.orDie(crypto.randomUUIDv4);
-				return yield* executor({
-					caseId: evalCase.id,
-					tier: "graded",
-					arm: "with-skill",
-					sessionId,
-					prompt,
-					model: request.model,
-					pluginDir,
-					jsonSchema: null,
-				});
+
+		// The executor is built per invocation, not once for the axis: `cwd` is what makes a run's
+		// directory its own, so an executor shared across the five would re-share the directory (#5437).
+		const invoke = (args: {
+			readonly caseId: number;
+			readonly prompt: string;
+			readonly pluginDir: string | null;
+			readonly sessionId: string;
+			readonly cwd: string | null;
+		}) =>
+			claudeExecutor(
+				args.cwd === null
+					? {timeoutMs: request.timeoutMs}
+					: {timeoutMs: request.timeoutMs, cwd: args.cwd},
+			)({
+				caseId: args.caseId,
+				tier: "graded",
+				arm: "with-skill",
+				sessionId: args.sessionId,
+				prompt: args.prompt,
+				model: request.model,
+				pluginDir: args.pluginDir,
+				jsonSchema: null,
 			});
 
 		const results = yield* runGradedAxis({
 			cases,
-			runOnce: ({evalCase}) =>
-				Effect.gen(function* () {
-					const candidate = candidateOutputOf(
-						yield* invoke(evalCase, evalCase.prompt, request.pluginDir),
-					);
-					if (candidate._tag !== "Output") return candidate;
-					// The grader loads no plugin: it judges what the candidate produced against the
-					// authored expectations, and running the skill again inside the grader would make the
-					// judgement depend on a second execution nobody scored.
-					return readGraderVerdict(
-						graderResponseOf(
-							yield* invoke(
-								evalCase,
-								composeGraderPrompt({evalCase, candidateOutput: candidate.text}),
-								null,
+			runOnce: ({evalCase, run}) =>
+				Effect.scoped(
+					Effect.gen(function* () {
+						const sessionId = yield* Effect.orDie(crypto.randomUUIDv4);
+						const workspace = yield* stageRunWorkspace({
+							setPath: request.path,
+							caseId: evalCase.id,
+							run,
+							sessionId,
+							files: evalCase.files,
+						});
+						// A run that cannot be isolated is not run un-isolated. Falling back to the
+						// inherited tree is precisely the exposure this closes (#5434/#5437), and a
+						// measurement nobody could isolate is a `NoVerdict`, never a pass or a fail.
+						if (workspace._tag === "Unstageable") {
+							yield* Console.error(
+								`fabrika eval: case ${evalCase.id} run ${run}: no isolated working directory — ${workspace.detail}`,
+							);
+							return {_tag: "NoVerdict", reason: "invocation-failed"} satisfies RunVerdict;
+						}
+						const candidate = candidateOutputOf(
+							yield* invoke({
+								caseId: evalCase.id,
+								prompt: evalCase.prompt,
+								pluginDir: request.pluginDir,
+								sessionId,
+								cwd: workspace.dir,
+							}),
+						);
+						if (candidate._tag !== "Output") return candidate;
+						// The grader loads no plugin: it judges what the candidate produced against the
+						// authored expectations, and running the skill again inside the grader would make the
+						// judgement depend on a second execution nobody scored. It is handed the authored
+						// expectations in-process and stages nothing, so it needs no directory of its own.
+						return readGraderVerdict(
+							graderResponseOf(
+								yield* invoke({
+									caseId: evalCase.id,
+									prompt: composeGraderPrompt({evalCase, candidateOutput: candidate.text}),
+									pluginDir: null,
+									sessionId: yield* Effect.orDie(crypto.randomUUIDv4),
+									cwd: null,
+								}),
 							),
-						),
-					);
-				}),
+						);
+					}),
+				),
 		});
 
 		const built = buildEvalRecord({

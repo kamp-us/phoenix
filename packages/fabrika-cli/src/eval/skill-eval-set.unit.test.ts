@@ -51,6 +51,26 @@ describe("decodeSkillEvalSet — an unedited /skill-creator eval set decodes", (
 		assert.deepStrictEqual(fourth?.assertions, []);
 	});
 
+	// The two are different claims, and the staging tier reads them differently (#5434): `[]` says the
+	// case needs no material, an absent key says nothing at all. Collapsing them here is what let a
+	// case with no declaration score out of an empty directory.
+	it("keeps an absent `files` key distinct from an authored empty one", () => {
+		const result = decodeSkillEvalSet(
+			JSON.stringify({
+				skill_name: "example-skill",
+				evals: [
+					{id: 0, prompt: "no files key at all"},
+					{id: 1, prompt: "declares it needs none", files: []},
+				],
+			}),
+		);
+		assert.isTrue(Result.isSuccess(result));
+		if (Result.isSuccess(result)) {
+			assert.strictEqual(result.success.cases[0]?.files, null);
+			assert.deepStrictEqual(result.success.cases[1]?.files, []);
+		}
+	});
+
 	it("accepts the `assertions` key the authoring SKILL.md names, not only `expectations`", () => {
 		const result = decodeSkillEvalSet(
 			JSON.stringify({
