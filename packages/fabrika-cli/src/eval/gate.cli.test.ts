@@ -138,11 +138,15 @@ const gate = (args: ReadonlyArray<string>, env: Record<string, string> = {}): Ru
 };
 
 describe("fabrika eval gate, watched failing", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}, () => {
-	it("is green when the floor passes and no skill changed", () => {
+	it("passes when the floor passes and no skill changed, and says which legs measured nothing", () => {
 		const run = gate(fixture({command: "true", changed: ["packages/fabrika-cli/src/x.ts"]}).args);
 		expect(run.code).toBe(0);
-		expect(run.stdout).toContain("gate: GREEN");
 		expect(run.stdout).toContain("floor: 1/1");
+		// The graded leg is n/a and there is no candidate ledger, so two legs measured nothing — and
+		// the summary a reader skims must say so rather than report the bar met.
+		expect(run.stdout).toContain("gate: NOT FULLY MEASURED");
+		expect(run.stdout).toContain("2 of 4 leg(s) measured NOTHING");
+		expect(run.stdout).not.toContain("gate: GREEN");
 	});
 
 	it("(a) reds `regression-floor` on a genuinely failing incident case", () => {
@@ -158,6 +162,7 @@ describe("fabrika eval gate, watched failing", {timeout: SUBPROCESS_TEST_TIMEOUT
 		expect(run.code).toBe(MISSING_RESULT);
 		expect(run.stdout).toBe("");
 		expect(run.stderr).toContain("missing");
+		expect(run.stderr).toContain("plain, non-worktree session");
 	});
 
 	it("(c) reds `stale` when the newest result is bound to an older commit", () => {
@@ -185,7 +190,8 @@ describe("fabrika eval gate, watched failing", {timeout: SUBPROCESS_TEST_TIMEOUT
 			fixture({command: "true", changed: [SKILL_PATH], records: [recordBytes(HEAD, 9, 10)]}).args,
 		);
 		expect(run.code).toBe(0);
-		expect(run.stdout).toContain("gate: GREEN");
+		expect(run.stdout).toContain("graded: 1 cell(s) recorded");
+		expect(run.stdout).toContain("gate: NOT FULLY MEASURED");
 	});
 
 	it("reds zero scope when the change declares no path", () => {

@@ -1186,7 +1186,7 @@ cases once through the tier, and the spend leg folds ledger rows a meter already
 |---|---|---|
 | `7` | `zero-scope` | no changed path, no deterministic case, a corpus case the sidecar accounts for neither way, or a record that measured nothing |
 | `15` | `over-baseline` | spend above the committed v1 baseline — or `incomparable`, which is never a pass |
-| `18` | `stale` | the newest recorded result is bound to an older commit; re-run the suite, never re-bind |
+| `18` | `stale` | the newest recorded result is bound to an older commit; the measurement is re-run at the new head, never re-bound |
 | `21` | `missing` | no eval record for the head under gate |
 | `22` | `below-bar` | a recorded graded rate under the ruled `0.9` |
 | `23` | `regression-floor` | an armed incident case did not pass — 100%, no tolerance, no quarantine |
@@ -1196,6 +1196,35 @@ re-invented: `7`, `15` and `18` already mean exactly these facts elsewhere in th
 
 **The trend is reported and gates nothing** (ADR 0252 §4, the #4766 guardrail): it rides as an
 advisory line and never changes an exit status. Arming it is a later ADR's edit to `judgeGraded`.
+
+### `missing` and `stale` name their cure and its run site
+
+Both are **recoverable states with a named next action**, and neither is a blocker the build lane
+that tripped it can clear. The harness's worktree-isolation guard refuses the eval runner inside a
+lane outright ([#5406](https://github.com/kamp-us/phoenix/issues/5406) — not this repo's code and not
+fixable here), so **a graded run executes in a plain, non-worktree session**. A lane that hits either
+red **hands the measurement off**; a red that said only "re-run the suite" would be naming a cure the
+lane structurally cannot perform, which is why both details carry the site.
+
+### A leg that measured nothing is never reported as a leg that passed
+
+`LegVerdict` has **three** states — `measured`, `unmeasured`, `red` — and the summary line names
+every unmeasured leg instead of absorbing it:
+
+```
+floor: NOT MEASURED — no incident case is armed to run yet, ...
+graded: NOT MEASURED — n/a — this change touches no fabrika skill, ...
+spend: NOT MEASURED — not-priced — no candidate spend ledger ...
+gate: NOT FULLY MEASURED — nothing red, and 3 of 4 leg(s) measured NOTHING, so this is not a
+statement that the bar is met. NOT MEASURED: ... Measured and met: scope.
+```
+
+`gate: GREEN — all N leg(s) of the ruled bar were measured and met` is reachable **only** when every
+leg measured. The check-run `name:` in the workflow follows the same rule: it states what the job
+enforces **today** (the graded 90% at head), not what the ruled bar says, because a green check
+advertising an enforcement nobody performed is the #4604 shape arriving from the reporting side.
+Today the floor runs no case and CI prices no spend, so **the graded leg is the only enforced one**;
+rename the job when a leg is armed, never before.
 
 ### The trigger split lives in the verb, not in the workflow
 
@@ -1224,17 +1253,26 @@ Three rules follow, and the middle one is the load-bearing distinction:
 - **Every deterministic case must appear under one status or the other**, or the gate reds
   `zero-scope`. A case added to the corpus with no arming decision would otherwise leave the floor
   silently. A data test asserts the same completeness at commit time.
-- **An all-pending floor reports rather than reds.** That is *not* the quarantine the ruled floor
-  forbids: nothing failing is being excluded, because none of these cases has ever been runnable.
-  Zero scope is a corpus the gate could not see; this is a corpus it can see, whose every case
-  carries a written statement of what it needs. The line prints on every run, which is what keeps it
-  from being forgotten.
+- **An all-pending floor reports rather than reds — as `NOT MEASURED`, never as a pass.** That is
+  *not* the quarantine the ruled floor forbids: nothing failing is being excluded, because none of
+  these cases has ever been runnable. Zero scope is a corpus the gate could not see; this is a corpus
+  it can see, whose every case carries a written statement of what it needs. But no incident
+  regression can red a floor that runs nothing, so the leg is `unmeasured` and the summary says so on
+  every run — that is what keeps it from being forgotten.
 - **An armed case that does not pass reds**, including `uncheckable` and `flake` — the tier's own
   aggregator already refuses to tolerate either.
 
 Today **every** case is `pending`: the corpus's assertions were authored as prose a grader reads, so
 `readExpectation` cannot read most of them, and no CLI-layer command exists for any case. Arming them
 is [#5431](https://github.com/kamp-us/phoenix/issues/5431), which carries the per-case evidence.
+
+Each row's `pendingReason` names the **concrete owed work**, not just the ticket, because a deferral
+whose cure would not cure is a silence with extra words. For an unreadable assertion that work is
+**re-wording the expectation in [`incident-corpus/evals.json`](incident-corpus/evals.json)** so it
+quotes an observable, plus an `armed` row here carrying the command. It is **never** a `corrections`
+entry in `provenance.json`: that array is an append-only re-diagnosis ledger (see the corpus README)
+and `readExpectation` reads only the assertion text, so a correction there would leave the case
+exactly as unrunnable as it found it.
 
 ### Spend
 

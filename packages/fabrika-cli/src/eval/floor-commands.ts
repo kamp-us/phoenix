@@ -8,8 +8,17 @@
  *
  * A row is a discriminated union on `status`, on `ruled-keeps.ts`'s precedent: a `pending` row
  * without a written reason is unrepresentable. That is the whole point of the shape — an incident
- * case the floor cannot yet run is a **committed admission carrying prose**, never a silence. And
- * the completeness rule that pairs with it is the gate's, not this module's: every deterministic
+ * case the floor cannot yet run is a **committed admission carrying prose**, never a silence.
+ *
+ * **What a `pendingReason` must name, and the one cure that does not work.** The prose owes the
+ * concrete next action, because a deferral whose cure would not cure is a silence with extra words.
+ * For an assertion `readExpectation` cannot read, that action is **re-wording the expectation in
+ * `incident-corpus/evals.json`** so it quotes an observable — never a `corrections` entry in
+ * `provenance.json`, which is an append-only re-diagnosis ledger the tier never reads (the corpus
+ * README defines it; `readExpectation` reads only the assertion text). Stated here once; the rows
+ * name the action, not this reasoning.
+ *
+ * The completeness rule that pairs with the shape is the gate's, not this module's: every deterministic
  * case in the corpus must appear here under one status or the other, so a case added to the corpus
  * without an arming decision reds instead of quietly leaving the floor.
  */

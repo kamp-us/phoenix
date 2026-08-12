@@ -20,6 +20,12 @@
  * its authority to block until it has been watched against a real series. Arming it is a later ADR's
  * edit to `judgeGraded`, and nothing else.
  *
+ * **A leg that measured nothing never reads as a leg that passed.** `LegVerdict` carries three states
+ * rather than two, and the summary names every unmeasured leg instead of absorbing it — because the
+ * artifact a reader acts on is a green check, and a green check that claims a bar was met over legs
+ * that ran nothing tells the same lie #4604 told, just from the reporting side rather than the
+ * path-filter side. Disclosing the gap elsewhere does not change what the check says.
+ *
  * Zero scope reds (ADR 0092). A change with no path, a corpus with no deterministic case, a corpus
  * case the arming sidecar accounts for neither way, and a record that measured nothing all resolve to
  * the same refusal, because a gate that could not see its own subject has proven nothing — the #4604
@@ -119,17 +125,51 @@ export interface GateRed {
 
 export type GateLeg = "scope" | "floor" | "graded" | "spend";
 
-/** One leg's answer: a line a human reads, and the red it raised — `null` when it raised none. */
-export interface LegVerdict {
-	readonly leg: GateLeg;
-	readonly line: string;
-	readonly red: GateRed | null;
-}
+/**
+ * One leg's answer — **three** states, and the third is the one a green check hides.
+ *
+ * A leg that measured nothing (an unarmed floor, a graded leg with no skill in the change, a spend
+ * leg with no candidate ledger) raised no red, but it also established nothing. Folding it into the
+ * same `red: null` as a leg that ran and passed is what lets a summary line say the bar is met over
+ * a bar nobody measured — the #4604 shape this gate exists to end, arriving from the reporting side
+ * instead of the path-filter side. So `unmeasured` is its own state, it carries the short reason the
+ * summary prints, and `renderGate` may never absorb it into a met-the-bar sentence.
+ */
+export type LegVerdict =
+	| {readonly leg: GateLeg; readonly status: "measured"; readonly line: string; readonly red: null}
+	| {
+			readonly leg: GateLeg;
+			readonly status: "unmeasured";
+			readonly line: string;
+			/** What was not measured, in a clause the summary can list. */
+			readonly notMeasured: string;
+			readonly red: null;
+	  }
+	| {
+			readonly leg: GateLeg;
+			readonly status: "red";
+			readonly line: string;
+			readonly red: GateRed;
+	  };
 
-const green = (leg: GateLeg, line: string): LegVerdict => ({leg, line, red: null});
+const measured = (leg: GateLeg, line: string): LegVerdict => ({
+	leg,
+	status: "measured",
+	line,
+	red: null,
+});
+
+const unmeasured = (leg: GateLeg, line: string, notMeasured: string): LegVerdict => ({
+	leg,
+	status: "unmeasured",
+	line: `${leg}: NOT MEASURED — ${line}`,
+	notMeasured,
+	red: null,
+});
 
 const red = (leg: GateLeg, reason: GateReason, detail: string): LegVerdict => ({
 	leg,
+	status: "red",
 	line: `${leg}: RED (${reason}) — ${detail}`,
 	red: {reason, detail},
 });
@@ -142,7 +182,7 @@ export const judgeScope = (changed: ReadonlyArray<string>): LegVerdict =>
 				"zero-scope",
 				"the change declares no path — a gate that cannot see its own subject proves nothing (ADR 0092)",
 			)
-		: green("scope", `scope: ${changed.length} changed path(s)`);
+		: measured("scope", `scope: ${changed.length} changed path(s)`);
 
 /** How the floor's cases divide against the arming sidecar. */
 export interface FloorScope {
@@ -210,9 +250,14 @@ export const judgeFloor = (args: {
 	// the one a reader is most likely to collapse. Zero scope is a corpus the gate could not see; this
 	// is a corpus it can see, whose every case carries a committed, written statement of what is owed
 	// before it can run. Nothing failing is being excluded, so this is not the quarantine the ruled
-	// floor forbids — and naming it on every run is what keeps it from being forgotten.
+	// floor forbids. It is still `unmeasured` and never `measured`: no regression can red a floor that
+	// runs nothing, so the summary has to say so out loud.
 	if (args.scope.armed.length === 0) {
-		return green("floor", `floor: pending — no incident case is armed to run yet${pending}`);
+		return unmeasured(
+			"floor",
+			`no incident case is armed to run yet, so no incident regression can red this gate${pending}`,
+			`floor (0 of ${args.scope.pending.length} incident case(s) armed — no regression can red it)`,
+		);
 	}
 	const summary = summarizeEvalRows(args.rows);
 	if (summary.verdict === "red") {
@@ -222,7 +267,7 @@ export const judgeFloor = (args: {
 			`${summary.redReason ?? "the suite is red"} — the floor is 100%, with no tolerance and no quarantine`,
 		);
 	}
-	return green(
+	return measured(
 		"floor",
 		`floor: ${summary.total.passed}/${summary.total.cases} armed incident case(s) pass${pending}`,
 	);
@@ -244,6 +289,19 @@ export const latestPerCell = (records: ReadonlyArray<EvalRecord>): ReadonlyArray
 };
 
 /**
+ * Where the measurement this leg reads back is taken, named in both reds that a run cures.
+ *
+ * `missing` and `stale` are recoverable states, not terminal failures, and neither is a blocker the
+ * build lane that tripped it can clear: the harness's worktree-isolation guard refuses the eval
+ * runner inside a lane outright (#5406, not fixable in this repo), so a graded run executes in a
+ * plain non-worktree session. A red that names no run site reads as "this lane is broken" and a red
+ * that says only "re-run the suite" names a cure the lane structurally cannot perform — so both name
+ * the site, and the hand-off, here. Stated once; both details point at it.
+ */
+const GRADED_RUN_SITE =
+	"cure: take a graded run at the head under gate in a plain, non-worktree session — never inside a build lane, whose harness refuses the runner (#5406) — which posts the head-bound record this leg reads back. A lane that hits this hands the measurement off; it is not the lane's to fix in place";
+
+/**
  * The graded leg: verify the recorded head-bound result, and never run anything.
  *
  * The resolution is the shared gate-verdict contract's, reused rather than re-invented — latest
@@ -258,14 +316,18 @@ export const judgeGraded = (args: {
 }): LegVerdict => {
 	const bar = args.bar ?? GRADED_BAR;
 	if (args.changedSkills.length === 0) {
-		return green("graded", "graded: n/a — this change touches no fabrika skill");
+		return unmeasured(
+			"graded",
+			"n/a — this change touches no fabrika skill, so no graded rate was read",
+			"graded (n/a — this change touches no fabrika skill)",
+		);
 	}
 	const skills = args.changedSkills.join(", ");
 	if (args.records.length === 0) {
 		return red(
 			"graded",
 			"missing",
-			`${skills} changed and no eval record was recorded for ${args.head} — absence is never "nothing to check" (#4649 ruling)`,
+			`${skills} changed and no eval record was recorded for ${args.head} — absence is never "nothing to check" (#4649 ruling). ${GRADED_RUN_SITE}`,
 		);
 	}
 
@@ -278,7 +340,7 @@ export const judgeGraded = (args: {
 		return red(
 			"graded",
 			"stale",
-			`the newest eval record is bound to ${newest?.sha ?? "an unreadable head"}, not to ${args.head} — re-run the suite at the head under gate, never re-bind (ADR 0253)`,
+			`the newest eval record is bound to ${newest?.sha ?? "an unreadable head"}, not to ${args.head} — a measurement is re-run at the new head, never re-bound to it (ADR 0253). ${GRADED_RUN_SITE}`,
 		);
 	}
 
@@ -298,7 +360,7 @@ export const judgeGraded = (args: {
 			.join(", ");
 		return red("graded", "below-bar", `${worst} — the ruled bar is ${bar} (#4637 ruling 2)`);
 	}
-	return green(
+	return measured(
 		"graded",
 		`graded: ${atHead.length} cell(s) recorded at ${args.head}, all at or above ${bar} (skills: ${skills})`,
 	);
@@ -324,9 +386,10 @@ export type SpendInput =
  */
 export const judgeSpend = (input: SpendInput): LegVerdict => {
 	if (input._tag === "NoLedger") {
-		return green(
+		return unmeasured(
 			"spend",
-			`spend: not-priced — no candidate spend ledger at ${input.path}; CI runs no suite of its own`,
+			`not-priced — no candidate spend ledger at ${input.path}; CI runs no suite of its own, so no spend was priced against the v1 baseline`,
+			"spend (not-priced — CI ran no suite, so nothing was priced against the v1 baseline)",
 		);
 	}
 	if (input._tag === "NoBaseline") {
@@ -338,7 +401,7 @@ export const judgeSpend = (input: SpendInput): LegVerdict => {
 	}
 	const {comparison} = input;
 	if (comparison.verdict === "at-or-below") {
-		return green(
+		return measured(
 			"spend",
 			`spend: at-or-below — ${comparison.candidateBilled} billed against the v1 baseline's ${comparison.baselineBilled}`,
 		);
@@ -379,15 +442,39 @@ export const decideGate = (args: {
 	};
 };
 
-/** The human report — one line per leg, then the advisories, then the verdict. */
+/** What the legs that measured nothing were not measuring — empty when the bar was measured whole. */
+export const unmeasuredLegs = (verdict: GateVerdict): ReadonlyArray<string> =>
+	verdict.legs.flatMap((leg) => (leg.status === "unmeasured" ? [leg.notMeasured] : []));
+
+/**
+ * The summary line — the one sentence a reader skimming a green check actually reads.
+ *
+ * It never says the bar is met unless every leg measured: an unmeasured leg is named in the line
+ * itself, so the check cannot be read as an enforcement it did not perform.
+ */
+const summaryLine = (verdict: GateVerdict): string => {
+	if (verdict.verdict === "red") {
+		return `gate: RED — ${verdict.reds.map((r) => r.reason).join(", ")}`;
+	}
+	const unmeasured = unmeasuredLegs(verdict);
+	if (unmeasured.length === 0) {
+		return `gate: GREEN — all ${verdict.legs.length} leg(s) of the ruled bar were measured and met`;
+	}
+	const met = verdict.legs.flatMap((leg) => (leg.status === "measured" ? [leg.leg] : []));
+	return [
+		`gate: NOT FULLY MEASURED — nothing red, and ${unmeasured.length} of ${verdict.legs.length} leg(s) measured NOTHING,`,
+		` so this is not a statement that the bar is met. NOT MEASURED: ${unmeasured.join("; ")}.`,
+		` Measured and met: ${met.length === 0 ? "no leg" : met.join(", ")}.`,
+	].join("");
+};
+
+/** The human report — one line per leg, then the advisories, then the summary. */
 export const renderGate = (verdict: GateVerdict): string =>
 	[
-		"fabrika eval gate — the #4637-B bar (100% floor · 90% graded · spend ≤ v1 baseline)",
+		"fabrika eval gate — judged against the #4637-B bar (100% floor · 90% graded · spend ≤ v1 baseline)",
 		...verdict.legs.map((leg) => leg.line),
 		...verdict.advisories,
-		verdict.verdict === "green"
-			? "gate: GREEN — every ruled leg of the bar is met"
-			: `gate: RED — ${verdict.reds.map((r) => r.reason).join(", ")}`,
+		summaryLine(verdict),
 	].join("\n");
 
 /** The machine-readable form, for a caller that wants the reasons without parsing prose. */
@@ -398,7 +485,13 @@ export const gateToJson = (verdict: GateVerdict): string =>
 			code: verdict.code,
 			bar: {graded: GRADED_BAR, floor: 1, adr: 4637},
 			reds: verdict.reds,
-			legs: verdict.legs.map((leg) => ({leg: leg.leg, line: leg.line, red: leg.red})),
+			unmeasured: unmeasuredLegs(verdict),
+			legs: verdict.legs.map((leg) => ({
+				leg: leg.leg,
+				status: leg.status,
+				line: leg.line,
+				red: leg.red,
+			})),
 			advisories: verdict.advisories,
 		},
 		null,

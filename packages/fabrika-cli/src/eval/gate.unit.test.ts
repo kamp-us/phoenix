@@ -9,6 +9,12 @@
  * the assertion is that the mis-scoped run turns a `missing` red into a pass. That is the property
  * worth holding: not that the filter matches, but that a wrong filter is *visible* as the difference
  * between a red and a green.
+ *
+ * **Which assertion catches a broken shipped filter — do not delete the siblings.** That
+ * parameterised test passes its filter in explicitly, so it documents the failure mode and would
+ * still pass if `SKILL_PATH_PREFIXES` were re-anchored wrong. The three assertions beside it are the
+ * guard: `changedSkills(changed)` equals `["triage"]`, the same input reds `missing`, and
+ * `SKILL_PATH_PREFIXES` contains the skills directory. Break the constant and those three go red.
  */
 import {describe, expect, it} from "vitest";
 import {type EvalRecord, read as readEvalRecord} from "../wire/eval-record.ts";
@@ -29,6 +35,7 @@ import {
 	decideGate,
 	floorScope,
 	GRADED_BAR,
+	gateToJson,
 	judgeFloor,
 	judgeGraded,
 	judgeScope,
@@ -36,6 +43,7 @@ import {
 	latestPerCell,
 	renderGate,
 	SKILL_PATH_PREFIXES,
+	unmeasuredLegs,
 } from "./gate.ts";
 
 const HEAD = "03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c";
@@ -228,10 +236,12 @@ describe("the regression floor", () => {
 		expect(verdict.line).toContain("pending arming (2)");
 	});
 
-	it("reports an all-pending floor rather than reding, and says so on every run", () => {
+	it("reports an all-pending floor as NOT MEASURED rather than reding, and says so on every run", () => {
 		const scope = floorScope([mechanicalCase(1)], sidecar([pending(1)]));
 		const verdict = judgeFloor({scope, rows: [], deterministicCases: 1});
 		expect(verdict.red).toBeNull();
+		expect(verdict.status).toBe("unmeasured");
+		expect(verdict.line).toContain("NOT MEASURED");
 		expect(verdict.line).toContain("no incident case is armed to run yet");
 	});
 });
@@ -243,6 +253,24 @@ describe("the graded leg verifies the recorded head-bound result", () => {
 		expect(judgeGraded({changedSkills: skills, records: [], head: head(HEAD)}).red?.reason).toBe(
 			"missing",
 		);
+	});
+
+	it("names the cure and the run site on both skip-path reds — neither is terminal, neither is the lane's", () => {
+		const missing = judgeGraded({changedSkills: skills, records: [], head: head(HEAD)});
+		const stale = judgeGraded({
+			changedSkills: skills,
+			records: [record({sha: OLDER, recordedAt: "2026-08-11T00:00:00Z", passed: 10, graded: 10})],
+			head: head(HEAD),
+		});
+		for (const verdict of [missing, stale]) {
+			expect(verdict.line).toContain("cure:");
+			expect(verdict.line).toContain("plain, non-worktree session");
+			expect(verdict.line).toContain("never inside a build lane");
+			expect(verdict.line).toContain("hands the measurement off");
+		}
+		// #5406 is the whole reason the site has to be named: the lane's harness refuses the runner, so
+		// "re-run the suite" without a site is an instruction the lane cannot follow.
+		expect(stale.line).toContain("#5406");
 	});
 
 	it("reds `stale` when the newest record is bound to an older commit", () => {
@@ -293,9 +321,10 @@ describe("the graded leg verifies the recorded head-bound result", () => {
 		).toBeNull();
 	});
 
-	it("is n/a when no fabrika skill changed", () => {
+	it("is n/a when no fabrika skill changed — unmeasured, not passed", () => {
 		const verdict = judgeGraded({changedSkills: [], records: [], head: head(HEAD)});
 		expect(verdict.red).toBeNull();
+		expect(verdict.status).toBe("unmeasured");
 		expect(verdict.line).toContain("n/a");
 	});
 });
@@ -320,7 +349,74 @@ describe("the spend leg", () => {
 	it("names an unmeasured change rather than folding it into a pass", () => {
 		const verdict = judgeSpend({_tag: "NoLedger", path: ".fabrika/spend-ledger.jsonl"});
 		expect(verdict.red).toBeNull();
+		expect(verdict.status).toBe("unmeasured");
 		expect(verdict.line).toContain("not-priced");
+	});
+});
+
+/**
+ * The reporting-side half of the #4604 shape: not a filter that saw nothing, but a summary that
+ * reported health it never measured. These assertions are what stop the summary sentence drifting
+ * back to one that a reader of a green check would take as an enforcement.
+ */
+describe("the summary never claims a bar it did not measure", () => {
+	const unarmedFloor = judgeFloor({
+		scope: floorScope([mechanicalCase(1)], sidecar([pending(1)])),
+		rows: [],
+		deterministicCases: 1,
+	});
+
+	it("says NOT FULLY MEASURED, and names each unmeasured leg, when a leg measured nothing", () => {
+		const verdict = decideGate({
+			legs: [
+				judgeScope(["a.ts"]),
+				unarmedFloor,
+				judgeGraded({changedSkills: [], records: [], head: head(HEAD)}),
+				judgeSpend({_tag: "NoLedger", path: ".fabrika/spend-ledger.jsonl"}),
+			],
+		});
+		const report = renderGate(verdict);
+		expect(verdict.verdict).toBe("green");
+		expect(report).not.toContain("every ruled leg");
+		expect(report).toContain("gate: NOT FULLY MEASURED");
+		expect(report).toContain("3 of 4 leg(s) measured NOTHING");
+		expect(report).toContain("0 of 1 incident case(s) armed");
+		expect(report).toContain("n/a — this change touches no fabrika skill");
+		expect(report).toContain("not-priced");
+		expect(report).toContain("Measured and met: scope");
+	});
+
+	it("says the bar was measured and met only when every leg measured", () => {
+		const scope = floorScope([mechanicalCase(1)], sidecar([armed(1)]));
+		const verdict = decideGate({
+			legs: [
+				judgeScope(["a.ts"]),
+				judgeFloor({scope, rows: [row(1, "pass")], deterministicCases: 1}),
+				judgeGraded({
+					changedSkills: ["triage"],
+					records: [
+						record({sha: HEAD, recordedAt: "2026-08-11T00:00:00Z", passed: 10, graded: 10}),
+					],
+					head: head(HEAD),
+				}),
+				judgeSpend({_tag: "Compared", comparison: comparison("at-or-below")}),
+			],
+		});
+		const report = renderGate(verdict);
+		expect(unmeasuredLegs(verdict)).toEqual([]);
+		expect(report).toContain("all 4 leg(s) of the ruled bar were measured and met");
+		expect(report).not.toContain("NOT MEASURED");
+	});
+
+	it("carries the unmeasured legs into the JSON form too, beside the reds", () => {
+		const verdict = decideGate({legs: [judgeScope(["a.ts"]), unarmedFloor]});
+		const parsed = JSON.parse(gateToJson(verdict));
+		expect(parsed.reds).toEqual([]);
+		expect(parsed.unmeasured).toHaveLength(1);
+		expect(parsed.legs.map((leg: {status: string}) => leg.status)).toEqual([
+			"measured",
+			"unmeasured",
+		]);
 	});
 });
 

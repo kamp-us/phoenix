@@ -31,7 +31,11 @@ concurrency:
 
 jobs:
   gate:
-    name: the ruled bar - 100% floor, 90% graded verified at head, spend <= v1 baseline
+    # The name states what the job ENFORCES TODAY, not what the ruled bar says. The floor runs no
+    # incident case until #5431 arms one and CI runs no suite to price spend against, so a name
+    # promising those two would be a green check advertising an enforcement nobody performed — the
+    # #4604 shape. Rename it when a leg is actually armed, never before.
+    name: "fabrika eval gate: graded 90% enforced at head; floor + spend report, not yet enforced"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4.2.2
