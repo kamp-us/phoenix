@@ -935,12 +935,12 @@ known-unwritten.
 
 ```
 $ fabrika governance post 4321 --polarity PASS --sha 03135b91 --clause "no contradiction, no weakening" < verdict.md
-posted	governance	PASS	03135b91	created	https://github.com/kamp-us/phoenix/pull/4321#issuecomment-5154902211
+posted	governance	PASS	03135b91	2f1a9c4e0b7d	created	https://github.com/kamp-us/phoenix/pull/4321#issuecomment-5154902211
 ```
 
 ```
 $ fabrika governance post 4321 --polarity PASS --sha 03135b91 --clause "no contradiction, no weakening" --json < verdict.md
-{"outcome":"posted","namespace":"governance","polarity":"PASS","sha":"03135b91","upsert":"created","commentUrl":"https://github.com/kamp-us/phoenix/pull/4321#issuecomment-5154902211"}
+{"outcome":"posted","namespace":"governance","polarity":"PASS","sha":"03135b91","content":"2f1a9c4e0b7d","upsert":"created","commentUrl":"https://github.com/kamp-us/phoenix/pull/4321#issuecomment-5154902211"}
 ```
 
 ```

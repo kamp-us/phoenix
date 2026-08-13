@@ -92,7 +92,7 @@ const prefixMatch = (a: string, b: string): boolean => a.startsWith(b) || b.star
  * Why the read-back does not show what was posted, or `null` when it does.
  *
  * Two assertions, and both are needed. The **marker** is checked through the format's own `read`,
- * which is the contract's step 6 — the four fields have to be the four that were composed. The
+ * which is the contract's step 6 — the five fields have to be the five that were composed. The
  * **whole comment** is then compared against the bytes that were sent, through `normalizeForReadback`
  * from `report/compose.ts`: a marker that parses proves nothing about the body under it, and the body
  * is the verdict. The normalizer is what makes that comparison survivable — its trailing-newline step

@@ -85,8 +85,8 @@ const carriesNamespace = (body: string): boolean => {
 /**
  * Why the read-back does not show what was posted, or `null` when it does.
  *
- * Two assertions, and both are needed. The marker goes through the format's own `read`, so the four
- * fields have to be the four that were composed; the whole comment is then compared through
+ * Two assertions, and both are needed. The marker goes through the format's own `read`, so the five
+ * fields have to be the five that were composed; the whole comment is then compared through
  * `normalizeForReadback` — a marker that parses proves nothing about the body under it, and the body
  * is the verdict. That normalizer is imported rather than re-derived because its trailing-newline step
  * is the one a re-derivation drops, and dropping it fires this refusal on every clean run.

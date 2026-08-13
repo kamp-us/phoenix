@@ -637,6 +637,13 @@ never `stale`, because a comparison that could not be made is not a negative res
 The digest read is **lazy**: it runs only when a content-bound marker has already failed the head
 test, so an ordinary sweep touches no `git` at all.
 
+<!-- anchor: ABSENCE-IS-NEVER-A-BINDING --> **A marker carrying no content field is head-bound, and
+that is the stricter answer, not a free pass.** Absence of the field never widens what a verdict
+survives: a legacy marker, a hand-written one and a typo'd one all fall back to head equality, and a
+`content:` token that reaches for the field and misses reads `malformed` rather than head-only. Any
+change that lets a missing or unreadable content field resolve `current` inverts this and needs its
+own record (ADR 0276).
+
 Each comment's **first non-blank line** is what is read (the format's anchoring rule); a marker
 quoted further down a body is not a marker, which is why one comment carries one namespace.
 
@@ -831,9 +838,10 @@ the poster reads success.
 | stdin | markdown | yes | — | the verdict body below the first line: per-criterion table, findings, the §DEV row |
 
 **Output** — machine channel. One line:
-`posted\t<namespace>\t<polarity>\t<sha>\t<content>\t<created|edited>\t<comment-url>` — the fourth
-field is the content digest the verdict binds (ADR 0276) and the fifth says whether the upsert
-created a fresh comment or edited this namespace's existing one.
+`posted\t<namespace>\t<polarity>\t<sha>\t<content>\t<created|edited>\t<comment-url>` — counting
+`posted` as the first field, the **fifth** is the content digest the verdict binds (ADR 0276) and
+the **sixth** says whether the upsert created a fresh comment or edited this namespace's existing
+one.
 With `--json`: `{"outcome":"posted","namespace":…,"polarity":…,"sha":…,"content":…,"upsert":"created"|"edited","carrier":…,"commentUrl":…}`.
 
 **What the operation does, in order — each step gates the next.**
