@@ -521,8 +521,9 @@ every interrupted session a blocked one.
 
 ## The `heal-ci` group
 
-The contract is
-[`claude-plugins/fabrika/skills/heal-ci/contract.md`](../../claude-plugins/fabrika/skills/heal-ci/contract.md).
+The contract is `claude-plugins/fabrika/skills/heal-ci/contract.md`, which this group was written
+against. It has not landed yet — that path is where the contract will live, so it is left unlinked
+rather than pointing at a file that is not there.
 This is the repair lane: it takes a stranded or red pull request and drives it back toward green
 without a human reading logs. A **strand** is a PR nobody is moving; a **signature** is the one row
 of a closed table a failure log matches.
