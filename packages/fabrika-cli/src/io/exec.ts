@@ -178,11 +178,15 @@ export const execRecord: ChildRunner = (request) =>
 		),
 	);
 
-/** Run a command, capturing stdout; a non-zero exit and a spawn fault are both data, never a throw. */
-export const execCapture = (file: string, args: ReadonlyArray<string>): Exec =>
+const captured = (file: string, args: ReadonlyArray<string>, input: string | null): Exec =>
 	Effect.scoped(
 		Effect.gen(function* () {
-			const handle = yield* ChildProcess.make(file, [...args]);
+			const handle =
+				input === null
+					? yield* ChildProcess.make(file, [...args])
+					: yield* ChildProcess.make(file, [...args], {
+							stdin: Stream.fromIterable([new TextEncoder().encode(input)]),
+						});
 			const [stdout, stderr, exitCode] = yield* Effect.all(
 				[collect(handle.stdout), collect(handle.stderr), handle.exitCode],
 				{concurrency: "unbounded"},
@@ -205,3 +209,18 @@ export const execCapture = (file: string, args: ReadonlyArray<string>): Exec =>
 			}),
 		),
 	);
+
+/** Run a command, capturing stdout; a non-zero exit and a spawn fault are both data, never a throw. */
+export const execCapture = (file: string, args: ReadonlyArray<string>): Exec =>
+	captured(file, args, null);
+
+/**
+ * The same run with `input` piped to the child's stdin — the file-free carrying path.
+ *
+ * It exists so a message can reach a command **without a file on disk at all** (§SP rule 1). The
+ * scar is `git commit -F <path>`: the path is a second place the bytes live, and a lane that read
+ * back a two-day-old file at that path committed another lane's message with nothing failing
+ * anywhere (#5484). Bytes handed straight to the child cannot be stale.
+ */
+export const execCaptureInput = (file: string, args: ReadonlyArray<string>, input: string): Exec =>
+	captured(file, args, input);

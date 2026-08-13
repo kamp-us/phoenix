@@ -13,7 +13,7 @@
  *   directly, and the caller compares.
  */
 import {Effect} from "effect";
-import {execCapture} from "../io/exec.ts";
+import {execCapture, execCaptureInput} from "../io/exec.ts";
 import {
 	type Attempt,
 	fail,
@@ -171,6 +171,49 @@ export const push = (remote: string, ref: string, force: boolean): Shell<Attempt
 			`HEAD:refs/heads/${ref}`,
 		]);
 		return r.ok ? ok(undefined) : fail(r.reason);
+	});
+
+/** The paths staged for commit. An empty list is a proven "there is nothing to commit". */
+export const stagedPaths: Shell<Attempt<ReadonlyArray<string>>> = Effect.gen(function* () {
+	const r = yield* execCapture("git", ["diff", "--cached", "--name-only", "-z"]);
+	return r.ok ? ok(r.stdout.split("\0").filter((p) => p !== "")) : fail(r.reason);
+});
+
+/**
+ * `--cleanup=verbatim` — git records the message byte for byte.
+ *
+ * Every other mode edits it (`whitespace` collapses consecutive blank lines, `strip` deletes `#`
+ * lines), and an edited message makes the read-back below compare two things that were never meant
+ * to be equal — a false mismatch on a clean run, which is the fastest way to get a real one ignored.
+ */
+const COMMIT_FLAGS = ["commit", "--cleanup=verbatim"];
+
+/** Create a commit from a message on git's own stdin — the file-free carrying path (#5484). */
+export const commitFromStdin = (message: string): Shell<Attempt<void>> =>
+	Effect.gen(function* () {
+		const r = yield* execCaptureInput("git", [...COMMIT_FLAGS, "-F", "-"], message);
+		return r.ok ? ok<void>(undefined) : fail(r.reason);
+	});
+
+/** Create a commit from a message file. The caller proves the path is this lane's allocator's. */
+export const commitFromFile = (path: string): Shell<Attempt<void>> =>
+	Effect.gen(function* () {
+		const r = yield* execCapture("git", [...COMMIT_FLAGS, "-F", path]);
+		return r.ok ? ok<void>(undefined) : fail(r.reason);
+	});
+
+/**
+ * The message git actually recorded on a commit — the independent witness `build commit` turns on.
+ *
+ * `%B` is the raw body, so what comes back is what a reviewer will read in the merge record. The
+ * whole point of asking git rather than trusting the invocation is #5484: the message reaching the
+ * commit and the message the lane authored were different, every command exited 0, and nothing but
+ * a read-back could tell.
+ */
+export const commitMessage = (sha: string): Shell<Attempt<string>> =>
+	Effect.gen(function* () {
+		const r = yield* execCapture("git", ["log", "-1", "--format=%B", sha]);
+		return r.ok ? ok(r.stdout) : fail(r.reason);
 	});
 
 /** The merge base of HEAD and `base` — where this lane's diff starts. */
