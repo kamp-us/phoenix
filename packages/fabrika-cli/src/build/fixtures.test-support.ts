@@ -11,13 +11,8 @@ import type {ExecResult} from "../io/exec.ts";
 export const HEAD = "03135b9188d2be6c0a4b7bd0b7a3ff9c53f0f2b1";
 export const OLD_HEAD = "8f1c2ad4e5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0";
 
-/** A linked worktree: the git dir and the common dir differ. */
-export const LINKED = okOut(
-	["/repo/.git/worktrees/lane-a", "/repo/.git", "/repo/trees/lane-a"].join("\n"),
-);
-
-/** The primary checkout: the two dirs are the same path. */
-export const PRIMARY = okOut(["/repo/.git", "/repo/.git", "/repo"].join("\n"));
+/** What `git rev-parse` names for a checkout: its git dir, then its tree root. */
+export const GIT_DIRS = okOut(["/repo/trees/lane-a/.git", "/repo/trees/lane-a"].join("\n"));
 
 export const issue = (overrides: Record<string, unknown> = {}): ExecResult =>
 	okOut(

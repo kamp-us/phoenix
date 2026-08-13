@@ -1,6 +1,6 @@
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {LINKED} from "../build/fixtures.test-support.ts";
+import {GIT_DIRS} from "../build/fixtures.test-support.ts";
 import {fakeShell} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {BAD_SECTIONS, CAPTURE_INVALID, PRECONDITION_UNKNOWN} from "./codes.ts";
@@ -13,7 +13,7 @@ const POINTER = `${ROOT}/packages/design-capture/golden-pointer.json`;
 const CANDIDATE = "/scratch/after/pano.png";
 
 const REV_PARSE: ReadonlyArray<readonly [RegExp, ExecResult]> = [
-	[/^git rev-parse --path-format=absolute/, LINKED],
+	[/^git rev-parse --path-format=absolute/, GIT_DIRS],
 ];
 
 const GOLDEN_BYTES = encodePng(2, 2, solid(2, 2, [0, 0, 0, 255]));

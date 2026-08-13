@@ -293,7 +293,7 @@ describe("the graded leg reports the recorded head-bound result and never reds (
 	it("names the run site on every debt line — the lane that reads it cannot take the measurement", () => {
 		for (const verdict of [missing(), stale()]) {
 			expect(verdict.line).toContain("to clear this debt:");
-			expect(verdict.line).toContain("plain, non-worktree session");
+			expect(verdict.line).toContain("plain session");
 			expect(verdict.line).toContain("never inside a build lane");
 			expect(verdict.line).toContain("hands the measurement off");
 		}

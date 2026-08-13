@@ -1320,9 +1320,9 @@ advisory line and never changes an exit status. Arming it is a later ADR's edit 
 ### Every graded debt line names the run site
 
 A debt line is a **named next action**, and it is not one the build lane reading it can take. The
-harness's worktree-isolation guard refuses the eval runner inside a lane outright
+harness refuses the eval runner inside a lane outright
 ([#5406](https://github.com/kamp-us/phoenix/issues/5406) — not this repo's code and not fixable
-here), so **a graded run executes in a plain, non-worktree session**. A lane that reads a debt line
+here), so **a graded run executes in a plain session**. A lane that reads a debt line
 **hands the measurement off**; a line that said only "run the suite" would be naming an act the lane
 structurally cannot perform, which is why each carries the site.
 

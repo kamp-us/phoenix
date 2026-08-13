@@ -39,7 +39,6 @@ export const MESSAGES: LedgerMessages = {
 	verb: VERB,
 	notAnEpic: (epic) => `${VERB}: #${epic} is not a type:epic.`,
 	unreadable: (what, reason) => `${VERB}: cannot read ${what}: ${reason} — nothing was written.`,
-	notAWorktree: `${VERB}: not in a linked worktree — the run manifest is unreachable.`,
 };
 
 export interface SupersedeOptions extends OpenOptions {

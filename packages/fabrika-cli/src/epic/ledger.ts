@@ -2,10 +2,10 @@
  * The run ledger: an append-only JSONL event log, and the two counters derived from it.
  *
  * **Where it lives binds the implementation.**
- * `<epic-worktree-root>/.fabrika-epic/<epic>-<claim-nonce>/ledger.jsonl` — worktree-resident and
+ * `<epic-tree-root>/.fabrika-epic/<epic>-<claim-nonce>/ledger.jsonl` — tree-resident and
  * **claim-nonce-keyed, never session-keyed**: the session id is constant across sibling subagents, so
  * a write collision under it is invisible to the victim (#4516). It is never committed; `epic open`
- * registers the directory in the worktree's git exclude so conductor state cannot enter the epic's PR.
+ * registers the directory in the tree's git exclude so conductor state cannot enter the epic's PR.
  *
  * **Events, with state derived at read time and never stored.** A line is
  * `{seq, at, event, slice, detail, sha}` over a closed event set. Anything else the file might hold —
@@ -181,9 +181,9 @@ export const boundShaOf = (line: LedgerLine): string | null => {
 /** The run key: `<epic>-<claim-nonce>`, never the session id (#4516). */
 export const runKey = (epic: number, nonce: string): string => `${epic}-${nonce}`;
 
-/** The run's directory inside the epic worktree. */
-export const runDir = (worktreeRoot: string, key: string): string =>
-	`${worktreeRoot.replace(/\/+$/, "")}/.fabrika-epic/${key}`;
+/** The run’s directory inside the epic tree. */
+export const runDir = (treeRoot: string, key: string): string =>
+	`${treeRoot.replace(/\/+$/, "")}/.fabrika-epic/${key}`;
 
 export const ledgerPathIn = (dir: string): string => `${dir}/ledger.jsonl`;
 

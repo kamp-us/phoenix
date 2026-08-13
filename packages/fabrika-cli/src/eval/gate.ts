@@ -297,13 +297,13 @@ export const latestPerCell = (records: ReadonlyArray<EvalRecord>): ReadonlyArray
 /**
  * Where the measurement is taken, named on every debt line so the reader knows who can take it.
  *
- * The harness's worktree-isolation guard refuses the eval runner inside a build lane outright (#5406,
- * not fixable in this repo), so a graded run executes in a plain non-worktree session. A debt line
- * that says only "run the suite" names an act the lane structurally cannot perform — so it names the
- * site, and the hand-off, here. Stated once; every debt line points at it.
+ * The harness refuses the eval runner inside a build lane outright (#5406, not fixable in this
+ * repo), so a graded run executes in a plain session. A debt line that says only "run the suite"
+ * names an act the lane structurally cannot perform — so it names the site, and the hand-off, here.
+ * Stated once; every debt line points at it.
  */
 const GRADED_RUN_SITE =
-	"to clear this debt: take a graded run at the head under gate in a plain, non-worktree session — never inside a build lane, whose harness refuses the runner (#5406) — which posts the head-bound record this leg reads back. A lane that hits this hands the measurement off; it is not the lane's to fix in place";
+	"to clear this debt: take a graded run at the head under gate in a plain session — never inside a build lane, whose harness refuses the runner (#5406) — which posts the head-bound record this leg reads back. A lane that hits this hands the measurement off; it is not the lane's to fix in place";
 
 /**
  * A graded state that used to red and now only prints (#5498 executing the 2026-08-13 ruling).

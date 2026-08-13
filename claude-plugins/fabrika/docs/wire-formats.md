@@ -157,7 +157,7 @@ round would change text its digest covers, breaking every ruling bound to it.
 ### `handoff-pack`
 
 This is one session's handoff to the next, as a single comment, and it crosses the widest boundary in
-the corpus: the two sides share no memory, no worktree and possibly no machine. That is why it is
+the corpus: the two sides share no memory, no checkout and possibly no machine. That is why it is
 registered rather than kept private to its group — the three-answer read is what the boundary needs,
 because a malformed pack read as an absent one tells a successor nobody handed off and it starts the
 work over. Its shape is two halves under one marker. The four asserted sections are the model's own

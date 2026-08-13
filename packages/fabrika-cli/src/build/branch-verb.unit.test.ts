@@ -3,22 +3,15 @@ import {describe, expect, it} from "vitest";
 import {errOut, fakeShell, okOut} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {runBranch} from "./branch-verb.ts";
-import {
-	CLAIM_NOT_MINE,
-	NOT_A_WORKTREE,
-	OFF_VOCABULARY,
-	PRECONDITION_UNKNOWN,
-	ZERO_SCOPE,
-} from "./codes.ts";
+import {CLAIM_NOT_MINE, OFF_VOCABULARY, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {
 	comments,
+	GIT_DIRS,
 	HEAD,
 	issue,
 	LANE_UUID,
-	LINKED,
 	marker,
 	NONCE,
-	PRIMARY,
 } from "./fixtures.test-support.ts";
 
 const REV_PARSE = /^git rev-parse --path-format=absolute/;
@@ -46,7 +39,7 @@ const options = {
 };
 
 const CLAIMED: ReadonlyArray<readonly [RegExp, ExecResult]> = [
-	[REV_PARSE, LINKED],
+	[REV_PARSE, GIT_DIRS],
 	[ISSUE, issue()],
 	[COMMENTS, MINE],
 	[PERM, okOut("write\n")],
@@ -115,17 +108,17 @@ describe("runBranch — create mode", () => {
 		expect(shell.calls).toEqual([]);
 	});
 
-	it("refuses the primary checkout on 12, in its own words", async () => {
-		const out = await run([[REV_PARSE, PRIMARY]]);
-		expect(out.code).toBe(NOT_A_WORKTREE);
+	it("refuses an unreadable tree root on 11, in its own words", async () => {
+		const out = await run([[REV_PARSE, errOut("fatal: not a git repository")]]);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stderr.at(-1)).toBe(
-			"build branch: this is the primary checkout — refusing to branch here.",
+			"build branch: cannot read the tree root: fatal: not a git repository — the ground is UNKNOWN.",
 		);
 	});
 
 	it("refuses a foreign claim on 15 — nothing is cut", async () => {
 		const shell = fakeShell([
-			[REV_PARSE, LINKED],
+			[REV_PARSE, GIT_DIRS],
 			[ISSUE, issue()],
 			[COMMENTS, comments({id: 1, body: marker("s-77aa", LANE_UUID)})],
 			[PERM, okOut("write\n")],
@@ -161,7 +154,7 @@ describe("runBranch — resume mode", () => {
 
 	it("checks the PR's head out under this claim's own local lane name, with the upstream set", async () => {
 		const shell = fakeShell([
-			[REV_PARSE, LINKED],
+			[REV_PARSE, GIT_DIRS],
 			[RESUME_ISSUE, issue({number: 4310})],
 			[RESUME_COMMENTS, MINE],
 			[PERM, okOut("write\n")],
@@ -186,7 +179,7 @@ describe("runBranch — resume mode", () => {
 	it("refuses a merged PR on 7 — nothing to resume", async () => {
 		const out = await run(
 			[
-				[REV_PARSE, LINKED],
+				[REV_PARSE, GIT_DIRS],
 				[RESUME_ISSUE, issue({number: 4310})],
 				[RESUME_COMMENTS, MINE],
 				[PERM, okOut("write\n")],

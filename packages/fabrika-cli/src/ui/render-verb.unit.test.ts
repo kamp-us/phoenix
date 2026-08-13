@@ -1,6 +1,13 @@
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {comments, issue, LANE_UUID, LINKED, marker, NONCE} from "../build/fixtures.test-support.ts";
+import {
+	comments,
+	GIT_DIRS,
+	issue,
+	LANE_UUID,
+	marker,
+	NONCE,
+} from "../build/fixtures.test-support.ts";
 import {fakeShell, okOut} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {FAILED} from "../verb.ts";
@@ -23,7 +30,7 @@ const LANE = `build/4312-editor-focus-loss-${NONCE}`;
 const SET_DIR = `/tmp/fabrika-build/s-9f2e/4312-${NONCE}/after`;
 
 const LANE_OK: ReadonlyArray<readonly [RegExp, ExecResult]> = [
-	[/^git rev-parse --path-format=absolute/, LINKED],
+	[/^git rev-parse --path-format=absolute/, GIT_DIRS],
 	[/^git rev-parse --abbrev-ref HEAD$/, okOut(`${LANE}\n`)],
 	[/^gh api repos\/o\/r\/issues\/4312$/, issue()],
 	[

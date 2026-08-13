@@ -1,6 +1,6 @@
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {LINKED} from "../build/fixtures.test-support.ts";
+import {GIT_DIRS} from "../build/fixtures.test-support.ts";
 import {fakeShell} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {NO_MANIFEST, PRECONDITION_UNKNOWN} from "./codes.ts";
@@ -8,7 +8,7 @@ import {type FakeBytesFsOptions, fakeBytesFs} from "./fakes.test-support.ts";
 import {runManifest} from "./manifest-verb.ts";
 
 const REV_PARSE: ReadonlyArray<readonly [RegExp, ExecResult]> = [
-	[/^git rev-parse --path-format=absolute/, LINKED],
+	[/^git rev-parse --path-format=absolute/, GIT_DIRS],
 ];
 
 const ROOT = "/repo/trees/lane-a";

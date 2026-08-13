@@ -17,7 +17,7 @@
 import {Effect, FileSystem, Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {scannedLine} from "../build/target.ts";
-import {readTree} from "../build/worktree.ts";
+import {readTree} from "../build/tree.ts";
 import {searchOpenIssues} from "../io/issues.ts";
 import {probeCycleDoc} from "../plan/github.ts";
 import {sectionCount} from "../plan/ledger.ts";
@@ -48,7 +48,6 @@ export const MESSAGES: LedgerMessages = {
 	verb: VERB,
 	notAnEpic: (epic) => `${VERB}: #${epic} is not a type:epic — refusing to plan it.`,
 	unreadable: (what, reason) => `${VERB}: cannot read ${what}: ${reason} — the ground is UNKNOWN.`,
-	notAWorktree: `${VERB}: not in a linked worktree — refusing to plan from the primary checkout (#4934).`,
 };
 
 export const runOpen = (
@@ -240,7 +239,7 @@ const writeAll = (
 
 /**
  * Put the run directory behind the tree's own exclude file, so run state can never enter the epic's
- * PR. The file is per-worktree and untracked, so the exclusion never enters a diff and never fights a
+ * PR. The file is per-checkout and untracked, so the exclusion never enters a diff and never fights a
  * `--require-clean` check.
  */
 const registerExclude = (

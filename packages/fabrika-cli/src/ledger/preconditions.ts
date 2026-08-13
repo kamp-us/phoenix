@@ -1,7 +1,7 @@
 /**
  * The four preconditions every `ledger` verb runs before it answers, in one place so six copies cannot
- * drift apart: resolve the repo, refuse a target that is not a `type:epic`, prove this process is in a
- * linked worktree, and prove this session holds the epic's claim.
+ * drift apart: resolve the repo, refuse a target that is not a `type:epic`, read the tree root the run
+ * directory hangs off, and prove this session holds the epic's claim.
  *
  * The claim is the **`build` group's, reused as landed verbs** — no second lock is derived. v1's
  * `epic-lock` is why: all five of its distinct outcomes collapsed onto exit `1`, it wrote the
@@ -18,10 +18,10 @@ import type {ChildProcessSpawner} from "effect/unstable/process";
 import {requireClaim, requireSession} from "../build/claim.ts";
 import {nonceOf} from "../build/lane.ts";
 import {badNumber, openIssue, resolveTargetRepo} from "../build/target.ts";
-import {assertGround} from "../build/worktree.ts";
+import {assertGround} from "../build/tree.ts";
 import type {IssueRecord} from "../io/issues.ts";
 import {refuse, type VerbOutcome} from "../verb.ts";
-import {CLAIM_NOT_MINE, NOT_A_WORKTREE, OFF_VOCABULARY, PRECONDITION_UNKNOWN} from "./codes.ts";
+import {CLAIM_NOT_MINE, OFF_VOCABULARY, PRECONDITION_UNKNOWN} from "./codes.ts";
 import {runDir, runKey} from "./run.ts";
 
 export const EPIC_LABEL = "type:epic";
@@ -33,14 +33,12 @@ export interface LedgerMessages {
 	readonly notAnEpic: (epic: number) => string;
 	/** `<verb>: cannot read <what>: <reason> — <tail>.` */
 	readonly unreadable: (what: string, reason: string) => string;
-	/** `<verb>: not in a linked worktree — <tail>.` */
-	readonly notAWorktree: string;
 }
 
 export interface Ground {
 	readonly repo: string;
 	readonly epic: IssueRecord;
-	readonly worktreeRoot: string;
+	readonly treeRoot: string;
 	/** `<epic>-<claim-nonce>` — the run's name, and the leaf of its directory. */
 	readonly run: string;
 	readonly dir: string;
@@ -86,9 +84,7 @@ export const openGround = (
 		}
 
 		const tree = yield* assertGround(verb, false);
-		if (tree._tag === "Refused") {
-			return refused(refuse(NOT_A_WORKTREE, messages.notAWorktree, tree.outcome.stderr));
-		}
+		if (tree._tag === "Refused") return refused(tree.outcome);
 
 		const held = yield* requireClaim(verb, repo, epicNumber, session.id);
 		if (held._tag === "Refused") {
@@ -120,7 +116,7 @@ export const openGround = (
 			_tag: "Ground",
 			repo,
 			epic: target.issue,
-			worktreeRoot: tree.root,
+			treeRoot: tree.root,
 			run,
 			dir: runDir(tree.root, run),
 			notes: held.notes,

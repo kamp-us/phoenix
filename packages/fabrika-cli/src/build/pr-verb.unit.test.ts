@@ -13,7 +13,15 @@ import {
 	WRITE_UNKNOWN,
 	ZERO_SCOPE,
 } from "./codes.ts";
-import {comments, issue, LANE_UUID, LINKED, marker, NONCE, pull} from "./fixtures.test-support.ts";
+import {
+	comments,
+	GIT_DIRS,
+	issue,
+	LANE_UUID,
+	marker,
+	NONCE,
+	pull,
+} from "./fixtures.test-support.ts";
 import {runPr} from "./pr-verb.ts";
 
 const REV_PARSE = /^git rev-parse --path-format=absolute/;
@@ -31,7 +39,7 @@ const BODY = "Fixes #4312\n\nEditor focus now survives a save.\n\n## Deviations\
 
 const LANE_OK: ReadonlyArray<readonly [RegExp, ExecResult]> = [
 	[ISSUE, issue()],
-	[REV_PARSE, LINKED],
+	[REV_PARSE, GIT_DIRS],
 	[BRANCH, okOut(`${LANE}\n`)],
 	[COMMENTS, comments({id: 1, body: marker("s-9f2e", LANE_UUID)})],
 	[PERM, okOut("write\n")],

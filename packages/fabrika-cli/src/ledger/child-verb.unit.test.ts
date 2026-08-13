@@ -1,6 +1,6 @@
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {LINKED} from "../build/fixtures.test-support.ts";
+import {GIT_DIRS} from "../build/fixtures.test-support.ts";
 import {errOut, fakeFs, fakeShell, okOut} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import type {StdinRead} from "../io/stdin.ts";
@@ -52,7 +52,7 @@ const CREATED = okOut(JSON.stringify({number: 4301, id: 90210}));
 
 const HAPPY: ReadonlyArray<readonly [RegExp, ExecResult]> = [
 	[/^gh api repos\/o\/r\/issues\/4300$/, epic()],
-	[/^git rev-parse --path-format=absolute/, LINKED],
+	[/^git rev-parse --path-format=absolute/, GIT_DIRS],
 	...CLAIMED,
 	[LABELS, labelSet(...DEFAULT_LABELS)],
 	[MILESTONES, milestones([44, "fabrika campaign"])],

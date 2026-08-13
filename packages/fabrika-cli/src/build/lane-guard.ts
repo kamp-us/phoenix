@@ -2,9 +2,9 @@
  * "This tree, on this branch, is my lane" — the precondition `tree --issue`, `check`, `push` and `pr`
  * share, guarded identically so a sibling verb cannot take the same ground on weaker evidence.
  *
- * Four facts in one order, and each is proven before the next is asked: a linked worktree (`12`), a
- * branch whose **name** parses as a lane (`14`), a claim on that lane's number this session holds
- * (`15` / `11`), and a nonce in the branch that matches the token that claim carries (`14`).
+ * Three facts in one order, and each is proven before the next is asked: a branch whose **name**
+ * parses as a lane (`14`), a claim on that lane's number this session holds (`15` / `11`), and a nonce
+ * in the branch that matches the token that claim carries (`14`).
  *
  * The last step is the one that makes the others worth having. A branch that merely *looks* like a
  * lane proves nothing; the branch name and the live claim have to agree on the same UUID, which is
@@ -17,7 +17,7 @@ import {refuse, type VerbOutcome} from "../verb.ts";
 import {type ClaimMarker, requireClaim} from "./claim.ts";
 import {WRONG_LANE} from "./codes.ts";
 import {type LaneBranch, laneNumber, nonceOf, parseLaneBranch} from "./lane.ts";
-import {assertGround} from "./worktree.ts";
+import {assertGround} from "./tree.ts";
 
 export type Lane =
 	| {readonly _tag: "Refused"; readonly outcome: VerbOutcome}

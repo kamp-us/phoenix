@@ -10,9 +10,9 @@ import {
 	DIR,
 	ENV,
 	EPIC,
+	GIT_DIRS,
 	LANDED,
 	LEDGER,
-	LINKED,
 	ledgerOf,
 	MINE,
 	ON_LANE,
@@ -29,7 +29,7 @@ import {runVerdict} from "./verdict-verb.ts";
 const RESOLVE = /^git rev-parse --verify --quiet [0-9a-f]+\^\{commit\}$/;
 
 const WORLD: ReadonlyArray<readonly [RegExp, ExecResult]> = [
-	[REV_PARSE, LINKED],
+	[REV_PARSE, GIT_DIRS],
 	[BRANCH, ON_LANE],
 	[COMMENTS, MINE],
 	[PERM, WRITE],

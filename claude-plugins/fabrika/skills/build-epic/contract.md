@@ -35,8 +35,8 @@ respecifies them. Modules reused by import:
   already a declared **producer** of this format (`src/wire/registry.ts`).
 - `packages/fabrika-cli/src/build/git.ts` — `headSha`, `isAncestor`, `mergeBase`, `changedFiles`.
   `epic landed` and `epic slice-diff` import them.
-- `packages/fabrika-cli/src/build/lane-guard.ts` + `src/build/worktree.ts` — the shared
-  tree/lane/claim preconditions and their codes (`12`/`14`/`15`/`11`). Every mutating `epic` verb
+- `packages/fabrika-cli/src/build/lane-guard.ts` + `src/build/tree.ts` — the shared
+  tree/lane/claim preconditions and their codes (`13`/`14`/`15`/`11`). Every mutating `epic` verb
   runs them, identically to `build`'s own verbs.
 - `packages/fabrika-cli/src/build/dependencies.ts` — the canonical `## Dependencies` grammar
   (defined in `build eligible`'s block). `epic open` imports the parser; this spec adds **no
@@ -66,9 +66,10 @@ tracked inline as the sibling contracts do):
   planning lane's. Progress lands as `build note` comments.
 - **A CI reader, a §CP classifier, a leak scanner over changed files.** `build`'s and `review`'s
   contracts already record why each is nothing here too.
-- **A worktree provisioner.** `build tree` verifies and never provisions; under the #4934 ruling
-  the conductor's spawner provisions ONE epic worktree and every subagent runs inside it. No verb
-  creates, locks, or reaps trees (`worktree.ts`: the spawner owns the lifecycle).
+- **Any opinion about where the run sits.** No verb creates, locks, or reaps a tree, and none
+  refuses one either: the 2026-08-13 ruling on #5386 dropped fabrika's isolation posture, so a run
+  works wherever it was spawned. What #4934 still fixes is **one tree per epic run** — every
+  subagent works in the conductor's tree, not its own.
 - **A retry classifier.** The crash-vs-healthy axes are the ledger's two counters (below); the
   TRANSIENT/LOGIC *classification* of a crash is the harness's, composed not reimplemented
   (`resume-policy.ts`: LOGIC includes every default-deny).
@@ -96,7 +97,7 @@ re-derived.
 ## The run ledger — storage, shape, and the Q1 seam
 
 **Storage (binds the implementation):** an append-only JSONL event log at
-`<epic-worktree-root>/.fabrika-epic/<epic>-<claim-nonce>/ledger.jsonl` — **worktree-resident and
+`<epic-tree-root>/.fabrika-epic/<epic>-<claim-nonce>/ledger.jsonl` — **tree-resident and
 claim-nonce-keyed, never session-keyed** (#4516: the session key is constant across sibling
 subagents, and a write collision is invisible to the victim) and **never committed** (the path is
 covered by the git exclude mechanism at `epic open`; conductor state inside the epic's PR would
@@ -144,11 +145,11 @@ Every `epic` verb obeys these; stated once.
   across invocations; every invocation re-fetches and re-gates (the TOCTOU answer for a branch
   held across many dispatches).
 - **Preconditions are `build`'s, guarded identically.** Every verb that reads or mutates run
-  state runs the imported lane guard (linked worktree `12`, lane branch `14`, claim held
+  state runs the imported lane guard (lane branch `14`, claim held
   `15`/`11`) — the conductor's claim is on the **epic** number, and the lane branch is the one
   `build branch <epic>` cut. Two stated exemptions: `epic slice-diff` runs the tree assertions
   only (an evaluator holds no claim; it reads), and `epic open` runs tree + claim only
-  (`12`/`15`/`11`, never `14`) — it precedes `build branch` in the loop, so the lane branch may
+  (`15`/`11`, never `14`) — it precedes `build branch` in the loop, so the lane branch may
   not exist yet.
 - **Error-message prefix** is the invoked verb's name, contract-wide, as in `build`.
 - **A non-zero exit is UNKNOWN** to the caller until the code is read.
@@ -163,11 +164,11 @@ them.
 **Alignment:** `3`–`11` are `report`'s seats, imported (`src/report/codes.ts`), code-for-code as
 `build` does, and the group registers those base seats in `ALIGNED_GROUPS`
 (`src/exit-code-alignment.ts` — its checker verifies only the overlap with the `report` base).
-**`12`–`19` are imported from `build`'s `codes.ts` verbatim** — this group runs the same
-worktree, lane, claim, validation and push facts, and a caller driving `build` and `epic` in one
+**`13`–`19` are imported from `build`'s `codes.ts` verbatim** (`12` is `build`'s retired seat) — this group runs the same
+tree, lane, claim, validation and push facts, and a caller driving `build` and `epic` in one
 sweep must read one meaning per code; that identity is carried by the constant import itself,
 which the alignment registry does not (and cannot) check — stated so an implementer does not
-hunt for a `12`–`19` seat-map mechanism that does not exist. **`20`+ are this group's own** —
+hunt for a `13`–`19` seat-map mechanism that does not exist. **`20`+ are this group's own** —
 the genuinely-new facts; they carry no cross-group obligation.
 
 | Code | Meaning |
@@ -182,7 +183,6 @@ the genuinely-new facts; they carry no cross-group obligation.
 | `9` | the write landed but the read-back does not match |
 | `10` | a value off its closed vocabulary — a semantic refusal, never a malformed-flag usage error |
 | `11` | a required read failed — nothing was written, no outcome is proven |
-| `12` | proven: not in a linked worktree (imported from `build`) |
 | `13` | proven: the tree is dirty (imported from `build`; reached here at `epic landed`, whose block states the trigger widening — dirty beside the new HEAD, not only at a `--require-clean` open) |
 | `14` | proven: the checked-out branch is not this lane's (imported) |
 | `15` | proven: this session does not hold the claim (imported) |
@@ -242,7 +242,7 @@ broken by ascending ref, so two runs over one epic derive one order (the determi
 On first open, creates the ledger directory and writes `run-opened`, and registers the ledger
 path in the git exclude mechanism so conductor state can never enter the PR.
 
-Preconditions: tree + claim assertions (`12`/`15`/`11`) on the epic's claim — never `14`; this
+Preconditions: tree + claim assertions (`15`/`11`) on the epic's claim — never `14`; this
 verb precedes `build branch` in the loop (the stated exemption in Shared conventions).
 
 **Exit status** (beyond the universal four)
@@ -253,7 +253,7 @@ verb precedes `build branch` in the loop (the stated exemption in Shared convent
 | `7` | the epic is proven absent (404) or closed, or a named child ref is proven absent |
 | `10` | the issue is not a `type:epic` — conducting a non-epic is off-vocabulary |
 | `11` | the epic, a child, or the ledger path could not be read/created |
-| `12`/`15` | the imported tree/claim refusals (`14` is exempted — see Shared conventions) |
+| `15`/`11` | the imported tree/claim refusals (`14` is exempted — see Shared conventions) |
 | `21` | a ledger exists at this run's key but holds unnameable state |
 
 **Errors**
@@ -334,7 +334,7 @@ this verb reads no GitHub, spawns nothing, and judges nothing.
 | Code | Trigger |
 |---|---|
 | `11` | the ledger or the git graph could not be read |
-| `12`/`14`/`15` | the imported lane-guard refusals |
+| `14`/`15` | the imported lane-guard refusals |
 | `20` | proven: no ledger at this run's key — run `epic open` first |
 | `21` | the ledger holds unnameable state |
 
@@ -416,7 +416,7 @@ that slice's tripped breaker is `23`, excepting only `breaker-tripped` itself an
 | `9` | the tail read-back does not match the appended line |
 | `10` | `--event` off-enum, `--slice` unknown to this run, or the event contradicts derived state |
 | `11` | the ledger could not be read |
-| `12`/`14`/`15` | the imported lane-guard refusals |
+| `14`/`15` | the imported lane-guard refusals |
 | `20` | no ledger at this run's key |
 | `21` | the ledger holds unnameable state |
 | `23` | the slice's breaker is tripped — only `breaker-tripped`/`run-halted` are recordable for it |
@@ -474,7 +474,7 @@ and brands — the registry's own landing rule). The format's fixed sections, in
 
 1. `## Slice` — id, the child issue ref, the slice's acceptance criteria verbatim (via the
    imported wire read).
-2. `## Ground` — worktree root, branch name, base SHA the slice opens at, the scratch path for
+2. `## Ground` — tree root, branch name, base SHA the slice opens at, the scratch path for
    the handoff note (derived per-slice: `<tmp>/fabrika-epic/<epic>-<nonce>/<slice>/handoff.md` —
    the `build scratch` key extended one level, per-slice by construction).
 3. `## Rules` — fixed literal text, owned by the format: ground the contract against the source,
@@ -494,7 +494,7 @@ ingestion of a brief carrying instructions outside the fixed sections.
 |---|---|
 | `10` | `--slice` unknown to this run; `--retry` with no FAIL verdict recorded for the slice |
 | `11` | the ledger, the child issue, or the git base could not be read |
-| `12`/`14`/`15` | the imported lane-guard refusals |
+| `14`/`15` | the imported lane-guard refusals |
 | `20` | no ledger at this run's key |
 | `21` | the ledger holds unnameable state |
 | `23` | the slice's breaker is tripped — nothing further is dispatchable |
@@ -571,7 +571,7 @@ history (old tip not an ancestor) is `10` — off the run's vocabulary entirely,
 | `7` | the new commit is empty — zero changed files, nothing landed |
 | `10` | the old tip is not an ancestor of HEAD — history was rewritten under the run |
 | `11` | the ledger or git state could not be read |
-| `12`/`14`/`15` | the imported lane-guard refusals |
+| `14`/`15` | the imported lane-guard refusals |
 | `13` | proven: the tree is dirty beside the new HEAD — an unfinished landing (imported `build` seat, trigger widened from `build`'s at-`--require-clean`-open meaning to dirty-at-landing-proof) |
 | `20` | no ledger at this run's key |
 | `21` | the ledger holds unnameable state |
@@ -636,7 +636,6 @@ runs (#4959, restated for slice scope on #4950), and never checks the head out.
 | `7` | the commit's diff is empty |
 | `10` | `--commit` is not 7–40 lowercase hex |
 | `11` | the git read failed |
-| `12` | proven: not in a linked worktree (tree assertions only — an evaluator holds no claim) |
 | `24` | proven: the commit is not in this branch's local graph |
 
 **Errors**
@@ -715,7 +714,7 @@ graph before recording — the recorded marker always carries the full SHA.
 | `9` | the tail read-back does not match |
 | `10` | polarity off-enum; or `--commit` is not the slice's landed commit |
 | `11` | the ledger or graph could not be read |
-| `12`/`14`/`15` | the imported lane-guard refusals |
+| `14`/`15` | the imported lane-guard refusals |
 | `20` | no ledger at this run's key |
 | `21` | the ledger holds unnameable state |
 | `23` | the slice's breaker is tripped |
@@ -789,7 +788,7 @@ fabrika epic status 4300
 dropped, and never rendered as `current`). This fold is the handoff artifact: a successor session
 resumes from `status` + the ledger, not from anyone's narrative.
 
-**Exit status** (beyond the universal four): `11`, `12`/`14`/`15`, `20`, `21` — triggers exactly
+**Exit status** (beyond the universal four): `11`, `14`/`15`, `20`, `21` — triggers exactly
 as in `epic next`.
 
 **Errors** — `epic next`'s rows with the verb name substituted (shared conventions).
@@ -823,7 +822,7 @@ contract's verbs make, so an implementer sees the dependency set in one place. V
 | --- | --- | --- |
 | The epic issue: `type:epic`, planned ledger body, `## Dependencies` block | `epic open` derives the run from it | **fail-loud** — exit `4`/`10` naming the gap; route to the planning lane. |
 | Child slice issues with `### Acceptance criteria` blocks | `epic open`/`epic brief` carry each slice's contract via the registered wire format | **fail-loud** — the wire read's `absent`/`malformed` is carried as a token; the skill surfaces it as a plan defect, no criterion is invented. |
-| A git repository with a linked epic worktree and the lane branch | every verb's ground; the ledger lives in the worktree | **fail-loud** — the imported lane guard's `12`/`14`/`15`, per the #4934 ruling; never the primary checkout. |
+| A git checkout with the lane branch | every verb's ground; the ledger lives in that tree | **fail-loud** — the imported lane guard's `14`/`15`; one tree for the whole run, per the #4934 ruling. |
 | The `build` group's own repo surfaces | the reused verbs' rows, declared in [`build`'s SKILL.md](../build/SKILL.md) | as declared there — this contract adds no new row to them. |
 
 ---

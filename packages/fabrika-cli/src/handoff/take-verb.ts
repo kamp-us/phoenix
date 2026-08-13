@@ -8,7 +8,7 @@
  * reached a posted artifact (#3086, #3173), so there is no `--body` and no `--body-file`.
  *
  * <!-- anchor: UNREACHABLE-WORK-IS-REFUSED --> **Unreachability refuses rather than warns.** A
- * successor is a fresh session in a fresh worktree: an unpushed commit and a modified tracked file
+ * successor is a fresh session in a different checkout: an unpushed commit and a modified tracked file
  * are both literally invisible to it, so a pack whose `## Next act` points at work in that state is
  * confidently wrong. The remedy is the caller's, outside this group, which commits and pushes
  * nothing; the refusal names it. `--declare-unreachable` does not silence the fact — the proven half

@@ -2,10 +2,10 @@ import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
 import {
 	comments,
+	GIT_DIRS,
 	HEAD,
 	issue,
 	LANE_UUID,
-	LINKED,
 	marker,
 	NONCE,
 	pull,
@@ -66,7 +66,7 @@ const script = (
 	overrides: ReadonlyArray<readonly [RegExp, ExecResult]> = [],
 ): ReadonlyArray<readonly [RegExp, ExecResult]> => [
 	...overrides,
-	[/^git rev-parse --path-format=absolute/, LINKED],
+	[/^git rev-parse --path-format=absolute/, GIT_DIRS],
 	[/^git rev-parse --abbrev-ref HEAD$/, okOut(`${LANE}\n`)],
 	[/^gh api repos\/o\/r\/issues\/4312$/, issue()],
 	[

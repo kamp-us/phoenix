@@ -41,8 +41,8 @@ the same tracked debt the sibling contracts carry.)
   tests, secret scan, leak scan and unresolved-thread accounting are required CI gates
   (`.github/workflows/ci.yml`, `gitleaks.yml`, `leak-guard.yml`,
   `unresolved-threads-guard.yml`). A fabrika copy could only agree redundantly or contradict an
-  enforced verdict, and a local re-run has returned another worktree's cached green three times
-  in one session (#4106). v1's ADR 0067 made the in-worktree typecheck authoritative; that
+  enforced verdict, and a local re-run has returned another checkout's cached green three times
+  in one session (#4106). v1's ADR 0067 made the in-tree typecheck authoritative; that
   posture is **deliberately not carried** — the brief's scope rule ("no second answer to
   anything a CI gate already enforces") supersedes it for fabrika, and `review ci` is the
   structural read of the same facts. Dropping the worktree also removes the #3607 /tmp-collision

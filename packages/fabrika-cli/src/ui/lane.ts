@@ -15,7 +15,7 @@ import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {laneNumber, nonceOf, parseLaneBranch} from "../build/lane.ts";
 import {requireLane} from "../build/lane-guard.ts";
-import {readTree} from "../build/worktree.ts";
+import {readTree} from "../build/tree.ts";
 import {currentBranch} from "../io/issues.ts";
 import {refuse, type VerbOutcome} from "../verb.ts";
 import {LANE_NOT_MINE, PRECONDITION_UNKNOWN} from "./codes.ts";

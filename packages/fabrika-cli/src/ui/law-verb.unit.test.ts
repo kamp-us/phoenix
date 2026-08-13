@@ -1,6 +1,6 @@
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {LINKED} from "../build/fixtures.test-support.ts";
+import {GIT_DIRS} from "../build/fixtures.test-support.ts";
 import {fakeShell} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {BAD_SECTIONS, NO_MANIFEST, PRECONDITION_UNKNOWN, UNTYPED_LAW} from "./codes.ts";
@@ -12,7 +12,7 @@ const MANIFEST = `${ROOT}/design-system-manifest.md`;
 const REGISTRY = `${ROOT}/design-prohibitions.json`;
 
 const REV_PARSE: ReadonlyArray<readonly [RegExp, ExecResult]> = [
-	[/^git rev-parse --path-format=absolute/, LINKED],
+	[/^git rev-parse --path-format=absolute/, GIT_DIRS],
 ];
 
 const run = (fs: FakeBytesFsOptions) =>

@@ -16,10 +16,10 @@ import {
 	COMMENTS,
 	ENV,
 	EPIC,
+	GIT_DIRS,
 	HEAD,
 	LANDED,
 	LEDGER,
-	LINKED,
 	ledgerOf,
 	MINE,
 	ON_LANE,
@@ -35,7 +35,7 @@ import {parseLedger} from "./ledger.ts";
 import {runRecord} from "./record-verb.ts";
 
 const LANE: ReadonlyArray<readonly [RegExp, ExecResult]> = [
-	[REV_PARSE, LINKED],
+	[REV_PARSE, GIT_DIRS],
 	[BRANCH, ON_LANE],
 	[COMMENTS, MINE],
 	[PERM, WRITE],
@@ -162,7 +162,7 @@ describe("runRecord", () => {
 
 	it("refuses a wrong lane branch on 14 — the imported guard, not a second check", async () => {
 		const {outcome} = await run({}, OPENED, [
-			[REV_PARSE, LINKED],
+			[REV_PARSE, GIT_DIRS],
 			[BRANCH, okOut("build/9999-other-lane-deadbeef\n")],
 			[COMMENTS, MINE],
 			[PERM, WRITE],

@@ -1,6 +1,6 @@
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {LINKED} from "../build/fixtures.test-support.ts";
+import {GIT_DIRS} from "../build/fixtures.test-support.ts";
 import {errOut, fakeFs, fakeShell, okOut, once} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {
@@ -49,7 +49,7 @@ const happy = (
 	options: {before?: string; after?: string; patch?: ExecResult} = {},
 ): ReadonlyArray<readonly [RegExp, ExecResult]> => [
 	[once(EPIC_READ), epic({body: options.before ?? BODY})],
-	[/^git rev-parse --path-format=absolute/, LINKED],
+	[/^git rev-parse --path-format=absolute/, GIT_DIRS],
 	...CLAIMED,
 	[PATCH, options.patch ?? okOut("{}")],
 	[EPIC_READ, epic({body: options.after ?? SPLICED})],
@@ -138,7 +138,7 @@ describe("runWrite", () => {
 		const {outcome} = await run(
 			[
 				[once(EPIC_READ), epic({body})],
-				[/^git rev-parse --path-format=absolute/, LINKED],
+				[/^git rev-parse --path-format=absolute/, GIT_DIRS],
 				...CLAIMED,
 				[PATCH, okOut("{}")],
 				[EPIC_READ, epic({body})],
@@ -159,7 +159,7 @@ describe("runWrite", () => {
 	it("refuses a body that landed and does not read back as composed", async () => {
 		const {outcome} = await run([
 			[once(EPIC_READ), epic()],
-			[/^git rev-parse --path-format=absolute/, LINKED],
+			[/^git rev-parse --path-format=absolute/, GIT_DIRS],
 			...CLAIMED,
 			[PATCH, okOut("{}")],
 			[EPIC_READ, epic({body: `${SPLICED}\nsomeone else wrote this\n`})],

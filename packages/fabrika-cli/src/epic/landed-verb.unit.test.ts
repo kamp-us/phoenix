@@ -10,10 +10,10 @@ import {
 	COMMENTS,
 	ENV,
 	EPIC,
+	GIT_DIRS,
 	HEAD,
 	LANDED,
 	LEDGER,
-	LINKED,
 	ledgerOf,
 	MINE,
 	ON_LANE,
@@ -37,7 +37,7 @@ const DISPATCHED = {
 };
 
 const WORLD: ReadonlyArray<readonly [RegExp, ExecResult]> = [
-	[REV_PARSE, LINKED],
+	[REV_PARSE, GIT_DIRS],
 	[BRANCH, ON_LANE],
 	[COMMENTS, MINE],
 	[PERM, WRITE],

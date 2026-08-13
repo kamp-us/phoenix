@@ -17,13 +17,13 @@
 
 import {isRecord, parseJson} from "../io/json.ts";
 
-/** The directory the run tree lives under, inside the epic's worktree. */
+/** The directory the run tree lives under, inside the epic's tree. */
 export const RUN_ROOT = ".fabrika-plan";
 
 /**
  * The one line `ledger open` appends to `.git/info/exclude`.
  *
- * That file is per-worktree and untracked, so the exclusion never enters a diff and never fights a
+ * That file is per-checkout and untracked, so the exclusion never enters a diff and never fights a
  * `--require-clean` check — `epic/ledger.ts`'s `EXCLUDE_ENTRY` shape, applied to this group's root.
  */
 export const EXCLUDE_ENTRY = `${RUN_ROOT}/`;
@@ -31,9 +31,9 @@ export const EXCLUDE_ENTRY = `${RUN_ROOT}/`;
 /** The run key: `<epic>-<claim-nonce>`. */
 export const runKey = (epic: number, nonce: string): string => `${epic}-${nonce}`;
 
-/** The run's directory inside the epic worktree. */
-export const runDir = (worktreeRoot: string, key: string): string =>
-	`${worktreeRoot.replace(/\/+$/, "")}/${RUN_ROOT}/${key}`;
+/** The run’s directory inside the epic tree. */
+export const runDir = (treeRoot: string, key: string): string =>
+	`${treeRoot.replace(/\/+$/, "")}/${RUN_ROOT}/${key}`;
 
 export const runJsonPath = (dir: string): string => `${dir}/run.json`;
 export const planPath = (dir: string): string => `${dir}/plan.md`;

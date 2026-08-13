@@ -3,22 +3,8 @@ import {describe, expect, it} from "vitest";
 import {errOut, fakeShell, okOut} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {FAILED} from "../verb.ts";
-import {
-	CLAIM_NOT_MINE,
-	DIRTY_TREE,
-	NOT_A_WORKTREE,
-	PRECONDITION_UNKNOWN,
-	WRONG_LANE,
-} from "./codes.ts";
-import {
-	comments,
-	issue,
-	LANE_UUID,
-	LINKED,
-	marker,
-	NONCE,
-	PRIMARY,
-} from "./fixtures.test-support.ts";
+import {CLAIM_NOT_MINE, DIRTY_TREE, PRECONDITION_UNKNOWN, WRONG_LANE} from "./codes.ts";
+import {comments, GIT_DIRS, issue, LANE_UUID, marker, NONCE} from "./fixtures.test-support.ts";
 import {runTree} from "./tree-verb.ts";
 
 const REV_PARSE = /^git rev-parse --path-format=absolute/;
@@ -49,28 +35,21 @@ const run = (
 
 describe("runTree", () => {
 	it("prints the tree root when the git dir and the common dir differ", async () => {
-		const out = await run([[REV_PARSE, LINKED]]);
+		const out = await run([[REV_PARSE, GIT_DIRS]]);
 		expect(out.code).toBe(0);
 		expect(out.stdout).toBe("/repo/trees/lane-a\n");
 	});
 
-	it("refuses the primary checkout on 12 — the two dirs being equal IS the proof", async () => {
-		const out = await run([[REV_PARSE, PRIMARY]]);
-		expect(out.code).toBe(NOT_A_WORKTREE);
-		expect(out.stdout).toBe("");
-		expect(out.stderr.at(-1)).toBe(
-			"build tree: this is the primary checkout, not a linked worktree — stop; never build here.",
-		);
-	});
-
-	it("refuses an unreadable git state on 12 too — outside a repo there is no linked worktree", async () => {
+	it("refuses an unreadable git state on 11 — the ground is UNKNOWN, never a verdict", async () => {
 		const out = await run([[REV_PARSE, errOut("fatal: not a git repository")]]);
-		expect(out.code).toBe(NOT_A_WORKTREE);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toContain("cannot read the tree root");
 	});
 
 	it("refuses a dirty tree at a --require-clean open on 13, and never cleans it", async () => {
 		const shell = fakeShell([
-			[REV_PARSE, LINKED],
+			[REV_PARSE, GIT_DIRS],
 			[STATUS, okOut(" M apps/web/src/App.tsx\n?? scratch.md\n")],
 		]);
 		const out = await Effect.runPromise(
@@ -85,7 +64,7 @@ describe("runTree", () => {
 
 	it("passes --require-clean over a clean tree", async () => {
 		const out = await run([
-			[REV_PARSE, LINKED],
+			[REV_PARSE, GIT_DIRS],
 			[STATUS, okOut("")],
 		]);
 		expect(out.code).toBe(0);
@@ -94,7 +73,7 @@ describe("runTree", () => {
 	it("proves the lane with --issue when the branch nonce matches the claim", async () => {
 		const out = await run(
 			[
-				[REV_PARSE, LINKED],
+				[REV_PARSE, GIT_DIRS],
 				[ISSUE, issue()],
 				[COMMENTS, MINE],
 				[PERM, okOut("write\n")],
@@ -109,7 +88,7 @@ describe("runTree", () => {
 	it("refuses a branch carrying another claim's nonce on 14", async () => {
 		const out = await run(
 			[
-				[REV_PARSE, LINKED],
+				[REV_PARSE, GIT_DIRS],
 				[ISSUE, issue()],
 				[COMMENTS, MINE],
 				[PERM, okOut("write\n")],
@@ -124,7 +103,7 @@ describe("runTree", () => {
 	it("refuses a foreign claim on 15", async () => {
 		const out = await run(
 			[
-				[REV_PARSE, LINKED],
+				[REV_PARSE, GIT_DIRS],
 				[ISSUE, issue()],
 				[COMMENTS, comments({id: 1, body: marker("s-77aa", LANE_UUID)})],
 				[PERM, okOut("write\n")],
@@ -140,7 +119,7 @@ describe("runTree", () => {
 	it("refuses an unreadable marker set on 11 — the lane is UNKNOWN, never unclaimed", async () => {
 		const out = await run(
 			[
-				[REV_PARSE, LINKED],
+				[REV_PARSE, GIT_DIRS],
 				[ISSUE, issue()],
 				[COMMENTS, errOut("gh: Bad gateway (HTTP 502)")],
 			],
@@ -151,7 +130,7 @@ describe("runTree", () => {
 	});
 
 	it("refuses a missing session id on 1, never on 15", async () => {
-		const out = await run([[REV_PARSE, LINKED]], {
+		const out = await run([[REV_PARSE, GIT_DIRS]], {
 			issue: 4312,
 			env: {CLAUDE_PIPELINE_REPO: "o/r"},
 		});

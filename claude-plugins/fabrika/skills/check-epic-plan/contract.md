@@ -284,7 +284,7 @@ Every `plan` verb obeys these; stated once.
 - **Preconditions.** Every verb runs `resolveTargetRepo` and refuses a non-`type:epic` target on
   `10`; every verb's `7` covers the same two facts (the epic is proven absent or closed, or it has
   zero children). The two mutating verbs additionally run the imported `requireClaim` on the
-  **epic** number (`15`). No verb touches a worktree, a branch, or the index.
+  **epic** number (`15`). No verb touches a tree, a branch, or the index.
 - **Error-message prefix** is the invoked verb's name, contract-wide.
 - **A non-zero exit is UNKNOWN** to the caller until the code is read.
 
@@ -345,10 +345,10 @@ nothing, since `epic` already seats `20`–`24` over the same two `build` codes.
 
 `3` is a seat no `plan` verb reaches: the only stdin-taking verb is `plan verdict`, whose stdin is
 **optional** (a clean verdict with no caveats is an ordinary answer), so an empty stdin is a fact,
-not a refusal. It stays re-exported for the alignment reason above. `12`, `13`, `14`, `16`, `17`,
+not a refusal. It stays re-exported for the alignment reason above. `13`, `14`, `16`, `17`,
 `18`, `19` stay reserved with `build`'s meanings and are unreachable here, each for its own reason:
-`12 NOT_A_WORKTREE`, `13 DIRTY_TREE`, `14 WRONG_LANE` and `18 VALIDATION_RED` because this gate
-holds no worktree, no branch and no validation surface; `17 REF_NOT_MOVED` and `19 UNSAFE_PUSH`
+`13 DIRTY_TREE`, `14 WRONG_LANE` and `18 VALIDATION_RED` because this gate
+holds no tree of its own, no branch and no validation surface; `17 REF_NOT_MOVED` and `19 UNSAFE_PUSH`
 because it never pushes; and `16 BLOCKED` because pickability is deliberately not derived here
 (see §Considered and deliberately not derived) — blocked-ness surfaces as dependency-shaped
 defects, not as a per-child readiness verdict. All are deliberately not re-seated.

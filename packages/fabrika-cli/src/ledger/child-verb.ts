@@ -61,7 +61,6 @@ export const MESSAGES: LedgerMessages = {
 	verb: VERB,
 	notAnEpic: (epic) => `${VERB}: #${epic} is not a type:epic — refusing to mint a child of it.`,
 	unreadable: (what, reason) => `${VERB}: cannot read ${what}: ${reason} — nothing was created.`,
-	notAWorktree: `${VERB}: not in a linked worktree — the run manifest is unreachable.`,
 };
 
 export interface ChildOptions extends OpenOptions {

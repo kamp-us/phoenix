@@ -1,7 +1,7 @@
 /**
  * `build check` — this surface's validators, run in this tree, with the build cache **bypassed**.
  *
- * The bypass is the design, not an option. A cache hit from another worktree returned another tree's
+ * The bypass is the design, not an option. A cache hit from another checkout returned another tree's
  * green three times in one session (#4106) and recurred on the review side (#4887); re-running is
  * cheaper than trusting a key that has already lied. And the command set is the verb's, not the
  * agent's memory: v1 mandated the exact CI commands in prose with nothing enforcing it

@@ -1,6 +1,6 @@
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {LINKED} from "../build/fixtures.test-support.ts";
+import {GIT_DIRS} from "../build/fixtures.test-support.ts";
 import {fakeFs, fakeShell} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import type {StdinRead} from "../io/stdin.ts";
@@ -26,7 +26,7 @@ import {runTopology} from "./topology-verb.ts";
 
 const GROUND: ReadonlyArray<readonly [RegExp, ExecResult]> = [
 	[/^gh api repos\/o\/r\/issues\/4300$/, epic()],
-	[/^git rev-parse --path-format=absolute/, LINKED],
+	[/^git rev-parse --path-format=absolute/, GIT_DIRS],
 	...CLAIMED,
 ];
 

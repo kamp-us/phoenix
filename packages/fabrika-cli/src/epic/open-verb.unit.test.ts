@@ -1,10 +1,9 @@
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, type FakeFsOptions, fakeFs, fakeShell, okOut} from "../fakes.test-support.ts";
+import {errOut, type FakeFsOptions, fakeFs, fakeShell} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {
 	BAD_SECTIONS,
-	NOT_A_WORKTREE,
 	OFF_VOCABULARY,
 	PRECONDITION_UNKNOWN,
 	UNNAMEABLE_STATE,
@@ -18,9 +17,9 @@ import {
 	EPIC,
 	EPIC_ISSUE,
 	GIT_DIR,
+	GIT_DIRS,
 	issueJson,
 	LEDGER,
-	LINKED,
 	ledgerOf,
 	MINE,
 	PERM,
@@ -35,7 +34,7 @@ const C1 = /^gh api repos\/o\/r\/issues\/4301$/;
 const C2 = /^gh api repos\/o\/r\/issues\/4302$/;
 
 const WORLD: ReadonlyArray<readonly [RegExp, ExecResult]> = [
-	[REV_PARSE, LINKED],
+	[REV_PARSE, GIT_DIRS],
 	[COMMENTS, MINE],
 	[PERM, WRITE],
 	[EPIC_ISSUE, issueJson()],
@@ -97,7 +96,7 @@ describe("runOpen", () => {
 	it("refuses a body with no parseable planned ledger on 4 — never 'no slices'", async () => {
 		const prose = issueJson({body: "We'll figure the slices out as we go.\n"});
 		const {outcome, written} = await run([
-			[REV_PARSE, LINKED],
+			[REV_PARSE, GIT_DIRS],
 			[COMMENTS, MINE],
 			[PERM, WRITE],
 			[EPIC_ISSUE, prose],
@@ -109,7 +108,7 @@ describe("runOpen", () => {
 
 	it("refuses an issue that is not a type:epic on 10", async () => {
 		const {outcome} = await run([
-			[REV_PARSE, LINKED],
+			[REV_PARSE, GIT_DIRS],
 			[COMMENTS, MINE],
 			[PERM, WRITE],
 			[EPIC_ISSUE, issueJson({labels: [{name: "type:feature"}]})],
@@ -125,11 +124,9 @@ describe("runOpen", () => {
 		expect(unreadable.outcome.code).toBe(PRECONDITION_UNKNOWN);
 	});
 
-	it("refuses the primary checkout on 12 before it reads anything", async () => {
-		const {outcome} = await run([
-			[REV_PARSE, okOut(["/repo/.git", "/repo/.git", "/repo"].join("\n"))],
-		]);
-		expect(outcome.code).toBe(NOT_A_WORKTREE);
+	it("refuses an unreadable tree root on 11 before it reads anything", async () => {
+		const {outcome} = await run([[REV_PARSE, errOut("fatal: not a git repository")]]);
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
 	});
 
 	it("writes the run's files under the claim-nonce key, never a session key", async () => {

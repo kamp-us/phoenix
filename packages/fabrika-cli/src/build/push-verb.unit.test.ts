@@ -13,10 +13,10 @@ import {
 } from "./codes.ts";
 import {
 	comments,
+	GIT_DIRS,
 	HEAD,
 	issue,
 	LANE_UUID,
-	LINKED,
 	marker,
 	NONCE,
 	OLD_HEAD,
@@ -40,7 +40,7 @@ const LOG = /^git log /;
 const LANE = `build/4312-editor-focus-loss-${NONCE}`;
 
 const LANE_OK: ReadonlyArray<readonly [RegExp, ExecResult]> = [
-	[REV_PARSE, LINKED],
+	[REV_PARSE, GIT_DIRS],
 	[BRANCH, okOut(`${LANE}\n`)],
 	[ISSUE, issue()],
 	[COMMENTS, comments({id: 1, body: marker("s-9f2e", LANE_UUID)})],
@@ -160,7 +160,7 @@ describe("runPush", () => {
 
 	it("pushes to the TRACKED UPSTREAM when there is one — resume mode's local name differs", async () => {
 		const shell = fakeShell([
-			[REV_PARSE, LINKED],
+			[REV_PARSE, GIT_DIRS],
 			[BRANCH, okOut(`build/pr-4310-${NONCE}\n`)],
 			[/^gh api repos\/o\/r\/issues\/4310$/, issue({number: 4310})],
 			[
@@ -260,7 +260,7 @@ describe("runPush", () => {
 
 	it("refuses a branch that is not a lane branch on 14", async () => {
 		const out = await run([
-			[REV_PARSE, LINKED],
+			[REV_PARSE, GIT_DIRS],
 			[BRANCH, okOut("main\n")],
 		]);
 		expect(out.code).toBe(WRONG_LANE);
@@ -268,7 +268,7 @@ describe("runPush", () => {
 
 	it("refuses a foreign claim on 15, and pushes nothing", async () => {
 		const shell = fakeShell([
-			[REV_PARSE, LINKED],
+			[REV_PARSE, GIT_DIRS],
 			[BRANCH, okOut(`${LANE}\n`)],
 			[ISSUE, issue()],
 			[COMMENTS, comments({id: 1, body: marker("s-77aa", LANE_UUID)})],

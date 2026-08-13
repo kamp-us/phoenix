@@ -146,7 +146,7 @@ rather than leaving it blank.
 
 <!-- anchor: UNREACHABLE-WORK-IS-REFUSED --> **A pack is refused when the work it describes is not
 reachable by a successor** — an unpushed head, or a modified tracked file. Both are invisible to a
-fresh session in a fresh worktree, so a pack pointing at them is confidently wrong in the way #3330
+fresh session in a different checkout, so a pack pointing at them is confidently wrong in the way #3330
 is confidently wrong. **The remedy is yours to perform outside this skill**, which pushes nothing
 and commits nothing: commit and push by whatever means you normally would, then re-run. Where the
 diff is genuinely disposable, `--declare-unreachable` proceeds and records the unreachability in the

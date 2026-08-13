@@ -19,7 +19,7 @@ export const DIR = `${ROOT}/.fabrika-epic/${RUN}`;
 export const LEDGER = `${DIR}/ledger.jsonl`;
 export const PLAN = `${DIR}/plan.json`;
 export const BRANCH_NAME = `build/${EPIC}-totals-rework-${NONCE}`;
-export const GIT_DIR = "/repo/.git/worktrees/lane-a";
+export const GIT_DIR = `${ROOT}/.git`;
 
 export const BASE = "03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c";
 export const LANDED = "8c1f2a9d3b7e4a199c2d5e8f0a1b2c3d4e5f6a7b";
@@ -39,7 +39,7 @@ export const PERM = /^gh api repos\/o\/r\/collaborators\/agent\/permission/;
 export const EPIC_ISSUE = /^gh api repos\/o\/r\/issues\/4300$/;
 export const ANCESTOR = /^git merge-base --is-ancestor/;
 
-export const LINKED = okOut([GIT_DIR, "/repo/.git", ROOT].join("\n"));
+export const GIT_DIRS = okOut([GIT_DIR, ROOT].join("\n"));
 export const ON_LANE = okOut(`${BRANCH_NAME}\n`);
 export const MINE = okOut(
 	JSON.stringify([

@@ -1,11 +1,10 @@
 /**
  * `build tree` — the ground, proven from git state and one claim, and never repaired.
  *
- * Three assertions, each with its own code so a caller can act on which one failed: a linked worktree
- * (`12`), a clean tree at a `--require-clean` open (`13`), and a checked-out branch carrying this
- * claim's nonce (`14`). It **verifies and never provisions** — no create, no lock, no unlock, no
- * remove. A verifier that could also repair is the self-provision path the incident record closes
- * (the 2026-08-03 amendment on #4707).
+ * Two assertions, each with its own code so a caller can act on which one failed: a clean tree at a
+ * `--require-clean` open (`13`), and a checked-out branch carrying this claim's nonce (`14`). Both are
+ * location-neutral — where the lane runs is the operator's call, not fabrika's (#5386). It reads and
+ * never repairs: no clean, no create, no remove.
  *
  * The skill re-runs this before every git mutation because the shell's cwd resets between calls, so a
  * pass here is a fact about *this* invocation and nothing later.
@@ -18,7 +17,7 @@ import {requireClaim, requireSession} from "./claim.ts";
 import {WRONG_LANE} from "./codes.ts";
 import {nonceOf, parseLaneBranch} from "./lane.ts";
 import {resolveTargetRepo} from "./target.ts";
-import {assertGround} from "./worktree.ts";
+import {assertGround} from "./tree.ts";
 
 const VERB = "build tree";
 
