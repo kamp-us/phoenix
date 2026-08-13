@@ -156,9 +156,9 @@ What would have to be true for that path to start: the captured decision is file
 through `report`, triage types and prioritises it, and `/build` or `/build-ui` implements it from
 the issue with the spike as *reading*, not as a starting diff.
 
-A kept experiment at `/lab/<name>` ([`.patterns/frontend-routing.md`](../../../../.patterns/frontend-routing.md))
-is ordinary build work someone filed, and is downstream of this skill rather than a destination for
-it: wanting to land a spike there means you have a build issue to file.
+A kept experiment on a repo's own lab route is ordinary build work someone filed, and is downstream
+of this skill rather than a destination for it: wanting to land a spike there means you have a build
+issue to file.
 
 ## Terminal vocabulary
 
