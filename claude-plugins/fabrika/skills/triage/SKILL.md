@@ -6,8 +6,8 @@ description: Turn one raw `status:needs-triage` issue into a single actionable u
 # triage
 
 You are the guardrail. **The failure that matters is not a missing label — it is a confident wrong
-one**, indistinguishable from a correct one once it lands (#4227, #4285). Each step makes its answer
-checkable, not merely well-formed. You have full rewrite authority; **salvage first**.
+one**, indistinguishable from a correct one once it lands. Each step makes its answer checkable, not
+merely well-formed. You have full rewrite authority; **salvage first**.
 
 ## 1 — Claim it before you mutate it
 
@@ -21,14 +21,14 @@ Done when it printed `won` — that means this session holds it; on anything els
 
 Never classify from the title. Read the body, then read enough of the repo to say what this is about
 in your own words. **Check any falsifiable claim it rests on against source before enriching on top
-of it** — a summary of a contract is not the contract (#4133). A hand-filed issue skipped dedup:
+of it** — a summary of a contract is not the contract. A hand-filed issue skipped dedup:
 
 ```bash
 fabrika report dedup --query "sozluk definition editor loses focus after save" --exclude 4312
 ```
 
 Read `candidates` yourself — shared vocabulary is not a shared observation; `indeterminate` is a
-non-check, so re-query. A duplicate routes by who filed it (step 7). Done when you can state the
+non-check, so re-query. A duplicate routes by who filed it (step 8). Done when you can state the
 issue from the code and the dedup outcome is read.
 
 ## 3 — Classify into exactly one of six types
@@ -44,7 +44,7 @@ issue from the code and the dedup outcome is read.
 
 - **decision vs epic** — one question → decision; many, or questions-plus-buildable-children → epic.
 - **bug vs investigation** — a nameable fix → bug. An investigation whose answer *might* be trivial
-  stays one; `write-code` owns that collapse, and re-typing in anticipation was rejected (ADR 0070).
+  stays one; `build` owns that collapse, and re-typing in anticipation was rejected.
 - **feature vs epic** — judge the *real* deliverable. **Do not invent a v1 scope to make an epic fit
   a PR**; if you must carve the work down to call it a feature, it is an epic and your carve-out is
   its first child. Tells: missing prerequisite infrastructure, implied new surfaces, and your own
@@ -52,7 +52,35 @@ issue from the code and the dedup outcome is read.
 
 Done when one type holds and you can name the question that excluded its nearest neighbour.
 
-## 4 — Split a bundle into single units
+## 4 — Attach before you mint
+
+**Search the board for an open epic or issue on the same surface before you leave this as standalone
+work.** Step 2's dedup asks whether this exact observation is already filed; this asks the wider
+question — is there already a ticket that *owns this surface* and should absorb it? Query on the
+surface, not on your issue's wording:
+
+```bash
+fabrika report dedup --query "sozluk definition editor keyboard focus" --exclude 4312
+```
+
+Read the candidates yourself and take the cheapest true route:
+
+- **An open epic or issue already owns this surface** → **fold in and close**, which is the preferred
+  outcome. Add this issue's content to the survivor, then close this one against it so the trail runs
+  both ways — the survivor carries the content, this issue points at the survivor. `fabrika triage
+  kill 4312 --confirm --duplicate-of 4290` is the folding route, and it is only open to an agent
+  filing (step 8); for a human filing, add the content to the survivor by hand and carry on triaging
+  this one, since a human filing is never closed here.
+- **Several small items cluster on one surface with no owner yet** → **make the cluster an epic**
+  rather than minting each item as its own ticket. An epic's children ship as one pull request, so a
+  cluster of small items costs one review-and-merge round instead of five.
+- **Nothing owns the surface, or the fit is forced** → **mint it standalone and say why** in your
+  step 6 rewrite: one line naming what you searched and why nothing absorbed it. A forced fold-in is
+  worse than a new ticket; the reason is what stops the next triager re-litigating the same search.
+
+Done when you have taken one of the three routes and the reason is written down.
+
+## 5 — Split a bundle into single units
 
 Two problems agents could work at different times are a bundle; two facets of one change are not.
 
@@ -66,12 +94,12 @@ Done when every unit is separately pickable. **A human-filed original always sta
 units** — only an agent filing may be left as an empty husk and killed, because a husk parked on
 `status:needs-info` is a question nobody can answer.
 
-## 5 — Home it, then enrich: rewrite on top, original preserved beneath
+## 6 — Home it, then enrich: rewrite on top, original preserved beneath
 
 **Every issue leaves with a home** — an open milestone, or one of the two standing lanes.
 Lane-entering work (an epic, or a parentless feature) additionally carries a `## Pitch` whose `Arc`
 *is* that home — inside your rewrite for a feature, on stdin for an epic — and **only the founder
-approves a pitch**. Take an existing home: **triage never creates a milestone** (ADR 0072 §3), and
+approves a pitch**. Take an existing home: **triage never creates a milestone**, and
 `wayfinder:backlog` is bounded to genuine fog rather than work you would rather not decide about.
 
 ```bash
@@ -88,17 +116,17 @@ For an epic, `fabrika triage enrich 4318 --epic` takes the pitch's five fields o
 Problem / Arc / Appetite / Rabbit-holes / No-gos — and heads them `## Pitch` above the brief, which
 it preserves verbatim for the planner; no *rewrite* goes above an epic's brief. The rewrite adds
 real paths and function names over vague framing, and acceptance criteria that make "done" legible —
-not a closed set, a `review-*` gate may append (ADR 0079). **No invention**: enrich from what you
-found, keep the uncertainty the original had, and mark your own reads `Triage note:`.
-On a **re-type, rewrite the body's criteria to the new type** — stale criteria under a re-scoped
-comment ship a misleading spec (#2165). Done when every claim traces to something you read.
+not a closed set, a `review-*` gate may append. **No invention**: enrich from what you found, keep
+the uncertainty the original had, and mark your own reads `Triage note:`. On a **re-type, rewrite the
+body's criteria to the new type** — stale criteria under a re-scoped comment ship a misleading spec.
+Done when every claim traces to something you read.
 
-## 6 — Price it, stamp it, and say who picks it up
+## 7 — Price it, stamp it, and say who picks it up
 
-Ask ADR 0202's question first — *if the founder never learned this ticket existed, would anything
+Ask the kill question first — *if the founder never learned this ticket existed, would anything
 visibly change?* A "no" earns no home by default; it earns a kill. Then price on the work's own
 merit: `p0` for ship-work and fires, `p1` for what you would genuinely pull next, **`p2` is the
-default** and most of a healthy backlog. A roadmap row confers no band either way (ADR 0219).
+default** and most of a healthy backlog. A roadmap row confers no band either way.
 
 ```bash
 fabrika triage apply 4312 --type bug --priority p2 --ready-for agent --home 47
@@ -106,30 +134,29 @@ fabrika triage apply 4312 --type bug --priority p2 --ready-for agent --home 47
 
 A standing lane takes `--lane wayfinder:backlog` (or `axis:pipeline-hardening`) **instead of**
 `--home`, never both — a lane label is not a milestone number, and putting a milestone on a
-lane-exempt issue is banned outright (ADR 0208).
+lane-exempt issue is banned outright.
 
 **`--ready-for` is a different question from readiness.** `status:triaged` says the ticket is ready;
-`ready-for:` says ready *for whom* (#4780). Send it to `agent` when the work is specified well enough
-to execute cold; to `human` when the deliverable is a judgment — a `type:decision`, an authoring
-brief, anything resting on a product call nobody has made. Get it wrong and a document written for a
-human lands in a builder's candidate pool (#4693).
+`ready-for:` says ready *for whom*. Send it to `agent` when the work is specified well enough to
+execute cold; to `human` when the deliverable is a judgment — a `type:decision`, an authoring brief,
+anything resting on a product call nobody has made. Get it wrong and a document written for a human
+lands in a builder's candidate pool.
 
 **Do not assert control-plane scope.** `cp-classify` routes it and CODEOWNERS enforces it at merge;
-#4227 contradicted a settled ruling and routed a lane around an approval that never fires.
+asserting it here routes a lane around an approval that never fires.
 
 Done when the verb read back exactly one `type:`, one `p`, `status:triaged`, `ready-for:`, a home.
 
-## 7 — The two outcomes that are not "triaged"
+## 8 — The two outcomes that are not "triaged"
 
 ```bash
 fabrika triage provenance 4312
 ```
 
 Provenance decides what may be closed, and it has **two agent signals**: the `Filed by an agent`
-footer (ADR 0159), or an author in the operator set `$FABRIKA_OPERATOR_ACCOUNTS` names — the
-operator's own filing is agent-reported footer or not, because footer-absence there is the emitter
-gap, not a human author (founder ruling on #4619, 2026-08-09). Footer-absence from anyone else is
-still human-owned.
+footer, or an author in the operator set `$FABRIKA_OPERATOR_ACCOUNTS` names — the operator's own
+filing is agent-reported footer or not, because footer-absence there is the emitter gap, not a human
+author. Footer-absence from anyone else is still human-owned.
 
 - **`human`** you cannot act on → park it; it leaves the queue on `status:needs-info`, **never
   closed**. When in doubt treat it as human: ignoring a person costs more than a cheap agent issue.
