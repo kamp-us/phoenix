@@ -7,25 +7,39 @@ runs `coder → reviewer → shipper`. **This doc is the single source for how t
 Each crew def states its own one-line spawn scope and cites this file; none of them re-derive the
 reasoning inline.
 
-## The one scoped exception: the intake-desk's `review-plan` gate (founder directive, 2026-07-29)
+## The one scoped exception: the intake-desk's plan gate (founder directive, 2026-07-29)
 
-The intake-desk spawns `reviewer` **only when wrapping `review-plan`** over an epic ledger it had
-planned — the closing step of planning, not an entry into the build drain. The four PR-stage gates
-(`review-code`, `review-doc`, `review-skill`, `review-design`) plus `coder` and `shipper` remain
-the engine's seam, and no other bridge gains `reviewer`.
+The intake-desk conducts the **plan-layer gate** over an epic ledger it had planned — the closing
+step of planning, not an entry into the build drain. The four PR-stage gates (`review-code`,
+`review-doc`, `review-skill`, `review-design`) plus `coder` and `shipper` remain the engine's seam,
+and no bridge gains `reviewer`.
 
 The line the roster law draws is still intact, because a plan-layer gate routes nothing: ADR 0189
 forbids a bridge holding an **execution-routing** edge, and a gate fired over a planned ledger
 hands no work to an engine — a flipped child becomes pickable off the board, exactly as a
 `triage`-produced one does. ADR [0047](../../.decisions/0047-review-plan-gate.md) constrains the
-gate's *shape* (it signals, it never repairs) and names no dispatcher; the reviewer is a separately
-spawned agent that reads the epic and its children cold, so its independence comes from that
-isolation, not from which seat fired it. The engine, by contrast, is structurally disqualified: it
-consumes triaged children, it cannot produce them.
+gate's *shape* (it signals, it never repairs) and names no dispatcher; the gate runs in a
+separately dispatched subagent that reads the epic and its children cold, so its independence comes
+from that isolation, not from which seat fired it. The engine, by contrast, is structurally
+disqualified: it consumes triaged children, it cannot produce them.
 
-Because the guard below classifies per agent-type and not per skill, the `review-plan` scoping
-lives in the intake-desk's charter prose — including the fixed dispatch template it must use — and
-the guard carries only the agent-type. See
+**Both halves of that seam now run fabrika, so neither `planner` nor `reviewer` is dispatched at
+all.** The desk dispatches `claude-plugins/fabrika/skills/plan-epic/` to write a ledger and
+`claude-plugins/fabrika/skills/check-epic-plan/` to gate it, each as a fixed template handed to a
+fresh general-purpose subagent — because a fabrika child is born carrying its `ready-for:` audience
+(`fabrika ledger child` refuses the create without one, #4780) while a v1-planned child is not, and
+an audience-less child is invisible to every engine's picker (#5462). The v1 defs are left
+byte-unchanged and merely unrouted (ADR
+[0238](../../.decisions/0238-fabrika-reimplements-v1-never-calls-it.md)).
+
+The guard's tables still list `planner` and `reviewer` as sanctioned for the intake-desk. That is a
+**permissive superset**, not a contradiction: the tables state which spawns would not be a charter
+violation, and a seat is free to be narrower than its allowlist. They live in `packages/pipeline-cli/`
+and are deliberately untouched here.
+
+Because the guard below classifies per agent-type and not per skill, the plan-layer scoping lives in
+the intake-desk's charter prose — including the two fixed dispatch templates it must use — and the
+guard carries only the agent-type. See
 [`agents/crew-intake-desk.md`](agents/crew-intake-desk.md).
 
 ## The line is a charter rule, not a permission mechanism (#3764)
