@@ -150,6 +150,12 @@ without the heading, and an empty one is a lie if you deviated. **Assert no cont
 verdict in it**: that classification is the merge gate's, and a body claiming "not control-plane"
 has been wrong before.
 
+**State what changed and why, and stop.** Two things earn their lines: the summary, and
+`## Deviations` — deviations catch real defects, so state each plainly and never trim one for
+brevity. Everything else goes: sweep methodology, a "what I deliberately kept" section, a clause
+per row defending a choice nobody attacked. Same no-op test as the prose — delete a sentence whose
+absence would change no reviewer behaviour.
+
 ```bash
 fabrika build pr 4312 <<'EOF'
 …body…
