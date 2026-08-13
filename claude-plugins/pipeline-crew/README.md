@@ -57,8 +57,8 @@ The four roles, each owning one accountability:
 - **intake-desk — the intake bridge** ([`agents/crew-intake-desk.md`](agents/crew-intake-desk.md)).
   Turns the world's raw observations into typed, prioritized work *and talks back to whoever
   filed* (the talking-back is what makes it a bridge, not a filter). Runs the report → triage
-  loop and owns the planning/canon seam (spawns the `planner` / `canon` / `adr` agents, plus the
-  `reviewer` scoped to `review-plan` over the ledger it planned). A
+  loop and owns the planning/canon seam (spawns the `canon` / `adr` agents, and dispatches
+  fabrika's `plan-epic` to write an epic ledger and `check-epic-plan` to gate it). A
   *desk* is a standing seat staffed by whoever is on shift (renamed from `triage-guy`, which
   named a person, not a seat).
 - **engineering-manager — the execution engine**
