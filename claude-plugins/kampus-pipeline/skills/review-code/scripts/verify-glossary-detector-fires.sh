@@ -74,7 +74,11 @@ BIN="$TMP/bin"
 PLUGIN="$TMP/plugin/bin"
 HEAD="$TMP/head"
 mkdir -p "$BIN" "$PLUGIN" "$HEAD" || { echo "FAIL: cannot create the stub dirs under $TMP"; exit 1; }
-printf 'BASE_REF=main\nHEAD_SHA=%s\n' "0000000000000000000000000000000000000000" > "$HEAD/head.env"
+# Every case runs the SUT for PR 1, so the handle must be PR 1's — `HANDLE_PR` plus the PR-stamped
+# worktree/ref names a real materialization writes. Without them `head-env.sh` refuses the handle as
+# possibly a sibling reviewer's, which is the fail-closed behaviour #5416 added.
+printf 'BASE_REF=main\nHEAD_SHA=%s\nHANDLE_PR=1\nREVIEW_WT=%s\nPR_REF=refs/pr/1-proof\n' \
+	"0000000000000000000000000000000000000000" "$TMP/review-head-1-proof" > "$HEAD/head.env"
 
 cat > "$BIN/gh" <<'STUB'
 #!/usr/bin/env bash

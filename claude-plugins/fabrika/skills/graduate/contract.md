@@ -389,13 +389,13 @@ Every `graduate` verb obeys these; stated once rather than repeated per block.
 ### The shared exit matrix
 
 This table owns `code → meaning`. Per-verb **Errors** tables below own only that verb's own
-triggers. `0`, `1`, `2` and `127` are stated **here and only here**, and every verb can return them.
+triggers. `0`, `1`, `126` and `127` are stated **here and only here**, and every verb can return them.
 
 | Code | Meaning | `trail` | `compose` | `emit` | `read` |
 |---|---|---|---|---|---|
 | `0` | the answer is on stdout | ✓ | ✓ | ✓ | ✓ |
 | `1` | usage error, or the verb failed to run | ✓ | ✓ | ✓ | ✓ |
-| `2` | no implementation could be resolved | ✓ | ✓ | ✓ | ✓ |
+| `126` | no implementation could be resolved | ✓ | ✓ | ✓ | ✓ |
 | `127` | the verb never ran (unresolved binary) | ✓ | ✓ | ✓ | ✓ |
 | `3` | `EMPTY_STDIN` — stdin was read and held nothing | — | ✓ | — | — |
 | `4` | `BAD_SECTIONS` — an authored section is missing, out of order, or empty; or (on `trail`) the map body does not parse | ✓ | ✓ | ✓ | — |
@@ -443,7 +443,7 @@ terminal.
 | `SOURCE-UNRESOLVED` | `7`, `12` | the source could not be named — absent, or carrying neither source label. Nothing was written |
 | `INPUT-REFUSED` | `3`, `4`, `5`, `6`, `10`, `17`, `18` | an input the caller supplied is **proven** malformed and nothing was written. Fix and re-run; this is not UNKNOWN |
 | `WRITE-UNPROVEN` | `8`, `9` | a write may or may not have landed. Re-read before re-writing |
-| `STOPPED` | `1`, `2`, `11`, `14`, `127` | the run is UNKNOWN with nothing written |
+| `STOPPED` | `1`, `11`, `14`, `126`, `127` | the run is UNKNOWN with nothing written |
 
 `0` is disambiguated by which verb produced it and, for `graduate trail`, by the `readiness` token.
 

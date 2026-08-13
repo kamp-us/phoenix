@@ -136,6 +136,12 @@ export interface GradableCase {
 	readonly expectedOutput: string | null;
 	/** The authored judgment assertions, verbatim. This is the rubric, and the only one. */
 	readonly expectations: ReadonlyArray<string>;
+	/**
+	 * The authored `files` — the fixture material this case needs, and the whole of what a run's
+	 * working directory is staged with. `null` when the case never declared the key, which is not the
+	 * same as declaring none (`./run-workspace.ts`, #5434/#5437).
+	 */
+	readonly files: ReadonlyArray<string> | null;
 }
 
 /**
@@ -147,12 +153,14 @@ export const gradableCase = (evalCase: {
 	readonly id: number;
 	readonly prompt: string;
 	readonly expectedOutput: string | null;
+	readonly files: ReadonlyArray<string> | null;
 	readonly assertions: ReadonlyArray<{readonly text: string}>;
 }): GradableCase => ({
 	id: evalCase.id,
 	prompt: evalCase.prompt,
 	expectedOutput: evalCase.expectedOutput,
 	expectations: evalCase.assertions.map((assertion) => assertion.text),
+	files: evalCase.files,
 });
 
 /**

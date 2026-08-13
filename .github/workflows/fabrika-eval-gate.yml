@@ -1,8 +1,8 @@
 name: fabrika-eval-gate
 
-# The ruled #4637-B bar as a merge gate (#4681): the 100% incident-regression floor, the 90% graded
-# rate, and spend at or below the committed v1 baseline. The whole decision lives in
-# `fabrika eval gate` and this job only relays its exit code — a script relays a verb's answer and
+# The ruled #4637-B bar, judged on every PR (#4681): the 100% incident-regression floor, the 90%
+# graded rate, and spend at or below the committed v1 baseline. The whole decision lives in
+# `fabrika grade gate` and this job only relays its exit code — a script relays a verb's answer and
 # never derives the decision (ADR 0228). Nothing here decides which paths count as a skill change,
 # which eval record is in force, or whether a rate clears the bar; the verb reads the PR's head,
 # changed paths and eval records itself.
@@ -14,8 +14,11 @@ name: fabrika-eval-gate
 # than a YAML condition nobody can red (the #4604 shape, where a path filter matching nothing
 # presented as a pass).
 #
-# No model runs here and no model credential is needed: the graded leg VERIFIES the head-bound eval
-# record the review stage recorded (the founder's cost ruling on #4649) and never runs the suite.
+# No model runs here and no model credential is needed: the graded leg reads back the head-bound eval
+# record the review stage recorded (the founder's cost ruling on #4649) and never runs the suite. It
+# also never reds — the founder's 2026-08-13 ruling on #4681 demoted it to reporting ("i dont wanna
+# wait 1h for every skill update"), so it prints the rate at head or the measurement debt and nothing
+# else. The bar keeps its teeth as the RELEASE criterion (#5498).
 on:
   pull_request:
 
@@ -31,11 +34,21 @@ concurrency:
 
 jobs:
   gate:
-    # The name states what the job ENFORCES TODAY, not what the ruled bar says. The floor runs no
-    # incident case until #5431 arms one and CI runs no suite to price spend against, so a name
-    # promising those two would be a green check advertising an enforcement nobody performed — the
-    # #4604 shape. Rename it when a leg is actually armed, never before.
-    name: "fabrika eval gate: graded 90% enforced at head; floor + spend report, not yet enforced"
+    # The name states what the job ENFORCES TODAY, not what the ruled bar says. The graded leg only
+    # reports since the 2026-08-13 demotion (#5498), the floor runs no incident case until #5431 arms
+    # one, and CI runs no suite to price spend against — so a name promising any of the three would be
+    # a green check advertising an enforcement nobody performed, the #4604 shape. Rename it when a leg
+    # is actually armed, never before.
+    #
+    # It spells the verb `grade`, the #5461 alias of `eval`, because this string is agent-facing: a
+    # coder reading a red check copies the command out of it, and a graded-run command spelled with
+    # `eval` was refused before execution in a worktree-isolated session (run-verified 2026-08-12;
+    # see the registry row for what that observation does and does not establish). Renaming the job
+    # was checked against its consumers first: it is not one of the `main protection` ruleset's
+    # required contexts, and `ship checks` reads check runs name-blind apart from the
+    # `^deploy`/`^cleanup` informational denylist in `src/review/rollup.ts`, which neither spelling
+    # matches. Nothing in the repo matches this string literally.
+    name: "fabrika grade gate: graded reports only, never blocks; floor + spend report, not yet enforced"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4.2.2
@@ -49,12 +62,12 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # Exits 0 when every leg of the bar is met. Each red names its reason and seats its own code:
-      # 7 zero scope, 15 spend above the v1 baseline (or incomparable), 18 stale (the newest record
-      # is bound to an older commit), 21 missing (no record for this head), 22 below the 90% bar,
-      # 23 an armed incident case did not pass. See #4681.
+      # Exits 0 unless a still-enforced leg reds, each on its own seat: 7 zero scope, 15 spend above
+      # the v1 baseline (or incomparable), 23 an armed incident case did not pass. The graded seats —
+      # 18 stale, 21 missing, 22 below the bar — are unreachable from a PR since the demotion (#5498);
+      # they remain the release criterion's vocabulary. See #4681.
       - name: Decide the ruled bar
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CLAUDE_PIPELINE_REPO: ${{ github.repository }}
-        run: node packages/fabrika-cli/src/bin.ts eval gate ${{ github.event.pull_request.number }}
+        run: node packages/fabrika-cli/src/bin.ts grade gate ${{ github.event.pull_request.number }}

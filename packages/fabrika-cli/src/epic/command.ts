@@ -240,6 +240,7 @@ export const epicCommand = Command.make("epic").pipe(
 		verdict,
 		status,
 	]),
+	Command.withShortDescription("Conduct one epic as a single pull request."),
 	Command.withDescription(
 		"Conduct one epic as a single PR: open the nonce-keyed run ledger, relay the next action, brief and prove each slice from the git graph, and bind a verdict to the unpushed commit",
 	),

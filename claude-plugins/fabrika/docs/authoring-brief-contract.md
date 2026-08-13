@@ -59,7 +59,7 @@ one-line behavior it records. The corpus is the fabrika eval feedstock — the p
 scar tissue, kept precisely because each row is a real incident encodable as a regression case —
 and it is a file you **read**, not a join you re-run:
 [`ruled-keeps.json`](../../../packages/fabrika-cli/src/eval/incident-corpus/ruled-keeps.json)
-enumerates it at **66 members plus 1 pending**, and `fabrika eval keeps` prints it with the cases
+enumerates it at **66 members plus 1 pending**, and `fabrika grade keeps` prints it with the cases
 that already pin each row.
 [#4642](https://github.com/kamp-us/phoenix/issues/4642) ruled the corpus and published its size as
 74; that figure double-counts the 7 borderline items, and the enumeration supersedes it

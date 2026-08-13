@@ -220,6 +220,7 @@ const status = leafCommand(
 
 export const spikeCommand = Command.make("spike").pipe(
 	Command.withSubcommands([open, run, capture, dispose, status]),
+	Command.withShortDescription("Settle one empirical question by building a throwaway."),
 	Command.withDescription(
 		"Settle one empirical question by building a throwaway: mint the spike and its workspace outside the repository, record every run as evidence, capture the decision on the issue, and prove the throwaway was thrown away",
 	),

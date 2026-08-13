@@ -10,6 +10,7 @@ import * as evalCodes from "./eval/codes.ts";
 import {
 	ALIGNED_GROUPS,
 	ALIGNMENT_BASE,
+	allocatedCodes,
 	type CodeTable,
 	checkAlignment,
 	codeTableGroupsIn,
@@ -24,6 +25,7 @@ import * as governance from "./governance/codes.ts";
 import * as grill from "./grill/codes.ts";
 import * as handoff from "./handoff/codes.ts";
 import * as hook from "./hook/codes.ts";
+import {PRETOOLUSE_BLOCKING_EXIT} from "./hook/harness-exit.ts";
 import * as ledger from "./ledger/codes.ts";
 import * as map from "./map/codes.ts";
 import * as pattern from "./pattern/codes.ts";
@@ -98,6 +100,25 @@ describe("every verb group the CLI ships is accounted for", () => {
 
 	it("holds a module for each table on disk, so no checked group is checked against nothing", () => {
 		expect(Object.keys(TABLES).sort()).toEqual([...onDisk].sort());
+	});
+});
+
+/**
+ * `2` is a seat no group may take, and this is where that is enforced across all of them.
+ *
+ * It is not a style rule. On `PreToolUse` exit `2` is the harness's one blocking code
+ * (`./hook/harness-exit.ts`), so a table that seats any meaning on it denies a tool call as a side
+ * effect of its exit status — which is how a fabrika that could not bootstrap came to block every
+ * spawn in a session (#5423, ADR 0250). A per-group docblock cannot hold this: the property is that
+ * NO group seats it, and only a scan over every shipped table can say so.
+ */
+describe("no group's exit table seats the harness's blocking code", () => {
+	it("scans every table there is — an empty scan is a failure, not a pass (ADR 0092)", () => {
+		expect(Object.keys(TABLES).length).toBeGreaterThan(0);
+	});
+
+	it.each(Object.entries(TABLES))("%s allocates nothing on it", (_name, table) => {
+		expect(allocatedCodes(table).get(PRETOOLUSE_BLOCKING_EXIT)).toBeUndefined();
 	});
 });
 

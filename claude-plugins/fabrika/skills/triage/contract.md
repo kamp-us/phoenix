@@ -146,7 +146,7 @@ or the search index could not be read
 |---|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
 | `0` | the answer is on stdout | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `1` | usage error, unresolvable repo, or the verb failed to run | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `2` | no implementation could be resolved | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `126` | no implementation could be resolved | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `3` | stdin was read and held nothing | — | — | — | — | ✓ | ✓ | — | ✓ | ✓ |
 | `4` | *(deliberate gap — see below)* | — | — | — | — | — | — | — | — | — |
 | `5` | the **authored** text carries a machine-local path | — | — | — | — | ✓ | ✓ | — | ✓ | ✓ |
@@ -161,7 +161,7 @@ or the search index could not be read
 | `127` | the verb never ran (unresolved binary) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 
 **This matrix owns what a code *means*; the per-verb tables own what *triggers* it.** Every verb in
-this group can return `0`, `1`, `2` and `127` with the meanings above, and each of the four is stated
+this group can return `0`, `1`, `126` and `127` with the meanings above, and each of the four is stated
 **here and nowhere else** — the per-verb "Exit status" tables below enumerate only that verb's own
 proven outcomes, `3` and up, phrased as that verb's trigger rather than as a restatement of the
 meaning. The reason is a defect this spec already shipped once: an earlier revision restated every

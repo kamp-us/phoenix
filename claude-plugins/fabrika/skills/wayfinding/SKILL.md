@@ -348,7 +348,7 @@ never anything to push, leave local, or remove.
 - `MAP-UNRESOLVED` — `7` or `16`: the map could not be named — absent, unlabelled, or ambiguous.
 - `WRITE-UNPROVEN` — `8` or `9`: a write may or may not have landed, or read back differently.
   Re-read before re-writing; the refusal names the artifact that needs a human.
-- `STOPPED` — `1`, `2`, `11`, `127`: the run is UNKNOWN with nothing written.
+- `STOPPED` — `1`, `11`, `126`, `127`: the run is UNKNOWN with nothing written.
 
 Every non-zero terminal here wrote nothing, except `WRITE-UNPROVEN`, where whether a write landed is
 the open question.

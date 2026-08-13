@@ -19,11 +19,16 @@ cannot() { echo "glossary-freshness: CANNOT-EVALUATE ($1) — fold as [UNVERIFIA
 [ "$#" -ge 1 ] || { echo "usage: glossary-freshness.sh <pr>" >&2; cannot "no <pr> argument" 2; }
 PR="$1"
 REPO="$(kp_repo)" || cannot "target repo unresolved"
-# BASE_REF comes from the head handle materialize-head.sh wrote — the FRESHLY FETCHED base every
-# existence probe below reads against, never the working tree (formats §RO; the PR #305 false-FAIL).
-# shellcheck disable=SC1007,SC1090
-. "$("$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/head-env.sh")" || cannot "no head handle — run materialize-head.sh first (its \`git fetch origin \$BASE_REF\` is what makes these probes fresh)"
+# BASE_REF comes from the head handle materialize-head.sh wrote FOR THIS PR — the FRESHLY FETCHED
+# base every existence probe below reads against, never the working tree (formats §RO; the PR #305
+# false-FAIL).
+# shellcheck disable=SC1007
+HERE="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+HANDLE="$(bash "$HERE/head-env.sh" "$PR")" || cannot "no head handle for PR $PR — run materialize-head.sh first (its \`git fetch origin \$BASE_REF\` is what makes these probes fresh)"
+# shellcheck disable=SC1090
+. "$HANDLE" || cannot "the head handle $HANDLE is unreachable, which is not absent"
 [ -n "${BASE_REF:-}" ] || cannot "handle carries no BASE_REF"
+kp_head_handle_names_pr "$PR" "$HANDLE" || cannot "the head handle does not describe PR $PR — every probe below would read a SIBLING reviewer's base (#5416)"
 
 # `git cat-file -e` exits non-zero for BOTH "no such path" and "the read itself failed", so against an
 # unreadable base every probe below reads ABSENT and the graceful-absence branch prints a confident

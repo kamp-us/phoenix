@@ -219,10 +219,10 @@ it needs most.
 | `DECLINED-BELOW-BAR` | success | reached at `0`; the material fails the index's admission bar (step 2), **or** step 1's tiebreak found it has no destination — a *why* already carried at its single home, or too small to earn a record anywhere. Name which; **nothing written**, tree as found |
 | `ROUTED-ELSEWHERE` | success | reached at `0`; the material belongs to another surface, named; **nothing written here** |
 | `HALTED-REFUSED` | back-off | a verb **proved** a refusal this session could not correct (`12`, `13`) before anything was written; tree as found |
-| `HALTED-UNKNOWN` | back-off | a verb could not establish the answer (`1`, `2`, `8`, `9`, `11`, `127`). Tree as found, **except** after `8` or `9`, where a write was already attempted — name the path so a human can look |
+| `HALTED-UNKNOWN` | back-off | a verb could not establish the answer (`1`, `8`, `9`, `11`, `126`, `127`). Tree as found, **except** after `8` or `9`, where a write was already attempted — name the path so a human can look |
 
 A non-zero exit is never the permissive reading. It splits two ways, and the split is the point:
-`1`, `2`, `8`, `9`, `11` and `127` are **UNKNOWN** — nothing was established, so re-run once. `10`
+`1`, `8`, `9`, `11`, `126` and `127` are **UNKNOWN** — nothing was established, so re-run once. `10`
 and `12` through `16` are **proven** refusals; re-running changes nothing and the fix is to correct the input
 or accept the narrower ending. Improvising past a verb that refused is how a session writes a doc
 against a corpus it never read.

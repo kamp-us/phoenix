@@ -1032,6 +1032,119 @@ fact about the set, so it is validated first and records nothing. The exit code 
 a measurement exists — a below-bar rate exits `0`, because whether a rate clears the ruled bar is
 #4681's judgement and appears nowhere in this module.
 
+### Each run gets its own staged directory ([#5434](https://github.com/kamp-us/phoenix/issues/5434), [#5437](https://github.com/kamp-us/phoenix/issues/5437))
+
+A candidate used to **inherit** the verb process's working directory — nothing was staged. Two
+consequences fell out of that one fact. The authored `evals.json` carries every case's
+`expected_output` and assertion list, and the cases' own prompts (`Read evals/cases/eval-<n>.md`)
+only resolve from the directory that holds it, so the answer key sat one relative path from the
+candidate. And all five runs of a case shared that directory, so run N could read run N−1's
+deliverables — measured on the `write-pattern` case-1 lane, where 3 of 5 runs saw a prior verdict
+and run 5 wrote nothing of its own. `dispersion` (ADR 0252 §1) counts runs it assumes are
+independent, so that run measured **at most 2 independent samples, not 5**.
+
+`run-workspace.ts` stages instead. Per `(case, run)` it makes a scoped temp directory named
+`case<id>-run<n>-<session-id>` — the session id the same spawn is pinned to, so run identity is
+legible on disk — copies in **only** the paths that case's authored `files` field declares, at the
+same relative path the prompt reads, and feeds it through `claudeExecutor`'s existing `cwd`. The
+directory is removed when the run's scope closes.
+
+**The base a `files` entry resolves against is found, not assumed.** The corpus writes two
+conventions and neither is wrong: at the time this became the field's first consumer, 65 of the 92
+authored entries were relative to the set's own directory (`fixtures/eval-1.md`) and 17 to the skill
+root (`evals/fixtures/eval-1.md`, `evals/cases/eval-1.md`). So each entry is looked up under the set
+directory first and the skill root second, and staged at the **authored** relative path either way,
+which is what the prompt reads. (10 entries — `check-epic-plan`'s bare `eval-<n>.md`, whose files
+live under `evals/fixtures/` — resolve under neither, and are therefore `Unstageable` below rather
+than silently absent: [#5457](https://github.com/kamp-us/phoenix/issues/5457).)
+
+Three properties are deliberate:
+
+- **The answer key is refused by name**, not merely left uncopied: a case that declared
+  `evals/evals.json` would still not get it. It is also the **only** refusal a run survives —
+  withholding it is the point, and everything else the case declared is still there.
+- **A run that cannot be isolated does not run, and a run missing its declared material is not
+  isolated.** `stageRunWorkspace` answers `Unstageable` — for a fixture that resolves under no base,
+  a copy that fails, an absolute path, or a `..` segment — and the verb records
+  `no-verdict:invocation-failed` rather than falling back to the inherited tree or spawning into a
+  directory short of what the prompt names. Either fallback would let a run nobody could isolate
+  reach `medianVerdict` and `dispersion` as a scored verdict.
+- **The grader is unchanged.** It is handed `expected_output` and the expectations in-process by
+  `composeGraderPrompt`, stages nothing, and needs no directory of its own. `dispersion` and
+  `medianVerdict` are untouched; this restores the independence they already assumed.
+
+**An absent `files` key is not a declaration that a case is self-contained.** The decoder keeps
+absent and `[]` apart (`files: ReadonlyArray<string> | null`) because they are different claims:
+`[]` says this case needs no material, so an empty directory is exactly right and the run scores; an
+absent key says nothing, so there is nothing to stage from and the run is `Unstageable`. The
+distinction is load-bearing rather than pedantic — of the 31 graded cases declaring no `files` at
+this writing, 9 (`report`, `adr`) write `files: []` and are genuinely self-contained, while 22
+(`review` 7, `review-ui` 5, `ship` 5, `triage` 5) omit the key entirely and their prompts name
+material by path (`fixtures/mixed-diff/BUNDLE.md`, `FIXTURE.md`, un-substituted `{FIXTURE}`
+placeholders). Those 22 report `unmeasured` until their `files` are authored, which is the loud
+failure; the alternative is the silent one this rule exists to remove — a `pass`/`fail` taken in an
+empty directory, indistinguishable in the record from a measurement
+([#5464](https://github.com/kamp-us/phoenix/issues/5464)).
+
+**Isolation is announced, so a real run can be checked.** The directories are ephemeral by design and
+the sidecar manifest below deliberately carries no working directory, which left a live run with
+nothing to look at: the property held by construction and was pinned by unit test, but an operator
+asked to confirm it on a real run had no observable. Every staged run now prints one stderr line —
+`fabrika eval: case <id> run <n>: isolated working directory <path>` — beside the
+`no isolated working directory` line the unstageable path already printed. Five distinct paths per
+case is the check:
+
+```bash
+fabrika grade graded <set> … 2>run.log
+grep 'isolated working directory' run.log | awk '{print $NF}' | sort -u | wc -l   # 5 per case
+```
+
+### Which session produced which run ([#5439](https://github.com/kamp-us/phoenix/issues/5439))
+
+The run directory above makes identity legible while the run is alive, and the directory is removed
+when its scope closes. That left the recorded number un-traceable: a session id was minted, spent on
+`--session-id` so the transcript would be locatable, and then dropped. Anyone asking which of a
+case's five runs produced which artifact had to sort artifacts by file mtime — an inference two
+separate investigations made and had to flag as one, and one that stops working the moment two runs
+land in the same second.
+
+`run-manifest.ts` gives it a landing place. Whenever `graded` (or `churn`) writes its record to
+`--out`, it writes a **sidecar manifest** beside those bytes at the same path with a `.runs.json`
+extension, one row per `(case × run)`:
+
+```jsonc
+{
+  "sha": "…",                       // the head the record attests
+  "recordedAt": "2026-08-12T18:26:39.118Z",
+  "cell": {"stage": "build", "surface": null, "model": "claude-opus-4-8"},
+  "runs": [
+    {"caseId": 1, "run": 1, "sessionId": "…", "model": "claude-opus-4-8", "verdict": "pass"}
+  ]
+}
+```
+
+Four decisions carry it:
+
+- **Beside the record, not inside it.** The record's field inventory is governed by ADR
+  [0253](../../../../.decisions/0253-eval-record-is-an-eval-namespaced-pr-comment.md), so a field
+  there is an amendment question. Nothing in `run-manifest.ts` widens `EvalCaseBlock` or
+  `EvalRecordPayload`, and `RunOnce` still returns a bare `RunVerdict`.
+- **It follows `--out` rather than a flag of its own.** The whole defect is that identity was
+  separable from the number, so a run that persists a record persists its sessions in the same act.
+  With no `--out` the record is not durable either, and there is nothing to sit beside.
+- **Checked against the record, not trusted.** `runManifestDisagreement` re-derives the join — one
+  row per run, numbered `1…runs`, each carrying the same token the record's `perRun` carries in that
+  position — and a disagreement writes **nothing** and says why. Naming the wrong session is worse
+  than naming none, because a reader cannot tell. Zero rows against a non-empty case list is a
+  disagreement, never a vacuous pass (ADR 0092).
+- **No transcript path and no working directory.** Both are absolute, machine-local and perishable,
+  and this file is meant to be committed. The session id is the durable key: it is what the
+  transcript is named after, so a reader on the same machine can still find it, and a reader
+  elsewhere at least knows exactly which session to ask for.
+
+A run that **died** keeps its row — the run that produced nothing is the one a later reader most
+needs named, so an `UNRECORDABLE` record still gets its manifest.
+
 ## The fabrika incident corpus ([#4675](https://github.com/kamp-us/phoenix/issues/4675))
 
 `incident-corpus/` is a **second, separate** body of ground truth, and the name matters: the
@@ -1167,15 +1280,18 @@ fabrika eval gate 5432                       # over a pull request: head, change
 fabrika eval gate --head <sha> --changed changed.txt --record result.md   # offline: no network, no credential
 ```
 
-### CI does not run the evals; CI verifies that the review did
+### CI does not run the evals; CI reports what the review recorded
 
 No model executes here and no model credential is needed. The founder ruled on
 [#4649](https://github.com/kamp-us/phoenix/issues/4649#issuecomment-5153280445) that model runs stay
 out of CI — **the recorded reason is cost, not principle** — so the graded leg reads back the
 head-bound eval record the review stage left (#4678, ADR 0253) and compares a string and a number.
-That is why `missing` and `stale` are red conditions in their own right: they are the two ways the
-review step can be skipped by forgetting, and absence that passes is the guarantee this epic exists
-to restore.
+
+**The graded leg no longer reds** ([#5498](https://github.com/kamp-us/phoenix/issues/5498), executing
+the founder's 2026-08-13 ruling on #4681: *"i dont wanna wait 1h for every skill update"*). Missing,
+stale, unrecordable and below-bar are all printed lines now — the score at head, or the measurement
+debt the weekly sweep will collect — and none of them fails a PR. The bar is untouched as the
+**release** criterion: merging is cheap, releasing is earned.
 
 The legs that never needed a model still execute: the deterministic regression floor runs its armed
 cases once through the tier, and the spend leg folds ledger rows a meter already reconstructed.
@@ -1191,20 +1307,24 @@ cases once through the tier, and the spend leg folds ledger rows a meter already
 | `22` | `below-bar` | a recorded graded rate under the ruled `0.9` |
 | `23` | `regression-floor` | an armed incident case did not pass — 100%, no tolerance, no quarantine |
 
+**Three of those seats have no producer on a PR.** `18`, `21` and `22` are the graded leg's, and
+since the demotion (#5498) it reports instead of redding — they stay as the release criterion's
+vocabulary, unreachable from `fabrika grade gate`.
+
 Every red is printed; the highest-precedence one seats `$?`. Four seats are reused rather than
 re-invented: `7`, `15` and `18` already mean exactly these facts elsewhere in this group.
 
 **The trend is reported and gates nothing** (ADR 0252 §4, the #4766 guardrail): it rides as an
 advisory line and never changes an exit status. Arming it is a later ADR's edit to `judgeGraded`.
 
-### `missing` and `stale` name their cure and its run site
+### Every graded debt line names the run site
 
-Both are **recoverable states with a named next action**, and neither is a blocker the build lane
-that tripped it can clear. The harness's worktree-isolation guard refuses the eval runner inside a
-lane outright ([#5406](https://github.com/kamp-us/phoenix/issues/5406) — not this repo's code and not
-fixable here), so **a graded run executes in a plain, non-worktree session**. A lane that hits either
-red **hands the measurement off**; a red that said only "re-run the suite" would be naming a cure the
-lane structurally cannot perform, which is why both details carry the site.
+A debt line is a **named next action**, and it is not one the build lane reading it can take. The
+harness's worktree-isolation guard refuses the eval runner inside a lane outright
+([#5406](https://github.com/kamp-us/phoenix/issues/5406) — not this repo's code and not fixable
+here), so **a graded run executes in a plain, non-worktree session**. A lane that reads a debt line
+**hands the measurement off**; a line that said only "run the suite" would be naming an act the lane
+structurally cannot perform, which is why each carries the site.
 
 ### A leg that measured nothing is never reported as a leg that passed
 
@@ -1220,11 +1340,15 @@ statement that the bar is met. NOT MEASURED: ... Measured and met: scope.
 ```
 
 `gate: GREEN — all N leg(s) of the ruled bar were measured and met` is reachable **only** when every
-leg measured. The check-run `name:` in the workflow follows the same rule: it states what the job
-enforces **today** (the graded 90% at head), not what the ruled bar says, because a green check
-advertising an enforcement nobody performed is the #4604 shape arriving from the reporting side.
-Today the floor runs no case and CI prices no spend, so **the graded leg is the only enforced one**;
-rename the job when a leg is armed, never before.
+leg measured. A demoted graded state is `unmeasured` for exactly this reason: the leg relays a number
+it no longer judges, so it establishes nothing and the summary keeps saying so — under-claiming, the
+one safe direction. Its line reads `graded: REPORTED, NOT ENFORCED — …`.
+
+The check-run `name:` in the workflow follows the same rule: it states what the job enforces
+**today**, not what the ruled bar says, because a green check advertising an enforcement nobody
+performed is the #4604 shape arriving from the reporting side. Today the graded leg only reports, the
+floor runs no case and CI prices no spend, so **no leg of the bar is enforced on a PR**; rename the
+job when a leg is armed, never before.
 
 ### The trigger split lives in the verb, not in the workflow
 
@@ -1236,9 +1360,9 @@ changed files, anchored on `claude-plugins/fabrika/skills/`.
 That filter is the one #4604 got wrong on the v1 side: a `packages/`-anchored list that never reached
 a skills directory, so a skill change matched nothing and the gate reported green. `changedSkills`
 takes its prefixes as a parameter for exactly that reason — `gate.unit.test.ts` runs the same
-decision twice over one changed-path set and asserts that the mis-scoped run turns a `missing` red
-into a pass. The property held is not that the filter matches, but that a wrong one is visible as the
-difference between a red and a green.
+decision twice over one changed-path set and asserts that the mis-scoped run erases the
+measurement-debt line the correctly-scoped one prints. The property held is not that the filter
+matches, but that a wrong one is visible in the artifact a reader acts on.
 
 ### The arming sidecar, and why the floor is honest about what it cannot run
 

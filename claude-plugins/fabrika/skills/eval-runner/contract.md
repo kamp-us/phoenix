@@ -85,7 +85,7 @@ the same tracked debt the sibling contracts carry.)
 ### Exit codes
 
 `eval post` allocates from the shipped group table (`packages/fabrika-cli/src/eval/codes.ts`) —
-never from a sibling contract's prose. Universal codes `0` / `1` / `2` / `127` carry the
+never from a sibling contract's prose. Universal codes `0` / `1` / `126` / `127` carry the
 convention doc's meanings and are stated only here. Shared base seats are imported from
 `report/codes.ts` — `3`, `5`, `6`, `8`, `9` and `11`, each carrying the base meaning unchanged.
 

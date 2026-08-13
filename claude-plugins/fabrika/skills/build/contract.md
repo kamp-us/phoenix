@@ -214,7 +214,7 @@ mid-lane must never strand a lane already running, and a release must never be g
 
 The one table every `build` verb allocates from — this matrix owns `code → meaning`; each verb's
 block below enumerates only **that verb's own reachable proven outcomes** with their triggers, and
-its `--help` restates them. `0`, `1`, `2` and `127` are the interface convention's reserved codes
+its `--help` restates them. `0`, `1`, `126` and `127` are the interface convention's reserved codes
 (`packages/fabrika-cli/src/verb.ts`, the exit-2 bootstrap in `packages/fabrika-cli/src/bin.ts`): every verb can also return those four, and
 they are stated only here.
 
@@ -229,7 +229,7 @@ range, exactly as `triage/codes.ts` itself states for `adr`.
 |---|---|
 | `0` | the answer is on stdout |
 | `1` | usage error, or the verb failed to run |
-| `2` | no implementation could be resolved (`packages/fabrika-cli/src/bin.ts`) |
+| `126` | no implementation could be resolved (`packages/fabrika-cli/src/bin.ts`) |
 | `3` | stdin was read and held nothing |
 | `4` | a required section is missing, malformed, empty, or out of place — in an authored body, or in a document a verb derives from |
 | `5` | the authored text carries a machine-local path, unredacted |
@@ -1498,7 +1498,7 @@ $ fabrika build verdicts --pr 4310
 
 Per the [interface convention](../../docs/cli-interface-convention.md) Part 2: every flag above
 carries a type and default; every stdout shape has a literal example; every non-zero code is
-enumerated with its trigger (per-verb tables own `3`+; the universal `0/1/2/127` are stated once
+enumerated with its trigger (per-verb tables own `3`+; the universal `0/1/126/127` are stated once
 in the shared matrix, which owns every code's single meaning); every error names message, stream,
 and code; every judging verb states scope and zero-scope behavior; and no clause defers to a v1
 script, another skill's prose, or the authoring session. The three hand-checks the brief's
