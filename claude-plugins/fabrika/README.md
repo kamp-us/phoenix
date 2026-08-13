@@ -47,10 +47,29 @@ claude-plugins/fabrika/
 per-skill directory and nothing else at the `skills/` root. A `.gitkeep` remains from when the
 directory was empty; it is harmless and can go with any later change.
 
+## Install
+
+fabrika ships through the `kampus` marketplace, and phoenix consumes it from that same
+marketplace entry — the ship channel is the dogfood channel ([#4670](https://github.com/kamp-us/phoenix/issues/4670)).
+
+```
+/plugin marketplace update kampus
+/plugin install fabrika@kampus
+```
+
+**Refresh first.** The install reads a locally cached catalog. A cache that predates fabrika's
+entry refuses by name — `Plugin "fabrika" not found in marketplace "kampus"` — instead of saying
+it is out of date, and the same message comes back when the marketplace was never registered on
+the machine at all, so the refusal does not tell you which of the two you hit. Updating first
+clears the common one.
+
+Inside phoenix you type neither line: `.claude/settings.json` declares the marketplace under
+`extraKnownMarketplaces.kampus` and enables `fabrika@kampus`. A fresh clone picks both up once the
+workspace is trusted — settings-declared marketplaces are read from project settings only after
+you accept the trust prompt — so no collaborator needs a registration of their own.
+
 ## What is deliberately absent
 
-- **No marketplace entry.** fabrika is not listed in the root marketplace manifest
-  (`.claude-plugin/`), so nothing here reaches the pinned external channel (#4643).
 - **No dependency on v1.** fabrika calls `pipeline-cli` nowhere — not from a skill, not from a verb.
   Its own verbs live in `packages/fabrika-cli/`. v1 is a reference to read, never a runtime to call,
   because a fabrika that calls the old tree can never be the thing that replaces it.
