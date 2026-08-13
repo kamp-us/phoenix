@@ -257,8 +257,10 @@ judgment, and both say so; every other row names the code that produced it.
 **Shared machinery — filing, and session state — lives in verbs, never duplicated across the
 ideation skills.** This skill's session state is the pack, and the pack is a verb's artifact.
 **The smallest path is first-class, and this skill is not on it**: one-session work never needs a
-handoff, and reaching for one is a sign the work should have shipped. The verb inventory, every
-grammar and the pack's wire format live in [`contract.md`](contract.md).
+handoff, and reaching for one is a sign the work should have shipped. **fabrika calls no skill
+outside fabrika** — a capability it needs it reimplements here rather than reaching for the v1 skill
+that has it. The verb inventory, every grammar and the pack's wire format live in
+[`contract.md`](contract.md).
 
 ## Required repo files
 

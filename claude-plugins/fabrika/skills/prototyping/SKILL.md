@@ -237,8 +237,10 @@ the captured decision. A caller cites that number. Nothing reads the spike's cod
 none left.
 
 **A throwaway never grows into the product**, and the only route to the shipped tree is a fresh
-build through the ordinary path. **One question per spike** — two questions is two spikes. The verb
-inventory and every grammar live in [`contract.md`](contract.md).
+build through the ordinary path. **One question per spike** — two questions is two spikes.
+**fabrika calls no skill outside fabrika** — a capability it needs it reimplements here rather than
+reaching for the v1 skill that has it. The verb inventory and every grammar live in
+[`contract.md`](contract.md).
 
 ## Required repo files
 

@@ -237,6 +237,13 @@ manifest.
 someone once claimed about the code — during a re-grounding it is a claim you are actively
 falsifying. Authority arrives only from what the source does.
 
+## Packaging — one listed skill
+
+**Listed and model-invocable — no `disable-model-invocation`, no `context: fork`.** The trigger this
+skill most needs to catch is the one nobody types: noticing mid-task that a shape you just relied on
+is undocumented, or that a doc you just trusted is wrong. A user-invoked skill cannot be reached
+from another skill's direction, and would lose exactly that case.
+
 ## Capability set
 
 Reads the repo tree at a resolved ref, which means one network call — `corpus`, `drift` and

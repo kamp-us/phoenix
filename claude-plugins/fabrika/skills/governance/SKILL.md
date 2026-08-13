@@ -275,6 +275,12 @@ FAIL** — a relayed ruling is indistinguishable from a fabricated one.
 and binds to a commit and refuses what it cannot bind, and `post` re-resolves the live head at write
 time and refuses a moved one.
 
+## Packaging — one listed skill
+
+**Listed and model-invocable — no `disable-model-invocation`, no `context: fork` — both halves in
+one file.** `review` step 6 directs the model to fire this skill, and a user-only skill is
+model-unreachable and cannot join a stack; `context: fork` would stop that stack mid-review.
+
 ## Required repo files
 
 fabrika installs into repos that are not phoenix, so every surface this skill leans on is declared
