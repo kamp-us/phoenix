@@ -1280,15 +1280,18 @@ fabrika eval gate 5432                       # over a pull request: head, change
 fabrika eval gate --head <sha> --changed changed.txt --record result.md   # offline: no network, no credential
 ```
 
-### CI does not run the evals; CI verifies that the review did
+### CI does not run the evals; CI reports what the review recorded
 
 No model executes here and no model credential is needed. The founder ruled on
 [#4649](https://github.com/kamp-us/phoenix/issues/4649#issuecomment-5153280445) that model runs stay
 out of CI — **the recorded reason is cost, not principle** — so the graded leg reads back the
 head-bound eval record the review stage left (#4678, ADR 0253) and compares a string and a number.
-That is why `missing` and `stale` are red conditions in their own right: they are the two ways the
-review step can be skipped by forgetting, and absence that passes is the guarantee this epic exists
-to restore.
+
+**The graded leg no longer reds** ([#5498](https://github.com/kamp-us/phoenix/issues/5498), executing
+the founder's 2026-08-13 ruling on #4681: *"i dont wanna wait 1h for every skill update"*). Missing,
+stale, unrecordable and below-bar are all printed lines now — the score at head, or the measurement
+debt the weekly sweep will collect — and none of them fails a PR. The bar is untouched as the
+**release** criterion: merging is cheap, releasing is earned.
 
 The legs that never needed a model still execute: the deterministic regression floor runs its armed
 cases once through the tier, and the spend leg folds ledger rows a meter already reconstructed.
@@ -1304,20 +1307,24 @@ cases once through the tier, and the spend leg folds ledger rows a meter already
 | `22` | `below-bar` | a recorded graded rate under the ruled `0.9` |
 | `23` | `regression-floor` | an armed incident case did not pass — 100%, no tolerance, no quarantine |
 
+**Three of those seats have no producer on a PR.** `18`, `21` and `22` are the graded leg's, and
+since the demotion (#5498) it reports instead of redding — they stay as the release criterion's
+vocabulary, unreachable from `fabrika grade gate`.
+
 Every red is printed; the highest-precedence one seats `$?`. Four seats are reused rather than
 re-invented: `7`, `15` and `18` already mean exactly these facts elsewhere in this group.
 
 **The trend is reported and gates nothing** (ADR 0252 §4, the #4766 guardrail): it rides as an
 advisory line and never changes an exit status. Arming it is a later ADR's edit to `judgeGraded`.
 
-### `missing` and `stale` name their cure and its run site
+### Every graded debt line names the run site
 
-Both are **recoverable states with a named next action**, and neither is a blocker the build lane
-that tripped it can clear. The harness's worktree-isolation guard refuses the eval runner inside a
-lane outright ([#5406](https://github.com/kamp-us/phoenix/issues/5406) — not this repo's code and not
-fixable here), so **a graded run executes in a plain, non-worktree session**. A lane that hits either
-red **hands the measurement off**; a red that said only "re-run the suite" would be naming a cure the
-lane structurally cannot perform, which is why both details carry the site.
+A debt line is a **named next action**, and it is not one the build lane reading it can take. The
+harness's worktree-isolation guard refuses the eval runner inside a lane outright
+([#5406](https://github.com/kamp-us/phoenix/issues/5406) — not this repo's code and not fixable
+here), so **a graded run executes in a plain, non-worktree session**. A lane that reads a debt line
+**hands the measurement off**; a line that said only "run the suite" would be naming an act the lane
+structurally cannot perform, which is why each carries the site.
 
 ### A leg that measured nothing is never reported as a leg that passed
 
@@ -1333,11 +1340,15 @@ statement that the bar is met. NOT MEASURED: ... Measured and met: scope.
 ```
 
 `gate: GREEN — all N leg(s) of the ruled bar were measured and met` is reachable **only** when every
-leg measured. The check-run `name:` in the workflow follows the same rule: it states what the job
-enforces **today** (the graded 90% at head), not what the ruled bar says, because a green check
-advertising an enforcement nobody performed is the #4604 shape arriving from the reporting side.
-Today the floor runs no case and CI prices no spend, so **the graded leg is the only enforced one**;
-rename the job when a leg is armed, never before.
+leg measured. A demoted graded state is `unmeasured` for exactly this reason: the leg relays a number
+it no longer judges, so it establishes nothing and the summary keeps saying so — under-claiming, the
+one safe direction. Its line reads `graded: REPORTED, NOT ENFORCED — …`.
+
+The check-run `name:` in the workflow follows the same rule: it states what the job enforces
+**today**, not what the ruled bar says, because a green check advertising an enforcement nobody
+performed is the #4604 shape arriving from the reporting side. Today the graded leg only reports, the
+floor runs no case and CI prices no spend, so **no leg of the bar is enforced on a PR**; rename the
+job when a leg is armed, never before.
 
 ### The trigger split lives in the verb, not in the workflow
 
@@ -1349,9 +1360,9 @@ changed files, anchored on `claude-plugins/fabrika/skills/`.
 That filter is the one #4604 got wrong on the v1 side: a `packages/`-anchored list that never reached
 a skills directory, so a skill change matched nothing and the gate reported green. `changedSkills`
 takes its prefixes as a parameter for exactly that reason — `gate.unit.test.ts` runs the same
-decision twice over one changed-path set and asserts that the mis-scoped run turns a `missing` red
-into a pass. The property held is not that the filter matches, but that a wrong one is visible as the
-difference between a red and a green.
+decision twice over one changed-path set and asserts that the mis-scoped run erases the
+measurement-debt line the correctly-scoped one prints. The property held is not that the filter
+matches, but that a wrong one is visible in the artifact a reader acts on.
 
 ### The arming sidecar, and why the floor is honest about what it cannot run
 

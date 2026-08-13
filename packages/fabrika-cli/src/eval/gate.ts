@@ -5,12 +5,13 @@
  * says a script relays a verb's answer and never derives the decision, so every comparison that
  * could be re-spelled in YAML lives here instead.
  *
- * **The graded leg verifies; it does not run.** The founder ruled on #4649 (comment 5153280445) that
- * no model executes inside CI — the reason recorded is cost, not principle. The review stage runs the
- * five-run graded axis and leaves a head-bound eval record (#4678, ADR 0253); this leg reads that
- * record back and compares a string and a number. So `missing` and `stale` are red conditions in
- * their own right: they are the two ways the review step can be skipped by forgetting, and absence
- * that passes is exactly the guarantee the epic exists to restore.
+ * **The graded leg reports; it neither runs nor reds (founder ruling 2026-08-13 on #4681, #5498).** No
+ * model executes inside CI — recorded reason cost, not principle (#4649) — and since the ruling no
+ * graded state fails a PR either: "i dont wanna wait 1h for every skill update". The leg still reads
+ * back the head-bound eval record the review stage leaves (#4678, ADR 0253) and prints what it knows:
+ * the rate at head, or the measurement debt when there is none. Every state that used to red —
+ * missing, stale, unrecordable, below-bar — is now a printed line. The bar is unchanged as the
+ * RELEASE criterion; merging is cheap again, releasing is earned.
  *
  * **Everything else still executes here, because none of it ever needed a model.** The deterministic
  * regression floor runs its cases once through the tier (#4677), and the spend leg is arithmetic over
@@ -80,7 +81,12 @@ export const changedSkills = (
 	return [...names].sort();
 };
 
-/** The six ruled red conditions. Each names why the change is refused; none is a bare failure. */
+/**
+ * The six ruled red conditions. Each names why the change is refused; none is a bare failure.
+ *
+ * `missing`, `stale` and `below-bar` have had no producer since the graded leg was demoted (#5498):
+ * they stay because they are the release criterion's vocabulary, which the ruling left untouched.
+ */
 export type GateReason =
 	| "zero-scope"
 	| "regression-floor"
@@ -289,24 +295,38 @@ export const latestPerCell = (records: ReadonlyArray<EvalRecord>): ReadonlyArray
 };
 
 /**
- * Where the measurement this leg reads back is taken, named in both reds that a run cures.
+ * Where the measurement is taken, named on every debt line so the reader knows who can take it.
  *
- * `missing` and `stale` are recoverable states, not terminal failures, and neither is a blocker the
- * build lane that tripped it can clear: the harness's worktree-isolation guard refuses the eval
- * runner inside a lane outright (#5406, not fixable in this repo), so a graded run executes in a
- * plain non-worktree session. A red that names no run site reads as "this lane is broken" and a red
- * that says only "re-run the suite" names a cure the lane structurally cannot perform — so both name
- * the site, and the hand-off, here. Stated once; both details point at it.
+ * The harness's worktree-isolation guard refuses the eval runner inside a build lane outright (#5406,
+ * not fixable in this repo), so a graded run executes in a plain non-worktree session. A debt line
+ * that says only "run the suite" names an act the lane structurally cannot perform — so it names the
+ * site, and the hand-off, here. Stated once; every debt line points at it.
  */
 const GRADED_RUN_SITE =
-	"cure: take a graded run at the head under gate in a plain, non-worktree session — never inside a build lane, whose harness refuses the runner (#5406) — which posts the head-bound record this leg reads back. A lane that hits this hands the measurement off; it is not the lane's to fix in place";
+	"to clear this debt: take a graded run at the head under gate in a plain, non-worktree session — never inside a build lane, whose harness refuses the runner (#5406) — which posts the head-bound record this leg reads back. A lane that hits this hands the measurement off; it is not the lane's to fix in place";
 
 /**
- * The graded leg: verify the recorded head-bound result, and never run anything.
+ * A graded state that used to red and now only prints (#5498 executing the 2026-08-13 ruling).
+ *
+ * It is `unmeasured`, never `measured`, because a demoted leg establishes nothing about the bar: it
+ * relays a number it no longer judges. Under-claiming is the whole point — a green check that reads
+ * as an enforcement nobody performed is the #4604 lie arriving from the reporting side, and the
+ * summary line's job is to keep saying so out loud even when the leg has a score to print.
+ */
+const reportedGraded = (line: string, notMeasured: string): LegVerdict => ({
+	leg: "graded",
+	status: "unmeasured",
+	line: `graded: REPORTED, NOT ENFORCED — ${line}`,
+	notMeasured,
+	red: null,
+});
+
+/**
+ * The graded leg: read the recorded head-bound result back, print it, and never red (#5498).
  *
  * The resolution is the shared gate-verdict contract's, reused rather than re-invented — latest
- * result wins per cell, then a refusal when that latest is not bound to the head under gate. A
- * measurement is re-run at the new head, never re-bound to it.
+ * result wins per cell, and a latest not bound to the head under gate is a measurement owed at the
+ * new head, never one re-bound to it.
  */
 export const judgeGraded = (args: {
 	readonly changedSkills: ReadonlyArray<string>;
@@ -324,10 +344,9 @@ export const judgeGraded = (args: {
 	}
 	const skills = args.changedSkills.join(", ");
 	if (args.records.length === 0) {
-		return red(
-			"graded",
-			"missing",
-			`${skills} changed and no eval record was recorded for ${args.head} — absence is never "nothing to check" (#4649 ruling). ${GRADED_RUN_SITE}`,
+		return reportedGraded(
+			`${skills} changed and no eval record was recorded for ${args.head} — a measurement is owed. ${GRADED_RUN_SITE}`,
+			`graded (${skills} changed at ${args.head} with no record — a measurement is owed)`,
 		);
 	}
 
@@ -337,19 +356,20 @@ export const judgeGraded = (args: {
 		const newest = [...latest].sort((a, b) =>
 			a.payload.recordedAt.localeCompare(b.payload.recordedAt),
 		)[latest.length - 1];
-		return red(
-			"graded",
-			"stale",
+		return reportedGraded(
 			`the newest eval record is bound to ${newest?.sha ?? "an unreadable head"}, not to ${args.head} — a measurement is re-run at the new head, never re-bound to it (ADR 0253). ${GRADED_RUN_SITE}`,
+			`graded (the newest record is bound to ${newest?.sha ?? "an unreadable head"}, not to ${args.head} — a measurement is owed)`,
 		);
 	}
 
 	const unrecordable = atHead.filter((record) => record.outcome !== "RECORDED");
 	if (unrecordable.length > 0) {
-		return red(
-			"graded",
-			"zero-scope",
-			`the record for ${cellLabel(unrecordable[0]?.payload.cell ?? {stage: "?", surface: null, model: "?"})} at ${args.head} is UNRECORDABLE — a run that measured nothing is broken, not green (ADR 0092)`,
+		const cell = cellLabel(
+			unrecordable[0]?.payload.cell ?? {stage: "?", surface: null, model: "?"},
+		);
+		return reportedGraded(
+			`the record for ${cell} at ${args.head} is UNRECORDABLE — a run that measured nothing is broken, not a rate (ADR 0092). ${GRADED_RUN_SITE}`,
+			`graded (the record for ${cell} at ${args.head} is UNRECORDABLE — it measured nothing)`,
 		);
 	}
 
@@ -358,7 +378,10 @@ export const judgeGraded = (args: {
 		const worst = below
 			.map((record) => `${cellLabel(record.payload.cell)} at ${record.payload.passRate}`)
 			.join(", ");
-		return red("graded", "below-bar", `${worst} — the ruled bar is ${bar} (#4637 ruling 2)`);
+		return reportedGraded(
+			`${worst} — under the ruled bar of ${bar} (#4637 ruling 2), which is the RELEASE criterion and no longer blocks a merge`,
+			`graded (${worst} — under the ${bar} bar, which the release criterion still refuses)`,
+		);
 	}
 	return measured(
 		"graded",
