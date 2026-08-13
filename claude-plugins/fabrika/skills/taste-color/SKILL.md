@@ -11,19 +11,18 @@ does not name. **The failure this skill exists to stop is the invented value** �
 scale token, or a status colour nobody ratified, which is the single defect class every real
 design FAIL on record shipped.
 
-**Ingestion surface** (convention §9): the repo's design manifest, its component inventory, and
-its blessed goldens — repo files, read as law, no externally-authorable text. **Capability set:**
-read-only. This skill emits guidance; it writes no file, runs no verb, and posts no verdict.
+This skill is **read-only**: it reads the repo's design manifest, its component inventory, and its
+blessed goldens as law — repo files, never externally-authorable text — and it emits guidance. It
+writes no file, runs no verb, and posts no verdict.
 
 ## Grounding and the firewall — advise, never author
 
 Every rule below cites the named manifest or inventory section it comes from. **A colour rule
 with no citation is not a rule** — it is an invention, and this skill does not carry one.
 
-**Skills advise creation; only the founder authors design law** (ADR
-[0194](https://github.com/kamp-us/phoenix/blob/main/.decisions/0194-design-law-jsdoc-firewall.md)).
-So this skill never edits `design-system-manifest.md`, never adds a token, and never promotes a
-preference into a prohibition. It restates law and points at it; the law's own file is the source.
+**Skills advise creation; only the founder authors design law.** So this skill never edits
+`design-system-manifest.md`, never adds a token, and never promotes a preference into a
+prohibition. It restates law and points at it; the law's own file is the source.
 
 ## The role table — one row per colouring job
 

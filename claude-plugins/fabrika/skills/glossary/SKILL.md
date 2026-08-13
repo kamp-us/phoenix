@@ -9,7 +9,7 @@ Two registers, one meaning each. `TERMS.md` holds the **domain nouns** — the p
 backend or infra terms a contributor must share to read the code. `LANGUAGE.md` holds the
 **architecture vocabulary** — the structural terms that describe *shape* rather than subject —
 together with the Turkish brand-noun surface. A product's domain row lives in `TERMS.md`; only its
-brand-name spelling belongs to `LANGUAGE.md`. One term, one register, one row (#4465); a second
+brand-name spelling belongs to `LANGUAGE.md`. **One term, one register, one row** — a second
 definition in the other file is the defect, not thoroughness.
 
 You decide what a word means and whether it has earned a row. The verbs decide what is already
@@ -50,9 +50,9 @@ suggestion list**, never a work order.
   no-op is the correct outcome of most runs.
 - **`drift`** — candidates follow, each with the surface that produced it.
 
-**A non-zero exit is UNKNOWN, never "nothing drifted."** Re-run it. The failure this replaces is
-v1's, where a shallow clone with no history for the register reported "never committed" and sent the
-model to regenerate a populated file wholesale.
+**A non-zero exit is UNKNOWN, never "nothing drifted."** Re-run it — a shallow clone with no
+history for the register reads as "never committed", and acting on that regenerates a populated
+file wholesale.
 
 ## 2 — Ask what is already declared
 
@@ -66,9 +66,9 @@ answers on exit 0.
 **`collision` is the one that needs you.** It means a declared key overlaps the query as a whole-word
 span — it does **not** mean the two are the same term. `Database (tag)` and `tag` collide and are
 different terms; a parenthetical in a row is a disambiguating qualifier, not an alias, and reading it
-as one produced three false duplicates the last time it was tried (#4206). Judge each collision:
-**redefine** the existing row, **disambiguate** both by namespace (ADR 0246 — `graduate` keeps its
-name and carries both senses), or **add** a genuinely distinct term.
+as one manufactures false duplicates. Judge each collision: **redefine** the existing row,
+**disambiguate** both by namespace (one name carrying both senses, each qualified), or **add** a
+genuinely distinct term.
 
 Comparison folds case, whitespace and hyphens, so `front-door` and `front door` are one key. It does
 not fold parentheses, slashes or commas.
@@ -88,12 +88,11 @@ thing to fix.
 
 **Which register?** Domain nouns — a product, an entity, a service, a table, a flag — go to
 `TERMS.md`. The architecture vocabulary — module, interface, depth, seam, adapter, and the structural
-terms that describe *shape* rather than *subject* — goes to `LANGUAGE.md` (#4529 is the worked case:
-`source-edge surface` is architecture, not domain).
+terms that describe *shape* rather than *subject* — goes to `LANGUAGE.md`.
 
 **Which language?** Product and brand names stay Turkish; everything technical is English. A
 technical or analytics concept keeps its English name even when it renders on a Turkish screen —
-never manufacture a Turkish word for one (#1611, #3231).
+**never manufacture a Turkish word for one**.
 
 **Does the `Not` column earn a line?** Fill it only where a reader would plausibly land on the wrong
 neighbour — a real drift, a live collision, a superseded reading. An empty `Not` is honest; an
@@ -144,7 +143,7 @@ reflow of an untouched section aborts the write rather than landing quietly. Rew
 row is the same verb with `--replace`, under the read-first rule in step 3.
 
 **Land the row only after the decision that coins it is on `main`.** An ADR number is not stable
-before merge — three lanes each derived `0253` (#5278) — so a row citing an unmerged decision is a
+before merge — concurrent lanes derive the same one — so a row citing an unmerged decision is a
 dead link the day it lands. Resolve the citation rather than assuming it:
 
 ```bash
@@ -152,7 +151,7 @@ fabrika adr resolve 0240
 ```
 
 Cite only `live` or `landed`. On `in-flight` or `absent`, end on `HELD-UNMERGED-ADR` and say which
-record (#5104, #5274).
+record.
 
 ## 5 — Check the register
 

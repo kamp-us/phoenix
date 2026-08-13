@@ -204,7 +204,7 @@ idea that was passed over in an authoring session.
 
 ## 8. The ship gate
 
-A fabrika skill ships when **all three** hold — no exceptions, no partial credit:
+A fabrika skill ships when **both** hold — no exceptions, no partial credit:
 
 1. **Authored via `/skill-creator`**, against these conventions. This is the only door: not
    hand-dropped into `skills/`, not ported from v1, not copied from a sibling plugin. See the
@@ -212,13 +212,8 @@ A fabrika skill ships when **all three** hold — no exceptions, no partial cred
 2. **Its derived CLI contract is implemented with deterministic tests.** The authoring session
    derives the CLI API the skill needs, and *that spec is the contract* the verbs implement — the
    v1 scripts are never the source of truth, so there is no port to grade against.
-3. **Its eval set is green at the bar.** The bar's numbers are ruled on
-   [#4637-B](https://github.com/kamp-us/phoenix/issues/4637); the harness, corpus, and protocol
-   that measure against it are owned by [#4649](https://github.com/kamp-us/phoenix/issues/4649).
-   **This doc specifies none of that mechanics and must not grow it** — a convention doc that
-   restates the bar becomes a second source of truth for a number that moves.
 
-Gates 1 and 2 are what this doc governs. Gate 3 is cited, never re-derived here.
+Both gates are what this doc governs.
 
 > Source: founder ruling [#4637-C](https://github.com/kamp-us/phoenix/issues/4637) (confirmed
 > in-session 2026-08-01), with the contract-driven method from
@@ -272,24 +267,21 @@ the meantime, and no brief may write down a posture as though it were settled.
 
 **A per-surface leaf is a rubric file by default.** A family entry — `/review`, `/build` — routes
 internally, and the per-surface rubrics it routes to are files it reads. Promote a leaf to a real
-skill only when one of three things is true: two or more skills consume it, it needs independent
-invocation, or it needs its own eval identity. v1's shared writing rubric is the worked case: both
-construction and review consume it, so it stays a skill.
+skill only when two or more skills consume it, or it needs independent invocation. v1's shared
+writing rubric is the worked case: both construction and review consume it, so it stays a skill.
 
 The default falls out of what each form costs. A file carries no listing cost and its tokens are
 reclaimed when context compacts; a skill re-attaches its content on every invocation. No adherence
 difference between the two forms is documented, so there is no measured benefit to buy with that
 cost.
 
-**Promotion is not free either, and the obligation rides with the default.** Folding N surfaces
-behind one family entry folds N identities into one, so **a family entry's eval suite enumerates
-its per-surface cases or a surface goes eval-blind** — the enumeration is what keeps each surface
-measured once it no longer has a skill of its own. §8 gate 3 still owns everything else about
-evals.
+**Promotion is not free either.** Folding N surfaces behind one family entry folds N identities into
+one, so the family entry's own text has to keep each surface's rules visible — a surface that no
+longer has a skill of its own has nowhere else to state them.
 
 > Source: founder ruling on wayfinder:map
 > [#4891](https://github.com/kamp-us/phoenix/issues/4891) (2026-08-08, in-session), the leaf rule
-> and the eval-enumeration obligation recorded with it.
+> recorded with it.
 
 ## 11. GitHub access is REST, never GraphQL
 
@@ -329,19 +321,16 @@ not assume it.
   ([#4654](https://github.com/kamp-us/phoenix/issues/4654)).
 - **The boot document a stateless authoring session works from**: the authoring-brief contract
   ([#4655](https://github.com/kamp-us/phoenix/issues/4655)).
-- **Any eval mechanics** — bar, harness, corpus, protocol, scorecards
-  ([#4637-B](https://github.com/kamp-us/phoenix/issues/4637) /
-  [#4649](https://github.com/kamp-us/phoenix/issues/4649)), as §8 states.
 
 ## What fabrika does not take from the reference
 
 The SOTA reference is SOTA on skill-**writing** theory, and that is the whole of what is adopted
-above. It carries **no eval harness, no test cases, no regression discipline, no authoring
-workflow, and no deterministic tool layer** — its mechanics are embedded shell-and-`gh` prose,
-which is precisely the shape the two-layer split (§1) exists to escape.
+above. It carries **no test cases, no regression discipline, no authoring workflow, and no
+deterministic tool layer** — its mechanics are embedded shell-and-`gh` prose, which is precisely the
+shape the two-layer split (§1) exists to escape.
 
 So the borrowing is one-directional and bounded: **take the vocabulary, the sizing, and the
 invocation economics; keep our execution substrate.** Neither source arrives on authority.
 
 > Source: [#4644](https://github.com/kamp-us/phoenix/issues/4644) SKIP list and its calibration
-> note (v2's two-layer split and eval-backed givens are ahead of the reference).
+> note (v2's two-layer split is ahead of the reference).
