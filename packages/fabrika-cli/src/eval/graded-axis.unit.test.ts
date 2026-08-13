@@ -38,6 +38,7 @@ const caseOf = (id: number, over: Partial<GradableCase> = {}): GradableCase => (
 	prompt: "File a report for the guard that reds on zero scope.",
 	expectedOutput: "One issue, tagged needs-triage.",
 	expectations: ["it files exactly one issue", "the issue carries no priority label"],
+	files: [`evals/cases/eval-${id}.md`],
 	...over,
 });
 

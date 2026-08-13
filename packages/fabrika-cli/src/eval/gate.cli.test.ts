@@ -1,26 +1,27 @@
 /**
  * The merge gate watched failing — the exit status and stream discipline a CI job actually relays.
  *
- * #4681 asks for the guard to be *observed* red on three deliberately-constructed cases rather than
- * assumed: a genuinely failing eval case, a **missing** result, and a **stale** result bound to an
- * older commit. The last two are the paths by which the review-stage step can be skipped by
- * forgetting, so they are the ones a green would hide. Each `it` here runs the real bin in a
- * subprocess and asserts the code a `run:` step would see (`.patterns/subprocess-test-budget.md`
- * bounds the spawn count; every branch of the decision itself lives in `./gate.unit.test.ts`).
+ * #4681 asks for the guard to be *observed* rather than assumed, and the 2026-08-13 demotion (#5498)
+ * splits what there is to observe: a genuinely failing eval case is still watched **red**, while the
+ * graded states — **missing**, **stale**, **below-bar** — are watched **green with the debt printed**,
+ * which is the demotion's whole claim and the one an assumption would get wrong. Each `it` here runs
+ * the real bin in a subprocess and asserts the code a `run:` step would see
+ * (`.patterns/subprocess-test-budget.md` bounds the spawn count; every branch of the decision itself
+ * lives in `./gate.unit.test.ts`).
  *
  * The floor runs against a corpus authored here rather than the committed one, because the assertion
  * is about the gate's behaviour on a failing case and the committed corpus has none armed yet
  * (#5431). The PR path gets one run through a `gh` shim, which proves the verb resolves head,
  * changed paths and records off the platform — the shape the workflow depends on.
  */
-import {execFileSync} from "node:child_process";
+import {spawnSync} from "node:child_process";
 import {chmodSync, mkdirSync, mkdtempSync, writeFileSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {describe, expect, it} from "vitest";
 import {SUBPROCESS_TEST_TIMEOUT_MS} from "../test-budget.ts";
-import {BELOW_BAR, MISSING_RESULT, REGRESSION_FLOOR, STALE_HEAD, ZERO_SCOPE} from "./codes.ts";
+import {REGRESSION_FLOOR, ZERO_SCOPE} from "./codes.ts";
 
 const BIN = fileURLToPath(new URL("../bin.ts", import.meta.url));
 
@@ -123,18 +124,14 @@ interface Run {
 	readonly stderr: string;
 }
 
+// `spawnSync` rather than `execFileSync` so a run that EXITS 0 still yields its stderr: since the
+// demotion the interesting graded cases are green, and their diagnostics are the thing to assert.
 const gate = (args: ReadonlyArray<string>, env: Record<string, string> = {}): Run => {
-	try {
-		const stdout = execFileSync(process.execPath, [BIN, "eval", "gate", ...args], {
-			encoding: "utf8",
-			env: {...process.env, FABRIKA_SKIP_INFER: "1", CLAUDE_PIPELINE_REPO: "o/r", ...env},
-			stdio: ["pipe", "pipe", "pipe"],
-		});
-		return {code: 0, stdout, stderr: ""};
-	} catch (err) {
-		const failure = err as {status?: number; stdout?: string; stderr?: string};
-		return {code: failure.status ?? -1, stdout: failure.stdout ?? "", stderr: failure.stderr ?? ""};
-	}
+	const run = spawnSync(process.execPath, [BIN, "eval", "gate", ...args], {
+		encoding: "utf8",
+		env: {...process.env, FABRIKA_SKIP_INFER: "1", CLAUDE_PIPELINE_REPO: "o/r", ...env},
+	});
+	return {code: run.status ?? -1, stdout: run.stdout ?? "", stderr: run.stderr ?? ""};
 };
 
 describe("fabrika eval gate, watched failing", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}, () => {
@@ -157,15 +154,18 @@ describe("fabrika eval gate, watched failing", {timeout: SUBPROCESS_TEST_TIMEOUT
 		expect(run.stderr).toContain("no tolerance and no quarantine");
 	});
 
-	it("(b) reds `missing` when a skill changed and no result was recorded", () => {
+	// (b), (c) and (d) are the demotion watched live: a skill change with no record, one whose newest
+	// record is stale, and one recorded under the bar all exit 0 and print what they know instead.
+	it("(b) goes green and prints the debt when a skill changed and no result was recorded", () => {
 		const run = gate(fixture({command: "true", changed: [SKILL_PATH]}).args);
-		expect(run.code).toBe(MISSING_RESULT);
-		expect(run.stdout).toBe("");
-		expect(run.stderr).toContain("missing");
-		expect(run.stderr).toContain("plain, non-worktree session");
+		expect(run.code).toBe(0);
+		expect(run.stdout).toContain("graded: REPORTED, NOT ENFORCED");
+		expect(run.stdout).toContain("a measurement is owed");
+		expect(run.stdout).toContain("plain, non-worktree session");
+		expect(run.stdout).toContain("gate: NOT FULLY MEASURED");
 	});
 
-	it("(c) reds `stale` when the newest result is bound to an older commit", () => {
+	it("(c) goes green and names the older commit when the newest result is stale", () => {
 		const run = gate(
 			fixture({
 				command: "true",
@@ -173,16 +173,19 @@ describe("fabrika eval gate, watched failing", {timeout: SUBPROCESS_TEST_TIMEOUT
 				records: [recordBytes(OLDER, 10, 10)],
 			}).args,
 		);
-		expect(run.code).toBe(STALE_HEAD);
-		expect(run.stderr).toContain(OLDER);
+		expect(run.code).toBe(0);
+		expect(run.stdout).toContain(OLDER);
+		expect(run.stdout).toContain("graded: REPORTED, NOT ENFORCED");
 	});
 
-	it("reds `below-bar` on a recorded rate under the ruled bar", () => {
+	it("(d) goes green and still prints the score on a recorded rate under the ruled bar", () => {
 		const run = gate(
 			fixture({command: "true", changed: [SKILL_PATH], records: [recordBytes(HEAD, 8, 10)]}).args,
 		);
-		expect(run.code).toBe(BELOW_BAR);
-		expect(run.stderr).toContain("below-bar");
+		expect(run.code).toBe(0);
+		expect(run.stdout).toContain("0.8");
+		expect(run.stdout).toContain("under the ruled bar of 0.9");
+		expect(run.stdout).toContain("gate: NOT FULLY MEASURED");
 	});
 
 	it("passes a skill change whose recorded rate is at the bar", () => {
@@ -217,7 +220,7 @@ esac
 `;
 
 describe("fabrika eval gate, over a pull request", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}, () => {
-	it("resolves head, changed paths and records off the platform and reds `missing`", () => {
+	it("resolves head, changed paths and records off the platform, and merges green on the debt", () => {
 		const at = fixture({command: "true", changed: []});
 		const shimDir = mkdtempSync(join(tmpdir(), "fabrika-gate-shim-"));
 		const state = join(shimDir, "state");
@@ -253,8 +256,9 @@ describe("fabrika eval gate, over a pull request", {timeout: SUBPROCESS_TEST_TIM
 			],
 			{PATH: `${shimDir}:${process.env.PATH ?? ""}`, GH_STATE: state},
 		);
-		expect(run.code).toBe(MISSING_RESULT);
+		expect(run.code).toBe(0);
 		expect(run.stderr).toContain(`o/r#9041 at ${HEAD}`);
 		expect(run.stderr).toContain("1 changed path(s)");
+		expect(run.stdout).toContain("graded: REPORTED, NOT ENFORCED");
 	});
 });

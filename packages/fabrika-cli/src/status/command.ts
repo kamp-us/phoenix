@@ -315,6 +315,7 @@ export const statusCommand = Command.make("status").pipe(
 		board,
 		bootstrap,
 	]),
+	Command.withShortDescription("Answer what state the factory is in."),
 	Command.withDescription(
 		"Answer what state the factory is in — the composite front-door readout, the config-surface detection verb, the derived skill roster, the landed-decision digest, the board's bucket counts, and the one primitive that creates a missing surface",
 	),

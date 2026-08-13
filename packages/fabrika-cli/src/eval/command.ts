@@ -85,8 +85,11 @@ import {
 	buildEvalRecord,
 	candidateOutputOf,
 	composeGraderPrompt,
+	type GradableCase,
 	gradableCase,
 	graderResponseOf,
+	perRunToken,
+	type RunVerdict,
 	readGraderVerdict,
 	runGradedAxis,
 } from "./graded-axis.ts";
@@ -107,6 +110,14 @@ import {
 	ruledKeepsViolations,
 	withCoverage,
 } from "./ruled-keeps.ts";
+import {
+	type RunIdentity,
+	type RunManifest,
+	runManifestDisagreement,
+	runManifestPathFor,
+	toJson as runManifestToJson,
+} from "./run-manifest.ts";
+import {stageRunWorkspace} from "./run-workspace.ts";
 import {readSeriesFiles} from "./series-io.ts";
 import {decodeSkillEvalSet, tierCounts} from "./skill-eval-set.ts";
 import {
@@ -679,6 +690,27 @@ const produceGradedRecord = (request: GradedRunRequest) =>
 				yield* request.log(bytes);
 			});
 
+		// Write the run identities beside the record's own bytes; with no `--out` nothing durable was
+		// written, so there is nothing to sit beside. See `./run-manifest.ts` (#5439).
+		const writeRunManifest = (record: EvalRecord, runs: ReadonlyArray<RunIdentity>) =>
+			Effect.gen(function* () {
+				if (request.out === null) return;
+				const manifest: RunManifest = {
+					sha: record.payload.sha,
+					recordedAt: record.payload.recordedAt,
+					cell,
+					runs,
+				};
+				const disagreement = runManifestDisagreement(manifest, record.payload.cases);
+				if (disagreement !== null) {
+					yield* Console.error(`fabrika eval: no run manifest written — ${disagreement}`);
+					return;
+				}
+				const to = runManifestPathFor(request.out);
+				yield* fs.writeFileString(to, runManifestToJson(manifest));
+				yield* Console.error(`fabrika eval: ${runs.length} run identities written to ${to}`);
+			});
+
 		const recordNoMeasurement = (noMeasurement: string, code: number) =>
 			Effect.gen(function* () {
 				const built = buildEvalRecord({
@@ -718,47 +750,106 @@ const produceGradedRecord = (request: GradedRunRequest) =>
 		}
 
 		const crypto = yield* Crypto.Crypto;
-		const executor = claudeExecutor({timeoutMs: request.timeoutMs});
-		const invoke = (
-			evalCase: ReturnType<typeof gradableCase>,
-			prompt: string,
-			pluginDir: string | null,
-		) =>
+
+		// The executor is built per invocation, not once for the axis: `cwd` is what makes a run's
+		// directory its own, so an executor shared across the five would re-share the directory (#5437).
+		const invoke = (args: {
+			readonly caseId: number;
+			readonly prompt: string;
+			readonly pluginDir: string | null;
+			readonly sessionId: string;
+			readonly cwd: string | null;
+		}) =>
+			claudeExecutor(
+				args.cwd === null
+					? {timeoutMs: request.timeoutMs}
+					: {timeoutMs: request.timeoutMs, cwd: args.cwd},
+			)({
+				caseId: args.caseId,
+				tier: "graded",
+				arm: "with-skill",
+				sessionId: args.sessionId,
+				prompt: args.prompt,
+				model: request.model,
+				pluginDir: args.pluginDir,
+				jsonSchema: null,
+			});
+
+		// Every run's identity, in run order, for the sidecar manifest below. The record itself has
+		// nowhere to put it (ADR 0253 governs its fields), so this is the accumulator that gives the
+		// minted session id a landing place instead of being spent and dropped (#5439).
+		const identities: Array<RunIdentity> = [];
+
+		const gradeRun = (args: {
+			readonly evalCase: GradableCase;
+			readonly run: number;
+			readonly sessionId: string;
+		}) =>
 			Effect.gen(function* () {
-				const sessionId = yield* Effect.orDie(crypto.randomUUIDv4);
-				return yield* executor({
+				const {evalCase, run, sessionId} = args;
+				const workspace = yield* stageRunWorkspace({
+					setPath: request.path,
 					caseId: evalCase.id,
-					tier: "graded",
-					arm: "with-skill",
+					run,
 					sessionId,
-					prompt,
-					model: request.model,
-					pluginDir,
-					jsonSchema: null,
+					files: evalCase.files,
 				});
+				// A run that cannot be isolated is not run un-isolated. Falling back to the inherited
+				// tree is precisely the exposure this closes (#5434/#5437), and a measurement nobody
+				// could isolate is a `NoVerdict`, never a pass or a fail.
+				if (workspace._tag === "Unstageable") {
+					yield* Console.error(
+						`fabrika eval: case ${evalCase.id} run ${run}: no isolated working directory — ${workspace.detail}`,
+					);
+					return {_tag: "NoVerdict", reason: "invocation-failed"} satisfies RunVerdict;
+				}
+				const candidate = candidateOutputOf(
+					yield* invoke({
+						caseId: evalCase.id,
+						prompt: evalCase.prompt,
+						pluginDir: request.pluginDir,
+						sessionId,
+						cwd: workspace.dir,
+					}),
+				);
+				if (candidate._tag !== "Output") return candidate;
+				// The grader loads no plugin: it judges what the candidate produced against the authored
+				// expectations, and running the skill again inside the grader would make the judgement
+				// depend on a second execution nobody scored. It is handed the authored expectations
+				// in-process and stages nothing, so it needs no directory of its own.
+				return readGraderVerdict(
+					graderResponseOf(
+						yield* invoke({
+							caseId: evalCase.id,
+							prompt: composeGraderPrompt({evalCase, candidateOutput: candidate.text}),
+							pluginDir: null,
+							sessionId: yield* Effect.orDie(crypto.randomUUIDv4),
+							cwd: null,
+						}),
+					),
+				);
 			});
 
 		const results = yield* runGradedAxis({
 			cases,
-			runOnce: ({evalCase}) =>
-				Effect.gen(function* () {
-					const candidate = candidateOutputOf(
-						yield* invoke(evalCase, evalCase.prompt, request.pluginDir),
-					);
-					if (candidate._tag !== "Output") return candidate;
-					// The grader loads no plugin: it judges what the candidate produced against the
-					// authored expectations, and running the skill again inside the grader would make the
-					// judgement depend on a second execution nobody scored.
-					return readGraderVerdict(
-						graderResponseOf(
-							yield* invoke(
-								evalCase,
-								composeGraderPrompt({evalCase, candidateOutput: candidate.text}),
-								null,
-							),
-						),
-					);
-				}),
+			runOnce: ({evalCase, run}) =>
+				Effect.scoped(
+					Effect.gen(function* () {
+						const sessionId = yield* Effect.orDie(crypto.randomUUIDv4);
+						const verdict = yield* gradeRun({evalCase, run, sessionId});
+						// Recorded on every outcome, a dead run included: the run that produced nothing is
+						// exactly the one a later reader needs named, and a row that disappears with its
+						// failure leaves the same gap in the numbering this closes.
+						identities.push({
+							caseId: evalCase.id,
+							run,
+							sessionId,
+							model: request.model,
+							verdict: perRunToken(verdict),
+						});
+						return verdict;
+					}),
+				),
 		});
 
 		const built = buildEvalRecord({
@@ -773,6 +864,7 @@ const produceGradedRecord = (request: GradedRunRequest) =>
 			return yield* Effect.sync(() => process.exit(FAILED));
 		}
 		yield* emitRecord(built.record);
+		yield* writeRunManifest(built.record, identities);
 		if (built.record.outcome === "UNRECORDABLE") {
 			yield* Console.error(
 				`fabrika eval: every run of all ${results.length} graded case(s) returned no verdict — the record is UNRECORDABLE, which is not a below-bar number`,

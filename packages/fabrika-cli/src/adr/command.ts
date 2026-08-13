@@ -202,6 +202,7 @@ const sweepCmd = leafCommand(
 
 export const adrCommand = Command.make("adr").pipe(
 	Command.withSubcommands([next, newCmd, resolve, supersede, amendInPart, sweepCmd]),
+	Command.withShortDescription("Record one architecture decision, from id to citations."),
 	Command.withDescription(
 		"Record one architecture decision: allocate an id, scaffold the file, sweep for contradictions, resolve citations, and edit the status lines a new decision implies",
 	),

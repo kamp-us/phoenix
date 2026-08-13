@@ -280,6 +280,7 @@ const readout = leafCommand(
 
 export const governanceCommand = Command.make("governance").pipe(
 	Command.withSubcommands([scope, sweep, guards, base, post, digest, readout]),
+	Command.withShortDescription("Keep the governance corpus honest across a diff."),
 	Command.withDescription(
 		"Keep the governance corpus honest: derive the namespace a diff requires, rank the records it may contradict, scan the anchored invariants it moves, read this skill's own text at the merge base, emit the one verdict, and publish the periodic non-blocking readout",
 	),

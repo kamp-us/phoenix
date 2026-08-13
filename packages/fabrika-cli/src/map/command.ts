@@ -351,6 +351,7 @@ const descope = leafCommand(
 
 export const mapCommand = Command.make("map").pipe(
 	Command.withSubcommands([open, read, ticket, lane, finding, fork, record, descope]),
+	Command.withShortDescription("Chart one destination's fog into frontier tickets."),
 	Command.withDescription(
 		"Chart one destination's fog: mint the map, decompose it into frontier tickets with native dependency edges, run lanes under a run nonce, route decisions to grilling and empirical questions to prototyping, and record each answer in lockstep",
 	),

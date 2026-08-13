@@ -155,6 +155,7 @@ const claim = leafCommand(
 
 export const handoffCommand = Command.make("handoff").pipe(
 	Command.withSubcommands([capture, take, read, claim]),
+	Command.withShortDescription("Hand one session's work to the next."),
 	Command.withDescription(
 		"Hand one session's work to the next: derive the ground state, seal a pack of what is asserted plus what is proven, read the latest pack back with its drift, and claim it under a run nonce",
 	),

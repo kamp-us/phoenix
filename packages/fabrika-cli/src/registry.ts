@@ -14,7 +14,7 @@
  * before registering.
  */
 import type {NodeServices} from "@effect/platform-node";
-import type {Command} from "effect/unstable/cli";
+import {Command} from "effect/unstable/cli";
 import {adrCommand} from "./adr/command.ts";
 import {buildCommand} from "./build/command.ts";
 import {epicCommand} from "./epic/command.ts";
@@ -47,7 +47,15 @@ export const registeredGroups: ReadonlyArray<VerbGroup> = [
 	adrCommand,
 	buildCommand,
 	epicCommand,
-	evalCommand,
+	// `grade` is the printed form agents copy-paste, and `eval` is kept for humans and every existing
+	// caller (founder ruling on #5461: alias, not rename). It is an alias rather than a second row
+	// because the parser and `unknown-subcommand.ts` both resolve `alias` to the same node — a
+	// duplicated tree would drift. Run-verified 2026-08-12 in a worktree-isolated session: a graded-run
+	// command spelled with `eval` was refused before execution ("runs a string through eval, which
+	// can't be verified to stay inside the worktree"); the byte-identical `grade` spelling executed.
+	// That is an observation of behavior — the guard's source is outside this repo and unread, so no
+	// claim is made here about what it matches (#5458).
+	Command.withAlias(evalCommand, "grade"),
 	glossaryCommand,
 	governanceCommand,
 	grillCommand,

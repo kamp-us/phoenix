@@ -226,6 +226,7 @@ const check = leafCommand(
 
 export const glossaryCommand = Command.make("glossary").pipe(
 	Command.withSubcommands([init, drift, lookup, sections, add, check]),
+	Command.withShortDescription("Maintain the repo's canonical vocabulary registers."),
 	Command.withDescription(
 		"Maintain the repo's canonical vocabulary registers: what is already declared, what moved since one last changed, where a row goes, and which rows have gone stale",
 	),

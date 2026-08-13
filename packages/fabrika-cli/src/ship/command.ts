@@ -364,6 +364,7 @@ export const shipCommand = Command.make("ship").pipe(
 		note,
 		release,
 	]),
+	Command.withShortDescription("Drive one pull request down the merge path."),
 	Command.withDescription(
 		"Everything the merge path needs off one pull request — scope, §CP discharge, the verdict conjunction, head CI, run evidence and review threads — plus the four writes that arm, watch, disarm and record it",
 	),

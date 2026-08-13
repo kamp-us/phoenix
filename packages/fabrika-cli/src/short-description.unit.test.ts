@@ -74,3 +74,48 @@ describe("every registered leaf verb carries a short list-row description", () =
 		expect((verb.description ?? "").length).toBeGreaterThan((verb.shortDescription ?? "").length);
 	});
 });
+
+/**
+ * The same guard one level up: a group with no short description falls back to its full paragraph
+ * as its row in root `fabrika --help`, which is the root index #5372 found unreadable — 110–261
+ * characters per row across 23 groups.
+ *
+ * `eval` is the one group this slice could not author: `packages/fabrika-cli/src/eval/` was held by
+ * a live lane (PR #5441) rewriting the same file, so it is listed as pending rather than edited
+ * across that lane. The listing is self-retiring — the pending assertion below reds the moment
+ * `eval` gains its short description, so the entry has to be removed rather than remembered.
+ */
+describe("every registered verb group carries a short list-row description", () => {
+	interface DescribedGroup {
+		readonly name: string;
+		readonly description?: string | undefined;
+		readonly shortDescription?: string | undefined;
+	}
+
+	const PENDING_GROUPS: ReadonlyArray<string> = ["eval"];
+	const groups: ReadonlyArray<DescribedGroup> = registeredGroups;
+	const isPending = (group: DescribedGroup) => PENDING_GROUPS.includes(group.name);
+
+	it("finds groups at all — fail closed on zero scope (ADR 0092)", () => {
+		expect(groups.length).toBeGreaterThan(0);
+	});
+
+	it.each(
+		groups.filter((group) => !isPending(group)).map((group) => [group.name, group] as const),
+	)("`fabrika %s` lists as one scannable line", (_name, group) => {
+		expect(shortDescriptionDefects(group.shortDescription)).toEqual([]);
+	});
+
+	it.each(
+		groups.filter(isPending).map((group) => [group.name, group] as const),
+	)("`fabrika %s` is still pending — delete its entry once it is authored", (_name, group) => {
+		expect(shortDescriptionDefects(group.shortDescription)).not.toEqual([]);
+	});
+
+	it.each(
+		groups.map((group) => [group.name, group] as const),
+	)("`fabrika %s` keeps its full description for its own --help", (_name, group) => {
+		expect(group.description ?? "").not.toBe("");
+		expect((group.description ?? "").length).toBeGreaterThan((group.shortDescription ?? "").length);
+	});
+});

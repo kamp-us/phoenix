@@ -389,6 +389,7 @@ export const triageCommand = Command.make("triage").pipe(
 		homes,
 		enrich,
 	]),
+	Command.withShortDescription("Take one intake-queue issue from arrival to triaged."),
 	Command.withDescription(
 		"Take one intake-queue issue from arrival to a triaged, homed transition — or park it, split it, or close it not-planned — over reads that page and writes that are read back",
 	),

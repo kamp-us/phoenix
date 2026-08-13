@@ -300,6 +300,7 @@ export const reviewCommand = Command.make("review").pipe(
 		post,
 		appendCriterion,
 	]),
+	Command.withShortDescription("Read what a text review needs off one pull request."),
 	Command.withDescription(
 		"Read everything a text review needs off one pull request — scope, diff, criteria, CI, verdicts, deviations — and emit the verdict or a reviewer-authored criterion through the one sanctioned write path",
 	),

@@ -357,6 +357,20 @@ values also persist to a per-run §SP handle that this skill's *own later script
 in-process via [`scripts/head-env.sh`](scripts/head-env.sh) — in-script sourcing of a sibling script
 stays sanctioned; only the `.` at your top-level command is banned.
 
+**That handle is keyed by PR, and every consumer passes the PR it was invoked for.** This is why
+each fence below carries `"$PR"`. The key used to be the session alone, and a fanned drain runs
+several `review-code` gates inside **one** session — so they shared a single `head.env`, the last
+materialization won, and an earlier reviewer typechecked a **sibling PR's tree** while binding its
+verdict to its own correctly-read live head SHA. Every existing detector passes that: the marker's
+SHA *is* the PR's head, so the post-time cross-check and ADR 0058 staleness both agree, and a
+wrong-tree green is indistinguishable from a right-tree green (#5416). The same key is what stops
+[`scripts/teardown-head.sh`](scripts/teardown-head.sh) `rm -rf`ing a sibling's live tree. Belt and
+braces: the handle records the PR it was written for, and every consumer refuses — loudly, as
+UNKNOWN, never as a skip — when the handle it resolved does not describe its own PR. All of that is
+re-derived, not asserted, by
+`bash ./.claude/.pipeline/skills/review-code/scripts/verify-head-handle-pr-keyed.sh` — including a
+mutant that puts the constant slug back and collides the two PRs again.
+
 The cross-fork case needs no special branch: `pull/$PR/head` is the GitHub-provided ref for
 the PR head whether it lives on this repo or a fork, so the single `git fetch` above covers
 both — and because it lands in `$PR_REF` (not your working tree) and the denylist is removed
@@ -367,7 +381,7 @@ an output), run the repo's commands **inside the review worktree** — behavior 
 running beats behavior inferred from a diff:
 
 ```bash
-bash ./.claude/.pipeline/skills/review-code/scripts/worktree-checks.sh
+bash ./.claude/.pipeline/skills/review-code/scripts/worktree-checks.sh "$PR"
 ```
 
 Scoping a test to the criterion is fine when the SHA-bound run-evidence bundle (Step 2) corroborates
@@ -379,7 +393,7 @@ degrade block below: run the FULL unit project, never a subset.
 just the happy path:**
 
 ```bash
-bash ./.claude/.pipeline/skills/review-code/scripts/teardown-head.sh
+bash ./.claude/.pipeline/skills/review-code/scripts/teardown-head.sh "$PR"
 ```
 
 It is the review's own `rm -rf` of a detached, already-pushed throwaway
@@ -387,7 +401,7 @@ it materialized itself (safe — it holds no branch and no unpushed work), so ru
 the review is exiting `FAIL` or aborting after a typecheck/lint error; a leaked `review-head-*`
 tree accumulates on the shared primary otherwise (#2785). To catch a mid-block error inside a
 single Bash call, register the script as a trap right after materialization:
-`trap 'bash ./.claude/.pipeline/skills/review-code/scripts/teardown-head.sh' EXIT` —
+`trap 'bash ./.claude/.pipeline/skills/review-code/scripts/teardown-head.sh "$PR"' EXIT` —
 and note the trap belongs to **your** shell, not to any extracted script: none of them installs an
 `EXIT` trap, because under bash 3.2 the trap's last command becomes the script's exit status and
 would launder a `set -u` abort into exit 0 (#4476, class #4479). And the
@@ -415,8 +429,43 @@ the full build inputs, so the typecheck bootstrap is whole — run it and treat 
 the typecheck signal:
 
 ```bash
-bash ./.claude/.pipeline/skills/review-code/scripts/worktree-typecheck.sh
+# stdout IS the attestation — one `TURBO-ATTESTATION: … verdict=RAN …` line. Nothing on stdout means
+# the typecheck did NOT attest, which is UNKNOWN and never a pass.
+bash ./.claude/.pipeline/skills/review-code/scripts/worktree-typecheck.sh "$PR"
 ```
+
+**Its exit status is not the signal — the attestation line is (#4887).** turbo's cache key is
+repo-relative content only (no path, no checkout identity) and a linked worktree shares the primary
+checkout's cache directory, so a bare `pnpm typecheck` here can exit 0 in milliseconds having
+**replayed** an entry a *sibling* tree produced at a *different* commit. Measured on this repo: two
+forced runs attest `executed=31 replayed=0`, and the same command without the force flag immediately
+after reports `replayed=31` — a green that says nothing about the head under review. #5416's per-PR
+head handle fixed the neighbouring defect (the gate resolving a sibling's *tree*) and does not reach
+this one; a correctly-pinned tree still reads the shared cache. So the script forces a real run
+**and** re-reads turbo's own per-task `cache.status` to prove it, refusing a replay instead of
+passing on it. That is worth doing whatever
+[#4106](https://github.com/kamp-us/phoenix/issues/4106) concludes about whether a hit can also be
+*wrong*: it makes the gate say **which** signal it consumed.
+
+**Paste the attestation line into the verdict** as the typecheck evidence — `TURBO-ATTESTATION:
+task=typecheck verdict=RAN turbo=2.10.3 tasks=31 executed=31 replayed=0`. It names repo-relative
+turbo task ids only, so it carries no machine-local path into a public artifact (§SP).
+
+**Any *other* turbo-cached task you consume as evidence goes through the same script.** `test` and
+`lint` are `"cache": true` in `turbo.json` too, so a reviewer who runs `pnpm -C "$REVIEW_WT" test` to
+verify a criterion inherits the identical hole. Run it attested instead, and cite its line the same
+way:
+
+```bash
+bash ./.claude/.pipeline/skills/review-code/scripts/attested-turbo-run.sh "$PR" test
+```
+
+Two checks are *not* turbo-driven and need no attestation: `pnpm lint:worktree` (a direct
+`node scripts/biome-worktree.mjs` run) and `full-unit-project.sh`'s `pnpm -C … test:unit` (vitest in
+`apps/web`, not a root turbo task). The claim itself is re-derived, not asserted, by
+`bash ./.claude/.pipeline/skills/review-code/scripts/verify-turbo-attestation.sh "$PR"` — its
+fixture leg pins the RAN / REPLAYED / zero-scope judgements, and its live leg runs this typecheck
+path **twice against the same tree** and requires both runs to attest `RAN`.
 
 CI and the SHA-bound run-evidence bundle (below) are now **corroboration**, not the sole
 signal. Only when the in-worktree typecheck genuinely cannot run (e.g. an environment fault
@@ -516,7 +565,7 @@ gate exists to prevent. On the degrade path therefore:
   past a degraded verification.
 
   ```bash
-  bash ./.claude/.pipeline/skills/review-code/scripts/full-unit-project.sh
+  bash ./.claude/.pipeline/skills/review-code/scripts/full-unit-project.sh "$PR"
   ```
 
 - **If — and only if — the full unit project genuinely cannot run** (an environment fault
@@ -1265,6 +1314,9 @@ Verified PR #<PR> against the acceptance criteria of #<ISSUE>, one at a time:
 <$BUNDLE_LINE — the `Run-evidence bundle:` line from `run-evidence read`, pasted verbatim; on a
 non-`present` state append "— verified from diff + worktree run">
 
+<the `TURBO-ATTESTATION:` line from each attested turbo run, pasted verbatim (Step 2); if the
+in-worktree typecheck could not run at all, say that instead — never omit both>
+
 Read the PR head (§HEAD): all files under review sourced from `<HEAD_SHA>` via `$REVIEW_WT` /
 `git show "$PR_REF:<path>"`, never the launched checkout's working copy.
 
@@ -1370,6 +1422,8 @@ Verified PR #<PR> against the acceptance criteria of #<ISSUE>, one at a time —
 - [PASS] <criterion 2> — <evidence>
 
 <$BUNDLE_LINE, pasted verbatim; on a non-`present` state append "— verified from diff + worktree run">
+
+<the `TURBO-ATTESTATION:` line from each attested turbo run, pasted verbatim (Step 2)>
 ```
 
 ---
@@ -1431,6 +1485,8 @@ Verified PR #<PR> against the acceptance criteria of #<ISSUE>, one at a time:
 
 <$BUNDLE_LINE, pasted verbatim — it already names the failing suites on a `present` state; on a
 non-`present` state append "— verified from diff + worktree run">
+
+<the `TURBO-ATTESTATION:` line from each attested turbo run, pasted verbatim (Step 2)>
 
 
 Failing criteria above must be addressed before this PR can merge. The PR stays open

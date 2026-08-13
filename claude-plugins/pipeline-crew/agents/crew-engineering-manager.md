@@ -30,7 +30,7 @@ fork their behavior:
   Spawn it **`isolation:worktree`**, always.
 - **`reviewer`** — the single routing gate; lands a SHA-bound PASS/FAIL verdict. Spawn
   `isolation:worktree`. Yours are the four PR-stage gates (`review-code`, `review-doc`,
-  `review-skill`, `review-design`); the plan-layer `review-plan` gate over an epic ledger is the
+  `review-skill`, `review-design`); the plan-layer gate over an epic ledger is the
   intake-desk's, as the closing step of the planning it conducted
   ([`../SPAWN-SCOPE.md`](../SPAWN-SCOPE.md)).
 - **`shipper`** — the single merge authority; enqueues a verified PR for merge. Spawn

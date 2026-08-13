@@ -14,8 +14,8 @@
 #
 # The same four values ALSO persist to a per-run §SP handle. That is not a second answer channel: the
 # harness resets the agent's shell between Bash calls, so the LATER scripts of this skill re-source
-# the handle in-process via head-env.sh. In-script sourcing stays sanctioned under ADR 0232 — only
-# the `.` at an agent's top-level command is banned.
+# the handle in-process via `head-env.sh <pr>`, each passing the PR it was invoked for. In-script
+# sourcing stays sanctioned under ADR 0232 — only the `.` at an agent's top-level command is banned.
 set -uo pipefail
 # shellcheck source=../../../lib/common.sh disable=SC1007,SC1091
 . "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../lib" && pwd)/common.sh"
@@ -66,10 +66,15 @@ git fetch origin "$BASE_REF" >&2
 # catalog/lockfile, and everything `fate generate` needs are present, so the typecheck bootstrap is
 # whole. A full checkout also lands the head's root CLAUDE.md + .claude/.decisions/.patterns — that
 # leak is closed by the explicit denylist removal + absence-assert below, NOT by any pattern set.
-WT_FILE="$(kp_scratch_open review-code-head)/head.env" || exit 1
+# The slug is keyed by PR, not by session alone: a fanned drain runs several `review-code` gates in
+# ONE session, so a constant slug made them share one handle and the last writer won (#5416). The
+# `HANDLE_PR` stamp is the same fact recorded INSIDE the file, which is what lets every reader
+# refuse a handle that reached it by any route the slug does not cover — see
+# `kp_head_handle_names_pr`.
+WT_FILE="$(kp_scratch_open "review-code-head-$PR")/head.env" || exit 1
 "$PCLI" review-head materialize --pr "$PR" --worktree \
   | jq -r '"REVIEW_WT=\(.worktreeDir)\nPR_REF=\(.prRef)\nHEAD_SHA=\(.headSha)"' > "$WT_FILE"
-printf 'BASE_REF=%s\n' "$BASE_REF" >> "$WT_FILE"
+printf 'BASE_REF=%s\nHANDLE_PR=%s\n' "$BASE_REF" "$PR" >> "$WT_FILE"
 # shellcheck disable=SC1090  # the run-unique handle this script just wrote
 . "$WT_FILE"
 [ -n "${REVIEW_WT:-}" ] && [ -n "${PR_REF:-}" ] && [ -n "${HEAD_SHA:-}" ] || {

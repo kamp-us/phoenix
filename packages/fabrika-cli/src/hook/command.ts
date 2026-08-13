@@ -82,6 +82,7 @@ export const hookCommand = Command.make("hook").pipe(
 		codes,
 		spawn,
 	]),
+	Command.withShortDescription("Own fabrika's Claude Code hook surface."),
 	Command.withDescription(
 		"Own fabrika's Claude Code hook surface — read the harness envelope a hook is handed on stdin and say whether it is one fabrika can act on",
 	),

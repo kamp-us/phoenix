@@ -191,6 +191,7 @@ const read = leafCommand(
 
 export const grillCommand = Command.make("grill").pipe(
 	Command.withSubcommands([open, round, answerCmd, rule, read]),
+	Command.withShortDescription("Run a grilling session on a GitHub issue."),
 	Command.withDescription(
 		"Run a grilling session on a GitHub issue: post rounds of fact and decision questions, record agent-established answers and founder rulings against them, and read back the frontier — every recorded ruling bound to an authority and to the round text it ruled",
 	),
