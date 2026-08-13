@@ -34,6 +34,19 @@ import {Console, Effect, FileSystem, Path, Result, type Scope} from "effect";
  */
 export const EVAL_SET_FILE = "evals.json";
 
+/**
+ * The stable phrase every staged run announces itself with, so isolation is checkable from a real run.
+ *
+ * The directories are ephemeral by design — scoped, removed when the run's scope closes, and
+ * deliberately absent from the committed run manifest because they are absolute and machine-local
+ * (see `./run-manifest.ts`). That left a live `fabrika eval graded` run with nothing to look at: the
+ * property held by construction and was pinned by unit test, but an operator asked to confirm it on a
+ * real run had no observable at all. One line per staged run gives them one — five distinct paths per
+ * case, greppable by this phrase, next to the `no isolated working directory` line the unstageable
+ * path already prints (#5437).
+ */
+export const ISOLATED_DIR_NOTE = "isolated working directory";
+
 /** A declared fixture that will not be staged, and the reason a reader needs to see. */
 export interface RefusedFixture {
 	readonly path: string;
@@ -210,5 +223,6 @@ export const stageRunWorkspace = (args: {
 				return {_tag: "Unstageable", detail: `${file}: ${copied.failure.message}`};
 			}
 		}
+		yield* Console.error(`fabrika eval: ${where}: ${ISOLATED_DIR_NOTE} ${dir}`);
 		return {_tag: "Staged", dir};
 	});

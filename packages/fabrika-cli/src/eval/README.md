@@ -1086,6 +1086,19 @@ failure; the alternative is the silent one this rule exists to remove — a `pas
 empty directory, indistinguishable in the record from a measurement
 ([#5464](https://github.com/kamp-us/phoenix/issues/5464)).
 
+**Isolation is announced, so a real run can be checked.** The directories are ephemeral by design and
+the sidecar manifest below deliberately carries no working directory, which left a live run with
+nothing to look at: the property held by construction and was pinned by unit test, but an operator
+asked to confirm it on a real run had no observable. Every staged run now prints one stderr line —
+`fabrika eval: case <id> run <n>: isolated working directory <path>` — beside the
+`no isolated working directory` line the unstageable path already printed. Five distinct paths per
+case is the check:
+
+```bash
+fabrika grade graded <set> … 2>run.log
+grep 'isolated working directory' run.log | awk '{print $NF}' | sort -u | wc -l   # 5 per case
+```
+
 ### Which session produced which run ([#5439](https://github.com/kamp-us/phoenix/issues/5439))
 
 The run directory above makes identity legible while the run is alive, and the directory is removed
