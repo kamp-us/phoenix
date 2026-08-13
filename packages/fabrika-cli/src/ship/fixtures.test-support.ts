@@ -24,6 +24,9 @@ export interface PullShape {
 	/** `null` is the platform's lazy "not computed yet" — an indefinite read, never an answer. */
 	readonly mergeable?: boolean | null;
 	readonly mergeableState?: string;
+	/** Who has taken the PR — `heal-ci diagnose`'s owner signal. */
+	readonly assignees?: ReadonlyArray<string>;
+	readonly updatedAt?: string;
 }
 
 export const pull = (shape: PullShape = {}): ExecResult =>
@@ -42,6 +45,8 @@ export const pull = (shape: PullShape = {}): ExecResult =>
 			user: {login: shape.author ?? "usirin"},
 			mergeable: shape.mergeable === undefined ? true : shape.mergeable,
 			mergeable_state: shape.mergeableState ?? "blocked",
+			assignees: (shape.assignees ?? []).map((login) => ({login})),
+			updated_at: shape.updatedAt ?? "2026-08-08T00:00:00Z",
 		}),
 	);
 

@@ -24,6 +24,7 @@ import * as glossary from "./glossary/codes.ts";
 import * as governance from "./governance/codes.ts";
 import * as grill from "./grill/codes.ts";
 import * as handoff from "./handoff/codes.ts";
+import * as healCi from "./heal-ci/codes.ts";
 import * as hook from "./hook/codes.ts";
 import {PRETOOLUSE_BLOCKING_EXIT} from "./hook/harness-exit.ts";
 import * as ledger from "./ledger/codes.ts";
@@ -58,6 +59,7 @@ const TABLES: Readonly<Record<string, CodeTable>> = {
 	governance,
 	grill,
 	handoff,
+	"heal-ci": healCi,
 	hook,
 	ledger,
 	map,
