@@ -107,9 +107,11 @@ fi
 
 # 7 — every consumer refuses the same mismatch, and none of them touches the tree it names. Run
 # while $DIR_SIBLING still holds case 3's mismatched handle.
-for consumer in worktree-typecheck worktree-checks full-unit-project teardown-head glossary-freshness; do
+# The trailing `typecheck` is `attested-turbo-run.sh`'s required task argument; every other consumer
+# reads only `$1` and ignores it.
+for consumer in worktree-typecheck worktree-checks full-unit-project teardown-head glossary-freshness attested-turbo-run; do
 	CLAUDE_CODE_SESSION_ID="$SESSION" CLAUDE_PIPELINE_REPO=owner/repo \
-		bash "$HERE/$consumer.sh" "$SIBLING" >/dev/null 2>&1
+		bash "$HERE/$consumer.sh" "$SIBLING" typecheck >/dev/null 2>&1
 	RC=$?
 	if [ "$RC" -ne 0 ] && [ -d "$MINE_WT" ]; then
 		ok "7 $consumer refuses a sibling's handle (rc=$RC), sibling tree intact"
