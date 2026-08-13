@@ -1,6 +1,6 @@
 # World-state — acme/checkout, epic #310
 
-You are a session in a linked worktree of `acme/checkout` at `/work/lanes/epic-310`. This file is
+You are a session in a checkout of `acme/checkout` at `/work/lanes/epic-310`. This file is
 the complete world: the board, the issue bodies, and the verbatim result of every command run so
 far, in order. Treat those results as what the commands returned. Where the transcript ends,
 continue by stating the exact commands you would run and their documented behavior.

@@ -24,7 +24,7 @@ writing verb re-derives the floor and refuses if it moved.
 
 **§CAP — capability set:** a repo-scoped token and a claim on the epic. Its write surface is **two
 labels on the epic's children** and **comments on the epic** — the claim marker, its release, the
-verdict, and a successor note. It holds no branch and no worktree, so every terminal below shares
+verdict, and a successor note. It holds no branch and no checkout of its own, so every terminal below shares
 one branch disposition: none, nothing checked out, nothing to clean up.
 
 ## 1 — Claim the epic, read the ledger

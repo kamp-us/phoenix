@@ -34,7 +34,7 @@ two never meet: no verb here reads or writes an `epic` run ledger.
 **What fabrika already ships, reused — never respecified.** The claim is the **`build` group's,
 reused as landed verbs** ([`build`'s contract](../build/contract.md)) — the cross-contract shape
 `build-ui` sanctioned: this skill claims the epic with `fabrika build claim --purpose plan`, proves
-its worktree with `fabrika build tree`, releases with `fabrika build release`, and posts a successor
+its ground with `fabrika build tree`, releases with `fabrika build release`, and posts a successor
 note with `fabrika build note`. The purpose is part of the reuse, not a detail of it: `build claim`'s
 audience axis asks whether an agent should pick the issue up to *build*, and an epic earns
 `ready-for:agent` only after this skill has planned it and the gate has passed it, so a `plan` claim
@@ -75,7 +75,7 @@ session id**, so a sibling lane's release retracts the holder's claim. Modules r
   not exist anywhere and is derived new by `ledger child` and `ledger supersede`.
 - `packages/fabrika-cli/src/build/claim.ts` — `requireSession` and `requireClaim` (this session holds
   it, proven now); the claim nonce comes from `src/build/lane.ts`'s `nonceOf`. Every verb runs `requireClaim`; the nonce is the run key.
-- `packages/fabrika-cli/src/build/worktree.ts` — `assertGround`; and
+- `packages/fabrika-cli/src/build/tree.ts` — `assertGround`; and
   `src/build/target.ts` — `resolveTargetRepo`, `openIssue` (pre-seats the `7` / `11` refusals),
   `badNumber`, `scannedLine`.
 
@@ -284,14 +284,14 @@ Every `ledger` verb obeys these; stated once.
   are `3`. The two must never collapse: a non-blocking pipe throws `EAGAIN` before its producer
   writes, and swallowing that to `""` makes an unread pipe byte-identical to an empty one.
 - **The run directory is keyed on the claim nonce, never the session.** `runKey(epic, nonce)` →
-  `<worktreeRoot>/.fabrika-plan/<epic>-<nonce>/`. Every sibling subagent of one session shares
+  `<treeRoot>/.fabrika-plan/<epic>-<nonce>/`. Every sibling subagent of one session shares
   `CLAUDE_CODE_SESSION_ID` (measured, #4500), so a session-keyed namespace collapses exactly the
   isolation two parallel planning lanes need (#4516, #4544). Every file inside it is named for what
   it holds — no fixed leaf shared across runs. The shipped precedents are
   `build/scratch-verb.ts:33` and `epic/ledger.ts:182-199`.
   **It is kept out of git the way `epic` already does it** — `ledger open` appends the literal line
   `.fabrika-plan/` to `.git/info/exclude` if absent (`epic/ledger.ts:199`'s `EXCLUDE_ENTRY` shape).
-  That file is per-worktree and untracked, so the exclusion never enters a diff and never fights a
+  That file is per-checkout and untracked, so the exclusion never enters a diff and never fights a
   `--require-clean` check.
 
 - **The run directory holds four files, and they are the reason nothing is remembered:**
@@ -330,7 +330,7 @@ Every `ledger` verb obeys these; stated once.
   verb that half-succeeded across N children could not tell its caller which N, and the design
   answer is not to write such a verb.
 - **Preconditions.** Every verb runs `resolveTargetRepo`, refuses a non-`type:epic` target on
-  `10`, resolves the run directory (`12` when this process is not in a linked worktree), and runs
+  `10`, resolves the run directory (`11` when the tree root cannot be read), and runs
   the imported `requireClaim` on the **epic** number (`15`). Every verb's `7` means **zero scope**;
   for five of the six that is the epic proven absent (404) or closed, and `ledger topology` adds one
   documented arm — an empty run manifest — stated in its own table with its reason.
@@ -356,8 +356,8 @@ The group registers **`BUILD_SEATS`** in `ALIGNED_GROUPS` (`src/exit-code-alignm
 `SHARED_SEATS`, which omits `BAD_SECTIONS`; three verbs here seat `4`, so under `SHARED_SEATS` the
 checker would report `4` as a private code colliding with the base. `build`, `epic` and `plan`
 claim all nine that way; `review`, `ship` and `triage` take `SHARED_SEATS` and leave `4` a
-deliberate gap. **`12` and `15` are re-exported from `build` verbatim**, because this group asserts
-the identical facts (this process is in a linked worktree; this session holds this issue's claim)
+deliberate gap. **`15` is re-exported from `build` verbatim**, because this group asserts
+the identical fact (this session holds this issue's claim)
 and a caller driving both in one sweep must read one meaning for each.
 
 **The re-export is selective and stops at `19`.** `13`, `14`, `16`, `17`, `18` and `19` come across
@@ -389,10 +389,9 @@ it, and the alignment checker is base-only by design (`occupied = allocatedCodes
 | `9` | the write landed but the read-back does not match | — | — | ✓ | — | ✓ | ✓ |
 | `10` | a value off its closed vocabulary — a semantic refusal, never a malformed-flag usage error | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `11` | a required read failed — nothing was written, no outcome is proven | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `12` | proven: this process is not in a linked worktree (imported from `build`) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `13` | proven: the tree was dirty at a `--require-clean` open (`build`'s meaning, reserved — no `ledger` verb declares that flag) | — | — | — | — | — | — |
 | `15` | proven: this session does not hold the epic's claim (imported from `build`) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `20` | proven: the worktree's base is behind `origin/main` | ✓ | — | — | — | — | — |
+| `20` | proven: the tree's base is behind `origin/main` | ✓ | — | — | — | — | — |
 | `21` | proven: the epic body moved — the recomputed digest differs from `--body-digest` | — | ✓ | — | — | ✓ | — |
 | `22` | proven: the plan region is unresolvable — a duplicated anchor, or a mode the body contradicts | ✓ | — | — | — | ✓ | — |
 | `23` | proven: the child was created and its sub-issue link could not be proven | — | — | ✓ | — | — | — |
@@ -472,7 +471,7 @@ interruption is present exactly once, with its observed `linked` state) and **le
 silently discarding a staged document a caller has not replaced would lose authored work with no
 refusal to notice.
 
-**Freshness.** The verb resolves `origin/main` and compares the worktree's merge base. Provably
+**Freshness.** The verb resolves `origin/main` and compares the tree's merge base. Provably
 behind is `20`. A fetch or rev-parse that fails is `11`. There is no third arm: this verb never
 answers "fresh" without having proven it, because the whole point is that v1 planned against
 stale checkouts and minted phantom children (#3330), and the repo has no post-merge sync with any
@@ -485,9 +484,8 @@ call site (#4167) — so the tree is stale by default until shown otherwise.
 | `7` | the epic is proven absent (404) or closed |
 | `10` | the issue is not a `type:epic` |
 | `11` | the epic, its sub-issue list, the backlog read, the cycle-doc probe, or the freshness probe could not be read |
-| `12` | this process is not in a linked worktree |
 | `15` | this session does not hold the epic's claim |
-| `20` | the worktree's base is proven behind `origin/main` |
+| `20` | the tree's base is proven behind `origin/main` |
 | `22` | the body carries two or more `## Plan (plan-epic)` headings — the run's mode cannot be decided |
 
 **Errors**
@@ -497,7 +495,6 @@ call site (#4167) — so the tree is stale by default until shown otherwise.
 | `ledger open: issue #<n> is proven absent or closed.` | 7 | refusal |
 | `ledger open: #<n> is not a type:epic — refusing to plan it.` | 10 | refusal |
 | `ledger open: cannot read <what>: <reason> — the ground is UNKNOWN.` | 11 | refusal |
-| `ledger open: not in a linked worktree — refusing to plan from the primary checkout (#4934).` | 12 | refusal |
 | `ledger open: this session does not hold #<n>'s claim.` | 15 | refusal |
 | `ledger open: base is <k> commit(s) behind origin/main — a plan derived here is derived on stale ground (#3330).` | 20 | refusal |
 | `ledger open: #<n>'s body carries <k> "## Plan (plan-epic)" headings — the plan mode has no single meaning.` | 22 | refusal |
@@ -526,7 +523,7 @@ $ echo $?
 
 - #3330 / #4167 — a stale checkout inflated a baseline and spawned phantom children; `main-sync
   --post-merge` has no call site, so freshness is proven here rather than assumed.
-- #4934 — one worktree per epic; the primary checkout is refused rather than silently used.
+- #4934 — one tree per epic run; every subagent works in the tree the conductor is in.
 - #4516 / #4544 / #4500 — the run key is the claim nonce; sibling subagents share the session id,
   so a session-keyed namespace is not a namespace.
 - v1 scar (`idempotency-sets.sh:27,33`) — `per_page=100` with no `--paginate` made the duplicate
@@ -591,7 +588,6 @@ splices.
 | `7` | the epic is proven absent or closed |
 | `10` | the issue is not a `type:epic`, or `--body-digest` is not 12 lowercase hex |
 | `11` | the epic body or the run directory could not be read |
-| `12` | this process is not in a linked worktree |
 | `15` | this session does not hold the epic's claim |
 | `21` | the recomputed body digest differs from `--body-digest` |
 
@@ -612,7 +608,6 @@ splices.
 | `ledger draft: --body-digest must be 12 lowercase hex — got "<v>".` | 10 | refusal |
 | `ledger draft: #<n> is not a type:epic — refusing to stage a plan for it.` | 10 | refusal |
 | `ledger draft: cannot read <what>: <reason> — nothing was staged.` | 11 | refusal |
-| `ledger draft: not in a linked worktree — the run directory is unreachable.` | 12 | refusal |
 | `ledger draft: this session does not hold #<n>'s claim.` | 15 | refusal |
 | `ledger draft: the epic body moved since open (digest <a> → <b>) — re-open before staging.` | 21 | refusal |
 
@@ -757,7 +752,6 @@ link, deliberately** — see step 5.
 | `9` | the child was created and the re-read does not match what was sent |
 | `10` | a label, `--type`, `--priority`, `--milestone` or `--ready-for` value off its closed vocabulary; `--ready-for` absent; `--ready-for human` without `--assignee`; or the issue is not a `type:epic` |
 | `11` | a precondition read failed — **nothing was created** |
-| `12` | this process is not in a linked worktree |
 | `15` | this session does not hold the epic's claim |
 | `23` | the child was created and its sub-issue link could not be proven |
 | `26` | the child was created and the run manifest could not be written — the child exists and this run has no record of it |
@@ -782,7 +776,6 @@ link, deliberately** — see step 5.
 | `ledger child: milestone "<title>" is not an open milestone of <repo>.` | 10 | refusal |
 | `ledger child: --priority <v> is off the closed set (p0, p1, p2).` | 10 | refusal |
 | `ledger child: cannot read <what>: <reason> — nothing was created.` | 11 | refusal |
-| `ledger child: not in a linked worktree — the run manifest is unreachable.` | 12 | refusal |
 | `ledger child: this session does not hold #<n>'s claim.` | 15 | refusal |
 | `ledger child: created #<c> and could not prove the sub-issue link — the child exists, is recorded in the run manifest as linked:false, and is unlinked on GitHub.` | 23 | refusal |
 | `ledger child: created #<c> and could not write the run manifest: <reason> — the child exists and this run holds no record of it.` | 26 | refusal |
@@ -876,7 +869,6 @@ skill carries (#3709), and the verb does not pretend otherwise.
 | `7` | zero scope: the epic is proven absent or closed, **or the run manifest holds zero children** |
 | `10` | the issue is not a `type:epic`, or a phase number is not a positive integer |
 | `11` | the run manifest or the epic could not be read |
-| `12` | this process is not in a linked worktree |
 | `15` | this session does not hold the epic's claim |
 | `24` | the topology is proven invalid: a cycle, a reference to a non-child, a manifest child placed nowhere, or a rendered block that does not parse back to the declared edges |
 
@@ -896,7 +888,6 @@ skill carries (#3709), and the verb does not pretend otherwise.
 | `ledger topology: #<n> is not a type:epic — refusing to declare a topology for it.` | 10 | refusal |
 | `ledger topology: phase "<v>" is not a positive integer.` | 10 | refusal |
 | `ledger topology: cannot read <what>: <reason> — nothing was staged.` | 11 | refusal |
-| `ledger topology: not in a linked worktree — the run manifest is unreachable.` | 12 | refusal |
 | `ledger topology: this session does not hold #<n>'s claim.` | 15 | refusal |
 
 **Scope** — the run manifest's whole child set and every declared line, plus one read of the epic for the shared preconditions. It writes nothing. **Zero scope reds on `7`**:
@@ -995,7 +986,6 @@ every byte outside it.
 | `9` | the body was written and does not read back as composed |
 | `10` | the issue is not a `type:epic`, or `--body-digest` is not 12 lowercase hex |
 | `11` | the epic body or the run directory could not be read — **nothing was written** |
-| `12` | this process is not in a linked worktree |
 | `15` | this session does not hold the epic's claim |
 | `21` | the recomputed body digest differs from `--body-digest` |
 | `22` | the plan region is unresolvable: a duplicated anchor, or a mode the body contradicts |
@@ -1015,7 +1005,6 @@ every byte outside it.
 | `ledger write: #<n> is not a type:epic — refusing to write a plan into it.` | 10 | refusal |
 | `ledger write: issue #<n> is proven absent or closed.` | 7 | refusal |
 | `ledger write: cannot read <what>: <reason> — nothing was written.` | 11 | refusal |
-| `ledger write: not in a linked worktree — the staged documents are unreachable.` | 12 | refusal |
 | `ledger write: this session does not hold #<n>'s claim.` | 15 | refusal |
 
 **Scope** — one epic body read, one PATCH, one confirming read. Zero scope is unreachable: the
@@ -1107,7 +1096,6 @@ exists for, so the refusal narrows to the minted set rather than the whole manif
 | `9` | the legs landed and the child does not read back closed and unlinked |
 | `10` | the issue is not a `type:epic`; `--child` is not a sub-issue of it; or `--child`'s manifest line carries `"mintedThisRun":true` |
 | `11` | a precondition read failed — **nothing was written** |
-| `12` | this process is not in a linked worktree |
 | `15` | this session does not hold the epic's claim |
 
 **Errors**
@@ -1123,7 +1111,6 @@ exists for, so the refusal narrows to the minted set rather than the whole manif
 | `ledger supersede: #<c> was minted by this run — refusing to supersede a child of the current plan.` | 10 | refusal |
 | `ledger supersede: #<n> is not a type:epic.` | 10 | refusal |
 | `ledger supersede: cannot read <what>: <reason> — nothing was written.` | 11 | refusal |
-| `ledger supersede: not in a linked worktree — the run manifest is unreachable.` | 12 | refusal |
 | `ledger supersede: this session does not hold #<n>'s claim.` | 15 | refusal |
 
 **Scope** — one child: one comment, one unlink, one close, one confirming read. Zero scope is
@@ -1164,7 +1151,7 @@ Vocabulary: **fail-loud** / **degrade** / **bootstrap** (front-door, #4952).
 | Must exist | Why | When missing |
 | --- | --- | --- |
 | A `type:epic` issue, open | every verb's subject | **fail-loud** — exit `7` / `10` naming the gap. |
-| A linked git worktree with a reachable `origin/main` | the run directory lives in it, and `ledger open` proves freshness there | **fail-loud** — `12` at any `ledger` verb, and `13` from `build tree` at step 1; an unprovable freshness read is `11`, never `20`. |
+| A git checkout with a reachable `origin/main` | the run directory lives in it, and `ledger open` proves freshness there | **fail-loud** — `11` at any `ledger` verb whose tree root will not read, and `13` from `build tree` at step 1; an unprovable freshness read is `11`, never `20`. |
 | Labels `status:planned`, `ready-for:human`, `ready-for:agent`, `type:*`, `p0`/`p1`/`p2` | every child is born carrying them | **fail-loud** — `ledger child` exits `10` rather than creating a label (#4285); taxonomy creation is the front door's. |
 | At least one open milestone, or a standing-lane exemption | `--milestone` is validated against the open set | **degrade** — a child is minted unhomed; the repo's own homing guard reds it at the labelling seam. This contract computes no second answer. |
 | `product-development-cycle.md` at the repo root | decides whether `**Containment:**` is required | **degrade** — *absent* means containment is not required; an *unreadable* probe is `11`. Never silently dropped. |

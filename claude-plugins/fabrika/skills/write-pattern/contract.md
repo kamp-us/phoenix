@@ -169,8 +169,8 @@ oversight:
 | `7` `ZERO_SCOPE` | **the important one.** No verb here judges over a corpus, so none has a vacuous pass to prevent. An empty or absent `.patterns/` is a *fact* this group reports at exit `0`, and refusing there would leave a repo adopting fabrika unable to write its first pattern doc on the documented path — the first-run dead-end the portability rules forbid, and the same correction #5254 applied to `adr next`. Where a question genuinely cannot be answered, the group says so in **vocabulary** — `unanchored`, `unknown` — never by falling silent. |
 
 **Private codes are group-local.** `12`–`16` mean what this table says within `pattern` and carry no
-cross-group obligation; `build` seats `12` as `NOT_A_WORKTREE` and `review` seats it as `STALE_HEAD`,
-and those are three namespaces rather than one collision.
+cross-group obligation; `review` seats `12` as `STALE_HEAD` and `build` retired its own `12`,
+and those are separate namespaces rather than one collision.
 
 ---
 

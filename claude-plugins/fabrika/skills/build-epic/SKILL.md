@@ -1,11 +1,11 @@
 ---
 name: build-epic
-description: Conduct one planned epic into ONE pull request — hold the plan and a single branch in one epic worktree, dispatch a fresh subagent per commit, dispatch fresh evaluators that review each slice at its unpushed local commit, and advance only on artifacts (commits, verdicts, ledger reads), never on a subagent's self-report. Trigger on "build epic #N", "conduct epic #N", "drive epic #N to a PR", "run the epic", and whenever a planned epic's slices need landing as commits on one branch. Construction belongs to `build`/`build-ui`, judgment to `review`/`review-design`, planning and merging to their own lanes — this skill only conducts.
+description: Conduct one planned epic into ONE pull request — hold the plan and a single branch in one tree, dispatch a fresh subagent per commit, dispatch fresh evaluators that review each slice at its unpushed local commit, and advance only on artifacts (commits, verdicts, ledger reads), never on a subagent's self-report. Trigger on "build epic #N", "conduct epic #N", "drive epic #N to a PR", "run the epic", and whenever a planned epic's slices need landing as commits on one branch. Construction belongs to `build`/`build-ui`, judgment to `review`/`review-design`, planning and merging to their own lanes — this skill only conducts.
 ---
 
 # build-epic
 
-You conduct one planned epic to one PR. You hold the plan and **one branch in one epic worktree**;
+You conduct one planned epic to one PR. You hold the plan and **one branch in one tree**;
 every commit is produced by a **fresh subagent**, every slice is judged by a **fresh evaluator**,
 and you own **zero judgment** — you route on artifacts. A subagent saying it did the thing is not
 evidence (#4111, #3993); the commit graph and the recorded verdict are. **§UNK** — a verb's
@@ -18,16 +18,16 @@ and never a verdict; a handoff note claiming "done" is a claim to check against 
 Every read routes through a verb, so the open #4859 posture lands as one verb change; the branch
 you hold across many dispatches is a long TOCTOU window, and the verbs re-gate it by
 construction — no content is cached across a dispatch boundary; every dispatch re-fetches.
-**§CAP — capability set:** shell in one epic worktree, repo-scoped token, branch push, PR open,
+**§CAP — capability set:** shell in one tree, repo-scoped token, branch push, PR open,
 and dispatch — it may spawn implementer and evaluator subagents (fresh forks, `skills:` preload;
 subagents inherit nothing). No merge, no queue, no release, no label.
 
 ## 1 — Claim the epic, prove the ground
 
 Claim and lane mechanics are `build`'s verbs, reused: `fabrika build claim <epic>` then
-`fabrika build tree --require-clean` in the **epic worktree the spawner provisioned** — per the
-worktree ruling (#4934): one worktree per epic run, every subagent inside it, never the primary
-checkout, never a per-subagent throwaway tree. Then:
+`fabrika build tree --require-clean`. **One tree for the whole run** — every subagent you dispatch
+works in the tree you are in, never its own. Where that tree sits is the operator's call, not this
+skill's (#5386). Then:
 
 ```bash
 fabrika epic open 4300
@@ -35,8 +35,8 @@ fabrika epic open 4300
 
 Done when it prints the run id: the epic is planned, its slice topology parses, the ledger
 exists. Re-run `fabrika build tree --issue 4300` before **every** git mutation — the cwd resets
-between shell calls, and a vanished worktree must stop you, not demote you to the primary (#3744,
-#3837). Cut the one branch: `fabrika build branch 4300 --slug checkout-totals`.
+between shell calls, so the tree you proved is not the tree you are standing in until you prove it
+again (#3837). Cut the one branch: `fabrika build branch 4300 --slug checkout-totals`.
 
 ## 2 — Ask, never infer: the tick loop
 
@@ -54,8 +54,8 @@ cannot name refuses rather than guesses — that refusal is the ledger's reason 
 ## 3 — Dispatch a fresh implementer per commit
 
 Per `dispatch-slice`: spawn a **new** subagent (fork = the fresh-context guarantee; ruled, #4891)
-into this worktree, carrying only what is written down (H2): the dispatch brief `fabrika epic
-brief 4300 --slice C3` prints — slice contract, branch, worktree path, handoff-note path. The
+into this tree, carrying only what is written down (H2): the dispatch brief `fabrika epic
+brief 4300 --slice C3` prints — slice contract, branch, tree path, handoff-note path. The
 brief tells the agent to ground the contract itself, never to trust you (#4133). Record the
 dispatch: `fabrika epic record 4300 --event slice-dispatched --slice C3`.
 

@@ -60,7 +60,7 @@ matching rubric file to each class's slice: code → [rubrics/code.md](rubrics/c
 any prose surface: apply **fabrika's** shared writing rubric skill verbatim, never v1's copy (ADR
 0238); the doc rubric's prose-craft line is the fallback until it lands.
 
-**No class re-executes what CI enforces** — a local re-run can report another worktree's cached
+**No class re-executes what CI enforces** — a local re-run can report another checkout's cached
 green as this PR's (#4106). The code class's execution evidence is the structural CI-at-head read,
 refusing incomplete enumerations:
 

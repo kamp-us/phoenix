@@ -68,7 +68,7 @@ const open = leafCommand(
 ).pipe(
 	Command.withShortDescription("Open or resume an epic run and print its state."),
 	Command.withDescription(
-		'Open or resume the run: parse the epic\'s slice topology, create the nonce-keyed run ledger if absent, print run state. Prints {"answer":"opened","epic":n,"run":"<epic>-<nonce>","slices":[…],"order":[…],"resumed":false}; a ledger already at this key answers "resumed":true and the run picks up where it left off. Runs the tree and claim assertions only — never the lane branch, because this verb precedes `fabrika build branch`. Exits 4 (no parseable planned ledger or "## Dependencies" block — "no parseable slices" is never "no slices"), 7 (the epic or a named child is proven absent or closed), 10 (the issue is not a type:epic), 11 (the epic, a child or the ledger path could not be read or created), 12 (not in a linked worktree), 15 (this session does not hold the epic\'s claim), 21 (a ledger exists at this key and holds unnameable state). Example: fabrika epic open 4300',
+		'Open or resume the run: parse the epic\'s slice topology, create the nonce-keyed run ledger if absent, print run state. Prints {"answer":"opened","epic":n,"run":"<epic>-<nonce>","slices":[…],"order":[…],"resumed":false}; a ledger already at this key answers "resumed":true and the run picks up where it left off. Runs the tree and claim assertions only — never the lane branch, because this verb precedes `fabrika build branch`. Exits 4 (no parseable planned ledger or "## Dependencies" block — "no parseable slices" is never "no slices"), 7 (the epic or a named child is proven absent or closed), 10 (the issue is not a type:epic), 11 (the epic, a child or the ledger path could not be read or created), 15 (this session does not hold the epic\'s claim), 21 (a ledger exists at this key and holds unnameable state). Example: fabrika epic open 4300',
 	),
 );
 
@@ -81,7 +81,7 @@ const next = leafCommand(
 ).pipe(
 	Command.withShortDescription("The one next action for this run."),
 	Command.withDescription(
-		`The state relay: ledger + git graph folded into exactly one next action. Prints one JSON object whose "action" is dispatch-slice | evaluate-slice | retry-slice | escalate-slice | open-pr | done | halted. Reads no GitHub beyond the lane guard, spawns nothing, judges nothing. The two retry breakers are its arithmetic and are never summed: the fail axis caps at ${FAIL_AXIS_CAP}, the dead axis at ${DEAD_AXIS_CAP}; escalate-slice is an ANSWER on exit 0, not the 23 refusal. Exits 11 (the ledger or the graph could not be read), 12/14/15 (the lane guard's refusals), 20 (no ledger at this run's key — run "fabrika epic open <n>" first), 21 (the ledger holds unnameable state). Example: fabrika epic next 4300`,
+		`The state relay: ledger + git graph folded into exactly one next action. Prints one JSON object whose "action" is dispatch-slice | evaluate-slice | retry-slice | escalate-slice | open-pr | done | halted. Reads no GitHub beyond the lane guard, spawns nothing, judges nothing. The two retry breakers are its arithmetic and are never summed: the fail axis caps at ${FAIL_AXIS_CAP}, the dead axis at ${DEAD_AXIS_CAP}; escalate-slice is an ANSWER on exit 0, not the 23 refusal. Exits 11 (the ledger or the graph could not be read), 14/15 (the lane guard's refusals), 20 (no ledger at this run's key — run "fabrika epic open <n>" first), 21 (the ledger holds unnameable state). Example: fabrika epic next 4300`,
 	),
 );
 
@@ -117,7 +117,7 @@ const record = leafCommand(
 ).pipe(
 	Command.withShortDescription("Append one event to the run ledger."),
 	Command.withDescription(
-		'Append one closed-vocabulary event to the run ledger, append-only, and read the tail back. Prints {"answer":"recorded","seq":n,"event":"…","slice":"…"}. The HEAD SHA is SELF-CAPTURED into slice-dispatched and slice-landed — a caller-supplied SHA would reopen the self-report hole this group closes — so the answer omits it and the read-back proves it from the artifact. Exits 8 (the append could not be proven — UNKNOWN), 9 (the tail does not read back), 10 (--event off-enum, --slice unknown to the run, or the event contradicts derived state), 11 (a required read failed), 12/14/15 (the lane guard\'s refusals), 20 (no ledger at this run\'s key), 21 (unnameable ledger state), 23 (the slice\'s breaker is at cap — only breaker-tripped or run-halted). Example: fabrika epic record 4300 --event slice-dispatched --slice C2',
+		'Append one closed-vocabulary event to the run ledger, append-only, and read the tail back. Prints {"answer":"recorded","seq":n,"event":"…","slice":"…"}. The HEAD SHA is SELF-CAPTURED into slice-dispatched and slice-landed — a caller-supplied SHA would reopen the self-report hole this group closes — so the answer omits it and the read-back proves it from the artifact. Exits 8 (the append could not be proven — UNKNOWN), 9 (the tail does not read back), 10 (--event off-enum, --slice unknown to the run, or the event contradicts derived state), 11 (a required read failed), 14/15 (the lane guard\'s refusals), 20 (no ledger at this run\'s key), 21 (unnameable ledger state), 23 (the slice\'s breaker is at cap — only breaker-tripped or run-halted). Example: fabrika epic record 4300 --event slice-dispatched --slice C2',
 	),
 );
 
@@ -148,7 +148,7 @@ const brief = leafCommand(
 ).pipe(
 	Command.withShortDescription("The dispatch brief for one slice."),
 	Command.withDescription(
-		"The dispatch brief for one slice, emitted through the registered slice-handoff wire format: ## Slice (the child's acceptance criteria verbatim), ## Ground (worktree, branch, base SHA, the per-slice handoff path), ## Rules (byte-fixed text the format owns), and ## Fix-First with --retry. The document is NOT leak-scanned — ## Ground carries machine-local paths by construction, so a brief is consumed in-session and never posted. Exits 4 (the child's acceptance criteria are absent or malformed — no criterion is invented), 7 (the child issue is proven absent or closed), 10 (--slice unknown to this run, or --retry with no FAIL verdict on record), 11 (the ledger, the child issue or the git base could not be read), 12/14/15 (the lane guard's refusals), 20 (no ledger at this run's key), 21 (unnameable ledger state), 23 (the slice's breaker is at cap — escalate, do not dispatch). Example: fabrika epic brief 4300 --slice C2",
+		"The dispatch brief for one slice, emitted through the registered slice-handoff wire format: ## Slice (the child's acceptance criteria verbatim), ## Ground (tree, branch, base SHA, the per-slice handoff path), ## Rules (byte-fixed text the format owns), and ## Fix-First with --retry. The document is NOT leak-scanned — ## Ground carries machine-local paths by construction, so a brief is consumed in-session and never posted. Exits 4 (the child's acceptance criteria are absent or malformed — no criterion is invented), 7 (the child issue is proven absent or closed), 10 (--slice unknown to this run, or --retry with no FAIL verdict on record), 11 (the ledger, the child issue or the git base could not be read), 14/15 (the lane guard's refusals), 20 (no ledger at this run's key), 21 (unnameable ledger state), 23 (the slice's breaker is at cap — escalate, do not dispatch). Example: fabrika epic brief 4300 --slice C2",
 	),
 );
 
@@ -161,7 +161,7 @@ const landed = leafCommand(
 ).pipe(
 	Command.withShortDescription("Prove a slice's commit landed, from the git graph alone."),
 	Command.withDescription(
-		'Prove a slice\'s commit landed, from the git graph alone and NEVER from a subagent\'s report: HEAD moved since the slice\'s opening SHA, the old tip is an ancestor of the new HEAD, the tree is clean, and the commit is non-empty. Prints {"answer":"landed","slice":"…","commit":"…","parent":"…","files":n}. Exits 7 (the new commit changes zero files), 10 (the old tip is not an ancestor — history was rewritten under the run; a human decides), 11 (the ledger or git state could not be read), 12/14/15 (the lane guard\'s refusals), 13 (proven: the tree is dirty beside the new commit), 20 (no ledger at this run\'s key), 21 (unnameable ledger state), 22 (proven: HEAD is unchanged since the slice opened — a dead dispatch, distinct from a failed slice). Example: fabrika epic landed 4300 --slice C2',
+		'Prove a slice\'s commit landed, from the git graph alone and NEVER from a subagent\'s report: HEAD moved since the slice\'s opening SHA, the old tip is an ancestor of the new HEAD, the tree is clean, and the commit is non-empty. Prints {"answer":"landed","slice":"…","commit":"…","parent":"…","files":n}. Exits 7 (the new commit changes zero files), 10 (the old tip is not an ancestor — history was rewritten under the run; a human decides), 11 (the ledger or git state could not be read), 14/15 (the lane guard\'s refusals), 13 (proven: the tree is dirty beside the new commit), 20 (no ledger at this run\'s key), 21 (unnameable ledger state), 22 (proven: HEAD is unchanged since the slice opened — a dead dispatch, distinct from a failed slice). Example: fabrika epic landed 4300 --slice C2',
 	),
 );
 
@@ -179,7 +179,7 @@ const sliceDiff = leafCommand(
 ).pipe(
 	Command.withShortDescription("The unpushed slice commit's diff against its first parent."),
 	Command.withDescription(
-		"The unpushed commit's unified diff against its first parent, served from the local object store exactly as git show gives it — no push, no CI dependency, no draft PR. Completeness is the object store's: a commit that resolves serves in full or the read fails. Runs the TREE assertion only — an evaluator holds no claim, it reads. Exits 7 (the diff is empty — nothing to review, ADR 0092), 10 (--commit is not 7–40 lowercase hex), 11 (the git read failed), 12 (proven: not in a linked worktree), 24 (proven: the commit is not in this branch's local graph). Example: fabrika epic slice-diff 4300 --commit 8c1f2a9d",
+		"The unpushed commit's unified diff against its first parent, served from the local object store exactly as git show gives it — no push, no CI dependency, no draft PR. Completeness is the object store's: a commit that resolves serves in full or the read fails. Runs the TREE assertion only — an evaluator holds no claim, it reads. Exits 7 (the diff is empty — nothing to review, ADR 0092), 10 (--commit is not 7–40 lowercase hex), 11 (the git read failed), 24 (proven: the commit is not in this branch's local graph). Example: fabrika epic slice-diff 4300 --commit 8c1f2a9d",
 	),
 );
 
@@ -211,7 +211,7 @@ const verdict = leafCommand(
 ).pipe(
 	Command.withShortDescription("Record one slice verdict, bound to its commit SHA."),
 	Command.withDescription(
-		'Record one slice verdict from the body on STDIN, bound to the commit SHA in the local graph — content-addressed, so any amend or rebase makes the old verdict unbindable rather than stale. Prints {"answer":"recorded","slice":"…","polarity":"PASS","commit":"…","seq":n}. The recorded marker is composed by the shared verdict-marker format under the namespace slice:<id>, its clause the body\'s first line, which is what next injects as Fix-First. Exits 3 (stdin held nothing), 8 (the append could not be proven), 9 (the tail does not read back), 10 (polarity off-enum, or --commit is not the slice\'s landed commit), 11 (a required read failed), 12/14/15 (the lane guard\'s refusals), 20 (no ledger at this run\'s key), 21 (unnameable ledger state), 23 (the slice\'s breaker is at cap), 24 (the commit is not in the local graph). Example: fabrika epic verdict 4300 --slice C2 --commit 8c1f2a9d --polarity FAIL < findings.md',
+		'Record one slice verdict from the body on STDIN, bound to the commit SHA in the local graph — content-addressed, so any amend or rebase makes the old verdict unbindable rather than stale. Prints {"answer":"recorded","slice":"…","polarity":"PASS","commit":"…","seq":n}. The recorded marker is composed by the shared verdict-marker format under the namespace slice:<id>, its clause the body\'s first line, which is what next injects as Fix-First. Exits 3 (stdin held nothing), 8 (the append could not be proven), 9 (the tail does not read back), 10 (polarity off-enum, or --commit is not the slice\'s landed commit), 11 (a required read failed), 14/15 (the lane guard\'s refusals), 20 (no ledger at this run\'s key), 21 (unnameable ledger state), 23 (the slice\'s breaker is at cap), 24 (the commit is not in the local graph). Example: fabrika epic verdict 4300 --slice C2 --commit 8c1f2a9d --polarity FAIL < findings.md',
 	),
 );
 
@@ -224,7 +224,7 @@ const status = leafCommand(
 ).pipe(
 	Command.withShortDescription("The whole run folded from the ledger and the live graph."),
 	Command.withDescription(
-		"The whole run folded, derived fresh from the ledger and the live graph: per-slice state (pending | dispatched | landed | passed | retrying | escalated | dead-dispatch), each verdict four-valued against the graph (current | fail | none | unbindable — an unbindable verdict is surfaced, never dropped and never rendered as current), both per-slice counters, and the run counters. This fold is the handoff artifact: a successor session resumes from it and the ledger, not from anyone's narrative. Exits 11, 12/14/15, 20, 21 — triggers exactly as in `fabrika epic next`. Example: fabrika epic status 4300",
+		"The whole run folded, derived fresh from the ledger and the live graph: per-slice state (pending | dispatched | landed | passed | retrying | escalated | dead-dispatch), each verdict four-valued against the graph (current | fail | none | unbindable — an unbindable verdict is surfaced, never dropped and never rendered as current), both per-slice counters, and the run counters. This fold is the handoff artifact: a successor session resumes from it and the ledger, not from anyone's narrative. Exits 11, 14/15, 20, 21 — triggers exactly as in `fabrika epic next`. Example: fabrika epic status 4300",
 	),
 );
 

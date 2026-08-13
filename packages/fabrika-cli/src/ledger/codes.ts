@@ -7,9 +7,9 @@
  *   tables to keep level. `ALIGNED_GROUPS` records the claim under `BUILD_SEATS` — *not*
  *   `SHARED_SEATS`, which omits `BAD_SECTIONS`: three verbs here seat `4`, so under `SHARED_SEATS`
  *   the checker would report `4` as a private code colliding with the base.
- * - `12`–`19` are `build`'s, **re-exported verbatim**, because this group asserts the identical facts
- *   (this process is in a linked worktree; this session holds this issue's claim) and a caller driving
- *   both in one sweep must read one meaning for each. The re-export is selective and stops at `19`:
+ * - `13`–`19` are `build`'s, **re-exported verbatim**, because this group asserts the identical fact
+ *   (this session holds this issue's claim) and a caller driving both in one sweep must read one
+ *   meaning for each. `12` is not among them: it is `build`'s retired seat. The re-export stops at `19`:
  *   `13`, `14`, `16`, `17`, `18` and `19` are **never reached here** — this skill declares no
  *   `--require-clean` flag, holds no lane branch, pushes nothing, runs no validation and derives no
  *   readiness verdict — but carrying them keeps those seats occupied so a later verb here cannot
@@ -32,7 +32,6 @@ export {
 	DIRTY_TREE,
 	EMPTY_STDIN,
 	LEAKED_PATH,
-	NOT_A_WORKTREE,
 	OFF_VOCABULARY,
 	PRECONDITION_UNKNOWN,
 	READBACK_MISMATCH,
@@ -44,7 +43,7 @@ export {
 	ZERO_SCOPE,
 } from "../build/codes.ts";
 
-/** Proven: the worktree's base is behind `origin/main` — a plan derived here is derived on stale ground. */
+/** Proven: the tree's base is behind `origin/main` — a plan derived here is derived on stale ground. */
 export const STALE_GROUND = 20;
 /** Proven: the epic body moved — the recomputed digest differs from `--body-digest`. */
 export const EPIC_MOVED = 21;

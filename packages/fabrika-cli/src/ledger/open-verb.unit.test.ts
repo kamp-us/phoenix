@@ -1,11 +1,10 @@
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {comments, LINKED, PRIMARY} from "../build/fixtures.test-support.ts";
+import {comments, GIT_DIRS} from "../build/fixtures.test-support.ts";
 import {errOut, fakeFs, fakeShell, okOut} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {
 	CLAIM_NOT_MINE,
-	NOT_A_WORKTREE,
 	OFF_VOCABULARY,
 	PRECONDITION_UNKNOWN,
 	REGION_UNRESOLVABLE,
@@ -43,7 +42,7 @@ const GROUND: ReadonlyArray<readonly [RegExp, ExecResult]> = [
 
 const CLEAN: ReadonlyArray<readonly [RegExp, ExecResult]> = [
 	[EPIC_READ, epic()],
-	[TREE, LINKED],
+	[TREE, GIT_DIRS],
 	...CLAIMED,
 	...GROUND,
 	[SUBS, subIssues()],
@@ -210,15 +209,19 @@ describe("runOpen", () => {
 		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
 	});
 
-	it("refuses the primary checkout", async () => {
-		const {outcome} = await run([[EPIC_READ, epic()], [TREE, PRIMARY], ...CLEAN.slice(2)]);
-		expect(outcome.code).toBe(NOT_A_WORKTREE);
+	it("refuses an unreadable tree root on 11 — the run directory is UNKNOWN", async () => {
+		const {outcome} = await run([
+			[EPIC_READ, epic()],
+			[TREE, errOut("fatal: not a git repository")],
+			...CLEAN.slice(2),
+		]);
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
 	});
 
 	it("refuses when this session does not hold the claim", async () => {
 		const {outcome} = await run([
 			[EPIC_READ, epic()],
-			[TREE, LINKED],
+			[TREE, GIT_DIRS],
 			[
 				/^gh api --paginate repos\/o\/r\/issues\/4300\/comments/,
 				comments({id: 1, body: "nothing here"}),

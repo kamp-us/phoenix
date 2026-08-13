@@ -11,7 +11,15 @@ import {
 	WRONG_LANE,
 	ZERO_SCOPE,
 } from "./codes.ts";
-import {comments, HEAD, issue, LANE_UUID, LINKED, marker, NONCE} from "./fixtures.test-support.ts";
+import {
+	comments,
+	GIT_DIRS,
+	HEAD,
+	issue,
+	LANE_UUID,
+	marker,
+	NONCE,
+} from "./fixtures.test-support.ts";
 
 const REV_PARSE = /^git rev-parse --path-format=absolute/;
 const BRANCH = /^git rev-parse --abbrev-ref HEAD$/;
@@ -27,7 +35,7 @@ const LINT = /^pnpm lint:worktree$/;
 const LANE = `build/4312-editor-focus-loss-${NONCE}`;
 
 const LANE_OK: ReadonlyArray<readonly [RegExp, ExecResult]> = [
-	[REV_PARSE, LINKED],
+	[REV_PARSE, GIT_DIRS],
 	[BRANCH, okOut(`${LANE}\n`)],
 	[ISSUE, issue()],
 	[COMMENTS, comments({id: 1, body: marker("s-9f2e", LANE_UUID)})],
@@ -186,7 +194,7 @@ describe("runCheck", () => {
 
 	it("refuses a branch that is not this lane's on 14", async () => {
 		const out = await run([
-			[REV_PARSE, LINKED],
+			[REV_PARSE, GIT_DIRS],
 			[BRANCH, okOut("main\n")],
 		]);
 		expect(out.code).toBe(WRONG_LANE);

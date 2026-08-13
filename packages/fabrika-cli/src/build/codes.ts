@@ -4,7 +4,7 @@
  *
  * **The overlap with `report` is re-exported, never re-typed** — the discipline `review/codes.ts`
  * states in full: an aligning group *imports* the base's constant, so a drift is unrepresentable
- * rather than merely detectable. This group shares nine seats over `3`-`11` and adds its own `12`-`21`
+ * rather than merely detectable. This group shares nine seats over `3`-`11` and adds its own `13`-`21`
  * for facts about the lane — the tree, the claim, the push, the validators, and the two admission
  * axes — that no writing verb has.
  *
@@ -48,8 +48,12 @@ export const OFF_VOCABULARY = REPORT_CLASSIFIED;
 /** A required read or validator execution failed — nothing was written, no outcome is proven. */
 export const PRECONDITION_UNKNOWN = REPORT_PRECONDITION_UNKNOWN;
 
-/** Proven: this process is not in a linked worktree (the primary checkout, or no worktree at all). */
-export const NOT_A_WORKTREE = 12;
+/**
+ * `12` is a **retired seat, deliberately left empty.** It was "not in a linked worktree", and the
+ * 2026-08-13 ruling on #5386 dropped fabrika's opinion on where a lane runs. Nothing is renumbered
+ * into it: a reader of an old transcript must not find `12` meaning something new.
+ */
+
 /** Proven: the tree was dirty at a `--require-clean` open. An unauthored hunk is not ours (#2666). */
 export const DIRTY_TREE = 13;
 /** Proven: the checked-out branch does not belong to this lane's claim (the lane-identity rule). */

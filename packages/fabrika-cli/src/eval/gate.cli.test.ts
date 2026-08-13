@@ -161,7 +161,7 @@ describe("fabrika eval gate, watched failing", {timeout: SUBPROCESS_TEST_TIMEOUT
 		expect(run.code).toBe(0);
 		expect(run.stdout).toContain("graded: REPORTED, NOT ENFORCED");
 		expect(run.stdout).toContain("a measurement is owed");
-		expect(run.stdout).toContain("plain, non-worktree session");
+		expect(run.stdout).toContain("plain session");
 		expect(run.stdout).toContain("gate: NOT FULLY MEASURED");
 	});
 

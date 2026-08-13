@@ -16,7 +16,7 @@
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {badNumber} from "../build/target.ts";
-import {assertGround} from "../build/worktree.ts";
+import {assertGround} from "../build/tree.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {COMMIT_NOT_IN_GRAPH, OFF_VOCABULARY, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {resolveCommit, showDiff} from "./graph.ts";

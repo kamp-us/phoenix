@@ -8,12 +8,12 @@ it matters.
 
 ```
 The DEVELOPMENT.md quickstart says two steps but setup now needs three (the .env.local overlay
-landed last week). Also the why-we-use-worktrees rationale paragraph appears in three places and
+landed last week). Also the why-one-branch-per-lane rationale paragraph appears in three places and
 they are drifting.
 
 ### Acceptance criteria
 - [ ] the quickstart matches the real three-step setup
-- [ ] the worktree rationale has exactly one home, pointed to from the other two places
+- [ ] the one-branch-per-lane rationale has exactly one home, pointed to from the other two places
 ```
 
 ## DEVELOPMENT.md (excerpt, as read in your tree)
@@ -24,23 +24,23 @@ they are drifting.
 2. pnpm dev
 
 ## Parallel lanes
-We build in linked worktrees because parallel agents sharing one checkout corrupt each other's
-index; a worktree gives each lane its own tree over one object store.
+We give each lane its own branch because parallel agents sharing one branch corrupt each other's
+index; the branch name carries the lane nonce, so ownership is derivable.
 ```
 
 ## .patterns/build-lanes.md (excerpt, as read in your tree)
 
 ```
-We build in linked worktrees because parallel agents sharing one checkout corrupt each other's
-index; a worktree gives each lane its own tree over one object store. Lanes are provisioned by
+We give each lane its own branch because parallel agents sharing one branch corrupt each other's
+index; the branch name carries the lane nonce, so ownership is derivable. Lanes are provisioned by
 the spawner.
 ```
 
 ## .patterns/agent-isolation.md (excerpt, as read in your tree)
 
 ```
-We build in linked worktrees because parallel agents sharing one checkout clobber each other;
-each lane gets its own tree over one object store.
+We give each lane its own branch because parallel agents sharing one branch clobber each other;
+each lane is identified by the nonce in its branch name.
 ```
 
 ## The real setup, per the issue's reporter (fixture ground truth)

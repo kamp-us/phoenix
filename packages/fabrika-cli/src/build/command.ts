@@ -84,9 +84,9 @@ const tree = leafCommand(
 		);
 	}),
 ).pipe(
-	Command.withShortDescription("Prove the ground is a linked worktree, clean and this lane's."),
+	Command.withShortDescription("Prove the ground is clean and this lane's, wherever it sits."),
 	Command.withDescription(
-		"Prove the ground: a linked worktree, optionally clean, optionally this lane's. Prints the tree root's absolute path on stdout. Verifies and NEVER provisions — it creates, locks, unlocks and removes nothing (the spawner owns the tree's lifecycle). Exits 11 (with --issue: the claim state could not be read — the lane is UNKNOWN), 12 (proven: not in a linked worktree), 13 (proven: uncommitted changes at a --require-clean open), 14 (proven: the checked-out branch does not carry this claim's nonce), 15 (proven: the claim on --issue is foreign). Example: fabrika build tree --require-clean",
+		"Prove the ground: optionally clean, optionally this lane's. Where the tree sits is not asserted — isolation is the operator's call, not fabrika's. Prints the tree root's absolute path on stdout. Reads and NEVER repairs — it cleans, creates and removes nothing. Exits 11 (the tree root could not be read, or with --issue the claim state could not be read — UNKNOWN), 13 (proven: uncommitted changes at a --require-clean open), 14 (proven: the checked-out branch does not carry this claim's nonce), 15 (proven: the claim on --issue is foreign). Example: fabrika build tree --require-clean",
 	),
 );
 
@@ -249,7 +249,7 @@ const branch = leafCommand(
 ).pipe(
 	Command.withShortDescription("Cut or resume the lane's branch off a freshly fetched base."),
 	Command.withDescription(
-		"Cut (or resume) the lane's nonce branch off a FRESHLY FETCHED base, never a stale local ref. Prints the checked-out branch name: build/<number>-<slug>-<nonce> in create mode, build/pr-<pr>-<nonce> in resume mode, where <nonce> is the first 8 hex of the current claim token's UUID. The branch name IS the lane record — there is no stamp file. Exits 7 (--resume's PR is proven absent, closed or merged), 10 (--slug is not kebab-case, exceeds 5 words, or is flag-shaped), 11 (the fetch failed, or the claim state could not be read), 12 (proven: not in a linked worktree), 15 (proven: the claim is foreign). Example: fabrika build branch 4312 --slug editor-focus-loss",
+		"Cut (or resume) the lane's nonce branch off a FRESHLY FETCHED base, never a stale local ref. Prints the checked-out branch name: build/<number>-<slug>-<nonce> in create mode, build/pr-<pr>-<nonce> in resume mode, where <nonce> is the first 8 hex of the current claim token's UUID. The branch name IS the lane record — there is no stamp file. Exits 7 (--resume's PR is proven absent, closed or merged), 10 (--slug is not kebab-case, exceeds 5 words, or is flag-shaped), 11 (the fetch failed, or the tree root or claim state could not be read), 15 (proven: the claim is foreign). Example: fabrika build branch 4312 --slug editor-focus-loss",
 	),
 );
 
@@ -298,7 +298,7 @@ const check = leafCommand(
 		"Run this surface's validators here, with the build cache bypassed.",
 	),
 	Command.withDescription(
-		'Run this surface\'s validators in this tree, with the build cache BYPASSED — a cache hit from another worktree has returned another tree\'s green. Prints {"verdict":"green","surface":"…","tree":"…","ran":[…]}; red and unknown print nothing. This verb predicts; ci.yml decides, and supersedes it where they disagree. Exits 7 (the diff against the base is empty — zero scope, ADR 0092), 10 (--surface is off-enum or provably mismatches the diff), 11 (a validator could not be executed, or the lane\'s claim could not be read — UNKNOWN, never green), 12 (not in a linked worktree), 14 (the checked-out branch is not this lane\'s), 15 (the lane\'s claim is held by another session), 18 (proven red). Example: fabrika build check --surface code',
+		'Run this surface\'s validators in this tree, with the build cache BYPASSED — a cache hit from another checkout has returned another tree\'s green. Prints {"verdict":"green","surface":"…","tree":"…","ran":[…]}; red and unknown print nothing. This verb predicts; ci.yml decides, and supersedes it where they disagree. Exits 7 (the diff against the base is empty — zero scope, ADR 0092), 10 (--surface is off-enum or provably mismatches the diff), 11 (the tree root could not be read, a validator could not be executed, or the lane\'s claim could not be read — UNKNOWN, never green), 14 (the checked-out branch is not this lane\'s), 15 (the lane\'s claim is held by another session), 18 (proven red). Example: fabrika build check --surface code',
 	),
 );
 
@@ -334,7 +334,7 @@ const push = leafCommand(
 ).pipe(
 	Command.withShortDescription("Push the lane's branch and confirm the remote ref moved."),
 	Command.withDescription(
-		"Publish the lane's branch and INDEPENDENTLY confirm the remote ref moved, by reading it back with git ls-remote. The whole report is stdout, single-stream, so `tail -1` of stdout on exit 0 is always `PUSH-VERDICT: MOVED`. Before pushing, the local head must CONTAIN the published remote head — on the force path too, where --force-with-lease proves nothing about this lane's own dropped commits. Exits 8 (pushed, but the remote ref could not be re-read — the outcome is UNKNOWN), 11 (the lane's claim could not be read, or containment could not be proven — nothing was pushed), 12 (not in a linked worktree), 14 (the checked-out branch is not this lane's), 15 (the claim is held by another session), 17 (proven: the remote ref did not move), 19 (refused before pushing: detached HEAD, or non-fast-forward without --force-with-lease), 23 (proven: the local head drops the remote head's commits — rebase, or pass --drop-remote-commits). Example: fabrika build push",
+		"Publish the lane's branch and INDEPENDENTLY confirm the remote ref moved, by reading it back with git ls-remote. The whole report is stdout, single-stream, so `tail -1` of stdout on exit 0 is always `PUSH-VERDICT: MOVED`. Before pushing, the local head must CONTAIN the published remote head — on the force path too, where --force-with-lease proves nothing about this lane's own dropped commits. Exits 8 (pushed, but the remote ref could not be re-read — the outcome is UNKNOWN), 11 (the tree root or the lane's claim could not be read, or containment could not be proven — nothing was pushed), 14 (the checked-out branch is not this lane's), 15 (the claim is held by another session), 17 (proven: the remote ref did not move), 19 (refused before pushing: detached HEAD, or non-fast-forward without --force-with-lease), 23 (proven: the local head drops the remote head's commits — rebase, or pass --drop-remote-commits). Example: fabrika build push",
 	),
 );
 
@@ -363,7 +363,7 @@ const pr = leafCommand(
 ).pipe(
 	Command.withShortDescription("Open the PR from the body on stdin, guarded and read back."),
 	Command.withDescription(
-		'Open the PR from the body on STDIN, refusing the known defect shapes before any write, with a read-back through normalizeForReadback. Prints {"answer":"opened",…}, or {"answer":"existing",…} on exit 0 when this head branch already has an open PR — an idempotent re-run is an answer, not a duplicate. Exits 3 (stdin held nothing), 4 ("## Deviations" missing or empty, or the closing-keyword line is absent, duplicated, mistargeted, or contradicts --partial), 5 (machine-local path), 6 (bare @ reference), 7 (issue proven absent or closed), 8 (the create failed — UNKNOWN; re-run), 9 (landed but does not read back), 10 (the body asserts a control-plane, type or priority classification — those verdicts are the gate\'s and triage\'s), 11 (a precondition read failed), 12 (not in a linked worktree), 14 (the head branch is not this lane\'s), 15 (this session does not hold the claim). Example: fabrika build pr 4312 < body.md',
+		'Open the PR from the body on STDIN, refusing the known defect shapes before any write, with a read-back through normalizeForReadback. Prints {"answer":"opened",…}, or {"answer":"existing",…} on exit 0 when this head branch already has an open PR — an idempotent re-run is an answer, not a duplicate. Exits 3 (stdin held nothing), 4 ("## Deviations" missing or empty, or the closing-keyword line is absent, duplicated, mistargeted, or contradicts --partial), 5 (machine-local path), 6 (bare @ reference), 7 (issue proven absent or closed), 8 (the create failed — UNKNOWN; re-run), 9 (landed but does not read back), 10 (the body asserts a control-plane, type or priority classification — those verdicts are the gate\'s and triage\'s), 11 (a precondition read failed), 14 (the head branch is not this lane\'s), 15 (this session does not hold the claim). Example: fabrika build pr 4312 < body.md',
 	),
 );
 

@@ -37,7 +37,6 @@ export const MESSAGES: LedgerMessages = {
 	notAnEpic: (epic) =>
 		`${VERB}: #${epic} is not a type:epic — refusing to declare a topology for it.`,
 	unreadable: (what, reason) => `${VERB}: cannot read ${what}: ${reason} — nothing was staged.`,
-	notAWorktree: `${VERB}: not in a linked worktree — the run manifest is unreachable.`,
 };
 
 export interface TopologyOptions extends OpenOptions {

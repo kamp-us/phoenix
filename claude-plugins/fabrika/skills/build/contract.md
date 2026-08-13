@@ -42,16 +42,16 @@ second answer to a gated question can contradict the gate (interface convention 
 - **A CI-rollup reader.** `ci.yml` owns redness; the review/ship stages read it. `build check` is
   an in-tree *prediction*, not a second verdict over the gate's question.
 - **A trivial-diff classifier.** v1's ships dormant by design (ADR 0120); nothing here consumes it.
-- **A worktree provisioner, locker, or reaper.** The 2026-08-03 amendment on #4707 measured the v1
-  worktree machinery as accretion (8 ADRs, 3,600 LOC, three reapers) and ruled the direction:
-  **the spawner owns the tree's lifecycle**. `build tree` verifies; it never creates, locks,
-  unlocks, or removes.
+- **Any opinion about where a lane runs.** No provisioner, no locker, no reaper — and no refusal
+  either. The 2026-08-13 ruling on #5386 dropped the whole isolation posture: fabrika runs wherever
+  it is spawned, and isolation is the operator's call, said in prose at spawn time. What survives
+  is location-neutral: don't leave a mess (`13`), don't work another lane's branch (`14`).
 
 ## Verb inventory
 
 | Verb | Purpose | Split test |
 |---|---|---|
-| `build tree` | prove the ground: a linked worktree, optionally clean, optionally this lane's | three git-derivable assertions — no judgment; *what to do on a refusal* (stop, report) stays in the skill |
+| `build tree` | prove the ground: optionally clean, optionally this lane's | two git-derivable assertions — no judgment; *what to do on a refusal* (stop, report) stays in the skill |
 | `build pick` | the ranked candidate pool: `status:triaged` + `ready-for:agent` + unassigned, paginated | a label/assignee filter over a paged listing — no judgment; the *choice* among candidates stays in the skill |
 | `build eligible` | one issue's dependency gate: `eligible` / blocked-by-named-edge / UNKNOWN | derivable entirely from the parent ledger's `## Dependencies` and issue states |
 | `build claim` | race the earliest-authorized claim on an issue; win, or name the winner | a deterministic race protocol; *what to do on a loss* stays in the skill |
@@ -239,7 +239,7 @@ range, exactly as `triage/codes.ts` itself states for `adr`.
 | `9` | the write landed but the read-back does not match; the artifact exists and needs a human |
 | `10` | a value off its closed vocabulary, or a classification claim where none is permitted (a non-kebab slug, an off-enum surface, a §CP claim in a body) — a semantic refusal, never a malformed-flag usage error, which is `1` |
 | `11` | a required read or validator execution failed — nothing was written, no outcome is proven |
-| `12` | proven: this process is not in a linked worktree (the primary checkout, or no worktree at all) |
+| `12` | **retired, left empty** — it meant "not in a linked worktree" until the 2026-08-13 ruling on #5386 dropped fabrika's isolation opinion; nothing is renumbered into it |
 | `13` | proven: the tree was dirty at a `--require-clean` open |
 | `14` | proven: the checked-out branch does not belong to this lane's claim |
 | `15` | proven: this session does not hold the claim — lost, foreign, or none exists at all; the detail is on stderr |
@@ -276,17 +276,14 @@ fabrika build tree [--require-clean] [--issue <n>]
 | `--issue` | integer | no | — | additionally prove the checked-out branch carries this claim's nonce — the pre-mutation posture |
 
 **Output** — machine. One line, the tree root's absolute path, newline-terminated. This verb
-**verifies and never provisions**: it creates nothing, locks nothing, removes nothing — the
-spawner owns the tree's lifecycle (the 2026-08-03 amendment on #4707), and a verifier that could
-also repair would be the self-provision path the incident record closes.
+**reads and never repairs**: it creates nothing, cleans nothing, removes nothing. It also asserts
+nothing about *where* the tree is — that is the operator's call, not fabrika's (#5386).
 
-The three assertions, each proven from git state alone:
+The two assertions, each proven from git state alone:
 
-1. **A linked worktree** — the git dir and the common dir differ. The primary checkout, or no
-   repository at all, is `12`.
-2. **Clean at open** (`--require-clean`) — any uncommitted change is `13`. A fresh tree carrying
+1. **Clean at open** (`--require-clean`) — any uncommitted change is `13`. A fresh tree carrying
    an unauthored hunk is not yours to keep *or* to clean (#2666).
-3. **This lane's branch** (`--issue`) — the checked-out branch parses as a lane branch whose
+2. **This lane's branch** (`--issue`) — the checked-out branch parses as a lane branch whose
    number is `--issue` and whose nonce matches this session's confirmed claim (the lane-identity
    rule, defined in `build branch`); a foreign, wrong-number, or nonce-less branch is `14`. No
    stamp file exists to check: ownership is derivable, not recorded.
@@ -295,8 +292,7 @@ The three assertions, each proven from git state alone:
 
 | Code | Trigger |
 |---|---|
-| `11` | with `--issue`: the claim state could not be read — the lane is UNKNOWN |
-| `12` | proven: not in a linked worktree (the primary checkout, or outside any repository) |
+| `11` | the tree root could not be read, or with `--issue` the claim state could not be read — UNKNOWN |
 | `13` | proven: uncommitted changes present at a `--require-clean` open |
 | `14` | proven: the checked-out branch does not carry this claim's nonce |
 | `15` | proven: the claim on `--issue` is foreign |
@@ -305,7 +301,7 @@ The three assertions, each proven from git state alone:
 
 | Message (stderr) | Code | Kind |
 |---|---|---|
-| `build tree: this is the primary checkout, not a linked worktree — stop; never build here.` | 12 | refusal |
+| `build tree: cannot read the tree root: <reason> — the ground is UNKNOWN.` | 11 | refusal |
 | `build tree: <n> uncommitted change(s) at open — refusing; an unauthored hunk is not yours to keep or clean.` | 13 | refusal |
 | `build tree: the checked-out branch "<name>" does not carry claim <token>'s nonce — wrong lane.` | 14 | refusal |
 | `build tree: cannot read the claim markers on #<n>: <reason> — the lane is UNKNOWN.` | 11 | refusal |
@@ -321,21 +317,20 @@ $ fabrika build tree --require-clean
 ```
 
 ```
-$ fabrika build tree
-build tree: this is the primary checkout, not a linked worktree — stop; never build here.
+$ fabrika build tree --require-clean
+build tree: 2 uncommitted change(s) at open — refusing; an unauthored hunk is not yours to keep or clean.
 $ echo $?
-12
+13
 ```
 
 **Grounding**
 
-- #3744 / #3594 / #4162 — work landing silently in the shared primary checkout; the refusal is
-  loud and terminal, and the skill re-runs this verb before every git mutation because the cwd
-  resets between shell calls.
 - #2666 — the dirty fresh tree; refused, never cleaned.
 - #4500 — eight trees under one stamp; the nonce comparison has no stamp to duplicate.
-- 2026-08-03 amendment on #4707 — spawner-owned lifecycle; this verb is the trap, not the
-  machinery.
+- #4162 — the cwd resets between shell calls, so the skill re-runs this verb before every git
+  mutation: a pass is a fact about this invocation and nothing later.
+- 2026-08-13 ruling on #5386 — fabrika holds no worktree opinion; `12` is retired and this verb
+  asserts nothing about where the tree sits.
 
 ---
 
@@ -857,7 +852,7 @@ head branch — `build push` publishes via that tracked upstream, so the PR upda
 name carries the *current* repair claim's nonce. Each repair run gets its own local branch, so a
 dead earlier lane can never pin this one (#4868's class). A closed or merged PR refuses (`7`).
 
-Preconditions, guarded identically to `build tree`: a linked worktree (`12`), a confirmed claim
+Preconditions, guarded identically to `build tree`: a readable tree root (`11`), a confirmed claim
 (`15` / `11`) — in create mode on `<number>`, in resume mode on the `--resume` PR's number, which
 is the number repair mode claims.
 
@@ -868,7 +863,6 @@ is the number repair mode claims.
 | `7` | `--resume`'s PR is proven absent, closed, or merged |
 | `10` | `--slug` is not kebab-case, exceeds 5 words, or is flag-shaped |
 | `11` | the fetch failed, or the claim state could not be read |
-| `12` | proven: not in a linked worktree |
 | `15` | proven: the claim on `<number>` is foreign |
 
 **Errors**
@@ -878,7 +872,6 @@ is the number repair mode claims.
 | `build branch: --slug "<value>" is not kebab-case (lowercase letters, digits, single hyphens, ≤5 words).` | 10 | refusal |
 | `build branch: cannot fetch <ref>: <reason> — refusing to cut a branch off a stale base.` | 11 | refusal |
 | `build branch: PR #<n> is proven closed or merged — nothing to resume.` | 7 | refusal |
-| `build branch: this is the primary checkout — refusing to branch here.` | 12 | refusal |
 | `build branch: #<n> is held by <token>, not this session.` | 15 | refusal |
 
 **Scope** — not a judging verb. It mutates only the current tree's HEAD and local refs.
@@ -1018,7 +1011,7 @@ the file-open level (#5304). Two facts hold that promise up:
 Per surface:
 
 - **code** — the exact CI commands (`pnpm typecheck`, `pnpm lint:worktree`), executed in this
-  tree **with the build cache bypassed** (turbo `--force`). A cache hit from another worktree
+  tree **with the build cache bypassed** (turbo `--force`). A cache hit from another checkout
   returned another tree's green three times in one session (#4106) and recurred on the review
   side (#4887); bypassing is cheaper than trusting a key that has already lied.
 - **prose** — changed markdown files: every relative link resolves against this tree; no
@@ -1051,7 +1044,7 @@ pattern to swallow `.yml` was considered and rejected, because it would claim `p
 validated a shell script (#5229). "Split the diff" is not offered as a remedy anywhere here: a lane
 cannot split a diff it has already written (#5301).
 
-Preconditions: a linked worktree (`12`), the lane's branch checked out (`14`).
+Preconditions: a readable tree root (`11`), the lane's branch checked out (`14`).
 
 **Exit status** (beyond the universal four)
 
@@ -1060,7 +1053,6 @@ Preconditions: a linked worktree (`12`), the lane's branch checked out (`14`).
 | `7` | the diff against the branch base is empty — nothing to validate, zero scope |
 | `10` | `--surface` is off-enum, or the diff contains none of the file classes that surface's validators open |
 | `11` | a validator could not be executed, a changed file could not be read for a reason other than absence, or the lane's claim could not be read — the verdict is UNKNOWN, never green |
-| `12` | proven: not in a linked worktree |
 | `14` | proven: the checked-out branch is not this lane's (lane-identity rule) |
 | `15` | proven: the lane's claim is held by another session |
 | `18` | proven red — the failing runner and its diagnostics are on stderr |
@@ -1181,7 +1173,7 @@ and the refusal is `11` — never `23`, which is a *proven* fact about two commi
 also why the read is a live `ls-remote` rather than a remote-tracking ref: a tracking ref a
 preceding fetch in the same lane already refreshed proves nothing about what is published.
 
-Preconditions: a linked worktree (`12`), the lane's branch (`14`).
+Preconditions: a readable tree root (`11`), the lane's branch (`14`).
 
 **Exit status** (beyond the universal four)
 
@@ -1189,7 +1181,6 @@ Preconditions: a linked worktree (`12`), the lane's branch (`14`).
 |---|---|
 | `8` | the push was attempted but the remote ref could not be re-read — the outcome is UNKNOWN (the matrix's `8`: an attempted write whose outcome cannot be proven) |
 | `11` | the lane's claim could not be read, or the remote head could not be made readable so containment is UNKNOWN — nothing was pushed |
-| `12` | proven: not in a linked worktree |
 | `14` | proven: the checked-out branch is not this lane's (lane-identity rule) |
 | `15` | proven: the lane's claim is held by another session — nothing was pushed |
 | `17` | proven: the remote ref did not move |
@@ -1290,7 +1281,6 @@ posts the literal string (#4683).
 | `9` | the PR landed but the read-back body does not match |
 | `10` | the body carries a control-plane (or type/priority) classification claim |
 | `11` | a precondition read failed |
-| `12` | proven: not in a linked worktree |
 | `14` | proven: the checked-out head branch is not this lane's |
 | `15` | proven: this session does not hold the claim |
 
@@ -1311,7 +1301,7 @@ posts the literal string (#4683).
 | `build pr: cannot read <what>: <reason> — nothing was written.` | 11 | refusal |
 | `build pr: #<n> is held by <token>, not this session.` | 15 | refusal |
 
-The `12`/`14` tree-precondition messages are `build tree`'s rows with the verb name substituted
+The `11`/`14` tree-precondition messages are `build tree`'s rows with the verb name substituted
 (shared conventions).
 
 **Scope** — one PR create against one issue. The head branch is the checked-out one; its nonce

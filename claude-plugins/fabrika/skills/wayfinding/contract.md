@@ -289,7 +289,7 @@ restated per verb because each verb's `0` names a different answer.
 [`src/report/codes.ts`](../../../../packages/fabrika-cli/src/report/codes.ts)**, not restated as
 numerals, so a drift is unrepresentable rather than merely detectable. `12`–`21` are the group's own
 and clear the base's occupied seats; they carry **no** cross-group uniqueness obligation, so
-`build`'s `12` and this group's `12` are two namespaces rather than a collision.
+`build`'s retired `12` seat and this group's `12` are two namespaces rather than a collision.
 
 **`10` is a deliberate gap**, exported as a `DELIBERATE_GAP` constant on the shipped `ui`
 precedent, which holds seat `3` the same way (`src/ui/codes.ts:29`,

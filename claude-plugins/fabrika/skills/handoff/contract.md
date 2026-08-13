@@ -83,7 +83,7 @@ is open can steer its receiver past the artifact — an extra heading, a sentenc
 known one, a "note from the maintainer" — and the receiver cannot tell the format's own words from
 someone else's. That is the injection defence the pack needs, and it is why the five sections are
 closed rather than merely expected. It cannot be *called*: its fields are a slice id, a branch and a
-worktree root, none of which a pack carries.
+tree root, none of which a pack carries.
 
 [`src/build/claim.ts`](../../../../packages/fabrika-cli/src/build/claim.ts) is the model for
 marker-based claiming and cannot be called either: `composeMarker` hardcodes the `build-claim:`
@@ -205,7 +205,7 @@ tolerated.
 row in [`src/wire/registry.ts`](../../../../packages/fabrika-cli/src/wire/registry.ts)
 (`producers: ["handoff"]`, `consumers: ["handoff"]`). The registry is the right home precisely
 because this artifact crosses the widest boundary in the corpus — one session to another that shares
-no memory, no worktree, and possibly no machine — and `WireRead<A>`'s three answers are what that
+no memory, no checkout, and possibly no machine — and `WireRead<A>`'s three answers are what that
 boundary needs: **a malformed pack must never read as an absent one**, or a successor concludes
 nobody handed off and starts over. The key is deliberately distinct from the shipped `slice-handoff`,
 a different format with an inverted posture.
@@ -300,7 +300,7 @@ followed immediately by `read` yields `drift: "none"`.
 
 <!-- anchor: READ-DERIVES-AGAINST-THE-PACKED-BRANCH --> **`read` re-derives rows 3–10 against the
 pack's own `git.branch`, never against the successor's `HEAD`.** A successor is by construction a
-different checkout — usually a fresh worktree sitting on the default branch — so deriving `git.head`
+different checkout — usually a fresh clone sitting on the default branch — so deriving `git.head`
 from `HEAD` would report the successor's own location as drift and mark ten rows moved on a
 perfectly current pack. So `read` resolves `<packed branch>`, `<packed branch>@{u}` and the
 merge-base against that ref, and `board.pull` is selected by the **packed** branch's head ref rather
@@ -404,7 +404,7 @@ grows, and it grows in the fail-closed direction. (`review-ui` renames its seat 
 condition is still "this document does not have the sections it must".)
 
 `12`–`15` are the group's own and clear the base's occupied seats; they carry **no** cross-group
-uniqueness obligation, so `build`'s `12 NOT_A_WORKTREE` and this group's `12` are two namespaces
+uniqueness obligation, so this group's `12` and `build`'s retired `12` seat are two namespaces
 rather than a collision. The governing rule is the shipped one at
 [`src/plan/codes.ts`](../../../../packages/fabrika-cli/src/plan/codes.ts): *import a code when two
 groups prove the same fact; allocate freely when they do not.* `build`'s `13 DIRTY_TREE` is the near
@@ -605,7 +605,7 @@ pack rather than inferring an empty field.
    until step 4.
 
 <!-- anchor: UNREACHABLE-WORK-IS-REFUSED --> **Why unreachability refuses rather than warns.** A
-successor is a fresh session in a fresh worktree: an unpushed commit and a modified tracked file are
+successor is a fresh session in a different checkout: an unpushed commit and a modified tracked file are
 both literally invisible to it. A pack whose `## Next act` points at work in that state is
 confidently wrong in the way #3330 is confidently wrong — a plausible record resting on state only
 the writing machine can see. **The remedy is the caller's, outside this group**, which commits and

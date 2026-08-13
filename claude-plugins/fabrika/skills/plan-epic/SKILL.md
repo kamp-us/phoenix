@@ -36,11 +36,11 @@ Source grounds *what is true of the code*; authority arrives only through the AC
 (ADR 0055).
 
 **§CAP — capability set:** a repo-scoped token, a claim on the epic, and direct reads inside **the
-epic's worktree**. Its write surface is: creating child issues, linking them as sub-issues, the
+epic's tree**. Its write surface is: creating child issues, linking them as sub-issues, the
 labels / milestone / assignee those children are born with, one PATCH of the epic body, and — on a
 re-plan only — **commenting on, unlinking and closing** a child it supersedes. Through `build note`
 it posts a successor note on the epic, and it may file a follow-up observation with `report`. It
-also appends one line to `.git/info/exclude` in the worktree so its run directory stays untracked. It cuts no branch, pushes nothing, opens no
+also appends one line to `.git/info/exclude` in this tree so its run directory stays untracked. It cuts no branch, pushes nothing, opens no
 PR, and writes no `status:triaged` — making a child pickable is the gate's, never yours.
 
 ## 1 — Claim the epic and prove the ground
@@ -62,9 +62,9 @@ label; the scope axis still binds, so an out-of-focus epic is still exit `20`. N
 `--override` to get past the audience axis — that is the fail-open convention the purpose exists to
 remove.
 
-Work in **the epic's worktree, never the primary checkout** (#4934, #4167): `12` and `13` end
-`STOPPED`. `build tree` is called **without** `--issue` — that flag proves the branch carries the
-claim's nonce, and this skill cuts no branch.
+Work wherever you were spawned; where that is, is the operator's call, not this skill's (#5386).
+`13` ends `STOPPED`. `build tree` is called **without** `--issue` — that flag proves the branch
+carries the claim's nonce, and this skill cuts no branch.
 
 Done when the claim answers `won`. **Read these codes off `build claim`, whose numbers above `11`
 are its own group's:** `15` is a proven loss (`BACKED-OFF`); `7` is a proven-absent or closed epic
@@ -225,8 +225,8 @@ with `report` and let the gate decide.
 
 ## §TERM — terminal vocabulary
 
-End as exactly one. **No case holds a branch or a checkout of its own**: the worktree is the
-spawner's, nothing is cut, nothing to push or remove. Release the claim with `fabrika build
+End as exactly one. **No case holds a branch or a checkout of its own**: nothing is cut, nothing to
+push or remove. Release the claim with `fabrika build
 release 4300` on every terminal reached **after step 1 answered `won`**; if it never did, you hold
 nothing. Where children were minted, every terminal below says so — a successor that cannot tell
 whether children exist re-mints them.
@@ -246,7 +246,7 @@ epic — so read each code off the command that produced it and never off this l
   was written to it.
 - `EPIC-MOVED` — `21` from `ledger draft` or `ledger write`: the epic body changed under the run.
   **A back-off, retryable** — nothing was written; re-open from step 2.
-- `GROUND-STALE` — `20` from `ledger open`: the worktree is proven behind `origin/main`. **A
+- `GROUND-STALE` — `20` from `ledger open`: the tree is proven behind `origin/main`. **A
   back-off, terminal here** — nothing read into a plan, nothing written, no children. Refreshing
   the tree is outside this skill's capabilities and is a fresh run.
 - `EPIC-NOT-ADMITTED` — `20` from **`build claim`**: proven not admitted on the scope axis. **A
@@ -277,7 +277,7 @@ epic — so read each code off the command that produced it and never off this l
   set — a half-minted epic with no topology and no plan in its body is a state a human has to
   reconcile — then state the one question and post it with `fabrika build note`.
 - `BACKED-OFF` — `15` at the claim: held by another lane. Nothing read, written, or released.
-- `STOPPED` — everything else that leaves the run UNKNOWN: `3`, `11`, `12`, an unrepairable `4`/`5`/`6`/`25`, a `10` you cannot
+- `STOPPED` — everything else that leaves the run UNKNOWN: `3`, `11`, an unrepairable `4`/`5`/`6`/`25`, a `10` you cannot
   repair, `13` from `build tree` (no `ledger` verb seats a `13`), a `15` after the claim was won, and any `1`, `126` or `127` from any verb.
   Post the state for a successor with `fabrika build note` **when you hold the claim**; otherwise
   report the code.
@@ -286,7 +286,7 @@ Any cross-lane signal is closed-vocabulary — kind + action + the branded ref, 
 receiver re-fetches from the artifact.
 
 <!-- anchor: RULED --> **Ruled, do not re-argue:** #4780 and #4693 (audience and born-assignment),
-#4934 (one worktree per epic), #4891 (the gate is not yours), ADR 0238 (fabrika calls no v1).
+#4934 (one tree per epic run), #4891 (the gate is not yours), ADR 0238 (fabrika calls no v1).
 
 <!-- anchor: MARKER-NOT-TERMINALITY --> **The enrichment marker locates the plan region, not its
 position** — a whole-line `<!-- fabrika:enriched … -->` match (#4866), so the plan may sit below the
@@ -308,7 +308,7 @@ fabrika installs into repos that are not phoenix. When-missing vocabulary: **fai
 | Must exist | Why this skill needs it | When missing |
 | --- | --- | --- |
 | A triaged `type:epic` issue | the subject of the plan | **fail-loud** — `ledger open` exits `7`/`10`; the run ends `EPIC-UNPLANNABLE`. |
-| A git worktree for this epic, and a reachable `origin/main` | the plan is grounded in source, and staleness is proven rather than assumed (#3330) | **fail-loud** — `12`/`13` end `STOPPED`; an unprovable freshness read is `11`, never "probably fresh". |
+| A git checkout of this repo, and a reachable `origin/main` | the plan is grounded in source, and staleness is proven rather than assumed (#3330) | **fail-loud** — `13` ends `STOPPED`; an unprovable freshness read is `11`, never "probably fresh". |
 | The label taxonomy: `type:*`, `p0`/`p1`/`p2`, `status:planned`, `ready-for:human`, `ready-for:agent` | every child is born carrying them; `POST .../labels` **creates** an unknown label rather than rejecting it (#4285) | **fail-loud** — `ledger child` exits `10` naming the absent label rather than minting it; taxonomy creation is the front door's. |
 | An open milestone, or a standing-lane exemption | every child needs a home; where the host repo enforces homing at its own labelling seam, this skill states the expectation and computes no second answer | **degrade** — an unhomed child reds at a homing guard where the repo has one, and nowhere where it does not. Pass `--milestone` unless the child is genuinely standing-lane work. |
 | `product-development-cycle.md` at the repo root | decides whether `**Containment:**` is required on a `type:feature` child | **degrade** — absent means containment is not required; an *unreadable* probe is `11`, never "absent". |

@@ -1,8 +1,8 @@
 /**
  * Opening the run's ground: the preconditions every `epic` verb shares, and the two files a run is.
  *
- * The preconditions are **`build`'s, guarded identically** — the imported lane guard's linked
- * worktree (`12`), lane branch (`14`) and held claim (`15`/`11`), run against the **epic's** number.
+ * The preconditions are **`build`'s, guarded identically** — the imported lane guard's lane branch
+ * (`14`) and held claim (`15`/`11`), run against the **epic's** number.
  * Two verbs are exempt by contract and say so at their call site: `epic slice-diff` runs the tree
  * assertion only (an evaluator holds no claim; it reads), and `epic open` runs tree + claim only,
  * because it precedes `build branch` in the loop and the lane branch may not exist yet.
@@ -19,7 +19,7 @@ import {requireClaim, requireSession} from "../build/claim.ts";
 import {nonceOf} from "../build/lane.ts";
 import {requireLane} from "../build/lane-guard.ts";
 import {resolveTargetRepo} from "../build/target.ts";
-import {assertGround} from "../build/worktree.ts";
+import {assertGround} from "../build/tree.ts";
 import {isRecord, parseJson} from "../io/json.ts";
 import {refuse, type VerbOutcome} from "../verb.ts";
 import {NO_RUN, PRECONDITION_UNKNOWN, UNNAMEABLE_STATE} from "./codes.ts";

@@ -1,6 +1,6 @@
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {LINKED} from "../build/fixtures.test-support.ts";
+import {GIT_DIRS} from "../build/fixtures.test-support.ts";
 import {errOut, fakeFs, fakeShell, okOut, once} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {
@@ -70,7 +70,7 @@ const happy = (
 	} = {},
 ): ReadonlyArray<readonly [RegExp, ExecResult]> => [
 	[/^gh api repos\/o\/r\/issues\/4300$/, epic()],
-	[/^git rev-parse --path-format=absolute/, LINKED],
+	[/^git rev-parse --path-format=absolute/, GIT_DIRS],
 	...CLAIMED,
 	[once(SUBS), subIssues({number: 4288, id: 42880})],
 	[once(CHILD), childIssue({number: 4288})],
@@ -153,7 +153,7 @@ describe("runSupersede", () => {
 		const {outcome} = await run(
 			[
 				[/^gh api repos\/o\/r\/issues\/4300$/, epic()],
-				[/^git rev-parse --path-format=absolute/, LINKED],
+				[/^git rev-parse --path-format=absolute/, GIT_DIRS],
 				...CLAIMED,
 				[SUBS, subIssues({number: 4301, id: 43010})],
 			],
@@ -166,7 +166,7 @@ describe("runSupersede", () => {
 	it("refuses a child that is already closed", async () => {
 		const {outcome} = await run([
 			[/^gh api repos\/o\/r\/issues\/4300$/, epic()],
-			[/^git rev-parse --path-format=absolute/, LINKED],
+			[/^git rev-parse --path-format=absolute/, GIT_DIRS],
 			...CLAIMED,
 			[SUBS, subIssues({number: 4288, id: 42880})],
 			[CHILD, childIssue({number: 4288, state: "closed"})],
@@ -217,7 +217,7 @@ describe("runSupersede", () => {
 	it("refuses when the sub-issue list could not be read", async () => {
 		const {outcome} = await run([
 			[/^gh api repos\/o\/r\/issues\/4300$/, epic()],
-			[/^git rev-parse --path-format=absolute/, LINKED],
+			[/^git rev-parse --path-format=absolute/, GIT_DIRS],
 			...CLAIMED,
 			[SUBS, errOut("gh: Bad Gateway (HTTP 502)")],
 		]);

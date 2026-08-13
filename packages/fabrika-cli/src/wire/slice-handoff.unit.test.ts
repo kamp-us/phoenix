@@ -6,7 +6,7 @@ const brief = (overrides: Partial<SliceHandoff> = {}): SliceHandoff => ({
 	id: sliceId("C1") as NonNullable<ReturnType<typeof sliceId>>,
 	issue: 4301,
 	criteria: ["- [ ] cart and invoice render through one totals module"],
-	worktree: "/work/lanes/epic-4300",
+	tree: "/work/lanes/epic-4300",
 	branch: branchName("build/4300-totals-rework-c1a4d6f8") as NonNullable<
 		ReturnType<typeof branchName>
 	>,

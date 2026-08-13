@@ -12,7 +12,7 @@
  * maintainer" — and the receiver has no way to tell the format's own words from someone else's. A
  * closed section set with byte-fixed rules text makes that unrepresentable rather than detectable.
  *
- * `## Ground`'s paths are machine-local by construction (a worktree root, a temp-dir handoff path),
+ * `## Ground`'s paths are machine-local by construction (a tree root, a temp-dir handoff path),
  * which is why a brief is consumed in-session and never posted: the leak scan the posting verbs run
  * would red on exactly the values this format exists to carry.
  */
@@ -44,7 +44,7 @@ export interface SliceHandoff {
 	readonly issue: number;
 	/** The slice's acceptance criteria, verbatim from the imported wire read. */
 	readonly criteria: NonEmptyReadonlyArray<string>;
-	readonly worktree: string;
+	readonly tree: string;
 	readonly branch: BranchName;
 	/** The SHA the slice opens at. */
 	readonly base: HeadSha;
@@ -77,7 +77,7 @@ export const emit = (handoff: SliceHandoff): string => {
 		"criteria:",
 		...handoff.criteria,
 		"## Ground",
-		`worktree: ${handoff.worktree}`,
+		`tree: ${handoff.tree}`,
 		`branch: ${handoff.branch}`,
 		`base: ${handoff.base}`,
 		`handoff: ${handoff.handoff}`,
@@ -230,10 +230,10 @@ export const read = (artifact: string): SliceHandoffRead => {
 	if (base === null) {
 		return malformed(`"${fields.get("base") ?? ""}" is not a base SHA`, "base");
 	}
-	const worktree = (fields.get("worktree") ?? "").trim();
+	const tree = (fields.get("tree") ?? "").trim();
 	const handoff = (fields.get("handoff") ?? "").trim();
-	if (worktree === "" || handoff === "") {
-		return malformed("the ground names no worktree or no handoff path", "worktree|handoff");
+	if (tree === "" || handoff === "") {
+		return malformed("the ground names no tree or no handoff path", "tree|handoff");
 	}
 	const fixFirst = fix === undefined ? null : trimmed(fix.lines).join(" ").trim();
 
@@ -243,7 +243,7 @@ export const read = (artifact: string): SliceHandoffRead => {
 			id,
 			issue: Number.parseInt(issueRaw, 10),
 			criteria: [head, ...rest],
-			worktree,
+			tree,
 			branch,
 			base,
 			handoff,
@@ -257,7 +257,7 @@ export const renderHandoff = (handoff: SliceHandoff): NonEmptyReadonlyArray<stri
 	`id\t${handoff.id}`,
 	`issue\t${handoff.issue}`,
 	...handoff.criteria.map((line) => `criteria\t${line}`),
-	`worktree\t${handoff.worktree}`,
+	`tree\t${handoff.tree}`,
 	`branch\t${handoff.branch}`,
 	`base\t${handoff.base}`,
 	`handoff\t${handoff.handoff}`,
@@ -300,7 +300,7 @@ export const parseFields = (fields: string): SliceHandoffFields => {
 	const issueRaw = (values.get("issue") ?? "").trim().replace(/^#/, "");
 	const branch = branchName(values.get("branch") ?? "");
 	const base = headSha(values.get("base") ?? "");
-	const worktree = (values.get("worktree") ?? "").trim();
+	const tree = (values.get("tree") ?? "").trim();
 	const handoffAt = (values.get("handoff") ?? "").trim();
 	const [head, ...rest] = criteria;
 	if (id === null) return {_tag: "Unusable", reason: "no C<n> slice id"};
@@ -308,8 +308,8 @@ export const parseFields = (fields: string): SliceHandoffFields => {
 	if (head === undefined) return {_tag: "Unusable", reason: "no acceptance criteria"};
 	if (branch === null) return {_tag: "Unusable", reason: "no branch name"};
 	if (base === null) return {_tag: "Unusable", reason: "no base SHA"};
-	if (worktree === "" || handoffAt === "") {
-		return {_tag: "Unusable", reason: "no worktree root or no handoff path"};
+	if (tree === "" || handoffAt === "") {
+		return {_tag: "Unusable", reason: "no tree root or no handoff path"};
 	}
 	const fixFirst = (values.get("fix-first") ?? "").trim();
 	return {
@@ -318,7 +318,7 @@ export const parseFields = (fields: string): SliceHandoffFields => {
 			id,
 			issue: Number.parseInt(issueRaw, 10),
 			criteria: [head, ...rest],
-			worktree,
+			tree,
 			branch,
 			base,
 			handoff: handoffAt,

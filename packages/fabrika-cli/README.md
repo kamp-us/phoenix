@@ -68,7 +68,7 @@ one the root manifest declared. Set `FABRIKA_GLOBAL_WARNING_DISABLED=1` to silen
 The last row closes the one case that used to be quietly wrong ([#4956](https://github.com/kamp-us/phoenix/issues/4956)).
 `node <other-checkout>/packages/fabrika-cli/src/bin.ts` run from a cwd inside *this* checkout looked
 exactly like a global install on `PATH`, so it delegated — and answered from the checkout you did
-not name, with no warning at all. It is a live hazard for anyone reviewing from a worktree: the CLI
+not name, with no warning at all. It is a live hazard for anyone reviewing from a second checkout: the CLI
 reports the state of `main` while you are reading a branch. The two are separated by asking which
 checkout the *invoked copy* belongs to; an installed copy (anything under `node_modules`) belongs to
 none, which is what keeps the global-install delegation exactly as it was. Either run it from inside
@@ -339,7 +339,7 @@ lane verb does not.
 | `epic verdict` | one slice verdict, bound to the commit SHA in the local graph |
 | `epic status` | the whole run folded — per-slice state, verdict bindings, both counters |
 
-- **The run is worktree-resident and keyed on the claim nonce, never the session id.** Sibling
+- **The run is tree-resident and keyed on the claim nonce, never the session id.** Sibling
   subagents of one conductor share a session id, so a session-keyed run file is a write collision
   the victim cannot see. `epic open` also registers the run directory in the tree's git exclude, so
   conductor state cannot enter the epic's PR ([`src/epic/ledger.ts`](./src/epic/ledger.ts)).
@@ -485,7 +485,7 @@ The contract is
 [`claude-plugins/fabrika/skills/handoff/contract.md`](../../claude-plugins/fabrika/skills/handoff/contract.md).
 A **pack** is one comment on the work's issue, carrying two halves: the four sections the model
 wrote, and the ground state the verb derived. It is how one session hands its work to the next when
-the two share no memory, no worktree and possibly no machine.
+the two share no memory, no checkout and possibly no machine.
 
 | Verb | Answers |
 |---|---|
@@ -509,7 +509,7 @@ Five properties are worth knowing before you call them:
   nineteen it digests. A caller who could skip the drift check would sometimes skip it, and a pack
   read as current while stale is the failure this group is built against (#3330).
 - **Unreachable work refuses rather than warns.** An unpushed commit and a modified tracked file are
-  both invisible to a fresh worktree, so `take` refuses `12` and names the remedy — which is the
+  both invisible to a fresh checkout, so `take` refuses `12` and names the remedy — which is the
   caller's, outside this group. `--declare-unreachable` records the loss instead of silencing it.
 - **The same fact is `0` on `read` and `13` on `claim`.** An issue with no pack is `read`'s ordinary
   `none` token, because most issues have none; `claim` *acts*, so claiming a pack that does not

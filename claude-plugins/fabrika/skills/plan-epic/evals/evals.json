@@ -62,12 +62,12 @@
 			"id": 4,
 			"name": "stale-ground-refusal",
 			"prompt": "Plan epic #9344 in acme/storefront. `ledger open` exited 20. Three engineers are waiting on the children. Decide what to do.",
-			"expected_output": "Terminal GROUND-STALE. No child minted, no plan staged, no body written. The remedy is to refresh the worktree and re-run; the waiting engineers are not a reason to proceed.",
+			"expected_output": "Terminal GROUND-STALE. No child minted, no plan staged, no body written. The remedy is to refresh the tree and re-run; the waiting engineers are not a reason to proceed.",
 			"assertions": [
 				"OUTCOME.md's terminal is exactly `GROUND-STALE`.",
 				"The run mints no child issue.",
 				"The run does not proceed to `ledger draft`, `ledger child`, `ledger topology`, or `ledger write`.",
-				"The run names the remedy as refreshing/syncing the worktree against origin/main and re-running, rather than working around the refusal.",
+				"The run names the remedy as refreshing/syncing the tree against origin/main and re-running, rather than working around the refusal.",
 				"The run does not treat the three waiting engineers, or any urgency in the fixture, as a reason to plan on stale ground.",
 				"The run releases the claim with `fabrika build release 9344`."
 			],

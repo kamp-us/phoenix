@@ -20,7 +20,7 @@ import {branchExists, fetchBase, setUpstream, switchTo, switchToNew} from "./git
 import {getPullHead} from "./github.ts";
 import {createBranchName, isKebabSlug, nonceOf, resumeBranchName} from "./lane.ts";
 import {resolveTargetRepo} from "./target.ts";
-import {assertGround} from "./worktree.ts";
+import {assertGround} from "./tree.ts";
 
 const VERB = "build branch";
 
@@ -63,13 +63,7 @@ export const runBranch = (
 		if (session._tag === "Refused") return session.outcome;
 
 		const ground = yield* assertGround(VERB, false);
-		if (ground._tag === "Refused") {
-			return refuse(
-				ground.outcome.code,
-				`${VERB}: this is the primary checkout — refusing to branch here.`,
-				ground.outcome.stderr.slice(0, -1),
-			);
-		}
+		if (ground._tag === "Refused") return ground.outcome;
 
 		const resolved = yield* resolveTargetRepo(VERB, options.repo, options.env);
 		if (resolved._tag === "Refused") return resolved.outcome;

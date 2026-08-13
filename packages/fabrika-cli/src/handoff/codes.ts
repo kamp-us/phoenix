@@ -66,9 +66,9 @@ export const PRECONDITION_UNKNOWN = REPORT_PRECONDITION_UNKNOWN;
  *
  * Allocated rather than imported from `build`'s `13 DIRTY_TREE`, which is the near miss: this proves
  * a **different** fact — unreachable *to a successor*, which is an unpushed head **or** a modified
- * tracked file, and which `--declare-unreachable` waives. `build`'s `12 NOT_A_WORKTREE` and this seat
- * are two namespaces rather than a collision (`../plan/codes.ts`: import a code when two groups prove
- * the same fact; allocate freely when they do not).
+ * tracked file, and which `--declare-unreachable` waives. This group's `12` and `build`'s (retired,
+ * left empty) are two namespaces rather than a collision (`../plan/codes.ts`: import a code when two
+ * groups prove the same fact; allocate freely when they do not).
  */
 export const WORK_UNREACHABLE = 12;
 /** Proven: the issue carries no sealed pack to claim. `handoff claim` only. */

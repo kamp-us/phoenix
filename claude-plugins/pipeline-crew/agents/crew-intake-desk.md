@@ -81,13 +81,13 @@ teach a v1 skill to emit a `ready-for:` value, and you never call a v1 verb from
 
 **Dispatch each fabrika skill to a fresh subagent, never inline and never a roster agent-type.**
 A fork carrying only what is written down is fabrika's own dispatch idiom (`build-epic` §3), and
-two constraints force it here: `plan-epic` runs in **the epic worktree the spawner provisioned** —
-`fabrika build tree` verifies a linked worktree and never provisions one
-([#4934](https://github.com/kamp-us/phoenix/issues/4934)), while your seat sits in the primary
-checkout — and a gate that reads the ledger in the context that planned it is one seat holding two
-answers to one question. So spawn a **general-purpose** subagent with `isolation:worktree`, whose
-whole instruction is the template below. The gate needs no tree of its own (its §CAP holds no
-branch and no worktree), but it is dispatched the same way, because an isolated tree costs nothing
+two constraints force it here: `plan-epic` writes its run directory into whatever tree it runs in,
+and fabrika itself holds **no** opinion about where that is — isolation is yours to choose at
+spawn time ([#5386](https://github.com/kamp-us/phoenix/issues/5386)), and your seat sits in the
+primary checkout — and a gate that reads the ledger in the context that planned it is one seat
+holding two answers to one question. So spawn a **general-purpose** subagent with
+`isolation:worktree`, whose whole instruction is the template below. The gate needs no tree of its
+own (its §CAP holds no branch and no checkout), but it is dispatched the same way, because an isolated tree costs nothing
 and keeps any stray git op off the shared checkout. Do **not** add a fabrika agent-type to the roster: every
 def under `claude-plugins/*/agents/` must be classified in `crew-fanout-guard`'s tables, which live
 in `packages/pipeline-cli/` and are out of bounds here.

@@ -16,10 +16,10 @@ import {runDir, runKey} from "./run.ts";
 export const EPIC = 4300;
 export const SESSION = "s-9f2e";
 export const REPO = "o/r";
-/** The tree root `LINKED` names — every run path in these tests hangs off it. */
-export const WORKTREE = "/repo/trees/lane-a";
-export const GIT_DIR = "/repo/.git/worktrees/lane-a";
-export const DIR = runDir(WORKTREE, runKey(EPIC, NONCE));
+/** The tree root `GIT_DIRS` names — every run path in these tests hangs off it. */
+export const TREE_ROOT = "/repo/trees/lane-a";
+export const GIT_DIR = `${TREE_ROOT}/.git`;
+export const DIR = runDir(TREE_ROOT, runKey(EPIC, NONCE));
 export const EXCLUDE_PATH = `${GIT_DIR}/info/exclude`;
 
 export const env = {CLAUDE_PIPELINE_REPO: REPO, CLAUDE_CODE_SESSION_ID: SESSION} as Record<

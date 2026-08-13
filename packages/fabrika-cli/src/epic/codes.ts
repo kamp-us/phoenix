@@ -6,7 +6,8 @@
  * - `3`-`11` are `report`'s seats, reached through `build`'s own re-exports so there is one hop, not
  *   two tables to keep level. `ALIGNED_GROUPS` records the claim; the import is what makes a drift
  *   unrepresentable rather than merely detectable.
- * - `12`-`19` are `build`'s, **imported verbatim**. This group runs the same worktree, lane and claim
+ * - `13`-`19` are `build`'s, **imported verbatim** (`12` is `build`'s retired seat, so it is not among
+ *   them). This group runs the same tree, lane and claim
  *   facts, and a caller driving `build` and `epic` in one sweep must read one meaning per code. That
  *   identity rides on the import itself — the alignment registry checks the overlap with the `report`
  *   base and cannot see this one, which is why it is stated here.
@@ -27,7 +28,6 @@ export {
 	DIRTY_TREE,
 	EMPTY_STDIN,
 	LEAKED_PATH,
-	NOT_A_WORKTREE,
 	OFF_VOCABULARY,
 	PRECONDITION_UNKNOWN,
 	READBACK_MISMATCH,

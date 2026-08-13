@@ -370,7 +370,7 @@ export const parseAheadBehind = (
  *
  * <!-- anchor: READ-DERIVES-AGAINST-THE-PACKED-BRANCH --> `capture` passes `null` and derives
  * against `HEAD`; `read` passes the **pack's own branch**, never the successor's `HEAD`. A successor
- * is by construction a different checkout — usually a fresh worktree on the default branch — so
+ * is by construction a different checkout — usually a fresh checkout on the default branch — so
  * deriving from `HEAD` there would report the successor's own location as drift and mark eight rows
  * moved on a perfectly current pack.
  */

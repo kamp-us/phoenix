@@ -13,10 +13,10 @@ import {
 	childJson,
 	ENV,
 	EPIC,
+	GIT_DIRS,
 	HEAD,
 	LANDED,
 	LEDGER,
-	LINKED,
 	ledgerOf,
 	MINE,
 	ON_LANE,
@@ -33,7 +33,7 @@ import {
 const C1_ISSUE = /^gh api repos\/o\/r\/issues\/4301$/;
 
 const WORLD: ReadonlyArray<readonly [RegExp, ExecResult]> = [
-	[REV_PARSE, LINKED],
+	[REV_PARSE, GIT_DIRS],
 	[BRANCH, ON_LANE],
 	[COMMENTS, MINE],
 	[PERM, WRITE],
@@ -73,7 +73,7 @@ describe("runBrief", () => {
 		expect(read.value).toMatchObject({
 			id: "C1",
 			issue: 4301,
-			worktree: ROOT,
+			tree: ROOT,
 			branch: BRANCH_NAME,
 			base: BASE,
 			handoff: `/run/fabrika-epic/${RUN}/C1/handoff.md`,

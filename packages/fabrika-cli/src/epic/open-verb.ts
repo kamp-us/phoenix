@@ -13,7 +13,7 @@ import {Effect, FileSystem} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {gate} from "../build/content-gate.ts";
 import {badNumber, scannedLine} from "../build/target.ts";
-import {readTree} from "../build/worktree.ts";
+import {readTree} from "../build/tree.ts";
 import {getIssue} from "../io/issues.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {read as readCriteria} from "../wire/acceptance-criteria.ts";

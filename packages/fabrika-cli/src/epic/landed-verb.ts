@@ -16,7 +16,7 @@ import {Effect, type FileSystem} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {headSha, isAncestor} from "../build/git.ts";
 import {badNumber} from "../build/target.ts";
-import {uncommittedChanges} from "../build/worktree.ts";
+import {uncommittedChanges} from "../build/tree.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {DIRTY_TREE, NO_COMMIT, OFF_VOCABULARY, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {changedIn, firstParent} from "./graph.ts";

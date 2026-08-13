@@ -7,7 +7,7 @@
  * tree plus the graph are everything a fresh fork gets (H2), and a brief whose instructions could be
  * written per dispatch is a brief that can steer its receiver past the artifact.
  *
- * The composed document is **not** leak-scanned: `## Ground` carries a worktree root and a temp-dir
+ * The composed document is **not** leak-scanned: `## Ground` carries a tree root and a temp-dir
  * handoff path by construction, and a brief is consumed in-session and never posted.
  */
 import {Effect, type FileSystem} from "effect";
@@ -154,7 +154,7 @@ export const runBrief = (
 			id,
 			issue: slice.issue,
 			criteria: [first, ...rest],
-			worktree: ground.root,
+			tree: ground.root,
 			branch,
 			base,
 			handoff: handoffPath(options.tmpRoot, run.plan.run, slice.id),

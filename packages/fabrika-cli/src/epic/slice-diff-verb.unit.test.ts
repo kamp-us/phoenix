@@ -2,14 +2,8 @@ import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {errOut, fakeShell, okOut} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
-import {
-	COMMIT_NOT_IN_GRAPH,
-	NOT_A_WORKTREE,
-	OFF_VOCABULARY,
-	PRECONDITION_UNKNOWN,
-	ZERO_SCOPE,
-} from "./codes.ts";
-import {EPIC, LANDED, LINKED, REV_PARSE} from "./fixtures.test-support.ts";
+import {COMMIT_NOT_IN_GRAPH, OFF_VOCABULARY, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
+import {EPIC, GIT_DIRS, LANDED, REV_PARSE} from "./fixtures.test-support.ts";
 import {runSliceDiff} from "./slice-diff-verb.ts";
 
 const RESOLVE = /^git rev-parse --verify --quiet [0-9a-f]+\^\{commit\}$/;
@@ -25,7 +19,7 @@ index 0b1c2d3..a1b2c3d 100644
 `;
 
 const WORLD: ReadonlyArray<readonly [RegExp, ExecResult]> = [
-	[REV_PARSE, LINKED],
+	[REV_PARSE, GIT_DIRS],
 	[RESOLVE, okOut(`${LANDED}\n`)],
 	[SHOW, okOut(DIFF)],
 ];
@@ -48,11 +42,9 @@ describe("runSliceDiff", () => {
 		expect(shell.calls.some((call) => call.startsWith("gh "))).toBe(false);
 	});
 
-	it("refuses the primary checkout on 12", async () => {
-		const outcome = await run([
-			[REV_PARSE, okOut(["/repo/.git", "/repo/.git", "/repo"].join("\n"))],
-		]);
-		expect(outcome.code).toBe(NOT_A_WORKTREE);
+	it("refuses an unreadable tree root on 11", async () => {
+		const outcome = await run([[REV_PARSE, errOut("fatal: not a git repository")]]);
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
 	});
 
 	it("refuses a --commit that is not 7–40 lowercase hex on 10, before any git read", async () => {

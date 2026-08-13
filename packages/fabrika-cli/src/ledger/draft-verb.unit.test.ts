@@ -1,7 +1,7 @@
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {LINKED, PRIMARY} from "../build/fixtures.test-support.ts";
-import {fakeFs, fakeShell} from "../fakes.test-support.ts";
+import {GIT_DIRS} from "../build/fixtures.test-support.ts";
+import {errOut, fakeFs, fakeShell} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {
@@ -10,7 +10,6 @@ import {
 	EMPTY_STDIN,
 	EPIC_MOVED,
 	LEAKED_PATH,
-	NOT_A_WORKTREE,
 	OFF_VOCABULARY,
 	PRECONDITION_UNKNOWN,
 } from "./codes.ts";
@@ -24,7 +23,7 @@ const DIGEST = bodyDigest(EPIC_BODY);
 
 const GROUND: ReadonlyArray<readonly [RegExp, ExecResult]> = [
 	[/^gh api repos\/o\/r\/issues\/4300$/, epic()],
-	[/^git rev-parse --path-format=absolute/, LINKED],
+	[/^git rev-parse --path-format=absolute/, GIT_DIRS],
 	...CLAIMED,
 ];
 
@@ -142,17 +141,17 @@ describe("runDraft", () => {
 		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
 	});
 
-	it("refuses the primary checkout", async () => {
+	it("refuses an unreadable tree root on 11 — the run directory is UNKNOWN", async () => {
 		const {outcome} = await run(text(planBlock()), {
 			script: [
 				[/^gh api repos\/o\/r\/issues\/4300$/, epic()],
-				[/^git rev-parse --path-format=absolute/, PRIMARY],
+				[/^git rev-parse --path-format=absolute/, errOut("fatal: not a git repository")],
 				...CLAIMED,
 			],
 		});
-		expect(outcome.code).toBe(NOT_A_WORKTREE);
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
 		expect(outcome.stderr.at(-1)).toBe(
-			"ledger draft: not in a linked worktree — the run directory is unreachable.",
+			"ledger draft: cannot read the tree root: fatal: not a git repository — the ground is UNKNOWN.",
 		);
 	});
 
@@ -160,7 +159,7 @@ describe("runDraft", () => {
 		const {outcome} = await run(text(planBlock()), {
 			script: [
 				[/^gh api repos\/o\/r\/issues\/4300$/, epic({labels: [{name: "type:chore"}]})],
-				[/^git rev-parse --path-format=absolute/, LINKED],
+				[/^git rev-parse --path-format=absolute/, GIT_DIRS],
 				...CLAIMED,
 			],
 		});

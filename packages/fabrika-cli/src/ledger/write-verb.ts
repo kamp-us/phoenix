@@ -40,7 +40,6 @@ export const MESSAGES: LedgerMessages = {
 	verb: VERB,
 	notAnEpic: (epic) => `${VERB}: #${epic} is not a type:epic — refusing to write a plan into it.`,
 	unreadable: (what, reason) => `${VERB}: cannot read ${what}: ${reason} — nothing was written.`,
-	notAWorktree: `${VERB}: not in a linked worktree — the staged documents are unreachable.`,
 };
 
 export interface WriteOptions extends OpenOptions {
