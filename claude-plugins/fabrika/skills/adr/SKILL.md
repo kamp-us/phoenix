@@ -18,7 +18,7 @@ Unions the freshly fetched merged set with the ids open ADR PRs already claim, s
 at `0150` while origin is at `0151` cannot mint a duplicate.
 
 **A non-zero exit is UNKNOWN, never "nothing reserved."** Re-run it. Falling back to the highest id
-on disk is what minted ADR 0198 from two lanes at once, and 0114 and 0123 before it (#3779).
+on disk mints the same number from two lanes at once.
 
 **An empty `.decisions/` is not one of those cases — it answers `0001` and exits 0.** A repo adopting
 fabrika has no records on day one, and that is a fact the verb reports, not a read it failed. Only a
@@ -81,11 +81,10 @@ fabrika adr resolve 0164 0023 0126
 Answers against a freshly fetched base ref, printing `live`, `landed`, `in-flight` or `absent` with
 the real filename. Pass every citation, supersede link and amend target in one call.
 
-**Cite only `live`.** `landed` means present but `proposed`, `superseded` or `retired` — 36 of the
-233 ADRs on `main` — and citing one as settled law is how a withdrawn ADR gets applied 86 minutes
-after its withdrawal (#4338). `in-flight` may never merge: that is how PR #4293 cited ADR 0219 and
-every gate passed on a dead citation (#4296). **A non-zero exit is UNKNOWN, never `absent`** (#4163).
-**Use the filename it prints** — 0048 is `ship-it-merge-actor`, not `single-merge-authority`.
+**Cite only `live`.** `landed` means present but `proposed`, `superseded` or `retired`, and citing
+one as settled law applies a decision that was already withdrawn. `in-flight` may never merge, so a
+citation to one can pass every gate and still be dead on arrival. **A non-zero exit is UNKNOWN,
+never `absent`.** **Use the filename it prints** — a remembered slug is usually the wrong one.
 
 ```bash
 fabrika adr supersede 0126 --by 0240
@@ -97,8 +96,8 @@ immutable, so name the relationship in your own `## Context` rather than editing
 
 ## 5 — Record the vocabulary impact
 
-An ADR is a primary coining site — 0126's "ambient discovery" was coined here and drifted silently.
-Land on **exactly one** outcome; the explicit "none" separates *considered it* from *forgot to*:
+An ADR is a primary coining site, and a term coined here drifts silently unless it is routed. Land
+on **exactly one** outcome; the explicit "none" separates *considered it* from *forgot to*:
 
 - **A term is coined or redefined** → name it and route it to `.glossary/TERMS.md`: the row in this
   PR when the definition is short and unambiguous, otherwise `/glossary`.
@@ -113,14 +112,11 @@ fabrika adr resolve 0240
 Your own id, one last time: `absent` means nobody claimed it while you wrote; `in-flight` means
 another lane opened its PR first, so renumber now.
 
-**How this PR routes depends on which model is live, so expect either.** v1's gate decides it on
-content: no `.decisions/**` path matches its control-plane pattern, so `cp-classify` falls to its
-ADR-0164 content probe, and 84% of the corpus comes back guard-touching — expect control plane.
-fabrika's ruled model is CODEOWNERS-only with no semantic detection at all, and `.decisions/`
-deliberately carries no row, so under it an ADR is not control plane
-([§CP classification](../../docs/control-plane-classification.md)). **Whichever answers, that gate is
-the authority; do not predict it and never reword the ADR to change its verdict.** A false §CP costs
-one approval, a false ordinary reaches `main` with none (#4386, #3416). If you think it misfired, say
-so on the PR (#2617).
+**Whether this PR needs a control-plane approval is `cp-classify`'s answer, not yours** — it routes
+on CODEOWNERS, and how a repo owns `.decisions/` decides it
+([control-plane classification](../../docs/control-plane-classification.md)). **That gate is the
+authority: do not predict it, and never reword the ADR to change its verdict.** A wrong
+control-plane call costs one approval; a wrong ordinary call reaches `main` with none. If you think
+it misfired, say so on the pull request.
 
 Report the path and the vocabulary outcome; do not summarize the body.
