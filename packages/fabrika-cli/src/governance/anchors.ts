@@ -142,8 +142,58 @@ export const scanAnchors = (diff: string): ReadonlyArray<AnchorHit> => {
  * list-item and heading clauses are what keep an anchor sitting on one bullet from swallowing its
  * siblings — without them a reword of the bullet *below* an anchor reads as that anchor moving, and a
  * guard that cries on unrelated prose gets read past.
+ *
+ * It is applied to a line's **prose**, which in a comment-framed block is the line with its decoration
+ * removed — see {@link commentFramedLines}.
  */
 const BLOCK_BREAK = /^\s*$|^\s*#{1,6}\s|^\s*(?:[-*+]|\d+[.)])\s|^\s*(?:```|~~~)/;
+
+const COMMENT_OPEN = "/*";
+const COMMENT_CLOSE = "*/";
+
+/**
+ * A block comment's decoration on one line: its opener, or the star a docblock repeats down its left
+ * edge. The terminator is excluded — that ends the frame rather than decorating a line inside it.
+ */
+const COMMENT_DECORATION = /^\s*(?:\/\*+|\*(?!\/))\s?/;
+
+/**
+ * Which lines sit inside a block comment — the frame the anchor's paragraph is written in (#5514).
+ *
+ * Half the guarded corpus writes its anchored claims in TypeScript docblocks, where every continuation
+ * line begins with a star. Read as markdown that star is a new list item, so {@link BLOCK_BREAK} fired
+ * on the line immediately after every `.ts` anchor and its block was truncated to the tag's own line —
+ * 80 anchors counted in the `anchors-in-reach` denominator and structurally unable to contribute to
+ * the numerator, which is the shape #5514 exists to remove.
+ *
+ * The two cases are only distinguishable by *frame*, never by the line: `* a bullet` and a docblock's
+ * `* a continuation` are the same bytes. So the frame is resolved once per file here, and a
+ * comment-framed block reads each line's prose with its decoration stripped, ending where the comment
+ * does. Keying on the frame rather than on a file extension is what keeps an anchor in a docblock and
+ * an anchor in prose one rule instead of two — a `.md` file's fenced TypeScript example is framed by
+ * the same evidence its `.ts` original is.
+ *
+ * The scan is over comment syntax, not a parse, so an unterminated opener inside a string literal
+ * would frame the lines after it. That misreads nothing on its own: the block still ends at the same
+ * paragraph boundaries, it just tolerates a leading star — and a tag reached after real content is
+ * already fenced to its own line by {@link OPENS_LINE}.
+ */
+const commentFramedLines = (lines: ReadonlyArray<string>): ReadonlyArray<boolean> => {
+	const framed: boolean[] = [];
+	let open = false;
+	for (const line of lines) {
+		if (open) {
+			framed.push(true);
+			if (line.includes(COMMENT_CLOSE)) open = false;
+			continue;
+		}
+		const opened = line.lastIndexOf(COMMENT_OPEN);
+		const closed = opened >= 0 && line.indexOf(COMMENT_CLOSE, opened + COMMENT_OPEN.length) >= 0;
+		open = opened >= 0 && !closed;
+		framed.push(open);
+	}
+	return framed;
+};
 
 /**
  * Whitespace collapsed to single spaces, so a re-wrap is not a change.
@@ -161,9 +211,13 @@ const normalize = (text: string): string => text.replace(/\s+/g, " ").trim();
  * A tag reached only after real content did not open the lines below it, so continuing through them
  * captures text the anchor never covered. That is not hypothetical: this file's own tests embed the
  * tag in TypeScript string literals, and the block ran off the end of the literal and swallowed the
- * assertions after it, so editing an assertion reported the fixture as a moved invariant. Every
- * anchor in the guarded corpus opens its line — bare, after a bullet, or after a blockquote marker —
- * which the `anchorsIn` note above already observes from the other side.
+ * assertions after it, so editing an assertion reported the fixture as a moved invariant.
+ *
+ * Nearly every anchor in the guarded corpus opens its line — bare, after a bullet, after a blockquote
+ * marker, or after a docblock's star. The exceptions are of two kinds and neither is a loss. A handful
+ * of markdown anchors are written at the very *end* of their line, so their compared text is the empty
+ * string either way. The rest are this package's own test fixtures, which embed the tag in a string
+ * literal — the case the fence exists for.
  *
  * A tag that does NOT open its line still gets a block: the text trailing it on that one line, which
  * is exactly what the diff walk has always compared. So this is a fence on the *widening*, never a
@@ -186,22 +240,33 @@ interface AnchorBlock {
  * every line that could *end* one, so a tag inside backticks neither mints a block nor cuts one
  * short. The compared text is the real bytes, because that fence is about what counts as an anchor,
  * not about which prose an anchor covers.
+ *
+ * Inside a block comment a line's prose is the line minus its decoration, and the comment's
+ * terminator ends the block — see {@link commentFramedLines} for why the frame, not the file's
+ * extension, is what decides.
  */
 export const anchorBlocksIn = (text: string): ReadonlyArray<AnchorBlock> => {
 	const lines = text.split("\n");
+	const framed = commentFramedLines(lines);
 	const blocks: AnchorBlock[] = [];
 	for (const [index, line] of lines.entries()) {
 		const matched = ANCHOR.exec(maskInlineCode(line));
 		if (matched?.[1] === undefined) continue;
+		const inComment = framed[index] === true;
+		const prose = (raw: string): string => (inComment ? raw.replace(COMMENT_DECORATION, "") : raw);
 		const body = [line.slice(matched.index + matched[0].length)];
-		const opens = OPENS_LINE.test(line.slice(0, matched.index));
+		const opens = OPENS_LINE.test(prose(line.slice(0, matched.index)));
 		for (let next = index + 1; opens && next < lines.length; next += 1) {
-			const candidate = lines[next] ?? "";
+			const raw = lines[next] ?? "";
+			if (inComment && framed[next] !== true) break;
+			const ends = inComment ? raw.indexOf(COMMENT_CLOSE) : -1;
+			const candidate = prose(ends >= 0 ? raw.slice(0, ends) : raw);
 			// The break test reads the raw line and the anchor test the masked one, because masking is
 			// length-preserving but not content-preserving: it eats the leading backticks of a ``` fence,
 			// which is exactly the marker the break is looking for.
 			if (BLOCK_BREAK.test(candidate) || ANCHOR.test(maskInlineCode(candidate))) break;
 			body.push(candidate);
+			if (ends >= 0) break;
 		}
 		blocks.push({name: matched[1], line: index + 1, text: normalize(body.join(" "))});
 	}

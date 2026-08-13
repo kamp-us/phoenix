@@ -107,6 +107,25 @@ const PACKED_BRANCH = (checkout: string): string =>
 		"",
 	].join("\n");
 
+/**
+ * The same defect in the other half of the guarded corpus, taken from `handoff/ground.ts`: the claim
+ * lives in a TypeScript docblock, where every continuation line opens with the star markdown reads as
+ * a new list item — so the block used to end on the line after the tag and the reworded checkout was
+ * invisible (#5514).
+ */
+const PACKED_BRANCH_DOCBLOCK = (checkout: string): string =>
+	[
+		"/**",
+		" * Rows 3-10, derived against the pack.",
+		" *",
+		" * <!-- anchor: READ-DERIVES-AGAINST-THE-PACKED-BRANCH --> **`read` re-derives against the",
+		" * pack's own branch, never the successor's `HEAD`.** A successor is by construction a",
+		` * different checkout — usually ${checkout} — so deriving there would report drift.`,
+		" */",
+		"export const deriveGitCore = () => {};",
+		"",
+	].join("\n");
+
 describe("anchorBlocksIn", () => {
 	it("carries the anchor's continuation lines, which is the text the same-line scan never read", () => {
 		expect(anchorBlocksIn("<!-- anchor: G --> a claim\nthat wraps here\n\nunrelated\n")).toEqual([
@@ -161,6 +180,39 @@ describe("anchorBlocksIn", () => {
 			{name: "G", line: 1, text: "a claim that wraps"},
 		]);
 	});
+
+	// Half the guarded corpus writes its claims in docblocks, where a continuation line and a list item
+	// are the same bytes and only the frame tells them apart (#5514).
+	it("continues through a docblock's star continuation lines and stops at the comment's end", () => {
+		expect(anchorBlocksIn(PACKED_BRANCH_DOCBLOCK("a fresh worktree"))).toEqual([
+			{
+				name: "READ-DERIVES-AGAINST-THE-PACKED-BRANCH",
+				line: 4,
+				text:
+					"**`read` re-derives against the pack's own branch, never the successor's `HEAD`.** " +
+					"A successor is by construction a different checkout — usually a fresh worktree — so " +
+					"deriving there would report drift.",
+			},
+		]);
+	});
+
+	it("ends a docblock's block at the star-only line — a docblock's paragraph break", () => {
+		expect(
+			anchorBlocksIn("/**\n * <!-- anchor: G --> a claim\n *\n * a second paragraph\n */\n"),
+		).toEqual([{name: "G", line: 2, text: "a claim"}]);
+	});
+
+	it("still breaks on a REAL list inside a docblock — the frame strips decoration, not structure", () => {
+		expect(
+			anchorBlocksIn("/**\n * <!-- anchor: G --> a claim\n * - a bullet below it\n */\n"),
+		).toEqual([{name: "G", line: 2, text: "a claim"}]);
+	});
+
+	it("still breaks on a markdown star bullet, where no comment frame says otherwise", () => {
+		expect(anchorBlocksIn("* <!-- anchor: G --> a claim\n* a sibling bullet\n")).toEqual([
+			{name: "G", line: 1, text: "a claim"},
+		]);
+	});
 });
 
 describe("scanAnchorBlocks", () => {
@@ -179,6 +231,33 @@ describe("scanAnchorBlocks", () => {
 				line: 1,
 			},
 		]);
+	});
+
+	it("reports the PR #5501 shape in a TypeScript docblock too — the .ts half of the corpus", () => {
+		expect(
+			scanAnchorBlocks(
+				"ground.ts",
+				PACKED_BRANCH_DOCBLOCK("a fresh worktree"),
+				PACKED_BRANCH_DOCBLOCK("a fresh clone"),
+			),
+		).toEqual([
+			{
+				kind: "modified",
+				name: "READ-DERIVES-AGAINST-THE-PACKED-BRANCH",
+				file: "ground.ts",
+				line: 4,
+			},
+		]);
+	});
+
+	it("reports NOTHING for a docblock re-wrap — a star continuation line break is cosmetic", () => {
+		expect(
+			scanAnchorBlocks(
+				"ground.ts",
+				"/**\n * <!-- anchor: G --> a claim that\n * wraps here\n */\n",
+				"/**\n * <!-- anchor: G --> a claim\n * that wraps here\n */\n",
+			),
+		).toEqual([]);
 	});
 
 	it("reports NOTHING for a block that only moved — the anti-noise property, at block scale", () => {

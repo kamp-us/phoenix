@@ -615,6 +615,21 @@ diff, so a paragraph reworded under an untouched tag read as `no-anchor-change`
 comparable base path, so those keep the older same-line walk over the diff's `+`/`-` lines; a file
 covered by both scans still reports one hit per NAME.
 
+Two rules complete that definition, both load-bearing, so that two implementers build one verb.
+
+**A block continues past its own line only from a tag that opens that line.** Indentation, a
+blockquote marker, one list bullet, or a block comment's decoration may precede the tag — nothing
+else. A tag reached after real content gets only the text trailing it on that line, which is what the
+same-line walk has always compared. This is what stops a tag written inside a string literal from
+swallowing the code below it, and it is a fence on the widening, never a narrowing.
+
+**Inside a block comment, a line's prose is the line minus its decoration, and the comment's end ends
+the block.** Half the guarded corpus writes its claims in TypeScript docblocks, where every
+continuation line opens with a star — the same bytes as a markdown list item, and only the frame
+tells the two apart. Without this rule every `.ts` block stopped on the line after its tag, so those
+anchors counted toward `anchors-in-reach` while being unable to produce a hit. A real list *inside* a
+docblock still ends the block, because the break is tested against the prose, not the decoration.
+
 **What a guard-bearing file is, stated closed so two implementers build one verb.** A changed file is
 guard-bearing iff it satisfies at least one of exactly two clauses: **(a)** it contains at least one
 anchor at the bound commit, or **(b)** it is under `.github/workflows/`. Nothing else qualifies — in
