@@ -46,7 +46,7 @@ this skill runs until you hold one. Then take exactly the row your token names:
 | `check-surface` | step 5 | a required context no run produces — it cannot go green whoever attends it |
 | `red` | step 3 | a gating check failed |
 | `linkage-refused` | step 6 | correct PR; the merge seam refuses its issue-reference grammar |
-| `blocked-human` | step 6 | correctly waiting on a person's approval or an unresolved human thread |
+| `blocked-human` | step 6 | correctly waiting on a person: changes requested, or a control-plane approval outstanding |
 | `ungated` · `gated-unshipped` · `claim-stale` | step 2 | green, and nobody is holding it |
 
 `attended` and `not-open` write nothing — there is no strand to record.
@@ -157,9 +157,11 @@ Route it to the author or to `build` to reword the body, and stop. **Propose no 
 token** — `Re: #N`, `Refs`, `See` and a bare `#N` stay banned, and the ruled fix is widening what
 `Part of #N` is stated to cover, not minting a token this skill would be the only reader of.
 
-**`blocked-human`** — awaiting a control-plane approval, or an unresolved human review thread. A PR
-correctly waiting on a person is a stall you report and never clear: you do not approve, and you do
-not resolve another person's thread.
+**`blocked-human`** — a human reviewer requested changes at this head, or a control-plane approval
+is outstanding. A PR correctly waiting on a person is a stall you report and never clear: you do not
+approve, and you do not resolve another person's thread. An *unresolved review thread* is not one of
+this class's signals — resolution state is GraphQL-only and the contract rules it out of scope, so a
+PR blocked solely by an open thread lands in another class.
 
 ## Sweep — the scheduled surface
 

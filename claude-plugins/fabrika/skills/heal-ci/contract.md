@@ -23,10 +23,12 @@ but no clause defers to one, and none is invoked.
 **Substrate.** Effect CLI verbs on the `@effect/platform-node` seam the sibling groups use.
 GitHub access is `gh api` REST throughout, per
 [skill conventions §11](../../docs/skill-conventions.md#11-github-access-is-rest-never-graphql) —
-**this group takes no GraphQL carve and no porcelain carve.** Both of `ship`'s carves exist for
-surfaces this group never touches (review-thread resolution; auto-merge arming), and every read
-below has a REST form. Named because a spec that leaves the substrate open makes the implementer
-guess (#4734).
+**this group takes no GraphQL carve and no porcelain carve.** Every read specified below has a
+REST form, because the one read that does not — review-thread **resolution** state, whose
+`isResolved` lives only on GraphQL `reviewThreads` — is specified out of this group's scope rather
+than carved for (see the out-of-scope entry below and arm 6 of `diagnose`). `ship`'s two carves
+(review-thread resolution; auto-merge arming) therefore stay `ship`'s. Named because a spec that
+leaves the substrate open makes the implementer guess (#4734).
 
 ## Verb inventory
 
@@ -85,6 +87,14 @@ the same tracked debt the sibling contracts carry.)
   are three incidents where the healing action was itself the damage.
 - **An agent-honoured hold.** A hold is label-triggered and platform-enforced, cause-agnostic
   (#5352 founder ruling); a shipper- or healer-read label is the losing side of that fork.
+- **Detecting a PR blocked *solely* by an unresolved human review thread.** Resolution state is
+  GraphQL-only (`reviewThreads.isResolved`; REST `pulls/{n}/comments` carries no resolved flag), so
+  reading it would need this group's own GraphQL carve. Founder-ruled option 1 on #5511: narrow the
+  axis, keep the no-carve substrate. `diagnose` arm 6 therefore fires on REST-derivable human blocks
+  only — a live `CHANGES_REQUESTED` review at the head, or a control-plane diff with no approval at
+  the head — and a PR whose *only* block is an open human thread reads as some other class. The door
+  stays open: if a real stranded PR is ever blocked solely that way, the narrow read-only
+  `reviewThreads` carve gets added then, with `ship`'s shipped precedent to copy.
 
 ### Filing is the `report` group's, reused rather than respecified
 
@@ -396,7 +406,7 @@ moving it.
 | 3 | `check-surface` | ≥1 declared required status context has **no producing run** at this head, or ≥1 gating run answers no declared requirement — `surface`'s exact predicate, shared as one module so the two verbs cannot disagree |
 | 4 | `red` | the gating rollup at the head is `red` (`rollupOf` over `listShipCheckRuns`, informational contexts excluded first — ADR 0061) |
 | 5 | `linkage-refused` | the diff derives ≥1 namespace whose merge seam requires a linked issue, the body carries neither `Fixes #N` nor `Part of #N`, **and** it carries some other reference form |
-| 6 | `blocked-human` | a control-plane approval is outstanding at this head, or ≥1 unresolved review thread has a non-`Bot` participant |
+| 6 | `blocked-human` | ≥1 non-`Bot` reviewer's latest decisive review at this head is `CHANGES_REQUESTED`, or the diff touches a control-plane path and no approval stands at this head. REST-derivable signals only — the unresolved-thread axis is out of scope, above |
 | 7 | `attended` | **any positive signal of motion**: an owner whose last activity is inside `--dwell-minutes`, a live merge-queue entry, an armed merge intent, or a gating rollup of `pending` — CI running at this head *is* the PR moving |
 | 8 | `claim-stale` | an owner signal exists and arm 7 did not fire — the claim is there and nothing shows it live. The stderr notice names which of the three proved it: activity older than `--dwell-minutes`, a head more than `--drift-commits` behind the base (`behindBase`), or an activity timestamp that could not be read at all |
 | 9 | `gated-unshipped` | no owner signal, and every required namespace holds an in-force `pass` verdict at this head (`inForce`) |
@@ -450,10 +460,10 @@ like one with no board row at all. `link` is printed as a fact and consumed only
 | `heal-ci diagnose: the live head is <live>, you are diagnosing <sha> — the head moved.` | 0 | notice |
 | `heal-ci diagnose: claim-stale fired on <inactivity\|ground-drift> — last activity <ts>, behind base <k>.` | 0 | notice |
 
-**Scope** — one PR's metadata, changed files, comments, check runs, workflow runs, review
-threads and timeline, each paginated and count-checked, plus its base branch's declared required
-contexts. The predicate chain is total over what was read; a read that could not complete is `11`,
-never a class.
+**Scope** — one PR's metadata, changed files, comments, check runs, workflow runs, reviews and
+timeline, each paginated and count-checked, plus its base branch's declared required contexts.
+Review *threads* are not read: arm 6 is REST-only, per the out-of-scope entry above. The predicate
+chain is total over what was read; a read that could not complete is `11`, never a class.
 
 **Examples**
 
