@@ -1,8 +1,0 @@
-.article {
-	background: var(--surface-page);
-	color: var(--text-primary);
-	padding: var(--s-5);
-}
-.article h1 {
-	margin-block-end: var(--s-4);
-}

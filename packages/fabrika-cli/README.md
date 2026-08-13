@@ -9,8 +9,7 @@ eight the `/build-epic` contract specifies; `plan`, the epic-plan gate's; `revie
 the `/review` contract specifies; `review-ui`, the three the `/review-ui` contract specifies
 (capture a PR's preview, emit the `review-ui` verdict, or post a typed blocker note);
 `ship`, the thirteen the `/ship` contract specifies; `map`, the eight the `/wayfinding`
-contract specifies (chart one destination's fog, and drain its frontier); `eval`, the graded-corpus
-harness the fabrika eval layer measures itself with; `spend`, what one fabrika run cost in
+contract specifies (chart one destination's fog, and drain its frontier); `spend`, what one fabrika run cost in
 tokens; `wire`, which owns the byte-level formats two skills meet through on a GitHub
 artifact; `status`, the six the `/fabrika` front door's contract specifies (what state the
 factory is in); and `hook`, which reads the envelope Claude Code writes to a hook's stdin — the group
@@ -352,8 +351,7 @@ lane verb does not.
   a failing implementation are different problems, and a shared counter hides whichever is rarer.
 - **`epic landed` reads the graph, never the report.** HEAD moved, the old tip is an ancestor, the
   tree is clean, the commit is non-empty. Its `22` is positive evidence that a returned subagent
-  produced nothing — the conductor-side detector for the silent-green class
-  ([`src/eval/spawn.ts`](./src/eval/spawn.ts)).
+  produced nothing — the conductor-side detector for the silent-green class.
 - **A slice verdict binds a commit SHA, not a pushed head.** The whole point of the unpushed-slice
   loop: a SHA is content-addressed, so an amend or rebase makes the old verdict `unbindable`
   against the new graph rather than quietly stale, and `status` re-derives every binding against
@@ -724,38 +722,6 @@ printf 'the read is total\n[x] the registry is the seam\n' \
   | node src/bin.ts wire check --format acceptance-criteria
 ```
 
-## The `eval` group — printed `grade`
-
-The eval harness, moved here from v1 by founder ruling
-([#4777](https://github.com/kamp-us/phoenix/issues/4777)) so that "the existing report and
-scorecard path" the eval-layer children are specced against is a fabrika path rather than a
-call into `pipeline-cli` that ADR 0238 forbids. Its own docs are
-[`src/eval/README.md`](./src/eval/README.md).
-
-**`grade` is an alias of `eval`** (founder ruling on
-[#5461](https://github.com/kamp-us/phoenix/issues/5461)): both spellings resolve to the same
-command, `eval` keeps working for every existing caller, and `grade` is the spelling
-agent-facing text prints — because a graded-run command spelled `eval` was refused before
-execution in a worktree-isolated session while the `grade` spelling ran (run-verified
-2026-08-12). It is declared at the group's row in [`src/registry.ts`](./src/registry.ts).
-
-| Verb | Answers |
-|---|---|
-| `grade check` | whether a corpus manifest matches the schema |
-| `grade report` | the graded two-axis scorecard (pass-rate × net-token cost) over runner rows |
-| `grade cases` | whether an authored eval set decodes, and the tier each case derives to |
-| `grade run` | executes an eval set unattended on both arms and emits the capture manifest |
-
-`grade run` is the one verb that spawns a model. Its supported callers are an operator's
-shell and a `review-skill` spawn — **never a CI job**, on the cost constraint the founder
-ruled on epic #4649, which `src/eval/spawn.unit.test.ts` asserts rather than states.
-
-The token meter these verbs price runs with is fabrika's own
-([`src/spend/token-spend.ts`](./src/spend/token-spend.ts)), not v1's. `billed` is
-*specified* by ADR 0112 §2, not chosen, so the two implementations are held to one ruler by
-a committed transcript fixture both packages' unit tiers assert against —
-`src/spend/fixtures/one-ruler/`.
-
 ## The `hook` group
 
 The envelope Claude Code writes to a hook's stdin, read once here instead of in every hook.
@@ -787,10 +753,14 @@ Three things shape it:
 
 ## The `spend` group
 
-What one fabrika run cost, in tokens, read from its transcript. The group is the CLI surface
-over the meter the `eval` verbs already price runs with — it adds no second sum
+What one fabrika run cost, in tokens, read from its transcript
 ([#5007](https://github.com/kamp-us/phoenix/issues/5007), epic
 [#4779](https://github.com/kamp-us/phoenix/issues/4779)).
+
+The meter is fabrika's own ([`src/spend/token-spend.ts`](./src/spend/token-spend.ts)), not v1's.
+`billed` is *specified* by ADR 0112 §2, not chosen, so the two implementations are held to one
+ruler by a committed transcript fixture both packages' unit tiers assert against —
+`src/spend/fixtures/one-ruler/`.
 
 | Verb | Answers |
 |---|---|
@@ -814,17 +784,20 @@ Three behaviours are worth knowing before you call it:
 ### The spend ledger
 
 `spend read` prices one transcript on demand; the ledger is where measured runs *survive*
-([#5009](https://github.com/kamp-us/phoenix/issues/5009)). `fabrika grade run` appends one
-**JSON Lines** row per completed run to `.fabrika/spend-ledger.jsonl` (repo-relative,
-gitignored, `--spend-ledger` overrides it) once the suite finishes — each line carrying that
-run's spend and the identity of the work it measured. The core is
+([#5009](https://github.com/kamp-us/phoenix/issues/5009)). A producer appends one **JSON Lines**
+row per completed run to `.fabrika/spend-ledger.jsonl` (repo-relative, gitignored,
+`--spend-ledger` overrides it) — each line carrying that run's spend and the identity of the work
+it measured. **There is no in-repo producer today:** the eval runner was the only caller of
+`appendSpendLedger` and went out with the eval tooling
+([#5510](https://github.com/kamp-us/phoenix/issues/5510)), so `spend rollup` reads whatever an
+operator or a future producer wrote and reports an empty ledger otherwise. The core is
 [`src/spend/ledger.ts`](./src/spend/ledger.ts): `appendSpendLedger` writes, `readSpendLedger`
 reads back the well-formed rows **and the count of lines it skipped**, so a truncated tail
 costs one line rather than the file. Every line stamps its own `v`, which is the seam a later
 row shape evolves through.
 
-The module imports from `spend/` and `io/` only — never `eval/` — so a reader of the ledger
-does not drag in the eval harness that writes it.
+The module imports from `spend/` and `io/` only, so a reader of the ledger drags in nothing but
+the meter.
 
 ### `spend rollup` — the epic's acceptance test, as one command
 
@@ -1024,13 +997,11 @@ substitutes those same services rather than a hand-rolled double, so the seam un
 the seam production uses. A read that could not be performed fails on the `E` channel — it
 never resolves to an empty value a caller could forget to distinguish from a real one.
 
-Two raw `node:*` reads survive, both named by that pattern doc rather than overlooked. **fd
-0** stays a raw `node:fs` read at the boundary in [`src/io/stdin.ts`](./src/io/stdin.ts) —
-the standing ruling, where `Stdio.stdin` is a considered-and-declined stream swap rather
-than a missing service; the verbs take the read as an injected effect, so the `EAGAIN` and
-TTY paths stay testable without a real descriptor. **`homedir()`** stays a raw `node:os`
-read in [`src/eval/spawn-io.ts`](./src/eval/spawn-io.ts), because Effect v4 ships no
-equivalent at all; it is a parameter default, so a test substitutes it without a service.
+One raw `node:*` read survives, named by that pattern doc rather than overlooked. **fd 0** stays a
+raw `node:fs` read at the boundary in [`src/io/stdin.ts`](./src/io/stdin.ts) — the standing ruling,
+where `Stdio.stdin` is a considered-and-declined stream swap rather than a missing service; the
+verbs take the read as an injected effect, so the `EAGAIN` and TTY paths stay testable without a
+real descriptor.
 
 The delegation layer reads `process` — `cwd()`, `argv`, `execPath`, `env`, `exit()` — and that is
 confined to [`src/delegate/entry.ts`](./src/delegate/entry.ts), the boundary the bin bootstrap calls.

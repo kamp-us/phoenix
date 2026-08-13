@@ -4,7 +4,7 @@
 
 The verbs land in `packages/fabrika-cli/` under the **`spike`** subcommand group, registered in
 `packages/fabrika-cli/src/registry.ts` beside the shipped groups (at the time of writing `adr`,
-`build`, `epic`, `eval`, `hook`, `ledger`, `plan`, `report`, `review`, `review-ui`, `ship`, `spend`,
+`build`, `epic`, `hook`, `ledger`, `plan`, `report`, `review`, `review-ui`, `ship`, `spend`,
 `triage`, `ui`, `wire` — that list grows most weeks, so read the file rather than this sentence).
 The [CLI interface convention](../../docs/cli-interface-convention.md) governs every verb; where this
 spec and that doc disagree, the doc wins and this spec is the bug. **None of these verbs exist yet** —
@@ -66,10 +66,10 @@ ADR 0238).
   request, and emits no verdict. A `spike` marker in that namespace would be one `wire read` could
   never read back, which is the hazard that file's own docblock names. The HTML-comment markers
   below are this group's own, live only in issue comments, and enter no wire registry.
-- **An `eval` corpus stage.** `STAGES` (`packages/fabrika-cli/src/eval/corpus.ts:32`) is
-  `["triage","build","review","ship-it"]` and admits no ideation stage. That is an open decision at
-  [#5241](https://github.com/kamp-us/phoenix/issues/5241) blocking all five quintet skills equally;
-  adding a member here would red `eval/stage-admission.data.unit.test.ts`. Cited, not resolved.
+- **An eval corpus stage.** Moot: the eval corpus and its stage vocabulary were removed with the
+  rest of the eval tooling ([#5510](https://github.com/kamp-us/phoenix/issues/5510)). The ideation
+  layer needed a stage the corpus never admitted
+  ([#5241](https://github.com/kamp-us/phoenix/issues/5241)); there is no corpus to admit one now.
 - **Reusing `build scratch` for the workspace.** Read first, then refused on its preconditions, not
   on taste. `runScratch` requires a session env var, a resolved repo, and a **held `build` claim on
   an issue number**, and derives its nonce *from the claim token*

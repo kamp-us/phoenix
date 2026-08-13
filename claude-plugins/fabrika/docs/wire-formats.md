@@ -39,7 +39,6 @@ does not exist yet — rather than missing; check the registry before assuming a
 | --- | --- | --- | --- |
 | `acceptance-criteria` | [`packages/fabrika-cli/src/wire/acceptance-criteria.ts`](../../../packages/fabrika-cli/src/wire/acceptance-criteria.ts) | `triage`, `build-epic` | `build`, `review` |
 | `verdict-marker` | [`packages/fabrika-cli/src/wire/verdict-marker.ts`](../../../packages/fabrika-cli/src/wire/verdict-marker.ts) | `review`, `check-epic-plan`, `governance` | `build`, `ship` |
-| `eval-record` | [`packages/fabrika-cli/src/wire/eval-record.ts`](../../../packages/fabrika-cli/src/wire/eval-record.ts) | `review` | `ship` |
 | `slice-handoff` | [`packages/fabrika-cli/src/wire/slice-handoff.ts`](../../../packages/fabrika-cli/src/wire/slice-handoff.ts) | `build-epic` | `build` |
 | `map-ticket` | [`packages/fabrika-cli/src/wire/map-ticket.ts`](../../../packages/fabrika-cli/src/wire/map-ticket.ts) | `map` | `map` |
 | `grill-ruling` | [`packages/fabrika-cli/src/wire/grill-ruling.ts`](../../../packages/fabrika-cli/src/wire/grill-ruling.ts) | `grilling` | `grilling` |
@@ -73,27 +72,6 @@ moved is stale rather than passing. Drift costs both directions: a marker the re
 recognise makes a reviewed PR look unreviewed and stalls it, while one whose binding is lost would
 let a stale approval carry an unreviewed tree through a merge. The module owns the composing and the
 reading, including the staleness question; the skills keep the judgement of when to flip a verdict.
-
-### `eval-record`
-
-This is the measurement a graded review run leaves behind on the PR it graded. `review` runs a
-changed skill's graded eval cases five times each, takes the median, and posts one record per
-`(head, cell)`; a later merge gate reads it back, and a later scorecard aggregates it into a series.
-The record exists because the grading no longer returns into the job that needs the answer — running
-a model in CI costs credits the CI provider does not have, so the run happens where a model is
-already being paid for and leaves its answer bound to the exact commit it measured.
-
-Two things about the agreement are deliberate and easy to undo by accident. Its outcome token is
-`RECORDED` or `UNRECORDABLE` and never a pass/fail polarity: a polarity would have to mean *pass
-against what*, and the only candidate is the merge bar, which belongs to the gate and not to the
-measurement. And every aggregate it carries is re-derived from the numbers beside it when it is read
-— each case's dispersion against its own run counts, and the cell's graded, passing and unmeasured
-case counts against the case blocks themselves, with the pass rate against that denominator — so a
-record cannot publish a figure its own contents contradict, at either level. A record claiming ten
-graded cases over two case blocks, or over none at all, is refused rather than read back. A run that
-produced no measurement at
-all says so rather than reporting a zero, because a zero somebody measured and a zero nobody measured
-are the two facts the reader most needs to keep apart.
 
 ### `slice-handoff`
 

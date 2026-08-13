@@ -18,7 +18,7 @@ those citations are non-normative and an implementer opens none of them to build
 
 **The group name.** `grill`, free against
 [`src/registry.ts`](../../../../packages/fabrika-cli/src/registry.ts) when this was written; the
-registered groups were `adr build epic eval hook ledger plan report review review-ui ship spend
+registered groups were `adr build epic hook ledger plan report review review-ui ship spend
 triage ui wire`, though that list grows most weeks, so read the file rather than this sentence. `grill` is the
 verb group; `grilling` is the skill.
 

@@ -72,5 +72,6 @@ This skill proposes, never resolves; a ruling enters through report → triage.
 
 Model-invoked entry skill, one directory, no leaf skills. The caveat kinds are a closed vocabulary
 in `SKILL.md` rather than a rubric leaf — the leaf rule's two-consumer bar is unmet. Eval obligation
-rides that choice: this skill's eval suite enumerates the gate's own cases, which it does across the
-ten in [`evals/evals.json`](evals/evals.json).
+rides that choice: this skill's eval suite enumerated the gate's own cases across ten of them, until
+the eval tooling and every case folder were removed
+([#5510](https://github.com/kamp-us/phoenix/issues/5510)).

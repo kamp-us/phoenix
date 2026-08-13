@@ -228,8 +228,8 @@ created	/tmp/fresh/.glossary/TERMS.md
 ```
 
 ```
-$ fabrika glossary init --register terms --dir claude-plugins/fabrika/skills/glossary/evals/fixtures/registers
-glossary init: claude-plugins/fabrika/skills/glossary/evals/fixtures/registers/TERMS.md already exists — refusing to overwrite a register.
+$ fabrika glossary init --register terms --dir packages/fabrika-cli/test-fixtures/glossary/registers
+glossary init: packages/fabrika-cli/test-fixtures/glossary/registers/TERMS.md already exists — refusing to overwrite a register.
 $ echo $?
 12
 ```
@@ -350,14 +350,14 @@ The two outcomes whose every printed byte is derivable from this spec — an abs
 register that exists with nothing outstanding against it:
 
 ```
-$ fabrika glossary drift --dir claude-plugins/fabrika/skills/glossary/evals/fixtures/empty
+$ fabrika glossary drift --dir packages/fabrika-cli/test-fixtures/glossary/empty
 bootstrap
 $ echo $?
 0
 ```
 
 ```
-$ fabrika glossary drift --dir claude-plugins/fabrika/skills/glossary/evals/fixtures/registers --paths claude-plugins/fabrika/skills/glossary/evals/fixtures
+$ fabrika glossary drift --dir packages/fabrika-cli/test-fixtures/glossary/registers --paths packages/fabrika-cli/test-fixtures/glossary
 clean
 $ echo $?
 0
@@ -379,7 +379,7 @@ With `--json`, the same `clean` run carries the pinned `reason` and the counts t
 readable against:
 
 ```
-$ fabrika glossary drift --dir claude-plugins/fabrika/skills/glossary/evals/fixtures/registers --paths claude-plugins/fabrika/skills/glossary/evals/fixtures --json
+$ fabrika glossary drift --dir packages/fabrika-cli/test-fixtures/glossary/registers --paths packages/fabrika-cli/test-fixtures/glossary --json
 {"outcome":"clean","candidates":[],"reason":"swept 0 commit(s) since 0000000000000000000000000000000000000000; every candidate was already declared — this is a clean sweep, not an unread range","sinceCommit":"0000000000000000000000000000000000000000","scannedCommits":0,"declaredKeys":5}
 ```
 
@@ -507,7 +507,7 @@ Every example resolves against the committed fixture register, never the host re
 each printed cell reproduces:
 
 ```
-$ fabrika glossary lookup "pano" --register terms --dir claude-plugins/fabrika/skills/glossary/evals/fixtures/registers
+$ fabrika glossary lookup "pano" --register terms --dir packages/fabrika-cli/test-fixtures/glossary/registers
 declared	terms	Core / shape	pano
 ```
 
@@ -516,7 +516,7 @@ the `Core / shape` row is reported. The duplication itself is `glossary check`'s
 `lookup`'s.
 
 ```
-$ fabrika glossary lookup "tag" --register terms --dir claude-plugins/fabrika/skills/glossary/evals/fixtures/registers
+$ fabrika glossary lookup "tag" --register terms --dir packages/fabrika-cli/test-fixtures/glossary/registers
 collision	terms	Indexing	Database (tag)
 ```
 
@@ -524,7 +524,7 @@ The parenthetical is a qualifier, so `tag` is not `declared` — it is reported 
 skill judges whether the two are one term.
 
 ```
-$ fabrika glossary lookup "de-po" "capture ledger" --register terms --dir claude-plugins/fabrika/skills/glossary/evals/fixtures/registers
+$ fabrika glossary lookup "de-po" "capture ledger" --register terms --dir packages/fabrika-cli/test-fixtures/glossary/registers
 declared	terms	Products (domains)	depo
 absent	-	-	-
 ```
@@ -599,7 +599,7 @@ carries table rows — content the verb can see but cannot place under any secti
 **Examples**
 
 ```
-$ fabrika glossary sections --register terms --dir claude-plugins/fabrika/skills/glossary/evals/fixtures/registers
+$ fabrika glossary sections --register terms --dir packages/fabrika-cli/test-fixtures/glossary/registers
 terms	Core / shape	2
 terms	Products (domains)	3
 terms	Indexing	1
@@ -729,8 +729,8 @@ number all reproduce. `capture ledger` sorts before `depo`, so it lands as the f
 `Products (domains)` table:
 
 ```
-$ printf 'The append-only record of one capture run.' | fabrika glossary add "capture ledger" --register terms --section "Products (domains)" --definition-file - --dir claude-plugins/fabrika/skills/glossary/evals/fixtures/registers
-added	claude-plugins/fabrika/skills/glossary/evals/fixtures/registers/TERMS.md	Products (domains)	18
+$ printf 'The append-only record of one capture run.' | fabrika glossary add "capture ledger" --register terms --section "Products (domains)" --definition-file - --dir packages/fabrika-cli/test-fixtures/glossary/registers
+added	packages/fabrika-cli/test-fixtures/glossary/registers/TERMS.md	Products (domains)	18
 ```
 
 Line `18` is derivable from the committed fixture: `## Products (domains)` is line 14, line 15 is
@@ -741,7 +741,7 @@ is whatever that corpus makes it, which is why the example pins a fixture rather
 register.
 
 ```
-$ printf 'x' | fabrika glossary add "pano" --register terms --section "Core / shape" --definition-file - --dir claude-plugins/fabrika/skills/glossary/evals/fixtures/registers
+$ printf 'x' | fabrika glossary add "pano" --register terms --section "Core / shape" --definition-file - --dir packages/fabrika-cli/test-fixtures/glossary/registers
 glossary add: pano is already declared in terms under "Core / shape" — pass --replace to rewrite it.
 $ echo $?
 12
@@ -750,8 +750,8 @@ $ echo $?
 With `--replace`, the same invocation rewrites that row and reports the action:
 
 ```
-$ printf 'The board product.' | fabrika glossary add "pano" --register terms --section "Core / shape" --definition-file - --replace --dir claude-plugins/fabrika/skills/glossary/evals/fixtures/registers
-replaced	claude-plugins/fabrika/skills/glossary/evals/fixtures/registers/TERMS.md	Core / shape	11
+$ printf 'The board product.' | fabrika glossary add "pano" --register terms --section "Core / shape" --definition-file - --replace --dir packages/fabrika-cli/test-fixtures/glossary/registers
+replaced	packages/fabrika-cli/test-fixtures/glossary/registers/TERMS.md	Core / shape	11
 ```
 
 **Grounding**
@@ -882,7 +882,7 @@ Both the register and the decision corpus are committed fixtures in this skill's
 printed byte reproduces:
 
 ```
-$ fabrika glossary check --register terms --dir claude-plugins/fabrika/skills/glossary/evals/fixtures/registers --decisions claude-plugins/fabrika/skills/glossary/evals/fixtures/decisions
+$ fabrika glossary check --register terms --dir packages/fabrika-cli/test-fixtures/glossary/registers --decisions packages/fabrika-cli/test-fixtures/glossary/decisions
 defects
 duplicate-key	terms	Products (domains)	pano	also declared in "Core / shape"
 citation-superseded	terms	Core / shape	worker	cites 0044, status "superseded by [0144](0144-depo-internal-asset-store.md)"

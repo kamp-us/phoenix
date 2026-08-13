@@ -18,7 +18,7 @@ those citations are non-normative and an implementer opens none of them to build
 
 **The group name.** `map`, free against
 [`src/registry.ts`](../../../../packages/fabrika-cli/src/registry.ts) when this was written; the
-registered groups were `adr build epic eval hook ledger plan report review review-ui ship spend
+registered groups were `adr build epic hook ledger plan report review review-ui ship spend
 triage ui wire`. That list grows most weeks — `ledger` landed during this authoring session — so
 read the file rather than this sentence. `map` is the verb group; `wayfinding` is the skill.
 
@@ -327,7 +327,7 @@ alone: this group emits no verdict marker and gates no merge. An implementer who
 added the second human gate the skill's `NO-SECOND-GATE` anchor rules out.
 
 **One vocabulary this group is NOT a member of, stated because it bites the ship gate rather than
-the code.** `src/eval/corpus.ts`'s `STAGES` is `["triage", "build", "review", "ship-it"]`, so the
+the code.** the retired eval corpus's `STAGES` is `["triage", "build", "review", "ship-it"]`, so the
 ideation layer has no stage to declare an eval entry under. That is a corpus-wide gap affecting the
 whole quintet, owned by [#4649](https://github.com/kamp-us/phoenix/issues/4649)'s harness rather
 than by this contract, and it is recorded here so an implementer meets it as a known absence rather

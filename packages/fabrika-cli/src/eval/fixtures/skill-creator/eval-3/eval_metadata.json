@@ -1,6 +1,0 @@
-{
-	"eval_id": 3,
-	"eval_name": "renumber-after-a-collision",
-	"prompt": "Renumber the decision records after a collision.",
-	"assertions": ["The command exits 0", "The output includes every renumbered record"]
-}

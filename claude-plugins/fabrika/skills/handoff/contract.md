@@ -19,7 +19,7 @@ those citations are non-normative and an implementer opens none of them to build
 
 **The group name.** `handoff`, free against
 [`src/registry.ts`](../../../../packages/fabrika-cli/src/registry.ts) when this was written; the
-registered groups were `adr build epic eval hook ledger plan report review review-ui ship spend
+registered groups were `adr build epic hook ledger plan report review review-ui ship spend
 triage ui wire`. That list grows most weeks, so read the file rather than this sentence. Unlike its
 quintet siblings — whose groups are the domain noun rather than the skill name (`wayfinding`→`map`,
 `grilling`→`grill`, `prototyping`→`spike`) — the skill name *is* the domain noun here, and the
@@ -451,7 +451,7 @@ would report a claim nobody holds.
    would.
 
 **One vocabulary this group is NOT a member of, stated because it bites the ship gate rather than
-the code.** `src/eval/corpus.ts`'s `STAGES` is `["triage", "build", "review", "ship-it"]`, so there
+the code.** the retired eval corpus's `STAGES` is `["triage", "build", "review", "ship-it"]`, so there
 is no stage under which a `handoff` eval entry can be decoded. That is a corpus-wide gap affecting
 the whole quintet, open and unruled at [#5241](https://github.com/kamp-us/phoenix/issues/5241) and
 owned by [#4649](https://github.com/kamp-us/phoenix/issues/4649)'s harness rather than by this

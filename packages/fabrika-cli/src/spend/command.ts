@@ -46,11 +46,11 @@ const rollup = leafCommand(
 	"rollup",
 	{
 		// `--ledger`, not `--spend-ledger`: inside `fabrika spend rollup` the group name is already
-		// said, and the description names the writer's flag so the pairing stays findable.
+		// said.
 		ledger: Flag.string("ledger").pipe(
 			Flag.withDefault(DEFAULT_SPEND_LEDGER_PATH),
 			Flag.withDescription(
-				`the durable spend ledger to read — the file \`fabrika eval run --spend-ledger\` appends to (default: ${DEFAULT_SPEND_LEDGER_PATH})`,
+				`the durable spend ledger to read, one JSON Lines row per recorded run (default: ${DEFAULT_SPEND_LEDGER_PATH})`,
 			),
 		),
 		since: Flag.string("since").pipe(

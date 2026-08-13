@@ -3,7 +3,7 @@
 **Skill:** [`review`](SKILL.md) · **Authoring brief:** [#4959](https://github.com/kamp-us/phoenix/issues/4959) · **Date:** 2026-08-08
 
 These verbs live in `packages/fabrika-cli/`, binary `fabrika`, grouped under a `review`
-subcommand, beside the `adr`, `eval`, `report`, `triage` and `wire` groups already implemented
+subcommand, beside the `adr`, `report`, `triage` and `wire` groups already implemented
 there. The [CLI interface convention](../../docs/cli-interface-convention.md) governs them; where
 this spec and that doc disagree, the doc wins and this spec is the bug.
 

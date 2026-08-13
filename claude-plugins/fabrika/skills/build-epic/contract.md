@@ -41,7 +41,7 @@ respecifies them. Modules reused by import:
 - `packages/fabrika-cli/src/build/dependencies.ts` — the canonical `## Dependencies` grammar
   (defined in `build eligible`'s block). `epic open` imports the parser; this spec adds **no
   second grammar**.
-- `packages/fabrika-cli/src/eval/spawn.ts` — `NO_MODEL_TURNS_SIGNALS` / `noModelTurns` /
+- the silent-green measurement (#4106) — `NO_MODEL_TURNS_SIGNALS` / `noModelTurns` /
   `classifyRun`: the measured silent-green taxonomy (an unresolvable skill exits 0 with zero
   turns). `epic record --event dispatch-dead` consumes its classification vocabulary; the
   taxonomy is imported, never re-derived.
@@ -560,7 +560,7 @@ nothing landed). The verb answers with the commit SHA — the value `epic verdic
 
 This verb is what makes a **dead dispatch a proven fact instead of an inferred one**: exit `22`
 (HEAD unchanged) after a subagent returned is positive evidence the dispatch produced nothing —
-the silent-green class (`eval/spawn.ts`: exit 0, zero turns, nothing anywhere) and the
+the silent-green class (the silent-green measurement, #4106: exit 0, zero turns, nothing anywhere) and the
 produced-nothing class both land here, and the skill records `dispatch-dead` on it. A rewritten
 history (old tip not an ancestor) is `10` — off the run's vocabulary entirely, needs a human.
 
@@ -599,7 +599,7 @@ $ fabrika epic landed 4300 --slice C2
 
 - Ruled: artifacts over self-reports (#4891); #4111 / #3993 are the false reports this verb
   replaces. The #4934 ruling's second duty verbatim: read the graph, never the report.
-- `eval/spawn.ts` — the silent green; `22` is its conductor-side detector.
+- the silent-green measurement (#4106) — the silent green; `22` is its conductor-side detector.
 - #3837 — the reverting tree: the ancestor + clean assertions catch a tree that moved backward.
 - `post-build.ts` — a no-artifact return short-circuits before any evaluator is spawned.
 

@@ -24,7 +24,7 @@ against the v1 shape, so the merge lands on a module whose stated central guaran
 Three source facts fix the problem, and they were read rather than assumed:
 
 - **The two review label shapes genuinely differ.**
-  [`packages/fabrika-cli/src/eval/corpus.ts`](../packages/fabrika-cli/src/eval/corpus.ts) declares
+  `packages/fabrika-cli/src/eval/corpus.ts` (removed by #5510) declared
   `ReviewCodeEntry` with `label: {verdict, acFindings}` and `ReviewDocEntry` with
   `label: {verdict, findings}` — different field names over different rubrics (acceptance-criteria
   findings versus doc findings), not one shape spelled two ways.
@@ -35,7 +35,7 @@ Three source facts fix the problem, and they were read rather than assumed:
   *unrepresentable*". Collapsing `review-code` and `review-doc` onto a bare `review` key would make
   *both* label shapes legal under one key — the guarantee's exact negation.
 - **The grader dispatches on that same discriminator.**
-  [`packages/fabrika-cli/src/eval/oracle.ts`](../packages/fabrika-cli/src/eval/oracle.ts)'s
+  `packages/fabrika-cli/src/eval/oracle.ts`'s
   `gradeEntry` is a `switch (entry.stage)` selecting `gradeReviewCode` (compares `verdict` +
   `acFindings` as a set) or `gradeReviewDoc` (compares `verdict` + `findings` as a set). With one
   `review` case and no further key, two rubrics silently collapse onto one grader.

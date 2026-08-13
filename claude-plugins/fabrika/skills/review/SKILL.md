@@ -93,39 +93,6 @@ No class checks out the head: content arrives through the verbs as bytes, so the
 instructions are never loaded to judge the PR. Every namespace's verdict is **comment-only** — v1's
 code-namespace native-APPROVE is deliberately not carried (ADR 0058 rule 4).
 
-## 3a — Skill class only: run the changed skill's graded cases and record the number
-
-```bash
-fabrika eval graded claude-plugins/fabrika/skills/<name>/evals/evals.json \
-  --stage review --surface skill --model <model> \
-  --plugin-dir claude-plugins/fabrika --sha 03135b91
-```
-
-Each graded case runs five times and the median is its verdict; the verb prints an **eval record**
-bound to the head you scoped, which you post as its own PR comment.
-
-<!-- anchor: GRADED-COST-IS-TEN-SPAWNS-PER-CASE --> **Budget it at ten model spawns per graded
-case** — five runs, each a candidate against the skill *plus* a grader against its output — at a
-default 15-minute timeout each. A four-case eval set is forty spawns. The run count is not a flag:
-five is the ruled count (#4637 ruling 4), and a record produced at fewer runs is indistinguishable
-from a ruled one at the gate.
-
-**This stage is the only place the graded path runs.** Model-in-the-loop execution never runs in CI,
-on a **cost** constraint — no credits for model runs inside the CI provider — recorded as a cost
-constraint, not a principle. You are already spawning a model, so the graded axis rides a cost
-already being paid; a later CI job verifies the record rather than reproducing it.
-
-<!-- anchor: RECORD-IS-A-MEASUREMENT-NOT-A-VERDICT --> The record is a **measurement, not a
-judgement**: its token is `RECORDED` or `UNRECORDABLE`, never a polarity, and the 90% bar it would be
-judged against is the merge gate's, not yours. So it neither grants nor blocks your `review-skill`
-verdict. Post it on **every** outcome — a below-bar run records its below-bar number, because a
-failing run that wrote nothing reaches the verifier as *missing* and reddens for the wrong reason.
-`UNRECORDABLE` is the run that measured nothing at all: read it as UNKNOWN and say so, never as a
-zero. **That includes the runs that never reached a case** — an eval set you could not read, one that
-does not conform, one with no graded case. Each of those prints an `UNRECORDABLE` record naming which
-it was, and you post it like any other: an unposted record reaches the merge gate as *missing*, which
-is indistinguishable from a review that never ran the axis.
-
 ## 4 — Fan out, then route — never grade severity
 
 Sweep the loaded diff on silent-failure, type-design and test-gap as checklist lines in this same
@@ -219,7 +186,6 @@ the surface and files the gap. No row here dead-ends on a bare error.
 | The linked issue's `### Acceptance criteria` block | `review criteria` grades against it, and nothing else is the contract | **fail-loud** — `review criteria` exits `7` naming the issue and the wire reason (`absent` vs `malformed`), no criterion is invented, and the run points at front-door. A PR with no issue at all never reaches this verb: step 2 forks that state by class first. |
 | The PR body's `## Deviations` section | `review deviations` matches the disclosure against the bound commit's Tier-M scan | **fail-loud** — on a PR that owes the section, `absent` is malformed and fails the verdict closed; the run names the missing `## Deviations` heading and points at front-door. |
 | A git remote in this checkout whose URL names the repo under review | `review scope`, `review diff`, `review deviations` and `review post`'s namespace recompute fetch `pull/<pr>/head` and read the artifact out of the object database, so the bytes are provably the bound commit's ([`contract.md`](contract.md), the read verbs' commit binding) | **fail-loud** — every one of them exits `11` naming the repo no remote serves; the artifact cannot be tied to a commit, so what it shows is UNKNOWN and no unbound fallback is taken. |
-| The changed skill's `evals/evals.json` | `eval graded` runs its graded cases five times each so the PR carries a head-bound measurement of the skill it changed (step 3a) | **degrade**, on three distinguishable exits — `7` the set conforms and carries no graded case, `4` it decodes and does not conform, `1` it could not be read at all. All three still print an `UNRECORDABLE` record naming which one it was: **post it**, so the merge gate reads a broken eval set rather than an absent one. `7` and `4` are facts about the *set*, so say so in the `review-skill` verdict body as an unmeasured change; `1` is also the code for "the verb failed to run", so report it as the axis not running rather than as a fact about the skill. No number is invented on any of the three, and the verdict is still emitted on what the rubric *could* see. |
 | A CI check rollup at the head — `.github/workflows/` | `review ci` is the code class's execution evidence; this skill re-runs no check itself | **fail-loud** — zero declared check runs is exit `7`, refusing green over an empty enumeration (ADR 0092), and an unreadable enumeration is `11`, UNKNOWN, never green; the run names `.github/workflows/` and points at front-door. |
 
 ## Eval enumeration (leaf-rule obligation)

@@ -689,7 +689,7 @@ Both examples run against fixtures in this skill's tree and reproduce byte for b
 each writes to stderr is not shown.
 
 ```
-$ fabrika adr sweep --new claude-plugins/fabrika/skills/adr/evals/fixtures/0240-only-landed-adrs-may-be-cited.md --dir claude-plugins/fabrika/skills/adr/evals/fixtures/sweep-corpus
+$ fabrika adr sweep --new packages/fabrika-cli/test-fixtures/adr/0240-only-landed-adrs-may-be-cited.md --dir packages/fabrika-cli/test-fixtures/adr/sweep-corpus
 shortlist
 0101	17.03	0101-citations-resolve-against-the-base-ref.md	A citation resolves against the fetched base ref, never the local working tree
 0103	11.74	0103-an-unmerged-pull-request-leaves-no-record.md	A pull request that never merges leaves no record behind
@@ -708,7 +708,7 @@ the open: `0107` shares only `time` and `0110` only `lands`, each held by one re
 score `ln(10 / 1) = 2.302…` → `2.30` and tie, and the tie breaks toward the lower id.
 
 ```
-$ fabrika adr sweep --new 0240 --dir claude-plugins/fabrika/skills/adr/evals/fixtures/small-corpus
+$ fabrika adr sweep --new 0240 --dir packages/fabrika-cli/test-fixtures/adr/small-corpus
 indeterminate
 $ echo $?
 0
@@ -718,7 +718,7 @@ That corpus holds three live-accepted records, so it is below the rarity floor a
 indeterminate rather than clean. With `--json` the same run carries the pinned `reason`:
 
 ```
-$ fabrika adr sweep --new 0240 --dir claude-plugins/fabrika/skills/adr/evals/fixtures/small-corpus --json
+$ fabrika adr sweep --new 0240 --dir packages/fabrika-cli/test-fixtures/adr/small-corpus --json
 {"outcome":"indeterminate","entries":[],"reason":"the live-accepted corpus holds 3 record(s), below the rarity floor of 10 — every term looks common, so a clean sweep here is degenerate rather than clean","scanned":4,"inScope":3,"cited":0}
 $ echo $?
 0
