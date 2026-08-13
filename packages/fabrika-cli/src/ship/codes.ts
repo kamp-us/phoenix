@@ -1,6 +1,6 @@
 /**
- * The one exit table all thirteen `ship` verbs allocate from, so a code means one thing across this
- * group whichever verb produced it.
+ * The one exit table every `ship` verb allocates from, so a code means one thing across this group
+ * whichever verb produced it.
  *
  * **Every seat this group shares is imported, never re-typed as a numeral.** `3`, `5`, `6`, `7`,
  * `8`, `9`, `10` and `11` come from `../report/codes.ts` and `../triage/codes.ts`; `12` and `13`
@@ -71,6 +71,16 @@ export const PROVEN_NOT_IN_STATE = 16;
  * folding it into {@link WRITE_UNKNOWN} would hide the fact the operator must act on immediately.
  */
 export const NUDGE_REOPEN_UNCONFIRMED = 17;
+
+/**
+ * Refused: the diff touches a governance root and its `governance` verdict is **not** a head-bound
+ * PASS — `absent`, `stale` or `fail` (`ship floor`, #5408).
+ *
+ * Its own seat rather than a fold into {@link PROVEN_NOT_IN_STATE}, because a CI job keys on it: this
+ * is the one refusal a red check means "a human owes this PR a governance verdict", and every other
+ * non-zero from that job means the floor could not be resolved at all.
+ */
+export const GOVERNANCE_FLOOR_UNMET = 18;
 
 /**
  * The unallocated codes. `4` is `report file`'s body-section seat and `14`/`15` are `review`'s ACL

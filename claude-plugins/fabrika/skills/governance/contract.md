@@ -261,6 +261,14 @@ changed-file list and raises the required set from it (`requiredWithFloor`) thro
 `touchesGovernanceRoot` predicate `governance scope` and `ship scope` use — one derivation, three
 readers. So the requirement is a property of the diff, not of what a session remembered to type.
 
+**1c. …and the requirement had to be readable by something other than an agent. LANDED (#5408).**
+`ship gate` seats `blocked` at exit 0 and no workflow invoked it, so the floor bound on nothing but
+prose in the `ship` skill and two fabrika-tree PRs merged with no governance verdict after it
+shipped. `fabrika ship floor` reads the same conjunction for this one namespace and refuses on `18`
+when the verdict is absent, stale or fail; `.github/workflows/governance-floor.yml` relays that exit
+code. The mechanism choice and why the alternatives were rejected are recorded once, in
+[the `ship` contract](../ship/contract.md#the-mechanism-choice).
+
 **The founder ruled this instead of a §CP row** ([veto on
 #5036](https://github.com/kamp-us/phoenix/issues/5036#issuecomment-5234614633), 2026-08-10):
 `claude-plugins/fabrika/**` gets **no** CODEOWNERS row and **no** §CP-boundary widening. The model

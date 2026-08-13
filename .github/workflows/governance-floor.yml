@@ -1,0 +1,62 @@
+name: governance-floor
+
+# The governance floor made binding (#5408).
+#
+# The founder vetoed making `claude-plugins/fabrika/**` control-plane and substituted a control: a
+# required `governance` verdict on any diff touching a governance root (#5036 comment 5234614633).
+# The floor shipped in PR #5231 and it does derive the requirement correctly — but `ship gate` seats
+# `blocked` at exit 0, nothing read it, and no workflow invoked it at all, so two fabrika-tree PRs
+# (#5293, #5333) merged with no governance verdict after the floor was live. A control that never
+# withholds a merge is worse than none, because it looks present.
+#
+# `fabrika ship floor` is the decision; this job only relays its exit code (ADR 0228). Nothing here
+# decides which paths are governance-bearing, which verdict is in force, or whether an author may
+# author one — the verb reads the PR's changed files and resolves the verdict through `ship gate`
+# itself, which stays the single merge authority.
+#
+# It runs on EVERY pull request with no `paths:` filter on purpose. A YAML path filter is a second
+# copy of `GOVERNANCE_ROOTS` that nothing reds when it drifts (#4604); the verb's own read of the
+# PR's changed files is the one derivation, and a diff under no governance root is an `n/a` answer
+# this job passes on.
+on:
+  pull_request:
+
+# Least-privilege: the job checks out the repo and reads the PR's metadata, changed files, comments,
+# reviews and the comment authors' repository permission (the ADR 0055 write+ gate). It posts no
+# check-run, status or comment and fails by exit code alone.
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  floor:
+    name: a governance-root diff carries a governance verdict at its head
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: pnpm/action-setup@v4.1.0
+
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version-file: package.json
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Exit 0 = the floor does not bind (`n/a`) or is discharged (`satisfied`). Every non-zero reds,
+      # and they are different facts: 18 means the diff touches a governance root and its verdict is
+      # absent, stale or fail — a human owes this PR a verdict. 7 / 11 / 13 mean the floor could not
+      # be resolved at all, which is UNKNOWN and never a pass (ADR 0092).
+      - name: Decide whether the governance floor is discharged at this head
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CLAUDE_PIPELINE_REPO: ${{ github.repository }}
+        run: |
+          node packages/fabrika-cli/src/bin.ts ship floor \
+            ${{ github.event.pull_request.number }} \
+            --sha ${{ github.event.pull_request.head.sha }}
