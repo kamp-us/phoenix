@@ -36,6 +36,10 @@ export interface PullRecord {
 	readonly autoMerge: boolean;
 	/** The PR's author — the §CP cardinality table's `sole owner authored the PR` arm. */
 	readonly authorLogin: string;
+	/** Who has taken the PR, if anyone — `heal-ci diagnose`'s owner signal, and never its ACL. */
+	readonly assignees: ReadonlyArray<string>;
+	/** The platform's own last-activity stamp — one operand of the strand age. */
+	readonly updatedAt: string;
 }
 
 const toPullRecord = (value: unknown): PullRecord | null => {
@@ -56,6 +60,12 @@ const toPullRecord = (value: unknown): PullRecord | null => {
 		baseRef: isRecord(base) && typeof base.ref === "string" ? base.ref : "",
 		autoMerge: isRecord(value.auto_merge),
 		authorLogin: isRecord(user) && typeof user.login === "string" ? user.login : "",
+		assignees: Array.isArray(value.assignees)
+			? value.assignees.flatMap((entry) =>
+					isRecord(entry) && typeof entry.login === "string" ? [entry.login] : [],
+				)
+			: [],
+		updatedAt: typeof value.updated_at === "string" ? value.updated_at : "",
 	};
 };
 

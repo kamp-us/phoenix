@@ -127,6 +127,19 @@ export const GRILL_SEATS: SharedSeats = {
 export const HANDOFF_SEATS: SharedSeats = GRILL_SEATS;
 
 /**
+ * `heal-ci`'s seats: the same eight `triage` and `review` claim, so the map is reused rather than
+ * retyped.
+ *
+ * Every name and every reading matches the base's, including `7` as the widened `ZERO_SCOPE` (proven
+ * absent, or a required input proven empty) and `10` as the off-vocabulary classification `heal-ci
+ * rerun --signature` performs. `4` is held as a `DELIBERATE_GAP` and is deliberately **absent** from
+ * this map: it is `report file`'s body-section seat, filing is `report`'s verb, and keying the gap
+ * here would look up a name the base does not have and red the suite (the `HANDOFF_SEATS` precedent).
+ * The group's private band is `14`-`16`.
+ */
+export const HEAL_CI_SEATS: SharedSeats = SHARED_SEATS;
+
+/**
  * `glossary`'s seats: `build`'s nine minus the two leak seats.
  *
  * The group deliberately claims neither `5` nor `6`: machine-local paths in a register are decided by
@@ -262,6 +275,7 @@ export const ALIGNED_GROUPS: Readonly<Record<string, SharedSeats>> = {
 	glossary: GLOSSARY_SEATS,
 	grill: GRILL_SEATS,
 	handoff: HANDOFF_SEATS,
+	"heal-ci": HEAL_CI_SEATS,
 	ledger: BUILD_SEATS,
 	map: MAP_SEATS,
 	pattern: PATTERN_SEATS,

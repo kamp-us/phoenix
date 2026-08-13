@@ -17,6 +17,8 @@ const PULL_RECORD = {
 	baseRef: "main",
 	autoMerge: false,
 	authorLogin: "usirin",
+	assignees: [],
+	updatedAt: "2026-08-08T00:00:00Z",
 };
 
 const TAIL = "the file list cannot be bound to a commit, so the derivation is UNKNOWN.";

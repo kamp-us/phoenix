@@ -79,7 +79,7 @@ const declaresNextPage = (headers: string): boolean =>
  * `--paginate` concatenates the bodies and drops the headers, so the proof would not survive the
  * read.
  */
-const pagedWithLinkProof = (path: string): Shell<Attempt<PagedProof>> =>
+export const pagedWithLinkProof = (path: string): Shell<Attempt<PagedProof>> =>
 	Effect.gen(function* () {
 		const entries: unknown[] = [];
 		for (let page = 1; page <= PAGE_CAP; page++) {
@@ -96,7 +96,7 @@ const pagedWithLinkProof = (path: string): Shell<Attempt<PagedProof>> =>
 	});
 
 /** A `{total_count, <key>: []}` envelope, paged: entries accumulate, the declared total is page 1's. */
-const pagedEnvelope = (
+export const pagedEnvelope = (
 	stdout: string,
 	key: string,
 ): Attempt<{declared: number; entries: ReadonlyArray<unknown>}> => {

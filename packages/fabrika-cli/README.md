@@ -519,6 +519,54 @@ This group applies no label, closes nothing, opens no pull request, emits no ver
 pushes nothing. Nothing it records can block a merge — a session state that gated one would make
 every interrupted session a blocked one.
 
+## The `heal-ci` group
+
+The contract is `claude-plugins/fabrika/skills/heal-ci/contract.md`, which this group was written
+against. It has not landed yet — that path is where the contract will live, so it is left unlinked
+rather than pointing at a file that is not there.
+This is the repair lane: it takes a stranded or red pull request and drives it back toward green
+without a human reading logs. A **strand** is a PR nobody is moving; a **signature** is the one row
+of a closed table a failure log matches.
+
+| Verb | Answers |
+|---|---|
+| `heal-ci diagnose` | one PR's stall class from an ordered, total predicate chain, with the evidence that proves it |
+| `heal-ci sweep` | every open PR classified with its strand age — the scheduled surface |
+| `heal-ci surface` | declared required contexts against the runs that actually post at the head |
+| `heal-ci logs` | the failed-job log text for **every** failing gating context at a head |
+| `heal-ci classify` | pure: log text on stdin → one signature from a ten-row ordered table, default-deny |
+| `heal-ci rerun` | the at-most-once transient rerun, precondition re-derived inside the verb |
+| `heal-ci note` | the durable stop-path comment |
+
+Six properties are worth knowing before you call them:
+
+- **Every classification is an exit-`0` answer**, `red` and `wedged` and `not-open` included. A
+  non-zero exit means the verb could not produce an answer — v1's green head exited `3`, which made
+  its most successful outcome a failure to every caller using the toolkit's own `|| exit 1` idiom.
+- **The chain is ordered, and the order is the contract.** `check-surface` fires above `red` because
+  a required context no run produces cannot be healed by anything a log classifier does, and
+  `attended` sits above every strand class because a PR whose author pushed two minutes ago is not
+  abandoned.
+- **`unprobeable` is not `no-requirements`.** The branch-protection endpoint answers `404` both when
+  a branch is unprotected and when the token cannot see it, so `no-requirements` additionally needs a
+  successful rules read that returned nothing. Where the surface is unprobeable, `diagnose` skips
+  that arm with a notice rather than passing it — a permission the token lacks never reads as a
+  surface that is clean.
+- **`unclassified` is a third token, deliberately.** Fusing "I recognise a deterministic bug" with "I
+  recognise nothing" means a caller can never count how often the classifier is guessing, and the
+  routing differs. There is no path from ambiguous input to `transient`.
+- **The rerun guard lives in the verb.** `rerun` re-derives the head binding, the failure state and
+  at-most-once — from two independent, fully paginated signals — then requires a **read-back new
+  attempt** before any marker is written. v1 wrote its marker on the strength of the dispatch
+  response and thereby blocked every future rerun of a run that never re-ran. Exit `16` is the loud
+  one: the rerun landed and the record did not.
+- **`sweep` writes nothing.** It files no issue, assigns nobody and spawns nothing (ADR 0205): a
+  detector emits claimable work and normal pull adopts it. A board it could not read whole is a
+  refusal, never a shorter list.
+
+Filing is `report file`'s and is not respecified here, which is why `4` stays a deliberate gap in
+this group's table.
+
 ## The `glossary` group
 
 The contract is
