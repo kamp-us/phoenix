@@ -258,13 +258,13 @@ Every `grill` verb obeys these; stated once rather than repeated per block.
 ### The shared exit matrix
 
 This table owns `code → meaning`. Per-verb **Errors** tables below own only that verb's own
-triggers. `0`, `1`, `2` and `127` are stated **here and only here**, and every verb can return them.
+triggers. `0`, `1`, `126` and `127` are stated **here and only here**, and every verb can return them.
 
 | Code | Meaning | `open` | `round` | `answer` | `rule` | `read` |
 |---|---|---|---|---|---|---|
 | `0` | the answer is on stdout | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `1` | usage error, or the verb failed to run | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `2` | no implementation could be resolved | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `126` | no implementation could be resolved | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `127` | the verb never ran (unresolved binary) | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `3` | `EMPTY_STDIN` — stdin was read and held nothing | — | ✓ | — | — | — |
 | `4` | `BAD_SECTIONS` — a required section is missing, out of order, or empty | — | ✓ | ✓ | — | — |
@@ -316,7 +316,7 @@ restated beside them. Every **non-zero** code seats on exactly one terminal.
 | `SESSION-UNRESOLVED` | `7`, `16` | the session could not be named — absent, unlabelled, or ambiguous. Nothing was written |
 | `RECORD-REFUSED` | `12`, `13`, `14`, `15`, `17`, `18` | a writing verb refused on a clause. Nothing was recorded and every question stays exactly as it was — the seam working, not an error to route around |
 | `WRITE-UNPROVEN` | `8`, `9` | a write may or may not have landed. Re-read before re-writing |
-| `STOPPED` | `1`, `2`, `11`, `127` | the run is UNKNOWN with nothing written |
+| `STOPPED` | `1`, `11`, `126`, `127` | the run is UNKNOWN with nothing written |
 
 `10` is the deliberate gap above: unreachable, so it seats on no terminal by design. `0` is
 disambiguated by which verb produced it and, for `grill read`, by the `frontier` token — which is

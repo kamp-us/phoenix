@@ -10,7 +10,7 @@ tags: [fabrika, hooks, guards, probes]
 
 **What this decides:** the polarity of exactly one state — a fabrika hook fires, and its verb
 **never ran** (a bare `fabrika` exits `127` on a machine with no install; a cross-checkout
-invocation refuses with exit `2`). That state **fails open**: the harness event proceeds. What
+invocation refuses with exit `126`). That state **fails open**: the harness event proceeds. What
 this decision adds on top of the v1 status quo is that **fail-open-and-silent is banned** — the
 cannot-run state owes a visible degraded notice, and this ADR records that the notice does not
 have a working home today.
@@ -139,9 +139,38 @@ the convention reserves for "the verb never ran" resolve UNKNOWN
 | State | Reading | Gates? |
 | --- | --- | --- |
 | exit `127` — nothing on PATH | UNKNOWN, and the notice cannot come from fabrika (see below) | no |
-| exit `2` — cross-checkout refusal | UNKNOWN, and fabrika itself speaks the refusal | no |
+| exit `126` — cross-checkout refusal | UNKNOWN, and fabrika itself speaks the refusal | no |
 | ran, returned a deny | a real verdict on observed input | **yes — fails closed** |
 | ran, returned allow / no objection | a real verdict | no |
+
+> **Amendment, 2026-08-13 ([#5423](https://github.com/kamp-us/phoenix/issues/5423)) — the exit-2 row's
+> factual reading was wrong, and the fix is a re-seat rather than a re-ruling.** The row above read
+> `exit 2 — cross-checkout refusal … Gates? no`. On `PreToolUse` that "no" was false: exit `2` is
+> the *one* code the harness reads as "block the tool call", verified first-party against the
+> installed build (2.1.228 `strings`, *Before tool execution*) and live on 2.1.227 (a probe hook on
+> matcher `Task|Workflow` exiting `2` stopped an agent spawn; the same probe exiting `3` did not).
+> So while fabrika's bootstrap failures sat on `2`, a fabrika that could not resolve itself **denied
+> every `Task`/`Workflow` spawn in the session** — the exact inverse of the polarity this ADR ruled.
+> `SessionStart` was never exposed: exit `2` there is user-visible only.
+>
+> **The ruling is unchanged; only the premise was.** The cannot-run state still fails open, and no
+> horn was re-decided. What changed is where the state sits: the founder ruling on #5423 (option A)
+> moved fabrika's bootstrap/dispatch failures off `2` onto a non-blocking code, and `2` is now
+> allocated by nothing in any fabrika exit table. The seat chosen is `126` rather than the ruling's
+> illustrative `3`, because `3` is `EMPTY_STDIN` across the aligned tables and seating "I could not
+> start" there would collapse it into "I started and read nothing"; `126` is the shell's own *found
+> but not executable*, the same claim one level up, and it can never collide with a group's `3`+
+> band. Four sites moved — `bin.ts`'s `ERR_MODULE_NOT_FOUND`, `delegate/entry.ts`'s foreign-checkout
+> refusal and walk-fault, and `delegate/resolve.ts`'s spawn fault, the fourth found while fixing the
+> three the issue named. The general rule now lives in
+> [`../claude-plugins/fabrika/docs/hook-surface.md`](../claude-plugins/fabrika/docs/hook-surface.md)
+> (*The harness exit-code contract*), and the polarity is pinned by a regression test rather than by
+> this prose.
+>
+> **The adversarial review this ADR gates implementation on was discharged by the #5423 ruling**,
+> which weighed proceeding-unguarded against a blocked spawn for both the dependency-not-linked and
+> cross-checkout states and chose option A explicitly. The exposure it accepts is the one the
+> Consequences below already name.
 
 **UNKNOWN never drives a refusal.** A hook may only deny on a decision its verb actually computed
 from input it actually read.
@@ -151,7 +180,7 @@ from input it actually read.
 The ruling names a visible degraded notice as the price of fail-open. Checked first-hand, that
 notice is **implementable for one of the two states and not the other**:
 
-- **exit `2`** — the process *did* start, so fabrika speaks for itself: the foreign-checkout refusal
+- **exit `126`** — the process *did* start, so fabrika speaks for itself: the foreign-checkout refusal
   prints on stderr from
   [`../packages/fabrika-cli/src/delegate/resolve.ts`](../packages/fabrika-cli/src/delegate/resolve.ts)
   (the [#4956](https://github.com/kamp-us/phoenix/issues/4956) branch). This half already works.

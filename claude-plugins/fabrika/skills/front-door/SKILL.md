@@ -181,7 +181,7 @@ runs, and a closed set nobody can resolve is not closed.
 
 1. **the status source was unreadable** — *back-off.* One or more fields are `unknown`; a read a verb
    needed failed (exit `11`); or no readout appeared at all because the CLI could not run — the verb
-   failed to run or the flag was wrong (`1`), no implementation resolved (`2`), or nothing ran at all
+   failed to run or the flag was wrong (`1`), no implementation resolved (`126`), or nothing ran at all
    (`127`). Distinct from "there is nothing to report": nothing was proven either way, and no field
    may be presented as clear. It ranks first because an unknown a reader mistakes for a clear is the
    failure this whole page is built against.
@@ -204,7 +204,7 @@ input and run the verb again. Ending a run on one of these reports a repo proble
 typo.
 
 Those two lists between them account for **every** code the contract seats — the five terminals cover
-`0`, `1`, `2`, `8`, `9`, `11` and `127`, and the non-terminal refusals cover `3`, `5`, `6`, `7`, `10`
+`0`, `1`, `8`, `9`, `11`, `126` and `127`, and the non-terminal refusals cover `3`, `5`, `6`, `7`, `10`
 and `12` — so no exit can leave you improvising a way out. (`4` is the registered deliberate gap and
 no verb here returns it.)
 

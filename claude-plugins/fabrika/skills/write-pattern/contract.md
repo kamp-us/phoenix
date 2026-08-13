@@ -116,7 +116,7 @@ Every verb below obeys these; they are stated once rather than repeated per bloc
 ### The shared exit matrix
 
 This table owns `code → meaning` for the group. Per-verb tables below enumerate only that verb's own
-proven outcomes and the trigger that produces each; **the universal codes `0`, `1`, `2` and `127` are
+proven outcomes and the trigger that produces each; **the universal codes `0`, `1`, `126` and `127` are
 stated here exactly once and every verb can also return them.** One fact, one home — a shared matrix
 restated per verb is a shared matrix that can drift from itself.
 
@@ -124,7 +124,7 @@ restated per verb is a shared matrix that can drift from itself.
 |---|---|---|
 | `0` | — | the answer was produced on stdout |
 | `1` | — | usage error, or the verb failed to run |
-| `2` | — | no implementation could be resolved — the binary was found, the verbs were not |
+| `126` | — | no implementation could be resolved — the binary was found, the verbs were not |
 | `127` | — | the verb never ran at all (unresolved binary) |
 | `8` | `WRITE_UNKNOWN` | the write itself failed, so the outcome is UNKNOWN — deliberately not `1` |
 | `9` | `READBACK_MISMATCH` | the write landed and the read-back does not match; the artifact exists and needs a human |

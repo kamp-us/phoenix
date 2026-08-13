@@ -367,14 +367,14 @@ Every `handoff` verb obeys these; stated once rather than repeated per block.
 ### The shared exit matrix
 
 This table owns `code → meaning`. Per-verb **Errors** tables below own only that verb's own
-triggers. `1`, `2` and `127` are stated **here and only here**, and every verb can return them. `0`
+triggers. `1`, `126` and `127` are stated **here and only here**, and every verb can return them. `0`
 is restated per verb because each verb's `0` names a different answer.
 
 | Code | Meaning | `capture` | `take` | `read` | `claim` |
 |---|---|---|---|---|---|
 | `0` | the answer is on stdout | ✓ | ✓ | ✓ | ✓ |
 | `1` | usage error, or the verb failed to run | ✓ | ✓ | ✓ | ✓ |
-| `2` | no implementation could be resolved | ✓ | ✓ | ✓ | ✓ |
+| `126` | no implementation could be resolved | ✓ | ✓ | ✓ | ✓ |
 | `127` | the verb never ran (unresolved binary) | ✓ | ✓ | ✓ | ✓ |
 | `3` | `EMPTY_STDIN` — stdin was read and held nothing | — | ✓ | — | — |
 | `4` | `BAD_SECTIONS` — a required section is missing, out of order or empty, **or the document carries content outside the closed set** | — | ✓ | — | — |
@@ -1009,7 +1009,7 @@ no `origin`, which degrades rather than blocks.
 8. **Every outcome the verb can reach has a code** — walked below one verb at a time, over *states*
    rather than over codes, because check 3 can only see what the tables already wrote down. The
    universal seats are reachable from all four and are named once here instead of in every row: `1`
-   for a usage error or a verb that failed to run, `2` for an implementation that could not be
+   for a usage error or a verb that failed to run, `126` for an implementation that could not be
    resolved, `127` for a verb that never ran. The walk was re-run against the shipped verbs
    ([`src/handoff/`](../../../../packages/fabrika-cli/src/handoff/), #5025), so the codes below are
    the ones the group actually seats rather than the ones this spec once intended.

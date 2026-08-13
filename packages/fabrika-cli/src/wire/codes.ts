@@ -1,8 +1,9 @@
 /**
  * The one exit table every `wire` verb allocates from, so a code means one thing across the group.
  *
- * `0`, `1`, `2` and `127` are reserved by the interface convention (`../verb.ts`); everything else
- * is `3` and up, the band a verb owns for outcomes it PROVED.
+ * `0`, `1`, `126` and `127` are reserved by the interface convention (`../verb.ts`); everything else
+ * is `3` and up, the band a verb owns for outcomes it PROVED. `2` is allocated by nothing anywhere
+ * in fabrika — it is the harness's block code on `PreToolUse` (`../hook/harness-exit.ts`, #5423).
  *
  * **The split that is the whole point of this group.** Three different things can go wrong while
  * looking for a format in an artifact, and collapsing any two of them is what blinds a reader:
@@ -17,12 +18,12 @@
  * one place where the negative is the *expected* result and so the least likely to be questioned.
  */
 
+import {NO_IMPLEMENTATION} from "../verb.ts";
+
 /** The answer is on stdout. Restated here because {@link WIRE_EXIT_TABLE} spans the whole matrix. */
 const ANSWER = 0;
 /** Usage error, or the verb failed to run. */
 const FAILED = 1;
-/** No implementation could be resolved — the dependency graph never loaded (`../bin.ts`). */
-const NO_IMPLEMENTATION = 2;
 
 /** The artifact was read and the format's block is provably not in it. A proven negative. */
 export const ABSENT = 3;
@@ -67,7 +68,6 @@ export interface ExitCodeRow {
 export const WIRE_EXIT_TABLE: ReadonlyArray<ExitCodeRow> = [
 	{code: ANSWER, meaning: "the answer is on stdout"},
 	{code: FAILED, meaning: "usage error, or the verb failed to run"},
-	{code: NO_IMPLEMENTATION, meaning: "no implementation could be resolved"},
 	{code: ABSENT, meaning: "the artifact was read and the format's block is proven absent"},
 	{code: MALFORMED, meaning: "the block is present and does not conform"},
 	{code: EMPTY_ARTIFACT, meaning: "stdin was read and held nothing"},
@@ -80,5 +80,6 @@ export const WIRE_EXIT_TABLE: ReadonlyArray<ExitCodeRow> = [
 		meaning: "zero scope: --format names no registered format, or the registry is empty",
 	},
 	{code: UNUSABLE_FIELDS, meaning: "the fields on stdin hold nothing this format can compose"},
+	{code: NO_IMPLEMENTATION, meaning: "no implementation could be resolved"},
 	{code: NEVER_RAN, meaning: "the verb never ran (unresolved binary)"},
 ];

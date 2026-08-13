@@ -201,7 +201,7 @@ case states the **workspace's** disposition instead.
 - `WRITE-UNPROVEN` — `8`, `9`, or `20`: a write may or may not have landed, read back differently,
   or landed while the manifest did not. Re-read the spike before re-writing; the refusal names the
   artifact that needs a human. *Workspace: live — never dispose on an unproven write.*
-- `STOPPED` — `1`, `2`, `4`, `7`, `11`, `12`, `13`, `18`, `127`: the run could not proceed and
+- `STOPPED` — `1`, `4`, `7`, `11`, `12`, `13`, `18`, `126`, `127`: the run could not proceed and
   nothing was written. Three of these are not "unknown" and you say which you hit: `4` is a corrupt
   artifact on disk — a manifest or evidence log that does not parse, which no re-run repairs; `7` is
   a proven repository fact whose way forward the refusal names — a missing label routes to

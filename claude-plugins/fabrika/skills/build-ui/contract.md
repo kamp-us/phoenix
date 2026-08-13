@@ -125,7 +125,7 @@ Every `ui` verb obeys these; stated once.
 ### The shared exit matrix
 
 This matrix owns `code → meaning` for the `ui` group; each verb's block enumerates only its own
-reachable proven outcomes with triggers. `0`, `1`, `2` and `127` are the interface convention's
+reachable proven outcomes with triggers. `0`, `1`, `126` and `127` are the interface convention's
 reserved codes, stated only here: every verb can also return them. **`3`–`11` aligns code-for-code
 with the shipped `report`/`triage` base** (`packages/fabrika-cli/src/report/codes.ts`) like the
 sibling `build` contract; **`12`+ is `ui`-local by design** — cross-group divergence above `11` is
@@ -135,7 +135,7 @@ the established doctrine (`triage`'s own `codes.ts` states it for `adr`).
 |---|---|
 | `0` | the answer is on stdout |
 | `1` | usage error, or the verb failed to run |
-| `2` | no implementation could be resolved (`packages/fabrika-cli/src/bin.ts`) |
+| `126` | no implementation could be resolved (`packages/fabrika-cli/src/bin.ts`) |
 | `3` | stdin was read and held nothing — the aligned seat, reserved: no `ui` verb reads stdin today, and the seat stays empty rather than reused (a gap is cheaper than a collision, `report/codes.ts`) |
 | `4` | a required section is missing, malformed, empty, or out of place — in a document a verb derives from (here: a registry or pointer file that exists but does not parse) |
 | `5` | the authored text carries a machine-local path, unredacted |

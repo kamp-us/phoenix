@@ -345,7 +345,7 @@ Every `ledger` verb obeys these; stated once.
 ### The shared exit matrix
 
 This matrix owns `code → meaning`; the per-verb tables enumerate only that verb's own reachable
-proven outcomes with triggers. `0`, `1`, `2`, `127` are the interface convention's reserved codes
+proven outcomes with triggers. `0`, `1`, `126`, `127` are the interface convention's reserved codes
 (`src/verb.ts`, the exit-2 bootstrap in `src/bin.ts`), stated **only here**; every verb can return
 them.
 
@@ -379,7 +379,7 @@ it, and the alignment checker is base-only by design (`occupied = allocatedCodes
 |---|---|---|---|---|---|---|---|
 | `0` | the answer is on stdout | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `1` | usage error, or the verb failed to run | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `2` | no implementation could be resolved (`src/bin.ts`) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `126` | no implementation could be resolved (`src/bin.ts`) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `3` | stdin was read and held nothing | — | ✓ | ✓ | ✓ | — | — |
 | `4` | an authored document's required section or field is missing, duplicated, or mis-numbered | — | ✓ | ✓ | ✓ | — | — |
 | `5` | the **authored** text carries a machine-local path | — | ✓ | ✓ | — | — | ✓ |
@@ -1178,7 +1178,7 @@ Vocabulary: **fail-loud** / **degrade** / **bootstrap** (front-door, #4952).
 Per the [interface convention](../../docs/cli-interface-convention.md) Part 2: every flag carries a
 type and default; every stdout shape has a literal example; every non-zero code is enumerated with
 its trigger (the shared matrix owns each code's single meaning, the per-verb tables own the
-triggers, and the universal `0`/`1`/`2`/`127` are stated exactly once); every enumerated code has
+triggers, and the universal `0`/`1`/`126`/`127` are stated exactly once); every enumerated code has
 an Errors row; every judging verb states its scope and its zero-scope behavior; no clause defers to
 a v1 script, another skill's prose, or the authoring session — every cross-reference is to a
 **landed sibling fabrika contract or a shipped module by path**.

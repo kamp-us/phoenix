@@ -250,7 +250,7 @@ one, which the first edit already satisfies.
 |---|---|:--:|:--:|:--:|:--:|:--:|:--:|
 | `0` | the answer is on stdout | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `1` | usage error, unresolvable repo where the answer requires one, a failed stdin read, or the verb failed to run | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `2` | no implementation could be resolved | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `126` | no implementation could be resolved | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `3` | stdin was read and held nothing | — | — | — | — | — | ✓ |
 | `4` | *(deliberate gap — `report file`'s body-section seat; no verb here composes body sections)* | — | — | — | — | — | — |
 | `5` | the **authored** content carries a machine-local path | — | — | — | — | — | ✓ |
@@ -270,7 +270,7 @@ different spelling reds the alignment test with nothing in the failure naming wh
 `OFF_VOCABULARY`, `PRECONDITION_UNKNOWN`, plus this group's own `NOT_BUILDABLE`.
 
 **This matrix owns what a code *means*; the per-verb tables own what *triggers* it.** Every verb can
-also return `0`, `1`, `2` and `127` with the meanings above, stated here and nowhere else; the
+also return `0`, `1`, `126` and `127` with the meanings above, stated here and nowhere else; the
 per-verb "Exit status" tables enumerate only that verb's own proven outcomes, `3` and up.
 
 **`7` and `11` are the group's load-bearing pair.** `7` is a *fact about a caller-supplied path* —

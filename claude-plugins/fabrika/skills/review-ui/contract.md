@@ -132,7 +132,7 @@ Every `review-ui` verb obeys these; stated once.
 ### The shared exit matrix
 
 This matrix owns `code → meaning` for the `review-ui` group; each verb's block enumerates only
-its own reachable proven outcomes with triggers. `0`, `1`, `2` and `127` are the interface
+its own reachable proven outcomes with triggers. `0`, `1`, `126` and `127` are the interface
 convention's reserved codes, stated only here: every verb can also return them. **Seats `3`, `5`, `6`, `7`, `8`, `9`, `10` and `11`
 align with the shipped base** (`packages/fabrika-cli/src/report/codes.ts`; registered in
 `ALIGNED_GROUPS`, `src/exit-code-alignment.ts`) — the same eight-seat mapping the shipped
@@ -150,7 +150,7 @@ sibling's numerals is not a goal the doctrine sets.
 |---|---|
 | `0` | the answer is on stdout |
 | `1` | usage error (bad flag, zero `--surface` operands, unresolvable repo), or the verb failed to run |
-| `2` | no implementation could be resolved |
+| `126` | no implementation could be resolved |
 | `3` | stdin was read and held nothing (`post` and `note`; the aligned seat) |
 | `4` | a required file a verb derives from is absent, does not parse, or violates its schema — a capture set's `manifest.json`, or `design-harness.json` at the tier-choice read (the whole-file rule the `ui` group states; the seat the base uses for a malformed derived document) |
 | `5` | the authored text carries a machine-local path (this group offers no `--redact`; the recovery is a rewrite) |

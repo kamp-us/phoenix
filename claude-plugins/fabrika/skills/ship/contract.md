@@ -203,7 +203,7 @@ authority.
 |---|---|---|
 | `0` | the answer is on stdout — including `stop`, `red`, `ejected`, `n/a`: an answer, not an error | all |
 | `1` | usage error, unresolvable repo, or the verb failed to run | all |
-| `2` | no implementation could be resolved | all |
+| `126` | no implementation could be resolved | all |
 | `3` | stdin was read and held nothing | `resolve`, `note` |
 | `4` | *(deliberate gap — `report file`'s body-section seat; no verb here performs one)* | — |
 | `5` | the **authored** text carries a machine-local path | `resolve`, `note` |
@@ -221,7 +221,7 @@ authority.
 | `127` | the verb never ran (unresolved binary) | all |
 
 **This matrix owns what a code *means*; the per-verb tables own what *triggers* it.** Every
-verb can return `0`, `1`, `2` and `127` with the meanings above, stated here and nowhere else;
+verb can return `0`, `1`, `126` and `127` with the meanings above, stated here and nowhere else;
 the per-verb "Exit status" tables enumerate only that verb's own proven outcomes, `3` and up,
 phrased as that verb's trigger. (The one-fact-one-home rule; the `/triage` contract shipped the
 ten-places drift this prevents.)

@@ -9,6 +9,7 @@
 import {NodeServices} from "@effect/platform-node";
 import {Effect, FileSystem, Path} from "effect";
 import * as Schema from "effect/Schema";
+import {NO_IMPLEMENTATION} from "../verb.ts";
 import {VERSION} from "../version.ts";
 import {declaredVersion, probeLocalInstall} from "./local.ts";
 import {
@@ -76,7 +77,7 @@ const program = Effect.gen(function* () {
 
 	if (resolution._tag === "refuse-foreign-checkout") {
 		console.error(foreignCheckoutRefusal(resolution));
-		return {_tag: "exited", status: 2} as const;
+		return {_tag: "exited", status: NO_IMPLEMENTATION} as const;
 	}
 	if (resolution._tag === "run-here") return undefined;
 	if (resolution._tag === "warn-and-run-here") {
@@ -114,7 +115,7 @@ const program = Effect.gen(function* () {
  */
 export const delegateOrRunHere = async (): Promise<void> => {
 	// Both recursion guards are read BEFORE any filesystem work: a delegated child must not pay for
-	// the ancestor walk, and must not be able to exit 2 on a walk fault it should never have
+	// the ancestor walk, and must not be able to fail on a walk fault it should never have
 	// performed. The self-check in `resolve` is the second, independent guard.
 	if (takeSkipInfer(process.argv, process.env)) return;
 
@@ -145,5 +146,5 @@ export const delegateOrRunHere = async (): Promise<void> => {
 			`  stopped at: ${outcome.failed}\n` +
 			`  cause: ${outcome.reason}`,
 	);
-	process.exit(2);
+	process.exit(NO_IMPLEMENTATION);
 };

@@ -149,7 +149,7 @@ Every `spike` verb obeys these; stated once.
 ### The shared exit matrix
 
 This matrix owns `code → meaning` for the `spike` group; each verb's block enumerates only its own
-reachable proven outcomes with triggers. `0`, `1`, `2` and `127` are the interface convention's
+reachable proven outcomes with triggers. `0`, `1`, `126` and `127` are the interface convention's
 reserved codes, stated **only here**: every verb can also return them. **`3`–`11` aligns
 code-for-code with the shipped `report`/`triage` base** (`packages/fabrika-cli/src/report/codes.ts`),
 registered in `exit-code-alignment.ts` with the seat map below; **`12`+ is `spike`-local by design** —
@@ -159,7 +159,7 @@ cross-group divergence above `11` is the established doctrine.
 |---|---|
 | `0` | the answer is on stdout |
 | `1` | usage error, or the verb failed to run |
-| `2` | no implementation could be resolved (`packages/fabrika-cli/src/bin.ts:39`) |
+| `126` | no implementation could be resolved (`packages/fabrika-cli/src/bin.ts:39`) |
 | `3` | stdin was read and held nothing |
 | `4` | a required document is missing, malformed, or out of place — here: the workspace manifest or the evidence log exists but does not parse |
 | `5` | the authored text carries a machine-local path, unredacted |
@@ -990,7 +990,7 @@ skill's table does not already carry.
 Per the [interface convention](../../docs/cli-interface-convention.md) Part 2: every flag carries a
 type and, where optional, a default; every stdout shape has a literal example; every non-zero code is
 enumerated with its trigger (the per-verb tables own the group-local rows, and the universal
-`0`/`1`/`2`/`127` live once in the shared matrix, which owns every code's single meaning); every
+`0`/`1`/`126`/`127` live once in the shared matrix, which owns every code's single meaning); every
 error names its message, its stream and its code, and every code in every verb's exit table has a
 matching Errors row; every judging verb states its scope and its zero-scope behaviour (`spike
 dispose` is the one judging verb, and `spike capture`'s `14` is the zero-scope red on the evidence
