@@ -24,10 +24,16 @@ import {
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {NodeServices} from "@effect/platform-node";
-import {Effect, FileSystem, Path} from "effect";
+import {Console, Effect, FileSystem, Path} from "effect";
 import {afterEach, beforeEach, describe, expect, it} from "vitest";
 import {type GradableCase, type RunVerdict, runGradedAxis} from "./graded-axis.ts";
-import {EVAL_SET_FILE, runDirName, stageRunWorkspace, stagingPlan} from "./run-workspace.ts";
+import {
+	EVAL_SET_FILE,
+	ISOLATED_DIR_NOTE,
+	runDirName,
+	stageRunWorkspace,
+	stagingPlan,
+} from "./run-workspace.ts";
 
 const live = <A, E>(effect: Effect.Effect<A, E, FileSystem.FileSystem | Path.Path>): Promise<A> =>
 	Effect.runPromise(Effect.provide(effect, NodeServices.layer));
@@ -123,8 +129,17 @@ describe("the five graded runs of one case", () => {
 	 * Drive the real axis with a stub that stages, snapshots what it was handed, and only then writes
 	 * a deliverable — the shape a candidate leaves behind, and what the next run must not be able to see.
 	 */
-	const stageFiveRuns = (evalCase: GradableCase = gradableCase) =>
-		live(
+	const stageFiveRuns = (evalCase: GradableCase = gradableCase) => {
+		// Captured rather than inspected on the real stderr: the announcement is the only thing a live
+		// run leaves behind about the directories, so it is asserted here the way an operator reads it.
+		const announced: Array<string> = [];
+		const capturing: Console.Console = {
+			...globalThis.console,
+			error: (...args: ReadonlyArray<unknown>) => {
+				announced.push(args.join(" "));
+			},
+		};
+		return live(
 			Effect.gen(function* () {
 				const fs = yield* FileSystem.FileSystem;
 				const path = yield* Path.Path;
@@ -165,9 +180,10 @@ describe("the five graded runs of one case", () => {
 							}),
 						),
 				});
-				return {observed, results};
-			}),
+				return {observed, results, announced};
+			}).pipe(Effect.provideService(Console.Console, capturing)),
 		);
+	};
 
 	it("each execute in their own fresh directory, with no sibling run's deliverables in it", async () => {
 		const {observed} = await stageFiveRuns();
@@ -189,6 +205,24 @@ describe("the five graded runs of one case", () => {
 			expect(run.bytes).toBe(FIXTURE_BODY);
 			expect(run.bytes).not.toContain("expected_output");
 			expect(run.bytes).not.toContain("answer key");
+		}
+	});
+
+	/**
+	 * The observable half of the same property. The directories are removed on scope close and are
+	 * absent from the committed manifest, so without this line a real run confirms nothing — which is
+	 * what #5437's live-verification criterion asks an operator to do.
+	 */
+	it("each announce their own directory, so a real run's stderr shows five distinct ones", async () => {
+		const {observed, announced} = await stageFiveRuns();
+
+		const isolation = announced.filter((line) => line.includes(ISOLATED_DIR_NOTE));
+		expect(isolation).toHaveLength(5);
+		expect(new Set(isolation).size).toBe(5);
+		for (const run of observed) {
+			expect(isolation).toContain(
+				`fabrika eval: case 1 run ${run.run}: ${ISOLATED_DIR_NOTE} ${run.dir}`,
+			);
 		}
 	});
 
