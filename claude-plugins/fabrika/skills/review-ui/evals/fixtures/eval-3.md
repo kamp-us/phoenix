@@ -15,7 +15,7 @@ The repo has `design-system-manifest.md` and typed `design-prohibitions.json`
 
 - `fabrika review scope` → exit 0, stdout:
   ```
-  scoped	9d2c44ab1e2f3a4b5c6d7e8f9012a3b4c5d6e7f8	733
+  scoped	9d2c44ab1e2f3a4b5c6d7e8f9012a3b4c5d6e7f8	fixes:733
   class	code	4
   self	false
   harness	false

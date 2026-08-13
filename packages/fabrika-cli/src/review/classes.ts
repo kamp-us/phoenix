@@ -176,3 +176,35 @@ export const linkedIssueOf = (body: string): number | null => {
 	const matched = CLOSING_KEYWORD.exec(body);
 	return matched?.[1] === undefined ? null : Number.parseInt(matched[1], 10);
 };
+
+/**
+ * The **whole** reference a PR body can carry to its issue: a closing keyword, else the explicit
+ * non-closing `Part of #N`, else nothing.
+ *
+ * It sits here, beside the primitive it wraps, because `ship scope` and `review scope` ask one
+ * question of one body. While the `Part of` half lived only under `ship/`, a partial-split PR — the
+ * shape `build --partial` emits by contract — was linked to the shipper and issueless to the gate,
+ * so the gate's acceptance-criteria step had no issue to grade against (#5446).
+ *
+ * {@link linkedIssueOf} stays closing-keyword-only. The two kinds are told apart here rather than
+ * collapsed into it, because only the closing kind auto-closes on merge.
+ */
+const PART_OF = /\bpart of\b[ \t]*:?[ \t]*#(\d+)/i;
+
+export interface IssueRef {
+	readonly kind: "fixes" | "part-of" | "none";
+	readonly number: number | null;
+}
+
+export const issueRefOf = (body: string): IssueRef => {
+	const closing = linkedIssueOf(body);
+	if (closing !== null) return {kind: "fixes", number: closing};
+	const part = PART_OF.exec(body);
+	return part?.[1] === undefined
+		? {kind: "none", number: null}
+		: {kind: "part-of", number: Number.parseInt(part[1], 10)};
+};
+
+/** `fixes:<n>` / `part-of:<n>`, or the calling group's null token. */
+export const renderIssueRef = (ref: IssueRef, nullToken: string): string =>
+	ref.number === null ? nullToken : `${ref.kind}:${ref.number}`;

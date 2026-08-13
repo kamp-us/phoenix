@@ -2,6 +2,7 @@ import {describe, expect, it} from "vitest";
 import {
 	classOf,
 	GOVERNANCE_ROOTS,
+	issueRefOf,
 	linkedIssueOf,
 	namespacesOf,
 	partition,
@@ -156,5 +157,25 @@ describe("linkedIssueOf", () => {
 		expect(linkedIssueOf("relates to #4287")).toBeNull();
 		expect(linkedIssueOf("Part of #4287")).toBeNull();
 		expect(linkedIssueOf("")).toBeNull();
+	});
+});
+
+describe("issueRefOf", () => {
+	it("prefers a closing keyword, and keeps its kind distinct from a partial split", () => {
+		expect(issueRefOf("Fixes #4287\n\nPart of #4000")).toEqual({kind: "fixes", number: 4287});
+		expect(issueRefOf("Part of #4000")).toEqual({kind: "part-of", number: 4000});
+	});
+
+	it("reads the partial-split marker `build --partial` emits, in the shapes it emits it", () => {
+		expect(issueRefOf("does things\n\nPart of #5434\nPart of #5437\n")).toEqual({
+			kind: "part-of",
+			number: 5434,
+		});
+		expect(issueRefOf("part of: #12")).toEqual({kind: "part-of", number: 12});
+	});
+
+	it("answers none for a body with neither marker", () => {
+		expect(issueRefOf("see #4000")).toEqual({kind: "none", number: null});
+		expect(issueRefOf("")).toEqual({kind: "none", number: null});
 	});
 });

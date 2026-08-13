@@ -16,7 +16,7 @@ comfortable ramp, not compact]).
 
 - `fabrika review scope` → exit 0, stdout:
   ```
-  scoped	c1e09b3d8a9b0c1d2e3f4a5b6c7d8e9f01234567	752
+  scoped	c1e09b3d8a9b0c1d2e3f4a5b6c7d8e9f01234567	fixes:752
   class	code	2
   self	false
   harness	false
