@@ -1,7 +1,15 @@
 import {readFileSync} from "node:fs";
 import {fileURLToPath} from "node:url";
 import {describe, expect, it} from "vitest";
-import {anchorsIn, filesInDiff, isGuardBearing, scanAnchors} from "./anchors.ts";
+import {
+	anchorBlocksIn,
+	anchorsIn,
+	filesInDiff,
+	isGuardBearing,
+	mergeHits,
+	scanAnchorBlocks,
+	scanAnchors,
+} from "./anchors.ts";
 
 const GOVERNANCE_SKILL = "claude-plugins/fabrika/skills/governance/SKILL.md";
 
@@ -80,6 +88,275 @@ describe("scanAnchors", () => {
 
 	it("finds nothing in a diff that carries no anchor at all", () => {
 		expect(scanAnchors(diff(...file("src/cart.ts"), "-const a = 1;", "+const a = 2;"))).toEqual([]);
+	});
+});
+
+/**
+ * The live shape of the defect, taken from the merged PR #5501: an anchored claim whose continuation
+ * line was reworded while the anchor's own line stayed byte-identical, so no `+`/`-` line in that
+ * 98-file diff carried an anchor tag at all.
+ */
+const PACKED_BRANCH = (checkout: string): string =>
+	[
+		"<!-- anchor: READ-DERIVES-AGAINST-THE-PACKED-BRANCH --> **`read` re-derives rows 3–10 against",
+		"the pack's own `git.branch`, never against the successor's `HEAD`.** A successor is by",
+		`construction a different checkout — usually ${checkout} sitting on the default branch — so`,
+		"deriving `git.head` from `HEAD` would report the successor's own location as drift.",
+		"",
+		"**The compared set is therefore sixteen of the nineteen, not all of them.**",
+		"",
+	].join("\n");
+
+/**
+ * The same defect in the other half of the guarded corpus, taken from `handoff/ground.ts`: the claim
+ * lives in a TypeScript docblock, where every continuation line opens with the star markdown reads as
+ * a new list item — so the block used to end on the line after the tag and the reworded checkout was
+ * invisible (#5514).
+ */
+const PACKED_BRANCH_DOCBLOCK = (checkout: string): string =>
+	[
+		"/**",
+		" * Rows 3-10, derived against the pack.",
+		" *",
+		" * <!-- anchor: READ-DERIVES-AGAINST-THE-PACKED-BRANCH --> **`read` re-derives against the",
+		" * pack's own branch, never the successor's `HEAD`.** A successor is by construction a",
+		` * different checkout — usually ${checkout} — so deriving there would report drift.`,
+		" */",
+		"export const deriveGitCore = () => {};",
+		"",
+	].join("\n");
+
+describe("anchorBlocksIn", () => {
+	it("carries the anchor's continuation lines, which is the text the same-line scan never read", () => {
+		expect(anchorBlocksIn("<!-- anchor: G --> a claim\nthat wraps here\n\nunrelated\n")).toEqual([
+			{name: "G", line: 1, text: "a claim that wraps here"},
+		]);
+	});
+
+	it("ends a block at the next anchor, so one paragraph never answers for another", () => {
+		expect(anchorBlocksIn("<!-- anchor: A --> one\n<!-- anchor: B --> two\n")).toEqual([
+			{name: "A", line: 1, text: "one"},
+			{name: "B", line: 2, text: "two"},
+		]);
+	});
+
+	it("ends a block at a heading, a new list item and a fence — the units a paragraph cannot span", () => {
+		expect(anchorBlocksIn("- <!-- anchor: H --> a claim\n- a sibling bullet\n")).toEqual([
+			{name: "H", line: 1, text: "a claim"},
+		]);
+		expect(anchorBlocksIn("<!-- anchor: H --> a claim\n## Next\n")).toEqual([
+			{name: "H", line: 1, text: "a claim"},
+		]);
+		expect(anchorBlocksIn("<!-- anchor: H --> a claim\n```sh\nrm -rf\n```\n")).toEqual([
+			{name: "H", line: 1, text: "a claim"},
+		]);
+	});
+
+	it("mints NO block for a tag inside backticks — the fence holds over the widened unit", () => {
+		expect(
+			anchorBlocksIn("the `<!-- anchor: NAME -->` tags skills carry\nand more prose\n"),
+		).toEqual([]);
+	});
+
+	it("does not let a backticked tag CUT a block short — masking decides anchors, not content", () => {
+		expect(
+			anchorBlocksIn("<!-- anchor: G --> a claim\nwritten as `<!-- anchor: NAME -->` here\n"),
+		).toEqual([{name: "G", line: 1, text: "a claim written as `<!-- anchor: NAME -->` here"}]);
+	});
+
+	// The over-capture this file's own tests exposed: the tag sits inside a TypeScript string literal,
+	// so the lines below it are unrelated code the anchor never covered (#5514).
+	it("does NOT continue past a tag that real content precedes — it covered no lines below it", () => {
+		expect(anchorBlocksIn('expect(scan("<!-- anchor: A --> one"));\nexpect(other());\n')).toEqual([
+			{name: "A", line: 1, text: 'one"));'},
+		]);
+	});
+
+	it("still continues from a tag a blockquote marker or a bullet precedes — those open a line", () => {
+		expect(anchorBlocksIn("> <!-- anchor: G --> a claim\n> that wraps\n")).toEqual([
+			{name: "G", line: 1, text: "a claim > that wraps"},
+		]);
+		expect(anchorBlocksIn("1. <!-- anchor: G --> a claim\n   that wraps\n")).toEqual([
+			{name: "G", line: 1, text: "a claim that wraps"},
+		]);
+	});
+
+	// Half the guarded corpus writes its claims in docblocks, where a continuation line and a list item
+	// are the same bytes and only the frame tells them apart (#5514).
+	it("continues through a docblock's star continuation lines and stops at the comment's end", () => {
+		expect(anchorBlocksIn(PACKED_BRANCH_DOCBLOCK("a fresh worktree"))).toEqual([
+			{
+				name: "READ-DERIVES-AGAINST-THE-PACKED-BRANCH",
+				line: 4,
+				text:
+					"**`read` re-derives against the pack's own branch, never the successor's `HEAD`.** " +
+					"A successor is by construction a different checkout — usually a fresh worktree — so " +
+					"deriving there would report drift.",
+			},
+		]);
+	});
+
+	it("ends a docblock's block at the star-only line — a docblock's paragraph break", () => {
+		expect(
+			anchorBlocksIn("/**\n * <!-- anchor: G --> a claim\n *\n * a second paragraph\n */\n"),
+		).toEqual([{name: "G", line: 2, text: "a claim"}]);
+	});
+
+	it("still breaks on a REAL list inside a docblock — the frame strips decoration, not structure", () => {
+		expect(
+			anchorBlocksIn("/**\n * <!-- anchor: G --> a claim\n * - a bullet below it\n */\n"),
+		).toEqual([{name: "G", line: 2, text: "a claim"}]);
+	});
+
+	it("still breaks on a markdown star bullet, where no comment frame says otherwise", () => {
+		expect(anchorBlocksIn("* <!-- anchor: G --> a claim\n* a sibling bullet\n")).toEqual([
+			{name: "G", line: 1, text: "a claim"},
+		]);
+	});
+});
+
+describe("scanAnchorBlocks", () => {
+	it("reports the PR #5501 shape: an anchored paragraph reworded below an untouched anchor line", () => {
+		expect(
+			scanAnchorBlocks(
+				"contract.md",
+				PACKED_BRANCH("a fresh worktree"),
+				PACKED_BRANCH("a fresh clone"),
+			),
+		).toEqual([
+			{
+				kind: "modified",
+				name: "READ-DERIVES-AGAINST-THE-PACKED-BRANCH",
+				file: "contract.md",
+				line: 1,
+			},
+		]);
+	});
+
+	it("reports the PR #5501 shape in a TypeScript docblock too — the .ts half of the corpus", () => {
+		expect(
+			scanAnchorBlocks(
+				"ground.ts",
+				PACKED_BRANCH_DOCBLOCK("a fresh worktree"),
+				PACKED_BRANCH_DOCBLOCK("a fresh clone"),
+			),
+		).toEqual([
+			{
+				kind: "modified",
+				name: "READ-DERIVES-AGAINST-THE-PACKED-BRANCH",
+				file: "ground.ts",
+				line: 4,
+			},
+		]);
+	});
+
+	it("reports NOTHING for a docblock re-wrap — a star continuation line break is cosmetic", () => {
+		expect(
+			scanAnchorBlocks(
+				"ground.ts",
+				"/**\n * <!-- anchor: G --> a claim that\n * wraps here\n */\n",
+				"/**\n * <!-- anchor: G --> a claim\n * that wraps here\n */\n",
+			),
+		).toEqual([]);
+	});
+
+	it("reports NOTHING for a block that only moved — the anti-noise property, at block scale", () => {
+		expect(
+			scanAnchorBlocks(
+				"contract.md",
+				`# a doc\n\n${PACKED_BRANCH("a fresh worktree")}`,
+				`# a doc\n\nprose added above\n\n${PACKED_BRANCH("a fresh worktree")}`,
+			),
+		).toEqual([]);
+	});
+
+	it("reports NOTHING for a pure re-wrap — a markdown line break is not a weakened guarantee", () => {
+		expect(
+			scanAnchorBlocks(
+				"a.md",
+				"<!-- anchor: G --> a claim that\nwraps here\n",
+				"<!-- anchor: G --> a claim\nthat wraps here\n",
+			),
+		).toEqual([]);
+	});
+
+	it("reports NOTHING when a bullet BELOW an anchored bullet changes — blocks stop at the sibling", () => {
+		expect(
+			scanAnchorBlocks(
+				"a.md",
+				"- <!-- anchor: G --> a claim\n- an unanchored sibling\n",
+				"- <!-- anchor: G --> a claim\n- a reworded sibling\n",
+			),
+		).toEqual([]);
+	});
+
+	it("reports an anchor absent from the later bytes as `removed`, at the line it sat on", () => {
+		expect(scanAnchorBlocks("a.md", "x\n<!-- anchor: G --> a claim\n", "x\nplain prose\n")).toEqual(
+			[{kind: "removed", name: "G", file: "a.md", line: 2}],
+		);
+	});
+
+	it("reports only the reworded one of two same-named blocks — two uses are two questions", () => {
+		expect(
+			scanAnchorBlocks(
+				"a.md",
+				"<!-- anchor: G --> one\n\n<!-- anchor: G --> two\n",
+				"<!-- anchor: G --> one\n\n<!-- anchor: G --> rewritten\n",
+			),
+		).toEqual([{kind: "modified", name: "G", file: "a.md", line: 3}]);
+	});
+
+	// Positional pairing alone answers the wrong question here: both blocks are intact, but the old
+	// occurrence 1 lands against the new occurrence 2's text and reads as reworded (#5514).
+	it("reports NOTHING when a new same-named anchor is INSERTED above an intact one", () => {
+		expect(
+			scanAnchorBlocks(
+				"a.md",
+				"<!-- anchor: G --> the old claim\n",
+				"<!-- anchor: G --> a new claim\n\n<!-- anchor: G --> the old claim\n",
+			),
+		).toEqual([]);
+	});
+
+	it("still reports a rewording when a same-named anchor was inserted in the same edit", () => {
+		expect(
+			scanAnchorBlocks(
+				"a.md",
+				"<!-- anchor: G --> the old claim\n",
+				"<!-- anchor: G --> a new claim\n\n<!-- anchor: G --> the old claim, softened\n",
+			),
+		).toEqual([{kind: "modified", name: "G", file: "a.md", line: 1}]);
+	});
+
+	it("reports the SECOND of two same-named blocks as removed when only one survives", () => {
+		expect(
+			scanAnchorBlocks(
+				"a.md",
+				"<!-- anchor: G --> one\n\n<!-- anchor: G --> two\n",
+				"<!-- anchor: G --> one\n",
+			),
+		).toEqual([{kind: "removed", name: "G", file: "a.md", line: 3}]);
+	});
+
+	it("reports NOTHING when an anchor is added — a new guarantee is not a moved one", () => {
+		expect(scanAnchorBlocks("a.md", "prose\n", "<!-- anchor: G --> a claim\n")).toEqual([]);
+	});
+});
+
+describe("mergeHits", () => {
+	const walk = {kind: "modified", name: "G", file: "a.md", line: 12} as const;
+	const block = {kind: "modified", name: "G", file: "a.md", line: 40} as const;
+
+	it("keeps one hit per file and NAME, with the first list's line", () => {
+		expect(mergeHits([walk], [block])).toEqual([walk]);
+	});
+
+	it("keeps a same-named anchor in another file — a name in two files is two questions", () => {
+		expect(mergeHits([walk], [{...block, file: "b.md"}])).toEqual([walk, {...block, file: "b.md"}]);
+	});
+
+	it("carries a block-only hit through — the case the diff walk structurally cannot see", () => {
+		expect(mergeHits([], [block])).toEqual([block]);
 	});
 });
 

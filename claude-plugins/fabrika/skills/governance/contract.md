@@ -594,16 +594,41 @@ With `--json`:
 `{"outcome":…,"hits":[{"kind","name","file","line"}…],"guardFiles":[{"path","anchors"}…],"inReach":<n>,"scanned":<files>}`.
 
 **The three outcomes are distinct facts and none is a clearance.** `hits` — an anchored invariant
-was removed or its line changed. `no-anchor-change` — anchors exist in the diff's reach and none
+was removed or its claim changed. `no-anchor-change` — anchors exist in the diff's reach and none
 moved. `no-anchors-in-reach` — the touched files carry no anchors at all, so this scan had nothing
 to look at; it is the mechanical floor reporting its own silence, not a statement that no guard was
 weakened. A guard weakened in prose that carries no anchor is invisible here **by construction**,
 and the skill's judgment is what covers it.
 
 **What an anchor is.** The `<!-- anchor: NAME -->` HTML comment fabrika skills already carry; NAME is
-`[A-Z][A-Z0-9-]*`. The scan is over the diff's removed and added lines, pairing by NAME: a NAME
-present in a removed line and absent from every added line is `removed`; a NAME on both sides with
-different following text is `modified`.
+`[A-Z][A-Z0-9-]*`. A tag inside backticks is documentation of the pattern, not an anchor.
+
+**What is compared is the anchor's whole block, at both commits.** An anchor's block is the text
+trailing its tag plus the lines that continue the same paragraph, ending at a blank line, a heading,
+a new list item, a code fence, or the next anchor. Each changed file is read at the base commit and
+at the head, and the blocks are paired by NAME and occurrence: a NAME absent from the head is
+`removed`; a NAME whose block text differs is `modified`. Whitespace is collapsed before comparing,
+so a re-wrap or a move is not a hit. Reading both commits is what makes the answer independent of
+the diff's shape — a same-line comparison could not see an anchor whose own line was never in the
+diff, so a paragraph reworded under an untouched tag read as `no-anchor-change`
+([#5514](https://github.com/kamp-us/phoenix/issues/5514)). A deleted file and a rename have no
+comparable base path, so those keep the older same-line walk over the diff's `+`/`-` lines; a file
+covered by both scans still reports one hit per NAME.
+
+Two rules complete that definition, both load-bearing, so that two implementers build one verb.
+
+**A block continues past its own line only from a tag that opens that line.** Indentation, a
+blockquote marker, one list bullet, or a block comment's decoration may precede the tag — nothing
+else. A tag reached after real content gets only the text trailing it on that line, which is what the
+same-line walk has always compared. This is what stops a tag written inside a string literal from
+swallowing the code below it, and it is a fence on the widening, never a narrowing.
+
+**Inside a block comment, a line's prose is the line minus its decoration, and the comment's end ends
+the block.** Half the guarded corpus writes its claims in TypeScript docblocks, where every
+continuation line opens with a star — the same bytes as a markdown list item, and only the frame
+tells the two apart. Without this rule every `.ts` block stopped on the line after its tag, so those
+anchors counted toward `anchors-in-reach` while being unable to produce a hit. A real list *inside* a
+docblock still ends the block, because the break is tested against the prose, not the decoration.
 
 **What a guard-bearing file is, stated closed so two implementers build one verb.** A changed file is
 guard-bearing iff it satisfies at least one of exactly two clauses: **(a)** it contains at least one
@@ -644,11 +669,14 @@ anchors rather than invariants.
 | `governance guards: cannot read the diff for #<n> at <sha>: <reason> — UNKNOWN, never "nothing moved".` | 11 | refusal |
 | `governance guards: PR #<n>'s head is <live>, not <asked> — re-scan at <live> (ADR 0058).` | 12 | refusal |
 | `governance guards: the diff at <sha> carries <k> of #<n>'s <m> declared files — refusing a partial anchor scan (#3925's class).` | 13 | refusal |
-| `governance guards: scanned <k> files, <m> anchored invariants in reach.` | 0 | notice |
+| `governance guards: cannot read <path> at <sha>: <reason> — UNKNOWN, never "nothing moved".` | 11 | refusal |
+| `governance guards: scanned <k> files, <m> anchored invariants in reach, <j> compared block-by-block against <base>.` | 0 | notice |
 
 **Scope** — the bound commit's diff, completeness-checked against the PR's declared changed-file
-count, and the anchors in every file that diff touches. A truncated diff is refused rather than
-scanned, because an under-reported hit list reads as a checked-clean answer that was never checked.
+count, and the anchors in every file that diff touches, read at the base commit as well as at the
+head. A truncated diff is refused rather than scanned, because an under-reported hit list reads as a
+checked-clean answer that was never checked; a file that cannot be read at either commit is refused
+for the same reason.
 
 **Examples**
 

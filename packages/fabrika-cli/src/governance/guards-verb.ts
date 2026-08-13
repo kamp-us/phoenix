@@ -10,14 +10,24 @@
  * what covers it.
  *
  * A truncated diff is refused rather than scanned. An under-reported hit list reads as a
- * checked-clean answer that was never checked (#3925's class).
+ * checked-clean answer that was never checked (#3925's class). For the same reason each changed
+ * file is read at the base commit as well as at the head, so an anchor's paragraph is compared whole
+ * instead of only where the diff happens to touch it — see `anchors.ts` (#5514).
  */
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {diffRange, diffRangeStatuses, readFileAt} from "../io/git.ts";
 import {badNumber, openPull, resolveTargetRepo} from "../review/target.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
-import {anchorsIn, filesInDiff, isGuardBearing, scanAnchors} from "./anchors.ts";
+import type {AnchorHit} from "./anchors.ts";
+import {
+	anchorsIn,
+	filesInDiff,
+	isGuardBearing,
+	mergeHits,
+	scanAnchorBlocks,
+	scanAnchors,
+} from "./anchors.ts";
 import {INCOMPLETE_SCAN, PRECONDITION_UNKNOWN} from "./codes.ts";
 import {bindGovernanceHead, boundLine} from "./head.ts";
 
@@ -90,6 +100,8 @@ export const runGuards = (
 		// anchored invariants EXIST in the files this diff touches, which is the denominator that makes
 		// "I scanned nothing and found nothing" unrenderable as a pass (ADR 0092).
 		const inTree: Array<{readonly path: string; readonly anchors: number}> = [];
+		const blockHits: AnchorHit[] = [];
+		let compared = 0;
 		for (const entry of listed.value) {
 			if (entry.status.startsWith("D")) continue;
 			const bytes = yield* readFileAt(head.sha, entry.path);
@@ -101,9 +113,23 @@ export const runGuards = (
 				);
 			}
 			inTree.push({path: entry.path, anchors: anchorsIn(bytes.value)});
+			// Only a path that names the same file at both commits can be block-compared. An addition has
+			// no base side, and a rename's base path is the source `--name-status` drops, so both fall
+			// back to the diff walk rather than being read at a path the base commit does not carry.
+			if (!(entry.status.startsWith("M") || entry.status.startsWith("T"))) continue;
+			const before = yield* readFileAt(head.base, entry.path);
+			if (before._tag === "Failure") {
+				return refuse(
+					PRECONDITION_UNKNOWN,
+					`${VERB}: cannot read ${entry.path} at ${head.base}: ${before.reason} — UNKNOWN, never "nothing moved".`,
+					diagnostics,
+				);
+			}
+			compared += 1;
+			blockHits.push(...scanAnchorBlocks(entry.path, before.value, bytes.value));
 		}
 
-		const hits = scanAnchors(diff.value);
+		const hits = mergeHits(scanAnchors(diff.value), blockHits);
 		const inReach = inTree.reduce((total, file) => total + file.anchors, 0);
 		const moved = new Set(hits.map((hit) => hit.file));
 		const guardFiles = inTree.filter(
@@ -113,7 +139,7 @@ export const runGuards = (
 		const outcome =
 			hits.length > 0 ? "hits" : inReach === 0 ? "no-anchors-in-reach" : "no-anchor-change";
 		diagnostics.push(
-			`${VERB}: scanned ${listed.value.length} files, ${inReach} anchored invariants in reach.`,
+			`${VERB}: scanned ${listed.value.length} files, ${inReach} anchored invariants in reach, ${compared} compared block-by-block against ${head.base}.`,
 		);
 
 		if (json) {
