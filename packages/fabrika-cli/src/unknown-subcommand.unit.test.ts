@@ -120,6 +120,52 @@ describe("against the real fabrika command tree", () => {
 });
 
 /**
+ * The `grade` alias of the `eval` group (#5461). Both spellings must reach the *same* node, so the
+ * proof is that an unknown verb under each refuses identically — same group path, same offered set —
+ * rather than that each spelling merely resolves.
+ */
+describe("the grade alias", () => {
+	it("resolves `grade` where `eval` resolves", () => {
+		expect(findUnknownSubcommand(fabrikaCommand, ["grade", "cases"])).toBeUndefined();
+		expect(findUnknownSubcommand(fabrikaCommand, ["eval", "cases"])).toBeUndefined();
+	});
+
+	it("routes both spellings to one node, so the alias is not a second command tree", () => {
+		const viaName = findUnknownSubcommand(fabrikaCommand, ["eval", "__no_such_verb__"]);
+		expect(findUnknownSubcommand(fabrikaCommand, ["grade", "__no_such_verb__"])).toEqual(viaName);
+		expect(viaName?.path).toEqual(["fabrika", "eval"]);
+		expect(viaName?.known.length).toBeGreaterThan(0);
+	});
+
+	it("keeps the group listed under its own name — an alias adds a spelling, it removes none", () => {
+		expect(registeredGroups.map((group) => group.name)).toContain("eval");
+	});
+
+	// The guard above walks a mirror of the tree; this runs the real parser, so it is what proves the
+	// alias resolves through the CLI's own mechanism rather than only through our mirror of it. The
+	// discriminating assertion is *which* token the parser rejected: an unresolved `grade` would put
+	// `grade` itself in `subcommand`, so only a resolved alias can leave the tail token there.
+	it("is resolved by the parser itself, not just by the guard", async () => {
+		const exit = await Effect.runPromiseExit(
+			Command.runWith(fabrikaCommand, {version: "test"})(["grade", "__no_such_token__"]).pipe(
+				Effect.provide(NodeServices.layer),
+			),
+		);
+		const failure = Exit.isFailure(exit)
+			? Option.getOrUndefined(Cause.findErrorOption(exit.cause))
+			: undefined;
+		const unknown =
+			CliError.isCliError(failure) && failure._tag === "ShowHelp"
+				? failure.errors.find((error) => error._tag === "UnknownSubcommand")
+				: undefined;
+		expect(unknown?._tag).toBe("UnknownSubcommand");
+		expect(unknown?._tag === "UnknownSubcommand" ? unknown.subcommand : undefined).toBe(
+			"__no_such_token__",
+		);
+	});
+});
+
+/**
  * Closes the one divergence `findUnknownSubcommand` documents: if a future group ever declared both
  * subcommands and positional arguments, the parser would read an unknown token as an argument while
  * the guard refused it. This reds there instead.

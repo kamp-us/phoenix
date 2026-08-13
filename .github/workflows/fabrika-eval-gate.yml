@@ -2,7 +2,7 @@ name: fabrika-eval-gate
 
 # The ruled #4637-B bar as a merge gate (#4681): the 100% incident-regression floor, the 90% graded
 # rate, and spend at or below the committed v1 baseline. The whole decision lives in
-# `fabrika eval gate` and this job only relays its exit code — a script relays a verb's answer and
+# `fabrika grade gate` and this job only relays its exit code — a script relays a verb's answer and
 # never derives the decision (ADR 0228). Nothing here decides which paths count as a skill change,
 # which eval record is in force, or whether a rate clears the bar; the verb reads the PR's head,
 # changed paths and eval records itself.
@@ -35,7 +35,16 @@ jobs:
     # incident case until #5431 arms one and CI runs no suite to price spend against, so a name
     # promising those two would be a green check advertising an enforcement nobody performed — the
     # #4604 shape. Rename it when a leg is actually armed, never before.
-    name: "fabrika eval gate: graded 90% enforced at head; floor + spend report, not yet enforced"
+    #
+    # It spells the verb `grade`, the #5461 alias of `eval`, because this string is agent-facing: a
+    # coder reading a red check copies the command out of it, and a graded-run command spelled with
+    # `eval` was refused before execution in a worktree-isolated session (run-verified 2026-08-12;
+    # see the registry row for what that observation does and does not establish). Renaming the job
+    # was checked against its consumers first: it is not one of the `main protection` ruleset's
+    # required contexts, and `ship checks` reads check runs name-blind apart from the
+    # `^deploy`/`^cleanup` informational denylist in `src/review/rollup.ts`, which neither spelling
+    # matches. Nothing in the repo matches this string literally.
+    name: "fabrika grade gate: graded 90% enforced at head; floor + spend report, not yet enforced"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4.2.2
@@ -57,4 +66,4 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CLAUDE_PIPELINE_REPO: ${{ github.repository }}
-        run: node packages/fabrika-cli/src/bin.ts eval gate ${{ github.event.pull_request.number }}
+        run: node packages/fabrika-cli/src/bin.ts grade gate ${{ github.event.pull_request.number }}
