@@ -1,12 +1,12 @@
 /**
- * The one exit table all fourteen `build` verbs allocate from, so a code means one thing across this
+ * The one exit table all fifteen `build` verbs allocate from, so a code means one thing across this
  * group whichever verb produced it.
  *
  * **The overlap with `report` is re-exported, never re-typed** — the discipline `review/codes.ts`
  * states in full: an aligning group *imports* the base's constant, so a drift is unrepresentable
- * rather than merely detectable. This group shares nine seats over `3`-`11` and adds its own `13`-`21`
- * for facts about the lane — the tree, the claim, the push, the validators, and the two admission
- * axes — that no writing verb has.
+ * rather than merely detectable. This group shares nine seats over `3`-`11` and adds its own `13`-`24`
+ * for facts about the lane — the tree, the claim, the commit, the push, the validators, and the two
+ * admission axes — that no writing verb has.
  *
  * `0`, `1`, `2` and `127` are reserved by the interface convention (`../verb.ts`, `../bin.ts`).
  */
@@ -107,3 +107,14 @@ export const UNCLASSIFIED_DIFF = 22;
  * otherwise read off the command that produced it. No `epic` verb can prove a push's containment.
  */
 export const HEAD_DROPS_REMOTE = 23;
+/**
+ * Proven: `git commit` ran and HEAD did not move — no commit was created.
+ *
+ * The commit-side twin of `17`, and seated separately for the same reason `23` is not `19`: the
+ * remedy differs. `17` says the remote did not take the head; this one says no head was made, so the
+ * fix is git's own refusal (an empty index, a hook that blocked) rather than anything about a ref.
+ * It is never {@link WRITE_UNKNOWN}: HEAD was re-read and compared, so the absence is *proven*, and
+ * fusing "no commit exists" with "a commit may exist" is the fusion this group refuses everywhere
+ * else (#5484).
+ */
+export const COMMIT_NOT_CREATED = 24;

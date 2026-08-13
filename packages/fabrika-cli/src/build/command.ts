@@ -22,6 +22,7 @@ import type {VerbOutcome} from "../verb.ts";
 import {runBranch} from "./branch-verb.ts";
 import {runCheck} from "./check-verb.ts";
 import {runClaim, runConfirm, runRelease} from "./claim-verb.ts";
+import {runCommit} from "./commit-verb.ts";
 import {runEligible} from "./eligible-verb.ts";
 import {runIssue} from "./issue-verb.ts";
 import {runNote} from "./note-verb.ts";
@@ -280,6 +281,35 @@ const scratch = leafCommand(
 	),
 );
 
+const commit = leafCommand(
+	"commit",
+	{
+		messageFile: Flag.string("message-file").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"carry the message in a leaf under this lane's `build scratch` directory instead of on stdin; any other path is refused",
+			),
+		),
+		repo: repoFlag,
+	},
+	Effect.fn(function* ({messageFile, repo}) {
+		yield* emit(
+			yield* runCommit({
+				messageFile: Option.getOrNull(messageFile),
+				repo: Option.getOrNull(repo),
+				env: process.env,
+				stdin: Effect.sync(readStdin),
+				tmpRoot: tmpdir(),
+			}),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Commit the staged change and prove the message is this lane's."),
+	Command.withDescription(
+		'Create this lane\'s commit from the message on STDIN, then READ THE MESSAGE BACK off the created commit and refuse if it is not the one this lane authored — the refusal prints both. The message may name only numbers this lane holds a confirmed claim on. The carrying path is prescribed, not improvised: stdin (file-free), or --message-file pointing at a leaf under "fabrika build scratch"\'s claim-nonce-keyed directory; any other path is refused. No refusal repeats a machine-local path. Prints {"answer":"committed","sha":"…","subject":"…","carried":"stdin"|"scratch-leaf"}. Exits 3 (stdin held nothing), 4 (the message names an issue this lane does not hold, or --message-file is empty), 5 (machine-local path in the message), 6 (bare @ reference), 7 (nothing is staged), 8 (the commit ran but HEAD or its message could not be read back — UNKNOWN), 9 (proven: the created commit carries a message this lane did not author), 10 (--message-file is not a leaf in this lane\'s scratch directory), 11 (a precondition read failed — nothing was committed), 14 (the checked-out branch is not this lane\'s), 15 (this session does not hold the claim), 24 (proven: git commit ran and HEAD did not move). Example: fabrika build commit < message.txt',
+	),
+);
+
 const check = leafCommand(
 	"check",
 	{
@@ -422,6 +452,7 @@ export const buildCommand = Command.make("build").pipe(
 		issue,
 		branch,
 		scratch,
+		commit,
 		check,
 		push,
 		pr,

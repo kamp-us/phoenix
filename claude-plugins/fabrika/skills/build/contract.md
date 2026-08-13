@@ -6,6 +6,8 @@
 
 **Amended 2026-08-10** — the third file class in `build check` ([#5229](https://github.com/kamp-us/phoenix/issues/5229)): a changed file matching neither the code nor the markdown pattern is now named rather than dropped out of both filters, so a diff nothing validates refuses on a new code (`22`) instead of greening, and a green over a partly-unvalidatable diff carries the files it did not cover.
 
+**Amended 2026-08-13** — `build commit` ([#5484](https://github.com/kamp-us/phoenix/issues/5484)): the group had no commit verb, so the message-carrying path at every call site was improvised and nothing asserted the message on the resulting commit. A lane's improvised `git commit -F <leaf>` read back a two-day-old message from another lane and committed it, silently, with every command exiting 0. The verb prescribes the carrying path, tests the numbers the message names against this lane's claim, and reads the message back off the created commit — plus one code (`24`) in the shared exit matrix.
+
 The verbs land in `packages/fabrika-cli/` under the `build` subcommand group, registered in
 `packages/fabrika-cli/src/registry.ts` like the shipped `adr`, `report`, `triage` and `wire`
 groups. The [CLI interface convention](../../docs/cli-interface-convention.md) governs every verb;
@@ -60,6 +62,7 @@ second answer to a gated question can contradict the gate (interface convention 
 | `build issue` | the claimed issue's body + parsed acceptance criteria, through the content gate | fetch + parse via the wire module; *judging* the criteria stays in the skill |
 | `build branch` | cut (or resume) the lane's nonce branch off a freshly fetched base | fetch, derive, create — the nonce is a function of the claim token |
 | `build scratch` | the per-lane scratch path, allocated fail-closed | deterministic path derivation keyed session + issue + claim nonce |
+| `build commit` | create this lane's commit from an authored message, and prove the commit carries it | a prescribed carrying path, a claim test over the numbers named, and a read-back — no judgment; *authoring* the message stays in the skill |
 | `build check` | run this surface's validators in this tree, cache-bypassed; green/red/unknown | command execution + tree-binding assertions; *fixing red* stays in the skill |
 | `build push` | publish the branch and independently confirm the remote ref moved | push + `ls-remote` read-back, three proven outcomes |
 | `build pr` | open the PR from a stdin body, refusing the known defect shapes, with read-back | mechanical guards over an authored body; *authoring* stays in the skill |
@@ -93,8 +96,8 @@ Every verb obeys these; stated once.
   forward/back-referenced content — not as an edit to five verbs. TOCTOU is handled by
   construction: no verb caches content across invocations; every invocation re-fetches and
   re-gates, so a gate change is in force on the next read.
-- **Isolation preconditions are guarded identically wherever they apply.** `branch`, `check`,
-  `push` and `pr` run the same tree assertions `tree` runs, with the same codes (`note` runs only
+- **Isolation preconditions are guarded identically wherever they apply.** `branch`, `commit`,
+  `check`, `push` and `pr` run the same tree assertions `tree` runs, with the same codes (`note` runs only
   the posting guards — a stop-report must remain postable from a refused tree) — a sibling that
   took the same ground unguarded would be the split this table exists to prevent.
   Their refusal messages are `tree`'s rows with the verb-name prefix substituted; **every error
@@ -251,6 +254,7 @@ range, exactly as `triage/codes.ts` itself states for `adr`.
 | `21` | proven: not admitted on the audience axis, audience not agent — the issue's `ready-for:` label is not `ready-for:agent`, or is absent |
 | `22` | proven: every changed file falls outside all three surfaces' validators — there is nothing to run, so the verdict is a refusal, never a green |
 | `23` | proven: the local head does not contain the published remote head — the push would drop its commits |
+| `24` | proven: `git commit` ran and HEAD did not move — no commit was created |
 | `127` | the verb never ran at all (unresolved binary — the shell's code, not this process's) |
 
 **`7` versus `11` is the split the whole group rests on** (the `wire` group's `ABSENT` vs
@@ -963,6 +967,118 @@ $ fabrika build scratch 4312 --slug notes
 
 ---
 
+## `build commit`
+
+**Invocation**
+
+```
+fabrika build commit < message.txt
+fabrika build commit --message-file "$(fabrika build scratch 4312 --slug commit-message)"
+```
+
+**Inputs**
+
+| Flag | Type | Required | Default | Description |
+|---|---|---|---|---|
+| stdin | text | yes, unless `--message-file` | — | the commit message, file-free |
+| `--message-file` | string | no | — | a leaf under this lane's `build scratch` directory; any other path is refused |
+
+**Output** — machine. On success, one JSON object:
+`{"answer": "committed", "sha": "<full object name>", "subject": "<the message's first non-blank line>", "carried": "stdin" | "scratch-leaf"}`.
+Every refusal produces no stdout.
+
+**The three guards, and the incident each closes.** The verb exists because there was no commit verb
+at all: nothing prescribed how a message reached `git commit`, so the call site stayed improvised,
+and nothing asserted that the message on the resulting commit was the one the lane wrote. A lane ran
+`git commit -F <leaf>` against a leaf holding a **two-day-old message from another lane**; the file
+existed, was non-empty, and was a well-formed conventional-commit message, so every cheap check read
+green and the commit landed naming an issue the lane had never touched (#5484).
+
+1. **The carrying path is prescribed.** Either **file-free** — the message on stdin, handed straight
+   to `git commit -F -`, so there is no second place the bytes live — or a **leaf under `build
+   scratch`'s claim-nonce-keyed directory**. A hand-rolled path is **refused** (`10`), not tolerated:
+   a path outside the allocator is precisely the one with no per-lane key, which is what let a stale
+   file sit where a fresh one was assumed.
+   **The containment test keys on the DIRECTORY and never on the leaf name** (§SP rule 2): a plain
+   `commit-message` leaf inside this lane's directory is admitted, and a run-keyed leaf anywhere else
+   is refused. Keying the leaf is the anti-pattern the allocator retired — a shared directory with
+   clever names is still a shared directory.
+2. **The message may name only numbers this lane holds.** Every `#<n>` in the message is tested
+   against this lane's confirmed claim; one it does not hold is `4`, before any commit exists. In
+   resume mode the permitted set also holds the issue the PR itself closes, **read off the PR** and
+   never taken on the message's word. This is the guard a shape check cannot be: the borrowed message
+   was well-formed and referenced a real issue.
+3. **The message is read back off the created commit.** `git log -1 --format=%B` asks git what it
+   *recorded*; everything upstream is only a claim about what was *sent*. A mismatch is `9` and the
+   refusal prints **both** messages, quoted, so the difference is legible without re-running. The
+   commit is created with `--cleanup=verbatim` so git edits nothing and the comparison is honest;
+   `normalizeForReadback` is what absorbs the trailing-newline difference, exactly as the two posting
+   verbs' read-backs do.
+
+**No refusal repeats a machine-local path.** `build scratch`'s path is machine-local by definition,
+and both the `--message-file` refusals and the ones quoting git's own stderr would otherwise carry
+one — git names the path it could not read. The path refusals name the **leaf only**, and every
+quoted foreign string (git's stderr, the message read back) is masked through the same
+`report/leaks.ts` predicate `build pr` and `build note` red on.
+
+Preconditions: a branch that is this lane's (`14`), a claim this session holds (`15` / `11`), and
+something staged (`7`).
+
+**Exit status** (beyond the universal four)
+
+| Code | Trigger |
+|---|---|
+| `3` | stdin was read and held nothing |
+| `4` | the message names an issue this lane holds no confirmed claim on, or `--message-file` holds no message |
+| `5` | the message carries a machine-local path |
+| `6` | the message is a bare `@` path reference |
+| `7` | nothing is staged — there is no change to commit |
+| `8` | the commit ran and HEAD, or the created commit's message, could not be read back — UNKNOWN |
+| `9` | proven: the created commit carries a message this lane did not author |
+| `10` | `--message-file` is not a leaf in this lane's `build scratch` directory |
+| `11` | a precondition read failed — nothing was committed |
+| `14` | proven: the checked-out branch is not this lane's |
+| `15` | proven: this session does not hold the claim |
+| `24` | proven: `git commit` ran and HEAD did not move — no commit was created |
+
+**Errors**
+
+| Message (stderr) | Code | Kind |
+|---|---|---|
+| `build commit: stdin held nothing — the commit message is the input.` | 3 | refusal |
+| `build commit: the message names #<m>, which this lane holds no confirmed claim on — this lane's claim is on #<n>. A commit message names only what this lane owns; a related reference belongs in the PR body.` | 4 | refusal |
+| `build commit: --message-file "<leaf>" holds no message — a commit message is the input.` | 4 | refusal |
+| `build commit: the body carries a machine-local path: <text> — redact before posting.` | 5 | refusal (the imported predicate's wording) |
+| `build commit: nothing is staged — there is no change to commit.` | 7 | refusal |
+| `build commit: commit <sha> was created but its message could not be read back: <reason> — what it carries is UNKNOWN.` | 8 | refusal |
+| `build commit: commit <sha> carries a message this lane did not author — amend it, then re-run. It needs a human eye.` | 9 | refusal, with both messages quoted above it |
+| `build commit: --message-file "<leaf>" is not a leaf in this lane's scratch directory — send the message on stdin, or write it under the path "fabrika build scratch <n> --slug <leaf>" prints. That path is machine-local, so it is not repeated here.` | 10 | refusal |
+| `build commit: cannot read the index: <reason> — nothing was committed.` | 11 | refusal |
+| `build commit: git commit ran and HEAD did not move — no commit was created: <reason>.` | 24 | refusal |
+
+**Scope** — not a judging verb. Creates one commit, or none; writes no file, and pushes nothing.
+
+**Example**
+
+```
+$ fabrika build commit < message.txt
+{"answer":"committed","sha":"03135b9188d2be6c0a4b7bd0b7a3ff9c53f0f2b1","subject":"fix(build): read the commit message back off the commit (#4312)","carried":"stdin"}
+```
+
+**Grounding**
+
+- #5484 — the incident: `git commit -F <leaf>` over a two-day-old message file, committed silently.
+  Its corrected mechanism is what shapes the guards: `-F` on a **missing** file dies (`128`), and
+  `COMMIT_EDITMSG` is per-worktree, so neither a fallback nor a cross-lane share was involved. The
+  file **existed and was stale**, which is why the answer is a keyed directory plus a read-back
+  rather than an existence check.
+- #4692 / #4516 / #4875 / #4544 — the shared-namespace clobber class the allocator already keys
+  against; this verb is what makes a lane use it for the one file that reaches the merge record.
+- §SP rules 1 and 2 (`claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md`) — prefer no
+  file at all; where one is unavoidable, uniqueness lives in the directory.
+
+---
+
 ## `build check`
 
 **Invocation**
@@ -1495,5 +1611,5 @@ script, another skill's prose, or the authoring session. The three hand-checks t
 lineage demands: every reachable outcome above was walked against its verb's failure modes; every
 example value is derivable from its verb's stated rules (the nonce from the claim token, the
 verdict line from the protocol); and sibling verbs guard shared preconditions identically
-(`branch`/`check`/`push` run `tree`'s assertions; `pr`/`note` run the same posting guards on the
-same codes).
+(`branch`/`commit`/`check`/`push` run `tree`'s assertions; `pr`/`note` run the same posting guards on
+the same codes, and `commit` runs the same authored-text guards on `3`/`5`/`6`).

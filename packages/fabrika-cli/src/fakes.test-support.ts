@@ -146,7 +146,30 @@ export interface FakeShell {
 	readonly layer: Layer.Layer<ChildProcessSpawner.ChildProcessSpawner>;
 	/** Every command line spawned, in order — how a test asserts the fetch preceded the read. */
 	readonly calls: ReadonlyArray<string>;
+	/**
+	 * What was piped to each spawned command's stdin, aligned with {@link FakeShell.calls}; `""` when
+	 * nothing was.
+	 *
+	 * Without it, a caller that hands bytes to a child through stdin is indistinguishable from one
+	 * that hands it nothing — the argv is identical (`git commit -F -`) either way — so the whole
+	 * file-free carrying path would be untestable at this seam (#5484).
+	 */
+	readonly inputs: ReadonlyArray<string>;
 }
+
+/** The bytes a command's `stdin` option carries, decoded; `""` for a mode string or no option. */
+const pipedInput = (stdin: unknown): Effect.Effect<string> => {
+	if (stdin === undefined || typeof stdin === "string") return Effect.succeed("");
+	const source =
+		typeof stdin === "object" && stdin !== null && "stream" in stdin
+			? (stdin as {readonly stream: unknown}).stream
+			: stdin;
+	if (source === undefined || typeof source === "string") return Effect.succeed("");
+	return Stream.decodeText(source as Stream.Stream<Uint8Array, unknown>).pipe(
+		Stream.mkString,
+		Effect.orElseSucceed(() => ""),
+	);
+};
 
 /**
  * A spawner scripted on the joined `file arg arg …` command line.
@@ -160,6 +183,7 @@ export const fakeShell = (
 	fallback: ExecResult = {ok: false, stdout: "", reason: "unscripted command"},
 ): FakeShell => {
 	const calls: string[] = [];
+	const inputs: string[] = [];
 	const layer = Layer.succeed(ChildProcessSpawner.ChildProcessSpawner)(
 		ChildProcessSpawner.make(
 			Effect.fnUntraced(function* (command) {
@@ -168,6 +192,9 @@ export const fakeShell = (
 				const line =
 					cmd._tag === "StandardCommand" ? [cmd.command, ...cmd.args].join(" ") : "<piped>";
 				calls.push(line);
+				inputs.push(
+					yield* pipedInput(cmd._tag === "StandardCommand" ? cmd.options.stdin : undefined),
+				);
 				const result = script.find(([pattern]) => pattern.test(line))?.[1] ?? fallback;
 				return ChildProcessSpawner.makeHandle({
 					pid: ChildProcessSpawner.ProcessId(1),
@@ -185,7 +212,7 @@ export const fakeShell = (
 			}),
 		),
 	);
-	return {layer, calls};
+	return {layer, calls, inputs};
 };
 
 /**

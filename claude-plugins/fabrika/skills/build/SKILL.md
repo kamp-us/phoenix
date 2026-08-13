@@ -120,6 +120,23 @@ surface validates, run `build check` again there: markdown beside your code — 
 to `--surface prose`, or `--surface plan` if that markdown is an epic ledger, which runs the prose
 validators too. One run per class present is what leaves nothing in the diff unread (#5301, #5304).
 
+Commit through the verb, never a hand-rolled `git commit` — it is the only thing that reads the
+message back off the commit it just made:
+
+```bash
+git add <your files>
+fabrika build commit <<'EOF'
+fix(build): one line saying what changed (#4312)
+EOF
+```
+
+Send the message on stdin. The alternative is a leaf under `fabrika build scratch`; any other path is
+refused, because a path outside the allocator has no per-lane key — that is how a lane once committed
+a two-day-old message belonging to another lane, with nothing failing anywhere (#5484). Exit `9`
+means the commit exists and carries a message you did not write: amend it and re-run, do not push.
+Exit `4` means your message names an issue this lane holds no claim on — a related reference belongs
+in the PR body, not the merge record.
+
 ## 5 — Push verified, open the PR through the guard
 
 ```bash
