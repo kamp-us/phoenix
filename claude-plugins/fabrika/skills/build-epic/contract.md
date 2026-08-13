@@ -156,7 +156,7 @@ Every `epic` verb obeys these; stated once.
 ### The shared exit matrix
 
 This matrix owns `code → meaning`; per-verb tables enumerate only that verb's own reachable
-proven outcomes with triggers. `0`, `1`, `2`, `127` are the interface convention's reserved codes
+proven outcomes with triggers. `0`, `1`, `126`, `127` are the interface convention's reserved codes
 (`src/verb.ts`, the exit-2 bootstrap in `src/bin.ts`), stated only here; every verb can return
 them.
 
@@ -174,7 +174,7 @@ the genuinely-new facts; they carry no cross-group obligation.
 |---|---|
 | `0` | the answer is on stdout |
 | `1` | usage error, or the verb failed to run |
-| `2` | no implementation could be resolved (`src/bin.ts`) |
+| `126` | no implementation could be resolved (`src/bin.ts`) |
 | `3` | stdin was read and held nothing |
 | `4` | a required section is missing, malformed, empty, or out of place — in a document a verb derives from |
 | `7` | zero scope: the target is proven absent (404) or closed, or there is nothing to judge |
@@ -833,7 +833,7 @@ contract's verbs make, so an implementer sees the dependency set in one place. V
 Per the [interface convention](../../docs/cli-interface-convention.md) Part 2: every flag carries
 a type and default; every stdout shape has a literal example; every non-zero code is enumerated
 with its trigger (per-verb tables own the triggers; the shared matrix owns each code's single
-meaning; the universal `0/1/2/127` are stated once); every error names message, stream, and code;
+meaning; the universal `0/1/126/127` are stated once); every error names message, stream, and code;
 every judging verb states scope and zero-scope behavior; no clause defers to a v1 script, another
 skill's prose, or the authoring session — the cross-references are to **landed sibling fabrika
 contracts and shipped modules by path**, the sanctioned shape. The three hand-checks: every

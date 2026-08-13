@@ -248,7 +248,7 @@ nothing, and removes nothing, so there is never a disposition to state.
 - `TARGET-UNRESOLVED` — `7`: the issue does not exist.
 - `WRITE-UNPROVEN` — `8`, `9`: the comment may or may not have landed, or read back differently.
   Re-read before re-posting; the refusal names what needs a human.
-- `STOPPED` — `1`, `2`, `11`, `127`: the run is UNKNOWN with nothing written.
+- `STOPPED` — `1`, `11`, `126`, `127`: the run is UNKNOWN with nothing written.
 
 Every non-zero terminal here wrote nothing, except `WRITE-UNPROVEN`, where whether the write landed
 is the open question. `10` is held as a deliberate gap and is unreachable, so it reaches no terminal

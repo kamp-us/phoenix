@@ -58,7 +58,7 @@ TypeScript ([#4784](https://github.com/kamp-us/phoenix/issues/4784)).
 | In a consumer repo that installed it | that repo's pinned version | — |
 | In a consumer repo that did **not** install it | the global | **yes**, naming both versions |
 | In no repo at all | the global | no — deliberately |
-| Running a **different checkout's** copy by path | nothing — it refuses, exit `2` | **yes**, naming both checkouts |
+| Running a **different checkout's** copy by path | nothing — it refuses, exit `126` | **yes**, naming both checkouts |
 
 Rows three and four are the original design. Running the global outside any repo is a normal,
 correct invocation, so it stays quiet. Running the global *inside a repo that asked for a specific
@@ -147,9 +147,11 @@ Four rules matter most to a caller:
   `no-overlap`, not an empty shortlist — a verb whose "nothing found" answer is empty
   stdout is byte-identical to a verb that never ran.
 - **The exit status is the answer; empty stdout never is.** `0` = the answer is on stdout,
-  `1` = usage error or the verb failed to run, `2` = the binary started but could not resolve an
+  `1` = usage error or the verb failed to run, `126` = the binary started but could not resolve an
   implementation, `127` = the verb never ran, `3`+ = the verb's own proven outcomes. **A non-zero
-  exit is UNKNOWN** — read the status before the bytes.
+  exit is UNKNOWN** — read the status before the bytes. `2` is allocated by nothing: it is the one
+  code a `PreToolUse` hook blocks the tool call on, so a fabrika exit seated there would deny a
+  spawn as a side effect of its status ([#5423](https://github.com/kamp-us/phoenix/issues/5423)).
 - **Fail closed on missing scope or state.** A zero-record scan is a failed read, not an
   answer ([ADR 0092](../../.decisions/0092-gates-fail-closed-on-zero-scope.md)); an
   unreadable input resolves to a refusal, never to a permissive default.

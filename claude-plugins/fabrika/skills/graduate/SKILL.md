@@ -25,7 +25,7 @@ kinds, and collapsing any two is the mistake:
   wrote nothing. Fix the named thing and re-run; this is not UNKNOWN.
 - **Write unproven** (`8`, `9`) — a write may or may not have landed. **Re-read before re-writing**,
   or you file the spec twice.
-- **Genuine UNKNOWN** (`1`, `2`, `11`, `14`, `127`) — the verb could not establish the answer at all.
+- **Genuine UNKNOWN** (`1`, `11`, `14`, `126`, `127`) — the verb could not establish the answer at all.
   Re-run or stop, and never resolve it to the permissive reading: a trail whose state could not be
   read is neither ready nor blocked.
 

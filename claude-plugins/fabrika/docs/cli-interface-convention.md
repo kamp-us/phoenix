@@ -117,15 +117,30 @@ exit taxonomy, and the verdict-vs-invocation rule proven in v1 at
   |---|---|
   | `0` | the answer was produced on stdout |
   | `1` | usage error, or the verb failed to run |
-  | `2` | no implementation could be resolved — the binary was found, the verbs were not |
+  | `2` | **never allocated** — the harness's block code on `PreToolUse` |
+  | `126` | no implementation could be resolved — the binary was found, the verbs were not |
   | `127` | the verb never ran at all (unresolved binary) |
   | `3`+ | the verb's own proven outcomes, each enumerated in `--help` |
 
-  `2` is the seat between the two invocation failures. `127` is the shell reporting that nothing
+  `126` is the seat between the two invocation failures. `127` is the shell reporting that nothing
   ran; `1` is a verb reporting that it ran and the caller asked wrongly. Between them sits the case
   where `fabrika` itself started, could not reach a working set of verbs — an unlinked
-  dependency, a repo-local install it could not execute — and has something specific to say about
-  it. Seating that on `1` would make it indistinguishable from a typo in a flag ([#4666](https://github.com/kamp-us/phoenix/issues/4666)).
+  dependency, a repo-local install it could not execute, a cwd it refuses to answer from — and has
+  something specific to say about it. Seating that on `1` would make it indistinguishable from a typo
+  in a flag ([#4666](https://github.com/kamp-us/phoenix/issues/4666)). `126` is the shell's own
+  *found but not executable*, which is the same claim one level up, so the two invocation failures
+  read as one band.
+
+  **`2` is allocated by nothing, in any group, and that is a hard rule rather than a free slot.** On
+  a `PreToolUse` hook, exit `2` is the *one* code the harness reads as "block the tool call" — so an
+  exit code seated there denies a tool call as a side effect of its status, whatever the verb meant.
+  This seat used to hold "no implementation could be resolved", which made a fabrika that could not
+  bootstrap block every `Task`/`Workflow` spawn in the session, the inverse of ADR
+  [0250](../../../.decisions/0250-fabrika-hook-cannot-run-fails-open.md)'s ruled fail-open
+  ([#5423](https://github.com/kamp-us/phoenix/issues/5423)). The full harness contract, and why it is
+  `PreToolUse`-only, is in [`hook-surface.md`](hook-surface.md#the-harness-exit-code-contract). The
+  rule is checked as data: `packages/fabrika-cli/src/exit-code-alignment.unit.test.ts` reds if any
+  group's table allocates it.
 
 - **The `3`+ band is scoped to the verb group that seats it. A code above the reserved band means one
   thing *within* its group and carries no cross-group uniqueness obligation.** Two shipped shapes are

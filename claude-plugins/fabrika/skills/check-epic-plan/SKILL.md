@@ -178,7 +178,7 @@ An unreleased claim is v1's unreclaimable-lock scar, which a human then clears b
   released.
 - `STOPPED` — everything else that leaves the run UNKNOWN with nothing written: `4`, `11`, `23`, a
   claim whose own state is UNKNOWN, a `15` from a verb after the claim was won (the claim moved
-  under you), and any `1`, `2` or `127` — a verb that could not run is never a verdict. Post the
+  under you), and any `1`, `126` or `127` — a verb that could not run is never a verdict. Post the
   state for a successor with `fabrika build note` **when you hold the claim**; when the claim itself
   is what failed, report the code instead.
 

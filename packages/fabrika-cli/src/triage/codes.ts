@@ -2,9 +2,10 @@
  * The one exit table all nine `triage` verbs allocate from, so a code means one thing across this
  * group whichever verb produced it.
  *
- * `0`, `1`, `2` and `127` are reserved by the interface convention (see `../verb.ts` and the exit-2
- * bootstrap in `../bin.ts`); everything else here is `3` and up, the band a verb owns for outcomes
- * it PROVED.
+ * `0`, `1`, `126` and `127` are reserved by the interface convention (see `../verb.ts` and the
+ * bootstrap failure in `../bin.ts`); everything else here is `3` and up, the band a verb owns for
+ * outcomes it PROVED. `2` is allocated by nothing anywhere in fabrika — it is the harness's block
+ * code on `PreToolUse` (`../hook/harness-exit.ts`, #5423).
  *
  * **The alignment with `report` is deliberate, code-for-code, and re-exported rather than
  * re-typed.** Where this table overlaps `report`'s two writing verbs — `3`, `5`, `6`, `7`, `8`, `9`,
@@ -31,13 +32,12 @@ import {
 	READBACK_MISMATCH as REPORT_READBACK_MISMATCH,
 	WRITE_UNKNOWN as REPORT_WRITE_UNKNOWN,
 } from "../report/codes.ts";
+import {NO_IMPLEMENTATION} from "../verb.ts";
 
 /** The answer is on stdout. Restated here because {@link TRIAGE_EXIT_TABLE} spans the whole matrix. */
 const ANSWER = 0;
 /** Usage error, an unresolvable repo, or the verb failed to run. */
 const FAILED = 1;
-/** No implementation could be resolved — the dependency graph never loaded (`../bin.ts`). */
-const NO_IMPLEMENTATION = 2;
 
 /** Stdin was read and held nothing. Distinct from a read that failed, which is `1`. */
 export const EMPTY_STDIN = REPORT_EMPTY_STDIN;
@@ -113,7 +113,6 @@ export interface ExitCodeRow {
 export const TRIAGE_EXIT_TABLE: ReadonlyArray<ExitCodeRow> = [
 	{code: ANSWER, meaning: "the answer is on stdout"},
 	{code: FAILED, meaning: "usage error, unresolvable repo, or the verb failed to run"},
-	{code: NO_IMPLEMENTATION, meaning: "no implementation could be resolved"},
 	{code: EMPTY_STDIN, meaning: "stdin was read and held nothing"},
 	{code: LEAKED_PATH, meaning: "the authored text carries a machine-local path"},
 	{code: BARE_AT_PATH, meaning: "the authored text is a bare @ path reference — not redactable"},
@@ -134,6 +133,7 @@ export const TRIAGE_EXIT_TABLE: ReadonlyArray<ExitCodeRow> = [
 		code: UNCONFIRMED,
 		meaning: "refused: agent-filed and close-eligible, but the kill is unconfirmed (ADR 0159)",
 	},
+	{code: NO_IMPLEMENTATION, meaning: "no implementation could be resolved"},
 	{code: NEVER_RAN, meaning: "the verb never ran (unresolved binary)"},
 ];
 

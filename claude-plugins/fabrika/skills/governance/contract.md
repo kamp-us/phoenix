@@ -142,7 +142,7 @@ package**, never from a sibling `contract.md`.
 |---|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
 | `0` | the answer is on stdout | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `1` | usage error, unresolvable repo, or the verb failed to run | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `2` | no implementation could be resolved | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `126` | no implementation could be resolved | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `3` | stdin was read and held nothing | — | — | — | — | ✓ | — | ✓ |
 | `4` | *(deliberate gap — `report file`'s body-section seat; no verb here composes body sections)* | — | — | — | — | — | — | — |
 | `5` | the **authored** text carries a machine-local path | — | — | — | — | ✓ | — | ✓ |
@@ -165,7 +165,7 @@ different spelling reds the alignment test with nothing in the failure naming wh
 this group's own `NOT_HARNESS_TOUCHING`.
 
 **This matrix owns what a code *means*; the per-verb tables own what *triggers* it.** Every verb can
-also return `0`, `1`, `2` and `127` with the meanings above, stated here and nowhere else; the
+also return `0`, `1`, `126` and `127` with the meanings above, stated here and nowhere else; the
 per-verb "Exit status" tables enumerate only that verb's own proven outcomes, `3` and up, phrased as
 that verb's trigger.
 
