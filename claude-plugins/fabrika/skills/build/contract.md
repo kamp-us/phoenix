@@ -1498,7 +1498,7 @@ $ fabrika build verdicts --pr 4310
 
 Per the [interface convention](../../docs/cli-interface-convention.md) Part 2: every flag above
 carries a type and default; every stdout shape has a literal example; every non-zero code is
-enumerated with its trigger (per-verb tables own `3`+; the universal `0/1/2/127` are stated once
+enumerated with its trigger (per-verb tables own `3`+; the universal `0/1/126/127` are stated once
 in the shared matrix, which owns every code's single meaning); every error names message, stream,
 and code; every judging verb states scope and zero-scope behavior; and no clause defers to a v1
 script, another skill's prose, or the authoring session. The three hand-checks the brief's

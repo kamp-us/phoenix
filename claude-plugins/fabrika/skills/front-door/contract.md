@@ -1120,6 +1120,6 @@ signal of any kind.
 **`fabrika status open` is the command the skill injects**, so its capability set is the one that
 matters most: read-only over the filesystem and GitHub, takes no stdin, and writes nothing. **The
 injected form cannot refuse** — it passes no flags, so its one refusal seat (`10`, a bad `--field`)
-is unreachable, and every source failure becomes a field state. It can still fail to *run* (`1`, `2`,
+is unreachable, and every source failure becomes a field state. It can still fail to *run* (`1`, `126`,
 `127`), which is the no-readout case the skill handles as its own state. Nothing that mutates is ever
 injected.

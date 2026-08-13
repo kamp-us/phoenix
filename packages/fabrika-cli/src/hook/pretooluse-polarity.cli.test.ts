@@ -48,7 +48,9 @@ const BLOCKING_EXIT_LITERAL = new RegExp(
 	`(?:process\\.exit\\(\\s*${PRETOOLUSE_BLOCKING_EXIT}\\s*\\)|status:\\s*${PRETOOLUSE_BLOCKING_EXIT}\\b)`,
 );
 
-describe("no bootstrap or dispatch failure is seated on the harness's blocking code", () => {
+describe("no bootstrap or dispatch failure is seated on the harness's blocking code", {
+	timeout: SUBPROCESS_TEST_TIMEOUT_MS,
+}, () => {
 	it(`reads the blocking code from the harness contract (Claude Code ${HARNESS_BUILD_READ})`, () => {
 		expect(PRETOOLUSE_BLOCKING_EXIT).toBe(2);
 		expect(NO_IMPLEMENTATION).not.toBe(PRETOOLUSE_BLOCKING_EXIT);

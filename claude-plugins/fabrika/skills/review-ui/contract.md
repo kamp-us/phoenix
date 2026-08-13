@@ -562,7 +562,7 @@ EOF
 
 Per the [interface convention](../../docs/cli-interface-convention.md) Part 2: every flag
 carries a type and default; every stdout shape has a literal example; every non-zero code is
-enumerated with its trigger (per-verb tables own the group-local rows; the universal `0/1/2/127`
+enumerated with its trigger (per-verb tables own the group-local rows; the universal `0/1/126/127`
 live once in the shared matrix, which owns every code's single meaning); every error names
 message, stream, and code; every verb states scope and zero-scope behavior (`render` refuses
 zero surfaces at `1`; `post` refuses an empty body at `3` and an unreadable evidence set at

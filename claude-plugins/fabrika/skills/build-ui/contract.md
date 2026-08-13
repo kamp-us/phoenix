@@ -671,7 +671,7 @@ $ fabrika ui evidence --pr 4318 --before before --after after
 Per the [interface convention](../../docs/cli-interface-convention.md) Part 2: every flag
 carries a type and default; every stdout shape has a literal example; every non-zero code is
 enumerated with its trigger (per-verb tables own the group-local rows; the universal
-`0/1/2/127` live once in the shared matrix, which owns every code's single meaning); every error
+`0/1/126/127` live once in the shared matrix, which owns every code's single meaning); every error
 names message, stream, and code; every judging verb states scope and zero-scope behavior; and no
 clause defers to a v1 script, another skill's prose, or the authoring session — the `build`
 group reuse is a reference to a *sibling fabrika contract*, the sanctioned shape the `build`
