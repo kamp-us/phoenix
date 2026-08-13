@@ -154,6 +154,23 @@ const BLOCK_BREAK = /^\s*$|^\s*#{1,6}\s|^\s*(?:[-*+]|\d+[.)])\s|^\s*(?:```|~~~)/
  */
 const normalize = (text: string): string => text.replace(/\s+/g, " ").trim();
 
+/**
+ * What may sit before a tag on a line that still *opens* a paragraph: indentation, blockquote markers
+ * and one list bullet. Nothing else.
+ *
+ * A tag reached only after real content did not open the lines below it, so continuing through them
+ * captures text the anchor never covered. That is not hypothetical: this file's own tests embed the
+ * tag in TypeScript string literals, and the block ran off the end of the literal and swallowed the
+ * assertions after it, so editing an assertion reported the fixture as a moved invariant. Every
+ * anchor in the guarded corpus opens its line — bare, after a bullet, or after a blockquote marker —
+ * which the `anchorsIn` note above already observes from the other side.
+ *
+ * A tag that does NOT open its line still gets a block: the text trailing it on that one line, which
+ * is exactly what the diff walk has always compared. So this is a fence on the *widening*, never a
+ * narrowing of what was already covered (#5514).
+ */
+const OPENS_LINE = /^[\s>]*(?:(?:[-*+]|\d+[.)])\s+)?$/;
+
 /** One anchor's paragraph at one commit — the tag's trailing text plus the lines that continue it. */
 interface AnchorBlock {
 	readonly name: string;
@@ -177,7 +194,8 @@ export const anchorBlocksIn = (text: string): ReadonlyArray<AnchorBlock> => {
 		const matched = ANCHOR.exec(maskInlineCode(line));
 		if (matched?.[1] === undefined) continue;
 		const body = [line.slice(matched.index + matched[0].length)];
-		for (let next = index + 1; next < lines.length; next += 1) {
+		const opens = OPENS_LINE.test(line.slice(0, matched.index));
+		for (let next = index + 1; opens && next < lines.length; next += 1) {
 			const candidate = lines[next] ?? "";
 			// The break test reads the raw line and the anchor test the masked one, because masking is
 			// length-preserving but not content-preserving: it eats the leading backticks of a ``` fence,
@@ -203,10 +221,16 @@ const byName = (blocks: ReadonlyArray<AnchorBlock>): Map<string, AnchorBlock[]> 
 /**
  * Every anchored invariant whose block `before` carries and `after` removed or reworded.
  *
- * Pairing is by NAME and then by occurrence, so a name used twice in one file is two independent
- * questions rather than one that answers itself from the wrong paragraph. A name absent from `after`
- * is `removed`; a name whose normalized block text differs is `modified`, reported at the line it
- * now sits on. A block that only moved is neither.
+ * A name absent from `after` is `removed`; a name whose normalized block text differs is `modified`,
+ * reported at the line it now sits on. A block that only moved is neither.
+ *
+ * **An unchanged block is claimed before a reworded one, and each is claimed once.** Where a name is
+ * used twice in one file, matching by position alone answers the wrong question the moment a new
+ * occurrence is inserted above an old one: both blocks are intact, but occurrence 1 is now compared
+ * against occurrence 2's text and reads as reworded. Matching an identical block first makes an
+ * insertion silent while leaving a genuine rewording loud, because a reworded block has no identical
+ * counterpart to claim; consuming each match keeps two same-named blocks two questions rather than
+ * letting one answer for both.
  */
 export const scanAnchorBlocks = (
 	file: string,
@@ -214,16 +238,19 @@ export const scanAnchorBlocks = (
 	after: string,
 ): ReadonlyArray<AnchorHit> => {
 	const later = byName(anchorBlocksIn(after));
-	const seen = new Map<string, number>();
 	const hits: AnchorHit[] = [];
 	for (const block of anchorBlocksIn(before)) {
-		const nth = seen.get(block.name) ?? 0;
-		seen.set(block.name, nth + 1);
-		const match = later.get(block.name)?.[nth];
-		if (match === undefined) {
+		const candidates = later.get(block.name) ?? [];
+		const intact = candidates.findIndex((entry) => entry.text === block.text);
+		if (intact >= 0) {
+			candidates.splice(intact, 1);
+			continue;
+		}
+		const reworded = candidates.shift();
+		if (reworded === undefined) {
 			hits.push({kind: "removed", name: block.name, file, line: block.line});
-		} else if (match.text !== block.text) {
-			hits.push({kind: "modified", name: block.name, file, line: match.line});
+		} else {
+			hits.push({kind: "modified", name: block.name, file, line: reworded.line});
 		}
 	}
 	return hits;

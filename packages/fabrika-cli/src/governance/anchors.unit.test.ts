@@ -144,6 +144,23 @@ describe("anchorBlocksIn", () => {
 			anchorBlocksIn("<!-- anchor: G --> a claim\nwritten as `<!-- anchor: NAME -->` here\n"),
 		).toEqual([{name: "G", line: 1, text: "a claim written as `<!-- anchor: NAME -->` here"}]);
 	});
+
+	// The over-capture this file's own tests exposed: the tag sits inside a TypeScript string literal,
+	// so the lines below it are unrelated code the anchor never covered (#5514).
+	it("does NOT continue past a tag that real content precedes — it covered no lines below it", () => {
+		expect(anchorBlocksIn('expect(scan("<!-- anchor: A --> one"));\nexpect(other());\n')).toEqual([
+			{name: "A", line: 1, text: 'one"));'},
+		]);
+	});
+
+	it("still continues from a tag a blockquote marker or a bullet precedes — those open a line", () => {
+		expect(anchorBlocksIn("> <!-- anchor: G --> a claim\n> that wraps\n")).toEqual([
+			{name: "G", line: 1, text: "a claim > that wraps"},
+		]);
+		expect(anchorBlocksIn("1. <!-- anchor: G --> a claim\n   that wraps\n")).toEqual([
+			{name: "G", line: 1, text: "a claim that wraps"},
+		]);
+	});
 });
 
 describe("scanAnchorBlocks", () => {
@@ -200,7 +217,7 @@ describe("scanAnchorBlocks", () => {
 		);
 	});
 
-	it("pairs a repeated NAME by occurrence — two uses are two questions, not one", () => {
+	it("reports only the reworded one of two same-named blocks — two uses are two questions", () => {
 		expect(
 			scanAnchorBlocks(
 				"a.md",
@@ -208,6 +225,38 @@ describe("scanAnchorBlocks", () => {
 				"<!-- anchor: G --> one\n\n<!-- anchor: G --> rewritten\n",
 			),
 		).toEqual([{kind: "modified", name: "G", file: "a.md", line: 3}]);
+	});
+
+	// Positional pairing alone answers the wrong question here: both blocks are intact, but the old
+	// occurrence 1 lands against the new occurrence 2's text and reads as reworded (#5514).
+	it("reports NOTHING when a new same-named anchor is INSERTED above an intact one", () => {
+		expect(
+			scanAnchorBlocks(
+				"a.md",
+				"<!-- anchor: G --> the old claim\n",
+				"<!-- anchor: G --> a new claim\n\n<!-- anchor: G --> the old claim\n",
+			),
+		).toEqual([]);
+	});
+
+	it("still reports a rewording when a same-named anchor was inserted in the same edit", () => {
+		expect(
+			scanAnchorBlocks(
+				"a.md",
+				"<!-- anchor: G --> the old claim\n",
+				"<!-- anchor: G --> a new claim\n\n<!-- anchor: G --> the old claim, softened\n",
+			),
+		).toEqual([{kind: "modified", name: "G", file: "a.md", line: 1}]);
+	});
+
+	it("reports the SECOND of two same-named blocks as removed when only one survives", () => {
+		expect(
+			scanAnchorBlocks(
+				"a.md",
+				"<!-- anchor: G --> one\n\n<!-- anchor: G --> two\n",
+				"<!-- anchor: G --> one\n",
+			),
+		).toEqual([{kind: "removed", name: "G", file: "a.md", line: 3}]);
 	});
 
 	it("reports NOTHING when an anchor is added — a new guarantee is not a moved one", () => {
