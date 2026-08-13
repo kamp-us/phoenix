@@ -5,6 +5,7 @@ import type {ExecResult} from "../io/exec.ts";
 import {DIFF_AT} from "../review/fixtures.test-support.ts";
 import {INCOMPLETE_SCAN, PRECONDITION_UNKNOWN, STALE_HEAD, ZERO_SCOPE} from "./codes.ts";
 import {
+	BASE,
 	binding,
 	HEAD,
 	OLD_HEAD,
@@ -42,16 +43,24 @@ const diffOf = (path: string, ...body: ReadonlyArray<string>): string =>
 		"",
 	].join("\n");
 
+/**
+ * The one changed file scripted at both commits.
+ *
+ * `before` defaults to `bytes` — a file whose *blocks* are identical at both ends, so a test that
+ * only means to exercise the diff walk is not accidentally also asserting a block hit.
+ */
 const scripted = (
 	diff: string,
 	bytes: string,
 	path = SKILL,
+	before = bytes,
 ): ReadonlyArray<readonly [RegExp, ExecResult]> => [
 	[PULL, pull({changedFiles: 1})],
 	...binding(),
 	[DIFF_AT(), okOut(diff)],
 	[STATUS_AT(), statuses(["M", path])],
 	[SHOW_AT(HEAD, path), okOut(bytes)],
+	[SHOW_AT(BASE, path), okOut(before)],
 ];
 
 describe("runGuards", () => {
@@ -108,10 +117,10 @@ describe("runGuards", () => {
 		expect(out.stdout).not.toContain("guard-file");
 	});
 
-	it("states the scanned file count and the anchors in reach on stderr", async () => {
+	it("states the scanned file count, the anchors in reach and the base comparison on stderr", async () => {
 		const out = await run(scripted(diffOf(SKILL, "-a", "+b"), "<!-- anchor: G --> g\n"));
 		expect(out.stderr.at(-1)).toBe(
-			"governance guards: scanned 1 files, 1 anchored invariants in reach.",
+			`governance guards: scanned 1 files, 1 anchored invariants in reach, 1 compared block-by-block against ${BASE}.`,
 		);
 	});
 
@@ -124,6 +133,99 @@ describe("runGuards", () => {
 			hits: [{kind: "removed", name: "G", file: SKILL, line: 12}],
 			scanned: 1,
 		});
+	});
+
+	// The PR #5501 shape: not one `+`/`-` line in that 98-file diff carried an anchor tag, yet two
+	// anchored paragraphs had been reworded on their continuation lines (#5514).
+	it("reports a hit when the anchored PROSE changed and no anchor line is in the diff at all", async () => {
+		const claim = (checkout: string): string =>
+			[
+				"<!-- anchor: READ-DERIVES-AGAINST-THE-PACKED-BRANCH --> **`read` re-derives against the",
+				`pack's own branch.** A successor is a different checkout — usually ${checkout} sitting on`,
+				"the default branch — so deriving from `HEAD` would report its own location as drift.",
+				"",
+			].join("\n");
+		const out = await run(
+			scripted(
+				diffOf(
+					SKILL,
+					"-pack's own branch.** A successor is a different checkout — usually a fresh worktree sitting on",
+					"+pack's own branch.** A successor is a different checkout — usually a fresh clone sitting on",
+				),
+				claim("a fresh clone"),
+				SKILL,
+				claim("a fresh worktree"),
+			),
+		);
+		expect(out.stdout).toBe(
+			[
+				"guards\thits\t1",
+				`anchor\tmodified\tREAD-DERIVES-AGAINST-THE-PACKED-BRANCH\t${SKILL}:1`,
+				"",
+			].join("\n"),
+		);
+	});
+
+	it("still answers `no-anchor-change` when the anchored blocks are untouched — not a clearance", async () => {
+		const bytes = "<!-- anchor: G --> a claim\n\nunanchored prose\n";
+		const out = await run(
+			scripted(diffOf(SKILL, "-unanchored prose", "+other unanchored prose"), bytes, SKILL, bytes),
+		);
+		expect(out.stdout).toBe(
+			[`guards\tno-anchor-change\t1`, `guard-file\t${SKILL}\t1`, ""].join("\n"),
+		);
+	});
+
+	it("counts one hit per anchor when both scans see it — the two scans are not two findings", async () => {
+		const out = await run(
+			scripted(
+				diffOf(SKILL, "-<!-- anchor: G --> one", "+<!-- anchor: G --> two"),
+				"<!-- anchor: G --> two\n",
+				SKILL,
+				"<!-- anchor: G --> one\n",
+			),
+		);
+		expect(out.stdout).toBe([`guards\thits\t1`, `anchor\tmodified\tG\t${SKILL}:12`, ""].join("\n"));
+	});
+
+	it("refuses an unreadable BASE read on 11 — UNKNOWN, never `nothing moved`", async () => {
+		const out = await run([
+			[PULL, pull({changedFiles: 1})],
+			...binding(),
+			[DIFF_AT(), okOut(diffOf(SKILL, "-a", "+b"))],
+			[STATUS_AT(), statuses(["M", SKILL])],
+			[SHOW_AT(HEAD, SKILL), okOut("<!-- anchor: G --> g\n")],
+			[SHOW_AT(BASE, SKILL), errOut("fatal: path does not exist")],
+		]);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toBe(
+			`governance guards: cannot read ${SKILL} at ${BASE}: fatal: path does not exist — UNKNOWN, never "nothing moved".`,
+		);
+	});
+
+	it("does NOT read an added file at the base — it has no base side to compare", async () => {
+		const out = await run([
+			[PULL, pull({changedFiles: 1})],
+			...binding(),
+			[DIFF_AT(), okOut(diffOf(SKILL, "+<!-- anchor: G --> a claim"))],
+			[STATUS_AT(), statuses(["A", SKILL])],
+			[SHOW_AT(HEAD, SKILL), okOut("<!-- anchor: G --> a claim\n")],
+		]);
+		expect(out.code).toBe(0);
+		expect(out.stdout).toBe(
+			[`guards\tno-anchor-change\t1`, `guard-file\t${SKILL}\t1`, ""].join("\n"),
+		);
+	});
+
+	it("reports a deleted file's anchors as removed — the walk still covers what has no head bytes", async () => {
+		const out = await run([
+			[PULL, pull({changedFiles: 1})],
+			...binding(),
+			[DIFF_AT(), okOut(diffOf(SKILL, "-<!-- anchor: G --> a claim"))],
+			[STATUS_AT(), statuses(["D", SKILL])],
+		]);
+		expect(out.stdout).toBe([`guards\thits\t0`, `anchor\tremoved\tG\t${SKILL}:12`, ""].join("\n"));
 	});
 
 	it("refuses an absent, closed, or empty PR on 7", async () => {
