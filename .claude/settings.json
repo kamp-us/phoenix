@@ -3,6 +3,15 @@
 		"fabrika@kampus": true,
 		"kampus-pipeline@kampus": false
 	},
+	"extraKnownMarketplaces": {
+		"kampus": {
+			"source": {
+				"source": "github",
+				"repo": "kamp-us/phoenix"
+			},
+			"autoUpdate": true
+		}
+	},
 	"hooks": {
 		"PreToolUse": [
 			{
