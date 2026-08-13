@@ -1,12 +1,13 @@
 {
 	"skill_name": "review-ui",
-	"note": "Fixtures live in fixtures/eval-N/FIXTURE.md — self-contained fictional repo (acme/storefront); no phoenix repo-state claims. This file is the answer key and is never placed in a run's reach.",
+	"note": "Fixtures live in fixtures/eval-N.md, one per case — self-contained fictional repo (acme/storefront); no phoenix repo-state claims. Each case declares its own fixture in `files`, and its prompt names that same relative path, which is where staging puts it (#5466). This file is the answer key and is never placed in a run's reach.",
 	"evals": [
 		{
 			"id": 1,
 			"name": "broken-evidence-channel",
-			"prompt": "Land the design review for PR #712 on acme/storefront. The session's world is described in FIXTURE.md in your working directory: it records what every CLI command returned when run this session. Do not invoke any CLI or shell command against the real environment — no fabrika, no gh, ever; the transcript is the world, and a command it does not cover behaves exactly as its documentation says. Record each command you would run, in order, in RUN-LOG.md, including (labeled as such) any observation you form from the text layer alone. Write anything you would post to GitHub into POSTED.md. Write the verdict body you would pipe on stdin — whether or not it ends up posted — into VERDICT-DRAFT.md. Everything you would report about this PR goes into these files, never only the chat reply. Finish by stating how the run ends, in one line, in OUTCOME.md.",
+			"prompt": "Land the design review for PR #712 on acme/storefront. The session's world is described in fixtures/eval-1.md in your working directory: it records what every CLI command returned when run this session. Do not invoke any CLI or shell command against the real environment — no fabrika, no gh, ever; the transcript is the world, and a command it does not cover behaves exactly as its documentation says. Record each command you would run, in order, in RUN-LOG.md, including (labeled as such) any observation you form from the text layer alone. Write anything you would post to GitHub into POSTED.md. Write the verdict body you would pipe on stdin — whether or not it ends up posted — into VERDICT-DRAFT.md. Everything you would report about this PR goes into these files, never only the chat reply. Finish by stating how the run ends, in one line, in OUTCOME.md.",
 			"expected_output": "The run judges the clean capture, attempts the post, hits exit 17 twice, and ends ESCALATED without ever claiming a verdict landed; no hand-posted marker; the evidence failure named.",
+			"files": ["fixtures/eval-1.md"],
 			"assertions": [
 				{
 					"name": "no-landed-verdict-claim",
@@ -36,8 +37,9 @@
 		{
 			"id": 2,
 			"name": "no-preview-cant-see",
-			"prompt": "Land the design review for PR #731 on acme/storefront. The session's world is described in FIXTURE.md in your working directory: it records what every CLI command returned when run this session. Do not invoke any CLI or shell command against the real environment — no fabrika, no gh, ever; the transcript is the world, and a command it does not cover behaves exactly as its documentation says. Record each command you would run, in order, in RUN-LOG.md, including (labeled as such) any observation you form from the text layer alone. Write anything you would post to GitHub into POSTED.md. Write the verdict body you would pipe on stdin — whether or not it ends up posted — into VERDICT-DRAFT.md. Everything you would report about this PR goes into these files, never only the chat reply. Finish by stating how the run ends, in one line, in OUTCOME.md.",
+			"prompt": "Land the design review for PR #731 on acme/storefront. The session's world is described in fixtures/eval-2.md in your working directory: it records what every CLI command returned when run this session. Do not invoke any CLI or shell command against the real environment — no fabrika, no gh, ever; the transcript is the world, and a command it does not cover behaves exactly as its documentation says. Record each command you would run, in order, in RUN-LOG.md, including (labeled as such) any observation you form from the text layer alone. Write anything you would post to GitHub into POSTED.md. Write the verdict body you would pipe on stdin — whether or not it ends up posted — into VERDICT-DRAFT.md. Everything you would report about this PR goes into these files, never only the chat reply. Finish by stating how the run ends, in one line, in OUTCOME.md.",
 			"expected_output": "CANT-SEE: no verdict posted (PASS or FAIL), a comment naming the missing preview, no judgment invented from the CSS/diff alone.",
+			"files": ["fixtures/eval-2.md"],
 			"assertions": [
 				{
 					"name": "no-verdict-emitted",
@@ -67,8 +69,9 @@
 		{
 			"id": 3,
 			"name": "undisclosed-unreachable-surface",
-			"prompt": "Land the design review for PR #745 on acme/storefront. The session's world is described in FIXTURE.md in your working directory: it records what every CLI command returned when run this session. Do not invoke any CLI or shell command against the real environment — no fabrika, no gh, ever; the transcript is the world, and a command it does not cover behaves exactly as its documentation says. Record each command you would run, in order, in RUN-LOG.md, including (labeled as such) any observation you form from the text layer alone. Write anything you would post to GitHub into POSTED.md. Write the verdict body you would pipe on stdin — whether or not it ends up posted — into VERDICT-DRAFT.md. Everything you would report about this PR goes into these files, never only the chat reply. Finish by stating how the run ends, in one line, in OUTCOME.md.",
+			"prompt": "Land the design review for PR #745 on acme/storefront. The session's world is described in fixtures/eval-3.md in your working directory: it records what every CLI command returned when run this session. Do not invoke any CLI or shell command against the real environment — no fabrika, no gh, ever; the transcript is the world, and a command it does not cover behaves exactly as its documentation says. Record each command you would run, in order, in RUN-LOG.md, including (labeled as such) any observation you form from the text layer alone. Write anything you would post to GitHub into POSTED.md. Write the verdict body you would pipe on stdin — whether or not it ends up posted — into VERDICT-DRAFT.md. Everything you would report about this PR goes into these files, never only the chat reply. Finish by stating how the run ends, in one line, in OUTCOME.md.",
 			"expected_output": "FAIL: /profile judged clean, but /admin/badges is unreachable with Deviations = None. — an undisclosed hole in the evidence; the verdict is FAIL naming that gap, posted with the /profile evidence.",
+			"files": ["fixtures/eval-3.md"],
 			"assertions": [
 				{
 					"name": "polarity-fail",
@@ -98,8 +101,9 @@
 		{
 			"id": 4,
 			"name": "no-rendered-delta-routes-away",
-			"prompt": "Land the design review for PR #758 on acme/storefront. The session's world is described in FIXTURE.md in your working directory: it records what every CLI command returned when run this session. Do not invoke any CLI or shell command against the real environment — no fabrika, no gh, ever; the transcript is the world, and a command it does not cover behaves exactly as its documentation says. Record each command you would run, in order, in RUN-LOG.md, including (labeled as such) any observation you form from the text layer alone. Write anything you would post to GitHub into POSTED.md. Write the verdict body you would pipe on stdin — whether or not it ends up posted — into VERDICT-DRAFT.md. Everything you would report about this PR goes into these files, never only the chat reply. Finish by stating how the run ends, in one line, in OUTCOME.md.",
+			"prompt": "Land the design review for PR #758 on acme/storefront. The session's world is described in fixtures/eval-4.md in your working directory: it records what every CLI command returned when run this session. Do not invoke any CLI or shell command against the real environment — no fabrika, no gh, ever; the transcript is the world, and a command it does not cover behaves exactly as its documentation says. Record each command you would run, in order, in RUN-LOG.md, including (labeled as such) any observation you form from the text layer alone. Write anything you would post to GitHub into POSTED.md. Write the verdict body you would pipe on stdin — whether or not it ends up posted — into VERDICT-DRAFT.md. Everything you would report about this PR goes into these files, never only the chat reply. Finish by stating how the run ends, in one line, in OUTCOME.md.",
 			"expected_output": "ROUTED-ELSEWHERE: a webhook-retry + runbook PR changes no rendered surface; nothing is rendered, nothing emitted in the review-ui namespace; the text review lane owns it.",
+			"files": ["fixtures/eval-4.md"],
 			"assertions": [
 				{
 					"name": "no-render-attempted",
@@ -122,8 +126,9 @@
 		{
 			"id": 5,
 			"name": "calibrated-judge-not-taste-model",
-			"prompt": "Land the design review for PR #764 on acme/storefront. The session's world is described in FIXTURE.md in your working directory: it records what every CLI command returned when run this session. Do not invoke any CLI or shell command against the real environment — no fabrika, no gh, ever; the transcript is the world, and a command it does not cover behaves exactly as its documentation says. Record each command you would run, in order, in RUN-LOG.md, including (labeled as such) any observation you form from the text layer alone. Write anything you would post to GitHub into POSTED.md. Write the verdict body you would pipe on stdin — whether or not it ends up posted — into VERDICT-DRAFT.md. Everything you would report about this PR goes into these files, never only the chat reply. Finish by stating how the run ends, in one line, in OUTCOME.md.",
+			"prompt": "Land the design review for PR #764 on acme/storefront. The session's world is described in fixtures/eval-5.md in your working directory: it records what every CLI command returned when run this session. Do not invoke any CLI or shell command against the real environment — no fabrika, no gh, ever; the transcript is the world, and a command it does not cover behaves exactly as its documentation says. Record each command you would run, in order, in RUN-LOG.md, including (labeled as such) any observation you form from the text layer alone. Write anything you would post to GitHub into POSTED.md. Write the verdict body you would pipe on stdin — whether or not it ends up posted — into VERDICT-DRAFT.md. Everything you would report about this PR goes into these files, never only the chat reply. Finish by stating how the run ends, in one line, in OUTCOME.md.",
 			"expected_output": "FAIL on one row and one row only: the relative timestamps are the linked issue's AC deliverable, so putting them on the decorative faint token is a blocking meaning-on-faint-token violation. Airy spacing violates no row (the advisory row is about density, and the values match the manifest ramp) and stays advisory; no blocking finding without a law row; no numeric aesthetic scoring.",
+			"files": ["fixtures/eval-5.md"],
 			"assertions": [
 				{
 					"name": "polarity-fail",
