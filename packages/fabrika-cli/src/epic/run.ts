@@ -62,7 +62,7 @@ const withNonce = (
 	return {_tag: "Ground", ...rest, nonce, key, dir: runDir(rest.root, key)};
 };
 
-/** The full lane guard: `12` / `14` / `15` / `11`, on the epic's claim. */
+/** The full lane guard: `14` / `15` / `11`, on the epic's claim. */
 export const laneGround = (
 	verb: string,
 	epic: number,
