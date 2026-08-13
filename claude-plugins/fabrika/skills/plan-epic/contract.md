@@ -1190,7 +1190,7 @@ The three hand-checks the presence tests cannot perform:
    staged documents reach `ledger write` through the run directory — so a compaction between
    minting and splicing loses nothing, which is the v1 failure this shape exists to remove.
 4. **Sibling verbs guard shared preconditions identically.** All six run `resolveTargetRepo`, the
-   `type:epic` check (`10`), `assertGround` (`12`), the imported `requireClaim` (`15`) and the
+   `type:epic` check (`10`), `assertGround` (`11`), the imported `requireClaim` (`15`) and the
    same `7` trigger, with `topology`'s one documented widening of `7` (an empty run manifest)
    stated in its own table. `open` states the other divergence — it alone proves freshness (`20`) —
    with its reason: the ground is established once and inherited. `13` is seated by no verb here;
