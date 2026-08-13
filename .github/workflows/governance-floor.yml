@@ -37,7 +37,15 @@ jobs:
     name: a governance-root diff carries a governance verdict at its head
     runs-on: ubuntu-latest
     steps:
+      # `fetch-depth: 0`, not the action's default 1. Under ADR 0276 `ship floor` resolves a
+      # content-bound verdict at a moved head by reading `git diff --raw <base>...<head>`, and a
+      # depth-1 checkout cannot: measured on a synthetic origin, both of `bindHead`'s fetches
+      # succeed and the three-dot read still dies `fatal: … no merge base`. That fails safe — the
+      # namespace resolves stale and the floor reds — but red is exactly the re-review this ruling
+      # removes, so a shallow checkout would keep the tax for governance-root PRs alone.
       - uses: actions/checkout@v4.2.2
+        with:
+          fetch-depth: 0
 
       - uses: pnpm/action-setup@v4.1.0
 

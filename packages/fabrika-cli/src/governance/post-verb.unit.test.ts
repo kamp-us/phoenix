@@ -3,7 +3,7 @@ import {describe, expect, it} from "vitest";
 import {errOut, fakeShell, okOut, once} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import type {StdinRead} from "../io/stdin.ts";
-import {PATHS_AT} from "../review/fixtures.test-support.ts";
+import {CONTENT, PATHS_AT} from "../review/fixtures.test-support.ts";
 import {
 	BARE_AT_PATH,
 	EMPTY_STDIN,
@@ -47,7 +47,7 @@ const run = (
 	Effect.runPromise(Effect.provide(runPost({...options, ...overrides}), fakeShell(script).layer));
 
 const composed = (body = BODY, sha = HEAD): string =>
-	`governance: PASS @ ${sha} — no contradiction, no weakening\n\n${body}`;
+	`governance: PASS @ ${sha} content:${CONTENT} — no contradiction, no weakening\n\n${body}`;
 
 const created = (id = 91): ExecResult => okOut(JSON.stringify({id, html_url: URL}));
 
@@ -68,7 +68,7 @@ describe("runPost", () => {
 			governing([CREATE, created()], [READ_BACK, okOut(JSON.stringify({body: composed()}))]),
 		);
 		expect(out.code).toBe(0);
-		expect(out.stdout).toBe(`posted\tgovernance\tPASS\t${HEAD}\tcreated\t${URL}\n`);
+		expect(out.stdout).toBe(`posted\tgovernance\tPASS\t${HEAD}\t${CONTENT}\tcreated\t${URL}\n`);
 	});
 
 	it("edits the namespace's own comment rather than stacking a second one", async () => {

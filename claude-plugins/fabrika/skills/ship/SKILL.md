@@ -45,7 +45,10 @@ fabrika ship cp-approval 4321 --sha 03135b91
 before it is solicited, a base-drift notice from the verb routes rebase → re-gate → re-bank first,
 so the approval is never spent on a head that must move. <!-- anchor: NO-REBASE-AFTER-APPROVAL -->
 Once a control-plane approval exists, **never rebase or force-push the head**: a moved head means
-re-approval, patch-identical or not. A control-plane PR whose latest verdict is FAIL routes to
+re-approval, patch-identical or not. **That is the human approval only.** A fabrika `review-*` or
+`governance` marker binds the content it judged as well as the head, so a branch update leaving the
+diff and every changed file byte-identical keeps it; the control-plane approval and GitHub's own
+review object do not. A control-plane PR whose latest verdict is FAIL routes to
 repair exactly as an ordinary FAIL; the advisory carrier is a PASS path only.
 
 ## 3 — The verdict conjunction
@@ -62,7 +65,9 @@ so an `ns governance` line you did not ask for is the gate working, not a bug. `
 naming a FAIL → route to repair (`build`) and stop. `blocked` naming absence → the namespace was
 never gated at this head; route to the gate that owns it — `review` for every `review-*` namespace,
 the `governance` skill for `governance` — and stop. **Absence and staleness are refusals, never
-passes.**
+passes.** A `pass` on a verdict posted at an *earlier* head is not a refusal it missed: the verb
+says so on stderr, having proved this head's content digest is the one that verdict bound. What it
+never does is pass a content binding it could not check — that reads `stale`.
 
 **Your reading of `blocked` is not the only thing enforcing the governance floor.**
 `.github/workflows/governance-floor.yml` runs `fabrika ship floor` on every PR and reds when a

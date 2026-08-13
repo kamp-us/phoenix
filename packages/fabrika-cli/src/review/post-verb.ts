@@ -28,6 +28,7 @@ import type {StdinRead} from "../io/stdin.ts";
 import {normalizeForReadback} from "../report/compose.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {
+	contentDigest,
 	emit as emitMarker,
 	headSha,
 	type Polarity,
@@ -44,6 +45,7 @@ import {
 	STALE_HEAD,
 	WRITE_UNKNOWN,
 } from "./codes.ts";
+import {contentDigestAt} from "./content-binding.ts";
 import {bindHead, boundLine} from "./head.ts";
 import {badNumber, openPull, resolveTargetRepo, scannedLine} from "./target.ts";
 import {latestByWriteRecency, stampIso, withWrittenAt} from "./write-recency.ts";
@@ -79,6 +81,7 @@ interface Posted {
 	readonly namespace: string;
 	readonly polarity: string;
 	readonly sha: string;
+	readonly content: string;
 	readonly clause: string;
 }
 
@@ -89,7 +92,7 @@ const prefixMatch = (a: string, b: string): boolean => a.startsWith(b) || b.star
  * Why the read-back does not show what was posted, or `null` when it does.
  *
  * Two assertions, and both are needed. The **marker** is checked through the format's own `read`,
- * which is the contract's step 6 — the four fields have to be the four that were composed. The
+ * which is the contract's step 6 — the five fields have to be the five that were composed. The
  * **whole comment** is then compared against the bytes that were sent, through `normalizeForReadback`
  * from `report/compose.ts`: a marker that parses proves nothing about the body under it, and the body
  * is the verdict. The normalizer is what makes that comparison survivable — its trailing-newline step
@@ -134,6 +137,9 @@ const mismatchOf = (
 		return `polarity ${marker.polarity}, expected ${posted.polarity}`;
 	}
 	if (marker.sha !== posted.sha) return `sha ${marker.sha}, expected ${posted.sha}`;
+	if (marker.content !== posted.content) {
+		return `content ${marker.content ?? "none"}, expected ${posted.content}`;
+	}
 	if (marker.clause !== posted.clause) {
 		return `clause "${marker.clause}", expected "${posted.clause}"`;
 	}
@@ -238,9 +244,19 @@ export const runPost = (
 		const listed = yield* diffRangePaths(head.base, head.sha);
 		if (listed._tag === "Failure") return unreadable("the changed-file list", pr, listed.reason);
 		const derived = namespacesOf(partition(listed.value));
+		// The content binding is taken at the SAME bound commit the class set is derived at, so the
+		// digest the verdict carries is provably over the range it judged and not over a later read
+		// (ADR 0276). A digest that cannot be computed refuses the post: a marker silently emitted
+		// without one is head-bound forever, and nothing downstream could tell that apart from a
+		// deliberate head-only verdict.
+		const content = yield* contentDigestAt(head.base, head.sha);
+		if (content._tag === "Failure") {
+			return unreadable("the content digest", pr, content.reason);
+		}
 		const diagnostics = [
 			boundLine(VERB, head),
 			scannedLine(VERB, listed.value.length, "changed file"),
+			`${VERB}: content ${content.value} — the digest of ${head.base}...${head.sha} this verdict survives on (ADR 0276).`,
 		];
 		const namespace = options.namespace.trim().toLowerCase();
 		if (!derived.includes(namespace)) {
@@ -255,7 +271,13 @@ export const runPost = (
 		const firstLine =
 			carrier === "advisory"
 				? emitAdvisory(namespace, clause)
-				: emitMarker({namespace, polarity: polarity as Polarity, sha: inspected, clause});
+				: emitMarker({
+						namespace,
+						polarity: polarity as Polarity,
+						sha: inspected,
+						content: contentDigest(content.value),
+						clause,
+					});
 		const below =
 			carrier === "advisory" ? `${reviewedHeadLine(inspected)}\n\n${authored.text}` : authored.text;
 		// The stamp goes on here, before the leak scan and before the body is used as the read-back
@@ -307,7 +329,12 @@ export const runPost = (
 		const mismatch =
 			back._tag === "Failure"
 				? back.reason
-				: mismatchOf(back.value, {namespace, polarity, sha: inspected, clause}, carrier, composed);
+				: mismatchOf(
+						back.value,
+						{namespace, polarity, sha: inspected, content: content.value, clause},
+						carrier,
+						composed,
+					);
 		if (mismatch !== null) {
 			return refuse(
 				READBACK_MISMATCH,
@@ -323,6 +350,7 @@ export const runPost = (
 						namespace,
 						polarity,
 						sha: inspected,
+						content: content.value,
 						upsert,
 						carrier,
 						commentUrl: landed.url,
@@ -330,7 +358,7 @@ export const runPost = (
 					diagnostics,
 				)
 			: answer(
-					`posted\t${namespace}\t${polarity}\t${inspected}\t${upsert}\t${landed.url}`,
+					`posted\t${namespace}\t${polarity}\t${inspected}\t${content.value}\t${upsert}\t${landed.url}`,
 					diagnostics,
 				);
 	});

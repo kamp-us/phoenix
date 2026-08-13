@@ -26,10 +26,12 @@ import {patchComment, viewerLogin} from "../io/pulls.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {normalizeForReadback} from "../report/compose.ts";
 import {GOVERNANCE_ROOTS, touchesGovernanceRoot} from "../review/classes.ts";
+import {contentDigestAt} from "../review/content-binding.ts";
 import {badNumber, openPull, resolveTargetRepo, scannedLine} from "../review/target.ts";
 import {latestByWriteRecency} from "../review/write-recency.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {
+	contentDigest,
 	emit as emitMarker,
 	headSha,
 	type Polarity,
@@ -83,15 +85,20 @@ const carriesNamespace = (body: string): boolean => {
 /**
  * Why the read-back does not show what was posted, or `null` when it does.
  *
- * Two assertions, and both are needed. The marker goes through the format's own `read`, so the four
- * fields have to be the four that were composed; the whole comment is then compared through
+ * Two assertions, and both are needed. The marker goes through the format's own `read`, so the five
+ * fields have to be the five that were composed; the whole comment is then compared through
  * `normalizeForReadback` — a marker that parses proves nothing about the body under it, and the body
  * is the verdict. That normalizer is imported rather than re-derived because its trailing-newline step
  * is the one a re-derivation drops, and dropping it fires this refusal on every clean run.
  */
 const mismatchOf = (
 	body: string,
-	posted: {readonly polarity: string; readonly sha: string; readonly clause: string},
+	posted: {
+		readonly polarity: string;
+		readonly sha: string;
+		readonly content: string;
+		readonly clause: string;
+	},
 	composed: string,
 ): string | null => {
 	const normalized = normalizeForReadback(body);
@@ -103,6 +110,9 @@ const mismatchOf = (
 		return `polarity ${marker.polarity}, expected ${posted.polarity}`;
 	}
 	if (marker.sha !== posted.sha) return `sha ${marker.sha}, expected ${posted.sha}`;
+	if (marker.content !== posted.content) {
+		return `content ${marker.content ?? "none"}, expected ${posted.content}`;
+	}
 	if (marker.clause !== posted.clause) {
 		return `clause "${marker.clause}", expected "${posted.clause}"`;
 	}
@@ -186,9 +196,13 @@ export const runPost = (
 		const head = bound.head;
 		const listed = yield* diffRangePaths(head.base, head.sha);
 		if (listed._tag === "Failure") return unreadable("the changed-file list", pr, listed.reason);
+		// Taken at the SAME bound commit the requirement is re-derived at — see `review/post-verb.ts`.
+		const content = yield* contentDigestAt(head.base, head.sha);
+		if (content._tag === "Failure") return unreadable("the content digest", pr, content.reason);
 		const diagnostics = [
 			boundLine(VERB, head),
 			scannedLine(VERB, listed.value.length, "changed file"),
+			`${VERB}: content ${content.value} — the digest of ${head.base}...${head.sha} this verdict survives on (ADR 0276).`,
 		];
 		if (!touchesGovernanceRoot(listed.value)) {
 			return refuse(
@@ -203,6 +217,7 @@ export const runPost = (
 			namespace: NAMESPACE,
 			polarity: polarity as Polarity,
 			sha: inspected,
+			content: contentDigest(content.value),
 			clause,
 		})}\n${authored.text}`;
 
@@ -250,7 +265,11 @@ export const runPost = (
 		const mismatch =
 			back._tag === "Failure"
 				? back.reason
-				: mismatchOf(back.value, {polarity, sha: inspected, clause}, composed);
+				: mismatchOf(
+						back.value,
+						{polarity, sha: inspected, content: content.value, clause},
+						composed,
+					);
 		if (mismatch !== null) {
 			return refuse(
 				READBACK_MISMATCH,
@@ -266,13 +285,14 @@ export const runPost = (
 						namespace: NAMESPACE,
 						polarity,
 						sha: inspected,
+						content: content.value,
 						upsert,
 						commentUrl: landed.url,
 					}),
 					diagnostics,
 				)
 			: answer(
-					`posted\t${NAMESPACE}\t${polarity}\t${inspected}\t${upsert}\t${landed.url}`,
+					`posted\t${NAMESPACE}\t${polarity}\t${inspected}\t${content.value}\t${upsert}\t${landed.url}`,
 					diagnostics,
 				);
 	});

@@ -81,7 +81,7 @@ export const composeVerdict = (
 	const text = clause(clauseFor(ledger.children.length, floor));
 	if (sha === null || text === null) return null;
 	const sections = [
-		emit({namespace: NAMESPACE, polarity, sha, clause: text}).trimEnd(),
+		emit({namespace: NAMESPACE, polarity, sha, content: null, clause: text}).trimEnd(),
 		`Scanned: ${ledger.children.map((child) => `#${child.number}`).join(", ")}`,
 	];
 	if (floor.defects.length > 0) {

@@ -50,6 +50,25 @@ export const PATHS_AT = (base: string = BASE, head: string = HEAD): RegExp =>
 export const paths = (...names: ReadonlyArray<string>): ExecResult =>
 	okOut(names.map((n) => `${n}\0`).join(""));
 
+/** The bound `--raw` read the content binding digests (ADR 0276). */
+export const RAW_AT = (base: string = BASE, head: string = HEAD): RegExp =>
+	range(base, head, " --raw --abbrev=40 -z");
+
+/** One `--raw -z` stream over the same two paths {@link DIFF} carries. */
+export const RAW = [
+	`:100644 100644 ${"a".repeat(40)} ${"b".repeat(40)} M\0src/cart.ts\0`,
+	`:100644 100644 ${"c".repeat(40)} ${"d".repeat(40)} M\0README.md\0`,
+].join("");
+
+/**
+ * The digest {@link RAW} produces, asserted as a literal.
+ *
+ * Written out rather than recomputed from `contentDigest` in the tests that use it: a fixture that
+ * calls the code under test agrees with it by construction, so it could never catch the
+ * serialization changing under a verdict that already bound the old one.
+ */
+export const CONTENT = "7af166f42fdb";
+
 /**
  * Every command `bindHead` issues, scripted green — remote lookup, the `pull/<pr>/head` fetch, the
  * object-database resolve of the head, and the base's fetch-then-resolve.
@@ -70,6 +89,9 @@ export const binding = (
 	[/^git remote$/, okOut("origin\n")],
 	[/^git fetch --quiet origin main$/, okOut("")],
 	[/^git rev-parse --verify --quiet origin\/main\^\{commit\}$/, okOut(`${base}\n`)],
+	// The content binding's own read, in the binding script because every verb that binds a head then
+	// digests that same range (ADR 0276); a per-test copy is how two tests come to digest differently.
+	[RAW_AT(base, sha), okOut(RAW)],
 ];
 
 export const files = (...names: ReadonlyArray<string>): ExecResult =>

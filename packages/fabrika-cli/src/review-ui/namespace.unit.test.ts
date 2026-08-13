@@ -19,6 +19,7 @@ describe("the review-ui namespace", () => {
 			namespace: NAMESPACE,
 			polarity: "FAIL",
 			sha: headSha(HEAD) as never,
+			content: null,
 			clause: clause("changes-requested") as never,
 		});
 		const parsed = read(line);

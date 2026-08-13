@@ -144,7 +144,13 @@ export const runVerdict = (
 				ground.notes,
 			);
 		}
-		const marker = emitMarker({namespace: `slice:${slice}`, polarity, sha, clause: text}).trimEnd();
+		const marker = emitMarker({
+			namespace: `slice:${slice}`,
+			polarity,
+			sha,
+			content: null,
+			clause: text,
+		}).trimEnd();
 
 		const fs = yield* FileSystem.FileSystem;
 		const bodyPath = verdictBodyPath(ground.dir, slice, resolved);

@@ -382,6 +382,9 @@ export const runPost = (
 						namespace: NAMESPACE,
 						polarity: polarity as Polarity,
 						sha: inspected,
+						// Head-bound only: this namespace attests deployed PIXELS, and ADR 0276's digest is
+						// taken over a diff, which a rendered preview is not a function of (#4808's class).
+						content: null,
 						clause,
 					});
 		const below =

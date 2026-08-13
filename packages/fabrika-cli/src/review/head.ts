@@ -9,6 +9,12 @@
  * re-resolve cannot close it: it fires after the judging, and a rewind that lands back on the
  * recorded SHA passes it clean.
  *
+ * **This is the READ binding, and it is not what a verdict survives on.** The distinction is easy to
+ * lose and ADR 0276 turns on it: what is resolved here is which commit this run's bytes come out of,
+ * which is unchanged. Whether a verdict formed over those bytes is still in force *after the head
+ * moves* is a separate question, answered by the content digest taken over this same range
+ * (`./content-binding.ts`) — a head move alone no longer settles it.
+ *
  * The binding is therefore taken **here, before the read**, and every read downstream of it goes
  * through the object database at the resolved commit (`../io/git.ts`). Nothing is checked out —
  * `contract.md`'s "Considered and deliberately not derived" rules out a head worktree, and that

@@ -114,7 +114,7 @@ export const resolveCommit = (rev: string, qualifier = ""): Shell<Attempt<string
 
 /**
  * The flags every diff read below is taken under, so the bytes depend on the two commits and not on
- * the invoking user's `~/.gitconfig`.
+ * the invoking user's own git configuration.
  *
  * `--no-ext-diff` refuses a configured external differ, and the explicit prefixes defeat
  * `diff.noprefix` / `diff.mnemonicPrefix` — under either, the `diff --git a/… b/…` header the
@@ -138,6 +138,26 @@ const DIFF_FLAGS = [
 export const diffRange = (base: string, head: string): Shell<Attempt<string>> =>
 	Effect.gen(function* () {
 		const r = yield* execCapture("git", ["diff", ...DIFF_FLAGS, `${base}...${head}`]);
+		return r.ok ? ok(r.stdout) : fail(r.reason);
+	});
+
+/**
+ * The `--raw` record stream of that range: one header per changed path naming both endpoint blobs.
+ *
+ * `--abbrev=40` because the default abbreviation is a display convenience whose width depends on
+ * the repository's object count — a digest taken over abbreviated names would change with the clone
+ * rather than with the content (`../review/content-binding.ts`).
+ */
+export const diffRangeRaw = (base: string, head: string): Shell<Attempt<string>> =>
+	Effect.gen(function* () {
+		const r = yield* execCapture("git", [
+			"diff",
+			...DIFF_FLAGS,
+			"--raw",
+			"--abbrev=40",
+			"-z",
+			`${base}...${head}`,
+		]);
 		return r.ok ? ok(r.stdout) : fail(r.reason);
 	});
 

@@ -13,6 +13,12 @@
  * the ADR 0055 write+ ACL. `absent` and `stale` stay distinct tokens because their remedies differ,
  * and both block: absence-is-refusal is the #3944 law.
  *
+ * **Staleness is the content question, not the head question (ADR 0276).** A verdict whose head has
+ * moved survives only while the content it bound is still this head's. `inForce`'s ordering is
+ * deliberately *not* widened to match: a content-current verdict at a moved head still loses the
+ * head-bound tiebreak, so the widening can only ever let a FAIL win an ordering a PASS used to win —
+ * never the reverse.
+ *
  * The one caller-asserted input is `--cp`, and it reaches **every** resolution in one run — v1
  * passed it to the gate and not the native fold, and a discharged FAIL stayed in force forever
  * (#4049). The fold living inside this verb is what makes that seam unrepresentable.
@@ -25,8 +31,10 @@ import {type CommentRecord, listComments} from "../io/issues.ts";
 import {listPullFiles, permissionFor} from "../io/pulls.ts";
 import {readAdvisory} from "../review/advisory.ts";
 import {SHIP_NAMESPACES, touchesGovernanceRoot} from "../review/classes.ts";
+import {contentDigestAt} from "../review/content-binding.ts";
+import {bindHead} from "../review/head.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
-import {read as readMarker} from "../wire/verdict-marker.ts";
+import {bindToContent, read as readMarker} from "../wire/verdict-marker.ts";
 import {INCOMPLETE_SCAN, OFF_VOCABULARY, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {listReviews, type ReviewRecord} from "./github.ts";
 import {
@@ -69,6 +77,8 @@ interface Candidate {
 	readonly namespace: string;
 	readonly polarity: "PASS" | "FAIL";
 	readonly sha: string;
+	/** The content the claim binds, or `null` for a carrier that emits none (ADR 0276). */
+	readonly content: string | null;
 	readonly carrier: Carrier;
 	readonly stamp: string;
 	readonly commentId: number;
@@ -81,6 +91,7 @@ const candidateOf = (comment: CommentRecord, cp: boolean): Candidate | null => {
 			namespace: marker.value.namespace,
 			polarity: marker.value.polarity,
 			sha: marker.value.sha,
+			content: marker.value.content,
 			carrier: "marker",
 			stamp: comment.updatedAt,
 			commentId: comment.id,
@@ -96,6 +107,10 @@ const candidateOf = (comment: CommentRecord, cp: boolean): Candidate | null => {
 				// emission, caught below and reported — never read as a pass.
 				polarity: /\[FAIL\]/.test(comment.body) ? "FAIL" : "PASS",
 				sha: advisory.sha,
+				// The §CP advisory withholds a content binding by design: the human-approval half of the
+				// binding question is #3769's, and ADR 0276 carries its answer from there rather than
+				// deciding it here. So an advisory stays head-bound, exactly as before.
+				content: null,
 				carrier: "advisory",
 				stamp: comment.updatedAt,
 				commentId: comment.id,
@@ -156,6 +171,8 @@ const foldedReview = (reviews: ReadonlyArray<ReviewRecord>, sha: string): Candid
 				namespace: "review-code",
 				polarity: latest.state === "APPROVED" ? "PASS" : "FAIL",
 				sha: latest.commitId,
+				// GitHub re-binds its own review objects; that layer is untouched (ADR 0276).
+				content: null,
 				carrier: "review-fold",
 				stamp: latest.submittedAt,
 				commentId: 0,
@@ -299,20 +316,54 @@ export const runGate = (
 		}
 
 		const fold = foldedReview(reviewed.value.reviews, bound);
-		const verdicts: NamespaceVerdict[] = required.map((name) => {
+		const winners = required.map((name) => {
 			const own = candidates.filter((claim) => claim.namespace === name);
 			const pool = name === "review-code" && fold !== null ? [...own, fold] : own;
-			const winner = inForce(pool, bound);
+			return {name, winner: inForce(pool, bound)};
+		});
+
+		// The head digest is read ONLY when a content-bound claim has already failed the head test,
+		// which is the whole cost story: the common path — every claim at this head — never touches
+		// git. It also makes the read non-regressive. A checkout that cannot answer leaves
+		// `headDigest` null, `bindToContent` says `Unbindable`, and the namespace resolves `stale` —
+		// the same block this verb gave before ADR 0276, so a git failure can only ever refuse.
+		const contested = winners.some(
+			({winner}) => winner !== null && !prefixMatch(winner.sha, bound) && winner.content !== null,
+		);
+		let headDigest: string | null = null;
+		if (contested) {
+			const head = yield* bindHead(VERB, repo, pr, pull, options.sha);
+			const digest =
+				head._tag === "Bound" ? yield* contentDigestAt(head.head.base, head.head.sha) : null;
+			if (digest !== null && digest._tag === "Ok") headDigest = digest.value;
+			else {
+				diagnostics.push(
+					`${VERB}: a verdict at another head binds content, but this head's digest could not be read — every such namespace resolves stale (ADR 0276).`,
+				);
+			}
+		}
+
+		const verdicts: NamespaceVerdict[] = winners.map(({name, winner}) => {
 			if (winner === null) return {name, state: "absent", carrier: "-", commentId: null};
 			const commentId = winner.carrier === "review-fold" ? null : winner.commentId;
-			return prefixMatch(winner.sha, bound)
-				? {
-						name,
-						state: winner.polarity === "PASS" ? "pass" : "fail",
-						carrier: winner.carrier,
-						commentId,
-					}
-				: {name, state: "stale", carrier: winner.carrier, commentId};
+			const binding = bindToContent(winner, bound, headDigest);
+			if (binding._tag !== "Current") {
+				if (binding._tag === "Unbindable") {
+					diagnostics.push(`${VERB}: ${name}: ${binding.reason} — resolved stale.`);
+				}
+				return {name, state: "stale", carrier: winner.carrier, commentId};
+			}
+			if (binding.via === "content") {
+				diagnostics.push(
+					`${VERB}: ${name}: the verdict at ${winner.sha} binds content ${winner.content}, which is this head's — the head moved, the reviewed content did not (ADR 0276).`,
+				);
+			}
+			return {
+				name,
+				state: winner.polarity === "PASS" ? "pass" : "fail",
+				carrier: winner.carrier,
+				commentId,
+			};
 		});
 
 		// The coverage assertion runs BEFORE the answer is believed, not after it is printed.
