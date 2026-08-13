@@ -1,15 +1,22 @@
 /**
  * The verdict marker — the recognizable first line of a gate's verdict comment on a PR.
  *
- *     review-code: PASS @ 03135b91 — merge-ready
+ *     review-code: PASS @ 03135b91 content:2f1a9c4e0b7d — merge-ready
  *
- * Four fields: the gate **namespace**, the **polarity**, the **head SHA the reviewer inspected**,
- * and the trailing human clause. The SHA is the load-bearing one. A verdict attests the exact tree
- * it was formed over, so a marker bound to a head that has since moved is *stale*, not passing — and
- * a marker carrying no SHA at all is malformed, not passing either. Both are refusals here rather
- * than values a caller could mistake for a current PASS: {@link read} never yields a `Found` with an
- * empty SHA (the type forbids it — {@link HeadSha} has no empty inhabitant), and {@link bindToHead}
- * answers the staleness question as its own third outcome instead of folding it into the read.
+ * Five fields: the gate **namespace**, the **polarity**, the **head SHA the reviewer inspected**, an
+ * optional **content digest** of what it inspected, and the trailing human clause. A verdict attests
+ * the exact tree it was formed over, so a marker carrying no SHA at all is malformed, not passing:
+ * {@link read} never yields a `Found` with an empty SHA (the type forbids it — {@link HeadSha} has
+ * no empty inhabitant), and the staleness question is its own answer rather than a fold into the
+ * read.
+ *
+ * **What makes a verdict survive a head move is the content field, and its absence never does**
+ * (ADR 0276, ruled on #5508). The SHA alone was doing two jobs — invalidating on any branch push,
+ * and invalidating on base drift — and it was over-broad on the first: an update-from-main that
+ * leaves both the diff and every touched file byte-identical re-reviewed content nobody changed.
+ * {@link bindToContent} is where the ruled rule lives. A marker with **no** content field falls back
+ * to head equality, which is the pre-ruling answer and strictly the stricter one, so a legacy or
+ * hand-written marker can never gain survival it did not earn.
  *
  * `read` is total and its three answers are the design (see `./format.ts`). The discrimination that
  * carries the weight is **Absent vs Malformed**: bytes carrying no marker of this format at all are
@@ -27,6 +34,7 @@ import type {NonEmptyReadonlyArray, WireEmit, WireRead, WireReadLines} from "./f
 
 declare const HEAD_SHA: unique symbol;
 declare const CLAUSE: unique symbol;
+declare const CONTENT_DIGEST: unique symbol;
 
 /**
  * A git object name the marker is bound to: 7–40 hex characters, lowercased.
@@ -40,6 +48,15 @@ export type HeadSha = string & {readonly [HEAD_SHA]: true};
 /** The trailing human clause. Branded for the same reason: a blank clause is not a clause. */
 export type Clause = string & {readonly [CLAUSE]: true};
 
+/**
+ * The digest of the content the verdict was formed over: exactly 12 lowercase hex.
+ *
+ * Fixed-width rather than a prefix match, unlike {@link HeadSha}: a SHA is abbreviated by the tools
+ * that print it, whereas this value only ever comes from `review/content-binding.ts`, so a
+ * shorter-or-longer one is a drift and reads as `Malformed`, never as a value to compare loosely.
+ */
+export type ContentDigest = string & {readonly [CONTENT_DIGEST]: true};
+
 /** The reviewer's go/no-go. A third token is not a polarity — it is a drift. */
 export type Polarity = "PASS" | "FAIL";
 
@@ -51,6 +68,8 @@ export interface VerdictMarker {
 	readonly namespace: string;
 	readonly polarity: Polarity;
 	readonly sha: HeadSha;
+	/** `null` when the emitter carried no content binding — see the module docblock. */
+	readonly content: ContentDigest | null;
 	readonly clause: Clause;
 }
 
@@ -78,6 +97,10 @@ const NAMESPACE = /^(review|check-epic-plan|governance)(-[a-z0-9]+)*$/;
 const NAMESPACE_PREFIXES = ["review", "check-epic-plan", "governance"];
 const HEX = /^[0-9a-f]+$/;
 
+/** The optional content field's token, wherever it is read: on the marker line or off `wire emit`. */
+export const CONTENT_PREFIX = "content:";
+const CONTENT_HEX = /^[0-9a-f]{12}$/;
+
 /** The conforming separator between the SHA and the clause; the ASCII dashes are read tolerantly. */
 export const CLAUSE_SEPARATOR = "—";
 const SEPARATOR = /^(?:—|–|--|-)\s*/;
@@ -95,6 +118,11 @@ export const headSha = (raw: string): HeadSha | null => {
 	const value = raw.trim().toLowerCase();
 	if (value.length < SHA_MIN || value.length > SHA_MAX || !HEX.test(value)) return null;
 	return value as HeadSha;
+};
+
+export const contentDigest = (raw: string): ContentDigest | null => {
+	const value = raw.trim().toLowerCase();
+	return CONTENT_HEX.test(value) ? (value as ContentDigest) : null;
 };
 
 export const clause = (raw: string): Clause | null => {
@@ -189,9 +217,27 @@ export const read = (artifact: string): VerdictMarkerRead => {
 		);
 	}
 
+	// The content field is optional and sits between the SHA and the separator, so it is taken only
+	// when the next token reaches for it. A token that reaches and fails is `Malformed`, never
+	// stepped over into the clause: a dropped content field would silently re-bind the verdict to
+	// the head alone, which is the strictly weaker rule (ADR 0276).
+	const afterContent = takeToken(afterSha);
+	let content: ContentDigest | null = null;
+	let remainder = afterSha;
+	if (afterContent.token.toLowerCase().startsWith(CONTENT_PREFIX)) {
+		content = contentDigest(afterContent.token.slice(CONTENT_PREFIX.length));
+		if (content === null) {
+			return malformed(
+				`"${afterContent.token}" is not a content binding — expected ${CONTENT_PREFIX}<12 hex characters>`,
+				evidence,
+			);
+		}
+		remainder = afterContent.after;
+	}
+
 	// A skill that bolds the whole marker closes it after the clause, so that closer belongs to the
 	// emphasis rather than to the human's sentence. Stripped only when the line opened with one.
-	const tail = afterSha.trim();
+	const tail = remainder.trim();
 	const unemphasized =
 		emphasis !== "" && tail.endsWith(emphasis) ? tail.slice(0, -emphasis.length) : tail;
 	const text = clause(unemphasized.replace(SEPARATOR, ""));
@@ -202,12 +248,14 @@ export const read = (artifact: string): VerdictMarkerRead => {
 		);
 	}
 
-	return {_tag: "Found", value: {namespace, polarity, sha, clause: text}};
+	return {_tag: "Found", value: {namespace, polarity, sha, content, clause: text}};
 };
 
 /** Compose the marker's first line. Round-trips through {@link read}. */
-export const emit = ({namespace, polarity, sha, clause: text}: VerdictMarker): string =>
-	`${namespace}: ${polarity} @ ${sha} ${CLAUSE_SEPARATOR} ${text}\n`;
+export const emit = ({namespace, polarity, sha, content, clause: text}: VerdictMarker): string => {
+	const bound = content === null ? `@ ${sha}` : `@ ${sha} ${CONTENT_PREFIX}${content}`;
+	return `${namespace}: ${polarity} ${bound} ${CLAUSE_SEPARATOR} ${text}\n`;
+};
 
 /**
  * Whether a marker is bound to the head a caller holds — the question the SHA field exists for.
@@ -219,7 +267,7 @@ export const emit = ({namespace, polarity, sha, clause: text}: VerdictMarker): s
  * Fold any two of these together and a stale PASS reads as a current one (ADR 0058).
  */
 export type Binding =
-	| {readonly _tag: "Current"; readonly sha: HeadSha}
+	| {readonly _tag: "Current"; readonly sha: HeadSha; readonly via: "head" | "content"}
 	| {readonly _tag: "Stale"; readonly markerSha: HeadSha; readonly head: HeadSha}
 	| {readonly _tag: "Unbindable"; readonly reason: string};
 
@@ -241,8 +289,60 @@ export const bindToHead = (marker: VerdictMarker, head: string): Binding => {
 		};
 	}
 	return sameHead(marker.sha, resolved)
-		? {_tag: "Current", sha: marker.sha}
+		? {_tag: "Current", sha: marker.sha, via: "head"}
 		: {_tag: "Stale", markerSha: marker.sha, head: resolved};
+};
+
+/**
+ * Whether a verdict claim still binds once the head has moved — the ruled question (ADR 0276).
+ *
+ * It takes the two bound fields rather than a whole marker so the advisory carrier and the native
+ * review fold, which are verdict claims carrying no marker, resolve through this one derivation
+ * instead of a second one that could drift from it. A {@link VerdictMarker} satisfies the shape.
+ *
+ * Same three arms as {@link bindToHead}, and the non-folding is what carries the guarantee: a
+ * caller that could not compute the head's digest gets `Unbindable`, never `Current` and never
+ * `Stale`, because a comparison that could not be made is not a result in either direction. Every
+ * consumer must block on `Unbindable` as it blocks on `Stale`; what it must never do is read one as
+ * the other in the permissive direction.
+ *
+ * Four gates, in the order that makes each later one unreachable when an earlier one already
+ * decided:
+ *
+ * 1. An unresolvable head is `Unbindable` — nothing below can be asked.
+ * 2. The head the marker names is still the head ⇒ `Current` via `head`, and no digest is needed.
+ *    This is the pre-ruling answer, untouched, and it is why the common path costs no git read.
+ * 3. A marker carrying **no** content field is `Stale`, exactly as before the ruling. Absence of a
+ *    binding is never a binding; a legacy marker earns nothing by predating the field.
+ * 4. `digest === null` — the caller holds a content-bound marker but could not compute the head's
+ *    own digest — is `Unbindable`. Reading it as `Current` would let an unverifiable claim ship;
+ *    reading it as `Stale` would be safe but would lie about *why*, and the reason is what tells an
+ *    operator whether to fix a checkout or re-review.
+ */
+export const bindToContent = (
+	claim: {readonly sha: string; readonly content: string | null},
+	head: string,
+	digest: string | null,
+): Binding => {
+	const bound = headSha(claim.sha);
+	const resolved = headSha(head);
+	if (bound === null || resolved === null) {
+		return {
+			_tag: "Unbindable",
+			reason: `"${(bound === null ? claim.sha : head).trim()}" is not a head SHA — the binding cannot be judged`,
+		};
+	}
+	if (sameHead(bound, resolved)) return {_tag: "Current", sha: bound, via: "head"};
+	if (claim.content === null) return {_tag: "Stale", markerSha: bound, head: resolved};
+	if (digest === null) {
+		return {
+			_tag: "Unbindable",
+			reason: `the verdict binds content ${claim.content}, but this head's content digest could not be computed — whether it still holds is UNKNOWN`,
+		};
+	}
+	return contentDigest(claim.content) !== null && claim.content === contentDigest(digest)
+		? {_tag: "Current", sha: bound, via: "content"}
+		: {_tag: "Stale", markerSha: bound, head: resolved};
 };
 
 export type VerdictMarkerFields =
@@ -252,9 +352,13 @@ export type VerdictMarkerFields =
 /** `<key>: <value>` or `<key><TAB><value>`, so `wire read`'s own output pipes back into `wire emit`. */
 const FIELD_LINE = /^([A-Za-z-]+)[ \t]*[:\t][ \t]*(.*)$/;
 const KEYS = ["namespace", "polarity", "sha", "clause"] as const;
-type FieldKey = (typeof KEYS)[number];
+/** The one field that may be absent: a marker with no content binding is well-formed (ADR 0276). */
+const OPTIONAL_KEYS = ["content"] as const;
+type FieldKey = (typeof KEYS)[number] | (typeof OPTIONAL_KEYS)[number];
 
-const isFieldKey = (key: string): key is FieldKey => (KEYS as ReadonlyArray<string>).includes(key);
+const isFieldKey = (key: string): key is FieldKey =>
+	(KEYS as ReadonlyArray<string>).includes(key) ||
+	(OPTIONAL_KEYS as ReadonlyArray<string>).includes(key);
 
 /**
  * Parse `emit`'s stdin into a marker: one `<key>: <value>` per line, in any order.
@@ -318,7 +422,17 @@ export const parseFields = (fields: string): VerdictMarkerFields => {
 	if (text === null) {
 		return {_tag: "Unusable", reason: "the trailing clause is blank"};
 	}
-	return {_tag: "Fields", marker: {namespace, polarity, sha, clause: text}};
+	// An omitted `content` is the well-formed no-binding default; a GIVEN one that is not 12 hex is a
+	// refusal, so a typo can never quietly compose a head-only marker out of a content-bound intent.
+	const givenContent = (seen.get("content") ?? "").trim();
+	const content = givenContent === "" ? null : contentDigest(givenContent);
+	if (givenContent !== "" && content === null) {
+		return {
+			_tag: "Unusable",
+			reason: `"${givenContent}" is not a content digest — expected 12 hex characters`,
+		};
+	}
+	return {_tag: "Fields", marker: {namespace, polarity, sha, content, clause: text}};
 };
 
 /** One `<field>\t<value>` line per field — the `wire read` answer for this format. */
@@ -326,6 +440,7 @@ export const renderMarker = (marker: VerdictMarker): NonEmptyReadonlyArray<strin
 	`namespace\t${marker.namespace}`,
 	`polarity\t${marker.polarity}`,
 	`sha\t${marker.sha}`,
+	...(marker.content === null ? [] : [`content\t${marker.content}`]),
 	`clause\t${marker.clause}`,
 ];
 

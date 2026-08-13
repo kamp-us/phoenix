@@ -26,6 +26,7 @@ import type {StdinRead} from "../io/stdin.ts";
 import {APPEND_ONLY, INCOMPLETE_SCAN, LEAKED_PATH, READBACK_MISMATCH} from "./codes.ts";
 import {
 	binding,
+	CONTENT,
 	checkRuns,
 	comments,
 	DIFF,
@@ -133,9 +134,11 @@ describe("the three-outcome binding", () => {
 		await mutate<typeof import("../wire/verdict-marker.ts")>(
 			"../wire/verdict-marker.ts",
 			(actual) => ({
-				bindToHead: (marker, head) => {
-					const binding = actual.bindToHead(marker, head);
-					return binding._tag === "Stale" ? {_tag: "Current", sha: marker.sha} : binding;
+				bindToContent: (claim, head, digest) => {
+					const binding = actual.bindToContent(claim, head, digest);
+					return binding._tag === "Stale"
+						? ({_tag: "Current", sha: binding.markerSha, via: "head"} as const)
+						: binding;
 				},
 			}),
 		);
@@ -319,7 +322,7 @@ diff --git a/README.md b/README.md
 			READBACK,
 			okOut(
 				JSON.stringify({
-					body: `review-skill: PASS @ ${HEAD} — guide matches shipped behavior\n\nthe table\n\n${STAMP}`,
+					body: `review-skill: PASS @ ${HEAD} content:${CONTENT} — guide matches shipped behavior\n\nthe table\n\n${STAMP}`,
 				}),
 			),
 		],
@@ -374,7 +377,7 @@ describe("the leak predicate over the assembled verdict", () => {
 			READBACK,
 			okOut(
 				JSON.stringify({
-					body: `review-doc: PASS @ ${HEAD} — guide matches shipped behavior\n\n${LEAKY}\n\n${STAMP}`,
+					body: `review-doc: PASS @ ${HEAD} content:${CONTENT} — guide matches shipped behavior\n\n${LEAKY}\n\n${STAMP}`,
 				}),
 			),
 		],
@@ -428,7 +431,7 @@ describe("normalizeForReadback's trailing-newline step", () => {
 			READBACK,
 			okOut(
 				JSON.stringify({
-					body: `review-doc: PASS @ ${HEAD} — guide matches shipped behavior   \n\nthe table\n\n${STAMP}\n\n\n`,
+					body: `review-doc: PASS @ ${HEAD} content:${CONTENT} — guide matches shipped behavior   \n\nthe table\n\n${STAMP}\n\n\n`,
 				}),
 			),
 		],

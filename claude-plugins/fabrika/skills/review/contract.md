@@ -26,7 +26,7 @@ Named because a spec that leaves the substrate open makes the implementer guess 
 | `review diff` | the PR's diff bytes, with truncation refused rather than silently passed through | fetching and proving completeness is mechanical; reading the diff is the whole judgment layer |
 | `review criteria` | the linked issue's acceptance-criteria block, read through the registered `acceptance-criteria` wire format | fetch + registered parse + checkbox states are mechanical; grading a criterion is judgment |
 | `review ci` | the live CI check-run rollup at a head, fail-closed on incomplete enumeration | classifying check runs and proving the enumeration complete is mechanical (#4552, #3999); weighing a red check is judgment |
-| `review verdicts` | every verdict marker on the PR, per namespace, each with its `Current` / `Stale` / `Unbindable` binding against the live head | comment sweep + registered parse + `bindToHead` is mechanical; what a stale marker means for this round is judgment |
+| `review verdicts` | every verdict marker on the PR, per namespace, each with its `Current` / `Stale` / `Unbindable` binding against the live head and the content it bound | comment sweep + registered parse + `bindToContent` is mechanical; what a stale marker means for this round is judgment |
 | `review deviations` | the PR body's `## Deviations` section state (found / absent / malformed), its entries, and the Tier-M token scan over the diff | section detection and token scanning are mechanical; matching entry *substance* against findings is judgment (Tier R) |
 | `review post` | the single sanctioned verdict emit: compose through the `verdict-marker` wire format, bind to the inspected head at post time, post one comment per namespace, read it back | marker composition, head re-resolution, leak scan and read-back are a protocol; the polarity and clause are judgment |
 | `review append-criterion` | append one reviewer-authored acceptance criterion to the linked issue under the four fences (append-only · ACL-gated fail-closed · frozen after round 3), with provenance tag | the fences and the diff-guarded append are mechanical (ADR 0079); whether a finding is in-scope is judgment |
@@ -188,7 +188,7 @@ already requires, and all four run one shared binding step
 3. The artifact is then read with `git diff <base>...<head>` — bytes for `review diff` and
    `review deviations`'s Tier-M scan, the `--name-only -z` path list for `review scope` and
    `review post`'s namespace recompute — under flags that pin the output to the two commits
-   rather than to the invoking user's `~/.gitconfig` (`--no-ext-diff`, explicit `a/`/`b/`
+   rather than to the invoking user's own git configuration (`--no-ext-diff`, explicit `a/`/`b/`
    prefixes).
 
 Every one of them prints the bound commit and its base on stderr, and `review scope`'s `scoped`
@@ -615,7 +615,9 @@ fabrika review verdicts 4321 [--repo <owner/name>] [--json]
 **Output** — machine channel. First line: `verdicts\t<live-head>\t<count>`, where `<count>` is
 the number of marker-bearing comments found (`0` is a valid, proven answer: the PR carries no
 verdict). Then one line per marker, newest first:
-`<namespace>\t<polarity>\t<marker-sha>\t<current|stale|unbindable>\t<comment-id>`. Advisory
+`<namespace>\t<polarity>\t<marker-sha>\t<current|stale|unbindable>\t<comment-id>` — the marker SHA
+is the head the verdict was formed at, which under ADR 0276 need not be the live head for the row
+to read `current`. Advisory
 carriers (a `Reviewed-head: @ <sha>` body line under an advisory first line) print with polarity
 `ADVISORY` and the body-bound SHA. Malformed markers — bytes reaching for the format that fail
 it — print as `malformed\t-\t-\t-\t<comment-id>` with the wire reason on stderr: **a drifted
@@ -624,12 +626,16 @@ reads as unreviewed, #4103/#4105).
 
 With `--json`: `{"outcome":"verdicts","head":…,"markers":[{namespace,polarity,sha,binding,commentId}…],"malformed":[{commentId,reason}…],"scanned":<comments>}`.
 
-**Binding is computed here, per marker, against the live head** — `bindToHead` from
-`packages/fabrika-cli/src/wire/verdict-marker.ts`, imported. That module's `Binding` type has
-zero non-test callers today; this verb is its first consumer surface, and the three outcomes
-reach stdout as three tokens. A head this verb cannot resolve prints `unbindable` on every row —
-never `current`, never `stale` — because a comparison that could not be made is not a negative
-result (ADR 0058).
+**Binding is computed here, per marker** — `bindToContent` from
+`packages/fabrika-cli/src/wire/verdict-marker.ts`, imported, and the same derivation `ship gate`
+uses so the two cannot disagree. The three outcomes reach stdout as three tokens. A marker at the
+live head is `current`; one at another head is `current` only while the content digest it carries
+is still this head's (ADR 0276), and `stale` otherwise. A head this verb cannot resolve — or a
+content-bound marker whose head digest cannot be read — prints `unbindable`, never `current` and
+never `stale`, because a comparison that could not be made is not a negative result (ADR 0058).
+
+The digest read is **lazy**: it runs only when a content-bound marker has already failed the head
+test, so an ordinary sweep touches no `git` at all.
 
 Each comment's **first non-blank line** is what is read (the format's anchoring rule); a marker
 quoted further down a body is not a marker, which is why one comment carries one namespace.
@@ -819,15 +825,16 @@ the poster reads success.
 | `--polarity` | enum | yes | — | `PASS` or `FAIL` — a third token is not a polarity |
 | `--sha` | string | yes | — | the head the reviewer actually inspected (7–40 lowercase hex) |
 | `--clause` | string | yes | — | the human clause; blank is not a clause |
-| `--carrier` | enum | no | `marker` | `marker` (first-line SHA-bound marker) or `advisory` (§CP: advisory first line, `Reviewed-head: @ <sha>` in the body). `advisory` is a PASS path only |
+| `--carrier` | enum | no | `marker` | `marker` (first-line head- and content-bound marker) or `advisory` (§CP: advisory first line, `Reviewed-head: @ <sha>` in the body). `advisory` is a PASS path only |
 | `--repo` | string | no | resolved | the repository |
 | `--json` | boolean | no | `false` | emit the result object |
 | stdin | markdown | yes | — | the verdict body below the first line: per-criterion table, findings, the §DEV row |
 
 **Output** — machine channel. One line:
-`posted\t<namespace>\t<polarity>\t<sha>\t<created|edited>\t<comment-url>` — the fifth field says
-whether the upsert created a fresh comment or edited this namespace's existing one.
-With `--json`: `{"outcome":"posted","namespace":…,"polarity":…,"sha":…,"upsert":"created"|"edited","carrier":…,"commentUrl":…}`.
+`posted\t<namespace>\t<polarity>\t<sha>\t<content>\t<created|edited>\t<comment-url>` — the fourth
+field is the content digest the verdict binds (ADR 0276) and the fifth says whether the upsert
+created a fresh comment or edited this namespace's existing one.
+With `--json`: `{"outcome":"posted","namespace":…,"polarity":…,"sha":…,"content":…,"upsert":"created"|"edited","carrier":…,"commentUrl":…}`.
 
 **What the operation does, in order — each step gates the next.**
 
@@ -843,7 +850,7 @@ With `--json`: `{"outcome":"posted","namespace":…,"polarity":…,"sha":…,"up
    from the PR-number file endpoint: `12` above proves the tree is still the live one, not that
    the list came from it (#5122).
 3. **Compose the first line through the wire format's `emit`**
-   (`verdict-marker.ts`, imported — fields `namespace`/`polarity`/`sha`/`clause`), or with
+   (`verdict-marker.ts`, imported — fields `namespace`/`polarity`/`sha`/`content`/`clause`), or with
    `--carrier advisory` the fixed advisory line with the `Reviewed-head: @ <sha>` body line;
    `advisory` with `--polarity FAIL` is a `10` refusal (ADR 0226 — a §CP FAIL posts the ordinary
    FAIL marker).
@@ -862,7 +869,7 @@ With `--json`: `{"outcome":"posted","namespace":…,"polarity":…,"sha":…,"up
    substantively-passing PR (the live PR #2456 stall).
 6. **Read it back, unconditionally, from live PR state**, under the same carrier — re-fetch the
    comment and, with `marker`, hand its body to the format's `read` and require `Found` with
-   exactly the four fields posted; with `--carrier advisory`, require both ADR-0151 anchors —
+   exactly the five fields posted; with `--carrier advisory`, require both ADR-0151 anchors —
    `readAdvisory` yielding this namespace and a `Reviewed-head:` SHA equal to the one posted, since
    the format's `read` calls an advisory `Malformed` by design. Either way the whole comment is
    then compared against the bytes sent (through `normalizeForReadback`). A read-back that trusts a
@@ -908,7 +915,7 @@ outcome known-unwritten.
 
 ```
 $ fabrika review post 4321 --namespace review-doc --polarity PASS --sha 03135b91 --clause "guide matches shipped behavior" < verdict.md
-posted	review-doc	PASS	03135b91	created	https://github.com/kamp-us/phoenix/pull/4321#issuecomment-5154902211
+posted	review-doc	PASS	03135b91	2f1a9c4e0b7d	created	https://github.com/kamp-us/phoenix/pull/4321#issuecomment-5154902211
 ```
 
 ```

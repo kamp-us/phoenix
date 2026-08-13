@@ -203,7 +203,7 @@ verdict over text nobody judged. All four run one shared binding step
    must resolve too, since a diff is a range. Any of these unmet is `11`, naming what is UNKNOWN.
    There is no permissive fallback to the PR-number endpoints.
 3. The artifact is then read with `git diff <base>...<head>` and `git show <head>:<path>` under flags
-   that pin output to the two commits rather than to the invoking user's `~/.gitconfig`
+   that pin output to the two commits rather than to the invoking user's own git configuration
    (`--no-ext-diff`, explicit `a/`/`b/` prefixes).
 
 **The fetch is load-bearing, not incidental.** A stale working tree is what made four seats declare a
@@ -852,9 +852,10 @@ poster reads success.
 | stdin | markdown | yes | — | the verdict body below the first line: the questions swept, the sweep outcome, the domain read by hand, the anchored invariants in reach and their disposition |
 
 **Output** — machine channel. One line:
-`posted\tgovernance\t<polarity>\t<sha>\t<created|edited>\t<comment-url>`.
+`posted\tgovernance\t<polarity>\t<sha>\t<content>\t<created|edited>\t<comment-url>`, where
+`<content>` is the content digest the verdict binds (ADR 0276).
 With `--json`:
-`{"outcome":"posted","namespace":"governance","polarity":…,"sha":…,"upsert":"created"|"edited","commentUrl":…}`.
+`{"outcome":"posted","namespace":"governance","polarity":…,"sha":…,"content":…,"upsert":"created"|"edited","commentUrl":…}`.
 
 **The namespace is fixed.** There is no `--namespace` flag: this verb emits exactly one namespace and
 composing another is not a mode it has. That is the disjointness guarantee made structural in the
@@ -872,8 +873,10 @@ namespace is a constant, so it cannot be aimed anywhere else even by a confused 
    that was actually in scope.
 3. **Compose the first line through the wire format's `emit`**
    (`packages/fabrika-cli/src/wire/verdict-marker.ts`, imported — fields
-   `namespace`/`polarity`/`sha`/`clause`), giving
-   `governance: PASS @ <sha> — <clause>`. This requires the namespace widening specified above; until
+   `namespace`/`polarity`/`sha`/`content`/`clause`), giving
+   `governance: PASS @ <sha> content:<digest> — <clause>`. The digest is taken over the same bound
+   range this step's derivation read, so a verdict survives a branch update that leaves the diff and
+   every changed file byte-identical, and dies on anything else (ADR 0276). This requires the namespace widening specified above; until
    it lands, `emit` composes bytes `read` rejects and step 6 fails every clean run.
 4. **Leak-scan the assembled comment** (`report/leaks.ts`, imported) — an authored machine-local path
    is the `5` refusal, a bare `@` reference the `6`.
@@ -882,7 +885,7 @@ namespace is a constant, so it cannot be aimed anywhere else even by a confused 
    comment: a second marker stacked on line 2 is un-anchored, resolves the namespace empty and
    fail-closes a substantively-passing PR.
 6. **Read it back, unconditionally, from live PR state** — re-fetch the comment, hand its body to the
-   format's `read`, require `Found` with exactly the four fields posted, then compare the whole
+   format's `read`, require `Found` with exactly the five fields posted, then compare the whole
    comment against the bytes sent through `normalizeForReadback`. A read-back that trusts a carried
    variable instead of live state re-ships #3173's false PASS.
 

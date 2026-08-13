@@ -284,6 +284,7 @@ export const diagnoseOne = (
 			readonly namespace: string;
 			readonly polarity: "PASS" | "FAIL";
 			readonly sha: string;
+			readonly content: string | null;
 			readonly carrier: "marker";
 			readonly stamp: string;
 			readonly commentId: number;
@@ -309,6 +310,7 @@ export const diagnoseOne = (
 				namespace: marker.value.namespace,
 				polarity: marker.value.polarity,
 				sha: marker.value.sha,
+				content: marker.value.content,
 				carrier: "marker",
 				stamp: comment.updatedAt,
 				commentId: comment.id,

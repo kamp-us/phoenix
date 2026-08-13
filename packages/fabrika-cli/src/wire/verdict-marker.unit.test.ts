@@ -10,6 +10,7 @@
  */
 import {describe, expect, it} from "vitest";
 import {
+	bindToContent,
 	bindToHead,
 	clause,
 	emit,
@@ -39,6 +40,7 @@ const MARKER: VerdictMarker = {
 	namespace: "review-code",
 	polarity: "PASS",
 	sha: sha(HEAD),
+	content: null,
 	clause: text("merge-ready"),
 };
 
@@ -62,6 +64,7 @@ describe("emit", () => {
 				namespace: "review",
 				polarity: "FAIL",
 				sha: sha("03135b9"),
+				content: null,
 				clause: text("changes-requested — 2 criteria unmet, see the table below"),
 			},
 		];
@@ -77,6 +80,7 @@ describe("read — Found", () => {
 			namespace: "review-code",
 			polarity: "FAIL",
 			sha: sha(HEAD),
+			content: null,
 			clause: text("not merge-ready"),
 		});
 	});
@@ -129,7 +133,9 @@ describe("read — the check-epic-plan namespace", () => {
 		expect(text).not.toBeNull();
 		expect(sha).not.toBeNull();
 		if (text === null || sha === null) return;
-		const result = read(emit({namespace: "check-epic-plan", polarity: "PASS", sha, clause: text}));
+		const result = read(
+			emit({namespace: "check-epic-plan", polarity: "PASS", sha, content: null, clause: text}),
+		);
 		expect(result._tag).toBe("Found");
 		if (result._tag !== "Found") return;
 		expect(result.value.namespace).toBe("check-epic-plan");
@@ -157,7 +163,13 @@ describe("read — the check-epic-plan namespace", () => {
 describe("read — the governance namespace", () => {
 	it("round-trips a governance verdict through emit and read", () => {
 		const result = read(
-			emit({namespace: "governance", polarity: "PASS", sha: sha(HEAD), clause: text("clean")}),
+			emit({
+				namespace: "governance",
+				polarity: "PASS",
+				sha: sha(HEAD),
+				content: null,
+				clause: text("clean"),
+			}),
 		);
 		expect(result._tag).toBe("Found");
 		if (result._tag !== "Found") return;
@@ -251,7 +263,7 @@ describe("read — Absent and Malformed are two answers, not one collapsed negat
 
 describe("bindToHead — stale is its own outcome, never a PASS and never an absence", () => {
 	it("answers Current when the marker's SHA is the head", () => {
-		expect(bindToHead(MARKER, HEAD)).toEqual({_tag: "Current", sha: HEAD});
+		expect(bindToHead(MARKER, HEAD)).toEqual({_tag: "Current", sha: HEAD, via: "head"});
 	});
 
 	it("answers Current across an abbreviation, in either direction", () => {
@@ -366,5 +378,84 @@ describe("the type forbids the values a lenient reader would invent", () => {
 			clause: text("ok"),
 		} satisfies VerdictMarker;
 		expect(counterexample.namespace).toBe("review");
+	});
+});
+
+/**
+ * The content binding (ADR 0276) — the field, and the four gates that decide what a moved head
+ * survives.
+ *
+ * Every case below is written from the direction that costs something. The gate that matters is not
+ * "an identical digest is Current" but its three neighbours: a marker with no content field, a head
+ * whose digest could not be computed, and a digest that differs — none of which may resolve
+ * `Current`, because each is a verdict nobody re-formed.
+ */
+describe("the content field", () => {
+	const DIGEST = "2f1a9c4e0b7d";
+	const BOUND: VerdictMarker = {...MARKER, content: DIGEST as VerdictMarker["content"]};
+
+	it("emits after the SHA and reads back as the same field", () => {
+		expect(emit(BOUND)).toBe(`review-code: PASS @ ${HEAD} content:${DIGEST} — merge-ready\n`);
+		expect(found(emit(BOUND))).toEqual(BOUND);
+	});
+
+	it("reads a marker WITHOUT it as content null — the pre-ruling marker is still well-formed", () => {
+		expect(found(`review-code: PASS @ ${HEAD} — merge-ready`).content).toBeNull();
+	});
+
+	it("is Malformed when the token reaches for the field and misses, never stepped over", () => {
+		for (const token of ["content:", "content:zzzzzzzzzzzz", "content:2f1a9c4e"]) {
+			expect(read(`review-code: PASS @ ${HEAD} ${token} — merge-ready`)._tag).toBe("Malformed");
+		}
+	});
+
+	it("round-trips through the wire field grammar, in both presence and absence", () => {
+		for (const marker of [BOUND, MARKER]) {
+			const fields = renderMarker(marker).join("\n");
+			expect(emitFromFields(fields)).toEqual({_tag: "Composed", bytes: emit(marker)});
+		}
+	});
+
+	it("refuses a GIVEN content field that is not a digest, never composing a head-only marker", () => {
+		const fields = renderMarker(MARKER).concat("content\tnope").join("\n");
+		expect(emitFromFields(fields)._tag).toBe("Unusable");
+	});
+});
+
+describe("bindToContent — what a moved head survives", () => {
+	const DIGEST = "2f1a9c4e0b7d";
+	const OTHER = "0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f708192";
+	const BOUND: VerdictMarker = {...MARKER, content: DIGEST as VerdictMarker["content"]};
+
+	it("answers Current via head when the head has not moved, needing no digest at all", () => {
+		expect(bindToContent(MARKER, HEAD, null)).toEqual({_tag: "Current", sha: HEAD, via: "head"});
+	});
+
+	it("answers Current via content when the head moved and the content did not", () => {
+		expect(bindToContent(BOUND, OTHER, DIGEST)).toEqual({
+			_tag: "Current",
+			sha: HEAD,
+			via: "content",
+		});
+	});
+
+	it("answers Stale when the head moved and the content moved with it", () => {
+		expect(bindToContent(BOUND, OTHER, "ffffffffffff")._tag).toBe("Stale");
+	});
+
+	it("answers Stale for a marker carrying NO content field — absence is never a binding", () => {
+		expect(bindToContent(MARKER, OTHER, DIGEST)._tag).toBe("Stale");
+	});
+
+	it("answers Unbindable, never Current and never Stale, when the head's digest is unknown", () => {
+		expect(bindToContent(BOUND, OTHER, null)._tag).toBe("Unbindable");
+	});
+
+	it("answers Unbindable when either side is not a head SHA", () => {
+		expect(bindToContent(BOUND, "not-a-sha", DIGEST)._tag).toBe("Unbindable");
+	});
+
+	it("never answers Current for a digest that is not 12 hex, however it was smuggled in", () => {
+		expect(bindToContent({sha: HEAD, content: "short"}, OTHER, "short")._tag).toBe("Stale");
 	});
 });

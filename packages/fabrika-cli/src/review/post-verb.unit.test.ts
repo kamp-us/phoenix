@@ -17,6 +17,7 @@ import {
 import {
 	BASE,
 	binding,
+	CONTENT,
 	comments,
 	files,
 	HEAD,
@@ -42,7 +43,7 @@ const READBACK = /^gh api repos\/o\/r\/issues\/comments\/\d+$/;
 
 const BODY = "| criterion | verdict |\n|---|---|\n| the first thing | PASS |\n";
 const URL = "https://example.test/pull/4321#issuecomment-5154902211";
-const MARKER = `review-doc: PASS @ ${HEAD} — guide matches shipped behavior`;
+const MARKER = `review-doc: PASS @ ${HEAD} content:${CONTENT} — guide matches shipped behavior`;
 
 const created = okOut(JSON.stringify({id: 5154902211, html_url: URL}));
 
@@ -92,7 +93,7 @@ describe("runPost", () => {
 	it("posts the verdict and says whether it created or edited", async () => {
 		const out = await run(happy());
 		expect(out.code).toBe(0);
-		expect(out.stdout).toBe(`posted\treview-doc\tPASS\t${HEAD}\tcreated\t${URL}\n`);
+		expect(out.stdout).toBe(`posted\treview-doc\tPASS\t${HEAD}\t${CONTENT}\tcreated\t${URL}\n`);
 	});
 
 	it("puts the marker on the comment's LITERAL first line, never stacked on line 2", async () => {

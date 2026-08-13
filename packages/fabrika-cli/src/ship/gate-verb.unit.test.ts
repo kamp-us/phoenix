@@ -58,6 +58,7 @@ const candidate = (sha: string, stamp: string) => ({
 	namespace: "review-code",
 	polarity: "PASS" as const,
 	sha,
+	content: null,
 	carrier: "marker" as const,
 	stamp,
 	commentId: 1,
@@ -402,5 +403,95 @@ describe("requiredWithFloor", () => {
 		const result = requiredWithFloor(["review-code"], ["apps/web/src/a.ts"]);
 		expect(result.required).toEqual(["review-code"]);
 		expect(result.floored).toEqual([]);
+	});
+});
+
+/**
+ * The content binding at the gate (ADR 0276) — the four readings of a verdict whose head has moved.
+ *
+ * The cheap case to write would be "an identical digest passes". The three that pay for the change
+ * are its neighbours, and each is asserted here against the SAME moved head, so nothing but the
+ * digest distinguishes them: a differing digest, a marker carrying no digest, and a checkout that
+ * could not answer. All three block, and the last one blocks with exactly the answer this verb gave
+ * before the ruling — which is what makes the git read non-regressive rather than a new way to
+ * wedge a merge.
+ */
+describe("runGate — staleness is the content question", () => {
+	const BASE = "0f1e2d3c4b5a69788796a5b4c3d2e1f009182736";
+	/** The digest of RAW below, written out so the fixture cannot agree with the code by calling it. */
+	const DIGEST = "65ebe421b3c0";
+	const RAW = `:100644 100644 ${"a".repeat(40)} ${"b".repeat(40)} M\0apps/web/src/a.ts\0`;
+
+	const bound = (raw: ExecResult): ReadonlyArray<readonly [RegExp, ExecResult]> => [
+		[
+			/^git remote -v$/,
+			okOut("origin\tgit@github.com:o/r.git (fetch)\norigin\tgit@github.com:o/r.git (push)\n"),
+		],
+		[/^git fetch --quiet origin pull\/4321\/head$/, okOut("")],
+		[new RegExp(`^git rev-parse --verify --quiet ${HEAD}\\^\\{commit\\}$`), okOut(`${HEAD}\n`)],
+		[/^git remote$/, okOut("origin\n")],
+		[/^git fetch --quiet origin main$/, okOut("")],
+		[/^git rev-parse --verify --quiet origin\/main\^\{commit\}$/, okOut(`${BASE}\n`)],
+		[/^git diff .* --raw --abbrev=40 -z /, raw],
+	];
+
+	const bindingMarker = (sha: string, content: string | null): string =>
+		`review-code: PASS @ ${sha}${content === null ? "" : ` content:${content}`} — the clause`;
+
+	const atMovedHead = (
+		content: string | null,
+		raw: ExecResult,
+	): ReadonlyArray<readonly [RegExp, ExecResult]> => [
+		[PULL, pull({comments: 1})],
+		[COMMENTS, comments({id: 1, body: bindingMarker(OTHER_HEAD, content)})],
+		[REVIEWS, reviews()],
+		[ACL, okOut("write")],
+		...bound(raw),
+	];
+
+	it("passes a verdict at a MOVED head whose content digest is still this head's", async () => {
+		const out = await run(atMovedHead(DIGEST, okOut(RAW)));
+		expect(out.stdout).toContain("ns\treview-code\tpass\tmarker");
+		expect(out.stdout.split("\n")[0]).toBe(`gate\tsatisfied\t${HEAD}`);
+		expect(out.stderr.join("\n")).toContain("the reviewed content did not");
+	});
+
+	it("blocks the same verdict when the head's content digest is a DIFFERENT one", async () => {
+		const out = await run(atMovedHead("ffffffffffff", okOut(RAW)));
+		expect(out.stdout).toContain("ns\treview-code\tstale\tmarker");
+		expect(out.stdout.split("\n")[0]).toBe(`gate\tblocked\t${HEAD}`);
+	});
+
+	it("blocks a moved-head verdict carrying NO content field, and reads no git for it", async () => {
+		const shell = fakeShell([
+			[PULL, pull({comments: 1})],
+			[COMMENTS, comments({id: 1, body: bindingMarker(OTHER_HEAD, null)})],
+			[REVIEWS, reviews()],
+			[ACL, okOut("write")],
+			ORDINARY,
+		]);
+		const out = await Effect.runPromise(Effect.provide(runGate(options), shell.layer));
+		expect(out.stdout).toContain("ns\treview-code\tstale\tmarker");
+		expect(shell.calls.some((call) => call.startsWith("git "))).toBe(false);
+	});
+
+	it("blocks — not passes — when this head's digest cannot be read at all", async () => {
+		const out = await run(atMovedHead(DIGEST, errOut("no such ref")));
+		expect(out.stdout).toContain("ns\treview-code\tstale\tmarker");
+		expect(out.stdout.split("\n")[0]).toBe(`gate\tblocked\t${HEAD}`);
+		expect(out.stderr.join("\n")).toContain("could not be read");
+	});
+
+	it("reads no git at all when every verdict is already at this head — the common path", async () => {
+		const shell = fakeShell([
+			[PULL, pull({comments: 1})],
+			[COMMENTS, comments({id: 1, body: bindingMarker(HEAD, DIGEST)})],
+			[REVIEWS, reviews()],
+			[ACL, okOut("write")],
+			ORDINARY,
+		]);
+		const out = await Effect.runPromise(Effect.provide(runGate(options), shell.layer));
+		expect(out.stdout).toContain("ns\treview-code\tpass\tmarker");
+		expect(shell.calls.some((call) => call.startsWith("git "))).toBe(false);
 	});
 });

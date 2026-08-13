@@ -2,9 +2,13 @@
  * `review verdicts` — every verdict marker on the PR, per namespace, each with its
  * `Current` / `Stale` / `Unbindable` binding against the live head.
  *
- * This is `bindToHead`'s first consumer surface. That module's `Binding` type has three arms and no
- * non-test caller today; the three reach stdout here as **three tokens**, because folding any two of
- * them together is how a stale PASS reads as a current one (ADR 0058, #3769 / #4338).
+ * The `Binding` type has three arms; the three reach stdout here as **three tokens**, because folding
+ * any two of them together is how a stale PASS reads as a current one (ADR 0058, #3769 / #4338).
+ *
+ * **It resolves the same binding `ship gate` does, and that is the point of the coupling.** This verb
+ * is what routes an agent to re-review, so a row reading `stale` where the merge gate would read
+ * `pass` re-imposes the very tax ADR 0276 removed — through a second opinion nobody would think to
+ * suspect. Both call `bindToContent`, so they cannot disagree.
  *
  * A head this verb cannot resolve prints `unbindable` on **every** row — never `current`, never
  * `stale`. A comparison that could not be made is not a negative result, so the live-head read's
@@ -21,14 +25,18 @@ import {type CommentRecord, listComments} from "../io/issues.ts";
 import {getPullRequest} from "../io/pulls.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {
-	bindToHead,
+	bindToContent,
 	type HeadSha,
+	headSha,
 	read as readMarker,
+	sameHead,
 	clause as toClause,
 	type VerdictMarker,
 } from "../wire/verdict-marker.ts";
 import {readAdvisory} from "./advisory.ts";
 import {INCOMPLETE_SCAN, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
+import {contentDigestAt} from "./content-binding.ts";
+import {bindHead} from "./head.ts";
 import {NULL_TOKEN} from "./scope-verb.ts";
 import {badNumber, resolveTargetRepo, scannedLine} from "./target.ts";
 
@@ -58,11 +66,15 @@ interface MalformedRow {
  * The binding token for one marker against a head this run may not have been able to resolve.
  *
  * The three arms map to three tokens and nothing folds: an unresolved head is `unbindable` before
- * `bindToHead` is even asked, because the comparison could not be made.
+ * `bindToContent` is even asked, because the comparison could not be made.
  */
-const bindingOf = (marker: VerdictMarker, head: string | null): MarkerRow["binding"] => {
+const bindingOf = (
+	marker: VerdictMarker,
+	head: string | null,
+	digest: string | null,
+): MarkerRow["binding"] => {
 	if (head === null) return "unbindable";
-	const binding = bindToHead(marker, head);
+	const binding = bindToContent(marker, head, digest);
 	return binding._tag === "Current" ? "current" : binding._tag === "Stale" ? "stale" : "unbindable";
 };
 
@@ -71,12 +83,14 @@ const advisoryMarker = (namespace: string, sha: HeadSha): VerdictMarker => ({
 	namespace,
 	polarity: "PASS",
 	sha,
+	content: null,
 	clause: toClause("advisory") ?? ("advisory" as VerdictMarker["clause"]),
 });
 
 const sweep = (
 	comments: ReadonlyArray<CommentRecord>,
 	head: string | null,
+	digest: string | null,
 ): {markers: MarkerRow[]; malformed: MalformedRow[]} => {
 	const markers: MarkerRow[] = [];
 	const malformed: MalformedRow[] = [];
@@ -88,7 +102,7 @@ const sweep = (
 				namespace: parsed.value.namespace,
 				polarity: parsed.value.polarity,
 				sha: parsed.value.sha,
-				binding: bindingOf(parsed.value, head),
+				binding: bindingOf(parsed.value, head, digest),
 				commentId: comment.id,
 			});
 			continue;
@@ -99,7 +113,7 @@ const sweep = (
 				namespace: advisory.namespace,
 				polarity: "ADVISORY",
 				sha: advisory.sha,
-				binding: bindingOf(advisoryMarker(advisory.namespace, advisory.sha), head),
+				binding: bindingOf(advisoryMarker(advisory.namespace, advisory.sha), head, digest),
 				commentId: comment.id,
 			});
 			continue;
@@ -165,7 +179,34 @@ export const runVerdicts = (
 			);
 		}
 
-		const {markers, malformed} = sweep(comments, head);
+		// Lazy, exactly as at `ship gate`: the digest is read only when a content-bound marker has
+		// already failed the head test, and a read that cannot answer leaves it null — which
+		// `bindToContent` reports as `unbindable`, never as a row a caller could act on as current.
+		const contested =
+			head !== null && found._tag === "Present"
+				? comments.some((comment) => {
+						const parsed = readMarker(comment.body);
+						return (
+							parsed._tag === "Found" &&
+							parsed.value.content !== null &&
+							!sameHead(parsed.value.sha, headSha(head) ?? parsed.value.sha)
+						);
+					})
+				: false;
+		let digest: string | null = null;
+		if (contested && found._tag === "Present") {
+			const bound = yield* bindHead(VERB, repo, pr, found.value, null);
+			const read =
+				bound._tag === "Bound" ? yield* contentDigestAt(bound.head.base, bound.head.sha) : null;
+			if (read !== null && read._tag === "Ok") digest = read.value;
+			else {
+				diagnostics.push(
+					`${VERB}: a marker binds content at another head, but this head's digest could not be read — those rows print unbindable (ADR 0276).`,
+				);
+			}
+		}
+
+		const {markers, malformed} = sweep(comments, head, digest);
 		for (const row of malformed) {
 			diagnostics.push(
 				`${VERB}: comment ${row.commentId} reaches for a marker and fails the format: ${row.reason}.`,
