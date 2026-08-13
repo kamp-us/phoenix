@@ -127,7 +127,7 @@ the `TABLES` map of its unit test, or the coverage guard reds the moment the gro
 |---|---|---|
 | `0` | the answer is on stdout | reserved |
 | `1` | usage error, or the verb failed to run | reserved |
-| `2` | no implementation could be resolved | reserved |
+| `126` | no implementation could be resolved | reserved |
 | `127` | the verb never ran | reserved |
 | `3` | `EMPTY_STDIN` — stdin was read and held nothing | import from `report` (`EMPTY_STDIN`) |
 | `4` | `BAD_SECTIONS` — the register was read and a structure this verb needs (its term table, or its headings) is unusable | import from `report` (`BAD_SECTIONS`) |
@@ -143,7 +143,7 @@ the `TABLES` map of its unit test, or the coverage guard reds the moment the gro
 | `14` | `ROW_SHAPE_INVALID` — the composed row cannot be a well-formed table row | group-local |
 | `15` | `EDIT_BEYOND_ROW` — the write would have changed a line outside the target row | group-local |
 
-Every verb can additionally return `0`, `1`, `2` and `127`; the per-verb tables below enumerate only
+Every verb can additionally return `0`, `1`, `126` and `127`; the per-verb tables below enumerate only
 that verb's own proven outcomes from `3` up, so no fact has two homes.
 
 **The seats map.** None of the shipped seat sets fits: `BUILD_SEATS` carries `LEAKED_PATH` and

@@ -14,6 +14,7 @@ import {join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {afterAll, beforeAll, describe, expect, it} from "vitest";
 import {SUBPROCESS_TEST_TIMEOUT_MS} from "../test-budget.ts";
+import {NO_IMPLEMENTATION} from "../verb.ts";
 
 const BIN = fileURLToPath(new URL("../bin.ts", import.meta.url));
 
@@ -59,7 +60,7 @@ describe("invoking this checkout's bin from a cwd in another checkout", {
 	it("refuses instead of answering, and never lets the cwd's install speak", () => {
 		const run = invokeFromConsumer("--version");
 		expect(run.stdout).not.toContain(IMPOSTER);
-		expect(run.code).toBe(2);
+		expect(run.code).toBe(NO_IMPLEMENTATION);
 		expect(run.stderr).toContain("different checkouts");
 	});
 

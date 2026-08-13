@@ -256,14 +256,14 @@ Every `map` verb obeys these; stated once rather than repeated per block.
 ### The shared exit matrix
 
 This table owns `code → meaning`. Per-verb **Errors** tables below own only that verb's own
-triggers. `1`, `2` and `127` are stated **here and only here**, and every verb can return them. `0` is
+triggers. `1`, `126` and `127` are stated **here and only here**, and every verb can return them. `0` is
 restated per verb because each verb's `0` names a different answer.
 
 | Code | Meaning | `open` | `read` | `ticket` | `lane` | `finding` | `fork` | `record` | `descope` |
 |---|---|---|---|---|---|---|---|---|---|
 | `0` | the answer is on stdout | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `1` | usage error, or the verb failed to run | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `2` | no implementation could be resolved | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `126` | no implementation could be resolved | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `127` | the verb never ran (unresolved binary) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `3` | `EMPTY_STDIN` — stdin was read and held nothing | ✓ | — | — | — | — | — | — | — |
 | `4` | `BAD_SECTIONS` — a required section is missing, out of order, or holds an unparseable entry | ✓ | ✓ | ✓ | — | ✓ | ✓ | ✓ | ✓ |
