@@ -2,7 +2,7 @@
  * The in-memory corpus the `glossary` verb tests resolve against.
  *
  * Deliberately **not** a copy of the committed fixture register under
- * `claude-plugins/fabrika/skills/glossary/evals/fixtures/` — that one is read for real by
+ * `packages/fabrika-cli/test-fixtures/glossary/` — that one is read for real by
  * `contract-examples.test.ts`, and a second copy here would be free to drift from the bytes the
  * contract's examples are pinned to.
  */

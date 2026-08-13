@@ -144,7 +144,7 @@ half-written, which is out of scope for this contract.
   what it reads, and that authority arrives only through the resolver's ACL check — and writes down
   no posture, per the brief's own instruction and convention §9.
 - **Whether the eval corpus gains an ideation stage.** `STAGES` in
-  `packages/fabrika-cli/src/eval/corpus.ts` holds `triage`, `build`, `review`, `ship-it` and no
+  the retired eval corpus holds `triage`, `build`, `review`, `ship-it` and no
   ideation entry, and stage admission is demand-driven — a skill must be on disk *and* carry
   committed ground truth. [#5241](https://github.com/kamp-us/phoenix/issues/5241) holds three
   unruled branches. This session declares no stage entry and takes no position.

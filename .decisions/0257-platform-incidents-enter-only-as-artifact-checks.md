@@ -92,7 +92,7 @@ platform-originated incident:
 ### 3. The tier is derived, so the rule is self-enforcing — a graded platform case cannot be authored honestly
 
 A case's tier is not a field an author declares. `deriveTier`
-([`packages/fabrika-cli/src/eval/skill-eval-set.ts`](../packages/fabrika-cli/src/eval/skill-eval-set.ts))
+(`packages/fabrika-cli/src/eval/skill-eval-set.ts`)
 returns `deterministic` only when a case has assertions and **every one** of them classifies as
 mechanical, and `graded` otherwise — including for a case with no assertions at all. Mechanical means
 the assertion's text hits one of the cue phrases for an observable: an exit status, a file artifact, a

@@ -3,7 +3,7 @@
 **Skill:** [`triage`](SKILL.md) · **Authoring brief:** [#4706](https://github.com/kamp-us/phoenix/issues/4706) · **Date:** 2026-08-02
 
 These verbs live in `packages/fabrika-cli/`, binary `fabrika`, grouped under a `triage` subcommand,
-beside the `adr`, `report` and `eval` groups already implemented there. The
+beside the `adr` and `report` groups already implemented there. The
 [CLI interface convention](../../docs/cli-interface-convention.md) governs them; where this spec and
 that doc disagree, the doc wins and this spec is the bug.
 

@@ -5,7 +5,7 @@
 The verbs sit under a `pattern` subcommand group in `packages/fabrika-cli/`, whose binary is
 `fabrika`. The group name was verified free against
 [`registry.ts`](../../../../packages/fabrika-cli/src/registry.ts) at authoring time — at the time of
-writing the registered groups are `adr build epic eval hook ledger plan report review review-ui ship
+writing the registered groups are `adr build epic hook ledger plan report review review-ui ship
 spend status triage ui wire`, though that list grows most weeks, so read the file rather than this
 sentence. The [CLI interface convention](../../docs/cli-interface-convention.md) governs all five;
 where this spec and that doc disagree, the doc wins and this spec is the bug.
@@ -267,21 +267,21 @@ computes `max + 1` over an empty entry set and hands a mis-rooted checkout `0001
 **Examples**
 
 ```
-$ fabrika pattern corpus --dir claude-plugins/fabrika/skills/write-pattern/evals/fixtures/empty-library
+$ fabrika pattern corpus --dir packages/fabrika-cli/test-fixtures/write-pattern/empty-library
 corpus	none	0	0	0	0
 $ echo $?
 0
 ```
 
 ```
-$ fabrika pattern corpus --dir claude-plugins/fabrika/skills/write-pattern/evals/fixtures/no-library
+$ fabrika pattern corpus --dir packages/fabrika-cli/test-fixtures/write-pattern/no-library
 corpus	absent	0	0	0	0
 $ echo $?
 0
 ```
 
 ```
-$ fabrika pattern corpus --dir claude-plugins/fabrika/skills/write-pattern/evals/fixtures/empty-library --json
+$ fabrika pattern corpus --dir packages/fabrika-cli/test-fixtures/write-pattern/empty-library --json
 {"outcome":"none","docs":0,"unregistered":0,"unknown":0,"dangling":0,"entries":[],"danglingRows":[],"baseRef":"origin/main","baseSha":"<sha>"}
 ```
 
@@ -415,14 +415,14 @@ the doc was never consulted about.
 **Examples**
 
 ```
-$ fabrika pattern drift worker-queue-retry --dir claude-plugins/fabrika/skills/write-pattern/evals/fixtures/unanchored-doc
+$ fabrika pattern drift worker-queue-retry --dir packages/fabrika-cli/test-fixtures/write-pattern/unanchored-doc
 drift	unanchored	-	0	0	0	0
 $ echo $?
 0
 ```
 
 ```
-$ fabrika pattern drift worker-queue-retry --json --dir claude-plugins/fabrika/skills/write-pattern/evals/fixtures/unanchored-doc
+$ fabrika pattern drift worker-queue-retry --json --dir packages/fabrika-cli/test-fixtures/write-pattern/unanchored-doc
 {"outcome":"unanchored","anchorSha":"-","cited":0,"inRepo":0,"unresolved":0,"moved":0,"paths":[],"unresolvedPaths":[],"baseRef":"origin/main","baseSha":"<sha>"}
 ```
 
@@ -607,7 +607,7 @@ scope line is not shown. The fixture manifest pins `acme-queue: 4.2.0` and carri
 `@acme/retry` key.
 
 ```
-$ fabrika pattern anchor worker-queue-retry --dir claude-plugins/fabrika/skills/write-pattern/evals/fixtures/anchored --manifest claude-plugins/fabrika/skills/write-pattern/evals/fixtures/anchored/workspace.yaml
+$ fabrika pattern anchor worker-queue-retry --dir packages/fabrika-cli/test-fixtures/write-pattern/anchored --manifest packages/fabrika-cli/test-fixtures/write-pattern/anchored/workspace.yaml
 anchor	moved	2	1	1	0
 pkg	acme-queue	4.1.0	4.2.0	moved
 pkg	@acme/retry	2.0.0	-	unpinned
@@ -616,15 +616,15 @@ $ echo $?
 ```
 
 ```
-$ fabrika pattern anchor plain-doc --dir claude-plugins/fabrika/skills/write-pattern/evals/fixtures/anchored --manifest claude-plugins/fabrika/skills/write-pattern/evals/fixtures/anchored/workspace.yaml
+$ fabrika pattern anchor plain-doc --dir packages/fabrika-cli/test-fixtures/write-pattern/anchored --manifest packages/fabrika-cli/test-fixtures/write-pattern/anchored/workspace.yaml
 anchor	unanchored	0	0	0	0
 $ echo $?
 0
 ```
 
 ```
-$ fabrika pattern anchor worker-queue-retry --json --dir claude-plugins/fabrika/skills/write-pattern/evals/fixtures/anchored --manifest claude-plugins/fabrika/skills/write-pattern/evals/fixtures/anchored/workspace.yaml
-{"outcome":"moved","declared":2,"moved":1,"unpinned":1,"malformed":0,"packages":[{"package":"acme-queue","declaredVersion":"4.1.0","pinnedVersion":"4.2.0","state":"moved"},{"package":"@acme/retry","declaredVersion":"2.0.0","pinnedVersion":null,"state":"unpinned"}],"manifest":"claude-plugins/fabrika/skills/write-pattern/evals/fixtures/anchored/workspace.yaml","baseRef":"origin/main","baseSha":"<sha>"}
+$ fabrika pattern anchor worker-queue-retry --json --dir packages/fabrika-cli/test-fixtures/write-pattern/anchored --manifest packages/fabrika-cli/test-fixtures/write-pattern/anchored/workspace.yaml
+{"outcome":"moved","declared":2,"moved":1,"unpinned":1,"malformed":0,"packages":[{"package":"acme-queue","declaredVersion":"4.1.0","pinnedVersion":"4.2.0","state":"moved"},{"package":"@acme/retry","declaredVersion":"2.0.0","pinnedVersion":null,"state":"unpinned"}],"manifest":"packages/fabrika-cli/test-fixtures/write-pattern/anchored/workspace.yaml","baseRef":"origin/main","baseSha":"<sha>"}
 ```
 
 **Grounding**
@@ -857,15 +857,15 @@ section carrying a table, in document order, comma-separated — it never trunca
 correcting a flag needs the whole set:
 
 ```
-$ fabrika pattern register cache-invalidation --section "Nonexistent Section" --topic "x" --read-when "y" --dir claude-plugins/fabrika/skills/write-pattern/evals/fixtures/three-sections
-pattern register: no section "Nonexistent Section" in claude-plugins/fabrika/skills/write-pattern/evals/fixtures/three-sections/index.md (present: Index — services, Index — edge, Index — observability).
+$ fabrika pattern register cache-invalidation --section "Nonexistent Section" --topic "x" --read-when "y" --dir packages/fabrika-cli/test-fixtures/write-pattern/three-sections
+pattern register: no section "Nonexistent Section" in packages/fabrika-cli/test-fixtures/write-pattern/three-sections/index.md (present: Index — services, Index — edge, Index — observability).
 $ echo $?
 10
 ```
 
 ```
-$ fabrika pattern register cache-invalidation --section "Index — services" --topic "Cache keys and invalidation order" --read-when "Touching a cached read" --dir claude-plugins/fabrika/skills/write-pattern/evals/fixtures/three-sections
-already	claude-plugins/fabrika/skills/write-pattern/evals/fixtures/three-sections/index.md	Index — services
+$ fabrika pattern register cache-invalidation --section "Index — services" --topic "Cache keys and invalidation order" --read-when "Touching a cached read" --dir packages/fabrika-cli/test-fixtures/write-pattern/three-sections
+already	packages/fabrika-cli/test-fixtures/write-pattern/three-sections/index.md	Index — services
 $ echo $?
 0
 ```

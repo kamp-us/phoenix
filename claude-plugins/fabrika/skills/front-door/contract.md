@@ -4,7 +4,7 @@
 
 These verbs live in `packages/fabrika-cli/`, binary `fabrika`, grouped under a `status` subcommand
 beside the groups registered in `packages/fabrika-cli/src/registry.ts` — at the time of writing
-`adr`, `build`, `epic`, `eval`, `hook`, `plan`, `report`, `review`, `review-ui`, `ship`, `spend`,
+`adr`, `build`, `epic`, `hook`, `plan`, `report`, `review`, `review-ui`, `ship`, `spend`,
 `triage`, `ui` and `wire`. That list grows most weeks, so **read the file rather than this
 sentence**. `status` was confirmed free there against a freshly fetched `origin/main` immediately
 before this spec landed. The [CLI interface convention](../../docs/cli-interface-convention.md)
@@ -138,7 +138,7 @@ vocabulary in this group. Four consequences bind every verb below:
 1. **A proven-empty answer is a positive token at exit `0`**, never empty stdout and never `0` where
    a count is unknown. An unmeasured count renders `unknown` with a parenthesised reason, following
    the shipped precedent that an unmeasured run reads `n/a (reason)` rather than `0`
-   (`packages/fabrika-cli/src/eval/spawn.ts`).
+   (measured, #4106).
 2. **A state word names the reading it is not.** The `<detail>` beside `absent` carries "proven
    absent, not unread"; beside `unknown` it carries the raw failed read, reproduced verbatim before
    clamping, so the failure stays attributable — the shape
@@ -426,7 +426,7 @@ $ fabrika status open --field readout --json
 
 **Grounding**
 
-- `packages/fabrika-cli/src/eval/spawn.ts` — the silent-green finding: an unresolvable skill exits
+- the silent-green measurement (#4106) — the silent-green finding: an unresolvable skill exits
   `0` with `num_turns: 0` and reconstructs to well-formed zeros, so `classifyRun` must synthesize the
   missing signal. A front door is where a wrong-but-plausible value does the most damage, because
   every later decision in the session rests on it.
@@ -939,7 +939,7 @@ $ fabrika status board --json
 - #4103 — a FAIL'd pull request presented identically to a banked-ready one, and what "banked" means
   is still open. No bucket claims it.
 - #4060 — a probe that read 0 files and classified at exit `0`. An absent label is `unknown`.
-- `packages/fabrika-cli/src/eval/spawn.ts` — an unmeasured value renders `n/a (reason)` rather than
+- the silent-green measurement (#4106) — an unmeasured value renders `n/a (reason)` rather than
   `0`, *"because … a rendered `0` would erase the difference at the last step."*
 - skill-conventions §11 — REST, never GraphQL, and every list read paginates; an unpaginated read
   returns a plausible first page instead of an error.

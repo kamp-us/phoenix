@@ -54,18 +54,15 @@ brief that says "rebuild this" has specified nothing; the fields below are the s
 
 ### 3. Incidents — what the rebuild must not regress
 
-The rows from the **ruled KEEP corpus** that bear on this skill, each as a number plus the
-one-line behavior it records. The corpus is the fabrika eval feedstock — the pipeline's observed
-scar tissue, kept precisely because each row is a real incident encodable as a regression case —
-and it is a file you **read**, not a join you re-run:
-[`ruled-keeps.json`](../../../packages/fabrika-cli/src/eval/incident-corpus/ruled-keeps.json)
-enumerates it at **66 members plus 1 pending**, and `fabrika grade keeps` prints it with the cases
-that already pin each row.
-[#4642](https://github.com/kamp-us/phoenix/issues/4642) ruled the corpus and published its size as
-74; that figure double-counts the 7 borderline items, and the enumeration supersedes it
-([#4823](https://github.com/kamp-us/phoenix/issues/4823)). #4642 and the per-issue verdict table on
-[#4634](https://github.com/kamp-us/phoenix/issues/4634) remain the enumeration's provenance, which
-`ruled-keeps.json` records in its own `derivation`.
+The rows from the **ruled KEEP corpus** that bear on this skill, each as a number plus the one-line
+behavior it records — the pipeline's observed scar tissue, kept because each row is a real incident.
+The corpus lives on the tracker, not in the repo: [#4642](https://github.com/kamp-us/phoenix/issues/4642)
+ruled it and the per-issue verdict table on
+[#4634](https://github.com/kamp-us/phoenix/issues/4634) enumerates it. #4642 published the size as
+74; that figure double-counts the 7 borderline items, and the real membership is **66 plus 1
+pending** ([#4823](https://github.com/kamp-us/phoenix/issues/4823)). The committed enumeration that
+used to mirror those two issues went out with the eval tooling
+([#5510](https://github.com/kamp-us/phoenix/issues/5510)), so read them directly.
 
 This is the field that makes a stateless session safe. Without it the session re-derives the skill
 from its purpose alone and silently re-opens every hole the v1 skill closed the hard way — which is

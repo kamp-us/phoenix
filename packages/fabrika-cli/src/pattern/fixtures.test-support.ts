@@ -1,7 +1,8 @@
 /**
  * The fixture bytes the contract's worked examples are stated against, scripted onto the git seam.
  *
- * The examples name fixtures committed in the skill's own tree, and the read-at-`--base` rule
+ * The examples name fixtures committed under `packages/fabrika-cli/test-fixtures/`, and the
+ * read-at-`--base` rule
  * applies to them like anything else — so what a verb actually sees is `git show <sha>:<path>`
  * output. Scripting **those bytes** reproduces the examples through the same seam production uses,
  * and it does so without a checkout: a test that shelled out to a real repository would be asserting
@@ -19,7 +20,7 @@ import {readFileSync} from "node:fs";
 import {fileURLToPath} from "node:url";
 
 /** The three fixture directory paths the contract's examples pass to `--dir`. */
-export const FIXTURES = "claude-plugins/fabrika/skills/write-pattern/evals/fixtures";
+export const FIXTURES = "packages/fabrika-cli/test-fixtures/write-pattern";
 
 /**
  * An empty read is a failed read, never fixture bytes — `""` scripted onto the seam satisfies every
@@ -38,6 +39,7 @@ export const nonEmptyFixture = (relativePath: string, bytes: string): string => 
 /**
  * Resolved from this module rather than from the process cwd, the way the `wire` group resolves its
  * committed index doc — the fixtures live in the checkout this file ships in, wherever vitest ran.
+ * Four levels up from `src/pattern/` is the repo root, which is what `FIXTURES` is relative to.
  */
 export const fixtureBytes = (relativePath: string): string =>
 	nonEmptyFixture(

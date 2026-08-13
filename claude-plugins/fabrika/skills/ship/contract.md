@@ -3,7 +3,7 @@
 **Skill:** [`ship`](SKILL.md) · **Authoring brief:** [#4709](https://github.com/kamp-us/phoenix/issues/4709) · **Date:** 2026-08-08
 
 These verbs live in `packages/fabrika-cli/`, binary `fabrika`, grouped under a `ship`
-subcommand, beside the `adr`, `eval`, `report`, `review`, `triage` and `wire` groups already
+subcommand, beside the `adr`, `report`, `review`, `triage` and `wire` groups already
 implemented there. (The skill directory and the CLI group are both `ship`, so every
 invocation reads as a sentence — `fabrika ship enqueue`. One skill, one group; the mapping is
 stated here once.) The [CLI interface convention](../../docs/cli-interface-convention.md)

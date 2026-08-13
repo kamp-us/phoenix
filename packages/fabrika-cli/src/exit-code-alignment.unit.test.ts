@@ -6,7 +6,6 @@ import {describe, expect, it} from "vitest";
 import * as adr from "./adr/codes.ts";
 import * as build from "./build/codes.ts";
 import * as epic from "./epic/codes.ts";
-import * as evalCodes from "./eval/codes.ts";
 import {
 	ALIGNED_GROUPS,
 	ALIGNMENT_BASE,
@@ -54,7 +53,6 @@ const TABLES: Readonly<Record<string, CodeTable>> = {
 	adr,
 	build,
 	epic,
-	eval: evalCodes,
 	glossary,
 	governance,
 	grill,

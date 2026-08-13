@@ -48,7 +48,7 @@ namespace, polarity, `@ <sha>`, trailing clause, with `bindToHead` answering
 and its own docblock records *why* each addition is a root and not a `review-<gate>` member — a
 verdict wearing another gate's namespace is the family confusion the partition ruling removed
 ([#4891](https://github.com/kamp-us/phoenix/issues/4891)). The scorecard cell the record feeds is
-`ScorecardCell` in [`packages/fabrika-cli/src/eval/report.ts`](../packages/fabrika-cli/src/eval/report.ts),
+`ScorecardCell` in `packages/fabrika-cli/src/eval/report.ts`,
 carrying `stage`, `surface`, `model`, `gradedRuns`, `passedRuns`, `passRate`. Both were read at head.
 
 This is engineering's lane: the eval harness is pipeline infrastructure, which ADR

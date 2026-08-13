@@ -78,7 +78,7 @@ ambiguity #4840 is open about; and v1's own shell treats both type labels identi
    rather than storing a state for it — keeps the two consistent without ruling the general case.
    If #4840 rules that stored blockedness is illegal for standalone issues, this skill's edges are
    unaffected only for as long as frontier tickets stay unpickable. Worth re-reading at that ruling.
-2. **The ideation layer has no eval stage.** `packages/fabrika-cli/src/eval/corpus.ts`'s `STAGES` is
+2. **The ideation layer has no eval stage.** the retired eval corpus's `STAGES` is
    `["triage", "build", "review", "ship-it"]`, so neither `wayfinding` nor `grilling` can declare a
    corpus entry today. That blocks ship gate 3 for the whole quintet, it is not this brief's to fix
    (#4649 owns the harness), and it is filed rather than left in a chat window.

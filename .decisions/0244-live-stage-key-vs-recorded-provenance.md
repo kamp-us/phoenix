@@ -18,18 +18,18 @@ forever; the live vocabulary re-keys around them.
 fabrika re-keys the pipeline's stage vocabulary (ADR
 [0242](0242-fabrika-skill-nouns-redefine-build-and-review.md): `write-code` becomes `build`, the
 `review-*` family collapses to `review`). The eval harness in
-[`packages/fabrika-cli/src/eval/`](../packages/fabrika-cli/src/eval/) uses a stage name in two
+`packages/fabrika-cli/src/eval/` uses a stage name in two
 unrelated jobs, and the re-key forced the difference into the open:
 
-- **As a live key.** `STAGES` in [`corpus.ts`](../packages/fabrika-cli/src/eval/corpus.ts) is what
-  `--stage` accepts ([`command.ts`](../packages/fabrika-cli/src/eval/command.ts) rejects anything
+- **As a live key.** `STAGES` in `corpus.ts` is what
+  `--stage` accepts (`command.ts` rejects anything
   else by name), what `CorpusManifest` groups entries under, and what
-  [`runner.ts`](../packages/fabrika-cli/src/eval/runner.ts)'s `collectFromCapture` joins a capture
+  `runner.ts`'s `collectFromCapture` joins a capture
   run to a corpus entry on.
 - **As a record.** A committed corpus row's own `stage` field says which pipeline produced the
   labeled artifact. The module's README states the label is what the baseline *actually produced*,
-  and three rows in [`corpus/build.json`](../packages/fabrika-cli/src/eval/corpus/build.json) plus
-  three in [`corpus/review.json`](../packages/fabrika-cli/src/eval/corpus/review.json)
+  and three rows in `corpus/build.json` plus
+  three in `corpus/review.json`
   are genuine v1 artifacts (issues/PRs #1223, #106, #1032, #1199, #1294, #1115).
 
 Treating those as one thing gives two bad options. Retiring the rows throws away the only graded
@@ -139,7 +139,7 @@ manifest small enough to hand-edit is not worth a migrator. Two boundaries:
 
 ### 5. `incident-corpus/` is out of scope
 
-[`incident-corpus/`](../packages/fabrika-cli/src/eval/incident-corpus/) — `evals.json`,
+`incident-corpus/` — `evals.json`,
 `provenance.json`, `ruled-keeps.json` — is a separate body of ground truth, decoded by
 `skill-eval-set.ts` / `incident-provenance.ts`, and carries **no stage key at all**. Where v1 skill
 names appear in it they are the *subject* of a recorded incident, not a key anything dispatches on.
@@ -155,7 +155,7 @@ re-key of `STAGES` — to those files.
   new writes and load-bearing for decoding history; the union member is what keeps "nothing new may
   be filed here" a type-level fact rather than a convention.
 - **The per-stage minimum-entry and seed assertions in
-  [`corpus.data.unit.test.ts`](../packages/fabrika-cli/src/eval/corpus.data.unit.test.ts) are
+  `corpus.data.unit.test.ts` are
   undisturbed by this ruling, and that is a consequence of keeping the rows.** Those assertions
   require ≥3 entries in each of the `triage` / `build` / `review-code` groups and the presence of
   the ADR 0112 §1 seed `inputRef`s (#1227, #1223, #1199). Because nothing is retired and `inputRef`

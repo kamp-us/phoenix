@@ -4,7 +4,7 @@
 
 These verbs live in `packages/fabrika-cli/`, binary `fabrika`, grouped under a `governance`
 subcommand beside the groups already registered in `packages/fabrika-cli/src/registry.ts` — at the
-time of writing `adr`, `build`, `epic`, `eval`, `hook`, `plan`, `report`, `review`, `review-ui`,
+time of writing `adr`, `build`, `epic`, `hook`, `plan`, `report`, `review`, `review-ui`,
 `ship`, `spend`, `triage`, `ui` and `wire`, though that list grows most weeks, so **read the file
 rather than this sentence**. `governance` was confirmed free there against a freshly fetched
 `origin/main` immediately before this spec landed. The [CLI interface convention](../../docs/cli-interface-convention.md) governs

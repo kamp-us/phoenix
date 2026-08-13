@@ -43,7 +43,7 @@ not be read at all.
 **Never read a proven negative as healthy, and never read an unknown one as empty.** The failure is
 measured, not hypothetical: an unresolvable skill is a **silent green** — `claude -p "/not-a-skill"`
 exits `0`, `num_turns: 0`, reconstructing to well-formed zeros
-(`packages/fabrika-cli/src/eval/spawn.ts`, which synthesizes the signal the platform refuses to
+(the silent-green measurement (#4106), which synthesizes the signal the platform refuses to
 give). The same shape put a PASS over a totally failed upload for months (#3925), read "none" while
 FAIL rows sat unread (#4105), and classified off zero files at exit `0` (#4060). A source that never
 ran is indistinguishable from one that ran and found nothing unless something manufactures the

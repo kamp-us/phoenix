@@ -1,6 +1,6 @@
 /**
  * The contract's worked examples, reproduced byte for byte against the **committed** fixtures under
- * `claude-plugins/fabrika/skills/glossary/evals/fixtures/`.
+ * `packages/fabrika-cli/test-fixtures/glossary/`.
  *
  * In-process rather than through a subprocess: what is under test is the bytes each verb produces
  * over a corpus that does not move, and a spawn per example would buy nothing but cost a cold
@@ -26,9 +26,9 @@ import {runLookup} from "./lookup-verb.ts";
 import {runSections} from "./sections-verb.ts";
 
 /** The two fixture directories, repo-relative exactly as the contract's examples spell them. */
-const REGISTERS = "claude-plugins/fabrika/skills/glossary/evals/fixtures/registers";
-const DECISIONS = "claude-plugins/fabrika/skills/glossary/evals/fixtures/decisions";
-const EMPTY = "claude-plugins/fabrika/skills/glossary/evals/fixtures/empty";
+const REGISTERS = "packages/fabrika-cli/test-fixtures/glossary/registers";
+const DECISIONS = "packages/fabrika-cli/test-fixtures/glossary/decisions";
+const EMPTY = "packages/fabrika-cli/test-fixtures/glossary/empty";
 
 /**
  * The verbs resolve a relative `--dir` against the target repo's root, so the package directory is a

@@ -15,7 +15,7 @@ import {SUBPROCESS_TEST_TIMEOUT_MS} from "../test-budget.ts";
 import {ZERO_SCOPE} from "./codes.ts";
 
 const BIN = fileURLToPath(new URL("../bin.ts", import.meta.url));
-const REGISTERS = "claude-plugins/fabrika/skills/glossary/evals/fixtures/registers";
+const REGISTERS = "packages/fabrika-cli/test-fixtures/glossary/registers";
 
 interface Run {
 	readonly code: number;

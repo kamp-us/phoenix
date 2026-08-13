@@ -161,26 +161,6 @@ export const GLOSSARY_SEATS: SharedSeats = (() => {
 export const HOOK_SEATS: SharedSeats = {EMPTY_STDIN: "EMPTY_STDIN"};
 
 /**
- * `eval`'s seats: eight, six of which arrived with `eval post` (#5411).
- *
- * The group's first two are readings of artifacts on disk — a named JSON artifact is malformed, and a
- * decoded eval set carries nothing to run. The six added here are the write path's, and they are
- * claimed rather than re-seated because `post` establishes the base's own facts unchanged: stdin held
- * nothing, the bytes carry a machine-local path, the body is a bare `@` reference, the write failed,
- * the read-back does not match, a precondition read failed. The group's private band stays `12`+.
- */
-export const EVAL_SEATS: SharedSeats = {
-	MALFORMED_DOCUMENT: "BAD_SECTIONS",
-	ZERO_SCOPE: "NO_TARGET",
-	EMPTY_STDIN: "EMPTY_STDIN",
-	LEAKED_PATH: "LEAKED_PATH",
-	BARE_AT_PATH: "BARE_AT_PATH",
-	WRITE_UNKNOWN: "WRITE_UNKNOWN",
-	READBACK_MISMATCH: "READBACK_MISMATCH",
-	PRECONDITION_UNKNOWN: "PRECONDITION_UNKNOWN",
-};
-
-/**
  * `adr`'s seats: two. Its verbs read decision records off disk rather than writing to GitHub, so
  * most of the base's table is about facts they cannot establish. What they do establish is that the
  * record a caller named is not there, and that the read which would have proven it failed.
@@ -268,7 +248,6 @@ export const PATTERN_SEATS: SharedSeats = {
 export const ALIGNED_GROUPS: Readonly<Record<string, SharedSeats>> = {
 	adr: ADR_SEATS,
 	build: BUILD_SEATS,
-	eval: EVAL_SEATS,
 	governance: GOVERNANCE_SEATS,
 	hook: HOOK_SEATS,
 	epic: BUILD_SEATS,

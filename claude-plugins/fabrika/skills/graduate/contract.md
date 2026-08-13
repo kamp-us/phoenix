@@ -19,7 +19,7 @@ those citations are non-normative and an implementer opens none of them to build
 
 **The group name.** `graduate`, free against
 [`src/registry.ts`](../../../../packages/fabrika-cli/src/registry.ts) when this was written; the
-registered groups were `adr build epic eval hook ledger plan report review review-ui ship spend
+registered groups were `adr build epic hook ledger plan report review review-ui ship spend
 triage ui wire`. That list grows most weeks, so read the file rather than this sentence. Here the
 group and the skill share the name, which the sibling groups do not do (`grill`/`grilling`,
 `map`/`wayfinding`) — `graduate` is already a noun, and inventing a second spelling for it would

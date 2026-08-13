@@ -624,7 +624,7 @@ pass on one run and fail on the next — an n=1 oracle cannot separate *"good en
 lucky"*, and a per-run token saving hides the extra write-code→review→repair cycles a
 fail-prone model forces. The **graded** apparatus generalizes §1/§3/§4 from *binary-per-run* to
 *graded-over-corpus*, and it is built and committed as the
-[`eval-harness`](../packages/fabrika-cli/src/eval) tool (epic
+`eval-harness` tool (epic
 [#1842](https://github.com/kamp-us/phoenix/issues/1842)), extending ADR
 [0146](../.decisions/0146-graded-corpus-oracle-for-stochastic-model-swap.md) /
 [0112](../.decisions/0112-token-measurement-no-quality-compromise-methodology.md). The three
@@ -650,7 +650,7 @@ generalizations, one per §1/§3/§4 part:
 
 **Runnable entry point + corpus location** (the role §2's `jq` one-liner plays for token-spend).
 The committed ground truth is one manifest per stage under
-[`eval-harness/corpus/`](../packages/fabrika-cli/src/eval/corpus)
+`eval-harness/corpus/`
 (`triage.json`, `write-code.json`, `review-code.json`). Validate a manifest against the schema
 with the one live subcommand today:
 
@@ -666,7 +666,7 @@ The pure library cores are `corpus.ts` (the `CorpusManifest` format + `decodeMan
 (`eval-harness report` — pass-rate + token spend + churn cost per stage × model) is the pending
 aggregation slice ([#1853](https://github.com/kamp-us/phoenix/issues/1853)), not yet on `main`;
 until it lands, the graded rows are produced by the `runner.ts` cores and the corpus is exercised
-by `eval-harness check`. See the tool [README](../packages/fabrika-cli/src/eval/README.md)
+by `eval-harness check`. See the tool README
 for the full data model and the corpus-curation policy.
 
 **This apparatus feeds a tiering decision — it does not make it.** Whether any stage runs on a

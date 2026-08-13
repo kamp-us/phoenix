@@ -3,7 +3,7 @@
 **Skill:** [`review-ui`](SKILL.md) · **Authoring brief:** [#4718](https://github.com/kamp-us/phoenix/issues/4718) · **Date:** 2026-08-09
 
 The verbs land in `packages/fabrika-cli/` under the **`review-ui`** subcommand group, registered
-in `packages/fabrika-cli/src/registry.ts` beside the shipped `adr`, `build`, `eval`, `report`,
+in `packages/fabrika-cli/src/registry.ts` beside the shipped `adr`, `build`, `report`,
 `review`, `spend`, `triage` and `wire` groups. The
 [CLI interface convention](../../docs/cli-interface-convention.md) governs every verb; where this
 spec and that doc disagree, the doc wins and this spec is the bug. **None of these verbs exists yet** —
