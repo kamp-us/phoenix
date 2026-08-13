@@ -87,8 +87,9 @@ EOF
 On FAIL, `next` answers `retry-slice` carrying the Fix-First line — record it
 (`fabrika epic record 4300 --event retry-injected --slice C3`) and dispatch a fresh implementer
 with the retry brief (`fabrika epic brief 4300 --slice C3 --retry`); **the breaker is the verb's
-number, not your judgment in the moment**, and the implementer is fresh each retry so a stale
-context cannot carry a confabulated fix forward. On `escalate-slice`, record `breaker-tripped`; on
+number, not your judgment in the moment** — the cap is **2** on each axis, fail and dead counted
+separately and never summed — and the implementer is fresh each retry so a stale context cannot
+carry a confabulated fix forward. On `escalate-slice`, record `breaker-tripped`; on
 the fail axis, `fabrika build push` the branch (the terminal vocabulary's declared disposition),
 post the escalation via `fabrika build note`, record `run-halted`, and end at the matching terminal.
 

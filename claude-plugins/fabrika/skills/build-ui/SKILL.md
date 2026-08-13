@@ -174,9 +174,9 @@ Cap at round 3 → `ESCALATED`.
 
 fabrika installs into repos that are not phoenix, so every repo surface this skill leans on is
 declared here. The when-missing vocabulary is closed — **fail-loud** (stop, name the missing
-surface by its repo-relative path, point at front-door), **degrade** (continue with a narrower
-answer, stated), **bootstrap** (front-door creates it) — and it is the same table in every fabrika
-skill, so one reader parses all of them. No row here dead-ends on a bare error.
+surface by its repo-relative path, point at front-door, **and file the gap**), **degrade** (continue
+with a narrower answer, stated), **bootstrap** (front-door creates it) — and it is the same table in
+every fabrika skill, so one reader parses all of them. No row here dead-ends on a bare error.
 
 | Must exist | Why this skill needs it | When missing |
 | --- | --- | --- |

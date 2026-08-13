@@ -348,6 +348,8 @@ lands on exactly one terminal above; `0` is disambiguated by which verb produced
 
 `wayfinding` is the **fog-only** wrapper; `grilling` and `prototyping` are siblings it **invokes and
 never reimplements**, and `prototyping` is standalone-first with this skill one caller among others.
+Beyond those siblings, **fabrika calls no skill outside fabrika** — a capability it needs it
+reimplements here rather than reaching for the v1 skill that has it.
 **The smallest path is first-class**: one-session work skips this skill entirely. **One fresh
 session per frontier ticket**, with resolutions summarized back to the map — the lane marker is what
 makes that checkable rather than remembered. The verb inventory and every grammar live in

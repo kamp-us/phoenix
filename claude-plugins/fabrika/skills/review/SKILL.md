@@ -57,10 +57,12 @@ issue whose criteria are not met.
 the verb. There are two, and only one of them is a defect:
 
 - **The conversation-authored artifact** — a doc or vocabulary surface that records a settled
-  choice, so no issue ever tracked it. Legitimate: gate it on its rubric alone, say in the verdict
-  body that it is conversation-authored with no acceptance criteria to bind, and do **not** refuse
-  it for the missing link. Refusing here deadlocks the merge on a verdict that could never be
-  produced.
+  choice, so no issue ever tracked it. A `.glossary/**` vocabulary change is one of these, in
+  whichever class its files land — the register is conversation-authored by design, so an issueless
+  one is legitimate here and **never** the broken seam below. Gate it on its rubric alone, say in
+  the verdict body that it is conversation-authored with no acceptance criteria to bind, and do
+  **not** refuse it for the missing link. Refusing here deadlocks the merge on a verdict that could
+  never be produced.
 - **A code or skill diff that should have had an issue** — a broken seam, and a FAIL. There is no
   contract to grade the behaviour against, so no namespace over that diff can PASS; name the missing
   link as the finding and stop, rather than grading against nothing.
@@ -77,8 +79,8 @@ bytes it read **at the commit you scoped** — pass step 1's head as `--sha`, an
 verdict is a label; bytes read out of that commit are the immunity. Apply the matching rubric file
 to each class's slice: code → [rubrics/code.md](rubrics/code.md) · doc →
 [rubrics/doc.md](rubrics/doc.md) · skill → [rubrics/skill.md](rubrics/skill.md). Editorial craft on
-any prose surface: apply **fabrika's** shared writing rubric skill verbatim; the doc rubric's
-prose-craft line is the fallback until it lands.
+any prose surface: apply **fabrika's** shared writing rubric skill verbatim, never v1's copy; the
+doc rubric's prose-craft line is the fallback until it lands.
 
 **No class re-executes what CI enforces** — a local re-run can report another checkout's cached
 green as this PR's. The code class's execution evidence is the structural CI-at-head read, refusing
@@ -170,9 +172,9 @@ a verb.
 
 fabrika installs into repos that are not phoenix, so every repo surface this skill leans on is
 declared here. The when-missing vocabulary is closed — **fail-loud** (stop, name the missing surface
-by its repo-relative path, point at front-door), **degrade** (continue with a narrower answer,
-stated), **bootstrap** (front-door creates it) — and it is the same table in every fabrika skill, so
-one reader parses all of them. No row here dead-ends on a bare error.
+by its repo-relative path, point at front-door, **and file the gap**), **degrade** (continue with a
+narrower answer, stated), **bootstrap** (front-door creates it) — and it is the same table in every
+fabrika skill, so one reader parses all of them. No row here dead-ends on a bare error.
 
 | Must exist | Why this skill needs it | When missing |
 | --- | --- | --- |

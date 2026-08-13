@@ -18,6 +18,10 @@ renders it from the trail, so it cannot be forgotten or fudged.
 cleared fog into buildable work. Compaction is not graduation. If what you want is to keep working,
 you want `handoff`; if the questions are answered and something should get built, you are here.
 
+**`graduate` names several things, and they are told apart by namespace, never by vibe.** A bare
+`graduate` in a fabrika or ideation context is this skill; anything else is another namespace's and
+does something else.
+
 **A non-zero exit is never an answer, and you read the code before the bytes.** Three
 kinds, and collapsing any two is the mistake:
 
@@ -48,7 +52,8 @@ things — three on the same-spec branch: one new issue carrying `status:needs-t
 comment on the source, and, when step 3 finds the spec already filed, one note comment on **that**
 issue (one this skill did not create). It cuts no branch, pushes nothing, opens no pull request,
 merges nothing, and — load-bearing — it **writes no `type:`, priority or milestone label and closes
-nothing**.
+nothing**. Closing a source is `pipeline-cli tracker graduate`, a different CLI's verb that does the
+opposite of this skill; reaching for it here would close the trail this skill must leave open.
 
 ## 1 — Read the trail, and check it has not already graduated
 
