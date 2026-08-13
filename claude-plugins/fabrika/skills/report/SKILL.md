@@ -83,10 +83,10 @@ EOF
 
 **When the verb refuses, fix the input and run it again.** A refusal names one thing — an empty
 section, a machine-local path in the body, a body that never reached stdin, a title that classifies
-— and each is a thing to correct. A refusal is never a signal to post some other way: that is the
-path #3945 walked, where a blocked command was retried through a form that passes the body as a
-*file path*, and the path text posted instead of the file's contents. That is how a machine-local
-path reaches a public artifact while the poster reads success (#3086, #3173).
+— and each is a thing to correct. **A refusal is never a signal to post some other way.** Retrying a
+blocked command through a form that passes the body as a *file path* posts the path text instead of
+the file's contents, which is how a machine-local path reaches a public artifact while the poster
+reads success.
 
 Use `--redact` when a machine-local path is genuinely part of the evidence — reporting a leak
 incident is the case it exists for. It masks each path down to its class and says so; it never
