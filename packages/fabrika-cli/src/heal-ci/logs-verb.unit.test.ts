@@ -130,6 +130,18 @@ describe("runLogs refuses rather than answering `no failed steps`", () => {
 		expect(out.stdout).toBe("");
 	});
 
+	it("refuses a purged log on 15 when the platform answers 404 rather than 410", async () => {
+		const out = await run([
+			[PULL, pull()],
+			[CHECK_RUNS, checkRuns(1, [failed("unit tests")])],
+			[RUNS_AT_HEAD, runsAtHead(1, [{id: 77}])],
+			[JOBS, jobs(1, [{id: 441, name: "unit tests"}])],
+			[JOB_LOG, errOut("gh: Not Found (HTTP 404)")],
+		]);
+		expect(out.code).toBe(LOGS_EXPIRED);
+		expect(out.stdout).toBe("");
+	});
+
 	it("refuses an unreadable check-run read on 11", async () => {
 		const out = await run([
 			[PULL, pull()],

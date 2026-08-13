@@ -327,8 +327,13 @@ export const diagnoseOne = (
 			required.length > 0 && link.kind === "other" && !pull.draft && pull.state === "open";
 
 		// Arm 6, REST-only: the contract's unresolved-thread half has no REST form and the group takes
-		// no GraphQL carve, so what is derivable is a live CHANGES_REQUESTED from a human, and a
-		// control-plane diff with no approval at this head.
+		// no GraphQL carve, so what is derivable is a live CHANGES_REQUESTED review — the contract's
+		// non-`Bot` qualifier scopes the thread clause, not this one — and a control-plane diff with no
+		// approval at this head. The narrowing is disclosed at runtime below, the way arm 3's skip is:
+		// a half-evaluated axis a caller cannot see is indistinguishable from one that passed.
+		notices.push(
+			`${VERB}: the unresolved-thread clause has no REST form under this group's no-GraphQL rule — that half of the arm-6 axis is UNIMPLEMENTED, so blocked-human is derived from reviews alone, never from threads.`,
+		);
 		const decisive = reviewed.value.reviews
 			.filter((review) => prefixMatch(review.commitId, bound))
 			.filter((review) => review.state === "APPROVED" || review.state === "CHANGES_REQUESTED")

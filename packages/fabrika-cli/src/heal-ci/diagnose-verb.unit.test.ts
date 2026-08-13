@@ -141,6 +141,13 @@ describe("runDiagnose answers", () => {
 		expect(out.stderr.join("\n")).toContain("UNPROBEABLE");
 	});
 
+	it("declares arm 6's unimplemented half on stderr rather than letting the class read whole", async () => {
+		const out = await run(script([[PULL, pull({assignees: ["usirin"]})]]));
+		expect(out.code).toBe(0);
+		expect(out.stderr.join("\n")).toContain("UNIMPLEMENTED");
+		expect(out.stderr.join("\n")).toContain("derived from reviews alone");
+	});
+
 	it("reads an assignee whose activity is inside the dwell as attended, not as a strand", async () => {
 		const out = await run(
 			script([[PULL, pull({assignees: ["usirin"], updatedAt: "2026-08-08T00:55:00Z"})]]),

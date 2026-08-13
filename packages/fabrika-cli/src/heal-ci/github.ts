@@ -70,6 +70,11 @@ export type LogRead =
  * `410 Gone` is the platform's own word for expired or purged logs, and it is a **verdict about the
  * run** rather than a failed read — folding it into a transport failure would tell the caller to
  * retry a read that can never succeed.
+ *
+ * `404` is read the same way, and only because of where this call sits: the caller has already read
+ * the run and enumerated its jobs over this same token, so a job id this endpoint denies is one whose
+ * bytes are gone rather than one the token cannot see. Outside that ordering a `404` would be
+ * ambiguous, and folding could-not-read into proven-absent is the collapse the group forbids.
  */
 export const fetchJobLog = (repo: string, job: number): Shell<LogRead> =>
 	Effect.gen(function* () {
