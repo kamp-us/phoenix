@@ -1,11 +1,17 @@
 /**
  * The one exit table every `hook` verb allocates from.
  *
- * `0`, `1`, `2` and `127` are reserved by the interface convention (`../verb.ts`). The three seats
+ * `0`, `1`, `126` and `127` are reserved by the interface convention (`../verb.ts`). The three seats
  * below keep apart the three ways a harness envelope fails to arrive, which is the whole reason a
  * hook verb needs its own table: "stdin held nothing", "stdin held bytes that are not an envelope"
  * and "fd 0 could not be read" are three different claims, and collapsing any two of them lets a
  * hook report a proven negative over evidence it never saw (ADR 0092).
+ *
+ * **`2` is allocated by nothing, here or in any other group, and this is the group that makes it a
+ * hard rule.** On `PreToolUse` exit `2` is the harness's one blocking code (`./harness-exit.ts`), so
+ * a fabrika verb that seats any meaning on it denies a tool call as a side effect of its exit
+ * status. `NO_IMPLEMENTATION` used to sit there, which made a fabrika that could not bootstrap block
+ * every `Task`/`Workflow` spawn — the inverse of ADR 0250's ruled fail-open polarity (#5423).
  *
  * {@link EMPTY_STDIN} is *imported* from `report`, not restated as `3`: it is the same fact the
  * writing verbs already seat there, so the alignment is by identity rather than by assertion
@@ -19,13 +25,12 @@
  */
 
 import {EMPTY_STDIN as REPORT_EMPTY_STDIN} from "../report/codes.ts";
+import {NO_IMPLEMENTATION} from "../verb.ts";
 
 /** The answer is on stdout. Restated because {@link HOOK_EXIT_TABLE} spans the whole matrix. */
 const ANSWER = 0;
 /** Usage error, or the verb failed to run. */
 const FAILED = 1;
-/** No implementation could be resolved — the dependency graph never loaded (`../bin.ts`). */
-const NO_IMPLEMENTATION = 2;
 
 /** Stdin was read and held nothing. An absent envelope is not an envelope to judge. */
 export const EMPTY_STDIN = REPORT_EMPTY_STDIN;
@@ -67,7 +72,6 @@ export interface ExitCodeRow {
 export const HOOK_EXIT_TABLE: ReadonlyArray<ExitCodeRow> = [
 	{code: ANSWER, meaning: "the answer is on stdout"},
 	{code: FAILED, meaning: "usage error, or the verb failed to run"},
-	{code: NO_IMPLEMENTATION, meaning: "no implementation could be resolved"},
 	{code: EMPTY_STDIN, meaning: "stdin was read and held nothing"},
 	{
 		code: MALFORMED_ENVELOPE,
@@ -75,5 +79,6 @@ export const HOOK_EXIT_TABLE: ReadonlyArray<ExitCodeRow> = [
 	},
 	{code: ENVELOPE_UNKNOWN, meaning: "fd 0 could not be read — UNKNOWN, never malformed"},
 	{code: WRONG_EVENT, meaning: "the envelope is a harness event this verb does not judge"},
+	{code: NO_IMPLEMENTATION, meaning: "no implementation could be resolved"},
 	{code: NEVER_RAN, meaning: "the verb never ran (unresolved binary)"},
 ];

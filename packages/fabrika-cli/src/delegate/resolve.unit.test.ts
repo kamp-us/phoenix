@@ -5,6 +5,7 @@ import {NodeServices} from "@effect/platform-node";
 import {Effect, PlatformError} from "effect";
 import {describe, expect, it} from "vitest";
 import {faultingShell, signalledExitError, signalledShell} from "../fakes.test-support.ts";
+import {NO_IMPLEMENTATION} from "../verb.ts";
 import type {LocalInstall} from "./local.ts";
 import {
 	foreignCheckoutRefusal,
@@ -229,7 +230,7 @@ describe("signalFromError", () => {
 });
 
 describe("spawnDelegate", () => {
-	it("answers 2 — not the child's verdict — when the spawn itself faults", async () => {
+	it("answers NO_IMPLEMENTATION — not the child's verdict — when the spawn itself faults", async () => {
 		const outcome = await Effect.runPromise(
 			spawnDelegate({
 				execPath: "/usr/bin/node",
@@ -239,10 +240,10 @@ describe("spawnDelegate", () => {
 				invocationDir: "/repo/packages/fabrika-cli",
 			}).pipe(Effect.provide(faultingShell)),
 		);
-		expect(outcome).toEqual({_tag: "exited", status: 2});
+		expect(outcome).toEqual({_tag: "exited", status: NO_IMPLEMENTATION});
 	});
 
-	it("reports a signal-killed child as signalled, never as the exit-2 could-not-run diagnosis", async () => {
+	it("reports a signal-killed child as signalled, never as the could-not-run diagnosis", async () => {
 		const outcome = await Effect.runPromise(
 			spawnDelegate({
 				execPath: "/usr/bin/node",

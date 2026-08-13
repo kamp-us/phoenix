@@ -42,6 +42,7 @@ Named because a spec that leaves the substrate open makes the implementer guess 
 | `ship scope` | one PR's state, head, linked issue, class set with required namespaces, and §CP four-state classification | path partition against single-sourced maps, count-checked reads, and closing-keyword resolution are mechanical; what each state means for the run is judgment |
 | `ship cp-approval` | the ADR 0175 cardinality discharge: `discharge` / `stop` / `n/a` from head-bound signals only | the roster-cardinality case split and head-binding are a transcription of a ruled table; nothing in it is judgment (#2435 is what judgment did) |
 | `ship gate` | the verdict conjunction: every required namespace's in-force, current-head verdict, §CP advisory resolution and native-review fold included | in-force resolution (write-stamp ordering, staleness, authorization) is mechanical; what to do with `blocked` is judgment |
+| `ship floor` | whether the governance floor binds on this diff and is discharged at this head — `n/a` / `satisfied` / a refusal CI reds on | asking `ship gate` for the one `governance` namespace and seating the answer on an exit code is mechanical; nothing about the verdict itself is decided here |
 | `ship checks` | the head CI rollup — green/red/pending with the running/wedged split and the zero-checkset facts; `--wait` adds the bounded settle poll | latest-per-context dedupe, status vocabulary, and a budgeted poll are mechanical; the wedge remedy is a human's |
 | `ship evidence` | the SHA-bound run-evidence bundle read as five states: present / pending / failed / absent / unknown | the lookup chain and the positive-evidence rules for each state are mechanical; none of it is judgment |
 | `ship threads` | every unresolved review thread, fully paginated, with per-thread class facts | pagination, count proof, and author-type classification are mechanical; nit-vs-substantive is THE retained judgment and never enters this verb |
@@ -190,7 +191,7 @@ Stated once rather than repeated per block.
 
 ### The shared exit taxonomy
 
-All thirteen verbs allocate from one internal table, so a code means one thing across this
+All the verbs allocate from one internal table, so a code means one thing across this
 group. Where the codes overlap the shipped `report`/`triage`/`review` seats (`3`, `5`, `6`,
 `7`, `8`, `9`, `10`, `11`, `12`, `13`) they are **imported from the shipped package**
 (`packages/fabrika-cli/src/report/codes.ts`, `src/triage/codes.ts`, `src/review/codes.ts` —
@@ -203,7 +204,7 @@ authority.
 |---|---|---|
 | `0` | the answer is on stdout — including `stop`, `red`, `ejected`, `n/a`: an answer, not an error | all |
 | `1` | usage error, unresolvable repo, or the verb failed to run | all |
-| `2` | no implementation could be resolved | all |
+| `126` | no implementation could be resolved | all |
 | `3` | stdin was read and held nothing | `resolve`, `note` |
 | `4` | *(deliberate gap — `report file`'s body-section seat; no verb here performs one)* | — |
 | `5` | the **authored** text carries a machine-local path | `resolve`, `note` |
@@ -214,14 +215,15 @@ authority.
 | `10` | a supplied classification value is off the closed vocabulary — an unknown `--require` namespace, a bad `--site` | `gate`, `disarm` |
 | `11` | a **precondition read failed** — nothing was proven and (for a write) nothing was written | all |
 | `12` | refused: the live head moved past the inspected `--sha` — a mutation formed over a tree that is no longer the PR | `enqueue`, `nudge` |
-| `13` | refused: a read completed but its scope is **provably incomplete** — received short of a declared count, or (where the platform declares none) pagination never reached a terminal page | `scope`, `cp-approval`, `gate`, `checks`, `evidence`, `threads`, `nudge`, `release`, `reconcile` |
+| `13` | refused: a read completed but its scope is **provably incomplete** — received short of a declared count, or (where the platform declares none) pagination never reached a terminal page | `scope`, `cp-approval`, `gate`, `checks`, `evidence`, `threads`, `nudge`, `release`, `reconcile`, `floor` |
 | `14`, `15` | *(deliberate gaps — `review`'s ACL and append-only seats; no verb here performs either)* | — |
 | `16` | refused: the target is **proven not in the state this write acts on** — nothing was mutated | `resolve`, `nudge` |
 | `17` | refused: the nudge's close landed and the reopen is **unconfirmed — the PR may be left closed**; a human re-opens before anything else happens | `nudge` |
+| `18` | refused: the diff touches a governance root and its `governance` verdict is **not** a head-bound PASS — `absent`, `stale` or `fail`. The one red that means *a human owes this PR a verdict*, kept off `16` so a CI job can tell it from "the floor could not be resolved" | `floor` |
 | `127` | the verb never ran (unresolved binary) | all |
 
 **This matrix owns what a code *means*; the per-verb tables own what *triggers* it.** Every
-verb can return `0`, `1`, `2` and `127` with the meanings above, stated here and nowhere else;
+verb can return `0`, `1`, `126` and `127` with the meanings above, stated here and nowhere else;
 the per-verb "Exit status" tables enumerate only that verb's own proven outcomes, `3` and up,
 phrased as that verb's trigger. (The one-fact-one-home rule; the `/triage` contract shipped the
 ten-places drift this prevents.)
@@ -661,6 +663,141 @@ ns	governance	absent	-
   because the fold lives inside the same verb.
 - #1932 / #2005 / ADR 0111/0151/0226 — the advisory carrier's resolution rules, including the
   forged-marker workaround this forbids and the PASS-only rule.
+
+---
+
+## `ship floor`
+
+**Invocation**
+
+```
+fabrika ship floor 4321 --sha 03135b91 [--repo <owner/name>] [--json]
+```
+
+**Inputs**
+
+| Flag | Type | Required | Default | Description |
+|---|---|---|---|---|
+| *(positional)* | integer | yes | — | the pull-request number |
+| `--sha` | string | yes | — | the head the answer binds to (7–40 lowercase hex) |
+| `--repo` | string | no | resolved | the repository |
+| `--json` | boolean | no | `false` | emit the result object |
+
+**Output** — machine channel. Two lines: `floor\t<satisfied|n/a>\t<sha>` then
+`ns\tgovernance\t<pass|->`. With `--json`, an object with keys `outcome`, `sha`, `namespace`,
+`state` and `scanned`.
+
+**`n/a` is an answer about the diff, never a discharged verdict.** It means the changed files touch
+none of the four governance roots, so the floor does not bind — and the verb says so on stderr, in
+those words, because "the check was green" is exactly the reading that would make this gate
+decorative for the diffs it does not cover.
+
+<a id="the-mechanism-choice"></a>
+### Why a caller verb, and not a new exit code on `ship gate` (#5408)
+
+The floor had to become **machine-binding**: CI must read the governance verdict on a governance-root
+diff and red without it (founder ruling, 2026-08-11, routed onto #5408). Two mechanisms were on the
+table and the choice decides whether `gate-verb.ts` changes at all. **The caller was chosen.**
+
+- **Rejected — reseat `blocked` on the `3`+ proven-outcome band inside `ship gate`.** `blocked` is an
+  answer the verb *produced*, and `../../docs/cli-interface-convention.md` reserves `0` for exactly
+  that; moving it would break the convention's answer/refusal split for every caller at once — the
+  `ship` skill's step 3, which reads the `ns` lines to route repair, most of all. A gate that
+  refuses instead of answering also cannot report *which* namespace blocked, because `refuse()`
+  hardcodes empty stdout.
+- **Rejected — parse `gate\tblocked\t<sha>` in the workflow's `run:` step.** That puts the decision
+  in bash, which ADR 0228 forbids: a script relays a verb's answer and never derives the decision
+  itself. It would also need a second step to decide whether the floor applies at all, and that step
+  would be a second copy of `GOVERNANCE_ROOTS` that nothing reds when it drifts (#4604).
+- **Chosen — `ship floor`, a caller verb whose refusal *is* the decision.** `ship gate` is untouched
+  and keeps answering; `ship floor` asks it for the one `governance` namespace, reads the row back
+  and seats a non-PASS on `18`. The workflow relays an exit code and derives nothing. The verdict
+  resolution stays in one place, so there is no rival answer to drift.
+
+`ship floor` is therefore **not** a second conjunction and **not** an enqueue decision — `ship gate`
+remains the single merge authority. It reads one namespace, its own group's floor, and decides
+nothing about the others.
+
+### It refuses on WRONG, not only on MISSING
+
+The recurring defect is a guard that fires when the guarded thing is *absent* and stays silent when
+it is *present and wrong* (#5416, #4887). All four of these red on `18`, and each has a unit test:
+
+| The PR carries | Resolves | Why it still reds |
+|---|---|---|
+| no governance marker at all | `absent` | the #5293 / #5333 shape — the fail-open this verb closes |
+| `governance: FAIL @ <head>` | `fail` | a verdict was formed and it said no |
+| `governance: PASS @ <other-head>` | `stale` | the PASS attests a tree that is not this one (ADR 0058) |
+| `governance: PASS @ <head>` from an author without write+ | `absent` | the ADR 0055 ACL gate drops it before the polarity is read |
+
+**Exit status**
+
+| Code | Trigger |
+|---|---|
+| `7` | the PR is proven absent (404) or closed, or has zero changed files — whether it touches a governance root is unanswerable (ADR 0092) |
+| `11` | the PR, its changed-file list, or the conjunction underneath could not be read — the floor is UNKNOWN, never `n/a` |
+| `13` | the changed-file enumeration is provably short — a governance root could sit in the part nobody read |
+| `18` | the diff touches a governance root and its `governance` verdict at this head is `absent`, `stale` or `fail` |
+
+**Errors**
+
+| Message (stderr) | Code | Kind |
+|---|---|---|
+| `ship floor: PR #<n> not found in <repo>.` | 7 | refusal |
+| `ship floor: PR #<n> has zero changed files — whether it touches a governance root is unanswerable (ADR 0092).` | 7 | refusal |
+| `ship floor: cannot read PR #<n> in <repo>: <reason> — whether the floor binds is UNKNOWN, never "n/a".` | 11 | refusal |
+| `ship floor: cannot read the changed-file list for #<n>: <reason> — whether the floor binds is UNKNOWN, never "n/a".` | 11 | refusal |
+| ``ship floor: `ship gate` answered without a resolvable governance row — the floor is UNKNOWN, never discharged.`` | 11 | refusal |
+| `ship floor: received <k> of <m> changed files — a governance root could sit in the part nobody read.` | 13 | refusal |
+| `ship floor: #<n> touches a governance root and its governance verdict at <sha> is <state> — <remedy> (#5408).` | 18 | refusal |
+| `ship floor: #<n>'s diff touches no governance root, so the floor does not bind — this is an answer about the diff, not a discharged verdict.` | 0 | notice |
+
+**Scope** — one PR's changed-file list, count-checked against the declared total, plus whatever
+`ship gate` scans for the one required namespace (its own file list, the comments, the reviews and
+the comment authors' ACL). Both scanned counts reach stderr, this verb's first.
+
+**Where it is enforced.** `.github/workflows/governance-floor.yml`, job `floor`, on every
+`pull_request` with no `paths:` filter — the verb's own read of the changed files is the path
+decision, so there is no YAML copy of the root list to drift. The job relays the exit code and does
+nothing else. Making that context **required** is a repository-ruleset change and therefore a
+human's; until it is required the check is red-but-not-blocking, which is a weaker state than the
+ruling asks for and is recorded here rather than glossed.
+
+**Examples**
+
+```
+$ fabrika ship floor 5237 --sha be0ece1aac259dd906e257529ce3294441f16e85
+ship floor: scanned 8 changed files; 8 declared.
+ship floor: #5237's diff touches no governance root, so the floor does not bind — this is an answer about the diff, not a discharged verdict.
+floor	n/a	be0ece1aac259dd906e257529ce3294441f16e85
+ns	governance	-
+$ echo $?
+0
+```
+
+```
+$ fabrika ship floor 5481 --sha c9deb6047acc69da85b033a46b1fe05d2e0f5b91
+ship floor: scanned 1 changed file; 1 declared.
+ship gate: scanned 1 changed file; 1 declared.
+ship gate: scanned 2 comments; 2 declared.
+ship gate: scanned 0 reviews; pagination exhausted.
+ship floor: #5481 touches a governance root and its governance verdict at c9deb6047acc69da85b033a46b1fe05d2e0f5b91 is absent — no authorized governance verdict at this head — run the `governance` skill and emit one with `fabrika governance post` (#5408).
+$ echo $?
+18
+```
+
+**Grounding**
+
+- #5408 — the substituted control did not bind. `requiredWithFloor` was wired and correct, no
+  workflow invoked `ship gate` at all, and `blocked` exited 0, so #5293 and #5333 merged with no
+  governance verdict after the floor was live. The gap was the missing caller, not the floor.
+- ADR 0228 — a script relays a verb's answer and never derives the decision; that is why the
+  decision is a verb and the workflow step is one line.
+- #4604 — a path filter matching nothing presents as a pass, which is why this job has no `paths:`.
+- ADR 0055 / ADR 0058 — the write+ author gate and the SHA binding, both inherited from `ship gate`
+  rather than re-derived, which is what makes an unauthorized or stale PASS red here.
+- ADR 0092 — an unreadable answer reds. `11` and `13` are not softer than `18`; they are a different
+  fact, and neither is a pass.
 
 ---
 

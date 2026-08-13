@@ -15,6 +15,7 @@
  */
 import {Effect} from "effect";
 import {ChildProcess, type ChildProcessSpawner} from "effect/unstable/process";
+import {NO_IMPLEMENTATION} from "../verb.ts";
 import type {LocalInstall, LocalProbe} from "./local.ts";
 import type {SelfOrigin} from "./root.ts";
 
@@ -234,17 +235,17 @@ export const spawnDelegate = ({
 		Effect.catchTag("PlatformError", (cause): Effect.Effect<ChildOutcome> => {
 			const signal = signalFromError(cause);
 			if (signal !== undefined) return Effect.succeed({_tag: "signalled", signal});
-			// A spawn that never happened must not read as the child's own verdict. `2` is this
-			// package's reserved "could not resolve an implementation" code, distinct from `1` (a
-			// verb's usage error) and from `127` (nothing ran at all) — see the convention doc's
-			// rule 3 table.
+			// A spawn that never happened must not read as the child's own verdict.
+			// `NO_IMPLEMENTATION` is this package's reserved "could not resolve an implementation"
+			// code, distinct from `1` (a verb's usage error) and from `127` (nothing ran at all) —
+			// see the convention doc's rule 3 table.
 			return Effect.sync(() => {
 				console.error(
 					`fabrika: found a repo-local install but could not run it.\n` +
 						`  tried: ${execPath} ${binPath}\n` +
 						`  cause: ${cause.message}`,
 				);
-				return {_tag: "exited", status: 2};
+				return {_tag: "exited", status: NO_IMPLEMENTATION};
 			});
 		}),
 	);

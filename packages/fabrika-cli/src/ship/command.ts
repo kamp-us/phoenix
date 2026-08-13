@@ -19,6 +19,7 @@ import {runCpApproval} from "./cp-approval-verb.ts";
 import {runDisarm} from "./disarm-verb.ts";
 import {runEnqueue} from "./enqueue-verb.ts";
 import {runEvidence} from "./evidence-verb.ts";
+import {runFloor} from "./floor-verb.ts";
 import {runGate} from "./gate-verb.ts";
 import {runNote} from "./note-verb.ts";
 import {runNudge} from "./nudge-verb.ts";
@@ -115,6 +116,19 @@ const gate = leafCommand(
 	Command.withShortDescription("The verdict conjunction over every required namespace."),
 	Command.withDescription(
 		"Resolve the verdict conjunction over every required namespace at one head. First stdout line is `gate\\t<satisfied|blocked>\\t<sha>`, then one `ns\\t<namespace>\\t<pass|fail|absent|stale>\\t<marker|advisory|review-fold|->` line per required namespace, in the order required; `satisfied` iff every one reads pass, and the coverage of the required set is asserted before that word is printed (#4520). In-force resolution is head-bound-first then by write stamp (#4189/#4200), ACL-gated fail-closed (ADR 0055). Both `absent` and `stale` block (#3944). The required set is a floor the verb raises from the diff itself: a PR touching `.decisions/`, `.claude/`, `.github/` or `claude-plugins/` gates on `governance` whether or not --require named it, so no session can turn the requirement off by omission (#5036). Exits 7 (PR proven absent or closed, or the diff has zero changed files), 10 (a --require value is not a gateable namespace), 11 (the changed-file list, comments, reviews or the ACL could not be read — the conjunction is UNKNOWN, never blocked and never satisfied), 13 (the changed-file or comment enumeration is provably short of the declared count, or the review read — which the platform gives no count for — never reached a terminal page with no `next` link). Example: fabrika ship gate 4321 --sha 03135b91 --require review-code --require review-doc",
+	),
+);
+
+const floor = leafCommand(
+	"floor",
+	{pr: prArg, sha: shaFlag, repo: repoFlag, json: jsonFlag},
+	Effect.fn(function* ({pr, sha, repo, json}) {
+		yield* emit(yield* runFloor({pr, sha, repo: Option.getOrNull(repo), json, env: process.env}));
+	}),
+).pipe(
+	Command.withShortDescription("Whether a governance-root diff carries its governance verdict."),
+	Command.withDescription(
+		"Decide whether the governance floor binds on this PR at one head, and seat the answer on an exit code a CI job can red on. Prints `floor\\t<satisfied|n/a>\\t<sha>` then `ns\\tgovernance\\t<pass|->`; `n/a` is a proven answer about the diff — it touches no governance root — and never a discharged verdict. The verdict itself is `ship gate`'s, asked for the one `governance` namespace, so this is not a second conjunction and it decides nothing about enqueue. Exits 7 (PR proven absent or closed, or zero changed files), 11 (the PR, its file list or the conjunction could not be read — the floor is UNKNOWN, never n/a), 13 (the changed-file enumeration is provably short — a governance root could sit in the part nobody read), 18 (the diff touches a governance root and its governance verdict is absent, stale or fail — the one refusal that means a human owes this PR a verdict, #5408). Example: fabrika ship floor 4321 --sha 03135b91",
 	),
 );
 
@@ -353,6 +367,7 @@ export const shipCommand = Command.make("ship").pipe(
 		scope,
 		cpApproval,
 		gate,
+		floor,
 		checks,
 		evidence,
 		threads,

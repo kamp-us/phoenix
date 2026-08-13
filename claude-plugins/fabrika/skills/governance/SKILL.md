@@ -221,7 +221,7 @@ run ends as exactly one of:
 - **verdict PASS** — swept or hand-read, no contradiction and no weakening found.
 - **verdict FAIL** — a named contradiction or a named weakening, with the line and the invariant.
 - **UNKNOWN — could not determine** — a corpus, diff or commit that could not be **read** (`11`,
-  `13`), or a verb that could not run at all (`1`, `2`, `127`). Never a verdict, never read as clean.
+  `13`), or a verb that could not run at all (`1`, `126`, `127`). Never a verdict, never read as clean.
 - **refused on proven absence or zero scope** (`7`) — the target is provably not there, or the scan
   would have run over nothing. A *fact about the repository*, not a failed read: that is why `7` and
   `11` are two codes. A missing readout artifact routes to front-door, not to a verdict.

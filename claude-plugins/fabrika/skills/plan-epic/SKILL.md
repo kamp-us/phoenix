@@ -278,7 +278,7 @@ epic — so read each code off the command that produced it and never off this l
   reconcile — then state the one question and post it with `fabrika build note`.
 - `BACKED-OFF` — `15` at the claim: held by another lane. Nothing read, written, or released.
 - `STOPPED` — everything else that leaves the run UNKNOWN: `3`, `11`, `12`, an unrepairable `4`/`5`/`6`/`25`, a `10` you cannot
-  repair, `13` from `build tree` (no `ledger` verb seats a `13`), a `15` after the claim was won, and any `1`, `2` or `127` from any verb.
+  repair, `13` from `build tree` (no `ledger` verb seats a `13`), a `15` after the claim was won, and any `1`, `126` or `127` from any verb.
   Post the state for a successor with `fabrika build note` **when you hold the claim**; otherwise
   report the code.
 

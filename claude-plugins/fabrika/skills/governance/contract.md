@@ -142,7 +142,7 @@ package**, never from a sibling `contract.md`.
 |---|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
 | `0` | the answer is on stdout | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `1` | usage error, unresolvable repo, or the verb failed to run | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `2` | no implementation could be resolved | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `126` | no implementation could be resolved | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `3` | stdin was read and held nothing | — | — | — | — | ✓ | — | ✓ |
 | `4` | *(deliberate gap — `report file`'s body-section seat; no verb here composes body sections)* | — | — | — | — | — | — | — |
 | `5` | the **authored** text carries a machine-local path | — | — | — | — | ✓ | — | ✓ |
@@ -165,7 +165,7 @@ different spelling reds the alignment test with nothing in the failure naming wh
 this group's own `NOT_HARNESS_TOUCHING`.
 
 **This matrix owns what a code *means*; the per-verb tables own what *triggers* it.** Every verb can
-also return `0`, `1`, `2` and `127` with the meanings above, stated here and nowhere else; the
+also return `0`, `1`, `126` and `127` with the meanings above, stated here and nowhere else; the
 per-verb "Exit status" tables enumerate only that verb's own proven outcomes, `3` and up, phrased as
 that verb's trigger.
 
@@ -260,6 +260,14 @@ called that `satisfied`. `packages/fabrika-cli/src/ship/gate-verb.ts` now reads 
 changed-file list and raises the required set from it (`requiredWithFloor`) through the **same**
 `touchesGovernanceRoot` predicate `governance scope` and `ship scope` use — one derivation, three
 readers. So the requirement is a property of the diff, not of what a session remembered to type.
+
+**1c. …and the requirement had to be readable by something other than an agent. LANDED (#5408).**
+`ship gate` seats `blocked` at exit 0 and no workflow invoked it, so the floor bound on nothing but
+prose in the `ship` skill and two fabrika-tree PRs merged with no governance verdict after it
+shipped. `fabrika ship floor` reads the same conjunction for this one namespace and refuses on `18`
+when the verdict is absent, stale or fail; `.github/workflows/governance-floor.yml` relays that exit
+code. The mechanism choice and why the alternatives were rejected are recorded once, in
+[the `ship` contract](../ship/contract.md#the-mechanism-choice).
 
 **The founder ruled this instead of a §CP row** ([veto on
 #5036](https://github.com/kamp-us/phoenix/issues/5036#issuecomment-5234614633), 2026-08-10):
