@@ -6,14 +6,15 @@
  * that excluded the skills directory, so a skill change matched nothing and the gate reported green
  * over it — a mistake that presents as a pass. Here the same decision is run twice over the same
  * changed-path set, once under the shipped filter and once under a deliberately mis-scoped one, and
- * the assertion is that the mis-scoped run turns a `missing` red into a pass. That is the property
- * worth holding: not that the filter matches, but that a wrong filter is *visible* as the difference
- * between a red and a green.
+ * the assertion is that the mis-scoped run erases the measurement-debt line the correctly-scoped run
+ * prints. Since the graded demotion (#5498) neither run reds, so the visible difference moved from
+ * red-versus-green to what the report says — but the property is the same one: not that the filter
+ * matches, but that a wrong filter is *visible* in the artifact a reader acts on.
  *
  * **Which assertion catches a broken shipped filter — do not delete the siblings.** That
  * parameterised test passes its filter in explicitly, so it documents the failure mode and would
  * still pass if `SKILL_PATH_PREFIXES` were re-anchored wrong. The three assertions beside it are the
- * guard: `changedSkills(changed)` equals `["triage"]`, the same input reds `missing`, and
+ * guard: `changedSkills(changed)` equals `["triage"]`, the same input names the debt, and
  * `SKILL_PATH_PREFIXES` contains the skills directory. Break the constant and those three go red.
  */
 import {describe, expect, it} from "vitest";
@@ -41,6 +42,7 @@ import {
 	judgeScope,
 	judgeSpend,
 	latestPerCell,
+	REASON_CODES,
 	renderGate,
 	SKILL_PATH_PREFIXES,
 	unmeasuredLegs,
@@ -156,22 +158,27 @@ describe("the skill path filter (the #4604 reproduction)", () => {
 		expect(changedSkills(changed)).toEqual(["triage"]);
 	});
 
-	it("reds `missing` on a skill change with no recorded result", () => {
+	it("reports the debt by name on a skill change with no recorded result", () => {
 		const verdict = judgeGraded({
 			changedSkills: changedSkills(changed),
 			records: [],
 			head: head(HEAD),
 		});
-		expect(verdict.red?.reason).toBe("missing");
+		expect(verdict.red).toBeNull();
+		expect(verdict.line).toContain("triage");
+		expect(verdict.line).toContain("a measurement is owed");
 	});
 
-	it("turns that red into a PASS under a mis-scoped filter — the mistake presents as a green", () => {
+	it("erases that debt line under a mis-scoped filter — the mistake is still visible in the report", () => {
 		// #4604's own shape: a filter anchored inside `packages/` that never reaches a skills directory.
+		// Since the demotion (#5498) neither run reds, so what a wrong filter destroys is the DEBT
+		// LINE: the correctly-scoped run names the skill and what it owes, the mis-scoped one says the
+		// change touches no skill at all. That difference is what the property now holds onto.
 		const misScoped = changedSkills(changed, ["packages/pipeline-cli/src/"]);
 		expect(misScoped).toEqual([]);
 		const verdict = judgeGraded({changedSkills: misScoped, records: [], head: head(HEAD)});
-		expect(verdict.red).toBeNull();
 		expect(verdict.line).toContain("n/a");
+		expect(verdict.line).not.toContain("a measurement is owed");
 	});
 
 	it("anchors on the fabrika skills directory, not on a package path", () => {
@@ -246,51 +253,65 @@ describe("the regression floor", () => {
 	});
 });
 
-describe("the graded leg verifies the recorded head-bound result", () => {
+describe("the graded leg reports the recorded head-bound result and never reds (#5498)", () => {
 	const skills = ["triage"];
-
-	it("reds `missing` when nothing was recorded at all", () => {
-		expect(judgeGraded({changedSkills: skills, records: [], head: head(HEAD)}).red?.reason).toBe(
-			"missing",
-		);
-	});
-
-	it("names the cure and the run site on both skip-path reds — neither is terminal, neither is the lane's", () => {
-		const missing = judgeGraded({changedSkills: skills, records: [], head: head(HEAD)});
-		const stale = judgeGraded({
+	const missing = () => judgeGraded({changedSkills: skills, records: [], head: head(HEAD)});
+	const stale = () =>
+		judgeGraded({
 			changedSkills: skills,
 			records: [record({sha: OLDER, recordedAt: "2026-08-11T00:00:00Z", passed: 10, graded: 10})],
 			head: head(HEAD),
 		});
-		for (const verdict of [missing, stale]) {
-			expect(verdict.line).toContain("cure:");
+	const belowBar = () =>
+		judgeGraded({
+			changedSkills: skills,
+			records: [record({sha: HEAD, recordedAt: "2026-08-11T00:00:00Z", passed: 8, graded: 10})],
+			head: head(HEAD),
+		});
+	const unrecordable = () =>
+		judgeGraded({
+			changedSkills: skills,
+			records: [record({sha: HEAD, recordedAt: "2026-08-11T00:00:00Z", passed: 0, graded: 0})],
+			head: head(HEAD),
+		});
+
+	// The demotion's whole content: the four states that used to seat exit codes 21/18/7/22 now seat
+	// none. Asserted as one sweep so a state that quietly regains teeth cannot pass unnoticed.
+	it("reds on none of the four states that used to fail a PR", () => {
+		for (const verdict of [missing(), stale(), belowBar(), unrecordable()]) {
+			expect(verdict.red).toBeNull();
+			expect(verdict.line).toContain("REPORTED, NOT ENFORCED");
+		}
+	});
+
+	it("never presents a demoted state as a leg that passed — it is unmeasured, not measured", () => {
+		for (const verdict of [missing(), stale(), belowBar(), unrecordable()]) {
+			expect(verdict.status).toBe("unmeasured");
+		}
+	});
+
+	it("names the run site on every debt line — the lane that reads it cannot take the measurement", () => {
+		for (const verdict of [missing(), stale()]) {
+			expect(verdict.line).toContain("to clear this debt:");
 			expect(verdict.line).toContain("plain, non-worktree session");
 			expect(verdict.line).toContain("never inside a build lane");
 			expect(verdict.line).toContain("hands the measurement off");
 		}
 		// #5406 is the whole reason the site has to be named: the lane's harness refuses the runner, so
-		// "re-run the suite" without a site is an instruction the lane cannot follow.
-		expect(stale.line).toContain("#5406");
+		// "run the suite" without a site is an instruction the lane cannot follow.
+		expect(stale().line).toContain("#5406");
 	});
 
-	it("reds `stale` when the newest record is bound to an older commit", () => {
-		const verdict = judgeGraded({
-			changedSkills: skills,
-			records: [record({sha: OLDER, recordedAt: "2026-08-11T00:00:00Z", passed: 10, graded: 10})],
-			head: head(HEAD),
-		});
-		expect(verdict.red?.reason).toBe("stale");
-		expect(verdict.line).toContain(OLDER);
+	it("reports which head the newest record is bound to when it is not this one", () => {
+		expect(stale().line).toContain(OLDER);
 	});
 
-	it("reds `below-bar` on a recorded rate under the ruled bar", () => {
-		const verdict = judgeGraded({
-			changedSkills: skills,
-			records: [record({sha: HEAD, recordedAt: "2026-08-11T00:00:00Z", passed: 8, graded: 10})],
-			head: head(HEAD),
-		});
-		expect(verdict.red?.reason).toBe("below-bar");
+	it("still prints the score and the bar it fell under", () => {
+		const verdict = belowBar();
+		expect(verdict.line).toContain("0.8");
 		expect(verdict.line).toContain(String(GRADED_BAR));
+		if (verdict.status !== "unmeasured") throw new Error("a below-bar rate must stay unmeasured");
+		expect(verdict.notMeasured).toContain("release criterion");
 	});
 
 	it("passes a rate exactly at the bar — the bar is `at or above`", () => {
@@ -300,16 +321,11 @@ describe("the graded leg verifies the recorded head-bound result", () => {
 			head: head(HEAD),
 		});
 		expect(verdict.red).toBeNull();
+		expect(verdict.status).toBe("measured");
 	});
 
-	it("reds an UNRECORDABLE record as zero scope — a broken run is not a below-bar number", () => {
-		const verdict = judgeGraded({
-			changedSkills: skills,
-			records: [record({sha: HEAD, recordedAt: "2026-08-11T00:00:00Z", passed: 0, graded: 0})],
-			head: head(HEAD),
-		});
-		expect(verdict.red?.reason).toBe("zero-scope");
-		expect(verdict.line).toContain("UNRECORDABLE");
+	it("reports an UNRECORDABLE record as measuring nothing — never as a rate", () => {
+		expect(unrecordable().line).toContain("UNRECORDABLE");
 	});
 
 	it("takes the latest record per cell, so a re-run at the same head supersedes", () => {
@@ -433,37 +449,32 @@ describe("the folded verdict", () => {
 		const verdict = decideGate({
 			legs: [
 				judgeScope([]),
-				judgeGraded({changedSkills: ["triage"], records: [], head: head(HEAD)}),
+				judgeFloor({
+					scope: floorScope([mechanicalCase(1)], sidecar([armed(1)])),
+					rows: [row(1, "fail")],
+					deterministicCases: 1,
+				}),
 				judgeSpend({_tag: "Compared", comparison: comparison("above")}),
 			],
 		});
-		expect(verdict.reds.map((r) => r.reason)).toEqual(["zero-scope", "missing", "over-baseline"]);
+		expect(verdict.reds.map((r) => r.reason)).toEqual([
+			"zero-scope",
+			"regression-floor",
+			"over-baseline",
+		]);
 		expect(verdict.code).toBe(ZERO_SCOPE);
+	});
+
+	// The three graded seats keep their numbers and lose their PR-side producer: the demotion (#5498)
+	// took the graded leg out of the failing set, and the release criterion still refuses on them.
+	it("keeps the graded reasons on their own seats even with no leg producing them", () => {
+		expect(REASON_CODES.missing).toBe(MISSING_RESULT);
+		expect(REASON_CODES.stale).toBe(STALE_HEAD);
+		expect(REASON_CODES["below-bar"]).toBe(BELOW_BAR);
 	});
 
 	it("seats each reason on the code its group already means it by", () => {
 		const seat = (legs: Parameters<typeof decideGate>[0]["legs"]) => decideGate({legs}).code;
-		expect(seat([judgeGraded({changedSkills: ["t"], records: [], head: head(HEAD)})])).toBe(
-			MISSING_RESULT,
-		);
-		expect(
-			seat([
-				judgeGraded({
-					changedSkills: ["t"],
-					records: [record({sha: OLDER, recordedAt: "2026-08-11T00:00:00Z", passed: 1, graded: 1})],
-					head: head(HEAD),
-				}),
-			]),
-		).toBe(STALE_HEAD);
-		expect(
-			seat([
-				judgeGraded({
-					changedSkills: ["t"],
-					records: [record({sha: HEAD, recordedAt: "2026-08-11T00:00:00Z", passed: 1, graded: 2})],
-					head: head(HEAD),
-				}),
-			]),
-		).toBe(BELOW_BAR);
 		expect(
 			seat([
 				judgeFloor({
