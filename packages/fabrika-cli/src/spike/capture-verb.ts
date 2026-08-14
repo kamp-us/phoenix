@@ -190,8 +190,11 @@ export const runCapture = (options: CaptureOptions): SpikeEffect<VerbOutcome> =>
 			evidenceDigest,
 			decision: authored.text,
 			records: evidence.value.records,
+			workspace,
 		});
-		const composed = leakFree(VERB, "composed capture comment", body);
+		// The run table is masked at composition, so the only unmasked text left here is the decision
+		// — the one part a caller can actually rewrite and re-run (#5553).
+		const composed = leakFree(VERB, "decision, as it composes into the capture comment", body);
 		if (composed !== null) return {...composed, stderr: [scope, ...composed.stderr]};
 
 		const posted = yield* createComment(repo, options.spike, body);

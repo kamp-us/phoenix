@@ -3,7 +3,7 @@ import {describe, expect, it} from "vitest";
 import {errOut, type FakeFsOptions, fakeFs, fakeShell, okOut, once} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import type {StdinRead} from "../io/stdin.ts";
-import {captureComment, captureMarker, forfeitMarker} from "./bodies.ts";
+import {captureComment, captureMarker, forfeitMarker, WORKSPACE_MASK} from "./bodies.ts";
 import {runCapture} from "./capture-verb.ts";
 import {
 	AUTHOR_UNAUTHORIZED,
@@ -24,8 +24,13 @@ import {
 	ENV,
 	EVIDENCE,
 	evidenceRecord,
+	evidenceText,
 	ISSUE,
 	issuePayload,
+	LEAKY_EVIDENCE,
+	LEAKY_MANIFEST,
+	LEAKY_TMP_ROOT,
+	LEAKY_WORKSPACE,
 	MANIFEST,
 	manifestText,
 	NONCE,
@@ -39,6 +44,7 @@ import {
 	VIEWER,
 	WORKSPACE,
 } from "./fixtures.test-support.ts";
+import {sha256OfText} from "./workspace.ts";
 
 const DECISION = "A single-use token needs no new table — the verification record carries it.";
 const BODY = captureComment({
@@ -46,6 +52,7 @@ const BODY = captureComment({
 	evidenceDigest: ONE_RUN_DIGEST,
 	decision: DECISION,
 	records: [evidenceRecord(1)],
+	workspace: WORKSPACE,
 });
 
 const resident: FakeFsOptions = {
@@ -110,6 +117,37 @@ describe("runCapture records a decision the log grounds", () => {
 		const posted = calls.find((line) => POST.test(line)) ?? "";
 		expect(posted).toContain("## Runs");
 		expect(posted).toContain("printf");
+	});
+
+	it("captures a run whose argv names the workspace, masking it instead of refusing (#5553)", async () => {
+		const records = [evidenceRecord(1, {command: ["bash", `${LEAKY_WORKSPACE}/probe.sh`]})];
+		const log = evidenceText(records);
+		const body = captureComment({
+			nonce: NONCE,
+			evidenceDigest: sha256OfText(log),
+			decision: DECISION,
+			records,
+			workspace: LEAKY_WORKSPACE,
+		});
+		const {outcome, calls} = await run(
+			[
+				...identity,
+				[ISSUE, okOut(issuePayload())],
+				[COMMENTS, okOut(commentsPayload([]))],
+				[POST, okOut(JSON.stringify({id: 512349, html_url: "https://example.test/#c"}))],
+				[READBACK, okOut(JSON.stringify({body}))],
+				[CLOSE, okOut("{}")],
+			],
+			{tmpRoot: LEAKY_TMP_ROOT},
+			{
+				directories: [LEAKY_WORKSPACE],
+				files: {[LEAKY_MANIFEST]: manifestText(), [LEAKY_EVIDENCE]: log},
+			},
+		);
+		expect(outcome.code).toBe(0);
+		const posted = calls.find((line) => POST.test(line)) ?? "";
+		expect(posted).toContain(`${WORKSPACE_MASK}/probe.sh`);
+		expect(posted).not.toContain(LEAKY_WORKSPACE);
 	});
 });
 

@@ -94,6 +94,7 @@ export const runDispose = (options: DisposeOptions): SpikeEffect<VerbOutcome> =>
 				forfeit: options.forfeit,
 				question: manifest.value.question,
 				records,
+				workspace,
 				evidenceDigest: evidence.value.digest,
 				repo: options.repo,
 				env: options.env,
@@ -149,6 +150,8 @@ const resolveIssueHalf = (input: {
 	readonly forfeit: boolean;
 	readonly question: string;
 	readonly records: ReadonlyArray<EvidenceRecord>;
+	/** The workspace root, masked out of every transcribed command in the forfeit note. */
+	readonly workspace: string;
 	readonly evidenceDigest: string | null;
 	readonly repo: string | null;
 	readonly env: Readonly<Record<string, string | undefined>>;
@@ -215,8 +218,11 @@ const resolveIssueHalf = (input: {
 			nonce: input.nonce,
 			question: input.question,
 			records: input.records,
+			workspace: input.workspace,
 		});
-		const leaked = leakFree(VERB, "composed forfeit note", body);
+		// The run table is masked at composition; what remains is the question the caller wrote at
+		// spike open, which is the only part a refusal here could ask anyone to change (#5553).
+		const leaked = leakFree(VERB, "question, as it composes into the forfeit note", body);
 		if (leaked !== null) return refused({...leaked, stderr: [input.scope, ...leaked.stderr]});
 
 		const posted = yield* createComment(repo, input.spike, body);

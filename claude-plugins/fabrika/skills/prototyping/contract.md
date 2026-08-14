@@ -324,6 +324,13 @@ trailing `…` when longer.
 run's command and status beside the claim rather than a hash standing in for them. The
 `evidenceDigest` proves the table matches the log; the table is what a human can actually read.
 
+**A transcribed command is masked, never refused** (#5553). The workspace root renders as
+`<workspace>`, and any other machine-local path in a recorded argv renders as its class mask. A
+recorded argv is already on the log when the table is composed, so a refusal over it would name no
+input anyone can correct — the leak scan that still runs over the composed body therefore reaches
+only the caller's own text (the decision, or the manifest's question), which is exactly the text a
+`5` can ask them to rewrite.
+
 ### The disposal invariant — stated because everything downstream leans on it
 
 **`treeDigest` is neutral to every write this group makes.** The claim is checkable by walking each
@@ -376,7 +383,7 @@ fabrika spike open --question <text> --kind <logic|ui> [--ticket <n>] [--nonce <
 **Output** — machine. One JSON object:
 
 ```json
-{"spike":9310,"nonce":"7f3a9c21","kind":"logic","workspace":"/tmp/fabrika-spike/7f3a9c21","treeDigest":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"}
+{"spike":9310,"nonce":"7f3a9c21","kind":"logic","workspace":"<tmp>/fabrika-spike/7f3a9c21","treeDigest":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"}
 ```
 
 There is no empty answer: the verb either mints a spike or refuses.
@@ -454,7 +461,7 @@ scope over a corpus.
 
 ```
 $ fabrika spike open --question "does better-auth mint a single-use token without a new table?" --kind logic
-{"spike":9310,"nonce":"7f3a9c21","kind":"logic","workspace":"/tmp/fabrika-spike/7f3a9c21","treeDigest":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"}
+{"spike":9310,"nonce":"7f3a9c21","kind":"logic","workspace":"<tmp>/fabrika-spike/7f3a9c21","treeDigest":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"}
 ```
 
 ```
@@ -749,6 +756,9 @@ is sample data returned by GitHub.)
   demotion or a grant.
 - #3086 — the decision is leak-scanned through the shipped predicates before it is posted; the
   inherited #3785 false-positive is stated rather than worked around.
+- #5553 — the same scan over the verb's **own** composition deadlocked a spike whose recorded argv
+  named the workspace: neither `capture` nor an honest `dispose` could get past it. The run table is
+  masked at composition, so a refusal can only ever name text a caller wrote.
 - v1 scar: `claude-plugins/kampus-pipeline/skills/wayfinder/SKILL.md:292-301` mandates every map
   write through the `wayfinder-map` CLI, and that tool is read-only by construction — the sanctioned
   write path is a dead end and the only alternative is explicitly banned. This group ships its own
