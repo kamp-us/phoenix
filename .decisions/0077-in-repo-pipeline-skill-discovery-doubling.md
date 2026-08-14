@@ -1,7 +1,7 @@
 ---
 id: 0077
 title: Phoenix suppresses the pipeline plugin in-repo (skill discovery doubling)
-status: accepted
+status: amended-in-part by [0277](0277-v1-retirement-keeps-the-plugin-suppression.md)
 date: 2026-06-16
 tags: [skills, plugin, tooling]
 ---
