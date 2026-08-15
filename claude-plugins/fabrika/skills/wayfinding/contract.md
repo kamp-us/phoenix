@@ -1060,8 +1060,17 @@ fabrika map record 9140 --digest a1b2c3d4e5f6 --ticket 9143 --finding finding.md
 **Output** — machine. One JSON object:
 
 ```json
-{"map":9140,"ticket":9143,"recorded":"— from #9143","closed":true,"digest":"d4e5f6a1b2c3"}
+{"map":9140,"ticket":9143,"recorded":"— from #9143","closed":true,"resumed":false,"digest":"d4e5f6a1b2c3"}
 ```
+
+`resumed` is `true` when this run only closed the ticket because the answer was already on the map —
+see the resume paragraph below.
+
+**The finding is folded to one line before it is composed**, the same expression `map descope`
+folds its `--reason` with (`src/map/body.ts`, `foldEntryText`): both sections are one entry per
+bullet, so a multi-line input written verbatim lands as lines the parser reads as neither an entry
+nor a continuation. `map record` shipped without the fold and corrupted a live map
+([#5550](https://github.com/kamp-us/phoenix/issues/5550)).
 
 **The lockstep, and the order that makes a partial application safe.** Three writes, one guard:
 
@@ -1080,6 +1089,17 @@ doc forbids — *"the map is never left in a state where a resolved unknown has 
 state unrepresentable. The close is second and its failure is `8` with the ticket named: an answer
 recorded against a still-open ticket is visibly incomplete and re-runnable, whereas a closed ticket
 with no recorded answer is the forbidden state.
+
+**Re-runnable is enforced, not asserted.** When the map's `## Decisions` already cites this ticket
+and the ticket is still open, the verb takes the resume branch: it writes no body at all and only
+closes, answering `"resumed":true`. So finishing an interrupted lockstep is the same command again
+rather than a hand-close, and a re-run can never record the same answer twice. The recorded entry
+stands as written — a wrong answer is retracted in the open with a new entry (#4227), never
+overwritten by a re-run, so the resume ignores `--finding`'s text.
+
+**A landed body write is never rolled back.** There is no transaction across two GitHub writes, and
+an undo PATCH is itself a write that can fail, leaving a state no reader can name. The composed
+entry is fenced before the write instead, and the surviving half stays the visible, resumable one.
 
 **A `forked` ticket may not be recorded without its ruling.** `--ruled-on` and `--question-id` are
 required when the ticket's state is `forked`.
@@ -1114,8 +1134,8 @@ research path is unaffected. Both groups are fabrika's own; nothing here reaches
 
 | Code | Trigger |
 |---|---|
-| `0` | the answer is on the map and the ticket is closed |
-| `4` | the map body does not parse, or `--finding` is empty |
+| `0` | the answer is on the map and the ticket is closed — including a resume, which only closed |
+| `4` | the map body does not parse, `--finding` is empty, or the composed entry would not read back |
 | `5` / `6` | the finding carries a machine-local path, or is a bare `@` reference |
 | `7` | the map does not exist |
 | `8` / `9` | a write failed, or the read-back differs |
@@ -1132,7 +1152,8 @@ research path is unaffected. Both groups are fabrika's own; nothing here reaches
 | `map record: #<t> is forked to #<s> and --ruled-on was not given — a forked ticket's answer is the founder's, and it is recorded by citing his ruling, never by restating it.` | 13 | refusal |
 | `map record: #<s> <q> reads <state>, not ruled — nothing was recorded. A question that is not ruled has no answer to carry onto the map.` | 13 | refusal |
 | `map record: #<t>'s lane returned unreachable — there is no answer to record. Re-lane it once the source is reachable, or retire it with map descope --ticket.` | 21 | refusal |
-| `map record: recorded the answer on #<n> and the close of #<t> did NOT land — the answer is on the map and the ticket is still open. Close #<t> by hand.` | 8 | refusal |
+| `map record: recorded the answer on #<n> and the close of #<t> did NOT land — the answer is on the map and the ticket is still open. Re-run this same command to resume the close; it will not record the answer twice.` | 8 | refusal |
+| `map record: #<n>'s body would not hold this record — <reason>; nothing was written.` | 4 | refusal |
 
 **Scope** — the ticket's state and, for a forked ticket, the named session's question state. A read
 that could not complete is `11`.
@@ -1141,7 +1162,16 @@ that could not complete is `11`.
 
 ```
 $ fabrika map record 9140 --digest a1b2c3d4e5f6 --ticket 9143 --finding finding.md
-{"map":9140,"ticket":9143,"recorded":"— from #9143","closed":true,"digest":"d4e5f6a1b2c3"}
+{"map":9140,"ticket":9143,"recorded":"— from #9143","closed":true,"resumed":false,"digest":"d4e5f6a1b2c3"}
+$ echo $?
+0
+```
+
+Resuming a run whose close did not land — the same command, against the map's new digest:
+
+```
+$ fabrika map record 9140 --digest d4e5f6a1b2c3 --ticket 9143 --finding finding.md
+{"map":9140,"ticket":9143,"recorded":"— from #9143","closed":true,"resumed":true,"digest":"d4e5f6a1b2c3"}
 $ echo $?
 0
 ```
@@ -1279,8 +1309,8 @@ The five hand-checks those tests cannot perform:
    creating the issue and failing the label write, leaving a map no later run can find (`8`, number
    named, write order chosen so the survivor is inert); `map ticket` filing a ticket whose sub-issue
    link then fails (`8`, number named, re-run resumes); and `map record` landing the answer and
-   failing the close (`8`, ordered so the surviving half is the visible-and-re-runnable one rather
-   than the forbidden one).
+   failing the close (`8`, ordered so the surviving half is the visible one, and re-runnable because
+   the verb's resume branch closes it without recording the answer again).
 2. **Every value an example prints is derivable from the spec.** The digest is defined as an
    algorithm over named bytes, not shown as a magic literal; `created`, `lane`, `outcome`, `state`,
    `frontier` and `kind` are closed sets enumerated above.

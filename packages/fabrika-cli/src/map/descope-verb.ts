@@ -26,6 +26,7 @@ import {appendOnly} from "../review/append.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {
 	digestOf,
+	foldEntryText,
 	type OutOfScopeEntry,
 	parseBody,
 	renderFrontierRow,
@@ -92,9 +93,7 @@ export const runDescope = (
 				`${VERB}: could not read --reason ${options.reason}: ${read.value} — the reasoning is UNKNOWN, never empty.`,
 			);
 		}
-		// One line: the section's entries are one bullet each, so a multi-line reason is folded rather
-		// than allowed to split into entries the parser would read as separate rejections.
-		const reason = read.value.trim().replace(/\s*\n\s*/g, " ");
+		const reason = foldEntryText(read.value);
 		if (reason === "") {
 			return refuse(
 				BAD_SECTIONS,

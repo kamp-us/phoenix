@@ -19,7 +19,7 @@ import {blockedBy, blocking, subIssues} from "../io/edges.ts";
 import type {Shell} from "../io/git.ts";
 import {type CommentRecord, getIssue, type IssueRecord, listComments} from "../io/issues.ts";
 import {permissionFor} from "../io/pulls.ts";
-import {type Kind, type MapBody, parseBody} from "./body.ts";
+import {type DecisionEntry, type Kind, type MapBody, parseBody} from "./body.ts";
 import {
 	type Outcome,
 	reachesForTicketMarker,
@@ -168,16 +168,22 @@ export const scanTicketMarkers = (
  * fork's session is what lets a decision ticket graduate at all; without it a forked ticket's answer
  * could land on the map and the ticket would still read `forked` forever.
  */
-export const decisionCites = (
+export const decisionCiting = (
 	body: MapBody,
 	ticket: number,
 	forkedSession: number | null,
-): boolean =>
-	body.decisions.some((entry) =>
+): DecisionEntry | undefined =>
+	body.decisions.find((entry) =>
 		entry.authority._tag === "Finding"
 			? entry.authority.ticket === ticket
 			: forkedSession !== null && entry.authority.session === forkedSession,
 	);
+
+export const decisionCites = (
+	body: MapBody,
+	ticket: number,
+	forkedSession: number | null,
+): boolean => decisionCiting(body, ticket, forkedSession) !== undefined;
 
 const stateOf = (
 	closed: boolean,

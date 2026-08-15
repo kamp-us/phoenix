@@ -95,6 +95,17 @@ export const normalizeSection = (text: string): string =>
 		.replace(/\n+$/, "");
 
 /**
+ * Free text folded onto one line — the shape every entry section takes.
+ *
+ * Shared by `map record` and `map descope` rather than written twice: both take prose from a file
+ * into a section whose grammar is one entry per bullet, so an unfolded multi-line input lands as
+ * lines the parser reads as neither an entry nor a continuation. `map descope` folded and `map
+ * record` did not, and the asymmetry corrupted a live map (#5550); one expression is what stops the
+ * two drifting apart again.
+ */
+export const foldEntryText = (text: string): string => text.trim().replace(/\s*\n\s*/g, " ");
+
+/**
  * The compare-and-set token over the five section bodies, headings excluded.
  *
  * The exclusions are the invariant, not an optimisation: the digest must cover every byte a
