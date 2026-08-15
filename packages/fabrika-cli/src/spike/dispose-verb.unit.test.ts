@@ -37,7 +37,12 @@ import {
 	WORKSPACE,
 } from "./fixtures.test-support.ts";
 
-const NOTE = forfeitNote({nonce: NONCE, question: QUESTION, records: [evidenceRecord(1)]});
+const NOTE = forfeitNote({
+	nonce: NONCE,
+	question: QUESTION,
+	records: [evidenceRecord(1)],
+	workspace: WORKSPACE,
+});
 
 const resident: FakeFsOptions = {
 	directories: [WORKSPACE],

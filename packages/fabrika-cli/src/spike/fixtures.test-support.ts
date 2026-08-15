@@ -25,6 +25,16 @@ export const MANIFEST = manifestPath(WORKSPACE);
 export const EVIDENCE = evidencePath(WORKSPACE);
 export const CLEAN_TREE_DIGEST = sha256OfText("");
 
+/**
+ * A temp root of the shape a real machine hands out — one the leak scanner recognises, unlike
+ * {@link TMP_ROOT}. It is what a masking test must sit on: a workspace under `/tmp-root` is not a
+ * leak, so it cannot prove the refusal #5553 named.
+ */
+export const LEAKY_TMP_ROOT = "/var/folders/z9/t0000000";
+export const LEAKY_WORKSPACE = workspacePath(LEAKY_TMP_ROOT, NONCE);
+export const LEAKY_MANIFEST = manifestPath(LEAKY_WORKSPACE);
+export const LEAKY_EVIDENCE = evidencePath(LEAKY_WORKSPACE);
+
 export const ENV = {CLAUDE_PIPELINE_REPO: REPO} as Record<string, string | undefined>;
 
 export const manifest = (overrides: Partial<Manifest> = {}): Manifest => ({

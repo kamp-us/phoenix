@@ -10,11 +10,15 @@
  * status beside the claim rather than a hash standing in for them; the `evidenceDigest` is what
  * proves the table matches the log.
  *
- * The body never carries the workspace path — that is the answer to #3086: the path is not scanned
- * out of the body, it is never placed in it.
+ * **The body never carries a machine-local path**, which is the answer to #3086. The prose parts
+ * never place one there; the run table is transcribed from argv a caller chose, so it is masked here
+ * at composition — the workspace root by class as `<workspace>`, anything else by the leak scanner's
+ * own class masks. The caller cannot edit an argv already on the log, so a refusal over it would have
+ * no remedy (#5553).
  */
 
 import type {CommentRecord} from "../io/issues.ts";
+import {scanBody} from "../report/leaks.ts";
 import type {EvidenceRecord, Kind} from "./workspace.ts";
 
 /** The label that makes a spike findable, countable and disposable as a class. */
@@ -118,14 +122,30 @@ export const newestCapture = (
 	return newest;
 };
 
+/** What the workspace root renders as in a transcribed command — the one path a reader never needs. */
+export const WORKSPACE_MASK = "<workspace>";
+
+/**
+ * A recorded command as it is transcribed: the workspace root masked by class, then whatever other
+ * machine-local path the argv carried masked by the leak scanner's own class masks.
+ *
+ * Masking here rather than refusing later is the whole fix: by the time a table exists the argv is
+ * already on the log, so there is no input left for a caller to correct (#5553).
+ */
+export const maskedCommand = (command: ReadonlyArray<string>, workspace: string): string => {
+	const joined = command.join(" ");
+	const rooted = workspace === "" ? joined : joined.replaceAll(workspace, WORKSPACE_MASK);
+	return scanBody(rooted).redacted;
+};
+
 /** The run table, one row per evidence line, transcribed from the log rather than re-derived. */
-export const runTable = (records: ReadonlyArray<EvidenceRecord>): string =>
+export const runTable = (records: ReadonlyArray<EvidenceRecord>, workspace: string): string =>
 	[
 		"| seq | command | exit | truncated |",
 		"| --- | --- | --- | --- |",
 		...records.map(
 			(record) =>
-				`| ${record.seq} | ${record.command.join(" ")} | ${
+				`| ${record.seq} | ${maskedCommand(record.command, workspace)} | ${
 					record.timedOut ? "timed out" : String(record.commandExit)
 				} | ${record.truncated} |`,
 		),
@@ -137,6 +157,8 @@ export const captureComment = (fields: {
 	readonly evidenceDigest: string;
 	readonly decision: string;
 	readonly records: ReadonlyArray<EvidenceRecord>;
+	/** The workspace root, masked out of every transcribed command. */
+	readonly workspace: string;
 }): string =>
 	[
 		captureMarker(fields.nonce, fields.evidenceDigest),
@@ -147,7 +169,7 @@ export const captureComment = (fields: {
 		"",
 		"## Runs",
 		"",
-		runTable(fields.records),
+		runTable(fields.records, fields.workspace),
 		"",
 	].join("\n");
 
@@ -159,6 +181,8 @@ export const forfeitNote = (fields: {
 	readonly nonce: string;
 	readonly question: string;
 	readonly records: ReadonlyArray<EvidenceRecord>;
+	/** The workspace root, masked out of every transcribed command. */
+	readonly workspace: string;
 }): string =>
 	[
 		forfeitMarker(fields.nonce, fields.records.length),
@@ -169,7 +193,7 @@ export const forfeitNote = (fields: {
 		"",
 		"## Runs",
 		"",
-		runTable(fields.records),
+		runTable(fields.records, fields.workspace),
 		"",
 		"No decision was reached; this spike was abandoned and its workspace disposed.",
 		"",
