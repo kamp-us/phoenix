@@ -23,7 +23,7 @@ linked, a dependency cycle, an orphaned child, a missing or `status:needs-triage
 `write-code`'s pick predicate selects `status:triaged` children and starts building. A
 structurally-broken child is therefore *pickable* — and a child with no acceptance
 criteria is one `review-code` can never pass, because there is nothing to check (the
-≥1-AC invariant in [`gh-issue-intake-formats.md`](../.claude/skills/gh-issue-intake-formats.md)
+≥1-AC invariant in [`gh-issue-intake-formats.md`](../claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md)
 §2 exists precisely to stop this, but nothing enforces it).
 
 The verification that *was* being run against the backlog was a non-deterministic LLM
@@ -45,7 +45,7 @@ scratch — see Decision 4.)
 ## Decision
 
 phoenix adds **`review-plan`**, a deterministic gate between `plan-epic` and
-`write-code`. It is the symmetric twin of [`review-code`](../.claude/skills/review-code/SKILL.md):
+`write-code`. It is the symmetric twin of [`review-code`](../claude-plugins/kampus-pipeline/skills/review-code/SKILL.md):
 where `review-code` verifies a PR against acceptance criteria and gates `write-code` →
 merge, `review-plan` verifies an epic ledger against the structural floor and gates
 `plan-epic` → `write-code`. Like its twin, it **signals; it never does the next agent's
@@ -154,7 +154,7 @@ later children:
   re-plan loop's job — Decision 3); a fixed retry budget as the loop's stop condition
   (converge on stall — Decision 3); a plain-TS core for the validator (Effect v4-native
   throughout — Decision 4); any `gh` GraphQL call (REST only).
-- **Relationship to [`review-code`](../.claude/skills/review-code/SKILL.md):** `review-plan`
+- **Relationship to [`review-code`](../claude-plugins/kampus-pipeline/skills/review-code/SKILL.md):** `review-plan`
   is its structural twin one stage earlier. Both gate without doing the next agent's job —
   `review-code` verifies a PR and never merges; `review-plan` verifies a ledger and never
   repairs. The two gates bracket `write-code` on both sides: the plan it consumes is

@@ -15,7 +15,7 @@ epic's children and nothing serializes them (#264):
 
 - **`review-plan` owns the `status:planned → status:triaged` flip** — the *only* thing that
   makes a child `write-code`-pickable (ADR [0047](0047-review-plan-gate.md);
-  [gh-issue-intake-formats.md](../.claude/skills/gh-issue-intake-formats.md) §Pipeline labels).
+  [gh-issue-intake-formats.md](../claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md) §Pipeline labels).
 - **`plan-epic` owns supersede/unlink/close on re-plan** — a re-plan can drop a child out
   from under that flip (plan-epic/SKILL.md §Re-plan).
 
@@ -164,7 +164,7 @@ here; if that behavior is wanted it is a separate `loop.ts` change.
 - **Layering with #261 (don't conflate them).** This lock is the **primary serialization** —
   it prevents the concurrent re-plans at the *root*, so the body-write rarely races at all.
   #261's **surgical splice + optimistic recheck** on plan-epic's epic-body `PATCH`
-  ([gh-issue-intake-formats.md](../.claude/skills/gh-issue-intake-formats.md) §1 "Updating it
+  ([gh-issue-intake-formats.md](../claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md) §1 "Updating it
   safely"; plan-epic/SKILL.md Step 5) is the **complementary backstop** for the residual
   co-acquire window of rule 2 **and** for body edits that aren't plan-epic re-plans (a handoff
   note, a manual edit). The two compose: lock = primary (no concurrent re-plans), splice+recheck
@@ -183,7 +183,7 @@ here; if that behavior is wanted it is a separate `loop.ts` change.
   `DELETE` or clear the label by hand), never a silent wedge. The acquire fails closed; the release
   fails loud.
 - **New label.** `status:planning` joins the `status:*` family
-  ([gh-issue-intake-formats.md](../.claude/skills/gh-issue-intake-formats.md) §Pipeline
+  ([gh-issue-intake-formats.md](../claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md) §Pipeline
   labels). It is a **transient lock**, *not* a pipeline-state label — it does not change what
   `write-code` picks (`write-code` keys on `status:triaged`), and it is always paired with the
   epic's real `status:*`, never replacing it. It is released on every exit path. **Setup

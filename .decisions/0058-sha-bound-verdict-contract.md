@@ -72,7 +72,7 @@ HEAD_SHA="$(gh api repos/kamp-us/phoenix/pulls/$PR --jq .head.sha)"
 ```
 
 The canonical marker shapes (recorded in
-[gh-issue-intake-formats.md](../.claude/skills/gh-issue-intake-formats.md) §5/§6):
+[gh-issue-intake-formats.md](../claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md) §5/§6):
 
 - `review-code: PASS @ <sha> — merge-ready` / `review-code: FAIL @ <sha> — not merge-ready`
 - `review-doc: PASS @ <sha> — merge-ready` / `review-doc: FAIL @ <sha> — changes-requested`
