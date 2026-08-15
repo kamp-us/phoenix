@@ -22,11 +22,11 @@
  * The machine-local-path shapes themselves — the generic deny-list design and the
  * `~/.claude` config-file carve-out (#3475/#3505); the `/tmp` arm carries no carve-out,
  * so it fail-closes on any bare `/tmp/…` (#3492 Option 1) — live in the single shared
- * `path-matcher.ts` module that both this doc/comment scanner and `crew-leak.ts` import,
- * so the two detectors can never
- * drift (the #3506 root bug). This module owns only the surface scoping (which
- * files get scanned) and the self-exempt list; the path shapes are imported, not
- * re-declared. See `path-matcher.ts` for the pattern rationale.
+ * `path-matcher.ts` module this doc/comment scanner imports. (The second consumer, the
+ * crew-plugin sanitizer, left with ADR 0279; the single-definition shape is what keeps
+ * the drift class closed — the #3506 root bug.) This module owns only the surface
+ * scoping (which files get scanned) and the self-exempt list; the path shapes are
+ * imported, not re-declared. See `path-matcher.ts` for the pattern rationale.
  */
 import {MACHINE_LOCAL_PATH_PATTERNS, type PathPattern, TEMP_PATH_PATTERNS} from "./path-matcher.ts";
 
