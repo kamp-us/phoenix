@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Mechanical drift guard for the §CP canonical regex and the .claude/skills symlink
-# (issue #720). Two invariants, both runnable in CI/locally:
+# Mechanical drift guard for the §CP canonical regex (issue #720). One invariant,
+# runnable in CI/locally:
 #
 #   1. CONTROL_PLANE_RE ↔ single-source const — the §CP boundary is now single-sourced
 #      as the CONTROL_PLANE_RE const in packages/pipeline-cli (issue #2761), emitted by
@@ -11,10 +11,10 @@
 #      diffs it against that one line — the residual drift guard for the last prose
 #      surface, no byte-compare of N hand-copies.
 #
-#   2. SYMLINK ↔ MARKETPLACE — .claude/skills must resolve to the same directory
-#      as marketplace.json's `source` field + /skills. Both express the same plugin
-#      root; divergence means the harness loads skills from a different tree than
-#      the one the marketplace advertises.
+# A second invariant used to assert that `.claude/skills` was a symlink resolving to
+# marketplace.json's source + /skills. That symlink is gone: v1's skill roster is retired
+# and the tree is loaded by nobody (ADR 0277, #5276). The invariant is removed rather than
+# rewritten — with no loader path there is no drift left to detect.
 #
 # The single source for invariant 1 is the pipeline-cli const (ADR 0073 §6; #2761): the
 # CLI emits it, this script diffs the formats-doc line against it — no copy re-hardcoded.
@@ -23,10 +23,10 @@
 # substitution with mapfile. Same self-locating idiom as validate-skills.sh.
 set -euo pipefail
 
-# `pwd -P` (physical) is load-bearing: this script is invoked via the `.claude/skills`
-# symlink (CI runs `bash .claude/skills/validate-gate-path-drift.sh`), so a logical `pwd`
-# would resolve skills_dir to the 2-level symlink path `.claude/skills` and `../../..` would
-# overshoot past the repo root. Physical resolution lands on the real 3-level plugin path.
+# `pwd -P` (physical) is kept though CI now invokes this at its real path: any caller that
+# still reaches the script through a symlink would otherwise resolve skills_dir to the link's
+# own depth and send `../../..` past the repo root. Physical resolution always lands on the
+# real 3-level plugin path.
 skills_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 repo_root="$(cd "$skills_dir/../../.." && pwd -P)"
 
@@ -182,51 +182,9 @@ EOF
 	ok "$name copies across the corpus match the single-source const"
 done
 
-# Invariant 2: .claude/skills symlink agrees with marketplace source.
-#
-# .claude/skills -> ../claude-plugins/kampus-pipeline/skills
-# marketplace.json source -> ./claude-plugins/kampus-pipeline
-# Invariant: resolved(.claude/skills) == resolved(marketplace source)/skills
-SYMLINK="$repo_root/.claude/skills"
-MARKETPLACE="$repo_root/.claude-plugin/marketplace.json"
-
-if [ ! -L "$SYMLINK" ]; then
-	fail ".claude/skills is not a symlink (expected: symlink into the plugin skills dir)"
-else
-	ok ".claude/skills is a symlink"
-
-	# Resolve the symlink to an absolute path
-	SYMLINK_RESOLVED=$(cd "$(dirname "$SYMLINK")" && cd "$(readlink "$SYMLINK")" && pwd || true)   # || true: a broken target yields empty → drift-fail below, never a set -e abort
-
-	if [ ! -f "$MARKETPLACE" ]; then
-		fail ".claude-plugin/marketplace.json not found — cannot verify symlink ↔ marketplace agreement"
-	else
-		# Extract source field (bash 3.2: grep + sed, no python/jq required)
-		MP_SOURCE=$(grep '"source"' "$MARKETPLACE" | head -n1 \
-			| sed 's/.*"source"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/' || true)   # || true: no-match → empty → fail below, not a set -e abort
-		if [ -z "$MP_SOURCE" ]; then
-			fail "marketplace.json: no \"source\" field found in plugins entry"
-		else
-			# Resolve marketplace source to absolute path, then append /skills
-			if ! MP_SOURCE_RESOLVED=$(cd "$repo_root" && cd "$MP_SOURCE" && pwd) 2>/dev/null; then
-				fail "marketplace.json source \"$MP_SOURCE\" does not resolve to a directory"
-			else
-				EXPECTED_SYMLINK="$MP_SOURCE_RESOLVED/skills"
-				if [ "$SYMLINK_RESOLVED" = "$EXPECTED_SYMLINK" ]; then
-					ok ".claude/skills symlink agrees with marketplace source ($MP_SOURCE + /skills)"
-				else
-					fail ".claude/skills symlink has drifted from marketplace source
-  symlink resolves to: $SYMLINK_RESOLVED
-  marketplace expects: $EXPECTED_SYMLINK (source=\"$MP_SOURCE\" + /skills)"
-				fi
-			fi
-		fi
-	fi
-fi
-
 if [ "$errors" -gt 0 ]; then
 	echo "validate-gate-path-drift: FAILED — $errors error(s); gate-path invariants are broken (issue #720)"
 	exit 1
 fi
 
-echo "validate-gate-path-drift: OK — $checks checks; CONTROL_PLANE_RE copies and symlink agree with §CP / marketplace"
+echo "validate-gate-path-drift: OK — $checks checks; CONTROL_PLANE_RE copies agree with the §CP single-source const"
