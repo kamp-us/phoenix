@@ -10,9 +10,9 @@
  * read by importing the `grill` group's reader, never by re-deriving it here.** A ruling counts only
  * when four clauses hold, and those clauses are `grill read`'s to resolve; a second implementation
  * here would be a second answer to a question already enforced elsewhere, and the one that said
- * `ruled` would win by being called. That group ships from #5023 and is not in the package yet, so
- * until it lands this verb refuses a `forked` decision ticket with `11` — the ruling's state is
- * UNKNOWN, never assumed `ruled`. The research and spike paths are unaffected.
+ * `ruled` would win by being called. So the branch calls `grill read` through `requireRuling` and
+ * records only what that reader calls `ruled`: a read that did not complete is `11` and any other
+ * state is `13` naming it, because UNKNOWN is never resolved to `ruled`.
  */
 
 import {Effect, type FileSystem} from "effect";
@@ -31,10 +31,12 @@ import {
 	WRITE_UNKNOWN,
 } from "./codes.ts";
 import {
+	type Citation,
 	digestFresh,
 	leakFree,
 	notTerminal,
 	requireMap,
+	requireRuling,
 	requireTicket,
 	targetRepo,
 } from "./guards.ts";
@@ -71,6 +73,10 @@ export const runRecord = (
 				`${VERB}: --ruled-on requires --question-id matching R<round>.<n>; got "${options.questionId ?? ""}".`,
 			);
 		}
+		const citation: Citation | null =
+			options.ruledOn !== null && options.questionId !== null
+				? {session: options.ruledOn, questionId: options.questionId}
+				: null;
 
 		const read = yield* readFile(options.finding).pipe(
 			Effect.map((value) => ({ok: true as const, value})),
@@ -129,40 +135,43 @@ export const runRecord = (
 		};
 		if (ticket.state === "forked") {
 			if (ticket.kind === "decision") {
-				if (options.ruledOn === null) {
+				if (citation === null) {
 					return refuse(
 						TICKET_UNKNOWN,
 						`${VERB}: #${ticket.number} is forked to #${ticket.session ?? 0} and --ruled-on was not given — a forked ticket's answer is the founder's, and it is recorded by citing his ruling, never by restating it.`,
 					);
 				}
-				return refuse(
-					PRECONDITION_UNKNOWN,
-					`${VERB}: #${options.ruledOn} ${options.questionId ?? ""} cannot be read — the grill question-state reader (#5023) has not landed, so whether it is ruled is UNKNOWN. Nothing was recorded.`,
-				);
+				const ruling = yield* requireRuling(VERB, repo, citation, options.env);
+				if (ruling._tag === "Refused") return ruling.outcome;
+				entry = {
+					text: finding,
+					authority: {_tag: "Ruled", session: citation.session, questionId: citation.questionId},
+				};
+			} else {
+				if (options.spike === null) {
+					return refuse(
+						TICKET_UNKNOWN,
+						`${VERB}: #${ticket.number} is forked to spike #${ticket.spike ?? 0} and --spike was not given — the record cites the spike whose captured decision it carries.`,
+					);
+				}
+				const spike = yield* getIssue(repo, options.spike);
+				if (spike._tag === "Unknown") {
+					return refuse(
+						PRECONDITION_UNKNOWN,
+						`${VERB}: cannot read spike #${options.spike}: ${spike.reason} — nothing was recorded.`,
+					);
+				}
+				if (spike._tag === "Absent" || spike.value.state !== "closed") {
+					return refuse(
+						TICKET_UNKNOWN,
+						`${VERB}: spike #${options.spike} ${spike._tag === "Absent" ? "does not exist" : "is still open"} — a spike's captured decision is recorded once the spike is done.`,
+					);
+				}
 			}
-			if (options.spike === null) {
-				return refuse(
-					TICKET_UNKNOWN,
-					`${VERB}: #${ticket.number} is forked to spike #${ticket.spike ?? 0} and --spike was not given — the record cites the spike whose captured decision it carries.`,
-				);
-			}
-			const spike = yield* getIssue(repo, options.spike);
-			if (spike._tag === "Unknown") {
-				return refuse(
-					PRECONDITION_UNKNOWN,
-					`${VERB}: cannot read spike #${options.spike}: ${spike.reason} — nothing was recorded.`,
-				);
-			}
-			if (spike._tag === "Absent" || spike.value.state !== "closed") {
-				return refuse(
-					TICKET_UNKNOWN,
-					`${VERB}: spike #${options.spike} ${spike._tag === "Absent" ? "does not exist" : "is still open"} — a spike's captured decision is recorded once the spike is done.`,
-				);
-			}
-		} else if (options.ruledOn !== null && options.questionId !== null) {
+		} else if (citation !== null) {
 			entry = {
 				text: finding,
-				authority: {_tag: "Ruled", session: options.ruledOn, questionId: options.questionId},
+				authority: {_tag: "Ruled", session: citation.session, questionId: citation.questionId},
 			};
 		}
 

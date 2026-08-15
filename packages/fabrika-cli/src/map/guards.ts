@@ -8,7 +8,9 @@
 
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
+import {type QuestionRow, runRead as runGrillRead} from "../grill/read-verb.ts";
 import {resolveRepo} from "../io/issues.ts";
+import {isRecord, parseJson} from "../io/json.ts";
 import {isBareAtReference, renderLeaks, scanBody} from "../report/leaks.ts";
 import {FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {digestOfBody, type MapBody} from "./body.ts";
@@ -181,6 +183,82 @@ export const notTerminal = (verb: string, ticket: Ticket, tail: string): VerbOut
 	isTerminal(ticket.state)
 		? refuse(TICKET_RETIRED, `${verb}: #${ticket.number} already left the frontier — ${tail}`)
 		: null;
+
+/** The ruling a forked decision ticket's record cites: a session, and one question inside it. */
+export interface Citation {
+	readonly session: number;
+	readonly questionId: string;
+}
+
+/**
+ * The reader's stdout, read as its question rows or as nothing.
+ *
+ * The shape is a contract between two groups, not a guarantee: a rename, an added prose line or a
+ * truncated pipe all arrive here as bytes that do not parse, and a caller seats that as `11` rather
+ * than reading a missing question as "not ruled".
+ */
+const readQuestions = (stdout: string): ReadonlyArray<QuestionRow> | undefined => {
+	const parsed = parseJson(stdout);
+	if (!isRecord(parsed)) return undefined;
+	if (!Array.isArray(parsed.questions)) return undefined;
+	return parsed.questions as ReadonlyArray<QuestionRow>;
+};
+
+/**
+ * The cited question, proven `ruled` by the `grill` group's own reader.
+ *
+ * A read that did not complete is `11` and a question that is absent or reads any other state is
+ * `13` naming the state — UNKNOWN is never resolved to `ruled`.
+ */
+export const requireRuling = (
+	verb: string,
+	repo: string,
+	citation: Citation,
+	env: Readonly<Record<string, string | undefined>>,
+): Effect.Effect<Guarded<QuestionRow>, never, ChildProcessSpawner.ChildProcessSpawner> =>
+	Effect.gen(function* () {
+		const outcome = yield* runGrillRead({session: citation.session, repo, env});
+		if (outcome.code !== 0) {
+			const reason = outcome.stderr.at(-1) ?? "the reader refused without a reason";
+			return refused(
+				outcome.code === NO_TARGET
+					? refuse(
+							NO_TARGET,
+							`${verb}: #${citation.session} does not exist, or is not a grilling session — nothing was recorded.`,
+						)
+					: refuse(
+							PRECONDITION_UNKNOWN,
+							`${verb}: cannot read #${citation.session} ${citation.questionId}: ${reason} — whether it is ruled is UNKNOWN, never assumed ruled. Nothing was recorded.`,
+						),
+			);
+		}
+		const questions = readQuestions(outcome.stdout);
+		if (questions === undefined) {
+			return refused(
+				refuse(
+					PRECONDITION_UNKNOWN,
+					`${verb}: the grilling reader exited 0 on #${citation.session} but its answer carries no questions array — whether ${citation.questionId} is ruled is UNKNOWN. Nothing was recorded.`,
+				),
+			);
+		}
+		const found = questions.find((row) => row.id === citation.questionId);
+		if (found === undefined) {
+			return refused(
+				refuse(
+					TICKET_UNKNOWN,
+					`${verb}: ${citation.questionId} names no question in session #${citation.session} — nothing was recorded.`,
+				),
+			);
+		}
+		return found.state === "ruled"
+			? {_tag: "Ok" as const, value: found}
+			: refused(
+					refuse(
+						TICKET_UNKNOWN,
+						`${verb}: #${citation.session} ${citation.questionId} reads "${found.state}", not "ruled" — only a ruled question's answer is the founder's, so nothing was recorded.`,
+					),
+				);
+	});
 
 /** The compare-and-set guard: the body must still be the one `--digest` was taken from. */
 export const digestFresh = (

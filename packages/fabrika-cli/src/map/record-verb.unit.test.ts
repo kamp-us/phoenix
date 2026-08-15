@@ -1,6 +1,13 @@
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
 import {errOut, fakeFs, fakeShell, okOut, once} from "../fakes.test-support.ts";
+import {
+	AUTHORIZATION,
+	answerComment,
+	roundComment,
+	roundDigestOf,
+	rulingComment,
+} from "../grill/fixtures.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {
 	BAD_SECTIONS,
@@ -132,29 +139,6 @@ describe("runRecord", () => {
 		expect(out.stderr.join("\n")).toContain("never by restating it");
 	});
 
-	it("exits 11 on a forked decision until the grill reader lands — never assumed ruled", async () => {
-		const out = await run(
-			[
-				...frontier(
-					ticketComments(
-						[
-							{
-								id: 2,
-								body: composeForkMarker({map: MAP, ticket: TICKET, route: "session", issue: 9301}),
-							},
-						],
-						"decision",
-					),
-				),
-				[MAP_ISSUE, okOut(issueJson({number: MAP, body: MAP_BODY, labels: ["wayfinding:map"]}))],
-			],
-			{ruledOn: 9301, questionId: "R2.3"},
-		);
-		expect(out.code).toBe(PRECONDITION_UNKNOWN);
-		expect(out.stdout).toBe("");
-		expect(out.stderr.join("\n")).toContain("Nothing was recorded");
-	});
-
 	it("exits 0 on a research finding, moving the row and closing the ticket in that order", async () => {
 		const shell = fakeShell([
 			[PATCH_TICKET, okOut("{}")],
@@ -222,5 +206,120 @@ describe("runRecord", () => {
 		expect(out.code).toBe(WRITE_UNKNOWN);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.join("\n")).toContain(`Close #${TICKET} by hand`);
+	});
+});
+
+const SESSION = 9301;
+const SESSION_ISSUE = /issues\/9301$/;
+const SESSION_COMMENTS = /issues\/9301\/comments/;
+const BOUND = roundDigestOf(1);
+const QUESTION = "R1.2";
+
+/** The frontier of a map whose one ticket is a decision forked to session #9301. */
+const forkedDecision = () =>
+	frontier(
+		ticketComments(
+			[
+				{
+					id: 2,
+					body: composeForkMarker({map: MAP, ticket: TICKET, route: "session", issue: SESSION}),
+				},
+			],
+			"decision",
+		),
+	);
+
+const mapAt = (body: string) =>
+	[MAP_ISSUE, okOut(issueJson({number: MAP, body, labels: ["wayfinding:map"]}))] as const;
+
+const session = (comments: ReadonlyArray<{readonly id: number; readonly body: string}>) =>
+	[
+		[SESSION_ISSUE, okOut(issueJson({number: SESSION, labels: ["grilling:session"]}))],
+		[SESSION_COMMENTS, okOut(commentsJson(comments))],
+	] as const;
+
+/** Round 1 posted, then R1.2 ruled with its adjacent dated authorization. */
+const RULED = [
+	{id: 11, body: roundComment(1)},
+	{id: 12, body: AUTHORIZATION},
+	{id: 13, body: rulingComment(QUESTION, BOUND)},
+];
+
+const ruledRecord = applyRecord(parsed(MAP_BODY), TICKET, {
+	text: ANSWER,
+	authority: {_tag: "Ruled", session: SESSION, questionId: QUESTION},
+}) as string;
+
+describe("a forked decision ticket's ruling is read through the grill reader", () => {
+	it("exits 0 recording the ruling when the cited question reads ruled", async () => {
+		const shell = fakeShell([
+			[PATCH_TICKET, okOut("{}")],
+			[PATCH_MAP, okOut("{}")],
+			...forkedDecision(),
+			...session(RULED),
+			[
+				once(MAP_ISSUE),
+				okOut(issueJson({number: MAP, body: MAP_BODY, labels: ["wayfinding:map"]})),
+			],
+			mapAt(ruledRecord),
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runRecord({...options, ruledOn: SESSION, questionId: QUESTION}),
+				Layer.merge(shell.layer, fakeFs({files: {[FINDING]: `${ANSWER}\n`}}).layer),
+			),
+		);
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({
+			map: MAP,
+			ticket: TICKET,
+			recorded: `— ruled on #${SESSION} ${QUESTION}`,
+			closed: true,
+		});
+		const bodyAt = shell.calls.findIndex((line) => line.includes("PATCH repos/o/r/issues/9140"));
+		const closeAt = shell.calls.findIndex((line) => line.includes("state_reason=completed"));
+		expect(closeAt).toBeGreaterThan(bodyAt);
+	});
+
+	it("exits 11 when the reader cannot complete its read — never assumed ruled", async () => {
+		const out = await run(
+			[
+				...forkedDecision(),
+				mapAt(MAP_BODY),
+				[SESSION_ISSUE, okOut(issueJson({number: SESSION, labels: ["grilling:session"]}))],
+				[SESSION_COMMENTS, errOut("gh: API rate limit exceeded")],
+			],
+			{ruledOn: SESSION, questionId: QUESTION},
+		);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.join("\n")).toContain("Nothing was recorded");
+	});
+
+	it("exits 13 when the cited question names nothing in the session", async () => {
+		const out = await run([...forkedDecision(), mapAt(MAP_BODY), ...session(RULED)], {
+			ruledOn: SESSION,
+			questionId: "R9.9",
+		});
+		expect(out.code).toBe(TICKET_UNKNOWN);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.join("\n")).toContain("names no question");
+	});
+
+	it("exits 13 naming the state it read when the question is not ruled", async () => {
+		const out = await run(
+			[
+				...forkedDecision(),
+				mapAt(MAP_BODY),
+				...session([
+					{id: 11, body: roundComment(1)},
+					{id: 12, body: answerComment("R1.1", BOUND)},
+				]),
+			],
+			{ruledOn: SESSION, questionId: "R1.1"},
+		);
+		expect(out.code).toBe(TICKET_UNKNOWN);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.join("\n")).toContain('reads "answered", not "ruled"');
 	});
 });
