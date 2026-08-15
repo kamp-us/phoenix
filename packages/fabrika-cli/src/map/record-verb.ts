@@ -5,8 +5,9 @@
  * The two body edits are one PATCH and the close is second, ordered so the surviving half of a
  * partial application is the visible-and-re-runnable one — an answer recorded against a still-open
  * ticket — rather than the forbidden one, a closed ticket with no recorded answer. Re-runnable is
- * enforced, not asserted: a ticket whose answer the body already cites takes the resume branch and
- * only closes, so finishing an interrupted lockstep is the same command again, never a hand-close.
+ * enforced, not asserted: a ticket whose answer the body already carries takes the resume branch and
+ * only closes, so finishing an interrupted lockstep is the verb again — re-read the map, re-run
+ * against its new digest — never a hand-close.
  *
  * <!-- anchor: RELAY-GRILLINGS-STATE-NEVER-RECOMPUTE-IT --> **A forked decision ticket's ruling is
  * read by importing the `grill` group's reader, never by re-deriving it here.** A ruling counts only
@@ -32,7 +33,7 @@ import {
 	TICKET_UNKNOWN,
 	WRITE_UNKNOWN,
 } from "./codes.ts";
-import {decisionCiting} from "./frontier.ts";
+import {decisionRecorded} from "./frontier.ts";
 import {
 	type Citation,
 	digestFresh,
@@ -133,22 +134,20 @@ export const runRecord = (
 
 		// The lockstep's second half, resumed. The body write lands first and the close second, so an
 		// interrupted run leaves the answer recorded against a still-open ticket — the state the close
-		// order deliberately chooses. Re-running the same command finishes the close instead of
-		// appending the answer a second time, which is what makes that state re-runnable rather than a
-		// hand-repair (#5550). The recorded entry stands as written: a wrong answer is retracted in the
-		// open with a new entry, never overwritten by a re-run (#4227).
-		const recordedAlready = decisionCiting(
-			found.value.body,
-			options.ticket,
-			ticket.session ?? null,
-		);
+		// order deliberately chooses. Re-reading the map and re-running against its new digest finishes
+		// the close instead of appending the answer a second time, which is what makes that state
+		// re-runnable rather than a hand-repair (#5550). The match is the citation THIS run carries, so
+		// a sibling ticket forked to the same grilling session cannot resume on the other's entry
+		// (#5637). The recorded entry stands as written: a wrong answer is retracted in the open with a
+		// new entry, never overwritten by a re-run (#4227).
+		const recordedAlready = decisionRecorded(found.value.body, options.ticket, citation);
 		if (recordedAlready !== undefined) {
 			const resumeScope = `${VERB}: ${repo}, #${options.ticket}'s answer is already on #${options.map} — resuming the close.`;
 			const finish = yield* closeCompleted(repo, options.ticket);
 			if (finish._tag === "Failure") {
 				return refuse(
 					WRITE_UNKNOWN,
-					`${VERB}: #${options.ticket}'s answer is on #${options.map} and the close did NOT land: ${finish.reason} — the ticket is still open. Re-run this same command to resume it.`,
+					`${VERB}: #${options.ticket}'s answer is on #${options.map} and the close did NOT land: ${finish.reason} — the ticket is still open. Re-read the map and re-run with its new digest to resume the close.`,
 					[resumeScope],
 				);
 			}
@@ -260,7 +259,7 @@ export const runRecord = (
 		if (closed._tag === "Failure") {
 			return refuse(
 				WRITE_UNKNOWN,
-				`${VERB}: recorded the answer on #${options.map} and the close of #${options.ticket} did NOT land — the answer is on the map and the ticket is still open. Re-run this same command to resume the close; it will not record the answer twice.`,
+				`${VERB}: recorded the answer on #${options.map} and the close of #${options.ticket} did NOT land — the answer is on the map and the ticket is still open. Re-read the map and re-run with its new digest to resume the close; it will not record the answer twice.`,
 				[scope],
 			);
 		}

@@ -9,7 +9,7 @@ import {
 	rulingComment,
 } from "../grill/fixtures.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
-import {type DecisionEntry, renderOutOfScope, spliceSection} from "./body.ts";
+import {type DecisionEntry, renderDecision, renderOutOfScope, spliceSection} from "./body.ts";
 import {
 	BAD_SECTIONS,
 	NO_TARGET,
@@ -212,7 +212,9 @@ describe("runRecord", () => {
 		]);
 		expect(out.code).toBe(WRITE_UNKNOWN);
 		expect(out.stdout).toBe("");
-		expect(out.stderr.join("\n")).toContain("Re-run this same command to resume the close");
+		expect(out.stderr.join("\n")).toContain(
+			"Re-read the map and re-run with its new digest to resume the close",
+		);
 	});
 });
 
@@ -356,7 +358,9 @@ describe("the lockstep is one act: an interrupted run resumes", () => {
 		});
 		expect(out.code).toBe(WRITE_UNKNOWN);
 		expect(out.stdout).toBe("");
-		expect(out.stderr.join("\n")).toContain("Re-run this same command to resume it");
+		expect(out.stderr.join("\n")).toContain(
+			"Re-read the map and re-run with its new digest to resume the close",
+		);
 	});
 });
 
@@ -482,5 +486,77 @@ describe("a forked decision ticket's ruling is read through the grill reader", (
 		expect(out.code).toBe(TICKET_UNKNOWN);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.join("\n")).toContain('reads "answered", not "ruled"');
+	});
+});
+
+describe("two decision tickets forked to one grilling session", () => {
+	/** The map after a SIBLING ticket's R1.1 ruling landed — this ticket's row is still on it. */
+	const siblingRecorded = spliceSection(
+		parsed(MAP_BODY),
+		"Decisions",
+		renderDecision({
+			text: "the decay clock runs per account",
+			authority: {_tag: "Ruled", session: SESSION, questionId: "R1.1"},
+		}),
+	);
+
+	it("records the second ticket's own answer instead of resuming on the first's", async () => {
+		const landed = composed(
+			{text: ANSWER, authority: {_tag: "Ruled", session: SESSION, questionId: QUESTION}},
+			siblingRecorded,
+		);
+		const shell = fakeShell([
+			[PATCH_TICKET, okOut("{}")],
+			[PATCH_MAP, okOut("{}")],
+			...forkedDecision(),
+			...session(RULED),
+			[
+				once(MAP_ISSUE),
+				okOut(issueJson({number: MAP, body: siblingRecorded, labels: ["wayfinding:map"]})),
+			],
+			mapAt(landed),
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runRecord({
+					...options,
+					digest: digestFor(siblingRecorded),
+					ruledOn: SESSION,
+					questionId: QUESTION,
+				}),
+				Layer.merge(shell.layer, fakeFs({files: {[FINDING]: `${ANSWER}\n`}}).layer),
+			),
+		);
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({
+			recorded: `— ruled on #${SESSION} ${QUESTION}`,
+			closed: true,
+			resumed: false,
+		});
+		const patch = shell.calls.find((line) => line.includes("PATCH repos/o/r/issues/9140")) ?? "";
+		expect(patch).toContain(`${ANSWER} — ruled on #${SESSION} ${QUESTION}`);
+		expect(parsed(landed).decisions).toHaveLength(2);
+	});
+
+	it("still resumes when the map already carries THIS run's citation", async () => {
+		const mine = composed(
+			{text: ANSWER, authority: {_tag: "Ruled", session: SESSION, questionId: QUESTION}},
+			siblingRecorded,
+		);
+		const shell = fakeShell([[PATCH_TICKET, okOut("{}")], ...forkedDecision(), mapAt(mine)]);
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runRecord({
+					...options,
+					digest: digestFor(mine),
+					ruledOn: SESSION,
+					questionId: QUESTION,
+				}),
+				Layer.merge(shell.layer, fakeFs({files: {[FINDING]: `${ANSWER}\n`}}).layer),
+			),
+		);
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({resumed: true, closed: true});
+		expect(shell.calls.some((line) => line.includes("PATCH repos/o/r/issues/9140"))).toBe(false);
 	});
 });

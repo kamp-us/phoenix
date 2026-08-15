@@ -1090,12 +1090,18 @@ state unrepresentable. The close is second and its failure is `8` with the ticke
 recorded against a still-open ticket is visibly incomplete and re-runnable, whereas a closed ticket
 with no recorded answer is the forbidden state.
 
-**Re-runnable is enforced, not asserted.** When the map's `## Decisions` already cites this ticket
-and the ticket is still open, the verb takes the resume branch: it writes no body at all and only
-closes, answering `"resumed":true`. So finishing an interrupted lockstep is the same command again
-rather than a hand-close, and a re-run can never record the same answer twice. The recorded entry
-stands as written — a wrong answer is retracted in the open with a new entry (#4227), never
-overwritten by a re-run, so the resume ignores `--finding`'s text.
+**Re-runnable is enforced, not asserted.** When the map's `## Decisions` already carries the entry
+this run would write and the ticket is still open, the verb takes the resume branch: it writes no
+body at all and only closes, answering `"resumed":true`. The match key is the whole citation this
+run carries — for a research or spike finding the ticket number (`— from #<ticket>`), and for a
+relayed ruling the session **and** the question id (`— ruled on #<session> R<round>.<n>`), never the
+session alone, because one grilling session answers several questions and two decision tickets may
+fork to it. So finishing an interrupted lockstep is this verb again rather than a hand-close: re-read
+the map with `map read` for its new digest, then re-run the command against that digest — the body
+write that landed moved the digest, so the literal same command exits `12`. A re-run can never record
+the same answer twice, and the recorded entry stands as written — a wrong answer is retracted in the
+open with a new entry (#4227), never overwritten by a re-run, so the resume ignores `--finding`'s
+text.
 
 **A landed body write is never rolled back.** There is no transaction across two GitHub writes, and
 an undo PATCH is itself a write that can fail, leaving a state no reader can name. The composed
@@ -1134,7 +1140,8 @@ research path is unaffected. Both groups are fabrika's own; nothing here reaches
 
 | Code | Trigger |
 |---|---|
-| `0` | the answer is on the map and the ticket is closed — including a resume, which only closed |
+| `0` | this run recorded the answer on the map and closed the ticket (`"resumed":false`) |
+| `0` | a resume: the answer was already on the map, this run wrote no body and only closed the ticket (`"resumed":true`) |
 | `4` | the map body does not parse, `--finding` is empty, or the composed entry would not read back |
 | `5` / `6` | the finding carries a machine-local path, or is a bare `@` reference |
 | `7` | the map does not exist |
@@ -1152,7 +1159,7 @@ research path is unaffected. Both groups are fabrika's own; nothing here reaches
 | `map record: #<t> is forked to #<s> and --ruled-on was not given — a forked ticket's answer is the founder's, and it is recorded by citing his ruling, never by restating it.` | 13 | refusal |
 | `map record: #<s> <q> reads <state>, not ruled — nothing was recorded. A question that is not ruled has no answer to carry onto the map.` | 13 | refusal |
 | `map record: #<t>'s lane returned unreachable — there is no answer to record. Re-lane it once the source is reachable, or retire it with map descope --ticket.` | 21 | refusal |
-| `map record: recorded the answer on #<n> and the close of #<t> did NOT land — the answer is on the map and the ticket is still open. Re-run this same command to resume the close; it will not record the answer twice.` | 8 | refusal |
+| `map record: recorded the answer on #<n> and the close of #<t> did NOT land — the answer is on the map and the ticket is still open. Re-read the map and re-run with its new digest to resume the close; it will not record the answer twice.` | 8 | refusal |
 | `map record: #<n>'s body would not hold this record — <reason>; nothing was written.` | 4 | refusal |
 
 **Scope** — the ticket's state and, for a forked ticket, the named session's question state. A read
@@ -1167,7 +1174,8 @@ $ echo $?
 0
 ```
 
-Resuming a run whose close did not land — the same command, against the map's new digest:
+Resuming a run whose close did not land — `map read` first for the map's new digest, then the same
+arguments against that digest:
 
 ```
 $ fabrika map record 9140 --digest d4e5f6a1b2c3 --ticket 9143 --finding finding.md
