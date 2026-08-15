@@ -18,9 +18,18 @@ Spike [#5554](https://github.com/kamp-us/phoenix/issues/5554) drove build, revie
 fabrika skills for one real ticket, and stalled at the gate. Its review stage ran on a throwaway agent
 that carried `Read, Edit, Write, Bash, Grep, Glob` and no agent-spawn tool. The PR it reviewed touched
 `claude-plugins/fabrika/skills/prototyping/contract.md`, so the diff derived the `governance`
-namespace, and `fabrika ship gate 5556` returned `gate blocked` over `governance absent` — a namespace
-nothing in the review stage could fill. The stage did not misbehave; it was run in a shell that could
-not do what its own contract tells it to do.
+namespace, and `fabrika ship gate 5556` returned `gate blocked at this head` over three reasons:
+
+```
+- ns review-code fail (marker)
+- ns review-skill fail (marker)
+- ns governance absent
+```
+
+The two `fail` markers were the spike's own review verdicts and a repair could have cleared them.
+`ns governance absent` was the one no repair could clear — a namespace nothing in the review stage
+could fill. The stage did not misbehave; it was run in a shell that could not do what its own
+contract tells it to do.
 
 The contract had already picked the shape. `claude-plugins/fabrika/skills/review/SKILL.md` §6 says
 that on `harness: true` the governance namespace is derived-required: fire the `governance` skill and
@@ -69,9 +78,10 @@ matching instruction — the shell's text still carries no pipeline step, no rub
 
 ## Consequences
 
-The first is the founder's ruling. The rest are derived by agent from the verb contracts, not ruled.
+All of these are derived by agent from the verb contracts, not ruled. The only founder ruling is the
+Decision above, verbatim in `## Records`.
 
-1. **(Ruled.)** The grant lands in the `review` shell definition under
+1. **(Derived.)** The grant lands in the `review` shell definition under
    [#5586](https://github.com/kamp-us/phoenix/issues/5586), by design, rather than being discovered
    later by a lane that dead-ends at `governance absent` the way #5554 did.
 2. **(Derived.)** `fabrika governance scope <pr>` stays the named derivation. Its own help text —
