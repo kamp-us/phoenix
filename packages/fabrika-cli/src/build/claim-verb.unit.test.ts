@@ -411,6 +411,203 @@ describe("runClaim — the admission test runs before any marker is written", ()
 });
 
 /**
+ * Repair claims a PR number, and a PR carries no milestone and no `ready-for:` label of its own — so
+ * while any focus was declared the fence refused every one of them (#5562). The subject the two axes
+ * read is the issue the PR's lane serves.
+ */
+describe("runClaim — a PR number is judged by the issue it serves", () => {
+	const FOCUSED = fakeFs({files: {[DEFAULT_ROADMAP]: focusTable(44)}});
+	const SERVED = /^gh api repos\/o\/r\/issues\/5553$/;
+
+	const pull = (body: string) =>
+		issue({
+			title: "fix(build): the repair lane",
+			body,
+			labels: [],
+			milestone: null,
+			pull_request: {url: "https://api.github.com/repos/o/r/pulls/4312"},
+		});
+
+	const served = (
+		milestone: number | null,
+		labels = labelled("status:triaged", "ready-for:agent"),
+	) =>
+		okOut(
+			JSON.stringify({
+				number: 5553,
+				title: "The ticket the lane serves",
+				body: "## Acceptance criteria\n",
+				state: "open",
+				labels,
+				html_url: "https://github.com/o/r/issues/5553",
+				milestone: milestone === null ? null : {number: milestone},
+				state_reason: null,
+			}),
+		);
+
+	const claimPull = (
+		body: string,
+		servedRecord: ExecResult,
+		overrides: Partial<typeof options> = {},
+	) => {
+		const shell = fakeShell([
+			[ISSUE, pull(body)],
+			[SERVED, servedRecord],
+			[POST, POSTED],
+			[GET_COMMENT, ECHO],
+			[COMMENTS, comments({id: 9001, body: MINE})],
+			[perm("agent"), okOut("write\n")],
+		]);
+		return Effect.runPromise(
+			Effect.provide(runClaim({...options, ...overrides}), Layer.merge(shell.layer, FOCUSED.layer)),
+		).then((out) => ({out, shell}));
+	};
+
+	it("admits a PR whose served issue is in focus, with no override", async () => {
+		const {out} = await claimPull("Fixes #5553\n", served(44));
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).answer).toBe("won");
+		expect(out.stderr.some((line) => line.includes("PR #4312 serves #5553 (fixes)"))).toBe(true);
+	});
+
+	it("reads Part of #<n> too — the partial-PR shape build --partial emits", async () => {
+		const {out} = await claimPull("Part of #5553\n", served(44));
+		expect(out.code).toBe(0);
+		expect(out.stderr.some((line) => line.includes("serves #5553 (part-of)"))).toBe(true);
+	});
+
+	it("still refuses at 20 when the served issue is genuinely out of focus, and posts NOTHING", async () => {
+		const {out, shell} = await claimPull("Fixes #5553\n", served(39));
+		expect(out.code).toBe(OUT_OF_FOCUS);
+		expect(shell.calls.some((line) => POST.test(line))).toBe(false);
+		expect(out.stderr.some((line) => line.includes("out of focus"))).toBe(true);
+		expect(out.stderr.some((line) => line.includes("this issue's home is 39"))).toBe(true);
+	});
+
+	it("keeps that refusal overridable", async () => {
+		const {out} = await claimPull("Fixes #5553\n", served(39), {
+			override: "repairing a landed FAIL",
+			overrideLane: "build",
+		});
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).answer).toBe("won");
+	});
+
+	it("refuses a PR naming no issue at 20, saying which case fired — and stays overridable", async () => {
+		const body = "A conversation-authored ADR.\n\n## Deviations\nNone.\n";
+		const {out, shell} = await claimPull(body, served(44));
+		expect(out.code).toBe(OUT_OF_FOCUS);
+		expect(shell.calls.some((line) => POST.test(line))).toBe(false);
+		expect(out.stderr.some((line) => line.includes("no served issue"))).toBe(true);
+		const overridden = await claimPull(body, served(44), {
+			override: "no ticket — the ADR was authored in conversation",
+			overrideLane: "build",
+		});
+		expect(overridden.out.code).toBe(0);
+	});
+
+	it("refuses at 20 when the named issue is proven absent — never on the PR's own empty home", async () => {
+		const {out} = await claimPull("Fixes #5553\n", errOut("gh: Not Found (HTTP 404)"));
+		expect(out.code).toBe(OUT_OF_FOCUS);
+		expect(out.stderr.some((line) => line.includes("proven absent"))).toBe(true);
+	});
+
+	it("refuses at 11 when the served issue cannot be read — UNKNOWN, never admitted", async () => {
+		const {out, shell} = await claimPull("Fixes #5553\n", errOut("gh: Bad gateway (HTTP 502)"));
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(shell.calls.some((line) => POST.test(line))).toBe(false);
+	});
+
+	it("judges the audience on the served issue too, so a repair lane is not refused at 21", async () => {
+		const {out} = await claimPull(
+			"Fixes #5553\n",
+			served(44, labelled("status:triaged", "ready-for:agent")),
+		);
+		expect(out.code).toBe(0);
+		expect(out.stderr.some((line) => line.includes("this issue carries ready-for:agent"))).toBe(
+			true,
+		);
+	});
+
+	it("leaves an issue target reading its own record — the resolution never fires on one", async () => {
+		const shell = fakeShell([
+			[
+				ISSUE,
+				issue({milestone: {number: 44}, labels: labelled("status:triaged", "ready-for:agent")}),
+			],
+			[POST, POSTED],
+			[GET_COMMENT, ECHO],
+			[COMMENTS, comments({id: 9001, body: MINE})],
+			[perm("agent"), okOut("write\n")],
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(runClaim(options), Layer.merge(shell.layer, FOCUSED.layer)),
+		);
+		expect(out.code).toBe(0);
+		expect(out.stderr.some((line) => line.includes("serves #"))).toBe(false);
+	});
+
+	it("admits an unresolvable PR while no focus is declared — an inert fence refuses nothing", async () => {
+		const shell = fakeShell([
+			[ISSUE, pull("No reference at all.\n")],
+			[POST, POSTED],
+			[GET_COMMENT, ECHO],
+			[COMMENTS, comments({id: 9001, body: MINE})],
+			[perm("agent"), okOut("write\n")],
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runClaim({...options, purpose: "gate"}),
+				Layer.merge(shell.layer, NO_FOCUS.layer),
+			),
+		);
+		expect(out.code).toBe(0);
+	});
+
+	/**
+	 * The no-focus half, under the DEFAULT `build` purpose — the one that binds the audience axis, and
+	 * so the one that reads whichever record the resolution returned.
+	 */
+	describe("with no focus declared", () => {
+		const claimInert = (body: string, servedRecord: ExecResult | null) => {
+			const shell = fakeShell([
+				[ISSUE, pull(body)],
+				...(servedRecord === null
+					? []
+					: ([[SERVED, servedRecord]] as ReadonlyArray<readonly [RegExp, ExecResult]>)),
+				[POST, POSTED],
+				[GET_COMMENT, ECHO],
+				[COMMENTS, comments({id: 9001, body: MINE})],
+				[perm("agent"), okOut("write\n")],
+			]);
+			return Effect.runPromise(
+				Effect.provide(runClaim(options), Layer.merge(shell.layer, NO_FOCUS.layer)),
+			).then((out) => ({out, shell}));
+		};
+
+		it("resolves a served issue anyway, so the audience axis reads it and the claim is won", async () => {
+			const {out} = await claimInert("Fixes #5553\n", served(null));
+			expect(out.code).toBe(0);
+			expect(out.stderr.some((line) => line.includes("PR #4312 serves #5553 (fixes)"))).toBe(true);
+			expect(out.stderr.some((line) => line.includes("scope fence inert"))).toBe(true);
+		});
+
+		it("leaves an unserved PR on its own record, audience and all — the pre-#5562 answer", async () => {
+			const {out, shell} = await claimInert("No reference at all.\n", null);
+			expect(out.code).toBe(AUDIENCE_NOT_AGENT);
+			expect(shell.calls.some((line) => POST.test(line))).toBe(false);
+			expect(out.stderr.some((line) => line.includes("serves #"))).toBe(false);
+		});
+
+		it("still refuses at 11 when the served issue cannot be read — an inert fence does not soften UNKNOWN", async () => {
+			const {out, shell} = await claimInert("Fixes #5553\n", errOut("gh: Bad gateway (HTTP 502)"));
+			expect(out.code).toBe(PRECONDITION_UNKNOWN);
+			expect(shell.calls.some((line) => POST.test(line))).toBe(false);
+		});
+	});
+});
+
+/**
  * The purpose axis (#5175): the audience fence binds a build claim only.
  *
  * The epic below is the census shape the ruling rests on — homed in the campaign, `type:epic`, and

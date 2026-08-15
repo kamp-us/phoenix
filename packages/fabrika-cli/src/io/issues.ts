@@ -230,6 +230,14 @@ export interface IssueRecord {
 	 * proving a short read from a count that was never there.
 	 */
 	readonly comments: number;
+	/**
+	 * Whether this number is a pull request rather than an issue.
+	 *
+	 * `repos/<repo>/issues/<n>` answers for both, and the only thing that tells them apart is the
+	 * `pull_request` key. A caller that cannot see the difference reads a PR's empty milestone as an
+	 * unhomed issue's (#5562).
+	 */
+	readonly isPullRequest: boolean;
 }
 
 const toIssueRecord = (value: unknown): IssueRecord | null => {
@@ -254,6 +262,7 @@ const toIssueRecord = (value: unknown): IssueRecord | null => {
 			isRecord(milestone) && typeof milestone.number === "number" ? milestone.number : null,
 		stateReason: typeof state_reason === "string" ? state_reason : null,
 		comments: typeof value.comments === "number" ? value.comments : 0,
+		isPullRequest: isRecord(value.pull_request),
 	};
 };
 

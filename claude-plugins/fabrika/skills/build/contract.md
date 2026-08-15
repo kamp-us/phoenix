@@ -164,17 +164,30 @@ chosen.
   present-but-empty table are the same well-formed default** — no focus is declared. More than one
   data row, a milestone cell that is not `#<int>`, or a date that is not ISO is **malformed** (`4`),
   and malformed is never read as "no focus".
+- **The subject** — *which* record the two axes read. An issue is its own subject. A **pull request
+  is not**: it carries no milestone and no `ready-for:` label, so a test reading the PR's own record
+  refused every repair claim while any focus was declared ([#5562](https://github.com/kamp-us/phoenix/issues/5562)).
+  A PR resolves to the issue its lane serves — the first closing keyword in its body, else `Part of
+  #<n>`, the same reference `review scope` reads — and **both** axes then read that issue. A PR whose
+  body names no readable issue is `refused: no-served-issue` under a declared focus (`20`, and
+  overridable like any scope refusal): the fence cannot judge a ticket nobody named, and admitting it
+  would let a lane past the focus by omitting one line from a body. **The resolution runs whether or
+  not a focus is declared** — the audience axis reads the served issue either way — and only the
+  scope refusal is gated on a declaration: while the fence is inert a PR naming no readable issue
+  falls back to its own record instead of refusing. A served issue that **cannot be read** is
+  `unknown` at either setting (`11`, and not overridable), which is the `unknown` row below.
 - **The issue's home** — the number of the open milestone the issue is homed in, as a string; or, for
   an issue carrying a standing-lane label, that label.
 - **The issue's audience** — its `ready-for:` label.
 
-**The four outcomes — state words, never a boolean.** The admission test returns exactly one across
+**The outcomes — state words, never a boolean.** The admission test returns exactly one across
 both axes, and every refusal carries its reason and names which axis refused:
 
 | Outcome | Trigger | Seat |
 |---|---|---|
 | `admitted` | a focus is declared and the issue's home is that milestone; or the issue carries a standing-lane label; or no focus is declared | kept in the pool · the claim proceeds |
 | `refused: out-of-focus` | a focus is declared, the issue's home is some other milestone or no milestone, and no standing-lane label exempts it | `20` |
+| `refused: no-served-issue` | a focus is declared and the target is a pull request whose body names no readable issue — neither a closing keyword nor `Part of #<n>`, or one naming an issue proven absent | `20` |
 | `refused: audience-not-agent` | the issue carries a `ready-for:` label other than `ready-for:agent`, or carries none at all — absence is an unknown audience, never an agent audience (#4780) | `21` |
 | `unknown` | the declaration or the issue's home could not be read (`11`), or the declaration is malformed (`4`) | `11` / `4` |
 
@@ -606,7 +619,9 @@ fabrika build release 4312 [--repo <owner/name>]
 **`claim` runs the fence before it writes anything.** After the target-open check and **before
 any marker is posted**, `claim` puts `<number>` through the
 [admission test](#admission-test--scope-admission-and-the-audience-axis) — the same imported
-module `build pick` filters on, both axes, never a second derivation. A `refused: out-of-focus` is
+module `build pick` filters on, both axes, never a second derivation. In repair, `<number>` is a PR,
+and the test judges the issue that PR serves rather than the PR's own empty home — a PR naming no
+readable issue is `refused: no-served-issue` at `20`. A `refused: out-of-focus` is
 `20` and a
 `refused: audience-not-agent` is `21`, each named on stderr; an unreadable declaration or home is
 `11` and a malformed declaration is `4`, and neither ever proceeds. Nothing is written on any of the

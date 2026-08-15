@@ -21,6 +21,7 @@
  */
 import {Effect, type FileSystem, Result} from "effect";
 import {exists, type ReadFailed, readFile} from "../io/fs.ts";
+import {issueRefOf} from "../review/classes.ts";
 import {refuse, type VerbOutcome} from "../verb.ts";
 import {AUDIENCE_NOT_AGENT, BAD_SECTIONS, OUT_OF_FOCUS, PRECONDITION_UNKNOWN} from "./codes.ts";
 
@@ -49,6 +50,35 @@ export interface IssueFacts {
 	readonly labels: ReadonlyArray<string>;
 	readonly milestone: number | null;
 }
+
+/** What a subject read needs off the target — the PR/issue split, and the body the link lives in. */
+export interface SubjectFacts {
+	readonly isPullRequest: boolean;
+	readonly body: string;
+}
+
+/**
+ * Whose home the admission test judges.
+ *
+ * An issue is its own subject. A pull request is not: it carries no milestone and no `ready-for:`
+ * label, so a fence reading the PR's own record refused **every** repair claim while any focus was
+ * declared (#5562). A PR's lane serves a ticket, and that ticket's home is the campaign membership
+ * the fence is actually asking about — so the PR resolves to it, through the same body reference
+ * `review scope` reads (`issueRefOf`), never a second parser.
+ */
+export type ScopeSubject =
+	| {readonly _tag: "Own"}
+	| {readonly _tag: "Served"; readonly number: number; readonly kind: "fixes" | "part-of"}
+	/** A PR whose body names no issue at all — there is nothing to resolve to. */
+	| {readonly _tag: "Unserved"};
+
+export const scopeSubjectOf = (target: SubjectFacts): ScopeSubject => {
+	if (!target.isPullRequest) return {_tag: "Own"};
+	const ref = issueRefOf(target.body);
+	return ref.kind === "none" || ref.number === null
+		? {_tag: "Unserved"}
+		: {_tag: "Served", number: ref.number, kind: ref.kind};
+};
 
 /** An issue's home: its open milestone's number as a string, or its standing lane. */
 export const homeOf = (issue: IssueFacts): string | null =>
@@ -235,7 +265,28 @@ export type Admission =
 			readonly scope: ScopeAxis;
 			readonly audience: Extract<AudienceAxis, {readonly _tag: "NotAgent"}>;
 	  }
+	/**
+	 * A pull request with no readable served issue, under a declared focus.
+	 *
+	 * It carries no axis verdict because neither axis ever ran: the fence could not identify the
+	 * record to judge. Refusing is the fail-closed answer — admitting a PR whose ticket nobody can
+	 * name would let any lane past a declared focus by omitting one line from a body — and the
+	 * remedy is a cheap one the message states: name the issue in the PR body, or override.
+	 */
+	| {
+			readonly _tag: "NoServedIssue";
+			readonly pr: number;
+			readonly focus: number;
+			readonly reason: string;
+	  }
 	| {readonly _tag: "Unknown"; readonly code: number; readonly reason: string};
+
+export const noServedIssue = (pr: number, focus: number, reason: string): Admission => ({
+	_tag: "NoServedIssue",
+	pr,
+	focus,
+	reason,
+});
 
 /**
  * Run both axes over one issue.
@@ -277,6 +328,9 @@ export const exclusionReasonOf = (
 		case "Admitted":
 			return null;
 		case "OutOfFocus":
+		// The pool reads issues only, so this arrives from the claim path alone; it is a scope-axis
+		// refusal there, and it is reported as one here rather than as an unreadable issue.
+		case "NoServedIssue":
 			return "out-of-focus";
 		case "AudienceNotAgent":
 			return "audience-not-agent";
@@ -304,7 +358,7 @@ export const ADMISSION_EXIT_CODES: ReadonlyArray<{
 	{
 		code: OUT_OF_FOCUS,
 		condition:
-			"proven: not admitted on the scope axis — the issue's home is not the declared milestone and no standing-lane label exempts it",
+			"proven: not admitted on the scope axis — the issue's home is not the declared milestone and no standing-lane label exempts it, or the target is a pull request naming no served issue to judge",
 	},
 	{
 		code: AUDIENCE_NOT_AGENT,
@@ -364,6 +418,11 @@ export const admissionRefusal = (verb: string, admission: Admission): VerbOutcom
 				`${verb}: out of focus — the declared focus is milestone #${admission.scope.focus} and this issue's home is ${home}; edit the ## Focus row, or claim it with an explicit override.`,
 			);
 		}
+		case "NoServedIssue":
+			return refuse(
+				OUT_OF_FOCUS,
+				`${verb}: no served issue — the declared focus is milestone #${admission.focus} and PR #${admission.pr} ${admission.reason}, so there is no ticket whose home the fence can judge; name the issue in the PR body (a closing keyword or "Part of #<n>"), or claim it with an explicit override.`,
+			);
 		case "AudienceNotAgent":
 			return refuse(
 				AUDIENCE_NOT_AGENT,
