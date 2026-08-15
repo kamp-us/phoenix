@@ -967,7 +967,15 @@ With `--json`: `{"outcome":…,"sha":…,"run":…,"artifact":…,"checks":[{nam
   `run-evidence`; the manifest's required keys are `schemaVersion` (numeric, `1`), `commit`,
   and `checks[]` of `{name, status}` (ADR 0054). `checks[]` entries carry a string `status`
   field, **not** a boolean `pass` — the wire shape is the producer's, and prose that says
-  "boolean" ships a parser that reads everything falsy (#4392).
+  "boolean" ships a parser that reads everything falsy (#4392). Passing is the producer's own
+  word, `pass`, and nothing else: `crabbox-manifest`'s `deriveChecks` writes `pass`/`fail` and the
+  producer workflow appends its `bundle-node-core-free` entry in the same words. GitHub's
+  check-conclusion vocabulary (`success`/`neutral`/`skipped`) belongs to `ship checks`, which
+  reads check runs; against a bundle it matches nothing, so every passing check counted as
+  failing and no bundle could attest a passing run (#5563). An unrecognized `status` reads as
+  failing, never as passing — the same fail-closed posture the check-run rollup takes (#4552) —
+  and accepting both vocabularies at once is not the fix, because it re-opens the same silent
+  disagreement.
 - `pending` — a producer run for this head exists and has not completed, **or** it completed
   **within the freshness window** and lists no `run-evidence` artifact. **Pending is not absent** —
   reporting it absent invents a CI gap (#3913).
@@ -1026,8 +1034,8 @@ match only), one artifact, one manifest. All fetch intermediates live under a pe
 $ fabrika ship evidence 4321 --sha 03135b91
 evidence	present	03135b91
 lookup	run:9182736450	artifact:2211334455	status:completed
-check	typecheck	success
-check	unit	success
+check	typecheck	pass
+check	unit	pass
 ```
 
 ```
@@ -1040,8 +1048,8 @@ lookup	run:9182736999	artifact:-	status:in_progress
 $ fabrika ship evidence 4323 --sha 7c31a0de
 evidence	failed	7c31a0de
 lookup	run:9182737111	artifact:2211334999	status:completed
-check	typecheck	success
-check	unit	failure
+check	typecheck	pass
+check	unit	fail
 ```
 
 **Grounding**
@@ -1052,6 +1060,8 @@ check	unit	failure
   bundle" for a bundle present the whole time.
 - #4392 — `checks[]` `status` is a string on the wire; the contract says so, so the parser
   cannot be written against invented prose.
+- #5563 — which vocabulary that string is written in: the producer's `pass`/`fail`, not GitHub's
+  conclusions, and unrecognized reads as failing.
 - #4013 — the thin-skill rule: the skill never hand-rolls this fetch; this verb is the only
   reader.
 - ADR 0054 / 0086 — the bundle contract and the foreign-repo degradation this transcribes.

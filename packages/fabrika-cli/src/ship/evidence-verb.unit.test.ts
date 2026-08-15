@@ -43,6 +43,24 @@ const artifactsFor = (
 const manifest = (commit: string, checks: ReadonlyArray<{name: string; status: string}>): string =>
 	JSON.stringify({schemaVersion: 1, commit, checks});
 
+/**
+ * A manifest in the shape the real producer publishes: `crabbox-manifest`'s `deriveChecks` writes
+ * `{name, status: "pass" | "fail", exitCode}` per command, and the `run-evidence` workflow appends
+ * `bundle-node-core-free` in the same words.
+ */
+const producerManifest = (commit: string): string =>
+	JSON.stringify({
+		schemaVersion: 1,
+		commit,
+		run: {producer: "crabbox", timestamp: "2026-07-25T04:57:44Z", environment: "ci"},
+		checks: [
+			{name: "run", status: "pass", exitCode: 0},
+			{name: "bundle-node-core-free", status: "pass", exitCode: 0},
+		],
+		tests: {total: 2362, passed: 2362, failed: 0, skipped: 0, failures: []},
+		logs: {ref: "run-log"},
+	});
+
 const options = {pr: 4321, sha: HEAD, repo: null, json: false, env: ENV};
 
 const run = (
@@ -66,8 +84,8 @@ const upToArtifact: ReadonlyArray<readonly [RegExp, ExecResult]> = [
 
 describe("readManifest", () => {
 	it("reads `checks[].status` as a STRING — a boolean-shaped parser reads everything falsy (#4392)", () => {
-		expect(readManifest(manifest(HEAD, [{name: "unit", status: "success"}]))?.checks).toEqual([
-			{name: "unit", status: "success"},
+		expect(readManifest(manifest(HEAD, [{name: "unit", status: "pass"}]))?.checks).toEqual([
+			{name: "unit", status: "pass"},
 		]);
 	});
 
@@ -88,8 +106,8 @@ describe("runEvidence", () => {
 				UNZIP,
 				okOut(
 					manifest(HEAD, [
-						{name: "typecheck", status: "success"},
-						{name: "unit", status: "success"},
+						{name: "typecheck", status: "pass"},
+						{name: "unit", status: "pass"},
 					]),
 				),
 			],
@@ -99,11 +117,28 @@ describe("runEvidence", () => {
 			[
 				`evidence\tpresent\t${HEAD}`,
 				"lookup\trun:9182736450\tartifact:2211334455\tstatus:completed",
-				"check\ttypecheck\tsuccess",
-				"check\tunit\tsuccess",
+				"check\ttypecheck\tpass",
+				"check\tunit\tpass",
 				"",
 			].join("\n"),
 		);
+	});
+
+	// #5563: the consumer read the bundle against GitHub's conclusion vocabulary, which the producer
+	// never writes, so every real bundle read `failed` and no PR could ship on green evidence.
+	it("reports present for a manifest in the producer's own published shape", async () => {
+		const out = await run([...upToArtifact, [UNZIP, okOut(producerManifest(HEAD))]]);
+		expect(out.code).toBe(0);
+		expect(out.stdout.split("\n")[0]).toBe(`evidence\tpresent\t${HEAD}`);
+	});
+
+	it("reports failed for a check carrying GitHub's `success` — an unknown word is not passing", async () => {
+		const out = await run([
+			...upToArtifact,
+			[UNZIP, okOut(manifest(HEAD, [{name: "unit", status: "success"}]))],
+		]);
+		expect(out.code).toBe(0);
+		expect(out.stdout.split("\n")[0]).toBe(`evidence\tfailed\t${HEAD}`);
 	});
 
 	it("reports pending for an in-flight producer run — pending is NOT absent (#3913)", async () => {
@@ -186,7 +221,7 @@ describe("runEvidence", () => {
 	it("reports failed for a bundle that binds this head and attests a failing run", async () => {
 		const out = await run([
 			...upToArtifact,
-			[UNZIP, okOut(manifest(HEAD, [{name: "unit", status: "failure"}]))],
+			[UNZIP, okOut(manifest(HEAD, [{name: "unit", status: "fail"}]))],
 		]);
 		expect(out.code).toBe(0);
 		expect(out.stdout.split("\n")[0]).toBe(`evidence\tfailed\t${HEAD}`);
