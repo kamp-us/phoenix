@@ -391,7 +391,7 @@ absence.
 |---|---|---|
 | `grill open: --topic carries a machine-local path: <path> — refusing to open a session titled with it.` | 5 | refusal |
 | `grill open: --topic is a bare @ path reference — not redactable, refusing to open a session titled with it.` | 6 | refusal |
-| `grill open: label "grilling:session" does not exist in <repo> — refusing to open a session no later run can find. Run: fabrika status bootstrap issue-shape-markers.` | 7 | refusal |
+| `grill open: label "grilling:session" does not exist in <repo> — refusing to open a session no later run can find. Run the front-door bootstrap: fabrika status bootstrap issue-shape-markers.` | 7 | refusal |
 | `grill open: the create failed, so whether a session issue exists is UNKNOWN — check <repo> before re-running.` | 8 | refusal |
 | `grill open: created #<n> but the read-back does not match what was sent.` | 9 | refusal |
 | `grill open: the label write on #<n> failed, so the session may exist unlabelled and unfindable — check #<n> before re-running.` | 8 | refusal |
