@@ -563,6 +563,48 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 		);
 		expect(out.code).toBe(0);
 	});
+
+	/**
+	 * The no-focus half, under the DEFAULT `build` purpose — the one that binds the audience axis, and
+	 * so the one that reads whichever record the resolution returned.
+	 */
+	describe("with no focus declared", () => {
+		const claimInert = (body: string, servedRecord: ExecResult | null) => {
+			const shell = fakeShell([
+				[ISSUE, pull(body)],
+				...(servedRecord === null
+					? []
+					: ([[SERVED, servedRecord]] as ReadonlyArray<readonly [RegExp, ExecResult]>)),
+				[POST, POSTED],
+				[GET_COMMENT, ECHO],
+				[COMMENTS, comments({id: 9001, body: MINE})],
+				[perm("agent"), okOut("write\n")],
+			]);
+			return Effect.runPromise(
+				Effect.provide(runClaim(options), Layer.merge(shell.layer, NO_FOCUS.layer)),
+			).then((out) => ({out, shell}));
+		};
+
+		it("resolves a served issue anyway, so the audience axis reads it and the claim is won", async () => {
+			const {out} = await claimInert("Fixes #5553\n", served(null));
+			expect(out.code).toBe(0);
+			expect(out.stderr.some((line) => line.includes("PR #4312 serves #5553 (fixes)"))).toBe(true);
+			expect(out.stderr.some((line) => line.includes("scope fence inert"))).toBe(true);
+		});
+
+		it("leaves an unserved PR on its own record, audience and all — the pre-#5562 answer", async () => {
+			const {out, shell} = await claimInert("No reference at all.\n", null);
+			expect(out.code).toBe(AUDIENCE_NOT_AGENT);
+			expect(shell.calls.some((line) => POST.test(line))).toBe(false);
+			expect(out.stderr.some((line) => line.includes("serves #"))).toBe(false);
+		});
+
+		it("still refuses at 11 when the served issue cannot be read — an inert fence does not soften UNKNOWN", async () => {
+			const {out, shell} = await claimInert("Fixes #5553\n", errOut("gh: Bad gateway (HTTP 502)"));
+			expect(out.code).toBe(PRECONDITION_UNKNOWN);
+			expect(shell.calls.some((line) => POST.test(line))).toBe(false);
+		});
+	});
 });
 
 /**

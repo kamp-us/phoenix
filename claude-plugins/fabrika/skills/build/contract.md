@@ -171,8 +171,11 @@ chosen.
   #<n>`, the same reference `review scope` reads — and **both** axes then read that issue. A PR whose
   body names no readable issue is `refused: no-served-issue` under a declared focus (`20`, and
   overridable like any scope refusal): the fence cannot judge a ticket nobody named, and admitting it
-  would let a lane past the focus by omitting one line from a body. While the fence is inert there is
-  nothing to refuse on, so an unresolvable PR falls back to its own record.
+  would let a lane past the focus by omitting one line from a body. **The resolution runs whether or
+  not a focus is declared** — the audience axis reads the served issue either way — and only the
+  scope refusal is gated on a declaration: while the fence is inert a PR naming no readable issue
+  falls back to its own record instead of refusing. A served issue that **cannot be read** is
+  `unknown` at either setting (`11`, and not overridable), which is the `unknown` row below.
 - **The issue's home** — the number of the open milestone the issue is homed in, as a string; or, for
   an issue carrying a standing-lane label, that label.
 - **The issue's audience** — its `ready-for:` label.

@@ -105,9 +105,12 @@ export type AdmissionSubject =
 /**
  * Resolve a claim target to the record whose home and audience the fence judges.
  *
- * An issue judges itself. A pull request judges the issue its lane serves (#5562). While no focus is
- * declared the fence is inert, so an unresolvable PR is never refused on scope grounds here — it
- * falls back to its own record, exactly as before.
+ * An issue judges itself. A pull request judges the issue its lane serves (#5562). The resolution
+ * runs whether or not a focus is declared, because the audience axis reads the served issue either
+ * way; only the *scope* refusal is gated on a declaration, so an **unresolvable** PR falls back to
+ * its own record while the fence is inert instead of refusing at `20`. A served issue that cannot be
+ * READ is UNKNOWN at either setting — `11`, and outside the overridable set, because a fence that
+ * could not read its input has proven nothing.
  */
 export const resolveAdmissionSubject = (
 	verb: string,
