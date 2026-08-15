@@ -11,8 +11,9 @@
  * trail can graduate its remainder later at a different digest instead of being refused forever by
  * the repeat guard. And `covers` is what lets a reader answer a coverage question without re-deriving
  * anything: a digest alone is opaque, so a caller holding one could not tell a remainder from a
- * duplicate. Its separator is `;` rather than `,` because a map-sourced ref contains a space
- * (`#9301 R1.2`), which makes a comma-separated list of them ambiguous.
+ * duplicate. Its separator is `;` rather than `,` for readability — a map-sourced ref already carries
+ * a space (`#9301 R1.2`), and `R1.1, #9301 R1.2` reads as one run-on list where `;` keeps the refs
+ * visually apart. A comma would parse the same; this is a legibility choice, not a hazard.
  *
  * It is a new format rather than a widening of `./verdict-marker.ts`: that reader is guarded by a
  * separate namespace-prefix gate that returns `Absent` for a non-member, so a widening missing either

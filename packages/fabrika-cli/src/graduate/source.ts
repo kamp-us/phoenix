@@ -17,6 +17,7 @@ import type {ChildProcessSpawner} from "effect/unstable/process";
 import {runRead as runGrillRead} from "../grill/read-verb.ts";
 import {SESSION_LABEL} from "../grill/session.ts";
 import {getIssue, type IssueRecord} from "../io/issues.ts";
+import {isRecord, parseJson} from "../io/json.ts";
 import {MAP_LABEL, readFrontier, readMap} from "../map/frontier.ts";
 import {refuse, type VerbOutcome} from "../verb.ts";
 import {BAD_SECTIONS, NO_TARGET, PRECONDITION_UNKNOWN, SOURCE_UNRECOGNIZED} from "./codes.ts";
@@ -45,11 +46,16 @@ export interface Source {
  *
  * An issue carrying **both** labels is `12` naming both rather than a merge of two trails: that is a
  * mis-shaped artifact, and guessing which one is live would be judgment inside a verb.
+ *
+ * `noTrailClause` is the tail the *neither*-label refusal ends on, and each of the three callers
+ * states a different one because the contract's error tables state three different sentences — the
+ * check is shared, the bytes a reader sees are not.
  */
 export const requireSource = (
 	verb: string,
 	repo: string,
 	source: number,
+	noTrailClause: string,
 ): Effect.Effect<Guarded<Source>, never, ChildProcessSpawner.ChildProcessSpawner> =>
 	Effect.gen(function* () {
 		const found = yield* getIssue(repo, source);
@@ -78,7 +84,7 @@ export const requireSource = (
 			return refused(
 				refuse(
 					SOURCE_UNRECOGNIZED,
-					`${verb}: #${source} carries neither ${SESSION_LABEL} nor ${MAP_LABEL} — there is no trail to read.`,
+					`${verb}: #${source} carries neither ${SESSION_LABEL} nor ${MAP_LABEL}${noTrailClause}`,
 				),
 			);
 		}
@@ -122,6 +128,26 @@ interface GrillAnswer {
 }
 
 /**
+ * The sibling's stdout, read as its answer or as nothing.
+ *
+ * The resolver's shape is a contract between two groups, not a guarantee: a rename, an added prose
+ * line, a truncated pipe all arrive here as bytes that do not parse. An unguarded `JSON.parse` would
+ * throw, and a defect is not a seated exit code — the verb would die where it owes `11`.
+ */
+export const readGrillAnswer = (stdout: string): GrillAnswer | undefined => {
+	const parsed = parseJson(stdout);
+	if (!isRecord(parsed)) return undefined;
+	if (!Array.isArray(parsed.questions)) return undefined;
+	if (typeof parsed.frontier !== "string") return undefined;
+	if (!isRecord(parsed.scanned)) return undefined;
+	return {
+		questions: parsed.questions as ReadonlyArray<ResolvedQuestion>,
+		frontier: parsed.frontier,
+		scanned: parsed.scanned as Readonly<Record<string, number>>,
+	};
+};
+
+/**
  * The trail of `source`, resolved through the reader its kind belongs to.
  *
  * Zero decisions is a **fact** — the trail reads `empty`. A read that could not complete is `11`,
@@ -138,7 +164,15 @@ export const deriveTrail = (
 		if (kind === "grilling") {
 			const outcome = yield* runGrillRead({session: source, repo, env});
 			if (outcome.code !== 0) return refused(grillRefusal(verb, source, outcome));
-			const answer = JSON.parse(outcome.stdout) as GrillAnswer;
+			const answer = readGrillAnswer(outcome.stdout);
+			if (answer === undefined) {
+				return refused(
+					refuse(
+						PRECONDITION_UNKNOWN,
+						`${verb}: the grilling resolver exited 0 on #${source} but its answer does not carry the shape this verb reads (questions, frontier, scanned) — the trail is UNKNOWN, never empty and never ready.`,
+					),
+				);
+			}
 			const normalized = fromSession(answer.questions);
 			return {
 				_tag: "Ok",

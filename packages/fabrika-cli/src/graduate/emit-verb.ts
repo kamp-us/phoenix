@@ -181,7 +181,12 @@ export const runEmit = <R = never>(
 			);
 		}
 
-		const found = yield* requireSource(VERB, repo, source);
+		const found = yield* requireSource(
+			VERB,
+			repo,
+			source,
+			" — there is no trail to bind this spec to.",
+		);
 		if (found._tag === "Refused") return found.outcome;
 
 		const resolved = yield* deriveTrail(VERB, repo, source, found.value.kind, options.env);

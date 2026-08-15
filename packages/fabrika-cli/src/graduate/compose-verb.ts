@@ -31,6 +31,7 @@ import {
 	checkSections,
 	composeSpec,
 	DECISIONS_SECTION,
+	unplacedContent,
 } from "./spec.ts";
 import {parseTrailDocument} from "./trail.ts";
 
@@ -82,6 +83,15 @@ export const runCompose = <R = never>(
 					: problem._tag === "Empty"
 						? `${VERB}: section "${problem.heading}" is empty.`
 						: `${VERB}: sections are out of order — "${problem.heading}" follows "${problem.after}".`,
+			);
+		}
+		const unplaced = unplacedContent(authored, AUTHORED_SECTIONS);
+		if (unplaced !== null) {
+			return refuse(
+				BAD_SECTIONS,
+				unplaced._tag === "Preamble"
+					? `${VERB}: stdin carries content above "## Problem" — a spec body holds ${AUTHORED_SECTIONS.join(", ")} and nothing else, and composing would have dropped it.`
+					: `${VERB}: stdin carries section "${unplaced.heading}", which is not one of ${AUTHORED_SECTIONS.join(", ")} — composing would have dropped it.`,
 			);
 		}
 

@@ -95,6 +95,26 @@ export const checkSections = (
 	return null;
 };
 
+export type Unplaced =
+	| {readonly _tag: "Preamble"}
+	| {readonly _tag: "Heading"; readonly heading: string};
+
+/**
+ * The first authored bytes `composeSpec` would not carry into the spec, or `null`.
+ *
+ * `composeSpec` rebuilds the body from the closed set of headings, so anything outside it — a
+ * preamble above `## Problem`, a fourth `## Risks` — would be dropped without a word and exist only
+ * in the caller's scrollback. Naming it is the only option that does not lose the author's bytes.
+ */
+export const unplacedContent = (body: string, allowed: ReadonlyArray<string>): Unplaced | null => {
+	const lines = body.split("\n");
+	const firstHeading = lines.findIndex((line) => /^##\s+/.test(line));
+	const preamble = (firstHeading === -1 ? lines : lines.slice(0, firstHeading)).join("\n");
+	if (preamble.trim() !== "") return {_tag: "Preamble"};
+	const stray = sectionsOf(body).find((section) => !allowed.includes(section.heading));
+	return stray === undefined ? null : {_tag: "Heading", heading: stray.heading};
+};
+
 /** Whether the authored body reaches for the section this group owns. */
 export const carriesDecisionsHeading = (body: string): boolean =>
 	sectionsOf(body).some((section) => section.heading === DECISIONS_SECTION);

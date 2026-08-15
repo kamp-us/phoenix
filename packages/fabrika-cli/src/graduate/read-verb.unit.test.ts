@@ -125,9 +125,12 @@ describe("its only three refusals", () => {
 		expect(out.stdout).toBe("");
 	});
 
-	it("refuses a source carrying neither label", async () => {
+	it("refuses a source carrying neither label, in this verb's own words", async () => {
 		const out = await run([[ISSUE, okOut(issueJson({number: SESSION, labels: []}))]]);
 		expect(out.code).toBe(SOURCE_UNRECOGNIZED);
+		expect(out.stderr.join("\n")).toContain(
+			`graduate read: #${SESSION} carries neither grilling:session nor wayfinding:map.`,
+		);
 	});
 
 	it('refuses a comment read that could not complete — never "no"', async () => {

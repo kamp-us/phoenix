@@ -170,8 +170,10 @@ two buildable things graduates its remainder later at a different digest, and a 
 trail would refuse that second filing forever while claiming to prevent duplicates. And `covers`
 names the refs the spec rendered, which is what makes coverage answerable from the artifact alone: a
 digest by itself is opaque, so a reader holding one could say a source had graduated but not which
-parts of its trail were specified. Its separator is `;` rather than `,` because a map-sourced ref
-contains a space (`#9301 R1.2`).
+parts of its trail were specified. Its separator is `;` rather than `,` for readability — a
+map-sourced ref already carries a space (`#9301 R1.2`), and `R1.1, #9301 R1.2` reads as one run-on
+list where `;` keeps the refs visually apart. A comma would parse the same; this is a legibility
+choice, not a hazard.
 
 It is a new format rather than a widening of `verdict-marker`. That reader is guarded by a separate
 namespace-prefix gate that returns `Absent` for a non-member, so a widening that missed either

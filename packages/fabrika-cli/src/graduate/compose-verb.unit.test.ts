@@ -65,6 +65,19 @@ describe("the authored half is validated before anything is rendered", () => {
 		expect(out.stdout).toBe("");
 	});
 
+	it("refuses a fourth section rather than dropping it from the composed spec", async () => {
+		const out = await compose({stdin: {_tag: "Text", text: `${AUTHORED}\n## Risks\nr\n`}});
+		expect(out.code).toBe(BAD_SECTIONS);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.join("\n")).toContain("## Risks");
+	});
+
+	it("refuses a preamble above ## Problem rather than dropping it", async () => {
+		const out = await compose({stdin: {_tag: "Text", text: `intro\n\n${AUTHORED}`}});
+		expect(out.code).toBe(BAD_SECTIONS);
+		expect(out.stdout).toBe("");
+	});
+
 	it("refuses a stdin body that authors the decisions section itself", async () => {
 		const out = await compose({stdin: {_tag: "Text", text: `${AUTHORED}\n## Decisions\n- mine\n`}});
 		expect(out.code).toBe(DECISIONS_AUTHORED);

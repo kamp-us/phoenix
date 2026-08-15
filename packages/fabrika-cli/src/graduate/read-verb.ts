@@ -95,7 +95,7 @@ export const runRead = (
 		}
 		const repo = repoAttempt.value;
 
-		const found = yield* requireSource(VERB, repo, source);
+		const found = yield* requireSource(VERB, repo, source, ".");
 		if (found._tag === "Refused") return found.outcome;
 
 		const comments = yield* listComments(repo, source);
