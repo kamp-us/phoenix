@@ -25,23 +25,25 @@ flowchart TD
 		arc_at_lye["Atölye"]:::done
 	end
 	subgraph campaigns["Campaigns"]
-		camp_mentor_audit["Mentor Audit"]:::active
+		camp_mentor_audit["Mentor Audit"]:::done
 		camp_crew_mcp_finish_replace_the_tmux_relay_with_crew_mcp["Crew-MCP Finish — replace the tmux relay with crew-mcp"]:::done
-		camp_deterministic_crew_mechanics["Deterministic Crew Mechanics"]:::active
+		camp_deterministic_crew_mechanics["Deterministic Crew Mechanics"]:::done
 		camp_di_taxis_docs_pipeline_crew_mcp["Diátaxis docs — pipeline-crew & -mcp"]:::done
-		camp_merge_gate_reliability["Merge-Gate Reliability"]:::active
-		camp_worktree_isolation_integrity["Worktree-Isolation Integrity"]:::active
-		camp_cp_verdict_integrity["§CP Verdict Integrity"]:::active
-		camp_flag_graduation["Flag Graduation"]:::active
-		camp_pipeline_cli_glue_consolidation["pipeline-cli Glue Consolidation"]:::active
-		camp_lint_gate_adoption["Lint-Gate Adoption"]:::active
+		camp_merge_gate_reliability["Merge-Gate Reliability"]:::done
+		camp_worktree_isolation_integrity["Worktree-Isolation Integrity"]:::done
+		camp_cp_verdict_integrity["§CP Verdict Integrity"]:::done
+		camp_flag_graduation["Flag Graduation"]:::done
+		camp_pipeline_cli_glue_consolidation["pipeline-cli Glue Consolidation"]:::done
+		camp_lint_gate_adoption["Lint-Gate Adoption"]:::done
 		camp_taste_skill_library["Taste-Skill Library"]:::active
-		camp_pipeline_anywhere["Pipeline Anywhere"]:::active
-		camp_pipeline_cli_effect_platform_migration["pipeline-cli @effect/platform migration"]:::active
+		camp_pipeline_anywhere["Pipeline Anywhere"]:::done
+		camp_pipeline_cli_effect_platform_migration["pipeline-cli @effect/platform migration"]:::done
 		camp_agentic_design_system_coverage["Agentic design-system coverage"]:::done
-		camp_flag_retirement_adr_0136["Flag Retirement (ADR 0136)"]:::active
+		camp_flag_retirement_adr_0136["Flag Retirement (ADR 0136)"]:::done
 		camp_writing_craft_import["Writing-Craft Import"]:::done
-		camp_fabrika_kampus_pipeline_v2["fabrika — kampus-pipeline v2"]:::active
+		camp_fabrika_kampus_pipeline_v2["fabrika — kampus-pipeline v2"]:::done
+		camp_switching_to_fabrika["switching to fabrika"]:::active
+		camp_fabrika_fast_follows["fabrika fast follows"]:::active
 	end
 	ext_3642["#3642"]:::external
 	ext_3833["#3833"]:::external
@@ -79,30 +81,32 @@ Campaigns are bounded, milestone-backed pushes that run *concurrently* with the 
 
 | Campaign | Milestone | State |
 |----------|-----------|-------|
-| Mentor Audit | #27 | active |
+| Mentor Audit | #27 | done |
 | Crew-MCP Finish — replace the tmux relay with crew-mcp | #28 | done |
-| Deterministic Crew Mechanics | #29 | active |
+| Deterministic Crew Mechanics | #29 | done |
 | Diátaxis docs — pipeline-crew & -mcp | #31 | done |
-| Merge-Gate Reliability | #36 | active |
-| Worktree-Isolation Integrity | #37 | active |
-| §CP Verdict Integrity | #38 | active |
-| Flag Graduation | #39 | active |
-| pipeline-cli Glue Consolidation | #40 | active |
-| Lint-Gate Adoption | #41 | active |
+| Merge-Gate Reliability | #36 | done |
+| Worktree-Isolation Integrity | #37 | done |
+| §CP Verdict Integrity | #38 | done |
+| Flag Graduation | #39 | done |
+| pipeline-cli Glue Consolidation | #40 | done |
+| Lint-Gate Adoption | #41 | done |
 | Taste-Skill Library | #42 | active |
-| Pipeline Anywhere | #35 | active |
-| pipeline-cli @effect/platform migration | #32 | active |
+| Pipeline Anywhere | #35 | done |
+| pipeline-cli @effect/platform migration | #32 | done |
 | Agentic design-system coverage | #33 | done |
-| Flag Retirement (ADR 0136) | #34 | active |
+| Flag Retirement (ADR 0136) | #34 | done |
 | Writing-Craft Import | #30 | done |
-| fabrika — kampus-pipeline v2 | #44 | active |
+| fabrika — kampus-pipeline v2 | #44 | done |
+| switching to fabrika | #45 | active |
+| fabrika fast follows | #46 | active |
 
 **The table is a parsed contract.** It is the single source the campaign skill (which appends a row and flips its state) and the lifecycle guard (which reads it) both bind to, so the grammar is pinned here rather than re-derived at either end:
 
 - **Columns** are `Campaign | Milestone | State`, in that order. `Campaign` is the founder-voice name; `Milestone` pins the campaign to its GitHub milestone **by number** (`#N`) — the same row→milestone-by-number binding the roadmap-guard already enforces on `## Arcs`, and that number is the one link to the operational projection. `State` is the lifecycle cell.
 - **`State ∈ {active, done}`** — the symmetric two-state lifecycle. A campaign is `active` while its milestone is draining, and flips to `done` once that milestone is fully drained (its GitHub milestone closed). There is no `queued` state: unlike an arc, a campaign is not sequenced ahead — it opens `active` when the founder starts it and ends `done`, running concurrently with whichever arc is active.
 
-**Mentor Audit** — a security & architecture audit wave (the staff-mentor findings: the karma double-bump race, per-actor rate limiting, ops runbooks, `SECURITY.md`, …). To be solved ASAP; drains via the platform lane alongside Geçit.
+**Mentor Audit** — *done.* A security & architecture audit wave (the staff-mentor findings: the karma double-bump race, per-actor rate limiting, ops runbooks, `SECURITY.md`, …). Drained via the platform lane alongside Geçit.
 
 ## Focus
 
@@ -110,7 +114,7 @@ The one milestone in **exclusive focus**: the campaign an execution engine may o
 
 | Milestone | Declared |
 |-----------|----------|
-| #44 | 2026-08-09 |
+| #45 | 2026-08-14 |
 
 **The grammar.** Columns are `Milestone | Declared`, in that order. `Milestone` pins the focus **by number** (`#N`) — the same row→milestone-by-number binding `## Arcs` and `## Campaigns` use, and the one link to the operational projection. `Declared` is the ISO date (`YYYY-MM-DD`) the focus was declared. The table carries **at most one row**: exclusive focus admits exactly one milestone.
 
