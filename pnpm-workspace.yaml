@@ -5,6 +5,12 @@ packages:
 
 catalog:
   '@alchemy.run/better-auth': 2.0.0-beta.59
+  # Lockstep with better-auth 1.6.23 (the `^1.6.13` catalog pin resolves there):
+  # api-key + core pinned to the EXACT version better-auth links transitively, so ONE
+  # `@better-auth/core` lives in the tree. A stale `core: 1.6.10` left apps/web's direct
+  # (type-anchor) core a version behind the transitive 1.6.23 the apiKey plugin's hook
+  # types are built against — two `HookEndpointContext` types → TS2322 in the plugins
+  # array (#108, the CLAUDE.md "don't introduce a second version" catalog invariant).
   '@better-auth/api-key': 1.6.23
   '@better-auth/core': 1.6.23
   '@biomejs/biome': ^2.4.15
@@ -40,12 +46,23 @@ catalog:
   '@vitejs/plugin-react': ^6.0.2
   alchemy: 2.0.0-beta.59
   axe-core: ^4.10.3
+  # better-auth's drizzle-adapter speaks RQB v1 (raw-SQL `eq()` where-shape); drizzle-orm 1.x
+  # is RQB v2 (`defineRelations`). The two do NOT interoperate through RQB: routing a better-auth
+  # read via `experimental.joins` 500s ("Unknown relational filter field"). These pins are coupled
+  # by that incompatibility — don't assume a bump makes them join-compatible (no RQB-v2 adapter
+  # release exists yet). See #2286 (guard) / #2291 (re-enable joins via pnpm patch).
   better-auth: ^1.6.13
+  # better-call's EXACT-pinned peer of `@better-auth/core@1.6.23` (`better-call: 1.3.7`),
+  # also what better-auth 1.6.23 links transitively. A stale 1.3.5 split core@1.6.23 into
+  # two peer-hash instances (one per better-call), re-surfacing the two-`HookEndpointContext`
+  # TS2322 — pinned to 1.3.7 so ONE core/better-call pair lives in the tree (#108).
   better-call: 1.3.7
   drizzle-kit: 1.0.0-rc.4
   drizzle-orm: 1.0.0-rc.4
   effect: 4.0.0-beta.92
   fast-check: ^3.23.2
+  # Pinned to the exact 5.8.0 an existing lockfile parent already links (@distilled.cloud/aws +
+  # alchemy) so no third version enters the tree — the PR #535 frozen-lockfile rule.
   fast-xml-parser: 5.8.0
   jsdom: ^26.1.0
   lefthook: ^2.1.9
@@ -70,6 +87,80 @@ onlyBuiltDependencies:
   - lefthook
   - workerd
 
+# Local patches (policy: patch deps locally, don't depend on an upstream/fork
+# release — ADR 0038). Re-key each on that dep's next version bump.
+#
+# alchemy — three patches on beta.59:
+# 1. Cloudflare/Flagship/Flag.js — `FlagshipFlag.reconcile` UPDATE path reconciles
+#    only the schema/metadata IaC owns ({variations, description}) and preserves the
+#    live serving the dashboard owns ({defaultVariation, rules, enabled}); the no-op
+#    skip compares only the schema. Implements ADR 0106; fixes the full-body PUT that
+#    clobbered live serving on every deploy (#840). Still NOT upstreamed in beta.59.
+# 2. Cloudflare/Workers/{Worker.d.ts, WorkerProvider.js} — expose per-Worker Workers
+#    Caching: add the `cache?: {enabled?}` prop to `WorkerProps` (the .d.ts) and
+#    thread it through the provider as the script-upload metadata's `cache_options`
+#    field, sent only when set. Implements ADR 0170; beta.59 predates the native
+#    knob. Retire both hunks when a future alchemy release ships the field natively.
+# 3. Test/Vitest.js — `Test.make`'s `beforeAll`/`afterAll`/`afterAll.skipIf`/scope-close
+#    hooks drop the `?? DEFAULT_TIMEOUT` (120s) fallback, passing `undefined` when no
+#    `{timeout}` override is given so @vitest/runner resolves `config.hookTimeout`
+#    instead of the hard-coded clamp. The clamp silently shadowed `vitest.config.ts`'s
+#    `hookTimeout` and was the #3146 merge-queue eviction root cause (#3168). Regression
+#    test: apps/web/tests/integration/alchemy-hook-timeout.unit.test.ts. Retire when a
+#    future alchemy release honors the configured hook timeout natively.
+#
+# The prior beta.56 second hunk (DurableObjectNamespace.d.ts — adding
+# `DurableObjectNamespaceScope` to the `DurableObjectServices` union) was DROPPED:
+# beta.59 rewrote the DO authoring model (flat → namespaced), removing the
+# `DurableObjectNamespaceScope` type the hunk targeted entirely — the hunk is moot,
+# not upstreamed. Re-keyed beta.56 → beta.59.
+#
+# react-fate — ONE hunk on 1.3.1:
+# 1. lib/index.mjs — `useView`'s `readViewSnapshot` caches the derived thenable for a
+#    NON-fulfilled snapshot (keyed on viewRef + source snapshot + cacheKey, mirroring
+#    the deferred branch's `pendingRef` cache). Unpatched it built a fresh
+#    `Promise.resolve(snapshot).then(…)` per `getSnapshot` call, so
+#    `useSyncExternalStore` looped into React #185 whenever a mounted `useLiveView`'s
+#    record was deleted by an entity live frame (#1686 — the term-page crash on
+#    definition.delete). Regression test:
+#    apps/web/src/fate/useViewPendingSnapshot.test.tsx. Not upstreamed in 1.3.1.
+#
+# @nkzw/fate — ONE hunk on 1.3.1 (createHTTPTransport is defined here; react-fate only
+# re-exports it):
+# 1. lib/index.mjs — the native live client's `add` buffers same-tick subscribe ops and
+#    flushes them as ONE `/fate/live` control POST (mirroring the reconnect path's
+#    `control(resubscribe)`). Unpatched, each `add` fired its own `control([op])` after
+#    `open`, so a feed load with N `useLiveView` mounts issued N single-op POSTs, each
+#    re-validating the session (~22 on an authed /pano load — #2273). Regression test:
+#    apps/web/src/fate/liveSubscribeBatch.test.ts. Not upstreamed in 1.3.1.
+#
+# effect — THREE hunks on 4.0.0-beta.92 (dist only; `effect/unstable/*` resolves to
+# dist/*.js + dist/*.d.ts). Hunks 1–2 gave the MCP channel edge the two things the fixed
+# public `McpServer`/`McpSchema` surface can't express (#3053, epic #3045). That edge was
+# the v1 crew's MCP server, removed with it (ADR 0279), so both hunks have NO in-repo
+# consumer today and nothing pins their behavior — retire them on the next effect bump
+# unless a new MCP server needs them:
+# 1. unstable/ai/McpServer.{js,d.ts} — an `experimental` capability passthrough in
+#    `layerHandlers` (+ the `experimental?` option on run/layer/layerStdio/layerHttp),
+#    so a server can advertise `experimental: { "claude/channel": {} }`. The
+#    `ServerCapabilities` schema already carries the slot; only the server wiring was
+#    missing.
+# 2. unstable/ai/McpSchema.{js,d.ts} — a `ChannelNotification`
+#    (`notifications/claude/channel`, `{ message, _meta }`) added to the fixed
+#    `ServerNotificationRpcs` union, so the run-loop's encode union and the
+#    `McpServer.notifications` client both gain the custom notification.
+# Their `@patch-pin` test (#3040/#3051) went with that package, so the patch's only
+# remaining pin is hunk 3's. Retire when effect ships these natively, or sooner —
+# nothing in the repo depends on them.
+# 3. unstable/cli/internal/command.js — `buildHelpDoc` skips a positional argument marked
+#    hidden, the rule that file already applies to hidden flags and hidden subcommands.
+#    `Param.withHidden` is public and documented as hiding, but upstream honours it for
+#    flags only, so a hidden argument still rendered in USAGE and ARGUMENTS. fabrika's
+#    excess-operand guard declares one hidden trailing catch-all per leaf verb (#4828);
+#    without this hunk every verb's `--help` would advertise an operand it refuses, and
+#    `--help` is fabrika's stated interface. Cosmetic and scoped to hidden arguments, of
+#    which nothing else in the repo declares any. Behavior-pinned by
+#    packages/fabrika-cli/src/excess-operand.cli.test.ts. Retire when effect honours it.
 patchedDependencies:
   '@nkzw/fate@1.3.1': patches/@nkzw__fate@1.3.1.patch
   alchemy@2.0.0-beta.59: patches/alchemy@2.0.0-beta.59.patch
