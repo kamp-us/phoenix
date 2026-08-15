@@ -26,13 +26,13 @@ Recorded on the same session as R4.1, R4.2 and R4.3.
 
 Formal models, not measurements:
 
-- Ethiraj and Levinthal, "Modularity and Innovation in Complex Systems," *Management Science* 50(2), 2004. A simulation over decompositions that are over- and under-modular against the true structure. The load-bearing result is the asymmetry: too much modularity can stop adaptation entirely, while too little only slows it. Over-decomposing hurts more than under-decomposing. https://pubsonline.informs.org/doi/10.1287/mnsc.1030.0145
+- Ethiraj and Levinthal, "Modularity and Innovation in Complex Systems," *Management Science* 50(2), 2004. A simulation over decompositions that are over- and under-modular against the true structure. The load-bearing result is the asymmetry: too much modularity can stop adaptation entirely, while too little only slows it and risks lock-in. Over-decomposing hurts more than under-decomposing. https://pubsonline.informs.org/doi/10.1287/mnsc.1030.0145
 - Baldwin and Clark, *Design Rules, Vol. 1* (2000). Modularity is an option whose value must clear a fixed architecture cost. Splitting alone earns nothing.
 - Reinertsen, *The Principles of Product Development Flow* (2009). Batch size is a U-curve of transaction cost against holding cost, and Little's Law puts wait time at queue size over processing rate. Analytical and practitioner, not measured. It is why a work-in-progress cap belongs at the slowest server.
 
 Measured:
 
-- Kulk and Verhoef, "Quantifying requirements volatility effects," *Science of Computer Programming* 72 (2008), over 84 projects. Requirements churn runs near 2% a month. A hierarchy invented before the dependency structure is known is a guess, and that is the rate it decays at.
+- Kulk and Verhoef, "Quantifying requirements volatility effects," *Science of Computer Programming* 72 (2008), over 84 projects. Requirements churn runs near 2% a month. Reading that rate as the decay rate of a hierarchy invented before the dependency structure is known is inference, not a result of the paper.
 - The Cisco and SmartBear review study (2005-06; 2,500 reviews, 3.2M lines, 50 developers). Defect detection falls off past roughly 200 to 400 lines per review. An industrial case study, not a controlled experiment. https://static0.smartbear.co/support/media/resources/cc/book/code-review-cisco-case-study.pdf
 - Faros AI (2025), telemetry from 1,255 teams. High-adoption teams merge 98% more pull requests while review time rises 91% and pull request size rises 154%, with weak organisation-level gains. Vendor telemetry, no causal identification. https://www.faros.ai/blog/ai-software-engineering
 - Duma and colleagues (2026) over the AIDev dataset of 932,000 pull requests. 61.4% of AI-authored pull requests get no recorded review, and human-only review falls from 25.2% on human pull requests to 8.1% on agent ones. https://arxiv.org/html/2605.02273v1
@@ -41,7 +41,8 @@ Null result, stated rather than papered over: no empirical study was found testi
 
 ### What this relates to
 
-- **ADR [0083](0083-agents-deploy-humans-release.md)** already ruled the other end of the same pipeline: the merge-time human eyeball is gone, green PRs auto-ship, and the human checkpoint moved to the release flip. That is the output side. Clause 3 is the input side, and the two together say where the human's remaining seats are: intent going in, release coming out, nothing per-PR in between. 0083 is untouched.
+- **ADR [0083](0083-agents-deploy-humans-release.md)** already ruled the other end of the same pipeline: the merge-time human eyeball is gone, green PRs auto-ship, and the human checkpoint moved to the release flip. That is the output side. Clause 3 is the input side, and the two together say where the human's remaining seats are: intent going in, release coming out, nothing per-PR in between outside the control-plane paths. 0083 is untouched.
+- **ADRs [0053](0053-control-plane-boundary.md) / [0135](0135-hard-gate-control-plane-team-codeowners-approve-then-enqueue.md)** keep one human seat in the per-PR path, and this record leaves it exactly where it is. A pull request that touches a control-plane path is held at the enqueue seam until a `@kamp-us/control-plane` member approves it at the current head. That is a path-scoped authorization seat: it fires on which files changed, not on every issue, and no clause here is a standing per-issue review seat. ADR [0274](0274-fabrika-tree-is-not-control-plane.md) re-affirmed it four days ago. Clause 3 and the ban on a per-issue review seat are about ordinary work, and neither reaches this gate.
 - **ADRs [0202](0202-forward-motion-doctrine-crewops.md) / [0208](0208-standing-lane-exemption-from-full-homing.md)** rule *milestone homing*: every open issue is homed or killed, with two standing lanes exempt. That is a different axis from *parenting*. Clause 1 is about the parent-issue rollup only. Milestone homing is unchanged, and an unparented issue still takes a milestone or a standing-lane label.
 - **ADR [0210](0210-direction-binds-at-intake.md)** already put the founder's seat at intake: the pitch, the appetite, the betting call, and no merge-time direction gate. Clause 3 names which intake seat that is, milestone and epic intent, and clause 2 does not loosen it. Unparented is not unpitched either: a parentless feature still needs an approved pitch under 0210 before it enters the drain.
 - **The flat build-lane work-in-progress budget** (6 lanes, 2 reserved for platform; #3227, see `platform lane` in [`.glossary/TERMS.md`](../.glossary/TERMS.md)) already caps concurrency. Clause 2 does not change the number. It fixes where the number comes from: review throughput, not agent throughput.
@@ -75,7 +76,7 @@ Nothing is superseded.
 
 - Rollup reporting gets harder and priority stays partly incomparable, since an unparented p1 competes against nothing. Accepted.
 - Agent capacity is deliberately left idle when review is saturated. That will look like underuse. It is not: the lanes beyond the review rate were producing queue.
-- The risk this design runs is exactly the Duma finding. When most agent-authored pull requests get no human review, the gates are the only thing standing between a defect and `main`. This ADR takes that trade knowingly. The failure mode to watch is gates that are weaker than believed, and the way to watch it is to instrument gate escapes, not to add an eyeball back.
+- The risk this design runs is exactly the Duma finding. When most agent-authored pull requests get no human review, the gates are the only thing standing between a defect and `main` on ordinary pull requests. This ADR takes that trade knowingly. The failure mode to watch is gates that are weaker than believed, and the way to watch it is to instrument gate escapes, not to add an eyeball back.
 - The hierarchy stays cheap to change, which matters at a 2% monthly churn rate.
 
 ## Records
