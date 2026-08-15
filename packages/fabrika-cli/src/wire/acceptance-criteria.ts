@@ -65,6 +65,15 @@ const ATX_HEADING = /^ {0,3}(#{1,6})[ \t]+(.*?)[ \t]*#*[ \t]*$/;
 const FENCE = /^ {0,3}(```|~~~)/;
 const CHECKBOX_ITEM = /^[ \t]*[-*][ \t]+\[([ xX])\][ \t]*(.*)$/;
 
+/**
+ * A line that opens a GFM block of its own beside the item — a plain bullet, an ordered-list marker,
+ * a blockquote, or a thematic break. Each leaves the item's paragraph in the render exactly as the
+ * next checkbox item does, so each closes the open criterion here (#5596). Tested after
+ * {@link CHECKBOX_ITEM}, which owns the task-list forms this would otherwise swallow.
+ */
+const BLOCK_STARTER =
+	/^[ \t]*(?:[-*+][ \t]+|\d{1,9}[.)][ \t]+|>|(?:-[ \t]*){3,}$|(?:\*[ \t]*){3,}$|(?:_[ \t]*){3,}$)/;
+
 interface Heading {
 	readonly level: number;
 	readonly text: string;
@@ -175,16 +184,19 @@ const sectionOf = (lines: ReadonlyArray<string>, heading: Heading): ReadonlyArra
  * and said nothing about it — which is the defect this rule closes (#5572). The loss landed on the
  * qualifiers and the "must not" clauses, because those are the half of a criterion that wraps.
  *
- * Four lines close the open criterion, and each is a line the CommonMark render also treats as
- * leaving the item's paragraph:
+ * A line closes the open criterion when the CommonMark render also treats it as leaving the item's
+ * paragraph:
  *
  * 1. a blank line,
  * 2. the next checkbox item — including a *nested* one, which is why a sub-item stays its own
  *    criterion and is never absorbed into its parent's text,
  * 3. a fence delimiter, and every line inside the fence it opens,
- * 4. the heading that ends the section — {@link sectionOf} already cuts there, so the loop ends.
+ * 4. any other line that opens a block of its own — a plain bullet, an ordered-list marker, a
+ *    blockquote, a thematic break ({@link BLOCK_STARTER}). Joining those swallowed a sibling block's
+ *    prose into the contract, the same defect pointing the other way (#5596),
+ * 5. the heading that ends the section — {@link sectionOf} already cuts there, so the loop ends.
  *
- * Anything else non-blank continues the criterion above it.
+ * Only a line that continues the item's own paragraph — the wrap this rule exists for — is appended.
  */
 interface OpenCriterion {
 	readonly parts: string[];
@@ -277,7 +289,7 @@ export const read = (body: string): AcceptanceCriteriaRead => {
 			close();
 			continue;
 		}
-		if (openFence !== null || line.trim() === "") {
+		if (openFence !== null || line.trim() === "" || BLOCK_STARTER.test(line)) {
 			close();
 			continue;
 		}

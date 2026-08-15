@@ -171,6 +171,46 @@ describe("read — a criterion that wraps is one criterion", () => {
 		).toEqual([criterion("the criterion", false)]);
 	});
 
+	it("closes the criterion at a plain bullet — a sibling list is not part of the contract", () => {
+		expect(
+			found(
+				body(
+					"### Acceptance criteria",
+					"- [ ] the criterion",
+					"- a plain bullet, not a checkbox",
+					"* a star bullet",
+					"+ a plus bullet",
+				),
+			),
+		).toEqual([criterion("the criterion", false)]);
+	});
+
+	it("closes the criterion at an ordered-list marker", () => {
+		expect(
+			found(
+				body("### Acceptance criteria", "- [ ] the criterion", "1. an ordered item", "2) another"),
+			),
+		).toEqual([criterion("the criterion", false)]);
+	});
+
+	it("closes the criterion at a blockquote", () => {
+		expect(
+			found(body("### Acceptance criteria", "- [ ] the criterion", "> a quoted note")),
+		).toEqual([criterion("the criterion", false)]);
+	});
+
+	it("closes the criterion at a thematic break, and joins nothing after it", () => {
+		expect(
+			found(body("### Acceptance criteria", "- [ ] the criterion", "---", "trailing prose")),
+		).toEqual([criterion("the criterion", false)]);
+		expect(found(body("### Acceptance criteria", "- [ ] the criterion", "***"))).toEqual([
+			criterion("the criterion", false),
+		]);
+		expect(found(body("### Acceptance criteria", "- [ ] the criterion", "___"))).toEqual([
+			criterion("the criterion", false),
+		]);
+	});
+
 	it("leaves a single-line criterion byte-identical — the join widens Found, it does not restate it", () => {
 		expect(found(body("### Acceptance criteria", "- [ ] one  criterion, two  spaces"))).toEqual([
 			criterion("one  criterion, two  spaces", false),
