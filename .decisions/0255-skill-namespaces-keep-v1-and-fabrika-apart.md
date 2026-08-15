@@ -1,7 +1,7 @@
 ---
 id: 0255
 title: v1 and fabrika skills coexist under separate namespaces; the `.claude/skills` symlink is the retirement lever
-status: amended-in-part by [0277](0277-v1-retirement-keeps-the-plugin-suppression.md)
+status: amended-in-part by [0277](0277-v1-retirement-keeps-the-plugin-suppression.md) and [0281](0281-agent-names-are-nouns.md)
 date: 2026-08-10
 tags: [fabrika, skills, plugin, pipeline, vocabulary]
 ---
