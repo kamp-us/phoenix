@@ -13,12 +13,13 @@
  *      hold five unlanded lanes with zero live coders. Nothing in GitHub observes a process,
  *      so this tool counts UNLANDED WORK and says so — never "active agents" — and it always
  *      breaks the total down by stage rather than emitting one ambiguous figure.
- *   2. A lane has two identities the crew tracker cannot link: `issue-<N>` and `pr-<M>` are
- *      free-form, independent resource keys there (#3886, #4074), so one engine can hold the
- *      issue keys while a sibling holds the PR keys for the same work. The PR's own
- *      `Closes #N` link is the edge that tracker lacks; `coalesce` below folds the pair into
- *      ONE lane and each lane publishes BOTH tracker keys, so an external reconciliation can
- *      see which keys belong together.
+ *   2. A lane has two identities nothing links: `issue-<N>` and `pr-<M>` are free-form,
+ *      independent resource keys (#3886, #4074), so one engine can hold the issue keys while a
+ *      sibling holds the PR keys for the same work. The crew tracker that keyed them this way
+ *      left with ADR 0279; the split identity did not, because the keys are still written per
+ *      issue and per PR. The PR's own `Closes #N` link is the edge the keyspace lacks;
+ *      `coalesce` below folds the pair into ONE lane and each lane publishes BOTH keys, so an
+ *      external reconciliation can see which keys belong together.
  *
  * The `gh api` REST reads live in `github.ts`; the wiring in `command.ts`.
  */
@@ -91,7 +92,7 @@ export interface Lane {
 	readonly classification: LaneClass;
 	/** The claim session holding the issue, when one stands — the attribution a self-report cannot give. */
 	readonly holder: string | null;
-	/** Every crew-tracker resource key this ONE lane occupies (#3886/#4074's unlinkable pair). */
+	/** Every tracker resource key this ONE lane occupies (#3886/#4074's unlinkable pair). */
 	readonly trackerKeys: ReadonlyArray<string>;
 }
 
@@ -282,6 +283,6 @@ const FOOTNOTE =
 	"  A lane is UNLANDED WORK, not a running agent: a `claimed` lane may have no coder process\n" +
 	"  alive, and an `in-review` lane holds its slot until the PR merges. Nothing in GitHub\n" +
 	"  observes a process, so this count never claims to.\n" +
-	"  Each lane lists BOTH crew-tracker resource keys it occupies (issue-N and pr-M). The\n" +
-	"  tracker keys them independently and cannot link them (#3886, #4074) — the PR's `Closes #N`\n" +
-	"  is the edge that folds them into one lane here.";
+	"  Each lane lists BOTH tracker resource keys it occupies (issue-N and pr-M). They are keyed\n" +
+	"  independently and nothing links them (#3886, #4074) — the PR's `Closes #N` is the edge\n" +
+	"  that folds them into one lane here.";

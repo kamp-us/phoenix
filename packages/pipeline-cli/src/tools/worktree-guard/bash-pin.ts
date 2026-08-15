@@ -26,7 +26,7 @@
  * ruling on the arm-vs-refuse posture (issue #1571) is REFUSE, scoped to guarded
  * agents: the refusal fires when `$WORKTREE_ROOT` names a managed worktree —
  * i.e. this hook is active for an `isolation:worktree` subagent — OR, per ADR 0172, when
- * isolation was EXPECTED (a direct isolation-asserting agent-type, OR a nested crew spawn whose
+ * isolation was EXPECTED (a direct isolation-asserting agent-type, OR a nested spawn whose
  * inherited agent-type masks that — detected via `git-dir == git-common-dir`; #2462) yet
  * `$WORKTREE_ROOT` is unset (the #2440 harness no-op that disarms the root-keyed branch and leaves
  * this the sole layer).
@@ -247,7 +247,7 @@ const REFUSE_REASON_ISOLATION_NO_ROOT =
  * no-worktree refusal (ADR 0172)?
  *
  * A **direct** guarded spawn names itself: `$CLAUDE_CODE_AGENT` is coder/reviewer/shipper. But a
- * **nested crew spawn** inherits the *parent's* agent-type (a coder spawned under the crew reads
+ * **nested spawn** inherits the *parent's* agent-type (a coder spawned under a parent agent reads
  * `engineering-manager`), so the agent-type regex alone goes inert for it and ADR 0172's loud-fail
  * never arms (#2462). So we corroborate with an **env-independent** signal — `onPrimaryCheckout`
  * (`git-dir == git-common-dir`, the same primary-checkout signal write-code Step-4 uses): an

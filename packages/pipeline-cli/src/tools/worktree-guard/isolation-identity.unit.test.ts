@@ -35,7 +35,7 @@ describe("sidecarPathFor", () => {
 describe("resolveIsolationIdentity — the #3682 reproduction", () => {
 	it("recovers root AND agent type when BOTH env vars misreport (the live incident)", () => {
 		// The observed state inside a correctly-provisioned coder worktree: $WORKTREE_ROOT unset,
-		// $CLAUDE_CODE_AGENT carrying the parent crew's value.
+		// $CLAUDE_CODE_AGENT carrying the parent launcher pane's value.
 		const id = resolveIsolationIdentity({
 			sidecar: sidecar(),
 			envWorktreeRoot: "",

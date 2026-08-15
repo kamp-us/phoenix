@@ -63,7 +63,7 @@ afterward" / "ported from the operator-local def") into a repo artifact. **Suppr
 composition time**, at the source — not as a downstream hand-scrub, which is the recurring
 #3233–#3237 / ADR 0189 leak this rule exists to end. **Boundary — do not over-apply:** the
 distributable plugin's own *configuration* surface is legitimately in-repo — operator-*configured*
-transport, session gh-identity routing, and similar. The rule targets the operator's personal crew
+transport, session gh-identity routing, and similar. The rule targets the operator's personal agent
 **definitions**, not the word "operator"; a fix that strips every "operator" mention overshoots.
 
 ## What wayfinder is not
@@ -338,7 +338,7 @@ shaped for and the durable seam between runs — WORK mutates the map only throu
    deliverable) — and note them on the graduated line (`→ spawned #M`). A resolved unknown
    routinely reveals the next one; that spawn is the map's forward motion, not a failure to finish.
    Compose each new ticket body and the recorded decision line per §the distributable-plugin-only
-   artifact rule — the distributable plugin is the sole crew definition, no operator-local framing.
+   artifact rule — the distributable plugin is the sole agent definition, no operator-local framing.
 
 6. **Stop — exactly one ticket resolved.** One frontier ticket is now answered, recorded, and
    graduated, with any newly-revealed fog laid down for a future run. Do **not** pick a second

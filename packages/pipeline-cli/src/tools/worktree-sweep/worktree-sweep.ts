@@ -60,7 +60,7 @@
  * "cannot prove dead" must never collapse into "dead".
  *
  * Launcher-vs-occupant (#4001): the identity a tree is stamped with is the session that SPAWNED it,
- * never the ephemeral subagent occupying it, so a long-lived crew pane kept every tree it ever
+ * never the ephemeral subagent occupying it, so a long-lived launcher pane kept every tree it ever
  * spawned `"alive"` for its whole multi-hour lifetime and the sweep went near-silent during exactly
  * the runs that generate orphans. Such an owner now resolves `"launcher-alive"` — neither presence
  * nor proof of death: the tree is held for a grace window and then decided by the ordinary
@@ -133,7 +133,7 @@ export interface WorktreeRecord {
 	 */
 	readonly locked: boolean;
 	/**
-	 * The lock is a crew-agent lock (`claude agent … (pid <N> …)`) whose pid is provably GONE — a
+	 * The lock is an agent lock (`claude agent … (pid <N> …)`) whose pid is provably GONE — a
 	 * stale pin, not a live claim, so it must not keep the tree. Resolved at the boundary for the
 	 * `review-head-*` class only, whose locks this repo writes (`review-head materialize`, #4004); a
 	 * build tree's lock stays opaque, so its keep-on-`locked` behavior is unchanged. Without this,
@@ -203,7 +203,7 @@ export type RemoveReason =
 	| "squash-merged-clean"
 	/**
 	 * A `review-head-*` throwaway detached checkout that is clean + idle + not pinned by a LIVE lock
-	 * (its own crew-agent lock counts as a pin only while that session runs — #4004). No
+	 * (its own agent lock counts as a pin only while that session runs — #4004). No
 	 * merge gate: it holds a detached, already-pushed PR head and no branch/unpushed work, so once
 	 * it is clean, unlocked, and idle it is a pure leak — nothing to strand. Requiring merge here
 	 * would strand it for the PR's entire open life (a review is a bounded one-shot event, not tied
@@ -243,7 +243,7 @@ export interface WorktreeSweepPlan {
  *      tree with a LIVE directory are never candidates, regardless of their other facts.
  *   2. Dirty → KEEP (`dirty`). Wins over every other signal for BOTH classes: a worktree
  *      with working-tree changes is never removed, even when its branch has merged.
- *   3. Liveness gates — locked (#2240; a STALE crew-agent lock, its session proven dead, does not
+ *   3. Liveness gates — locked (#2240; a STALE agent lock, its session proven dead, does not
  *      keep — #4004) / owner alive-or-unprovable (#3943) / launcher-alive within grace (#4001) /
  *      recently-active (#2240) → KEEP, for BOTH classes. A clean tree may still belong to a LIVE
  *      lane (a build tree just committed+pushed; a review still running against its head). These
@@ -349,7 +349,7 @@ export interface ParsedWorktree {
 	readonly locked: boolean;
 	/**
 	 * The lock reason: `null` when the tree is NOT locked, `""` when locked with no reason, else the
-	 * reason string. Kept alongside `locked` because a crew-agent lock's reason carries the owning
+	 * reason string. Kept alongside `locked` because an agent lock's reason carries the owning
 	 * session's pid — the presence fact that tells a live pin from a stale one (#4004).
 	 */
 	readonly lockReason: string | null;

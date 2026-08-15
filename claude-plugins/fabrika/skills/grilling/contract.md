@@ -805,7 +805,7 @@ The four clauses:
 <!-- anchor: NO-DIRECT-VS-RELAYED-SPLIT --> **Clause 4 admits no exception, and that is deliberate.**
 An earlier draft of this contract split `ruled-direct` (a bare marker, "authored directly") from
 `ruled-relayed` (a marker with authorization) and treated the bare one as the stronger. That was
-wrong twice over: *authored directly* is not a checkable property, because every crew agent writes
+wrong twice over: *authored directly* is not a checkable property, because every agent writes
 to GitHub as the founder's account and the 2026-08-09 ruling on
 [#4619](https://github.com/kamp-us/phoenix/issues/4619#issuecomment-5230098869) settles that filings
 from that account read as agent-authored regardless of the footer; and #4938 declares a bare stamp

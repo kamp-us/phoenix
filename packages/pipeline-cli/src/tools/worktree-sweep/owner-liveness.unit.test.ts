@@ -98,7 +98,7 @@ describe("resolveOwnerLiveness", () => {
 		);
 	});
 
-	// The #4001 case: a crew pane runs for hours and spawns many short-lived subagent trees, so its
+	// The #4001 case: a launcher pane runs for hours and spawns many short-lived subagent trees, so its
 	// liveness says nothing about whether any given tree is still occupied. Collapsing this into
 	// "alive" is what kept every tree such a pane ever created for the pane's whole lifetime.
 	it("resolves LAUNCHER-ALIVE — not alive — when the live owner is the LAUNCHER (#4001)", () => {

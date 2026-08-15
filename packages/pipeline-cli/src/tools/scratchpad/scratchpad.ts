@@ -1,5 +1,5 @@
 /**
- * `scratchpad` pure core — resolve the per-run scratch namespace a crew agent writes
+ * `scratchpad` pure core — resolve the per-run scratch namespace an agent writes
  * intermediate state into, and decide who owns it. IO-free and total; the filesystem
  * boundary lives in `store.ts`, the CLI surface in `command.ts`.
  *

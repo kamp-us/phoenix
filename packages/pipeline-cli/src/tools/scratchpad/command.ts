@@ -1,7 +1,7 @@
 /**
  * The `scratchpad` tool — `pipeline-cli scratchpad <open|path|file> --slug <slug>`.
  *
- * The one allocator every crew agent calls instead of hand-rolling a scratch path
+ * The one allocator every agent calls instead of hand-rolling a scratch path
  * (#3718). It prints an absolute per-run directory (or a file inside it) on stdout and
  * NOTHING else, so a caller captures it directly:
  *

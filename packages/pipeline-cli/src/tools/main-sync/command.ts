@@ -136,7 +136,7 @@ const repoRoot = (): string | null => {
 };
 
 // `execFileSync`'s own `timeout` option — a portable Node bound, NOT the `timeout(1)` binary,
-// which some crew shells don't have. Only the PATH leg gets it: a corepack first run may DOWNLOAD
+// which some shells do not have. Only the PATH leg gets it: a corepack first run may DOWNLOAD
 // the pinned pnpm, and killing that would turn a slow network into a false refusal.
 const PATH_PROBE_TIMEOUT_MS = 15_000;
 
@@ -174,7 +174,7 @@ const readPackageManagerPin = (root: string): string | undefined => {
 /**
  * Re-install deps after a ff merge IFF the merge pulled a `patches/**`/`pnpm-lock.yaml`
  * change — the #3498 fix. Without it the ff advances the SOURCE patch/lockfile but not the
- * installed `.pnpm/…/patched` copy the runtime executes, so a re-booted crew silently runs
+ * installed `.pnpm/…/patched` copy the runtime executes, so a re-booted session silently runs
  * the PRE-merge patched dep (a merged fix reads as "still broken"). Resolves pnpm against the
  * repo's `packageManager` pin through the ordered strategy in `dep-refresh.ts` — a PATH pnpm at
  * EXACTLY the pin, else corepack — and FAILS LOUD (exit 1) if neither resolves it or the frozen
@@ -218,7 +218,7 @@ const refreshDepsAfterMerge = Effect.fn(function* (preSha: string) {
 	if (!resolution.ok) {
 		const {detail, remedy} = describePnpmResolutionFailure(resolution);
 		yield* Console.error(
-			`main-sync dep refresh FAILED (fail-closed): the merge changed ${forcing.join(", ")} but the repo-pinned pnpm did not resolve — ${detail}. node_modules is STALE and a re-booted crew would run the PRE-merge patched dep (#3498). To recover: ${remedy}.`,
+			`main-sync dep refresh FAILED (fail-closed): the merge changed ${forcing.join(", ")} but the repo-pinned pnpm did not resolve — ${detail}. node_modules is STALE and a re-booted session would run the PRE-merge patched dep (#3498). To recover: ${remedy}.`,
 		);
 		return yield* Effect.sync(() => process.exit(1));
 	}

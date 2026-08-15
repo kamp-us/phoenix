@@ -401,7 +401,7 @@ const worktreeSweep = Command.make(
 							reachableFromOriginMain: false,
 							squashMergedToOriginMain: false,
 							locked: p.locked,
-							// A gone-dir tree's crew-agent lock is stale WHATEVER its pid says — the reviewer
+							// A gone-dir tree's agent lock is stale WHATEVER its pid says — the reviewer
 							// tore the directory down (`rm -rf $REVIEW_WT`) and only admin metadata is left.
 							// It must be recorded, because `git worktree prune` SKIPS a locked entry: without
 							// the unlock this flag drives, every torn-down review tree would leave a permanent
@@ -530,7 +530,7 @@ const worktreeSweep = Command.make(
 		/** Branches whose tree this run actually reclaimed — the ref pass's default scope (#4190). */
 		const reclaimedBranches: Array<string> = [];
 		if (goneDir.length > 0) {
-			// `git worktree prune` SKIPS a locked entry, so a torn-down review tree's stale crew-agent
+			// `git worktree prune` SKIPS a locked entry, so a torn-down review tree's stale agent
 			// lock (#4004) would keep its metadata forever. Free it first — the directory is already
 			// gone, so there is no working surface to pull out from under anyone.
 			for (const r of goneDir) {
@@ -551,7 +551,7 @@ const worktreeSweep = Command.make(
 		let removed = 0;
 		let refused = 0;
 		for (const r of toRemovePaths) {
-			// A stale crew-agent lock (#4004) makes the non-forced remove refuse, so free it first —
+			// A stale agent lock (#4004) makes the non-forced remove refuse, so free it first —
 			// scoped to a tree the classifier already proved dead+clean+idle, never a live lane's lock.
 			// Unlock, never `--force`: the dirty-work refusal below stays git's to make.
 			if (r.worktree.staleAgentLock) runGit(["worktree", "unlock", r.worktree.path]);

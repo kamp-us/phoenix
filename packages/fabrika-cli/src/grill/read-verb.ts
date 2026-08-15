@@ -72,7 +72,7 @@ export interface ReadOptions {
  *
  * It admits no exception, and that is deliberate. An earlier design treated a bare marker as
  * "authored directly" and therefore stronger, but *authored directly* is not a checkable property —
- * every crew agent writes to GitHub as the founder's account — and a bare stamp is void. So a bare
+ * every agent writes to GitHub as the founder's account — and a bare stamp is void. So a bare
  * marker resolves to `unattested`, surfaced and never counted, whoever appears to have posted it.
  */
 const adjacentAuthorization = (

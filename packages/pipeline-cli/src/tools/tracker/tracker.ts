@@ -701,7 +701,7 @@ type PostVerdictErrors = TrackerErrors | TrackerInputError | TrackerVerifyError;
 type GraduateErrors = TrackerErrors | TrackerVerifyError;
 
 /**
- * `Tracker` — the shared crew tracker capability. Every verb is live: `claim`, `readBack`,
+ * `Tracker` — the shared GitHub-issue tracker capability. Every verb is live: `claim`, `readBack`,
  * `applyTriage`, `createIssue`, `createComment`, `postVerdict`, and `graduate` (the
  * map/investigation graduation-close, #3266). Built by `GithubTrackerLive`, whose `R` is
  * `ChildProcessSpawner`.

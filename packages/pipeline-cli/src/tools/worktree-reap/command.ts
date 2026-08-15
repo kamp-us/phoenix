@@ -1,13 +1,13 @@
 /**
  * The `worktree-reap` tool — `pipeline-cli worktree-reap [--execute]`.
  *
- * A safe reaper for agent worktrees orphaned by DEAD crew sessions (issue #3754). Dead
+ * A safe reaper for agent worktrees orphaned by DEAD agent sessions (issue #3754). Dead
  * sessions leave their `isolation:worktree` trees (and checked-out branches) behind under
  * `.claude/worktrees/`, where they accumulate and block their branches from being
  * re-checked-out elsewhere. This verb identifies trees whose owning SESSION is provably
  * dead, and reclaims only the ones that hold nothing recoverable. The `$TMPDIR`-rooted
  * `review-head-*` review checkouts are in scope too, since they now carry the same pid-bearing
- * crew-agent lock (#4004) — see `worktree-reap.ts` for what that changes for them.
+ * agent lock (#4004) — see `worktree-reap.ts` for what that changes for them.
  *
  * Eligibility is session-presence-based, never age-based (ADR 0191), read from two owner
  * signals gathered here and folded by the pure classifier:
@@ -389,7 +389,7 @@ const worktreeReap = Command.make(
 	}),
 ).pipe(
 	Command.withDescription(
-		"Safe reaper for agent worktrees orphaned by DEAD crew sessions — session-presence-based (ADR 0191), clean+pushed only, never --force (#3754)",
+		"Safe reaper for agent worktrees orphaned by DEAD agent sessions — session-presence-based (ADR 0191), clean+pushed only, never --force (#3754)",
 	),
 );
 

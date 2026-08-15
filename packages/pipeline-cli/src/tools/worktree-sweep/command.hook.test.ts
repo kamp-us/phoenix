@@ -271,7 +271,7 @@ describe("worktree-sweep --execute — SessionStart cadence against a REAL git r
 		assert.strictEqual(code, 0, stdout);
 		assert.isFalse(
 			git(mainRepo, "worktree", "list", "--porcelain").includes(goneWt),
-			"the sweep must unlock the stale crew-agent lock and prune the metadata",
+			"the sweep must unlock the stale agent lock and prune the metadata",
 		);
 	});
 
@@ -315,7 +315,7 @@ describe("worktree-sweep --execute — SessionStart cadence against a REAL git r
 		assert.include(stdout, "owner-unknown");
 	});
 
-	// The #4001 regression, end to end: LIVE_SID stands in for a crew pane that is STILL RUNNING and
+	// The #4001 regression, end to end: LIVE_SID stands in for a launcher pane that is STILL RUNNING and
 	// has spawned many trees. A tree it launched, whose occupant finished long ago, must become
 	// reclaimable on its own idle clock — the pane never exits, so waiting for it is waiting forever.
 	it("reclaims a LAUNCHER-owned orphan while its launcher is still registered as running (#4001)", async () => {

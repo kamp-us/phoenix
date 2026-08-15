@@ -1424,7 +1424,7 @@ table or it does not ship.
 | `review-trivial` | `cp-classify` (path + content) | was path-only; routes to the lighter gate, so a fail-open here under-gates |
 | `trivial-diff` | path + content | bound 3; shares the content-clause scope with `cp-classify` |
 | `codeowners-cp` | **path only — deliberate, not a defect** | it generates `.github/CODEOWNERS`, and GitHub matches CODEOWNERS on **paths**; the format structurally cannot express a content predicate. The content clause is enforced at the gates above instead, which is where a merge is actually decided. |
-| the crew driver (EM) | *classifies §CP nowhere today* | when it does, it uses `cp-classify` — tracked by #3416, which must not be built twice |
+| the crew driver (EM) | *classified §CP nowhere, and left with ADR 0279* | had it ever classified, it would have used `cp-classify` — #3416 stays the single home for that work, which must not be built twice |
 
 The boundary stays single-sourced on both axes: `CONTROL_PLANE_RE` in the pipeline-cli const
 (#2761), `GUARD_ADR_RE` in this file, and the content clause's **scope** (`.decisions/**`) once in
@@ -1551,10 +1551,10 @@ reached merge un-reviewed. Both now class **has-skills** and ride the `review-sk
 manifest surface *declares* the plugin's skill/agent artifacts (and is the drift-check `source`
 `validate-gate-path-drift.sh` locks), so it belongs to the same behavioral-artifact class and gate
 as the artifacts it manifests — no new class or gate is invented. This is **only** the review-class
-axis: `CONTROL_PLANE_RE` (§CP, who-merges) is a **separate** regex and is **untouched**, so a crew
+axis: `CONTROL_PLANE_RE` (§CP, who-merges) is a **separate** regex and is **untouched**, so a sibling
 plugin's `agents/**` gains a `review-skill` gate yet still **auto-ships** on PASS (the founder #2342
 ruling — extras don't block — **re-affirmed 2026-07-24 on #3765** on the threat-modeled containment
-basis recorded in the crew-engine-defs clause of the §CP **Deliberately OUT** paragraph above; the class fix and the
+basis recorded in the sibling-plugin agent-defs clause of the §CP **Deliberately OUT** paragraph above; the class fix and the
 §CP ruling compose).
 
 **Both consumers re-resolve these lines from `origin/main` at run time** (REST raw, `?ref=main`
@@ -2576,11 +2576,13 @@ reused pid all leave the claim standing, so the reader refuses. Doubt refuses; i
 
 **Liveness is same-host by construction — the honest limit.** The probe is a local pid probe, so
 a claim stamped on another machine is unprobeable and stays indeterminate ⇒ it stands and the
-reader refuses. That is the correct fail-closed direction, but it means a multi-host crew gets no
-supersession at all: every claim it reads was stamped elsewhere. Closing *that* needs a
-host-independent liveness source — the crew tracker's own presence keyspace (ADR 0191 proper,
-#3938 / epic #3766), whose cross-keyspace reconciliation is where it belongs. Explicitly **out of
-scope** for this GitHub-claim keyspace: do not "fix" the multi-host case by treating an
+reader refuses. That is the correct fail-closed direction, but it means work spread across more
+than one machine gets no supersession at all: every claim it reads was stamped elsewhere. Closing
+*that* needs a host-independent liveness source. The one that was planned — the crew tracker's own
+presence keyspace (ADR 0191 proper, #3938 / epic #3766) — left with the crew (ADR
+[0279](https://github.com/kamp-us/phoenix/blob/main/.decisions/0279-v1-crew-retired-in-full.md)),
+so the multi-host case has **no planned home** today rather than a deleted one. It stays explicitly
+**out of scope** for this GitHub-claim keyspace either way: do not "fix" it by treating an
 unprobeable claim as dead, which trades a stuck lane for live-claim eviction.
 
 Both the resolution and the probe live in the shared verb — `pipeline-cli claim is-mine`

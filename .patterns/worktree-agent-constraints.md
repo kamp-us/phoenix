@@ -274,10 +274,13 @@ so the `WorktreeCreate` hook does not run and no tree is stamped (272 registered
 so `0 reapable` is partly an absence of evidence.
 
 **Expect near-silence, and not only from legacy trees.** The stamp carries the **launcher's**
-session id, and a crew pane is long-lived — so every tree that pane provisioned reads `alive` for the
-pane's entire lifetime, not just for as long as the subagent that used it ran. Combined with the
-pre-#3943 pile, which carries no stamp and resolves `owner-unknown`, the sweep goes near-silent
-during any crew run and only the gone-dir `prunable` class still drains. That is the safe direction,
+session id, so a long-lived launcher makes every tree it provisioned read `alive` for the
+launcher's entire lifetime, not just for as long as the subagent that used it ran. This was measured
+on the v1 crew's long-lived panes, which left with ADR
+[0279](../.decisions/0279-v1-crew-retired-in-full.md); the property belongs to the stamp, not to the
+crew, so any long-lived launcher reproduces it. Combined with the pre-#3943 pile, which carries no
+stamp and resolves `owner-unknown`, the sweep goes near-silent under such a launcher and only the
+gone-dir `prunable` class still drains. That is the safe direction,
 but it means the worktree pileup (#3887) will not bend from this gate; draining the pile needs a
 separate, liveness-keyed operator-confirmed path (#3892).
 

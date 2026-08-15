@@ -45,8 +45,8 @@ export const STAMPING_CUTOFF = "2026-07-25T20:52:36Z";
  * population but says nothing about liveness — a run that claimed minutes before it may still be
  * working — so age is the only evidence left once a marker carries no stamp to probe.
  *
- * Two days, not the one a coder run would justify: claims are also written by long-lived crew
- * engine sessions, which routinely outlive a single build. No margin is *proof* a claimant is
+ * Two days, not the one a coder run would justify: claims are also written by long-lived
+ * orchestrator sessions, which routinely outlive a single build. No margin is *proof* a claimant is
  * gone, which is why retirement is an operator act on a report that names each session, and why
  * `--min-age-hours` exists — lower it deliberately for a claimant you have confirmed is gone,
  * never to make a bulk sweep reach further.

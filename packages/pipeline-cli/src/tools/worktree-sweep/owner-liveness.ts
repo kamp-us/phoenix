@@ -54,7 +54,7 @@
  * launcher liveness a strict **upper bound**, sound in one direction only:
  *
  *   - launcher DEAD ⇒ the occupant it spawned is necessarily gone too ⇒ `"dead"`.
- *   - launcher ALIVE ⇒ says **nothing** about the occupant. A crew pane runs for hours and spawns
+ *   - launcher ALIVE ⇒ says **nothing** about the occupant. A launcher pane runs for hours and spawns
  *     many short-lived subagent trees, so reading this as `"alive"` KEPT every tree such a pane
  *     ever created for the pane's whole lifetime — the sweep went near-silent during exactly the
  *     runs that generate orphans (#4001). That case is `"launcher-alive"`, a distinct verdict.

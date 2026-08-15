@@ -88,7 +88,7 @@ inline, the same tracked debt the sibling contracts carry.)
   `heal-ci` lane); this group reports `red` with the failing runs named and stops.
 - **A flag-flip or release-execution verb.** Agents deploy, humans release (ADR 0083).
   `ship release` ends at the label.
-- **An approval-watcher / banked-§CP ledger verb.** The watch loop over parked §CP PRs is crew
+- **An approval-watcher / banked-§CP ledger verb.** The watch loop over parked §CP PRs is separate
   machinery with its own open decisions (#4790, #4753, #4103); building it into the merge verb
   group would freeze those decisions from the wrong side. `ship cp-approval` answers "now,
   at this head"; durable watching is not this group's.
