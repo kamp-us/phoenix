@@ -36,10 +36,19 @@ plugin-qualified `plugin:name` form does not resolve. So a driver spawns `review
 `fabrika:reviewer` — the qualified spelling names the plugin's shell in prose. That platform fact is
 recorded at Claude Code 2.1.214 and is not re-proven here;
 [#5590](https://github.com/kamp-us/phoenix/issues/5590) is the spawn that settles which form
-resolves today. Two names in this set — `reviewer` and `shipper` — are also spelled by
-`claude-plugins/kampus-pipeline/agents/`, so in a repo where both plugins are enabled they contend
-for one `agentType`; phoenix is not such a repo, because `.claude/settings.json` suppresses that
-plugin (ADR [0277](../../../.decisions/0277-v1-retirement-keeps-the-plugin-suppression.md)).
+resolves today.
+
+**Two of these names are spelled elsewhere.** `claude-plugins/kampus-pipeline/agents/` carries
+`reviewer.md` and `shipper.md`, so in a repo where both plugins load they contend for one
+`agentType`. Inside phoenix they no longer load, and the reason is the load path rather than a
+setting: those definitions reached the project agent-load path through the tracked `.claude/agents`
+symlink, which ADR
+[0255](../../../.decisions/0255-skill-namespaces-keep-v1-and-fabrika-apart.md) §4 records loads them
+*regardless of the plugin toggle* — and
+[#5599](https://github.com/kamp-us/phoenix/issues/5599) deleted that symlink on 2026-08-15 (ADR
+[0277](../../../.decisions/0277-v1-retirement-keeps-the-plugin-suppression.md)). The
+`kampus-pipeline@kampus: false` line that survives in `.claude/settings.json` suppresses the plugin
+copy and never reached the symlink, so do not read it as what keeps these names clear.
 
 ## Why exactly three
 

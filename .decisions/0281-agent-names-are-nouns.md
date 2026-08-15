@@ -66,11 +66,22 @@ does not conflict with this one.
 
 `builder` / `reviewer` / `shipper` were checked against that mechanism before being adopted:
 
-- `claude-plugins/kampus-pipeline/agents/reviewer.md` and `shipper.md` already carry two of these
-  names. **In phoenix they load nothing**, on one fact only: `.claude/settings.json` carries
-  `"kampus-pipeline@kampus": false`, and ADR
-  [0277](0277-v1-retirement-keeps-the-plugin-suppression.md) keeps that suppression permanently, on a
-  direct founder ruling.
+- **Inside phoenix the collision was live until 2026-08-15, and what closed it was the deletion of a
+  load path, not a toggle.** `claude-plugins/kampus-pipeline/agents/reviewer.md` and `shipper.md`
+  carry two of these names. ADR
+  [0255](0255-skill-namespaces-keep-v1-and-fabrika-apart.md) §4 states the mechanism: `.claude/agents`
+  was a tracked symlink into the v1 tree and it *"materializes v1's agent definitions at the project
+  agent-load path regardless of the plugin toggle"*. The `"kampus-pipeline@kampus": false` line in
+  `.claude/settings.json` reaches the plugin copy and never reached that symlink — 0255 §2 measured
+  it, ADR [0277](0277-v1-retirement-keeps-the-plugin-suppression.md) quotes the measurement, and
+  0255's Banned list forbids recording that the toggle gates what the symlink loads. So for as long
+  as the symlink existed, bare `reviewer` and `shipper` were live project-scope agent definitions in
+  this repo. [#5599](https://github.com/kamp-us/phoenix/issues/5599) deleted both `.claude` symlinks
+  on 2026-08-15 (`a0ae0bd3`), executing 0277's decision; `git ls-tree origin/main .claude/` now
+  returns `.pipeline`, `settings.json` and `workflows` and nothing else. The v1 definitions no longer
+  materialize at any agent-load path in this repo, so the in-repo collision is gone — because the
+  load path was removed, not because a toggle was gating it. The surviving suppression is a separate
+  door: it keeps the plugin copy off a machine where someone installs `kampus-pipeline` (0277).
 - **ADR [0279](0279-v1-crew-retired-in-full.md) does not retire kampus-pipeline.** It retires the v1
   *crew* in full and keeps `claude-plugins/kampus-pipeline/` alive on a live-consumer fact — someone
   outside this repository installs the suite from it — and bans touching it as part of that
@@ -85,6 +96,29 @@ does not conflict with this one.
 - Whether a user-scope agent directory holds one of the three is a per-machine fact and is not a
   guarantee in either direction. It is checked at adoption, not relied on.
 
+## What this amends in ADR 0255
+
+ADR [0255](0255-skill-namespaces-keep-v1-and-fabrika-apart.md) §4 rests its no-collision finding on a
+premise about fabrika's plugin root:
+
+> There is no agent-name collision. fabrika ships no agent definitions — its plugin root carries
+> `skills/`, `docs/`, `hooks.json` and its manifest, and no `agents/` directory. Nothing contests
+> those names.
+
+That premise stopped being true on 2026-08-14, when
+[#5586](https://github.com/kamp-us/phoenix/issues/5586) landed `claude-plugins/fabrika/agents/`, and
+this decision is what puts two of those definitions on the exact bare names §4 was checking. **This
+entry amends 0255 §4 in part**, in that direction only: fabrika does ship agent definitions, and
+`reviewer` and `shipper` are contested names wherever both plugins load. Everything else in 0255
+stands, including §4's second bullet — `.claude/agents` retired on the same lever as `.claude/skills`,
+which is what #5599 did.
+
+The rest of the amendment is arithmetic rather than judgement: with the symlink gone, §4's conclusion
+survives its own falsified premise. There is no agent-name collision in phoenix today, but for the
+opposite reason to the one §4 gave — not because fabrika ships nothing, but because v1's definitions
+no longer load. 0255's body is untouched; its status line carries the link, which is the shape
+[0277](0277-v1-retirement-keeps-the-plugin-suppression.md) used for the same act.
+
 ## Consequences
 
 1. The name is the spawn target, so the rename has two directions and both were swept.
@@ -93,12 +127,22 @@ does not conflict with this one.
    the repo against the old names must be updated by hand.
    **New names — the direction the rename creates:** `.claude/workflows/drive-issue.js` already
    spawns `agentType: "reviewer"` (lines 252, 486, 530) and `agentType: "shipper"` (line 614), left
-   from the v1 roster. Under 0195's mechanism a bare `name:` is the `agentType` verbatim, fabrika is
-   enabled in `.claude/settings.json` and kampus-pipeline is suppressed, so after this rename those
-   four sites resolve to fabrika's shells — preloading `fabrika:review` / `fabrika:ship` against v1
-   prompts and v1 output schemas — where before they resolved to no plugin def at all. Whether that
-   driver is on a live path was **not** tested here, and this entry does not claim it is harmless;
-   it claims the collision exists and names where.
+   from the v1 roster. Those four sites have resolved to three different things in three days, and
+   the middle state is the one an earlier draft of this entry got wrong:
+   - **Before #5599** they resolved to the v1 definitions themselves —
+     `claude-plugins/kampus-pipeline/agents/reviewer.md` and `shipper.md`, materialized at the
+     project agent-load path by the `.claude/agents` symlink (0255 §4). That is why the driver spells
+     those names at all. Not "no def at all".
+   - **After #5599 and before this rename** they resolved to nothing: the symlink was gone and no
+     plugin shipped those names.
+   - **After this rename**, under 0195's mechanism a bare `name:` is the `agentType` verbatim and
+     fabrika is enabled in `.claude/settings.json`, so they resolve to fabrika's shells — preloading
+     `fabrika:review` / `fabrika:ship` against v1 prompts and v1 output schemas.
+
+   The two `agentType: "coder"` sites (382, 562) resolve to nothing now, and this rename does not
+   change that: fabrika ships no `coder` shell. Whether that driver is on a live path was **not**
+   tested here, and this entry does not claim any of it is harmless; it names what resolves to what
+   and where.
 2. ADR [0280](0280-review-shell-carries-the-spawn-tool.md) is `accepted` and names the `review`
    shell in its title and body. Per the ADR-immutability convention it is not edited; its `review`
    shell is this decision's `reviewer`, and the tool grant it decides is unchanged.
@@ -110,6 +154,8 @@ does not conflict with this one.
 
 - Records the founder ruling of 2026-08-15, verbatim: *"i think we need to make sure when we are
   naming agents we should name them as nouns, not verbs. so not build, but builder, etc etc."*
+- Amends in part [0255](0255-skill-namespaces-keep-v1-and-fabrika-apart.md) — §4's *"fabrika ships no
+  agent definitions"* premise only. 0255's status line carries the link; its body is untouched.
 - Implemented by [#5617](https://github.com/kamp-us/phoenix/issues/5617), over the shells landed by
   [#5586](https://github.com/kamp-us/phoenix/issues/5586) and amended by
   [#5608](https://github.com/kamp-us/phoenix/issues/5608).
