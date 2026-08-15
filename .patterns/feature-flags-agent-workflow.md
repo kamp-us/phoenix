@@ -280,7 +280,7 @@ recorded **at declaration** (Step 1: owner, originating issue, removal trigger).
 #### Filing the retirement chore (via `report`)
 
 When a flag's removal trigger has fired and the retirement isn't being done in the current session,
-**file a `type:chore` retirement issue** with the [`report`](../.claude/skills/report/SKILL.md) skill
+**file a `type:chore` retirement issue** with the [`report`](../claude-plugins/kampus-pipeline/skills/report/SKILL.md) skill
 (per CLAUDE.md's "Filing follow-up work"), so an agent picks it up and `write-code` drains it like any
 other chore. `report` files the issue `status:needs-triage` and type-blind; triage classifies it
 `type:chore` (the standard retirement-chore shape below is what makes that classification obvious) and

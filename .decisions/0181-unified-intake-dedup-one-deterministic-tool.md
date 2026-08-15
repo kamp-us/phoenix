@@ -11,7 +11,7 @@ tags: [pipeline, intake, triage]
 ## Context
 
 Two intake paths create issues, and only one of them dedups. The **agent path**
-(the [`report`](../.claude/skills/report/SKILL.md) skill) already runs a pre-file
+(the [`report`](../claude-plugins/kampus-pipeline/skills/report/SKILL.md) skill) already runs a pre-file
 "is there already an open issue for this?" check before it files. The **human path**
 — an issue filed directly through the GitHub UI — runs no such check, so a
 human-filed duplicate (e.g. #2802) lands unguarded and only gets caught, if at all,
