@@ -15,9 +15,23 @@ bar gates.
 faces the evals, and it silently forks from the skill the moment the skill changes. Anything you
 want a shell to "always do" belongs in its skill.
 
+## A shell's name is a noun
+
+**Name a shell for the thing that acts, never for the act.** `builder`, `reviewer`, `shipper` — and
+whatever the fourth turns out to be, it is named the same way. Founder ruling of 2026-08-15, ADR
+[0281](../../../.decisions/0281-agent-names-are-nouns.md), which binds every agent definition in
+this repo and not only these three.
+
+The concrete reason is a collision. A shell exists to run one skill, so an imperative shell name is
+the skill's name: the skill is `fabrika:review` and a shell called `fabrika:review` is
+indistinguishable from it in a prompt, in a workflow script, and in a log line. `fabrika:reviewer`
+spawning `fabrika:review` reads in one pass; `fabrika:review` spawning `fabrika:review` does not.
+The noun also says the true thing about a shell — it is a seat that loads instructions, not the
+instructions.
+
 ## Why exactly three
 
-`build`, `review` and `ship`, and no fourth — founder ruling of 2026-08-14 (epic
+`builder`, `reviewer` and `shipper`, and no fourth — founder ruling of 2026-08-14 (epic
 [#5492](https://github.com/kamp-us/phoenix/issues/5492)), verbatim *"three sounds right"*. A shell
 earns its place only where a driver needs something to spawn, and those are the three heavy
 pipeline stages. Every other fabrika skill is invoked by name from a plain session and needs no
@@ -46,9 +60,9 @@ resolves to the committed default, which is allowlisted, so an unset `model` pas
 that never exported `WORKFLOW_MODEL`. All three shells today leave it unset, so a spawn runs on the
 caller's own model whenever the pin is sane.
 
-## Only the review shell carries a spawn tool
+## Only the reviewer carries a spawn tool
 
-`review` is the one shell whose `tools:` includes the harness spawn tool, `Agent`. That is a tool
+`reviewer` is the one shell whose `tools:` includes the harness spawn tool, `Agent`. That is a tool
 grant and nothing more: the behaviour stays in
 [`../skills/review/SKILL.md`](../skills/review/SKILL.md) §6, which makes the `governance` namespace
 **derived-required** on a `harness: true` diff — fire the `governance` skill, wait for it, and never
@@ -56,11 +70,12 @@ emit that namespace yourself. Without a spawn tool the shell derives that requir
 dead-ends, leaving the PR with a governance check nothing in the run can clear. The grant only lets
 the shell obey an instruction it already carried. Founder ruling of 2026-08-14 on
 [#5558](https://github.com/kamp-us/phoenix/issues/5558), verbatim *"yeah, review shell carries the
-spawn tool"*. Its decision record, ADR 0280, is in flight on
-[#5604](https://github.com/kamp-us/phoenix/pull/5604) and is not in `.decisions/` yet.
+spawn tool"*. Its decision record is ADR
+[0280](../../../.decisions/0280-review-shell-carries-the-spawn-tool.md), which predates the noun
+rename and calls this shell `review`.
 
-`build` and `ship` get no spawn tool: neither skill invokes another agent. `ship` routes by writing
-a `ship note` and stopping, so it holds no `Skill` grant either.
+`builder` and `shipper` get no spawn tool: neither skill invokes another agent. The `ship` skill
+routes by writing a `ship note` and stopping, so `shipper` holds no `Skill` grant either.
 
 Write the tool's canonical name, `Agent` — the `name` on the spawn tool in the Claude Code 2.1.233
 bundle, which also carries `aliases: ["Task"]`. Both strings grant the tool (a shell built with
