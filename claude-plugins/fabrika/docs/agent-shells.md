@@ -56,7 +56,8 @@ emit that namespace yourself. Without a spawn tool the shell derives that requir
 dead-ends, leaving the PR with a governance check nothing in the run can clear. The grant only lets
 the shell obey an instruction it already carried. Founder ruling of 2026-08-14 on
 [#5558](https://github.com/kamp-us/phoenix/issues/5558), verbatim *"yeah, review shell carries the
-spawn tool"*, recorded as ADR 0280.
+spawn tool"*. Its decision record, ADR 0280, is in flight on
+[#5604](https://github.com/kamp-us/phoenix/pull/5604) and is not in `.decisions/` yet.
 
 `build` and `ship` get no spawn tool: neither skill invokes another agent. `ship` routes by writing
 a `ship note` and stopping, so it holds no `Skill` grant either.
