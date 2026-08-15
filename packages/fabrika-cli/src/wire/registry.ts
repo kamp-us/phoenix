@@ -21,6 +21,7 @@
 import * as acceptanceCriteria from "./acceptance-criteria.ts";
 import {brandWitnesses, type WireFormat} from "./format.ts";
 import * as governanceDigest from "./governance-digest.ts";
+import * as graduateEmitted from "./graduate-emitted.ts";
 import * as grillAnswer from "./grill-answer.ts";
 import * as grillRuling from "./grill-ruling.ts";
 import * as grillSupersede from "./grill-supersede.ts";
@@ -400,6 +401,46 @@ export const registeredFormats: ReadonlyArray<WireFormat> = [
 			],
 		},
 		brands: brandWitnesses<governanceDigest.DigestRow>({id: true, kind: true, note: true}),
+	},
+	{
+		key: "graduate-emitted",
+		purpose:
+			"the record on a grilling session or wayfinding map that one spec issue was graduated out of it — the spec digest it bound and the decision refs that spec covered",
+		module: "packages/fabrika-cli/src/wire/graduate-emitted.ts",
+		producers: ["graduate"],
+		consumers: ["graduate"],
+		emit: graduateEmitted.emitFromFields,
+		read: graduateEmitted.readToLines,
+		fixtures: {
+			roundTrip: {
+				fields:
+					"source: 9412\nemitted: 9520\ndigest: a1b2c3d4e5f6\ncovers: R1.2;R1.4\nat: 2026-08-09T18:36:48Z\n",
+				values: ["9412", "9520", "a1b2c3d4e5f6", "R1.2;R1.4", "2026-08-09T18:36:48Z"],
+			},
+			absent: "Reading the trail back now — nothing here reaches for the marker.\n",
+			malformed: [
+				{
+					drift: "the digest is not 12 lowercase hex",
+					artifact:
+						"graduate-emitted: #9412 → #9520 @ A1B2C3D4E5F6 · covers R1.2 · 2026-08-09T18:36:48Z\n",
+				},
+				{
+					drift: "the marker names no covered ref, so a remainder is underivable",
+					artifact:
+						"graduate-emitted: #9412 → #9520 @ a1b2c3d4e5f6 · covers  · 2026-08-09T18:36:48Z\n",
+				},
+				{
+					drift: "the emitted issue is missing, so the marker claims an emission it cannot name",
+					artifact: "graduate-emitted: #9412 @ a1b2c3d4e5f6 · covers R1.2 · 2026-08-09T18:36:48Z\n",
+				},
+				{
+					drift: "the timestamp is not an ISO-8601 UTC instant",
+					artifact:
+						"graduate-emitted: #9412 → #9520 @ a1b2c3d4e5f6 · covers R1.2 · yesterday evening\n",
+				},
+			],
+		},
+		brands: brandWitnesses<graduateEmitted.GraduateEmitted>({digest: true, at: true}),
 	},
 ];
 

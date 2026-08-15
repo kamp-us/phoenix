@@ -46,6 +46,7 @@ does not exist yet — rather than missing; check the registry before assuming a
 | `grill-supersede` | [`packages/fabrika-cli/src/wire/grill-supersede.ts`](../../../packages/fabrika-cli/src/wire/grill-supersede.ts) | `grilling` | `grilling` |
 | `handoff-pack` | [`packages/fabrika-cli/src/wire/handoff-pack.ts`](../../../packages/fabrika-cli/src/wire/handoff-pack.ts) | `handoff` | `handoff` |
 | `governance-digest` | [`packages/fabrika-cli/src/wire/governance-digest.ts`](../../../packages/fabrika-cli/src/wire/governance-digest.ts) | `governance` | `front-door` |
+| `graduate-emitted` | [`packages/fabrika-cli/src/wire/graduate-emitted.ts`](../../../packages/fabrika-cli/src/wire/graduate-emitted.ts) | `graduate` | `graduate` |
 <!-- fabrika:wire-index:end -->
 
 ### `acceptance-criteria`
@@ -158,6 +159,25 @@ the record the id names and reads it there, which is what keeps a coordination a
 whoever reads it, and it is why free prose is confined to that one field. The block is upserted onto a
 durable issue rather than appended, so a reader always finds exactly one current readout instead of a
 stream a timestamp has to decide between.
+
+### `graduate-emitted`
+
+This is the record on a grilling session or a wayfinding map that one spec issue was graduated out of
+it, and the agreement it closes is a repeat one: without it, a second run over the same trail cannot
+tell a spec that already exists from one nobody has filed, so it files a duplicate. Two fields carry
+the design. The digest it binds is the **spec**'s, not the trail's — a trail deliberately split across
+two buildable things graduates its remainder later at a different digest, and a marker bound to the
+trail would refuse that second filing forever while claiming to prevent duplicates. And `covers`
+names the refs the spec rendered, which is what makes coverage answerable from the artifact alone: a
+digest by itself is opaque, so a reader holding one could say a source had graduated but not which
+parts of its trail were specified. Its separator is `;` rather than `,` because a map-sourced ref
+contains a space (`#9301 R1.2`).
+
+It is a new format rather than a widening of `verdict-marker`. That reader is guarded by a separate
+namespace-prefix gate that returns `Absent` for a non-member, so a widening that missed either
+constant would emit markers it could never read back — and an emission is not a verdict anyway: it
+carries no `PASS`/`FAIL` polarity, binds a spec digest rather than a head SHA, and nothing recorded
+in it can block a merge.
 
 ## Adding a format
 
