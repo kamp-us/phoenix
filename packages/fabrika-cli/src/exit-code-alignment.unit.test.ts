@@ -21,6 +21,7 @@ import {
 } from "./exit-code-alignment.ts";
 import * as glossary from "./glossary/codes.ts";
 import * as governance from "./governance/codes.ts";
+import * as graduate from "./graduate/codes.ts";
 import * as grill from "./grill/codes.ts";
 import * as handoff from "./handoff/codes.ts";
 import * as healCi from "./heal-ci/codes.ts";
@@ -55,6 +56,7 @@ const TABLES: Readonly<Record<string, CodeTable>> = {
 	epic,
 	glossary,
 	governance,
+	graduate,
 	grill,
 	handoff,
 	"heal-ci": healCi,

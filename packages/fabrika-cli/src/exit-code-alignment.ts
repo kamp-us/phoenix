@@ -114,6 +114,28 @@ export const GRILL_SEATS: SharedSeats = {
 };
 
 /**
+ * `graduate`'s seats: all nine, under the base's own names.
+ *
+ * None of the shipped maps fits, which is why this one is written out. It seats `4` as
+ * `BAD_SECTIONS` like `build` does, but names `7` `NO_TARGET` (a source issue or a label proven
+ * absent — the base's own reading, widened only from *write target* to *named target*) and `10`
+ * `CLASSIFIED` rather than the `ZERO_SCOPE` / `OFF_VOCABULARY` aliases the eight-seat maps key on.
+ * `10` is reached rather than held empty: ADR 0246 forbids this group writing board state, and `10`
+ * is that prohibition made mechanical against a classifying `--title`. The private band is `12`-`18`.
+ */
+export const GRADUATE_SEATS: SharedSeats = {
+	EMPTY_STDIN: "EMPTY_STDIN",
+	BAD_SECTIONS: "BAD_SECTIONS",
+	LEAKED_PATH: "LEAKED_PATH",
+	BARE_AT_PATH: "BARE_AT_PATH",
+	NO_TARGET: "NO_TARGET",
+	WRITE_UNKNOWN: "WRITE_UNKNOWN",
+	READBACK_MISMATCH: "READBACK_MISMATCH",
+	CLASSIFIED: "CLASSIFIED",
+	PRECONDITION_UNKNOWN: "PRECONDITION_UNKNOWN",
+};
+
+/**
  * `handoff`'s seats: the same eight `grill` claims, so the map is reused rather than retyped.
  *
  * The two groups reach the identical set from different directions: both name `7` `NO_TARGET` (an
@@ -252,6 +274,7 @@ export const ALIGNED_GROUPS: Readonly<Record<string, SharedSeats>> = {
 	hook: HOOK_SEATS,
 	epic: BUILD_SEATS,
 	glossary: GLOSSARY_SEATS,
+	graduate: GRADUATE_SEATS,
 	grill: GRILL_SEATS,
 	handoff: HANDOFF_SEATS,
 	"heal-ci": HEAL_CI_SEATS,
