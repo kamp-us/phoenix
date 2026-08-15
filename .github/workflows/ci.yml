@@ -683,10 +683,13 @@ jobs:
       # Same script runs locally: `bash claude-plugins/kampus-pipeline/skills/triage/scripts/verify-apply-triage-args.sh`.
       - run: bash claude-plugins/kampus-pipeline/skills/triage/scripts/verify-apply-triage-args.sh
 
-      # Gate-path drift guard (issue #720): assert the five CONTROL_PLANE_RE= copies
-      # in ship-it/review-code/review-doc/review-skill/gh-issue-intake-formats are
-      # byte-identical to the §CP canonical line. A drifted copy otherwise silently
-      # breaks all gate checks with no build-time failure. Its second invariant — the
+      # Gate-path drift guard (issue #720): read the §CP CONTROL_PLANE_RE from its
+      # single-source const via `pipeline-cli control-plane-paths` (#2761) and diff it
+      # against the ONE un-importable copy left — the CONTROL_PLANE_RE= line in
+      # gh-issue-intake-formats.md the live gates re-resolve from origin/main (#981);
+      # the gate skills carry no copy of their own. The same const-vs-copy compare then
+      # runs over the ten other gate boundaries (#4401). A drifted copy otherwise
+      # silently breaks all gate checks with no build-time failure. Its second invariant — the
       # `.claude/skills` symlink agreeing with marketplace.json — went with the symlink
       # when v1 retired (ADR 0277).
       # Same script runs locally: `bash claude-plugins/kampus-pipeline/skills/validate-gate-path-drift.sh`.
