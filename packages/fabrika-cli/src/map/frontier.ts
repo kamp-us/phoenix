@@ -19,7 +19,7 @@ import {blockedBy, blocking, subIssues} from "../io/edges.ts";
 import type {Shell} from "../io/git.ts";
 import {type CommentRecord, getIssue, type IssueRecord, listComments} from "../io/issues.ts";
 import {permissionFor} from "../io/pulls.ts";
-import {type Kind, type MapBody, parseBody} from "./body.ts";
+import {type DecisionEntry, type Kind, type MapBody, parseBody} from "./body.ts";
 import {
 	type Outcome,
 	reachesForTicketMarker,
@@ -160,13 +160,36 @@ export const scanTicketMarkers = (
 };
 
 /**
- * Whether the map's `## Decisions` already carries this ticket's answer.
+ * The entry this run would write, if the map's `## Decisions` already carries it.
  *
- * Two citations resolve to one ticket, because the contract's citation grammar has two forms and only
- * one of them names a ticket: a research or spike finding cites `— from #<ticket>`, and a relayed
- * ruling cites `— ruled on #<session>`, which names the session the fork pointed at. Matching the
- * fork's session is what lets a decision ticket graduate at all; without it a forked ticket's answer
- * could land on the map and the ticket would still read `forked` forever.
+ * The exact test, for a caller about to decide whether a write already landed. A finding cites
+ * `— from #<ticket>`, so the ticket number identifies it. A relayed ruling cites
+ * `— ruled on #<session> R<round>.<n>`, and the session alone does NOT identify it: one grilling
+ * session answers several questions, so every decision ticket forked to that session matches a
+ * session-only test. The match key is therefore the whole citation this run carries — session and
+ * question id — or recording the second such ticket would find the first ticket's entry (#5637).
+ */
+export const decisionRecorded = (
+	body: MapBody,
+	ticket: number,
+	citation: {readonly session: number; readonly questionId: string} | null,
+): DecisionEntry | undefined =>
+	body.decisions.find((entry) =>
+		entry.authority._tag === "Finding"
+			? entry.authority.ticket === ticket
+			: citation !== null &&
+				entry.authority.session === citation.session &&
+				entry.authority.questionId === citation.questionId,
+	);
+
+/**
+ * Whether the map's `## Decisions` carries an answer that could be this ticket's — the loose test,
+ * for reading a closed ticket's state off the body alone.
+ *
+ * A reader has no citation in hand, only the session the fork pointed at, so a relayed ruling can be
+ * matched no more precisely than by that session. Matching it is what lets a decision ticket read
+ * `graduated` at all; without it a forked ticket's answer could land and the ticket would still read
+ * `forked` forever. Never reuse this to decide a write — see `decisionRecorded`.
  */
 export const decisionCites = (
 	body: MapBody,

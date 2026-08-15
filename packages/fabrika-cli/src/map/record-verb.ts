@@ -4,7 +4,10 @@
  *
  * The two body edits are one PATCH and the close is second, ordered so the surviving half of a
  * partial application is the visible-and-re-runnable one — an answer recorded against a still-open
- * ticket — rather than the forbidden one, a closed ticket with no recorded answer.
+ * ticket — rather than the forbidden one, a closed ticket with no recorded answer. Re-runnable is
+ * enforced, not asserted: a ticket whose answer the body already carries takes the resume branch and
+ * only closes, so finishing an interrupted lockstep is the verb again — re-read the map, re-run
+ * against its new digest — never a hand-close.
  *
  * <!-- anchor: RELAY-GRILLINGS-STATE-NEVER-RECOMPUTE-IT --> **A forked decision ticket's ruling is
  * read by importing the `grill` group's reader, never by re-deriving it here.** A ruling counts only
@@ -21,7 +24,7 @@ import {readFile} from "../io/fs.ts";
 import {closeCompleted, getIssue, patchIssueBody} from "../io/issues.ts";
 import {normalizeForReadback} from "../report/compose.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
-import {type DecisionEntry, digestOf, parseBody} from "./body.ts";
+import {type DecisionEntry, digestOf, foldEntryText, parseBody} from "./body.ts";
 import {
 	BAD_SECTIONS,
 	OUTCOME_UNRECORDABLE,
@@ -30,6 +33,7 @@ import {
 	TICKET_UNKNOWN,
 	WRITE_UNKNOWN,
 } from "./codes.ts";
+import {decisionRecorded} from "./frontier.ts";
 import {
 	type Citation,
 	digestFresh,
@@ -41,6 +45,12 @@ import {
 	targetRepo,
 } from "./guards.ts";
 import {applyRecord, QUESTION_ID} from "./record.ts";
+
+/** The citation an entry carries, in the one form the answer reports it. */
+const citationOf = (entry: DecisionEntry): string =>
+	entry.authority._tag === "Ruled"
+		? `— ruled on #${entry.authority.session} ${entry.authority.questionId}`
+		: `— from #${entry.authority.ticket}`;
 
 export interface RecordOptions {
 	readonly map: number;
@@ -90,7 +100,7 @@ export const runRecord = (
 				`${VERB}: could not read --finding ${options.finding}: ${read.value} — the answer is UNKNOWN, never empty.`,
 			);
 		}
-		const finding = read.value.trim();
+		const finding = foldEntryText(read.value);
 		if (finding === "") {
 			return refuse(
 				BAD_SECTIONS,
@@ -121,6 +131,38 @@ export const runRecord = (
 
 		const left = notTerminal(VERB, ticket, "its answer is already on the map.");
 		if (left !== null) return left;
+
+		// The lockstep's second half, resumed. The body write lands first and the close second, so an
+		// interrupted run leaves the answer recorded against a still-open ticket — the state the close
+		// order deliberately chooses. Re-reading the map and re-running against its new digest finishes
+		// the close instead of appending the answer a second time, which is what makes that state
+		// re-runnable rather than a hand-repair (#5550). The match is the citation THIS run carries, so
+		// a sibling ticket forked to the same grilling session cannot resume on the other's entry
+		// (#5637). The recorded entry stands as written: a wrong answer is retracted in the open with a
+		// new entry, never overwritten by a re-run (#4227).
+		const recordedAlready = decisionRecorded(found.value.body, options.ticket, citation);
+		if (recordedAlready !== undefined) {
+			const resumeScope = `${VERB}: ${repo}, #${options.ticket}'s answer is already on #${options.map} — resuming the close.`;
+			const finish = yield* closeCompleted(repo, options.ticket);
+			if (finish._tag === "Failure") {
+				return refuse(
+					WRITE_UNKNOWN,
+					`${VERB}: #${options.ticket}'s answer is on #${options.map} and the close did NOT land: ${finish.reason} — the ticket is still open. Re-read the map and re-run with its new digest to resume the close.`,
+					[resumeScope],
+				);
+			}
+			return answer(
+				JSON.stringify({
+					map: options.map,
+					ticket: options.ticket,
+					recorded: citationOf(recordedAlready),
+					closed: true,
+					resumed: true,
+					digest: digestOf(found.value.body.sections),
+				}),
+				[resumeScope],
+			);
+		}
 
 		if (ticket.state === "lane-closed" && ticket.outcome === "unreachable") {
 			return refuse(
@@ -175,13 +217,14 @@ export const runRecord = (
 			};
 		}
 
-		const next = applyRecord(found.value.body, options.ticket, entry);
-		if (next === null) {
+		const applied = applyRecord(found.value.body, options.ticket, entry);
+		if (applied._tag === "Refused") {
 			return refuse(
 				BAD_SECTIONS,
-				`${VERB}: #${options.map}'s body stops parsing once the row is removed — nothing was written.`,
+				`${VERB}: #${options.map}'s body would not hold this record — ${applied.reason}; nothing was written.`,
 			);
 		}
+		const next = applied.body;
 
 		const scope = `${VERB}: ${repo}, #${options.ticket} resolved ${ticket.state}, ${found.value.body.decisions.length} existing decision(s).`;
 		const written = yield* patchIssueBody(repo, options.map, next);
@@ -216,7 +259,7 @@ export const runRecord = (
 		if (closed._tag === "Failure") {
 			return refuse(
 				WRITE_UNKNOWN,
-				`${VERB}: recorded the answer on #${options.map} and the close of #${options.ticket} did NOT land — the answer is on the map and the ticket is still open. Close #${options.ticket} by hand.`,
+				`${VERB}: recorded the answer on #${options.map} and the close of #${options.ticket} did NOT land — the answer is on the map and the ticket is still open. Re-read the map and re-run with its new digest to resume the close; it will not record the answer twice.`,
 				[scope],
 			);
 		}
@@ -225,11 +268,9 @@ export const runRecord = (
 			JSON.stringify({
 				map: options.map,
 				ticket: options.ticket,
-				recorded:
-					entry.authority._tag === "Ruled"
-						? `— ruled on #${entry.authority.session} ${entry.authority.questionId}`
-						: `— from #${entry.authority.ticket}`,
+				recorded: citationOf(entry),
 				closed: true,
+				resumed: false,
 				digest: digestOf(reparsed.value.sections),
 			}),
 			[scope],

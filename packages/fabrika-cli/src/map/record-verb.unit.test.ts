@@ -9,6 +9,7 @@ import {
 	rulingComment,
 } from "../grill/fixtures.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
+import {type DecisionEntry, renderDecision, renderOutOfScope, spliceSection} from "./body.ts";
 import {
 	BAD_SECTIONS,
 	NO_TARGET,
@@ -17,6 +18,7 @@ import {
 	TICKET_UNKNOWN,
 	WRITE_UNKNOWN,
 } from "./codes.ts";
+import {runDescope} from "./descope-verb.ts";
 import {
 	commentsJson,
 	digestFor,
@@ -93,10 +95,14 @@ const laneClosed = (outcome: "answered" | "no-evidence" | "unreachable") =>
 		{id: 3, body: composeFindingMarker({map: MAP, ticket: TICKET, outcome, nonce: NONCE})},
 	]);
 
-const recorded = applyRecord(parsed(MAP_BODY), TICKET, {
-	text: ANSWER,
-	authority: {_tag: "Finding", ticket: TICKET},
-}) as string;
+/** The body `runRecord` composes for `entry`, or a thrown failure if the fence refuses it. */
+const composed = (entry: DecisionEntry, body = MAP_BODY): string => {
+	const outcome = applyRecord(parsed(body), TICKET, entry);
+	if (outcome._tag === "Refused") throw new Error(`applyRecord refused: ${outcome.reason}`);
+	return outcome.body;
+};
+
+const recorded = composed({text: ANSWER, authority: {_tag: "Finding", ticket: TICKET}});
 
 describe("runRecord", () => {
 	it("exits 1 when --ruled-on arrives without a well-formed --question-id", async () => {
@@ -206,7 +212,155 @@ describe("runRecord", () => {
 		]);
 		expect(out.code).toBe(WRITE_UNKNOWN);
 		expect(out.stdout).toBe("");
-		expect(out.stderr.join("\n")).toContain(`Close #${TICKET} by hand`);
+		expect(out.stderr.join("\n")).toContain(
+			"Re-read the map and re-run with its new digest to resume the close",
+		);
+	});
+});
+
+/** A finding as anyone actually writes one: bold lead-in, blank lines, a numbered list. */
+const MULTI_PARAGRAPH = [
+	"**The weight column lives on the account row.**",
+	"",
+	"Three reasons:",
+	"",
+	"1. the audit log already joins on account id",
+	"2. a per-topic column would cost a lookup per moderation action",
+	"3. the decay clock is per account, not per topic",
+	"",
+	"So the column goes on `account`.",
+].join("\n");
+
+const FOLDED = MULTI_PARAGRAPH.replace(/\s*\n\s*/g, " ");
+
+describe("a multi-paragraph finding", () => {
+	it("is folded to one line, so the body it writes still parses", async () => {
+		const folded = composed({text: FOLDED, authority: {_tag: "Finding", ticket: TICKET}});
+		const shell = fakeShell([
+			[PATCH_TICKET, okOut("{}")],
+			[PATCH_MAP, okOut("{}")],
+			...frontier(laneClosed("answered")),
+			[
+				once(MAP_ISSUE),
+				okOut(issueJson({number: MAP, body: MAP_BODY, labels: ["wayfinding:map"]})),
+			],
+			[MAP_ISSUE, okOut(issueJson({number: MAP, body: folded, labels: ["wayfinding:map"]}))],
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runRecord(options),
+				Layer.merge(shell.layer, fakeFs({files: {[FINDING]: `${MULTI_PARAGRAPH}\n`}}).layer),
+			),
+		);
+		expect(out.code).toBe(0);
+		const landed = parsed(folded);
+		expect(landed.decisions).toHaveLength(1);
+		expect(landed.decisions[0]?.text).toBe(FOLDED);
+		const patch = shell.calls.find((line) => line.includes("PATCH repos/o/r/issues/9140")) ?? "";
+		expect(patch).toContain(FOLDED);
+	});
+});
+
+describe("map record and map descope fold free text the same way", () => {
+	it("both land one line — a sibling that stopped folding fails here", async () => {
+		const folded = composed({text: FOLDED, authority: {_tag: "Finding", ticket: TICKET}});
+		const recordShell = fakeShell([
+			[PATCH_TICKET, okOut("{}")],
+			[PATCH_MAP, okOut("{}")],
+			...frontier(laneClosed("answered")),
+			[
+				once(MAP_ISSUE),
+				okOut(issueJson({number: MAP, body: MAP_BODY, labels: ["wayfinding:map"]})),
+			],
+			[MAP_ISSUE, okOut(issueJson({number: MAP, body: folded, labels: ["wayfinding:map"]}))],
+		]);
+		const fromRecord = await Effect.runPromise(
+			Effect.provide(
+				runRecord(options),
+				Layer.merge(recordShell.layer, fakeFs({files: {[FINDING]: `${MULTI_PARAGRAPH}\n`}}).layer),
+			),
+		);
+
+		const direction = "a per-topic weight column";
+		const descoped = spliceSection(
+			parsed(MAP_BODY),
+			"Out of scope",
+			renderOutOfScope({
+				direction,
+				reason: FOLDED.replace(/\.$/, ""),
+				recordedAt: "2026-08-10",
+			}),
+		);
+		const descopeShell = fakeShell([
+			[PATCH_MAP, okOut("{}")],
+			[
+				once(MAP_ISSUE),
+				okOut(issueJson({number: MAP, body: MAP_BODY, labels: ["wayfinding:map"]})),
+			],
+			[MAP_ISSUE, okOut(issueJson({number: MAP, body: descoped, labels: ["wayfinding:map"]}))],
+		]);
+		const fromDescope = await Effect.runPromise(
+			Effect.provide(
+				runDescope({
+					map: MAP,
+					digest: digestFor(MAP_BODY),
+					direction,
+					reason: FINDING,
+					ticket: null,
+					repo: null,
+					env: {CLAUDE_PIPELINE_REPO: REPO},
+					now: () => new Date("2026-08-10T00:00:00Z"),
+				}),
+				Layer.merge(descopeShell.layer, fakeFs({files: {[FINDING]: `${MULTI_PARAGRAPH}\n`}}).layer),
+			),
+		);
+
+		expect([fromRecord.code, fromDescope.code]).toEqual([0, 0]);
+		for (const shell of [recordShell, descopeShell]) {
+			const patch = shell.calls.find((line) => line.includes("PATCH repos/o/r/issues/9140")) ?? "";
+			expect(patch).toContain(FOLDED.replace(/\.$/, ""));
+			expect(patch).not.toContain("1. the audit log already joins on account id\\n");
+		}
+	});
+});
+
+describe("the lockstep is one act: an interrupted run resumes", () => {
+	/** The map after the body half landed: the answer recorded, the ticket never closed. */
+	const halfDone = () =>
+		[
+			...frontier(laneClosed("answered")),
+			[MAP_ISSUE, okOut(issueJson({number: MAP, body: recorded, labels: ["wayfinding:map"]}))],
+		] as const;
+
+	it("closes the ticket and writes no second entry when the answer is already on the map", async () => {
+		const shell = fakeShell([[PATCH_TICKET, okOut("{}")], ...halfDone()]);
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runRecord({...options, digest: digestFor(recorded)}),
+				Layer.merge(shell.layer, fakeFs({files: {[FINDING]: `${ANSWER}\n`}}).layer),
+			),
+		);
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({
+			map: MAP,
+			ticket: TICKET,
+			recorded: `— from #${TICKET}`,
+			closed: true,
+			resumed: true,
+		});
+		expect(shell.calls.some((line) => line.includes("PATCH repos/o/r/issues/9140"))).toBe(false);
+		expect(shell.calls.some((line) => line.includes("state_reason=completed"))).toBe(true);
+	});
+
+	it("exits 8 when the resumed close still does not land — never 0 with the ticket open", async () => {
+		const out = await run([[PATCH_TICKET, errOut("gh: Bad gateway (HTTP 502)")], ...halfDone()], {
+			digest: digestFor(recorded),
+		});
+		expect(out.code).toBe(WRITE_UNKNOWN);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.join("\n")).toContain(
+			"Re-read the map and re-run with its new digest to resume the close",
+		);
 	});
 });
 
@@ -246,10 +400,10 @@ const RULED = [
 	{id: 13, body: rulingComment(QUESTION, BOUND)},
 ];
 
-const ruledRecord = applyRecord(parsed(MAP_BODY), TICKET, {
+const ruledRecord = composed({
 	text: ANSWER,
 	authority: {_tag: "Ruled", session: SESSION, questionId: QUESTION},
-}) as string;
+});
 
 describe("a forked decision ticket's ruling is read through the grill reader", () => {
 	it("exits 0 recording the ruling when the cited question reads ruled", async () => {
@@ -332,5 +486,77 @@ describe("a forked decision ticket's ruling is read through the grill reader", (
 		expect(out.code).toBe(TICKET_UNKNOWN);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.join("\n")).toContain('reads "answered", not "ruled"');
+	});
+});
+
+describe("two decision tickets forked to one grilling session", () => {
+	/** The map after a SIBLING ticket's R1.1 ruling landed — this ticket's row is still on it. */
+	const siblingRecorded = spliceSection(
+		parsed(MAP_BODY),
+		"Decisions",
+		renderDecision({
+			text: "the decay clock runs per account",
+			authority: {_tag: "Ruled", session: SESSION, questionId: "R1.1"},
+		}),
+	);
+
+	it("records the second ticket's own answer instead of resuming on the first's", async () => {
+		const landed = composed(
+			{text: ANSWER, authority: {_tag: "Ruled", session: SESSION, questionId: QUESTION}},
+			siblingRecorded,
+		);
+		const shell = fakeShell([
+			[PATCH_TICKET, okOut("{}")],
+			[PATCH_MAP, okOut("{}")],
+			...forkedDecision(),
+			...session(RULED),
+			[
+				once(MAP_ISSUE),
+				okOut(issueJson({number: MAP, body: siblingRecorded, labels: ["wayfinding:map"]})),
+			],
+			mapAt(landed),
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runRecord({
+					...options,
+					digest: digestFor(siblingRecorded),
+					ruledOn: SESSION,
+					questionId: QUESTION,
+				}),
+				Layer.merge(shell.layer, fakeFs({files: {[FINDING]: `${ANSWER}\n`}}).layer),
+			),
+		);
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({
+			recorded: `— ruled on #${SESSION} ${QUESTION}`,
+			closed: true,
+			resumed: false,
+		});
+		const patch = shell.calls.find((line) => line.includes("PATCH repos/o/r/issues/9140")) ?? "";
+		expect(patch).toContain(`${ANSWER} — ruled on #${SESSION} ${QUESTION}`);
+		expect(parsed(landed).decisions).toHaveLength(2);
+	});
+
+	it("still resumes when the map already carries THIS run's citation", async () => {
+		const mine = composed(
+			{text: ANSWER, authority: {_tag: "Ruled", session: SESSION, questionId: QUESTION}},
+			siblingRecorded,
+		);
+		const shell = fakeShell([[PATCH_TICKET, okOut("{}")], ...forkedDecision(), mapAt(mine)]);
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runRecord({
+					...options,
+					digest: digestFor(mine),
+					ruledOn: SESSION,
+					questionId: QUESTION,
+				}),
+				Layer.merge(shell.layer, fakeFs({files: {[FINDING]: `${ANSWER}\n`}}).layer),
+			),
+		);
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({resumed: true, closed: true});
+		expect(shell.calls.some((line) => line.includes("PATCH repos/o/r/issues/9140"))).toBe(false);
 	});
 });
