@@ -43,8 +43,16 @@ const PRODUCER_WORKFLOW = "run-evidence.yml";
 const ARTIFACT_NAME = "run-evidence";
 const SCHEMA_VERSION = 1;
 
-/** The conclusions a bundle's `checks[]` entry may carry and still attest a passing run. */
-const PASSING = new Set(["success", "neutral", "skipped"]);
+/**
+ * The one word a bundle's `checks[]` entry carries when it attests a passing run — the PRODUCER's
+ * vocabulary (ADR 0054 §3; `crabbox-manifest`'s `deriveChecks` writes `pass`/`fail`), never
+ * GitHub's check-conclusion vocabulary, which no bundle ever contains. Reading the bundle against
+ * the wrong vocabulary made every passing check count as failing, so no bundle could attest a
+ * passing run and every ship deadlocked on green evidence (#5563). Anything else — including a
+ * word GitHub would call passing — reads as failing, the same fail-closed posture the check-run
+ * rollup takes on an unrecognized conclusion (#4552).
+ */
+const PASSING_STATUS = "pass";
 
 /**
  * How long after a run completes its artifact may still be missing from the listing and read
@@ -252,7 +260,7 @@ export const runEvidence = (
 			);
 			return emit("unknown", run.id, artifact.id, run.status, manifest.checks);
 		}
-		const failing = manifest.checks.filter((check) => !PASSING.has(check.status));
+		const failing = manifest.checks.filter((check) => check.status !== PASSING_STATUS);
 		if (failing.length > 0) {
 			diagnostics.push(
 				`${VERB}: the bundle binds ${bound} and ${failing.length} of its checks did not pass (${failing
