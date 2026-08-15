@@ -30,7 +30,6 @@
 }
 .kp-bildirim-pop__count {
 	font: var(--t-meta);
-	color: var(--text-primary);
 }
 
 /* The Positioner carries the stacking rank (the `position: fixed` element), the

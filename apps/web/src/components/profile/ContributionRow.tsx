@@ -8,6 +8,7 @@ import {toIso} from "../../fate/wire";
 import {formatAgoTR} from "../../lib/datetime";
 import {renderMarkdownInline} from "../../lib/markdown";
 import {Badge} from "../ui/Badge";
+import {ReviewBadge} from "../ui/ReviewBadge";
 import "./ContributionRow.css";
 
 export const ContributionView = view<Contribution>()({
@@ -41,12 +42,7 @@ export interface ContributionRowProps {
 
 export function ContributionRow({node, sandboxBadge = false}: ContributionRowProps) {
 	const c = useView(ContributionView, node);
-	const badge =
-		sandboxBadge && c.sandboxed ? (
-			<Badge variant="info" className="kp-user-profile__badge" data-testid="incelemede-badge">
-				incelemede
-			</Badge>
-		) : null;
+	const badge = sandboxBadge && c.sandboxed ? <ReviewBadge /> : null;
 
 	if (c.kind === "definition") {
 		return (
