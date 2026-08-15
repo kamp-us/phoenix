@@ -18,7 +18,8 @@
  * The fence decides what may *start* (ADR 0245), so a focus row edited mid-lane must not strand a
  * running lane or block its release. Claiming is the one moment every path goes through — a number
  * handed straight to `claim` passes through no pool — which is why the refusal has teeth here and is
- * advice at the pool.
+ * advice at the pool. In repair the number is a **PR**, which carries no home and no audience of its
+ * own, so the test runs over the issue that PR serves (#5562).
  */
 import {Effect, type FileSystem} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
@@ -51,7 +52,7 @@ import {
 	purposeScopeLine,
 	readDeclaredFocus,
 } from "./scope-admission.ts";
-import {openIssue, resolveTargetRepo} from "./target.ts";
+import {openIssue, resolveAdmissionSubject, resolveTargetRepo} from "./target.ts";
 
 export interface ClaimOptions {
 	readonly number: number;
@@ -178,18 +179,30 @@ export const runClaim = (
 			);
 		}
 		const scopeLine = focusScopeLine(CLAIM, read.focus);
-		const purposeLine = purposeScopeLine(CLAIM, purpose, audienceAxisOf(ready.issue));
-		const admission = admissionOf(read.focus, ready.issue, purpose);
+		const subject = yield* resolveAdmissionSubject(CLAIM, repo, read.focus, ready.issue);
+		const judged = subject._tag === "Judged" ? subject.facts : ready.issue;
+		const purposeLine = purposeScopeLine(CLAIM, purpose, audienceAxisOf(judged));
+		const admission =
+			subject._tag === "Judged"
+				? admissionOf(read.focus, subject.facts, purpose)
+				: subject.admission;
+		const lines = [
+			scopeLine,
+			...(subject._tag === "Judged" && subject.note !== null ? [subject.note] : []),
+			purposeLine,
+		];
 		const refusal = admissionRefusal(CLAIM, admission);
 		// An override answers a PROVEN refusal. UNKNOWN has proven nothing, so there is nothing to
 		// override — a fence that could not read its input must not be talked past by a flag.
-		const overridable = admission._tag === "OutOfFocus" || admission._tag === "AudienceNotAgent";
+		const overridable =
+			admission._tag === "OutOfFocus" ||
+			admission._tag === "AudienceNotAgent" ||
+			admission._tag === "NoServedIssue";
 		if (refusal !== null && !(overridable && override !== null)) {
 			return {
 				...refusal,
 				stderr: [
-					scopeLine,
-					purposeLine,
+					...lines,
 					...refusal.stderr,
 					`${CLAIM}: nothing was written — #${number} carries no marker from this run${
 						overridable
@@ -221,8 +234,7 @@ export const runClaim = (
 		// The checkpoint: posting DETECTS a race, this re-read RESOLVES it.
 		const {ownership, unauthorized} = yield* resolveOwnership(repo, number, session);
 		const notes = [
-			scopeLine,
-			purposeLine,
+			...lines,
 			...unauthorized.map(
 				(marker) =>
 					`${CLAIM}: comment ${marker.commentId} carries a claim marker from "${marker.author}", who holds no write permission — counted, never a winner.`,

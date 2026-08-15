@@ -12,6 +12,14 @@ import {getIssue, type IssueRecord, resolveRepo} from "../io/issues.ts";
 import {getPullRequest, type PullRecord} from "../io/pulls.ts";
 import {FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
+import {
+	type Admission,
+	type Focus,
+	type IssueFacts,
+	noServedIssue,
+	scopeSubjectOf,
+	unknownAdmission,
+} from "./scope-admission.ts";
 
 /** `<verb>: scanned <n> <noun>(s)[; <note>].` — the count first, so an empty answer is auditable. */
 export const scannedLine = (verb: string, scanned: number, noun: string, note?: string): string =>
@@ -76,6 +84,68 @@ export const openIssue = (
 			};
 		}
 		return {_tag: "Issue" as const, issue: found.value};
+	});
+
+/**
+ * The record the admission test runs over, resolved from the target the operator named.
+ *
+ * `Refused` carries an {@link Admission} rather than a seated outcome so the claim seam applies the
+ * one override rule it already has — a resolution refusal is overridable exactly like a scope one,
+ * and an unreadable served issue is UNKNOWN and so is not.
+ */
+export type AdmissionSubject =
+	| {
+			readonly _tag: "Judged";
+			readonly facts: IssueFacts;
+			/** What the fence judged, when that is not the named target itself. */
+			readonly note: string | null;
+	  }
+	| {readonly _tag: "Refused"; readonly admission: Admission};
+
+/**
+ * Resolve a claim target to the record whose home and audience the fence judges.
+ *
+ * An issue judges itself. A pull request judges the issue its lane serves (#5562). While no focus is
+ * declared the fence is inert, so an unresolvable PR is never refused on scope grounds here — it
+ * falls back to its own record, exactly as before.
+ */
+export const resolveAdmissionSubject = (
+	verb: string,
+	repo: string,
+	focus: Focus,
+	target: IssueRecord,
+): Effect.Effect<AdmissionSubject, never, ChildProcessSpawner.ChildProcessSpawner> =>
+	Effect.gen(function* () {
+		const own = {_tag: "Judged" as const, facts: target, note: null};
+		const subject = scopeSubjectOf(target);
+		if (subject._tag === "Own") return own;
+		const unresolved = (reason: string): AdmissionSubject =>
+			focus._tag === "Declared"
+				? {
+						_tag: "Refused" as const,
+						admission: noServedIssue(target.number, focus.milestone, reason),
+					}
+				: own;
+		if (subject._tag === "Unserved") {
+			return unresolved('carries neither a closing keyword nor "Part of #<n>" in its body');
+		}
+		const served = yield* getIssue(repo, subject.number);
+		if (served._tag === "Absent") {
+			return unresolved(`names #${subject.number}, which is proven absent`);
+		}
+		if (served._tag === "Unknown") {
+			return {
+				_tag: "Refused" as const,
+				admission: unknownAdmission(
+					`cannot read #${subject.number}, the issue PR #${target.number} serves: ${served.reason}`,
+				),
+			};
+		}
+		return {
+			_tag: "Judged" as const,
+			facts: served.value,
+			note: `${verb}: subject: PR #${target.number} serves #${subject.number} (${subject.kind}) — the admission test judges that issue, not the PR's own empty home.`,
+		};
 	});
 
 export type PullTarget =

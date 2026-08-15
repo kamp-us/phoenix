@@ -18,12 +18,14 @@ import {
 	focusScopeLine,
 	homeOf,
 	type IssueFacts,
+	noServedIssue,
 	parseClaimPurpose,
 	purposeScopeLine,
 	readDeclaredFocus,
 	readFocus,
 	STANDING_LANE_LABELS,
 	scopeAxisOf,
+	scopeSubjectOf,
 	unknownAdmission,
 } from "./scope-admission.ts";
 
@@ -293,5 +295,53 @@ describe("readDeclaredFocus", () => {
 		const out = await read(layer);
 		expect(out._tag).toBe("Unreadable");
 		expect(out._tag === "Unreadable" && out.reason).toContain(DEFAULT_ROADMAP);
+	});
+});
+
+describe("scopeSubjectOf", () => {
+	const pull = (body: string) => ({isPullRequest: true, body});
+
+	it("reads an issue as its own subject, whatever its body says", () => {
+		expect(scopeSubjectOf({isPullRequest: false, body: "Fixes #4312"})).toEqual({_tag: "Own"});
+	});
+
+	it("resolves a PR to the issue its closing keyword names", () => {
+		expect(scopeSubjectOf(pull("A summary.\n\nFixes #4312\n"))).toEqual({
+			_tag: "Served",
+			number: 4312,
+			kind: "fixes",
+		});
+	});
+
+	it("resolves a partial PR through Part of #<n>, the reference review scope reads", () => {
+		expect(scopeSubjectOf(pull("Part of #4312\n"))).toEqual({
+			_tag: "Served",
+			number: 4312,
+			kind: "part-of",
+		});
+	});
+
+	it("reads a PR naming no issue as unserved — never as an issue with an empty home", () => {
+		expect(scopeSubjectOf(pull("A conversation-authored ADR.\n\n## Deviations\nNone.\n"))).toEqual({
+			_tag: "Unserved",
+		});
+	});
+});
+
+describe("noServedIssue", () => {
+	const unserved = noServedIssue(5556, 44, "carries no reference");
+
+	it("refuses at 20, naming the case that fired and the remedy", () => {
+		const refusal = admissionRefusal("build claim", unserved);
+		expect(refusal?.code).toBe(OUT_OF_FOCUS);
+		const text = refusal?.stderr.join("\n") ?? "";
+		expect(text).toContain("no served issue");
+		expect(text).toContain("PR #5556 carries no reference");
+		expect(text).toContain("milestone #44");
+		expect(text).toContain("explicit override");
+	});
+
+	it("is a scope-axis exclusion, never an unreadable one", () => {
+		expect(exclusionReasonOf(unserved)).toBe("out-of-focus");
 	});
 });
