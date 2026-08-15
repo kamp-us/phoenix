@@ -92,7 +92,7 @@ export const runOpen = (
 		if (!labels.value.includes(SESSION_LABEL)) {
 			return refuse(
 				NO_TARGET,
-				`grill open: label "${SESSION_LABEL}" does not exist in ${repo} — refusing to open a session no later run can find. Create it, or run the front-door bootstrap (#4952).`,
+				`grill open: label "${SESSION_LABEL}" does not exist in ${repo} — refusing to open a session no later run can find. Run the front-door bootstrap: fabrika status bootstrap issue-shape-markers.`,
 			);
 		}
 

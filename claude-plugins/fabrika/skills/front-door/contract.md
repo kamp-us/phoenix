@@ -958,15 +958,35 @@ Creates **one** missing surface from this group's own registry and reads it back
 skill's judgement; the write, the collision guard and the read-back are this verb's.
 
 <a id="buildable-surfaces"></a>**The buildable-surface registry.** What this verb builds is fixed
-here, not inferred from any declaration ([why](#disposition-does-not-gate-bootstrap)). Four ids, and
-a fifth is a change to this table, not a new rule.
+here, not inferred from any declaration ([why](#disposition-does-not-gate-bootstrap)). Five ids, and
+a sixth is a change to this table, not a new rule.
 
 | `<surface-id>` | Target | Content | Read-back predicate |
 |---|---|---|---|
 | `design-manifest` | `--path`, default `design-system-manifest.md` at the repo root | **stdin**, required — the skill's inferred draft | the file's bytes match stdin through `normalizeForReadback` |
 | `roadmap-focus` | `--path`, default `ROADMAP.md` at the repo root | **stdin**, required | same |
 | `label-taxonomy` | the repo's labels | **none** — the set is `status:needs-triage`, `status:triaged`, one label per member of the imported `PRIORITIES` (`p0`, `p1`, `p2`), each created with GitHub's default colour and a description naming this group as its creator | every label in the set resolves on a re-read |
+| `issue-shape-markers` | the repo's labels | **none** — three labels, each at colour `1D76DB`, with the descriptions fixed below | every label in the set resolves on a re-read |
 | `readout-artifact` | one open issue in the repo | **none** — title exactly `Governance readout`; body exactly the two lines below | the issue resolves open, its title matches exactly, and its body matches through `normalizeForReadback` |
+
+The three marker labels, fixed here so no clause defers to another skill's prose or to source:
+
+| Label | Description, verbatim |
+|---|---|
+| `wayfinding:map` | `issue-shape marker: a wayfinding map (not a pipeline state, not pickable)` |
+| `prototyping:spike` | `issue-shape marker: a disposable prototyping spike (not a pipeline state, not pickable)` |
+| `grilling:session` | `issue-shape marker: a grilling session (not a pipeline state, not pickable)` |
+
+<a id="markers-are-not-the-taxonomy"></a>**Why the markers are their own id and not a wider
+`label-taxonomy`.** The taxonomy is the pipeline's state vocabulary: `status board` counts it and
+`build pick` filters and ranks on it. A marker says what an issue *is* — nothing counts it, nothing
+ranks it, and it is deliberately not pickable. They also carry a different colour and a different
+description grammar, so one id covering both would be one id with a conditional inside it. Splitting
+them also keeps `status bootstrap label-taxonomy` honest in a repo that already ran it: widening that
+set would flip a settled `exists` back to `created` and make the earlier answer read as wrong. One id
+covers all three markers rather than one each, because a fresh repo needs the whole set on day one —
+`graduate trail` dispatches on two of them at once — and three ids means three commands, of which the
+skipped one fails later in exactly the shape this registry exists to prevent.
 
 The `readout-artifact` body, fixed here so no clause defers to another skill's prose:
 
@@ -998,10 +1018,16 @@ bootstrap	<created|exists>	<surface-id>	<target>	<readback>
 caller acts on — it stops and reports the surface present — and a non-zero exit cannot carry it.
 Nothing is written and nothing is overwritten.
 
-**Partial existence is not existence.** For `label-taxonomy`, `exists` requires **every** label in
-the set; where some are present the verb creates only the missing ones and reports `created` with
-`<target>` naming exactly what it created. This is the one surface holding many objects, so it is the
-one place the rule has to be stated.
+**Partial existence is not existence.** For the two label surfaces, `exists` requires **every** label
+in the set; where some are present the verb creates only the missing ones and reports `created` with
+`<target>` naming exactly what it created. These are the surfaces holding many objects, so this is
+the one place the rule has to be stated.
+
+**A label is matched by name, not by shape.** Both label surfaces read the repo's label *names*, so a
+label someone created by hand at another colour or with another description reads `exists` at `0` and
+is left exactly as it is. That is what "nothing is written and nothing is overwritten" costs: the
+verb converges a repo that has none of them, and never re-shapes one that already has them under the
+same name. Reconciling a hand-made label's colour is a hand fix.
 
 **The operation.** Resolve the id against the registry — not in it is `12`. Probe the target; already
 present is `exists` at `0`. For a stdin surface: read stdin, leak-scan the content (`5`, `6`), write,
@@ -1036,7 +1062,7 @@ creating several would have to report a partial outcome, and a partial write rep
 | `status bootstrap: wrote <target> and the read-back differs — the outcome is UNKNOWN.` | 9 | refusal |
 | `status bootstrap: --path <v> resolves outside the repository root.` | 10 | usage error |
 | `status bootstrap: cannot probe <target>: <reason> — nothing was written.` | 11 | refusal |
-| `status bootstrap: "<v>" is not a buildable surface. Known: design-manifest, roadmap-focus, label-taxonomy, readout-artifact.` | 12 | refusal |
+| `status bootstrap: "<v>" is not a buildable surface. Known: design-manifest, roadmap-focus, label-taxonomy, issue-shape-markers, readout-artifact.` | 12 | refusal |
 | `status bootstrap: created <target> for <surface-id>, read-back conformed.` | 0 | notice |
 
 **Scope** — the single write target named by `<surface-id>`.
@@ -1059,7 +1085,7 @@ bootstrap	created	readout-artifact	acme/storefront#9420	ok
 
 ```
 $ fabrika status bootstrap merge-queue
-status bootstrap: "merge-queue" is not a buildable surface. Known: design-manifest, roadmap-focus, label-taxonomy, readout-artifact.
+status bootstrap: "merge-queue" is not a buildable surface. Known: design-manifest, roadmap-focus, label-taxonomy, issue-shape-markers, readout-artifact.
 $ echo $?
 12
 ```
@@ -1100,6 +1126,7 @@ states what the group itself needs. Dispositions use the canonical three.
 | A resolvable skill roster — the installed plugin's own skills tree, or `claude-plugins/fabrika/skills/` in-repo, or an explicit `--skills-dir` | it is the roster `status menu` renders and the declaration set `status config` parses | **degrade** — an implicitly-resolved roster holding zero skills is `empty` / `gaps` at exit `0`, never silence; only an **explicitly passed** absent path is `7`, and an unreadable one is `11` ([why](#roster-location)). |
 | A resolvable repo — `--repo`, `$CLAUDE_PIPELINE_REPO`, `$GITHUB_REPOSITORY`, or an `origin` remote | `board`, `readout` and the non-file arms of `bootstrap` read against it | **degrade** for `status open`, which renders those fields `unknown`; **fail-loud** at exit `1` for `board`, `readout` and `bootstrap` invoked directly, which have no other answer to give. |
 | The board label taxonomy — `status:needs-triage`, `status:triaged`, `p0`–`p2` | `status board`'s six bucket calls | **bootstrap** — absent labels render `unknown` with detail `label absent`, never `0`, and `status bootstrap label-taxonomy` creates them. |
+| The issue-shape markers — `wayfinding:map`, `prototyping:spike`, `grilling:session` | `status bootstrap issue-shape-markers` is where three skills' bootstrap pointers land | **bootstrap** — `status bootstrap issue-shape-markers` creates the whole set, and reports `exists` at `0` where it is already there. |
 | One open issue titled exactly `Governance readout`, or `$FABRIKA_GOVERNANCE_READOUT_ISSUE` | `status readout`'s artifact | **bootstrap** — `status bootstrap readout-artifact` creates it; until then the reading is `absent` at exit `0`, a proven fact and not a failed read. |
 | The registered `governance-digest` wire format | `status readout` decodes the artifact block through it | **fail-loud** — exit `11`, UNKNOWN, never `absent`. Not built yet; tracked at [#5199](https://github.com/kamp-us/phoenix/issues/5199) ([sequencing](#sequencing)). |
 

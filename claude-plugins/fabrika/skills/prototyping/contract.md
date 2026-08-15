@@ -445,7 +445,7 @@ orphaned workspace is always collectable.
 | `spike open: a workspace for nonce <nonce> holds a different <question|kind> — mint a new run rather than reusing it.` | 18 | refusal |
 | `spike open: a workspace for nonce <nonce> exists but its manifest does not parse: <first violation> — refusing the whole file; re-entry cannot be decided against half a manifest.` | 4 | refusal |
 | `spike open: --nonce <nonce> names no workspace — omit it to mint a new run.` | 12 | refusal |
-| `spike open: the repository has no prototyping:spike label — a spike minted without it is one no later run and no caller can find. Run /fabrika: front-door's bootstrap creates the board labels (#4952).` | 7 | refusal |
+| `spike open: the repository has no prototyping:spike label — a spike minted without it is one no later run and no caller can find. Run the front-door bootstrap: fabrika status bootstrap issue-shape-markers.` | 7 | refusal |
 | `spike open: the composed <title\|body> carries a machine-local path: <first hit>.` | 5 | refusal |
 | `spike open: the composed <title\|body> is a bare @ path reference — write the question, not a pointer to it.` | 6 | refusal |
 | `spike open: the issue create failed: <reason> — it may or may not have landed; read the board before re-running.` | 8 | refusal |
@@ -990,7 +990,7 @@ skill's table does not already carry.
 | Must exist | Why this group needs it | When missing |
 | --- | --- | --- |
 | A GitHub repository reachable over `gh` REST with `issues: write` | `spike open` creates the issue; `spike capture` comments and closes; `spike dispose --forfeit` comments and closes; `spike status` reads state | **fail-loud** — `11`, and no outcome is proven. `spike run` and a non-forfeit `spike dispose` are unaffected: neither touches GitHub |
-| The `prototyping:spike` label | `spike open` sends it in the create call; `spike capture`, `spike dispose` and `spike status` need spikes to be findable as a class | **bootstrap** — front-door creates it; until then `spike open` exits `7` naming the label. A fresh repo on day one hits exactly this, and the way forward is named rather than left as a refusal |
+| The `prototyping:spike` label | `spike open` sends it in the create call; `spike capture`, `spike dispose` and `spike status` need spikes to be findable as a class | **bootstrap** — `fabrika status bootstrap issue-shape-markers` creates it; until then `spike open` exits `7` naming the label. A fresh repo on day one hits exactly this, and the way forward is named rather than left as a refusal |
 | A git working tree — the repo root resolves and `git status --porcelain=v1 --untracked-files=all --ignored=matching` answers | `spike open` takes `treeDigest`; `spike dispose` recomputes and compares it; `spike status` reports `treeMatched` | **fail-loud** — `11`. An unreadable tree is UNKNOWN, never "clean". A directory that is not a repository at all is the same `11`, and the way forward is to run from inside one |
 | A writable OS temp root that resolves outside the repository tree | the workspace, the manifest, the evidence log and the capture files all live there | **fail-loud** — `11` if it cannot be written, `13` if it resolves inside the tree. There is no in-repo fallback: an in-tree workspace is the defect this group exists to prevent |
 | Readable collaborator permissions — `repos/<owner>/<repo>/collaborators/<login>/permission` | `spike capture` resolves the author against them before recording a decision (ADR 0055) | **fail-loud** — `11`. A permission read that fails is UNKNOWN, never a grant |

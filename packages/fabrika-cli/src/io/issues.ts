@@ -352,11 +352,12 @@ export const createUnlabelledIssue = (
 		return ok({number: parsed.number, url: parsed.html_url});
 	});
 
-/** Create one repository label with GitHub's default colour and a description naming its creator. */
+/** Create one repository label; `color` is `null` for GitHub's default. */
 export const createLabel = (
 	repo: string,
 	name: string,
 	description: string,
+	color: string | null,
 ): Shell<Attempt<void>> =>
 	Effect.gen(function* () {
 		const r = yield* execCapture("gh", [
@@ -368,6 +369,7 @@ export const createLabel = (
 			`name=${name}`,
 			"-f",
 			`description=${description}`,
+			...(color === null ? [] : ["-f", `color=${color}`]),
 		]);
 		return r.ok ? ok(undefined) : fail(r.reason);
 	});

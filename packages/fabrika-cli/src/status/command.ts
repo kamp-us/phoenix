@@ -18,7 +18,7 @@ import {listLabels, resolveRepo} from "../io/issues.ts";
 import {readStdin} from "../io/stdin.ts";
 import type {VerbOutcome} from "../verb.ts";
 import {readBoard, runBoard} from "./board-verb.ts";
-import {runBootstrap} from "./bootstrap-verb.ts";
+import {knownIds, runBootstrap} from "./bootstrap-verb.ts";
 import {labelSetOf, probeSurfaces, runConfig, type SurfaceRow} from "./config-verb.ts";
 import {instant, readNow} from "./fields.ts";
 import {runMenu} from "./menu-verb.ts";
@@ -195,9 +195,7 @@ const bootstrap = leafCommand(
 	"bootstrap",
 	{
 		surface: Argument.string("surface-id").pipe(
-			Argument.withDescription(
-				"one id from the buildable-surface registry: design-manifest, roadmap-focus, label-taxonomy, readout-artifact",
-			),
+			Argument.withDescription(`one id from the buildable-surface registry: ${knownIds()}`),
 		),
 		path: Flag.string("path").pipe(
 			Flag.optional,

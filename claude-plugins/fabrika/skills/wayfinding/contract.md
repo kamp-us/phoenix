@@ -416,7 +416,7 @@ rather than recomputes.
 | Message (stderr) | Code | Kind |
 |---|---|---|
 | `map open: stdin was read and held no question — a destination with no open question is not fog.` | 3 | refusal |
-| `map open: the wayfinding:map label does not exist in <repo> — refusing to open an unlabelled map no later run could find.` | 7 | refusal |
+| `map open: the wayfinding:map label does not exist in <repo> — refusing to open an unlabelled map no later run could find. Run the front-door bootstrap: fabrika status bootstrap issue-shape-markers.` | 7 | refusal |
 | `map open: created #<n> and the label write did NOT land — the map exists and no later run can find it. Add wayfinding:map to #<n> by hand.` | 8 | refusal |
 | `map open: cannot search <repo> for existing maps: <reason> — nothing was written and whether this destination is charted is UNKNOWN.` | 11 | refusal |
 | `map open: <k> open maps match this destination (#<a>, #<b>) — refusing to guess which; close or merge one.` | 16 | refusal |
@@ -1294,7 +1294,7 @@ Vocabulary: **fail-loud** / **degrade** / **bootstrap** (front-door, #4952).
 | Must exist | Why | When missing |
 | --- | --- | --- |
 | `gh` authenticated to `--repo` with `issues: write` | every verb reads or writes an issue, a comment or an edge over REST | **fail-loud** — `11` before any write, `8` after one; never a silent empty answer |
-| The `wayfinding:map` label | `map open` applies it on mint and resumes on it | **bootstrap** (front-door, #4952); until then `map open` exits `7` naming the label |
+| The `wayfinding:map` label | `map open` applies it on mint and resumes on it | **bootstrap** — `fabrika status bootstrap issue-shape-markers`; until it is run, `map open` exits `7` naming the label |
 | The native issue-dependency endpoints (`.../dependencies/blocked_by`, `.../dependencies/blocking`) enabled for the repository | `map ticket` writes the frontier's edges and `map read` derives blockedness from them | **fail-loud** — `11`. The alternative is prose topology in the body, which is the v1 shape this group replaces; degrading to it silently would rebuild the scar |
 | The native sub-issue endpoint (`.../sub_issues`) | the ticket-to-map link, and the child enumeration `map read` derives the frontier from | **fail-loud** — `11`, and the frontier is UNKNOWN, never empty |
 | `repos/<repo>/collaborators/<login>/permission` readable | resolves a lane claim's author (ADR 0055, `map lane`) | **fail-loud** — `11`. A permission read that fails is UNKNOWN, never a demotion that would free another run's lane |

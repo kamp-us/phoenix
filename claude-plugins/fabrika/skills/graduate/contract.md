@@ -982,7 +982,7 @@ stated), **bootstrap** (front-door creates it —
 | --- | --- | --- |
 | `gh` authenticated to `--repo` with `issues: write` | every verb reads an issue; `graduate emit` creates one and comments on another | **fail-loud** — `11` before any write, `8` after one; never a silent empty answer |
 | The `status:needs-triage` label | the only label `graduate emit` applies, and what makes the spec findable by triage | **fail-loud** — `7` naming the label; front-door bootstrap #4952 |
-| A source issue carrying `grilling:session` or `wayfinding:map` | the only two trail surfaces | **fail-loud** — `12`. A repo with neither has nothing to graduate, which is a first-run **fact**: the way forward is a `grilling` session, not a fix to this group |
+| A source issue carrying `grilling:session` or `wayfinding:map` | the only two trail surfaces | **fail-loud** — `12`. A repo with neither has nothing to graduate, which is a first-run **fact**: the way forward is `fabrika status bootstrap issue-shape-markers` and then a `grilling` session, not a fix to this group |
 | `repos/<owner>/<repo>/collaborators/<login>/permission` readable | the imported `grill read` resolver checks a ruling's authority against it (ADR 0055) | **fail-loud** — `11`, and the trail is UNKNOWN: never `ready`. The load-bearing row — a degrade here would license synthesizing over an unproven ruling |
 
 Nothing else. No `.decisions/`, no `.patterns/`, no CODEOWNERS, no merge-queue configuration, no

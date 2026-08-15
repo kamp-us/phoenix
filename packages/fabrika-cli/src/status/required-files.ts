@@ -47,10 +47,11 @@ const BACKTICKED = /`([^`]+)`/g;
  *
  * Left open, `lint:worktree` — a `package.json` script named in `build`'s table — reads as a label
  * and the row reports a missing label that was never declared. The facets here are the ones this
- * group itself creates and counts (`status bootstrap label-taxonomy`, `status board`'s buckets), so
- * the set is fabrika's vocabulary, not a guess at the host repo's.
+ * group itself creates and counts (`status bootstrap label-taxonomy` and `issue-shape-markers`,
+ * `status board`'s buckets), so the set is fabrika's vocabulary, not a guess at the host repo's.
  */
-const LABEL_TOKEN = /^(?:(?:status|type|ready-for):[a-z0-9._-]+|p\d+)$/;
+const LABEL_TOKEN =
+	/^(?:(?:status|type|ready-for|wayfinding|prototyping|grilling):[a-z0-9._-]+|p\d+)$/;
 const PATH_TOKEN = /^[A-Za-z0-9._][A-Za-z0-9._/-]*$/;
 const SEPARATOR_CELL = /^:?-{3,}:?$/;
 

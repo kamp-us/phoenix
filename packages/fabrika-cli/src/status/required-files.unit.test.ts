@@ -77,6 +77,16 @@ describe("subject classification", () => {
 		).toEqual({_tag: "Labels", labels: ["status:triaged", "type:feature", "p0"]});
 	});
 
+	it("reads an issue-shape marker as a label, so a row declaring one is probed and not shrugged at", () => {
+		expect(classifySubject("The `wayfinding:map` label")).toEqual({
+			_tag: "Labels",
+			labels: ["wayfinding:map"],
+		});
+		expect(
+			classifySubject("A source issue carrying `grilling:session` or `prototyping:spike`"),
+		).toEqual({_tag: "Labels", labels: ["grilling:session", "prototyping:spike"]});
+	});
+
 	/**
 	 * The regression the contract names by example: this row must be `unprobeable`, and a
 	 * `word:word` label grammar reads `lint:worktree` as a label and reports a missing label the

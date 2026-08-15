@@ -39,34 +39,76 @@ import {ARTIFACT_TITLE} from "./readout-verb.ts";
 
 const VERB = "status bootstrap";
 
-/** The board label taxonomy this verb creates, in the order it reports them. */
-export const TAXONOMY: ReadonlyArray<string> = [
+export interface LabelSpec {
+	readonly name: string;
+	readonly description: string;
+	/** A six-hex-digit colour, or `null` to take GitHub's default. */
+	readonly color: string | null;
+}
+
+/** The description every created taxonomy label carries, so its creator is on the record. */
+export const LABEL_DESCRIPTION = "created by fabrika status bootstrap label-taxonomy";
+
+/** The board label taxonomy this verb creates, in the order it reports it. */
+export const TAXONOMY: ReadonlyArray<LabelSpec> = [
 	"status:needs-triage",
 	"status:triaged",
 	...PRIORITIES,
-];
+].map((name) => ({name, description: LABEL_DESCRIPTION, color: null}));
 
-/** The description every created label carries, so its creator is on the record. */
-export const LABEL_DESCRIPTION = "created by fabrika status bootstrap label-taxonomy";
+/**
+ * The colour every issue-shape marker carries. Fixed here rather than left to GitHub's random
+ * default, because a marker minted a different colour in each repo is one no reader recognises
+ * across two boards.
+ */
+export const MARKER_COLOR = "1D76DB";
+
+const marker = (name: string, thing: string): LabelSpec => ({
+	name,
+	description: `issue-shape marker: a ${thing} (not a pipeline state, not pickable)`,
+	color: MARKER_COLOR,
+});
+
+/**
+ * The issue-shape markers — what an issue *is*, as against where it sits in the pipeline.
+ *
+ * They are a separate surface from {@link TAXONOMY} rather than an extension of it because they are
+ * a different kind of label: `status board` counts the taxonomy and `build pick` ranks on it, while
+ * nothing ranks or counts these — `map open`, `spike open` and `grill open` mint issues carrying
+ * them, and `graduate trail` dispatches on them. They also carry their own colour and their own
+ * description grammar, which a single set could only hold behind a conditional.
+ */
+export const ISSUE_SHAPE_MARKERS: ReadonlyArray<LabelSpec> = [
+	marker("wayfinding:map", "wayfinding map"),
+	marker("prototyping:spike", "disposable prototyping spike"),
+	marker("grilling:session", "grilling session"),
+];
 
 /** The artifact issue's body, fixed here so no clause defers to another skill's prose. */
 export const ARTIFACT_BODY = `The durable home for the landed-decision digest. \`fabrika governance readout\` upserts a comment
 here; \`fabrika status readout\` displays it. This issue stays open and is not worked.`;
 
-export interface BuildableSurface {
-	readonly id: string;
-	readonly kind: "file" | "labels" | "issue";
-	/** The registry default write path, for a file surface. */
-	readonly defaultPath: string | null;
-	readonly needsStdin: boolean;
-}
+/**
+ * A surface carries only the fields its own kind uses, so no caller reads a `defaultPath` off a
+ * label surface or a label set off a file.
+ */
+export type BuildableSurface =
+	| {
+			readonly id: string;
+			readonly kind: "file";
+			/** The registry default write path. */
+			readonly defaultPath: string;
+	  }
+	| {readonly id: string; readonly kind: "labels"; readonly labels: ReadonlyArray<LabelSpec>}
+	| {readonly id: string; readonly kind: "issue"};
 
-/** Four ids. A fifth is a change to this table, not a new rule. */
+/** Five ids. A sixth is a change to this table, not a new rule. */
 export const BUILDABLE_SURFACES: ReadonlyArray<BuildableSurface> = [
-	{id: "design-manifest", kind: "file", defaultPath: "design-system-manifest.md", needsStdin: true},
-	{id: "roadmap-focus", kind: "file", defaultPath: "ROADMAP.md", needsStdin: true},
-	{id: "label-taxonomy", kind: "labels", defaultPath: null, needsStdin: false},
-	{id: "readout-artifact", kind: "issue", defaultPath: null, needsStdin: false},
+	{id: "design-manifest", kind: "file", defaultPath: "design-system-manifest.md"},
+	{id: "roadmap-focus", kind: "file", defaultPath: "ROADMAP.md"},
+	{id: "label-taxonomy", kind: "labels", labels: TAXONOMY},
+	{id: "issue-shape-markers", kind: "labels", labels: ISSUE_SHAPE_MARKERS},
+	{id: "readout-artifact", kind: "issue"},
 ];
 
 export const findSurface = (id: string): BuildableSurface | undefined =>
@@ -138,12 +180,12 @@ const UNRESOLVED_REPO = refuse(
 );
 
 const buildFile = (
-	surface: BuildableSurface,
+	surface: Extract<BuildableSurface, {kind: "file"}>,
 	input: BootstrapInput,
 ): Effect.Effect<VerbOutcome, never, Requirements> =>
 	Effect.gen(function* () {
 		const path = yield* Path.Path;
-		const relative = input.path ?? (surface.defaultPath as string);
+		const relative = input.path ?? surface.defaultPath;
 		const absolute = path.resolve(input.repoRoot, relative);
 		// Containment is checked on the RESOLVED path, so `../` cannot walk out of the repository.
 		if (absolute !== input.repoRoot && !absolute.startsWith(`${input.repoRoot}${path.sep}`)) {
@@ -195,15 +237,18 @@ const buildFile = (
 /**
  * **Partial existence is not existence.** `exists` requires every label in the set; where some are
  * present the verb creates only the missing ones and reports `created` naming exactly what it
- * created. This is the one surface holding many objects, so it is the one place the rule is stated.
+ * created. A label is matched by name alone: one already there under another colour reads `exists`
+ * and is left as it is, because this verb never overwrites.
  */
 const buildLabels = (
-	surface: BuildableSurface,
+	surface: Extract<BuildableSurface, {kind: "labels"}>,
 	input: BootstrapInput,
 ): Effect.Effect<VerbOutcome, never, Requirements> =>
 	Effect.gen(function* () {
 		if (input.repo._tag === "Failure") return UNRESOLVED_REPO;
 		const repo = input.repo.value;
+		const wanted = surface.labels;
+		const names = wanted.map((label) => label.name);
 
 		const before = yield* listLabels(repo);
 		if (before._tag === "Failure") {
@@ -213,42 +258,43 @@ const buildLabels = (
 			);
 		}
 		const have = new Set(before.value);
-		const missing = TAXONOMY.filter((label) => !have.has(label));
-		if (missing.length === 0) return already(surface.id, TAXONOMY.join(","), input.json);
+		const missing = wanted.filter((label) => !have.has(label.name));
+		if (missing.length === 0) return already(surface.id, names.join(","), input.json);
 
 		for (const label of missing) {
-			const write = yield* createLabel(repo, label, LABEL_DESCRIPTION);
+			const write = yield* createLabel(repo, label.name, label.description, label.color);
 			if (write._tag === "Failure") {
 				return refuse(
 					WRITE_UNKNOWN,
-					`${VERB}: writing label ${label} failed: ${write.reason} — whether it landed is UNKNOWN. Re-read before retrying.`,
+					`${VERB}: writing label ${label.name} failed: ${write.reason} — whether it landed is UNKNOWN. Re-read before retrying.`,
 				);
 			}
 		}
+		const wrote = missing.map((label) => label.name).join(",");
 		const after = yield* listLabels(repo);
 		if (after._tag === "Failure") {
 			return refuse(
 				WRITE_UNKNOWN,
-				`${VERB}: created ${missing.join(",")} and the label set could not be re-read: ${after.reason} — the outcome is UNKNOWN.`,
+				`${VERB}: created ${wrote} and the label set could not be re-read: ${after.reason} — the outcome is UNKNOWN.`,
 			);
 		}
-		const stillMissing = TAXONOMY.filter((label) => !after.value.includes(label));
+		const stillMissing = names.filter((name) => !after.value.includes(name));
 		if (stillMissing.length > 0) {
 			return refuse(
 				READBACK_MISMATCH,
-				`${VERB}: wrote ${missing.join(",")} and the read-back differs — ${stillMissing.join(",")} is still absent.`,
+				`${VERB}: wrote ${wrote} and the read-back differs — ${stillMissing.join(",")} is still absent.`,
 			);
 		}
 		return created(
 			surface.id,
-			missing.join(","),
+			wrote,
 			input.json,
-			`${VERB}: created ${missing.join(",")} for ${surface.id}, read-back conformed.`,
+			`${VERB}: created ${wrote} for ${surface.id}, read-back conformed.`,
 		);
 	});
 
 const buildArtifact = (
-	surface: BuildableSurface,
+	surface: Extract<BuildableSurface, {kind: "issue"}>,
 	input: BootstrapInput,
 ): Effect.Effect<VerbOutcome, never, Requirements> =>
 	Effect.gen(function* () {
