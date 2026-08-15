@@ -165,7 +165,7 @@ The contract these six implement is
 | `adr next` | the next unused id — `max(fetched merged set ∪ open-PR claims) + 1` |
 | `adr new` | scaffolds `.decisions/NNNN-slug.md` from the canonical template |
 | `adr resolve` | each id's real filename and state: `live` / `landed` / `in-flight` / `absent` |
-| `adr supersede` | rewrites an older record's `status:` line to `superseded by [NNNN](…)` |
+| `adr supersede` | rewrites an older record's `status:` line to a `superseded by` link to the newer record |
 | `adr amend-in-part` | appends this id to an older record's `amended-in-part by` list |
 | `adr sweep` | ranks the uncited live-accepted records this one may contradict |
 
@@ -289,7 +289,7 @@ disarm and record it. The group implements
 
 | Verb | What it answers |
 |---|---|
-| `ship scope` | head, lifecycle state, linked issue, artifact classes with their required namespaces, and the four-state §CP classification |
+| `ship scope` | head, lifecycle state, linked issue, artifact classes with their required namespaces, and the three-state §CP classification |
 | `ship cp-approval` | the ADR 0175 cardinality discharge — `discharge` / `stop` / `n/a`, from head-bound signals only |
 | `ship gate` | the verdict conjunction over every required namespace, advisory and native-review fold included |
 | `ship checks` | the head CI rollup, with the running-vs-wedged split and the zero-checkset facts |

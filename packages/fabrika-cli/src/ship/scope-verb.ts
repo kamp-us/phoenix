@@ -1,6 +1,6 @@
 /**
  * `ship scope` — one PR's state, head, linked issue, artifact classes with the review namespaces
- * they require, and the four-state §CP classification.
+ * they require, and the three-state §CP classification.
  *
  * **The class partition and the namespace derivation are one derivation, printed once.** v1 printed
  * the class set from one derivation in one script and hand-copied it in another, and the copy

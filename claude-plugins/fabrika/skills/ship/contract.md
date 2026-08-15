@@ -39,7 +39,7 @@ Named because a spec that leaves the substrate open makes the implementer guess 
 
 | Verb | Purpose | Split test |
 |---|---|---|
-| `ship scope` | one PR's state, head, linked issue, class set with required namespaces, and §CP four-state classification | path partition against single-sourced maps, count-checked reads, and closing-keyword resolution are mechanical; what each state means for the run is judgment |
+| `ship scope` | one PR's state, head, linked issue, class set with required namespaces, and §CP three-state classification | path partition against single-sourced maps, count-checked reads, and closing-keyword resolution are mechanical; what each state means for the run is judgment |
 | `ship cp-approval` | the ADR 0175 cardinality discharge: `discharge` / `stop` / `n/a` from head-bound signals only | the roster-cardinality case split and head-binding are a transcription of a ruled table; nothing in it is judgment (#2435 is what judgment did) |
 | `ship gate` | the verdict conjunction: every required namespace's in-force, current-head verdict, §CP advisory resolution and native-review fold included | in-force resolution (write-stamp ordering, staleness, authorization) is mechanical; what to do with `blocked` is judgment |
 | `ship floor` | whether the governance floor binds on this diff and is discharged at this head — `n/a` / `satisfied` / a refusal CI reds on | asking `ship gate` for the one `governance` namespace and seating the answer on an exit code is mechanical; nothing about the verdict itself is decided here |
@@ -286,7 +286,7 @@ fabrika ship scope 4321 [--repo <owner/name>] [--json]
 `fixes:<n>`, `part-of:<n>`, or `-` (none). Then one line per present artifact class —
 `class\t<code|doc|skill|ui>\t<file-count>` — then one line per required namespace —
 `namespace\t<review-code|review-doc|review-skill|review-ui|governance>` — then
-`cp\t<control-plane|content-undetermined|not-control-plane|unknown>` and `files\t<scanned>`.
+`cp\t<control-plane|not-control-plane|unknown>` and `files\t<scanned>`.
 
 With `--json`: `{"outcome":"scoped","head":<40-hex>,"state":…,"issue":{"kind":"fixes"|"part-of"|"none","number":<n|null>},"classes":[{name,files}…],"namespaces":[…],"cp":…,"scanned":<n>}`.
 
@@ -318,7 +318,7 @@ an authorized author satisfies it at `ship gate` like any `review-*` marker. Req
 and readable move together — a required namespace no marker can carry blocks every
 governance-root PR permanently, which is the fail-**closed** half of the same gap (#5199).
 
-**The `cp` line** is the four-state routing input (see "Considered and deliberately not
+**The `cp` line** is the three-state routing input (see "Considered and deliberately not
 derived"), and its source is the **enforced artifact itself**: `.github/CODEOWNERS`, read at run
 time from **the PR's base ref — the branch the PR targets** ([ruled on
 #5067](https://github.com/kamp-us/phoenix/issues/5067#issuecomment-5233160017), founder-direct).
@@ -328,16 +328,16 @@ property — a PR must not reclassify itself — holds unchanged, because the ba
 PR's head. A changed path
 covered by a CODEOWNERS row whose owner is a control-plane team (the `@<org>/<team>` owners
 those rows carry — `@kamp-us/control-plane` in this repo, parsed, never hardcoded) is
-`control-plane`; `.decisions/**` present with no owned-path match → `content-undetermined`
-(an obligation to hold, not a verdict — #4134's guard-touching ADR had zero path matches);
-a CODEOWNERS that reads fine but is **trivial** — zero team-owned rows, or a row set that
+`control-plane`; a change set with no owned-path match — including one entirely under
+`.decisions/**` — is `not-control-plane` (founder ruling, 2026-08-15 on #5531: ADRs are not
+control-plane; the required `governance` verdict floor is what stands behind an ADR PR, per ADR
+0274 §2). A CODEOWNERS that reads fine but is **trivial** — zero team-owned rows, or a row set that
 covers everything — → `unknown` (a printed hold — the match-everything boundary is the #4336
 adopter incident and the #4401 trivial-pattern class). An **unreadable** CODEOWNERS is not
 `unknown`: a failed read is the `11` refusal, the group's own law. Deriving from CODEOWNERS rather than any prose or regex copy
 means this verb and the merge gate read one artifact and cannot disagree; the
 `codeowners-cp.yml` CI gate keeps that artifact in sync with the rest of the governance
-surface. `unknown` and `content-undetermined` are HOLD states the skill treats as §CP until
-proven otherwise.
+surface. `unknown` is the one HOLD state, and the skill treats it as §CP until proven otherwise.
 
 **The linked issue** resolves from the PR body's closing keywords (`Fixes/Closes/Resolves #N`,
 first match), else an explicit `Part of #N` (an intentional partial split — the skill merges
