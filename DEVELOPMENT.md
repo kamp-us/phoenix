@@ -133,43 +133,37 @@ CI runs the base build (`ci.yml` — Biome lint/format, `pnpm typecheck`, the in
 | [`workflow-contract`](./.github/workflows/workflow-contract.yml) | Every `.claude/workflows/*.js` conforms to the runtime load shape (`export const meta = {…}`, no `export default`). | A workflow script with a default export or a missing `meta`. |
 | [`decisions-index`](./.github/workflows/decisions-index.yml) | The `.decisions/*` ADR files carry no duplicate `id` and no filename ↔ front-matter number mismatch. | A new ADR that collides on number or mismatches its filename. |
 
-Not every workflow is a PR gate. [`run-evidence`](./.github/workflows/run-evidence.yml) *produces* the SHA-bound run-evidence artifact the `ship-it` / `review-code` gates consume (ADR [0054](./.decisions/0054-run-evidence-bundle.md)); [`deploy`](./.github/workflows/deploy.yml) / [`pr-cleanup`](./.github/workflows/pr-cleanup.yml) stand up and tear down per-PR preview stacks; [`changelog`](./.github/workflows/changelog.yml) / [`publish`](./.github/workflows/publish.yml) fire on a release tag; and [`epic-autoclose`](./.github/workflows/epic-autoclose.yml), [`glossary-drift`](./.github/workflows/glossary-drift.yml), and [`orphan-sweep`](./.github/workflows/orphan-sweep.yml) run on issue-close or a schedule rather than on your PR. Ground truth for the full set is `ls .github/workflows/`.
+Not every workflow is a PR gate. [`run-evidence`](./.github/workflows/run-evidence.yml) *produces* the SHA-bound run-evidence artifact the `ship` gate consumes (ADR [0054](./.decisions/0054-run-evidence-bundle.md)); [`deploy`](./.github/workflows/deploy.yml) / [`pr-cleanup`](./.github/workflows/pr-cleanup.yml) stand up and tear down per-PR preview stacks; [`changelog`](./.github/workflows/changelog.yml) / [`publish`](./.github/workflows/publish.yml) fire on a release tag; and [`epic-autoclose`](./.github/workflows/epic-autoclose.yml), [`glossary-drift`](./.github/workflows/glossary-drift.yml), and [`orphan-sweep`](./.github/workflows/orphan-sweep.yml) run on issue-close or a schedule rather than on your PR. Ground truth for the full set is `ls .github/workflows/`.
 
 ## The pipeline
 
-phoenix extends itself through an agent-operable issue-intake pipeline in `.claude/skills/`: an agent files what it notices, triage makes it actionable, then the work is planned, executed, reviewed, and shipped. Each stage consumes the previous stage's output and produces a signal the next stage trusts — a verification gate sits at every stage. Only [`ship-it`](./.claude/skills/ship-it/SKILL.md) merges, and it refuses to merge the pipeline's own control plane (`.claude`/`.github` PRs), which a human merges by hand — ADR [0053](./.decisions/0053-control-plane-boundary.md).
+phoenix extends itself through an agent-operable issue-intake pipeline: an agent files what it notices, triage makes it actionable, then the work is planned, executed, reviewed, and shipped. Each stage consumes the previous stage's output and produces a signal the next stage trusts — a verification gate sits at every stage.
+
+**That pipeline is fabrika, and it is the only one phoenix runs.** fabrika ships as its own plugin and phoenix installs it from the `kampus` marketplace the same way an outside repo does (ADR [0273](./.decisions/0273-fabrika-ships-as-an-installed-plugin.md)), so you reach a skill by its namespaced name — `fabrika:build` — never by a path into the repo. The roster it replaced is retired: fabrika re-implements v1's work instead of calling into it (ADR [0238](./.decisions/0238-fabrika-reimplements-v1-never-calls-it.md)), and the two `.claude` symlinks that made v1's skills discoverable in-repo are deleted (ADR [0277](./.decisions/0277-v1-retirement-keeps-the-plugin-suppression.md)). [`claude-plugins/kampus-pipeline/`](./claude-plugins/kampus-pipeline/) still exists, but only because a repo outside phoenix installs the suite from it (ADR [0279](./.decisions/0279-v1-crew-retired-in-full.md)); nothing here routes to it.
+
+Only `ship` merges, and it enqueues for the merge queue rather than merging by hand. On a control-plane PR (`.claude`/`.github`) it holds until a control-plane owner has approved the current head — ADR [0053](./.decisions/0053-control-plane-boundary.md).
 
 ```mermaid
 flowchart LR
-    report --> triage --> plan-epic --> review-plan --> write-code
-    write-code --> review-code
-    write-code --> review-doc
-    review-code --> ship-it
-    review-doc --> ship-it
-    ship-it -->|red CI| heal-ci
+    report --> triage --> plan-epic --> check-epic-plan --> build
+    build --> review --> ship
+    ship -->|stalled| heal-ci
 ```
 
 | Skill | Stage | Role |
 |---|---|---|
-| [`report`](./.claude/skills/report/SKILL.md) | intake | File a follow-up issue the moment you spot tangential work; tags `status:needs-triage` and nothing else. |
-| [`triage`](./.claude/skills/triage/SKILL.md) | classify | Process the needs-triage queue: classify, enrich, prioritize, split, or close. The guardrail between raw intake and pickable work. |
-| [`plan-epic`](./.claude/skills/plan-epic/SKILL.md) | plan | Turn a triaged epic into a PRD-grade task ledger; product layer leads, split into tracer-bullet sub-issues with a pinned `## Dependencies` topology. |
-| [`review-plan`](./.claude/skills/review-plan/SKILL.md) | gate | Verify the epic ledger against a deterministic structural floor before its children become pickable. |
-| [`write-code`](./.claude/skills/write-code/SKILL.md) | execute | Pick the next actionable issue, implement it on a branch, open a PR that closes it, hand off to the parent epic. |
-| [`review-code`](./.claude/skills/review-code/SKILL.md) | gate | Fresh-eyes QA: verify a PR against its issue's acceptance criteria, one criterion at a time, evidence-based. Never merges. |
-| [`review-doc`](./.claude/skills/review-doc/SKILL.md) | gate | The doc-artifact twin of review-code, plus a doc-hygiene checklist, for `.decisions`/`.patterns`/prose PRs. |
-| [`ship-it`](./.claude/skills/ship-it/SKILL.md) | merge | The only skill with merge authority. Asserts the matching gate signalled PASS and CI is green, squash-merges, confirms the issue auto-closed. Refuses to self-merge control-plane (`.claude`/`.github`) PRs. |
-| [`heal-ci`](./.claude/skills/heal-ci/SKILL.md) | self-heal | Classify a red CI run into flake-vs-defect; rerun a known transient once, or file a defect via report. ship-it hands off here when checks come back red. |
+| [`report`](./claude-plugins/fabrika/skills/report/SKILL.md) | intake | File a follow-up issue the moment you spot tangential work; it lands carrying `status:needs-triage` and nothing else. |
+| [`triage`](./claude-plugins/fabrika/skills/triage/SKILL.md) | classify | Turn one raw needs-triage issue into a unit a builder can pick up cold: classified, enriched from the code, priced, homed, addressed. |
+| [`plan-epic`](./claude-plugins/fabrika/skills/plan-epic/SKILL.md) | plan | Decompose a triaged epic into a task ledger; the product layer leads, tracer-bullet children each trace to a user story, with a pinned `## Dependencies` topology. |
+| [`check-epic-plan`](./claude-plugins/fabrika/skills/check-epic-plan/SKILL.md) | gate | Gate that ledger against a deterministic structural floor, then flip its children pickable. |
+| [`build`](./claude-plugins/fabrika/skills/build/SKILL.md) | execute | Execute one agent-ready issue end to end — claim, branch, construct in a verified tree, open the PR. Given a PR number instead, it is the repair lane for that PR's findings. |
+| [`review`](./claude-plugins/fabrika/skills/review/SKILL.md) | gate | Judge a PR's textual artifacts — code, docs, skills — against the linked issue's acceptance criteria, landing one SHA-bound verdict per artifact class. Never merges. |
+| [`ship`](./claude-plugins/fabrika/skills/ship/SKILL.md) | merge | The single merge authority. Walks the guard chain (scope, control-plane approval, verdicts, CI at head, run-evidence, threads), enqueues, then reconciles the terminal outcome. |
+| [`heal-ci`](./claude-plugins/fabrika/skills/heal-ci/SKILL.md) | self-heal | Answer why a PR is not moving and drive it back: one transient rerun, a route to the lane that owns the work, or a named human escalation. |
 
-Two more skills serve the docs rather than the chain: [`adr`](./.claude/skills/adr/SKILL.md) records a decision in `.decisions/`, and [`deslop-comments`](./.claude/skills/deslop-comments/SKILL.md) cuts comments that bury the code.
+**That table is the chain, not the roster.** The full set is [`claude-plugins/fabrika/skills/`](./claude-plugins/fabrika/skills/), one directory per skill — get it the way you get the ADRs (ADR [0129](./.decisions/0129-adr-discovery-is-the-claude-md-contract.md)): `ls claude-plugins/fabrika/skills/` for the names, each `SKILL.md`'s frontmatter for its one-line description. Beside the chain sit the rendered-visual twins (`build-ui`, `review-ui`), the epic conductor (`build-epic`), the ideation skills that turn fog into a spec (`wayfinding`, `grilling`, `prototyping`, `graduate`, `handoff`), the knowledge surfaces (`adr`, `write-pattern`, `glossary`), the harness-integrity gate (`governance`), and the cold-session door (`front-door`, typed as `/fabrika`).
 
-### fabrika — the replacement pipeline, growing beside this one
-
-The chain above is **v1**. Its replacement, **fabrika**, is being rebuilt from first principles as its own plugin under [`claude-plugins/fabrika/`](./claude-plugins/fabrika/): it re-implements v1's work instead of calling into it, so v1 stays deletable (ADR [0238](./.decisions/0238-fabrika-reimplements-v1-never-calls-it.md)).
-
-The skills that have landed live in [`claude-plugins/fabrika/skills/`](./claude-plugins/fabrika/skills/), one directory per skill — **that directory is the list.** Get the current set the way you get the ADRs (ADR [0129](./.decisions/0129-adr-discovery-is-the-claude-md-contract.md)): `ls claude-plugins/fabrika/skills/` for the names, each `SKILL.md`'s frontmatter for its one-line description. Nothing here freezes that list into a table, because the set is still filling one authoring session at a time and a copy would be stale before you read it.
-
-Two things before you map a fabrika skill onto the v1 table above: the nouns moved — `build` is the text-construction skill and `review` is a single skill, not v1's `review-*` family (ADR [0242](./.decisions/0242-fabrika-skill-nouns-redefine-build-and-review.md)) — and the conventions every fabrika skill is held to live in [`claude-plugins/fabrika/docs/`](./claude-plugins/fabrika/docs/README.md).
+One trap when you map an old name onto a fabrika one: the nouns moved. `build` is the text-construction skill and `review` is a single skill, not v1's `review-*` family (ADR [0242](./.decisions/0242-fabrika-skill-nouns-redefine-build-and-review.md)). The conventions every fabrika skill is held to live in [`claude-plugins/fabrika/docs/`](./claude-plugins/fabrika/docs/README.md).
 
 ## Releasing
 
