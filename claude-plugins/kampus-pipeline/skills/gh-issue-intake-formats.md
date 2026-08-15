@@ -1123,9 +1123,9 @@ amount to is the canonical `CONTROL_PLANE_RE=` line in the next subsection.
 **nested** `.claude-plugin/` dir — the branch is root-anchored, and `kampus-pipeline`'s own
 `plugin.json` is a genuine sibling gap to file rather than patch by hand (ADR
 [0212](https://github.com/kamp-us/phoenix/blob/main/.decisions/0212-marketplace-manifest-is-control-plane.md)
-Consequences); and the crew engine defs under `claude-plugins/pipeline-crew/agents/**`, which class
+Consequences); and a sibling plugin's agent defs under `claude-plugins/<plugin>/agents/**`, which class
 **has-skills** yet auto-ship on a `review-skill` PASS, because merge authority lives in `ship-it` and `shipper.md`
-— both §CP, both re-verifying the §CP approval independently — so the worst a weakened crew def can
+— both §CP, both re-verifying the §CP approval independently — so the worst a weakened agent def can
 do is fail to bank (live founder ruling, re-affirmed 2026-07-24 on
 [#3765](https://github.com/kamp-us/phoenix/issues/3765)). Do **not** widen `CONTROL_PLANE_RE` by
 hand to cover either of them. ADR 0174's four operational skill dirs — `heal-ci`, `what-shipped`,
@@ -1544,8 +1544,8 @@ name the **same** code roots (the has-code/docs-exclusion agreement invariant) a
 lockstep — keep them adjacent so a root added to one is added to the other.
 
 `HAS_SKILLS_RE`'s two additions close the **#663 neither-class gap** for the plugin surface (#2387):
-a PR touching only a **non-`kampus-pipeline`** plugin's `agents/**`/`skills/**` (e.g. the
-`pipeline-crew` crew defs) or only the `.claude-plugin/**` manifest (`plugin.json`,
+a PR touching only a **non-`kampus-pipeline`** plugin's `agents/**`/`skills/**` (a sibling
+plugin's agent defs) or only the `.claude-plugin/**` manifest (`plugin.json`,
 `marketplace.json`) previously matched **no** class — so `ship-it` Step 0 demanded no gate and it
 reached merge un-reviewed. Both now class **has-skills** and ride the `review-skill` gate: the
 manifest surface *declares* the plugin's skill/agent artifacts (and is the drift-check `source`
@@ -2542,16 +2542,16 @@ a **human's** decision on evidence outside this keyspace (the run's PR landed, t
 the session is gone), never a rule the pipeline applies for you. Clear it by deleting that claim
 comment and un-assigning the issue.
 
-**The two claim substrates differ, deliberately — don't read one's rule onto the other.** The
-crew tracker's **resource claim** (ADR
-[0191](https://github.com/kamp-us/phoenix/blob/main/.decisions/0191-crew-claim-lifecycle.md),
-`packages/pipeline-crew-mcp/src/tracker/registry-core.ts`) frees on explicit `releaseClaim` **or
-self-reaps** once its holder's presence lease lapses — a stale claim there reads as free. This
+**There is one claim substrate now, and it is this one.** The second — the crew tracker's
+**resource claim** (ADR
+[0191](https://github.com/kamp-us/phoenix/blob/main/.decisions/0191-crew-claim-lifecycle.md)),
+which freed on explicit `releaseClaim` **or** self-reaped once its holder's presence lease lapsed —
+left with the crew (ADR
+[0279](https://github.com/kamp-us/phoenix/blob/main/.decisions/0279-v1-crew-retired-in-full.md)),
+and the cross-keyspace reconciliation it needed (#3938 / epic #3766) is moot. This
 **GitHub-marker claim** has no lease to lapse: it frees on an explicit `claim release`, or on
-proven claimant death, and otherwise **stands**. So the same lane can read free in the tracker and
-held here. That is not a bug to reconcile in passing; the cross-keyspace reconciliation is #3938 /
-epic #3766. Until then, the claim your coder actually consults is this one, and "ADR 0191
-self-reaping" does **not** govern it.
+proven claimant death, and otherwise **stands**. "ADR 0191 self-reaping" governs nothing live —
+do not read it onto this keyspace.
 
 <a id="dead-claimant-supersession-proven-death-only-adr-0191"></a>
 ### Dead-claimant supersession — proven death only (ADR 0191 presence liveness)

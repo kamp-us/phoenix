@@ -12,7 +12,7 @@ tags: [pipeline, crew, rendezvous, worktree, addressing]
 
 ## Context
 
-The crew channel substrate derives its rendezvous socket from the launch cwd. `socketPathFor` in [`packages/pipeline-crew-mcp/src/tracker/server.ts`](../packages/pipeline-crew-mcp/src/tracker/server.ts) hashes a `projectRoot` string into a socket name under `$XDG_RUNTIME_DIR`:
+The crew channel substrate derives its rendezvous socket from the launch cwd. `socketPathFor` in `packages/pipeline-crew-mcp/src/tracker/server.ts` hashes a `projectRoot` string into a socket name under `$XDG_RUNTIME_DIR`:
 
 ```ts
 const digest = createHash("sha256").update(resolve(projectRoot)).digest("hex").slice(0, 16);

@@ -9,8 +9,8 @@ here for the detail. That placement is load-bearing: these are rules an agent mu
 specific moment, not background it must merely know, so the cite has to fire where the paragraph
 used to.
 
-**Scope: the `kampus-pipeline` agent definitions only.** `claude-plugins/pipeline-crew/agents/**`
-is deliberately outside the control-plane boundary (founder ruling #3765) and does not read this
+**Scope: the `kampus-pipeline` agent definitions only.** A sibling plugin's `agents/**` is
+deliberately outside the control-plane boundary (founder ruling #3765) and does not read this
 file; nothing here is a cross-plugin dependency.
 
 <a id="sp"></a>

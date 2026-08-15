@@ -235,17 +235,6 @@ stricter `findCommentLeaks` for comment bodies):
   exit 2 on a live leak. This is the check no emit-side guard can offer: it catches a leaked
   comment **regardless of emit path** (a raw `gh api -f body=@$FILE` bypass, #3018/#3005), which
   is why `ship-it` runs it as a pre-enqueue preflight (its Step 3.7) and refuses to merge on a hit.
-- **`leak-guard sweep [--dir <d>] [--root <r>]`** — the pipeline-crew sanitization sweep
-  (#2357, crew epic #2342 Phase 4). The crew plugin ships **zero real operator data**, so
-  its whole tree is swept by a **purely generic, pattern-based** personal-data detector —
-  it catches only **structural pattern classes**, never a hardcoded person identifier:
-  machine-local / home / absolute **paths**, any **email**, **tmux pane ids**, and
-  **personal-memory references**. Fails closed (exit 1) on any hit **and** on a zero-file scope
-  (ADR 0092), mirroring the readme-guard/fanout-guard directory-check idiom. The pure match-class
-  core (`crew-leak.ts`, unit-tested class by class) carries **no named operator deny-list** — a
-  bare first name in prose is deliberately NOT caught (generic over named: the high-value
-  leaks are all pattern-detectable, whereas bare-name matching is low-value and
-  false-positive-prone).
 
 ```bash
 # changed-file scan over both surfaces — doc and shell (exit 2 on a leak)
@@ -253,13 +242,11 @@ node packages/pipeline-cli/src/bin.ts leak-guard scan path/to/file.md path/to/sc
 
 # scan a PR's landed comments (issue + review) — the ship-it pre-enqueue preflight (exit 2 on a leak)
 node packages/pipeline-cli/src/bin.ts leak-guard scan-pr 123
-
-# sweep the whole pipeline-crew tree (exit 1 on any hit or zero scope)
-node packages/pipeline-cli/src/bin.ts leak-guard sweep
 ```
 
-Both modes are wired as CI gates (`leak-guard.yml` for `scan`, `crew-leak-guard.yml` for
-`sweep`) — the scan lives once in the tool, never re-grepped in the workflow.
+`scan` is wired as a CI gate (`leak-guard.yml`) — the scan lives once in the tool, never
+re-grepped in the workflow. The fourth mode, `sweep`, swept the crew plugin tree for
+personal data; it left with the tree under ADR 0279.
 
 ### `main-sync` — codified orchestrator main-sync with detached-HEAD auto-reattach (#1573)
 
@@ -682,7 +669,7 @@ Two properties follow from what the incident showed:
   zero live coders. Nothing in GitHub observes a process, so the report counts unlanded work and
   always breaks the total down by stage (`claimed` / `in-review`) rather than emitting one
   ambiguous figure.
-- **A lane has two crew-tracker keys the tracker cannot link.** `issue-<N>` and `pr-<M>` are
+- **A lane has two tracker keys the tracker cannot link.** `issue-<N>` and `pr-<M>` are
   independent free-form resource keys there (#3886, #4074), so one engine can hold the issue keys
   while a sibling holds the PR keys for the same work. The PR's own `Closes #N` link is the edge
   the tracker lacks: it folds the pair into **one** lane, and every lane publishes **both** keys

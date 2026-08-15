@@ -1,20 +1,17 @@
 /**
- * The single machine-local-path matcher shared by BOTH leak-guard detectors — the doc/comment
- * scanner (`leak-guard.ts`) and the crew-plugin sanitizer (`crew-leak.ts`). Extracted per the
- * founder ruling on #3506 (Option C — extract, don't copy): the two detectors each carried their
- * own copy of the same path arm, and #3505's `~/.claude` shape carve-out landed on leak-guard's
- * copy only — so the copies drifted, which is the exact root bug #3506 records. With the arm (and
- * every path-shape carve-out) living HERE once, the two-detectors-drift class of bug is structurally
- * impossible rather than fixed one instance at a time.
+ * The single machine-local-path matcher behind every leak-guard surface. Extracted per the founder
+ * ruling on #3506 (Option C — extract, don't copy): two detectors each carried their own copy of the
+ * same path arm, and #3505's `~/.claude` shape carve-out landed on one copy only — so the copies
+ * drifted, which is the exact root bug #3506 records. (The second consumer, the crew-plugin
+ * sanitizer, left with ADR 0279; the single-definition shape is what keeps the drift class closed.)
  *
  * Two arms, both GENERIC structural shapes and never a named operator allow-list (#2393):
  *
  *  - `MACHINE_LOCAL_PATH_PATTERNS` — the home/absolute path arm (`/Users/<name>`, `~/.usirin`,
- *    `~/.claude` internals, `~/code/`, `/vault/`). Used by every leak-guard surface and by
- *    crew-leak's `"path"` class.
+ *    `~/.claude` internals, `~/code/`, `/vault/`). Used by every leak-guard surface.
  *  - `TEMP_PATH_PATTERNS` — the stricter temp/scratch roots (`/var/folders/…`, `/private/tmp|var/…`,
  *    `/tmp/…`). leak-guard scans these on the PR/issue-COMMENT surface only (a public comment has no
- *    legitimate bare-`/tmp` example the way a doc does); crew-leak does not scan temp roots.
+ *    legitimate bare-`/tmp` example the way a doc does).
  *
  * Carve-outs live at the pattern (a property of the shape), not in a membership list:
  *  - `~/.claude.json` and `~/.claude/settings.json` — the two public, machine-agnostic claude CLI
@@ -54,9 +51,9 @@ export const MACHINE_LOCAL_PATH_PATTERNS: ReadonlyArray<PathPattern> = [
 		// negative lookaheads carve out the claude CLI's public, machine-agnostic config *files*
 		// — `~/.claude.json` (a sibling dotfile config, `~/.claude` + a `.json` extension, NOT
 		// the directory) and `~/.claude/settings.json` (the one documented settings file). Those
-		// two are identical on every machine and reveal nothing operator-specific, and they are
-		// the literal subject of packages/pipeline-crew-mcp, so flagging them was a chronic
-		// false positive. The carve-out is SHAPE, not a membership list: the exclusion is a
+		// two are identical on every machine and reveal nothing operator-specific, and any doc
+		// about MCP-server registration names them, so flagging them was a chronic false
+		// positive. The carve-out is SHAPE, not a membership list: the exclusion is a
 		// property of this one generic pattern (a config-file leaf on the marker), so a longer
 		// name (`~/.claude.json.bak`, `~/.claude/settings.local.json`, `~/.claude/settings.jsonc`)
 		// or any deeper path still trips it — the `(?![\w.])` tail pins each carve-out to the

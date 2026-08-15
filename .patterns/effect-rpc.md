@@ -1,14 +1,15 @@
 # Effect RPC (`effect/unstable/rpc`)
 
 How to define a typed message catalog and stand up a client/server over it with
-effect's `effect/unstable/rpc` at phoenix's pin — the substrate the crew's peer-to-peer
-message plane is built on ([`@kampus/pipeline-crew-mcp`](../packages/pipeline-crew-mcp),
-epic [#3045](https://github.com/kamp-us/phoenix/issues/3045)). The shipped worked example
-is the crew protocol: [`packages/pipeline-crew-mcp/src/protocol/`](../packages/pipeline-crew-mcp/src/protocol/)
-defines the catalog, and [`tracker/`](../packages/pipeline-crew-mcp/src/tracker/) /
-[`peer/`](../packages/pipeline-crew-mcp/src/peer/) are the server/client roles that stand
-it up. This doc is the Effect-API surface (catalog → server → client) and the
-**transport-pluggability seam** — why the substrate needs no `*-protocol` package.
+effect's `effect/unstable/rpc` at phoenix's pin. This doc is the Effect-API surface
+(catalog → server → client) and the **transport-pluggability seam** — why a message
+substrate on this surface needs no hand-rolled `*-protocol` package.
+
+**No in-repo instance today.** The one system built on this surface — the v1 crew's peer
+message plane — was removed with the crew (ADR [0279](../.decisions/0279-v1-crew-retired-in-full.md)),
+so every snippet below is grounded in the **module source at the pin** rather than in a
+phoenix call site. Read it as the API contract, and re-ground against the pin before
+leaning on it; the illustrative catalog is a two-message sketch, not shipped code.
 
 phoenix pins `effect@4.0.0-beta.92` (the `effect:` catalog entry in `pnpm-workspace.yaml`).
 The RPC surface lives in the **unstable** namespace, so its shape is pinned to that beta —
@@ -25,8 +26,8 @@ An Effect RPC system is one **transport-agnostic `RpcGroup`** (the catalog), a
 **server** that binds handlers to that group over a protocol, and a **client** that dials
 the same group over a matching protocol. The catalog is shared; server and client each
 provide their own transport Layer. Nothing in the catalog names a transport — that seam is
-what lets the same 7-message crew protocol run over a unix socket today and any other
-transport tomorrow with no catalog change.
+what lets the same catalog run over a unix socket today and any other transport tomorrow
+with no catalog change.
 
 ## 1. The catalog — `Rpc.make` + `RpcGroup.make`
 
@@ -39,8 +40,7 @@ one decision that splits the two shapes:
 - **Fire-and-forget** — omit `success`. It defaults to `Schema.Void`, so the caller gets no
   reply.
 
-From the shipped crew catalog ([`protocol/group.ts`](../packages/pipeline-crew-mcp/src/protocol/group.ts),
-payloads in [`protocol/schema.ts`](../packages/pipeline-crew-mcp/src/protocol/schema.ts)):
+A two-message sketch showing both shapes:
 
 ```ts
 import {Rpc, RpcGroup} from "effect/unstable/rpc";
@@ -57,13 +57,12 @@ export const AnnouncePresence = Rpc.make("AnnouncePresence", {
 	payload: Messages.PresenceAnnouncement,
 });
 
-export const CrewProtocol = RpcGroup.make(Claim, AnnouncePresence /* , … */);
+export const Protocol = RpcGroup.make(Claim, AnnouncePresence /* , … */);
 ```
 
-The group is introspectable — `CrewProtocol.requests` is a `Map<tag, Rpc>`, and a
-fire-and-forget kind's `successSchema` is exactly `Schema.Void`. That is what the catalog
-test asserts to pin the request-response vs fire-and-forget split
-([`protocol/group.test.ts`](../packages/pipeline-crew-mcp/src/protocol/group.test.ts)):
+The group is introspectable — `Protocol.requests` is a `Map<tag, Rpc>`, and a
+fire-and-forget kind's `successSchema` is exactly `Schema.Void`. A catalog test pins the
+request-response vs fire-and-forget split off that:
 
 ```ts
 // The claim kind decodes a structured reply; a fire-and-forget kind is Void.
@@ -85,22 +84,21 @@ The server side is two Layers merged:
 2. **The server** — `RpcServer.layer(group)`, forked in scope, provided with a **server
    protocol** Layer that installs the transport (`RpcServer.ts` `@category server`).
 
-For the crew's unix-socket transport, the protocol is `layerProtocolSocketServer`, which
-requires an `RpcSerialization` and a `SocketServer` in its `R` (`RpcServer.ts`
-`@category protocols`):
+For a unix-socket transport, the protocol is `layerProtocolSocketServer`, which requires an
+`RpcSerialization` and a `SocketServer` in its `R` (`RpcServer.ts` `@category protocols`):
 
 ```ts
 import {Layer} from "effect";
 import {RpcSerialization, RpcServer} from "effect/unstable/rpc";
-import {CrewProtocol} from "./protocol/group.ts";
+import {Protocol} from "./protocol/group.ts";
 
-const Handlers = CrewProtocol.toLayer({
+const Handlers = Protocol.toLayer({
 	Claim: (req) => grantOrCollide(req), // returns a ClaimReply
 	AnnouncePresence: (req) => registerPresence(req), // returns void
 	// … one handler per tag
 });
 
-const Server = RpcServer.layer(CrewProtocol).pipe(
+const Server = RpcServer.layer(Protocol).pipe(
 	Layer.provide(Handlers),
 	Layer.provide(RpcServer.layerProtocolSocketServer), // the swappable transport seam
 	Layer.provide(RpcSerialization.layerNdjson), // wire codec: newline-delimited JSON
@@ -126,7 +124,7 @@ Layer — `layerProtocolSocket` for the socket transport, requiring `Socket` + `
 ```ts
 import {Effect, Layer} from "effect";
 import {RpcClient, RpcSerialization} from "effect/unstable/rpc";
-import {CrewProtocol} from "./protocol/group.ts";
+import {Protocol} from "./protocol/group.ts";
 
 const ClientProtocol = RpcClient.layerProtocolSocket().pipe(
 	Layer.provide(RpcSerialization.layerNdjson), // must match the server's serialization
@@ -134,7 +132,7 @@ const ClientProtocol = RpcClient.layerProtocolSocket().pipe(
 );
 
 const program = Effect.gen(function* () {
-	const client = yield* RpcClient.make(CrewProtocol);
+	const client = yield* RpcClient.make(Protocol);
 	const reply = yield* client.Claim({resource: "issue:3058" /* … */}); // awaits ClaimReply
 	yield* client.AnnouncePresence({peer, role, at}); // fire-and-forget, resolves void
 }).pipe(Effect.provide(ClientProtocol));
@@ -147,12 +145,11 @@ resolves `void`. The client never re-declares which is which — it reads that f
 ## Which protocol layer
 
 Server and client each pick a matching transport pair, always with the **same serialization**
-on both ends. The crew substrate uses the socket pair; the table is the menu at the pin
-(each module's `@category protocols`):
+on both ends. The table is the menu at the pin (each module's `@category protocols`):
 
 | Transport | Server layer (`RpcServer`) | Client layer (`RpcClient`) | Use when |
 |---|---|---|---|
-| **Unix / TCP socket** | `layerProtocolSocketServer` (`+ SocketServer`) | `layerProtocolSocket` (`+ Socket`) | Local IPC between processes on one host — the crew peer plane |
+| **Unix / TCP socket** | `layerProtocolSocketServer` (`+ SocketServer`) | `layerProtocolSocket` (`+ Socket`) | Local IPC between processes on one host |
 | WebSocket | `layerProtocolWebsocket({path})` (`+ HttpRouter`) | `layerProtocolSocket` over a websocket `Socket` | Duplex over an HTTP upgrade |
 | HTTP | `layerProtocolHttp({path})` (`+ HttpRouter`) | `layerProtocolHttp({url})` (`+ HttpClient`) | Request-response over plain HTTP |
 | Worker | `layerProtocolWorkerRunner` | `layerProtocolWorker({...})` | Across a worker-thread boundary |
@@ -167,14 +164,14 @@ The catalog (`RpcGroup`) knows nothing about sockets, serialization, or wire fra
 three enter as **provided Layers** at the server and client edges — `RpcServer.layer(group)`
 and `RpcClient.make(group)` take the *same* group and differ only in which protocol Layer you
 `Layer.provide`. So there is **no protocol package to build**: the transport is a swappable
-Effect Layer, not a hand-rolled framing/encoding module. This is why the crew substrate ships
-a `protocol/` catalog and role modules (`tracker/`, `peer/`) but no `crew-protocol` or
-`crew-wire` package — the wire is `effect/unstable/rpc` + a `SocketServer`/`Socket` Layer.
+Effect Layer, not a hand-rolled framing/encoding module. A system on this surface ships a
+catalog module and its role modules and nothing else — the wire is `effect/unstable/rpc` plus
+a `SocketServer`/`Socket` Layer.
 
-It is also why `protocol/` stays generic (crew-agnostic): a role is a `RoleId` *parameter*
-(an opaque `Schema.NonEmptyString`), never a baked-in crew noun, so tracker, peer, and edge
-code against the contract without importing `crew/`. The catalog test pins that boundary — no
-`protocol/` source file may import from `crew/` ([`protocol/group.test.ts`](../packages/pipeline-crew-mcp/src/protocol/group.test.ts)).
+It is also why the catalog module stays domain-agnostic: an identity is a *parameter* (an
+opaque `Schema.NonEmptyString`), never a baked-in domain noun, so server and client code
+against the contract without importing the domain. Pin that boundary with a test asserting
+no catalog source file imports from the domain module.
 
 ## Rules
 
@@ -195,9 +192,6 @@ code against the contract without importing `crew/`. The catalog test pins that 
 
 ## See also
 
-- [mcp-server-effect.md](./mcp-server-effect.md) — the `effect/unstable/ai` MCP server the
-  crew channel edge is built on; `McpServer` itself uses an `RpcGroup`
-  (`ServerNotificationRpcs`) for its notification machinery.
 - [effect-schema-validation.md](./effect-schema-validation.md) — the `effect/Schema` idioms
   every RPC payload is built from.
 - [effect-context-service.md](./effect-context-service.md) — the `Context.Service` / Layer

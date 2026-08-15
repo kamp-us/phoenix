@@ -3,9 +3,8 @@
  * and the coalescing write plan. Pure and IO-free; `github.ts` supplies the `gh api` REST
  * shell and `command.ts` the Effect bin.
  *
- * The §CP approval-watcher (`claude-plugins/pipeline-crew/agents/crew-engineering-manager.md`)
- * used to end every branch of a tick in an `echo` to the running agent's transcript, which is
- * session-local. From outside, a loop that never ticked and a loop that ticked and found nothing
+ * The §CP approval-watcher used to end every branch of a tick in an `echo` to the running
+ * agent's transcript, which is session-local. From outside, a loop that never ticked and a loop that ticked and found nothing
  * were the same observation — silence — so an investigation into a watcher that is not firing
  * cannot discriminate a cadence defect from a derivation defect (#4292, blocking #4290).
  *

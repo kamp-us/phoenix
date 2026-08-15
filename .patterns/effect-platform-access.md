@@ -71,64 +71,60 @@ the Node layer once, at the bin. Grounded in effect-smol
 `packages/effect/src/FileSystem.ts` (§"Accessing file system operations" module
 example) and LLMS.md §"Writing Effect services" (the `yield*`-the-tag idiom).
 
-## The before / after — the real call sites (#3461)
-
-`packages/pipeline-crew-mcp/src/standup/register-local-scope.ts` and
-`.../orchestrate.ts` reach straight for the builtins.
+## The before / after — a real call site
 
 ### The before — welded to the real disk
 
 ```ts
-// register-local-scope.ts (today)
-import {existsSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync} from "node:fs";
-import {homedir} from "node:os";
-import {dirname, join, sep} from "node:path";
+import {existsSync, readFileSync, renameSync, writeFileSync} from "node:fs";
+import {dirname, join} from "node:path";
 import {randomUUID} from "node:crypto";
 
-const atomicWrite = (path: string, content: string): void => {
-	const temp = join(dirname(path), `.claude.json.crew-${randomUUID().slice(0, 8)}.tmp`);
+const atomicWrite = (target: string, content: string): void => {
+	const temp = join(dirname(target), `.tmp-${randomUUID().slice(0, 8)}`);
 	writeFileSync(temp, content);   // synchronous, throws, no seam
-	renameSync(temp, path);
+	renameSync(temp, target);
 };
 ```
 
-Because the IO is a raw `writeFileSync`, the unit test can only inject a temp
-*path* and let the code hit the real disk on it (the module's own note: "the IO
-wrapper is exercised against an injected temp path"). The filesystem itself is not
-substitutable — the test is forced to touch real disk and clean up after itself.
+Because the IO is a raw `writeFileSync`, a unit test can only inject a temp *path* and let the
+code hit the real disk on it. The filesystem itself is not substitutable — the test is forced to
+touch real disk and clean up after itself. Worse, a `existsSync` probe reports an unreadable
+parent directory as "absent", so a could-not-read is silently answered as a definite `false`.
 
 ### The after — the platform is already in scope; just `yield*` the service
 
-The crew-mcp bin already provides the whole platform:
+A CLI bin already provides the whole platform once, at the entry point:
 
 ```ts
-// packages/pipeline-crew-mcp/src/bin.ts (today — unchanged)
+// packages/fabrika-cli/src/run.ts
 import {NodeRuntime, NodeServices} from "@effect/platform-node";
 cli.pipe(Command.run({version: VERSION}), Effect.provide(NodeServices.layer), NodeRuntime.runMain);
 ```
 
-So the layer is *already wired* — the call sites just bypass it. The migrated shape
-routes the same atomic write through the `FileSystem` seam:
+So the layer is *already wired* — a call site reaching for `node:fs` is just bypassing it. The
+shipped seam is [`packages/fabrika-cli/src/io/fs.ts`](../packages/fabrika-cli/src/io/fs.ts), which
+routes every read and write through the service and **lowers `PlatformError` into a tagged
+failure** rather than a sentinel value:
 
 ```ts
-import {Effect, FileSystem, Path} from "effect";
+import {Effect, FileSystem} from "effect";
 
-const atomicWrite = Effect.fn("LocalScope.atomicWrite")(function* (target: string, content: string) {
-	const fs = yield* FileSystem.FileSystem;
-	const path = yield* Path.Path;
-	const temp = path.join(path.dirname(target), `.claude.json.crew-${crypto.randomUUIDv4}.tmp`);
-	yield* fs.writeFileString(temp, content);
-	yield* fs.rename(temp, target);
-});
+/** The file's UTF-8 text. A file that could not be read FAILS; it never resolves to `""`. */
+export const readFile = (path: string): Effect.Effect<string, ReadFailed, FileSystem.FileSystem> =>
+	Effect.gen(function* () {
+		const fs = yield* FileSystem.FileSystem;
+		return yield* fs.readFileString(path);
+	}).pipe(
+		Effect.catchTag("PlatformError", (cause) => new ReadFailed({path, reason: cause.message})),
+	);
 ```
 
-A `unit` test now substitutes `FileSystem.FileSystem` with a fake layer — no temp
-path to inject, no real disk touched, the whole seam scripted (see
+That is the whole point of the seam, and it is why "I could not read this" stays distinguishable
+from "I read this and it held nothing": the two take opposite branches, and only the `E` channel
+forces a caller to decide between them. A unit test substitutes `FileSystem.FileSystem` with a
+scripted layer — no temp path to inject, no real disk touched (see
 [Testing](#testing--substitute-the-filesystem-seam)).
-
-> The migration of these call sites is **not** this doc's job — it's the separate
-> sweep tracked in [#3462](https://github.com/kamp-us/phoenix/issues/3462). This doc
-> is the target the sweep migrates *toward*.
 
 ## The bright line — when raw `node:*` is still correct
 

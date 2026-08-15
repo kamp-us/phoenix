@@ -90,9 +90,9 @@ describe("CONTROL_PLANE_RE classifies the ADR-0174 boundary broadenings (#2761)"
 	});
 
 	it("does NOT over-widen: the marketplace branch is ROOT-anchored (ADR 0212)", () => {
-		// A NESTED plugin manifest stays out — an un-anchored form would sweep in pipeline-crew's
-		// own plugin.json, whose corpus a live founder ruling keeps out of §CP (#3765).
-		expect(isControlPlane("claude-plugins/pipeline-crew/.claude-plugin/plugin.json")).toBe(false);
+		// A NESTED plugin manifest stays out — an un-anchored form would sweep in every sibling
+		// plugin's own plugin.json, which a live founder ruling keeps out of §CP (#3765).
+		expect(isControlPlane("claude-plugins/fabrika/.claude-plugin/plugin.json")).toBe(false);
 		expect(isControlPlane("claude-plugins/kampus-pipeline/.claude-plugin/plugin.json")).toBe(false);
 		// and a look-alike sibling of the root dir is not swallowed either
 		expect(isControlPlane(".claude-plugins/marketplace.json")).toBe(false);
@@ -101,11 +101,10 @@ describe("CONTROL_PLANE_RE classifies the ADR-0174 boundary broadenings (#2761)"
 	it("does NOT classify known non-§CP paths", () => {
 		expect(isControlPlane("apps/web/src/main.tsx")).toBe(false);
 		expect(isControlPlane("packages/some-other-pkg/src/index.ts")).toBe(false);
-		// pipeline-crew-mcp is crew-coordination tooling, NOT gate machinery — declassified from §CP
-		// (#3147, reverse of #3072). Its child PRs auto-merge on the normal review gates; only the
-		// surfaces that perform/enforce merges & reviews stay §CP.
-		expect(isControlPlane("packages/pipeline-crew-mcp/src/index.ts")).toBe(false);
-		expect(isControlPlane("packages/pipeline-crew-mcp/package.json")).toBe(false);
+		// A sibling package that is not gate machinery is NOT §CP (#3147, reverse of #3072): only
+		// the surfaces that perform/enforce merges & reviews stay §CP.
+		expect(isControlPlane("packages/fabrika-cli/src/index.ts")).toBe(false);
+		expect(isControlPlane("packages/fabrika-cli/package.json")).toBe(false);
 		// biome-governance §CP (ADR 0193) is tightly anchored: some OTHER root config/file stays
 		// non-§CP (a NEGATIVE), and `biome\.jsonc$` end-anchors so a look-alike suffix is not §CP.
 		expect(isControlPlane("turbo.json")).toBe(false);
@@ -183,13 +182,11 @@ describe("CONTROL_PLANE_RE covers the kampus-pipeline skills tree whole (#4458)"
 		expect(isControlPlane("claude-plugins/kampus-pipeline/skills-notes/draft.md")).toBe(false);
 		expect(isControlPlane("claude-plugins/kampus-pipeline/README.md")).toBe(false);
 		expect(isControlPlane("claude-plugins/kampus-pipeline/.claude-plugin/plugin.json")).toBe(false);
-		// and it stays scoped to kampus-pipeline: pipeline-crew's corpus is OUT of §CP on a live
+		// and it stays scoped to kampus-pipeline: a sibling plugin's corpus is OUT of §CP on a live
 		// founder ruling re-affirmed 2026-07-24 (#3765), which this widening does not touch.
-		expect(isControlPlane("claude-plugins/pipeline-crew/agents/crew-engineering-manager.md")).toBe(
-			false,
-		);
-		expect(isControlPlane("claude-plugins/pipeline-crew/skills/some-skill/SKILL.md")).toBe(false);
-		expect(isControlPlane("claude-plugins/pipeline-crew/skills/lib/helper.sh")).toBe(false);
+		expect(isControlPlane("claude-plugins/fabrika/agents/some-agent.md")).toBe(false);
+		expect(isControlPlane("claude-plugins/fabrika/skills/some-skill/SKILL.md")).toBe(false);
+		expect(isControlPlane("claude-plugins/fabrika/skills/lib/helper.sh")).toBe(false);
 	});
 });
 
@@ -219,7 +216,7 @@ describe("CONTROL_PLANE_RE covers the relocated shared shell lib (#4484)", () =>
 		expect(isControlPlane("claude-plugins/kampus-pipeline/lib-notes/draft.md")).toBe(false);
 		expect(isControlPlane("claude-plugins/kampus-pipeline/libs/common.sh")).toBe(false);
 		expect(isControlPlane("claude-plugins/kampus-pipeline/scripts/common.sh")).toBe(false);
-		expect(isControlPlane("claude-plugins/pipeline-crew/lib/common.sh")).toBe(false);
+		expect(isControlPlane("claude-plugins/fabrika/lib/common.sh")).toBe(false);
 		expect(isControlPlane("lib/common.sh")).toBe(false);
 	});
 });

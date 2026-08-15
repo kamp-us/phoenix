@@ -34,9 +34,9 @@ describe("judge — the publish-isolation verdict", () => {
 		expect(v.pass).toBe(true);
 	});
 
-	it("PASSES the current pipeline-crew-mcp-shaped clean graph", () => {
+	it("PASSES the current two-package clean graph", () => {
 		const v = judge([
-			manifest("packages/pipeline-crew-mcp/package.json", "@kampus/pipeline-crew-mcp", [
+			manifest("packages/internal-lib/package.json", "@kampus/internal-lib", [
 				{field: "dependencies", name: "@effect/platform-node", value: "catalog:"},
 				{field: "dependencies", name: "effect", value: "catalog:"},
 				{field: "dependencies", name: "proper-lockfile", value: "catalog:"},
@@ -97,9 +97,9 @@ describe("judge — the publish-isolation verdict", () => {
 		// Two published packages; one depends on the other by a registry version — resolvable.
 		const v = judge([
 			manifest("packages/pipeline-cli/package.json", "@kampus/pipeline-cli", [
-				{field: "dependencies", name: "@kampus/pipeline-crew-mcp", value: "^0.1.0"},
+				{field: "dependencies", name: "@kampus/internal-lib", value: "^0.1.0"},
 			]),
-			manifest("packages/pipeline-crew-mcp/package.json", "@kampus/pipeline-crew-mcp", [
+			manifest("packages/internal-lib/package.json", "@kampus/internal-lib", [
 				{field: "dependencies", name: "effect", value: "catalog:"},
 			]),
 		]);
@@ -127,15 +127,15 @@ describe("parsePublishedTagPrefixes — derive the published set from publish.ym
 
 	it("dedupes and sorts multiple distinct prefixes", () => {
 		const yaml =
-			"=~ ^pipeline-crew-mcp-v([0-9].*)$ ... =~ ^pipeline-cli-v([0-9].*)$ ... =~ ^pipeline-cli-v(.*)$";
-		expect(parsePublishedTagPrefixes(yaml)).toEqual(["pipeline-cli", "pipeline-crew-mcp"]);
+			"=~ ^internal-lib-v([0-9].*)$ ... =~ ^pipeline-cli-v([0-9].*)$ ... =~ ^pipeline-cli-v(.*)$";
+		expect(parsePublishedTagPrefixes(yaml)).toEqual(["pipeline-cli", "internal-lib"]);
 	});
 });
 
 describe("resolvePublished — map prefixes onto members by unscoped name", () => {
 	const members: ReadonlyArray<PublishedManifest> = [
 		manifest("packages/pipeline-cli/package.json", "@kampus/pipeline-cli", []),
-		manifest("packages/pipeline-crew-mcp/package.json", "@kampus/pipeline-crew-mcp", []),
+		manifest("packages/internal-lib/package.json", "@kampus/internal-lib", []),
 		manifest("apps/web/package.json", "@kampus/web", []),
 	];
 

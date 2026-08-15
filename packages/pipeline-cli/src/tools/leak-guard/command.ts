@@ -29,12 +29,10 @@
  * is dropped: the `pipeline-cli` bin imports `@effect/platform-node` statically,
  * so by the time this command runs the runtime dep is always resolved.
  */
-import {Console, Effect, FileSystem, Option, Path, type PlatformError} from "effect";
+import {Console, Effect, FileSystem, Option, type PlatformError} from "effect";
 import * as Schema from "effect/Schema";
 import {Argument, Command, Flag} from "effect/unstable/cli";
-import {onCheckFailed} from "../../gate-fail.ts";
 import {readStdinTextOrExit} from "../../read-stdin.ts";
-import {CREW_DIR, sweepCrew} from "./crew-gate.ts";
 import {PrComments, PrCommentsLive, type UpstreamUnavailableError} from "./github.ts";
 import {
 	findCommentLeaks,
@@ -160,54 +158,6 @@ const scan = Command.make(
 	}),
 ).pipe(Command.withDescription("Scan files for user-local paths leaking into shared doc surfaces"));
 
-const ROOT_MARKERS = ["pnpm-workspace.yaml", ".git"] as const;
-
-// Walk up from cwd for the first ancestor bearing a repo-root marker, probing each marker
-// through the `FileSystem`/`Path` seam so the resolver is testable off real disk
-// (.patterns/effect-platform-access.md). Mirrors `findRootDir`'s pure upward walk (dirname to
-// the fixpoint, then fall back to the start), but the marker check is the fs seam — `fs.exists`
-// yields an Effect. Marker-existence faults fall through as false, matching `existsSync`.
-const defaultRoot = Effect.fn(function* (from: string = process.cwd()) {
-	const fs = yield* FileSystem.FileSystem;
-	const path = yield* Path.Path;
-	const start = path.resolve(from);
-	let dir = start;
-	for (;;) {
-		for (const marker of ROOT_MARKERS) {
-			if (yield* fs.exists(path.join(dir, marker)).pipe(Effect.orElseSucceed(() => false)))
-				return dir;
-		}
-		const parent = path.dirname(dir);
-		if (parent === dir) return start;
-		dir = parent;
-	}
-});
-
-const rootFlag = Flag.string("root").pipe(
-	Flag.optional,
-	Flag.withDescription("the repo root to resolve the crew dir under (default: walk up for one)"),
-);
-const dirFlag = Flag.string("dir").pipe(
-	Flag.optional,
-	Flag.withDescription(`the crew directory to sweep, root-relative (default: ${CREW_DIR})`),
-);
-
-const sweep = Command.make(
-	"sweep",
-	{root: rootFlag, dir: dirFlag},
-	Effect.fn(function* ({root, dir}) {
-		const base = yield* Option.match(root, {onNone: () => defaultRoot(), onSome: Effect.succeed});
-		yield* sweepCrew(
-			base,
-			Option.getOrElse(dir, () => CREW_DIR),
-		).pipe(Effect.catchTag("CheckFailed", onCheckFailed));
-	}),
-).pipe(
-	Command.withDescription(
-		"Sweep the pipeline-crew dir for personal-data leaks; fail-closed on any hit or zero scope",
-	),
-);
-
 // The pre-post net for a PR/issue COMMENT body (#2796). Where `scan` takes doc FILES and
 // `findLeaks` scopes to doc surfaces, this takes a single comment body on stdin/`--body-file`
 // and runs `findCommentLeaks` — which has no doc-surface gate (a comment is unconditionally a
@@ -319,6 +269,6 @@ const scanPr = Command.make(
 );
 
 export const leakGuardCommand = Command.make("leak-guard").pipe(
-	Command.withSubcommands([scan, sweep, scanComment, scanPr]),
+	Command.withSubcommands([scan, scanComment, scanPr]),
 	Command.withDescription("Block user-local paths from entering shared-artifact doc surfaces"),
 );
