@@ -590,31 +590,31 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # Pure-bash guard, no toolchain: every .claude/skills/*/SKILL.md must carry
+      # Pure-bash guard, no toolchain: every claude-plugins/kampus-pipeline/skills/*/SKILL.md must carry
       # valid frontmatter (name + description, name == dir) or a skill silently
-      # stops routing. Same script runs locally: `bash .claude/skills/validate-skills.sh`.
-      - run: bash .claude/skills/validate-skills.sh
+      # stops routing. Same script runs locally: `bash claude-plugins/kampus-pipeline/skills/validate-skills.sh`.
+      - run: bash claude-plugins/kampus-pipeline/skills/validate-skills.sh
 
       # Portability safety net (ADR 0062 / 0083): assert every cycle-aware skill
       # (plan-epic/write-code/review-code/ship-it) no-ops gracefully with no
       # product-development-cycle.md — each cites the one canonical absence-probe
       # and an absent⇒no-op branch, and a hermetic doc-absent walkthrough holds.
-      # Same script runs locally: `bash .claude/skills/validate-cycle-absence.sh`.
-      - run: bash .claude/skills/validate-cycle-absence.sh
+      # Same script runs locally: `bash claude-plugins/kampus-pipeline/skills/validate-cycle-absence.sh`.
+      - run: bash claude-plugins/kampus-pipeline/skills/validate-cycle-absence.sh
 
       # Present-path twin (issue #750, ADR 0091/0092): the absence script only ever
       # exercises the foreign-repo absent branch. This asserts phoenix's PRESENT path —
       # the cycle doc resolves `present` and each skill's present-branch action is wired
       # (plan-epic stamps, write-code ships dark, review-code gates, ship-it queues) — and
       # FAILS CLOSED on zero scope (missing doc ⇒ FAIL, never a silent no-op; ADR 0092).
-      # Same script runs locally: `bash .claude/skills/validate-cycle-presence.sh`.
-      - run: bash .claude/skills/validate-cycle-presence.sh
+      # Same script runs locally: `bash claude-plugins/kampus-pipeline/skills/validate-cycle-presence.sh`.
+      - run: bash claude-plugins/kampus-pipeline/skills/validate-cycle-presence.sh
 
       # Executable pin for the shared surface resolver both cycle validators consume: a
       # partially-failing `find` must not hand them a silently narrowed — but non-empty —
       # surface that their zero-scope guard reads as complete (#4487).
-      # The lib sits beside `bin/`, outside the skills tree, so this path is the real one rather
-      # than a `.claude/skills/…` symlink hop (#4484).
+      # The lib sits beside `bin/`, outside the skills tree, and was already invoked at its real
+      # path back when the rest of this job still hopped the `.claude/skills` symlink (#4484).
       # Same script runs locally: `bash claude-plugins/kampus-pipeline/lib/common-test.sh`.
       - run: bash claude-plugins/kampus-pipeline/lib/common-test.sh
 
@@ -631,8 +631,8 @@ jobs:
       # hardcoded the seam empty, and nothing in the repo noticed for a week — ship-it is
       # the single merge authority (ADR 0048/0135), so its chain not running as written
       # is a merge-path defect. Hermetic: gh and the CLI shim are stubbed, no network.
-      # Same script runs locally: `bash .claude/skills/ship-it/scripts/verify-chain-resolves.sh`.
-      - run: bash .claude/skills/ship-it/scripts/verify-chain-resolves.sh
+      # Same script runs locally: `bash claude-plugins/kampus-pipeline/skills/ship-it/scripts/verify-chain-resolves.sh`.
+      - run: bash claude-plugins/kampus-pipeline/skills/ship-it/scripts/verify-chain-resolves.sh
 
       # Executable pin for Step 0's class parity (#4744): the printed class set must EQUAL
       # `class-probe classify`'s. The harness landed with #4730's fix and then ran nowhere for a
@@ -640,8 +640,8 @@ jobs:
       # being unable to fail. Its own falsifiability is asserted in-file (three mutants, each
       # required to red for its intended reason) and its scope is counted, so a deleted case reds
       # rather than printing a vacuous OK. Hermetic: gh is stubbed, no network.
-      # Same script runs locally: `bash .claude/skills/ship-it/scripts/verify-step0-class-parity.sh`.
-      - run: bash .claude/skills/ship-it/scripts/verify-step0-class-parity.sh
+      # Same script runs locally: `bash claude-plugins/kampus-pipeline/skills/ship-it/scripts/verify-step0-class-parity.sh`.
+      - run: bash claude-plugins/kampus-pipeline/skills/ship-it/scripts/verify-step0-class-parity.sh
 
       # Executable pin for Step 3z's precondition (#4830): the one ship-it step that mutates a live
       # PR — close→reopen — must fire ONLY in the dropped-trigger state and refuse without touching
@@ -649,8 +649,8 @@ jobs:
       # caller's prose, and a mis-read branch close→reopened a green PR (#4816). The harness carries
       # its own mutant, so an assertion that stopped having teeth reds here rather than passing
       # quietly. Hermetic: gh and the CLI shim are stubbed, no network.
-      # Same script runs locally: `bash .claude/skills/ship-it/scripts/verify-step3z-precondition.sh`.
-      - run: bash .claude/skills/ship-it/scripts/verify-step3z-precondition.sh
+      # Same script runs locally: `bash claude-plugins/kampus-pipeline/skills/ship-it/scripts/verify-step3z-precondition.sh`.
+      - run: bash claude-plugins/kampus-pipeline/skills/ship-it/scripts/verify-step3z-precondition.sh
 
       # Executable pin for plan-epic's round-trip race detector (#4596): a CLEAN splice whose
       # `## Dependencies` block is the body's last section — the standard first-time layout —
@@ -658,8 +658,8 @@ jobs:
       # pre-fix diff reported "a racer clobbered it" on every clean deps-last write, so both
       # directions are pinned; greening the false alarm by loosening the block-level byte-exactness
       # would trade it for a silent miss. Hermetic: gh is stubbed, no network.
-      # Same script runs locally: `bash .claude/skills/plan-epic/scripts/verify-roundtrip-diff.sh`.
-      - run: bash .claude/skills/plan-epic/scripts/verify-roundtrip-diff.sh
+      # Same script runs locally: `bash claude-plugins/kampus-pipeline/skills/plan-epic/scripts/verify-roundtrip-diff.sh`.
+      - run: bash claude-plugins/kampus-pipeline/skills/plan-epic/scripts/verify-roundtrip-diff.sh
 
       # Positive pin for review-code's glossary-freshness detector (3) — a new public export on an
       # existing package entry point (#4700). It shipped born-dead: the awk regex would not compile,
@@ -670,8 +670,8 @@ jobs:
       # sibling class (#4986): three reads whose failure or empty result used to reach a clean skip,
       # each driven by the could-not-see state that produced it. Hermetic: gh, git and the CLI shim
       # are stubbed, no network.
-      # Same script runs locally: `bash .claude/skills/review-code/scripts/verify-glossary-detector-fires.sh`.
-      - run: bash .claude/skills/review-code/scripts/verify-glossary-detector-fires.sh
+      # Same script runs locally: `bash claude-plugins/kampus-pipeline/skills/review-code/scripts/verify-glossary-detector-fires.sh`.
+      - run: bash claude-plugins/kampus-pipeline/skills/review-code/scripts/verify-glossary-detector-fires.sh
 
       # Executable pin for triage's apply-triage wrapper (#4936): every argument it is given reaches
       # the verb, or it refuses non-zero having spawned the verb zero times. The wrapper took `-ge 3`
@@ -680,16 +680,20 @@ jobs:
       # deliberately holding. The assertions are on the verb's ARGV, not on a clean exit, because a
       # clean exit is what the defect already produced; five mutants keep them from going toothless.
       # Hermetic: the verb is a stub, no network, no issue mutated.
-      # Same script runs locally: `bash .claude/skills/triage/scripts/verify-apply-triage-args.sh`.
-      - run: bash .claude/skills/triage/scripts/verify-apply-triage-args.sh
+      # Same script runs locally: `bash claude-plugins/kampus-pipeline/skills/triage/scripts/verify-apply-triage-args.sh`.
+      - run: bash claude-plugins/kampus-pipeline/skills/triage/scripts/verify-apply-triage-args.sh
 
-      # Gate-path drift guard (issue #720): assert the five CONTROL_PLANE_RE= copies
-      # in ship-it/review-code/review-doc/review-skill/gh-issue-intake-formats are
-      # byte-identical to the §CP canonical line, and that .claude/skills resolves to
-      # marketplace.json's source + /skills. A rename of the plugin path otherwise
-      # silently breaks all gate checks with no build-time failure.
-      # Same script runs locally: `bash .claude/skills/validate-gate-path-drift.sh`.
-      - run: bash .claude/skills/validate-gate-path-drift.sh
+      # Gate-path drift guard (issue #720): read the §CP CONTROL_PLANE_RE from its
+      # single-source const via `pipeline-cli control-plane-paths` (#2761) and diff it
+      # against the ONE un-importable copy left — the CONTROL_PLANE_RE= line in
+      # gh-issue-intake-formats.md the live gates re-resolve from origin/main (#981);
+      # the gate skills carry no copy of their own. The same const-vs-copy compare then
+      # runs over the ten other gate boundaries (#4401). A drifted copy otherwise
+      # silently breaks all gate checks with no build-time failure. Its second invariant — the
+      # `.claude/skills` symlink agreeing with marketplace.json — went with the symlink
+      # when v1 retired (ADR 0277).
+      # Same script runs locally: `bash claude-plugins/kampus-pipeline/skills/validate-gate-path-drift.sh`.
+      - run: bash claude-plugins/kampus-pipeline/skills/validate-gate-path-drift.sh
 
   # Reproducible workflow-YAML lint (issue #568). `.github/workflows/**` is the most
   # control-plane-sensitive, human-merged file class (ADR 0053), yet was validated

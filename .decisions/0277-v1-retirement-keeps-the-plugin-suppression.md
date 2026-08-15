@@ -122,6 +122,14 @@ is owed, and none is possible.
 
 ## Records
 
+- **Executed 2026-08-14** by [#5276](https://github.com/kamp-us/phoenix/issues/5276) (skills half)
+  and [#5537](https://github.com/kamp-us/phoenix/issues/5537) (agents half), landed as one pull
+  request after the founder ruled the split over: `.claude/skills` and `.claude/agents` are deleted,
+  `.claude/.pipeline` stays (a literal path alias, ADR 0255 §5), and
+  `"kampus-pipeline@kampus": false` stays in `.claude/settings.json` exactly as this entry decides.
+  The same commit repoints the ten `- run:` steps in `ci.yml`'s `skills` job at
+  `claude-plugins/kampus-pipeline/skills/…` and drops `validate-gate-path-drift.sh`'s
+  symlink-is-a-symlink invariant, which had the deleted link as its subject.
 - Closes [#5532](https://github.com/kamp-us/phoenix/issues/5532).
 - Amends in part [0255](0255-skill-namespaces-keep-v1-and-fabrika-apart.md) and
   [0077](0077-in-repo-pipeline-skill-discovery-doubling.md); both status lines carry the link, both
