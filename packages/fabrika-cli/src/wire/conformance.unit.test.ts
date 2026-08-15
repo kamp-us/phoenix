@@ -71,6 +71,9 @@ const TOY_FORMAT: WireFormat = {
 	read: toyRead,
 	fixtures: {
 		roundTrip: {fields: "alpha", values: ["alpha"]},
+		found: [
+			{shape: "authored with surrounding blank lines", artifact: "\ntoy: beta\n", values: ["beta"]},
+		],
 		absent: "prose that reaches for nothing\n",
 		malformed: [{drift: "the key drifted", artifact: "toyish: alpha\n"}],
 	},
@@ -138,6 +141,24 @@ describe("the laws bite — each mutation is caught", () => {
 					: toyRead(artifact),
 		});
 		expect(lawsBrokenBy(format)).toContain(LAWS.driftIsMalformed);
+	});
+
+	it("catches an authored artifact answered as Absent, which emit's own bytes would have hidden", () => {
+		const format = broken({
+			read: (artifact) =>
+				artifact.includes("beta")
+					? {_tag: "Absent", reason: "read it as nothing"}
+					: toyRead(artifact),
+		});
+		expect(lawsBrokenBy(format)).toContain(LAWS.foundIsFound);
+	});
+
+	it("catches an authored artifact read as Found with part of its content dropped", () => {
+		const format = broken({
+			read: (artifact) =>
+				artifact.includes("beta") ? {_tag: "Found", value: ["value\t"]} : toyRead(artifact),
+		});
+		expect(lawsBrokenBy(format)).toContain(LAWS.foundRecovers);
 	});
 
 	it("catches two rows registered under one key", () => {

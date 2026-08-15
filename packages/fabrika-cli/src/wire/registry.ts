@@ -45,6 +45,18 @@ export const registeredFormats: ReadonlyArray<WireFormat> = [
 				fields: "- [ ] the read is total\n- [x] the registry is the seam\n",
 				values: ["the read is total", "the registry is the seam"],
 			},
+			found: [
+				{
+					shape:
+						"a criterion wrapped over two physical lines, as a body authored to 100 columns carries it",
+					artifact:
+						"### Acceptance criteria\n\n- [ ] The reader returns the criterion in full. It must **not** keep\n      only the first physical line.\n- [x] a single-line criterion is unchanged\n",
+					values: [
+						"The reader returns the criterion in full. It must **not** keep only the first physical line.",
+						"a single-line criterion is unchanged",
+					],
+				},
+			],
 			absent: "### What to build\n\nStand up the group. Nothing here reaches for the block.\n",
 			malformed: [
 				{
@@ -77,6 +89,15 @@ export const registeredFormats: ReadonlyArray<WireFormat> = [
 				fields: "namespace: review-code\npolarity: PASS\nsha: 03135b91\nclause: merge-ready\n",
 				values: ["review-code", "PASS", "03135b91", "merge-ready"],
 			},
+			found: [
+				{
+					shape:
+						"the marker as a reviewer posts it — first line of a comment that then explains itself",
+					artifact:
+						"review-code: PASS @ 03135b91 — merge-ready\n\nEvery criterion is met; the wrapped-item fixture is the one I looked at first.\n",
+					values: ["review-code", "PASS", "03135b91", "merge-ready"],
+				},
+			],
 			absent: "Thanks — this reads well to me, no notes.\n",
 			malformed: [
 				{
@@ -129,6 +150,19 @@ export const registeredFormats: ReadonlyArray<WireFormat> = [
 					"- [ ] cart and invoice render through one totals module",
 				],
 			},
+			found: [
+				{
+					shape: "the brief as a conductor hands it over, rules verbatim",
+					artifact: `## Slice\nid: C2\nissue: #312\ncriteria:\n- [ ] the invoice total is derived, never stored\n## Ground\ntree: /work/lanes/epic-310\nbranch: build/310-totals-rework-9b2e60c1\nbase: 7c1d4a9b\nhandoff: /run/fabrika-epic/310-9b2e60c1/C2/handoff.md\n## Rules\n${sliceHandoff.RULES}\n`,
+					values: [
+						"C2",
+						"312",
+						"build/310-totals-rework-9b2e60c1",
+						"7c1d4a9b",
+						"- [ ] the invoice total is derived, never stored",
+					],
+				},
+			],
 			absent: "Thanks — picking this up now, will push when the tests are green.\n",
 			malformed: [
 				{
@@ -162,6 +196,13 @@ export const registeredFormats: ReadonlyArray<WireFormat> = [
 				fields: "map: 9140\nkind: research\nnonce: 7f3a9c21\n",
 				values: ["9140", "research", "7f3a9c21"],
 			},
+			found: [
+				{
+					shape: "the marker opening a ticket comment that goes on to say what clears it",
+					artifact: "map-ticket: #9140 · research · 7f3a9c21\n\nPicking this one up now.\n",
+					values: ["9140", "research", "7f3a9c21"],
+				},
+			],
 			absent: "Picking this one up — will report back once the source read lands.\n",
 			malformed: [
 				{
@@ -194,6 +235,14 @@ export const registeredFormats: ReadonlyArray<WireFormat> = [
 				fields: "question: R2.3\ndigest: a1b2c3d4e5f6\nat: 2026-08-09T18:36:48Z\n",
 				values: ["R2.3", "a1b2c3d4e5f6", "2026-08-09T18:36:48Z"],
 			},
+			found: [
+				{
+					shape: "the marker over the ruling's own prose, as the comment is written",
+					artifact:
+						"grill-ruled: R2.3 @ a1b2c3d4e5f6 · 2026-08-09T18:36:48Z\n\nJoin the continuation, do not refuse it.\n",
+					values: ["R2.3", "a1b2c3d4e5f6", "2026-08-09T18:36:48Z"],
+				},
+			],
 			absent: "Noted — I'll take this one to him directly and report back.\n",
 			malformed: [
 				{
@@ -230,6 +279,14 @@ export const registeredFormats: ReadonlyArray<WireFormat> = [
 				fields: "question: R2.1\ndigest: a1b2c3d4e5f6\nat: 2026-08-09T18:36:48Z\n",
 				values: ["R2.1", "a1b2c3d4e5f6", "2026-08-09T18:36:48Z"],
 			},
+			found: [
+				{
+					shape: "the marker over the established answer it introduces",
+					artifact:
+						"grill-answered: R2.1 @ a1b2c3d4e5f6 · 2026-08-09T18:36:48Z\n\nGitHub's gfm render joins both lines into one item.\n",
+					values: ["R2.1", "a1b2c3d4e5f6", "2026-08-09T18:36:48Z"],
+				},
+			],
 			absent: "Checked the schema — there is no weight column today.\n",
 			malformed: [
 				{
@@ -263,6 +320,14 @@ export const registeredFormats: ReadonlyArray<WireFormat> = [
 				fields: "R1.4 @ 7c1d4a9b2e60 · round 2 · 2026-08-09T18:36:48Z\n",
 				values: ["R1.4", "7c1d4a9b2e60", "round 2", "2026-08-09T18:36:48Z"],
 			},
+			found: [
+				{
+					shape: "two questions retired in one comment, one line each",
+					artifact:
+						"grill-superseded: R1.4 @ 7c1d4a9b2e60 · round 2 · 2026-08-09T18:36:48Z\ngrill-superseded: R1.5 @ 7c1d4a9b2e60 · round 2 · 2026-08-09T18:36:48Z\n",
+					values: ["R1.4", "R1.5", "7c1d4a9b2e60", "round 2"],
+				},
+			],
 			absent: "Re-asking this one next round, it was worded too broadly.\n",
 			malformed: [
 				{
@@ -320,6 +385,20 @@ export const registeredFormats: ReadonlyArray<WireFormat> = [
 					"Whether one level is enough.",
 				],
 			},
+			found: [
+				{
+					shape: "a pack as a session writes it, each section carrying its own prose",
+					artifact:
+						'<!-- fabrika:handoff pack nonce=9b2e60c1 sealedAt=2026-08-09T21:04:11Z groundDigest=7c1d4a9b2e60 -->\n\n## Intent\nJoin a wrapped acceptance criterion instead of dropping it.\n\n## Established\nThe reader reads #5515 in full.\n\n## Next act\nCarry the wrapped artifact as a registry fixture.\n\n## Unsure\nWhether every row can author a Found fixture.\n\n## Ground state — proven\n```json\n{"issue":5572,"repo":"kamp-us/phoenix"}\n```\n',
+					values: [
+						"9b2e60c1",
+						"2026-08-09T21:04:11Z",
+						"7c1d4a9b2e60",
+						"Join a wrapped acceptance criterion instead of dropping it.",
+						"Whether every row can author a Found fixture.",
+					],
+				},
+			],
 			absent: "Picking this up — will push once the failing case is green.\n",
 			malformed: [
 				{
@@ -371,6 +450,14 @@ export const registeredFormats: ReadonlyArray<WireFormat> = [
 					"routine",
 				],
 			},
+			found: [
+				{
+					shape: "the readout as it is posted — a sentence of framing above the fenced rows",
+					artifact:
+						"## Governance readout\n\nThree records landed in the window.\n\n```governance-digest\nrow\t0398\ttension\tsits against ADR 0173\nrow\t0396\troutine\tno tension found\n```\n",
+					values: ["0398", "tension", "sits against ADR 0173", "0396", "routine"],
+				},
+			],
 			absent: "Reading through the landings now — nothing here reaches for the block.\n",
 			malformed: [
 				{
@@ -417,6 +504,14 @@ export const registeredFormats: ReadonlyArray<WireFormat> = [
 					"source: 9412\nemitted: 9520\ndigest: a1b2c3d4e5f6\ncovers: R1.2;R1.4\nat: 2026-08-09T18:36:48Z\n",
 				values: ["9412", "9520", "a1b2c3d4e5f6", "R1.2;R1.4", "2026-08-09T18:36:48Z"],
 			},
+			found: [
+				{
+					shape: "the marker over the emission note that follows it",
+					artifact:
+						"graduate-emitted: #9412 → #9520 @ a1b2c3d4e5f6 · covers R1.2;R1.4 · 2026-08-09T18:36:48Z\n\nThe remainder is R1.3.\n",
+					values: ["9412", "9520", "a1b2c3d4e5f6", "R1.2;R1.4", "2026-08-09T18:36:48Z"],
+				},
+			],
 			absent: "Reading the trail back now — nothing here reaches for the marker.\n",
 			malformed: [
 				{

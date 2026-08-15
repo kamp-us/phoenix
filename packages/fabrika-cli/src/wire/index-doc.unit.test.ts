@@ -45,6 +45,7 @@ const TOY_FORMAT: WireFormat = {
 	read: (): WireReadLines => ({_tag: "Found", value: ["value\talpha"]}),
 	fixtures: {
 		roundTrip: {fields: "alpha", values: ["alpha"]},
+		found: [{shape: "authored by hand", artifact: "toy: alpha\n", values: ["alpha"]}],
 		absent: "prose that reaches for nothing\n",
 		malformed: [{drift: "the key drifted", artifact: "toyish: alpha\n"}],
 	},
