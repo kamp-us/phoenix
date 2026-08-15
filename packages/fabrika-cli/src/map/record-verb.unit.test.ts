@@ -11,6 +11,7 @@ import {
 import type {ExecResult} from "../io/exec.ts";
 import {
 	BAD_SECTIONS,
+	NO_TARGET,
 	OUTCOME_UNRECORDABLE,
 	PRECONDITION_UNKNOWN,
 	TICKET_UNKNOWN,
@@ -294,6 +295,16 @@ describe("a forked decision ticket's ruling is read through the grill reader", (
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.join("\n")).toContain("Nothing was recorded");
+	});
+
+	it("exits 7 when the cited session does not exist — an absent session is not an unread one", async () => {
+		const out = await run(
+			[...forkedDecision(), mapAt(MAP_BODY), [SESSION_ISSUE, errOut("gh: Not Found (HTTP 404)")]],
+			{ruledOn: SESSION, questionId: QUESTION},
+		);
+		expect(out.code).toBe(NO_TARGET);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.join("\n")).toContain("does not exist");
 	});
 
 	it("exits 13 when the cited question names nothing in the session", async () => {
