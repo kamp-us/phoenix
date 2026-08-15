@@ -128,7 +128,7 @@ describe("parsePublishedTagPrefixes — derive the published set from publish.ym
 	it("dedupes and sorts multiple distinct prefixes", () => {
 		const yaml =
 			"=~ ^internal-lib-v([0-9].*)$ ... =~ ^pipeline-cli-v([0-9].*)$ ... =~ ^pipeline-cli-v(.*)$";
-		expect(parsePublishedTagPrefixes(yaml)).toEqual(["pipeline-cli", "internal-lib"]);
+		expect(parsePublishedTagPrefixes(yaml)).toEqual(["internal-lib", "pipeline-cli"]);
 	});
 });
 
