@@ -86,8 +86,20 @@ describe("classify", () => {
 		expect(classify(ROWS, ["apps/web/src/App.tsx"])).toBe("not-control-plane");
 	});
 
-	it("holds on content-undetermined when a .decisions/ file changed with no owned match", () => {
-		expect(classify(ROWS, [".decisions/0240-a.md"])).toBe("content-undetermined");
+	it("is not-control-plane for a .decisions/-only set — ADRs are not §CP (#5531)", () => {
+		expect(classify(ROWS, [".decisions/0240-a.md", ".decisions/0241-b.md"])).toBe(
+			"not-control-plane",
+		);
+	});
+
+	it("stays control-plane when a .decisions/ file rides alongside an owned path (#5531)", () => {
+		expect(classify(ROWS, [".decisions/0240-a.md", ".github/workflows/ci.yml"])).toBe(
+			"control-plane",
+		);
+	});
+
+	it("still holds on unknown for a .decisions/-only set the boundary cannot bound", () => {
+		expect(classify(parseCodeowners("/a/ @someone\n"), [".decisions/0240-a.md"])).toBe("unknown");
 	});
 
 	it("holds on unknown for a boundary with zero team-owned rows — never match-everything (#4401)", () => {

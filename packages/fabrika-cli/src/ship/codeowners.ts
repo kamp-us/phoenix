@@ -94,8 +94,8 @@ export const ownersOf = (
 	return owners;
 };
 
-/** The four states `ship scope` prints on its `cp` line. */
-export type CpState = "control-plane" | "content-undetermined" | "not-control-plane" | "unknown";
+/** The three states `ship scope` prints on its `cp` line. */
+export type CpState = "control-plane" | "not-control-plane" | "unknown";
 
 /** Rows that own at least one path to a team — the boundary's real extent. */
 const teamOwnedRows = (
@@ -109,10 +109,15 @@ const coversEverything = (row: OwnerRow): boolean =>
 	["*", "/*", "**", "/**", "**/*"].includes(row.pattern);
 
 /**
- * The four-state routing input.
+ * The three-state routing input.
  *
- * `unknown` and `content-undetermined` are HOLD states — the skill treats them as §CP until proven
- * otherwise. Neither is a verdict on the gated question; the merge gate still owns that.
+ * `unknown` is the one HOLD state — the skill treats it as §CP until proven otherwise. It is not a
+ * verdict on the gated question; the merge gate still owns that.
+ *
+ * A change set entirely under `.decisions/` is `not-control-plane` (founder ruling, 2026-08-15 on
+ * #5531: "adrs shouldn't be control-plane"). What stands behind an ADR PR is the required
+ * `governance` verdict floor, not a human approval — see ADR 0274 §2 and
+ * `claude-plugins/fabrika/docs/control-plane-classification.md`.
  */
 export const classify = (rows: ReadonlyArray<OwnerRow>, files: ReadonlyArray<string>): CpState => {
 	const teams = teamOwnersOf(rows);
@@ -125,9 +130,7 @@ export const classify = (rows: ReadonlyArray<OwnerRow>, files: ReadonlyArray<str
 			return "control-plane";
 		}
 	}
-	return files.some((file) => file.startsWith(".decisions/"))
-		? "content-undetermined"
-		: "not-control-plane";
+	return "not-control-plane";
 };
 
 /** `@org/team` split into the two path segments the REST team-members endpoint needs. */

@@ -32,9 +32,10 @@ doc/vocabulary-surface-only PRs are legitimately issueless. Carry the printed he
 
 ## 2 — Control-plane approval, discharged not assumed
 
-`scope` printing `control-plane`, `content-undetermined`, or `unknown` puts the PR on the
-approval-aware path — the holds are control-plane until proven otherwise: all machine gates still
-apply, plus a deterministic discharge.
+`scope` printing `control-plane` or `unknown` puts the PR on the approval-aware path — `unknown` is
+control-plane until proven otherwise: all machine gates still apply, plus a deterministic discharge.
+An ADR-only PR is `not-control-plane` and owes no approval; its required `governance` verdict is
+what still gates it (founder ruling, 2026-08-15 on #5531).
 
 ```bash
 fabrika ship cp-approval 4321 --sha 03135b91

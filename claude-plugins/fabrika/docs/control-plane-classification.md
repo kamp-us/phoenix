@@ -67,6 +67,25 @@ that ruling supersedes any reading of the above that would put `.decisions/` in 
 
 So an ADR classifies `not-§CP` under this model, and that is the ruled outcome, not a gap.
 
+**Re-ruled 2026-08-15 ([#5531](https://github.com/kamp-us/phoenix/issues/5531)), because the code
+had drifted the other way.** `classify()` in
+[`packages/fabrika-cli/src/ship/codeowners.ts`](../../../packages/fabrika-cli/src/ship/codeowners.ts)
+was returning a fourth state, `content-undetermined`, for any change set touching `.decisions/`,
+which routed every ADR PR onto the approval path this section says it does not owe. The founder
+ruled the doc's side — *"adrs shouldn't be control-plane"* — so the state left fabrika's `CpState`
+entirely and the verb is three-valued in code as well as here.
+
+Two boundaries on that, so nothing wider was narrowed:
+
+- **A mixed PR is unaffected.** This governs a change set that is *entirely* `.decisions/`. A PR
+  touching `.decisions/` alongside a team-owned path is `§CP` by that other path, unchanged.
+- **The machine gate is untouched.** `.decisions/` remains one of the four `GOVERNANCE_ROOTS` in
+  [`packages/fabrika-cli/src/review/classes.ts`](../../../packages/fabrika-cli/src/review/classes.ts),
+  so an ADR PR still owes a current-head `governance` verdict before `ship gate` is satisfied — the
+  diff-derived floor, not a caller-asserted flag. This removed a human approval, not a gate, which
+  is ADR [0274](../../../.decisions/0274-fabrika-tree-is-not-control-plane.md) §2's
+  substitution applied to the ADR case. `.github/CODEOWNERS` gained no row and lost none.
+
 ## What this changes relative to v1
 
 v1's [`pipeline-cli cp-classify`](../../../packages/pipeline-cli/src/tools/cp-classify/README.md)
