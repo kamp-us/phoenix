@@ -7,5 +7,6 @@ effort: high
 ---
 
 An agent shell: the **shipper** is a spawn target that exists so a driver can address the fabrika
-`ship` skill by name, with that skill already in context. The shell is the noun, the skill is the
-verb. Every step, rubric and terminal token is the skill's. Read it there.
+`ship` skill by name, with that skill already in context. The shell names the actor and never the
+skill it loads, so the `shipper` shell runs the `ship` skill. Every step, rubric and terminal token
+is the skill's. Read it there.

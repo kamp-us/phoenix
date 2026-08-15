@@ -7,5 +7,6 @@ effort: high
 ---
 
 An agent shell: the **builder** is a spawn target that exists so a driver can address the fabrika
-`build` skill by name, with that skill already in context. The shell is the noun, the skill is the
-verb. Every step, rubric and terminal token is the skill's. Read it there.
+`build` skill by name, with that skill already in context. The shell names the actor and never the
+skill it loads, so the `builder` shell runs the `build` skill. Every step, rubric and terminal token
+is the skill's. Read it there.
