@@ -22,12 +22,24 @@ whatever the fourth turns out to be, it is named the same way. Founder ruling of
 [0281](../../../.decisions/0281-agent-names-are-nouns.md), which binds every agent definition in
 this repo and not only these three.
 
-The concrete reason is a collision. A shell exists to run one skill, so an imperative shell name is
-the skill's name: the skill is `fabrika:review` and a shell called `fabrika:review` is
-indistinguishable from it in a prompt, in a workflow script, and in a log line. `fabrika:reviewer`
-spawning `fabrika:review` reads in one pass; `fabrika:review` spawning `fabrika:review` does not.
+The concrete reason is a collision. A shell exists to run one skill, so a shell named for the act is
+spelled exactly like the skill: the skill is `review` and a shell called `review` is
+indistinguishable from it in a prompt, in a workflow script, and in a log line. A `reviewer` shell
+loading the `review` skill reads in one pass; a `review` shell loading the `review` skill does not.
 The noun also says the true thing about a shell — it is a seat that loads instructions, not the
 instructions.
+
+**The address is the bare noun.** ADR
+[0195](../../../.decisions/0195-crew-agent-def-name-collision-free-convention.md) records that a
+bare `name:` becomes the def's `agentType` verbatim with no plugin-namespace prefix, and that the
+plugin-qualified `plugin:name` form does not resolve. So a driver spawns `reviewer`, not
+`fabrika:reviewer` — the qualified spelling names the plugin's shell in prose. That platform fact is
+recorded at Claude Code 2.1.214 and is not re-proven here;
+[#5590](https://github.com/kamp-us/phoenix/issues/5590) is the spawn that settles which form
+resolves today. Two names in this set — `reviewer` and `shipper` — are also spelled by
+`claude-plugins/kampus-pipeline/agents/`, so in a repo where both plugins are enabled they contend
+for one `agentType`; phoenix is not such a repo, because `.claude/settings.json` suppresses that
+plugin (ADR [0277](../../../.decisions/0277-v1-retirement-keeps-the-plugin-suppression.md)).
 
 ## Why exactly three
 

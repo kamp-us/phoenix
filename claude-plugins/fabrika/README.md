@@ -45,8 +45,9 @@ claude-plugins/fabrika/
 ```
 
 `agents/` holds exactly three **agent shells** — `builder`, `reviewer`, `shipper` — behaviour-free
-spawn targets that each preload one skill. The shell is a noun and the skill it runs is a verb, so
-`fabrika:builder` runs `fabrika:build`. What a shell may hold, why there are three, why its name is
+spawn targets that each preload one skill. The shell names the actor and never the skill it loads,
+so the `builder` shell runs the `build` skill — and the shell is addressed by that bare name, not by
+`fabrika:builder`. What a shell may hold, why there are three, why its name is
 a noun, and why a shell that grows opinions is a defect are all in
 [docs/agent-shells.md](docs/agent-shells.md).
 
