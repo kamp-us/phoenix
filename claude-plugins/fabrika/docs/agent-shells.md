@@ -38,9 +38,36 @@ nobody can reproduce from its skill text. Repo knowledge belongs in
 `model:` is either absent or exactly one of `claude-opus-4-8` / `claude-opus-4-8[1m]` —
 `ALLOWLIST` in [`packages/fabrika-cli/src/models.ts`](../../../packages/fabrika-cli/src/models.ts).
 `decideSpawn` in [`packages/fabrika-cli/src/hook/spawn.ts`](../../../packages/fabrika-cli/src/hook/spawn.ts)
-denies an explicit off-allowlist model unconditionally, and no pin overrides that deny; an unset
-`model` takes the inherit branch and passes. All three shells today leave it unset, so a spawn runs
-on the caller's own model.
+denies an explicit off-allowlist model unconditionally, and no pin overrides that deny. An unset
+`model` reaches the inherit branch **only when the effective pin is itself allowlisted** — the
+`AllowInherit` return sits inside `if (isAllowlisted(effectivePin))`, so a `WORKFLOW_MODEL` that is
+present but off the allowlist denies an unset request too (with `explicit: false`). An absent pin
+resolves to the committed default, which is allowlisted, so an unset `model` passes on a machine
+that never exported `WORKFLOW_MODEL`. All three shells today leave it unset, so a spawn runs on the
+caller's own model whenever the pin is sane.
+
+## Only the review shell carries a spawn tool
+
+`review` is the one shell whose `tools:` includes the harness spawn tool, `Agent`. That is a tool
+grant and nothing more: the behaviour stays in
+[`../skills/review/SKILL.md`](../skills/review/SKILL.md) §6, which makes the `governance` namespace
+**derived-required** on a `harness: true` diff — fire the `governance` skill, wait for it, and never
+emit that namespace yourself. Without a spawn tool the shell derives that requirement mid-run and
+dead-ends, leaving the PR with a governance check nothing in the run can clear. The grant only lets
+the shell obey an instruction it already carried. Founder ruling of 2026-08-14 on
+[#5558](https://github.com/kamp-us/phoenix/issues/5558), verbatim *"yeah, review shell carries the
+spawn tool"*, recorded as ADR 0280.
+
+`build` and `ship` get no spawn tool: neither skill invokes another agent. `ship` routes by writing
+a `ship note` and stopping, so it holds no `Skill` grant either.
+
+Write the tool's canonical name, `Agent` — the `name` on the spawn tool in the Claude Code 2.1.233
+bundle, which also carries `aliases: ["Task"]`. Both strings grant the tool (a shell built with
+`"Task"` reported `Agent` available), so `Agent` is a house choice, not the only one that works.
+
+Prove a grant by spawning, never by the file parsing: a `tools:` entry the harness does not
+recognise drops with no warning and no non-zero exit. A shell whose `tools:` named `SpawnAgent`
+loaded cleanly and reported exactly the tools it would have had without the entry.
 
 ## Fields a plugin-scope shell may not use
 
