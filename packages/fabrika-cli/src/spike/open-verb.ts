@@ -174,7 +174,7 @@ export const runOpen = (options: OpenOptions): SpikeEffect<VerbOutcome> =>
 		if (!labels.value.includes(SPIKE_LABEL)) {
 			return refuse(
 				ZERO_SCOPE,
-				`${VERB}: the repository has no ${SPIKE_LABEL} label — a spike minted without it is one no later run and no caller can find. Run the front-door's bootstrap: fabrika status bootstrap issue-shape-markers.`,
+				`${VERB}: the repository has no ${SPIKE_LABEL} label — a spike minted without it is one no later run and no caller can find. Run the front-door bootstrap: fabrika status bootstrap issue-shape-markers.`,
 			);
 		}
 

@@ -445,7 +445,7 @@ orphaned workspace is always collectable.
 | `spike open: a workspace for nonce <nonce> holds a different <question|kind> — mint a new run rather than reusing it.` | 18 | refusal |
 | `spike open: a workspace for nonce <nonce> exists but its manifest does not parse: <first violation> — refusing the whole file; re-entry cannot be decided against half a manifest.` | 4 | refusal |
 | `spike open: --nonce <nonce> names no workspace — omit it to mint a new run.` | 12 | refusal |
-| `spike open: the repository has no prototyping:spike label — a spike minted without it is one no later run and no caller can find. Run the front-door's bootstrap: fabrika status bootstrap issue-shape-markers.` | 7 | refusal |
+| `spike open: the repository has no prototyping:spike label — a spike minted without it is one no later run and no caller can find. Run the front-door bootstrap: fabrika status bootstrap issue-shape-markers.` | 7 | refusal |
 | `spike open: the composed <title\|body> carries a machine-local path: <first hit>.` | 5 | refusal |
 | `spike open: the composed <title\|body> is a bare @ path reference — write the question, not a pointer to it.` | 6 | refusal |
 | `spike open: the issue create failed: <reason> — it may or may not have landed; read the board before re-running.` | 8 | refusal |

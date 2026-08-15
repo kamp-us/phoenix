@@ -237,7 +237,8 @@ const buildFile = (
 /**
  * **Partial existence is not existence.** `exists` requires every label in the set; where some are
  * present the verb creates only the missing ones and reports `created` naming exactly what it
- * created. This is the one surface holding many objects, so it is the one place the rule is stated.
+ * created. A label is matched by name alone: one already there under another colour reads `exists`
+ * and is left as it is, because this verb never overwrites.
  */
 const buildLabels = (
 	surface: Extract<BuildableSurface, {kind: "labels"}>,

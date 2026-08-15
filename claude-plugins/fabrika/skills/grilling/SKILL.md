@@ -222,6 +222,6 @@ readable collaborator permissions for a ruling's author. Each row's **when-missi
 the closed **fail-loud** / **degrade** / **bootstrap** vocabulary every fabrika skill shares — is
 stated with the code it fires in [`contract.md`](contract.md) (*Required repo files*). The one to
 hold in mind while running: the label is **bootstrap**, and `fabrika status bootstrap
-issue-shape-markers` creates it; an unreadable ACL is `11` and every question's state is UNKNOWN — never
-`open`, never `ruled`. Nothing else is required, and that is stated rather than left blank, because
-an absent row reads as nobody checked.
+issue-shape-markers` creates it; an unreadable ACL is `11` and every question's state is
+UNKNOWN — never `open`, never `ruled`. Nothing else is required, and that is stated rather than
+left blank, because an absent row reads as nobody checked.

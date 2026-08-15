@@ -966,8 +966,16 @@ a sixth is a change to this table, not a new rule.
 | `design-manifest` | `--path`, default `design-system-manifest.md` at the repo root | **stdin**, required — the skill's inferred draft | the file's bytes match stdin through `normalizeForReadback` |
 | `roadmap-focus` | `--path`, default `ROADMAP.md` at the repo root | **stdin**, required | same |
 | `label-taxonomy` | the repo's labels | **none** — the set is `status:needs-triage`, `status:triaged`, one label per member of the imported `PRIORITIES` (`p0`, `p1`, `p2`), each created with GitHub's default colour and a description naming this group as its creator | every label in the set resolves on a re-read |
-| `issue-shape-markers` | the repo's labels | **none** — the set is `wayfinding:map`, `prototyping:spike`, `grilling:session`, each created at colour `1D76DB` with the description `issue-shape marker: a <thing> (not a pipeline state, not pickable)` | every label in the set resolves on a re-read |
+| `issue-shape-markers` | the repo's labels | **none** — three labels, each at colour `1D76DB`, with the descriptions fixed below | every label in the set resolves on a re-read |
 | `readout-artifact` | one open issue in the repo | **none** — title exactly `Governance readout`; body exactly the two lines below | the issue resolves open, its title matches exactly, and its body matches through `normalizeForReadback` |
+
+The three marker labels, fixed here so no clause defers to another skill's prose or to source:
+
+| Label | Description, verbatim |
+|---|---|
+| `wayfinding:map` | `issue-shape marker: a wayfinding map (not a pipeline state, not pickable)` |
+| `prototyping:spike` | `issue-shape marker: a disposable prototyping spike (not a pipeline state, not pickable)` |
+| `grilling:session` | `issue-shape marker: a grilling session (not a pipeline state, not pickable)` |
 
 <a id="markers-are-not-the-taxonomy"></a>**Why the markers are their own id and not a wider
 `label-taxonomy`.** The taxonomy is the pipeline's state vocabulary: `status board` counts it and
@@ -1014,6 +1022,12 @@ Nothing is written and nothing is overwritten.
 in the set; where some are present the verb creates only the missing ones and reports `created` with
 `<target>` naming exactly what it created. These are the surfaces holding many objects, so this is
 the one place the rule has to be stated.
+
+**A label is matched by name, not by shape.** Both label surfaces read the repo's label *names*, so a
+label someone created by hand at another colour or with another description reads `exists` at `0` and
+is left exactly as it is. That is what "nothing is written and nothing is overwritten" costs: the
+verb converges a repo that has none of them, and never re-shapes one that already has them under the
+same name. Reconciling a hand-made label's colour is a hand fix.
 
 **The operation.** Resolve the id against the registry — not in it is `12`. Probe the target; already
 present is `exists` at `0`. For a stdin surface: read stdin, leak-scan the content (`5`, `6`), write,

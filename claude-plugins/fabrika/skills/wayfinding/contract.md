@@ -416,7 +416,7 @@ rather than recomputes.
 | Message (stderr) | Code | Kind |
 |---|---|---|
 | `map open: stdin was read and held no question — a destination with no open question is not fog.` | 3 | refusal |
-| `map open: the wayfinding:map label does not exist in <repo> — refusing to open an unlabelled map no later run could find. Run: fabrika status bootstrap issue-shape-markers.` | 7 | refusal |
+| `map open: the wayfinding:map label does not exist in <repo> — refusing to open an unlabelled map no later run could find. Run the front-door bootstrap: fabrika status bootstrap issue-shape-markers.` | 7 | refusal |
 | `map open: created #<n> and the label write did NOT land — the map exists and no later run can find it. Add wayfinding:map to #<n> by hand.` | 8 | refusal |
 | `map open: cannot search <repo> for existing maps: <reason> — nothing was written and whether this destination is charted is UNKNOWN.` | 11 | refusal |
 | `map open: <k> open maps match this destination (#<a>, #<b>) — refusing to guess which; close or merge one.` | 16 | refusal |
