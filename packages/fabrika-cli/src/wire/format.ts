@@ -73,6 +73,23 @@ export interface WireRoundTripFixture {
 	readonly values: NonEmptyReadonlyArray<string>;
 }
 
+/**
+ * An artifact *nobody emitted* that must still read `Found` — the authored-shape half of coverage.
+ *
+ * A round-trip fixture only ever drives `read` over bytes this format's own `emit` produced, so a
+ * reader and a writer that agree with each other and disagree with what a human writes round-trip
+ * perfectly while dropping content. That is exactly how a wrapped acceptance criterion lost
+ * everything past its first physical line and stayed green (#5572). This fixture is the artifact as
+ * a person or another tool would author it, and `values` is what `read`'s answer must still carry.
+ */
+export interface WireFoundFixture {
+	/** The authored shape this artifact stands for, so a broken law names the case, not an index. */
+	readonly shape: string;
+	readonly artifact: string;
+	/** Every value the answer must carry. Each must survive the read intact. */
+	readonly values: NonEmptyReadonlyArray<string>;
+}
+
 /** An artifact that reaches for the format's block and misses. */
 export interface WireMalformedFixture {
 	/** What drifted, so a broken law names the case rather than an index. */
@@ -90,6 +107,12 @@ export interface WireMalformedFixture {
  */
 export interface WireFixtures {
 	readonly roundTrip: WireRoundTripFixture;
+	/**
+	 * At least one artifact authored the way the world writes it: `Found`, carrying every declared
+	 * value. Required, not optional — a fixture kind a row may leave out is coverage a row opts out
+	 * of, which is the shape of the hole `roundTrip` alone left open.
+	 */
+	readonly found: NonEmptyReadonlyArray<WireFoundFixture>;
 	/** An artifact that genuinely carries no block: `Absent`, never `Malformed`. */
 	readonly absent: string;
 	/** At least one drift: `Malformed`, never `Found` and never `Absent`. */

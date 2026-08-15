@@ -44,6 +44,8 @@ export const LAWS = {
 	emits: "emit composes the round-trip fixture",
 	roundTrip: "read(emit(fields)) is Found",
 	recovers: "the Found answer carries every field value it was given",
+	foundIsFound: "each declared found fixture reads Found — never Absent, never Malformed",
+	foundRecovers: "each found fixture's answer carries every value it declared",
 	emptyIsAbsent: "empty bytes read Absent — never Found",
 	absentIsAbsent: "the declared absent fixture reads Absent — never Found, never Malformed",
 	driftIsMalformed: "each declared drift fixture reads Malformed — never Found, never Absent",
@@ -59,7 +61,7 @@ export const conformFormat = (format: WireFormat): ReadonlyArray<ConformanceFind
 		findings.push({format: format.key, law, detail});
 	};
 
-	const {roundTrip, absent, malformed} = format.fixtures;
+	const {roundTrip, found, absent, malformed} = format.fixtures;
 	const composed = format.emit(roundTrip.fields);
 	if (composed._tag !== "Composed") {
 		fail(LAWS.emits, `emit answered Unusable: ${composed.reason}`);
@@ -73,6 +75,22 @@ export const conformFormat = (format: WireFormat): ReadonlyArray<ConformanceFind
 			if (dropped.length > 0) {
 				fail(LAWS.recovers, `the answer dropped ${dropped.map((v) => `"${v}"`).join(", ")}`);
 			}
+		}
+	}
+
+	for (const fixture of found) {
+		const authored = format.read(fixture.artifact);
+		if (authored._tag !== "Found") {
+			fail(LAWS.foundIsFound, `"${fixture.shape}" read ${authored._tag}: ${authored.reason}`);
+			continue;
+		}
+		const answer = answerOf(authored);
+		const dropped = fixture.values.filter((value) => !answer.includes(value));
+		if (dropped.length > 0) {
+			fail(
+				LAWS.foundRecovers,
+				`"${fixture.shape}" dropped ${dropped.map((v) => `"${v}"`).join(", ")}`,
+			);
 		}
 	}
 

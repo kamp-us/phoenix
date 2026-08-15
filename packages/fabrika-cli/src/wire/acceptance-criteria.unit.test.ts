@@ -85,6 +85,139 @@ describe("read — Found", () => {
 	});
 });
 
+describe("read — a criterion that wraps is one criterion", () => {
+	it("joins a continuation line rather than keeping only what fit on line one", () => {
+		expect(
+			found(
+				body(
+					"### Acceptance criteria",
+					"- [ ] The change stays in the product tree. It must **not** touch",
+					"      `review-code`'s materialization or its absence assert.",
+				),
+			),
+		).toEqual([
+			criterion(
+				"The change stays in the product tree. It must **not** touch `review-code`'s materialization or its absence assert.",
+				false,
+			),
+		]);
+	});
+
+	it("closes the wrapped criterion at the next checkbox item, and keeps that item's own state", () => {
+		expect(
+			found(
+				body(
+					"### Acceptance criteria",
+					"- [ ] the first criterion wraps",
+					"      onto a second line",
+					"- [x] the second is its own",
+				),
+			),
+		).toEqual([
+			criterion("the first criterion wraps onto a second line", false),
+			criterion("the second is its own", true),
+		]);
+	});
+
+	it("closes the wrapped criterion at the heading that ends the section", () => {
+		expect(
+			found(
+				body(
+					"### Acceptance criteria",
+					"- [ ] the criterion wraps",
+					"      onto a second line",
+					"",
+					"### Out of scope",
+					"Everything below belongs to the next section.",
+				),
+			),
+		).toEqual([criterion("the criterion wraps onto a second line", false)]);
+	});
+
+	it("leaves a nested sub-item its own criterion — a wrapped parent never absorbs it", () => {
+		expect(
+			found(
+				body(
+					"### Acceptance criteria",
+					"- [ ] the parent wraps",
+					"      onto a second line",
+					"  - [ ] the nested sub-item",
+				),
+			),
+		).toEqual([
+			criterion("the parent wraps onto a second line", false),
+			criterion("the nested sub-item", false),
+		]);
+	});
+
+	it("closes the criterion at a blank line, so trailing prose is not swallowed", () => {
+		expect(
+			found(
+				body(
+					"### Acceptance criteria",
+					"- [ ] the criterion",
+					"",
+					"A note about the block, which belongs to nobody.",
+				),
+			),
+		).toEqual([criterion("the criterion", false)]);
+	});
+
+	it("closes the criterion at a fence, and joins nothing from inside it", () => {
+		expect(
+			found(
+				body("### Acceptance criteria", "- [ ] the criterion", "```sh", "pnpm typecheck", "```"),
+			),
+		).toEqual([criterion("the criterion", false)]);
+	});
+
+	it("closes the criterion at a plain bullet — a sibling list is not part of the contract", () => {
+		expect(
+			found(
+				body(
+					"### Acceptance criteria",
+					"- [ ] the criterion",
+					"- a plain bullet, not a checkbox",
+					"* a star bullet",
+					"+ a plus bullet",
+				),
+			),
+		).toEqual([criterion("the criterion", false)]);
+	});
+
+	it("closes the criterion at an ordered-list marker", () => {
+		expect(
+			found(
+				body("### Acceptance criteria", "- [ ] the criterion", "1. an ordered item", "2) another"),
+			),
+		).toEqual([criterion("the criterion", false)]);
+	});
+
+	it("closes the criterion at a blockquote", () => {
+		expect(
+			found(body("### Acceptance criteria", "- [ ] the criterion", "> a quoted note")),
+		).toEqual([criterion("the criterion", false)]);
+	});
+
+	it("closes the criterion at a thematic break, and joins nothing after it", () => {
+		expect(
+			found(body("### Acceptance criteria", "- [ ] the criterion", "---", "trailing prose")),
+		).toEqual([criterion("the criterion", false)]);
+		expect(found(body("### Acceptance criteria", "- [ ] the criterion", "***"))).toEqual([
+			criterion("the criterion", false),
+		]);
+		expect(found(body("### Acceptance criteria", "- [ ] the criterion", "___"))).toEqual([
+			criterion("the criterion", false),
+		]);
+	});
+
+	it("leaves a single-line criterion byte-identical — the join widens Found, it does not restate it", () => {
+		expect(found(body("### Acceptance criteria", "- [ ] one  criterion, two  spaces"))).toEqual([
+			criterion("one  criterion, two  spaces", false),
+		]);
+	});
+});
+
 describe("read — Absent", () => {
 	it("answers Absent for a body where nothing reaches for the block", () => {
 		const result = read(body("### What to build", "Stand up the group.", "", "Some prose."));

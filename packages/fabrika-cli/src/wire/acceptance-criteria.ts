@@ -65,6 +65,15 @@ const ATX_HEADING = /^ {0,3}(#{1,6})[ \t]+(.*?)[ \t]*#*[ \t]*$/;
 const FENCE = /^ {0,3}(```|~~~)/;
 const CHECKBOX_ITEM = /^[ \t]*[-*][ \t]+\[([ xX])\][ \t]*(.*)$/;
 
+/**
+ * A line that opens a GFM block of its own beside the item — a plain bullet, an ordered-list marker,
+ * a blockquote, or a thematic break. Each leaves the item's paragraph in the render exactly as the
+ * next checkbox item does, so each closes the open criterion here (#5596). Tested after
+ * {@link CHECKBOX_ITEM}, which owns the task-list forms this would otherwise swallow.
+ */
+const BLOCK_STARTER =
+	/^[ \t]*(?:[-*+][ \t]+|\d{1,9}[.)][ \t]+|>|(?:-[ \t]*){3,}$|(?:\*[ \t]*){3,}$|(?:_[ \t]*){3,}$)/;
+
 interface Heading {
 	readonly level: number;
 	readonly text: string;
@@ -166,6 +175,48 @@ const sectionOf = (lines: ReadonlyArray<string>, heading: Heading): ReadonlyArra
 	return body;
 };
 
+/**
+ * Where one criterion's text ends — the whole of the wrapping rule, stated once.
+ *
+ * A criterion that wraps onto a second physical line is still *one* criterion: GitHub's own `gfm`
+ * render puts both lines inside one `<li class="task-list-item">`, joined by a `<br>`. A reader
+ * that kept only line one therefore handed every grader a shorter contract than the author wrote,
+ * and said nothing about it — which is the defect this rule closes (#5572). The loss landed on the
+ * qualifiers and the "must not" clauses, because those are the half of a criterion that wraps.
+ *
+ * A line closes the open criterion when the CommonMark render also treats it as leaving the item's
+ * paragraph:
+ *
+ * 1. a blank line,
+ * 2. the next checkbox item — including a *nested* one, which is why a sub-item stays its own
+ *    criterion and is never absorbed into its parent's text,
+ * 3. a fence delimiter, and every line inside the fence it opens,
+ * 4. any other line that opens a block of its own — a plain bullet, an ordered-list marker, a
+ *    blockquote, a thematic break ({@link BLOCK_STARTER}). Joining those swallowed a sibling block's
+ *    prose into the contract, the same defect pointing the other way (#5596),
+ * 5. the heading that ends the section — {@link sectionOf} already cuts there, so the loop ends.
+ *
+ * Only a line that continues the item's own paragraph — the wrap this rule exists for — is appended.
+ */
+interface OpenCriterion {
+	readonly parts: string[];
+	readonly checked: boolean;
+}
+
+/**
+ * Join a criterion's lines into its text: each continuation trimmed of its indentation, joined with
+ * one space, and interior whitespace runs collapsed so the answer carries no newline and no run.
+ *
+ * The collapse is skipped for an unwrapped criterion so that the single-line answer stays
+ * byte-for-byte what it was before the join existed — this widens `Found`, it does not restate it.
+ */
+const joinContinuations = (parts: ReadonlyArray<string>): string => {
+	const [head, ...rest] = parts;
+	if (head === undefined) return "";
+	if (rest.length === 0) return head;
+	return [head, ...rest].join(" ").replace(/\s+/g, " ").trim();
+};
+
 const malformed = (reason: string, evidence: string): AcceptanceCriteriaRead => ({
 	_tag: "Malformed",
 	reason,
@@ -206,18 +257,45 @@ export const read = (body: string): AcceptanceCriteriaRead => {
 	}
 
 	const criteria: AcceptanceCriterion[] = [];
+	let open: OpenCriterion | null = null;
+	let openFence: string | null = null;
+	const close = (): void => {
+		if (open === null) return;
+		const text = criterionText(joinContinuations(open.parts));
+		if (text !== null) criteria.push({text, checked: open.checked});
+		open = null;
+	};
+
 	for (const [offset, line] of sectionOf(lines, heading).entries()) {
 		const item = CHECKBOX_ITEM.exec(line);
-		if (item === null) continue;
-		const text = criterionText(item[2] ?? "");
-		if (text === null) {
-			return malformed(
-				"a checkbox item under the acceptance-criteria heading carries no text",
-				`line ${heading.line + offset + 1}: "${line}"`,
-			);
+		if (item !== null) {
+			close();
+			const text = criterionText(item[2] ?? "");
+			if (text === null) {
+				return malformed(
+					"a checkbox item under the acceptance-criteria heading carries no text",
+					`line ${heading.line + offset + 1}: "${line}"`,
+				);
+			}
+			open = {parts: [text], checked: (item[1] ?? " ").toLowerCase() === "x"};
+			continue;
 		}
-		criteria.push({text, checked: (item[1] ?? " ").toLowerCase() === "x"});
+
+		const fence = FENCE.exec(line);
+		if (fence !== null) {
+			const marker = fence[1] ?? "";
+			if (openFence === null) openFence = marker;
+			else if (openFence === marker) openFence = null;
+			close();
+			continue;
+		}
+		if (openFence !== null || line.trim() === "" || BLOCK_STARTER.test(line)) {
+			close();
+			continue;
+		}
+		if (open !== null) open.parts.push(line.trim());
 	}
+	close();
 
 	const [head, ...rest] = criteria;
 	if (head === undefined) {
