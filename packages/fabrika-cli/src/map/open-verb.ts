@@ -116,7 +116,7 @@ export const runOpen = (
 		if (!labels.value.includes(MAP_LABEL)) {
 			return refuse(
 				NO_TARGET,
-				`${VERB}: the ${MAP_LABEL} label does not exist in ${repo} — refusing to open an unlabelled map no later run could find.`,
+				`${VERB}: the ${MAP_LABEL} label does not exist in ${repo} — refusing to open an unlabelled map no later run could find. Run: fabrika status bootstrap issue-shape-markers.`,
 			);
 		}
 

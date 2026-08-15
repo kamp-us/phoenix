@@ -348,6 +348,7 @@ export const createLabel = (
 	repo: string,
 	name: string,
 	description: string,
+	color: string | null = null,
 ): Shell<Attempt<void>> =>
 	Effect.gen(function* () {
 		const r = yield* execCapture("gh", [
@@ -359,6 +360,7 @@ export const createLabel = (
 			`name=${name}`,
 			"-f",
 			`description=${description}`,
+			...(color === null ? [] : ["-f", `color=${color}`]),
 		]);
 		return r.ok ? ok(undefined) : fail(r.reason);
 	});

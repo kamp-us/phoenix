@@ -240,7 +240,7 @@ run. The **when-missing** vocabulary is the closed set every fabrika skill share
 | --- | --- | --- |
 | `gh` authenticated to the target repo with `issues: write` | every verb reads the source and the emit verb creates one issue and one comment over REST | **fail-loud** — `11` before any write, `8` after one; never a silent empty answer |
 | The `status:needs-triage` label | the emitted spec carries it, and it is the only label this skill writes | **fail-loud** — `7` naming the label; front-door bootstraps it |
-| A source issue carrying `grilling:session` or `wayfinding:map` | the trail is read from one of exactly these two surfaces | **fail-loud** — `12`, naming which labels were looked for. A repo with neither has nothing to graduate yet, which is a first-run fact rather than a defect |
+| A source issue carrying `grilling:session` or `wayfinding:map` | the trail is read from one of exactly these two surfaces | **fail-loud** — `12`, naming which labels were looked for. A repo with neither has nothing to graduate yet, which is a first-run fact rather than a defect. The labels themselves come from `fabrika status bootstrap issue-shape-markers` |
 | `repos/<owner>/<repo>/collaborators/<login>/permission` readable | the sibling reader resolves a ruling's authority against it | **fail-loud** — `11`, and the trail is UNKNOWN: never `ready`. A degrade here would license synthesizing over an unproven ruling, which is the failure this skill exists to prevent |
 
 Nothing else. No `.decisions/`, no `.patterns/`, no CODEOWNERS, no merge-queue configuration, no

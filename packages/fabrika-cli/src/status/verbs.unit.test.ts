@@ -9,7 +9,14 @@ import {describe, expect, it} from "vitest";
 import * as report from "../report/codes.ts";
 import {ANSWER} from "../verb.ts";
 import {type BoardRead, type Bucket, boardState, runBoard} from "./board-verb.ts";
-import {BUILDABLE_SURFACES, findSurface, knownIds} from "./bootstrap-verb.ts";
+import {
+	BUILDABLE_SURFACES,
+	findSurface,
+	ISSUE_SHAPE_MARKERS,
+	knownIds,
+	MARKER_COLOR,
+	TAXONOMY,
+} from "./bootstrap-verb.ts";
 import {NOT_BUILDABLE, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {configState, countsOf, runConfig, type SurfaceRow} from "./config-verb.ts";
 import {noAsOf, oneLine, readNow} from "./fields.ts";
@@ -236,12 +243,38 @@ describe("status readout", () => {
 describe("status bootstrap", () => {
 	it("refuses an id outside the registry on 12, naming what IS buildable", () => {
 		expect(findSurface("merge-queue")).toBeUndefined();
-		expect(knownIds()).toBe("design-manifest, roadmap-focus, label-taxonomy, readout-artifact");
+		expect(knownIds()).toBe(
+			"design-manifest, roadmap-focus, label-taxonomy, issue-shape-markers, readout-artifact",
+		);
 	});
 
-	it("carries exactly four ids", () => {
-		expect(BUILDABLE_SURFACES).toHaveLength(4);
+	it("carries exactly five ids", () => {
+		expect(BUILDABLE_SURFACES).toHaveLength(5);
 		expect(NOT_BUILDABLE).toBe(12);
+	});
+
+	it("builds every issue-shape marker the ideation skills mint issues with", () => {
+		expect(ISSUE_SHAPE_MARKERS.map((label) => label.name)).toEqual([
+			"wayfinding:map",
+			"prototyping:spike",
+			"grilling:session",
+		]);
+	});
+
+	it("mints every marker at one fixed colour and in the marker description grammar", () => {
+		for (const label of ISSUE_SHAPE_MARKERS) {
+			expect(label.color).toBe(MARKER_COLOR);
+			expect(label.description).toMatch(
+				/^issue-shape marker: a .+ \(not a pipeline state, not pickable\)$/,
+			);
+		}
+		expect(MARKER_COLOR).toBe("1D76DB");
+	});
+
+	it("keeps the markers a surface of their own — no taxonomy label is a marker", () => {
+		const taxonomy = new Set(TAXONOMY.map((label) => label.name));
+		for (const label of ISSUE_SHAPE_MARKERS) expect(taxonomy.has(label.name)).toBe(false);
+		expect(TAXONOMY.every((label) => label.color === null)).toBe(true);
 	});
 });
 
