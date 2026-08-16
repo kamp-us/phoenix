@@ -34,8 +34,12 @@ consumer, so it moved to `packages/pipeline-cli/src/tools/token-spend/session-co
 
 ## Consequences
 
-- Explicit-model spawns are no longer gated; a spawn's model is the operator's and the
-  harness's business, not a hook's.
+- The v1 `pipeline-cli` guard no longer gates explicit-model spawns — the #5539 ruling
+  reaches exactly that tool. Fabrika's own `fabrika hook spawn` (`Task|Workflow`
+  PreToolUse, reimplemented from v1 per ADR
+  [0238](0238-fabrika-reimplements-v1-never-calls-it.md) and governed by ADR
+  [0250](0250-fabrika-hook-cannot-run-fails-open.md)) still gates spawns at head and
+  stands; retiring it would be its own tracked decision, not this record's.
 - ADR 0116 (and ADR [0092](0092-gates-fail-closed-on-zero-scope.md)'s spawn-guard examples)
   now describe retired machinery. Both stand unedited as history; this ADR is the
   retirement record. ADR 0092's fail-closed rule itself is untouched — the other guards

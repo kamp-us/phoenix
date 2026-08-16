@@ -37,7 +37,9 @@ rather than the live issue.
 ### The meter is `spawn-guard`'s statusline reader — reuse it, do not reinvent
 
 The fleet already has one per-session token/cost meter:
-[`packages/pipeline-cli/src/tools/spawn-guard`](../packages/pipeline-cli/src/tools/spawn-guard).
+`packages/pipeline-cli/src/tools/spawn-guard` (since deleted — ADR
+[0282](../.decisions/0282-spawn-guard-retired.md); `formatSessionCost` survives in
+[`token-spend/session-cost.ts`](../packages/pipeline-cli/src/tools/token-spend/session-cost.ts)).
 It reads the figures Claude Code reports and renders one compact line. Two surfaces ground every
 claim below:
 

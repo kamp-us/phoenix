@@ -57,7 +57,9 @@ is the standing rule that gates every lever:
 2. **Reproducible token-measurement procedure — grounded in `spawn-guard`, not intuition.**
    The authoritative per-run figure is Claude Code's own `cost.total_tokens` /
    `cost.total_cost_usd` aggregate, exactly what the existing
-   [`spawn-guard`](../packages/pipeline-cli/src/tools/spawn-guard) statusline reader already
+   [`spawn-guard`](0282-spawn-guard-retired.md) statusline reader (since retired; its cost
+   core survives in
+   [`token-spend/session-cost.ts`](../packages/pipeline-cli/src/tools/token-spend/session-cost.ts)) already
    prints — reuse that meter read-only, never mint a new one. Because that aggregate is not
    persisted into a transcript, an **offline reconstruction** reproduces it from a stage
    sub-agent's own transcript
