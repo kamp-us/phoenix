@@ -39,15 +39,15 @@ that appears here by any other route is a defect, not a shortcut — the door is
 claude-plugins/fabrika/
 ├── .claude-plugin/plugin.json   the plugin manifest (no version — ADR 0110, continuous ship)
 ├── README.md                    this file: the mission, the only-door posture, the layout
-├── agents/                      builder, reviewer, shipper (see docs/agent-shells.md)
+├── agents/                      builder, reviewer, shipper, operator (see docs/agent-shells.md)
 ├── docs/                        the canonical convention + contract docs (see docs/README.md)
 └── skills/                      one dir per skill, each authored by /skill-creator
 ```
 
-`agents/` holds exactly three **agent shells** — `builder`, `reviewer`, `shipper` — behaviour-free
-spawn targets that each preload one skill. The shell names the actor and never the skill it loads,
-so the `builder` shell runs the `build` skill — and the shell is addressed by that bare name, not by
-`fabrika:builder`. What a shell may hold, why there are three, why its name is
+`agents/` holds exactly four **agent shells** — `builder`, `reviewer`, `shipper`, `operator` —
+behaviour-free spawn targets that each preload one skill. The shell names the actor and never the
+skill it loads, so the `builder` shell runs the `build` skill — and the shell is addressed by that
+bare name, not by `fabrika:builder`. What a shell may hold, why there are four, why its name is
 a noun, and why a shell that grows opinions is a defect are all in
 [docs/agent-shells.md](docs/agent-shells.md).
 

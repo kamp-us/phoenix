@@ -17,8 +17,8 @@ want a shell to "always do" belongs in its skill.
 
 ## A shell's name is a noun
 
-**Name a shell for the thing that acts, never for the act.** `builder`, `reviewer`, `shipper` — and
-whatever the fourth turns out to be, it is named the same way. Founder ruling of 2026-08-15, ADR
+**Name a shell for the thing that acts, never for the act.** `builder`, `reviewer`, `shipper`,
+`operator` — and whatever the fifth turns out to be, it is named the same way. Founder ruling of 2026-08-15, ADR
 [0281](../../../.decisions/0281-agent-names-are-nouns.md), which binds every agent definition in
 this repo and not only these three.
 
@@ -50,15 +50,18 @@ symlink, which ADR
 `kampus-pipeline@kampus: false` line that survives in `.claude/settings.json` suppresses the plugin
 copy and never reached the symlink, so do not read it as what keeps these names clear.
 
-## Why exactly three
+## Why exactly four
 
-`builder`, `reviewer` and `shipper`, and no fourth — founder ruling of 2026-08-14 (epic
-[#5492](https://github.com/kamp-us/phoenix/issues/5492)), verbatim *"three sounds right"*. A shell
-earns its place only where a driver needs something to spawn, and those are the three heavy
-pipeline stages. Every other fabrika skill is invoked by name from a plain session and needs no
-definition of its own.
+`builder`, `reviewer` and `shipper` — founder ruling of 2026-08-14 (epic
+[#5492](https://github.com/kamp-us/phoenix/issues/5492)), verbatim *"three sounds right"* — and,
+since 2026-08-16, the `operator`: the driver's own seat, added by the founder's phase-2 ruling on
+epic [#5680](https://github.com/kamp-us/phoenix/issues/5680) (naming ruled in that epic's
+comments: skill `operate`, shell `operator`). A shell earns its place only where a driver needs
+something to spawn, and the operator is that rule's own case — the founder spawns it so driving a
+lane stops costing him a live session, and it in turn spawns the other three. Every other fabrika
+skill is invoked by name from a plain session and needs no definition of its own.
 
-The shells ship inside the plugin, so every adopting repo inherits all three. Pick a fourth for
+The shells ship inside the plugin, so every adopting repo inherits all four. Pick a fifth for
 what a driver must spawn, never for what is convenient in one repo.
 
 ## No `memory:`
@@ -78,13 +81,21 @@ denies an explicit off-allowlist model unconditionally, and no pin overrides tha
 `AllowInherit` return sits inside `if (isAllowlisted(effectivePin))`, so a `WORKFLOW_MODEL` that is
 present but off the allowlist denies an unset request too (with `explicit: false`). An absent pin
 resolves to the committed default, which is allowlisted, so an unset `model` passes on a machine
-that never exported `WORKFLOW_MODEL`. All three shells today leave it unset, so a spawn runs on the
+that never exported `WORKFLOW_MODEL`. All four shells today leave it unset, so a spawn runs on the
 caller's own model whenever the pin is sane.
 
-## Only the reviewer carries a spawn tool
+## Which shells carry a spawn tool
 
-`reviewer` is the one shell whose `tools:` includes the harness spawn tool, `Agent`. That is a tool
-grant and nothing more: the behaviour stays in
+`reviewer` and `operator` carry the harness spawn tool, `Agent`. For the operator the spawn tool
+is the skill itself: every route in the `operate` loop
+([`../skills/operate/SKILL.md`](../skills/operate/SKILL.md)) is a spawn of one of the other
+shells, so a spawn-less operator drives nothing.
+[#5686](https://github.com/kamp-us/phoenix/issues/5686) records the founder's 2026-08-16
+direction that every role shell should be able to spawn subagents — the retired pipeline-crew's
+over-restricted tool sets are the named failure mode — but builder and shipper keep their current
+sets until that filing is triaged and built.
+
+For the reviewer the grant is a tool grant and nothing more: the behaviour stays in
 [`../skills/review/SKILL.md`](../skills/review/SKILL.md) §6, which makes the `governance` namespace
 **derived-required** on a `harness: true` diff — fire the `governance` skill, wait for it, and never
 emit that namespace yourself. Without a spawn tool the shell derives that requirement mid-run and
