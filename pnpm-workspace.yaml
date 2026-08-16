@@ -15,6 +15,9 @@ catalog:
   '@better-auth/core': 1.6.23
   '@biomejs/biome': ^2.4.15
   '@cloudflare/workers-types': ^4.20260629.1
+  # Exact pin: the lane ledger's machines fold over this engine's dispatch semantics
+  # (NoCellError refusal, Transitions-form cells), so the version is part of the contract (#5673).
+  '@demlik/tea': 0.5.1
   '@distilled.cloud/cloudflare': 0.27.0
   '@effect/language-service': ^0.85.1
   '@effect/platform-bun': 4.0.0-beta.92

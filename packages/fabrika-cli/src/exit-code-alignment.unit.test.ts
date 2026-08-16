@@ -27,6 +27,7 @@ import * as handoff from "./handoff/codes.ts";
 import * as healCi from "./heal-ci/codes.ts";
 import * as hook from "./hook/codes.ts";
 import {PRETOOLUSE_BLOCKING_EXIT} from "./hook/harness-exit.ts";
+import * as lane from "./lane/codes.ts";
 import * as ledger from "./ledger/codes.ts";
 import * as map from "./map/codes.ts";
 import * as pattern from "./pattern/codes.ts";
@@ -61,6 +62,7 @@ const TABLES: Readonly<Record<string, CodeTable>> = {
 	handoff,
 	"heal-ci": healCi,
 	hook,
+	lane,
 	ledger,
 	map,
 	pattern,

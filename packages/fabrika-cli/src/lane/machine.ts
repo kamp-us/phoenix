@@ -1,0 +1,311 @@
+/**
+ * The lane compiler — one `workflow.json` machine document in, one flat tea Transitions machine
+ * per task out, everything XState's nesting carried reduced to data (#5673; grounded in the
+ * recorded spike runs on #5671/#5672).
+ *
+ * Three structural recognitions replace every name-driven mechanism, and **no guard or action name
+ * is ever dereferenced** — a `guard`/`actions` string in the document is inert data:
+ *
+ *   - An **array on an event** means guarded-FAIL: `[retry-while-retries-remain, else-fallthrough]`.
+ *     The guard is the one inline `retries < maxRetries` in the compiled cell; the fallthrough
+ *     target, when final, is the task's error final (`frozen`, `tripped`).
+ *   - A transition **targeting a `history` node** resumes the state the task left, carried as the
+ *     `was` field in {@link TaskState} — history-state semantics as data, no pseudo-state.
+ *   - A phase's **`onDone` pair** `[{target, guard}, {target}]` names the two workflow terminals
+ *     structurally: the last phase's guarded target is the complete terminal, the fallthrough is
+ *     the tripped one.
+ *
+ * Compilation is total over its result type: a document that does not fit comes back as
+ * {@link Malformed} with every defect named, never as a machine that half-works.
+ */
+import type {Machine} from "@demlik/tea";
+import {defineMachine} from "@demlik/tea";
+
+/** The operator's whole event vocabulary — the six, closed (#5570 founder session, 2026-08-15). */
+export const OPERATOR_EVENTS = ["DONE", "PASS", "FAIL", "BLOCKED", "WIP", "UNBLOCKED"] as const;
+
+export type OperatorEvent = (typeof OPERATOR_EVENTS)[number];
+
+export const isOperatorEvent = (event: string): event is OperatorEvent =>
+	(OPERATOR_EVENTS as readonly string[]).includes(event);
+
+/** One task's folded state: the leaf, the retry budget, and the state it left (`was`). */
+export interface TaskState {
+	readonly type: string;
+	readonly retries: number;
+	readonly maxRetries: number;
+	readonly was?: string;
+}
+
+export interface LaneMsg {
+	readonly type: string;
+}
+
+export type TaskMachine = Machine<TaskState, LaneMsg, never, never, unknown>;
+
+export interface CompiledTask {
+	readonly machine: TaskMachine;
+	readonly initial: TaskState;
+	/** Every `type: "final"` state name in the task's region. */
+	readonly finals: ReadonlySet<string>;
+	/** The finals reached as a guarded array's fallthrough — the task's error terminals. */
+	readonly errorFinals: ReadonlySet<string>;
+	/** The task's `context` entry minus the retry bookkeeping — passed through to status. */
+	readonly extras: Readonly<Record<string, unknown>>;
+}
+
+export interface CompiledLane {
+	readonly tasks: Readonly<Record<string, CompiledTask>>;
+	readonly phases: ReadonlyArray<{readonly name: string; readonly tasks: ReadonlyArray<string>}>;
+	/** The workflow's two terminal names, read off the last phase's `onDone` pair. */
+	readonly terminals: {readonly complete: string; readonly tripped: string};
+}
+
+export type CompileResult =
+	| {readonly _tag: "Compiled"; readonly lane: CompiledLane}
+	| {readonly _tag: "Malformed"; readonly defects: ReadonlyArray<string>};
+
+const DEFAULT_MAX_RETRIES = 3;
+
+type Cell = (state: TaskState) => readonly [TaskState, readonly never[]];
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+	typeof value === "object" && value !== null && !Array.isArray(value);
+
+/** `TASK_1.DONE` and `DONE` are the same operator event; the namespace is presentation. */
+export const bareEvent = (event: string): string => {
+	const dot = event.indexOf(".");
+	return dot === -1 ? event : event.slice(dot + 1);
+};
+
+const nodeType = (node: unknown): string | undefined =>
+	isRecord(node) && typeof node.type === "string" ? node.type : undefined;
+
+interface RegionCompilation {
+	readonly task?: CompiledTask;
+	readonly defects: ReadonlyArray<string>;
+}
+
+const compileRegion = (taskId: string, region: unknown, context: unknown): RegionCompilation => {
+	const defects: string[] = [];
+	if (!isRecord(region) || !isRecord(region.states) || typeof region.initial !== "string") {
+		return {defects: [`task "${taskId}": region must carry string \`initial\` and \`states\``]};
+	}
+	const states = region.states;
+	const initialState = region.initial;
+	if (states[initialState] === undefined) {
+		defects.push(`task "${taskId}": initial state "${initialState}" is not in \`states\``);
+	}
+
+	const finals = new Set<string>();
+	const errorFinals = new Set<string>();
+	for (const [name, node] of Object.entries(states)) {
+		if (nodeType(node) === "final") finals.add(name);
+	}
+
+	const table: Record<string, Record<string, Cell>> = {};
+	for (const [stateName, node] of Object.entries(states)) {
+		if (nodeType(node) === "history") continue;
+		const cells: Record<string, Cell> = {};
+		table[stateName] = cells;
+		if (!isRecord(node)) {
+			defects.push(`task "${taskId}": state "${stateName}" is not an object`);
+			continue;
+		}
+		const on = node.on ?? {};
+		if (!isRecord(on)) {
+			defects.push(`task "${taskId}": state "${stateName}" carries a non-object \`on\``);
+			continue;
+		}
+		for (const [eventName, transition] of Object.entries(on)) {
+			const msg = bareEvent(eventName);
+			if (!isOperatorEvent(msg)) {
+				defects.push(
+					`task "${taskId}": state "${stateName}" listens for "${eventName}" — outside the operator's six (${OPERATOR_EVENTS.join("/")})`,
+				);
+				continue;
+			}
+			if (Array.isArray(transition)) {
+				const targets = transition.map((arm) =>
+					isRecord(arm) && typeof arm.target === "string" ? arm.target : undefined,
+				);
+				const [retry, fallthrough] = targets;
+				if (transition.length !== 2 || retry === undefined || fallthrough === undefined) {
+					defects.push(
+						`task "${taskId}": guarded "${eventName}" must be a two-arm array of \`{target}\` — [retry-while-retries-remain, else-fallthrough]`,
+					);
+					continue;
+				}
+				for (const target of [retry, fallthrough]) {
+					if (states[target] === undefined) {
+						defects.push(`task "${taskId}": "${eventName}" targets unknown state "${target}"`);
+					}
+				}
+				if (finals.has(fallthrough)) errorFinals.add(fallthrough);
+				cells[msg] = (s) =>
+					s.retries < s.maxRetries
+						? [{...s, type: retry, retries: s.retries + 1, was: s.type}, []]
+						: [{...s, type: fallthrough, was: s.type}, []];
+				continue;
+			}
+			if (typeof transition !== "string") {
+				defects.push(`task "${taskId}": "${eventName}" is neither a target nor a guarded array`);
+				continue;
+			}
+			if (states[transition] === undefined) {
+				defects.push(`task "${taskId}": "${eventName}" targets unknown state "${transition}"`);
+				continue;
+			}
+			if (nodeType(states[transition]) === "history") {
+				cells[msg] = (s) => [{...s, type: s.was ?? initialState}, []];
+			} else {
+				const target = transition;
+				cells[msg] = (s) => [{...s, type: target, was: s.type}, []];
+			}
+		}
+	}
+	if (defects.length > 0) return {defects};
+
+	const ctx = isRecord(context) ? context : {};
+	const maxRetries = typeof ctx.maxRetries === "number" ? ctx.maxRetries : DEFAULT_MAX_RETRIES;
+	const {maxRetries: _max, retries: _retries, ...extras} = ctx;
+	const initial: TaskState = {type: initialState, retries: 0, maxRetries};
+	// The Transitions mapped type demands a cell for every (state × msg) pair; a lane machine is
+	// compiled from data and deliberately partial — the absent cells ARE the refusal contract
+	// (`applyCell` throws `NoCellError` on them). One cast at the construction boundary.
+	const machine = defineMachine<TaskState, LaneMsg, never, never, unknown>({
+		init: (loaded) => [loaded ?? initial, []],
+		update: table as never,
+	});
+	return {task: {machine, initial, finals, errorFinals, extras}, defects: []};
+};
+
+/** The two targets of a phase's `onDone` pair: `[guarded success, fallthrough trip]`. */
+const onDoneTargets = (
+	phaseName: string,
+	onDone: unknown,
+): {targets?: readonly [string, string]; defect?: string} => {
+	const defect = `phase "${phaseName}": \`onDone\` must be a two-arm array of \`{target}\` — [{target, guard}, {target}]`;
+	if (!Array.isArray(onDone) || onDone.length !== 2) return {defect};
+	const [success, trip] = onDone.map((arm) =>
+		isRecord(arm) && typeof arm.target === "string" ? arm.target : undefined,
+	);
+	return success === undefined || trip === undefined
+		? {defect}
+		: {targets: [success, trip] as const};
+};
+
+/**
+ * Compile one machine document. Phases are the machine's `parallel` states in declaration order;
+ * everything else at the machine level is either a terminal named by an `onDone` pair, or a defect.
+ */
+export const compile = (workflow: unknown): CompileResult => {
+	const defects: string[] = [];
+	const machineDef = isRecord(workflow) ? workflow.machine : undefined;
+	if (!isRecord(machineDef) || !isRecord(machineDef.states)) {
+		return {_tag: "Malformed", defects: ["document must carry a `machine.states` object"]};
+	}
+	const context = isRecord(machineDef.context) ? machineDef.context : {};
+
+	const machineStates = machineDef.states;
+	const tasks: Record<string, CompiledTask> = {};
+	const phases: Array<{name: string; tasks: string[]}> = [];
+	const gateTargets = new Set<string>();
+	let terminals: {complete: string; tripped: string} | undefined;
+	for (const [phaseName, node] of Object.entries(machineStates)) {
+		if (nodeType(node) !== "parallel" || !isRecord(node)) continue;
+		const regions = node.states;
+		if (!isRecord(regions) || Object.keys(regions).length === 0) {
+			defects.push(`phase "${phaseName}": a parallel phase must carry task regions in \`states\``);
+			continue;
+		}
+		const phaseTasks: string[] = [];
+		for (const [taskId, region] of Object.entries(regions)) {
+			const compiled = compileRegion(taskId, region, context[taskId]);
+			defects.push(...compiled.defects);
+			if (compiled.task !== undefined) tasks[taskId] = compiled.task;
+			phaseTasks.push(taskId);
+		}
+		phases.push({name: phaseName, tasks: phaseTasks});
+		const gate = onDoneTargets(phaseName, node.onDone);
+		if (gate.defect !== undefined) defects.push(gate.defect);
+		// Every phase names the same trip terminal; the LAST phase's success target is the
+		// workflow's complete terminal, because earlier ones target the next phase.
+		if (gate.targets !== undefined) {
+			for (const target of gate.targets) {
+				gateTargets.add(target);
+				if (machineStates[target] === undefined) {
+					defects.push(
+						`phase "${phaseName}": \`onDone\` targets unknown machine-level state "${target}"`,
+					);
+				}
+			}
+			terminals = {complete: gate.targets[0], tripped: gate.targets[1]};
+		}
+	}
+	// A machine-level state the loop above did not compile is a terminal or a defect — never
+	// dropped silently: a phase missing `"type": "parallel"` must refuse, not half-compile.
+	for (const [name, node] of Object.entries(machineStates)) {
+		if (nodeType(node) === "parallel" && isRecord(node)) continue;
+		if (nodeType(node) !== "final") {
+			defects.push(
+				`machine-level state "${name}" is neither a \`parallel\` phase nor a \`final\` terminal`,
+			);
+		} else if (!gateTargets.has(name)) {
+			defects.push(`machine-level final "${name}" is targeted by no phase's \`onDone\` pair`);
+		}
+	}
+	if (phases.length === 0) defects.push("machine holds no `parallel` phase state");
+	if (defects.length > 0) return {_tag: "Malformed", defects};
+	if (terminals === undefined) {
+		return {_tag: "Malformed", defects: ["no phase carried a readable `onDone` pair"]};
+	}
+	return {_tag: "Compiled", lane: {tasks, phases, terminals}};
+};
+
+/** Parse and compile in one step — for a caller holding the document's bytes off disk. */
+export const compileText = (text: string): CompileResult => {
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(text);
+	} catch {
+		return {_tag: "Malformed", defects: ["the document is not JSON"]};
+	}
+	return compile(parsed);
+};
+
+export interface LaneTopology {
+	readonly phases: CompiledLane["phases"];
+	readonly terminals: CompiledLane["terminals"];
+	readonly tasks: Readonly<
+		Record<
+			string,
+			{
+				readonly initial: string;
+				readonly maxRetries: number;
+				/** Per state, the events it holds a cell for — everything else refuses. */
+				readonly states: Readonly<Record<string, ReadonlyArray<string>>>;
+			}
+		>
+	>;
+}
+
+/** The compiled machines summarized as data — what `lane print` answers with. */
+export const topology = (lane: CompiledLane): LaneTopology => ({
+	phases: lane.phases,
+	terminals: lane.terminals,
+	tasks: Object.fromEntries(
+		Object.entries(lane.tasks).map(([taskId, task]) => [
+			taskId,
+			{
+				initial: task.initial.type,
+				maxRetries: task.initial.maxRetries,
+				states: Object.fromEntries(
+					Object.entries(task.machine.update as Record<string, Record<string, unknown>>).map(
+						([state, cells]) => [state, Object.keys(cells)],
+					),
+				),
+			},
+		]),
+	),
+});

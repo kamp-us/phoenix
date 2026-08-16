@@ -1,0 +1,71 @@
+{
+	"id": "coder",
+	"version": 1,
+	"machine": {
+		"id": "coder",
+		"initial": "pipeline",
+		"context": {
+			"issue": { "retries": 0, "maxRetries": 2 }
+		},
+		"states": {
+			"pipeline": {
+				"type": "parallel",
+				"states": {
+					"issue": {
+						"initial": "queued",
+						"states": {
+							"queued": {
+								"on": {
+									"ISSUE.WIP": "build",
+									"ISSUE.BLOCKED": "blocked"
+								}
+							},
+							"build": {
+								"on": {
+									"ISSUE.DONE": "review",
+									"ISSUE.BLOCKED": "blocked"
+								}
+							},
+							"review": {
+								"on": {
+									"ISSUE.PASS": "ship",
+									"ISSUE.BLOCKED": "blocked",
+									"ISSUE.FAIL": [
+										{
+											"target": "build",
+											"guard": "retriesRemaining",
+											"actions": "incrementRetries"
+										},
+										{ "target": "frozen" }
+									]
+								}
+							},
+							"ship": {
+								"on": {
+									"ISSUE.DONE": "shipped",
+									"ISSUE.BLOCKED": "human:cp-approval"
+								}
+							},
+							"blocked": {
+								"on": {
+									"ISSUE.UNBLOCKED": "hist"
+								}
+							},
+							"human:cp-approval": {
+								"on": {
+									"ISSUE.UNBLOCKED": "hist"
+								}
+							},
+							"hist": { "type": "history" },
+							"shipped": { "type": "final" },
+							"frozen": { "type": "final" }
+						}
+					}
+				},
+				"onDone": [{ "target": "complete", "guard": "noErrors" }, { "target": "tripped" }]
+			},
+			"complete": { "type": "final" },
+			"tripped": { "type": "final" }
+		}
+	}
+}
