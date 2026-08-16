@@ -5,8 +5,8 @@
  * The defect this exists to remove: every worktree-isolation consumer keyed on `$WORKTREE_ROOT`
  * and `$CLAUDE_CODE_AGENT`, and **neither is reliable for a subagent**. `$WORKTREE_ROOT` is
  * written by nothing in this repo and is not injected by the harness, so it reads empty inside a
- * correctly-provisioned worktree; `$CLAUDE_CODE_AGENT` is inherited, so a coder nested under the
- * crew reports its parent's `engineering-manager`. Both were observed misreporting *simultaneously*
+ * correctly-provisioned worktree; `$CLAUDE_CODE_AGENT` is inherited, so a nested coder reports its
+ * parent's agent-type (`engineering-manager`). Both were observed misreporting *simultaneously*
  * in a live coder whose worktree was provisioned correctly — the guard layer was disarmed by the
  * key, not by a provisioning failure. See ADR 0199.
  *

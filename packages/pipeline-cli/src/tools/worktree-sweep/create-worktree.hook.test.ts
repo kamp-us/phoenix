@@ -350,7 +350,7 @@ describe("create-worktree.sh — WorktreeCreate hook against the golden real pay
 
 	// The trace's non-fatality is the whole reason it is safe to add: `git worktree add` execs
 	// hooks with a stripped PATH (#787–#789) against a `.git/hooks` shared by every lane, so a
-	// trace that hard-failed would abort worktree creation crew-wide. An unwritable log must
+	// trace that hard-failed would abort worktree creation host-wide. An unwritable log must
 	// degrade to "no trace", never to a failed spawn.
 	it("an unwritable trace log never changes the exit status — degrades to no trace (#787–#789)", () => {
 		const name = "agent-notrace01";

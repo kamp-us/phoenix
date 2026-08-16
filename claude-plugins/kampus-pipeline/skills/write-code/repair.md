@@ -46,7 +46,7 @@ refuse the repair on evidence, and two coders on the same wave resolved that amb
 Fail-open ambiguity is the defect; both halves below close it.
 
 **The dispatcher's obligation.** Whatever dispatches a repair — the orchestrator
-(`.claude/workflows/drive-issue.js`, which threads the token it claimed pre-spawn) or a crew
+(`.claude/workflows/drive-issue.js`, which threads the token it claimed pre-spawn) or any other
 engine re-driving a stalled lane (which **claims the lane in its own session first**, via
 `pipeline-cli tracker claim <issue>`, and threads *that* token) — **MUST** thread the lane's
 claim token into the repair prompt, exactly as the initial-build dispatch does (ADR 0115 §3

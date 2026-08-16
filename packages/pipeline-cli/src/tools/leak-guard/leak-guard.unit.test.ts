@@ -84,10 +84,10 @@ describe("findLeaks — ALLOW matrix (legitimate content must NOT be flagged)", 
 describe("~/.claude public-config-file carve-out (#3475 — narrowed by shape, both surfaces)", () => {
 	// The three provably-safe public, machine-agnostic config FILES must PASS on BOTH the doc
 	// surface (findLeaks) and the guard-4 landed-comment surface (findCommentLeaks) — they are
-	// the literal subject of packages/pipeline-crew-mcp and reveal nothing operator-specific.
+	// named by any MCP-server registration doc and reveal nothing operator-specific.
 	const PUBLIC_CONFIG_FILES = [
 		"registers the server into ~/.claude.json",
-		"edit ~/.claude/settings.json to add the crew server",
+		"edit ~/.claude/settings.json to add the server",
 		"the project MCP config lives in .mcp.json",
 	] as const;
 	// The directory internals + operator-specific / config-file-lookalike forms must STILL trip
@@ -108,11 +108,11 @@ describe("~/.claude public-config-file carve-out (#3475 — narrowed by shape, b
 		it(`allows "${text}" on the comment surface (guard-4)`, () =>
 			assert.isFalse(hasCommentLeak(text)));
 	}
-	// The end-to-end guard-4 case from #3475: one crew-mcp comment naming all three at once passes.
-	it("allows a crew-mcp comment naming all three config files at once (guard-4, #3475 e2e)", () =>
+	// The end-to-end guard-4 case from #3475: one comment naming all three at once passes.
+	it("allows a comment naming all three config files at once (guard-4, #3475 e2e)", () =>
 		assert.isFalse(
 			hasCommentLeak(
-				"pipeline-crew-mcp registers servers into ~/.claude.json, ~/.claude/settings.json, and the project .mcp.json",
+				"an MCP plugin registers servers into ~/.claude.json, ~/.claude/settings.json, and the project .mcp.json",
 			),
 		));
 

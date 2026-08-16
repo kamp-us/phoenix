@@ -10,7 +10,7 @@
  * every subcommand a clean allow/skip no-op, so a non-worktree session is never
  * affected — with ONE exception (ADR 0172): `pre-bash` still refuses a head-moving git
  * op when isolation was EXPECTED (a direct coder/reviewer/shipper agent-type, or a nested
- * crew spawn detected via `git-dir == git-common-dir`; #2462) yet the root is unset, because
+ * spawn detected via `git-dir == git-common-dir`; #2462) yet the root is unset, because
  * that unset root is itself the #2440 harness no-op that would otherwise let the #2452/#2453
  * primary-checkout detach through.
  *
@@ -73,7 +73,7 @@ const WORKTREE_ROOT = process.env.WORKTREE_ROOT ?? "";
  * Which tree is this run sitting in? Env-independent signal (see ADR 0172 amendment, #2462):
  * `git rev-parse --absolute-git-dir` equals the (cwd-resolved) `--git-common-dir` on the primary
  * checkout, but differs in a linked worktree (whose per-tree git dir is `.git/worktrees/<id>`) —
- * the same signal write-code Step-4 uses. This corroborates the isolation gate for a NESTED crew
+ * the same signal write-code Step-4 uses. This corroborates the isolation gate for a NESTED
  * spawn whose inherited $CLAUDE_CODE_AGENT (engineering-manager) masks the direct agent-type regex.
  *
  * Tri-state on purpose: "unknown" (the probe could not run) is NOT "linked" and NOT "primary", so

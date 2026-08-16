@@ -1,5 +1,5 @@
 /**
- * The shared `gh api` REST IO seam for the crew's tracker consumers — the single source of the
+ * The shared `gh api` REST IO seam for the tracker's consumers — the single source of the
  * `runGh` / `resolveRepo` / `authorizedAuthors` / `RawComment` idiom the `Tracker` service, the
  * `epic-lock` lock, and the `verdict` gate each used to re-copy (#3262 AC 5, the same-commit
  * adoption follow-up). Consolidating it here is what makes those three consumers stop drifting

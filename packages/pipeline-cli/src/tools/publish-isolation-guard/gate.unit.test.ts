@@ -75,8 +75,8 @@ describe("checkPublishIsolation — the CI exit-code gate over a fake repo dir",
 		writePublishWorkflow(["pipeline-cli"]);
 		mkPackage("pipeline-cli", {name: "@kampus/pipeline-cli", dependencies: {effect: "catalog:"}});
 		// This member is NOT published (no matching tag prefix), so its workspace: link is fine.
-		mkPackage("pipeline-crew-mcp", {
-			name: "@kampus/pipeline-crew-mcp",
+		mkPackage("internal-lib", {
+			name: "@kampus/internal-lib",
 			dependencies: {"@kampus/internal-only": "workspace:*"},
 		});
 		const exit = await run(checkPublishIsolation(root));
@@ -143,7 +143,7 @@ describe("checkPublishIsolation — the CI exit-code gate over a fake repo dir",
 		mkPackage("pipeline-cli", {name: "@kampus/pipeline-cli", dependencies: {effect: "catalog:"}});
 		mkPackage("fabrika-cli", {
 			name: "@kampus/fabrika-cli",
-			dependencies: {"@kampus/pipeline-crew-mcp": "workspace:*"},
+			dependencies: {"@kampus/internal-lib": "workspace:*"},
 		});
 		const exit = await run(checkPublishIsolation(root));
 		expect(isCheckFailed(exit)).toBe(true);

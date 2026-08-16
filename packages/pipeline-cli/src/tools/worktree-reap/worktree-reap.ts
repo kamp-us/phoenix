@@ -1,7 +1,7 @@
 /**
  * `worktree-reap` pure core — classify each agent worktree (a managed build tree, or a
  * `review-head-*` throwaway review checkout) into REAP / KEEP-DIRTY / SPARE with a
- * reason, for the safe reaping of worktrees orphaned by DEAD crew sessions (issue
+ * reason, for the safe reaping of worktrees orphaned by DEAD agent sessions (issue
  * #3754). IO-free and total: every decision is a deterministic transform over
  * already-gathered facts. The git + process boundary
  * (enumerate / status / ancestry / pid-liveness / unlock+remove) lives in
@@ -30,7 +30,7 @@
  * (#3989, #3887). Read a `0 reapable` report as partly an absence of evidence, and do not treat
  * that inertness as fixed until #4180 lands a producer that actually fires.
  *
- * BOTH signals name the LAUNCHER — the crew pane that provisioned the tree — never the
+ * BOTH signals name the LAUNCHER — the launcher pane that provisioned the tree — never the
  * subagent occupying it: the lock pid is the pane's, the stamp is written by the hook before
  * the subagent exists, and a subagent has no session identity of its own on this platform
  * (#4001). That makes launcher death sound in exactly one direction, which is the only
@@ -64,7 +64,7 @@ export const isManagedAgentWorktree = (path: string): boolean =>
 
 /**
  * The owning session parsed off a worktree's git lock reason. `pid` is the top-level
- * crew session process the harness stamped into the lock (`claude agent <id> (pid <N>
+ * agent session process the harness stamped into the lock (`claude agent <id> (pid <N>
  * …)`); its liveness IS the session's presence (ADR 0191).
  */
 export interface AgentLockOwner {
@@ -73,7 +73,7 @@ export interface AgentLockOwner {
 
 /**
  * Parse the owning session pid out of a worktree lock reason. Returns the owner ONLY
- * for a harness-written crew-agent lock (`claude agent … (pid <N> …)`) — an operator's
+ * for a harness-written agent lock (`claude agent … (pid <N> …)`) — an operator's
  * manual `git worktree lock` with a bespoke reason, an unlocked tree (`null` reason), or
  * a reason with no parseable pid all yield `null`, so a worktree whose owner cannot be
  * proven is never treated as orphaned (fail-safe SPARE). Keying on the `claude agent`
@@ -114,7 +114,7 @@ export interface ReapCandidate {
 	readonly branch: string | null;
 	/**
 	 * Signal 1 — the owning session parsed off the git lock reason AND its probed liveness, or
-	 * `null` when no crew-agent owner is provable from the lock (unlocked, operator-locked, or
+	 * `null` when no agent owner is provable from the lock (unlocked, operator-locked, or
 	 * unparseable). `alive` is the boundary's `pid`-presence probe: it reads TRUE unless the pid is
 	 * provably gone (a still-resolving or reused pid fails safe toward alive → SPARE).
 	 */
@@ -175,7 +175,7 @@ export type ReapDecision =
  *   1. Neither a managed agent worktree nor a `review-head-*` throwaway review checkout → SPARE
  *      (`not-managed`). The primary checkout and any foreign tree are never candidates, regardless
  *      of their other facts. Review-head trees are in scope since they too carry a pid-bearing
- *      crew-agent lock (#4004) — signal 1, the only one that resolves for that class (they are not
+ *      agent lock (#4004) — signal 1, the only one that resolves for that class (they are not
  *      `.claude/worktrees/` trees, so no hook ever stamps them).
  *   2. Locked by someone else → SPARE (`foreign-lock`). An operator pin outranks both owner
  *      signals, because reclaiming would mean unlocking what a human deliberately locked.

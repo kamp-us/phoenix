@@ -1,10 +1,12 @@
 /**
- * `path-matcher` unit tests — the single source both leak-guard detectors import (#3506). These
- * pin the one SHAPE carve-out that must apply uniformly to every consumer: the `~/.claude` public
- * config-file exemption (#3475/#3505). The `/tmp` arm has NO carve-out (#3492 Option 1 — the socket
- * false positive is fixed emit-side, not by weakening the guard), so it fail-closes on ANY bare
- * `/tmp/…`. The detector-level tests (leak-guard.unit.test.ts / crew-leak.unit.test.ts) assert the
- * carve-out reaches their surfaces; these assert the shared shapes directly.
+ * `path-matcher` unit tests — the single source every leak-guard detector imports (#3506; the
+ * second consumer, the crew-plugin sanitizer, left with ADR 0279, and the single-definition shape
+ * is what keeps the drift class closed). These pin the one SHAPE carve-out that must apply
+ * uniformly to every consumer: the `~/.claude` public config-file exemption (#3475/#3505). The
+ * `/tmp` arm has NO carve-out (#3492 Option 1 — the socket false positive is fixed emit-side, not
+ * by weakening the guard), so it fail-closes on ANY bare `/tmp/…`. The detector-level tests
+ * (leak-guard.unit.test.ts) assert the carve-out reaches its surface; these assert the shared
+ * shapes directly.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {MACHINE_LOCAL_PATH_PATTERNS, TEMP_PATH_PATTERNS} from "./path-matcher.ts";

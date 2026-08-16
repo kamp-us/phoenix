@@ -38,7 +38,7 @@ Three grounded facts settle it:
 
 2. **Plugin content is static, shared component files — not a home for testable mechanics.**
    Per the plugin spec, audited in the crew's own personalization seam
-   ([`PERSONALIZATION.md`](../claude-plugins/pipeline-crew/PERSONALIZATION.md), grounded in the
+   (`claude-plugins/pipeline-crew/PERSONALIZATION.md`, grounded in the
    [Plugins reference](https://docs.claude.com/en/docs/claude-code/plugins-reference), the same
    source ADR [0171](0171-kampus-pipeline-plugin-spec-conformance.md) audited), plugin content
    is `agents/` / `commands/` / `skills/` / `hooks/` — the *same bytes* for every operator. A

@@ -6,9 +6,8 @@ name: leak-guard
 # the no-local-paths rule (#158/#173). It reuses pipeline-cli's `leak-guard scan`
 # mode; the deny-list lives once in the tool (findLeaks), never re-grepped here.
 on:
-  # No `push: main` (#5085): this scan's scope IS the diff (`git diff base...HEAD`). The
-  # repo-wide counterpart already exists as crew-leak-guard.yml's `leak-guard sweep`, which
-  # does run on `main`.
+  # No `push: main` (#5085): this scan's scope IS the diff (`git diff base...HEAD`), so a
+  # `main` run would re-scan history rather than the change under review.
   pull_request:
   # `scan changed files for leaks` is a branch-protection-REQUIRED status check, so the
   # merge queue awaits it on the batched `merge_group` ref before it can merge; without

@@ -363,7 +363,7 @@ export const trackerCommand = Command.make("tracker").pipe(
 		graduate,
 	]),
 	Command.withDescription(
-		"The crew tracker service (ADR 0190): claim a tracker entity, read back its owner, apply a triage classification, create an issue or a comment, post a gate verdict, graduate a source into its artifact",
+		"The GitHub-issue tracker service (ADR 0190): claim a tracker entity, read back its owner, apply a triage classification, create an issue or a comment, post a gate verdict, graduate a source into its artifact",
 	),
 	Command.provide(GithubTrackerLive),
 );

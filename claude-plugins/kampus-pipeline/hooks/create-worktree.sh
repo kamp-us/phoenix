@@ -52,9 +52,9 @@ set -u
 # PATH-resilient and non-fatal BY CONSTRUCTION, and both properties are load-bearing rather than
 # polish: `git worktree add` execs hooks with a stripped PATH (#787–#789) and `.git/hooks` is
 # shared across every lane, so a trace that hard-failed here would abort worktree creation for
-# the whole crew. Hence no jq, no unguarded external command, and a failed write degrades to
-# "no trace" and never to a non-zero exit. The log lives outside any repo so it can never dirty
-# a worktree (a dirty tree is KEPT forever by the sweep).
+# every lane in the checkout, not just this one. Hence no jq, no unguarded external command, and
+# a failed write degrades to "no trace" and never to a non-zero exit. The log lives outside any
+# repo so it can never dirty a worktree (a dirty tree is KEPT forever by the sweep).
 KAMPUS_WORKTREE_HOOK_LOG="${KAMPUS_WORKTREE_HOOK_LOG:-/tmp/kampus-worktree-create.log}"
 trace() {
 	# `date` may be unreachable under a stripped PATH; an unknown timestamp is still proof of
@@ -173,8 +173,10 @@ fi
 #
 # `ownerKind` is LAUNCHER and cannot be otherwise (#4001): this hook runs in the SPAWNING session,
 # before the subagent that will occupy the tree exists, so `session_id` is the launcher's — and for
-# a long-lived crew pane that id stays alive for hours after the occupant finishes. Recording WHICH
-# identity this is keeps the consumer from reading launcher liveness as occupancy; see
+# a long-lived launcher that id stays alive for hours after the occupant finishes. That was measured
+# on the v1 crew's long-lived panes, which left with ADR 0279; the property belongs to the stamp,
+# not to the crew, so any long-lived launcher reproduces it. Recording WHICH identity this is
+# keeps the consumer from reading launcher liveness as occupancy; see
 # `packages/pipeline-cli/src/tools/worktree-sweep/owner-liveness.ts` for what each kind licenses.
 # Do NOT stamp `occupant` here — there is no occupant yet to name.
 if [ -n "$session_id" ]; then

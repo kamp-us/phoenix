@@ -96,9 +96,6 @@ catalogs:
     '@types/node':
       specifier: ^25.6.2
       version: 25.6.2
-    '@types/proper-lockfile':
-      specifier: 4.1.4
-      version: 4.1.4
     '@types/react':
       specifier: ^19.2.14
       version: 19.2.14
@@ -147,9 +144,6 @@ catalogs:
     lucide-react:
       specifier: 1.23.0
       version: 1.23.0
-    proper-lockfile:
-      specifier: 4.1.2
-      version: 4.1.2
     react:
       specifier: 19.2.6
       version: 19.2.6
@@ -1124,37 +1118,6 @@ importers:
       '@types/node':
         specifier: 'catalog:'
         version: 25.6.2
-      typescript:
-        specifier: 'catalog:'
-        version: 7.0.2
-      vitest:
-        specifier: 'catalog:'
-        version: 4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
-
-  packages/pipeline-crew-mcp:
-    dependencies:
-      '@effect/platform-node':
-        specifier: 'catalog:'
-        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(ioredis@5.10.1)
-      effect:
-        specifier: 'catalog:'
-        version: 4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89)
-      proper-lockfile:
-        specifier: 'catalog:'
-        version: 4.1.2
-    devDependencies:
-      '@effect/tsgo':
-        specifier: 'catalog:'
-        version: 0.36.4
-      '@effect/vitest':
-        specifier: 'catalog:'
-        version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
-      '@types/node':
-        specifier: 'catalog:'
-        version: 25.6.2
-      '@types/proper-lockfile':
-        specifier: 'catalog:'
-        version: 4.1.4
       typescript:
         specifier: 'catalog:'
         version: 7.0.2
@@ -2905,9 +2868,6 @@ packages:
   '@types/node@25.6.2':
     resolution: {integrity: sha512-sokuT28dxf9JT5Kady1fsXOvI4HVpjZa95NKT5y9PNTIrs2AsobR4GFAA90ZG8M+nxVRLysCXsVj6eGC7Vbrlw==}
 
-  '@types/proper-lockfile@4.1.4':
-    resolution: {integrity: sha512-uo2ABllncSqg9F1D4nugVl9v93RmjxF6LJzQLMLDdPaXCUIDPeOJ21Gbqi43xNKzBi/WQ0Q0dICqufzQbMjipQ==}
-
   '@types/react-dom@19.2.3':
     resolution: {integrity: sha512-jp2L/eY6fn+KgVVQAOqYItbF0VY/YApe5Mz2F0aykSO8gx31bYCZyvSeYxCHKvzHG5eZjc+zyaS5BrBWya2+kQ==}
     peerDependencies:
@@ -2915,9 +2875,6 @@ packages:
 
   '@types/react@19.2.14':
     resolution: {integrity: sha512-ilcTH/UniCkMdtexkoCN0bI7pMcJDvmQFPvuPvmEaYA/NSfFTAgdUSLAoVjaRJm7+6PvcM+q1zYOwS4wTYMF9w==}
-
-  '@types/retry@0.12.5':
-    resolution: {integrity: sha512-3xSjTp3v03X/lSQLkczaN9UIEwJMoMCA1+Nb5HfbJEQWogdeQIyVtTvxPXDQjZ5zws8rFQfVfRdz03ARihPJgw==}
 
   '@types/use-sync-external-store@0.0.6':
     resolution: {integrity: sha512-zFDAD+tlpf2r4asuHEj0XH6pY6i0g5NeAHPn+15wk3BV6JA69eERFXC1gyGThDkVa1zCyKr5jox1+2LbV/AMLg==}
@@ -3841,9 +3798,6 @@ packages:
     resolution: {integrity: sha512-AOIgSQCepiJYwP3ARnGx+5VnTu2HBYdzbGP45eLw1vr3zB3vZLeyed1sC9hnbcOc9/SrMyM5RPQrkGz4aS9Zow==}
     engines: {node: '>= 6'}
 
-  graceful-fs@4.2.11:
-    resolution: {integrity: sha512-RbJ5/jmFcNNCcDV5o9eTnBLJ/HszWV0P73bc+Ff4nS/rJj+YaS6IGyiOL0VoBYX+l1Wrl3k63h/KrH+nhJ0XvQ==}
-
   html-encoding-sniffer@4.0.0:
     resolution: {integrity: sha512-Y22oTqIU4uuPgEemfz7NDJz6OeKf12Lsu+QC+s3BVpda64lTiMYCyGwg5ki4vFxkMwQdeZDl2adZoqUgdFuTgQ==}
     engines: {node: '>=18'}
@@ -4364,9 +4318,6 @@ packages:
   promise-limit@2.7.0:
     resolution: {integrity: sha512-7nJ6v5lnJsXwGprnGXga4wx6d1POjvi5Qmf1ivTRxTjH4Z/9Czja/UCMLVmB9N93GeWOU93XaFaEt6jbuoagNw==}
 
-  proper-lockfile@4.1.2:
-    resolution: {integrity: sha512-TjNPblN4BwAWMXU8s9AEz4JmQxnD1NNL7bNOY/AKUzyamc379FWASUhc/K1pL2noVb+XmZKLL68cjzLsiOAMaA==}
-
   prosemirror-changeset@2.4.1:
     resolution: {integrity: sha512-96WBLhOaYhJ+kPhLg3uW359Tz6I/MfcrQfL4EGv4SrcqKEMC1gmoGrXHecPE8eOwTVCJ4IwgfzM8fFad25wNfw==}
 
@@ -4474,10 +4425,6 @@ packages:
   restore-cursor@4.0.0:
     resolution: {integrity: sha512-I9fPXU9geO9bHOt9pHHOhOkYerIMsmVaWB0rA2AI9ERh/+x/i7MV5HKBNrg+ljO5eoPVgCcnFuRjJ9uH6I/3eg==}
     engines: {node: ^12.20.0 || ^14.13.1 || >=16.0.0}
-
-  retry@0.12.0:
-    resolution: {integrity: sha512-9LkiTwjUh6rT555DtE9rTX+BKByPfrMzEAtnlEtdEwr3Nkffwiihqe2bWADg+OQRjt9gl6ICdmB/ZFDCGAtSow==}
-    engines: {node: '>= 4'}
 
   reusify@1.1.0:
     resolution: {integrity: sha512-g6QUff04oZpHs0eG5p83rFLhHeV00ug/Yf9nZM6fLeUrPguBTkTQOdpAWWspMh55TZfVQDPaN3NQJfbVRAxdIw==}
@@ -6450,10 +6397,6 @@ snapshots:
     dependencies:
       undici-types: 7.19.2
 
-  '@types/proper-lockfile@4.1.4':
-    dependencies:
-      '@types/retry': 0.12.5
-
   '@types/react-dom@19.2.3(@types/react@19.2.14)':
     dependencies:
       '@types/react': 19.2.14
@@ -6461,8 +6404,6 @@ snapshots:
   '@types/react@19.2.14':
     dependencies:
       csstype: 3.2.3
-
-  '@types/retry@0.12.5': {}
 
   '@types/use-sync-external-store@0.0.6': {}
 
@@ -7481,8 +7422,6 @@ snapshots:
     dependencies:
       is-glob: 4.0.3
 
-  graceful-fs@4.2.11: {}
-
   html-encoding-sniffer@4.0.0:
     dependencies:
       whatwg-encoding: 3.1.1
@@ -7978,12 +7917,6 @@ snapshots:
 
   promise-limit@2.7.0: {}
 
-  proper-lockfile@4.1.2:
-    dependencies:
-      graceful-fs: 4.2.11
-      retry: 0.12.0
-      signal-exit: 3.0.7
-
   prosemirror-changeset@2.4.1:
     dependencies:
       prosemirror-transform: 1.12.0
@@ -8124,8 +8057,6 @@ snapshots:
     dependencies:
       onetime: 5.1.2
       signal-exit: 3.0.7
-
-  retry@0.12.0: {}
 
   reusify@1.1.0: {}
 

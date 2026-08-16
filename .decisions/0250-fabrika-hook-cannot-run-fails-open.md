@@ -48,7 +48,7 @@ months-old binary carrying zero copies of the isolation guard, for months, while
 defence read as armed. The **masking** case: an adjacent layer refusing loudly next door made an
 inert guard look armed. Horn B is never a blanket fail-closed; it refuses only on a state proven
 unsafe and stays open on ambiguity, which is the same rule as
-[`../claude-plugins/pipeline-crew/PROBES.md`](../claude-plugins/pipeline-crew/PROBES.md)'s.
+[`../.patterns/liveness-probe-outcomes.md`](../.patterns/liveness-probe-outcomes.md)'s.
 
 Both horns are real. This ADR rules the fork without collapsing either.
 
@@ -103,9 +103,9 @@ to, and collapsing them produces a confident wrong answer either way.
   L19–22, [#3999](https://github.com/kamp-us/phoenix/issues/3999)). Refusing here costs one stalled
   PR — recoverable, visible, and cheaper than a wrong merge.
 - **Liveness probe — unrunnable resolves to UNKNOWN, never "down".**
-  [`PROBES.md`](../claude-plugins/pipeline-crew/PROBES.md)'s three-outcome rule: only a probe that
-  *actually ran* and observed the target unhealthy may gate; a missing binary, a stripped PATH or an
-  exec error carries no information about the target.
+  [`liveness-probe-outcomes.md`](../.patterns/liveness-probe-outcomes.md)'s three-outcome rule: only
+  a probe that *actually ran* and observed the target unhealthy may gate; a missing binary, a
+  stripped PATH or an exec error carries no information about the target.
   [#3411](https://github.com/kamp-us/phoenix/issues/3411) is the cost of getting this backwards — a
   bare `timeout` that was not on PATH read as "API down" and baked a conductor idle for ~5 hours
   while the API was fine.

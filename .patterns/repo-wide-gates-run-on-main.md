@@ -36,19 +36,20 @@ time of writing (#5085's carried-forward questions).
 
 Every `pull_request`-triggered workflow in `.github/workflows/`, classified by guard scope.
 
-**Repo-wide → gained `push: main`** (20): `a11y-pbt`, `catalog-guard`,
-`change-detect-guard`, `codeowners-cp`, `commands-guard`, `crew-fanout-guard`,
-`crew-leak-guard`, `decisions-index`, `design-inventory-guard`, `design-token-guard`,
-`doc-links`, `fanout-guard`, `migrations-guard`, `patch-guard`, `path-filter-guard`,
-`pointer-guard`, `publish-isolation-guard`, `readme-guard`, `settings-env-guard`,
-`workflow-contract`.
+**Repo-wide → gained `push: main`** (18): `a11y-pbt`, `catalog-guard`,
+`change-detect-guard`, `codeowners-cp`, `commands-guard`, `decisions-index`,
+`design-inventory-guard`, `design-token-guard`, `doc-links`, `fanout-guard`,
+`migrations-guard`, `patch-guard`, `path-filter-guard`, `pointer-guard`,
+`publish-isolation-guard`, `readme-guard`, `settings-env-guard`, `workflow-contract`.
+(The audit named 20; `crew-fanout-guard` and `crew-leak-guard` left with the crew, ADR
+[0279](../.decisions/0279-v1-crew-retired-in-full.md).)
 
 **Deliberately left `pull_request`-only** (5):
 
 | Workflow | Why |
 |---|---|
 | `gitleaks` | Scans `merge-base..HEAD`, the PR's net-new commits. A `main` run re-scans the triaged #2325 history baseline and reds every time. |
-| `leak-guard` | Scans `git diff base...HEAD`. Its repo-wide counterpart is `crew-leak-guard` (`leak-guard sweep`), which does run on `main`. |
+| `leak-guard` | Scans `git diff base...HEAD`, the change under review. A `main` run would re-scan history instead. |
 | `run-evidence` | Not a gate — a per-PR-head evidence producer whose consumers key on the PR head SHA. |
 | `unresolved-threads-guard` | Reads a PR's review threads; a `push` carries no PR number. |
 | `roadmap-guard` | Repo-wide, but its `milestone` event and weekly schedule already cover post-merge drift. |

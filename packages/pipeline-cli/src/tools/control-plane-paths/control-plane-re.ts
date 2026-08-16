@@ -62,8 +62,8 @@
  * `^(\.claude|\.github)/` branch requires a literal `/` after `.claude` — the character after
  * `.claude` in `.claude-plugin/` is a hyphen, so that branch never matched it. Anchored to the
  * ROOT dir on purpose: an un-anchored `(^|/)\.claude-plugin/` would also sweep in every nested
- * plugin's own `plugin.json`, including `claude-plugins/pipeline-crew/`, whose corpus a live
- * founder ruling deliberately keeps OUT of §CP (#3765). See ADR 0212.
+ * plugin's own `plugin.json`, which a live founder ruling deliberately keeps OUT of §CP (#3765).
+ * See ADR 0212.
  *
  * The pipeline-cli clauses cover an **enforcement core**, not the whole package (ADR 0218,
  * amending ADR 0100). Three branches:

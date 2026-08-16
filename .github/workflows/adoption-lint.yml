@@ -1,6 +1,6 @@
 name: adoption-lint
 
-# The #3254 adoption corpus-lint (epic #3258, governing AC): reds a crew-corpus file
+# The #3254 adoption corpus-lint (epic #3258, governing AC): reds a pipeline-corpus file
 # that inline-re-derives a tool-owned decision — the hand-copied ~50-line procedure that
 # duplicates a shipped `pipeline-cli` verb's logic — instead of citing the owning verb.
 # It lands FIRST so the verb-extraction sweep cannot grow the unreferenced-tool pile
@@ -28,6 +28,8 @@ permissions:
 
 jobs:
   lint:
+    # "crew corpus" here is the branch-protection check name, not a live component — renaming
+    # it silently drops a required check (ADR 0279 retired the crew; the corpus did not go).
     name: lint crew corpus for inline re-derivations of tool-owned decisions
     runs-on: ubuntu-latest
     steps:
@@ -46,7 +48,7 @@ jobs:
       # orchestrator's drive-issue.js (the declared mirror, in scope so its exemption is
       # linted). The tool self-scopes against the manifest and fails closed (exit 3) on an
       # empty corpus or an empty decision set (ADR 0092).
-      - name: Lint crew corpus for un-cited re-derivations
+      - name: Lint pipeline corpus for un-cited re-derivations
         run: |
           set -euo pipefail
           {

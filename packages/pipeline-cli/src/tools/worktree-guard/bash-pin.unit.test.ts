@@ -213,7 +213,7 @@ describe("pinBash — isolation expected but NO provisioned worktree (ADR 0172, 
 
 // ADR 0172 amendment / #2462: re-key the isolation gate off $CLAUDE_CODE_AGENT alone onto the
 // env-independent primary-checkout signal (git-dir == common-dir) so the loud-fail arms for a
-// NESTED crew-spawned coder, whose inherited $CLAUDE_CODE_AGENT (engineering-manager) masks the
+// NESTED nested-spawn coder, whose inherited $CLAUDE_CODE_AGENT (engineering-manager) masks the
 // direct agent-type regex and used to leave the guard inert.
 describe("isIsolationExpected — the ADR-0172 gate, re-keyed onto git-dir == common-dir (#2462)", () => {
 	it("arms for a DIRECT guarded agent-type (coder/reviewer/shipper), regardless of checkout", () => {
@@ -225,7 +225,7 @@ describe("isIsolationExpected — the ADR-0172 gate, re-keyed onto git-dir == co
 
 	// The load-bearing AC2 case: a nested coder inherits CLAUDE_CODE_AGENT=engineering-manager with
 	// $WORKTREE_ROOT unset; on the primary checkout the loud-fail must now arm (it did not before).
-	it("arms for a NESTED crew spawn (engineering-manager) sitting on the primary checkout", () => {
+	it("arms for a NESTED spawn (engineering-manager) sitting on the primary checkout", () => {
 		assert.isTrue(isIsolationExpected({agentType: "engineering-manager", onPrimaryCheckout: true}));
 	});
 

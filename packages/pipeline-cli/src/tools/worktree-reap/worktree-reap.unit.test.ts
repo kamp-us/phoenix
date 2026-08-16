@@ -42,7 +42,7 @@ describe("isManagedAgentWorktree", () => {
 });
 
 describe("parseAgentLockOwner — the session-presence signal (pid off the harness lock reason)", () => {
-	it("extracts the owning pid from a harness crew-agent lock reason", () => {
+	it("extracts the owning pid from a harness agent lock reason", () => {
 		const owner = parseAgentLockOwner(
 			"claude agent agent-aa838a5704e05b5b3 (pid 58975 start Fri Jul 24 06:51:03 2026)",
 		);
@@ -59,12 +59,12 @@ describe("parseAgentLockOwner — the session-presence signal (pid off the harne
 
 	it("returns null for an operator's manual lock — never read a pid out of a foreign lock", () => {
 		// A human `git worktree lock --reason "pinned for debugging (pid 999)"` must NOT be parsed as
-		// a crew-agent owner, even though it contains a `pid` token: it lacks the `claude agent` prefix.
+		// an agent owner, even though it contains a `pid` token: it lacks the `claude agent` prefix.
 		assert.isNull(parseAgentLockOwner("pinned for debugging (pid 999)"));
 		assert.isNull(parseAgentLockOwner("do not remove"));
 	});
 
-	it("returns null for a crew-agent lock with no parseable pid", () => {
+	it("returns null for an agent lock with no parseable pid", () => {
 		assert.isNull(parseAgentLockOwner("claude agent agent-x (started, no pid recorded)"));
 	});
 
@@ -334,7 +334,7 @@ describe("computeWorktreeReapPlan — partitions into reap / kept-dirty / spared
 });
 
 describe("parseWorktreeList — preserves the lock reason (the age-based sweep discards it)", () => {
-	it("captures path, HEAD, branch, and the crew-agent lock reason", () => {
+	it("captures path, HEAD, branch, and the agent lock reason", () => {
 		const porcelain = [
 			"worktree /Users/dev/phoenix",
 			"HEAD 0420fedbc175d8f2bfd4ada19acec6f729e3d5bc",

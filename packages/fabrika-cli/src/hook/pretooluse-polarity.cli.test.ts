@@ -13,7 +13,8 @@
  * than a literal, for the same reason the golden test does: a pass must not be able to exercise a
  * verb the surface does not name. And it reaches a refusal for real rather than mocking one — a temp
  * directory made into a repo root that resolves a *different* `@kampus/fabrika-cli` is the
- * cross-checkout state, which triage found is the default in every crew worktree.
+ * cross-checkout state, which triage measured on the v1 crew's worktrees before they left with ADR
+ * 0279 — the state belongs to any worktree whose install resolves outside its own checkout.
  *
  * `../delegate/foreign-checkout.cli.test.ts` spawns the same state and asserts a different property:
  * that the refusal happens at all, and that the cwd's install never answers. This file asserts what

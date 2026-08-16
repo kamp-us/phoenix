@@ -15,8 +15,9 @@
  * prove it stamps, on a machine (CI) where no session process resolves.
  *
  * Stamping makes liveness *evaluable*, not universal: the probe is local, so a marker stamped on
- * another machine stays indeterminate and its claim stands. The host-independent signal is the
- * crew tracker's presence keyspace (#3938 / epic #3766), out of scope here — see
+ * another machine stays indeterminate and its claim stands. The host-independent signal that would
+ * close that — the crew tracker's presence keyspace (#3938 / epic #3766) — left with ADR 0279, so
+ * the multi-host case has no planned home; either way it is out of scope here. See
  * gh-issue-intake-formats.md §7 "Liveness is same-host by construction".
  */
 import {type ClaimPresence, formatClaimPresence} from "./claim-presence.ts";

@@ -129,7 +129,7 @@ describe("classifyWorktree — review-head trees (#2785)", () => {
 		assert.deepStrictEqual(d, {kind: "keep", reason: "locked"});
 	});
 
-	it("RECLAIMS one whose lock is a STALE crew-agent lock — a dead session's pin never pins forever", () => {
+	it("RECLAIMS one whose lock is a STALE agent lock — a dead session's pin never pins forever", () => {
 		// `review-head materialize` now locks every tree it creates (#4004). Were `locked` alone a
 		// keep, that lock would pin each of them past its reviewer's death and re-open the #2785
 		// unbounded leak — so a lock whose owning session is PROVEN dead does not keep.
@@ -295,7 +295,7 @@ describe("classifyWorktree — owner-presence liveness (#3943, ADR 0191)", () =>
 	});
 });
 
-// The inverse defect of #3943: UNDER-reaping. A long-lived crew pane spawns many short-lived
+// The inverse defect of #3943: UNDER-reaping. A long-lived launcher pane spawns many short-lived
 // subagent trees and stays alive for hours, so a launcher-keyed owner resolves live for every tree
 // it ever created — during exactly the runs that generate orphans. These pin that such a tree
 // becomes sweep-eligible on its own idle clock, without waiting for the pane to exit, while a live

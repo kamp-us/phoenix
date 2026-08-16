@@ -1,5 +1,11 @@
+// @patch-pin: effect@4.0.0-beta.92
 /**
  * The end-to-end half of the excess-operand guard: the **exit status** a caller actually reads.
+ *
+ * Also the registered behavior pin for the `effect` patch's hunk 3 (`buildHelpDoc` honouring
+ * `Param.withHidden` on a positional): the help case below fails if upstream's unpatched
+ * rendering comes back. It took the pin over when ADR 0279 removed the crew package that
+ * carried it.
  *
  * The defect this covers produced a successful-looking result — exit 0 with the id `adr next` would
  * have printed anyway (#4828) — so a test asserting on stdout *content* is exactly the test that

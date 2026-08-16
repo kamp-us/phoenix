@@ -1123,9 +1123,9 @@ amount to is the canonical `CONTROL_PLANE_RE=` line in the next subsection.
 **nested** `.claude-plugin/` dir — the branch is root-anchored, and `kampus-pipeline`'s own
 `plugin.json` is a genuine sibling gap to file rather than patch by hand (ADR
 [0212](https://github.com/kamp-us/phoenix/blob/main/.decisions/0212-marketplace-manifest-is-control-plane.md)
-Consequences); and the crew engine defs under `claude-plugins/pipeline-crew/agents/**`, which class
+Consequences); and a sibling plugin's agent defs under `claude-plugins/<plugin>/agents/**`, which class
 **has-skills** yet auto-ship on a `review-skill` PASS, because merge authority lives in `ship-it` and `shipper.md`
-— both §CP, both re-verifying the §CP approval independently — so the worst a weakened crew def can
+— both §CP, both re-verifying the §CP approval independently — so the worst a weakened agent def can
 do is fail to bank (live founder ruling, re-affirmed 2026-07-24 on
 [#3765](https://github.com/kamp-us/phoenix/issues/3765)). Do **not** widen `CONTROL_PLANE_RE` by
 hand to cover either of them. ADR 0174's four operational skill dirs — `heal-ci`, `what-shipped`,
@@ -1424,7 +1424,7 @@ table or it does not ship.
 | `review-trivial` | `cp-classify` (path + content) | was path-only; routes to the lighter gate, so a fail-open here under-gates |
 | `trivial-diff` | path + content | bound 3; shares the content-clause scope with `cp-classify` |
 | `codeowners-cp` | **path only — deliberate, not a defect** | it generates `.github/CODEOWNERS`, and GitHub matches CODEOWNERS on **paths**; the format structurally cannot express a content predicate. The content clause is enforced at the gates above instead, which is where a merge is actually decided. |
-| the crew driver (EM) | *classifies §CP nowhere today* | when it does, it uses `cp-classify` — tracked by #3416, which must not be built twice |
+| the crew driver (EM) | *classified §CP nowhere, and left with ADR 0279* | had it ever classified, it would have used `cp-classify` — #3416 stays the single home for that work, which must not be built twice |
 
 The boundary stays single-sourced on both axes: `CONTROL_PLANE_RE` in the pipeline-cli const
 (#2761), `GUARD_ADR_RE` in this file, and the content clause's **scope** (`.decisions/**`) once in
@@ -1544,17 +1544,17 @@ name the **same** code roots (the has-code/docs-exclusion agreement invariant) a
 lockstep — keep them adjacent so a root added to one is added to the other.
 
 `HAS_SKILLS_RE`'s two additions close the **#663 neither-class gap** for the plugin surface (#2387):
-a PR touching only a **non-`kampus-pipeline`** plugin's `agents/**`/`skills/**` (e.g. the
-`pipeline-crew` crew defs) or only the `.claude-plugin/**` manifest (`plugin.json`,
+a PR touching only a **non-`kampus-pipeline`** plugin's `agents/**`/`skills/**` (a sibling
+plugin's agent defs) or only the `.claude-plugin/**` manifest (`plugin.json`,
 `marketplace.json`) previously matched **no** class — so `ship-it` Step 0 demanded no gate and it
 reached merge un-reviewed. Both now class **has-skills** and ride the `review-skill` gate: the
 manifest surface *declares* the plugin's skill/agent artifacts (and is the drift-check `source`
 `validate-gate-path-drift.sh` locks), so it belongs to the same behavioral-artifact class and gate
 as the artifacts it manifests — no new class or gate is invented. This is **only** the review-class
-axis: `CONTROL_PLANE_RE` (§CP, who-merges) is a **separate** regex and is **untouched**, so a crew
+axis: `CONTROL_PLANE_RE` (§CP, who-merges) is a **separate** regex and is **untouched**, so a sibling
 plugin's `agents/**` gains a `review-skill` gate yet still **auto-ships** on PASS (the founder #2342
 ruling — extras don't block — **re-affirmed 2026-07-24 on #3765** on the threat-modeled containment
-basis recorded in the crew-engine-defs clause of the §CP **Deliberately OUT** paragraph above; the class fix and the
+basis recorded in the sibling-plugin agent-defs clause of the §CP **Deliberately OUT** paragraph above; the class fix and the
 §CP ruling compose).
 
 **Both consumers re-resolve these lines from `origin/main` at run time** (REST raw, `?ref=main`
@@ -2391,7 +2391,7 @@ Layer two has a named writer on every path; layer one did not, and the gap fell 
 **delegated (orchestrated) path**. `write-code` Step 3's orchestrated branch skips the direct-path
 block — which carries *both* the claim comment and the self-assign — and the contract never
 re-assigned the second half to anybody. The obligation survived only inside one orchestrator's
-inline claim-agent prompt, so any other dispatcher (a crew engine threading a token by hand)
+inline claim-agent prompt, so any other dispatcher (an engine threading a token by hand)
 satisfied the delegated-claim contract in full while leaving the gate unset. The result was an
 issue sitting `status:triaged` **and unassigned** with a finished implementation already open as a
 PR — precisely the shape the Step-1 picker selects (observed on #4283 / PR #4295).
@@ -2401,7 +2401,7 @@ after the win, before it hands the lane on.**
 
 - **Delegated path** — the dispatcher wins the claim pre-spawn, so the **dispatcher** owes layer
   one before it spawns the coder. This binds *every* dispatcher — the orchestrator
-  (`.claude/workflows/drive-issue.js`) and any crew engine that claims a lane and threads the
+  (`.claude/workflows/drive-issue.js`) and any other engine that claims a lane and threads the
   token — not just the one whose prompt happens to say so.
 - **Direct path** — `write-code` wins its own claim at Step 3, so the **coder** owes it there.
 - **Either way the coder re-asserts it**, idempotently, once it has confirmed the claim is its own
@@ -2456,8 +2456,8 @@ so closing it means claiming before any branch, build, or spawn:
   spawn the coder**, threading the winning claim **token** into the coder's prompt. On a lost claim
   it aborts the dispatch — no coder spawns, and it leaves the assignee untouched (see
   [Claim before you assign](#claim-before-you-assign-a-defer-must-not-strip-the-incumbent)).
-  **This binds every dispatcher, not only `drive-issue.js`** — a crew engine that claims a lane and
-  threads the token owes layer one on exactly the same terms
+  **This binds every dispatcher, not only `drive-issue.js`** — any other engine that claims a lane
+  and threads the token owes layer one on exactly the same terms
   ([Who writes layer one](#who-writes-layer-one-the-claim-winner-on-both-paths)).
 - **Delegated ownership.** The orchestrator and the coder are distinct sessions (the spawned
   coder carries `CLAUDE_CODE_CHILD_SESSION=1` and its own id), so the claim token is
@@ -2542,16 +2542,16 @@ a **human's** decision on evidence outside this keyspace (the run's PR landed, t
 the session is gone), never a rule the pipeline applies for you. Clear it by deleting that claim
 comment and un-assigning the issue.
 
-**The two claim substrates differ, deliberately — don't read one's rule onto the other.** The
-crew tracker's **resource claim** (ADR
-[0191](https://github.com/kamp-us/phoenix/blob/main/.decisions/0191-crew-claim-lifecycle.md),
-`packages/pipeline-crew-mcp/src/tracker/registry-core.ts`) frees on explicit `releaseClaim` **or
-self-reaps** once its holder's presence lease lapses — a stale claim there reads as free. This
+**There is one claim substrate now, and it is this one.** The second — the crew tracker's
+**resource claim** (ADR
+[0191](https://github.com/kamp-us/phoenix/blob/main/.decisions/0191-crew-claim-lifecycle.md)),
+which freed on explicit `releaseClaim` **or** self-reaped once its holder's presence lease lapsed —
+left with the crew (ADR
+[0279](https://github.com/kamp-us/phoenix/blob/main/.decisions/0279-v1-crew-retired-in-full.md)),
+and the cross-keyspace reconciliation it needed (#3938 / epic #3766) is moot. This
 **GitHub-marker claim** has no lease to lapse: it frees on an explicit `claim release`, or on
-proven claimant death, and otherwise **stands**. So the same lane can read free in the tracker and
-held here. That is not a bug to reconcile in passing; the cross-keyspace reconciliation is #3938 /
-epic #3766. Until then, the claim your coder actually consults is this one, and "ADR 0191
-self-reaping" does **not** govern it.
+proven claimant death, and otherwise **stands**. "ADR 0191 self-reaping" governs nothing live —
+do not read it onto this keyspace.
 
 <a id="dead-claimant-supersession-proven-death-only-adr-0191"></a>
 ### Dead-claimant supersession — proven death only (ADR 0191 presence liveness)
@@ -2576,11 +2576,13 @@ reused pid all leave the claim standing, so the reader refuses. Doubt refuses; i
 
 **Liveness is same-host by construction — the honest limit.** The probe is a local pid probe, so
 a claim stamped on another machine is unprobeable and stays indeterminate ⇒ it stands and the
-reader refuses. That is the correct fail-closed direction, but it means a multi-host crew gets no
-supersession at all: every claim it reads was stamped elsewhere. Closing *that* needs a
-host-independent liveness source — the crew tracker's own presence keyspace (ADR 0191 proper,
-#3938 / epic #3766), whose cross-keyspace reconciliation is where it belongs. Explicitly **out of
-scope** for this GitHub-claim keyspace: do not "fix" the multi-host case by treating an
+reader refuses. That is the correct fail-closed direction, but it means work spread across more
+than one machine gets no supersession at all: every claim it reads was stamped elsewhere. Closing
+*that* needs a host-independent liveness source. The one that was planned — the crew tracker's own
+presence keyspace (ADR 0191 proper, #3938 / epic #3766) — left with the crew (ADR
+[0279](https://github.com/kamp-us/phoenix/blob/main/.decisions/0279-v1-crew-retired-in-full.md)),
+so the multi-host case has **no planned home** today rather than a deleted one. It stays explicitly
+**out of scope** for this GitHub-claim keyspace either way: do not "fix" it by treating an
 unprobeable claim as dead, which trades a stuck lane for live-claim eviction.
 
 Both the resolution and the probe live in the shared verb — `pipeline-cli claim is-mine`
@@ -2623,7 +2625,7 @@ A **repair** dispatch is the class this contract is easiest to violate on: it la
 someone else opened, so the earliest authorized claim is by default *not* the repairing run's
 session. Every repair dispatcher **MUST** thread the lane's claim token into the coder's prompt
 under the same delegated-ownership contract as the initial build (§The pre-spawn claim protocol):
-the orchestrator threads the token it claimed pre-spawn; a crew engine re-driving a stalled lane
+the orchestrator threads the token it claimed pre-spawn; any other engine re-driving a stalled lane
 **claims the lane in its own session first** (`pipeline-cli tracker claim <issue>`, which now
 supersedes a dead claimant) and threads *that* token. A repair coder handed no token **refuses**
 — deterministically, and not overridably by a coherent-looking dispatch brief (`write-code`

@@ -228,13 +228,6 @@ export const registeredTools: ReadonlyArray<ToolRegistration> = [
 	tool("trap-status-guard", () =>
 		import("./tools/trap-status-guard/command.ts").then((m) => m.trapStatusGuardCommand),
 	),
-	// #3606 — inverts the crew read-only-fanout per-bridge spawn denylist into an ENFORCED
-	// allowlist: reds when a mutating roster agent-type is neither allowlisted nor denied by a
-	// crew bridge (chief-of-staff/cartographer/intake-desk), closing the future-agent hole ADR
-	// 0196 warns of. Fail-closed on zero scope (ADR 0092); roster-law boundary (ADR 0189/0196).
-	tool("crew-fanout-guard", () =>
-		import("./tools/crew-fanout-guard/command.ts").then((m) => m.crewFanoutGuardCommand),
-	),
 	// #3650 — the orphan-red-PR detector + heal-item emitter (the #3532 boundary path, steps
 	// 1–2): convert an open, CI-red, laneless PR into one idempotent triaged "heal red CI on
 	// PR #N" item so an engine adopts the lane, rather than free-scanning arbitrary red PRs.

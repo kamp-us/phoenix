@@ -1,7 +1,7 @@
 /**
  * Pure-core tests for `lane` (#3964): the founder-set constants, the single-place platform
  * discriminator, the closing-keyword parse, the occupancy predicate (including the
- * issue-key/PR-key coalescing that the crew tracker cannot do), the counts, the ADR-0092
+ * issue-key/PR-key coalescing nothing in the keyspace does), the counts, the ADR-0092
  * empty-scan fork, and the report. No IO — the `gh api` seam is crossed in `github.ts`.
  */
 import {describe, expect, it} from "@effect/vitest";

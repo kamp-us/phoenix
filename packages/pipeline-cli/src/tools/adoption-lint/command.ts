@@ -1,7 +1,7 @@
 /**
  * The `adoption-lint` tool — `pipeline-cli adoption-lint check <file>…`.
  *
- * The #3254 adoption corpus-lint: flags a crew-corpus file that inline-re-derives a
+ * The #3254 adoption corpus-lint: flags a pipeline-corpus file that inline-re-derives a
  * tool-owned decision instead of citing the owning `pipeline-cli` verb, the governing
  * AC of epic #3258 (it lands first so the verb sweep can't grow the unreferenced-tool
  * pile). Follows the `gh-phoenix lint-skills` shape — an IO-free core (`lintAdoption`)
@@ -40,7 +40,7 @@ const readFileOrSkip = (file: string): string | null =>
 const fileArg = Argument.string("file").pipe(
 	Argument.atLeast(1),
 	Argument.withDescription(
-		"one or more crew-corpus file paths (SKILL.md / agent defs / orchestrator surfaces) to lint for inline re-derivations of tool-owned decisions",
+		"one or more pipeline-corpus file paths (SKILL.md / agent defs / orchestrator surfaces) to lint for inline re-derivations of tool-owned decisions",
 	),
 );
 

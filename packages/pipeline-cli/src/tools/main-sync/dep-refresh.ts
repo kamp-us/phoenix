@@ -6,7 +6,7 @@
  *
  * The forcing hazard: a ff that advances `patches/**` or `pnpm-lock.yaml` moves the
  * SOURCE patch/lockfile but never the installed `.pnpm/…/patched` copy the runtime
- * executes — so a re-booted crew silently runs the PRE-merge patched dep (a merged fix
+ * executes — so a re-booted session silently runs the PRE-merge patched dep (a merged fix
  * reads as "still broken"). The fix re-installs with the REPO-PINNED pnpm on any such ff,
  * or FAILS LOUD — never an unverified PATH pnpm (whose wrong major silently leaves a stale dir).
  *
@@ -69,7 +69,7 @@ export const parsePnpmVersionOutput = (output: string): PnpmVersion | null => {
 /**
  * The pnpm-version guard outcome (candidate 3 of #3498, folded into the install path). Only
  * `ok` authorizes the install; every other case is a fail-closed refusal with the reason a
- * LOUD message reports — a crew-affecting install NEVER proceeds under an unknown/wrong major.
+ * LOUD message reports — a repo-wide install NEVER proceeds under an unknown/wrong major.
  */
 export type PnpmGuardResult =
 	// The pinned pnpm resolved and its major matches the repo requirement — install may run.

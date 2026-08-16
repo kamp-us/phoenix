@@ -104,7 +104,7 @@ would key onto one namespace and each would read the other's marker as its own.
 
 This is the first line of the comment that records a founder ruling on one grilling question, and it
 is the only marker a reader may resolve to `ruled`. The agreement it closes is an authority one: a
-comment claiming a decision is byte-indistinguishable from one carrying it, because every crew agent
+comment claiming a decision is byte-indistinguishable from one carrying it, because every agent
 writes to GitHub as the same account, so nothing in the prose can settle who decided. The marker
 therefore carries no claim about itself at all — it names a question and the digest of the round text
 it answered, and the reader settles authority against repository permissions and against a dated
