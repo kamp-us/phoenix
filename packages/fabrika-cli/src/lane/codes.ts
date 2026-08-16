@@ -58,3 +58,23 @@ export const EVENT_REFUSED = 12;
  * differs: name a task the machine has, not a different event.
  */
 export const TASK_UNKNOWN = 13;
+
+/**
+ * The lane directory is already there — a boot or emit over it is refused with nothing written.
+ * Resuming an existing lane needs no boot, and silently overwriting a machine mid-drive would
+ * corrupt a live fold (#5688; gate-1 friction item 1 on #5680).
+ */
+export const LANE_EXISTS = 14;
+
+/**
+ * The epic body carries no readable `## Dependencies` topology — there is nothing to emit a machine
+ * from. The remedy is planning the epic, so it never shares a seat with a topology that is there
+ * and defective.
+ */
+export const TOPOLOGY_ABSENT = 15;
+
+/** The topology references an issue that is not a child of the epic, and the ref is named. */
+export const TOPOLOGY_FOREIGN = 16;
+
+/** The topology's dependency graph holds a cycle, and the ref path is named. */
+export const TOPOLOGY_CYCLE = 17;

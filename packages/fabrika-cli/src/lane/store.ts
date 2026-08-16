@@ -12,7 +12,7 @@
  * well-formed fresh lane, not a fault.
  */
 import {Effect, type FileSystem, Path, Result} from "effect";
-import {exists, readFile} from "../io/fs.ts";
+import {exists, readFile, writeFile} from "../io/fs.ts";
 import {type LogEntry, parseLog} from "./fold.ts";
 import {type CompiledLane, compileText} from "./machine.ts";
 
@@ -78,4 +78,37 @@ export const loadLane = (
 			return {_tag: "Malformed", path: logPath, defects: parsed.defects} as const;
 		}
 		return {_tag: "Loaded", lane: compiled.lane, entries: parsed.entries, dir, logPath} as const;
+	});
+
+export type Placement =
+	| {readonly _tag: "Placed"; readonly dir: string; readonly workflow: string}
+	| {readonly _tag: "Exists"; readonly dir: string}
+	| {readonly _tag: "Unprobeable"; readonly dir: string; readonly reason: string}
+	| {readonly _tag: "Unwritten"; readonly path: string; readonly reason: string};
+
+/**
+ * Place one machine document as a NEW lane — the boot both `lane open` and `lane emit` share.
+ *
+ * An existing lane directory refuses before anything is written: resuming an existing lane needs no
+ * boot, and silently overwriting a machine mid-drive would corrupt a live fold (#5688). A probe that
+ * cannot answer is UNKNOWN, never an absence to build on.
+ */
+export const placeMachine = (
+	ref: LaneRef,
+	text: string,
+): Effect.Effect<Placement, never, FileSystem.FileSystem | Path.Path> =>
+	Effect.gen(function* () {
+		const path = yield* Path.Path;
+		const dir = path.join(ref.root, ref.lane);
+		const probe = yield* Effect.result(exists(dir));
+		if (Result.isFailure(probe)) {
+			return {_tag: "Unprobeable", dir, reason: probe.failure.reason} as const;
+		}
+		if (probe.success) return {_tag: "Exists", dir} as const;
+		const workflow = path.join(dir, "workflow.json");
+		const wrote = yield* Effect.result(writeFile(workflow, text));
+		if (Result.isFailure(wrote)) {
+			return {_tag: "Unwritten", path: workflow, reason: wrote.failure.reason} as const;
+		}
+		return {_tag: "Placed", dir, workflow} as const;
 	});

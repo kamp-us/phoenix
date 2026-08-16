@@ -1,0 +1,10 @@
+## Plan (plan-epic)
+
+### Summary
+Three children over two phases; the phase-2 child also names an explicit requires edge.
+
+## Dependencies
+
+- phase 1: #4301, #4302
+- phase 2: #4303
+- #4303 requires: #4301

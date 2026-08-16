@@ -1,0 +1,232 @@
+{
+	"id": "epic-4300",
+	"version": 1,
+	"machine": {
+		"id": "epic-4300",
+		"initial": "phase1",
+		"context": {
+			"issue_4301": {
+				"retries": 0,
+				"maxRetries": 2
+			},
+			"issue_4302": {
+				"retries": 0,
+				"maxRetries": 2
+			},
+			"issue_4303": {
+				"retries": 0,
+				"maxRetries": 2
+			}
+		},
+		"states": {
+			"phase1": {
+				"type": "parallel",
+				"states": {
+					"issue_4301": {
+						"initial": "queued",
+						"states": {
+							"queued": {
+								"on": {
+									"ISSUE_4301.WIP": "build",
+									"ISSUE_4301.BLOCKED": "blocked"
+								}
+							},
+							"build": {
+								"on": {
+									"ISSUE_4301.DONE": "review",
+									"ISSUE_4301.BLOCKED": "blocked"
+								}
+							},
+							"review": {
+								"on": {
+									"ISSUE_4301.PASS": "ship",
+									"ISSUE_4301.BLOCKED": "blocked",
+									"ISSUE_4301.FAIL": [
+										{
+											"target": "build",
+											"guard": "retriesRemaining",
+											"actions": "incrementRetries"
+										},
+										{
+											"target": "frozen"
+										}
+									]
+								}
+							},
+							"ship": {
+								"on": {
+									"ISSUE_4301.DONE": "shipped",
+									"ISSUE_4301.BLOCKED": "human:cp-approval"
+								}
+							},
+							"blocked": {
+								"on": {
+									"ISSUE_4301.UNBLOCKED": "hist"
+								}
+							},
+							"human:cp-approval": {
+								"on": {
+									"ISSUE_4301.UNBLOCKED": "hist"
+								}
+							},
+							"hist": {
+								"type": "history"
+							},
+							"shipped": {
+								"type": "final"
+							},
+							"frozen": {
+								"type": "final"
+							}
+						}
+					},
+					"issue_4302": {
+						"initial": "queued",
+						"states": {
+							"queued": {
+								"on": {
+									"ISSUE_4302.WIP": "build",
+									"ISSUE_4302.BLOCKED": "blocked"
+								}
+							},
+							"build": {
+								"on": {
+									"ISSUE_4302.DONE": "review",
+									"ISSUE_4302.BLOCKED": "blocked"
+								}
+							},
+							"review": {
+								"on": {
+									"ISSUE_4302.PASS": "ship",
+									"ISSUE_4302.BLOCKED": "blocked",
+									"ISSUE_4302.FAIL": [
+										{
+											"target": "build",
+											"guard": "retriesRemaining",
+											"actions": "incrementRetries"
+										},
+										{
+											"target": "frozen"
+										}
+									]
+								}
+							},
+							"ship": {
+								"on": {
+									"ISSUE_4302.DONE": "shipped",
+									"ISSUE_4302.BLOCKED": "human:cp-approval"
+								}
+							},
+							"blocked": {
+								"on": {
+									"ISSUE_4302.UNBLOCKED": "hist"
+								}
+							},
+							"human:cp-approval": {
+								"on": {
+									"ISSUE_4302.UNBLOCKED": "hist"
+								}
+							},
+							"hist": {
+								"type": "history"
+							},
+							"shipped": {
+								"type": "final"
+							},
+							"frozen": {
+								"type": "final"
+							}
+						}
+					}
+				},
+				"onDone": [
+					{
+						"target": "phase2",
+						"guard": "noErrors"
+					},
+					{
+						"target": "tripped"
+					}
+				]
+			},
+			"phase2": {
+				"type": "parallel",
+				"states": {
+					"issue_4303": {
+						"initial": "queued",
+						"states": {
+							"queued": {
+								"on": {
+									"ISSUE_4303.WIP": "build",
+									"ISSUE_4303.BLOCKED": "blocked"
+								}
+							},
+							"build": {
+								"on": {
+									"ISSUE_4303.DONE": "review",
+									"ISSUE_4303.BLOCKED": "blocked"
+								}
+							},
+							"review": {
+								"on": {
+									"ISSUE_4303.PASS": "ship",
+									"ISSUE_4303.BLOCKED": "blocked",
+									"ISSUE_4303.FAIL": [
+										{
+											"target": "build",
+											"guard": "retriesRemaining",
+											"actions": "incrementRetries"
+										},
+										{
+											"target": "frozen"
+										}
+									]
+								}
+							},
+							"ship": {
+								"on": {
+									"ISSUE_4303.DONE": "shipped",
+									"ISSUE_4303.BLOCKED": "human:cp-approval"
+								}
+							},
+							"blocked": {
+								"on": {
+									"ISSUE_4303.UNBLOCKED": "hist"
+								}
+							},
+							"human:cp-approval": {
+								"on": {
+									"ISSUE_4303.UNBLOCKED": "hist"
+								}
+							},
+							"hist": {
+								"type": "history"
+							},
+							"shipped": {
+								"type": "final"
+							},
+							"frozen": {
+								"type": "final"
+							}
+						}
+					}
+				},
+				"onDone": [
+					{
+						"target": "complete",
+						"guard": "noErrors"
+					},
+					{
+						"target": "tripped"
+					}
+				]
+			},
+			"complete": {
+				"type": "final"
+			},
+			"tripped": {
+				"type": "final"
+			}
+		}
+	}
+}
