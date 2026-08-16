@@ -109,14 +109,11 @@ The plugin's `hooks.json` (registered via plugin.json's `"hooks": "./hooks.json"
 
 | Event | Matcher | Dispatch |
 |---|---|---|
-| SessionStart | `startup\|resume` | `install.sh`, then `guard.sh spawn-guard freshness`, then `worktree-sweep-detach.sh` |
+| SessionStart | `startup\|resume` | `install.sh`, then `worktree-sweep-detach.sh` |
 | PreToolUse | `Read\|Edit\|Write` | `guard.sh worktree-guard pre-file` |
 | PreToolUse | `Bash` | `guard.sh worktree-guard pre-bash` |
 | PreToolUse | `EnterWorktree` | `guard.sh worktree-guard pre-enter` |
-| PreToolUse | `Task\|Workflow` | `guard.sh spawn-guard guard` |
 | SubagentStop | `*` | `guard.sh worktree-guard reap` |
-
-The old standalone `freshness-bin.ts` is now `spawn-guard freshness` — one consolidated CLI, subcommand dispatch (ADR 0103).
 
 ## Why two shell scripts (not the node-bin idiom)
 

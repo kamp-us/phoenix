@@ -14,8 +14,8 @@
  * This is the exact `jq` reconstruction documented in
  * `reports/token-economics-measurement.md` §2, turned into a pure, total core so a
  * one-command reporter replaces the hand-run `jq`. The headline figure renders through
- * `spawn-guard`'s existing `formatSessionCost` (the same per-session shape the statusline
- * draws) — reused read-only here, not re-minted.
+ * the existing `formatSessionCost` (`session-cost.ts`) — reused read-only here, not
+ * re-minted.
  *
  * `cache_read` is kept visible separately on purpose: it is the cumulative cached prefix
  * re-reported every turn, so it dominates `billed` and balloons with turn count — that
@@ -27,7 +27,7 @@
  * that isn't JSON, isn't an assistant message, or carries no `usage` is skipped, never a
  * crash (fail-open: a missed message just undercounts, never aborts the report).
  */
-import {formatSessionCost, type SessionCostInput} from "../spawn-guard/spawn-guard.ts";
+import {formatSessionCost, type SessionCostInput} from "./session-cost.ts";
 
 /** The four-component reconstruction of a stage's billed token spend, plus its comparators. */
 export interface StageSpend {

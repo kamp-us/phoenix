@@ -110,7 +110,7 @@ describe("guard.sh readiness is a VERSION check, not an executability check (#37
 	// The live state this issue was filed from: install failed, so install.sh dropped the marker,
 	// but the stale tree it could not overwrite is still on disk and still executable.
 	it("REFUSES to dispatch when the marker is absent (a failed install left the tree behind)", () => {
-		const {code, stdout, stderr} = runGuard(dataDir(null), "spawn-guard", "guard");
+		const {code, stdout, stderr} = runGuard(dataDir(null), "worktree-guard", "pre-bash");
 		assert.notInclude(stdout, "DISPATCHED");
 		assert.strictEqual(code, 0);
 		assert.include(

@@ -46,9 +46,6 @@ export const registeredTools: ReadonlyArray<ToolRegistration> = [
 	tool("worktree-guard", () =>
 		import("./tools/worktree-guard/command.ts").then((m) => m.worktreeGuardCommand),
 	),
-	tool("spawn-guard", () =>
-		import("./tools/spawn-guard/command.ts").then((m) => m.spawnGuardCommand),
-	),
 	tool("leak-guard", () => import("./tools/leak-guard/command.ts").then((m) => m.leakGuardCommand)),
 	tool("merge-queue-classify", () =>
 		import("./tools/merge-queue-classify/command.ts").then((m) => m.mergeQueueClassifyCommand),

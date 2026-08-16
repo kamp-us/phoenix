@@ -3,8 +3,6 @@
 #
 # Usage: guard.sh <tool> [mode...]   e.g. guard.sh worktree-guard pre-file
 #                                         guard.sh worktree-guard pre-bash
-#                                         guard.sh spawn-guard guard
-#                                         guard.sh spawn-guard freshness
 #
 # Resolves the SessionStart-installed pipeline-cli from the pipeline data dir
 # (via resolve-data-dir.sh — the same resolver install.sh uses, robust to verbatim
