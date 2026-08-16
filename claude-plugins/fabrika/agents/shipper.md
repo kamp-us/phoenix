@@ -2,8 +2,7 @@
 name: shipper
 description: The shipper — spawn target for the fabrika `ship` skill, the merge authority. Use it when a driver needs a subagent that walks one verified PR's guard chain, enqueues it, and reconciles the terminal outcome. It carries no behaviour of its own; everything it does comes from the preloaded skill.
 skills: ["fabrika:ship"]
-tools: ["Bash", "Read", "Grep", "Glob"]
-effort: high
+tools: ["Bash", "Read", "Grep", "Glob", "Agent"]
 ---
 
 An agent shell: the **shipper** is a spawn target that exists so a driver can address the fabrika
