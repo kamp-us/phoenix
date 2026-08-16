@@ -105,6 +105,8 @@ describe("runPost", () => {
 		expect(body.split("\n").filter((line) => line.startsWith("review-doc:"))).toHaveLength(1);
 	});
 
+	// The prior comment is bound to HEAD, not OLD_HEAD, and that is load-bearing: the upsert key
+	// carries a head dimension, so only a re-post at the SAME head takes the edit path at all.
 	it("edits this namespace's existing comment instead of stacking a second one", async () => {
 		const shell = fakeShell([
 			[PULL, pull({comments: 1})],
@@ -116,7 +118,7 @@ describe("runPost", () => {
 				COMMENTS,
 				comments({
 					id: 42,
-					body: `review-doc: PASS @ ${OLD_HEAD} — older round`,
+					body: `review-doc: PASS @ ${HEAD} — earlier round at this head`,
 					author: "kampus-bot",
 				}),
 			],
@@ -127,6 +129,58 @@ describe("runPost", () => {
 		expect(out.code).toBe(0);
 		expect(out.stdout).toContain("\tedited\t");
 		expect(shell.calls.some((call) => CREATE.test(call))).toBe(false);
+	});
+
+	// The head dimension of the upsert key. It shipped in v1 under #4007 and this tree did not carry
+	// it forward, so a re-gate after a repair PATCHed the prior head's verdict away and the record of
+	// what was true over that tree became unrecoverable (#5585). Both carriers are pinned, because
+	// each binds its head on different bytes and a fix to one says nothing about the other.
+	it("leaves a prior head's marker verdict intact and appends at the new head", async () => {
+		const shell = fakeShell([
+			[PULL, pull({comments: 1})],
+			...binding(),
+			[PATHS_AT(), paths("src/cart.ts", "README.md")],
+			[FILES, files("skills/deploy/SKILL.md")],
+			[USER, okOut("kampus-bot")],
+			[
+				COMMENTS,
+				comments({
+					id: 42,
+					body: `review-doc: PASS @ ${OLD_HEAD} — the round before the repair`,
+					author: "kampus-bot",
+				}),
+			],
+			[CREATE, created],
+			[READBACK, commentBody(`${MARKER}\n\n${BODY}`)],
+		]);
+		const out = await Effect.runPromise(Effect.provide(runPost(options), shell.layer));
+		expect(out.code).toBe(0);
+		expect(out.stdout).toContain("\tcreated\t");
+		expect(shell.calls.some((call) => PATCH.test(call))).toBe(false);
+	});
+
+	it("leaves a prior head's advisory intact and appends at the new head", async () => {
+		const advisoryFor = (sha: string): string =>
+			`review-doc: advisory — blocking-set PR (manual merge)\n\nReviewed-head: @ ${sha}\n\n${BODY}`;
+		const shell = fakeShell([
+			[PULL, pull({comments: 1})],
+			...binding(),
+			[PATHS_AT(), paths("src/cart.ts", "README.md")],
+			[FILES, files("skills/deploy/SKILL.md")],
+			[USER, okOut("kampus-bot")],
+			[COMMENTS, comments({id: 42, body: advisoryFor(OLD_HEAD), author: "kampus-bot"})],
+			[CREATE, created],
+			[READBACK, commentBody(advisoryFor(HEAD))],
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runPost({...options, carrier: "advisory", clause: "blocking-set PR (manual merge)"}),
+				shell.layer,
+			),
+		);
+		expect(out.code).toBe(0);
+		expect(out.stdout).toContain("\tcreated\t");
+		expect(shell.calls.some((call) => PATCH.test(call))).toBe(false);
 	});
 
 	it("stamps the write-recency line on the comment it creates", async () => {
@@ -143,7 +197,10 @@ describe("runPost", () => {
 			[PATHS_AT(), paths("src/cart.ts", "README.md")],
 			[FILES, files("skills/deploy/SKILL.md")],
 			[USER, okOut("kampus-bot")],
-			[COMMENTS, comments({id: 42, body: `review-doc: FAIL @ ${OLD_HEAD} — older round`})],
+			[
+				COMMENTS,
+				comments({id: 42, body: `review-doc: FAIL @ ${HEAD} — earlier round at this head`}),
+			],
 			[PATCH, okOut(JSON.stringify({html_url: URL}))],
 			[READBACK, commentBody(`${MARKER}\n\n${BODY}`)],
 		]);
@@ -168,12 +225,12 @@ describe("runPost", () => {
 					{
 						id: 42,
 						createdAt: "2026-08-09T03:46:59Z",
-						body: `review-doc: FAIL @ ${OLD_HEAD} — the older duplicate`,
+						body: `review-doc: FAIL @ ${HEAD} — the older duplicate`,
 					},
 					{
 						id: 77,
 						createdAt: "2026-08-09T04:05:28Z",
-						body: `review-doc: FAIL @ ${OLD_HEAD} — the newer duplicate`,
+						body: `review-doc: FAIL @ ${HEAD} — the newer duplicate`,
 					},
 				),
 			],
@@ -203,12 +260,12 @@ describe("runPost", () => {
 					{
 						id: 42,
 						createdAt: "2026-08-09T03:46:59Z",
-						body: `review-doc: FAIL @ ${OLD_HEAD} — re-posted in place\n\nVerdict-written: 2026-08-09T05:10:00Z`,
+						body: `review-doc: FAIL @ ${HEAD} — re-posted in place\n\nVerdict-written: 2026-08-09T05:10:00Z`,
 					},
 					{
 						id: 77,
 						createdAt: "2026-08-09T04:05:28Z",
-						body: `review-doc: FAIL @ ${OLD_HEAD} — the newer slot, older verdict`,
+						body: `review-doc: FAIL @ ${HEAD} — the newer slot, older verdict`,
 					},
 				),
 			],
@@ -425,7 +482,7 @@ describe("runPost", () => {
 			[PATHS_AT(), paths("src/cart.ts", "README.md")],
 			[FILES, files("skills/deploy/SKILL.md")],
 			[USER, okOut("kampus-bot")],
-			[COMMENTS, comments({id: 42, body: advisoryFor(OLD_HEAD), author: "kampus-bot"})],
+			[COMMENTS, comments({id: 42, body: advisoryFor(HEAD), author: "kampus-bot"})],
 			[PATCH, okOut(JSON.stringify({html_url: URL}))],
 			[READBACK, commentBody(advisoryFor(HEAD))],
 		]);
@@ -435,8 +492,10 @@ describe("runPost", () => {
 		expect(again.calls.some((call) => CREATE.test(call))).toBe(false);
 	});
 
+	// Both prior comments below sit at HEAD, so the only thing that can send either post down the
+	// create path is the carrier mismatch — at OLD_HEAD the head dimension would carry the test.
 	it("never crosses the carriers: a marker post skips an advisory comment, and the reverse", async () => {
-		const advisory = `review-doc: advisory — blocking-set PR (manual merge)\n\nReviewed-head: @ ${OLD_HEAD}\n\n${BODY}`;
+		const advisory = `review-doc: advisory — blocking-set PR (manual merge)\n\nReviewed-head: @ ${HEAD}\n\n${BODY}`;
 		const overAdvisory = fakeShell([
 			[PULL, pull({comments: 1})],
 			...binding(),
@@ -461,7 +520,7 @@ describe("runPost", () => {
 				COMMENTS,
 				comments({
 					id: 42,
-					body: `review-doc: PASS @ ${OLD_HEAD} — older round`,
+					body: `review-doc: PASS @ ${HEAD} — a marker at this same head`,
 					author: "kampus-bot",
 				}),
 			],

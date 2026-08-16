@@ -3,7 +3,7 @@
  *
  * Six steps, each gating the next: re-resolve the live head, re-derive the namespace requirement at
  * the bound commit, compose the first line through the `verdict-marker` wire format, leak-scan the
- * assembled comment, upsert one comment, and read it back unconditionally from live PR state.
+ * assembled comment, upsert one comment per head, and read it back unconditionally from live PR state.
  *
  * **The namespace is fixed.** There is no `--namespace` flag: this verb emits exactly one namespace,
  * so it cannot be aimed anywhere else even by a confused caller. That is the disjointness guarantee
@@ -33,9 +33,11 @@ import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {
 	contentDigest,
 	emit as emitMarker,
+	type HeadSha,
 	headSha,
 	type Polarity,
 	read as readMarker,
+	sameHead,
 	clause as toClause,
 } from "../wire/verdict-marker.ts";
 import {type AuthoredSurface, leakRefusal, readAuthored} from "./authored.ts";
@@ -76,10 +78,21 @@ export interface PostOptions {
 /** Either side may be abbreviated, so the match is a prefix in whichever direction is shorter. */
 const prefixMatch = (a: string, b: string): boolean => a.startsWith(b) || b.startsWith(a);
 
-/** Whether a comment already carries this namespace's marker — the upsert's match key. */
-const carriesNamespace = (body: string): boolean => {
+/**
+ * Whether a comment carries this namespace's marker **bound to this head** — the upsert's match key.
+ *
+ * The head dimension is what makes a re-gate at a moved head append instead of overwrite. A verdict
+ * is SHA-bound, so a new head's verdict is a different fact, not a revision of the old one, and
+ * PATCHing the prior head's comment destroys the only record of what was true over that tree. ADR
+ * 0213 refined rule 2's uniqueness key and named this half as still open; #4007 closed it in v1.
+ */
+const carriesNamespaceAt = (body: string, sha: HeadSha): boolean => {
 	const parsed = readMarker(body);
-	return parsed._tag === "Found" && parsed.value.namespace === NAMESPACE;
+	return (
+		parsed._tag === "Found" &&
+		parsed.value.namespace === NAMESPACE &&
+		sameHead(parsed.value.sha, sha)
+	);
 };
 
 /**
@@ -225,8 +238,8 @@ export const runPost = (
 		const leaked = leakRefusal(SURFACE, composed);
 		if (leaked !== null) return leaked;
 
-		// Step 5 — one namespace, one comment: a second marker stacked on line 2 is un-anchored,
-		// resolves the namespace empty, and fail-closes a substantively-passing PR.
+		// Step 5 — one namespace at one head, one comment: a second marker stacked on line 2 is
+		// un-anchored, resolves the namespace empty, and fail-closes a substantively-passing PR.
 		const me = yield* viewerLogin;
 		if (me._tag === "Failure") return unreadable("the authenticated user", pr, me.reason);
 		const comments = yield* listComments(repo, pr);
@@ -236,7 +249,7 @@ export const runPost = (
 		// and the edit lands where nobody reads (#5048).
 		const mine = latestByWriteRecency(
 			comments.value.filter(
-				(comment) => comment.author === me.value && carriesNamespace(comment.body),
+				(comment) => comment.author === me.value && carriesNamespaceAt(comment.body, inspected),
 			),
 		);
 

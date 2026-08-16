@@ -28,7 +28,7 @@ Named because a spec that leaves the substrate open makes the implementer guess 
 | `review ci` | the live CI check-run rollup at a head, fail-closed on incomplete enumeration | classifying check runs and proving the enumeration complete is mechanical (#4552, #3999); weighing a red check is judgment |
 | `review verdicts` | every verdict marker on the PR, per namespace, each with its `Current` / `Stale` / `Unbindable` binding against the live head and the content it bound | comment sweep + registered parse + `bindToContent` is mechanical; what a stale marker means for this round is judgment |
 | `review deviations` | the PR body's `## Deviations` section state (found / absent / malformed), its entries, and the Tier-M token scan over the diff | section detection and token scanning are mechanical; matching entry *substance* against findings is judgment (Tier R) |
-| `review post` | the single sanctioned verdict emit: compose through the `verdict-marker` wire format, bind to the inspected head at post time, post one comment per namespace, read it back | marker composition, head re-resolution, leak scan and read-back are a protocol; the polarity and clause are judgment |
+| `review post` | the single sanctioned verdict emit: compose through the `verdict-marker` wire format, bind to the inspected head at post time, post one comment per namespace at that head, read it back | marker composition, head re-resolution, leak scan and read-back are a protocol; the polarity and clause are judgment |
 | `review append-criterion` | append one reviewer-authored acceptance criterion to the linked issue under the four fences (append-only · ACL-gated fail-closed · frozen after round 3), with provenance tag | the fences and the diff-guarded append are mechanical (ADR 0079); whether a finding is in-scope is judgment |
 
 ### Considered and deliberately not derived
@@ -841,7 +841,7 @@ the poster reads success.
 `posted\t<namespace>\t<polarity>\t<sha>\t<content>\t<created|edited>\t<comment-url>` — counting
 `posted` as the first field, the **fifth** is the content digest the verdict binds (ADR 0276) and
 the **sixth** says whether the upsert created a fresh comment or edited this namespace's existing
-one.
+comment at this head.
 With `--json`: `{"outcome":"posted","namespace":…,"polarity":…,"sha":…,"content":…,"upsert":"created"|"edited","carrier":…,"commentUrl":…}`.
 
 **What the operation does, in order — each step gates the next.**
@@ -864,17 +864,22 @@ With `--json`: `{"outcome":"posted","namespace":…,"polarity":…,"sha":…,"co
    FAIL marker).
 4. **Leak-scan the assembled comment** (`report/leaks.ts`, imported) — an authored machine-local
    path is the `5` refusal.
-5. **Upsert one comment per namespace, matched under the carrier this post uses**: an existing
-   comment by this bot that already carries this namespace **under this carrier** is edited in
-   place; otherwise a new comment is created. With `marker` the match key is the format's `read`
-   over the first non-blank line. With `--carrier advisory` it is the ADR-0151 pair — the advisory
-   first line plus the `Reviewed-head: @ <sha>` body line, read through `readAdvisory` — because
-   the advisory first line withholds the SHA, so the marker `read` can never match one and a
-   marker-keyed upsert would post a **second** advisory on every re-post. The two keys are
-   disjoint: a `marker` post never edits an advisory comment, and an `advisory` post never edits a
-   marker one. One namespace, one comment, the carrier's anchor on its literal first line — a
-   second marker stacked on line 2 is un-anchored, resolves its namespace empty, and fail-closes a
-   substantively-passing PR (the live PR #2456 stall).
+5. **Upsert one comment per namespace *at this head*, matched under the carrier this post uses**: an
+   existing comment by this bot that already carries this namespace **under this carrier, bound to
+   the head being posted**, is edited in place; otherwise a new comment is created. A re-post at the
+   same head upserts; a post at a moved head appends, leaving the prior head's verdict intact — a
+   verdict is SHA-bound, so a new head's verdict is a different fact, not a revision, and editing
+   the old comment destroys the only record of what was true over that tree (ADR 0213 named this
+   half of rule 2's key as still open; #4007 closed it in v1). With `marker` the match key is the
+   format's `read` over the first non-blank line, plus its `sha` compared prefix-tolerantly to the
+   posted head. With `--carrier advisory` it is the ADR-0151 pair — the advisory first line plus the
+   `Reviewed-head: @ <sha>` body line, read through `readAdvisory`, whose SHA carries the same head
+   dimension — because the advisory first line withholds the SHA, so the marker `read` can never
+   match one and a marker-keyed upsert would post a **second** advisory on every re-post. The two
+   keys are disjoint: a `marker` post never edits an advisory comment, and an `advisory` post never
+   edits a marker one. One namespace at one head, one comment, the carrier's anchor on its literal
+   first line — a second marker stacked on line 2 is un-anchored, resolves its namespace empty, and
+   fail-closes a substantively-passing PR (the live PR #2456 stall).
 6. **Read it back, unconditionally, from live PR state**, under the same carrier — re-fetch the
    comment and, with `marker`, hand its body to the format's `read` and require `Found` with
    exactly the five fields posted; with `--carrier advisory`, require both ADR-0151 anchors —
