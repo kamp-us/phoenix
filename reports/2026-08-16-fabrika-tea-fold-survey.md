@@ -185,9 +185,12 @@ Not a ruling. The founder rules the direction after reading this.
 3. **The first genuinely new work, if any, is the retry counter.** One concept, three
    implementations, three caps. When the driver owns the loop, the lane machine's counter is the only
    one that has to survive.
-4. **Leave the two other local logs alone.** `spend/ledger.ts` and `spike`'s `evidence.jsonl` already
-   share the `.fabrika/` append-only-JSONL idiom, but neither derivation is a state machine — one is
-   a sum, the other a tail read. Folding them through tea would buy vocabulary and nothing else.
+4. **Leave the two other local logs alone.** `spend/ledger.ts` (`.fabrika/spend-ledger.jsonl`) and
+   `spike`'s `evidence.jsonl` (`<tmpRoot>/fabrika-spike/<nonce>/`, per `spike/workspace.ts`) are both
+   append-only local JSONL, but neither derivation is a state machine — one is a sum, the other a
+   tail read. Folding them through tea would buy vocabulary and nothing else. They do not share a
+   root: with `epic/ledger.ts` at `<epic-tree-root>/.fabrika-epic/<epic>-<nonce>/ledger.jsonl`, the
+   package writes local logs under three different roots.
 5. **`ship`'s guard chain is a set of predicates, not a machine.** That was an open question in the
    ticket; the source answers it. Nothing carries between the guards, so there is no state for a fold
    to hold.
