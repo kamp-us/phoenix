@@ -1,12 +1,12 @@
 /**
  * The `cli-invocation-guard` tool — `pipeline-cli cli-invocation-guard check|baseline <file>…`.
  *
- * Reds on any non-canonical `pipeline-cli` invocation inside runnable shell in the pipeline
- * corpus — a bare `pipeline-cli <verb>` (#3314) or a cwd-relative
- * `node …/pipeline-cli/src/bin.ts <verb>` (#4236) — across **both** corpus surfaces: a runnable
- * fence in a `.md`, and a `.sh` file scanned whole as one implicit fence (#4486). See the formats
- * contract's §CLI for the canonical resolution this enforces and the exit-code taxonomy it
- * protects. Follows the `adoption-lint` / `gh-phoenix lint-skills` shape — an IO-free core over
+ * Reds on any non-canonical invocation of either plugin CLI inside runnable shell in the plugin
+ * corpus — a bare `pipeline-cli <verb>` (#3314), a bare `fabrika <verb>` (#5679), or a cwd-relative
+ * `node …/src/bin.ts <verb>` of either (#4236) — across **both** corpus surfaces: a runnable
+ * fence in a `.md`, and a `.sh` file scanned whole as one implicit fence (#4486). Each CLI's
+ * canonical resolution is documented in its own home, and the remedy printed below names it.
+ * Follows the `adoption-lint` / `gh-phoenix lint-skills` shape — an IO-free core over
  * handed-in file contents, with a thin CLI that maps the verdict to a fail-closed exit contract
  * (ADR 0092):
  *
@@ -27,6 +27,7 @@ import {Argument, Command, Flag} from "effect/unstable/cli";
 import {
 	type AttributedFinding,
 	attribute,
+	type Cli,
 	type GuardResult,
 	isUsableBaseline,
 	isZeroScope,
@@ -38,9 +39,17 @@ import {
 const FINDING_EXIT_CODE = 2;
 const ZERO_SCOPE_EXIT_CODE = 3;
 
-const FIX_ATTRIBUTABLE =
-	// biome-ignore lint/suspicious/noTemplateCurlyInString: shell parameter expansion in the remediation literal a reader pastes, not a JS template
-	'  FIX (NEW — yours to edit): resolve the shim once per fence — PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel)/claude-plugins/kampus-pipeline}/bin/pipeline-cli" — then call "$PCLI" <verb>. See §CLI in claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md.';
+/**
+ * One remedy per CLI, because the two resolve by opposite mechanisms and a shared line would send
+ * half the readers to the wrong fix (#5679).
+ */
+const FIX_ATTRIBUTABLE: Record<Cli, string> = {
+	"pipeline-cli":
+		// biome-ignore lint/suspicious/noTemplateCurlyInString: shell parameter expansion in the remediation literal a reader pastes, not a JS template
+		'  FIX (NEW — yours to edit, `pipeline-cli`): resolve the shim once per fence — PCLI="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel)/claude-plugins/kampus-pipeline}/bin/pipeline-cli" — then call "$PCLI" <verb>. See §CLI in claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md.',
+	fabrika:
+		"  FIX (NEW — yours to edit, `fabrika`): write `pnpm exec fabrika <group> <verb> …`. It resolves through the calling tree's own node_modules/.bin from any directory inside it; the bare name resolves whatever copy PATH points at, which in a worktree is another checkout and refuses at exit 126. See rule 5 in claude-plugins/fabrika/docs/cli-interface-convention.md.",
+};
 
 const FIX_PRE_EXISTING =
 	"  FIX (PRE-EXISTING — not yours to edit): the offender was already at the merge-base. The remedy is a REBASE onto a `main` where it is fixed, not an edit — editing it here puts an unrelated change in your diff (#4250).";
@@ -59,7 +68,7 @@ const readFileOrSkip = (file: string): string | null =>
 const fileArg = Argument.string("file").pipe(
 	Argument.atLeast(1),
 	Argument.withDescription(
-		"one or more corpus file paths (SKILL.md / agent defs / plugin docs / extracted `scripts/*.sh`) to scan for non-canonical `pipeline-cli` invocations",
+		"one or more corpus file paths (SKILL.md / agent defs / plugin docs / extracted `scripts/*.sh`) to scan for non-canonical `pipeline-cli` or `fabrika` invocations",
 	),
 );
 
@@ -111,7 +120,7 @@ const loadBaseline = (
 
 const reportFinding = (f: AttributedFinding): Effect.Effect<void> =>
 	Console.error(
-		`  [${f.attribution === "new" ? "NEW — introduced by this change" : "PRE-EXISTING at the merge-base"}] ${f.file}:${f.line}: ${f.text}`,
+		`  [${f.attribution === "new" ? "NEW — introduced by this change" : "PRE-EXISTING at the merge-base"}] [${f.cli}] ${f.file}:${f.line}: ${f.text}`,
 	);
 
 const guardZeroScope = (result: GuardResult): Effect.Effect<void, ZeroScope> =>
@@ -146,8 +155,8 @@ const judge = (
 		if (attributable.length === 0) {
 			yield* Console.log(
 				preExisting.length === 0
-					? "cli-invocation-guard: clean — every `pipeline-cli` call in runnable shell (fenced or `.sh`) resolves the shim by path (§CLI)."
-					: `cli-invocation-guard: clean — this change introduces no non-canonical \`pipeline-cli\` invocation. ${preExisting.length} violation(s) are PRE-EXISTING at the merge-base and are NOT this change's to fix:`,
+					? "cli-invocation-guard: clean — every `pipeline-cli` and `fabrika` call in runnable shell (fenced or `.sh`) uses that CLI's canonical resolution."
+					: `cli-invocation-guard: clean — this change introduces no non-canonical invocation. ${preExisting.length} violation(s) are PRE-EXISTING at the merge-base and are NOT this change's to fix:`,
 			);
 			for (const f of preExisting) yield* reportFinding(f);
 			if (preExisting.length > 0) yield* Console.log(FIX_PRE_EXISTING);
@@ -155,10 +164,12 @@ const judge = (
 		}
 
 		yield* Console.error(
-			`cli-invocation-guard: FAIL — ${attributable.length} non-canonical \`pipeline-cli\` invocation(s) in runnable shell attributable to this change${preExisting.length > 0 ? ` (plus ${preExisting.length} pre-existing at the merge-base, listed but not counted against you)` : ""}. A bare name is NOT on PATH where agents spawn (ADR 0207 retired PATH-shadowing) and dies \`command not found\` (exit 127); a cwd-relative \`node …/src/bin.ts\` dies \`Cannot find module\` (exit 1, empty stdout) from any dir but the repo root. Either way a fail-closed wrapper turns the miss into a wrong verdict (#3314, #4236):`,
+			`cli-invocation-guard: FAIL — ${attributable.length} non-canonical invocation(s) in runnable shell attributable to this change${preExisting.length > 0 ? ` (plus ${preExisting.length} pre-existing at the merge-base, listed but not counted against you)` : ""}. A bare \`pipeline-cli\` is NOT on PATH where agents spawn (ADR 0207 retired PATH-shadowing) and dies \`command not found\` (exit 127); a bare \`fabrika\` IS on PATH but resolves whichever copy PATH names, and from a worktree that is another checkout, refused at exit 126 (#5679); a cwd-relative \`node …/src/bin.ts\` dies \`Cannot find module\` (exit 1, empty stdout) from any dir but the repo root. Each way a fail-closed wrapper turns the miss into a wrong verdict (#3314, #4236, #5679):`,
 		);
 		for (const f of attributed) yield* reportFinding(f);
-		yield* Console.error(FIX_ATTRIBUTABLE);
+		for (const cli of new Set(attributable.map((f) => f.cli))) {
+			yield* Console.error(FIX_ATTRIBUTABLE[cli]);
+		}
 		if (preExisting.length > 0) yield* Console.error(FIX_PRE_EXISTING);
 		return yield* Effect.fail(new FindingsFound({count: attributable.length}));
 	});
@@ -197,7 +208,7 @@ const check = Command.make(
 	}),
 ).pipe(
 	Command.withDescription(
-		"Red on any bare or `node …/src/bin.ts` `pipeline-cli` invocation in runnable shell — a bash/sh fence or a whole `.sh` file (fails closed on zero scope, per surface; --baseline narrows the verdict to newly-introduced ones)",
+		"Red on any non-canonical `pipeline-cli` or `fabrika` invocation in runnable shell — a bash/sh fence or a whole `.sh` file (fails closed on zero scope, per surface; --baseline narrows the verdict to newly-introduced ones)",
 	),
 );
 
@@ -226,6 +237,6 @@ const baseline = Command.make(
 export const cliInvocationGuardCommand = Command.make("cli-invocation-guard").pipe(
 	Command.withSubcommands([check, baseline]),
 	Command.withDescription(
-		"Enforce §CLI: every `pipeline-cli` call in the corpus resolves the shim by path, never bare on PATH (#3314)",
+		"Enforce each plugin CLI's canonical resolution in the corpus: `pipeline-cli` by shim path (#3314), `fabrika` through `pnpm exec` (#5679)",
 	),
 );

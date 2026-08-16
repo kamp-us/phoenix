@@ -17,7 +17,7 @@ marker in your own namespace is a defect you report, not a PR nobody reviewed.
 ## 1 — Scope the PR; the answer is your emission checklist
 
 ```bash
-fabrika review scope 4321
+pnpm exec fabrika review scope 4321
 ```
 
 <!-- anchor: NAMESPACE-SET-IS-THE-EMISSION-CHECKLIST --> The printed class set derives your
@@ -36,8 +36,8 @@ tree.
 ## 2 — Read the contract you grade against, and the prior verdicts
 
 ```bash
-fabrika review criteria 4287
-fabrika review verdicts 4321
+pnpm exec fabrika review criteria 4287
+pnpm exec fabrika review verdicts 4321
 ```
 
 The acceptance-criteria block arrives through the registered wire format, never a hand parse;
@@ -70,7 +70,7 @@ the verb. There are two, and only one of them is a defect:
 ## 3 — Judge each class by its rubric
 
 ```bash
-fabrika review diff 4321 --sha 03135b91
+pnpm exec fabrika review diff 4321 --sha 03135b91
 ```
 
 The diff verb refuses a truncated read rather than serving a prefix as the whole PR, and serves
@@ -87,7 +87,7 @@ green as this PR's. The code class's execution evidence is the structural CI-at-
 incomplete enumerations:
 
 ```bash
-fabrika review ci 4321 --sha 03135b91
+pnpm exec fabrika review ci 4321 --sha 03135b91
 ```
 
 No class checks out the head: content arrives through the verbs as bytes, so the PR's own
@@ -103,7 +103,7 @@ severity tier. In-scope findings append an acceptance criterion under the verb's
 never this one's. Out-of-scope findings go to fabrika's `/report`, non-blocking.
 
 ```bash
-fabrika review append-criterion 4287 --pr 4321 --round 1 <<'EOF'
+pnpm exec fabrika review append-criterion 4287 --pr 4321 --round 1 <<'EOF'
 a regression test covers qty > 1
 EOF
 ```
@@ -115,7 +115,7 @@ routes back to the full path, and the verdict stays conjunctive default-deny.
 ## 5 — Verify the deviations disclosure
 
 ```bash
-fabrika review deviations 4321 --sha 03135b91
+pnpm exec fabrika review deviations 4321 --sha 03135b91
 ```
 
 <!-- anchor: DEV-VOCABULARY --> Match your findings against each entry's **substance**, never its
@@ -136,7 +136,7 @@ undisclosed that this gate could see"* — never "no deviations exist".
 ## 7 — Emit: one comment per namespace, read back, bound to what you saw
 
 ```bash
-fabrika review post 4321 --namespace review-code --polarity PASS --sha 03135b91 --clause "merge-ready" <<'EOF'
+pnpm exec fabrika review post 4321 --namespace review-code --polarity PASS --sha 03135b91 --clause "merge-ready" <<'EOF'
 …the verdict body: per-criterion evidence, findings, deviations table…
 EOF
 ```

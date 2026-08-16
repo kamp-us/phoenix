@@ -29,7 +29,7 @@ works in the tree you are in, never its own. Where that tree sits is the operato
 skill's. Then:
 
 ```bash
-fabrika epic open 4300
+pnpm exec fabrika epic open 4300
 ```
 
 Done when it prints the run id: the epic is planned, its slice topology parses, the ledger
@@ -40,7 +40,7 @@ again. Cut the one branch: `fabrika build branch 4300 --slug checkout-totals`.
 ## 2 — Ask, never infer: the tick loop
 
 ```bash
-fabrika epic next 4300
+pnpm exec fabrika epic next 4300
 ```
 
 You do not walk the plan or remember where you are — the run's state lives in the ledger, and
@@ -60,7 +60,7 @@ slice-dispatched --slice C3`.
 When it returns, **read the graph, not the report**:
 
 ```bash
-fabrika epic landed 4300 --slice C3
+pnpm exec fabrika epic landed 4300 --slice C3
 ```
 
 `landed` proves a new commit on this branch since the slice opened — and its refusals are the
@@ -79,7 +79,7 @@ verbatim** (the polarity is the evaluator's, the recording fence is the claim-ho
 the **commit SHA in the local graph** — content-addressed, so any rewrite unbinds it:
 
 ```bash
-fabrika epic verdict 4300 --slice C3 --commit 8c1f2a9d --polarity PASS <<'EOF'
+pnpm exec fabrika epic verdict 4300 --slice C3 --commit 8c1f2a9d --polarity PASS <<'EOF'
 …the evaluator's per-criterion evidence, verbatim…
 EOF
 ```

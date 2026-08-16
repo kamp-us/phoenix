@@ -15,27 +15,28 @@ closed translation table below is the only way a report moves the machine.
 Writes used — lane-ledger appends and comments on the driven issue. No branch, no push, no merge,
 no verdict of your own.
 
-Every lane verb is invoked as a plain literal through the in-tree entrypoint:
+Every lane verb is invoked through the calling tree's own install:
 
 ```bash
-node packages/fabrika-cli/src/bin.ts lane <verb> …
+pnpm exec fabrika lane <verb> …
 ```
 
-**Never the bare `fabrika` binstub** — in a worktree it resolves to another checkout's code
-([#5679](https://github.com/kamp-us/phoenix/issues/5679)), so its answer describes a tree you are
-not standing in. The same rule goes into every spawn prompt you write.
+**Never the bare `fabrika`** — it resolves whichever copy is on PATH, and from a worktree that copy
+belongs to another checkout, so the delegation refuses at exit `126` rather than answer from a tree
+you are not standing in ([#5679](https://github.com/kamp-us/phoenix/issues/5679)). The same rule
+goes into every spawn prompt you write.
 
 ## 1 — Boot or resume
 
 ```bash
-node packages/fabrika-cli/src/bin.ts lane status 5539
+pnpm exec fabrika lane status 5539
 ```
 
 Exit `0` is resume — the lane exists and its fold is the state; go to step 2. Exit `7` (no lane)
 is boot:
 
 ```bash
-node packages/fabrika-cli/src/bin.ts lane emit 5539
+pnpm exec fabrika lane emit 5539
 ```
 
 `lane emit` generates an epic lane — one region per child, phase-sequenced — from the epic body's
@@ -44,7 +45,7 @@ that refusal-first order is what keeps the boot type-blind: no label is read any
 refusal, boot the single-issue lane instead:
 
 ```bash
-node packages/fabrika-cli/src/bin.ts lane open 5539
+pnpm exec fabrika lane open 5539
 ```
 
 `lane open`'s already-exists refusal is tolerated as resume, not treated as an error. Both verbs
@@ -85,8 +86,8 @@ Every spawn, no exceptions:
 - **The prompt points at the spec, never restates it**: it carries the URLs — the issue, the PR,
   the verdict comments, as each exists — and no summary of their content; the shell re-reads its
   own ground through its own verbs.
-- **The prompt instructs `node packages/fabrika-cli/src/bin.ts` for every fabrika verb**, never
-  the bare binstub (#5679 again, now in the spawned tree).
+- **The prompt instructs `pnpm exec fabrika` for every fabrika verb**, never the bare name
+  (#5679 again, now in the spawned tree, which is a worktree by the rule above).
 
 Done when every active task has either a spawn in flight or an event recorded this pass.
 
@@ -95,7 +96,7 @@ Done when every active task has either a spawn in flight or an event recorded th
 Translate each spawn's report into **exactly one** of the machine's events and record it:
 
 ```bash
-node packages/fabrika-cli/src/bin.ts lane transition 5539 DONE
+pnpm exec fabrika lane transition 5539 DONE
 ```
 
 (On a multi-task lane, address the event with `--task <name>`, the name exactly as `lane status`
@@ -153,7 +154,7 @@ and ends `LANE-PARKED` again; the ledger, not your patience, decides when the la
 the transcript**, posted to the driven issue straight off the verbs:
 
 ```bash
-node packages/fabrika-cli/src/bin.ts lane print 5539 | gh issue comment 5539 --body-file -
+pnpm exec fabrika lane print 5539 | gh issue comment 5539 --body-file -
 ```
 
 with `lane history 5539` appended the same way when the event log adds anything `print` does not
@@ -184,6 +185,6 @@ fabrika skill, so one reader parses all of them. No row here dead-ends on a bare
 
 | Must exist | Why this skill needs it | When missing |
 | --- | --- | --- |
-| The lane verb group — `packages/fabrika-cli/src/bin.ts` routing `lane status`/`transition`/`history`/`print` plus `open`/`emit` (#5688) | Every state read and every event write in this skill is one of these verbs; there is no other path to the ledger | **fail-loud** — a verb that cannot be executed leaves the lane state UNKNOWN; the run ends `STOPPED` naming `packages/fabrika-cli/src/bin.ts` and points at front-door. |
+| The lane verb group — `fabrika lane status`/`transition`/`history`/`print` plus `open`/`emit` (#5688), served from `packages/fabrika-cli/` | Every state read and every event write in this skill is one of these verbs; there is no other path to the ledger | **fail-loud** — a verb that cannot be executed leaves the lane state UNKNOWN; the run ends `STOPPED` naming the verb group and points at front-door. |
 | The agent shells — `claude-plugins/fabrika/agents/builder.md`, `reviewer.md`, `shipper.md` | Step 2's routing table spawns exactly these three by their bare noun names | **fail-loud** — a route whose shell does not exist cannot spawn; the run ends `STOPPED` naming the absent shell file, and no event is recorded for a spawn that never started. |
 | `.gitignore` covering `.fabrika/` | The ledger is a disposable machine-local artifact, regenerable from the board — committed, it would smuggle one machine's lane state into every checkout | **degrade** — the verbs still work; state the uncovered `.fabrika/` in the park or transcript comment and file the gap via `/report`. |

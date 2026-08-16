@@ -86,7 +86,7 @@ answer wearing a deterministic exit code.
 ## 2 — Read the ground state before you write about it
 
 ```bash
-fabrika handoff capture --issue 5021
+pnpm exec fabrika handoff capture --issue 5021
 ```
 
 The proven half, derived and never narrated: the branch, its head, whether the head is pushed and
@@ -112,7 +112,7 @@ hex characters** that you generate for this run and reuse in every call of it �
 yourself; no verb mints one, and nothing infers it from the environment:
 
 ```bash
-fabrika handoff take --issue 5021 --nonce 7f3a9c21 <<'PACK'
+pnpm exec fabrika handoff take --issue 5021 --nonce 7f3a9c21 <<'PACK'
 ## Intent
 Make the fanout guard classify a mutation that writes through a helper.
 
@@ -155,7 +155,7 @@ pack's proven half names a different `git.base.branch`, re-read passing that val
 reports drift your flag caused rather than drift the work has.
 
 ```bash
-fabrika handoff read --issue 5021
+pnpm exec fabrika handoff read --issue 5021
 ```
 
 One call answers both questions a successor has, because asking only the first is the trap: **what
@@ -186,7 +186,7 @@ none, that is itself the most useful thing the pack told you.
 ## 5 — Claim it, so a third session knows you are on it
 
 ```bash
-fabrika handoff claim --issue 5021 --nonce 4b8e2f01
+pnpm exec fabrika handoff claim --issue 5021 --nonce 4b8e2f01
 ```
 
 **A claim says you are doing this pack's work — not merely that you read it.** Claim when you intend

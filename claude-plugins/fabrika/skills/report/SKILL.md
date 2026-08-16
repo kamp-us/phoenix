@@ -48,7 +48,7 @@ Report runs go concurrently, so what you just saw may have reached the board min
 creating stays small:
 
 ```bash
-fabrika report dedup --query "http worker aborted request downstream plain timeout reason"
+pnpm exec fabrika report dedup --query "http worker aborted request downstream plain timeout reason"
 ```
 
 Three outcomes, and only one of them is about your observation:
@@ -75,7 +75,7 @@ they are branches of one decision rather than two things to do in order:
 ## 3 — File it — the branch where nothing already covers it
 
 ```bash
-fabrika report file --title "Aborted requests in the http worker surface as plain timeouts" <<'EOF'
+pnpm exec fabrika report file --title "Aborted requests in the http worker surface as plain timeouts" <<'EOF'
 ## Summary
 …
 EOF
@@ -100,7 +100,7 @@ When step 2 found your observation already filed, do not file a twin. Add only w
 not already carry, over the same guarded path:
 
 ```bash
-fabrika report note --issue 4312 <<'EOF'
+pnpm exec fabrika report note --issue 4312 <<'EOF'
 …
 EOF
 ```

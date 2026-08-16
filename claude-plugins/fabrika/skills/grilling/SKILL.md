@@ -40,7 +40,7 @@ approval step and no new gate label.
 ## 1 — Open or resume the session
 
 ```bash
-fabrika grill open --topic "sozluk moderation model" --repo kamp-us/phoenix
+pnpm exec fabrika grill open --topic "sozluk moderation model" --repo kamp-us/phoenix
 ```
 
 Prints the session issue number. It resumes an existing open session for the topic rather than
@@ -69,7 +69,7 @@ a decision.
 ## 3 — Post one round
 
 ```bash
-fabrika grill round 5290 --repo kamp-us/phoenix <<'ROUND'
+pnpm exec fabrika grill round 5290 --repo kamp-us/phoenix <<'ROUND'
 ### 1 · decision
 Do vouched-in yazars inherit their kefil's moderation weight?
 
@@ -95,7 +95,7 @@ closes the tab on.
 ## 4 — Answer the facts yourself
 
 ```bash
-fabrika grill answer 5290 R2.1 --finding finding.md --repo kamp-us/phoenix
+pnpm exec fabrika grill answer 5290 R2.1 --finding finding.md --repo kamp-us/phoenix
 ```
 
 One call per fact question, after a subagent has established it. **Treat that subagent's report as
@@ -112,7 +112,7 @@ one in the next round rather than answering it on your own authority.
 ## 5 — Read the frontier before you act on it
 
 ```bash
-fabrika grill read 5290 --repo kamp-us/phoenix
+pnpm exec fabrika grill read 5290 --repo kamp-us/phoenix
 ```
 
 The parser, and the only thing that may tell you a question is ruled. It prints one row per
@@ -147,7 +147,7 @@ it has one shape: the marker counts only when an adjacent comment quotes his aut
 **verbatim, with its date**.
 
 ```bash
-fabrika grill rule 5290 R2.3 --authorization authorization.md --repo kamp-us/phoenix
+pnpm exec fabrika grill rule 5290 R2.3 --authorization authorization.md --repo kamp-us/phoenix
 ```
 
 Write `authorization.md` by pasting what he actually said, with the date he said it. The verb
@@ -168,7 +168,7 @@ If he later contradicts a recorded ruling, re-ask the question in a new round ra
 the old one, and name what it replaces:
 
 ```bash
-fabrika grill round 5290 --supersedes R1.4 --repo kamp-us/phoenix <<'ROUND'
+pnpm exec fabrika grill round 5290 --supersedes R1.4 --repo kamp-us/phoenix <<'ROUND'
 ### 1 · decision
 Does a partial return follow the same path as a full one?
 

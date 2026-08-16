@@ -220,13 +220,25 @@ usable at an agent's top-level command.
 
 - A fabrika verb is invoked as a plain literal command string — no `$VAR`, no `${VAR:-default}`, no
   command substitution, no `source`.
-- **The literal is `fabrika`.** That name is now fixed, closing the deferral this rule carried
-  to [#4650](https://github.com/kamp-us/phoenix/issues/4650): every fence in every fabrika skill
-  writes `fabrika <group> <verb> …` and nothing else. The command and the package are deliberately
-  **different names** — `fabrika` is the `bin` *key* of the `@kampus/fabrika-cli` package, which
-  keeps its name on npm and its directory at `packages/fabrika-cli/`
-  ([#4784](https://github.com/kamp-us/phoenix/issues/4784)). [Delivery](#delivery--one-name-two-installs)
-  below is how the command comes to resolve.
+- **The literal is `pnpm exec fabrika`.** The command name is fixed, closing the deferral this rule
+  carried to [#4650](https://github.com/kamp-us/phoenix/issues/4650): every fence in every fabrika
+  skill writes `pnpm exec fabrika <group> <verb> …` and nothing else. The command and the package
+  are deliberately **different names** — `fabrika` is the `bin` *key* of the `@kampus/fabrika-cli`
+  package, which keeps its name on npm and its directory at `packages/fabrika-cli/`
+  ([#4784](https://github.com/kamp-us/phoenix/issues/4784)). The `pnpm exec` prefix is what makes
+  the fence resolve the **calling tree's** copy rather than whichever copy PATH happens to name;
+  [Delivery](#delivery--one-name-two-installs) below is why the bare name cannot be that fence.
+  This is still a plain literal — the rule above bans a variable-rooted invocation, and there is no
+  variable here. `pipeline-cli`'s opposite rule (never bare, resolved by path) is not this one: the
+  two CLIs resolve by different mechanisms, and `pipeline-cli cli-invocation-guard` enforces each
+  in its own terms ([#5679](https://github.com/kamp-us/phoenix/issues/5679)).
+- **The hook surface is the one exception, and it is enforced the other way.** A `hooks.json`
+  command stays the bare `fabrika <group> <verb>` literal: the harness runs it, not an agent in a
+  worktree, and `LITERAL_COMMAND` in
+  [`../../../packages/fabrika-cli/src/hook/declaration.ts`](../../../packages/fabrika-cli/src/hook/declaration.ts)
+  reds on anything else. A hook that cannot dispatch fails open by ruling (ADR
+  [0250](../../../.decisions/0250-fabrika-hook-cannot-run-fails-open.md)), so the worktree branch
+  costs a hook its answer, never a session. [`hook-surface.md`](hook-surface.md) owns that surface.
 - **Examples in `--help` and in a contract spec are held to the same rule.** An example an agent
   cannot paste verbatim is not an example.
 - A verb never requires an env var to *locate* itself. Configuration may still arrive by env
@@ -258,6 +270,24 @@ global's version beside the version the root manifest declared, silenceable with
 **No repo root at all is the one silent branch**, deliberately, so a global-only invocation stays
 quiet. Separating those two is the whole point — collapsing them is what makes a delegation quietly
 wrong.
+
+**The branch that decides the fence is the worktree one, and it is why rule 5's literal carries
+`pnpm exec`.** A fifth branch refuses outright: a copy that belongs to a *different checkout* is not
+a global install, so delegating it would answer from a tree the caller never named
+([#4956](https://github.com/kamp-us/phoenix/issues/4956)). Where the machine's `fabrika` on PATH is
+linked to a source checkout rather than installed from the registry, every agent working in a git
+worktree of that same repo hits exactly that branch — the copy PATH names belongs to the primary
+checkout, the cwd belongs to the worktree, and the run stops at exit `126` before any verb sees it.
+The refusal is right; what is wrong is a documented fence that can only produce it. `pnpm exec`
+resolves through the calling tree's own `node_modules/.bin` from any directory inside it, so the
+delegation's `run-here` branch serves the invocation and the answer describes the tree the caller is
+standing in ([#5679](https://github.com/kamp-us/phoenix/issues/5679)).
+
+One consumer shape degrades, and it is stated rather than hidden: `pnpm exec` needs a `package.json`
+at or above the cwd, so in a repo that is not a Node project at all it refuses with
+`ERR_PNPM_RECURSIVE_EXEC_NO_PACKAGE` where the bare name would have run the global. Such a repo pins
+no version either, so it was already on the "no repo root at all" branch — it types the bare name and
+the delivery above is unchanged for it.
 
 Three environment variables belong to the delivery layer rather than to any verb, and none of them
 locates the binary, so none weakens the rule above: `FABRIKA_DEBUG` prints one stderr line naming

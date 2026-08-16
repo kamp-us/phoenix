@@ -33,8 +33,8 @@ confirm, issue, branch, scratch, check, push, pr, note, verdicts, release ([`../
 This skill adds only the `ui` group ([`contract.md`](contract.md)); nothing here re-derives a lane rule.
 
 ```bash
-fabrika build tree --require-clean
-fabrika build pick
+pnpm exec fabrika build tree --require-clean
+pnpm exec fabrika build pick
 ```
 
 Isolation behaves as in `build`: on the `build` verbs, exit 13/14 is stop-and-report (the `ui`
@@ -48,7 +48,7 @@ every later mutation.
 ## 2 — Read the law before you generate anything
 
 ```bash
-fabrika ui manifest
+pnpm exec fabrika ui manifest
 ```
 
 This resolves the **repo's** design surfaces by convention — the design manifest, the typed
@@ -59,7 +59,7 @@ instance, not the definition: whatever repo you run in, its manifest is the law 
 Fail loud, route to the bootstrap, **never improvise a design language**.
 
 ```bash
-fabrika ui law
+pnpm exec fabrika ui law
 ```
 
 The typed registry rows are your generation-time law (row shape: the contract's registry
@@ -81,7 +81,7 @@ Branch (`fabrika build branch <n> --slug <slug>`), then capture the **before** s
 surface you are about to change, while the tree still renders it:
 
 ```bash
-fabrika ui render --out before --surface /pano --surface /pano/yeni
+pnpm exec fabrika ui render --out before --surface /pano --surface /pano/yeni
 ```
 
 You name the surfaces — bare routes; a `:state` suffix is reserved grammar and refused (exit
@@ -99,7 +99,7 @@ over the sanctioned scale, or a hand-rolled color function where a token exists 
 class every real design failure has shipped. Then the inner loop, per iteration:
 
 ```bash
-fabrika ui render --out after --surface /pano
+pnpm exec fabrika ui render --out after --surface /pano
 ```
 
 **Look at the capture and judge composition** — balance, rhythm, alignment, hierarchy, whether
@@ -129,7 +129,7 @@ Push (`fabrika build push`, done only on `PUSH-VERDICT: MOVED`) and open the PR
 classification claims. Then attach what you rendered:
 
 ```bash
-fabrika ui evidence --pr <pr> --before before --after after
+pnpm exec fabrika ui evidence --pr <pr> --before before --after after
 ```
 
 The verb uploads every capture, **verifies each upload landed, and refuses on any failure** — a

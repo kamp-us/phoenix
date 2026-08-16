@@ -54,7 +54,7 @@ recognise when you saw it. Two questions is two spikes, because a single artifac
 things is an artifact you will be tempted to keep.
 
 ```bash
-fabrika spike open --question "does better-auth mint a single-use token without a new table?" --kind logic
+pnpm exec fabrika spike open --question "does better-auth mint a single-use token without a new table?" --kind logic
 ```
 
 **The verb mints the nonce and prints it; you never invent one.** It keys this run's workspace, and
@@ -90,7 +90,7 @@ first edit lands in the primary checkout easily enough, so `spike open` recorded
 ## 3 — Run it through the verb, or you have no evidence
 
 ```bash
-fabrika spike run --nonce 7f3a9c21 -- node walkthrough.mjs --case suspended
+pnpm exec fabrika spike run --nonce 7f3a9c21 -- node walkthrough.mjs --case suspended
 ```
 
 **This is the step the skill exists for.** The verb executes the command with the workspace as its
@@ -116,7 +116,7 @@ line of its captured output answers the question.
 ## 4 — Capture the decision, then destroy the artifact
 
 ```bash
-fabrika spike capture 9310 --nonce 7f3a9c21 <<'MD'
+pnpm exec fabrika spike capture 9310 --nonce 7f3a9c21 <<'MD'
 A single-use token needs no new table — the verification record carries it, and the walkthrough
 drove sign-in twice on one token with the second rejected (run 2).
 MD
@@ -130,7 +130,7 @@ the evidence beside the claim rather than a hash standing in for it.
 Then the half a session skips because the question is already answered:
 
 ```bash
-fabrika spike dispose --nonce 7f3a9c21
+pnpm exec fabrika spike dispose --nonce 7f3a9c21
 ```
 
 <!-- anchor: DISPOSAL-IS-CHECKED-NOT-INTENDED --> **This is what makes "throwaway" a property rather

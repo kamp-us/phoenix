@@ -11,7 +11,7 @@ implies, because discovery is the CLAUDE.md contract and there is no index. Exam
 ## 1 — Claim the number
 
 ```bash
-fabrika adr next
+pnpm exec fabrika adr next
 ```
 
 Unions the freshly fetched merged set with the ids open ADR PRs already claim, so a checkout sitting
@@ -29,7 +29,7 @@ and re-run; a repo with no decision directory at all is a setup question for
 ## 2 — Write the decision
 
 ```bash
-fabrika adr new 0240 only-landed-adrs-may-be-cited
+pnpm exec fabrika adr new 0240 only-landed-adrs-may-be-cited
 ```
 
 Scaffolds the frontmatter and section skeleton; the slug is kebab-case, at most 5 words.
@@ -52,7 +52,7 @@ questions** — *"may an open issue exist without a milestone?"* — not as a su
 for a question you cannot phrase. Then rank the uncited live-accepted ADRs your domain touches:
 
 ```bash
-fabrika adr sweep --new 0240
+pnpm exec fabrika adr sweep --new 0240
 ```
 
 None of its three outcomes is a clearance:
@@ -75,7 +75,7 @@ append a dated `- **#NNNN — <what changed> (YYYY-MM-DD).**` line under its `##
 ## 4 — Resolve every reference, then edit the status lines
 
 ```bash
-fabrika adr resolve 0164 0023 0126
+pnpm exec fabrika adr resolve 0164 0023 0126
 ```
 
 Answers against a freshly fetched base ref, printing `live`, `landed`, `in-flight` or `absent` with
@@ -87,7 +87,7 @@ citation to one can pass every gate and still be dead on arrival. **A non-zero e
 never `absent`.** **Use the filename it prints** — a remembered slug is usually the wrong one.
 
 ```bash
-fabrika adr supersede 0126 --by 0240
+pnpm exec fabrika adr supersede 0126 --by 0240
 ```
 
 Where the rest of that ADR still stands, `fabrika adr amend-in-part 0023 --by 0240` instead.
@@ -106,7 +106,7 @@ on **exactly one** outcome; the explicit "none" separates *considered it* from *
 ## 6 — Check, then report
 
 ```bash
-fabrika adr resolve 0240
+pnpm exec fabrika adr resolve 0240
 ```
 
 Your own id, one last time: `absent` means nobody claimed it while you wrote; `in-flight` means

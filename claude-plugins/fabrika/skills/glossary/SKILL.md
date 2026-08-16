@@ -37,7 +37,7 @@ request**: it leaves edited files in the working tree and the surrounding lane c
 ## 1 — Scope the run
 
 ```bash
-fabrika glossary drift --register terms
+pnpm exec fabrika glossary drift --register terms
 ```
 
 Answers `drift`, `clean` or `bootstrap`, all on exit 0. It reports the surfaces that moved since the
@@ -57,7 +57,7 @@ file wholesale.
 ## 2 — Ask what is already declared
 
 ```bash
-fabrika glossary lookup "front door" --register both
+pnpm exec fabrika glossary lookup "front door" --register both
 ```
 
 For each term: `declared`, `absent`, or `collision`, with the register and section. All three are
@@ -123,18 +123,18 @@ On `bootstrap`, create the register first — this is the one verb that writes a
 yet exist, and it is why a fresh repo is not a dead end:
 
 ```bash
-fabrika glossary init --register terms
+pnpm exec fabrika glossary init --register terms
 ```
 
 A register's sections are **data, not a fixed enum** — they grow as the repo does, so read them
 rather than recalling them, and pass `--create-section` when a term's right home is genuinely new:
 
 ```bash
-fabrika glossary sections --register terms
+pnpm exec fabrika glossary sections --register terms
 ```
 
 ```bash
-fabrika glossary add "front door" --register terms --section "fabrika skill nouns" --definition-file -
+pnpm exec fabrika glossary add "front door" --register terms --section "fabrika skill nouns" --definition-file -
 ```
 
 Reads the definition on stdin, inserts the row in that section's alphabetical place, and re-reads the
@@ -147,7 +147,7 @@ before merge — concurrent lanes derive the same one — so a row citing an unm
 dead link the day it lands. Resolve the citation rather than assuming it:
 
 ```bash
-fabrika adr resolve 0240
+pnpm exec fabrika adr resolve 0240
 ```
 
 Cite only `live` or `landed`. On `in-flight` or `absent`, end on `HELD-UNMERGED-ADR` and say which
@@ -156,7 +156,7 @@ record.
 ## 5 — Check the register
 
 ```bash
-fabrika glossary check --register both
+pnpm exec fabrika glossary check --register both
 ```
 
 Answers `clean`, `defects` or `bootstrap` on exit 0, enumerating row-shape breaks, duplicate keys,

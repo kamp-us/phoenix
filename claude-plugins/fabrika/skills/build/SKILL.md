@@ -23,7 +23,7 @@ An argument that is a PR number is repair mode — skip to **Repair**.
 ## 1 — Prove the ground, then pick
 
 ```bash
-fabrika build tree --require-clean
+pnpm exec fabrika build tree --require-clean
 ```
 
 Done when it printed this tree's root. Work wherever you were spawned; where that is, is
@@ -33,7 +33,7 @@ Re-prove before every mutation — once you hold a claim, use `fabrika build tre
 lane check arms too.
 
 ```bash
-fabrika build pick
+pnpm exec fabrika build pick
 ```
 
 The pool is `status:triaged` + `ready-for:agent` + unassigned + inside the campaign in exclusive
@@ -47,7 +47,7 @@ Two refusals before claiming: a `type:decision`'s deliverable is a recorded choi
 it executes the whole loop itself. Then gate your choice:
 
 ```bash
-fabrika build eligible 4312
+pnpm exec fabrika build eligible 4312
 ```
 
 Only `eligible` proceeds. `blocked` (`16`) names every open dependency, so one call tells you the
@@ -57,7 +57,7 @@ be read, and it is named on stderr.
 ## 2 — Claim, and keep proving the claim
 
 ```bash
-fabrika build claim 4312
+pnpm exec fabrika build claim 4312
 ```
 
 `won` prints your token; `lost` names the winner — that lane is theirs, back off. Exit
@@ -69,7 +69,7 @@ theirs, not a rationale you compose. Before **every** later mutation addressed t
 number, re-confirm:
 
 ```bash
-fabrika build confirm 4312
+pnpm exec fabrika build confirm 4312
 ```
 
 **The refusal is not overridable by reasoning**: a lost confirm means another lane owns this number
@@ -78,7 +78,7 @@ now, and your next write lands in their lane.
 ## 3 — Read the contract, then the ground it stands on
 
 ```bash
-fabrika build issue 4312
+pnpm exec fabrika build issue 4312
 ```
 
 That is the issue body and its acceptance criteria, off the verb, never off memory. Check any
@@ -91,7 +91,7 @@ something you can point at.
 ## 4 — Branch, build, verify in this tree
 
 ```bash
-fabrika build branch 4312 --slug editor-focus-loss
+pnpm exec fabrika build branch 4312 --slug editor-focus-loss
 ```
 
 Construct. Match the surrounding artifact's idiom; for code: domain logic in domain objects,
@@ -100,7 +100,7 @@ mutation — the cwd resets between shell calls, so the tree you proved is not t
 standing in until you prove it again. Scratch files go only where this prints:
 
 ```bash
-fabrika build scratch 4312 --slug notes
+pnpm exec fabrika build scratch 4312 --slug notes
 ```
 
 Then validate **in this tree, cache bypassed** — a green borrowed from another checkout's cache is
@@ -108,7 +108,7 @@ the false green this verb exists to refuse. Hand it the surface you named in ste
 refuses a surface the diff contradicts.
 
 ```bash
-fabrika build check --surface code
+pnpm exec fabrika build check --surface code
 ```
 
 Loop construct → check until green. `red` rows name the diagnostics; fix them here, in this tree.
@@ -123,7 +123,7 @@ message back off the commit it just made:
 
 ```bash
 git add <your files>
-fabrika build commit <<'EOF'
+pnpm exec fabrika build commit <<'EOF'
 fix(build): one line saying what changed (#<n>)
 EOF
 ```
@@ -138,7 +138,7 @@ in the PR body, not the merge record.
 ## 5 — Push verified, open the PR through the guard
 
 ```bash
-fabrika build push
+pnpm exec fabrika build push
 ```
 
 Done only on `PUSH-VERDICT: MOVED`. `UNKNOWN` is not a success with a caveat — re-run; an
@@ -157,7 +157,7 @@ per row defending a choice nobody attacked. Same no-op test as the prose — del
 absence would change no reviewer behaviour.
 
 ```bash
-fabrika build pr 4312 <<'EOF'
+pnpm exec fabrika build pr 4312 <<'EOF'
 …body…
 EOF
 ```
@@ -166,10 +166,10 @@ The verb is the guard: it refuses leaks, stray closing keywords, a missing Devia
 reads back what landed. Then hand off and release:
 
 ```bash
-fabrika build note 4312 <<'EOF'
+pnpm exec fabrika build note 4312 <<'EOF'
 …what was done, what a reviewer should look at first…
 EOF
-fabrika build release 4312
+pnpm exec fabrika build release 4312
 ```
 
 **Terminal vocabulary** — end on exactly one: `SHIPPED-PR` (PR open, branch pushed);
@@ -188,8 +188,8 @@ the receiver re-fetches from the artifact.
 Claim the PR's number first — repair mutates a shared lane exactly like a build does:
 
 ```bash
-fabrika build claim 4310
-fabrika build verdicts --pr 4310
+pnpm exec fabrika build claim 4310
+pnpm exec fabrika build verdicts --pr 4310
 ```
 
 The fold is the only entry: paginated, current-head, per-gate — polarity visible, round count

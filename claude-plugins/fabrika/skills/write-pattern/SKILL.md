@@ -81,7 +81,7 @@ is the correct outcome, not a failure to deliver.
 ## 3 — Read the library before you add to it
 
 ```bash
-fabrika pattern corpus
+pnpm exec fabrika pattern corpus
 ```
 
 One line per doc: its slug, whether `.patterns/index.md` carries a table row for it, which section
@@ -104,8 +104,8 @@ Skip to step 5 for a genuinely new doc. For an existing one, two independent thi
 only one of them is visible in git.
 
 ```bash
-fabrika pattern drift worker-queue-retry
-fabrika pattern anchor worker-queue-retry
+pnpm exec fabrika pattern drift worker-queue-retry
+pnpm exec fabrika pattern anchor worker-queue-retry
 ```
 
 `drift` answers whether the **in-repo source the doc itself cites** moved since the doc was last
@@ -142,7 +142,7 @@ in-repo path. Do not treat one as a stale pointer.
 **For a new doc only:**
 
 ```bash
-fabrika pattern new worker-queue-retry
+pnpm exec fabrika pattern new worker-queue-retry
 ```
 
 Scaffolds the file and nothing else; it never touches the index and never overwrites. **A
@@ -170,7 +170,7 @@ between them, so they cannot drift apart.
 ## 6 — Register it, or nobody finds it
 
 ```bash
-fabrika pattern register worker-queue-retry --section "Index — services" --topic "Retry and backoff on the worker queue" --read-when "Adding a queue consumer, or changing a retry policy"
+pnpm exec fabrika pattern register worker-queue-retry --section "Index — services" --topic "Retry and backoff on the worker queue" --read-when "Adding a queue consumer, or changing a retry policy"
 ```
 
 The section name above is sample data — pass one this repo's index actually carries. The row goes

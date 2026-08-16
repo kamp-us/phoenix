@@ -58,8 +58,8 @@ opposite of this skill; reaching for it here would close the trail this skill mu
 ## 1 — Read the trail, and check it has not already graduated
 
 ```bash
-fabrika graduate read 9412
-fabrika graduate trail 9412 > trail.json
+pnpm exec fabrika graduate read 9412
+pnpm exec fabrika graduate trail 9412 > trail.json
 ```
 
 Read first, and **read the `emissions` array, not just `state`.** Each emission names the refs it
@@ -118,7 +118,7 @@ spec you invented a boundary for.
 ## 3 — Check it is not already filed
 
 ```bash
-fabrika report dedup --query "moderation weight earned per account not inherited from kefil"
+pnpm exec fabrika report dedup --query "moderation weight earned per account not inherited from kefil"
 ```
 
 Three outcomes, and only one is about your spec: `candidates` (open each and judge it yourself),
@@ -129,7 +129,7 @@ non-check). A non-zero exit is never `none` — read the code, and band it by th
 `NOTE-ADDED`:
 
 ```bash
-fabrika report note --issue 9312 <<'NOTE'
+pnpm exec fabrika report note --issue 9312 <<'NOTE'
 The offline-sync trail settles conflict resolution, which this issue does not cover.
 NOTE
 ```
@@ -143,7 +143,7 @@ instead of discovering the pair later.
 ## 4 — Compose the spec
 
 ```bash
-fabrika graduate compose --trail trail.json > spec.md <<'SPEC'
+pnpm exec fabrika graduate compose --trail trail.json > spec.md <<'SPEC'
 ## Problem
 Moderation weight is unbounded today, so a single vouched account can outvote a topic.
 
@@ -179,7 +179,7 @@ seat and a separate act.
 ## 5 — File it, and record the emission
 
 ```bash
-fabrika graduate emit 9412 --spec spec.md --title "Cap moderation weight per topic"
+pnpm exec fabrika graduate emit 9412 --spec spec.md --title "Cap moderation weight per topic"
 ```
 
 Files exactly one issue carrying `status:needs-triage` and nothing else — no type, no priority, no

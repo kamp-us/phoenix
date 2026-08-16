@@ -249,6 +249,86 @@ describe("cli-invocation-guard core", () => {
 	});
 });
 
+// #5679: `fabrika` IS on PATH, so a bare call resolves whichever copy PATH names. In a worktree
+// that copy belongs to another checkout, and the delegation refuses it at exit 126 rather than
+// answer from a tree the caller is not standing in — so every bare fence dies on step one.
+describe("the fabrika surface — a bare `fabrika` is not the canonical form (#5679)", () => {
+	it("flags a bare `fabrika` at the start of a runnable line", () => {
+		const {findings} = scanFile("s.md", fence("bash", "fabrika build tree --require-clean"));
+		assert.strictEqual(findings.length, 1);
+		assert.strictEqual(findings[0]?.line, 2);
+		assert.strictEqual(findings[0]?.cli, "fabrika");
+	});
+
+	it("flags a bare `fabrika` in a pipe, a substitution, a conditional and an env prefix", () => {
+		const {findings} = scanFile(
+			"s.md",
+			fence(
+				"bash",
+				"fabrika build print 5679 | gh issue comment 5679 --body-file -",
+				'STATE="$(fabrika build confirm 5679)"',
+				"if ! fabrika build claim 5679; then exit 0; fi",
+				"FABRIKA_DEBUG=1 fabrika build tree",
+			),
+		);
+		assert.strictEqual(findings.length, 4);
+		assert.deepStrictEqual(new Set(findings.map((f) => f.cli)), new Set(["fabrika"]));
+	});
+
+	it("accepts the canonical `pnpm exec fabrika` form", () => {
+		const {findings} = scanFile(
+			"s.md",
+			fence(
+				"bash",
+				"pnpm exec fabrika build tree --require-clean",
+				'STATE="$(pnpm exec fabrika build confirm 5679)"',
+			),
+		);
+		assert.deepStrictEqual(findings, []);
+	});
+
+	// The reason this rule anchors on command position while the `pipeline-cli` rule does not:
+	// `fabrika` is also a label, a directory, a marketplace entry and a plugin namespace, and all
+	// four appear as ARGUMENTS in runnable fences. Flagging those would make the guard unusable.
+	it("does not flag `fabrika` in argument position — a label, a path, a namespace", () => {
+		const {findings} = scanFile(
+			"s.md",
+			fence(
+				"bash",
+				"gh issue edit 5679 --add-label fabrika",
+				"ls claude-plugins/fabrika/skills/",
+				"cat .fabrika/lanes/5679/events.jsonl",
+				'gh pr list --search "fabrika in:title"',
+			),
+		);
+		assert.deepStrictEqual(findings, []);
+	});
+
+	it("flags the cwd-relative `node …/fabrika-cli/src/bin.ts` entrypoint form", () => {
+		const {findings} = scanFile(
+			"s.md",
+			fence("bash", "node packages/fabrika-cli/src/bin.ts lane status 5539"),
+		);
+		assert.strictEqual(findings.length, 1);
+		assert.strictEqual(findings[0]?.cli, "fabrika");
+	});
+
+	it("ignores a named verb in prose and a commented-out call", () => {
+		const {findings} = scanFile(
+			"s.md",
+			"Run `fabrika build pick` to take the next issue.\n" +
+				fence("bash", "# was: fabrika build claim 5679", "true"),
+		);
+		assert.deepStrictEqual(findings, []);
+	});
+
+	it("flags a bare `fabrika` in a `.sh` file, which is one implicit fence", () => {
+		const {findings} = scanFile("skills/build/scripts/claim.sh", "fabrika build claim 5679\n");
+		assert.strictEqual(findings.length, 1);
+		assert.strictEqual(findings[0]?.cli, "fabrika");
+	});
+});
+
 describe("cli-invocation-guard attribution (#4250)", () => {
 	const OFFENDER = "pipeline-cli claim status --issue 1";
 
@@ -372,6 +452,16 @@ describe("cli-invocation-guard attribution (#4250)", () => {
 			assert.isNull(parseBaseline(JSON.stringify({...wellFormed, findings: undefined})));
 			assert.isNull(parseBaseline(JSON.stringify({...wellFormed, scanned: [1]})));
 			assert.isNull(parseBaseline(JSON.stringify({...wellFormed, fenceCount: "1"})));
+		});
+
+		it("rejects a finding with no `cli` — a manifest predating the two-CLI split (#5679)", () => {
+			const legacy = {...wellFormed, findings: [{file: "a.md", line: 2, text: "pipeline-cli x"}]};
+			assert.isNull(parseBaseline(JSON.stringify(legacy)));
+			const current = {
+				...wellFormed,
+				findings: [{file: "a.md", line: 2, text: "pipeline-cli x", cli: "pipeline-cli" as const}],
+			};
+			assert.deepStrictEqual(parseBaseline(JSON.stringify(current)), current);
 		});
 	});
 });

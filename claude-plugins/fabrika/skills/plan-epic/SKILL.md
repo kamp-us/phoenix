@@ -44,8 +44,8 @@ A plan is only as good as the ground it was derived from. Claim first — the cl
 `build`'s, reused, not a second lock:
 
 ```bash
-fabrika build claim 4300 --purpose plan
-fabrika build tree --require-clean
+pnpm exec fabrika build claim 4300 --purpose plan
+pnpm exec fabrika build tree --require-clean
 ```
 
 `--purpose plan` is not optional here. The audience axis (`ready-for:agent`) asks whether an agent
@@ -71,7 +71,7 @@ back to `build`: you hold no claim, and `build note` requires one.
 ## 2 — Open the run
 
 ```bash
-fabrika ledger open 4300
+pnpm exec fabrika ledger open 4300
 ```
 
 This proves the ground fresh against `origin/main`, allocates the run directory keyed on the
@@ -97,7 +97,7 @@ syncing and planning again is a fresh run from step 1, not a loop inside this on
 This is your work. Write the plan block and stage it:
 
 ```bash
-fabrika ledger draft 4300 --body-digest 8f2c1a90b4d7 <<'EOF'
+pnpm exec fabrika ledger draft 4300 --body-digest 8f2c1a90b4d7 <<'EOF'
 ## Plan (plan-epic)
 
 ### Summary
@@ -122,7 +122,7 @@ cannot say which story each slice serves is telling you the split is wrong.
 ## 4 — Mint each child, born complete
 
 ```bash
-fabrika ledger child 4300 --title "queue view: fate loader" \
+pnpm exec fabrika ledger child 4300 --title "queue view: fate loader" \
   --type type:feature --priority p1 --ready-for agent --milestone "fabrika campaign" <<'EOF'
 **Stories:** 1, 2
 **TDD:** yes
@@ -165,7 +165,7 @@ parser that harvests every digit run reads `1, 3 (see #<other>)` as claiming a s
 On a `re-plan`, a child the new plan drops is retired rather than left dangling:
 
 ```bash
-fabrika ledger supersede 4300 --child 4288 --reason "folded into the loader slice"
+pnpm exec fabrika ledger supersede 4300 --child 4288 --reason "folded into the loader slice"
 ```
 
 It journals the reason, unlinks, then closes as not-planned — in that order, so a child is never
@@ -174,7 +174,7 @@ closed while still linked. It refuses a child that is not this epic's, and one t
 ## 5 — Declare the topology
 
 ```bash
-fabrika ledger topology 4300 <<'EOF'
+pnpm exec fabrika ledger topology 4300 <<'EOF'
 #<child-a> phase 1
 #<child-b> phase 1
 #<child-c> phase 2 requires #<child-a>
@@ -192,7 +192,7 @@ file plan; you can. Sequence them, or say in `### Task-split rationale` why they
 ## 6 — Write it into the epic
 
 ```bash
-fabrika ledger write 4300 --body-digest 8f2c1a90b4d7
+pnpm exec fabrika ledger write 4300 --body-digest 8f2c1a90b4d7
 ```
 
 The staged plan and topology go into the epic body in one PATCH, re-read and compared byte for
@@ -210,7 +210,7 @@ Release the claim, then hand off — clearing the floor and flipping children is
 `check-epic-plan`'s, and doing it yourself is the two-answers defect:
 
 ```bash
-fabrika build release 4300
+pnpm exec fabrika build release 4300
 ```
 
 If you find something that ought to block a plan, that is a finding about the **floor** — file it

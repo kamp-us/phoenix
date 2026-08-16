@@ -20,7 +20,7 @@ disposition; it changes what you report (`merge intent: NOT cleared`).
 ## 1 — Scope
 
 ```bash
-fabrika ship scope 4321
+pnpm exec fabrika ship scope 4321
 ```
 
 Already `merged` is an idempotent success — report it and end. `draft`/`closed` is a refusal.
@@ -38,7 +38,7 @@ An ADR-only PR is `not-control-plane` and owes no approval; its required `govern
 what still gates it (founder ruling, 2026-08-15 on #5531).
 
 ```bash
-fabrika ship cp-approval 4321 --sha 03135b91
+pnpm exec fabrika ship cp-approval 4321 --sha 03135b91
 ```
 
 `discharge` → continue, and pass `--cp` to step 3's gate. `stop` → disarm, post
@@ -55,7 +55,7 @@ repair exactly as an ordinary FAIL; the advisory carrier is a PASS path only.
 ## 3 — The verdict conjunction
 
 ```bash
-fabrika ship gate 4321 --sha 03135b91 --require review-code --require review-skill
+pnpm exec fabrika ship gate 4321 --sha 03135b91 --require review-code --require review-skill
 ```
 
 `--require` is repeated verbatim from `scope`'s printed namespace set — the verb refuses a
@@ -80,7 +80,7 @@ is red too, and routing to the `governance` skill is what clears both.
 ## 4 — CI at the head, and only at the head
 
 ```bash
-fabrika ship checks 4321 --sha 03135b91 --wait
+pnpm exec fabrika ship checks 4321 --sha 03135b91 --wait
 ```
 
 Terminals: `green` → continue. `red` → disarm, note, route the failed run to `heal-ci`, stop.
@@ -94,7 +94,7 @@ stop. `head-moved` → start over at step 1; every answer so far was about a tre
 ## 5 — Run-evidence
 
 ```bash
-fabrika ship evidence 4321 --sha 03135b91
+pnpm exec fabrika ship evidence 4321 --sha 03135b91
 ```
 
 `present` → continue. `pending` → wait or stop; pending is not absent, and a run that completed
@@ -108,7 +108,7 @@ exist: stop without a verdict; **a failed read is never "no bundle"**.
 ## 6 — Unresolved threads: the one judgment
 
 ```bash
-fabrika ship threads 4321
+pnpm exec fabrika ship threads 4321
 ```
 
 The ruleset blocks the enqueue on unresolved threads, and your resolve is the pipeline's only
@@ -124,7 +124,7 @@ unresolved thread:
   answers, a finding a later commit made moot → resolve it, rationale first:
 
 ```bash
-fabrika ship resolve 4321 --thread PRRT_kwDOxx <<'EOF'
+pnpm exec fabrika ship resolve 4321 --thread PRRT_kwDOxx <<'EOF'
 Resolving: the import this flags was removed in the follow-up commit at this head.
 EOF
 ```
@@ -135,8 +135,8 @@ real objection.
 ## 7 — Enqueue, then reconcile honestly
 
 ```bash
-fabrika ship enqueue 4321 --sha 03135b91
-fabrika ship reconcile 4321
+pnpm exec fabrika ship enqueue 4321 --sha 03135b91
+pnpm exec fabrika ship reconcile 4321
 ```
 
 `enqueue` is the only step that arms an intent, and it never passes a merge-method flag — the
@@ -154,7 +154,7 @@ read and disarms nothing), note, and stop.
 ## 8 — Release queue (dark ships only)
 
 ```bash
-fabrika ship release 4321
+pnpm exec fabrika ship release 4321
 ```
 
 `queued` or `n/a` — the label is the whole action. `no-issue` (a dark-ship signal with no

@@ -63,7 +63,7 @@ be built, it is a deliverable, and charting it buries buildable work under a map
 Enumerate your open questions and hand them to the verb on stdin, one per line:
 
 ```bash
-printf 'does a suspended account keep its weight?\nwhat clock does weight decay on?\n' | fabrika map open --destination "how moderation weight is earned"
+printf 'does a suspended account keep its weight?\nwhat clock does weight decay on?\n' | pnpm exec fabrika map open --destination "how moderation weight is earned"
 ```
 
 The verb does not classify for you — a verb guessing fog would be a stochastic answer wearing a
@@ -111,7 +111,7 @@ elsewhere and stopped.
 ## 2 — Read the map before you write to it
 
 ```bash
-fabrika map read 9140
+pnpm exec fabrika map read 9140
 ```
 
 The parser, and the only thing that may tell you what the frontier holds. It prints the
@@ -138,7 +138,7 @@ rather than re-reading between each.
 ## 3 — Lay the frontier out as blocking edges
 
 ```bash
-fabrika map ticket 9140 --digest a1b2c3d4e5f6 --kind research --question "does better-auth mint a single-use token without a new table?" --blocks 9143
+pnpm exec fabrika map ticket 9140 --digest a1b2c3d4e5f6 --kind research --question "does better-auth mint a single-use token without a new table?" --blocks 9143
 ```
 
 One call per open question. The verb files the ticket, links it as a native sub-issue, sets the
@@ -163,7 +163,7 @@ The delta that makes charting one session's work rather than one ticket per sess
 per **answerable** ticket now, instead of leaving each to a later run.
 
 ```bash
-fabrika map lane 9140 --ticket 9143 --nonce 7f3a9c21
+pnpm exec fabrika map lane 9140 --ticket 9143 --nonce 7f3a9c21
 ```
 
 **A `decision` ticket cannot be laned.** `map lane` and `map finding` refuse one, naming `map fork`
@@ -182,7 +182,7 @@ human-readable label like `run-1` is refused rather than quietly shared with the
 Each lane closes with an outcome from a closed set:
 
 ```bash
-fabrika map finding 9140 --ticket 9143 --nonce 7f3a9c21 --outcome no-evidence
+pnpm exec fabrika map finding 9140 --ticket 9143 --nonce 7f3a9c21 --outcome no-evidence
 ```
 
 <!-- anchor: NOTHING-IS-NOT-EMPTY --> **Three answers an absence would collapse into one.**
@@ -214,7 +214,7 @@ primitive, which owns question rounds, recommended answers, and the four-clause 
 needs. Do not reimplement any of that here, and never write an answer onto the map in his voice.
 
 ```bash
-fabrika map fork 9140 --digest a1b2c3d4e5f6 --ticket 9144 --session 9301
+pnpm exec fabrika map fork 9140 --digest a1b2c3d4e5f6 --ticket 9144 --session 9301
 ```
 
 **An empirical question is a spike's.** When the only thing that settles a question is *running
@@ -223,7 +223,7 @@ something* — not a conversation, not a subagent reading source — the model f
 that code itself, and the spike stays disposable.
 
 ```bash
-fabrika map fork 9140 --digest a1b2c3d4e5f6 --ticket 9147 --spike 9310
+pnpm exec fabrika map fork 9140 --digest a1b2c3d4e5f6 --ticket 9147 --spike 9310
 ```
 
 The ticket's kind decides which flag is admitted, so a mis-sorted question is refused rather than
@@ -245,7 +245,7 @@ map, or the run ends naming what he owes.
 ## 6 — Summarize a cleared ticket back to the map
 
 ```bash
-fabrika map record 9140 --digest a1b2c3d4e5f6 --ticket 9143 --finding finding.md
+pnpm exec fabrika map record 9140 --digest a1b2c3d4e5f6 --ticket 9143 --finding finding.md
 ```
 
 One verb moves the whole lockstep: the answer lands under the decisions section and the ticket's row
@@ -262,7 +262,7 @@ the sibling established; you never restate it in your own voice.
 ## 7 — Record what was decided against
 
 ```bash
-fabrika map descope 9140 --digest a1b2c3d4e5f6 --direction "a per-topic weight multiplier" --reason reason.md
+pnpm exec fabrika map descope 9140 --digest a1b2c3d4e5f6 --direction "a per-topic weight multiplier" --reason reason.md
 ```
 
 The out-of-scope section is **append-only and never graduates**. Every other section empties as the

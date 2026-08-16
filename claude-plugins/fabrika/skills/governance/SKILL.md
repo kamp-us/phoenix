@@ -20,7 +20,7 @@ edits.**
 ## 1 — Derive the requirement; you cannot elect it
 
 ```bash
-fabrika governance scope 4321
+pnpm exec fabrika governance scope 4321
 ```
 
 <!-- anchor: DERIVED-NOT-ELECTED --> The requirement is a **total function of the changed-file list
@@ -69,8 +69,8 @@ not read?"* — before you look for a conflict. You cannot sweep for a question 
 **Where the diff adds or edits a decision record**, rank the corpus against it:
 
 ```bash
-fabrika governance sweep 4321 --record 0240 --sha 03135b91
-fabrika adr resolve 0164 0055
+pnpm exec fabrika governance sweep 4321 --record 0240 --sha 03135b91
+pnpm exec fabrika adr resolve 0164 0055
 ```
 
 <!-- anchor: NO-SWEEP-OUTCOME-IS-A-CLEARANCE --> `sweep` returns `shortlist` · `no-overlap` ·
@@ -102,7 +102,7 @@ body names the sweep outcome or records that there was no record to sweep.
 ## 3 — The gate half: does this quietly weaken a guard
 
 ```bash
-fabrika governance guards 4321 --sha 03135b91
+pnpm exec fabrika governance guards 4321 --sha 03135b91
 ```
 
 The question is narrow and catastrophic: does the edit **remove or soften** an invariant? A diff that
@@ -140,7 +140,7 @@ no authorizing decision at all.
 diff edits this skill or its contract, and `base` serves this file's bytes at the merge-base:
 
 ```bash
-fabrika governance base 4321
+pnpm exec fabrika governance base 4321
 ```
 
 <!-- anchor: SELF-COVERING --> **Judge by those, not the head's** — a bytes read that loads no
@@ -154,7 +154,7 @@ you applied are the base revision's and the verdict says so.
 ## 5 — Emit one verdict, bound to what you saw
 
 ```bash
-fabrika governance post 4321 --polarity PASS --sha 03135b91 --clause "no contradiction, no weakening" <<'EOF'
+pnpm exec fabrika governance post 4321 --polarity PASS --sha 03135b91 --clause "no contradiction, no weakening" <<'EOF'
 …the verdict body: the questions swept, the sweep outcome or the no-record note,
 the domain read by hand, the anchored invariants in reach and their disposition…
 EOF
@@ -179,9 +179,9 @@ overwrite it, so consecutive digests neither overlap nor leave a gap. With no pr
 the cadence's start and say which you used.
 
 ```bash
-fabrika governance digest --since 2026-08-02
-fabrika governance sweep --landed 0398
-fabrika governance readout <<'EOF'
+pnpm exec fabrika governance digest --since 2026-08-02
+pnpm exec fabrika governance sweep --landed 0398
+pnpm exec fabrika governance readout <<'EOF'
 row	0398	tension	sits against 0173 on whether a pending required check blocks admission
 EOF
 ```

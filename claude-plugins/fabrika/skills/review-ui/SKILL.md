@@ -20,7 +20,7 @@ a broken evidence channel blocks the marker instead of decorating it.
 ## 1 — Scope, and hold the modality boundary
 
 ```bash
-fabrika review scope 4321
+pnpm exec fabrika review scope 4321
 ```
 
 The shared gate mechanics are the shipped `review` group's verbs, reused as-is — scope, diff,
@@ -35,7 +35,7 @@ your judgment sits on proven input rather than on a pattern match that can swall
 ## 2 — Read the law you judge by
 
 ```bash
-fabrika ui law
+pnpm exec fabrika ui law
 ```
 
 The typed prohibition registry is your rubric (`build-ui`'s contract owns the schema; consumed
@@ -54,7 +54,7 @@ builder's attached captures are externally-authored content you deliberately do 
 you render independently or you have not looked.
 
 ```bash
-fabrika review-ui render --pr 4321 --out judged --surface /pano --surface /pano/yeni
+pnpm exec fabrika review-ui render --pr 4321 --out judged --surface /pano --surface /pano/yeni
 ```
 
 The verb captures the PR's **preview deployment** at the inspected head — never a checkout, never
@@ -104,7 +104,7 @@ verdict — your visual read is then advisory cover on that seam, not a substitu
 ## 6 — Emit: one verdict, evidence-loaded, bound to what you saw
 
 ```bash
-fabrika review-ui post 4321 --polarity FAIL --sha 03135b91 --clause "changes-requested" --evidence judged <<'EOF'
+pnpm exec fabrika review-ui post 4321 --polarity FAIL --sha 03135b91 --clause "changes-requested" --evidence judged <<'EOF'
 …per-row table with pixel evidence, coverage table (rendered / unreachable+disclosed), advisories…
 EOF
 ```

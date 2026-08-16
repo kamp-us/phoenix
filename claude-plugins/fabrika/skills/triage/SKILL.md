@@ -12,7 +12,7 @@ merely well-formed. You have full rewrite authority; **salvage first**.
 ## 1 — Claim it before you mutate it
 
 ```bash
-fabrika triage claim 4312
+pnpm exec fabrika triage claim 4312
 ```
 
 Done when it printed `won` — that means this session holds it; on anything else, move on.
@@ -24,7 +24,7 @@ in your own words. **Check any falsifiable claim it rests on against source befo
 of it** — a summary of a contract is not the contract. A hand-filed issue skipped dedup:
 
 ```bash
-fabrika report dedup --query "sozluk definition editor loses focus after save" --exclude 4312
+pnpm exec fabrika report dedup --query "sozluk definition editor loses focus after save" --exclude 4312
 ```
 
 Read `candidates` yourself — shared vocabulary is not a shared observation; `indeterminate` is a
@@ -60,7 +60,7 @@ question — is there already a ticket that *owns this surface* and should absor
 surface, not on your issue's wording:
 
 ```bash
-fabrika report dedup --query "sozluk definition editor keyboard focus" --exclude 4312
+pnpm exec fabrika report dedup --query "sozluk definition editor keyboard focus" --exclude 4312
 ```
 
 Read the candidates yourself and take the cheapest true route:
@@ -85,7 +85,7 @@ Done when you have taken one of the three routes and the reason is written down.
 Two problems agents could work at different times are a bundle; two facets of one change are not.
 
 ```bash
-fabrika triage split 4312 --title "Editor loses focus after save" <<'EOF'
+pnpm exec fabrika triage split 4312 --title "Editor loses focus after save" <<'EOF'
 …
 EOF
 ```
@@ -103,11 +103,11 @@ approves a pitch**. Take an existing home: **triage never creates a milestone**,
 `wayfinder:backlog` is bounded to genuine fog rather than work you would rather not decide about.
 
 ```bash
-fabrika triage homes
+pnpm exec fabrika triage homes
 ```
 
 ```bash
-fabrika triage enrich 4312 <<'EOF'
+pnpm exec fabrika triage enrich 4312 <<'EOF'
 …
 EOF
 ```
@@ -129,7 +129,7 @@ merit: `p0` for ship-work and fires, `p1` for what you would genuinely pull next
 default** and most of a healthy backlog. A roadmap row confers no band either way.
 
 ```bash
-fabrika triage apply 4312 --type bug --priority p2 --ready-for agent --home 47
+pnpm exec fabrika triage apply 4312 --type bug --priority p2 --ready-for agent --home 47
 ```
 
 A standing lane takes `--lane wayfinder:backlog` (or `axis:pipeline-hardening`) **instead of**
@@ -150,7 +150,7 @@ Done when the verb read back exactly one `type:`, one `p`, `status:triaged`, `re
 ## 8 — The two outcomes that are not "triaged"
 
 ```bash
-fabrika triage provenance 4312
+pnpm exec fabrika triage provenance 4312
 ```
 
 Provenance decides what may be closed, and it has **two agent signals**: the `Filed by an agent`
@@ -162,7 +162,7 @@ author. Footer-absence from anyone else is still human-owned.
   closed**. When in doubt treat it as human: ignoring a person costs more than a cheap agent issue.
 
 ```bash
-fabrika triage park 4312 <<'EOF'
+pnpm exec fabrika triage park 4312 <<'EOF'
 …
 EOF
 ```
@@ -174,7 +174,7 @@ EOF
   issue's content into that one before closing; without it the content is simply lost.
 
 ```bash
-fabrika triage kill 4312 --confirm --duplicate-of 4290 <<'EOF'
+pnpm exec fabrika triage kill 4312 --confirm --duplicate-of 4290 <<'EOF'
 …
 EOF
 ```
@@ -184,7 +184,7 @@ Done when the issue has left the queue by exactly one route.
 ## Sweeping the queue
 
 ```bash
-fabrika triage queue
+pnpm exec fabrika triage queue
 ```
 
 **Only `empty` ends a sweep** — a proven-empty queue and a failed read are different answers. Then

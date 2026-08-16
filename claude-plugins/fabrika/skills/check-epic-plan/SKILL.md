@@ -32,7 +32,7 @@ The planner and this gate must not interleave on one epic, so claim it before re
 the claim is `build`'s, reused, not a second lock:
 
 ```bash
-fabrika build claim 4300 --purpose gate
+pnpm exec fabrika build claim 4300 --purpose gate
 ```
 
 `--purpose gate` is not optional here. The audience axis (`ready-for:agent`) asks whether an agent
@@ -52,7 +52,7 @@ is a proven out-of-focus epic. Exit `21` is no longer reachable at this step, be
 is not bound by the audience axis.
 
 ```bash
-fabrika plan read 4300
+pnpm exec fabrika plan read 4300
 ```
 
 This is the **advisory layer's** read — the floor re-fetches on its own so it never grades a
@@ -62,7 +62,7 @@ assignee slot, criteria token, stories and containment.
 ## 2 — Run the floor; do not re-derive it
 
 ```bash
-fabrika plan check 4300
+pnpm exec fabrika plan check 4300
 ```
 
 This is the **whole pass/fail decision** over the closed hard-defect enum in
@@ -82,7 +82,7 @@ defective path is terminal here.** Re-planning is `plan-epic`'s lane; hand back 
 Only on a clean floor:
 
 ```bash
-fabrika plan flip 4300 --digest 4d90e1bb27ac
+pnpm exec fabrika plan flip 4300 --digest 4d90e1bb27ac
 ```
 
 The flip is **unconditional over every `status:planned` child** and not yours to narrow: there is
@@ -110,7 +110,7 @@ the check and the flip; nothing was written, so re-check rather than retry.
 ## 4 — Post the verdict, bound to the scope you scanned
 
 ```bash
-fabrika plan verdict 4300 --digest 4d90e1bb27ac <<'EOF'
+pnpm exec fabrika plan verdict 4300 --digest 4d90e1bb27ac <<'EOF'
 caveat: ac-not-checkable #<child> — "works well" states no observable outcome
 EOF
 ```

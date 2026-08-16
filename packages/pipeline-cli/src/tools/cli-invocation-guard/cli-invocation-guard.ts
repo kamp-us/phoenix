@@ -2,14 +2,24 @@
  * `cli-invocation-guard` core — the pure, IO-free matcher behind
  * `pipeline-cli cli-invocation-guard check <file>…` (#3314).
  *
- * Two non-canonical forms are banned, for the same reason: neither's failure is
- * distinguishable from a verb result at the call site. A bare `pipeline-cli <verb>` is not on
- * PATH where pipeline agents spawn and never will be (ADR 0207 retired PATH-shadowing), so it
- * dies `command not found`; a cwd-relative `node …/pipeline-cli/src/bin.ts <verb>` resolves
- * only from the repo root, so it dies `Cannot find module` anywhere else. Both land at a gate
- * step, inside a fail-closed wrapper that converts the miss into a wrong verdict. The canonical
- * resolution and its exit-code taxonomy live once in the formats contract's §CLI; this core is
- * the mechanical enforcement of its bans (#3314, #4236).
+ * Two CLIs live in the plugin corpus and each has ONE canonical resolution; every other form is
+ * banned for the same reason, that its failure is not distinguishable from a verb result at the
+ * call site. The canonical forms and their exit-code taxonomies live once per CLI — the formats
+ * contract's §CLI for `pipeline-cli`, rule 5 of `claude-plugins/fabrika/docs/cli-interface-convention.md`
+ * for `fabrika` — and this core is the mechanical enforcement of their bans (#3314, #4236, #5679).
+ *
+ * The two CLIs resolve by opposite mechanisms, so their bans are not symmetric and must not be
+ * collapsed. `pipeline-cli` is never on PATH (ADR 0207 retired PATH-shadowing), so its bare name
+ * dies `command not found` and the canonical form is the shim resolved by path. `fabrika` IS on
+ * PATH, but a bare call resolves the copy PATH points at, which in a git worktree belongs to
+ * another checkout — the delegation refuses that outright at exit `126` rather than answer from a
+ * tree the caller is not standing in, so every fence in a worktree dies on step one (#5679). Its
+ * canonical form is `pnpm exec fabrika`, which resolves through the calling tree's own
+ * `node_modules/.bin` from any directory inside it.
+ *
+ * The `node …/src/bin.ts` entrypoint is banned for BOTH: it resolves only from the repo root, so
+ * from a nested app dir — the dir sessions launch in — it dies `Cannot find module` with exit 1
+ * and empty stdout.
  *
  * Scoped to what an agent actually RUNS: a `bash`/`sh` fenced block, minus comment-only
  * lines. Prose that merely names a verb ("the `pipeline-cli claim is-mine` verb") is not an
@@ -31,12 +41,17 @@ export interface ScanFile {
 	readonly content: string;
 }
 
+/** The CLIs this guard knows a canonical resolution for. */
+export type Cli = "pipeline-cli" | "fabrika";
+
 export interface Finding {
 	readonly file: string;
 	/** 1-based line number of the offending line. */
 	readonly line: number;
 	/** The offending line, trimmed — enough to locate it without opening the file. */
 	readonly text: string;
+	/** Which CLI's rule this line broke — the two have different canonical forms and remedies. */
+	readonly cli: Cli;
 }
 
 export interface GuardResult {
@@ -65,10 +80,23 @@ const unquote = (line: string): string => line.replace(/^(\s*>)+\s?/, "");
  * lookbehind-free form is a negated character class on the preceding char, so `bin/pipeline-cli`,
  * `packages/pipeline-cli`, `@kampus/pipeline-cli` and `-pipeline-cli` all fall through.
  */
-const BARE_INVOCATION = /(^|[^\w./@-])pipeline-cli(\s|$)/;
+const BARE_PIPELINE_CLI = /(^|[^\w./@-])pipeline-cli(\s|$)/;
 
 /**
- * The second non-canonical form: running the CLI's entrypoint directly through `node` at a
+ * A bare `fabrika`, matched only in **command position** — line start, or after a `|`, `;`, `&`,
+ * `(`, `!` or `$(`, with any number of `VAR=value` assignments in between.
+ *
+ * The tighter anchor is not a stylistic difference from the rule above; it is forced by the token.
+ * `fabrika` is also a plugin directory, a label, a marketplace entry and a brand noun, so the
+ * `pipeline-cli` rule's "any non-word char before it" would red `gh issue edit 1 --add-label
+ * fabrika` and every other argument-position mention in a runnable fence. Command position is what
+ * separates a call from a word. It also lets the canonical `pnpm exec fabrika` through with no
+ * carve-out: there, `fabrika` is an argument to `exec`, not a command.
+ */
+const BARE_FABRIKA = /(?:^|[|;&(!]|\$\()\s*(?:[A-Za-z_]\w*=\S*\s+)*fabrika(?=\s|$)/;
+
+/**
+ * The form banned for both CLIs: running an entrypoint directly through `node` at a
  * **cwd-relative** path. It resolves only from the repo root and only in this repo, so from a
  * nested app dir — the dir sessions launch in — it dies `Cannot find module` with **exit 1 and
  * empty stdout**. That is byte-identical to the clean answer several call sites consume
@@ -76,7 +104,23 @@ const BARE_INVOCATION = /(^|[^\w./@-])pipeline-cli(\s|$)/;
  * stdout = "nothing found"), so a resolution failure launders into a permissive verdict —
  * a fail-open on a gate, not a style nit (#4236). §CLI's exit-code taxonomy covers it.
  */
-const NODE_ENTRYPOINT_INVOCATION = /\bnode\s+\S*pipeline-cli\/src\/bin\.ts(\s|$)/;
+const nodeEntrypoint = (pkg: string): RegExp =>
+	new RegExp(String.raw`\bnode\s+\S*${pkg}\/src\/bin\.ts(\s|$)`);
+
+const PIPELINE_CLI_ENTRYPOINT = nodeEntrypoint("pipeline-cli");
+const FABRIKA_ENTRYPOINT = nodeEntrypoint("fabrika-cli");
+
+/**
+ * Which CLI's rule this line breaks, or `null` for a line that invokes neither non-canonically.
+ *
+ * `pipeline-cli` is tested first so a line that somehow offends both is reported once, under the
+ * CLI whose remedy is the more specific.
+ */
+const offendingCli = (line: string): Cli | null => {
+	if (BARE_PIPELINE_CLI.test(line) || PIPELINE_CLI_ENTRYPOINT.test(line)) return "pipeline-cli";
+	if (BARE_FABRIKA.test(line) || FABRIKA_ENTRYPOINT.test(line)) return "fabrika";
+	return null;
+};
 
 /** A line that is only a shell comment carries no invocation to run. */
 const COMMENT_ONLY = /^\s*#/;
@@ -120,8 +164,9 @@ export const scanFile = (
 		}
 		if (openLang === null || !RUNNABLE_LANGS.has(openLang)) continue;
 		if (COMMENT_ONLY.test(lineText)) continue;
-		if (!BARE_INVOCATION.test(lineText) && !NODE_ENTRYPOINT_INVOCATION.test(lineText)) continue;
-		findings.push({file, line: i + 1, text: lineText.trim()});
+		const cli = offendingCli(lineText);
+		if (cli === null) continue;
+		findings.push({file, line: i + 1, text: lineText.trim(), cli});
 	}
 	return {findings, fences};
 };
@@ -203,10 +248,17 @@ export const attribute = (
  */
 export const isUsableBaseline = (baseline: GuardResult): boolean => !isZeroScope(baseline);
 
+const isCli = (value: unknown): value is Cli => value === "pipeline-cli" || value === "fabrika";
+
 const isFinding = (value: unknown): value is Finding => {
 	if (typeof value !== "object" || value === null) return false;
 	const f = value as Record<string, unknown>;
-	return typeof f.file === "string" && typeof f.line === "number" && typeof f.text === "string";
+	return (
+		typeof f.file === "string" &&
+		typeof f.line === "number" &&
+		typeof f.text === "string" &&
+		isCli(f.cli)
+	);
 };
 
 /**
@@ -217,6 +269,9 @@ const isFinding = (value: unknown): value is Finding => {
  * `isZeroScope`'s `=== 0` test does not catch that — so a zero-shell-scope baseline would sail
  * through as usable. Only reachable under version skew between the base-side `baseline` and the
  * head-side `check`, but "no pre-existing violations" is the wrong direction to be wrong in.
+ * Each finding's `cli` is asserted the same way and for the same reason: a manifest predating the
+ * two-CLI split (#5679) is a baseline this build cannot attribute against, and refusing it reds
+ * rather than silently treating every fabrika violation as newly introduced.
  */
 export const parseBaseline = (raw: string): GuardResult | null => {
 	let parsed: unknown;

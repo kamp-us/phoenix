@@ -30,7 +30,7 @@ Your mutations are exactly three: one rerun request, one comment, one filed repo
 An argument that is a PR number is single-PR mode. No argument is **Sweep** — skip to that section.
 
 ```bash
-fabrika heal-ci diagnose 4321
+pnpm exec fabrika heal-ci diagnose 4321
 ```
 
 The verb prints one `stall` token and the evidence that proves it. Every token is an answer at
@@ -88,7 +88,7 @@ or decision PR may legitimately carry no issue at all, so a missing row is not a
 ## 3 — The red stalls: classify before you touch anything
 
 ```bash
-fabrika heal-ci logs 4321 | fabrika heal-ci classify
+pnpm exec fabrika heal-ci logs 4321 | pnpm exec fabrika heal-ci classify
 ```
 
 `logs` emits **every** failing gating context and `classify` returns one line per context — a PR is
@@ -111,7 +111,7 @@ and treating one as healable is how a non-failure stalled a mergeable PR.
 ## 4 — The one rerun, and why the verb owns the guard
 
 ```bash
-fabrika heal-ci rerun 4321 --run 9182736450 --sha 03135b91 --signature preview-warmup
+pnpm exec fabrika heal-ci rerun 4321 --run 9182736450 --sha 03135b91 --signature preview-warmup
 ```
 
 A transient gets **exactly one** rerun per head, ever. The verb re-derives that precondition itself
@@ -128,7 +128,7 @@ say why.
 ## 5 — When the red is not in the code, or nothing started
 
 ```bash
-fabrika heal-ci surface 4321
+pnpm exec fabrika heal-ci surface 4321
 ```
 
 Some PRs are red, or unmergeable while reading green, because the **required-check surface is
@@ -165,7 +165,7 @@ PR blocked solely by an open thread lands in another class.
 ## Sweep — the scheduled surface
 
 ```bash
-fabrika heal-ci sweep
+pnpm exec fabrika heal-ci sweep
 ```
 
 Both hour-long strands were found by someone tracing a downstream hold backwards. A lane that only
