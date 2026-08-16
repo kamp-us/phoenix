@@ -14,7 +14,7 @@ A conducting session wrapped its GitHub-API liveness probe in a bare `timeout �
 shell it ran on there is **no `timeout` on PATH** — GNU `timeout` ships as `gtimeout` via
 coreutils, or is absent (`command -v timeout` → not found, `command -v gtimeout` → not found). So
 every probe command exited non-zero because the **wrapper binary was missing**, not because the
-probed API was unhealthy. The conductor mapped that non-zero to "API still down", held all agent
+probed API was unhealthy. That session mapped the non-zero to "API still down", held all agent
 dispatches, and baked idle for ~5 hours — while the API was fine throughout (concurrent `gh`
 reads kept succeeding; rate limit ~4994). A real transient blip earlier had killed the in-flight
 agents; the missing-binary probe is what turned a momentary blip into a 5-hour false outage,

@@ -1,5 +1,5 @@
 /**
- * The declared manifest for `adoption-lint` — the tool-owned decisions the crew
+ * The declared manifest for `adoption-lint` — the tool-owned decisions the pipeline
  * corpus must CITE rather than re-derive, plus the self-linted exemptions.
  *
  * This is the extension seam for epic #3258: each sibling verb-child that extracts

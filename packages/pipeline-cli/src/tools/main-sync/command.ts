@@ -234,7 +234,7 @@ const refreshDepsAfterMerge = Effect.fn(function* (preSha: string) {
 	const installed = runCaptured(install[0], install[1], root);
 	if (!installed.ok) {
 		yield* Console.error(
-			`main-sync dep refresh FAILED (fail-closed): \`${shown}\` exited non-zero — ${installed.stderr.trim() || "install error"}. node_modules may be STALE (#3498). Resolve the install by hand before booting the crew.`,
+			`main-sync dep refresh FAILED (fail-closed): \`${shown}\` exited non-zero — ${installed.stderr.trim() || "install error"}. node_modules may be STALE (#3498). Resolve the install by hand before booting a session.`,
 		);
 		return yield* Effect.sync(() => process.exit(1));
 	}

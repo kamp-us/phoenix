@@ -144,10 +144,12 @@ sometimes the only option, in these grounded cases:
   members directly — that's the wiring seam, not domain control flow. Likewise a
   socket/runtime layer (`NodeSocket.layerNet`, `NodeRuntime.runMain`) is composed at
   the edge, not `yield*`ed in a method.
-- **A `node:*`-only API the platform service doesn't expose.** `proper-lockfile`
-  (advisory lockfiles) and `fileURLToPath` (`import.meta.url` → path) have no
-  `FileSystem`/`Path` method; keep the raw call and wrap it in an `Effect.try` with a
-  typed error, as the existing code does.
+- **A `node:*`-only API the platform service doesn't expose.** `fileURLToPath`
+  (`import.meta.url` → path) has no `FileSystem`/`Path` method; keep the raw call and
+  wrap it in an `Effect.try` with a typed error, as the existing code does. (The other
+  standing example, `proper-lockfile`'s advisory lockfiles, left with the v1 crew's MCP
+  package under ADR [0279](../.decisions/0279-v1-crew-retired-in-full.md) — the rule is
+  unchanged, it just has one live instance now.)
 - **Deliberate real-fs test code.** A test that means to touch the real filesystem
   (an `integration`-style fixture) may use `node:fs` directly — the point is the real
   disk, so there's nothing to substitute.

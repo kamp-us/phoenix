@@ -1,5 +1,5 @@
 /**
- * The `Tracker` service — the shared Effect capability over the crew's issue tracker
+ * The `Tracker` service — the shared Effect capability over the GitHub-issue tracker
  * surface (claims, triage, verdicts, graduation) with **domain-shaped** signatures.
  *
  * Grown from the Wave-1 walking skeleton (epic #3258): a `Context.Service` `Tracker`
@@ -150,7 +150,7 @@ export type ReadBackResult =
 /**
  * Triage classification (judgment-as-parameter, #3252): the domain type + priority a
  * triage decision assigns, and the lifecycle stage it moves the entity to (`status`,
- * default `triaged`). Domain vocabulary only — `type`/`priority`/`status` are the crew's
+ * default `triaged`). Domain vocabulary only — `type`/`priority`/`status` are the tracker's
  * own terms; `GithubTrackerLive` maps them to `type:` / `status:` label strings at the
  * boundary, so no GitHub label string leaks into the signature (ADR 0190).
  *
@@ -217,7 +217,7 @@ export type CommentResult = {
 /**
  * A gate verdict (judgment-as-parameter, #3252): which `gate` it decides, whether it `passed`,
  * the `headRef` the verdict binds to (ADR 0058), and the verdict `body` prose. Domain vocabulary
- * only — `gate` is the crew's own gate name (`code`/`doc`/`skill`/`design`); the caller never
+ * only — `gate` is the tracker's own gate name (`code`/`doc`/`skill`/`design`); the caller never
  * hand-composes the `review-<gate>:` marker or its `@ <sha>` binding (the divergent-copy class
  * #3254 names), so no GitHub marker string leaks into the signature. `GithubTrackerLive` composes
  * the marker from this judgment at the boundary.

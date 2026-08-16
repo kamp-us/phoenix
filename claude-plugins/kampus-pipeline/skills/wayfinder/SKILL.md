@@ -58,8 +58,9 @@ on the answer — are the [founder-decision-fork seam](#the-founder-decision-for
 distributable plugin def, never the operator-local one.** Every repo-side artifact wayfinder
 composes — the `wayfinder:map` issue, each frontier ticket, an emitted epic, a PR, a comment, ADR
 framing — references **only** a plugin def committed under `claude-plugins/`. The operator's
-local/personal agent definitions are out of repo scope **entirely — not even as a concept**: never carry personal-cleanup framing (e.g. "operator-local defs are deleted
-afterward" / "ported from the operator-local def") into a repo artifact. **Suppress it at
+local/personal agent definitions are out of repo scope **entirely — not even as a concept**: never
+carry personal-cleanup framing (e.g. "operator-local defs are deleted afterward" / "ported from the
+operator-local def") into a repo artifact. **Suppress it at
 composition time**, at the source — not as a downstream hand-scrub, which is the recurring
 #3233–#3237 / ADR 0189 leak this rule exists to end. **Boundary — do not over-apply:** the
 distributable plugin's own *configuration* surface is legitimately in-repo — operator-*configured*

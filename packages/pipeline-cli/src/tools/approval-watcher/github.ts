@@ -43,7 +43,11 @@ import {
 	type TickWrite,
 } from "./tick-record.ts";
 
-/** The label that identifies the ledger issue — the only thing that makes it discoverable. */
+/**
+ * The label that identifies the ledger issue — the only thing that makes it discoverable. The
+ * `crew-` prefix is a live identifier on the board, not a claim the v1 crew still exists (ADR
+ * 0279); renaming it would orphan the ledger issue already carrying it.
+ */
 export const LEDGER_LABEL = "crew-ledger:approval-watcher";
 const LEDGER_TITLE = "approval-watcher tick ledger";
 const LEDGER_BODY = [
@@ -78,7 +82,7 @@ const createLabelArgs = (repo: string): ReadonlyArray<string> => [
 	"-f",
 	"color=ededed",
 	"-f",
-	"description=Machine-written crew loop tick ledger — not a discussion thread",
+	"description=Machine-written approval-watcher tick ledger — not a discussion thread",
 ];
 
 const createLedgerArgs = (repo: string): ReadonlyArray<string> => [

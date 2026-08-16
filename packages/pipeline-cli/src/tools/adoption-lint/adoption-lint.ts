@@ -1,6 +1,6 @@
 /**
  * `adoption-lint` core — the pure, IO-free matcher behind the #3254 adoption
- * corpus-lint. It flags a crew-corpus file (a SKILL.md, an agent def, an
+ * corpus-lint. It flags a pipeline-corpus file (a SKILL.md, an agent def, an
  * orchestrator surface) that **inline-re-derives a tool-owned decision** — the
  * hand-copied ~50-line procedure that duplicates a shipped `pipeline-cli` verb's
  * logic — **instead of citing the owning verb**. This is the governing AC of epic

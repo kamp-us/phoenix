@@ -2391,7 +2391,7 @@ Layer two has a named writer on every path; layer one did not, and the gap fell 
 **delegated (orchestrated) path**. `write-code` Step 3's orchestrated branch skips the direct-path
 block — which carries *both* the claim comment and the self-assign — and the contract never
 re-assigned the second half to anybody. The obligation survived only inside one orchestrator's
-inline claim-agent prompt, so any other dispatcher (a crew engine threading a token by hand)
+inline claim-agent prompt, so any other dispatcher (an engine threading a token by hand)
 satisfied the delegated-claim contract in full while leaving the gate unset. The result was an
 issue sitting `status:triaged` **and unassigned** with a finished implementation already open as a
 PR — precisely the shape the Step-1 picker selects (observed on #4283 / PR #4295).
@@ -2401,7 +2401,7 @@ after the win, before it hands the lane on.**
 
 - **Delegated path** — the dispatcher wins the claim pre-spawn, so the **dispatcher** owes layer
   one before it spawns the coder. This binds *every* dispatcher — the orchestrator
-  (`.claude/workflows/drive-issue.js`) and any crew engine that claims a lane and threads the
+  (`.claude/workflows/drive-issue.js`) and any other engine that claims a lane and threads the
   token — not just the one whose prompt happens to say so.
 - **Direct path** — `write-code` wins its own claim at Step 3, so the **coder** owes it there.
 - **Either way the coder re-asserts it**, idempotently, once it has confirmed the claim is its own
@@ -2456,8 +2456,8 @@ so closing it means claiming before any branch, build, or spawn:
   spawn the coder**, threading the winning claim **token** into the coder's prompt. On a lost claim
   it aborts the dispatch — no coder spawns, and it leaves the assignee untouched (see
   [Claim before you assign](#claim-before-you-assign-a-defer-must-not-strip-the-incumbent)).
-  **This binds every dispatcher, not only `drive-issue.js`** — a crew engine that claims a lane and
-  threads the token owes layer one on exactly the same terms
+  **This binds every dispatcher, not only `drive-issue.js`** — any other engine that claims a lane
+  and threads the token owes layer one on exactly the same terms
   ([Who writes layer one](#who-writes-layer-one-the-claim-winner-on-both-paths)).
 - **Delegated ownership.** The orchestrator and the coder are distinct sessions (the spawned
   coder carries `CLAUDE_CODE_CHILD_SESSION=1` and its own id), so the claim token is
@@ -2625,7 +2625,7 @@ A **repair** dispatch is the class this contract is easiest to violate on: it la
 someone else opened, so the earliest authorized claim is by default *not* the repairing run's
 session. Every repair dispatcher **MUST** thread the lane's claim token into the coder's prompt
 under the same delegated-ownership contract as the initial build (§The pre-spawn claim protocol):
-the orchestrator threads the token it claimed pre-spawn; a crew engine re-driving a stalled lane
+the orchestrator threads the token it claimed pre-spawn; any other engine re-driving a stalled lane
 **claims the lane in its own session first** (`pipeline-cli tracker claim <issue>`, which now
 supersedes a dead claimant) and threads *that* token. A repair coder handed no token **refuses**
 — deterministically, and not overridably by a coherent-looking dispatch brief (`write-code`
