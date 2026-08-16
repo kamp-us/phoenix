@@ -1,6 +1,6 @@
 ---
 name: grilling
-description: Run one grilling session — frontier rounds of numbered questions, each carrying a recommended answer, worked down until the fog clears. Facts are yours to establish (dispatch subagents and answer them); decisions are the founder's, surfaced and then stopped on, never resolved for him. Trigger on "grill me", "grill this", "poke holes in this", "stress-test this design", "what am I missing", "challenge this plan", "run another round", and reach for it too whenever a proposal or plan needs its open questions surfaced before anyone commits to it — including when a `wayfinding` ticket session needs its questions worked, because this is the ideation quintet's shared primitive and the first hop of the shortest path to a spec. Done when every decision question on the session reads ruled through the verb, or the run ends awaiting the founder with the open questions named — and no question's state was inferred from prose.
+description: "Run one grilling session — frontier rounds of numbered questions worked down until the fog clears. Trigger on \"grill me\", \"grill this\", \"poke holes in this\", \"stress-test this design\", \"what am I missing\", \"challenge this plan\", \"run another round\" — and reach for it whenever a proposal or plan needs its open questions surfaced before anyone commits to it, including when a `wayfinding` ticket session needs its questions worked."
 ---
 
 # grilling

@@ -1,6 +1,6 @@
 ---
 name: wayfinding
-description: "Chart one foggy destination as a map issue whose open questions are frontier tickets gated by native GitHub blocking edges, then work that frontier down — answerable tickets researched in parallel at chart time, decision tickets handed to `grilling` and never answered here. Use it when a direction is genuinely undecided and will span sessions: trigger on 'chart this', 'map out X', 'run a wayfinding session', 'this is too foggy to plan', 'we keep re-litigating this', and reach for it whenever someone is about to plan work whose central questions nobody has answered yet. For fog only — work that fits in one session skips this entirely and goes straight to `grilling`. Done when the map records the frontier and every cleared ticket, or the run stops naming the decision the founder owes."
+description: "Chart one foggy destination as a map issue whose open questions are frontier tickets, then work that frontier down. Use it when a direction is genuinely undecided and will span sessions — trigger on \"chart this\", \"map out X\", \"run a wayfinding session\", \"this is too foggy to plan\", \"we keep re-litigating this\", and whenever someone is about to plan work whose central questions nobody has answered yet. For fog only — work that fits in one session goes straight to `grilling`."
 ---
 
 # wayfinding

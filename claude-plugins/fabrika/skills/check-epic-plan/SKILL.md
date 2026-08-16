@@ -1,6 +1,6 @@
 ---
 name: check-epic-plan
-description: Gate one planned epic's task ledger against the deterministic structural floor, then — only on a clean floor — flip its planned children to pickable, and annotate the verdict with advisory plan-quality caveats that never block. Trigger on "gate epic #N", "check the plan for epic #N", "run the plan gate", "is epic #N's ledger clean", "make epic #N's children pickable", and whenever a planned epic's ledger needs clearing before its children can be built. This is the planning lane's gate, downstream of `plan-epic` — it does not plan, does not decompose, and never reviews a pull request; PR judgment is `review`'s.
+description: "Gate one planned epic's task ledger and, only on a clean floor, flip its planned children to pickable. Trigger on \"gate epic #N\", \"check the plan for epic #N\", \"run the plan gate\", \"is epic #N's ledger clean\", \"make epic #N's children pickable\", and whenever a planned epic's ledger needs clearing before its children can be built. It does not plan (`plan-epic`) and never reviews a pull request (`review`)."
 ---
 
 # check-epic-plan

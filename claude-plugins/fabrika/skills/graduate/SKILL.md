@@ -1,6 +1,6 @@
 ---
 name: graduate
-description: "Turn a cleared decision trail into ONE buildable spec issue — the ideation quintet's emission act. Runs on a grilling session or a wayfinding map, reads the trail through the sibling reader, and synthesizes a single spec whose Decisions section separates what the founder actually ruled from what you inferred. Trigger on 'graduate this', 'turn this into a spec', 'file the spec issue', 'this is decided, write it up', 'emit the issue for this session', and reach for it whenever a grilling session or map reads clear and someone is about to hand-write the ticket. Emits one issue at status:needs-triage and stops — it writes no board state, closes no source, and is not handoff, which compacts a session rather than graduating it."
+description: "Turn a cleared decision trail — a grilling session or a wayfinding map — into ONE buildable spec issue. Trigger on \"graduate this\", \"turn this into a spec\", \"file the spec issue\", \"this is decided, write it up\", \"emit the issue for this session\", and whenever a session or map reads clear and someone is about to hand-write the ticket. Not `handoff`, which compacts a session rather than graduating it."
 ---
 
 # graduate

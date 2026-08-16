@@ -1,6 +1,6 @@
 ---
 name: handoff
-description: "Pack a working session so a fresh one continues it — the ground state proven by a verb, the judgment asserted by you, and the two kept apart so a successor knows which half to re-verify. Use it when a session will end before its work does: trigger on 'hand this off', 'pack this session', 'I'm running out of context', 'write a checkpoint before I clear', 'someone else picks this up tomorrow', and on the other side when a fresh session is told to continue work it did not start. Not graduation — it emits no spec and files nothing; it annotates work that already exists. Done when a sealed pack is on the work's issue, or a successor holds one and knows what moved since."
+description: "Pack a working session so a fresh one continues it. Use it when a session will end before its work does — trigger on \"hand this off\", \"pack this session\", \"I'm running out of context\", \"write a checkpoint before I clear\", \"someone else picks this up tomorrow\" — and on the other side, when a fresh session is told to continue work it did not start. Not graduation — it emits no spec and files nothing."
 ---
 
 # handoff

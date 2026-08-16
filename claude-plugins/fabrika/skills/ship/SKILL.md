@@ -1,6 +1,6 @@
 ---
 name: ship
-description: Ship one verified PR — the pipeline's single merge authority. Walk the guard chain (scope, control-plane approval, verdict conjunction, CI at head, run-evidence, unresolved threads), enqueue for the merge queue, and reconcile the terminal outcome honestly. Trigger on "/ship", "ship #N", "merge #N", "enqueue #N", "close the loop on #N", and whenever a reviewed PR needs its merge driven to a terminal state. Not review (the `review` skill), not repair (`build`), not the human release flip. Done when the run ends on exactly one terminal token with the merge intent provably clear on every path that did not enqueue.
+description: "Ship one verified PR — the pipeline's single merge authority. Trigger on \"/ship\", \"ship #N\", \"merge #N\", \"enqueue #N\", \"close the loop on #N\", and whenever a reviewed PR needs its merge driven to a terminal state. Not review (`review`), not repair (`build`), not the human release flip."
 ---
 
 # ship

@@ -1,6 +1,6 @@
 ---
 name: review
-description: The merged text-review gate — judge one PR's textual artifacts (code, docs, skills) against the linked issue's acceptance criteria and the per-surface rubric, and land one SHA-bound namespaced verdict per artifact class present. Trigger on "/review", "review PR #N", "verify PR #N", "gate PR #N before merge", and whenever a PR needs its review verdict before it can ship. Not plans (`check-epic-plan`), not rendered visuals (`review-ui`), not governance-corpus integrity (the `governance` skill — this one invokes it and must not absorb it). Done when every namespace the diff derives carries its own current-head verdict comment, read back conforming.
+description: "The merged text-review gate — judge one PR's textual artifacts (code, docs, skills) against the linked issue's acceptance criteria. Trigger on \"/review\", \"review PR #N\", \"verify PR #N\", \"gate PR #N before merge\", and whenever a PR needs its review verdict before it can ship. Not plans (`check-epic-plan`), not rendered visuals (`review-ui`), not governance-corpus integrity (`governance` — this skill invokes it and must not absorb it)."
 ---
 
 # review

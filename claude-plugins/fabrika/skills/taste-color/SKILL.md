@@ -1,6 +1,6 @@
 ---
 name: taste-color
-description: Pick the colour a surface, border, text run, accent or focus ring is painted with, using the repo's own role-token layer. Trigger before writing or editing any styled UI — a new component, a theme pass, a state or status treatment, a contrast or dark-mode fix — and whenever a review needs the vocabulary to say why a colour choice is wrong. It selects from the design law that already exists; it never mints a colour, a token, or a rule.
+description: "Pick the colour a surface, border, text run, accent or focus ring is painted with, using the repo's own role-token layer. Trigger before writing or editing any styled UI — a new component, a theme pass, a state or status treatment, a contrast or dark-mode fix — and whenever a review needs the vocabulary to say why a colour choice is wrong."
 ---
 
 # taste-color

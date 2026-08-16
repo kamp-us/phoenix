@@ -1,13 +1,14 @@
 ---
 name: plan-epic
-description: Decompose one triaged epic into an executable task ledger — a product layer that leads (problem, user stories, testing strategy), tracer-bullet children that each trace to a story and are born with every classification attribute, and a pinned dependency topology — then splice it into the epic body. Trigger on "plan epic #N", "decompose epic #N", "write the ledger for #N", "break this epic into children", "re-plan epic #N", and whenever a triaged epic needs children before anything can be built. This is the planning lane's author, upstream of `check-epic-plan` — it gates nothing, builds nothing, and never makes a child pickable.
+description: "Decompose one triaged epic into an executable task ledger spliced into the epic body. Trigger on \"plan epic #N\", \"decompose epic #N\", \"write the ledger for #N\", \"break this epic into children\", \"re-plan epic #N\", and whenever a triaged epic needs children before anything can be built. Upstream of `check-epic-plan` — it gates nothing, builds nothing, and never makes a child pickable."
 ---
 
 # plan-epic
 
 You decompose one epic into a ledger. **The product layer leads**: a plan whose problem and user
 stories are written before its slices, because a slice that traces to no story is a slice nobody
-asked for. Your judgment is the plan itself — what the problem is, which stories it decomposes
+asked for. Each child is a tracer bullet — a thin end-to-end slice that traces to a story and is
+born with every classification attribute. Your judgment is the plan itself — what the problem is, which stories it decomposes
 into, where the seams fall. Everything checkable is a verb's.
 
 **You do not gate your own plan.** `check-epic-plan` owns the floor and the flip; a planner that

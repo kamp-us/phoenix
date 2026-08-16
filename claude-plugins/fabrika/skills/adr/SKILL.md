@@ -1,12 +1,14 @@
 ---
 name: adr
-description: Record one architecture decision as a `.decisions/NNNN-slug.md` file. Trigger on "/adr", "save this as an ADR", "record this decision", "ADR for X" — and reach for it too whenever a technical preference, convention, or invariant gets settled in conversation that future agents must respect, even when nobody asks for an ADR, because an unrecorded ruling is one the next session re-decides differently. Done when the file exists, the sweep landed on hits-resolved or read-by-hand, every ADR reference in it resolves as live, and the vocabulary impact is a named term or an explicit none.
+description: "Record one architecture decision as a `.decisions/NNNN-slug.md` file. Trigger on \"/adr\", \"save this as an ADR\", \"record this decision\", \"ADR for X\" — and reach for it whenever a technical preference, convention, or invariant gets settled in conversation that future agents must respect, even when nobody asks for an ADR."
 ---
 
 # adr
 
 One decision per file; the pull request adds nothing but that file plus the status-line edits it
-implies, because discovery is the CLAUDE.md contract and there is no index. Examples run id `0240`.
+implies, because discovery is the CLAUDE.md contract and there is no index. A settled preference
+earns a file even when nobody asks for an ADR — an unrecorded ruling is one the next session
+re-decides differently. Examples run id `0240`.
 
 ## 1 — Claim the number
 

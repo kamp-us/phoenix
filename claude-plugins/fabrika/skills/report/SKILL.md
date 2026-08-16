@@ -1,6 +1,6 @@
 ---
 name: report
-description: File one follow-up GitHub issue the moment you spot work you will not do right now — a bug, a refactor, a design question, a missing test, a confusing convention. Fire it mid-task and autonomously, without asking permission and without finishing what you were doing first, because an observation that stays in the conversation dies there. Composes and posts the body over a single guarded path that refuses a machine-local path, an empty body, or a hand-applied classification and reads back what landed, after a duplicate check whose three outcomes it makes you read. Also trigger on "/report", "file an issue", "report this", "open a follow-up", "track this for later". Done when the observation is on the board — a new issue carrying `status:needs-triage` and nothing else, or a note on the issue that already covered it — and you are back on the task you interrupted.
+description: "File one follow-up GitHub issue the moment you spot work you will not do right now — a bug, a refactor, a design question, a missing test, a confusing convention. Fire it mid-task and autonomously, without asking permission and without finishing what you were doing first. Also trigger on \"/report\", \"file an issue\", \"report this\", \"open a follow-up\", \"track this for later\"."
 ---
 
 # report

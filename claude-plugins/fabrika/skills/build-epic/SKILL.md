@@ -1,6 +1,6 @@
 ---
 name: build-epic
-description: Conduct one planned epic into ONE pull request — hold the plan and a single branch in one tree, dispatch a fresh subagent per commit, dispatch fresh evaluators that review each slice at its unpushed local commit, and advance only on artifacts (commits, verdicts, ledger reads), never on a subagent's self-report. Trigger on "build epic #N", "conduct epic #N", "drive epic #N to a PR", "run the epic", and whenever a planned epic's slices need landing as commits on one branch. Construction belongs to `build`/`build-ui`, judgment to `review`/`review-design`, planning and merging to their own lanes — this skill only conducts.
+description: "Conduct one planned epic into ONE pull request. Trigger on \"build epic #N\", \"conduct epic #N\", \"drive epic #N to a PR\", \"run the epic\", and whenever a planned epic's slices need landing as commits on one branch. Construction is `build`/`build-ui`'s, judgment `review`/`review-ui`'s, planning and merging their own lanes — this skill only conducts."
 ---
 
 # build-epic

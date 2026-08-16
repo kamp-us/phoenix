@@ -1,6 +1,6 @@
 ---
 name: triage
-description: Turn one raw `status:needs-triage` issue into a single actionable unit a builder can pick up cold — classified, enriched from the code, priced, homed, and addressed to whoever picks it up. Trigger on "/triage", "triage the queue", "triage issue #N", "process needs-triage", "classify these issues", and whenever someone asks to make the backlog actionable or pickable. This is the guardrail between raw intake and pickable work: nothing reaches a builder without passing through here, so a wrong-but-well-formed label written here travels downstream unchallenged. Done when the issue carries exactly one `type:`, one `p`, `status:triaged`, one `ready-for:`, and a home — or has left the queue as `status:needs-info` or a killed agent filing.
+description: "Turn one raw `status:needs-triage` issue into a single actionable unit a builder can pick up cold. Trigger on \"/triage\", \"triage the queue\", \"triage issue #N\", \"process needs-triage\", \"classify these issues\", and whenever someone asks to make the backlog actionable or pickable."
 ---
 
 # triage

@@ -1,6 +1,6 @@
 ---
 name: write-pattern
-description: "Author or re-ground one `.patterns/*.md` doc — the how-the-code-is-shaped surface later runs ground in before touching a service. Trigger on \"/write-pattern\", \"write a pattern doc\", \"record this pattern\", \"the patterns drifted from the code\", \"re-ground `.patterns/<x>` against source\" — and reach for it too whenever a shape you just relied on turns out to be undocumented, or a doc you just trusted turns out to be wrong, because a pattern doc nobody refreshes does not go quiet, it starts actively misleading every agent that reads it. NOT the `.decisions/` why surface (that is `adr`), NOT the `.glossary/` nouns. Done when the doc is written, re-grounded, or routed to the surface that owns it."
+description: "Author or re-ground one `.patterns/*.md` doc — the how-the-code-is-shaped surface. Trigger on \"/write-pattern\", \"write a pattern doc\", \"record this pattern\", \"the patterns drifted from the code\", \"re-ground `.patterns/<x>` against source\" — and reach for it whenever a shape you just relied on turns out to be undocumented, or a doc you just trusted turns out to be wrong. NOT the `.decisions/` why surface (that is `adr`), NOT the `.glossary/` nouns."
 ---
 
 # write-pattern

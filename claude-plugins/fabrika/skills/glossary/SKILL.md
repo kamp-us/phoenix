@@ -1,6 +1,6 @@
 ---
 name: glossary
-description: "Maintain the repo's canonical vocabulary registers — `.glossary/TERMS.md` (the domain nouns) and `.glossary/LANGUAGE.md` (the architecture vocabulary). Trigger on \"/glossary\", \"update the glossary\", \"add a term\", \"what does X canonically mean here\", \"bootstrap the vocabulary\" — and reach for it too whenever a name gets coined, redefined, or disambiguated in work you are already doing, even when nobody asks, because a term that ships without a row is one the next reader re-derives a different meaning for. This is the fabrika register-maintenance skill: it owns BOTH registers and calls `fabrika glossary` verbs plus one sibling citation check. Not the sözlük product feature, and not an architecture audit. Done when every candidate landed on exactly one outcome — a row written, or a stated reason it earned none."
+description: "Maintain the repo's canonical vocabulary registers — `.glossary/TERMS.md` (domain nouns) and `.glossary/LANGUAGE.md` (architecture vocabulary). Trigger on \"/glossary\", \"update the glossary\", \"add a term\", \"what does X canonically mean here\", \"bootstrap the vocabulary\" — and reach for it whenever a name gets coined, redefined, or disambiguated in work you are already doing, even when nobody asks. Not the sözlük product feature, and not an architecture audit."
 ---
 
 # glossary
@@ -13,7 +13,9 @@ brand-name spelling belongs to `LANGUAGE.md`. **One term, one register, one row*
 definition in the other file is the defect, not thoroughness.
 
 You decide what a word means and whether it has earned a row. The verbs decide what is already
-declared, what changed, and where a row goes.
+declared, what changed, and where a row goes. A term that ships without a row is one the next
+reader re-derives a different meaning for — which is why a coining in work already underway fires
+this skill even when nobody asks.
 
 Every command is a plain literal. Each verb's default register differs — pass `--register`
 explicitly rather than recalling a default.
