@@ -1,6 +1,6 @@
 ---
 name: operate
-description: Drive one issue's lane to a terminal state — boot or resume its ledger machine, read the folded state, spawn the matching fabrika shell (builder/reviewer/shipper) per active leaf state, and feed each spawn's outcome back as exactly one lane event, looping until the machine finishes or parks on a human. Trigger on "operate #N", "drive the lane on #N", "run issue #N to terminal", "resume the lane on #N", and whenever a driver wants an issue carried through build→review→ship without holding the loop in their own session. Type-blind — it routes on the machine's state names, never on the work's type, so a single issue and an epic drive identically. Not construction (`build`), not judging (`review`), not merging (`ship`): those run inside the shells this skill spawns; this skill only reads the machine and routes. Done when the run ends on exactly one terminal token, with the transcript or the park posted on the driven issue.
+description: Drive one issue's lane to a terminal state — boot or resume its ledger machine, read the folded state, spawn the matching fabrika shell (builder/reviewer/shipper) per active leaf state, and feed each spawn's outcome back as exactly one lane event, looping until the machine finishes or parks on a human. Trigger on "operate #N", "drive the lane on #N", "run issue #N to terminal", "resume the lane on #N", and whenever a driver wants an issue carried through build→review→ship without holding the loop in their own session. Type-blind — it routes on the machine's state names, never on the work's type, so a single issue and an epic drive identically. Not `build-epic` — "build epic #N" / "drive epic #N to a PR" is build-epic's one-PR conduction of an epic's slices on a single branch in one tree; this skill drives the lane's ledger machine, one spawned shell per active state and one PR per child. Not construction (`build`), not judging (`review`), not merging (`ship`): those run inside the shells this skill spawns; this skill only reads the machine and routes. Done when the run ends on exactly one terminal token, with the transcript or the park posted on the driven issue.
 ---
 
 # operate
@@ -48,9 +48,9 @@ node packages/fabrika-cli/src/bin.ts lane open 5539
 ```
 
 `lane open`'s already-exists refusal is tolerated as resume, not treated as an error. Both verbs
-are specified on [#5688](https://github.com/kamp-us/phoenix/issues/5688) and live beside
-`status`/`transition`/`history`/`print` in `packages/fabrika-cli/src/lane/`; each verb's `--help`
-is its interface. Any other exit is a stop, not a fallback: `4` is a record read in full and not
+are specified on [#5688](https://github.com/kamp-us/phoenix/issues/5688) — until that lands they
+exist only as its spec; once it does they join `status`/`transition`/`history`/`print` in
+`packages/fabrika-cli/src/lane/`, and each verb's `--help` is its interface. Any other exit is a stop, not a fallback: `4` is a record read in full and not
 the shape, `11` is a lane that could not be read — opposite remedies, neither yours to guess. End
 `STOPPED` naming the code.
 
@@ -105,7 +105,8 @@ prints it; a single-task lane tolerates omission.)
 | --- | --- |
 | builder `SHIPPED-PR` / `SUCCESS-NO-PR` | `DONE` |
 | reviewer: every namespace verdict `PASS` at the current head | `PASS` |
-| reviewer: any namespace verdict `FAIL` | `FAIL` |
+| reviewer: every derived namespace terminal at the current head, at least one `FAIL` | `FAIL` |
+| reviewer: any derived namespace still without a current-head verdict | no event — re-read, see below |
 | shipper `already-merged` / `QUEUED` / `landed` | `DONE` |
 | anything else — a back-off, an escalation, a stop, an awaiting-approval, a permission denial, a dead or unresponsive spawn, a report you cannot parse | `BLOCKED` |
 
@@ -115,6 +116,15 @@ spawned shell is a BLOCKED-class outcome, never something to route around
 ([#5685](https://github.com/kamp-us/phoenix/issues/5685)); a **dead spawn** is a `BLOCKED` event,
 never a retry-in-place — retries belong to the machine (`FAIL` spends one; `frozen` is its
 answer), and you never re-spawn what the fold has not re-asked for.
+
+A third refusal guards the `FAIL` row: **a reviewer `FAIL` is recorded only when every derived
+namespace holds a current-head verdict** — governance included, on a `harness: true` diff. `FAIL`
+routes the machine into a repair build, and a repair pushes a new head; recorded while any
+namespace is still in flight, it orphans that namespace's verdict mid-write and spends one of the
+machine's retries on a verdict set nobody finished. A reviewer report carrying a `FAIL` beside a
+namespace with no current-head verdict is an incomplete read, not an event: re-read the PR's
+verdicts until every derived namespace is terminal at the head, then record. No repair builder is
+ever spawned while any namespace at the head is non-terminal.
 
 `lane transition` exits are verdicts: `12` means the event was refused and the log left
 unappended — the machine holds no cell for it, so re-fold with `lane status` and route from the
@@ -127,7 +137,14 @@ Done when the fold reads a terminal state or a park.
 
 **`human:*` and `blocked` park the lane.** You cannot clear them: post on the driven issue what is
 needed and from whom (the parking spawn's report names both; for `human:cp-approval` it is a
-control-plane approval at the PR's current head), then end `LANE-PARKED`. Clearing a park is a
+control-plane approval at the PR's current head), then end `LANE-PARKED`. One park class names its
+owner here, not off the spawn's report: **a wire defect on the driven issue's own body** — an
+acceptance-criteria heading a spawned shell fail-louds on, a criteria block that reads as no shape
+the verbs parse. The fix is `triage`'s: the surface that stamped the issue agent-ready owns its
+wire shape, so the park comment names the defective section and says explicitly that a `triage`
+re-run on this issue is the fix — never delegating both the what and the who to the parking
+spawn's report, and never editing the body yourself (you are type-blind, and a driven issue's body
+is not your artifact). Clearing a park is a
 human's `UNBLOCKED`, recorded through the same `lane transition` verb — you never record
 `UNBLOCKED`. A resumed run that folds into a still-parked lane restates the park in one comment
 and ends `LANE-PARKED` again; the ledger, not your patience, decides when the lane moves.
