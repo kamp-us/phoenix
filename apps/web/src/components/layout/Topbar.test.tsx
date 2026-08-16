@@ -140,16 +140,32 @@ describe("Topbar accent-scarcity containment law (#2614)", () => {
 		expect(temaHover?.body).not.toMatch(/var\(--accent(-11)?\)/);
 	});
 
-	it("arama odağını yalnızca dış kabuk çizer; Manti kontrolü ikinci halka üretmez", () => {
-		const searchControlFocus = rules.find(
+	// #5660. The search has exactly one focus owner, and it is the shared ring global.css paints on
+	// [data-part="control"]. Two things make that true and both are asserted: the stylesheet
+	// declares no focus treatment of its own (a second one is the mismatched double-paint), and the
+	// control is the element drawing the visible border (otherwise the ring outlines a box the
+	// reader cannot see, which is what the hand-rolled group did).
+	it("the search paints no focus treatment of its own, and the ring's box is the bordered one", () => {
+		const focusRules = rules.filter(
+			(r) => /kp-topbar__search/.test(r.selector) && /:focus/.test(r.selector),
+		);
+		// Any focus rule here may only NEUTRALIZE — hold the resting border against Manti's accent
+		// recolour. One that paints an outline or an accent is the second treatment coming back.
+		for (const r of focusRules) {
+			expect(r.body).not.toMatch(/outline/);
+			expect(r.body).not.toMatch(/var\(--accent/);
+		}
+		expect(focusRules.some((r) => /border-color:\s*var\(--border\)/.test(r.body))).toBe(true);
+
+		const control = rules.find(
 			(r) =>
 				/kp-topbar__search-field/.test(r.selector) &&
-				/:focus-within/.test(r.selector) &&
-				/\[data-part="control"\]/.test(r.selector),
+				/\[data-part="control"\]/.test(r.selector) &&
+				!/:focus/.test(r.selector),
 		);
-		expect(searchControlFocus).toBeDefined();
-		expect(searchControlFocus?.body).toMatch(/border-color:\s*transparent/);
-		expect(searchControlFocus?.body).toMatch(/box-shadow:\s*none/);
+		expect(control).toBeDefined();
+		expect(control?.body).toMatch(/border:\s*1px solid var\(--border\)/);
+		expect(control?.body).toMatch(/border-radius:\s*var\(--r-sm\)/);
 	});
 
 	it("kompakt üst çubuk butonu Manti'nin ortak min-height değerine esnemez", () => {
