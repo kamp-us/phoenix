@@ -207,10 +207,12 @@ export const compile = (workflow: unknown): CompileResult => {
 	}
 	const context = isRecord(machineDef.context) ? machineDef.context : {};
 
+	const machineStates = machineDef.states;
 	const tasks: Record<string, CompiledTask> = {};
 	const phases: Array<{name: string; tasks: string[]}> = [];
+	const gateTargets = new Set<string>();
 	let terminals: {complete: string; tripped: string} | undefined;
-	for (const [phaseName, node] of Object.entries(machineDef.states)) {
+	for (const [phaseName, node] of Object.entries(machineStates)) {
 		if (nodeType(node) !== "parallel" || !isRecord(node)) continue;
 		const regions = node.states;
 		if (!isRecord(regions) || Object.keys(regions).length === 0) {
@@ -229,8 +231,29 @@ export const compile = (workflow: unknown): CompileResult => {
 		if (gate.defect !== undefined) defects.push(gate.defect);
 		// Every phase names the same trip terminal; the LAST phase's success target is the
 		// workflow's complete terminal, because earlier ones target the next phase.
-		if (gate.targets !== undefined)
+		if (gate.targets !== undefined) {
+			for (const target of gate.targets) {
+				gateTargets.add(target);
+				if (machineStates[target] === undefined) {
+					defects.push(
+						`phase "${phaseName}": \`onDone\` targets unknown machine-level state "${target}"`,
+					);
+				}
+			}
 			terminals = {complete: gate.targets[0], tripped: gate.targets[1]};
+		}
+	}
+	// A machine-level state the loop above did not compile is a terminal or a defect — never
+	// dropped silently: a phase missing `"type": "parallel"` must refuse, not half-compile.
+	for (const [name, node] of Object.entries(machineStates)) {
+		if (nodeType(node) === "parallel" && isRecord(node)) continue;
+		if (nodeType(node) !== "final") {
+			defects.push(
+				`machine-level state "${name}" is neither a \`parallel\` phase nor a \`final\` terminal`,
+			);
+		} else if (!gateTargets.has(name)) {
+			defects.push(`machine-level final "${name}" is targeted by no phase's \`onDone\` pair`);
+		}
 	}
 	if (phases.length === 0) defects.push("machine holds no `parallel` phase state");
 	if (defects.length > 0) return {_tag: "Malformed", defects};

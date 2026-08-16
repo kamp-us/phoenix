@@ -19,6 +19,12 @@ const defectsOf = (workflow: unknown): string => {
 	return result._tag === "Malformed" ? result.defects.join("\n") : "";
 };
 
+/** Reach a fixture's machine-level `states` map, for a test to mutate one phase or terminal. */
+const machineStates = (
+	workflow: Record<string, unknown>,
+): Record<string, Record<string, unknown>> =>
+	(workflow.machine as Record<string, unknown>).states as Record<string, Record<string, unknown>>;
+
 describe("the compiler — structural recognition", () => {
 	it("compiles the committed coder template", () => {
 		const lane = compiled(coderWorkflow());
@@ -89,6 +95,34 @@ describe("the compiler — refusals", () => {
 			.phase1 as Record<string, unknown>;
 		phase1.onDone = undefined;
 		expect(defectsOf(noGate)).toContain("onDone");
+	});
+
+	it("refuses a machine-level state that lost its `parallel` type, never dropping it", () => {
+		const workflow = twoPhaseWorkflow();
+		delete defined(machineStates(workflow).phase2).type;
+
+		expect(defectsOf(workflow)).toContain(
+			'machine-level state "phase2" is neither a `parallel` phase nor a `final` terminal',
+		);
+	});
+
+	it("refuses an `onDone` target that names no machine-level state", () => {
+		const workflow = twoPhaseWorkflow();
+		defined(machineStates(workflow).phase2).onDone = [
+			{target: "compleet", guard: "noErrors"},
+			{target: "tripped"},
+		];
+
+		expect(defectsOf(workflow)).toContain('unknown machine-level state "compleet"');
+	});
+
+	it("refuses a machine-level final no `onDone` pair reaches", () => {
+		const workflow = twoPhaseWorkflow();
+		machineStates(workflow).orphan = {type: "final"};
+
+		expect(defectsOf(workflow)).toContain(
+			'machine-level final "orphan" is targeted by no phase\'s `onDone` pair',
+		);
 	});
 
 	it("refuses a document that is not machine-shaped at all", () => {
