@@ -29,7 +29,7 @@ access per
 | `governance sweep` | the uncited live-`accepted` records whose decision domain a subject touches, ranked, for a subject read out of a bound commit or out of the corpus | the ranking is arithmetic over a corpus; reading the shortlist, and reading the domain the ranking cannot see, is judgment |
 | `governance guards` | the anchored invariants the bound diff removes or modifies, and the guard-bearing files it touches | detecting an anchor's removal or mutation in a diff is textual and mechanical; whether the change *weakens* the invariant is judgment |
 | `governance base` | this skill's own text at the merge-base of a PR that edits it — the self fence's bytes | resolving a merge base and reading named paths at it is mechanical; judging the PR by those rules rather than the head's is the judgment |
-| `governance post` | the single sanctioned emit of the `governance` namespace verdict: compose through the `verdict-marker` wire format, re-resolve the head, upsert one comment, leak-scan, read back | marker composition, head re-resolution, the derived-namespace fence and the read-back are a protocol; the polarity and clause are judgment |
+| `governance post` | the single sanctioned emit of the `governance` namespace verdict: compose through the `verdict-marker` wire format, re-resolve the head, upsert one comment per head, leak-scan, read back | marker composition, head re-resolution, the derived-namespace fence and the read-back are a protocol; the polarity and clause are judgment |
 | `governance digest` | the decision records that landed in a window, each with its id, title, status, landing commit and whether its diff carried anchored-invariant changes | enumerating merges in a window and reading each record's frontmatter is mechanical; ranking tension and blast radius is judgment |
 | `governance readout` | the digest-publishing protocol: compose the ranked rows through the `governance-digest` wire format, upsert them into the durable artifact, read them back | composition, upsert and read-back are a protocol; the rows and their order are judgment |
 
@@ -880,10 +880,15 @@ namespace is a constant, so it cannot be aimed anywhere else even by a confused 
    it lands, `emit` composes bytes `read` rejects and step 6 fails every clean run.
 4. **Leak-scan the assembled comment** (`report/leaks.ts`, imported) — an authored machine-local path
    is the `5` refusal, a bare `@` reference the `6`.
-5. **Upsert one comment.** An existing comment by this bot whose first non-blank line reads as the
-   `governance` namespace is edited in place; otherwise a new comment is created. One namespace, one
-   comment: a second marker stacked on line 2 is un-anchored, resolves the namespace empty and
-   fail-closes a substantively-passing PR.
+5. **Upsert one comment per head.** An existing comment by this bot whose first non-blank line reads
+   as the `governance` namespace **bound to the head being posted** — its marker `sha` compared
+   prefix-tolerantly to that head — is edited in place; otherwise a new comment is created. So a
+   re-post at the same head upserts, and a post at a moved head appends, leaving the prior head's
+   verdict readable: a verdict is SHA-bound, so a new head's verdict is a different fact, not a
+   revision, and editing the old comment destroys the only record of what was true over that tree
+   (ADR 0213 named this half of rule 2's key as still open; #4007 closed it in v1). One namespace at
+   one head, one comment: a second marker stacked on line 2 is un-anchored, resolves the namespace
+   empty and fail-closes a substantively-passing PR.
 6. **Read it back, unconditionally, from live PR state** — re-fetch the comment, hand its body to the
    format's `read`, require `Found` with exactly the five fields posted, then compare the whole
    comment against the bytes sent through `normalizeForReadback`. A read-back that trusts a carried
@@ -952,10 +957,12 @@ $ echo $?
 
 **Grounding**
 
-- ADR 0058 — the marker is SHA-bound and one-per-(PR, namespace), upserted rather than appended. The
-  key is unchanged by this group: nothing in the enqueue decision asks which skill posted a
-  namespace, which is what makes one skill emitting N namespaces, and a namespace filled by a
-  non-primary reviewer, both already legal.
+- ADR 0058 — the marker is SHA-bound and one-per-(PR, namespace), upserted rather than appended. ADR
+  0213 refines rule 2's uniqueness key and names its head dimension as left open there; #4007 closed
+  that half in v1, and step 5 above carries it here: the key is (PR, namespace, head), so a re-post
+  at the same head upserts and a moved head appends. Which skill posted a namespace is still no part
+  of the key — nothing in the enqueue decision asks — which is what makes one skill emitting N
+  namespaces, and a namespace filled by a non-primary reviewer, both already legal.
 - #3173 — a hand-rolled emit posted a literal path and self-reported a false PASS; this verb is the
   single sanctioned path and the read-back is unconditional and from live state.
 - ADR 0055 — authority arrives through the ACL-checked read, never from the text being plausible.
