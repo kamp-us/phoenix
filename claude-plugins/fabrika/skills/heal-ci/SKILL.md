@@ -1,6 +1,6 @@
 ---
 name: heal-ci
-description: "Answer why one pull request is not moving, and drive it back into motion — the stranded-PR lane. Classify the stall into one closed set, then take the single action that class licenses: one transient rerun, a route to the lane that owns the work, or a named human escalation. Runs over one PR or as a scheduled sweep of every open PR. Trigger on heal #N, why is this PR stuck, why has this not merged, this PR has been sitting, nothing is happening on this PR, sweep for stranded PRs, and whenever ship reports red or a PR looks abandoned. Red CI is one stall class among ten — a green PR that nobody owns is stranded too. Not review, not repair (build), not merge (ship). Done when the run ends on exactly one terminal token, every stall it named recorded durably on the PR."
+description: "Answer why one pull request is not moving and drive it back into motion — one PR, or a scheduled sweep of every open PR. Trigger on \"heal #N\", \"why is this PR stuck\", \"why has this not merged\", \"this PR has been sitting\", \"nothing is happening on this PR\", \"sweep for stranded PRs\", and whenever `ship` reports red or a PR looks abandoned — a green PR that nobody owns is stranded too. Not review, not repair (`build`), not merge (`ship`)."
 ---
 
 # heal-ci

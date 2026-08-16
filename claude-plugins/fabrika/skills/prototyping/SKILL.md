@@ -1,6 +1,6 @@
 ---
 name: prototyping
-description: "Answer ONE named empirical question with throwaway code — a spike that exists to produce evidence, is marked disposable from the moment it is opened, has its decision captured back, and is then destroyed. Use it when a question can only be settled by running something: trigger on 'spike this', 'prototype it', 'just try it and see', 'build a throwaway to find out', 'would this even work', and whenever a decision is stuck because nobody has actually run the thing. Standalone-first; `wayfinding` is one caller among others. Not `build` or `build-ui` — those construct what ships. This constructs what gets thrown away, and the code never grows into the product. Done when the spike is closed carrying a decision grounded in recorded runs, and the workspace is proven gone."
+description: "Answer ONE named empirical question with throwaway code — a disposable spike, never the shipped construction of `build`/`build-ui`. Use it when a question can only be settled by running something — trigger on \"spike this\", \"prototype it\", \"just try it and see\", \"build a throwaway to find out\", \"would this even work\", and whenever a decision is stuck because nobody has actually run the thing. Standalone-first; `wayfinding` is one caller among others."
 ---
 
 # prototyping

@@ -1,6 +1,6 @@
 ---
 name: build
-description: Execute one triaged, agent-ready issue end to end — claim it, construct the text artifact (code, prose, or a plan) in a verified tree, open a PR that traces to it — or, given a PR number, enter repair mode and consume the gates' latest current-head verdicts to fix and resubmit on the same branch. Trigger on "work the next issue", "pick up an issue", "implement issue #N", "build #N", "repair PR #N", "fix the FAIL on #N", and whenever triaged backlog work needs turning into a pull request. This is the construction edge of the pipeline: everything it writes lands on a shared board and a shared remote, so every step verifies its ground before mutating. Rendered-visual construction (UI against the design system) is `build-ui`'s lane, not this skill's.
+description: "Execute one triaged, agent-ready issue end to end and land it as a PR — or, given a PR number, enter repair mode on that PR's branch. Trigger on \"work the next issue\", \"pick up an issue\", \"implement issue #N\", \"build #N\", \"repair PR #N\", \"fix the FAIL on #N\", and whenever triaged backlog work needs turning into a pull request. Rendered-visual construction is `build-ui`'s lane, not this skill's."
 ---
 
 # build

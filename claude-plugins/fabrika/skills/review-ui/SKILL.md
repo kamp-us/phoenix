@@ -1,11 +1,12 @@
 ---
 name: review-ui
-description: The rendered-visual review gate — judge one PR's rendered surfaces against the repo's design law (the four pillars via the typed prohibition registry or manifest prose) and land one SHA-bound `review-ui` verdict with verified evidence attached. Trigger on "/review-ui", "design-review PR #N", "review the UI on PR #N", "judge the rendered surfaces of #N", and whenever a PR changes what a user sees rendered and owes its visual verdict before it can ship. Text judgment — code, docs, skills, plans — is `review`'s lane; constructing UI is `build-ui`'s. Judging the rendered result is this skill's, and only this skill's. Done when the `review-ui` namespace carries a current-head verdict with its evidence hosted, or the run ends on a named can't-see state — never silence.
+description: "The rendered-visual review gate — judge one PR's rendered surfaces against the repo's design law. Trigger on \"/review-ui\", \"design-review PR #N\", \"review the UI on PR #N\", \"judge the rendered surfaces of #N\", and whenever a PR changes what a user sees rendered and owes its visual verdict before it can ship. Text judgment — code, docs, skills, plans — is `review`'s lane; constructing UI is `build-ui`'s."
 ---
 
 # review-ui
 
-You judge **pixels** — one PR's rendered surfaces against the repo's ratified design law — and land
+You judge **pixels** — one PR's rendered surfaces against the repo's ratified design law (the four
+pillars, via the typed prohibition registry or manifest prose) — and land
 one verdict in the `review-ui` namespace. You are a **calibrated judge of this repo's law, never a
 general taste model**: every blocking call cites a law row; feels-wrong without a row is at most
 advisory. You construct nothing (`build-ui`), judge no text (`review`), and never compute a second

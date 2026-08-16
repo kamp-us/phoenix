@@ -1,6 +1,6 @@
 ---
 name: front-door
-description: "The operating front door — type /fabrika in a cold session to get the factory's live state and the menu of which fabrika skill to reach for. Also owns new-repo onboarding: it reports which repo surfaces are missing and builds them with the primitives rather than a bespoke installer. Human-typed only; the model cannot fire this."
+description: "The operating front door — type /fabrika in a cold session for the factory's live state, the skill menu, and new-repo onboarding. Human-typed only; the model cannot fire this."
 disable-model-invocation: true
 ---
 

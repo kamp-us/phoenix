@@ -1,6 +1,6 @@
 ---
 name: build-ui
-description: Execute one triaged issue whose deliverable is a rendered visual surface — claim it, read the repo's design law before generating, construct the UI against role tokens and the component inventory in a verified tree, render and self-check what you built, open a PR carrying before/after captures — or, given a PR number, enter repair mode and fix against the gates' current-head verdicts. Trigger on "build the UI for #N", "implement the page/component/screen", "make the visual change in #N", "repair the design FAIL on PR #N", and whenever backlog work's deliverable is something a user will see rendered. Text construction — code-as-text, prose, plans — is `build`'s lane; judging a rendered surface is `review-ui`'s. Constructing it is this skill's, and only this skill's.
+description: "Execute one triaged issue whose deliverable is a rendered visual surface, and land it as a PR — or, given a PR number, enter repair mode. Trigger on \"build the UI for #N\", \"implement the page/component/screen\", \"make the visual change in #N\", \"repair the design FAIL on PR #N\", and whenever backlog work's deliverable is something a user will see rendered. Text construction — code-as-text, prose, plans — is `build`'s lane; judging a rendered surface is `review-ui`'s."
 ---
 
 # build-ui
