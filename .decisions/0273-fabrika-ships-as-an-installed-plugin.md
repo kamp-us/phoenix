@@ -198,6 +198,35 @@ Conversation-authored under ADR [0075](0075-issueless-doc-pr-merge-seam.md). Rel
 [#5049](https://github.com/kamp-us/phoenix/issues/5049) (the required-repo-files manifest mandate) and
 [#5247](https://github.com/kamp-us/phoenix/issues/5247) (the portability ruling and its sharpened test).
 
+## Amendment (2026-08-16) — the plugin's own dev repo consumes from the checkout
+
+Founder ruling, recorded on [#5705](https://github.com/kamp-us/phoenix/issues/5705). The staleness
+cost this ADR priced in ("a change is not live until it lands on the tracked ref and the install
+updates") proved worse than priced: on 2026-08-16 alone, three just-merged plugin changes were
+invisible to running sessions until a manual `/plugin` update plus `/reload-plugins`, and the first
+reload without the update silently changed nothing because the cache was pinned to a pre-merge
+commit. The failure mode is silent (agent-not-found, stale skill text) in the one repo where fabrika
+changes many times a day.
+
+**Amended decision:** phoenix — the repo that authors the plugin — registers the `kampus`
+marketplace as a directory source pointing at its own checkout (`claude plugin marketplace add ./`,
+once per machine), so plugin content resolves from the working tree. External consumers are
+unchanged: they install from the GitHub marketplace exactly as this ADR rules, and that channel
+remains the release criterion.
+
+What this does and does not weaken. The portability test (**repo-resident** inputs), the
+`## Required repo files` mandate, the banned list, and the review-time enumeration all stand
+untouched — they are properties of the skill corpus, not of which machine consumes it from where.
+What is given up is phoenix's own sessions exercising the GitHub install path day to day; that proof
+now comes from external consumers and from review-time enumeration rather than from dogfood. The
+founder ruled that trade explicitly (2026-08-16): the dev repo's iteration loop wins.
+
+The repo's `.claude/settings.json` previously carried an `extraKnownMarketplaces` block intended to
+auto-register the GitHub marketplace for cloners; Claude Code 2.1.233 never registers project-scope
+`extraKnownMarketplaces` (verified live, recorded on #5705), so the block was inert and is removed.
+A fresh clone runs the one-liner above; when Claude Code fixes project-scope registration, a
+directory-source settings block can restore zero-step clones.
+
 Vocabulary impact: this ADR adopts **repo-resident** as the operative portability test — an input a
 skill can obtain by opening the repository it is installed into, and nothing else. It is not
 "non-phoenix-specific" (the phrasing it replaces), not repo-*agnostic* targeting (ADR
