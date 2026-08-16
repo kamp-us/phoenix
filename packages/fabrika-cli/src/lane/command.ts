@@ -6,11 +6,14 @@
  * decision lives in the verb modules beside it, which is what makes each refusal testable without
  * spawning a process.
  */
-import {Effect} from "effect";
+import {fileURLToPath} from "node:url";
+import {Effect, Option} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
 import {leafCommand} from "../excess-operand.ts";
 import type {VerbOutcome} from "../verb.ts";
+import {runEmit} from "./emit-verb.ts";
 import {runHistory} from "./history-verb.ts";
+import {runOpen} from "./open-verb.ts";
 import {runPrint} from "./print-verb.ts";
 import {runStatus} from "./status-verb.ts";
 import {DEFAULT_LANES_ROOT} from "./store.ts";
@@ -102,8 +105,47 @@ const print = leafCommand(
 	),
 );
 
+const templatePath = fileURLToPath(new URL("./templates/coder.workflow.json", import.meta.url));
+
+const open = leafCommand(
+	"open",
+	{lane: laneArgument, root: rootFlag},
+	Effect.fn(function* ({lane, root}) {
+		yield* emit(yield* runOpen({root, lane, templatePath}));
+	}),
+).pipe(
+	Command.withShortDescription("Boot a single-issue lane from the committed coder template."),
+	Command.withDescription(
+		"Boot one single-issue lane: create `<root>/<lane>/` and place a byte-identical copy of the committed coder template as its workflow.json. An existing lane dir is refused loudly with nothing written — resuming needs no boot, and overwriting a machine mid-drive would corrupt a live fold. Exits 8 (the write did not land — the lane is NOT booted), 11 (the template or the lane dir's existence could not be read — UNKNOWN, never a boot), 14 (the lane already exists). Example: fabrika lane open 5673",
+	),
+);
+
+const emitLane = leafCommand(
+	"emit",
+	{
+		epic: Argument.integer("epic").pipe(
+			Argument.withDescription("the type:epic issue whose plan topology becomes the machine"),
+		),
+		root: rootFlag,
+		repo: Flag.string("repo").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"the target owner/name (default: $CLAUDE_PIPELINE_REPO, else $GITHUB_REPOSITORY, else the origin remote)",
+			),
+		),
+	},
+	Effect.fn(function* ({epic, root, repo}) {
+		yield* emit(yield* runEmit({epic, root, repo: Option.getOrNull(repo), env: process.env}));
+	}),
+).pipe(
+	Command.withShortDescription("Generate an epic's lane machine from its board topology."),
+	Command.withDescription(
+		"Generate a lane machine from the epic's board state: read the epic body's `## Dependencies` topology (the shape `ledger topology` stages) and emit `<root>/<epic>/workflow.json` — one region per child in the coder template's exact shape, phase-sequenced, parallel within a phase. Deterministic: the same epic body bytes and child set emit the same machine bytes. Exits 4 (the topology was read in full and does not parse — the defective line, duplicate placement or unplaced requires subject is named), 7 (the epic is proven absent or closed), 8 (the write did not land), 11 (the epic, its child list or the lane dir could not be read — UNKNOWN), 14 (the lane already exists — remove it to regenerate), 15 (no `## Dependencies` topology — plan the epic first), 16 (the topology references a non-child, named), 17 (the topology holds a cycle, path named). Example: fabrika lane emit 5680",
+	),
+);
+
 export const laneCommand = Command.make("lane").pipe(
-	Command.withSubcommands([status, transition, history, print]),
+	Command.withSubcommands([status, transition, history, print, open, emitLane]),
 	Command.withShortDescription("Drive one lane's state ledger by folding its event log."),
 	Command.withDescription(
 		"Drive one lane's state ledger — a @demlik/tea machine folded fresh from an append-only events.jsonl on every invocation, speaking the operator's six events (#5673)",
