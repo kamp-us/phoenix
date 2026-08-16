@@ -464,8 +464,8 @@ the four-component breakdown — the one-command replacement for the hand-run `j
 §2. Claude Code does not persist its `cost.total_tokens` into the transcript, so the total
 is summed from the per-message `usage` components over assistant messages
 (`input + cache_creation + cache_read + output`); `cache_read` is kept on its own line as
-the per-turn context-bloat signal, with `ex-cache-read` as the cross-run comparator. Reuses
-`spawn-guard`'s `formatSessionCost` core read-only.
+the per-turn context-bloat signal, with `ex-cache-read` as the cross-run comparator. The
+headline renders through the tool's own `session-cost.ts` `formatSessionCost` core.
 
 ```bash
 node packages/pipeline-cli/src/bin.ts token-spend <session>/subagents/agent-<id>.jsonl
@@ -477,7 +477,7 @@ Reads the **backticked repo-path pointers** in every git-tracked `CLAUDE.md`
 ("operate from the repo root, never `apps/web`"; a pointer at
 `apps/web/worker/dom/settings.ts`) and exits non-zero when one no longer resolves
 on disk — the reference class `doc-links` (#638) cannot see, because it validates
-markdown `[text](path)` links and *masks* code spans by construction. The two gates
+markdown link targets and *masks* code spans by construction. The two gates
 are complementary: `doc-links` reads link targets and masks code; `pointer-guard`
 reads code spans and ignores link syntax.
 

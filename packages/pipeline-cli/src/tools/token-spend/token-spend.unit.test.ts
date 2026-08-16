@@ -154,7 +154,7 @@ describe("reconstructSpend — the shared one-ruler fixture (ADR 0112 §2, #4777
 	});
 });
 
-describe("toSessionCostInput — reuse spawn-guard's SessionCostInput shape", () => {
+describe("toSessionCostInput — reuse session-cost's SessionCostInput shape", () => {
 	it("maps billed → totalTokens, omits cost (not persisted in the transcript), carries model", () => {
 		const spend: StageSpend = {
 			input: 1,

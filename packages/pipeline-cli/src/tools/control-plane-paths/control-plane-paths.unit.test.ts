@@ -282,7 +282,6 @@ describe("CONTROL_PLANE_RE narrows packages/pipeline-cli to its enforcement core
 		for (const path of [
 			"packages/pipeline-cli/src/tools/checks/command.ts",
 			"packages/pipeline-cli/src/tools/leak-guard/leak-guard.ts",
-			"packages/pipeline-cli/src/tools/spawn-guard/command.ts",
 			"packages/pipeline-cli/src/tools/worktree-guard/command.ts",
 			"packages/pipeline-cli/src/tools/structured-output-guard/command.ts",
 			"packages/pipeline-cli/src/tools/guard-content-probe/command.ts",
