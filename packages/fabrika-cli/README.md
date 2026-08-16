@@ -10,7 +10,9 @@ the `/review` contract specifies; `review-ui`, the three the `/review-ui` contra
 (capture a PR's preview, emit the `review-ui` verdict, or post a typed blocker note);
 `ship`, the thirteen the `/ship` contract specifies; `map`, the eight the `/wayfinding`
 contract specifies (chart one destination's fog, and drain its frontier); `spend`, what one fabrika run cost in
-tokens; `wire`, which owns the byte-level formats two skills meet through on a GitHub
+tokens; `lane`, the four-verb lane ledger the operator loop drives — a @demlik/tea machine
+folded fresh from an append-only `events.jsonl` on every invocation; `wire`, which owns the
+byte-level formats two skills meet through on a GitHub
 artifact; `status`, the six the `/fabrika` front door's contract specifies (what state the
 factory is in); and `hook`, which reads the envelope Claude Code writes to a hook's stdin — the group
 [fabrika's hook surface](../../claude-plugins/fabrika/hooks.json) declares against.
@@ -798,6 +800,53 @@ Three things shape it:
   over the one model vocabulary in [`src/models.ts`](./src/models.ts) — the allowlist, the harness
   alias map and the committed default pin, which are one table because the request is canonicalized
   through the aliases *before* the allowlist sees it.
+
+## The `lane` group
+
+The minimal lane ledger the operator loop drives by hand
+([#5673](https://github.com/kamp-us/phoenix/issues/5673); engine direction recorded on
+[#5570](https://github.com/kamp-us/phoenix/issues/5570), de-risked by the recorded-run spikes
+[#5671](https://github.com/kamp-us/phoenix/issues/5671)/[#5672](https://github.com/kamp-us/phoenix/issues/5672)).
+A lane is a directory — `.fabrika/lanes/<n>/workflow.json` plus an append-only `events.jsonl` —
+and **fold = state**: every verb is a fresh process that re-folds the whole log through a
+[@demlik/tea](https://github.com/kamp-us/demlik) Transitions machine; no resident process, no
+snapshot. Lane state is local and never committed (the repo's `/.fabrika/` gitignore entry).
+
+| Verb | Answers |
+|---|---|
+| `lane status` | the derived state: compound `stateValue` (active phase → per-task leaf, future phases `"waiting"`), `status` active/done, per-task `{retries, maxRetries, …}` context and the tripped tasks in `errors` |
+| `lane transition` | records one operator event after the machine accepts it — `{previous, event, current, taskAffected}` |
+| `lane history` | the log verbatim, one `{task, event, at}` per event — `from`/`to` are reconstructible by folding, never stored |
+| `lane print` | the compiled topology: phases, the two workflow terminals, and each state's legal events |
+
+To open a lane, copy a template in and speak the operator's six events —
+`DONE` / `PASS` / `FAIL` / `BLOCKED` / `WIP` / `UNBLOCKED`:
+
+```bash
+mkdir -p .fabrika/lanes/5673
+cp packages/fabrika-cli/src/lane/templates/coder.workflow.json .fabrika/lanes/5673/workflow.json
+fabrika lane transition 5673 WIP     # queued → build (--task is implied on a single-task lane)
+fabrika lane status 5673
+```
+
+Three behaviours are worth knowing before you call it:
+
+- **An invalid event refuses loudly and appends nothing.** An event the current state holds no
+  cell for surfaces tea's own `NoCellError` verbatim at exit `12`, and `events.jsonl` is left
+  byte-identical — where XState silently swallows an unhandled event, the machine here names it
+  (#5671, run 8). The six-event vocabulary, the active-phase check and the finished-workflow
+  check refuse the same way.
+- **The compiler recognizes shapes, never guard names.** An array on an event is read
+  structurally as `[retry-while-retries-remain, else-fallthrough]`; a transition targeting a
+  `history` node resumes the state the task left, carried as a `was` field in the folded state;
+  a phase's `onDone` pair names the workflow terminals. `guard`/`actions` strings in
+  `workflow.json` are inert data — there is no name-normalization anywhere.
+- **One committed template today.** [`src/lane/templates/coder.workflow.json`](./src/lane/templates/coder.workflow.json)
+  is the static single-issue coder machine: `queued → build → review → ship`, review `FAIL`
+  retried on a budget of 2 then frozen (freeze-after-2 as data), `BLOCKED`/`UNBLOCKED`
+  suspend-resume from any working state, and ship `BLOCKED` parking in `human:cp-approval`
+  until the approval lands as `UNBLOCKED`. Per-type templates beyond it are deliberately out of
+  scope until a real lane snaps against the six-event vocabulary (#5570).
 
 ## The `spend` group
 

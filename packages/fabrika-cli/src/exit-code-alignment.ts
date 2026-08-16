@@ -266,6 +266,22 @@ export const PATTERN_SEATS: SharedSeats = {
 	PRECONDITION_UNKNOWN: "PRECONDITION_UNKNOWN",
 };
 
+/**
+ * `lane`'s seats: four, on `spend`'s reading widened by a write.
+ *
+ * Its verbs read a local lane directory and append to its log, so the base's facts they establish
+ * are the target that is not there (`LANE_ABSENT`), the target read in full that is not the shape
+ * (`MALFORMED_RECORD`, the `review-ui` whole-record widening of the section seat), the append that
+ * did not land (`APPEND_UNKNOWN`), and the read that failed before any of that could be proven
+ * (`LANE_UNREADABLE`). The private band is `12`-`13`: the refused event and the unresolved task.
+ */
+export const LANE_SEATS: SharedSeats = {
+	MALFORMED_RECORD: "BAD_SECTIONS",
+	LANE_ABSENT: "NO_TARGET",
+	APPEND_UNKNOWN: "WRITE_UNKNOWN",
+	LANE_UNREADABLE: "PRECONDITION_UNKNOWN",
+};
+
 /** The groups that align to {@link ALIGNMENT_BASE}, each with the seats it claims to share. */
 export const ALIGNED_GROUPS: Readonly<Record<string, SharedSeats>> = {
 	adr: ADR_SEATS,
@@ -278,6 +294,7 @@ export const ALIGNED_GROUPS: Readonly<Record<string, SharedSeats>> = {
 	grill: GRILL_SEATS,
 	handoff: HANDOFF_SEATS,
 	"heal-ci": HEAL_CI_SEATS,
+	lane: LANE_SEATS,
 	ledger: BUILD_SEATS,
 	map: MAP_SEATS,
 	pattern: PATTERN_SEATS,

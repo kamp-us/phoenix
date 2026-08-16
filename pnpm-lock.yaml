@@ -21,6 +21,9 @@ catalogs:
     '@cloudflare/workers-types':
       specifier: ^4.20260629.1
       version: 4.20260629.1
+    '@demlik/tea':
+      specifier: 0.5.1
+      version: 0.5.1
     '@distilled.cloud/cloudflare':
       specifier: 0.27.0
       version: 0.27.0
@@ -811,6 +814,9 @@ importers:
 
   packages/fabrika-cli:
     dependencies:
+      '@demlik/tea':
+        specifier: 'catalog:'
+        version: 0.5.1(fast-check@4.8.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))(ws@8.21.0)
       '@effect/platform-node':
         specifier: 'catalog:'
         version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))(ioredis@5.10.1)
@@ -1526,6 +1532,26 @@ packages:
   '@csstools/css-tokenizer@3.0.4':
     resolution: {integrity: sha512-Vd/9EVDiu6PPJt9yAh6roZP6El1xHrdvIVGjyBsHR0RYwNHgL7FJPyIIW4fANJNG6FtyZfvlRPpFI4ZM/lubvw==}
     engines: {node: '>=18'}
+
+  '@demlik/tea@0.5.1':
+    resolution: {integrity: sha512-GziDf830RQwMTqJqzI9yaPeqWKfkIvFlm3CP6pLnswWUpSrMLXqhOyjznZOVtcgJMh8zJ2+hHEy+bQHNcJZedQ==}
+    peerDependencies:
+      fast-check: ^3 || ^4
+      react: ^18 || ^19
+      react-dom: ^18 || ^19
+      vitest: ^2 || ^3
+      ws: ^8
+    peerDependenciesMeta:
+      fast-check:
+        optional: true
+      react:
+        optional: true
+      react-dom:
+        optional: true
+      vitest:
+        optional: true
+      ws:
+        optional: true
 
   '@distilled.cloud/aws@0.27.0':
     resolution: {integrity: sha512-3yjwnQ15XJJcDuNpeRD0INSLV4tQOulo5zppdp7juT6ODcDCxLBkx6QeVWlxCGPVqKed2LDBxHzVDj+8AxaIjw==}
@@ -3423,6 +3449,9 @@ packages:
       zod:
         optional: true
 
+  better-result@2.10.0:
+    resolution: {integrity: sha512-oQhh0y1qo2/ZKdAAEvHZAqKKiHOFU5k/bW96fE2ScgQOVkJRiHwB+nOS1SgFsYqRlxMDWvefXi9Q3px7QvgNDw==}
+
   bowser@2.14.1:
     resolution: {integrity: sha512-tzPjzCxygAKWFOJP011oxFHs57HzIhOEracIgAePE4pqB3LikALKnSzUyU4MGs9/iCEUuHlAJTjTc5M+u7YEGg==}
 
@@ -5222,6 +5251,16 @@ snapshots:
       '@csstools/css-tokenizer': 3.0.4
 
   '@csstools/css-tokenizer@3.0.4': {}
+
+  '@demlik/tea@0.5.1(fast-check@4.8.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))(ws@8.21.0)':
+    dependencies:
+      better-result: 2.10.0
+    optionalDependencies:
+      fast-check: 4.8.0
+      react: 19.2.6
+      react-dom: 19.2.6(react@19.2.6)
+      vitest: 4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
+      ws: 8.21.0
 
   '@distilled.cloud/aws@0.27.0(effect@4.0.0-beta.92(patch_hash=ed3008c54709e9cf624df2b898d592f905c570fc0a673eeaadf06ce377caac89))':
     dependencies:
@@ -7156,6 +7195,8 @@ snapshots:
       set-cookie-parser: 3.1.0
     optionalDependencies:
       zod: 4.4.3
+
+  better-result@2.10.0: {}
 
   bowser@2.14.1: {}
 

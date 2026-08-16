@@ -54,6 +54,7 @@
 		"cli": "node src/bin.ts"
 	},
 	"dependencies": {
+		"@demlik/tea": "catalog:",
 		"@effect/platform-node": "catalog:",
 		"@playwright/test": "catalog:",
 		"effect": "catalog:"

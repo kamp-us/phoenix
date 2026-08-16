@@ -55,8 +55,9 @@ apps/web/tests/e2e/.auth
 # Local scratch (uncommitted explorations)
 /.scratch/
 
-# fabrika's durable spend ledger — one appended JSON line per completed eval run (#5009).
-# Per-machine measurement evidence, written by `fabrika eval run`; never committed.
+# fabrika's local machine state — never committed. The durable spend ledger (one appended
+# JSON line per completed eval run, #5009) and the lane ledger's per-lane state
+# (`.fabrika/lanes/<n>/workflow.json` + `events.jsonl`, written by `fabrika lane`, #5673).
 /.fabrika/
 
 # pipeline-cli data dir: where the SessionStart install.sh drops the installed
