@@ -19,4 +19,4 @@
 # pin-dispatch.hook.test.ts — the same value, not a second source to hand-sync.
 
 KAMPUS_PIPELINE_CLI_PKG="@kampus/pipeline-cli"
-KAMPUS_PIPELINE_CLI_PIN="0.2.1"
+KAMPUS_PIPELINE_CLI_PIN="0.3.0"
