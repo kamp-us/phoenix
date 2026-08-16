@@ -1338,12 +1338,13 @@ mirrored for the code lane.
 
 ### Reviewer discipline — never write a bare `/tmp/…` in the verdict body (#3492)
 
-When a verdict must reference the crew inbox socket, write it as the bare name
-`kampus-crew-inbox-*.sock` (no `/tmp/` prefix) or inside a code fence. leak-guard fail-closes on
-ANY bare `/tmp/…` literal in a landed comment (ship-it Step 3.7 `leak-guard scan-pr`), and that is
-correct — the guard's zero-`/tmp` invariant stays strict (#3492 Option 1; there is deliberately no
-socket carve-out in the shared matcher). A bare `/tmp/kampus-crew-inbox-*.sock` in your prose blocks
-the ship; the bare-name or fenced form conveys the same thing without tripping the guard.
+leak-guard fail-closes on ANY bare `/tmp/…` literal in a landed comment (ship-it Step 3.7
+`leak-guard scan-pr`), and that is correct — the guard's zero-`/tmp` invariant stays strict (#3492
+Option 1; there is deliberately no carve-out in the shared matcher). When a verdict must reference a
+temp path, write it as the bare name with no `/tmp/` prefix, or inside a code fence: same meaning,
+no trip. The matcher's worked example is still the v1 crew inbox socket glob — a bare
+`/tmp/kampus-crew-inbox-*.sock` in your prose blocks the ship — but that socket left with ADR 0279,
+so it is an illustration of the shape now, not a path any verdict has occasion to name.
 
 ### The marker is the contract — emit the canonical line, never a freelance form (governs 4a *and* 4b)
 
