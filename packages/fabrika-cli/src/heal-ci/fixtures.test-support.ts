@@ -116,7 +116,12 @@ export const workflowRun = (shape: {
 
 export const runsAtHead = (
 	declared: number,
-	rows: ReadonlyArray<{id: number; name?: string}>,
+	rows: ReadonlyArray<{
+		id: number;
+		name?: string;
+		status?: string;
+		conclusion?: string | null;
+	}>,
 ): ExecResult =>
 	okOut(
 		JSON.stringify({
@@ -124,8 +129,8 @@ export const runsAtHead = (
 			workflow_runs: rows.map((row) => ({
 				id: row.id,
 				name: row.name ?? "ci",
-				status: "completed",
-				conclusion: "failure",
+				status: row.status ?? "completed",
+				conclusion: row.conclusion === undefined ? "failure" : row.conclusion,
 				completed_at: "2026-08-08T00:00:00Z",
 			})),
 		}),

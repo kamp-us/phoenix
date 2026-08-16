@@ -49,6 +49,7 @@ import {
 	STALE_HEAD,
 	WRITE_UNKNOWN,
 } from "./codes.ts";
+import {assertFloorAt, floorLine, floorToken} from "./floor-assert.ts";
 import {bindGovernanceHead, boundLine} from "./head.ts";
 
 const VERB = "governance post";
@@ -291,6 +292,13 @@ export const runPost = (
 			);
 		}
 
+		// Step 7 — assert the floor at this head. The floor job ran before this verdict existed and
+		// nothing re-fires it, so the gate that just wrote the verdict is the actor that re-derives the
+		// check (#5585). It never gates the post: the verdict is landed and read back by here, and a
+		// floor that could not be asserted is a red check, not an unwritten verdict.
+		const floor = yield* assertFloorAt(repo, head.sha);
+		diagnostics.push(floorLine(VERB, floor));
+
 		return json
 			? answer(
 					JSON.stringify({
@@ -300,6 +308,7 @@ export const runPost = (
 						sha: inspected,
 						content: content.value,
 						upsert,
+						floor: floorToken(floor),
 						commentUrl: landed.url,
 					}),
 					diagnostics,

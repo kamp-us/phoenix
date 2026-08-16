@@ -170,7 +170,15 @@ it is; this namespace rides the same channel as every other.
 the head you actually inspected; the verb re-resolves the live head at post time and refuses a moved
 one. Re-review, never re-bind.
 
-**Done when** `post` prints `posted` and its read-back conformed.
+**`post` also re-fires the floor check at that head.** The `governance-floor` job runs on
+`pull_request`, so it judged the PR before your verdict existed and nothing else re-fires it. The verb
+re-runs that job, which re-derives `ship floor` against your verdict — it never writes a check-run, so
+the green is the job's own. Its last stderr line says which of `refired` / `green` / `in-flight` /
+`no-run` / `unknown` happened.
+
+**Done when** `post` prints `posted`, its read-back conformed, and you have read the floor line — an
+`in-flight` or `unknown` floor means the check may still red at this head, and clearing it is
+`heal-ci`'s, not a human's.
 
 ## 6 — Digest time: the readout that replaced the human gate
 
