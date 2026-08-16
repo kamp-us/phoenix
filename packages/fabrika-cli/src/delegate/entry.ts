@@ -12,6 +12,7 @@ import * as Schema from "effect/Schema";
 import {NO_IMPLEMENTATION} from "../verb.ts";
 import {VERSION} from "../version.ts";
 import {declaredVersion, probeLocalInstall} from "./local.ts";
+import {relateCopy} from "./repository.ts";
 import {
 	DEBUG_ENV,
 	foreignCheckoutRefusal,
@@ -71,7 +72,10 @@ const program = Effect.gen(function* () {
 	const invocationDir = process.cwd();
 	const repoRoot = yield* discoverRepoRoot(invocationDir);
 	const local = repoRoot === undefined ? undefined : yield* probeLocalInstall(repoRoot);
-	const resolution = resolve({selfPackageRoot, selfOrigin, repoRoot, local});
+	// The relation, not the two roots, is what the refusal turns on: a worktree of the copy's own
+	// repository is a different checkout but the same project (#5679).
+	const origin = yield* relateCopy(selfOrigin, repoRoot);
+	const resolution = resolve({selfPackageRoot, origin, repoRoot, local});
 
 	if (process.env[DEBUG_ENV] !== undefined) console.error(traceLine(selfPackageRoot, resolution));
 

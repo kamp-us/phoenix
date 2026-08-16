@@ -123,7 +123,7 @@ describe("the PreToolUse hook the surface declares, run from a checkout it refus
 	};
 
 	it("refuses, and says so on stderr — fail open and loud, per ADR 0250", () => {
-		expect(run().stderr).toContain("different checkouts");
+		expect(run().stderr).toContain("different repositories");
 	});
 
 	it("does not exit on the blocking code, so the spawn proceeds", () => {
