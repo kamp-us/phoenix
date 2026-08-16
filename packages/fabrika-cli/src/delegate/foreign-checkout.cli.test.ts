@@ -61,7 +61,7 @@ describe("invoking this checkout's bin from a cwd in another checkout", {
 		const run = invokeFromConsumer("--version");
 		expect(run.stdout).not.toContain(IMPOSTER);
 		expect(run.code).toBe(NO_IMPLEMENTATION);
-		expect(run.stderr).toContain("different checkouts");
+		expect(run.stderr).toContain("different repositories");
 	});
 
 	it("names both checkouts in the refusal, so the caller can see which copy it declined", () => {

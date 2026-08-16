@@ -7,6 +7,7 @@ import {describe, expect, it} from "vitest";
 import {faultingShell, signalledExitError, signalledShell} from "../fakes.test-support.ts";
 import {NO_IMPLEMENTATION} from "../verb.ts";
 import type {LocalInstall} from "./local.ts";
+import type {CopyOrigin} from "./repository.ts";
 import {
 	foreignCheckoutRefusal,
 	GLOBAL_WARNING_DISABLED_ENV,
@@ -17,7 +18,6 @@ import {
 	spawnDelegate,
 	traceLine,
 } from "./resolve.ts";
-import type {SelfOrigin} from "./root.ts";
 
 const install: LocalInstall = {
 	packageRoot: "/repo/packages/fabrika-cli",
@@ -28,19 +28,20 @@ const install: LocalInstall = {
 
 const GLOBAL = "/usr/local/pnpm/global/5/node_modules/@kampus/fabrika-cli";
 
-/** A copy on `PATH`: it belongs to no checkout, which is what makes delegating from it correct. */
-const INSTALLED: SelfOrigin = {_tag: "no-checkout"};
+/** A copy on `PATH`: it belongs to no repository to cross out of, so it may always hand over. */
+const INSTALLED: CopyOrigin = {_tag: "same-repository"};
 
-/** The reviewer's shape — a second checkout of the same repo, invoked by path from elsewhere. */
-const OTHER_CHECKOUT = "/repo/.claude/worktrees/agent-1";
+/** A copy whose checkout is a genuinely different repository — the one state that refuses. */
+const OTHER_CHECKOUT = "/elsewhere";
 const otherCopy = `${OTHER_CHECKOUT}/packages/fabrika-cli`;
+const ELSEWHERE: CopyOrigin = {_tag: "other-repository", checkout: OTHER_CHECKOUT};
 
 describe("resolve", () => {
 	it("delegates to the repo-local install — the pinned version wins over the global", () => {
 		expect(
 			resolve({
 				selfPackageRoot: GLOBAL,
-				selfOrigin: INSTALLED,
+				origin: INSTALLED,
 				repoRoot: "/repo",
 				local: {_tag: "found", install},
 			}),
@@ -50,7 +51,7 @@ describe("resolve", () => {
 	it("runs here SILENTLY outside any repo — a global-only invocation is not a defect", () => {
 		const resolution = resolve({
 			selfPackageRoot: GLOBAL,
-			selfOrigin: INSTALLED,
+			origin: INSTALLED,
 			repoRoot: undefined,
 			local: undefined,
 		});
@@ -60,7 +61,7 @@ describe("resolve", () => {
 	it("WARNS when a repo root exists but nothing is installed — the quietly-wrong case", () => {
 		const resolution = resolve({
 			selfPackageRoot: GLOBAL,
-			selfOrigin: INSTALLED,
+			origin: INSTALLED,
 			repoRoot: "/repo",
 			local: {_tag: "absent"},
 		});
@@ -70,7 +71,7 @@ describe("resolve", () => {
 	it("warns rather than throws on a corrupt local — the worst outcome is running the global", () => {
 		const resolution = resolve({
 			selfPackageRoot: GLOBAL,
-			selfOrigin: INSTALLED,
+			origin: INSTALLED,
 			repoRoot: "/repo",
 			local: {_tag: "corrupt", reason: "manifest declares no version"},
 		});
@@ -84,29 +85,46 @@ describe("resolve", () => {
 	it("runs here when the install it found IS this copy, rather than spawning itself", () => {
 		const resolution = resolve({
 			selfPackageRoot: install.packageRoot,
-			selfOrigin: {_tag: "checkout", root: "/repo"},
+			origin: INSTALLED,
 			repoRoot: "/repo",
 			local: {_tag: "found", install},
 		});
 		expect(resolution._tag).toBe("run-here");
 	});
+
+	/**
+	 * The recursion guard's second, independent half: the delegated child lands here with the cwd's
+	 * repo root and its own package root, and must proceed rather than spawn itself again — including
+	 * on the worktree hop, where the parent reached the child ACROSS working trees.
+	 */
+	it("runs here in the child of a worktree hop, where the install found is the child itself", () => {
+		const worktreeInstall: LocalInstall = {
+			...install,
+			packageRoot: "/repo/.claude/worktrees/lane/packages/fabrika-cli",
+			binPath: "/repo/.claude/worktrees/lane/packages/fabrika-cli/src/bin.ts",
+		};
+		expect(
+			resolve({
+				selfPackageRoot: worktreeInstall.packageRoot,
+				origin: {_tag: "same-repository"},
+				repoRoot: "/repo/.claude/worktrees/lane",
+				local: {_tag: "found", install: worktreeInstall},
+			})._tag,
+		).toBe("run-here");
+	});
 });
 
 /**
- * The two cases #4956 fused. Both reach the delegate comparison with `selfPackageRoot` outside the
- * cwd's repo root, so `selfOrigin` is the only fact separating them — and these two assertions
- * disagree on the outcome, which is what makes a future edit that drops the field fail rather than
- * quietly restore the wrong answer.
+ * The two cases #4956 fused, and the third #5679 split back out. All three reach the delegate
+ * comparison with `selfPackageRoot` outside the cwd's repo root, so `origin` is the only fact
+ * separating them — and these assertions disagree on the outcome, which is what makes a future edit
+ * that drops the field fail rather than quietly restore the wrong answer.
  */
-describe("resolve — a global install and a foreign checkout are NOT the same input", () => {
+describe("resolve — an install, a worktree peer and a foreign checkout are NOT the same input", () => {
 	const input = {repoRoot: "/repo", local: {_tag: "found", install}} as const;
 
-	it("REFUSES a copy invoked out of a different checkout, naming both roots", () => {
-		const resolution = resolve({
-			...input,
-			selfPackageRoot: otherCopy,
-			selfOrigin: {_tag: "checkout", root: OTHER_CHECKOUT},
-		});
+	it("REFUSES a copy invoked out of a different repository, naming both roots", () => {
+		const resolution = resolve({...input, selfPackageRoot: otherCopy, origin: ELSEWHERE});
 		expect(resolution).toEqual({
 			_tag: "refuse-foreign-checkout",
 			selfPackageRoot: otherCopy,
@@ -117,10 +135,25 @@ describe("resolve — a global install and a foreign checkout are NOT the same i
 	});
 
 	it("still delegates SILENTLY from an install that belongs to no checkout — same comparison, opposite answer", () => {
-		expect(resolve({...input, selfPackageRoot: GLOBAL, selfOrigin: INSTALLED})).toEqual({
+		expect(resolve({...input, selfPackageRoot: GLOBAL, origin: INSTALLED})).toEqual({
 			_tag: "delegate",
 			to: install,
 		});
+	});
+
+	/**
+	 * #5679: the copy on `PATH` is a link into the primary checkout, so it belongs to a checkout — but
+	 * the cwd's worktree is that same repository, and refusing there is what made the bare `fabrika`
+	 * unusable from every worktree.
+	 */
+	it("delegates from another WORKING TREE of the same repository — a peer is not foreign", () => {
+		expect(
+			resolve({
+				...input,
+				selfPackageRoot: "/primary/packages/fabrika-cli",
+				origin: {_tag: "same-repository"},
+			}),
+		).toEqual({_tag: "delegate", to: install});
 	});
 
 	it("delegates within ONE checkout — the pinned install may differ from the copy you ran", () => {
@@ -128,7 +161,7 @@ describe("resolve — a global install and a foreign checkout are NOT the same i
 			resolve({
 				...input,
 				selfPackageRoot: "/repo/vendor/fabrika-cli",
-				selfOrigin: {_tag: "checkout", root: "/repo"},
+				origin: {_tag: "same-repository"},
 			}),
 		).toEqual({_tag: "delegate", to: install});
 	});
@@ -180,7 +213,7 @@ describe("traceLine", () => {
 			GLOBAL,
 			resolve({
 				selfPackageRoot: GLOBAL,
-				selfOrigin: INSTALLED,
+				origin: INSTALLED,
 				repoRoot: "/repo",
 				local: {_tag: "found", install},
 			}),
@@ -195,7 +228,7 @@ describe("traceLine", () => {
 			GLOBAL,
 			resolve({
 				selfPackageRoot: GLOBAL,
-				selfOrigin: INSTALLED,
+				origin: INSTALLED,
 				repoRoot: undefined,
 				local: undefined,
 			}),

@@ -10,14 +10,16 @@
  * corrupt runs the global too, but *says so loudly* — that pairing is the whole design: tiers that
  * can only be right or loudly absent are fine; tiers that can be quietly wrong are the defect
  * (#4784). One tier used to be quietly wrong against that rule and is now a refusal: a copy invoked
- * out of a *different checkout* is not a global install, and delegating it answered from a tree the
- * caller never named (#4956).
+ * out of a *different repository* is not a global install, and delegating it answered from a tree
+ * the caller never named (#4956). What counts as different is
+ * [`repository.ts`](./repository.ts)'s to decide — a working tree of the same repository is not
+ * (#5679).
  */
 import {Effect} from "effect";
 import {ChildProcess, type ChildProcessSpawner} from "effect/unstable/process";
 import {NO_IMPLEMENTATION} from "../verb.ts";
 import type {LocalInstall, LocalProbe} from "./local.ts";
-import type {SelfOrigin} from "./root.ts";
+import type {CopyOrigin} from "./repository.ts";
 
 /**
  * The child's recursion guard, passed as a **flag** rather than an environment variable so it is
@@ -46,7 +48,7 @@ export type Resolution =
 	| {
 			readonly _tag: "refuse-foreign-checkout";
 			readonly selfPackageRoot: string;
-			/** The checkout the invoked copy belongs to — never equal to {@link repoRoot}. */
+			/** The checkout the invoked copy belongs to — never a working tree of {@link repoRoot}'s. */
 			readonly selfCheckout: string;
 			readonly repoRoot: string;
 			/** The install the cwd's repo would have answered from, named so the refusal is checkable. */
@@ -56,35 +58,28 @@ export type Resolution =
 export interface ResolveInput {
 	/** The real path of the package root the running bin belongs to. */
 	readonly selfPackageRoot: string;
-	/** Which checkout, if any, {@link selfPackageRoot} belongs to. */
-	readonly selfOrigin: SelfOrigin;
+	/** Whether {@link selfPackageRoot}'s home is a repository other than the cwd's. */
+	readonly origin: CopyOrigin;
 	/** `undefined` when the cwd is in no repo at all — the one silent branch. */
 	readonly repoRoot: string | undefined;
 	readonly local: LocalProbe | undefined;
 }
 
 /** Which copy serves this invocation. Total over the five states; there is no fallthrough. */
-export const resolve = ({
-	selfPackageRoot,
-	selfOrigin,
-	repoRoot,
-	local,
-}: ResolveInput): Resolution => {
+export const resolve = ({selfPackageRoot, origin, repoRoot, local}: ResolveInput): Resolution => {
 	if (repoRoot === undefined) return {_tag: "run-here", why: "the cwd is not inside a repo"};
 	if (local === undefined || local._tag === "absent")
 		return {_tag: "warn-and-run-here", repoRoot, reason: "it has no local install"};
 	if (local._tag === "corrupt") return {_tag: "warn-and-run-here", repoRoot, reason: local.reason};
 	if (local.install.packageRoot === selfPackageRoot)
 		return {_tag: "run-here", why: "the repo-local install is this copy"};
-	// Only a copy that belongs to NO checkout is the global install this delegation was designed for.
-	// A copy from another checkout reaches the same comparison and used to be indistinguishable from
-	// it (#4956) — the refusal is placed here, on the delegate branch alone, so the two loud branches
-	// above keep their behaviour and their text exactly.
-	if (selfOrigin._tag === "checkout" && selfOrigin.root !== repoRoot)
+	// The refusal is placed here, on the delegate branch alone, so the two loud branches above keep
+	// their behaviour and their text exactly (#4956).
+	if (origin._tag === "other-repository")
 		return {
 			_tag: "refuse-foreign-checkout",
 			selfPackageRoot,
-			selfCheckout: selfOrigin.root,
+			selfCheckout: origin.checkout,
 			repoRoot,
 			wouldHaveRun: local.install,
 		};
@@ -109,10 +104,10 @@ export const foreignCheckoutRefusal = ({
 	readonly wouldHaveRun: LocalInstall;
 }): string =>
 	[
-		"fabrika: refusing to run — the copy you invoked and your cwd are in different checkouts.",
+		"fabrika: refusing to run — the copy you invoked and your cwd are in different repositories.",
 		`  invoked copy: ${selfPackageRoot} (checkout ${selfCheckout})`,
 		`  cwd checkout: ${repoRoot}, which resolves ${wouldHaveRun.binPath} (v${wouldHaveRun.version})`,
-		"  Delegating would have answered from a checkout you did not name.",
+		"  Delegating would have answered from a repository you did not name.",
 		`  Re-run with the cwd inside ${selfCheckout}, or pass ${SKIP_INFER_FLAG} to make the copy you named serve this invocation.`,
 	].join("\n");
 
@@ -153,7 +148,7 @@ export const traceLine = (selfPackageRoot: string, resolution: Resolution): stri
 		case "warn-and-run-here":
 			return `fabrika: running here, at ${selfPackageRoot} — repo root ${resolution.repoRoot}, but ${resolution.reason}`;
 		case "refuse-foreign-checkout":
-			return `fabrika: refusing — ${selfPackageRoot} is in checkout ${resolution.selfCheckout}, the cwd is in ${resolution.repoRoot}`;
+			return `fabrika: refusing — ${selfPackageRoot} is in checkout ${resolution.selfCheckout}, a different repository from the cwd's ${resolution.repoRoot}`;
 		case "run-here":
 			return `fabrika: running here, at ${selfPackageRoot} — ${resolution.why}`;
 	}

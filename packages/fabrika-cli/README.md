@@ -56,24 +56,35 @@ TypeScript ([#4784](https://github.com/kamp-us/phoenix/issues/4784)).
 | Where you are | What runs | Warning |
 | --- | --- | --- |
 | In phoenix | the working tree — `packages/fabrika-cli` | — |
+| In a **git worktree** of phoenix | that worktree's `packages/fabrika-cli` | — |
 | In a consumer repo that installed it | that repo's pinned version | — |
 | In a consumer repo that did **not** install it | the global | **yes**, naming both versions |
 | In no repo at all | the global | no — deliberately |
-| Running a **different checkout's** copy by path | nothing — it refuses, exit `126` | **yes**, naming both checkouts |
+| Running a copy from a **different repository** by path | nothing — it refuses, exit `126` | **yes**, naming both checkouts |
 
-Rows three and four are the original design. Running the global outside any repo is a normal,
+Rows four and five are the original design. Running the global outside any repo is a normal,
 correct invocation, so it stays quiet. Running the global *inside a repo that asked for a specific
 version* is the quietly-wrong case, so it says so out loud and names the global's version beside the
 one the root manifest declared. Set `FABRIKA_GLOBAL_WARNING_DISABLED=1` to silence it.
 
 The last row closes the one case that used to be quietly wrong ([#4956](https://github.com/kamp-us/phoenix/issues/4956)).
-`node <other-checkout>/packages/fabrika-cli/src/bin.ts` run from a cwd inside *this* checkout looked
-exactly like a global install on `PATH`, so it delegated — and answered from the checkout you did
+`node <other-repo>/packages/fabrika-cli/src/bin.ts` run from a cwd inside *this* repo looked
+exactly like a global install on `PATH`, so it delegated — and answered from a repository you did
 not name, with no warning at all. It is a live hazard for anyone reviewing from a second checkout: the CLI
 reports the state of `main` while you are reading a branch. The two are separated by asking which
-checkout the *invoked copy* belongs to; an installed copy (anything under `node_modules`) belongs to
+repository the *invoked copy* belongs to; an installed copy (anything under `node_modules`) belongs to
 none, which is what keeps the global-install delegation exactly as it was. Either run it from inside
-its own checkout, or pass `--skip-infer` to make the copy you named serve the invocation.
+its own repository, or pass `--skip-infer` to make the copy you named serve the invocation.
+
+Row two is the carve-out that refusal needed ([#5679](https://github.com/kamp-us/phoenix/issues/5679)).
+A `pnpm link --global` install puts a checkout's own copy on `PATH`, so an agent standing in a
+worktree who types the bare `fabrika` invokes the primary checkout's copy — a different checkout, and
+the refusal swallowed it, leaving the bare command unusable from every worktree. `git worktree` gives
+one repository several working trees, so the comparison is the repository, not the checkout: the two
+trees' `$GIT_COMMON_DIR` is read off disk (`.git` directory, else the `.git` file's `gitdir:` and that
+dir's `commondir`, per `gitrepository-layout(5)`) and equal common dirs delegate. A tree whose
+repository cannot be established is treated as a different one, so the refusal is what an unreadable
+answer falls back to.
 
 The property this buys is a **repo-pinned version**. phoenix carries `@kampus/fabrika-cli` in its
 root `devDependencies`, so a bare `fabrika` anywhere in a phoenix checkout runs the version this
