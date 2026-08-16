@@ -92,21 +92,12 @@
 	flex: 1;
 }
 
+/* The form is a bare layout box. The pill a reader sees is the field's own
+   [data-part="control"], which is also the element global.css paints the focus ring on — one
+   element draws the border and owns the ring, so they cannot disagree (#5660). */
 .kp-topbar__search {
 	display: flex;
-	align-items: center;
-	gap: 6px;
 	width: 240px;
-	height: 24px;
-	/* Asymmetric on purpose: the trailing edge holds a ⌘K keycap, which carries its own
-	   box, so it needs half the breathing room the leading magnifier does. */
-	padding: 0 var(--s-1) 0 var(--s-2);
-	background: var(--surface);
-	border: 1px solid var(--border);
-	border-radius: var(--r-sm);
-}
-.kp-topbar__search:focus-within {
-	border-color: var(--accent);
 }
 .kp-topbar__search svg {
 	color: var(--text-muted);
@@ -117,16 +108,30 @@
 	min-width: 0;
 }
 .kp-topbar__search-field[data-scope="field"] [data-part="control"] {
-	--manti-field-height: var(--letter-size);
-	width: 100%;
-	border: 0;
-	background: transparent;
-	box-shadow: none;
-	padding: 0;
+	/* An addon's glyph lands at 2 × --manti-field-addon-padding-x from the border, not at one:
+	   Manti pulls the addon's box out of the control's padding by (addon − field) and then re-adds
+	   `addon` as the addon's own padding. So s-1 here is what puts the magnifier at the s-2 the
+	   hand-rolled group used, and the input text still starts at --manti-field-padding-x. */
+	--manti-field-height: 24px;
+	--manti-field-padding-x: var(--s-2);
+	--manti-field-addon-padding-x: var(--s-1);
+	gap: 6px;
+	background: var(--surface);
+	border: 1px solid var(--border);
+	border-radius: var(--r-sm);
 }
-.kp-topbar__search-field[data-scope="field"][data-part="root"]:focus-within [data-part="control"] {
-	border-color: transparent;
-	box-shadow: none;
+/* Manti recolours the control's border to the accent on :focus-within. global.css already paints
+   the shared ring on this same element, so letting both fire is the doubled treatment #5660 is
+   about — only now concentric instead of misaligned. The ring is the one focus owner, so the
+   border holds its resting colour. This neutralizes; it does not paint. */
+.kp-topbar__search-field[data-scope="field"] [data-part="control"]:focus-within {
+	border-color: var(--border);
+}
+/* Asymmetric on purpose: the trailing edge holds a ⌘K keycap, which carries its own box, so it
+   needs half the breathing room the leading magnifier does. Dropping the addon's own trailing
+   padding leaves the keycap at s-1, where the form's asymmetric padding used to put it. */
+.kp-topbar__search-field[data-scope="field"] [data-part="addon"][data-position="right"] {
+	padding-inline-end: 0;
 }
 .kp-topbar__search-field[data-scope="field"] [data-part="input"] {
 	font: var(--t-body-sm);

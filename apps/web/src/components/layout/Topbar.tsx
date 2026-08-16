@@ -142,12 +142,14 @@ export function Topbar({
 				onSearchSubmit?.(input?.value ?? "");
 			}}
 		>
-			{/* Drawn Lucide, not the hand-inlined magnifier this replaced: ADR 0166 §2 rules
-			    icons are drawn glyphs, and §4 floors them at 16 — below that a stroke muddies
-			    on a dark surface, which is exactly how the old 11px one read. */}
-			<Icon icon={Search} size={12} />
 			{/* key + defaultValue: uncontrolled so it stays editable, yet a query→query
 			    navigation re-seeds the echoed value by remounting with the new default. */}
+			{/* The magnifier and the keycap ride the field's own `left`/`right` slots rather than
+			    sitting beside it. They land inside [data-part="control"], which is the element
+			    global.css paints the focus ring on — hand-rolling the group put the ring on a box
+			    that was not the one drawing the border (#5660). Size 12 is below ADR 0166 §4's
+			    floor on purpose: ADR 0240's labelled-glyph tier names this exact call site, since
+			    the adjacent `ara…` placeholder already carries the meaning. */}
 			<Input
 				key={searchQuery}
 				id="topbar-search"
@@ -156,8 +158,10 @@ export function Topbar({
 				defaultValue={searchQuery}
 				placeholder="ara…"
 				aria-label="Ara"
+				fullWidth
+				left={<Icon icon={Search} size={12} />}
+				right={<Kbd>⌘K</Kbd>}
 			/>
-			<Kbd>⌘K</Kbd>
 		</form>
 	);
 	// The three-way theme picker (#2612) — the sole theme control. Signed-in ⇒ it lives in
