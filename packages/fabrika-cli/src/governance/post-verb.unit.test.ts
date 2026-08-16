@@ -71,6 +71,8 @@ describe("runPost", () => {
 		expect(out.stdout).toBe(`posted\tgovernance\tPASS\t${HEAD}\t${CONTENT}\tcreated\t${URL}\n`);
 	});
 
+	// `composed()` defaults to HEAD, and that is load-bearing: the upsert key carries a head
+	// dimension, so only a re-post at the SAME head takes the edit path at all.
 	it("edits the namespace's own comment rather than stacking a second one", async () => {
 		const out = await run([
 			[PULL, pull()],
@@ -82,6 +84,25 @@ describe("runPost", () => {
 			[READ_BACK, okOut(JSON.stringify({body: composed()}))],
 		]);
 		expect(out.stdout).toContain("\tedited\t");
+	});
+
+	// The head dimension of the upsert key. It shipped in v1 under #4007 and this tree did not carry
+	// it forward, so a re-gate after a repair PATCHed the prior head's verdict away and the record of
+	// what was true over that tree became unrecoverable (#5585).
+	it("leaves a prior head's verdict intact and appends at the new head", async () => {
+		const shell = fakeShell([
+			[PULL, pull()],
+			...binding(),
+			[PATHS_AT(), paths(".decisions/0240-x.md", "src/cart.ts")],
+			[VIEWER, okOut("kampus-bot\n")],
+			[COMMENTS, comments({id: 77, body: composed("the round before the repair\n", OLD_HEAD)})],
+			[CREATE, created()],
+			[READ_BACK, okOut(JSON.stringify({body: composed()}))],
+		]);
+		const out = await Effect.runPromise(Effect.provide(runPost(options), shell.layer));
+		expect(out.code).toBe(0);
+		expect(out.stdout).toContain("\tcreated\t");
+		expect(shell.calls.some((call) => PATCH.test(call))).toBe(false);
 	});
 
 	it("emits the record with --json, naming the fixed namespace", async () => {

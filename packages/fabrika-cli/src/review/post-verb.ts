@@ -30,9 +30,11 @@ import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {
 	contentDigest,
 	emit as emitMarker,
+	type HeadSha,
 	headSha,
 	type Polarity,
 	read as readMarker,
+	sameHead,
 	clause as toClause,
 } from "../wire/verdict-marker.ts";
 import {emitAdvisory, readAdvisory, reviewedHeadLine} from "./advisory.ts";
@@ -147,8 +149,8 @@ const mismatchOf = (
 };
 
 /**
- * Whether a comment already holds this namespace's verdict **under this carrier** — step 5's
- * upsert-match key.
+ * Whether a comment already holds this namespace's verdict **under this carrier, at this head** —
+ * step 5's upsert-match key.
  *
  * The key is per-carrier because the two carriers anchor on different bytes, and neither read can
  * stand in for the other. An advisory withholds the SHA from its first line by design (ADR 0111), so
@@ -156,11 +158,30 @@ const mismatchOf = (
  * created a second comment, against the one-namespace-one-comment invariant this step exists for
  * (#4992). Matching per carrier also keeps the pair disjoint in the other direction — a marker post
  * never edits an advisory comment, and vice versa.
+ *
+ * The head dimension makes a re-gate at a moved head append instead of overwrite: a verdict is
+ * SHA-bound, so a new head's verdict is a different fact, not a revision, and PATCHing the prior
+ * head's comment destroys the only record of what was true over that tree. Both carriers can be
+ * keyed on it — the marker binds its head on line 1, the advisory on its `Reviewed-head:` line
+ * (ADR 0151), which `readAdvisory` already requires. ADR 0213 refined rule 2's uniqueness key and
+ * named this half as still open; #4007 closed it in v1.
  */
-const carriesNamespace = (body: string, carrier: Carrier, namespace: string): boolean => {
-	if (carrier === "advisory") return readAdvisory(body)?.namespace === namespace;
+const carriesNamespaceAt = (
+	body: string,
+	carrier: Carrier,
+	namespace: string,
+	sha: HeadSha,
+): boolean => {
+	if (carrier === "advisory") {
+		const advisory = readAdvisory(body);
+		return advisory !== null && advisory.namespace === namespace && sameHead(advisory.sha, sha);
+	}
 	const parsed = readMarker(body);
-	return parsed._tag === "Found" && parsed.value.namespace === namespace;
+	return (
+		parsed._tag === "Found" &&
+		parsed.value.namespace === namespace &&
+		sameHead(parsed.value.sha, sha)
+	);
 };
 
 /** Steps 1, 2 and 5's reads failing is `11`: nothing was written, so the outcome is known-unwritten. */
@@ -289,7 +310,7 @@ export const runPost = (
 		const leaked = leakRefusal(SURFACE, composed);
 		if (leaked !== null) return leaked;
 
-		// Step 5 — one namespace, one comment: edit this namespace's own comment, else create one.
+		// Step 5 — one namespace at one head, one comment: edit this head's own comment, else create one.
 		const me = yield* viewerLogin;
 		if (me._tag === "Failure") return unreadable("the authenticated user", pr, me.reason);
 		const comments = yield* listComments(repo, pr);
@@ -300,7 +321,8 @@ export const runPost = (
 		const mine = latestByWriteRecency(
 			comments.value.filter(
 				(comment) =>
-					comment.author === me.value && carriesNamespace(comment.body, carrier, namespace),
+					comment.author === me.value &&
+					carriesNamespaceAt(comment.body, carrier, namespace, inspected),
 			),
 		);
 
