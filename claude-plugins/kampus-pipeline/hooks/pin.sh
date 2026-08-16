@@ -15,8 +15,12 @@
 #
 # This is the ONE pin home. The skills carry no copy of it: they invoke the `bin/pipeline-cli`
 # shim, which sources THIS file for its dlx fallback (#3653, per #3457). The package's own
-# package.json / src/version.ts version is test-locked equal to this pin by
-# pin-dispatch.hook.test.ts — the same value, not a second source to hand-sync.
+# package.json version is test-locked equal to this pin by pin-dispatch.hook.test.ts — the same
+# value, not a second source to hand-sync. `src/version.ts` derives from that package.json and so
+# cannot drift from either (#5714).
+#
+# The annotation on the pin line is what release-please's generic updater keys on, so a
+# pipeline-cli bump rewrites this file inside the same Release PR. Do not move it off that line.
 
 KAMPUS_PIPELINE_CLI_PKG="@kampus/pipeline-cli"
-KAMPUS_PIPELINE_CLI_PIN="0.3.0"
+KAMPUS_PIPELINE_CLI_PIN="0.3.0" # x-release-please-version

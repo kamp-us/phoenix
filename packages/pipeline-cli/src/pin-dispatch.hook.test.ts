@@ -8,9 +8,9 @@
  * ready. Nothing observable distinguished "the isolation guard is enforcing" from "the isolation
  * guard has not shipped." These tests are that missing observation, wired blocking: they drive
  * the REAL script against throwaway data dirs (the create-worktree.hook.test.ts idiom), and they
- * assert the four links of the chain end to end — hook pin == package.json version == the CLI's
- * own `VERSION`, dispatch only on a matching marker, and `isIsolationExpected` present in the
- * source that version publishes.
+ * assert the links of the chain end to end — hook pin == package.json version, `src/version.ts`
+ * still derives its `VERSION` from that package.json rather than re-declaring one, dispatch only
+ * on a matching marker, and `isIsolationExpected` present in the source that version publishes.
  *
  * Coverage note: the hook scripts are inside CI's `packages` path filter, so a `hooks/**` edit
  * runs this suite (ADR 0180 / the #2925 gap).
@@ -22,7 +22,6 @@ import {dirname, join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {afterEach, assert, describe, it} from "@effect/vitest";
 import {SUBPROCESS_TEST_TIMEOUT_MS} from "./test-budget.ts";
-import {VERSION} from "./version.ts";
 
 const repoPath = (rel: string) => fileURLToPath(new URL(`../../../${rel}`, import.meta.url));
 
@@ -148,12 +147,28 @@ describe("the dispatched build carries ADR 0172's isolation guard (#3742 AC3)", 
 	// Links 1–2 of the chain: the version guard.sh admits is the version this workspace builds
 	// and publishes. Without this a pin bump could point at a version whose source is something
 	// else entirely, and the marker comparison would attest nothing.
-	it("the hook pin, the package version, and the CLI's own VERSION are one version", () => {
+	it("the hook pin and the package version are one version", () => {
 		const pkg = JSON.parse(
 			readFileSync(repoPath("packages/pipeline-cli/package.json"), "utf8"),
 		) as {version: string};
 		assert.strictEqual(hookPin(), pkg.version, `${HOOKS}/pin.sh must pin this package's version`);
-		assert.strictEqual(VERSION, pkg.version, "src/version.ts must not misreport what shipped");
+	});
+
+	// `VERSION === pkg.version` is true by construction since #5714, so asserting it would attest
+	// nothing. What can still regress is the derivation itself: re-declare a literal here and the
+	// CLI silently misreports every release release-please bumps. That is what this reads for.
+	it("src/version.ts derives its VERSION rather than declaring one (#5714)", () => {
+		const src = readFileSync(repoPath("packages/pipeline-cli/src/version.ts"), "utf8");
+		assert.include(
+			src,
+			'import pkg from "../package.json" with {type: "json"}',
+			"src/version.ts must read the package's own package.json",
+		);
+		assert.notMatch(
+			src,
+			/export const VERSION\s*=\s*["'`]/,
+			"src/version.ts must not re-declare a version literal — package.json is the one carrier release-please bumps",
+		);
 	});
 
 	// Link 3: that version's source carries the guard. The stale 0.1.0 tarball has zero

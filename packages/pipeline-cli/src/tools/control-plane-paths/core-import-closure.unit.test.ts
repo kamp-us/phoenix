@@ -124,6 +124,11 @@ const escapingModules = (): ReadonlyArray<string> => {
  * of its own, so promoting it pulled nothing new in.
  */
 const ALLOWED_ESCAPES = [
+	// `src/version.ts` reads the package manifest for its version rather than declaring a literal
+	// (#5714). Pinned rather than filtered out of the walk: a JSON edge out of the core is still an
+	// edge worth reddening on, so the next one has to be argued for too — this is the package's own
+	// manifest, which carries no behavior a gate could reach through.
+	"packages/pipeline-cli/package.json",
 	"packages/pipeline-cli/src/tools/guard-content-probe/guard-content-probe.ts",
 	"packages/pipeline-cli/src/tools/leak-guard/leak-guard.ts",
 	"packages/pipeline-cli/src/tools/leak-guard/path-matcher.ts",
