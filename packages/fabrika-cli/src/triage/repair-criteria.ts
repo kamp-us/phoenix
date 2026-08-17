@@ -13,9 +13,9 @@
  * The plan acts on the **authored region only**. The `<!-- fabrika:enriched … -->` marker (or the
  * legacy v1 envelope) is the boundary `triage enrich`'s own guards rely on, and a `##` heading down
  * inside the preserved original is a historical record — rewriting it would falsify the verbatim
- * block. Classification, though, reads the **whole body**, because that is what the reader grades:
- * a body whose only drift lives inside the preserved block is un-gateable *and* unrepairable, and
- * that pair must land on a refusal that says so, not on a plausible no-op.
+ * block. Classification reads the **whole body**, because that is what the reader grades; since
+ * #5852 the reader skips a `<details>` appendix, so a body whose only drift is buried there is
+ * `Absent` — nothing to repair, and nothing left un-gateable either.
  */
 
 import {

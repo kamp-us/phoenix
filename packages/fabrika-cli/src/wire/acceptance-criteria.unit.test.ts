@@ -322,6 +322,94 @@ describe("read — a fenced example is not the real block", () => {
 	});
 });
 
+describe("read — a `<details>` appendix is not the real block (#5852)", () => {
+	const appendix = (...lines: ReadonlyArray<string>): string =>
+		body(
+			"<details>",
+			"<summary>Original report (verbatim)</summary>",
+			"",
+			...lines,
+			"",
+			"</details>",
+		);
+
+	it("answers Absent when the only criteria heading is buried in a `<details>` block", () => {
+		const result = read(
+			body(
+				"A rewrite that carries no criteria block.",
+				"",
+				appendix("## Acceptance criteria", "- [ ] the historical record"),
+			),
+		);
+		expect(result._tag).toBe("Absent");
+	});
+
+	it("reads the authored block when the appendix carries a conforming one too", () => {
+		expect(
+			found(
+				body(
+					"### Acceptance criteria",
+					"- [ ] the contract",
+					"",
+					appendix("### Acceptance criteria", "- [ ] the historical record"),
+				),
+			),
+		).toEqual([criterion("the contract", false)]);
+	});
+
+	it("does not absorb the appendix's checkbox items into the authored block", () => {
+		expect(
+			found(
+				body(
+					"### Acceptance criteria",
+					"- [ ] the contract",
+					"",
+					appendix("- [ ] a leading item, before any heading"),
+				),
+			),
+		).toEqual([criterion("the contract", false)]);
+	});
+
+	it("skips a nested `<details>`, and reads a block below the outer one", () => {
+		expect(
+			found(
+				body(
+					"<details>",
+					"<summary>outer</summary>",
+					"<details>",
+					"<summary>inner</summary>",
+					"## Acceptance criteria",
+					"</details>",
+					"</details>",
+					"",
+					"### Acceptance criteria",
+					"- [ ] the contract",
+				),
+			),
+		).toEqual([criterion("the contract", false)]);
+	});
+
+	it("still reads a `<details>` line quoted inside a fence as ordinary text", () => {
+		expect(
+			found(
+				body(
+					"```markdown",
+					"<details>",
+					"```",
+					"",
+					"### Acceptance criteria",
+					"- [ ] the contract",
+				),
+			),
+		).toEqual([criterion("the contract", false)]);
+	});
+
+	it("keeps a heading whose line only mentions the tag — the boundary is a line of its own", () => {
+		const result = read(body("Text about <details> blocks.", "", "## Acceptance criteria"));
+		expect(result._tag).toBe("Malformed");
+	});
+});
+
 describe("parseFields", () => {
 	it("takes one criterion per line, with the state marker optional", () => {
 		expect(parseFields("first\n[x] second\n- [ ] third\n")).toEqual({

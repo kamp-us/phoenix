@@ -70,11 +70,10 @@ describe("planRepair — the mechanical repair", () => {
 		expect(result.reason).toContain('heading text "Acceptance criterias"');
 	});
 
-	it("refuses when the only drift lives inside the preserved original — never a no-op", () => {
-		const result = plan(enveloped("Just prose above the marker, no heading."));
-		expect(result._tag).toBe("Refused");
-		if (result._tag !== "Refused") return;
-		expect(result.reason).toContain("authored region");
+	it("answers NoBlock when the only heading lives inside the preserved original (#5852)", () => {
+		// The reader no longer counts a `<details>` appendix, so this body is `Absent` rather than
+		// the `Malformed` that used to have to land on a refusal here.
+		expect(plan(enveloped("Just prose above the marker, no heading."))._tag).toBe("NoBlock");
 	});
 
 	it("refuses two drifted headings in the authored region as undecidable", () => {

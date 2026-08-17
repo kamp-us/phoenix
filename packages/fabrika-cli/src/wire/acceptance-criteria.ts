@@ -14,6 +14,9 @@
  * `Absent`. Neither is an answer on stdout: the adapter seats them on distinct non-zero codes
  * (`./codes.ts`).
  *
+ * The scan runs over the body's *contract* region, not its bytes end to end: a fenced code block
+ * and a `<details>` appendix are both out of reach (see {@link scanHeadings}).
+ *
  * v1's `claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md` §2 is where the semantics
  * come from — read as prior art, never called (ADR 0238). Its reviewer-append provenance tag
  * (`<!-- ac:review-code … -->`) is deliberately not carried here.
@@ -89,6 +92,15 @@ const FENCE = /^ {0,3}(```|~~~)/;
 const CHECKBOX_ITEM = /^[ \t]*[-*][ \t]+\[([ xX])\][ \t]*(.*)$/;
 
 /**
+ * A `<details>` block's own opening and closing lines.
+ *
+ * Whole-line and nothing else: an envelope writes its opener on a line of its own, so matching only
+ * that shape cannot mistake prose mentioning the tag for a block boundary.
+ */
+const DETAILS_OPEN = /^[ \t]*<details(?:[ \t][^>]*)?>[ \t]*$/;
+const DETAILS_CLOSE = /^[ \t]*<\/details>[ \t]*$/;
+
+/**
  * A line that opens a GFM block of its own beside the item — a plain bullet, an ordered-list marker,
  * a blockquote, or a thematic break. Each leaves the item's paragraph in the render exactly as the
  * next checkbox item does, so each closes the open criterion here (#5596). Tested after
@@ -140,7 +152,19 @@ const reachesForBlock = (headingText: string): boolean => {
 };
 
 /**
- * Every ATX heading outside a fenced code block — a fenced example must not pass for the real one.
+ * Every ATX heading outside a fenced code block **and outside a `<details>` block** — neither a
+ * fenced example nor a collapsed appendix may pass for the real one.
+ *
+ * The `<details>` rule is what makes an enriched body readable. `triage enrich` composes
+ * `authored region + marker + preserved original`, and the preserved original is kept verbatim
+ * inside a `<details>` block — so a legacy `## Acceptance criteria` buried there used to be a
+ * candidate, and the composed body read `Malformed` (drifted heading) or `Malformed` (two
+ * conforming headings) over an authored block that was clean (#5852). A collapsed block is an
+ * appendix, never the contract: it renders folded shut, so nothing a grader must read lives in it.
+ * Skipping it here rather than at compose time is what covers the bodies already wrapped — the
+ * board's whole enriched corpus — and not only the ones wrapped from now on.
+ *
+ * An unclosed `<details>` swallows the rest of the body, exactly as the GitHub render does.
  *
  * Exported for `triage repair-criteria`, which must locate a drifted heading by exactly the rules
  * this reader refuses it under — a second scanner would be a second definition of "heading".
@@ -148,6 +172,7 @@ const reachesForBlock = (headingText: string): boolean => {
 export const scanHeadings = (lines: ReadonlyArray<string>): ReadonlyArray<Heading> => {
 	const headings: Heading[] = [];
 	let openFence: string | null = null;
+	let detailsDepth = 0;
 	for (const [index, line] of lines.entries()) {
 		const fence = FENCE.exec(line);
 		if (fence !== null) {
@@ -157,6 +182,15 @@ export const scanHeadings = (lines: ReadonlyArray<string>): ReadonlyArray<Headin
 			continue;
 		}
 		if (openFence !== null) continue;
+		if (DETAILS_OPEN.test(line)) {
+			detailsDepth += 1;
+			continue;
+		}
+		if (DETAILS_CLOSE.test(line)) {
+			detailsDepth = Math.max(0, detailsDepth - 1);
+			continue;
+		}
+		if (detailsDepth > 0) continue;
 		const heading = ATX_HEADING.exec(line);
 		if (heading === null) continue;
 		headings.push({
@@ -184,7 +218,14 @@ const driftReason = (heading: Heading): string => {
 	return `the acceptance-criteria heading has drifted — ${parts.join("; ")}`;
 };
 
-/** The lines under `heading`, up to the next heading outside a fence, or the end of the body. */
+/**
+ * The lines under `heading`, up to the next heading outside a fence, the opening line of a
+ * `<details>` block, or the end of the body.
+ *
+ * A `<details>` opener ends the section for the same reason {@link scanHeadings} skips inside one:
+ * the collapsed block is an appendix. Without it, a preserved original that opens on checkbox lines
+ * before its first heading has them read back as criteria the author never wrote (#5852).
+ */
 const sectionOf = (lines: ReadonlyArray<string>, heading: Heading): ReadonlyArray<string> => {
 	const body: string[] = [];
 	let openFence: string | null = null;
@@ -197,7 +238,7 @@ const sectionOf = (lines: ReadonlyArray<string>, heading: Heading): ReadonlyArra
 			body.push(line);
 			continue;
 		}
-		if (openFence === null && ATX_HEADING.test(line)) break;
+		if (openFence === null && (ATX_HEADING.test(line) || DETAILS_OPEN.test(line))) break;
 		body.push(line);
 	}
 	return body;
