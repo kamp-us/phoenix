@@ -267,7 +267,7 @@ describe("runEnrich — legacy migration", () => {
 });
 
 describe("runEnrich — the composed body's criteria block must be one the wire reader accepts (#5565, ADR 0288)", () => {
-	it("refuses a level-2 heading on 14, naming the level it read and the level expected", async () => {
+	it("refuses a level-2 heading on 15, naming the level it read and the level expected", async () => {
 		const shell = fakeShell([[READ, issue(ORIGINAL)]]);
 		const outcome = await Effect.runPromise(
 			Effect.provide(
