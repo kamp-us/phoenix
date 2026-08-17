@@ -27,13 +27,27 @@ import type {CycleDoc} from "./model.ts";
 /** The cycle doc the containment class is gated on, at the target repository's root. */
 export const CYCLE_DOC_PATH = "product-development-cycle.md";
 
+/** One native sub-issue link: the child's number plus the open/closed facts the payload carries. */
+export interface SubIssueLink {
+	readonly number: number;
+	readonly state: "open" | "closed";
+	readonly stateReason: string | null;
+}
+
 /**
  * The epic's children, from the **native sub-issue link list**, paginated in full.
  *
  * Typed-JSON decoded rather than `--jq`: `-r` errors mid-stream on a control character in a title and
  * reads back as an empty body, which for a child list is a false "no children".
+ *
+ * Each entry must carry a readable `state` — an entry without one fails the whole read rather than
+ * defaulting to open, because a silently-defaulted state is exactly how `lane emit` booted closed
+ * children as `queued` (#5746).
  */
-export const listSubIssues = (repo: string, epic: number): Shell<Attempt<ReadonlyArray<number>>> =>
+export const listSubIssues = (
+	repo: string,
+	epic: number,
+): Shell<Attempt<ReadonlyArray<SubIssueLink>>> =>
 	Effect.gen(function* () {
 		const r = yield* execCapture("gh", [
 			"api",
@@ -43,7 +57,7 @@ export const listSubIssues = (repo: string, epic: number): Shell<Attempt<Readonl
 		if (!r.ok) return fail(r.reason);
 		const pages = pagedJson(r.stdout);
 		if (pages._tag === "Failure") return pages;
-		const numbers: number[] = [];
+		const links: SubIssueLink[] = [];
 		for (const page of pages.value) {
 			const parsed = parseJson(page);
 			if (!Array.isArray(parsed)) {
@@ -53,10 +67,19 @@ export const listSubIssues = (repo: string, epic: number): Shell<Attempt<Readonl
 				if (!isRecord(value) || typeof value.number !== "number") {
 					return fail("`gh api` exited 0 but one entry is not a sub-issue");
 				}
-				numbers.push(value.number);
+				if (value.state !== "open" && value.state !== "closed") {
+					return fail(
+						`\`gh api\` exited 0 but sub-issue #${value.number} carries no readable \`state\``,
+					);
+				}
+				links.push({
+					number: value.number,
+					state: value.state,
+					stateReason: typeof value.state_reason === "string" ? value.state_reason : null,
+				});
 			}
 		}
-		return ok(numbers);
+		return ok(links);
 	});
 
 /** One child as the ledger reads it — labels, body, and the three-state assignee slot. */

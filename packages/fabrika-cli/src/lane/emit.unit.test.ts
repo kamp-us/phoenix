@@ -14,7 +14,25 @@ const body = (): string => readGoldenFixture(import.meta.url, "./__fixtures__/ep
 const golden = (): string =>
 	readGoldenFixture(import.meta.url, "./__fixtures__/epic-4300.workflow.golden.txt");
 
-const CHILDREN = [4301, 4302, 4303];
+const open = (number: number) => ({number, state: "open" as const, stateReason: null});
+const closed = (number: number, stateReason: string | null = "completed") => ({
+	number,
+	state: "closed" as const,
+	stateReason,
+});
+
+const CHILDREN = [open(4301), open(4302), open(4303)];
+
+const initialOf = (text: string, task: string): unknown => {
+	const doc = JSON.parse(text) as {
+		machine: {states: Record<string, {states: Record<string, {initial: string}>}>};
+	};
+	for (const phase of Object.values(doc.machine.states)) {
+		const node = phase.states?.[task];
+		if (node !== undefined) return node.initial;
+	}
+	throw new Error(`no region for ${task}`);
+};
 
 const emitted = (result: EmitResult): string => {
 	if (result._tag !== "Emitted") throw new Error(`expected Emitted, got ${result._tag}`);
@@ -56,6 +74,42 @@ describe("emitMachine", () => {
 		expect(JSON.parse(out.stdout)).toMatchObject({
 			event: "ISSUE_4301.WIP",
 			current: {phase1: {issue_4301: "build", issue_4302: "queued"}, phase2: "waiting"},
+		});
+	});
+
+	it("emits an all-open epic byte-identically to the golden bytes — state widened nothing", () => {
+		expect(emitted(emitMachine(4300, body(), [open(4301), open(4302), open(4303)]))).toBe(golden());
+	});
+
+	it("boots a completed-closed child in `shipped` and leaves its open siblings queued", () => {
+		const text = emitted(emitMachine(4300, body(), [closed(4301), open(4302), open(4303)]));
+		expect(initialOf(text, "issue_4301")).toBe("shipped");
+		expect(initialOf(text, "issue_4302")).toBe("queued");
+	});
+
+	it("boots a child closed for any other reason in `frozen` — a close is never a landing", () => {
+		const text = emitted(
+			emitMachine(4300, body(), [closed(4301, "not_planned"), open(4302), open(4303)]),
+		);
+		expect(initialOf(text, "issue_4301")).toBe("frozen");
+		const legacy = emitted(emitMachine(4300, body(), [closed(4301, null), open(4302), open(4303)]));
+		expect(initialOf(legacy, "issue_4301")).toBe("frozen");
+	});
+
+	it("skips a fully-shipped phase at boot — its onDone fires with no human UNBLOCKED", async () => {
+		const text = emitted(emitMachine(4300, body(), [closed(4301), closed(4302), open(4303)]));
+		const fs = fakeFs({files: {".fabrika/lanes/4300/workflow.json": text}});
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runTransition({root: ".fabrika/lanes", lane: "4300", event: "WIP", task: "issue_4303"}),
+				fs.layer,
+			),
+		);
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({
+			event: "ISSUE_4303.WIP",
+			previous: {phase2: {issue_4303: "queued"}},
+			current: {phase2: {issue_4303: "build"}},
 		});
 	});
 

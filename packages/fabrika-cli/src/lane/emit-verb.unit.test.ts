@@ -22,7 +22,13 @@ const body = (): string => readGoldenFixture(import.meta.url, "./__fixtures__/ep
 const golden = (): string =>
 	readGoldenFixture(import.meta.url, "./__fixtures__/epic-4300.workflow.golden.txt");
 
-const children = okOut(JSON.stringify([{number: 4301}, {number: 4302}, {number: 4303}]));
+const children = okOut(
+	JSON.stringify([
+		{number: 4301, state: "open", state_reason: null},
+		{number: 4302, state: "open", state_reason: null},
+		{number: 4303, state: "open", state_reason: null},
+	]),
+);
 
 const OPTIONS = {
 	epic: 4300,
@@ -78,6 +84,17 @@ describe("lane emit", () => {
 		]);
 
 		expect(out.code).toBe(LANE_UNREADABLE);
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("refuses a child entry with no readable state as UNKNOWN — never a queued default", async () => {
+		const {out, fs} = await run([
+			[ISSUE, issue({number: 4300, body: body()})],
+			[SUBS, okOut(JSON.stringify([{number: 4301}, {number: 4302}, {number: 4303}]))],
+		]);
+
+		expect(out.code).toBe(LANE_UNREADABLE);
+		expect(out.stderr.join("\n")).toContain("#4301");
 		expect(fs.written.size).toBe(0);
 	});
 
