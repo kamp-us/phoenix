@@ -32,6 +32,7 @@ import * as ledger from "./ledger/codes.ts";
 import * as map from "./map/codes.ts";
 import * as pattern from "./pattern/codes.ts";
 import * as plan from "./plan/codes.ts";
+import * as recipe from "./recipe/codes.ts";
 import {registeredGroups} from "./registry.ts";
 import * as report from "./report/codes.ts";
 import * as review from "./review/codes.ts";
@@ -67,6 +68,7 @@ const TABLES: Readonly<Record<string, CodeTable>> = {
 	map,
 	pattern,
 	plan,
+	recipe,
 	report,
 	review,
 	"review-ui": reviewUi,
