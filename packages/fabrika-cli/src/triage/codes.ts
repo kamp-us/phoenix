@@ -93,6 +93,16 @@ export const PRECONDITION_UNKNOWN = REPORT_PRECONDITION_UNKNOWN;
 export const HUMAN_FILED = 12;
 /** Refused: agent-filed and close-eligible, but the kill is unconfirmed (ADR 0159). */
 export const UNCONFIRMED = 13;
+/**
+ * Refused: the acceptance-criteria block is drifted in a way no mechanical repair covers.
+ *
+ * `repair-criteria` may fix exactly one defect — a heading whose text is already exactly
+ * `Acceptance criteria` and whose only drift is the level. Anything else (drifted text, multiple
+ * headings, a section with no checkbox items, a drift living only inside the preserved original) is
+ * this refusal: rewriting it would be indistinguishable from inventing a contract, which is the one
+ * thing the review gate is forbidden to do.
+ */
+export const UNREPAIRABLE = 14;
 
 /** The verb never ran (unresolved binary). The shell's, not this process's — no constant owns it. */
 const NEVER_RAN = 127;
@@ -132,6 +142,11 @@ export const TRIAGE_EXIT_TABLE: ReadonlyArray<ExitCodeRow> = [
 	{
 		code: UNCONFIRMED,
 		meaning: "refused: agent-filed and close-eligible, but the kill is unconfirmed (ADR 0159)",
+	},
+	{
+		code: UNREPAIRABLE,
+		meaning:
+			"refused: the acceptance-criteria drift is not mechanically repairable — not a pure level drift on exact heading text",
 	},
 	{code: NO_IMPLEMENTATION, meaning: "no implementation could be resolved"},
 	{code: NEVER_RAN, meaning: "the verb never ran (unresolved binary)"},

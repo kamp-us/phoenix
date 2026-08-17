@@ -232,14 +232,15 @@ type/priority vocabulary.
 
 The contract is
 [`claude-plugins/fabrika/skills/triage/contract.md`](../../claude-plugins/fabrika/skills/triage/contract.md).
-**Only the shared substrate is built so far** — the group's nine verbs (`queue`, `claim`,
-`provenance`, `homes`, `split`, `enrich`, `apply`, `park`, `kill`) land in later slices of
-[#4831](https://github.com/kamp-us/phoenix/issues/4831), and the one registered verb today
-prints the table they will all allocate from.
+The group's nine verbs (`queue`, `claim`, `provenance`, `homes`, `split`, `enrich`, `apply`,
+`park`, `kill`) landed in the slices of
+[#4831](https://github.com/kamp-us/phoenix/issues/4831); `repair-criteria` joined as the
+corpus-repair verb ([#5744](https://github.com/kamp-us/phoenix/issues/5744)).
 
 | Verb | Answers |
 |---|---|
 | `triage codes` | the exit taxonomy every verb in the group allocates from, one `<code>\t<meaning>` line per code |
+| `triage repair-criteria` | rewrite a level-drifted `## Acceptance criteria` heading to the conforming `###` — one issue, or `--sweep` over every open issue with a per-issue outcome line; authored region only, and anything that is not a pure level drift on the exact heading text is refused on `14`, never guessed |
 
 Three properties of that substrate are worth knowing before the verbs arrive:
 
