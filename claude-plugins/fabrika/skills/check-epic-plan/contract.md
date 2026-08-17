@@ -603,12 +603,18 @@ child carried neither label — a clean floor permits this, since `MISSING_LABEL
 some other `status:` value; the flip does not consider it and does not touch it).
 
 `terminal` is a closed token the skill reads rather than deriving from counters, and **it has
-exactly two values, because it only ever appears on the answer channel**: `flipped-all` (at least
-one `flipped`, no `unchanged`) · `nothing-to-flip` (no child carried `status:planned` **and** the
+exactly two values, because it only ever appears on the answer channel**: `flipped-all` (something
+moved and nothing is `unchanged` — at least one `flipped` child, **or** an `audience.result` of
+`flipped`, or both) · `nothing-to-flip` (no child carried `status:planned` **and** the
 epic's audience was `already` — a run that wrote one label is not a run that changed nothing). A partial
 flip has no token here at all — any `unchanged` child forces exit `22`, and a non-zero exit prints
 nothing on stdout, so the unchanged refs are named on **stderr** and the caller reads them there.
 There is deliberately no `unchanged` counter in the answer object: it could only ever be `0`.
+
+So `flipped-all` does **not** imply a child moved. Re-gating an epic planned before #5832 takes
+exactly that arm: every child already sits at `status:triaged`, only the epic's audience is owed, and
+the run prints `flipped-all` with `flipped: 0` and `audience.result: "flipped"`. A caller that wants
+to know whether any child became pickable reads `flipped`, never the token.
 
 **The flip is unconditional over every `status:planned` child** — ruled, with no per-child
 predicate and no opt-out hook (#4693 AC4). The barrier keeping a held child out of the build pool

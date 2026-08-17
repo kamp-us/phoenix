@@ -113,9 +113,12 @@ write the label by hand; the verb writes it and reads it back.
 
 Done when you have read the outcome from the channel that carries it. On exit `0`, read the
 answer's closed `terminal` token — `flipped-all` or `nothing-to-flip`; do not derive it from the
-counters. `nothing-to-flip` is a **clean gate that changed nothing**, which is not the same outcome
-as one that made children pickable — and it now means the epic was already `ready-for:agent` too.
-The `audience` object beside the counters carries that fact and the epic's observed labels.
+counters. `nothing-to-flip` is a **clean gate that changed nothing**: every child was already
+pickable and the epic was already `ready-for:agent`. `flipped-all` means something moved, which is
+not the same as children moving — a re-gated epic whose children are all already `status:triaged`
+prints `flipped-all` with `flipped: 0` and an `audience.result` of `flipped`. So **read `flipped`
+before you say a child became pickable**, and the `audience` object beside the counters for the
+epic's own outcome and observed labels.
 
 A non-zero exit prints no answer at all, so read the refusal on stderr: `22` is a partial flip and
 the verb names there what did not move — the children, or the epic when every child moved and its
@@ -172,8 +175,9 @@ local, or remove.** Release the claim with `fabrika build release $epic_number` 
 **after step 1 answered `won`** — if it never did, you hold nothing and there is nothing to release.
 An unreleased claim is a lock nobody can reclaim, which a human then clears by hand.
 
-- `PLAN-CLEARED` — floor clean, `skipped` empty, children flipped, the epic `ready-for:agent`,
-  verdict posted.
+- `PLAN-CLEARED` — floor clean, `skipped` empty, `terminal: flipped-all`, the epic
+  `ready-for:agent`, verdict posted. Say children were flipped only when `flipped` is non-zero; on a
+  re-gate it is `0` and the epic's own label is all that moved.
 - `PLAN-CLEARED-PARTIAL` — as above, but a defect class could not be derived; the marker names it,
   so nobody reads the verdict as a full-enum pass.
 - `PLAN-CLEARED-NO-FLIP` — floor clean, `terminal: nothing-to-flip`; verdict posted, no label

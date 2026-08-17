@@ -295,6 +295,32 @@ describe("runFlip", () => {
 		expect(calls.some((line) => /--method (POST|DELETE) .*labels/.test(line))).toBe(false);
 	});
 
+	/** #5680's shape: an epic planned and gated before #5832, re-gated to earn its audience label. */
+	it("flips the epic alone when every child is already triaged", async () => {
+		const already = child({number: 4301, labels: ["type:feature", "p1", "status:triaged"]});
+		const digest = await digestOf([
+			[EPIC, ONE_CHILD_EPIC],
+			[SUBS, subIssues(4301)],
+			[CHILD, already],
+			[CYCLE, okOut("{}")],
+		]);
+		const {outcome, calls} = await run(digest, [
+			...CLAIMED,
+			...ledger(already, already),
+			[LABELS, labelSet("ready-for:agent")],
+			[ADD_EPIC, okOut("[]")],
+			[REMOVE_EPIC, okOut("[]")],
+		]);
+		expect(outcome.code).toBe(0);
+		expect(JSON.parse(outcome.stdout)).toMatchObject({
+			terminal: "flipped-all",
+			flipped: 0,
+			already: 1,
+			audience: {result: "flipped", observed: ["ready-for:agent", "type:epic"]},
+		});
+		expect(calls.some((line) => ADD.test(line) || REMOVE.test(line))).toBe(false);
+	});
+
 	/**
 	 * v1 asserted the flip from its pre-mutation intent list and re-read nothing, so a child left
 	 * carrying both labels — the ADD landing and the DELETE failing — was reported as pickable.
