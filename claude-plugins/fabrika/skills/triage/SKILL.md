@@ -127,7 +127,7 @@ it preserves verbatim for the planner; no *rewrite* goes above an epic's brief. 
 real paths and function names over vague framing, and acceptance criteria that make "done" legible —
 not a closed set, a `review-*` gate may append. The criteria block's grammar is the wire format's,
 not this skill's ([`packages/fabrika-cli/src/wire/acceptance-criteria.ts`](../../../../packages/fabrika-cli/src/wire/acceptance-criteria.ts)):
-`enrich` runs that reader over the body it composed and refuses a drifted block on exit `14` before
+`enrich` runs that reader over the body it composed and refuses a drifted block on exit `15` before
 writing anything, naming the defect the reader found — so write the criteria and let the verb answer.
 A rewrite carrying **no** criteria block is still accepted, where none is warranted.
 **No invention**: enrich from what you found, keep

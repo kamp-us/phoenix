@@ -158,7 +158,7 @@ or the search index could not be read
 | `11` | a **precondition read failed** — nothing was written and the outcome is UNKNOWN | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `12` | refused: the issue is human-filed | — | — | — | — | — | — | — | — | ✓ |
 | `13` | refused: agent-filed and close-eligible, but the kill is unconfirmed (ADR 0159) | — | — | — | — | — | — | — | — | ✓ |
-| `14` | refused: the body this verb composed carries an acceptance-criteria block its registered wire reader classifies `Malformed` (ADR 0288) | — | — | — | — | — | ✓ | — | — | — |
+| `15` | refused: the body this verb composed carries an acceptance-criteria block its registered wire reader classifies `Malformed` (ADR 0288) | — | — | — | — | — | ✓ | — | — | — |
 | `127` | the verb never ran (unresolved binary) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 
 **This matrix owns what a code *means*; the per-verb tables own what *triggers* it.** Every verb in
@@ -168,6 +168,13 @@ proven outcomes, `3` and up, phrased as that verb's trigger rather than as a res
 meaning. The reason is a defect this spec already shipped once: an earlier revision restated every
 code in all nine verb tables, and a `127` row added to the matrix reached only five of them. One fact
 in ten places is nine chances to drift, so the fact has one place.
+
+**`14` is allocated in code and missing from this matrix, and that is a known gap this spec does not
+close.** `packages/fabrika-cli/src/triage/codes.ts` seats `UNREPAIRABLE = 14` for `triage
+repair-criteria`, a tenth verb this document does not yet specify at all — it has no column above
+and no section below. Writing its row here would be guessing at a spec nobody has written, so `15`
+takes the next free seat instead of compacting into `14`, and the gap is disclosed rather than
+silently filled ([#5855](https://github.com/kamp-us/phoenix/issues/5855)).
 
 **`4` is a deliberate gap, not a free slot.** It held *"the target issue does not exist, or is not
 readable"* — one code for a proven fact and an unknown at once, which is the exact fusion `7` and
@@ -1075,7 +1082,7 @@ to bold text.**
 verdict on a gated question, which is the same reason a `triage pitch-check` verb is not derived.
 This verb refuses only what it can refuse about text the caller just wrote — empty (`3`), a
 machine-local path (`5`), a bare `@` reference (`6`), and an acceptance-criteria block the wire
-reader rejects (`14`, below) — and `--epic` **adds no exit code of its own**: reaching those same
+reader rejects (`15`, below) — and `--epic` **adds no exit code of its own**: reaching those same
 refusals is the removal of a restriction, not a new outcome.
 
 **The re-enrich detector is the marker this verb writes — one rule, mode-independent** (founder
@@ -1221,7 +1228,7 @@ else's leak, and preserving it unredacted re-commits that leak into a public iss
 Per ADR [0288](../../../../.decisions/0288-producers-run-consumer-readers.md) this verb runs the
 criteria format's own registered reader
 ([`packages/fabrika-cli/src/wire/acceptance-criteria.ts`](../../../../packages/fabrika-cli/src/wire/acceptance-criteria.ts))
-over the body it has composed and refuses on `14` when the answer is `Malformed`, so a block every
+over the body it has composed and refuses on `15` when the answer is `Malformed`, so a block every
 downstream grader would reject never reaches the board. **The grammar is not restated here or in
 `SKILL.md`** — the module owns it and the refusal quotes the reader's own reason (ADR 0241).
 Two boundaries carry the weight:
@@ -1247,7 +1254,7 @@ criteria block; a verb that demanded one would be a different verb.
 | `8` | the `PATCH` failed — UNKNOWN whether the body changed |
 | `9` | the body was written but the read-back does not match |
 | `11` | the issue body could not be read — there is no original to preserve |
-| `14` | the composed body's **authored region** carries an acceptance-criteria block the wire reader classifies `Malformed` |
+| `15` | the composed body's **authored region** carries an acceptance-criteria block the wire reader classifies `Malformed` |
 
 **Errors**
 
