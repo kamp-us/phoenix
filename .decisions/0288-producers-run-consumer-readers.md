@@ -24,13 +24,15 @@ That fixed who *owns* the bytes. It left open who *checks* them at write time: t
 composed their sections from prose instruction and posted them unread, while the consuming gates
 ran the strict reader a review round later.
 
-The asymmetry was measured, not hypothetical. Every review FAIL on 2026-08-16 was wire grammar,
-none were substance: the acceptance-criteria heading defect four times, the Deviations grammar
-four times, an eighth lane bitten the same night. Each mismatch cost a full review round plus a
-repair spawn. The producing verbs (`triage enrich`/`apply` for criteria; `build pr` for
-deviations, before #5566) carried zero references to the reader that would later reject their
-output — and Deviations was not a registered format at all, its grammar held privately by the
-review side, so no producer *could* have checked it.
+The report that opened #5735 counted the damage of a single day: on 2026-08-16 the
+acceptance-criteria heading defect drew four review FAILs (#5539, #5694, #5585, #5643) and the
+Deviations grammar drew four more (PRs #5693, #5707, #5674, #5725), each costing a review round
+plus a hand-fix or a repair spawn. Triage did not re-count those eight, so they are cited here as
+the report's tally and nothing below rests on the number. What triage did verify at source is the
+asymmetry underneath them, and that is this decision's ground: the producing verbs (`triage
+enrich`/`apply` for criteria; `build pr` for deviations, before #5566) carried zero references to
+the reader that would later reject their output — and Deviations was not a registered format at
+all, its grammar held privately by the review side, so no producer *could* have checked it.
 
 The counter-example already existed in-tree:
 [`packages/fabrika-cli/src/epic/brief-verb.ts`](../packages/fabrika-cli/src/epic/brief-verb.ts)
