@@ -12,6 +12,7 @@ import {leafCommand} from "../excess-operand.ts";
 import {DEFAULT_LANES_ROOT} from "../lane/store.ts";
 import type {VerbOutcome} from "../verb.ts";
 import {runRerun} from "./rerun-verb.ts";
+import {runRoute} from "./route-verb.ts";
 import {runUnpark} from "./unpark-verb.ts";
 
 /** Write the outcome and exit on its code — stdout is the answer, everything else is stderr. */
@@ -81,8 +82,33 @@ const rerun = leafCommand(
 	),
 );
 
+const route = leafCommand(
+	"route",
+	{
+		state: Argument.string("state").pipe(
+			Argument.withDescription("the chore lane's leaf state, exactly as `lane status` prints it"),
+		),
+		exit: Flag.integer("exit").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"the exit the state's recipe run answered on; omit to ask which verb it applies",
+			),
+		),
+	},
+	Effect.fn(function* ({state, exit}) {
+		yield* emit(yield* runRoute({state, exit: Option.getOrNull(exit)}));
+	}),
+).pipe(
+	Command.withShortDescription(
+		"Route one chore-lane state to its recipe, and its exit to one event.",
+	),
+	Command.withDescription(
+		"Answer what a chore drive does at one chore-lane state. Without --exit, stdout is `{state, verb, target, summary}` — which recipe verb the state applies and whether it is pointed at a lane key or a pull-request number. With --exit, stdout is `{state, verb, exit, event, why}` — the single machine event that run's outcome records, from the closed table in `recipe/drive.ts`; an exit the table has no reading for records BLOCKED, never a permissive default. Nothing here reads a lane or the board: it is the routing answer `operate`'s chore drive relays instead of restating it in prose. Exits 22 (the state applies no recipe — act on that state, do not run a verb). Examples: fabrika recipe route unpark · fabrika recipe route unpark --exit 12",
+	),
+);
+
 export const recipeCommand = Command.make("recipe").pipe(
-	Command.withSubcommands([unpark, rerun]),
+	Command.withSubcommands([unpark, rerun, route]),
 	Command.withShortDescription("Apply one standing driver recipe as a deterministic verb."),
 	Command.withDescription(
 		"Apply one standing driver recipe: a fixed sequence with a checkable outcome and no judgment in it, versioned once instead of retyped nightly. Each verb relays a decision another verb already owns and proves every mutation with a read-back (ADR 0228; epic #5840)",
