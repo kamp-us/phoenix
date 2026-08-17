@@ -210,6 +210,11 @@ Three of those fields exist because of how the first three records were graded, 
 - **UNKNOWN is mandatory with an explicit `none`** because an omittable field is self-certified — a grader who checks nothing and a grader who checked everything write the same empty space. An explicit `none` is a claim a reviewer can attack.
 - **What is lost exists because RETIRE is the verdict that removes something.** A record whose dominant verdict is RETIRE and which has no field for the residue lets a real reduction in guarantee — a refusal traded for a silenceable warning — read as a clean discharge.
 
+**Amendment, [#5726](https://github.com/kamp-us/phoenix/issues/5726) — "the channel property" reads the harness too, and a PORT may be scoped.** Two changes to the format above, stated here rather than applied silently.
+
+- **The channel is not always the delivery channel.** The six records above all grade a piece whose fate is decided by *how fabrika is delivered*. The worktree records below are decided by something else: what Claude Code enforces natively on the version this repo runs. So **The channel property that carries the verdict** admits an observed harness behaviour, cited to the version and the observation, in place of a delivery-channel property. A behaviour asserted from a changelog or a doc page is not admissible in that field — only something run.
+- **A PORT may name a narrower subject than the v1 piece.** Several pieces below survive in part: one of two refusals, one of two entry points. Writing PORT unqualified would hand a builder the whole v1 scope back, and writing RETIRE would drop the live half. Such a record states its verdict as **PORT**, and its first line names the shrunken subject. The dropped half is accounted for in **What is lost**, with the harness behaviour that covers it.
+
 ## What is proven today, and what is not
 
 The ruled channel — a global install of `@kampus/fabrika-cli` whose binary finds the repo root, asks Node's resolver what copy that root installed, and hands the invocation over ([`../../../packages/fabrika-cli/README.md`](../../../packages/fabrika-cli/README.md), *How it is delivered*; [`cli-interface-convention.md`](cli-interface-convention.md) rule 5, *Delivery — one name, two installs, both of them real*) — has **two halves, and only one of them is exercised.**
@@ -227,6 +232,27 @@ This is the `run-here` branch of [`../../../packages/fabrika-cli/src/delegate/re
 **Not proven: the published-global half.** `@kampus/fabrika-cli` is not published; `pnpm add --global @kampus/fabrika-cli` answers a registry 404, tracked by [#4791](https://github.com/kamp-us/phoenix/issues/4791) (README, *How it is delivered*, the IMPORTANT callout). So the `delegate` and `warn-and-run-here` branches have unit tests over the pure resolver ([`../../../packages/fabrika-cli/src/delegate/resolve.unit.test.ts`](../../../packages/fabrika-cli/src/delegate/resolve.unit.test.ts)) but **no end-to-end exercise from a registry-installed global.** Nothing below grades that half as proven.
 
 One honest wrinkle found while grading, worth recording because it is easy to mistake for proof: on a machine where the workspace copy has been hand-linked global (`pnpm link --global`), a bare `fabrika` **is** on `PATH` — but that global is the same checkout's copy, not a published artifact, and from a linked worktree it takes the foreign-checkout refusal (exit `126` — `2` when this was reproduced first-hand, re-seated by [#5423](https://github.com/kamp-us/phoenix/issues/5423); `resolve.ts` L82–89, the [#4956](https://github.com/kamp-us/phoenix/issues/4956) branch). A hand-linked global is **not** evidence for the published half.
+
+### The two findings the worktree records rest on
+
+**Every v1 `worktree-guard` hook keys on `$WORKTREE_ROOT`, and nothing writes it.** [`../../../packages/pipeline-cli/src/tools/worktree-guard/command.ts`](../../../packages/pipeline-cli/src/tools/worktree-guard/command.ts) L67 annotates the variable `KNOWN PHANTOM, tracked at` [#3682](https://github.com/kamp-us/phoenix/issues/3682) and L70 reads it as `process.env.WORKTREE_ROOT ?? ""`. Downstream, [`.../worktree-guard/path-resolve.ts`](../../../packages/pipeline-cli/src/tools/worktree-guard/path-resolve.ts) L45 returns `null` on the empty value and every candidate resolves `allow`; [`.../worktree-guard/bash-pin.ts`](../../../packages/pipeline-cli/src/tools/worktree-guard/bash-pin.ts) L62 gates its cd-pin and its two refusals behind the same key. So `pre-file`, `pre-enter` and `reap` are unconditional no-ops in the field, and `pre-bash` survives only through its one env-independent branch. **No worktree record below may be read as "this guard protects us today".** Verified first-hand at commit `08793089`.
+
+**Claude Code 2.1.233 enforces part of the same class natively, and this is what was run rather than read.** Every row was executed from inside a live worktree-isolated agent on 2.1.233, in the linked worktree `.claude/worktrees/agent-…` of this checkout ([#5726](https://github.com/kamp-us/phoenix/issues/5726) carries the full transcript).
+
+| Attempt, from inside the worktree | 2.1.233 |
+| --- | --- |
+| `Write` tool at a `<primary-checkout>/…` path | **refused** — *"Edit the worktree copy of this file instead of the shared-checkout path"* |
+| `git -C <primary-checkout> status` | **refused** — names the `-C` redirect |
+| `git --git-dir=… --work-tree=… status` | **refused** — names the `--git-dir` redirect |
+| `GIT_DIR=… GIT_WORK_TREE=… git status` | **refused** — names the `GIT_DIR` redirect |
+| `cd <primary-checkout> && git status` | **refused** — names the directory change *before running git* |
+| `for f in a b c; do echo "$f"; done` | **refused** — *"too complex to verify that it stays inside the worktree"*; no git in the command at all |
+| `cd <primary-checkout> && ls -d scratchpad` | **allowed** — the cwd guard arms on git, not on every command |
+| `touch <primary-checkout>/scratchpad/<file>` | **allowed, and the file landed** — the tool path is guarded, the shell path is not |
+| `git add -A` | **allowed** |
+| `git worktree add --detach /tmp/<dir> HEAD` | **allowed, and the worktree was created** |
+
+Two more observations from the same session, both load-bearing below. **The harness lock does not cover agent worktrees:** `git worktree list --porcelain` showed 94 registered worktrees, of which exactly three carried a `locked` line — all three `claude agent review-head-*` trees under the temp dir, stamped `pid 38055 start 2026-08-13`, with that pid dead and the trees still registered three days later. This live agent's own `.claude/worktrees/agent-…` tree carried **no** lock. **And v1's sweep is what reclaims:** the pipeline data dir's `worktree-sweep.status` read `exit 0 2026-08-16T23:11:25Z` and its log ended `worktree-sweep: removed 59, pruned 0, kept 53` — 17 of those removals were *nested* worktrees, at `…/worktrees/agent-<a>/.claude/worktrees/agent-<b>`.
 
 ## Records
 
@@ -396,6 +422,113 @@ Ported at [`../../../packages/fabrika-cli/src/hook/spawn.ts`](../../../packages/
 
 **Owner:** `fabrika hook spawn`, declared in [`../hooks.json`](../hooks.json). The dispatch-failure residue is [the ruled policy point](#the-dispatch-failure-policy-point) plus [#4791](https://github.com/kamp-us/phoenix/issues/4791), which removes the `127` state the notice cannot cover; the ungraded `statusline` mode has no owner yet.
 
+### `worktree-guard pre-file` — RETIRE
+
+**Verdict:** RETIRE.
+
+**Graded against:** [`../../../packages/pipeline-cli/src/tools/worktree-guard/path-resolve.ts`](../../../packages/pipeline-cli/src/tools/worktree-guard/path-resolve.ts) L44–46 (`mainCheckoutPrefix` returning `null` on an empty root) and L89–100 (`resolvePath`) · [`../../../packages/pipeline-cli/src/tools/worktree-guard/command.ts`](../../../packages/pipeline-cli/src/tools/worktree-guard/command.ts) L67–70 (the phantom) · [`../../../.claude/settings.json`](../../../.claude/settings.json) L22 (the live `PreToolUse` `Read|Edit|Write` wiring) · Claude Code 2.1.233, observed. Line numbers true at commit `08793089`.
+
+**What it does in v1:** a `PreToolUse` hook on `Read|Edit|Write` that resolves the candidate path against the worktree root rather than the reset cwd — pinning a relative path into the worktree, rewriting a primary-checkout absolute path to its worktree copy, and blocking one that has no copy. Its subject is the crash that already happened at [#3458](https://github.com/kamp-us/phoenix/issues/3458): with the cwd reset to the primary checkout, an agent's first `Edit` carried primary-checkout absolute paths out of its own context and wrote them into primary `main`.
+
+**The channel property that carries the verdict:** the harness refuses the exact act, by tool and by path, on 2.1.233. A `Write` at `<primary-checkout>/scratchpad/<file>` from inside a worktree-isolated agent returned *"This agent is isolated in the worktree …. Edit the worktree copy of this file instead of the shared-checkout path."* — the write never reached the disk. That is the same decision `path-resolve.ts` was written to make, made one layer lower, keyed on the harness's own isolation record instead of on an environment variable nothing sets. Porting it would re-implement a live refusal with a weaker key.
+
+**What is lost:** the rewrite. The harness **blocks**; v1 intended to **rewrite** a primary-checkout path to its worktree copy and let the call through. An agent that names the wrong path now takes a refusal and has to re-issue the call, where v1's design would have silently corrected it. Who notices: the agent, immediately, in the refusal text — which names the worktree to use. That is a strictly louder failure than a silent rewrite, so the loss is real but not a reduction in protection.
+
+**UNKNOWN:** two.
+
+- **The shell path is not covered, and this record does not claim it is.** `touch <primary-checkout>/scratchpad/<file>` from the same session **succeeded** — the harness guards the `Write`/`Edit` tools, not a file write issued through `Bash`. v1's `pre-file` never matched `Bash` either, so this is not residue this record drops; it is an uncovered neighbour, recorded so nobody reads the RETIRE as "writes into the primary checkout are impossible".
+- **Mid-run cwd drift was not reproduced, and one session is not a proof.** [anthropics/claude-code#76197](https://github.com/anthropics/claude-code/issues/76197) reports the worktree cwd pin drifting back to the main repo mid-run. Sampled repeatedly across one long 2.1.233 session, `pwd` and `git rev-parse --show-toplevel` resolved to the worktree every time, including after a 22-second command and after the tool type changed between calls. It did not reproduce. Absence over one session does not establish that it cannot happen.
+
+**Not graded here:** the `Read` half of the matcher. v1 matched `Read|Edit|Write`; only the write side was exercised against 2.1.233, because only the write side carries the [#3458](https://github.com/kamp-us/phoenix/issues/3458) hazard.
+
+**Owner:** none. The hazard is covered natively and nothing is left to carry. The uncovered `Bash` neighbour named in **UNKNOWN** is the next record's, not a residue of this one.
+
+### `worktree-guard pre-bash` — PORT
+
+**Verdict:** PORT — **shrunken to the auto-stage-all refusal alone.** The head-move and redirect refusals retire.
+
+**Graded against:** [`../../../packages/pipeline-cli/src/tools/worktree-guard/bash-pin.ts`](../../../packages/pipeline-cli/src/tools/worktree-guard/bash-pin.ts) L59–63 (`WORKTREE_SEGMENT`, `isManagedWorktree`), L73 (`HEAD_MOVING`), L80–91 (the scoping walk) · [`../../../packages/pipeline-cli/src/tools/worktree-guard/command.ts`](../../../packages/pipeline-cli/src/tools/worktree-guard/command.ts) L67–70 · [`../../../.claude/settings.json`](../../../.claude/settings.json) L31 · Claude Code 2.1.233, observed. Line numbers true at commit `08793089`.
+
+**What it does in v1:** a `PreToolUse` hook on `Bash` doing three jobs — cd-pin a command with no leading `cd`; refuse a working-state-mutating git op (`checkout` / `switch` / `reset` / `rebase` / `stash` / `merge`, the `HEAD_MOVING` set at L73) that is not scoped to the worktree; and refuse an auto-stage-all (`git add -A` / `--all` / `.`, `git commit -a`) regardless of scoping.
+
+**The channel property that carries the verdict:** the harness covers the *escape* and does not touch the *staging*, and both halves were run. Every route out of the worktree was refused by name — `git -C`, `--git-dir`/`--work-tree`, `GIT_DIR`/`GIT_WORK_TREE`, and a leading `cd` into the shared checkout before a git command — so an unscoped head-move can no longer reach the primary checkout, which is the whole of what the `HEAD_MOVING` refusal defended. `git add -A` inside the worktree was **allowed**, and there is no reason for the harness to refuse it: its check answers *where does this command act*, and a stage-all acts exactly where it is supposed to. The [#2666](https://github.com/kamp-us/phoenix/issues/2666) hazard — a long-lived tree where one slice's `git add -A` sweeps up the previous slice's residue — is about *what* gets staged, which nothing in the harness reads.
+
+The harness also refuses a shape it cannot statically verify at all: `for f in a b c; do echo "$f"; done`, with no git in it, came back *"too complex to verify that it stays inside the worktree; break it into plain, separate commands."* That is broader than v1 ever was, and it constrains the port's own shell as much as anyone's.
+
+**What is lost:** the cd-pin rewrite, and it is not being ported. v1 would silently relocate an unpinned command into the worktree; the harness refuses the escaping command instead. Same direction as the `pre-file` record above — a refusal in place of a correction, louder rather than weaker. The `HEAD_MOVING` refusal loses nothing: every path it covered is refused one layer down.
+
+**UNKNOWN:** two.
+
+- **Only `git add -A` was run, not the whole stage-all family.** `git commit -a` / `-am` and `git add .` were not attempted, because the tree was clean and a probe that mutates the lane's own commit graph is not one to run for evidence. They are read as allowed by the same reasoning that makes `-A` allowed — the harness's check is locational — but that is inference, not an observation.
+- **Whether the shape check would refuse the ported hook's own invocation** is unmeasured. The refusal fires on the *agent's* command, not on a hook command the harness runs itself, but nothing here established that.
+
+**Not graded here:** the fail-open-versus-fail-closed dispatch policy, ruled at [#5079](https://github.com/kamp-us/phoenix/issues/5079) and recorded [above](#the-dispatch-failure-policy-point).
+
+**Owner:** [#5195](https://github.com/kamp-us/phoenix/issues/5195), re-scoped to the stage-all refusal. Its head-move criteria are covered natively and are not work.
+
+### `worktree-guard pre-enter` — PORT
+
+**Verdict:** PORT — **shrunken to the `git worktree add` refusal.** The `EnterWorktree` matcher is not wired on this evidence.
+
+**Graded against:** [`../../../packages/pipeline-cli/src/tools/worktree-guard/enter-guard.ts`](../../../packages/pipeline-cli/src/tools/worktree-guard/enter-guard.ts) L17–21 (the block branch, keyed entirely on a non-empty `$WORKTREE_ROOT`) · [`../../../packages/pipeline-cli/src/tools/worktree-guard/bash-pin.ts`](../../../packages/pipeline-cli/src/tools/worktree-guard/bash-pin.ts) L73 (`worktree` absent from `HEAD_MOVING`) · [`../../../.claude/settings.json`](../../../.claude/settings.json) L40 · Claude Code 2.1.233, observed. Line numbers true at commit `08793089`.
+
+**What it does in v1:** a `PreToolUse` hook on the `EnterWorktree` tool that refuses to nest a second worktree inside an isolated one ([#741](https://github.com/kamp-us/phoenix/issues/741)) — and, because its condition is `$WORKTREE_ROOT` being non-empty, refuses nothing in the field.
+
+**The channel property that carries the verdict:** the harness does not refuse the act, and the act is happening. `git worktree add --detach /tmp/<dir> HEAD`, issued from inside a live worktree-isolated agent on 2.1.233, ran to completion and created the worktree — no refusal, and the agent's own isolation record did not arm anything. The field rate is not hypothetical either: the sweep that ran the same day removed **17 nested worktrees**, each at `…/worktrees/agent-<a>/.claude/worktrees/agent-<b>`. This is the one hazard in the set that is both uncovered and observed firing, so it is the strongest PORT of the five.
+
+**What is lost:** nothing from v1 — v1 refused nothing here. What the shrunken port drops relative to [#5196](https://github.com/kamp-us/phoenix/issues/5196)'s written scope is the `EnterWorktree` matcher, and #5196's own acceptance criteria already require exactly that: wire it only if a captured envelope proves the tool is exposed, and otherwise ship the bash half alone and record the finding. This record is that finding.
+
+**UNKNOWN:** two.
+
+- **Whether `EnterWorktree` is exposed as a `PreToolUse` matcher on 2.1.233 is still unproven.** The identifier appears in the 2.1.233 binary 20 times, which establishes the tool exists and nothing more. No envelope was captured.
+- **What creates the nested trees the sweep reaps.** 17 is a count of nested trees, not of `git worktree add` calls: the harness provisions a worktree for an `isolation:worktree` subagent on its own internal path, so a nested tree can arrive without any agent typing the command. Both routes produce the same leak and the same refusal target, but this record cannot say which dominates.
+
+**Not graded here:** the disk cost of a nested tree. It is real and measured elsewhere; the verdict here rests on the refusal gap, not on the size.
+
+**Owner:** [#5196](https://github.com/kamp-us/phoenix/issues/5196), re-scoped to the bash half.
+
+### `worktree-guard reap` (the `SubagentStop` reaper) — RETIRE
+
+**Verdict:** RETIRE.
+
+**Graded against:** [#4934](https://github.com/kamp-us/phoenix/issues/4934)'s grading, carried unchanged · [`../../../.claude/settings.json`](../../../.claude/settings.json) L51 (the live `SubagentStop` wiring) · Claude Code 2.1.233, observed. Line numbers true at commit `08793089`.
+
+**What it does in v1:** a `SubagentStop` hook that reaps the stopping subagent's worktree.
+
+**The channel property that carries the verdict:** the ruled architecture deletes the hook's subject — a per-subagent worktree the subagent's stop can reap. Nothing observed on 2.1.233 disturbs that, so #4934's verdict stands as written. Recorded here because [#5726](https://github.com/kamp-us/phoenix/issues/5726) re-scoped the four PORTs around it and a reader needs the fifth to see the set is complete.
+
+**What is lost:** end-of-run reclamation timed to the stop. It moves to the periodic reclaimer in the next record, which reclaims later and on evidence rather than immediately and on a signal. Stated as weaker on latency: a tree that a stop hook would have removed at once now waits for a sweep.
+
+**UNKNOWN:** none.
+
+**Not graded here:** the end-of-epic-run teardown of the epic worktree, which is the spawner's.
+
+**Owner:** none. The latency residue named in **What is lost** is carried by the next record's reclaimer.
+
+### `worktree-sweep` + `worktree-reap` + `worktree-sweep-detach.sh` — PORT
+
+**Verdict:** PORT.
+
+**Graded against:** [`../../kampus-pipeline/hooks/worktree-sweep-detach.sh`](../../kampus-pipeline/hooks/worktree-sweep-detach.sh) (whole file, 54 lines; L31–33 the no-data-dir fail-open, L41–50 the previous-run report, L52 the background dispatch) · [`../../kampus-pipeline/hooks/resolve-data-dir.sh`](../../kampus-pipeline/hooks/resolve-data-dir.sh) L20–28 · [`../../../packages/pipeline-cli/src/tools/worktree-reap/worktree-reap.ts`](../../../packages/pipeline-cli/src/tools/worktree-reap/worktree-reap.ts) L17–34 (the two signals, and signal 2 having no producer), L67 (reading the harness's own lock stamp) · [`../../../.claude/settings.json`](../../../.claude/settings.json) L78 · Claude Code 2.1.233, observed. Line numbers true at commit `08793089`.
+
+**What it does in v1:** classifies every registered worktree KEEP or REMOVE — removable only when clean **and** already landed on `origin/main` **and** provably not in use — with ref deletion held back to a separate, stricter pass. `worktree-sweep-detach.sh` is the SessionStart entry that dispatches it into the background and reports the previous run's exit; it drains stdin and exits 0 on every path, so it can never abort a session start.
+
+**The channel property that carries the verdict:** the harness's own reclamation is not doing this job, and v1's is. Two observations, one session, 2.1.233. First, the harness's stale sweep left three `claude agent review-head-*` worktrees registered and `locked` by `pid 38055`, stamped `2026-08-13`, with that pid dead — three days later they were still there, and the lock is what spared them from v1's sweep too. Second, v1's sweep had run that same day and recorded `removed 59, pruned 0, kept 53`. The reclaimer is not belt-and-braces over a working native sweep; on this machine it **is** the reclamation.
+
+**`worktree-sweep-detach.sh` is graded here, and it is KEEP.** It had no record before ([#5726](https://github.com/kamp-us/phoenix/issues/5726)), and it is the only live producer of the reclamation above — the status and log files it writes are the evidence this record rests on. Its fail-open shape is load-bearing and carries forward: a reclaimer that can abort a session start is worse than one that skips a cycle. Note the trap it shares with the other `hooks/` entries — it resolves a data dir and returns quietly when there is none, so removing the v1 install path while this entry stays wired turns it into a silent no-op, and the reclamation stops with nothing saying so.
+
+**What is lost:** nothing yet — this is a PORT and the v1 verb keeps running until its replacement lands. What must **not** be lost in the port is named instead, because the temptation to loosen is exactly what makes this verb look broken: the clean-**and**-landed predicate, the separate stricter ref pass, `git worktree remove` never `--force`, and every fail-safe-toward-KEEP signal. An inert-looking reclaimer is the missing owner-stamp producer ([#4180](https://github.com/kamp-us/phoenix/issues/4180)), not a gate to relax.
+
+**UNKNOWN:** three.
+
+- **The harness lock is not a liveness signal for agent worktrees, and the port must not treat it as one.** `worktree-reap.ts` L67 reads the lock's `claude agent <id> (pid <N>)` stamp as presence. On 2.1.233 this live agent's own `.claude/worktrees/agent-…` tree carried **no** lock at all — only the harness's internally provisioned `review-head-*` trees did. So an unlocked tree can be fully live, and a locked one can be three days dead. What is unknown is whether that asymmetry is stable or a version artifact.
+- **Whether fabrika's spawner can write the owner stamp** is exactly [#4180](https://github.com/kamp-us/phoenix/issues/4180)'s open question and is untouched here. If the ruled spawner is the harness's own internal path, this port inherits that blocker rather than solving it.
+- **The counts are one machine at one moment** — 94 registered worktrees, 3 locked, 59 removed in the last sweep. They establish the reclaimer is doing work and the native sweep is not finishing the job; they do not establish a rate.
+
+**Not graded here:** the fabrika home for the verb. [`../skills/build-epic/contract.md`](../skills/build-epic/contract.md) rules out a `build`/`epic` lane verb, leaving the spawner or a standalone maintenance verb, and that call belongs to the port unit.
+
+**Owner:** [#5197](https://github.com/kamp-us/phoenix/issues/5197), which keeps its scope. `worktree-sweep-detach.sh`'s successor is part of it — a reclaimer with no dispatcher reclaims nothing.
+
 ## Related
 
-[#5075](https://github.com/kamp-us/phoenix/issues/5075) · [#5076](https://github.com/kamp-us/phoenix/issues/5076) · [#5077](https://github.com/kamp-us/phoenix/issues/5077) · [#5078](https://github.com/kamp-us/phoenix/issues/5078) · [#4927](https://github.com/kamp-us/phoenix/issues/4927) (the container) · [#4791](https://github.com/kamp-us/phoenix/issues/4791) (publish) · ADR [0238](../../../.decisions/0238-fabrika-reimplements-v1-never-calls-it.md)
+[#5075](https://github.com/kamp-us/phoenix/issues/5075) · [#5076](https://github.com/kamp-us/phoenix/issues/5076) · [#5077](https://github.com/kamp-us/phoenix/issues/5077) · [#5078](https://github.com/kamp-us/phoenix/issues/5078) · [#4927](https://github.com/kamp-us/phoenix/issues/4927) (the container) · [#4934](https://github.com/kamp-us/phoenix/issues/4934) (the worktree grading) · [#5726](https://github.com/kamp-us/phoenix/issues/5726) (the 2.1.233 re-scope) · [#5198](https://github.com/kamp-us/phoenix/issues/5198) (the transcription this replaces) · [#4791](https://github.com/kamp-us/phoenix/issues/4791) (publish) · ADR [0238](../../../.decisions/0238-fabrika-reimplements-v1-never-calls-it.md)
