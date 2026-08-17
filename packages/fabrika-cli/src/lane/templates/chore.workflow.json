@@ -17,30 +17,18 @@
 						"states": {
 							"queued": {
 								"on": {
-									"PARK_SWEEP.WIP": "classify",
+									"PARK_SWEEP.WIP": "unpark",
 									"PARK_SWEEP.BLOCKED": "human:novel-park"
 								}
 							},
-							"classify": {
+							"unpark": {
 								"on": {
-									"PARK_SWEEP.PASS": "apply",
 									"PARK_SWEEP.DONE": "swept",
-									"PARK_SWEEP.BLOCKED": "human:novel-park"
-								}
-							},
-							"apply": {
-								"on": {
-									"PARK_SWEEP.DONE": "verify",
-									"PARK_SWEEP.BLOCKED": "human:novel-park"
-								}
-							},
-							"verify": {
-								"on": {
-									"PARK_SWEEP.PASS": "swept",
+									"PARK_SWEEP.WIP": "unpark",
 									"PARK_SWEEP.BLOCKED": "human:novel-park",
 									"PARK_SWEEP.FAIL": [
 										{
-											"target": "apply",
+											"target": "unpark",
 											"guard": "retriesRemaining",
 											"actions": "incrementRetries"
 										},

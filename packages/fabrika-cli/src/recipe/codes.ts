@@ -103,3 +103,11 @@ export const UNPARK_REFUSED = 20;
  * disagreed: here nothing is proven in either direction and the remedy is reading the run.
  */
 export const RERUN_UNKNOWN = 21;
+
+/**
+ * The chore state `recipe route` was asked about applies no recipe — `queued`, a park, a final, or a
+ * name nobody registered. It is `route`'s own refusal and never a recipe run's outcome, so
+ * [`drive.ts`](./drive.ts) seats no event for it: the operator acts on that state itself (`operate`
+ * §2's table), and a chore drive that ran *some* verb there would be guessing.
+ */
+export const NO_RECIPE = 22;
