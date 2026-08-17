@@ -19,9 +19,16 @@ import type {StdinRead} from "../io/stdin.ts";
 import {normalizeForReadback} from "../report/compose.ts";
 import {renderLeaks, scanBody} from "../report/leaks.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
+import {read as readCriteria} from "../wire/acceptance-criteria.ts";
 import {leakRefusal, readAuthored} from "./authored.ts";
-import {PRECONDITION_UNKNOWN, READBACK_MISMATCH, WRITE_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
-import {composeBody, detect, type EnrichMode, wrapOriginal} from "./enrich.ts";
+import {
+	MALFORMED_CRITERIA,
+	PRECONDITION_UNKNOWN,
+	READBACK_MISMATCH,
+	WRITE_UNKNOWN,
+	ZERO_SCOPE,
+} from "./codes.ts";
+import {authoredRegion, composeBody, detect, type EnrichMode, wrapOriginal} from "./enrich.ts";
 import {legacyPreserved} from "./enrich-legacy.ts";
 
 export interface EnrichOptions {
@@ -121,6 +128,19 @@ export const runEnrich = (
 		}
 
 		const composed = composeBody({mode, issue, authored: authored.text, preserved});
+
+		// ADR 0288 §1: the read runs over the bytes about to be posted, not over stdin — an enclosing
+		// template can demote a heading that arrived conforming. It is scoped to the region above the
+		// marker, which `composeBody` guarantees is `composed`'s own prefix, because the preserved
+		// original below it is redacted rather than refused; a legacy `##` heading buried there would
+		// otherwise refuse every re-enrichment forever. `Absent` stays allowed (#5565).
+		const criteria = readCriteria(authoredRegion(mode, authored.text));
+		if (criteria._tag === "Malformed") {
+			return refuse(
+				MALFORMED_CRITERIA,
+				`triage enrich: ${surface.noun} composes an acceptance-criteria block the wire reader rejects — ${criteria.reason} (${criteria.evidence}). The grammar is owned by packages/fabrika-cli/src/wire/acceptance-criteria.ts; fix the block or drop it.`,
+			);
+		}
 
 		const written = yield* patchIssueBody(repo, issue, composed);
 		if (written._tag === "Failure") {

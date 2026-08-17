@@ -1,5 +1,6 @@
 import {describe, expect, it} from "vitest";
 import {
+	authoredRegion,
 	composeBody,
 	detect,
 	MARKER_RE,
@@ -67,6 +68,16 @@ describe("the composed envelope", () => {
 		expect(enrichedEpic()).toBe(
 			`## Pitch\n\n${PITCH}\n\n## Epic — awaiting plan\n\n\`plan-epic\` appends its plan and dependency topology below.\n\n<!-- fabrika:enriched issue=4312 mode=wrap -->\n<details>\n${SUMMARY_LINE.wrap}\n\n${ORIGINAL}\n\n</details>\n`,
 		);
+	});
+
+	/**
+	 * The verb's ADR-0288 read-back runs over `authoredRegion(...)` and posts `composeBody(...)`. If
+	 * those two ever stop being the same leading bytes, the verb is reading something it does not
+	 * post — which is the defect 0288 §1 exists to refuse — and no test of the verb would show it.
+	 */
+	it("leads the composed body with exactly the authored region, in both modes", () => {
+		expect(enrichedDefault().startsWith(authoredRegion("rewrite", REWRITE))).toBe(true);
+		expect(enrichedEpic().startsWith(authoredRegion("wrap", PITCH))).toBe(true);
 	});
 
 	it("binds the issue number and the mode into the marker", () => {

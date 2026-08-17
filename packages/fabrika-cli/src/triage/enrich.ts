@@ -109,8 +109,16 @@ export const detect = (
 
 const EPIC_HEADER = "## Epic — awaiting plan";
 
-/** The authored region — everything above the marker — for one mode and one caller's stdin. */
-const authoredRegion = (mode: EnrichMode, text: string): string =>
+/**
+ * The authored region — everything above the marker — for one mode and one caller's stdin.
+ *
+ * Exported because it is the slice a producer's own read-back runs over (ADR 0288 §1): it is the
+ * composed body's leading bytes, template headings and separators included, so a section the
+ * envelope demoted is visible; and it stops above the marker, so the preserved original — foreign
+ * bytes this verb redacts rather than judges — stays out of reach. `composeBody` below is the law
+ * that the two are the same bytes.
+ */
+export const authoredRegion = (mode: EnrichMode, text: string): string =>
 	mode === "rewrite"
 		? `${text.trim()}\n\n---\n\n`
 		: `## Pitch\n\n${text.trim()}\n\n${EPIC_HEADER}\n\n\`plan-epic\` appends its plan and dependency topology below.\n\n`;
