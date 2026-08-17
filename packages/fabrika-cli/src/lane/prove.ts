@@ -117,7 +117,10 @@ export type RangeTrace =
 			readonly _tag: "One";
 			readonly branch: string;
 			readonly tip: string;
+			/** Every commit the range adds — the artifact's size. */
 			readonly commits: number;
+			/** How many of those name this issue — the evidence the range is this child's. */
+			readonly naming: number;
 	  }
 	| {readonly _tag: "None"; readonly why: string}
 	| {readonly _tag: "Many"; readonly branches: ReadonlyArray<string>};
@@ -155,7 +158,13 @@ export const traceRange = (
 	const [first] = carrying;
 	if (first !== undefined) {
 		return carrying.length === 1
-			? {_tag: "One", branch: first.branch, tip: first.tip, commits: first.messages.length}
+			? {
+					_tag: "One",
+					branch: first.branch,
+					tip: first.tip,
+					commits: first.messages.length,
+					naming: first.messages.filter((message) => issueRefsIn(message).includes(issue)).length,
+				}
 			: {_tag: "Many", branches: carrying.map((fact) => fact.branch)};
 	}
 	const names = facts.map((fact) => fact.branch).join(", ");
@@ -292,25 +301,26 @@ export type Proof =
  *
  * `subject` is what the verdicts were read on — `#<pr>` for a PR-scoped read, the child's range for
  * a range-scoped one. One fold serves both, so the bar a child's review must clear cannot drift
- * from the bar the tail's does.
+ * from the bar the tail's does. That is also why the strings say "still binds" rather than
+ * "current-head": a range has no head, and only the caller knows which binding it asked for.
  */
 export const foldNamespaces = (rows: ReadonlyArray<NamespaceRow>, subject: string): Proof => {
 	const failed = rows.filter((row) => row.state === "fail");
 	if (failed.length > 0) {
 		return {
 			_tag: "Contradicted",
-			what: `${subject} holds a current-head FAIL in ${failed.map((row) => row.namespace).join(", ")} — the artifact says FAIL, so PASS is not the event this outcome earns`,
+			what: `${subject} holds a FAIL that still binds in ${failed.map((row) => row.namespace).join(", ")} — the artifact says FAIL, so PASS is not the event this outcome earns`,
 		};
 	}
 	const pending = rows.filter((row) => row.state !== "pass");
 	if (pending.length > 0) {
 		return {
 			_tag: "InFlight",
-			what: `${subject} has no current-head verdict in ${pending.map((row) => `${row.namespace} (${row.state})`).join(", ")} — the review is not finished, so nothing is recorded`,
+			what: `${subject} has no verdict that still binds in ${pending.map((row) => `${row.namespace} (${row.state})`).join(", ")} — the review is not finished, so nothing is recorded`,
 		};
 	}
 	return {
 		_tag: "Proven",
-		note: `every derived namespace holds a current-head PASS on ${subject}: ${rows.map((row) => row.namespace).join(", ")}`,
+		note: `every derived namespace holds a PASS that still binds on ${subject}: ${rows.map((row) => row.namespace).join(", ")}`,
 	};
 };

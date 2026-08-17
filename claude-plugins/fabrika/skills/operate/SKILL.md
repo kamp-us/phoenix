@@ -213,12 +213,13 @@ answer), and you never re-spawn what the fold has not re-asked for.
 A third refusal guards the `FAIL` row, and it is the one half `lane prove` cannot take off your
 hands — the verb enforces it mechanically for a `PASS` (exit `23`), while a `FAIL` claims no
 artifact and so is proven by nothing: **a reviewer `FAIL` is recorded only when every derived
-namespace holds a current-head verdict** — governance included, on a `harness: true` diff. `FAIL`
+namespace holds a verdict that still binds** — governance included, on a `harness: true` diff. `FAIL`
 routes the machine into a repair build, and a repair pushes a new head; recorded while any
 namespace is still in flight, it orphans that namespace's verdict mid-write and spends one of the
 machine's retries on a verdict set nobody finished. A reviewer report carrying a `FAIL` beside a
-namespace with no current-head verdict is an incomplete read, not an event: re-read the PR's
-verdicts until every derived namespace is terminal at the head, then record. No repair builder is
+namespace with no verdict that still binds is an incomplete read, not an event: re-read the
+artifact's verdicts — the PR's, or the child range's — until every derived namespace is terminal
+against what that artifact carries now, then record. No repair builder is
 ever spawned while any namespace at the head is non-terminal.
 
 `lane transition` exits are verdicts: `12` means the event was refused and the log left

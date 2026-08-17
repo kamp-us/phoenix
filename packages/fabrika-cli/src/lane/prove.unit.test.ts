@@ -107,6 +107,21 @@ describe("traceRange", () => {
 			branch: carrying.branch,
 			tip: "03135b9",
 			commits: 1,
+			naming: 1,
+		});
+	});
+
+	it("counts the range whole and the naming commits apart, never one as the other", () => {
+		const mixed = {
+			...carrying,
+			messages: [commit(5829), commit(5824), "chore: no issue in this subject"],
+		};
+		expect(traceRange(5829, "epic/5800", [mixed])).toEqual({
+			_tag: "One",
+			branch: carrying.branch,
+			tip: "03135b9",
+			commits: 3,
+			naming: 1,
 		});
 	});
 

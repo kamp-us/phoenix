@@ -428,7 +428,11 @@ const runEpic = (
 		),
 	);
 
-const REV = (rev: string) => new RegExp(`^git rev-parse --verify --quiet ${rev}\\^\\{commit\\}$`);
+/** A ref name is matched literally, so `build/pr-1` never reaches the engine as a pattern. */
+const literally = (text: string): string => text.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
+
+const REV = (rev: string) =>
+	new RegExp(`^git rev-parse --verify --quiet ${literally(rev)}\\^\\{commit\\}$`);
 const BRANCHES = /^git for-each-ref --format=%\(refname:short\) refs\/heads$/;
 const LOG_RANGE = /^git log --format=/;
 const RAW = /^git diff .* --raw --abbrev=40 -z /;
@@ -456,7 +460,7 @@ const locating = (
 ): ReadonlyArray<readonly [RegExp, ExecResult]> => [
 	[REV("epic/4300"), okOut(`${EPIC_BASE}\n`)],
 	[BRANCHES, okOut(`${branches.join("\n")}\n`)],
-	[REV(CHILD_BRANCH.replace(/\//g, "\\/")), okOut(`${CHILD_TIP}\n`)],
+	[REV(CHILD_BRANCH), okOut(`${CHILD_TIP}\n`)],
 	[/^git rev-parse --verify --quiet build\//, okOut(`${CHILD_TIP}\n`)],
 	[LOG_RANGE, logOf(...commits)],
 ];
@@ -486,9 +490,28 @@ describe("lane prove — an epic child's DONE stands on commits, never on a PR",
 				branch: CHILD_BRANCH,
 				range: {base: EPIC_BASE, tip: CHILD_TIP},
 				commits: 1,
+				naming: 1,
 			},
 		});
 		expect(shell.calls.filter((line) => line.startsWith("gh "))).toEqual([]);
+	});
+
+	it("reports the range's size and its naming commits as the two numbers they are", async () => {
+		const shell = fakeShell([
+			...locating(
+				[CHILD_BRANCH, "main", "epic/4300"],
+				[
+					[CHILD_TIP, CHILD_MESSAGE],
+					["2222222222222222222222222222222222222222", "feat(lane): groundwork, no issue named"],
+				],
+			),
+		]);
+
+		const out = await runEpic(epicLaneAt("build"), shell, "DONE", "issue_4301");
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).evidence).toMatchObject({commits: 2, naming: 1});
+		expect(out.stderr.join("\n")).toContain("adds 2 commit(s), 1 of them naming #4301");
 	});
 
 	it("refuses a child DONE whose branch was cut and never built on", async () => {

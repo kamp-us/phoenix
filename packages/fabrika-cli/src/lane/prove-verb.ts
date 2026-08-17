@@ -151,6 +151,7 @@ export const runProve = (
 							branch: located.branch,
 							range: {base: located.base, tip: located.tip},
 							commits: located.commits,
+							naming: located.naming,
 						},
 					},
 					null,
@@ -463,6 +464,7 @@ interface Located {
 	readonly base: string;
 	readonly tip: string;
 	readonly commits: number;
+	readonly naming: number;
 	readonly notes: ReadonlyArray<string>;
 }
 
@@ -542,9 +544,10 @@ const locateRange = (
 			base: base.value,
 			tip: trace.tip,
 			commits: trace.commits,
+			naming: trace.naming,
 			notes: [
 				...notes,
-				`${VERB}: ${baseRef}..${trace.branch} adds ${trace.commits} commit(s) naming #${issue}.`,
+				`${VERB}: ${baseRef}..${trace.branch} adds ${trace.commits} commit(s), ${trace.naming} of them naming #${issue}.`,
 			],
 		};
 	});
