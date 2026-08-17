@@ -31,7 +31,7 @@ import {
 } from "../wire/lane-brief.ts";
 import {ISSUE_UNRESOLVED, LANE_UNREADABLE, NO_SHELL, PR_AMBIGUOUS, TASK_UNKNOWN} from "./codes.ts";
 import {foldLog, resolveTask} from "./fold.ts";
-import type {CompiledLane} from "./machine.ts";
+import {epicOf, issueOf} from "./prove.ts";
 import {loadRefusal, replayRefusal} from "./refusals.ts";
 import {type LaneRef, loadLane} from "./store.ts";
 
@@ -43,31 +43,6 @@ export interface BriefOptions extends LaneRef {
 	readonly repo: string | null;
 	readonly env: Readonly<Record<string, string | undefined>>;
 }
-
-/**
- * The issue a task drives: the number in an emitted epic lane's task name (`issue_<n>`, or the tail
- * phase's `epic_<n>`), else the lane id itself on a single-issue lane. `null` when neither carries
- * one.
- */
-const issueOf = (lane: string, task: string): number | null => {
-	const named = /^(?:issue|epic)_(\d+)$/.exec(task);
-	if (named?.[1] !== undefined) return Number.parseInt(named[1], 10);
-	return /^\d+$/.test(lane.trim()) ? Number.parseInt(lane.trim(), 10) : null;
-};
-
-/**
- * The epic a lane's tail phase reviews and ships, read off the tail task's own name — `null` on a
- * single-issue lane, which has no tail. That name is the emitter's structural mark of the one-PR
- * shape (`emit.ts`'s `epicTaskId`), so recognising it needs no second declaration: on such a lane
- * every OTHER task is a child region, whose states have no PR at all (ADR 0285).
- */
-const epicOf = (lane: CompiledLane): number | null => {
-	for (const taskId of Object.keys(lane.tasks)) {
-		const named = /^epic_(\d+)$/.exec(taskId);
-		if (named?.[1] !== undefined) return Number.parseInt(named[1], 10);
-	}
-	return null;
-};
 
 type UrlRead =
 	| {readonly _tag: "Url"; readonly url: ArtifactUrl}
@@ -142,7 +117,7 @@ export const runBrief = (
 		const shell = shellOf(state);
 
 		const notes = [`${VERB}: folded ${loaded.entries.length} event(s) from ${loaded.logPath}.`];
-		const issue = issueOf(options.lane, task);
+		const issue = issueOf(task, options.lane);
 		if (issue === null) {
 			return refuse(
 				ISSUE_UNRESOLVED,
@@ -162,7 +137,7 @@ export const runBrief = (
 		const read = yield* issueUrl(VERB, repo.value, issue, notes);
 		if (read._tag === "Refused") return read.outcome;
 
-		const epic = epicOf(loaded.lane);
+		const epic = epicOf(Object.keys(loaded.lane.tasks));
 		if (epic !== null && task !== `epic_${epic}`) {
 			if (state === "ship") {
 				return refuse(

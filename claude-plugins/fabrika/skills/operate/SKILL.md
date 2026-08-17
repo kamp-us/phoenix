@@ -138,8 +138,11 @@ recorded this pass.
 ## 3 — Prove the outcome, then record one event
 
 **Artifacts over self-reports.** A spawn's report is data; what moves the machine is the artifact
-behind it. The retired epic conductor held this rule against the git graph; a lane owns no
-branch, so the lane's proof is the board — and it runs **before** the event, never after:
+behind it. The retired epic conductor held this rule against the git graph; the verb below holds it
+against whichever artifact the task's own shape has — the board for a single-issue lane and for an
+epic run's tail, the commit range and its range-scoped verdict for an epic child, which opens no PR
+at all (ADR 0285). You never pick which; it reads the shape off the machine. It runs **before** the
+event, never after:
 
 ```bash
 node packages/fabrika-cli/src/bin.ts lane prove $lane_key DONE
@@ -162,11 +165,11 @@ event and never skipped as an optimisation. Its refusals each name a different n
 | Exit | What it read | What you do |
 | --- | --- | --- |
 | `0` | the artifact is there (or the event claims none) | record the event |
-| `22` | no open PR links the task's issue, and no legal no-PR outcome is proven either — the issue is not a `type:investigation`, or it is one but no diagnosis was posted since the task entered `build` | the report is unproven — record `BLOCKED`, never the `DONE` |
-| `23` | a derived namespace has no current-head verdict | record **nothing**; re-read this pass |
-| `24` | a current-head `FAIL` under a claimed `PASS` | record the event the artifact supports (`FAIL`) |
-| `25` | several open PRs link the issue | park — step 4, naming the ambiguity |
-| `11` | a lane or board read failed | the proof is UNKNOWN — end `STOPPED` naming the code |
+| `22` | the artifact is provably absent — no open PR links the task's issue and no legal no-PR outcome is proven either (the issue is not a `type:investigation`, or it is one but no diagnosis was posted since the task entered `build`); on an epic child, no branch in this tree carries commits naming it | the report is unproven — record `BLOCKED`, never the `DONE` |
+| `23` | a derived namespace has no verdict that still binds — no current-head one on a PR, or, on an epic child, none whose content digest matches what the range carries now | record **nothing**; re-read this pass |
+| `24` | a still-binding `FAIL` under a claimed `PASS` | record the event the artifact supports (`FAIL`) |
+| `25` | several candidates — open PRs linking the issue, or lane branches carrying an epic child's commits | park — step 4, naming the ambiguity |
+| `11` | a lane, board or tree read failed | the proof is UNKNOWN — end `STOPPED` naming the code |
 
 A builder's `SUCCESS-NO-PR` is a proven `DONE`, not an unproven one: the verb takes the no-PR arm
 only for a `type:investigation`, and proves it from the diagnosis comment posted since the task
@@ -176,11 +179,16 @@ the report.
 | Spawn report | Event |
 | --- | --- |
 | builder `SHIPPED-PR` / `SUCCESS-NO-PR` | `DONE` |
-| reviewer: every namespace verdict `PASS` at the current head | `PASS` |
-| reviewer: every derived namespace terminal at the current head, at least one `FAIL` | `FAIL` |
-| reviewer: any derived namespace still without a current-head verdict | no event — re-read, see below |
+| reviewer: every namespace verdict `PASS` and still binding | `PASS` |
+| reviewer: every derived namespace terminal on a still-binding verdict, at least one `FAIL` | `FAIL` |
+| reviewer: any derived namespace without a still-binding verdict | no event — re-read, see below |
 | shipper `already-merged` / `QUEUED` / `landed` | `DONE` |
 | anything else — a back-off, an escalation, a stop, an awaiting-approval, a permission denial, a dead or unresponsive spawn, a report you cannot parse | `BLOCKED` |
+
+**Still binding** is one rule read against whichever artifact the subject has: on a PR, a verdict at
+its current head; on an epic child, which opens no PR, a verdict whose content digest matches what
+the child's range carries now (ADR 0276). You never judge that yourself — `lane prove` reads it, and
+its exit is what decides.
 
 **A recipe run's exit folds through the same verb that routed it**, never through a reading of
 your own:
@@ -210,12 +218,13 @@ answer), and you never re-spawn what the fold has not re-asked for.
 A third refusal guards the `FAIL` row, and it is the one half `lane prove` cannot take off your
 hands — the verb enforces it mechanically for a `PASS` (exit `23`), while a `FAIL` claims no
 artifact and so is proven by nothing: **a reviewer `FAIL` is recorded only when every derived
-namespace holds a current-head verdict** — governance included, on a `harness: true` diff. `FAIL`
+namespace holds a verdict that still binds** — governance included, on a `harness: true` diff. `FAIL`
 routes the machine into a repair build, and a repair pushes a new head; recorded while any
 namespace is still in flight, it orphans that namespace's verdict mid-write and spends one of the
 machine's retries on a verdict set nobody finished. A reviewer report carrying a `FAIL` beside a
-namespace with no current-head verdict is an incomplete read, not an event: re-read the PR's
-verdicts until every derived namespace is terminal at the head, then record. No repair builder is
+namespace with no verdict that still binds is an incomplete read, not an event: re-read the
+artifact's verdicts — the PR's, or the child range's — until every derived namespace is terminal
+against what that artifact carries now, then record. No repair builder is
 ever spawned while any namespace at the head is non-terminal.
 
 `lane transition` exits are verdicts: `12` means the event was refused and the log left

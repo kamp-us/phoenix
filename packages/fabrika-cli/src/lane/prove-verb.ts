@@ -2,27 +2,34 @@
  * `lane prove` — read the artifact a lane event claims, before the event is recorded.
  *
  * "Artifacts over self-reports" was the retired epic conductor's standing rule, enforced by reading
- * the git graph. This is the lane machine's counterpart, and it reads the board instead: a lane
- * operator owns no branch, so the only thing that can contradict a spawn's report is an open PR
- * tracing to the task's issue and the verdicts on it (ADR 0283 — that ordering is GitHub's, never
- * the local ledger's).
+ * the git graph. This is the lane machine's counterpart, and which artifact it reads is the task's
+ * own shape: a single-issue lane and an epic run's tail are contradicted by an open PR tracing to
+ * the task's issue and the verdicts on it (ADR 0283 — that ordering is GitHub's, never the local
+ * ledger's); an epic run's child opens no PR at all (ADR 0285), so its `DONE` is contradicted by the
+ * commits its branch adds over the epic branch, read off this tree, and its `PASS` by a range-bound
+ * verdict on the child issue that still binds the content it judged (ADR 0276).
  *
  * **It writes nothing.** The proof sits beside `lane transition` rather than inside it so the
  * append path stays pure, offline and byte-identical on refusal; what makes it non-optional is
  * `operate` step 3, which runs it first and records only on its exit 0.
  *
- * Every refusal names what it looked for, and the three failing readings stay on three codes
- * because their remedies are opposite: nothing there, not finished yet, says the other thing.
+ * Every refusal names what it looked for, and the failing readings stay on their own codes because
+ * their remedies are opposite: nothing there, not finished yet, says the other thing, several
+ * candidates. The four are the artifact-independent vocabulary, so the range arms allocate no new
+ * seat — what a caller must do about "the artifact is not there" does not change with its kind.
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {resolveTargetRepo} from "../build/target.ts";
+import {localBranches, rangeCommits, resolveCommit} from "../io/git.ts";
 import {getIssue, listComments} from "../io/issues.ts";
 import {getPullRequest, listPullFiles, openPullsClosing, searchOpenPulls} from "../io/pulls.ts";
 import {issueRefOf, namespacesOf, partition, touchesGovernanceRoot} from "../review/classes.ts";
-import {contentDigestAt} from "../review/content-binding.ts";
+import {bindRange, contentDigestAt, rangeContentAt} from "../review/content-binding.ts";
 import {bindHead} from "../review/head.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
+import {epicBranch} from "../wire/lane-brief.ts";
+import {read as readRangeMarker} from "../wire/range-verdict-marker.ts";
 import {bindToContent, read as readMarker} from "../wire/verdict-marker.ts";
 import {
 	LANE_UNREADABLE,
@@ -34,7 +41,10 @@ import {
 } from "./codes.ts";
 import {foldLog, resolveTask} from "./fold.ts";
 import {
+	type BranchFact,
+	childLaneBranches,
 	claimOf,
+	epicOf,
 	foldNamespaces,
 	INVESTIGATION_LABEL,
 	issueOf,
@@ -42,8 +52,10 @@ import {
 	type NamespaceRow,
 	type Proof,
 	type PullFact,
+	roleOf,
 	traceDiagnosis,
 	tracePulls,
+	traceRange,
 	type VerdictFact,
 } from "./prove.ts";
 import {loadRefusal, replayRefusal} from "./refusals.ts";
@@ -104,7 +116,8 @@ export const runProve = (
 		const taskId = task.taskId;
 		const leaf = fold.states[taskId]?.type ?? "";
 		const event = options.event.toUpperCase();
-		const claim = claimOf(event, leaf);
+		const role = roleOf(taskId, epicOf(Object.keys(loaded.lane.tasks)));
+		const claim = claimOf(event, leaf, role);
 		if (claim._tag === "None") {
 			return answer(
 				JSON.stringify({proof: "not-required", event, task: taskId, state: leaf}, null, 2),
@@ -116,13 +129,45 @@ export const runProve = (
 		if (issue === null) {
 			return refuse(
 				TASK_UNKNOWN,
-				`${VERB}: neither task "${taskId}" nor lane "${options.lane}" names an issue number, so there is no board target to prove ${event} against.`,
+				`${VERB}: neither task "${taskId}" nor lane "${options.lane}" names an issue number, so there is no target to prove ${event} against.`,
+			);
+		}
+
+		// A child's range lives in this tree, not on the board, so the repo is not resolved for it —
+		// a `gh`-shaped read that failed would report a range this verb never needed as UNKNOWN.
+		if (claim._tag === "RangeCommits") {
+			const located = yield* locateRange(claim.epic, issue);
+			if (located._tag === "Refused") return located.outcome;
+			return answer(
+				JSON.stringify(
+					{
+						proof: "proven",
+						event,
+						task: taskId,
+						issue,
+						evidence: {
+							kind: "range-commits",
+							epic: claim.epic,
+							branch: located.branch,
+							range: {base: located.base, tip: located.tip},
+							commits: located.commits,
+							naming: located.naming,
+						},
+					},
+					null,
+					2,
+				),
+				located.notes,
 			);
 		}
 
 		const resolved = yield* resolveTargetRepo(VERB, options.repo, options.env);
 		if (resolved._tag === "Refused") return resolved.outcome;
 		const repo = resolved.repo;
+
+		if (claim._tag === "RangeVerdict") {
+			return yield* proveRangeVerdicts(repo, claim.epic, issue, taskId, event);
+		}
 
 		const traced = yield* traceOpenPull(repo, issue);
 		if (traced._tag === "Refused") return traced.outcome;
@@ -393,7 +438,7 @@ const proveVerdicts = (
 			`${VERB}: #${pr} at ${head} derives ${required.join(", ")}; read ${commented.value.length} comment(s).`,
 		);
 
-		const proof = foldNamespaces(rows, pr);
+		const proof = foldNamespaces(rows, `#${pr}`);
 		if (proof._tag !== "Proven") return seat(proof, notes);
 		return answer(
 			JSON.stringify(
@@ -403,6 +448,228 @@ const proveVerdicts = (
 					task: taskId,
 					issue,
 					evidence: {kind: "head-verdicts", pr, head, namespaces: rows},
+				},
+				null,
+				2,
+			),
+			notes,
+		);
+	});
+
+interface Located {
+	readonly _tag: "Located";
+	readonly branch: string;
+	/** The epic branch's own ref name, so a diagnostic names a range a human can re-run. */
+	readonly baseRef: string;
+	readonly base: string;
+	readonly tip: string;
+	readonly commits: number;
+	readonly naming: number;
+	readonly notes: ReadonlyArray<string>;
+}
+
+type Refused = {readonly _tag: "Refused"; readonly outcome: VerbOutcome};
+
+/**
+ * The one commit range a child built, read off this tree's refs and object database.
+ *
+ * Off the tree rather than off a search index because a child's work is never published: nothing on
+ * GitHub knows it exists until the epic's single PR opens at the tail. The branch is nominated by
+ * `build branch`'s own grammar (`../build/lane.ts`'s parser, never a second regex) and the range is
+ * then the evidence — a branch is only a name until commits naming this child sit on it.
+ *
+ * A ref this tree cannot resolve is UNKNOWN, never "not built": an operator standing in a checkout
+ * the epic run never touched would otherwise read as a proof that the run did nothing.
+ */
+const locateRange = (
+	epic: number,
+	issue: number,
+): Effect.Effect<Located | Refused, never, ChildProcessSpawner.ChildProcessSpawner> =>
+	Effect.gen(function* () {
+		const baseRef = epicBranch(epic);
+		const base = yield* resolveCommit(baseRef, " — the epic run's assembly branch");
+		if (base._tag === "Failure") {
+			return {
+				_tag: "Refused" as const,
+				outcome: unreadable(`"${baseRef}" in this tree`, base.reason),
+			};
+		}
+		const branches = yield* localBranches;
+		if (branches._tag === "Failure") {
+			return {
+				_tag: "Refused" as const,
+				outcome: unreadable("this tree's local branches", branches.reason),
+			};
+		}
+		const candidates = childLaneBranches(issue, branches.value);
+		const facts: BranchFact[] = [];
+		for (const branch of candidates) {
+			const tip = yield* resolveCommit(branch);
+			if (tip._tag === "Failure") {
+				return {_tag: "Refused" as const, outcome: unreadable(`branch "${branch}"`, tip.reason)};
+			}
+			const walked = yield* rangeCommits(base.value, tip.value);
+			if (walked._tag === "Failure") {
+				return {
+					_tag: "Refused" as const,
+					outcome: unreadable(`the commits "${branch}" adds over ${baseRef}`, walked.reason),
+				};
+			}
+			facts.push({branch, tip: tip.value, messages: walked.value.map((row) => row.message)});
+		}
+
+		const notes = [
+			`${VERB}: #${issue} is a child of epic #${epic} and opens no PR of its own — looked in this tree for a lane branch of #${issue} over ${baseRef}; ${branches.value.length} local branch(es) read, ${candidates.length} candidate(s).`,
+		];
+		const trace = traceRange(issue, baseRef, facts);
+		if (trace._tag === "None") {
+			return {_tag: "Refused" as const, outcome: seat({_tag: "Absent", what: trace.why}, notes)};
+		}
+		if (trace._tag === "Many") {
+			return {
+				_tag: "Refused" as const,
+				outcome: seat(
+					{
+						_tag: "Ambiguous",
+						what: `${trace.branches.join(", ")} each carry commits naming #${issue} — which range this lane built is not derivable here`,
+					},
+					notes,
+				),
+			};
+		}
+		return {
+			_tag: "Located" as const,
+			branch: trace.branch,
+			baseRef,
+			base: base.value,
+			tip: trace.tip,
+			commits: trace.commits,
+			naming: trace.naming,
+			notes: [
+				...notes,
+				`${VERB}: ${baseRef}..${trace.branch} adds ${trace.commits} commit(s), ${trace.naming} of them naming #${issue}.`,
+			],
+		};
+	});
+
+/** One namespace's newest range-scoped verdict claim, before the binding question is asked of it. */
+interface RangeClaim {
+	readonly namespace: string;
+	readonly polarity: "PASS" | "FAIL";
+	readonly commentId: number;
+	readonly content: string;
+	readonly range: string;
+}
+
+/**
+ * The child arm of the `PASS` claim: a range-bound verdict on the child issue that still binds.
+ *
+ * The required namespaces are derived from the range's own changed paths through the same
+ * `review scope` partition and the same `governance` floor the PR arm uses, so a child's bar is the
+ * tail's bar asked of a different scope. What binds is content and only content (ADR 0276): the two
+ * SHAs a range marker names stop being history the moment the range merges into the epic branch, so
+ * `bindRange` compares the digest the reviewer recorded against the digest this range carries now —
+ * a verdict written over a sibling's range, or over a tip the builder has since moved past, reads
+ * `Stale` and refuses.
+ *
+ * A comment carrying a PR-scoped marker is `Malformed` to this reader rather than absent, and is
+ * counted into the diagnostics instead of dropped: a verdict posted in the wrong format is the one
+ * failure that would otherwise present as "the reviewer never ran".
+ */
+const proveRangeVerdicts = (
+	repo: string,
+	epic: number,
+	issue: number,
+	taskId: string,
+	event: string,
+): Effect.Effect<VerbOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
+	Effect.gen(function* () {
+		const located = yield* locateRange(epic, issue);
+		if (located._tag === "Refused") return located.outcome;
+		const range = `${located.baseRef}..${located.branch}`;
+
+		const content = yield* rangeContentAt({base: located.base, tip: located.tip});
+		if (content._tag === "Failure") {
+			return unreadable(`the content ${range} changes`, content.reason);
+		}
+		const required = [
+			...namespacesOf(partition(content.value.paths)),
+			...(touchesGovernanceRoot(content.value.paths) ? ["governance"] : []),
+		];
+
+		const commented = yield* listComments(repo, issue);
+		if (commented._tag === "Failure") {
+			return unreadable(`the comments on #${issue}`, commented.reason);
+		}
+
+		// Newest write stamp wins per namespace — the ordering the PR arm folds on, for the reason it
+		// folds on it: a FAIL upserted after a PASS must win (#4200).
+		const latest = new Map<string, RangeClaim>();
+		const stamps = new Map<string, string>();
+		const malformed: string[] = [];
+		for (const comment of commented.value) {
+			const parsed = readRangeMarker(comment.body);
+			if (parsed._tag === "Malformed") {
+				malformed.push(`#${comment.id}: ${parsed.reason}`);
+				continue;
+			}
+			if (parsed._tag !== "Found") continue;
+			const marker = parsed.value;
+			if (!required.includes(marker.namespace)) continue;
+			const seen = stamps.get(marker.namespace);
+			if (seen !== undefined && seen > comment.updatedAt) continue;
+			stamps.set(marker.namespace, comment.updatedAt);
+			latest.set(marker.namespace, {
+				namespace: marker.namespace,
+				polarity: marker.polarity,
+				commentId: comment.id,
+				content: marker.content,
+				range: `${marker.range.base}..${marker.range.tip}`,
+			});
+		}
+
+		const claims = [...latest.values()];
+		const inForce: VerdictFact[] = claims.map((claim) => {
+			const binding = bindRange(claim, {_tag: "Digest", digest: content.value.digest});
+			return {
+				namespace: claim.namespace,
+				polarity: claim.polarity,
+				binding:
+					binding._tag === "Current" ? "current" : binding._tag === "Stale" ? "stale" : "unknown",
+				commentId: claim.commentId,
+			};
+		});
+		const rows: ReadonlyArray<NamespaceRow> = judgeVerdicts(required, inForce);
+		const notes = [
+			...located.notes,
+			`${VERB}: ${range} changes ${content.value.paths.length} path(s) at content ${content.value.digest} and derives ${required.join(", ")}; read ${commented.value.length} comment(s) on #${issue}.`,
+			...claims.map(
+				(claim) =>
+					`${VERB}: ${claim.namespace} claims ${claim.polarity} over range ${claim.range} bound to content ${claim.content}.`,
+			),
+			...malformed.map(
+				(reason) =>
+					`${VERB}: a comment on #${issue} reaches for a verdict marker and is not a range one — ${reason}`,
+			),
+		];
+
+		const proof = foldNamespaces(rows, `${range} (content ${content.value.digest})`);
+		if (proof._tag !== "Proven") return seat(proof, notes);
+		return answer(
+			JSON.stringify(
+				{
+					proof: "proven",
+					event,
+					task: taskId,
+					issue,
+					evidence: {
+						kind: "range-verdicts",
+						epic,
+						branch: located.branch,
+						range: {base: located.base, tip: located.tip},
+						content: content.value.digest,
+						namespaces: rows,
+					},
 				},
 				null,
 				2,

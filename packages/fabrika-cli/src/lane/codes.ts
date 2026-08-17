@@ -110,27 +110,35 @@ export const KEY_MALFORMED = 21;
 
 /**
  * The artifact the event claims is **provably not there**: no open pull request traces to the
- * task's issue, and the issue is not one a no-PR outcome is legal on. The event is a self-report
- * nothing corroborates, so the remedy is to route the spawn's outcome as blocked, not to record it.
+ * task's issue and the issue is not one a no-PR outcome is legal on, or — on an epic run's child,
+ * which opens no PR (ADR 0285) — no branch in this tree carries commits naming the child. The event
+ * is a self-report nothing corroborates, so the remedy is to route the spawn's outcome as blocked,
+ * not to record it.
+ *
+ * The four proof seats are **artifact-independent**: what a caller must do about "not there", "not
+ * finished", "says the other thing" and "several candidates" does not change with the kind of
+ * artifact, so the range arms allocate no fifth seat.
  */
 export const PROOF_ABSENT = 22;
 
 /**
- * The artifacts are there but not terminal at the head — a required namespace with no current-head
- * verdict. Its own seat because the remedy is the opposite of {@link PROOF_ABSENT}'s: re-read until
- * the review finishes, record nothing in the meantime (`operate` step 3's in-flight rule).
+ * The artifacts are there but not terminal — a required namespace with no verdict that still binds,
+ * whether by head (a PR verdict) or by content digest (a child's range verdict, ADR 0276). Its own
+ * seat because the remedy is the opposite of {@link PROOF_ABSENT}'s: re-read until the review
+ * finishes, record nothing in the meantime (`operate` step 3's in-flight rule).
  */
 export const PROOF_IN_FLIGHT = 23;
 
 /**
- * The artifact is there and says the other thing — a current-head `FAIL` under a claimed `PASS`.
+ * The artifact is there and says the other thing — a still-binding `FAIL` under a claimed `PASS`.
  * Distinct again by remedy: the caller has the event wrong and the machine has a cell for the one
- * the board actually supports.
+ * the artifact actually supports.
  */
 export const PROOF_CONTRADICTED = 24;
 
 /**
- * Several open pull requests trace to the task's issue. Which one the lane owns is not derivable,
- * and picking one would record a DONE against another lane's work — a park, never a guess.
+ * Several candidates trace to the task: several open pull requests linking its issue, or several
+ * lane branches carrying an epic child's commits. Which one the lane owns is not derivable, and
+ * picking one would record a DONE against another lane's work — a park, never a guess.
  */
 export const PROOF_AMBIGUOUS = 25;
