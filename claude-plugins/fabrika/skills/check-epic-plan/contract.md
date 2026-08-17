@@ -99,7 +99,7 @@ as the sibling contracts do):
 |---|---|---|
 | `plan read` | fetch the epic and its children, parse the ledger, print it as one object | fetch + registered parses — no judgment; *what the plan is worth* stays in the skill |
 | `plan check` | the deterministic floor: the thirteen hard defect types over the scanned child set | a total function from the ledger to a sorted defect list; the whole pass/fail decision, checkable by construction |
-| `plan flip` | flip every `status:planned` child to `status:triaged`, re-gating first, reporting the **observed** result per child | a guarded batch write with a read-back — no judgment; *what a partial flip means* stays in the skill |
+| `plan flip` | flip every `status:planned` child to `status:triaged` and the epic itself to `ready-for:agent`, re-gating first, reporting the **observed** result for each | a guarded batch write with a read-back — no judgment; *what a partial flip means* stays in the skill |
 | `plan verdict` | post the gate's verdict comment, bound to the scope digest, and read it back | marker composition + a guarded write; the caveats are the skill's judgment, taken as input |
 
 **Considered and not derived: a `plan defects --explain` verb.** A defect's *remedy* is the
@@ -211,10 +211,13 @@ epic=<number>|stories=<ids ascending comma-joined, or "" when the epic declares 
 
 <a id="flip-neutral"></a>
 **The flip is digest-neutral and floor-neutral by construction — this is the invariant the whole
-gate rests on.** The only two labels `plan flip` writes are `status:planned` and `status:triaged`,
-and both are **excluded from the digest serialization**. Neither is a floor trigger either:
-`MISSING_LABEL` requires *a* `status:` prefix, which both satisfy, and `NEEDS_TRIAGE_LABEL` names
-`status:needs-triage`, which the flip never writes. So a digest taken at check time still binds
+gate rests on.** The only two labels `plan flip` writes on a **child** are `status:planned` and
+`status:triaged`, and both are **excluded from the digest serialization**. Neither is a floor trigger
+either: `MISSING_LABEL` requires *a* `status:` prefix, which both satisfy, and `NEEDS_TRIAGE_LABEL`
+names `status:needs-triage`, which the flip never writes. The audience labels it writes on the
+**epic** are neutral for a stronger reason: the epic line carries no labels field at all, and every
+defect in the enum is derived from a child, so nothing about the epic's own labels reaches either the
+digest or the floor. So a digest taken at check time still binds
 after the flip, and a verdict posted after the flip attests **the scope the floor actually
 scanned**. Without this exclusion the digest would be invalidated by the very write it guards, and
 every clean verdict would bind a scope no floor had checked.
@@ -569,18 +572,26 @@ fabrika plan flip 4300 --digest 4d90e1bb27ac
 
 | Flag | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `<number>` | positional integer | yes | — | the epic whose planned children are flipped |
+| `<number>` | positional integer | yes | — | the epic whose planned children are flipped, and whose own audience label is flipped with them |
 | `--digest` | string, 12 lowercase hex | yes | — | the scope digest `plan check` printed; the flip refuses if the plan has moved since |
 | `--repo` | string | no | `resolveRepo`'s precedence | the repository written |
 
-**Output** — machine. The **observed** result per child, never the intended one:
+**Output** — machine. The **observed** result per child and for the epic, never the intended one:
 
 ```
 {"answer": "flipped", "epic": 4300, "digest": "4d90e1bb27ac", "terminal": "flipped-all",
  "children": [{"number": 4301, "observed": ["p1","status:triaged","type:feature"], "result": "flipped"},
               {"number": 4302, "observed": ["p2","status:triaged","type:chore"], "result": "already"}],
- "flipped": 1, "already": 1}
+ "flipped": 1, "already": 1,
+ "audience": {"result": "flipped", "observed": ["ready-for:agent","type:epic"]}}
 ```
+
+`audience` is the epic's own result, on the same observed-not-intended discipline: `flipped` (the
+epic did not carry `ready-for:agent` alone, the labels moved, and the re-read proves it) · `already`
+(it carried `ready-for:agent` and no `ready-for:human` before the run — nothing was written) ·
+`unchanged` is unreachable on this channel, because it forces exit `22`. There is no `not-planned`
+arm: an epic carrying no audience label at all is still owed `ready-for:agent`, so absence is a
+write, not an exemption.
 
 `children` enumerates **every** child of the epic, not only the planned ones, so the answer states
 the whole set the flip considered. `result` is closed and **total over that set**: `flipped` (the
@@ -592,26 +603,46 @@ child carried neither label — a clean floor permits this, since `MISSING_LABEL
 some other `status:` value; the flip does not consider it and does not touch it).
 
 `terminal` is a closed token the skill reads rather than deriving from counters, and **it has
-exactly two values, because it only ever appears on the answer channel**: `flipped-all` (at least
-one `flipped`, no `unchanged`) · `nothing-to-flip` (no child carried `status:planned`). A partial
+exactly two values, because it only ever appears on the answer channel**: `flipped-all` (something
+moved and nothing is `unchanged` — at least one `flipped` child, **or** an `audience.result` of
+`flipped`, or both) · `nothing-to-flip` (no child carried `status:planned` **and** the
+epic's audience was `already` — a run that wrote one label is not a run that changed nothing). A partial
 flip has no token here at all — any `unchanged` child forces exit `22`, and a non-zero exit prints
 nothing on stdout, so the unchanged refs are named on **stderr** and the caller reads them there.
 There is deliberately no `unchanged` counter in the answer object: it could only ever be `0`.
 
+So `flipped-all` does **not** imply a child moved. Re-gating an epic planned before #5832 takes
+exactly that arm: every child already sits at `status:triaged`, only the epic's audience is owed, and
+the run prints `flipped-all` with `flipped: 0` and `audience.result: "flipped"`. A caller that wants
+to know whether any child became pickable reads `flipped`, never the token.
+
 **The flip is unconditional over every `status:planned` child** — ruled, with no per-child
 predicate and no opt-out hook (#4693 AC4). The barrier keeping a held child out of the build pool
 is the assignee slot, which this verb never touches and `plan check` checks instead.
+
+<a id="gate-owns-the-audience-flip"></a>
+**The epic's audience flip has exactly one owner, and it is this verb** (#5832). Under the single-PR
+model the operator picks the **epic** up, so the epic's own `ready-for:agent` decides whether the
+epic is pickable at all — and before #5832 nobody wrote it, leaving planned-and-gated epics sitting
+at `ready-for:human` (#5680). The other two candidates are both wrong for the same reason, that
+neither has proven a clean floor: the **planner** never flips, because an ungated plan would become
+pickable; the **operator** never flips, because it would be admitting itself. The gate re-derives the
+floor at the moment of writing, so the gate is the seat. It writes the epic **last**, after every
+child's re-read proves it moved, so an epic never becomes pickable over a half-flipped ledger.
 
 Order of operations, each guard designed against a named v1 failure:
 
 1. **Re-gate.** Re-run the floor and recompute the digest. Any defect refuses on `20`; a digest
    differing from `--digest` refuses on `21`. The gap between deciding and writing is closed by
    re-deciding, not by trusting. Neither refusal writes anything.
-2. **Vocabulary precondition.** When there is at least one `status:planned` child to write, confirm
-   `status:triaged` and `status:planned` exist in the repository's label list. `POST .../labels`
+2. **Vocabulary precondition.** Confirm every label this run would **POST** exists in the
+   repository's label list: `status:triaged` and `status:planned` when there is at least one
+   `status:planned` child, and `ready-for:agent` when the epic is owed it. `POST .../labels`
    **creates** an unknown label rather than rejecting it (#4285), so an absent label would be
-   silently minted; refuse on `23` instead. With nothing to write the check is skipped — a
-   `nothing-to-flip` success must not refuse over a label it was never going to touch.
+   silently minted; refuse on `23` instead. Only posted labels are guarded — a `DELETE` of a label
+   the repository never defined removes nothing and mints nothing. With nothing to write the check is
+   skipped entirely — a `nothing-to-flip` success must not refuse over a label it was never going to
+   touch.
 3. **Write, bounded and per-child, add before remove.** Concurrency 8, decomposed into
    individually-observable calls so the failure index is reportable — never a replace-set `PUT`.
    **`status:triaged` is added first and `status:planned` removed second, always.** That order is
@@ -625,6 +656,12 @@ Order of operations, each guard designed against a named v1 failure:
 4. **Re-read every child** and report its observed labels. v1 asserted the flip from its
    pre-mutation intent list and re-read nothing, so a child left carrying both labels — the ADD
    landing and the DELETE failing — was reported as pickable.
+5. **Then flip the epic, add before remove, and read it back.** `ready-for:agent` is added, then
+   `ready-for:human` removed, so an epic caught between the two calls is over-labelled rather than
+   audience-less. This step runs only once step 4 proves every child moved: any `unchanged` child
+   refuses on `22` with the epic untouched. The read-back decides the result — `ready-for:agent`
+   present and `ready-for:human` absent, or it is `unchanged` and refuses on `22` in turn. An epic
+   that cannot be re-read after a write is exit `8`, never an assumed flip.
 
 Because the flip is [digest-neutral and floor-neutral](#flip-neutral), step 1's recomputation is
 comparable to `plan check`'s directly, and a verdict posted afterwards binds the same digest.
@@ -641,8 +678,8 @@ comparable to `plan check`'s directly, and a verdict posted afterwards binds the
 | `15` | proven: this session does not hold the epic's claim |
 | `20` | proven: the re-gate derived hard defects — the floor is not clean, nothing is written |
 | `21` | proven: the recomputed digest differs from `--digest` — the plan moved since the check |
-| `22` | proven: at least one child is `unchanged` — the observed set is on stderr |
-| `23` | proven: `status:triaged` or `status:planned` is absent from the repository's labels |
+| `22` | proven: at least one child is `unchanged`, or the epic did not reach `ready-for:agent` — the refs are on stderr |
+| `23` | proven: a label this run would post — `status:triaged`, `status:planned` or `ready-for:agent` — is absent from the repository's labels |
 
 **Errors**
 
@@ -651,6 +688,7 @@ comparable to `plan check`'s directly, and a verdict posted afterwards binds the
 | `plan flip: the floor is not clean (<k> defect(s)) — refusing to flip.` | 20 | refusal |
 | `plan flip: the plan moved since the check (digest <a> → <b>) — re-check before flipping.` | 21 | refusal |
 | `plan flip: <a> of <n> children flipped; <b> unchanged (#<x>, #<y>) — the epic is half-flipped and needs a human.` | 22 | refusal |
+| `plan flip: every child flipped but epic #<n> does not carry ready-for:agent alone — the epic is half-flipped and needs a human.` | 22 | refusal |
 | `plan flip: label "<name>" is absent from <repo>'s taxonomy — refusing to create it (#4285).` | 23 | refusal |
 | `plan flip: wrote <n> label change(s) and could not re-read <what> — the outcome is UNKNOWN.` | 8 | refusal |
 | `plan flip: this session does not hold #<n>'s claim.` | 15 | refusal |
@@ -660,16 +698,18 @@ comparable to `plan check`'s directly, and a verdict posted afterwards binds the
 | `plan flip: cannot read <what>: <reason> — nothing was written.` | 11 | refusal |
 | `plan flip: the ledger grammar refused during the re-gate: <reason>` | 4 | refusal |
 
-**Scope** — the verb *reads* every child of the epic and reports each one; it *writes* only those
-carrying `status:planned`. Zero children carrying it is **not** zero scope: it is the answer with
+**Scope** — the verb *reads* every child of the epic and reports each one; it *writes* those carrying
+`status:planned`, plus the epic's own audience labels. Zero children carrying `status:planned` is
+**not** zero scope: with the epic already `ready-for:agent` it is the answer with
 `terminal: "nothing-to-flip"` at exit `0`, because a gate that finds its work already done has
-succeeded. Zero *children at all* is `7`.
+succeeded — and with the epic still owed its label, that one write is the whole of the run. Zero
+*children at all* is `7`.
 
 **Examples**
 
 ```
 $ fabrika plan flip 4300 --digest 4d90e1bb27ac
-{"answer":"flipped","epic":4300,"digest":"4d90e1bb27ac","terminal":"flipped-all","children":[{"number":4301,"observed":["p1","status:triaged","type:feature"],"result":"flipped"}],"flipped":1,"already":0}
+{"answer":"flipped","epic":4300,"digest":"4d90e1bb27ac","terminal":"flipped-all","children":[{"number":4301,"observed":["p1","status:triaged","type:feature"],"result":"flipped"}],"flipped":1,"already":0,"audience":{"result":"flipped","observed":["ready-for:agent","type:epic"]}}
 ```
 
 ```
@@ -687,6 +727,8 @@ $ echo $?
   labels, the PASS comment posted only after every write so a partial flip posted nothing, and
   `discard: true` erasing the per-child record. Steps 3 and 4 answer all four.
 - #4285 — `POST .../labels` creates unknown labels; the vocabulary check is a precondition.
+- #5832 / #5680 — the gate owns the epic's audience flip; before it, a planned-and-gated epic sat at
+  `ready-for:human` and the operator could never pick it up.
 - ADR 0058's shape — the re-gate is a relation checked at write time, not a cached decision.
 
 ---

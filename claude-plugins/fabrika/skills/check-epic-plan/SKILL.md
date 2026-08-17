@@ -1,6 +1,6 @@
 ---
 name: check-epic-plan
-description: "Gate one planned epic's task ledger and, only on a clean floor, flip its planned children to pickable. Trigger on \"gate epic #N\", \"check the plan for epic #N\", \"run the plan gate\", \"is epic #N's ledger clean\", \"make epic #N's children pickable\", and whenever a planned epic's ledger needs clearing before its children can be built. It does not plan (`plan-epic`) and never reviews a pull request (`review`)."
+description: "Gate one planned epic's task ledger and, only on a clean floor, flip its planned children and the epic itself to pickable. Trigger on \"gate epic #N\", \"check the plan for epic #N\", \"run the plan gate\", \"is epic #N's ledger clean\", \"make epic #N's children pickable\", and whenever a planned epic's ledger needs clearing before its children can be built. It does not plan (`plan-epic`) and never reviews a pull request (`review`)."
 arguments: [epic_number]
 argument-hint: "[epic-number] — the planned epic whose ledger to gate"
 ---
@@ -23,10 +23,11 @@ an ACL-checked verb. Every read routes through a verb, and the window between ch
 is re-gated by construction — you carry the scope digest forward and each writing verb re-derives
 the floor and refuses if it moved.
 
-**Capability set:** a repo-scoped token and a claim on the epic. Its write surface is **two
-labels on the epic's children** and **comments on the epic** — the claim marker, its release, the
-verdict, and a successor note. It holds no branch and no checkout of its own, so every terminal below shares
-one branch disposition: none, nothing checked out, nothing to clean up.
+**Capability set:** a repo-scoped token and a claim on the epic. Its write surface is **two labels on
+the epic's children**, **the epic's own audience label**, and **comments on the epic** — the claim
+marker, its release, the verdict, and a successor note. It holds no branch and no checkout of its
+own, so every terminal below shares one branch disposition: none, nothing checked out, nothing to
+clean up.
 
 ## 1 — Claim the epic, read the ledger
 
@@ -46,7 +47,8 @@ fabrika build claim $epic_number --purpose gate
 
 `--purpose gate` is not optional here. The audience axis (`ready-for:agent`) asks whether an agent
 should pick the issue up to **build**, and an epic earns that label only *after* it has been planned
-and gated — so fencing this gate on it is circular, and the fence binds build-purpose claims only.
+and gated — at step 3, from this very run — so fencing this gate on it is circular, and the fence
+binds build-purpose claims only.
 A `gate` claim is admitted without the label; the scope axis still binds, so an out-of-focus epic is still exit
 `20`. Never reach for `--override` to get past the audience axis — that is the fail-open convention
 the purpose exists to remove.
@@ -100,13 +102,27 @@ The barrier keeping a held child out of the build pool is the **assignee slot**,
 never touches and the floor checks instead (`HELD_CHILD_UNASSIGNED` / `UNVERIFIABLE_ASSIGNEE`) — a
 signal plus its enforcement, composed, not rivals.
 
+<!-- anchor: GATE-OWNS-THE-AUDIENCE-FLIP --> **The same clean floor also flips the epic itself to
+`ready-for:agent`, and this gate is that flip's only owner.** Under the single-PR model the operator
+picks the epic up, so the epic's own audience label decides whether the epic is pickable at all. The
+planner never writes it — an ungated plan would become pickable. The operator never writes it — it
+would be admitting itself. Only this gate has already proven the floor clean, so only this gate may
+write it, and the verb writes it **last**, after every child's re-read proves it moved: an epic that
+became pickable over a half-flipped ledger is exactly the failure the ordering removes. You never
+write the label by hand; the verb writes it and reads it back.
+
 Done when you have read the outcome from the channel that carries it. On exit `0`, read the
 answer's closed `terminal` token — `flipped-all` or `nothing-to-flip`; do not derive it from the
-counters. `nothing-to-flip` is a **clean gate that changed nothing**, which is not the same outcome
-as one that made children pickable.
+counters. `nothing-to-flip` is a **clean gate that changed nothing**: every child was already
+pickable and the epic was already `ready-for:agent`. `flipped-all` means something moved, which is
+not the same as children moving — a re-gated epic whose children are all already `status:triaged`
+prints `flipped-all` with `flipped: 0` and an `audience.result` of `flipped`. So **read `flipped`
+before you say a child became pickable**, and the `audience` object beside the counters for the
+epic's own outcome and observed labels.
 
 A non-zero exit prints no answer at all, so read the refusal on stderr: `22` is a partial flip and
-the verb names there the children that did not move — **those refs are the whole of what you post,
+the verb names there what did not move — the children, or the epic when every child moved and its
+own audience label did not — **those refs are the whole of what you post,
 and you claim nothing about what any child carries now**, in a table or in prose. Nothing in this
 run read that back: the `22` refusal carries the un-flipped refs and no observed labels, and `plan
 read`'s `children[].labels` are pre-flip — they were read at step 1, before the write. So any
@@ -129,9 +145,10 @@ caveats, never the verdict. It is the only emit path and it reads its own commen
 it answers `posted` with a comment id.
 
 **Every clean floor comes through here, `FLIP-PARTIAL` included** — skip it there and the caveats
-that run formed are simply dropped. A partial flip writes only `status:planned` / `status:triaged` on a subset, both excluded
-from the digest and neither a floor trigger ([`contract.md`](contract.md), `flip-neutral`), so the
-digest you carried still binds and this verb still re-derives a clean floor after a `22`. **Order on
+that run formed are simply dropped. A partial flip writes only `status:planned` / `status:triaged` on
+a subset of children plus the epic's own audience label, none of them in the digest and none a floor
+trigger ([`contract.md`](contract.md), `flip-neutral`), so the digest you carried still binds and
+this verb still re-derives a clean floor after a `22`. **Order on
 that terminal: this verdict first, then `fabrika build note` with the un-flipped refs.** The note's
 body is free prose — no closed-kind check, no digest binding — so it carries refs and
 never caveats, and posting the verdict first is what keeps the rule below true.
@@ -158,20 +175,23 @@ local, or remove.** Release the claim with `fabrika build release $epic_number` 
 **after step 1 answered `won`** — if it never did, you hold nothing and there is nothing to release.
 An unreleased claim is a lock nobody can reclaim, which a human then clears by hand.
 
-- `PLAN-CLEARED` — floor clean, `skipped` empty, children flipped, verdict posted.
+- `PLAN-CLEARED` — floor clean, `skipped` empty, `terminal: flipped-all`, the epic
+  `ready-for:agent`, verdict posted. Say children were flipped only when `flipped` is non-zero; on a
+  re-gate it is `0` and the epic's own label is all that moved.
 - `PLAN-CLEARED-PARTIAL` — as above, but a defect class could not be derived; the marker names it,
   so nobody reads the verdict as a full-enum pass.
 - `PLAN-CLEARED-NO-FLIP` — floor clean, `terminal: nothing-to-flip`; verdict posted, no label
-  written. A success that changed nothing, said so.
+  written — every child was already pickable and so was the epic. A success that changed nothing,
+  said so.
 - `PLAN-REFUSED` — the floor proved defects, whether at step 2 or at the flip's re-gate (`20`);
   verdict posted naming them, nothing flipped. A verdict **is** the deliverable, so this is a
   success, not a back-off.
 - `PLAN-MOVED` — `21`: the plan changed between the check and a writing verb. Nothing was written
   and no verdict is posted; re-check from step 2.
-- `FLIP-PARTIAL` — `22`: the floor was clean and some children did not move. Post the verdict with
-  any caveats (step 4), **then** the refs the verb named with `fabrika build note` — refs only, no
-  claim about what any child carries now (step 3); the epic needs a human. Never reported as a gate
-  failure.
+- `FLIP-PARTIAL` — `22`: the floor was clean and something did not move — some children, or the
+  epic's own audience label. Post the verdict with any caveats (step 4), **then** the refs the verb
+  named with `fabrika build note` — refs only, no claim about what any issue carries now (step 3);
+  the epic needs a human. Never reported as a gate failure.
 - `PLAN-UNGATEABLE` — `7` or `10`: the target is **proven** not gateable — absent or closed, not a
   `type:epic`, or it has zero children. Nothing was written. Proven, so not `STOPPED`.
 - `WRITE-UNPROVEN` — `8` or `9` from **either** writing verb: a write landed, or may have landed,
@@ -211,6 +231,6 @@ fabrika installs into repos that are not phoenix; the when-missing vocabulary is
 | --- | --- | --- |
 | A planned epic: a `type:epic` issue with native sub-issue links to its children | `plan read` derives the child set from it | **fail-loud** — `plan read` exits `7`/`10`; the run ends `PLAN-UNGATEABLE`. |
 | A `## Dependencies` block in the epic body | the topology the three dependency defects rest on | **fail-loud**, two ways: *absent* is the defect `MISSING_DEPS_SECTION`, so the run ends `PLAN-REFUSED` and routes to the planning lane; *unparseable or duplicated* is `plan read`'s `4`, which ends `STOPPED`. |
-| The label taxonomy: `status:planned`, `status:triaged`, `status:needs-triage`, `ready-for:human`, `type:*`, `p0`/`p1`/`p2` | the floor reads them and the flip writes two; `POST .../labels` **creates** an unknown label rather than rejecting it, so the vocabulary is a precondition, not politeness | **fail-loud** — `plan flip` exits `23` naming the absent label rather than minting it; taxonomy creation is the front door's. |
+| The label taxonomy: `status:planned`, `status:triaged`, `status:needs-triage`, `ready-for:human`, `ready-for:agent`, `type:*`, `p0`/`p1`/`p2` | the floor reads them and the flip writes three — `status:triaged` and `status:planned` on children, `ready-for:agent` on the epic; `POST .../labels` **creates** an unknown label rather than rejecting it, so the vocabulary is a precondition, not politeness | **fail-loud** — `plan flip` exits `23` naming the absent label rather than minting it; taxonomy creation is the front door's. |
 | `product-development-cycle.md` at the repo root | gates whether `MISSING_CONTAINMENT` is derived | **degrade** — an *absent* file evaluates the class false; an *unreadable* probe puts it in `skipped` and the run ends `PLAN-CLEARED-PARTIAL`. Never silently dropped. |
 | Repository permissions readable for claim authorship | `build claim`'s ownership resolution is ACL-sourced | **fail-loud** — as declared in [`build`'s contract](../build/contract.md); a permission read that fails is `Unknown`, never a demotion to unclaimed. |

@@ -1,6 +1,13 @@
 /**
- * `plan flip` — flip every `status:planned` child to `status:triaged`, re-gating first, and report the
- * **observed** result per child.
+ * `plan flip` — flip every `status:planned` child to `status:triaged` and the epic itself to
+ * `ready-for:agent`, re-gating first, and report the **observed** result for each.
+ *
+ * **The epic's audience flip has exactly one owner, and this verb is it.** Under the single-PR model
+ * the operator picks the epic up, so the epic's own audience label is load-bearing; the planner must
+ * not write it (an ungated plan would become pickable) and the operator must not write it (it would
+ * admit itself). The gate is the only place a clean floor has already been proven. It is written
+ * last, after every child is *observed* pickable, so the epic never becomes pickable over a
+ * half-flipped ledger.
  *
  * Four guards, each designed against a named v1 failure:
  *
@@ -24,7 +31,7 @@ import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {requireClaim, requireSession} from "../build/claim.ts";
 import {badNumber, resolveTargetRepo} from "../build/target.ts";
-import {addLabels, listLabels, removeLabel} from "../io/issues.ts";
+import {addLabels, getIssue, listLabels, removeLabel} from "../io/issues.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {
 	FLOOR_DEFECTIVE,
@@ -50,6 +57,8 @@ const VERB = "plan flip";
 
 const PLANNED = "status:planned";
 const TRIAGED = "status:triaged";
+const AUDIENCE_AGENT = "ready-for:agent";
+const AUDIENCE_HUMAN = "ready-for:human";
 
 export const MESSAGES: PlanMessages = {
 	verb: VERB,
@@ -62,6 +71,24 @@ export const MESSAGES: PlanMessages = {
 
 /** Closed and **total over every child**, not only the ones the flip wrote. */
 export type FlipResult = "flipped" | "already" | "unchanged" | "not-planned";
+
+/**
+ * The epic's audience result. There is no `not-planned` arm: an epic carrying neither audience label
+ * is still owed `ready-for:agent`, so absence is a write, not an exemption.
+ */
+export type AudienceResult = "flipped" | "already" | "unchanged";
+
+/** The two audience writes the epic is owed, read off its observed labels. */
+export const audienceWrites = (
+	labels: ReadonlyArray<string>,
+): {readonly add: boolean; readonly remove: boolean} => ({
+	add: !labels.includes(AUDIENCE_AGENT),
+	remove: labels.includes(AUDIENCE_HUMAN),
+});
+
+/** The settled epic, decided by the read-back: pickable by agents and by nobody else. */
+export const audienceSettled = (observed: ReadonlyArray<string>): boolean =>
+	observed.includes(AUDIENCE_AGENT) && !observed.includes(AUDIENCE_HUMAN);
 
 export interface FlipOptions {
 	readonly number: number;
@@ -132,7 +159,14 @@ export const runFlip = (
 		}
 
 		const planned = ledger.children.filter((child) => child.labels.includes(PLANNED));
-		if (planned.length > 0) {
+		const audience = audienceWrites(target.issue.labels);
+		// Only the labels this run would POST are guarded: it is the POST that mints an unknown label,
+		// and a DELETE of a label the repo never defined removes nothing.
+		const required = [
+			...(planned.length > 0 ? FLIP_LABELS : []),
+			...(audience.add ? [AUDIENCE_AGENT] : []),
+		];
+		if (required.length > 0) {
 			const labels = yield* listLabels(repo);
 			if (labels._tag === "Failure") {
 				return refuse(
@@ -141,7 +175,7 @@ export const runFlip = (
 					notes,
 				);
 			}
-			for (const label of FLIP_LABELS) {
+			for (const label of required) {
 				if (labels.value.includes(label)) continue;
 				return refuse(
 					LABEL_ABSENT,
@@ -195,17 +229,49 @@ export const runFlip = (
 			);
 		}
 
+		let audienceResult: AudienceResult = "already";
+		let audienceObserved = [...target.issue.labels].sort();
+		if (audience.add || audience.remove) {
+			if (audience.add) {
+				const added = yield* addLabels(repo, ledger.epic, [AUDIENCE_AGENT]);
+				if (added._tag === "Ok") writes += 1;
+			}
+			if (audience.remove) {
+				const removed = yield* removeLabel(repo, ledger.epic, AUDIENCE_HUMAN);
+				if (removed._tag === "Ok") writes += 1;
+			}
+			const reread = yield* getIssue(repo, ledger.epic);
+			if (reread._tag !== "Present") {
+				return refuse(
+					WRITE_UNKNOWN,
+					`${VERB}: wrote ${writes} label change(s) and could not re-read the epic #${ledger.epic} — the outcome is UNKNOWN.`,
+					notes,
+				);
+			}
+			audienceObserved = [...reread.value.labels].sort();
+			audienceResult = audienceSettled(audienceObserved) ? "flipped" : "unchanged";
+			if (audienceResult === "unchanged") {
+				return refuse(
+					PARTIAL_FLIP,
+					`${VERB}: every child flipped but epic #${ledger.epic} does not carry ${AUDIENCE_AGENT} alone — the epic is half-flipped and needs a human.`,
+					notes,
+				);
+			}
+		}
+
 		const flipped = rows.filter((row) => row.result === "flipped").length;
 		const already = rows.filter((row) => row.result === "already").length;
+		const nothingToFlip = planned.length === 0 && audienceResult === "already";
 		return answer(
 			JSON.stringify({
 				answer: "flipped",
 				epic: ledger.epic,
 				digest: ledger.digest,
-				terminal: planned.length === 0 ? "nothing-to-flip" : "flipped-all",
+				terminal: nothingToFlip ? "nothing-to-flip" : "flipped-all",
 				children: rows,
 				flipped,
 				already,
+				audience: {result: audienceResult, observed: audienceObserved},
 			}),
 			notes,
 		);
