@@ -29,6 +29,7 @@ import * as grillSupersede from "./grill-supersede.ts";
 import * as handoffPack from "./handoff-pack.ts";
 import * as laneBrief from "./lane-brief.ts";
 import * as mapTicket from "./map-ticket.ts";
+import * as rangeVerdictMarker from "./range-verdict-marker.ts";
 import * as verdictMarker from "./verdict-marker.ts";
 
 export const registeredFormats: ReadonlyArray<WireFormat> = [
@@ -189,6 +190,71 @@ export const registeredFormats: ReadonlyArray<WireFormat> = [
 			],
 		},
 		brands: brandWitnesses<verdictMarker.VerdictMarker>({sha: true, clause: true, polarity: true}),
+	},
+	{
+		key: "range-verdict-marker",
+		purpose:
+			"the range-bound first line of a child's verdict on its own issue — namespace, polarity, the commit range judged, and the content digest that outlives the merge of that range",
+		module: "packages/fabrika-cli/src/wire/range-verdict-marker.ts",
+		producers: ["review"],
+		consumers: ["build", "operate"],
+		emit: rangeVerdictMarker.emitFromFields,
+		read: rangeVerdictMarker.readToLines,
+		fixtures: {
+			roundTrip: {
+				fields:
+					"namespace: review-child\npolarity: PASS\nbase: 9f2c1ab\ntip: 03135b91\ncontent: 2f1a9c4e0b7d\nclause: every criterion met\n",
+				values: [
+					"review-child",
+					"PASS",
+					"9f2c1ab",
+					"03135b91",
+					"2f1a9c4e0b7d",
+					"every criterion met",
+				],
+			},
+			found: [
+				{
+					shape: "the marker as a child reviewer posts it — first line of a comment on the issue",
+					artifact:
+						"review-child: PASS range:9f2c1ab..03135b91 content:2f1a9c4e0b7d — every criterion met\n\nThe range is the child's branch over the epic branch point.\n",
+					values: [
+						"review-child",
+						"PASS",
+						"9f2c1ab",
+						"03135b91",
+						"2f1a9c4e0b7d",
+						"every criterion met",
+					],
+				},
+			],
+			absent: "Thanks — this reads well to me, no notes.\n",
+			malformed: [
+				{
+					drift: "the range form carries no content digest, so nothing survives the merge",
+					artifact: "review-child: PASS range:9f2c1ab..03135b91 — every criterion met\n",
+				},
+				{
+					drift: "a head-bound marker read as a range one",
+					artifact: "review-child: PASS @ 03135b91 content:2f1a9c4e0b7d — every criterion met\n",
+				},
+				{
+					drift: "the range names one revision",
+					artifact:
+						"review-child: PASS range:03135b91 content:2f1a9c4e0b7d — every criterion met\n",
+				},
+				{
+					drift: "the namespace is not kebab-case",
+					artifact:
+						"review_child: PASS range:9f2c1ab..03135b91 content:2f1a9c4e0b7d — every criterion met\n",
+				},
+			],
+		},
+		brands: brandWitnesses<rangeVerdictMarker.RangeVerdictMarker>({
+			polarity: true,
+			content: true,
+			clause: true,
+		}),
 	},
 	{
 		key: "lane-brief",
