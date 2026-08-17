@@ -12,7 +12,7 @@
 import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {getIssue, resolveRepo} from "../io/issues.ts";
-import {openPullsTracing} from "../io/pulls.ts";
+import {openPullsClosing} from "../io/pulls.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {
 	artifactUrl,
@@ -113,11 +113,11 @@ export const runBrief = (
 			);
 		}
 
-		const pulls = yield* openPullsTracing(repo.value, issue);
+		const pulls = yield* openPullsClosing(repo.value, issue);
 		if (pulls._tag === "Failure") {
 			return refuse(
 				LANE_UNREADABLE,
-				`${VERB}: cannot read the open PRs tracing to #${issue}: ${pulls.reason} — UNKNOWN.`,
+				`${VERB}: cannot read the open PRs declaring they close #${issue}: ${pulls.reason} — UNKNOWN.`,
 				notes,
 			);
 		}
@@ -125,14 +125,14 @@ export const runBrief = (
 		if (rest.length > 0) {
 			return refuse(
 				PR_AMBIGUOUS,
-				`${VERB}: ${pulls.value.length} open PRs trace to #${issue} — exactly one is the lane's, and which is not this verb's to guess.`,
+				`${VERB}: ${pulls.value.length} open PRs declare they close #${issue} — exactly one is the lane's, and which is not this verb's to guess.`,
 				[...notes, `${VERB}: candidates: ${pulls.value.map((p) => `#${p.number}`).join(", ")}.`],
 			);
 		}
 		if (only === undefined && state !== "build") {
 			return refuse(
 				PR_AMBIGUOUS,
-				`${VERB}: no open PR traces to #${issue}, and a "${state}" shell has nothing to read without one.`,
+				`${VERB}: no open PR declares it closes #${issue}, and a "${state}" shell has nothing to read without one.`,
 				notes,
 			);
 		}

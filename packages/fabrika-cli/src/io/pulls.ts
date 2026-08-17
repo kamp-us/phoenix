@@ -3,9 +3,10 @@
  * list, its diff bytes, the check runs at a commit, the invoking token's identity and repository
  * permission, and the comment edit an upsert needs.
  *
- * The `issues.ts` disciplines hold here unchanged — `gh api` REST and never GraphQL, every list read
- * paged, absent split from unreadable through {@link Existence}, and a shape that is not what was
- * asked for treated as a failure rather than an empty result.
+ * The `issues.ts` disciplines hold here — every list read paged, absent split from unreadable
+ * through {@link Existence}, and a shape that is not what was asked for treated as a failure rather
+ * than an empty result. REST is the default surface; {@link openPullsClosing} is on GraphQL because
+ * the closing-issue link edge it needs is published nowhere else.
  *
  * **Every list read returns what it received alongside what the platform declared.** A review whose
  * scope was silently truncated is a review over unknown scope, and the only way a caller can refuse
@@ -14,15 +15,7 @@
 import {Effect} from "effect";
 import {execCapture} from "./exec.ts";
 import {type Attempt, fail, ok, type Shell} from "./git.ts";
-import {
-	absent,
-	type Existence,
-	httpStatusOf,
-	pagedJson,
-	parseTabRows,
-	present,
-	unknown,
-} from "./issues.ts";
+import {absent, type Existence, httpStatusOf, pagedJson, present, unknown} from "./issues.ts";
 import {isRecord, parseJson} from "./json.ts";
 
 export interface PullRecord {
@@ -261,42 +254,85 @@ export const patchComment = (repo: string, id: number, body: string): Shell<Atte
 			: fail("`gh api` exited 0 but its output is not an edited comment");
 	});
 
-/** One open pull request as a body-trace lookup sees it: the number and the link to hand on. */
-export interface TracingPull {
+/** One open pull request that declares it closes the issue: the number and the link to hand on. */
+export interface ClosingPull {
 	readonly number: number;
 	readonly url: string;
 }
 
+const CLOSERS_QUERY =
+	"query($owner:String!,$name:String!,$number:Int!,$cursor:String){repository(owner:$owner,name:$name){issue(number:$number){closedByPullRequestsReferences(first:100,includeClosedPrs:true,after:$cursor){pageInfo{hasNextPage endCursor} nodes{number url state}}}}}";
+
 /**
- * Every OPEN pull request whose body mentions `issue`, paged.
+ * Every OPEN pull request that **declares it closes** `issue`, read off GitHub's own closing-issue
+ * link edge and paged.
  *
- * The lane's PR is read off the board and never off a driver's memory, so the answer is the whole
- * match set rather than a first hit: zero and several are facts a caller must be able to refuse on,
- * and a read that narrowed to one would invent the lane's PR whenever two branches trace to the
- * same issue.
+ * v1 asked `search/issues` for `<issue> in:body`, which matches any prose quoting the number: a PR
+ * closing a different issue but naming this one in a table came back as a candidate, and the
+ * caller's several-hits refusal then parked a lane that had exactly one real PR (#5805). The edge
+ * read here is the one GitHub builds from a closing keyword, so a mention is not a hit and
+ * "several" means what the caller needs it to mean — two PRs each declaring they close this issue.
+ *
+ * `includeClosedPrs: true` plus an explicit `OPEN` filter, rather than the field's own exclusion:
+ * that argument's name promises more than it delivers (a merged PR is still returned under
+ * `false`), and the caller is asking about open PRs specifically.
+ *
+ * The answer is the whole set rather than a first hit: zero and several are facts a caller must be
+ * able to refuse on, and a read that narrowed to one would invent the lane's PR.
  */
-export const openPullsTracing = (
+export const openPullsClosing = (
 	repo: string,
 	issue: number,
-): Shell<Attempt<ReadonlyArray<TracingPull>>> =>
+): Shell<Attempt<ReadonlyArray<ClosingPull>>> =>
 	Effect.gen(function* () {
-		const q = `repo:${repo} is:pr is:open ${issue} in:body`;
-		const r = yield* execCapture("gh", [
-			"api",
-			"--paginate",
-			`search/issues?q=${encodeURIComponent(q)}&per_page=100`,
-			"--jq",
-			'.items[] | "\\(.number)\t\\(.html_url)"',
-		]);
-		if (!r.ok) return fail(r.reason);
-		const rows = parseTabRows(r.stdout, 2);
-		if (rows === null) return fail("`gh api` exited 0 but its output is not a list of pull rows");
-		const out: TracingPull[] = [];
-		for (const [number, url] of rows) {
-			if (number === undefined || !/^\d+$/.test(number) || url === undefined || url === "") {
-				return fail("`gh api` exited 0 but one row is not a pull request");
+		const [owner, name] = repo.split("/");
+		if (owner === undefined || name === undefined) return fail(`\`${repo}\` is not owner/name`);
+		const out: ClosingPull[] = [];
+		let cursor: string | null = null;
+		for (let page = 0; page < 50; page++) {
+			const args = [
+				"api",
+				"graphql",
+				"-f",
+				`query=${CLOSERS_QUERY}`,
+				"-F",
+				`owner=${owner}`,
+				"-F",
+				`name=${name}`,
+				"-F",
+				`number=${issue}`,
+			];
+			if (cursor !== null) args.push("-F", `cursor=${cursor}`);
+			const r = yield* execCapture("gh", args);
+			if (!r.ok) return fail(r.reason);
+			const parsed = parseJson(r.stdout);
+			const data = isRecord(parsed) && isRecord(parsed.data) ? parsed.data : null;
+			const repository = data !== null && isRecord(data.repository) ? data.repository : null;
+			const issueNode = repository !== null && isRecord(repository.issue) ? repository.issue : null;
+			const set =
+				issueNode !== null && isRecord(issueNode.closedByPullRequestsReferences)
+					? issueNode.closedByPullRequestsReferences
+					: null;
+			if (set === null || !Array.isArray(set.nodes)) {
+				return fail("`gh api graphql` exited 0 but its output is not a closing-pull page");
 			}
-			out.push({number: Number.parseInt(number, 10), url});
+			for (const node of set.nodes) {
+				if (
+					!isRecord(node) ||
+					typeof node.number !== "number" ||
+					typeof node.url !== "string" ||
+					node.url === "" ||
+					typeof node.state !== "string"
+				) {
+					return fail("`gh api graphql` exited 0 but one node is not a pull request");
+				}
+				if (node.state !== "OPEN") continue;
+				out.push({number: node.number, url: node.url});
+			}
+			const info = isRecord(set.pageInfo) ? set.pageInfo : null;
+			if (info === null || info.hasNextPage !== true) break;
+			cursor = typeof info.endCursor === "string" ? info.endCursor : "";
+			if (cursor === "") return fail("`gh api graphql` declared another page and named no cursor");
 		}
 		return ok(out);
 	});
