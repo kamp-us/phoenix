@@ -3,7 +3,7 @@ import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
 import {errOut, fakeFs, fakeShell, okOut} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
-import {RULES, read as readBrief} from "../wire/lane-brief.ts";
+import {EPIC_RULES, RULES, read as readBrief} from "../wire/lane-brief.ts";
 import {runBrief} from "./brief-verb.ts";
 import {
 	ISSUE_UNRESOLVED,
@@ -14,6 +14,7 @@ import {
 	PR_AMBIGUOUS,
 	TASK_UNKNOWN,
 } from "./codes.ts";
+import {emitMachine} from "./emit.ts";
 import {coderTemplateText} from "./fixtures.test-support.ts";
 
 const ROOT = ".fabrika/lanes";
@@ -74,6 +75,41 @@ const lane = (id: string, events: ReadonlyArray<string>) =>
 		},
 	});
 
+const EPIC = 5800;
+const EPIC_URL = "https://github.com/o/r/issues/5800";
+const CHILD_URL = "https://github.com/o/r/issues/5828";
+const EPIC_ISSUE_READ = /^gh api repos\/o\/r\/issues\/5800$/;
+const EPIC_CHILD_READ = /^gh api repos\/o\/r\/issues\/5828$/;
+
+/**
+ * An epic lane in the one-PR shape, its machine emitted by `emitMachine` rather than hand-written —
+ * a brief arm keyed to a shape the emitter does not produce would pass its own test and refuse the
+ * live lane.
+ */
+const epicLane = (events: ReadonlyArray<readonly [string, string]>) => {
+	const emitted = emitMachine(EPIC, "## Dependencies\n\n- phase 1: #5828\n", [
+		{number: 5828, state: "open", stateReason: null},
+	]);
+	if (emitted._tag !== "Emitted") throw new Error(`the epic fixture did not emit: ${emitted._tag}`);
+	return fakeFs({
+		files: {
+			[`${ROOT}/${EPIC}/workflow.json`]: emitted.text,
+			[`${ROOT}/${EPIC}/events.jsonl`]:
+				events.length === 0
+					? null
+					: `${events
+							.map(([task, event]) =>
+								JSON.stringify({
+									task,
+									event: `${task.toUpperCase()}.${event}`,
+									at: "2026-08-17T00:00:00Z",
+								}),
+							)
+							.join("\n")}\n`,
+		},
+	});
+};
+
 const options = {
 	root: ROOT,
 	lane: "5751",
@@ -119,8 +155,24 @@ describe("lane brief", () => {
 		expect(out.code).toBe(0);
 		expect(readBrief(out.stdout)).toMatchObject({
 			_tag: "Found",
-			value: {state: "review", shell: "reviewer", issue: ISSUE_URL, pr: PR_URL},
+			value: {
+				state: "review",
+				shell: "reviewer",
+				issue: ISSUE_URL,
+				ground: {_tag: "Pull", pr: PR_URL},
+			},
 		});
+	});
+
+	it("prints a single-issue brief byte for byte — the format's bytes, nothing per dispatch", async () => {
+		const out = await run(lane("5751", ["WIP", "DONE"]), [
+			[ISSUE_READ, issuePayload(5751, ISSUE_URL)],
+			[PR_CLOSERS, closingPulls([5790, PR_URL])],
+		]);
+
+		expect(out.stdout).toBe(
+			`## Task\nlane: 5751\ntask: issue\nstate: review\nshell: reviewer\n## Ground\nissue: ${ISSUE_URL}\npr: ${PR_URL}\n## Rules\n${RULES}\n`,
+		);
 	});
 
 	it("briefs the shipper on a `ship` state", async () => {
@@ -132,7 +184,7 @@ describe("lane brief", () => {
 		expect(out.code).toBe(0);
 		expect(readBrief(out.stdout)).toMatchObject({
 			_tag: "Found",
-			value: {state: "ship", shell: "shipper", pr: PR_URL},
+			value: {state: "ship", shell: "shipper", ground: {_tag: "Pull", pr: PR_URL}},
 		});
 	});
 
@@ -284,6 +336,151 @@ describe("lane brief", () => {
 		]);
 
 		expect(out.code).toBe(PR_AMBIGUOUS);
+		expect(out.stdout).toBe("");
+	});
+});
+
+describe("lane brief on an epic lane", () => {
+	const runEpic = async (
+		fs: ReturnType<typeof fakeFs>,
+		script: ReadonlyArray<readonly [RegExp, ExecResult]>,
+		overrides: Partial<typeof options>,
+	) => {
+		const shell = fakeShell(script);
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runBrief({...options, lane: String(EPIC), ...overrides}),
+				Layer.merge(fs.layer, shell.layer),
+			),
+		);
+		return {out, calls: shell.calls};
+	};
+
+	it("briefs a child's build on the epic branch, resolving no PR at all", async () => {
+		const {out, calls} = await runEpic(
+			epicLane([["issue_5828", "WIP"]]),
+			[
+				[EPIC_CHILD_READ, issuePayload(5828, CHILD_URL)],
+				[EPIC_ISSUE_READ, issuePayload(EPIC, EPIC_URL)],
+			],
+			{task: "issue_5828"},
+		);
+
+		expect(out.code).toBe(0);
+		expect(readBrief(out.stdout)).toMatchObject({
+			_tag: "Found",
+			value: {
+				lane: "5800",
+				task: "issue_5828",
+				state: "build",
+				shell: "builder",
+				issue: CHILD_URL,
+				ground: {_tag: "Epic", epic: EPIC_URL, branch: "epic/5800"},
+			},
+		});
+		expect(out.stdout).toContain(EPIC_RULES);
+		expect(out.stdout).not.toContain("range:");
+		expect(calls.some((call) => PR_CLOSERS.test(call))).toBe(false);
+	});
+
+	it("briefs a child's review with the range to judge and the range-verdict contract", async () => {
+		const {out, calls} = await runEpic(
+			epicLane([
+				["issue_5828", "WIP"],
+				["issue_5828", "DONE"],
+			]),
+			[
+				[EPIC_CHILD_READ, issuePayload(5828, CHILD_URL)],
+				[EPIC_ISSUE_READ, issuePayload(EPIC, EPIC_URL)],
+			],
+			{task: "issue_5828"},
+		);
+
+		expect(out.code).toBe(0);
+		expect(readBrief(out.stdout)).toMatchObject({
+			_tag: "Found",
+			value: {state: "review", shell: "reviewer", ground: {_tag: "Epic", branch: "epic/5800"}},
+		});
+		expect(out.stdout).toContain("range: epic/5800..HEAD");
+		expect(out.stdout).toContain("range-verdict-marker");
+		expect(calls.some((call) => PR_CLOSERS.test(call))).toBe(false);
+	});
+
+	it("briefs the epic tail's review on the one PR the run produced", async () => {
+		const {out} = await runEpic(
+			epicLane([
+				["issue_5828", "WIP"],
+				["issue_5828", "DONE"],
+				["issue_5828", "PASS"],
+			]),
+			[
+				[EPIC_ISSUE_READ, issuePayload(EPIC, EPIC_URL)],
+				[PR_CLOSERS, closingPulls([5890, PR_URL])],
+			],
+			{task: "epic_5800"},
+		);
+
+		expect(out.code).toBe(0);
+		expect(readBrief(out.stdout)).toMatchObject({
+			_tag: "Found",
+			value: {
+				task: "epic_5800",
+				state: "review",
+				shell: "reviewer",
+				issue: EPIC_URL,
+				ground: {_tag: "Pull", pr: PR_URL},
+			},
+		});
+		expect(out.stdout).not.toContain(EPIC_RULES);
+	});
+
+	it("keeps the tail's zero-PR refusal — a run with no PR is a real ambiguity", async () => {
+		const {out} = await runEpic(
+			epicLane([
+				["issue_5828", "WIP"],
+				["issue_5828", "DONE"],
+				["issue_5828", "PASS"],
+			]),
+			[
+				[EPIC_ISSUE_READ, issuePayload(EPIC, EPIC_URL)],
+				[PR_CLOSERS, closingPulls()],
+			],
+			{task: "epic_5800"},
+		);
+
+		expect(out.code).toBe(PR_AMBIGUOUS);
+		expect(out.stdout).toBe("");
+	});
+
+	it("refuses the tail when several open PRs claim the epic", async () => {
+		const {out} = await runEpic(
+			epicLane([
+				["issue_5828", "WIP"],
+				["issue_5828", "DONE"],
+				["issue_5828", "PASS"],
+			]),
+			[
+				[EPIC_ISSUE_READ, issuePayload(EPIC, EPIC_URL)],
+				[PR_CLOSERS, closingPulls([5890, PR_URL], [5891, "https://github.com/o/r/pull/5891"])],
+			],
+			{task: "epic_5800"},
+		);
+
+		expect(out.code).toBe(PR_AMBIGUOUS);
+		expect(out.stderr.join("\n")).toContain("#5891");
+	});
+
+	it("refuses a child whose epic issue could not be read — UNKNOWN, never a brief", async () => {
+		const {out} = await runEpic(
+			epicLane([["issue_5828", "WIP"]]),
+			[
+				[EPIC_CHILD_READ, issuePayload(5828, CHILD_URL)],
+				[EPIC_ISSUE_READ, errOut("gh: Server Error (HTTP 503)")],
+			],
+			{task: "issue_5828"},
+		);
+
+		expect(out.code).toBe(LANE_UNREADABLE);
 		expect(out.stdout).toBe("");
 	});
 });
