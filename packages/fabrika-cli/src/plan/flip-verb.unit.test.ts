@@ -33,8 +33,18 @@ const PERM = /^gh api repos\/o\/r\/collaborators\/agent\/permission/;
 const LABELS = /^gh api --paginate repos\/o\/r\/labels/;
 const ADD = /^gh api --method POST repos\/o\/r\/issues\/4301\/labels/;
 const REMOVE = /^gh api --method DELETE repos\/o\/r\/issues\/4301\/labels/;
+const ADD_EPIC = /^gh api --method POST repos\/o\/r\/issues\/4300\/labels/;
+const REMOVE_EPIC = /^gh api --method DELETE repos\/o\/r\/issues\/4300\/labels/;
 
-const ONE_CHILD_EPIC = epic({body: epicBody({dependencies: "- phase 1: #4301"})});
+const oneChildEpic = (labels: ReadonlyArray<string>): ExecResult =>
+	epic({
+		body: epicBody({dependencies: "- phase 1: #4301"}),
+		labels: labels.map((name) => ({name})),
+	});
+
+const ONE_CHILD_EPIC = oneChildEpic(["type:epic", "ready-for:human"]);
+/** The epic as the read-back finds it once the audience flip landed. */
+const AGENT_EPIC = oneChildEpic(["type:epic", "ready-for:agent"]);
 
 const env = {CLAUDE_PIPELINE_REPO: "o/r", CLAUDE_CODE_SESSION_ID: SESSION} as Record<
 	string,
@@ -49,16 +59,18 @@ const CLAIMED: ReadonlyArray<readonly [RegExp, ExecResult]> = [
 const PLANNED = child({number: 4301, labels: ["type:feature", "p1", "status:planned"]});
 const TRIAGED = child({number: 4301, labels: ["type:feature", "p1", "status:triaged"]});
 
-/** The ledger reads, in the order the flip issues them; `once` lets the re-read differ. */
+/** The ledger reads, in the order the flip issues them; `once` lets each re-read differ. */
 const ledger = (
 	first: ExecResult,
 	reread: ExecResult,
+	epics: {first?: ExecResult; reread?: ExecResult} = {},
 ): ReadonlyArray<readonly [RegExp, ExecResult]> => [
-	[EPIC, ONE_CHILD_EPIC],
+	[once(EPIC), epics.first ?? ONE_CHILD_EPIC],
 	[SUBS, subIssues(4301)],
 	[once(CHILD), first],
 	[CYCLE, okOut("{}")],
 	[CHILD, reread],
+	[EPIC, epics.reread ?? AGENT_EPIC],
 ];
 
 const digestOf = async (script: ReadonlyArray<readonly [RegExp, ExecResult]>): Promise<string> => {
@@ -91,9 +103,11 @@ describe("runFlip", () => {
 		const {outcome} = await run(digest, [
 			...CLAIMED,
 			...ledger(PLANNED, TRIAGED),
-			[LABELS, labelSet("status:planned", "status:triaged", "type:feature")],
+			[LABELS, labelSet("status:planned", "status:triaged", "ready-for:agent", "type:feature")],
 			[ADD, okOut("[]")],
 			[REMOVE, okOut("[]")],
+			[ADD_EPIC, okOut("[]")],
+			[REMOVE_EPIC, okOut("[]")],
 		]);
 		expect(outcome.code).toBe(0);
 		expect(JSON.parse(outcome.stdout)).toMatchObject({
@@ -104,7 +118,82 @@ describe("runFlip", () => {
 			children: [
 				{number: 4301, observed: ["p1", "status:triaged", "type:feature"], result: "flipped"},
 			],
+			audience: {result: "flipped", observed: ["ready-for:agent", "type:epic"]},
 		});
+	});
+
+	/**
+	 * The epic is admitted only once every child is *observed* pickable — flip it earlier and a
+	 * ledger the re-read proves half-flipped still ships an epic the operator can pick up.
+	 */
+	it("writes the epic's audience label last, after every child re-read", async () => {
+		const digest = await digestOf(CLEAN_READ);
+		const {calls} = await run(digest, [
+			...CLAIMED,
+			...ledger(PLANNED, TRIAGED),
+			[LABELS, labelSet("status:planned", "status:triaged", "ready-for:agent")],
+			[ADD, okOut("[]")],
+			[REMOVE, okOut("[]")],
+			[ADD_EPIC, okOut("[]")],
+			[REMOVE_EPIC, okOut("[]")],
+		]);
+		const childReread = calls.findIndex((line) => /^gh api repos\/o\/r\/issues\/4301$/.test(line));
+		const epicAdd = calls.findIndex((line) => ADD_EPIC.test(line));
+		const epicRemove = calls.findIndex((line) => REMOVE_EPIC.test(line));
+		expect(childReread).toBeGreaterThanOrEqual(0);
+		expect(epicAdd).toBeGreaterThan(childReread);
+		expect(epicRemove).toBeGreaterThan(epicAdd);
+	});
+
+	it("refuses 22 when the re-read proves the epic did not reach ready-for:agent", async () => {
+		const digest = await digestOf(CLEAN_READ);
+		const {outcome} = await run(digest, [
+			...CLAIMED,
+			...ledger(PLANNED, TRIAGED, {reread: ONE_CHILD_EPIC}),
+			[LABELS, labelSet("status:planned", "status:triaged", "ready-for:agent")],
+			[ADD, okOut("[]")],
+			[REMOVE, okOut("[]")],
+			[ADD_EPIC, okOut("[]")],
+			[REMOVE_EPIC, errOut("gh: Bad gateway (HTTP 502)")],
+		]);
+		expect(outcome.code).toBe(PARTIAL_FLIP);
+		expect(outcome.stdout).toBe("");
+		expect(outcome.stderr.at(-1)).toContain(
+			"epic #4300 does not carry ready-for:agent alone — the epic is half-flipped",
+		);
+	});
+
+	it("refuses 8 when the epic's audience write cannot be proven", async () => {
+		const digest = await digestOf(CLEAN_READ);
+		const {outcome} = await run(digest, [
+			...CLAIMED,
+			...ledger(PLANNED, TRIAGED, {reread: errOut("gh: Bad gateway (HTTP 502)")}),
+			[LABELS, labelSet("status:planned", "status:triaged", "ready-for:agent")],
+			[ADD, okOut("[]")],
+			[REMOVE, okOut("[]")],
+			[ADD_EPIC, okOut("[]")],
+			[REMOVE_EPIC, okOut("[]")],
+		]);
+		expect(outcome.code).toBe(WRITE_UNKNOWN);
+		expect(outcome.stderr.at(-1)).toContain("could not re-read the epic #4300");
+	});
+
+	it("refuses 23 when ready-for:agent is absent from the taxonomy, writing nothing", async () => {
+		const already = child({number: 4301, labels: ["type:feature", "p1", "status:triaged"]});
+		const digest = await digestOf([
+			[EPIC, ONE_CHILD_EPIC],
+			[SUBS, subIssues(4301)],
+			[CHILD, already],
+			[CYCLE, okOut("{}")],
+		]);
+		const {outcome, calls} = await run(digest, [
+			...CLAIMED,
+			...ledger(already, already),
+			[LABELS, labelSet("status:planned", "status:triaged", "type:feature")],
+		]);
+		expect(outcome.code).toBe(LABEL_ABSENT);
+		expect(outcome.stderr.at(-1)).toContain('label "ready-for:agent" is absent');
+		expect(calls.some((line) => /--method POST .*labels/.test(line))).toBe(false);
 	});
 
 	/**
@@ -117,12 +206,14 @@ describe("runFlip", () => {
 		const {calls} = await run(digest, [
 			...CLAIMED,
 			...ledger(PLANNED, TRIAGED),
-			[LABELS, labelSet("status:planned", "status:triaged")],
+			[LABELS, labelSet("status:planned", "status:triaged", "ready-for:agent")],
 			[ADD, okOut("[]")],
 			[REMOVE, okOut("[]")],
+			[ADD_EPIC, okOut("[]")],
+			[REMOVE_EPIC, okOut("[]")],
 		]);
-		const add = calls.findIndex((line) => /--method POST .*labels/.test(line));
-		const remove = calls.findIndex((line) => /--method DELETE .*labels/.test(line));
+		const add = calls.findIndex((line) => ADD.test(line));
+		const remove = calls.findIndex((line) => REMOVE.test(line));
 		expect(add).toBeGreaterThanOrEqual(0);
 		expect(remove).toBeGreaterThan(add);
 	});
@@ -184,19 +275,24 @@ describe("runFlip", () => {
 	it("skips the vocabulary check when there is nothing to flip", async () => {
 		const already = child({number: 4301, labels: ["type:feature", "p1", "status:triaged"]});
 		const digest = await digestOf([
-			[EPIC, ONE_CHILD_EPIC],
+			[EPIC, AGENT_EPIC],
 			[SUBS, subIssues(4301)],
 			[CHILD, already],
 			[CYCLE, okOut("{}")],
 		]);
-		const {outcome, calls} = await run(digest, [...CLAIMED, ...ledger(already, already)]);
+		const {outcome, calls} = await run(digest, [
+			...CLAIMED,
+			...ledger(already, already, {first: AGENT_EPIC}),
+		]);
 		expect(outcome.code).toBe(0);
 		expect(JSON.parse(outcome.stdout)).toMatchObject({
 			terminal: "nothing-to-flip",
 			flipped: 0,
 			already: 1,
+			audience: {result: "already", observed: ["ready-for:agent", "type:epic"]},
 		});
 		expect(calls.some((line) => LABELS.test(line))).toBe(false);
+		expect(calls.some((line) => /--method (POST|DELETE) .*labels/.test(line))).toBe(false);
 	});
 
 	/**
@@ -209,16 +305,17 @@ describe("runFlip", () => {
 			number: 4301,
 			labels: ["type:feature", "p1", "status:planned", "status:triaged"],
 		});
-		const {outcome} = await run(digest, [
+		const {outcome, calls} = await run(digest, [
 			...CLAIMED,
 			...ledger(PLANNED, stuck),
-			[LABELS, labelSet("status:planned", "status:triaged")],
+			[LABELS, labelSet("status:planned", "status:triaged", "ready-for:agent")],
 			[ADD, okOut("[]")],
 			[REMOVE, errOut("gh: Bad gateway (HTTP 502)")],
 		]);
 		expect(outcome.code).toBe(PARTIAL_FLIP);
 		expect(outcome.stdout).toBe("");
 		expect(outcome.stderr.at(-1)).toContain("1 unchanged (#4301) — the epic is half-flipped");
+		expect(calls.some((line) => ADD_EPIC.test(line))).toBe(false);
 	});
 
 	it("refuses 8 when a write landed and no re-read can prove its outcome", async () => {
@@ -226,7 +323,7 @@ describe("runFlip", () => {
 		const {outcome} = await run(digest, [
 			...CLAIMED,
 			...ledger(PLANNED, errOut("gh: Bad gateway (HTTP 502)")),
-			[LABELS, labelSet("status:planned", "status:triaged")],
+			[LABELS, labelSet("status:planned", "status:triaged", "ready-for:agent")],
 			[ADD, okOut("[]")],
 			[REMOVE, okOut("[]")],
 		]);
