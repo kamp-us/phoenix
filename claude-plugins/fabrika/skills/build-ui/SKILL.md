@@ -3,6 +3,8 @@ name: build-ui
 description: "Execute one triaged issue whose deliverable is a rendered visual surface, and land it as a PR — or, given a PR number, enter repair mode. Trigger on \"build the UI for #N\", \"implement the page/component/screen\", \"make the visual change in #N\", \"repair the design FAIL on PR #N\", and whenever backlog work's deliverable is something a user will see rendered. Text construction — code-as-text, prose, plans — is `build`'s lane; judging a rendered surface is `review-ui`'s."
 arguments: [issue_or_pr_number]
 argument-hint: "[issue-number|pr-number] — an issue number builds, a PR number repairs; omit to pick from the pool"
+context: fork
+background: true
 ---
 
 # build-ui

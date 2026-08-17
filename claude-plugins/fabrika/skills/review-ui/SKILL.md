@@ -3,6 +3,8 @@ name: review-ui
 description: "The rendered-visual review gate — judge one PR's rendered surfaces against the repo's design law. Trigger on \"/review-ui\", \"design-review PR #N\", \"review the UI on PR #N\", \"judge the rendered surfaces of #N\", and whenever a PR changes what a user sees rendered and owes its visual verdict before it can ship. Text judgment — code, docs, skills, plans — is `review`'s lane; constructing UI is `build-ui`'s."
 arguments: [pr_number]
 argument-hint: "[pr-number] — the pull request whose rendered surfaces to judge"
+context: fork
+background: true
 ---
 
 # review-ui

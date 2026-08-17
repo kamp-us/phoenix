@@ -3,6 +3,8 @@ name: build-epic
 description: "Conduct one planned epic into ONE pull request. Trigger on \"build epic #N\", \"conduct epic #N\", \"drive epic #N to a PR\", \"run the epic\", and whenever a planned epic's slices need landing as commits on one branch. Construction is `build`/`build-ui`'s, judgment `review`/`review-ui`'s, planning and merging their own lanes — this skill only conducts."
 arguments: [epic_number]
 argument-hint: "[epic-number] — the planned epic to conduct into one PR"
+context: fork
+background: true
 ---
 
 # build-epic

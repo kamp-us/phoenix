@@ -3,6 +3,8 @@ name: build
 description: "Execute one triaged, agent-ready issue end to end and land it as a PR — or, given a PR number, enter repair mode on that PR's branch. Trigger on \"work the next issue\", \"pick up an issue\", \"implement issue #N\", \"build #N\", \"repair PR #N\", \"fix the FAIL on #N\", and whenever triaged backlog work needs turning into a pull request. Rendered-visual construction is `build-ui`'s lane, not this skill's."
 arguments: [issue_or_pr_number]
 argument-hint: "[issue-number|pr-number] — an issue number builds, a PR number repairs; omit to pick from the pool"
+context: fork
+background: true
 ---
 
 # build
