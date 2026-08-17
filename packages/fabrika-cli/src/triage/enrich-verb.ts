@@ -19,8 +19,15 @@ import type {StdinRead} from "../io/stdin.ts";
 import {normalizeForReadback} from "../report/compose.ts";
 import {renderLeaks, scanBody} from "../report/leaks.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
+import {read as readCriteria} from "../wire/acceptance-criteria.ts";
 import {leakRefusal, readAuthored} from "./authored.ts";
-import {PRECONDITION_UNKNOWN, READBACK_MISMATCH, WRITE_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
+import {
+	MALFORMED_CRITERIA,
+	PRECONDITION_UNKNOWN,
+	READBACK_MISMATCH,
+	WRITE_UNKNOWN,
+	ZERO_SCOPE,
+} from "./codes.ts";
 import {composeBody, detect, type EnrichMode, wrapOriginal} from "./enrich.ts";
 import {legacyPreserved} from "./enrich-legacy.ts";
 
@@ -65,6 +72,17 @@ export const runEnrich = (
 		if (authored._tag === "Refused") return authored.outcome;
 		const leak = leakRefusal(surface, authored.text);
 		if (leak !== null) return leak;
+
+		// Over the authored stdin only, like the leak guard above: the composed body preserves the
+		// original by design, and an old `##` heading buried in it must never block a re-enrichment.
+		// `Absent` stays allowed — an issue may legitimately carry no criteria block (#5565).
+		const criteria = readCriteria(authored.text);
+		if (criteria._tag === "Malformed") {
+			return refuse(
+				MALFORMED_CRITERIA,
+				`triage enrich: ${surface.noun} carries an acceptance-criteria block every downstream reader rejects — ${criteria.reason} (${criteria.evidence}). Emit "### Acceptance criteria" with "- [ ]" items, or drop the block.`,
+			);
+		}
 
 		const target = yield* getIssue(repo, issue);
 		if (target._tag === "Absent") {
