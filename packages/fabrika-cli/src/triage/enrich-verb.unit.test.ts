@@ -266,7 +266,7 @@ describe("runEnrich — legacy migration", () => {
 	});
 });
 
-describe("runEnrich — the acceptance-criteria block on stdin must be one the wire reader accepts (#5565)", () => {
+describe("runEnrich — the composed body's criteria block must be one the wire reader accepts (#5565, ADR 0288)", () => {
 	it("refuses a level-2 heading on 14, naming the level it read and the level expected", async () => {
 		const shell = fakeShell([[READ, issue(ORIGINAL)]]);
 		const outcome = await Effect.runPromise(
@@ -309,6 +309,25 @@ describe("runEnrich — the acceptance-criteria block on stdin must be one the w
 		});
 		expect(outcome.code).toBe(0);
 		expect(body).toContain("## Acceptance criteria");
+	});
+
+	it("refuses a drifted block in an --epic pitch too, where the envelope heads it with `## Pitch`", async () => {
+		const shell = fakeShell([[READ, issue(ORIGINAL)]]);
+		const outcome = await Effect.runPromise(
+			Effect.provide(
+				runEnrich({
+					...options,
+					epic: true,
+					stdin: Effect.succeed<StdinRead>({
+						_tag: "Text",
+						text: "**Problem:** x\n\n## Acceptance criteria\n\n- [ ] keep focus\n",
+					}),
+				}),
+				shell.layer,
+			),
+		);
+		expect(outcome.code).toBe(MALFORMED_CRITERIA);
+		expect(shell.calls.some((line) => PATCH.test(line))).toBe(false);
 	});
 });
 

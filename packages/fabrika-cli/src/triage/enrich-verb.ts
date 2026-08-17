@@ -28,7 +28,7 @@ import {
 	WRITE_UNKNOWN,
 	ZERO_SCOPE,
 } from "./codes.ts";
-import {composeBody, detect, type EnrichMode, wrapOriginal} from "./enrich.ts";
+import {authoredRegion, composeBody, detect, type EnrichMode, wrapOriginal} from "./enrich.ts";
 import {legacyPreserved} from "./enrich-legacy.ts";
 
 export interface EnrichOptions {
@@ -72,17 +72,6 @@ export const runEnrich = (
 		if (authored._tag === "Refused") return authored.outcome;
 		const leak = leakRefusal(surface, authored.text);
 		if (leak !== null) return leak;
-
-		// Over the authored stdin only, like the leak guard above: the composed body preserves the
-		// original by design, and an old `##` heading buried in it must never block a re-enrichment.
-		// `Absent` stays allowed — an issue may legitimately carry no criteria block (#5565).
-		const criteria = readCriteria(authored.text);
-		if (criteria._tag === "Malformed") {
-			return refuse(
-				MALFORMED_CRITERIA,
-				`triage enrich: ${surface.noun} carries an acceptance-criteria block every downstream reader rejects — ${criteria.reason} (${criteria.evidence}). Emit "### Acceptance criteria" with "- [ ]" items, or drop the block.`,
-			);
-		}
 
 		const target = yield* getIssue(repo, issue);
 		if (target._tag === "Absent") {
@@ -139,6 +128,19 @@ export const runEnrich = (
 		}
 
 		const composed = composeBody({mode, issue, authored: authored.text, preserved});
+
+		// ADR 0288 §1: the read runs over the bytes about to be posted, not over stdin — an enclosing
+		// template can demote a heading that arrived conforming. It is scoped to the region above the
+		// marker, which `composeBody` guarantees is `composed`'s own prefix, because the preserved
+		// original below it is redacted rather than refused; a legacy `##` heading buried there would
+		// otherwise refuse every re-enrichment forever. `Absent` stays allowed (#5565).
+		const criteria = readCriteria(authoredRegion(mode, authored.text));
+		if (criteria._tag === "Malformed") {
+			return refuse(
+				MALFORMED_CRITERIA,
+				`triage enrich: ${surface.noun} composes an acceptance-criteria block the wire reader rejects — ${criteria.reason} (${criteria.evidence}). The grammar is owned by packages/fabrika-cli/src/wire/acceptance-criteria.ts; fix the block or drop it.`,
+			);
+		}
 
 		const written = yield* patchIssueBody(repo, issue, composed);
 		if (written._tag === "Failure") {
