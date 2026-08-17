@@ -74,3 +74,19 @@ apps/web/tests/e2e/.auth
 !.vscode/extensions.json
 !.vscode/settings.json
 .idea
+
+# Driver/agent session working state — dropped into the repo root by live
+# sessions (status pages, screenshots, retro notes, per-session crew state);
+# never committed. Real repo images live under app dirs, not the root.
+/scratchpad/
+/scratchpad-*.png
+/*.png
+/retro/
+/.claude/crew-run/
+/.claude/settings.local.json
+
+# Stray .claude/ dirs subagents mint inside package trees when a tool runs
+# with a package cwd — always accidental; the root /.claude/ stays tracked.
+packages/**/.claude/
+claude-plugins/**/.claude/
+apps/**/.claude/
