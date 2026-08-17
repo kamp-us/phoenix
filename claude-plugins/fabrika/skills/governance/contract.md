@@ -901,7 +901,10 @@ namespace is a constant, so it cannot be aimed anywhere else even by a confused 
    newest `governance-floor` run there is completed-and-red it requests a re-run of that run's failed
    jobs, then re-reads the run and requires `run_attempt` to have increased. **The re-run is a
    re-derivation, never a claim**: nothing here writes a check-run or a status, so the green a PR ends
-   with is one `ship floor` reached itself against live comment state.
+   with is one `ship floor` reached itself against live comment state. **This step is the one place
+   the verb needs `actions: write`** on its token; no earlier step asks for it. Without it the
+   `rerun-failed-jobs` request 403s, the floor reads `unknown`, and the fix degrades to
+   #5585's own symptom — a red check a human clears — never to a false green.
 
 **The floor assertion never changes the exit code.** By step 7 the verdict is landed and read back, so
 a floor that could not be asserted is a red check, not an unwritten verdict — every outcome is one
