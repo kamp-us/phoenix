@@ -1,5 +1,5 @@
 ---
-id: 0284
+id: 0287
 title: The fabrika delegation stays inside one repository, and an unprovable repository refuses
 status: accepted
 date: 2026-08-16

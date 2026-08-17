@@ -3,7 +3,7 @@
  *
  * The delegation boundary is the repository, not the checkout; the identity compared is
  * `$GIT_COMMON_DIR`, read off disk per `gitrepository-layout(5)` because the bootstrap has no
- * linked dependencies and no runtime for a `git` subprocess. See ADR 0284.
+ * linked dependencies and no runtime for a `git` subprocess. See ADR 0287.
  */
 import {Effect, type FileSystem, Path} from "effect";
 import {exists, isDirectory, type ReadFailed, readFile, realPath} from "../io/fs.ts";
