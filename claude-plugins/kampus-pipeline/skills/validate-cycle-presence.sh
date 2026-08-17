@@ -45,8 +45,8 @@
 set -uo pipefail
 
 # Self-locating, same idiom as validate-cycle-absence.sh: this script lives in the skills
-# root, so its own dir IS that root — resolve from BASH_SOURCE (physical path, -P, so the
-# .claude/skills symlink doesn't poison the repo-root walk below) so it works from any cwd.
+# root, so its own dir IS that root — resolve from BASH_SOURCE (physical path, -P, so a symlinked
+# or relative caller cannot poison the repo-root walk below) so it works from any cwd.
 skills_dir="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [ ! -d "$skills_dir" ]; then
 	echo "FAIL: could not resolve the skills root from ${BASH_SOURCE[0]} — refusing to scan an unresolved root (ADR 0092)"

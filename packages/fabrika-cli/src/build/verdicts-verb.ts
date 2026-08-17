@@ -18,6 +18,7 @@
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {getIssue, listComments} from "../io/issues.ts";
+import {CAP_ROUND} from "../retry-budget.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {read as readCriteria} from "../wire/acceptance-criteria.ts";
 import {bindToHead, read as readMarker} from "../wire/verdict-marker.ts";
@@ -25,7 +26,7 @@ import {PRECONDITION_UNKNOWN} from "./codes.ts";
 import {contentOf, gate} from "./content-gate.ts";
 import {listReviews} from "./github.ts";
 import {closingTargets, proseOf} from "./pr-body.ts";
-import {countRounds, ROUND_CAP} from "./rounds.ts";
+import {countRounds} from "./rounds.ts";
 import {openPull, resolveTargetRepo} from "./target.ts";
 
 const VERB = "build verdicts";
@@ -130,7 +131,7 @@ export const runVerdicts = (
 				head,
 				rows,
 				rounds,
-				capReached: rounds >= ROUND_CAP,
+				capReached: rounds >= CAP_ROUND,
 				frozenCriteria: frozen.rows,
 			}),
 			[
@@ -144,7 +145,7 @@ type Frozen =
 	| {readonly _tag: "Unknown"; readonly reason: string};
 
 /**
- * The reviewer-appended criteria on this PR's linked issue that landed after round 2.
+ * The reviewer-appended criteria on this PR's linked issue that landed at or past the freeze round.
  *
  * The provenance tag ADR 0079 requires is what makes them findable at all — the round is written into
  * the row, so the freeze is a property of the artifact rather than of a session's memory. A PR with no
@@ -169,7 +170,7 @@ const frozenCriteria = (
 			if (tag?.[1] === undefined || tag[2] === undefined) continue;
 			if (Number.parseInt(tag[1], 10) !== pr) continue;
 			const round = Number.parseInt(tag[2], 10);
-			if (round > 2) {
+			if (round >= CAP_ROUND) {
 				rows.push({text: criterion.text.replace(PROVENANCE_RE, "").trim(), appendedRound: round});
 			}
 		}

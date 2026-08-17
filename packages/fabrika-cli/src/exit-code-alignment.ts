@@ -481,8 +481,8 @@ export const checkAlignment = (
 /**
  * The `<group>/codes.ts` tables that actually exist on disk — one of {@link coverageGaps}'s two
  * inputs, and on its own never the scan's scope: a group with no table is exactly what this read
- * cannot see (#5213). Paths resolve physically — a `..` folded across the repo's `.claude/skills`
- * symlink resolves somewhere else entirely.
+ * cannot see (#5213). Paths resolve physically — reached through any symlinked or relative caller, a
+ * logically folded `..` resolves somewhere else entirely.
  */
 export const codeTableGroupsIn = (srcDir: string): readonly string[] => {
 	const root = realpathSync(srcDir);
@@ -541,10 +541,10 @@ const LOCAL_NUMBER = /^(?:export )?const ([A-Za-z_$][\w$]*)\s*=\s*-?\d/gm;
  *
  * A code is seated here when `refuse(...)` is handed a numeric literal, or a name the same file
  * declares as a number. That is deliberately narrower than {@link verbLocalCodesIn}'s shape-only
- * read, which cannot be the repo-wide check: `review`'s `FREEZE_ROUND` and `triage`'s
- * `DEFAULT_TTL_MINUTES` are numeric constants a verb file is entitled to declare, and only their use
- * as an exit code would make them a seat. Reading the source is still the only way — an import and a
- * declaration are the same export once the module is loaded.
+ * read, which cannot be the repo-wide check: `triage`'s `DEFAULT_TTL_MINUTES` is a numeric constant
+ * a verb file is entitled to declare, and only its use as an exit code would make it a seat.
+ * Reading the source is still the only way — an import and a declaration are the same export once
+ * the module is loaded.
  *
  * Throws on a scan that read no verb file. An all-clear over nothing is the vacuous pass ADR 0092
  * forbids, and it is the shape a mistyped source root would produce first.

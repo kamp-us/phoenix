@@ -9,9 +9,12 @@
  */
 import {Console, Effect} from "effect";
 import {Command} from "effect/unstable/cli";
+import pkg from "../package.json" with {type: "json"};
 
-/** The pipeline-cli version string, surfaced both at the root `--version` and here. */
-export const VERSION = "0.3.0";
+// Derived, never declared: `package.json` is the one carrier release-please bumps, so a literal
+// here would be a second version to hand-sync on every release cut (#5714). Resolves the same
+// from `src/` and from `dist/` — npm ships `package.json` in the tarball whatever `files` says.
+export const VERSION = pkg.version;
 
 export const versionCommand = Command.make(
 	"version",

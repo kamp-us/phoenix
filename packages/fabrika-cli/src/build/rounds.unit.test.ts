@@ -1,5 +1,5 @@
 import {describe, expect, it} from "vitest";
-import {countRounds, ROUND_CAP, ROUND_GAP_MS} from "./rounds.ts";
+import {countRounds, ROUND_GAP_MS} from "./rounds.ts";
 
 const at = (secondsFromStart: number) =>
 	new Date(1_770_000_000_000 + secondsFromStart * 1000).toISOString();
@@ -23,8 +23,8 @@ describe("countRounds clusters FAIL markers by the 120-second gap rule", () => {
 		expect(countRounds([at(0), at(121)])).toBe(2);
 	});
 
-	it("counts three separated rounds, which is the cap", () => {
-		expect(countRounds([at(0), at(300), at(600)])).toBe(ROUND_CAP);
+	it("counts three separated markers as three rounds", () => {
+		expect(countRounds([at(0), at(300), at(600)])).toBe(3);
 	});
 
 	it("sorts before clustering, so an out-of-order list counts the same", () => {

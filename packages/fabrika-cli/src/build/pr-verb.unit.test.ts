@@ -91,12 +91,15 @@ describe("runPr — the body guards run before any write", () => {
 		const out = await run([], withBody("Fixes #4312\n\njust prose\n"));
 		expect(out.code).toBe(BAD_SECTIONS);
 		expect(out.stderr.at(-1)).toBe(
-			'build pr: the body has no "## Deviations" heading, or it is empty — state deviations, or state "None."',
+			'build pr: the body\'s "## Deviations" section is not readable — no heading in the body reaches for "## Deviations". State each deviation as an entry, or state "None."',
 		);
 	});
 
 	it("refuses a stray closing keyword on 4 (#4471)", async () => {
-		const out = await run([], withBody(`${BODY}\nAlso closes #999.\n`));
+		const out = await run(
+			[],
+			withBody(BODY.replace("## Deviations", "Also closes #999.\n\n## Deviations")),
+		);
 		expect(out.code).toBe(BAD_SECTIONS);
 		expect(out.stderr.at(-1)).toBe(
 			"build pr: the body carries a closing keyword aimed at #999 — this PR serves #4312.",

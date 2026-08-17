@@ -35,18 +35,19 @@
 # answer against the step's, and a stubbed probe would compare a stub to itself.
 #
 # Usage:  bash claude-plugins/kampus-pipeline/skills/ship-it/scripts/verify-step0-class-parity.sh
-#         CI runs the same script through the `.claude/skills` symlink (ci.yml, the `skills` job).
+#         CI runs the same script from that path (ci.yml, the `skills` job).
 #
 # Shell shape per .patterns/skill-script-shell-shape.md: `set -uo pipefail`, never `-e`, and no
 # `EXIT` trap — on bash 3.2 `-e` plus a cleanup trap launders a `set -u` abort into exit 0, and this
 # harness's whole contract is its exit status.
 set -uo pipefail
 
-# PHYSICAL resolution (`cd -P` / `pwd -P`): CI invokes this through the `.claude/skills` symlink, and
-# the step under test resolves its own sourced chain through `../../../lib`. Left logical, that hop is
-# folded textually against the symlink and lands on `.claude/lib`, which does not exist — the step
-# then dies at its source line and prints no class set, which this harness would score as a caught
-# disagreement while testing nothing. Resolving here physically is what keeps the `..` hops real.
+# PHYSICAL resolution (`cd -P` / `pwd -P`): the step under test resolves its own sourced chain
+# through `../../../lib`. Reached through any symlinked or relative caller and left logical, that hop
+# folds textually against the caller's path instead of the real one and lands where no `lib/` exists
+# — the step then dies at its source line and prints no class set, which this harness would score as
+# a caught disagreement while testing nothing. Resolving here physically is what keeps the `..` hops
+# real whatever path the caller used.
 DIR="$(CDPATH= cd -P -- "$(dirname -- "$0")" && pwd -P)"
 SUT="$DIR/step0-classify.sh"
 if [ ! -f "$SUT" ]; then

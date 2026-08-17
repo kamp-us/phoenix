@@ -108,7 +108,8 @@ namespace posts a native APPROVE.
 Sweep the loaded diff on silent-failure, type-design and test-gap as checklist lines in this same
 pass, then route each finding **binary** — traces to the linked issue's stated goal, or not; no
 severity tier. In-scope findings append an acceptance criterion under the verb's fences
-(append-only, ACL-gated fail-closed, frozen at round 3); the row enters the *next* cycle's verdict,
+(append-only, ACL-gated fail-closed, frozen at the round the verb declares — hand it `--round` and
+read its answer, never a remembered number); the row enters the *next* cycle's verdict,
 never this one's. Out-of-scope findings go to fabrika's `/report`, non-blocking.
 
 ```bash

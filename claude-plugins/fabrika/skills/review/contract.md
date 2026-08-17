@@ -29,7 +29,7 @@ Named because a spec that leaves the substrate open makes the implementer guess 
 | `review verdicts` | every verdict marker on the PR, per namespace, each with its `Current` / `Stale` / `Unbindable` binding against the live head and the content it bound | comment sweep + registered parse + `bindToContent` is mechanical; what a stale marker means for this round is judgment |
 | `review deviations` | the PR body's `## Deviations` section state (found / absent / malformed), its entries, and the Tier-M token scan over the diff | section detection and token scanning are mechanical; matching entry *substance* against findings is judgment (Tier R) |
 | `review post` | the single sanctioned verdict emit: compose through the `verdict-marker` wire format, bind to the inspected head at post time, post one comment per namespace at that head, read it back | marker composition, head re-resolution, leak scan and read-back are a protocol; the polarity and clause are judgment |
-| `review append-criterion` | append one reviewer-authored acceptance criterion to the linked issue under the four fences (append-only · ACL-gated fail-closed · frozen after round 3), with provenance tag | the fences and the diff-guarded append are mechanical (ADR 0079); whether a finding is in-scope is judgment |
+| `review append-criterion` | append one reviewer-authored acceptance criterion to the linked issue under the four fences (append-only · ACL-gated fail-closed · frozen at `src/retry-budget.ts`'s `CAP_ROUND`), with provenance tag | the fences and the diff-guarded append are mechanical (ADR 0079); whether a finding is in-scope is judgment |
 
 ### Considered and deliberately not derived
 
@@ -708,15 +708,22 @@ fabrika review deviations 4321 [--sha <head>] [--repo <owner/name>] [--json]
 | `--json` | boolean | no | `false` | emit the result object |
 
 **Output** — machine channel. First line: `deviations\t<found|none-declared|absent|malformed>`.
-On `found`, one line per entry: `entry\t<class-label-or-->\t<first-line-of-Said>` (the null
-token is the ASCII hyphen `-`, the same one `review verdicts` uses). Then the
+On `found`, one line per entry: `entry\t<class-label-or-->\t<Said>` (the null
+token is the ASCII hyphen `-`, the same one `review verdicts` uses; a **Said** authored across
+wrapped lines is carried in full, collapsed to one line, so the answer never holds a partial clause). Then the
 Tier-M scan over the head diff, one line per hit:
 `tier-m\t<suppression|removed-assertion>\t<file>:<line>\t<token>` — the mechanically-detectable
 §DEV classes (an in-diff `biome-ignore` / `@ts-expect-error` / `test.skip` / `.only`; a deleted
 assertion line), each a fact the judgment layer matches against the disclosed entries.
 
 `none-declared` is the literal `None.` body; `absent` is **no `## Deviations` heading at all**;
-`malformed` is a heading whose section fits neither shape. The three stay distinct on the wire
+`malformed` is a heading whose section fits neither shape. Which shapes those are is not stated
+here: the grammar is the registered `deviations` wire format
+([`packages/fabrika-cli/src/wire/deviations.ts`](../../../../packages/fabrika-cli/src/wire/deviations.ts)),
+which `build pr` refuses against at creation, so a body that verb accepted never reaches this one as
+`malformed` (#5566). On `malformed` and `absent` the verb prints the format's own reason as a
+diagnostic — a gate that answers a bare `malformed` never tells an author which field is missing.
+The three stay distinct on the wire
 because the skill's verdict vocabulary depends on the distinction: absent-on-owing fails closed,
 `None.` is a checked claim, and this verb is what makes the claim checkable — a `None.` printed
 beside a non-empty Tier-M list is a falsified disclosure the caller can see in one read.
@@ -969,13 +976,13 @@ The criterion text arrives on **stdin** — one checkbox row's text, without the
 |---|---|---|---|---|
 | *(positional)* | integer | yes | — | the linked issue receiving the criterion |
 | `--pr` | integer | yes | — | the PR whose review round produced the finding — half the provenance tag |
-| `--round` | integer | yes | — | this review round's number; at or past the freeze (3) the verb escalates instead of appending |
+| `--round` | integer | yes | — | this review round's number; at or past the freeze (`src/retry-budget.ts`'s `CAP_ROUND`) the verb escalates instead of appending |
 | `--repo` | string | no | resolved | the repository |
 | `--json` | boolean | no | `false` | emit the result object |
 | stdin | markdown | yes | — | the criterion text |
 
 **Output** — machine channel. One line: `appended\t<issue>\t<row-count-after>`, or
-`escalated-frozen\t<issue>\t<round>` when `--round` ≥ 3 — the escalation comment landed and the
+`escalated-frozen\t<issue>\t<round>` when `--round` is at or past `CAP_ROUND` — the escalation comment landed and the
 AC did **not** (fence 4: append-rate stays bounded by fix-rate; a finding raised at the freeze
 routes to a human). Both are proven answers at exit 0, discriminated by the token.
 
@@ -989,7 +996,8 @@ With `--json`: `{"outcome":…,"issue":…,"rows":…,"round":…,"acl":"write+"
 2. **Append-only**: the new body is the old body plus exactly one row (`- [ ] <text>
    <!-- ac:review pr:#<pr> round:<round> -->`) under the existing conforming heading; a diff
    guard refuses any write that would drop or mutate a prior byte.
-3. **Frozen at round K = 3**: `--round` ≥ 3 posts the escalation comment instead of appending.
+3. **Frozen at ADR 0079's round K**, read from `src/retry-budget.ts`'s `CAP_ROUND`: a `--round` at
+   or past it posts the escalation comment instead of appending.
 4. **In-scope-only is the caller's** (the trace-to-stated-goal test is judgment); the provenance
    tag is what makes a routed row auditable after the fact.
 
@@ -1045,7 +1053,8 @@ escalated-frozen	4287	3
 **Grounding**
 
 - ADR 0079 — reviewer-authored acceptance criteria: routed binary, appended under fences, frozen
-  at K = N = 3; v1's `reviewer-append-ac.sh` was mandated at four call sites and called at none
+  at K = N = 3 (the value the ADR set; the fence reads it from `src/retry-budget.ts`'s
+  `CAP_ROUND`); v1's `reviewer-append-ac.sh` was mandated at four call sites and called at none
   (the S8 scar) — a first-class verb is the difference between a fence and a fence description.
 - ADR 0055 — authority from the ACL check; a below-write author or a failed lookup skips the
   append entirely, fail-closed.

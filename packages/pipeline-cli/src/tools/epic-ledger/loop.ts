@@ -28,7 +28,7 @@
  * re-invokes plan-epic (a subagent spawn, a queued job, a shell-out). The package
  * owns the convergence control flow and stays testable with a faked `RePlanner`;
  * the binding to the real agent lives at the call site, outside this package.
- * See `.claude/skills/review-plan/SKILL.md` for the agent-side wiring.
+ * See `claude-plugins/kampus-pipeline/skills/review-plan/SKILL.md` for the agent-side wiring.
  */
 import {Context, Effect} from "effect";
 import * as Schema from "effect/Schema";

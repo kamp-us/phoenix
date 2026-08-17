@@ -691,9 +691,17 @@ jobs:
       # runs over the ten other gate boundaries (#4401). A drifted copy otherwise
       # silently breaks all gate checks with no build-time failure. Its second invariant — the
       # `.claude/skills` symlink agreeing with marketplace.json — went with the symlink
-      # when v1 retired (ADR 0277).
+      # when v1 retired (ADR 0277); its incidental source-resolution coverage moved to
+      # validate-marketplace-sources.sh below (#5605).
       # Same script runs locally: `bash claude-plugins/kampus-pipeline/skills/validate-gate-path-drift.sh`.
       - run: bash claude-plugins/kampus-pipeline/skills/validate-gate-path-drift.sh
+
+      # Marketplace manifest guard (#5605): every `source` in .claude-plugin/marketplace.json
+      # resolves to a real plugin directory. The retired invariant 2 asserted this only as a
+      # side effect and only for the first entry, so a typo'd or renamed source in any later
+      # entry shipped a plugin nobody can install with nothing red.
+      # Same script runs locally: `bash claude-plugins/kampus-pipeline/skills/validate-marketplace-sources.sh`.
+      - run: bash claude-plugins/kampus-pipeline/skills/validate-marketplace-sources.sh
 
   # Reproducible workflow-YAML lint (issue #568). `.github/workflows/**` is the most
   # control-plane-sensitive, human-merged file class (ADR 0053), yet was validated

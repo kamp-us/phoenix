@@ -9,7 +9,7 @@
  * node, edge, and story sets emitted in a fixed order so a downstream signature
  * is stable.
  *
- * See `.claude/skills/gh-issue-intake-formats.md` §1 (the `## Dependencies`
+ * See `claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md` §1 (the `## Dependencies`
  * grammar) and §2 (the ≥1-AC sub-issue invariant + the required `**Stories:**`
  * field) for the source conventions.
  */

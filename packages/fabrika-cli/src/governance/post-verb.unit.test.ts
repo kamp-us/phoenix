@@ -1,6 +1,7 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {errOut, fakeShell, okOut, once} from "../fakes.test-support.ts";
+import {runsAtHead, workflowRun} from "../heal-ci/fixtures.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {CONTENT, PATHS_AT} from "../review/fixtures.test-support.ts";
@@ -25,6 +26,10 @@ const COMMENTS = /^gh api --paginate repos\/o\/r\/issues\/4321\/comments/;
 const CREATE = /^gh api --method POST repos\/o\/r\/issues\/4321\/comments/;
 const PATCH = /^gh api --method PATCH repos\/o\/r\/issues\/comments\/77/;
 const READ_BACK = /^gh api repos\/o\/r\/issues\/comments\/(\d+)$/;
+const RUNS = /^gh api --paginate repos\/o\/r\/actions\/runs\?head_sha=/;
+const RUN = /^gh api repos\/o\/r\/actions\/runs\/\d+$/;
+const RERUN = /^gh api --method POST repos\/o\/r\/actions\/runs\/\d+\/rerun-failed-jobs$/;
+const FLOOR = 31_863_008_185;
 
 const BODY = "The sweep found no contradiction; no anchored invariant is in reach.\n";
 const URL = "https://github.com/o/r/pull/4321#issuecomment-5154902211";
@@ -201,5 +206,57 @@ describe("runPost", () => {
 		);
 		await Effect.runPromise(Effect.provide(runPost(options), fake.layer));
 		expect(fake.calls).toContain("gh api repos/o/r/issues/comments/91");
+	});
+});
+
+// The floor job runs on `pull_request` and reads comment state at its own start, so it always judges
+// a head that has no verdict yet and nothing re-fires it. The gate that just wrote the verdict is the
+// actor with no ordering problem — founder ruling, 2026-08-16 (#5585).
+describe("runPost asserts the governance floor at the head it posted to", () => {
+	const landed = (
+		...extra: ReadonlyArray<readonly [RegExp, ExecResult]>
+	): ReadonlyArray<readonly [RegExp, ExecResult]> =>
+		governing(
+			[CREATE, created()],
+			[READ_BACK, okOut(JSON.stringify({body: composed()}))],
+			...extra,
+		);
+
+	const floorRed = (): ReadonlyArray<readonly [RegExp, ExecResult]> => [
+		[RUNS, runsAtHead(1, [{id: FLOOR, name: "governance-floor"}])],
+		[once(RUN), workflowRun({id: FLOOR, attempt: 1})],
+		[RERUN, okOut("")],
+		[RUN, workflowRun({id: FLOOR, attempt: 2})],
+	];
+
+	it("re-fires the red floor run and names the new attempt on stderr", async () => {
+		const shell = fakeShell(landed(...floorRed()));
+		const out = await Effect.runPromise(Effect.provide(runPost(options), shell.layer));
+		expect(out.code).toBe(0);
+		expect(shell.calls.some((call) => RERUN.test(call))).toBe(true);
+		expect(out.stderr.at(-1)).toContain(`re-fired governance-floor run ${FLOOR} at attempt 2`);
+	});
+
+	it("carries the floor's outcome in the --json record", async () => {
+		const out = await run(landed(...floorRed()), {json: true});
+		expect(JSON.parse(out.stdout)).toMatchObject({outcome: "posted", floor: "refired"});
+	});
+
+	// The verdict is landed and read back before the floor is touched, so a floor that could not be
+	// asserted is a red check to clear, never an unwritten verdict to retry.
+	it("still answers 0 when the floor cannot be asserted, and says the check may need a re-fire", async () => {
+		const out = await run(landed([RUNS, errOut("gh: Bad gateway (HTTP 502)")]));
+		expect(out.code).toBe(0);
+		expect(out.stdout).toContain("\tcreated\t");
+		expect(out.stderr.at(-1)).toContain("may still need a re-fire");
+	});
+
+	it("asserts the floor only after the verdict has been read back", async () => {
+		const shell = fakeShell(landed(...floorRed()));
+		await Effect.runPromise(Effect.provide(runPost(options), shell.layer));
+		const readBack = shell.calls.findIndex((call) => READ_BACK.test(call));
+		const refire = shell.calls.findIndex((call) => RERUN.test(call));
+		expect(readBack).toBeGreaterThanOrEqual(0);
+		expect(refire).toBeGreaterThan(readBack);
 	});
 });
