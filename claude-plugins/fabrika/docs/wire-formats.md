@@ -41,6 +41,7 @@ does not exist yet — rather than missing; check the registry before assuming a
 | `deviations` | [`packages/fabrika-cli/src/wire/deviations.ts`](../../../packages/fabrika-cli/src/wire/deviations.ts) | `build`, `build-ui`, `build-epic` | `review`, `review-ui` |
 | `verdict-marker` | [`packages/fabrika-cli/src/wire/verdict-marker.ts`](../../../packages/fabrika-cli/src/wire/verdict-marker.ts) | `review`, `check-epic-plan`, `governance` | `build`, `ship` |
 | `slice-handoff` | [`packages/fabrika-cli/src/wire/slice-handoff.ts`](../../../packages/fabrika-cli/src/wire/slice-handoff.ts) | `build-epic` | `build` |
+| `lane-brief` | [`packages/fabrika-cli/src/wire/lane-brief.ts`](../../../packages/fabrika-cli/src/wire/lane-brief.ts) | `operate` | `build`, `review`, `ship` |
 | `map-ticket` | [`packages/fabrika-cli/src/wire/map-ticket.ts`](../../../packages/fabrika-cli/src/wire/map-ticket.ts) | `map` | `map` |
 | `grill-ruling` | [`packages/fabrika-cli/src/wire/grill-ruling.ts`](../../../packages/fabrika-cli/src/wire/grill-ruling.ts) | `grilling` | `grilling` |
 | `grill-answer` | [`packages/fabrika-cli/src/wire/grill-answer.ts`](../../../packages/fabrika-cli/src/wire/grill-answer.ts) | `grilling` | `grilling` |
@@ -106,6 +107,18 @@ own words from someone else's. So the section set is closed and the rules text i
 module, and a brief carrying anything outside them reads as drifted rather than as a brief with
 extra advice. Its paths are machine-local by construction, which is also why a brief is consumed in
 session and never posted to a public surface.
+
+### `lane-brief`
+
+This is the spawn prompt a lane driver hands one fabrika shell, and it exists because the prompt is
+the whole interface between the machine and the work. Written per dispatch, two drivers driving the
+same state send materially different instructions, and the rule that matters most — carry the URLs,
+never a restatement, because a restated spec is a stale spec — is enforced by nothing but the
+driver's care. So the format owns the rules text byte for byte and the state → shell routing table
+with it, and `lane brief` prints what it derives instead of composing anything. `## Ground` carries
+links and no content at all: the shell re-reads its own issue, PR and verdicts through its own
+verbs. A `review` or `ship` brief with no PR is malformed rather than dispatchable, because that
+shell would have nothing to read.
 
 ### `map-ticket`
 

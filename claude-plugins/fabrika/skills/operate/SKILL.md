@@ -73,29 +73,35 @@ active phase** (future phases read `waiting`; leave them alone), route on the le
 | Leaf state | Action |
 | --- | --- |
 | `queued` | record `WIP` — the task enters build |
-| `build` | spawn `builder` — repair mode with the PR when the task's issue already carries an open PR, construction with the issue otherwise |
-| `review` | spawn `reviewer` on the task's PR |
-| `ship` | spawn `shipper` on the task's PR |
+| `build` / `review` / `ship` | dispatch through `lane brief` — below |
 | `human:*` | park — step 4 |
 | `blocked` | park — step 4 |
 | any other name | park naming the state — never guess a shell for a state you do not recognise |
 
-The issue a task drives: on an emitted epic lane the task's own name (regions are the children);
-on an opened single lane the lane number itself. The task's PR is read off the board, never off
-your memory: the open PR whose body traces to the task's issue
-(`gh pr list --state open --search "$issue_number in:body" --json number,url,headRefName`) — exactly one is
-the lane's; zero where the state demands one, or several, is a park naming the ambiguity.
-Parallel active tasks spawn in parallel.
+**You never compose a spawn prompt.** The verb prints it:
 
-Every spawn, no exceptions:
+```bash
+node packages/fabrika-cli/src/bin.ts lane brief $issue_number --task <name>
+```
 
-- **Worktree isolation** (`isolation: worktree`) — a non-isolated subagent shares the primary
-  checkout and can mutate its git state.
-- **The prompt points at the spec, never restates it**: it carries the URLs — the issue, the PR,
-  the verdict comments, as each exists — and no summary of their content; the shell re-reads its
-  own ground through its own verbs.
-- **The prompt instructs `node packages/fabrika-cli/src/bin.ts` for every fabrika verb**, never
-  the bare binstub (#5679 again, now in the spawned tree).
+Its stdout is the whole prompt — send those bytes to the spawn verbatim and add nothing to them. It
+derives every value: the state from the same fold you just read, the shell from its own routing
+table (`build` → builder, `review` → reviewer, `ship` → shipper), the issue and PR URLs off the
+board, and its rules from byte-fixed text the `lane-brief` wire format owns
+([`packages/fabrika-cli/src/wire/lane-brief.ts`](../../../../packages/fabrika-cli/src/wire/lane-brief.ts)).
+Those rules are the three a driver used to carry in their own prose — the isolated worktree, URLs
+never restatements, and `node packages/fabrika-cli/src/bin.ts` for every fabrika verb rather than
+the bare binstub (#5679, now in the spawned tree). They are in the brief because a prompt written
+per dispatch is a prompt two drivers write differently.
+
+The spawn flag is still yours: **`isolation: worktree`, no exceptions** — a non-isolated subagent
+shares the primary checkout and can mutate its git state, and no bytes in a prompt can enforce that
+from the inside.
+
+`lane brief`'s refusals are the parks it saves you from guessing at: `18` is a state that routes to
+no shell, `19` is a task whose issue cannot be resolved or is absent, `20` is zero open PRs where
+the state needs one or several where one is required. Each is a park naming what the verb named —
+never a prompt you write by hand instead. Parallel active tasks brief and spawn in parallel.
 
 Done when every active task has either a spawn in flight or an event recorded this pass.
 
@@ -193,6 +199,6 @@ fabrika skill, so one reader parses all of them. No row here dead-ends on a bare
 
 | Must exist | Why this skill needs it | When missing |
 | --- | --- | --- |
-| The lane verb group — `packages/fabrika-cli/src/bin.ts` routing `lane status`/`transition`/`history`/`print` plus `open`/`emit` (#5688) | Every state read and every event write in this skill is one of these verbs; there is no other path to the ledger | **fail-loud** — a verb that cannot be executed leaves the lane state UNKNOWN; the run ends `STOPPED` naming `packages/fabrika-cli/src/bin.ts` and points at front-door. |
+| The lane verb group — `packages/fabrika-cli/src/bin.ts` routing `lane status`/`transition`/`history`/`print` plus `open`/`emit` (#5688) and `brief` (#5751) | Every state read, every event write and every spawn prompt in this skill is one of these verbs; there is no other path to the ledger, and none to a prompt | **fail-loud** — a verb that cannot be executed leaves the lane state UNKNOWN; the run ends `STOPPED` naming `packages/fabrika-cli/src/bin.ts` and points at front-door. |
 | The agent shells — `claude-plugins/fabrika/agents/builder.md`, `reviewer.md`, `shipper.md` | Step 2's routing table spawns exactly these three by their bare noun names | **fail-loud** — a route whose shell does not exist cannot spawn; the run ends `STOPPED` naming the absent shell file, and no event is recorded for a spawn that never started. |
 | `.gitignore` covering `.fabrika/` | The ledger is a disposable machine-local artifact, regenerable from the board — committed, it would smuggle one machine's lane state into every checkout | **degrade** — the verbs still work; state the uncovered `.fabrika/` in the park or transcript comment and file the gap via `/report`. |

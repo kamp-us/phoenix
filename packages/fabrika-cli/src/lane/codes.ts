@@ -78,3 +78,24 @@ export const TOPOLOGY_FOREIGN = 16;
 
 /** The topology's dependency graph holds a cycle, and the ref path is named. */
 export const TOPOLOGY_CYCLE = 17;
+
+/**
+ * The task's leaf state routes to no shell — `queued`, `blocked`, a `human:*` park, a final, or a
+ * name this machine does not recognise. Its own seat because there is nothing to fix in the lane:
+ * the remedy is the driver acting on that state (record an event, clear the park), not a re-run.
+ */
+export const NO_SHELL = 18;
+
+/**
+ * The issue a task drives could not be resolved: neither the task name nor the lane id carries an
+ * issue number, or the number they carry is proven absent or closed. Separate from
+ * {@link TASK_UNKNOWN}: the task IS in the machine, and what is missing is its ground on the board.
+ */
+export const ISSUE_UNRESOLVED = 19;
+
+/**
+ * Exactly one open PR was required to trace to the task's issue and zero or several did. Never
+ * resolved by picking the newest: a brief handed the wrong PR sends a shell to judge or merge
+ * someone else's work, so the ambiguity is named and the dispatch stops.
+ */
+export const PR_AMBIGUOUS = 20;
