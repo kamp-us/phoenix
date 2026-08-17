@@ -10,10 +10,11 @@
  * phase after the last of them.
  *
  * **One epic run is one branch and one PR** (ADR 0285). A child's region is the local loop only —
- * `queued → build → review`, PASS landing that child's commits on the shared branch — and the merge
- * lives once, in the tail phase's single epic-level region (`review → ship → shipped`). The tail is
- * a *phase* rather than a bare state because `machine.ts` reads the workflow's two terminals off the
- * last phase's `onDone` pair; shaped this way the compiler needs no change at all.
+ * `queued → build → review → integrate`, the integrate step merging the child's range into the epic
+ * branch — and the merge to `main` lives once, in the tail phase's single epic-level region
+ * (`review → ship → shipped`). The tail is a *phase* rather than a bare state because `machine.ts`
+ * reads the workflow's two terminals off the last phase's `onDone` pair; shaped this way the
+ * compiler needs no change at all.
  *
  * Determinism is by construction: phases ascend, children within a phase ascend, every object's
  * keys are inserted in one fixed order, and the serialization is a single `JSON.stringify` — the
@@ -60,6 +61,14 @@ const initialFor = (link: SubIssueLink): "queued" | "landed" | "frozen" => {
  * It ends at `landed`: the child's commits are on the epic's shared branch and nothing was pushed,
  * reviewed on GitHub or merged. There is no per-child `ship` and no per-child `human:cp-approval`
  * because there is no per-child PR to ship or to gate (ADR 0285).
+ *
+ * `integrate` is the merge of the reviewed range into the epic branch, and it is a *state* so that a
+ * collision between two children resolves inside the run: its `FAIL` — a textual conflict, or a
+ * failed post-merge check, which is the semantic collision — re-enters `build` under the same
+ * guarded-FAIL retry array `review` uses, and exhausts into `frozen`. No route from it reaches a
+ * merge queue, and none reaches `landed` without passing back through `review`: post-resolution
+ * content is not what the range verdict judged, so the verdict is re-proven before the landing
+ * rather than after it.
  */
 const region = (ns: string, initial: "queued" | "landed" | "frozen"): Record<string, unknown> => ({
 	initial,
@@ -68,7 +77,17 @@ const region = (ns: string, initial: "queued" | "landed" | "frozen"): Record<str
 		build: {on: {[`${ns}.DONE`]: "review", [`${ns}.BLOCKED`]: "blocked"}},
 		review: {
 			on: {
-				[`${ns}.PASS`]: "landed",
+				[`${ns}.PASS`]: "integrate",
+				[`${ns}.BLOCKED`]: "blocked",
+				[`${ns}.FAIL`]: [
+					{target: "build", guard: "retriesRemaining", actions: "incrementRetries"},
+					{target: "frozen"},
+				],
+			},
+		},
+		integrate: {
+			on: {
+				[`${ns}.DONE`]: "landed",
 				[`${ns}.BLOCKED`]: "blocked",
 				[`${ns}.FAIL`]: [
 					{target: "build", guard: "retriesRemaining", actions: "incrementRetries"},
