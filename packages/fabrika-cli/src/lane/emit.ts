@@ -1,5 +1,5 @@
 /**
- * The pure epic-machine emitter — one epic body plus its child set in, one `workflow.json` text
+ * The pure epic-machine emitter — one epic body plus its child links in, one `workflow.json` text
  * out, byte-deterministic (#5688; phase 3 of #5680).
  *
  * **No second grammar and no second cycle walk.** The topology is read through the shipped
@@ -11,10 +11,14 @@
  *
  * Determinism is by construction: phases ascend, children within a phase ascend, every object's
  * keys are inserted in one fixed order, and the serialization is a single `JSON.stringify` — the
- * same body bytes and child set can only produce the same machine bytes.
+ * same body bytes and the same child links (each child's number, state and close reason) can only
+ * produce the same machine bytes. A child's state is part of the input: a closed child boots its
+ * region in a final state, so re-emitting a partly-built epic yields a machine that can still
+ * terminate (#5746).
  */
 import {type Ref, readTopology} from "../build/dependencies.ts";
 import {type DeclaredLine, findCycle} from "../ledger/topology-doc.ts";
+import type {SubIssueLink} from "../plan/github.ts";
 import {RETRY_BUDGET} from "../retry-budget.ts";
 
 export type EmitResult =
@@ -31,9 +35,21 @@ export type EmitResult =
 	| {readonly _tag: "Unplaced"; readonly child: number}
 	| {readonly _tag: "Cycle"; readonly path: ReadonlyArray<number>};
 
+/**
+ * Where a child's region boots. Only a `completed` close asserts the work landed, so only it earns
+ * `shipped`; every other close (`not_planned`, `duplicate`, a legacy null reason) is
+ * closed-without-landing and boots `frozen` — `lane status` reads `frozen` as an error final and
+ * trips the phase, which is the loud answer for a topology that still requires a child the board
+ * abandoned. Marking it `shipped` would fabricate a landing.
+ */
+const initialFor = (link: SubIssueLink): "queued" | "shipped" | "frozen" => {
+	if (link.state === "open") return "queued";
+	return link.stateReason === "completed" ? "shipped" : "frozen";
+};
+
 /** One child's region — the coder template's `issue` region, namespaced to the child's task id. */
-const region = (ns: string): Record<string, unknown> => ({
-	initial: "queued",
+const region = (ns: string, initial: "queued" | "shipped" | "frozen"): Record<string, unknown> => ({
+	initial,
 	states: {
 		queued: {on: {[`${ns}.WIP`]: "build", [`${ns}.BLOCKED`]: "blocked"}},
 		build: {on: {[`${ns}.DONE`]: "review", [`${ns}.BLOCKED`]: "blocked"}},
@@ -61,17 +77,25 @@ const taskId = (child: number): string => `issue_${child}`;
 const ascending = (values: Iterable<number>): ReadonlyArray<number> =>
 	[...values].sort((a, b) => a - b);
 
-/** Emit the epic's lane machine from its body's `## Dependencies` block and its child set. */
+/** Emit the epic's lane machine from its body's `## Dependencies` block and its child links. */
 export const emitMachine = (
 	epic: number,
 	body: string,
-	children: ReadonlyArray<number>,
+	children: ReadonlyArray<SubIssueLink>,
 ): EmitResult => {
 	const topo = readTopology(body);
 	if (topo._tag === "Absent") return {_tag: "NoTopology"};
 	if (topo._tag === "Unparseable") return {_tag: "Unparseable", line: topo.line, text: topo.text};
 
-	const known = new Set(children);
+	const initials = new Map(children.map((link) => [link.number, initialFor(link)]));
+	const known = new Set(initials.keys());
+	// Every phase member is checked against `known` below, so the lookup holds by construction; the
+	// throw is the invariant's enforcement site — a defaulted initial would re-open #5746.
+	const initialOf = (child: number): "queued" | "shipped" | "frozen" => {
+		const initial = initials.get(child);
+		if (initial === undefined) throw new Error(`no child link for #${child}`);
+		return initial;
+	};
 	const issueNumbers = (refs: ReadonlyArray<Ref>): number[] =>
 		refs.flatMap((ref) => (ref._tag === "Issue" ? [ref.number] : []));
 	const phases = new Map<number, number[]>();
@@ -125,7 +149,10 @@ export const emitMachine = (
 		states[phaseName(phase)] = {
 			type: "parallel",
 			states: Object.fromEntries(
-				members.map((child) => [taskId(child), region(taskId(child).toUpperCase())]),
+				members.map((child) => [
+					taskId(child),
+					region(taskId(child).toUpperCase(), initialOf(child)),
+				]),
 			),
 			onDone: [
 				{target: next === undefined ? "complete" : phaseName(next), guard: "noErrors"},
