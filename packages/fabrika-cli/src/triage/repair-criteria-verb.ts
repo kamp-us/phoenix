@@ -44,13 +44,18 @@ export interface RepairCriteriaOptions {
 
 type Shell = ChildProcessSpawner.ChildProcessSpawner;
 
-/** The closed outcome vocabulary a sweep line speaks — one token per plan tag. */
-const OUTCOME: Record<CriteriaRepairPlan["_tag"], string> = {
+/**
+ * The closed outcome vocabulary a sweep line speaks — one token per plan tag, plus `moved` for an
+ * issue whose body changed between the board snapshot and its own write.
+ */
+const OUTCOME = {
 	Repaired: "repaired",
 	AlreadyConforming: "conforming",
 	NoBlock: "no-block",
 	Refused: "refused",
-};
+} as const satisfies Record<CriteriaRepairPlan["_tag"], string>;
+
+type SweepOutcome = (typeof OUTCOME)[CriteriaRepairPlan["_tag"]] | "moved";
 
 interface RepairFailure {
 	readonly code: number;
@@ -154,34 +159,61 @@ const runSweep = (repo: string, json: boolean): Effect.Effect<VerbOutcome, never
 		const scanned = scannedLine("triage repair-criteria", repo, issues.length, "open issue");
 
 		const lines: string[] = [];
-		const rows: Array<{number: number; outcome: string; reason?: string}> = [];
-		const counts = {repaired: 0, conforming: 0, "no-block": 0, refused: 0};
+		const rows: Array<{number: number; outcome: SweepOutcome; reason?: string}> = [];
+		const counts: Record<SweepOutcome, number> = {
+			repaired: 0,
+			conforming: 0,
+			"no-block": 0,
+			refused: 0,
+			moved: 0,
+		};
 		for (const issue of issues) {
 			const plan = planRepair(issue.body, issue.number, legacyPreserved);
+			let outcome: SweepOutcome = OUTCOME[plan._tag];
+			let reason = plan._tag === "Refused" ? plan.reason : null;
 			if (plan._tag === "Repaired") {
-				const failure = yield* writeRepair(repo, issue.number, plan.body);
-				if (failure !== null) {
-					return refuse(failure.code, `triage repair-criteria: ${failure.reason}`, [
-						scanned,
-						...lines.map((line) => `triage repair-criteria: before the failure: ${line}`),
-					]);
+				// The board snapshot ages across a run of hundreds of sequential writes, and the
+				// pipeline edits issue bodies the whole time. Re-read immediately before the PATCH so
+				// the planned body is anchored to a body proven live: without this the read-back
+				// compares the write against itself and a clobber reads as a success, and GitHub keeps
+				// no issue-body history to recover from.
+				const fresh = yield* getIssue(repo, issue.number);
+				if (fresh._tag === "Unknown") {
+					return refuse(
+						PRECONDITION_UNKNOWN,
+						`triage repair-criteria: cannot re-read #${issue.number} before writing it: ${fresh.reason} — refusing to write a body planned from a snapshot that can no longer be checked.`,
+						[scanned, ...lines.map((line) => `triage repair-criteria: before the halt: ${line}`)],
+					);
+				}
+				const stale =
+					fresh._tag === "Absent" ||
+					normalizeForReadback(fresh.value.body) !== normalizeForReadback(issue.body);
+				if (stale) {
+					outcome = "moved";
+					reason =
+						fresh._tag === "Absent"
+							? "the issue left the open board mid-sweep"
+							: "the body changed after the board snapshot — re-run the sweep to repair it against its current body";
+				} else {
+					const failure = yield* writeRepair(repo, issue.number, plan.body);
+					if (failure !== null) {
+						return refuse(failure.code, `triage repair-criteria: ${failure.reason}`, [
+							scanned,
+							...lines.map((line) => `triage repair-criteria: before the failure: ${line}`),
+						]);
+					}
 				}
 			}
-			const outcome = OUTCOME[plan._tag];
-			counts[outcome as keyof typeof counts] += 1;
+			counts[outcome] += 1;
 			lines.push(
-				plan._tag === "Refused"
-					? `${outcome}\t${issue.number}\t${plan.reason}`
-					: `${outcome}\t${issue.number}`,
+				reason === null ? `${outcome}\t${issue.number}` : `${outcome}\t${issue.number}\t${reason}`,
 			);
 			rows.push(
-				plan._tag === "Refused"
-					? {number: issue.number, outcome, reason: plan.reason}
-					: {number: issue.number, outcome},
+				reason === null ? {number: issue.number, outcome} : {number: issue.number, outcome, reason},
 			);
 		}
 
-		const summary = `swept\t${counts.repaired}\t${counts.conforming}\t${counts["no-block"]}\t${counts.refused}`;
+		const summary = `swept\t${counts.repaired}\t${counts.conforming}\t${counts["no-block"]}\t${counts.refused}\t${counts.moved}`;
 		return json
 			? answer(JSON.stringify({outcome: "swept", scanned: issues.length, counts, issues: rows}), [
 					scanned,

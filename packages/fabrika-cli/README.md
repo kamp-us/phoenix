@@ -242,9 +242,9 @@ corpus-repair verb ([#5744](https://github.com/kamp-us/phoenix/issues/5744)).
 | `triage codes` | the exit taxonomy every verb in the group allocates from, one `<code>\t<meaning>` line per code |
 | `triage repair-criteria` | rewrite a level-drifted `## Acceptance criteria` heading to the conforming `###` — one issue, or `--sweep` over every open issue with a per-issue outcome line; authored region only, and anything that is not a pure level drift on the exact heading text is refused on `14`, never guessed |
 
-Three properties of that substrate are worth knowing before the verbs arrive:
+Three properties of that substrate are worth knowing:
 
-- **All nine verbs allocate from one table** ([`src/triage/codes.ts`](./src/triage/codes.ts)),
+- **Every verb in the group allocates from one table** ([`src/triage/codes.ts`](./src/triage/codes.ts)),
   so a code means one thing across this group. Where it overlaps the two `report` writing
   verbs — `3`, `5`, `6`, `7`, `8`, `9`, `10`, `11` — the meanings match **code for code**, so
   a caller driving both groups in one sweep reads one meaning. `report dedup` used to break that

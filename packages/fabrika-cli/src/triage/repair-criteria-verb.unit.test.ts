@@ -154,6 +154,7 @@ describe("runRepairCriteria — the sweep", () => {
 	it("repairs every drifted open issue and prints one outcome line per issue, ascending", async () => {
 		const shell = fakeShell([
 			[LIST, board],
+			[once(READ_1), okOut(JSON.stringify(record(1, DRIFTED.replace("Intro.", "First."))))],
 			[PATCH_1, okOut("{}")],
 			[READ_1, okOut(JSON.stringify(record(1, REPAIRED.replace("Intro.", "First."))))],
 		]);
@@ -162,7 +163,7 @@ describe("runRepairCriteria — the sweep", () => {
 		);
 		expect(outcome.code).toBe(0);
 		const [summary, ...lines] = outcome.stdout.trimEnd().split("\n");
-		expect(summary).toBe("swept\t1\t1\t1\t1");
+		expect(summary).toBe("swept\t1\t1\t1\t1\t0");
 		expect(lines[0]).toBe("repaired\t1");
 		expect(lines[1]).toBe("conforming\t2");
 		expect(lines[2]).toBe("no-block\t3");
@@ -176,12 +177,57 @@ describe("runRepairCriteria — the sweep", () => {
 		const outcome = await run(
 			[
 				[LIST, board],
+				[once(READ_1), okOut(JSON.stringify(record(1, DRIFTED.replace("Intro.", "First."))))],
 				[PATCH_1, errOut("gh: timeout")],
 			],
 			{issue: null, sweep: true},
 		);
 		expect(outcome.code).toBe(WRITE_UNKNOWN);
 		expect(outcome.stdout).toBe("");
+	});
+
+	it("answers moved and writes nothing when the body changed after the board snapshot", async () => {
+		const shell = fakeShell([
+			[LIST, board],
+			[READ_1, okOut(JSON.stringify(record(1, "somebody rewrote this body mid-sweep")))],
+		]);
+		const outcome = await Effect.runPromise(
+			Effect.provide(runRepairCriteria({...options, issue: null, sweep: true}), shell.layer),
+		);
+		expect(outcome.code).toBe(0);
+		expect(shell.calls.some((line) => PATCH_1.test(line))).toBe(false);
+		const [summary, ...lines] = outcome.stdout.trimEnd().split("\n");
+		expect(summary).toBe("swept\t0\t1\t1\t1\t1");
+		expect(lines[0]).toBe(
+			"moved\t1\tthe body changed after the board snapshot — re-run the sweep to repair it against its current body",
+		);
+	});
+
+	it("answers moved when the issue left the open board between the snapshot and its write", async () => {
+		const shell = fakeShell([
+			[LIST, board],
+			[READ_1, errOut("gh: Not Found (HTTP 404)")],
+		]);
+		const outcome = await Effect.runPromise(
+			Effect.provide(runRepairCriteria({...options, issue: null, sweep: true}), shell.layer),
+		);
+		expect(outcome.code).toBe(0);
+		expect(shell.calls.some((line) => PATCH_1.test(line))).toBe(false);
+		expect(outcome.stdout).toContain("moved\t1\tthe issue left the open board mid-sweep");
+	});
+
+	it("halts on 11 when an issue cannot be re-read before its write — never writes the stale plan", async () => {
+		const shell = fakeShell([
+			[LIST, board],
+			[READ_1, errOut("gh: Bad gateway (HTTP 502)")],
+		]);
+		const outcome = await Effect.runPromise(
+			Effect.provide(runRepairCriteria({...options, issue: null, sweep: true}), shell.layer),
+		);
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+		expect(outcome.stdout).toBe("");
+		expect(shell.calls.some((line) => PATCH_1.test(line))).toBe(false);
+		expect(outcome.stderr.at(-1)).toContain("cannot re-read #1 before writing it");
 	});
 
 	it("refuses an unreadable board on 11 — a sweep over unknown scope proves nothing", async () => {
