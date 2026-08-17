@@ -23,7 +23,7 @@ const TITLE = "the operator hand-writes every spawn prompt";
 
 const ISSUE_READ = /^gh api repos\/o\/r\/issues\/5751$/;
 const CHILD_READ = /^gh api repos\/o\/r\/issues\/5729$/;
-const PR_SEARCH = /^gh api --paginate search\/issues/;
+const PR_CLOSERS = /^gh api graphql -f query=query\(/;
 
 const issuePayload = (number: number, url: string): ExecResult =>
 	okOut(
@@ -37,8 +37,22 @@ const issuePayload = (number: number, url: string): ExecResult =>
 		}),
 	);
 
-const pullRows = (...rows: ReadonlyArray<readonly [number, string]>): ExecResult =>
-	okOut(rows.map(([number, url]) => `${number}\t${url}`).join("\n"));
+/** One page of the closing-issue link edge — every node OPEN, since the verb filters on that. */
+const closingPulls = (...rows: ReadonlyArray<readonly [number, string]>): ExecResult =>
+	okOut(
+		JSON.stringify({
+			data: {
+				repository: {
+					issue: {
+						closedByPullRequestsReferences: {
+							pageInfo: {hasNextPage: false, endCursor: null},
+							nodes: rows.map(([number, url]) => ({number, url, state: "OPEN"})),
+						},
+					},
+				},
+			},
+		}),
+	);
 
 /** A single-issue lane at `lane`, with one log line per operator event already recorded. */
 const lane = (id: string, events: ReadonlyArray<string>) =>
@@ -84,7 +98,7 @@ describe("lane brief", () => {
 	it("briefs the builder on a `build` state, with no PR when construction has none", async () => {
 		const out = await run(lane("5751", ["WIP"]), [
 			[ISSUE_READ, issuePayload(5751, ISSUE_URL)],
-			[PR_SEARCH, okOut("")],
+			[PR_CLOSERS, closingPulls()],
 		]);
 
 		expect(out.code).toBe(0);
@@ -99,7 +113,7 @@ describe("lane brief", () => {
 	it("briefs the reviewer on a `review` state, carrying the one open PR that traces to the issue", async () => {
 		const out = await run(lane("5751", ["WIP", "DONE"]), [
 			[ISSUE_READ, issuePayload(5751, ISSUE_URL)],
-			[PR_SEARCH, pullRows([5790, PR_URL])],
+			[PR_CLOSERS, closingPulls([5790, PR_URL])],
 		]);
 
 		expect(out.code).toBe(0);
@@ -112,7 +126,7 @@ describe("lane brief", () => {
 	it("briefs the shipper on a `ship` state", async () => {
 		const out = await run(lane("5751", ["WIP", "DONE", "PASS"]), [
 			[ISSUE_READ, issuePayload(5751, ISSUE_URL)],
-			[PR_SEARCH, pullRows([5790, PR_URL])],
+			[PR_CLOSERS, closingPulls([5790, PR_URL])],
 		]);
 
 		expect(out.code).toBe(0);
@@ -125,7 +139,7 @@ describe("lane brief", () => {
 	it("carries URLs only — no title, no body, no verdict text", async () => {
 		const out = await run(lane("5751", ["WIP", "DONE"]), [
 			[ISSUE_READ, issuePayload(5751, ISSUE_URL)],
-			[PR_SEARCH, pullRows([5790, PR_URL])],
+			[PR_CLOSERS, closingPulls([5790, PR_URL])],
 		]);
 
 		expect(out.stdout).not.toContain(TITLE);
@@ -175,7 +189,7 @@ describe("lane brief", () => {
 			fs,
 			[
 				[CHILD_READ, issuePayload(5729, "https://github.com/o/r/issues/5729")],
-				[PR_SEARCH, okOut("")],
+				[PR_CLOSERS, closingPulls()],
 			],
 			{lane: "5680", task: "issue_5729"},
 		);
@@ -255,7 +269,7 @@ describe("lane brief", () => {
 	it("refuses several open PRs, naming every candidate", async () => {
 		const out = await run(lane("5751", ["WIP", "DONE"]), [
 			[ISSUE_READ, issuePayload(5751, ISSUE_URL)],
-			[PR_SEARCH, pullRows([5790, PR_URL], [5791, "https://github.com/o/r/pull/5791"])],
+			[PR_CLOSERS, closingPulls([5790, PR_URL], [5791, "https://github.com/o/r/pull/5791"])],
 		]);
 
 		expect(out.code).toBe(PR_AMBIGUOUS);
@@ -266,7 +280,7 @@ describe("lane brief", () => {
 	it("refuses zero open PRs where the state needs one", async () => {
 		const out = await run(lane("5751", ["WIP", "DONE", "PASS"]), [
 			[ISSUE_READ, issuePayload(5751, ISSUE_URL)],
-			[PR_SEARCH, okOut("")],
+			[PR_CLOSERS, closingPulls()],
 		]);
 
 		expect(out.code).toBe(PR_AMBIGUOUS);

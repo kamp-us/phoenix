@@ -100,7 +100,9 @@ from the inside.
 
 `lane brief`'s refusals are the parks it saves you from guessing at: `18` is a state that routes to
 no shell, `19` is a task whose issue cannot be resolved or is absent, `20` is zero open PRs where
-the state needs one or several where one is required. Each is a park naming what the verb named —
+the state needs one or several where one is required. It counts a PR only when the PR **declares it
+closes** the task's issue — GitHub's own closing-issue link, not a body mention — so a PR that
+quotes the number in prose never makes `20` fire (#5805). Each is a park naming what the verb named —
 never a prompt you write by hand instead. Parallel active tasks brief and spawn in parallel.
 
 Done when every active task has either a spawn in flight or an event recorded this pass.
