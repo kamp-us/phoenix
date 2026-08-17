@@ -1,10 +1,6 @@
 /**
- * `fabrika --version` reports what shipped (#5714).
- *
- * This VERSION was the unasserted carrier: nothing failed when a release bumped `package.json`
- * and left the literal behind, so the CLI shipped lying about itself through `run.ts` and
- * `delegate/entry.ts`. Deriving it from `package.json` makes the equality true by construction,
- * which leaves the derivation as the only thing that can regress.
+ * `fabrika --version` reports what shipped. The derivation is the only thing that can regress,
+ * so that is what these assertions read (#5714).
  */
 import {readFileSync} from "node:fs";
 import {fileURLToPath} from "node:url";
