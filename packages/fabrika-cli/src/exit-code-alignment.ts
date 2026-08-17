@@ -64,8 +64,7 @@ export const SHARED_SEATS: SharedSeats = {
  *
  * `review` and `triage` leave `4` a deliberate gap because neither performs a section check;
  * `build pr` does — a body with no `## Deviations` block is that same fact — so the seat is claimed
- * rather than re-invented one code higher. `epic` claims the identical nine: `epic open` reads the
- * same fact off an epic body with no parseable planned ledger. `plan` claims them too: `plan read`
+ * rather than re-invented one code higher. `plan` claims them too: `plan read`
  * seats `4` for a ledger section declared twice, so under `SHARED_SEATS` the checker would report
  * `4` as a private code colliding with the base.
  */
@@ -288,7 +287,6 @@ export const ALIGNED_GROUPS: Readonly<Record<string, SharedSeats>> = {
 	build: BUILD_SEATS,
 	governance: GOVERNANCE_SEATS,
 	hook: HOOK_SEATS,
-	epic: BUILD_SEATS,
 	glossary: GLOSSARY_SEATS,
 	graduate: GRADUATE_SEATS,
 	grill: GRILL_SEATS,

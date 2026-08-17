@@ -17,7 +17,6 @@ import type {NodeServices} from "@effect/platform-node";
 import type {Command} from "effect/unstable/cli";
 import {adrCommand} from "./adr/command.ts";
 import {buildCommand} from "./build/command.ts";
-import {epicCommand} from "./epic/command.ts";
 import {glossaryCommand} from "./glossary/command.ts";
 import {governanceCommand} from "./governance/command.ts";
 import {graduateCommand} from "./graduate/command.ts";
@@ -48,7 +47,6 @@ export type VerbGroup = Command.Command<any, any, object, unknown, NodeServices.
 export const registeredGroups: ReadonlyArray<VerbGroup> = [
 	adrCommand,
 	buildCommand,
-	epicCommand,
 	glossaryCommand,
 	governanceCommand,
 	graduateCommand,

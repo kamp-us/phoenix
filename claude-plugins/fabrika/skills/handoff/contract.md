@@ -70,20 +70,18 @@ a transcription drifts and a pointer to code cannot:
   `Found | Absent | Malformed`, with `Found` carrying a `NonEmptyReadonlyArray` **by construction**.
   This is why a malformed pack can never be reported as an absent one.
 
-**Read for its shape, NOT imported.**
-[`src/wire/slice-handoff.ts`](../../../../packages/fabrika-cli/src/wire/slice-handoff.ts) is the
-closest prior art in the package and the **inverse** of this format, which is what makes it
-instructive rather than reusable. Its posture is *in-session, never posted*: its `## Ground` paths
-are machine-local by construction, so the leak scan the posting verbs run would red on exactly the
-values it exists to carry. The pack is the opposite — **posted by definition**, so it carries no
-machine-local path at all and the leak scan is precisely right for it. What *is* inherited is that
-module's load-bearing discipline, stated in its own docblock: **the read side refuses an artifact
-carrying content outside its closed section set**, because a coordination artifact whose section set
-is open can steer its receiver past the artifact — an extra heading, a sentence appended under a
-known one, a "note from the maintainer" — and the receiver cannot tell the format's own words from
-someone else's. That is the injection defence the pack needs, and it is why the five sections are
-closed rather than merely expected. It cannot be *called*: its fields are a slice id, a branch and a
-tree root, none of which a pack carries.
+**A shape read from prior art, NOT imported.** The package's closest prior art was
+`src/wire/slice-handoff.ts`, the epic conductor's dispatch brief, retired with that conductor. It was
+the **inverse** of this format, which is what made it instructive rather than reusable: its posture
+was *in-session, never posted*, its `## Ground` paths machine-local by construction, so the leak scan
+the posting verbs run would have redded on exactly the values it existed to carry. The pack is the
+opposite — **posted by definition**, so it carries no machine-local path at all and the leak scan is
+precisely right for it. What *is* inherited is that module's load-bearing discipline: **the read side
+refuses an artifact carrying content outside its closed section set**, because a coordination
+artifact whose section set is open can steer its receiver past the artifact — an extra heading, a
+sentence appended under a known one, a "note from the maintainer" — and the receiver cannot tell the
+format's own words from someone else's. That is the injection defence the pack needs, and it is why
+the five sections are closed rather than merely expected.
 
 [`src/build/claim.ts`](../../../../packages/fabrika-cli/src/build/claim.ts) is the model for
 marker-based claiming and cannot be called either: `composeMarker` hardcodes the `build-claim:`
@@ -168,7 +166,7 @@ verb and never by the caller.
 
 <!-- anchor: THE-SECTION-SET-IS-CLOSED --> **Content outside those five headings is refused, not
 ignored.** A fifth heading, prose before the first heading, or text after the JSON fence is `4` on
-the way in and `14` on the way out. This is `slice-handoff`'s discipline and it is the pack's whole
+the way in and `14` on the way out. That closed section set is the pack's whole
 injection defence: an open section set lets an author append a paragraph a successor reads as part
 of the format, and the successor has no way to tell the format's own words from someone else's.
 
@@ -207,12 +205,11 @@ row in [`src/wire/registry.ts`](../../../../packages/fabrika-cli/src/wire/regist
 because this artifact crosses the widest boundary in the corpus — one session to another that shares
 no memory, no checkout, and possibly no machine — and `WireRead<A>`'s three answers are what that
 boundary needs: **a malformed pack must never read as an absent one**, or a successor concludes
-nobody handed off and starts over. The key is deliberately distinct from the shipped `slice-handoff`,
-a different format with an inverted posture.
+nobody handed off and starts over.
 
 **Not widened, deliberately.** `wire/verdict-marker.ts`'s `NAMESPACE` regex and its separate
 `NAMESPACE_PREFIXES` gate are left alone. Those govern **verdict markers** specifically; a registered
-format need not be a member, and the shipped `slice-handoff` is the proof — it is registered
+format need not be a member, and `map-ticket` is the proof — it is registered
 (`wire/registry.ts`) and appears in neither. This group emits no verdict, so widening either would
 admit a merge-gating namespace for a skill that gates nothing.
 
@@ -681,8 +678,8 @@ $ echo $?
   caller cannot supply the proven half, and the asserted half is labelled as assertion.
 - #4285 — an unvalidated value applied as a literal and reported as success. The nonce grammar and
   the closed section set are validated before the write, not after.
-- `slice-handoff`'s closed section set — an artifact whose section set is open can steer its
-  receiver past the artifact.
+- The retired `slice-handoff`'s closed section set — an artifact whose section set is open can steer
+  its receiver past the artifact.
 - v1's `add-frontier-ticket.sh` prints a refusal with bare `echo` to **stdout**, the channel carrying
   its answer, against its own library's stated contract that *"stdout is the ANSWER"*
   (`lib/common.sh:31`). Here every refusal is stderr and stdout is empty by construction.

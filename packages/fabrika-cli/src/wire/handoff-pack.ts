@@ -15,8 +15,9 @@
  * before the first heading, or text after the JSON fence is `Malformed`, never tolerated: an
  * artifact whose section set is open lets an author append a paragraph a successor reads as part of
  * the format, and the successor cannot tell the format's own words from someone else's. The
- * discipline is `./slice-handoff.ts`'s; the posture is its inverse — that brief is machine-local by
- * construction and never posted, this document is posted by definition and carries no local path.
+ * discipline is inherited from the retired `slice-handoff` brief; the posture is its inverse — that
+ * brief was machine-local by construction and never posted, this document is posted by definition
+ * and carries no local path.
  *
  * This module owns the **bytes** and nothing else. What the proven half's nineteen fields mean, and
  * whether `groundDigest` agrees with them, is `../handoff/ground.ts`'s — so the digest arrives here

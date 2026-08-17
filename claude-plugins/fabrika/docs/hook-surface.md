@@ -525,7 +525,7 @@ The harness also refuses a shape it cannot statically verify at all: `for f in a
 - **Whether fabrika's spawner can write the owner stamp** is exactly [#4180](https://github.com/kamp-us/phoenix/issues/4180)'s open question and is untouched here. If the ruled spawner is the harness's own internal path, this port inherits that blocker rather than solving it.
 - **The counts are one machine at one moment** — 94 registered worktrees, 3 locked, 59 removed in the last sweep. They establish the reclaimer is doing work and the native sweep is not finishing the job; they do not establish a rate.
 
-**Not graded here:** the fabrika home for the verb. [`../skills/build-epic/contract.md`](../skills/build-epic/contract.md) rules out a `build`/`epic` lane verb, leaving the spawner or a standalone maintenance verb, and that call belongs to the port unit.
+**Not graded here:** the fabrika home for the verb. The retired epic conductor's contract ruled out a `build`/`epic` lane verb, leaving the spawner or a standalone maintenance verb, and that call belongs to the port unit.
 
 **Owner:** [#5197](https://github.com/kamp-us/phoenix/issues/5197), which keeps its scope. `worktree-sweep-detach.sh`'s successor is part of it — a reclaimer with no dispatcher reclaims nothing.
 

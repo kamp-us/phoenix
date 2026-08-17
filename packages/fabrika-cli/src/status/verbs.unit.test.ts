@@ -136,7 +136,7 @@ describe("status config", () => {
 	it("deduplicates the missing count by id while every declaring row still prints", () => {
 		const counts = countsOf([
 			surface({skill: "build", surfaceId: "taxonomy", presence: "missing"}),
-			surface({skill: "build-epic", surfaceId: "taxonomy", presence: "missing"}),
+			surface({skill: "operate", surfaceId: "taxonomy", presence: "missing"}),
 			surface({skill: "review", surfaceId: "other", presence: "missing"}),
 		]);
 		expect(counts.missing).toBe(2);

@@ -18,18 +18,20 @@ module name cited in this spec is **non-normative**: the behavior it informs is 
 full, and an implementer needs none of those files to build these verbs.
 
 **The group name.** `ledger` is this skill's, following the one-group-per-skill precedent
-(`build-ui` took `ui`, `build-epic` took `epic`, `check-epic-plan` took `plan`, each reusing
-`build`'s verbs rather than sharing its group). `plan` and `epic` are both occupied at `main` and
-neither answers this skill's question: `plan`'s four verbs read, gate and flip a plan that already
-exists, and `epic`'s eight conduct a run over one already gated. **Authoring is unoccupied** —
+(`build-ui` took `ui`, `check-epic-plan` took `plan`, each reusing
+`build`'s verbs rather than sharing its group). `plan` is occupied at `main` and does not answer
+this skill's question: its four verbs read, gate and flip a plan that already exists. (`epic` was
+occupied too, by the eight verbs that conducted a run over an already-gated plan; that group is
+retired and an epic's children now drive through `operate` on a `lane emit` machine.)
+**Authoring is unoccupied** —
 nothing shipped creates an issue with a full classification, links a sub-issue, or composes a
 `## Dependencies` or `### User stories` block.
 
 **One disambiguation, because the word is overloaded in this package.**
-`packages/fabrika-cli/src/epic/ledger.ts` calls its append-only JSONL run log a "ledger". That is
+`packages/fabrika-cli/src/lane/store.ts` calls its append-only `events.jsonl` a "ledger". That is
 the *run* ledger. This group's `ledger` is the **plan** — the noun the brief and
 [`check-epic-plan`](../check-epic-plan/SKILL.md) both use for an epic's decomposed task list. The
-two never meet: no verb here reads or writes an `epic` run ledger.
+two never meet: no verb here reads or writes a lane's run ledger.
 
 **What fabrika already ships, reused — never respecified.** The claim is the **`build` group's,
 reused as landed verbs** ([`build`'s contract](../build/contract.md)) — the cross-contract shape

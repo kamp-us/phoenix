@@ -738,8 +738,8 @@ $ echo $?
 ```
 
 ```
-$ fabrika build claim 4290 --override "hotfix for the release blocker" --override-lane build-epic
-{"answer":"won","number":4290,"token":"build:s-9f2e:c1a4d6f8-3b7e-4a19-9c2d-5e8f0a1b2c3d","purpose":"build","override":{"lane":"build-epic","reason":"hotfix for the release blocker"}}
+$ fabrika build claim 4290 --override "hotfix for the release blocker" --override-lane build-ui
+{"answer":"won","number":4290,"token":"build:s-9f2e:c1a4d6f8-3b7e-4a19-9c2d-5e8f0a1b2c3d","purpose":"build","override":{"lane":"build-ui","reason":"hotfix for the release blocker"}}
 ```
 
 ```

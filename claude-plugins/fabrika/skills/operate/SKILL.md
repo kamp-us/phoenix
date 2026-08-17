@@ -1,6 +1,6 @@
 ---
 name: operate
-description: "Drive one issue's lane to a terminal state, spawning one fabrika shell per active state until the machine finishes or parks on a human. Trigger on \"operate #N\", \"drive the lane on #N\", \"run issue #N to terminal\", \"resume the lane on #N\", and whenever a driver wants an issue carried through build→review→ship without holding the loop in their own session. Type-blind — a single issue and an epic drive identically. Not `build-epic`'s one-PR conduction of an epic on a single branch; not construction (`build`), judging (`review`), or merging (`ship`) — those run inside the shells it spawns."
+description: "Drive one issue's lane to a terminal state, spawning one fabrika shell per active state until the machine finishes or parks on a human. Trigger on \"operate #N\", \"drive the lane on #N\", \"run issue #N to terminal\", \"resume the lane on #N\", and whenever a driver wants an issue carried through build→review→ship without holding the loop in their own session. Type-blind — a single issue and an epic drive identically, and an epic's children land as their own PRs. Not construction (`build`), judging (`review`), or merging (`ship`) — those run inside the shells it spawns."
 ---
 
 # operate

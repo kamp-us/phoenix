@@ -16,12 +16,13 @@ cited anywhere in this spec is **non-normative**: the behavior it informs is res
 and an implementer needs none of those files to build these verbs.
 
 **The group name.** `plan` is this gate's, following the one-group-per-skill precedent (`build-ui`
-took `ui`, `build-epic` took `epic`, each reusing `build`'s verbs rather than sharing its group).
+took `ui`, each reusing `build`'s verbs rather than sharing its group).
 The planner `plan-epic` ([#4712](https://github.com/kamp-us/phoenix/issues/4712), unauthored) takes
 its own group and may reuse these verbs the same way. **Nothing here allocates against the `epic`
-group.** (When this was written `epic` was an unimplemented spec with no `src/epic/`; it landed via
-[#5092](https://github.com/kamp-us/phoenix/issues/5092), so the premise is stale and the conclusion
-is not — `plan` is still unallocated, and no `epic` verb answers this gate's question.)
+group.** (When this was written `epic` was an unimplemented spec; it landed via
+[#5092](https://github.com/kamp-us/phoenix/issues/5092) and was retired again with the epic
+conductor, so the conclusion outlived both — `plan` is this gate's, and nothing else answers its
+question.)
 
 **What fabrika already ships, reused — never respecified.** The claim is the **`build` group's,
 reused as landed verbs** ([`build`'s contract](../build/contract.md)) — the cross-contract shape
@@ -47,12 +48,12 @@ close. Modules reused by import:
   into success — removal is idempotent**, which is v1 scar F3 gone for free), `listLabels`.
 - `packages/fabrika-cli/src/build/dependencies.ts` — `readTopology` (`Parsed` / `Absent` /
   `Unparseable{line,text}`) and `predecessorsOf`. **This spec adds no second `## Dependencies`
-  grammar**; `build-epic` imports the same parser for the same reason.
+  grammar**; `lane emit` imports the same parser for the same reason.
 - `packages/fabrika-cli/src/wire/acceptance-criteria.ts` — the total three-armed read
   (`Found` / `Absent` / `Malformed`), fence-aware, near-miss-admitting, refusing more than one
-  conforming heading as undecidable. `plan read` imports it per child. The wire registry already
-  declares `build-epic` a producer of this format, so it is the pinned contract between the
-  planner's output and this gate's input.
+  conforming heading as undecidable. `plan read` imports it per child. The wire registry declares
+  `triage` a producer of this format, so it is the pinned contract between a child's authored
+  criteria and this gate's input.
 - `packages/fabrika-cli/src/wire/verdict-marker.ts` — `emit` / `read` / `bindToHead` and the
   branded 7–40-hex slot. **Entirely pure — it binds any hex string, not only a commit**, which is
   what makes a scope digest bindable through it. Requires two additive edits, specified in
@@ -222,8 +223,8 @@ every clean verdict would bind a scope no floor had checked.
 `plan verdict` **require** it as `--digest`. Each recomputes the digest from a fresh read and
 compares: equal means the plan has not moved, different is exit `21`. That is the TOCTOU answer —
 the gap between deciding and writing is closed by re-deciding against a value the caller carried,
-not by trusting a cached decision. It is the same shape `build-epic` uses when it threads
-`--commit <sha>` between its verbs.
+not by trusting a cached decision. It is the same shape `build verdicts` uses when it re-reads a
+gate's marker against the PR's live head rather than against the head the marker claimed.
 
 **The two additive edits to `verdict-marker.ts` this gate needs landed in #5107**, recorded here
 because the second one is easy to miss and stays load-bearing:
