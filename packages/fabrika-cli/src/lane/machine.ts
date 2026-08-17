@@ -60,6 +60,12 @@ export interface CompiledLane {
 	readonly phases: ReadonlyArray<{readonly name: string; readonly tasks: ReadonlyArray<string>}>;
 	/** The workflow's two terminal names, read off the last phase's `onDone` pair. */
 	readonly terminals: {readonly complete: string; readonly tripped: string};
+	/**
+	 * What fires this lane, as the document declares it — a chore workflow's own field (#5840). Read
+	 * and carried rather than ignored, so a mistyped declaration is a defect instead of a silence;
+	 * what a trigger name *means* is the caller's, exactly as a guard name is.
+	 */
+	readonly trigger?: string;
 }
 
 export type CompileResult =
@@ -205,6 +211,10 @@ export const compile = (workflow: unknown): CompileResult => {
 		return {_tag: "Malformed", defects: ["document must carry a `machine.states` object"]};
 	}
 	const context = isRecord(machineDef.context) ? machineDef.context : {};
+	const declaredTrigger = isRecord(workflow) ? workflow.trigger : undefined;
+	if (declaredTrigger !== undefined && typeof declaredTrigger !== "string") {
+		defects.push("document `trigger` must be a string naming what fires this lane");
+	}
 
 	const machineStates = machineDef.states;
 	const tasks: Record<string, CompiledTask> = {};
@@ -259,7 +269,15 @@ export const compile = (workflow: unknown): CompileResult => {
 	if (terminals === undefined) {
 		return {_tag: "Malformed", defects: ["no phase carried a readable `onDone` pair"]};
 	}
-	return {_tag: "Compiled", lane: {tasks, phases, terminals}};
+	return {
+		_tag: "Compiled",
+		lane: {
+			tasks,
+			phases,
+			terminals,
+			...(typeof declaredTrigger === "string" ? {trigger: declaredTrigger} : {}),
+		},
+	};
 };
 
 /** Parse and compile in one step — for a caller holding the document's bytes off disk. */
@@ -276,6 +294,7 @@ export const compileText = (text: string): CompileResult => {
 export interface LaneTopology {
 	readonly phases: CompiledLane["phases"];
 	readonly terminals: CompiledLane["terminals"];
+	readonly trigger?: string;
 	readonly tasks: Readonly<
 		Record<
 			string,
@@ -293,6 +312,7 @@ export interface LaneTopology {
 export const topology = (lane: CompiledLane): LaneTopology => ({
 	phases: lane.phases,
 	terminals: lane.terminals,
+	...(lane.trigger === undefined ? {} : {trigger: lane.trigger}),
 	tasks: Object.fromEntries(
 		Object.entries(lane.tasks).map(([taskId, task]) => [
 			taskId,
