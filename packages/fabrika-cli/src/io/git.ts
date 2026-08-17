@@ -142,22 +142,50 @@ export const diffRange = (base: string, head: string): Shell<Attempt<string>> =>
 	});
 
 /**
- * The `--raw` record stream of that range: one header per changed path naming both endpoint blobs.
+ * A commit range as this package names one: what `tip` adds since it diverged from `base`.
+ *
+ * `Rev` is a parameter so a caller holding validated revisions — a verdict marker's branded SHAs —
+ * carries that validation into the range instead of widening back to `string` at the boundary.
+ */
+export interface CommitRange<Rev extends string = string> {
+	readonly base: Rev;
+	readonly tip: Rev;
+}
+
+/**
+ * The argv of the `--raw` read, written once because a digest is only comparable across two runs of
+ * the *same* invocation. A test that re-types these flags proves a serialization production never
+ * computes, which is why this is exported rather than inlined below.
  *
  * `--abbrev=40` because the default abbreviation is a display convenience whose width depends on
  * the repository's object count — a digest taken over abbreviated names would change with the clone
  * rather than with the content (`../review/content-binding.ts`).
+ *
+ * An empty `paths` reads the whole range; a non-empty one limits it to that pathspec. A caller that
+ * means "these paths and no others" must therefore refuse an empty set before it reaches here — a
+ * pathspec that silently widens to everything digests a scope nobody chose (ADR 0092).
  */
-export const diffRangeRaw = (base: string, head: string): Shell<Attempt<string>> =>
+export const rawDiffArgs = (
+	range: CommitRange,
+	paths: ReadonlyArray<string> = [],
+): ReadonlyArray<string> => [
+	"diff",
+	...DIFF_FLAGS,
+	"--raw",
+	"--abbrev=40",
+	"-z",
+	`${range.base}...${range.tip}`,
+	...(paths.length === 0 ? [] : ["--", ...paths]),
+];
+
+/** The `--raw` record stream of a range: one header per changed path naming both endpoint blobs. */
+export const diffRangeRaw = (
+	base: string,
+	head: string,
+	paths: ReadonlyArray<string> = [],
+): Shell<Attempt<string>> =>
 	Effect.gen(function* () {
-		const r = yield* execCapture("git", [
-			"diff",
-			...DIFF_FLAGS,
-			"--raw",
-			"--abbrev=40",
-			"-z",
-			`${base}...${head}`,
-		]);
+		const r = yield* execCapture("git", rawDiffArgs({base, tip: head}, paths));
 		return r.ok ? ok(r.stdout) : fail(r.reason);
 	});
 

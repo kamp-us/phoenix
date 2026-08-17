@@ -40,6 +40,7 @@ does not exist yet — rather than missing; check the registry before assuming a
 | `acceptance-criteria` | [`packages/fabrika-cli/src/wire/acceptance-criteria.ts`](../../../packages/fabrika-cli/src/wire/acceptance-criteria.ts) | `triage` | `build`, `review` |
 | `deviations` | [`packages/fabrika-cli/src/wire/deviations.ts`](../../../packages/fabrika-cli/src/wire/deviations.ts) | `build`, `build-ui` | `review`, `review-ui` |
 | `verdict-marker` | [`packages/fabrika-cli/src/wire/verdict-marker.ts`](../../../packages/fabrika-cli/src/wire/verdict-marker.ts) | `review`, `check-epic-plan`, `governance` | `build`, `ship` |
+| `range-verdict-marker` | [`packages/fabrika-cli/src/wire/range-verdict-marker.ts`](../../../packages/fabrika-cli/src/wire/range-verdict-marker.ts) | `review` | `build`, `operate` |
 | `lane-brief` | [`packages/fabrika-cli/src/wire/lane-brief.ts`](../../../packages/fabrika-cli/src/wire/lane-brief.ts) | `operate` | `build`, `review`, `ship` |
 | `map-ticket` | [`packages/fabrika-cli/src/wire/map-ticket.ts`](../../../packages/fabrika-cli/src/wire/map-ticket.ts) | `map` | `map` |
 | `grill-ruling` | [`packages/fabrika-cli/src/wire/grill-ruling.ts`](../../../packages/fabrika-cli/src/wire/grill-ruling.ts) | `grilling` | `grilling` |
@@ -94,6 +95,20 @@ moved is stale rather than passing. Drift costs both directions: a marker the re
 recognise makes a reviewed PR look unreviewed and stalls it, while one whose binding is lost would
 let a stale approval carry an unreviewed tree through a merge. The module owns the composing and the
 reading, including the staleness question; the skills keep the judgement of when to flip a verdict.
+
+### `range-verdict-marker`
+
+This is the same verdict, over a commit range instead of a pull request head — what a child's local
+review judges on its own branch, posted on the child issue. It exists because the head binding above
+cannot survive the one event every child's verdict has to survive: the moment the range is merged
+into the epic branch, the SHAs the verdict names stop being that branch's history, and a reader
+holding only those SHAs has to re-review work nobody changed. So this form drops the head and makes
+the **content digest mandatory** — the twelve hex of the same ADR 0276 serialization, over the same
+`<base>...<tip>` records. A clean merge that preserves every judged blob leaves that digest
+derivable from the epic branch and the verdict in force; a conflict resolution, or any later commit
+touching a judged path, moves it and kills the verdict, which is exactly the re-review that is owed.
+A marker of this form written with no digest binds nothing at all, so it is malformed rather than a
+weaker verdict — the one place this format is stricter than the head-bound one.
 
 ### `lane-brief`
 

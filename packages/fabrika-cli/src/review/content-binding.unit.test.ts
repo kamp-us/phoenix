@@ -12,8 +12,17 @@ import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {fakeShell, okOut} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
-import {contentDigest, contentDigestAt, parseRaw, serializeContent} from "./content-binding.ts";
-import {BASE, HEAD, RAW, RAW_AT} from "./fixtures.test-support.ts";
+import {
+	bindRange,
+	contentDigest,
+	contentDigestAt,
+	judgedPaths,
+	parseRaw,
+	rangeContentAt,
+	rangeDigestOnto,
+	serializeContent,
+} from "./content-binding.ts";
+import {BASE, HEAD, OLD_HEAD, RAW, RAW_AT, RAW_ONTO} from "./fixtures.test-support.ts";
 
 const oid = (letter: string) => letter.repeat(40);
 
@@ -123,5 +132,79 @@ describe("contentDigestAt", () => {
 	it("FAILS on an unreadable stream rather than digesting what it could parse", async () => {
 		const out = await run([[RAW_AT(), okOut("src/cart.ts\0")]]);
 		expect(out._tag).toBe("Failure");
+	});
+});
+
+describe("the range scope", () => {
+	const JUDGED = ["README.md", "src/cart.ts"] as const;
+	const ONTO = RAW_ONTO(BASE, OLD_HEAD, ...JUDGED);
+
+	const range = (script: ReadonlyArray<readonly [RegExp, ExecResult]>) =>
+		Effect.runPromise(
+			Effect.provide(rangeContentAt({base: BASE, tip: HEAD}), fakeShell(script).layer),
+		);
+	const onto = (script: ReadonlyArray<readonly [RegExp, ExecResult]>) =>
+		Effect.runPromise(
+			Effect.provide(rangeDigestOnto(BASE, OLD_HEAD, [...JUDGED]), fakeShell(script).layer),
+		);
+
+	it("names both sides of a rename, so the pathspec can still detect it", () => {
+		const renamed = rows(record("R100", oid("a"), oid("b"), "src/new.ts", "src/old.ts"));
+		expect(judgedPaths(renamed)).toEqual(["src/new.ts", "src/old.ts"]);
+	});
+
+	it("digests a range through the SAME serialization the PR scope uses", async () => {
+		const out = await range([[RAW_AT(), okOut(RAW)]]);
+		expect(out).toEqual({_tag: "Ok", value: {digest: digestOf(RAW), paths: JUDGED}});
+	});
+
+	it("FAILS on an empty range rather than binding a verdict to nothing", async () => {
+		expect((await range([[RAW_AT(), okOut("")]]))._tag).toBe("Failure");
+	});
+
+	it("re-derives from a later state over the judged paths only", async () => {
+		expect(await onto([[ONTO, okOut(RAW)]])).toEqual({_tag: "Digest", digest: digestOf(RAW)});
+	});
+
+	it("tells a state that carries none of the judged change from one it could not read", async () => {
+		expect(await onto([[ONTO, okOut("")]])).toEqual({_tag: "Unchanged"});
+		expect((await onto([[ONTO, okOut("src/cart.ts\0")]]))._tag).toBe("Unreadable");
+	});
+});
+
+describe("bindRange", () => {
+	const CLAIMED = "7af166f42fdb";
+
+	it("is Current only when the state re-derives the claimed digest", () => {
+		expect(bindRange({content: CLAIMED}, {_tag: "Digest", digest: CLAIMED})).toEqual({
+			_tag: "Current",
+			digest: CLAIMED,
+		});
+	});
+
+	it("is Stale when the state derives a different digest", () => {
+		expect(bindRange({content: CLAIMED}, {_tag: "Digest", digest: "0123456789ab"})).toEqual({
+			_tag: "Stale",
+			claimed: CLAIMED,
+			found: "0123456789ab",
+		});
+	});
+
+	it("is Stale, not Unbindable, when the state carries none of the judged change", () => {
+		expect(bindRange({content: CLAIMED}, {_tag: "Unchanged"})._tag).toBe("Stale");
+	});
+
+	/**
+	 * The non-folding ADR 0276 turns on: a derivation that could not be made is UNKNOWN. Read as
+	 * `Current` it would ship an unverifiable verdict; read as `Stale` it would name the wrong cause
+	 * and send an operator to re-review instead of to a broken checkout.
+	 */
+	it("is Unbindable when the derivation could not be made", () => {
+		const out = bindRange({content: CLAIMED}, {_tag: "Unreadable", reason: "no merge base"});
+		expect(out._tag).toBe("Unbindable");
+	});
+
+	it("is Unbindable on a claim that is not a digest — never a comparison against a typo", () => {
+		expect(bindRange({content: "nope"}, {_tag: "Digest", digest: CLAIMED})._tag).toBe("Unbindable");
 	});
 });

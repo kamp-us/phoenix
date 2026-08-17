@@ -36,8 +36,8 @@ export const pull = (shape: PullShape = {}): ExecResult =>
 
 const DIFF_FLAGS = "--no-ext-diff --no-color --find-renames --src-prefix=a/ --dst-prefix=b/";
 
-const range = (base: string, head: string, extra = ""): RegExp =>
-	new RegExp(`^git diff ${DIFF_FLAGS}${extra} ${base}\\.\\.\\.${head}$`);
+const range = (base: string, head: string, extra = "", trailing = ""): RegExp =>
+	new RegExp(`^git diff ${DIFF_FLAGS}${extra} ${base}\\.\\.\\.${head}${trailing}$`);
 
 /** The bound diff read: `git diff <base>...<head>` under the config-proof flags. */
 export const DIFF_AT = (base: string = BASE, head: string = HEAD): RegExp => range(base, head);
@@ -53,6 +53,10 @@ export const paths = (...names: ReadonlyArray<string>): ExecResult =>
 /** The bound `--raw` read the content binding digests (ADR 0276). */
 export const RAW_AT = (base: string = BASE, head: string = HEAD): RegExp =>
 	range(base, head, " --raw --abbrev=40 -z");
+
+/** The same read limited to the paths a range verdict judged — the re-derivation read (#5825). */
+export const RAW_ONTO = (base: string, state: string, ...judged: ReadonlyArray<string>): RegExp =>
+	range(base, state, " --raw --abbrev=40 -z", ` -- ${judged.join(" ")}`);
 
 /** One `--raw -z` stream over the same two paths {@link DIFF} carries. */
 export const RAW = [
