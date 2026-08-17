@@ -15,9 +15,7 @@
  */
 import {type Ref, readTopology} from "../build/dependencies.ts";
 import {type DeclaredLine, findCycle} from "../ledger/topology-doc.ts";
-
-/** The coder template's retry budget, mirrored per child (see `templates/coder.workflow.json`). */
-const MAX_RETRIES = 2;
+import {RETRY_BUDGET} from "../retry-budget.ts";
 
 export type EmitResult =
 	| {
@@ -122,7 +120,7 @@ export const emitMachine = (
 	const states: Record<string, unknown> = {};
 	for (const [index, phase] of order.entries()) {
 		const members = ascending(phases.get(phase) ?? []);
-		for (const child of members) context[taskId(child)] = {retries: 0, maxRetries: MAX_RETRIES};
+		for (const child of members) context[taskId(child)] = {retries: 0, maxRetries: RETRY_BUDGET};
 		const next = order[index + 1];
 		states[phaseName(phase)] = {
 			type: "parallel",

@@ -20,6 +20,7 @@
  */
 import type {Machine} from "@demlik/tea";
 import {defineMachine} from "@demlik/tea";
+import {RETRY_BUDGET} from "../retry-budget.ts";
 
 /** The operator's whole event vocabulary — the six, closed (#5570 founder session, 2026-08-15). */
 export const OPERATOR_EVENTS = ["DONE", "PASS", "FAIL", "BLOCKED", "WIP", "UNBLOCKED"] as const;
@@ -64,8 +65,6 @@ export interface CompiledLane {
 export type CompileResult =
 	| {readonly _tag: "Compiled"; readonly lane: CompiledLane}
 	| {readonly _tag: "Malformed"; readonly defects: ReadonlyArray<string>};
-
-const DEFAULT_MAX_RETRIES = 3;
 
 type Cell = (state: TaskState) => readonly [TaskState, readonly never[]];
 
@@ -167,7 +166,7 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 	if (defects.length > 0) return {defects};
 
 	const ctx = isRecord(context) ? context : {};
-	const maxRetries = typeof ctx.maxRetries === "number" ? ctx.maxRetries : DEFAULT_MAX_RETRIES;
+	const maxRetries = typeof ctx.maxRetries === "number" ? ctx.maxRetries : RETRY_BUDGET;
 	const {maxRetries: _max, retries: _retries, ...extras} = ctx;
 	const initial: TaskState = {type: initialState, retries: 0, maxRetries};
 	// The Transitions mapped type demands a cell for every (state × msg) pair; a lane machine is
