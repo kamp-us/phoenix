@@ -3,22 +3,14 @@
  * requests.
  *
  * The residual race is real and this verb does not close it: two authors between the same pair of
- * invocations still collide. CI's decision-record validation reds the second-to-merge pull request,
- * and the skill's own re-check catches it for the caller's id before the pull request opens. A verb
- * that claimed to close it would be lying.
+ * invocations still collide. `adr mint` is what removes the gap this verb opens between reading an
+ * id and writing it; CI's decision-record validation reds a duplicate that still reaches the merge
+ * queue. A verb that claimed to close the race would be lying.
  */
 import {Effect} from "effect";
-import {originRepo, type Shell} from "../io/git.ts";
-import {answer, refuse, type VerbOutcome} from "../verb.ts";
-import {loadInFlight, loadMerged} from "./base-ref.ts";
-import {
-	BASE_UNFETCHABLE,
-	DIR_UNREADABLE,
-	IN_FLIGHT_UNKNOWN,
-	ORIGIN_REPO_UNRESOLVABLE,
-	UNPARSEABLE_RECORD_ID,
-} from "./codes.ts";
-import {allocate} from "./next.ts";
+import type {Shell} from "../io/git.ts";
+import {answer, type VerbOutcome} from "../verb.ts";
+import {resolveAllocation} from "./allocation.ts";
 
 export interface NextOptions {
 	readonly dir: string;
@@ -29,57 +21,11 @@ export interface NextOptions {
 
 export const runNext = (options: NextOptions): Shell<VerbOutcome> =>
 	Effect.gen(function* () {
-		const {dir, base, json} = options;
+		const {dir, base, repo, json} = options;
 
-		let repo = options.repo;
-		if (repo === null) {
-			const resolved = yield* originRepo;
-			if (resolved._tag === "Failure") {
-				return refuse(
-					ORIGIN_REPO_UNRESOLVABLE,
-					`adr next: cannot resolve --repo from the origin remote: ${resolved.reason} — the in-flight set is UNKNOWN.`,
-				);
-			}
-			repo = resolved.value;
-		}
-
-		const merged = yield* loadMerged(base, dir);
-		if (merged._tag === "Err") {
-			const e = merged.error;
-			if (e._tag === "FetchFailed") {
-				return refuse(
-					BASE_UNFETCHABLE,
-					`adr next: cannot fetch ${base}: ${e.reason} — the merged set is UNKNOWN. Re-run; do not answer from the local tree.`,
-				);
-			}
-			if (e._tag === "DirUnreadable") {
-				return refuse(
-					DIR_UNREADABLE,
-					`adr next: cannot read ${dir} at ${base}: ${e.reason} — the merged set is UNKNOWN, never "0 records".`,
-				);
-			}
-			return refuse(
-				UNPARSEABLE_RECORD_ID,
-				`adr next: ${dir} holds a record with an unparseable id: ${e.file}`,
-			);
-		}
-
-		const inFlight = yield* loadInFlight(repo, dir);
-		if (inFlight._tag === "Err") {
-			const e = inFlight.error;
-			return refuse(
-				IN_FLIGHT_UNKNOWN,
-				e._tag === "PrListFailed"
-					? `adr next: cannot enumerate open pull requests in ${repo}: ${e.reason} — the in-flight set is UNKNOWN, never "nothing reserved". Re-run; do not fall back to the on-disk id.`
-					: `adr next: cannot read PR #${e.pr}'s file list: ${e.reason} — the in-flight set is INCOMPLETE, so it is UNKNOWN.`,
-			);
-		}
-
-		const allocation = allocate(
-			merged.value.ids,
-			inFlight.value.map((r) => r.id),
-		);
-		const scope = `adr next: scanned ${dir} at ${merged.value.sha}, ${merged.value.files.length} decision records; ${allocation.inFlight.length} id(s) in flight across the open pull requests of ${repo}.`;
+		const resolved = yield* resolveAllocation({verb: "adr next", dir, base, repo});
+		if (resolved._tag === "Refused") return resolved.outcome;
+		const {allocation, baseSha, scope} = resolved.value;
 
 		return answer(
 			json
@@ -88,7 +34,7 @@ export const runNext = (options: NextOptions): Shell<VerbOutcome> =>
 						mergedMax: allocation.mergedMax,
 						inFlight: allocation.inFlight,
 						baseRef: base,
-						baseSha: merged.value.sha,
+						baseSha,
 					})
 				: allocation.id,
 			[scope],

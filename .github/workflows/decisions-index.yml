@@ -11,6 +11,11 @@ on:
   pull_request:
   push:
     branches: [main]
+  # The number-lock's only cross-PR view (#5841). `validate` reads the tree it is checked out
+  # on, so on `pull_request` it sees one branch and two pull requests each minting 0284 are
+  # both green — the duplicate first exists on the batched `merge_group` ref, and without this
+  # trigger nothing reads that ref until `main` is already red.
+  merge_group:
 
 permissions:
   contents: read

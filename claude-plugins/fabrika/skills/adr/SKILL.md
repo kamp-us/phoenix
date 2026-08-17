@@ -10,31 +10,34 @@ implies, because discovery is the CLAUDE.md contract and there is no index. A se
 earns a file even when nobody asks for an ADR — an unrecorded ruling is one the next session
 re-decides differently. Examples run id `0240`.
 
-## 1 — Claim the number
+## 1 — Claim the number and write the file, in one call
 
 ```bash
-fabrika adr next
+fabrika adr mint only-landed-adrs-may-be-cited
 ```
 
-Unions the freshly fetched merged set with the ids open ADR PRs already claim, so a checkout sitting
-at `0150` while origin is at `0151` cannot mint a duplicate.
+One call allocates the id and scaffolds the record, and that is why it is one call: it unions the
+freshly fetched merged set with the ids open ADR PRs already claim, so a checkout sitting at `0150`
+while origin is at `0151` cannot mint a duplicate — **and an id you allocate now and write later is
+already stale**, which is how 0284 landed on two pull requests at once (#5841). The slug is
+kebab-case, at most 5 words; it prints the path written.
 
 **A non-zero exit is UNKNOWN, never "nothing reserved."** Re-run it. Falling back to the highest id
 on disk mints the same number from two lanes at once.
 
-**An empty `.decisions/` is not one of those cases — it answers `0001` and exits 0.** A repo adopting
-fabrika has no records on day one, and that is a fact the verb reports, not a read it failed. Only a
-directory it could not read at all refuses (exit 11). If `.decisions/` does not exist yet, create it
-and re-run; a repo with no decision directory at all is a setup question for
+**An empty `.decisions/` is not one of those cases — it allocates `0001` and exits 0.** A repo
+adopting fabrika has no records on day one, and that is a fact the verb reports, not a read it
+failed. Only a directory it could not read at all refuses (exit 11). If `.decisions/` does not exist
+yet, create it and re-run; a repo with no decision directory at all is a setup question for
 [front-door](../front-door/SKILL.md).
 
+`fabrika adr next` still answers the id on its own, and `fabrika adr new 0240 <slug>` still
+scaffolds against an id you name. Reach for the pair only when you genuinely need the id before the
+file — the gap between them is the race, so do not re-open it out of habit. Whichever route, the
+minted file is not a reservation: nothing outside this checkout sees the id until the pull request
+opens, and step 6 is where you find out whether someone got there first.
+
 ## 2 — Write the decision
-
-```bash
-fabrika adr new 0240 only-landed-adrs-may-be-cited
-```
-
-Scaffolds the frontmatter and section skeleton; the slug is kebab-case, at most 5 words.
 
 **The `title` carries the decision, not the topic** — `Every gate fails closed on zero scope`, never
 `Gate scope handling`. **One clause**: where the ruling has a discriminating half, it belongs inside
@@ -112,7 +115,10 @@ fabrika adr resolve 0240
 ```
 
 Your own id, one last time: `absent` means nobody claimed it while you wrote; `in-flight` means
-another lane opened its PR first, so renumber now.
+another lane opened its PR first, so **renumber now — the lane that opened first keeps the id, and
+this check is the only place a renumber is still cheap.** Skip it and the duplicate surfaces on the
+merge queue's batched ref instead, where it fails the batch and can dismiss an approval already
+given.
 
 **Whether this PR needs a control-plane approval is `cp-classify`'s answer, not yours** — it routes
 on CODEOWNERS, and how a repo owns `.decisions/` decides it

@@ -6,7 +6,7 @@
 lands — [#4648](https://github.com/kamp-us/phoenix/issues/4648) Resolved question 2 defers the
 decision to the first derived contract, which is this one. The package is `packages/fabrika-cli/`,
 its binary is `fabrika`, and this skill's verbs sit under an `adr` subcommand group. The
-[CLI interface convention](../../docs/cli-interface-convention.md) governs all six; where this spec
+[CLI interface convention](../../docs/cli-interface-convention.md) governs all seven; where this spec
 and that doc disagree, the doc wins and this spec is the bug.
 
 **`fabrika` calls `pipeline-cli` nowhere, and neither does the skill.** fabrika is self-contained
@@ -36,6 +36,7 @@ would not have caught them anyway.
 |---|---|---|
 | `adr next` | the next unused ADR id, against a fetched base ref unioned with open ADR PRs | fetch, parse ids, take the max, add one — no judgment anywhere in it |
 | `adr new` | scaffold `.decisions/NNNN-slug.md` from the canonical template | the file's *shape* is fixed text with substitutions; only its content is judgment |
+| `adr mint` | allocate the next id and scaffold its record in one invocation | both halves are already derived; fusing them removes a window rather than adding judgment |
 | `adr resolve` | resolve an id to its real filename and state against a fetched base ref | a lookup with a defined answer; whether the result may be cited stays in the skill |
 | `adr supersede` | rewrite an older ADR's `status:` line to `superseded by [NNNN](…)` | *deciding* to supersede is judgment; the one-line edit and its link are mechanical |
 | `adr amend-in-part` | append this ADR to an older one's `amended-in-part by` list | as above, plus the list-append and refusal rules an author gets wrong by hand |
@@ -63,22 +64,22 @@ Every verb below obeys these; they are stated once rather than repeated per bloc
   whichever verb produced it. Each verb's block below lists only the codes it can reach; none of them
   re-seats a number.
 
-  | Code | Meaning | next | resolve | new | supersede / amend-in-part | sweep |
-  |---|---|:--:|:--:|:--:|:--:|:--:|
-  | `0` | the answer is on stdout | ✓ | ✓ | ✓ | ✓ | ✓ |
-  | `1` | usage error, or the verb failed to run | ✓ | ✓ | ✓ | ✓ | ✓ |
-  | `7` | the record the caller named is not there | | | | ✓ | ✓ |
-  | `11` | the record directory could not be read, so the outcome is UNKNOWN | ✓ | ✓ | | | ✓ |
-  | `12` | the target path already exists — refused, never overwritten | | | ✓ | | |
-  | `13` | `--by` has no record under `--dir` | | | | ✓ | |
-  | `14` | `<id>` has no single rewritable `status:` line | | | | ✓ | |
-  | `15` | the rewrite would have touched another line — nothing written | | | | ✓ | |
-  | `16` | `<id>` is already `superseded by …` | | | | ✓ | |
-  | `17` | `--base` could not be fetched, so the merged set is UNKNOWN | ✓ | ✓ | | | |
-  | `18` | the open pull requests could not be enumerated | ✓ | ✓ | | | |
-  | `19` | a record under `--dir` has a filename with no readable id | ✓ | ✓ | | | |
-  | `20` | two records under `--dir` claim one id | | ✓ | | | |
-  | `21` | `--repo` was not given and the `origin` remote could not be read | ✓ | ✓ | | | |
+  | Code | Meaning | next | resolve | new | mint | supersede / amend-in-part | sweep |
+  |---|---|:--:|:--:|:--:|:--:|:--:|:--:|
+  | `0` | the answer is on stdout | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+  | `1` | usage error, or the verb failed to run | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+  | `7` | the record the caller named is not there | | | | | ✓ | ✓ |
+  | `11` | the record directory could not be read, so the outcome is UNKNOWN | ✓ | ✓ | | ✓ | | ✓ |
+  | `12` | the target path already exists — refused, never overwritten | | | ✓ | ✓ | | |
+  | `13` | `--by` has no record under `--dir` | | | | | ✓ | |
+  | `14` | `<id>` has no single rewritable `status:` line | | | | | ✓ | |
+  | `15` | the rewrite would have touched another line — nothing written | | | | | ✓ | |
+  | `16` | `<id>` is already `superseded by …` | | | | | ✓ | |
+  | `17` | `--base` could not be fetched, so the merged set is UNKNOWN | ✓ | ✓ | | ✓ | | |
+  | `18` | the open pull requests could not be enumerated | ✓ | ✓ | | ✓ | | |
+  | `19` | a record under `--dir` has a filename with no readable id | ✓ | ✓ | | ✓ | | |
+  | `20` | two records under `--dir` claim one id | | ✓ | | | | |
+  | `21` | `--repo` was not given and the `origin` remote could not be read | ✓ | ✓ | | ✓ | | |
 
   `7` and `11` are the two seats this group shares with `report`'s table, code for code, so a caller
   driving both reads one meaning: the target is not there, and the read that would have proven it
@@ -293,7 +294,7 @@ merge-time bookkeeping (`Closes #N`, blocks cleared, the vocabulary-impact outco
 | `adr new: cannot write <path>: <reason>` | 1 | refusal |
 
 **Scope** — not a judging verb. It writes exactly one file and never edits another. It does not check
-whether the id is claimed; that is `adr next` and `adr resolve`.
+whether the id is claimed; that is `adr next`, `adr mint` and `adr resolve`.
 
 **Examples**
 
@@ -316,6 +317,58 @@ $ echo $?
   carry.
 - The `**What this decides:**` line is required on every ADR: the founder ratifies ADRs (ADR 0078)
   and reads that line, not the dense agent-facing prose beneath it.
+
+---
+
+## `adr mint`
+
+**Invocation**
+
+```
+fabrika adr mint only-landed-adrs-may-be-cited [--dir <path>] [--base <ref>] [--repo <owner/name>] [--status <text>] [--date <YYYY-MM-DD>] [--title <text>] [--tags <a,b>] [--json]
+```
+
+**Inputs** — `adr next`'s `--dir` / `--base` / `--repo`, plus `adr new`'s `<slug>`, `--status`,
+`--date`, `--title` and `--tags`. There is no `<id>`: allocating it is the point.
+
+**Output** — one line, the path written, newline-terminated. With `--json`, one object with keys
+`path`, `id`, `slug`, `mergedMax`, `inFlight`, `baseRef`, `baseSha`.
+
+**Exit status** — every code `adr next` can reach (`11`, `17`, `18`, `19`, `21`), plus `adr new`'s
+`12`, plus `1` for a `<slug>` that is not kebab-case. Refusal messages are `adr next`'s and
+`adr new`'s verbatim under an `adr mint:` prefix.
+
+**Order is the contract: allocate, then write.** A refused allocation writes nothing, so a run that
+could not read the merged or in-flight set leaves the tree exactly as it found it. The scope line
+rides a refused write too — an id that turns out to be taken on disk is only readable against the
+sets it was allocated from.
+
+**Scope** — it decides only the order. Allocation is `adr next`'s read and the write is `adr new`'s,
+shared as code rather than restated, because two copies of the four UNKNOWN branches is two places
+for one of them to become an answer.
+
+**Why it exists.** `adr next` then `adr new` leaves the author's whole drafting turn between reading
+an id and writing it, and an id read then is stale by the time it lands: that gap put ADR 0284 on two
+pull requests and cost a dismissed approval (#5841). **It is not a reservation and must never be
+described as one** — no id is visible to another lane until its pull request opens, so the
+mint-to-open window survives and is caught downstream by `decisions-index`'s `merge_group` run
+reading the batched ref. `adr next` and `adr new` stay callable on their own for the cases that
+genuinely need the id before the file.
+
+**Examples**
+
+```
+$ fabrika adr mint only-landed-adrs-may-be-cited
+adr mint: scanned .decisions at 49a2290…, 236 decision records; 3 id(s) in flight across the open pull requests of kamp-us/phoenix.
+.decisions/0240-only-landed-adrs-may-be-cited.md
+```
+
+```
+$ fabrika adr mint only-landed-adrs-may-be-cited
+adr mint: cannot enumerate open pull requests in kamp-us/phoenix: <reason> — the in-flight set is UNKNOWN, never "nothing reserved". Re-run; do not fall back to the on-disk id.
+$ echo $?
+18
+```
 
 ---
 
