@@ -74,7 +74,8 @@ export const resolve = ({selfPackageRoot, origin, repoRoot, local}: ResolveInput
 	if (local.install.packageRoot === selfPackageRoot)
 		return {_tag: "run-here", why: "the repo-local install is this copy"};
 	// The refusal is placed here, on the delegate branch alone, so the two loud branches above keep
-	// their behaviour and their text exactly (#4956).
+	// their behaviour and their text exactly (#4956). The boundary it enforces is the repository,
+	// unprovable-refuses included — see ADR 0287.
 	if (origin._tag === "other-repository")
 		return {
 			_tag: "refuse-foreign-checkout",

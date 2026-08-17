@@ -165,7 +165,7 @@ the gap surfaces before any work is done; it **prints** the fix and never applie
 
 The plugin carries **no per-plugin `version`** (neither in the marketplace plugin entry nor in [`.claude-plugin/plugin.json`](.claude-plugin/plugin.json)): Claude Code then content-addresses the install by git commit SHA, so every commit is a new "version" and skill additions/edits reach already-installed users on the normal update path — a fixed semver pin froze the cache and silently served stale content (#945). This omission is **deliberate, not a defect — do not add a `version`**; the decision record (why + history) is [ADR 0110](https://github.com/kamp-us/phoenix/blob/main/.decisions/0110-plugin-carries-no-version-continuous-ship.md).
 
-The whole plugin surface was audited against the official Claude Code plugin spec ([plugins reference](https://docs.claude.com/en/docs/claude-code/plugins-reference), [marketplaces](https://docs.claude.com/en/docs/claude-code/plugin-marketplaces)); the conformance record — the corrected manifest `$schema` URL plus every deliberate deviation (no `version`, the root-level `hooks.json`, the absent `commands/`, the `.claude/skills` discovery symlink) and its forcing constraint — is [ADR 0171](https://github.com/kamp-us/phoenix/blob/main/.decisions/0171-kampus-pipeline-plugin-spec-conformance.md). A future audit that re-flags any of those reads the disposition there: documented-intentional, not an open defect.
+The whole plugin surface was audited against the official Claude Code plugin spec ([plugins reference](https://docs.claude.com/en/docs/claude-code/plugins-reference), [marketplaces](https://docs.claude.com/en/docs/claude-code/plugin-marketplaces)); the conformance record — the corrected manifest `$schema` URL plus every deliberate deviation (no `version`, the root-level `hooks.json`, the absent `commands/`; the `.claude/skills` discovery symlink was one until ADR 0277 retired it) and its forcing constraint — is [ADR 0171](https://github.com/kamp-us/phoenix/blob/main/.decisions/0171-kampus-pipeline-plugin-spec-conformance.md). A future audit that re-flags any of those reads the disposition there: documented-intentional, not an open defect.
 
 ## Portability boundary (ADR 0062)
 
@@ -267,17 +267,14 @@ into every install (Claude Code does a full recursive copy and honors no ignore 
 so a plugin must be the only thing under its source root.
 
 Claude Code's **plugin** discovery scans the plugin source root's `skills/` directory and
-offers no manifest field to redirect it. Phoenix's **local** discovery reads
-`.claude/skills/`. To satisfy both with **no duplicated content**:
+offers no manifest field to redirect it. The skills therefore live in exactly one place:
 
 - **Canonical files live at `claude-plugins/kampus-pipeline/skills/`** — the plugin source-root location.
-- **`.claude/skills` is a symlink → `../claude-plugins/kampus-pipeline/skills`** (relative target, stored
-  in git as a mode-`120000` symlink blob). Local discovery follows it to that directory.
 
-Editing a file in one location is editing it in the other — there is exactly one source of
-truth. The relative symlink target means it **resolves in a fresh `git clone`** (marketplace
-installs clone the repo), not only in the working tree. CI runs the validators through the
-same symlink (`bash .claude/skills/validate-skills.sh`), so the layout needs no workflow change.
+There is no second discovery path. Phoenix used to mirror the skills into `.claude/skills/`
+via a symlink for project-local discovery; ADR 0277 retired it, and phoenix now consumes the
+plugin the same way any adopter does. CI invokes the validators at the real path
+(`bash claude-plugins/kampus-pipeline/skills/validate-skills.sh`).
 
 ```
 phoenix/
@@ -293,7 +290,6 @@ phoenix/
 │           └── gh-issue-intake-formats.md
 ├── apps/  packages/  infra/             # repo source — no longer shipped to installers
 └── .claude/
-    ├── skills -> ../claude-plugins/kampus-pipeline/skills  # symlink — local discovery
     └── .pipeline -> <the live plugin install>              # symlink — planted by the hooks, gitignored
 ```
 
@@ -339,15 +335,13 @@ live, and asserts that no corpus script may exit 127 for any reason other than a
   paths (ADR 0062 §4) — so they resolve from an adopter's install, where those trees don't
   exist.
 
-### In-repo discovery doubling — accept the doubles (ADR 0062 §5)
+### In-repo discovery doubling — resolved by the symlink retirement (ADR 0062 §5, ADR 0277)
 
-When the plugin is installed at **user scope** and a maintainer works **inside phoenix**,
-every skill surfaces twice in the picker: bare `report` (project-scope `.claude/skills/`)
-and `phoenix:report` (plugin scope). Claude Code does not dedupe skill names across scopes
+Under the v1 layout, a maintainer working inside phoenix with the plugin installed saw
+every skill twice in the picker: bare `report` (project-scope `.claude/skills/`) and
+`phoenix:report` (plugin scope) — Claude Code does not dedupe skill names across scopes
 and has no per-project plugin disable (upstream anthropics/claude-code#53923).
 
-**Disposition: accept the doubles for v1.** The recommendation is that **phoenix
-maintainers rely on the local `.claude/skills/` discovery and do _not_ install the plugin
-into phoenix itself** — they already have the canonical suite locally; the plugin exists
-for *other* repos. This is a documentation cost, not a functional one. Revisit if/when
-upstream ships a per-project plugin toggle. See ADR 0062 §5 for the full rationale.
+ADR 0277 retired the project-scope symlink, so the doubling no longer arises: skills reach
+a phoenix session only through the plugin, the same as in any adopting repo. ADR 0062 §5's
+accept-the-doubles disposition is history, kept there as the record of the v1 trade.
