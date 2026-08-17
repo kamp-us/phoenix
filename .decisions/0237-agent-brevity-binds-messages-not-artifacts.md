@@ -98,23 +98,22 @@ them. `review-doc`'s gate criteria do not change, and no existing prose is rewri
 
 The `CLAUDE.md` edit is downstream follow-up work, not part of this decision's record.
 
-Landing this does **not** discharge #4690. `claude-plugins/pipeline-crew/` is repo-agnostic
-shipped content (ADR [0062](0062-repo-as-config-plugin.md)), so a crew installed against a
-different repo never reads *this* repo's `CLAUDE.md`, and that coverage gap survives. The
-sequencing is #4694 upstream, #4690 downstream — two independent triage passes converged on it.
-The wording is single-sourced here; #4690 decides where it binds for the crew.
+**A downstream sequencing note, now historical.** When this was ruled on 2026-08-01 the plan was
+#4694 upstream, #4690 downstream: `claude-plugins/pipeline-crew/` was repo-agnostic shipped content
+(ADR [0062](0062-repo-as-config-plugin.md)), so a crew installed against a different repo never read
+*this* repo's `CLAUDE.md`, and #4690 was to decide where the wording bound for the crew — as fixed
+def doctrine or as a tunable key in that plugin's `PERSONALIZATION.md`. That surface no longer
+exists. ADR [0279](0279-v1-crew-retired-in-full.md) retired the v1 crew in full and the
+`claude-plugins/pipeline-crew/` tree, `PERSONALIZATION.md` included, was deleted; #4690 is closed.
+The coverage gap and that open sub-question went with the crew. The wording stays single-sourced
+here, and any later surface that ships agent definitions to another repo cites this ADR for it.
 
-One sub-question stays open and is **not** ruled here: whether the crew-facing half lands as fixed
-def doctrine or as a tunable personalization seam key. That is #4690's call, and either outcome
-cites this ADR for the wording.
-
-`claude-plugins/pipeline-crew/PERSONALIZATION.md` carries a deliberate deferral under "Tied-off
-and deferred seam gaps" for operator interaction preferences, deferred because no def-side
-consumer exists. That deferral can be closed by pointing at this ADR once #4690 lands the
-consuming surface; nothing here closes it.
-
-Any edit under `claude-plugins/**` is control-plane and needs control-plane approval before
-enqueue (ADR [0053](0053-control-plane-boundary.md)). A `CLAUDE.md` edit does not.
+Control-plane approval is CODEOWNERS' call at the merge gate (ADR
+[0053](0053-control-plane-boundary.md)), and it is not blanket over `claude-plugins/**`: ADR
+[0274](0274-fabrika-tree-is-not-control-plane.md) rules `claude-plugins/fabrika/**` out of the
+human gate in favour of a required `governance` verdict. What CODEOWNERS gates under
+`claude-plugins/` today is the v1 tree — `kampus-pipeline/`'s `skills/`, `agents/`, `lib/`,
+`hooks/` and `hooks.json`. A `CLAUDE.md` edit is gated by neither.
 
 ## Records
 
@@ -124,5 +123,5 @@ enqueue (ADR [0053](0053-control-plane-boundary.md)). A `CLAUDE.md` edit does no
   a reader opens on purpose (issues, PRs, verdicts, ledgers, ADRs) and is bound by
   `writing-clearly-and-concisely` instead. Routed to `.glossary/TERMS.md` by report #4702 rather
   than added inline, so this PR stays purely additive.
-- Discharges #4694's ruling criteria. #4694 and #4690 both stay **open** — the `CLAUDE.md` edit
-  and the crew-surface decision are the remaining work.
+- Discharges #4694's ruling criteria. #4694 stays **open** — the `CLAUDE.md` edit is the remaining
+  work. #4690, the crew-facing half, closed with the crew (ADR 0279).
