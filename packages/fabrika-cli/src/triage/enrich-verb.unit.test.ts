@@ -7,6 +7,7 @@ import {
 	BARE_AT_PATH,
 	EMPTY_STDIN,
 	LEAKED_PATH,
+	MALFORMED_CRITERIA,
 	PRECONDITION_UNKNOWN,
 	READBACK_MISMATCH,
 	WRITE_UNKNOWN,
@@ -262,6 +263,71 @@ describe("runEnrich — legacy migration", () => {
 		expect(body).toContain("I think this format is wrong:");
 		expect(body).toContain("What should it be?");
 		expect(summaryLines(body ?? "")).toEqual([SUMMARY_LINE.rewrite, SUMMARY_LINE.wrap]);
+	});
+});
+
+describe("runEnrich — the composed body's criteria block must be one the wire reader accepts (#5565, ADR 0288)", () => {
+	it("refuses a level-2 heading on 15, naming the level it read and the level expected", async () => {
+		const shell = fakeShell([[READ, issue(ORIGINAL)]]);
+		const outcome = await Effect.runPromise(
+			Effect.provide(
+				runEnrich({
+					...options,
+					stdin: Effect.succeed<StdinRead>({
+						_tag: "Text",
+						text: `${REWRITE}\n\n## Acceptance criteria\n\n- [ ] keep focus\n`,
+					}),
+				}),
+				shell.layer,
+			),
+		);
+		expect(outcome.code).toBe(MALFORMED_CRITERIA);
+		expect(outcome.stderr.at(-1)).toContain("heading level 2, expected 3");
+		expect(shell.calls.some((line) => PATCH.test(line))).toBe(false);
+	});
+
+	it("accepts a conforming level-3 block", async () => {
+		const {outcome} = await run(ORIGINAL, {
+			stdin: Effect.succeed<StdinRead>({
+				_tag: "Text",
+				text: `${REWRITE}\n\n### Acceptance criteria\n\n- [ ] keep focus\n`,
+			}),
+		});
+		expect(outcome.code).toBe(0);
+	});
+
+	it("accepts a rewrite that carries no criteria block at all — Absent is never a defect", async () => {
+		const {outcome} = await run(ORIGINAL);
+		expect(outcome.code).toBe(0);
+	});
+
+	it("never blocks a re-enrichment on a `##` heading inside the PRESERVED original", async () => {
+		const driftedOriginal = `## Summary\n\nx\n\n## Acceptance criteria\n\n- [ ] old item`;
+		const enriched = `${REWRITE}\n\n---\n\n${renderMarker(4312, "rewrite")}\n<details>\n${SUMMARY_LINE.rewrite}\n\n${driftedOriginal}\n\n</details>\n`;
+		const {outcome, body} = await run(enriched, {
+			stdin: Effect.succeed<StdinRead>({_tag: "Text", text: "## A sharper rewrite"}),
+		});
+		expect(outcome.code).toBe(0);
+		expect(body).toContain("## Acceptance criteria");
+	});
+
+	it("refuses a drifted block in an --epic pitch too, where the envelope heads it with `## Pitch`", async () => {
+		const shell = fakeShell([[READ, issue(ORIGINAL)]]);
+		const outcome = await Effect.runPromise(
+			Effect.provide(
+				runEnrich({
+					...options,
+					epic: true,
+					stdin: Effect.succeed<StdinRead>({
+						_tag: "Text",
+						text: "**Problem:** x\n\n## Acceptance criteria\n\n- [ ] keep focus\n",
+					}),
+				}),
+				shell.layer,
+			),
+		);
+		expect(outcome.code).toBe(MALFORMED_CRITERIA);
+		expect(shell.calls.some((line) => PATCH.test(line))).toBe(false);
 	});
 });
 

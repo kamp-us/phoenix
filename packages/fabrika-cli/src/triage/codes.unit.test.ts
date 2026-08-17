@@ -8,6 +8,7 @@ import {
 	EMPTY_STDIN,
 	HUMAN_FILED,
 	LEAKED_PATH,
+	MALFORMED_CRITERIA,
 	OFF_VOCABULARY,
 	PRECONDITION_UNKNOWN,
 	READBACK_MISMATCH,
@@ -38,7 +39,7 @@ describe("the overlap with `report`'s writing verbs is code-for-code", () => {
 	});
 });
 
-describe("the two codes this group adds", () => {
+describe("the codes this group adds", () => {
 	it("seats the human-filed refusal clear of `report`'s shipped 11", () => {
 		expect(HUMAN_FILED).toBe(12);
 		expect(HUMAN_FILED).not.toBe(report.PRECONDITION_UNKNOWN);
@@ -52,6 +53,16 @@ describe("the two codes this group adds", () => {
 	it("seats the unrepairable-drift refusal on its own code", () => {
 		expect(UNREPAIRABLE).toBe(14);
 		expect(UNREPAIRABLE).not.toBe(UNCONFIRMED);
+	});
+
+	/**
+	 * Two criteria refusals, two codes, and the distinctness is the point: `repair-criteria` answers
+	 * `14` about a block already on the board, `enrich` answers `15` about one that has not landed.
+	 * Fusing them would tell a caller to hand-edit an issue it has not written yet.
+	 */
+	it("seats the malformed-criteria refusal clear of the unrepairable one", () => {
+		expect(MALFORMED_CRITERIA).toBe(15);
+		expect(MALFORMED_CRITERIA).not.toBe(UNREPAIRABLE);
 	});
 
 	/**
@@ -74,7 +85,7 @@ describe("TRIAGE_EXIT_TABLE", () => {
 	});
 
 	it("carries every allocated code exactly once", () => {
-		expect(codes).toEqual([0, 1, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 126, 127]);
+		expect(codes).toEqual([0, 1, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 126, 127]);
 	});
 
 	it("gives every code a non-empty meaning", () => {
@@ -88,5 +99,6 @@ describe("TRIAGE_EXIT_TABLE", () => {
 		expect(meaningOf(HUMAN_FILED)).toContain("human-filed");
 		expect(meaningOf(UNCONFIRMED)).toContain("unconfirmed");
 		expect(meaningOf(UNREPAIRABLE)).toContain("not mechanically repairable");
+		expect(meaningOf(MALFORMED_CRITERIA)).toContain("acceptance-criteria");
 	});
 });

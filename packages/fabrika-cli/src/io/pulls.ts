@@ -254,6 +254,47 @@ export const patchComment = (repo: string, id: number, body: string): Shell<Atte
 			: fail("`gh api` exited 0 but its output is not an edited comment");
 	});
 
+/**
+ * The open pull requests the search index nominates for `tokens` — candidate numbers, never a proof.
+ *
+ * The index is a nomination surface only: it matches prose as readily as a link, and it lags a
+ * fresh PR. A caller proving a PR traces to an issue reads each candidate's own record and its own
+ * body; what this narrows is how many records that costs.
+ *
+ * **Why this survives #5850's retirement of the same read.** {@link openPullsClosing} replaced it
+ * everywhere the question is "which PR closes this issue", and is authoritative there — an edge, not
+ * an index, so it has no lag. It is built from closing keywords, so it cannot see a `Part of #N` PR
+ * — the body shape `build --partial` emits for an epic child, and the normal shape for a lane task
+ * that does not close its issue. That one shape is all this read is for. A caller wanting both kinds
+ * reads the edge first and unions this nomination in behind it, so an index that has not caught up
+ * with a fresh PR can only ever add candidates, never subtract the closing one.
+ */
+export const searchOpenPulls = (
+	repo: string,
+	tokens: ReadonlyArray<string>,
+): Shell<Attempt<ReadonlyArray<number>>> =>
+	Effect.gen(function* () {
+		const q = `repo:${repo} is:pr is:open ${tokens.join(" ")}`;
+		const r = yield* execCapture("gh", [
+			"api",
+			"--paginate",
+			`search/issues?q=${encodeURIComponent(q)}&per_page=100`,
+			"--jq",
+			".items[].number",
+		]);
+		if (!r.ok) return fail(r.reason);
+		const numbers: number[] = [];
+		for (const line of r.stdout.split("\n")) {
+			const text = line.trim();
+			if (text === "") continue;
+			if (!/^\d+$/.test(text)) {
+				return fail("`gh api` exited 0 but its output is not a list of pull-request numbers");
+			}
+			numbers.push(Number.parseInt(text, 10));
+		}
+		return ok(numbers);
+	});
+
 /** One open pull request that declares it closes the issue: the number and the link to hand on. */
 export interface ClosingPull {
 	readonly number: number;
