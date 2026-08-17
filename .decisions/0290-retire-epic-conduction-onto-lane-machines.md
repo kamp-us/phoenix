@@ -46,9 +46,12 @@ row in `src/registry.ts` and its seats in `src/exit-code-alignment.ts`, and the 
 format (`src/wire/slice-handoff.ts` and its registry entry) — the dispatch brief only a conductor
 had anyone to hand.
 
-Every surface that pointed a reader at the conductor now points at `operate` / `lane emit`, and a
-surface that described conducting an epic into one PR says plainly that children land as their own
-PRs. `packages/fabrika-cli/CHANGELOG.md` is release history and is left alone.
+Every surface that pointed a reader at the conductor now points at `operate` / `lane emit`. At this
+record's writing the lane engine lands each child as its own PR; ADR
+[0285](0285-epic-machine-ends-in-review.md) has since ruled the target shape — one epic run, one
+branch, one PR, children as commits with local range reviews — and
+[#5800](https://github.com/kamp-us/phoenix/issues/5800) tracks reshaping the engine to it.
+`packages/fabrika-cli/CHANGELOG.md` is release history and is left alone.
 
 What replaces each capability, from the proving run's gap list:
 
@@ -60,14 +63,19 @@ What replaces each capability, from the proving run's gap list:
 | `epic slice-diff` — judge the unpushed local commit | each child gets a full `review` at its pushed head, with CI |
 | `epic verdict` — verdict bound to a commit SHA | `review`'s SHA-bound markers plus `build verdicts --pr`'s current-head fold |
 
-Four capabilities have no replacement and are tracked rather than forgotten: the spawn brief
-([#5751](https://github.com/kamp-us/phoenix/issues/5751)), commit proof from the git graph over a
-spawn's self-report ([#5747](https://github.com/kamp-us/phoenix/issues/5747)), the second
+Four capabilities were filed as gaps when the proving run parked, and all four are now dispatched:
+the spawn brief was rebuilt as `lane brief`
+([#5751](https://github.com/kamp-us/phoenix/issues/5751), closed completed), commit proof over a
+spawn's self-report as `lane prove`
+([#5747](https://github.com/kamp-us/phoenix/issues/5747), closed completed), and the
+board-and-ledger status fold landed on the lane layer
+([#5746](https://github.com/kamp-us/phoenix/issues/5746), closed completed). The second
 circuit-breaker axis that separated a dead dispatch from a failing implementation
-([#5750](https://github.com/kamp-us/phoenix/issues/5750)), and a status fold that reads the live
-board as well as the ledger ([#5746](https://github.com/kamp-us/phoenix/issues/5746)). A fifth,
-one reviewable unit per epic, is lost by design and filed at
-[#5784](https://github.com/kamp-us/phoenix/issues/5784).
+([#5750](https://github.com/kamp-us/phoenix/issues/5750)) is founder-accepted as lost — closed
+not-planned; the lane machine keeps one retry counter. A fifth, one reviewable unit per epic, was
+filed at [#5784](https://github.com/kamp-us/phoenix/issues/5784) and closed by ADR
+[0285](0285-epic-machine-ends-in-review.md), which restores the property by ruling one PR per epic
+run.
 
 This amends ADR [0242](0242-fabrika-skill-nouns-redefine-build-and-review.md) in part: its list of
 eight canonical skill nouns loses `build-epic`, and that glossary row is removed. Nothing else in
@@ -80,12 +88,12 @@ name whatever the work is, so a single issue and an epic drive identically and n
 drift from the other. A child's PR is reviewed against the child's own acceptance criteria at its
 pushed head with CI, which the conductor's pre-push slice judgement could not do.
 
-Harder: an epic no longer has one diff anybody can read end to end, and nothing above the children
-judges the epic's coherence — that is #5784's question, open. The four tracked gaps above are real
-today, not theoretical: the run that produced them parked, and one of its parks
-([#5750](https://github.com/kamp-us/phoenix/issues/5750)) is exactly the missing dead-dispatch axis.
-Retiring the conductor is a bet that fixing them on the lane layer is cheaper than keeping a second
-engine alive to hold them, and it is reversible only by rebuilding, since the code is gone rather
-than frozen.
+Harder: until [#5800](https://github.com/kamp-us/phoenix/issues/5800) lands ADR 0285's shape, an
+epic has no single diff anybody can read end to end, and nothing above the children judges the
+epic's coherence. The gaps the proving run filed were real, not theoretical — the run parked on
+them — and closing them cost three lane verbs and one accepted loss (#5750, the dead-dispatch
+axis). Retiring the conductor was a bet that fixing them on the lane layer is cheaper than keeping
+a second engine alive to hold them, and it is reversible only by rebuilding, since the code is gone
+rather than frozen.
 
 No migration cost in flight: `.fabrika/` is gitignored and every conductor run is finished.
