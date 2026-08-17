@@ -1,4 +1,5 @@
 import {describe, expect, it} from "vitest";
+import {read} from "../wire/acceptance-criteria.ts";
 import {
 	authoredRegion,
 	composeBody,
@@ -246,6 +247,65 @@ describe("legacy migration — recognise once, stamp in passing, never wrap twic
 
 	it("refuses a summary line with no <details> opener above it", () => {
 		expect(legacyPreserved(`${REWRITE}\n\n${SUMMARY_LINE.rewrite}\n\n</details>\n`)).toBeNull();
+	});
+});
+
+describe("the composed body is readable — the appendix is never the contract (#5852)", () => {
+	const ORIGINAL_DRIFTED =
+		"## Summary\n\nFocus is lost.\n\n## Acceptance criteria\n\n- [ ] the record";
+	const ORIGINAL_CONFORMING =
+		"## Summary\n\nFocus is lost.\n\n### Acceptance criteria\n\n- [ ] the record";
+	const REWRITE_WITH_CRITERIA =
+		"## What to build\n\nKeep focus.\n\n### Acceptance criteria\n\n- [ ] focus survives a save";
+
+	/** A re-enrichment: an earlier run wrapped the original, and this run preserves it byte for byte. */
+	const reEnriched = (original: string, authored: string): string => {
+		const first = composeBody({
+			mode: "rewrite",
+			issue: ISSUE,
+			authored: REWRITE,
+			preserved: wrapOriginal("rewrite", original),
+		});
+		const detection = detect(first, ISSUE, legacyPreserved);
+		if (detection._tag !== "Enriched") throw new Error("unreachable");
+		return composeBody({mode: "rewrite", issue: ISSUE, authored, preserved: detection.preserved});
+	};
+
+	const texts = (source: string): ReadonlyArray<string> => {
+		const result = read(source);
+		if (result._tag !== "Found") throw new Error(`expected Found, got ${result._tag}`);
+		return result.value.map((item) => String(item.text));
+	};
+
+	it("a rewrite with NO criteria over a DRIFTED original reads Absent, not Malformed", () => {
+		expect(read(reEnriched(ORIGINAL_DRIFTED, REWRITE))._tag).toBe("Absent");
+	});
+
+	it("a rewrite WITH criteria over a CONFORMING original reads the authored block, not `undecidable`", () => {
+		expect(texts(reEnriched(ORIGINAL_CONFORMING, REWRITE_WITH_CRITERIA))).toEqual([
+			"focus survives a save",
+		]);
+	});
+
+	it("covers a body wrapped BEFORE this fix — a pre-marker v1 envelope reads the same way", () => {
+		const legacy = `${REWRITE}\n\n---\n\n${wrapOriginal("rewrite", ORIGINAL_DRIFTED)}`;
+		expect(read(legacy)._tag).toBe("Absent");
+		const detection = detect(legacy, ISSUE, legacyPreserved);
+		if (detection._tag !== "Enriched") throw new Error("unreachable");
+		expect(
+			texts(
+				composeBody({
+					mode: "rewrite",
+					issue: ISSUE,
+					authored: REWRITE_WITH_CRITERIA,
+					preserved: detection.preserved,
+				}),
+			),
+		).toEqual(["focus survives a save"]);
+	});
+
+	it("reads the authored region alone exactly as before — the producer guard is unchanged", () => {
+		expect(read(authoredRegion("rewrite", REWRITE_WITH_CRITERIA))._tag).toBe("Found");
 	});
 });
 
