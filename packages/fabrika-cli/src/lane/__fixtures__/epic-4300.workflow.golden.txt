@@ -16,6 +16,10 @@
 			"issue_4303": {
 				"retries": 0,
 				"maxRetries": 2
+			},
+			"epic_4300": {
+				"retries": 0,
+				"maxRetries": 2
 			}
 		},
 		"states": {
@@ -39,7 +43,7 @@
 							},
 							"review": {
 								"on": {
-									"ISSUE_4301.PASS": "ship",
+									"ISSUE_4301.PASS": "landed",
 									"ISSUE_4301.BLOCKED": "blocked",
 									"ISSUE_4301.FAIL": [
 										{
@@ -53,18 +57,7 @@
 									]
 								}
 							},
-							"ship": {
-								"on": {
-									"ISSUE_4301.DONE": "shipped",
-									"ISSUE_4301.BLOCKED": "human:cp-approval"
-								}
-							},
 							"blocked": {
-								"on": {
-									"ISSUE_4301.UNBLOCKED": "hist"
-								}
-							},
-							"human:cp-approval": {
 								"on": {
 									"ISSUE_4301.UNBLOCKED": "hist"
 								}
@@ -72,7 +65,7 @@
 							"hist": {
 								"type": "history"
 							},
-							"shipped": {
+							"landed": {
 								"type": "final"
 							},
 							"frozen": {
@@ -97,7 +90,7 @@
 							},
 							"review": {
 								"on": {
-									"ISSUE_4302.PASS": "ship",
+									"ISSUE_4302.PASS": "landed",
 									"ISSUE_4302.BLOCKED": "blocked",
 									"ISSUE_4302.FAIL": [
 										{
@@ -111,18 +104,7 @@
 									]
 								}
 							},
-							"ship": {
-								"on": {
-									"ISSUE_4302.DONE": "shipped",
-									"ISSUE_4302.BLOCKED": "human:cp-approval"
-								}
-							},
 							"blocked": {
-								"on": {
-									"ISSUE_4302.UNBLOCKED": "hist"
-								}
-							},
-							"human:cp-approval": {
 								"on": {
 									"ISSUE_4302.UNBLOCKED": "hist"
 								}
@@ -130,7 +112,7 @@
 							"hist": {
 								"type": "history"
 							},
-							"shipped": {
+							"landed": {
 								"type": "final"
 							},
 							"frozen": {
@@ -169,7 +151,7 @@
 							},
 							"review": {
 								"on": {
-									"ISSUE_4303.PASS": "ship",
+									"ISSUE_4303.PASS": "landed",
 									"ISSUE_4303.BLOCKED": "blocked",
 									"ISSUE_4303.FAIL": [
 										{
@@ -183,20 +165,69 @@
 									]
 								}
 							},
-							"ship": {
-								"on": {
-									"ISSUE_4303.DONE": "shipped",
-									"ISSUE_4303.BLOCKED": "human:cp-approval"
-								}
-							},
 							"blocked": {
 								"on": {
 									"ISSUE_4303.UNBLOCKED": "hist"
 								}
 							},
+							"hist": {
+								"type": "history"
+							},
+							"landed": {
+								"type": "final"
+							},
+							"frozen": {
+								"type": "final"
+							}
+						}
+					}
+				},
+				"onDone": [
+					{
+						"target": "epic",
+						"guard": "noErrors"
+					},
+					{
+						"target": "tripped"
+					}
+				]
+			},
+			"epic": {
+				"type": "parallel",
+				"states": {
+					"epic_4300": {
+						"initial": "review",
+						"states": {
+							"review": {
+								"on": {
+									"EPIC_4300.PASS": "ship",
+									"EPIC_4300.BLOCKED": "blocked",
+									"EPIC_4300.FAIL": [
+										{
+											"target": "review",
+											"guard": "retriesRemaining",
+											"actions": "incrementRetries"
+										},
+										{
+											"target": "human:epic-review"
+										}
+									]
+								}
+							},
+							"ship": {
+								"on": {
+									"EPIC_4300.DONE": "shipped",
+									"EPIC_4300.BLOCKED": "human:cp-approval"
+								}
+							},
+							"blocked": {
+								"on": {
+									"EPIC_4300.UNBLOCKED": "hist"
+								}
+							},
 							"human:cp-approval": {
 								"on": {
-									"ISSUE_4303.UNBLOCKED": "hist"
+									"EPIC_4300.UNBLOCKED": "hist"
 								}
 							},
 							"hist": {
@@ -205,7 +236,7 @@
 							"shipped": {
 								"type": "final"
 							},
-							"frozen": {
+							"human:epic-review": {
 								"type": "final"
 							}
 						}
