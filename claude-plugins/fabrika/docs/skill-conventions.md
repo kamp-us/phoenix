@@ -390,6 +390,68 @@ it the shell expands it to empty and the verb refuses on a missing number.
 > and otherwise replaces every declared name — with nothing when the parsed argument list is empty;
 > the agent-shell preload path calls it with an explicit empty string.
 
+## 13. Six skills fork; every other one runs inline
+
+**A skill declares `context: fork` and `background: true` when both clauses hold, and declares
+neither field otherwise:**
+
+1. **The run is open-ended.** Its length is set by something outside the skill, so it can consume a
+   caller's whole context window before it reaches a terminal. `build` loops construct→check until
+   green and again per review round; `review` walks a whole diff and waits on a spawned
+   `governance` run; `heal-ci` sweeps every open PR.
+2. **Nobody is waiting on the value.** Everything the run decides lands in a GitHub artifact the
+   caller re-fetches by reference — a PR, a SHA-bound verdict comment, a PR driven back into
+   motion — so the report to the caller is a pointer and nothing dies with the run's context.
+
+The six that pass both: **`build`, `build-epic`, `build-ui`, `review`, `review-ui`, `heal-ci`**.
+The other eighteen fail at least one clause, and the two clauses fail in distinct ways:
+
+| Excluded | Fails |
+|---|---|
+| `ship` | clause 2 — its whole output is the terminal merge verdict the caller routes on, and a background fork files that verdict as a task notification the caller is not reading. |
+| `operate` | clause 2 — a `LANE-PARKED` is a human's cue to act, and the two terminals differ in exactly who moves next. |
+| `check-epic-plan`, `governance` | clause 2 — each returns a gate verdict its caller waits on; `review` §6 fires `governance` and waits, so a backgrounded `governance` would return after `review` had already emitted. |
+| `grilling`, `wayfinding`, `prototyping`, `taste-color`, `front-door` | clause 2 — a human is mid-conversation, waiting. |
+| `graduate`, `handoff` | clause 2, and harder: their subject is the calling session, which a fork does not have. |
+| `adr`, `write-pattern`, `glossary`, `report`, `triage`, `plan-epic` | clause 1 — each writes one document or one issue's labels and stops, so its length is knowable from its own steps. |
+| `writing-for-agents` | clause 1 — reference read during another skill's run; it has no run of its own. |
+
+### What the two fields actually do, as observed
+
+`background` already defaults to `true` under `context: fork` (`e.background ?? !0`), so declaring
+it changes nothing at runtime — it is declared so the setting is legible in the file rather than in
+a bundle. Two conditions force it off regardless: `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS`, and a
+**non-interactive session**, where the fork still happens but blocks and returns its result in-line.
+So a `-p` run never demonstrates the notification path, and the path fires exactly where it was
+meant to: a human typing `/fabrika:build 1234` in a live session.
+
+Neither of the six declares `agent:`, so a fork spawns a `general-purpose` subagent carrying the
+skill body. Naming a shell there would make the shell's `tools:` set bind instead of the caller's,
+which is a change to who may do what — not this convention's call.
+
+**Preloading a forking skill into an agent shell does not fork, and is safe for all six.** The
+`skills:` preload and the `context: fork` machinery are two unrelated code paths: the preload
+renders the skill body and pushes it into the spawned agent's own prompt as a meta message, never
+consulting `context` or `background`. Observed rather than reasoned — spawning `fabrika:reviewer`
+(which preloads `fabrika:review`, carrying `context: fork`) produced exactly one subagent at
+`spawnDepth: 1`, whose transcript opens with the `fabrika:review` body as an `isMeta` message and
+contains no `Skill` call. So the field is inert on that path, in the harmless direction: a shell
+behaves exactly as it did before this section existed.
+
+The one path where it could bite is a shell re-invoking its own preloaded skill by name mid-run.
+The build carries a recursion guard for it — a `Skill` invocation is refused with *"already
+executing in this forked context — you are the subagent running it"* — but the guard keys on the
+agent having been *spawned by* that skill, which a `skills:` preload does not set. Nothing in the
+corpus tells a shell to re-invoke its own skill, so this stays a note rather than a defence.
+
+> Source: [#5588](https://github.com/kamp-us/phoenix/issues/5588), the M45 native-shell campaign.
+> The frontmatter schema, the `background` default, the two suppressors and the recursion guard are
+> read out of the installed Claude Code build (2.1.233), whose schema describes `context` as
+> "`inline` expands into the current conversation; `fork` spawns a subagent" and `background` as
+> "Only for `context: fork`. Forks run as background agents that report back as a task notification
+> instead of blocking the turn". The two runs behind the observations are recorded on the pull
+> request that landed this section.
+
 ## What these conventions deliberately do not cover
 
 - **What a verb owes its caller** — `--help` discoverability, output contracts, usage examples —

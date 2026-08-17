@@ -80,28 +80,49 @@ export const TOPOLOGY_FOREIGN = 16;
 export const TOPOLOGY_CYCLE = 17;
 
 /**
+ * The task's leaf state routes to no shell — `queued`, `blocked`, a `human:*` park, a final, or a
+ * name this machine does not recognise. Its own seat because there is nothing to fix in the lane:
+ * the remedy is the driver acting on that state (record an event, clear the park), not a re-run.
+ */
+export const NO_SHELL = 18;
+
+/**
+ * The issue a task drives could not be resolved: neither the task name nor the lane id carries an
+ * issue number, or the number they carry is proven absent or closed. Separate from
+ * {@link TASK_UNKNOWN}: the task IS in the machine, and what is missing is its ground on the board.
+ */
+export const ISSUE_UNRESOLVED = 19;
+
+/**
+ * Exactly one open PR was required to trace to the task's issue and zero or several did. Never
+ * resolved by picking the newest: a brief handed the wrong PR sends a shell to judge or merge
+ * someone else's work, so the ambiguity is named and the dispatch stops.
+ */
+export const PR_AMBIGUOUS = 20;
+
+/**
  * The artifact the event claims is **provably not there**: no open pull request traces to the
  * task's issue, and the issue is not one a no-PR outcome is legal on. The event is a self-report
  * nothing corroborates, so the remedy is to route the spawn's outcome as blocked, not to record it.
  */
-export const PROOF_ABSENT = 18;
+export const PROOF_ABSENT = 21;
 
 /**
  * The artifacts are there but not terminal at the head — a required namespace with no current-head
  * verdict. Its own seat because the remedy is the opposite of {@link PROOF_ABSENT}'s: re-read until
  * the review finishes, record nothing in the meantime (`operate` step 3's in-flight rule).
  */
-export const PROOF_IN_FLIGHT = 19;
+export const PROOF_IN_FLIGHT = 22;
 
 /**
  * The artifact is there and says the other thing — a current-head `FAIL` under a claimed `PASS`.
  * Distinct again by remedy: the caller has the event wrong and the machine has a cell for the one
  * the board actually supports.
  */
-export const PROOF_CONTRADICTED = 20;
+export const PROOF_CONTRADICTED = 23;
 
 /**
  * Several open pull requests trace to the task's issue. Which one the lane owns is not derivable,
  * and picking one would record a DONE against another lane's work — a park, never a guess.
  */
-export const PROOF_AMBIGUOUS = 21;
+export const PROOF_AMBIGUOUS = 24;

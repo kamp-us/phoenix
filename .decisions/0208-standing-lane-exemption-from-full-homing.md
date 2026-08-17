@@ -1,7 +1,7 @@
 ---
 id: 0208
 title: Standing lanes exempt from 100%-homed — exactly `wayfinder:backlog` + `axis:pipeline-hardening`
-status: accepted
+status: amended-in-part by [0286](0286-standing-lanes-come-from-config.md)
 date: 2026-07-24
 tags: [process, prioritization, triage, pipeline]
 ---

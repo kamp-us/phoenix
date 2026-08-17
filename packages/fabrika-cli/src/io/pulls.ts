@@ -14,7 +14,15 @@
 import {Effect} from "effect";
 import {execCapture} from "./exec.ts";
 import {type Attempt, fail, ok, type Shell} from "./git.ts";
-import {absent, type Existence, httpStatusOf, pagedJson, present, unknown} from "./issues.ts";
+import {
+	absent,
+	type Existence,
+	httpStatusOf,
+	pagedJson,
+	parseTabRows,
+	present,
+	unknown,
+} from "./issues.ts";
 import {isRecord, parseJson} from "./json.ts";
 
 export interface PullRecord {
@@ -284,6 +292,46 @@ export const searchOpenPulls = (
 			numbers.push(Number.parseInt(text, 10));
 		}
 		return ok(numbers);
+	});
+
+/** One open pull request as a body-trace lookup sees it: the number and the link to hand on. */
+export interface TracingPull {
+	readonly number: number;
+	readonly url: string;
+}
+
+/**
+ * Every OPEN pull request whose body mentions `issue`, paged.
+ *
+ * The lane's PR is read off the board and never off a driver's memory, so the answer is the whole
+ * match set rather than a first hit: zero and several are facts a caller must be able to refuse on,
+ * and a read that narrowed to one would invent the lane's PR whenever two branches trace to the
+ * same issue.
+ */
+export const openPullsTracing = (
+	repo: string,
+	issue: number,
+): Shell<Attempt<ReadonlyArray<TracingPull>>> =>
+	Effect.gen(function* () {
+		const q = `repo:${repo} is:pr is:open ${issue} in:body`;
+		const r = yield* execCapture("gh", [
+			"api",
+			"--paginate",
+			`search/issues?q=${encodeURIComponent(q)}&per_page=100`,
+			"--jq",
+			'.items[] | "\\(.number)\t\\(.html_url)"',
+		]);
+		if (!r.ok) return fail(r.reason);
+		const rows = parseTabRows(r.stdout, 2);
+		if (rows === null) return fail("`gh api` exited 0 but its output is not a list of pull rows");
+		const out: TracingPull[] = [];
+		for (const [number, url] of rows) {
+			if (number === undefined || !/^\d+$/.test(number) || url === undefined || url === "") {
+				return fail("`gh api` exited 0 but one row is not a pull request");
+			}
+			out.push({number: Number.parseInt(number, 10), url});
+		}
+		return ok(out);
 	});
 
 /** One pull request as a branch lookup sees it — enough to pick the newest and state what it is. */

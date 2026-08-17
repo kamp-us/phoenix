@@ -11,6 +11,7 @@ import {Effect, Option} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
 import {leafCommand} from "../excess-operand.ts";
 import type {VerbOutcome} from "../verb.ts";
+import {runBrief} from "./brief-verb.ts";
 import {runEmit} from "./emit-verb.ts";
 import {runHistory} from "./history-verb.ts";
 import {runOpen} from "./open-verb.ts";
@@ -114,7 +115,7 @@ const prove = leafCommand(
 ).pipe(
 	Command.withShortDescription("Prove a lane event against the board before recording it."),
 	Command.withDescription(
-		"Read the artifact a lane event claims — artifacts over self-reports, the rule `epic landed` holds for a conducted branch, read off the board here because a lane owns none. Two events carry a claim: a DONE out of `build` claims an open PR whose body links the task's issue (or, for an investigation, the diagnosis comment a no-PR builder posted since the task entered build), and a PASS out of `review` claims a current-head verdict in every namespace that PR's diff derives, governance included. Every other event answers `not-required` at exit 0. Writes nothing — the append stays `lane transition`'s. Exits 4 (lane record read in full and not the shape), 7 (no lane there), 11 (a lane or board read failed — the proof is UNKNOWN, never proven), 13 (the task is not in the machine, or names no issue), 18 (the artifact is provably not there), 19 (a required namespace has no current-head verdict — re-read, record nothing), 20 (a current-head FAIL under a claimed PASS), 21 (several open PRs link the issue). Example: fabrika lane prove 5673 DONE",
+		"Read the artifact a lane event claims — artifacts over self-reports, the rule `epic landed` holds for a conducted branch, read off the board here because a lane owns none. Two events carry a claim: a DONE out of `build` claims an open PR whose body links the task's issue (or, for an investigation, the diagnosis comment a no-PR builder posted since the task entered build), and a PASS out of `review` claims a current-head verdict in every namespace that PR's diff derives, governance included. Every other event answers `not-required` at exit 0. Writes nothing — the append stays `lane transition`'s. Exits 4 (lane record read in full and not the shape), 7 (no lane there), 11 (a lane or board read failed — the proof is UNKNOWN, never proven), 13 (the task is not in the machine, or names no issue), 21 (the artifact is provably not there), 22 (a required namespace has no current-head verdict — re-read, record nothing), 23 (a current-head FAIL under a claimed PASS), 24 (several open PRs link the issue). Example: fabrika lane prove 5673 DONE",
 	),
 );
 
@@ -183,8 +184,42 @@ const emitLane = leafCommand(
 	),
 );
 
+const brief = leafCommand(
+	"brief",
+	{
+		lane: laneArgument,
+		root: rootFlag,
+		task: Flag.string("task").pipe(
+			Flag.optional,
+			Flag.withDescription("the task to brief; omittable on a single-task lane"),
+		),
+		repo: Flag.string("repo").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"the target owner/name (default: $CLAUDE_PIPELINE_REPO, else $GITHUB_REPOSITORY, else the origin remote)",
+			),
+		),
+	},
+	Effect.fn(function* ({lane, root, task, repo}) {
+		yield* emit(
+			yield* runBrief({
+				root,
+				lane,
+				task: Option.getOrNull(task),
+				repo: Option.getOrNull(repo),
+				env: process.env,
+			}),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("The spawn prompt for one task's current leaf state."),
+	Command.withDescription(
+		"Print the spawn prompt for one task's current leaf state, folded fresh from the ledger — so a driver pastes a brief rather than composing one. stdout is the `lane-brief` wire format: which lane, task, state and shell, the resolved issue and PR URLs (URLs only — the spawned shell re-reads its own ground), and the format's byte-fixed rules. Exits 4 (lane record read in full and not the shape), 7 (no lane there), 11 (the lane, the issue or its PRs could not be read — UNKNOWN), 13 (the task is not in the machine, or --task omitted on a multi-task lane), 18 (the leaf state routes to no shell — `queued`, `blocked`, `human:*`, a final), 19 (neither the task nor the lane names an issue, or that issue is proven absent), 20 (zero open PRs where the state needs one, or several where one is required). Example: fabrika lane brief 5680 --task issue_5729",
+	),
+);
+
 export const laneCommand = Command.make("lane").pipe(
-	Command.withSubcommands([status, transition, prove, history, print, open, emitLane]),
+	Command.withSubcommands([status, transition, prove, history, print, open, emitLane, brief]),
 	Command.withShortDescription("Drive one lane's state ledger by folding its event log."),
 	Command.withDescription(
 		"Drive one lane's state ledger — a @demlik/tea machine folded fresh from an append-only events.jsonl on every invocation, speaking the operator's six events (#5673)",
