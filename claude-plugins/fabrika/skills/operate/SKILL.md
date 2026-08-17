@@ -420,6 +420,20 @@ chore's transcript is posted.
 operator again with the same issue number — step 1 tolerates the existing lane, and the fold says
 everything a successor needs. That is why no step above holds session state.
 
+**A non-parked lane with no live operator is a detectable defect, not a wait.** The ledger records
+state, not liveness, so an operator that dies mid-drive leaves its lane reading `build` or `review`
+forever and nothing here can record the `BLOCKED` a dead spawn is owed — the dead shell is the one
+that would have to record it. What catches it is a driver-side sweep, not a driver's patience:
+
+```bash
+node packages/fabrika-cli/src/bin.ts lane stale --older-than 60
+```
+
+Every `stale` row is a lane something is owed on that has not moved in the threshold; `parked`,
+`terminal` and `unstarted` rows are never reported stale, so the list is exactly the lanes to
+re-spawn. It reports and never resumes: a driver or a human decides, and the resume is the
+re-spawn above ([#5897](https://github.com/kamp-us/phoenix/issues/5897)).
+
 ## Terminal vocabulary
 
 Every run ends as exactly one of — each naming what was recorded and what the fold reads after:
@@ -448,7 +462,7 @@ fabrika skill, so one reader parses all of them. No row here dead-ends on a bare
 
 | Must exist | Why this skill needs it | When missing |
 | --- | --- | --- |
-| The lane verb group — `packages/fabrika-cli/src/bin.ts` routing `lane status`/`transition`/`prove` (#5747)/`history`/`print` plus `open`/`emit` (#5688) and `brief` (#5751) | Every state read, every proof, every event write and every spawn prompt in this skill is one of these verbs; there is no other path to the ledger, and none to a prompt | **fail-loud** — a verb that cannot be executed leaves the lane state UNKNOWN; the run ends `STOPPED` naming `packages/fabrika-cli/src/bin.ts` and points at front-door. |
+| The lane verb group — `packages/fabrika-cli/src/bin.ts` routing `lane status`/`transition`/`prove` (#5747)/`history`/`print` plus `open`/`emit` (#5688), `brief` (#5751) and `stale` (#5897) | Every state read, every proof, every event write, every spawn prompt and the dead-operator sweep in this skill is one of these verbs; there is no other path to the ledger, and none to a prompt | **fail-loud** — a verb that cannot be executed leaves the lane state UNKNOWN; the run ends `STOPPED` naming `packages/fabrika-cli/src/bin.ts` and points at front-door. |
 | The recipe verb group — `packages/fabrika-cli/src/bin.ts` routing `recipe route` plus the recipes it names (`unpark`, `rerun`), and the chore template at `packages/fabrika-cli/src/lane/templates/chore.workflow.json` | A chore drive routes and folds through `recipe route`, runs the recipe it names, and boots from that template; there is no other path to either answer | **fail-loud** — a chore drive whose routing verb cannot be executed knows neither what to run nor what an exit meant; the run ends `STOPPED` naming `packages/fabrika-cli/src/recipe/`, records no event, and points at front-door. An issue lane is unaffected. |
 | The agent shells — `claude-plugins/fabrika/agents/builder.md`, `reviewer.md`, `shipper.md` | Step 2's routing table spawns exactly these three by their bare noun names | **fail-loud** — a route whose shell does not exist cannot spawn; the run ends `STOPPED` naming the absent shell file, and no event is recorded for a spawn that never started. |
 | The `package.json` scripts `typecheck` and `lint:worktree` | An epic run's `integrate` reads the semantic collision off them — two ranges that each passed alone and fail together show up as the merged assembly failing the checks, and a clean `git merge` alone cannot see that | **degrade** — a clean merge is then the whole `DONE` answer and a semantic collision only surfaces at the epic review; say so in the transcript comment and file the gap via `/report`. An epic run still drives; a single-issue lane is unaffected. |

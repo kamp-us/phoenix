@@ -10,7 +10,7 @@ gate's; `review`, the eight the `/review` contract specifies; `review-ui`, the t
 (capture a PR's preview, emit the `review-ui` verdict, or post a typed blocker note);
 `ship`, the thirteen the `/ship` contract specifies; `map`, the eight the `/wayfinding`
 contract specifies (chart one destination's fog, and drain its frontier); `spend`, what one fabrika run cost in
-tokens; `lane`, the four-verb lane ledger the operator loop drives — a @demlik/tea machine
+tokens; `lane`, the lane ledger the operator loop drives — a @demlik/tea machine
 folded fresh from an append-only `events.jsonl` on every invocation; `wire`, which owns the
 byte-level formats two skills meet through on a GitHub
 artifact; `status`, the six the `/fabrika` front door's contract specifies (what state the
@@ -799,6 +799,7 @@ snapshot. Lane state is local and never committed (the repo's `/.fabrika/` gitig
 | `lane transition` | records one operator event after the machine accepts it — `{previous, event, current, taskAffected}` |
 | `lane history` | the log verbatim, one `{task, event, at}` per event — `from`/`to` are reconstructible by folding, never stored |
 | `lane print` | the compiled topology: phases, the two workflow terminals, and each state's legal events |
+| `lane stale` | every lane on disk with the age of its last event and one verdict — which lanes are non-terminal, unparked and silent past `--older-than` (default 60 minutes), so a dead operator is detectable instead of invisible |
 
 To open a lane, copy a template in and speak the operator's six events —
 `DONE` / `PASS` / `FAIL` / `BLOCKED` / `WIP` / `UNBLOCKED`:
