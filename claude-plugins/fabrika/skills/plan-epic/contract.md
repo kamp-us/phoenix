@@ -290,9 +290,10 @@ Every `ledger` verb obeys these; stated once.
   `CLAUDE_CODE_SESSION_ID` (measured, #4500), so a session-keyed namespace collapses exactly the
   isolation two parallel planning lanes need (#4516, #4544). Every file inside it is named for what
   it holds — no fixed leaf shared across runs. The shipped precedents are
-  `build/scratch-verb.ts:33` and `epic/ledger.ts:182-199`.
-  **It is kept out of git the way `epic` already does it** — `ledger open` appends the literal line
-  `.fabrika-plan/` to `.git/info/exclude` if absent (`epic/ledger.ts:199`'s `EXCLUDE_ENTRY` shape).
+  `build/scratch-verb.ts:33` and `ledger/run.ts:31-36`.
+  **It is kept out of git the way `ledger` already does it** — `ledger open` appends the literal line
+  `.fabrika-plan/` to `.git/info/exclude` if absent (`ledger/run.ts:29`'s `EXCLUDE_ENTRY`, written by
+  `ledger/open-verb.ts:251-258`).
   That file is per-checkout and untracked, so the exclusion never enters a diff and never fights a
   `--require-clean` check.
 
@@ -353,10 +354,10 @@ them.
 
 **Alignment.** `3`–`11` are `report`'s seats, re-exported from `src/build/codes.ts`, which is where
 they are imported from `src/report/codes.ts` (under a `REPORT_`-prefixed alias there, and
-re-exported unprefixed — `epic/codes.ts:22-40` and `plan/codes.ts:36-47` are the shape to copy).
+re-exported unprefixed — `ledger/codes.ts` and `plan/codes.ts:36-47` are the shape to copy).
 The group registers **`BUILD_SEATS`** in `ALIGNED_GROUPS` (`src/exit-code-alignment.ts`) — *not*
 `SHARED_SEATS`, which omits `BAD_SECTIONS`; three verbs here seat `4`, so under `SHARED_SEATS` the
-checker would report `4` as a private code colliding with the base. `build`, `epic` and `plan`
+checker would report `4` as a private code colliding with the base. `build`, `ledger` and `plan`
 claim all nine that way; `review`, `ship` and `triage` take `SHARED_SEATS` and leave `4` a
 deliberate gap. **`15` is re-exported from `build` verbatim**, because this group asserts
 the identical fact (this session holds this issue's claim)

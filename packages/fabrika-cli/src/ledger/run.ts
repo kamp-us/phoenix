@@ -3,8 +3,8 @@
  *
  * **The key is the claim nonce, never the session.** Every sibling subagent of one session shares
  * `CLAUDE_CODE_SESSION_ID` (measured, #4500), so a session-keyed namespace collapses exactly the
- * isolation two parallel planning lanes need (#4516, #4544). The shipped precedents are
- * `build/scratch-verb.ts` and `epic/ledger.ts`.
+ * isolation two parallel planning lanes need (#4516, #4544). The shipped precedent is
+ * `build/scratch-verb.ts`.
  *
  * Four files, each named for what it holds, and between them they are the reason a compaction between
  * minting and splicing loses nothing: `run.json` (the run's identity, decided once by `ledger open`),
@@ -24,7 +24,7 @@ export const RUN_ROOT = ".fabrika-plan";
  * The one line `ledger open` appends to `.git/info/exclude`.
  *
  * That file is per-checkout and untracked, so the exclusion never enters a diff and never fights a
- * `--require-clean` check — `epic/ledger.ts`'s `EXCLUDE_ENTRY` shape, applied to this group's root.
+ * `--require-clean` check.
  */
 export const EXCLUDE_ENTRY = `${RUN_ROOT}/`;
 

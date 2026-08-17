@@ -4,8 +4,9 @@ The deterministic verb package [fabrika](../../claude-plugins/fabrika/) skills c
 `fabrika <group> <verb> …` dispatches to a registered verb group. The registered groups are
 `adr`, the six verbs the `/adr` skill's derived contract specifies; `report`,
 the three the `/report` contract specifies; `triage`, the intake-queue group the `/triage`
-contract specifies; `build`, the fourteen the `/build` contract specifies; `plan`, the epic-plan gate's; `review`, the eight
-the `/review` contract specifies; `review-ui`, the three the `/review-ui` contract specifies
+contract specifies; `build`, the fourteen the `/build` contract specifies; `plan`, the epic-plan
+gate's; `review`, the eight the `/review` contract specifies; `review-ui`, the three the
+`/review-ui` contract specifies
 (capture a PR's preview, emit the `review-ui` verdict, or post a typed blocker note);
 `ship`, the thirteen the `/ship` contract specifies; `map`, the eight the `/wayfinding`
 contract specifies (chart one destination's fog, and drain its frontier); `spend`, what one fabrika run cost in

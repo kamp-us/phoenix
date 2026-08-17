@@ -16,7 +16,7 @@ from the epic's `## Dependencies` topology, with each child landing its own pull
 
 `build-epic` conducted an epic into **one** pull request. One conductor held the plan and one
 branch, forked a fresh subagent per commit, and trusted artifacts over any subagent's self-report.
-It was backed by `packages/fabrika-cli/src/epic/` — twenty-six files, eight verbs, its own
+It was backed by `packages/fabrika-cli/src/epic/` — twenty-seven files, eight verbs, its own
 nonce-keyed `ledger.jsonl`, its own fold, and its own two circuit-breaker axes. ADR
 [0242](0242-fabrika-skill-nouns-redefine-build-and-review.md) put the noun in the glossary.
 

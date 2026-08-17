@@ -64,9 +64,9 @@ export const SHARED_SEATS: SharedSeats = {
  *
  * `review` and `triage` leave `4` a deliberate gap because neither performs a section check;
  * `build pr` does — a body with no `## Deviations` block is that same fact — so the seat is claimed
- * rather than re-invented one code higher. `plan` claims them too: `plan read`
- * seats `4` for a ledger section declared twice, so under `SHARED_SEATS` the checker would report
- * `4` as a private code colliding with the base.
+ * rather than re-invented one code higher. `plan` claims them too: `plan read` seats `4` for a
+ * ledger section declared twice, so under `SHARED_SEATS` the checker would report `4` as a private
+ * code colliding with the base.
  */
 export const BUILD_SEATS: SharedSeats = {...SHARED_SEATS, BAD_SECTIONS: "BAD_SECTIONS"};
 

@@ -79,9 +79,10 @@ at the group level and `fabrika <group> <verb>` always names its group, so there
 conflict. **One readability caveat, recorded rather than hidden:** `fabrika lane status <n>` already
 exists (`packages/fabrika-cli/src/lane/status-verb.ts`) and means *the state of one lane*, where
 `fabrika status <verb>` means *the state of the factory*. `state`, `ground` and `posture` were free
-alternatives. (The caveat first read against the retired epic conductor's own status verb.) **The brief's name is settled here**; the readability trade is recorded in the
-authoring pull request for the founder to re-price before the verbs are built, because a group name
-is the one thing that is expensive to change after shipping.
+alternatives. (The caveat first read against the retired epic conductor's own status verb.) **The
+brief's name is settled here**; the readability trade is recorded in the authoring pull request for
+the founder to re-price before the verbs are built, because a group name is the one thing that is
+expensive to change after shipping.
 
 ### Routing — nothing on `main` reaches a fabrika skill
 
