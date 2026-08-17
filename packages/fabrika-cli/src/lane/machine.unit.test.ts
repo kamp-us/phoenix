@@ -1,5 +1,10 @@
 import {describe, expect, it} from "vitest";
-import {coderWorkflow, stateNode, twoPhaseWorkflow} from "./fixtures.test-support.ts";
+import {
+	choreWorkflow,
+	coderWorkflow,
+	stateNode,
+	twoPhaseWorkflow,
+} from "./fixtures.test-support.ts";
 import {compile, OPERATOR_EVENTS, topology} from "./machine.ts";
 
 const compiled = (workflow: unknown) => {
@@ -62,6 +67,30 @@ describe("the compiler — structural recognition", () => {
 		expect(defined(summary.tasks.issue).states.queued).toEqual(["WIP", "BLOCKED"]);
 		expect(defined(summary.tasks.issue).states.review).toEqual(["PASS", "BLOCKED", "FAIL"]);
 		expect(defined(summary.tasks.issue).states.shipped).toEqual([]);
+		expect(summary.trigger).toBeUndefined();
+	});
+
+	it("compiles the committed chore template, carrying its declared trigger", () => {
+		const lane = compiled(choreWorkflow());
+
+		expect(lane.phases).toEqual([{name: "sweep", tasks: ["park_sweep"]}]);
+		expect(lane.trigger).toBe("lane-parked");
+		expect(topology(lane).trigger).toBe("lane-parked");
+		expect(defined(lane.tasks.park_sweep).initial).toEqual({
+			type: "queued",
+			retries: 0,
+			maxRetries: 2,
+		});
+		expect([...defined(lane.tasks.park_sweep).errorFinals]).toEqual(["frozen"]);
+	});
+
+	it("holds the chore template to the same six events as every other lane", () => {
+		const summary = topology(compiled(choreWorkflow()));
+		const listened = new Set(
+			Object.values(defined(summary.tasks.park_sweep).states).flatMap((events) => events),
+		);
+
+		for (const event of listened) expect(OPERATOR_EVENTS).toContain(event);
 	});
 });
 
@@ -123,6 +152,12 @@ describe("the compiler — refusals", () => {
 		expect(defectsOf(workflow)).toContain(
 			'machine-level final "orphan" is targeted by no phase\'s `onDone` pair',
 		);
+	});
+
+	it("refuses a `trigger` that is not a string, rather than ignoring the declaration", () => {
+		const workflow = {...twoPhaseWorkflow(), trigger: {on: "lane-parked"}};
+
+		expect(defectsOf(workflow)).toContain("`trigger` must be a string");
 	});
 
 	it("refuses a document that is not machine-shaped at all", () => {

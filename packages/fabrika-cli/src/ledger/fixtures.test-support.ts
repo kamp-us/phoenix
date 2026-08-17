@@ -47,6 +47,8 @@ export interface SubIssueFixture {
 	readonly id?: number;
 	readonly title?: string;
 	readonly labels?: ReadonlyArray<string>;
+	readonly state?: string;
+	readonly stateReason?: string | null;
 }
 
 export const subIssues = (...rows: ReadonlyArray<SubIssueFixture>): ExecResult =>
@@ -57,6 +59,8 @@ export const subIssues = (...rows: ReadonlyArray<SubIssueFixture>): ExecResult =
 				id: row.id ?? row.number * 1000,
 				title: row.title ?? `child ${row.number}`,
 				labels: (row.labels ?? ["type:feature", "p1"]).map((name) => ({name})),
+				state: row.state ?? "open",
+				state_reason: row.stateReason ?? null,
 			})),
 		),
 	);

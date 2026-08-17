@@ -330,7 +330,7 @@ The two assertions, each proven from git state alone:
 
 ```
 $ fabrika build tree --require-clean
-/private/var/folders/…/lanes/build-4312
+/private/var/<redacted>/lanes/build-4312
 ```
 
 ```
@@ -969,7 +969,7 @@ Preconditions: a confirmed claim on `<number>` (`15` / `11`).
 
 ```
 $ fabrika build scratch 4312 --slug notes
-/tmp/fabrika-build/s-9f2e/4312-c1a4d6f8/notes
+/tmp/<redacted>/s-9f2e/4312-c1a4d6f8/notes
 ```
 
 **Grounding**
@@ -1213,7 +1213,7 @@ surface that ran, so a file another surface would have read counts as uncovered 
 
 ```
 $ fabrika build check --surface code
-{"verdict":"green","surface":"code","tree":"/private/var/folders/…/build-4312","ran":["pnpm typecheck","pnpm lint:worktree"],"unvalidated":["README.md","scripts/deploy.sh"]}
+{"verdict":"green","surface":"code","tree":"/private/var/<redacted>/build-4312","ran":["pnpm typecheck","pnpm lint:worktree"],"unvalidated":["README.md","scripts/deploy.sh"]}
 ```
 
 **Grounding**
@@ -1400,6 +1400,14 @@ The guards, in order, all before any write:
    and triage own those verdicts. The pattern set is closed on purpose: two implementers must
    ship the same guard, and a "any spelling" instruction is two guards.
 5. **claim confirmed** (`15`/`11`), **target issue open** (`7`).
+
+The PR title is **derived, not the issue title verbatim**
+([`packages/fabrika-cli/src/build/pr-title.ts`](../../../../packages/fabrika-cli/src/build/pr-title.ts)):
+the served issue's `type:` label maps to a conventional-commit prefix (`type:bug` → `fix`,
+`type:feature` → `feat`, everything else → `chore`) ahead of the issue title unchanged, and a title
+that already leads with a conventional prefix passes through untouched. The repo squash-merges with
+`COMMIT_OR_PR_TITLE`, so on a multi-commit PR this title becomes the commit subject on `main` —
+deriving it is what keeps every builder squash parseable by release-please (#5771).
 
 Then create, **re-read the created PR**, and compare body through `normalizeForReadback` (`9` on
 mismatch). The write path is `gh api` with the body from a file — never `-f body=@file`, which

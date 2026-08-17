@@ -1,18 +1,9 @@
 /**
  * Which git repository a checkout belongs to, and therefore whether two checkouts are one repository.
  *
- * The delegation refuses to hand an invocation to a *different* checkout (#4956). A linked working
- * tree is not one: `git worktree` gives a single repository several working trees, so the copy on
- * `PATH` sitting in the primary checkout while the cwd sits in a worktree is one project seen twice,
- * and refusing there made the bare `fabrika` unusable from every worktree (#5679).
- *
- * The identity compared is git's own `$GIT_COMMON_DIR`, read **off disk** rather than by spawning
- * `git`: this runs in the bootstrap, before any dependency is guaranteed linked and before there is
- * a runtime to carry a subprocess, which is the same constraint that makes `root.ts` hand-read
- * `pnpm-workspace.yaml`. The read follows `gitrepository-layout(5)`: a `.git` **directory** is the
- * common dir itself; a `.git` **file** holds `gitdir: <path>` naming this working tree's own git
- * dir, and that dir's `commondir` file — when present — names the common dir it shares, "relative to
- * $GIT_DIR" when the path in it is relative.
+ * The delegation boundary is the repository, not the checkout; the identity compared is
+ * `$GIT_COMMON_DIR`, read off disk per `gitrepository-layout(5)` because the bootstrap has no
+ * linked dependencies and no runtime for a `git` subprocess. See ADR 0287.
  */
 import {Effect, type FileSystem, Path} from "effect";
 import {exists, isDirectory, type ReadFailed, readFile, realPath} from "../io/fs.ts";

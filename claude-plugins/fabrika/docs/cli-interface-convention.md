@@ -219,7 +219,12 @@ special-cased. So no env-injection mechanism of any kind can make a variable-roo
 usable at an agent's top-level command.
 
 - A fabrika verb is invoked as a plain literal command string — no `$VAR`, no `${VAR:-default}`, no
-  command substitution, no `source`.
+  command substitution, no `source`. The one thing that is not a `$VAR` here is a name a skill
+  declares in its own `arguments:` frontmatter: the harness substitutes it into the skill body
+  textually before the agent reads it, so the string the verifier checks still holds a literal
+  ([skill-conventions §4](skill-conventions.md#4-the-invocation-surface-is-a-plain-literal)). That
+  carve-out reaches skill bodies only — a hook command has no caller argument to bind and stays
+  literal end to end.
 - **The literal is `fabrika`.** That name is now fixed, closing the deferral this rule carried
   to [#4650](https://github.com/kamp-us/phoenix/issues/4650): every fence in every fabrika skill
   writes `fabrika <group> <verb> …` and nothing else. The command and the package are deliberately

@@ -50,11 +50,11 @@
 # harness's whole contract is its exit status.
 set -uo pipefail
 
-# PHYSICAL resolution (`cd -P` / `pwd -P`), unlike the sibling verify scripts: CI invokes this
-# through the `.claude/skills` symlink, and the `$DIR/../..` hop below has to land on the plugin
-# root. Resolved logically, `..` is folded textually and that hop lands on `.claude/`, where there
-# is no `lib/` — the mutants then all die at repo resolution, which is a CANNOT-EVALUATE too and so
-# scores as "mutant caught" while testing nothing.
+# PHYSICAL resolution (`cd -P` / `pwd -P`), unlike the sibling verify scripts: the `$DIR/../..` hop
+# below has to land on the plugin root. Reached through any symlinked or relative caller and resolved
+# logically, `..` folds textually against the caller's path and that hop lands somewhere with no
+# `lib/` — the mutants then all die at repo resolution, which is a CANNOT-EVALUATE too and so scores
+# as "mutant caught" while testing nothing.
 DIR="$(CDPATH= cd -P -- "$(dirname -- "$0")" && pwd -P)"
 SUT="$DIR/glossary-freshness.sh"
 fail=0

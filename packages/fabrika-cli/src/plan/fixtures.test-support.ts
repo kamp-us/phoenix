@@ -46,7 +46,16 @@ export const epic = (overrides: Record<string, unknown> = {}): ExecResult =>
 	);
 
 export const subIssues = (...numbers: ReadonlyArray<number>): ExecResult =>
-	okOut(JSON.stringify(numbers.map((number) => ({number, title: `child ${number}`}))));
+	okOut(
+		JSON.stringify(
+			numbers.map((number) => ({
+				number,
+				title: `child ${number}`,
+				state: "open",
+				state_reason: null,
+			})),
+		),
+	);
 
 /** A child body that clears the floor: criteria, a story claim, and a containment marker. */
 export const childBody = (

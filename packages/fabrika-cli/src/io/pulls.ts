@@ -3,9 +3,10 @@
  * list, its diff bytes, the check runs at a commit, the invoking token's identity and repository
  * permission, and the comment edit an upsert needs.
  *
- * The `issues.ts` disciplines hold here unchanged — `gh api` REST and never GraphQL, every list read
- * paged, absent split from unreadable through {@link Existence}, and a shape that is not what was
- * asked for treated as a failure rather than an empty result.
+ * The `issues.ts` disciplines hold here — every list read paged, absent split from unreadable
+ * through {@link Existence}, and a shape that is not what was asked for treated as a failure rather
+ * than an empty result. REST is the default surface; {@link openPullsClosing} is on GraphQL because
+ * the closing-issue link edge it needs is published nowhere else.
  *
  * **Every list read returns what it received alongside what the platform declared.** A review whose
  * scope was silently truncated is a review over unknown scope, and the only way a caller can refuse
@@ -251,6 +252,130 @@ export const patchComment = (repo: string, id: number, body: string): Shell<Atte
 		return isRecord(parsed) && typeof parsed.html_url === "string"
 			? ok(parsed.html_url)
 			: fail("`gh api` exited 0 but its output is not an edited comment");
+	});
+
+/**
+ * The open pull requests the search index nominates for `tokens` — candidate numbers, never a proof.
+ *
+ * The index is a nomination surface only: it matches prose as readily as a link, and it lags a
+ * fresh PR. A caller proving a PR traces to an issue reads each candidate's own record and its own
+ * body; what this narrows is how many records that costs.
+ *
+ * **Why this survives #5850's retirement of the same read.** {@link openPullsClosing} replaced it
+ * everywhere the question is "which PR closes this issue", and is authoritative there — an edge, not
+ * an index, so it has no lag. It is built from closing keywords, so it cannot see a `Part of #N` PR
+ * — the body shape `build --partial` emits for an epic child, and the normal shape for a lane task
+ * that does not close its issue. That one shape is all this read is for. A caller wanting both kinds
+ * reads the edge first and unions this nomination in behind it, so an index that has not caught up
+ * with a fresh PR can only ever add candidates, never subtract the closing one.
+ */
+export const searchOpenPulls = (
+	repo: string,
+	tokens: ReadonlyArray<string>,
+): Shell<Attempt<ReadonlyArray<number>>> =>
+	Effect.gen(function* () {
+		const q = `repo:${repo} is:pr is:open ${tokens.join(" ")}`;
+		const r = yield* execCapture("gh", [
+			"api",
+			"--paginate",
+			`search/issues?q=${encodeURIComponent(q)}&per_page=100`,
+			"--jq",
+			".items[].number",
+		]);
+		if (!r.ok) return fail(r.reason);
+		const numbers: number[] = [];
+		for (const line of r.stdout.split("\n")) {
+			const text = line.trim();
+			if (text === "") continue;
+			if (!/^\d+$/.test(text)) {
+				return fail("`gh api` exited 0 but its output is not a list of pull-request numbers");
+			}
+			numbers.push(Number.parseInt(text, 10));
+		}
+		return ok(numbers);
+	});
+
+/** One open pull request that declares it closes the issue: the number and the link to hand on. */
+export interface ClosingPull {
+	readonly number: number;
+	readonly url: string;
+}
+
+const CLOSERS_QUERY =
+	"query($owner:String!,$name:String!,$number:Int!,$cursor:String){repository(owner:$owner,name:$name){issue(number:$number){closedByPullRequestsReferences(first:100,includeClosedPrs:true,after:$cursor){pageInfo{hasNextPage endCursor} nodes{number url state}}}}}";
+
+/**
+ * Every OPEN pull request that **declares it closes** `issue`, read off GitHub's own closing-issue
+ * link edge and paged.
+ *
+ * v1 asked `search/issues` for `<issue> in:body`, which matches any prose quoting the number: a PR
+ * closing a different issue but naming this one in a table came back as a candidate, and the
+ * caller's several-hits refusal then parked a lane that had exactly one real PR (#5805). The edge
+ * read here is the one GitHub builds from a closing keyword, so a mention is not a hit and
+ * "several" means what the caller needs it to mean — two PRs each declaring they close this issue.
+ *
+ * `includeClosedPrs: true` plus an explicit `OPEN` filter, rather than the field's own exclusion:
+ * that argument's name promises more than it delivers (a merged PR is still returned under
+ * `false`), and the caller is asking about open PRs specifically.
+ *
+ * The answer is the whole set rather than a first hit: zero and several are facts a caller must be
+ * able to refuse on, and a read that narrowed to one would invent the lane's PR.
+ */
+export const openPullsClosing = (
+	repo: string,
+	issue: number,
+): Shell<Attempt<ReadonlyArray<ClosingPull>>> =>
+	Effect.gen(function* () {
+		const [owner, name] = repo.split("/");
+		if (owner === undefined || name === undefined) return fail(`\`${repo}\` is not owner/name`);
+		const out: ClosingPull[] = [];
+		let cursor: string | null = null;
+		for (let page = 0; page < 50; page++) {
+			const args = [
+				"api",
+				"graphql",
+				"-f",
+				`query=${CLOSERS_QUERY}`,
+				"-F",
+				`owner=${owner}`,
+				"-F",
+				`name=${name}`,
+				"-F",
+				`number=${issue}`,
+			];
+			if (cursor !== null) args.push("-F", `cursor=${cursor}`);
+			const r = yield* execCapture("gh", args);
+			if (!r.ok) return fail(r.reason);
+			const parsed = parseJson(r.stdout);
+			const data = isRecord(parsed) && isRecord(parsed.data) ? parsed.data : null;
+			const repository = data !== null && isRecord(data.repository) ? data.repository : null;
+			const issueNode = repository !== null && isRecord(repository.issue) ? repository.issue : null;
+			const set =
+				issueNode !== null && isRecord(issueNode.closedByPullRequestsReferences)
+					? issueNode.closedByPullRequestsReferences
+					: null;
+			if (set === null || !Array.isArray(set.nodes)) {
+				return fail("`gh api graphql` exited 0 but its output is not a closing-pull page");
+			}
+			for (const node of set.nodes) {
+				if (
+					!isRecord(node) ||
+					typeof node.number !== "number" ||
+					typeof node.url !== "string" ||
+					node.url === "" ||
+					typeof node.state !== "string"
+				) {
+					return fail("`gh api graphql` exited 0 but one node is not a pull request");
+				}
+				if (node.state !== "OPEN") continue;
+				out.push({number: node.number, url: node.url});
+			}
+			const info = isRecord(set.pageInfo) ? set.pageInfo : null;
+			if (info === null || info.hasNextPage !== true) break;
+			cursor = typeof info.endCursor === "string" ? info.endCursor : "";
+			if (cursor === "") return fail("`gh api graphql` declared another page and named no cursor");
+		}
+		return ok(out);
 	});
 
 /** One pull request as a branch lookup sees it — enough to pick the newest and state what it is. */

@@ -243,7 +243,10 @@ export const runChild = (
 		}
 
 		const siblings = yield* listSubIssues(repo, epic.number);
-		if (siblings._tag === "Failure" || !siblings.value.includes(child.number)) {
+		if (
+			siblings._tag === "Failure" ||
+			!siblings.value.some((link) => link.number === child.number)
+		) {
 			return refuse(LINK_UNPROVEN, unlinked, [
 				...diagnostics,
 				`${VERB}: ${siblings._tag === "Failure" ? siblings.reason : `#${child.number} is not in #${epic.number}'s sub-issue list`}.`,

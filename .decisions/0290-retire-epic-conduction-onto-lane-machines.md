@@ -1,12 +1,12 @@
 ---
-id: 0284
+id: 0290
 title: the epic conductor is retired; an epic's children drive through operate on a lane machine
 status: accepted
 date: 2026-08-17
 tags: [fabrika, pipeline, epic, lane]
 ---
 
-# 0284 — the epic conductor is retired; an epic's children drive through operate on a lane machine
+# 0290 — the epic conductor is retired; an epic's children drive through operate on a lane machine
 
 **What this decides:** fabrika has one epic engine, not two — the `build-epic` skill and the `epic`
 verb group are deleted, and an epic is now driven by `operate` over the machine `lane emit` writes

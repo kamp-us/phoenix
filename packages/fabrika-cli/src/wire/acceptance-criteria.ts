@@ -14,12 +14,21 @@
  * `Absent`. Neither is an answer on stdout: the adapter seats them on distinct non-zero codes
  * (`./codes.ts`).
  *
+ * The scan runs over the body's *contract* region, not its bytes end to end: a fenced code block
+ * and a `<details>` appendix are both out of reach (see {@link scanHeadings}).
+ *
  * v1's `claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md` §2 is where the semantics
  * come from — read as prior art, never called (ADR 0238). Its reviewer-append provenance tag
  * (`<!-- ac:review-code … -->`) is deliberately not carried here.
  */
 
-import type {NonEmptyReadonlyArray, WireEmit, WireRead, WireReadLines} from "./format.ts";
+import type {
+	NonEmptyReadonlyArray,
+	WireEmit,
+	WireMalformed,
+	WireRead,
+	WireReadLines,
+} from "./format.ts";
 
 declare const CRITERION_TEXT: unique symbol;
 
@@ -45,6 +54,23 @@ export interface AcceptanceCriterion {
 
 export type AcceptanceCriteriaRead = WireRead<NonEmptyReadonlyArray<AcceptanceCriterion>>;
 
+/**
+ * One criterion and the physical lines it occupies — `firstLine` its checkbox line, `lastLine` the
+ * last continuation folded into its text. Both are 0-based indices into the body, inclusive.
+ *
+ * A criterion's *text* cannot locate its own lines once it wraps: the text is the joined sentence
+ * while the checkbox line carries only its first segment, so a caller matching one against the
+ * other finds nothing and reads that as "no such row" (#5716). Anything writing beside a criterion
+ * takes the span from here instead of re-deriving the wrapping rule at the call site.
+ */
+export interface CriterionSpan {
+	readonly criterion: AcceptanceCriterion;
+	readonly firstLine: number;
+	readonly lastLine: number;
+}
+
+export type AcceptanceCriteriaSpans = WireRead<NonEmptyReadonlyArray<CriterionSpan>>;
+
 /** The one conforming heading. Level and spelling are both part of it. */
 export const HEADING_LEVEL = 3;
 export const HEADING_TEXT = "Acceptance criteria";
@@ -66,6 +92,15 @@ const FENCE = /^ {0,3}(```|~~~)/;
 const CHECKBOX_ITEM = /^[ \t]*[-*][ \t]+\[([ xX])\][ \t]*(.*)$/;
 
 /**
+ * A `<details>` block's own opening and closing lines.
+ *
+ * Whole-line and nothing else: an envelope writes its opener on a line of its own, so matching only
+ * that shape cannot mistake prose mentioning the tag for a block boundary.
+ */
+const DETAILS_OPEN = /^[ \t]*<details(?:[ \t][^>]*)?>[ \t]*$/;
+const DETAILS_CLOSE = /^[ \t]*<\/details>[ \t]*$/;
+
+/**
  * A line that opens a GFM block of its own beside the item — a plain bullet, an ordered-list marker,
  * a blockquote, or a thematic break. Each leaves the item's paragraph in the render exactly as the
  * next checkbox item does, so each closes the open criterion here (#5596). Tested after
@@ -74,7 +109,7 @@ const CHECKBOX_ITEM = /^[ \t]*[-*][ \t]+\[([ xX])\][ \t]*(.*)$/;
 const BLOCK_STARTER =
 	/^[ \t]*(?:[-*+][ \t]+|\d{1,9}[.)][ \t]+|>|(?:-[ \t]*){3,}$|(?:\*[ \t]*){3,}$|(?:_[ \t]*){3,}$)/;
 
-interface Heading {
+export interface Heading {
 	readonly level: number;
 	readonly text: string;
 	/** 1-based, so a refusal can point at a line a human can find. */
@@ -116,10 +151,28 @@ const reachesForBlock = (headingText: string): boolean => {
 	);
 };
 
-/** Every ATX heading outside a fenced code block — a fenced example must not pass for the real one. */
-const scanHeadings = (lines: ReadonlyArray<string>): ReadonlyArray<Heading> => {
+/**
+ * Every ATX heading outside a fenced code block **and outside a `<details>` block** — neither a
+ * fenced example nor a collapsed appendix may pass for the real one.
+ *
+ * The `<details>` rule is what makes an enriched body readable. `triage enrich` composes
+ * `authored region + marker + preserved original`, and the preserved original is kept verbatim
+ * inside a `<details>` block — so a legacy `## Acceptance criteria` buried there used to be a
+ * candidate, and the composed body read `Malformed` (drifted heading) or `Malformed` (two
+ * conforming headings) over an authored block that was clean (#5852). A collapsed block is an
+ * appendix, never the contract: it renders folded shut, so nothing a grader must read lives in it.
+ * Skipping it here rather than at compose time is what covers the bodies already wrapped — the
+ * board's whole enriched corpus — and not only the ones wrapped from now on.
+ *
+ * An unclosed `<details>` swallows the rest of the body, exactly as the GitHub render does.
+ *
+ * Exported for `triage repair-criteria`, which must locate a drifted heading by exactly the rules
+ * this reader refuses it under — a second scanner would be a second definition of "heading".
+ */
+export const scanHeadings = (lines: ReadonlyArray<string>): ReadonlyArray<Heading> => {
 	const headings: Heading[] = [];
 	let openFence: string | null = null;
+	let detailsDepth = 0;
 	for (const [index, line] of lines.entries()) {
 		const fence = FENCE.exec(line);
 		if (fence !== null) {
@@ -129,6 +182,15 @@ const scanHeadings = (lines: ReadonlyArray<string>): ReadonlyArray<Heading> => {
 			continue;
 		}
 		if (openFence !== null) continue;
+		if (DETAILS_OPEN.test(line)) {
+			detailsDepth += 1;
+			continue;
+		}
+		if (DETAILS_CLOSE.test(line)) {
+			detailsDepth = Math.max(0, detailsDepth - 1);
+			continue;
+		}
+		if (detailsDepth > 0) continue;
 		const heading = ATX_HEADING.exec(line);
 		if (heading === null) continue;
 		headings.push({
@@ -156,7 +218,14 @@ const driftReason = (heading: Heading): string => {
 	return `the acceptance-criteria heading has drifted — ${parts.join("; ")}`;
 };
 
-/** The lines under `heading`, up to the next heading outside a fence, or the end of the body. */
+/**
+ * The lines under `heading`, up to the next heading outside a fence, the opening line of a
+ * `<details>` block, or the end of the body.
+ *
+ * A `<details>` opener ends the section for the same reason {@link scanHeadings} skips inside one:
+ * the collapsed block is an appendix. Without it, a preserved original that opens on checkbox lines
+ * before its first heading has them read back as criteria the author never wrote (#5852).
+ */
 const sectionOf = (lines: ReadonlyArray<string>, heading: Heading): ReadonlyArray<string> => {
 	const body: string[] = [];
 	let openFence: string | null = null;
@@ -169,7 +238,7 @@ const sectionOf = (lines: ReadonlyArray<string>, heading: Heading): ReadonlyArra
 			body.push(line);
 			continue;
 		}
-		if (openFence === null && ATX_HEADING.test(line)) break;
+		if (openFence === null && (ATX_HEADING.test(line) || DETAILS_OPEN.test(line))) break;
 		body.push(line);
 	}
 	return body;
@@ -201,6 +270,8 @@ const sectionOf = (lines: ReadonlyArray<string>, heading: Heading): ReadonlyArra
 interface OpenCriterion {
 	readonly parts: string[];
 	readonly checked: boolean;
+	readonly firstLine: number;
+	lastLine: number;
 }
 
 /**
@@ -217,19 +288,22 @@ const joinContinuations = (parts: ReadonlyArray<string>): string => {
 	return [head, ...rest].join(" ").replace(/\s+/g, " ").trim();
 };
 
-const malformed = (reason: string, evidence: string): AcceptanceCriteriaRead => ({
+const malformed = (reason: string, evidence: string): WireMalformed => ({
 	_tag: "Malformed",
 	reason,
 	evidence,
 });
 
 /**
- * Read the acceptance-criteria block out of an issue body. Total: `Found` | `Absent` | `Malformed`.
+ * Read the block as criteria *with their line spans*. Total: `Found` | `Absent` | `Malformed`.
+ *
+ * {@link read} is this answer with the spans dropped, so there is one scanner and one wrapping rule
+ * for both — a second one would be a second definition of "criterion".
  *
  * `Found` is unreachable with zero criteria — the only `return` that produces it is guarded by the
  * emptiness check below and the type would reject it regardless.
  */
-export const read = (body: string): AcceptanceCriteriaRead => {
+export const readSpans = (body: string): AcceptanceCriteriaSpans => {
 	const lines = body.split("\n");
 	const candidates = scanHeadings(lines).filter((heading) => reachesForBlock(heading.text));
 	if (candidates.length === 0) {
@@ -256,17 +330,24 @@ export const read = (body: string): AcceptanceCriteriaRead => {
 		return malformed("the acceptance-criteria heading could not be resolved", "");
 	}
 
-	const criteria: AcceptanceCriterion[] = [];
+	const criteria: CriterionSpan[] = [];
 	let open: OpenCriterion | null = null;
 	let openFence: string | null = null;
 	const close = (): void => {
 		if (open === null) return;
 		const text = criterionText(joinContinuations(open.parts));
-		if (text !== null) criteria.push({text, checked: open.checked});
+		if (text !== null) {
+			criteria.push({
+				criterion: {text, checked: open.checked},
+				firstLine: open.firstLine,
+				lastLine: open.lastLine,
+			});
+		}
 		open = null;
 	};
 
 	for (const [offset, line] of sectionOf(lines, heading).entries()) {
+		const at = heading.line + offset;
 		const item = CHECKBOX_ITEM.exec(line);
 		if (item !== null) {
 			close();
@@ -274,10 +355,15 @@ export const read = (body: string): AcceptanceCriteriaRead => {
 			if (text === null) {
 				return malformed(
 					"a checkbox item under the acceptance-criteria heading carries no text",
-					`line ${heading.line + offset + 1}: "${line}"`,
+					`line ${at + 1}: "${line}"`,
 				);
 			}
-			open = {parts: [text], checked: (item[1] ?? " ").toLowerCase() === "x"};
+			open = {
+				parts: [text],
+				checked: (item[1] ?? " ").toLowerCase() === "x",
+				firstLine: at,
+				lastLine: at,
+			};
 			continue;
 		}
 
@@ -293,7 +379,10 @@ export const read = (body: string): AcceptanceCriteriaRead => {
 			close();
 			continue;
 		}
-		if (open !== null) open.parts.push(line.trim());
+		if (open !== null) {
+			open.parts.push(line.trim());
+			open.lastLine = at;
+		}
 	}
 	close();
 
@@ -305,6 +394,14 @@ export const read = (body: string): AcceptanceCriteriaRead => {
 		);
 	}
 	return {_tag: "Found", value: [head, ...rest]};
+};
+
+/** Read the acceptance-criteria block out of an issue body — {@link readSpans} without the spans. */
+export const read = (body: string): AcceptanceCriteriaRead => {
+	const spans = readSpans(body);
+	if (spans._tag !== "Found") return spans;
+	const [head, ...rest] = spans.value;
+	return {_tag: "Found", value: [head.criterion, ...rest.map((span) => span.criterion)]};
 };
 
 /** Compose criteria into the block's bytes. Round-trips through {@link read}. */

@@ -14,7 +14,9 @@
 # A second invariant used to assert that `.claude/skills` was a symlink resolving to
 # marketplace.json's source + /skills. That symlink is gone: v1's skill roster is retired
 # and the tree is loaded by nobody (ADR 0277, #5276). The invariant is removed rather than
-# rewritten — with no loader path there is no drift left to detect.
+# rewritten — with no loader path there is no drift left to detect. The one thing it checked
+# incidentally, that marketplace.json's source resolves, is now validate-marketplace-sources.sh's
+# on its own terms — every entry, not just the first (#5605).
 #
 # The single source for invariant 1 is the pipeline-cli const (ADR 0073 §6; #2761): the
 # CLI emits it, this script diffs the formats-doc line against it — no copy re-hardcoded.

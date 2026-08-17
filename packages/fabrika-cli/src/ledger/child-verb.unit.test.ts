@@ -59,7 +59,7 @@ const HAPPY: ReadonlyArray<readonly [RegExp, ExecResult]> = [
 	[CREATE, CREATED],
 	[LINK, okOut("{}")],
 	[READBACK, childIssue({number: 4301, labels: MINTED_LABELS})],
-	[SUBS, okOut(JSON.stringify([{number: 4301, id: 90210}]))],
+	[SUBS, okOut(JSON.stringify([{number: 4301, id: 90210, state: "open", state_reason: null}]))],
 ];
 
 const options = {

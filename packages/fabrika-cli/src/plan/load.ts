@@ -142,7 +142,7 @@ export const loadLedger = (
 		}
 
 		const fetched = yield* Effect.forEach(
-			[...listed.value].sort((a, b) => a - b),
+			listed.value.map((link) => link.number).sort((a, b) => a - b),
 			(child) => getChild(repo, child).pipe(Effect.map((found) => [child, found] as const)),
 			{concurrency: FAN_OUT},
 		);

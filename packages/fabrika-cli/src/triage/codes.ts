@@ -93,6 +93,31 @@ export const PRECONDITION_UNKNOWN = REPORT_PRECONDITION_UNKNOWN;
 export const HUMAN_FILED = 12;
 /** Refused: agent-filed and close-eligible, but the kill is unconfirmed (ADR 0159). */
 export const UNCONFIRMED = 13;
+/**
+ * Refused: the acceptance-criteria block is drifted in a way no mechanical repair covers.
+ *
+ * `repair-criteria` may fix exactly one defect — a heading whose text is already exactly
+ * `Acceptance criteria` and whose only drift is the level. Anything else (drifted text, multiple
+ * headings, a section with no checkbox items, a drift living only inside the preserved original) is
+ * this refusal: rewriting it would be indistinguishable from inventing a contract, which is the one
+ * thing the review gate is forbidden to do.
+ */
+export const UNREPAIRABLE = 14;
+/**
+ * Refused: the **authored region of the composed body** carries an acceptance-criteria block the
+ * wire reader classifies `Malformed`.
+ *
+ * Every downstream consumer (`build issue`, `review criteria`) reads the block through
+ * `../wire/acceptance-criteria.ts` and rejects exactly what it rejects, so writing it to a body only
+ * defers the refusal to a lane that cannot fix it (#5565, ADR 0288). `Absent` stays allowed: an
+ * issue with no criteria block is a fact, not a defect, and this code never turns enrich into
+ * "every issue must have criteria".
+ *
+ * Distinct from {@link UNREPAIRABLE}, which is `repair-criteria`'s answer about a block already on
+ * the board. This one is `enrich`'s answer about a block that has not landed yet, so the fix is a
+ * re-send rather than a hand-edit.
+ */
+export const MALFORMED_CRITERIA = 15;
 
 /** The verb never ran (unresolved binary). The shell's, not this process's — no constant owns it. */
 const NEVER_RAN = 127;
@@ -132,6 +157,16 @@ export const TRIAGE_EXIT_TABLE: ReadonlyArray<ExitCodeRow> = [
 	{
 		code: UNCONFIRMED,
 		meaning: "refused: agent-filed and close-eligible, but the kill is unconfirmed (ADR 0159)",
+	},
+	{
+		code: UNREPAIRABLE,
+		meaning:
+			"refused: the acceptance-criteria drift is not mechanically repairable — not a pure level drift on exact heading text",
+	},
+	{
+		code: MALFORMED_CRITERIA,
+		meaning:
+			"refused: the composed body's authored region carries an acceptance-criteria block the wire reader classifies Malformed",
 	},
 	{code: NO_IMPLEMENTATION, meaning: "no implementation could be resolved"},
 	{code: NEVER_RAN, meaning: "the verb never ran (unresolved binary)"},

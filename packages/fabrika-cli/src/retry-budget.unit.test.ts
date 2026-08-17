@@ -13,7 +13,11 @@ import {compileText} from "./lane/machine.ts";
 import {RETRY_BUDGET} from "./retry-budget.ts";
 
 const EPIC = 4300;
-const CHILDREN = [4301, 4302, 4303];
+const CHILDREN = [4301, 4302, 4303].map((number) => ({
+	number,
+	state: "open" as const,
+	stateReason: null,
+}));
 
 const epicBody = (): string =>
 	readGoldenFixture(import.meta.url, "./lane/__fixtures__/epic-4300.body.txt");

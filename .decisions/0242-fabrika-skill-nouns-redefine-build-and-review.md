@@ -1,7 +1,7 @@
 ---
 id: 0242
 title: the eight fabrika skill nouns enter the register, and build and review are redefinitions
-status: amended-in-part by [0284](0284-retire-epic-conduction-onto-lane-machines.md)
+status: amended-in-part by [0290](0290-retire-epic-conduction-onto-lane-machines.md)
 date: 2026-08-09
 tags: [fabrika, glossary, vocabulary, pipeline]
 ---

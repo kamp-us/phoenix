@@ -1,6 +1,8 @@
 ---
 name: governance
 description: "The governance-corpus integrity gate — does this diff contradict the decision corpus, and does it quietly weaken a guard? Fire it on \"/fabrika:governance\", \"does this contradict an ADR\", \"does this weaken a gate\", \"governance verdict for PR #N\" — and unprompted whenever a diff touches `.decisions/`, `.claude/`, `.github/` or `claude-plugins/`, including a diff that edits this skill. Also produces the periodic landed-decision readout. Not acceptance criteria or editorial craft (`review`), not rendered visuals (`review-ui`), not control-plane routing (CODEOWNERS decides that)."
+arguments: [pr_number]
+argument-hint: "[pr-number] — the pull request to judge against the decision corpus"
 ---
 
 # governance
@@ -19,8 +21,15 @@ edits.**
 
 ## 1 — Derive the requirement; you cannot elect it
 
+The pull request you were invoked on is `$pr_number`, and every command below carries it. A blank
+there does not mean no number exists: a preloaded agent shell (`skills:` frontmatter) always
+substitutes blank, because the harness hands the preload an empty argument and the number arrives
+in the spawn brief instead — so on a blank, take the PR your caller named there. Only when no
+caller named one are you actually without a number, and then ask for it before running a verb.
+Never invent one nobody named.
+
 ```bash
-fabrika governance scope 4321
+fabrika governance scope $pr_number
 ```
 
 <!-- anchor: DERIVED-NOT-ELECTED --> The requirement is a **total function of the changed-file list
@@ -69,7 +78,7 @@ not read?"* — before you look for a conflict. You cannot sweep for a question 
 **Where the diff adds or edits a decision record**, rank the corpus against it:
 
 ```bash
-fabrika governance sweep 4321 --record 0240 --sha 03135b91
+fabrika governance sweep $pr_number --record 0240 --sha 03135b91
 fabrika adr resolve 0164 0055
 ```
 
@@ -102,7 +111,7 @@ body names the sweep outcome or records that there was no record to sweep.
 ## 3 — The gate half: does this quietly weaken a guard
 
 ```bash
-fabrika governance guards 4321 --sha 03135b91
+fabrika governance guards $pr_number --sha 03135b91
 ```
 
 The question is narrow and catastrophic: does the edit **remove or soften** an invariant? A diff that
@@ -140,7 +149,7 @@ no authorizing decision at all.
 diff edits this skill or its contract, and `base` serves this file's bytes at the merge-base:
 
 ```bash
-fabrika governance base 4321
+fabrika governance base $pr_number
 ```
 
 <!-- anchor: SELF-COVERING --> **Judge by those, not the head's** — a bytes read that loads no
@@ -154,7 +163,7 @@ you applied are the base revision's and the verdict says so.
 ## 5 — Emit one verdict, bound to what you saw
 
 ```bash
-fabrika governance post 4321 --polarity PASS --sha 03135b91 --clause "no contradiction, no weakening" <<'EOF'
+fabrika governance post $pr_number --polarity PASS --sha 03135b91 --clause "no contradiction, no weakening" <<'EOF'
 …the verdict body: the questions swept, the sweep outcome or the no-record note,
 the domain read by hand, the anchored invariants in reach and their disposition…
 EOF

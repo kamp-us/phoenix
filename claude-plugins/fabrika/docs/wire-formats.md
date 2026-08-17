@@ -40,6 +40,7 @@ does not exist yet — rather than missing; check the registry before assuming a
 | `acceptance-criteria` | [`packages/fabrika-cli/src/wire/acceptance-criteria.ts`](../../../packages/fabrika-cli/src/wire/acceptance-criteria.ts) | `triage` | `build`, `review` |
 | `deviations` | [`packages/fabrika-cli/src/wire/deviations.ts`](../../../packages/fabrika-cli/src/wire/deviations.ts) | `build`, `build-ui` | `review`, `review-ui` |
 | `verdict-marker` | [`packages/fabrika-cli/src/wire/verdict-marker.ts`](../../../packages/fabrika-cli/src/wire/verdict-marker.ts) | `review`, `check-epic-plan`, `governance` | `build`, `ship` |
+| `lane-brief` | [`packages/fabrika-cli/src/wire/lane-brief.ts`](../../../packages/fabrika-cli/src/wire/lane-brief.ts) | `operate` | `build`, `review`, `ship` |
 | `map-ticket` | [`packages/fabrika-cli/src/wire/map-ticket.ts`](../../../packages/fabrika-cli/src/wire/map-ticket.ts) | `map` | `map` |
 | `grill-ruling` | [`packages/fabrika-cli/src/wire/grill-ruling.ts`](../../../packages/fabrika-cli/src/wire/grill-ruling.ts) | `grilling` | `grilling` |
 | `grill-answer` | [`packages/fabrika-cli/src/wire/grill-answer.ts`](../../../packages/fabrika-cli/src/wire/grill-answer.ts) | `grilling` | `grilling` |
@@ -93,6 +94,18 @@ moved is stale rather than passing. Drift costs both directions: a marker the re
 recognise makes a reviewed PR look unreviewed and stalls it, while one whose binding is lost would
 let a stale approval carry an unreviewed tree through a merge. The module owns the composing and the
 reading, including the staleness question; the skills keep the judgement of when to flip a verdict.
+
+### `lane-brief`
+
+This is the spawn prompt a lane driver hands one fabrika shell, and it exists because the prompt is
+the whole interface between the machine and the work. Written per dispatch, two drivers driving the
+same state send materially different instructions, and the rule that matters most — carry the URLs,
+never a restatement, because a restated spec is a stale spec — is enforced by nothing but the
+driver's care. So the format owns the rules text byte for byte and the state → shell routing table
+with it, and `lane brief` prints what it derives instead of composing anything. `## Ground` carries
+links and no content at all: the shell re-reads its own issue, PR and verdicts through its own
+verbs. A `review` or `ship` brief with no PR is malformed rather than dispatchable, because that
+shell would have nothing to read.
 
 ### `map-ticket`
 

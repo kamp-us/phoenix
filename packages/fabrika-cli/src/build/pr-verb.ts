@@ -27,6 +27,7 @@ import {
 import {createPull, defaultBranch, openPullForHead} from "./github.ts";
 import {requireLane} from "./lane-guard.ts";
 import {bodyDefect, classificationIn, proseOf} from "./pr-body.ts";
+import {conventionalTitleOf} from "./pr-title.ts";
 import {openIssue, resolveTargetRepo} from "./target.ts";
 
 const VERB = "build pr";
@@ -155,7 +156,13 @@ export const runPr = (
 			);
 		}
 
-		const created = yield* createPull(repo, target.issue.title, lane.branch, base.value, body);
+		const created = yield* createPull(
+			repo,
+			conventionalTitleOf(target.issue.title, target.issue.labels),
+			lane.branch,
+			base.value,
+			body,
+		);
 		if (created._tag === "Failure") {
 			return refuse(
 				WRITE_UNKNOWN,

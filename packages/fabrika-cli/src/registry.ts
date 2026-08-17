@@ -29,6 +29,7 @@ import {ledgerCommand} from "./ledger/command.ts";
 import {mapCommand} from "./map/command.ts";
 import {patternCommand} from "./pattern/command.ts";
 import {planCommand} from "./plan/command.ts";
+import {recipeCommand} from "./recipe/command.ts";
 import {reportCommand} from "./report/command.ts";
 import {reviewCommand} from "./review/command.ts";
 import {reviewUiCommand} from "./review-ui/command.ts";
@@ -59,6 +60,7 @@ export const registeredGroups: ReadonlyArray<VerbGroup> = [
 	mapCommand,
 	patternCommand,
 	planCommand,
+	recipeCommand,
 	reportCommand,
 	reviewCommand,
 	reviewUiCommand,
