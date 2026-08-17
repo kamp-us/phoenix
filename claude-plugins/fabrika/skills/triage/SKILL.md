@@ -125,7 +125,12 @@ For an epic, `fabrika triage enrich 4318 --epic` takes the pitch's five fields o
 Problem / Arc / Appetite / Rabbit-holes / No-gos — and heads them `## Pitch` above the brief, which
 it preserves verbatim for the planner; no *rewrite* goes above an epic's brief. The rewrite adds
 real paths and function names over vague framing, and acceptance criteria that make "done" legible —
-not a closed set, a `review-*` gate may append. **No invention**: enrich from what you found, keep
+not a closed set, a `review-*` gate may append. The criteria block's grammar is the wire format's,
+not this skill's ([`packages/fabrika-cli/src/wire/acceptance-criteria.ts`](../../../../packages/fabrika-cli/src/wire/acceptance-criteria.ts)):
+`enrich` runs that reader over the body it composed and refuses a drifted block on exit `15` before
+writing anything, naming the defect the reader found — so write the criteria and let the verb answer.
+A rewrite carrying **no** criteria block is still accepted, where none is warranted.
+**No invention**: enrich from what you found, keep
 the uncertainty the original had, and mark your own reads `Triage note:`. On a **re-type, rewrite the
 body's criteria to the new type** — stale criteria under a re-scoped comment ship a misleading spec.
 Done when every claim traces to something you read.

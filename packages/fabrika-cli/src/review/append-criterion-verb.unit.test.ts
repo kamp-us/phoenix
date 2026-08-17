@@ -147,6 +147,32 @@ describe("runAppendCriterion", () => {
 		expect(write.indexOf(ROW)).toBeLessThan(write.indexOf("## Notes"));
 	});
 
+	it("appends under a WRAPPED last criterion — the shape triage enrichment produces", async () => {
+		// The live #5585 case: the last criterion's text is joined across three physical lines, so it
+		// matches no single line and the append was refused as a mutation (#5716).
+		const wrapped = `Build the thing.
+
+### Acceptance criteria
+
+- [ ] the first retry delay equals \`base\`
+- [x] the retry guide documents the delay table, and the table's first row states the base delay
+  the runtime actually applies rather than the one the ADR proposed, so a reader comparing the two
+  can tell which is in force.
+`;
+		const shell = fakeShell([
+			[USER, okOut("kampus-bot")],
+			[PERMISSION, okOut("write")],
+			[once(ISSUE), issue(wrapped)],
+			[ISSUE, issue(`${wrapped.trimEnd()}\n${ROW}\n`)],
+			[PATCH, okOut("{}")],
+		]);
+		const out = await Effect.runPromise(Effect.provide(runAppendCriterion(options), shell.layer));
+		expect(out.code).toBe(0);
+		expect(out.stdout).toBe("appended\t4287\t3\n");
+		const write = shell.calls.find((call) => PATCH.test(call)) ?? "";
+		expect(write).toContain(`can tell which is in force.\n${ROW}`);
+	});
+
 	/**
 	 * Exit 15 is unreachable from any input this verb accepts, and that is the fence working rather
 	 * than a gap: the composition is built to satisfy it, so no PR body can drive it. It is therefore

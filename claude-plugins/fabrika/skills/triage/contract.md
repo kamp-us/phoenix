@@ -158,6 +158,7 @@ or the search index could not be read
 | `11` | a **precondition read failed** — nothing was written and the outcome is UNKNOWN | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `12` | refused: the issue is human-filed | — | — | — | — | — | — | — | — | ✓ |
 | `13` | refused: agent-filed and close-eligible, but the kill is unconfirmed (ADR 0159) | — | — | — | — | — | — | — | — | ✓ |
+| `15` | refused: the body this verb composed carries an acceptance-criteria block its registered wire reader classifies `Malformed` (ADR 0288) | — | — | — | — | — | ✓ | — | — | — |
 | `127` | the verb never ran (unresolved binary) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 
 **This matrix owns what a code *means*; the per-verb tables own what *triggers* it.** Every verb in
@@ -167,6 +168,13 @@ proven outcomes, `3` and up, phrased as that verb's trigger rather than as a res
 meaning. The reason is a defect this spec already shipped once: an earlier revision restated every
 code in all nine verb tables, and a `127` row added to the matrix reached only five of them. One fact
 in ten places is nine chances to drift, so the fact has one place.
+
+**`14` is allocated in code and missing from this matrix, and that is a known gap this spec does not
+close.** `packages/fabrika-cli/src/triage/codes.ts` seats `UNREPAIRABLE = 14` for `triage
+repair-criteria`, a tenth verb this document does not yet specify at all — it has no column above
+and no section below. Writing its row here would be guessing at a spec nobody has written, so `15`
+takes the next free seat instead of compacting into `14`, and the gap is disclosed rather than
+silently filled ([#5855](https://github.com/kamp-us/phoenix/issues/5855)).
 
 **`4` is a deliberate gap, not a free slot.** It held *"the target issue does not exist, or is not
 readable"* — one code for a proven fact and an unknown at once, which is the exact fusion `7` and
@@ -1073,8 +1081,9 @@ to bold text.**
 `pitch-guard`'s, at the `status:triaged` seam `triage apply` trips; this spec computes no second
 verdict on a gated question, which is the same reason a `triage pitch-check` verb is not derived.
 This verb refuses only what it can refuse about text the caller just wrote — empty (`3`), a
-machine-local path (`5`), a bare `@` reference (`6`) — and **adds no exit code**: `--epic` reaching
-those three is the removal of a restriction, not a new outcome.
+machine-local path (`5`), a bare `@` reference (`6`), and an acceptance-criteria block the wire
+reader rejects (`15`, below) — and `--epic` **adds no exit code of its own**: reaching those same
+refusals is the removal of a restriction, not a new outcome.
 
 **The re-enrich detector is the marker this verb writes — one rule, mode-independent** (founder
 ruling on [#4866](https://github.com/kamp-us/phoenix/issues/4866), 2026-08-08, option (b)). A body
@@ -1205,16 +1214,34 @@ original" is not a case that arises. This holds over a **planned** epic body (th
 #4850) and it holds when the re-run's mode **differs** from the mode that wrote the envelope (the
 mode axis, #4866) — the two qualifications the sentence previously needed. The one case it does not
 claim is a body carrying no marker and matching neither v1 shape, which is a *first* enrichment by
-definition rather than a re-run. No branch here refuses, so the exit-status and error tables are
-unchanged and the **adds no exit code** statement above stands: the marker is a body-composition
-change, not a refusal branch. This is the rule's only statement in this spec; the Scope section below
-states the scope and does not restate it.
+definition rather than a re-run. The detector itself refuses nothing — it is a body-composition
+rule, not a refusal branch, so it adds no row to the exit-status or error tables below. This is the
+rule's only statement in this spec; the Scope section below states the scope and does not restate it.
 
 **Redaction is asymmetric and deliberate.** The **preserved original** is foreign content: any
 machine-local path in it is masked to its class root, counted, and reported on stderr with its line
 number. **Your rewrite** is authored now, so a machine-local path in it is refused on exit `5` — you
 can fix what you just wrote. Refusing the original instead would strand the enrichment on somebody
 else's leak, and preserving it unredacted re-commits that leak into a public issue.
+
+**The acceptance-criteria block is read back before the write, and the split follows redaction's.**
+Per ADR [0288](../../../../.decisions/0288-producers-run-consumer-readers.md) this verb runs the
+criteria format's own registered reader
+([`packages/fabrika-cli/src/wire/acceptance-criteria.ts`](../../../../packages/fabrika-cli/src/wire/acceptance-criteria.ts))
+over the body it has composed and refuses on `15` when the answer is `Malformed`, so a block every
+downstream grader would reject never reaches the board. **The grammar is not restated here or in
+`SKILL.md`** — the module owns it and the refusal quotes the reader's own reason (ADR 0241).
+Two boundaries carry the weight:
+
+- **The read runs over the composed body, not over stdin.** The authored region includes what the
+  envelope adds, so a heading the template itself demoted is caught. Reading stdin alone would miss
+  exactly the case 0288 §1 names.
+- **It stops above the marker**, on the same asymmetry redaction uses: the preserved original is
+  foreign content, and a legacy `##` heading buried in it would otherwise refuse every
+  re-enrichment of that issue forever.
+
+`Absent` is **not** a refusal. An epic pitch, a decision, a parked ticket may legitimately carry no
+criteria block; a verb that demanded one would be a different verb.
 
 **Exit status**
 
@@ -1227,6 +1254,7 @@ else's leak, and preserving it unredacted re-commits that leak into a public iss
 | `8` | the `PATCH` failed — UNKNOWN whether the body changed |
 | `9` | the body was written but the read-back does not match |
 | `11` | the issue body could not be read — there is no original to preserve |
+| `15` | the composed body's **authored region** carries an acceptance-criteria block the wire reader classifies `Malformed` |
 
 **Errors**
 
@@ -1241,6 +1269,7 @@ else's leak, and preserving it unredacted re-commits that leak into a public iss
 | `triage enrich: redacted <k> machine-local path(s) from the preserved original (lines <l1>, <l2>).` | 0 | notice |
 | `triage enrich: PATCH failed: <reason> — UNKNOWN whether the body changed; re-read #<n> before retrying.` | 8 | refusal |
 | `triage enrich: body written but the read-back does not match — inspect #<n> before continuing.` | 9 | refusal |
+| `triage enrich: the rewrite composes an acceptance-criteria block the wire reader rejects — <reader's reason> (<evidence>). The grammar is owned by packages/fabrika-cli/src/wire/acceptance-criteria.ts; fix the block or drop it.` | 15 | refusal |
 
 **Scope** — one issue body, plus the caller's stdin: the rewrite, or the pitch with `--epic`. An
 issue proven absent is `7`; a body that could not be read is `11`; a body that *was* read and is
