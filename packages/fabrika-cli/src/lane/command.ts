@@ -17,6 +17,7 @@ import {runHistory} from "./history-verb.ts";
 import {type LaneKey, laneRef, parseKey, templateFile} from "./key.ts";
 import {runOpen} from "./open-verb.ts";
 import {runPrint} from "./print-verb.ts";
+import {runProve} from "./prove-verb.ts";
 import {keyRefusal} from "./refusals.ts";
 import {runStatus} from "./status-verb.ts";
 import {DEFAULT_CHORES_ROOT, DEFAULT_LANES_ROOT, type LaneRef} from "./store.ts";
@@ -95,6 +96,45 @@ const transition = leafCommand(
 	Command.withShortDescription("Record one operator event, refusing an invalid one unappended."),
 	Command.withDescription(
 		"Record one operator event on the lane's append-only log — after the machine accepts it, never before. stdout is `{previous, event, current, taskAffected}` with the two stateValues around the fold. An invalid event — no cell in the task's current state (tea's NoCellError, surfaced verbatim), outside the operator's six, a task outside the active phase, a finished workflow — is refused loudly and the log is left byte-identical. Exits 4 (lane record read in full and not the shape), 7 (no lane there), 8 (the append did not land — the event is NOT recorded), 11 (the lane could not be read), 12 (the event is refused, log unappended), 13 (the task is not in the machine, or --task omitted on a multi-task lane), 21 (the key is not a lane key). Example: fabrika lane transition 5673 DONE",
+	),
+);
+
+const prove = leafCommand(
+	"prove",
+	{
+		lane: laneArgument,
+		event: Argument.string("event").pipe(
+			Argument.withDescription("the operator event about to be recorded"),
+		),
+		root: rootFlag,
+		task: Flag.string("task").pipe(
+			Flag.optional,
+			Flag.withDescription("the task the event addresses; omittable on a single-task lane"),
+		),
+		repo: Flag.string("repo").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"the target owner/name (default: $CLAUDE_PIPELINE_REPO, else $GITHUB_REPOSITORY, else the origin remote)",
+			),
+		),
+	},
+	Effect.fn(function* ({lane, event, root, task, repo}) {
+		yield* emit(
+			yield* onKey(lane, root, (_key, ref) =>
+				runProve({
+					...ref,
+					event,
+					task: Option.getOrNull(task),
+					repo: Option.getOrNull(repo),
+					env: process.env,
+				}),
+			),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Prove a lane event against the board before recording it."),
+	Command.withDescription(
+		"Read the artifact a lane event claims — artifacts over self-reports, the rule `epic landed` holds for a conducted branch, read off the board here because a lane owns none. Two events carry a claim: a DONE out of `build` claims an open PR whose body links the task's issue (or, for an investigation, the diagnosis comment a no-PR builder posted since the task entered build), and a PASS out of `review` claims a current-head verdict in every namespace that PR's diff derives, governance included. Every other event answers `not-required` at exit 0. Writes nothing — the append stays `lane transition`'s. Exits 4 (lane record read in full and not the shape), 7 (no lane there), 11 (a lane or board read failed — the proof is UNKNOWN, never proven), 13 (the task is not in the machine, or names no issue), 21 (the key is not a lane key), 22 (the artifact is provably not there), 23 (a required namespace has no current-head verdict — re-read, record nothing), 24 (a current-head FAIL under a claimed PASS), 25 (several open PRs link the issue). Example: fabrika lane prove 5673 DONE",
 	),
 );
 
@@ -209,7 +249,7 @@ const brief = leafCommand(
 );
 
 export const laneCommand = Command.make("lane").pipe(
-	Command.withSubcommands([status, transition, history, print, open, emitLane, brief]),
+	Command.withSubcommands([status, transition, prove, history, print, open, emitLane, brief]),
 	Command.withShortDescription("Drive one lane's state ledger by folding its event log."),
 	Command.withDescription(
 		"Drive one lane's state ledger — a @demlik/tea machine folded fresh from an append-only events.jsonl on every invocation, speaking the operator's six events (#5673). A lane is keyed by the issue number it drives, or by name as `chore:<name>` for a chore that has no issue number (#5840)",
