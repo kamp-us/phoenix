@@ -6,6 +6,7 @@ import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {fakeFs} from "../fakes.test-support.ts";
 import {readGoldenFixture} from "../golden-fixture.ts";
+import {RETRY_BUDGET} from "../retry-budget.ts";
 import {type EmitResult, emitMachine} from "./emit.ts";
 import {applyEvent, deriveStatus, foldLog, type LogEntry} from "./fold.ts";
 import {type CompiledLane, compileText} from "./machine.ts";
@@ -76,17 +77,19 @@ const drive = (
 	return deriveStatus(compiled, statesOf(log));
 };
 
+/** One child driven queued → build → review → integrate → landed. */
+const land = (task: string): ReadonlyArray<readonly [string, string]> => [
+	[task, "WIP"],
+	[task, "DONE"],
+	[task, "PASS"],
+	[task, "DONE"],
+];
+
 /** Every child through its local loop to `landed`, in phase order. */
 const LAND_ALL: ReadonlyArray<readonly [string, string]> = [
-	["issue_4301", "WIP"],
-	["issue_4301", "DONE"],
-	["issue_4301", "PASS"],
-	["issue_4302", "WIP"],
-	["issue_4302", "DONE"],
-	["issue_4302", "PASS"],
-	["issue_4303", "WIP"],
-	["issue_4303", "DONE"],
-	["issue_4303", "PASS"],
+	...land("issue_4301"),
+	...land("issue_4302"),
+	...land("issue_4303"),
 ];
 
 describe("emitMachine", () => {
@@ -95,9 +98,9 @@ describe("emitMachine", () => {
 	});
 
 	it("is deterministic — the same body bytes emit the same machine bytes", () => {
-		expect(emitted(emitMachine(4300, body(), CHILDREN))).toBe(
-			emitted(emitMachine(4300, body(), CHILDREN)),
-		);
+		const text = emitted(emitMachine(4300, body(), CHILDREN));
+		expect(text).toBe(emitted(emitMachine(4300, body(), CHILDREN)));
+		expect(text.match(/"integrate": \{/g)).toHaveLength(CHILDREN.length);
 	});
 
 	it("is deterministic over a partly-built epic too — the child states are input, not drift", () => {
@@ -179,6 +182,7 @@ describe("emitMachine", () => {
 			"queued",
 			"build",
 			"review",
+			"integrate",
 			"blocked",
 			"hist",
 			"landed",
@@ -186,7 +190,26 @@ describe("emitMachine", () => {
 		]);
 	});
 
-	it("lands a child's review PASS locally — the success final asserts a landing, not a merge", () => {
+	it("routes an integrate collision back into the local loop — no arm reaches a merge queue", () => {
+		const child = regionOf(emitted(emitMachine(4300, body(), CHILDREN)), "issue_4301");
+		expect(child).toMatchObject({
+			states: {
+				review: {on: {"ISSUE_4301.PASS": "integrate"}},
+				integrate: {
+					on: {
+						"ISSUE_4301.DONE": "landed",
+						"ISSUE_4301.BLOCKED": "blocked",
+						"ISSUE_4301.FAIL": [
+							{target: "build", guard: "retriesRemaining", actions: "incrementRetries"},
+							{target: "frozen"},
+						],
+					},
+				},
+			},
+		});
+	});
+
+	it("sends a child's review PASS to integrate — the merge into the epic branch is its own state", () => {
 		const compiled = laneOf(emitted(emitMachine(4300, body(), CHILDREN)));
 		const status = drive(compiled, [
 			["issue_4301", "WIP"],
@@ -194,10 +217,66 @@ describe("emitMachine", () => {
 			["issue_4301", "PASS"],
 		]);
 		expect(status.stateValue).toEqual({
+			phase1: {issue_4301: "integrate", issue_4302: "queued"},
+			phase2: "waiting",
+			epic: "waiting",
+		});
+	});
+
+	it("lands a child on its integrate DONE — the success final asserts a landing, not a merge to main", () => {
+		const compiled = laneOf(emitted(emitMachine(4300, body(), CHILDREN)));
+		expect(drive(compiled, land("issue_4301")).stateValue).toEqual({
 			phase1: {issue_4301: "landed", issue_4302: "queued"},
 			phase2: "waiting",
 			epic: "waiting",
 		});
+	});
+
+	it("re-enters build on a collision at integrate, and re-proves the range through review before landing", () => {
+		const compiled = laneOf(emitted(emitMachine(4300, body(), CHILDREN)));
+		const collided: ReadonlyArray<readonly [string, string]> = [
+			["issue_4301", "WIP"],
+			["issue_4301", "DONE"],
+			["issue_4301", "PASS"],
+			["issue_4301", "FAIL"],
+		];
+		expect(drive(compiled, collided).stateValue).toMatchObject({
+			phase1: {issue_4301: "build"},
+		});
+		expect(drive(compiled, [...collided, ["issue_4301", "DONE"]]).stateValue).toMatchObject({
+			phase1: {issue_4301: "review"},
+		});
+		expect(
+			drive(compiled, [
+				...collided,
+				["issue_4301", "DONE"],
+				["issue_4301", "PASS"],
+				["issue_4301", "DONE"],
+			]).stateValue,
+		).toMatchObject({phase1: {issue_4301: "landed"}});
+	});
+
+	it("trips the lane when integrate keeps colliding past the retry budget — never a landing", () => {
+		const compiled = laneOf(emitted(emitMachine(4300, body(), CHILDREN)));
+		/** One collided integration: the range passes review, the merge fails, the repair rebuilds. */
+		const collide: ReadonlyArray<readonly [string, string]> = [
+			["issue_4301", "PASS"],
+			["issue_4301", "FAIL"],
+			["issue_4301", "DONE"],
+		];
+		const exhausted: ReadonlyArray<readonly [string, string]> = [
+			["issue_4301", "WIP"],
+			["issue_4301", "DONE"],
+			...Array.from({length: RETRY_BUDGET}, () => collide).flat(),
+			["issue_4301", "PASS"],
+			["issue_4301", "FAIL"],
+		];
+		expect(drive(compiled, exhausted).stateValue).toMatchObject({
+			phase1: {issue_4301: "frozen"},
+		});
+		const tripped = drive(compiled, [...exhausted, ...land("issue_4302")]);
+		expect(tripped).toMatchObject({stateValue: "tripped", status: "done"});
+		expect(tripped.context.errors).toEqual(["issue_4301"]);
 	});
 
 	it("carries an epic tail phase whose one region reviews the single PR, then ships it", () => {
@@ -271,6 +350,7 @@ describe("emitMachine", () => {
 		expect(template).toContain('"ISSUE.PASS": "ship"');
 		expect(template).toContain('"ISSUE.BLOCKED": "human:cp-approval"');
 		expect(template).not.toContain("landed");
+		expect(template).not.toContain("integrate");
 	});
 
 	it("refuses a body with no ## Dependencies block", () => {

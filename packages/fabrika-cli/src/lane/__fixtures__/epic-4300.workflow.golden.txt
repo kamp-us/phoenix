@@ -43,7 +43,23 @@
 							},
 							"review": {
 								"on": {
-									"ISSUE_4301.PASS": "landed",
+									"ISSUE_4301.PASS": "integrate",
+									"ISSUE_4301.BLOCKED": "blocked",
+									"ISSUE_4301.FAIL": [
+										{
+											"target": "build",
+											"guard": "retriesRemaining",
+											"actions": "incrementRetries"
+										},
+										{
+											"target": "frozen"
+										}
+									]
+								}
+							},
+							"integrate": {
+								"on": {
+									"ISSUE_4301.DONE": "landed",
 									"ISSUE_4301.BLOCKED": "blocked",
 									"ISSUE_4301.FAIL": [
 										{
@@ -90,7 +106,23 @@
 							},
 							"review": {
 								"on": {
-									"ISSUE_4302.PASS": "landed",
+									"ISSUE_4302.PASS": "integrate",
+									"ISSUE_4302.BLOCKED": "blocked",
+									"ISSUE_4302.FAIL": [
+										{
+											"target": "build",
+											"guard": "retriesRemaining",
+											"actions": "incrementRetries"
+										},
+										{
+											"target": "frozen"
+										}
+									]
+								}
+							},
+							"integrate": {
+								"on": {
+									"ISSUE_4302.DONE": "landed",
 									"ISSUE_4302.BLOCKED": "blocked",
 									"ISSUE_4302.FAIL": [
 										{
@@ -151,7 +183,23 @@
 							},
 							"review": {
 								"on": {
-									"ISSUE_4303.PASS": "landed",
+									"ISSUE_4303.PASS": "integrate",
+									"ISSUE_4303.BLOCKED": "blocked",
+									"ISSUE_4303.FAIL": [
+										{
+											"target": "build",
+											"guard": "retriesRemaining",
+											"actions": "incrementRetries"
+										},
+										{
+											"target": "frozen"
+										}
+									]
+								}
+							},
+							"integrate": {
+								"on": {
+									"ISSUE_4303.DONE": "landed",
 									"ISSUE_4303.BLOCKED": "blocked",
 									"ISSUE_4303.FAIL": [
 										{
