@@ -1,6 +1,6 @@
 ---
 name: operate
-description: "Drive one lane to a terminal state — an issue number, or a `chore:<name>` chore lane — spawning one fabrika shell per active state, or applying one recipe verb, until the machine finishes or parks on a human. Trigger on \"operate #N\", \"drive the lane on #N\", \"run issue #N to terminal\", \"resume the lane on #N\", \"run the chore <name>\", \"sweep the parked lanes\", and whenever a driver wants work carried through without holding the loop in their own session. Type-blind — a single issue, an epic and a chore drive identically. Not `build-epic`'s one-PR conduction of an epic on a single branch; not construction (`build`), judging (`review`), or merging (`ship`) — those run inside the shells it spawns."
+description: "Drive one lane to a terminal state — an issue number, or a `chore:<name>` chore lane — spawning one fabrika shell per active state, or applying one recipe verb, until the machine finishes or parks on a human. Trigger on \"operate #N\", \"drive the lane on #N\", \"run issue #N to terminal\", \"resume the lane on #N\", \"run the chore <name>\", \"sweep the parked lanes\", and whenever a driver wants work carried through without holding the loop in their own session. Type-blind — a single issue, an epic and a chore drive identically. Not construction (`build`), judging (`review`), or merging (`ship`) — those run inside the shells it spawns."
 arguments: [lane_key]
 argument-hint: "[lane-key] — the issue number, or `chore:<name>`, whose lane to drive"
 ---
@@ -138,7 +138,7 @@ recorded this pass.
 ## 3 — Prove the outcome, then record one event
 
 **Artifacts over self-reports.** A spawn's report is data; what moves the machine is the artifact
-behind it. `build-epic` holds this rule against the git graph (`epic landed`); a lane owns no
+behind it. The retired epic conductor held this rule against the git graph; a lane owns no
 branch, so the lane's proof is the board — and it runs **before** the event, never after:
 
 ```bash

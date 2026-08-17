@@ -1,7 +1,7 @@
 /**
  * `lane prove` — read the artifact a lane event claims, before the event is recorded.
  *
- * `build-epic`'s standing rule is "artifacts over self-reports", enforced by `epic landed` reading
+ * "Artifacts over self-reports" was the retired epic conductor's standing rule, enforced by reading
  * the git graph. This is the lane machine's counterpart, and it reads the board instead: a lane
  * operator owns no branch, so the only thing that can contradict a spawn's report is an open PR
  * tracing to the task's issue and the verdicts on it (ADR 0283 — that ordering is GitHub's, never

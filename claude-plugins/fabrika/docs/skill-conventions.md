@@ -403,7 +403,7 @@ neither field otherwise:**
    caller re-fetches by reference — a PR, a SHA-bound verdict comment, a PR driven back into
    motion — so the report to the caller is a pointer and nothing dies with the run's context.
 
-The six that pass both: **`build`, `build-epic`, `build-ui`, `review`, `review-ui`, `heal-ci`**.
+The five that pass both: **`build`, `build-ui`, `review`, `review-ui`, `heal-ci`**.
 The other eighteen fail at least one clause, and the two clauses fail in distinct ways:
 
 | Excluded | Fails |
@@ -425,11 +425,11 @@ a bundle. Two conditions force it off regardless: `CLAUDE_CODE_DISABLE_BACKGROUN
 So a `-p` run never demonstrates the notification path, and the path fires exactly where it was
 meant to: a human typing `/fabrika:build 1234` in a live session.
 
-Neither of the six declares `agent:`, so a fork spawns a `general-purpose` subagent carrying the
+Neither of the five declares `agent:`, so a fork spawns a `general-purpose` subagent carrying the
 skill body. Naming a shell there would make the shell's `tools:` set bind instead of the caller's,
 which is a change to who may do what — not this convention's call.
 
-**Preloading a forking skill into an agent shell does not fork, and is safe for all six.** The
+**Preloading a forking skill into an agent shell does not fork, and is safe for all five.** The
 `skills:` preload and the `context: fork` machinery are two unrelated code paths: the preload
 renders the skill body and pushes it into the spawned agent's own prompt as a meta message, never
 consulting `context` or `background`. Observed rather than reasoned — spawning `fabrika:reviewer`

@@ -37,10 +37,9 @@ does not exist yet — rather than missing; check the registry before assuming a
 
 | Format | Owner module | Producers | Consumers |
 | --- | --- | --- | --- |
-| `acceptance-criteria` | [`packages/fabrika-cli/src/wire/acceptance-criteria.ts`](../../../packages/fabrika-cli/src/wire/acceptance-criteria.ts) | `triage`, `build-epic` | `build`, `review` |
-| `deviations` | [`packages/fabrika-cli/src/wire/deviations.ts`](../../../packages/fabrika-cli/src/wire/deviations.ts) | `build`, `build-ui`, `build-epic` | `review`, `review-ui` |
+| `acceptance-criteria` | [`packages/fabrika-cli/src/wire/acceptance-criteria.ts`](../../../packages/fabrika-cli/src/wire/acceptance-criteria.ts) | `triage` | `build`, `review` |
+| `deviations` | [`packages/fabrika-cli/src/wire/deviations.ts`](../../../packages/fabrika-cli/src/wire/deviations.ts) | `build`, `build-ui` | `review`, `review-ui` |
 | `verdict-marker` | [`packages/fabrika-cli/src/wire/verdict-marker.ts`](../../../packages/fabrika-cli/src/wire/verdict-marker.ts) | `review`, `check-epic-plan`, `governance` | `build`, `ship` |
-| `slice-handoff` | [`packages/fabrika-cli/src/wire/slice-handoff.ts`](../../../packages/fabrika-cli/src/wire/slice-handoff.ts) | `build-epic` | `build` |
 | `lane-brief` | [`packages/fabrika-cli/src/wire/lane-brief.ts`](../../../packages/fabrika-cli/src/wire/lane-brief.ts) | `operate` | `build`, `review`, `ship` |
 | `map-ticket` | [`packages/fabrika-cli/src/wire/map-ticket.ts`](../../../packages/fabrika-cli/src/wire/map-ticket.ts) | `map` | `map` |
 | `grill-ruling` | [`packages/fabrika-cli/src/wire/grill-ruling.ts`](../../../packages/fabrika-cli/src/wire/grill-ruling.ts) | `grilling` | `grilling` |
@@ -95,18 +94,6 @@ moved is stale rather than passing. Drift costs both directions: a marker the re
 recognise makes a reviewed PR look unreviewed and stalls it, while one whose binding is lost would
 let a stale approval carry an unreviewed tree through a merge. The module owns the composing and the
 reading, including the staleness question; the skills keep the judgement of when to flip a verdict.
-
-### `slice-handoff`
-
-This is the brief an epic conductor hands one freshly-forked implementer, and it is the whole of
-what that fork gets beyond its tree and the graph. The two sides are one dispatch apart, which is
-why the agreement has to be closed rather than merely well-formed: a coordination artifact whose
-sections are open can steer its receiver past the artifact — an extra heading, a sentence appended
-to the rules, a note that waives an evaluation — and the receiver has no way to tell the format's
-own words from someone else's. So the section set is closed and the rules text is owned by the
-module, and a brief carrying anything outside them reads as drifted rather than as a brief with
-extra advice. Its paths are machine-local by construction, which is also why a brief is consumed in
-session and never posted to a public surface.
 
 ### `lane-brief`
 

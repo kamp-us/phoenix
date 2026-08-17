@@ -297,7 +297,7 @@ describe("runClaim — the admission test runs before any marker is written", ()
 	it("claims a refused issue under --override, recording the lane and reason on the marker and in the answer", async () => {
 		const {out, shell} = await claimWith(OUT_OF_CAMPAIGN, FOCUSED, {
 			override: "hotfix for the release blocker",
-			overrideLane: "build-epic",
+			overrideLane: "build-ui",
 		});
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout)).toEqual({
@@ -305,13 +305,13 @@ describe("runClaim — the admission test runs before any marker is written", ()
 			number: 4312,
 			purpose: "build",
 			token: `build:s-9f2e:${LANE_UUID}`,
-			override: {lane: "build-epic", reason: "hotfix for the release blocker"},
+			override: {lane: "build-ui", reason: "hotfix for the release blocker"},
 		});
 		expect(
 			shell.calls.some(
 				(line) =>
 					POST.test(line) &&
-					line.includes("build-claim-override: build-epic · hotfix for the release blocker"),
+					line.includes("build-claim-override: build-ui · hotfix for the release blocker"),
 			),
 		).toBe(true);
 	});
@@ -320,7 +320,7 @@ describe("runClaim — the admission test runs before any marker is written", ()
 		const {out, shell} = await claimWith(
 			CLAIMABLE,
 			fakeFs({files: {[DEFAULT_ROADMAP]: null}, unprobeable: [DEFAULT_ROADMAP]}),
-			{override: "I know what I am doing", overrideLane: "build-epic"},
+			{override: "I know what I am doing", overrideLane: "build-ui"},
 		);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(shell.calls.some((line) => POST.test(line))).toBe(false);
@@ -329,7 +329,7 @@ describe("runClaim — the admission test runs before any marker is written", ()
 	it("refuses an empty --override reason on 1 — an override is recorded or it is not one", async () => {
 		const {out, shell} = await claimWith(OUT_OF_CAMPAIGN, FOCUSED, {
 			override: "  ",
-			overrideLane: "build-epic",
+			overrideLane: "build-ui",
 		});
 		expect(out.code).toBe(FAILED);
 		expect(shell.calls.some((line) => POST.test(line))).toBe(false);
@@ -354,7 +354,7 @@ describe("runClaim — the admission test runs before any marker is written", ()
 	});
 
 	it("refuses an --override-lane with no --override on 1 — a lane names no override alone", async () => {
-		const {out, shell} = await claimWith(CLAIMABLE, FOCUSED, {overrideLane: "build-epic"});
+		const {out, shell} = await claimWith(CLAIMABLE, FOCUSED, {overrideLane: "build-ui"});
 		expect(out.code).toBe(FAILED);
 		expect(shell.calls.some((line) => POST.test(line))).toBe(false);
 	});

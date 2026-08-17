@@ -4,9 +4,9 @@ The deterministic verb package [fabrika](../../claude-plugins/fabrika/) skills c
 `fabrika <group> <verb> …` dispatches to a registered verb group. The registered groups are
 `adr`, the six verbs the `/adr` skill's derived contract specifies; `report`,
 the three the `/report` contract specifies; `triage`, the intake-queue group the `/triage`
-contract specifies; `build`, the fourteen the `/build` contract specifies; `epic`, the
-eight the `/build-epic` contract specifies; `plan`, the epic-plan gate's; `review`, the eight
-the `/review` contract specifies; `review-ui`, the three the `/review-ui` contract specifies
+contract specifies; `build`, the fourteen the `/build` contract specifies; `plan`, the epic-plan
+gate's; `review`, the eight the `/review` contract specifies; `review-ui`, the three the
+`/review-ui` contract specifies
 (capture a PR's preview, emit the `review-ui` verdict, or post a typed blocker note);
 `ship`, the thirteen the `/ship` contract specifies; `map`, the eight the `/wayfinding`
 contract specifies (chart one destination's fog, and drain its frontier); `spend`, what one fabrika run cost in
@@ -340,44 +340,6 @@ disarm and record it. The group implements
 - **Exactly two verbs use GraphQL** (`threads`, `resolve`), because review-thread resolution
   state has no REST equivalent. Every other verb is `gh api` REST, paginated, with the
   platform's declared count carried beside what arrived.
-
-## The `epic` group
-
-The epic conductor: one epic run, driven to a single PR. The group implements
-[`claude-plugins/fabrika/skills/build-epic/contract.md`](../../claude-plugins/fabrika/skills/build-epic/contract.md).
-Lane mechanics are **not** here — the conductor claims, branches, validates, pushes, opens the PR
-and posts progress with the landed `build` verbs; this group adds only what a conductor has and a
-lane verb does not.
-
-| Verb | What it answers |
-|---|---|
-| `epic open` | the run: the slices parsed off the epic's planned ledger, resolved and ordered, with the nonce-keyed ledger created or resumed |
-| `epic next` | exactly one next action, folded from the ledger and the git graph, retry breakers enforced |
-| `epic record` | one closed-vocabulary event, appended and read back, with HEAD self-captured |
-| `epic brief` | one slice's dispatch brief, through the registered `slice-handoff` wire format |
-| `epic landed` | whether a slice's commit landed, proven from the graph alone |
-| `epic slice-diff` | the unpushed commit's diff bytes, served from the local object store |
-| `epic verdict` | one slice verdict, bound to the commit SHA in the local graph |
-| `epic status` | the whole run folded — per-slice state, verdict bindings, both counters |
-
-- **The run is tree-resident and keyed on the claim nonce, never the session id.** Sibling
-  subagents of one conductor share a session id, so a session-keyed run file is a write collision
-  the victim cannot see. `epic open` also registers the run directory in the tree's git exclude, so
-  conductor state cannot enter the epic's PR ([`src/epic/ledger.ts`](./src/epic/ledger.ts)).
-- **A ledger that reads and cannot be named is `21`, not a guess.** An off-enum event, a broken
-  line or a `seq` regression refuses and names itself; a ledger that could not be *read* is `11`,
-  and a provably absent one is `20` whose repair is `epic open`. No message here is worded "does
-  not exist, or is not readable".
-- **Two counters per slice, never summed** — the fail axis counts the FAIL that opens a retry
-  cycle, the dead axis counts dead dispatches, each capped at 2 (ADR 0130). A crashed dispatch and
-  a failing implementation are different problems, and a shared counter hides whichever is rarer.
-- **`epic landed` reads the graph, never the report.** HEAD moved, the old tip is an ancestor, the
-  tree is clean, the commit is non-empty. Its `22` is positive evidence that a returned subagent
-  produced nothing — the conductor-side detector for the silent-green class.
-- **A slice verdict binds a commit SHA, not a pushed head.** The whole point of the unpushed-slice
-  loop: a SHA is content-addressed, so an amend or rebase makes the old verdict `unbindable`
-  against the new graph rather than quietly stale, and `status` re-derives every binding against
-  the live graph on each read.
 
 ## The `map` group
 
@@ -731,7 +693,7 @@ diff gates on the doc review namespace like any other doc change.
 
 A **wire format** is the byte-level agreement two skills meet through on a GitHub artifact —
 the acceptance-criteria block on a sub-issue body, the verdict marker on a PR, the
-slice-handoff brief an epic conductor hands one implementer. Each one is
+handoff pack one session leaves the next. Each one is
 owned by a typed schema module under [`src/wire/`](./src/wire/) with an `emit` and a
 `read`, registered as one row in [`src/wire/registry.ts`](./src/wire/registry.ts). The
 formats used to live as prose in a skill body, which is why fabrika could not pin one: the
@@ -767,11 +729,10 @@ Three properties are worth knowing before you call them:
   [`verdict-marker.ts`](./src/wire/verdict-marker.ts)'s `bindToHead` — three answers again
   (`Current` / `Stale` / `Unbindable`), because a head the caller could not resolve is not a
   comparison anyone made.
-- **`slice-handoff`'s read side refuses instructions it does not own.** Its four sections are
-  closed and its `## Rules` text is byte-fixed, so a brief carrying an extra heading, an edited
-  rule, or a sentence outside every section reads `Malformed` rather than `Found` — coordination
-  output that cannot steer its receiver past the artifact
-  ([`slice-handoff.ts`](./src/wire/slice-handoff.ts)).
+- **`handoff-pack`'s read side refuses instructions it does not own.** Its sections are
+  closed, so a pack carrying an extra heading or a sentence outside every section reads `Malformed`
+  rather than `Found` — coordination output that cannot steer its receiver past the artifact
+  ([`handoff-pack.ts`](./src/wire/handoff-pack.ts)).
 - **The index doc's per-format table is generated, not typed.** `claude-plugins/fabrika/docs/wire-formats.md`
   used to carry a hand-copied projection of each row's owner module, producers and consumers, which
   is a second source of truth that agrees until someone lands a format and forgets a line. The table

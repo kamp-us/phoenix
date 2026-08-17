@@ -18,18 +18,20 @@ module name cited in this spec is **non-normative**: the behavior it informs is 
 full, and an implementer needs none of those files to build these verbs.
 
 **The group name.** `ledger` is this skill's, following the one-group-per-skill precedent
-(`build-ui` took `ui`, `build-epic` took `epic`, `check-epic-plan` took `plan`, each reusing
-`build`'s verbs rather than sharing its group). `plan` and `epic` are both occupied at `main` and
-neither answers this skill's question: `plan`'s four verbs read, gate and flip a plan that already
-exists, and `epic`'s eight conduct a run over one already gated. **Authoring is unoccupied** —
+(`build-ui` took `ui`, `check-epic-plan` took `plan`, each reusing
+`build`'s verbs rather than sharing its group). `plan` is occupied at `main` and does not answer
+this skill's question: its four verbs read, gate and flip a plan that already exists. (`epic` was
+occupied too, by the eight verbs that conducted a run over an already-gated plan; that group is
+retired and an epic's children now drive through `operate` on a `lane emit` machine.)
+**Authoring is unoccupied** —
 nothing shipped creates an issue with a full classification, links a sub-issue, or composes a
 `## Dependencies` or `### User stories` block.
 
 **One disambiguation, because the word is overloaded in this package.**
-`packages/fabrika-cli/src/epic/ledger.ts` calls its append-only JSONL run log a "ledger". That is
+`packages/fabrika-cli/src/lane/store.ts` calls its append-only `events.jsonl` a "ledger". That is
 the *run* ledger. This group's `ledger` is the **plan** — the noun the brief and
 [`check-epic-plan`](../check-epic-plan/SKILL.md) both use for an epic's decomposed task list. The
-two never meet: no verb here reads or writes an `epic` run ledger.
+two never meet: no verb here reads or writes a lane's run ledger.
 
 **What fabrika already ships, reused — never respecified.** The claim is the **`build` group's,
 reused as landed verbs** ([`build`'s contract](../build/contract.md)) — the cross-contract shape
@@ -288,9 +290,10 @@ Every `ledger` verb obeys these; stated once.
   `CLAUDE_CODE_SESSION_ID` (measured, #4500), so a session-keyed namespace collapses exactly the
   isolation two parallel planning lanes need (#4516, #4544). Every file inside it is named for what
   it holds — no fixed leaf shared across runs. The shipped precedents are
-  `build/scratch-verb.ts:33` and `epic/ledger.ts:182-199`.
-  **It is kept out of git the way `epic` already does it** — `ledger open` appends the literal line
-  `.fabrika-plan/` to `.git/info/exclude` if absent (`epic/ledger.ts:199`'s `EXCLUDE_ENTRY` shape).
+  `build/scratch-verb.ts:33` and `ledger/run.ts:31-36`.
+  **It is kept out of git the way `ledger` already does it** — `ledger open` appends the literal line
+  `.fabrika-plan/` to `.git/info/exclude` if absent (`ledger/run.ts:29`'s `EXCLUDE_ENTRY`, written by
+  `ledger/open-verb.ts:251-258`).
   That file is per-checkout and untracked, so the exclusion never enters a diff and never fights a
   `--require-clean` check.
 
@@ -351,10 +354,10 @@ them.
 
 **Alignment.** `3`–`11` are `report`'s seats, re-exported from `src/build/codes.ts`, which is where
 they are imported from `src/report/codes.ts` (under a `REPORT_`-prefixed alias there, and
-re-exported unprefixed — `epic/codes.ts:22-40` and `plan/codes.ts:36-47` are the shape to copy).
+re-exported unprefixed — `ledger/codes.ts` and `plan/codes.ts:36-47` are the shape to copy).
 The group registers **`BUILD_SEATS`** in `ALIGNED_GROUPS` (`src/exit-code-alignment.ts`) — *not*
 `SHARED_SEATS`, which omits `BAD_SECTIONS`; three verbs here seat `4`, so under `SHARED_SEATS` the
-checker would report `4` as a private code colliding with the base. `build`, `epic` and `plan`
+checker would report `4` as a private code colliding with the base. `build`, `ledger` and `plan`
 claim all nine that way; `review`, `ship` and `triage` take `SHARED_SEATS` and leave `4` a
 deliberate gap. **`15` is re-exported from `build` verbatim**, because this group asserts
 the identical fact (this session holds this issue's claim)

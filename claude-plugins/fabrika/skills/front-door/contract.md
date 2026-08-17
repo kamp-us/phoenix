@@ -76,12 +76,13 @@ why they are legitimately verbs here.
 
 `status` is the name the authoring brief specifies and every acceptance criterion cites. It is free
 at the group level and `fabrika <group> <verb>` always names its group, so there is no parse
-conflict. **One readability caveat, recorded rather than hidden:** `fabrika epic status <n>` already
-exists (`packages/fabrika-cli/src/epic/status-verb.ts`) and means *the state of one epic run*, where
+conflict. **One readability caveat, recorded rather than hidden:** `fabrika lane status <n>` already
+exists (`packages/fabrika-cli/src/lane/status-verb.ts`) and means *the state of one lane*, where
 `fabrika status <verb>` means *the state of the factory*. `state`, `ground` and `posture` were free
-alternatives. **The brief's name is settled here**; the readability trade is recorded in the
-authoring pull request for the founder to re-price before the verbs are built, because a group name
-is the one thing that is expensive to change after shipping.
+alternatives. (The caveat first read against the retired epic conductor's own status verb.) **The
+brief's name is settled here**; the readability trade is recorded in the authoring pull request for
+the founder to re-price before the verbs are built, because a group name is the one thing that is
+expensive to change after shipping.
 
 ### Routing — nothing on `main` reaches a fabrika skill
 
@@ -544,8 +545,8 @@ present surface, and scoring it clean is the fail-open this verb exists to remov
 `unknown` are different answers** — the first is proven.
 
 <a id="multiply-declared"></a>**One surface declared by several skills** — the label taxonomy is
-declared by `build`, `build-epic` and this skill — emits **one row per declaring skill**, so no
-declaration is hidden, and counts **deduplicate by id**, so a thrice-declared missing surface counts
+declared by `build` and this skill — emits **one row per declaring skill**, so no
+declaration is hidden, and counts **deduplicate by id**, so a twice-declared missing surface counts
 once in `<missing>`. Where two skills give one id different dispositions, both rows print their own
 word and nothing is folded; this verb reports declarations and reconciles nothing.
 

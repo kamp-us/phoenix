@@ -34,10 +34,9 @@ enrich`/`apply` for criteria; `build pr` for deviations, before #5566) carried z
 the reader that would later reject their output — and Deviations was not a registered format at
 all, its grammar held privately by the review side, so no producer *could* have checked it.
 
-The counter-example already existed in-tree:
-[`packages/fabrika-cli/src/epic/brief-verb.ts`](../packages/fabrika-cli/src/epic/brief-verb.ts)
-imports both `emit` and `read` from the criteria module and reads back what it wrote, at a cost of
-roughly twenty lines. The rule below generalizes that shape to every registered format, so the
+The counter-example already existed in-tree: the epic group's brief verb (retired with the group
+in ADR [0290](0290-retire-epic-conduction-onto-lane-machines.md)) imported both `emit` and `read`
+from the criteria module and read back what it wrote, at a cost of roughly twenty lines. The rule below generalizes that shape to every registered format, so the
 class dies rather than the two instances.
 
 ## Decision

@@ -1,8 +1,8 @@
 /**
  * The proof core — what a lane event claims about the world, and whether the world says it.
  *
- * `build-epic` moves on `epic landed`, which reads the git graph rather than the conductor's
- * report. A lane operator owns no branch, so the artifact a lane event claims lives on the board:
+ * The retired epic conductor moved on the git graph rather than on its own report. A lane operator
+ * owns no branch, so the artifact a lane event claims lives on the board:
  * an open PR tracing to the task's issue, a verdict at that PR's head. Everything here is the pure
  * half — facts in, one verdict out — so the whole table is testable without a network.
  *
