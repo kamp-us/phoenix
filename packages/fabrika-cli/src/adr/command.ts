@@ -1,5 +1,5 @@
 /**
- * The `adr` verb group — `fabrika adr <next|new|resolve|supersede|amend-in-part|sweep>`.
+ * The `adr` verb group — `fabrika adr <next|new|mint|resolve|supersede|amend-in-part|sweep>`.
  *
  * This file is the adapter and nothing else: it declares the flags (`--help` is the interface, so
  * every flag carries a one-line description), runs the pure verb, and emits its outcome. Every
@@ -10,6 +10,7 @@ import {Effect, Option} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
 import {leafCommand} from "../excess-operand.ts";
 import type {VerbOutcome} from "../verb.ts";
+import {runMint} from "./mint-verb.ts";
 import {runNew} from "./new-verb.ts";
 import {runNext} from "./next-verb.ts";
 import {runRelate} from "./relate-verb.ts";
@@ -79,30 +80,35 @@ const slugArg = Argument.string("slug").pipe(
 	Argument.withDescription("the kebab-case slug, at most 5 words"),
 );
 
+/** The frontmatter flags `adr new` and `adr mint` fill the same template from. */
+const templateFlags = {
+	status: Flag.string("status").pipe(
+		Flag.withDefault("accepted"),
+		Flag.withDescription("the frontmatter status: value (default: accepted)"),
+	),
+	date: Flag.string("date").pipe(
+		Flag.optional,
+		Flag.withDescription("the frontmatter date: value as YYYY-MM-DD (default: today)"),
+	),
+	title: Flag.string("title").pipe(
+		Flag.optional,
+		Flag.withDescription(
+			"the frontmatter title: value and the H1 (default: the slug, de-hyphenated)",
+		),
+	),
+	tags: Flag.string("tags").pipe(
+		Flag.optional,
+		Flag.withDescription("comma-separated frontmatter tags (default: empty)"),
+	),
+};
+
 const newCmd = leafCommand(
 	"new",
 	{
 		id: idArg,
 		slug: slugArg,
 		dir: dirFlag,
-		status: Flag.string("status").pipe(
-			Flag.withDefault("accepted"),
-			Flag.withDescription("the frontmatter status: value (default: accepted)"),
-		),
-		date: Flag.string("date").pipe(
-			Flag.optional,
-			Flag.withDescription("the frontmatter date: value as YYYY-MM-DD (default: today)"),
-		),
-		title: Flag.string("title").pipe(
-			Flag.optional,
-			Flag.withDescription(
-				"the frontmatter title: value and the H1 (default: the slug, de-hyphenated)",
-			),
-		),
-		tags: Flag.string("tags").pipe(
-			Flag.optional,
-			Flag.withDescription("comma-separated frontmatter tags (default: empty)"),
-		),
+		...templateFlags,
 		json: jsonFlag,
 	},
 	Effect.fn(function* ({id, slug, dir, status, date, title, tags, json}) {
@@ -123,6 +129,38 @@ const newCmd = leafCommand(
 	Command.withShortDescription("Scaffold a new ADR file from the canonical template."),
 	Command.withDescription(
 		"Scaffold .decisions/NNNN-slug.md from the canonical template. Prints the path written. Exits 12 (path exists — never overwritten); a bad id or slug is a usage error and exits 1. Example: fabrika adr new 0240 only-landed-adrs-may-be-cited",
+	),
+);
+
+const mint = leafCommand(
+	"mint",
+	{
+		slug: slugArg,
+		dir: dirFlag,
+		base: baseFlag,
+		repo: repoFlag,
+		...templateFlags,
+		json: jsonFlag,
+	},
+	Effect.fn(function* ({slug, dir, base, repo, status, date, title, tags, json}) {
+		yield* emit(
+			yield* runMint({
+				slug,
+				dir,
+				base,
+				repo: Option.getOrNull(repo),
+				status,
+				date: Option.getOrElse(date, today),
+				title: Option.getOrNull(title),
+				tags: Option.getOrNull(tags),
+				json,
+			}),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Allocate the next ADR id and scaffold its record in one call."),
+	Command.withDescription(
+		"Allocate the next unused ADR id and scaffold its record in one invocation — `adr next` then `adr new` with no gap for another lane's mint to land in. Prints the path written; --json adds id/mergedMax/inFlight/baseSha. Exits 11 (--dir unreadable), 12 (path exists — never overwritten), 17 (base unfetchable), 18 (in-flight unknown), 19 (a record filename with no readable id), 21 (origin remote unresolvable); a bad slug is a usage error and exits 1. Example: fabrika adr mint only-landed-adrs-may-be-cited",
 	),
 );
 
@@ -201,7 +239,7 @@ const sweepCmd = leafCommand(
 );
 
 export const adrCommand = Command.make("adr").pipe(
-	Command.withSubcommands([next, newCmd, resolve, supersede, amendInPart, sweepCmd]),
+	Command.withSubcommands([next, newCmd, mint, resolve, supersede, amendInPart, sweepCmd]),
 	Command.withShortDescription("Record one architecture decision, from id to citations."),
 	Command.withDescription(
 		"Record one architecture decision: allocate an id, scaffold the file, sweep for contradictions, resolve citations, and edit the status lines a new decision implies",

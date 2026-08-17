@@ -170,23 +170,31 @@ Four rules matter most to a caller:
 
 ## The `adr` group
 
-The contract these six implement is
+The contract these seven implement is
 [`claude-plugins/fabrika/skills/adr/contract.md`](../../claude-plugins/fabrika/skills/adr/contract.md).
 
 | Verb | Answers |
 |---|---|
 | `adr next` | the next unused id — `max(fetched merged set ∪ open-PR claims) + 1` |
 | `adr new` | scaffolds `.decisions/NNNN-slug.md` from the canonical template |
+| `adr mint` | `next` and `new` in one call — allocates the id and writes the record with no gap between |
 | `adr resolve` | each id's real filename and state: `live` / `landed` / `in-flight` / `absent` |
 | `adr supersede` | rewrites an older record's `status:` line to a `superseded by` link to the newer record |
 | `adr amend-in-part` | appends this id to an older record's `amended-in-part by` list |
 | `adr sweep` | ranks the uncited live-accepted records this one may contradict |
 
-Three behaviours are worth knowing before you call them:
+Four behaviours are worth knowing before you call them:
 
 - **`--base` is fetched before it is read.** Reading a stale local ref is the defect class
   the contract exists to close — it is how two lanes both minted ADR 0198, and how a stale
   checkout applied a withdrawn ADR 86 minutes after the withdrawal landed.
+- **`mint` exists because an id read in one call is stale by the next.** `next` then `new` leaves
+  the author's whole drafting turn between the read and the write, which put ADR 0284 on two pull
+  requests ([#5841](https://github.com/kamp-us/phoenix/issues/5841)). It is still not a reservation
+  — no id is visible to another lane until its pull request opens — and nothing catches a duplicate
+  downstream: `decisions-index`'s `merge_group` run reports one on the batched ref, but it is not a
+  required context, so the batch merges and `main` goes red until someone renumbers
+  ([#5869](https://github.com/kamp-us/phoenix/issues/5869)). Still run the step-6 re-check.
 - **`live` and `landed` are different answers.** `landed` means present on the base ref but
   `proposed`, `superseded` or `retired`; 36 of the 233 records on `main` are in that state,
   and citing one as settled law is the failure this split exists to prevent.
