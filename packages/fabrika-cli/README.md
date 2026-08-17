@@ -868,6 +868,40 @@ Three behaviours are worth knowing before you call it:
   until the approval lands as `UNBLOCKED`. Per-type templates beyond it are deliberately out of
   scope until a real lane snaps against the six-event vocabulary (#5570).
 
+## The `recipe` group
+
+The standing driver recipes, versioned once instead of retyped nightly
+([#5840](https://github.com/kamp-us/phoenix/issues/5840)). A recipe is one deterministic verb with
+named exits over a fixed sequence that has no judgment in it: it relays a decision another verb
+already owns and never derives one (ADR
+[0228](../../.decisions/0228-scripts-relay-never-derive.md)). Every mutation is proven by a
+read-back before the verb reports success.
+
+| Verb | Answers |
+|---|---|
+| `recipe unpark` | whether a parked lane's park is a known recipe, and on a known one clears it — `lane transition … UNBLOCKED`, emitted only after a second fold reads the task out of the park |
+| `recipe rerun` | the failed workflow runs at a PR's live head, rerequested only behind a `governance` PASS bound to that head, each proven by re-reading its own run record |
+| `recipe route` | which recipe a chore-lane state applies, and which of the machine's six events one of that recipe's exits folds to |
+
+Each verb's `--help` is its interface — the exit table lives there, not here:
+
+```bash
+node packages/fabrika-cli/src/bin.ts recipe unpark --help
+```
+
+Two behaviours are worth knowing before you call it:
+
+- **Known clears, novel escalates, and both are exit codes.** `unpark`'s `12` is a park whose cause
+  is outside the recipe table — nothing written, route it to a human — while `13` is a known recipe
+  whose clearing condition is simply not met yet. `recipe route --exit` folds the first to `BLOCKED`
+  and the second to `WIP`, so how autonomous a chore drive is never depends on a caller's reading.
+- **Two recipes are deliberately absent.** The acceptance-criteria heading repair is
+  [`triage repair-criteria`](#the-triage-group), landed with its producer fix
+  ([#5744](https://github.com/kamp-us/phoenix/issues/5744) /
+  [#5565](https://github.com/kamp-us/phoenix/issues/5565)); orphaned-worktree reclamation is
+  [#5197](https://github.com/kamp-us/phoenix/issues/5197)'s port. Neither is re-implemented here —
+  a recipe for work another ticket owns buys a workaround and pays twice.
+
 ## The `spend` group
 
 What one fabrika run cost, in tokens, read from its transcript

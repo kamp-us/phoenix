@@ -248,10 +248,10 @@ spawned shell fail-louds on, a criteria block that reads as no shape the verbs p
 you originate, so the order above binds: record `BLOCKED`, re-fold and confirm the state, then
 post the park comment — the step both #5643 and #5714 skipped, leaving parks the machine could
 not resume. The fix is `triage`'s: the surface that stamped the issue agent-ready owns its
-wire shape, so the park comment names the defective section and says explicitly that a `triage`
-re-run on this issue is the fix — never delegating both the what and the who to the parking
-spawn's report, and never editing the body yourself (you are type-blind, and a driven issue's body
-is not your artifact). Clearing a park is a
+wire shape, so the park comment names the defective section and points at the verb that owns the
+repair — `triage repair-criteria`, whose `--help` is its interface — never restating what that
+verb does, never delegating both the what and the who to the parking spawn's report, and never
+editing the body yourself (you are type-blind, and a driven issue's body is not your artifact). Clearing a park is a
 human's `UNBLOCKED`, recorded through the same `lane transition` verb — you never record
 `UNBLOCKED`. One exception, and it is still not yours: on a **known** park a recipe verb owns,
 `recipe unpark` records that lane's `UNBLOCKED` itself, and only after a re-fold proves the task
