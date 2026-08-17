@@ -1269,7 +1269,7 @@ criteria block; a verb that demanded one would be a different verb.
 | `triage enrich: redacted <k> machine-local path(s) from the preserved original (lines <l1>, <l2>).` | 0 | notice |
 | `triage enrich: PATCH failed: <reason> — UNKNOWN whether the body changed; re-read #<n> before retrying.` | 8 | refusal |
 | `triage enrich: body written but the read-back does not match — inspect #<n> before continuing.` | 9 | refusal |
-| `triage enrich: the rewrite composes an acceptance-criteria block the wire reader rejects — <reader's reason> (<evidence>). The grammar is owned by packages/fabrika-cli/src/wire/acceptance-criteria.ts; fix the block or drop it.` | 14 | refusal |
+| `triage enrich: the rewrite composes an acceptance-criteria block the wire reader rejects — <reader's reason> (<evidence>). The grammar is owned by packages/fabrika-cli/src/wire/acceptance-criteria.ts; fix the block or drop it.` | 15 | refusal |
 
 **Scope** — one issue body, plus the caller's stdin: the rewrite, or the pitch with `--epic`. An
 issue proven absent is `7`; a body that could not be read is `11`; a body that *was* read and is
