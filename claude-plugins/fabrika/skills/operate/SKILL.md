@@ -78,18 +78,14 @@ A lane `lane emit` booted is an epic run, and an epic run is **one branch and on
 you read: the topology parsed, so children exist. Children build in parallel worktrees, each on its
 own local branch, and land by merging into a single **assembly branch** — `epic/<lane-key>`, the
 name `lane brief` hands every child shell and the base `lane prove` reads a child's range against.
-Create it before the first dispatch, off the default branch the board names. Resolve that name
-first, as its own read:
-
-```bash
-gh repo view --json defaultBranchRef --jq .defaultBranchRef.name
-```
-
-Then cut the branch from what it printed, with `$default_branch` set to that name:
+Create it before the first dispatch, off the default branch the board names. `origin/HEAD` is
+git's own pointer to that branch — no name resolution needed; the `set-head` call refreshes the
+pointer in a checkout where it was never set:
 
 ```bash
 git fetch origin
-git switch --create epic/$lane_key origin/$default_branch
+git remote set-head origin --auto
+git switch --create epic/$lane_key origin/HEAD
 ```
 
 An already-exists error is resume, like `lane open`'s: `git switch epic/$lane_key` instead. Its
@@ -209,18 +205,15 @@ things, neither of them a summary you compose:
   parser over the body before you open or edit it — `wire check --format deviations` — rather than
   leaving the malformed answer to arrive a review round later.
 
-Read the epic's title first, as its own command:
-
-```bash
-gh issue view $lane_key --json title --jq .title
-```
-
-Then open the draft, with `$default_branch` the name resolved in step 1 and `$epic_title` the
-title just printed:
+Open the draft with the command below as written. `--base` is omitted on purpose — `gh pr create`
+defaults it to the repository's default branch, the same branch the assembly cut from. The title
+is deliberately the lane key, not the epic's prose title: nothing downstream reads a PR title
+(`lane brief` resolves the tail's PR through the closing-issue edge), and a literal title is what
+keeps this fence expansion-free:
 
 ```bash
 gh pr create --draft --head epic/$lane_key \
-  --base $default_branch --title "$epic_title" --body-file -
+  --title "epic #$lane_key: one-PR run" --body-file -
 ```
 
 Every later integration pushes the same branch and **appends that child's closing reference** to the
