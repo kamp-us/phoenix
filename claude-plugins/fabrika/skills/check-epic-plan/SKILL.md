@@ -31,8 +31,11 @@ one branch disposition: none, nothing checked out, nothing to clean up.
 ## 1 — Claim the epic, read the ledger
 
 The epic you were invoked on is `$epic_number`, and every command below carries it. A blank there
-means you were handed no number — get one from your caller before running a verb, never guess it out
-of the surrounding prose.
+does not mean no number exists: a preloaded agent shell (`skills:` frontmatter) always substitutes
+blank, because the harness hands the preload an empty argument and the number arrives in the spawn
+brief instead — so on a blank, take the epic your caller named there. Only when no caller named one
+are you actually without a number, and then ask for it before running a verb. Never invent one
+nobody named.
 
 The planner and this gate must not interleave on one epic, so claim it before reading anything —
 the claim is `build`'s, reused, not a second lock:

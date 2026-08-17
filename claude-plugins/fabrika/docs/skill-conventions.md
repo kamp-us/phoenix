@@ -355,15 +355,40 @@ caller starts typing.
 An issue number is construction; a PR number is repair; which one arrives *is* the mode selector,
 so neither can be split into its own argument without splitting the skill. Their argument is
 `issue_or_pr_number` and their hint spells out both readings plus the third case — omitted, which
-sends them to `pick`. Where an argument is optional at all (`build`, `build-ui`, `heal-ci`), the
-body says in one line what a blank means, because a blank is what an absent argument substitutes
-to and a skill that runs a verb on it has run it on nothing.
+sends them to `pick`.
+
+**Every body says in one line what a blank means, and the line may not read blank as "no number
+exists".** There are three input cases in the harness, not two, and only one of them is the caller
+typing nothing:
+
+| How the skill was reached | What the body sees at `$<name>` |
+|---|---|
+| A caller typed a number | the number |
+| A caller typed the command bare | the empty string — the argument list parses to empty and every declared name is replaced with nothing |
+| A skill is preloaded into an agent shell (`skills:` frontmatter) | the empty string as well — the preload passes an empty argument, and the number reaches the agent through its spawn prompt instead |
+| No argument object is passed at all | the body is returned untouched, so `$<name>` survives literally |
+
+The third row is the one this repo runs most, because every fabrika agent shell preloads its skill
+that way. So a blank is ambiguous by construction, and a body that resolves it to a mode — pick,
+Sweep — misroutes every shell-spawned run. The rule each body states: **on a blank, take the number
+your caller named in the spawn brief; only when the argument is blank *and* no caller named a
+number are you without one.** The thing still forbidden is inventing a number nobody named. Where
+the argument is optional at all (`build`, `build-ui`, `heal-ci`), the fallback mode is reached only
+after both sources come up empty.
+
+The fourth row is why the third's blank is not a general truth about absent arguments: an *omitted*
+argument object leaves the name literal rather than blanking it. Both remaining paths are
+fail-closed — under isolation the invocation verifier meets the surviving `$` and refuses; outside
+it the shell expands it to empty and the verb refuses on a missing number.
 
 > Source: [#5587](https://github.com/kamp-us/phoenix/issues/5587), the M45 native-shell campaign.
 > The mechanics are read out of the installed Claude Code build (2.1.233), whose frontmatter
 > schema documents `arguments` as "@internal — typed variant of argument-hint; argument-hint is
 > the documented form". Both fields are declared here for that reason: the typed one binds the
-> name, the documented one is what a caller reads.
+> name, the documented one is what a caller reads. The four input cases are read out of the same
+> build: the substitution routine returns the body untouched when it is handed no argument object,
+> and otherwise replaces every declared name — with nothing when the parsed argument list is empty;
+> the agent-shell preload path calls it with an explicit empty string.
 
 ## What these conventions deliberately do not cover
 

@@ -22,8 +22,11 @@ edits.**
 ## 1 — Derive the requirement; you cannot elect it
 
 The pull request you were invoked on is `$pr_number`, and every command below carries it. A blank
-there means you were handed no number — get one from your caller before running a verb, never guess
-it out of the surrounding prose.
+there does not mean no number exists: a preloaded agent shell (`skills:` frontmatter) always
+substitutes blank, because the harness hands the preload an empty argument and the number arrives
+in the spawn brief instead — so on a blank, take the PR your caller named there. Only when no
+caller named one are you actually without a number, and then ask for it before running a verb.
+Never invent one nobody named.
 
 ```bash
 fabrika governance scope $pr_number

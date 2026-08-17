@@ -29,9 +29,13 @@ Your mutations are exactly three: one rerun request, one comment, one filed repo
 
 ## 1 — Classify the stall
 
-Your number is `$pr_number`, and it selects the mode: a PR number is single-PR mode, and a blank
-means you were handed none — that is **Sweep**, so skip to that section. Read it there; never
-re-derive it from the prose around you.
+Your number is `$pr_number`, and it selects the mode: a PR number is single-PR mode. **A blank is
+not itself a mode.** A preloaded agent shell (`skills:` frontmatter) always substitutes blank,
+because the harness hands the preload an empty argument and your number arrives in the spawn brief
+instead — so on a blank, take the PR your caller named there and stay in single-PR mode. Only when
+the argument is blank *and* no caller named a PR is this **Sweep**, and then skip to that section.
+Sweep mutates every open PR it touches, so reaching it on a misread blank is the expensive mistake;
+what is forbidden is the other direction — inventing a number nobody named.
 
 ```bash
 fabrika heal-ci diagnose $pr_number

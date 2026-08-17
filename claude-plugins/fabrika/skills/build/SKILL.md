@@ -23,8 +23,13 @@ merge, no queue access, no release.
 ## 1 — Prove the ground, then pick
 
 Your number is `$issue_or_pr_number`, and it selects the mode: an issue number is construction, a
-PR number is repair — **skip to Repair** — and a blank means you were handed none, so `pick` below
-chooses one for you. Read it there; never re-derive it from the prose around you.
+PR number is repair — **skip to Repair**. **A blank is not itself a mode.** A preloaded agent shell
+(`skills:` frontmatter) always substitutes blank, because the harness hands the preload an empty
+argument and your number arrives in the spawn brief instead — so on a blank, take the number your
+caller named there and let its kind pick the mode exactly as a typed one would. Only when the
+argument is blank *and* no caller named a number are you handed none, and then `pick` below chooses
+one for you. What is forbidden is inventing a number nobody named — never one out of an artifact
+you happened to read.
 
 ```bash
 fabrika build tree --require-clean
@@ -48,8 +53,8 @@ focus is declared at all — an inert fence is a fact to report, not a shorter p
 Two refusals before claiming: a `type:decision`'s deliverable is a recorded choice
 (`/adr`'s, not yours), and a rendered-visual deliverable is outside this skill's modality
 (`build-ui`'s) — **do not claim either**. This skill is not a router: on its own text surfaces
-it executes the whole loop itself. In pick mode `$issue_or_pr_number` is blank, so the number `pick`
-returned stands in its place everywhere below. Then gate your choice:
+it executes the whole loop itself. In pick mode neither the argument nor your caller gave you a
+number, so the one `pick` returned stands in its place everywhere below. Then gate your choice:
 
 ```bash
 fabrika build eligible $issue_or_pr_number

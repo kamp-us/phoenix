@@ -29,9 +29,13 @@ the session's tool surface carries the `claude-in-chrome` tools, the connected l
 ## 1 — Prove the ground, then pick
 
 Your number is `$issue_or_pr_number`, and it selects the mode: an issue number is construction, a
-PR number is repair — **skip to Repair** — and a blank means you were handed none, so `pick` below
-chooses one for you, and its answer stands in for the argument everywhere after. Read it there;
-never re-derive it from the prose around you.
+PR number is repair — **skip to Repair**. **A blank is not itself a mode.** A preloaded agent shell
+(`skills:` frontmatter) always substitutes blank, because the harness hands the preload an empty
+argument and your number arrives in the spawn brief instead — so on a blank, take the number your
+caller named there and let its kind pick the mode exactly as a typed one would. Only when the
+argument is blank *and* no caller named a number are you handed none, and then `pick` below chooses
+one for you and its answer stands in for the argument everywhere after. What is forbidden is
+inventing a number nobody named — never one out of an artifact you happened to read.
 
 Lane mechanics are the `build` group's verbs, shared verbatim — tree, pick, eligible, claim,
 confirm, issue, branch, scratch, check, push, pr, note, verdicts, release ([`../build/contract.md`](../build/contract.md)).
