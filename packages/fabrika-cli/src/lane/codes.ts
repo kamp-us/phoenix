@@ -100,3 +100,10 @@ export const ISSUE_UNRESOLVED = 19;
  * someone else's work, so the ambiguity is named and the dispatch stops.
  */
 export const PR_AMBIGUOUS = 20;
+
+/**
+ * The `lane` argument is not a lane key: an empty key, or a `chore:<name>` whose name is not the one
+ * shape a chore lane's directory may carry. Refused before any path is joined and before any read,
+ * so a name carrying a separator or a traversal never becomes a directory nobody meant.
+ */
+export const KEY_MALFORMED = 21;

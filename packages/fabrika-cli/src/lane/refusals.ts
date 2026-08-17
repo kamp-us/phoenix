@@ -1,17 +1,29 @@
 /**
- * The two refusal folds every `lane` verb shares, so a load or replay fault seats on the same code
- * with the same stderr shape whichever verb hit it.
+ * The refusal folds every `lane` verb shares, so a key, load, boot or replay fault seats on the same
+ * code with the same stderr shape whichever verb hit it.
  */
 import {refuse, type VerbOutcome} from "../verb.ts";
 import {
 	APPEND_UNKNOWN,
+	KEY_MALFORMED,
 	LANE_ABSENT,
 	LANE_EXISTS,
 	LANE_UNREADABLE,
 	MALFORMED_RECORD,
 } from "./codes.ts";
 import type {FoldResult} from "./fold.ts";
+import type {KeyResult} from "./key.ts";
 import type {LoadedLane, Placement} from "./store.ts";
+
+/**
+ * Seat an unreadable `lane` argument. Group-level rather than per-verb: the key is parsed by the
+ * adapter every verb shares, before any of them is reached.
+ */
+export const keyRefusal = (malformed: Extract<KeyResult, {_tag: "Malformed"}>): VerbOutcome =>
+	refuse(
+		KEY_MALFORMED,
+		`fabrika lane: "${malformed.raw}" is not a lane key — ${malformed.reason}. A key is an issue number, or \`chore:<name>\` for a chore lane.`,
+	);
 
 /** Seat a non-`Loaded` load outcome. Absent names the remedy: open the lane from a template. */
 export const loadRefusal = (
