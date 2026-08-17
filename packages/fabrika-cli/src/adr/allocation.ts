@@ -29,8 +29,6 @@ export interface AllocationRequest {
 
 export interface AllocationFacts {
 	readonly allocation: Allocation;
-	/** The repo whose open pull requests formed the in-flight set — resolved, never the raw flag. */
-	readonly repo: string;
 	/** The base commit the merged set was read at. */
 	readonly baseSha: string;
 	/** The one-line account of what was scanned, for stderr. */
@@ -114,7 +112,6 @@ export const resolveAllocation = (request: AllocationRequest): Shell<AllocationO
 			_tag: "Ok",
 			value: {
 				allocation,
-				repo,
 				baseSha: merged.value.sha,
 				scope: `${verb}: scanned ${dir} at ${merged.value.sha}, ${merged.value.files.length} decision records; ${allocation.inFlight.length} id(s) in flight across the open pull requests of ${repo}.`,
 			},

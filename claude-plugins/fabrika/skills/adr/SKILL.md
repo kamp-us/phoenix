@@ -116,9 +116,10 @@ fabrika adr resolve 0240
 
 Your own id, one last time: `absent` means nobody claimed it while you wrote; `in-flight` means
 another lane opened its PR first, so **renumber now — the lane that opened first keeps the id, and
-this check is the only place a renumber is still cheap.** Skip it and the duplicate surfaces on the
-merge queue's batched ref instead, where it fails the batch and can dismiss an approval already
-given.
+this check is the only place a renumber is still cheap.** Skip it and nothing else stops the
+duplicate: `decisions-index` reads the merge queue's batched ref and reports it, but that job is not
+a required context, so the batch merges anyway. Both records land, `main` goes red, and you renumber
+there instead — a second pull request, a second review, and the approval on this one already spent.
 
 **Whether this PR needs a control-plane approval is `cp-classify`'s answer, not yours** — it routes
 on CODEOWNERS, and how a repo owns `.decisions/` decides it

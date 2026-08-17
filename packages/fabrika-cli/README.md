@@ -191,8 +191,10 @@ Four behaviours are worth knowing before you call them:
 - **`mint` exists because an id read in one call is stale by the next.** `next` then `new` leaves
   the author's whole drafting turn between the read and the write, which put ADR 0284 on two pull
   requests ([#5841](https://github.com/kamp-us/phoenix/issues/5841)). It is still not a reservation
-  — no id is visible to another lane until its pull request opens — so `decisions-index`'s
-  `merge_group` run remains the backstop that catches a duplicate on the batched ref.
+  — no id is visible to another lane until its pull request opens — and nothing catches a duplicate
+  downstream: `decisions-index`'s `merge_group` run reports one on the batched ref, but it is not a
+  required context, so the batch merges and `main` goes red until someone renumbers
+  ([#5869](https://github.com/kamp-us/phoenix/issues/5869)). Still run the step-6 re-check.
 - **`live` and `landed` are different answers.** `landed` means present on the base ref but
   `proposed`, `superseded` or `retired`; 36 of the 233 records on `main` are in that state,
   and citing one as settled law is the failure this split exists to prevent.

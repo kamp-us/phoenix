@@ -11,10 +11,15 @@ on:
   pull_request:
   push:
     branches: [main]
-  # The number-lock's only cross-PR view (#5841). `validate` reads the tree it is checked out
-  # on, so on `pull_request` it sees one branch and two pull requests each minting 0284 are
-  # both green — the duplicate first exists on the batched `merge_group` ref, and without this
-  # trigger nothing reads that ref until `main` is already red.
+  # The number-lock's only cross-PR view (#5841). `validate` reads the tree it is checked out on,
+  # so on `pull_request` it sees one branch and two pull requests each minting 0284 are both green;
+  # the duplicate first exists on the batched `merge_group` ref, which nothing read before this.
+  #
+  # It reports, it does not block: this job is not one of the base branch's required contexts
+  # (`ci-required`, `validate skill frontmatter`, `scan changed files for leaks`), so a batch merges
+  # over its red and `main` lands red anyway. ADR 0132 §CI-under-batch still lists decisions-index
+  # among the workflows that get no `merge_group:` trigger; this departs from it on the founder
+  # ruling of 2026-08-16 on #5841. Promoting the context and amending 0132 are tracked on #5869.
   merge_group:
 
 permissions:

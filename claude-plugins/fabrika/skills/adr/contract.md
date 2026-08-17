@@ -341,7 +341,9 @@ fabrika adr mint only-landed-adrs-may-be-cited [--dir <path>] [--base <ref>] [--
 **Order is the contract: allocate, then write.** A refused allocation writes nothing, so a run that
 could not read the merged or in-flight set leaves the tree exactly as it found it. The scope line
 rides a refused write too — an id that turns out to be taken on disk is only readable against the
-sets it was allocated from.
+sets it was allocated from. The one thing checked ahead of the allocation is the `<slug>`: it is a
+usage error, and it should not cost a fetch and a full pull-request enumeration to hear about, so
+its `1` carries no scope line.
 
 **Scope** — it decides only the order. Allocation is `adr next`'s read and the write is `adr new`'s,
 shared as code rather than restated, because two copies of the four UNKNOWN branches is two places
@@ -351,9 +353,11 @@ for one of them to become an answer.
 an id and writing it, and an id read then is stale by the time it lands: that gap put ADR 0284 on two
 pull requests and cost a dismissed approval (#5841). **It is not a reservation and must never be
 described as one** — no id is visible to another lane until its pull request opens, so the
-mint-to-open window survives and is caught downstream by `decisions-index`'s `merge_group` run
-reading the batched ref. `adr next` and `adr new` stay callable on their own for the cases that
-genuinely need the id before the file.
+mint-to-open window survives, and nothing downstream closes it: `decisions-index`'s `merge_group`
+run reads the batched ref and *reports* a duplicate there, but that job is not a
+branch-protection-required context, so the batch still merges and the lane that opened second
+renumbers on `main` afterwards ([#5869](https://github.com/kamp-us/phoenix/issues/5869)). `adr next`
+and `adr new` stay callable on their own for the cases that genuinely need the id before the file.
 
 **Examples**
 

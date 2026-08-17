@@ -26,6 +26,18 @@ export interface NewOptions {
 	readonly json: boolean;
 }
 
+/**
+ * The slug rule as a refusal, exported so `adr mint` can apply it before it pays for the allocation
+ * read — a usage error should not cost a fetch and a full pull-request enumeration first.
+ */
+export const refuseUnlessKebabSlug = (slug: string, verb: string): VerbOutcome | null =>
+	isKebabSlug(slug)
+		? null
+		: refuse(
+				FAILED,
+				`${verb}: slug "${slug}" is not kebab-case (lowercase letters, digits and single hyphens).`,
+			);
+
 export type ScaffoldOutcome =
 	| {readonly _tag: "Ok"; readonly path: string}
 	| {readonly _tag: "Refused"; readonly outcome: VerbOutcome};
@@ -50,15 +62,8 @@ export const scaffold = (
 				outcome: refuse(FAILED, `${verb}: id "${id}" is not four zero-padded digits.`),
 			};
 		}
-		if (!isKebabSlug(slug)) {
-			return {
-				_tag: "Refused",
-				outcome: refuse(
-					FAILED,
-					`${verb}: slug "${slug}" is not kebab-case (lowercase letters, digits and single hyphens).`,
-				),
-			};
-		}
+		const badSlug = refuseUnlessKebabSlug(slug, verb);
+		if (badSlug !== null) return {_tag: "Refused", outcome: badSlug};
 
 		const path = `${dir.replace(/\/+$/, "")}/${recordFilename(id, slug)}`;
 		const present = yield* Effect.result(exists(path));

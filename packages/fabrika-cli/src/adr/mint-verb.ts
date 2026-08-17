@@ -6,7 +6,9 @@
  * pull requests and cost a dismissed approval (#5841). Fusing the pair does not make allocation
  * atomic across lanes — nothing local can, since an id only becomes visible to the in-flight set
  * when its pull request opens — but it removes the one window an author controls, leaving only the
- * mint-to-open window, which `decisions-index`'s `merge_group` run catches on the batched ref.
+ * mint-to-open window. Nothing closes that one downstream either: `decisions-index` now reads the
+ * batched `merge_group` ref and reports a duplicate there, but that job is not a required context,
+ * so the batch merges and the lane that opened second renumbers on `main` (#5869).
  *
  * Both halves are the existing ones: {@link resolveAllocation} is `adr next`'s read and
  * {@link scaffold} is `adr new`'s write, so this verb decides only the order and what it reports.
@@ -15,7 +17,7 @@ import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {answer, type VerbOutcome} from "../verb.ts";
 import {resolveAllocation} from "./allocation.ts";
-import {scaffold} from "./new-verb.ts";
+import {refuseUnlessKebabSlug, scaffold} from "./new-verb.ts";
 
 export interface MintOptions {
 	readonly slug: string;
@@ -38,6 +40,9 @@ export const runMint = (
 > =>
 	Effect.gen(function* () {
 		const {slug, dir, base, repo, status, date, title, tags, json} = options;
+
+		const badSlug = refuseUnlessKebabSlug(slug, "adr mint");
+		if (badSlug !== null) return badSlug;
 
 		const resolved = yield* resolveAllocation({verb: "adr mint", dir, base, repo});
 		if (resolved._tag === "Refused") return resolved.outcome;

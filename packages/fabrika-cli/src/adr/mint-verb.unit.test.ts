@@ -120,13 +120,18 @@ describe("runMint", () => {
 		expect(out.stderr.at(-1)).toBe(`adr mint: ${PATH} already exists — refusing to overwrite.`);
 	});
 
-	it("refuses a slug that is not kebab-case", async () => {
+	it("refuses a slug that is not kebab-case before it spends a read", async () => {
 		const fs = fakeFs({});
-		const out = await run([], {slug: "Not Kebab"}, fs);
+		const sh = shell();
+		const out = await Effect.runPromise(
+			Effect.provide(runMint({...options, slug: "Not Kebab"}), Layer.merge(sh.layer, fs.layer)),
+		);
 		expect(out.code).toBe(FAILED);
 		expect(out.stderr.at(-1)).toBe(
 			'adr mint: slug "Not Kebab" is not kebab-case (lowercase letters, digits and single hyphens).',
 		);
 		expect(fs.written.size).toBe(0);
+		// A usage error costs no fetch and no pull-request enumeration.
+		expect(sh.calls).toEqual([]);
 	});
 });
