@@ -186,7 +186,7 @@ const deviations = leafCommand(
 ).pipe(
 	Command.withShortDescription("The PR body's Deviations state, entries and token scan."),
 	Command.withDescription(
-		"Report the PR body's `## Deviations` state — found | none-declared | absent | malformed, three distinct facts — with its entries and the Tier-M token scan over the diff at the bound commit. First stdout line is `deviations\\t<state>`, then one `entry\\t<class-label-or-->\\t<first-line-of-Said>` line per entry and one `tier-m\\t<kind>\\t<file>:<line>\\t<token>` line per hit. Exits 7 (PR proven absent), 10 (--sha is not a head SHA), 11 (the body or diff could not be read, or the commit could not be bound — the disclosure state is UNKNOWN, never `none`), 12 (--sha is not the PR's head — re-scope, never re-bind), 13 (a partial diff must not print a partial scan beside a disclosure claim). Example: fabrika review deviations 4321 --sha 03135b91",
+		"Report the PR body's `## Deviations` state — found | none-declared | absent | malformed, three distinct facts — with its entries and the Tier-M token scan over the diff at the bound commit. First stdout line is `deviations\\t<state>`, then one `entry\\t<class-label-or-->\\t<Said>` line per entry and one `tier-m\\t<kind>\\t<file>:<line>\\t<token>` line per hit. Exits 7 (PR proven absent), 10 (--sha is not a head SHA), 11 (the body or diff could not be read, or the commit could not be bound — the disclosure state is UNKNOWN, never `none`), 12 (--sha is not the PR's head — re-scope, never re-bind), 13 (a partial diff must not print a partial scan beside a disclosure claim). Example: fabrika review deviations 4321 --sha 03135b91",
 	),
 );
 
