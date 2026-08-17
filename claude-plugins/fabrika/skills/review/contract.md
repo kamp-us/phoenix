@@ -133,7 +133,7 @@ sibling contract.md — the checked-in `/report` contract is behind its own bina
 | `12` | refused: the `--sha` given is not the PR's head — a read taken over, or a verdict bound to, a tree that is no longer the PR | ✓ | ✓ | — | — | — | ✓ | ✓ | — |
 | `13` | refused: the read was completed but its scope is **provably incomplete** — a truncated file list or diff, a check-run enumeration short of `total_count` | ✓ | ✓ | — | ✓ | ✓ | ✓ | — | — |
 | `14` | refused: the invoking token resolves below `write`, or the ACL lookup failed — authorization denied, fail-closed (ADR 0055) | — | — | — | — | — | — | — | ✓ |
-| `15` | refused: the write would drop or mutate an existing row — the append-only fence | — | — | — | — | — | — | — | ✓ |
+| `15` | refused: the write is not provably the prior rows plus one — the append-only fence, whose causes carry distinct messages | — | — | — | — | — | — | — | ✓ |
 | `127` | the verb never ran (unresolved binary) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 
 **This matrix owns what a code *means*; the per-verb tables own what *triggers* it.** Every verb
@@ -995,7 +995,10 @@ With `--json`: `{"outcome":…,"issue":…,"rows":…,"round":…,"acl":"write+"
    from the text being plausible.
 2. **Append-only**: the new body is the old body plus exactly one row (`- [ ] <text>
    <!-- ac:review pr:#<pr> round:<round> -->`) under the existing conforming heading; a diff
-   guard refuses any write that would drop or mutate a prior byte.
+   guard refuses any write that would drop or mutate a prior byte. The row lands after the last
+   criterion's **last physical line**, taken from the parser's own span — a criterion that wraps
+   spans several lines and its text appears on none of them, so matching text against lines found
+   no anchor and refused every append on such a body (#5716).
 3. **Frozen at ADR 0079's round K**, read from `src/retry-budget.ts`'s `CAP_ROUND`: a `--round` at
    or past it posts the escalation comment instead of appending.
 4. **In-scope-only is the caller's** (the trace-to-stated-goal test is judgment); the provenance
@@ -1015,7 +1018,7 @@ The row enters the **next** review cycle's conjunctive verdict; the verb does no
 | `9` | the write landed but the read-back does not show exactly the old rows plus this one |
 | `11` | the issue body, the ACL, or the block could not be read — nothing was written |
 | `14` | refused: the invoking token resolves below `write`, or the ACL lookup failed (ADR 0055, fail-closed) — an authorization denial, never mistakable for an absent target |
-| `15` | refused: the composed write would drop or mutate an existing row — the append-only fence |
+| `15` | refused: the composed write is not provably the old body plus one row — the append-only fence. Its three causes carry three different messages: no row to append under, a line the diff guard says would move (named), or a composed body the format re-reads as something other than the prior rows plus this one |
 
 **Errors**
 
@@ -1029,7 +1032,9 @@ The row enters the **next** review cycle's conjunctive verdict; the verb does no
 | `review append-criterion: #<n> carries no conforming acceptance-criteria block (<absent|malformed>: <wire reason>) — nothing to append under.` | 7 | refusal |
 | `review append-criterion: token resolves below write on <repo>, or the ACL could not be read — refusing the append (ADR 0055, fail-closed).` | 14 | refusal |
 | `review append-criterion: cannot read <what>: <reason> — nothing was written.` | 11 | refusal |
-| `review append-criterion: the append would drop or mutate an existing row — refusing (append-only fence).` | 15 | refusal |
+| `review append-criterion: no row to append under — <reason>; nothing was written.` | 15 | refusal |
+| `review append-criterion: the append would drop or mutate an existing row — <which line moved>; refusing (append-only fence).` | 15 | refusal |
+| `review append-criterion: the composed body does not re-read as the <k> prior row(s) plus this one — it re-reads as <what>; refusing (append-only fence).` | 15 | refusal |
 | `review append-criterion: PATCH failed: <reason> — UNKNOWN whether the row landed; re-read #<n> before retrying.` | 8 | refusal |
 | `review append-criterion: the escalation comment failed: <reason> — UNKNOWN whether it landed; nothing was appended either way. Re-run.` | 8 | refusal |
 | `review append-criterion: read-back does not show the prior rows plus this one — inspect #<n>.` | 9 | refusal |
