@@ -116,6 +116,15 @@ process environment nor the filesystem. A genuinely-set `$CLAUDE_PLUGIN_ROOT` is
 invocation work** — the failure is in the expansion, not in availability, and no re-test will
 change it.
 
+**What this constrains is the string the agent executes, not the source text of the file.** A
+`$<name>` written into a fence under [§12](#12-a-skill-that-takes-a-number-declares-it) is the one
+thing that is not a variable expansion: the harness substitutes a declared `arguments:` name into
+the skill body **textually, at load time**, so the model reads the fence with the caller's literal
+number already in it and the isolation verifier never meets a `$`. Everything the *shell* would
+expand at run time — `$CLAUDE_PLUGIN_ROOT`, `$USER`, `$PWD`, a `..` climb — is still refused, for
+the reason above. The test is when the substitution happens: before the body reaches the agent, or
+inside the command the agent runs.
+
 A `pipeline-cli <verb> …`-style invocation — a bare command name followed by literal arguments —
 satisfies this **by construction**, carrying no path expansion at all. (The shape is what is
 adopted, not that package: where fabrika's own verbs live is deferred to the first derived
@@ -313,6 +322,73 @@ not assume it.
 > Source: the org's Projects-classic constraint, carried through v1 as a per-skill standing
 > invariant. Five fabrika contracts each restated it before this section existed
 > ([#4929](https://github.com/kamp-us/phoenix/issues/4929)); they now cite it.
+
+## 12. A skill that takes a number declares it
+
+**A skill declares `arguments:` exactly when its own `description` names a number it is invoked
+on** — an issue, a pull request, or an epic. That is the whole rule, and it is derivable rather
+than curated: read the skill's declared trigger phrases, and if one of them carries a `#N`, the
+skill takes a number and declares it. Nothing else qualifies. A skill that reads a number out of
+some artifact it fetched has not been *handed* one, and a skill whose subject is a session, a
+diff, or a term takes none at all.
+
+Declaring it buys one thing: `/fabrika:review 5492` binds `5492` to a name the body reads,
+instead of leaving the model to find the number in the surrounding prose. So the body must
+actually read it — **the step that takes the number substitutes `$<name>`, and no second
+prose-parsing path for the same number survives the change.** A sentence like "an argument that is
+a PR number means repair mode" is exactly that second path, and it goes.
+
+That `$<name>` in a fence is the single carve-out to
+[§4](#4-the-invocation-surface-is-a-plain-literal), and §4 states why it is not the variable
+expansion the harness refuses: the harness resolves the name into the body before the agent sees
+it. A shell-expanded variable in the same fence is still a defect.
+
+**The declaration is two fields, because one of them cannot carry the hint.** `arguments:` is a
+list of *names only* — the loader drops anything that is not a non-numeric string, so a name is
+all it can hold. The caller-facing wording lives in `argument-hint:`, and **it must say which kind
+of number the skill wants**, because the completion menu is where `/fabrika:review 5492` and
+`/fabrika:plan-epic 5492` become distinguishable. Name the argument for its kind too —
+`pr_number`, `issue_number`, `epic_number` — since the completion falls back to `[name]` once the
+caller starts typing.
+
+**`build` and `build-ui` take two kinds of number in one slot, and the declaration admits both.**
+An issue number is construction; a PR number is repair; which one arrives *is* the mode selector,
+so neither can be split into its own argument without splitting the skill. Their argument is
+`issue_or_pr_number` and their hint spells out both readings plus the third case — omitted, which
+sends them to `pick`.
+
+**Every body says in one line what a blank means, and the line may not read blank as "no number
+exists".** There are three input cases in the harness, not two, and only one of them is the caller
+typing nothing:
+
+| How the skill was reached | What the body sees at `$<name>` |
+|---|---|
+| A caller typed a number | the number |
+| A caller typed the command bare | the empty string — the argument list parses to empty and every declared name is replaced with nothing |
+| A skill is preloaded into an agent shell (`skills:` frontmatter) | the empty string as well — the preload passes an empty argument, and the number reaches the agent through its spawn prompt instead |
+| No argument object is passed at all | the body is returned untouched, so `$<name>` survives literally |
+
+The third row is the one this repo runs most, because every fabrika agent shell preloads its skill
+that way. So a blank is ambiguous by construction, and a body that resolves it to a mode — pick,
+Sweep — misroutes every shell-spawned run. The rule each body states: **on a blank, take the number
+your caller named in the spawn brief; only when the argument is blank *and* no caller named a
+number are you without one.** The thing still forbidden is inventing a number nobody named. Where
+the argument is optional at all (`build`, `build-ui`, `heal-ci`), the fallback mode is reached only
+after both sources come up empty.
+
+The fourth row is why the third's blank is not a general truth about absent arguments: an *omitted*
+argument object leaves the name literal rather than blanking it. Both remaining paths are
+fail-closed — under isolation the invocation verifier meets the surviving `$` and refuses; outside
+it the shell expands it to empty and the verb refuses on a missing number.
+
+> Source: [#5587](https://github.com/kamp-us/phoenix/issues/5587), the M45 native-shell campaign.
+> The mechanics are read out of the installed Claude Code build (2.1.233), whose frontmatter
+> schema documents `arguments` as "@internal — typed variant of argument-hint; argument-hint is
+> the documented form". Both fields are declared here for that reason: the typed one binds the
+> name, the documented one is what a caller reads. The four input cases are read out of the same
+> build: the substitution routine returns the body untouched when it is handed no argument object,
+> and otherwise replaces every declared name — with nothing when the parsed argument list is empty;
+> the agent-shell preload path calls it with an explicit empty string.
 
 ## What these conventions deliberately do not cover
 

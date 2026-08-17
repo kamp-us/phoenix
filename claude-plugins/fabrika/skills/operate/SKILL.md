@@ -1,6 +1,8 @@
 ---
 name: operate
 description: "Drive one issue's lane to a terminal state, spawning one fabrika shell per active state until the machine finishes or parks on a human. Trigger on \"operate #N\", \"drive the lane on #N\", \"run issue #N to terminal\", \"resume the lane on #N\", and whenever a driver wants an issue carried through build→review→ship without holding the loop in their own session. Type-blind — a single issue and an epic drive identically. Not `build-epic`'s one-PR conduction of an epic on a single branch; not construction (`build`), judging (`review`), or merging (`ship`) — those run inside the shells it spawns."
+arguments: [issue_number]
+argument-hint: "[issue-number] — the issue whose lane to drive"
 ---
 
 # operate
@@ -27,15 +29,22 @@ not standing in. The same rule goes into every spawn prompt you write.
 
 ## 1 — Boot or resume
 
+The issue you were invoked on is `$issue_number`, and every command below carries it. A blank there
+does not mean no number exists: a preloaded agent shell (`skills:` frontmatter) always substitutes
+blank, because the harness hands the preload an empty argument and the number arrives in the spawn
+brief instead — so on a blank, take the issue your caller named there. Only when no caller named
+one are you actually without a number, and then ask for it before running a verb. Never invent one
+nobody named.
+
 ```bash
-node packages/fabrika-cli/src/bin.ts lane status 5539
+node packages/fabrika-cli/src/bin.ts lane status $issue_number
 ```
 
 Exit `0` is resume — the lane exists and its fold is the state; go to step 2. Exit `7` (no lane)
 is boot:
 
 ```bash
-node packages/fabrika-cli/src/bin.ts lane emit 5539
+node packages/fabrika-cli/src/bin.ts lane emit $issue_number
 ```
 
 `lane emit` generates an epic lane — one region per child, phase-sequenced — from the epic body's
@@ -44,7 +53,7 @@ that refusal-first order is what keeps the boot type-blind: no label is read any
 refusal, boot the single-issue lane instead:
 
 ```bash
-node packages/fabrika-cli/src/bin.ts lane open 5539
+node packages/fabrika-cli/src/bin.ts lane open $issue_number
 ```
 
 `lane open`'s already-exists refusal is tolerated as resume, not treated as an error. Both verbs
@@ -74,7 +83,7 @@ active phase** (future phases read `waiting`; leave them alone), route on the le
 The issue a task drives: on an emitted epic lane the task's own name (regions are the children);
 on an opened single lane the lane number itself. The task's PR is read off the board, never off
 your memory: the open PR whose body traces to the task's issue
-(`gh pr list --state open --search "5539 in:body" --json number,url,headRefName`) — exactly one is
+(`gh pr list --state open --search "$issue_number in:body" --json number,url,headRefName`) — exactly one is
 the lane's; zero where the state demands one, or several, is a park naming the ambiguity.
 Parallel active tasks spawn in parallel.
 
@@ -95,7 +104,7 @@ Done when every active task has either a spawn in flight or an event recorded th
 Translate each spawn's report into **exactly one** of the machine's events and record it:
 
 ```bash
-node packages/fabrika-cli/src/bin.ts lane transition 5539 DONE
+node packages/fabrika-cli/src/bin.ts lane transition $issue_number DONE
 ```
 
 (On a multi-task lane, address the event with `--task <name>`, the name exactly as `lane status`
@@ -153,10 +162,10 @@ and ends `LANE-PARKED` again; the ledger, not your patience, decides when the la
 the transcript**, posted to the driven issue straight off the verbs:
 
 ```bash
-node packages/fabrika-cli/src/bin.ts lane print 5539 | gh issue comment 5539 --body-file -
+node packages/fabrika-cli/src/bin.ts lane print $issue_number | gh issue comment $issue_number --body-file -
 ```
 
-with `lane history 5539` appended the same way when the event log adds anything `print` does not
+with `lane history $issue_number` appended the same way when the event log adds anything `print` does not
 show. Name the terminal state in the comment. End `LANE-TERMINAL`.
 
 **Resume is a re-spawn.** There is no handoff and no memory: resuming a lane is spawning the

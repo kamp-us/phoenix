@@ -1,6 +1,8 @@
 ---
 name: build
 description: "Execute one triaged, agent-ready issue end to end and land it as a PR — or, given a PR number, enter repair mode on that PR's branch. Trigger on \"work the next issue\", \"pick up an issue\", \"implement issue #N\", \"build #N\", \"repair PR #N\", \"fix the FAIL on #N\", and whenever triaged backlog work needs turning into a pull request. Rendered-visual construction is `build-ui`'s lane, not this skill's."
+arguments: [issue_or_pr_number]
+argument-hint: "[issue-number|pr-number] — an issue number builds, a PR number repairs; omit to pick from the pool"
 ---
 
 # build
@@ -18,9 +20,16 @@ ACL checks.
 **Capability set:** shell in the checkout you were spawned in, repo-scoped token, branch push. No
 merge, no queue access, no release.
 
-An argument that is a PR number is repair mode — skip to **Repair**.
-
 ## 1 — Prove the ground, then pick
+
+Your number is `$issue_or_pr_number`, and it selects the mode: an issue number is construction, a
+PR number is repair — **skip to Repair**. **A blank is not itself a mode.** A preloaded agent shell
+(`skills:` frontmatter) always substitutes blank, because the harness hands the preload an empty
+argument and your number arrives in the spawn brief instead — so on a blank, take the number your
+caller named there and let its kind pick the mode exactly as a typed one would. Only when the
+argument is blank *and* no caller named a number are you handed none, and then `pick` below chooses
+one for you. What is forbidden is inventing a number nobody named — never one out of an artifact
+you happened to read.
 
 ```bash
 fabrika build tree --require-clean
@@ -44,10 +53,11 @@ focus is declared at all — an inert fence is a fact to report, not a shorter p
 Two refusals before claiming: a `type:decision`'s deliverable is a recorded choice
 (`/adr`'s, not yours), and a rendered-visual deliverable is outside this skill's modality
 (`build-ui`'s) — **do not claim either**. This skill is not a router: on its own text surfaces
-it executes the whole loop itself. Then gate your choice:
+it executes the whole loop itself. In pick mode neither the argument nor your caller gave you a
+number, so the one `pick` returned stands in its place everywhere below. Then gate your choice:
 
 ```bash
-fabrika build eligible 4312
+fabrika build eligible $issue_or_pr_number
 ```
 
 Only `eligible` proceeds. `blocked` (`16`) names every open dependency, so one call tells you the
@@ -57,7 +67,7 @@ be read, and it is named on stderr.
 ## 2 — Claim, and keep proving the claim
 
 ```bash
-fabrika build claim 4312
+fabrika build claim $issue_or_pr_number
 ```
 
 `won` prints your token; `lost` names the winner — that lane is theirs, back off. Exit
@@ -69,7 +79,7 @@ theirs, not a rationale you compose. Before **every** later mutation addressed t
 number, re-confirm:
 
 ```bash
-fabrika build confirm 4312
+fabrika build confirm $issue_or_pr_number
 ```
 
 **The refusal is not overridable by reasoning**: a lost confirm means another lane owns this number
@@ -78,7 +88,7 @@ now, and your next write lands in their lane.
 ## 3 — Read the contract, then the ground it stands on
 
 ```bash
-fabrika build issue 4312
+fabrika build issue $issue_or_pr_number
 ```
 
 That is the issue body and its acceptance criteria, off the verb, never off memory. Check any
@@ -91,16 +101,16 @@ something you can point at.
 ## 4 — Branch, build, verify in this tree
 
 ```bash
-fabrika build branch 4312 --slug editor-focus-loss
+fabrika build branch $issue_or_pr_number --slug editor-focus-loss
 ```
 
 Construct. Match the surrounding artifact's idiom; for code: domain logic in domain objects,
-invalid states unrepresentable. Re-run `fabrika build tree --issue 4312` before every git
-mutation — the cwd resets between shell calls, so the tree you proved is not the tree you are
+invalid states unrepresentable. Re-run `fabrika build tree --issue $issue_or_pr_number` before every
+git mutation — the cwd resets between shell calls, so the tree you proved is not the tree you are
 standing in until you prove it again. Scratch files go only where this prints:
 
 ```bash
-fabrika build scratch 4312 --slug notes
+fabrika build scratch $issue_or_pr_number --slug notes
 ```
 
 Then validate **in this tree, cache bypassed** — a green borrowed from another checkout's cache is
@@ -176,7 +186,7 @@ per row defending a choice nobody attacked. Same no-op test as the prose — del
 absence would change no reviewer behaviour.
 
 ```bash
-fabrika build pr 4312 <<'EOF'
+fabrika build pr $issue_or_pr_number <<'EOF'
 …body…
 EOF
 ```
@@ -185,10 +195,10 @@ The verb is the guard: it refuses leaks, stray closing keywords, a Deviations se
 gate would read as malformed, and reads back what landed. Then hand off and release:
 
 ```bash
-fabrika build note 4312 <<'EOF'
+fabrika build note $issue_or_pr_number <<'EOF'
 …what was done, what a reviewer should look at first…
 EOF
-fabrika build release 4312
+fabrika build release $issue_or_pr_number
 ```
 
 **Terminal vocabulary** — end on exactly one: `SHIPPED-PR` (PR open, branch pushed);
@@ -207,8 +217,8 @@ the receiver re-fetches from the artifact.
 Claim the PR's number first — repair mutates a shared lane exactly like a build does:
 
 ```bash
-fabrika build claim 4310
-fabrika build verdicts --pr 4310
+fabrika build claim $issue_or_pr_number
+fabrika build verdicts --pr $issue_or_pr_number
 ```
 
 The fold is the only entry: paginated, current-head, per-gate — polarity visible, round count
@@ -216,7 +226,7 @@ included. Act only on rows it prints; empty rows at exit 0 are a proven no-work 
 UNKNOWN exit means the verdict state is unread — **never "nothing to fix"**. The budget is the
 fold's own `capReached` field, never a number you carry: on `true`, end `ESCALATED` and post the
 escalation via `fabrika build note` instead of another push. Fix findings on the same branch
-(`fabrika build tree --issue 4310`, then `fabrika build branch --resume 4310`), re-validate with
+(`fabrika build tree --issue $issue_or_pr_number`, then `fabrika build branch --resume $issue_or_pr_number`), re-validate with
 `fabrika build check --surface <yours>`, push with `fabrika build push --force-with-lease`, answer
 the findings in a `fabrika build note` naming each one addressed, release. Exit `23` on that push
 means your head **drops commits the PR already published** — `build branch --resume` again so you
