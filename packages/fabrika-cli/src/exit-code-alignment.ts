@@ -282,6 +282,22 @@ export const LANE_SEATS: SharedSeats = {
 	LANE_UNREADABLE: "PRECONDITION_UNKNOWN",
 };
 
+/**
+ * `recipe`'s seats: five, `lane`'s four widened by the read-back seat.
+ *
+ * A recipe verb applies a fixed fix and then proves it, so alone among the lane-shaped groups it can
+ * establish the base's *the write landed and the read-back contradicts it* — a lane that did not
+ * leave its park, a workflow run that shows no new attempt. Its private band is `12`-`21`, and the
+ * two seats the group exists for are in it: the park's cause is known, or it is novel.
+ */
+export const RECIPE_SEATS: SharedSeats = {
+	MALFORMED_RECORD: "BAD_SECTIONS",
+	TARGET_ABSENT: "NO_TARGET",
+	WRITE_UNKNOWN: "WRITE_UNKNOWN",
+	READBACK_MISMATCH: "READBACK_MISMATCH",
+	PRECONDITION_UNKNOWN: "PRECONDITION_UNKNOWN",
+};
+
 /** The groups that align to {@link ALIGNMENT_BASE}, each with the seats it claims to share. */
 export const ALIGNED_GROUPS: Readonly<Record<string, SharedSeats>> = {
 	adr: ADR_SEATS,
@@ -299,6 +315,7 @@ export const ALIGNED_GROUPS: Readonly<Record<string, SharedSeats>> = {
 	map: MAP_SEATS,
 	pattern: PATTERN_SEATS,
 	plan: BUILD_SEATS,
+	recipe: RECIPE_SEATS,
 	triage: SHARED_SEATS,
 	review: SHARED_SEATS,
 	"review-ui": REVIEW_UI_SEATS,

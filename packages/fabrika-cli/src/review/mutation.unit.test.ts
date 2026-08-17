@@ -482,7 +482,10 @@ nothing yet.
 
 	it("MUTANT: a composition that appends PAST the block reds on 15, before any PATCH", async () => {
 		await mutate<typeof import("./append.ts")>("./append.ts", () => ({
-			insertAfterLastCriterion: (body: string, _last: string, row: string) => `${body}\n${row}`,
+			insertAfterLastCriterion: (body: string, row: string) => ({
+				_tag: "Composed" as const,
+				body: `${body}\n${row}`,
+			}),
 		}));
 		const {runAppendCriterion} = await import("./append-criterion-verb.ts");
 		const shell = fakeShell(script);
@@ -490,7 +493,7 @@ nothing yet.
 		expect(out.code).toBe(APPEND_ONLY);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toBe(
-			"review append-criterion: the append would drop or mutate an existing row — refusing (append-only fence).",
+			"review append-criterion: the composed body does not re-read as the 1 prior row(s) plus this one — it re-reads as 1 row(s); refusing (append-only fence).",
 		);
 		expect(shell.calls.some((call) => PATCH.test(call))).toBe(false);
 	});

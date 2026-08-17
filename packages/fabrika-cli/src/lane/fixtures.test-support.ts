@@ -1,6 +1,6 @@
 /**
- * Shared lane fixtures: the committed coder template read verbatim (the golden-fixture idiom), and
- * a two-phase document in the /prd-to-tasks shape small enough for a test to mutate.
+ * Shared lane fixtures: the committed coder and chore templates read verbatim (the golden-fixture
+ * idiom), and a two-phase document in the /prd-to-tasks shape small enough for a test to mutate.
  */
 import {readGoldenFixture} from "../golden-fixture.ts";
 
@@ -8,6 +8,11 @@ export const coderTemplateText = (): string =>
 	readGoldenFixture(import.meta.url, "./templates/coder.workflow.json");
 
 export const coderWorkflow = (): unknown => JSON.parse(coderTemplateText());
+
+export const choreTemplateText = (): string =>
+	readGoldenFixture(import.meta.url, "./templates/chore.workflow.json");
+
+export const choreWorkflow = (): unknown => JSON.parse(choreTemplateText());
 
 const region = (ns: string): Record<string, unknown> => ({
 	initial: "doing",

@@ -1,10 +1,11 @@
 /**
  * The lane store — where a lane lives on disk, and the one guarded read every verb goes through.
  *
- * A lane is a directory: `.fabrika/lanes/<n>/workflow.json` (the machine document, placed there by
- * the operator from a committed template) plus `events.jsonl` (the append-only log, born on the
- * first recorded event). Lane state is local and gitignored — the repo `.gitignore`'s `/.fabrika/`
- * entry covers it (#5673).
+ * A lane is a directory: `<root>/<key>/workflow.json` (the machine document, placed there by the
+ * operator from a committed template) plus `events.jsonl` (the append-only log, born on the first
+ * recorded event) — `.fabrika/lanes/<n>/` for an issue lane, `.fabrika/chores/<name>/` for a chore
+ * lane. Lane state is local and gitignored — the repo `.gitignore`'s `/.fabrika/` entry covers it
+ * (#5673). Which root a key resolves to is [`key.ts`](key.ts)'s call, not this module's.
  *
  * The load keeps four outcomes apart because they take opposite remedies: the lane is provably not
  * there, it could not be read (UNKNOWN, never "fresh"), it was read in full and is not the shape,
@@ -18,10 +19,13 @@ import {type CompiledLane, compileText} from "./machine.ts";
 
 export const DEFAULT_LANES_ROOT = ".fabrika/lanes";
 
+/** Where a chore lane lives: keyed by name, because a chore has no issue number (#5840). */
+export const DEFAULT_CHORES_ROOT = ".fabrika/chores";
+
 export interface LaneRef {
-	/** The lanes root — `.fabrika/lanes` unless a caller relocates it. */
+	/** The lanes root — `.fabrika/lanes`, or `.fabrika/chores` for a chore key. */
 	readonly root: string;
-	/** The lane id under the root — by convention the issue number the lane drives. */
+	/** The lane id under the root — an issue number, or a chore lane's name. */
 	readonly lane: string;
 }
 

@@ -1,0 +1,68 @@
+{
+	"id": "park-sweep",
+	"version": 1,
+	"trigger": "lane-parked",
+	"machine": {
+		"id": "park-sweep",
+		"initial": "sweep",
+		"context": {
+			"park_sweep": { "retries": 0, "maxRetries": 2 }
+		},
+		"states": {
+			"sweep": {
+				"type": "parallel",
+				"states": {
+					"park_sweep": {
+						"initial": "queued",
+						"states": {
+							"queued": {
+								"on": {
+									"PARK_SWEEP.WIP": "classify",
+									"PARK_SWEEP.BLOCKED": "human:novel-park"
+								}
+							},
+							"classify": {
+								"on": {
+									"PARK_SWEEP.PASS": "apply",
+									"PARK_SWEEP.DONE": "swept",
+									"PARK_SWEEP.BLOCKED": "human:novel-park"
+								}
+							},
+							"apply": {
+								"on": {
+									"PARK_SWEEP.DONE": "verify",
+									"PARK_SWEEP.BLOCKED": "human:novel-park"
+								}
+							},
+							"verify": {
+								"on": {
+									"PARK_SWEEP.PASS": "swept",
+									"PARK_SWEEP.BLOCKED": "human:novel-park",
+									"PARK_SWEEP.FAIL": [
+										{
+											"target": "apply",
+											"guard": "retriesRemaining",
+											"actions": "incrementRetries"
+										},
+										{ "target": "frozen" }
+									]
+								}
+							},
+							"human:novel-park": {
+								"on": {
+									"PARK_SWEEP.UNBLOCKED": "hist"
+								}
+							},
+							"hist": { "type": "history" },
+							"swept": { "type": "final" },
+							"frozen": { "type": "final" }
+						}
+					}
+				},
+				"onDone": [{ "target": "complete", "guard": "noErrors" }, { "target": "tripped" }]
+			},
+			"complete": { "type": "final" },
+			"tripped": { "type": "final" }
+		}
+	}
+}

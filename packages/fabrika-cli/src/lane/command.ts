@@ -14,11 +14,13 @@ import type {VerbOutcome} from "../verb.ts";
 import {runBrief} from "./brief-verb.ts";
 import {runEmit} from "./emit-verb.ts";
 import {runHistory} from "./history-verb.ts";
+import {type LaneKey, laneRef, parseKey, templateFile} from "./key.ts";
 import {runOpen} from "./open-verb.ts";
 import {runPrint} from "./print-verb.ts";
 import {runProve} from "./prove-verb.ts";
+import {keyRefusal} from "./refusals.ts";
 import {runStatus} from "./status-verb.ts";
-import {DEFAULT_LANES_ROOT} from "./store.ts";
+import {DEFAULT_CHORES_ROOT, DEFAULT_LANES_ROOT, type LaneRef} from "./store.ts";
 import {runTransition} from "./transition-verb.ts";
 
 /** Write the outcome and exit on its code — stdout is the answer, everything else is stderr. */
@@ -30,24 +32,43 @@ const emit = (outcome: VerbOutcome): Effect.Effect<void> =>
 	});
 
 const laneArgument = Argument.string("lane").pipe(
-	Argument.withDescription("the lane id under the root — by convention the issue number"),
+	Argument.withDescription(
+		"the lane key — the issue number the lane drives, or `chore:<name>` for a chore lane",
+	),
 );
 
 const rootFlag = Flag.string("root").pipe(
-	Flag.withDefault(DEFAULT_LANES_ROOT),
-	Flag.withDescription(`the lanes root directory (default: ${DEFAULT_LANES_ROOT})`),
+	Flag.optional,
+	Flag.withDescription(
+		`the lanes root directory (default: ${DEFAULT_LANES_ROOT}, or ${DEFAULT_CHORES_ROOT} for a chore key)`,
+	),
 );
+
+/**
+ * Resolve the `lane` argument to a key and its directory, or refuse it — the one step every keyed
+ * verb shares, so a malformed key is caught before any verb reads or writes anything.
+ */
+const onKey = <R>(
+	raw: string,
+	root: Option.Option<string>,
+	run: (key: LaneKey, ref: LaneRef) => Effect.Effect<VerbOutcome, never, R>,
+): Effect.Effect<VerbOutcome, never, R> => {
+	const parsed = parseKey(raw);
+	return parsed._tag === "Malformed"
+		? Effect.succeed(keyRefusal(parsed))
+		: run(parsed.key, laneRef(parsed.key, Option.getOrNull(root)));
+};
 
 const status = leafCommand(
 	"status",
 	{lane: laneArgument, root: rootFlag},
 	Effect.fn(function* ({lane, root}) {
-		yield* emit(yield* runStatus({root, lane}));
+		yield* emit(yield* onKey(lane, root, (_key, ref) => runStatus(ref)));
 	}),
 ).pipe(
 	Command.withShortDescription("One lane's derived state, folded fresh from its event log."),
 	Command.withDescription(
-		"One lane's derived state, folded fresh from the whole events.jsonl every invocation — no resident process, no snapshot. stdout is the operator's status JSON: compound `stateValue` (active phase → per-task leaf state, future phases \"waiting\", or a bare terminal), `status` active/done, and per-task `{retries, maxRetries, …}` context with the tripped tasks in `errors`. Exits 4 (workflow.json or events.jsonl read in full and not the shape — every defect on stderr), 7 (no lane there — copy a workflow template to open it), 11 (the lane could not be read — its state is UNKNOWN, never fresh). Example: fabrika lane status 5673",
+		"One lane's derived state, folded fresh from the whole events.jsonl every invocation — no resident process, no snapshot. stdout is the operator's status JSON: compound `stateValue` (active phase → per-task leaf state, future phases \"waiting\", or a bare terminal), `status` active/done, and per-task `{retries, maxRetries, …}` context with the tripped tasks in `errors`. Exits 4 (workflow.json or events.jsonl read in full and not the shape — every defect on stderr), 7 (no lane there — copy a workflow template to open it), 11 (the lane could not be read — its state is UNKNOWN, never fresh), 21 (the key is not a lane key). Examples: fabrika lane status 5673 · fabrika lane status chore:park-sweep",
 	),
 );
 
@@ -66,18 +87,15 @@ const transition = leafCommand(
 	},
 	Effect.fn(function* ({lane, event, root, task}) {
 		yield* emit(
-			yield* runTransition({
-				root,
-				lane,
-				event,
-				task: task._tag === "Some" ? task.value : null,
-			}),
+			yield* onKey(lane, root, (_key, ref) =>
+				runTransition({...ref, event, task: Option.getOrNull(task)}),
+			),
 		);
 	}),
 ).pipe(
 	Command.withShortDescription("Record one operator event, refusing an invalid one unappended."),
 	Command.withDescription(
-		"Record one operator event on the lane's append-only log — after the machine accepts it, never before. stdout is `{previous, event, current, taskAffected}` with the two stateValues around the fold. An invalid event — no cell in the task's current state (tea's NoCellError, surfaced verbatim), outside the operator's six, a task outside the active phase, a finished workflow — is refused loudly and the log is left byte-identical. Exits 4 (lane record read in full and not the shape), 7 (no lane there), 8 (the append did not land — the event is NOT recorded), 11 (the lane could not be read), 12 (the event is refused, log unappended), 13 (the task is not in the machine, or --task omitted on a multi-task lane). Example: fabrika lane transition 5673 DONE",
+		"Record one operator event on the lane's append-only log — after the machine accepts it, never before. stdout is `{previous, event, current, taskAffected}` with the two stateValues around the fold. An invalid event — no cell in the task's current state (tea's NoCellError, surfaced verbatim), outside the operator's six, a task outside the active phase, a finished workflow — is refused loudly and the log is left byte-identical. Exits 4 (lane record read in full and not the shape), 7 (no lane there), 8 (the append did not land — the event is NOT recorded), 11 (the lane could not be read), 12 (the event is refused, log unappended), 13 (the task is not in the machine, or --task omitted on a multi-task lane), 21 (the key is not a lane key). Example: fabrika lane transition 5673 DONE",
 	),
 );
 
@@ -102,20 +120,21 @@ const prove = leafCommand(
 	},
 	Effect.fn(function* ({lane, event, root, task, repo}) {
 		yield* emit(
-			yield* runProve({
-				root,
-				lane,
-				event,
-				task: task._tag === "Some" ? task.value : null,
-				repo: Option.getOrNull(repo),
-				env: process.env,
-			}),
+			yield* onKey(lane, root, (_key, ref) =>
+				runProve({
+					...ref,
+					event,
+					task: Option.getOrNull(task),
+					repo: Option.getOrNull(repo),
+					env: process.env,
+				}),
+			),
 		);
 	}),
 ).pipe(
 	Command.withShortDescription("Prove a lane event against the board before recording it."),
 	Command.withDescription(
-		"Read the artifact a lane event claims — artifacts over self-reports, the rule `epic landed` holds for a conducted branch, read off the board here because a lane owns none. Two events carry a claim: a DONE out of `build` claims an open PR whose body links the task's issue (or, for an investigation, the diagnosis comment a no-PR builder posted since the task entered build), and a PASS out of `review` claims a current-head verdict in every namespace that PR's diff derives, governance included. Every other event answers `not-required` at exit 0. Writes nothing — the append stays `lane transition`'s. Exits 4 (lane record read in full and not the shape), 7 (no lane there), 11 (a lane or board read failed — the proof is UNKNOWN, never proven), 13 (the task is not in the machine, or names no issue), 21 (the artifact is provably not there), 22 (a required namespace has no current-head verdict — re-read, record nothing), 23 (a current-head FAIL under a claimed PASS), 24 (several open PRs link the issue). Example: fabrika lane prove 5673 DONE",
+		"Read the artifact a lane event claims — artifacts over self-reports, the rule `epic landed` holds for a conducted branch, read off the board here because a lane owns none. Two events carry a claim: a DONE out of `build` claims an open PR whose body links the task's issue (or, for an investigation, the diagnosis comment a no-PR builder posted since the task entered build), and a PASS out of `review` claims a current-head verdict in every namespace that PR's diff derives, governance included. Every other event answers `not-required` at exit 0. Writes nothing — the append stays `lane transition`'s. Exits 4 (lane record read in full and not the shape), 7 (no lane there), 11 (a lane or board read failed — the proof is UNKNOWN, never proven), 13 (the task is not in the machine, or names no issue), 21 (the key is not a lane key), 22 (the artifact is provably not there), 23 (a required namespace has no current-head verdict — re-read, record nothing), 24 (a current-head FAIL under a claimed PASS), 25 (several open PRs link the issue). Example: fabrika lane prove 5673 DONE",
 	),
 );
 
@@ -123,12 +142,12 @@ const history = leafCommand(
 	"history",
 	{lane: laneArgument, root: rootFlag},
 	Effect.fn(function* ({lane, root}) {
-		yield* emit(yield* runHistory({root, lane}));
+		yield* emit(yield* onKey(lane, root, (_key, ref) => runHistory(ref)));
 	}),
 ).pipe(
 	Command.withShortDescription("The lane's append-only event log, verbatim."),
 	Command.withDescription(
-		"The lane's append-only event log, verbatim — one `{task, event, at}` per recorded event, in append order; the log IS the history, and `from`/`to` are reconstructible by folding, never stored. A lane with no events yet answers `[]`. Exits 4 (lane record read in full and not the shape), 7 (no lane there), 11 (the lane could not be read). Example: fabrika lane history 5673",
+		"The lane's append-only event log, verbatim — one `{task, event, at}` per recorded event, in append order; the log IS the history, and `from`/`to` are reconstructible by folding, never stored. A lane with no events yet answers `[]`. Exits 4 (lane record read in full and not the shape), 7 (no lane there), 11 (the lane could not be read), 21 (the key is not a lane key). Example: fabrika lane history 5673",
 	),
 );
 
@@ -136,27 +155,30 @@ const print = leafCommand(
 	"print",
 	{lane: laneArgument, root: rootFlag},
 	Effect.fn(function* ({lane, root}) {
-		yield* emit(yield* runPrint({root, lane}));
+		yield* emit(yield* onKey(lane, root, (_key, ref) => runPrint(ref)));
 	}),
 ).pipe(
 	Command.withShortDescription("The lane's compiled machine topology, as data."),
 	Command.withDescription(
-		"The lane's compiled machine topology — phases in order, the two workflow terminals, and per task its initial state, retry budget, and each state's legal events (everything absent refuses at transition time). Exits 4 (workflow.json read in full and not the shape), 7 (no lane there), 11 (the lane could not be read). Example: fabrika lane print 5673",
+		"The lane's compiled machine topology — phases in order, the two workflow terminals, and per task its initial state, retry budget, and each state's legal events (everything absent refuses at transition time). Exits 4 (workflow.json read in full and not the shape), 7 (no lane there), 11 (the lane could not be read), 21 (the key is not a lane key). Example: fabrika lane print 5673",
 	),
 );
 
-const templatePath = fileURLToPath(new URL("./templates/coder.workflow.json", import.meta.url));
+const templatePath = (key: LaneKey): string =>
+	fileURLToPath(new URL(`./templates/${templateFile(key)}`, import.meta.url));
 
 const open = leafCommand(
 	"open",
 	{lane: laneArgument, root: rootFlag},
 	Effect.fn(function* ({lane, root}) {
-		yield* emit(yield* runOpen({root, lane, templatePath}));
+		yield* emit(
+			yield* onKey(lane, root, (key, ref) => runOpen({...ref, templatePath: templatePath(key)})),
+		);
 	}),
 ).pipe(
-	Command.withShortDescription("Boot a single-issue lane from the committed coder template."),
+	Command.withShortDescription("Boot a lane from the committed template its key selects."),
 	Command.withDescription(
-		"Boot one single-issue lane: create `<root>/<lane>/` and place a byte-identical copy of the committed coder template as its workflow.json. An existing lane dir is refused loudly with nothing written — resuming needs no boot, and overwriting a machine mid-drive would corrupt a live fold. Exits 8 (the write did not land — the lane is NOT booted), 11 (the template or the lane dir's existence could not be read — UNKNOWN, never a boot), 14 (the lane already exists). Example: fabrika lane open 5673",
+		"Boot one lane: create `<root>/<key>/` and place a byte-identical copy of the committed template the key selects as its workflow.json — the coder template for an issue number, the chore template for a `chore:<name>` key. An existing lane dir is refused loudly with nothing written — resuming needs no boot, and overwriting a machine mid-drive would corrupt a live fold. Exits 8 (the write did not land — the lane is NOT booted), 11 (the template or the lane dir's existence could not be read — UNKNOWN, never a boot), 14 (the lane already exists), 21 (the key is not a lane key). Examples: fabrika lane open 5673 · fabrika lane open chore:park-sweep",
 	),
 );
 
@@ -175,7 +197,14 @@ const emitLane = leafCommand(
 		),
 	},
 	Effect.fn(function* ({epic, root, repo}) {
-		yield* emit(yield* runEmit({epic, root, repo: Option.getOrNull(repo), env: process.env}));
+		yield* emit(
+			yield* runEmit({
+				epic,
+				root: Option.getOrNull(root) ?? DEFAULT_LANES_ROOT,
+				repo: Option.getOrNull(repo),
+				env: process.env,
+			}),
+		);
 	}),
 ).pipe(
 	Command.withShortDescription("Generate an epic's lane machine from its board topology."),
@@ -202,19 +231,20 @@ const brief = leafCommand(
 	},
 	Effect.fn(function* ({lane, root, task, repo}) {
 		yield* emit(
-			yield* runBrief({
-				root,
-				lane,
-				task: Option.getOrNull(task),
-				repo: Option.getOrNull(repo),
-				env: process.env,
-			}),
+			yield* onKey(lane, root, (_key, ref) =>
+				runBrief({
+					...ref,
+					task: Option.getOrNull(task),
+					repo: Option.getOrNull(repo),
+					env: process.env,
+				}),
+			),
 		);
 	}),
 ).pipe(
 	Command.withShortDescription("The spawn prompt for one task's current leaf state."),
 	Command.withDescription(
-		"Print the spawn prompt for one task's current leaf state, folded fresh from the ledger — so a driver pastes a brief rather than composing one. stdout is the `lane-brief` wire format: which lane, task, state and shell, the resolved issue and PR URLs (URLs only — the spawned shell re-reads its own ground), and the format's byte-fixed rules. Exits 4 (lane record read in full and not the shape), 7 (no lane there), 11 (the lane, the issue or its PRs could not be read — UNKNOWN), 13 (the task is not in the machine, or --task omitted on a multi-task lane), 18 (the leaf state routes to no shell — `queued`, `blocked`, `human:*`, a final), 19 (neither the task nor the lane names an issue, or that issue is proven absent), 20 (zero open PRs where the state needs one, or several where one is required). Example: fabrika lane brief 5680 --task issue_5729",
+		"Print the spawn prompt for one task's current leaf state, folded fresh from the ledger — so a driver pastes a brief rather than composing one. stdout is the `lane-brief` wire format: which lane, task, state and shell, the resolved issue and PR URLs (URLs only — the spawned shell re-reads its own ground), and the format's byte-fixed rules. Exits 4 (lane record read in full and not the shape), 7 (no lane there), 11 (the lane, the issue or its PRs could not be read — UNKNOWN), 13 (the task is not in the machine, or --task omitted on a multi-task lane), 18 (the leaf state routes to no shell — `queued`, `blocked`, `human:*`, a final), 19 (neither the task nor the lane names an issue, or that issue is proven absent), 20 (zero open PRs where the state needs one, or several where one is required), 21 (the key is not a lane key). Example: fabrika lane brief 5680 --task issue_5729",
 	),
 );
 
@@ -222,6 +252,6 @@ export const laneCommand = Command.make("lane").pipe(
 	Command.withSubcommands([status, transition, prove, history, print, open, emitLane, brief]),
 	Command.withShortDescription("Drive one lane's state ledger by folding its event log."),
 	Command.withDescription(
-		"Drive one lane's state ledger — a @demlik/tea machine folded fresh from an append-only events.jsonl on every invocation, speaking the operator's six events (#5673)",
+		"Drive one lane's state ledger — a @demlik/tea machine folded fresh from an append-only events.jsonl on every invocation, speaking the operator's six events (#5673). A lane is keyed by the issue number it drives, or by name as `chore:<name>` for a chore that has no issue number (#5840)",
 	),
 );

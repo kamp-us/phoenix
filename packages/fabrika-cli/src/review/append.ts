@@ -11,9 +11,7 @@
  * A composition that inserted the row somewhere the parser does not see it passes the first and reds
  * on the second, which is the whole reason both exist.
  */
-import type {AcceptanceCriterion} from "../wire/acceptance-criteria.ts";
-
-const CHECKBOX = /^([ \t]*[-*][ \t]+\[[ xX]\][ \t]*)(.*)$/;
+import {type AcceptanceCriterion, readSpans} from "../wire/acceptance-criteria.ts";
 
 /** The provenance tag ADR 0079 requires — what makes a routed row auditable after the fact. */
 export const provenanceTag = (pr: number, round: number): string =>
@@ -22,28 +20,43 @@ export const provenanceTag = (pr: number, round: number): string =>
 export const criterionRow = (text: string, pr: number, round: number): string =>
 	`- [ ] ${text.trim()} ${provenanceTag(pr, round)}`;
 
+export type Composition =
+	| {readonly _tag: "Composed"; readonly body: string}
+	| {readonly _tag: "NoAnchor"; readonly reason: string};
+
 /**
- * `body` with `row` inserted directly after the block's **last criterion**, or `null` when that
- * criterion's line cannot be located.
+ * `body` with `row` inserted directly after the block's **last criterion**, or `NoAnchor` when the
+ * block does not parse and there is nothing to append under.
  *
- * The anchor is the parser's own answer — the text of the last row `acceptance-criteria.ts` read —
- * rather than "the last checkbox in the body". Those differ whenever a later section carries
- * checkboxes of its own, and appending to the wrong one puts the row outside the block every future
- * read parses. Locating it this way needs no second heading parser.
+ * The anchor is the parser's own span — the last row `acceptance-criteria.ts` read, and its last
+ * *physical* line — rather than "the last checkbox in the body". Those differ whenever a later
+ * section carries checkboxes of its own, and appending to the wrong one puts the row outside the
+ * block every future read parses. Taking the span rather than matching the criterion's text is what
+ * makes a wrapped last criterion locatable at all: its text is the joined sentence, which appears on
+ * no single line (#5716). Inserting after the span's last line — not its checkbox line — is what
+ * keeps the new row a sibling instead of one more continuation of the row above it.
  */
-export const insertAfterLastCriterion = (
-	body: string,
-	lastCriterion: string,
-	row: string,
-): string | null => {
-	const lines = body.split("\n");
-	let at = -1;
-	for (const [index, line] of lines.entries()) {
-		const matched = CHECKBOX.exec(line);
-		if (matched !== null && (matched[2] ?? "").trim() === lastCriterion.trim()) at = index;
+export const insertAfterLastCriterion = (body: string, row: string): Composition => {
+	const spans = readSpans(body);
+	if (spans._tag !== "Found") {
+		return {
+			_tag: "NoAnchor",
+			reason: `the acceptance-criteria block is ${spans._tag.toLowerCase()}: ${spans.reason}`,
+		};
 	}
-	if (at < 0) return null;
-	return [...lines.slice(0, at + 1), row, ...lines.slice(at + 1)].join("\n");
+	const [head, ...rest] = spans.value;
+	const last = rest[rest.length - 1] ?? head;
+	const lines = body.split("\n");
+	return {
+		_tag: "Composed",
+		body: [...lines.slice(0, last.lastLine + 1), row, ...lines.slice(last.lastLine + 1)].join("\n"),
+	};
+};
+
+/** The line a refusal points at, elided so a long row does not swallow the message. */
+const quote = (line: string | undefined): string => {
+	const text = (line ?? "").trim();
+	return text.length > 80 ? `"${text.slice(0, 77)}…"` : `"${text}"`;
 };
 
 export type AppendGuard =
@@ -68,17 +81,24 @@ export const appendOnly = (previous: string, next: string): AppendGuard => {
 	}
 	let inserted = 0;
 	let at = 0;
+	let firstDiverged: number | null = null;
 	for (const line of after) {
 		if (at < before.length && before[at] === line) {
 			at += 1;
 			continue;
 		}
 		inserted += 1;
-		if (inserted > 1) return {_tag: "Violates", reason: "more than one line differs"};
+		if (firstDiverged === null) firstDiverged = at;
+		if (inserted > 1) {
+			return {
+				_tag: "Violates",
+				reason: `more than one line differs, from line ${firstDiverged + 1}: ${quote(before[firstDiverged])}`,
+			};
+		}
 	}
 	return at === before.length
 		? {_tag: "AppendOnly"}
-		: {_tag: "Violates", reason: "an original line was dropped or mutated"};
+		: {_tag: "Violates", reason: `line ${at + 1} was dropped or mutated: ${quote(before[at])}`};
 };
 
 /**

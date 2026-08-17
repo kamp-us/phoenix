@@ -4,9 +4,10 @@ import {describe, expect, it} from "vitest";
 import {fakeFs} from "../fakes.test-support.ts";
 import type {VerbOutcome} from "../verb.ts";
 import {APPEND_UNKNOWN, LANE_EXISTS, LANE_UNREADABLE} from "./codes.ts";
-import {coderTemplateText} from "./fixtures.test-support.ts";
+import {choreTemplateText, coderTemplateText} from "./fixtures.test-support.ts";
 import {runOpen} from "./open-verb.ts";
 import {runStatus} from "./status-verb.ts";
+import {DEFAULT_CHORES_ROOT} from "./store.ts";
 
 const ROOT = ".fabrika/lanes";
 const DIR = `${ROOT}/42`;
@@ -38,6 +39,27 @@ describe("lane open", () => {
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout)).toMatchObject({
 			stateValue: {pipeline: {issue: "queued"}},
+			status: "active",
+		});
+	});
+
+	it("boots a chore lane by name and folds it, with no issue number anywhere", async () => {
+		const chore = {
+			root: DEFAULT_CHORES_ROOT,
+			lane: "park-sweep",
+			templatePath: "/pkg/src/lane/templates/chore.workflow.json",
+		};
+		const fs = fakeFs({files: {[chore.templatePath]: choreTemplateText()}});
+		const opened = await run(fs, runOpen(chore));
+		const folded = await run(fs, runStatus({root: chore.root, lane: chore.lane}));
+
+		expect(opened.code).toBe(0);
+		expect(fs.written.get(`${DEFAULT_CHORES_ROOT}/park-sweep/workflow.json`)).toBe(
+			choreTemplateText(),
+		);
+		expect(folded.code).toBe(0);
+		expect(JSON.parse(folded.stdout)).toMatchObject({
+			stateValue: {sweep: {park_sweep: "queued"}},
 			status: "active",
 		});
 	});

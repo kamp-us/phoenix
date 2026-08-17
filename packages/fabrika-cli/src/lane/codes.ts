@@ -102,28 +102,35 @@ export const ISSUE_UNRESOLVED = 19;
 export const PR_AMBIGUOUS = 20;
 
 /**
+ * The `lane` argument is not a lane key: an empty key, or a `chore:<name>` whose name is not the one
+ * shape a chore lane's directory may carry. Refused before any path is joined and before any read,
+ * so a name carrying a separator or a traversal never becomes a directory nobody meant.
+ */
+export const KEY_MALFORMED = 21;
+
+/**
  * The artifact the event claims is **provably not there**: no open pull request traces to the
  * task's issue, and the issue is not one a no-PR outcome is legal on. The event is a self-report
  * nothing corroborates, so the remedy is to route the spawn's outcome as blocked, not to record it.
  */
-export const PROOF_ABSENT = 21;
+export const PROOF_ABSENT = 22;
 
 /**
  * The artifacts are there but not terminal at the head — a required namespace with no current-head
  * verdict. Its own seat because the remedy is the opposite of {@link PROOF_ABSENT}'s: re-read until
  * the review finishes, record nothing in the meantime (`operate` step 3's in-flight rule).
  */
-export const PROOF_IN_FLIGHT = 22;
+export const PROOF_IN_FLIGHT = 23;
 
 /**
  * The artifact is there and says the other thing — a current-head `FAIL` under a claimed `PASS`.
  * Distinct again by remedy: the caller has the event wrong and the machine has a cell for the one
  * the board actually supports.
  */
-export const PROOF_CONTRADICTED = 23;
+export const PROOF_CONTRADICTED = 24;
 
 /**
  * Several open pull requests trace to the task's issue. Which one the lane owns is not derivable,
  * and picking one would record a DONE against another lane's work — a park, never a guess.
  */
-export const PROOF_AMBIGUOUS = 24;
+export const PROOF_AMBIGUOUS = 25;

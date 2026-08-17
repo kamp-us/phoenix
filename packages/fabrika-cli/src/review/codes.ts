@@ -72,7 +72,7 @@ export const STALE_HEAD = 12;
 export const INCOMPLETE_SCAN = 13;
 /** Refused: the invoking token resolves below `write`, or the ACL lookup failed (ADR 0055). */
 export const ACL_DENIED = 14;
-/** Refused: the write would drop or mutate an existing row — the append-only fence. */
+/** Refused: the write is not provably the prior rows plus one — the append-only fence. */
 export const APPEND_ONLY = 15;
 
 /** The unallocated code — see the gap note at the top of this file. */

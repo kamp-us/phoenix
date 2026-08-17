@@ -265,7 +265,8 @@ composition API — flat element-props*, which coins both terms; it builds on AD
 `PageShell` source is defined by that ADR — the term is grounded in the ADR until the shells
 land in [`apps/web/src/components/layout/`](../apps/web/src/components/layout/).)
 
-- **`recipe`** — the composition-primitive idiom: **one flat element-prop per zone**,
+- **`recipe`** (UI sense; the pipeline sense is below) — the composition-primitive idiom: **one
+  flat element-prop per zone**,
   orphan-as-type-error. NOT a zones-object, NOT compound components
   (`<Shell.Destinations>…`) — a compound API leaves an *orphan slot* (an element rendered
   but placed nowhere) that only a lint pass catches; flat element-props make that
@@ -276,6 +277,28 @@ land in [`apps/web/src/components/layout/`](../apps/web/src/components/layout/).
   primitive (wrapping it, not replacing it); `PageShell` composes `SubnavShell` plus the routed
   page content below it. A shell sits *between* a **primitive** and the page — distinct from a
   **primitive**, which owns no zone and exposes raw slots.
+
+### The lane, the chore lane, and the pipeline sense of "recipe"
+
+A **lane** is one unit of pipeline work driven by a machine document plus an append-only
+`events.jsonl`, folded fresh on every read — no resident process, no snapshot (#5673). A lane
+is addressed by a key, and the key decides where its ledger lives:
+
+- **`chore lane`** — a lane keyed by a **name** rather than an issue number, because a recurring
+  chore has no issue to be keyed by; its state lives at `.fabrika/chores/<name>/events.jsonl`,
+  against `.fabrika/lanes/<n>/` for an issue lane. Same fold, same six-event vocabulary
+  (DONE/PASS/FAIL/BLOCKED/WIP/UNBLOCKED), different key. Source:
+  [`packages/fabrika-cli/src/lane/key.ts`](../packages/fabrika-cli/src/lane/key.ts) (#5840).
+- **`recipe`** (pipeline sense) — one deterministic fabrika verb a chore workflow state applies:
+  a fixed sequence with named exit codes and no judgment in it. A recipe **relays a verb's
+  answer, it never derives the decision** — ADR
+  [0228](../.decisions/0228-scripts-relay-never-derive.md). The operator that runs one is a thin
+  executor of the machine it is handed; the known/novel split lives in the verb's exit codes,
+  never in operator prose.
+
+**Two senses of `recipe`.** This is the pipeline one. The other is the UI composition idiom
+above ("The composition shell / recipe", ADR 0182) — one flat element-prop per zone. They share
+nothing but the word; name which one you mean when the context does not fix it.
 
 ### The three senses of "phoenix"
 

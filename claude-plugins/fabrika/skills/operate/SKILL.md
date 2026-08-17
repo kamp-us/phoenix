@@ -135,10 +135,10 @@ event and never skipped as an optimisation. Its refusals each name a different n
 | Exit | What it read | What you do |
 | --- | --- | --- |
 | `0` | the artifact is there (or the event claims none) | record the event |
-| `21` | no open PR links the task's issue, and the issue is not one a no-PR outcome is legal on | the report is unproven — record `BLOCKED`, never the `DONE` |
-| `22` | a derived namespace has no current-head verdict | record **nothing**; re-read this pass |
-| `23` | a current-head `FAIL` under a claimed `PASS` | record the event the artifact supports (`FAIL`) |
-| `24` | several open PRs link the issue | park — step 4, naming the ambiguity |
+| `22` | no open PR links the task's issue, and the issue is not one a no-PR outcome is legal on | the report is unproven — record `BLOCKED`, never the `DONE` |
+| `23` | a derived namespace has no current-head verdict | record **nothing**; re-read this pass |
+| `24` | a current-head `FAIL` under a claimed `PASS` | record the event the artifact supports (`FAIL`) |
+| `25` | several open PRs link the issue | park — step 4, naming the ambiguity |
 | `11` | a lane or board read failed | the proof is UNKNOWN — end `STOPPED` naming the code |
 
 A builder's `SUCCESS-NO-PR` is a proven `DONE`, not an unproven one: the verb takes the no-PR arm
@@ -163,7 +163,7 @@ never a retry-in-place — retries belong to the machine (`FAIL` spends one; `fr
 answer), and you never re-spawn what the fold has not re-asked for.
 
 A third refusal guards the `FAIL` row, and it is the one half `lane prove` cannot take off your
-hands — the verb enforces it mechanically for a `PASS` (exit `22`), while a `FAIL` claims no
+hands — the verb enforces it mechanically for a `PASS` (exit `23`), while a `FAIL` claims no
 artifact and so is proven by nothing: **a reviewer `FAIL` is recorded only when every derived
 namespace holds a current-head verdict** — governance included, on a `harness: true` diff. `FAIL`
 routes the machine into a repair build, and a repair pushes a new head; recorded while any
