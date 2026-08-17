@@ -2,55 +2,175 @@
  * The proof core — what a lane event claims about the world, and whether the world says it.
  *
  * The retired epic conductor moved on the git graph rather than on its own report. A lane operator
- * owns no branch, so the artifact a lane event claims lives on the board:
- * an open PR tracing to the task's issue, a verdict at that PR's head. Everything here is the pure
- * half — facts in, one verdict out — so the whole table is testable without a network.
+ * owns no branch, so the artifact a lane event claims is one it cannot author: for a single-issue
+ * lane and for an epic run's tail, an open PR tracing to the task's issue and a verdict at that PR's
+ * head; for an epic run's *child*, which never opens a PR at all (ADR 0285), the commits its range
+ * adds and a range-bound verdict on the child issue. Everything here is the pure half — facts in,
+ * one verdict out — so the whole table is testable without a network and without a checkout.
  *
- * **Two events carry a claim; the other four carry none.** `DONE` out of a `build` state asserts a
- * PR exists, `PASS` out of a `review` state asserts every derived namespace judged this head. A
- * `BLOCKED`, a `WIP`, an `UNBLOCKED`, a `FAIL`, or a `DONE` out of `ship` asserts nothing a board
- * read could falsify — those answer {@link Claim} `None`, so a caller may prove *every* event and
- * still only pay for the two that can lie.
+ * **Two events carry a claim; the other four carry none.** `DONE` out of a `build` state asserts the
+ * work exists, `PASS` out of a `review` state asserts every derived namespace judged it. A
+ * `BLOCKED`, a `WIP`, an `UNBLOCKED`, a `FAIL`, a `DONE` out of `ship` or a `DONE` out of a child's
+ * `integrate` asserts nothing a read could falsify — those answer {@link Claim} `None`, so a caller
+ * may prove *every* event and still only pay for the two that can lie.
+ *
+ * **What the two events claim is the same question asked of a different artifact**, and which
+ * artifact is structural: {@link roleOf} reads it off the task's own name, exactly as the emitter
+ * wrote it. Nothing here chooses a per-run policy, so a child cannot be proven against a PR it was
+ * never allowed to open, and a tail cannot be proven against a range nobody judged.
  *
  * The state names are the shipped templates' (`./templates/coder.workflow.json` and the regions
  * `./emit.ts` renders). A machine that renames them derives no claim and says so, which keeps a
  * foreign workflow routable instead of refused.
  */
 
-/** The leaf state a builder runs in — a `DONE` out of it claims a PR. */
+import {issueRefsIn} from "../build/commit-message.ts";
+import {parseLaneBranch} from "../build/lane.ts";
+
+/** The leaf state a builder runs in — a `DONE` out of it claims the built work exists. */
 export const BUILD_STATE = "build";
 
-/** The leaf state a reviewer runs in — a `PASS` out of it claims current-head verdicts. */
+/** The leaf state a reviewer runs in — a `PASS` out of it claims a verdict that still binds. */
 export const REVIEW_STATE = "review";
 
 /** The label a no-PR builder outcome is only legal under (`build`'s `SUCCESS-NO-PR`). */
 export const INVESTIGATION_LABEL = "type:investigation";
 
+/**
+ * Which of the two shapes a task sits in — the union that makes "a child with no epic" unwritable.
+ *
+ * `Tail` and `Single` are separate even though they claim the same artifacts: they reach the same
+ * arms by different routes, and folding them would leave the epic number unreadable at the one place
+ * a diagnostic wants to name it.
+ */
+export type LaneRole =
+	| {readonly _tag: "Single"}
+	| {readonly _tag: "Child"; readonly epic: number}
+	| {readonly _tag: "Tail"; readonly epic: number};
+
+/**
+ * The epic a lane's tail phase reviews and ships, read off the tail task's own name — `null` on a
+ * single-issue lane, which has no tail. That name is the emitter's structural mark of the one-PR
+ * shape (`./emit.ts`'s `epicTaskId`), so recognising it needs no second declaration.
+ */
+export const epicOf = (taskIds: ReadonlyArray<string>): number | null => {
+	for (const taskId of taskIds) {
+		const named = /^epic_(\d+)$/.exec(taskId);
+		if (named?.[1] !== undefined) return Number.parseInt(named[1], 10);
+	}
+	return null;
+};
+
+/** The role a task plays: on an epic lane every task but the tail is a child region. */
+export const roleOf = (taskId: string, epic: number | null): LaneRole => {
+	if (epic === null) return {_tag: "Single"};
+	return taskId === `epic_${epic}` ? {_tag: "Tail", epic} : {_tag: "Child", epic};
+};
+
 export type Claim =
 	| {readonly _tag: "OpenPull"}
 	| {readonly _tag: "HeadVerdicts"}
+	| {readonly _tag: "RangeCommits"; readonly epic: number}
+	| {readonly _tag: "RangeVerdict"; readonly epic: number}
 	| {readonly _tag: "None"; readonly why: string};
 
-/** What this event, recorded out of this leaf state, asserts about the board. */
-export const claimOf = (event: string, leaf: string): Claim => {
-	if (event === "DONE" && leaf === BUILD_STATE) return {_tag: "OpenPull"};
-	if (event === "PASS" && leaf === REVIEW_STATE) return {_tag: "HeadVerdicts"};
+/** What this event, recorded out of this leaf state in this role, asserts about the world. */
+export const claimOf = (event: string, leaf: string, role: LaneRole): Claim => {
+	const child = role._tag === "Child";
+	if (event === "DONE" && leaf === BUILD_STATE) {
+		return child ? {_tag: "RangeCommits", epic: role.epic} : {_tag: "OpenPull"};
+	}
+	if (event === "PASS" && leaf === REVIEW_STATE) {
+		return child ? {_tag: "RangeVerdict", epic: role.epic} : {_tag: "HeadVerdicts"};
+	}
 	return {
 		_tag: "None",
-		why: `${event} out of "${leaf}" asserts no board artifact — only DONE out of "${BUILD_STATE}" and PASS out of "${REVIEW_STATE}" do`,
+		why: `${event} out of "${leaf}" asserts no artifact — only DONE out of "${BUILD_STATE}" and PASS out of "${REVIEW_STATE}" do`,
 	};
 };
 
 /**
- * The issue a task drives: the child number an emitted region is named for, else the lane's own id.
+ * The issue a task drives: the number an emitted region is named for — a child's `issue_<n>` or the
+ * tail's `epic_<n>` — else the lane's own id.
  *
  * `null` where neither is a number — the proof has nothing to read, and a caller must say so rather
  * than pick a plausible issue.
  */
 export const issueOf = (taskId: string, lane: string): number | null => {
-	const region = /^issue_(\d+)$/.exec(taskId);
+	const region = /^(?:issue|epic)_(\d+)$/.exec(taskId);
 	if (region?.[1] !== undefined) return Number.parseInt(region[1], 10);
-	return /^\d+$/.test(lane) ? Number.parseInt(lane, 10) : null;
+	const key = lane.trim();
+	return /^\d+$/.test(key) ? Number.parseInt(key, 10) : null;
+};
+
+/** One local branch, with the commits it adds over the epic branch already read off the tree. */
+export interface BranchFact {
+	readonly branch: string;
+	/** The branch tip as an object name — what a range read is taken against, never the ref name. */
+	readonly tip: string;
+	/** Every message the range adds, whole. Empty where the branch adds nothing. */
+	readonly messages: ReadonlyArray<string>;
+}
+
+export type RangeTrace =
+	| {
+			readonly _tag: "One";
+			readonly branch: string;
+			readonly tip: string;
+			readonly commits: number;
+	  }
+	| {readonly _tag: "None"; readonly why: string}
+	| {readonly _tag: "Many"; readonly branches: ReadonlyArray<string>};
+
+/** The local branches a lane branch's own grammar says were cut for this child (`build branch`). */
+export const childLaneBranches = (
+	issue: number,
+	branches: ReadonlyArray<string>,
+): ReadonlyArray<string> =>
+	branches.filter((name) => {
+		const lane = parseLaneBranch(name);
+		return lane !== null && lane._tag === "Create" && lane.number === issue;
+	});
+
+/**
+ * The one range a child's `DONE` out of `build` stands on.
+ *
+ * A child opens no PR, so the artifact is the commits themselves — and a branch alone is not one: a
+ * `build branch` that was cut and never built on adds nothing, and commits that name another issue
+ * are another child's work sitting on a name this issue happens to match. Both are `None` with the
+ * reason, because their remedies differ and an operator reading "absent" needs told which.
+ *
+ * Several branches carrying this child's commits is its own answer for the same reason
+ * {@link tracePulls} keeps `Many`: which one the lane owns is not derivable here, and picking the
+ * first records a `DONE` against a range nobody reviewed.
+ */
+export const traceRange = (
+	issue: number,
+	base: string,
+	facts: ReadonlyArray<BranchFact>,
+): RangeTrace => {
+	const carrying = facts.filter((fact) =>
+		fact.messages.some((message) => issueRefsIn(message).includes(issue)),
+	);
+	const [first] = carrying;
+	if (first !== undefined) {
+		return carrying.length === 1
+			? {_tag: "One", branch: first.branch, tip: first.tip, commits: first.messages.length}
+			: {_tag: "Many", branches: carrying.map((fact) => fact.branch)};
+	}
+	const names = facts.map((fact) => fact.branch).join(", ");
+	if (facts.length === 0) {
+		return {
+			_tag: "None",
+			why: `no local branch in this tree was cut for #${issue}, so nothing was built here for ${base} to carry`,
+		};
+	}
+	return facts.every((fact) => fact.messages.length === 0)
+		? {
+				_tag: "None",
+				why: `${names} adds no commit over ${base} — the branch was cut and not built on`,
+			}
+		: {_tag: "None", why: `no commit ${names} adds over ${base} names #${issue}`};
 };
 
 /** One candidate pull request, read off the board rather than off the search row. */
@@ -169,24 +289,28 @@ export type Proof =
  * The three refusals stay apart because their remedies are opposite: a `fail` at the head says
  * record `FAIL` instead, an `absent`/`stale`/`unknown` says the read is incomplete — re-read and
  * record nothing, which is exactly the in-flight refusal `operate` states in prose.
+ *
+ * `subject` is what the verdicts were read on — `#<pr>` for a PR-scoped read, the child's range for
+ * a range-scoped one. One fold serves both, so the bar a child's review must clear cannot drift
+ * from the bar the tail's does.
  */
-export const foldNamespaces = (rows: ReadonlyArray<NamespaceRow>, pr: number): Proof => {
+export const foldNamespaces = (rows: ReadonlyArray<NamespaceRow>, subject: string): Proof => {
 	const failed = rows.filter((row) => row.state === "fail");
 	if (failed.length > 0) {
 		return {
 			_tag: "Contradicted",
-			what: `#${pr} holds a current-head FAIL in ${failed.map((row) => row.namespace).join(", ")} — the artifact says FAIL, so PASS is not the event this outcome earns`,
+			what: `${subject} holds a current-head FAIL in ${failed.map((row) => row.namespace).join(", ")} — the artifact says FAIL, so PASS is not the event this outcome earns`,
 		};
 	}
 	const pending = rows.filter((row) => row.state !== "pass");
 	if (pending.length > 0) {
 		return {
 			_tag: "InFlight",
-			what: `#${pr} has no current-head verdict in ${pending.map((row) => `${row.namespace} (${row.state})`).join(", ")} — the review is not finished, so nothing is recorded`,
+			what: `${subject} has no current-head verdict in ${pending.map((row) => `${row.namespace} (${row.state})`).join(", ")} — the review is not finished, so nothing is recorded`,
 		};
 	}
 	return {
 		_tag: "Proven",
-		note: `every derived namespace holds a current-head PASS on #${pr}: ${rows.map((row) => row.namespace).join(", ")}`,
+		note: `every derived namespace holds a current-head PASS on ${subject}: ${rows.map((row) => row.namespace).join(", ")}`,
 	};
 };

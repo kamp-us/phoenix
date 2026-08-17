@@ -347,6 +347,58 @@ export const listTreePaths = (sha: string): Shell<Attempt<ReadonlyArray<string>>
 		return r.ok ? ok(r.stdout.split("\0").filter((p) => p !== "")) : fail(r.reason);
 	});
 
+/** Every local branch this tree's refs carry, in git's own ordering. */
+export const localBranches: Shell<Attempt<ReadonlyArray<string>>> = Effect.gen(function* () {
+	const r = yield* execCapture("git", ["for-each-ref", "--format=%(refname:short)", "refs/heads"]);
+	return r.ok
+		? ok(
+				r.stdout
+					.split("\n")
+					.map((line) => line.trim())
+					.filter((line) => line !== ""),
+			)
+		: fail(r.reason);
+});
+
+/** One commit a range adds: its object name and its whole message, subject and body together. */
+export interface RangeCommit {
+	readonly sha: string;
+	readonly message: string;
+}
+
+const RECORD_SEPARATOR = "\x1e";
+const FIELD_SEPARATOR = "\x1f";
+
+/**
+ * The commits `tip` adds over `base`, newest first — two dots, because the question is what this
+ * branch carries that the base does not.
+ *
+ * Framed with the two ASCII separators rather than newlines or NULs: a commit message is multi-line
+ * by construction, so a line-oriented format splits one message into commits nobody wrote, and `-z`
+ * frames records with the same NUL a pathological message may carry inside it.
+ */
+export const rangeCommits = (
+	base: string,
+	tip: string,
+): Shell<Attempt<ReadonlyArray<RangeCommit>>> =>
+	Effect.gen(function* () {
+		const r = yield* execCapture("git", [
+			"log",
+			`--format=%H${FIELD_SEPARATOR}%B${RECORD_SEPARATOR}`,
+			`${base}..${tip}`,
+		]);
+		if (!r.ok) return fail(r.reason);
+		const rows: RangeCommit[] = [];
+		for (const record of r.stdout.split(RECORD_SEPARATOR)) {
+			if (record.trim() === "") continue;
+			const at = record.indexOf(FIELD_SEPARATOR);
+			const sha = at < 0 ? "" : record.slice(0, at).trim();
+			if (!isObjectName(sha)) return fail(`unreadable log record "${record.trim().slice(0, 80)}"`);
+			rows.push({sha, message: record.slice(at + 1).trim()});
+		}
+		return ok(rows);
+	});
+
 /** The merge base of two commits, as a full object name. */
 export const mergeBase = (a: string, b: string): Shell<Attempt<string>> =>
 	Effect.gen(function* () {
