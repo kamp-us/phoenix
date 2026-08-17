@@ -2,15 +2,21 @@
  * The lane-brief — the bytes a lane driver hands one freshly-spawned fabrika shell.
  *
  * Three fixed sections and nothing else: `## Task` (which lane, which task, which state, which
- * shell), `## Ground` (the URLs, and only URLs), and `## Rules` (byte-fixed text this module owns).
+ * shell), `## Ground` (links and refs, never prose), and `## Rules` (byte-fixed text this module
+ * owns).
  *
  * **The rules are the format's own bytes, not a driver's phrasing.** A prompt composed per dispatch
  * is a prompt two drivers write differently, and the rule that matters most — carry URLs, never a
  * restatement — is then enforced by nothing but the driver's care. Fixing the bytes here makes the
  * drift unrepresentable rather than detectable.
  *
- * **`## Ground` carries URLs and no content.** A brief that summarised an issue would hand the shell
- * a stale contract to work from, and the shell has verbs that read the live one.
+ * **`## Ground` carries URLs, git refs and no content.** A brief that summarised an issue would hand
+ * the shell a stale contract to work from, and the shell has verbs that read the live one.
+ *
+ * Ground comes in two shapes because an epic run has one branch and one PR (ADR 0285): a child's
+ * states have no PR at all — they build in a worktree and their review judges a commit range on the
+ * epic branch — while every other state has one PR to read. {@link LaneGround} is that union, so a
+ * brief carrying both a PR and an epic branch is not a value anyone can construct.
  */
 
 import type {NonEmptyReadonlyArray, WireEmit, WireRead, WireReadLines} from "./format.ts";
@@ -24,6 +30,28 @@ export const artifactUrl = (raw: string): ArtifactUrl | null => {
 	const value = raw.trim();
 	return /^https:\/\/\S+$/.test(value) ? (value as ArtifactUrl) : null;
 };
+
+declare const GIT_REF: unique symbol;
+
+/** A git ref name. Branded so a URL, a range, or a flag-shaped word cannot ride in one. */
+export type GitRef = string & {readonly [GIT_REF]: true};
+
+export const gitRef = (raw: string): GitRef | null => {
+	const value = raw.trim();
+	return /^[A-Za-z0-9][\w./-]*$/.test(value) && !value.includes("..") ? (value as GitRef) : null;
+};
+
+/** The assembly branch of one epic run — one branch and one PR per run (ADR 0285). */
+export const epicBranch = (epic: number): GitRef => `epic/${epic}` as GitRef;
+
+/**
+ * The range a child's review judges, tipped at `HEAD`.
+ *
+ * The far end is the shell's own worktree head rather than a branch name this format mints: the
+ * child's local branch is cut by `build branch`, which owns its spelling, and a brief naming a
+ * branch nobody created would send the reviewer to read a range that does not exist.
+ */
+export const rangeOf = (branch: GitRef): string => `${branch}..HEAD`;
 
 /** The three leaf states that route to a shell. Every other state is a refusal, never a guess. */
 export const SHELL_STATES = ["build", "review", "ship"] as const;
@@ -52,6 +80,17 @@ export const shellState = (raw: string): ShellState | null => {
 	return (SHELL_STATES as ReadonlyArray<string>).includes(value) ? (value as ShellState) : null;
 };
 
+/**
+ * What the shell works over.
+ *
+ * `Pull` is a single-issue lane's state and an epic lane's tail — one PR to read, `null` only on
+ * `build`, where construction has none yet. `Epic` is a child's state on an epic lane: the epic
+ * issue, the assembly branch its worktree is cut from, and no PR, because a child never opens one.
+ */
+export type LaneGround =
+	| {readonly _tag: "Pull"; readonly pr: ArtifactUrl | null}
+	| {readonly _tag: "Epic"; readonly epic: ArtifactUrl; readonly branch: GitRef};
+
 export interface LaneBrief {
 	/** The lane id as the store names it — by convention the driven issue number. */
 	readonly lane: string;
@@ -60,8 +99,7 @@ export interface LaneBrief {
 	readonly state: ShellState;
 	readonly shell: LaneShell;
 	readonly issue: ArtifactUrl;
-	/** The lane's open PR. `null` only on `build`, where construction has none yet. */
-	readonly pr: ArtifactUrl | null;
+	readonly ground: LaneGround;
 }
 
 export type LaneBriefRead = WireRead<LaneBrief>;
@@ -79,8 +117,37 @@ Invoke every fabrika verb as \`node packages/fabrika-cli/src/bin.ts <group> <ver
 \`fabrika\` binstub: in a worktree it resolves to another checkout's code (#5679), so its answer
 describes a tree you are not standing in.`;
 
+/**
+ * The rules an epic lane's child state adds, byte-fixed the same way and appended to {@link RULES}.
+ *
+ * Which text a brief carries is structural — an `Epic` ground carries both, a `Pull` ground carries
+ * only the first — so this stays a fixed pair of texts rather than a per-dispatch choice.
+ */
+export const EPIC_RULES = `This lane is one epic run: one shared branch and one pull request at its tail (ADR 0285). Build in
+your own worktree on a local branch cut from \`branch\`, and never push or open a pull request for a
+child state — the merge happens once, after the epic review.
+A child's review judges the \`range\` above and records its verdict on the child issue in the
+\`range-verdict-marker\` format, composed through
+\`node packages/fabrika-cli/src/bin.ts wire emit --format range-verdict-marker\`.`;
+
 /** The section headings this format admits, in the order it emits them. */
 export const SECTIONS = ["Task", "Ground", "Rules"] as const;
+
+/** The `## Ground` fields a ground carries, after the `issue` every brief has. */
+const groundFields = (brief: LaneBrief): ReadonlyArray<readonly [string, string]> => {
+	if (brief.ground._tag === "Pull") {
+		return brief.ground.pr === null ? [] : [["pr", brief.ground.pr]];
+	}
+	const {epic, branch} = brief.ground;
+	return [
+		["epic", epic],
+		["branch", branch],
+		...(brief.state === "review" ? [["range", rangeOf(branch)] as const] : []),
+	];
+};
+
+const rulesFor = (ground: LaneGround): string =>
+	ground._tag === "Pull" ? RULES : `${RULES}\n${EPIC_RULES}`;
 
 export const emit = (brief: LaneBrief): string =>
 	[
@@ -91,9 +158,9 @@ export const emit = (brief: LaneBrief): string =>
 		`shell: ${brief.shell}`,
 		"## Ground",
 		`issue: ${brief.issue}`,
-		...(brief.pr === null ? [] : [`pr: ${brief.pr}`]),
+		...groundFields(brief).map(([key, value]) => `${key}: ${value}`),
 		"## Rules",
-		RULES,
+		rulesFor(brief.ground),
 		"",
 	].join("\n");
 
@@ -159,6 +226,57 @@ const fieldsOf = (sections: ReadonlyArray<Section>): FieldScan => {
 	return {_tag: "Fields", fields};
 };
 
+type GroundScan =
+	| {readonly _tag: "Ground"; readonly ground: LaneGround}
+	| {readonly _tag: "Bad"; readonly reason: string; readonly field: string};
+
+const bad = (reason: string, field: string): GroundScan => ({_tag: "Bad", reason, field});
+
+/**
+ * Which ground the fields carry, and whether the state may stand on it — the one reader both `read`
+ * and {@link parseFields} go through, so a brief cannot be composable and unreadable at once.
+ */
+const groundOf = (fields: ReadonlyMap<string, string>, state: ShellState): GroundScan => {
+	const value = (key: string): string => (fields.get(key) ?? "").trim();
+	const prRaw = value("pr");
+	const epicRaw = value("epic");
+	const branchRaw = value("branch");
+	const rangeRaw = value("range");
+	if (epicRaw === "" && branchRaw === "" && rangeRaw === "") {
+		const pr = prRaw === "" ? null : artifactUrl(prRaw);
+		if (pr === null && prRaw !== "") return bad(`"${prRaw}" is not a PR URL`, "pr");
+		// A reviewer or shipper with no PR has nothing to judge or merge, so the brief that would send
+		// one is not a well-formed brief — the ambiguity is the driver's to resolve before dispatch.
+		if (pr === null && state !== "build") {
+			return bad(`a "${state}" brief carries no PR URL — that shell has nothing to read`, "pr");
+		}
+		return {_tag: "Ground", ground: {_tag: "Pull", pr}};
+	}
+	if (prRaw !== "") {
+		return bad(
+			"an epic lane's child state has no PR — one run is one PR, merged at its tail",
+			"pr",
+		);
+	}
+	const epic = artifactUrl(epicRaw);
+	if (epic === null) return bad(`"${epicRaw}" is not an epic issue URL`, "epic");
+	const branch = gitRef(branchRaw);
+	if (branch === null) return bad(`"${branchRaw}" is not a branch name`, "branch");
+	if (state === "ship") {
+		return bad("a child state never ships — an epic run merges once, at its tail", "state");
+	}
+	const expected = state === "review" ? rangeOf(branch) : "";
+	if (rangeRaw !== expected) {
+		return bad(
+			state === "review"
+				? `a child review judges "${expected}", and this brief names "${rangeRaw}"`
+				: `a "${state}" brief names a range, and nothing has landed for one to judge`,
+			"range",
+		);
+	}
+	return {_tag: "Ground", ground: {_tag: "Epic", epic, branch}};
+};
+
 /** Read a brief. Total: `Found` | `Absent` | `Malformed`. */
 export const read = (artifact: string): LaneBriefRead => {
 	const {sections, stray} = sectionsOf(artifact);
@@ -195,13 +313,6 @@ export const read = (artifact: string): LaneBriefRead => {
 		);
 	}
 
-	if (trimmed(rules.lines).join("\n") !== RULES) {
-		return malformed(
-			'"## Rules" does not carry this format\'s own text — the rules are byte-fixed, so an edited one is not a brief',
-			trimmed(rules.lines).join("\n"),
-		);
-	}
-
 	const scan = fieldsOf([task, ground]);
 	if (scan._tag === "NotAField") {
 		return malformed(`a section carries a line that is not a field: "${scan.line}"`, scan.line);
@@ -230,18 +341,22 @@ export const read = (artifact: string): LaneBriefRead => {
 	if (issue === null) {
 		return malformed(`"${(fields.get("issue") ?? "").trim()}" is not an issue URL`, "issue");
 	}
-	const prRaw = (fields.get("pr") ?? "").trim();
-	const pr = prRaw === "" ? null : artifactUrl(prRaw);
-	if (pr === null && prRaw !== "") return malformed(`"${prRaw}" is not a PR URL`, "pr");
-	// A reviewer or shipper with no PR has nothing to judge or merge, so the brief that would send
-	// one is not a well-formed brief — the ambiguity is the driver's to resolve before dispatch.
-	if (pr === null && state !== "build") {
-		return malformed(`a "${state}" brief carries no PR URL — that shell has nothing to read`, "pr");
+	const scanned = groundOf(fields, state);
+	if (scanned._tag === "Bad") return malformed(scanned.reason, scanned.field);
+
+	// The rules are checked against the ground's own text, so a child brief carrying only the
+	// single-issue rules — the shape that would let a child push and open its own PR — is malformed.
+	const expected = rulesFor(scanned.ground);
+	if (trimmed(rules.lines).join("\n") !== expected) {
+		return malformed(
+			'"## Rules" does not carry this format\'s own text — the rules are byte-fixed, so an edited one is not a brief',
+			trimmed(rules.lines).join("\n"),
+		);
 	}
 
 	return {
 		_tag: "Found",
-		value: {lane: laneRaw, task: taskName, state, shell, issue, pr},
+		value: {lane: laneRaw, task: taskName, state, shell, issue, ground: scanned.ground},
 	};
 };
 
@@ -252,7 +367,7 @@ export const renderBrief = (brief: LaneBrief): NonEmptyReadonlyArray<string> => 
 	`state\t${brief.state}`,
 	`shell\t${brief.shell}`,
 	`issue\t${brief.issue}`,
-	...(brief.pr === null ? [] : [`pr\t${brief.pr}`]),
+	...groundFields(brief).map(([key, value]) => `${key}\t${value}`),
 ];
 
 export type LaneBriefFields =
@@ -281,21 +396,17 @@ export const parseFields = (fields: string): LaneBriefFields => {
 	const task = (values.get("task") ?? "").trim();
 	const state = shellState(values.get("state") ?? "");
 	const issue = artifactUrl(values.get("issue") ?? "");
-	const prRaw = (values.get("pr") ?? "").trim();
-	const pr = prRaw === "" ? null : artifactUrl(prRaw);
 	if (laneRaw === "") return {_tag: "Unusable", reason: "no lane id"};
 	if (task === "") return {_tag: "Unusable", reason: "no task name"};
 	if (state === null) {
 		return {_tag: "Unusable", reason: `no shell state (${SHELL_STATES.join("/")})`};
 	}
 	if (issue === null) return {_tag: "Unusable", reason: "no issue URL"};
-	if (pr === null && prRaw !== "") return {_tag: "Unusable", reason: "no PR URL"};
-	if (pr === null && state !== "build") {
-		return {_tag: "Unusable", reason: `a "${state}" brief needs a PR URL`};
-	}
+	const scanned = groundOf(values, state);
+	if (scanned._tag === "Bad") return {_tag: "Unusable", reason: scanned.reason};
 	return {
 		_tag: "Fields",
-		brief: {lane: laneRaw, task, state, shell: SHELLS[state], issue, pr},
+		brief: {lane: laneRaw, task, state, shell: SHELLS[state], issue, ground: scanned.ground},
 	};
 };
 

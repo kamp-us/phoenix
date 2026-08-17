@@ -122,6 +122,13 @@ links and no content at all: the shell re-reads its own issue, PR and verdicts t
 verbs. A `review` or `ship` brief with no PR is malformed rather than dispatchable, because that
 shell would have nothing to read.
 
+Ground comes in two shapes, because an epic run is one branch and one pull request (ADR 0285). A
+child state on an epic lane has no PR to name at all: it carries the epic issue, the branch its
+worktree is cut from, and — at `review` — the commit range whose verdict lands on the child issue as
+a `range-verdict-marker`. Those briefs carry a second byte-fixed rules paragraph saying so, so a
+child brief holding only the single-issue rules — the one that would let a child push and open its
+own PR — reads back malformed. The run's tail task is the PR shape again, unchanged.
+
 ### `map-ticket`
 
 This is how a wayfinding frontier ticket says which map it belongs to. The load-bearing field is the

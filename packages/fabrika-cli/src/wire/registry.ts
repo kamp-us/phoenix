@@ -259,7 +259,7 @@ export const registeredFormats: ReadonlyArray<WireFormat> = [
 	{
 		key: "lane-brief",
 		purpose:
-			"the spawn prompt a lane driver hands one fabrika shell — which task and state it serves, the URLs of its ground, and the format's own byte-fixed rules",
+			"the spawn prompt a lane driver hands one fabrika shell — which task and state it serves, the ground it stands on (a PR, or an epic run's branch and range), and the format's own byte-fixed rules",
 		module: "packages/fabrika-cli/src/wire/lane-brief.ts",
 		producers: ["operate"],
 		consumers: ["build", "review", "ship"],
@@ -289,6 +289,18 @@ export const registeredFormats: ReadonlyArray<WireFormat> = [
 					artifact: `## Task\nlane: 5751\ntask: issue\nstate: build\nshell: builder\n## Ground\nissue: https://github.com/kamp-us/phoenix/issues/5751\n## Rules\n${laneBrief.RULES}\n`,
 					values: ["5751", "build", "builder", "https://github.com/kamp-us/phoenix/issues/5751"],
 				},
+				{
+					shape: "an epic lane's child review — the range it judges, and no PR anywhere",
+					artifact: `## Task\nlane: 5800\ntask: issue_5828\nstate: review\nshell: reviewer\n## Ground\nissue: https://github.com/kamp-us/phoenix/issues/5828\nepic: https://github.com/kamp-us/phoenix/issues/5800\nbranch: epic/5800\nrange: epic/5800..HEAD\n## Rules\n${laneBrief.RULES}\n${laneBrief.EPIC_RULES}\n`,
+					values: [
+						"issue_5828",
+						"review",
+						"https://github.com/kamp-us/phoenix/issues/5828",
+						"https://github.com/kamp-us/phoenix/issues/5800",
+						"epic/5800",
+						"epic/5800..HEAD",
+					],
+				},
 			],
 			absent: "Spawning the builder on #5751 now — will report back when the PR is open.\n",
 			malformed: [
@@ -312,6 +324,19 @@ export const registeredFormats: ReadonlyArray<WireFormat> = [
 				{
 					drift: "the shell disagrees with the state it was routed from",
 					artifact: `## Task\nlane: 5751\ntask: issue\nstate: build\nshell: shipper\n## Ground\nissue: https://github.com/kamp-us/phoenix/issues/5751\n## Rules\n${laneBrief.RULES}\n`,
+				},
+				{
+					drift: "an epic lane's child brief carries a PR — one run is one PR, merged at its tail",
+					artifact: `## Task\nlane: 5800\ntask: issue_5828\nstate: review\nshell: reviewer\n## Ground\nissue: https://github.com/kamp-us/phoenix/issues/5828\nepic: https://github.com/kamp-us/phoenix/issues/5800\nbranch: epic/5800\nrange: epic/5800..HEAD\npr: https://github.com/kamp-us/phoenix/pull/5890\n## Rules\n${laneBrief.RULES}\n${laneBrief.EPIC_RULES}\n`,
+				},
+				{
+					drift: "a child review names no range — the reviewer would have nothing scoped to judge",
+					artifact: `## Task\nlane: 5800\ntask: issue_5828\nstate: review\nshell: reviewer\n## Ground\nissue: https://github.com/kamp-us/phoenix/issues/5828\nepic: https://github.com/kamp-us/phoenix/issues/5800\nbranch: epic/5800\n## Rules\n${laneBrief.RULES}\n${laneBrief.EPIC_RULES}\n`,
+				},
+				{
+					drift:
+						"a child brief carries only the single-issue rules, which let it push and open a PR",
+					artifact: `## Task\nlane: 5800\ntask: issue_5828\nstate: build\nshell: builder\n## Ground\nissue: https://github.com/kamp-us/phoenix/issues/5828\nepic: https://github.com/kamp-us/phoenix/issues/5800\nbranch: epic/5800\n## Rules\n${laneBrief.RULES}\n`,
 				},
 			],
 		},

@@ -7,7 +7,12 @@
  * write differently, and the "URLs, never restatements" rule is then enforced by nothing but care.
  *
  * The brief is a dispatch artifact, consumed in-session and never posted, so it is not leak-scanned.
- * It carries no path and no content — only URLs the board already published.
+ * It carries no path and no content — only URLs the board already published, and the epic branch the
+ * emitter's own shape names.
+ *
+ * An epic lane's children are the one place where no PR is resolved at all: one run is one branch and
+ * one PR, so a child builds in a worktree and its review judges a commit range, while the tail task
+ * briefs that single PR under the same refusals a single-issue lane has always used (ADR 0285).
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
@@ -15,14 +20,18 @@ import {getIssue, resolveRepo} from "../io/issues.ts";
 import {openPullsClosing} from "../io/pulls.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {
+	type ArtifactUrl,
 	artifactUrl,
 	emit as emitBrief,
+	epicBranch,
 	type LaneBrief,
+	type LaneGround,
 	shellOf,
 	shellState,
 } from "../wire/lane-brief.ts";
 import {ISSUE_UNRESOLVED, LANE_UNREADABLE, NO_SHELL, PR_AMBIGUOUS, TASK_UNKNOWN} from "./codes.ts";
 import {foldLog, resolveTask} from "./fold.ts";
+import type {CompiledLane} from "./machine.ts";
 import {loadRefusal, replayRefusal} from "./refusals.ts";
 import {type LaneRef, loadLane} from "./store.ts";
 
@@ -36,14 +45,75 @@ export interface BriefOptions extends LaneRef {
 }
 
 /**
- * The issue a task drives: the number in an emitted epic lane's task name (`issue_<n>`), else the
- * lane id itself on a single-issue lane. `null` when neither carries one.
+ * The issue a task drives: the number in an emitted epic lane's task name (`issue_<n>`, or the tail
+ * phase's `epic_<n>`), else the lane id itself on a single-issue lane. `null` when neither carries
+ * one.
  */
 const issueOf = (lane: string, task: string): number | null => {
-	const named = /^issue_(\d+)$/.exec(task);
+	const named = /^(?:issue|epic)_(\d+)$/.exec(task);
 	if (named?.[1] !== undefined) return Number.parseInt(named[1], 10);
 	return /^\d+$/.test(lane.trim()) ? Number.parseInt(lane.trim(), 10) : null;
 };
+
+/**
+ * The epic a lane's tail phase reviews and ships, read off the tail task's own name — `null` on a
+ * single-issue lane, which has no tail. That name is the emitter's structural mark of the one-PR
+ * shape (`emit.ts`'s `epicTaskId`), so recognising it needs no second declaration: on such a lane
+ * every OTHER task is a child region, whose states have no PR at all (ADR 0285).
+ */
+const epicOf = (lane: CompiledLane): number | null => {
+	for (const taskId of Object.keys(lane.tasks)) {
+		const named = /^epic_(\d+)$/.exec(taskId);
+		if (named?.[1] !== undefined) return Number.parseInt(named[1], 10);
+	}
+	return null;
+};
+
+type UrlRead =
+	| {readonly _tag: "Url"; readonly url: ArtifactUrl}
+	| {readonly _tag: "Refused"; readonly outcome: VerbOutcome};
+
+/** One issue's published URL, or the refusal that stands in its place — proven absent vs UNKNOWN. */
+const issueUrl = (
+	verb: string,
+	repo: string,
+	number: number,
+	notes: ReadonlyArray<string>,
+): Effect.Effect<UrlRead, never, ChildProcessSpawner.ChildProcessSpawner> =>
+	Effect.gen(function* () {
+		const record = yield* getIssue(repo, number);
+		if (record._tag === "Absent") {
+			return {
+				_tag: "Refused",
+				outcome: refuse(
+					ISSUE_UNRESOLVED,
+					`${verb}: issue #${number} is proven absent or closed — there is no ground to brief.`,
+					notes,
+				),
+			} as const;
+		}
+		if (record._tag === "Unknown") {
+			return {
+				_tag: "Refused",
+				outcome: refuse(
+					LANE_UNREADABLE,
+					`${verb}: cannot read #${number}: ${record.reason} — the ground is UNKNOWN.`,
+					notes,
+				),
+			} as const;
+		}
+		const url = artifactUrl(record.value.url);
+		return url === null
+			? ({
+					_tag: "Refused",
+					outcome: refuse(
+						LANE_UNREADABLE,
+						`${verb}: the board published no URL for #${number} — the ground is UNKNOWN.`,
+						notes,
+					),
+				} as const)
+			: ({_tag: "Url", url} as const);
+	});
 
 export const runBrief = (
 	options: BriefOptions,
@@ -89,28 +159,30 @@ export const runBrief = (
 				notes,
 			);
 		}
-		const record = yield* getIssue(repo.value, issue);
-		if (record._tag === "Absent") {
-			return refuse(
-				ISSUE_UNRESOLVED,
-				`${VERB}: issue #${issue} is proven absent or closed — there is no ground to brief.`,
-				notes,
-			);
-		}
-		if (record._tag === "Unknown") {
-			return refuse(
-				LANE_UNREADABLE,
-				`${VERB}: cannot read #${issue}: ${record.reason} — the ground is UNKNOWN.`,
-				notes,
-			);
-		}
-		const issueUrl = artifactUrl(record.value.url);
-		if (issueUrl === null) {
-			return refuse(
-				LANE_UNREADABLE,
-				`${VERB}: the board published no URL for #${issue} — the ground is UNKNOWN.`,
-				notes,
-			);
+		const read = yield* issueUrl(VERB, repo.value, issue, notes);
+		if (read._tag === "Refused") return read.outcome;
+
+		const epic = epicOf(loaded.lane);
+		if (epic !== null && task !== `epic_${epic}`) {
+			if (state === "ship") {
+				return refuse(
+					NO_SHELL,
+					`${VERB}: task "${task}" is a child region of epic #${epic}, which has no ship state — an epic run merges once, at its tail.`,
+					notes,
+				);
+			}
+			const epicRead = yield* issueUrl(VERB, repo.value, epic, notes);
+			if (epicRead._tag === "Refused") return epicRead.outcome;
+			const ground: LaneGround = {
+				_tag: "Epic",
+				epic: epicRead.url,
+				branch: epicBranch(epic),
+			};
+			const brief: LaneBrief = {lane: options.lane, task, state, shell, issue: read.url, ground};
+			return answer(emitBrief(brief), [
+				...notes,
+				`${VERB}: task "${task}" is "${state}" on epic #${epic}'s lane — brief the ${shell}; a child state has no PR.`,
+			]);
 		}
 
 		const pulls = yield* openPullsClosing(repo.value, issue);
@@ -150,8 +222,8 @@ export const runBrief = (
 			task,
 			state,
 			shell,
-			issue: issueUrl,
-			pr: prUrl,
+			issue: read.url,
+			ground: {_tag: "Pull", pr: prUrl},
 		};
 		return answer(emitBrief(brief), [
 			...notes,
