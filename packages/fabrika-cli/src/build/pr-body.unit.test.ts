@@ -1,19 +1,31 @@
 import {describe, expect, it} from "vitest";
-import {bodyDefect, classificationIn, hasDeviations, proseOf} from "./pr-body.ts";
+import {bodyDefect, classificationIn, deviationsDefect, proseOf} from "./pr-body.ts";
 
 const body = (extra: string) => `Fixes #4312\n\nsome prose.\n${extra}\n## Deviations\n\nNone.\n`;
 
 describe("the Deviations section blocks, and 'None.' counts", () => {
-	it("accepts a section with content", () => {
-		expect(hasDeviations("## Deviations\nNone.\n")).toBe(true);
+	it("accepts the `None.` claim", () => {
+		expect(deviationsDefect("## Deviations\n\nNone.\n")).toBeNull();
+	});
+
+	it("accepts a four-field entry", () => {
+		const section =
+			"## Deviations\n\n- **Scope narrowing** — **Said:** four gates. **Did:** three. **Why:** the fourth is trivial. **Disposition:** stated here.\n";
+		expect(deviationsDefect(section)).toBeNull();
 	});
 
 	it("refuses a missing section", () => {
-		expect(hasDeviations("Fixes #4312\n")).toBe(false);
+		expect(deviationsDefect("Fixes #4312\n")).not.toBeNull();
 	});
 
 	it("refuses a section whose only content is the next heading — silence is not content (#4542)", () => {
-		expect(hasDeviations("## Deviations\n\n## Testing\nran it\n")).toBe(false);
+		expect(deviationsDefect("## Deviations\n\n## Testing\nran it\n")).not.toBeNull();
+	});
+
+	it("refuses a prose bullet at creation, naming the fields it owes (#5566)", () => {
+		const reason = deviationsDefect("## Deviations\n\n- narrowed the scope a bit.\n");
+		expect(reason).toContain("**Said:**");
+		expect(reason).toContain("**Disposition:**");
 	});
 });
 
@@ -23,7 +35,7 @@ describe("the closing keyword", () => {
 	});
 
 	it("refuses a stray keyword aimed elsewhere — the #4471 auto-close", () => {
-		expect(bodyDefect(`${body("")}\nAlso closes #999.\n`, 4312, false)).toEqual({
+		expect(bodyDefect(body("\nAlso closes #999.\n"), 4312, false)).toEqual({
 			_tag: "StrayClosing",
 			target: 999,
 		});
@@ -34,7 +46,7 @@ describe("the closing keyword", () => {
 	});
 
 	it("refuses a duplicated keyword aimed at the same issue", () => {
-		expect(bodyDefect(`${body("")}\nfixes #4312 again\n`, 4312, false)).toEqual({
+		expect(bodyDefect(body("\nfixes #4312 again\n"), 4312, false)).toEqual({
 			_tag: "DuplicateClosing",
 		});
 	});
@@ -45,7 +57,7 @@ describe("the closing keyword", () => {
 	});
 
 	it("puts the Deviations refusal ahead of the link refusal when both are wrong", () => {
-		expect(bodyDefect("no link, no section", 4312, false)).toEqual({_tag: "NoDeviations"});
+		expect(bodyDefect("no link, no section", 4312, false)?._tag).toBe("NoDeviations");
 	});
 });
 

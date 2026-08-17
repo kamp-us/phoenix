@@ -708,15 +708,22 @@ fabrika review deviations 4321 [--sha <head>] [--repo <owner/name>] [--json]
 | `--json` | boolean | no | `false` | emit the result object |
 
 **Output** — machine channel. First line: `deviations\t<found|none-declared|absent|malformed>`.
-On `found`, one line per entry: `entry\t<class-label-or-->\t<first-line-of-Said>` (the null
-token is the ASCII hyphen `-`, the same one `review verdicts` uses). Then the
+On `found`, one line per entry: `entry\t<class-label-or-->\t<Said>` (the null
+token is the ASCII hyphen `-`, the same one `review verdicts` uses; a **Said** authored across
+wrapped lines is carried in full, collapsed to one line, so the answer never holds a partial clause). Then the
 Tier-M scan over the head diff, one line per hit:
 `tier-m\t<suppression|removed-assertion>\t<file>:<line>\t<token>` — the mechanically-detectable
 §DEV classes (an in-diff `biome-ignore` / `@ts-expect-error` / `test.skip` / `.only`; a deleted
 assertion line), each a fact the judgment layer matches against the disclosed entries.
 
 `none-declared` is the literal `None.` body; `absent` is **no `## Deviations` heading at all**;
-`malformed` is a heading whose section fits neither shape. The three stay distinct on the wire
+`malformed` is a heading whose section fits neither shape. Which shapes those are is not stated
+here: the grammar is the registered `deviations` wire format
+([`packages/fabrika-cli/src/wire/deviations.ts`](../../../../packages/fabrika-cli/src/wire/deviations.ts)),
+which `build pr` refuses against at creation, so a body that verb accepted never reaches this one as
+`malformed` (#5566). On `malformed` and `absent` the verb prints the format's own reason as a
+diagnostic — a gate that answers a bare `malformed` never tells an author which field is missing.
+The three stay distinct on the wire
 because the skill's verdict vocabulary depends on the distinction: absent-on-owing fails closed,
 `None.` is a checked claim, and this verb is what makes the claim checkable — a `None.` printed
 beside a non-empty Tier-M list is a falsified disclosure the caller can see in one read.
