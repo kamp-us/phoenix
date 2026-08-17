@@ -173,8 +173,16 @@ has something worth publishing. So after the merge and its checks pass, and befo
 `DONE`:
 
 ```bash
-git push origin epic/$lane_key
+fabrika lane push $lane_key
 ```
+
+The verb, not your own `git push`: it derives `epic/<n>` from the number rather than taking a branch
+name, refuses any tree not standing on it, and then reads the ref back off the remote — so
+`PUSH-VERDICT: MOVED` on the last stdout line is the only thing that means the assembly landed. A
+bare push cannot say that, which is why the corpus forbids one ([#4213](https://github.com/kamp-us/phoenix/issues/4213)),
+and `build push` cannot serve here because the assembly branch carries no build claim's nonce. There
+is no force flag to reach for: the branch only ever grows, so exit `29` means fetch and re-merge, and
+exit `30` is a proven "the remote did not move" — never a `MOVED` you assume.
 
 **The first of those pushes also opens the run's one PR**, as a draft — a draft carries the CI
 signal and the board's view of the run without inviting a review the machine has not asked for.

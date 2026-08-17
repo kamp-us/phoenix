@@ -142,3 +142,29 @@ export const PROOF_CONTRADICTED = 24;
  * picking one would record a DONE against another lane's work — a park, never a guess.
  */
 export const PROOF_AMBIGUOUS = 25;
+
+/**
+ * The tree is not standing on the run's assembly branch — a detached HEAD, or another branch checked
+ * out. Refused before anything is pushed: the branch name is derived from the epic number, so a push
+ * from anywhere else would publish a tree this run never assembled.
+ */
+export const WRONG_BRANCH = 26;
+
+/**
+ * The push would not fast-forward — the local head does not contain the published assembly head, so
+ * it would drop commits the remote already carries. The assembly branch only ever grows (every
+ * landing is a merge onto it), so no force path exists and no flag opens one: the remedy is to fetch
+ * and re-merge, never to overwrite.
+ *
+ * `27` and `28` are skipped rather than taken: the base already speaks for both
+ * (`report`'s `QUEUE_UNREADABLE` and `SEARCH_UNREADABLE`), and `exit-code-alignment.ts` reds on a
+ * private code that collides with one of the base's.
+ */
+export const UNSAFE_PUSH = 29;
+
+/**
+ * Proven: the push ran and the remote ref is **not** at the local head. Its own seat rather than
+ * {@link APPEND_UNKNOWN}'s, because "it did not land" and "whether it landed is unreadable" take
+ * opposite remedies — push again, versus re-read before touching anything.
+ */
+export const REF_NOT_MOVED = 30;
