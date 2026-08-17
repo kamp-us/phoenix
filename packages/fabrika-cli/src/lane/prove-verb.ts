@@ -190,7 +190,7 @@ interface Traced {
  * `build --partial` emits; the search index sees any body but lags a fresh PR — and this verb runs
  * at the worst moment for that lag, right after a builder reports `SHIPPED-PR`. Reading the edge
  * first means a lagging index can only fail to add a candidate, never hide the closing one, so a
- * lane that shipped is not recorded `BLOCKED` on exit `21`. `lane brief` asks the same question
+ * lane that shipped is not recorded `BLOCKED` on exit `22`. `lane brief` asks the same question
  * through the same edge, so the two lane verbs agree on the closing-link half.
  *
  * Both reads only nominate; the body's link decides. A candidate that has closed since it was

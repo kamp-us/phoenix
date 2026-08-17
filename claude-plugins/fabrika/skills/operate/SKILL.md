@@ -135,7 +135,7 @@ event and never skipped as an optimisation. Its refusals each name a different n
 | Exit | What it read | What you do |
 | --- | --- | --- |
 | `0` | the artifact is there (or the event claims none) | record the event |
-| `22` | no open PR links the task's issue, and the issue is not one a no-PR outcome is legal on | the report is unproven — record `BLOCKED`, never the `DONE` |
+| `22` | no open PR links the task's issue, and no legal no-PR outcome is proven either — the issue is not a `type:investigation`, or it is one but no diagnosis was posted since the task entered `build` | the report is unproven — record `BLOCKED`, never the `DONE` |
 | `23` | a derived namespace has no current-head verdict | record **nothing**; re-read this pass |
 | `24` | a current-head `FAIL` under a claimed `PASS` | record the event the artifact supports (`FAIL`) |
 | `25` | several open PRs link the issue | park — step 4, naming the ambiguity |
