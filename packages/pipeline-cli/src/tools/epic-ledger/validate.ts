@@ -9,7 +9,7 @@
  * presentation order; (2) the final defect list is sorted by canonical defect
  * rank then by the finding's first ref. So a permuted child array — or a
  * permuted `## Dependencies` listing — yields a byte-identical defect list and
- * an identical `ledgerSignature`. See `.claude/skills/gh-issue-intake-formats.md`
+ * an identical `ledgerSignature`. See `claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md`
  * for the conventions each check enforces.
  */
 import type {Defect, DefectType} from "./Defect.ts";

@@ -26,7 +26,7 @@ import {parseWorkspacePackageGlobs} from "./tools/publish-isolation-guard/publis
  */
 const GUARDED_WORKSPACE_ROOTS = ["packages", "infra"] as const;
 
-/** Physical resolution — the `.claude/skills` symlink's `..` folding can otherwise walk past the root. */
+/** Physical resolution — reached through a symlinked path, `..` folding can otherwise walk past the root. */
 const repoRoot = (): string => {
 	let dir = realpathSync(dirname(fileURLToPath(import.meta.url)));
 	for (;;) {

@@ -36,11 +36,11 @@
 set -uo pipefail
 
 # Same self-locating idiom as the presence twin: this script lives in the skills root, so its own
-# dir IS that root — resolve from BASH_SOURCE, PHYSICALLY (`cd -P`), because `skills/` is reached
-# through the `.claude/skills` symlink.
+# dir IS that root — resolve from BASH_SOURCE, PHYSICALLY (`cd -P`), so any symlinked or relative
+# caller still lands on the real skills root.
 #
 # What `-P` actually buys is the EMITTED SCOPE, not the allowlist. Measured: a logical-`cd` variant
-# through the symlink still exits 0, because `kp_skill_source_edges` resolves its own roots AND its
+# through a symlinked caller still exits 0, because `kp_skill_source_edges` resolves its own roots AND its
 # edge targets with `cd -P`, so that comparison is physical on both sides whatever it is handed.
 # What breaks under a logical root is `scope_label`'s prefix strip below: the prefix misses,
 # and every edge-resolved file is printed as a full absolute machine path instead of
