@@ -83,7 +83,7 @@ describe("CONTROL_PLANE_RE classifies the ADR-0174 boundary broadenings (#2761)"
 
 	it("classifies the root marketplace manifest as control-plane (ADR 0212, #3933)", () => {
 		// The file declaring what the `kampus` marketplace serves — including kampus-pipeline's
-		// `source` tree, which validate-gate-path-drift.sh resolves .claude/skills against. It gets
+		// `source` tree, which validate-marketplace-sources.sh resolves. It gets
 		// its own branch because `^(\.claude|\.github)/` demands a literal `/` after `.claude` and
 		// the character here is a hyphen.
 		expect(isControlPlane(".claude-plugin/marketplace.json")).toBe(true);

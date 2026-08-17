@@ -481,8 +481,8 @@ export const checkAlignment = (
 /**
  * The `<group>/codes.ts` tables that actually exist on disk — one of {@link coverageGaps}'s two
  * inputs, and on its own never the scan's scope: a group with no table is exactly what this read
- * cannot see (#5213). Paths resolve physically — a `..` folded across the repo's `.claude/skills`
- * symlink resolves somewhere else entirely.
+ * cannot see (#5213). Paths resolve physically — reached through any symlinked or relative caller, a
+ * logically folded `..` resolves somewhere else entirely.
  */
 export const codeTableGroupsIn = (srcDir: string): readonly string[] => {
 	const root = realpathSync(srcDir);

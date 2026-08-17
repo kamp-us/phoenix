@@ -32,9 +32,9 @@
 # harness's whole contract is its exit status.
 set -uo pipefail
 
-# PHYSICAL resolution (`cd -P` / `pwd -P`): CI and agents reach this through the `.claude/skills`
-# symlink, where a logically-folded `..` lands on `.claude/` — which has no `lib/`, so every mutant
-# would die at lib resolution and score as "caught" while testing nothing.
+# PHYSICAL resolution (`cd -P` / `pwd -P`): reached through any symlinked or relative caller, a
+# logically-folded `..` lands on the caller's path instead of the real one — which has no `lib/`, so
+# every mutant would die at lib resolution and score as "caught" while testing nothing.
 DIR="$(CDPATH= cd -P -- "$(dirname -- "$0")" && pwd -P)"
 SUT="$DIR/apply-triage.sh"
 fail=0

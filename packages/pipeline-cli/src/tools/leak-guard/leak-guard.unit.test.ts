@@ -265,9 +265,9 @@ describe("surface predicates", () => {
 		assert.isTrue(isSelfExempt("packages/pipeline-cli/src/tools/leak-guard/command.ts"));
 		assert.isTrue(isSelfExempt("skills/review-doc/SKILL.md"));
 		assert.isTrue(isSelfExempt("skills/report/footer.sh"));
-		// the `.claude/skills` symlink path resolves too — its suffix still ends with
-		// the canonical `/skills/<name>/...`, so editing through either path is exempt.
-		assert.isTrue(isSelfExempt(".claude/skills/triage/SKILL.md"));
+		// the exemption is a suffix match, so the same file under its real plugin prefix
+		// still ends with the canonical `/skills/<name>/...` and is exempt either way.
+		assert.isTrue(isSelfExempt("claude-plugins/kampus-pipeline/skills/triage/SKILL.md"));
 		// the triager agent's ## Output privacy rule names the forbidden machine-local
 		// shapes as illustrative text (#1956), so it is self-exempt like the skills.
 		assert.isTrue(isSelfExempt("agents/triager.md"));
