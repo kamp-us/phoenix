@@ -179,11 +179,16 @@ the report.
 | Spawn report | Event |
 | --- | --- |
 | builder `SHIPPED-PR` / `SUCCESS-NO-PR` | `DONE` |
-| reviewer: every namespace verdict `PASS` at the current head | `PASS` |
-| reviewer: every derived namespace terminal at the current head, at least one `FAIL` | `FAIL` |
-| reviewer: any derived namespace still without a current-head verdict | no event — re-read, see below |
+| reviewer: every namespace verdict `PASS` and still binding | `PASS` |
+| reviewer: every derived namespace terminal on a still-binding verdict, at least one `FAIL` | `FAIL` |
+| reviewer: any derived namespace without a still-binding verdict | no event — re-read, see below |
 | shipper `already-merged` / `QUEUED` / `landed` | `DONE` |
 | anything else — a back-off, an escalation, a stop, an awaiting-approval, a permission denial, a dead or unresponsive spawn, a report you cannot parse | `BLOCKED` |
+
+**Still binding** is one rule read against whichever artifact the subject has: on a PR, a verdict at
+its current head; on an epic child, which opens no PR, a verdict whose content digest matches what
+the child's range carries now (ADR 0276). You never judge that yourself — `lane prove` reads it, and
+its exit is what decides.
 
 **A recipe run's exit folds through the same verb that routed it**, never through a reading of
 your own:

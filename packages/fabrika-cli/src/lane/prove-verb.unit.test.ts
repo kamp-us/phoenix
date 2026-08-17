@@ -453,6 +453,10 @@ const digestOf = (raw: string): string => {
 const CHILD_DIGEST = digestOf(CHILD_RAW);
 const OTHER_DIGEST = digestOf(rawRecord("packages/fabrika-cli/src/lane/emit.ts"));
 
+/** The same child range, plus one path under a governance root — `code` class, `governance` floor. */
+const GOVERNED_RAW = CHILD_RAW + rawRecord(".github/workflows/ci.yml");
+const GOVERNED_DIGEST = digestOf(GOVERNED_RAW);
+
 /** The git reads that locate the one child branch and the range it adds. */
 const locating = (
 	branches: ReadonlyArray<string> = [CHILD_BRANCH, "main", "epic/4300"],
@@ -470,8 +474,9 @@ const rangeMarker = (
 	content: string,
 	base = EPIC_BASE.slice(0, 7),
 	tip = CHILD_TIP.slice(0, 7),
+	namespace = "review-code",
 ): string =>
-	`review-code: ${polarity} range:${base}..${tip} content:${content} — every criterion met`;
+	`${namespace}: ${polarity} range:${base}..${tip} content:${content} — every criterion met`;
 
 describe("lane prove — an epic child's DONE stands on commits, never on a PR", () => {
 	it("proves a child DONE from the commits its branch adds over the epic branch", async () => {
@@ -657,6 +662,43 @@ describe("lane prove — an epic child's PASS stands on a range verdict that sti
 
 		expect(out.code).toBe(PROOF_IN_FLIGHT);
 		expect(out.stderr.join("\n")).toContain("is not a range one");
+	});
+
+	const governedBy = (...comments: ReadonlyArray<{id: number; body: string}>) =>
+		fakeShell([...locating(), [RAW, okOut(GOVERNED_RAW)], [CHILD_COMMENTS, comments_(comments)]]);
+
+	it("refuses a child PASS whose range touches a governance root and carries no governance verdict", async () => {
+		const shell = governedBy({id: 1, body: rangeMarker("PASS", GOVERNED_DIGEST)});
+
+		const out = await runEpic(epicLaneAt("review"), shell, "PASS", "issue_4301");
+
+		expect(out.code).toBe(PROOF_IN_FLIGHT);
+		expect(out.stderr.join("\n")).toContain("derives review-code, governance");
+		expect(out.stderr.join("\n")).toContain("governance (absent)");
+		expect(out.stderr.join("\n")).not.toContain("review-code (absent)");
+	});
+
+	it("proves that same governed child PASS once the governance range verdict is on the issue", async () => {
+		const shell = governedBy(
+			{id: 1, body: rangeMarker("PASS", GOVERNED_DIGEST)},
+			{
+				id: 2,
+				body: rangeMarker(
+					"PASS",
+					GOVERNED_DIGEST,
+					EPIC_BASE.slice(0, 7),
+					CHILD_TIP.slice(0, 7),
+					"governance",
+				),
+			},
+		);
+
+		const out = await runEpic(epicLaneAt("review"), shell, "PASS", "issue_4301");
+
+		expect(out.code).toBe(0);
+		expect(
+			JSON.parse(out.stdout).evidence.namespaces.map((row: {namespace: string}) => row.namespace),
+		).toEqual(["review-code", "governance"]);
 	});
 
 	it("leaves a child PASS UNKNOWN when the range's own content cannot be read", async () => {
