@@ -33,11 +33,13 @@ describe("the one retry budget", () => {
 		expect(compiledInitials(coderTemplateText())).toEqual([RETRY_BUDGET]);
 	});
 
-	it("is what an emitted epic machine carries into every child task", () => {
+	it("is what an emitted epic machine carries into every task — each child, and the epic tail", () => {
 		const emitted = emitMachine(EPIC, epicBody(), CHILDREN);
 		if (emitted._tag !== "Emitted") throw new Error(`expected Emitted, got ${emitted._tag}`);
 
-		expect(compiledInitials(emitted.text)).toEqual(CHILDREN.map(() => RETRY_BUDGET));
+		expect(compiledInitials(emitted.text)).toEqual(
+			[...CHILDREN, "epic tail"].map(() => RETRY_BUDGET),
+		);
 	});
 
 	it("is the default a task context that declares no budget of its own compiles to", () => {

@@ -7,7 +7,8 @@ import {describe, expect, it} from "vitest";
 import {fakeFs} from "../fakes.test-support.ts";
 import {readGoldenFixture} from "../golden-fixture.ts";
 import {type EmitResult, emitMachine} from "./emit.ts";
-import {compileText} from "./machine.ts";
+import {applyEvent, deriveStatus, foldLog, type LogEntry} from "./fold.ts";
+import {type CompiledLane, compileText} from "./machine.ts";
 import {runTransition} from "./transition-verb.ts";
 
 const body = (): string => readGoldenFixture(import.meta.url, "./__fixtures__/epic-4300.body.txt");
@@ -39,6 +40,55 @@ const emitted = (result: EmitResult): string => {
 	return result.text;
 };
 
+const regionOf = (text: string, task: string): Record<string, unknown> => {
+	const doc = JSON.parse(text) as {
+		machine: {states: Record<string, {states?: Record<string, Record<string, unknown>>}>};
+	};
+	for (const phase of Object.values(doc.machine.states)) {
+		const node = phase.states?.[task];
+		if (node !== undefined) return node;
+	}
+	throw new Error(`no region for ${task}`);
+};
+
+const laneOf = (text: string): CompiledLane => {
+	const compiled = compileText(text);
+	if (compiled._tag !== "Compiled") throw new Error(compiled.defects.join("; "));
+	return compiled.lane;
+};
+
+/** Drive a sequence through `applyEvent`, asserting every step is accepted, and fold the result. */
+const drive = (
+	compiled: CompiledLane,
+	steps: ReadonlyArray<readonly [string, string]>,
+): ReturnType<typeof deriveStatus> => {
+	const log: LogEntry[] = [];
+	const statesOf = (entries: ReadonlyArray<LogEntry>) => {
+		const fold = foldLog(compiled, entries);
+		if (fold._tag !== "Folded") throw new Error(fold.defects.join("; "));
+		return fold.states;
+	};
+	for (const [task, event] of steps) {
+		const applied = applyEvent(compiled, statesOf(log), task, event, "2026-08-17T00:00:00.000Z");
+		if (applied._tag !== "Applied") throw new Error(`${task} ${event}: ${applied.reason}`);
+		log.push(applied.entry);
+	}
+	return deriveStatus(compiled, statesOf(log));
+};
+
+/** Every child through its local loop to `landed`, in phase order. */
+const LAND_ALL: ReadonlyArray<readonly [string, string]> = [
+	["issue_4301", "WIP"],
+	["issue_4301", "DONE"],
+	["issue_4301", "PASS"],
+	["issue_4302", "WIP"],
+	["issue_4302", "DONE"],
+	["issue_4302", "PASS"],
+	["issue_4303", "WIP"],
+	["issue_4303", "DONE"],
+	["issue_4303", "PASS"],
+];
+
 describe("emitMachine", () => {
 	it("emits the golden machine bytes from the golden epic body", () => {
 		expect(emitted(emitMachine(4300, body(), CHILDREN))).toBe(golden());
@@ -50,12 +100,20 @@ describe("emitMachine", () => {
 		);
 	});
 
+	it("is deterministic over a partly-built epic too — the child states are input, not drift", () => {
+		const links = [closed(4301), closed(4302, "not_planned"), open(4303)];
+		expect(emitted(emitMachine(4300, body(), links))).toBe(
+			emitted(emitMachine(4300, body(), links)),
+		);
+	});
+
 	it("emits a machine the lane compiler accepts without repair", () => {
 		const compiled = compileText(emitted(emitMachine(4300, body(), CHILDREN)));
 		if (compiled._tag !== "Compiled") throw new Error(compiled.defects.join("; "));
 		expect(compiled.lane.phases).toEqual([
 			{name: "phase1", tasks: ["issue_4301", "issue_4302"]},
 			{name: "phase2", tasks: ["issue_4303"]},
+			{name: "epic", tasks: ["epic_4300"]},
 		]);
 		expect(compiled.lane.terminals).toEqual({complete: "complete", tripped: "tripped"});
 	});
@@ -81,9 +139,9 @@ describe("emitMachine", () => {
 		expect(emitted(emitMachine(4300, body(), [open(4301), open(4302), open(4303)]))).toBe(golden());
 	});
 
-	it("boots a completed-closed child in `shipped` and leaves its open siblings queued", () => {
+	it("boots a completed-closed child in `landed` and leaves its open siblings queued", () => {
 		const text = emitted(emitMachine(4300, body(), [closed(4301), open(4302), open(4303)]));
-		expect(initialOf(text, "issue_4301")).toBe("shipped");
+		expect(initialOf(text, "issue_4301")).toBe("landed");
 		expect(initialOf(text, "issue_4302")).toBe("queued");
 	});
 
@@ -111,6 +169,108 @@ describe("emitMachine", () => {
 			previous: {phase2: {issue_4303: "queued"}},
 			current: {phase2: {issue_4303: "build"}},
 		});
+	});
+
+	it("gives a child no `ship` and no `human:cp-approval` — an epic run has one PR, not one per child", () => {
+		const child = regionOf(emitted(emitMachine(4300, body(), CHILDREN)), "issue_4301") as {
+			states: Record<string, unknown>;
+		};
+		expect(Object.keys(child.states)).toEqual([
+			"queued",
+			"build",
+			"review",
+			"blocked",
+			"hist",
+			"landed",
+			"frozen",
+		]);
+	});
+
+	it("lands a child's review PASS locally — the success final asserts a landing, not a merge", () => {
+		const compiled = laneOf(emitted(emitMachine(4300, body(), CHILDREN)));
+		const status = drive(compiled, [
+			["issue_4301", "WIP"],
+			["issue_4301", "DONE"],
+			["issue_4301", "PASS"],
+		]);
+		expect(status.stateValue).toEqual({
+			phase1: {issue_4301: "landed", issue_4302: "queued"},
+			phase2: "waiting",
+			epic: "waiting",
+		});
+	});
+
+	it("carries an epic tail phase whose one region reviews the single PR, then ships it", () => {
+		const tail = regionOf(emitted(emitMachine(4300, body(), CHILDREN)), "epic_4300");
+		expect(tail).toMatchObject({
+			initial: "review",
+			states: {
+				review: {
+					on: {
+						"EPIC_4300.PASS": "ship",
+						"EPIC_4300.FAIL": [
+							{target: "review", guard: "retriesRemaining", actions: "incrementRetries"},
+							{target: "human:epic-review"},
+						],
+					},
+				},
+				ship: {on: {"EPIC_4300.DONE": "shipped", "EPIC_4300.BLOCKED": "human:cp-approval"}},
+				shipped: {type: "final"},
+				"human:epic-review": {type: "final"},
+			},
+		});
+	});
+
+	it("reaches the epic review only after every child has landed, and completes on its ship", () => {
+		const compiled = laneOf(emitted(emitMachine(4300, body(), CHILDREN)));
+		expect(drive(compiled, LAND_ALL).stateValue).toEqual({epic: {epic_4300: "review"}});
+		expect(
+			drive(compiled, [...LAND_ALL, ["epic_4300", "PASS"], ["epic_4300", "DONE"]]),
+		).toMatchObject({stateValue: "complete", status: "done"});
+	});
+
+	it("trips the lane when the epic review fails past its retry budget — a park, never `complete`", () => {
+		const compiled = laneOf(emitted(emitMachine(4300, body(), CHILDREN)));
+		const fails: ReadonlyArray<readonly [string, string]> = [
+			["epic_4300", "FAIL"],
+			["epic_4300", "FAIL"],
+		];
+		expect(drive(compiled, [...LAND_ALL, ...fails]).stateValue).toEqual({
+			epic: {epic_4300: "review"},
+		});
+		const spent = drive(compiled, [...LAND_ALL, ...fails, ["epic_4300", "FAIL"]]);
+		expect(spent).toMatchObject({stateValue: "tripped", status: "done"});
+		expect(spent.context.errors).toEqual(["epic_4300"]);
+	});
+
+	it("terminates a partly-built epic — every child closed still leaves the epic review to run", () => {
+		const compiled = laneOf(
+			emitted(emitMachine(4300, body(), [closed(4301), closed(4302), closed(4303)])),
+		);
+		expect(drive(compiled, []).stateValue).toEqual({epic: {epic_4300: "review"}});
+		expect(
+			drive(compiled, [
+				["epic_4300", "PASS"],
+				["epic_4300", "DONE"],
+			]),
+		).toMatchObject({
+			stateValue: "complete",
+			status: "done",
+		});
+	});
+
+	it("trips before the epic review when a child was closed without landing", () => {
+		const compiled = laneOf(
+			emitted(emitMachine(4300, body(), [closed(4301, "not_planned"), closed(4302), open(4303)])),
+		);
+		expect(drive(compiled, [])).toMatchObject({stateValue: "tripped", status: "done"});
+	});
+
+	it("leaves `coder.workflow.json` byte-untouched — a single-issue lane still ships its own PR", () => {
+		const template = readGoldenFixture(import.meta.url, "./templates/coder.workflow.json");
+		expect(template).toContain('"ISSUE.PASS": "ship"');
+		expect(template).toContain('"ISSUE.BLOCKED": "human:cp-approval"');
+		expect(template).not.toContain("landed");
 	});
 
 	it("refuses a body with no ## Dependencies block", () => {
