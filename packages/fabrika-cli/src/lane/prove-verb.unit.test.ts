@@ -18,12 +18,34 @@ const LOG = `${ROOT}/5747/events.jsonl`;
 const HEAD = "03135b9188d2be6c0a4b7bd0b7a3ff9c53f0f2b1";
 const OLD = "8f1c2ad4e5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0";
 
+const CLOSERS = /^gh api graphql -f query=query\(/;
 const SEARCH = /^gh api --paginate search\/issues/;
 const PULL = /^gh api repos\/o\/r\/pulls\/4318$/;
 const FILES = /^gh api --paginate repos\/o\/r\/pulls\/4318\/files/;
 const PR_COMMENTS = /^gh api --paginate repos\/o\/r\/issues\/4318\/comments/;
 const ISSUE = /^gh api repos\/o\/r\/issues\/5747$/;
 const ISSUE_COMMENTS = /^gh api --paginate repos\/o\/r\/issues\/5747\/comments/;
+
+/** One page of the closing-issue link edge, every node OPEN — the verb filters on that itself. */
+const closingPulls = (...numbers: ReadonlyArray<number>): ExecResult =>
+	okOut(
+		JSON.stringify({
+			data: {
+				repository: {
+					issue: {
+						closedByPullRequestsReferences: {
+							pageInfo: {hasNextPage: false, endCursor: null},
+							nodes: numbers.map((number) => ({
+								number,
+								url: `https://github.com/o/r/pull/${number}`,
+								state: "OPEN",
+							})),
+						},
+					},
+				},
+			},
+		}),
+	);
 
 const logLine = (event: string, at: string): string =>
 	`${JSON.stringify({task: "issue", event: `ISSUE.${event}`, at})}\n`;
@@ -100,6 +122,7 @@ const run = (fs: ReturnType<typeof fakeFs>, shell: ReturnType<typeof fakeShell>,
 describe("lane prove — the two events that carry a claim", () => {
 	it("proves a build DONE against the one open PR whose body links the issue", async () => {
 		const shell = fakeShell([
+			[CLOSERS, closingPulls()],
 			[SEARCH, okOut("4318\n")],
 			[PULL, pull()],
 		]);
@@ -117,6 +140,7 @@ describe("lane prove — the two events that carry a claim", () => {
 
 	it("proves a review PASS when every derived namespace passes at the live head", async () => {
 		const shell = fakeShell([
+			[CLOSERS, closingPulls()],
 			[SEARCH, okOut("4318\n")],
 			[PULL, pull()],
 			[FILES, okOut(JSON.stringify([{filename: "packages/fabrika-cli/src/lane/prove.ts"}]))],
@@ -136,6 +160,7 @@ describe("lane prove — the two events that carry a claim", () => {
 describe("lane prove — the refusals, each on its own remedy", () => {
 	it("refuses a build DONE with no open PR and no no-PR outcome, naming what it looked for", async () => {
 		const shell = fakeShell([
+			[CLOSERS, closingPulls()],
 			[SEARCH, okOut("")],
 			[ISSUE, issue(["type:feature"])],
 			[ISSUE_COMMENTS, comments()],
@@ -151,6 +176,7 @@ describe("lane prove — the refusals, each on its own remedy", () => {
 
 	it("refuses a build DONE when several open PRs link the issue", async () => {
 		const shell = fakeShell([
+			[CLOSERS, closingPulls()],
 			[SEARCH, okOut("4318\n4319\n")],
 			[PULL, pull()],
 			[/^gh api repos\/o\/r\/pulls\/4319$/, pull({number: 4319})],
@@ -164,6 +190,7 @@ describe("lane prove — the refusals, each on its own remedy", () => {
 
 	it("refuses a PASS while a derived namespace has no current-head verdict", async () => {
 		const shell = fakeShell([
+			[CLOSERS, closingPulls()],
 			[SEARCH, okOut("4318\n")],
 			[PULL, pull()],
 			[
@@ -181,6 +208,7 @@ describe("lane prove — the refusals, each on its own remedy", () => {
 
 	it("refuses a PASS whose namespace verdict is at a head the PR has moved past", async () => {
 		const shell = fakeShell([
+			[CLOSERS, closingPulls()],
 			[SEARCH, okOut("4318\n")],
 			[PULL, pull()],
 			[FILES, okOut(JSON.stringify([{filename: "packages/fabrika-cli/src/lane/prove.ts"}]))],
@@ -195,6 +223,7 @@ describe("lane prove — the refusals, each on its own remedy", () => {
 
 	it("refuses a PASS the board contradicts with a current-head FAIL", async () => {
 		const shell = fakeShell([
+			[CLOSERS, closingPulls()],
 			[SEARCH, okOut("4318\n")],
 			[PULL, pull()],
 			[FILES, okOut(JSON.stringify([{filename: "packages/fabrika-cli/src/lane/prove.ts"}]))],
@@ -208,12 +237,67 @@ describe("lane prove — the refusals, each on its own remedy", () => {
 	});
 
 	it("leaves the proof UNKNOWN when a board read fails — never proven, never absent", async () => {
-		const shell = fakeShell([[SEARCH, errOut("HTTP 502")]]);
+		const shell = fakeShell([
+			[CLOSERS, closingPulls()],
+			[SEARCH, errOut("HTTP 502")],
+		]);
 
 		const out = await run(laneAt("build"), shell, "DONE");
 
 		expect(out.code).toBe(LANE_UNREADABLE);
 		expect(out.stderr.join("\n")).toContain("UNKNOWN");
+	});
+
+	it("leaves the proof UNKNOWN when the closing-issue edge fails, before any search", async () => {
+		const shell = fakeShell([[CLOSERS, errOut("HTTP 502")]]);
+
+		const out = await run(laneAt("build"), shell, "DONE");
+
+		expect(out.code).toBe(LANE_UNREADABLE);
+		expect(out.stderr.join("\n")).toContain("closing #5747");
+		expect(shell.calls.some((line) => SEARCH.test(line))).toBe(false);
+	});
+});
+
+describe("lane prove — the union of the two nomination reads", () => {
+	it("proves a DONE off the closing edge while the search index still lags the fresh PR", async () => {
+		const shell = fakeShell([
+			[CLOSERS, closingPulls(4318)],
+			[SEARCH, okOut("")],
+			[PULL, pull()],
+		]);
+
+		const out = await run(laneAt("build"), shell, "DONE");
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({evidence: {kind: "open-pull", pr: 4318}});
+	});
+
+	it("proves a DONE off the search nomination for a Part of PR the closing edge cannot see", async () => {
+		const shell = fakeShell([
+			[CLOSERS, closingPulls()],
+			[SEARCH, okOut("4318\n")],
+			[PULL, pull({body: "Part of #5747\n\n## Deviations\nNone.\n"})],
+		]);
+
+		const out = await run(laneAt("build"), shell, "DONE");
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({evidence: {kind: "open-pull", pr: 4318}});
+	});
+
+	it("counts a PR both reads nominate once, so agreement is not ambiguity", async () => {
+		const shell = fakeShell([
+			[CLOSERS, closingPulls(4318)],
+			[SEARCH, okOut("4318\n")],
+			[PULL, pull()],
+		]);
+
+		const out = await run(laneAt("build"), shell, "DONE");
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({evidence: {kind: "open-pull", pr: 4318}});
+		expect(shell.calls.filter((line) => PULL.test(line))).toHaveLength(1);
 	});
 });
 
@@ -231,6 +315,7 @@ describe("lane prove — what it does not claim, and what it never writes", () =
 
 	it("proves a no-PR builder outcome from the investigation label and its diagnosis", async () => {
 		const shell = fakeShell([
+			[CLOSERS, closingPulls()],
 			[SEARCH, okOut("")],
 			[ISSUE, issue(["type:investigation"])],
 			[
@@ -250,6 +335,7 @@ describe("lane prove — what it does not claim, and what it never writes", () =
 
 	it("refuses a no-PR DONE whose only comment predates the build", async () => {
 		const shell = fakeShell([
+			[CLOSERS, closingPulls()],
 			[SEARCH, okOut("")],
 			[ISSUE, issue(["type:investigation"])],
 			[ISSUE_COMMENTS, comments({id: 900, body: "triaged", createdAt: "2026-08-16T00:30:00Z"})],
@@ -263,6 +349,7 @@ describe("lane prove — what it does not claim, and what it never writes", () =
 	it("writes nothing on any path — the ledger append stays lane transition's", async () => {
 		const fs = laneAt("build");
 		const shell = fakeShell([
+			[CLOSERS, closingPulls()],
 			[SEARCH, okOut("4318\n")],
 			[PULL, pull()],
 		]);

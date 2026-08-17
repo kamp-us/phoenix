@@ -18,7 +18,7 @@ import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {resolveTargetRepo} from "../build/target.ts";
 import {getIssue, listComments} from "../io/issues.ts";
-import {getPullRequest, listPullFiles, searchOpenPulls} from "../io/pulls.ts";
+import {getPullRequest, listPullFiles, openPullsClosing, searchOpenPulls} from "../io/pulls.ts";
 import {issueRefOf, namespacesOf, partition, touchesGovernanceRoot} from "../review/classes.ts";
 import {contentDigestAt} from "../review/content-binding.ts";
 import {bindHead} from "../review/head.ts";
@@ -185,8 +185,17 @@ interface Traced {
 /**
  * The open PRs linking this issue, each read as its own record.
  *
- * The search index nominates; the body's link decides. A candidate that has closed since the index
- * saw it, or that only mentions the number in prose, drops out here rather than counting as proof.
+ * Two nomination reads, unioned, because neither alone answers the question. The closing-issue edge
+ * (`openPullsClosing`) is authoritative and lag-free but blind to `Part of #N`, the shape
+ * `build --partial` emits; the search index sees any body but lags a fresh PR — and this verb runs
+ * at the worst moment for that lag, right after a builder reports `SHIPPED-PR`. Reading the edge
+ * first means a lagging index can only fail to add a candidate, never hide the closing one, so a
+ * lane that shipped is not recorded `BLOCKED` on exit `21`. `lane brief` asks the same question
+ * through the same edge, so the two lane verbs agree on the closing-link half.
+ *
+ * Both reads only nominate; the body's link decides. A candidate that has closed since it was
+ * nominated, or that only mentions the number in prose, drops out here rather than counting as
+ * proof — so unioning in the looser read widens candidates without widening what counts.
  */
 const traceOpenPull = (
 	repo: string,
@@ -197,6 +206,13 @@ const traceOpenPull = (
 	ChildProcessSpawner.ChildProcessSpawner
 > =>
 	Effect.gen(function* () {
+		const closing = yield* openPullsClosing(repo, issue);
+		if (closing._tag === "Failure") {
+			return {
+				_tag: "Refused" as const,
+				outcome: unreadable(`the open pull requests closing #${issue}`, closing.reason),
+			};
+		}
 		const found = yield* searchOpenPulls(repo, [`${issue}`, "in:body"]);
 		if (found._tag === "Failure") {
 			return {
@@ -204,8 +220,9 @@ const traceOpenPull = (
 				outcome: unreadable(`the open pull requests mentioning #${issue}`, found.reason),
 			};
 		}
+		const candidates = new Set([...closing.value.map((pull) => pull.number), ...found.value]);
 		const facts: PullFact[] = [];
-		for (const candidate of found.value) {
+		for (const candidate of candidates) {
 			const pull = yield* getPullRequest(repo, candidate);
 			if (pull._tag === "Unknown") {
 				return {

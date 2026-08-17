@@ -260,6 +260,14 @@ export const patchComment = (repo: string, id: number, body: string): Shell<Atte
  * The index is a nomination surface only: it matches prose as readily as a link, and it lags a
  * fresh PR. A caller proving a PR traces to an issue reads each candidate's own record and its own
  * body; what this narrows is how many records that costs.
+ *
+ * **Why this survives #5850's retirement of the same read.** {@link openPullsClosing} replaced it
+ * everywhere the question is "which PR closes this issue", and is authoritative there — an edge, not
+ * an index, so it has no lag. It is built from closing keywords, so it cannot see a `Part of #N` PR
+ * — the body shape `build --partial` emits for an epic child, and the normal shape for a lane task
+ * that does not close its issue. That one shape is all this read is for. A caller wanting both kinds
+ * reads the edge first and unions this nomination in behind it, so an index that has not caught up
+ * with a fresh PR can only ever add candidates, never subtract the closing one.
  */
 export const searchOpenPulls = (
 	repo: string,
