@@ -218,7 +218,7 @@ describe("no verb file seats an exit code its group's table does not", () => {
 	it("passes a numeric constant the file never refuses with — a round count is not a seat", () => {
 		const root = stub({
 			"thing-verb.ts":
-				"const FREEZE_ROUND = 3;\nif (round >= FREEZE_ROUND) refuse(ZERO_SCOPE, 'x');\n",
+				"const ROUND_LIMIT = 3;\nif (round >= ROUND_LIMIT) refuse(ZERO_SCOPE, 'x');\n",
 		});
 		expect(verbSeatedExitCodes(root, ["ghost"]).seated).toEqual([]);
 	});

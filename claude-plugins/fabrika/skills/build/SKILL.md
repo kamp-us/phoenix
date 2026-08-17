@@ -196,16 +196,14 @@ The fold is the only entry: paginated, current-head, per-gate — polarity visib
 included. Act only on rows it prints; empty rows at exit 0 are a proven no-work answer, but an
 UNKNOWN exit means the verdict state is unread — **never "nothing to fix"**. The budget is the
 fold's own `capReached` field, never a number you carry: on `true`, end `ESCALATED` and post the
-escalation via `fabrika build note` instead of another push. Fix findings
-on the same branch (`fabrika build tree --issue 4310`, then `fabrika build branch --resume
-4310`), re-validate
-with `fabrika build check --surface <yours>`, push with `fabrika build push --force-with-lease`,
-answer the findings in a `fabrika build note` naming each one addressed, release. Exit `23` on that
-push means your head **drops commits the PR already published** — `build branch --resume` again so
-you rebuild on the published head, never `--drop-remote-commits`, which is for a rewrite you
-actually intend. The fold's
-`frozenCriteria` rows are the review-appended criteria past the freeze — note them, do not chase
-them.
+escalation via `fabrika build note` instead of another push. Fix findings on the same branch
+(`fabrika build tree --issue 4310`, then `fabrika build branch --resume 4310`), re-validate with
+`fabrika build check --surface <yours>`, push with `fabrika build push --force-with-lease`, answer
+the findings in a `fabrika build note` naming each one addressed, release. Exit `23` on that push
+means your head **drops commits the PR already published** — `build branch --resume` again so you
+rebuild on the published head, never `--drop-remote-commits`, which is for a rewrite you actually
+intend. The fold's `frozenCriteria` rows are the review-appended criteria past the freeze — note
+them, do not chase them.
 
 ## Expectations you hold but never recompute
 
