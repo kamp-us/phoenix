@@ -74,7 +74,7 @@ const CHECKBOX_ITEM = /^[ \t]*[-*][ \t]+\[([ xX])\][ \t]*(.*)$/;
 const BLOCK_STARTER =
 	/^[ \t]*(?:[-*+][ \t]+|\d{1,9}[.)][ \t]+|>|(?:-[ \t]*){3,}$|(?:\*[ \t]*){3,}$|(?:_[ \t]*){3,}$)/;
 
-interface Heading {
+export interface Heading {
 	readonly level: number;
 	readonly text: string;
 	/** 1-based, so a refusal can point at a line a human can find. */
@@ -116,8 +116,13 @@ const reachesForBlock = (headingText: string): boolean => {
 	);
 };
 
-/** Every ATX heading outside a fenced code block — a fenced example must not pass for the real one. */
-const scanHeadings = (lines: ReadonlyArray<string>): ReadonlyArray<Heading> => {
+/**
+ * Every ATX heading outside a fenced code block — a fenced example must not pass for the real one.
+ *
+ * Exported for `triage repair-criteria`, which must locate a drifted heading by exactly the rules
+ * this reader refuses it under — a second scanner would be a second definition of "heading".
+ */
+export const scanHeadings = (lines: ReadonlyArray<string>): ReadonlyArray<Heading> => {
 	const headings: Heading[] = [];
 	let openFence: string | null = null;
 	for (const [index, line] of lines.entries()) {

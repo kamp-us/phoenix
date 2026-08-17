@@ -824,6 +824,39 @@ export const openQueueIssues = (
 		return ok(rows);
 	});
 
+/**
+ * Every **open** issue in `repo` as a full record, paged, pull requests filtered out.
+ *
+ * Typed JSON pages rather than `--jq` line grammar, for `listComments`' reason one field over: the
+ * bodies are the payload here, and a body carrying an unescaped control character would make
+ * `jq -r` die mid-stream and read back as a shorter board. A truncated read is a failure — a sweep
+ * over a silently short list reports issues it never looked at as never drifted.
+ */
+export const listOpenIssues = (repo: string): Shell<Attempt<ReadonlyArray<IssueRecord>>> =>
+	Effect.gen(function* () {
+		const r = yield* execCapture("gh", [
+			"api",
+			"--paginate",
+			`repos/${repo}/issues?state=open&per_page=100`,
+		]);
+		if (!r.ok) return fail(r.reason);
+		const pages = pagedJson(r.stdout);
+		if (pages._tag === "Failure") return pages;
+		const out: IssueRecord[] = [];
+		for (const page of pages.value) {
+			const parsed = parseJson(page);
+			if (!Array.isArray(parsed)) {
+				return fail("`gh api` exited 0 but its output is not a list of issues");
+			}
+			for (const value of parsed) {
+				const record = toIssueRecord(value);
+				if (record === null) return fail("`gh api` exited 0 but one entry is not an issue");
+				if (!record.isPullRequest) out.push(record);
+			}
+		}
+		return ok(out);
+	});
+
 /** An issue or pull request that references this one, from the timeline. */
 export interface CrossReference {
 	readonly number: number;

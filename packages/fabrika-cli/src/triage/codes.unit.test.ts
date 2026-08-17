@@ -13,6 +13,7 @@ import {
 	READBACK_MISMATCH,
 	TRIAGE_EXIT_TABLE,
 	UNCONFIRMED,
+	UNREPAIRABLE,
 	WRITE_UNKNOWN,
 	ZERO_SCOPE,
 } from "./codes.ts";
@@ -48,6 +49,11 @@ describe("the two codes this group adds", () => {
 		expect(UNCONFIRMED).not.toBe(HUMAN_FILED);
 	});
 
+	it("seats the unrepairable-drift refusal on its own code", () => {
+		expect(UNREPAIRABLE).toBe(14);
+		expect(UNREPAIRABLE).not.toBe(UNCONFIRMED);
+	});
+
 	/**
 	 * The pairwise checks above name one `report` constant each, so a *new* code added upstream at
 	 * `12` or `13` would land on top of this group and every one of them would stay green. This reads
@@ -68,7 +74,7 @@ describe("TRIAGE_EXIT_TABLE", () => {
 	});
 
 	it("carries every allocated code exactly once", () => {
-		expect(codes).toEqual([0, 1, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 126, 127]);
+		expect(codes).toEqual([0, 1, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 126, 127]);
 	});
 
 	it("gives every code a non-empty meaning", () => {
@@ -81,5 +87,6 @@ describe("TRIAGE_EXIT_TABLE", () => {
 		expect(meaningOf(PRECONDITION_UNKNOWN)).toContain("precondition read failed");
 		expect(meaningOf(HUMAN_FILED)).toContain("human-filed");
 		expect(meaningOf(UNCONFIRMED)).toContain("unconfirmed");
+		expect(meaningOf(UNREPAIRABLE)).toContain("not mechanically repairable");
 	});
 });

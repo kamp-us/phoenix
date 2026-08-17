@@ -77,7 +77,7 @@ active phase** (future phases read `waiting`; leave them alone), route on the le
 | `build` / `review` / `ship` | dispatch through `lane brief` — below |
 | `human:*` | park — step 4 |
 | `blocked` | park — step 4 |
-| any other name | park naming the state — never guess a shell for a state you do not recognise |
+| any other name | end `STOPPED` naming the state — never guess a shell for a state you do not recognise, and never a park: `LANE-PARKED` promises a fold in `blocked`/`human:*`, which an unrecognised state cannot honour (Terminal vocabulary, below) |
 
 **You never compose a spawn prompt.** The verb prints it:
 
@@ -101,7 +101,9 @@ from the inside.
 
 `lane brief`'s refusals are the parks it saves you from guessing at: `18` is a state that routes to
 no shell, `19` is a task whose issue cannot be resolved or is absent, `20` is zero open PRs where
-the state needs one or several where one is required. Each is a park naming what the verb named —
+the state needs one or several where one is required. It counts a PR only when the PR **declares it
+closes** the task's issue — GitHub's own closing-issue link, not a body mention — so a PR that
+quotes the number in prose never makes `20` fire (#5805). Each is a park naming what the verb named —
 never a prompt you write by hand instead. Parallel active tasks brief and spawn in parallel.
 
 Done when every active task has either a spawn in flight or an event recorded this pass.
@@ -180,12 +182,27 @@ Done when the fold reads a terminal state or a park.
 
 ## 4 — Park, or end with the transcript
 
-**`human:*` and `blocked` park the lane.** You cannot clear them: post on the driven issue what is
-needed and from whom (the parking spawn's report names both; for `human:cp-approval` it is a
-control-plane approval at the PR's current head), then end `LANE-PARKED`. One park class names its
-owner here, not off the spawn's report: **a wire defect on the driven issue's own body** — an
-acceptance-criteria heading a spawned shell fail-louds on, a criteria block that reads as no shape
-the verbs parse. The fix is `triage`'s: the surface that stamped the issue agent-ready owns its
+**A run never ends `LANE-PARKED` while the fold reads a non-parked state.** `human:*` and
+`blocked` are already parked — the fold itself says so, and no event is owed on top of it. Any
+park you originate — one this section names rather than a state the fold already holds — records
+the event that matches the terminal first: `lane transition $issue_number BLOCKED`, then a fresh
+`lane status`, and only when the re-fold reads `blocked` or `human:*` does the run end
+`LANE-PARKED`. A park whose event was never recorded is prose the machine cannot see: the fold
+still reads `build` or `review`, the human's `UNBLOCKED` is refused there (exit `12`, no cell),
+and resume becomes interpretation instead of mechanics (#5643, #5714). If the `BLOCKED`
+transition is itself refused with exit `12` — the current state holds no cell for it — end
+`STOPPED` naming the code, never a prose park on top of the refusal. (One recorded park is still
+mislabeled rather than missing: `BLOCKED` from `ship` folds to `human:cp-approval` even when the
+block is generic — [#5820](https://github.com/kamp-us/phoenix/issues/5820) tracks that cell.)
+
+You cannot clear a park: post on the driven issue what is needed and from whom (the parking
+spawn's report names both; for `human:cp-approval` it is a control-plane approval at the PR's
+current head), then end `LANE-PARKED`. One park class names its owner here, not off the spawn's
+report: **a wire defect on the driven issue's own body** — an acceptance-criteria heading a
+spawned shell fail-louds on, a criteria block that reads as no shape the verbs parse. It is a park
+you originate, so the order above binds: record `BLOCKED`, re-fold and confirm the state, then
+post the park comment — the step both #5643 and #5714 skipped, leaving parks the machine could
+not resume. The fix is `triage`'s: the surface that stamped the issue agent-ready owns its
 wire shape, so the park comment names the defective section and says explicitly that a `triage`
 re-run on this issue is the fix — never delegating both the what and the who to the parking
 spawn's report, and never editing the body yourself (you are type-blind, and a driven issue's body
@@ -210,10 +227,17 @@ everything a successor needs. That is why no step above holds session state.
 
 ## Terminal vocabulary
 
-Every run ends as exactly one of: **`LANE-TERMINAL`** (the machine folded to a final state,
-transcript posted on the driven issue) · **`LANE-PARKED`** (a `human:*`, `blocked`, or unroutable
-state; the need posted on the driven issue) · **`STOPPED`** (a verb exit UNKNOWN or a malformed
-record — the code named, nothing guessed, no event recorded on top of it). A park reported as a
+Every run ends as exactly one of — each naming what was recorded and what the fold reads after:
+**`LANE-TERMINAL`** (the machine folded to a final state — `shipped`, `frozen`, `complete`,
+`tripped`; no event recorded on top of a final fold; transcript posted on the driven issue) ·
+**`LANE-PARKED`** (the fold reads `blocked` or `human:*` — either it already did and no event was
+owed, or the `BLOCKED` this run recorded put it there and the re-fold confirmed it; the need
+posted on the driven issue) · **`STOPPED`** (a verb exit UNKNOWN, a malformed record, an
+unroutable state, or a `BLOCKED` refused with exit `12` — the code or state named, nothing
+guessed, no event recorded, the fold unchanged). An unroutable state ends `STOPPED`, never
+`LANE-PARKED`: a park promises a mechanical `UNBLOCKED` resume from `blocked`/`human:*`, which a
+state this skill does not recognise cannot honour — and appending `BLOCKED` toward cells you do
+not know is exactly the guess step 2's routing table forbids. A park reported as a
 terminal destroys the caller's routing: the two differ in exactly who acts next. Follow-up
 observations leave through `/report` the moment you see them — never through scope creep in a
 lane you are only driving.

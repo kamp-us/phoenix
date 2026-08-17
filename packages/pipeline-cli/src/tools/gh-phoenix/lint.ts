@@ -289,11 +289,11 @@ export const scanBarePush = (file: string, content: string): ReadonlyArray<Findi
  * directory` — a live customer-down break (#4605). The portable literal is `./.claude/.pipeline/…`,
  * a symlink the SessionStart / WorktreeCreate hooks plant at whatever install is live.
  *
- * The leading `(?<![\w./-])` is what keeps two legitimate neighbours out of scope: the marketplace
+ * The leading `(?<![\w./-])` is what keeps a legitimate neighbour out of scope: the marketplace
  * manifest's `source: "./claude-plugins/<plugin>"` (no runnable-surface segment follows, so the
- * trailing group never matches) and the `.claude/skills -> ../claude-plugins/…` symlink target in
- * the README's tree diagram (the `.` is preceded by another `.`). Both are true statements about
- * this repo's own layout, not commands anyone pastes.
+ * trailing group never matches) — a true statement about this repo's own layout, not a command
+ * anyone pastes. It also guards any `../claude-plugins/…` relative target (the `.` is preceded
+ * by another `.`), the class the retired `.claude/skills` symlink used to sit in.
  */
 const NON_PORTABLE_PLUGIN_PATH =
 	/(?<![\w./-])\.\/claude-plugins\/[A-Za-z0-9._-]+\/(?:skills|bin|lib|hooks)\//g;

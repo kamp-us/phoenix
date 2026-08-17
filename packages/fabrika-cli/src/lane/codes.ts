@@ -94,7 +94,8 @@ export const NO_SHELL = 18;
 export const ISSUE_UNRESOLVED = 19;
 
 /**
- * Exactly one open PR was required to trace to the task's issue and zero or several did. Never
+ * Exactly one open PR was required to declare it closes the task's issue and zero or several did.
+ * A PR that merely quotes the number in prose is not one of them (#5805). Never
  * resolved by picking the newest: a brief handed the wrong PR sends a shell to judge or merge
  * someone else's work, so the ambiguity is named and the dispatch stops.
  */

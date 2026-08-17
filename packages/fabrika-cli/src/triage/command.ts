@@ -29,6 +29,7 @@ import {runKill} from "./kill-verb.ts";
 import {runPark} from "./park-verb.ts";
 import {runProvenance} from "./provenance-verb.ts";
 import {DEFAULT_QUEUE_LABEL, DEFAULT_QUEUE_LIMIT, runQueue} from "./queue-verb.ts";
+import {runRepairCriteria} from "./repair-criteria-verb.ts";
 import {runSplit} from "./split-verb.ts";
 
 /** Write the outcome and exit on its code — stdout is the answer, everything else is stderr. */
@@ -374,6 +375,39 @@ const enrich = leafCommand(
 	),
 );
 
+const repairCriteria = leafCommand(
+	"repair-criteria",
+	{
+		issue: Argument.integer("issue").pipe(
+			Argument.optional,
+			Argument.withDescription("the one issue whose drifted heading to repair"),
+		),
+		sweep: Flag.boolean("sweep").pipe(
+			Flag.withDescription(
+				"repair every drifted open issue in one run instead of one issue, with a per-issue outcome line",
+			),
+		),
+		repo: repoFlag,
+		json: jsonFlag,
+	},
+	Effect.fn(function* ({issue, sweep, repo, json}) {
+		yield* emit(
+			yield* runRepairCriteria({
+				issue: Option.getOrNull(issue),
+				sweep,
+				repo: Option.getOrNull(repo),
+				json,
+				env: process.env,
+			}),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Repair a drifted acceptance-criteria heading, mechanically."),
+	Command.withDescription(
+		'Rewrite a level-drifted "## Acceptance criteria" heading to the conforming "### Acceptance criteria" — authored region only, preserved originals byte-for-byte untouched, the repair pre-verified through the wire read before anything is written. One issue by number, or --sweep for every open issue with one `<repaired|conforming|no-block|refused|moved>\\t<number>` line each; a sweep re-reads each issue immediately before its write and answers `moved` instead of writing when the body changed after the board snapshot. Only a pure level drift on the exact heading text is repaired; every other Malformed answer is refused, never guessed. Exits 7 (issue absent, closed, or a pull request), 8 (the PATCH failed — UNKNOWN), 9 (read-back mismatch), 11 (an issue or the open-issue list could not be read), 14 (not mechanically repairable — the refusal names what it read). Example: fabrika triage repair-criteria 5726',
+	),
+);
+
 export const triageCommand = Command.make("triage").pipe(
 	Command.withSubcommands([
 		// One leaf per line, so five in-flight slices append at five distinct lines rather than all
@@ -388,6 +422,7 @@ export const triageCommand = Command.make("triage").pipe(
 		provenance,
 		homes,
 		enrich,
+		repairCriteria,
 	]),
 	Command.withShortDescription("Take one intake-queue issue from arrival to triaged."),
 	Command.withDescription(
