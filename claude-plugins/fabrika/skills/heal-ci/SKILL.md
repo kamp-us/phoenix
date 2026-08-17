@@ -1,6 +1,8 @@
 ---
 name: heal-ci
 description: "Answer why one pull request is not moving and drive it back into motion — one PR, or a scheduled sweep of every open PR. Trigger on \"heal #N\", \"why is this PR stuck\", \"why has this not merged\", \"this PR has been sitting\", \"nothing is happening on this PR\", \"sweep for stranded PRs\", and whenever `ship` reports red or a PR looks abandoned — a green PR that nobody owns is stranded too. Not review, not repair (`build`), not merge (`ship`)."
+arguments: [pr_number]
+argument-hint: "[pr-number] — the stuck pull request; omit to sweep every open one"
 ---
 
 # heal-ci
@@ -27,10 +29,12 @@ Your mutations are exactly three: one rerun request, one comment, one filed repo
 
 ## 1 — Classify the stall
 
-An argument that is a PR number is single-PR mode. No argument is **Sweep** — skip to that section.
+Your number is `$pr_number`, and it selects the mode: a PR number is single-PR mode, and a blank
+means you were handed none — that is **Sweep**, so skip to that section. Read it there; never
+re-derive it from the prose around you.
 
 ```bash
-fabrika heal-ci diagnose 4321
+fabrika heal-ci diagnose $pr_number
 ```
 
 The verb prints one `stall` token and the evidence that proves it. Every token is an answer at
@@ -88,7 +92,7 @@ or decision PR may legitimately carry no issue at all, so a missing row is not a
 ## 3 — The red stalls: classify before you touch anything
 
 ```bash
-fabrika heal-ci logs 4321 | fabrika heal-ci classify
+fabrika heal-ci logs $pr_number | fabrika heal-ci classify
 ```
 
 `logs` emits **every** failing gating context and `classify` returns one line per context — a PR is
@@ -111,7 +115,7 @@ and treating one as healable is how a non-failure stalled a mergeable PR.
 ## 4 — The one rerun, and why the verb owns the guard
 
 ```bash
-fabrika heal-ci rerun 4321 --run 9182736450 --sha 03135b91 --signature preview-warmup
+fabrika heal-ci rerun $pr_number --run 9182736450 --sha 03135b91 --signature preview-warmup
 ```
 
 A transient gets **exactly one** rerun per head, ever. The verb re-derives that precondition itself
@@ -128,7 +132,7 @@ say why.
 ## 5 — When the red is not in the code, or nothing started
 
 ```bash
-fabrika heal-ci surface 4321
+fabrika heal-ci surface $pr_number
 ```
 
 Some PRs are red, or unmergeable while reading green, because the **required-check surface is

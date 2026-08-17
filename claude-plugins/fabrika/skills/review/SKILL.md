@@ -1,6 +1,8 @@
 ---
 name: review
 description: "The merged text-review gate — judge one PR's textual artifacts (code, docs, skills) against the linked issue's acceptance criteria. Trigger on \"/review\", \"review PR #N\", \"verify PR #N\", \"gate PR #N before merge\", and whenever a PR needs its review verdict before it can ship. Not plans (`check-epic-plan`), not rendered visuals (`review-ui`), not governance-corpus integrity (`governance` — this skill invokes it and must not absorb it)."
+arguments: [pr_number]
+argument-hint: "[pr-number] — the pull request to review"
 ---
 
 # review
@@ -16,8 +18,12 @@ marker in your own namespace is a defect you report, not a PR nobody reviewed.
 
 ## 1 — Scope the PR; the answer is your emission checklist
 
+The pull request you were invoked on is `$pr_number`, and every command below carries it. A blank
+there means you were handed no number — get one from your caller before running a verb, never guess
+it out of the surrounding prose.
+
 ```bash
-fabrika review scope 4321
+fabrika review scope $pr_number
 ```
 
 <!-- anchor: NAMESPACE-SET-IS-THE-EMISSION-CHECKLIST --> The printed class set derives your
@@ -37,7 +43,7 @@ tree.
 
 ```bash
 fabrika review criteria 4287
-fabrika review verdicts 4321
+fabrika review verdicts $pr_number
 ```
 
 The acceptance-criteria block arrives through the registered wire format, never a hand parse;
@@ -70,7 +76,7 @@ the verb. There are two, and only one of them is a defect:
 ## 3 — Judge each class by its rubric
 
 ```bash
-fabrika review diff 4321 --sha 03135b91
+fabrika review diff $pr_number --sha 03135b91
 ```
 
 The diff verb refuses a truncated read rather than serving a prefix as the whole PR, and serves
@@ -87,7 +93,7 @@ green as this PR's. The code class's execution evidence is the structural CI-at-
 incomplete enumerations:
 
 ```bash
-fabrika review ci 4321 --sha 03135b91
+fabrika review ci $pr_number --sha 03135b91
 ```
 
 No class checks out the head: content arrives through the verbs as bytes, so the PR's own
@@ -103,7 +109,7 @@ severity tier. In-scope findings append an acceptance criterion under the verb's
 never this one's. Out-of-scope findings go to fabrika's `/report`, non-blocking.
 
 ```bash
-fabrika review append-criterion 4287 --pr 4321 --round 1 <<'EOF'
+fabrika review append-criterion 4287 --pr $pr_number --round 1 <<'EOF'
 a regression test covers qty > 1
 EOF
 ```
@@ -115,7 +121,7 @@ routes back to the full path, and the verdict stays conjunctive default-deny.
 ## 5 — Verify the deviations disclosure
 
 ```bash
-fabrika review deviations 4321 --sha 03135b91
+fabrika review deviations $pr_number --sha 03135b91
 ```
 
 <!-- anchor: DEV-VOCABULARY --> Match your findings against each entry's **substance**, never its
@@ -136,7 +142,7 @@ undisclosed that this gate could see"* — never "no deviations exist".
 ## 7 — Emit: one comment per namespace, read back, bound to what you saw
 
 ```bash
-fabrika review post 4321 --namespace review-code --polarity PASS --sha 03135b91 --clause "merge-ready" <<'EOF'
+fabrika review post $pr_number --namespace review-code --polarity PASS --sha 03135b91 --clause "merge-ready" <<'EOF'
 …the verdict body: per-criterion evidence, findings, deviations table…
 EOF
 ```

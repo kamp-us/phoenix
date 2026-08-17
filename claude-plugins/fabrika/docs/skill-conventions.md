@@ -314,6 +314,43 @@ not assume it.
 > invariant. Five fabrika contracts each restated it before this section existed
 > ([#4929](https://github.com/kamp-us/phoenix/issues/4929)); they now cite it.
 
+## 12. A skill that takes a number declares it
+
+**A skill declares `arguments:` exactly when its own `description` names a number it is invoked
+on** — an issue, a pull request, or an epic. That is the whole rule, and it is derivable rather
+than curated: read the skill's declared trigger phrases, and if one of them carries a `#N`, the
+skill takes a number and declares it. Nothing else qualifies. A skill that reads a number out of
+some artifact it fetched has not been *handed* one, and a skill whose subject is a session, a
+diff, or a term takes none at all.
+
+Declaring it buys one thing: `/fabrika:review 5492` binds `5492` to a name the body reads,
+instead of leaving the model to find the number in the surrounding prose. So the body must
+actually read it — **the step that takes the number substitutes `$<name>`, and no second
+prose-parsing path for the same number survives the change.** A sentence like "an argument that is
+a PR number means repair mode" is exactly that second path, and it goes.
+
+**The declaration is two fields, because one of them cannot carry the hint.** `arguments:` is a
+list of *names only* — the loader drops anything that is not a non-numeric string, so a name is
+all it can hold. The caller-facing wording lives in `argument-hint:`, and **it must say which kind
+of number the skill wants**, because the completion menu is where `/fabrika:review 5492` and
+`/fabrika:plan-epic 5492` become distinguishable. Name the argument for its kind too —
+`pr_number`, `issue_number`, `epic_number` — since the completion falls back to `[name]` once the
+caller starts typing.
+
+**`build` and `build-ui` take two kinds of number in one slot, and the declaration admits both.**
+An issue number is construction; a PR number is repair; which one arrives *is* the mode selector,
+so neither can be split into its own argument without splitting the skill. Their argument is
+`issue_or_pr_number` and their hint spells out both readings plus the third case — omitted, which
+sends them to `pick`. Where an argument is optional at all (`build`, `build-ui`, `heal-ci`), the
+body says in one line what a blank means, because a blank is what an absent argument substitutes
+to and a skill that runs a verb on it has run it on nothing.
+
+> Source: [#5587](https://github.com/kamp-us/phoenix/issues/5587), the M45 native-shell campaign.
+> The mechanics are read out of the installed Claude Code build (2.1.233), whose frontmatter
+> schema documents `arguments` as "@internal — typed variant of argument-hint; argument-hint is
+> the documented form". Both fields are declared here for that reason: the typed one binds the
+> name, the documented one is what a caller reads.
+
 ## What these conventions deliberately do not cover
 
 - **What a verb owes its caller** — `--help` discoverability, output contracts, usage examples —

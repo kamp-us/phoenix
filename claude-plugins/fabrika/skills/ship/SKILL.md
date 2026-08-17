@@ -1,6 +1,8 @@
 ---
 name: ship
 description: "Ship one verified PR — the pipeline's single merge authority. Trigger on \"/ship\", \"ship #N\", \"merge #N\", \"enqueue #N\", \"close the loop on #N\", and whenever a reviewed PR needs its merge driven to a terminal state. Not review (`review`), not repair (`build`), not the human release flip."
+arguments: [pr_number]
+argument-hint: "[pr-number] — the verified pull request to merge"
 ---
 
 # ship
@@ -11,7 +13,7 @@ async merge, so "QUEUED" is your victory condition and "merged" is something you
 assert.
 
 <!-- anchor: DISARM-LIFECYCLE --> **Every run that does not enqueue disarms the merge intent.**
-First act: `fabrika ship disarm 4321 --site preflight` — a parked `--auto` from an interrupted run
+First act: `fabrika ship disarm $pr_number --site preflight` — a parked `--auto` from an interrupted run
 enqueues the PR the second an approval lands. Every stop below repeats it with `--site refuse`, and
 every stop posts its reason durably with `fabrika ship note`, because a shipper that dies silently
 leaves a green-but-not-enqueued PR with zero signal. A failed disarm never rewrites a stop's
@@ -19,8 +21,12 @@ disposition; it changes what you report (`merge intent: NOT cleared`).
 
 ## 1 — Scope
 
+The pull request you were invoked on is `$pr_number`, and every command below carries it. A blank
+there means you were handed no number — get one from your caller before running a verb, never guess
+it out of the surrounding prose.
+
 ```bash
-fabrika ship scope 4321
+fabrika ship scope $pr_number
 ```
 
 Already `merged` is an idempotent success — report it and end. `draft`/`closed` is a refusal.
@@ -38,7 +44,7 @@ An ADR-only PR is `not-control-plane` and owes no approval; its required `govern
 what still gates it (founder ruling, 2026-08-15 on #5531).
 
 ```bash
-fabrika ship cp-approval 4321 --sha 03135b91
+fabrika ship cp-approval $pr_number --sha 03135b91
 ```
 
 `discharge` → continue, and pass `--cp` to step 3's gate. `stop` → disarm, post
@@ -55,7 +61,7 @@ repair exactly as an ordinary FAIL; the advisory carrier is a PASS path only.
 ## 3 — The verdict conjunction
 
 ```bash
-fabrika ship gate 4321 --sha 03135b91 --require review-code --require review-skill
+fabrika ship gate $pr_number --sha 03135b91 --require review-code --require review-skill
 ```
 
 `--require` is repeated verbatim from `scope`'s printed namespace set — the verb refuses a
@@ -80,13 +86,13 @@ is red too, and routing to the `governance` skill is what clears both.
 ## 4 — CI at the head, and only at the head
 
 ```bash
-fabrika ship checks 4321 --sha 03135b91 --wait
+fabrika ship checks $pr_number --sha 03135b91 --wait
 ```
 
 Terminals: `green` → continue. `red` → disarm, note, route the failed run to `heal-ci`, stop.
 `wedged` → disarm, note naming the stranded check; **the cancel-and-rerun lever belongs to a
 human** — you diagnose, you never pull it. `no-runs` → one bounded nudge:
-`fabrika ship nudge 4321 --sha 03135b91` re-derives the dropped-trigger state itself and refuses
+`fabrika ship nudge $pr_number --sha 03135b91` re-derives the dropped-trigger state itself and refuses
 otherwise; after the nudge, re-enter this step once. `budget-exhausted` → disarm, note,
 stop. `head-moved` → start over at step 1; every answer so far was about a tree that is gone.
 **You never re-run, re-trigger, or locally reproduce a check** — CI's verdict is CI's.
@@ -94,7 +100,7 @@ stop. `head-moved` → start over at step 1; every answer so far was about a tre
 ## 5 — Run-evidence
 
 ```bash
-fabrika ship evidence 4321 --sha 03135b91
+fabrika ship evidence $pr_number --sha 03135b91
 ```
 
 `present` → continue. `pending` → wait or stop; pending is not absent, and a run that completed
@@ -108,7 +114,7 @@ exist: stop without a verdict; **a failed read is never "no bundle"**.
 ## 6 — Unresolved threads: the one judgment
 
 ```bash
-fabrika ship threads 4321
+fabrika ship threads $pr_number
 ```
 
 The ruleset blocks the enqueue on unresolved threads, and your resolve is the pipeline's only
@@ -124,7 +130,7 @@ unresolved thread:
   answers, a finding a later commit made moot → resolve it, rationale first:
 
 ```bash
-fabrika ship resolve 4321 --thread PRRT_kwDOxx <<'EOF'
+fabrika ship resolve $pr_number --thread PRRT_kwDOxx <<'EOF'
 Resolving: the import this flags was removed in the follow-up commit at this head.
 EOF
 ```
@@ -135,8 +141,8 @@ real objection.
 ## 7 — Enqueue, then reconcile honestly
 
 ```bash
-fabrika ship enqueue 4321 --sha 03135b91
-fabrika ship reconcile 4321
+fabrika ship enqueue $pr_number --sha 03135b91
+fabrika ship reconcile $pr_number
 ```
 
 `enqueue` is the only step that arms an intent, and it never passes a merge-method flag — the
@@ -148,13 +154,13 @@ the run's terminals: `landed` → step 8. `ejected` → `disarm --site ejected`,
 repair; re-entry is rebase → re-review → fresh gate pass, never a re-enqueue on old verdicts.
 `unresolved` → report it in those words with the horizon; still-queued at the horizon is
 neither a landing nor a failure, and **"auto-merges on green" is not a thing you say**. `parked` →
-the enqueue never took effect: run `fabrika ship disarm 4321 --site post-enqueue` (reconcile is a
+the enqueue never took effect: run `fabrika ship disarm $pr_number --site post-enqueue` (reconcile is a
 read and disarms nothing), note, and stop.
 
 ## 8 — Release queue (dark ships only)
 
 ```bash
-fabrika ship release 4321
+fabrika ship release $pr_number
 ```
 
 `queued` or `n/a` — the label is the whole action. `no-issue` (a dark-ship signal with no

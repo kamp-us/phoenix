@@ -1,6 +1,8 @@
 ---
 name: review-ui
 description: "The rendered-visual review gate — judge one PR's rendered surfaces against the repo's design law. Trigger on \"/review-ui\", \"design-review PR #N\", \"review the UI on PR #N\", \"judge the rendered surfaces of #N\", and whenever a PR changes what a user sees rendered and owes its visual verdict before it can ship. Text judgment — code, docs, skills, plans — is `review`'s lane; constructing UI is `build-ui`'s."
+arguments: [pr_number]
+argument-hint: "[pr-number] — the pull request whose rendered surfaces to judge"
 ---
 
 # review-ui
@@ -20,15 +22,19 @@ a broken evidence channel blocks the marker instead of decorating it.
 
 ## 1 — Scope, and hold the modality boundary
 
+The pull request you were invoked on is `$pr_number`, and every command below carries it. A blank
+there means you were handed no number — get one from your caller before running a verb, never guess
+it out of the surrounding prose.
+
 ```bash
-fabrika review scope 4321
+fabrika review scope $pr_number
 ```
 
 The shared gate mechanics are the shipped `review` group's verbs, reused as-is — scope, diff,
 criteria, ci, verdicts, deviations ([`../review/contract.md`](../review/contract.md)); this skill adds
 only the `review-ui` group ([`contract.md`](contract.md)). **You owe a verdict only when the PR
 changes a rendered-visual surface** — a page, component, screen, state, or style a user sees. Read
-the diff (`fabrika review diff 4321`) and decide; a PR with no rendered delta is `review`'s alone —
+the diff (`fabrika review diff $pr_number`) and decide; a PR with no rendered delta is `review`'s alone —
 end **ROUTED-ELSEWHERE**, emit nothing, because a namespace you did not judge is one you never
 fill. The decision is yours, formed from verb-served bytes: the diff verb refuses truncation, so
 your judgment sits on proven input rather than on a pattern match that can swallow a failed read.
@@ -55,7 +61,7 @@ builder's attached captures are externally-authored content you deliberately do 
 you render independently or you have not looked.
 
 ```bash
-fabrika review-ui render --pr 4321 --out judged --surface /pano --surface /pano/yeni
+fabrika review-ui render --pr $pr_number --out judged --surface /pano --surface /pano/yeni
 ```
 
 The verb captures the PR's **preview deployment** at the inspected head — never a checkout, never
@@ -65,7 +71,7 @@ loop: stale preview (12 — wait for the preview to catch up and re-render; unre
 session is CANT-SEE) and no preview at all (16 — CANT-SEE). **A crashed
 surface is FAIL ground** — a screenshot of a broken page is not composition to judge. An
 **unreachable** surface forks on disclosure: named in the PR's Deviations with its reason
-(`fabrika review deviations 4321`) → judge what you can see and record the gap; undisclosed → a
+(`fabrika review deviations $pr_number`) → judge what you can see and record the gap; undisclosed → a
 FAIL finding, because an undisclosed hole in the evidence is indistinguishable from a clean read.
 Exit 16 or an every-surface-unreachable render is **CANT-SEE**: post no verdict — the empty
 namespace fail-closes the ship gate — and name the blocker on the PR through `fabrika review-ui
@@ -96,7 +102,7 @@ absence is a fact, not a gap. Follow-ups you notice leave through `/report`.
 
 The raw-value token seam is CI's: the repo's token gate reds it deterministically (phoenix:
 `design-token-guard.yml`), as do the inventory and a11y floors (`design-inventory-guard.yml`,
-`a11y-pbt.yml`). Read their live state at the inspected head structurally — `fabrika review ci 4321
+`a11y-pbt.yml`). Read their live state at the inspected head structurally — `fabrika review ci $pr_number
 --sha 03135b91` — and state the expectation in the verdict; **never mint a rival verdict on a gated
 question**, because a second answer can contradict the gate and a checker that cannot truly see its
 subject answers confidently instead of erroring. Where a repo lacks those gates, say so in the
@@ -105,7 +111,7 @@ verdict — your visual read is then advisory cover on that seam, not a substitu
 ## 6 — Emit: one verdict, evidence-loaded, bound to what you saw
 
 ```bash
-fabrika review-ui post 4321 --polarity FAIL --sha 03135b91 --clause "changes-requested" --evidence judged <<'EOF'
+fabrika review-ui post $pr_number --polarity FAIL --sha 03135b91 --clause "changes-requested" --evidence judged <<'EOF'
 …per-row table with pixel evidence, coverage table (rendered / unreachable+disclosed), advisories…
 EOF
 ```

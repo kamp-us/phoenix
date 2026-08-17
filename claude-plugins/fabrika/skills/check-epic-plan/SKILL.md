@@ -1,6 +1,8 @@
 ---
 name: check-epic-plan
 description: "Gate one planned epic's task ledger and, only on a clean floor, flip its planned children to pickable. Trigger on \"gate epic #N\", \"check the plan for epic #N\", \"run the plan gate\", \"is epic #N's ledger clean\", \"make epic #N's children pickable\", and whenever a planned epic's ledger needs clearing before its children can be built. It does not plan (`plan-epic`) and never reviews a pull request (`review`)."
+arguments: [epic_number]
+argument-hint: "[epic-number] — the planned epic whose ledger to gate"
 ---
 
 # check-epic-plan
@@ -28,11 +30,15 @@ one branch disposition: none, nothing checked out, nothing to clean up.
 
 ## 1 — Claim the epic, read the ledger
 
+The epic you were invoked on is `$epic_number`, and every command below carries it. A blank there
+means you were handed no number — get one from your caller before running a verb, never guess it out
+of the surrounding prose.
+
 The planner and this gate must not interleave on one epic, so claim it before reading anything —
 the claim is `build`'s, reused, not a second lock:
 
 ```bash
-fabrika build claim 4300 --purpose gate
+fabrika build claim $epic_number --purpose gate
 ```
 
 `--purpose gate` is not optional here. The audience axis (`ready-for:agent`) asks whether an agent
@@ -52,7 +58,7 @@ is a proven out-of-focus epic. Exit `21` is no longer reachable at this step, be
 is not bound by the audience axis.
 
 ```bash
-fabrika plan read 4300
+fabrika plan read $epic_number
 ```
 
 This is the **advisory layer's** read — the floor re-fetches on its own so it never grades a
@@ -62,7 +68,7 @@ assignee slot, criteria token, stories and containment.
 ## 2 — Run the floor; do not re-derive it
 
 ```bash
-fabrika plan check 4300
+fabrika plan check $epic_number
 ```
 
 This is the **whole pass/fail decision** over the closed hard-defect enum in
@@ -82,7 +88,7 @@ defective path is terminal here.** Re-planning is `plan-epic`'s lane; hand back 
 Only on a clean floor:
 
 ```bash
-fabrika plan flip 4300 --digest 4d90e1bb27ac
+fabrika plan flip $epic_number --digest 4d90e1bb27ac
 ```
 
 The flip is **unconditional over every `status:planned` child** and not yours to narrow: there is
@@ -110,7 +116,7 @@ the check and the flip; nothing was written, so re-check rather than retry.
 ## 4 — Post the verdict, bound to the scope you scanned
 
 ```bash
-fabrika plan verdict 4300 --digest 4d90e1bb27ac <<'EOF'
+fabrika plan verdict $epic_number --digest 4d90e1bb27ac <<'EOF'
 caveat: ac-not-checkable #<child> — "works well" states no observable outcome
 EOF
 ```
@@ -145,7 +151,7 @@ it with `report` and let the verdict stand.
 ## Terminal vocabulary
 
 End as exactly one. **Every case holds no branch and no checkout — there is nothing to push, leave
-local, or remove.** Release the claim with `fabrika build release 4300` on every terminal reached
+local, or remove.** Release the claim with `fabrika build release $epic_number` on every terminal reached
 **after step 1 answered `won`** — if it never did, you hold nothing and there is nothing to release.
 An unreleased claim is a lock nobody can reclaim, which a human then clears by hand.
 

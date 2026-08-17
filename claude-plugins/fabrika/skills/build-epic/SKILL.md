@@ -1,6 +1,8 @@
 ---
 name: build-epic
 description: "Conduct one planned epic into ONE pull request. Trigger on \"build epic #N\", \"conduct epic #N\", \"drive epic #N to a PR\", \"run the epic\", and whenever a planned epic's slices need landing as commits on one branch. Construction is `build`/`build-ui`'s, judgment `review`/`review-ui`'s, planning and merging their own lanes — this skill only conducts."
+arguments: [epic_number]
+argument-hint: "[epic-number] — the planned epic to conduct into one PR"
 ---
 
 # build-epic
@@ -23,24 +25,28 @@ nothing). No merge, no queue, no release, no label.
 
 ## 1 — Claim the epic, prove the ground
 
+The epic you were invoked on is `$epic_number`, and every command below carries it. A blank there
+means you were handed no number — get one from your caller before running a verb, never guess it out
+of the surrounding prose.
+
 Claim and lane mechanics are `build`'s verbs, reused: `fabrika build claim <epic>` then
 `fabrika build tree --require-clean`. **One tree for the whole run** — every subagent you dispatch
 works in the tree you are in, never its own. Where that tree sits is the operator's call, not this
 skill's. Then:
 
 ```bash
-fabrika epic open 4300
+fabrika epic open $epic_number
 ```
 
 Done when it prints the run id: the epic is planned, its slice topology parses, the ledger
-exists. **Re-run `fabrika build tree --issue 4300` before every git mutation** — the cwd resets
+exists. **Re-run `fabrika build tree --issue $epic_number` before every git mutation** — the cwd resets
 between shell calls, so the tree you proved is not the tree you are standing in until you prove it
-again. Cut the one branch: `fabrika build branch 4300 --slug checkout-totals`.
+again. Cut the one branch: `fabrika build branch $epic_number --slug checkout-totals`.
 
 ## 2 — Ask, never infer: the tick loop
 
 ```bash
-fabrika epic next 4300
+fabrika epic next $epic_number
 ```
 
 You do not walk the plan or remember where you are — the run's state lives in the ledger, and
@@ -52,15 +58,15 @@ cannot name refuses rather than guesses, which is the ledger's reason to exist.
 ## 3 — Dispatch a fresh implementer per commit
 
 Per `dispatch-slice`: spawn a **new** subagent — a fork is the fresh-context guarantee — into this
-tree, carrying only what is written down: the dispatch brief `fabrika epic brief 4300 --slice C3`
+tree, carrying only what is written down: the dispatch brief `fabrika epic brief $epic_number --slice C3`
 prints — slice contract, branch, tree path, handoff-note path. The brief tells the agent to ground
-the contract itself, never to trust you. Record the dispatch: `fabrika epic record 4300 --event
+the contract itself, never to trust you. Record the dispatch: `fabrika epic record $epic_number --event
 slice-dispatched --slice C3`.
 
 When it returns, **read the graph, not the report**:
 
 ```bash
-fabrika epic landed 4300 --slice C3
+fabrika epic landed $epic_number --slice C3
 ```
 
 `landed` proves a new commit on this branch since the slice opened — and its refusals are the
@@ -72,21 +78,21 @@ Record what it proved (`--event slice-landed`; on its `22`, `--event dispatch-de
 ## 4 — Dispatch a fresh evaluator per slice
 
 Per `evaluate-slice`: spawn a fresh evaluator that runs `review`-style judgment at slice scope —
-**reading the unpushed local commit** (`fabrika epic slice-diff 4300 --commit 8c1f2a9d`), no
+**reading the unpushed local commit** (`fabrika epic slice-diff $epic_number --commit 8c1f2a9d`), no
 push, no CI wait, zero execution: the reviewer reads, never runs. **The implementer never grades
 its own slice.** The evaluator returns its verdict — polarity and evidence; **you record it
 verbatim** (the polarity is the evaluator's, the recording fence is the claim-holder's), bound to
 the **commit SHA in the local graph** — content-addressed, so any rewrite unbinds it:
 
 ```bash
-fabrika epic verdict 4300 --slice C3 --commit 8c1f2a9d --polarity PASS <<'EOF'
+fabrika epic verdict $epic_number --slice C3 --commit 8c1f2a9d --polarity PASS <<'EOF'
 …the evaluator's per-criterion evidence, verbatim…
 EOF
 ```
 
 On FAIL, `next` answers `retry-slice` carrying the Fix-First line — record it
-(`fabrika epic record 4300 --event retry-injected --slice C3`) and dispatch a fresh implementer
-with the retry brief (`fabrika epic brief 4300 --slice C3 --retry`); **the breaker is the verb's
+(`fabrika epic record $epic_number --event retry-injected --slice C3`) and dispatch a fresh implementer
+with the retry brief (`fabrika epic brief $epic_number --slice C3 --retry`); **the breaker is the verb's
 number, not your judgment in the moment** — the cap is **2** on each axis, fail and dead counted
 separately and never summed — and the implementer is fresh each retry so a stale context cannot
 carry a confabulated fix forward. On `escalate-slice`, record `breaker-tripped`; on
@@ -95,9 +101,9 @@ post the escalation via `fabrika build note`, record `run-halted`, and end at th
 
 ## 5 — One PR, final review as merged
 
-Per `open-pr`: read the fold (`fabrika epic status 4300` — every slice PASS-current at its SHA;
+Per `open-pr`: read the fold (`fabrika epic status $epic_number` — every slice PASS-current at its SHA;
 your terminal report reads this artifact, never memory), then `fabrika build push` and
-`fabrika build pr 4300` with an authored body, then `fabrika epic record 4300 --event pr-opened`
+`fabrika build pr $epic_number` with an authored body, then `fabrika epic record $epic_number --event pr-opened`
 (`next` answers `done` from here). The final PR-scope review stays exactly as merged (`/review`:
 SHA-bound at the pushed head, CI-gated). Slices land as commits; **the epic's output is this one
 PR**. On `HALTED-SLICE-FAILED` / `HALTED-DISPATCH-DEAD`, record `run-halted` before you stop;

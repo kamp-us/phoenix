@@ -1,6 +1,8 @@
 ---
 name: triage
 description: "Turn one raw `status:needs-triage` issue into a single actionable unit a builder can pick up cold. Trigger on \"/triage\", \"triage the queue\", \"triage issue #N\", \"process needs-triage\", \"classify these issues\", and whenever someone asks to make the backlog actionable or pickable."
+arguments: [issue_number]
+argument-hint: "[issue-number] — the raw issue to triage"
 ---
 
 # triage
@@ -11,8 +13,12 @@ merely well-formed. You have full rewrite authority; **salvage first**.
 
 ## 1 — Claim it before you mutate it
 
+The issue you were invoked on is `$issue_number`, and every command below carries it. A blank there
+means you were handed no number — get one from your caller before running a verb, never guess it out
+of the surrounding prose.
+
 ```bash
-fabrika triage claim 4312
+fabrika triage claim $issue_number
 ```
 
 Done when it printed `won` — that means this session holds it; on anything else, move on.
@@ -24,7 +30,7 @@ in your own words. **Check any falsifiable claim it rests on against source befo
 of it** — a summary of a contract is not the contract. A hand-filed issue skipped dedup:
 
 ```bash
-fabrika report dedup --query "sozluk definition editor loses focus after save" --exclude 4312
+fabrika report dedup --query "sozluk definition editor loses focus after save" --exclude $issue_number
 ```
 
 Read `candidates` yourself — shared vocabulary is not a shared observation; `indeterminate` is a
@@ -60,7 +66,7 @@ question — is there already a ticket that *owns this surface* and should absor
 surface, not on your issue's wording:
 
 ```bash
-fabrika report dedup --query "sozluk definition editor keyboard focus" --exclude 4312
+fabrika report dedup --query "sozluk definition editor keyboard focus" --exclude $issue_number
 ```
 
 Read the candidates yourself and take the cheapest true route:
@@ -68,7 +74,7 @@ Read the candidates yourself and take the cheapest true route:
 - **An open epic or issue already owns this surface** → **fold in and close**, which is the preferred
   outcome. Add this issue's content to the survivor, then close this one against it so the trail runs
   both ways — the survivor carries the content, this issue points at the survivor. `fabrika triage
-  kill 4312 --confirm --duplicate-of 4290` is the folding route, and it is only open to an agent
+  kill $issue_number --confirm --duplicate-of 4290` is the folding route, and it is only open to an agent
   filing (step 8); for a human filing, add the content to the survivor by hand and carry on triaging
   this one, since a human filing is never closed here.
 - **Several small items cluster on one surface with no owner yet** → **make the cluster an epic**
@@ -85,7 +91,7 @@ Done when you have taken one of the three routes and the reason is written down.
 Two problems agents could work at different times are a bundle; two facets of one change are not.
 
 ```bash
-fabrika triage split 4312 --title "Editor loses focus after save" <<'EOF'
+fabrika triage split $issue_number --title "Editor loses focus after save" <<'EOF'
 …
 EOF
 ```
@@ -107,7 +113,7 @@ fabrika triage homes
 ```
 
 ```bash
-fabrika triage enrich 4312 <<'EOF'
+fabrika triage enrich $issue_number <<'EOF'
 …
 EOF
 ```
@@ -129,7 +135,7 @@ merit: `p0` for ship-work and fires, `p1` for what you would genuinely pull next
 default** and most of a healthy backlog. A roadmap row confers no band either way.
 
 ```bash
-fabrika triage apply 4312 --type bug --priority p2 --ready-for agent --home 47
+fabrika triage apply $issue_number --type bug --priority p2 --ready-for agent --home 47
 ```
 
 A standing lane takes `--lane wayfinder:backlog` (or `axis:pipeline-hardening`) **instead of**
@@ -150,7 +156,7 @@ Done when the verb read back exactly one `type:`, one `p`, `status:triaged`, `re
 ## 8 — The two outcomes that are not "triaged"
 
 ```bash
-fabrika triage provenance 4312
+fabrika triage provenance $issue_number
 ```
 
 Provenance decides what may be closed, and it has **two agent signals**: the `Filed by an agent`
@@ -162,7 +168,7 @@ author. Footer-absence from anyone else is still human-owned.
   closed**. When in doubt treat it as human: ignoring a person costs more than a cheap agent issue.
 
 ```bash
-fabrika triage park 4312 <<'EOF'
+fabrika triage park $issue_number <<'EOF'
 …
 EOF
 ```
@@ -174,7 +180,7 @@ EOF
   issue's content into that one before closing; without it the content is simply lost.
 
 ```bash
-fabrika triage kill 4312 --confirm --duplicate-of 4290 <<'EOF'
+fabrika triage kill $issue_number --confirm --duplicate-of 4290 <<'EOF'
 …
 EOF
 ```

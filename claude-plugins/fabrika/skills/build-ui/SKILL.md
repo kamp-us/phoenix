@@ -1,6 +1,8 @@
 ---
 name: build-ui
 description: "Execute one triaged issue whose deliverable is a rendered visual surface, and land it as a PR — or, given a PR number, enter repair mode. Trigger on \"build the UI for #N\", \"implement the page/component/screen\", \"make the visual change in #N\", \"repair the design FAIL on PR #N\", and whenever backlog work's deliverable is something a user will see rendered. Text construction — code-as-text, prose, plans — is `build`'s lane; judging a rendered surface is `review-ui`'s."
+arguments: [issue_or_pr_number]
+argument-hint: "[issue-number|pr-number] — an issue number builds, a PR number repairs; omit to pick from the pool"
 ---
 
 # build-ui
@@ -24,9 +26,12 @@ local render harness (headless browser over this tree), evidence upload to the P
 the session's tool surface carries the `claude-in-chrome` tools, the connected live browser
 (interactive look mode). No merge, no queue access, no release.
 
-An argument that is a PR number is repair mode — skip to **Repair**.
-
 ## 1 — Prove the ground, then pick
+
+Your number is `$issue_or_pr_number`, and it selects the mode: an issue number is construction, a
+PR number is repair — **skip to Repair** — and a blank means you were handed none, so `pick` below
+chooses one for you, and its answer stands in for the argument everywhere after. Read it there;
+never re-derive it from the prose around you.
 
 Lane mechanics are the `build` group's verbs, shared verbatim — tree, pick, eligible, claim,
 confirm, issue, branch, scratch, check, push, pr, note, verdicts, release ([`../build/contract.md`](../build/contract.md)).
@@ -42,7 +47,8 @@ group's own 13/14 mean different things — read each group's own table). **Clai
 whose deliverable is rendered-visual** — a page, component, screen, state, or style a user sees.
 Code-as-text, prose, and plans are `build`'s; a `type:decision` is `/adr`'s. Judging someone else's
 rendered surface is `review-ui`'s. **When in doubt, the work is not yours.** Gate the choice with
-`fabrika build eligible <n>`, then claim with `fabrika build claim <n>` and re-confirm before
+`fabrika build eligible $issue_or_pr_number`, then claim with `fabrika build claim
+$issue_or_pr_number` and re-confirm before
 every later mutation.
 
 ## 2 — Read the law before you generate anything
@@ -70,14 +76,14 @@ the PR's Deviations when you do, and **never cite one as grounds for refusing th
 addressability; note `LAW-SOURCE: manifest-prose` in the PR body. The law is typable at all
 because role tokens make a violation a one-token edit.
 
-Read the issue (`fabrika build issue <n>`) and the component inventory the manifest names:
+Read the issue (`fabrika build issue $issue_or_pr_number`) and the component inventory the manifest names:
 **select from it, never invent a primitive it already ships.** A hand-built card beside a shipped
 Card is the recurring miss. Where the repo carries per-aspect taste skills, consult each by name
 before composing; their absence is a fact, not a gap to fill.
 
 ## 3 — Baseline, construct, render→look→fix
 
-Branch (`fabrika build branch <n> --slug <slug>`), then capture the **before** state of every
+Branch (`fabrika build branch $issue_or_pr_number --slug <slug>`), then capture the **before** state of every
 surface you are about to change, while the tree still renders it:
 
 ```bash
@@ -125,7 +131,7 @@ Validate the text layer like any code diff: `fabrika build check --surface code`
 ## 4 — Ship with the evidence attached
 
 Push (`fabrika build push`, done only on `PUSH-VERDICT: MOVED`) and open the PR
-(`fabrika build pr <n>`) exactly as `build` does — Deviations section, closing keyword, no
+(`fabrika build pr $issue_or_pr_number`) exactly as `build` does — Deviations section, closing keyword, no
 classification claims. Then attach what you rendered:
 
 ```bash
@@ -136,7 +142,7 @@ The verb uploads every capture, **verifies each upload landed, and refuses on an
 partial or silent attach would let a gate pass over an evidence channel that never worked, and it
 is unrepresentable here. A proven refusal (`17`/`9`) with the PR already open gets exactly one
 re-run; still failing, end `ESCALATED` with the note naming the evidence state — **never a quiet
-ship**. `fabrika build note <n>` for the handoff, then `fabrika build release <n>`.
+ship**. `fabrika build note $issue_or_pr_number` for the handoff, then `fabrika build release $issue_or_pr_number`.
 
 **Terminal vocabulary** — end on exactly one: `SHIPPED-PR` (PR open, branch pushed, and
 the evidence state is loud: captures attached, or every uncapturable surface named in Deviations
@@ -154,7 +160,7 @@ cross-lane signals are closed-vocabulary — kind + action + branded ref, receiv
 ## Repair
 
 `build`'s repair loop, plus the visual half: claim the PR's number, fold the verdicts
-(`fabrika build verdicts --pr <n>`), and treat a `review-ui`/design FAIL's findings as law rows
+(`fabrika build verdicts --pr $issue_or_pr_number`), and treat a `review-ui`/design FAIL's findings as law rows
 to re-satisfy — fix on the same branch, **re-render and re-run the look**, push with
 `--force-with-lease`, re-attach evidence at the new head (`fabrika ui evidence` again — captures
 from the old head no longer describe this one), answer findings in a `fabrika build note`.
