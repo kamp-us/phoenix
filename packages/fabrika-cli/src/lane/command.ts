@@ -11,6 +11,7 @@ import {Effect, Option} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
 import {leafCommand} from "../excess-operand.ts";
 import type {VerbOutcome} from "../verb.ts";
+import {runBrief} from "./brief-verb.ts";
 import {runEmit} from "./emit-verb.ts";
 import {runHistory} from "./history-verb.ts";
 import {runOpen} from "./open-verb.ts";
@@ -144,8 +145,42 @@ const emitLane = leafCommand(
 	),
 );
 
+const brief = leafCommand(
+	"brief",
+	{
+		lane: laneArgument,
+		root: rootFlag,
+		task: Flag.string("task").pipe(
+			Flag.optional,
+			Flag.withDescription("the task to brief; omittable on a single-task lane"),
+		),
+		repo: Flag.string("repo").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"the target owner/name (default: $CLAUDE_PIPELINE_REPO, else $GITHUB_REPOSITORY, else the origin remote)",
+			),
+		),
+	},
+	Effect.fn(function* ({lane, root, task, repo}) {
+		yield* emit(
+			yield* runBrief({
+				root,
+				lane,
+				task: Option.getOrNull(task),
+				repo: Option.getOrNull(repo),
+				env: process.env,
+			}),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("The spawn prompt for one task's current leaf state."),
+	Command.withDescription(
+		"Print the spawn prompt for one task's current leaf state, folded fresh from the ledger — so a driver pastes a brief rather than composing one. stdout is the `lane-brief` wire format: which lane, task, state and shell, the resolved issue and PR URLs (URLs only — the spawned shell re-reads its own ground), and the format's byte-fixed rules. Exits 4 (lane record read in full and not the shape), 7 (no lane there), 11 (the lane, the issue or its PRs could not be read — UNKNOWN), 13 (the task is not in the machine, or --task omitted on a multi-task lane), 18 (the leaf state routes to no shell — `queued`, `blocked`, `human:*`, a final), 19 (neither the task nor the lane names an issue, or that issue is proven absent), 20 (zero open PRs where the state needs one, or several where one is required). Example: fabrika lane brief 5680 --task issue_5729",
+	),
+);
+
 export const laneCommand = Command.make("lane").pipe(
-	Command.withSubcommands([status, transition, history, print, open, emitLane]),
+	Command.withSubcommands([status, transition, history, print, open, emitLane, brief]),
 	Command.withShortDescription("Drive one lane's state ledger by folding its event log."),
 	Command.withDescription(
 		"Drive one lane's state ledger — a @demlik/tea machine folded fresh from an append-only events.jsonl on every invocation, speaking the operator's six events (#5673)",
