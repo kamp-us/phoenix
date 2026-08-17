@@ -21,6 +21,26 @@ const BODY = `### Acceptance criteria
 
 Some trailing prose.`;
 
+/** The composed body, or "" — the shape most assertions here want. */
+const compose = (body: string, row: string): string => {
+	const composed = insertAfterLastCriterion(body, row);
+	return composed._tag === "Composed" ? composed.body : "";
+};
+
+/**
+ * A body in the shape triage enrichment actually produces: prose wrapped at ~100 columns with a
+ * two-space continuation indent, so the **last** criterion's text spans three physical lines.
+ */
+const WRAPPED = `### Acceptance criteria
+
+- [ ] the first thing
+- [ ] \`insertAfterLastCriterion\` locates the anchor for a criterion whose text spans continuation
+  lines, and the row is inserted after the criterion's **last** physical line so the parser reads it
+  as a new sibling row rather than a continuation of the previous one.
+
+## Pointers
+`;
+
 describe("criterionRow", () => {
 	it("carries the provenance tag that makes a routed row auditable", () => {
 		expect(criterionRow("a regression test covers qty > 1", 4321, 1)).toBe(
@@ -32,8 +52,7 @@ describe("criterionRow", () => {
 
 describe("insertAfterLastCriterion", () => {
 	it("puts the row inside the block a later read parses, not after the trailing prose", () => {
-		const composed = insertAfterLastCriterion(BODY, "the second thing", "- [ ] a third thing");
-		expect(composed).toBe(`### Acceptance criteria
+		expect(compose(BODY, "- [ ] a third thing")).toBe(`### Acceptance criteria
 
 - [x] the first thing
 - [ ] the second thing
@@ -50,20 +69,34 @@ Some trailing prose.`);
 ## Notes
 
 - [ ] a checkbox that is not a criterion`;
-		const composed =
-			insertAfterLastCriterion(withLaterList, "the only criterion", "- [ ] added") ?? "";
+		const composed = compose(withLaterList, "- [ ] added");
 		expect(composed.indexOf("- [ ] added")).toBeLessThan(composed.indexOf("## Notes"));
 	});
 
-	it("answers null when the criterion's line cannot be located", () => {
-		expect(insertAfterLastCriterion(BODY, "a row that is not there", "- [ ] x")).toBeNull();
+	it("locates a WRAPPED last criterion and lands the row after its last physical line", () => {
+		// The anchor this case used to miss: the criterion's text is the joined sentence, which is on
+		// no single line, so a text-to-line match found nothing and refused the append (#5716).
+		const composed = compose(WRAPPED, "- [ ] a third thing");
+		expect(composed).toContain(
+			"as a new sibling row rather than a continuation of the previous one.\n- [ ] a third thing\n",
+		);
+		const after = criteriaOf(composed) ?? [];
+		expect(after).toHaveLength(3);
+		expect(after[2]?.text).toBe("a third thing");
+		expect(after[1]?.text).toBe(criteriaOf(WRAPPED)?.[1]?.text);
+		expect(appendOnly(WRAPPED, composed)._tag).toBe("AppendOnly");
+		expect(grewByOne(criteriaOf(WRAPPED) ?? [], after, "a third thing")).toBe(true);
+	});
+
+	it("answers NoAnchor when the body carries no block to append under", () => {
+		const composed = insertAfterLastCriterion("## Summary\n\nno criteria here.", "- [ ] x");
+		expect(composed._tag).toBe("NoAnchor");
 	});
 });
 
 describe("grewByOne", () => {
 	it("passes the block the parser reads back as the old rows plus this one", () => {
-		const composed =
-			insertAfterLastCriterion(BODY, "the second thing", "- [ ] a third thing") ?? "";
+		const composed = compose(BODY, "- [ ] a third thing");
 		expect(grewByOne(criteriaOf(BODY) ?? [], criteriaOf(composed), "a third thing")).toBe(true);
 	});
 
@@ -86,16 +119,14 @@ describe("grewByOne", () => {
 - [x] the second thing
 - [ ] a third thing`);
 		expect(grewByOne(criteriaOf(BODY) ?? [], mutated, "a third thing")).toBe(false);
-		const composed =
-			insertAfterLastCriterion(BODY, "the second thing", "- [ ] something else") ?? "";
+		const composed = compose(BODY, "- [ ] something else");
 		expect(grewByOne(criteriaOf(BODY) ?? [], criteriaOf(composed), "a third thing")).toBe(false);
 	});
 });
 
 describe("appendOnly", () => {
 	it("passes exactly one inserted line", () => {
-		const composed =
-			insertAfterLastCriterion(BODY, "the second thing", "- [ ] a third thing") ?? "";
+		const composed = compose(BODY, "- [ ] a third thing");
 		expect(appendOnly(BODY, composed)._tag).toBe("AppendOnly");
 	});
 

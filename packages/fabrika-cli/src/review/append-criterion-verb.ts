@@ -156,24 +156,39 @@ export const runAppendCriterion = (
 		}
 
 		// Fence 2 — append-only, proven twice before anything is sent: against the old bytes, and
-		// against what the registered format reads back out of the composed body.
+		// against what the registered format reads back out of the composed body. The three ways it
+		// can fail refuse on the same code and say different things: one refusal covering all three
+		// left a caller unable to tell a fence hit from an anchor the verb never found (#5716).
 		const row = criterionRow(authored.text, pr, round);
-		const last = before[before.length - 1]?.text ?? "";
-		const composed = insertAfterLastCriterion(target.value.body, last, row);
-		const composedBlock = composed === null ? null : readCriteria(composed);
-		const wouldGrow = grewByOne(
-			before,
-			composedBlock !== null && composedBlock._tag === "Found" ? composedBlock.value : null,
-			authored.text,
-		);
-		if (
-			composed === null ||
-			appendOnly(target.value.body, composed)._tag === "Violates" ||
-			!wouldGrow
-		) {
+		const composition = insertAfterLastCriterion(target.value.body, row);
+		if (composition._tag === "NoAnchor") {
 			return refuse(
 				APPEND_ONLY,
-				`${VERB}: the append would drop or mutate an existing row — refusing (append-only fence).`,
+				`${VERB}: no row to append under — ${composition.reason}; nothing was written.`,
+				diagnostics,
+			);
+		}
+		const composed = composition.body;
+
+		const violation = appendOnly(target.value.body, composed);
+		if (violation._tag === "Violates") {
+			return refuse(
+				APPEND_ONLY,
+				`${VERB}: the append would drop or mutate an existing row — ${violation.reason}; refusing (append-only fence).`,
+				diagnostics,
+			);
+		}
+
+		const composedBlock = readCriteria(composed);
+		const rows = composedBlock._tag === "Found" ? composedBlock.value : null;
+		if (!grewByOne(before, rows, authored.text)) {
+			const reread =
+				rows === null
+					? `no conforming block (${composedBlock._tag.toLowerCase()})`
+					: `${rows.length} row(s)`;
+			return refuse(
+				APPEND_ONLY,
+				`${VERB}: the composed body does not re-read as the ${before.length} prior row(s) plus this one — it re-reads as ${reread}; refusing (append-only fence).`,
 				diagnostics,
 			);
 		}

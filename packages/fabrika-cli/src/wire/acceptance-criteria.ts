@@ -19,7 +19,13 @@
  * (`<!-- ac:review-code … -->`) is deliberately not carried here.
  */
 
-import type {NonEmptyReadonlyArray, WireEmit, WireRead, WireReadLines} from "./format.ts";
+import type {
+	NonEmptyReadonlyArray,
+	WireEmit,
+	WireMalformed,
+	WireRead,
+	WireReadLines,
+} from "./format.ts";
 
 declare const CRITERION_TEXT: unique symbol;
 
@@ -44,6 +50,23 @@ export interface AcceptanceCriterion {
 }
 
 export type AcceptanceCriteriaRead = WireRead<NonEmptyReadonlyArray<AcceptanceCriterion>>;
+
+/**
+ * One criterion and the physical lines it occupies — `firstLine` its checkbox line, `lastLine` the
+ * last continuation folded into its text. Both are 0-based indices into the body, inclusive.
+ *
+ * A criterion's *text* cannot locate its own lines once it wraps: the text is the joined sentence
+ * while the checkbox line carries only its first segment, so a caller matching one against the
+ * other finds nothing and reads that as "no such row" (#5716). Anything writing beside a criterion
+ * takes the span from here instead of re-deriving the wrapping rule at the call site.
+ */
+export interface CriterionSpan {
+	readonly criterion: AcceptanceCriterion;
+	readonly firstLine: number;
+	readonly lastLine: number;
+}
+
+export type AcceptanceCriteriaSpans = WireRead<NonEmptyReadonlyArray<CriterionSpan>>;
 
 /** The one conforming heading. Level and spelling are both part of it. */
 export const HEADING_LEVEL = 3;
@@ -206,6 +229,8 @@ const sectionOf = (lines: ReadonlyArray<string>, heading: Heading): ReadonlyArra
 interface OpenCriterion {
 	readonly parts: string[];
 	readonly checked: boolean;
+	readonly firstLine: number;
+	lastLine: number;
 }
 
 /**
@@ -222,19 +247,22 @@ const joinContinuations = (parts: ReadonlyArray<string>): string => {
 	return [head, ...rest].join(" ").replace(/\s+/g, " ").trim();
 };
 
-const malformed = (reason: string, evidence: string): AcceptanceCriteriaRead => ({
+const malformed = (reason: string, evidence: string): WireMalformed => ({
 	_tag: "Malformed",
 	reason,
 	evidence,
 });
 
 /**
- * Read the acceptance-criteria block out of an issue body. Total: `Found` | `Absent` | `Malformed`.
+ * Read the block as criteria *with their line spans*. Total: `Found` | `Absent` | `Malformed`.
+ *
+ * {@link read} is this answer with the spans dropped, so there is one scanner and one wrapping rule
+ * for both — a second one would be a second definition of "criterion".
  *
  * `Found` is unreachable with zero criteria — the only `return` that produces it is guarded by the
  * emptiness check below and the type would reject it regardless.
  */
-export const read = (body: string): AcceptanceCriteriaRead => {
+export const readSpans = (body: string): AcceptanceCriteriaSpans => {
 	const lines = body.split("\n");
 	const candidates = scanHeadings(lines).filter((heading) => reachesForBlock(heading.text));
 	if (candidates.length === 0) {
@@ -261,17 +289,24 @@ export const read = (body: string): AcceptanceCriteriaRead => {
 		return malformed("the acceptance-criteria heading could not be resolved", "");
 	}
 
-	const criteria: AcceptanceCriterion[] = [];
+	const criteria: CriterionSpan[] = [];
 	let open: OpenCriterion | null = null;
 	let openFence: string | null = null;
 	const close = (): void => {
 		if (open === null) return;
 		const text = criterionText(joinContinuations(open.parts));
-		if (text !== null) criteria.push({text, checked: open.checked});
+		if (text !== null) {
+			criteria.push({
+				criterion: {text, checked: open.checked},
+				firstLine: open.firstLine,
+				lastLine: open.lastLine,
+			});
+		}
 		open = null;
 	};
 
 	for (const [offset, line] of sectionOf(lines, heading).entries()) {
+		const at = heading.line + offset;
 		const item = CHECKBOX_ITEM.exec(line);
 		if (item !== null) {
 			close();
@@ -279,10 +314,15 @@ export const read = (body: string): AcceptanceCriteriaRead => {
 			if (text === null) {
 				return malformed(
 					"a checkbox item under the acceptance-criteria heading carries no text",
-					`line ${heading.line + offset + 1}: "${line}"`,
+					`line ${at + 1}: "${line}"`,
 				);
 			}
-			open = {parts: [text], checked: (item[1] ?? " ").toLowerCase() === "x"};
+			open = {
+				parts: [text],
+				checked: (item[1] ?? " ").toLowerCase() === "x",
+				firstLine: at,
+				lastLine: at,
+			};
 			continue;
 		}
 
@@ -298,7 +338,10 @@ export const read = (body: string): AcceptanceCriteriaRead => {
 			close();
 			continue;
 		}
-		if (open !== null) open.parts.push(line.trim());
+		if (open !== null) {
+			open.parts.push(line.trim());
+			open.lastLine = at;
+		}
 	}
 	close();
 
@@ -310,6 +353,14 @@ export const read = (body: string): AcceptanceCriteriaRead => {
 		);
 	}
 	return {_tag: "Found", value: [head, ...rest]};
+};
+
+/** Read the acceptance-criteria block out of an issue body — {@link readSpans} without the spans. */
+export const read = (body: string): AcceptanceCriteriaRead => {
+	const spans = readSpans(body);
+	if (spans._tag !== "Found") return spans;
+	const [head, ...rest] = spans.value;
+	return {_tag: "Found", value: [head.criterion, ...rest.map((span) => span.criterion)]};
 };
 
 /** Compose criteria into the block's bytes. Round-trips through {@link read}. */
