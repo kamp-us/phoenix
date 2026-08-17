@@ -14,9 +14,6 @@
 /** The gap at which a FAIL still belongs to the round before it. Inclusive. */
 export const ROUND_GAP_MS = 120_000;
 
-/** The round at which a repair loop is capped — `capReached` is a field read, not a remembered number. */
-export const ROUND_CAP = 3;
-
 /** Cluster FAIL timestamps into rounds. An empty input is zero rounds, which is a fact, not a gap. */
 export const countRounds = (createdAt: ReadonlyArray<string>): number => {
 	const times = createdAt

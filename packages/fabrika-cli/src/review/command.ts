@@ -13,6 +13,7 @@ import {Effect, Option} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
 import {leafCommand} from "../excess-operand.ts";
 import {readStdin} from "../io/stdin.ts";
+import {CAP_ROUND} from "../retry-budget.ts";
 import type {VerbOutcome} from "../verb.ts";
 import {runAppendCriterion} from "./append-criterion-verb.ts";
 import {runCi} from "./ci-verb.ts";
@@ -262,7 +263,7 @@ const appendCriterion = leafCommand(
 		),
 		round: Flag.integer("round").pipe(
 			Flag.withDescription(
-				"this review round's number; at or past the freeze (3) the verb escalates instead of appending",
+				`this review round's number; at or past the freeze (${CAP_ROUND}) the verb escalates instead of appending`,
 			),
 		),
 		repo: repoFlag,

@@ -1555,10 +1555,11 @@ fabrika build verdicts --pr 4310 [--repo <owner/name>]
 ```
 
 (`frozenCriteria` rows carry `text` and `appendedRound`; the array is empty when nothing was
-appended after round 2. **Each row's `body` is the finding's full text, passed through the
+appended past the freeze. **Each row's `body` is the finding's full text, passed through the
 content gate** — the repair loop consumes findings from here and never raw-fetches a comment,
 which is what keeps AC 3's one-door property over the repair path. `capReached` is
-`rounds >= 3`, computed here so the cap is a field read, not a number remembered.)
+`rounds >= CAP_ROUND`, read from `src/retry-budget.ts` — the package's one declared retry budget
+— and computed here so the cap is a field read, not a number remembered.)
 
 The fold: resolve the PR's current head; fetch **every** comment and **every** review, paginated
 in full; parse each comment through the imported `verdict-marker` read; keep the latest marker
@@ -1573,7 +1574,7 @@ comment snapshot, `stepR-round-count.sh` + `stepR1-verdicts.sh:48`; the off-by-o
 every FAIL-polarity marker comment, sorted by `created_at` ascending; a marker whose gap from
 the previous FAIL marker exceeds 120 seconds starts a new cluster, a gap of exactly 120 seconds
 or less continues the current one; `rounds` is the cluster count. `frozenCriteria` lists
-review-appended acceptance-criterion rows dated after round 2.
+review-appended acceptance-criterion rows dated at or past `CAP_ROUND`.
 
 **`{"rows": [], ...}` on exit 0 is a proven "no verdicts", readable against the scope line's
 comment/review counts. An unreadable page is `11` — never a shorter list.** All content passes
