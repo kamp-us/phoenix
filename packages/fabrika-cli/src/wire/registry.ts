@@ -19,6 +19,7 @@
  * registered without them — which is what makes the totality law inherited rather than re-written.
  */
 import * as acceptanceCriteria from "./acceptance-criteria.ts";
+import * as deviations from "./deviations.ts";
 import {brandWitnesses, type WireFormat} from "./format.ts";
 import * as governanceDigest from "./governance-digest.ts";
 import * as graduateEmitted from "./graduate-emitted.ts";
@@ -74,6 +75,75 @@ export const registeredFormats: ReadonlyArray<WireFormat> = [
 			],
 		},
 		brands: brandWitnesses<acceptanceCriteria.AcceptanceCriterion>({text: true}),
+	},
+	{
+		key: "deviations",
+		purpose:
+			"what a PR body discloses about where the build departed from its contract, carried under `## Deviations` as four-field entries or the literal `None.`",
+		module: "packages/fabrika-cli/src/wire/deviations.ts",
+		producers: ["build", "build-ui", "build-epic"],
+		consumers: ["review", "review-ui"],
+		emit: deviations.emitFromFields,
+		read: deviations.readToLines,
+		fixtures: {
+			roundTrip: {
+				fields:
+					"4\tthe issue named two artifacts.\talso re-grounded a third.\tit stated a rule the change contradicts.\tstated here.\n",
+				values: [
+					"the issue named two artifacts.",
+					"also re-grounded a third.",
+					"it stated a rule the change contradicts.",
+					"stated here.",
+				],
+			},
+			found: [
+				{
+					shape:
+						"an entry authored across four wrapped lines, as a body written to 100 columns carries it",
+					artifact:
+						"## Deviations\n\n- **Declined guidance** — **Said:** take the reviewer's shape.\n  **Did:** kept mine.\n  **Why:** the reviewer's shape reads the label, and the label is a routing hint.\n  **Disposition:** stated here.\n",
+					values: [
+						"take the reviewer's shape.",
+						"kept mine.",
+						"the reviewer's shape reads the label, and the label is a routing hint.",
+						"stated here.",
+					],
+				},
+				{
+					shape: "the checked claim that there is nothing to disclose",
+					artifact: "Fixes #4312\n\n## Deviations\n\nNone.\n",
+					values: ["none-declared"],
+				},
+			],
+			absent: "Fixes #4312\n\n## Summary\n\nThe editor keeps focus across a save.\n",
+			malformed: [
+				{
+					drift: "the heading level drifted",
+					artifact:
+						"### Deviations\n\n- **Said:** a. **Did:** b. **Why:** c. **Disposition:** d.\n",
+				},
+				{
+					drift: "an entry is prose, carrying none of the four fields",
+					artifact:
+						"## Deviations\n\n- Narrowed the scope to the reader, and left the writer alone.\n",
+				},
+				{
+					drift: "an entry states what changed and never what becomes of it",
+					artifact:
+						"## Deviations\n\n- **Scope narrowing** — **Said:** both sides. **Did:** the reader only. **Why:** the writer is #5562's.\n",
+				},
+				{
+					drift: "the heading is present over an empty section",
+					artifact: "## Deviations\n\n## Testing\n\nran it\n",
+				},
+			],
+		},
+		brands: brandWitnesses<deviations.DeviationEntry>({
+			said: true,
+			did: true,
+			why: true,
+			disposition: true,
+		}),
 	},
 	{
 		key: "verdict-marker",

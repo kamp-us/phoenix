@@ -116,7 +116,7 @@ describe("runDeviations", () => {
 
 	it("prints an entry's label and the first line of its Said", async () => {
 		const body =
-			"## Deviations\n\n- **Pre-existing test or fixture changed** — **Said:** replaced the two-decimal rendering assertion. **Did:** dropped it.";
+			"## Deviations\n\n- **Pre-existing test or fixture changed** — **Said:** replaced the two-decimal rendering assertion. **Did:** dropped it. **Why:** it asserted the defect. **Disposition:** stated here.";
 		const out = await run(happy({body}));
 		expect(out.stdout).toBe(
 			["deviations\tfound", "entry\t6\treplaced the two-decimal rendering assertion.", ""].join(

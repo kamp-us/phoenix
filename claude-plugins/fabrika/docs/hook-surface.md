@@ -27,6 +27,126 @@ A declared hook nobody ever runs is the false-green this repo keeps paying for, 
 
 The one thing this cannot do is notice the **harness** changing. No gate here executes it (ADR 0180's own premise), so a stale fixture goes green; re-capture is the only refresh, and `PROVENANCE.md` says how.
 
+<a id="the-events-fabrika-does-not-declare"></a>
+### The events fabrika does not declare, and why
+
+Five events were considered for this surface and all five were refused ([#5589](https://github.com/kamp-us/phoenix/issues/5589)). Each entry below says what the event carries, why a fabrika verb cannot act on it, and — for the three non-worktree ones — what a payload would have had to carry instead, so a later reader can tell whether a newer build has fixed it.
+
+Everything here is read out of the **installed Claude Code executable, build 2.1.233**, by two methods, named per claim so neither is mistaken for the other:
+
+- **Registry read.** The build carries its own hook-event registry — one `summary` plus a `description` that names the input JSON's fields — the same table `/hooks` renders. Extracted with `strings` and quoted verbatim below.
+- **Live capture.** Probe hooks wired in a throwaway git repository, each writing its stdin to a file. Absolute paths in the captures are elided; nothing else is edited.
+
+A newer build can change any row. The method above is the recheck.
+
+#### `WorktreeCreate` — a provider hook, left undeclared
+
+Registry entry, verbatim:
+
+```
+Create an isolated worktree for VCS-agnostic isolation
+Input to command is JSON with name (suggested worktree slug).
+Stdout should contain the absolute path to the created worktree directory.
+Exit code 0 - worktree created successfully
+Other exit codes - worktree creation failed
+```
+
+So it is **not a notification**. The harness expects the hook to create the worktree and echo its path, and it exists so worktree isolation can work under a non-git VCS. Captured live:
+
+```json
+{"session_id":"…","transcript_path":"…","cwd":"…","hook_event_name":"WorktreeCreate","name":"probe2"}
+```
+
+**The failure mode was reproduced rather than inferred.** In an ordinary git repository — one where `git worktree add` works — with a `WorktreeCreate` hook whose command exits non-zero, `claude --worktree <name>` printed
+
+```
+Error creating worktree: WorktreeCreate hook failed: false: no output
+```
+
+and the session never started. **There is no git fallback**: a configured hook preempts git wherever it is declared, so declaring this event means fabrika takes over worktree creation in every repo that installs the plugin, and a verb that fails breaks worktree isolation outright.
+
+That failure mode is not survivable, and the reason is sharper than "it would be bad". [The ruled dispatch-failure policy](#the-dispatch-failure-policy-point) is fail-open, and on this event **fail-open has no form**. The harness reads every non-zero exit as a creation failure, including the two codes the convention reserves for *the verb never ran* — a bare `fabrika` exiting `127` on a machine with no install, and the cross-checkout refusal at `126`. It says so itself, in a build string that covers the hook not running at all:
+
+```
+WorktreeCreate hook failed: hook is configured but did not run (workspace not trusted, disableAllHooks set, or matcher mismatch)
+```
+
+A machine with no fabrika install would therefore lose `--worktree` entirely, which is the inverse of ADR [0250](../../../.decisions/0250-fabrika-hook-cannot-run-fails-open.md). Left undeclared.
+
+#### `WorktreeRemove` — the teardown counterpart, also a provider, left undeclared
+
+Registry entry, verbatim:
+
+```
+Remove a previously created worktree
+Input to command is JSON with worktree_path (absolute path to worktree).
+Exit code 0 - worktree removed successfully
+Other exit codes - show stderr to user only
+```
+
+The payload is the base envelope plus one field, `worktree_path`. The same build's teardown path carries three strings, and the third is the load-bearing one:
+
+```
+Removed hook-based worktree at: 
+WorktreeRemove hook did not remove worktree, kept at: 
+No WorktreeRemove hook configured; falling back to git worktree remove for: 
+```
+
+`git worktree remove` is the **fallback for having no hook**. So declaring this event replaces git teardown in every adopting repo, and the harness then checks whether the path actually went away — an observe-only verb makes every managed worktree leak, in a state that reports nothing louder than a line on stderr. Nothing is bought for that: `worktree_path` names a directory, not a lane, an issue or a claim token, so there is no verdict a fabrika verb could reach from it. Left undeclared.
+
+**UNKNOWN:** this event was not fired live. Its hook runs on the in-session worktree cleanup path; the `claude rm <id>` background-job path refused every hook-created worktree (`worktree has files but no repository to verify them against`) and, once the directory was removed by hand, removed the job without invoking the hook. Its payload is therefore a registry read and its fallback behaviour a strings read — read, not seen.
+
+#### `TaskCompleted` — carries a task id, and none of its ids are fabrika's
+
+Registry entry, verbatim:
+
+```
+When a task is being marked as completed
+Input to command is JSON with task_id, task_subject, task_description, teammate_name, and team_name.
+Exit code 0 - stdout/stderr not shown
+Exit code 2 - show stderr to model and prevent task completion
+Other exit codes - show stderr to user only
+```
+
+**It does carry a `task_id`**, so the reason this event cannot be judged from is not the one the planning round assumed — recorded here so nobody re-derives the wrong one. The real blocker is that every id in that payload lives in the harness's own teammate-task namespace: none of them is a GitHub issue or PR number, and none is a fabrika claim token, so no verb can map a completed task back onto the lane it belongs to.
+
+**What a verb would have needed:** one field carrying the issue number or the claim token the lane was opened under — anything `fabrika build confirm` could be addressed to. A build that adds one makes this re-decidable.
+
+A second obstacle stands behind the first even if that field arrives: the blocking code here is `2`, and fabrika allocates `2` nowhere ([the harness exit-code contract](#the-harness-exit-code-contract)). A verb with something to refuse would have no admissible way to say it.
+
+#### `TeammateIdle` — names a teammate, names no lane
+
+Registry entry, verbatim:
+
+```
+When a teammate is about to go idle
+Input to command is JSON with teammate_name and team_name.
+Exit code 0 - stdout/stderr not shown
+Exit code 2 - show stderr to teammate and prevent idle (teammate continues working)
+Other exit codes - show stderr to user only
+```
+
+`teammate_name` identifies the teammate perfectly well; what is missing is the same linkage `TaskCompleted` lacks. Neither field says what the teammate was idle *against* — no issue, no PR, no claim — so an idling teammate is not an event fabrika can attach a verdict to.
+
+**What a verb would have needed:** the lane the teammate held, by issue number or claim token. As with `TaskCompleted`, the blocking code is `2`, which fabrika does not allocate.
+
+#### `SubagentStop` — identifies the subagent, states no outcome
+
+Captured live, which makes this the strongest of the three — seen rather than read:
+
+```json
+{"session_id":"…","transcript_path":"…","cwd":"…","prompt_id":"…","permission_mode":"auto",
+ "agent_id":"aa2a9583f18c0b8fe","agent_type":"general-purpose","effort":{"level":"medium"},
+ "hook_event_name":"SubagentStop","stop_hook_active":false,"agent_transcript_path":"…",
+ "last_assistant_message":"PONG","background_tasks":[],"session_crons":[]}
+```
+
+It carries `agent_id` and `agent_type`, so the subagent is identified. What no field states is **whether it succeeded** — there is no status, no exit code, no terminal token as data. `last_assistant_message` is prose, and deciding a lane's outcome by pattern-matching prose is exactly the claim-a-tree-does-not-support failure the [`build`](../skills/build/SKILL.md) skill exists to refuse.
+
+**What a verb would have needed:** an outcome field — a status, or the subagent's terminal token carried as data rather than embedded in its last message.
+
+Until then the artifact is the only place an outcome can be read — the PR, the posted verdict, the claim marker — and fabrika's verbs already read it there, which is why nothing is lost by leaving this event undeclared.
+
 <a id="the-harness-exit-code-contract"></a>
 ### The harness exit-code contract — exit `2` blocks, and only on `PreToolUse`
 

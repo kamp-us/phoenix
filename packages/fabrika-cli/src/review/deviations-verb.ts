@@ -109,6 +109,9 @@ export const runDeviations = (
 		}
 
 		const section = readDeviations(pull.body);
+		if (section.reason !== null) {
+			diagnostics.push(`${VERB}: ${section.state} — ${section.reason}.`);
+		}
 		const hits = tierMHits(diff);
 		return json
 			? answer(

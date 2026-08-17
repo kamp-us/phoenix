@@ -1,0 +1,132 @@
+import {Effect} from "effect";
+import {describe, expect, it} from "vitest";
+import {errOut, fakeShell, okOut, once} from "../fakes.test-support.ts";
+import {runsAtHead, workflowRun} from "../heal-ci/fixtures.test-support.ts";
+import type {ExecResult} from "../io/exec.ts";
+import {HEAD} from "./fixtures.test-support.ts";
+import {assertFloorAt, floorLine} from "./floor-assert.ts";
+
+const RUNS = /^gh api --paginate repos\/o\/r\/actions\/runs\?head_sha=/;
+const RUN = /^gh api repos\/o\/r\/actions\/runs\/\d+$/;
+const RERUN = /^gh api --method POST repos\/o\/r\/actions\/runs\/\d+\/rerun-failed-jobs$/;
+
+const FLOOR = 31_863_008_185;
+
+const assert = (script: ReadonlyArray<readonly [RegExp, ExecResult]>) =>
+	Effect.runPromise(Effect.provide(assertFloorAt("o/r", HEAD), fakeShell(script).layer));
+
+const withCalls = (script: ReadonlyArray<readonly [RegExp, ExecResult]>) => {
+	const shell = fakeShell(script);
+	return Effect.runPromise(Effect.provide(assertFloorAt("o/r", HEAD), shell.layer)).then(
+		(assertion) => ({assertion, shell}),
+	);
+};
+
+/** A red floor run at the head, re-fired into a second attempt. */
+const red = (): ReadonlyArray<readonly [RegExp, ExecResult]> => [
+	[
+		RUNS,
+		runsAtHead(2, [
+			{id: 1, name: "ci"},
+			{id: FLOOR, name: "governance-floor"},
+		]),
+	],
+	[once(RUN), workflowRun({id: FLOOR, attempt: 1})],
+	[RERUN, okOut("")],
+	[RUN, workflowRun({id: FLOOR, attempt: 2})],
+];
+
+describe("assertFloorAt re-derives the floor rather than claiming it", () => {
+	it("re-fires the red floor run at this head and proves the new attempt", async () => {
+		const {assertion, shell} = await withCalls(red());
+		expect(assertion).toEqual({_tag: "Refired", run: FLOOR, attempt: 2});
+		expect(shell.calls.some((call) => RERUN.test(call))).toBe(true);
+		// The re-fire re-runs `ship floor` in CI. Nothing here writes a check-run or a status, so the
+		// green a PR ends up with is one the gate's own job derived (#5585).
+		expect(shell.calls.some((call) => call.includes("check-runs"))).toBe(false);
+	});
+
+	it("picks the NEWEST floor run at the head, not the first one listed", async () => {
+		const {shell} = await withCalls([
+			[
+				RUNS,
+				runsAtHead(2, [
+					{id: 700, name: "governance-floor"},
+					{id: 900, name: "governance-floor"},
+				]),
+			],
+			[once(RUN), workflowRun({id: 900, attempt: 1})],
+			[RERUN, okOut("")],
+			[RUN, workflowRun({id: 900, attempt: 2})],
+		]);
+		expect(shell.calls.some((call) => call.endsWith("/actions/runs/900"))).toBe(true);
+		expect(shell.calls.some((call) => call.endsWith("/actions/runs/700"))).toBe(false);
+	});
+
+	it("leaves an in-flight run alone — it cannot be re-fired, and saying so is the answer", async () => {
+		const {assertion, shell} = await withCalls([
+			[RUNS, runsAtHead(1, [{id: FLOOR, name: "governance-floor", status: "in_progress"}])],
+		]);
+		expect(assertion).toEqual({_tag: "InFlight", run: FLOOR});
+		expect(shell.calls.some((call) => RERUN.test(call))).toBe(false);
+	});
+
+	it("re-fires nothing when the run at this head already reads green", async () => {
+		const {assertion, shell} = await withCalls([
+			[RUNS, runsAtHead(1, [{id: FLOOR, name: "governance-floor", conclusion: "success"}])],
+		]);
+		expect(assertion).toEqual({_tag: "Green", run: FLOOR});
+		expect(shell.calls.some((call) => RERUN.test(call))).toBe(false);
+	});
+
+	it("answers NoRun when the repository runs no floor at this head", async () => {
+		expect(await assert([[RUNS, runsAtHead(1, [{id: 1, name: "ci"}])]])).toEqual({_tag: "NoRun"});
+	});
+});
+
+describe("every unread state is UNKNOWN, never a re-fire nobody proved", () => {
+	it("refuses to read NoRun out of a truncated run list", async () => {
+		const assertion = await assert([[RUNS, runsAtHead(9, [{id: 1, name: "ci"}])]]);
+		expect(assertion._tag).toBe("Unknown");
+		expect(assertion._tag === "Unknown" && assertion.reason).toContain("of 9 declared runs");
+	});
+
+	it("reports a failed re-fire request as UNKNOWN", async () => {
+		const assertion = await assert([
+			[RUNS, runsAtHead(1, [{id: FLOOR, name: "governance-floor"}])],
+			[once(RUN), workflowRun({id: FLOOR, attempt: 1})],
+			[RERUN, errOut("gh: Forbidden (HTTP 403)")],
+		]);
+		expect(assertion._tag).toBe("Unknown");
+		expect(assertion._tag === "Unknown" && assertion.reason).toContain("403");
+	});
+
+	// The dispatch's 2xx is an acknowledgement, not an attempt: a re-fire reported on the strength of
+	// the response would tell the caller a red is clearing itself when nothing re-ran.
+	it("refuses to call it re-fired when run_attempt did not move", async () => {
+		const assertion = await assert([
+			[RUNS, runsAtHead(1, [{id: FLOOR, name: "governance-floor"}])],
+			[RUN, workflowRun({id: FLOOR, attempt: 1})],
+			[RERUN, okOut("")],
+		]);
+		expect(assertion._tag).toBe("Unknown");
+		expect(assertion._tag === "Unknown" && assertion.reason).toContain("stayed at attempt 1");
+	});
+
+	it("reports an unreadable run list as UNKNOWN", async () => {
+		const assertion = await assert([[RUNS, errOut("gh: Bad gateway (HTTP 502)")]]);
+		expect(assertion._tag).toBe("Unknown");
+	});
+});
+
+describe("floorLine says what the caller must do next", () => {
+	it("names the attempt on a re-fire and the residual red otherwise", async () => {
+		expect(floorLine("governance post", {_tag: "Refired", run: FLOOR, attempt: 2})).toContain(
+			"attempt 2",
+		);
+		expect(floorLine("governance post", {_tag: "Unknown", reason: "502"})).toContain(
+			"may still need a re-fire",
+		);
+		expect(floorLine("governance post", {_tag: "InFlight", run: FLOOR})).toContain("re-read");
+	});
+});

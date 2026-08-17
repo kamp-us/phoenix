@@ -1382,9 +1382,15 @@ The guards, in order, all before any write:
 
 1. **stdin non-empty** (`3`).
 2. **no machine-local path** — the imported `leaks.ts` predicates (`5`, `6`).
-3. **body shape** (`4`): a `## Deviations` heading is present **and non-empty** — at least one
-   non-blank line before the next heading or EOF; "None." is content, silence is not (the
-   *truth* of the section stays the skill's — a verb can force the author to write, not to be
+3. **body shape** (`4`): the `## Deviations` section reads `Found` through the registered
+   `deviations` wire format
+   ([`packages/fabrika-cli/src/wire/deviations.ts`](../../../../packages/fabrika-cli/src/wire/deviations.ts)) —
+   the same module `review deviations` resolves against, so a body this verb accepts can never
+   fail that gate as malformed (#5566). That means: the heading is exactly `## Deviations`, and
+   under it either the literal `None.` or one or more entries, each stating all four of
+   `**Said:**` / `**Did:**` / `**Why:**` / `**Disposition:**`. "None." is content, silence is not,
+   and a prose bullet is refused here rather than a review round later (the *truth* of the
+   section stays the skill's — a verb can force the author to write, not to be
    honest); exactly one closing-keyword line, targeting `<number>` and matching `--partial`
    (`Fixes #4312` without `--partial`, `Part of #4312` with it); no second closing keyword aimed
    at any other issue (#4471's stray auto-close).
@@ -1404,7 +1410,7 @@ posts the literal string (#4683).
 | Code | Trigger |
 |---|---|
 | `3` | stdin held nothing |
-| `4` | `## Deviations` missing or empty, or the closing-keyword line is absent, duplicated, mistargeted, or contradicts `--partial` |
+| `4` | the `## Deviations` section does not read `Found` through the `deviations` wire format — absent, empty, a drifted heading, or an entry short a field — or the closing-keyword line is absent, duplicated, mistargeted, or contradicts `--partial` |
 | `5` | the body carries a machine-local path |
 | `6` | the body is a bare `@` path reference |
 | `7` | the issue is proven absent or closed |
@@ -1420,7 +1426,7 @@ posts the literal string (#4683).
 | Message (stderr) | Code | Kind |
 |---|---|---|
 | `build pr: stdin held nothing — the body is the input.` | 3 | refusal |
-| `build pr: the body has no "## Deviations" heading, or it is empty — state deviations, or state "None."` | 4 | refusal |
+| `build pr: the body's "## Deviations" section is not readable — <the wire format's reason>. State each deviation as an entry, or state "None."` | 4 | refusal |
 | `build pr: the body says "Fixes #<n>" but --partial was given — a partial PR must say "Part of #<n>".` | 4 | refusal |
 | `build pr: the body carries a closing keyword aimed at #<m> — this PR serves #<n>.` | 4 | refusal |
 | `build pr: the body carries a machine-local path: <first hit> — redact before posting.` | 5 | refusal |
@@ -1447,14 +1453,25 @@ Fixes #4312
 Editor focus now survives a save: the toolbar re-render no longer steals it.
 
 ## Deviations
-None.
+
+- **Pre-existing test or fixture changed** — **Said:** the fixture asserts focus lands on the
+  toolbar after a save. **Did:** rewrote it to assert focus stays in the editor. **Why:** it
+  asserted the defect, so keeping it would have red-lit the fix. **Disposition:** stated here;
+  no other test covered the old behaviour.
+- **Out-of-scope change** — **Said:** #4312 names the editor only. **Did:** also fixed the same
+  steal in the comment box. **Why:** both call the one `refocus()` helper this changes, so
+  leaving it would have shipped a knowingly half-fixed helper. **Disposition:** stated here.
 EOF
 {"answer":"opened","number":4318,"url":"https://github.com/kamp-us/phoenix/pull/4318"}
 ```
 
+The section is `None.` when there is nothing to disclose, and that is a *checked* claim rather than
+a skip — `review deviations` reads it beside the diff's Tier-M scan, so a `None.` over a suppressed
+lint rule is a falsified disclosure the gate can see in one read.
+
 ```
-$ printf 'Fixes #4312\n\nbody with no deviations heading\n' | fabrika build pr 4312
-build pr: the body has no "## Deviations" heading, or it is empty — state deviations, or state "None."
+$ printf 'Fixes #4312\n\n## Deviations\n\n- narrowed the scope a bit.\n' | fabrika build pr 4312
+build pr: the body's "## Deviations" section is not readable — an entry carries no **Said:**, **Did:**, **Why:**, **Disposition:** — every entry states **Said:** / **Did:** / **Why:** / **Disposition:**. State each deviation as an entry, or state "None."
 $ echo $?
 4
 ```
@@ -1462,6 +1479,8 @@ $ echo $?
 **Grounding**
 
 - #4542 — the Deviations check must block, not warn.
+- #5566 — the check and `review deviations` asked for different shapes, so a conforming body was
+  guaranteed to fail the gate closed; both now read the one registered `deviations` format.
 - #4471 — a stray closing keyword auto-closed an issue the PR did not fix.
 - #4153 — a false control-plane negative shipped in a PR body; the claim is now unrepresentable.
 - #4683 / #3086 — the `-f body=@file` literal and the temp-path leak; both guarded here.

@@ -3,9 +3,11 @@
  *
  * Three defects, each with a scar behind it:
  *
- * - **A missing or empty `## Deviations` section** (#4542). The check blocks rather than warns, and
- *   "None." counts while silence does not — the verb can force the author to *write*, never to be
- *   honest, so the section's truth stays the skill's problem and its presence is this one's.
+ * - **A `## Deviations` section the review gate cannot read** (#4542, #5566). The check blocks rather
+ *   than warns, and "None." counts while silence does not — the verb can force the author to *write*,
+ *   never to be honest, so the section's truth stays the skill's problem and its shape is this one's.
+ *   The shape itself is not restated here: it is `../wire/deviations.ts`, the same registered format
+ *   `review deviations` reads, so a body this verb accepts cannot fail that gate as malformed.
  * - **A stray closing keyword** (#4471). One closing line, aimed at this PR's own issue; a second
  *   aimed anywhere else auto-closed an issue the PR did not fix.
  * - **A classification claim** (#4153). CODEOWNERS decides control-plane membership at the merge gate
@@ -16,6 +18,8 @@
  * and "refuse any spelling of it" is two guards. Fences and block quotes are excluded before matching,
  * so a body that *quotes* a classification to discuss it is not refused for the quotation.
  */
+
+import {read as readDeviations} from "../wire/deviations.ts";
 
 /** GitHub's own auto-closing keywords. A body may carry exactly one, aimed at its own issue. */
 const CLOSING_RE = /\b(close[sd]?|fix(e[sd])?|resolve[sd]?)\s+#(\d+)\b/gi;
@@ -47,17 +51,10 @@ export const proseOf = (body: string): string => {
 	return lines.join("\n");
 };
 
-/** Whether a `## Deviations` heading is present with at least one non-blank line under it. */
-export const hasDeviations = (body: string): boolean => {
-	const lines = body.split("\n");
-	const start = lines.findIndex((line) => /^##\s+Deviations\s*$/.test(line.trim()));
-	if (start === -1) return false;
-	for (let i = start + 1; i < lines.length; i++) {
-		const text = (lines[i] ?? "").trim();
-		if (text === "") continue;
-		return !/^#{1,6}\s+/.test(text);
-	}
-	return false;
+/** Why the body's `## Deviations` section is not readable, or `null` when the wire format reads it. */
+export const deviationsDefect = (body: string): string | null => {
+	const result = readDeviations(body);
+	return result._tag === "Found" ? null : result.reason;
 };
 
 /** Every issue number a closing keyword in `prose` aims at, in order. */
@@ -76,7 +73,8 @@ export const classificationIn = (prose: string): string | null =>
 	CLASSIFICATION_PATTERNS.find(({re}) => re.test(prose))?.name ?? null;
 
 export type BodyDefect =
-	| {readonly _tag: "NoDeviations"}
+	/** The section is absent, or present in a shape the review gate reads as malformed. */
+	| {readonly _tag: "NoDeviations"; readonly reason: string}
 	/** A closing keyword aimed somewhere other than this PR's issue. */
 	| {readonly _tag: "StrayClosing"; readonly target: number}
 	/** `--partial` was given and the body still auto-closes. */
@@ -93,7 +91,8 @@ export type BodyDefect =
  * forgot, and a body missing both should say so about the section rather than about the link.
  */
 export const bodyDefect = (body: string, issue: number, partial: boolean): BodyDefect | null => {
-	if (!hasDeviations(body)) return {_tag: "NoDeviations"};
+	const deviations = deviationsDefect(body);
+	if (deviations !== null) return {_tag: "NoDeviations", reason: deviations};
 
 	const prose = proseOf(body);
 	const targets = closingTargets(prose);

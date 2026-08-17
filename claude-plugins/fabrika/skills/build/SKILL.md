@@ -145,10 +145,29 @@ Done only on `PUSH-VERDICT: MOVED`. `UNKNOWN` is not a success with a caveat —
 unverified push is how "pushed" and "the remote never heard" become one claim.
 
 Author the PR body yourself: a human-first summary, `Fixes #<n>` only when every acceptance
-criterion is met (else `Part of #<n>`, and pass `--partial`), and a `## Deviations` section — the verb refuses a body
-without the heading, and an empty one is a lie if you deviated. **Assert no control-plane
-verdict in it**: that classification is the merge gate's, and a body claiming "not control-plane"
-has been wrong before.
+criterion is met (else `Part of #<n>`, and pass `--partial`), and a `## Deviations` section — the
+verb refuses a body without the heading, and an empty one is a lie if you deviated. **Assert no
+control-plane verdict in it**: that classification is the merge gate's, and a body claiming "not
+control-plane" has been wrong before.
+
+**The section has one grammar, and both the verb that opens the PR and the gate that reads it back
+resolve the same module for it** ([`wire/deviations.ts`](../../../../packages/fabrika-cli/src/wire/deviations.ts)).
+Under the exact heading `## Deviations`, write either the literal `None.` or one bullet per
+deviation, each stating all four fields:
+
+```markdown
+## Deviations
+
+- **Out-of-scope change** — **Said:** #4312 names the editor only. **Did:** also fixed the same
+  focus steal in the comment box. **Why:** both call the one `refocus()` helper this changes.
+  **Disposition:** stated here.
+```
+
+An optional bold class lead (`Scope narrowing`, `Governing-ADR departure`, `Known defect left
+unfixed`, `Declined guidance`, `Guard or gate bypassed`, `Pre-existing test or fixture changed`,
+`Out-of-scope change`) routes the entry; the gate matches an entry's substance, never its label. A
+prose bullet with no fields is refused by `build pr` at the point you write it — that refusal used
+to arrive a whole review round later, and could not say what was wrong (#5566).
 
 **State what changed and why, and stop.** Two things earn their lines: the summary, and
 `## Deviations` — deviations catch real defects, so state each plainly and never trim one for
@@ -162,8 +181,8 @@ fabrika build pr 4312 <<'EOF'
 EOF
 ```
 
-The verb is the guard: it refuses leaks, stray closing keywords, a missing Deviations heading, and
-reads back what landed. Then hand off and release:
+The verb is the guard: it refuses leaks, stray closing keywords, a Deviations section the review
+gate would read as malformed, and reads back what landed. Then hand off and release:
 
 ```bash
 fabrika build note 4312 <<'EOF'

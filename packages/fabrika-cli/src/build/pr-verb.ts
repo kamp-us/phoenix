@@ -56,7 +56,7 @@ const shapeRefusal = (
 		case "NoDeviations":
 			return refuse(
 				BAD_SECTIONS,
-				`${VERB}: the body has no "## Deviations" heading, or it is empty — state deviations, or state "None."`,
+				`${VERB}: the body's "## Deviations" section is not readable — ${defect.reason}. State each deviation as an entry, or state "None."`,
 			);
 		case "StrayClosing":
 			return refuse(

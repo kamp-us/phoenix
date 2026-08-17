@@ -38,6 +38,7 @@ does not exist yet — rather than missing; check the registry before assuming a
 | Format | Owner module | Producers | Consumers |
 | --- | --- | --- | --- |
 | `acceptance-criteria` | [`packages/fabrika-cli/src/wire/acceptance-criteria.ts`](../../../packages/fabrika-cli/src/wire/acceptance-criteria.ts) | `triage`, `build-epic` | `build`, `review` |
+| `deviations` | [`packages/fabrika-cli/src/wire/deviations.ts`](../../../packages/fabrika-cli/src/wire/deviations.ts) | `build`, `build-ui`, `build-epic` | `review`, `review-ui` |
 | `verdict-marker` | [`packages/fabrika-cli/src/wire/verdict-marker.ts`](../../../packages/fabrika-cli/src/wire/verdict-marker.ts) | `review`, `check-epic-plan`, `governance` | `build`, `ship` |
 | `slice-handoff` | [`packages/fabrika-cli/src/wire/slice-handoff.ts`](../../../packages/fabrika-cli/src/wire/slice-handoff.ts) | `build-epic` | `build` |
 | `map-ticket` | [`packages/fabrika-cli/src/wire/map-ticket.ts`](../../../packages/fabrika-cli/src/wire/map-ticket.ts) | `map` | `map` |
@@ -61,6 +62,26 @@ recognition reads back as *a body with no criteria*, which is byte-identical to 
 genuinely has none, so a grader scores against nothing and passes. Reading through the owner module
 is what keeps a drifted block reportable as a defect instead of arriving as a plausible empty
 answer.
+
+### `deviations`
+
+This is what a PR body discloses about where the build departed from its contract — the `##
+Deviations` section, carried as four-field entries or the literal `None.`. It is the one format
+whose two sides used to disagree *by construction*: `build pr` asked only that the heading exist
+with something under it, while the review reader dropped every bullet carrying no `Said` field and
+then called a section of zero surviving entries malformed. A body that fully satisfied the producer
+was therefore guaranteed to fail the consumer closed, and no author-facing doc stated the grammar
+either side judged against (#5566). Registering it is what makes that unrepresentable: the entry
+shape is written down once, in the owner module, and both sides resolve it there — so the refusal
+now lands at the point the body is written, naming the missing field, instead of costing a review
+round that could not say what was wrong.
+
+The read is total over three answers where the section has four meanings, so `None.` is a `Found`
+carrying a tag of its own rather than an empty entry list. That is the load-bearing distinction:
+`None.` is a *checked* claim — an author who considered the question and has nothing to disclose —
+and folding it into `Absent` is how "never considered it" comes to read as "nothing to disclose".
+An entry states all four fields. The label is a routing hint and stays optional, but a disclosure
+missing *Why* or *Disposition* states what changed without stating whether anyone accepted it.
 
 ### `verdict-marker`
 

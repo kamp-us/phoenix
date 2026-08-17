@@ -29,7 +29,7 @@ access per
 | `governance sweep` | the uncited live-`accepted` records whose decision domain a subject touches, ranked, for a subject read out of a bound commit or out of the corpus | the ranking is arithmetic over a corpus; reading the shortlist, and reading the domain the ranking cannot see, is judgment |
 | `governance guards` | the anchored invariants the bound diff removes or modifies, and the guard-bearing files it touches | detecting an anchor's removal or mutation in a diff is textual and mechanical; whether the change *weakens* the invariant is judgment |
 | `governance base` | this skill's own text at the merge-base of a PR that edits it — the self fence's bytes | resolving a merge base and reading named paths at it is mechanical; judging the PR by those rules rather than the head's is the judgment |
-| `governance post` | the single sanctioned emit of the `governance` namespace verdict: compose through the `verdict-marker` wire format, re-resolve the head, upsert one comment per head, leak-scan, read back | marker composition, head re-resolution, the derived-namespace fence and the read-back are a protocol; the polarity and clause are judgment |
+| `governance post` | the single sanctioned emit of the `governance` namespace verdict: compose through the `verdict-marker` wire format, re-resolve the head, upsert one comment per head, leak-scan, read back, then re-fire the floor check at that head | marker composition, head re-resolution, the derived-namespace fence and the read-back are a protocol; the polarity and clause are judgment |
 | `governance digest` | the decision records that landed in a window, each with its id, title, status, landing commit and whether its diff carried anchored-invariant changes | enumerating merges in a window and reading each record's frontmatter is mechanical; ranking tension and blast radius is judgment |
 | `governance readout` | the digest-publishing protocol: compose the ranked rows through the `governance-digest` wire format, upsert them into the durable artifact, read them back | composition, upsert and read-back are a protocol; the rows and their order are judgment |
 
@@ -855,7 +855,8 @@ poster reads success.
 `posted\tgovernance\t<polarity>\t<sha>\t<content>\t<created|edited>\t<comment-url>`, where
 `<content>` is the content digest the verdict binds (ADR 0276).
 With `--json`:
-`{"outcome":"posted","namespace":"governance","polarity":…,"sha":…,"content":…,"upsert":"created"|"edited","commentUrl":…}`.
+`{"outcome":"posted","namespace":"governance","polarity":…,"sha":…,"content":…,"upsert":"created"|"edited","floor":"refired"|"green"|"in-flight"|"no-run"|"unknown","commentUrl":…}`.
+The tab line does not carry `floor` — the floor's outcome is on stderr, one line, always.
 
 **The namespace is fixed.** There is no `--namespace` flag: this verb emits exactly one namespace and
 composing another is not a mode it has. That is the disjointness guarantee made structural in the
@@ -893,6 +894,25 @@ namespace is a constant, so it cannot be aimed anywhere else even by a confused 
    format's `read`, require `Found` with exactly the five fields posted, then compare the whole
    comment against the bytes sent through `normalizeForReadback`. A read-back that trusts a carried
    variable instead of live state re-ships #3173's false PASS.
+7. **Assert the floor at this head.** `governance-floor.yml` triggers on `pull_request` alone, so it
+   ran before this verdict could exist, judged a head with no verdict on it, and no comment write can
+   re-fire a `pull_request`-triggered job — every governance-root PR reds at least once and stays red
+   until something re-runs the job (#5585). The verb reads the runs at the bound head, and when the
+   newest `governance-floor` run there is completed-and-red it requests a re-run of that run's failed
+   jobs, then re-reads the run and requires `run_attempt` to have increased. **The re-run is a
+   re-derivation, never a claim**: nothing here writes a check-run or a status, so the green a PR ends
+   with is one `ship floor` reached itself against live comment state. **This step is the one place
+   the verb needs `actions: write`** on its token; no earlier step asks for it. Without it the
+   `rerun-failed-jobs` request 403s, the floor reads `unknown`, and the fix degrades to
+   #5585's own symptom — a red check a human clears — never to a false green.
+
+**The floor assertion never changes the exit code.** By step 7 the verdict is landed and read back, so
+a floor that could not be asserted is a red check, not an unwritten verdict — every outcome is one
+stderr line and the `--json` `floor` field. The five: `refired` (a new attempt exists), `green` (the
+run at this head already passed), `in-flight` (the run had not completed, so it may still judge state
+older than this verdict — re-read the check), `no-run` (no floor run at this head: not installed in
+this repository, or not fired yet), `unknown` (the state could not be read or the re-fire could not be
+proven — never read as a pass).
 
 **No advisory carrier.** `review post` takes `--carrier advisory` for §CP PRs, where a human approval
 is the gate. This verb has no such mode: §CP is not this namespace's question, the governance verdict
@@ -933,8 +953,9 @@ clothes.
 | `governance post: posted, but the read-back does not yield this marker (<wire reason>) — the PR may carry a garbled verdict; inspect comment <id>.` | 9 | refusal |
 
 **Scope** — one PR: its live head, the bound commit's file list for the re-derivation, its comments,
-and the caller's stdin. A read failing at any of those is `11` — nothing written, outcome
-known-unwritten.
+and the caller's stdin, plus the workflow runs at the bound head for step 7. A read failing at any of
+the first four is `11` — nothing written, outcome known-unwritten; a read failing at the fifth is the
+`unknown` floor, because by then the verdict is written.
 
 **Examples**
 
@@ -945,7 +966,7 @@ posted	governance	PASS	03135b91	2f1a9c4e0b7d	created	https://github.com/kamp-us/
 
 ```
 $ fabrika governance post 4321 --polarity PASS --sha 03135b91 --clause "no contradiction, no weakening" --json < verdict.md
-{"outcome":"posted","namespace":"governance","polarity":"PASS","sha":"03135b91","content":"2f1a9c4e0b7d","upsert":"created","commentUrl":"https://github.com/kamp-us/phoenix/pull/4321#issuecomment-5154902211"}
+{"outcome":"posted","namespace":"governance","polarity":"PASS","sha":"03135b91","content":"2f1a9c4e0b7d","upsert":"created","floor":"refired","commentUrl":"https://github.com/kamp-us/phoenix/pull/4321#issuecomment-5154902211"}
 ```
 
 ```
