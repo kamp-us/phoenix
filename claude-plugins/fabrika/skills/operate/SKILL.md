@@ -173,7 +173,7 @@ has something worth publishing. So after the merge and its checks pass, and befo
 `DONE`:
 
 ```bash
-fabrika lane push $lane_key
+node packages/fabrika-cli/src/bin.ts lane push $lane_key
 ```
 
 The verb, not your own `git push`: it derives `epic/<n>` from the number rather than taking a branch
