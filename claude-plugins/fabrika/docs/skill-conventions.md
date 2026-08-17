@@ -116,6 +116,15 @@ process environment nor the filesystem. A genuinely-set `$CLAUDE_PLUGIN_ROOT` is
 invocation work** — the failure is in the expansion, not in availability, and no re-test will
 change it.
 
+**What this constrains is the string the agent executes, not the source text of the file.** A
+`$<name>` written into a fence under [§12](#12-a-skill-that-takes-a-number-declares-it) is the one
+thing that is not a variable expansion: the harness substitutes a declared `arguments:` name into
+the skill body **textually, at load time**, so the model reads the fence with the caller's literal
+number already in it and the isolation verifier never meets a `$`. Everything the *shell* would
+expand at run time — `$CLAUDE_PLUGIN_ROOT`, `$USER`, `$PWD`, a `..` climb — is still refused, for
+the reason above. The test is when the substitution happens: before the body reaches the agent, or
+inside the command the agent runs.
+
 A `pipeline-cli <verb> …`-style invocation — a bare command name followed by literal arguments —
 satisfies this **by construction**, carrying no path expansion at all. (The shape is what is
 adopted, not that package: where fabrika's own verbs live is deferred to the first derived
@@ -328,6 +337,11 @@ instead of leaving the model to find the number in the surrounding prose. So the
 actually read it — **the step that takes the number substitutes `$<name>`, and no second
 prose-parsing path for the same number survives the change.** A sentence like "an argument that is
 a PR number means repair mode" is exactly that second path, and it goes.
+
+That `$<name>` in a fence is the single carve-out to
+[§4](#4-the-invocation-surface-is-a-plain-literal), and §4 states why it is not the variable
+expansion the harness refuses: the harness resolves the name into the body before the agent sees
+it. A shell-expanded variable in the same fence is still a defect.
 
 **The declaration is two fields, because one of them cannot carry the hint.** `arguments:` is a
 list of *names only* — the loader drops anything that is not a non-numeric string, so a name is

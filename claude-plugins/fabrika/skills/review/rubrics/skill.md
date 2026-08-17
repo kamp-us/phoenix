@@ -8,10 +8,16 @@ skill's, never graded here).
 ## 1 — Behavioral correctness
 
 Walk the skill's instructions as the executor would: every step is executable as written, every
-completion criterion is checkable, every fence is a plain literal (no `$VAR`, no default
-expansion, no `..` climb — the isolation verifier is syntactic and refuses them), and every verb
-the text invokes exists in the contract beside it, same spelling, same flags. An instruction the
-model cannot carry out, or a state word the contract never prints, is a finding.
+completion criterion is checkable, every fence is a plain literal **in the string the agent
+executes** (no shell-expanded `$VAR`, no default expansion, no `..` climb — the isolation verifier
+is syntactic and refuses them), and every verb the text invokes exists in the contract beside it,
+same spelling, same flags. An instruction the model cannot carry out, or a state word the contract
+never prints, is a finding.
+
+A `$<name>` that the skill declares in its own `arguments:` frontmatter is **not** a finding: the
+harness substitutes it textually before the body reaches the agent, so the verifier never sees it
+([skill-conventions §4](../../../docs/skill-conventions.md#4-the-invocation-surface-is-a-plain-literal)).
+A `$<name>` in a fence with no matching `arguments:` entry still is one.
 
 ## 2 — Trigger and description quality
 
