@@ -19,6 +19,8 @@ import {runOpen} from "./open-verb.ts";
 import {runPrint} from "./print-verb.ts";
 import {runProve} from "./prove-verb.ts";
 import {keyRefusal} from "./refusals.ts";
+import {DEFAULT_STALE_MINUTES} from "./stale.ts";
+import {runStale} from "./stale-verb.ts";
 import {runStatus} from "./status-verb.ts";
 import {DEFAULT_CHORES_ROOT, DEFAULT_LANES_ROOT, type LaneRef} from "./store.ts";
 import {runTransition} from "./transition-verb.ts";
@@ -248,8 +250,48 @@ const brief = leafCommand(
 	),
 );
 
+const stale = leafCommand(
+	"stale",
+	{
+		root: rootFlag,
+		olderThan: Flag.integer("older-than").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				`minutes of silence before a lane something is owed on is stale (default: ${DEFAULT_STALE_MINUTES})`,
+			),
+		),
+	},
+	Effect.fn(function* ({root, olderThan}) {
+		yield* emit(
+			yield* runStale({
+				roots: Option.match(root, {
+					onNone: () => [DEFAULT_LANES_ROOT, DEFAULT_CHORES_ROOT],
+					onSome: (only) => [only],
+				}),
+				olderThanMinutes: Option.getOrElse(olderThan, () => DEFAULT_STALE_MINUTES),
+				now: new Date().toISOString(),
+			}),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Which lanes have gone quiet with something owed on them."),
+	Command.withDescription(
+		`Sweep every lane on disk and answer which ones nothing is driving. A lane's ledger records state, not liveness, so a shell that dies leaves the lane reading active forever (#5897); the age here comes off the \`at\` every event line already carries — nothing new is stored. stdout is {now, olderThanMinutes, scanned, summary, lanes}, oldest silence first, each lane carrying its folded stateValue, its last event's timestamp, its age in minutes and one verdict: "stale" (non-terminal, unparked and silent past the threshold), "moving", "parked" (blocked or a human:* hold — a park is meant to sit), "terminal", "unstarted" (a lane with no events at all, so no age to judge) or "unreadable" (the lane is there and its record is not readable — it is reported, never dropped). Both default roots are swept unless --root names one; an absent root holds no lanes and is not a fault, and zero lanes is an empty answer at exit 0. Stale lanes exit 0 too — this reports, it never resumes. Exits 1 (--older-than is not a non-negative number of minutes), 11 (a root is there and could not be listed — the lane set is UNKNOWN, never a short list). Examples: fabrika lane stale · fabrika lane stale --older-than 30`,
+	),
+);
+
 export const laneCommand = Command.make("lane").pipe(
-	Command.withSubcommands([status, transition, prove, history, print, open, emitLane, brief]),
+	Command.withSubcommands([
+		status,
+		transition,
+		prove,
+		history,
+		print,
+		open,
+		emitLane,
+		brief,
+		stale,
+	]),
 	Command.withShortDescription("Drive one lane's state ledger by folding its event log."),
 	Command.withDescription(
 		"Drive one lane's state ledger — a @demlik/tea machine folded fresh from an append-only events.jsonl on every invocation, speaking the operator's six events (#5673). A lane is keyed by the issue number it drives, or by name as `chore:<name>` for a chore that has no issue number (#5840)",
