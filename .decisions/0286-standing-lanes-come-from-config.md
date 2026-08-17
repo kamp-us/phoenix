@@ -58,4 +58,5 @@ The cost is that a declared lane is a name the config asserts and the board may 
 
 ## Records
 
-no vocabulary impact — `standing lane` is already defined by ADR [0208](0208-standing-lane-exemption-from-full-homing.md), and this ADR changes only where the set is read from.
+- **No vocabulary impact.** `standing lane` is already defined by ADR [0208](0208-standing-lane-exemption-from-full-homing.md), and this ADR changes only where the set is read from.
+- ADR [0208](0208-standing-lane-exemption-from-full-homing.md) status set to `amended-in-part by [0286]`; its body is untouched.
