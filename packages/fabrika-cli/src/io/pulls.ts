@@ -253,6 +253,39 @@ export const patchComment = (repo: string, id: number, body: string): Shell<Atte
 			: fail("`gh api` exited 0 but its output is not an edited comment");
 	});
 
+/**
+ * The open pull requests the search index nominates for `tokens` — candidate numbers, never a proof.
+ *
+ * The index is a nomination surface only: it matches prose as readily as a link, and it lags a
+ * fresh PR. A caller proving a PR traces to an issue reads each candidate's own record and its own
+ * body; what this narrows is how many records that costs.
+ */
+export const searchOpenPulls = (
+	repo: string,
+	tokens: ReadonlyArray<string>,
+): Shell<Attempt<ReadonlyArray<number>>> =>
+	Effect.gen(function* () {
+		const q = `repo:${repo} is:pr is:open ${tokens.join(" ")}`;
+		const r = yield* execCapture("gh", [
+			"api",
+			"--paginate",
+			`search/issues?q=${encodeURIComponent(q)}&per_page=100`,
+			"--jq",
+			".items[].number",
+		]);
+		if (!r.ok) return fail(r.reason);
+		const numbers: number[] = [];
+		for (const line of r.stdout.split("\n")) {
+			const text = line.trim();
+			if (text === "") continue;
+			if (!/^\d+$/.test(text)) {
+				return fail("`gh api` exited 0 but its output is not a list of pull-request numbers");
+			}
+			numbers.push(Number.parseInt(text, 10));
+		}
+		return ok(numbers);
+	});
+
 /** One pull request as a branch lookup sees it — enough to pick the newest and state what it is. */
 export interface BranchPull {
 	readonly number: number;
