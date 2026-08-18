@@ -453,7 +453,7 @@ export const runRelease = (
 		if (listed._tag === "Failure") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
-				`${RELEASE}: cannot re-read the markers on #${number}: ${listed.reason} — nothing was retracted; run "fabrika build release ${number}" again.`,
+				`${RELEASE}: cannot re-read the markers on #${number}: ${listed.reason} — nothing was retracted; run "fabrika build release ${number} --token ${options.token.trim()}" again.`,
 				notes,
 			);
 		}

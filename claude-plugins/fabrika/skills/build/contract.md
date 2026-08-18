@@ -1691,7 +1691,7 @@ argv value, never `-f body=@file` (#4683).
 | `build pr-body: cannot read PR #<pr>: <reason> — nothing was written.` | 11 | refusal |
 | `build pr-body: PR #<pr>'s head branch "<ref>" is not a lane branch — this verb rewrites a lane's own PR.` | 14 | refusal |
 | `build pr-body: the checked-out branch "<branch>" does not serve PR #<pr> — wrong lane.` | 14 | refusal |
-| `build pr-body: #<n> is held by <token>, not this session.` | 15 | refusal |
+| `build pr-body: #<n> is held by <winning token>, not by the lane on nonce <nonce>.` | 15 | refusal |
 
 **Scope** — one body replacement on one open PR. Nothing else about the PR moves: no commit, no
 push, no branch, no title, no base.
