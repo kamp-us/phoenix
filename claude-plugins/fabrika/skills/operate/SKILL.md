@@ -284,7 +284,7 @@ or an event recorded this pass.
 `lane report <lane> --root <root> --token <TOKEN>` against the lane and root its brief named, and
 the token→event map is code
 ([`packages/fabrika-cli/src/lane/report.ts`](../../../../packages/fabrika-cli/src/lane/report.ts)),
-never a table you execute — an unrecognised token is that verb's refusal (exit `31`), not a reading
+never a table you execute — an unrecognised token is that verb's refusal (exit `32`), not a reading
 of yours. **That verb proves before it appends**: it runs `lane prove`'s read on the mapped event
 and refuses on `lane prove`'s own codes, so a shell-recorded `DONE` or `PASS` reaches the ledger
 only with its artifact behind it, exactly as one you record does. So when a spawn returns, your

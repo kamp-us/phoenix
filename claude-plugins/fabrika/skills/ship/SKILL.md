@@ -201,7 +201,7 @@ node packages/fabrika-cli/src/bin.ts lane report <lane> --root <root> --token LA
 ```
 
 The reason behind a `refused` stays in your note and report — the verb takes the bare token. It
-refuses a token outside this vocabulary (exit `31`) rather than interpreting it. It proves an event
+refuses a token outside this vocabulary (exit `32`) rather than interpreting it. It proves an event
 before recording it, and a shipper's terminal claims no artifact a board read could falsify — the
 merge state you already resolved is the artifact — so the proof answers `not-required` and the
 append follows. Any refusal: print the token, name the exit code, change nothing. Then print the

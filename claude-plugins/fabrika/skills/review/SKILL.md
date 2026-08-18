@@ -184,7 +184,7 @@ node packages/fabrika-cli/src/bin.ts lane report <lane> --root <root> --token PA
 One guard is yours before a `FAIL`: record it **only when every derived namespace holds a verdict
 that still binds at the head** — a `FAIL` beside an in-flight namespace is an incomplete read the
 lane must not act on yet, so print the terminal without recording and leave the record to the
-operator's re-read. The verb refuses a token outside this vocabulary (exit `31`) rather than
+operator's re-read. The verb refuses a token outside this vocabulary (exit `32`) rather than
 interpreting it, and it **proves a `PASS` before it records it** — every namespace the PR's diff
 derives must hold a verdict still binding at the head, read off the PR itself (exit `23` where one
 does not). A refusal is the PR disagreeing with your terminal: print the token, name the exit code,

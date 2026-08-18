@@ -233,7 +233,7 @@ node packages/fabrika-cli/src/bin.ts lane report <lane> --root <root> --token SH
 ```
 
 `--pr` whenever the terminal names one; `--comment` for the diagnosis comment behind a
-`SUCCESS-NO-PR`. The verb refuses a token outside this vocabulary (exit `31`) rather than
+`SUCCESS-NO-PR`. The verb refuses a token outside this vocabulary (exit `32`) rather than
 interpreting it — never respell one to get past it. It also **proves the event before it records**:
 your `SHIPPED-PR` lands only against an open PR the board shows linking the issue, and a
 `SUCCESS-NO-PR` only against the diagnosis comment you posted — so a refusal here is the board
