@@ -29,10 +29,15 @@ const PERM = /^gh api repos\/o\/r\/collaborators\/agent\/permission/;
 const REPO_META = /^gh api repos\/o\/r --jq \.default_branch$/;
 const MERGE_BASE = /^git merge-base HEAD origin\/main$/;
 const DIFF = /^git diff --name-only /;
+const UNTRACKED_ARGV = "git ls-files --others --exclude-standard --full-name -- :/";
+const UNTRACKED = /^git ls-files --others --exclude-standard --full-name -- :\/$/;
 const TYPECHECK = /^pnpm typecheck --force$/;
 const LINT = /^pnpm lint:worktree$/;
 
 const LANE = `build/4312-editor-focus-loss-${NONCE}`;
+
+/** A scripted untracked-file list. Placed ahead of `LANE_OK`, whose default is an empty one. */
+const untracked = (stdout: string): readonly [RegExp, ExecResult] => [UNTRACKED, okOut(stdout)];
 
 const LANE_OK: ReadonlyArray<readonly [RegExp, ExecResult]> = [
 	[REV_PARSE, GIT_DIRS],
@@ -42,6 +47,7 @@ const LANE_OK: ReadonlyArray<readonly [RegExp, ExecResult]> = [
 	[PERM, okOut("write\n")],
 	[REPO_META, okOut("main\n")],
 	[MERGE_BASE, okOut(`${HEAD}\n`)],
+	untracked(""),
 ];
 
 const options = {
@@ -166,7 +172,7 @@ describe("runCheck", () => {
 		const out = await run([...LANE_OK, [DIFF, okOut("")]]);
 		expect(out.code).toBe(ZERO_SCOPE);
 		expect(out.stderr.at(-1)).toBe(
-			"build check: the diff against origin/main is empty — nothing to validate (ADR 0092).",
+			"build check: this tree changes nothing against origin/main, tracked or untracked — nothing to validate (ADR 0092).",
 		);
 	});
 
@@ -518,5 +524,107 @@ describe("--surface plan covers the markdown class it claims", () => {
 		const verdict = JSON.parse(out.stdout);
 		expect(verdict.unvalidated).toEqual([]);
 		expect(verdict.ran).toEqual(["markdown link + leak scan", "## Dependencies grammar"]);
+	});
+});
+
+// #5823: `git diff` reports no untracked path, so a brand-new file reached neither the validated
+// set nor `unvalidated` — invisible instead of disclosed, under a green verdict. The lane order is
+// construct, check, then commit, so every new file is untracked exactly when the verb runs.
+describe("the enumeration unions the untracked files with the diff", () => {
+	it("counts an untracked file in the scanned scope", async () => {
+		const out = await run([
+			untracked("packages/fabrika-cli/src/build/pr-title.ts\n"),
+			...LANE_OK,
+			[DIFF, okOut("apps/web/src/App.tsx\n")],
+			[TYPECHECK, okOut("")],
+			[LINT, okOut("")],
+		]);
+		expect(out.code).toBe(0);
+		expect(out.stderr).toContain("build check: 2 changed file(s) against origin/main.");
+		expect(JSON.parse(out.stdout).unvalidated).toEqual([]);
+	});
+
+	it("names an untracked markdown file in a code run's unvalidated list", async () => {
+		const out = await run([
+			untracked("docs/new-guide.md\n"),
+			...LANE_OK,
+			[DIFF, okOut("apps/web/src/App.tsx\n")],
+			[TYPECHECK, okOut("")],
+			[LINT, okOut("")],
+		]);
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).unvalidated).toEqual(["docs/new-guide.md"]);
+	});
+
+	// The prose scanners read per enumerated file, so an unlisted markdown file is scanned by nothing.
+	it("scans an untracked markdown file under --surface prose", async () => {
+		const out = await run(
+			[untracked("docs/new-guide.md\n"), ...LANE_OK, [DIFF, okOut("docs/tracked.md\n")]],
+			{surface: "prose"},
+			{
+				"/repo/trees/lane-a/docs/tracked.md": "fine\n",
+				"/repo/trees/lane-a/docs/new-guide.md": "run it from /Users/someone/phoenix\n",
+			},
+		);
+		expect(out.code).toBe(VALIDATION_RED);
+		expect(out.stderr.some((line) => line.includes("machine-local path"))).toBe(true);
+	});
+
+	it("validates an all-untracked tree instead of refusing it as empty", async () => {
+		const out = await run([
+			untracked("apps/web/src/New.tsx\n"),
+			...LANE_OK,
+			[DIFF, okOut("")],
+			[TYPECHECK, okOut("")],
+			[LINT, okOut("")],
+		]);
+		expect(out.code).toBe(0);
+		expect(out.stderr).toContain("build check: 1 changed file(s) against origin/main.");
+	});
+
+	it("lists a path both sources report exactly once", async () => {
+		const out = await run([
+			untracked("b.ts\na.ts\n"),
+			...LANE_OK,
+			[DIFF, okOut("b.ts\nc.ts\n")],
+			[TYPECHECK, okOut("")],
+			[LINT, okOut("")],
+		]);
+		expect(out.code).toBe(0);
+		expect(out.stderr).toContain("build check: 3 changed file(s) against origin/main.");
+	});
+
+	it("still refuses on 7 when neither source yields a path", async () => {
+		const out = await run([untracked(""), ...LANE_OK, [DIFF, okOut("")]]);
+		expect(out.code).toBe(ZERO_SCOPE);
+	});
+
+	// Scripting stdout cannot catch a cwd-scoped read: bare `ls-files --others` answers only for the
+	// cwd and answers cwd-relative, while `git diff` answers repo-wide and root-relative. Run from a
+	// subdirectory that drops untracked files elsewhere in the tree and misresolves the rest against
+	// `lane.root`. Only the argv proves the two reads cover the same tree, so assert the argv.
+	it("reads the untracked list repo-wide and root-relative", async () => {
+		const shell = fakeShell([
+			untracked("apps/web/src/New.tsx\n"),
+			...LANE_OK,
+			[DIFF, okOut("apps/web/src/App.tsx\n")],
+			[TYPECHECK, okOut("")],
+			[LINT, okOut("")],
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(runCheck(options), Layer.merge(shell.layer, fakeFs({}).layer)),
+		);
+		expect(out.code).toBe(0);
+		expect(shell.calls).toContain(UNTRACKED_ARGV);
+	});
+
+	it("refuses an unreadable untracked read on 11 — a short list is a fail-open green", async () => {
+		const out = await run([
+			[UNTRACKED, errOut("fatal: not a git repository")],
+			...LANE_OK,
+			[DIFF, okOut("apps/web/src/App.tsx\n")],
+		]);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stderr.at(-1)).toContain("the verdict is UNKNOWN, never green");
 	});
 });

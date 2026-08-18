@@ -309,7 +309,7 @@ export const runCheck = (
 		if (listed._tag === "Failure") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
-				`${VERB}: cannot read the diff against ${base}: ${listed.reason} — the verdict is UNKNOWN, never green.`,
+				`${VERB}: cannot enumerate the files changed against ${base}: ${listed.reason} — the verdict is UNKNOWN, never green.`,
 				lane.notes,
 			);
 		}
@@ -318,7 +318,7 @@ export const runCheck = (
 		if (files.length === 0) {
 			return refuse(
 				ZERO_SCOPE,
-				`${VERB}: the diff against ${base} is empty — nothing to validate (ADR 0092).`,
+				`${VERB}: this tree changes nothing against ${base}, tracked or untracked — nothing to validate (ADR 0092).`,
 				scope,
 			);
 		}
