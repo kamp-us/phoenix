@@ -152,8 +152,10 @@ The two entry points need different Nodes, so the manifest carries two floors an
 
 `publishConfig.engines` is a real field replacement, not a hopeful one: packing this package with
 pnpm 10.27.0 (the `packageManager` pin `publish.yml` runs on) emits a tarball `package.json` whose
-`engines.node` is `>=22.12` and whose `publishConfig` is gone entirely. So the dev floor never
-reaches a consumer, and a Node-22 repo installs and runs with no `Unsupported engine` warning —
+`engines.node` is `>=22.12` and whose `publishConfig` is stripped to `{"access": "public"}` — pnpm
+copies a whitelisted field onto the manifest and deletes it from `publishConfig`, and `access` is a
+publish setting rather than a manifest field, so it stays behind. So the dev floor never reaches a
+consumer, and a Node-22 repo installs and runs with no `Unsupported engine` warning —
 including under `engine-strict=true`, where `>=24` was a hard install failure rather than noise.
 
 `>=22.12` is what the bundle was measured to need, not what it was assumed to need. Running
@@ -1148,8 +1150,9 @@ pnpm --filter @kampus/fabrika-cli build       # tsc -> dist/, for the published 
 types natively, so an edit to `src/` is live on the next invocation — which is the entire point of
 the workspace `devDependencies` line in the root `package.json`. `build` emits `dist/` for the
 published tarball and nothing else reads it; see [the two Node floors](#the-two-node-floors) for why
-that `≥ 24` is this workspace's number and not the published package's. Emit and type-check now run the same binary — the stable native `tsc` (ADR 0271) — so the
-published artifact and the gate can no longer disagree about the compiler.
+that `≥ 24` is this workspace's number and not the published package's. Emit and type-check now run
+the same binary — the stable native `tsc` (ADR 0271) — so the published artifact and the gate can no
+longer disagree about the compiler.
 
 A verb is a **pure function of its dependencies** — the `*-verb.ts` modules compute a
 `VerbOutcome` (exit code, stdout, stderr) and never write a stream or exit. The Effect CLI
