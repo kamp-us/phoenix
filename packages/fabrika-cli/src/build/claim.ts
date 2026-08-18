@@ -14,6 +14,10 @@
  *
  * Three refusals stay separate, because v1 fused them and callers guessed: a proven loss is `15`, a
  * missing session id is `1`, and an unreadable marker set is `11` — never "unclaimed".
+ *
+ * The protocol is namespaced by a {@link ClaimGrammar} so a second kind of lane can race on the same
+ * issue without colliding with a build claim; `build` reads {@link BUILD_CLAIM}, which is the default
+ * everywhere, and the `lane` group reads its own (`../lane/claim.ts`).
  */
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
@@ -30,12 +34,45 @@ export const SESSION_ENV = "CLAUDE_CODE_SESSION_ID";
 const AUTHORIZED = new Set(["admin", "maintain", "write"]);
 
 /**
- * The marker's one line: `build-claim: <token> · <ISO-8601-UTC>`.
+ * One claim namespace: the marker line's leading word, and the token's leading segment.
+ *
+ * Two namespaces race on the same issue and never see each other — `build-claim:`/`build:` for a
+ * builder, `lane-claim:`/`lane:` for the `operate` driver that spawns it (#5761). That separation is
+ * the whole reason the grammar is a value: the marker's regex is *derived* from the keyword and the
+ * prefix, so a namespace cannot ship a writer and a reader that disagree, and a driver holding a
+ * lane claim on issue N cannot lock its own builder out of N.
+ */
+export interface ClaimGrammar {
+	readonly keyword: string;
+	readonly prefix: string;
+	readonly marker: RegExp;
+}
+
+const NAMESPACE = /^[a-z]+(?:-[a-z]+)*$/;
+
+/**
+ * A namespace's grammar. Both halves are checked because they are interpolated into a regex: a
+ * keyword carrying a metacharacter would compile a pattern nobody wrote, and the callers pass module
+ * constants, so an off-shape one is a programming error rather than input to refuse.
+ */
+export const claimGrammar = (keyword: string, prefix: string): ClaimGrammar => {
+	if (!NAMESPACE.test(keyword) || !NAMESPACE.test(prefix)) {
+		throw new Error(`"${keyword}"/"${prefix}" is not a claim namespace (${NAMESPACE.source})`);
+	}
+	return {
+		keyword,
+		prefix,
+		marker: new RegExp(`^${keyword}:\\s*(${prefix}:[^\\s·]+)\\s*(?:·.*)?$`, "m"),
+	};
+};
+
+/**
+ * The builder's namespace, and the one every existing caller reads: `build-claim: <token> · <ISO>`.
  *
  * The token is the only field ownership turns on. The timestamp is for a human reading the thread —
  * the tiebreak uses the comment's own `created_at`, which a claimant cannot author.
  */
-const MARKER_RE = /^build-claim:\s*(build:[^\s·]+)\s*(?:·.*)?$/m;
+export const BUILD_CLAIM: ClaimGrammar = claimGrammar("build-claim", "build");
 
 /** An admission override: the lane it is taken for, and why. Both required — see `readOverride`. */
 export interface ClaimOverride {
@@ -55,15 +92,19 @@ export const composeMarker = (
 	token: string,
 	at: string,
 	override: ClaimOverride | null = null,
+	grammar: ClaimGrammar = BUILD_CLAIM,
 ): string =>
 	override === null
-		? `build-claim: ${token} · ${at}`
-		: `build-claim: ${token} · ${at}\nbuild-claim-override: ${override.lane} · ${override.reason}`;
+		? `${grammar.keyword}: ${token} · ${at}`
+		: `${grammar.keyword}: ${token} · ${at}\n${grammar.keyword}-override: ${override.lane} · ${override.reason}`;
 
-/** The token a comment body claims, or `null` when it carries no marker. */
-export const readMarkerToken = (body: string): string | null => {
-	const m = MARKER_RE.exec(body);
-	return m?.[1] === undefined || parseToken(m[1]) === null ? null : m[1];
+/** The token a comment body claims in `grammar`, or `null` when it carries no marker of that kind. */
+export const readMarkerToken = (
+	body: string,
+	grammar: ClaimGrammar = BUILD_CLAIM,
+): string | null => {
+	const m = grammar.marker.exec(body);
+	return m?.[1] === undefined || parseToken(m[1], grammar.prefix) === null ? null : m[1];
 };
 
 export interface ClaimMarker {
@@ -73,11 +114,14 @@ export interface ClaimMarker {
 	readonly token: string;
 }
 
-/** Every claim marker in a comment list, oldest first, ties broken by comment id. */
-export const markersIn = (comments: ReadonlyArray<CommentRecord>): ReadonlyArray<ClaimMarker> => {
+/** Every claim marker of `grammar` in a comment list, oldest first, ties broken by comment id. */
+export const markersIn = (
+	comments: ReadonlyArray<CommentRecord>,
+	grammar: ClaimGrammar = BUILD_CLAIM,
+): ReadonlyArray<ClaimMarker> => {
 	const markers: ClaimMarker[] = [];
 	for (const comment of comments) {
-		const token = readMarkerToken(comment.body);
+		const token = readMarkerToken(comment.body, grammar);
 		if (token !== null) {
 			markers.push({
 				commentId: comment.id,
@@ -111,6 +155,7 @@ export const resolveOwnership = (
 	repo: string,
 	number: number,
 	session: string,
+	grammar: ClaimGrammar = BUILD_CLAIM,
 ): Effect.Effect<
 	{readonly ownership: Ownership; readonly unauthorized: ReadonlyArray<ClaimMarker>},
 	never,
@@ -121,7 +166,7 @@ export const resolveOwnership = (
 		if (listed._tag === "Failure") {
 			return {ownership: {_tag: "Unknown" as const, reason: listed.reason}, unauthorized: []};
 		}
-		const markers = markersIn(listed.value);
+		const markers = markersIn(listed.value, grammar);
 		const unauthorized: ClaimMarker[] = [];
 		const permissions = new Map<string, string | null>();
 		for (const marker of markers) {
@@ -144,7 +189,7 @@ export const resolveOwnership = (
 				unauthorized.push(marker);
 				continue;
 			}
-			const parsed = parseToken(marker.token);
+			const parsed = parseToken(marker.token, grammar.prefix);
 			const mine = parsed !== null && parsed.session === session;
 			return {
 				ownership: mine ? ({_tag: "Mine", marker} as const) : ({_tag: "Foreign", marker} as const),
