@@ -560,3 +560,76 @@ describe("two decision tickets forked to one grilling session", () => {
 		expect(shell.calls.some((line) => line.includes("PATCH repos/o/r/issues/9140"))).toBe(false);
 	});
 });
+
+describe("a citation on a ticket carrying no fork marker", () => {
+	/** An ordinary research ticket's frontier — no fork marker on it. */
+	const unforked = () => frontier(ticketComments());
+
+	it("exits 0 recording the ruling when the cited question reads ruled", async () => {
+		const shell = fakeShell([
+			[PATCH_TICKET, okOut("{}")],
+			[PATCH_MAP, okOut("{}")],
+			...unforked(),
+			...session(RULED),
+			[
+				once(MAP_ISSUE),
+				okOut(issueJson({number: MAP, body: MAP_BODY, labels: ["wayfinding:map"]})),
+			],
+			mapAt(ruledRecord),
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runRecord({...options, ruledOn: SESSION, questionId: QUESTION}),
+				Layer.merge(shell.layer, fakeFs({files: {[FINDING]: `${ANSWER}\n`}}).layer),
+			),
+		);
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({
+			recorded: `— ruled on #${SESSION} ${QUESTION}`,
+			closed: true,
+		});
+		expect(shell.calls.some((line) => line.includes("issues/9301/comments"))).toBe(true);
+	});
+
+	it("exits 13 naming the state it read instead of recording the citation verbatim", async () => {
+		const out = await run(
+			[
+				...unforked(),
+				mapAt(MAP_BODY),
+				...session([
+					{id: 11, body: roundComment(1)},
+					{id: 12, body: answerComment("R1.1", BOUND)},
+				]),
+			],
+			{ruledOn: SESSION, questionId: "R1.1"},
+		);
+		expect(out.code).toBe(TICKET_UNKNOWN);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.join("\n")).toContain('reads "answered", not "ruled"');
+	});
+
+	it("exits 11 when the reader cannot complete its read — never assumed ruled", async () => {
+		const out = await run(
+			[
+				...unforked(),
+				mapAt(MAP_BODY),
+				[SESSION_ISSUE, okOut(issueJson({number: SESSION, labels: ["grilling:session"]}))],
+				[SESSION_COMMENTS, errOut("gh: API rate limit exceeded")],
+			],
+			{ruledOn: SESSION, questionId: QUESTION},
+		);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.join("\n")).toContain("Nothing was recorded");
+	});
+
+	it("exits 7 when the cited session does not exist", async () => {
+		const out = await run(
+			[...unforked(), mapAt(MAP_BODY), [SESSION_ISSUE, errOut("gh: Not Found (HTTP 404)")]],
+			{ruledOn: SESSION, questionId: QUESTION},
+		);
+		expect(out.code).toBe(NO_TARGET);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.join("\n")).toContain("does not exist");
+	});
+});
