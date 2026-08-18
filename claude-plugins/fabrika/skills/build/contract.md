@@ -1577,12 +1577,14 @@ exactly as in `build pr`, minus the body-shape and classification rows (`4`, `10
 unreachable: a note has no required sections and no closing keywords; a classification *claim* in
 a note is prose the reader weighs, not a label the board consumes).
 
-**Errors** — `build pr`'s rows for `3`, `5`, `6`, `8`, `9`, `11`, `15` with the verb name
-substituted (shared conventions), plus:
+**Errors** — `build pr`'s rows for `3`, `5`, `6`, `8`, `9`, `11` with the verb name substituted
+(shared conventions), plus — `15` is written out rather than inherited, because `note` names its
+lane with `--token` where `pr` reads it off the branch, so the two verbs refuse in different words:
 
 | Message (stderr) | Code | Kind |
 |---|---|---|
 | `build note: #<n> is proven absent or closed — nothing to post to.` | 7 | refusal |
+| `build note: #<n> is held by <winning token>, not by <caller token>.` | 15 | refusal |
 
 **Example**
 

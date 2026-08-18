@@ -45,7 +45,9 @@ the claim is `build`'s, reused, not a second lock:
 fabrika build claim $epic_number --purpose gate
 ```
 
-The token `claim` prints is `<claim-token>` below — this LANE's name, which every later verb takes as `--token`. A session runs several lanes, so a verb handed only the session id can tell a sibling lane's claim from yours (#6037).
+The token `claim` prints is `<claim-token>` below — this LANE's name, which every later verb takes as
+`--token`. A session runs several lanes, so a verb handed only the session id cannot tell a sibling
+lane's claim from yours (#6037).
 
 `--purpose gate` is not optional here. The audience axis (`ready-for:agent`) asks whether an agent
 should pick the issue up to **build**, and an epic earns that label only *after* it has been planned
