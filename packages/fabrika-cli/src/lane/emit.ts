@@ -163,6 +163,11 @@ export const emitMachine = (
 	body: string,
 	children: ReadonlyArray<SubIssueLink>,
 ): EmitResult => {
+	// Childlessness is read before the body, because an issue with no sub-issue links is not an epic
+	// whatever its prose says — parsing first let a plain issue's `## Dependencies` heading refuse as
+	// a malformed epic record and dead-end the boot (#5973).
+	if (children.length === 0) return {_tag: "NoTopology"};
+
 	const topo = readTopology(body);
 	if (topo._tag === "Absent") return {_tag: "NoTopology"};
 	if (topo._tag === "Unparseable") return {_tag: "Unparseable", line: topo.line, text: topo.text};
