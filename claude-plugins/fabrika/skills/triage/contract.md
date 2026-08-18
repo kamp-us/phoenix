@@ -666,19 +666,19 @@ unless the work is `p0` or blocks one of that milestone's own in-flight lanes, s
 fourth tab-separated column, verbatim `running: p0/blocker only`, and its `--json` object carries
 `"running": "p0/blocker only"` as a fourth key. Every other row is unchanged on both channels — no
 fourth column, and no `running` key — so a reader written against the pre-marker shape still parses.
-The marked milestone is still listed: the two exceptions are real work, and a removed row cannot
+A marked milestone is still listed: the two exceptions are real work, and a removed row cannot
 carry them. This verb states the subtraction and stops; where excluded work goes instead is the
 caller's by-fit judgement, and no output here names a destination.
 
 **Which milestone is running is data, never a literal in this spec or in the verb.** It is
-`ROADMAP.md`'s `## Focus` table — the same exclusive-focus declaration `build pick` fences on, read
+`ROADMAP.md`'s `## Focus` table — the same focus declaration `build pick` fences on, read
 through the same parser, off the roadmap text this verb has already read for the arc join. Moving the
 focus to the next campaign is a `ROADMAP.md` edit and never a code or skill edit; `--roadmap` moves
 both reads together. The declaration's three states are the ones that declaration already has:
 
 | `## Focus` | Rows marked | stderr |
 |---|---|---|
-| declares a milestone | that milestone's row, if it is open | `triage homes: focus: milestone #<n>, declared <date>.` |
+| declares one or more milestones | every declared milestone's row, if it is open | `triage homes: focus: milestone #<n>, declared <date>.` — or, for N > 1, `triage homes: focus: <n> milestones — #<a> (declared <date>), #<b> (declared <date>).` |
 | absent, or an empty section | none — the answer is exactly the pre-marker one | `triage homes: focus: none declared — scope fence inert.` |
 | reads but does not parse | none | `triage homes: focus: unreadable — <reason>.` |
 

@@ -120,8 +120,8 @@ Lane-entering work (an epic, or a parentless feature) additionally carries a `##
 approves a pitch**. Take an existing home: **triage never creates a milestone**, and
 `wayfinder:backlog` is bounded to genuine fog rather than work you would rather not decide about.
 **A milestone in declared focus is closed to new intake** unless the work is `p0` or blocks one of
-that milestone's own in-flight lanes — `triage homes` marks that row `running`, and is where you read
-which milestone it is. That is a subtraction and nothing more: home the work by fit exactly as above.
+that milestone's own in-flight lanes — `triage homes` marks those rows `running`, and is where you read
+which milestones they are. That is a subtraction and nothing more: home the work by fit exactly as above.
 
 ```bash
 fabrika triage homes
