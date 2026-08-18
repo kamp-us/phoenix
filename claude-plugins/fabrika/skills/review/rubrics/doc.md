@@ -16,7 +16,9 @@ Read the CI-at-head result; do not re-derive them.
   `DEVELOPMENT.md`. A why-narrative landing in a pattern doc is a finding.
 - **One Diátaxis mode per doc.** A tutorial that drifts into reference, or a how-to that
   re-derives explanation, is a finding — name the mode the doc claims and the paragraphs that
-  leave it.
+  leave it. The classification procedure and the five recurring mixes live in the
+  [`diataxis`](../../diataxis/SKILL.md) skill; fire it on the doc-class slice and state its
+  verdict here.
 - **Supersession is explicit.** A doc that replaces or contradicts an existing one names it and
   routes the reader; two live docs answering the same question is a finding.
 - **Status sanity.** Frontmatter/status lines match the body's claims (a `superseded` doc that

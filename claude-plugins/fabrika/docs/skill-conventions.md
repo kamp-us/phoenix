@@ -404,7 +404,7 @@ neither field otherwise:**
    motion — so the report to the caller is a pointer and nothing dies with the run's context.
 
 The five that pass both: **`build`, `build-ui`, `review`, `review-ui`, `heal-ci`**.
-The other nineteen fail at least one clause, and the two clauses fail in distinct ways:
+The other twenty fail at least one clause, and the two clauses fail in distinct ways:
 
 | Excluded | Fails |
 |---|---|
@@ -412,6 +412,7 @@ The other nineteen fail at least one clause, and the two clauses fail in distinc
 | `operate` | clause 2 — a `LANE-PARKED` is a human's cue to act, and the two terminals differ in exactly who moves next. |
 | `check-epic-plan`, `governance` | clause 2 — each returns a gate verdict its caller waits on; `review` §6 fires `governance` and waits, so a backgrounded `governance` would return after `review` had already emitted. |
 | `grilling`, `wayfinding`, `prototyping`, `taste-color`, `front-door`, `deslop-comments` | clause 2 — a human is mid-conversation, waiting. `deslop-comments` hands back a working-tree diff, which dies with a fork's context. |
+| `diataxis` | clause 2 — a caller is waiting mid-run (`build` mid-authoring, `review` mid-diff), and the verdict is a judgement in the run's own words, so it dies with a fork's context. |
 | `graduate`, `handoff` | clause 2, and harder: their subject is the calling session, which a fork does not have. |
 | `adr`, `write-pattern`, `glossary`, `report`, `triage`, `plan-epic` | clause 1 — each writes one document or one issue's labels and stops, so its length is knowable from its own steps. |
 | `writing-for-agents` | clause 1 — reference read during another skill's run; it has no run of its own. |
