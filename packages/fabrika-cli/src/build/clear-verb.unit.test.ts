@@ -15,6 +15,7 @@ const VIEWER = /^gh api user --jq \.login$/;
 const CONFIG =
 	/^gh api -H Accept: application\/vnd\.github\.raw repos\/o\/r\/contents\/\.fabrika\.jsonc\?ref=main$/;
 const TEAM = /^gh api --paginate orgs\/kamp-us\/teams\/control-plane\/members/;
+const PERMISSION = /^gh api repos\/o\/r\/collaborators\/usirin\/permission/;
 const POST = /^gh api --method POST repos\/o\/r\/issues\/4310\/comments/;
 const GET_COMMENT = /^gh api repos\/o\/r\/issues\/comments\/(\d+)$/;
 
@@ -63,6 +64,7 @@ const GRANTABLE: ReadonlyArray<readonly [RegExp, ExecResult]> = [
 	[COMMENTS, THREE_ROUNDS],
 	[CONFIG, CONFIGURED],
 	[VIEWER, okOut("usirin\n")],
+	[PERMISSION, okOut("admin\n")],
 ];
 
 describe("runClear", () => {
@@ -193,6 +195,7 @@ describe("runClear", () => {
 				],
 				[CONFIG, CONFIGURED],
 				[VIEWER, okOut("usirin\n")],
+				[PERMISSION, okOut("admin\n")],
 				[POST, POSTED(901)],
 				[
 					GET_COMMENT,
@@ -206,5 +209,73 @@ describe("runClear", () => {
 		const parsed = JSON.parse(outcome.stdout);
 		expect(parsed.round).toBe(CAP_ROUND + 1);
 		expect(parsed.cap).toBe(CAP_ROUND + 2);
+	});
+
+	/** A committed set narrows the ACL; it never stands in for one (ADR 0055, ADR 0292). */
+	it("refuses a configured account that resolves below write at the ACL", async () => {
+		const {outcome, calls} = await run([
+			[PULL, pull({number: 4310, base: {ref: "main"}})],
+			[COMMENTS, THREE_ROUNDS],
+			[CONFIG, CONFIGURED],
+			[VIEWER, okOut("usirin\n")],
+			[PERMISSION, okOut("read\n")],
+		]);
+		expect(outcome.code).toBe(GRANT_UNAUTHORIZED);
+		expect(outcome.stderr.at(-1)).toContain("below write");
+		expect(calls.some((line) => /--method POST/.test(line))).toBe(false);
+	});
+
+	it("holds an unreadable permission UNKNOWN rather than granting on the config alone", async () => {
+		const {outcome} = await run([
+			[PULL, pull({number: 4310, base: {ref: "main"}})],
+			[COMMENTS, THREE_ROUNDS],
+			[CONFIG, CONFIGURED],
+			[VIEWER, okOut("usirin\n")],
+			[PERMISSION, {ok: false, stdout: "", reason: "HTTP 502"}],
+		]);
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+	});
+
+	/**
+	 * Exit 29's own remedy: the marker landed and the lane write did not, so the raised cap is what
+	 * now makes the budget test say "not spent". The re-run must reconcile the lane, not refuse on 7.
+	 */
+	it("reconciles the lane on a re-run for a round already granted, posting nothing", async () => {
+		const {outcome, calls, written} = await run(
+			[
+				[PULL, pull({number: 4310, base: {ref: "main"}})],
+				[
+					COMMENTS,
+					comments(
+						{id: 1, body: `review-code: FAIL @ ${HEAD} — one`, createdAt: "2026-08-18T01:00:00Z"},
+						{id: 2, body: `review-code: FAIL @ ${HEAD} — two`, createdAt: "2026-08-18T02:00:00Z"},
+						{id: 3, body: `review-code: FAIL @ ${HEAD} — three`, createdAt: "2026-08-18T03:00:00Z"},
+						{id: 4, body: AUTHORIZATION, author: "usirin", createdAt: "2026-08-18T03:10:00Z"},
+						{
+							id: 5,
+							body: "cap-cleared: round 3 · 2026-08-18T03:11:00Z",
+							author: "usirin",
+							createdAt: "2026-08-18T03:11:00Z",
+						},
+					),
+				],
+				[CONFIG, CONFIGURED],
+				[VIEWER, okOut("usirin\n")],
+				[PERMISSION, okOut("admin\n")],
+			],
+			{},
+			{[WORKFLOW]: coderTemplateText()},
+		);
+		expect(outcome.code).toBe(0);
+		expect(JSON.parse(outcome.stdout)).toMatchObject({
+			round: CAP_ROUND,
+			marker: 5,
+			authorization: 4,
+			resolvesTo: "reconciled",
+		});
+		expect(calls.some((line) => /--method POST/.test(line))).toBe(false);
+		const compiled = compileText(written.get(WORKFLOW) ?? "");
+		if (compiled._tag !== "Compiled") throw new Error("the lane document did not recompile");
+		expect(compiled.lane.tasks.issue?.initial.maxRetries).toBe(RETRY_BUDGET + 1);
 	});
 });

@@ -119,12 +119,15 @@ export const HEAD_DROPS_REMOTE = 23;
  */
 export const COMMIT_NOT_CREATED = 24;
 /**
- * Proven: the invoking account is not in the repo's configured cap-clear grant-author set.
+ * Proven: the invoking account may not clear a cap — outside the configured grant-author set, or
+ * below `write` at the repository ACL.
  *
- * Its own seat rather than a borrowed `21`: that code is about the *issue's* audience label, and
- * this one is about who the repo configured to hold founder authority — the remedies share nothing.
- * It is never {@link PRECONDITION_UNKNOWN}: the config and the memberships were read in full, so the
- * refusal is a fact about the account (#5959).
+ * One seat for both clauses because they answer one question, "may this account grant?", and a
+ * caller's next move is the same either way: get authority, then re-run. Its own seat rather than a
+ * borrowed `21`: that code is about the *issue's* audience label, and this one is about who may hold
+ * founder authority — the remedies share nothing. It is never {@link PRECONDITION_UNKNOWN}: the
+ * config, the memberships and the ACL were read in full, so the refusal is a fact about the account
+ * (#5959; the ACL clause is ADR 0055's).
  */
 export const GRANT_UNAUTHORIZED = 25;
 /** Proven: the quoted authorization is empty or undated — a bare stamp is void (#4938). */

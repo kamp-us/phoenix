@@ -1606,13 +1606,19 @@ package's one declared retry budget — plus what the founder cleared through `b
 computed here so the cap is a field read, not a number remembered.)
 
 **Cleared rounds.** `clearances` lists every `cap-cleared` marker on the PR, judged. A row is
-`honoured` only when its author is in `.fabrika.jsonc`'s `capClearAuthors` set at the PR's **base**
-ref, a dated authorization comment from that same author precedes it, and the round it names is at
-or past `CAP_ROUND`; a row that misses carries the `reason` it missed and grants nothing. Each
+`honoured` only when four clauses hold: its author is in `.fabrika.jsonc`'s `capClearAuthors` set at
+the PR's **base** ref, that author holds `write+` at the repository ACL read live (ADR 0055 — the
+configured set narrows the ACL, it never replaces one, ADR 0292), the round it names is at or past
+`CAP_ROUND`, and a dated authorization comment from that same author sits **immediately before** it
+and is not itself a `cap-cleared` marker — the strict adjacency `grill rule` enforces, because
+without it a second bare marker rests on the first grant's own dated marker and every grant after
+the first is authorized by nothing. A row that misses carries the `reason` it missed and grants
+nothing; the ACL is read only for authors the configured set already names. Each
 honoured round adds one to the cap, counted by distinct round, so a re-posted grant buys one round
 and not two — and because a clearance binds the *round* rather than a head SHA, it survives the push
 it exists to permit and is spent the moment the next FAIL round lands. A read that cannot complete —
-the config file, a configured team's membership — is `11`, never an empty set.
+the config file, a configured team's membership, a named author's permission — is `11`, never an
+empty set.
 
 The fold: resolve the PR's current head; fetch **every** comment and **every** review, paginated
 in full; parse each comment through the imported `verdict-marker` read; keep the latest marker
@@ -1703,17 +1709,21 @@ fabrika build clear --pr 5953 --authorization authorization.md [--lane-root <dir
  "lane": "recorded on issue in .fabrika/lanes/5941/workflow.json", "resolvesTo": "cleared"}
 ```
 
-**Who may grant** — the accounts and teams `.fabrika.jsonc` names in `capClearAuthors`, read at the
-PR's **base** ref so a PR cannot widen the set that clears its own cap. Entries are `@user` or
-`@org/team`, both as GitHub writes them; a team is expanded through its membership, and a membership
-that cannot be read is `11`, never a grant and never a refusal. An absent file, an absent key, an
-empty array and a malformed entry are all *nobody may grant* — fail-closed on every axis (ruled
-2026-08-18: the grant-author set is repo configuration, not a compiled-in "founder" concept).
+**Who may grant** — an account that is **both** named by `.fabrika.jsonc`'s `capClearAuthors`, read
+at the PR's **base** ref so a PR cannot widen the set that clears its own cap, **and** resolved to
+`write+` at the repository ACL at the moment it runs. The configured set narrows the ACL, it never
+replaces one (ADR 0292): a committed file has no author gate (ADR 0055), so widening the file grants
+nothing to an account with no collaboration. Entries are `@user` or `@org/team`, both as GitHub
+writes them; a team is expanded through its membership, and a membership or permission that cannot
+be read is `11`, never a grant and never a refusal. An absent file, an absent key, an empty array and
+a malformed entry are all *nobody may grant* — fail-closed on every axis (ruled 2026-08-18: the
+grant-author set is repo configuration, not a compiled-in "founder" concept).
 
 **The clauses are conjunctive**, and any miss resolves to *not cleared*: the PR is open, the budget
 is actually spent (`rounds >= ` the current cap — clearing an unspent budget would pre-arm a round
-nobody has needed), the invoking account is in the set, and the authorization is present and dated.
-A bare stamp is void (#4938), which is why `--authorization` is required rather than inferred.
+nobody has needed), the invoking account is in the set and above the write floor, and the
+authorization is present and dated. A bare stamp is void (#4938), which is why `--authorization` is
+required rather than inferred.
 
 **Write ordering is an invariant.** The authorization comment lands first, the `cap-cleared` marker
 second, the lane's local bump last. An interrupted run that wrote the marker first would leave a

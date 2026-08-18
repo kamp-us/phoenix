@@ -2,9 +2,11 @@
  * `build clear` — record the founder's clearance of one extra repair round on a PR.
  *
  * The clauses are conjunctive and any miss resolves to *not cleared*, never to a warning: the
- * invoking account is in the repo's `.fabrika.jsonc` grant-author set at the PR's base ref, the PR
- * is open, its budget is actually spent, and the quoted authorization is present and dated. A bare
- * stamp is void (#4938), which is why `--authorization` is required rather than inferred.
+ * invoking account is in the repo's `.fabrika.jsonc` grant-author set at the PR's base ref AND holds
+ * `write+` at GitHub's ACL, the PR is open, its budget is actually spent, and the quoted
+ * authorization is present and dated. A bare stamp is void (#4938), which is why `--authorization`
+ * is required rather than inferred; the ACL clause is ADR 0055's, which is why the configured set
+ * narrows the ACL rather than replacing it (ADR 0292).
  *
  * **Write ordering is an invariant, not an implementation detail** — the same one `grill rule`
  * holds. The authorization comment lands first and the marker second: an interrupted run that wrote
@@ -19,6 +21,13 @@
  * the residue is the same one #4441 is open on for `grill rule`. In a repo where an agent runs on
  * the founder's own token, the agent's restraint is what holds — this verb is the operator's, and
  * `build`'s Repair section tells a builder that reads a cap to escalate, never to clear it.
+ *
+ * **Re-running after a partial write reconciles, it does not re-grant.** Once the marker has landed,
+ * the cap it raised is the reason the budget test would now say "not spent" — so a run that finds
+ * this round already granted skips both the budget test and the two writes, and does the one thing
+ * that is still undone: the lane's local bump. Without that branch exit `29`'s own stated remedy
+ * refuses on `7` and the lane can only be unfrozen by an edit outside the loop, which is the thing
+ * #5959 exists to remove.
  */
 
 import type {FileSystem, Path} from "effect";
@@ -37,7 +46,13 @@ import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import * as capClearance from "../wire/cap-clearance.ts";
 import {stampOf} from "../wire/grill-marker.ts";
 import {read as readMarker} from "../wire/verdict-marker.ts";
-import {clearancesOn, grantedFrom, membershipAt} from "./clearances.ts";
+import {
+	clearancesOn,
+	clearsWriteFloor,
+	grantedFrom,
+	membershipAt,
+	permissionsFor,
+} from "./clearances.ts";
 import {
 	AUTHORIZATION_VOID,
 	BARE_AT_PATH,
@@ -160,7 +175,8 @@ export const runClear = <R = never>(
 		const granted = grantedFrom(recorded.rows);
 		const cap = effectiveCap(granted);
 		const scopeLine = `${VERB}: ${repo}#${pr} at ${rounds} round(s); cap ${cap} = ${CAP_ROUND} declared + ${grantedRounds(granted)} cleared.`;
-		if (rounds < cap) {
+		const held = recorded.rows.find((row) => row.honoured && row.round === rounds);
+		if (held === undefined && rounds < cap) {
 			return refuse(
 				ZERO_SCOPE,
 				`${VERB}: #${pr} has ${rounds} round(s) against a cap of ${cap} — the budget is not spent, so there is no round to clear.`,
@@ -195,6 +211,50 @@ export const runClear = <R = never>(
 			return refuse(
 				GRANT_UNAUTHORIZED,
 				`${VERB}: ${viewer.value} is not in ${CONFIG_PATH}'s grant-author set at ${baseRef} — refusing to record a clearance.`,
+				[scopeLine],
+			);
+		}
+		// ADR 0055: the committed set narrows the ACL, it never stands in for one. Read through the
+		// same door that judges a landed marker, so the set that may post a grant and the set whose
+		// grant counts can never drift into two.
+		const permissions = yield* permissionsFor(repo, [viewer.value]);
+		if (permissions._tag === "Unknown") {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: cannot resolve ${viewer.value}'s repository permission: ${permissions.reason} — authority is UNKNOWN, never granted. Nothing was posted.`,
+				[scopeLine],
+			);
+		}
+		const level = permissions.levelOf(viewer.value);
+		if (!clearsWriteFloor(level)) {
+			return refuse(
+				GRANT_UNAUTHORIZED,
+				`${VERB}: ${viewer.value} resolves to ${level ?? "no collaboration"} on ${repo}, below write — authority is the ACL's, never ${CONFIG_PATH}'s alone (ADR 0055).`,
+				[scopeLine],
+			);
+		}
+
+		if (held !== undefined) {
+			const reconciled = yield* bumpLane(options, target.pull.body, held.round);
+			if (reconciled._tag === "Unwritten") {
+				return refuse(
+					LOCAL_LANE_UNWRITTEN,
+					`${VERB}: the clearance is recorded on #${pr} as comment ${held.commentId}, and the lane at ${reconciled.path} still did not take it: ${reconciled.reason} — the lane still freezes.`,
+					[scopeLine],
+				);
+			}
+			return answer(
+				JSON.stringify({
+					pr,
+					round: held.round,
+					at: held.at,
+					by: held.by,
+					authorization: held.authorization,
+					marker: held.commentId,
+					cap,
+					lane: reconciled.note,
+					resolvesTo: "reconciled",
+				}),
 				[scopeLine],
 			);
 		}
