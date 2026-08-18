@@ -11,6 +11,12 @@
  * is open work, and the alternative — treating it as satisfied — is the fail-open this verb exists to
  * remove.
  *
+ * **A predecessor is discharged by closed issue OR by landed commit** (`./landed.ts`, #6063). Under
+ * ADR 0285 an epic run's children stay open until the single tail PR merges, so inside a run the
+ * closed-state proxy answers "is the issue closed" where the gate means "did the work land" — and
+ * reading only the first makes every phase-2 child unbuildable until the epic it blocks has shipped.
+ * The second source is evidence, not a skip: no assembly branch, no discharge.
+ *
  * **Every predecessor is scanned before the answer is seated, so the answer does not depend on the
  * order the topology happens to list them in.** One *proven* open edge is proof of blockedness
  * whatever else could not be read, so a predecessor read that failed alongside it downgrades neither
@@ -26,9 +32,39 @@ import {BAD_SECTIONS, BLOCKED, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.t
 import {gate} from "./content-gate.ts";
 import {predecessorsOf, readTopology, renderRef} from "./dependencies.ts";
 import {getParent} from "./github.ts";
+import {type Assembly, readAssembly} from "./landed.ts";
 import {openIssue, resolveTargetRepo, scannedLine} from "./target.ts";
 
 const VERB = "build eligible";
+
+/**
+ * One edge that is not discharged by the board, and the issue it names — `null` for a ledger-local
+ * ref, which names no issue a commit could reference and so is never dischargeable off the branch.
+ */
+interface Edge {
+	readonly number: number | null;
+	readonly text: string;
+}
+
+/** What the assembly-branch read added to the answer, said on stderr so the upgrade is auditable. */
+const assemblyNotes = (
+	assembly: Assembly | null,
+	discharged: ReadonlyArray<Edge>,
+): ReadonlyArray<string> => {
+	if (assembly === null) return [];
+	if (assembly._tag === "Unreadable") {
+		return [
+			`${VERB}: cannot read ${assembly.branch} in this tree: ${assembly.reason} — no edge is counted discharged off it, and every edge keeps the state the board gave it.`,
+		];
+	}
+	return discharged.length === 0
+		? [
+				`${VERB}: ${assembly.branch} carries ${assembly.commits} commit(s), none naming an undischarged predecessor.`,
+			]
+		: [
+				`${VERB}: ${assembly.branch} carries a commit naming ${discharged.map((edge) => `#${edge.number}`).join(", ")} — that work landed on the epic run's assembly branch, so the edge is discharged whatever the board says about the issue (ADR 0285).`,
+			];
+};
 
 export interface EligibleOptions {
 	readonly number: number;
@@ -96,39 +132,52 @@ export const runEligible = (
 			"dependency edge",
 			`parent #${parent.value}`,
 		);
-		const open: string[] = [];
-		const unread: string[] = [];
+		const open: Edge[] = [];
+		const unread: Edge[] = [];
 		for (const {kind, ref} of predecessors) {
 			if (ref._tag === "Local") {
-				open.push(`${kind} ${renderRef(ref)} (unfiled, so open)`);
+				open.push({number: null, text: `${kind} ${renderRef(ref)} (unfiled, so open)`});
 				continue;
 			}
 			const state = yield* getIssue(repo, ref.number);
 			if (state._tag === "Unknown") {
-				unread.push(
-					`${VERB}: cannot read ${kind} predecessor #${ref.number}: ${state.reason} — its state is UNKNOWN, never counted closed.`,
-				);
+				unread.push({
+					number: ref.number,
+					text: `${VERB}: cannot read ${kind} predecessor #${ref.number}: ${state.reason} — its state is UNKNOWN, never counted closed.`,
+				});
 				continue;
 			}
 			if (state._tag === "Absent" || state.value.state === "open")
-				open.push(`${kind} #${ref.number}`);
+				open.push({number: ref.number, text: `${kind} #${ref.number}`});
 		}
+
+		const undischarged = [...open, ...unread].some((edge) => edge.number !== null);
+		const assembly = undischarged ? yield* readAssembly(parent.value) : null;
+		const landed = assembly?._tag === "Read" ? assembly.landed : new Set<number>();
+		const carries = (edge: Edge) => edge.number !== null && landed.has(edge.number);
+		const stillOpen = open.filter((edge) => !carries(edge));
+		const stillUnread = unread.filter((edge) => !carries(edge));
+		const branchNotes = assemblyNotes(assembly, [...open, ...unread].filter(carries));
 
 		const plural = (n: number, noun: string) => `${n} ${noun}${n === 1 ? "" : "s"}`;
-		if (open.length > 0) {
+		const detail = stillUnread.map((edge) => edge.text);
+		if (stillOpen.length > 0) {
 			return refuse(
 				BLOCKED,
-				`${VERB}: blocked by ${plural(open.length, "open dependency edge")}: ${open.join(", ")}.`,
-				[scope, ...unread],
+				`${VERB}: blocked by ${plural(stillOpen.length, "open dependency edge")}: ${stillOpen.map((edge) => edge.text).join(", ")}.`,
+				[scope, ...branchNotes, ...detail],
 			);
 		}
-		if (unread.length > 0) {
+		if (stillUnread.length > 0) {
 			return refuse(
 				PRECONDITION_UNKNOWN,
-				`${VERB}: ${plural(unread.length, "predecessor")} could not be read — eligibility is UNKNOWN, never "eligible".`,
-				[scope, ...unread],
+				`${VERB}: ${plural(stillUnread.length, "predecessor")} could not be read — eligibility is UNKNOWN, never "eligible".`,
+				[scope, ...branchNotes, ...detail],
 			);
 		}
 
-		return answer(JSON.stringify({answer: "eligible", number, parent: parent.value}), [scope]);
+		return answer(JSON.stringify({answer: "eligible", number, parent: parent.value}), [
+			scope,
+			...branchNotes,
+		]);
 	});

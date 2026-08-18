@@ -26,6 +26,21 @@ const options = {
 const run = (script: ReadonlyArray<readonly [RegExp, ExecResult]>) =>
 	Effect.runPromise(Effect.provide(runEligible(options), fakeShell(script).layer));
 
+/** The same run, with the command lines it spawned — how "no git read happened" is asserted. */
+const runWatched = async (script: ReadonlyArray<readonly [RegExp, ExecResult]>) => {
+	const shell = fakeShell(script);
+	const out = await Effect.runPromise(Effect.provide(runEligible(options), shell.layer));
+	return {out, calls: shell.calls};
+};
+
+const ASSEMBLY = /^git rev-parse --verify --quiet epic\/4300\^\{commit\}$/;
+const ASSEMBLY_LOG = /^git log --format=.* [0-9a-f]{40}$/;
+const TIP = "9a1c2b3d4e5f60718293a4b5c6d7e8f901234567";
+
+/** One `git log` record stream, in the framing `rangeCommits` reads. */
+const commitLog = (...messages: ReadonlyArray<string>): ExecResult =>
+	okOut(messages.map((message, i) => `${TIP.slice(0, 39)}${i}\x1f${message}\x1e`).join(""));
+
 describe("runEligible", () => {
 	it("answers eligible for a standalone issue, with parent null", async () => {
 		const out = await run([
@@ -157,6 +172,109 @@ describe("runEligible", () => {
 			expect(out.stdout).toBe("");
 			expect(out.stderr.some((line) => line.includes("cannot read phase predecessor #210"))).toBe(
 				true,
+			);
+		});
+	});
+
+	/**
+	 * The epic-run arm (#6063): inside a one-PR run every predecessor issue is open by design, so the
+	 * closed-state proxy alone makes every phase-2 child permanently blocked. Each case pins one half
+	 * of the two-source rule — and the two negatives pin that the second source only ever discharges
+	 * on evidence it actually read.
+	 */
+	describe("a predecessor is discharged by a closed issue OR by a commit on epic/<n>", () => {
+		it("discharges an OPEN predecessor whose work landed on the assembly branch", async () => {
+			const out = await run([
+				[ISSUE, issue()],
+				[PARENT, okOut("4300\n")],
+				[LEDGER, ledger("- phase 1: #210\n- phase 2: #4312")],
+				[PRED(210), issue({number: 210, state: "open"})],
+				[ASSEMBLY, okOut(`${TIP}\n`)],
+				[ASSEMBLY_LOG, commitLog("feat(guide): the front door (#210)\n\nPart of #4300")],
+			]);
+			expect(out.code).toBe(0);
+			expect(JSON.parse(out.stdout)).toEqual({answer: "eligible", number: 4312, parent: 4300});
+			expect(out.stderr.at(-1)).toContain("epic/4300 carries a commit naming #210");
+		});
+
+		it("reads no branch at all when every predecessor is already closed", async () => {
+			const {out, calls} = await runWatched([
+				[ISSUE, issue()],
+				[PARENT, okOut("4300\n")],
+				[LEDGER, ledger("- phase 1: #210\n- phase 2: #4312")],
+				[PRED(210), issue({number: 210, state: "closed"})],
+			]);
+			expect(out.code).toBe(0);
+			expect(calls.some((line) => line.startsWith("git"))).toBe(false);
+		});
+
+		it("reads no branch for a standalone issue", async () => {
+			const {out, calls} = await runWatched([
+				[ISSUE, issue()],
+				[PARENT, NOT_FOUND],
+			]);
+			expect(JSON.parse(out.stdout).parent).toBe(null);
+			expect(calls.some((line) => line.startsWith("git"))).toBe(false);
+		});
+
+		it("stays blocked when the branch names no commit for the open predecessor", async () => {
+			const out = await run([
+				[ISSUE, issue()],
+				[PARENT, okOut("4300\n")],
+				[LEDGER, ledger("- phase 1: #210\n- phase 2: #4312")],
+				[PRED(210), issue({number: 210, state: "open"})],
+				[ASSEMBLY, okOut(`${TIP}\n`)],
+				[ASSEMBLY_LOG, commitLog("feat(guide): some other child (#211)")],
+			]);
+			expect(out.code).toBe(BLOCKED);
+			expect(out.stderr.at(-1)).toBe(
+				"build eligible: blocked by 1 open dependency edge: phase #210.",
+			);
+		});
+
+		it("never discharges off a branch it could not read — absent epic/<n> stays 16", async () => {
+			const out = await run([
+				[ISSUE, issue()],
+				[PARENT, okOut("4300\n")],
+				[LEDGER, ledger("- phase 1: #210\n- phase 2: #4312")],
+				[PRED(210), issue({number: 210, state: "open"})],
+				[ASSEMBLY, errOut("fatal: ambiguous argument 'epic/4300'")],
+			]);
+			expect(out.code).toBe(BLOCKED);
+			expect(out.stdout).toBe("");
+			expect(out.stderr.some((line) => line.includes("cannot read epic/4300 in this tree"))).toBe(
+				true,
+			);
+		});
+
+		it("never discharges off a log that failed — an unread predecessor stays 11", async () => {
+			const out = await run([
+				[ISSUE, issue()],
+				[PARENT, okOut("4300\n")],
+				[LEDGER, ledger("- phase 1: #210\n- phase 2: #4312")],
+				[PRED(210), GATEWAY],
+				[ASSEMBLY, okOut(`${TIP}\n`)],
+				[ASSEMBLY_LOG, errOut("fatal: bad object")],
+			]);
+			expect(out.code).toBe(PRECONDITION_UNKNOWN);
+			expect(out.stdout).toBe("");
+			expect(out.stderr.some((line) => line.includes("cannot read epic/4300 in this tree"))).toBe(
+				true,
+			);
+		});
+
+		it("never discharges an unfiled ledger-local ref — no commit can name one", async () => {
+			const out = await run([
+				[ISSUE, issue()],
+				[PARENT, okOut("4300\n")],
+				[LEDGER, ledger("- phase 1: C1, #210\n- phase 2: #4312")],
+				[PRED(210), issue({number: 210, state: "open"})],
+				[ASSEMBLY, okOut(`${TIP}\n`)],
+				[ASSEMBLY_LOG, commitLog("feat: landed (#210)")],
+			]);
+			expect(out.code).toBe(BLOCKED);
+			expect(out.stderr.at(-1)).toBe(
+				"build eligible: blocked by 1 open dependency edge: phase C1 (unfiled, so open).",
 			);
 		});
 	});
