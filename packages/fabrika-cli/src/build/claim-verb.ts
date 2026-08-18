@@ -235,9 +235,15 @@ export const runClaim = (
 		const body = composeMarker(token, options.at, override);
 		const posted = yield* createComment(repo, number, body);
 		if (posted._tag === "Failure") {
+			// The minted token is the ONLY thing that can still address a marker this write may have
+			// landed: `confirm` and `release` both require it, so a refusal that withholds it strands
+			// the lane in the one state the protocol calls UNKNOWN.
 			return refuse(
 				WRITE_UNKNOWN,
-				`${CLAIM}: the marker write failed: ${posted.reason} — the claim state is UNKNOWN; run "fabrika build confirm ${number}" before any further action.`,
+				`${CLAIM}: the marker write failed: ${posted.reason} — the claim state is UNKNOWN; run "fabrika build confirm ${number} --token ${token}" before any further action.`,
+				[
+					`${CLAIM}: the token this run minted is ${token} — it addresses the marker the failed write may still have landed. Do not re-run "fabrika build claim ${number}": it mints a second token, and if the first marker landed the race resolves to that earlier one, leaving a claim no lane holds a token for.`,
+				],
 			);
 		}
 		const back = yield* getComment(repo, posted.value.id);
@@ -391,7 +397,7 @@ export const runRelease = (
 		return deleted._tag === "Failure"
 			? refuse(
 					WRITE_UNKNOWN,
-					`${RELEASE}: the retraction failed: ${deleted.reason} — whether the claim is still held is UNKNOWN; run "fabrika build confirm ${number}".`,
+					`${RELEASE}: the retraction failed: ${deleted.reason} — whether the claim is still held is UNKNOWN; run "fabrika build confirm ${number} --token ${options.token.trim()}".`,
 					notes,
 				)
 			: answer(JSON.stringify({answer: "released", number}), notes);

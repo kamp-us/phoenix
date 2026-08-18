@@ -196,15 +196,19 @@ describe("runClaim", () => {
 		expect(out.stderr.some((line) => line.includes("who holds no write permission"))).toBe(true);
 	});
 
-	it("refuses a failed marker write on 8 — UNKNOWN, and points at confirm", async () => {
+	it("refuses a failed marker write on 8 — UNKNOWN, and hands back a RUNNABLE recovery (#6037)", async () => {
 		const out = await run(runClaim, [
 			[ISSUE, CLAIMABLE],
 			[POST, errOut("gh: Gateway timeout (HTTP 504)")],
 		]);
 		expect(out.code).toBe(WRITE_UNKNOWN);
+		// `confirm` and `release` both require --token, so the minted token has to reach the operator
+		// or the lane can address neither the marker this write may have landed nor its own claim.
 		expect(out.stderr.at(-1)).toContain(
-			'run "fabrika build confirm 4312" before any further action',
+			`run "fabrika build confirm 4312 --token ${LANE_TOKEN}" before any further action`,
 		);
+		expect(out.stderr.join("\n")).toContain(`the token this run minted is ${LANE_TOKEN}`);
+		expect(out.stderr.join("\n")).toContain('Do not re-run "fabrika build claim 4312"');
 	});
 
 	it("refuses a marker that does not read back on 9", async () => {
@@ -908,5 +912,6 @@ describe("runRelease", () => {
 			[once(DELETE), errOut("gh: Gateway timeout (HTTP 504)")],
 		]);
 		expect(out.code).toBe(WRITE_UNKNOWN);
+		expect(out.stderr.at(-1)).toContain(`run "fabrika build confirm 4312 --token ${LANE_TOKEN}"`);
 	});
 });

@@ -708,7 +708,7 @@ proven-foreign only; a missing session id is `1`; an unreadable marker set is `1
 |---|---|
 | `4` | `claim` only: the `## Focus` declaration reads but does not parse — nothing was written |
 | `7` | the issue is proven absent (404) or closed |
-| `8` | the marker write failed — it may or may not have landed; re-run `confirm` before anything else |
+| `8` | the marker write failed — it may or may not have landed; run `confirm` with the token named on stderr before anything else, and never re-run `claim` |
 | `9` | the marker landed but the read-back does not match |
 | `10` | `claim` only: `--purpose` is off the `plan` \| `gate` \| `build` enum — a refusal, never a fallback to `build` |
 | `11` | the marker set could not be read — ownership is UNKNOWN, never "unclaimed"; or, `claim` only, the focus declaration or the issue's home could not be read — scope admission is UNKNOWN, never admitted |
@@ -729,7 +729,7 @@ proven-foreign only; a missing session id is `1`; an unreadable marker set is `1
 | `build claim: --override was given without a lane — pass --override-lane "<lane>" so the escape hatch names who took it.` | 1 | usage error |
 | `build claim: --override-lane was given without --override — a lane names no override on its own.` | 1 | usage error |
 | `build claim: --purpose "<value>" is not one of plan \| gate \| build — an unrecognised purpose refuses, and never falls back to build.` | 10 | usage error |
-| `build claim: the marker write failed: <reason> — the claim state is UNKNOWN; run "fabrika build confirm <n>" before any further action.` | 8 | refusal |
+| `build claim: the marker write failed: <reason> — the claim state is UNKNOWN; run "fabrika build confirm <n> --token <minted token>" before any further action.` — preceded by `build claim: the token this run minted is <minted token> — it addresses the marker the failed write may still have landed. Do not re-run "fabrika build claim <n>": it mints a second token, and if the first marker landed the race resolves to that earlier one, leaving a claim no lane holds a token for.` | 8 | refusal |
 | `build claim: cannot read the claim markers on #<n>: <reason> — ownership is UNKNOWN, never "unclaimed".` | 11 | refusal |
 | `build claim: lost to <token> (posted <timestamp>, authorized).` | 15 | refusal |
 | `build claim: the marker landed but the read-back does not match — the claim needs a human eye.` | 9 | refusal |
@@ -738,6 +738,7 @@ proven-foreign only; a missing session id is `1`; an unreadable marker set is `1
 | `build confirm: --token "<value>" carries session <a>, but this run is session <b> — a lane names itself, never another.` | 1 | usage error |
 | `build confirm: no claim exists on #<n> — nothing to confirm; run "fabrika build claim <n>" first.` | 15 | refusal |
 | `build release: this lane holds no claim on #<n> — refusing to release another lane's.` | 15 | refusal |
+| `build release: the retraction failed: <reason> — whether the claim is still held is UNKNOWN; run "fabrika build confirm <n> --token <caller token>".` | 8 | refusal |
 
 **Proven-unclaimed sits on `15` too**: zero markers means this lane does not hold the claim,
 which is the one fact every `15` consumer acts on (stop mutating; claim first). The stderr detail
@@ -1114,7 +1115,7 @@ something staged (`7`).
 | `build commit: nothing is staged — there is no change to commit.` | 7 | refusal |
 | `build commit: commit <sha> was created but its message could not be read back: <reason> — what it carries is UNKNOWN.` | 8 | refusal |
 | `build commit: commit <sha> carries a message this lane did not author — amend it, then re-run. It needs a human eye.` | 9 | refusal, with both messages quoted above it |
-| `build commit: --message-file "<leaf>" is not a leaf in this lane's scratch directory — send the message on stdin, or write it under the path "fabrika build scratch <n> --slug <leaf>" prints. That path is machine-local, so it is not repeated here.` | 10 | refusal |
+| `build commit: --message-file "<leaf>" is not a leaf in this lane's scratch directory — send the message on stdin, or write it under the path "fabrika build scratch <n> --slug <leaf> --token <token>" prints. That path is machine-local, so it is not repeated here.` | 10 | refusal |
 | `build commit: cannot read the index: <reason> — nothing was committed.` | 11 | refusal |
 | `build commit: git commit ran and HEAD did not move — no commit was created: <reason>.` | 24 | refusal |
 
