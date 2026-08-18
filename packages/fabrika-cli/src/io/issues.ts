@@ -531,6 +531,49 @@ export const listOpenMilestones = (repo: string): Shell<Attempt<ReadonlyArray<Mi
 		return ok(rows.map((row, i) => ({number: numbers[i] as number, title: row[1] ?? ""})));
 	});
 
+/** One milestone in whichever state it is actually in — the projection a roadmap row is checked against. */
+export interface MilestoneState extends Milestone {
+	readonly state: "open" | "closed";
+}
+
+/**
+ * Every milestone in `repo` **in any state**, paged.
+ *
+ * `state=all` rather than {@link listOpenMilestones}'s open-only read: `roadmap-guard` has to resolve a
+ * `done` row's pin to a CLOSED milestone, and an open-only projection would report that pin as
+ * dangling — turning a correctly retired arc into a violation.
+ *
+ * A row whose state is neither `open` nor `closed` FAILS the read. GitHub has exactly those two, so a
+ * third value means the bytes are not the projection that was asked for, and interpreting them
+ * positionally is how a malformed read answers a plausible verdict.
+ */
+export const listMilestones = (repo: string): Shell<Attempt<ReadonlyArray<MilestoneState>>> =>
+	Effect.gen(function* () {
+		const r = yield* execCapture("gh", [
+			"api",
+			"--paginate",
+			`repos/${repo}/milestones?state=all&per_page=100`,
+			"--jq",
+			'.[] | "\\(.number)\t\\(.state)\t\\(.title)"',
+		]);
+		if (!r.ok) return fail(r.reason);
+		const rows = parseTabRows(r.stdout, 3);
+		if (rows === null) return fail("`gh api` exited 0 but its output is not a list of milestones");
+		const numbers = leadingNumbers(rows);
+		if (numbers === null) {
+			return fail("`gh api` exited 0 but a milestone row does not start with a number");
+		}
+		const milestones: MilestoneState[] = [];
+		for (const [i, row] of rows.entries()) {
+			const state = row[1];
+			if (state !== "open" && state !== "closed") {
+				return fail(`\`gh api\` exited 0 but a milestone row's state is "${state}"`);
+			}
+			milestones.push({number: numbers[i] as number, state, title: row[2] ?? ""});
+		}
+		return ok(milestones);
+	});
+
 /**
  * The pages a paginated read produced, or the proof that its output stopped mid-flight.
  *
@@ -879,12 +922,27 @@ export const openQueueIssues = (
  * over a silently short list reports issues it never looked at as never drifted.
  */
 export const listOpenIssues = (repo: string): Shell<Attempt<ReadonlyArray<IssueRecord>>> =>
+	openIssueRecords(`repos/${repo}/issues?state=open&per_page=100`);
+
+/**
+ * Every **open** issue in `repo` carrying `label`, as full records, paged, pull requests filtered
+ * out — {@link listOpenIssues} narrowed at the endpoint rather than in the caller.
+ *
+ * Its own read because a guard scoped to one label would otherwise page the entire open board to
+ * throw most of it away, and every extra page is another chance for the read to fail and leave the
+ * verdict UNKNOWN.
+ */
+export const openIssuesWithLabelRecords = (
+	repo: string,
+	label: string,
+): Shell<Attempt<ReadonlyArray<IssueRecord>>> =>
+	openIssueRecords(
+		`repos/${repo}/issues?state=open&labels=${encodeURIComponent(label)}&per_page=100`,
+	);
+
+const openIssueRecords = (endpoint: string): Shell<Attempt<ReadonlyArray<IssueRecord>>> =>
 	Effect.gen(function* () {
-		const r = yield* execCapture("gh", [
-			"api",
-			"--paginate",
-			`repos/${repo}/issues?state=open&per_page=100`,
-		]);
+		const r = yield* execCapture("gh", ["api", "--paginate", endpoint]);
 		if (!r.ok) return fail(r.reason);
 		const pages = pagedJson(r.stdout);
 		if (pages._tag === "Failure") return pages;
