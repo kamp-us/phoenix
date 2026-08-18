@@ -93,6 +93,11 @@ to each class's slice: code → [rubrics/code.md](rubrics/code.md) · doc →
 any prose surface: apply **fabrika's** shared writing rubric skill verbatim, never v1's copy; the
 doc rubric's prose-craft line is the fallback until it lands.
 
+**A contract you need while grading arrives one section at a time** — including a `contract.md` the
+diff itself edits. Take each heading the judgment touches with
+`fabrika wire doc-section --heading "…" < <skill-base>/contract.md`, never the whole file (ADR
+[0296](../../../../.decisions/0296-contracts-are-read-by-section.md)).
+
 **No class re-executes what CI enforces** — a local re-run can report another checkout's cached
 green as this PR's. The code class's execution evidence is the structural CI-at-head read, refusing
 incomplete enumerations:
