@@ -580,8 +580,9 @@ jobs:
       # closed on zero entries (ADR 0092).
       - name: Check every marketplace source resolves to a real plugin
         run: |
-          # shellcheck disable=SC2016  # the single quotes are the intent: JS template literals, not shell expansion
           set -uo pipefail
+          # The single quotes are the intent: JS template literals, not shell expansion.
+          # shellcheck disable=SC2016
           node -e '
             const fs = require("node:fs");
             const manifest = JSON.parse(fs.readFileSync(".claude-plugin/marketplace.json", "utf8"));

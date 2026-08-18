@@ -26,18 +26,20 @@ in this skill exits 127**, and 127 means the verb never ran — never a verdict.
 a tracked blocker rather than a surprise, and so an eval run cannot quietly grade "the verb is not
 available yet" as though it were the skill's own behaviour.
 
-**One skill named `report` already exists** at `claude-plugins/kampus-pipeline/skills/report/`, and
-it is model-invoked with an overlapping trigger list. This paragraph used to say the collision was
-"dormant only by configuration" because `.claude/settings.json` has `"kampus-pipeline@kampus": false`.
+**One skill named `report` existed** at `claude-plugins/kampus-pipeline/skills/report/` until the
+v1 plugin's retirement (ADR 0291, #5937), model-invoked with an overlapping trigger list. This
+paragraph used to say the collision was "dormant only by configuration" because
+`.claude/settings.json` had `"kampus-pipeline@kampus": false`.
 **That was wrong twice over, and [ADR 0255](../../../../.decisions/0255-skill-namespaces-keep-v1-and-fabrika-apart.md)
-settles it.** `.claude/skills` is a symlink into the v1 tree, so v1's skills load as *project-level*
-skills and the toggle never reaches them — both sets are live in one roster today. But they never
-share a name: the loader namespaces plugin skills, so the bare `report` is always v1's and this one
-is reached as `fabrika:report`. What actually overlaps is the **description**, which is what a model
-invokes off. So this skill's description is deliberately differentiated (it names the guarded posting
-path and the three dedup outcomes, which v1's cannot), its eval set is what establishes the
-differentiation works (ADR 0249), and retiring v1 is one cutover edit that drops the whole v1 roster
-at once — not this brief's, which treats v1 as a frozen baseline.
+settled it.** `.claude/skills` was a symlink into the v1 tree, so v1's skills loaded as
+*project-level* skills and the toggle never reached them — both sets were live in one roster. But
+they never shared a name: the loader namespaces plugin skills, so the bare `report` was always v1's
+and this one is reached as `fabrika:report`. What actually overlapped was the **description**, which
+is what a model invokes off. So this skill's description is deliberately differentiated (it names
+the guarded posting path and the three dedup outcomes, which v1's could not), its eval set is what
+establishes the differentiation works (ADR 0249), and retiring v1 was exactly the one cutover edit
+that dropped the whole v1 roster at once (#5937) — the collision is history now, the differentiated
+description stays.
 
 ## Verb inventory
 
@@ -150,8 +152,8 @@ operator, a renamed tool directory or a different machine needs no edit:
    the exact leaf, a deeper descent or a longer name still matches.
 2. **Absolute home root** — an absolute path under an OS home root: `/Users/<account>` on macOS,
    `/home/<account>` on Linux.
-3. **Temp and scratch roots** — `/tmp/…`, `/private/tmp/…`, `/private/var/…`, `/var/folders/…`. No
-   carve-out: a public issue body has no legitimate bare temp path.
+3. **Temp and scratch roots** — `/tmp/<…>`, `/private/tmp/<…>`, `/private/var/<…>`,
+   `/var/folders/<…>`. No carve-out: a public issue body has no legitimate bare temp path.
 
 All three are redactable and refuse on **exit 5**. `--redact` replaces each match with
 `<class-root>/<redacted>`, so the body still reads as evidence that a path of *that* kind was there.
@@ -162,13 +164,13 @@ together:
 
 | Matched | Redacts to |
 |---|---|
-| `/var/folders/…` | `/var/folders/<redacted>` |
-| `/private/tmp/…` | `/private/tmp/<redacted>` |
-| `/private/var/…` | `/private/var/<redacted>` |
-| `/tmp/…` | `/tmp/<redacted>` |
-| `/Users/<account>/…` | `/Users/<redacted>` |
-| `/home/<account>/…` | `/home/<redacted>` |
-| `~/…` | `~/<redacted>` |
+| `/var/folders/<…>` | `/var/folders/<redacted>` |
+| `/private/tmp/<…>` | `/private/tmp/<redacted>` |
+| `/private/var/<…>` | `/private/var/<redacted>` |
+| `/tmp/<…>` | `/tmp/<redacted>` |
+| `/Users/<account>/<…>` | `/Users/<redacted>` |
+| `/home/<account>/<…>` | `/home/<redacted>` |
+| `~/<…>` | `~/<redacted>` |
 
 **The leaf filename does not survive**, and that is deliberate rather than an oversight: a filename
 can itself identify a person or a machine, and a reader who needs it can ask the reporter. Longer
