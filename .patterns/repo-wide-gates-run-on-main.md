@@ -62,6 +62,7 @@ enforces the property it gated.)
 `skill-gh-lint` kept the trigger through its port.)
 
 Workflows with no `pull_request` trigger at all (schedules, issue events, release events)
-are out of scope: `changelog`, `cp-bank-guard`, `epic-autoclose`, `glossary-drift`,
-`homing-guard`, `orphan-heal`, `orphan-sweep`, `pitch-guard`, `pr-cleanup`, `publish`,
-`release-please`.
+are out of scope: `changelog`, `epic-autoclose`, `homing-guard`, `orphan-sweep`,
+`pr-cleanup`, `publish`, `release-please`. (`cp-bank-guard`, `glossary-drift`,
+`orphan-heal` and `pitch-guard` retired in
+[#6097](https://github.com/kamp-us/phoenix/issues/6097).)
