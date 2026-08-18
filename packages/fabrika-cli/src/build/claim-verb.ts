@@ -19,7 +19,9 @@
  * running lane or block its release. Claiming is the one moment every path goes through — a number
  * handed straight to `claim` passes through no pool — which is why the refusal has teeth here and is
  * advice at the pool. In repair the number is a **PR**, which carries no home and no audience of its
- * own, so the test runs over the issue that PR serves (#5562).
+ * own, so the test runs over the issue that PR serves (#5562) — and when that issue is
+ * `type:decision` the audience axis does not bind, because triage bars a decision from
+ * `ready-for:agent` and the fence could otherwise never be satisfied (#5914).
  */
 import {Effect, type FileSystem} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
@@ -48,6 +50,7 @@ import {
 	CLAIM_PURPOSES,
 	DEFAULT_CLAIM_PURPOSE,
 	focusScopeLine,
+	NOT_REPAIR,
 	parseClaimPurpose,
 	purposeScopeLine,
 	readDeclaredFocus,
@@ -181,10 +184,11 @@ export const runClaim = (
 		const scopeLine = focusScopeLine(CLAIM, read.focus);
 		const subject = yield* resolveAdmissionSubject(CLAIM, repo, read.focus, ready.issue);
 		const judged = subject._tag === "Judged" ? subject.facts : ready.issue;
-		const purposeLine = purposeScopeLine(CLAIM, purpose, audienceAxisOf(judged));
+		const repair = subject._tag === "Judged" ? subject.repair : NOT_REPAIR;
+		const purposeLine = purposeScopeLine(CLAIM, purpose, audienceAxisOf(judged), repair);
 		const admission =
 			subject._tag === "Judged"
-				? admissionOf(read.focus, subject.facts, purpose)
+				? admissionOf(read.focus, subject.facts, purpose, repair)
 				: subject.admission;
 		const lines = [
 			scopeLine,

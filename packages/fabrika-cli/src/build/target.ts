@@ -16,7 +16,10 @@ import {
 	type Admission,
 	type Focus,
 	type IssueFacts,
+	NOT_REPAIR,
 	noServedIssue,
+	type RepairClaim,
+	repairClaimOf,
 	scopeSubjectOf,
 	unknownAdmission,
 } from "./scope-admission.ts";
@@ -99,6 +102,13 @@ export type AdmissionSubject =
 			readonly facts: IssueFacts;
 			/** What the fence judged, when that is not the named target itself. */
 			readonly note: string | null;
+			/**
+			 * Whether this claim repairs an open PR — derived here, the one place that proves it.
+			 *
+			 * The caller reached this through {@link openIssue}, which refuses a closed target, so a
+			 * resolved served issue means an **open** PR serves it (#5914).
+			 */
+			readonly repair: RepairClaim;
 	  }
 	| {readonly _tag: "Refused"; readonly admission: Admission};
 
@@ -111,6 +121,9 @@ export type AdmissionSubject =
  * its own record while the fence is inert instead of refusing at `20`. A served issue that cannot be
  * READ is UNKNOWN at either setting — `11`, and outside the overridable set, because a fence that
  * could not read its input has proven nothing.
+ *
+ * Resolving the subject is also what proves the {@link RepairClaim}: only a PR's path reaches a
+ * served issue, so this is the one place that can answer "is an open PR already in flight here".
  */
 export const resolveAdmissionSubject = (
 	verb: string,
@@ -119,7 +132,7 @@ export const resolveAdmissionSubject = (
 	target: IssueRecord,
 ): Effect.Effect<AdmissionSubject, never, ChildProcessSpawner.ChildProcessSpawner> =>
 	Effect.gen(function* () {
-		const own = {_tag: "Judged" as const, facts: target, note: null};
+		const own = {_tag: "Judged" as const, facts: target, note: null, repair: NOT_REPAIR};
 		const subject = scopeSubjectOf(target);
 		if (subject._tag === "Own") return own;
 		const unresolved = (reason: string): AdmissionSubject =>
@@ -148,6 +161,7 @@ export const resolveAdmissionSubject = (
 			_tag: "Judged" as const,
 			facts: served.value,
 			note: `${verb}: subject: PR #${target.number} serves #${subject.number} (${subject.kind}) — the admission test judges that issue, not the PR's own empty home.`,
+			repair: repairClaimOf(target.number, served.value),
 		};
 	});
 

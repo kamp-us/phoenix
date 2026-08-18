@@ -10,6 +10,7 @@ import {
 	audienceAxisBinds,
 	audienceAxisOf,
 	CLAIM_PURPOSES,
+	DECISION_TYPE_LABEL,
 	DEFAULT_CLAIM_PURPOSE,
 	DEFAULT_ROADMAP,
 	exclusionReasonOf,
@@ -18,11 +19,13 @@ import {
 	focusScopeLine,
 	homeOf,
 	type IssueFacts,
+	NOT_REPAIR,
 	noServedIssue,
 	parseClaimPurpose,
 	purposeScopeLine,
 	readDeclaredFocus,
 	readFocus,
+	repairClaimOf,
 	STANDING_LANE_LABELS,
 	scopeAxisOf,
 	scopeSubjectOf,
@@ -227,6 +230,76 @@ describe("admissionOf", () => {
 			);
 			expect(purposeScopeLine("build claim", "gate", audience)).toContain(
 				"the audience axis does not bind a gate claim (#5175)",
+			);
+		});
+	});
+
+	/**
+	 * The repair carve-out (founder ruling on #5866, built as #5914). A decision issue can never carry
+	 * `ready-for:agent` — triage routes it to a human — so the fence it fails is one it could never
+	 * pass. The exemption is therefore conditioned on an open PR already serving it, and on nothing
+	 * else: no PR, no exemption, and no other type gets one.
+	 */
+	describe("repair of an open PR whose served issue is a decision", () => {
+		const decision = issue({labels: ["status:triaged", "type:decision", "ready-for:human"]});
+		const decisionRepair = repairClaimOf(4703, decision);
+
+		it("admits it under the default build purpose, with no override", () => {
+			expect(decisionRepair).toEqual({_tag: "DecisionRepair", pr: 4703});
+			const out = admissionOf(declared, decision, DEFAULT_CLAIM_PURPOSE, decisionRepair);
+			expect(out._tag).toBe("Admitted");
+			expect(admissionRefusal("build claim", out)).toBeNull();
+		});
+
+		it("still reports the non-agent audience it saw, so the exemption is readable afterwards", () => {
+			const out = admissionOf(declared, decision, DEFAULT_CLAIM_PURPOSE, decisionRepair);
+			const audience = audienceAxisOf(decision);
+			expect(out._tag === "Admitted" && out.audience).toEqual(audience);
+			expect(audience).toEqual({_tag: "NotAgent", label: "ready-for:human"});
+			expect(purposeScopeLine("build claim", "build", audience, decisionRepair)).toBe(
+				"build claim: purpose: build — repairing open PR #4703, whose served issue is type:decision: the audience axis does not bind (#5914); this issue carries ready-for:human.",
+			);
+		});
+
+		it("refuses the same decision issue at 21 with no PR serving it — the other arm", () => {
+			expect(audienceAxisBinds("build", NOT_REPAIR)).toBe(true);
+			const out = admissionOf(declared, decision);
+			expect(out._tag).toBe("AudienceNotAgent");
+			expect(admissionRefusal("build claim", out)?.code).toBe(AUDIENCE_NOT_AGENT);
+			expect(purposeScopeLine("build claim", "build", audienceAxisOf(decision))).toContain(
+				"the audience axis binds",
+			);
+		});
+
+		it("exempts the decision type only — an ordinary repair still reads the audience label", () => {
+			const human = issue({labels: ["status:triaged", "type:bug", "ready-for:human"]});
+			const ordinary = repairClaimOf(4703, human);
+			expect(ordinary).toEqual({_tag: "OrdinaryRepair", pr: 4703});
+			expect(audienceAxisBinds("build", ordinary)).toBe(true);
+			expect(admissionOf(declared, human, DEFAULT_CLAIM_PURPOSE, ordinary)._tag).toBe(
+				"AudienceNotAgent",
+			);
+		});
+
+		it("leaves the scope axis armed — an out-of-focus decision PR is still 20", () => {
+			const elsewhere = issue({
+				milestone: 24,
+				labels: ["status:triaged", "type:decision", "ready-for:human"],
+			});
+			const out = admissionOf(
+				declared,
+				elsewhere,
+				DEFAULT_CLAIM_PURPOSE,
+				repairClaimOf(4703, elsewhere),
+			);
+			expect(out._tag).toBe("OutOfFocus");
+			expect(admissionRefusal("build claim", out)?.code).toBe(OUT_OF_FOCUS);
+		});
+
+		it("names the decision label once, so the test and the fence read the same string", () => {
+			expect(DECISION_TYPE_LABEL).toBe("type:decision");
+			expect(repairClaimOf(4703, issue({labels: [DECISION_TYPE_LABEL]}))._tag).toBe(
+				"DecisionRepair",
 			);
 		});
 	});

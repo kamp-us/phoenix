@@ -605,6 +605,71 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 			expect(shell.calls.some((line) => POST.test(line))).toBe(false);
 		});
 	});
+
+	/**
+	 * The decision arm (founder ruling on #5866, built as #5914). An ADR PR is served by a
+	 * `type:decision` issue, and triage routes those to `ready-for:human` — so before this the repair
+	 * lane failed a fence the issue could never pass, and the only way through was an operator's
+	 * `--override`, which spent the override's audit value on routine repair.
+	 */
+	describe("a decision issue served by an open PR", () => {
+		const DECISION = labelled("status:triaged", "type:decision", "ready-for:human");
+
+		it("admits the repair claim with no override, and writes the marker", async () => {
+			const {out, shell} = await claimPull("Fixes #5553\n", served(44, DECISION));
+			expect(out.code).toBe(0);
+			expect(JSON.parse(out.stdout)).toEqual({
+				answer: "won",
+				number: 4312,
+				purpose: "build",
+				token: `build:s-9f2e:${LANE_UUID}`,
+			});
+			expect(shell.calls.some((line) => POST.test(line))).toBe(true);
+			expect(
+				out.stderr.some((line) =>
+					line.includes(
+						"repairing open PR #4312, whose served issue is type:decision: the audience axis does not bind (#5914)",
+					),
+				),
+			).toBe(true);
+		});
+
+		it("records no override on the answer — the ruling made this the ordinary path", async () => {
+			const {out} = await claimPull("Fixes #5553\n", served(44, DECISION));
+			expect(JSON.parse(out.stdout).override).toBeUndefined();
+		});
+
+		it("refuses the very same issue at 21 when it is claimed directly, writing nothing", async () => {
+			const shell = fakeShell([
+				[ISSUE, issue({milestone: {number: 44}, labels: DECISION})],
+				[POST, POSTED],
+				[GET_COMMENT, ECHO],
+				[COMMENTS, comments({id: 9001, body: MINE})],
+				[perm("agent"), okOut("write\n")],
+			]);
+			const out = await Effect.runPromise(
+				Effect.provide(runClaim(options), Layer.merge(shell.layer, FOCUSED.layer)),
+			);
+			expect(out.code).toBe(AUDIENCE_NOT_AGENT);
+			expect(shell.calls.some((line) => POST.test(line))).toBe(false);
+			expect(out.stderr.some((line) => line.includes("audience not agent"))).toBe(true);
+		});
+
+		it("keeps the fence for every other type an open PR serves", async () => {
+			const {out, shell} = await claimPull(
+				"Fixes #5553\n",
+				served(44, labelled("status:triaged", "type:bug", "ready-for:human")),
+			);
+			expect(out.code).toBe(AUDIENCE_NOT_AGENT);
+			expect(shell.calls.some((line) => POST.test(line))).toBe(false);
+		});
+
+		it("keeps the scope fence armed — an out-of-focus decision PR is still 20", async () => {
+			const {out, shell} = await claimPull("Fixes #5553\n", served(39, DECISION));
+			expect(out.code).toBe(OUT_OF_FOCUS);
+			expect(shell.calls.some((line) => POST.test(line))).toBe(false);
+		});
+	});
 });
 
 /**

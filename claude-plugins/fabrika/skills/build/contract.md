@@ -121,7 +121,8 @@ from two separate questions, computed together and answered together:
 - **The audience axis** — is the issue's `ready-for:` label `ready-for:agent`? This axis is older
   than the fence (#4780); `build pick` already carried it, and ADR 0245 asks for the scope axis to
   be added **beside** it, not folded into it. Refusal is `21`, and it binds a **build-purpose** claim
-  only (see `build claim`'s `--purpose`, #5175).
+  only (see `build claim`'s `--purpose`, #5175) — and not even that one when the claim repairs an
+  open PR whose served issue is `type:decision` (#5914).
 
 **Keep the two names apart.** *Scope admission* is a different question from the audience axis (who
 the work is for), from dependency eligibility (`build eligible` asks whether an issue's predecessors
@@ -639,6 +640,18 @@ repair round settled. A `21` is therefore reachable under `--purpose build` only
 reachable under every purpose. `claim`'s purpose line names which reading applied, and the audience
 it saw either way, so a claim admitted over a non-agent audience is readable as one afterwards.
 
+**Repair of a decision PR is admitted on its own, with no flag and no override.** When `<number>` is
+an open PR and the issue it serves carries `type:decision`, the audience axis does not bind that
+claim (founder ruling on [#5866](https://github.com/kamp-us/phoenix/issues/5866), built as #5914).
+Triage routes a decision to `ready-for:human`, so `type:decision` and `ready-for:agent` are mutually
+exclusive by construction and an ADR PR's repair lane was failing a fence it could never pass — the
+only way through was `--override`, which spent a founder-authorized escape hatch on routine repair.
+The exemption is read off the **target**, not typed: there is no `--purpose repair`, because a flag
+could be passed against a bare issue and would then have to be refused, while naming a PR is already
+proof that a build is in flight. Its width is exactly one pairing — the same decision issue claimed
+directly is still `21`, an open PR serving any other type still reads the audience label, and the
+scope axis is untouched. `claim`'s purpose line names the exemption when it fires.
+
 This is the seam where the refusal has teeth. A pool filter is bypassed by an operator naming a
 number, and a number handed straight to `claim` passes through no pool — claiming is the moment work
 starts and the one moment every path goes through (ADR 0245). `--override "<reason>"
@@ -683,7 +696,7 @@ proven-foreign only; a missing session id is `1`; an unreadable marker set is `1
 | `11` | the marker set could not be read — ownership is UNKNOWN, never "unclaimed"; or, `claim` only, the focus declaration or the issue's home could not be read — scope admission is UNKNOWN, never admitted |
 | `15` | proven: another session's earlier authorized marker wins (`claim`), holds (`confirm`), or `release` was asked for a token this session does not hold |
 | `20` | `claim` only, proven: the issue's home is outside the declared focus — no marker was written |
-| `21` | `claim --purpose build` only (the default), proven: the issue's audience is not an agent — no marker was written |
+| `21` | `claim --purpose build` only (the default), proven: the issue's audience is not an agent — no marker was written. Unreachable when the target is an open PR serving a `type:decision` issue (#5914) |
 
 **Errors**
 
