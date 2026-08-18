@@ -368,6 +368,27 @@ describe("lane brief", () => {
 		expect(out.code).toBe(MALFORMED_RECORD);
 	});
 
+	it("refuses when this fabrika's own entrypoint could not be resolved — UNKNOWN, never a brief", async () => {
+		const out = await run(lane("5751", ["WIP"]), [], {
+			entrypoint: {_tag: "Unresolved", reason: "this fabrika's own package root is not on disk"},
+		});
+
+		expect(out.code).toBe(LANE_UNREADABLE);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.join("\n")).toContain("this fabrika's own package root is not on disk");
+	});
+
+	it("refuses a resolved entrypoint node cannot run — a binstub reaching the brief is #5679 again", async () => {
+		const binstub = "/checkout/node_modules/.bin/fabrika";
+		const out = await run(lane("5751", ["WIP"]), [], {
+			entrypoint: {_tag: "Entrypoint", entrypoint: binstub},
+		});
+
+		expect(out.code).toBe(LANE_UNREADABLE);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.join("\n")).toContain(`"${binstub}" is not node-runnable`);
+	});
+
 	it("refuses when neither the task nor the lane names an issue", async () => {
 		const out = await run(lane("scratch", ["WIP"]), [], {lane: "scratch"});
 
