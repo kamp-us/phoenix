@@ -116,7 +116,7 @@ CI runs the base build (`ci.yml` — Biome lint/format, `pnpm typecheck`, the in
 | Guard | What it checks | What trips it |
 |---|---|---|
 | [`ci`](./.github/workflows/ci.yml) | The base build: Biome lint + format, `pnpm typecheck` (Effect-patched `tsc`), the integration suite, the deploy-preview e2e. | A lint/format violation, a type error, a failing test, or a red preview e2e. |
-| [`leak-guard`](./.github/workflows/leak-guard.yml) | Changed doc **and shell** surfaces (markdown, `.decisions/`/`.patterns/`, and `.sh`) carry no machine-local/home path or operator PII (the no-local-paths rule). | A `~/`, `/Users/…`, vault, or sibling-repo path — or an operator email — in a changed doc or script. |
+| [`leak-guard`](./.github/workflows/leak-guard.yml) | Changed doc **and shell** surfaces (markdown, `.decisions/`/`.patterns/`, and `.sh`) carry no machine-local/home path or operator PII (the no-local-paths rule). | A `~/`, an absolute home path, a vault, or a sibling-repo path — or an operator email — in a changed doc or script. |
 | [`gitleaks`](./.github/workflows/gitleaks.yml) | The PR's new commits for committed secrets (API keys, tokens, private keys). | A credential committed anywhere in the diff. |
 | [`fanout-guard`](./.github/workflows/fanout-guard.yml) | Every `Fate.mutation` is classified fanned/not, and each fanned mutation's feature publishes the `/fate/live` invalidation (ADR 0155). | An unclassified mutation, or a fanned mutation whose feature omits the `WorkerLivePublisher` publish. |
 | [`readme-guard`](./.github/workflows/readme-guard.yml) | Every `packages/*` workspace member (a dir with `package.json`) carries a `README.md`. | Adding a package without a README. |
