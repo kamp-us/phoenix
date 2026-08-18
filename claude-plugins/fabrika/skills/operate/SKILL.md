@@ -419,7 +419,7 @@ One more refusal guards a reviewer `FAIL`, and it is the one half `lane prove` c
 hands — the read enforces it mechanically for a `PASS` (exit `23`) on both paths, the shell's
 through `lane report` and yours through the verb, while a `FAIL` claims no
 artifact and so is proven by nothing: **a reviewer `FAIL` is recorded only when every derived
-namespace holds a verdict that still binds** — governance included, on a `harness: true` diff. `FAIL`
+namespace holds a verdict that still binds** — governance included, on a `governance: required` diff. `FAIL`
 routes the machine into a repair build, and a repair pushes a new head; recorded while any
 namespace is still in flight, it orphans that namespace's verdict mid-write and spends one of the
 machine's retries on a verdict set nobody finished. A reviewer report carrying a `FAIL` beside a
@@ -434,13 +434,13 @@ ever spawned while any namespace at the head is non-terminal.
 **Re-reading terminates, because no reviewer may decline a derived namespace on a `FAIL` round, and
 none may route one away either.** ADR
 [0293](../../../../.decisions/0293-governance-fires-every-round.md) rules governance
-derived-required at every round and every head on a `harness: true` diff, FAIL rounds included —
+derived-required at every round and every head on a `governance: required` diff, FAIL rounds included —
 `review` §6 states it on both arms, and that skill's `routed elsewhere` terminal covers `review-ui`
 and `check-epic-plan` only, so no reviewer terminal ends a run with governance un-fired (#5769). So a
-governance verdict missing at a `harness: true` head is
+governance verdict missing at a `governance: required` head is
 always a read still in flight or a reviewer that died mid-emit, never a licensed refusal, and the
 remedy above reaches a verdict instead of waiting on one nobody will write. The floor stays, and no
-`harness: true` FAIL round holds the old deadlock — the state where the verdict is refused by rule,
+`governance: required` FAIL round holds the old deadlock — the state where the verdict is refused by rule,
 so it can never be written and the repair can never be dispatched. A namespace still empty after the
 reviewer's run has ended is a dead spawn like any other: record `BLOCKED` per the spawn-report step
 above and let a human unblock it. Do not re-spawn the reviewer on your own read.

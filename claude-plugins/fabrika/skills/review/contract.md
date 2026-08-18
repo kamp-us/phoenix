@@ -22,7 +22,7 @@ Named because a spec that leaves the substrate open makes the implementer guess 
 
 | Verb | Purpose | Split test |
 |---|---|---|
-| `review scope` | the PR's head SHA, linked issue, artifact-class partition of its changed files, and the `self` / `harness` flags | partitioning paths against a fixed class map and failing closed on an empty file list is mechanical; what to do with each class is judgment |
+| `review scope` | the PR's head SHA, linked issue, artifact-class partition of its changed files, the `self` / `harness` flags, and whether the diff requires the `governance` namespace | partitioning paths against a fixed class map and failing closed on an empty file list is mechanical; what to do with each class is judgment |
 | `review diff` | the PR's diff bytes, with truncation refused rather than silently passed through | fetching and proving completeness is mechanical; reading the diff is the whole judgment layer |
 | `review criteria` | the linked issue's acceptance-criteria block, read through the registered `acceptance-criteria` wire format | fetch + registered parse + checkbox states are mechanical; grading a criterion is judgment |
 | `review ci` | the live CI check-run rollup at a head, fail-closed on incomplete enumeration | classifying check runs and proving the enumeration complete is mechanical (#4552, #3999); weighing a red check is judgment |
@@ -242,11 +242,13 @@ fabrika review scope 4321 [--sha <head>] [--repo <owner/name>] [--json]
 head is the commit the file list was actually read out of and the third field is the issue
 reference — the same token `ship scope` prints. Then one line per
 present class — `class\t<name>\t<file-count>` where `<name>` is one of `code`, `doc`, `skill` —
-then two flag lines `self\t<true|false>` and `harness\t<true|false>`.
+then two flag lines `self\t<true|false>` and `harness\t<true|false>`, then
+`governance\t<required|not-required>`.
 
 With `--json`, an object with keys `outcome`, `head` (full 40-hex), `issue` (an object
 `{kind, number}` where `kind` is `fixes` / `part-of` / `none` and `number` is an integer, or `null`
-on `none`), `classes` (array of `{name, files}`), `self` (boolean), `harness` (boolean), `scanned`
+on `none`), `classes` (array of `{name, files}`), `self` (boolean), `harness` (boolean), `governance`
+(the string `required` or `not-required`), `scanned`
 (changed files seen), and `namespaces` (array — the derived namespace per present class, e.g.
 `["review-code","review-doc"]`).
 
@@ -267,6 +269,14 @@ three-root list of its own. The class map's two portability rows (`skills/**`, a
 deliberately do **not** set it: they classify a foreign repo's skill text for the rubric, while
 `harness` marks *this* harness. The *decision* of what governance does with the flag belongs to
 the `governance` skill; the flag only makes the seam mechanical.
+
+**`governance` is a fourth-root answer, and it is why `harness` must not be read as one.** The line
+is `touchesGovernanceRoot` over the same file list — `.decisions/` plus the three `harness` roots,
+the one derivation `governance scope` prints, imported rather than recomputed (#4730). So a
+`.decisions/`-only diff prints `harness\tfalse` and `governance\trequired`, which is exactly the
+pair a reviewer keying the governance obligation off `harness` got wrong on PR #5604: a clean PASS,
+then the ship gate blocking on `ns governance absent` with nobody told to fill it (#5607). The token
+vocabulary matches `governance scope`'s on purpose — one word, read the same in both places.
 
 **The issue reference** is resolved from the PR body in two passes, and the kinds are reported
 apart rather than collapsed. First the closing keywords (`Fixes/Closes/Resolves #N`), first match
@@ -320,6 +330,7 @@ class	code	3
 class	doc	1
 self	false
 harness	false
+governance	not-required
 ```
 
 ```
@@ -329,11 +340,21 @@ class	code	5
 class	doc	1
 self	false
 harness	false
+governance	not-required
+```
+
+```
+$ fabrika review scope 4323
+scoped	6a562f751a5d4d0e2efa277286f793b7ece3a008	fixes:5599
+class	doc	1
+self	false
+harness	false
+governance	required
 ```
 
 ```
 $ fabrika review scope 4321 --json
-{"outcome":"scoped","head":"03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c","issue":{"kind":"fixes","number":4287},"classes":[{"name":"code","files":3},{"name":"doc","files":1}],"self":false,"harness":false,"scanned":4,"namespaces":["review-code","review-doc"]}
+{"outcome":"scoped","head":"03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c","issue":{"kind":"fixes","number":4287},"classes":[{"name":"code","files":3},{"name":"doc","files":1}],"self":false,"harness":false,"governance":"not-required","scanned":4,"namespaces":["review-code","review-doc"]}
 ```
 
 **Grounding**
