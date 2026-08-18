@@ -47,7 +47,13 @@ export const normalizeTopic = (topic: string): string =>
 	topic.normalize("NFC").toLowerCase().trim().replace(/\s+/g, " ");
 
 export type SessionRead =
-	| {readonly _tag: "Session"; readonly title: string; readonly url: string}
+	| {
+			readonly _tag: "Session";
+			readonly title: string;
+			readonly url: string;
+			/** Carried so a reader can answer which ticket the session is bound to (`../wire/came-from.ts`). */
+			readonly body: string;
+	  }
 	/** Proven: no such issue, or an issue that is not a grilling session. */
 	| {readonly _tag: "Absent"}
 	| {readonly _tag: "Unknown"; readonly reason: string};
@@ -61,7 +67,12 @@ export const resolveSession = (
 		if (found._tag === "Absent") return {_tag: "Absent" as const};
 		if (found._tag === "Unknown") return {_tag: "Unknown" as const, reason: found.reason};
 		return found.value.labels.includes(SESSION_LABEL)
-			? {_tag: "Session" as const, title: found.value.title, url: found.value.url}
+			? {
+					_tag: "Session" as const,
+					title: found.value.title,
+					url: found.value.url,
+					body: found.value.body,
+				}
 			: {_tag: "Absent" as const};
 	});
 

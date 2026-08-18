@@ -11,6 +11,7 @@ import {
 } from "./codes.ts";
 import {
 	BASE,
+	BASE_TIP,
 	binding,
 	files,
 	HEAD,
@@ -122,11 +123,14 @@ describe("runScope reads the partial-split marker its own builder emits", () => 
 });
 
 describe("runScope refusals and diagnostics", () => {
+	// `binding()` puts `origin/main` ahead of the branch point, so the base on this line naming `BASE`
+	// rather than `BASE_TIP` is what says the verb reports the merge base (#5770).
 	it("reports the commit it bound to, then what it scanned against what was declared", async () => {
 		const out = await run(happy());
 		expect(out.stderr[0]).toBe(
 			`review scope: bound to ${HEAD} (base ${BASE}) — read from the object database, nothing checked out.`,
 		);
+		expect(out.stderr[0]).not.toContain(BASE_TIP);
 		expect(out.stderr[1]).toBe("review scope: scanned 2 changed files; 2 declared by GitHub.");
 	});
 

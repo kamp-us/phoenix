@@ -23,16 +23,27 @@
  */
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import {fetchAndResolve, fetchRef, remoteFor, resolveCommit} from "../io/git.ts";
+import {fetchAndResolve, fetchRef, mergeBase, remoteFor, resolveCommit} from "../io/git.ts";
 import type {PullRecord} from "../io/pulls.ts";
 import {refuse, type VerbOutcome} from "../verb.ts";
 import {headSha} from "../wire/verdict-marker.ts";
 import {OFF_VOCABULARY, PRECONDITION_UNKNOWN, STALE_HEAD} from "./codes.ts";
 
-/** The two commits every bound read is taken between, each a full object name git itself resolved. */
+/**
+ * The commits every bound read is taken between, each a full object name git itself resolved.
+ *
+ * **`baseTip` and `mergeBase` are different commits, and the difference is not intermittent.** Under
+ * a moving base branch `origin/<baseRef>` runs ahead of the point this branch diverged from, so a
+ * value read as "the base" while it holds the branch tip is wrong by construction (#5770). They are
+ * two fields rather than one so that no caller can take the wrong one silently: a range, a point
+ * read and a printed base all mean the merge base, and the tip is only what derives it.
+ */
 export interface BoundHead {
 	readonly sha: string;
-	readonly base: string;
+	/** Where the base branch is *now* — `origin/<baseRef>` at fetch time, ahead of the branch point. */
+	readonly baseTip: string;
+	/** Where this branch left the base branch. The commit every reader downstream means by "base". */
+	readonly mergeBase: string;
 }
 
 export type Binding =
@@ -65,7 +76,9 @@ const prefixMatch = (a: string, b: string): boolean => a.startsWith(b) || b.star
  *    `git rev-parse` must resolve it to itself. That second half is not ceremony: a local ref or tag
  *    spelled as hex resolves to a different object, which is how a "verified" name still names the
  *    wrong tree.
- * 4. The base must resolve too, since a diff is a range and an unresolvable end makes it UNKNOWN.
+ * 4. The base must resolve too, since a diff is a range and an unresolvable end makes it UNKNOWN —
+ *    and so must the merge base of that tip and this head, because *that* is the end every caller
+ *    downstream means by "base" (#5770).
  */
 export const bindHead = (
 	verb: string,
@@ -114,13 +127,28 @@ export const bindHead = (
 		if (!prefixMatch(resolved.value, wanted)) {
 			return unknown(verb, `git resolved ${wanted} to ${resolved.value}, a different commit`);
 		}
-		const base = yield* fetchAndResolve(`${remote}/${pull.baseRef}`);
-		if (base._tag === "Failure") {
-			return unknown(verb, `cannot resolve base ${pull.baseRef}: ${base.reason}`);
+		const tip = yield* fetchAndResolve(`${remote}/${pull.baseRef}`);
+		if (tip._tag === "Failure") {
+			return unknown(verb, `cannot resolve base ${pull.baseRef}: ${tip.reason}`);
 		}
-		return {_tag: "Bound" as const, head: {sha: resolved.value, base: base.value}};
+		const forked = yield* mergeBase(tip.value, resolved.value);
+		if (forked._tag === "Failure") {
+			return unknown(
+				verb,
+				`cannot resolve the merge base of ${pull.baseRef} (${tip.value}) and ${resolved.value}: ${forked.reason}`,
+			);
+		}
+		return {
+			_tag: "Bound" as const,
+			head: {sha: resolved.value, baseTip: tip.value, mergeBase: forked.value},
+		};
 	});
 
-/** The stderr line that says which commit the answer was read out of. Evidence, on every answer. */
+/**
+ * The stderr line that says which commit the answer was read out of. Evidence, on every answer.
+ *
+ * The `(base …)` clause names the **merge base** — what every reader of this line has always taken
+ * it for. Printing the branch tip there cost three agents a hand-correction each in one lane (#5770).
+ */
 export const boundLine = (verb: string, head: BoundHead): string =>
-	`${verb}: bound to ${head.sha} (base ${head.base}) — read from the object database, nothing checked out.`;
+	`${verb}: bound to ${head.sha} (base ${head.mergeBase}) — read from the object database, nothing checked out.`;

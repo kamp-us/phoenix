@@ -468,7 +468,9 @@ const proveVerdicts = (
 		) {
 			const bound = yield* bindHead(VERB, repo, pr, pull.value, null);
 			const computed =
-				bound._tag === "Bound" ? yield* contentDigestAt(bound.head.base, bound.head.sha) : null;
+				bound._tag === "Bound"
+					? yield* contentDigestAt(bound.head.mergeBase, bound.head.sha)
+					: null;
 			if (computed !== null && computed._tag === "Ok") digest = computed.value;
 			if (digest === null) {
 				notes.push(

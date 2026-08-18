@@ -1,5 +1,27 @@
 import {describe, expect, it} from "vitest";
-import {readCapClearAuthors, stripJsonComments} from "./repo-config.ts";
+import {readCapClearAuthors, readDocLeakExempt, stripJsonComments} from "./repo-config.ts";
+
+describe("readDocLeakExempt", () => {
+	it("reads the declared paths, trimmed, in declaration order", () => {
+		expect(readDocLeakExempt('{"docLeakExempt": [" /CLAUDE.md ", "/agents/triager.md"]}')).toEqual({
+			_tag: "Paths",
+			paths: ["/CLAUDE.md", "/agents/triager.md"],
+		});
+	});
+
+	/** Every one of these is "nothing is exempt" — the strictest answer, never a silent skip. */
+	it.each([
+		{shape: "no file content at all", text: ""},
+		{shape: "a document that is not an object", text: "[]"},
+		{shape: "no key", text: '{"other": 1}'},
+		{shape: "a key that is not an array", text: '{"docLeakExempt": "/CLAUDE.md"}'},
+		{shape: "an empty array", text: '{"docLeakExempt": []}'},
+		{shape: "a non-string entry", text: '{"docLeakExempt": [1]}'},
+		{shape: "a blank entry", text: '{"docLeakExempt": ["  "]}'},
+	])("refuses the whole list on $shape", ({text}) => {
+		expect(readDocLeakExempt(text)._tag).toBe("Unusable");
+	});
+});
 
 describe("stripJsonComments", () => {
 	it("drops line and block comments", () => {

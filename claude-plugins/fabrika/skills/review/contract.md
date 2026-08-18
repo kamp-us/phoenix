@@ -182,14 +182,16 @@ already requires, and all four run one shared binding step
 2. A configured git remote in this checkout must serve the target repo, `pull/<pr>/head` must
    fetch, the commit must resolve in the **object database**, and `git rev-parse` must resolve it
    to *itself* — a local ref or tag spelled as hex resolves elsewhere, which is how a name that
-   verifies still names the wrong tree. The base ref must resolve too, since a diff is a range.
-   Any of these unmet is `11`, naming what is UNKNOWN. There is no permissive fallback to the
-   PR-number endpoints: unbindable is a refusal, never a plausible value.
-3. The artifact is then read with `git diff <base>...<head>` — bytes for `review diff` and
-   `review deviations`'s Tier-M scan, the `--name-only -z` path list for `review scope` and
-   `review post`'s namespace recompute — under flags that pin the output to the two commits
-   rather than to the invoking user's own git configuration (`--no-ext-diff`, explicit `a/`/`b/`
-   prefixes).
+   verifies still names the wrong tree. The base ref must resolve too, since a diff is a range,
+   **and so must the merge base of that branch tip and this head** — the binding carries the tip
+   and the branch point as two separate values, and every verb's `base` is the branch point
+   (#5770). Any of these unmet is `11`, naming what is UNKNOWN. There is no permissive fallback to
+   the PR-number endpoints: unbindable is a refusal, never a plausible value.
+3. The artifact is then read with `git diff <base>...<head>`, where `<base>` is that branch point
+   — bytes for `review diff` and `review deviations`'s Tier-M scan, the `--name-only -z` path list
+   for `review scope` and `review post`'s namespace recompute — under flags that pin the output to
+   the two commits rather than to the invoking user's own git configuration (`--no-ext-diff`,
+   explicit `a/`/`b/` prefixes).
 
 Every one of them prints the bound commit and its base on stderr, and `review scope`'s `scoped`
 line prints **the commit it read the files out of**, so the head named and the files partitioned

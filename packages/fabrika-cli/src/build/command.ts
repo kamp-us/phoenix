@@ -350,7 +350,7 @@ const check = leafCommand(
 		"Run this surface's validators here, with the build cache bypassed.",
 	),
 	Command.withDescription(
-		'Run this surface\'s validators in this tree, with the build cache BYPASSED — a cache hit from another checkout has returned another tree\'s green. Prints {"verdict":"green","surface":"…","tree":"…","ran":[…]}; red and unknown print nothing. This verb predicts; ci.yml decides, and supersedes it where they disagree. Exits 7 (the diff against the base is empty — zero scope, ADR 0092), 10 (--surface is off-enum or provably mismatches the diff), 11 (the tree root could not be read, a validator could not be executed, or the lane\'s claim could not be read — UNKNOWN, never green), 14 (the checked-out branch is not this lane\'s), 15 (the lane\'s claim is held by another session), 18 (proven red). Example: fabrika build check --surface code',
+		'Run this surface\'s validators in this tree, with the build cache BYPASSED — a cache hit from another checkout has returned another tree\'s green. Prints {"verdict":"green","surface":"…","tree":"…","ran":[…]}; red and unknown print nothing. This verb predicts; ci.yml decides, and supersedes it where they disagree. Exits 7 (the diff against the base is empty — zero scope, ADR 0092), 10 (--surface is off-enum or provably mismatches the diff), 11 (the tree root could not be read, a validator could not be executed, `.fabrika.jsonc` could not be read, or the lane\'s claim could not be read — UNKNOWN, never green), 14 (the checked-out branch is not this lane\'s), 15 (the lane\'s claim is held by another session), 18 (proven red). Example: fabrika build check --surface code',
 	),
 );
 

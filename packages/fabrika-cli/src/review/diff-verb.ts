@@ -55,7 +55,7 @@ export const runDiff = (
 		if (bound._tag === "Refused") return bound.outcome;
 		const head = bound.head;
 
-		const served = yield* diffRange(head.base, head.sha);
+		const served = yield* diffRange(head.mergeBase, head.sha);
 		if (served._tag === "Failure") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
@@ -69,11 +69,11 @@ export const runDiff = (
 		// so rename pairing and merge-base choice cancel instead of being compared across systems. What
 		// that does and does not prove is in `diff.ts`. GitHub's `changed_files` is its own merge base
 		// and its own rename detection, so it is reported below and never refused on (#5139).
-		const listed = yield* diffRangePaths(head.base, head.sha);
+		const listed = yield* diffRangePaths(head.mergeBase, head.sha);
 		if (listed._tag === "Failure") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
-				`${VERB}: cannot read the file list of the range ${head.base}...${head.sha} for #${pr}: ${listed.reason} — UNKNOWN.`,
+				`${VERB}: cannot read the file list of the range ${head.mergeBase}...${head.sha} for #${pr}: ${listed.reason} — UNKNOWN.`,
 			);
 		}
 		const inRange = listed.value.length;
@@ -96,7 +96,7 @@ export const runDiff = (
 		if (seen < inRange) {
 			return refuse(
 				INCOMPLETE_SCAN,
-				`${VERB}: the diff at ${head.sha} carries ${seen} of the ${inRange} files git reports for the same range ${head.base}...${head.sha} — both counts from git, so this diff is provably short; refusing to serve a partial diff as the whole (#3925's class).`,
+				`${VERB}: the diff at ${head.sha} carries ${seen} of the ${inRange} files git reports for the same range ${head.mergeBase}...${head.sha} — both counts from git, so this diff is provably short; refusing to serve a partial diff as the whole (#3925's class).`,
 				diagnostics,
 			);
 		}

@@ -11,6 +11,7 @@ import {
 } from "./codes.ts";
 import {
 	BASE,
+	BASE_TIP,
 	binding,
 	FULL_TREE,
 	HEAD,
@@ -80,9 +81,12 @@ describe("runScope", () => {
 		expect(out.stdout).toContain("self\ttrue");
 	});
 
-	it("emits the record with --json, carrying the base the range was read across", async () => {
+	// The binding runs against a main that has moved on (`BASE_TIP` is ahead of `BASE`), so `base`
+	// naming the branch point rather than that tip is the whole assertion here (#5770).
+	it("emits the record with --json, carrying the merge base the range was read across", async () => {
 		const out = await run(GOVERNING, {json: true});
-		expect(JSON.parse(out.stdout)).toMatchObject({
+		const record = JSON.parse(out.stdout);
+		expect(record).toMatchObject({
 			outcome: "required",
 			head: HEAD,
 			base: BASE,
@@ -90,6 +94,7 @@ describe("runScope", () => {
 			scanned: 2,
 			records: [{id: "0240", change: "added"}],
 		});
+		expect(record.base).not.toBe(BASE_TIP);
 	});
 
 	it("says on stderr, on every run, that this is not the §CP answer", async () => {

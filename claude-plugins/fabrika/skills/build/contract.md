@@ -25,7 +25,11 @@ scar is named, the verb here designs it out; that is the only thing a rebuild in
 - `packages/fabrika-cli/src/wire/verdict-marker.ts` — the verdict-marker `read` and its
   head-binding (`bindToHead`). `build verdicts` imports both.
 - `packages/fabrika-cli/src/report/leaks.ts` — `scanBody` and `isBareAtReference`, the
-  machine-local-path predicates. `build pr` and `build note` import them.
+  machine-local-path predicates for a **body this skill posts**. `build pr` and `build note` import
+  them.
+- `packages/fabrika-cli/src/build/doc-leaks.ts` — `docLeaks`, the same question over a **committed
+  file**, which is a different answer. `build check --surface prose` imports it and nothing else
+  declares a path shape.
 - `packages/fabrika-cli/src/report/compose.ts` — `normalizeForReadback` (three steps: CRLF→LF,
   strip trailing spaces/tabs per line, strip trailing newlines — read the body, the docblock
   understates it). Both writing verbs' read-backs compare through it, never byte-for-byte:
@@ -1261,13 +1265,39 @@ Per surface:
   returned another tree's green three times in one session (#4106) and recurred on the review
   side (#4887); bypassing is cheaper than trusting a key that has already lied.
 - **prose** — changed markdown files: every relative link resolves against this tree; no
-  machine-local path (the imported `leaks.ts` predicate); every fabrika-doc reference cited by id
-  exists.
+  machine-local path (the imported `doc-leaks.ts` predicate); every fabrika-doc reference cited by
+  id exists.
 - **plan** — everything `prose` runs, plus the changed ledger's `## Dependencies` block parsing
   under the canonical grammar (defined in `build eligible`): issue refs (`#<int>`) resolve to real
   issues, ledger-local refs (`C<int>`) resolve within the ledger, and no child is its own
   predecessor. A ledger is markdown, so the markdown validators are its baseline and the grammar is
   the specialization on top.
+
+**The prose leak scan predicts the repo's committed-file gate, and is not the body guard.** Those
+are two questions with two answers, and asking the body guard about a file in a diff made this verb
+red on bytes CI passes clean — a red the lane that inherited it could not clear (#5687). Three shapes
+separate them, each a real doc a lane writes: a fenced code block quoting a path-scanning regex (a
+segment must be name-shaped here, so a bare marker beside an alternation bar is not a path); a doc
+citing a scratch root (`/tmp/…` is a rule for a public *comment*, which has no legitimate example of
+one — a doc does); and a doc whose subject IS path hygiene and must spell the shapes out. A body
+posted to an issue keeps refusing all three, because nothing gates it.
+
+That last one is repo policy, so it is declared, not compiled in: `.fabrika.jsonc`'s `docLeakExempt`
+lists repo-relative path suffixes the leak scan skips. Every failure resolves to *nothing is exempt*
+— absent file, absent key, empty array, malformed entry — so the scanner stays strictest and a
+mis-declared exemption reads as a red rather than a silent pass. A config that exists and cannot be
+read is `11`, UNKNOWN: which docs are exempt is then unknown, and the verdict may not be green.
+Fenced code is **scanned**, deliberately — the repo's gate scans docs whole, and skipping fences here
+would make the predictor looser than what it predicts.
+
+A predictor and the gate it predicts have to carry the same path shapes, and fabrika may not import
+the gate's module (ADR 0238, ADR 0273). So the agreement is pinned rather than promised, on ADR
+0251's terms: the canonical shapes are the golden fixture
+`packages/fabrika-cli/src/build/__fixtures__/doc-leak-patterns.golden.json`, and each side asserts
+against it in a test of its own, so a drift on either side reds instead of shipping. In phoenix the
+gate's side is `packages/pipeline-cli/src/tools/leak-guard/fabrika-doc-leak-conformance.test.ts`,
+which pins the exempt declarations against each other too. `doc-leaks.ts` carries the why; this is
+the pointer to it.
 
 The surface anchor: the verb diffs the branch against its base and refuses a surface whose own file
 class the diff does not contain (`--surface prose` over a diff with no markdown is `10`) — the
@@ -1311,6 +1341,9 @@ Preconditions: a readable tree root (`11`), the lane's branch checked out (`14`)
 | `build check: <runner> could not be executed: <reason> — the verdict is UNKNOWN, never green.` | 11 | refusal |
 | `build check: cannot read the claim markers on #<n>: <reason> — the lane is UNKNOWN.` | 11 | refusal |
 | `build check: cannot read <file> (<reason>) — it is in the diff and is not absent, so the verdict is UNKNOWN, never green.` | 11 | refusal |
+| `build check: cannot read .fabrika.jsonc (<reason>) — which docs are leak-scan exempt is UNKNOWN, never green.` | 11 | refusal |
+| `build check: <n> leak-scan exemption(s) declared in .fabrika.jsonc.` | 0 | scope note |
+| `build check: nothing is leak-scan exempt — <reason>.` | 0 | scope note |
 | `build check: #<n> is held by <winning token>, not by the lane on nonce <nonce>.` | 15 | refusal |
 | `build check: --surface prose, but the diff changes no markdown file — the surface is provably wrong.` | 10 | refusal |
 | `build check: the diff against <base> is empty — nothing to validate (ADR 0092).` | 7 | refusal |

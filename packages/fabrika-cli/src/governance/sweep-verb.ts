@@ -157,7 +157,7 @@ export const runSweep = (
 			const head = bound.head;
 			diagnostics.push(boundLine(VERB, head));
 
-			const listed = yield* diffRangeStatuses(head.base, head.sha);
+			const listed = yield* diffRangeStatuses(head.mergeBase, head.sha);
 			if (listed._tag === "Failure") {
 				return refuse(
 					PRECONDITION_UNKNOWN,

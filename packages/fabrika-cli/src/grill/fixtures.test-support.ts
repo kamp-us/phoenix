@@ -104,12 +104,16 @@ export const commentsPayload = (comments: ReadonlyArray<FakeComment>): string =>
 /** The `gh api repos/<repo>/issues/<n>` payload for a labelled session issue. */
 export const sessionPayload = (
 	session: number,
-	options: {readonly labels?: ReadonlyArray<string>; readonly title?: string} = {},
+	options: {
+		readonly labels?: ReadonlyArray<string>;
+		readonly title?: string;
+		readonly body?: string;
+	} = {},
 ): string =>
 	JSON.stringify({
 		number: session,
 		title: options.title ?? "sozluk moderation model",
-		body: "",
+		body: options.body ?? "",
 		state: "open",
 		labels: (options.labels ?? ["grilling:session"]).map((name) => ({name})),
 		html_url: `https://example.test/issues/${session}`,

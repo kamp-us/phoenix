@@ -334,7 +334,7 @@ export const runGate = (
 		if (contested) {
 			const head = yield* bindHead(VERB, repo, pr, pull, options.sha);
 			const digest =
-				head._tag === "Bound" ? yield* contentDigestAt(head.head.base, head.head.sha) : null;
+				head._tag === "Bound" ? yield* contentDigestAt(head.head.mergeBase, head.head.sha) : null;
 			if (digest !== null && digest._tag === "Ok") headDigest = digest.value;
 			else {
 				diagnostics.push(
