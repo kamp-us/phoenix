@@ -44,7 +44,6 @@ on:
 permissions:
   contents: write
   pull-requests: write
-  issues: write # the failure alarm files/updates one intake issue (#5946)
 
 # Never cancel in flight: a cancelled run can leave the standing Release PR groomed
 # against a stale commit range.
@@ -87,7 +86,9 @@ jobs:
             exit 0
           fi
 
-          gh api "repos/$GITHUB_REPOSITORY/pulls/$number" --jq .body > "$RUNNER_TEMP/body.md"
+          # `--jq .body` alone prints the literal `null` for a bodyless PR, which passes
+          # the emptiness test below and reaches the sanitizer.
+          gh api "repos/$GITHUB_REPOSITORY/pulls/$number" --jq '.body // ""' > "$RUNNER_TEMP/body.md"
           if [ ! -s "$RUNNER_TEMP/body.md" ]; then
             echo "::warning::Release PR #$number carries no body to repair."
             exit 0
@@ -151,21 +152,36 @@ jobs:
             echo "Publishing is \`publish.yml\` on the \`release: published\` event — not this workflow."
           } >> "$GITHUB_STEP_SUMMARY"
 
-      # #5946's second half: this workflow was red on twelve consecutive pushes and
-      # nobody noticed for 20 hours, because a red run on `main` shows up nowhere anyone
-      # is looking. Release automation being down is silent by nature — no PR turns red,
-      # no reviewer is blocked, it just stops. So a failed run files itself into the
-      # intake queue triage already drains, and updates that same issue on every later
-      # failure rather than filing a new one.
-      #
-      # `intake-dedup check` is the repo's existing "is there already an open issue for
-      # this?" lookup; it ranks candidates and this step relays only an EXACT title match
-      # (ADR 0228 — a script relays a verb's answer, it never derives the decision). A
-      # missed match costs one duplicate issue, which triage closes; a lost alarm is the
-      # failure this step exists to end (ADR 0181).
-      - name: File the red run where triage sees it
-        if: failure()
-        env:
+  # #5946's second half: this workflow was red on twelve consecutive pushes and nobody
+  # noticed for 20 hours, because a red run on `main` shows up nowhere anyone is looking.
+  # Release automation going down is silent by nature — no PR turns red, no reviewer is
+  # blocked, it just stops. So a failed run files itself into the intake queue triage
+  # already drains, and updates that same issue on every later failure.
+  #
+  # It is a SEPARATE job that checks nothing out, installs nothing, and runs no repo
+  # code — deliberately, and this is the whole point of the job boundary. The job above
+  # now needs `actions/checkout` and `pnpm install --frozen-lockfile` before it can run
+  # `pipeline-cli`, so an alarm living inside it dies with the very failures it exists
+  # to report: a bad lockfile on `main` reds the install and takes the alarm down with
+  # it, leaving the run red and silent again. Nothing here depends on the repo, so the
+  # alarm survives every failure class of the job it watches, including one that leaves
+  # no checkout at all.
+  #
+  # The cost is that the dedup lookup is `gh` rather than `intake-dedup check`, which
+  # this job cannot execute. The decision stays the same exact-title equality either
+  # way: the search only narrows candidates, and `jq` picks the one whose title matches
+  # byte for byte (ADR 0228 — relay an answer, never derive the decision). A missed
+  # match costs one duplicate issue, which triage closes; a lost alarm is the failure
+  # this job exists to end (ADR 0181), so every refusal here falls toward filing.
+  alarm:
+    name: file the red run where triage sees it
+    needs: release-please
+    if: failure()
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ALARM_TITLE: release-please.yml is failing on pushes to main
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -181,13 +197,21 @@ jobs:
             echo "grooming on the standing Release PR, and nothing to merge, so no package can ship."
           } > "$RUNNER_TEMP/alarm.md"
 
-          existing=$(node packages/pipeline-cli/src/bin.ts intake-dedup check --query "$ALARM_TITLE" \
-            | awk -F'\t' -v title="$ALARM_TITLE" '$2 == title {print substr($1, 2); exit}')
+          candidates=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --limit 50 \
+            --search "\"$ALARM_TITLE\" in:title" --json number,title)
+          status=$?
+          if [ "$status" -ne 0 ]; then
+            echo "::warning::the open-issue lookup exited $status — filing a fresh alarm rather than risking a lost one."
+            candidates='[]'
+          fi
+
+          existing=$(printf '%s' "$candidates" \
+            | jq -r --arg title "$ALARM_TITLE" 'map(select(.title == $title)) | .[0].number // empty')
 
           if [ -n "$existing" ]; then
-            node packages/pipeline-cli/src/bin.ts tracker create-comment "$existing" \
-              < "$RUNNER_TEMP/alarm.md"
+            gh issue comment "$existing" --repo "$GITHUB_REPOSITORY" \
+              --body-file "$RUNNER_TEMP/alarm.md"
           else
-            node packages/pipeline-cli/src/bin.ts tracker create-issue --title "$ALARM_TITLE" \
-              < "$RUNNER_TEMP/alarm.md"
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$ALARM_TITLE" \
+              --label status:needs-triage --body-file "$RUNNER_TEMP/alarm.md"
           fi
