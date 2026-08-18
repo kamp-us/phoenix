@@ -305,6 +305,27 @@ Two reads stay yours, because no shell can take them:
   machine (`FAIL` spends one; `frozen` is its answer), and you never re-spawn what the fold has not
   re-asked for. Record `BLOCKED`.
 
+**A dead spawn's residue is yours to clear** — the founder's ruling on
+[#5752](https://github.com/kamp-us/phoenix/issues/5752). `BLOCKED` records where the lane stands; it
+does not clean up after the shell that died, and what a dead spawn leaves behind is an incident
+nobody filed and a claim nobody can take. Three obligations, in this order:
+
+- **Read its final message.** What the spawn printed before it stopped is the only account of what
+  it was doing, and both the filing and the park comment come out of it.
+- **File what it could not file.** A dying agent cannot run `fabrika report file` itself, so the
+  incident reaches the board only if you file it — through [`report`](../report/SKILL.md), as the
+  spawn would have.
+- **Release the claim it stranded.** `node packages/fabrika-cli/src/bin.ts build release <issue>`
+  is the whole act: the spawn ran under your `CLAUDE_CODE_SESSION_ID`, so its marker resolves as
+  this session's and the verb that already exists retracts it. No new verb and no widened one — the
+  ruling rejected a lease, a TTL, supersession and steal outright, and eviction by inference from
+  absence stays banned (ADR
+  [0215](../../../../.decisions/0215-claim-identity-continuity-proof.md) §5).
+
+**A claim held by a different, gone session is not yours to release.** `build release` refuses it on
+exit `15`, proven-foreign, and that refusal is the guard rather than an obstacle to reason past.
+Name that claim in the park comment with its token and leave it to a human.
+
 **Every event is proven first — artifacts over self-reports.** A report is
 data; what moves the machine is the artifact behind it. The verb below is the read `lane report`
 already ran for the shell; on your own two records it is yours to run. The retired epic conductor held this rule
