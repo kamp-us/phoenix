@@ -63,7 +63,7 @@ second answer to a gated question can contradict the gate (interface convention 
 | `build claim` | race the earliest-authorized claim on an issue; win, or name the winner | a deterministic race protocol; *what to do on a loss* stays in the skill |
 | `build confirm` | re-prove this LANE still holds the claim before a mutation | a lookup with a defined answer |
 | `build release` | retract this LANE's own claim | a guarded single write |
-| `build adopt` | record that a dead session's claim passes to this lane, so `release` can retract it | a marker write with a read-back; *whether the session is really gone* is the driver's judgment |
+| `build adopt` | record that a dead session's claim passes to the lane this marker names, which may then release it or carry on | a marker write with a read-back; *whether the session is really gone* is the driver's judgment |
 | `build issue` | the claimed issue's body + parsed acceptance criteria, through the content gate | fetch + parse via the wire module; *judging* the criteria stays in the skill |
 | `build branch` | cut (or resume) the lane's nonce branch off a freshly fetched base | fetch, derive, create — the nonce is a function of the claim token |
 | `build scratch` | the per-lane scratch path, allocated fail-closed | deterministic path derivation keyed session + issue + claim nonce |
@@ -764,13 +764,28 @@ comment:
 build-adopt: <dead-session> by build:<my-session>:<uuid> · <ISO> · reason: <text>
 ```
 
-`release` then resolves that claim as `Mine` and retracts **both** comments. The guards are the ones
-that keep this from being a steal: the adopt confers the claim on exactly the session its `by <token>`
-names, so a third session still reads `Foreign`; its author is ACL-checked at release time, so an
+The `by build:<my-session>:<uuid>` token is minted by `adopt` itself and printed on the answer: it is
+the lane identity the succession creates, and `release <n> --token <that token>` is what retracts
+**both** comments. The guards are the ones that keep this from being a steal: the adopt confers the
+claim on exactly the **lane** its `by <token>` names — the same whole-token test an ordinary win
+passes (#6060), so another lane of the successor's own session reads `Foreign` just as a third
+session does; its author is ACL-checked at release time, so an
 adopt from an account below `write` is counted, reported and never a succession; the reason is
 required; and an adopt naming the caller's own session is `1`, because plain `release` already covers
 a claim this session holds. There is still no TTL, no lease, and no eviction inferred from absence —
-the successor states the fact on the board and the ordinary ownership read does the rest.
+the successor states the fact on the board and the ordinary ownership read does the rest. What the
+protocol cannot check is that the adopted session is really dead: any `write` account may adopt a
+live claim, and the guard against that is the disclosed reason plus the ACL, not a proof.
+
+**An adopt confers the whole claim, not just the right to release it.** The ownership read is one
+function, so an adopted claim answers `mine` to `confirm` and admits `branch`, `note`, `scratch` and
+`tree --issue` — each under the token `adopt` printed, which is now this lane's identity on that
+number. The successor inherits the dead lane and may carry it on. `claim` is the exception: over an
+adopted claim it refuses on `15`, retracting the marker it just posted, because a second marker
+beside the dead session's would outlive the release (which deletes the claim and the adopt, not the
+extra); handed `--token`, it refuses the same way before writing anything, because the winner it
+would otherwise answer with is the dead session's token, which no later verb of this session accepts.
+Adopt, release, then claim.
 
 The session id arrives from the environment (`CLAUDE_CODE_SESSION_ID`, named in `--help` with its
 unset behavior: unset is a usage error, exit `1` — a claim without an identity is not a claim).
@@ -803,7 +818,7 @@ proven-foreign only; a missing session id is `1`; an unreadable marker set is `1
 | `9` | the marker landed but the read-back does not match |
 | `10` | `claim` only: `--purpose` is off the `plan` \| `gate` \| `build` enum — a refusal, never a fallback to `build` |
 | `11` | the marker set could not be read — ownership is UNKNOWN, never "unclaimed"; or, `claim` only, the focus declaration or the issue's home could not be read — scope admission is UNKNOWN, never admitted |
-| `15` | proven: another session's earlier authorized marker wins (`claim`), holds (`confirm`), or `release` was asked for a token this session does not hold |
+| `15` | proven: another lane's earlier authorized marker wins (`claim`), holds (`confirm`), or `release` was asked for a token this lane does not hold. `claim` also refuses here over a claim this lane has *adopted* — release it first |
 | `20` | `claim` only, proven: the issue's home is outside the declared focus — no marker was written |
 | `21` | `claim --purpose build` only (the default), proven: the issue's audience is not an agent — no marker was written. Unreachable when the target is an open PR serving a `type:decision` issue (#5914) |
 
@@ -836,6 +851,9 @@ proven-foreign only; a missing session id is `1`; an unreadable marker set is `1
 | `build adopt: --session names this very session — "fabrika build release <n>" already covers a claim this session holds; nothing was written.` | 1 | usage error |
 | `build adopt: --reason is empty — a succession is recorded or it is not one.` | 1 | usage error |
 | `build adopt: --session is empty — an adoption that names no session adopts nothing.` | 1 | usage error |
+| `build adopt: --session "<value>" carries whitespace or "·" — a session id is one unbroken word, and this one would compose a marker no reader can read back; nothing was written.` | 1 | usage error |
+| `build adopt: --reason spans more than one line — the marker records one line, so the rest would be dropped silently; restate it as one line. Nothing was written.` | 1 | usage error |
+| `build claim: #<n> still carries the adopted claim <winning token> — run "fabrika build release <n> --token <the adopt's token>" to retract it and the adopt together, then claim.` | 15 | refusal |
 
 **Proven-unclaimed sits on `15` too**: zero markers means this lane does not hold the claim,
 which is the one fact every `15` consumer acts on (stop mutating; claim first). The stderr detail

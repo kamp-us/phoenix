@@ -333,7 +333,7 @@ nobody filed and a claim nobody can take. Three obligations, in this order:
 - **Release the claim it stranded.** `node <fabrika> build release <issue>`
   is the whole act: the spawn ran under your `CLAUDE_CODE_SESSION_ID`, so its marker resolves as
   this session's and the verb that already exists retracts it. No new verb and no widened one — the
-  ruling rejected a lease, a TTL, supersession and steal outright, and eviction by inference from
+  ruling rejected a lease, a TTL and steal outright, and eviction by inference from
   absence stays banned (ADR
   [0215](../../../../.decisions/0215-claim-identity-continuity-proof.md) §5).
 

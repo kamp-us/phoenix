@@ -226,6 +226,15 @@ export const runClaim = (
 			const holding = requireCallerToken(CLAIM, session, options.token);
 			if (holding._tag === "Refused") return holding.outcome;
 			const prior = yield* resolveOwnership(repo, number, holding.caller);
+			if (prior.ownership._tag === "Mine" && prior.ownership.adopt !== null) {
+				// Answering `won` here would hand back the DEAD session's token — the winner on an adopted
+				// claim — and `confirm --token` refuses that token as another session's. Same refusal as
+				// the racing path below, and nothing was written, so there is no marker to retract.
+				return refuse(
+					CLAIM_NOT_MINE,
+					`${CLAIM}: #${number} still carries the adopted claim ${prior.ownership.marker.token} — run "fabrika build release ${number} --token ${prior.ownership.adopt.token}" to retract it and the adopt together, then claim.`,
+				);
+			}
 			if (prior.ownership._tag === "Mine") {
 				return answer(
 					JSON.stringify({answer: "won", number, token: prior.ownership.marker.token, purpose}),
@@ -331,7 +340,7 @@ export const runClaim = (
 				notes,
 			);
 		}
-		if (ownership._tag === "Mine") {
+		if (ownership._tag === "Mine" && ownership.adopt === null) {
 			// The winner is the marker this run just posted: `Mine` turns on the whole token, so an older
 			// marker of this session under another nonce is a SIBLING lane and lands on the lose path
 			// below, where this run retracts its OWN marker. That is what keeps #5782's fixed point —
@@ -347,6 +356,23 @@ export const runClaim = (
 					...(override === null ? {} : {override}),
 				}),
 				notes,
+			);
+		}
+		if (ownership._tag === "Mine" && ownership.adopt !== null) {
+			// An adopted claim answers `Mine` on the DEAD session's marker, so a `won` here would hand
+			// back this run's token while the board's claim is the older one — and the marker just
+			// posted would outlive the release, which deletes the winner and the adopt, not the extra.
+			// The successor's path is release-then-claim; this is the refusal that keeps it the only one.
+			const retractedAdopted = yield* deleteComment(repo, posted.value.id);
+			return refuse(
+				CLAIM_NOT_MINE,
+				`${CLAIM}: #${number} still carries the adopted claim ${ownership.marker.token} — run "fabrika build release ${number} --token ${ownership.adopt.token}" to retract it and the adopt together, then claim.`,
+				[
+					...notes,
+					retractedAdopted._tag === "Failure"
+						? `${CLAIM}: could not retract this run's own marker (comment ${posted.value.id}): ${retractedAdopted.reason}.`
+						: `${CLAIM}: retracted this run's own marker (comment ${posted.value.id}).`,
+				],
 			);
 		}
 
@@ -463,7 +489,7 @@ export const runRelease = (
 					...notes,
 					...(ownership._tag === "Foreign" && !ownership.sameSession
 						? [
-								`${RELEASE}: #${number} is held by ${ownership.marker.token}; if that session is gone, adopt it first: fabrika build adopt ${number} --session <its session id> --reason <why>.`,
+								`${RELEASE}: #${number} is held by ${ownership.marker.token}; if that session is gone, adopt it first: fabrika build adopt ${number} --session <its session id> --reason <why>, then release under the token that adopt prints.`,
 							]
 						: []),
 				],
@@ -554,6 +580,21 @@ export const runAdopt = (
 				`${ADOPT}: --reason is empty — a succession is recorded or it is not one.`,
 			);
 		}
+		// The marker is one line with `·` as its field separator, so a value carrying either composes
+		// a comment the reader cannot read back: the post lands, the read-back refuses, and a stray
+		// comment is left behind. Refuse before the write instead.
+		if (/[\s·]/.test(adopted)) {
+			return refuse(
+				FAILED,
+				`${ADOPT}: --session "${adopted}" carries whitespace or "·" — a session id is one unbroken word, and this one would compose a marker no reader can read back; nothing was written.`,
+			);
+		}
+		if (/[\r\n]/.test(reason)) {
+			return refuse(
+				FAILED,
+				`${ADOPT}: --reason spans more than one line — the marker records one line, so the rest would be dropped silently; restate it as one line. Nothing was written.`,
+			);
+		}
 
 		const ready = yield* preflight(ADOPT, options);
 		if (ready._tag === "Refused") return ready.outcome;
@@ -586,6 +627,6 @@ export const runAdopt = (
 			);
 		}
 		return answer(JSON.stringify({answer: "adopted", number, session: adopted, token}), [
-			`${ADOPT}: #${number}'s claim from "${adopted}" is now releasable by this session — run "fabrika build release ${number}".`,
+			`${ADOPT}: #${number}'s claim from "${adopted}" is now releasable by the lane this marker names — run "fabrika build release ${number} --token ${token}".`,
 		]);
 	});

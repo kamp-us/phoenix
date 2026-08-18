@@ -1138,6 +1138,60 @@ describe("runAdopt / succession", () => {
 		expect(out.stderr.at(-1)).toContain("--reason is empty");
 	});
 
+	it("refuses a --session carrying whitespace or the field separator, before the write", async () => {
+		for (const session of ["s-77aa dead", "s-77aa·2"]) {
+			const shell = fakeShell([[ISSUE, CLAIMABLE]]);
+			const out = await Effect.runPromise(
+				Effect.provide(
+					runAdopt({...adoptOptions, session}),
+					Layer.merge(shell.layer, NO_FOCUS.layer),
+				),
+			);
+			expect(out.code).toBe(FAILED);
+			expect(out.stderr.at(-1)).toContain("no reader can read back");
+			expect(shell.calls.some((line) => POST.test(line))).toBe(false);
+		}
+	});
+
+	it("refuses a multi-line --reason rather than recording its first line only", async () => {
+		const shell = fakeShell([[ISSUE, CLAIMABLE]]);
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runAdopt({...adoptOptions, reason: "outage\nand context loss"}),
+				Layer.merge(shell.layer, NO_FOCUS.layer),
+			),
+		);
+		expect(out.code).toBe(FAILED);
+		expect(out.stderr.at(-1)).toContain("one line");
+		expect(shell.calls.some((line) => POST.test(line))).toBe(false);
+	});
+
+	it("claim on an adopted number refuses and retracts its own marker — release comes first", async () => {
+		const shell = fakeShell([
+			[ISSUE, CLAIMABLE],
+			[POST, POSTED],
+			[GET_COMMENT, ECHO],
+			[
+				COMMENTS,
+				comments(
+					{id: 8000, body: THEIRS},
+					{id: 8100, body: ADOPT, createdAt: "2026-08-10T00:00:00Z"},
+					{id: 9001, body: MINE, createdAt: "2026-08-11T00:00:00Z"},
+				),
+			],
+			[perm("agent"), okOut("write\n")],
+			[DELETE, okOut("")],
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(runClaim(options), Layer.merge(shell.layer, NO_FOCUS.layer)),
+		);
+		expect(out.code).toBe(CLAIM_NOT_MINE);
+		expect(out.stderr.some((line) => line.includes("still carries the adopted claim"))).toBe(true);
+		expect(shell.calls.filter((line) => DELETE.test(line))).toEqual([
+			"gh api --method DELETE repos/o/r/issues/comments/9001",
+		]);
+	});
+
 	it("release still refuses the dead session's claim while no adopt marker names it", async () => {
 		const shell = fakeShell([
 			[ISSUE, CLAIMABLE],

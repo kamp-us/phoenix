@@ -1,7 +1,7 @@
 ---
 id: 0215
 title: Claim identity — the session id owns, the process witness proves continuity, nothing is inferred
-status: amended-in-part by [0272](0272-lane-owns-the-claim.md)
+status: amended-in-part by [0272](0272-lane-owns-the-claim.md), [0295](0295-board-attested-claim-succession.md)
 date: 2026-07-25
 tags: [pipeline, concurrency, agents, claim, decisions]
 ---

@@ -19,6 +19,15 @@ The marker:
 build-adopt: <dead-session> by build:<my-session>:<uuid> · <ISO> · reason: <text>
 ```
 
+This record **amends ADR [0215](0215-claim-identity-continuity-proof.md) §5 in part**. That section
+says a claim ends three ways and never any other, and bans "adoption: treating another session's
+marker as one's own without releasing it". There is now a fourth ending: an agent successor attests
+on the board and releases, where 0215 required a human. ADR
+[0272](0272-lane-owns-the-claim.md) §1 restates 0215's closed set in the same terms ("proven dead and
+superseded under ADR 0215 §5, or an operator clears the claim under that same section"), so it
+inherits the same widening. Everything else 0215 §5 bans stays banned — no TTL, no lease, no steal,
+and no eviction inferred from absence. An adopt is a written positive statement, not an inference.
+
 ## Context
 
 An Anthropic API outage on 2026-08-18 killed a driver session mid-drain. Its builders' claim markers
@@ -48,6 +57,19 @@ Guards, all of them in the verb:
 - The adopt's author is ACL-checked at release time. An adopt from an account below `write` is
   counted, reported on stderr, and is never a succession — content is not authority.
 - The act is reversible: delete the adopt comment and the claim is foreign again.
+
+**What an adopt does not prove: that the adopted session is actually dead.** Nothing in the protocol
+can check that. Any account with `write` may adopt a *live* session's claim and release it. That is
+the ruling as given — the guard here is disclosure plus the ACL, not a liveness proof — and it is why
+the reason is required and the marker stays on the issue for anyone to read.
+
+**What an adopt confers, beyond `release`.** `resolveOwnership` is one function and every verb reads
+it, so an adopted claim answers `Mine` to `build confirm` and to everything `requireClaim` guards —
+`branch`, `note`, `scratch`, `tree --issue`. That is the intent: the successor inherits the dead
+lane and may carry it on, not merely retract it. The one exception is `build claim`, which refuses on
+`15` over an adopted claim and retracts the marker it just posted: claiming would leave this run's
+marker beside the dead session's, and `release` deletes the claim and the adopt, not the extra. The
+successor's path is adopt → release → claim, and the refusal is what keeps it the only one.
 
 ## Why the other three lost
 
@@ -81,7 +103,10 @@ releasable, and stays so with no adopt marker (#5795).
   [#6060](https://github.com/kamp-us/phoenix/issues/6060) is making it. The adopt keyword is derived
   from each namespace's own prefix, so `lane:` and epic ownership see no adopt markers and nothing
   re-widens.
-- The claim protocol grew one verb, `build adopt`, and one resolver branch that is read only when the
-  winning claim is not this session's. The ordinary path costs what it did.
+- The claim protocol grew one verb, `build adopt`, one resolver branch that is read only when the
+  winning claim is not this session's, and one refusal in `build claim` over an adopted claim. The
+  ordinary path costs what it did.
+- ADR 0215's `status:` now records this amendment, so a reader who lands on the older record is sent
+  here for the current rule.
 - A successor who adopts a claim it should not have is visible on the issue with its reason, which is
   the property the hand-deleted comment never had.
