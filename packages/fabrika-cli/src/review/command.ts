@@ -200,7 +200,9 @@ const post = leafCommand(
 	"post",
 	{
 		pr: Argument.integer("pr").pipe(
-			Argument.withDescription("the pull request the verdict is posted on"),
+			Argument.withDescription(
+				"the pull request the verdict is posted on — with --base/--tip, the child issue instead",
+			),
 		),
 		namespace: Flag.string("namespace").pipe(
 			Flag.withDescription(
@@ -211,7 +213,10 @@ const post = leafCommand(
 			Flag.withDescription("PASS or FAIL — a third token is not a polarity"),
 		),
 		sha: Flag.string("sha").pipe(
-			Flag.withDescription("the head the reviewer actually inspected (7–40 lowercase hex)"),
+			Flag.optional,
+			Flag.withDescription(
+				"the head the reviewer actually inspected (7–40 lowercase hex); required unless --base/--tip scope the verdict to a range",
+			),
 		),
 		clause: Flag.string("clause").pipe(
 			Flag.withDescription("the human clause the marker ends with; blank is not a clause"),
@@ -222,18 +227,30 @@ const post = leafCommand(
 				"marker (first-line SHA-bound marker) or advisory (§CP: advisory first line, `Reviewed-head: @ <sha>` in the body); advisory is a PASS path only (default: marker)",
 			),
 		),
+		base: Flag.string("base").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"with --tip: post a range-scoped verdict over <base>..<tip> on the child issue named by the positional (#5935); never combined with --sha",
+			),
+		),
+		tip: Flag.string("tip").pipe(
+			Flag.optional,
+			Flag.withDescription("the range's tip revision — the other half of --base"),
+		),
 		repo: repoFlag,
 		json: jsonFlag,
 	},
-	Effect.fn(function* ({pr, namespace, polarity, sha, clause, carrier, repo, json}) {
+	Effect.fn(function* ({pr, namespace, polarity, sha, clause, carrier, base, tip, repo, json}) {
 		yield* emit(
 			yield* runPost({
 				pr,
 				namespace,
 				polarity,
-				sha,
+				sha: Option.getOrNull(sha),
 				clause,
 				carrier,
+				base: Option.getOrNull(base),
+				tip: Option.getOrNull(tip),
 				repo: Option.getOrNull(repo),
 				json,
 				env: process.env,
@@ -245,7 +262,7 @@ const post = leafCommand(
 ).pipe(
 	Command.withShortDescription("Post the verdict on stdin as this namespace's one comment."),
 	Command.withDescription(
-		'Post the verdict on STDIN as ONE comment for this namespace — re-resolve the live head, recompute the class set at the bound commit, compose the first line through the `verdict-marker` wire format, leak-scan the assembled comment, upsert, and read it back from live state. Prints `posted\\t<namespace>\\t<polarity>\\t<sha>\\t<content>\\t<created|edited>\\t<comment-url>`, where `<content>` is the content digest the verdict binds (ADR 0276). Exits 3 (empty stdin — an empty verdict reads as UNGATED), 5 (machine-local path in the assembled comment), 6 (bare @ reference), 7 (PR absent or closed), 8 (the create/edit failed — UNKNOWN), 9 (read-back does not yield this marker), 10 (namespace this diff did not derive, bad polarity, or advisory with FAIL), 11 (a precondition read failed, or the commit could not be bound — nothing was posted), 12 (the live head moved past --sha — re-review, never re-bind). Example: fabrika review post 4321 --namespace review-doc --polarity PASS --sha 03135b91 --clause "guide matches shipped behavior" < verdict.md',
+		'Post the verdict on STDIN as ONE comment for this namespace — re-resolve the live head, recompute the class set at the bound commit, compose the first line through the `verdict-marker` wire format, leak-scan the assembled comment, upsert, and read it back from live state. With --base and --tip the verdict is RANGE-scoped instead (#5935): the positional names the child issue, the class set is recomputed over what `<base>...<tip>` changed in this checkout, the first line goes through the `range-verdict-marker` format `lane prove` reads, and the answer\'s third field is `<base>..<tip>`; --sha and --carrier advisory are refused in this mode. Prints `posted\\t<namespace>\\t<polarity>\\t<sha|base..tip>\\t<content>\\t<created|edited>\\t<comment-url>`, where `<content>` is the content digest the verdict binds (ADR 0276). Exits 3 (empty stdin — an empty verdict reads as UNGATED), 5 (machine-local path in the assembled comment), 6 (bare @ reference), 7 (PR absent or closed; or, ranged, the issue is absent, closed, or a pull request), 8 (the create/edit failed — UNKNOWN), 9 (read-back does not yield this marker), 10 (namespace the diff or range did not derive, bad polarity, advisory with FAIL or with a range, a lone --base/--tip, or --sha beside a range), 11 (a precondition read failed, or the commit could not be bound — nothing was posted), 12 (the live head moved past --sha — re-review, never re-bind). Examples: fabrika review post 4321 --namespace review-doc --polarity PASS --sha 03135b91 --clause "guide matches shipped behavior" < verdict.md; fabrika review post 5830 --namespace review --polarity PASS --base 9f2c1ab --tip 03135b9 --clause "every criterion met" < verdict.md',
 	),
 );
 

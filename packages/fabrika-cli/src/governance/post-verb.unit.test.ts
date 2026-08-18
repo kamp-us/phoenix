@@ -39,6 +39,8 @@ const options = {
 	polarity: "PASS",
 	sha: HEAD,
 	clause: "no contradiction, no weakening",
+	base: null,
+	tip: null,
 	repo: null,
 	json: false,
 	env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,
