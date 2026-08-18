@@ -45,8 +45,12 @@ claude-plugins/fabrika/
 ├── README.md                    this file: the mission, the route in, the layout
 ├── agents/                      builder, reviewer, shipper, operator (see docs/agent-shells.md)
 ├── docs/                        the canonical convention + contract docs (see docs/README.md)
+├── guide/                       the human-facing pages, one Diátaxis mode each (see guide/README.md)
 └── skills/                      one dir per skill, each written under writing-for-agents
 ```
+
+A person reading fabrika starts at [guide/README.md](guide/README.md), which maps every page to
+the question it answers and says which of the five fabrika surfaces to open next.
 
 `agents/` holds exactly four **agent shells** — `builder`, `reviewer`, `shipper`, `operator` —
 behaviour-free spawn targets that each preload one skill. The shell names the actor and never the
