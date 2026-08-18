@@ -16,7 +16,7 @@ Four surfaces, in the order a change flows through them:
 | [`release-please-config.json`](../release-please-config.json) + [`.release-please-manifest.json`](../.release-please-manifest.json) | The package roots, their tag components, and each one's currently-released version. The manifest is release-please's memory of where it left off. |
 | [`.github/workflows/release-please.yml`](../.github/workflows/release-please.yml) | Runs on every push to `main`. Derives each package's next version from conventional commits and grooms one standing Release PR. Holds no registry credential and never publishes. |
 | [`.github/workflows/publish.yml`](../.github/workflows/publish.yml) | Runs on `release: published`. Resolves the tag prefix to a workspace member, typechecks, builds `dist/`, and `pnpm publish`es under an OIDC credential. |
-| [`pipeline-cli publish-isolation-guard`](../packages/pipeline-cli/src/tools/publish-isolation-guard/gate.ts) | A PR gate that *machine-reads* `publish.yml` to derive which packages publish, then checks none of them links a private workspace member. |
+| [`fabrika guard publish-isolation-guard`](../packages/fabrika-cli/src/guard/publish-isolation-verb.ts) | A PR gate that *machine-reads* `publish.yml` to derive which packages publish, then checks none of them links a private workspace member. |
 
 The seam between the two workflows is a **git tag**, not a workflow call. Merging the
 Release PR creates `<component>-v<version>` tags and their GitHub Releases; the
