@@ -66,6 +66,7 @@ second answer to a gated question can contradict the gate (interface convention 
 | `build check` | run this surface's validators in this tree, cache-bypassed; green/red/unknown | command execution + tree-binding assertions; *fixing red* stays in the skill |
 | `build push` | publish the branch and independently confirm the remote ref moved | push + `ls-remote` read-back, three proven outcomes |
 | `build pr` | open the PR from a stdin body, refusing the known defect shapes, with read-back | mechanical guards over an authored body; *authoring* stays in the skill |
+| `build pr-body` | replace an open PR's body from a stdin body, under `build pr`'s guards, with read-back | the same mechanical guards as `build pr`, over a `PATCH` that moves no ref; *authoring* stays in the skill |
 | `build note` | post a progress/handoff comment, head-stamped, leak-guarded, with read-back | as `report note`, plus the head stamp |
 | `build verdicts` | the paginated, current-head, per-gate verdict fold on a PR | fetch-all + fold via the wire module; *acting on rows* stays in the skill |
 | `build clear` | record the founder's clearance of one extra repair round on a PR | a conjunctive ACL/authorization protocol with read-back; *whether to grant* is the founder's, never the verb's |
@@ -98,7 +99,7 @@ Every verb obeys these; stated once.
   construction: no verb caches content across invocations; every invocation re-fetches and
   re-gates, so a gate change is in force on the next read.
 - **Isolation preconditions are guarded identically wherever they apply.** `branch`, `commit`,
-  `check`, `push` and `pr` run the same tree assertions `tree` runs, with the same codes (`note` runs only
+  `check`, `push`, `pr` and `pr-body` run the same tree assertions `tree` runs, with the same codes (`note` runs only
   the posting guards — a stop-report must remain postable from a refused tree) — a sibling that
   took the same ground unguarded would be the split this table exists to prevent.
   Their refusal messages are `tree`'s rows with the verb-name prefix substituted; **every error
@@ -1563,6 +1564,123 @@ $ echo $?
 
 ---
 
+## `build pr-body`
+
+**Invocation**
+
+```
+fabrika build pr-body 4318 [--partial] [--repo <owner/name>] <<'EOF'
+…the authored body…
+EOF
+```
+
+**Inputs**
+
+| Flag | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `<pr>` | positional integer | yes | — | the open pull request whose body is replaced |
+| `--partial` | boolean | no | `false` | the acceptance criteria are not all met: the body must say `Part of #<n>`, not `Fixes #<n>` |
+| stdin | text | yes | — | the replacement PR body |
+
+**Output** — machine. One JSON object:
+`{"answer": "updated", "number": 4318, "url": "..."}`.
+
+The verb exists because a review FAIL whose whole fix is a body edit — the recurring one is a
+`## Deviations` section the gate reads as malformed — otherwise had no guarded route at all: `build
+pr` answers `existing` and writes nothing, `build push` moves a head that did not need to move, and
+the raw `gh` call the repairer fell back to ran none of the create path's guards (#5618).
+
+The guards are `build pr`'s, in `build pr`'s order with **one step moved**: the served issue is read
+off the PR before the two guards that name it can run. Everything still happens before any write,
+which is what the ordering is for.
+
+1. **stdin non-empty** (`3`); **no machine-local path** (`5`, `6`); **no forbidden classification**
+   (`10`) — the three that need no issue number, so they refuse before a single read.
+2. **The PR is open** (`7` proven absent, closed or merged; `11` unreadable).
+3. **The served issue** is `parseLaneBranch`'d out of the PR's own head ref — `build/<issue>-<slug>-<nonce>`,
+   which is the head ref even for a resumed PR, since resume mode checks out `build/pr-<pr>-<nonce>`
+   locally and tracks the original. A head that is not a lane branch is `14`. The **body is never the
+   source**: the closing keyword is the thing being checked, so reading the issue off it would let a
+   mistargeted body validate itself.
+4. **Body shape** (`4`) against that issue — identical to `build pr`'s step 3, same `deviations` wire
+   format, same closing-keyword and `--partial` rules.
+5. **Claim confirmed and this lane addresses this PR** (`15`/`11`/`14`): the checked-out branch is a
+   lane whose claim this session holds, and it serves this PR — the resume branch names it, or the
+   create branch *is* its head ref.
+
+Then `PATCH repos/<repo>/pulls/<pr>` carrying `body` alone — no title, no base, no ref — and
+re-read the PR, comparing through `normalizeForReadback` (`9` on mismatch). The body travels as an
+argv value, never `-f body=@file` (#4683).
+
+**Exit status** (beyond the universal four)
+
+| Code | Trigger |
+|---|---|
+| `3` | stdin held nothing |
+| `4` | the `## Deviations` section does not read `Found` through the `deviations` wire format, or the closing-keyword line is absent, duplicated, mistargeted, or contradicts `--partial` |
+| `5` | the body carries a machine-local path |
+| `6` | the body is a bare `@` path reference |
+| `7` | the PR is proven absent, closed or merged |
+| `8` | the update failed — it may or may not have landed; re-read the PR before retrying |
+| `9` | the body was replaced but does not read back as sent |
+| `10` | the body carries a control-plane (or type/priority) classification claim |
+| `11` | a precondition read failed |
+| `14` | the PR's head is not a lane branch, or the checked-out branch does not serve this PR |
+| `15` | proven: this session does not hold the claim |
+
+**Errors**
+
+| Message (stderr) | Code | Kind |
+|---|---|---|
+| `build pr-body: stdin held nothing — the body is the input.` | 3 | refusal |
+| `build pr-body: the body's "## Deviations" section is not readable — <the wire format's reason>. State each deviation as an entry, or state "None."` | 4 | refusal |
+| `build pr-body: the body carries a closing keyword aimed at #<m> — this PR serves #<n>.` | 4 | refusal |
+| `build pr-body: the body carries a machine-local path: <first hit> — redact before posting.` | 5 | refusal |
+| `build pr-body: the body is a bare @ path reference — write the body, not a pointer to it.` | 6 | refusal |
+| `build pr-body: PR #<pr> is proven absent, closed or merged — there is no body to rewrite.` | 7 | refusal |
+| `build pr-body: the update failed: <reason> — it may or may not have landed; re-read PR #<pr> before retrying.` | 8 | refusal |
+| `build pr-body: PR #<pr>'s body was replaced but does not read back as sent — it needs a human eye.` | 9 | refusal |
+| `build pr-body: the body asserts a control-plane classification — that verdict is the merge gate's.` | 10 | refusal |
+| `build pr-body: cannot read PR #<pr>: <reason> — nothing was written.` | 11 | refusal |
+| `build pr-body: PR #<pr>'s head branch "<ref>" is not a lane branch — this verb rewrites a lane's own PR.` | 14 | refusal |
+| `build pr-body: the checked-out branch "<branch>" does not serve PR #<pr> — wrong lane.` | 14 | refusal |
+| `build pr-body: #<n> is held by <token>, not this session.` | 15 | refusal |
+
+**Scope** — one body replacement on one open PR. Nothing else about the PR moves: no commit, no
+push, no branch, no title, no base.
+
+**Examples**
+
+```
+$ fabrika build pr-body 4318 <<'EOF'
+Fixes #4312
+
+Editor focus now survives a save: the toolbar re-render no longer steals it.
+
+## Deviations
+
+- **Out-of-scope change** — **Said:** #4312 names the editor only. **Did:** also fixed the same
+  steal in the comment box. **Why:** both call the one `refocus()` helper this changes.
+  **Disposition:** stated here.
+EOF
+{"answer":"updated","number":4318,"url":"https://github.com/kamp-us/phoenix/pull/4318"}
+```
+
+```
+$ printf 'Fixes #4312\n\n## Deviations\n\n- narrowed the scope a bit.\n' | fabrika build pr-body 4318
+build pr-body: the body's "## Deviations" section is not readable — an entry carries no **Said:**, **Did:**, **Why:**, **Disposition:** — every entry states **Said:** / **Did:** / **Why:** / **Disposition:**. State each deviation as an entry, or state "None."
+$ echo $?
+4
+```
+
+**Grounding**
+
+- #5618 — no `build` verb rewrote an open PR's body, so a `deviations malformed` FAIL was repaired
+  with a raw `gh` call that ran none of the guards. PRs #5556 and #5599 both went out that way.
+- #5566 — the `deviations` shape both this verb and `review deviations` resolve against.
+
+---
+
 ## `build note`
 
 **Invocation**
@@ -1864,5 +1982,5 @@ script, another skill's prose, or the authoring session. The three hand-checks t
 lineage demands: every reachable outcome above was walked against its verb's failure modes; every
 example value is derivable from its verb's stated rules (the nonce from the claim token, the
 verdict line from the protocol); and sibling verbs guard shared preconditions identically
-(`branch`/`commit`/`check`/`push` run `tree`'s assertions; `pr`/`note` run the same posting guards on
+(`branch`/`commit`/`check`/`push` run `tree`'s assertions; `pr`/`pr-body`/`note` run the same posting guards on
 the same codes, and `commit` runs the same authored-text guards on `3`/`5`/`6`).
