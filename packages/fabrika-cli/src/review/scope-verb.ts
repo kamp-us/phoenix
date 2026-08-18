@@ -58,7 +58,7 @@ export const runScope = (
 		if (bound._tag === "Refused") return bound.outcome;
 		const head = bound.head;
 
-		const listed = yield* diffRangePaths(head.base, head.sha);
+		const listed = yield* diffRangePaths(head.mergeBase, head.sha);
 		if (listed._tag === "Failure") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
@@ -82,7 +82,7 @@ export const runScope = (
 		if (files.length === 0) {
 			return refuse(
 				INCOMPLETE_SCAN,
-				`${VERB}: git reports no changed files for the range ${head.base}...${head.sha}, so ${head.sha} has nothing to partition — refusing to scope an empty read (#3999).`,
+				`${VERB}: git reports no changed files for the range ${head.mergeBase}...${head.sha}, so ${head.sha} has nothing to partition — refusing to scope an empty read (#3999).`,
 				diagnostics,
 			);
 		}

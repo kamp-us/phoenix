@@ -11,8 +11,11 @@
  *
  * A truncated diff is refused rather than scanned. An under-reported hit list reads as a
  * checked-clean answer that was never checked (#3925's class). For the same reason each changed
- * file is read at the base commit as well as at the head, so an anchor's paragraph is compared whole
- * instead of only where the diff happens to touch it — see `anchors.ts` (#5514).
+ * file is read at the merge base as well as at the head, so an anchor's paragraph is compared whole
+ * instead of only where the diff happens to touch it — see `anchors.ts` (#5514). That "before" read
+ * is a point read at one commit, not a range, so nothing recomputes a merge base for it the way a
+ * three-dot diff would: reading it at the base *branch tip* compares this PR's anchors against
+ * main's newest bytes and invents a move nobody made (#5770/#6077).
  */
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
@@ -70,7 +73,7 @@ export const runGuards = (
 		const head = bound.head;
 		const diagnostics = [boundLine(VERB, head)];
 
-		const diff = yield* diffRange(head.base, head.sha);
+		const diff = yield* diffRange(head.mergeBase, head.sha);
 		if (diff._tag === "Failure") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
@@ -87,7 +90,7 @@ export const runGuards = (
 			);
 		}
 
-		const listed = yield* diffRangeStatuses(head.base, head.sha);
+		const listed = yield* diffRangeStatuses(head.mergeBase, head.sha);
 		if (listed._tag === "Failure") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
@@ -117,11 +120,11 @@ export const runGuards = (
 			// no base side, and a rename's base path is the source `--name-status` drops, so both fall
 			// back to the diff walk rather than being read at a path the base commit does not carry.
 			if (!(entry.status.startsWith("M") || entry.status.startsWith("T"))) continue;
-			const before = yield* readFileAt(head.base, entry.path);
+			const before = yield* readFileAt(head.mergeBase, entry.path);
 			if (before._tag === "Failure") {
 				return refuse(
 					PRECONDITION_UNKNOWN,
-					`${VERB}: cannot read ${entry.path} at ${head.base}: ${before.reason} — UNKNOWN, never "nothing moved".`,
+					`${VERB}: cannot read ${entry.path} at ${head.mergeBase}: ${before.reason} — UNKNOWN, never "nothing moved".`,
 					diagnostics,
 				);
 			}
@@ -139,7 +142,7 @@ export const runGuards = (
 		const outcome =
 			hits.length > 0 ? "hits" : inReach === 0 ? "no-anchors-in-reach" : "no-anchor-change";
 		diagnostics.push(
-			`${VERB}: scanned ${listed.value.length} files, ${inReach} anchored invariants in reach, ${compared} compared block-by-block against ${head.base}.`,
+			`${VERB}: scanned ${listed.value.length} files, ${inReach} anchored invariants in reach, ${compared} compared block-by-block against ${head.mergeBase}.`,
 		);
 
 		if (json) {
