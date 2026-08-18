@@ -46,7 +46,7 @@
 		}
 	},
 	"scripts": {
-		"build": "tsc -p tsconfig.build.json",
+		"build": "tsc -p tsconfig.build.json && node ./scripts/copy-src-assets.mjs",
 		"postinstall": "node ./scripts/provision-browser.mjs",
 		"prepublishOnly": "pnpm run build",
 		"typecheck": "tsc -p tsconfig.json",
