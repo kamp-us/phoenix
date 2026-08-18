@@ -127,6 +127,15 @@ export const focusTable = (milestone: number, declared = "2026-08-09"): string =
 export const marker = (session: string, uuid: string): string =>
 	`build-claim: build:${session}:${uuid} · 2026-08-09T00:00:00Z`;
 
+/** The succession marker a successor session posts over a dead one's claim (ADR 0295). */
+export const adoptMarker = (
+	adopted: string,
+	session: string,
+	uuid: string,
+	reason = "the driver session died mid-flight",
+): string =>
+	`build-adopt: ${adopted} by build:${session}:${uuid} · 2026-08-09T00:00:00Z · reason: ${reason}`;
+
 export const LANE_UUID = "c1a4d6f8-3b7e-4a19-9c2d-5e8f0a1b2c3d";
 /** The lane nonce `LANE_UUID` confers. */
 export const NONCE = "c1a4d6f8";

@@ -63,6 +63,7 @@ second answer to a gated question can contradict the gate (interface convention 
 | `build claim` | race the earliest-authorized claim on an issue; win, or name the winner | a deterministic race protocol; *what to do on a loss* stays in the skill |
 | `build confirm` | re-prove this LANE still holds the claim before a mutation | a lookup with a defined answer |
 | `build release` | retract this LANE's own claim | a guarded single write |
+| `build adopt` | record that a dead session's claim passes to the lane this marker names, which may then release it or carry on | a marker write with a read-back; *whether the session is really gone* is the driver's judgment |
 | `build issue` | the claimed issue's body + parsed acceptance criteria, through the content gate | fetch + parse via the wire module; *judging* the criteria stays in the skill |
 | `build branch` | cut (or resume) the lane's nonce branch off a freshly fetched base | fetch, derive, create — the nonce is a function of the claim token |
 | `build scratch` | the per-lane scratch path, allocated fail-closed | deterministic path derivation keyed session + issue + claim nonce |
@@ -652,7 +653,7 @@ $ echo $?
 
 ---
 
-## `build claim`, `build confirm`, `build release`
+## `build claim`, `build confirm`, `build release`, `build adopt`
 
 One protocol, three verbs. The claim is a comment-marker race on the issue (the ADR 0115 shape,
 re-implemented): post a claim marker carrying the session's token, re-read the issue's markers,
@@ -690,6 +691,7 @@ fabrika build claim 4312 [--repo <owner/name>] [--purpose plan|gate|build] [--to
                          [--override <reason> --override-lane <lane>]
 fabrika build confirm 4312 --token <token> [--repo <owner/name>]
 fabrika build release 4312 --token <token> [--repo <owner/name>]
+fabrika build adopt 4312 --session <dead-session> --reason <text> [--repo <owner/name>]
 ```
 
 **Inputs** — the first two rows are identical for all three verbs; the last three are `claim`'s alone:
@@ -752,6 +754,43 @@ plan- or gate-purpose lane gets past the audience axis, which `--purpose` now an
 run the fence at all: it governs what may *start*, so a focus row edited mid-lane can neither strand
 a running lane nor block its release.
 
+**A dead session's claim passes to a successor by an adopt marker, and by nothing else** (ADR
+[0295](../../../../.decisions/0295-board-attested-claim-succession.md)). When a driver session dies —
+an outage, a crash — its builders' claim markers stay on the board, and `release` from the successor
+is proven-foreign on `15`. `build adopt <n> --session <dead-session> --reason "<text>"` posts one
+comment:
+
+```
+build-adopt: <dead-session> by build:<my-session>:<uuid> · <ISO> · reason: <text>
+```
+
+The `by build:<my-session>:<uuid>` token is minted by `adopt` itself and printed on the answer: it is
+the lane identity the succession creates, and `release <n> --token <that token>` is what retracts
+**both** comments. The guards are the ones that keep this from being a steal: the adopt confers the
+claim on exactly the **lane** its `by <token>` names — the same whole-token test an ordinary win
+passes (#6060), so another lane of the successor's own session reads `Foreign` just as a third
+session does; its author is ACL-checked at release time, so an
+adopt from an account below `write` is counted, reported and never a succession; the reason is
+required; and an adopt naming the caller's own session is `1`, because plain `release` already covers
+a claim this session holds. There is still no TTL, no lease, and no eviction inferred from absence —
+the successor states the fact on the board and the ordinary ownership read does the rest. What the
+protocol cannot check is that the adopted session is really dead: any `write` account may adopt a
+live claim, and the guard against that is the disclosed reason plus the ACL, not a proof.
+
+**An adopt confers the whole claim on the number — under a new lane, not the dead one.** The
+ownership read is one function, so an adopted claim answers `mine` to `confirm` and admits `branch`,
+`note`, `scratch` and `tree --issue` — each under the token `adopt` printed, which is this lane's
+identity on that number. That token carries a **fresh** nonce, and those verbs key on the caller's
+nonce, so the successor gets its own branch (`build/<n>-<slug>-<its own nonce>`) and its own scratch
+dir: standing in the dead lane's branch fails `tree --issue` on `14`, and the dead lane's unpushed
+commits are recovered by hand or not at all. Inherit the number, not the working state.
+
+`claim` is the one verb an adopted claim does not admit. Handed `--token` it refuses on `15` before
+writing anything, because the winner it would otherwise answer with is the dead session's token,
+which no later verb of this session accepts. Without one it resolves `Foreign` — the post-write read
+runs under the nonce that run just minted, which no adopt names — so it retracts the marker it just
+posted and refuses on `15` too. Adopt, release, then claim.
+
 The session id arrives from the environment (`CLAUDE_CODE_SESSION_ID`, named in `--help` with its
 unset behavior: unset is a usage error, exit `1` — a claim without an identity is not a claim).
 
@@ -760,8 +799,13 @@ unset behavior: unset is a usage error, exit `1` — a claim without an identity
 - `claim` on a win: `{"answer": "won", "number": 4312, "token": "build:<sid>:<uuid>", "purpose":
   "build"}` — plus `"override": {"lane": "<lane>", "reason": "<reason>"}` when the win came through
   `--override`, so the answer records the exception as well as the marker does.
-- `confirm` when held: `{"answer": "mine", "number": 4312, "token": "..."}`.
-- `release` when released: `{"answer": "released", "number": 4312}`.
+- `confirm` when held: `{"answer": "mine", "number": 4312, "token": "..."}` — the winning marker's
+  token on the ordinary path, and on a succession the **adopt's** token, never the dead session's,
+  which every verb of this session refuses on `1`.
+- `release` when released: `{"answer": "released", "number": 4312}` — plus `"adopted":
+  "<dead-session>"` when the release came through a succession.
+- `adopt` when recorded: `{"answer": "adopted", "number": 4312, "session": "<dead-session>", "token":
+  "build:<sid>:<uuid>"}`.
 
 A loss, a foreign confirm, and a not-mine release produce no stdout — they are exit `15`, the
 winner named on stderr. **A lost race is a proven outcome on its own code, never exit 0** — v1's
@@ -780,7 +824,7 @@ proven-foreign only; a missing session id is `1`; an unreadable marker set is `1
 | `9` | the marker landed but the read-back does not match |
 | `10` | `claim` only: `--purpose` is off the `plan` \| `gate` \| `build` enum — a refusal, never a fallback to `build` |
 | `11` | the marker set could not be read — ownership is UNKNOWN, never "unclaimed"; or, `claim` only, the focus declaration or the issue's home could not be read — scope admission is UNKNOWN, never admitted |
-| `15` | proven: another session's earlier authorized marker wins (`claim`), holds (`confirm`), or `release` was asked for a token this session does not hold |
+| `15` | proven: another lane's earlier authorized marker wins (`claim`), holds (`confirm`), or `release` was asked for a token this lane does not hold. `claim` also refuses here over a claim this lane has *adopted* — release it first |
 | `20` | `claim` only, proven: the issue's home is outside the declared focus — no marker was written |
 | `21` | `claim --purpose build` only (the default), proven: the issue's audience is not an agent — no marker was written. Unreachable when the target is an open PR serving a `type:decision` issue (#5914) |
 
@@ -810,6 +854,12 @@ proven-foreign only; a missing session id is `1`; an unreadable marker set is `1
 | `build confirm: no claim exists on #<n> — nothing to confirm; run "fabrika build claim <n>" first.` | 15 | refusal |
 | `build release: this lane holds no claim on #<n> — refusing to release another lane's.` | 15 | refusal |
 | `build release: the retraction failed: <reason> — whether the claim is still held is UNKNOWN; run "fabrika build confirm <n> --token <caller token>".` | 8 | refusal |
+| `build adopt: --session names this very session — "fabrika build release <n>" already covers a claim this session holds; nothing was written.` | 1 | usage error |
+| `build adopt: --reason is empty — a succession is recorded or it is not one.` | 1 | usage error |
+| `build adopt: --session is empty — an adoption that names no session adopts nothing.` | 1 | usage error |
+| `build adopt: --session "<value>" carries whitespace or "·" — a session id is one unbroken word, and this one would compose a marker no reader can read back; nothing was written.` | 1 | usage error |
+| `build adopt: --reason spans more than one line — the marker records one line, so the rest would be dropped silently; restate it as one line. Nothing was written.` | 1 | usage error |
+| `build claim: #<n> still carries the adopted claim <winning token> — run "fabrika build release <n> --token <the adopt's token>" to retract it and the adopt together, then claim.` | 15 | refusal |
 
 **Proven-unclaimed sits on `15` too**: zero markers means this lane does not hold the claim,
 which is the one fact every `15` consumer acts on (stop mutating; claim first). The stderr detail
@@ -866,6 +916,8 @@ $ echo $?
 **Grounding**
 
 - ADR 0115 — detect-and-tiebreak comment claims; re-implemented, never called (ADR 0238).
+- ADR 0295 / #6068 — succession is attested on the board, never by a TTL, a lease or a steal;
+  #5752's cross-session carve-out is narrowed by exactly this one marker kind.
 - ADR 0055 — authorization from repository permissions, never from marker text.
 - #4428 — the token shape is pinned here because callers guessed between two shapes.
 - #2997 — `confirm` before every number-addressed mutation is the guard that pins the actor.
