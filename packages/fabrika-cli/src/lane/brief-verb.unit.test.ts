@@ -2,6 +2,7 @@
 import {resolve} from "node:path";
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
+import type {EntrypointRead} from "../delegate/entrypoint.ts";
 import {errOut, fakeFs, fakeShell, okOut} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {EPIC_RULES, EPIC_TAIL_RULES, RULES, read as readBrief} from "../wire/lane-brief.ts";
@@ -139,12 +140,20 @@ const epicLane = (events: ReadonlyArray<readonly [string, string]>) => {
 	});
 };
 
+/**
+ * A non-phoenix entrypoint on purpose: every brief these tests read back is the shape a repo that
+ * *installs* fabrika gets, so a path bound back to `packages/fabrika-cli/` fails here rather than in
+ * a consuming repo's maiden run (#6012).
+ */
+const ENTRY = "/checkout/node_modules/@kampus/fabrika-cli/dist/bin.js";
+
 const options = {
 	root: ROOT,
 	lane: "5751",
 	task: null as string | null,
 	repo: null as string | null,
 	env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,
+	entrypoint: {_tag: "Entrypoint", entrypoint: ENTRY} as EntrypointRead,
 };
 
 const run = (
@@ -200,7 +209,7 @@ describe("lane brief", () => {
 		]);
 
 		expect(out.stdout).toBe(
-			`## Task\nlane: 5751\nroot: ${resolve(ROOT)}\ntask: issue\nstate: review\nshell: reviewer\n## Ground\nissue: ${ISSUE_URL}\npr: ${PR_URL}\n## Rules\n${RULES}\n`,
+			`## Task\nlane: 5751\nroot: ${resolve(ROOT)}\nfabrika: ${ENTRY}\ntask: issue\nstate: review\nshell: reviewer\n## Ground\nissue: ${ISSUE_URL}\npr: ${PR_URL}\n## Rules\n${RULES}\n`,
 		);
 	});
 

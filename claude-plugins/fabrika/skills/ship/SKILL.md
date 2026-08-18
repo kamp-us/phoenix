@@ -194,10 +194,11 @@ branded reference, no steering prose; the receiver re-fetches from the PR itself
 step is the verb — pass back the `lane` and `root` its `## Task` section carries, one token per
 terminal above (`ALREADY-MERGED`, `QUEUED`, `LANDED`, `REFUSED`, `AWAITING-CP-APPROVAL`, `ROUTED`,
 `UNRESOLVED`, `EJECTED`, `UNKNOWN`), mapped to a lane event in its code, with the PR as the event's
-evidence (#5736):
+evidence (#5736). `<fabrika>` is that same section's `fabrika:` entrypoint, the one path this repo's
+verbs actually run from (#6012):
 
 ```bash
-node packages/fabrika-cli/src/bin.ts lane report <lane> --root <root> --token LANDED --pr <pr-url>
+node <fabrika> lane report <lane> --root <root> --token LANDED --pr <pr-url>
 ```
 
 The reason behind a `refused` stays in your note and report — the verb takes the bare token. It

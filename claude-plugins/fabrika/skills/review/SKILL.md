@@ -183,10 +183,11 @@ see, naming the unread piece UNKNOWN; no namespace PASSes on an unseen input.
 **Record the terminal yourself, then print it.** When your spawn brief named a lane, your terminal
 step is the verb — pass back the `lane` and `root` its `## Task` section carries, one token per
 terminal above (`PASS`, `FAIL`, `UNKNOWN`, `STALE`, `UNBINDABLE`, `ROUTED`), mapped to a lane event
-in its code, with the PR as the event's evidence (#5736):
+in its code, with the PR as the event's evidence (#5736). `<fabrika>` is that same section's
+`fabrika:` entrypoint, the one path this repo's verbs actually run from (#6012):
 
 ```bash
-node packages/fabrika-cli/src/bin.ts lane report <lane> --root <root> --token PASS --pr <pr-url>
+node <fabrika> lane report <lane> --root <root> --token PASS --pr <pr-url>
 ```
 
 One guard is yours before a `FAIL`: record it **only when every derived namespace holds a verdict
