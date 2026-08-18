@@ -408,13 +408,19 @@ namespace is still in flight, it orphans that namespace's verdict mid-write and 
 machine's retries on a verdict set nobody finished. A reviewer report carrying a `FAIL` beside a
 namespace with no verdict that still binds is an incomplete read, not an event: re-read the
 artifact's verdicts — the PR's, or the child range's — until every derived namespace is terminal
-against what that artifact carries now, then record. No repair builder is
+against what that artifact carries now, then record. **The re-read is bounded, not a hold**: it runs
+only while the reviewer's run is still in flight, and once that run has ended with the namespace
+still empty the outcome is the `BLOCKED` the next paragraph names — never an indefinite wait on a
+state that reads as active. No repair builder is
 ever spawned while any namespace at the head is non-terminal.
 
-**Re-reading terminates, because no reviewer may decline a derived namespace on a `FAIL` round.**
-ADR [0293](../../../../.decisions/0293-governance-fires-every-round.md) rules governance
+**Re-reading terminates, because no reviewer may decline a derived namespace on a `FAIL` round, and
+none may route one away either.** ADR
+[0293](../../../../.decisions/0293-governance-fires-every-round.md) rules governance
 derived-required at every round and every head on a `harness: true` diff, FAIL rounds included —
-`review` §6 states it on both arms. So a governance verdict missing at a `harness: true` head is
+`review` §6 states it on both arms, and that skill's `routed elsewhere` terminal covers `review-ui`
+and `check-epic-plan` only, so no reviewer terminal ends a run with governance un-fired (#5769). So a
+governance verdict missing at a `harness: true` head is
 always a read still in flight or a reviewer that died mid-emit, never a licensed refusal, and the
 remedy above reaches a verdict instead of waiting on one nobody will write. The floor stays, and no
 `harness: true` FAIL round holds the old deadlock — the state where the verdict is refused by rule,
