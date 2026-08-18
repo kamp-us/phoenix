@@ -26,6 +26,13 @@
  * `build branch --resume` cut a branch off a nonce the caller was never shown. Session-scoped, those
  * same rules told a sibling lane it held its neighbour's claim (#6037), so the scope is the lane.
  *
+ * The single exception to "a lane retracts only its own marker" is a succession the board attests:
+ * `adopt` records that a named session is gone and this lane inherits its claim, and `release` then
+ * retracts the claim and the adopt together (ADR 0295). No TTL, no lease, no steal — the successor
+ * writes a comment an ACL check reads, exactly like every other authority in this protocol, and the
+ * adopt names the inheriting lane by its whole token so succession does not re-widen ownership back
+ * to a session.
+ *
  * **`claim` runs the admission test before it writes anything; `confirm` and `release` never run it.**
  * The fence decides what may *start* (ADR 0245), so a focus row edited mid-lane must not strand a
  * running lane or block its release. Claiming is the one moment every path goes through — a number
@@ -49,9 +56,11 @@ import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {
 	BUILD_CLAIM,
 	type ClaimOverride,
+	composeAdoptMarker,
 	composeMarker,
 	laneCaller,
 	markersIn,
+	readAdoptMarker,
 	readMarkerToken,
 	requireCallerToken,
 	requireSession,
@@ -424,11 +433,21 @@ export const runRelease = (
 		const asking = requireCallerToken(RELEASE, session, options.token);
 		if (asking._tag === "Refused") return asking.outcome;
 
-		const {ownership, unauthorized} = yield* resolveOwnership(repo, number, asking.caller);
-		const notes = unauthorized.map(
-			(marker) =>
-				`${RELEASE}: comment ${marker.commentId} carries a claim marker from "${marker.author}", who holds no write permission — counted, never a winner.`,
+		const {ownership, unauthorized, unauthorizedAdopts} = yield* resolveOwnership(
+			repo,
+			number,
+			asking.caller,
 		);
+		const notes = [
+			...unauthorized.map(
+				(marker) =>
+					`${RELEASE}: comment ${marker.commentId} carries a claim marker from "${marker.author}", who holds no write permission — counted, never a winner.`,
+			),
+			...unauthorizedAdopts.map(
+				(marker) =>
+					`${RELEASE}: comment ${marker.commentId} carries an adopt marker from "${marker.author}", who holds no write permission — counted, never a succession.`,
+			),
+		];
 		if (ownership._tag === "Unknown") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
@@ -440,7 +459,14 @@ export const runRelease = (
 			return refuse(
 				CLAIM_NOT_MINE,
 				`${RELEASE}: this lane holds no claim on #${number} — refusing to release another lane's.`,
-				notes,
+				[
+					...notes,
+					...(ownership._tag === "Foreign" && !ownership.sameSession
+						? [
+								`${RELEASE}: #${number} is held by ${ownership.marker.token}; if that session is gone, adopt it first: fabrika build adopt ${number} --session <its session id> --reason <why>.`,
+							]
+						: []),
+				],
 			);
 		}
 		// Every marker carrying THIS LANE's token, not only the winner. A thread carrying duplicates —
@@ -477,5 +503,89 @@ export const runRelease = (
 				);
 			}
 		}
-		return answer(JSON.stringify({answer: "released", number}), notes);
+		const adopt = ownership.adopt;
+		if (adopt === null) return answer(JSON.stringify({answer: "released", number}), notes);
+		// The adopt outlives nothing: it exists to authorize this release, so it goes with the claim.
+		const cleared = yield* deleteComment(repo, adopt.commentId);
+		return cleared._tag === "Failure"
+			? refuse(
+					WRITE_UNKNOWN,
+					`${RELEASE}: the claim was retracted and its adopt marker (comment ${adopt.commentId}) was not: ${cleared.reason} — delete it by hand, or a later claim on #${number} reads a succession that no longer applies.`,
+					notes,
+				)
+			: answer(JSON.stringify({answer: "released", number, adopted: adopt.adopted}), notes);
+	});
+
+const ADOPT = "build adopt";
+
+export interface AdoptOptions extends ProtocolOptions {
+	/** The dead session whose claim this run adopts. */
+	readonly session: string;
+	/** Why the succession is taken — required, and recorded on the marker. */
+	readonly reason: string;
+	/** A fresh UUID, supplied by the adapter so the successor token is deterministic under test. */
+	readonly uuid: string;
+	readonly at: string;
+}
+
+/**
+ * `build adopt` — the successor driver names a dead session on the board, so its stranded claim
+ * becomes releasable (ADR 0295).
+ *
+ * It writes one comment and nothing else. It takes no claim, evicts nobody, and confers ownership
+ * only on the session it names as successor: the release that follows still runs the ordinary
+ * ownership read, so an adopt posted by an account below `write` decides nothing.
+ */
+export const runAdopt = (
+	options: AdoptOptions,
+): Effect.Effect<VerbOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
+	Effect.gen(function* () {
+		const adopted = options.session.trim();
+		const reason = options.reason.trim();
+		if (adopted === "") {
+			return refuse(
+				FAILED,
+				`${ADOPT}: --session is empty — an adoption that names no session adopts nothing.`,
+			);
+		}
+		if (reason === "") {
+			return refuse(
+				FAILED,
+				`${ADOPT}: --reason is empty — a succession is recorded or it is not one.`,
+			);
+		}
+
+		const ready = yield* preflight(ADOPT, options);
+		if (ready._tag === "Refused") return ready.outcome;
+		const {repo, session} = ready;
+		const {number} = options;
+
+		if (adopted === session) {
+			return refuse(
+				FAILED,
+				`${ADOPT}: --session names this very session — "fabrika build release ${number}" already covers a claim this session holds; nothing was written.`,
+			);
+		}
+
+		const token = composeToken(session, options.uuid);
+		const body = composeAdoptMarker(adopted, token, options.at, reason);
+		const posted = yield* createComment(repo, number, body);
+		if (posted._tag === "Failure") {
+			return refuse(
+				WRITE_UNKNOWN,
+				`${ADOPT}: the adopt marker write failed: ${posted.reason} — whether the succession is recorded is UNKNOWN; re-read #${number}'s comments before releasing.`,
+			);
+		}
+		const back = yield* getComment(repo, posted.value.id);
+		const read = back._tag === "Failure" ? null : readAdoptMarker(normalizeForReadback(back.value));
+		if (read === null || read.adopted !== adopted || read.token !== token) {
+			return refuse(
+				READBACK_MISMATCH,
+				`${ADOPT}: the adopt marker landed but the read-back does not match — the succession needs a human eye.`,
+				[`${ADOPT}: comment ${posted.value.id} on #${number} is the one to inspect.`],
+			);
+		}
+		return answer(JSON.stringify({answer: "adopted", number, session: adopted, token}), [
+			`${ADOPT}: #${number}'s claim from "${adopted}" is now releasable by this session — run "fabrika build release ${number}".`,
+		]);
 	});

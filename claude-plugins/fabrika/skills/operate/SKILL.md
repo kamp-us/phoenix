@@ -337,9 +337,13 @@ nobody filed and a claim nobody can take. Three obligations, in this order:
   absence stays banned (ADR
   [0215](../../../../.decisions/0215-claim-identity-continuity-proof.md) §5).
 
-**A claim held by a different, gone session is not yours to release.** `build release` refuses it on
-exit `15`, proven-foreign, and that refusal is the guard rather than an obstacle to reason past.
-Name that claim in the park comment with its token and leave it to a human.
+**A claim stranded by a gone session is releasable, once you say so on the board.** `build release`
+refuses it on `15` — proven-foreign — until an adopt marker names that session as dead and this one
+as its successor: `fabrika build adopt <n> --session <its session id> --reason "<why>"`, then
+`fabrika build release <n>` (ADR
+[0295](../../../../.decisions/0295-board-attested-claim-succession.md)). The adopt is disclosed on the
+issue and reversible by deleting it; a claim you are not willing to state that about stays where it
+is, named in the park comment with its token.
 
 **Every event is proven first — artifacts over self-reports.** A report is
 data; what moves the machine is the artifact behind it. The verb below is the read `lane report`

@@ -3,7 +3,7 @@ import {describe, expect, it} from "vitest";
 import {errOut, fakeFs, fakeShell, okOut, once} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {FAILED} from "../verb.ts";
-import {runClaim, runConfirm, runRelease} from "./claim-verb.ts";
+import {runAdopt, runClaim, runConfirm, runRelease} from "./claim-verb.ts";
 import {
 	AUDIENCE_NOT_AGENT,
 	BAD_SECTIONS,
@@ -16,6 +16,7 @@ import {
 	ZERO_SCOPE,
 } from "./codes.ts";
 import {
+	adoptMarker,
 	candidates,
 	comments,
 	focusTable,
@@ -1068,5 +1069,155 @@ describe("the claim protocol", () => {
 		expect(confirmed.stderr.at(-1)).toBe(
 			`build confirm: #4312 is held by ${SIBLING_TOKEN}, not by ${LANE_TOKEN} — another lane of this same session.`,
 		);
+	});
+});
+
+/**
+ * Board-attested succession (ADR 0295): the dead session's claim becomes this session's through an
+ * adopt marker on the same number, and never through a TTL, a lease or a steal.
+ */
+describe("runAdopt / succession", () => {
+	const DEAD = "s-77aa";
+	const ADOPT = adoptMarker(DEAD, "s-9f2e", LANE_UUID);
+	const adoptOptions = {
+		number: 4312,
+		repo: null,
+		env: options.env,
+		session: DEAD,
+		reason: "the driver session died mid-flight",
+		uuid: LANE_UUID,
+		at: "2026-08-09T00:00:00Z",
+	};
+
+	const runAdoptWith = (
+		script: ReadonlyArray<readonly [RegExp, ExecResult]>,
+		overrides: Partial<typeof adoptOptions> = {},
+	) =>
+		Effect.runPromise(
+			Effect.provide(
+				runAdopt({...adoptOptions, ...overrides}),
+				Layer.merge(fakeShell(script).layer, NO_FOCUS.layer),
+			),
+		);
+
+	it("posts the adopt marker naming the dead session and this session's token", async () => {
+		const shell = fakeShell([
+			[ISSUE, CLAIMABLE],
+			[POST, POSTED],
+			[GET_COMMENT, okOut(JSON.stringify({body: ADOPT}))],
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(runAdopt(adoptOptions), Layer.merge(shell.layer, NO_FOCUS.layer)),
+		);
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toEqual({
+			answer: "adopted",
+			number: 4312,
+			session: DEAD,
+			token: `build:s-9f2e:${LANE_UUID}`,
+		});
+		expect(shell.calls.filter((line) => POST.test(line))).toHaveLength(1);
+	});
+
+	it("refuses an adopt naming this very session, and writes nothing", async () => {
+		const shell = fakeShell([[ISSUE, CLAIMABLE]]);
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runAdopt({...adoptOptions, session: "s-9f2e"}),
+				Layer.merge(shell.layer, NO_FOCUS.layer),
+			),
+		);
+		expect(out.code).toBe(FAILED);
+		expect(out.stderr.at(-1)).toContain("already covers");
+		expect(shell.calls.some((line) => POST.test(line))).toBe(false);
+	});
+
+	it("refuses an empty reason before anything is read", async () => {
+		const out = await runAdoptWith([[ISSUE, CLAIMABLE]], {reason: "  "});
+		expect(out.code).toBe(FAILED);
+		expect(out.stderr.at(-1)).toContain("--reason is empty");
+	});
+
+	it("release still refuses the dead session's claim while no adopt marker names it", async () => {
+		const shell = fakeShell([
+			[ISSUE, CLAIMABLE],
+			[COMMENTS, comments({id: 8000, body: THEIRS})],
+			[perm("agent"), okOut("write\n")],
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(runRelease(options), Layer.merge(shell.layer, NO_FOCUS.layer)),
+		);
+		expect(out.code).toBe(CLAIM_NOT_MINE);
+		expect(out.stderr.some((line) => line.includes("fabrika build adopt 4312 --session"))).toBe(
+			true,
+		);
+		expect(shell.calls.some((line) => DELETE.test(line))).toBe(false);
+	});
+
+	it("release retracts BOTH markers once an authorized adopt names the dead session", async () => {
+		const shell = fakeShell([
+			[ISSUE, CLAIMABLE],
+			[
+				COMMENTS,
+				comments(
+					{id: 8000, body: THEIRS},
+					{id: 8100, body: ADOPT, createdAt: "2026-08-10T00:00:00Z"},
+				),
+			],
+			[perm("agent"), okOut("write\n")],
+			[DELETE, okOut("")],
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(runRelease(options), Layer.merge(shell.layer, NO_FOCUS.layer)),
+		);
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toEqual({answer: "released", number: 4312, adopted: DEAD});
+		expect(shell.calls.filter((line) => DELETE.test(line))).toEqual([
+			"gh api --method DELETE repos/o/r/issues/comments/8000",
+			"gh api --method DELETE repos/o/r/issues/comments/8100",
+		]);
+	});
+
+	it("ignores an adopt marker whose poster holds no write permission — content is not authority", async () => {
+		const shell = fakeShell([
+			[ISSUE, CLAIMABLE],
+			[
+				COMMENTS,
+				comments(
+					{id: 8000, body: THEIRS},
+					{id: 8100, body: ADOPT, author: "drive-by", createdAt: "2026-08-10T00:00:00Z"},
+				),
+			],
+			[perm("agent"), okOut("write\n")],
+			[perm("drive-by"), okOut("read\n")],
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(runRelease(options), Layer.merge(shell.layer, NO_FOCUS.layer)),
+		);
+		expect(out.code).toBe(CLAIM_NOT_MINE);
+		expect(out.stderr.some((line) => line.includes("counted, never a succession"))).toBe(true);
+		expect(shell.calls.some((line) => DELETE.test(line))).toBe(false);
+	});
+
+	it("confers the claim on the named successor only — a third session still reads Foreign", async () => {
+		const shell = fakeShell([
+			[ISSUE, CLAIMABLE],
+			[
+				COMMENTS,
+				comments(
+					{id: 8000, body: THEIRS},
+					{id: 8100, body: ADOPT, createdAt: "2026-08-10T00:00:00Z"},
+				),
+			],
+			[perm("agent"), okOut("write\n")],
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runRelease({...options, env: {...options.env, CLAUDE_CODE_SESSION_ID: "s-3rd"}}),
+				Layer.merge(shell.layer, NO_FOCUS.layer),
+			),
+		);
+		expect(out.code).toBe(CLAIM_NOT_MINE);
+		expect(shell.calls.some((line) => DELETE.test(line))).toBe(false);
 	});
 });

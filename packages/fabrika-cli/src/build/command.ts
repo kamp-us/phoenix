@@ -23,7 +23,7 @@ import {DEFAULT_LANES_ROOT} from "../lane/store.ts";
 import type {VerbOutcome} from "../verb.ts";
 import {runBranch} from "./branch-verb.ts";
 import {runCheck} from "./check-verb.ts";
-import {runClaim, runConfirm, runRelease} from "./claim-verb.ts";
+import {runAdopt, runClaim, runConfirm, runRelease} from "./claim-verb.ts";
 import {type DocumentRead, runClear} from "./clear-verb.ts";
 import {runCommit} from "./commit-verb.ts";
 import {runEligible} from "./eligible-verb.ts";
@@ -548,6 +548,42 @@ const clear = leafCommand(
 	),
 );
 
+const adopt = leafCommand(
+	"adopt",
+	{
+		number: issueArg,
+		session: Flag.string("session").pipe(
+			Flag.withDescription(
+				"the dead session whose claim this run adopts; naming this session refuses",
+			),
+		),
+		reason: Flag.string("reason").pipe(
+			Flag.withDescription("why the succession is taken — recorded on the marker, required"),
+		),
+		repo: repoFlag,
+	},
+	Effect.fn(function* ({number, session, reason, repo}) {
+		yield* emit(
+			yield* runAdopt({
+				number,
+				repo: Option.getOrNull(repo),
+				env: process.env,
+				session,
+				reason,
+				uuid: randomUUID(),
+				at: new Date().toISOString(),
+			}),
+		);
+	}),
+).pipe(
+	Command.withShortDescription(
+		"Record on the board that a dead session's claim passes to this one.",
+	),
+	Command.withDescription(
+		'Post the succession marker a dead session\'s stranded claim needs: build-adopt: <dead-session> by build:<this-session>:<uuid> · <ISO> · reason: <text>. It writes ONE comment and takes no claim — "fabrika build release <n>" then resolves that claim as this session\'s and retracts both comments (ADR 0295). Authority is the poster\'s repository permission, read at release time (ADR 0055): an adopt from an account below write is counted, reported, and never a succession. Prints {"answer":"adopted","number":n,"session":"<dead-session>","token":"…"}. Exits 1 (CLAUDE_CODE_SESSION_ID unset, an empty --session or --reason, or --session naming this very session — plain release already covers that), 7 (issue proven absent or closed), 8 (the marker write failed — UNKNOWN), 9 (the marker landed but does not read back). Example: fabrika build adopt 6037 --session 3672779a --reason "driver died in the 2026-08-18 API outage"',
+	),
+);
+
 export const buildCommand = Command.make("build").pipe(
 	Command.withSubcommands([
 		// One leaf per line, so concurrent slices append at distinct lines rather than all editing one.
@@ -557,6 +593,7 @@ export const buildCommand = Command.make("build").pipe(
 		claim,
 		confirm,
 		release,
+		adopt,
 		issue,
 		branch,
 		scratch,
