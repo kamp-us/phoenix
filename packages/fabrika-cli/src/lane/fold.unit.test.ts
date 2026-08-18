@@ -3,6 +3,7 @@
  * state-ledger rebuild's runs 1–6 recorded on #5570's 2026-08-15 session note are the plan).
  */
 import {describe, expect, it} from "vitest";
+import {CAP_ROUND, RETRY_BUDGET} from "../retry-budget.ts";
 import {coderWorkflow, twoPhaseWorkflow} from "./fixtures.test-support.ts";
 import {applyEvent, deriveStatus, foldLog, type LogEntry, parseLog, resolveTask} from "./fold.ts";
 import {type CompiledLane, compile} from "./machine.ts";
@@ -187,6 +188,168 @@ describe("run 5 — BLOCKED then UNBLOCKED resumes the state it left", () => {
 		if (applied._tag === "Applied") {
 			expect(applied.current.stateValue).toMatchObject({pipeline: {issue: "ship"}});
 		}
+	});
+});
+
+describe("the frozen park — an UNBLOCKED door out of an error final (ADR 0297)", () => {
+	const round: ReadonlyArray<readonly [string, string]> = [
+		["issue", "DONE"],
+		["issue", "FAIL"],
+	];
+	/** WIP, then a FAIL per round until the budget is spent and the last one freezes the task. */
+	const freeze: ReadonlyArray<readonly [string, string]> = [
+		["issue", "WIP"],
+		...Array.from({length: RETRY_BUDGET + 1}, () => round).flat(),
+	];
+
+	/** The coder template with one founder-cleared round recorded on the task's context. */
+	const cleared = (): unknown => {
+		const workflow = coderWorkflow() as {machine: {context: {issue: Record<string, unknown>}}};
+		const issue = workflow.machine.context.issue;
+		workflow.machine.context.issue = {...issue, clearedRounds: [CAP_ROUND]};
+		return workflow;
+	};
+
+	it("trips the lane on the frozen task rather than hanging its phase", () => {
+		const compiled = lane(coderWorkflow());
+
+		const status = statusOf(compiled, drive(compiled, freeze));
+		expect(status).toMatchObject({stateValue: "tripped", status: "done"});
+		expect(status.context.errors).toEqual(["issue"]);
+		expect(status.context.issue).toMatchObject({retries: RETRY_BUDGET, maxRetries: RETRY_BUDGET});
+	});
+
+	it("resumes the state the task left, with the spent retries held", () => {
+		const compiled = lane(coderWorkflow());
+
+		const applied = applyEvent(
+			compiled,
+			statesOf(compiled, drive(compiled, freeze)),
+			"issue",
+			"UNBLOCKED",
+			"2026-08-16T00:00:00.000Z",
+		);
+		expect(applied._tag).toBe("Applied");
+		if (applied._tag !== "Applied") return;
+		expect(applied.current).toMatchObject({
+			stateValue: {pipeline: {issue: "review"}},
+			status: "active",
+		});
+		expect(applied.current.context.issue).toMatchObject({retries: RETRY_BUDGET});
+		expect(applied.current.context.errors).toEqual([]);
+	});
+
+	it("re-freezes on the next FAIL when no further round was granted", () => {
+		const compiled = lane(coderWorkflow());
+
+		const log = drive(compiled, [...freeze, ["issue", "UNBLOCKED"], ["issue", "FAIL"]]);
+		expect(statusOf(compiled, log)).toMatchObject({stateValue: "tripped", status: "done"});
+	});
+
+	it("hands the door no budget — a recorded grant re-folds the same log into the repair", () => {
+		const compiled = lane(cleared());
+
+		// The clearance widens the budget at compile time, so the FAIL that froze this log now spends
+		// the granted round instead: nothing to unblock, and the door grants nothing of its own.
+		const granted = drive(compiled, freeze);
+		expect(statusOf(compiled, granted).stateValue).toMatchObject({pipeline: {issue: "build"}});
+		expect(statusOf(compiled, granted).context.issue).toMatchObject({
+			retries: RETRY_BUDGET + 1,
+			maxRetries: RETRY_BUDGET + 1,
+		});
+		expect(statusOf(compiled, drive(compiled, [...freeze, ...round]))).toMatchObject({
+			stateValue: "tripped",
+			status: "done",
+		});
+	});
+
+	it("refuses the door on a region booted in the park — there is no state to resume", () => {
+		const workflow = coderWorkflow() as {
+			machine: {states: {pipeline: {states: {issue: {initial: string}}}}};
+		};
+		workflow.machine.states.pipeline.states.issue.initial = "frozen";
+		const compiled = lane(workflow);
+
+		const applied = applyEvent(
+			compiled,
+			statesOf(compiled, []),
+			"issue",
+			"UNBLOCKED",
+			"2026-08-16T00:00:00.000Z",
+		);
+		expect(applied).toMatchObject({_tag: "Refused"});
+		if (applied._tag === "Refused") expect(applied.reason).toContain("no state to resume");
+	});
+
+	/** twoPhaseWorkflow with task_a's `tripped` turned into a park, optionally booted into it. */
+	const parkedSibling = (booted: boolean): Record<string, unknown> => {
+		const workflow = twoPhaseWorkflow();
+		const region = (
+			workflow.machine as {
+				states: {phase1: {states: {task_a: {initial: string; states: Record<string, unknown>}}}};
+			}
+		).states.phase1.states.task_a;
+		region.states.tripped = {type: "final", on: {"TASK_A.UNBLOCKED": "hist"}};
+		if (booted) region.initial = "tripped";
+		return workflow;
+	};
+
+	it("refuses the booted park's door while a sibling keeps the phase active", () => {
+		const compiled = lane(parkedSibling(true));
+
+		// The phase never folds — task_b is still `doing` — so the lane reads active and the whole
+		// tripped-terminal path is unreachable; the self-loop has to be caught on the task itself.
+		expect(statusOf(compiled, []).status).toBe("active");
+		const applied = applyEvent(
+			compiled,
+			statesOf(compiled, []),
+			"task_a",
+			"UNBLOCKED",
+			"2026-08-16T00:00:00.000Z",
+		);
+		expect(applied).toMatchObject({_tag: "Refused"});
+		if (applied._tag === "Refused") expect(applied.reason).toContain("no state to resume");
+	});
+
+	it("still resumes a park the task walked into, with the phase active around it", () => {
+		const compiled = lane(parkedSibling(false));
+
+		const log = drive(compiled, [
+			["task_a", "DONE"],
+			["task_a", "FAIL"],
+			["task_a", "DONE"],
+			["task_a", "FAIL"],
+			["task_a", "DONE"],
+			["task_a", "FAIL"],
+		]);
+		expect(statusOf(compiled, log)).toMatchObject({
+			stateValue: {phase1: {task_a: "tripped", task_b: "doing"}},
+			status: "active",
+		});
+		const applied = applyEvent(
+			compiled,
+			statesOf(compiled, log),
+			"task_a",
+			"UNBLOCKED",
+			"2026-08-16T00:00:00.000Z",
+		);
+		expect(applied._tag).toBe("Applied");
+		if (applied._tag !== "Applied") return;
+		expect(applied.current.stateValue).toMatchObject({phase1: {task_a: "checking"}});
+	});
+
+	it("still refuses an event the park holds no cell for", () => {
+		const compiled = lane(coderWorkflow());
+
+		const applied = applyEvent(
+			compiled,
+			statesOf(compiled, drive(compiled, freeze)),
+			"issue",
+			"DONE",
+			"2026-08-16T00:00:00.000Z",
+		);
+		expect(applied).toMatchObject({_tag: "Refused"});
+		if (applied._tag === "Refused") expect(applied.reason).toContain("NoCellError");
 	});
 });
 

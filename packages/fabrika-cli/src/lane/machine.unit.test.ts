@@ -60,6 +60,7 @@ describe("the compiler — structural recognition", () => {
 		expect(defined(lane.tasks.issue).initial).toEqual({type: "queued", retries: 0, maxRetries: 2});
 		expect([...defined(lane.tasks.issue).finals].sort()).toEqual(["frozen", "shipped"]);
 		expect([...defined(lane.tasks.issue).errorFinals]).toEqual(["frozen"]);
+		expect([...defined(lane.tasks.issue).openFinals]).toEqual(["frozen"]);
 	});
 
 	it("reads a guarded array as retry-or-fallthrough by shape, never by guard name", () => {
@@ -89,6 +90,8 @@ describe("the compiler — structural recognition", () => {
 		expect(defined(summary.tasks.issue).states.review).toEqual(["PASS", "BLOCKED", "FAIL"]);
 		expect(defined(summary.tasks.issue).states.ship).toEqual(["DONE", "BLOCKED", "FAIL"]);
 		expect(defined(summary.tasks.issue).states.shipped).toEqual([]);
+		// `frozen` is a final that carries a door: a park the lane trips on, not an end (ADR 0297).
+		expect(defined(summary.tasks.issue).states.frozen).toEqual(["UNBLOCKED"]);
 		expect(summary.trigger).toBeUndefined();
 	});
 
@@ -123,6 +126,7 @@ describe("the compiler — structural recognition", () => {
 			maxRetries: 2,
 		});
 		expect([...defined(lane.tasks.park_sweep).errorFinals]).toEqual(["frozen"]);
+		expect([...defined(lane.tasks.park_sweep).openFinals]).toEqual(["frozen"]);
 	});
 
 	it("holds the chore template to the same six events as every other lane", () => {
