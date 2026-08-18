@@ -125,7 +125,8 @@ export const KEY_MALFORMED = 21;
  *
  * The four proof seats are **artifact-independent**: what a caller must do about "not there", "not
  * finished", "says the other thing" and "several candidates" does not change with the kind of
- * artifact, so the range arms allocate no fifth seat.
+ * artifact, so the range arms allocate no fifth seat — nor does `lane brief`, which reads a child's
+ * range off the same tree before it dispatches a reviewer at it (#6023).
  */
 export const PROOF_ABSENT = 22;
 
@@ -147,7 +148,8 @@ export const PROOF_CONTRADICTED = 24;
 /**
  * Several candidates trace to the task: several open pull requests linking its issue, or several
  * lane branches carrying an epic child's commits. Which one the lane owns is not derivable, and
- * picking one would record a DONE against another lane's work — a park, never a guess.
+ * picking one would record a DONE against another lane's work — or brief a reviewer at another
+ * lane's range — a park, never a guess.
  */
 export const PROOF_AMBIGUOUS = 25;
 

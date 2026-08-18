@@ -13,7 +13,10 @@
  *
  * An epic lane's children are the one place where no PR is resolved at all: one run is one branch and
  * one PR, so a child builds in a worktree and its review judges a commit range, while the tail task
- * briefs that single PR under the same refusals a single-issue lane has always used (ADR 0285).
+ * briefs that single PR under the same refusals a single-issue lane has always used (ADR 0285). That
+ * range is resolved here, off this tree, through the same read `lane prove` stands its proof on
+ * (`./range.ts`) — the two verbs cannot name different ranges for one child, and a range the tree
+ * cannot pin refuses the dispatch instead of printing one that resolves to nothing (#6023).
  */
 import {Effect, type FileSystem, Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
@@ -28,12 +31,23 @@ import {
 	type LaneBrief,
 	type LaneGround,
 	lanesRoot,
+	type ShellState,
 	shellOf,
 	shellState,
 } from "../wire/lane-brief.ts";
-import {ISSUE_UNRESOLVED, LANE_UNREADABLE, NO_SHELL, PR_AMBIGUOUS, TASK_UNKNOWN} from "./codes.ts";
+import {headSha} from "../wire/marker-line.ts";
+import {
+	ISSUE_UNRESOLVED,
+	LANE_UNREADABLE,
+	NO_SHELL,
+	PR_AMBIGUOUS,
+	PROOF_ABSENT,
+	PROOF_AMBIGUOUS,
+	TASK_UNKNOWN,
+} from "./codes.ts";
 import {foldLog, resolveTask} from "./fold.ts";
 import {epicOf, issueOf} from "./prove.ts";
+import {locateRange, type RangeLocation} from "./range.ts";
 import {loadRefusal, replayRefusal} from "./refusals.ts";
 import {type LaneRef, loadLane} from "./store.ts";
 
@@ -90,6 +104,77 @@ const issueUrl = (
 					),
 				} as const)
 			: ({_tag: "Url", url} as const);
+	});
+
+/**
+ * A range this tree could not pin, seated on the proof codes the `lane` table already spends on
+ * exactly these three facts (`./codes.ts`) — nothing there, several candidates, unreadable.
+ *
+ * Refusing is the whole point: a brief whose range resolves to nothing sends the reviewer an empty
+ * diff it can still land a `range-verdict-marker` over (#6023).
+ */
+const rangeRefusal = (
+	located: Exclude<RangeLocation, {readonly _tag: "Located"}>,
+	notes: ReadonlyArray<string>,
+): VerbOutcome =>
+	located._tag === "Unreadable"
+		? refuse(
+				LANE_UNREADABLE,
+				`${VERB}: cannot read ${located.what}: ${located.reason} — which range the reviewer would judge is UNKNOWN.`,
+				notes,
+			)
+		: refuse(
+				located._tag === "Absent" ? PROOF_ABSENT : PROOF_AMBIGUOUS,
+				`${VERB}: ${located.why} — the reviewer would be sent to a range that resolves to nothing.`,
+				[...notes, ...located.notes],
+			);
+
+type GroundRead =
+	| {readonly _tag: "Ground"; readonly ground: LaneGround; readonly notes: ReadonlyArray<string>}
+	| {readonly _tag: "Refused"; readonly outcome: VerbOutcome};
+
+/**
+ * A child state's ground: the epic issue and the assembly branch its worktree is cut from, plus —
+ * at `review` only — the one range this tree resolved for the child.
+ *
+ * The range is read here so the reviewer judges two commits the *driver* pinned. The far end used to
+ * be `HEAD`, which the spawned shell re-resolved in a worktree standing on the assembly branch, so
+ * the range read as empty (#6023). `build` reads nothing off the tree at all: no child branch exists
+ * yet there, and its ground carries no range field to half-fill.
+ */
+const childGround = (
+	epic: number,
+	epicUrl: ArtifactUrl,
+	state: ShellState,
+	issue: number,
+	notes: ReadonlyArray<string>,
+): Effect.Effect<GroundRead, never, ChildProcessSpawner.ChildProcessSpawner> =>
+	Effect.gen(function* () {
+		const branch = epicBranch(epic);
+		if (state !== "review") {
+			return {_tag: "Ground", ground: {_tag: "Epic", epic: epicUrl, branch}, notes: []} as const;
+		}
+		const located = yield* locateRange(VERB, epic, issue);
+		if (located._tag !== "Located") {
+			return {_tag: "Refused", outcome: rangeRefusal(located, notes)} as const;
+		}
+		const base = headSha(located.range.base);
+		const tip = headSha(located.range.tip);
+		if (base === null || tip === null) {
+			return {
+				_tag: "Refused",
+				outcome: refuse(
+					LANE_UNREADABLE,
+					`${VERB}: this tree named "${located.range.base}..${located.range.tip}" for #${issue}, which is not a pair of revisions — the range is UNKNOWN.`,
+					[...notes, ...located.notes],
+				),
+			} as const;
+		}
+		return {
+			_tag: "Ground",
+			ground: {_tag: "EpicRange", epic: epicUrl, branch, range: {base, tip}},
+			notes: located.notes,
+		} as const;
 	});
 
 export const runBrief = (
@@ -160,11 +245,10 @@ export const runBrief = (
 			}
 			const epicRead = yield* issueUrl(VERB, repo.value, epic, notes);
 			if (epicRead._tag === "Refused") return epicRead.outcome;
-			const ground: LaneGround = {
-				_tag: "Epic",
-				epic: epicRead.url,
-				branch: epicBranch(epic),
-			};
+			const child = yield* childGround(epic, epicRead.url, state, issue, notes);
+			if (child._tag === "Refused") return child.outcome;
+			const ground = child.ground;
+			notes.push(...child.notes);
 			const brief: LaneBrief = {
 				lane: options.lane,
 				root,

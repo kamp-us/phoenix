@@ -144,9 +144,13 @@ shell would have nothing to read.
 Ground comes in two shapes, because an epic run is one branch and one pull request (ADR 0285). A
 child state on an epic lane has no PR to name at all: it carries the epic issue, the branch its
 worktree is cut from, and — at `review` — the commit range whose verdict lands on the child issue as
-a `range-verdict-marker`. Those briefs carry a second byte-fixed rules paragraph saying so, so a
-child brief holding only the single-issue rules — the one that would let a child push and open its
-own PR — reads back malformed. The run's tail task is the PR shape again, unchanged.
+a `range-verdict-marker`. Both of that range's endpoints are commits the driver's tree already
+resolved, never a `HEAD` the spawned shell resolves for itself: a reviewer's worktree is cut fresh
+from the driver's checkout and stands on the assembly branch, so a `HEAD`-tipped range read as empty
+and the gate judged nothing while still able to land a verdict (#6023). Those briefs carry a second
+byte-fixed rules paragraph saying so, so a child brief holding only the single-issue rules — the one
+that would let a child push and open its own PR — reads back malformed. The run's tail task is the
+PR shape again, unchanged.
 
 ### `map-ticket`
 
