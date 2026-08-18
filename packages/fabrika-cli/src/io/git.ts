@@ -372,33 +372,20 @@ const FIELD_SEPARATOR = "\x1f";
 /**
  * The commits `tip` adds over `base`, newest first — two dots, because the question is what this
  * branch carries that the base does not.
+ *
+ * Framed with the two ASCII separators rather than newlines or NULs: a commit message is multi-line
+ * by construction, so a line-oriented format splits one message into commits nobody wrote, and `-z`
+ * frames records with the same NUL a pathological message may carry inside it.
  */
 export const rangeCommits = (
 	base: string,
 	tip: string,
-): Shell<Attempt<ReadonlyArray<RangeCommit>>> => walkCommits(`${base}..${tip}`);
-
-/**
- * Every commit reachable from `rev`, newest first.
- *
- * A branch a caller holds without a base cannot be asked a two-dot question, and inventing a base
- * to ask one would answer about a range nobody named.
- */
-export const reachableCommits = (rev: string): Shell<Attempt<ReadonlyArray<RangeCommit>>> =>
-	walkCommits(rev);
-
-/**
- * The one `git log` walk both reads take, framed with the two ASCII separators rather than newlines
- * or NULs: a commit message is multi-line by construction, so a line-oriented format splits one
- * message into commits nobody wrote, and `-z` frames records with the same NUL a pathological
- * message may carry inside it.
- */
-const walkCommits = (revs: string): Shell<Attempt<ReadonlyArray<RangeCommit>>> =>
+): Shell<Attempt<ReadonlyArray<RangeCommit>>> =>
 	Effect.gen(function* () {
 		const r = yield* execCapture("git", [
 			"log",
 			`--format=%H${FIELD_SEPARATOR}%B${RECORD_SEPARATOR}`,
-			revs,
+			`${base}..${tip}`,
 		]);
 		if (!r.ok) return fail(r.reason);
 		const rows: RangeCommit[] = [];

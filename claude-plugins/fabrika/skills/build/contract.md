@@ -55,7 +55,7 @@ second answer to a gated question can contradict the gate (interface convention 
 |---|---|---|
 | `build tree` | prove the ground: optionally clean, optionally this lane's | two git-derivable assertions — no judgment; *what to do on a refusal* (stop, report) stays in the skill |
 | `build pick` | the ranked candidate pool: `status:triaged` + `ready-for:agent` + unassigned, paginated | a label/assignee filter over a paged listing — no judgment; the *choice* among candidates stays in the skill |
-| `build eligible` | one issue's dependency gate: `eligible` / blocked-by-named-edge / UNKNOWN | derivable entirely from the parent ledger's `## Dependencies`, issue states, and the commits `epic/<parent>` carries in this tree |
+| `build eligible` | one issue's dependency gate: `eligible` / blocked-by-named-edge / UNKNOWN | derivable entirely from the parent ledger's `## Dependencies`, issue states, and the commits `epic/<parent>` adds over the trunk in this tree |
 | `build claim` | race the earliest-authorized claim on an issue; win, or name the winner | a deterministic race protocol; *what to do on a loss* stays in the skill |
 | `build confirm` | re-prove this session still holds the claim before a mutation | a lookup with a defined answer |
 | `build release` | retract this session's own claim | a guarded single write |
@@ -523,9 +523,17 @@ before the epic it blocks has shipped. The branch name is derived from the paren
 taken from a caller, and the message is read with the same `#<n>` rule `build commit` and
 `lane prove` use.
 
+**"Carries" is the run's own commits, and the range is stated in every line the verb prints**:
+`<merge base with the trunk>..epic/<parent>`, the two-dot shape `lane prove` locates a child's range
+with, where the trunk is `origin/<the repo's default branch>`. Not everything reachable from the
+branch tip — that set is the whole trunk history the branch was cut from, and since the `#<n>` rule
+matches a bare mention anywhere in a message, an old commit writing "blocked on #<n>" would
+discharge an edge whose work was never built.
+
 The second source only ever discharges, and only on evidence it read: a branch this tree does not
-carry, or a git read that failed, leaves every edge exactly as the board gave it — `16` for an open
-one, `11` for an unread one — and names the unread branch on stderr. A ledger-local `C<int>` ref is
+carry, a trunk this repo would not name, no merge base, or a git read that failed, leaves every edge
+exactly as the board gave it — `16` for an open one, `11` for an unread one — and names the unread
+branch on stderr. A ledger-local `C<int>` ref is
 never discharged this way, since no commit can name an issue nobody filed. The branch is read only
 when at least one edge is still undischarged, so a standalone issue and a child whose predecessors
 are all closed make no git call at all.
@@ -561,7 +569,7 @@ and the whole derivation refuses on `4` — "no parseable edges" is never read a
 | `4` | the parent ledger was read but its `## Dependencies` block is absent or unparseable — eligibility cannot be derived, fail-closed |
 | `7` | the issue is proven absent (404) or closed |
 | `11` | the issue, parent, or any predecessor could not be read — eligibility is UNKNOWN |
-| `16` | proven blocked — an open predecessor or `requires:` edge no commit on `epic/<parent>` discharges, named on stderr |
+| `16` | proven blocked — an open predecessor or `requires:` edge no commit in `<base>..epic/<parent>` discharges, named on stderr |
 
 **Errors**
 
@@ -573,9 +581,9 @@ and the whole derivation refuses on `4` — "no parseable edges" is never read a
 | `build eligible: <n> predecessors could not be read — eligibility is UNKNOWN, never "eligible".` | 11 | refusal |
 | `build eligible: cannot read <edge-kind> predecessor #<m>: <reason> — its state is UNKNOWN, never counted closed.` | 11 or 16 | detail line, one per unread predecessor |
 | `build eligible: blocked by <n> open dependency edges: <edge-kind> #<m>, <edge-kind> #<k>.` | 16 | refusal |
-| `build eligible: epic/<p> carries a commit naming #<m> — that work landed on the epic run's assembly branch, so the edge is discharged whatever the board says about the issue (ADR 0285).` | 0, 11 or 16 | detail line, once |
-| `build eligible: epic/<p> carries <n> commit(s), none naming an undischarged predecessor.` | 11 or 16 | detail line, once |
-| `build eligible: cannot read epic/<p> in this tree: <reason> — no edge is counted discharged off it, and every edge keeps the state the board gave it.` | 11 or 16 | detail line, once |
+| `build eligible: origin/<trunk>..epic/<p> adds a commit naming #<m> — that work landed on the epic run's assembly branch, so the edge is discharged whatever the board says about the issue (ADR 0285).` | 0, 11 or 16 | detail line, once |
+| `build eligible: origin/<trunk>..epic/<p> adds <n> commit(s), none naming an undischarged predecessor.` | 11 or 16 | detail line, once |
+| `build eligible: cannot read epic/<p> in this tree: <reason> — no edge is counted discharged off it, and every edge keeps the state the board gave it.` (`<reason>` also covers an unnameable trunk and an absent merge base — the range's other two endpoints) | 11 or 16 | detail line, once |
 
 **Scope** — one issue, its parent (if any), every predecessor the parent's topology names, and —
 only when an edge is still undischarged — `epic/<parent>` in this tree.
@@ -610,7 +618,7 @@ $ echo $?
 ```
 $ fabrika build eligible 6007
 build eligible: scanned 1 dependency edge; parent #5817.
-build eligible: epic/5817 carries a commit naming #6004 — that work landed on the epic run's assembly branch, so the edge is discharged whatever the board says about the issue (ADR 0285).
+build eligible: origin/main..epic/5817 adds a commit naming #6004 — that work landed on the epic run's assembly branch, so the edge is discharged whatever the board says about the issue (ADR 0285).
 {"answer":"eligible","number":6007,"parent":5817}
 $ echo $?
 0
@@ -623,7 +631,9 @@ $ echo $?
   closed-state proxy made the gate structurally unsatisfiable: no child could become eligible before
   the epic shipped, and no epic could ship before its children built. The fix is the second
   discharge source, reading the assembly branch the way `lane prove` already reads a child's range —
-  never a skip of the gate, and never a discharge off the lane's own fold (ADR 0283).
+  never a skip of the gate, and never a discharge off the lane's own fold (ADR 0283). Its review
+  round then bounded that read to the run's own commits: an unbounded walk let a `#<n>` written
+  anywhere in the trunk's history discharge an edge, which is the same fail-open by another route.
 - #4920 — the eligibility question needed a verb; prose-derived blockedness was re-derived
   differently per session. Its acceptance also fixes two properties of the answer: a `blocked`
   refusal names **every** open edge, and every unreadable input on the path is `11` with a test

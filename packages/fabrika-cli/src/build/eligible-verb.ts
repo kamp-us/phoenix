@@ -15,7 +15,8 @@
  * ADR 0285 an epic run's children stay open until the single tail PR merges, so inside a run the
  * closed-state proxy answers "is the issue closed" where the gate means "did the work land" — and
  * reading only the first makes every phase-2 child unbuildable until the epic it blocks has shipped.
- * The second source is evidence, not a skip: no assembly branch, no discharge.
+ * The second source is evidence, not a skip: no assembly branch, no discharge — and the evidence is
+ * only what the run added over the trunk, never the history the branch was cut from.
  *
  * **Every predecessor is scanned before the answer is seated, so the answer does not depend on the
  * order the topology happens to list them in.** One *proven* open edge is proof of blockedness
@@ -57,12 +58,13 @@ const assemblyNotes = (
 			`${VERB}: cannot read ${assembly.branch} in this tree: ${assembly.reason} — no edge is counted discharged off it, and every edge keeps the state the board gave it.`,
 		];
 	}
+	const range = `${assembly.baseRef}..${assembly.branch}`;
 	return discharged.length === 0
 		? [
-				`${VERB}: ${assembly.branch} carries ${assembly.commits} commit(s), none naming an undischarged predecessor.`,
+				`${VERB}: ${range} adds ${assembly.commits} commit(s), none naming an undischarged predecessor.`,
 			]
 		: [
-				`${VERB}: ${assembly.branch} carries a commit naming ${discharged.map((edge) => `#${edge.number}`).join(", ")} — that work landed on the epic run's assembly branch, so the edge is discharged whatever the board says about the issue (ADR 0285).`,
+				`${VERB}: ${range} adds a commit naming ${discharged.map((edge) => `#${edge.number}`).join(", ")} — that work landed on the epic run's assembly branch, so the edge is discharged whatever the board says about the issue (ADR 0285).`,
 			];
 };
 
@@ -152,7 +154,7 @@ export const runEligible = (
 		}
 
 		const undischarged = [...open, ...unread].some((edge) => edge.number !== null);
-		const assembly = undischarged ? yield* readAssembly(parent.value) : null;
+		const assembly = undischarged ? yield* readAssembly(repo, parent.value) : null;
 		const landed = assembly?._tag === "Read" ? assembly.landed : new Set<number>();
 		const carries = (edge: Edge) => edge.number !== null && landed.has(edge.number);
 		const stillOpen = open.filter((edge) => !carries(edge));

@@ -34,8 +34,19 @@ const runWatched = async (script: ReadonlyArray<readonly [RegExp, ExecResult]>) 
 };
 
 const ASSEMBLY = /^git rev-parse --verify --quiet epic\/4300\^\{commit\}$/;
-const ASSEMBLY_LOG = /^git log --format=.* [0-9a-f]{40}$/;
+const TRUNK = /^gh api repos\/o\/r --jq \.default_branch$/;
+const MERGE_BASE = /^git merge-base origin\/main [0-9a-f]{40}$/;
+/** The bounded walk: two dots, base first — a one-dot rev would not match. */
+const ASSEMBLY_LOG = /^git log --format=.* [0-9a-f]{40}\.\.[0-9a-f]{40}$/;
 const TIP = "9a1c2b3d4e5f60718293a4b5c6d7e8f901234567";
+const BASE = "0123456789abcdef0123456789abcdef01234567";
+
+/** The three reads that bound the assembly range, scripted together — tip, trunk, merge base. */
+const RANGE_ENDPOINTS: ReadonlyArray<readonly [RegExp, ExecResult]> = [
+	[ASSEMBLY, okOut(`${TIP}\n`)],
+	[TRUNK, okOut("main\n")],
+	[MERGE_BASE, okOut(`${BASE}\n`)],
+];
 
 /** One `git log` record stream, in the framing `rangeCommits` reads. */
 const commitLog = (...messages: ReadonlyArray<string>): ExecResult =>
@@ -189,12 +200,12 @@ describe("runEligible", () => {
 				[PARENT, okOut("4300\n")],
 				[LEDGER, ledger("- phase 1: #210\n- phase 2: #4312")],
 				[PRED(210), issue({number: 210, state: "open"})],
-				[ASSEMBLY, okOut(`${TIP}\n`)],
+				...RANGE_ENDPOINTS,
 				[ASSEMBLY_LOG, commitLog("feat(guide): the front door (#210)\n\nPart of #4300")],
 			]);
 			expect(out.code).toBe(0);
 			expect(JSON.parse(out.stdout)).toEqual({answer: "eligible", number: 4312, parent: 4300});
-			expect(out.stderr.at(-1)).toContain("epic/4300 carries a commit naming #210");
+			expect(out.stderr.at(-1)).toContain("origin/main..epic/4300 adds a commit naming #210");
 		});
 
 		it("reads no branch at all when every predecessor is already closed", async () => {
@@ -223,7 +234,7 @@ describe("runEligible", () => {
 				[PARENT, okOut("4300\n")],
 				[LEDGER, ledger("- phase 1: #210\n- phase 2: #4312")],
 				[PRED(210), issue({number: 210, state: "open"})],
-				[ASSEMBLY, okOut(`${TIP}\n`)],
+				...RANGE_ENDPOINTS,
 				[ASSEMBLY_LOG, commitLog("feat(guide): some other child (#211)")],
 			]);
 			expect(out.code).toBe(BLOCKED);
@@ -247,13 +258,42 @@ describe("runEligible", () => {
 			);
 		});
 
+		it("never discharges when the trunk to bound the range against cannot be named", async () => {
+			const out = await run([
+				[ISSUE, issue()],
+				[PARENT, okOut("4300\n")],
+				[LEDGER, ledger("- phase 1: #210\n- phase 2: #4312")],
+				[PRED(210), issue({number: 210, state: "open"})],
+				[ASSEMBLY, okOut(`${TIP}\n`)],
+				[TRUNK, GATEWAY],
+			]);
+			expect(out.code).toBe(BLOCKED);
+			expect(out.stderr.some((line) => line.includes("cannot name o/r's default branch"))).toBe(
+				true,
+			);
+		});
+
+		it("never discharges when the range has no merge base with the trunk", async () => {
+			const out = await run([
+				[ISSUE, issue()],
+				[PARENT, okOut("4300\n")],
+				[LEDGER, ledger("- phase 1: #210\n- phase 2: #4312")],
+				[PRED(210), issue({number: 210, state: "open"})],
+				[ASSEMBLY, okOut(`${TIP}\n`)],
+				[TRUNK, okOut("main\n")],
+				[MERGE_BASE, errOut("fatal: refusing to merge unrelated histories")],
+			]);
+			expect(out.code).toBe(BLOCKED);
+			expect(out.stderr.some((line) => line.includes("no merge base with origin/main"))).toBe(true);
+		});
+
 		it("never discharges off a log that failed — an unread predecessor stays 11", async () => {
 			const out = await run([
 				[ISSUE, issue()],
 				[PARENT, okOut("4300\n")],
 				[LEDGER, ledger("- phase 1: #210\n- phase 2: #4312")],
 				[PRED(210), GATEWAY],
-				[ASSEMBLY, okOut(`${TIP}\n`)],
+				...RANGE_ENDPOINTS,
 				[ASSEMBLY_LOG, errOut("fatal: bad object")],
 			]);
 			expect(out.code).toBe(PRECONDITION_UNKNOWN);
@@ -269,7 +309,7 @@ describe("runEligible", () => {
 				[PARENT, okOut("4300\n")],
 				[LEDGER, ledger("- phase 1: C1, #210\n- phase 2: #4312")],
 				[PRED(210), issue({number: 210, state: "open"})],
-				[ASSEMBLY, okOut(`${TIP}\n`)],
+				...RANGE_ENDPOINTS,
 				[ASSEMBLY_LOG, commitLog("feat: landed (#210)")],
 			]);
 			expect(out.code).toBe(BLOCKED);
