@@ -13,6 +13,7 @@ import {BASE, HEAD} from "../review/fixtures.test-support.ts";
 
 export {
 	BASE,
+	BASE_TIP,
 	binding,
 	comments,
 	HEAD,

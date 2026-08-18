@@ -9,8 +9,16 @@ import type {ExecResult} from "../io/exec.ts";
 
 export const HEAD = "03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c";
 export const OLD_HEAD = "0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f708192";
-/** The base commit the bound range diffs from — the merge base `git diff base...head` resolves. */
+/** The commit this branch left the base branch at — every bound range's other end. */
 export const BASE = "0f1e2d3c4b5a69788796a5b4c3d2e1f009182736";
+/**
+ * Where `origin/main` is *now*: a commit ahead of {@link BASE}, never equal to it.
+ *
+ * The two are kept distinct on purpose. A fixture where the branch tip and the merge base are the
+ * same commit cannot tell a verb that reports the tip from one that reports the branch point — which
+ * is the whole of #5770. Every test that binds a head therefore runs against a moved main.
+ */
+export const BASE_TIP = "5a4b3c2d1e0f98877665544332211000ffeeddcc";
 
 export interface PullShape {
 	readonly state?: string;
@@ -75,14 +83,17 @@ export const CONTENT = "7af166f42fdb";
 
 /**
  * Every command `bindHead` issues, scripted green — remote lookup, the `pull/<pr>/head` fetch, the
- * object-database resolve of the head, and the base's fetch-then-resolve.
+ * object-database resolve of the head, the base branch's fetch-then-resolve, and the merge base of
+ * that tip and the head.
  *
  * One helper because both read verbs bind identically: two hand-written copies are two chances for a
- * test to prove a binding the other verb does not make.
+ * test to prove a binding the other verb does not make. `tip` defaults ahead of `base`, so every
+ * caller of this helper is bound under a moved main (#5770).
  */
 export const binding = (
 	sha: string = HEAD,
 	base: string = BASE,
+	tip: string = BASE_TIP,
 ): ReadonlyArray<readonly [RegExp, ExecResult]> => [
 	[
 		/^git remote -v$/,
@@ -92,7 +103,8 @@ export const binding = (
 	[new RegExp(`^git rev-parse --verify --quiet ${sha}\\^\\{commit\\}$`), okOut(`${sha}\n`)],
 	[/^git remote$/, okOut("origin\n")],
 	[/^git fetch --quiet origin main$/, okOut("")],
-	[/^git rev-parse --verify --quiet origin\/main\^\{commit\}$/, okOut(`${base}\n`)],
+	[/^git rev-parse --verify --quiet origin\/main\^\{commit\}$/, okOut(`${tip}\n`)],
+	[new RegExp(`^git merge-base ${tip} ${sha}$`), okOut(`${base}\n`)],
 	// The content binding's own read, in the binding script because every verb that binds a head then
 	// digests that same range (ADR 0276); a per-test copy is how two tests come to digest differently.
 	[RAW_AT(base, sha), okOut(RAW)],
