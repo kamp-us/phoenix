@@ -1,5 +1,5 @@
 /**
- * `status open` — the composite front-door readout: four fields, each with its own state, source
+ * `status open` — the composite front-door readout: five fields, each with its own state, source
  * and freshness.
  *
  * **This verb has no zero-scope seat and no failed-read seat at all.** It is the command the skill
@@ -18,7 +18,7 @@
  * a rule for "three fine, one unknown", and every such rule either hides the unknown or drowns the
  * three.
  */
-import {answer, refuse, type VerbOutcome} from "../verb.ts";
+import {ANSWER, answer, refuse, type VerbOutcome} from "../verb.ts";
 import type {BoardRead} from "./board-verb.ts";
 import {boardState} from "./board-verb.ts";
 import {OFF_VOCABULARY} from "./codes.ts";
@@ -31,7 +31,7 @@ import type {RosterRead} from "./roster.ts";
 const VERB = "status open";
 
 /** The closed `--field` vocabulary. Any other value is off-vocabulary. */
-export const FIELDS = ["menu", "config", "board", "readout"] as const;
+export const FIELDS = ["menu", "config", "board", "readout", "lanes"] as const;
 export type FieldName = (typeof FIELDS)[number];
 
 export interface Field {
@@ -176,6 +176,105 @@ export const readoutField = (read: ReadoutRead): Field => {
 					? "unknown"
 					: read.repo,
 		asOf: noAsOf,
+	};
+};
+
+/** What `lanes` reads out of `fabrika lane stale`'s documented answer object. */
+interface StaleSweep {
+	readonly olderThanMinutes: number;
+	readonly lanes: ReadonlyArray<{
+		readonly key: string;
+		readonly verdict: string;
+		readonly ageMinutes: number | null;
+		readonly reason?: string;
+	}>;
+}
+
+const parseSweep = (stdout: string): StaleSweep | null => {
+	try {
+		const parsed: unknown = JSON.parse(stdout);
+		if (
+			typeof parsed !== "object" ||
+			parsed === null ||
+			!Array.isArray((parsed as StaleSweep).lanes)
+		) {
+			return null;
+		}
+		return parsed as StaleSweep;
+	} catch {
+		return null;
+	}
+};
+
+/**
+ * The stale-lane sweep as a field, composed from `lane stale`'s in-process outcome — the one field
+ * sourced outside this group, because lanes are machine-local and no scheduled job can see them
+ * (#5908). The sweep's refusal (an unreadable root) and a lane whose record does not read are both
+ * `unknown` with the reason, never flattened to clean; zero stale lanes — including zero lanes on
+ * disk at all — is the proven negative `empty`.
+ */
+export const lanesField = (
+	outcome: VerbOutcome,
+	roots: ReadonlyArray<string>,
+	asOf: AsOf,
+): Field => {
+	const source = roots.join(",");
+	if (outcome.code !== ANSWER) {
+		return {
+			name: "lanes",
+			state: UNKNOWN,
+			detail: detail(outcome.stderr.at(-1) ?? "the sweep refused without naming a reason"),
+			source,
+			asOf: noAsOf,
+		};
+	}
+	const sweep = parseSweep(outcome.stdout);
+	if (sweep === null) {
+		return {
+			name: "lanes",
+			state: UNKNOWN,
+			detail: detail(
+				"the sweep's answer is not the documented object — a failed read, not zero lanes",
+			),
+			source,
+			asOf: noAsOf,
+		};
+	}
+	const stale = sweep.lanes.filter((lane) => lane.verdict === "stale");
+	const unreadable = sweep.lanes.filter((lane) => lane.verdict === "unreadable");
+	if (stale.length > 0) {
+		const tail = unreadable.length > 0 ? ` — ${unreadable.length} unreadable` : "";
+		return {
+			name: "lanes",
+			state: "stale",
+			detail: detail(
+				`${stale.length} stale: ${stale.map((lane) => `${lane.key} (${String(lane.ageMinutes)}m)`).join(", ")}${tail}`,
+			),
+			source,
+			asOf,
+		};
+	}
+	if (unreadable.length > 0) {
+		const first = unreadable[0];
+		return {
+			name: "lanes",
+			state: UNKNOWN,
+			detail: detail(
+				`${unreadable.length} lane(s) unreadable: ${first?.key ?? "?"} — ${first?.reason ?? "no reason recorded"}`,
+			),
+			source,
+			asOf: noAsOf,
+		};
+	}
+	return {
+		name: "lanes",
+		state: "empty",
+		detail:
+			sweep.lanes.length === 0
+				? "no lanes on disk"
+				: `${sweep.lanes.length} lane(s), none silent past ${sweep.olderThanMinutes}m`,
+		source,
+		asOf,
 	};
 };
 

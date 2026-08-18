@@ -5,7 +5,13 @@
  * The property under test throughout is the three-state law: a proven negative is an exit-`0` token,
  * an unread source is `unknown`, and the two never collapse.
  */
+import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
+import {fakeFs} from "../fakes.test-support.ts";
+import {coderTemplateText} from "../lane/fixtures.test-support.ts";
+import {DEFAULT_STALE_MINUTES} from "../lane/stale.ts";
+import {runStale} from "../lane/stale-verb.ts";
+import {DEFAULT_CHORES_ROOT, DEFAULT_LANES_ROOT} from "../lane/store.ts";
 import * as report from "../report/codes.ts";
 import {ANSWER} from "../verb.ts";
 import {type BoardRead, type Bucket, boardState, runBoard} from "./board-verb.ts";
@@ -25,6 +31,7 @@ import {
 	badFieldRefusal,
 	boardField,
 	configField,
+	lanesField,
 	menuField,
 	readoutField,
 	runOpen,
@@ -279,17 +286,22 @@ describe("status bootstrap", () => {
 });
 
 describe("status open is TOTAL — every unreadable source is a field state, never a refusal", () => {
-	it("renders four fields at exit 0 when EVERY source failed", () => {
+	it("renders five fields at exit 0 when EVERY source failed", () => {
 		const fields = [
 			menuField({_tag: "Failed", path: "/x", display: "x", reason: "EACCES"}, AS_OF),
 			configField({_tag: "Failed", path: "/x", display: "x", reason: "EACCES"}, [], AS_OF),
 			boardField({_tag: "Failed", repo: "acme/storefront", reason: "EAI_AGAIN"}),
 			readoutField({_tag: "NoFormat"}),
+			lanesField(
+				{code: 11, stdout: "", stderr: ["fabrika lane stale: cannot list .fabrika/lanes"]},
+				[DEFAULT_LANES_ROOT, DEFAULT_CHORES_ROOT],
+				AS_OF,
+			),
 		];
 		const out = runOpen({fields, json: false, scope: "roster x; repo acme/storefront"});
 		expect(out.code).toBe(ANSWER);
-		expect(out.stdout.split("\n")[0]).toBe("open\t4");
-		expect(out.stdout.split("\n").filter((l) => l.startsWith("field\t"))).toHaveLength(4);
+		expect(out.stdout.split("\n")[0]).toBe("open\t5");
+		expect(out.stdout.split("\n").filter((l) => l.startsWith("field\t"))).toHaveLength(5);
 		for (const field of fields) expect(field.state).toBe("unknown");
 	});
 
@@ -310,6 +322,92 @@ describe("status open is TOTAL — every unreadable source is a field state, nev
 		const source = menuField(resolvedRoster([]), AS_OF).source;
 		expect(source).toBe("claude-plugins/fabrika/skills");
 		expect(source.startsWith("/")).toBe(false);
+	});
+});
+
+describe("the lanes field renders `lane stale`'s sweep, never a second staleness implementation", () => {
+	const NOW = "2026-08-17T12:00:00.000Z";
+	const ROOTS = [DEFAULT_LANES_ROOT, DEFAULT_CHORES_ROOT];
+	const minutesAgo = (n: number): string => new Date(Date.parse(NOW) - n * 60_000).toISOString();
+	const logLine = (at: string): string =>
+		`${JSON.stringify({task: "issue", event: "ISSUE.WIP", at})}\n`;
+
+	const laneTree = (lanes: ReadonlyArray<{lane: string; log?: string; workflow?: string}>) => {
+		const files: Record<string, string> = {};
+		for (const {lane, log, workflow} of lanes) {
+			files[`${DEFAULT_LANES_ROOT}/${lane}/workflow.json`] = workflow ?? coderTemplateText();
+			if (log !== undefined) files[`${DEFAULT_LANES_ROOT}/${lane}/events.jsonl`] = log;
+		}
+		return fakeFs({
+			files,
+			dirs: {[DEFAULT_LANES_ROOT]: lanes.map((entry) => entry.lane)},
+			directories: [DEFAULT_LANES_ROOT],
+		});
+	};
+
+	const sweep = (fs: ReturnType<typeof fakeFs>) =>
+		Effect.runPromise(
+			Effect.provide(
+				runStale({roots: ROOTS, olderThanMinutes: DEFAULT_STALE_MINUTES, now: NOW}),
+				fs.layer,
+			),
+		);
+
+	it("renders no lanes on disk as the proven negative `empty`, not a fault", async () => {
+		const field = lanesField(await sweep(fakeFs({})), ROOTS, AS_OF);
+		expect(field.state).toBe("empty");
+		expect(field.detail).toBe("no lanes on disk");
+		expect(field.source).toBe(`${DEFAULT_LANES_ROOT},${DEFAULT_CHORES_ROOT}`);
+	});
+
+	it("renders zero stale lanes over live ones as `empty`, echoing the verb's own threshold", async () => {
+		const field = lanesField(
+			await sweep(laneTree([{lane: "5908", log: logLine(minutesAgo(5))}])),
+			ROOTS,
+			AS_OF,
+		);
+		expect(field.state).toBe("empty");
+		expect(field.detail).toBe(`1 lane(s), none silent past ${DEFAULT_STALE_MINUTES}m`);
+	});
+
+	it("renders a silent lane as `stale`, naming the lane and its age", async () => {
+		const field = lanesField(
+			await sweep(laneTree([{lane: "5908", log: logLine(minutesAgo(76))}])),
+			ROOTS,
+			AS_OF,
+		);
+		expect(field.state).toBe("stale");
+		expect(field.detail).toContain("1 stale: 5908 (76m)");
+		expect(field.asOf).toBe(AS_OF);
+	});
+
+	it("renders an unreadable lane record as `unknown` with its reason, never flattened to clean", async () => {
+		const field = lanesField(
+			await sweep(laneTree([{lane: "5908", workflow: "not json", log: logLine(minutesAgo(5))}])),
+			ROOTS,
+			AS_OF,
+		);
+		expect(field.state).toBe("unknown");
+		expect(field.detail).toContain("1 lane(s) unreadable: 5908");
+		expect(field.asOf).toBe(noAsOf);
+	});
+
+	it("renders the sweep's refusal — an unlistable root — as `unknown` with the refusal's reason", async () => {
+		const fs = fakeFs({
+			dirs: {[DEFAULT_LANES_ROOT]: null},
+			directories: [DEFAULT_LANES_ROOT],
+		});
+		const outcome = await sweep(fs);
+		expect(outcome.code).not.toBe(ANSWER);
+		const field = lanesField(outcome, ROOTS, AS_OF);
+		expect(field.state).toBe("unknown");
+		expect(field.detail).toContain(`cannot list ${DEFAULT_LANES_ROOT}`);
+	});
+
+	it("renders an answer that is not the documented object as `unknown`, never zero lanes", () => {
+		const field = lanesField({code: ANSWER, stdout: "not json\n", stderr: []}, ROOTS, AS_OF);
+		expect(field.state).toBe("unknown");
+		expect(field.detail).toContain("a failed read, not zero lanes");
 	});
 });
 

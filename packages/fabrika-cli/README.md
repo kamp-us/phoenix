@@ -972,7 +972,7 @@ What state the factory is in — the six verbs
 [`contract.md`](../../claude-plugins/fabrika/skills/front-door/contract.md)).
 
 ```
-status open                       # the composite four-field readout the skill injects
+status open                       # the composite five-field readout the skill injects
 status config                     # which declared repo surfaces exist here — the detection verb
 status menu                       # the landed skill roster, derived from the skills tree
 status readout                    # the landed-decision digest, as published
@@ -990,7 +990,12 @@ Three things about it are load-bearing:
   [`src/verb.ts`](./src/verb.ts)'s `refuse()` hardcodes empty stdout — so a refusal would leave the
   front door silent on exactly the cold start it exists for. Every source it cannot read becomes a
   field state; its one refusal seat is a bad `--field`. It composes by **importing** the sibling
-  cores, never by spawning a verb and reading its exit code.
+  cores, never by spawning a verb and reading its exit code. The fifth field, `lanes`, renders the
+  `lane stale` sweep ([`src/lane/stale-verb.ts`](./src/lane/stale-verb.ts)) over both default roots
+  at that verb's documented 60-minute threshold, so a dead operator's silent lane surfaces on every
+  cold session without anyone typing the command (#5908): stale lanes are named with their ages,
+  zero stale lanes — including zero lanes on disk — is the proven negative `empty`, and an
+  unreadable root or lane record is `unknown` with its reason. It reports; it never resumes.
 - **`7` and `11` are the pair.** `7` is an **explicitly passed** `--skills-dir` proven absent; `11`
   is a failed read. An *implicitly* resolved roster holding zero skills is neither — it is `empty`
   at exit `0`.

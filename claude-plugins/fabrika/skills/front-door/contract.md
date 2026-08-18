@@ -24,7 +24,7 @@ access per
 
 | Verb | Purpose | Split test |
 |---|---|---|
-| `status open` | the composite front-door readout: four fields, each with its own state, source and freshness | assembling four independent reads and rendering each one's three-state outcome is a total function; deciding what to *do* about a gap is the skill's |
+| `status open` | the composite front-door readout: five fields, each with its own state, source and freshness | assembling five independent reads and rendering each one's three-state outcome is a total function; deciding what to *do* about a gap is the skill's |
 | `status config` | which repo surfaces every landed skill declares it needs, and whether each is present here | parsing a fixed table shape and probing a path or a label is mechanical, zero judgement (the founder's detection-verb ruling, #4952); drafting a missing surface's *content* is judgment |
 | `status menu` | the landed skill roster with each skill's invocation and one-line description | reading a directory and each file's frontmatter is a total function; choosing which skill fits the work at hand is judgment |
 | `status readout` | the landed-decision digest as published in the durable artifact | fetching an artifact and decoding a registered wire format is mechanical; ranking the rows is `governance`'s judgment and is not recomputed here |
@@ -145,7 +145,7 @@ vocabulary in this group. Four consequences bind every verb below:
    clamping, so the failure stays attributable — the shape
    `packages/pipeline-cli/src/tools/run-evidence/run-evidence.ts` prints, and the shape v1's
    `doctor.sh` prints when it tells the reader what not to conclude.
-3. **Per-field state cannot be an exit code.** A composite readout has four independent outcomes and
+3. **Per-field state cannot be an exit code.** A composite readout has five independent outcomes and
    one exit status; because a non-zero exit cannot carry a payload, the exit status answers only
    *"did I produce a readout at all"* and each field carries its own state inside it.
 4. <a id="open-is-total"></a>**`status open` therefore has no zero-scope and no failed-read seat at
@@ -224,6 +224,10 @@ purpose — keeping proven-empty apart from unread — to chance.
 | `readout` | artifact unfetchable, or the format unregistered | `unknown` | the raw failure |
 | `readout` | artifact fetched, its `updated_at` unreadable | `unknown` | `freshness unreadable` — a digest whose age cannot be established is not a digest you may present as current |
 | `menu` / `config` | roster readable, one `SKILL.md` inside it unreadable | `unknown` | which file failed — a partial roster is not a roster |
+| `lanes` | sweep answered, ≥1 lane verdicted `stale` | `stale` | `<n> stale: <key> (<age>m), …` — each silent lane named with its age |
+| `lanes` | sweep answered, zero `stale`, zero `unreadable` | `empty` | `no lanes on disk`, or `<n> lane(s), none silent past <threshold>m` — the threshold echoed from the verb's answer, never a second constant. **Zero lanes on disk is this row, not a fault**: a fresh checkout has none |
+| `lanes` | sweep answered, zero `stale`, ≥1 lane record `unreadable` | `unknown` | which lane failed and why — a lane whose silence cannot be judged is never flattened to clean |
+| `lanes` | the sweep refused — a lane root is there and cannot be listed | `unknown` | the refusal's reason — the lane set is UNKNOWN, never empty |
 
 **A proven-absent artifact is `absent` inside the composite, never `unknown`** — the two rows above
 that both yield `absent` are both facts about the repository, and only a failed *read* is `unknown`.
@@ -348,7 +352,7 @@ fabrika status open [--field <name>] [--repo <owner/name>] [--skills-dir <path>]
 
 | Flag | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `--field` | string | no | all four | render one field only — `menu`, `config`, `board` or `readout`; any other value is off-vocabulary |
+| `--field` | string | no | all five | render one field only — `menu`, `config`, `board`, `readout` or `lanes`; any other value is off-vocabulary |
 | `--repo` | string | no | resolved | the repository the board and digest fields read |
 | `--skills-dir` | string | no | [resolved](#roster-location) | the roster root the menu and config fields read |
 | `--json` | boolean | no | `false` | emit the result object |
@@ -374,7 +378,7 @@ field	<name>	<state>	<detail>	<source>	<as-of>
 the render: the resolved roster path for `menu`/`config`, `<owner>/<name>` for `board`, and
 `<owner>/<name>#<issue>` for `readout` when an artifact resolved — otherwise `<owner>/<name>`.
 
-**No aggregate state, deliberately.** A roll-up over four independently-sourced fields would need a
+**No aggregate state, deliberately.** A roll-up over five independently-sourced fields would need a
 rule for "three fine, one unknown", and every such rule either hides the unknown or drowns the three.
 
 **Exit status**
@@ -392,7 +396,7 @@ token; a refusal would write zero bytes on the cold start it exists for.
 
 | Message (stderr) | Code | Kind |
 |---|---|---|
-| `status open: --field "<v>" is not one of menu, config, board, readout.` | 10 | usage error |
+| `status open: --field "<v>" is not one of menu, config, board, readout, lanes.` | 10 | usage error |
 | `status open: roster <path> (<tier>), <n> skills; repo <owner/name>; <k> field(s) rendered, <u> unknown.` | 0 | notice |
 
 **Scope** — the fields requested, each named on the scope line with the source it resolved and the
