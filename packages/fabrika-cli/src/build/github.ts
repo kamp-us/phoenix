@@ -29,6 +29,11 @@ export interface CandidateIssue {
 	readonly assigned: boolean;
 	readonly milestone: number | null;
 	readonly isPullRequest: boolean;
+	/**
+	 * The issue body, `""` when the payload carried none. The listing endpoint already returns it, so
+	 * the pool's criteria axis costs no second call.
+	 */
+	readonly body: string;
 }
 
 const toCandidate = (value: unknown): CandidateIssue | null => {
@@ -47,6 +52,7 @@ const toCandidate = (value: unknown): CandidateIssue | null => {
 		milestone:
 			isRecord(milestone) && typeof milestone.number === "number" ? milestone.number : null,
 		isPullRequest: value.pull_request !== undefined,
+		body: typeof value.body === "string" ? value.body : "",
 	};
 };
 

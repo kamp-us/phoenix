@@ -206,7 +206,7 @@ const apply = leafCommand(
 ).pipe(
 	Command.withShortDescription("Stamp the whole triaged transition as one reconcile."),
 	Command.withDescription(
-		"Stamp the whole triaged transition — type, priority, audience, status and home — as ONE owned-facet reconcile, then read the end state back positively. Exactly one of --home / --lane. Prints `triaged\\t<n>\\t<type>\\t<priority>\\t<ready-for>\\t<home>`. Exits 7 (no such issue, or a label this run would write does not exist), 8 (a write failed — UNKNOWN), 9 (read-back mismatch), 10 (off-vocabulary value, or a non-open milestone), 11 (a precondition read failed). Example: fabrika triage apply 4312 --type bug --priority p2 --ready-for agent --home 47",
+		"Stamp the whole triaged transition — type, priority, audience, status and home — as ONE owned-facet reconcile, then read the end state back positively. Exactly one of --home / --lane. Prints `triaged\\t<n>\\t<type>\\t<priority>\\t<ready-for>\\t<home>`. Exits 7 (no such issue, or a label this run would write does not exist), 8 (a write failed — UNKNOWN), 9 (read-back mismatch), 10 (off-vocabulary value, or a non-open milestone), 11 (a precondition read failed), 16 (--ready-for agent over a body with no readable acceptance-criteria block — every type but epic). Example: fabrika triage apply 4312 --type bug --priority p2 --ready-for agent --home 47",
 	),
 );
 

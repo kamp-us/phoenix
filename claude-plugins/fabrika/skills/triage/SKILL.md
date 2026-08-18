@@ -156,6 +156,13 @@ execute cold; to `human` when the deliverable is a judgment — a `type:decision
 anything resting on a product call nobody has made. Get it wrong and a document written for a human
 lands in a builder's candidate pool.
 
+**`--ready-for agent` requires a criteria block on every type but `epic`.** The verb reads the live
+body through the same wire reader every grader downstream reads, and refuses on `16` — writing no
+label — when the block is absent or malformed: that label promises a builder can pick the issue up
+cold, and the block is what the promise is made of. Author one back in step 6 and re-stamp; a level
+drift is `triage repair-criteria`'s. `--type epic` is exempt because an epic's criteria arrive per
+child from the plan ledger, and `--ready-for human` is never asked for one.
+
 **Do not assert control-plane scope.** `cp-classify` routes it and CODEOWNERS enforces it at merge;
 asserting it here routes a lane around an approval that never fires.
 

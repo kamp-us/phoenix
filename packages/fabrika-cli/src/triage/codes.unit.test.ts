@@ -4,6 +4,7 @@ import * as report from "../report/codes.ts";
 import * as codes from "./codes.ts";
 import {
 	BARE_AT_PATH,
+	CRITERIA_REQUIRED,
 	DELIBERATE_GAP,
 	EMPTY_STDIN,
 	HUMAN_FILED,
@@ -66,6 +67,16 @@ describe("the codes this group adds", () => {
 	});
 
 	/**
+	 * A third criteria code, and the split is the same one: `15` is about a block `enrich` composed
+	 * and has not written, where `Absent` is allowed; `16` is about a body already on the board that
+	 * `--ready-for agent` is being stamped over, where `Absent` is the refusal.
+	 */
+	it("seats the criteria-required refusal clear of the malformed-criteria one", () => {
+		expect(CRITERIA_REQUIRED).toBe(16);
+		expect(CRITERIA_REQUIRED).not.toBe(MALFORMED_CRITERIA);
+	});
+
+	/**
 	 * The pairwise checks above name one `report` constant each, so a *new* code added upstream at
 	 * `12` or `13` would land on top of this group and every one of them would stay green. This reads
 	 * the base's occupied seats off its exports instead, which is the only form that covers a code
@@ -85,7 +96,7 @@ describe("TRIAGE_EXIT_TABLE", () => {
 	});
 
 	it("carries every allocated code exactly once", () => {
-		expect(codes).toEqual([0, 1, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 126, 127]);
+		expect(codes).toEqual([0, 1, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 126, 127]);
 	});
 
 	it("gives every code a non-empty meaning", () => {
@@ -100,5 +111,6 @@ describe("TRIAGE_EXIT_TABLE", () => {
 		expect(meaningOf(UNCONFIRMED)).toContain("unconfirmed");
 		expect(meaningOf(UNREPAIRABLE)).toContain("not mechanically repairable");
 		expect(meaningOf(MALFORMED_CRITERIA)).toContain("acceptance-criteria");
+		expect(meaningOf(CRITERIA_REQUIRED)).toContain("--ready-for agent");
 	});
 });

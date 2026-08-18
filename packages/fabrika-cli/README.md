@@ -258,6 +258,7 @@ corpus-repair verb ([#5744](https://github.com/kamp-us/phoenix/issues/5744)).
 | Verb | Answers |
 |---|---|
 | `triage codes` | the exit taxonomy every verb in the group allocates from, one `<code>\t<meaning>` line per code |
+| `triage apply` | stamp type, priority, audience, status and home as one owned-facet reconcile, read back positively. `--ready-for agent` additionally asserts the issue's live body carries an acceptance-criteria block the wire reader answers `Found` on, refusing on `16` before any label is written — an absent block routes back to `enrich`, a malformed one to `repair-criteria`. `--type epic` is exempt (its criteria arrive per child from the plan ledger) and `--ready-for human` is unaffected ([#6025](https://github.com/kamp-us/phoenix/issues/6025)) |
 | `triage repair-criteria` | rewrite a level-drifted `## Acceptance criteria` heading to the conforming `###` — one issue, or `--sweep` over every open issue with a per-issue outcome line; authored region only, and anything that is not a pure level drift on the exact heading text is refused on `14`, never guessed |
 
 Three properties of that substrate are worth knowing:
@@ -278,6 +279,17 @@ Three properties of that substrate are worth knowing:
   ([`src/triage/scope.ts`](./src/triage/scope.ts)). A verdict driven by a silently truncated
   read is a verdict over unknown scope; pagination fixes the reach, and printing what was
   scanned is what makes the reach checkable from outside the process.
+
+## The `build` group
+
+Everything one construction lane needs, from the candidate pool to the opened pull request. The
+group implements
+[`claude-plugins/fabrika/skills/build/contract.md`](../../claude-plugins/fabrika/skills/build/contract.md).
+
+| Verb | What it answers |
+|---|---|
+| `build pick` | the ranked candidate pool, with every excluded issue reported beside it under the axis that refused it. Four axes report: `out-of-focus` and `audience-not-agent` from the shared admission test, `unreadable`, and `no-acceptance-criteria` — a body with no block the wire reader answers `Found` on, which is a lane that could otherwise only fail at `review criteria` once a whole build was spent. The body rides the listing read the filter already performs, so the axis costs no second call ([#6025](https://github.com/kamp-us/phoenix/issues/6025)) |
+| `build issue` | the claimed issue's body and its criteria, transporting the wire read's three arms — `found` / `absent` / `malformed` — as distinct facts on exit 0. It is a read verb and refuses none of them; the refusals live at the stamp and the pick |
 
 ## The `review` group
 

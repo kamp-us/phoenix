@@ -4,6 +4,7 @@ import {errOut, fakeShell, okOut, once} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {runApply} from "./apply-verb.ts";
 import {
+	CRITERIA_REQUIRED,
 	OFF_VOCABULARY,
 	PRECONDITION_UNKNOWN,
 	READBACK_MISMATCH,
@@ -18,12 +19,21 @@ const PATCH = /^gh api --method PATCH repos\/o\/r\/issues\/4312 -F milestone=/;
 const REMOVE = /^gh api --method DELETE repos\/o\/r\/issues\/4312\/labels\//;
 const ADD = /^gh api --method POST repos\/o\/r\/issues\/4312\/labels /;
 
-const issue = (labels: ReadonlyArray<string>, milestone: number | null): ExecResult =>
+/** A body carrying the conforming block — what `--ready-for agent` requires (#6025). */
+const CRITERIA_BODY = "## Summary\n\ns\n\n### Acceptance criteria\n\n- [ ] the one criterion\n";
+/** A report-shaped body: prose only, no block anywhere. kamp-us/demlik#4's shape. */
+const NO_CRITERIA_BODY = "## Summary\n\nsomething is off.\n\n## Pointers\n\n- a file\n";
+
+const issue = (
+	labels: ReadonlyArray<string>,
+	milestone: number | null,
+	body = CRITERIA_BODY,
+): ExecResult =>
 	okOut(
 		JSON.stringify({
 			number: 4312,
 			title: "t",
-			body: "b",
+			body,
 			state: "open",
 			labels: labels.map((name) => ({name})),
 			html_url: "https://example.test/issues/4312",
@@ -317,6 +327,77 @@ describe("runApply", () => {
 		]);
 		expect(out.code).toBe(READBACK_MISMATCH);
 		expect(out.stderr.at(-1)).toContain("read-back shows nothing");
+	});
+
+	/**
+	 * The stamp is the cheap door: one read, zero shells. Without it the first read of the contract
+	 * is `review criteria`, after a whole build has been spent on an issue that never had one (#6025).
+	 */
+	describe("the acceptance-criteria precondition on --ready-for agent", () => {
+		const criteriaShell = (body: string) =>
+			fakeShell([
+				[ISSUE, issue(["status:needs-triage"], null, body)],
+				[LABELS, VOCABULARY],
+				[MILESTONES, OPEN_MILESTONES],
+				[PATCH, okOut("{}")],
+				[REMOVE, okOut("[]")],
+				[ADD, okOut("[]")],
+			]);
+
+		it("refuses an absent block, points at enrich, and writes NO label", async () => {
+			const shell = criteriaShell(NO_CRITERIA_BODY);
+			const out = await Effect.runPromise(Effect.provide(runApply(options), shell.layer));
+			expect(out.code).toBe(CRITERIA_REQUIRED);
+			expect(out.stdout).toBe("");
+			expect(out.stderr.at(-1)).toContain("carries no acceptance-criteria block");
+			expect(out.stderr.at(-1)).toContain("triage enrich");
+			expect(shell.calls.some((c) => ADD.test(c) || REMOVE.test(c) || PATCH.test(c))).toBe(false);
+		});
+
+		it("refuses a malformed block on the same code, naming the drift and repair-criteria", async () => {
+			const shell = criteriaShell(CRITERIA_BODY.replace("### Acceptance", "## Acceptance"));
+			const out = await Effect.runPromise(Effect.provide(runApply(options), shell.layer));
+			expect(out.code).toBe(CRITERIA_REQUIRED);
+			expect(out.stderr.at(-1)).toContain("is malformed");
+			expect(out.stderr.at(-1)).toContain("heading level 2, expected 3");
+			expect(out.stderr.at(-1)).toContain("triage repair-criteria 4312");
+			expect(shell.calls.some((c) => ADD.test(c))).toBe(false);
+		});
+
+		/** An epic's criteria arrive per child from the plan ledger, never in its own body. */
+		it("stamps --type epic over an absent block — the exemption the carve-out exists for", async () => {
+			const out = await run(
+				[
+					[once(ISSUE), issue(["status:needs-triage"], null, NO_CRITERIA_BODY)],
+					[ISSUE, issue(["type:epic", "p2", "status:triaged", "ready-for:agent"], 47)],
+					[LABELS, okOut(["type:epic", "p2", "status:triaged", "ready-for:agent"].join("\n"))],
+					[MILESTONES, OPEN_MILESTONES],
+					[PATCH, okOut("{}")],
+					[REMOVE, okOut("[]")],
+					[ADD, okOut("[]")],
+				],
+				{type: "epic"},
+			);
+			expect(out.code).toBe(0);
+			expect(out.stdout).toBe("triaged\t4312\tepic\tp2\tagent\t47\n");
+		});
+
+		it("stamps --ready-for human over an absent block — the promise is made to an agent", async () => {
+			const out = await run(
+				[
+					[once(ISSUE), issue(["status:needs-triage"], null, NO_CRITERIA_BODY)],
+					[ISSUE, issue(["type:bug", "p2", "status:triaged", "ready-for:human"], 47)],
+					[LABELS, VOCABULARY],
+					[MILESTONES, OPEN_MILESTONES],
+					[PATCH, okOut("{}")],
+					[REMOVE, okOut("[]")],
+					[ADD, okOut("[]")],
+				],
+				{readyFor: "human"},
+			);
+			expect(out.code).toBe(0);
+			expect(out.stdout).toBe("triaged\t4312\tbug\tp2\thuman\t47\n");
+		});
 	});
 
 	it("refuses an unresolvable repo rather than guessing one", async () => {
