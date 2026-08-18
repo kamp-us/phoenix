@@ -44,6 +44,14 @@ export type StandingLaneLabel = (typeof STANDING_LANE_LABELS)[number];
 export const READY_FOR_AGENT = "ready-for:agent";
 const READY_FOR_PREFIX = "ready-for:";
 
+/**
+ * The type whose deliverable is a recorded choice rather than a pull request — `/adr`'s lane.
+ *
+ * Triage routes such an issue to `ready-for:human`, so `type:decision` and `ready-for:agent` are
+ * mutually exclusive by construction. That is the collision {@link RepairClaim} answers.
+ */
+export const DECISION_TYPE_LABEL = "type:decision";
+
 /** Everything either axis reads off an issue — no derived field, and nothing else. */
 export interface IssueFacts {
 	readonly number: number;
@@ -235,8 +243,46 @@ export const DEFAULT_CLAIM_PURPOSE: ClaimPurpose = "build";
 export const parseClaimPurpose = (value: string): ClaimPurpose | null =>
 	CLAIM_PURPOSES.find((purpose) => purpose === value) ?? null;
 
-/** Only a build-purpose claim is bound by the audience axis (#5175). Scope binds every purpose. */
-export const audienceAxisBinds = (purpose: ClaimPurpose): boolean => purpose === "build";
+/**
+ * Whether this claim repairs an open pull request, and whether the issue that PR serves is a
+ * decision.
+ *
+ * A claim's target is either an issue — a fresh build — or an open PR, which can only be a repair:
+ * the PR exists, so "should an agent start this" is already answered. The word is therefore
+ * **derived from the target**, never typed. A `--purpose repair` flag would be passable against a
+ * bare issue, which is a state the seam would then have to refuse; deriving it means the only way to
+ * be in repair is to name a PR (founder ruling on #5866, #5914).
+ */
+export type RepairClaim =
+	/** The target is an issue and judges itself — no PR is in flight. */
+	| {readonly _tag: "NotRepair"}
+	/** An open PR serves this issue, whose deliverable is a recorded decision. */
+	| {readonly _tag: "DecisionRepair"; readonly pr: number}
+	/** An open PR serves this issue, and the issue is not a decision. */
+	| {readonly _tag: "OrdinaryRepair"; readonly pr: number};
+
+/** The reading every seam but the claim path takes: the pool judges issues, never a PR in flight. */
+export const NOT_REPAIR: RepairClaim = {_tag: "NotRepair"};
+
+/** Read the repair state off an open PR and the issue the fence judges in its place. */
+export const repairClaimOf = (pr: number, served: IssueFacts): RepairClaim =>
+	served.labels.includes(DECISION_TYPE_LABEL)
+		? {_tag: "DecisionRepair", pr}
+		: {_tag: "OrdinaryRepair", pr};
+
+/**
+ * Only a build-purpose claim is bound by the audience axis (#5175), and not even that one when it
+ * repairs an open PR whose served issue is a decision. Scope binds every purpose and every repair.
+ *
+ * The exemption is narrow on purpose: it is the one pairing where the fence can never be satisfied,
+ * because a decision issue is barred from `ready-for:agent` by triage's own routing. An ordinary
+ * repair still reads the audience label, so an issue re-routed to a human mid-flight still stops a
+ * builder — the founder's ruling exempts decisions, not repair at large.
+ */
+export const audienceAxisBinds = (
+	purpose: ClaimPurpose,
+	repair: RepairClaim = NOT_REPAIR,
+): boolean => purpose === "build" && repair._tag !== "DecisionRepair";
 
 /** Absence is an unknown audience, never an agent audience (#4780). */
 export const audienceAxisOf = (issue: IssueFacts): AudienceAxis =>
@@ -296,13 +342,15 @@ export const noServedIssue = (pr: number, focus: number, reason: string): Admiss
  * send an operator to re-label work that the scope fence would refuse again. The unreported axis is
  * still on the outcome.
  *
- * `purpose` decides only whether an audience refusal is *seated*; the audience verdict itself is read
- * and reported either way, so a `plan`/`gate` claim admitted over a non-agent audience still says so.
+ * `purpose` and `repair` decide only whether an audience refusal is *seated*; the audience verdict
+ * itself is read and reported either way, so a claim admitted over a non-agent audience still says
+ * so.
  */
 export const admissionOf = (
 	focus: Focus,
 	issue: IssueFacts,
 	purpose: ClaimPurpose = DEFAULT_CLAIM_PURPOSE,
+	repair: RepairClaim = NOT_REPAIR,
 ): Admission => {
 	if (focus._tag === "Malformed") {
 		return {
@@ -314,7 +362,7 @@ export const admissionOf = (
 	const scope = scopeAxisOf(focus, issue);
 	const audience = audienceAxisOf(issue);
 	if (scope._tag === "OutOfFocus") return {_tag: "OutOfFocus", scope, audience};
-	if (audience._tag === "NotAgent" && audienceAxisBinds(purpose)) {
+	if (audience._tag === "NotAgent" && audienceAxisBinds(purpose, repair)) {
 		return {_tag: "AudienceNotAgent", scope, audience};
 	}
 	return {_tag: "Admitted", scope, audience};
@@ -362,7 +410,7 @@ export const ADMISSION_EXIT_CODES: ReadonlyArray<{
 	},
 	{
 		code: AUDIENCE_NOT_AGENT,
-		condition: `proven: not admitted on the audience axis — the issue's ${READY_FOR_PREFIX} label is not ${READY_FOR_AGENT}, or is absent; reachable only under purpose build`,
+		condition: `proven: not admitted on the audience axis — the issue's ${READY_FOR_PREFIX} label is not ${READY_FOR_AGENT}, or is absent; reachable only under purpose build, and never when an open PR serves a ${DECISION_TYPE_LABEL} issue`,
 	},
 ];
 
@@ -371,11 +419,15 @@ export const purposeScopeLine = (
 	verb: string,
 	purpose: ClaimPurpose,
 	audience: AudienceAxis,
+	repair: RepairClaim = NOT_REPAIR,
 ): string => {
 	const carried =
 		audience._tag === "Agent"
 			? READY_FOR_AGENT
 			: (audience.label ?? `no ${READY_FOR_PREFIX} label`);
+	if (repair._tag === "DecisionRepair") {
+		return `${verb}: purpose: ${purpose} — repairing open PR #${repair.pr}, whose served issue is ${DECISION_TYPE_LABEL}: the audience axis does not bind (#5914); this issue carries ${carried}.`;
+	}
 	return audienceAxisBinds(purpose)
 		? `${verb}: purpose: ${purpose} — the audience axis binds; this issue carries ${carried}.`
 		: `${verb}: purpose: ${purpose} — the audience axis does not bind a ${purpose} claim (#5175); this issue carries ${carried}.`;

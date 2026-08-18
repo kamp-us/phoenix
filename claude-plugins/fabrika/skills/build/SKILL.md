@@ -223,6 +223,12 @@ fabrika build claim $issue_or_pr_number
 fabrika build verdicts --pr $issue_or_pr_number
 ```
 
+**Step 1's "never claim a `type:decision`" is about picking one up fresh, and it does not reach
+here.** An ADR PR is served by a decision issue, and repairing it is the ordinary path: the claim
+admits it with no flag and no `--override`, and says so on its purpose line (#5914). Everything else
+still refuses — the same decision issue claimed by its own number is `21`, and the scope fence binds
+this claim exactly as it binds a build.
+
 The fold is the only entry: paginated, current-head, per-gate — polarity visible, round count
 included. Act only on rows it prints; empty rows at exit 0 are a proven no-work answer, but an
 UNKNOWN exit means the verdict state is unread — **never "nothing to fix"**. The budget is the
