@@ -52,7 +52,9 @@ question.
 
 **Say where each answer came from, and drill in rather than guess.** Every field names its source, so
 the session can re-run one instead of trusting the render. Each field has one command behind it —
-`fabrika status menu`, `fabrika status config`, `fabrika status readout`, and for the board:
+`fabrika status menu`, `fabrika status config`, `fabrika status readout`, `fabrika lane stale` for
+the lanes field (the stale-lane sweep over this machine's `.fabrika/` roots — it reports, it never
+resumes), and for the board:
 
 ```bash
 fabrika status board

@@ -16,6 +16,9 @@ import {leafCommand} from "../excess-operand.ts";
 import type {Attempt} from "../io/git.ts";
 import {listLabels, resolveRepo} from "../io/issues.ts";
 import {readStdin} from "../io/stdin.ts";
+import {DEFAULT_STALE_MINUTES} from "../lane/stale.ts";
+import {runStale} from "../lane/stale-verb.ts";
+import {DEFAULT_CHORES_ROOT, DEFAULT_LANES_ROOT} from "../lane/store.ts";
 import type {VerbOutcome} from "../verb.ts";
 import {readBoard, runBoard} from "./board-verb.ts";
 import {knownIds, runBootstrap} from "./bootstrap-verb.ts";
@@ -29,6 +32,7 @@ import {
 	FIELDS,
 	type Field,
 	isFieldName,
+	lanesField,
 	menuField,
 	readoutField,
 	runOpen,
@@ -288,6 +292,20 @@ const open = leafCommand(
 					),
 				);
 			}
+			if (name === "lanes") {
+				const roots = [DEFAULT_LANES_ROOT, DEFAULT_CHORES_ROOT];
+				fields.push(
+					lanesField(
+						yield* runStale({
+							roots,
+							olderThanMinutes: DEFAULT_STALE_MINUTES,
+							now: new Date().toISOString(),
+						}),
+						roots,
+						asOf,
+					),
+				);
+			}
 		}
 		const rosterScope =
 			roster === null
@@ -296,9 +314,11 @@ const open = leafCommand(
 		yield* emit(runOpen({fields, json, scope: `${rosterScope}; repo ${repoName}`}));
 	}),
 ).pipe(
-	Command.withShortDescription("The composite front-door readout: menu, config, board, readout."),
+	Command.withShortDescription(
+		"The composite front-door readout: menu, config, board, readout, lanes.",
+	),
 	Command.withDescription(
-		"The composite front-door readout: four fields — menu, config, board, readout — each with its own state, source and freshness. Every unreadable source becomes a field state, so this verb has no zero-scope seat and no failed-read seat: it is injected before the session reads a token and a refusal would write zero bytes. First stdout line is `open\\t<field-count>`, then one `field\\t<name>\\t<state>\\t<detail>\\t<source>\\t<as-of>` line each. Exits 10 (--field is off the closed vocabulary). Example: fabrika status open",
+		"The composite front-door readout: five fields — menu, config, board, readout, lanes — each with its own state, source and freshness. The lanes field renders `fabrika lane stale`'s sweep over both default roots at its documented threshold: `stale` names the silent lanes, zero stale lanes is the proven negative `empty` (no lanes on disk is `empty` too), and an unreadable root or lane record is `unknown` with its reason — it reports, it never resumes. Every unreadable source becomes a field state, so this verb has no zero-scope seat and no failed-read seat: it is injected before the session reads a token and a refusal would write zero bytes. First stdout line is `open\\t<field-count>`, then one `field\\t<name>\\t<state>\\t<detail>\\t<source>\\t<as-of>` line each. Exits 10 (--field is off the closed vocabulary). Example: fabrika status open",
 	),
 );
 
