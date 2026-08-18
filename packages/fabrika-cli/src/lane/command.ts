@@ -6,12 +6,14 @@
  * decision lives in the verb modules beside it, which is what makes each refusal testable without
  * spawning a process.
  */
+import {randomUUID} from "node:crypto";
 import {fileURLToPath} from "node:url";
 import {Effect, Option} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
 import {leafCommand} from "../excess-operand.ts";
 import type {VerbOutcome} from "../verb.ts";
 import {runBrief} from "./brief-verb.ts";
+import {runLaneClaim, runLaneRelease} from "./claim-verb.ts";
 import {runEmit} from "./emit-verb.ts";
 import {runHistory} from "./history-verb.ts";
 import {type LaneKey, laneRef, parseKey, templateFile} from "./key.ts";
@@ -275,6 +277,63 @@ const brief = leafCommand(
 	),
 );
 
+const claim = leafCommand(
+	"claim",
+	{
+		lane: laneArgument,
+		repo: Flag.string("repo").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"the target owner/name (default: $CLAUDE_PIPELINE_REPO, else $GITHUB_REPOSITORY, else the origin remote)",
+			),
+		),
+	},
+	Effect.fn(function* ({lane, repo}) {
+		yield* emit(
+			yield* onKey(lane, Option.none(), (key) =>
+				runLaneClaim({
+					key,
+					lane,
+					repo: Option.getOrNull(repo),
+					env: process.env,
+					uuid: randomUUID(),
+					at: new Date().toISOString(),
+				}),
+			),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Race the driver's claim on a lane and win it or name the winner."),
+	Command.withDescription(
+		'Race the earliest AUTHORIZED lane-claim marker on the issue a lane drives: post this driver\'s token (lane:<CLAUDE_CODE_SESSION_ID>:<uuid>), re-read, and win or name the winner. Two drivers over one lane used to be invisible until the builders they spawned collided one level down (#5761). The namespace is the driver\'s own — `lane-claim:`/`lane:`, never `build-claim:`/`build:` — so the builder this driver spawns claims the same issue and wins; the two races never see each other. Authorization is the author\'s repository permission (ADR 0055); marker text confers nothing. No admission test runs here — the fence is the spawned builder\'s. Prints {"answer":"won","lane":"…","number":n,"token":"…"}. A `chore:<name>` lane, or any key that is not a board number, has no thread to race on and answers {"answer":"unclaimable","lane":"…","why":"…"} at exit 0 with nothing written. A lost race retracts this run\'s own marker and exits 31, never 0; an unset CLAUDE_CODE_SESSION_ID is 1. Exits 8 (the marker write failed — UNKNOWN, never a claim), 9 (the marker landed and does not read back), 11 (the marker set could not be read — UNKNOWN, never "unclaimed"), 21 (the key is not a lane key), 31 (proven lost). Example: fabrika lane claim 5492',
+	),
+);
+
+const release = leafCommand(
+	"release",
+	{
+		lane: laneArgument,
+		repo: Flag.string("repo").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"the target owner/name (default: $CLAUDE_PIPELINE_REPO, else $GITHUB_REPOSITORY, else the origin remote)",
+			),
+		),
+	},
+	Effect.fn(function* ({lane, repo}) {
+		yield* emit(
+			yield* onKey(lane, Option.none(), (key) =>
+				runLaneRelease({key, lane, repo: Option.getOrNull(repo), env: process.env}),
+			),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Retract this driver's own lane-claim marker."),
+	Command.withDescription(
+		'Retract this driver\'s own lane-claim marker, so the lane is drivable again — run at both ends of the loop, the terminal fold and the park. It refuses to delete a marker this session does not hold: a driver never retracts another driver\'s claim. Prints {"answer":"released","lane":"…","number":n}. A `chore:<name>` lane, or any key that is not a board number, was never claimable and answers {"answer":"inert","lane":"…","why":"…"} at exit 0. Exits 1 (CLAUDE_CODE_SESSION_ID unset), 8 (the retraction failed — whether the claim is still held is UNKNOWN), 11 (the marker set could not be read), 21 (the key is not a lane key), 31 (proven: held by another driver, or no claim exists). Example: fabrika lane release 5492',
+	),
+);
+
 const stale = leafCommand(
 	"stale",
 	{
@@ -317,6 +376,8 @@ export const laneCommand = Command.make("lane").pipe(
 		brief,
 		pushLane,
 		stale,
+		claim,
+		release,
 	]),
 	Command.withShortDescription("Drive one lane's state ledger by folding its event log."),
 	Command.withDescription(

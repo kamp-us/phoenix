@@ -33,7 +33,7 @@ node packages/fabrika-cli/src/bin.ts lane <verb> …
 ([#5679](https://github.com/kamp-us/phoenix/issues/5679)), so its answer describes a tree you are
 not standing in. The same rule goes into every spawn prompt you write.
 
-## 1 — Boot or resume
+## 1 — Claim the lane, then boot or resume
 
 The lane you were invoked on is `$lane_key`, and every command below carries it — an issue number,
 or `chore:<name>` for a chore drive, which is how a chore is addressed by name. A blank there
@@ -42,6 +42,27 @@ blank, because the harness hands the preload an empty argument and the key arriv
 brief instead — so on a blank, take the lane your caller named there. Only when no caller named
 one are you actually without a key, and then ask for it before running a verb. Never invent one
 nobody named.
+
+**Claim it before you write anything.** Two drivers ran epic #5492's children at once, each folding
+its own machine-local ledger and each spawning its own builder on the same repair, and nothing saw
+the collision until `build claim` caught it one level down
+([#5761](https://github.com/kamp-us/phoenix/issues/5761)):
+
+```bash
+node packages/fabrika-cli/src/bin.ts lane claim $lane_key
+```
+
+Exit `0` is yours to drive — `won` on an issue lane, `unclaimable` on a `chore:<name>` key, which
+carries no board number for a marker to sit on and so races with nobody. Exit `31` is a **proven
+loss**: another driver holds this lane, its token is named on stderr, and this run ends `LANE-HELD`
+having emitted no ledger and spawned no shell. `1` (no `CLAUDE_CODE_SESSION_ID`), `8` (the marker
+write is UNKNOWN), `9` (it landed and does not read back) and `11` (the marker set could not be
+read) all end `STOPPED` naming the code — an unproven claim is never driven through.
+
+The claim is the driver's own namespace, `lane-claim:`, not the builder's `build-claim:`. That is
+what lets the builder you spawn on this very number claim it and win: two markers on one thread,
+two races that never see each other. You never read the other namespace and never retract a marker
+that is not this run's.
 
 ```bash
 node packages/fabrika-cli/src/bin.ts lane status $lane_key
@@ -359,7 +380,22 @@ re-run before trusting anything. Then loop to step 2.
 
 Done when the fold reads a terminal state or a park.
 
-## 4 — Park, or end with the transcript
+## 4 — Park, or end with the transcript — then release
+
+Both ends of the loop release the claim, and it is the **last** thing the run does — after the park
+comment or the transcript has landed, so a successor that wins the lane the moment you let go finds
+the artifact already there:
+
+```bash
+node packages/fabrika-cli/src/bin.ts lane release $lane_key
+```
+
+Exit `0` is released (or `inert` on a chore key, which was never claimable). `31` means this session
+holds no claim — say so and stop; you never retract another driver's marker. `8` or `11` leaves
+whether the lane is still held UNKNOWN: name the code in your terminal line rather than reporting a
+release you cannot prove. A `STOPPED` run releases too — a claim outliving the driver that took it
+is the same lane nobody can pick up.
+
 
 **A run never ends `LANE-PARKED` while the fold reads a non-parked state.** `human:*` and
 `blocked` are already parked — the fold itself says so, and no event is owed on top of it. Any
@@ -437,7 +473,9 @@ Every run ends as exactly one of — each naming what was recorded and what the 
 `tripped`; no event recorded on top of a final fold; transcript posted on the driven issue) ·
 **`LANE-PARKED`** (the fold reads `blocked` or `human:*` — either it already did and no event was
 owed, or the `BLOCKED` this run recorded put it there and the re-fold confirmed it; the need
-posted on the driven issue) · **`STOPPED`** (a verb exit UNKNOWN, a malformed record, an
+posted on the driven issue) · **`LANE-HELD`** (step 1's claim was proven lost — another driver owns
+this lane, its token named; no ledger emitted, no shell spawned, no marker retracted, nothing
+posted) · **`STOPPED`** (a verb exit UNKNOWN, a malformed record, an
 unroutable state, or a `BLOCKED` refused with exit `12` — the code or state named, nothing
 guessed, no event recorded, the fold unchanged). An unroutable state ends `STOPPED`, never
 `LANE-PARKED`: a park promises a mechanical `UNBLOCKED` resume from `blocked`/`human:*`, which a
@@ -458,7 +496,7 @@ fabrika skill, so one reader parses all of them. No row here dead-ends on a bare
 
 | Must exist | Why this skill needs it | When missing |
 | --- | --- | --- |
-| The lane verb group — `packages/fabrika-cli/src/bin.ts` routing `lane status`/`transition`/`prove` (#5747)/`history`/`print` plus `open`/`emit` (#5688), `brief` (#5751) and `stale` (#5897) | Every state read, every proof, every event write, every spawn prompt and the dead-operator sweep in this skill is one of these verbs; there is no other path to the ledger, and none to a prompt | **fail-loud** — a verb that cannot be executed leaves the lane state UNKNOWN; the run ends `STOPPED` naming `packages/fabrika-cli/src/bin.ts` and points at front-door. |
+| The lane verb group — `packages/fabrika-cli/src/bin.ts` routing `lane status`/`transition`/`prove` (#5747)/`history`/`print` plus `open`/`emit` (#5688), `brief` (#5751), `stale` (#5897) and `claim`/`release` (#5761) | Every state read, every proof, every event write, every spawn prompt, the dead-operator sweep and the driver's own exclusivity in this skill is one of these verbs; there is no other path to the ledger, none to a prompt, and none to knowing whether a second driver is already here | **fail-loud** — a verb that cannot be executed leaves the lane state UNKNOWN; the run ends `STOPPED` naming `packages/fabrika-cli/src/bin.ts` and points at front-door. |
 | The recipe verb group — `packages/fabrika-cli/src/bin.ts` routing `recipe route` plus the recipes it names (`unpark`, `rerun`), and the chore template at `packages/fabrika-cli/src/lane/templates/chore.workflow.json` | A chore drive routes and folds through `recipe route`, runs the recipe it names, and boots from that template; there is no other path to either answer | **fail-loud** — a chore drive whose routing verb cannot be executed knows neither what to run nor what an exit meant; the run ends `STOPPED` naming `packages/fabrika-cli/src/recipe/`, records no event, and points at front-door. An issue lane is unaffected. |
 | The agent shells — `claude-plugins/fabrika/agents/builder.md`, `reviewer.md`, `shipper.md` | Step 2's routing table spawns exactly these three by their bare noun names | **fail-loud** — a route whose shell does not exist cannot spawn; the run ends `STOPPED` naming the absent shell file, and no event is recorded for a spawn that never started. |
 | The `package.json` scripts `typecheck` and `lint:worktree` | An epic run's `integrate` reads the semantic collision off them — two ranges that each passed alone and fail together show up as the merged assembly failing the checks, and a clean `git merge` alone cannot see that | **degrade** — a clean merge is then the whole `DONE` answer and a semantic collision only surfaces at the epic review; say so in the transcript comment and file the gap via `/report`. An epic run still drives; a single-issue lane is unaffected. |

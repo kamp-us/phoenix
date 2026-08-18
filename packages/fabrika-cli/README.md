@@ -801,6 +801,7 @@ snapshot. Lane state is local and never committed (the repo's `/.fabrika/` gitig
 | `lane history` | the log verbatim, one `{task, event, at}` per event — `from`/`to` are reconstructible by folding, never stored |
 | `lane print` | the compiled topology: phases, the two workflow terminals, and each state's legal events |
 | `lane stale` | every lane on disk with the age of its last event and one verdict — which lanes are non-terminal, unparked and silent past `--older-than` (default 60 minutes), so a dead operator is detectable instead of invisible |
+| `lane claim` / `lane release` | who is driving this lane: the same detect-then-tiebreak race `build claim` runs, in the driver's own `lane-claim:` namespace, so the builder a driver spawns claims the same issue and wins ([#5761](https://github.com/kamp-us/phoenix/issues/5761)). A `chore:<name>` key carries no board number and answers `unclaimable`/`inert` at exit 0 |
 
 To open a lane, copy a template in and speak the operator's six events —
 `DONE` / `PASS` / `FAIL` / `BLOCKED` / `WIP` / `UNBLOCKED`:
