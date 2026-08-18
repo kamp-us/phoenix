@@ -8,6 +8,15 @@ on:
   # merge; without this trigger that required check never runs on the batch and every
   # queued merge hangs (ADR 0132).
   merge_group:
+  # The standing Release PR's only way in (#5718). release-please pushes that branch with
+  # `secrets.GITHUB_TOKEN`, and GitHub creates NO workflow run for an event raised with that
+  # token — so `pull_request` above never fires on a bot push and the Release PR sat showing
+  # stale checks until a human closed and reopened it. `workflow_dispatch` is one of the two
+  # documented exceptions (it always creates a run, whatever token dispatched it), so
+  # release-please.yml re-dispatches this workflow at the branch head. Every gate below reads
+  # its required-ness from the same `*_required` outputs, so this fourth event shape changes
+  # which jobs are REQUIRED, never how a job decides it passed.
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -70,7 +79,13 @@ jobs:
       # the FULL gate on the batch (fail-safe to running — the same stance the
       # worker-relevance classifier takes). The batch ref is the prospective merge of all
       # queued PRs, so cost-optimization path-filtering doesn't apply there (ADR 0132).
-      check_required: ${{ github.event_name == 'merge_group' || steps.filter.outputs.code == 'true' }}
+      # `workflow_dispatch` rides beside `merge_group` in every required-ness expression
+      # below, for the same reason and with the same stance: neither event carries a PR base,
+      # so neither gets to narrow the gate on a path filter, and both FAIL SAFE TO RUNNING.
+      # On a dispatched run the `mergebase` step is skipped, dorny falls back to its
+      # default-branch merge-base basis, and the filter outputs stay wide — but the Release PR
+      # is the one PR nobody re-reads before merging, so the full gate is what it gets (#5718).
+      check_required: ${{ github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch' || steps.filter.outputs.code == 'true' }}
       # `worker_relevant != 'false'` (issue #1014) is ANDed in LAST so it can only
       # REMOVE an integration run, never add one: a PR whose diff is provably confined
       # to worker-irrelevant packages skips the tier even though the lockfile delta
@@ -108,7 +123,7 @@ jobs:
       # batch must never skip and merge broken). The batch still runs in the trusted base's
       # context with repo secrets, so the PR-only fork/author guard does not apply.
       integration_required: >-
-        ${{ (github.event_name == 'merge_group' &&
+        ${{ ((github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch') &&
              steps.filter.outputs.backend == 'true' &&
              (steps.worker-relevance.outputs.worker_relevant || 'true') != 'false') ||
             ((steps.filter.outputs.backend == 'true' ||
@@ -127,6 +142,13 @@ jobs:
       # runs), so leaving `e2e_required == false` on `merge_group` skips it on the
       # batch (→ green legit-skip in ci-required) without losing PR-time coverage.
       # The pull_request-context requiredness below is unchanged.
+      #
+      # `workflow_dispatch` is left out for the IDENTICAL reason (#5718): deploy.yml has no
+      # dispatch trigger either, so a dispatched run would await a preview no job will ever
+      # post, time out, and red `ci-required` on the Release PR. The coverage lost is nil —
+      # a Release PR's diff is package.json versions, per-package CHANGELOGs and the
+      # release manifest, none of which appear in the `e2e:` path set, so this job skips on
+      # a `pull_request` run of that PR too.
       e2e_required: >-
         ${{ steps.filter.outputs.e2e == 'true' &&
             (steps.worker-relevance.outputs.worker_relevant || 'true') != 'false' &&
@@ -138,13 +160,13 @@ jobs:
       # integration/e2e), so a fork PR that touches `packages/**` MUST still run +
       # pass them. A non-packages PR has `packages_required == false`, so the job's
       # skip is a legitimate not-applicable PASS.
-      packages_required: ${{ github.event_name == 'merge_group' || steps.filter.outputs.packages == 'true' }}
+      packages_required: ${{ github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch' || steps.filter.outputs.packages == 'true' }}
       # `actionlint` lints `.github/workflows/**` (issue #568). Its single-sourced
       # required-ness is JUST the `workflows` path filter — actionlint is creds-free
       # and fast (no author/fork guard), so any PR (incl. a fork) that touches a
       # workflow MUST run + pass it. A non-workflow PR has `workflows_required ==
       # false`, so the job's skip is a legitimate not-applicable PASS.
-      workflows_required: ${{ github.event_name == 'merge_group' || steps.filter.outputs.workflows == 'true' }}
+      workflows_required: ${{ github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch' || steps.filter.outputs.workflows == 'true' }}
     steps:
       # Full history so the worker-relevance step's base...head diff resolves; the
       # default shallow checkout has no merge-base for the comparison (issue #1014).
