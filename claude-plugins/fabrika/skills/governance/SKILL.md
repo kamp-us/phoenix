@@ -37,7 +37,9 @@ alone**, over four roots — `.decisions/`, `.claude/`, `.github/`, `claude-plug
 make that checkable:
 
 - **Derived, not elected.** Nothing feeds the derivation and nothing can decline it. `review` reads
-  the same fact off its own `harness` flag and routes here; it never decides whether you were needed.
+  the same fact off the `governance` line its own `scope` prints — the same four-root derivation,
+  not its three-root `harness` flag (#5607) — and routes here; it never decides whether you were
+  needed.
 - **Fail-closed on absence.** The refusal belongs at the enqueue seam, not to a reviewer's good
   intentions: `governance` is a required namespace in `fabrika ship gate`'s conjunction, so a
   harness-touching diff carrying no current-head verdict is **named absent and refused there**. Zero

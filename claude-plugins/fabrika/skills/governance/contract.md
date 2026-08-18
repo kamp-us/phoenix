@@ -93,7 +93,9 @@ symlink to the v1 tree. The gap is already filed — [#4761](https://github.com/
 loads v1 regardless of the plugin toggle) — and is recorded in the authoring PR rather than patched
 from here, the same disposition the `review` and `ship` contracts took. Today this skill is reached
 as `/fabrika:governance`, and **from inside fabrika it is already routed**: `review`'s SKILL.md §6
-directs the model to fire it on a `harness: true` diff, and `review`'s eval set carries a
+directs the model to fire it on a `governance: required` diff — the token `review scope` prints
+from this group's own four-root derivation, never the narrower `harness` flag (#5607) — and
+`review`'s eval set carries a
 `governance-seam-derived-required` case.
 
 ## Shared conventions
