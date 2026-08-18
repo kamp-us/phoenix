@@ -16,6 +16,11 @@ const PASS_STALE = `review-doc: PASS @ ${OLD_HEAD} — guide matches shipped beh
 
 const NO_REVIEWS = okOut("[]");
 const PR = pull({number: 4310, body: "Fixes #4312\n\n## Deviations\nNone.\n"});
+const PR_ON_MAIN = pull({
+	number: 4310,
+	body: "Fixes #4312\n\n## Deviations\nNone.\n",
+	base: {ref: "main"},
+});
 
 const options = {
 	pr: 4310,
@@ -137,7 +142,8 @@ describe("runVerdicts", () => {
 		const parsed = JSON.parse(out.stdout);
 		expect(parsed.rows).toEqual([]);
 		expect(parsed.rounds).toBe(0);
-		expect(out.stderr.at(-1)).toContain("scanned 1 comment(s) and 0 review(s)");
+		expect(out.stderr.join("\n")).toContain("scanned 1 comment(s) and 0 review(s)");
+		expect(out.stderr.at(-1)).toContain("cap 3 = 3 declared + 0 cleared round(s)");
 	});
 
 	it("refuses a proven-absent PR on 7", async () => {
@@ -176,5 +182,172 @@ describe("runVerdicts", () => {
 		expect(shell.calls.filter((line) => line.includes("--paginate")).length).toBeGreaterThanOrEqual(
 			2,
 		);
+	});
+	describe("the founder's cleared rounds", () => {
+		const CONFIG =
+			/^gh api -H Accept: application\/vnd\.github\.raw repos\/o\/r\/contents\/\.fabrika\.jsonc\?ref=main$/;
+		const CONFIGURED = okOut('{"capClearAuthors": ["@usirin"]}');
+		const PERMISSION = /^gh api repos\/o\/r\/collaborators\/usirin\/permission/;
+		const WRITES = okOut("admin\n");
+		const AUTHORIZATION = 'Founder ruling 2026-08-18: "one more round."';
+		const CAPPED = [
+			{id: 1, body: `review-code: FAIL @ ${HEAD} — one`, createdAt: "2026-08-18T01:00:00Z"},
+			{id: 2, body: `review-code: FAIL @ ${HEAD} — two`, createdAt: "2026-08-18T02:00:00Z"},
+			{id: 3, body: `review-code: FAIL @ ${HEAD} — three`, createdAt: "2026-08-18T03:00:00Z"},
+		];
+		const GRANT = [
+			{id: 4, body: AUTHORIZATION, author: "usirin", createdAt: "2026-08-18T03:10:00Z"},
+			{
+				id: 5,
+				body: "cap-cleared: round 3 · 2026-08-18T03:11:00Z",
+				author: "usirin",
+				createdAt: "2026-08-18T03:11:00Z",
+			},
+		];
+
+		it("caps the loop at the declared round when nothing is cleared", async () => {
+			const out = await run([
+				[PULL, PR_ON_MAIN],
+				[COMMENTS, comments(...CAPPED)],
+				[REVIEWS, NO_REVIEWS],
+				[ISSUE, issue()],
+			]);
+			const parsed = JSON.parse(out.stdout);
+			expect(parsed.rounds).toBe(3);
+			expect(parsed.capReached).toBe(true);
+		});
+
+		it("folds an honoured clearance as budget, so the granted round proceeds", async () => {
+			const out = await run([
+				[PULL, PR_ON_MAIN],
+				[COMMENTS, comments(...CAPPED, ...GRANT)],
+				[CONFIG, CONFIGURED],
+				[PERMISSION, WRITES],
+				[REVIEWS, NO_REVIEWS],
+				[ISSUE, issue()],
+			]);
+			const parsed = JSON.parse(out.stdout);
+			expect(parsed.capReached).toBe(false);
+			expect(parsed.clearances).toHaveLength(1);
+			expect(parsed.clearances[0]).toMatchObject({round: 3, by: "usirin", honoured: true});
+		});
+
+		it("spends the grant on the next round — it never re-arms", async () => {
+			const out = await run([
+				[PULL, PR_ON_MAIN],
+				[
+					COMMENTS,
+					comments(...CAPPED, ...GRANT, {
+						id: 6,
+						body: `review-code: FAIL @ ${HEAD} — four`,
+						createdAt: "2026-08-18T04:00:00Z",
+					}),
+				],
+				[CONFIG, CONFIGURED],
+				[PERMISSION, WRITES],
+				[REVIEWS, NO_REVIEWS],
+				[ISSUE, issue()],
+			]);
+			const parsed = JSON.parse(out.stdout);
+			expect(parsed.rounds).toBe(4);
+			expect(parsed.capReached).toBe(true);
+		});
+
+		/**
+		 * The bare second stamp: without the adjacency clause the read takes the last prior comment
+		 * by that author — grant #1's own marker, which carries an ISO date — and every grant after
+		 * the first is authorized by nothing (#4938).
+		 */
+		it("refuses a second marker whose only precedent is the first grant's marker", async () => {
+			const out = await run([
+				[PULL, PR_ON_MAIN],
+				[
+					COMMENTS,
+					comments(
+						...CAPPED,
+						...GRANT,
+						{id: 6, body: `review-code: FAIL @ ${HEAD} — four`, createdAt: "2026-08-18T04:00:00Z"},
+						{
+							id: 7,
+							body: "cap-cleared: round 4 · 2026-08-18T05:00:00Z",
+							author: "usirin",
+							createdAt: "2026-08-18T05:00:00Z",
+						},
+					),
+				],
+				[CONFIG, CONFIGURED],
+				[PERMISSION, WRITES],
+				[REVIEWS, NO_REVIEWS],
+				[ISSUE, issue()],
+			]);
+			const parsed = JSON.parse(out.stdout);
+			const bare = parsed.clearances.find((row: {round: number}) => row.round === 4);
+			expect(bare).toMatchObject({honoured: false, authorization: null});
+			expect(bare.reason).toContain("immediately before");
+			expect(parsed.capReached).toBe(true);
+		});
+
+		/** A committed set narrows the ACL; it never stands in for one (ADR 0055, ADR 0294). */
+		it("refuses a configured author who resolves below write at the ACL", async () => {
+			const out = await run([
+				[PULL, PR_ON_MAIN],
+				[COMMENTS, comments(...CAPPED, ...GRANT)],
+				[CONFIG, CONFIGURED],
+				[PERMISSION, okOut("read\n")],
+				[REVIEWS, NO_REVIEWS],
+				[ISSUE, issue()],
+			]);
+			const parsed = JSON.parse(out.stdout);
+			expect(parsed.capReached).toBe(true);
+			expect(parsed.clearances[0]).toMatchObject({honoured: false});
+			expect(parsed.clearances[0].reason).toContain("below write");
+		});
+
+		it("holds the fold UNKNOWN when a configured author's permission cannot be read", async () => {
+			const out = await run([
+				[PULL, PR_ON_MAIN],
+				[COMMENTS, comments(...CAPPED, ...GRANT)],
+				[CONFIG, CONFIGURED],
+				[PERMISSION, errOut("gh: Bad gateway (HTTP 502)")],
+				[REVIEWS, NO_REVIEWS],
+				[ISSUE, issue()],
+			]);
+			expect(out.code).toBe(PRECONDITION_UNKNOWN);
+			expect(out.stdout).toBe("");
+		});
+
+		it("keeps an unauthorized marker visible as a refused row, never as budget", async () => {
+			const out = await run([
+				[PULL, PR_ON_MAIN],
+				[
+					COMMENTS,
+					comments(...CAPPED, {
+						id: 5,
+						body: "cap-cleared: round 3 · 2026-08-18T03:11:00Z",
+						author: "an-agent",
+						createdAt: "2026-08-18T03:11:00Z",
+					}),
+				],
+				[CONFIG, CONFIGURED],
+				[REVIEWS, NO_REVIEWS],
+				[ISSUE, issue()],
+			]);
+			const parsed = JSON.parse(out.stdout);
+			expect(parsed.capReached).toBe(true);
+			expect(parsed.clearances[0]).toMatchObject({honoured: false});
+			expect(parsed.clearances[0].reason).toContain("grant-author set");
+		});
+
+		it("holds the whole fold UNKNOWN when the grant-author set cannot be read", async () => {
+			const out = await run([
+				[PULL, PR_ON_MAIN],
+				[COMMENTS, comments(...CAPPED, ...GRANT)],
+				[CONFIG, errOut("gh: Bad gateway (HTTP 502)")],
+				[REVIEWS, NO_REVIEWS],
+				[ISSUE, issue()],
+			]);
+			expect(out.code).toBe(PRECONDITION_UNKNOWN);
+			expect(out.stdout).toBe("");
+		});
 	});
 });

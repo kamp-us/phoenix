@@ -45,6 +45,7 @@ does not exist yet — rather than missing; check the registry before assuming a
 | `lane-brief` | [`packages/fabrika-cli/src/wire/lane-brief.ts`](../../../packages/fabrika-cli/src/wire/lane-brief.ts) | `operate` | `build`, `review`, `ship` |
 | `map-ticket` | [`packages/fabrika-cli/src/wire/map-ticket.ts`](../../../packages/fabrika-cli/src/wire/map-ticket.ts) | `map` | `map` |
 | `grill-ruling` | [`packages/fabrika-cli/src/wire/grill-ruling.ts`](../../../packages/fabrika-cli/src/wire/grill-ruling.ts) | `grilling` | `grilling` |
+| `cap-clearance` | [`packages/fabrika-cli/src/wire/cap-clearance.ts`](../../../packages/fabrika-cli/src/wire/cap-clearance.ts) | `build` | `build`, `operate` |
 | `grill-answer` | [`packages/fabrika-cli/src/wire/grill-answer.ts`](../../../packages/fabrika-cli/src/wire/grill-answer.ts) | `grilling` | `grilling` |
 | `grill-supersede` | [`packages/fabrika-cli/src/wire/grill-supersede.ts`](../../../packages/fabrika-cli/src/wire/grill-supersede.ts) | `grilling` | `grilling` |
 | `handoff-pack` | [`packages/fabrika-cli/src/wire/handoff-pack.ts`](../../../packages/fabrika-cli/src/wire/handoff-pack.ts) | `handoff` | `handoff` |
@@ -172,6 +173,19 @@ it answered, and the reader settles authority against repository permissions and
 authorization comment beside it. The digest is what keeps the ruling honest over time: re-word the
 question and the recomputed digest differs, so the ruling stops counting and the question is open
 again. A ruling that drifted out from under the founder must never keep reading as his.
+
+### `cap-clearance`
+
+This is the founder's grant of one extra repair round, carried on the pull request the round belongs
+to. The agreement it closes is the one the repair loop had no way to express: the round budget is
+counted off the FAIL markers and enforced again by the lane machine, and a clearance that lived only
+as prose could not reach either, so a legitimately cleared round could only land as an edit outside
+the loop. The marker names the round it clears and nothing else — deliberately no head SHA, because a
+clearance exists precisely so a *new* head can be pushed, and a head-bound grant would be void the
+moment it was used. Naming the round is also what spends it exactly once: the grant covers the round
+it names, and the next FAIL round leaves it behind. Like the ruling marker, it is not authority on
+its own — the reader settles that against the repo's configured grant-author set and a dated
+authorization comment beside it.
 
 ### `grill-answer`
 

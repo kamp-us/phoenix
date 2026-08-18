@@ -14,14 +14,17 @@
  */
 import {randomUUID} from "node:crypto";
 import {tmpdir} from "node:os";
-import {Effect, Option} from "effect";
+import {Effect, type FileSystem, Option, Result} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
 import {leafCommand} from "../excess-operand.ts";
+import {readFile} from "../io/fs.ts";
 import {readStdin} from "../io/stdin.ts";
+import {DEFAULT_LANES_ROOT} from "../lane/store.ts";
 import type {VerbOutcome} from "../verb.ts";
 import {runBranch} from "./branch-verb.ts";
 import {runCheck} from "./check-verb.ts";
 import {runClaim, runConfirm, runRelease} from "./claim-verb.ts";
+import {type DocumentRead, runClear} from "./clear-verb.ts";
 import {runCommit} from "./commit-verb.ts";
 import {runEligible} from "./eligible-verb.ts";
 import {runIssue} from "./issue-verb.ts";
@@ -440,6 +443,59 @@ const verdicts = leafCommand(
 	),
 );
 
+/** A file the adapter reads for a verb, so the verb itself touches no filesystem for it. */
+const document = (path: string): Effect.Effect<DocumentRead, never, FileSystem.FileSystem> =>
+	Effect.gen(function* () {
+		const read = yield* Effect.result(readFile(path));
+		return Result.isFailure(read)
+			? ({_tag: "Failed", reason: read.failure.reason} satisfies DocumentRead)
+			: ({_tag: "Text", text: read.success} satisfies DocumentRead);
+	});
+
+const clear = leafCommand(
+	"clear",
+	{
+		pr: Flag.integer("pr").pipe(
+			Flag.withDescription("the pull request whose repair budget the founder cleared a round on"),
+		),
+		authorization: Flag.string("authorization").pipe(
+			Flag.withDescription(
+				"a file quoting the founder's authorization verbatim, carrying an ISO-8601 date; posted as an adjacent comment, never summarized",
+			),
+		),
+		laneRoot: Flag.string("lane-root").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				`the lanes root the local grant is recorded in (default: ${DEFAULT_LANES_ROOT})`,
+			),
+		),
+		task: Flag.string("task").pipe(
+			Flag.optional,
+			Flag.withDescription("the lane task the grant addresses; omittable on a single-task lane"),
+		),
+		repo: repoFlag,
+	},
+	Effect.fn(function* ({pr, authorization, laneRoot, task, repo}) {
+		yield* emit(
+			yield* runClear({
+				pr,
+				authorizationPath: authorization,
+				authorization: document(authorization),
+				laneRoot: Option.getOrNull(laneRoot),
+				task: Option.getOrNull(task),
+				repo: Option.getOrNull(repo),
+				env: process.env,
+				now: () => new Date(),
+			}),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Record the founder's clearance of one extra repair round."),
+	Command.withDescription(
+		'Record one founder-cleared repair round on a PR, refusing without a verbatim dated authorization and an invoking account inside `.fabrika.jsonc`\'s `capClearAuthors` at the PR\'s base ref. Writes the authorization comment FIRST, the `cap-cleared` marker second, then carries the grant into the local lane so `build verdicts` and the lane guard spend the same round. One grant buys exactly the round it names: it survives the push it permits and expires when the next FAIL round lands. Prints {"pr":n,"round":n,"at":"…","by":"…","authorization":n,"marker":n,"cap":n,"lane":"…","resolvesTo":"cleared"}. Exits 5 (machine-local path), 6 (bare @ reference), 7 (PR proven absent or closed, or the budget is not spent — there is no round to clear), 8 (a write failed — UNKNOWN), 9 (read-back mismatch), 11 (a precondition read failed), 25 (the invoking account may not clear a round here), 26 (--authorization missing, empty or undated), 29 (recorded on the PR, and the local lane did not take it — re-run to reconcile). Example: fabrika build clear --pr 5953 --authorization authorization.md',
+	),
+);
+
 export const buildCommand = Command.make("build").pipe(
 	Command.withSubcommands([
 		// One leaf per line, so concurrent slices append at distinct lines rather than all editing one.
@@ -458,6 +514,7 @@ export const buildCommand = Command.make("build").pipe(
 		pr,
 		note,
 		verdicts,
+		clear,
 	]),
 	Command.withShortDescription("Drive one construction lane from issue pick to open PR."),
 	Command.withDescription(

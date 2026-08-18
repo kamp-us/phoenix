@@ -20,6 +20,7 @@
  */
 import type {Machine} from "@demlik/tea";
 import {defineMachine} from "@demlik/tea";
+import {grantedRounds} from "../cap-clearance.ts";
 import {RETRY_BUDGET} from "../retry-budget.ts";
 
 /** The operator's whole event vocabulary — the six, closed (#5570 founder session, 2026-08-15). */
@@ -172,7 +173,13 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 	if (defects.length > 0) return {defects};
 
 	const ctx = isRecord(context) ? context : {};
-	const maxRetries = typeof ctx.maxRetries === "number" ? ctx.maxRetries : RETRY_BUDGET;
+	const declared = typeof ctx.maxRetries === "number" ? ctx.maxRetries : RETRY_BUDGET;
+	// The founder's cleared rounds are additive on the declared budget, so the lane guard and
+	// `build verdicts`'s `capReached` spend the same grant — see `../cap-clearance.ts` (#5959).
+	const cleared = Array.isArray(ctx.clearedRounds)
+		? ctx.clearedRounds.filter((round): round is number => typeof round === "number")
+		: [];
+	const maxRetries = declared + grantedRounds(cleared);
 	const {maxRetries: _max, retries: _retries, ...extras} = ctx;
 	const initial: TaskState = {type: initialState, retries: 0, maxRetries};
 	// The Transitions mapped type demands a cell for every (state × msg) pair; a lane machine is

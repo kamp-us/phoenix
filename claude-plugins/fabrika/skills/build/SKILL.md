@@ -260,7 +260,16 @@ The fold is the only entry: paginated, current-head, per-gate — polarity visib
 included. Act only on rows it prints; empty rows at exit 0 are a proven no-work answer, but an
 UNKNOWN exit means the verdict state is unread — **never "nothing to fix"**. The budget is the
 fold's own `capReached` field, never a number you carry: on `true`, end `ESCALATED` and post the
-escalation via `fabrika build note` instead of another push. Fix findings on the same branch
+escalation via `fabrika build note` instead of another push.
+
+**A founder can clear one more round, and you read that through the same field.** The clearance is
+data on the PR — an authorized account records it with `fabrika build clear`, and the fold counts it,
+so `capReached: false` beside a `clearances` row *is* the granted round and you simply build it. What
+you never do is grant one: `build clear` is the operator's verb, it refuses an account outside the
+repo's configured set or below `write` at the ACL, and an escalation is your whole move when the cap
+is reached. One grant is one
+round — it survives the push it permits, and the next FAIL round spends it, so a second round needs a
+second grant. Fix findings on the same branch
 (`fabrika build tree --issue $issue_or_pr_number`, then `fabrika build branch --resume $issue_or_pr_number`), re-validate with
 `fabrika build check --surface <yours>`, push with `fabrika build push --force-with-lease`, answer
 the findings in a `fabrika build note` naming each one addressed, release. Exit `23` on that push
@@ -292,4 +301,5 @@ fabrika skill, so one reader parses all of them. No row here dead-ends on a bare
 | `ROADMAP.md` with a `## Focus` section | It is the declaration `build pick` and `build claim` judge campaign scope against (`fabrika wire doc-section --heading "The admission test — scope admission composed with the audience axis, one module, two seams" < <skill-base>/contract.md`) | **degrade** — an absent file and an absent or empty section are the same well-formed default: no focus is declared, the fence is inert, every issue is admitted, and both verbs print that on their scope line. A section that reads but does not parse is exit `4` and the run stops — malformed is never read as "no focus". |
 | The `package.json` scripts `typecheck` and `lint:worktree` | `build check --surface code` runs exactly `pnpm typecheck` and `pnpm lint:worktree` in this tree, cache bypassed | **fail-loud** — a validator that cannot be executed is exit `11`, UNKNOWN, never green; the run stops naming the absent `package.json` script and points at front-door. |
 | The prose placement homes — `README`, `DEVELOPMENT.md`, `.decisions/`, `.patterns/`, `reports/`, `.glossary/LANGUAGE.md` | [`references/prose.md`](references/prose.md)'s one-home rule places every prose fact in exactly one of them | **degrade** — write into the homes that exist and disclose the substituted home in the PR's `## Deviations`; a home is never invented silently |
+| `.fabrika.jsonc` with a `capClearAuthors` array | It is the set `build clear` admits a round-clearance from, and `build verdicts` honours a recorded one against | **degrade** — an absent file, an absent key or an empty array all mean nobody may clear a round: `build clear` refuses on `25` and the cap stands at its declared value, which is the pre-clearance behaviour. A read that *failed* is exit `11`, never an empty set. |
 | `.github/workflows/ci.yml` | It is the superseding authority over `build check`'s in-tree prediction (`fabrika wire doc-section --heading "build check" < <skill-base>/contract.md`) | **degrade** — with no CI gate to supersede it, `build check`'s green is the only evidence the PR carries, and the PR says so in its `## Deviations` |

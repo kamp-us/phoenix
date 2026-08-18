@@ -11,17 +11,23 @@
  * - **An unreadable page is `11`, never a shorter list.** `{"rows": []}` on exit 0 is a proven "no
  *   verdicts", readable against the scope line's counts (ADR 0092, #4208 / #4219).
  *
+ * - **`capReached` is the declared cap plus what the founder cleared, never a second constant.** A
+ *   recorded clearance (`./clearances.ts`) buys the one round it names, so the field the Repair
+ *   section tells a builder to trust stays the only budget number anyone reads (#5959).
+ *
  * Every row's `body` is the finding's full text through the content gate — the repair loop consumes
  * findings from here and never raw-fetches a comment, which is what keeps the one-door property over
  * the repair path.
  */
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
+import {capReached, effectiveCap, grantedRounds} from "../cap-clearance.ts";
 import {getIssue, listComments} from "../io/issues.ts";
 import {CAP_ROUND} from "../retry-budget.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {read as readCriteria} from "../wire/acceptance-criteria.ts";
 import {bindToHead, read as readMarker} from "../wire/verdict-marker.ts";
+import {clearancesOn, grantedFrom} from "./clearances.ts";
 import {PRECONDITION_UNKNOWN} from "./codes.ts";
 import {contentOf, gate} from "./content-gate.ts";
 import {listReviews} from "./github.ts";
@@ -118,6 +124,13 @@ export const runVerdicts = (
 		}
 
 		const rounds = countRounds(failedAt);
+		const cleared = yield* clearancesOn(repo, target.pull.baseRef, listed.value);
+		if (cleared._tag === "Unknown") {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: cannot read the recorded cap clearances: ${cleared.reason} — whether the budget is spent is UNKNOWN, never "capped".`,
+			);
+		}
 		const frozen = yield* frozenCriteria(repo, pr, target.pull.body);
 		if (frozen._tag === "Unknown") {
 			return refuse(
@@ -126,16 +139,19 @@ export const runVerdicts = (
 			);
 		}
 
+		const granted = grantedFrom(cleared.rows);
 		return answer(
 			JSON.stringify({
 				head,
 				rows,
 				rounds,
-				capReached: rounds >= CAP_ROUND,
+				capReached: capReached(rounds, granted),
+				clearances: cleared.rows,
 				frozenCriteria: frozen.rows,
 			}),
 			[
 				`${VERB}: head ${head}; scanned ${listed.value.length} comment(s) and ${reviews.value.length} review(s) on #${pr}.`,
+				`${VERB}: cap ${effectiveCap(granted)} = ${CAP_ROUND} declared + ${grantedRounds(granted)} cleared round(s), from ${cleared.rows.length} marker(s).`,
 			],
 		);
 	});

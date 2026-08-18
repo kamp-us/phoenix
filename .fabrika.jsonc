@@ -1,0 +1,7 @@
+{
+	// Who may clear one extra repair round on a PR (`fabrika build clear`). Founder-ruled 2026-08-18
+	// on #5959: the grant-author set is repo configuration, not a compiled-in "founder" concept —
+	// GitHub usernames and teams, both `@`-prefixed as GitHub writes them. In phoenix it is the
+	// three founder accounts. One grant buys exactly one round.
+	"capClearAuthors": ["@usirin", "@notusirin", "@cansirin"]
+}
