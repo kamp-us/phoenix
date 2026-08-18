@@ -149,6 +149,26 @@ undisclosed that this gate could see"* — never "no deviations exist".
   repair undispatchable. Fire it, and expect to fire it again at each repair head — the extra run
   is the accepted cost. Neither namespace discharges the other. You never emit governance's
   namespace yourself.
+- **On an epic child the governance verdict is range-scoped and lands on the child issue** —
+  nothing governance-shaped waits for the epic tail. An epic run opens one tail PR (ADR
+  [0285](../../../../.decisions/0285-epic-machine-ends-in-review.md)), so mid-run a child has no PR
+  a head could bind to, and `lane prove`'s child arm derives that child's namespaces from the
+  **range's own changed paths** through the same `touchesGovernanceRoot` floor it uses on a PR
+  ([`prove-verb.ts`](../../../../packages/fabrika-cli/src/lane/prove-verb.ts)) — a range touching a
+  governance root derives `governance` exactly as a PR diff does. So post every namespace the range
+  derives over that range, on the child issue, with `--base`/`--tip` in place of `--sha`: yours
+  through `fabrika review post <child-issue> --namespace <ns> --base <b> --tip <t>`, governance's
+  through the `governance` skill's own range form (its §5). What binds is content, not a head (ADR
+  [0276](../../../../.decisions/0276-verdict-binds-content-not-only-head.md)). Deferring the
+  namespace strands the lane whichever polarity you reached: a claimed `PASS` reds at `lane prove`
+  exit `23`, and a `FAIL` is recorded only once every derived namespace is terminal against the
+  range (`operate`'s `FAIL` row). The every-round rule above is unchanged here — a child's FAIL
+  round owes its governance verdict too.
+- **The tail's own review is a separate subject, so this is not a double post.** The tail PR's
+  namespaces are derived from the tail PR's own diff and its verdicts are head-bound on that PR; a
+  child's are derived from the child's range and are content-bound on the child issue. Posting on
+  the child discharges the child, never the tail, and re-posting a child's verdict onto the tail
+  discharges nothing — the two reads ask different scopes.
 - `self: true` (the diff touches `claude-plugins/fabrika/skills/review/`) ⇒ a PR must not review
   itself by its own new rules: re-read this `SKILL.md` and the rubrics at the **merge-base**
   revision (`git show` — a bytes read that loads no instructions) and judge by those.
