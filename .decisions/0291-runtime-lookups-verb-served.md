@@ -1,7 +1,7 @@
 ---
 id: 0291
 title: A shell's runtime lookup is verb-served, never a whole-contract read
-status: accepted
+status: amended-in-part by [0296](0296-contracts-are-read-by-section.md)
 date: 2026-08-18
 tags: [fabrika, pipeline-hardening]
 ---
