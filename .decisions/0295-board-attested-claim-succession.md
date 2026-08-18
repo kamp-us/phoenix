@@ -44,16 +44,21 @@ human act until the ledger owns claims". An outage makes it not rare.
 ## Decision
 
 Option 2 of the four #6068 laid out — **board-attested succession**. The successor driver posts an
-adopt marker naming the dead session and its own token. `resolveOwnership` answers `Mine` for a claim
-marker whose session is named by an **authorized** adopt marker on the same number, and `build
-release` deletes the claim comment and the adopt comment together.
+adopt marker naming the dead session, under a fresh token the verb mints and prints. That token is
+the successor's lane identity on this number: `resolveOwnership` answers `Mine` when an
+**authorized** adopt marker on the same number names the winning claim's session *and* names the
+asking lane as its successor, and `build release --token <that token>` deletes the claim comment and
+the adopt comment together.
 
 Guards, all of them in the verb:
 
 - An adopt naming the caller's own session is refused — plain `build release` already covers that.
 - The reason is required and recorded; an empty one refuses before anything is written.
-- The adopt confers the claim on **exactly** the session its `by <token>` names. A third session
-  reading the same marker still sees `Foreign`.
+- The adopt confers the claim on **exactly** the lane its `by <token>` names — the same whole-token
+  test an ordinary win passes. A third session reading the same marker sees `Foreign`, and so does
+  another lane of the successor's own session. It does not follow that a claim has one successor:
+  two lanes may each post an adopt over the same dead session, and each reads `Mine` through its own
+  ([#6113](https://github.com/kamp-us/phoenix/issues/6113)). Whoever releases first ends the claim.
 - The adopt's author is ACL-checked at release time. An adopt from an account below `write` is
   counted, reported on stderr, and is never a succession — content is not authority.
 - The act is reversible: delete the adopt comment and the claim is foreign again.
@@ -65,11 +70,14 @@ the reason is required and the marker stays on the issue for anyone to read.
 
 **What an adopt confers, beyond `release`.** `resolveOwnership` is one function and every verb reads
 it, so an adopted claim answers `Mine` to `build confirm` and to everything `requireClaim` guards —
-`branch`, `note`, `scratch`, `tree --issue`. That is the intent: the successor inherits the dead
-lane and may carry it on, not merely retract it. The one exception is `build claim`, which refuses on
-`15` over an adopted claim and retracts the marker it just posted: claiming would leave this run's
-marker beside the dead session's, and `release` deletes the claim and the adopt, not the extra. The
-successor's path is adopt → release → claim, and the refusal is what keeps it the only one.
+`branch`, `note`, `scratch`, `tree --issue` — each under the token `adopt` printed, which every one
+of those verbs takes as `--token`. That is the intent: the successor inherits the dead lane and may
+carry it on, not merely retract it. The one exception is `build claim`, which refuses on `15` over an
+adopted claim: on the racing path it retracts the marker it just posted, because claiming would
+leave this run's marker beside the dead session's and `release` deletes the claim and the adopt, not
+the extra; handed `--token`, it refuses before writing at all, because the winner it would otherwise
+answer with is the dead session's token and no later verb of this session accepts that. The
+successor's path is adopt → release → claim, and the refusals are what keep it the only one.
 
 ## Why the other three lost
 
@@ -100,12 +108,13 @@ releasable, and stays so with no adopt marker (#5795).
 - #5795's cross-session bullet becomes: **post the adopt marker, then `build release`.** Its
   same-session path is untouched.
 - Token-level ownership stays exactly as narrow as
-  [#6060](https://github.com/kamp-us/phoenix/issues/6060) is making it. The adopt keyword is derived
-  from each namespace's own prefix, so `lane:` and epic ownership see no adopt markers and nothing
-  re-widens.
+  [#6060](https://github.com/kamp-us/phoenix/issues/6060) is making it, on both axes. The adopt
+  keyword is derived from each namespace's own prefix, so `lane:` and epic ownership see no adopt
+  markers; and the successor test is the same whole-token test the ordinary win uses, so an adopt
+  confers a lane's worth of ownership, never a session's.
 - The claim protocol grew one verb, `build adopt`, one resolver branch that is read only when the
-  winning claim is not this session's, and one refusal in `build claim` over an adopted claim. The
-  ordinary path costs what it did.
+  winning claim is not this lane's, and two refusals in `build claim` over an adopted claim — one on
+  the racing path, one before the write when `--token` is passed. The ordinary path costs what it did.
 - ADR 0215's `status:` now records this amendment, so a reader who lands on the older record is sent
   here for the current rule.
 - A successor who adopts a claim it should not have is visible on the issue with its reason, which is

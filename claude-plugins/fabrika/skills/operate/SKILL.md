@@ -340,7 +340,7 @@ nobody filed and a claim nobody can take. Three obligations, in this order:
 **A claim stranded by a gone session is releasable, once you say so on the board.** `build release`
 refuses it on `15` — proven-foreign — until an adopt marker names that session as dead and this one
 as its successor: `fabrika build adopt <n> --session <its session id> --reason "<why>"`, then
-`fabrika build release <n>` (ADR
+`fabrika build release <n> --token <the token adopt printed>` (ADR
 [0295](../../../../.decisions/0295-board-attested-claim-succession.md)). The adopt is disclosed on the
 issue and reversible by deleting it; a claim you are not willing to state that about stays where it
 is, named in the park comment with its token.

@@ -1183,13 +1183,34 @@ describe("runAdopt / succession", () => {
 			[DELETE, okOut("")],
 		]);
 		const out = await Effect.runPromise(
-			Effect.provide(runClaim(options), Layer.merge(shell.layer, NO_FOCUS.layer)),
+			Effect.provide(runClaim({...options, token: null}), Layer.merge(shell.layer, NO_FOCUS.layer)),
 		);
 		expect(out.code).toBe(CLAIM_NOT_MINE);
 		expect(out.stderr.some((line) => line.includes("still carries the adopted claim"))).toBe(true);
 		expect(shell.calls.filter((line) => DELETE.test(line))).toEqual([
 			"gh api --method DELETE repos/o/r/issues/comments/9001",
 		]);
+	});
+
+	it("claim --token over an adopted claim refuses before writing anything", async () => {
+		const shell = fakeShell([
+			[ISSUE, CLAIMABLE],
+			[
+				COMMENTS,
+				comments(
+					{id: 8000, body: THEIRS},
+					{id: 8100, body: ADOPT, createdAt: "2026-08-10T00:00:00Z"},
+				),
+			],
+			[perm("agent"), okOut("write\n")],
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(runClaim(options), Layer.merge(shell.layer, NO_FOCUS.layer)),
+		);
+		expect(out.code).toBe(CLAIM_NOT_MINE);
+		// The token named is the ADOPT's — the one `release` accepts — never the dead session's winner.
+		expect(out.stderr.some((line) => line.includes(`--token ${LANE_TOKEN}`))).toBe(true);
+		expect(shell.calls.some((line) => POST.test(line) || DELETE.test(line))).toBe(false);
 	});
 
 	it("release still refuses the dead session's claim while no adopt marker names it", async () => {
@@ -1253,7 +1274,13 @@ describe("runAdopt / succession", () => {
 		expect(shell.calls.some((line) => DELETE.test(line))).toBe(false);
 	});
 
-	it("confers the claim on the named successor only — a third session still reads Foreign", async () => {
+	// The adopt names ONE lane by its whole token, so succession confers exactly what an ordinary win
+	// confers and never re-widens ownership back to a session (#6060). A third session and a sibling
+	// lane of the successor's own session are refused by the same test, which is the point.
+	it.each([
+		["a third session", "s-3rd", `build:s-3rd:${LANE_UUID}`],
+		["a sibling lane of the successor's session", "s-9f2e", SIBLING_TOKEN],
+	])("confers the claim on the named lane only — %s reads Foreign", async (_who, session, token) => {
 		const shell = fakeShell([
 			[ISSUE, CLAIMABLE],
 			[
@@ -1267,7 +1294,7 @@ describe("runAdopt / succession", () => {
 		]);
 		const out = await Effect.runPromise(
 			Effect.provide(
-				runRelease({...options, env: {...options.env, CLAUDE_CODE_SESSION_ID: "s-3rd"}}),
+				runRelease({...options, token, env: {...options.env, CLAUDE_CODE_SESSION_ID: session}}),
 				Layer.merge(shell.layer, NO_FOCUS.layer),
 			),
 		);

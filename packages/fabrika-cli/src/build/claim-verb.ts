@@ -544,7 +544,12 @@ export const runRelease = (
 
 const ADOPT = "build adopt";
 
-export interface AdoptOptions extends ProtocolOptions {
+/**
+ * `adopt` takes no `--token`: it MINTS the lane identity the succession creates and prints it, which
+ * is why it is the one protocol verb not built on `ProtocolOptions`. A successor holds no token on a
+ * number whose claim it is inheriting — demanding one would be demanding the thing being conferred.
+ */
+export interface AdoptOptions extends Omit<ProtocolOptions, "token"> {
 	/** The dead session whose claim this run adopts. */
 	readonly session: string;
 	/** Why the succession is taken — required, and recorded on the marker. */
