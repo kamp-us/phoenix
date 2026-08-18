@@ -232,10 +232,12 @@ the receiver re-fetches from the artifact.
 
 **Record the terminal yourself, then print it.** When your spawn brief named a lane, your terminal
 step is the verb — pass back the `lane` and `root` its `## Task` section carries, and the token→event
-map is the verb's code; the event lands on the lane's own ledger with the PR as its evidence (#5736):
+map is the verb's code; the event lands on the lane's own ledger with the PR as its evidence (#5736).
+`<fabrika>` is that same section's `fabrika:` entrypoint, the one path this repo's verbs actually run
+from (#6012):
 
 ```bash
-node packages/fabrika-cli/src/bin.ts lane report <lane> --root <root> --token SHIPPED-PR --pr <pr-url>
+node <fabrika> lane report <lane> --root <root> --token SHIPPED-PR --pr <pr-url>
 ```
 
 `--pr` whenever the terminal names one; `--comment` for the diagnosis comment behind a

@@ -1,21 +1,28 @@
 /**
  * The lane-brief — the bytes a lane driver hands one freshly-spawned fabrika shell.
  *
- * Three fixed sections and nothing else: `## Task` (which lane, which lanes root, which task, which
- * state, which shell), `## Ground` (links and refs, never prose), and `## Rules` (byte-fixed text
- * this module owns).
+ * Three fixed sections and nothing else: `## Task` (which lane, which lanes root, which fabrika
+ * entrypoint, which task, which state, which shell), `## Ground` (links and refs, never prose), and
+ * `## Rules` (byte-fixed text this module owns).
  *
- * **The lanes root is the one local path a brief carries, and it is in `## Task` because the shell
- * has to address the driver's ledger, not its own.** The default root is relative and every shell
- * runs in its own worktree, so a shell told only the lane id records its terminal into its
- * worktree's `.fabrika/` and the driven lane never hears it (#5736). The root rides inside the
- * format rather than as a line the driver appends under the bytes: an appended line is text the
- * reader below calls malformed, which would turn the byte-fixed guarantee into a budget.
+ * **`## Task` carries the two local paths, because both address something the shell cannot derive
+ * from its own worktree.** The lanes root is the driver's ledger: the default is relative and every
+ * shell runs in its own worktree, so a shell told only the lane id records its terminal into its
+ * worktree's `.fabrika/` and the driven lane never hears it (#5736). The `fabrika` entrypoint is the
+ * copy of this CLI the shell must execute, resolved by the driver against the repo it is actually
+ * standing in — the rules used to name phoenix's own `packages/fabrika-cli/src/bin.ts` as a literal,
+ * which in any repo that installs fabrika as a dependency is a `MODULE_NOT_FOUND` on the shell's
+ * first verb and every verb after it (#6012). Both ride inside the format rather than as a line the
+ * driver appends under the bytes: an appended line is text the reader below calls malformed, which
+ * would turn the byte-fixed guarantee into a budget.
  *
  * **The rules are the format's own bytes, not a driver's phrasing.** A prompt composed per dispatch
  * is a prompt two drivers write differently, and the rule that matters most — carry URLs, never a
  * restatement — is then enforced by nothing but the driver's care. Fixing the bytes here makes the
- * drift unrepresentable rather than detectable.
+ * drift unrepresentable rather than detectable. That is also why the entrypoint is a `## Task`
+ * field and not an interpolation into the rules: the reader recomputes the rules from the ground
+ * alone, so a machine-resolved path inside them would make every brief malformed on the next
+ * machine that read it.
  *
  * **`## Ground` carries URLs, git refs and no content.** A brief that summarised an issue would hand
  * the shell a stale contract to work from, and the shell has verbs that read the live one.
@@ -55,6 +62,29 @@ export const lanesRoot = (raw: string): LanesRoot | null => {
 	const value = raw.trim();
 	if (!value.startsWith("/")) return null;
 	return value.split("/").includes("..") ? null : (value as LanesRoot);
+};
+
+declare const FABRIKA_ENTRY: unique symbol;
+
+/**
+ * The fabrika entrypoint a spawned shell runs its verbs through — the value that replaced the
+ * phoenix-literal path the rules used to hardcode (#6012).
+ *
+ * Two shapes are legal and each is right in its own repo: **relative** is repo-relative in-tree
+ * source, which the shell's own worktree carries its own copy of, and **absolute** is an installed
+ * copy no worktree has a `node_modules` of its own for. The brand refuses the third shape, which is
+ * the whole point: a path with no `.ts`/`.js` extension is a binstub, and a binstub in a worktree
+ * resolves through the delegate layer to the primary checkout's code (#5679).
+ */
+export type FabrikaEntry = string & {readonly [FABRIKA_ENTRY]: true};
+
+const NODE_SCRIPT = /\.[cm]?[jt]s$/;
+
+export const fabrikaEntry = (raw: string): FabrikaEntry | null => {
+	const value = raw.trim();
+	if (value === "" || /\s/.test(value)) return null;
+	if (value.split("/").includes("..")) return null;
+	return NODE_SCRIPT.test(value) ? (value as FabrikaEntry) : null;
 };
 
 declare const GIT_REF: unique symbol;
@@ -136,6 +166,8 @@ export interface LaneBrief {
 	readonly lane: string;
 	/** The absolute lanes root the shell passes back to `lane report` as `--root`. */
 	readonly root: LanesRoot;
+	/** The fabrika entrypoint the shell runs every verb through, resolved for this repo. */
+	readonly fabrika: FabrikaEntry;
 	/** The task the state belongs to, exactly as `lane status` prints it. */
 	readonly task: string;
 	readonly state: ShellState;
@@ -150,14 +182,19 @@ export type LaneBriefRead = WireRead<LaneBrief>;
  * The `## Rules` text, byte-fixed and owned by the format.
  *
  * Each sentence is a rule a driver used to carry in their own prose: worktree isolation, URLs over
- * restatements, and the in-tree entrypoint with the reason it exists (#5679).
+ * restatements, and the entrypoint with the reason it exists (#5679).
+ *
+ * The entrypoint is named by reference — `the `fabrika:` path in `## Task`` — and never interpolated,
+ * because the reader recomputes this text from the ground alone (#6012).
  */
 export const RULES = `Run in your own git worktree; a shell that shares the primary checkout can mutate its git state.
 Work from the URLs above and never from a summary of them — read the issue, the PR and its verdicts
 through your own verbs, because a restated spec is a stale spec.
-Invoke every fabrika verb as \`node packages/fabrika-cli/src/bin.ts <group> <verb>\`, never the bare
-\`fabrika\` binstub: in a worktree it resolves to another checkout's code (#5679), so its answer
-describes a tree you are not standing in.`;
+Invoke every fabrika verb as \`node <fabrika> <group> <verb>\`, where \`<fabrika>\` is the \`fabrika:\`
+entrypoint in \`## Task\` above — never the bare \`fabrika\` binstub, which in a worktree resolves to
+another checkout's code (#5679), so its answer describes a tree you are not standing in. A relative
+entrypoint is this repo's own source and resolves inside your worktree; an absolute one is an
+installed copy your worktree carries no \`node_modules\` for.`;
 
 /**
  * The rules an epic lane's child state adds, byte-fixed the same way and appended to {@link RULES}.
@@ -172,11 +209,11 @@ ends on \`BUILT-NO-PR\`, whose branch disposition is exactly that: left local an
 lane to fold (#6019).
 A child's build discloses its deviations — the section a PR body would carry — as a
 \`build-deviations\` marker comment on the child issue, composed through
-\`node packages/fabrika-cli/src/bin.ts wire emit --format build-deviations\`; the epic-tail review
+\`node <fabrika> wire emit --format build-deviations\`; the epic-tail review
 reads them from there (#5903).
 A child's review judges the \`range\` above and records its verdict on the child issue in the
 \`range-verdict-marker\` format, composed through
-\`node packages/fabrika-cli/src/bin.ts wire emit --format range-verdict-marker\`.`;
+\`node <fabrika> wire emit --format range-verdict-marker\`.`;
 
 /**
  * The rules an epic run's tail adds — the counterpart of {@link EPIC_RULES}, appended when the
@@ -187,7 +224,7 @@ export const EPIC_TAIL_RULES = `This PR is one epic run's tail: its branch assem
 \`## Deviations\` section covers only that assembly. Each landed child disclosed its own build
 deviations as a \`build-deviations\` marker comment on its child issue — the issues the PR body's
 closing references name. The tail review reads every one of them through
-\`node packages/fabrika-cli/src/bin.ts wire read --format build-deviations\` before forming its
+\`node <fabrika> wire read --format build-deviations\` before forming its
 verdict.`;
 
 /** The section headings this format admits, in the order it emits them. */
@@ -224,6 +261,7 @@ export const emit = (brief: LaneBrief): string =>
 		"## Task",
 		`lane: ${brief.lane}`,
 		`root: ${brief.root}`,
+		`fabrika: ${brief.fabrika}`,
 		`task: ${brief.task}`,
 		`state: ${brief.state}`,
 		`shell: ${brief.shell}`,
@@ -425,6 +463,13 @@ export const read = (artifact: string): LaneBriefRead => {
 			"root",
 		);
 	}
+	const fabrika = fabrikaEntry(fields.get("fabrika") ?? "");
+	if (fabrika === null) {
+		return malformed(
+			`"${(fields.get("fabrika") ?? "").trim()}" is not a fabrika entrypoint — a shell needs a node-runnable path, and a binstub resolves to another checkout's code (#5679)`,
+			"fabrika",
+		);
+	}
 	const taskName = (fields.get("task") ?? "").trim();
 	if (taskName === "") return malformed("the brief names no task", "task");
 	const state = shellState(fields.get("state") ?? "");
@@ -460,7 +505,16 @@ export const read = (artifact: string): LaneBriefRead => {
 
 	return {
 		_tag: "Found",
-		value: {lane: laneRaw, root, task: taskName, state, shell, issue, ground: scanned.ground},
+		value: {
+			lane: laneRaw,
+			root,
+			fabrika,
+			task: taskName,
+			state,
+			shell,
+			issue,
+			ground: scanned.ground,
+		},
 	};
 };
 
@@ -468,6 +522,7 @@ export const read = (artifact: string): LaneBriefRead => {
 export const renderBrief = (brief: LaneBrief): NonEmptyReadonlyArray<string> => [
 	`lane\t${brief.lane}`,
 	`root\t${brief.root}`,
+	`fabrika\t${brief.fabrika}`,
 	`task\t${brief.task}`,
 	`state\t${brief.state}`,
 	`shell\t${brief.shell}`,
@@ -499,11 +554,15 @@ export const parseFields = (fields: string): LaneBriefFields => {
 
 	const laneRaw = (values.get("lane") ?? "").trim();
 	const root = lanesRoot(values.get("root") ?? "");
+	const fabrika = fabrikaEntry(values.get("fabrika") ?? "");
 	const task = (values.get("task") ?? "").trim();
 	const state = shellState(values.get("state") ?? "");
 	const issue = artifactUrl(values.get("issue") ?? "");
 	if (laneRaw === "") return {_tag: "Unusable", reason: "no lane id"};
 	if (root === null) return {_tag: "Unusable", reason: "no absolute lanes root"};
+	if (fabrika === null) {
+		return {_tag: "Unusable", reason: "no node-runnable fabrika entrypoint"};
+	}
 	if (task === "") return {_tag: "Unusable", reason: "no task name"};
 	if (state === null) {
 		return {_tag: "Unusable", reason: `no shell state (${SHELL_STATES.join("/")})`};
@@ -513,7 +572,16 @@ export const parseFields = (fields: string): LaneBriefFields => {
 	if (scanned._tag === "Bad") return {_tag: "Unusable", reason: scanned.reason};
 	return {
 		_tag: "Fields",
-		brief: {lane: laneRaw, root, task, state, shell: SHELLS[state], issue, ground: scanned.ground},
+		brief: {
+			lane: laneRaw,
+			root,
+			fabrika,
+			task,
+			state,
+			shell: SHELLS[state],
+			issue,
+			ground: scanned.ground,
+		},
 	};
 };
 

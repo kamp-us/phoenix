@@ -199,10 +199,11 @@ terminal above (`ALREADY-MERGED`, `QUEUED`, `LANDED`, `REFUSED`, `AWAITING-CP-AP
 `ROUTED-REPAIR`, `ROUTED-HEAL-CI`, `ROUTED-REVIEW`, `UNRESOLVED`, `EJECTED`, `UNKNOWN`), mapped to a
 lane event in its code, with the PR as the event's evidence (#5736). The routing token names the arm
 your note's first line already names — report the one you took, never a bare `ROUTED`, which is the
-reviewer's token and means something else:
+reviewer's token and means something else. `<fabrika>` is that same section's `fabrika:` entrypoint,
+the one path this repo's verbs actually run from (#6012):
 
 ```bash
-node packages/fabrika-cli/src/bin.ts lane report <lane> --root <root> --token LANDED --pr <pr-url>
+node <fabrika> lane report <lane> --root <root> --token LANDED --pr <pr-url>
 ```
 
 The reason behind a `refused` stays in your note and report — the verb takes the bare token. It

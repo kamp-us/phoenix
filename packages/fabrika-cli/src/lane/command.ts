@@ -10,6 +10,7 @@ import {randomUUID} from "node:crypto";
 import {fileURLToPath} from "node:url";
 import {Effect, Option} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
+import {resolveEntrypoint} from "../delegate/entrypoint.ts";
 import {leafCommand} from "../excess-operand.ts";
 import type {VerbOutcome} from "../verb.ts";
 import {runBrief} from "./brief-verb.ts";
@@ -314,6 +315,7 @@ const brief = leafCommand(
 		),
 	},
 	Effect.fn(function* ({lane, root, task, repo}) {
+		const entrypoint = yield* resolveEntrypoint();
 		yield* emit(
 			yield* onKey(lane, root, (_key, ref) =>
 				runBrief({
@@ -321,6 +323,7 @@ const brief = leafCommand(
 					task: Option.getOrNull(task),
 					repo: Option.getOrNull(repo),
 					env: process.env,
+					entrypoint,
 				}),
 			),
 		);
@@ -328,7 +331,7 @@ const brief = leafCommand(
 ).pipe(
 	Command.withShortDescription("The spawn prompt for one task's current leaf state."),
 	Command.withDescription(
-		"Print the spawn prompt for one task's current leaf state, folded fresh from the ledger — so a driver pastes a brief rather than composing one. stdout is the `lane-brief` wire format: which lane, task, state and shell, this driver's lanes root resolved absolute (the shell passes it back to `lane report` as --root; a relative one would resolve against the shell's own worktree), the resolved issue and PR URLs (URLs only — the spawned shell re-reads its own ground), and the format's byte-fixed rules. Hand the bytes to the spawn verbatim — a line appended under them is text the format's own reader calls malformed. On an epic lane a child's state resolves no PR at all and briefs the epic issue, the epic branch and the range to judge, while the tail task briefs the run's single PR under the same refusals (ADR 0285). Exits 4 (lane record read in full and not the shape), 7 (no lane there), 11 (the lane, the issue, its PRs or — on a child `review` state — this tree's branches could not be read, UNKNOWN), 13 (the task is not in the machine, or --task omitted on a multi-task lane), 18 (the leaf state routes to no shell — `queued`, `blocked`, `human:*`, a final), 19 (neither the task nor the lane names an issue, or that issue is proven absent), 20 (zero open PRs where the state needs one, or several where one is required), 21 (the key is not a lane key), 22 and 25 (a child `review` state's range, on the seats `lane prove` already spends on the same two facts — no local branch in this tree carries the child's commits, or several do). Example: fabrika lane brief 5680 --task issue_5729",
+		"Print the spawn prompt for one task's current leaf state, folded fresh from the ledger — so a driver pastes a brief rather than composing one. stdout is the `lane-brief` wire format: which lane, task, state and shell, this driver's lanes root resolved absolute (the shell passes it back to `lane report` as --root; a relative one would resolve against the shell's own worktree), the fabrika entrypoint resolved for this repo (repo-relative in a checkout of fabrika's own repo so each worktree runs its own copy, absolute for an installed one no worktree has a node_modules for), the resolved issue and PR URLs (URLs only — the spawned shell re-reads its own ground), and the format's byte-fixed rules. Hand the bytes to the spawn verbatim — a line appended under them is text the format's own reader calls malformed. On an epic lane a child's state resolves no PR at all and briefs the epic issue, the epic branch and the range to judge, while the tail task briefs the run's single PR under the same refusals (ADR 0285). Exits 4 (lane record read in full and not the shape), 7 (no lane there), 11 (the lane, the issue, its PRs, this fabrika's own entrypoint or — on a child `review` state — this tree's branches could not be read, UNKNOWN), 13 (the task is not in the machine, or --task omitted on a multi-task lane), 18 (the leaf state routes to no shell — `queued`, `blocked`, `human:*`, a final), 19 (neither the task nor the lane names an issue, or that issue is proven absent), 20 (zero open PRs where the state needs one, or several where one is required), 21 (the key is not a lane key), 22 and 25 (a child `review` state's range, on the seats `lane prove` already spends on the same two facts — no local branch in this tree carries the child's commits, or several do). Example: fabrika lane brief 5680 --task issue_5729",
 	),
 );
 
