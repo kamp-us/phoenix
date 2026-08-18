@@ -58,7 +58,7 @@ const repoFlag = Flag.string("repo").pipe(
 const skillsDirFlag = Flag.string("skills-dir").pipe(
 	Flag.optional,
 	Flag.withDescription(
-		"the roster root to read (default: the installed plugin's own skills tree, else claude-plugins/fabrika/skills beneath the repo root)",
+		"the roster root to read (default: the installed plugin's own skills tree, else claude-plugins/fabrika/skills beneath the repo root, else the same path beneath the checkout the CLI itself runs from)",
 	),
 );
 

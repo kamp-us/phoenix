@@ -3,7 +3,7 @@
  *
  * **The roster is the plugin's, not the target repo's.** fabrika installs into repos that are not
  * phoenix (#4776), so defaulting to a repo-relative path would make `status menu` and
- * `status config` empty on precisely the fresh repo this skill onboards. Resolution runs three
+ * `status config` empty on precisely the fresh repo this skill onboards. Resolution runs four
  * tiers and prints which one served, so a caller can re-run the read instead of adopting the render.
  *
  * **A roster that resolves and holds zero skills is a fact, not a failure**; a roster that could not
@@ -14,8 +14,8 @@ import {Effect, type FileSystem, Path, Result} from "effect";
 import {ancestors} from "../delegate/root.ts";
 import {exists, isDirectory, readDir, readFile} from "../io/fs.ts";
 
-/** Which of the three tiers served the roster. Printed, never assumed. */
-export type RosterTier = "explicit" | "plugin" | "repo";
+/** Which of the four tiers served the roster. Printed, never assumed. */
+export type RosterTier = "explicit" | "plugin" | "repo" | "checkout";
 
 /** Who can reach a skill — the one routing fact a reader cannot infer from a description. */
 export type InvocationAxis = "model" | "user";
@@ -116,7 +116,7 @@ const nearestAncestorWith = (
 export interface RosterSources {
 	/** `--skills-dir`, when the caller passed one. */
 	readonly explicit: string | null;
-	/** The directory of the running module — tier 2 walks up from here. */
+	/** The directory of the running module — tiers 2 and 4 walk up from here. */
 	readonly moduleDir: string;
 	/** The invocation directory — tier 3 walks up from here for the in-repo checkout. */
 	readonly cwd: string;
@@ -152,12 +152,23 @@ export const resolveRosterPath = (
 			};
 		}
 		const repoRoot = yield* nearestAncestorWith(path, sources.cwd, IN_REPO_ROSTER);
-		return repoRoot === null
+		if (repoRoot !== null) {
+			return {
+				path: path.join(repoRoot, IN_REPO_ROSTER),
+				display: IN_REPO_ROSTER,
+				tier: "repo" as const,
+			};
+		}
+		// Tier 4 walks the same marker up from `moduleDir`, which is the only rung that answers in
+		// the dev shape: the CLI at `packages/fabrika-cli/` has no plugin manifest above it, so tier
+		// 2 cannot fire, and tier 3 is rooted at a target repo that holds no roster at all (#5775).
+		const checkoutRoot = yield* nearestAncestorWith(path, sources.moduleDir, IN_REPO_ROSTER);
+		return checkoutRoot === null
 			? null
 			: {
-					path: path.join(repoRoot, IN_REPO_ROSTER),
+					path: path.join(checkoutRoot, IN_REPO_ROSTER),
 					display: IN_REPO_ROSTER,
-					tier: "repo" as const,
+					tier: "checkout" as const,
 				};
 	});
 
