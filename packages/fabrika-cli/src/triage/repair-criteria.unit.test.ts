@@ -210,6 +210,51 @@ describe("planRepair — the bullet conversion (#6001)", () => {
 		expect(result.reason).toContain('is not one ("1. another")');
 	});
 
+	it("refuses a non-bullet block sitting directly under a bullet, with no blank line to close it", () => {
+		// The refusal used to be gated on the open bullet, so this exact list converted and shipped
+		// "1. ordered" inside a block no grader reads (#6001, review round 1).
+		const result = plan(enveloped("### Acceptance criteria\n\n- one item\n1. ordered\n- a third"));
+		expect(result._tag).toBe("Refused");
+		if (result._tag !== "Refused") return;
+		expect(result.reason).toContain('is not one ("1. ordered")');
+	});
+
+	it("still folds a wrapped continuation directly under its bullet — only a block starter refuses", () => {
+		const result = plan(
+			enveloped("### Acceptance criteria\n\n- one item\n  wrapped on\n- a third"),
+		);
+		expect(result._tag).toBe("Repaired");
+		if (result._tag !== "Repaired") return;
+		expect(result.criteria.map(({text}) => text)).toEqual(["one item wrapped on", "a third"]);
+	});
+
+	it("refuses a mixed-marker block: the `+` item converts and the reader counts no criterion there", () => {
+		// The read-back answered `Found` off the surviving `-` item, so the PATCH landed a contract one
+		// criterion shorter than the author wrote (#6001, review round 1).
+		const result = plan(enveloped("### Acceptance criteria\n\n- one item\n+ two item"));
+		expect(result._tag).toBe("Refused");
+		if (result._tag !== "Refused") return;
+		expect(result.reason).toContain("the reader counts no criterion there");
+		expect(result.reason).toContain("rewrote line 4");
+	});
+
+	it("refuses the mixed-marker block from the other side too — the dropped item is the FIRST", () => {
+		const result = plan(enveloped("### Acceptance criteria\n\n+ one item\n- two item"));
+		expect(result._tag).toBe("Refused");
+		if (result._tag !== "Refused") return;
+		expect(result.reason).toContain("the reader counts no criterion there");
+		expect(result.reason).toContain("rewrote line 3");
+	});
+
+	it("converts a nested sub-bullet to its own criterion — the reader's own flattening", () => {
+		const result = plan(
+			enveloped("### Acceptance criteria\n\n- top item\n\n  - nested detail\n\n- second"),
+		);
+		expect(result._tag).toBe("Repaired");
+		if (result._tag !== "Repaired") return;
+		expect(result.criteria.map(({text}) => text)).toEqual(["top item", "nested detail", "second"]);
+	});
+
 	it("still refuses a drifted heading TEXT over plain bullets — the widening swallows nothing", () => {
 		const result = plan(enveloped(`## Acceptance criterias\n\n${BULLETS}`));
 		expect(result._tag).toBe("Refused");

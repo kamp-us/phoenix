@@ -34,6 +34,7 @@ import {
 	type Heading,
 	isCheckboxItem,
 	read,
+	readSpans,
 	scanHeadings,
 	sectionOf,
 } from "../wire/acceptance-criteria.ts";
@@ -135,11 +136,18 @@ type BulletConversion =
  * would refuse nearly every body this repair exists for. Inside it, anything that is not a bullet,
  * a blank line, or an open bullet's lazy continuation is a refusal naming what it read: the reader
  * closes the criterion at each of those, so converting around one would ship a list whose middle
- * holds text no grader ever reads.
+ * holds text no grader ever reads. **A line that opens a block of its own is not a continuation**
+ * even standing directly under a bullet with no blank line between them — gating that refusal on the
+ * open bullet made it reachable only after a blank line, so `1. ordered` under `- one` converted
+ * and shipped exactly the list this rule exists to refuse (#6001, review round 1).
  *
  * A checkbox item **anywhere** in the section refuses regardless of the window: the block already
  * states criteria, and promoting the bullets beside them would add to what it says rather than fix
  * how it says it.
+ *
+ * A **nested** sub-bullet is converted like any other and becomes its own criterion. That is the
+ * reader's own semantics — it flattens an indented checkbox item the same way — so the conversion
+ * carries it rather than inventing a nesting rule the grader does not have.
  */
 const convertBullets = (lines: ReadonlyArray<string>, heading: Heading): BulletConversion => {
 	const section = sectionOf(lines, heading);
@@ -180,7 +188,10 @@ const convertBullets = (lines: ReadonlyArray<string>, heading: Heading): BulletC
 			open = true;
 			continue;
 		}
-		if (!open) {
+		// A line that opens a block of its own is never a lazy continuation, so `open` must not shield
+		// it: the reader closes the criterion at it either way, and converting around it would ship a
+		// list whose middle holds text no grader reads.
+		if (!open || NON_BULLET_BLOCK.test(line)) {
 			return {
 				_tag: "Refused",
 				reason: `line ${at} sits between the list's items and is not one ("${line.trim()}")`,
@@ -251,6 +262,7 @@ export const planRepair = (
 	};
 
 	const afterHeading = unreadable(lines);
+	let converted: ReadonlyArray<number> = [];
 	if (afterHeading !== null) {
 		const conversion = convertBullets(lines, heading);
 		if (conversion._tag === "Refused") {
@@ -260,11 +272,12 @@ export const planRepair = (
 			};
 		}
 		lines = conversion.lines;
+		converted = conversion.converted;
 		repairs.push({_tag: "BulletItems", lines: conversion.converted});
 	}
 
 	const repaired = `${lines.join("\n")}${preserved}`;
-	const back = read(repaired);
+	const back = readSpans(repaired);
 	if (back._tag !== "Found") {
 		const remaining =
 			back._tag === "Malformed" ? `${back.reason} (${back.evidence})` : "the block reads as absent";
@@ -273,6 +286,34 @@ export const planRepair = (
 			reason: `a pure shape rewrite does not make the block readable — ${remaining}`,
 		};
 	}
+
+	// The read-back answering `Found` proves the block reads; it does not prove it reads back what
+	// the conversion rewrote. A marker this module accepts and the reader does not — `+` today, any
+	// future divergence tomorrow — converts, reads `Found` off the surviving items, and PATCHes a
+	// contract one criterion shorter than the author wrote (#6001, review round 1). Proving one
+	// criterion per converted line, rather than pinning today's marker set, is what makes the whole
+	// class unrepresentable.
+	const counted = back.value.map((span) => span.firstLine + 1);
+	if (converted.length > 0 && counted.join(",") !== converted.join(",")) {
+		const dropped = converted.filter((line) => !counted.includes(line));
+		return {
+			_tag: "Refused",
+			reason:
+				dropped.length > 0
+					? `the conversion rewrote line${dropped.length === 1 ? "" : "s"} ${dropped.join(", ")} and the reader counts no criterion there — ${
+							counted.length
+						} criteri${counted.length === 1 ? "on" : "a"} read back from ${converted.length} converted line${
+							converted.length === 1 ? "" : "s"
+						}, so the repair would drop what the block says`
+					: `the reader counts criteria at line${counted.length === 1 ? "" : "s"} ${counted.join(", ")}, not at the ${converted.length} line${converted.length === 1 ? "" : "s"} the conversion rewrote (${converted.join(", ")})`,
+		};
+	}
+
+	const [firstSpan, ...restSpans] = back.value;
+	const criteria: NonEmptyReadonlyArray<AcceptanceCriterion> = [
+		firstSpan.criterion,
+		...restSpans.map((span) => span.criterion),
+	];
 	const [head, ...rest] = repairs;
 	if (head === undefined) {
 		// Unreachable by construction: a body that reads back `Found` having been rewritten in no way
@@ -282,5 +323,5 @@ export const planRepair = (
 			reason: `the block reads as ${whole.reason} and no shape defect this verb repairs explains it (${whole.evidence})`,
 		};
 	}
-	return {_tag: "Repaired", body: repaired, repairs: [head, ...rest], criteria: back.value};
+	return {_tag: "Repaired", body: repaired, repairs: [head, ...rest], criteria};
 };
