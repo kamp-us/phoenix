@@ -1,9 +1,15 @@
 import {describe, expect, it} from "vitest";
-import {capReached, effectiveBudget, effectiveCap, grantedRounds} from "./cap-clearance.ts";
+import {
+	budgetWith,
+	capReached,
+	effectiveBudget,
+	effectiveCap,
+	grantedRounds,
+} from "./cap-clearance.ts";
 import {CAP_ROUND, RETRY_BUDGET} from "./retry-budget.ts";
 
 describe("grantedRounds", () => {
-	it("counts distinct rounds, so a double-posted grant buys one round and not two", () => {
+	it("counts distinct rounds, so a double-posted grant reads as one and not two", () => {
 		expect(grantedRounds([CAP_ROUND, CAP_ROUND])).toBe(1);
 		expect(grantedRounds([CAP_ROUND, CAP_ROUND + 1])).toBe(2);
 	});
@@ -39,6 +45,22 @@ describe("capReached", () => {
 		expect(capReached(CAP_ROUND + 1, [CAP_ROUND, CAP_ROUND + 1])).toBe(false);
 		expect(capReached(CAP_ROUND + 2, [CAP_ROUND, CAP_ROUND + 1])).toBe(true);
 	});
+
+	/**
+	 * The grant a founder stamps past the declared cap is the one #6137 found inert: with the cap
+	 * tallied as `CAP_ROUND + grants` it landed exactly ON the new cap and bought nothing, so #6122
+	 * sat with an honoured clearance and no round to build.
+	 */
+	it.each([
+		CAP_ROUND,
+		CAP_ROUND + 1,
+		CAP_ROUND + 4,
+		CAP_ROUND + 9,
+	])("lets round %i through when the grant was stamped at it, with no earlier grant", (round) => {
+		expect(capReached(round, [round])).toBe(false);
+		expect(capReached(round + 1, [round])).toBe(true);
+		expect(effectiveCap([round])).toBe(round + 1);
+	});
 });
 
 /**
@@ -58,7 +80,16 @@ describe("the lane guard and the verdict fold spend the same grant", () => {
 		{rounds: CAP_ROUND + 1, cleared: [CAP_ROUND]},
 		{rounds: CAP_ROUND + 1, cleared: [CAP_ROUND, CAP_ROUND + 1]},
 		{rounds: CAP_ROUND + 2, cleared: [CAP_ROUND, CAP_ROUND + 1]},
+		{rounds: CAP_ROUND + 3, cleared: [CAP_ROUND + 3]},
+		{rounds: CAP_ROUND + 4, cleared: [CAP_ROUND + 3]},
 	])("agrees at $rounds round(s) with $cleared cleared", ({rounds, cleared}) => {
 		expect(laneFreezes(rounds, cleared)).toBe(capReached(rounds, cleared));
+	});
+
+	/** A lane carrying its own declared budget spends the grant the same way. */
+	it("holds for a lane whose template declares a budget of its own", () => {
+		expect(budgetWith(5, [])).toBe(5);
+		expect(budgetWith(5, [CAP_ROUND + 3])).toBe(CAP_ROUND + 3);
+		expect(budgetWith(1, [CAP_ROUND])).toBe(CAP_ROUND);
 	});
 });
