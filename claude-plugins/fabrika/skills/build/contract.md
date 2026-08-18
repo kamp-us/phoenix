@@ -68,6 +68,7 @@ second answer to a gated question can contradict the gate (interface convention 
 | `build pr` | open the PR from a stdin body, refusing the known defect shapes, with read-back | mechanical guards over an authored body; *authoring* stays in the skill |
 | `build note` | post a progress/handoff comment, head-stamped, leak-guarded, with read-back | as `report note`, plus the head stamp |
 | `build verdicts` | the paginated, current-head, per-gate verdict fold on a PR | fetch-all + fold via the wire module; *acting on rows* stays in the skill |
+| `build clear` | record the founder's clearance of one extra repair round on a PR | a conjunctive ACL/authorization protocol with read-back; *whether to grant* is the founder's, never the verb's |
 
 **Considered and not derived: a surface classifier.** Naming the surface (code / prose / plan) is
 a judgment the skill makes reading the issue; a verb that guessed it from file extensions would be
@@ -1591,6 +1592,8 @@ fabrika build verdicts --pr 4310 [--repo <owner/name>]
     "reviewId": 98001, "kind": "native", "body": "…the review's text…"}
  ],
  "rounds": 2, "capReached": false,
+ "clearances": [{"round": 3, "at": "2026-08-18T07:16:03Z", "by": "usirin", "commentId": 512400,
+                 "authorization": 512399, "honoured": true}],
  "frozenCriteria": [{"text": "add an e2e for the empty-list case", "appendedRound": 3}]}
 ```
 
@@ -1598,8 +1601,18 @@ fabrika build verdicts --pr 4310 [--repo <owner/name>]
 appended past the freeze. **Each row's `body` is the finding's full text, passed through the
 content gate** — the repair loop consumes findings from here and never raw-fetches a comment,
 which is what keeps AC 3's one-door property over the repair path. `capReached` is
-`rounds >= CAP_ROUND`, read from `src/retry-budget.ts` — the package's one declared retry budget
-— and computed here so the cap is a field read, not a number remembered.)
+`rounds >= CAP_ROUND + <cleared rounds>`, over the `CAP_ROUND` in `src/retry-budget.ts` — the
+package's one declared retry budget — plus what the founder cleared through `build clear`; it is
+computed here so the cap is a field read, not a number remembered.)
+
+**Cleared rounds.** `clearances` lists every `cap-cleared` marker on the PR, judged. A row is
+`honoured` only when its author is in `.fabrika.jsonc`'s `capClearAuthors` set at the PR's **base**
+ref, a dated authorization comment from that same author precedes it, and the round it names is at
+or past `CAP_ROUND`; a row that misses carries the `reason` it missed and grants nothing. Each
+honoured round adds one to the cap, counted by distinct round, so a re-posted grant buys one round
+and not two — and because a clearance binds the *round* rather than a head SHA, it survives the push
+it exists to permit and is spent the moment the next FAIL round lands. A read that cannot complete —
+the config file, a configured team's membership — is `11`, never an empty set.
 
 The fold: resolve the PR's current head; fetch **every** comment and **every** review, paginated
 in full; parse each comment through the imported `verdict-marker` read; keep the latest marker
@@ -1625,7 +1638,7 @@ the content gate.
 | Code | Trigger |
 |---|---|
 | `7` | the PR is proven absent or closed |
-| `11` | the head, any comment page, or any review page could not be read — the fold is UNKNOWN, never partial |
+| `11` | the head, any comment page, any review page, or the grant-author set could not be read — the fold is UNKNOWN, never partial |
 
 **Errors**
 
@@ -1633,6 +1646,7 @@ the content gate.
 |---|---|---|
 | `build verdicts: PR #<n> is proven absent or closed.` | 7 | refusal |
 | `build verdicts: cannot read <what> (page <k>): <reason> — the verdict state is UNKNOWN, never "none".` | 11 | refusal |
+| `build verdicts: cannot read the recorded cap clearances: <reason> — whether the budget is spent is UNKNOWN, never "capped".` | 11 | refusal |
 
 **Scope** — one PR: its head, all comments, all reviews. The stderr scope line names the head SHA
 and both counts, so an empty `rows` is auditable as "N comments read, none carried a marker".
@@ -1653,6 +1667,110 @@ $ fabrika build verdicts --pr 4310
 - #4555 (open decision) — native-review rows are reported as their own kind, never coerced;
   the ruling lands as a change to the *skill's* routing, not to this verb.
 - ADR 0092 / #4208 / #4219 — a proven-empty fold and an unreadable fold sit on different codes.
+- #5959 — a founder-cleared round had no representation either enforcement site could read, so it
+  could only land as an edit outside the loop; `clearances` is that representation.
+
+---
+
+## `build clear`
+
+**Purpose** — record the founder's clearance of one extra repair round on a PR, as data both
+enforcement sites read. The operator's verb, never the builder's: a builder that reads a spent cap
+escalates (`ESCALATED`), and this is what an authorized human runs so the next round can be built
+inside the loop instead of as an edit outside it (#5959).
+
+**Invocation**
+
+```
+fabrika build clear --pr 5953 --authorization authorization.md [--lane-root <dir>] [--task <id>] [--repo <owner/name>]
+```
+
+**Inputs**
+
+| Flag | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `--pr` | integer | yes | — | the pull request whose repair budget is cleared |
+| `--authorization` | path | yes | — | a file quoting the founder's authorization verbatim, carrying an ISO-8601 date |
+| `--lane-root` | string | no | `.fabrika/lanes` | the lanes root the local half of the grant is recorded in |
+| `--task` | string | no | the lane's only task | the lane task the grant addresses, on a multi-task lane |
+| `--repo` | string | no | the `origin` remote's `owner/name` | the repository written |
+
+**Output** — machine. One JSON object:
+
+```
+{"pr": 5953, "round": 3, "at": "2026-08-18T07:16:03Z", "by": "usirin",
+ "authorization": 512399, "marker": 512400, "cap": 4,
+ "lane": "recorded on issue in .fabrika/lanes/5941/workflow.json", "resolvesTo": "cleared"}
+```
+
+**Who may grant** — the accounts and teams `.fabrika.jsonc` names in `capClearAuthors`, read at the
+PR's **base** ref so a PR cannot widen the set that clears its own cap. Entries are `@user` or
+`@org/team`, both as GitHub writes them; a team is expanded through its membership, and a membership
+that cannot be read is `11`, never a grant and never a refusal. An absent file, an absent key, an
+empty array and a malformed entry are all *nobody may grant* — fail-closed on every axis (ruled
+2026-08-18: the grant-author set is repo configuration, not a compiled-in "founder" concept).
+
+**The clauses are conjunctive**, and any miss resolves to *not cleared*: the PR is open, the budget
+is actually spent (`rounds >= ` the current cap — clearing an unspent budget would pre-arm a round
+nobody has needed), the invoking account is in the set, and the authorization is present and dated.
+A bare stamp is void (#4938), which is why `--authorization` is required rather than inferred.
+
+**Write ordering is an invariant.** The authorization comment lands first, the `cap-cleared` marker
+second, the lane's local bump last. An interrupted run that wrote the marker first would leave a
+void grant a careless reader folds as budget; the order used leaves, at worst, a quote that grants
+nobody anything, or a lane that freezes one round early until a re-run reconciles it. **One grant is
+one round**, keyed by the round it names: it survives the push it exists to permit, and the next
+FAIL round spends it. Re-running is safe — the round is added as a set member on both sides, so a
+reconciling re-run buys nothing extra.
+
+**What `cleared` proves, exactly.** That a configured account posted a marker naming a round whose
+budget was spent, with a dated authorization comment beside it. It does not prove the quoted
+authorization is a truthful record of what the founder said; nothing mechanical can, and in a repo
+where agents run on a configured account's own token the agent's restraint is what holds — the same
+residue `grill rule` carries (#4441).
+
+**Exit status** (beyond the universal four)
+
+| Code | Trigger |
+|---|---|
+| `5` | the authorization carries a machine-local path |
+| `6` | the authorization is a bare `@` path reference |
+| `7` | the PR is proven absent or closed, or its budget is not spent — there is no round to clear |
+| `8` | a write failed — UNKNOWN; read the PR before re-running |
+| `9` | the marker posted and does not read back |
+| `11` | a precondition read failed — the config, a team's membership, the comments, the clock |
+| `25` | the invoking account is not in the configured grant-author set |
+| `26` | `--authorization` is missing, empty, or undated |
+| `29` | the grant is recorded on the PR and the local lane did not take it — re-run to reconcile |
+
+**Errors**
+
+| Message (stderr) | Code | Kind |
+|---|---|---|
+| `build clear: --authorization <path> is empty — a clearance with no quoted authorization is void (#4938).` | 26 | refusal |
+| `build clear: --authorization <path> carries no ISO-8601 date — the authorization must be dated.` | 26 | refusal |
+| `build clear: #<n> has <k> round(s) against a cap of <c> — the budget is not spent, so there is no round to clear.` | 7 | refusal |
+| `build clear: <login> is not in .fabrika.jsonc's grant-author set at <ref> — refusing to record a clearance.` | 25 | refusal |
+| `build clear: the authorization comment landed as #<id> and the marker write failed — the clearance is INCOMPLETE and grants nothing. Read #<n> before re-running.` | 8 | refusal |
+| `build clear: the clearance is recorded on #<n>, and the lane at <path> did not take it: <reason> — the lane still freezes. Re-run to reconcile; the grant is not doubled.` | 29 | refusal |
+
+**Scope** — one PR: its comments (for the round count and the recorded grants), the config at its
+base ref, and the lane its closing keyword names. The stderr scope line states the round count and
+the cap it is judged against, so a refusal is auditable without a second read.
+
+**Example**
+
+```
+$ fabrika build clear --pr 5953 --authorization authorization.md
+{"pr":5953,"round":3,"at":"2026-08-18T07:16:03Z","by":"usirin","authorization":512399,"marker":512400,"cap":4,"lane":"recorded on issue in .fabrika/lanes/5941/workflow.json","resolvesTo":"cleared"}
+```
+
+**Grounding**
+
+- #5959 — the cap was enforced in two places and neither could see a founder's clearance, so a
+  cleared round could only land as a driver-side edit outside the loop.
+- #4938 — a bare stamp is void; the quoted, dated authorization is what a ruling means.
+- #981 — repo configuration is read at the base ref, never from the PR that would change it.
 
 ---
 

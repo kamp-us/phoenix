@@ -20,6 +20,7 @@
  */
 import * as acceptanceCriteria from "./acceptance-criteria.ts";
 import * as buildDeviations from "./build-deviations.ts";
+import * as capClearance from "./cap-clearance.ts";
 import * as deviations from "./deviations.ts";
 import {brandWitnesses, type WireFormat} from "./format.ts";
 import * as governanceDigest from "./governance-digest.ts";
@@ -513,6 +514,46 @@ export const registeredFormats: ReadonlyArray<WireFormat> = [
 			],
 		},
 		brands: brandWitnesses<grillRuling.GrillRuling>({question: true, digest: true, at: true}),
+	},
+	{
+		key: "cap-clearance",
+		purpose:
+			"the founder's grant of one extra repair round on a PR, carried as a marker comment beside its dated authorization and folded as budget by `build verdicts`",
+		module: "packages/fabrika-cli/src/wire/cap-clearance.ts",
+		producers: ["build"],
+		consumers: ["build", "operate"],
+		emit: capClearance.emitFromFields,
+		read: capClearance.readToLines,
+		fixtures: {
+			roundTrip: {
+				fields: "round: 3\nat: 2026-08-18T07:16:03Z\n",
+				values: ["3", "2026-08-18T07:16:03Z"],
+			},
+			found: [
+				{
+					shape: "the marker over the round it grants, as `build clear` posts it",
+					artifact:
+						"cap-cleared: round 3 · 2026-08-18T07:16:03Z\n\nOne round, on the authorization above.\n",
+					values: ["3", "2026-08-18T07:16:03Z"],
+				},
+			],
+			absent: "Re-ran the gate at the new head and it is green now.\n",
+			malformed: [
+				{
+					drift: "the round is not a number",
+					artifact: "cap-cleared: round three · 2026-08-18T07:16:03Z\n",
+				},
+				{
+					drift: "the marker names no round, so the grant binds to nothing",
+					artifact: "cap-cleared: 2026-08-18T07:16:03Z\n",
+				},
+				{
+					drift: "the timestamp is not an ISO-8601 UTC instant",
+					artifact: "cap-cleared: round 3 · this morning\n",
+				},
+			],
+		},
+		brands: brandWitnesses<capClearance.CapClearance>({at: true}),
 	},
 	{
 		key: "grill-answer",

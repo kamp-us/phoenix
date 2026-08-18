@@ -118,3 +118,25 @@ export const HEAD_DROPS_REMOTE = 23;
  * else (#5484).
  */
 export const COMMIT_NOT_CREATED = 24;
+/**
+ * Proven: the invoking account is not in the repo's configured cap-clear grant-author set.
+ *
+ * Its own seat rather than a borrowed `21`: that code is about the *issue's* audience label, and
+ * this one is about who the repo configured to hold founder authority — the remedies share nothing.
+ * It is never {@link PRECONDITION_UNKNOWN}: the config and the memberships were read in full, so the
+ * refusal is a fact about the account (#5959).
+ */
+export const GRANT_UNAUTHORIZED = 25;
+/** Proven: the quoted authorization is empty or undated — a bare stamp is void (#4938). */
+export const AUTHORIZATION_VOID = 26;
+/**
+ * Proven: the grant is recorded on the PR and the local lane did not take it.
+ *
+ * Never {@link WRITE_UNKNOWN}: the remote half landed and read back, so the outcome is known and
+ * partial. The lane freezes a round early until a re-run reconciles it, which is the conservative
+ * direction and a state an operator must be able to see rather than infer.
+ *
+ * `27` and `28` are the base's (`QUEUE_UNREADABLE`, `SEARCH_UNREADABLE`), so the next free seat is
+ * `29` — a group never re-uses a number the base already spoke for.
+ */
+export const LOCAL_LANE_UNWRITTEN = 29;
