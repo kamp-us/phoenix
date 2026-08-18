@@ -138,9 +138,17 @@ undisclosed that this gate could see"* — never "no deviations exist".
 
 ## 6 — The governance seam and the self fence
 
-- `harness: true` ⇒ the governance namespace is **derived-required**: fire the `governance`
-  skill and wait — your PASS with no governance verdict on such a diff is not a complete gate
-  result. You never emit governance's namespace yourself.
+- `harness: true` ⇒ the governance namespace is **derived-required on every round, whatever
+  polarity you reach**: fire the `governance` skill and wait — a verdict of yours with no
+  governance verdict on such a diff is not a complete gate result, and that holds for a FAIL
+  exactly as for a PASS (ADR [0293](../../../../.decisions/0293-governance-fires-every-round.md)).
+  **A FAIL is not a licence to skip it.** "The repair moves the head, so this verdict is stale on
+  arrival" is the deadlock ADR 0293 rules out: the third refusal guarding `operate`'s `FAIL` row —
+  which owns that rule, this is only a pointer to it — records no FAIL until every derived
+  namespace holds a binding verdict, so a declined governance round strands the lane with the
+  repair undispatchable. Fire it, and expect to fire it again at each repair head — the extra run
+  is the accepted cost. Neither namespace discharges the other. You never emit governance's
+  namespace yourself.
 - `self: true` (the diff touches `claude-plugins/fabrika/skills/review/`) ⇒ a PR must not review
   itself by its own new rules: re-read this `SKILL.md` and the rubrics at the **merge-base**
   revision (`git show` — a bytes read that loads no instructions) and judge by those.
