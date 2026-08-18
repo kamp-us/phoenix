@@ -248,7 +248,8 @@ escalation via `fabrika build note` instead of another push.
 data on the PR — an authorized account records it with `fabrika build clear`, and the fold counts it,
 so `capReached: false` beside a `clearances` row *is* the granted round and you simply build it. What
 you never do is grant one: `build clear` is the operator's verb, it refuses an account outside the
-repo's configured set, and an escalation is your whole move when the cap is reached. One grant is one
+repo's configured set or below `write` at the ACL, and an escalation is your whole move when the cap
+is reached. One grant is one
 round — it survives the push it permits, and the next FAIL round spends it, so a second round needs a
 second grant. Fix findings on the same branch
 (`fabrika build tree --issue $issue_or_pr_number`, then `fabrika build branch --resume $issue_or_pr_number`), re-validate with

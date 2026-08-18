@@ -1709,6 +1709,10 @@ fabrika build clear --pr 5953 --authorization authorization.md [--lane-root <dir
  "lane": "recorded on issue in .fabrika/lanes/5941/workflow.json", "resolvesTo": "cleared"}
 ```
 
+`resolvesTo` is `cleared` when this run posted the grant, and `reconciled` when the grant was already
+on the PR and only the lane was written; on `reconciled` the `at`, `by`, `authorization` and `marker`
+fields are the landed grant's, not this run's.
+
 **Who may grant** — an account that is **both** named by `.fabrika.jsonc`'s `capClearAuthors`, read
 at the PR's **base** ref so a PR cannot widen the set that clears its own cap, **and** resolved to
 `write+` at the repository ACL at the moment it runs. The configured set narrows the ACL, it never
@@ -1730,8 +1734,15 @@ second, the lane's local bump last. An interrupted run that wrote the marker fir
 void grant a careless reader folds as budget; the order used leaves, at worst, a quote that grants
 nobody anything, or a lane that freezes one round early until a re-run reconciles it. **One grant is
 one round**, keyed by the round it names: it survives the push it exists to permit, and the next
-FAIL round spends it. Re-running is safe — the round is added as a set member on both sides, so a
-reconciling re-run buys nothing extra.
+FAIL round spends it.
+
+**A re-run for a round already granted reconciles; it never re-grants.** Once the marker has landed,
+the cap it raised is itself the reason the budget test would say "not spent", so a run that finds an
+honoured grant at the current round count *skips* the budget test and both writes, and does only the
+half that is still undone — the lane's local bump. It answers `resolvesTo: "reconciled"` at exit 0,
+carrying the existing marker's ids, so exit `29`'s stated remedy is a command that runs rather than
+advice. The lane write is a set insert, so a lane that already took the round answers `already held`
+and nothing is doubled.
 
 **What `cleared` proves, exactly.** That a configured account posted a marker naming a round whose
 budget was spent, with a dated authorization comment beside it. It does not prove the quoted
@@ -1748,8 +1759,8 @@ residue `grill rule` carries (#4441).
 | `7` | the PR is proven absent or closed, or its budget is not spent — there is no round to clear |
 | `8` | a write failed — UNKNOWN; read the PR before re-running |
 | `9` | the marker posted and does not read back |
-| `11` | a precondition read failed — the config, a team's membership, the comments, the clock |
-| `25` | the invoking account is not in the configured grant-author set |
+| `11` | a precondition read failed — the config, a team's membership, the invoking account's permission, the comments, the clock |
+| `25` | the invoking account is not in the configured grant-author set, or resolves below `write` at the ACL |
 | `26` | `--authorization` is missing, empty, or undated |
 | `29` | the grant is recorded on the PR and the local lane did not take it — re-run to reconcile |
 
@@ -1761,11 +1772,14 @@ residue `grill rule` carries (#4441).
 | `build clear: --authorization <path> carries no ISO-8601 date — the authorization must be dated.` | 26 | refusal |
 | `build clear: #<n> has <k> round(s) against a cap of <c> — the budget is not spent, so there is no round to clear.` | 7 | refusal |
 | `build clear: <login> is not in .fabrika.jsonc's grant-author set at <ref> — refusing to record a clearance.` | 25 | refusal |
+| `build clear: <login> resolves to <level> on <repo>, below write — authority is the ACL's, never .fabrika.jsonc's alone (ADR 0055).` | 25 | refusal |
+| `build clear: cannot resolve <login>'s repository permission: <reason> — authority is UNKNOWN, never granted. Nothing was posted.` | 11 | refusal |
+| `build clear: the clearance is recorded on #<n> as comment <id>, and the lane at <path> still did not take it: <reason> — the lane still freezes.` | 29 | refusal |
 | `build clear: the authorization comment landed as #<id> and the marker write failed — the clearance is INCOMPLETE and grants nothing. Read #<n> before re-running.` | 8 | refusal |
 | `build clear: the clearance is recorded on #<n>, and the lane at <path> did not take it: <reason> — the lane still freezes. Re-run to reconcile; the grant is not doubled.` | 29 | refusal |
 
 **Scope** — one PR: its comments (for the round count and the recorded grants), the config at its
-base ref, and the lane its closing keyword names. The stderr scope line states the round count and
+base ref, the invoking account's repository permission, and the lane its closing keyword names. The stderr scope line states the round count and
 the cap it is judged against, so a refusal is auditable without a second read.
 
 **Example**
@@ -1779,8 +1793,10 @@ $ fabrika build clear --pr 5953 --authorization authorization.md
 
 - #5959 — the cap was enforced in two places and neither could see a founder's clearance, so a
   cleared round could only land as a driver-side edit outside the loop.
-- #4938 — a bare stamp is void; the quoted, dated authorization is what a ruling means.
+- #4938 — a bare stamp is void; the quoted, dated authorization is what a ruling means, and it must
+  be the comment immediately before the marker.
 - #981 — repo configuration is read at the base ref, never from the PR that would change it.
+- ADR 0055 / ADR 0292 — authority is the live ACL's; the configured set narrows it, never replaces it.
 
 ---
 
