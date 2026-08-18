@@ -19,11 +19,9 @@ So the bar every rule below serves is one sentence:
 
 fabrika builds no authoring tool — [#4648 scope
 correction](https://github.com/kamp-us/phoenix/issues/4648#issuecomment-5152523719). The session
-writes under [`writing-for-agents`](../skills/writing-for-agents/SKILL.md), which is the route into
-`claude-plugins/fabrika/skills/` for a new skill, an edit and a v1 port alike — founder ruling of
-2026-08-18, recorded on [#5945](https://github.com/kamp-us/phoenix/issues/5945), retiring the
-earlier `/skill-creator`-only door of
-[#4637-C](https://github.com/kamp-us/phoenix/issues/4637). What fabrika owns is the ground the
+writes under [`writing-for-agents`](../skills/writing-for-agents/SKILL.md). That is the route into
+`claude-plugins/fabrika/skills/`, and the rule and its history live in one place:
+[`skill-conventions.md` §8 gate 1](skill-conventions.md#8-the-ship-gate). What fabrika owns is the ground the
 writing lands *into* and *against*: this brief format, the skill conventions, and the CLI interface
 convention (both in this directory — see [the docs index](README.md)).
 
@@ -134,7 +132,6 @@ Stated in the brief itself, so the session reads its own deliverable rather than
   (`contract.md` beside it, per the CLI interface convention's Part 2).
 - **Linked back to the brief issue** — `Fixes #<brief>` in the PR body, so the brief closes on merge
   and the authored artifact is traceable to the document it was authored from.
-- **No skill enters fabrika by any other path** ([#4637-C](https://github.com/kamp-us/phoenix/issues/4637)).
 - **No line target, and no sizing acceptance criterion.** Sizing is `skill-conventions.md` §2's
   structural split — `SKILL.md` routes, `contract.md` carries the depth — which the gate judges case
   by case; a number in a brief would be a second source of truth for a rule that deliberately has
@@ -167,7 +164,8 @@ seam has already failed twice by depending on somebody noticing (#4725, #4748).
 ## A brief is not write-code work
 
 A brief issue must never enter the `write-code` candidate pool. If it does, a coder agent picks it
-up and implements the skill directly — which is a second door, and the ruling says there is one.
+up and implements the skill directly — from a document written to boot an authoring session, not to
+be built from. A brief specifies the session's inputs; it is not a build ticket.
 
 The pool predicate is mechanical
 ([`step1-candidate-pool.sh`](../../kampus-pipeline/skills/write-code/scripts/step1-candidate-pool.sh)):
@@ -296,4 +294,4 @@ opening the PR (runbook step 5.5). Then one PR carrying `claude-plugins/fabrika/
 and `claude-plugins/fabrika/skills/adr/contract.md`, with `Fixes #<this brief>` in the body and the
 review pass. The verbs the contract specifies are implemented downstream by `write-code`, against
 that spec — and this session's handoff files that implementation ticket and names its number in the
-PR body (ADR 0248). No skill enters fabrika by any other path (#4637-C).
+PR body (ADR 0248). The skill is written under `writing-for-agents`, per skill-conventions §8 gate 1.

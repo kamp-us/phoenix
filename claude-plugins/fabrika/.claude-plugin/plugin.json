@@ -1,7 +1,7 @@
 {
 	"$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
 	"name": "fabrika",
-	"description": "fabrika — the kamp.us agent pipeline rebuilt from first principles: thin skill wrappers over deterministic CLI verbs, every skill authored through /skill-creator. Not the v1 kampus-pipeline plugin, which stays the frozen baseline.",
+	"description": "fabrika — the kamp.us agent pipeline rebuilt from first principles: thin skill wrappers over deterministic CLI verbs, every skill written under writing-for-agents. Not the v1 kampus-pipeline plugin, which stays the frozen baseline.",
 	"author": {
 		"name": "kamp-us",
 		"url": "https://github.com/kamp-us"
