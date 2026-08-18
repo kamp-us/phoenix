@@ -139,14 +139,11 @@ active phase** (future phases read `waiting`; leave them alone), route on the le
 node packages/fabrika-cli/src/bin.ts lane brief $lane_key --task <name>
 ```
 
-Its stdout is the whole prompt — send those bytes to the spawn verbatim, adding only one line under
-them: the absolute lanes root the shell must pass to `lane report` as `--root`
-(`<your checkout>/.fabrika/lanes`). The default root is a *relative* path and every shell runs
-worktree-isolated, so without the absolute root a shell's terminal record would land in its own
-worktree's `.fabrika/`, never the driven lane (#5736). Beyond that line, add nothing. It
+Its stdout is the whole prompt — send those bytes to the spawn verbatim and add nothing to them. It
 derives every value: the state from the same fold you just read, the shell from its own routing
 table (`build` → builder, `review` → reviewer, `ship` → shipper), the issue and PR URLs off the
-board, and its rules from byte-fixed text the `lane-brief` wire format owns
+board, your lanes root resolved absolute so the shell's `lane report` addresses this ledger rather
+than its own worktree's (#5736), and its rules from byte-fixed text the `lane-brief` wire format owns
 ([`packages/fabrika-cli/src/wire/lane-brief.ts`](../../../../packages/fabrika-cli/src/wire/lane-brief.ts)).
 Those rules are the three a driver used to carry in their own prose — the isolated worktree, URLs
 never restatements, and `node packages/fabrika-cli/src/bin.ts` for every fabrika verb rather than
@@ -284,7 +281,7 @@ or an event recorded this pass.
 ## 3 — Verify the record landed, and record what no shell can
 
 **A shell records its own terminal.** Every spawned shell ends by invoking
-`lane report <lane> --root <abs-root> --token <TOKEN>` against the absolute root you handed it, and
+`lane report <lane> --root <root> --token <TOKEN>` against the lane and root its brief named, and
 the token→event map is code
 ([`packages/fabrika-cli/src/lane/report.ts`](../../../../packages/fabrika-cli/src/lane/report.ts)),
 never a table you execute — an unrecognised token is that verb's refusal (exit `31`), not a reading

@@ -1,4 +1,5 @@
 /** `lane brief` — the three shell prompts it prints, and every refusal that prints none. */
+import {resolve} from "node:path";
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
 import {errOut, fakeFs, fakeShell, okOut} from "../fakes.test-support.ts";
@@ -171,8 +172,44 @@ describe("lane brief", () => {
 		]);
 
 		expect(out.stdout).toBe(
-			`## Task\nlane: 5751\ntask: issue\nstate: review\nshell: reviewer\n## Ground\nissue: ${ISSUE_URL}\npr: ${PR_URL}\n## Rules\n${RULES}\n`,
+			`## Task\nlane: 5751\nroot: ${resolve(ROOT)}\ntask: issue\nstate: review\nshell: reviewer\n## Ground\nissue: ${ISSUE_URL}\npr: ${PR_URL}\n## Rules\n${RULES}\n`,
 		);
+	});
+
+	it("carries the driver's lanes root resolved absolute — the shell would resolve a relative one against its own worktree", async () => {
+		const out = await run(lane("5751", ["WIP"]), [
+			[ISSUE_READ, issuePayload(5751, ISSUE_URL)],
+			[PR_CLOSERS, closingPulls()],
+		]);
+
+		expect(readBrief(out.stdout)).toMatchObject({
+			_tag: "Found",
+			value: {root: resolve(ROOT)},
+		});
+	});
+
+	it("prints an absolute root unchanged — resolution is not a rewrite", async () => {
+		const absolute = "/elsewhere/checkout/.fabrika/lanes";
+		const out = await run(
+			fakeFs({
+				files: {
+					[`${absolute}/5751/workflow.json`]: coderTemplateText(),
+					[`${absolute}/5751/events.jsonl`]: `${JSON.stringify({
+						task: "issue",
+						event: "ISSUE.WIP",
+						at: "2026-08-17T00:00:00Z",
+					})}\n`,
+				},
+			}),
+			[
+				[ISSUE_READ, issuePayload(5751, ISSUE_URL)],
+				[PR_CLOSERS, closingPulls()],
+			],
+			{root: absolute},
+		);
+
+		expect(out.code).toBe(0);
+		expect(readBrief(out.stdout)).toMatchObject({_tag: "Found", value: {root: absolute}});
 	});
 
 	it("briefs the shipper on a `ship` state", async () => {

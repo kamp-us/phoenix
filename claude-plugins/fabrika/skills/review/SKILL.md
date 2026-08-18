@@ -171,13 +171,13 @@ Stale/Unbindable — re-review required** · **routed elsewhere** (governance / 
 `check-epic-plan`). Precedence: **an unseen input blocks PASS, never FAIL** — FAIL on what you did
 see, naming the unread piece UNKNOWN; no namespace PASSes on an unseen input.
 
-**Record the terminal yourself, then print it.** When your spawn brief named a lane and an absolute
-lanes root, your terminal step is the verb — one token per terminal above (`PASS`, `FAIL`,
-`UNKNOWN`, `STALE`, `UNBINDABLE`, `ROUTED`), mapped to a lane event in its code, with the PR as the
-event's evidence (#5736):
+**Record the terminal yourself, then print it.** When your spawn brief named a lane, your terminal
+step is the verb — pass back the `lane` and `root` its `## Task` section carries, one token per
+terminal above (`PASS`, `FAIL`, `UNKNOWN`, `STALE`, `UNBINDABLE`, `ROUTED`), mapped to a lane event
+in its code, with the PR as the event's evidence (#5736):
 
 ```bash
-node packages/fabrika-cli/src/bin.ts lane report <lane> --root <abs-root> --token PASS --pr <pr-url>
+node packages/fabrika-cli/src/bin.ts lane report <lane> --root <root> --token PASS --pr <pr-url>
 ```
 
 One guard is yours before a `FAIL`: record it **only when every derived namespace holds a verdict

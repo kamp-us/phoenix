@@ -188,13 +188,14 @@ A note that routes another lane opens with the fixed first line
 `ship: <terminal-token> — PR #<n> @ <sha> → <repair|heal-ci|review|human>` — kind, action,
 branded reference, no steering prose; the receiver re-fetches from the PR itself.
 
-**Record the terminal yourself, then print it.** When your spawn brief named a lane and an absolute
-lanes root, your terminal step is the verb — one token per terminal above (`ALREADY-MERGED`,
-`QUEUED`, `LANDED`, `REFUSED`, `AWAITING-CP-APPROVAL`, `ROUTED`, `UNRESOLVED`, `EJECTED`,
-`UNKNOWN`), mapped to a lane event in its code, with the PR as the event's evidence (#5736):
+**Record the terminal yourself, then print it.** When your spawn brief named a lane, your terminal
+step is the verb — pass back the `lane` and `root` its `## Task` section carries, one token per
+terminal above (`ALREADY-MERGED`, `QUEUED`, `LANDED`, `REFUSED`, `AWAITING-CP-APPROVAL`, `ROUTED`,
+`UNRESOLVED`, `EJECTED`, `UNKNOWN`), mapped to a lane event in its code, with the PR as the event's
+evidence (#5736):
 
 ```bash
-node packages/fabrika-cli/src/bin.ts lane report <lane> --root <abs-root> --token LANDED --pr <pr-url>
+node packages/fabrika-cli/src/bin.ts lane report <lane> --root <root> --token LANDED --pr <pr-url>
 ```
 
 The reason behind a `refused` stays in your note and report — the verb takes the bare token. It
