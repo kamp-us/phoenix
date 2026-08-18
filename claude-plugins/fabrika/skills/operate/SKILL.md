@@ -202,7 +202,10 @@ things, neither of them a summary you compose:
   checks; one entry per repaired integrate once one did not, naming the two children whose ranges
   collided. The epic reviewer reads that section through the `deviations` wire format, so run its
   parser over the body before you open or edit it — `wire check --format deviations` — rather than
-  leaving the malformed answer to arrive a review round later.
+  leaving the malformed answer to arrive a review round later. A child's own deviations are not
+  yours to restate here: each child disclosed them as a `build-deviations` marker comment on its
+  own issue (#5903), and the tail review's brief names that surface, so the epic reviewer reads
+  them there.
 
 Open the draft with the command below as written. `--base` is omitted on purpose — `gh pr create`
 defaults it to the repository's default branch, the same branch the assembly cut from. The title

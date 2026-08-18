@@ -181,6 +181,15 @@ unfixed`, `Declined guidance`, `Guard or gate bypassed`, `Pre-existing test or f
 prose bullet with no fields is refused by `build pr` at the point you write it — that refusal used
 to arrive a whole review round later, and could not say what was wrong (#5566).
 
+**An epic child opens no PR, and its disclosure surface moves with that** (#5903). When your spawn
+brief carries the epic rules — you build on a branch cut from the assembly branch, and steps 5's
+push and PR are not yours — the same `## Deviations` section lands as a `build-deviations` marker
+comment on the child issue instead: the line `build-deviations: #<n>` over the section, composed
+through `fabrika wire emit --format build-deviations` and posted with `gh issue comment`. The
+epic-tail review reads every landed child's comment from there, so a child with nothing to disclose
+still posts the checked `None.` — an absent comment reads as "never considered it", not as
+"nothing to disclose".
+
 **State what changed and why, and stop.** Two things earn their lines: the summary, and
 `## Deviations` — deviations catch real defects, so state each plainly and never trim one for
 brevity. Everything else goes: sweep methodology, a "what I deliberately kept" section, a clause

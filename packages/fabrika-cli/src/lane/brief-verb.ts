@@ -192,13 +192,20 @@ export const runBrief = (
 			);
 		}
 
+		// The epic run's tail (task `epic_<n>`, and a PR is resolved — the tail states require one
+		// above): the ground carries the epic too, so the tail review's brief names where each
+		// child's `build-deviations` disclosure lives (#5903).
+		const ground: LaneGround =
+			epic !== null && prUrl !== null && state !== "build"
+				? {_tag: "Tail", pr: prUrl, epic: read.url}
+				: {_tag: "Pull", pr: prUrl};
 		const brief: LaneBrief = {
 			lane: options.lane,
 			task,
 			state,
 			shell,
 			issue: read.url,
-			ground: {_tag: "Pull", pr: prUrl},
+			ground,
 		};
 		return answer(emitBrief(brief), [
 			...notes,
