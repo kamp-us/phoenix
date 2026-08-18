@@ -7,17 +7,27 @@
  * append only what the machine accepts, refuse everything else with the log left byte-identical.
  * The optional `--pr`/`--comment` refs land on the event line itself, so an event names its
  * evidence at the moment the shell knows the URL (#5712).
+ *
+ * **The append is proof-gated.** A token is still a self-report, and moving the recorder from the
+ * operator into the shell must not move the bar: between the machine's acceptance and the append
+ * this verb runs the same read `lane prove` runs, so a `DONE` and a `PASS` enter the ledger with
+ * their artifact behind them or not at all, and every other event answers `not-required` without a
+ * board read. A refusal is returned on the prover's own code, log untouched — the codes and their
+ * remedies are `lane prove`'s, unchanged. The prover is a parameter so this verb's unit tier stays
+ * offline; the CLI always hands it `runProve`, which is the only prover a shell ever invokes.
  */
 import {Effect, type FileSystem, type Path, Result} from "effect";
 import {appendText} from "../io/fs.ts";
-import {answer, refuse, type VerbOutcome} from "../verb.ts";
+import {ANSWER, answer, refuse, type VerbOutcome} from "../verb.ts";
 import {APPEND_UNKNOWN, EVENT_REFUSED, TASK_UNKNOWN, TOKEN_UNRECOGNISED} from "./codes.ts";
 import {applyEvent, foldLog, type LogEntry, resolveTask} from "./fold.ts";
+import type {ProveOptions} from "./prove-verb.ts";
 import {loadRefusal, replayRefusal} from "./refusals.ts";
 import {eventForToken} from "./report.ts";
 import {type LaneRef, loadLane} from "./store.ts";
 
 const VERB = "fabrika lane report";
+const PROVE_VERB = "fabrika lane prove";
 
 export interface ReportOptions extends LaneRef {
 	/** The shell's terminal token, exactly as its skill's vocabulary spells it; case-folded here. */
@@ -28,11 +38,15 @@ export interface ReportOptions extends LaneRef {
 	readonly pr: string | null;
 	/** The comment URL the terminal names, recorded on the event line. */
 	readonly comment: string | null;
+	/** The target repo the proof reads against, resolved exactly as `lane prove` resolves it. */
+	readonly repo: string | null;
+	readonly env: Readonly<Record<string, string | undefined>>;
 }
 
-export const runReport = (
+export const runReport = <R>(
 	options: ReportOptions,
-): Effect.Effect<VerbOutcome, never, FileSystem.FileSystem | Path.Path> =>
+	prove: (options: ProveOptions) => Effect.Effect<VerbOutcome, never, R>,
+): Effect.Effect<VerbOutcome, never, FileSystem.FileSystem | Path.Path | R> =>
 	Effect.gen(function* () {
 		const resolved = eventForToken(options.token);
 		if (resolved._tag === "Unrecognised") {
@@ -51,6 +65,22 @@ export const runReport = (
 		const applied = applyEvent(loaded.lane, fold.states, task.taskId, resolved.event, at);
 		if (applied._tag === "Refused") {
 			return refuse(EVENT_REFUSED, `${VERB}: refused (log unappended): ${applied.reason}`);
+		}
+
+		const proved = yield* prove({
+			root: options.root,
+			lane: options.lane,
+			event: resolved.event,
+			task: task.taskId,
+			repo: options.repo,
+			env: options.env,
+		});
+		if (proved.code !== ANSWER) {
+			return refuse(
+				proved.code,
+				`${VERB}: refused (log unappended): the ${resolved.event} behind token ${resolved.token} is not proven — the reasons above are ${PROVE_VERB}'s and so are their remedies.`,
+				proved.stderr,
+			);
 		}
 
 		const entry: LogEntry = {
@@ -79,6 +109,9 @@ export const runReport = (
 				null,
 				2,
 			),
-			[`${VERB}: appended ${entry.event} (token ${resolved.token}) to ${loaded.logPath}.`],
+			[
+				...proved.stderr,
+				`${VERB}: appended ${entry.event} (token ${resolved.token}) to ${loaded.logPath}, proven first.`,
+			],
 		);
 	});

@@ -127,24 +127,35 @@ const report = leafCommand(
 			Flag.optional,
 			Flag.withDescription("the comment URL the terminal names, recorded on the event line"),
 		),
+		repo: Flag.string("repo").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"the target owner/name the proof reads against (default: $CLAUDE_PIPELINE_REPO, else $GITHUB_REPOSITORY, else the origin remote)",
+			),
+		),
 	},
-	Effect.fn(function* ({lane, token, root, task, pr, comment}) {
+	Effect.fn(function* ({lane, token, root, task, pr, comment, repo}) {
 		yield* emit(
 			yield* onKey(lane, root, (_key, ref) =>
-				runReport({
-					...ref,
-					token,
-					task: Option.getOrNull(task),
-					pr: Option.getOrNull(pr),
-					comment: Option.getOrNull(comment),
-				}),
+				runReport(
+					{
+						...ref,
+						token,
+						task: Option.getOrNull(task),
+						pr: Option.getOrNull(pr),
+						comment: Option.getOrNull(comment),
+						repo: Option.getOrNull(repo),
+						env: process.env,
+					},
+					runProve,
+				),
 			),
 		);
 	}),
 ).pipe(
 	Command.withShortDescription("Record a shell's terminal token, mapped to one operator event."),
 	Command.withDescription(
-		"Record a spawned shell's terminal token on the lane's append-only log: the token→event map in code (report.ts) picks one of the operator's six, then the append rides transition's exact path — validated against the folded state first, refused unappended otherwise. Optional --pr/--comment refs land on the event line itself, so the event names its evidence (visible via lane history). stdout is `{token, previous, event, current, taskAffected}` plus the refs. Exits 4 (lane record read in full and not the shape), 7 (no lane there), 8 (the append did not land — the event is NOT recorded), 11 (the lane could not be read), 12 (the mapped event is refused, log unappended), 13 (the task is not in the machine, or --task omitted on a multi-task lane), 21 (the key is not a lane key), 31 (the token is no shell's terminal token — refused, never interpreted). Example: fabrika lane report 5736 --token SHIPPED-PR --pr https://github.com/kamp-us/phoenix/pull/5760",
+		"Record a spawned shell's terminal token on the lane's append-only log: the token→event map in code (report.ts) picks one of the operator's six, the mapped event is then proven exactly as `lane prove` proves it — a token is a self-report, so a DONE and a PASS reach the log only with their artifact behind them, every other event answering not-required without a board read — and only then does the append ride transition's exact path, validated against the folded state first, refused unappended otherwise. Optional --pr/--comment refs land on the event line itself, so the event names its evidence (visible via lane history). stdout is `{token, previous, event, current, taskAffected}` plus the refs. Exits 4 (lane record read in full and not the shape), 7 (no lane there), 8 (the append did not land — the event is NOT recorded), 11 (a lane, board or tree read failed — whether the event is proven is UNKNOWN), 12 (the mapped event is refused, log unappended), 13 (the task is not in the machine, names no issue, or --task omitted on a multi-task lane), 21 (the key is not a lane key), 22/23/24/25 (`lane prove`'s own refusals — artifact provably absent, a namespace with no still-binding verdict, a FAIL under a claimed PASS, several candidates — log unappended, remedies unchanged), 31 (the token is no shell's terminal token — refused, never interpreted). Example: fabrika lane report 5736 --token SHIPPED-PR --pr https://github.com/kamp-us/phoenix/pull/5760",
 	),
 );
 

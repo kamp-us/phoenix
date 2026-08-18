@@ -1,9 +1,11 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {fakeFs} from "../fakes.test-support.ts";
-import {LANE_ABSENT, TASK_UNKNOWN, TOKEN_UNRECOGNISED} from "./codes.ts";
+import {answer, refuse, type VerbOutcome} from "../verb.ts";
+import {LANE_ABSENT, PROOF_ABSENT, TASK_UNKNOWN, TOKEN_UNRECOGNISED} from "./codes.ts";
 import {coderTemplateText} from "./fixtures.test-support.ts";
 import {runHistory} from "./history-verb.ts";
+import type {ProveOptions} from "./prove-verb.ts";
 import {SHELL_VOCABULARIES} from "./report.ts";
 import {runReport} from "./report-verb.ts";
 
@@ -21,21 +23,48 @@ const LOG_AT: Readonly<Record<"build" | "review" | "ship", string>> = {
 	ship: logLine("WIP") + logLine("DONE") + logLine("PASS"),
 };
 
+/**
+ * A prover the test drives, standing in for `runProve` — it records what the verb asked it and
+ * answers what the test wants read. `proof: "not-required"` is the shape `lane prove` answers with
+ * at exit 0 for an event that claims no artifact.
+ */
+const fakeProver = (outcome: VerbOutcome = answer(JSON.stringify({proof: "not-required"}))) => {
+	const asked: ProveOptions[] = [];
+	return {
+		asked,
+		prove: (options: ProveOptions) =>
+			Effect.sync(() => {
+				asked.push(options);
+				return outcome;
+			}),
+	};
+};
+
 const run = (
 	fs: ReturnType<typeof fakeFs>,
 	token: string,
-	extra: {task?: string | null; pr?: string | null; comment?: string | null} = {},
+	extra: {
+		task?: string | null;
+		pr?: string | null;
+		comment?: string | null;
+		prover?: ReturnType<typeof fakeProver>;
+	} = {},
 ) =>
 	Effect.runPromise(
 		Effect.provide(
-			runReport({
-				root: ROOT,
-				lane: "42",
-				token,
-				task: extra.task ?? null,
-				pr: extra.pr ?? null,
-				comment: extra.comment ?? null,
-			}),
+			runReport(
+				{
+					root: ROOT,
+					lane: "42",
+					token,
+					task: extra.task ?? null,
+					pr: extra.pr ?? null,
+					comment: extra.comment ?? null,
+					repo: "kamp-us/phoenix",
+					env: {},
+				},
+				(extra.prover ?? fakeProver()).prove,
+			),
 			fs.layer,
 		),
 	);
@@ -151,5 +180,59 @@ describe("lane report — refuse without append", () => {
 		const out = await run(fs, "SHIPPED-PR");
 		expect(out.code).toBe(LANE_ABSENT);
 		expect(fs.written.size).toBe(0);
+	});
+});
+
+describe("lane report — the append is proof-gated", () => {
+	it("asks the prover for the mapped event on the resolved task, before appending", async () => {
+		const fs = laneAt(LOG_AT.build);
+		const prover = fakeProver();
+
+		const out = await run(fs, "SHIPPED-PR", {prover});
+		expect(out.code).toBe(0);
+		expect(prover.asked).toEqual([
+			{
+				root: ROOT,
+				lane: "42",
+				event: "DONE",
+				task: "issue",
+				repo: "kamp-us/phoenix",
+				env: {},
+			},
+		]);
+	});
+
+	it("refuses on the prover's own code with the log byte-identical", async () => {
+		const fs = laneAt(LOG_AT.build);
+		const prover = fakeProver(
+			refuse(PROOF_ABSENT, "fabrika lane prove: unproven — no open PR links #42"),
+		);
+
+		const out = await run(fs, "SHIPPED-PR", {prover});
+		expect(out.code).toBe(PROOF_ABSENT);
+		expect(out.stdout).toBe("");
+		expect(out.stderr).toContain("fabrika lane prove: unproven — no open PR links #42");
+		expect(out.stderr.at(-1)).toContain("log unappended");
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("never reaches the prover for a token no shell owns", async () => {
+		const fs = laneAt(LOG_AT.build);
+		const prover = fakeProver();
+
+		const out = await run(fs, "MOSTLY-DONE", {prover});
+		expect(out.code).toBe(TOKEN_UNRECOGNISED);
+		expect(prover.asked).toEqual([]);
+	});
+
+	it("carries the proof's own diagnostics onto a recorded event", async () => {
+		const fs = laneAt(LOG_AT.build);
+		const prover = fakeProver(
+			answer(JSON.stringify({proof: "proven"}), ["fabrika lane prove: read 3 candidate(s)."]),
+		);
+
+		const out = await run(fs, "SHIPPED-PR", {prover});
+		expect(out.code).toBe(0);
+		expect(out.stderr).toContain("fabrika lane prove: read 3 candidate(s).");
 	});
 });

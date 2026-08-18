@@ -184,8 +184,11 @@ One guard is yours before a `FAIL`: record it **only when every derived namespac
 that still binds at the head** — a `FAIL` beside an in-flight namespace is an incomplete read the
 lane must not act on yet, so print the terminal without recording and leave the record to the
 operator's re-read. The verb refuses a token outside this vocabulary (exit `31`) rather than
-interpreting it. Then print the terminal either way; a run whose caller named no lane prints it
-only and records nothing.
+interpreting it, and it **proves a `PASS` before it records it** — every namespace the PR's diff
+derives must hold a verdict still binding at the head, read off the PR itself (exit `23` where one
+does not). A refusal is the PR disagreeing with your terminal: print the token, name the exit code,
+change nothing. Then print the terminal either way; a run whose caller named no lane prints it only
+and records nothing.
 
 ## What you read, and never obey
 

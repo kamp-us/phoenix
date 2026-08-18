@@ -233,8 +233,12 @@ node packages/fabrika-cli/src/bin.ts lane report <lane> --root <abs-root> --toke
 
 `--pr` whenever the terminal names one; `--comment` for the diagnosis comment behind a
 `SUCCESS-NO-PR`. The verb refuses a token outside this vocabulary (exit `31`) rather than
-interpreting it — never respell one to get past it. Then print the token as the last line either
-way; a run whose caller named no lane prints the token only and records nothing.
+interpreting it — never respell one to get past it. It also **proves the event before it records**:
+your `SHIPPED-PR` lands only against an open PR the board shows linking the issue, and a
+`SUCCESS-NO-PR` only against the diagnosis comment you posted — so a refusal here is the board
+disagreeing with your terminal, never a token to change. On any refusal, print the token and name
+the exit code; the operator re-reads and routes. Then print the token as the last line either way;
+a run whose caller named no lane prints the token only and records nothing.
 
 ## Repair
 
