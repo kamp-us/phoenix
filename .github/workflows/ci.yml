@@ -580,6 +580,7 @@ jobs:
       # closed on zero entries (ADR 0092).
       - name: Check every marketplace source resolves to a real plugin
         run: |
+          # shellcheck disable=SC2016  # the single quotes are the intent: JS template literals, not shell expansion
           set -uo pipefail
           node -e '
             const fs = require("node:fs");

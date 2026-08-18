@@ -205,7 +205,7 @@ const scopeLabel = (scope: Scope): string =>
 /** The un-homed remediation, stated once — the three outcomes the triage rubric allows. */
 const UNHOMED_REMEDY =
 	"Each issue above left triage un-homed. Give it one of the three home-or-exempt-or-kill outcomes\n" +
-	"(claude-plugins/kampus-pipeline/skills/triage/SKILL.md, ADR 0202/0208):\n" +
+	"(claude-plugins/fabrika/skills/triage/SKILL.md, ADR 0202/0208):\n" +
 	"  1. home it in an EXISTING open arc/campaign milestone from ROADMAP.md (triage never creates one);\n" +
 	`  2. label it a standing lane — ${EXEMPT_LABELS.join(" or ")} — when it is milestone-less by design;\n` +
 	"  3. kill it (close not-planned) when it does not move anything forward — agent-filed issues only,\n" +

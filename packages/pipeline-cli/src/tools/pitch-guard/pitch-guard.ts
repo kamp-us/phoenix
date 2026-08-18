@@ -1,9 +1,9 @@
 /**
  * `pitch-guard` pure core — decide whether every pickable piece of lane-entering work carries
- * a well-formed, founder-approved pitch. The invariant and the field set are defined once in
- * `claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md` §PITCH (founder ruling
- * #3909); this module is that contract's teeth, not a second definition of it. IO-free and
- * total — the `gh api` reads live in `github.ts`/`gate.ts`.
+ * a well-formed, founder-approved pitch. The invariant and the field set come from the §PITCH
+ * intake format (founder ruling #3909); its v1 skill-doc home retired with the kampus-pipeline
+ * plugin (ADR 0291), so this module now carries the field set. IO-free and total — the
+ * `gh api` reads live in `github.ts`/`gate.ts`.
  *
  * The guard binds at INTAKE only. Its inverse is half the founder ruling: no merge-blocking
  * conformance gate on shipped work, so nothing here may ever be wired to red a PR (#3909).
@@ -341,8 +341,7 @@ const scopeLabel = (scope: Scope): string =>
 /** The remediation, stated once — the draft/approve split is the whole point. */
 const REMEDY =
 	"Each issue above is pickable lane-entering work with no founder-approved pitch. Direction binds\n" +
-	"at intake (founder ruling #3909); see §PITCH in\n" +
-	"claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md:\n" +
+	"at intake (founder ruling #3909); the §PITCH format is:\n" +
 	`  1. triage DRAFTS a ## Pitch section with all five fields (${PITCH_FIELDS.join(" / ")}),\n` +
 	"     where Arc restates the home the ADR 0202 rubric step already assigned;\n" +
 	"  2. the FOUNDER approves it with a `pitch-approved: appetite <N> cycles · <ISO-8601-UTC>` comment\n" +

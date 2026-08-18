@@ -38,17 +38,18 @@ recorded at Claude Code 2.1.214 and is not re-proven here;
 [#5590](https://github.com/kamp-us/phoenix/issues/5590) is the spawn that settles which form
 resolves today.
 
-**Two of these names are spelled elsewhere.** `claude-plugins/kampus-pipeline/agents/` carries
-`reviewer.md` and `shipper.md`, so in a repo where both plugins load they contend for one
-`agentType`. Inside phoenix they no longer load, and the reason is the load path rather than a
-setting: those definitions reached the project agent-load path through the tracked `.claude/agents`
-symlink, which ADR
-[0255](../../../.decisions/0255-skill-namespaces-keep-v1-and-fabrika-apart.md) §4 records loads them
-*regardless of the plugin toggle* — and
+**Two of these names used to be spelled elsewhere.** The retired v1 plugin's
+`claude-plugins/kampus-pipeline/agents/` carried `reviewer.md` and `shipper.md`, so while both
+plugins existed they contended for one `agentType`. That contention is over: those definitions
+reached the project agent-load path through the tracked `.claude/agents` symlink — which ADR
+[0255](../../../.decisions/0255-skill-namespaces-keep-v1-and-fabrika-apart.md) §4 records loaded
+them *regardless of the plugin toggle* — and
 [#5599](https://github.com/kamp-us/phoenix/issues/5599) deleted that symlink on 2026-08-15 (ADR
-[0277](../../../.decisions/0277-v1-retirement-keeps-the-plugin-suppression.md)). The
-`kampus-pipeline@kampus: false` line that survives in `.claude/settings.json` suppresses the plugin
-copy and never reached the symlink, so do not read it as what keeps these names clear.
+[0277](../../../.decisions/0277-v1-retirement-keeps-the-plugin-suppression.md)); the plugin tree
+itself, along with its `kampus-pipeline@kampus: false` suppression line in
+`.claude/settings.json`, was deleted outright by ADR
+[0291](../../../.decisions/0291-retire-kampus-pipeline-plugin.md) (#5937). Fabrika's four shells
+are the only definitions spelling these names now.
 
 ## Why exactly four
 

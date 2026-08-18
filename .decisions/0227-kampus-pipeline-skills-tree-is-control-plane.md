@@ -1,7 +1,7 @@
 ---
 id: 0227
 title: the whole kampus-pipeline skills tree is §CP — the directory is the unit of coverage, not the file type
-status: accepted
+status: amended-in-part by [0291](0291-retire-kampus-pipeline-plugin.md)
 date: 2026-07-29
 tags: [pipeline, control-plane, ship-it, skills, codeowners, classifier]
 ---

@@ -113,11 +113,12 @@ of them.
 
 ### The name situation
 
-v1's `ship-it` remains the live project-level skill at `claude-plugins/kampus-pipeline/skills/`
-(routed from `CLAUDE.md` / `DEVELOPMENT.md` as `.claude/skills/ship-it/`) until the cutover,
-which is separate, later work; until then nothing on `main` routes to this skill and it is
-reached as `/fabrika:ship`. The routing gap is the same one recorded for the sibling
-rebuilds (#4761, #4829) and is noted in the authoring PR rather than patched from here.
+At authoring time v1's `ship-it` was still the live project-level skill at
+`claude-plugins/kampus-pipeline/skills/` (routed from `CLAUDE.md` / `DEVELOPMENT.md` as
+`.claude/skills/ship-it/`), the routing gap recorded for the sibling rebuilds (#4761, #4829).
+The cutover has since happened: the v1 plugin tree is deleted (ADR
+[0291](../../../../.decisions/0291-retire-kampus-pipeline-plugin.md), #5937) and this skill,
+reached as `/fabrika:ship`, is the one merge authority.
 
 The same applies to the **heal seam**: the skill routes red CI to `heal-ci`, and no fabrika
 counterpart exists yet — until one ships, that route resolves to the durable stop note plus a

@@ -1,7 +1,7 @@
 ---
 id: 0277
 title: v1 retirement deletes both `.claude` symlinks and keeps the plugin suppression
-status: accepted
+status: amended-in-part by [0291](0291-retire-kampus-pipeline-plugin.md)
 date: 2026-08-13
 tags: [skills, plugin, pipeline, fabrika]
 ---
