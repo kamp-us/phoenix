@@ -62,7 +62,10 @@ exactly one round.
 A region booted straight into `frozen` — an epic child whose issue was closed without landing — left
 no prior state behind it, so its door resolves back to the park itself. The fold refuses that
 `UNBLOCKED` rather than recording a resume that did not move; such a child is re-emitted, not
-unfrozen.
+unfrozen. That refusal is read off the task's own state, never off the lane's fold: an epic phase
+holding a booted-`frozen` child beside a still-open sibling never folds at all, so the lane is
+`active` and a fold-gated check would let the no-op resume through on exactly the shape the epic
+emitter produces.
 
 **Binding constraints.**
 

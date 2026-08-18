@@ -242,13 +242,17 @@ export const applyEvent = (
 		};
 	}
 	const previous = deriveStatus(lane, states);
-	// A task sitting in an open final is parked, not finished: the lane tripped on it and the door
-	// out is still walkable (ADR 0297). Only the tripped terminal admits one — `complete` means
+	// A task sitting in an open final is parked, not finished: the door out is still walkable (ADR
+	// 0297). This is a fact about the task alone — a phase holding a parked child beside an
+	// unfinished sibling never folds, so the lane's own status says nothing about it.
+	const compiled = lane.tasks[taskId];
+	const state = states[taskId];
+	const inOpenFinal =
+		compiled !== undefined && state !== undefined && compiled.openFinals.has(state.type);
+	// Only the tripped terminal admits an event once the whole lane has folded — `complete` means
 	// every task finished clean, and no door leads out of that.
 	const parked =
-		previous.status === "done" &&
-		previous.stateValue === lane.terminals.tripped &&
-		taskIn(lane, taskId).openFinals.has(stateIn(states, taskId).type);
+		previous.status === "done" && previous.stateValue === lane.terminals.tripped && inOpenFinal;
 	if (previous.status === "done" && !parked) {
 		return {
 			_tag: "Refused",
@@ -283,7 +287,7 @@ export const applyEvent = (
 	}
 	// A region booted straight into a park left no state behind it, so its door resolves to the park
 	// itself; recording that would answer "resumed" for a fold that did not move.
-	if (parked && next.type === stateIn(states, taskId).type) {
+	if (inOpenFinal && next.type === stateIn(states, taskId).type) {
 		return {
 			_tag: "Refused",
 			reason: `task "${taskId}" booted in "${next.type}" and left no state to resume — the door leads back to itself`,

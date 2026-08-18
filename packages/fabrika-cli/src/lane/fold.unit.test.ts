@@ -281,6 +281,63 @@ describe("the frozen park — an UNBLOCKED door out of an error final (ADR 0297)
 		if (applied._tag === "Refused") expect(applied.reason).toContain("no state to resume");
 	});
 
+	/** twoPhaseWorkflow with task_a's `tripped` turned into a park, optionally booted into it. */
+	const parkedSibling = (booted: boolean): Record<string, unknown> => {
+		const workflow = twoPhaseWorkflow();
+		const region = (
+			workflow.machine as {
+				states: {phase1: {states: {task_a: {initial: string; states: Record<string, unknown>}}}};
+			}
+		).states.phase1.states.task_a;
+		region.states.tripped = {type: "final", on: {"TASK_A.UNBLOCKED": "hist"}};
+		if (booted) region.initial = "tripped";
+		return workflow;
+	};
+
+	it("refuses the booted park's door while a sibling keeps the phase active", () => {
+		const compiled = lane(parkedSibling(true));
+
+		// The phase never folds — task_b is still `doing` — so the lane reads active and the whole
+		// tripped-terminal path is unreachable; the self-loop has to be caught on the task itself.
+		expect(statusOf(compiled, []).status).toBe("active");
+		const applied = applyEvent(
+			compiled,
+			statesOf(compiled, []),
+			"task_a",
+			"UNBLOCKED",
+			"2026-08-16T00:00:00.000Z",
+		);
+		expect(applied).toMatchObject({_tag: "Refused"});
+		if (applied._tag === "Refused") expect(applied.reason).toContain("no state to resume");
+	});
+
+	it("still resumes a park the task walked into, with the phase active around it", () => {
+		const compiled = lane(parkedSibling(false));
+
+		const log = drive(compiled, [
+			["task_a", "DONE"],
+			["task_a", "FAIL"],
+			["task_a", "DONE"],
+			["task_a", "FAIL"],
+			["task_a", "DONE"],
+			["task_a", "FAIL"],
+		]);
+		expect(statusOf(compiled, log)).toMatchObject({
+			stateValue: {phase1: {task_a: "tripped", task_b: "doing"}},
+			status: "active",
+		});
+		const applied = applyEvent(
+			compiled,
+			statesOf(compiled, log),
+			"task_a",
+			"UNBLOCKED",
+			"2026-08-16T00:00:00.000Z",
+		);
+		expect(applied._tag).toBe("Applied");
+		if (applied._tag !== "Applied") return;
+		expect(applied.current.stateValue).toMatchObject({phase1: {task_a: "checking"}});
+	});
+
 	it("still refuses an event the park holds no cell for", () => {
 		const compiled = lane(coderWorkflow());
 
