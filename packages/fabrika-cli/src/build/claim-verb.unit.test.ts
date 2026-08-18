@@ -298,6 +298,25 @@ describe("runClaim — the admission test runs before any marker is written", ()
 		expect(out.stderr.at(-1)).toContain("nothing was written");
 	});
 
+	it("claims an issue homed in the SECOND declared milestone, off the same predicate (#6005)", async () => {
+		const {out} = await claimWith(
+			OUT_OF_CAMPAIGN,
+			fakeFs({files: {[DEFAULT_ROADMAP]: focusTable([44, 39])}}),
+		);
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).answer).toBe("won");
+		expect(out.stderr.some((line) => line.includes("2 milestones"))).toBe(true);
+	});
+
+	it("refuses an out-of-focus issue naming the whole declared set in the remedy", async () => {
+		const {out} = await claimWith(
+			OUT_OF_CAMPAIGN,
+			fakeFs({files: {[DEFAULT_ROADMAP]: focusTable([44, 46])}}),
+		);
+		expect(out.code).toBe(OUT_OF_FOCUS);
+		expect(out.stderr.some((line) => line.includes("milestones #44, #46"))).toBe(true);
+	});
+
 	it("refuses a non-agent audience on 21 — a sibling axis, never folded into 20", async () => {
 		const {out, shell} = await claimWith(HUMAN_AUDIENCE);
 		expect(out.code).toBe(AUDIENCE_NOT_AGENT);

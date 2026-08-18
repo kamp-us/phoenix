@@ -14,6 +14,7 @@ import {FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {
 	type Admission,
+	declaredMilestones,
 	type Focus,
 	type IssueFacts,
 	NOT_REPAIR,
@@ -139,7 +140,7 @@ export const resolveAdmissionSubject = (
 			focus._tag === "Declared"
 				? {
 						_tag: "Refused" as const,
-						admission: noServedIssue(target.number, focus.milestone, reason),
+						admission: noServedIssue(target.number, declaredMilestones(focus), reason),
 					}
 				: own;
 		if (subject._tag === "Unserved") {

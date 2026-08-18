@@ -30,7 +30,7 @@ makes the implementer guess ([#4734](https://github.com/kamp-us/phoenix/issues/4
 | `triage queue` | the claimable `status:needs-triage` queue, with the count it scanned | paginating a label query and separating a proven-empty queue from a failed read is mechanical; which issue to take is judgment |
 | `triage claim` | take a session-scoped claim on one issue, proven by read-back | a marker write plus an earliest-claim tiebreak is a protocol, not a decision |
 | `triage provenance` | was this issue reported by an agent or hand-typed by a human | a structural marker test over a fetched body, plus a membership test over the configured operator set — an empty body fails closed to `human`, an unreadable one refuses rather than guessing; what to *do* about a human filing stays in the skill |
-| `triage homes` | the assignable homes — open milestones joined to their ROADMAP rows, plus the standing lanes, with the milestone in exclusive focus marked `running` | the join, the open-milestone filter and reading the focus declaration are mechanical; picking which home fits, and whether an exception applies, is judgment |
+| `triage homes` | the assignable homes — open milestones joined to their ROADMAP rows, plus the standing lanes, with every milestone in declared focus marked `running` | the join, the open-milestone filter and reading the focus declaration are mechanical; picking which home fits, and whether an exception applies, is judgment |
 | `triage split` | create one split child, once, keyed on the parent back-reference | idempotency keyed on a durable reference is mechanical; deciding a report *is* a bundle is judgment |
 | `triage enrich` | replace the body with your rewrite — or, for an epic, your pitch — over a preserved, leak-redacted original | envelope assembly, redaction and read-back are mechanical; what the rewrite says is judgment |
 | `triage apply` | apply the whole triaged transition — type, priority, audience, home — and read it back | closed-vocabulary validation and an atomic label envelope are mechanical; the classification is judgment |
@@ -661,7 +661,7 @@ machine-channel answer.
 With `--json`, an object with keys `outcome`, `milestones` (array of `{number, title, roadmapRow}`),
 `lanes` (array of `{label, meaning}`), and `scanned`.
 
-**The milestone in exclusive focus is marked `running`.** That campaign is closed to new intake
+**Every milestone in declared focus is marked `running`.** That campaign is closed to new intake
 unless the work is `p0` or blocks one of that milestone's own in-flight lanes, so its row carries a
 fourth tab-separated column, verbatim `running: p0/blocker only`, and its `--json` object carries
 `"running": "p0/blocker only"` as a fourth key. Every other row is unchanged on both channels — no
