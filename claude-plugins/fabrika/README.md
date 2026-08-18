@@ -17,31 +17,35 @@ fabrika something to be measured against.
 Turkish for "factory". The name is sealed (#4631) and styled lowercase, like the sibling brand
 nouns `sozluk` and `pano`.
 
-## The only door: /skill-creator
+## The route in: writing-for-agents
 
-`/skill-creator` is the founder's **existing** skill, used **as-is** — fabrika builds no
-authoring tool of its own ([#4648 scope
-correction](https://github.com/kamp-us/phoenix/issues/4648#issuecomment-5152523719)). What
-fabrika owns here is the discipline, not the tool.
+**Every skill in `skills/` is written under
+[`writing-for-agents`](skills/writing-for-agents/SKILL.md), against the [fabrika skill
+conventions](docs/skill-conventions.md)** — founder ruling of 2026-08-18, recorded on
+[#5945](https://github.com/kamp-us/phoenix/issues/5945) and carried by
+[#5953](https://github.com/kamp-us/phoenix/issues/5953). It is one route for three cases that used
+to be graded differently: a new skill, an edit to a skill already here, and a port of a v1 skill.
+fabrika still builds no authoring tool of its own ([#4648 scope
+correction](https://github.com/kamp-us/phoenix/issues/4648#issuecomment-5152523719)); what fabrika
+owns here is the discipline.
 
-**No skill enters fabrika by any path other than `/skill-creator`** — founder ruling
-[#4637-C](https://github.com/kamp-us/phoenix/issues/4637). There is no second door: a skill is
-not hand-dropped into `skills/`, not ported from v1, not copied from a sibling plugin. Every
-fabrika skill is authored through `/skill-creator`, against the [fabrika skill
-conventions](docs/skill-conventions.md), and enters as that session's output.
+That ruling retires the earlier posture, which made a `/skill-creator` session the only door and
+named a port a defect by construction ([#4637-C](https://github.com/kamp-us/phoenix/issues/4637)).
+A port that meets the discipline now enters the same way anything else does, so no skill needs a
+per-PR ruling to get through the gate.
 
-This posture is why `skills/` fills one authoring session at a time rather than by porting. A skill
-that appears here by any other route is a defect, not a shortcut — the door is the only door.
+What did not change: nothing is dropped into `skills/` unread. The text still has to pass the
+conventions, and it is the text that is graded rather than the session that produced it.
 
 ## Layout
 
 ```
 claude-plugins/fabrika/
 ├── .claude-plugin/plugin.json   the plugin manifest (no version — ADR 0110, continuous ship)
-├── README.md                    this file: the mission, the only-door posture, the layout
+├── README.md                    this file: the mission, the route in, the layout
 ├── agents/                      builder, reviewer, shipper, operator (see docs/agent-shells.md)
 ├── docs/                        the canonical convention + contract docs (see docs/README.md)
-└── skills/                      one dir per skill, each authored by /skill-creator
+└── skills/                      one dir per skill, each written under writing-for-agents
 ```
 
 `agents/` holds exactly four **agent shells** — `builder`, `reviewer`, `shipper`, `operator` —

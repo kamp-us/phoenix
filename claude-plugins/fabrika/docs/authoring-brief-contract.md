@@ -1,10 +1,9 @@
 # fabrika authoring-brief contract
 
-An **authoring brief** is a GitHub issue: the boot document a fresh `/skill-creator` session works
-out of when it authors one fabrika skill. This doc fixes what a brief carries and what the session
-owes back.
+An **authoring brief** is a GitHub issue: the boot document a fresh session works out of when it
+writes one fabrika skill. This doc fixes what a brief carries and what the session owes back.
 
-**Every `/skill-creator` session works out of a GitHub issue, and every skill gets its own fresh
+**Every authoring session works out of a GitHub issue, and every skill gets its own fresh
 session** — founder workflow ruling, recorded on
 [#4650](https://github.com/kamp-us/phoenix/issues/4650#issuecomment-5150192649). The freshness is
 deliberate: no context inheritance, no authoring bias carried from the last skill. The cost of a
@@ -16,18 +15,19 @@ So the bar every rule below serves is one sentence:
 > **A fresh session, given only the brief issue and this repo, can author the skill without asking a
 > question and without reading any prior session's transcript.**
 
-## The tool is the founder's existing `/skill-creator`, used as-is
+## The discipline is `writing-for-agents`, and fabrika builds no tool
 
-fabrika builds no authoring tool. The session runs the founder's **existing** `/skill-creator`,
-unmodified — [#4648 scope correction](https://github.com/kamp-us/phoenix/issues/4648#issuecomment-5152523719).
-What fabrika owns is the ground that tool authors *into* and *against*: this brief format, the skill
-conventions, and the CLI interface convention (both in this directory — see
-[the docs index](README.md)).
+fabrika builds no authoring tool — [#4648 scope
+correction](https://github.com/kamp-us/phoenix/issues/4648#issuecomment-5152523719). The session
+writes under [`writing-for-agents`](../skills/writing-for-agents/SKILL.md), which is the route into
+`claude-plugins/fabrika/skills/` for a new skill, an edit and a v1 port alike — founder ruling of
+2026-08-18, recorded on [#5945](https://github.com/kamp-us/phoenix/issues/5945), retiring the
+earlier `/skill-creator`-only door of
+[#4637-C](https://github.com/kamp-us/phoenix/issues/4637). What fabrika owns is the ground the
+writing lands *into* and *against*: this brief format, the skill conventions, and the CLI interface
+convention (both in this directory — see [the docs index](README.md)).
 
-And it is the **only** door — founder ruling
-[#4637-C](https://github.com/kamp-us/phoenix/issues/4637), restated on the
-[fabrika README](../README.md). A skill that reaches `claude-plugins/fabrika/skills/` by any other
-route is a defect, not a shortcut. That has a consequence for how a brief sits on the board, which
+A brief still boots its own session, and that has a consequence for how it sits on the board, which
 is [its own section](#a-brief-is-not-write-code-work) below.
 
 ## Required fields

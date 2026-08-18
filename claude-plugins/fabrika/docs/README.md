@@ -15,7 +15,7 @@ This directory is the home; the docs themselves land as the foundation epic's la
 |---|---|---|
 | [skill conventions](skill-conventions.md) | the writing discipline every fabrika skill meets — the two-layer split, wrapper sizing, invocation-axis economics, the quality vocabulary and failure-mode taxonomy, checkable completion criteria, the scope law, the literal-invocation rule, the ship gate, trust and ingestion, the leaf rule, and the REST-never-GraphQL GitHub-access rule | #4653 |
 | [CLI interface convention + contract-spec format](cli-interface-convention.md) | what every fabrika verb owes its caller (`--help` discoverability, uniform output contracts, usage examples) and the shape of the contract a skill derives for the verbs it needs | #4654 |
-| [authoring-brief contract](authoring-brief-contract.md) | the boot document a stateless `/skill-creator` session works from | #4655 |
+| [authoring-brief contract](authoring-brief-contract.md) | the boot document a stateless authoring session works from | #4655 |
 | [wire formats](wire-formats.md) | the index of the byte-level agreements two skills meet through — format → owner module → producers/consumers, with the protocol narrative and none of the shape | #4945 |
 | [§CP classification](control-plane-classification.md) | the ruled control-plane model every §CP-computing verb implements and every §CP-mentioning skill is held to — CODEOWNERS as single source, three-valued, `UNKNOWN` fails closed, no semantic detection | #4932 |
 | [agent shells](agent-shells.md) | what an agent shell in [`../agents/`](../agents/) is, why there are exactly three, why its name is a noun, the no-`memory:` ruling, the model allowlist, and the rule that a shell which grows opinions is a defect | #5586, #5617 |
