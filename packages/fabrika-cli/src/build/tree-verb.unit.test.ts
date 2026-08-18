@@ -107,12 +107,13 @@ describe("runTree", () => {
 				[ISSUE, issue()],
 				[COMMENTS, comments({id: 1, body: marker("s-77aa", LANE_UUID)})],
 				[PERM, okOut("write\n")],
+				[BRANCH, LANE_BRANCH],
 			],
 			{issue: 4312},
 		);
 		expect(out.code).toBe(CLAIM_NOT_MINE);
 		expect(out.stderr.at(-1)).toBe(
-			"build tree: #4312 is held by build:s-77aa:c1a4d6f8-3b7e-4a19-9c2d-5e8f0a1b2c3d, not this session.",
+			`build tree: #4312 is held by build:s-77aa:${LANE_UUID}, not by the lane on nonce ${NONCE}.`,
 		);
 	});
 
@@ -122,6 +123,7 @@ describe("runTree", () => {
 				[REV_PARSE, GIT_DIRS],
 				[ISSUE, issue()],
 				[COMMENTS, errOut("gh: Bad gateway (HTTP 502)")],
+				[BRANCH, LANE_BRANCH],
 			],
 			{issue: 4312},
 		);

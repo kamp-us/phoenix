@@ -20,8 +20,11 @@ import {
 	comments,
 	focusTable,
 	issue,
+	LANE_TOKEN,
 	LANE_UUID,
 	marker,
+	SIBLING_TOKEN,
+	SIBLING_UUID,
 	truncatedComments,
 } from "./fixtures.test-support.ts";
 import {runPick} from "./pick-verb.ts";
@@ -36,8 +39,8 @@ const perm = (login: string) => new RegExp(`^gh api repos/o/r/collaborators/${lo
 
 const MINE = marker("s-9f2e", LANE_UUID);
 const THEIRS = marker("s-77aa", "9d8c7b6a-5f4e-3d2c-1b0a-998877665544");
-/** A second marker of the SAME session — what a pre-fix thread carries, and what release must sweep. */
-const SECOND_MINE = marker("s-9f2e", "0a1b2c3d-4e5f-4071-8293-a4b5c6d7e8f9");
+/** A marker of the same SESSION under another nonce — a sibling lane's, which release must NOT sweep. */
+const SIBLING_MARKER = marker("s-9f2e", SIBLING_UUID);
 
 const POSTED = okOut(JSON.stringify({id: 9001, html_url: "https://github.com/o/r/issues/4312#c"}));
 const ECHO = okOut(JSON.stringify({body: MINE}));
@@ -48,10 +51,12 @@ const labelled = (...names: ReadonlyArray<string>) => names.map((name) => ({name
 const CLAIMABLE = issue({labels: labelled("type:bug", "p1", "status:triaged", "ready-for:agent")});
 
 /**
- * The read `claim` makes BEFORE it posts: this thread carries no marker of this session yet.
+ * The read `claim` makes BEFORE it posts, when it was handed the token this lane already holds: this
+ * thread carries no marker of this LANE yet, so the run goes on to race.
  *
  * A fresh `once` per call, because the same run then re-reads the thread at the checkpoint and must
- * see the post-state — one script entry cannot answer both reads.
+ * see the post-state — one script entry cannot answer both reads. A claim that passes no `--token`
+ * makes no such read at all, and its script carries no entry for one.
  */
 const unclaimed = () => [once(COMMENTS), comments()] as const;
 
@@ -76,6 +81,7 @@ const options = {
 		string | undefined
 	>,
 	uuid: LANE_UUID,
+	token: LANE_TOKEN,
 	at: "2026-08-09T00:00:00Z",
 	purpose: "build",
 	override: null as string | null,
@@ -83,7 +89,7 @@ const options = {
 };
 
 const run = (
-	verb: typeof runClaim,
+	verb: (given: typeof options) => ReturnType<typeof runClaim>,
 	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
 	overrides: Partial<typeof options> = {},
 	fs = NO_FOCUS,
@@ -112,6 +118,44 @@ describe("runClaim", () => {
 			purpose: "build",
 			token: `build:s-9f2e:${LANE_UUID}`,
 		});
+	});
+
+	/**
+	 * The two-lanes-one-session race (#6037). Lane B mints `SIBLING_UUID`, posts it, and re-reads a
+	 * thread where lane A's marker is earlier. Under the session-only rule it was told `won` and handed
+	 * back a nonce that held nothing, which `build branch` then cut a branch on.
+	 *
+	 * It holds no token yet, so it names none, and the run makes no pre-post read at all.
+	 */
+	it("loses to a SIBLING LANE of its own session, and never answers won on its behalf", async () => {
+		// The loser's own comment id is 9002, distinct from the winner's 9001, so the retraction
+		// assertion below discriminates "retracted its own marker" from "deleted the winner's".
+		const siblingMarker = marker("s-9f2e", SIBLING_UUID);
+		const shell = fakeShell([
+			[ISSUE, CLAIMABLE],
+			[POST, okOut(JSON.stringify({id: 9002, html_url: "https://github.com/o/r/issues/4312#c"}))],
+			[
+				/^gh api repos\/o\/r\/issues\/comments\/9002$/,
+				okOut(JSON.stringify({body: siblingMarker})),
+			],
+			[COMMENTS, comments({id: 9001, body: MINE}, {id: 9002, body: siblingMarker})],
+			[perm("agent"), okOut("write\n")],
+			[DELETE, okOut("")],
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runClaim({...options, uuid: SIBLING_UUID, token: null}),
+				Layer.merge(shell.layer, NO_FOCUS.layer),
+			),
+		);
+		expect(out.code).toBe(CLAIM_NOT_MINE);
+		expect(out.stderr.some((line) => line.includes(`lost to ${LANE_TOKEN}`))).toBe(true);
+		expect(shell.calls.filter((line) => DELETE.test(line))).toEqual([
+			"gh api --method DELETE repos/o/r/issues/comments/9002",
+		]);
+		expect(
+			shell.calls.some((line) => /DELETE repos\/o\/r\/issues\/comments\/9001/.test(line)),
+		).toBe(false);
 	});
 
 	it("re-reads AFTER posting — the checkpoint is what resolves a staggered race", async () => {
@@ -180,16 +224,20 @@ describe("runClaim", () => {
 		expect(out.stderr.some((line) => line.includes("who holds no write permission"))).toBe(true);
 	});
 
-	it("refuses a failed marker write on 8 — UNKNOWN, and points at confirm", async () => {
+	it("refuses a failed marker write on 8 — UNKNOWN, and hands back a RUNNABLE recovery (#6037)", async () => {
 		const out = await run(runClaim, [
 			[ISSUE, CLAIMABLE],
 			unclaimed(),
 			[POST, errOut("gh: Gateway timeout (HTTP 504)")],
 		]);
 		expect(out.code).toBe(WRITE_UNKNOWN);
+		// `confirm` and `release` both require --token, so the minted token has to reach the operator
+		// or the lane can address neither the marker this write may have landed nor its own claim.
 		expect(out.stderr.at(-1)).toContain(
-			'run "fabrika build confirm 4312" before any further action',
+			`run "fabrika build confirm 4312 --token ${LANE_TOKEN}" before any further action`,
 		);
+		expect(out.stderr.join("\n")).toContain(`the token this run minted is ${LANE_TOKEN}`);
+		expect(out.stderr.join("\n")).toContain('Do not re-run "fabrika build claim 4312"');
 	});
 
 	it("refuses a marker that does not read back on 9", async () => {
@@ -786,14 +834,30 @@ describe("runClaim — the purpose axis", () => {
 });
 
 describe("runConfirm", () => {
-	it("answers mine when this session holds the earliest authorized marker", async () => {
+	it("answers mine when this lane holds the earliest authorized marker", async () => {
 		const out = await run(runConfirm, [
 			[ISSUE, CLAIMABLE],
 			[COMMENTS, comments({id: 9001, body: MINE})],
 			[perm("agent"), okOut("write\n")],
 		]);
 		expect(out.code).toBe(0);
-		expect(JSON.parse(out.stdout).answer).toBe("mine");
+		expect(JSON.parse(out.stdout)).toEqual({answer: "mine", number: 4312, token: LANE_TOKEN});
+	});
+
+	it("refuses a SIBLING LANE OF THIS SESSION on 15, naming both tokens (#6037)", async () => {
+		const out = await run(
+			runConfirm,
+			[
+				[ISSUE, CLAIMABLE],
+				[COMMENTS, comments({id: 9001, body: MINE})],
+				[perm("agent"), okOut("write\n")],
+			],
+			{token: SIBLING_TOKEN},
+		);
+		expect(out.code).toBe(CLAIM_NOT_MINE);
+		expect(out.stderr.at(-1)).toBe(
+			`build confirm: #4312 is held by ${LANE_TOKEN}, not by ${SIBLING_TOKEN} — another lane of this same session.`,
+		);
 	});
 
 	it("refuses a foreign holder on 15, naming the token", async () => {
@@ -804,7 +868,9 @@ describe("runConfirm", () => {
 		]);
 		expect(out.code).toBe(CLAIM_NOT_MINE);
 		expect(out.stderr.at(-1)).toBe(
-			"build confirm: #4312 is held by build:s-77aa:9d8c7b6a-5f4e-3d2c-1b0a-998877665544, not this session.",
+			"build confirm: #4312 is held by build:s-77aa:9d8c7b6a-5f4e-3d2c-1b0a-998877665544, not by " +
+				LANE_TOKEN +
+				".",
 		);
 	});
 
@@ -859,7 +925,7 @@ describe("runRelease", () => {
 		);
 		expect(out.code).toBe(CLAIM_NOT_MINE);
 		expect(out.stderr.at(-1)).toBe(
-			"build release: this session holds no claim on #4312 — refusing to release another lane's.",
+			"build release: this lane holds no claim on #4312 — refusing to release another lane's.",
 		);
 		expect(shell.calls.some((line) => DELETE.test(line))).toBe(false);
 	});
@@ -886,15 +952,20 @@ describe("runRelease", () => {
 			[once(DELETE), errOut("gh: Gateway timeout (HTTP 504)")],
 		]);
 		expect(out.code).toBe(WRITE_UNKNOWN);
+		expect(out.stderr.at(-1)).toContain(`run "fabrika build confirm 4312 --token ${LANE_TOKEN}"`);
 	});
 });
 
 /**
- * The protocol's fixed point: one session, one marker, one token (#5782).
+ * The protocol's fixed point: one LANE, one marker, one token (#5782, scoped per lane by #6037).
  *
- * Before the fix N claims left N markers, `claim` printed its own fresh nonce while `confirm` and
+ * Before #5782 N claims left N markers, `claim` printed its own fresh nonce while `confirm` and
  * `requireClaim` read the earliest one, and each `release` peeled a single marker off the stack — so
- * `build branch --resume` cut its branch off a nonce the caller had never been shown.
+ * `build branch --resume` cut its branch off a nonce the caller had never been shown. That fix held
+ * the fixed point per SESSION, which is the rule that told a sibling lane it owned its neighbour's
+ * claim (#6037). Each property is asserted here per lane instead, and every one of them is paired
+ * with the sibling case it must NOT swallow: idempotence short-circuits only for the lane that named
+ * its own token, and release retracts only markers carrying that token.
  */
 describe("the claim protocol", () => {
 	const held = () => [
@@ -905,17 +976,53 @@ describe("the claim protocol", () => {
 		[perm("agent"), okOut("write\n")] as const,
 	];
 
-	const on = (shell: ReturnType<typeof fakeShell>, verb: typeof runClaim) =>
-		Effect.runPromise(Effect.provide(verb(options), Layer.merge(shell.layer, NO_FOCUS.layer)));
+	const on = (
+		shell: ReturnType<typeof fakeShell>,
+		verb: (given: typeof options) => ReturnType<typeof runClaim>,
+	) => Effect.runPromise(Effect.provide(verb(options), Layer.merge(shell.layer, NO_FOCUS.layer)));
 
-	it("posts no second marker on a number this session already holds", async () => {
+	it("posts no second marker on a number THIS LANE already holds", async () => {
 		const shell = fakeShell(held());
 		const first = await on(shell, runClaim);
 		const second = await on(shell, runClaim);
 		expect(shell.calls.filter((line) => POST.test(line))).toHaveLength(1);
 		expect(second.code).toBe(0);
 		expect(JSON.parse(second.stdout)).toEqual(JSON.parse(first.stdout));
+		expect(second.stderr.at(-1)).toContain("already held by this lane");
 		expect(second.stderr.at(-1)).toContain("nothing was written");
+	});
+
+	/**
+	 * The narrowing itself. Under the session-scoped short-circuit, lane B naming its own token on a
+	 * number lane A holds was answered `won` with lane A's marker — the #6037 defect, arriving through
+	 * #5782's idempotence rather than through the race.
+	 */
+	it("does NOT short-circuit for a sibling lane's marker — it races it, and loses", async () => {
+		const shell = fakeShell([
+			[ISSUE, CLAIMABLE],
+			...thread(
+				comments({id: 9001, body: MINE}),
+				comments({id: 9001, body: MINE}, {id: 9002, body: SIBLING_MARKER}),
+			),
+			[POST, okOut(JSON.stringify({id: 9002, html_url: "https://github.com/o/r/issues/4312#c"}))],
+			[
+				/^gh api repos\/o\/r\/issues\/comments\/9002$/,
+				okOut(JSON.stringify({body: SIBLING_MARKER})),
+			],
+			[perm("agent"), okOut("write\n")],
+			[DELETE, okOut("")],
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runClaim({...options, uuid: SIBLING_UUID, token: SIBLING_TOKEN}),
+				Layer.merge(shell.layer, NO_FOCUS.layer),
+			),
+		);
+		expect(out.code).toBe(CLAIM_NOT_MINE);
+		expect(out.stderr.some((line) => line.includes(`lost to ${LANE_TOKEN}`))).toBe(true);
+		expect(shell.calls.filter((line) => DELETE.test(line))).toEqual([
+			"gh api --method DELETE repos/o/r/issues/comments/9002",
+		]);
 	});
 
 	it("answers claim and confirm with the SAME token — the two can never disagree", async () => {
@@ -924,17 +1031,21 @@ describe("the claim protocol", () => {
 		const confirmed = await on(shell, runConfirm);
 		expect(confirmed.code).toBe(0);
 		expect(JSON.parse(confirmed.stdout).token).toBe(JSON.parse(claimed.stdout).token);
-		expect(JSON.parse(claimed.stdout).token).toBe(`build:s-9f2e:${LANE_UUID}`);
+		expect(JSON.parse(claimed.stdout).token).toBe(LANE_TOKEN);
 	});
 
-	it("reads a thread that already carries duplicate markers, and release clears every one", async () => {
+	it("clears every duplicate of THIS LANE's token on release, and leaves a sibling's standing", async () => {
+		// 9001 and 9002 both carry this lane's token — a write that reported UNKNOWN, landed, and was
+		// re-posted. 9003 is a sibling lane's claim: retracting it is the one write this protocol must
+		// never make, so it survives the sweep and is what `confirm` then loses to.
 		const dirty = comments(
 			{id: 9001, body: MINE},
-			{id: 9002, body: SECOND_MINE, createdAt: "2026-08-09T00:00:01Z"},
+			{id: 9002, body: MINE, createdAt: "2026-08-09T00:00:01Z"},
+			{id: 9003, body: SIBLING_MARKER, createdAt: "2026-08-09T00:00:02Z"},
 		);
 		const shell = fakeShell([
 			[ISSUE, CLAIMABLE],
-			...thread(dirty, dirty, dirty, comments()),
+			...thread(dirty, dirty, dirty, comments({id: 9003, body: SIBLING_MARKER})),
 			[POST, POSTED],
 			[GET_COMMENT, ECHO],
 			[perm("agent"), okOut("write\n")],
@@ -942,7 +1053,7 @@ describe("the claim protocol", () => {
 		]);
 		const claimed = await on(shell, runClaim);
 		expect(claimed.code).toBe(0);
-		expect(JSON.parse(claimed.stdout).token).toBe(`build:s-9f2e:${LANE_UUID}`);
+		expect(JSON.parse(claimed.stdout).token).toBe(LANE_TOKEN);
 		expect(shell.calls.some((line) => POST.test(line))).toBe(false);
 
 		const released = await on(shell, runRelease);
@@ -954,6 +1065,8 @@ describe("the claim protocol", () => {
 
 		const confirmed = await on(shell, runConfirm);
 		expect(confirmed.code).toBe(CLAIM_NOT_MINE);
-		expect(confirmed.stderr.at(-1)).toContain("no claim exists on #4312");
+		expect(confirmed.stderr.at(-1)).toBe(
+			`build confirm: #4312 is held by ${SIBLING_TOKEN}, not by ${LANE_TOKEN} — another lane of this same session.`,
+		);
 	});
 });

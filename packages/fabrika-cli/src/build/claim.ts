@@ -6,6 +6,13 @@
  * markers, and the **earliest authorized** one wins. The shape is ADR 0115's, re-implemented rather
  * than called (ADR 0238).
  *
+ * **Ownership turns on the whole token, never on the session id alone.** A session is not a lane: one
+ * driver session routinely runs several builders at once, and each mints its own token. Deciding
+ * `Mine` on `parsed.session === session` reads as the obvious simplification — it is indistinguishable
+ * under one lane per session — and it told the second lane it held the first lane's claim, so both ran
+ * the same repair and both pushed (#6037). The asking lane therefore names itself, as a {@link Caller},
+ * and a same-session marker under a different nonce is `Foreign`.
+ *
  * **Authorization comes from repository permissions, never from the marker's text** (ADR 0055). A
  * marker whose author resolves below `write` is counted and reported, and never wins — otherwise the
  * race is decided by whoever is willing to type the winning string. A permission read that *fails* is
@@ -25,7 +32,7 @@ import {type CommentRecord, listComments} from "../io/issues.ts";
 import {permissionFor} from "../io/pulls.ts";
 import {FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {CLAIM_NOT_MINE, PRECONDITION_UNKNOWN} from "./codes.ts";
-import {parseToken} from "./lane.ts";
+import {nonceOf, parseToken} from "./lane.ts";
 
 /** The env var the session id arrives in. A claim without an identity is not a claim. */
 export const SESSION_ENV = "CLAUDE_CODE_SESSION_ID";
@@ -136,15 +143,87 @@ export const markersIn = (
 	);
 };
 
+/**
+ * Which lane is asking — the identity every ownership question is answered against.
+ *
+ * `Lane` is the real one: a session plus the nonce of the token that lane holds, which is what
+ * separates two builders of one session. `AnySession` is the pre-#6037 identity, kept only for the
+ * claim namespaces that have not adopted a lane nonce (the `lane:` driver claim, and the epic claims
+ * the `plan` and `ledger` groups take); it is a named opt-in precisely so the session-only rule cannot
+ * come back as a default.
+ */
+export type Caller =
+	| {
+			readonly _tag: "Lane";
+			readonly session: string;
+			readonly nonce: string;
+			/** The token the lane was handed, when it passed one — carried so a refusal can name it. */
+			readonly token: string | null;
+	  }
+	| {readonly _tag: "AnySession"; readonly session: string};
+
+/** The identity a build lane always has: a session AND the nonce of the token it holds. */
+export type LaneCaller = Extract<Caller, {readonly _tag: "Lane"}>;
+
+export const laneCaller = (
+	session: string,
+	nonce: string,
+	token: string | null = null,
+): LaneCaller => ({_tag: "Lane", session, nonce, token});
+
+export const anySessionCaller = (session: string): Caller => ({_tag: "AnySession", session});
+
+/** How a refusal names the asking lane, so a reader can tell two lanes of one session apart. */
+export const describeCaller = (caller: Caller): string =>
+	caller._tag === "AnySession"
+		? `session ${caller.session}`
+		: (caller.token ?? `the lane on nonce ${caller.nonce}`);
+
+export type CallerRead =
+	| {readonly _tag: "Refused"; readonly outcome: VerbOutcome}
+	| {readonly _tag: "Caller"; readonly caller: LaneCaller};
+
+/**
+ * The asking lane, read off the `--token` it was handed by `build claim`.
+ *
+ * A token from another session is refused rather than trusted: the env says which session is running,
+ * the flag says which lane, and a pair that disagrees is a threaded-through token from somewhere else.
+ */
+export const requireCallerToken = (verb: string, session: string, token: string): CallerRead => {
+	const usage = (message: string): CallerRead => ({
+		_tag: "Refused",
+		outcome: refuse(FAILED, `${verb}: ${message}`),
+	});
+	const trimmed = token.trim();
+	const parsed = parseToken(trimmed);
+	const nonce = nonceOf(trimmed);
+	if (parsed === null || nonce === null) {
+		return usage(
+			`--token "${trimmed}" is not a claim token (build:<session-id>:<uuid>) — which lane is asking is not stated.`,
+		);
+	}
+	if (parsed.session !== session) {
+		return usage(
+			`--token "${trimmed}" carries session ${parsed.session}, but this run is session ${session} — a lane names itself, never another.`,
+		);
+	}
+	return {_tag: "Caller", caller: laneCaller(session, nonce, trimmed)};
+};
+
 /** Who holds the claim — four outcomes, and no two of them fold. */
 export type Ownership =
 	| {readonly _tag: "Mine"; readonly marker: ClaimMarker}
-	| {readonly _tag: "Foreign"; readonly marker: ClaimMarker}
+	| {
+			readonly _tag: "Foreign";
+			readonly marker: ClaimMarker;
+			/** The winner is another lane of the caller's own session — a wrong lane, not a wrong session. */
+			readonly sameSession: boolean;
+	  }
 	| {readonly _tag: "Unclaimed"}
 	| {readonly _tag: "Unknown"; readonly reason: string};
 
 /**
- * Resolve ownership of `number` against `session`.
+ * Resolve ownership of `number` against the asking lane.
  *
  * The ACL lookups run in marker order and stop at the first authorized one, so a thread full of
  * unauthorized markers costs one lookup each and the winner is found without reading the rest.
@@ -154,7 +233,7 @@ export type Ownership =
 export const resolveOwnership = (
 	repo: string,
 	number: number,
-	session: string,
+	caller: Caller,
 	grammar: ClaimGrammar = BUILD_CLAIM,
 ): Effect.Effect<
 	{readonly ownership: Ownership; readonly unauthorized: ReadonlyArray<ClaimMarker>},
@@ -190,9 +269,14 @@ export const resolveOwnership = (
 				continue;
 			}
 			const parsed = parseToken(marker.token, grammar.prefix);
-			const mine = parsed !== null && parsed.session === session;
+			const sameSession = parsed !== null && parsed.session === caller.session;
+			const mine =
+				sameSession &&
+				(caller._tag === "AnySession" || nonceOf(marker.token, grammar.prefix) === caller.nonce);
 			return {
-				ownership: mine ? ({_tag: "Mine", marker} as const) : ({_tag: "Foreign", marker} as const),
+				ownership: mine
+					? ({_tag: "Mine", marker} as const)
+					: ({_tag: "Foreign", marker, sameSession} as const),
 				unauthorized,
 			};
 		}
@@ -221,11 +305,17 @@ export const requireSession = (
 };
 
 export type Held =
-	| {readonly _tag: "Refused"; readonly outcome: VerbOutcome}
+	| {
+			readonly _tag: "Refused";
+			readonly outcome: VerbOutcome;
+			/** Why it refused, so a branch-asserting caller can re-map a same-session loss to `14`. */
+			readonly ownership: Ownership;
+			readonly notes: ReadonlyArray<string>;
+	  }
 	| {readonly _tag: "Held"; readonly marker: ClaimMarker; readonly notes: ReadonlyArray<string>};
 
 /**
- * The precondition every mutating verb runs: this session holds `number`'s claim, proven now.
+ * The precondition every mutating verb runs: this lane holds `number`'s claim, proven now.
  *
  * The three refusals are the contract's, with the invoked verb's name substituted. Unclaimed lands on
  * `15` beside foreign because the caller's action is the same in both — stop, claim first — while the
@@ -235,10 +325,10 @@ export const requireClaim = (
 	verb: string,
 	repo: string,
 	number: number,
-	session: string,
+	caller: Caller,
 ): Effect.Effect<Held, never, ChildProcessSpawner.ChildProcessSpawner> =>
 	Effect.gen(function* () {
-		const {ownership, unauthorized} = yield* resolveOwnership(repo, number, session);
+		const {ownership, unauthorized} = yield* resolveOwnership(repo, number, caller);
 		const notes = unauthorized.map(
 			(marker) =>
 				`${verb}: comment ${marker.commentId} carries a claim marker from "${marker.author}", who holds no write permission — counted, never a winner.`,
@@ -246,6 +336,8 @@ export const requireClaim = (
 		if (ownership._tag === "Unknown") {
 			return {
 				_tag: "Refused" as const,
+				ownership,
+				notes,
 				outcome: refuse(
 					PRECONDITION_UNKNOWN,
 					`${verb}: cannot read the claim markers on #${number}: ${ownership.reason} — the lane is UNKNOWN.`,
@@ -256,6 +348,8 @@ export const requireClaim = (
 		if (ownership._tag === "Unclaimed") {
 			return {
 				_tag: "Refused" as const,
+				ownership,
+				notes,
 				outcome: refuse(
 					CLAIM_NOT_MINE,
 					`${verb}: no claim exists on #${number} — nothing to confirm; run "fabrika build claim ${number}" first.`,
@@ -266,9 +360,11 @@ export const requireClaim = (
 		if (ownership._tag === "Foreign") {
 			return {
 				_tag: "Refused" as const,
+				ownership,
+				notes,
 				outcome: refuse(
 					CLAIM_NOT_MINE,
-					`${verb}: #${number} is held by ${ownership.marker.token}, not this session.`,
+					`${verb}: #${number} is held by ${ownership.marker.token}, not by ${describeCaller(caller)}.`,
 					notes,
 				),
 			};

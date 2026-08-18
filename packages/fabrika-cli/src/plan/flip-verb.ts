@@ -29,7 +29,7 @@
 
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import {requireClaim, requireSession} from "../build/claim.ts";
+import {anySessionCaller, requireClaim, requireSession} from "../build/claim.ts";
 import {badNumber, resolveTargetRepo} from "../build/target.ts";
 import {addLabels, getIssue, listLabels, removeLabel} from "../io/issues.ts";
 import {PLANNED, TRIAGED} from "../labels.ts";
@@ -128,7 +128,7 @@ export const runFlip = (
 		const target = yield* requireEpic(MESSAGES, repo, options.number);
 		if (target._tag === "Refused") return target.outcome;
 
-		const held = yield* requireClaim(VERB, repo, options.number, session.id);
+		const held = yield* requireClaim(VERB, repo, options.number, anySessionCaller(session.id));
 		if (held._tag === "Refused") return held.outcome;
 
 		const read = yield* loadLedger(MESSAGES, repo, target.issue);

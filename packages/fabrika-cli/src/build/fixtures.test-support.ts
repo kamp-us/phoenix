@@ -130,3 +130,10 @@ export const marker = (session: string, uuid: string): string =>
 export const LANE_UUID = "c1a4d6f8-3b7e-4a19-9c2d-5e8f0a1b2c3d";
 /** The lane nonce `LANE_UUID` confers. */
 export const NONCE = "c1a4d6f8";
+/** The token the fixture lane holds — what it passes as `--token`. */
+export const LANE_TOKEN = `build:s-9f2e:${LANE_UUID}`;
+
+/** A second lane of the SAME session `s-9f2e` — the two-lanes-one-session shape (#6037). */
+export const SIBLING_UUID = "7bab0955-616f-4a6a-af6e-71c34b7c68c7";
+export const SIBLING_NONCE = "7bab0955";
+export const SIBLING_TOKEN = `build:s-9f2e:${SIBLING_UUID}`;

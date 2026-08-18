@@ -9,6 +9,7 @@ import {
 	GIT_DIRS,
 	HEAD,
 	issue,
+	LANE_TOKEN,
 	LANE_UUID,
 	marker,
 	NONCE,
@@ -31,6 +32,7 @@ const options = {
 	slug: "editor-focus-loss" as string | null,
 	base: "origin/main",
 	resume: null as number | null,
+	token: LANE_TOKEN,
 	repo: null,
 	env: {CLAUDE_PIPELINE_REPO: "o/r", CLAUDE_CODE_SESSION_ID: "s-9f2e"} as Record<
 		string,

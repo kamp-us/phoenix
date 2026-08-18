@@ -57,6 +57,14 @@ const repoFlag = Flag.string("repo").pipe(
 	),
 );
 
+/**
+ * Required, and deliberately not defaulted: it is how a verb learns WHICH lane is asking, and the
+ * session id it could otherwise fall back to names every lane of the session at once (#6037).
+ */
+const tokenFlag = Flag.string("token").pipe(
+	Flag.withDescription("the claim token `build claim` handed this lane — its identity"),
+);
+
 const issueArg = Argument.integer("number").pipe(
 	Argument.withDescription("the issue this lane serves"),
 );
@@ -90,7 +98,7 @@ const tree = leafCommand(
 ).pipe(
 	Command.withShortDescription("Prove the ground is clean and this lane's, wherever it sits."),
 	Command.withDescription(
-		"Prove the ground: optionally clean, optionally this lane's. Where the tree sits is not asserted — isolation is the operator's call, not fabrika's. Prints the tree root's absolute path on stdout. Reads and NEVER repairs — it cleans, creates and removes nothing. Exits 11 (the tree root could not be read, or with --issue the claim state could not be read — UNKNOWN), 13 (proven: uncommitted changes at a --require-clean open), 14 (proven: the checked-out branch does not carry this claim's nonce), 15 (proven: the claim on --issue is foreign). Example: fabrika build tree --require-clean",
+		"Prove the ground: optionally clean, optionally this lane's. Where the tree sits is not asserted — isolation is the operator's call, not fabrika's. Prints the tree root's absolute path on stdout. Reads and NEVER repairs — it cleans, creates and removes nothing. Exits 11 (the tree root could not be read, or with --issue the claim state could not be read — UNKNOWN), 13 (proven: uncommitted changes at a --require-clean open), 14 (proven: the checked-out branch is not a lane branch, or does not carry the winning claim's nonce), 15 (proven: the claim on --issue is held by another session). Example: fabrika build tree --require-clean",
 	),
 );
 
@@ -135,6 +143,12 @@ const claim = leafCommand(
 	"claim",
 	{
 		number: issueArg,
+		token: tokenFlag.pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"the token this lane already holds, when it is re-claiming — an already-held number then answers won with that same marker and writes nothing; omit it on a fresh claim",
+			),
+		),
 		purpose: Flag.string("purpose").pipe(
 			Flag.withDefault(DEFAULT_CLAIM_PURPOSE),
 			Flag.withDescription(
@@ -155,7 +169,7 @@ const claim = leafCommand(
 		),
 		repo: repoFlag,
 	},
-	Effect.fn(function* ({number, purpose, override, overrideLane, repo}) {
+	Effect.fn(function* ({number, token, purpose, override, overrideLane, repo}) {
 		yield* emit(
 			yield* runClaim({
 				number,
@@ -163,6 +177,7 @@ const claim = leafCommand(
 				env: process.env,
 				uuid: randomUUID(),
 				at: new Date().toISOString(),
+				token: Option.getOrNull(token),
 				purpose,
 				override: Option.getOrNull(override),
 				overrideLane: Option.getOrNull(overrideLane),
@@ -172,33 +187,33 @@ const claim = leafCommand(
 ).pipe(
 	Command.withShortDescription("Race the claim marker on an issue and win it or name the winner."),
 	Command.withDescription(
-		`Race the earliest AUTHORIZED claim marker on an issue: post this session's token (build:<CLAUDE_CODE_SESSION_ID>:<uuid>), re-read, and win or name the winner. Authorization is the author's repository permission (ADR 0055) — marker text confers nothing. The admission test runs FIRST, before any marker is written, so a refused claim leaves no trace to retract. --purpose says why this lane claims (${CLAIM_PURPOSES.join(" | ")}, default ${DEFAULT_CLAIM_PURPOSE}): the audience axis (${READY_FOR_AGENT}) binds a build claim only, because an epic earns that label AFTER it is planned and gated (#5175); the scope axis binds every purpose, and an off-enum --purpose refuses on 10 rather than falling back. --override "<reason>" admits a proven refusal and REQUIRES --override-lane "<lane>"; both are recorded on the marker, and an UNKNOWN admission is never overridable. Prints {"answer":"won","number":n,"token":"…","purpose":"…"}, plus "override":{"lane","reason"} when one was used. A lost race retracts this run's own marker and exits 15, never 0; an unset CLAUDE_CODE_SESSION_ID, an empty --override reason, an --override with no lane, or an --override-lane with no override, is 1. Exits 7 (issue proven absent or closed), 8 (the marker write failed — UNKNOWN; run confirm), 9 (the marker landed but does not read back), 10 (--purpose is off-enum), 15 (proven lost), and from the admission test: ${admissionExits}. Example: fabrika build claim 4312 --purpose gate`,
+		`Race the earliest AUTHORIZED claim marker on an issue: post this session's token (build:<CLAUDE_CODE_SESSION_ID>:<uuid>), re-read, and win or name the winner. Authorization is the author's repository permission (ADR 0055) — marker text confers nothing. The admission test runs FIRST, before any marker is written, so a refused claim leaves no trace to retract. --purpose says why this lane claims (${CLAIM_PURPOSES.join(" | ")}, default ${DEFAULT_CLAIM_PURPOSE}): the audience axis (${READY_FOR_AGENT}) binds a build claim only, because an epic earns that label AFTER it is planned and gated (#5175); the scope axis binds every purpose, and an off-enum --purpose refuses on 10 rather than falling back. --override "<reason>" admits a proven refusal and REQUIRES --override-lane "<lane>"; both are recorded on the marker, and an UNKNOWN admission is never overridable. Prints {"answer":"won","number":n,"token":"…","purpose":"…"}, plus "override":{"lane","reason"} when one was used. --token makes the re-claim idempotent per LANE: handed the token this lane already holds, a number that lane already owns answers won with that same marker and writes nothing (#5782), while a same-session marker under another nonce is a sibling lane and races normally. A lost race retracts this run's own marker and exits 15, never 0 — including when the winner is another lane of THIS session, since ownership turns on the whole token and never the session id (#6037); an unset CLAUDE_CODE_SESSION_ID, a --token that is not a claim token of this session, an empty --override reason, an --override with no lane, or an --override-lane with no override, is 1. Exits 7 (issue proven absent or closed), 8 (the marker write failed — UNKNOWN; run confirm), 9 (the marker landed but does not read back), 10 (--purpose is off-enum), 15 (proven lost), and from the admission test: ${admissionExits}. Example: fabrika build claim 4312 --purpose gate`,
 	),
 );
 
 const confirm = leafCommand(
 	"confirm",
-	{number: issueArg, repo: repoFlag},
-	Effect.fn(function* ({number, repo}) {
-		yield* emit(yield* runConfirm({number, repo: Option.getOrNull(repo), env: process.env}));
+	{number: issueArg, token: tokenFlag, repo: repoFlag},
+	Effect.fn(function* ({number, token, repo}) {
+		yield* emit(yield* runConfirm({number, token, repo: Option.getOrNull(repo), env: process.env}));
 	}),
 ).pipe(
 	Command.withShortDescription("Re-prove this session still holds the claim."),
 	Command.withDescription(
-		'Re-prove this session still holds the claim, before a mutation. Prints {"answer":"mine","number":n,"token":"…"}. Exits 1 (CLAUDE_CODE_SESSION_ID unset), 7 (issue proven absent or closed), 11 (the marker set could not be read — UNKNOWN, never "unclaimed"), 15 (proven: held by another session, or no claim exists — the detail is on stderr). Example: fabrika build confirm 4312',
+		'Re-prove THIS LANE still holds the claim, before a mutation. --token is the lane asking: one session runs many lanes, so ownership turns on the whole token and a same-session marker under another nonce is a proven loss (#6037). Prints {"answer":"mine","number":n,"token":"…"}. Exits 1 (CLAUDE_CODE_SESSION_ID unset, or --token is not a claim token of this session), 7 (issue proven absent or closed), 11 (the marker set could not be read — UNKNOWN, never "unclaimed"), 15 (proven: held by another lane, or no claim exists — the detail is on stderr, naming both tokens). Example: fabrika build confirm 4312 --token build:s-9f2e:c1a4d6f8-…',
 	),
 );
 
 const release = leafCommand(
 	"release",
-	{number: issueArg, repo: repoFlag},
-	Effect.fn(function* ({number, repo}) {
-		yield* emit(yield* runRelease({number, repo: Option.getOrNull(repo), env: process.env}));
+	{number: issueArg, token: tokenFlag, repo: repoFlag},
+	Effect.fn(function* ({number, token, repo}) {
+		yield* emit(yield* runRelease({number, token, repo: Option.getOrNull(repo), env: process.env}));
 	}),
 ).pipe(
 	Command.withShortDescription("Retract this session's own claim marker."),
 	Command.withDescription(
-		'Retract this session\'s OWN claim marker, and only its own. Prints {"answer":"released","number":n}. Exits 1 (CLAUDE_CODE_SESSION_ID unset), 7 (issue proven absent or closed), 8 (the retraction failed — UNKNOWN), 11 (the marker set could not be read), 15 (this session holds no claim — refusing to release another lane\'s). Example: fabrika build release 4312',
+		'Retract this LANE\'s OWN claim marker, and only its own — --token says which lane that is. Prints {"answer":"released","number":n}. Exits 1 (CLAUDE_CODE_SESSION_ID unset, or --token is not a claim token of this session), 7 (issue proven absent or closed), 8 (the retraction failed — UNKNOWN), 11 (the marker set could not be read), 15 (this lane holds no claim — refusing to release another lane\'s). Example: fabrika build release 4312 --token build:s-9f2e:c1a4d6f8-…',
 	),
 );
 
@@ -236,15 +251,17 @@ const branch = leafCommand(
 				"repair mode: a PR number whose head branch to publish back to; exclusive with <number>",
 			),
 		),
+		token: tokenFlag,
 		repo: repoFlag,
 	},
-	Effect.fn(function* ({number, slug, base, resume, repo}) {
+	Effect.fn(function* ({number, slug, base, resume, token, repo}) {
 		yield* emit(
 			yield* runBranch({
 				number: Option.getOrNull(number),
 				slug: Option.getOrNull(slug),
 				base,
 				resume: Option.getOrNull(resume),
+				token,
 				repo: Option.getOrNull(repo),
 				env: process.env,
 			}),
@@ -253,7 +270,7 @@ const branch = leafCommand(
 ).pipe(
 	Command.withShortDescription("Cut or resume the lane's branch off a freshly fetched base."),
 	Command.withDescription(
-		"Cut (or resume) the lane's nonce branch off a FRESHLY FETCHED base, never a stale local ref. Prints the checked-out branch name: build/<number>-<slug>-<nonce> in create mode, build/pr-<pr>-<nonce> in resume mode, where <nonce> is the first 8 hex of the current claim token's UUID. The branch name IS the lane record — there is no stamp file. Exits 7 (--resume's PR is proven absent, closed or merged), 10 (--slug is not kebab-case, exceeds 5 words, or is flag-shaped), 11 (the fetch failed, or the tree root or claim state could not be read), 15 (proven: the claim is foreign). Example: fabrika build branch 4312 --slug editor-focus-loss",
+		"Cut (or resume) the lane's nonce branch off a FRESHLY FETCHED base, never a stale local ref. Prints the checked-out branch name: build/<number>-<slug>-<nonce> in create mode, build/pr-<pr>-<nonce> in resume mode, where <nonce> is the first 8 hex of --token's UUID — the token THIS lane holds, proven against the live claim before the name is composed, so a lane cannot cut a branch on a nonce that holds nothing (#6037). The branch name IS the lane record — there is no stamp file. Exits 1 (--token is not a claim token of this session), 7 (--resume's PR is proven absent, closed or merged), 10 (--slug is not kebab-case, exceeds 5 words, or is flag-shaped), 11 (the fetch failed, or the tree root or claim state could not be read), 15 (proven: the claim is held by another lane). Example: fabrika build branch 4312 --slug editor-focus-loss --token build:s-9f2e:c1a4d6f8-…",
 	),
 );
 
@@ -264,13 +281,15 @@ const scratch = leafCommand(
 		slug: Flag.string("slug").pipe(
 			Flag.withDescription("the file's leaf name: kebab-case, no path separators"),
 		),
+		token: tokenFlag,
 		repo: repoFlag,
 	},
-	Effect.fn(function* ({number, slug, repo}) {
+	Effect.fn(function* ({number, slug, token, repo}) {
 		yield* emit(
 			yield* runScratch({
 				number,
 				slug,
+				token,
 				repo: Option.getOrNull(repo),
 				env: process.env,
 				tmpRoot: tmpdir(),
@@ -280,7 +299,7 @@ const scratch = leafCommand(
 ).pipe(
 	Command.withShortDescription("The per-lane scratch directory path."),
 	Command.withDescription(
-		"The per-lane scratch path, allocated fail-closed: <temp root>/fabrika-build/<session-id>/<issue>-<claim-nonce>/<slug>, one absolute path on stdout, the directory created if absent. The claim nonce is what keys the namespace per LANE rather than per session, so two lanes of one session cannot clobber each other. The printed path is machine-local and must never reach a posted artifact. Exits 1 (the directory could not be created, or CLAUDE_CODE_SESSION_ID is unset), 10 (--slug carries a path separator or is not kebab-case), 11 (the claim state could not be read), 15 (proven: the claim is foreign). Example: fabrika build scratch 4312 --slug notes",
+		"The per-lane scratch path, allocated fail-closed: <temp root>/fabrika-build/<session-id>/<issue>-<claim-nonce>/<slug>, one absolute path on stdout, the directory created if absent. --token's nonce is what keys the namespace per LANE rather than per session, so two lanes of one session cannot clobber each other. The printed path is machine-local and must never reach a posted artifact. Exits 1 (the directory could not be created, CLAUDE_CODE_SESSION_ID is unset, or --token is not a claim token of this session), 10 (--slug carries a path separator or is not kebab-case), 11 (the claim state could not be read), 15 (proven: the claim is held by another lane). Example: fabrika build scratch 4312 --slug notes --token build:s-9f2e:c1a4d6f8-…",
 	),
 );
 
@@ -437,12 +456,14 @@ const note = leafCommand(
 		number: Argument.integer("number").pipe(
 			Argument.withDescription("the issue or PR the note posts to"),
 		),
+		token: tokenFlag,
 		repo: repoFlag,
 	},
-	Effect.fn(function* ({number, repo}) {
+	Effect.fn(function* ({number, token, repo}) {
 		yield* emit(
 			yield* runNote({
 				number,
+				token,
 				repo: Option.getOrNull(repo),
 				env: process.env,
 				stdin: Effect.sync(readStdin),
@@ -452,7 +473,7 @@ const note = leafCommand(
 ).pipe(
 	Command.withShortDescription("Post the progress or handoff note on stdin."),
 	Command.withDescription(
-		'Post the progress or handoff note on STDIN, leak-guarded and read back. When the number resolves to a PR the note is stamped with that PR\'s head SHA at post time, so a reader can see a note predates a later push. Runs ONLY the posting guards — never the tree assertions — so a stop-report stays postable from a refused tree. Prints {"answer":"posted","number":n,"commentId":n,"head":"…"|null}. Exits 3 (stdin held nothing), 5 (machine-local path), 6 (bare @ reference), 7 (target proven absent or closed), 8 (the write failed — UNKNOWN), 9 (posted but does not read back), 11 (a precondition read failed), 15 (this session does not hold the claim). Example: fabrika build note 4310 < round-2.md',
+		'Post the progress or handoff note on STDIN, leak-guarded and read back. When the number resolves to a PR the note is stamped with that PR\'s head SHA at post time, so a reader can see a note predates a later push. Runs ONLY the posting guards — never the tree assertions — so a stop-report stays postable from a refused tree. Prints {"answer":"posted","number":n,"commentId":n,"head":"…"|null}. Exits 1 (--token is not a claim token of this session), 3 (stdin held nothing), 5 (machine-local path), 6 (bare @ reference), 7 (target proven absent or closed), 8 (the write failed — UNKNOWN), 9 (posted but does not read back), 11 (a precondition read failed), 15 (this LANE does not hold the claim). Example: fabrika build note 4310 --token build:s-9f2e:c1a4d6f8-… < round-2.md',
 	),
 );
 
