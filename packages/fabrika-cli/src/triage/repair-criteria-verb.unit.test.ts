@@ -66,6 +66,21 @@ describe("runRepairCriteria — one issue", () => {
 		expect(patched).not.toContain("\n## Acceptance criteria");
 	});
 
+	it("converts plain bullets under a conforming heading and PATCHes the checkboxes (#6001)", async () => {
+		const bullets = "### Acceptance criteria\n\n- one criterion\n- a second";
+		const shell = fakeShell([
+			[once(READ), issue(bullets)],
+			[PATCH, okOut("{}")],
+			[READ, issue("### Acceptance criteria\n\n- [ ] one criterion\n- [ ] a second")],
+		]);
+		const outcome = await Effect.runPromise(
+			Effect.provide(runRepairCriteria(options), shell.layer),
+		);
+		expect(outcome.code).toBe(0);
+		expect(outcome.stdout).toBe("repaired\t5726\n");
+		expect(shell.calls.find((line) => PATCH.test(line))).toContain("- [ ] one criterion");
+	});
+
 	it("answers conforming on a level-3 body and writes nothing", async () => {
 		const shell = fakeShell([[READ, issue(REPAIRED)]]);
 		const outcome = await Effect.runPromise(

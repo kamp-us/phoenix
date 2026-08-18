@@ -1,5 +1,5 @@
 /**
- * `triage repair-criteria` — repair a drifted acceptance-criteria heading, one issue or the board.
+ * `triage repair-criteria` — repair an acceptance-criteria block's shape, one issue or the board.
  *
  * The counterpart to `review criteria`'s refusal: when the wire read answers `Malformed`, the
  * review gate may neither hand-parse the block nor invent criteria, so a drifted body stalls its PR
@@ -30,7 +30,7 @@ import {
 	ZERO_SCOPE,
 } from "./codes.ts";
 import {legacyPreserved} from "./enrich-legacy.ts";
-import {type CriteriaRepairPlan, planRepair} from "./repair-criteria.ts";
+import {type CriteriaRepairPlan, describeRepair, planRepair} from "./repair-criteria.ts";
 import {scannedLine} from "./scope.ts";
 
 export interface RepairCriteriaOptions {
@@ -133,7 +133,7 @@ const runSingle = (
 		const diagnostics: string[] = [];
 		if (plan._tag === "Repaired") {
 			diagnostics.push(
-				`triage repair-criteria: #${issue} line ${plan.line}: level ${plan.fromLevel} → 3, ${plan.criteria.length} criteria intact.`,
+				`triage repair-criteria: #${issue} ${plan.repairs.map(describeRepair).join("; ")}, ${plan.criteria.length} criteria intact.`,
 			);
 			const failure = yield* writeRepair(repo, issue, plan.body);
 			if (failure !== null) {
