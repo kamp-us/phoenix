@@ -167,7 +167,9 @@ describes a tree you are not standing in.`;
  */
 export const EPIC_RULES = `This lane is one epic run: one shared branch and one pull request at its tail (ADR 0285). Build in
 your own worktree on a local branch cut from \`branch\`, and never push or open a pull request for a
-child state — the merge happens once, after the epic review.
+child state — the merge happens once, after the epic review. A child's build that lands its commit
+ends on \`BUILT-NO-PR\`, whose branch disposition is exactly that: left local and unpushed for this
+lane to fold (#6019).
 A child's build discloses its deviations — the section a PR body would carry — as a
 \`build-deviations\` marker comment on the child issue, composed through
 \`node packages/fabrika-cli/src/bin.ts wire emit --format build-deviations\`; the epic-tail review
