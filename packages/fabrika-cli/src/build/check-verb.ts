@@ -23,7 +23,7 @@
 import {Effect, FileSystem} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {execCapture} from "../io/exec.ts";
-import {scanBody} from "../report/leaks.ts";
+import {CONFIG_PATH, readDocLeakExempt} from "../repo-config.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {requireSession} from "./claim.ts";
 import {
@@ -34,6 +34,7 @@ import {
 	ZERO_SCOPE,
 } from "./codes.ts";
 import {predecessorsOf, readTopology, renderRef, sameRef} from "./dependencies.ts";
+import {docLeaks} from "./doc-leaks.ts";
 import {changedFiles, mergeBase} from "./git.ts";
 import {defaultBranch} from "./github.ts";
 import {requireLane} from "./lane-guard.ts";
@@ -160,10 +161,22 @@ export const surfaceMismatch = (surface: Surface, files: ReadonlyArray<string>):
 	return `--surface ${surface}, but the diff changes no ${COVERS[surface].join("/")} file`;
 };
 
-/** The machine-local paths a prose file carries, as defect lines. */
-const leakDefects = (file: string, text: string): ReadonlyArray<string> =>
-	scanBody(text).leaks.map(
-		(leak) => `${file}:${leak.line} carries a machine-local path (${leak.class}): ${leak.text}`,
+/**
+ * The machine-local paths a committed prose file carries, as defect lines.
+ *
+ * The scanner is {@link docLeaks}, the committed-file one — not `report/leaks.ts`'s body scanner,
+ * which this verb used to call. That scanner guards runtime issue bodies, an ungated surface, and
+ * it is deliberately stricter than the repo's committed-file gate on three axes; asking it about a
+ * file in a diff made this predictor red on bytes CI passes clean, and the red was unclearable in
+ * the lane that inherited it (#5687). See `doc-leaks.ts` for the three divergences.
+ */
+const leakDefects = (
+	file: string,
+	text: string,
+	exempt: ReadonlyArray<string>,
+): ReadonlyArray<string> =>
+	docLeaks(file, text, exempt).map(
+		(leak) => `${file}:${leak.line} carries a machine-local path (${leak.reason}): ${leak.matched}`,
 	);
 
 /**
@@ -259,6 +272,50 @@ const readMarkdown = (
 			Effect.succeed<MarkdownRead>(
 				error.reason._tag === "NotFound"
 					? {_tag: "Absent"}
+					: {_tag: "Unreadable", reason: error.reason._tag},
+			),
+		),
+	);
+
+/** The declared exemptions, or why there are none — `Unreadable` is the one answer a green may not absorb. */
+type ExemptScope =
+	| {readonly _tag: "Scope"; readonly paths: ReadonlyArray<string>; readonly note: string}
+	| {readonly _tag: "Unreadable"; readonly reason: string};
+
+/**
+ * Read the repo's declared leak-scan exemptions off `.fabrika.jsonc`.
+ *
+ * An absent file is a repo that declared none, which is the fail-closed answer — nothing is exempt,
+ * the scanner stays strictest. Any other read fault proves nothing, so it refuses like
+ * {@link readMarkdown}'s does.
+ */
+const readExemptScope = (
+	fs: FileSystem.FileSystem,
+	root: string,
+): Effect.Effect<ExemptScope, never> =>
+	fs.readFileString(`${root}/${CONFIG_PATH}`).pipe(
+		Effect.map((text): ExemptScope => {
+			const read = readDocLeakExempt(text);
+			return read._tag === "Paths"
+				? {
+						_tag: "Scope",
+						paths: read.paths,
+						note: `${VERB}: ${read.paths.length} leak-scan exemption(s) declared in ${CONFIG_PATH}.`,
+					}
+				: {
+						_tag: "Scope",
+						paths: [],
+						note: `${VERB}: nothing is leak-scan exempt — ${read.reason}.`,
+					};
+		}),
+		Effect.catchTag("PlatformError", (error) =>
+			Effect.succeed<ExemptScope>(
+				error.reason._tag === "NotFound"
+					? {
+							_tag: "Scope",
+							paths: [],
+							note: `${VERB}: nothing is leak-scan exempt — this repo has no ${CONFIG_PATH}.`,
+						}
 					: {_tag: "Unreadable", reason: error.reason._tag},
 			),
 		),
@@ -367,6 +424,15 @@ export const runCheck = (
 		}
 
 		const fs = yield* FileSystem.FileSystem;
+		const exempt = yield* readExemptScope(fs, lane.root);
+		if (exempt._tag === "Unreadable") {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: cannot read ${CONFIG_PATH} (${exempt.reason}) — which docs are leak-scan exempt is UNKNOWN, never green.`,
+				noted,
+			);
+		}
+		const scoped = [...noted, exempt.note];
 		const defects: string[] = [];
 		for (const file of markdown) {
 			const path = `${lane.root}/${file}`;
@@ -376,10 +442,10 @@ export const runCheck = (
 				return refuse(
 					PRECONDITION_UNKNOWN,
 					`${VERB}: cannot read ${file} (${read.reason}) — it is in the diff and is not absent, so the verdict is UNKNOWN, never green.`,
-					noted,
+					scoped,
 				);
 			}
-			defects.push(...leakDefects(file, read.text));
+			defects.push(...leakDefects(file, read.text, exempt.paths));
 			const dir = path.slice(0, path.lastIndexOf("/"));
 			for (const target of linkTargets(read.text)) {
 				const absolute = normalizePath(
@@ -396,7 +462,7 @@ export const runCheck = (
 			return refuse(
 				VALIDATION_RED,
 				`${VERB}: red — the ${surface} validators failed; diagnostics above.`,
-				[...noted, ...defects],
+				[...scoped, ...defects],
 			);
 		}
 		return answer(
@@ -407,6 +473,6 @@ export const runCheck = (
 				ran: surface === "plan" ? [MARKDOWN_SCAN, PLAN_GRAMMAR] : [MARKDOWN_SCAN],
 				unvalidated,
 			}),
-			noted,
+			scoped,
 		);
 	});
