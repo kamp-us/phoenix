@@ -78,8 +78,10 @@ export const runBranch = (
 		const claimed = resume ?? (number as number);
 		const held = yield* requireClaim(VERB, repo, claimed, caller);
 		if (held._tag === "Refused") return held.outcome;
-		// Proven equal to the winning marker's nonce by the claim read above, so the branch cannot be
-		// named after a token that holds nothing (#6037).
+		// Proven by the claim read above to name the lane that holds the number — the winning marker's
+		// nonce on the ordinary path, the adopt's on a succession, where the dead lane's nonce is never
+		// inherited (ADR 0295). Either way the branch cannot be named after a token that holds
+		// nothing (#6037), and a successor's branch is its own, not the dead lane's.
 		const nonce = caller.nonce;
 
 		if (resume !== null) {

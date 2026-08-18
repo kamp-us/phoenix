@@ -1166,7 +1166,11 @@ describe("runAdopt / succession", () => {
 		expect(shell.calls.some((line) => POST.test(line))).toBe(false);
 	});
 
-	it("claim on an adopted number refuses and retracts its own marker — release comes first", async () => {
+	// A tokenless `claim` over an adopted number is the shape a real successor produces: `adopt` ran
+	// under its own nonce, this run mints another, and succession turns on the WHOLE token — so the
+	// adopt names a lane that is not this run and ownership resolves `Foreign`. The lose path retracts
+	// this run's own marker, which is what leaves no orphan behind the release (AC 9).
+	it("claim on an adopted number loses and retracts its own marker — release comes first", async () => {
 		const shell = fakeShell([
 			[ISSUE, CLAIMABLE],
 			[POST, POSTED],
@@ -1175,7 +1179,11 @@ describe("runAdopt / succession", () => {
 				COMMENTS,
 				comments(
 					{id: 8000, body: THEIRS},
-					{id: 8100, body: ADOPT, createdAt: "2026-08-10T00:00:00Z"},
+					{
+						id: 8100,
+						body: adoptMarker(DEAD, "s-9f2e", SIBLING_UUID),
+						createdAt: "2026-08-10T00:00:00Z",
+					},
 					{id: 9001, body: MINE, createdAt: "2026-08-11T00:00:00Z"},
 				),
 			],
@@ -1186,7 +1194,7 @@ describe("runAdopt / succession", () => {
 			Effect.provide(runClaim({...options, token: null}), Layer.merge(shell.layer, NO_FOCUS.layer)),
 		);
 		expect(out.code).toBe(CLAIM_NOT_MINE);
-		expect(out.stderr.some((line) => line.includes("still carries the adopted claim"))).toBe(true);
+		expect(out.stderr.some((line) => line.includes("lost to build:s-77aa:"))).toBe(true);
 		expect(shell.calls.filter((line) => DELETE.test(line))).toEqual([
 			"gh api --method DELETE repos/o/r/issues/comments/9001",
 		]);
@@ -1251,6 +1259,28 @@ describe("runAdopt / succession", () => {
 			"gh api --method DELETE repos/o/r/issues/comments/8000",
 			"gh api --method DELETE repos/o/r/issues/comments/8100",
 		]);
+	});
+
+	// `confirm` is what every number-addressed mutation runs first, and what it answers is what the
+	// caller threads onward. On a succession the winning marker is the DEAD session's, whose token
+	// `requireCallerToken` refuses on `1` — so the answer is the adopt's, this lane's own.
+	it("confirm on an adopted claim answers the adopt's token, never the dead session's", async () => {
+		const shell = fakeShell([
+			[ISSUE, CLAIMABLE],
+			[
+				COMMENTS,
+				comments(
+					{id: 8000, body: THEIRS},
+					{id: 8100, body: ADOPT, createdAt: "2026-08-10T00:00:00Z"},
+				),
+			],
+			[perm("agent"), okOut("write\n")],
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(runConfirm(options), Layer.merge(shell.layer, NO_FOCUS.layer)),
+		);
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toEqual({answer: "mine", number: 4312, token: LANE_TOKEN});
 	});
 
 	it("ignores an adopt marker whose poster holds no write permission — content is not authority", async () => {

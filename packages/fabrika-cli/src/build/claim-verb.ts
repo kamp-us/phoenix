@@ -228,8 +228,9 @@ export const runClaim = (
 			const prior = yield* resolveOwnership(repo, number, holding.caller);
 			if (prior.ownership._tag === "Mine" && prior.ownership.adopt !== null) {
 				// Answering `won` here would hand back the DEAD session's token — the winner on an adopted
-				// claim — and `confirm --token` refuses that token as another session's. Same refusal as
-				// the racing path below, and nothing was written, so there is no marker to retract.
+				// claim — and `confirm --token` refuses that token as another session's. This is the only
+				// arm that can see it: the post-write read runs under a nonce no adopt can name, so a
+				// tokenless claim resolves `Foreign` and loses. Nothing was written, so nothing to retract.
 				return refuse(
 					CLAIM_NOT_MINE,
 					`${CLAIM}: #${number} still carries the adopted claim ${prior.ownership.marker.token} — run "fabrika build release ${number} --token ${prior.ownership.adopt.token}" to retract it and the adopt together, then claim.`,
@@ -358,23 +359,10 @@ export const runClaim = (
 				notes,
 			);
 		}
-		if (ownership._tag === "Mine" && ownership.adopt !== null) {
-			// An adopted claim answers `Mine` on the DEAD session's marker, so a `won` here would hand
-			// back this run's token while the board's claim is the older one — and the marker just
-			// posted would outlive the release, which deletes the winner and the adopt, not the extra.
-			// The successor's path is release-then-claim; this is the refusal that keeps it the only one.
-			const retractedAdopted = yield* deleteComment(repo, posted.value.id);
-			return refuse(
-				CLAIM_NOT_MINE,
-				`${CLAIM}: #${number} still carries the adopted claim ${ownership.marker.token} — run "fabrika build release ${number} --token ${ownership.adopt.token}" to retract it and the adopt together, then claim.`,
-				[
-					...notes,
-					retractedAdopted._tag === "Failure"
-						? `${CLAIM}: could not retract this run's own marker (comment ${posted.value.id}): ${retractedAdopted.reason}.`
-						: `${CLAIM}: retracted this run's own marker (comment ${posted.value.id}).`,
-				],
-			);
-		}
+		// An adopted claim cannot reach here as `Mine`: succession turns on the whole token, and this
+		// read runs under the nonce this run just minted, which no adopt on the board can name. It
+		// resolves `Foreign` on the dead session's winning marker and takes the lose path below, which
+		// retracts this run's own marker — so the succession leaves no orphan either way.
 
 		// Lost, or shadowed by an unauthorized-only thread: retract this run's OWN marker, nothing else.
 		const retracted = yield* deleteComment(repo, posted.value.id);
@@ -384,7 +372,9 @@ export const runClaim = (
 						`${CLAIM}: could not retract this run's own marker (comment ${posted.value.id}): ${retracted.reason}.`,
 					]
 				: [`${CLAIM}: retracted this run's own marker (comment ${posted.value.id}).`];
-		return ownership._tag === "Foreign"
+		// Anything holding a winning marker that is not this run's is a loss, whatever resolved it —
+		// `Unclaimed` is the only remaining tag, and it means this run's OWN marker is the unauthorized one.
+		return ownership._tag !== "Unclaimed"
 			? refuse(
 					CLAIM_NOT_MINE,
 					`${CLAIM}: lost to ${ownership.marker.token} (posted ${ownership.marker.createdAt}, authorized).`,
@@ -438,8 +428,15 @@ export const runConfirm = (
 					notes,
 				);
 			case "Mine":
+				// On a succession the winning marker is the DEAD session's, and `requireCallerToken`
+				// refuses that token on `1` for every verb of this session — so the answer is the adopt's
+				// token, which is this lane's own and is what `branch`/`scratch`/`tree --issue` key on.
 				return answer(
-					JSON.stringify({answer: "mine", number, token: ownership.marker.token}),
+					JSON.stringify({
+						answer: "mine",
+						number,
+						token: ownership.adopt?.token ?? ownership.marker.token,
+					}),
 					notes,
 				);
 		}

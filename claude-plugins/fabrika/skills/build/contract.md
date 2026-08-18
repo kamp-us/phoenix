@@ -777,15 +777,19 @@ the successor states the fact on the board and the ordinary ownership read does 
 protocol cannot check is that the adopted session is really dead: any `write` account may adopt a
 live claim, and the guard against that is the disclosed reason plus the ACL, not a proof.
 
-**An adopt confers the whole claim, not just the right to release it.** The ownership read is one
-function, so an adopted claim answers `mine` to `confirm` and admits `branch`, `note`, `scratch` and
-`tree --issue` — each under the token `adopt` printed, which is now this lane's identity on that
-number. The successor inherits the dead lane and may carry it on. `claim` is the exception: over an
-adopted claim it refuses on `15`, retracting the marker it just posted, because a second marker
-beside the dead session's would outlive the release (which deletes the claim and the adopt, not the
-extra); handed `--token`, it refuses the same way before writing anything, because the winner it
-would otherwise answer with is the dead session's token, which no later verb of this session accepts.
-Adopt, release, then claim.
+**An adopt confers the whole claim on the number — under a new lane, not the dead one.** The
+ownership read is one function, so an adopted claim answers `mine` to `confirm` and admits `branch`,
+`note`, `scratch` and `tree --issue` — each under the token `adopt` printed, which is this lane's
+identity on that number. That token carries a **fresh** nonce, and those verbs key on the caller's
+nonce, so the successor gets its own branch (`build/<n>-<slug>-<its own nonce>`) and its own scratch
+dir: standing in the dead lane's branch fails `tree --issue` on `14`, and the dead lane's unpushed
+commits are recovered by hand or not at all. Inherit the number, not the working state.
+
+`claim` is the one verb an adopted claim does not admit. Handed `--token` it refuses on `15` before
+writing anything, because the winner it would otherwise answer with is the dead session's token,
+which no later verb of this session accepts. Without one it resolves `Foreign` — the post-write read
+runs under the nonce that run just minted, which no adopt names — so it retracts the marker it just
+posted and refuses on `15` too. Adopt, release, then claim.
 
 The session id arrives from the environment (`CLAUDE_CODE_SESSION_ID`, named in `--help` with its
 unset behavior: unset is a usage error, exit `1` — a claim without an identity is not a claim).
@@ -795,7 +799,9 @@ unset behavior: unset is a usage error, exit `1` — a claim without an identity
 - `claim` on a win: `{"answer": "won", "number": 4312, "token": "build:<sid>:<uuid>", "purpose":
   "build"}` — plus `"override": {"lane": "<lane>", "reason": "<reason>"}` when the win came through
   `--override`, so the answer records the exception as well as the marker does.
-- `confirm` when held: `{"answer": "mine", "number": 4312, "token": "..."}`.
+- `confirm` when held: `{"answer": "mine", "number": 4312, "token": "..."}` — the winning marker's
+  token on the ordinary path, and on a succession the **adopt's** token, never the dead session's,
+  which every verb of this session refuses on `1`.
 - `release` when released: `{"answer": "released", "number": 4312}` — plus `"adopted":
   "<dead-session>"` when the release came through a succession.
 - `adopt` when recorded: `{"answer": "adopted", "number": 4312, "session": "<dead-session>", "token":

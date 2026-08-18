@@ -71,13 +71,21 @@ the reason is required and the marker stays on the issue for anyone to read.
 **What an adopt confers, beyond `release`.** `resolveOwnership` is one function and every verb reads
 it, so an adopted claim answers `Mine` to `build confirm` and to everything `requireClaim` guards —
 `branch`, `note`, `scratch`, `tree --issue` — each under the token `adopt` printed, which every one
-of those verbs takes as `--token`. That is the intent: the successor inherits the dead lane and may
-carry it on, not merely retract it. The one exception is `build claim`, which refuses on `15` over an
-adopted claim: on the racing path it retracts the marker it just posted, because claiming would
-leave this run's marker beside the dead session's and `release` deletes the claim and the adopt, not
-the extra; handed `--token`, it refuses before writing at all, because the winner it would otherwise
-answer with is the dead session's token and no later verb of this session accepts that. The
-successor's path is adopt → release → claim, and the refusals are what keep it the only one.
+of those verbs takes as `--token`. That is the intent, and its limit is exact: **what is inherited is
+the claim on the number, under a lane of the successor's own.** `adopt` mints a fresh nonce, and every
+downstream verb keys on the caller's — `branch` cuts `build/<n>-<slug>-<its own nonce>`, `scratch`
+allocates its own dir, and `tree --issue` refuses a branch whose nonce is another lane's on `14`. So
+a successor does not resume the dead lane's branch or its scratch; it carries the number on in a new
+one, and any commits the dead lane left unpushed are recovered by hand or not at all. `build confirm`
+answers that same successor token, never the dead session's winning marker — a token no verb of this
+session accepts (`requireCallerToken`, exit `1`).
+
+`build claim` is the one verb an adopted claim does not admit. Handed `--token` it refuses on `15`
+before writing anything, because the winner it would otherwise answer with is the dead session's
+token. Without one it never resolves `Mine` at all: the post-write read runs under the nonce that run
+just minted, which no adopt on the board can name, so it resolves `Foreign`, retracts the marker it
+just posted, and refuses on `15` — no orphan either way. The successor's path is
+adopt → release → claim, and those refusals are what keep it the only one.
 
 ## Why the other three lost
 
@@ -109,12 +117,14 @@ releasable, and stays so with no adopt marker (#5795).
   same-session path is untouched.
 - Token-level ownership stays exactly as narrow as
   [#6060](https://github.com/kamp-us/phoenix/issues/6060) is making it, on both axes. The adopt
-  keyword is derived from each namespace's own prefix, so `lane:` and epic ownership see no adopt
-  markers; and the successor test is the same whole-token test the ordinary win uses, so an adopt
-  confers a lane's worth of ownership, never a session's.
+  keyword is derived from each namespace's own prefix, and only `build adopt` writes one, so no
+  `lane:` or epic adopt marker exists for the shared resolver to read; and the successor test is the
+  same whole-token test the ordinary win uses, so an adopt confers a lane's worth of ownership, never
+  a session's.
 - The claim protocol grew one verb, `build adopt`, one resolver branch that is read only when the
-  winning claim is not this lane's, and two refusals in `build claim` over an adopted claim — one on
-  the racing path, one before the write when `--token` is passed. The ordinary path costs what it did.
+  winning claim is not this lane's, and one refusal in `build claim` — before the write, when
+  `--token` names a lane an adopted claim would answer with the dead session's token. The ordinary
+  path costs what it did.
 - ADR 0215's `status:` now records this amendment, so a reader who lands on the older record is sent
   here for the current rule.
 - A successor who adopts a claim it should not have is visible on the issue with its reason, which is
