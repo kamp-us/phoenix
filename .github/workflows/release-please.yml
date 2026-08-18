@@ -44,6 +44,7 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  issues: write # the failure alarm files/updates one intake issue (#5946)
 
 # Never cancel in flight: a cancelled run can leave the standing Release PR groomed
 # against a stale commit range.
@@ -56,6 +57,59 @@ jobs:
     name: derive versions and groom the standing Release PR
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: pnpm/action-setup@v4.1.0
+
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version-file: package.json
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # #5946. release-please copies each commit subject verbatim into the Release PR
+      # body, then on the NEXT run reads that body back through an HTML parser — one
+      # subject's literal `<details>` gave it an element with no `<summary>` and every
+      # run died on `summary.match(...)` for 20 hours. Repairing the body by hand does
+      # not hold: the next green run rebuilds it from the same subject. So the repair
+      # runs before every read, and the tool prints nothing when there is nothing to fix.
+      - name: Repair the standing Release PR body before release-please reads it
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_BRANCH: release-please--branches--main
+        run: |
+          set -uo pipefail
+
+          number=$(gh pr list --state open --head "$RELEASE_BRANCH" --json number --jq '.[0].number // empty')
+          if [ -z "$number" ]; then
+            echo "No open Release PR on $RELEASE_BRANCH — nothing to repair."
+            exit 0
+          fi
+
+          gh api "repos/$GITHUB_REPOSITORY/pulls/$number" --jq .body > "$RUNNER_TEMP/body.md"
+          if [ ! -s "$RUNNER_TEMP/body.md" ]; then
+            echo "::warning::Release PR #$number carries no body to repair."
+            exit 0
+          fi
+
+          node packages/pipeline-cli/src/bin.ts release-pr-body sanitize \
+            < "$RUNNER_TEMP/body.md" > "$RUNNER_TEMP/repaired.md"
+          status=$?
+          if [ "$status" -ne 0 ]; then
+            echo "::error::release-pr-body sanitize exited $status — refusing to guess at the body."
+            exit "$status"
+          fi
+
+          if [ ! -s "$RUNNER_TEMP/repaired.md" ]; then
+            echo "Release PR #$number already parses — no write."
+            exit 0
+          fi
+
+          jq -Rs '{body: .}' < "$RUNNER_TEMP/repaired.md" \
+            | gh api --silent -X PATCH "repos/$GITHUB_REPOSITORY/pulls/$number" --input -
+          echo "::notice::Repaired Release PR #$number's body so release-please can parse it back."
+
       - uses: googleapis/release-please-action@v5.0.0
         id: release
         with:
@@ -96,3 +150,44 @@ jobs:
             echo
             echo "Publishing is \`publish.yml\` on the \`release: published\` event — not this workflow."
           } >> "$GITHUB_STEP_SUMMARY"
+
+      # #5946's second half: this workflow was red on twelve consecutive pushes and
+      # nobody noticed for 20 hours, because a red run on `main` shows up nowhere anyone
+      # is looking. Release automation being down is silent by nature — no PR turns red,
+      # no reviewer is blocked, it just stops. So a failed run files itself into the
+      # intake queue triage already drains, and updates that same issue on every later
+      # failure rather than filing a new one.
+      #
+      # `intake-dedup check` is the repo's existing "is there already an open issue for
+      # this?" lookup; it ranks candidates and this step relays only an EXACT title match
+      # (ADR 0228 — a script relays a verb's answer, it never derives the decision). A
+      # missed match costs one duplicate issue, which triage closes; a lost alarm is the
+      # failure this step exists to end (ADR 0181).
+      - name: File the red run where triage sees it
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ALARM_TITLE: release-please.yml is failing on pushes to main
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -uo pipefail
+
+          {
+            echo "\`release-please.yml\` failed on \`main\` at commit \`$GITHUB_SHA\`."
+            echo
+            echo "Failing run: $RUN_URL"
+            echo
+            echo "Release automation is down while this is red: no version derivation, no changelog"
+            echo "grooming on the standing Release PR, and nothing to merge, so no package can ship."
+          } > "$RUNNER_TEMP/alarm.md"
+
+          existing=$(node packages/pipeline-cli/src/bin.ts intake-dedup check --query "$ALARM_TITLE" \
+            | awk -F'\t' -v title="$ALARM_TITLE" '$2 == title {print substr($1, 2); exit}')
+
+          if [ -n "$existing" ]; then
+            node packages/pipeline-cli/src/bin.ts tracker create-comment "$existing" \
+              < "$RUNNER_TEMP/alarm.md"
+          else
+            node packages/pipeline-cli/src/bin.ts tracker create-issue --title "$ALARM_TITLE" \
+              < "$RUNNER_TEMP/alarm.md"
+          fi

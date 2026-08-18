@@ -245,6 +245,13 @@ export const registeredTools: ReadonlyArray<ToolRegistration> = [
 			(m) => m.publishIsolationGuardCommand,
 		),
 	),
+	// #5946 — release-please writes each commit subject verbatim into the Release PR body, then
+	// parses that body back as HTML on the next run; one subject's literal `<details>` crashed every
+	// run for 20h. This repairs the body before each read, so an already-landed subject cannot keep
+	// the release loop down.
+	tool("release-pr-body", () =>
+		import("./tools/release-pr-body/command.ts").then((m) => m.releasePrBodyCommand),
+	),
 	// #3991 — the SHA-bound run-evidence bundle lookup as FOUR states: present / pending / absent /
 	// unknown. review-code's inline `gh api` chain collapsed every non-success path into the prose
 	// "absent for this head SHA", so a producer that had not run yet and a 5xx during the download
