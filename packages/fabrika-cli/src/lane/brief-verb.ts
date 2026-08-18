@@ -7,14 +7,15 @@
  * write differently, and the "URLs, never restatements" rule is then enforced by nothing but care.
  *
  * The brief is a dispatch artifact, consumed in-session and never posted, so it is not leak-scanned.
- * It carries no path and no content — only URLs the board already published, and the epic branch the
- * emitter's own shape names.
+ * It carries no content — only URLs the board already published, the epic branch the emitter's own
+ * shape names, and the one local path a spawned shell cannot derive: this driver's lanes root,
+ * resolved absolute here because the shell would resolve a relative one against its own worktree.
  *
  * An epic lane's children are the one place where no PR is resolved at all: one run is one branch and
  * one PR, so a child builds in a worktree and its review judges a commit range, while the tail task
  * briefs that single PR under the same refusals a single-issue lane has always used (ADR 0285).
  */
-import {Effect, type FileSystem, type Path} from "effect";
+import {Effect, type FileSystem, Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {getIssue, resolveRepo} from "../io/issues.ts";
 import {openPullsClosing} from "../io/pulls.ts";
@@ -26,6 +27,7 @@ import {
 	epicBranch,
 	type LaneBrief,
 	type LaneGround,
+	lanesRoot,
 	shellOf,
 	shellState,
 } from "../wire/lane-brief.ts";
@@ -98,6 +100,16 @@ export const runBrief = (
 	FileSystem.FileSystem | Path.Path | ChildProcessSpawner.ChildProcessSpawner
 > =>
 	Effect.gen(function* () {
+		const path = yield* Path.Path;
+		// The brief carries the driver's root resolved against the driver's cwd, because the shell
+		// resolves what it is handed against its own worktree (#5736).
+		const root = lanesRoot(path.resolve(options.root));
+		if (root === null) {
+			return refuse(
+				LANE_UNREADABLE,
+				`${VERB}: "${options.root}" does not resolve to an absolute lanes root — the shell would have nowhere to record.`,
+			);
+		}
 		const loaded = yield* loadLane(options);
 		if (loaded._tag !== "Loaded") return loadRefusal(VERB, loaded);
 		const fold = foldLog(loaded.lane, loaded.entries);
@@ -153,7 +165,15 @@ export const runBrief = (
 				epic: epicRead.url,
 				branch: epicBranch(epic),
 			};
-			const brief: LaneBrief = {lane: options.lane, task, state, shell, issue: read.url, ground};
+			const brief: LaneBrief = {
+				lane: options.lane,
+				root,
+				task,
+				state,
+				shell,
+				issue: read.url,
+				ground,
+			};
 			return answer(emitBrief(brief), [
 				...notes,
 				`${VERB}: task "${task}" is "${state}" on epic #${epic}'s lane — brief the ${shell}; a child state has no PR.`,
@@ -201,6 +221,7 @@ export const runBrief = (
 				: {_tag: "Pull", pr: prUrl};
 		const brief: LaneBrief = {
 			lane: options.lane,
+			root,
 			task,
 			state,
 			shell,

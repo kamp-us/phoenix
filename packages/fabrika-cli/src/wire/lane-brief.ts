@@ -1,9 +1,16 @@
 /**
  * The lane-brief — the bytes a lane driver hands one freshly-spawned fabrika shell.
  *
- * Three fixed sections and nothing else: `## Task` (which lane, which task, which state, which
- * shell), `## Ground` (links and refs, never prose), and `## Rules` (byte-fixed text this module
- * owns).
+ * Three fixed sections and nothing else: `## Task` (which lane, which lanes root, which task, which
+ * state, which shell), `## Ground` (links and refs, never prose), and `## Rules` (byte-fixed text
+ * this module owns).
+ *
+ * **The lanes root is the one local path a brief carries, and it is in `## Task` because the shell
+ * has to address the driver's ledger, not its own.** The default root is relative and every shell
+ * runs in its own worktree, so a shell told only the lane id records its terminal into its
+ * worktree's `.fabrika/` and the driven lane never hears it (#5736). The root rides inside the
+ * format rather than as a line the driver appends under the bytes: an appended line is text the
+ * reader below calls malformed, which would turn the byte-fixed guarantee into a budget.
  *
  * **The rules are the format's own bytes, not a driver's phrasing.** A prompt composed per dispatch
  * is a prompt two drivers write differently, and the rule that matters most — carry URLs, never a
@@ -30,6 +37,21 @@ export type ArtifactUrl = string & {readonly [ARTIFACT_URL]: true};
 export const artifactUrl = (raw: string): ArtifactUrl | null => {
 	const value = raw.trim();
 	return /^https:\/\/\S+$/.test(value) ? (value as ArtifactUrl) : null;
+};
+
+declare const LANES_ROOT: unique symbol;
+
+/**
+ * The driver's lanes root, absolute. Branded so a relative path — the default `.fabrika/lanes`,
+ * which resolves against whichever worktree the reader happens to stand in — cannot ride in a
+ * `Found`.
+ */
+export type LanesRoot = string & {readonly [LANES_ROOT]: true};
+
+export const lanesRoot = (raw: string): LanesRoot | null => {
+	const value = raw.trim();
+	if (!value.startsWith("/")) return null;
+	return value.split("/").includes("..") ? null : (value as LanesRoot);
 };
 
 declare const GIT_REF: unique symbol;
@@ -98,6 +120,8 @@ export type LaneGround =
 export interface LaneBrief {
 	/** The lane id as the store names it — by convention the driven issue number. */
 	readonly lane: string;
+	/** The absolute lanes root the shell passes back to `lane report` as `--root`. */
+	readonly root: LanesRoot;
 	/** The task the state belongs to, exactly as `lane status` prints it. */
 	readonly task: string;
 	readonly state: ShellState;
@@ -181,6 +205,7 @@ export const emit = (brief: LaneBrief): string =>
 	[
 		"## Task",
 		`lane: ${brief.lane}`,
+		`root: ${brief.root}`,
 		`task: ${brief.task}`,
 		`state: ${brief.state}`,
 		`shell: ${brief.shell}`,
@@ -369,6 +394,13 @@ export const read = (artifact: string): LaneBriefRead => {
 
 	const laneRaw = (fields.get("lane") ?? "").trim();
 	if (laneRaw === "") return malformed("the brief names no lane", "lane");
+	const root = lanesRoot(fields.get("root") ?? "");
+	if (root === null) {
+		return malformed(
+			`"${(fields.get("root") ?? "").trim()}" is not an absolute lanes root — a relative one resolves against the shell's own worktree, never the driven lane`,
+			"root",
+		);
+	}
 	const taskName = (fields.get("task") ?? "").trim();
 	if (taskName === "") return malformed("the brief names no task", "task");
 	const state = shellState(fields.get("state") ?? "");
@@ -404,13 +436,14 @@ export const read = (artifact: string): LaneBriefRead => {
 
 	return {
 		_tag: "Found",
-		value: {lane: laneRaw, task: taskName, state, shell, issue, ground: scanned.ground},
+		value: {lane: laneRaw, root, task: taskName, state, shell, issue, ground: scanned.ground},
 	};
 };
 
 /** One `<field>\t<value>` line per field — the `wire read` answer for this format. */
 export const renderBrief = (brief: LaneBrief): NonEmptyReadonlyArray<string> => [
 	`lane\t${brief.lane}`,
+	`root\t${brief.root}`,
 	`task\t${brief.task}`,
 	`state\t${brief.state}`,
 	`shell\t${brief.shell}`,
@@ -441,10 +474,12 @@ export const parseFields = (fields: string): LaneBriefFields => {
 	}
 
 	const laneRaw = (values.get("lane") ?? "").trim();
+	const root = lanesRoot(values.get("root") ?? "");
 	const task = (values.get("task") ?? "").trim();
 	const state = shellState(values.get("state") ?? "");
 	const issue = artifactUrl(values.get("issue") ?? "");
 	if (laneRaw === "") return {_tag: "Unusable", reason: "no lane id"};
+	if (root === null) return {_tag: "Unusable", reason: "no absolute lanes root"};
 	if (task === "") return {_tag: "Unusable", reason: "no task name"};
 	if (state === null) {
 		return {_tag: "Unusable", reason: `no shell state (${SHELL_STATES.join("/")})`};
@@ -454,7 +489,7 @@ export const parseFields = (fields: string): LaneBriefFields => {
 	if (scanned._tag === "Bad") return {_tag: "Unusable", reason: scanned.reason};
 	return {
 		_tag: "Fields",
-		brief: {lane: laneRaw, task, state, shell: SHELLS[state], issue, ground: scanned.ground},
+		brief: {lane: laneRaw, root, task, state, shell: SHELLS[state], issue, ground: scanned.ground},
 	};
 };
 

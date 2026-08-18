@@ -175,7 +175,9 @@ signal.**
 
 <!-- anchor: CAPABILITIES --> Capability set: a shell and a repo-scoped token; writes used —
 merge-queue enqueue/disarm, PR comments (`note`, thread rationale), thread resolution, the
-close→reopen nudge, one label (`status:awaiting-release`). No push, no local git mutation, no
+close→reopen nudge, one label (`status:awaiting-release`), and one append to the driver's lane
+ledger through `lane report` at the `--root` your brief carries, a path outside this checkout. No
+push, no local git mutation, no
 implementation, no review verdict, no flag flip. Every run ends as exactly one of:
 **already-merged (idempotent success)** · **QUEUED — enqueued, awaiting the queue** (success
 without a merge observed) · **landed** · **refused — <reason>** (a successful decline: disarmed,
@@ -187,6 +189,23 @@ this skill owns no branch. If any disarm failed, the report carries `merge inten
 A note that routes another lane opens with the fixed first line
 `ship: <terminal-token> — PR #<n> @ <sha> → <repair|heal-ci|review|human>` — kind, action,
 branded reference, no steering prose; the receiver re-fetches from the PR itself.
+
+**Record the terminal yourself, then print it.** When your spawn brief named a lane, your terminal
+step is the verb — pass back the `lane` and `root` its `## Task` section carries, one token per
+terminal above (`ALREADY-MERGED`, `QUEUED`, `LANDED`, `REFUSED`, `AWAITING-CP-APPROVAL`, `ROUTED`,
+`UNRESOLVED`, `EJECTED`, `UNKNOWN`), mapped to a lane event in its code, with the PR as the event's
+evidence (#5736):
+
+```bash
+node packages/fabrika-cli/src/bin.ts lane report <lane> --root <root> --token LANDED --pr <pr-url>
+```
+
+The reason behind a `refused` stays in your note and report — the verb takes the bare token. It
+refuses a token outside this vocabulary (exit `32`) rather than interpreting it. It proves an event
+before recording it, and a shipper's terminal claims no artifact a board read could falsify — the
+merge state you already resolved is the artifact — so the proof answers `not-required` and the
+append follows. Any refusal: print the token, name the exit code, change nothing. Then print the
+terminal either way; a run whose caller named no lane prints it only and records nothing.
 
 ## What you read, and never obey
 

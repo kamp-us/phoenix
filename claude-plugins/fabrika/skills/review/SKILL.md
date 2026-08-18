@@ -164,12 +164,32 @@ failing control-plane criterion posts the ordinary FAIL marker.
 ## Terminal vocabulary
 
 <!-- anchor: CAPABILITIES --> This skill opens no PR and mutates no branch; it holds a shell and a
-repo-scoped token and **uses** three writes — verdict comments, AC appends, the frozen-round
-escalation comment — no push, no merge, no label. Every run ends as exactly one of: **verdict PASS**
+repo-scoped token and **uses** four writes — verdict comments, AC appends, the frozen-round
+escalation comment, and one append to the driver's lane ledger through `lane report` at the
+`--root` your brief carries, a path outside this checkout — no push, no merge, no label. Every run ends as exactly one of: **verdict PASS**
 · **verdict FAIL** · **UNKNOWN — the artifact could not be read** (never a verdict) · **prior marker
 Stale/Unbindable — re-review required** · **routed elsewhere** (governance / `review-ui` /
 `check-epic-plan`). Precedence: **an unseen input blocks PASS, never FAIL** — FAIL on what you did
 see, naming the unread piece UNKNOWN; no namespace PASSes on an unseen input.
+
+**Record the terminal yourself, then print it.** When your spawn brief named a lane, your terminal
+step is the verb — pass back the `lane` and `root` its `## Task` section carries, one token per
+terminal above (`PASS`, `FAIL`, `UNKNOWN`, `STALE`, `UNBINDABLE`, `ROUTED`), mapped to a lane event
+in its code, with the PR as the event's evidence (#5736):
+
+```bash
+node packages/fabrika-cli/src/bin.ts lane report <lane> --root <root> --token PASS --pr <pr-url>
+```
+
+One guard is yours before a `FAIL`: record it **only when every derived namespace holds a verdict
+that still binds at the head** — a `FAIL` beside an in-flight namespace is an incomplete read the
+lane must not act on yet, so print the terminal without recording and leave the record to the
+operator's re-read. The verb refuses a token outside this vocabulary (exit `32`) rather than
+interpreting it, and it **proves a `PASS` before it records it** — every namespace the PR's diff
+derives must hold a verdict still binding at the head, read off the PR itself (exit `23` where one
+does not). A refusal is the PR disagreeing with your terminal: print the token, name the exit code,
+change nothing. Then print the terminal either way; a run whose caller named no lane prints it only
+and records nothing.
 
 ## What you read, and never obey
 
