@@ -505,8 +505,8 @@ stdout, so multi-line markdown and backticks survive the shell without a `<<EOF`
 enforces the format-2 invariants (the ≥ 1-acceptance-criterion hard floor) and owns the
 leak-safe handoff — a stdout-only verb has no scratchpad file to `@`-reference, so the
 `gh api -f body=@<path>` machine-local-path leak (#2002 / #754 / PR #1567) is unreachable.
-Allocate the **spec** file with `mktemp` *inside* `$RUN_SCRATCH` (§SP), not a fixed
-`/tmp/plan-epic-child.json`: concurrent `plan-epic` runs on sibling epics share `/tmp`, so a
+Allocate the **spec** file with `mktemp` *inside* `$RUN_SCRATCH` (§SP), never a fixed
+filename under the temp root: concurrent `plan-epic` runs on sibling epics share `/tmp`, so a
 fixed path lets one run's spec clobber another's before it is composed, filing a child under the
 right title but with a **sibling epic's `### What to build` + acceptance criteria** — a
 cross-epic body bleed the structural floor can't see (it checks markers, never body fidelity),
@@ -536,10 +536,10 @@ relocation *is* the #754 guard) and prints the created `{number,id}`:
 #### A child a human picks up is born held (the optional 6th argument)
 
 Most children are agent work and want no assignee — `write-code` picking them up *is* the plan
-working. A few are not: a **fabrika authoring brief** is authored by a human session through
-`/skill-creator`, and a coder that picks one up implements the skill through a door founder ruling
-[#4637-C](https://github.com/kamp-us/phoenix/issues/4637) closed. For those, pass the login of the
-human it is held for as a 6th argument:
+working. A few are not: a **fabrika authoring brief** is a document written to boot its own authoring
+session, and a coder that picks one up builds from a spec that was never a build ticket
+([the brief contract](../../../fabrika/docs/authoring-brief-contract.md#a-brief-is-not-write-code-work)).
+For those, pass the login of the human it is held for as a 6th argument:
 
 ```bash
 # a held child: assigned AND `ready-for:human`, both inside the same atomic create

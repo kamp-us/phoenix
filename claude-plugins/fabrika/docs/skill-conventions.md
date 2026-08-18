@@ -1,7 +1,8 @@
 # fabrika skill conventions
 
-The writing discipline every fabrika skill meets. A `/skill-creator` session authors against this
-doc; the skill-reviewer gate holds a skill to it.
+The writing discipline every fabrika skill meets. A session writing a skill works against this doc
+under [`writing-for-agents`](../skills/writing-for-agents/SKILL.md); the skill-reviewer gate holds a
+skill to it.
 
 These conventions are **skill-agnostic**. The execution core, the ideation layer, and every skill
 after them are consumers on identical terms — there is no per-skill exemption and no
@@ -215,9 +216,11 @@ idea that was passed over in an authoring session.
 
 A fabrika skill ships when **both** hold — no exceptions, no partial credit:
 
-1. **Authored via `/skill-creator`**, against these conventions. This is the only door: not
-   hand-dropped into `skills/`, not ported from v1, not copied from a sibling plugin. See the
-   [fabrika README](../README.md) for the posture.
+1. **Written under [`writing-for-agents`](../skills/writing-for-agents/SKILL.md)**, against these
+   conventions. That discipline is the route into `claude-plugins/fabrika/skills/`, and it is the
+   same route for a new skill, an edit to a shipped one, and a v1 port. The gate reads the text, not
+   the session that produced it: a skill still cannot be dropped in unread, but the thing it must
+   pass is the discipline. See the [fabrika README](../README.md) for the posture.
 2. **Its derived CLI contract is implemented with deterministic tests.** The authoring session
    derives the CLI API the skill needs, and *that spec is the contract* the verbs implement — the
    v1 scripts are never the source of truth, so there is no port to grade against.
@@ -226,7 +229,13 @@ Both gates are what this doc governs.
 
 > Source: founder ruling [#4637-C](https://github.com/kamp-us/phoenix/issues/4637) (confirmed
 > in-session 2026-08-01), with the contract-driven method from
-> [#4638](https://github.com/kamp-us/phoenix/issues/4638) (no blanket port of the v1 scripts).
+> [#4638](https://github.com/kamp-us/phoenix/issues/4638) (no blanket port of the v1 scripts). Gate
+> 1's route was reopened by the founder ruling of 2026-08-18, recorded on
+> [#5945](https://github.com/kamp-us/phoenix/issues/5945) and carried by
+> [#5953](https://github.com/kamp-us/phoenix/issues/5953): `/skill-creator` is retired as the door
+> and `writing-for-agents` replaces it, ports included. The gate lost its third part when the eval
+> layer was removed ([#5510](https://github.com/kamp-us/phoenix/issues/5510) →
+> [#5517](https://github.com/kamp-us/phoenix/pull/5517)).
 
 ## 9. Trust and ingestion
 

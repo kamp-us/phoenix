@@ -120,3 +120,30 @@ those instructions, or a fabrika skill stays unreachable however its eval set sc
 class of check that runs clean while structurally blind to what it is for, and it states that its
 instances stay separately owned. [#4701](https://github.com/kamp-us/phoenix/issues/4701) is a second
 §8-adjacent gate defect on the same doc. Neither is merged into this.
+
+## Amendment (2026-08-18, [#5953](https://github.com/kamp-us/phoenix/issues/5953)) — clause 1 no longer describes §8
+
+Clause 1 above described §8 as it stood on 2026-08-09: three parts, part 1 being provenance through
+a `/skill-creator` session. Both halves of that description have since moved, so a reader who takes
+clause 1 as the current gate reads a gate that is not there.
+
+**The part count.** Part 3 ("its eval set is green at the bar") lost its subject when the eval layer
+was removed ([#5510](https://github.com/kamp-us/phoenix/issues/5510) →
+[#5517](https://github.com/kamp-us/phoenix/pull/5517)). §8 is two parts.
+
+**The route.** Founder ruling of 2026-08-18, recorded on
+[#5945](https://github.com/kamp-us/phoenix/issues/5945): the `/skill-creator` door is retired, and
+writing under `writing-for-agents` is the route into `claude-plugins/fabrika/skills/` for a new
+skill, an edit to a shipped one, and a v1 port alike. Applied live on
+[PR #5938](https://github.com/kamp-us/phoenix/pull/5938) before it was written down, which cost each
+port a per-PR ruling relay until this landed. §8 gate 1 now names that route, so clause 1's "the
+conventions doc is not edited by this decision" no longer holds either.
+
+What this amendment does **not** touch: the measurement in Context (recall 0–11% across five tuned
+descriptions, precision 100% throughout, and the finding that a one-step skill is fired by the
+project's routing instruction rather than its `description`) stands as recorded, and clause 3's
+user-only exemption reasoning is unaffected. Clause 2's home for the number — the eval set — is
+gone, and **where trigger coverage lives now is not answered here**; that obligation is carried
+forward by [#5526](https://github.com/kamp-us/phoenix/issues/5526), which also owns this record's
+status line and retirement banner. The frontmatter is left at `accepted` for that sweep rather than
+half-moved here.
