@@ -706,6 +706,7 @@ formats used to live as prose in a skill body, which is why fabrika could not pi
 | `wire emit` | the format's bytes, composed from the fields on stdin |
 | `wire read` | the format's fields, read out of the artifact on stdin |
 | `wire check` | whether the artifact on stdin carries a conforming block, without the fields |
+| `wire doc-section` | one markdown section of the document on stdin (or `--file`), by ATX heading — a shell's single-section contract lookup instead of a whole-file read (#5966) |
 | `wire index` | whether the index doc agrees with the registry — and, with `--write`, the doc's generated table, rendered from it |
 
 Three properties are worth knowing before you call them:
