@@ -136,9 +136,39 @@ refuse an unknown flag.
 > installed copy, which is what a real `pnpm add --global` produces. `publishConfig` is what lets
 > both halves be true at once: the manifest's `bin` stays `./src/bin.ts` for the workspace, where
 > pnpm's link resolves *outside* `node_modules` and an edit to `src/` is live on the next
-> invocation, and npm rewrites `bin`/`main`/`types`/`exports` onto the compiled `dist/` at publish
-> time. `files` is `["dist"]` and `prepublishOnly` runs the build, so a tarball can neither miss
-> `dist/` nor ship a stale one (#4784).
+> invocation, and npm rewrites `bin`/`main`/`types`/`exports`/`engines` onto the compiled `dist/` at
+> publish time. `files` is `["dist", "scripts"]` and `prepublishOnly` runs the build, so a tarball
+> can neither miss `dist/` nor ship a stale one (#4784).
+
+### The two Node floors
+
+The two entry points need different Nodes, so the manifest carries two floors and never one number
+(#5943):
+
+| Floor | Where it lives | What it is | Who reads it |
+| --- | --- | --- | --- |
+| `>=22.12` | `publishConfig.engines.node` | what the compiled `dist/` runs on | consumers, via the tarball |
+| `>=24` | top-level `engines.node` | what the `.ts` `bin` needs for type stripping | this workspace |
+
+`publishConfig.engines` is a real field replacement, not a hopeful one: packing this package with
+pnpm 10.27.0 (the `packageManager` pin `publish.yml` runs on) emits a tarball `package.json` whose
+`engines.node` is `>=22.12` and whose `publishConfig` is stripped to `{"access": "public"}` — pnpm
+copies a whitelisted field onto the manifest and deletes it from `publishConfig`, and `access` is a
+publish setting rather than a manifest field, so it stays behind. So the dev floor never reaches a
+consumer, and a Node-22 repo installs and runs with no `Unsupported engine` warning —
+including under `engine-strict=true`, where `>=24` was a hard install failure rather than noise.
+
+`>=22.12` is what the bundle was measured to need, not what it was assumed to need. Running
+`dist/bin.js` down the Node ladder: 22.12 and up is clean; 22.11 works but warns
+(`ExperimentalWarning: Importing JSON modules`, from [`src/version.ts`](./src/version.ts)'s
+`import pkg from "../package.json" with {type: "json"}` — import attributes for JSON stopped being
+experimental in 22.12); Node 20 and 18 throw, because `undici` in the dependency tree calls
+`webidl.util.markAsUncloneable`, which lands in Node 22.
+
+The dev floor stays `>=24` and is deliberately conservative — the `.ts` `bin` in fact starts on
+22.18+, where native type stripping was backported, but nothing in this repo runs below 24. It is
+also not the only home for that number: `volta.node` pins `26.2.0` here and at the root, and CI
+reads `node-version-file: package.json`.
 
 ## Quickstart
 
@@ -1119,9 +1149,10 @@ pnpm --filter @kampus/fabrika-cli build       # tsc -> dist/, for the published 
 **The development loop has no build step.** `bin` points at `./src/bin.ts` and Node ≥ 24 strips the
 types natively, so an edit to `src/` is live on the next invocation — which is the entire point of
 the workspace `devDependencies` line in the root `package.json`. `build` emits `dist/` for the
-published tarball and nothing else reads it; see the publish note above for why the two halves
-differ. Emit and type-check now run the same binary — the stable native `tsc` (ADR 0271) — so the
-published artifact and the gate can no longer disagree about the compiler.
+published tarball and nothing else reads it; see [the two Node floors](#the-two-node-floors) for why
+that `≥ 24` is this workspace's number and not the published package's. Emit and type-check now run
+the same binary — the stable native `tsc` (ADR 0271) — so the published artifact and the gate can no
+longer disagree about the compiler.
 
 A verb is a **pure function of its dependencies** — the `*-verb.ts` modules compute a
 `VerbOutcome` (exit code, stdout, stderr) and never write a stream or exit. The Effect CLI
