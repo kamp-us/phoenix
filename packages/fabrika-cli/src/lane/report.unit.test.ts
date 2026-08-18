@@ -1,5 +1,29 @@
 import {describe, expect, it} from "vitest";
+import {EPIC_RULES} from "../wire/lane-brief.ts";
 import {eventForToken, flattenVocabularies, SHELL_VOCABULARIES} from "./report.ts";
+
+describe("the builder's no-PR terminals", () => {
+	it("routes an epic child's BUILT-NO-PR to DONE, not to the BLOCKED a clean build never earned", () => {
+		expect(eventForToken("BUILT-NO-PR")).toEqual({
+			_tag: "Mapped",
+			token: "BUILT-NO-PR",
+			event: "DONE",
+		});
+	});
+
+	it("keeps SUCCESS-NO-PR its own token — the child terminal is additive, not a widening", () => {
+		expect(SHELL_VOCABULARIES.builder).toMatchObject({
+			"SUCCESS-NO-PR": "DONE",
+			"BUILT-NO-PR": "DONE",
+		});
+	});
+
+	it("recognises the terminal the epic-run brief tells a child to end on", () => {
+		const named = /ends on `([A-Z][A-Z-]+)`/.exec(EPIC_RULES);
+		expect(named?.[1]).toBe("BUILT-NO-PR");
+		expect(eventForToken(named?.[1] ?? "")).toMatchObject({event: "DONE"});
+	});
+});
 
 describe("the shipper's routing arms are three answers, not one", () => {
 	it("routes the repair arm to FAIL so the ship state spends a retry back into build", () => {

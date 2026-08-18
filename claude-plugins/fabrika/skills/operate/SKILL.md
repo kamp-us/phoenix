@@ -363,7 +363,8 @@ event and never skipped as an optimisation. Its refusals each name a different n
 A builder's `SUCCESS-NO-PR` is a proven `DONE`, not an unproven one: the verb takes the no-PR arm
 only for a `type:investigation`, and proves it from the diagnosis comment posted since the task
 entered `build` — the artifact the builder's terminal names, read off the issue rather than off
-the report.
+the report. An epic child's `BUILT-NO-PR` is the other proven `DONE` without a PR, and its artifact
+is the range's own commits — a child opens no PR to prove one against (#6019).
 
 **An `integrate` has no spawn to report**, so its row is the merge's own exit folded by the two
 rules step 2 named: a clean merge whose post-merge checks pass is `DONE`; a conflict, or a red
