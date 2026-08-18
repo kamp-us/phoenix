@@ -40,7 +40,7 @@ Three grounded facts settle it:
    Per the plugin spec, audited in the crew's own personalization seam
    (`claude-plugins/pipeline-crew/PERSONALIZATION.md`, grounded in the
    [Plugins reference](https://docs.claude.com/en/docs/claude-code/plugins-reference), the same
-   source ADR [0171](0171-kampus-pipeline-plugin-spec-conformance.md) audited), plugin content
+   source ADR `0171` audited), plugin content
    is `agents/` / `commands/` / `skills/` / `hooks/` — the *same bytes* for every operator. A
    plugin `commands/` entry is a prompt surface, not a unit-testable core; there is no vitest
    seam inside plugin content. Embedding process-spawning / bind-construction Node there strands

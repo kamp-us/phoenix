@@ -58,7 +58,7 @@ that ruling supersedes any reading of the above that would put `.decisions/` in 
 - `.decisions/` does **not** become team-owned; ADRs get **no** code-owner review. This declines a
   widening — `.decisions/` has no CODEOWNERS row today — rather than removing a protection.
 - The guard that stays is machine-run: the citation-independent ADR contradiction sweep
-  ([`../../kampus-pipeline/skills/review-doc/SKILL.md`](../../kampus-pipeline/skills/review-doc/SKILL.md),
+  (`../../kampus-pipeline/skills/review-doc/SKILL.md`,
   its `Step 4a`).
 - **The condition attached to the ruling, and not droppable:** the gate is replaced by a periodic,
   non-blocking **readout** of landed ADRs, ranked for consequence and tension by the

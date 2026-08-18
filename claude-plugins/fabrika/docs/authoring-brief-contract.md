@@ -41,7 +41,7 @@ one skill, one directory.
 ### 2. v1 baseline reference — a path, and nothing more
 
 The repo-relative path of the v1 skill this one replaces, under
-[`../../kampus-pipeline/skills/`](../../kampus-pipeline/skills/) — for a skill with no v1 ancestor,
+`../../kampus-pipeline/skills/` — for a skill with no v1 ancestor,
 an explicit **none**.
 
 **It is reference, never source of truth** ([#4638
@@ -168,7 +168,7 @@ up and implements the skill directly — from a document written to boot an auth
 be built from. A brief specifies the session's inputs; it is not a build ticket.
 
 The pool predicate is mechanical
-([`step1-candidate-pool.sh`](../../kampus-pipeline/skills/write-code/scripts/step1-candidate-pool.sh)):
+(`step1-candidate-pool.sh`):
 **open**, labelled **`status:triaged`** and a priority bucket, and **`assignee == null`**. A brief
 could in principle miss the label or hold an assignee — and only one of those two survives the
 pipeline that emits it.
@@ -257,7 +257,7 @@ doc, and this example pre-commits none of `/adr`'s design.
 
 **Skill:** `adr` → `claude-plugins/fabrika/skills/adr/`
 
-**v1 baseline reference:** [`claude-plugins/kampus-pipeline/skills/adr/SKILL.md`](../../kampus-pipeline/skills/adr/SKILL.md)
+**v1 baseline reference:** `claude-plugins/kampus-pipeline/skills/adr/SKILL.md`
 (181 lines, plus `scripts/`). Reference only — read it for the problem and the scars, not for the
 shape. Do not port its scripts (#4638).
 

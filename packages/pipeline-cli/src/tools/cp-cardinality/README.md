@@ -48,9 +48,9 @@ marker); this tool owns the branch. It never calls the network.
 ## Usage
 
 ```bash
-# ship-it's §CP gate resolves the roster + signals over REST, then decides deterministically.
-# The roster is a GUARDED read — `cp_team_roster` from §CPREAD-APPROVAL of
-# claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md, never a bare capture.
+# The caller resolves the roster + signals over REST, then decides deterministically.
+# The roster is a GUARDED read (the v1 §CPREAD-APPROVAL idiom, retired with that plugin —
+# #5937): never a bare capture.
 ORG="${REPO%%/*}"
 cp_team_roster "$ORG" || { echo "roster UNKNOWN (read failed) — STOP, do not decide" >&2; exit 1; }
 printf '%s\n' "$CP_MEMBERS" | pipeline-cli cp-cardinality decide \

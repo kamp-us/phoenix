@@ -73,7 +73,7 @@ structurally unmintable.
   and closes with the caveat that continuous-ship is "not a model to copy blindly for a plugin with
   external consumers". This ADR settles the *criterion*: it does not touch cadence, it says the
   artifact must work outside its home repo before it counts as shipped.
-- ADR [0171](0171-kampus-pipeline-plugin-spec-conformance.md) audits the v1 plugin's **manifest and
+- ADR `0171` audits the v1 plugin's **manifest and
   layout** against the official plugin spec and records each deviation as documented-intentional.
   Spec conformance is a static property of the packaging; this ADR is about a runtime property of the
   installed thing — a plugin can be perfectly spec-conformant and still exit 127 in every consumer,
@@ -231,6 +231,6 @@ Vocabulary impact: this ADR adopts **repo-resident** as the operative portabilit
 skill can obtain by opening the repository it is installed into, and nothing else. It is not
 "non-phoenix-specific" (the phrasing it replaces), not repo-*agnostic* targeting (ADR
 [0062](0062-repo-as-config-plugin.md), which is about *which* repo a skill acts on), and not spec
-conformance (ADR [0171](0171-kampus-pipeline-plugin-spec-conformance.md)). It needs that "not …"
+conformance (ADR `0171`). It needs that "not …"
 disambiguation, so it is routed to [`.glossary/TERMS.md`](../.glossary/TERMS.md) through the glossary
 skill rather than added inline here.

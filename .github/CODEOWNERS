@@ -15,26 +15,6 @@
 # The §CP `^\.claude-plugin/` branch; root-anchored, so nested plugin.json files are NOT
 # owned here (ADR 0212, #3933).
 /.claude-plugin/                @kamp-us/control-plane
-# Control-plane: the kampus-pipeline SKILLS TREE, whole — every file, any depth, any extension.
-# The DIRECTORY is the unit of coverage, not the file type (founder ruling on #4446, #4458). One
-# directory row replaces the eleven enumerated skill dirs, the `**/*.sh` row and the formats-doc
-# row: with no `*` catch-all here and the ruleset at count:0 + require_code_owner_review, a path
-# matching NO row merged on ZERO approvals — so a non-`.sh` file beside a gated script was
-# ungated. Must stay in lockstep with the single §CP `skills/` branch.
-/claude-plugins/kampus-pipeline/skills/                            @kamp-us/control-plane
-# Control-plane: the shared shell library every extracted per-skill script sources. It moved out of
-# `skills/shared/lib/` (#4484) — `shared/` was never a skill — and outside `skills/**` it would be
-# proven-ordinary at zero approvals, so this row and the §CP `lib/` branch land with the move.
-/claude-plugins/kampus-pipeline/lib/                               @kamp-us/control-plane
-# Control-plane: the pipeline agent definitions — the behavior of the very agents that run the
-# pipeline, including shipper.md (merge authority) and reviewer.md (verdict gate). §CP-blocking
-# for merge, review-skill-routed for the verdict (ADR 0150, #2003).
-/claude-plugins/kampus-pipeline/agents/                           @kamp-us/control-plane
-# Control-plane: the plugin hook surface — the install.sh + guard.sh dispatch wrapper (the dir)
-# and the foreign-repo hook manifest (hooks.json). The §CP `hooks(/|\.json$)` branch covers both,
-# so each gets its own literal row (ADR 0103, #1003).
-/claude-plugins/kampus-pipeline/hooks/                            @kamp-us/control-plane
-/claude-plugins/kampus-pipeline/hooks.json                        @kamp-us/control-plane
 # Control-plane: enforcement guard packages — the platform half of the §CP regex (ADR 0100).
 # The standalone *-guard packages were folded into pipeline-cli and deleted (#1003); ci-required
 # stays standalone (ADR 0092) and keeps its own owner line.

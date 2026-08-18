@@ -117,9 +117,6 @@ export const registeredTools: ReadonlyArray<ToolRegistration> = [
 	tool("tsc-annotate", () =>
 		import("./tools/tsc-annotate/command.ts").then((m) => m.tscAnnotateCommand),
 	),
-	tool("class-probe", () =>
-		import("./tools/class-probe/command.ts").then((m) => m.classProbeCommand),
-	),
 	tool("wayfinder-map", () =>
 		import("./tools/wayfinder-map/command.ts").then((m) => m.wayfinderMapCommand),
 	),
@@ -207,24 +204,6 @@ export const registeredTools: ReadonlyArray<ToolRegistration> = [
 	// earliest-authorized-claim decision — "is this claim mine?" — default-deny, reusing
 	// epic-lock's pure `resolveClaim` core rather than a second copy.
 	tool("claim", () => import("./tools/claim/command.ts").then((m) => m.claimCommand)),
-	// The #3254 adoption corpus-lint (epic #3258, governing AC): reds a corpus file that
-	// inline-re-derives a tool-owned decision without citing the owning verb, so the verb
-	// sweep can't grow the unreferenced-tool pile. Fail-closed on zero scope (ADR 0092).
-	tool("adoption-lint", () =>
-		import("./tools/adoption-lint/command.ts").then((m) => m.adoptionLintCommand),
-	),
-	// #3314 — reds on a bare `pipeline-cli <verb>` in a runnable fence. The CLI is not on PATH
-	// where agents spawn and won't be (ADR 0207), so a bare call dies `command not found` inside a
-	// fail-closed gate wrapper, which launders the miss into a wrong verdict. Enforces §CLI.
-	tool("cli-invocation-guard", () =>
-		import("./tools/cli-invocation-guard/command.ts").then((m) => m.cliInvocationGuardCommand),
-	),
-	// #4479 — reds on `errexit` + an `EXIT` trap in one runnable shell unit: on bash 3.2 a `set -u`
-	// abort then reaches the trap with `$?` already 0, so a cleanup trap exits 0 and the guard
-	// reports success on a path it never evaluated. Fail-closed on zero scope, per surface.
-	tool("trap-status-guard", () =>
-		import("./tools/trap-status-guard/command.ts").then((m) => m.trapStatusGuardCommand),
-	),
 	// #3650 — the orphan-red-PR detector + heal-item emitter (the #3532 boundary path, steps
 	// 1–2): convert an open, CI-red, laneless PR into one idempotent triaged "heal red CI on
 	// PR #N" item so an engine adopts the lane, rather than free-scanning arbitrary red PRs.

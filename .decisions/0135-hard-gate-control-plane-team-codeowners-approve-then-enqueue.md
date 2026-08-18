@@ -11,7 +11,7 @@ tags: [pipeline, ship-it, security, control-plane, governance, github]
 ## Context
 
 The control-plane boundary (ADRs [0053](0053-control-plane-boundary.md) / [0065](0065-gate-critical-skills-are-blocking.md);
-the canonical §CP set in [`gh-issue-intake-formats.md §CP`](../claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md))
+the canonical §CP set in `gh-issue-intake-formats.md §CP`)
 is a **security** boundary: the pipeline must not auto-merge a weakening of its own guardrails —
 the skills, hooks, CODEOWNERS, and CI that *perform* the merge. ADR
 [0071](0071-enforce-control-plane-at-github.md) already resolved to make that boundary binding at

@@ -592,7 +592,7 @@ The machine-readable substrate the `wayfinder` skill's fog-graduation and emissi
 read instead of prose-guessing a map's state. A `wayfinder:map` issue is the ideation-layer
 map that sits upstream of the execution pipeline; its body carries four canonical sections
 (`## Destination` / `## Decisions-so-far` / `## Open frontier` / `## Graduated fog`), defined
-once in the [map-shape contract](../../claude-plugins/kampus-pipeline/skills/shared/wayfinder-map-issue-shape.md).
+once in the `map-shape contract`.
 This tool parses that body into `{destination, decisionsSoFar, openFrontier, graduatedFog}`,
 validates it against a structural floor (the epic-ledger idiom: a closed defect enum, sorted
 deterministically), and exposes a **graduation-readiness** predicate — is the open frontier

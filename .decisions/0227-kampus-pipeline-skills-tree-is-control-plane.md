@@ -16,7 +16,7 @@ The §CP boundary (ADR [0053](0053-control-plane-boundary.md), enforced at GitHu
 path regex in
 [`control-plane-re.ts`](../packages/pipeline-cli/src/tools/control-plane-paths/control-plane-re.ts),
 byte-synced to the `CONTROL_PLANE_RE=` line in
-[`gh-issue-intake-formats.md`](../claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md)
+`gh-issue-intake-formats.md`
 and to `.github/CODEOWNERS`.
 
 Its coverage of the `kampus-pipeline` skills tree was, until now, **three narrow clauses**: an

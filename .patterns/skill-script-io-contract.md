@@ -1,10 +1,10 @@
 # Pipeline shell — the stdout/stderr contract
 
-Every shell unit under `claude-plugins/kampus-pipeline/` — a function in the shared lib
-[`lib/common.sh`](../claude-plugins/kampus-pipeline/lib/common.sh), a shared helper such as
-[`skills/shared/scripts/cp-read.sh`](../claude-plugins/kampus-pipeline/skills/shared/scripts/cp-read.sh),
-or an extracted per-skill `scripts/*.sh` — writes on two streams, and which stream a byte lands on
-is a **contract**, not a formatting choice.
+Every shell unit whose output a caller reads — a workflow `run:` step, a git-hook body, any
+script whose stdout feeds a decision — writes on two streams, and which stream a byte lands on
+is a **contract**, not a formatting choice. (The corpus this was measured on, the v1
+`kampus-pipeline` plugin's shared lib and per-skill scripts, retired with that plugin — #5937;
+the contract is what `fabrika`/`pipeline-cli` verbs and the remaining repo shell still honor.)
 
 It became load-bearing when [ADR 0232](../.decisions/0232-agents-execute-skill-scripts-never-source-them.md)
 made **stdout the return channel**: an isolated agent runs
@@ -111,16 +111,16 @@ process substitution is worse still — in `done < <(producer …)` the producer
 unobservable *even in principle*, which is why the shape doc's rule 6 makes the producer withhold
 its stdout instead ([#4487](https://github.com/kamp-us/phoenix/issues/4487)).
 
-## Where it is used
+## Where it was proven (retired corpus, #5937 — cited as the contract's provenance)
 
-- [`claude-plugins/kampus-pipeline/lib/common.sh`](../claude-plugins/kampus-pipeline/lib/common.sh) —
+- `claude-plugins/kampus-pipeline/lib/common.sh` —
   conforms throughout, and is the reference: `kp_skill_shell_surfaces`, `kp_surface_text` and
   `kp_skill_source_edges` each emit **nothing** on stdout, a named diagnostic on stderr, and a
   non-zero return when their scan is UNKNOWN; `kp_repo`, `kp_pcli` and `kp_scratch_*` print one
   value on stdout and fail closed rather than yield an empty string. Pinned by
   `lib/common-test.sh`, which asserts non-zero + empty stdout + a stderr diagnostic on a forced
   partial `find` failure.
-- [`claude-plugins/kampus-pipeline/skills/shared/scripts/cp-read.sh`](../claude-plugins/kampus-pipeline/skills/shared/scripts/cp-read.sh) —
+- `claude-plugins/kampus-pipeline/skills/shared/scripts/cp-read.sh` —
   the sourced §CPREAD helpers: no stdout at all, results in `CP_*` variables, every scope and
   failure line on stderr.
 - `skills/review-code/scripts/classify-control-plane.sh` — a **machine** answer channel of

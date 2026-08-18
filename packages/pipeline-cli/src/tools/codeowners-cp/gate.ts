@@ -7,13 +7,15 @@
  *
  * The §CP boundary is the single-source const `CONTROL_PLANE_RE` in
  * `control-plane-paths/control-plane-re.ts` (issue #2761). The gate derives the §CP
- * path set from THAT const, and also reads the `CONTROL_PLANE_RE=` line the live gates
- * consume from `gh-issue-intake-formats.md` and fails if it has drifted from the const —
- * so this job doubles as the unconditional const↔formats-doc drift guard (the un-importable
- * prose surface). It then fails when any §CP path has no covering `.github/CODEOWNERS` row.
- * Fail-closed (ADR 0092): a missing/unreadable source, a formats line it cannot parse, a
- * formats line that has drifted from the const, a CODEOWNERS with zero owned entries, OR a
- * const that resolves to ZERO §CP paths all FAIL — only a fully-covered, in-sync §CP set passes.
+ * path set from THAT const, and also reads the `CONTROL_PLANE_RE=` line the shell-side
+ * callers consume from `control-plane-paths/boundaries.md` (the v1 formats doc's
+ * successor, #5937) and fails if it has drifted from the const — so this job doubles as
+ * the unconditional const↔prose drift guard (the un-importable prose surface). It then
+ * fails when any §CP path has no covering `.github/CODEOWNERS` row.
+ * Fail-closed (ADR 0092): a missing/unreadable source, a boundaries line it cannot parse,
+ * a boundaries line that has drifted from the const, a CODEOWNERS with zero owned entries,
+ * OR a const that resolves to ZERO §CP paths all FAIL — only a fully-covered, in-sync §CP
+ * set passes.
  */
 import {Console, Effect, FileSystem, Path} from "effect";
 import * as Schema from "effect/Schema";
@@ -27,8 +29,8 @@ import {
 	renderReport,
 } from "./codeowners-cp.ts";
 
-/** The canonical §CP regex source, repo-relative. */
-export const FORMATS_PATH = "claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md";
+/** The canonical §CP prose (wire-line) source, repo-relative (#5937 moved it out of v1). */
+export const FORMATS_PATH = "packages/pipeline-cli/src/tools/control-plane-paths/boundaries.md";
 /** The literal owner enumeration, repo-relative. */
 export const CODEOWNERS_PATH = ".github/CODEOWNERS";
 
@@ -81,15 +83,15 @@ export const checkCodeownersCp = (
 			);
 		}
 
-		// Drift guard for the un-importable prose surface: the live merge-deciding gates read
-		// CONTROL_PLANE_RE from this formats line on origin/main (#981), so it must stay byte-equal
-		// to the single-source const. Fail-closed on any divergence (#2761).
+		// Drift guard for the un-importable prose surface: the shell-side callers read
+		// CONTROL_PLANE_RE from this line (cp-classify/trivial-diff fetch it at ref=main, #981),
+		// so it must stay byte-equal to the single-source const. Fail-closed on divergence (#2761).
 		if (re !== CONTROL_PLANE_RE) {
 			return yield* Effect.fail(
 				new CheckFailed({
 					reason:
 						`CONTROL_PLANE_RE in ${FORMATS_PATH} has drifted from the pipeline-cli single-source const ` +
-						`(control-plane-paths/control-plane-re.ts) — the two must match (#2761). Re-sync the formats line ` +
+						`(control-plane-paths/control-plane-re.ts) — the two must match (#2761). Re-sync the boundaries line ` +
 						`to \`pipeline-cli control-plane-paths\`.\n  const:   ${CONTROL_PLANE_RE}\n  formats: ${re}`,
 				}),
 			);

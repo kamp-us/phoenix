@@ -23,7 +23,7 @@ name: skill-gh-lint
 # ADR 0092: a lint that scanned nothing is a broken lint, exit 3. The walk roots at
 # `claude-plugins` — the whole plugin tree, every plugin dir, skills/** and agents/**
 # alike — so a new skill, a new agent, or a whole new PLUGIN is gated automatically.
-# It used to root at `claude-plugins/kampus-pipeline`, which silently excluded every
+# It used to root at a single plugin dir, which silently excluded every
 # sibling plugin dir while the job still reported green: a guard green from an empty
 # corner is indistinguishable from a guard green from clean code (#5004). The per-plugin coverage assertion in the lint
 # step is what now makes that narrowing loud instead of silent.

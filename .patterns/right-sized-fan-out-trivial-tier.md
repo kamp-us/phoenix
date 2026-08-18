@@ -53,7 +53,7 @@ unreadable/uncompilable live boundary all resolve to `non-trivial` — there is 
 
 ### 2. The lighter gate — `review-trivial`, a reduced gate, not a skipped gate (#1558)
 
-`claude-plugins/kampus-pipeline/skills/review-trivial/SKILL.md` is a **reduced-prompt** verify
+The v1 `review-trivial` skill (retired with the `kampus-pipeline` plugin, #5937) was a **reduced-prompt** verify
 path a trivially-classified diff can take instead of the full fan-out. It is still an
 **independent, fail-closed gate** run by a reviewer (never the author — the split-role firewall
 of ADR [0052](../.decisions/0052-review-code-config-isolation.md) is unchanged):
@@ -130,6 +130,6 @@ and the SHA-bound verdict contract (ADR 0058) are untouched.
   [0065](../.decisions/0065-gate-critical-skills-are-blocking.md) /
   [0100](../.decisions/0100-control-plane-covers-enforcement-guard-packages.md); the live
   `CONTROL_PLANE_RE` is defined once in
-  [`skills/gh-issue-intake-formats.md`](../claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md) §CP.
+  `skills/gh-issue-intake-formats.md` §CP.
 - [product-development-cycle.md](../product-development-cycle.md) — where the tier sits in the
   deploy→release cycle's review step.

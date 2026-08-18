@@ -9,7 +9,7 @@
 > — the founder mission statement, recorded on epic [#4648](https://github.com/kamp-us/phoenix/issues/4648)
 
 **fabrika** is the kamp.us agent pipeline, rebuilt from first principles as its own plugin. It
-grows here, beside the v1 baseline in [`../kampus-pipeline/`](../kampus-pipeline/), which stays
+grows here, beside the v1 baseline in `../kampus-pipeline/`, which stays
 frozen and untouched — v1 is not a failure to clean up but a deliberate experiment that succeeded
 at its own goal and has run its course (wayfinder:map #4631). Keeping it intact is what gives
 fabrika something to be measured against.

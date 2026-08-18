@@ -41,14 +41,14 @@ Findings are grouped and diffed on the **(dimension, check, surface) triple**, n
 sandbox-leak dimensions emit one `Finding` per `(check, surface)` pair), so keying on the
 pair would collide two distinct findings. The triple keeps them distinct run-over-run. The
 contract is stated in the skill's
-[`DIMENSIONS.md`](../../claude-plugins/kampus-pipeline/skills/rite-audit/DIMENSIONS.md).
+`DIMENSIONS.md`.
 
 ## Archive
 
 Each run lands a `<stamp>-<stage>.json` + `.md` pair under the repo-relative accumulating
 run log `rite-audit/runs/`, so successive runs pile up and diff. Every path the artifact
 emits is **repo-relative** — `archivePath` constructs from a fixed repo-relative dir and
-`assertRepoRelative` fails loud on any absolute/home/escaping path, so no local path leaks
+`assertRepoRelative` fails loud on any absolute, home-rooted or repo-escaping path, so no local path leaks
 into the archive.
 
 ## Architecture
