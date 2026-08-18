@@ -3,6 +3,9 @@
 Docs, ADRs, pattern docs, briefs, glossary entries. `fabrika build check` validates link
 resolution and doc-surface placement here.
 
+- **Pick the page's one mode before writing it** — tutorial, how-to, reference, or explanation.
+  The [`diataxis`](../../diataxis/SKILL.md) skill carries the procedure and maps each mode to the
+  home that owns it; a page serving two reader-needs splits instead of blending.
 - **Put the fact in its one home**: `README` = product front door; `DEVELOPMENT.md` = builder
   state; `.decisions/` = why + history; `.patterns/` = how code is shaped; `reports/` = dated
   snapshots; `.glossary/` = vocabulary. A fact in two homes is a fact that drifts.
