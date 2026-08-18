@@ -103,14 +103,17 @@ describe("runClaim", () => {
 	 * back a nonce that held nothing, which `build branch` then cut a branch on.
 	 */
 	it("loses to a SIBLING LANE of its own session, and never answers won on its behalf", async () => {
+		// The loser's own comment id is 9002, distinct from the winner's 9001, so the retraction
+		// assertion below discriminates "retracted its own marker" from "deleted the winner's".
+		const siblingMarker = marker("s-9f2e", SIBLING_UUID);
 		const shell = fakeShell([
 			[ISSUE, CLAIMABLE],
-			[POST, POSTED],
-			[GET_COMMENT, okOut(JSON.stringify({body: marker("s-9f2e", SIBLING_UUID)}))],
+			[POST, okOut(JSON.stringify({id: 9002, html_url: "https://github.com/o/r/issues/4312#c"}))],
 			[
-				COMMENTS,
-				comments({id: 9001, body: MINE}, {id: 9002, body: marker("s-9f2e", SIBLING_UUID)}),
+				/^gh api repos\/o\/r\/issues\/comments\/9002$/,
+				okOut(JSON.stringify({body: siblingMarker})),
 			],
+			[COMMENTS, comments({id: 9001, body: MINE}, {id: 9002, body: siblingMarker})],
 			[perm("agent"), okOut("write\n")],
 			[DELETE, okOut("")],
 		]);
@@ -123,8 +126,11 @@ describe("runClaim", () => {
 		expect(out.code).toBe(CLAIM_NOT_MINE);
 		expect(out.stderr.some((line) => line.includes(`lost to ${LANE_TOKEN}`))).toBe(true);
 		expect(shell.calls.filter((line) => DELETE.test(line))).toEqual([
-			"gh api --method DELETE repos/o/r/issues/comments/9001",
+			"gh api --method DELETE repos/o/r/issues/comments/9002",
 		]);
+		expect(
+			shell.calls.some((line) => /DELETE repos\/o\/r\/issues\/comments\/9001/.test(line)),
+		).toBe(false);
 	});
 
 	it("re-reads AFTER posting — the checkpoint is what resolves a staggered race", async () => {

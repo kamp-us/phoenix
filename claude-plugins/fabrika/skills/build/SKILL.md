@@ -263,7 +263,7 @@ The fold is the only entry: paginated, current-head, per-gate — polarity visib
 included. Act only on rows it prints; empty rows at exit 0 are a proven no-work answer, but an
 UNKNOWN exit means the verdict state is unread — **never "nothing to fix"**. The budget is the
 fold's own `capReached` field, never a number you carry: on `true`, end `ESCALATED` and post the
-escalation via `fabrika build note` instead of another push.
+escalation via `fabrika build note $issue_or_pr_number --token $claim_token` instead of another push.
 
 **A founder can clear one more round, and you read that through the same field.** The clearance is
 data on the PR — an authorized account records it with `fabrika build clear`, and the fold counts it,
@@ -275,7 +275,8 @@ round — it survives the push it permits, and the next FAIL round spends it, so
 second grant. Fix findings on the same branch
 (`fabrika build tree --issue $issue_or_pr_number`, then `fabrika build branch --resume $issue_or_pr_number --token $claim_token`), re-validate with
 `fabrika build check --surface <yours>`, push with `fabrika build push --force-with-lease`, answer
-the findings in a `fabrika build note` naming each one addressed, release. Exit `23` on that push
+the findings in a `fabrika build note $issue_or_pr_number --token $claim_token` naming each one
+addressed, then release with `fabrika build release $issue_or_pr_number --token $claim_token`. Exit `23` on that push
 means your head **drops commits the PR already published** — `build branch --resume` again so you
 rebuild on the published head, never `--drop-remote-commits`, which is for a rewrite you actually
 intend. The fold's `frozenCriteria` rows are the review-appended criteria past the freeze — note

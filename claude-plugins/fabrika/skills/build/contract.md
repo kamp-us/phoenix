@@ -325,6 +325,7 @@ The two assertions, each proven from git state alone:
 |---|---|---|
 | `build tree: cannot read the tree root: <reason> — the ground is UNKNOWN.` | 11 | refusal |
 | `build tree: <n> uncommitted change(s) at open — refusing; an unauthored hunk is not yours to keep or clean.` | 13 | refusal |
+| `build tree: the checked-out branch "<name>" is not a lane branch — wrong lane.` | 14 | refusal |
 | `build tree: the checked-out branch "<name>" does not carry claim <token>'s nonce — wrong lane.` | 14 | refusal |
 | `build tree: cannot read the claim markers on #<n>: <reason> — the lane is UNKNOWN.` | 11 | refusal |
 | `build tree: #<n> is held by <winning token>, not by the lane on nonce <nonce>.` | 15 | refusal |
@@ -941,12 +942,12 @@ is the number repair mode claims.
 **Examples**
 
 ```
-$ fabrika build branch 4312 --slug editor-focus-loss
+$ fabrika build branch 4312 --slug editor-focus-loss --token <token>
 build/4312-editor-focus-loss-c1a4d6f8
 ```
 
 ```
-$ fabrika build branch 4312 --slug -rf
+$ fabrika build branch 4312 --slug -rf --token <token>
 build branch: --slug "-rf" is not kebab-case (lowercase letters, digits, single hyphens, ≤5 words).
 $ echo $?
 10
@@ -1034,7 +1035,7 @@ $ fabrika build scratch 4312 --slug notes --token <token>
 
 ```
 fabrika build commit < message.txt
-fabrika build commit --message-file "$(fabrika build scratch 4312 --slug commit-message)"
+fabrika build commit --message-file "$(fabrika build scratch 4312 --slug commit-message --token <token>)"
 ```
 
 **Inputs**
@@ -1585,7 +1586,7 @@ substituted (shared conventions), plus:
 **Example**
 
 ```
-$ fabrika build note 4310 <<'EOF'
+$ fabrika build note 4310 --token <token> <<'EOF'
 Round 2 findings addressed: focus restore moved out of the render path.
 EOF
 {"answer":"posted","number":4310,"commentId":512346,"head":"03135b91"}
