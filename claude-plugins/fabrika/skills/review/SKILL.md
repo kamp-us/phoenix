@@ -143,7 +143,8 @@ undisclosed that this gate could see"* — never "no deviations exist".
   governance verdict on such a diff is not a complete gate result, and that holds for a FAIL
   exactly as for a PASS (ADR [0293](../../../../.decisions/0293-governance-fires-every-round.md)).
   **A FAIL is not a licence to skip it.** "The repair moves the head, so this verdict is stale on
-  arrival" is the deadlock ADR 0293 rules out: `operate` records no FAIL until every derived
+  arrival" is the deadlock ADR 0293 rules out: the third refusal guarding `operate`'s `FAIL` row —
+  which owns that rule, this is only a pointer to it — records no FAIL until every derived
   namespace holds a binding verdict, so a declined governance round strands the lane with the
   repair undispatchable. Fire it, and expect to fire it again at each repair head — the extra run
   is the accepted cost. Neither namespace discharges the other. You never emit governance's

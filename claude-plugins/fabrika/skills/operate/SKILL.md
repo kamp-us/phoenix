@@ -391,10 +391,11 @@ ADR [0293](../../../../.decisions/0293-governance-fires-every-round.md) rules go
 derived-required at every round and every head on a `harness: true` diff, FAIL rounds included —
 `review` §6 states it on both arms. So a governance verdict missing at a `harness: true` head is
 always a read still in flight or a reviewer that died mid-emit, never a licensed refusal, and the
-remedy above reaches a verdict instead of waiting on one nobody will write. If a re-read still
-shows the namespace empty after the reviewer's run has ended, that spawn is a dead spawn — re-spawn
-the reviewer at the current head rather than parking; the floor stays, and this row never holds a
-state where the `FAIL` cannot be recorded and the repair cannot be dispatched.
+remedy above reaches a verdict instead of waiting on one nobody will write. The floor stays, and no
+`harness: true` FAIL round holds the old deadlock — the state where the verdict is refused by rule,
+so it can never be written and the repair can never be dispatched. A namespace still empty after the
+reviewer's run has ended is a dead spawn like any other: record `BLOCKED` per the spawn-report step
+above and let a human unblock it. Do not re-spawn the reviewer on your own read.
 
 `lane transition` exits are verdicts: `12` means the event was refused and the log left
 unappended — the machine holds no cell for it, so re-fold with `lane status` and route from the

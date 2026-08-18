@@ -51,7 +51,9 @@ per ADR [0078](0078-product-driven-decisions-by-default.md)).
 - Neither namespace discharges the other. A current-head `review-code` FAIL does not excuse the
   governance read, and a governance verdict does not excuse the code read.
 - Each repair head is a fresh round: governance is re-fired at the new head and the prior verdict
-  is stale, never carried forward.
+  is stale, never carried forward. Staleness is ADR [0276](0276-verdict-binds-content-not-only-head.md)'s test,
+  not a stricter one — a repair changes the reviewed content, so its verdict goes stale; a head that
+  moved without touching that content keeps the verdict 0276 says still binds.
 - **`operate`'s all-namespaces-terminal floor on the `FAIL` row stays.** It keeps its ability to
   tell "the reviewer declined" from "the reviewer died mid-emit", because after this ruling nothing
   licenses a decline — a missing governance verdict on a `harness: true` FAIL round is always an
@@ -100,9 +102,10 @@ could find them, and both sat on the exact head the old reading declined to gove
 A lane already parked in this deadlock is cleared by a human `UNBLOCKED`, not by a new rule alone —
 the park is a recorded state and the machine does not un-park itself. On resume the reviewer fires
 governance at the current head under this record, the FAIL becomes recordable, and the repair
-dispatches. Lane 5718 has already been run through that route: both verdicts above were emitted
-after the ruling, and PR #5993 now holds current-head verdicts in every derived namespace. It is
-parked at its spent retry budget (2/2), which is the ordinary repair-cap park — not this deadlock.
+dispatches. Lane 5718 has already been run through that route: it took the FAIL-round governance
+exercise, which caught the two defects above that the code verdict would not have, and it then went
+on past its repair cap under a driver cap-clear disclosed on the lane. It left this deadlock by that
+route, not by waiting for a rule change.
 
 ## Consequences
 
