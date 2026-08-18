@@ -94,7 +94,9 @@ predicate admits.
 ## Records
 
 Fixes [#6005](https://github.com/kamp-us/phoenix/issues/6005). Supersedes the exclusive-focus premise
-of ADR [0245](0245-campaign-scope-fence-binds-both-seams.md).
+of ADR [0245](0245-campaign-scope-fence-binds-both-seams.md). 0245 carries the reciprocal
+`amended-in-part by [0295]` status-line pointer, written by `fabrika adr amend-in-part`; its body is
+untouched, because an accepted record's decision text is immutable.
 
 Vocabulary impact: **declared focus** changes from "the single milestone in exclusive focus" to "the
 set of milestones in declared focus"; the entry in [`.glossary/TERMS.md`](../.glossary/TERMS.md) moves

@@ -1,18 +1,12 @@
 ---
 id: 0245
 title: A campaign-scope refusal binds at both fabrika seams, from one shared predicate, fabrika-only
-status: accepted
+status: amended-in-part by [0295](0295-declared-focus-is-a-set-of-milestones.md)
 date: 2026-08-09
 tags: [fabrika, pipeline, roadmap, process]
 ---
 
 # 0245 — A campaign-scope refusal binds at both fabrika seams, from one shared predicate, fabrika-only
-
-> Amended by ADR [0295](0295-declared-focus-is-a-set-of-milestones.md): the declared focus is a
-> **set** of milestones, one per `## Focus` row, and the fence admits an issue homed in any of them.
-> "One campaign at a time and everything else off the table" is retired as a premise — a multi-dev
-> repo runs several streams at once. Everything else here stands, the both-seams-one-predicate rule
-> included.
 
 **What this decides:** When we say "only the campaign in focus gets worked on," that refusal has to
 live in two places to mean anything: the picker must not offer off-campaign work, and the claim step
