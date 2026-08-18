@@ -7,7 +7,7 @@ import {compileText} from "../lane/machine.ts";
 import {CAP_ROUND, RETRY_BUDGET} from "../retry-budget.ts";
 import {type DocumentRead, runClear} from "./clear-verb.ts";
 import {AUTHORIZATION_VOID, GRANT_UNAUTHORIZED, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
-import {comments, HEAD, pull} from "./fixtures.test-support.ts";
+import {comments, HEAD, PRIOR_HEADS, pull} from "./fixtures.test-support.ts";
 
 const PULL = /^gh api repos\/o\/r\/pulls\/4310$/;
 const COMMENTS = /^gh api --paginate repos\/o\/r\/issues\/4310\/comments/;
@@ -23,12 +23,13 @@ const WORKFLOW = ".fabrika/lanes/4312/workflow.json";
 const NOW = new Date("2026-08-18T07:16:03Z");
 const AUTHORIZATION = 'Founder ruling 2026-08-18: "one more round on this one."';
 
-/** Three FAIL rounds, each its own cluster — the count at which the declared budget is spent. */
-const THREE_ROUNDS = comments(
-	{id: 1, body: `review-code: FAIL @ ${HEAD} — one`, createdAt: "2026-08-18T01:00:00Z"},
-	{id: 2, body: `review-code: FAIL @ ${HEAD} — two`, createdAt: "2026-08-18T02:00:00Z"},
-	{id: 3, body: `review-code: FAIL @ ${HEAD} — three`, createdAt: "2026-08-18T03:00:00Z"},
-);
+/** Three graded heads — three rounds, the count at which the declared budget is spent. */
+const THREE_ROUND_COMMENTS = [
+	{id: 1, body: `review-code: FAIL @ ${PRIOR_HEADS[0]} — one`, createdAt: "2026-08-18T01:00:00Z"},
+	{id: 2, body: `review-code: FAIL @ ${PRIOR_HEADS[1]} — two`, createdAt: "2026-08-18T02:00:00Z"},
+	{id: 3, body: `review-code: FAIL @ ${PRIOR_HEADS[2]} — three`, createdAt: "2026-08-18T03:00:00Z"},
+];
+const THREE_ROUNDS = comments(...THREE_ROUND_COMMENTS);
 
 const CONFIGURED = okOut('{\n\t// the founder accounts\n\t"capClearAuthors": ["@usirin"]\n}\n');
 const POSTED = (id: number): ExecResult => okOut(JSON.stringify({id, html_url: "https://x/y#c"}));
@@ -180,9 +181,7 @@ describe("runClear", () => {
 				[
 					COMMENTS,
 					comments(
-						{id: 1, body: `review-code: FAIL @ ${HEAD} — one`, createdAt: "2026-08-18T01:00:00Z"},
-						{id: 2, body: `review-code: FAIL @ ${HEAD} — two`, createdAt: "2026-08-18T02:00:00Z"},
-						{id: 3, body: `review-code: FAIL @ ${HEAD} — three`, createdAt: "2026-08-18T03:00:00Z"},
+						...THREE_ROUND_COMMENTS,
 						{id: 4, body: AUTHORIZATION, author: "usirin", createdAt: "2026-08-18T03:10:00Z"},
 						{
 							id: 5,
@@ -247,9 +246,7 @@ describe("runClear", () => {
 				[
 					COMMENTS,
 					comments(
-						{id: 1, body: `review-code: FAIL @ ${HEAD} — one`, createdAt: "2026-08-18T01:00:00Z"},
-						{id: 2, body: `review-code: FAIL @ ${HEAD} — two`, createdAt: "2026-08-18T02:00:00Z"},
-						{id: 3, body: `review-code: FAIL @ ${HEAD} — three`, createdAt: "2026-08-18T03:00:00Z"},
+						...THREE_ROUND_COMMENTS,
 						{id: 4, body: AUTHORIZATION, author: "usirin", createdAt: "2026-08-18T03:10:00Z"},
 						{
 							id: 5,

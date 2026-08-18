@@ -1805,9 +1805,9 @@ fabrika build verdicts --pr 4310 [--repo <owner/name>]
 appended past the freeze. **Each row's `body` is the finding's full text, passed through the
 content gate** — the repair loop consumes findings from here and never raw-fetches a comment,
 which is what keeps AC 3's one-door property over the repair path. `capReached` is
-`rounds >= CAP_ROUND + <cleared rounds>`, over the `CAP_ROUND` in `src/retry-budget.ts` — the
-package's one declared retry budget — plus what the founder cleared through `build clear`; it is
-computed here so the cap is a field read, not a number remembered.)
+`rounds >= <the cap>`, where the cap is the `CAP_ROUND` in `src/retry-budget.ts` — the package's one
+declared retry budget — raised to the round after the highest one the founder cleared through
+`build clear`; it is computed here so the cap is a field read, not a number remembered.)
 
 **Cleared rounds.** `clearances` lists every `cap-cleared` marker on the PR, judged. A row is
 `honoured` only when four clauses hold: its author is in `.fabrika.jsonc`'s `capClearAuthors` set at
@@ -1817,10 +1817,12 @@ configured set narrows the ACL, it never replaces one, ADR 0294), the round it n
 and is not itself a `cap-cleared` marker — the strict adjacency `grill rule` enforces, because
 without it a second bare marker rests on the first grant's own dated marker and every grant after
 the first is authorized by nothing. A row that misses carries the `reason` it missed and grants
-nothing; the ACL is read only for authors the configured set already names. Each
-honoured round adds one to the cap, counted by distinct round, so a re-posted grant buys one round
-and not two — and because a clearance binds the *round* rather than a head SHA, it survives the push
-it exists to permit and is spent the moment the next FAIL round lands. A read that cannot complete —
+nothing; the ACL is read only for authors the configured set already names. The cap is the round
+**after** the highest honoured round, so a grant stamped at any round buys exactly the round it
+names and a re-posted grant buys one round and not two — the old `CAP_ROUND + <grants>` tally held
+that only when the grant landed at exactly `CAP_ROUND`, and a grant past it was inert (#6137).
+Because a clearance binds the *round* rather than a head SHA, it survives the push it exists to
+permit and is spent the moment the next FAIL round lands. A read that cannot complete —
 the config file, a configured team's membership, a named author's permission — is `11`, never an
 empty set.
 
@@ -1830,13 +1832,16 @@ per gate namespace; bind each to the current head (`current: true|false` — a s
 visible *as stale*, never dropped, because "the FAIL is old" and "there is no FAIL" are different
 facts, #4105's class). **Native reviews are their own row kind**, not coerced into markers —
 whether a `CHANGES_REQUESTED` with no marker drives a repair is the open decision #4555; this
-verb reports the state honestly and pre-rules nothing. `rounds` counts distinct FAIL clusters by
-the 120-second gap rule computed over the *full* comment set (v1 counted off a truncated 100-
-comment snapshot, `stepR-round-count.sh` + `stepR1-verdicts.sh:48`; the off-by-one at the cap is
-#4570 — the count here is covered by a unit test at the boundary). **The rule, exactly:** take
-every FAIL-polarity marker comment, sorted by `created_at` ascending; a marker whose gap from
-the previous FAIL marker exceeds 120 seconds starts a new cluster, a gap of exactly 120 seconds
-or less continues the current one; `rounds` is the cluster count. `frozenCriteria` lists
+verb reports the state honestly and pre-rules nothing. `rounds` counts the distinct heads the FAIL
+markers name, computed over the *full* comment set (v1 counted off a truncated 100-comment
+snapshot, `stepR-round-count.sh` + `stepR1-verdicts.sh:48`). **The rule, exactly:** take every
+FAIL-polarity marker comment; the distinct head SHAs they name — matched by the same prefix rule
+that binds a verdict to a head, so an abbreviation and the full SHA are one head — are the rounds.
+A round is one graded head, so two gates grading one head are one round however far apart they
+post. A FAIL naming no readable head cannot join a head's round and is never dropped: those
+cluster among themselves by the inclusive 120-second gap (#4570's boundary, now the fallback's
+only home) and the clusters are added to the head count. Counting by wall clock was #6137 — gate
+latency read as repair effort and burned the cap at twice the real rate. `frozenCriteria` lists
 review-appended acceptance-criterion rows dated at or past `CAP_ROUND`.
 
 **`{"rows": [], ...}` on exit 0 is a proven "no verdicts", readable against the scope line's
