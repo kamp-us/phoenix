@@ -42,6 +42,17 @@ behind the pointer. **A `SKILL.md` that inlines what its contract owns is the de
 the same un-split failure §1 names: the overflow is deterministic content that should have become a
 verb, or reference that should have moved behind a pointer (§5).
 
+**The pointer's shape depends on the read it serves** (ADR
+[0291](../../../.decisions/0291-runtime-lookups-verb-served.md)). A lookup-shaped read — one
+addressable answer: an exit-code row, a grammar table, a terminal vocabulary, one section — is
+verb-served, so the `SKILL.md` names the invocation
+(`fabrika wire doc-section --heading <x> < <skill-base>/contract.md`, or a dedicated lookup verb),
+never a whole-file pointer. A judgment-shaped read — the reader must weigh the whole surface —
+keeps the whole-file pointer, and is never thinned to a partial read to save tokens: partial
+reading caused misses on judgment tasks in the measurements behind the ruling. `contract.md`
+itself stays what [cli-interface-convention Part 2](cli-interface-convention.md) says it is — the
+authoring spec; runtime lookup was never a role it was designed to carry.
+
 **There is no line count.** Concision is judged case by case against that split — never "how long is
 it", always "does this paragraph belong here or in the contract". A skill that has honoured the
 split is short as a consequence, not as a target, and shortness reached by deleting judgement is not

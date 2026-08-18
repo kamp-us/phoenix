@@ -80,8 +80,8 @@ ROUND
 ```
 
 The heading numbers the question **within the round**; the verb owns the round number and returns
-the full ids, so you never guess which round you are on. The grammar, field by field, is in
-[`contract.md`](contract.md) (`grill round`).
+the full ids, so you never guess which round you are on. The grammar, field by field, is one
+lookup away: `fabrika wire doc-section --heading "grill round" < <skill-base>/contract.md`.
 
 **`**Recommended:**` is required on every question, and it is a recommendation because it is
 labelled one.** Write it in your own voice as the option you would take and why. What it must never
@@ -130,8 +130,9 @@ marker carries, so it is reported rather than silently absent. Say so to the fou
 quietly re-asking him a question he believes he already answered.
 
 <!-- anchor: ENFORCEMENT-VS-CONVENTION --> **What is enforced, and what is only convention.** Four
-clauses decide `ruled` and all four are mechanical and fail closed ([`contract.md`](contract.md),
-`grill read` — *the four clauses*, and *what `ruled` proves, exactly*); a marker missing only the
+clauses decide `ruled` and all four are mechanical and fail closed
+(`fabrika wire doc-section --heading "grill read" < <skill-base>/contract.md` — *the four clauses*,
+and *what `ruled` proves, exactly*); a marker missing only the
 authorization reads `unattested`, which is visible and **not** a ruling. Two things are **convention,
 not enforcement**, and both are yours to hold: that the quoted authorization is a truthful record of
 what he said, and that it was given about **this** question. Neither is machine-checkable — the verb
@@ -197,7 +198,9 @@ nothing, so there is never anything to push, leave local, or remove.
 `WRITE-UNPROVEN` · `STOPPED`
 
 Which exit code seats which terminal is a total function of the code, so it lives with the codes:
-the **terminal-seating** table under the shared exit matrix in [`contract.md`](contract.md). Read it
+the **terminal-seating** table under the shared exit matrix
+(`fabrika wire doc-section --heading "Terminal seating — which code lands on which §TERM terminal" < <skill-base>/contract.md`).
+Read it
 there; `0` is disambiguated by which verb produced it and, for `grill read`, by the `frontier` token.
 
 Three judgements that table cannot make for you:
@@ -220,7 +223,8 @@ fabrika installs into repos that are not phoenix, so three surfaces must exist b
 run: a repository reachable over `gh` REST with `issues: write`, the `grilling:session` label, and
 readable collaborator permissions for a ruling's author. Each row's **when-missing** disposition —
 the closed **fail-loud** / **degrade** / **bootstrap** vocabulary every fabrika skill shares — is
-stated with the code it fires in [`contract.md`](contract.md) (*Required repo files*). The one to
+stated with the code it fires in the contract's own table
+(`fabrika wire doc-section --heading "Required repo files (verb-level)" < <skill-base>/contract.md`). The one to
 hold in mind while running: the label is **bootstrap**, and `fabrika status bootstrap
 issue-shape-markers` creates it; an unreadable ACL is `11` and every question's state is
 UNKNOWN — never `open`, never `ruled`. Nothing else is required, and that is stated rather than
