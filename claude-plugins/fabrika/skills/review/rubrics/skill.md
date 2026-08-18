@@ -43,7 +43,8 @@ and capability set — and its contract to `cli-interface-convention.md` Part 2'
 test. A restated sibling behavior (rather than an imported module or a cited section) is drift
 waiting to happen; name it.
 
-**Every contract read the diff instructs is a section read** (ADR 0296). Skill text and any spawn
-prompt in the diff point at
+**Every contract read the diff instructs is a section read** (ADR
+[0296](../../../../../.decisions/0296-contracts-are-read-by-section.md)). Skill text and any
+spawn prompt in the diff point at
 `fabrika wire doc-section --heading "…" < <skill-base>/contract.md`; text telling an agent to read,
 open, or load a `contract.md` whole is a finding, whatever the read's shape.
