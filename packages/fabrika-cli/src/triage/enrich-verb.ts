@@ -30,6 +30,7 @@ import {
 } from "./codes.ts";
 import {authoredRegion, composeBody, detect, type EnrichMode, wrapOriginal} from "./enrich.ts";
 import {legacyPreserved} from "./enrich-legacy.ts";
+import {guardTarget} from "./target-guard.ts";
 
 export interface EnrichOptions {
 	readonly issue: number;
@@ -83,6 +84,15 @@ export const runEnrich = (
 				`triage enrich: cannot read #${issue} in ${repo}: ${target.reason} — refusing to write an envelope over an original that was never read.`,
 			);
 		}
+
+		const guarded = yield* guardTarget({
+			verb: "triage enrich",
+			repo,
+			issue,
+			target: target.value,
+			env: options.env,
+		});
+		if (guarded !== null) return guarded;
 
 		const before = target.value.body;
 		const detection = detect(before, issue, legacyPreserved);

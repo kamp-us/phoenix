@@ -1,10 +1,12 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeShell, okOut} from "../fakes.test-support.ts";
+import {errOut, okOut} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import type {StdinRead} from "../io/stdin.ts";
+import {COMMENTS, claimPage, EXPIRED, guardedShell, LIVE} from "./claim-fixtures.test-support.ts";
 import {
 	BARE_AT_PATH,
+	CLAIMED_ELSEWHERE,
 	EMPTY_STDIN,
 	HUMAN_FILED,
 	LEAKED_PATH,
@@ -121,7 +123,7 @@ const runWith = (
 	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
 	overrides: Partial<typeof options> = {},
 ) => {
-	const shell = fakeShell(script);
+	const shell = guardedShell(script);
 	return Effect.runPromise(Effect.provide(runKill({...options, ...overrides}), shell.layer)).then(
 		(out) => ({out, calls: shell.calls}),
 	);
@@ -569,5 +571,60 @@ describe("runKill", () => {
 		const {out} = await runWith(happy(), {duplicateOf: 4312});
 		expect(out.code).toBe(1);
 		expect(out.stderr.at(-1)).toContain("into itself");
+	});
+});
+
+/** #5644: kill already refused a closed target; the claim half is what it was missing. */
+describe("runKill — the target guard", () => {
+	const MINE = "session-mine";
+	const THEIRS = "session-theirs";
+	const mine = {
+		CLAUDE_PIPELINE_REPO: "o/r",
+		CLAUDE_CODE_SESSION_ID: MINE,
+	} as Record<string, string | undefined>;
+
+	const guard = async (script: ReadonlyArray<readonly [RegExp, ExecResult]>) => {
+		const {out, calls} = await runWith(script, {env: mine});
+		return {out, wrote: calls.some((line) => CLOSE.test(line) || REASON_COMMENT.test(line))};
+	};
+
+	it("refuses a closed issue on 7 and writes nothing", async () => {
+		const {out, wrote} = await guard([
+			[ISSUE, issue({state: "closed"})],
+			[LABELS, labelSet],
+		]);
+		expect(out.code).toBe(ZERO_SCOPE);
+		expect(out.stderr.at(-1)).toContain("issue #4312 is already closed.");
+		expect(wrote).toBe(false);
+	});
+
+	it("refuses a live claim held by another session on 17 and writes nothing", async () => {
+		const {out, wrote} = await guard([
+			...happy(),
+			[COMMENTS, claimPage({session: THEIRS, createdAt: LIVE})],
+		]);
+		expect(out.code).toBe(CLAIMED_ELSEWHERE);
+		expect(wrote).toBe(false);
+	});
+
+	it("kills when the live claim is this session's own", async () => {
+		const {out} = await guard([
+			...happy(),
+			[COMMENTS, claimPage({session: MINE, createdAt: LIVE})],
+		]);
+		expect(out.code).toBe(0);
+	});
+
+	it("kills an issue nobody has claimed", async () => {
+		const {out} = await guard(happy());
+		expect(out.code).toBe(0);
+	});
+
+	it("kills when the only foreign claim has aged out", async () => {
+		const {out} = await guard([
+			...happy(),
+			[COMMENTS, claimPage({session: THEIRS, createdAt: EXPIRED})],
+		]);
+		expect(out.code).toBe(0);
 	});
 });

@@ -38,6 +38,7 @@ import {
 	triagedFacets,
 } from "./facets.ts";
 import {scannedLine} from "./scope.ts";
+import {guardTarget} from "./target-guard.ts";
 
 export interface ApplyOptions {
 	readonly issue: number;
@@ -150,6 +151,15 @@ export const runApply = (
 		if (target._tag === "Unknown") {
 			return unreadable(`issue #${issue}`, repo, target.reason);
 		}
+
+		const guarded = yield* guardTarget({
+			verb: "triage apply",
+			repo,
+			issue,
+			target: target.value,
+			env: options.env,
+		});
+		if (guarded !== null) return guarded;
 
 		const refusal = criteriaRefusal(issue, type, readyFor, target.value.body);
 		if (refusal !== null) return refusal;
