@@ -158,8 +158,12 @@ from the inside.
 no shell, `19` is a task whose issue cannot be resolved or is absent, `20` is zero open PRs where
 the state needs one or several where one is required. It counts a PR only when the PR **declares it
 closes** the task's issue — GitHub's own closing-issue link, not a body mention — so a PR that
-quotes the number in prose never makes `20` fire (#5805). Each is a park naming what the verb named —
-never a prompt you write by hand instead. Parallel active tasks brief and spawn in parallel.
+quotes the number in prose never makes `20` fire (#5805). An epic child's `review` brief adds three
+more, because it resolves the child's range off this tree rather than printing one the spawned shell
+re-resolves (#6023): `22` is no branch here carrying the child's commits, `25` is several of them,
+and `11` is a ref this tree cannot read — the same three facts, and the same remedies, `lane prove`
+seats on those codes. Each is a park naming what the verb named — never a prompt you write by hand
+instead. Parallel active tasks brief and spawn in parallel.
 
 **An `integrate` state is the one thing you do with your own hands.** It routes to no shell —
 `lane brief` refuses it with exit `18` — because the merge *is* the assembly the run exists to

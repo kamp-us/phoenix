@@ -13,6 +13,8 @@ import {
 	MALFORMED_RECORD,
 	NO_SHELL,
 	PR_AMBIGUOUS,
+	PROOF_ABSENT,
+	PROOF_AMBIGUOUS,
 	TASK_UNKNOWN,
 } from "./codes.ts";
 import {emitMachine} from "./emit.ts";
@@ -81,6 +83,32 @@ const EPIC_URL = "https://github.com/o/r/issues/5800";
 const CHILD_URL = "https://github.com/o/r/issues/5828";
 const EPIC_ISSUE_READ = /^gh api repos\/o\/r\/issues\/5800$/;
 const EPIC_CHILD_READ = /^gh api repos\/o\/r\/issues\/5828$/;
+
+/** The child's range as this tree holds it: the epic branch's commit, and the build branch's tip. */
+const EPIC_BASE = "58ad239e2f8b41c0d7a6935ee1c204ab5d3f9017";
+const CHILD_TIP = "81c1f160c9a24e5b0f7d3821ab6c94ef0d52a7b3";
+const CHILD_BRANCH = "build/5828-child-lane-eaf33a6f";
+const CHILD_MESSAGE = "feat(lane): resolve the child's range (#5828)";
+
+const REV = (rev: string) =>
+	new RegExp(`^git rev-parse --verify --quiet ${rev.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&")}\\^`);
+const BRANCHES = /^git for-each-ref --format=%\(refname:short\) refs\/heads$/;
+const LOG_RANGE = /^git log --format=/;
+
+/** `git log`'s framing for one commit: `<sha>\x1f<message>\x1e`. */
+const logOf = (...rows: ReadonlyArray<readonly [string, string]>): ExecResult =>
+	okOut(rows.map(([sha, message]) => `${sha}\x1f${message}\n\x1e`).join(""));
+
+/** The git reads that locate the one branch a child built, and the commits it adds. */
+const locating = (
+	branches: ReadonlyArray<string> = [CHILD_BRANCH, "main", "epic/5800"],
+	commits: ReadonlyArray<readonly [string, string]> = [[CHILD_TIP, CHILD_MESSAGE]],
+): ReadonlyArray<readonly [RegExp, ExecResult]> => [
+	[REV("epic/5800"), okOut(`${EPIC_BASE}\n`)],
+	[/^git rev-parse --verify --quiet build\//, okOut(`${CHILD_TIP}\n`)],
+	[BRANCHES, okOut(`${branches.join("\n")}\n`)],
+	[LOG_RANGE, logOf(...commits)],
+];
 
 /**
  * An epic lane in the one-PR shape, its machine emitted by `emitMachine` rather than hand-written —
@@ -418,29 +446,83 @@ describe("lane brief on an epic lane", () => {
 		expect(out.stdout).toContain(EPIC_RULES);
 		expect(out.stdout).not.toContain("range:");
 		expect(calls.some((call) => PR_CLOSERS.test(call))).toBe(false);
+		// No child branch exists yet at `build`, so the tree is never read for one.
+		expect(calls.some((call) => call.startsWith("git "))).toBe(false);
 	});
 
-	it("briefs a child's review with the range to judge and the range-verdict contract", async () => {
-		const {out, calls} = await runEpic(
-			epicLane([
-				["issue_5828", "WIP"],
-				["issue_5828", "DONE"],
-			]),
-			[
-				[EPIC_CHILD_READ, issuePayload(5828, CHILD_URL)],
-				[EPIC_ISSUE_READ, issuePayload(EPIC, EPIC_URL)],
-			],
-			{task: "issue_5828"},
-		);
+	const reviewing = (
+		script: ReadonlyArray<readonly [RegExp, ExecResult]> = locating(),
+	): ReadonlyArray<readonly [RegExp, ExecResult]> => [
+		[EPIC_CHILD_READ, issuePayload(5828, CHILD_URL)],
+		[EPIC_ISSUE_READ, issuePayload(EPIC, EPIC_URL)],
+		...script,
+	];
+
+	const atReview = () =>
+		epicLane([
+			["issue_5828", "WIP"],
+			["issue_5828", "DONE"],
+		]);
+
+	it("briefs a child's review with the range this tree resolved and the range-verdict contract", async () => {
+		const {out, calls} = await runEpic(atReview(), reviewing(), {task: "issue_5828"});
 
 		expect(out.code).toBe(0);
 		expect(readBrief(out.stdout)).toMatchObject({
 			_tag: "Found",
-			value: {state: "review", shell: "reviewer", ground: {_tag: "Epic", branch: "epic/5800"}},
+			value: {
+				state: "review",
+				shell: "reviewer",
+				ground: {
+					_tag: "EpicRange",
+					branch: "epic/5800",
+					range: {base: EPIC_BASE, tip: CHILD_TIP},
+				},
+			},
 		});
-		expect(out.stdout).toContain("range: epic/5800..HEAD");
+		expect(out.stdout).toContain(`range: ${EPIC_BASE}..${CHILD_TIP}`);
 		expect(out.stdout).toContain("range-verdict-marker");
 		expect(calls.some((call) => PR_CLOSERS.test(call))).toBe(false);
+	});
+
+	it("never prints a literal HEAD — the spawned reviewer would re-resolve it in its own worktree", async () => {
+		const {out} = await runEpic(atReview(), reviewing(), {task: "issue_5828"});
+
+		expect(out.stdout).not.toContain("HEAD");
+	});
+
+	it("refuses a child review when no branch in this tree carries the child's commits", async () => {
+		const {out} = await runEpic(atReview(), reviewing(locating(["main", "epic/5800"])), {
+			task: "issue_5828",
+		});
+
+		expect(out.code).toBe(PROOF_ABSENT);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.join("\n")).toContain("no local branch in this tree was cut for #5828");
+	});
+
+	it("refuses a child review when several branches carry the child's commits", async () => {
+		const {out} = await runEpic(
+			atReview(),
+			reviewing(locating([CHILD_BRANCH, "build/5828-second-try-deadbeef"])),
+			{task: "issue_5828"},
+		);
+
+		expect(out.code).toBe(PROOF_AMBIGUOUS);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.join("\n")).toContain("build/5828-second-try-deadbeef");
+	});
+
+	it("leaves a child review UNKNOWN when the epic branch is not in this tree", async () => {
+		const {out} = await runEpic(
+			atReview(),
+			reviewing([[REV("epic/5800"), errOut("unknown revision")]]),
+			{task: "issue_5828"},
+		);
+
+		expect(out.code).toBe(LANE_UNREADABLE);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.join("\n")).toContain("UNKNOWN");
 	});
 
 	it("briefs the epic tail's review on the one PR the run produced", async () => {

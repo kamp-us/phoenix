@@ -20,14 +20,17 @@
  * **`## Ground` carries URLs, git refs and no content.** A brief that summarised an issue would hand
  * the shell a stale contract to work from, and the shell has verbs that read the live one.
  *
- * Ground comes in three shapes because an epic run has one branch and one PR (ADR 0285): a child's
- * states have no PR at all — they build in a worktree and their review judges a commit range on the
- * epic branch — the epic's tail has that one PR plus the epic issue whose children's disclosures
- * its review reads, and every other state has one PR to read. {@link LaneGround} is that union, so
- * a brief carrying both a PR and an epic branch is not a value anyone can construct.
+ * Ground comes in four shapes because an epic run has one branch and one PR (ADR 0285): a child's
+ * states have no PR at all — they build in a worktree, and their review judges a commit range the
+ * driver's tree resolved — the epic's tail has that one PR plus the epic issue whose children's
+ * disclosures its review reads, and every other state has one PR to read. {@link LaneGround} is
+ * that union, so a brief carrying both a PR and an epic branch is not a value anyone can construct.
  */
 
+import type {CommitRange} from "../io/git.ts";
 import type {NonEmptyReadonlyArray, WireEmit, WireRead, WireReadLines} from "./format.ts";
+import type {HeadSha} from "./marker-line.ts";
+import {parseRange, renderRange} from "./range-verdict-marker.ts";
 
 declare const ARTIFACT_URL: unique symbol;
 
@@ -68,13 +71,16 @@ export const gitRef = (raw: string): GitRef | null => {
 export const epicBranch = (epic: number): GitRef => `epic/${epic}` as GitRef;
 
 /**
- * The range a child's review judges, tipped at `HEAD`.
+ * The range a child's review judges: two commits the *driver's* tree already resolved.
  *
- * The far end is the shell's own worktree head rather than a branch name this format mints: the
- * child's local branch is cut by `build branch`, which owns its spelling, and a brief naming a
- * branch nobody created would send the reviewer to read a range that does not exist.
+ * Both endpoints are concrete because the far end used to be `HEAD` — and `HEAD` is resolved by the
+ * spawned reviewer, in a worktree cut fresh from the driver's checkout, where it stands on the
+ * assembly branch rather than on the child's build branch. The range read as empty there, so the
+ * gate judged nothing and could still land a verdict (#6023). The grammar is the range-verdict
+ * marker's own, so the range a reviewer is briefed with is spelled exactly like the verdict it
+ * records over it.
  */
-export const rangeOf = (branch: GitRef): string => `${branch}..HEAD`;
+export type ReviewRange = CommitRange<HeadSha>;
 
 /** The three leaf states that route to a shell. Every other state is a refusal, never a guess. */
 export const SHELL_STATES = ["build", "review", "ship"] as const;
@@ -108,14 +114,22 @@ export const shellState = (raw: string): ShellState | null => {
  *
  * `Pull` is a single-issue lane's state — one PR to read, `null` only on `build`, where
  * construction has none yet. `Tail` is an epic lane's tail: the run's one PR, plus the epic issue
- * whose children's `build-deviations` comments the tail review reads. `Epic` is a child's state on
- * an epic lane: the epic issue, the assembly branch its worktree is cut from, and no PR, because a
- * child never opens one.
+ * whose children's `build-deviations` comments the tail review reads. `Epic` is a child's `build`:
+ * the epic issue, the assembly branch its worktree is cut from, and no PR, because a child never
+ * opens one. `EpicRange` is a child's `review`, which is that same ground plus the resolved range
+ * to judge — two tags rather than one optional field, so a review brief with no range is a value
+ * nobody can construct, and a `build` brief can never carry a half-filled one (#6023).
  */
 export type LaneGround =
 	| {readonly _tag: "Pull"; readonly pr: ArtifactUrl | null}
 	| {readonly _tag: "Tail"; readonly pr: ArtifactUrl; readonly epic: ArtifactUrl}
-	| {readonly _tag: "Epic"; readonly epic: ArtifactUrl; readonly branch: GitRef};
+	| {readonly _tag: "Epic"; readonly epic: ArtifactUrl; readonly branch: GitRef}
+	| {
+			readonly _tag: "EpicRange";
+			readonly epic: ArtifactUrl;
+			readonly branch: GitRef;
+			readonly range: ReviewRange;
+	  };
 
 export interface LaneBrief {
 	/** The lane id as the store names it — by convention the driven issue number. */
@@ -192,7 +206,9 @@ const groundFields = (brief: LaneBrief): ReadonlyArray<readonly [string, string]
 	return [
 		["epic", epic],
 		["branch", branch],
-		...(brief.state === "review" ? [["range", rangeOf(branch)] as const] : []),
+		...(brief.ground._tag === "EpicRange"
+			? [["range", renderRange(brief.ground.range)] as const]
+			: []),
 	];
 };
 
@@ -338,16 +354,22 @@ const groundOf = (fields: ReadonlyMap<string, string>, state: ShellState): Groun
 	if (state === "ship") {
 		return bad("a child state never ships — an epic run merges once, at its tail", "state");
 	}
-	const expected = state === "review" ? rangeOf(branch) : "";
-	if (rangeRaw !== expected) {
+	if (state !== "review") {
+		return rangeRaw === ""
+			? {_tag: "Ground", ground: {_tag: "Epic", epic, branch}}
+			: bad(`a "${state}" brief names a range, and nothing has landed for one to judge`, "range");
+	}
+	if (rangeRaw === "") {
+		return bad("a child review judges a range, and this brief names none", "range");
+	}
+	const range = parseRange(rangeRaw);
+	if (range === null) {
 		return bad(
-			state === "review"
-				? `a child review judges "${expected}", and this brief names "${rangeRaw}"`
-				: `a "${state}" brief names a range, and nothing has landed for one to judge`,
+			`"${rangeRaw}" is not a range of two resolved revisions — an endpoint the spawned shell re-resolves is the defect this field exists to delete (#6023)`,
 			"range",
 		);
 	}
-	return {_tag: "Ground", ground: {_tag: "Epic", epic, branch}};
+	return {_tag: "Ground", ground: {_tag: "EpicRange", epic, branch, range}};
 };
 
 /** Read a brief. Total: `Found` | `Absent` | `Malformed`. */

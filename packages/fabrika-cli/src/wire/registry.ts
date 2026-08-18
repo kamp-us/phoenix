@@ -374,14 +374,14 @@ export const registeredFormats: ReadonlyArray<WireFormat> = [
 				},
 				{
 					shape: "an epic lane's child review — the range it judges, and no PR anywhere",
-					artifact: `## Task\nlane: 5800\nroot: /checkout/.fabrika/lanes\ntask: issue_5828\nstate: review\nshell: reviewer\n## Ground\nissue: https://github.com/kamp-us/phoenix/issues/5828\nepic: https://github.com/kamp-us/phoenix/issues/5800\nbranch: epic/5800\nrange: epic/5800..HEAD\n## Rules\n${laneBrief.RULES}\n${laneBrief.EPIC_RULES}\n`,
+					artifact: `## Task\nlane: 5800\nroot: /checkout/.fabrika/lanes\ntask: issue_5828\nstate: review\nshell: reviewer\n## Ground\nissue: https://github.com/kamp-us/phoenix/issues/5828\nepic: https://github.com/kamp-us/phoenix/issues/5800\nbranch: epic/5800\nrange: 58ad239e2f8b41c0d7a6935ee1c204ab5d3f9017..81c1f160c9a24e5b0f7d3821ab6c94ef0d52a7b3\n## Rules\n${laneBrief.RULES}\n${laneBrief.EPIC_RULES}\n`,
 					values: [
 						"issue_5828",
 						"review",
 						"https://github.com/kamp-us/phoenix/issues/5828",
 						"https://github.com/kamp-us/phoenix/issues/5800",
 						"epic/5800",
-						"epic/5800..HEAD",
+						"58ad239e2f8b41c0d7a6935ee1c204ab5d3f9017..81c1f160c9a24e5b0f7d3821ab6c94ef0d52a7b3",
 					],
 				},
 			],
@@ -410,7 +410,12 @@ export const registeredFormats: ReadonlyArray<WireFormat> = [
 				},
 				{
 					drift: "an epic lane's child brief carries a PR — one run is one PR, merged at its tail",
-					artifact: `## Task\nlane: 5800\nroot: /checkout/.fabrika/lanes\ntask: issue_5828\nstate: review\nshell: reviewer\n## Ground\nissue: https://github.com/kamp-us/phoenix/issues/5828\nepic: https://github.com/kamp-us/phoenix/issues/5800\nbranch: epic/5800\nrange: epic/5800..HEAD\npr: https://github.com/kamp-us/phoenix/pull/5890\n## Rules\n${laneBrief.RULES}\n${laneBrief.EPIC_RULES}\n`,
+					artifact: `## Task\nlane: 5800\nroot: /checkout/.fabrika/lanes\ntask: issue_5828\nstate: review\nshell: reviewer\n## Ground\nissue: https://github.com/kamp-us/phoenix/issues/5828\nepic: https://github.com/kamp-us/phoenix/issues/5800\nbranch: epic/5800\nrange: 58ad239e2f8b41c0d7a6935ee1c204ab5d3f9017..81c1f160c9a24e5b0f7d3821ab6c94ef0d52a7b3\npr: https://github.com/kamp-us/phoenix/pull/5890\n## Rules\n${laneBrief.RULES}\n${laneBrief.EPIC_RULES}\n`,
+				},
+				{
+					drift:
+						"a child review's range is tipped at HEAD — the spawned reviewer resolves that in its own worktree, where it reads as empty (#6023)",
+					artifact: `## Task\nlane: 5800\nroot: /checkout/.fabrika/lanes\ntask: issue_5828\nstate: review\nshell: reviewer\n## Ground\nissue: https://github.com/kamp-us/phoenix/issues/5828\nepic: https://github.com/kamp-us/phoenix/issues/5800\nbranch: epic/5800\nrange: epic/5800..HEAD\n## Rules\n${laneBrief.RULES}\n${laneBrief.EPIC_RULES}\n`,
 				},
 				{
 					drift: "a child review names no range — the reviewer would have nothing scoped to judge",
