@@ -86,6 +86,16 @@ dir's `commondir`, per `gitrepository-layout(5)`) and equal common dirs delegate
 repository cannot be established is treated as a different one, so the refusal is what an unreadable
 answer falls back to.
 
+Row three needs one more rule to hold, because the probe asks Node and Node answers about more than
+the repo ([#5768](https://github.com/kamp-us/phoenix/issues/5768)). After the `node_modules` walk
+fails, Node falls back to `NODE_PATH` — and the pnpm-generated global `fabrika` shim exports an
+absolute `NODE_PATH` chain rooted at the checkout it was installed from. So a repo with no install
+of its own still resolved one: the global's own copy, which read as "the repo-local install is this
+copy" and swallowed the warning row three exists for. The probe therefore requires the resolved
+install to live at or under the repo root; anything outside is `absent`, whatever Node found. The
+same rule drops a copy hoisted into a directory above the repo, which is not that repo's install
+either.
+
 The property this buys is a **repo-pinned version**. phoenix carries `@kampus/fabrika-cli` in its
 root `devDependencies`, so a bare `fabrika` anywhere in a phoenix checkout runs the version this
 repo pins — and because pnpm links the workspace package, that means the **working tree**: edit
