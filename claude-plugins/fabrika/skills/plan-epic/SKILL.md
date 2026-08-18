@@ -148,7 +148,9 @@ EOF
 
 **Every classification attribute lands in the one create call** — labels, milestone, and, for a
 held child, the assignee. `--ready-for` is required and has no default: a child must never inherit
-its audience by omission. A **held** child is born `ready-for:human` *and* assigned, in the
+its audience by omission. **A home is required the same way**: pass `--milestone`, or `--label` the
+child with the parent's standing lane. A child born with neither is one the claim fence refuses at
+exit `20`, so `ledger child` refuses it at mint instead of publishing an issue nobody can pick up. A **held** child is born `ready-for:human` *and* assigned, in the
 same write: the label is the routing signal, the assignment is the enforced hold, and
 neither substitutes for the other.
 
@@ -310,6 +312,6 @@ fabrika installs into repos that are not phoenix. When-missing vocabulary: **fai
 | A triaged `type:epic` issue | the subject of the plan | **fail-loud** — `ledger open` exits `7`/`10`; the run ends `EPIC-UNPLANNABLE`. |
 | A git checkout of this repo, and a reachable `origin/main` | the plan is grounded in source, and staleness is proven rather than assumed | **fail-loud** — `13` ends `STOPPED`; an unprovable freshness read is `11`, never "probably fresh". |
 | The label taxonomy: `type:*`, `p0`/`p1`/`p2`, `status:planned`, `ready-for:human`, `ready-for:agent` | every child is born carrying them; `POST .../labels` **creates** an unknown label rather than rejecting it | **fail-loud** — `ledger child` exits `10` naming the absent label rather than minting it; taxonomy creation is the front door's. |
-| An open milestone, or a standing-lane exemption | every child needs a home; where the host repo enforces homing at its own labelling seam, this skill states the expectation and computes no second answer | **degrade** — an unhomed child reds at a homing guard where the repo has one, and nowhere where it does not. Pass `--milestone` unless the child is genuinely standing-lane work. |
+| An open milestone, or one of the standing-lane labels `wayfinder:backlog` / `axis:pipeline-hardening` | every child needs a home, because the claim fence refuses a homeless issue at exit `20` and nothing downstream can build it | **fail-loud** — `ledger child` exits `10` before it reads or creates anything, naming both remedies (#5969). Pass `--milestone` unless the child is genuinely standing-lane work, in which case `--label` it with the parent's lane; creating a milestone is the front door's. |
 | `product-development-cycle.md` at the repo root | decides whether `**Containment:**` is required on a `type:feature` child | **degrade** — absent means containment is not required; an *unreadable* probe is `11`, never "absent". |
 | Repository permissions readable for claim authorship | `build claim`'s ownership resolution is ACL-sourced | **fail-loud** — as declared for `build claim` (`fabrika wire doc-section --heading "build claim" < <build skill's base dir>/contract.md`); a failed permission read is `Unknown`, never a demotion to unclaimed. |

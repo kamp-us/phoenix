@@ -648,7 +648,7 @@ $ echo $?
 **Invocation**
 
 ```
-fabrika ledger child 4300 --title "queue view: fate loader" --type type:feature --priority p1 --ready-for agent [--assignee <login>] [--milestone <title>] [--label <name>]… <<'EOF'
+fabrika ledger child 4300 --title "queue view: fate loader" --type type:feature --priority p1 --ready-for agent [--assignee <login>] --milestone <title> [--label <name>]… <<'EOF'
 **Stories:** 1, 2
 **TDD:** yes
 **Containment:** flag (default-off)
@@ -671,7 +671,7 @@ EOF
 | `--priority` | string, one of `p0`/`p1`/`p2` | yes | — | the child's priority label; `p3` is retired, not admitted |
 | `--ready-for` | string, one of `human`/`agent` | **optional at the parser, refused in the body** | none | the child's audience; an absent value is refused on `10`, never defaulted |
 | `--assignee` | string (login) | no | none | required when `--ready-for human`; born-assignment is the enforced hold |
-| `--milestone` | string (open milestone title) | no | none | the child's home; absent mints an unhomed child the repo's homing guard will red |
+| `--milestone` | string (open milestone title) | **required unless a `--label` carries a standing lane** | none | the child's home; a call naming neither is refused on `10` before any read (#5969) |
 | `--label` | string, repeatable | no | none | any further label, applied in the same create call |
 | `--repo` | string | no | `resolveRepo`'s precedence | the repository written |
 | stdin | markdown | yes | — | the child body's fields and sections |
@@ -692,6 +692,12 @@ applied by a follow-up PATCH — and a follow-up PATCH opens a window in which t
 **no** `ready-for:` value, which is the fail-open shape the ruling forbids, where an absent label
 reads as a permissive default rather than an unknown. v1's own sibling script knows the hazard by
 name and warns that patching a fresh child "reopens the label-less-orphan window".
+
+**A home is required and is never defaulted** (#5969): the call names an open milestone, or a
+`--label` from the claim fence's standing-lane set (`STANDING_LANE_LABELS`, ADR 0208) — a child
+carrying neither is what the fence refuses at exit `20`, so the refusal moves to the mint, where
+nothing has been written yet. The lane set is *imported* from `build/scope-admission.ts`, never
+re-listed here in code: two copies is how the two seams drift into disagreeing about what a home is.
 
 **`--ready-for` is required and has no default** (#4780): a child must never inherit its audience
 by omission. **`--ready-for human` requires `--assignee`** (#4693): the label is the routing
@@ -777,6 +783,7 @@ link, deliberately** — see step 5.
 | `ledger child: --ready-for human requires --assignee — a held child is born assigned (#4693).` | 10 | refusal |
 | `ledger child: label "<name>" is absent from <repo>'s taxonomy — refusing to create it (#4285).` | 10 | refusal |
 | `ledger child: milestone "<title>" is not an open milestone of <repo>.` | 10 | refusal |
+| `ledger child: a child needs a home — pass --milestone <open milestone title>, or --label the child with the parent's standing lane (wayfinder:backlog, axis:pipeline-hardening). A homeless child is refused at the claim fence, so it can never be built (#5969).` | 10 | refusal |
 | `ledger child: --priority <v> is off the closed set (p0, p1, p2).` | 10 | refusal |
 | `ledger child: cannot read <what>: <reason> — nothing was created.` | 11 | refusal |
 | `ledger child: this session does not hold #<n>'s claim.` | 15 | refusal |
