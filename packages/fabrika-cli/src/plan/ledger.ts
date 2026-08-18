@@ -16,8 +16,13 @@
  * documentation example inside a fence set a real child's data.
  *
  * `## Dependencies` is deliberately absent from this module: it is read through the imported
- * `../build/dependencies.ts` parser, and this spec adds no second grammar for it.
+ * `../build/dependencies.ts` parser, and this spec adds no second grammar for it. The **section
+ * boundary** is imported from there for the same reason — a section ends at the next heading of
+ * equal or shallower depth, or at the first thematic break, and the two readers would silently
+ * disagree about where a ledger's last section ends if each spelled that rule itself (#5816).
  */
+
+import {isThematicBreak} from "../build/dependencies.ts";
 
 const FENCE = /^ {0,3}(```|~~~)/;
 const ATX_HEADING = /^ {0,3}(#{1,6})[ \t]+(.*?)[ \t]*#*[ \t]*$/;
@@ -78,7 +83,10 @@ export const sectionCount = (body: string, heading: string): number => {
 	return headingsIn(unfencedLines(body)).filter((h) => h.key === key).length;
 };
 
-/** A section's content lines: everything up to the next heading of the same or shallower level. */
+/**
+ * A section's content lines: everything up to the next heading of the same or shallower level, or
+ * the first thematic break, whichever comes first.
+ */
 const sectionBody = (body: string, heading: string): ReadonlyArray<LedgerLine> | null => {
 	const lines = unfencedLines(body);
 	const headings = headingsIn(lines);
@@ -86,7 +94,14 @@ const sectionBody = (body: string, heading: string): ReadonlyArray<LedgerLine> |
 	const opener = headings.find((h) => h.key === key);
 	if (opener === undefined) return null;
 	const closer = headings.find((h) => h.index > opener.index && h.level <= opener.level);
-	return lines.slice(opener.index + 1, closer?.index ?? lines.length);
+	const broken = lines.findIndex(
+		(line, index) => index > opener.index && isThematicBreak(line.text),
+	);
+	const ends = [closer?.index, broken === -1 ? undefined : broken].filter(
+		(index): index is number => index !== undefined,
+	);
+	const end = ends.length === 0 ? lines.length : Math.min(...ends);
+	return lines.slice(opener.index + 1, end);
 };
 
 export const USER_STORIES_HEADING = "User stories";

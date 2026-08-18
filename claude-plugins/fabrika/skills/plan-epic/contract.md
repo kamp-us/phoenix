@@ -217,12 +217,13 @@ it on every child and the tolerant read made "forgot" indistinguishable from "no
 **`## Dependencies` — the rendered block.** Exactly the two line forms `readTopology` parses, and
 nothing else: one `- phase <n>: #<ref>[, #<ref>…]` row per phase, phases ascending and members
 ascending within a row, then one `- #<ref> requires: #<ref>[, #<ref>…]` row per child that declares
-a prerequisite, ascending by subject. There is no `###` heading inside the section, no label column
-and no parenthesized clause — `readTopology` breaks at the first heading of any level
-(`ANY_HEADING_RE`, `packages/fabrika-cli/src/build/dependencies.ts:47,84`), so a `### Phase <n>`
-line would end the scan on the line after `## Dependencies` and the block would read back as zero
-edges: a well-formed, plausible, always-wrong answer the gate then reads as an epic every one of
-whose children is orphaned. The block ends with a trailing blank line so a later heading stays
+a prerequisite, ascending by subject. There is no `###` heading inside the section, no label column,
+no parenthesized clause and no `---` rule — `readTopology` breaks at the first heading of any level
+**or** the first thematic break (`packages/fabrika-cli/src/build/dependencies.ts`), so a `### Phase
+<n>` line would end the scan on the line after `## Dependencies` and the block would read back as
+zero edges: a well-formed, plausible, always-wrong answer the gate then reads as an epic every one
+of whose children is orphaned. The thematic break is the same boundary an appended amendment's
+separator draws, which is why one below the block leaves the block itself intact (#5816). The block ends with a trailing blank line so a later heading stays
 separated. The illustrated block above is the round trip this grammar buys — pasted into
 `readTopology` it parses to the three edges it depicts (`phase 1: #4301, #4302`, `phase 2: #4303`,
 `#4303 requires: #4301`), never the empty set, which is what lets `ledger topology` stage instead of
