@@ -10,14 +10,16 @@
  *
  * 1. a heading whose text is already exactly the conforming text and whose only defect is the
  *    level, rewritten to `###`;
- * 2. items written as plain list bullets under a block that carries no checkbox at all, each
- *    rewritten to an unchecked checkbox with its text byte-for-byte unchanged (#6001).
+ * 2. items written as an ordinary list under a block that carries no checkbox at all — plain
+ *    bullets (`- `) or ordered items (`1. `), one family per block — each rewritten to an unchecked
+ *    checkbox with its text byte-for-byte unchanged (#6001, #5981).
  *
  * Anything else is refused, never guessed — repairing drifted *text* is indistinguishable from
  * inventing a contract, and so is deciding that a prose paragraph beside the list was meant as a
- * criterion. The bullet conversion is bounded the same way from the other side: a block that
- * already carries one checkbox is left alone, because promoting the remaining bullets there would
- * *add* criteria to a contract that already says something.
+ * criterion. The item conversion is bounded the same way from the other side: a block that already
+ * carries one checkbox is left alone, because promoting the remaining items there would *add*
+ * criteria to a contract that already says something, and a block mixing the two list families is
+ * left alone because which one states the criteria is the author's answer, not this module's.
  *
  * The plan acts on the **authored region only**. The `<!-- fabrika:enriched … -->` marker (or the
  * legacy v1 envelope) is the boundary `triage enrich`'s own guards rely on, and a `##` heading down
@@ -44,17 +46,23 @@ import {MARKER_RE} from "./enrich.ts";
 /** One shape defect this module repaired, with the lines it touched. Line numbers are 1-based. */
 export type CriteriaRepair =
 	| {readonly _tag: "HeadingLevel"; readonly line: number; readonly fromLevel: number}
-	| {readonly _tag: "BulletItems"; readonly lines: NonEmptyReadonlyArray<number>};
+	| {
+			readonly _tag: "BulletItems";
+			readonly lines: NonEmptyReadonlyArray<number>;
+			readonly family: ListFamily;
+	  };
 
 /** What a repair did, for the verb's diagnostic line. */
-export const describeRepair = (repair: CriteriaRepair): string =>
-	repair._tag === "HeadingLevel"
-		? `line ${repair.line}: level ${repair.fromLevel} → ${HEADING_LEVEL}`
-		: `line${repair.lines.length === 1 ? "" : "s"} ${repair.lines.join(", ")}: ${
-				repair.lines.length
-			} plain bullet${repair.lines.length === 1 ? "" : "s"} → unchecked checkbox${
-				repair.lines.length === 1 ? "" : "es"
-			}`;
+export const describeRepair = (repair: CriteriaRepair): string => {
+	if (repair._tag === "HeadingLevel") {
+		return `line ${repair.line}: level ${repair.fromLevel} → ${HEADING_LEVEL}`;
+	}
+	const many = repair.lines.length !== 1;
+	const kind = repair.family === "bullet" ? "plain bullet" : "ordered item";
+	return `line${many ? "s" : ""} ${repair.lines.join(", ")}: ${repair.lines.length} ${kind}${
+		many ? "s" : ""
+	} → unchecked checkbox${many ? "es" : ""}`;
+};
 
 export type CriteriaRepairPlan =
 	/** The shape rewritten; `body` is the whole repaired body, verified through `read`. */
@@ -104,48 +112,90 @@ const CONFORMING_LINE = `${"#".repeat(HEADING_LEVEL)} ${HEADING_TEXT}`;
 const namedHeadings = (authored: string): ReadonlyArray<Heading> =>
 	scanHeadings(authored.split("\n")).filter((heading) => heading.text === HEADING_TEXT);
 
-/** A list item with a plain bullet marker — the shape the conversion rewrites. */
+/** A list item with a plain bullet marker. */
 const PLAIN_BULLET = /^([ \t]*[-*+][ \t]+)(.*)$/;
 
-/**
- * A line that opens some block *other* than a plain bullet — an ordered item, a blockquote, a
- * fence, a thematic break. Tested before {@link PLAIN_BULLET}, which would otherwise swallow a
- * spaced thematic break (`- - -`).
- */
-const NON_BULLET_BLOCK =
-	/^[ \t]*(?:\d{1,9}[.)][ \t]+|>|```|~~~|(?:-[ \t]*){3,}$|(?:\*[ \t]*){3,}$|(?:_[ \t]*){3,}$)/;
+/** A list item with an ordered marker — `1.` or `1)`. */
+const ORDERED_ITEM = /^([ \t]*\d{1,9}[.)][ \t]+)(.*)$/;
 
-const plainBullet = (line: string): RegExpExecArray | null =>
-	isCheckboxItem(line) || NON_BULLET_BLOCK.test(line) ? null : PLAIN_BULLET.exec(line);
+/**
+ * A line that opens a block no list family owns — a blockquote, a fence, a thematic break. Tested
+ * before {@link PLAIN_BULLET}, which would otherwise swallow a spaced thematic break (`- - -`).
+ */
+const FOREIGN_BLOCK = /^[ \t]*(?:>|```|~~~|(?:-[ \t]*){3,}$|(?:\*[ \t]*){3,}$|(?:_[ \t]*){3,}$)/;
+
+/**
+ * Which marker grammar the section's items are written in.
+ *
+ * The conversion is per-family and never mixed. Both families rewrite to the one checkbox shape the
+ * reader recognises (`- [ ] `), so an ordered item loses its number — that is the repair, not a
+ * side effect, because `wire/acceptance-criteria.ts`'s `CHECKBOX_ITEM` matches `-`/`*` only and an
+ * ordered marker can carry no checkbox at all. A section mixing the two is refused rather than
+ * normalised: which grammar the author meant is exactly the guess this module does not make.
+ */
+export type ListFamily = "bullet" | "ordered";
+
+const familyPattern = (family: ListFamily): RegExp =>
+	family === "bullet" ? PLAIN_BULLET : ORDERED_ITEM;
+
+/** This family's item on this line, or `null` — a checkbox and a foreign block are never one. */
+const listItem = (line: string, family: ListFamily): RegExpExecArray | null =>
+	isCheckboxItem(line) || FOREIGN_BLOCK.test(line) ? null : familyPattern(family).exec(line);
+
+/**
+ * A line that opens a block of its own beside `family`'s items — a foreign block, or the *other*
+ * family's marker. The reader closes the open criterion at each, so converting around one would
+ * ship a list whose middle holds text no grader reads (#6001, review round 1).
+ */
+const foreignToFamily = (line: string, family: ListFamily): boolean =>
+	FOREIGN_BLOCK.test(line) ||
+	(!isCheckboxItem(line) && familyPattern(family === "bullet" ? "ordered" : "bullet").test(line));
 
 type BulletConversion =
 	| {
 			readonly _tag: "Converted";
 			readonly lines: ReadonlyArray<string>;
 			readonly converted: NonEmptyReadonlyArray<number>;
+			readonly family: ListFamily;
 	  }
 	| {readonly _tag: "Refused"; readonly reason: string};
 
 /**
- * Rewrite every plain bullet under `heading` to an unchecked checkbox, or prove the section is not
- * a plain list.
+ * Which family the section's items are written in, or the proof that the question has no one answer.
  *
- * **The strict window is the list itself** — the first plain bullet through the last one. Outside
- * it the section is left alone, because an enriched body's authored region ends on the `---` the
- * envelope writes and a preamble sentence under the heading is ordinary prose; refusing on either
- * would refuse nearly every body this repair exists for. Inside it, anything that is not a bullet,
- * a blank line, or an open bullet's lazy continuation is a refusal naming what it read: the reader
- * closes the criterion at each of those, so converting around one would ship a list whose middle
- * holds text no grader ever reads. **A line that opens a block of its own is not a continuation**
- * even standing directly under a bullet with no blank line between them — gating that refusal on the
- * open bullet made it reachable only after a blank line, so `1. ordered` under `- one` converted
- * and shipped exactly the list this rule exists to refuse (#6001, review round 1).
+ * Thematic breaks and checkbox items are excluded before counting, so `- - -` never votes and a
+ * section already carrying checkboxes is not classified at all (its caller refuses first).
+ */
+const familyOf = (section: ReadonlyArray<string>): ListFamily | null | "mixed" => {
+	const bullets = section.some((line) => listItem(line, "bullet") !== null);
+	const ordered = section.some((line) => listItem(line, "ordered") !== null);
+	if (bullets && ordered) return "mixed";
+	if (bullets) return "bullet";
+	return ordered ? "ordered" : null;
+};
+
+/**
+ * Rewrite every list item under `heading` to an unchecked checkbox, or prove the section is not one
+ * plain list.
+ *
+ * **The strict window is the list itself** — the first item through the last. Outside it the
+ * section is left alone, because an enriched body's authored region ends on the `---` the envelope
+ * writes and a preamble sentence under the heading is ordinary prose; refusing on either would
+ * refuse nearly every body this repair exists for. Inside it, anything that is not an item of the
+ * section's own family, a blank line, or an open item's lazy continuation is a refusal naming what
+ * it read: the reader closes the criterion at each of those, so converting around one would ship a
+ * list whose middle holds text no grader ever reads. **A line that opens a block of its own is not
+ * a continuation** even standing directly under an item with no blank line between them — gating
+ * that refusal on the open item made it reachable only after a blank line, so `1. ordered` under
+ * `- one` converted and shipped exactly the list this rule exists to refuse (#6001, review round 1).
+ * That case is now a `mixed` refusal one step earlier, and the guard stays because the two families
+ * can still meet inside the window without either being the section's own.
  *
  * A checkbox item **anywhere** in the section refuses regardless of the window: the block already
- * states criteria, and promoting the bullets beside them would add to what it says rather than fix
+ * states criteria, and promoting the items beside them would add to what it says rather than fix
  * how it says it.
  *
- * A **nested** sub-bullet is converted like any other and becomes its own criterion. That is the
+ * A **nested** sub-item is converted like any other and becomes its own criterion. That is the
  * reader's own semantics — it flattens an indented checkbox item the same way — so the conversion
  * carries it rather than inventing a nesting rule the grader does not have.
  */
@@ -155,12 +205,25 @@ const convertBullets = (lines: ReadonlyArray<string>, heading: Heading): BulletC
 	if (checkbox !== -1) {
 		return {
 			_tag: "Refused",
-			reason: `line ${heading.line + checkbox + 1} is already a checkbox item ("${section[checkbox]?.trim()}") — promoting the bullets beside it would add criteria to a block that already states some`,
+			reason: `line ${heading.line + checkbox + 1} is already a checkbox item ("${section[checkbox]?.trim()}") — promoting the items beside it would add criteria to a block that already states some`,
 		};
 	}
-	const bullets = section.flatMap((line, offset) => (plainBullet(line) === null ? [] : [offset]));
-	const first = bullets[0];
-	const last = bullets.at(-1);
+	const family = familyOf(section);
+	if (family === "mixed") {
+		return {
+			_tag: "Refused",
+			reason:
+				"the section mixes plain bullets and ordered items — which grammar states the criteria is undecidable",
+		};
+	}
+	if (family === null) {
+		return {_tag: "Refused", reason: "the section under the heading holds no list item to convert"};
+	}
+	const items = section.flatMap((line, offset) =>
+		listItem(line, family) === null ? [] : [offset],
+	);
+	const first = items[0];
+	const last = items.at(-1);
 	if (first === undefined || last === undefined) {
 		return {_tag: "Refused", reason: "the section under the heading holds no list item to convert"};
 	}
@@ -176,22 +239,22 @@ const convertBullets = (lines: ReadonlyArray<string>, heading: Heading): BulletC
 			open = false;
 			continue;
 		}
-		const bullet = plainBullet(line);
-		if (bullet !== null) {
-			const marker = bullet[1] ?? "";
-			const text = bullet[2] ?? "";
+		const item = listItem(line, family);
+		if (item !== null) {
+			const marker = item[1] ?? "";
+			const text = item[2] ?? "";
 			if (text.trim() === "") {
 				return {_tag: "Refused", reason: `line ${at} is a list item carrying no text ("${line}")`};
 			}
-			rewritten[index] = `${marker}[ ] ${text}`;
+			// An ordered marker carries no checkbox the reader recognises, so the family's marker is
+			// replaced by the one bullet shape `CHECKBOX_ITEM` matches; a bullet keeps its own.
+			const indent = /^[ \t]*/.exec(marker)?.[0] ?? "";
+			rewritten[index] = family === "bullet" ? `${marker}[ ] ${text}` : `${indent}- [ ] ${text}`;
 			converted.push(at);
 			open = true;
 			continue;
 		}
-		// A line that opens a block of its own is never a lazy continuation, so `open` must not shield
-		// it: the reader closes the criterion at it either way, and converting around it would ship a
-		// list whose middle holds text no grader reads.
-		if (!open || NON_BULLET_BLOCK.test(line)) {
+		if (!open || foreignToFamily(line, family)) {
 			return {
 				_tag: "Refused",
 				reason: `line ${at} sits between the list's items and is not one ("${line.trim()}")`,
@@ -202,7 +265,7 @@ const convertBullets = (lines: ReadonlyArray<string>, heading: Heading): BulletC
 	if (head === undefined) {
 		return {_tag: "Refused", reason: "the section under the heading holds no list item to convert"};
 	}
-	return {_tag: "Converted", lines: rewritten, converted: [head, ...rest]};
+	return {_tag: "Converted", lines: rewritten, converted: [head, ...rest], family};
 };
 
 /**
@@ -273,7 +336,7 @@ export const planRepair = (
 		}
 		lines = conversion.lines;
 		converted = conversion.converted;
-		repairs.push({_tag: "BulletItems", lines: conversion.converted});
+		repairs.push({_tag: "BulletItems", lines: conversion.converted, family: conversion.family});
 	}
 
 	const repaired = `${lines.join("\n")}${preserved}`;
@@ -325,3 +388,27 @@ export const planRepair = (
 	}
 	return {_tag: "Repaired", body: repaired, repairs: [head, ...rest], criteria};
 };
+
+/**
+ * The disclosure comment one repaired body carries.
+ *
+ * An in-place edit of a filed body leaves no trace — GitHub keeps no issue-body history — so the
+ * only record that the bytes moved is a comment saying so. The founder blessed the in-place edit on
+ * exactly that condition (#5981, ruling of 2026-08-18): one comment per edited issue, naming every
+ * repair by line and stating that no criterion's text moved. It is composed here rather than at the
+ * verb so the wording is unit-tested beside the plan it describes.
+ */
+export const disclosureComment = (
+	repairs: NonEmptyReadonlyArray<CriteriaRepair>,
+	criteria: NonEmptyReadonlyArray<AcceptanceCriterion>,
+): string =>
+	[
+		"`triage repair-criteria` repaired this body's acceptance-criteria block in place.",
+		"",
+		...repairs.map((repair) => `- ${describeRepair(repair)}`),
+		"",
+		`The block now reads back ${criteria.length} criteri${criteria.length === 1 ? "on" : "a"} through ` +
+			"`packages/fabrika-cli/src/wire/acceptance-criteria.ts`. Only the block's shape moved — every " +
+			"criterion's text and checked state is byte-for-byte what this body already carried, and nothing " +
+			"outside the block was touched.",
+	].join("\n");

@@ -387,14 +387,20 @@ const repairCriteria = leafCommand(
 				"repair every repairable open issue in one run instead of one issue, with a per-issue outcome line",
 			),
 		),
+		dryRun: Flag.boolean("dry-run").pipe(
+			Flag.withDescription(
+				"plan every issue and write nothing — a repairable issue answers `would-repair` with the repairs it would make, so the blast radius is reviewable before the first body is written",
+			),
+		),
 		repo: repoFlag,
 		json: jsonFlag,
 	},
-	Effect.fn(function* ({issue, sweep, repo, json}) {
+	Effect.fn(function* ({issue, sweep, dryRun, repo, json}) {
 		yield* emit(
 			yield* runRepairCriteria({
 				issue: Option.getOrNull(issue),
 				sweep,
+				dryRun,
 				repo: Option.getOrNull(repo),
 				json,
 				env: process.env,
@@ -404,7 +410,7 @@ const repairCriteria = leafCommand(
 ).pipe(
 	Command.withShortDescription("Repair an acceptance-criteria block's shape, mechanically."),
 	Command.withDescription(
-		'Rewrite an acceptance-criteria block\'s shape: a level-drifted "## Acceptance criteria" heading to the conforming "### Acceptance criteria", and — when the block carries no checkbox at all — its plain list bullets to unchecked checkboxes, each item\'s text byte-for-byte unchanged. Authored region only, preserved originals byte-for-byte untouched, the repair pre-verified through the wire read before anything is written. One issue by number, or --sweep for every open issue with one `<repaired|conforming|no-block|refused|moved>\\t<number>` line each; a sweep re-reads each issue immediately before its write and answers `moved` instead of writing when the body changed after the board snapshot. Only a pure shape rewrite on the exact heading text is repaired; a drifted heading text, a block mixing prose or another block into the list, an empty item, a block that already carries a checkbox beside its bullets, and a converted bullet the reader counts no criterion at are all refused, never guessed — a `Repaired` plan reads back exactly one criterion per line it rewrote. Exits 7 (issue absent, closed, or a pull request), 8 (the PATCH failed — UNKNOWN), 9 (read-back mismatch), 11 (an issue or the open-issue list could not be read), 14 (not mechanically repairable — the refusal names what it read). Example: fabrika triage repair-criteria 5726',
+		'Rewrite an acceptance-criteria block\'s shape: a level-drifted "## Acceptance criteria" heading to the conforming "### Acceptance criteria", and — when the block carries no checkbox at all — its plain list bullets to unchecked checkboxes, each item\'s text byte-for-byte unchanged. Authored region only, preserved originals byte-for-byte untouched, the repair pre-verified through the wire read before anything is written. One issue by number, or --sweep for every open issue with one `<repaired|conforming|no-block|refused|moved|would-repair>\\t<number>` line each; a sweep re-reads each issue immediately before its write and answers `moved` instead of writing when the body changed after the board snapshot. --dry-run plans everything and writes nothing, answering `would-repair` with the repairs it would make, so the set of bodies about to be edited is reviewable first. Every repaired body gets one disclosure comment naming its repairs, posted after the read-back — an in-place edit of a filed body GitHub keeps no history of leaves no other record. Only a pure shape rewrite on the exact heading text is repaired; a drifted heading text, a block mixing prose or another block into the list, an empty item, a block that already carries a checkbox beside its bullets, and a converted bullet the reader counts no criterion at are all refused, never guessed — a `Repaired` plan reads back exactly one criterion per line it rewrote. Exits 7 (issue absent, closed, or a pull request), 8 (the PATCH failed — UNKNOWN), 9 (read-back mismatch), 11 (an issue or the open-issue list could not be read), 14 (not mechanically repairable — the refusal names what it read). Example: fabrika triage repair-criteria 5726',
 	),
 );
 
