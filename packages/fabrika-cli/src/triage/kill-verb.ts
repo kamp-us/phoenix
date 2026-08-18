@@ -42,6 +42,7 @@ import {
 } from "./codes.ts";
 import {OPERATOR_ACCOUNTS_ENV, provenanceOf, resolveOperatorAccounts} from "./provenance.ts";
 import {scannedLine} from "./scope.ts";
+import {guardTarget} from "./target-guard.ts";
 
 /** The label a kill is audited by. Its absence in the repo is a zero-scope refusal, not a create. */
 export const KILL_LABEL = "closed-by-triage";
@@ -111,9 +112,14 @@ export const runKill = (
 				`triage kill: cannot read #${issue} in ${repo}: ${target.reason} — the provenance test has no evidence; refusing to close on a body that was never read.`,
 			);
 		}
-		if (target.value.state === "closed") {
-			return refuse(ZERO_SCOPE, `triage kill: issue #${issue} is already closed.`);
-		}
+		const guarded = yield* guardTarget({
+			verb: "triage kill",
+			repo,
+			issue,
+			target: target.value,
+			env: options.env,
+		});
+		if (guarded !== null) return guarded;
 
 		const operators = resolveOperatorAccounts(options.env);
 		const provenance = provenanceOf(target.value, operators);

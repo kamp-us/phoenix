@@ -26,6 +26,12 @@ fabrika triage claim $issue_number
 
 Done when it printed `won` — that means this session holds it; on anything else, move on.
 
+**That rule has teeth now.** Every verb below that writes — `enrich`, `apply`, `park`, `kill`,
+`split` — re-reads the claim before its first write and refuses on `17` when a live marker names
+another session, so proceeding on a `lost` no longer overwrites the winner's work; it just fails.
+The same re-read refuses a closed target on `7`. Neither refusal is overridable, and a comment read
+that fails is `11` — never a pass.
+
 ## 2 — Read the issue, then read the code it is about
 
 Never classify from the title. Read the body, then read enough of the repo to say what this is about

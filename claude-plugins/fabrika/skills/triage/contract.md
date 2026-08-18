@@ -160,6 +160,7 @@ or the search index could not be read
 | `13` | refused: agent-filed and close-eligible, but the kill is unconfirmed (ADR 0159) | — | — | — | — | — | — | — | — | ✓ |
 | `15` | refused: the body this verb composed carries an acceptance-criteria block its registered wire reader classifies `Malformed` (ADR 0288) | — | — | — | — | — | ✓ | — | — | — |
 | `16` | refused: `--ready-for agent` over a live body whose acceptance-criteria block the wire reader does not answer `Found` on — every type but `epic` | — | — | — | — | — | — | ✓ | — | — |
+| `17` | refused: a live claim marker on the target names a session other than this one | — | — | — | — | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `127` | the verb never ran (unresolved binary) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 
 **This matrix owns what a code *means*; the per-verb tables own what *triggers* it.** Every verb in
@@ -409,6 +410,18 @@ unset the verb exits `1` rather than posting an unattributable marker.
 **Resolution.** Post this session's marker, re-read all markers on the issue, discard any older than
 `--ttl-minutes`, and the **earliest surviving marker wins**. `won` requires a positive proof that the
 winner is this session; every unresolvable state answers `lost`, never `won`.
+
+**The claim binds, and every mutating verb is what makes it bind.** `split`, `enrich`, `apply`,
+`park` and `kill` each re-read the markers on their target immediately before their first write, and
+refuse on `17` when a live one names another session — the check reuses this verb's own reader and
+resolver, so there is one marker grammar. Holding **no** marker still passes: an unclaimed issue is
+the ordinary first-triage case, and demanding one would refuse every existing caller. The same
+re-read refuses a closed target on `7`, and a comment read that fails is `11`. Before, the protocol
+was advisory at exactly the point it needed to bite: on 2026-08-15 a session that had read `lost`
+ran `enrich` anyway and replaced the winner's authored body
+([#5644](https://github.com/kamp-us/phoenix/issues/5644), on
+[#5642](https://github.com/kamp-us/phoenix/issues/5642)). There is no override flag — nothing in that
+incident needed one, and a flag added before a real need is a flag agents learn to pass reflexively.
 
 **The marker has a lifecycle, and both ends of it are specified.** This is the one verb here that
 *is* a race protocol, so leaving either end to an implementer's judgment would let the protocol

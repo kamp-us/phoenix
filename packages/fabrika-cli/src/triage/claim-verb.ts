@@ -33,7 +33,7 @@ import {
 import {PRECONDITION_UNKNOWN, READBACK_MISMATCH, WRITE_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {scannedLine} from "./scope.ts";
 
-export const DEFAULT_TTL_MINUTES = 60;
+export {DEFAULT_TTL_MINUTES} from "./claim.ts";
 
 export interface ClaimOptions {
 	readonly issue: number;

@@ -23,6 +23,7 @@ import {PRECONDITION_UNKNOWN, READBACK_MISMATCH, WRITE_UNKNOWN, ZERO_SCOPE} from
 import {applyChanges} from "./facet-writes.ts";
 import {parkedFacets, planReconcile, renderShape, shapeViolations} from "./facets.ts";
 import {scannedLine} from "./scope.ts";
+import {guardTarget} from "./target-guard.ts";
 
 const SURFACE: AuthoredSurface = {
 	verb: "triage park",
@@ -76,6 +77,15 @@ export const runPark = (
 			return refuse(ZERO_SCOPE, `triage park: issue #${issue} not found in ${repo}.`);
 		}
 		if (target._tag === "Unknown") return unreadable(`issue #${issue}`, repo, target.reason);
+
+		const guarded = yield* guardTarget({
+			verb: "triage park",
+			repo,
+			issue,
+			target: target.value,
+			env: options.env,
+		});
+		if (guarded !== null) return guarded;
 
 		const vocabulary = yield* listLabels(repo);
 		if (vocabulary._tag === "Failure") return unreadable("the label set", repo, vocabulary.reason);
