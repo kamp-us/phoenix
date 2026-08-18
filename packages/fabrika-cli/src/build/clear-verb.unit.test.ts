@@ -211,7 +211,7 @@ describe("runClear", () => {
 		expect(parsed.cap).toBe(CAP_ROUND + 2);
 	});
 
-	/** A committed set narrows the ACL; it never stands in for one (ADR 0055, ADR 0292). */
+	/** A committed set narrows the ACL; it never stands in for one (ADR 0055, ADR 0294). */
 	it("refuses a configured account that resolves below write at the ACL", async () => {
 		const {outcome, calls} = await run([
 			[PULL, pull({number: 4310, base: {ref: "main"}})],

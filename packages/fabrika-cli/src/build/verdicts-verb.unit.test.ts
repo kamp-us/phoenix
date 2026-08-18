@@ -287,7 +287,7 @@ describe("runVerdicts", () => {
 			expect(parsed.capReached).toBe(true);
 		});
 
-		/** A committed set narrows the ACL; it never stands in for one (ADR 0055, ADR 0292). */
+		/** A committed set narrows the ACL; it never stands in for one (ADR 0055, ADR 0294). */
 		it("refuses a configured author who resolves below write at the ACL", async () => {
 			const out = await run([
 				[PULL, PR_ON_MAIN],

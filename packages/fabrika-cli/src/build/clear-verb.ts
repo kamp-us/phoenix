@@ -6,7 +6,7 @@
  * `write+` at GitHub's ACL, the PR is open, its budget is actually spent, and the quoted
  * authorization is present and dated. A bare stamp is void (#4938), which is why `--authorization`
  * is required rather than inferred; the ACL clause is ADR 0055's, which is why the configured set
- * narrows the ACL rather than replacing it (ADR 0292).
+ * narrows the ACL rather than replacing it (ADR 0294).
  *
  * **Write ordering is an invariant, not an implementation detail** — the same one `grill rule`
  * holds. The authorization comment lands first and the marker second: an interrupted run that wrote

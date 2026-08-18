@@ -1,12 +1,12 @@
 ---
-id: 0292
+id: 0294
 title: A `.fabrika.jsonc` authority set narrows the live repo ACL, it never replaces one
 status: accepted
 date: 2026-08-18
 tags: [fabrika, config, security, pipeline, plugin-portability]
 ---
 
-# 0292 — A `.fabrika.jsonc` authority set narrows the live repo ACL, it never replaces one
+# 0294 — A `.fabrika.jsonc` authority set narrows the live repo ACL, it never replaces one
 
 **What this decides:** when a fabrika verb reads *who* may do a privileged thing out of the repo's
 `.fabrika.jsonc`, that configured set is a narrowing on top of a live `write+` ACL read, never a

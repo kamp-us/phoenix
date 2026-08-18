@@ -15,7 +15,7 @@
  * Clause 3 is ADR 0055 applied: the committed file says whom the repo *nominates*, and the ACL says
  * who may actually act, so the two are intersected and a login with no collaboration clears nothing.
  * A committed list alone has no author gate, which is the thing 0055 supersedes 0051 to forbid; ADR
- * 0292 records why the file is nevertheless the place the nomination is written down.
+ * 0294 records why the file is nevertheless the place the nomination is written down.
  *
  * Every miss is a row carrying its reason rather than a dropped marker: an operator who posted a
  * void grant must be able to see it was void, and a silently dropped one reads as a PR nobody ever

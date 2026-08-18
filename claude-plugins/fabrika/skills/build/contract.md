@@ -1608,7 +1608,7 @@ computed here so the cap is a field read, not a number remembered.)
 **Cleared rounds.** `clearances` lists every `cap-cleared` marker on the PR, judged. A row is
 `honoured` only when four clauses hold: its author is in `.fabrika.jsonc`'s `capClearAuthors` set at
 the PR's **base** ref, that author holds `write+` at the repository ACL read live (ADR 0055 — the
-configured set narrows the ACL, it never replaces one, ADR 0292), the round it names is at or past
+configured set narrows the ACL, it never replaces one, ADR 0294), the round it names is at or past
 `CAP_ROUND`, and a dated authorization comment from that same author sits **immediately before** it
 and is not itself a `cap-cleared` marker — the strict adjacency `grill rule` enforces, because
 without it a second bare marker rests on the first grant's own dated marker and every grant after
@@ -1716,7 +1716,7 @@ fields are the landed grant's, not this run's.
 **Who may grant** — an account that is **both** named by `.fabrika.jsonc`'s `capClearAuthors`, read
 at the PR's **base** ref so a PR cannot widen the set that clears its own cap, **and** resolved to
 `write+` at the repository ACL at the moment it runs. The configured set narrows the ACL, it never
-replaces one (ADR 0292): a committed file has no author gate (ADR 0055), so widening the file grants
+replaces one (ADR 0294): a committed file has no author gate (ADR 0055), so widening the file grants
 nothing to an account with no collaboration. Entries are `@user` or `@org/team`, both as GitHub
 writes them; a team is expanded through its membership, and a membership or permission that cannot
 be read is `11`, never a grant and never a refusal. An absent file, an absent key, an empty array and
@@ -1796,7 +1796,7 @@ $ fabrika build clear --pr 5953 --authorization authorization.md
 - #4938 — a bare stamp is void; the quoted, dated authorization is what a ruling means, and it must
   be the comment immediately before the marker.
 - #981 — repo configuration is read at the base ref, never from the PR that would change it.
-- ADR 0055 / ADR 0292 — authority is the live ACL's; the configured set narrows it, never replaces it.
+- ADR 0055 / ADR 0294 — authority is the live ACL's; the configured set narrows it, never replaces it.
 
 ---
 
