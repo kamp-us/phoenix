@@ -85,6 +85,9 @@ jobs:
       # On a dispatched run the `mergebase` step is skipped, dorny falls back to its
       # default-branch merge-base basis, and the filter outputs stay wide — but the Release PR
       # is the one PR nobody re-reads before merging, so the full gate is what it gets (#5718).
+      # `e2e_required` is the one expression where a dispatch still reads the path filter
+      # rather than ORing past it; its own block says why, and it is a widening there too —
+      # no event may make that gate not-required on its own.
       check_required: ${{ github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch' || steps.filter.outputs.code == 'true' }}
       # `worker_relevant != 'false'` (issue #1014) is ANDed in LAST so it can only
       # REMOVE an integration run, never add one: a PR whose diff is provably confined
@@ -143,17 +146,27 @@ jobs:
       # batch (→ green legit-skip in ci-required) without losing PR-time coverage.
       # The pull_request-context requiredness below is unchanged.
       #
-      # `workflow_dispatch` is left out for the IDENTICAL reason (#5718): deploy.yml has no
-      # dispatch trigger either, so a dispatched run would await a preview no job will ever
-      # post, time out, and red `ci-required` on the Release PR. The coverage lost is nil —
-      # a Release PR's diff is package.json versions, per-package CHANGELOGs and the
-      # release manifest, none of which appear in the `e2e:` path set, so this job skips on
-      # a `pull_request` run of that PR too.
+      # `workflow_dispatch` DOES ride along, unlike `merge_group` (#5718). The event name was
+      # once ANDed in at the top level, which made `e2e_required` false on EVERY dispatched
+      # run whatever the diff touched — so `gh workflow run ci.yml --ref <branch>` posted a
+      # green `ci-required` at a PR's own head with the e2e gate skipped as not-applicable,
+      # the silent no-op ADR 0092 forbids. The event now only chooses WHICH trust check
+      # applies: on a dispatch the `pull_request`-only fork/author guard is dropped (raising
+      # one already requires write access, the same argument `integration_required`'s
+      # merge_group/dispatch arm above makes), and the path filter plus worker-relevance
+      # decide required-ness exactly as they do on a PR run. A Release PR's diff — versions,
+      # CHANGELOGs, the release manifest — matches no `e2e:` path, so that run still skips on
+      # the filter, which is the same legitimate not-applicable PASS a `pull_request` run of
+      # it gets. A dispatched run whose diff DOES hit the `e2e:` paths runs the job and,
+      # since deploy.yml has no dispatch trigger, finds no preview to test: the await step
+      # fails and `ci-required` goes red. Red is the correct answer there — a dispatch may
+      # not launder a missing e2e run into a pass.
       e2e_required: >-
         ${{ steps.filter.outputs.e2e == 'true' &&
             (steps.worker-relevance.outputs.worker_relevant || 'true') != 'false' &&
-            github.event_name == 'pull_request' &&
-            contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association) }}
+            (github.event_name == 'workflow_dispatch' ||
+             (github.event_name == 'pull_request' &&
+              contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association))) }}
       # `packages-tests` runs the workspace `packages/**` vitest suites (#760). Its
       # single-sourced required-ness is JUST the `packages` path filter — the suites
       # are creds-free node-pool unit runs (no fork/author guard, unlike
@@ -903,9 +916,10 @@ jobs:
     name: e2e (reads + authed + flows, blocking)
     needs: changes
     # Run-ness AND required-ness single-sourced (#786): `changes.e2e_required` mirrors
-    # the EXACT inputs this `if:` inlined — `e2e-path && pull_request && author-allowed`
-    # — and `ci-required` reads the same output. A fork/non-author or non-e2e-path PR
-    # has `e2e_required == false`, so its skip stays a legitimate not-applicable PASS.
+    # the EXACT inputs this `if:` inlined — `e2e-path && (dispatch || (pull_request &&
+    # author-allowed))` — and `ci-required` reads the same output. A fork/non-author or
+    # non-e2e-path PR has `e2e_required == false`, so its skip stays a legitimate
+    # not-applicable PASS.
     if: needs.changes.outputs.e2e_required == 'true'
     runs-on: ubuntu-latest
     # Hang backstop (#660): the old `playwright install` hang stalled this job ~80min

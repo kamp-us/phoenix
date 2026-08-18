@@ -1,8 +1,11 @@
 # Derives each publishable package's next version from conventional commits and parks
 # the answer in a standing Release PR (ADR 0239). Merging that PR is the human release
-# act: it tags `<component>-v<version>`, the tag creates the GitHub Release, and the
-# `release: published` event is what fires `publish.yml`. Nothing here publishes — this
-# workflow has no registry credential and release-please has no publish path.
+# act: it tags `<component>-v<version>` and the tag creates the GitHub Release. Publishing
+# is always `publish.yml`, and it has two entrances (ADR 0292): the `release: published`
+# event on a human-cut release, and this workflow's dispatch on a bot-cut one — because a
+# release created with `secrets.GITHUB_TOKEN` raises no event that starts a run. This
+# workflow holds no registry credential and release-please has no publish path of its own,
+# but it IS what starts the publish for every release it cuts.
 #
 # Routing is by CHANGED FILE PATH, not by commit scope (ADR 0239 §1): a commit is
 # assigned to a package root by the files it touched, so `fix(pipeline): …` still bumps
@@ -40,7 +43,8 @@ on:
 
 # release-please opens/updates the Release PR and creates releases + tags on merge.
 # No `id-token` — this workflow never touches a registry; `publish.yml` mints the OIDC
-# credential on the release event.
+# credential in its own run, whether that run came from the release event or from the
+# dispatch below.
 permissions:
   contents: write
   pull-requests: write
@@ -277,7 +281,8 @@ jobs:
             echo
             echo "Tags: \`${PIPELINE_CLI_TAG:-none}\` / \`${FABRIKA_CLI_TAG:-none}\`"
             echo
-            echo "Publishing is \`publish.yml\` on the \`release: published\` event — not this workflow."
+            echo "Publishing is \`publish.yml\`, dispatched by this run at each tag above (ADR 0292)."
+            echo "A human-cut release reaches the same workflow on the \`release: published\` event instead."
           } >> "$GITHUB_STEP_SUMMARY"
 
   # #5946's second half: this workflow was red on twelve consecutive pushes and nobody
