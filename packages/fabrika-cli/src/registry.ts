@@ -21,6 +21,7 @@ import {glossaryCommand} from "./glossary/command.ts";
 import {governanceCommand} from "./governance/command.ts";
 import {graduateCommand} from "./graduate/command.ts";
 import {grillCommand} from "./grill/command.ts";
+import {guardCommand} from "./guard/command.ts";
 import {handoffCommand} from "./handoff/command.ts";
 import {healCiCommand} from "./heal-ci/command.ts";
 import {hookCommand} from "./hook/command.ts";
@@ -52,6 +53,7 @@ export const registeredGroups: ReadonlyArray<VerbGroup> = [
 	governanceCommand,
 	graduateCommand,
 	grillCommand,
+	guardCommand,
 	handoffCommand,
 	healCiCommand,
 	hookCommand,

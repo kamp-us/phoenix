@@ -5,8 +5,8 @@ name: readme-guard
 # two packages drifted README-less (ci-required, worker-relevance) — the same
 # silent-drift class as the schema-mirror (#859) and node:sqlite (#930) incidents.
 # This job scopes to real workspace members (dirs with a package.json) so it ignores
-# dead-shell dirs, and fails closed if it scans zero members (ADR 0092). It reuses
-# pipeline-cli's `readme-guard check` mode — the scan lives once in the tool.
+# dead-shell dirs, and fails closed if it scans zero members (ADR 0092). The scan lives
+# once in fabrika-cli's `guard` group (#6093), which every ported guard shares.
 on:
   pull_request:
   push:
@@ -35,7 +35,9 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # Exit 1 when a real packages/* member lacks a README.md (the report is on
-      # stderr), or when zero members are in scope (fail-closed). See #938/#939.
+      # Non-zero on three distinct seats, so a red says which thing happened: 12 a member
+      # lacks a README.md, 7 zero scope (fail-closed, ADR 0092), 11 a read failed so the
+      # verdict is UNKNOWN. The report is on stderr, with ::error annotations beside it.
+      # Reproduce locally with the same verb. See #938/#939.
       - name: Check every packages/* member has a README
-        run: node packages/pipeline-cli/src/bin.ts readme-guard check
+        run: node packages/fabrika-cli/src/bin.ts guard readme-guard check

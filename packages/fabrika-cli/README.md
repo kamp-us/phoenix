@@ -618,6 +618,40 @@ Five properties are worth knowing before you call them:
 
 This group reaches no network and touches no GitHub artifact: every read is the local tree. It gates
 no merge and emits no verdict, so it registers in no verdict namespace and no wire format.
+
+## The `guard` group
+
+The repo's fail-closed CI gates, migrating here from `pipeline-cli` (epic
+[#5720](https://github.com/kamp-us/phoenix/issues/5720)). Unlike every other group this one nests —
+a guard is its own subcommand and `check` is its leaf — so a workflow step and a human reproducing
+its red type the same thing:
+
+```bash
+node packages/fabrika-cli/src/bin.ts guard readme-guard check
+```
+
+| Verb | Answers |
+|---|---|
+| `guard readme-guard check` | whether every real `packages/*` workspace member carries a `README.md` |
+
+Three things are shared by the group rather than rebuilt per guard, which is the point of it
+([#6093](https://github.com/kamp-us/phoenix/issues/6093)):
+
+- **Scope.** `members.ts` resolves real workspace members — a directory under a declared
+  `pnpm-workspace.yaml` glob that carries a `package.json`. A dead-shell directory is not a member,
+  and a read that fails is never an empty scan.
+- **The change.** `changed-files.ts` resolves what a change-scoped guard diffs against, per CI leg:
+  a PR's target branch, the merge queue's batch base (ADR
+  [0132](../../.decisions/0132-merge-queue-for-base-freshness.md)), a dispatch's default branch, or no
+  baseline at all on `push`. An event it cannot read is `Unresolvable` — never an empty diff.
+- **The verdict.** `verdict.ts` seats every guard on one taxonomy: `0` clean, `12` violation, `7`
+  zero scope (ADR [0092](../../.decisions/0092-gates-fail-closed-on-zero-scope.md)), `11` a read
+  failed so the answer is UNKNOWN. Three numbers, not one, because CI reds on all of them and a
+  human fixing one needs to know which. The report goes to stderr, with GitHub `::error`
+  annotations beside it under Actions — the runner feeds both a step's streams into one command
+  parser, so an annotation on stderr renders exactly as one on stdout, and stdout stays empty on
+  every refusal the way the interface convention requires.
+
 ## The `governance` group
 
 The contract is
