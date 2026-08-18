@@ -223,12 +223,23 @@ epic child under the epic rules — your commit landed on the branch you cut fro
 and the `build-deviations` marker is posted on the child issue; branch left local, unpushed, for the
 epic driver to fold); `BACKED-OFF` (claim lost or blocked — branch removed, nothing written); `ESCALATED`
 (repair cap reached — branch left pushed at its last verified head, escalation note posted);
-`STOPPED` (isolation or verdict UNKNOWN — branch left local, state named). An empty pick pool is
+`STOPPED` (isolation, a denied tool call, or verdict UNKNOWN — branch left local, state named). An
+empty pick pool is
 `BACKED-OFF` too — nothing to build, nothing written, and on a lost claim "branch removed" means
 none was ever cut. Each terminal names its branch disposition; **a back-off reported as a success
 destroys the caller's routing**. Any
 cross-lane signal you emit is closed-vocabulary — kind + action + the branded ref, no free prose;
 the receiver re-fetches from the artifact.
+
+**A denied tool call is one of those terminals, never an obstacle to route around.** When the
+harness refuses a mutation — an `Edit` the classifier blocks, a command a permission rule denies —
+that refusal is a human saying they decide this one, and re-making the identical change through a
+different tool, a script or a shell command spends the decision without ever asking for it. So do
+not re-attempt it. Stop where you stand, quote the denied action verbatim in a `fabrika build note`
+so the driver reads it before anything is pushed, and end `STOPPED` — `lane report` maps that token
+to a `BLOCKED` event, which is already the routing a denial wants, so no sixth terminal is needed
+(#5685). The content being legitimate changes nothing: a change nobody could have refused and a
+bypass read the same in the transcript, which is the whole reason the denial is worth reporting.
 
 **Record the terminal yourself, then print it.** When your spawn brief named a lane, your terminal
 step is the verb — pass back the `lane` and `root` its `## Task` section carries, and the token→event
