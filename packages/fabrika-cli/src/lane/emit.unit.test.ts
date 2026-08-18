@@ -293,7 +293,16 @@ describe("emitMachine", () => {
 						],
 					},
 				},
-				ship: {on: {"EPIC_4300.DONE": "shipped", "EPIC_4300.BLOCKED": "human:cp-approval"}},
+				ship: {
+					on: {
+						"EPIC_4300.DONE": "shipped",
+						"EPIC_4300.BLOCKED": "human:cp-approval",
+						"EPIC_4300.FAIL": [
+							{target: "review", guard: "retriesRemaining", actions: "incrementRetries"},
+							{target: "human:epic-review"},
+						],
+					},
+				},
 				shipped: {type: "final"},
 				"human:epic-review": {type: "final"},
 			},
@@ -306,6 +315,25 @@ describe("emitMachine", () => {
 		expect(
 			drive(compiled, [...LAND_ALL, ["epic_4300", "PASS"], ["epic_4300", "DONE"]]),
 		).toMatchObject({stateValue: "complete", status: "done"});
+	});
+
+	it("takes a FAIL at the epic ship back to review, and parks it once the retries are spent", () => {
+		const compiled = laneOf(emitted(emitMachine(4300, body(), CHILDREN)));
+		const toShip: ReadonlyArray<readonly [string, string]> = [...LAND_ALL, ["epic_4300", "PASS"]];
+		expect(drive(compiled, [...toShip, ["epic_4300", "FAIL"]]).stateValue).toEqual({
+			epic: {epic_4300: "review"},
+		});
+
+		const spent = drive(compiled, [
+			...toShip,
+			["epic_4300", "FAIL"],
+			["epic_4300", "PASS"],
+			["epic_4300", "FAIL"],
+			["epic_4300", "PASS"],
+			["epic_4300", "FAIL"],
+		]);
+		expect(spent).toMatchObject({stateValue: "tripped", status: "done"});
+		expect(spent.context.errors).toEqual(["epic_4300"]);
 	});
 
 	it("trips the lane when the epic review fails past its retry budget — a park, never `complete`", () => {

@@ -302,7 +302,8 @@ the report.
 | reviewer: every derived namespace terminal on a still-binding verdict, at least one `FAIL` | `FAIL` |
 | reviewer: any derived namespace without a still-binding verdict | no event — re-read, see below |
 | shipper `already-merged` / `QUEUED` / `landed` | `DONE` |
-| anything else — a back-off, an escalation, a stop, an awaiting-approval, a permission denial, a dead or unresponsive spawn, a report you cannot parse | `BLOCKED` |
+| shipper `routed to repair` / `EJECTED — routed to repair` | `FAIL` — the repair build the shipper named is what the machine's `ship` FAIL edge routes to, and it spends a retry (#5807) |
+| anything else not claimed above — a back-off, an escalation, a stop, an awaiting-approval, a permission denial, a dead or unresponsive spawn, a report you cannot parse | `BLOCKED` |
 
 **An `integrate` has no spawn to report**, so its row is the merge's own exit folded by the two
 rules step 2 named: a clean merge whose post-merge checks pass is `DONE`; a conflict, or a red

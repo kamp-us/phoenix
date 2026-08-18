@@ -265,7 +265,17 @@
 							"ship": {
 								"on": {
 									"EPIC_4300.DONE": "shipped",
-									"EPIC_4300.BLOCKED": "human:cp-approval"
+									"EPIC_4300.BLOCKED": "human:cp-approval",
+									"EPIC_4300.FAIL": [
+										{
+											"target": "review",
+											"guard": "retriesRemaining",
+											"actions": "incrementRetries"
+										},
+										{
+											"target": "human:epic-review"
+										}
+									]
 								}
 							},
 							"blocked": {

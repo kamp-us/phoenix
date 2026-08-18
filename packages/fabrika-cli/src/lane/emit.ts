@@ -105,6 +105,11 @@ const region = (ns: string, initial: "queued" | "landed" | "frozen"): Record<str
 /**
  * The epic's own region — the tail phase's single task: review the one PR, then merge it once.
  *
+ * `ship` carries the same guarded FAIL, because a PR can be re-reviewed at a rewritten head while
+ * the lane sits there and a park clear is exactly that path (#5807). Its retry arm is `review` for
+ * the same reason the review edge's is: the repair round happens outside the machine, so the next
+ * thing the lane can record is another verdict.
+ *
  * `review` FAIL is a two-arm guarded array so the fallthrough final is an *error* final by the
  * compiler's own structural read; a plain target would leave a failed epic review folding to
  * `complete`. The retry arm is `review` itself: a repair round happens outside the machine and the
@@ -125,7 +130,16 @@ const epicRegion = (ns: string): Record<string, unknown> => ({
 				],
 			},
 		},
-		ship: {on: {[`${ns}.DONE`]: "shipped", [`${ns}.BLOCKED`]: "human:cp-approval"}},
+		ship: {
+			on: {
+				[`${ns}.DONE`]: "shipped",
+				[`${ns}.BLOCKED`]: "human:cp-approval",
+				[`${ns}.FAIL`]: [
+					{target: "review", guard: "retriesRemaining", actions: "incrementRetries"},
+					{target: "human:epic-review"},
+				],
+			},
+		},
 		blocked: {on: {[`${ns}.UNBLOCKED`]: "hist"}},
 		"human:cp-approval": {on: {[`${ns}.UNBLOCKED`]: "hist"}},
 		hist: {type: "history"},
