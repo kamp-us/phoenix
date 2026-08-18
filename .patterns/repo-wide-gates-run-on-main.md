@@ -37,12 +37,14 @@ time of writing (#5085's carried-forward questions).
 Every `pull_request`-triggered workflow in `.github/workflows/`, classified by guard scope.
 
 **Repo-wide → gained `push: main`** (18): `a11y-pbt`, `catalog-guard`,
-`change-detect-guard`, `codeowners-cp`, `commands-guard`, `decisions-index`,
+`change-detect-guard`, `codeowners-cp`, `decisions-index`,
 `design-inventory-guard`, `design-token-guard`, `doc-links`, `fanout-guard`,
 `migrations-guard`, `patch-guard`, `path-filter-guard`, `pointer-guard`,
 `publish-isolation-guard`, `readme-guard`, `settings-env-guard`, `workflow-contract`.
 (The audit named 20; `crew-fanout-guard` and `crew-leak-guard` left with the crew, ADR
-[0279](../.decisions/0279-v1-crew-retired-in-full.md).)
+[0279](../.decisions/0279-v1-crew-retired-in-full.md), and `commands-guard` retired in
+[#6098](https://github.com/kamp-us/phoenix/issues/6098) — fabrika's own unit suite already
+enforces the property it gated.)
 
 **Deliberately left `pull_request`-only** (5):
 
@@ -55,7 +57,9 @@ Every `pull_request`-triggered workflow in `.github/workflows/`, classified by g
 | `roadmap-guard` | Repo-wide, but its `milestone` event and weekly schedule already cover post-merge drift. |
 
 **Already carried `push: main`** (6): `adoption-lint`, `ci`, `cli-invocation-guard`,
-`deploy`, `skill-gh-lint`, `trap-status-guard`.
+`deploy`, `skill-gh-lint`, `trap-status-guard`. (`cli-invocation-guard` and
+`trap-status-guard` retired in [#6098](https://github.com/kamp-us/phoenix/issues/6098);
+`skill-gh-lint` kept the trigger through its port.)
 
 Workflows with no `pull_request` trigger at all (schedules, issue events, release events)
 are out of scope: `changelog`, `cp-bank-guard`, `epic-autoclose`, `glossary-drift`,

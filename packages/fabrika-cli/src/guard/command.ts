@@ -17,6 +17,7 @@ import {Command, Flag} from "effect/unstable/cli";
 import {leafCommand} from "../excess-operand.ts";
 import type {VerbOutcome} from "../verb.ts";
 import {runReadmeGuard} from "./readme-verb.ts";
+import {runSkillLint} from "./skill-lint-verb.ts";
 
 /** Write the outcome and exit on its code — stdout is the answer, everything else is stderr. */
 const emit = (outcome: VerbOutcome): Effect.Effect<void> =>
@@ -58,8 +59,35 @@ const readmeGuard = Command.make("readme-guard").pipe(
 	),
 );
 
+const skillLintCheck = leafCommand(
+	"check",
+	{root: rootFlag},
+	Effect.fn(function* ({root}) {
+		yield* emit(
+			yield* runSkillLint({
+				root: Option.getOrNull(root),
+				cwd: process.cwd(),
+				env: process.env,
+			}),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Red on a broken gh call, frontmatter, push or path in a skill."),
+	Command.withDescription(
+		"Walk claude-plugins/ and red on any of four mechanical defects in the skill + agent corpus: a GraphQL-path `gh` invocation (REST only on this org, #743), a SKILL.md / agents/*.md frontmatter block that does not parse as strict YAML (#1766), a bare `git push` in a runnable block (#4213), and a repo-relative `./claude-plugins/…` literal inside a fence, which cannot resolve in a consumer's install (#4605). Prose naming a forbidden form is untouched; only runnable text is judged. Prints the one-line all-clear on stdout; a red puts the report on stderr, with GitHub ::error annotations beside it under Actions. Exits 7 (zero scope: nothing walked, a plugin dir contributed no file, or a check saw no file — fail-closed, ADR 0092), 11 (a read failed, so the verdict is UNKNOWN), 12 (a defect was found). Example: fabrika guard skill-lint check",
+	),
+);
+
+const skillLint = Command.make("skill-lint").pipe(
+	Command.withSubcommands([skillLintCheck]),
+	Command.withShortDescription("The skill + agent corpus obeys its four mechanical rules."),
+	Command.withDescription(
+		"The skill and agent corpus under claude-plugins/ must hold no GraphQL-path `gh` call, no unparseable frontmatter, no bare `git push` in a runnable block, and no plugin path literal that only resolves inside this repo.",
+	),
+);
+
 /** The registered guards. One appended row per port; the order is the `--help` order. */
-const guards = [readmeGuard];
+const guards = [readmeGuard, skillLint];
 
 export const guardCommand = Command.make("guard").pipe(
 	Command.withSubcommands(guards),
