@@ -970,9 +970,19 @@ a sixth is a change to this table, not a new rule.
 |---|---|---|---|
 | `design-manifest` | `--path`, default `design-system-manifest.md` at the repo root | **stdin**, required — the skill's inferred draft | the file's bytes match stdin through `normalizeForReadback` |
 | `roadmap-focus` | `--path`, default `ROADMAP.md` at the repo root | **stdin**, required | same |
-| `label-taxonomy` | the repo's labels | **none** — the set is `status:needs-triage`, `status:triaged`, one label per member of the imported `PRIORITIES` (`p0`, `p1`, `p2`), each created with GitHub's default colour and a description naming this group as its creator | every label in the set resolves on a re-read |
+| `label-taxonomy` | the repo's labels | **none** — the set is every imported `STATUSES` member (`status:needs-triage`, `status:triaged`, `status:needs-info`, `status:planned`, `status:awaiting-release`), every imported `PRIORITIES` member (`p0`, `p1`, `p2`), `type:` + every imported `TYPES` member, and `ready-for:` + every imported `AUDIENCES` member — sixteen today, each created with GitHub's default colour and a description naming this group as its creator | every label in the set resolves on a re-read |
 | `issue-shape-markers` | the repo's labels | **none** — three labels, each at colour `1D76DB`, with the descriptions fixed below | every label in the set resolves on a re-read |
 | `readout-artifact` | one open issue in the repo | **none** — title exactly `Governance readout`; body exactly the two lines below | the issue resolves open, its title matches exactly, and its body matches through `normalizeForReadback` |
+
+<a id="taxonomy-is-derived"></a>**The taxonomy is derived from the vocabularies, never restated.**
+Every name comes from the constant the writing verb already reads — `STATUSES` for the five statuses,
+`PRIORITIES`, `TYPES` and `AUDIENCES` for the rest — so a seventh `TYPES` member widens what this
+verb creates with no second edit anywhere. v1 restated two statuses and `PRIORITIES` and stopped, and
+the eleven it omitted are each a label some verb writes; since a verb finds its label absent and
+refuses rather than letting the API mint it (#4285), a repo that ran the whole documented bootstrap
+could not `triage apply`, `triage park`, `plan flip` or `ship release` (#5772). In a repo bootstrapped
+before the widening the verb reports `created` naming only the names it added, which is the honest
+answer for a set that grew — not a contradiction of the earlier `exists`.
 
 The three marker labels, fixed here so no clause defers to another skill's prose or to source:
 
@@ -1130,7 +1140,7 @@ states what the group itself needs. Dispositions use the canonical three.
 | --- | --- | --- |
 | A resolvable skill roster — the installed plugin's own skills tree, or `claude-plugins/fabrika/skills/` in-repo, or an explicit `--skills-dir` | it is the roster `status menu` renders and the declaration set `status config` parses | **degrade** — an implicitly-resolved roster holding zero skills is `empty` / `gaps` at exit `0`, never silence; only an **explicitly passed** absent path is `7`, and an unreadable one is `11` ([why](#roster-location)). |
 | A resolvable repo — `--repo`, `$CLAUDE_PIPELINE_REPO`, `$GITHUB_REPOSITORY`, or an `origin` remote | `board`, `readout` and the non-file arms of `bootstrap` read against it | **degrade** for `status open`, which renders those fields `unknown`; **fail-loud** at exit `1` for `board`, `readout` and `bootstrap` invoked directly, which have no other answer to give. |
-| The board label taxonomy — `status:needs-triage`, `status:triaged`, `p0`–`p2` | `status board`'s six bucket calls | **bootstrap** — absent labels render `unknown` with detail `label absent`, never `0`, and `status bootstrap label-taxonomy` creates them. |
+| The board label taxonomy — the whole set the [buildable-surface registry](#buildable-surfaces) derives, not a subset restated here | `status board`'s six bucket calls read five of it; every state-writing verb elsewhere needs the rest | **bootstrap** — absent labels render `unknown` with detail `label absent`, never `0`, and `status bootstrap label-taxonomy` creates the whole set. |
 | The issue-shape markers — `wayfinding:map`, `prototyping:spike`, `grilling:session` | `status bootstrap issue-shape-markers` is where three skills' bootstrap pointers land | **bootstrap** — `status bootstrap issue-shape-markers` creates the whole set, and reports `exists` at `0` where it is already there. |
 | One open issue titled exactly `Governance readout`, or `$FABRIKA_GOVERNANCE_READOUT_ISSUE` | `status readout`'s artifact | **bootstrap** — `status bootstrap readout-artifact` creates it; until then the reading is `absent` at exit `0`, a proven fact and not a failed read. |
 | The registered `governance-digest` wire format | `status readout` decodes the artifact block through it | **fail-loud** — exit `11`, UNKNOWN, never `absent`. Not built yet; tracked at [#5199](https://github.com/kamp-us/phoenix/issues/5199) ([sequencing](#sequencing)). |

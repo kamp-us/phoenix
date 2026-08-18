@@ -22,6 +22,7 @@ import {readAuthored} from "../build/authored.ts";
 import {scannedLine} from "../build/target.ts";
 import {listLabels, listOpenMilestones} from "../io/issues.ts";
 import type {StdinRead} from "../io/stdin.ts";
+import {PLANNED} from "../labels.ts";
 import {listSubIssues} from "../plan/github.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {composeChildBody} from "./child-body.ts";
@@ -40,9 +41,6 @@ import type {ChildRecord} from "./run.ts";
 import {appendChild, loadManifest, loadRun, maskedLeakRefusal, rewriteChild} from "./run-io.ts";
 
 const VERB = "ledger child";
-
-/** The status every child is born carrying — the gate flips it, never a verb here. */
-const PLANNED = "status:planned";
 
 export const TYPES: ReadonlyArray<string> = [
 	"type:bug",

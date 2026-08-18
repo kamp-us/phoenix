@@ -8,11 +8,20 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {fakeFs} from "../fakes.test-support.ts";
+import {AWAITING_RELEASE, PLANNED, STATUSES} from "../labels.ts";
 import {coderTemplateText} from "../lane/fixtures.test-support.ts";
 import {DEFAULT_STALE_MINUTES} from "../lane/stale.ts";
 import {runStale} from "../lane/stale-verb.ts";
 import {DEFAULT_CHORES_ROOT, DEFAULT_LANES_ROOT} from "../lane/store.ts";
 import * as report from "../report/codes.ts";
+import {
+	AUDIENCES,
+	PRIORITIES,
+	parkedFacets,
+	STANDING_LANES,
+	TYPES,
+	triagedFacets,
+} from "../triage/facets.ts";
 import {ANSWER} from "../verb.ts";
 import {type BoardRead, type Bucket, boardState, runBoard} from "./board-verb.ts";
 import {
@@ -282,6 +291,59 @@ describe("status bootstrap", () => {
 		const taxonomy = new Set(TAXONOMY.map((label) => label.name));
 		for (const label of ISSUE_SHAPE_MARKERS) expect(taxonomy.has(label.name)).toBe(false);
 		expect(TAXONOMY.every((label) => label.color === null)).toBe(true);
+	});
+});
+
+/**
+ * #5772: the taxonomy carried five of the sixteen names the verbs write, so a bootstrapped repo hit
+ * `#4285`'s correct refusal on the first `triage apply`. These bind the derivation, not the current
+ * spelling — widen `TYPES` or `AUDIENCES` and a restated copy of this set fails here.
+ */
+describe("the bootstrap taxonomy is derived from the vocabularies the verbs write", () => {
+	const names = new Set(TAXONOMY.map((label) => label.name));
+
+	/** Every label any facet keep set can produce, over the whole vocabulary cross-product. */
+	const keepable = (): ReadonlyArray<string> => {
+		const tables = [
+			parkedFacets(),
+			...TYPES.flatMap((type) =>
+				PRIORITIES.flatMap((priority) =>
+					AUDIENCES.flatMap((readyFor) =>
+						[null, ...STANDING_LANES].map((lane) =>
+							triagedFacets({type, priority, readyFor, lane}),
+						),
+					),
+				),
+			),
+		];
+		return [...new Set(tables.flatMap((facets) => facets.flatMap((facet) => facet.keep)))];
+	};
+
+	it("mints every label a facet keep set can produce, bar the per-repo standing lanes", () => {
+		// The lanes are the one deliberate exclusion: a lane is the host repo's own home vocabulary,
+		// declared in its ROADMAP, not a pipeline state every repo is born with.
+		const outside = keepable().filter((label) => !names.has(label));
+		expect(outside.slice().sort()).toEqual([...STANDING_LANES].sort());
+	});
+
+	it("mints one label per member of TYPES and of AUDIENCES, and no thirteenth", () => {
+		for (const type of TYPES) expect(names.has(`type:${type}`)).toBe(true);
+		for (const audience of AUDIENCES) expect(names.has(`ready-for:${audience}`)).toBe(true);
+		expect([...names].filter((name) => name.startsWith("type:"))).toHaveLength(TYPES.length);
+		expect([...names].filter((name) => name.startsWith("ready-for:"))).toHaveLength(
+			AUDIENCES.length,
+		);
+	});
+
+	it("mints the lifecycle statuses no facet produces — plan flip's and ship release's", () => {
+		for (const status of STATUSES) expect(names.has(status)).toBe(true);
+		expect(names.has(PLANNED)).toBe(true);
+		expect(names.has(AWAITING_RELEASE)).toBe(true);
+	});
+
+	it("carries sixteen labels, each named once", () => {
+		expect(TAXONOMY).toHaveLength(16);
+		expect(names.size).toBe(TAXONOMY.length);
 	});
 });
 

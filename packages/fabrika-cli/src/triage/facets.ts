@@ -15,6 +15,7 @@
  * change plan and the read-back assertion live here once and the verbs differ only in the facet table
  * they pass in.
  */
+import {NEEDS_INFO, NEEDS_TRIAGE, TRIAGED} from "../labels.ts";
 
 /**
  * The two standing lanes, taking their values from the contract's `triage homes` table — the one
@@ -58,8 +59,14 @@ export interface Facet {
 
 const ownsType = (label: string): boolean => label.startsWith("type:");
 const ownsPriority = (label: string): boolean => /^p\d+$/.test(label);
-const ownsStatus = (label: string): boolean =>
-	/^status:(needs-triage|triaged|needs-info)$/.test(label);
+/**
+ * The status facet owns the three statuses triage itself moves between, and no more. `status:planned`
+ * and `status:awaiting-release` are written by `plan`/`ledger` and `ship`, so triage preserves them
+ * rather than reconciling them away.
+ */
+export const TRIAGE_STATUSES: ReadonlyArray<string> = [NEEDS_TRIAGE, TRIAGED, NEEDS_INFO];
+
+const ownsStatus = (label: string): boolean => TRIAGE_STATUSES.includes(label);
 const ownsAudience = (label: string): boolean => label.startsWith("ready-for:");
 
 /**
@@ -79,7 +86,7 @@ export const triagedFacets = (input: {
 }): ReadonlyArray<Facet> => [
 	{name: "type", owns: ownsType, keep: [`type:${input.type}`]},
 	{name: "priority", owns: ownsPriority, keep: [input.priority]},
-	{name: "status", owns: ownsStatus, keep: ["status:triaged"]},
+	{name: "status", owns: ownsStatus, keep: [TRIAGED]},
 	{name: "audience", owns: ownsAudience, keep: [`ready-for:${input.readyFor}`]},
 	{name: "lane", owns: isStandingLane, keep: input.lane === null ? [] : [input.lane]},
 ];
@@ -95,7 +102,7 @@ export const triagedFacets = (input: {
 export const parkedFacets = (): ReadonlyArray<Facet> => [
 	{name: "type", owns: ownsType, keep: []},
 	{name: "priority", owns: ownsPriority, keep: []},
-	{name: "status", owns: ownsStatus, keep: ["status:needs-info"]},
+	{name: "status", owns: ownsStatus, keep: [NEEDS_INFO]},
 	{name: "audience", owns: ownsAudience, keep: []},
 	{name: "lane", owns: isStandingLane, keep: []},
 ];

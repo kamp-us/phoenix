@@ -17,13 +17,14 @@
  */
 
 import {createHash} from "node:crypto";
+import {PLANNED, TRIAGED} from "../labels.ts";
 import type {ChildLedger, Ledger} from "./model.ts";
 
 /** Everything the digest is taken over — the ledger minus the digest it is about to carry. */
 export type LedgerScope = Omit<Ledger, "digest">;
 
 /** The two labels the flip writes, excluded from the serialization. See the module docblock. */
-export const FLIP_LABELS: ReadonlyArray<string> = ["status:planned", "status:triaged"];
+export const FLIP_LABELS: ReadonlyArray<string> = [PLANNED, TRIAGED];
 
 export const DIGEST_LENGTH = 12;
 
