@@ -23,6 +23,7 @@ import type {ChildProcessSpawner} from "effect/unstable/process";
 import {createComment, deleteComment, getIssue, listComments, resolveRepo} from "../io/issues.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {
+	DEFAULT_TTL_MINUTES,
 	expiryOf,
 	isStampableSession,
 	markerBody,
@@ -33,11 +34,8 @@ import {
 import {PRECONDITION_UNKNOWN, READBACK_MISMATCH, WRITE_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {scannedLine} from "./scope.ts";
 
-export {DEFAULT_TTL_MINUTES} from "./claim.ts";
-
 export interface ClaimOptions {
 	readonly issue: number;
-	readonly ttlMinutes: number;
 	readonly repo: string | null;
 	readonly json: boolean;
 	readonly env: Readonly<Record<string, string | undefined>>;
@@ -82,13 +80,10 @@ export const runClaim = (
 	options: ClaimOptions,
 ): Effect.Effect<VerbOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
 	Effect.gen(function* () {
-		const {issue, ttlMinutes, json} = options;
+		const {issue, json} = options;
 
 		if (!Number.isInteger(issue) || issue <= 0) {
 			return refuse(FAILED, `${VERB}: ${issue} is not an issue number.`);
-		}
-		if (!Number.isInteger(ttlMinutes) || ttlMinutes <= 0) {
-			return refuse(FAILED, `${VERB}: --ttl-minutes ${ttlMinutes} is not a positive integer.`);
 		}
 
 		const stamped = sessionFrom(options.env);
@@ -130,7 +125,12 @@ export const runClaim = (
 		// Re-running inside one session is idempotent: a second marker is strictly later than the
 		// first, so it can win nothing the first did not and only adds litter to clean up.
 		const alreadyHeld = myMarker(
-			resolveClaim({markers: markersOf(before.value), session, now, ttlMinutes}),
+			resolveClaim({
+				markers: markersOf(before.value),
+				session,
+				now,
+				ttlMinutes: DEFAULT_TTL_MINUTES,
+			}),
 		);
 
 		let postedId: number | null = null;
@@ -162,7 +162,7 @@ export const runClaim = (
 			markers: markersOf(after.value),
 			session,
 			now,
-			ttlMinutes,
+			ttlMinutes: DEFAULT_TTL_MINUTES,
 		});
 
 		if (resolution._tag === "Unresolvable") {
@@ -201,7 +201,7 @@ export const runClaim = (
 		// already conceded would beat a rightful winner on a later run.
 		const deleted = yield* deleteComment(repo, resolution.mine.id);
 		if (deleted._tag === "Failure") {
-			const expiry = expiryOf(resolution.mine.createdAt, ttlMinutes) ?? "an unknown time";
+			const expiry = expiryOf(resolution.mine.createdAt, DEFAULT_TTL_MINUTES) ?? "an unknown time";
 			return refuse(
 				READBACK_MISMATCH,
 				`${VERB}: lost #${issue}, but this session's marker ${resolution.mine.id} could not be deleted: ${deleted.reason} — a stale claim is live on the issue until ${expiry}; delete it by hand.`,

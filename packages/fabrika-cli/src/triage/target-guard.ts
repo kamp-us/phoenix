@@ -69,7 +69,6 @@ export interface GuardOptions {
 	readonly noun?: string;
 	readonly env: Readonly<Record<string, string | undefined>>;
 	readonly now?: () => Date;
-	readonly ttlMinutes?: number;
 }
 
 /**
@@ -101,7 +100,7 @@ export const guardTarget = (
 			markers: markersOf(comments.value),
 			session: options.env.CLAUDE_CODE_SESSION_ID ?? "",
 			now: (options.now ?? (() => new Date()))().getTime(),
-			ttlMinutes: options.ttlMinutes ?? DEFAULT_TTL_MINUTES,
+			ttlMinutes: DEFAULT_TTL_MINUTES,
 		});
 		if (scanned._tag === "Unresolvable") {
 			return refuse(

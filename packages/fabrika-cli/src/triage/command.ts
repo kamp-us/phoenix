@@ -20,7 +20,7 @@ import {leafCommand} from "../excess-operand.ts";
 import {readStdin} from "../io/stdin.ts";
 import type {VerbOutcome} from "../verb.ts";
 import {runApply} from "./apply-verb.ts";
-import {DEFAULT_TTL_MINUTES, runClaim} from "./claim-verb.ts";
+import {runClaim} from "./claim-verb.ts";
 import {runCodes} from "./codes-verb.ts";
 import {runEnrich} from "./enrich-verb.ts";
 import {AUDIENCES, PRIORITIES, STANDING_LANES, TYPES} from "./facets.ts";
@@ -235,20 +235,13 @@ const claim = leafCommand(
 	"claim",
 	{
 		issue: Argument.integer("issue").pipe(Argument.withDescription("the issue number to claim")),
-		ttlMinutes: Flag.integer("ttl-minutes").pipe(
-			Flag.withDefault(DEFAULT_TTL_MINUTES),
-			Flag.withDescription(
-				`how long an existing claim marker stays binding before it is treated as abandoned (default: ${DEFAULT_TTL_MINUTES})`,
-			),
-		),
 		repo: repoFlag,
 		json: jsonFlag,
 	},
-	Effect.fn(function* ({issue, ttlMinutes, repo, json}) {
+	Effect.fn(function* ({issue, repo, json}) {
 		yield* emit(
 			yield* runClaim({
 				issue,
-				ttlMinutes,
 				repo: Option.getOrNull(repo),
 				json,
 				env: process.env,

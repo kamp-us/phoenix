@@ -73,7 +73,14 @@ export const instantOf = (iso: string): number | null => {
 	return Number.isNaN(ms) ? null : ms;
 };
 
-/** How long a marker binds before it is treated as abandoned. */
+/**
+ * How long a marker binds before it is treated as abandoned — the only TTL in the protocol.
+ *
+ * A constant rather than a flag: `triage claim --ttl-minutes 240` posted a marker the five mutating
+ * verbs stopped honouring at 60, because they age a marker they did not place and the marker carries
+ * no TTL of its own. That is the fail-open case #5644 exists to close, so the flag went and one
+ * reading stands. Widening it means widening it here, for placer and reader alike.
+ */
 export const DEFAULT_TTL_MINUTES = 60;
 
 export type ClaimResolution =
