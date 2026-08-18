@@ -855,7 +855,7 @@ poster reads success.
 `posted\tgovernance\t<polarity>\t<sha>\t<content>\t<created|edited>\t<comment-url>`, where
 `<content>` is the content digest the verdict binds (ADR 0276).
 With `--json`:
-`{"outcome":"posted","namespace":"governance","polarity":…,"sha":…,"content":…,"upsert":"created"|"edited","floor":"refired"|"green"|"in-flight"|"no-run"|"unknown","commentUrl":…}`.
+`{"outcome":"posted","namespace":"governance","polarity":…,"sha":…,"content":…,"upsert":"created"|"edited","floor":"refired"|"restarting"|"green"|"in-flight"|"no-run"|"unknown","commentUrl":…}`.
 The tab line does not carry `floor` — the floor's outcome is on stderr, one line, always.
 
 **The namespace is fixed.** There is no `--namespace` flag: this verb emits exactly one namespace and
@@ -899,7 +899,10 @@ namespace is a constant, so it cannot be aimed anywhere else even by a confused 
    re-fire a `pull_request`-triggered job — every governance-root PR reds at least once and stays red
    until something re-runs the job (#5585). The verb reads the runs at the bound head, and when the
    newest `governance-floor` run there is completed-and-red it requests a re-run of that run's failed
-   jobs, then re-reads the run and requires `run_attempt` to have increased. **The re-run is a
+   jobs, then re-reads the run and requires the re-fire to be **proven from run state** — either
+   `run_attempt` increased, or that same run id is no longer `completed`, which only this dispatch
+   could have caused. The counter lags the dispatch by a beat, and calling that beat unproven is what
+   sent three agents chasing a `heal-ci` pass over re-fires that had taken (#5982). **The re-run is a
    re-derivation, never a claim**: nothing here writes a check-run or a status, so the green a PR ends
    with is one `ship floor` reached itself against live comment state. **This step is the one place
    the verb needs `actions: write`** on its token; no earlier step asks for it. Without it the
@@ -908,11 +911,13 @@ namespace is a constant, so it cannot be aimed anywhere else even by a confused 
 
 **The floor assertion never changes the exit code.** By step 7 the verdict is landed and read back, so
 a floor that could not be asserted is a red check, not an unwritten verdict — every outcome is one
-stderr line and the `--json` `floor` field. The five: `refired` (a new attempt exists), `green` (the
-run at this head already passed), `in-flight` (the run had not completed, so it may still judge state
-older than this verdict — re-read the check), `no-run` (no floor run at this head: not installed in
-this repository, or not fired yet), `unknown` (the state could not be read or the re-fire could not be
-proven — never read as a pass).
+stderr line and the `--json` `floor` field. The six: `refired` (a new attempt exists), `restarting`
+(the re-fired run is queued or running again under its own id with the new attempt number not yet
+published — wait and re-read that run, never escalate it), `green` (the run at this head already
+passed), `in-flight` (the run had not completed, so it may still judge state older than this verdict
+— re-read the check), `no-run` (no floor run at this head: not installed in this repository, or not
+fired yet), `unknown` (the state could not be read or the re-fire could not be proven — never read as
+a pass).
 
 **No advisory carrier.** `review post` takes `--carrier advisory` for §CP PRs, where a human approval
 is the gate. This verb has no such mode: §CP is not this namespace's question, the governance verdict
