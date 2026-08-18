@@ -36,6 +36,8 @@ const perm = (login: string) => new RegExp(`^gh api repos/o/r/collaborators/${lo
 
 const MINE = marker("s-9f2e", LANE_UUID);
 const THEIRS = marker("s-77aa", "9d8c7b6a-5f4e-3d2c-1b0a-998877665544");
+/** A second marker of the SAME session — what a pre-fix thread carries, and what release must sweep. */
+const SECOND_MINE = marker("s-9f2e", "0a1b2c3d-4e5f-4071-8293-a4b5c6d7e8f9");
 
 const POSTED = okOut(JSON.stringify({id: 9001, html_url: "https://github.com/o/r/issues/4312#c"}));
 const ECHO = okOut(JSON.stringify({body: MINE}));
@@ -44,6 +46,24 @@ const labelled = (...names: ReadonlyArray<string>) => names.map((name) => ({name
 
 /** The claim path's default target: triaged, agent-ready, unhomed — admitted under an inert fence. */
 const CLAIMABLE = issue({labels: labelled("type:bug", "p1", "status:triaged", "ready-for:agent")});
+
+/**
+ * The read `claim` makes BEFORE it posts: this thread carries no marker of this session yet.
+ *
+ * A fresh `once` per call, because the same run then re-reads the thread at the checkpoint and must
+ * see the post-state — one script entry cannot answer both reads.
+ */
+const unclaimed = () => [once(COMMENTS), comments()] as const;
+
+/**
+ * The thread as it reads at each successive comment list, in call order — the last state answers
+ * every read after it. The protocol reads the thread several times in one run, and a static entry
+ * cannot tell a pre-post read from the checkpoint that follows it.
+ */
+const thread = (...states: ReadonlyArray<ExecResult>) =>
+	states.map((state, i) =>
+		i === states.length - 1 ? ([COMMENTS, state] as const) : ([once(COMMENTS), state] as const),
+	);
 
 /** No `ROADMAP.md`: no focus declared, so the scope axis admits and the fence reports itself inert. */
 const NO_FOCUS = fakeFs({files: {}});
@@ -79,6 +99,7 @@ describe("runClaim", () => {
 	it("wins when its own marker is the earliest authorized one", async () => {
 		const out = await run(runClaim, [
 			[ISSUE, CLAIMABLE],
+			unclaimed(),
 			[POST, POSTED],
 			[GET_COMMENT, ECHO],
 			[COMMENTS, comments({id: 9001, body: MINE})],
@@ -96,6 +117,7 @@ describe("runClaim", () => {
 	it("re-reads AFTER posting — the checkpoint is what resolves a staggered race", async () => {
 		const shell = fakeShell([
 			[ISSUE, CLAIMABLE],
+			unclaimed(),
 			[POST, POSTED],
 			[GET_COMMENT, ECHO],
 			[COMMENTS, comments({id: 9001, body: MINE})],
@@ -105,7 +127,7 @@ describe("runClaim", () => {
 			Effect.provide(runClaim(options), Layer.merge(shell.layer, NO_FOCUS.layer)),
 		);
 		const posted = shell.calls.findIndex((line) => POST.test(line));
-		const swept = shell.calls.findIndex((line) => COMMENTS.test(line));
+		const swept = shell.calls.findLastIndex((line) => COMMENTS.test(line));
 		expect(posted).toBeGreaterThanOrEqual(0);
 		expect(swept).toBeGreaterThan(posted);
 	});
@@ -113,6 +135,7 @@ describe("runClaim", () => {
 	it("exits 15 on a lost race — NEVER 0 — names the winner and retracts its own marker", async () => {
 		const shell = fakeShell([
 			[ISSUE, CLAIMABLE],
+			unclaimed(),
 			[POST, POSTED],
 			[GET_COMMENT, ECHO],
 			[
@@ -140,6 +163,7 @@ describe("runClaim", () => {
 	it("never lets marker TEXT confer authority — an unauthorized earlier marker does not win", async () => {
 		const out = await run(runClaim, [
 			[ISSUE, CLAIMABLE],
+			unclaimed(),
 			[POST, POSTED],
 			[GET_COMMENT, ECHO],
 			[
@@ -159,6 +183,7 @@ describe("runClaim", () => {
 	it("refuses a failed marker write on 8 — UNKNOWN, and points at confirm", async () => {
 		const out = await run(runClaim, [
 			[ISSUE, CLAIMABLE],
+			unclaimed(),
 			[POST, errOut("gh: Gateway timeout (HTTP 504)")],
 		]);
 		expect(out.code).toBe(WRITE_UNKNOWN);
@@ -170,6 +195,7 @@ describe("runClaim", () => {
 	it("refuses a marker that does not read back on 9", async () => {
 		const out = await run(runClaim, [
 			[ISSUE, CLAIMABLE],
+			unclaimed(),
 			[POST, POSTED],
 			[GET_COMMENT, okOut(JSON.stringify({body: "something else"}))],
 		]);
@@ -179,6 +205,7 @@ describe("runClaim", () => {
 	it("refuses an unreadable marker set on 11 — never 'unclaimed'", async () => {
 		const out = await run(runClaim, [
 			[ISSUE, CLAIMABLE],
+			unclaimed(),
 			[POST, POSTED],
 			[GET_COMMENT, ECHO],
 			[COMMENTS, errOut("gh: Bad gateway (HTTP 502)")],
@@ -190,6 +217,7 @@ describe("runClaim", () => {
 	it("refuses a TRUNCATED marker read on 11 and keeps its own marker — a short read is not a loss", async () => {
 		const shell = fakeShell([
 			[ISSUE, CLAIMABLE],
+			unclaimed(),
 			[POST, POSTED],
 			[GET_COMMENT, ECHO],
 			[COMMENTS, truncatedComments({id: 9001, body: MINE})],
@@ -208,6 +236,7 @@ describe("runClaim", () => {
 	it("refuses an unreadable PERMISSION on 11 — a transient read never demotes an author", async () => {
 		const out = await run(runClaim, [
 			[ISSUE, CLAIMABLE],
+			unclaimed(),
 			[POST, POSTED],
 			[GET_COMMENT, ECHO],
 			[COMMENTS, comments({id: 9001, body: MINE})],
@@ -240,6 +269,7 @@ describe("runClaim — the admission test runs before any marker is written", ()
 	const claimWith = (target: ExecResult, fs = FOCUSED, overrides: Partial<typeof options> = {}) => {
 		const shell = fakeShell([
 			[ISSUE, target],
+			unclaimed(),
 			[POST, POSTED],
 			[GET_COMMENT, ECHO],
 			[COMMENTS, comments({id: 9001, body: MINE})],
@@ -453,6 +483,7 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 		const shell = fakeShell([
 			[ISSUE, pull(body)],
 			[SERVED, servedRecord],
+			unclaimed(),
 			[POST, POSTED],
 			[GET_COMMENT, ECHO],
 			[COMMENTS, comments({id: 9001, body: MINE})],
@@ -535,6 +566,7 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 				ISSUE,
 				issue({milestone: {number: 44}, labels: labelled("status:triaged", "ready-for:agent")}),
 			],
+			unclaimed(),
 			[POST, POSTED],
 			[GET_COMMENT, ECHO],
 			[COMMENTS, comments({id: 9001, body: MINE})],
@@ -550,6 +582,7 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 	it("admits an unresolvable PR while no focus is declared — an inert fence refuses nothing", async () => {
 		const shell = fakeShell([
 			[ISSUE, pull("No reference at all.\n")],
+			unclaimed(),
 			[POST, POSTED],
 			[GET_COMMENT, ECHO],
 			[COMMENTS, comments({id: 9001, body: MINE})],
@@ -575,6 +608,7 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 				...(servedRecord === null
 					? []
 					: ([[SERVED, servedRecord]] as ReadonlyArray<readonly [RegExp, ExecResult]>)),
+				unclaimed(),
 				[POST, POSTED],
 				[GET_COMMENT, ECHO],
 				[COMMENTS, comments({id: 9001, body: MINE})],
@@ -642,6 +676,7 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 		it("refuses the very same issue at 21 when it is claimed directly, writing nothing", async () => {
 			const shell = fakeShell([
 				[ISSUE, issue({milestone: {number: 44}, labels: DECISION})],
+				unclaimed(),
 				[POST, POSTED],
 				[GET_COMMENT, ECHO],
 				[COMMENTS, comments({id: 9001, body: MINE})],
@@ -685,6 +720,7 @@ describe("runClaim — the purpose axis", () => {
 	const claimWith = (target: ExecResult, overrides: Partial<typeof options> = {}) => {
 		const shell = fakeShell([
 			[ISSUE, target],
+			unclaimed(),
 			[POST, POSTED],
 			[GET_COMMENT, ECHO],
 			[COMMENTS, comments({id: 9001, body: MINE})],
@@ -850,5 +886,74 @@ describe("runRelease", () => {
 			[once(DELETE), errOut("gh: Gateway timeout (HTTP 504)")],
 		]);
 		expect(out.code).toBe(WRITE_UNKNOWN);
+	});
+});
+
+/**
+ * The protocol's fixed point: one session, one marker, one token (#5782).
+ *
+ * Before the fix N claims left N markers, `claim` printed its own fresh nonce while `confirm` and
+ * `requireClaim` read the earliest one, and each `release` peeled a single marker off the stack — so
+ * `build branch --resume` cut its branch off a nonce the caller had never been shown.
+ */
+describe("the claim protocol", () => {
+	const held = () => [
+		[ISSUE, CLAIMABLE] as const,
+		...thread(comments(), comments({id: 9001, body: MINE})),
+		[POST, POSTED] as const,
+		[GET_COMMENT, ECHO] as const,
+		[perm("agent"), okOut("write\n")] as const,
+	];
+
+	const on = (shell: ReturnType<typeof fakeShell>, verb: typeof runClaim) =>
+		Effect.runPromise(Effect.provide(verb(options), Layer.merge(shell.layer, NO_FOCUS.layer)));
+
+	it("posts no second marker on a number this session already holds", async () => {
+		const shell = fakeShell(held());
+		const first = await on(shell, runClaim);
+		const second = await on(shell, runClaim);
+		expect(shell.calls.filter((line) => POST.test(line))).toHaveLength(1);
+		expect(second.code).toBe(0);
+		expect(JSON.parse(second.stdout)).toEqual(JSON.parse(first.stdout));
+		expect(second.stderr.at(-1)).toContain("nothing was written");
+	});
+
+	it("answers claim and confirm with the SAME token — the two can never disagree", async () => {
+		const shell = fakeShell(held());
+		const claimed = await on(shell, runClaim);
+		const confirmed = await on(shell, runConfirm);
+		expect(confirmed.code).toBe(0);
+		expect(JSON.parse(confirmed.stdout).token).toBe(JSON.parse(claimed.stdout).token);
+		expect(JSON.parse(claimed.stdout).token).toBe(`build:s-9f2e:${LANE_UUID}`);
+	});
+
+	it("reads a thread that already carries duplicate markers, and release clears every one", async () => {
+		const dirty = comments(
+			{id: 9001, body: MINE},
+			{id: 9002, body: SECOND_MINE, createdAt: "2026-08-09T00:00:01Z"},
+		);
+		const shell = fakeShell([
+			[ISSUE, CLAIMABLE],
+			...thread(dirty, dirty, dirty, comments()),
+			[POST, POSTED],
+			[GET_COMMENT, ECHO],
+			[perm("agent"), okOut("write\n")],
+			[DELETE, okOut("")],
+		]);
+		const claimed = await on(shell, runClaim);
+		expect(claimed.code).toBe(0);
+		expect(JSON.parse(claimed.stdout).token).toBe(`build:s-9f2e:${LANE_UUID}`);
+		expect(shell.calls.some((line) => POST.test(line))).toBe(false);
+
+		const released = await on(shell, runRelease);
+		expect(released.code).toBe(0);
+		expect(shell.calls.filter((line) => DELETE.test(line)).sort()).toEqual([
+			"gh api --method DELETE repos/o/r/issues/comments/9001",
+			"gh api --method DELETE repos/o/r/issues/comments/9002",
+		]);
+
+		const confirmed = await on(shell, runConfirm);
+		expect(confirmed.code).toBe(CLAIM_NOT_MINE);
+		expect(confirmed.stderr.at(-1)).toContain("no claim exists on #4312");
 	});
 });
