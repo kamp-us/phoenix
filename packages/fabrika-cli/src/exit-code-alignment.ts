@@ -272,7 +272,8 @@ export const PATTERN_SEATS: SharedSeats = {
  * are the target that is not there (`LANE_ABSENT`), the target read in full that is not the shape
  * (`MALFORMED_RECORD`, the `review-ui` whole-record widening of the section seat), the append that
  * did not land (`APPEND_UNKNOWN`), and the read that failed before any of that could be proven
- * (`LANE_UNREADABLE`). The private band is `12`-`13`: the refused event and the unresolved task.
+ * (`LANE_UNREADABLE`). The private band runs `12`-`30`, skipping `27` and `28` because the base
+ * already speaks for both.
  */
 export const LANE_SEATS: SharedSeats = {
 	MALFORMED_RECORD: "BAD_SECTIONS",

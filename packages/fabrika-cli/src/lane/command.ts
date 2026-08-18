@@ -18,6 +18,7 @@ import {type LaneKey, laneRef, parseKey, templateFile} from "./key.ts";
 import {runOpen} from "./open-verb.ts";
 import {runPrint} from "./print-verb.ts";
 import {runProve} from "./prove-verb.ts";
+import {runPush} from "./push-verb.ts";
 import {keyRefusal} from "./refusals.ts";
 import {DEFAULT_STALE_MINUTES} from "./stale.ts";
 import {runStale} from "./stale-verb.ts";
@@ -215,6 +216,30 @@ const emitLane = leafCommand(
 	),
 );
 
+const pushLane = leafCommand(
+	"push",
+	{
+		epic: Argument.integer("epic").pipe(
+			Argument.withDescription("the epic issue whose run owns the assembly branch"),
+		),
+		root: rootFlag,
+	},
+	Effect.fn(function* ({epic, root}) {
+		yield* emit(
+			yield* runPush({
+				epic,
+				root: Option.getOrNull(root) ?? DEFAULT_LANES_ROOT,
+				lane: String(epic),
+			}),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Publish an epic run's assembly branch, confirming the ref moved."),
+	Command.withDescription(
+		"Publish the assembly branch of one epic run — `epic/<n>`, derived from the epic number and never taken from the caller — and INDEPENDENTLY confirm the remote ref moved by reading it back with git ls-remote. The sanctioned push for the one branch no spawned shell owns (ADR 0285), where `build push` refuses because the branch carries no build claim's nonce and a bare `git push` cannot report whether the ref landed (#4213). The whole report is stdout, single-stream, so `tail -1` of stdout on exit 0 is always `PUSH-VERDICT: MOVED`. No force flag exists: the assembly branch only ever grows, one merge per landed child, so a non-fast-forward push is always a mistake. Exits 4 (the lane record was read in full and is not the shape), 7 (no lane there — emit the run's machine first), 8 (pushed, but the remote ref could not be re-read — the outcome is UNKNOWN), 11 (the lane, HEAD, the remote ref or containment could not be read — nothing was pushed), 26 (the tree is not on the assembly branch, or HEAD is detached), 29 (the push would drop commits the remote holds — fetch and merge, never rewrite), 30 (proven: the remote ref did not move). Example: fabrika lane push 5680",
+	),
+);
+
 const brief = leafCommand(
 	"brief",
 	{
@@ -290,6 +315,7 @@ export const laneCommand = Command.make("lane").pipe(
 		open,
 		emitLane,
 		brief,
+		pushLane,
 		stale,
 	]),
 	Command.withShortDescription("Drive one lane's state ledger by folding its event log."),
