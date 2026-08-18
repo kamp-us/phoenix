@@ -303,6 +303,115 @@ describe("lane prove — the union of the two nomination reads", () => {
 	});
 });
 
+describe("lane prove — the §CP advisory carrier (ADR 0111/0226)", () => {
+	const CODEOWNERS =
+		/^gh api -H Accept: application\/vnd\.github\.raw repos\/o\/r\/contents\/\.github\/CODEOWNERS\?ref=main$/;
+	const advisory = (rows = ""): string =>
+		`review-code: advisory — merge stays human-gated\n${rows}\nReviewed-head: @ ${HEAD}\n`;
+	const codeFile = okOut(JSON.stringify([{filename: "packages/fabrika-cli/src/lane/prove.ts"}]));
+
+	it("proves a review PASS carried by an advisory when the diff classifies control-plane", async () => {
+		const shell = fakeShell([
+			[CLOSERS, closingPulls()],
+			[SEARCH, okOut("4318\n")],
+			[PULL, pull()],
+			[FILES, codeFile],
+			[PR_COMMENTS, comments({id: 1, body: advisory()})],
+			[CODEOWNERS, okOut("/packages/fabrika-cli/ @kamp-us/control-plane\n")],
+		]);
+
+		const out = await run(laneAt("review"), shell, "PASS");
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({
+			proof: "proven",
+			evidence: {kind: "head-verdicts", pr: 4318, head: HEAD},
+		});
+		expect(out.stderr.join("\n")).toContain("advisory-carried");
+	});
+
+	it("still rows a marker-less comment absent when the diff is not control-plane", async () => {
+		const shell = fakeShell([
+			[CLOSERS, closingPulls()],
+			[SEARCH, okOut("4318\n")],
+			[PULL, pull()],
+			[FILES, codeFile],
+			[PR_COMMENTS, comments({id: 1, body: advisory()})],
+			[CODEOWNERS, okOut("/claude-plugins/ @kamp-us/control-plane\n")],
+		]);
+
+		const out = await run(laneAt("review"), shell, "PASS");
+
+		expect(out.code).toBe(PROOF_IN_FLIGHT);
+		expect(out.stderr.join("\n")).toContain("review-code (absent)");
+		expect(out.stderr.join("\n")).toContain("not-control-plane");
+	});
+
+	it("reads a [FAIL] row inside an advisory as fail, never as a pass", async () => {
+		const shell = fakeShell([
+			[CLOSERS, closingPulls()],
+			[SEARCH, okOut("4318\n")],
+			[PULL, pull()],
+			[FILES, codeFile],
+			[PR_COMMENTS, comments({id: 1, body: advisory("\n- [FAIL] the guard is bypassed\n")})],
+			[CODEOWNERS, okOut("/packages/fabrika-cli/ @kamp-us/control-plane\n")],
+		]);
+
+		const out = await run(laneAt("review"), shell, "PASS");
+
+		expect(out.code).toBe(PROOF_CONTRADICTED);
+		expect(out.stderr.join("\n")).toContain("invalid emission (ADR 0226)");
+	});
+
+	it("refuses an advisory bound to a head the PR has moved past as in-flight, not proven", async () => {
+		const stale = `review-code: advisory — merge stays human-gated\n\nReviewed-head: @ ${OLD}\n`;
+		const shell = fakeShell([
+			[CLOSERS, closingPulls()],
+			[SEARCH, okOut("4318\n")],
+			[PULL, pull()],
+			[FILES, codeFile],
+			[PR_COMMENTS, comments({id: 1, body: stale})],
+			[CODEOWNERS, okOut("/packages/fabrika-cli/ @kamp-us/control-plane\n")],
+		]);
+
+		const out = await run(laneAt("review"), shell, "PASS");
+
+		expect(out.code).toBe(PROOF_IN_FLIGHT);
+		expect(out.stderr.join("\n")).toContain("review-code (stale)");
+	});
+
+	it("leaves the proof UNKNOWN when the boundary itself cannot be read", async () => {
+		const shell = fakeShell([
+			[CLOSERS, closingPulls()],
+			[SEARCH, okOut("4318\n")],
+			[PULL, pull()],
+			[FILES, codeFile],
+			[PR_COMMENTS, comments({id: 1, body: advisory()})],
+			[CODEOWNERS, errOut("HTTP 502")],
+		]);
+
+		const out = await run(laneAt("review"), shell, "PASS");
+
+		expect(out.code).toBe(LANE_UNREADABLE);
+		expect(out.stderr.join("\n")).toContain(".github/CODEOWNERS");
+	});
+
+	it("never reads the boundary while no comment reaches for the advisory carrier", async () => {
+		const shell = fakeShell([
+			[CLOSERS, closingPulls()],
+			[SEARCH, okOut("4318\n")],
+			[PULL, pull()],
+			[FILES, codeFile],
+			[PR_COMMENTS, comments({id: 1, body: "looks good to me"})],
+		]);
+
+		const out = await run(laneAt("review"), shell, "PASS");
+
+		expect(out.code).toBe(PROOF_IN_FLIGHT);
+		expect(shell.calls.some((line) => CODEOWNERS.test(line))).toBe(false);
+	});
+});
+
 describe("lane prove — what it does not claim, and what it never writes", () => {
 	it("answers not-required for an event no board read can falsify, reading nothing", async () => {
 		const shell = fakeShell([]);
