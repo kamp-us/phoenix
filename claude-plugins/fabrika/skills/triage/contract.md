@@ -159,6 +159,7 @@ or the search index could not be read
 | `12` | refused: the issue is human-filed | — | — | — | — | — | — | — | — | ✓ |
 | `13` | refused: agent-filed and close-eligible, but the kill is unconfirmed (ADR 0159) | — | — | — | — | — | — | — | — | ✓ |
 | `15` | refused: the body this verb composed carries an acceptance-criteria block its registered wire reader classifies `Malformed` (ADR 0288) | — | — | — | — | — | ✓ | — | — | — |
+| `16` | refused: `--ready-for agent` over a live body whose acceptance-criteria block the wire reader does not answer `Found` on — every type but `epic` | — | — | — | — | — | — | ✓ | — | — |
 | `127` | the verb never ran (unresolved binary) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 
 **This matrix owns what a code *means*; the per-verb tables own what *triggers* it.** Every verb in
@@ -1357,6 +1358,22 @@ would be a second answer to a gated question.
 **Every classification value is a closed enum decoded at the boundary**, not a free string checked in
 prose. `--priority 1` is refused before any write.
 
+**`--ready-for agent` asserts the acceptance-criteria block, and refuses on `16` before writing any
+label.** The live body is read through the same wire module every downstream grader reads
+(`packages/fabrika-cli/src/wire/acceptance-criteria.ts`), and anything it does not answer `Found` on
+is refused: `ready-for:agent` promises a builder can pick the issue up cold, and the block is what
+the promise is made of. The refusal names the reader's own reason and routes by arm — a `Malformed`
+block goes to `triage repair-criteria`, an `Absent` one has nothing to repair mechanically and goes
+back through `enrich`. Stamping over it instead defers the discovery to `review criteria`, after a
+branch, a build, a push, a PR and a CI run are spent (kamp-us/demlik#4 and its burned PR #12;
+[#6025](https://github.com/kamp-us/phoenix/issues/6025)).
+
+**`--type epic` is exempt, and the exemption is load-bearing.** A triaged epic carries a `## Pitch`
+and gets its criteria later, per child, from the plan ledger — #5979 and #5817 are both
+`type:epic status:triaged ready-for:agent` over a body with no block — so a blanket refusal would
+make an epic unstampable. `--ready-for human` is unaffected on every type: the promise the block
+backs is the one made to an agent.
+
 **Output** — machine channel. One tab-separated line: `triaged`, `<number>`, `<type>`, `<priority>`,
 `<ready-for>`, `<home>` — where `<home>` is the milestone number or the lane label. With `--json`, an
 object with those keys plus `removed` (the labels superseded) and `readBack`, an object of
@@ -1445,6 +1462,7 @@ for drift, not because they are currently absent.)
 | `9` | the writes landed but the read-back does not show the required end state |
 | `10` | an off-vocabulary enum value, or `--home` names a milestone that is not open |
 | `11` | the issue, the repository's label set, or its milestone set could not be read |
+| `16` | `--ready-for agent` over a live body the wire reader does not answer `Found` on — every type but `epic`; nothing was written |
 
 The issue being proven absent is `7` as well — the same zero-scope seat, since there is no issue to
 stamp.
@@ -1464,6 +1482,8 @@ stamp.
 | `triage apply: cannot read <what> in <repo>: <reason> — nothing was written; the transition is UNKNOWN.` | 11 | refusal |
 | `triage apply: write failed after <k> of <m> changes: <reason> — #<n> may be partially labelled; re-run this verb, which is idempotent.` | 8 | refusal |
 | `triage apply: read-back shows <observed> — expected exactly one type, one priority, status:triaged, one ready-for, and <the milestone / no milestone>.` | 9 | refusal |
+| `triage apply: #<n> carries no acceptance-criteria block — <the reader's reason>. ready-for:agent promises a builder can pick it up cold; an absent block has nothing to repair mechanically, so author one with \`triage enrich\`. Nothing was written.` | 16 | refusal |
+| `triage apply: #<n>'s acceptance-criteria block is malformed — <the reader's reason> (<its evidence>). Repair a level drift with \`triage repair-criteria <n>\`; anything else needs a hand. Nothing was written.` | 16 | refusal |
 
 **`milestone <n> is not open` moved off `1` and onto `10`.** Deciding it requires a network read of
 the repository's milestone set, so it is a verdict the verb *proved* — and rule 3 is explicit that a

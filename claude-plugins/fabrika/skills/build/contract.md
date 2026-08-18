@@ -377,12 +377,12 @@ within a bucket. **An empty pool is a fact and prints `{"pool": [], ...}` on exi
 0** with the scanned counts proving what was searched — never an empty stdout (interface
 convention rule 2).
 
-**Each scope-excluded issue is reported with its reason**, so a shortened or empty pool is auditable
+**Each excluded issue is reported with its reason**, so a shortened or empty pool is auditable
 from the answer itself rather than only from the counts. Each `excluded` entry is
 `{"number", "home", "reason"}`, where `reason` is one of `out-of-focus` / `audience-not-agent` /
 `unreadable` — the outcome set of the [admission test](#admission-test--scope-admission-and-the-audience-axis),
-one reason per outcome. The scanned counts alone cannot tell a working fence from a broken one; the
-reasons can. `focus` is `{"state": "declared", "milestone": "44"}` or `{"state": "none"}`, the same
+one reason per outcome — or `no-acceptance-criteria`, this verb's own axis (below). The scanned
+counts alone cannot tell a working fence from a broken one; the reasons can. `focus` is `{"state": "declared", "milestone": "44"}` or `{"state": "none"}`, the same
 fact the stderr scope line carries.
 
 The filter, fail-closed on every axis:
@@ -407,6 +407,15 @@ The filter, fail-closed on every axis:
 - `type:` is one of `feature` / `chore` / `bug` / `investigation`. `type:decision` and `type:epic`
   never enter; a rendered-visual deliverable is excluded by the *skill* at reading time, not by
   this verb, because modality is not a label.
+- **a body carrying an acceptance-criteria block the wire reader answers `Found` on.** A candidate
+  with no contract can only fail at `review criteria`, once a branch, a build, a push, a PR and a CI
+  run are already spent, and neither the builder nor the reviewer can repair it — so the pool
+  excludes it with reason `no-acceptance-criteria` and the body travels on the listing read the
+  filter already performs, costing no second call. The axis is this verb's own rather than the
+  admission test's: that test is shared with `build claim`, where a `plan` or `gate` claim targets an
+  epic, whose criteria arrive per child from the plan ledger
+  ([#6025](https://github.com/kamp-us/phoenix/issues/6025)). The matching refusal at the stamp is
+  `triage apply`'s `16`.
 - open, and not a pull request.
 
 **Every bucket read paginates, and a failed bucket read fails the verb.** v1's candidate pool
