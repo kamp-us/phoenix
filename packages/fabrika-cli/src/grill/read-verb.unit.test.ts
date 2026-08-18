@@ -1,8 +1,8 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {cameFromSection} from "../came-from.ts";
 import {errOut, fakeShell, okOut} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
+import {cameFromSection} from "../wire/came-from.ts";
 import {NO_TARGET, PRECONDITION_UNKNOWN} from "./codes.ts";
 import {
 	AUTHORIZATION,
@@ -77,6 +77,22 @@ describe("the answer names the ticket the session is bound to", () => {
 
 	it("reports null for a session opened with no ticket", async () => {
 		expect(await readBody("A grilling session.\n")).toMatchObject({ticket: null});
+	});
+
+	it("names a drifted binding on stderr at exit 0 rather than reporting null in silence", async () => {
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runRead(options),
+				fakeShell([
+					[ISSUE, okOut(sessionPayload(9412, {body: "### Came from\n\n#5652\n"}))],
+					[COMMENTS, okOut(commentsPayload([]))],
+				]).layer,
+			),
+		);
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({ticket: null});
+		expect(out.stderr.join("\n")).toContain("does not parse");
+		expect(out.stderr.join("\n")).toContain("## Came from");
 	});
 });
 

@@ -46,6 +46,15 @@ describe("fabrika grill, end to end", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}, () 
 		}
 	});
 
+	// The refusal moved to the adapter when `OpenSubject` made "neither flag" unrepresentable in the
+	// verb, so this is the only tier that still reaches it.
+	it("refuses grill open with neither --topic nor --ticket, touching no network", () => {
+		const run = fabrika(["grill", "open", "--repo", "o/r"]);
+		expect(run.code).toBe(1);
+		expect(run.stdout).toBe("");
+		expect(run.stderr).toContain("neither --topic nor --ticket");
+	});
+
 	it("refuses an empty round on its own code with NOTHING on stdout", () => {
 		const run = fabrika(["grill", "round", "9412", "--repo", "o/r"], "");
 		expect(run.code).toBe(EMPTY_STDIN);

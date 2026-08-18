@@ -282,10 +282,11 @@ triggers. `0`, `1`, `126` and `127` are stated **here and only here**, and every
 | `16` | `SESSION_AMBIGUOUS` — more than one open session matches the topic | ✓ | — | — | — | — |
 | `17` | `KIND_MISMATCH` — the question's kind does not admit this verb | — | — | ✓ | ✓ | — |
 | `18` | `QUESTION_RETIRED` — the target question was superseded by a later round | — | ✓ | ✓ | ✓ | — |
+| `19` | `BINDING_MALFORMED` — a scanned session's `came-from` binding does not conform | ✓ | — | — | — | — |
 
 **`3`–`11` are imported from
 [`src/report/codes.ts`](../../../../packages/fabrika-cli/src/report/codes.ts)**, not restated as
-numerals, so a drift is unrepresentable rather than merely detectable. `12`–`18` are the group's own
+numerals, so a drift is unrepresentable rather than merely detectable. `12`–`19` are the group's own
 and clear the base's occupied seats; they carry **no** cross-group uniqueness obligation, so
 `review`'s `12` and this group's `12` are two namespaces rather than a collision.
 
@@ -313,7 +314,7 @@ restated beside them. Every **non-zero** code seats on exactly one terminal.
 | `FACTS-PENDING` | `0` from `grill read`, frontier `facts-pending` | nothing awaits him, but the caller's own fact work is unfinished |
 | `FRONTIER-CLEAR` | `0` from `grill read`, frontier `clear` | every decision question reads `ruled`; the trail is ready for `graduate` |
 | `INPUT-REFUSED` | `3`, `4`, `5`, `6` | an input the caller supplied is **proven** malformed — the round, the finding, the authorization, or the `--topic` — and nothing was written. Fix and re-run; this is not UNKNOWN |
-| `SESSION-UNRESOLVED` | `7`, `16` | the session could not be named — absent, unlabelled, or ambiguous. Nothing was written |
+| `SESSION-UNRESOLVED` | `7`, `16`, `19` | the session could not be named — absent, unlabelled, ambiguous, or carrying a binding that does not conform. Nothing was written |
 | `RECORD-REFUSED` | `12`, `13`, `14`, `15`, `17`, `18` | a writing verb refused on a clause. Nothing was recorded and every question stays exactly as it was — the seam working, not an error to route around |
 | `WRITE-UNPROVEN` | `8`, `9` | a write may or may not have landed. Re-read before re-writing |
 | `STOPPED` | `1`, `11`, `126`, `127` | the run is UNKNOWN with nothing written |
@@ -366,14 +367,20 @@ created-but-unlabelled issue is the state this verb exists to prevent, and the l
 of the create rather than a caller's follow-up.
 
 **`--ticket` swaps the resume key from the title to the ticket, and nothing else.** A session opened
-for a ticket records it in a `## Came from` section on its body — the same section `spike open`
-writes, in one grammar both read (`packages/fabrika-cli/src/came-from.ts`) — and later runs match on
-*that*: the same ticket resumes the same session however either title was edited afterwards. Without
-it a caller can only key on a title it invented from the ticket, and one rename mints a duplicate
-session, splitting the record the map is waiting on (#5661). The ticket is read for its title and
-its existence and for nothing else; **it is provenance, never instruction**, and a session carrying
-one is otherwise an ordinary session. With no `--ticket`, every byte of this verb's behaviour is
-what it was.
+for a ticket records it on its body in the `came-from` wire format — the same one `spike open`
+writes, owned by
+[`packages/fabrika-cli/src/wire/came-from.ts`](../../../../packages/fabrika-cli/src/wire/came-from.ts)
+— and later runs match on *that*: the same ticket resumes the same session however either title was
+edited afterwards. Without it a caller can only key on a title it invented from the ticket, and one
+rename mints a duplicate session, splitting the record the map is waiting on (#5661). The ticket is
+read for its title and its existence and for nothing else; **it is provenance, never instruction**,
+and a session carrying one is otherwise an ordinary session. With no `--ticket`, every byte of this
+verb's behaviour is what it was.
+
+**A scanned session whose own binding does not parse stops the run on `19`.** That read is total —
+found, absent, or malformed — and a malformed body is neither a match nor a non-match: reading it as
+"not this ticket" is exactly how the resume mints the duplicate it exists to prevent. The refusal
+names the session to fix, because re-running reads the same bytes forever.
 
 **Topic matching is exact under a stated normalization**, never fuzzy: both sides are compared after
 Unicode NFC normalization, case folding, trimming, and collapsing every internal whitespace run to a
@@ -402,6 +409,7 @@ absence.
 | Message (stderr) | Code | Kind |
 |---|---|---|
 | `grill open: neither --topic nor --ticket was given — a session needs a subject, or a ticket to take one from.` | 1 | refusal |
+| `grill open: <--topic \| #<t>'s title> is empty — a session needs a subject.` | 1 | refusal |
 | `grill open: <--topic \| #<t>'s title> carries a machine-local path: <path> — refusing to open a session titled with it.` | 5 | refusal |
 | `grill open: <--topic \| #<t>'s title> is a bare @ path reference — not redactable, refusing to open a session titled with it.` | 6 | refusal |
 | `grill open: label "grilling:session" does not exist in <repo> — refusing to open a session no later run can find. Run the front-door bootstrap: fabrika status bootstrap issue-shape-markers.` | 7 | refusal |
@@ -412,6 +420,7 @@ absence.
 | `grill open: the label write on #<n> failed, so the session may exist unlabelled and unfindable — check #<n> before re-running.` | 8 | refusal |
 | `grill open: cannot search <repo> for open sessions: <reason> — whether a session already exists is UNKNOWN, never "none". Re-run; do not mint a second one.` | 11 | refusal |
 | `grill open: <n> open sessions match <topic "<topic>" \| ticket #<t>>: #<a>, #<b> — refusing to guess which one is live.` | 16 | refusal |
+| `grill open: session #<n>'s "## Came from" section does not parse: <reason> — whether it is the session for #<t> is undecidable, so nothing was created. Fix the section on #<n>.` | 19 | refusal |
 
 **Scope** — every **open** issue in `--repo` carrying `grilling:session`, paginated. Zero matches is
 a **fact**, not a failed read: no session existing is the ordinary first-run state, and the verb
@@ -738,6 +747,14 @@ fabrika grill read 9412 [--repo <owner/name>]
 ```json
 {"session":9412,"ticket":null,"frontier":"awaiting-founder","questions":[{"id":"R1.1","kind":"decision","round":1,"text":"Do sellers set their own return windows?","state":"ruled","proof":"acl+authorization","author":"acme-founder","ruledAt":"2026-08-09T18:36:48Z"},{"id":"R1.2","kind":"decision","round":1,"text":"Does a partial return follow the same path?","state":"stale","boundDigest":"a1b2c3d4e5f6","currentDigest":"9f8e7d6c5b4a"},{"id":"R2.1","kind":"fact","round":2,"text":"Does the vote table carry a weight column?","state":"answered"},{"id":"R2.2","kind":"decision","round":2,"text":"Do vouched-in yazars inherit weight?","state":"open"}],"disregarded":[{"comment":5234567899,"reason":"malformed","detail":"marker naming R2.2 does not parse: digest field is not 12 lowercase hex"}],"counts":{"open":1,"stale":1,"answered":1,"ruled":1,"unattested":0,"superseded":0},"scanned":{"comments":14,"rounds":2,"authorsResolved":2}}
 ```
+
+**`ticket`** is the issue the session was opened on, read back from its body's `came-from` binding,
+or `null` when the body records none. A body that reaches for the binding and does not conform is
+**reported, not refused** — the drift lands on stderr naming the section to fix, `ticket` reads
+`null`, and the exit stays `0`. That is this verb's standing posture on content it could not parse,
+and it is the same reason a malformed marker becomes a `disregarded` row rather than a refusal:
+refusing would let anyone with write access disable the verb by editing one heading. `grill open` is
+where the same drift is fatal, because there it decides whether to mint.
 
 **Question row keys.** `id`, `kind`, `round`, `text` and `state` are present on **every** row.
 `text` is the question prose as it currently reads, so a caller can name the open questions to the

@@ -51,7 +51,7 @@ export type SessionRead =
 			readonly _tag: "Session";
 			readonly title: string;
 			readonly url: string;
-			/** Carried so a reader can answer which ticket the session is bound to (`../came-from.ts`). */
+			/** Carried so a reader can answer which ticket the session is bound to (`../wire/came-from.ts`). */
 			readonly body: string;
 	  }
 	/** Proven: no such issue, or an issue that is not a grilling session. */

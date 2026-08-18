@@ -18,9 +18,9 @@ import {Argument, Command, Flag} from "effect/unstable/cli";
 import {leafCommand} from "../excess-operand.ts";
 import {readFile} from "../io/fs.ts";
 import {readStdin} from "../io/stdin.ts";
-import type {VerbOutcome} from "../verb.ts";
+import {FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {type DocumentRead, runAnswer} from "./answer-verb.ts";
-import {runOpen} from "./open-verb.ts";
+import {openSubject, runOpen} from "./open-verb.ts";
 import {runRead} from "./read-verb.ts";
 import {runRound} from "./round-verb.ts";
 import {runRule} from "./rule-verb.ts";
@@ -81,19 +81,20 @@ const open = leafCommand(
 		repo: repoFlag,
 	},
 	Effect.fn(function* ({topic, ticket, repo}) {
+		const subject = openSubject(Option.getOrNull(topic), Option.getOrNull(ticket));
 		yield* emit(
-			yield* runOpen({
-				topic: Option.getOrNull(topic),
-				ticket: Option.getOrNull(ticket),
-				repo: Option.getOrNull(repo),
-				env: process.env,
-			}),
+			subject === null
+				? refuse(
+						FAILED,
+						"grill open: neither --topic nor --ticket was given — a session needs a subject, or a ticket to take one from.",
+					)
+				: yield* runOpen({subject, repo: Option.getOrNull(repo), env: process.env}),
 		);
 	}),
 ).pipe(
 	Command.withShortDescription("Open, or resume, the session issue for a topic or a ticket."),
 	Command.withDescription(
-		'Open, or resume, the session issue for a topic. Prints {"session":n,"topic":"…","ticket":n|null,"created":true|false,"url":"…"}. With --ticket the session records that ticket and later runs resume on it; without one, topic matching is exact under NFC + case folding + whitespace collapse, never fuzzy. Exits 1 (neither --topic nor --ticket), 5 (machine-local path in the title), 6 (bare @ reference), 7 (the grilling:session label does not exist, or --ticket names no issue), 8 (the create or the label write failed — UNKNOWN), 9 (read-back mismatch), 11 (the search or the ticket read could not complete, so "none" is unproven), 16 (more than one open session matches). Example: fabrika grill open --ticket 5652',
+		'Open, or resume, the session issue for a topic. Prints {"session":n,"topic":"…","ticket":n|null,"created":true|false,"url":"…"}. With --ticket the session records that ticket and later runs resume on it; without one, topic matching is exact under NFC + case folding + whitespace collapse, never fuzzy. Exits 1 (neither --topic nor --ticket), 5 (machine-local path in the title), 6 (bare @ reference), 7 (the grilling:session label does not exist, or --ticket names no issue), 8 (the create or the label write failed — UNKNOWN), 9 (read-back mismatch), 11 (the search or the ticket read could not complete, so "none" is unproven), 16 (more than one open session matches), 19 (a scanned session\'s ## Came from section does not parse, so which session is bound to --ticket is undecidable). Example: fabrika grill open --ticket 5652',
 	),
 );
 

@@ -51,6 +51,7 @@ does not exist yet — rather than missing; check the registry before assuming a
 | `handoff-pack` | [`packages/fabrika-cli/src/wire/handoff-pack.ts`](../../../packages/fabrika-cli/src/wire/handoff-pack.ts) | `handoff` | `handoff` |
 | `governance-digest` | [`packages/fabrika-cli/src/wire/governance-digest.ts`](../../../packages/fabrika-cli/src/wire/governance-digest.ts) | `governance` | `front-door` |
 | `graduate-emitted` | [`packages/fabrika-cli/src/wire/graduate-emitted.ts`](../../../packages/fabrika-cli/src/wire/graduate-emitted.ts) | `graduate` | `graduate` |
+| `came-from` | [`packages/fabrika-cli/src/wire/came-from.ts`](../../../packages/fabrika-cli/src/wire/came-from.ts) | `grilling`, `prototyping` | `grilling`, `wayfinding` |
 <!-- fabrika:wire-index:end -->
 
 ### `acceptance-criteria`
@@ -259,6 +260,22 @@ namespace-prefix gate that returns `Absent` for a non-member, so a widening that
 constant would emit markers it could never read back — and an emission is not a verdict anyway: it
 carries no `PASS`/`FAIL` polarity, binds a spec digest rather than a head SHA, and nothing recorded
 in it can block a merge.
+
+### `came-from`
+
+This is the section saying which issue an artifact's question arrived from, and it is the only thing
+carrying a `wayfinding` frontier ticket number into a sibling skill. `spike open` writes it on a
+spike issue and `grill open` writes it on a session issue; `grill open` also *reads* it, because for
+a session the binding is the resume key. That is the whole reason it is a format rather than a
+grammar either group owns: two writers and two readers across two skills, and a reader drifting from
+a writer here is silent.
+
+`standalone` is a value rather than a blank, so an artifact opened with no ticket says so instead of
+leaving a reader to infer it from an empty section. And the `Malformed` answer is load-bearing beyond
+the usual: a session whose heading drifted, answered as "bound to nothing", would make the resume
+find no match and mint a **second** session on one ticket — the split #5661 was filed about, except
+silent, where the failure it replaced was at least a visibly duplicate topic. `grill open` refuses on
+that answer rather than resuming past it.
 
 ## Adding a format
 
