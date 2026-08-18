@@ -1242,6 +1242,15 @@ read is `11`, UNKNOWN: which docs are exempt is then unknown, and the verdict ma
 Fenced code is **scanned**, deliberately — the repo's gate scans docs whole, and skipping fences here
 would make the predictor looser than what it predicts.
 
+A predictor and the gate it predicts have to carry the same path shapes, and fabrika may not import
+the gate's module (ADR 0238, ADR 0273). So the agreement is pinned rather than promised, on ADR
+0251's terms: the canonical shapes are the golden fixture
+`packages/fabrika-cli/src/build/__fixtures__/doc-leak-patterns.golden.json`, and each side asserts
+against it in a test of its own, so a drift on either side reds instead of shipping. In phoenix the
+gate's side is `packages/pipeline-cli/src/tools/leak-guard/fabrika-doc-leak-conformance.test.ts`,
+which pins the exempt declarations against each other too. `doc-leaks.ts` carries the why; this is
+the pointer to it.
+
 The surface anchor: the verb diffs the branch against its base and refuses a surface whose own file
 class the diff does not contain (`--surface prose` over a diff with no markdown is `10`) — the
 skill's judgment is taken, then checked against the tree, never silently accepted.

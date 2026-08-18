@@ -14,12 +14,17 @@
  *  3. **Self-exemption.** A doc whose subject IS path hygiene must spell the shapes out. That set is
  *     repo policy, so it is read from `.fabrika.jsonc`, not compiled in here (see `repo-config.ts`).
  *
- * **Why the shapes are re-declared rather than imported.** phoenix's own `leak-guard` owns the
- * authoritative gate and this predictor must agree with it byte for byte — but ADR 0238 forbids a
- * fabrika verb running v1 code, and ADR 0273 makes fabrika installable into a repo that has no
- * `pipeline-cli` at all. So the patterns are re-implemented from that source, scars included, and
- * `build check` sources them from **this one module** rather than re-declaring them at its call
- * site. The scars worth carrying, each already paid for once upstream:
+ * **Why the shapes are re-declared, and what keeps them honest.** phoenix's `leak-guard` owns the
+ * authoritative gate, but ADR 0238 forbids a fabrika verb running v1 code and ADR 0273 makes
+ * fabrika installable into a repo that has no `pipeline-cli` at all, so neither side can derive the
+ * shapes from the other. ADR 0251 rules what stands in for the import: the canonical bytes are
+ * committed as the golden fixture `__fixtures__/doc-leak-patterns.golden.json`, and each side pins
+ * it in a test of its own — `doc-leak-patterns.golden.test.ts` here, and
+ * `fabrika-doc-leak-conformance.test.ts` on the gate's side, which reads this fixture. Drift on
+ * either side reds. The fixture pins regex source and flags; the `reason` strings below are this
+ * scanner's own report text and deliberately are not shared vocabulary.
+ *
+ * The scars carried across, each already paid for once upstream:
  *
  *  - The `(?<![A-Za-z]:)` drive-letter carve-out on the `/Users/` arm: a Windows file URL
  *    (`file:///C:/Users/ci/…`) is not a macOS home leak, and flagging it blocked legitimate PRs.
