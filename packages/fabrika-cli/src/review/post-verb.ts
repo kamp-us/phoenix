@@ -18,6 +18,10 @@
  * (`head.ts`, #5122). `12` labels the tree; only the binding makes the derived set provably that
  * tree's — the two are separate reads, and a force-push that rewinds back onto `--sha` passes `12`
  * clean while the PR-number file endpoint serves some other head's list.
+ *
+ * With `--base`/`--tip` the verb runs the range-scoped path instead (`./range-post.ts`, #5935): the
+ * positional is the child issue, the marker is `../wire/range-verdict-marker.ts`'s, and the same
+ * namespace rule is asked of the range's own changed paths.
  */
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
@@ -49,6 +53,7 @@ import {
 } from "./codes.ts";
 import {contentDigestAt} from "./content-binding.ts";
 import {bindHead, boundLine} from "./head.ts";
+import {runRangePost} from "./range-post.ts";
 import {badNumber, openPull, resolveTargetRepo, scannedLine} from "./target.ts";
 import {latestByWriteRecency, stampIso, withWrittenAt} from "./write-recency.ts";
 
@@ -65,12 +70,17 @@ const SURFACE: AuthoredSurface = {
 export type Carrier = "marker" | "advisory";
 
 export interface PostOptions {
+	/** In range mode (`base`/`tip` given) this is the **child issue** the verdict lands on. */
 	readonly pr: number;
 	readonly namespace: string;
 	readonly polarity: string;
-	readonly sha: string;
+	/** Required in PR mode; refused in range mode, where content is the only binding (ADR 0276). */
+	readonly sha: string | null;
 	readonly clause: string;
 	readonly carrier: string;
+	/** The two ends of a range-scoped verdict (#5935) — both or neither. */
+	readonly base: string | null;
+	readonly tip: string | null;
 	readonly repo: string | null;
 	readonly json: boolean;
 	readonly env: Readonly<Record<string, string | undefined>>;
@@ -219,13 +229,6 @@ export const runPost = (
 				`${VERB}: --carrier advisory is a PASS path only (ADR 0226) — post the FAIL marker instead.`,
 			);
 		}
-		const inspected = headSha(options.sha);
-		if (inspected === null) {
-			return refuse(
-				OFF_VOCABULARY,
-				`${VERB}: --sha "${options.sha}" is not a head SHA — expected 7–40 hex characters.`,
-			);
-		}
 		const clause = toClause(options.clause);
 		if (clause === null) {
 			return refuse(
@@ -234,12 +237,86 @@ export const runPost = (
 			);
 		}
 
+		// Range mode (#5935): the positional is the child issue, and content is the only binding, so
+		// --sha and the advisory carrier — both head-scoped ideas — are refused rather than ignored.
+		const ranged = options.base !== null || options.tip !== null;
+		if (ranged && (options.base === null || options.tip === null)) {
+			return refuse(
+				OFF_VOCABULARY,
+				`${VERB}: --base and --tip come together — a range has two ends.`,
+			);
+		}
+		if (ranged && options.sha !== null) {
+			return refuse(
+				OFF_VOCABULARY,
+				`${VERB}: --sha does not combine with --base/--tip — a range verdict binds content, not a head (ADR 0276).`,
+			);
+		}
+		if (ranged && carrier === "advisory") {
+			return refuse(
+				OFF_VOCABULARY,
+				`${VERB}: --carrier advisory is a PR-scoped path (ADR 0151) — a range verdict has no advisory carrier.`,
+			);
+		}
+		if (!ranged && options.sha === null) {
+			return refuse(
+				OFF_VOCABULARY,
+				`${VERB}: --sha is required for a PR-scoped verdict — for a range-scoped one pass --base and --tip.`,
+			);
+		}
 		const resolved = yield* resolveTargetRepo(VERB, options.repo, options.env);
 		if (resolved._tag === "Refused") return resolved.outcome;
 		const repo = resolved.repo;
 
 		const authored = readAuthored(SURFACE, yield* options.stdin);
 		if (authored._tag === "Refused") return authored.outcome;
+
+		const namespace = options.namespace.trim().toLowerCase();
+		if (ranged) {
+			const base = headSha(options.base ?? "");
+			const tip = headSha(options.tip ?? "");
+			if (base === null || tip === null) {
+				const [flag, raw] = base === null ? ["base", options.base] : ["tip", options.tip];
+				return refuse(
+					OFF_VOCABULARY,
+					`${VERB}: --${flag} "${raw}" is not a revision — expected 7–40 hex characters.`,
+				);
+			}
+			return yield* runRangePost(
+				{
+					verb: VERB,
+					admit: (paths, diagnostics) => {
+						const derived = namespacesOf(partition(paths));
+						return derived.includes(namespace)
+							? null
+							: refuse(
+									OFF_VOCABULARY,
+									`${VERB}: --namespace ${namespace} is not derived by ${base}..${tip}'s changes (present: ${derived.join(", ")}) — a gate never emits a namespace it did not judge.`,
+									diagnostics,
+								);
+					},
+					leak: (composed) => leakRefusal(SURFACE, composed),
+				},
+				{
+					issue: pr,
+					namespace,
+					polarity: polarity as Polarity,
+					range: {base, tip},
+					clause,
+					body: authored.text,
+					repo,
+					json,
+				},
+			);
+		}
+
+		const inspected = headSha(options.sha ?? "");
+		if (inspected === null) {
+			return refuse(
+				OFF_VOCABULARY,
+				`${VERB}: --sha "${options.sha}" is not a head SHA — expected 7–40 hex characters.`,
+			);
+		}
 
 		const target = yield* openPull(VERB, repo, pr, {
 			requireOpen: true,
@@ -279,7 +356,6 @@ export const runPost = (
 			scannedLine(VERB, listed.value.length, "changed file"),
 			`${VERB}: content ${content.value} — the digest of ${head.base}...${head.sha} this verdict survives on (ADR 0276).`,
 		];
-		const namespace = options.namespace.trim().toLowerCase();
 		if (!derived.includes(namespace)) {
 			return refuse(
 				OFF_VOCABULARY,

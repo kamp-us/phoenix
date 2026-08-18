@@ -65,6 +65,8 @@ const options = {
 	sha: HEAD,
 	clause: "guide matches shipped behavior",
 	carrier: "marker",
+	base: null,
+	tip: null,
 	repo: null,
 	json: false,
 	env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,

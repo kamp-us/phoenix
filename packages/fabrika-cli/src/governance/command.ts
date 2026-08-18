@@ -178,26 +178,45 @@ const base = leafCommand(
 const post = leafCommand(
 	"post",
 	{
-		pr: prArgument,
+		pr: Argument.integer("pr").pipe(
+			Argument.withDescription(
+				"the pull-request number — with --base/--tip, the child issue instead",
+			),
+		),
 		polarity: Flag.string("polarity").pipe(
 			Flag.withDescription("PASS or FAIL — a third token is not a polarity"),
 		),
 		sha: Flag.string("sha").pipe(
-			Flag.withDescription("the head the reviewer actually inspected (7-40 lowercase hex)"),
+			Flag.optional,
+			Flag.withDescription(
+				"the head the reviewer actually inspected (7-40 lowercase hex); required unless --base/--tip scope the verdict to a range",
+			),
 		),
 		clause: Flag.string("clause").pipe(
 			Flag.withDescription("the human clause; blank is not a clause"),
 		),
+		base: Flag.string("base").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"with --tip: post a range-scoped verdict over <base>..<tip> on the child issue named by the positional (#5935); never combined with --sha",
+			),
+		),
+		tip: Flag.string("tip").pipe(
+			Flag.optional,
+			Flag.withDescription("the range's tip revision — the other half of --base"),
+		),
 		repo: repoFlag,
 		json: jsonFlag,
 	},
-	Effect.fn(function* ({pr, polarity, sha, clause, repo, json}) {
+	Effect.fn(function* ({pr, polarity, sha, clause, base, tip, repo, json}) {
 		yield* emit(
 			yield* runPost({
 				pr,
 				polarity,
-				sha,
+				sha: Option.getOrNull(sha),
 				clause,
+				base: Option.getOrNull(base),
+				tip: Option.getOrNull(tip),
 				repo: Option.getOrNull(repo),
 				json,
 				env: process.env,
@@ -208,7 +227,7 @@ const post = leafCommand(
 ).pipe(
 	Command.withShortDescription("Post the governance verdict on stdin as one comment."),
 	Command.withDescription(
-		'Post the governance verdict read from STDIN: compose through the verdict-marker format, re-resolve the head, re-derive the namespace at the bound commit, leak-scan, upsert one comment, read it back. The namespace is fixed — there is no --namespace, so this verb cannot be aimed at another gate\'s. Prints `posted\\tgovernance\\t<polarity>\\t<sha>\\t<content>\\t<created|edited>\\t<url>`, where `<content>` is the content digest the verdict binds (ADR 0276). Exits 3 (stdin held nothing), 5/6 (a machine-local path, a bare @ reference), 7 (the PR is absent or closed), 8/9 (the write was unproven, the read-back differs), 10 (a bad --polarity, --sha or blank --clause), 11 (a precondition read failed — nothing was posted), 12 (the head moved past --sha), 14 (the diff derives no governance namespace). Example: fabrika governance post 4321 --polarity PASS --sha 03135b91 --clause "no contradiction, no weakening" < verdict.md',
+		'Post the governance verdict read from STDIN: compose through the verdict-marker format, re-resolve the head, re-derive the namespace at the bound commit, leak-scan, upsert one comment, read it back. With --base and --tip the verdict is RANGE-scoped instead (#5935): the positional names the child issue, the requirement is re-derived over what `<base>...<tip>` changed in this checkout, the first line goes through the `range-verdict-marker` format `lane prove` reads, and the answer\'s third field is `<base>..<tip>`; --sha is refused in this mode. The namespace is fixed — there is no --namespace, so this verb cannot be aimed at another gate\'s. Prints `posted\\tgovernance\\t<polarity>\\t<sha|base..tip>\\t<content>\\t<created|edited>\\t<url>`, where `<content>` is the content digest the verdict binds (ADR 0276). Exits 3 (stdin held nothing), 5/6 (a machine-local path, a bare @ reference), 7 (the PR is absent or closed; or, ranged, the issue is absent, closed, or a pull request), 8/9 (the write was unproven, the read-back differs), 10 (a bad --polarity, --sha or blank --clause, a lone --base/--tip, or --sha beside a range), 11 (a precondition read failed — nothing was posted), 12 (the head moved past --sha), 14 (the diff or range derives no governance namespace). Examples: fabrika governance post 4321 --polarity PASS --sha 03135b91 --clause "no contradiction, no weakening" < verdict.md; fabrika governance post 5830 --polarity PASS --base 9f2c1ab --tip 03135b9 --clause "no contradiction, no weakening" < verdict.md',
 	),
 );
 
