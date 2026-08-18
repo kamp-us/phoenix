@@ -2,7 +2,14 @@ import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
 import {errOut, fakeFs, fakeShell, okOut} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
-import {classifyDiff, notCoveredBy, runCheck, SURFACES, surfaceMismatch} from "./check-verb.ts";
+import {
+	classifyDiff,
+	linkTargets,
+	notCoveredBy,
+	runCheck,
+	SURFACES,
+	surfaceMismatch,
+} from "./check-verb.ts";
 import {
 	OFF_VOCABULARY,
 	PRECONDITION_UNKNOWN,
@@ -695,5 +702,84 @@ describe("the enumeration unions the untracked files with the diff", () => {
 		]);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stderr.at(-1)).toContain("the verdict is UNKNOWN, never green");
+	});
+});
+
+// #5639: the extractor read a markdown link written as an *example* as a live one, so the five docs
+// that state this repo's link convention could not pass the surface that reads them.
+describe("linkTargets — an illustrated link is not a link", () => {
+	const TOOLS_MD_493 =
+		"`doc-links` validates markdown `[text](path)` links and *masks* code spans by construction.\n";
+
+	it("returns no target for the TOOLS.md line that illustrates the link grammar", () => {
+		expect(linkTargets(TOOLS_MD_493)).toEqual([]);
+	});
+
+	it("returns no target for a link inside a fenced block", () => {
+		expect(linkTargets("intro\n\n```markdown\nSee [the ADR](NNNN-slug.md).\n```\n")).toEqual([]);
+	});
+
+	it("returns no target for a link inside a tilde fence, or a fence indented up to three", () => {
+		expect(linkTargets("~~~\n[a](gone.md)\n~~~\n")).toEqual([]);
+		expect(linkTargets("   ```\n[a](gone.md)\n   ```\n")).toEqual([]);
+	});
+
+	it("returns no target for a link inside a multi-backtick span", () => {
+		expect(linkTargets("write `` [a](`x`.md) `` to show it\n")).toEqual([]);
+	});
+
+	it("still returns a real relative link", () => {
+		expect(linkTargets("see [the index](.patterns/index.md) first\n")).toEqual([
+			".patterns/index.md",
+		]);
+	});
+
+	it("still returns a real repo-rooted link", () => {
+		expect(linkTargets("see [the index](/.patterns/index.md)\n")).toEqual(["/.patterns/index.md"]);
+	});
+
+	it("still returns a link sharing its line with an unrelated code span", () => {
+		expect(linkTargets("run `pnpm dev`, then read [the guide](DEVELOPMENT.md)\n")).toEqual([
+			"DEVELOPMENT.md",
+		]);
+	});
+
+	it("still returns a link after a fence closes, and after an unpartnered backtick", () => {
+		expect(linkTargets("```\n[a](gone.md)\n```\n\n[b](DEVELOPMENT.md)\n")).toEqual([
+			"DEVELOPMENT.md",
+		]);
+		expect(linkTargets("a lone ` tick, then [b](DEVELOPMENT.md)\n")).toEqual(["DEVELOPMENT.md"]);
+	});
+
+	it("keeps skipping schemes and bare fragments, masked or not", () => {
+		expect(linkTargets("[home](https://kamp.us) and [top](#intro)\n")).toEqual([]);
+	});
+});
+
+describe("the prose link check still reds a dead link", () => {
+	const DOC = "/repo/trees/lane-a/docs/guide.md";
+
+	it("reds a genuinely dead relative link in a changed doc", async () => {
+		const out = await run(
+			[...LANE_OK, [DIFF, okOut("docs/guide.md\n")]],
+			{surface: "prose"},
+			{
+				[DOC]: "see [the plan](plan.md)\n",
+			},
+		);
+		expect(out.code).toBe(VALIDATION_RED);
+		expect(out.stderr.some((line) => line.includes('links to "plan.md"'))).toBe(true);
+	});
+
+	it("greens the same doc when that link is written as an example", async () => {
+		const out = await run(
+			[...LANE_OK, [DIFF, okOut("docs/guide.md\n")]],
+			{surface: "prose"},
+			{
+				[DOC]: "write `[the plan](plan.md)` to cite it\n",
+			},
+		);
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).verdict).toBe("green");
 	});
 });
