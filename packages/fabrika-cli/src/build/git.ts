@@ -238,6 +238,12 @@ const pathLines = (stdout: string): ReadonlyArray<string> =>
  *
  * Ignored files stay out; `--exclude-standard` is what keeps them out.
  *
+ * `--full-name -- :/` is load-bearing on the second read: bare `ls-files --others` is cwd-scoped and
+ * prints cwd-relative paths, while `git diff` is repo-wide and root-relative. Run from a
+ * subdirectory the two disagree, dropping untracked files outside the cwd and handing the rest a
+ * path that does not resolve against `lane.root`. The pathspec restores repo-wide, the flag
+ * restores root-relative.
+ *
  * The second source is the scar (#5823). `git diff` never reports an untracked path, so a
  * brand-new file was absent from the list `build check` partitions — neither validated nor named in
  * `unvalidated`, invisible instead of disclosed, while the verdict read green. The natural lane
@@ -250,7 +256,14 @@ export const changedFiles = (base: string): Shell<Attempt<ReadonlyArray<string>>
 	Effect.gen(function* () {
 		const tracked = yield* execCapture("git", ["diff", "--name-only", base]);
 		if (!tracked.ok) return fail(tracked.reason);
-		const untracked = yield* execCapture("git", ["ls-files", "--others", "--exclude-standard"]);
+		const untracked = yield* execCapture("git", [
+			"ls-files",
+			"--others",
+			"--exclude-standard",
+			"--full-name",
+			"--",
+			":/",
+		]);
 		if (!untracked.ok) return fail(untracked.reason);
 		const union = new Set([...pathLines(tracked.stdout), ...pathLines(untracked.stdout)]);
 		return ok([...union].sort());

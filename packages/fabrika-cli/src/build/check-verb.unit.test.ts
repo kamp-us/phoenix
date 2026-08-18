@@ -29,7 +29,8 @@ const PERM = /^gh api repos\/o\/r\/collaborators\/agent\/permission/;
 const REPO_META = /^gh api repos\/o\/r --jq \.default_branch$/;
 const MERGE_BASE = /^git merge-base HEAD origin\/main$/;
 const DIFF = /^git diff --name-only /;
-const UNTRACKED = /^git ls-files --others --exclude-standard$/;
+const UNTRACKED_ARGV = "git ls-files --others --exclude-standard --full-name -- :/";
+const UNTRACKED = /^git ls-files --others --exclude-standard --full-name -- :\/$/;
 const TYPECHECK = /^pnpm typecheck --force$/;
 const LINT = /^pnpm lint:worktree$/;
 
@@ -596,6 +597,25 @@ describe("the enumeration unions the untracked files with the diff", () => {
 	it("still refuses on 7 when neither source yields a path", async () => {
 		const out = await run([untracked(""), ...LANE_OK, [DIFF, okOut("")]]);
 		expect(out.code).toBe(ZERO_SCOPE);
+	});
+
+	// Scripting stdout cannot catch a cwd-scoped read: bare `ls-files --others` answers only for the
+	// cwd and answers cwd-relative, while `git diff` answers repo-wide and root-relative. Run from a
+	// subdirectory that drops untracked files elsewhere in the tree and misresolves the rest against
+	// `lane.root`. Only the argv proves the two reads cover the same tree, so assert the argv.
+	it("reads the untracked list repo-wide and root-relative", async () => {
+		const shell = fakeShell([
+			untracked("apps/web/src/New.tsx\n"),
+			...LANE_OK,
+			[DIFF, okOut("apps/web/src/App.tsx\n")],
+			[TYPECHECK, okOut("")],
+			[LINT, okOut("")],
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(runCheck(options), Layer.merge(shell.layer, fakeFs({}).layer)),
+		);
+		expect(out.code).toBe(0);
+		expect(shell.calls).toContain(UNTRACKED_ARGV);
 	});
 
 	it("refuses an unreadable untracked read on 11 — a short list is a fail-open green", async () => {
