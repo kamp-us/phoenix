@@ -58,8 +58,17 @@ issue from the code and the dedup outcome is read.
   a PR**; if you must carve the work down to call it a feature, it is an epic and your carve-out is
   its first child. Tells: missing prerequisite infrastructure, implied new surfaces, and your own
   hedging — "if this balloons, split X out" is the epic boundary talking.
+- **decision vs the type you already picked** — if landing on that type meant rejecting a *named
+  alternative* on a developer-experience or product-facing surface, the rejection is the tell:
+  someone still has to pick that direction, so it leaves triage as a `type:decision`, or as the type
+  you picked stamped `ready-for:human` in step 7. **"Forced" describes implementation mechanics,
+  never direction** — step 4's *forced fit* is the separate question of where a ticket attaches — and
+  "no PR in this repo can change X" eliminates nothing on its own, because the code X invokes is
+  usually repo-ownable (#5679's global shim vs `packages/fabrika-cli/src/bin.ts`; that exclusion cost
+  a full build round).
 
-Done when one type holds and you can name the question that excluded its nearest neighbour.
+Done when one type holds and you can name the question that excluded its nearest neighbour — a
+question about which category this is, never about which direction it should take.
 
 ## 4 — Attach before you mint
 
