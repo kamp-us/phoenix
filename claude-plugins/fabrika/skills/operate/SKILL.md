@@ -78,7 +78,7 @@ A lane `lane emit` booted is an epic run, and an epic run is **one branch and on
 you read: the topology parsed, so children exist. Children build in parallel worktrees, each on its
 own local branch, and land by merging into a single **assembly branch** — `epic/<lane-key>`, the
 name `lane brief` hands every child shell and the base `lane prove` reads a child's range against.
-Create it before the first dispatch, off the default branch the board names. `origin/HEAD` is
+Create it before the first dispatch, off the repository's default branch. `origin/HEAD` is
 git's own pointer to that branch — no name resolution needed; the `set-head` call refreshes the
 pointer in a checkout where it was never set:
 
@@ -188,8 +188,7 @@ exit `30` is a proven "the remote did not move" — never a `MOVED` you assume.
 
 **The first of those pushes also opens the run's one PR**, as a draft — a draft carries the CI
 signal and the board's view of the run without inviting a review the machine has not asked for.
-Open it yourself; no shell owns this branch. Its title is the epic issue's own, read off the board
-(`gh issue view $lane_key --json title`) rather than summarised by you, and its body carries two
+Open it yourself; no shell owns this branch. Its body carries two
 things, neither of them a summary you compose:
 
 - **one closing reference per child that has landed so far**, plus one on the epic issue itself.
