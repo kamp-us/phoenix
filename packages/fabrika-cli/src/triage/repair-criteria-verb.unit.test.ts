@@ -14,6 +14,8 @@ import {runRepairCriteria} from "./repair-criteria-verb.ts";
 const READ = /^gh api repos\/o\/r\/issues\/5726$/;
 const PATCH = /^gh api --method PATCH repos\/o\/r\/issues\/5726 -f body=/;
 const LIST = /^gh api --paginate repos\/o\/r\/issues\?state=open&per_page=100$/;
+const COMMENT = /^gh api --method POST repos\/o\/r\/issues\/5726\/comments -f body=/;
+const COMMENTED = okOut('{"id":1,"html_url":"https://example.test/c/1"}');
 
 const ITEMS = "- [ ] one criterion\n- [x] a checked one";
 const DRIFTED = `Intro.\n\n## Acceptance criteria\n\n${ITEMS}`;
@@ -36,6 +38,7 @@ const issue = (body: string, extra: Record<string, unknown> = {}): ExecResult =>
 const options = {
 	issue: 5726 as number | null,
 	sweep: false,
+	dryRun: false,
 	repo: null,
 	json: false,
 	env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,
@@ -55,6 +58,7 @@ describe("runRepairCriteria — one issue", () => {
 			[once(READ), issue(DRIFTED)],
 			[PATCH, okOut("{}")],
 			[READ, issue(REPAIRED)],
+			[COMMENT, COMMENTED],
 		]);
 		const outcome = await Effect.runPromise(
 			Effect.provide(runRepairCriteria(options), shell.layer),
@@ -64,6 +68,7 @@ describe("runRepairCriteria — one issue", () => {
 		const patched = shell.calls.find((line) => PATCH.test(line));
 		expect(patched).toContain("### Acceptance criteria");
 		expect(patched).not.toContain("\n## Acceptance criteria");
+		expect(shell.calls.find((line) => COMMENT.test(line))).toContain("level 2 → 3");
 	});
 
 	it("converts plain bullets under a conforming heading and PATCHes the checkboxes (#6001)", async () => {
@@ -72,6 +77,7 @@ describe("runRepairCriteria — one issue", () => {
 			[once(READ), issue(bullets)],
 			[PATCH, okOut("{}")],
 			[READ, issue("### Acceptance criteria\n\n- [ ] one criterion\n- [ ] a second")],
+			[COMMENT, COMMENTED],
 		]);
 		const outcome = await Effect.runPromise(
 			Effect.provide(runRepairCriteria(options), shell.layer),
@@ -147,6 +153,28 @@ describe("runRepairCriteria — one issue", () => {
 		expect(mismatched.code).toBe(READBACK_MISMATCH);
 	});
 
+	it("reports a failed disclosure comment on 8 — an in-place edit with no record of it", async () => {
+		const outcome = await run([
+			[once(READ), issue(DRIFTED)],
+			[PATCH, okOut("{}")],
+			[READ, issue(REPAIRED)],
+			[COMMENT, errOut("gh: timeout")],
+		]);
+		expect(outcome.code).toBe(WRITE_UNKNOWN);
+		expect(outcome.stderr.at(-1)).toContain("nothing recording it");
+	});
+
+	it("answers would-repair under --dry-run: the plan on stdout, no PATCH and no comment", async () => {
+		const shell = fakeShell([[READ, issue(DRIFTED)]]);
+		const outcome = await Effect.runPromise(
+			Effect.provide(runRepairCriteria({...options, dryRun: true}), shell.layer),
+		);
+		expect(outcome.code).toBe(0);
+		expect(outcome.stdout).toBe("would-repair\t5726\n");
+		expect(outcome.stderr.at(-1)).toContain("level 2 → 3");
+		expect(shell.calls.some((line) => PATCH.test(line) || COMMENT.test(line))).toBe(false);
+	});
+
 	it("refuses usage that names neither or both targets, before reading anything", async () => {
 		expect((await run([], {issue: null, sweep: false})).code).toBe(1);
 		expect((await run([], {issue: 5726, sweep: true})).code).toBe(1);
@@ -165,6 +193,7 @@ describe("runRepairCriteria — the sweep", () => {
 	);
 	const PATCH_1 = /^gh api --method PATCH repos\/o\/r\/issues\/1 -f body=/;
 	const READ_1 = /^gh api repos\/o\/r\/issues\/1$/;
+	const COMMENT_1 = /^gh api --method POST repos\/o\/r\/issues\/1\/comments -f body=/;
 
 	it("repairs every drifted open issue and prints one outcome line per issue, ascending", async () => {
 		const shell = fakeShell([
@@ -172,13 +201,14 @@ describe("runRepairCriteria — the sweep", () => {
 			[once(READ_1), okOut(JSON.stringify(record(1, DRIFTED.replace("Intro.", "First."))))],
 			[PATCH_1, okOut("{}")],
 			[READ_1, okOut(JSON.stringify(record(1, REPAIRED.replace("Intro.", "First."))))],
+			[COMMENT_1, COMMENTED],
 		]);
 		const outcome = await Effect.runPromise(
 			Effect.provide(runRepairCriteria({...options, issue: null, sweep: true}), shell.layer),
 		);
 		expect(outcome.code).toBe(0);
 		const [summary, ...lines] = outcome.stdout.trimEnd().split("\n");
-		expect(summary).toBe("swept\t1\t1\t1\t1\t0");
+		expect(summary).toBe("swept\t1\t1\t1\t1\t0\t0");
 		expect(lines[0]).toBe("repaired\t1");
 		expect(lines[1]).toBe("conforming\t2");
 		expect(lines[2]).toBe("no-block\t3");
@@ -212,10 +242,27 @@ describe("runRepairCriteria — the sweep", () => {
 		expect(outcome.code).toBe(0);
 		expect(shell.calls.some((line) => PATCH_1.test(line))).toBe(false);
 		const [summary, ...lines] = outcome.stdout.trimEnd().split("\n");
-		expect(summary).toBe("swept\t0\t1\t1\t1\t1");
+		expect(summary).toBe("swept\t0\t1\t1\t1\t1\t0");
 		expect(lines[0]).toBe(
 			"moved\t1\tthe body changed after the board snapshot — re-run the sweep to repair it against its current body",
 		);
+	});
+
+	it("--dry-run prints the exact set it would touch and issues no re-read, PATCH or comment", async () => {
+		const shell = fakeShell([[LIST, board]]);
+		const outcome = await Effect.runPromise(
+			Effect.provide(
+				runRepairCriteria({...options, issue: null, sweep: true, dryRun: true}),
+				shell.layer,
+			),
+		);
+		expect(outcome.code).toBe(0);
+		const [summary, ...lines] = outcome.stdout.trimEnd().split("\n");
+		expect(summary).toBe("swept\t0\t1\t1\t1\t0\t1");
+		expect(lines[0]).toBe("would-repair\t1\tline 3: level 2 → 3");
+		expect(
+			shell.calls.some((line) => PATCH_1.test(line) || READ_1.test(line) || COMMENT_1.test(line)),
+		).toBe(false);
 	});
 
 	it("answers moved when the issue left the open board between the snapshot and its write", async () => {

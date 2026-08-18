@@ -14,6 +14,7 @@
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {
+	createComment,
 	getIssue,
 	type IssueRecord,
 	listOpenIssues,
@@ -30,13 +31,27 @@ import {
 	ZERO_SCOPE,
 } from "./codes.ts";
 import {legacyPreserved} from "./enrich-legacy.ts";
-import {type CriteriaRepairPlan, describeRepair, planRepair} from "./repair-criteria.ts";
+import {
+	type CriteriaRepairPlan,
+	describeRepair,
+	disclosureComment,
+	planRepair,
+} from "./repair-criteria.ts";
 import {scannedLine} from "./scope.ts";
 
 export interface RepairCriteriaOptions {
 	/** The one issue to repair, or `null` with `--sweep` for the whole open board. */
 	readonly issue: number | null;
 	readonly sweep: boolean;
+	/**
+	 * Plan every issue and write nothing — the blast radius, readable before the first PATCH.
+	 *
+	 * The sweep edits filed bodies in place, and GitHub keeps no issue-body history to recover from,
+	 * so the set it would touch has to be reviewable *up front* rather than reconstructed from the
+	 * outcome lines afterwards (#5981). Under it a repairable issue answers `would-repair` instead of
+	 * `repaired`, and no re-read, no PATCH and no disclosure comment is issued.
+	 */
+	readonly dryRun: boolean;
 	readonly repo: string | null;
 	readonly json: boolean;
 	readonly env: Readonly<Record<string, string | undefined>>;
@@ -46,7 +61,12 @@ type Shell = ChildProcessSpawner.ChildProcessSpawner;
 
 /**
  * The closed outcome vocabulary a sweep line speaks — one token per plan tag, plus `moved` for an
- * issue whose body changed between the board snapshot and its own write.
+ * issue whose body changed between the board snapshot and its own write, and `would-repair` for a
+ * repairable issue a dry run left alone.
+ *
+ * `would-repair` is its own token rather than `repaired` under a header flag: the two lines end up
+ * quoted side by side in a PR and a review comment, and a dry run whose lines read `repaired` is a
+ * claim that bodies moved when none did.
  */
 const OUTCOME = {
 	Repaired: "repaired",
@@ -55,7 +75,7 @@ const OUTCOME = {
 	Refused: "refused",
 } as const satisfies Record<CriteriaRepairPlan["_tag"], string>;
 
-type SweepOutcome = (typeof OUTCOME)[CriteriaRepairPlan["_tag"]] | "moved";
+type SweepOutcome = (typeof OUTCOME)[CriteriaRepairPlan["_tag"]] | "moved" | "would-repair";
 
 interface RepairFailure {
 	readonly code: number;
@@ -63,13 +83,20 @@ interface RepairFailure {
 }
 
 /**
- * Patch one planned repair and prove it landed: PATCH, re-read, byte-compare. The same
- * write-then-read-back discipline as `triage enrich`, against the same normalisation.
+ * Patch one planned repair, prove it landed, then disclose it: PATCH, re-read, byte-compare,
+ * comment. The same write-then-read-back discipline as `triage enrich`, against the same
+ * normalisation.
+ *
+ * The disclosure comment posts **after** the read-back, so a comment never claims an edit that did
+ * not land, and its own failure is a refusal rather than a swallowed error: an in-place rewrite of a
+ * filed body whose only record failed to post is exactly the untraceable edit the founder's ruling
+ * conditioned this sweep on avoiding (#5981).
  */
 const writeRepair = (
 	repo: string,
 	issue: number,
 	body: string,
+	disclosure: string,
 ): Effect.Effect<RepairFailure | null, never, Shell> =>
 	Effect.gen(function* () {
 		const written = yield* patchIssueBody(repo, issue, body);
@@ -94,6 +121,13 @@ const writeRepair = (
 				reason: `body written but #${issue}'s read-back does not match — inspect it before continuing.`,
 			};
 		}
+		const disclosed = yield* createComment(repo, issue, disclosure);
+		if (disclosed._tag === "Failure") {
+			return {
+				code: WRITE_UNKNOWN,
+				reason: `#${issue}'s body was repaired and read back, but its disclosure comment could not be posted: ${disclosed.reason} — the edit is on the board with nothing recording it; post the disclosure by hand before continuing.`,
+			};
+		}
 		return null;
 	});
 
@@ -101,6 +135,7 @@ const runSingle = (
 	repo: string,
 	issue: number,
 	json: boolean,
+	dryRun: boolean,
 ): Effect.Effect<VerbOutcome, never, Shell> =>
 	Effect.gen(function* () {
 		const target = yield* getIssue(repo, issue);
@@ -131,22 +166,35 @@ const runSingle = (
 			return refuse(UNREPAIRABLE, `triage repair-criteria: refused #${issue} — ${plan.reason}`);
 		}
 		const diagnostics: string[] = [];
+		let outcome: SweepOutcome = OUTCOME[plan._tag];
 		if (plan._tag === "Repaired") {
 			diagnostics.push(
 				`triage repair-criteria: #${issue} ${plan.repairs.map(describeRepair).join("; ")}, ${plan.criteria.length} criteria intact.`,
 			);
-			const failure = yield* writeRepair(repo, issue, plan.body);
-			if (failure !== null) {
-				return refuse(failure.code, `triage repair-criteria: ${failure.reason}`, diagnostics);
+			if (dryRun) {
+				outcome = "would-repair";
+			} else {
+				const failure = yield* writeRepair(
+					repo,
+					issue,
+					plan.body,
+					disclosureComment(plan.repairs, plan.criteria),
+				);
+				if (failure !== null) {
+					return refuse(failure.code, `triage repair-criteria: ${failure.reason}`, diagnostics);
+				}
 			}
 		}
-		const outcome = OUTCOME[plan._tag];
 		return json
 			? answer(JSON.stringify({outcome, number: issue}), diagnostics)
 			: answer(`${outcome}\t${issue}`, diagnostics);
 	});
 
-const runSweep = (repo: string, json: boolean): Effect.Effect<VerbOutcome, never, Shell> =>
+const runSweep = (
+	repo: string,
+	json: boolean,
+	dryRun: boolean,
+): Effect.Effect<VerbOutcome, never, Shell> =>
 	Effect.gen(function* () {
 		const board = yield* listOpenIssues(repo);
 		if (board._tag === "Failure") {
@@ -166,12 +214,16 @@ const runSweep = (repo: string, json: boolean): Effect.Effect<VerbOutcome, never
 			"no-block": 0,
 			refused: 0,
 			moved: 0,
+			"would-repair": 0,
 		};
 		for (const issue of issues) {
 			const plan = planRepair(issue.body, issue.number, legacyPreserved);
 			let outcome: SweepOutcome = OUTCOME[plan._tag];
 			let reason = plan._tag === "Refused" ? plan.reason : null;
-			if (plan._tag === "Repaired") {
+			if (plan._tag === "Repaired" && dryRun) {
+				outcome = "would-repair";
+				reason = plan.repairs.map(describeRepair).join("; ");
+			} else if (plan._tag === "Repaired") {
 				// The board snapshot ages across a run of hundreds of sequential writes, and the
 				// pipeline edits issue bodies the whole time. Re-read immediately before the PATCH so
 				// the planned body is anchored to a body proven live: without this the read-back
@@ -195,7 +247,12 @@ const runSweep = (repo: string, json: boolean): Effect.Effect<VerbOutcome, never
 							? "the issue left the open board mid-sweep"
 							: "the body changed after the board snapshot — re-run the sweep to repair it against its current body";
 				} else {
-					const failure = yield* writeRepair(repo, issue.number, plan.body);
+					const failure = yield* writeRepair(
+						repo,
+						issue.number,
+						plan.body,
+						disclosureComment(plan.repairs, plan.criteria),
+					);
 					if (failure !== null) {
 						return refuse(failure.code, `triage repair-criteria: ${failure.reason}`, [
 							scanned,
@@ -213,7 +270,7 @@ const runSweep = (repo: string, json: boolean): Effect.Effect<VerbOutcome, never
 			);
 		}
 
-		const summary = `swept\t${counts.repaired}\t${counts.conforming}\t${counts["no-block"]}\t${counts.refused}\t${counts.moved}`;
+		const summary = `swept\t${counts.repaired}\t${counts.conforming}\t${counts["no-block"]}\t${counts.refused}\t${counts.moved}\t${counts["would-repair"]}`;
 		return json
 			? answer(JSON.stringify({outcome: "swept", scanned: issues.length, counts, issues: rows}), [
 					scanned,
@@ -225,7 +282,7 @@ export const runRepairCriteria = (
 	options: RepairCriteriaOptions,
 ): Effect.Effect<VerbOutcome, never, Shell> =>
 	Effect.gen(function* () {
-		const {issue, sweep, json} = options;
+		const {issue, sweep, json, dryRun} = options;
 		if ((issue === null && !sweep) || (issue !== null && sweep)) {
 			return refuse(
 				FAILED,
@@ -243,5 +300,7 @@ export const runRepairCriteria = (
 			);
 		}
 		const repo = repoAttempt.value;
-		return issue !== null ? yield* runSingle(repo, issue, json) : yield* runSweep(repo, json);
+		return issue !== null
+			? yield* runSingle(repo, issue, json, dryRun)
+			: yield* runSweep(repo, json, dryRun);
 	});
