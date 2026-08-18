@@ -142,10 +142,11 @@ active phase** (future phases read `waiting`; leave them alone), route on the le
 | `build` / `review` / `ship` | dispatch through `lane brief` — below |
 | `integrate` | land the child on the assembly branch yourself — the epic run, below |
 | a state `recipe route` names | apply that recipe verb — the chore drive, below |
-| a task's own final — `landed`, `shipped`, `frozen` | nothing to route and no event to record: that task is finished, and its phase advances when every task in it is final. `frozen` is an error final; it trips the phase at that point, and the fold is what says so |
+| a task's own final — `landed`, `shipped` | nothing to route and no event to record: that task is finished, and its phase advances when every task in it is final |
+| `frozen` | park — step 4. It is an error final, so it trips the phase where it sits and the fold says so; it is also the one final with a door out (ADR [0297](../../../../.decisions/0297-frozen-is-a-park-not-an-end.md)), and walking it is a human's `UNBLOCKED`, never yours |
 | `human:*` | park — step 4 |
 | `blocked` | park — step 4 |
-| any other name | end `STOPPED` naming the state — never guess a shell for a state you do not recognise, and never a park: `LANE-PARKED` promises a fold in `blocked`/`human:*`, which an unrecognised state cannot honour (Terminal vocabulary, below) |
+| any other name | end `STOPPED` naming the state — never guess a shell for a state you do not recognise, and never a park: `LANE-PARKED` promises a fold in `blocked`/`human:*`/`frozen`, which an unrecognised state cannot honour (Terminal vocabulary, below) |
 
 **You never compose a spawn prompt.** The verb prints it:
 
@@ -468,8 +469,8 @@ release you cannot prove. A `STOPPED` run releases too — a claim outliving the
 is the same lane nobody can pick up.
 
 
-**A run never ends `LANE-PARKED` while the fold reads a non-parked state.** `human:*` and
-`blocked` are already parked — the fold itself says so, and no event is owed on top of it. Any
+**A run never ends `LANE-PARKED` while the fold reads a non-parked state.** `human:*`, `blocked`
+and `frozen` are already parked — the fold itself says so, and no event is owed on top of it. Any
 park you originate — one this section names rather than a state the fold already holds — records
 the event that matches the terminal first: `lane transition $lane_key BLOCKED`, then a fresh
 `lane status`, and only when the re-fold reads `blocked` or `human:*` does the run end
@@ -483,7 +484,10 @@ block is generic — [#5820](https://github.com/kamp-us/phoenix/issues/5820) tra
 
 You cannot clear a park: post on the driven issue what is needed and from whom (the parking
 spawn's report names both; for `human:cp-approval` it is a control-plane approval at the PR's
-current head), then end `LANE-PARKED`. One park class names its owner here, not off the spawn's
+current head; for `frozen` it is a founder-cleared repair round, recorded with `build clear`, which
+re-folds the task into `build` on its own — a bare `UNBLOCKED` walks the door back into the same
+review with the budget still spent, so the next `FAIL` freezes it again). One park class names its
+owner here, not off the spawn's
 report: **a wire defect on the driven issue's own body** — an acceptance-criteria heading a
 spawned shell fail-louds on, a criteria block that reads as no shape the verbs parse.
 
@@ -526,7 +530,7 @@ fold reads (`human:novel-park` is the named park a recipe refusal folds to), and
 caller re-reads the ledger, never your summary. A resumed run that folds into a still-parked lane restates the park in one comment
 and ends `LANE-PARKED` again; the ledger, not your patience, decides when the lane moves.
 
-**A terminal fold (`status: done` — `shipped`, `frozen`, `complete`, `tripped`, and a chore's
+**A terminal fold (`status: done` — `shipped`, `complete`, `tripped`, and a chore's
 `swept`) ends the run with the transcript**, posted to the driven issue straight off the verbs:
 
 ```bash
@@ -537,6 +541,10 @@ with `lane history $lane_key` appended the same way when the event log adds anyt
 show. Name the terminal state in the comment. End `LANE-TERMINAL`. On a chore lane the pipe has no
 issue to land on: print the same two verbs and hand their bytes to your caller, who owns where a
 chore's transcript is posted.
+
+**A `tripped` fold is not automatically a terminal** — read which state its error task sits in. On
+`frozen` the run ends `LANE-PARKED` with the transcript and the need posted (the founder-cleared
+round above); every other error final has no door and ends `LANE-TERMINAL`.
 
 **Resume is a re-spawn.** There is no handoff and no memory: resuming a lane is spawning the
 operator again with the same issue number — step 1 tolerates the existing lane, and the fold says
@@ -559,17 +567,17 @@ re-spawn above ([#5897](https://github.com/kamp-us/phoenix/issues/5897)).
 ## Terminal vocabulary
 
 Every run ends as exactly one of — each naming what was recorded and what the fold reads after:
-**`LANE-TERMINAL`** (the machine folded to a final state — `shipped`, `frozen`, `complete`,
+**`LANE-TERMINAL`** (the machine folded to a final state with no door out — `shipped`, `complete`,
 `tripped`; no event recorded on top of a final fold; transcript posted on the driven issue) ·
-**`LANE-PARKED`** (the fold reads `blocked` or `human:*` — either it already did and no event was
-owed, or the `BLOCKED` this run recorded put it there and the re-fold confirmed it; the need
+**`LANE-PARKED`** (the fold reads `blocked`, `human:*` or `frozen` — either it already did and no
+event was owed, or the `BLOCKED` this run recorded put it there and the re-fold confirmed it; the need
 posted on the driven issue) · **`LANE-HELD`** (step 1's claim was proven lost — another driver owns
 this lane, its token named; no ledger emitted, no shell spawned, no marker retracted, nothing
 posted) · **`STOPPED`** (a verb exit UNKNOWN, a malformed record, an
 unroutable state, or a `BLOCKED` refused with exit `12` — the code or state named, nothing
 guessed, no event recorded, the fold unchanged). An unroutable state ends `STOPPED`, never
-`LANE-PARKED`: a park promises a mechanical `UNBLOCKED` resume from `blocked`/`human:*`, which a
-state this skill does not recognise cannot honour — and appending `BLOCKED` toward cells you do
+`LANE-PARKED`: a park promises a mechanical `UNBLOCKED` resume from `blocked`/`human:*`/`frozen`,
+which a state this skill does not recognise cannot honour — and appending `BLOCKED` toward cells you do
 not know is exactly the guess step 2's routing table forbids. A park reported as a
 terminal destroys the caller's routing: the two differ in exactly who acts next. Follow-up
 observations leave through `/report` the moment you see them — never through scope creep in a

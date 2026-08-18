@@ -14,6 +14,9 @@
  *   - A phase's **`onDone` pair** `[{target, guard}, {target}]` names the two workflow terminals
  *     structurally: the last phase's guarded target is the complete terminal, the fallthrough is
  *     the tripped one.
+ *   - A **`final` carrying an `on`** is a park rather than an end: it stays in `finals`, so its
+ *     phase still folds and its trip still reads, and the door out stays walkable — how `frozen`
+ *     takes an `UNBLOCKED` without leaving either set (ADR 0297).
  *
  * Compilation is total over its result type: a document that does not fit comes back as
  * {@link Malformed} with every defect named, never as a machine that half-works.
@@ -52,6 +55,8 @@ export interface CompiledTask {
 	readonly finals: ReadonlySet<string>;
 	/** The finals reached as a guarded array's fallthrough — the task's error terminals. */
 	readonly errorFinals: ReadonlySet<string>;
+	/** The finals that hold a cell for some event — parks the lane trips on and resumes from. */
+	readonly openFinals: ReadonlySet<string>;
 	/** The task's `context` entry minus the retry bookkeeping — passed through to status. */
 	readonly extras: Readonly<Record<string, unknown>>;
 }
@@ -172,6 +177,12 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 	}
 	if (defects.length > 0) return {defects};
 
+	const openFinals = new Set(
+		Object.entries(table)
+			.filter(([name, cells]) => finals.has(name) && Object.keys(cells).length > 0)
+			.map(([name]) => name),
+	);
+
 	const ctx = isRecord(context) ? context : {};
 	const declared = typeof ctx.maxRetries === "number" ? ctx.maxRetries : RETRY_BUDGET;
 	// The founder's cleared rounds are additive on the declared budget, so the lane guard and
@@ -189,7 +200,7 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 		init: (loaded) => [loaded ?? initial, []],
 		update: table as never,
 	});
-	return {task: {machine, initial, finals, errorFinals, extras}, defects: []};
+	return {task: {machine, initial, finals, errorFinals, openFinals, extras}, defects: []};
 };
 
 /** The two targets of a phase's `onDone` pair: `[guarded success, fallthrough trip]`. */

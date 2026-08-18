@@ -43,7 +43,12 @@
 							},
 							"hist": { "type": "history" },
 							"swept": { "type": "final" },
-							"frozen": { "type": "final" }
+							"frozen": {
+								"type": "final",
+								"on": {
+									"PARK_SWEEP.UNBLOCKED": "hist"
+								}
+							}
 						}
 					}
 				},

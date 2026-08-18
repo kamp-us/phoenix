@@ -242,15 +242,24 @@ export const applyEvent = (
 		};
 	}
 	const previous = deriveStatus(lane, states);
-	if (previous.status === "done") {
+	// A task sitting in an open final is parked, not finished: the lane tripped on it and the door
+	// out is still walkable (ADR 0297). Only the tripped terminal admits one — `complete` means
+	// every task finished clean, and no door leads out of that.
+	const parked =
+		previous.status === "done" &&
+		previous.stateValue === lane.terminals.tripped &&
+		taskIn(lane, taskId).openFinals.has(stateIn(states, taskId).type);
+	if (previous.status === "done" && !parked) {
 		return {
 			_tag: "Refused",
 			reason: `workflow is "${String(previous.stateValue)}" — no further events`,
 		};
 	}
-	const activePhase = lane.phases.find(
-		(phase) => typeof (previous.stateValue as Record<string, unknown>)[phase.name] === "object",
-	);
+	const activePhase = parked
+		? lane.phases.find((phase) => phase.tasks.includes(taskId))
+		: lane.phases.find(
+				(phase) => typeof (previous.stateValue as Record<string, unknown>)[phase.name] === "object",
+			);
 	if (activePhase === undefined || !activePhase.tasks.includes(taskId)) {
 		return {
 			_tag: "Refused",
@@ -271,6 +280,14 @@ export const applyEvent = (
 			return {_tag: "Refused", reason: `${error.name}: ${error.message}`};
 		}
 		throw error;
+	}
+	// A region booted straight into a park left no state behind it, so its door resolves to the park
+	// itself; recording that would answer "resumed" for a fold that did not move.
+	if (parked && next.type === stateIn(states, taskId).type) {
+		return {
+			_tag: "Refused",
+			reason: `task "${taskId}" booted in "${next.type}" and left no state to resume — the door leads back to itself`,
+		};
 	}
 	const entry: LogEntry = {task: taskId, event: `${taskId.toUpperCase()}.${event}`, at};
 	const current = deriveStatus(lane, {...states, [taskId]: next});
