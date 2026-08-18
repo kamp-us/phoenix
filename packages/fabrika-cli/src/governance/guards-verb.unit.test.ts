@@ -6,6 +6,7 @@ import {DIFF_AT} from "../review/fixtures.test-support.ts";
 import {INCOMPLETE_SCAN, PRECONDITION_UNKNOWN, STALE_HEAD, ZERO_SCOPE} from "./codes.ts";
 import {
 	BASE,
+	BASE_TIP,
 	binding,
 	HEAD,
 	OLD_HEAD,
@@ -115,6 +116,30 @@ describe("runGuards", () => {
 			),
 		);
 		expect(out.stdout).not.toContain("guard-file");
+	});
+
+	/**
+	 * The point read #6077 found, pinned (#5770).
+	 *
+	 * The block comparison is a read at ONE commit, so unlike the three-dot diff around it nothing
+	 * recomputes a branch point for it. Main here has edited the anchor since this branch left: at the
+	 * merge base the anchor still reads `one`, which is what the head carries, and at the branch tip
+	 * it reads `three`. Reading the tip would report a modification this PR did not make.
+	 */
+	it("compares the anchor block at the merge base, not at a main that edited it since", async () => {
+		const anchored = (text: string): string => `<!-- anchor: G --> ${text}\n`;
+		const out = await run([
+			[PULL, pull({changedFiles: 1})],
+			...binding(),
+			[DIFF_AT(), okOut(diffOf(SKILL, "-prose", "+other prose"))],
+			[STATUS_AT(), statuses(["M", SKILL])],
+			[SHOW_AT(HEAD, SKILL), okOut(anchored("one"))],
+			[SHOW_AT(BASE, SKILL), okOut(anchored("one"))],
+			[SHOW_AT(BASE_TIP, SKILL), okOut(anchored("three"))],
+		]);
+		expect(out.stdout).toBe(
+			[`guards\tno-anchor-change\t1`, `guard-file\t${SKILL}\t1`, ""].join("\n"),
+		);
 	});
 
 	it("states the scanned file count, the anchors in reach and the base comparison on stderr", async () => {

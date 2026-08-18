@@ -8,15 +8,25 @@
  * there is no linked issue to label, which means a dark ship the release queue cannot see — the
  * exact hazard this verb exists to prevent. The label write is read back, because v1's unverified
  * POST could report a release queued that no human would ever find.
+ *
+ * The write is also taxonomy-guarded like every other board-label writer (#4285, #6054): GitHub's
+ * label POST creates what it cannot find, so on a repo that never bootstrapped its taxonomy an
+ * unguarded write mints `status:awaiting-release` with a random colour and no description.
  */
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import {addLabels, getIssue} from "../io/issues.ts";
+import {addLabels, getIssue, listLabels} from "../io/issues.ts";
 import {getPullDiff, listPullFiles} from "../io/pulls.ts";
 import {AWAITING_RELEASE} from "../labels.ts";
 import {linkedIssueOf} from "../review/classes.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
-import {INCOMPLETE_SCAN, PRECONDITION_UNKNOWN, READBACK_MISMATCH, WRITE_UNKNOWN} from "./codes.ts";
+import {
+	INCOMPLETE_SCAN,
+	LABEL_ABSENT,
+	PRECONDITION_UNKNOWN,
+	READBACK_MISMATCH,
+	WRITE_UNKNOWN,
+} from "./codes.ts";
 import {detect, FLAG_REGISTRY} from "./dark-ship.ts";
 import {readFileAtRef} from "./github.ts";
 import {badNumber, NULL_TOKEN, resolvePull, resolveTargetRepo, scannedLine} from "./target.ts";
@@ -92,6 +102,24 @@ export const runRelease = (
 
 		const issue = linkedIssueOf(pull.body);
 		if (issue === null) return emit("no-issue", shipped.key, null);
+
+		// Guarded here and not earlier: it is the POST below that mints an unknown label, so an `n/a`
+		// or `no-issue` run — which posts nothing — owes the taxonomy no read (`plan flip`, #4285).
+		const taxonomy = yield* listLabels(repo);
+		if (taxonomy._tag === "Failure") {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: cannot read ${repo}'s label taxonomy: ${taxonomy.reason} — nothing was written, and a real dark ship is not queued; escalate.`,
+				diagnostics,
+			);
+		}
+		if (!taxonomy.value.includes(AWAITING_RELEASE)) {
+			return refuse(
+				LABEL_ABSENT,
+				`${VERB}: label "${AWAITING_RELEASE}" is absent from ${repo}'s taxonomy — refusing to create it (#4285). A real dark ship is not queued; run \`fabrika status bootstrap label-taxonomy\` and re-run.`,
+				diagnostics,
+			);
+		}
 
 		const labelled = yield* addLabels(repo, issue, [AWAITING_RELEASE]);
 		if (labelled._tag === "Failure") {
