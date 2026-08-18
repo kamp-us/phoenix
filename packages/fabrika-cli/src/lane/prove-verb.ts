@@ -24,9 +24,12 @@ import {resolveTargetRepo} from "../build/target.ts";
 import {localBranches, rangeCommits, resolveCommit} from "../io/git.ts";
 import {getIssue, listComments} from "../io/issues.ts";
 import {getPullRequest, listPullFiles, openPullsClosing, searchOpenPulls} from "../io/pulls.ts";
+import {readAdvisory} from "../review/advisory.ts";
 import {issueRefOf, namespacesOf, partition, touchesGovernanceRoot} from "../review/classes.ts";
 import {bindRange, contentDigestAt, rangeContentAt} from "../review/content-binding.ts";
 import {bindHead} from "../review/head.ts";
+import {CODEOWNERS_PATH, readBoundary} from "../ship/boundary.ts";
+import {classify} from "../ship/codeowners.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {epicBranch} from "../wire/lane-brief.ts";
 import {read as readRangeMarker} from "../wire/range-verdict-marker.ts";
@@ -350,6 +353,14 @@ const proveNoPull = (
  * gates enforce. `review-ui` is deliberately not derived here: the rendered-visual verdict is
  * `review-ui`'s own lane and the lane machine spawns no shell that emits it, so requiring it would
  * stall every UI lane on a verdict nothing in this loop writes.
+ *
+ * On a control-plane PR the reviewer's PASS arrives through the §CP advisory carrier by design —
+ * no first-line marker, the head in the body (ADR 0111/0226) — so a marker-only read would row it
+ * `absent` and hold the lane at `PROOF_IN_FLIGHT` forever. The advisory is read exactly as
+ * `ship gate`'s `candidateOf` reads it: head-bound with no content binding (ADR 0276), a `[FAIL]`
+ * row treated as fail (an invalid emission, reported) — and admitted only after the diff itself
+ * classifies control-plane through the shipped `classify` over CODEOWNERS at the PR's base ref,
+ * never a caller assertion. On any other PR a marker-less comment stays no verdict.
  */
 const proveVerdicts = (
 	repo: string,
@@ -385,9 +396,28 @@ const proveVerdicts = (
 		// a FAIL upserted after a PASS must win (#4200).
 		const latest = new Map<string, Claim>();
 		const stamps = new Map<string, string>();
+		const advisories: {readonly claim: Claim; readonly stamp: string}[] = [];
 		for (const comment of commented.value) {
 			const parsed = readMarker(comment.body);
-			if (parsed._tag !== "Found") continue;
+			if (parsed._tag !== "Found") {
+				const advisory = readAdvisory(comment.body);
+				if (advisory !== null && required.includes(advisory.namespace)) {
+					advisories.push({
+						claim: {
+							namespace: advisory.namespace,
+							// ADR 0226 makes the advisory carrier PASS-only; a [FAIL] row inside one is an
+							// invalid emission — treated as fail below, never read as a pass.
+							polarity: /\[FAIL\]/.test(comment.body) ? "FAIL" : "PASS",
+							commentId: comment.id,
+							sha: advisory.sha,
+							// The advisory withholds a content binding by design (ADR 0276) — head-bound only.
+							content: null,
+						},
+						stamp: comment.updatedAt,
+					});
+				}
+				continue;
+			}
 			const marker = parsed.value;
 			if (!required.includes(marker.namespace)) continue;
 			const seen = stamps.get(marker.namespace);
@@ -403,6 +433,33 @@ const proveVerdicts = (
 		}
 
 		const notes = [...diagnostics];
+		if (advisories.length > 0) {
+			const boundary = yield* readBoundary(repo, pull.value.baseRef);
+			if (boundary._tag === "Unreadable") {
+				return unreadable(`${CODEOWNERS_PATH} at ${pull.value.baseRef}`, boundary.reason);
+			}
+			const cp = classify(boundary.rows, files.value);
+			if (cp === "control-plane") {
+				for (const {claim, stamp} of advisories) {
+					if (claim.polarity === "FAIL") {
+						notes.push(
+							`${VERB}: #${pr} carries a §CP advisory with a [FAIL] row — an invalid emission (ADR 0226); treated as fail, report it.`,
+						);
+					}
+					const seen = stamps.get(claim.namespace);
+					if (seen !== undefined && seen > stamp) continue;
+					stamps.set(claim.namespace, stamp);
+					latest.set(claim.namespace, claim);
+					notes.push(
+						`${VERB}: ${claim.namespace} on #${pr} is advisory-carried (§CP, ADR 0111) — head-bound at ${claim.sha}, no content binding (ADR 0276).`,
+					);
+				}
+			} else {
+				notes.push(
+					`${VERB}: #${pr} classifies ${cp} against ${CODEOWNERS_PATH} at ${pull.value.baseRef}, so a marker-less advisory-shaped comment reads as no verdict.`,
+				);
+			}
+		}
 		const claims = [...latest.values()];
 		// A verdict survives a head move only through the content it bound (ADR 0276), so the digest
 		// is computed exactly when a head-only read would call a content-bearing verdict stale.
