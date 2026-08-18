@@ -148,7 +148,9 @@ undisclosed that this gate could see"* — never "no deviations exist".
   namespace holds a binding verdict, so a declined governance round strands the lane with the
   repair undispatchable. Fire it, and expect to fire it again at each repair head — the extra run
   is the accepted cost. Neither namespace discharges the other. You never emit governance's
-  namespace yourself.
+  namespace yourself. **And there is no route out of it**: the Terminal vocabulary's `routed
+  elsewhere` covers `review-ui` and `check-epic-plan` only, so this skill has no terminal that ends
+  a `harness: true` run with the governance namespace un-fired.
 - **On an epic child the governance verdict is range-scoped and lands on the child issue** —
   nothing governance-shaped waits for the epic tail. An epic run opens one tail PR (ADR
   [0285](../../../../.decisions/0285-epic-machine-ends-in-review.md)), so mid-run a child has no PR
@@ -196,9 +198,19 @@ repo-scoped token and **uses** four writes — verdict comments, AC appends, the
 escalation comment, and one append to the driver's lane ledger through `lane report` at the
 `--root` your brief carries, a path outside this checkout — no push, no merge, no label. Every run ends as exactly one of: **verdict PASS**
 · **verdict FAIL** · **UNKNOWN — the artifact could not be read** (never a verdict) · **prior marker
-Stale/Unbindable — re-review required** · **routed elsewhere** (governance / `review-ui` /
-`check-epic-plan`). Precedence: **an unseen input blocks PASS, never FAIL** — FAIL on what you did
+Stale/Unbindable — re-review required** · **routed elsewhere** (`review-ui` / `check-epic-plan`
+only). Precedence: **an unseen input blocks PASS, never FAIL** — FAIL on what you did
 see, naming the unread piece UNKNOWN; no namespace PASSes on an unseen input.
+
+**Governance is not one of the routes, and never was a legal way to end.** `routed elsewhere` carries
+the two modality handoffs and nothing else — `review-ui` for a rendered visual, `check-epic-plan` for
+a plan ledger — each a subject this skill cannot judge at all. Governance it can and must reach: §6
+makes the namespace derived-required at every round on a `harness: true` diff, so firing it and
+waiting happens **inside** this run, and no terminal above ends a run with that namespace un-fired.
+Routing it away instead is what stranded PR [#5738](https://github.com/kamp-us/phoenix/pull/5738) at
+head `7847ecf3` (#5769): `operate`'s `FAIL`-row floor correctly refused to record the FAIL while
+governance held no binding verdict, the machine had no state that could fire it, and the namespace
+filled only because an unrelated second driver happened to run governance on the same lane.
 
 **Record the terminal yourself, then print it.** When your spawn brief named a lane, your terminal
 step is the verb — pass back the `lane` and `root` its `## Task` section carries, one token per
