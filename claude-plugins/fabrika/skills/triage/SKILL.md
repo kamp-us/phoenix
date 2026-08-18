@@ -149,8 +149,8 @@ Done when every claim traces to something you read.
 
 ## 7 — Price it, stamp it, and say who picks it up
 
-Ask the kill question first — *if the founder never learned this ticket existed, would anything
-visibly change?* A "no" earns no home by default; it earns a kill. Then price on the work's own
+Run the value bar first — it is stated once, in step 8 on the `agent` kill route, and a ticket that
+fails it earns a kill rather than a price. Then price what survives, on the work's own
 merit: `p0` for ship-work and fires, `p1` for what you would genuinely pull next, **`p2` is the
 default** and most of a healthy backlog. A roadmap row confers no band either way.
 
@@ -200,7 +200,7 @@ fabrika triage park $issue_number <<'EOF'
 EOF
 ```
 
-- **`agent`** and unsalvageable, duplicate, or moving nothing forward → kill it, which closes it
+- **`agent`** and unsalvageable, duplicate, or failing the value bar below → kill it, which closes it
   not-planned carrying `closed-by-triage`. **`--confirm` is you attesting that salvage was genuinely
   attempted**: a human-invoked `/report` carries the same agent footer, so footer presence alone
   never licenses a close. Killing a duplicate takes `--duplicate-of <survivor>`, which folds this
@@ -211,6 +211,25 @@ fabrika triage kill $issue_number --confirm --duplicate-of 4290 <<'EOF'
 …
 EOF
 ```
+
+**The value bar.** An issue can be correct, well-written, and still worth nothing. This is the bar
+the founder's own sweeps run on ([#4634](https://github.com/kamp-us/phoenix/issues/4634)), and it
+kills an agent-filed issue when any one of five clauses holds:
+
+- **process ceremony** — the deliverable is a record nobody then acts on, a decision written down for
+  its own sake;
+- **self-generated churn** — refactor or build work we filed against our own output with no behaviour
+  change: restated vocabulary, a duplicated list tidied, a docblock or sample-transcript nit, a doc
+  sentence that omits one clause of a check that already works;
+- **hardening with no incident** — *has this ever failed in production?* This clause is a factual
+  test, not a taste call, and a "no" kills it. A missing unit test for a refusal that already works
+  is this clause; so is nice-to-have telemetry or cost reporting for a cost nobody is paying;
+- **superseded** — something already landed, or already ruled, makes it moot;
+- **duplicate of its parent** — the parent's scope already covers it.
+
+Those examples are verdicts, not hypotheticals: a sweep on 2026-08-18 killed twelve of thirty-five
+triaged `p2`s, and every one of them landed in a clause above. The bar reaches agent-filed work only
+— **a human filing is parked, never killed**, however cleanly it fits a clause.
 
 Done when the issue has left the queue by exactly one route.
 
