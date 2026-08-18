@@ -187,3 +187,12 @@ export const REF_NOT_MOVED = 30;
  * foreign apart for a reader; the code does not, because the caller stops either way.
  */
 export const CLAIM_NOT_MINE = 31;
+
+/**
+ * The token handed to `lane report` is no shell's terminal token — the map in `report.ts` holds no
+ * entry for it, so no event can be derived and the log is left unappended. Its own seat rather than
+ * {@link EVENT_REFUSED}'s because the remedy differs: pass a token from your shell skill's closed
+ * vocabulary, not a different event — silently interpreting an unknown token is the failure class
+ * this verb exists to delete (#5736).
+ */
+export const TOKEN_UNRECOGNISED = 32;

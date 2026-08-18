@@ -19,11 +19,18 @@ import {
 	type TaskState,
 } from "./machine.ts";
 
-/** One appended line of `events.jsonl`: which task, which (namespaced) event, when. */
+/**
+ * One appended line of `events.jsonl`: which task, which (namespaced) event, when — plus, on an
+ * event a shell reported through `lane report`, the artifact refs its terminal named (#5712). The
+ * refs are evidence carried verbatim; the fold reads only `task`/`event`, so a line with or
+ * without them folds identically.
+ */
 export interface LogEntry {
 	readonly task: string;
 	readonly event: string;
 	readonly at: string;
+	readonly pr?: string;
+	readonly comment?: string;
 }
 
 export type ParseLogResult =
@@ -44,7 +51,13 @@ export const parseLog = (text: string): ParseLogResult => {
 			defects.push(`line ${index + 1} is not JSON`);
 			continue;
 		}
-		const record = parsed as {task?: unknown; event?: unknown; at?: unknown};
+		const record = parsed as {
+			task?: unknown;
+			event?: unknown;
+			at?: unknown;
+			pr?: unknown;
+			comment?: unknown;
+		};
 		if (
 			typeof record !== "object" ||
 			record === null ||
@@ -55,7 +68,20 @@ export const parseLog = (text: string): ParseLogResult => {
 			defects.push(`line ${index + 1} does not carry string \`task\`/\`event\`/\`at\``);
 			continue;
 		}
-		entries.push({task: record.task, event: record.event, at: record.at});
+		if (
+			(record.pr !== undefined && typeof record.pr !== "string") ||
+			(record.comment !== undefined && typeof record.comment !== "string")
+		) {
+			defects.push(`line ${index + 1} carries a non-string \`pr\`/\`comment\` ref`);
+			continue;
+		}
+		entries.push({
+			task: record.task,
+			event: record.event,
+			at: record.at,
+			...(record.pr === undefined ? {} : {pr: record.pr}),
+			...(record.comment === undefined ? {} : {comment: record.comment}),
+		});
 	}
 	return defects.length > 0 ? {_tag: "Malformed", defects} : {_tag: "Parsed", entries};
 };

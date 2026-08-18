@@ -22,6 +22,7 @@ import {runPrint} from "./print-verb.ts";
 import {runProve} from "./prove-verb.ts";
 import {runPush} from "./push-verb.ts";
 import {keyRefusal} from "./refusals.ts";
+import {runReport} from "./report-verb.ts";
 import {DEFAULT_STALE_MINUTES} from "./stale.ts";
 import {runStale} from "./stale-verb.ts";
 import {runStatus} from "./status-verb.ts";
@@ -101,6 +102,49 @@ const transition = leafCommand(
 	Command.withShortDescription("Record one operator event, refusing an invalid one unappended."),
 	Command.withDescription(
 		"Record one operator event on the lane's append-only log — after the machine accepts it, never before. stdout is `{previous, event, current, taskAffected}` with the two stateValues around the fold. An invalid event — no cell in the task's current state (tea's NoCellError, surfaced verbatim), outside the operator's six, a task outside the active phase, a finished workflow — is refused loudly and the log is left byte-identical. Exits 4 (lane record read in full and not the shape), 7 (no lane there), 8 (the append did not land — the event is NOT recorded), 11 (the lane could not be read), 12 (the event is refused, log unappended), 13 (the task is not in the machine, or --task omitted on a multi-task lane), 21 (the key is not a lane key). Example: fabrika lane transition 5673 DONE",
+	),
+);
+
+const report = leafCommand(
+	"report",
+	{
+		lane: laneArgument,
+		token: Flag.string("token").pipe(
+			Flag.withDescription(
+				"the shell's terminal token, exactly as its skill's closed vocabulary spells it",
+			),
+		),
+		root: rootFlag,
+		task: Flag.string("task").pipe(
+			Flag.optional,
+			Flag.withDescription("the task the event addresses; omittable on a single-task lane"),
+		),
+		pr: Flag.string("pr").pipe(
+			Flag.optional,
+			Flag.withDescription("the PR URL the terminal names, recorded on the event line"),
+		),
+		comment: Flag.string("comment").pipe(
+			Flag.optional,
+			Flag.withDescription("the comment URL the terminal names, recorded on the event line"),
+		),
+	},
+	Effect.fn(function* ({lane, token, root, task, pr, comment}) {
+		yield* emit(
+			yield* onKey(lane, root, (_key, ref) =>
+				runReport({
+					...ref,
+					token,
+					task: Option.getOrNull(task),
+					pr: Option.getOrNull(pr),
+					comment: Option.getOrNull(comment),
+				}),
+			),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Record a shell's terminal token, mapped to one operator event."),
+	Command.withDescription(
+		"Record a spawned shell's terminal token on the lane's append-only log: the token→event map in code (report.ts) picks one of the operator's six, then the append rides transition's exact path — validated against the folded state first, refused unappended otherwise. Optional --pr/--comment refs land on the event line itself, so the event names its evidence (visible via lane history). stdout is `{token, previous, event, current, taskAffected}` plus the refs. Exits 4 (lane record read in full and not the shape), 7 (no lane there), 8 (the append did not land — the event is NOT recorded), 11 (the lane could not be read), 12 (the mapped event is refused, log unappended), 13 (the task is not in the machine, or --task omitted on a multi-task lane), 21 (the key is not a lane key), 31 (the token is no shell's terminal token — refused, never interpreted). Example: fabrika lane report 5736 --token SHIPPED-PR --pr https://github.com/kamp-us/phoenix/pull/5760",
 	),
 );
 
@@ -368,6 +412,7 @@ export const laneCommand = Command.make("lane").pipe(
 	Command.withSubcommands([
 		status,
 		transition,
+		report,
 		prove,
 		history,
 		print,

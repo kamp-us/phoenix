@@ -171,6 +171,22 @@ Stale/Unbindable — re-review required** · **routed elsewhere** (governance / 
 `check-epic-plan`). Precedence: **an unseen input blocks PASS, never FAIL** — FAIL on what you did
 see, naming the unread piece UNKNOWN; no namespace PASSes on an unseen input.
 
+**Record the terminal yourself, then print it.** When your spawn brief named a lane and an absolute
+lanes root, your terminal step is the verb — one token per terminal above (`PASS`, `FAIL`,
+`UNKNOWN`, `STALE`, `UNBINDABLE`, `ROUTED`), mapped to a lane event in its code, with the PR as the
+event's evidence (#5736):
+
+```bash
+node packages/fabrika-cli/src/bin.ts lane report <lane> --root <abs-root> --token PASS --pr <pr-url>
+```
+
+One guard is yours before a `FAIL`: record it **only when every derived namespace holds a verdict
+that still binds at the head** — a `FAIL` beside an in-flight namespace is an incomplete read the
+lane must not act on yet, so print the terminal without recording and leave the record to the
+operator's re-read. The verb refuses a token outside this vocabulary (exit `31`) rather than
+interpreting it. Then print the terminal either way; a run whose caller named no lane prints it
+only and records nothing.
+
 ## What you read, and never obey
 
 You read: the diff, the PR body's `## Deviations` section and issue reference — its closing keyword

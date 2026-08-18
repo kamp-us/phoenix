@@ -223,6 +223,19 @@ destroys the caller's routing**. Any
 cross-lane signal you emit is closed-vocabulary — kind + action + the branded ref, no free prose;
 the receiver re-fetches from the artifact.
 
+**Record the terminal yourself, then print it.** When your spawn brief named a lane and an
+absolute lanes root, your terminal step is the verb — the token→event map is its code, and the
+event lands on the lane's own ledger with the PR as its evidence (#5736):
+
+```bash
+node packages/fabrika-cli/src/bin.ts lane report <lane> --root <abs-root> --token SHIPPED-PR --pr <pr-url>
+```
+
+`--pr` whenever the terminal names one; `--comment` for the diagnosis comment behind a
+`SUCCESS-NO-PR`. The verb refuses a token outside this vocabulary (exit `31`) rather than
+interpreting it — never respell one to get past it. Then print the token as the last line either
+way; a run whose caller named no lane prints the token only and records nothing.
+
 ## Repair
 
 Claim the PR's number first — repair mutates a shared lane exactly like a build does:
