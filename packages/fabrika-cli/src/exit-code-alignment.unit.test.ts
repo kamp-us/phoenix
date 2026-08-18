@@ -22,6 +22,7 @@ import * as glossary from "./glossary/codes.ts";
 import * as governance from "./governance/codes.ts";
 import * as graduate from "./graduate/codes.ts";
 import * as grill from "./grill/codes.ts";
+import * as guard from "./guard/codes.ts";
 import * as handoff from "./handoff/codes.ts";
 import * as healCi from "./heal-ci/codes.ts";
 import * as hook from "./hook/codes.ts";
@@ -58,6 +59,7 @@ const TABLES: Readonly<Record<string, CodeTable>> = {
 	governance,
 	graduate,
 	grill,
+	guard,
 	handoff,
 	"heal-ci": healCi,
 	hook,
