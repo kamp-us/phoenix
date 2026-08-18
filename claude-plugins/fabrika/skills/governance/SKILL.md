@@ -43,8 +43,8 @@ make that checkable:
   harness-touching diff carrying no current-head verdict is **named absent and refused there**. Zero
   scope is itself a refusal. This is enforced end to end: `ship`'s vocabulary admits the namespace
   and `ship gate` **raises the requirement from the diff itself**, so passing `--require governance`
-  is not the caller's choice to make — see [contract.md](contract.md), shipped-surface changes 1
-  and 1b.
+  is not the caller's choice to make — see shipped-surface changes 1 and 1b
+  (`fabrika wire doc-section --heading "Three shipped-surface changes this group requires" < <skill-base>/contract.md`).
 - **Independent of who reviewed.** The predicate consults neither which skill ran nor what it
   concluded, so a `review` PASS discharges nothing and a `review` run that forgot to fire you leaves
   the namespace required — the omission surfaces as a refusal rather than as silence.

@@ -13,14 +13,15 @@
  * silently opts out of the excess-operand guard, which `../excess-operand.unit.test.ts` reds on.
  */
 import {fileURLToPath} from "node:url";
-import {Effect, type FileSystem, type Path, Result} from "effect";
+import {Effect, type FileSystem, Option, type Path, Result} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
 import {leafCommand} from "../excess-operand.ts";
 import {readFile, writeFile} from "../io/fs.ts";
-import {readStdin} from "../io/stdin.ts";
+import {readStdin, type StdinRead} from "../io/stdin.ts";
 import type {VerbOutcome} from "../verb.ts";
 import {runCheck} from "./check-verb.ts";
 import {runCodes} from "./codes-verb.ts";
+import {runDocSection} from "./doc-section-verb.ts";
 import {runEmit} from "./emit-verb.ts";
 import {runFormats} from "./formats-verb.ts";
 import {DOC_PATH} from "./index-doc.ts";
@@ -113,6 +114,40 @@ const check = leafCommand(
 	),
 );
 
+/** `--file` lifted into the stdin shape, so the verb keeps one UNKNOWN-vs-empty classification. */
+const readDocFile = (path: string): Effect.Effect<StdinRead, never, FileSystem.FileSystem> =>
+	Effect.map(Effect.result(readFile(path)), (read) =>
+		Result.isFailure(read)
+			? ({_tag: "Failed", reason: read.failure.reason} satisfies StdinRead)
+			: ({_tag: "Text", text: read.success} satisfies StdinRead),
+	);
+
+const docSection = leafCommand(
+	"doc-section",
+	{
+		heading: Flag.string("heading").pipe(
+			Flag.withDescription("the ATX heading text naming the section to print"),
+		),
+		file: Flag.string("file").pipe(
+			Flag.optional,
+			Flag.withDescription("read the document from this path instead of stdin"),
+		),
+		json: jsonFlag,
+	},
+	Effect.fn(function* ({heading, file, json}) {
+		const source: Effect.Effect<StdinRead, never, FileSystem.FileSystem> = Option.match(file, {
+			onNone: () => Effect.sync(readStdin),
+			onSome: readDocFile,
+		});
+		yield* emitOutcome(yield* runDocSection({heading, json, source}));
+	}),
+).pipe(
+	Command.withShortDescription("Print one markdown section of a document by heading."),
+	Command.withDescription(
+		'Print the one section of the markdown document on STDIN (or --file) sitting under the ATX heading whose text equals --heading — from the heading to the next heading of equal or shallower depth, headings inside code fences ignored. Stdout is the section body. Exits 3 (no heading outside a fence carries that text — proven absent), 4 (the heading occurs more than once — two sections with one name have no single meaning), 5 (the document was read and held nothing), 6 (the document could not be read — UNKNOWN, never absent). Example: fabrika wire doc-section --heading "build claim" < contract.md',
+	),
+);
+
 /**
  * The doc's location on disk, resolved from this module rather than from the process's cwd — the
  * verb answers about the checkout it ships in, wherever `fabrika` was invoked from.
@@ -174,6 +209,7 @@ export const wireCommand = Command.make("wire").pipe(
 		emit,
 		read,
 		check,
+		docSection,
 		index,
 	]),
 	Command.withShortDescription("Own the byte-level formats two skills meet through."),

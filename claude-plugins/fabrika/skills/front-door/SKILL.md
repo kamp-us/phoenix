@@ -32,7 +32,7 @@ source was read and holds nothing, spelled `empty`, `absent`, `missing`, `unprob
 `malformed` depending on what was read; or **`unknown`, with the reason attached** — the source could
 not be read. Several words share the middle class; only one word is ever the third. The mechanics —
 which core outcome becomes which state, per field — are fixed in
-[`contract.md`](contract.md#core-to-field); what is yours is the reading.
+the core-to-field mapping (`fabrika wire doc-section --heading "How each core outcome becomes a field state in status open" < <skill-base>/contract.md`); what is yours is the reading.
 
 This is a rule about **fields**. A `status config` row reporting one *surface* as `undeclared` or
 `unprobeable` is a proven negative about that surface, not an unread source, and it does not by
@@ -46,7 +46,7 @@ indistinguishable from one that ran and found nothing unless something manufactu
 The verb manufactures it; do not flatten it.
 
 **Freshness is a field, not a promise.** A field read from a durable artifact is only as fresh as
-that artifact's last write, not the moment you read it ([the two kinds](contract.md#as-of-is-mandatory)) —
+that artifact's last write, not the moment you read it (the two kinds — `fabrika wire doc-section --heading "Freshness is carried per field, never assumed" < <skill-base>/contract.md`) —
 so a digest can be `found` and a week stale at once, and saying only "found" answers the wrong
 question.
 
@@ -115,7 +115,7 @@ Three readings that are easy to collapse and must not be:
 - A **disposition is not a statement about who can build the surface.** It says what the *declaring*
   skill does when the surface is missing. `build-ui` declares the design manifest `fail-loud` — that
   skill stops — and still points here to have it built. What you can build is the contract's
-  [buildable-surface registry](contract.md#buildable-surfaces), nothing else.
+  buildable-surface registry (`fabrika wire doc-section --heading "status bootstrap" < <skill-base>/contract.md`), nothing else.
 
 Then **converse** — you are human-typed, so a human is present. Take one gap at a time:
 
@@ -217,7 +217,7 @@ routes through a verb** and none through an ad-hoc `gh` call. Re-gating is named
 The when-missing vocabulary is the one every fabrika skill shares — **fail-loud**, **degrade**,
 **bootstrap**. This skill is where the other tables' bootstrap pointers land, so it degrades rather
 than stops wherever it still has something true to say. The verbs' own needs are specified in
-[`contract.md`](contract.md#required-repo-files); this table is what the *skill* leans on.
+their own Required-repo-files section (`fabrika wire doc-section --heading "Required repo files" < <skill-base>/contract.md`); this table is what the *skill* leans on.
 
 | Must exist | Why this skill needs it | When missing |
 | --- | --- | --- |

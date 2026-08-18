@@ -130,7 +130,8 @@ PACK
 
 The verb takes a fresh capture itself, embeds it as the proven half under your asserted half,
 leak-scans the composed document, posts it as one marker-bearing comment, and reads it back. The
-five sections and their grammar are in [`contract.md`](contract.md).
+five sections and their grammar are one lookup away:
+`fabrika wire doc-section --heading "The pack document this group WRITES" < <skill-base>/contract.md`.
 
 <!-- anchor: UNSURE-IS-NEVER-SILENT --> **Write what you did not resolve.** `## Unsure` is required
 and an empty one is refused, because a successor reads silence there as certainty — and that is the
@@ -245,7 +246,8 @@ nothing, and removes nothing, so there is never a disposition to state.
 
 Every non-zero terminal here wrote nothing, except `WRITE-UNPROVEN`, where whether the write landed
 is the open question. `10` is held as a deliberate gap and is unreachable, so it reaches no terminal
-by design ([`contract.md`](contract.md), the shared exit matrix). Every other code the contract seats
+by design (`fabrika wire doc-section --heading "The shared exit matrix" < <skill-base>/contract.md`).
+Every other code the contract seats
 lands on exactly one terminal above. `capture`'s `0` is a mid-run step and ends nothing; the other
 three verbs' `0` is disambiguated by which produced it and, for `read`, by the `pack` token and the
 drift.
@@ -272,9 +274,9 @@ every fabrika skill, so one reader parses all of them.
 | Must exist | Why this skill needs it | When missing |
 | --- | --- | --- |
 | A GitHub repository reachable over `gh` REST, with a token carrying `issues: write` | the pack and the claim are comments on an issue, and the issue is the only place a successor sharing nothing with this session can find them ([`contract.md`](contract.md), all four verbs) | **fail-loud** — `11` before any write (end `STOPPED`), `8` after one (end `WRITE-UNPROVEN`); name the repo. There is no local fallback: a pack on this machine's disk is a pack the successor cannot reach, which is the defect this skill is built against |
-| A git working tree — the repo root resolves, and `git status` and `git rev-parse` answer | the proven half is derived from it, and the successor's drift check re-derives it ([`contract.md`](contract.md), `handoff capture` / `handoff read`) | **fail-loud** — `11`. A tree state that cannot be read is UNKNOWN, never "clean"; a pack asserting reachable work it could not verify is the one thing this skill must not post |
-| A remote named `origin` the branch can be compared against | reachability is what makes a pack usable — an unpushed head is invisible to a successor ([`contract.md`](contract.md), `handoff capture`, the `reachable` field) | **degrade** — with no upstream, `capture` reports `reachable: "unknown"` and both counts `null`, and `take` refuses `12` unless `--declare-unreachable` is given. The pack may still be taken; what it may not do is claim a reachability it could not prove |
-| Readable collaborator permissions — `repos/<repo>/collaborators/<login>/permission` | resolves a pack's author before a successor acts on it ([`contract.md`](contract.md), `handoff read`) | **fail-loud** — `11`. A permission read that fails is UNKNOWN, never a grant. The load-bearing row: degrading here would let anyone with a GitHub account write a document a successor acts on |
+| A git working tree — the repo root resolves, and `git status` and `git rev-parse` answer | the proven half is derived from it, and the successor's drift check re-derives it (`fabrika wire doc-section --heading "handoff capture" < <skill-base>/contract.md`, likewise `--heading "handoff read"`) | **fail-loud** — `11`. A tree state that cannot be read is UNKNOWN, never "clean"; a pack asserting reachable work it could not verify is the one thing this skill must not post |
+| A remote named `origin` the branch can be compared against | reachability is what makes a pack usable — an unpushed head is invisible to a successor (the `reachable` field — `fabrika wire doc-section --heading "handoff capture" < <skill-base>/contract.md`) | **degrade** — with no upstream, `capture` reports `reachable: "unknown"` and both counts `null`, and `take` refuses `12` unless `--declare-unreachable` is given. The pack may still be taken; what it may not do is claim a reachability it could not prove |
+| Readable collaborator permissions — `repos/<repo>/collaborators/<login>/permission` | resolves a pack's author before a successor acts on it (`fabrika wire doc-section --heading "handoff read" < <skill-base>/contract.md`) | **fail-loud** — `11`. A permission read that fails is UNKNOWN, never a grant. The load-bearing row: degrading here would let anyone with a GitHub account write a document a successor acts on |
 
 Nothing else is required. This skill reads no `.decisions/`, no `.patterns/`, no CODEOWNERS, no
 design manifest, no labels and no merge-queue configuration — it opens no pull request, gates no
