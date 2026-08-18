@@ -25,14 +25,17 @@ merge a passing child into it, push it, and open the one draft PR (step 2's `int
 branch a spawned shell owns, never a verdict of your own, and never the merge into the default
 branch — that one is `ship`'s, once, at the tail.
 
-Every lane verb is invoked through this repo's own fabrika entrypoint, which `$fabrika` stands for
+Every lane verb is invoked through this repo's own fabrika entrypoint, which `<fabrika>` stands for
 in every command below:
 
 ```bash
-node "$fabrika" lane <verb> …
+node <fabrika> lane <verb> …
 ```
 
-Resolve `$fabrika` once, before your first verb, and it is one of exactly two paths:
+`<fabrika>` is a placeholder you substitute textually, the same way you substitute `<verb>` — write
+the path itself into every command you run. Never a shell variable: shell state does not survive
+from one command to the next, so a `$name` you set expands to nothing on the command after it.
+Work out the path once, before your first verb, and it is one of exactly two:
 
 - **A checkout of fabrika's own repo** — the in-tree source, repo-relative:
   `packages/fabrika-cli/src/bin.ts`. Relative on purpose, so each worktree runs its own copy.
@@ -62,7 +65,7 @@ the collision until `build claim` caught it one level down
 ([#5761](https://github.com/kamp-us/phoenix/issues/5761)):
 
 ```bash
-node "$fabrika" lane claim $lane_key
+node <fabrika> lane claim $lane_key
 ```
 
 Exit `0` is yours to drive — `won` on an issue lane, `unclaimable` on a `chore:<name>` key, which
@@ -78,14 +81,14 @@ two races that never see each other. You never read the other namespace and neve
 that is not this run's.
 
 ```bash
-node "$fabrika" lane status $lane_key
+node <fabrika> lane status $lane_key
 ```
 
 Exit `0` is resume — the lane exists and its fold is the state; go to step 2. Exit `7` (no lane)
 is boot:
 
 ```bash
-node "$fabrika" lane emit $lane_key
+node <fabrika> lane emit $lane_key
 ```
 
 `lane emit` generates an epic lane — one region per child, phase-sequenced — from the epic body's
@@ -95,7 +98,7 @@ refusal — and straight away on a `chore:<name>` key, which names no epic body 
 out of — boot from the committed template instead:
 
 ```bash
-node "$fabrika" lane open $lane_key
+node <fabrika> lane open $lane_key
 ```
 
 `lane open` places the template the key selects — the coder workflow for an issue number, the chore
@@ -147,7 +150,7 @@ active phase** (future phases read `waiting`; leave them alone), route on the le
 **You never compose a spawn prompt.** The verb prints it:
 
 ```bash
-node "$fabrika" lane brief $lane_key --task <name>
+node <fabrika> lane brief $lane_key --task <name>
 ```
 
 Its stdout is the whole prompt — send those bytes to the spawn verbatim and add nothing to them. It
@@ -215,7 +218,7 @@ has something worth publishing. So after the merge and its checks pass, and befo
 `DONE`:
 
 ```bash
-node "$fabrika" lane push $lane_key
+node <fabrika> lane push $lane_key
 ```
 
 The verb, not your own `git push`: it derives `epic/<n>` from the number rather than taking a branch
@@ -275,7 +278,7 @@ That is the last thing you do to the branch: the merge itself is the shipper's, 
 **A chore state routes to a verb, not to a shell**, and the routing is a verb's answer too:
 
 ```bash
-node "$fabrika" recipe route <state>
+node <fabrika> recipe route <state>
 ```
 
 Exit `0` prints `{state, verb, target, summary}` — which recipe to run, and whether it is pointed at
@@ -288,7 +291,7 @@ chore is a verb and not a paragraph. Then run exactly what `route` named, with t
 caller gave you:
 
 ```bash
-node "$fabrika" recipe unpark <target-lane-key>
+node <fabrika> recipe unpark <target-lane-key>
 ```
 
 Done when every active task has either a spawn in flight, a recipe run answered, a merge answered,
@@ -326,13 +329,13 @@ range-scoped verdict for an epic child, which opens no PR at all (ADR 0285). You
 it reads the shape off the machine. It runs **before** the event, never after:
 
 ```bash
-node "$fabrika" lane prove $lane_key DONE
+node <fabrika> lane prove $lane_key DONE
 ```
 
 Record the proven event only on exit `0`:
 
 ```bash
-node "$fabrika" lane transition $lane_key DONE
+node <fabrika> lane transition $lane_key DONE
 ```
 
 (On a multi-task lane, address both verbs with `--task <name>`, the name exactly as `lane status`
@@ -370,7 +373,7 @@ its exit is what decides.
 your own:
 
 ```bash
-node "$fabrika" recipe route <state> --exit <code>
+node <fabrika> recipe route <state> --exit <code>
 ```
 
 Its `event` is the one to record and its `why` is the sentence to quote; the table it answers off is
@@ -427,7 +430,7 @@ comment or the transcript has landed, so a successor that wins the lane the mome
 the artifact already there:
 
 ```bash
-node "$fabrika" lane release $lane_key
+node <fabrika> lane release $lane_key
 ```
 
 Exit `0` is released (or `inert` on a chore key, which was never claimable). `31` means this session
@@ -480,7 +483,7 @@ and ends `LANE-PARKED` again; the ledger, not your patience, decides when the la
 `swept`) ends the run with the transcript**, posted to the driven issue straight off the verbs:
 
 ```bash
-node "$fabrika" lane print $lane_key | gh issue comment $lane_key --body-file -
+node <fabrika> lane print $lane_key | gh issue comment $lane_key --body-file -
 ```
 
 with `lane history $lane_key` appended the same way when the event log adds anything `print` does not
@@ -498,7 +501,7 @@ forever and nothing here can record the `BLOCKED` a dead spawn is owed — the d
 that would have to record it. What catches it is a driver-side sweep, not a driver's patience:
 
 ```bash
-node "$fabrika" lane stale --older-than 60
+node <fabrika> lane stale --older-than 60
 ```
 
 Every `stale` row is a lane something is owed on that has not moved in the threshold; `parked`,
@@ -536,8 +539,8 @@ fabrika skill, so one reader parses all of them. No row here dead-ends on a bare
 
 | Must exist | Why this skill needs it | When missing |
 | --- | --- | --- |
-| The lane verb group — `$fabrika` routing `lane status`/`transition`/`report` (#5736)/`prove` (#5747)/`history`/`print` plus `open`/`emit` (#5688), `brief` (#5751), `stale` (#5897) and `claim`/`release` (#5761) | Every state read, every proof, every event write, every spawn prompt, the dead-operator sweep and the driver's own exclusivity in this skill is one of these verbs; there is no other path to the ledger, none to a prompt, and none to knowing whether a second driver is already here | **fail-loud** — a verb that cannot be executed leaves the lane state UNKNOWN; the run ends `STOPPED` naming the entrypoint it could not run and points at front-door. |
-| The recipe verb group — `$fabrika` routing `recipe route` plus the recipes it names (`unpark`, `rerun`), and the chore template at `packages/fabrika-cli/src/lane/templates/chore.workflow.json` | A chore drive routes and folds through `recipe route`, runs the recipe it names, and boots from that template; there is no other path to either answer | **fail-loud** — a chore drive whose routing verb cannot be executed knows neither what to run nor what an exit meant; the run ends `STOPPED` naming `packages/fabrika-cli/src/recipe/`, records no event, and points at front-door. An issue lane is unaffected. |
+| The lane verb group — `<fabrika>` routing `lane status`/`transition`/`report` (#5736)/`prove` (#5747)/`history`/`print` plus `open`/`emit` (#5688), `brief` (#5751), `stale` (#5897) and `claim`/`release` (#5761) | Every state read, every proof, every event write, every spawn prompt, the dead-operator sweep and the driver's own exclusivity in this skill is one of these verbs; there is no other path to the ledger, none to a prompt, and none to knowing whether a second driver is already here | **fail-loud** — a verb that cannot be executed leaves the lane state UNKNOWN; the run ends `STOPPED` naming the entrypoint it could not run and points at front-door. |
+| The recipe verb group — `<fabrika>` routing `recipe route` plus the recipes it names (`unpark`, `rerun`), and the chore template at `packages/fabrika-cli/src/lane/templates/chore.workflow.json` | A chore drive routes and folds through `recipe route`, runs the recipe it names, and boots from that template; there is no other path to either answer | **fail-loud** — a chore drive whose routing verb cannot be executed knows neither what to run nor what an exit meant; the run ends `STOPPED` naming `packages/fabrika-cli/src/recipe/`, records no event, and points at front-door. An issue lane is unaffected. |
 | The agent shells — `claude-plugins/fabrika/agents/builder.md`, `reviewer.md`, `shipper.md` | Step 2's routing table spawns exactly these three by their bare noun names | **fail-loud** — a route whose shell does not exist cannot spawn; the run ends `STOPPED` naming the absent shell file, and no event is recorded for a spawn that never started. |
 | The `package.json` scripts `typecheck` and `lint:worktree` | An epic run's `integrate` reads the semantic collision off them — two ranges that each passed alone and fail together show up as the merged assembly failing the checks, and a clean `git merge` alone cannot see that | **degrade** — a clean merge is then the whole `DONE` answer and a semantic collision only surfaces at the epic review; say so in the transcript comment and file the gap via `/report`. An epic run still drives; a single-issue lane is unaffected. |
 | `.gitignore` covering `.fabrika/` | The ledger is a disposable machine-local artifact, regenerable from the board — committed, it would smuggle one machine's lane state into every checkout | **degrade** — the verbs still work; state the uncovered `.fabrika/` in the park or transcript comment and file the gap via `/report`. |
