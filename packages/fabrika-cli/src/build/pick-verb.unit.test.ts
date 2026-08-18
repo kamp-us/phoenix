@@ -124,6 +124,27 @@ describe("runPick", () => {
 		expect(excluded(out)).toEqual([{number: 501, home: null, reason: "no-acceptance-criteria"}]);
 	});
 
+	/**
+	 * The counts are printed so an operator can tell a working fence from a broken one, which they
+	 * cannot do if a shortened pool is attributed to an axis that did not refuse it (#6025).
+	 */
+	it("splits the excluded count by axis — the criteria axis is not the admission test's", async () => {
+		const out = await run([
+			[
+				bucket("p0"),
+				candidates(
+					{number: 500, labels: [...TRIAGED, "p0"], body: REPORT_BODY},
+					{number: 501, labels: ["status:triaged", "p0"]},
+				),
+			],
+			[bucket("p1"), EMPTY],
+			[bucket("p2"), EMPTY],
+		]);
+		expect(out.stderr.join("\n")).toContain(
+			"0 candidate(s) survived the filter, 2 excluded — 1 by the admission test, 1 for no acceptance-criteria block.",
+		);
+	});
+
 	it("excludes an assigned issue — assignment keeps a human's document out (#4764)", async () => {
 		const out = await run([
 			[bucket("p0"), candidates({number: 500, labels: [...TRIAGED, "p0"], assignees: ["usirin"]})],

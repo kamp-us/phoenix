@@ -1462,6 +1462,7 @@ for drift, not because they are currently absent.)
 | `9` | the writes landed but the read-back does not show the required end state |
 | `10` | an off-vocabulary enum value, or `--home` names a milestone that is not open |
 | `11` | the issue, the repository's label set, or its milestone set could not be read |
+| `16` | `--ready-for agent` over a live body the wire reader does not answer `Found` on — every type but `epic`; nothing was written |
 
 The issue being proven absent is `7` as well — the same zero-scope seat, since there is no issue to
 stamp.

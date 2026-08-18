@@ -168,6 +168,8 @@ export const runPick = (
 			pool.push(...entries.sort(rankWithinBucket));
 		}
 
+		const criteriaExcluded = excluded.filter((row) => row.reason === NO_CRITERIA).length;
+
 		return answer(
 			JSON.stringify({
 				pool: pool.slice(0, options.limit),
@@ -176,7 +178,7 @@ export const runPick = (
 				focus: focusReport(focus),
 			}),
 			[
-				`${VERB}: scanned p0 ${scanned.p0}, p1 ${scanned.p1}, p2 ${scanned.p2} in ${resolved.repo}; ${pool.length} candidate(s) survived the filter, ${excluded.length} excluded by the admission test.`,
+				`${VERB}: scanned p0 ${scanned.p0}, p1 ${scanned.p1}, p2 ${scanned.p2} in ${resolved.repo}; ${pool.length} candidate(s) survived the filter, ${excluded.length} excluded — ${excluded.length - criteriaExcluded} by the admission test, ${criteriaExcluded} for no acceptance-criteria block.`,
 				focusScopeLine(VERB, focus),
 			],
 		);
