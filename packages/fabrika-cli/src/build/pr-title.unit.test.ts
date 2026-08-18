@@ -52,6 +52,32 @@ describe("conventionalTitleOf", () => {
 		);
 	});
 
+	// #5946: a subject with a literal tag poisons the Release PR body's changelog, and every later
+	// release-please run crashes parsing that body as HTML.
+	it("strips the brackets off an HTML-looking tag so the subject cannot open one", () => {
+		expect(
+			conventionalTitleOf("read acceptance criteria outside a `<details>` appendix", ["type:bug"]),
+		).toBe("fix: read acceptance criteria outside a `details` appendix");
+		expect(conventionalTitleOf("drop the </summary> guard", ["type:chore"])).toBe(
+			"chore: drop the summary guard",
+		);
+		expect(conventionalTitleOf("escape <script src=x> in bios", ["type:bug"])).toBe(
+			"fix: escape script src=x in bios",
+		);
+	});
+
+	it("strips tags from an already-conventional title too", () => {
+		expect(
+			conventionalTitleOf("fix(wire): read outside a `<details>` appendix", ["type:bug"]),
+		).toBe("fix(wire): read outside a `details` appendix");
+	});
+
+	it("leaves an angle bracket no parser opens a tag on alone", () => {
+		expect(conventionalTitleOf("fail when depth < 3 and count > 0", ["type:bug"])).toBe(
+			"fix: fail when depth < 3 and count > 0",
+		);
+	});
+
 	it("trims the title before deriving", () => {
 		expect(conventionalTitleOf("  A padded title  ", ["type:bug"])).toBe("fix: A padded title");
 	});
