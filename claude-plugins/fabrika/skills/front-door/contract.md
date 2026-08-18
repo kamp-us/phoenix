@@ -188,6 +188,14 @@ this list: it builds from a fixed [registry](#buildable-surfaces) and reads no r
    an environment variable, because interface rule 5 forbids a variable-rooted invocation and a verb
    never requires an env var to locate itself.
 3. `claude-plugins/fabrika/skills/` beneath the repo root, which is the in-repo development case.
+4. That same `claude-plugins/fabrika/skills/` beneath the checkout the CLI itself runs from, found by
+   walking up from the running module — the rung that answers when fabrika runs out of a phoenix
+   checkout against a target repo carrying no roster of its own, where tier 2 cannot fire (the CLI at
+   `packages/fabrika-cli/` has no plugin manifest above it) and tier 3 is rooted at that target repo
+   (#5775). Resolution again, never an environment variable.
+
+The tier word printed on the scope line is `explicit` · `plugin` · `repo` · `checkout`, one per rung
+in that order.
 
 **A roster that resolves and holds zero skills is `empty` at exit `0`, a fact, not a refusal.** These
 are supplying verbs, and interface convention §4 requires a supplying verb to decide once, in its
@@ -1138,7 +1146,7 @@ states what the group itself needs. Dispositions use the canonical three.
 
 | Must exist | Why this group needs it | When missing |
 | --- | --- | --- |
-| A resolvable skill roster — the installed plugin's own skills tree, or `claude-plugins/fabrika/skills/` in-repo, or an explicit `--skills-dir` | it is the roster `status menu` renders and the declaration set `status config` parses | **degrade** — an implicitly-resolved roster holding zero skills is `empty` / `gaps` at exit `0`, never silence; only an **explicitly passed** absent path is `7`, and an unreadable one is `11` ([why](#roster-location)). |
+| A resolvable skill roster — the installed plugin's own skills tree, `claude-plugins/fabrika/skills/` in the target repo, that same path in the checkout the CLI itself runs from, or an explicit `--skills-dir` | it is the roster `status menu` renders and the declaration set `status config` parses | **degrade** — an implicitly-resolved roster holding zero skills is `empty` / `gaps` at exit `0`, never silence; only an **explicitly passed** absent path is `7`, and an unreadable one is `11` ([why](#roster-location)). |
 | A resolvable repo — `--repo`, `$CLAUDE_PIPELINE_REPO`, `$GITHUB_REPOSITORY`, or an `origin` remote | `board`, `readout` and the non-file arms of `bootstrap` read against it | **degrade** for `status open`, which renders those fields `unknown`; **fail-loud** at exit `1` for `board`, `readout` and `bootstrap` invoked directly, which have no other answer to give. |
 | The board label taxonomy — the whole set the [buildable-surface registry](#buildable-surfaces) derives, not a subset restated here | `status board`'s six bucket calls read five of it; every state-writing verb elsewhere needs the rest | **bootstrap** — absent labels render `unknown` with detail `label absent`, never `0`, and `status bootstrap label-taxonomy` creates the whole set. |
 | The issue-shape markers — `wayfinding:map`, `prototyping:spike`, `grilling:session` | `status bootstrap issue-shape-markers` is where three skills' bootstrap pointers land | **bootstrap** — `status bootstrap issue-shape-markers` creates the whole set, and reports `exists` at `0` where it is already there. |

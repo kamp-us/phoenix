@@ -1012,8 +1012,9 @@ Three things about it are load-bearing:
   is a failed read. An *implicitly* resolved roster holding zero skills is neither — it is `empty`
   at exit `0`.
 
-The roster resolves in three tiers — an explicit `--skills-dir`, the installed plugin's own skills
-tree, then `claude-plugins/fabrika/skills` in-repo — and prints which one served
+The roster resolves in four tiers — an explicit `--skills-dir`, the installed plugin's own skills
+tree, `claude-plugins/fabrika/skills` in-repo, then that same path in the checkout the CLI itself
+runs from — and prints which one served, `explicit` · `plugin` · `repo` · `checkout`
 ([`src/status/roster.ts`](./src/status/roster.ts)).
 
 ## The `ui` group

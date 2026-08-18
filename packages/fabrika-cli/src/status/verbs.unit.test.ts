@@ -46,7 +46,17 @@ import {
 	runOpen,
 } from "./open-verb.ts";
 import {digestComment, issueNumberOf, runReadout} from "./readout-verb.ts";
-import {parseFrontmatter, type RosterRead, type RosterSkill, skillFrom} from "./roster.ts";
+import {
+	IN_REPO_ROSTER,
+	PLUGIN_MANIFEST,
+	parseFrontmatter,
+	type RosterRead,
+	type RosterSkill,
+	type RosterSources,
+	readRoster,
+	resolveRosterPath,
+	skillFrom,
+} from "./roster.ts";
 
 const AS_OF = readNow("2026-08-09T14:22:03Z");
 
@@ -93,6 +103,112 @@ describe("the roster row", () => {
 		expect(parseFrontmatter("# no frontmatter at all\n")).toBeNull();
 		expect(row.description).toBe("unknown (frontmatter unreadable)");
 		expect(row.frontmatterReadable).toBe(false);
+	});
+});
+
+/**
+ * The rung order, and the one rung that answers in the shape #5775 reported: the CLI running out of
+ * a phoenix checkout while the cwd is a repo that carries no roster of its own.
+ */
+describe("the roster's resolution ladder", () => {
+	const CHECKOUT = "/home/dev/phoenix";
+	const MODULE_DIR = `${CHECKOUT}/packages/fabrika-cli/src/status`;
+	const FOREIGN = "/home/dev/demlik";
+	const SKILL_TEXT = "---\nname: build\ndescription: d\n---\n";
+
+	const tree = (over: Parameters<typeof fakeFs>[0]) => fakeFs(over);
+
+	const resolve = (sources: RosterSources, fs: ReturnType<typeof fakeFs>) =>
+		Effect.runPromise(Effect.provide(resolveRosterPath(sources), fs.layer));
+
+	const read = (sources: RosterSources, fs: ReturnType<typeof fakeFs>) =>
+		Effect.runPromise(Effect.provide(readRoster(sources), fs.layer));
+
+	const checkoutRoster = `${CHECKOUT}/${IN_REPO_ROSTER}`;
+
+	it("resolves the CLI's own checkout when the cwd is a repo carrying no roster", async () => {
+		const resolved = await resolve(
+			{explicit: null, moduleDir: MODULE_DIR, cwd: FOREIGN},
+			tree({directories: [checkoutRoster]}),
+		);
+		expect(resolved?.tier).toBe("checkout");
+		expect(resolved?.path).toBe(checkoutRoster);
+	});
+
+	/** `display` is what a session transcript keeps; an absolute path there is a machine-local leak. */
+	it("prints the checkout rung as a repo-relative path, never the absolute one", async () => {
+		const resolved = await resolve(
+			{explicit: null, moduleDir: MODULE_DIR, cwd: FOREIGN},
+			tree({directories: [checkoutRoster]}),
+		);
+		expect(resolved?.display).toBe(IN_REPO_ROSTER);
+		expect(resolved?.display.startsWith("/")).toBe(false);
+	});
+
+	it("keeps the cwd's own roster ahead of the checkout's when both are there", async () => {
+		const resolved = await resolve(
+			{explicit: null, moduleDir: MODULE_DIR, cwd: FOREIGN},
+			tree({directories: [checkoutRoster, `${FOREIGN}/${IN_REPO_ROSTER}`]}),
+		);
+		expect(resolved?.tier).toBe("repo");
+		expect(resolved?.path).toBe(`${FOREIGN}/${IN_REPO_ROSTER}`);
+	});
+
+	it("keeps an installed plugin ahead of both implicit checkout rungs", async () => {
+		const installed = "/cache/kampus/fabrika/abc123";
+		const resolved = await resolve(
+			{explicit: null, moduleDir: `${installed}/cli/src/status`, cwd: FOREIGN},
+			tree({
+				directories: [checkoutRoster, `${installed}/${PLUGIN_MANIFEST}`],
+				files: {[`${installed}/${PLUGIN_MANIFEST}`]: "{}"},
+			}),
+		);
+		expect(resolved?.tier).toBe("plugin");
+		expect(resolved?.path).toBe(`${installed}/skills`);
+	});
+
+	it("reads the checkout roster's skills rather than reporting the target repo bare", async () => {
+		const out = await read(
+			{explicit: null, moduleDir: MODULE_DIR, cwd: FOREIGN},
+			tree({
+				directories: [checkoutRoster, `${checkoutRoster}/build`],
+				dirs: {[checkoutRoster]: ["build"]},
+				files: {[`${checkoutRoster}/build/SKILL.md`]: SKILL_TEXT},
+			}),
+		);
+		expect(out._tag).toBe("Resolved");
+		if (out._tag !== "Resolved") return;
+		expect(out.tier).toBe("checkout");
+		expect(out.skills.map((s) => s.name)).toEqual(["build"]);
+	});
+
+	/** A resolved roster holding nothing is a fact at exit 0 — the added rung must not change that. */
+	it("keeps a resolved-but-empty checkout roster `empty`, never unknown", async () => {
+		const out = await read(
+			{explicit: null, moduleDir: MODULE_DIR, cwd: FOREIGN},
+			tree({directories: [checkoutRoster], dirs: {[checkoutRoster]: []}}),
+		);
+		expect(out._tag).toBe("Resolved");
+		const menu = runMenu({roster: out, asOf: AS_OF, json: false});
+		expect(menu.code).toBe(ANSWER);
+		expect(menu.stdout).toBe("menu\tempty\t0\t2026-08-09T14:22:03Z\n");
+	});
+
+	/** An explicit path is the caller's claim; no implicit rung may rescue it. */
+	it("still seats an explicitly-passed absent --skills-dir on AbsentExplicit", async () => {
+		const out = await read(
+			{explicit: "/nope", moduleDir: MODULE_DIR, cwd: FOREIGN},
+			tree({directories: [checkoutRoster], dirs: {[checkoutRoster]: ["build"]}}),
+		);
+		expect(out._tag).toBe("AbsentExplicit");
+		expect(runMenu({roster: out, asOf: AS_OF, json: false}).code).toBe(7);
+	});
+
+	it("still fails when no rung answers", async () => {
+		const out = await read({explicit: null, moduleDir: MODULE_DIR, cwd: FOREIGN}, tree({}));
+		expect(out._tag).toBe("Failed");
+		if (out._tag !== "Failed") return;
+		expect(out.reason).toBe("no roster resolved — pass --skills-dir");
 	});
 });
 
