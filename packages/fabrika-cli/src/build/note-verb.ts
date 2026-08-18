@@ -17,7 +17,7 @@ import type {StdinRead} from "../io/stdin.ts";
 import {normalizeForReadback} from "../report/compose.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {leakRefusal, readAuthored} from "./authored.ts";
-import {requireClaim, requireSession} from "./claim.ts";
+import {requireCallerToken, requireClaim, requireSession} from "./claim.ts";
 import {PRECONDITION_UNKNOWN, READBACK_MISMATCH, WRITE_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {isPullRequest} from "./github.ts";
 import {resolveTargetRepo} from "./target.ts";
@@ -32,6 +32,8 @@ const SURFACE = {
 
 export interface NoteOptions {
 	readonly number: number;
+	/** The token `build claim` handed this lane — the identity it posts under (#6037). */
+	readonly token: string;
 	readonly repo: string | null;
 	readonly env: Readonly<Record<string, string | undefined>>;
 	readonly stdin: Effect.Effect<StdinRead>;
@@ -88,7 +90,10 @@ export const runNote = (
 			head = pull.value.headSha;
 		}
 
-		const held = yield* requireClaim(VERB, repo, number, session.id);
+		const asking = requireCallerToken(VERB, session.id, options.token);
+		if (asking._tag === "Refused") return asking.outcome;
+
+		const held = yield* requireClaim(VERB, repo, number, asking.caller);
 		if (held._tag === "Refused") return held.outcome;
 
 		const composed = head === null ? authored.text : `${authored.text}\n\n${headStamp(head)}`;

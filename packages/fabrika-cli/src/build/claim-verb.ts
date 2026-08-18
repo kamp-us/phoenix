@@ -12,7 +12,9 @@
  * `15` is proven-foreign only, a missing session id is `1`, and an unreadable marker set is `11`.
  *
  * A loser retracts its **own** marker and nothing else — never another lane's, which is the one write
- * this protocol must never make.
+ * this protocol must never make. Which marker is its own is decided by the whole token: `claim` races
+ * under the one it just minted, and `confirm`/`release` under the `--token` that `claim` handed back,
+ * so a sibling lane of the same session is a co-racer here rather than the same claimant (#6037).
  *
  * **`claim` runs the admission test before it writes anything; `confirm` and `release` never run it.**
  * The fence decides what may *start* (ADR 0245), so a focus row edited mid-lane must not strand a
@@ -31,7 +33,9 @@ import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {
 	type ClaimOverride,
 	composeMarker,
+	laneCaller,
 	readMarkerToken,
+	requireCallerToken,
 	requireSession,
 	resolveOwnership,
 } from "./claim.ts";
@@ -42,7 +46,7 @@ import {
 	READBACK_MISMATCH,
 	WRITE_UNKNOWN,
 } from "./codes.ts";
-import {composeToken} from "./lane.ts";
+import {composeToken, nonceOf} from "./lane.ts";
 import {
 	admissionOf,
 	admissionRefusal,
@@ -76,7 +80,10 @@ export interface ClaimOptions {
 export type ProtocolOptions = Omit<
 	ClaimOptions,
 	"uuid" | "at" | "purpose" | "override" | "overrideLane"
->;
+> & {
+	/** The token `build claim` handed this lane — the identity it is asking under (#6037). */
+	readonly token: string;
+};
 
 const CLAIM = "build claim";
 
@@ -117,7 +124,7 @@ const readOverride = (reason: string | null, lane: string | null): OverrideRead 
 
 const preflight = (
 	verb: string,
-	options: ProtocolOptions,
+	options: Pick<ClaimOptions, "number" | "repo" | "env">,
 ): Effect.Effect<
 	| {readonly _tag: "Refused"; readonly outcome: VerbOutcome}
 	| {
@@ -218,6 +225,13 @@ export const runClaim = (
 		}
 
 		const token = composeToken(session, options.uuid);
+		const nonce = nonceOf(token);
+		if (nonce === null) {
+			return refuse(
+				FAILED,
+				`${CLAIM}: the token this run mints, ${token}, yields no lane nonce — nothing was written.`,
+			);
+		}
 		const body = composeMarker(token, options.at, override);
 		const posted = yield* createComment(repo, number, body);
 		if (posted._tag === "Failure") {
@@ -235,8 +249,13 @@ export const runClaim = (
 			);
 		}
 
-		// The checkpoint: posting DETECTS a race, this re-read RESOLVES it.
-		const {ownership, unauthorized} = yield* resolveOwnership(repo, number, session);
+		// The checkpoint: posting DETECTS a race, this re-read RESOLVES it. It resolves against the token
+		// this run just minted, so a sibling lane of the same session is a co-racer like any other.
+		const {ownership, unauthorized} = yield* resolveOwnership(
+			repo,
+			number,
+			laneCaller(session, nonce, token),
+		);
 		const notes = [
 			...lines,
 			...unauthorized.map(
@@ -256,7 +275,9 @@ export const runClaim = (
 				JSON.stringify({
 					answer: "won",
 					number,
-					token,
+					// The marker's token, not the minted one: they are equal here by construction, and the
+					// one that holds the lane is the one a caller may derive a nonce from (#6037).
+					token: ownership.marker.token,
 					purpose,
 					...(override === null ? {} : {override}),
 				}),
@@ -296,7 +317,10 @@ export const runConfirm = (
 		const {repo, session} = ready;
 		const {number} = options;
 
-		const {ownership, unauthorized} = yield* resolveOwnership(repo, number, session);
+		const asking = requireCallerToken(CONFIRM, session, options.token);
+		if (asking._tag === "Refused") return asking.outcome;
+
+		const {ownership, unauthorized} = yield* resolveOwnership(repo, number, asking.caller);
 		const notes = unauthorized.map(
 			(marker) =>
 				`${CONFIRM}: comment ${marker.commentId} carries a claim marker from "${marker.author}", who holds no write permission — counted, never a winner.`,
@@ -317,7 +341,9 @@ export const runConfirm = (
 			case "Foreign":
 				return refuse(
 					CLAIM_NOT_MINE,
-					`${CONFIRM}: #${number} is held by ${ownership.marker.token}, not this session.`,
+					`${CONFIRM}: #${number} is held by ${ownership.marker.token}, not by ${options.token.trim()}${
+						ownership.sameSession ? " — another lane of this same session" : ""
+					}.`,
 					notes,
 				);
 			case "Mine":
@@ -339,7 +365,10 @@ export const runRelease = (
 		const {repo, session} = ready;
 		const {number} = options;
 
-		const {ownership, unauthorized} = yield* resolveOwnership(repo, number, session);
+		const asking = requireCallerToken(RELEASE, session, options.token);
+		if (asking._tag === "Refused") return asking.outcome;
+
+		const {ownership, unauthorized} = yield* resolveOwnership(repo, number, asking.caller);
 		const notes = unauthorized.map(
 			(marker) =>
 				`${RELEASE}: comment ${marker.commentId} carries a claim marker from "${marker.author}", who holds no write permission — counted, never a winner.`,
@@ -354,7 +383,7 @@ export const runRelease = (
 		if (ownership._tag !== "Mine") {
 			return refuse(
 				CLAIM_NOT_MINE,
-				`${RELEASE}: this session holds no claim on #${number} — refusing to release another lane's.`,
+				`${RELEASE}: this lane holds no claim on #${number} — refusing to release another lane's.`,
 				notes,
 			);
 		}

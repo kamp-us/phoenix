@@ -13,9 +13,9 @@ import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {currentBranch} from "../io/issues.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
-import {requireClaim, requireSession} from "./claim.ts";
+import {laneCaller, requireClaim, requireSession} from "./claim.ts";
 import {WRONG_LANE} from "./codes.ts";
-import {nonceOf, parseLaneBranch} from "./lane.ts";
+import {parseLaneBranch} from "./lane.ts";
 import {resolveTargetRepo} from "./target.ts";
 import {assertGround} from "./tree.ts";
 
@@ -43,17 +43,31 @@ export const runTree = (
 		const resolved = yield* resolveTargetRepo(VERB, options.repo, options.env);
 		if (resolved._tag === "Refused") return resolved.outcome;
 
-		const held = yield* requireClaim(VERB, resolved.repo, options.issue, session.id);
-		if (held._tag === "Refused") return held.outcome;
-
+		// The checked-out branch's nonce IS this lane's identity here, so the claim read asks "does the
+		// winning marker belong to my lane" instead of "to my session" (#6037).
 		const branch = yield* currentBranch;
 		const lane = branch === null ? null : parseLaneBranch(branch);
-		if (lane === null || nonceOf(held.marker.token) !== lane.nonce) {
+		if (lane === null) {
 			return refuse(
 				WRONG_LANE,
-				`${VERB}: the checked-out branch "${branch ?? "(detached)"}" does not carry claim ${held.marker.token}'s nonce — wrong lane.`,
-				held.notes,
+				`${VERB}: the checked-out branch "${branch ?? "(detached)"}" is not a lane branch — wrong lane.`,
 			);
+		}
+
+		const held = yield* requireClaim(
+			VERB,
+			resolved.repo,
+			options.issue,
+			laneCaller(session.id, lane.nonce),
+		);
+		if (held._tag === "Refused") {
+			return held.ownership._tag === "Foreign" && held.ownership.sameSession
+				? refuse(
+						WRONG_LANE,
+						`${VERB}: the checked-out branch "${branch}" does not carry claim ${held.ownership.marker.token}'s nonce — wrong lane.`,
+						held.notes,
+					)
+				: held.outcome;
 		}
 		return answer(ground.root, held.notes);
 	});

@@ -73,7 +73,10 @@ be read, and it is named on stderr.
 fabrika build claim $issue_or_pr_number
 ```
 
-`won` prints your token; `lost` names the winner — that lane is theirs, back off. Exit
+`won` prints your token. **Keep it — it is your lane's name, and every later verb takes it as
+`--token`**; a session runs several lanes at once, so without it a verb can only tell that *some*
+lane of this session holds the number, which is how two lanes both ran one repair (#6037). `lost`
+names the winner — that lane is theirs, back off, including when the winner shares your session. Exit
 `20` (out of focus) or `21` (audience not agent) means the fence refused before writing any marker,
 including on a number handed straight to you: end the run naming the code, and **never override on
 your own authority**. `--override "<reason>" --override-lane "<lane>"` (both flags required) is the
@@ -82,7 +85,7 @@ theirs, not a rationale you compose. Before **every** later mutation addressed t
 number, re-confirm:
 
 ```bash
-fabrika build confirm $issue_or_pr_number
+fabrika build confirm $issue_or_pr_number --token $claim_token
 ```
 
 **The refusal is not overridable by reasoning**: a lost confirm means another lane owns this number
@@ -104,7 +107,7 @@ something you can point at.
 ## 4 — Branch, build, verify in this tree
 
 ```bash
-fabrika build branch $issue_or_pr_number --slug editor-focus-loss
+fabrika build branch $issue_or_pr_number --slug editor-focus-loss --token $claim_token
 ```
 
 Construct. Match the surrounding artifact's idiom; for code: domain logic in domain objects,
@@ -113,7 +116,7 @@ git mutation — the cwd resets between shell calls, so the tree you proved is n
 standing in until you prove it again. Scratch files go only where this prints:
 
 ```bash
-fabrika build scratch $issue_or_pr_number --slug notes
+fabrika build scratch $issue_or_pr_number --slug notes --token $claim_token
 ```
 
 Then validate **in this tree, cache bypassed** — a green borrowed from another checkout's cache is
@@ -207,10 +210,10 @@ The verb is the guard: it refuses leaks, stray closing keywords, a Deviations se
 gate would read as malformed, and reads back what landed. Then hand off and release:
 
 ```bash
-fabrika build note $issue_or_pr_number <<'EOF'
+fabrika build note $issue_or_pr_number --token $claim_token <<'EOF'
 …what was done, what a reviewer should look at first…
 EOF
-fabrika build release $issue_or_pr_number
+fabrika build release $issue_or_pr_number --token $claim_token
 ```
 
 **Terminal vocabulary** — end on exactly one: `SHIPPED-PR` (PR open, branch pushed);
@@ -270,7 +273,7 @@ repo's configured set or below `write` at the ACL, and an escalation is your who
 is reached. One grant is one
 round — it survives the push it permits, and the next FAIL round spends it, so a second round needs a
 second grant. Fix findings on the same branch
-(`fabrika build tree --issue $issue_or_pr_number`, then `fabrika build branch --resume $issue_or_pr_number`), re-validate with
+(`fabrika build tree --issue $issue_or_pr_number`, then `fabrika build branch --resume $issue_or_pr_number --token $claim_token`), re-validate with
 `fabrika build check --surface <yours>`, push with `fabrika build push --force-with-lease`, answer
 the findings in a `fabrika build note` naming each one addressed, release. Exit `23` on that push
 means your head **drops commits the PR already published** — `build branch --resume` again so you

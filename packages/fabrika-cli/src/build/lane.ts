@@ -41,8 +41,8 @@ export const parseToken = (
 };
 
 /** The lane nonce a token confers, or `null` when the token does not parse. */
-export const nonceOf = (token: string): string | null => {
-	const parsed = parseToken(token);
+export const nonceOf = (token: string, prefix: string = TOKEN_PREFIX): string | null => {
+	const parsed = parseToken(token, prefix);
 	if (parsed === null) return null;
 	const hex = parsed.uuid.replace(/-/g, "").slice(0, NONCE_LENGTH);
 	return hex.length === NONCE_LENGTH ? hex : null;

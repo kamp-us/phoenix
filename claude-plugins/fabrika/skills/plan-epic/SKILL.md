@@ -58,6 +58,8 @@ fabrika build claim $epic_number --purpose plan
 fabrika build tree --require-clean
 ```
 
+The token `claim` prints is `$claim_token` below — this LANE's name, which every later verb takes as `--token`. A session runs several lanes, so a verb handed only the session id can tell a sibling lane's claim from yours (#6037).
+
 `--purpose plan` is not optional here. The audience axis (`ready-for:agent`) asks whether an agent
 should pick the issue up to **build**, and an epic earns that label only *after* this skill has
 planned it and the gate has passed it — so fencing the planner on it is circular, and the fence
@@ -220,7 +222,7 @@ Release the claim, then hand off — clearing the floor and flipping children is
 `check-epic-plan`'s, and doing it yourself is the two-answers defect:
 
 ```bash
-fabrika build release $epic_number
+fabrika build release $epic_number --token $claim_token
 ```
 
 If you find something that ought to block a plan, that is a finding about the **floor** — file it
@@ -278,11 +280,11 @@ epic — so read each code off the command that produced it and never off this l
 - `NEEDS-INPUT` — no verb refused; the run is **fully known and one human answer short**. **A
   back-off, not UNKNOWN**, which is why it is not `STOPPED`. Mint nothing rather than part of the
   set — a half-minted epic with no topology and no plan in its body is a state a human has to
-  reconcile — then state the one question and post it with `fabrika build note`.
+  reconcile — then state the one question and post it with `fabrika build note $epic_number --token $claim_token`.
 - `BACKED-OFF` — `15` at the claim: held by another lane. Nothing read, written, or released.
 - `STOPPED` — everything else that leaves the run UNKNOWN: `3`, `11`, an unrepairable `4`/`5`/`6`/`25`, a `10` you cannot
   repair, `13` from `build tree` (no `ledger` verb seats a `13`), a `15` after the claim was won, and any `1`, `126` or `127` from any verb.
-  Post the state for a successor with `fabrika build note` **when you hold the claim**; otherwise
+  Post the state for a successor with `fabrika build note $epic_number --token $claim_token` **when you hold the claim**; otherwise
   report the code.
 
 Any cross-lane signal is closed-vocabulary — kind + action + the branded ref, no free prose; the
