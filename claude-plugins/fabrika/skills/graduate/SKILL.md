@@ -33,7 +33,7 @@ kinds, and collapsing any two is the mistake:
   Re-run or stop, and never resolve it to the permissive reading: a trail whose state could not be
   read is neither ready nor blocked.
 
-The seating table in [`contract.md`](contract.md) says which code is which.
+The seating table says which code is which: `fabrika wire doc-section --heading "Terminal seating — which code lands on which §TERM terminal" < <skill-base>/contract.md`.
 
 **What you read comes in two tiers.** Through a verb: the source issue and every comment on it,
 resolved by the sibling reader this skill imports rather than re-parses. Directly, never
@@ -209,7 +209,7 @@ nothing, so there is never anything to push, leave local, or remove.
 `STOPPED`
 
 Which exit code seats which terminal is a total function of the code, so it lives with the codes:
-the **terminal-seating** table under the shared exit matrix in [`contract.md`](contract.md). `0` is
+the **terminal-seating** table under the shared exit matrix (`fabrika wire doc-section --heading "Terminal seating — which code lands on which §TERM terminal" < <skill-base>/contract.md`). `0` is
 disambiguated by which verb produced it and, for `graduate trail`, by the `readiness` token.
 
 Four judgements that table cannot make for you:
@@ -233,8 +233,8 @@ every output shape and every exit code live in [`contract.md`](contract.md).
 
 fabrika installs into repos that are not the one it was authored in, so these must exist before a
 run. The **when-missing** vocabulary is the closed set every fabrika skill shares — **fail-loud**,
-**degrade**, **bootstrap** — and each row's code is stated in [`contract.md`](contract.md)
-(*Required repo files*).
+**degrade**, **bootstrap** — and each row's code is stated in the contract's own table
+(`fabrika wire doc-section --heading "Required repo files (verb-level)" < <skill-base>/contract.md`).
 
 | Must exist | Why this skill needs it | When missing |
 | --- | --- | --- |

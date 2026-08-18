@@ -135,7 +135,9 @@ fabrika spike dispose --nonce 7f3a9c21
 
 <!-- anchor: DISPOSAL-IS-CHECKED-NOT-INTENDED --> **This is what makes "throwaway" a property rather
 than a promise** — the verb checks the tree, the removal, and the decision rather than trusting any
-of the three ([`contract.md`](contract.md)). It refuses on a spike whose decision is not captured
+of the three
+(`fabrika wire doc-section --heading "The disposal invariant — stated because everything downstream leans on it" < <skill-base>/contract.md`).
+It refuses on a spike whose decision is not captured
 (`15`), because destroying an uncaptured spike erases exactly what you claimed to preserve.
 
 **`--forfeit` abandons a spike that never produced an answer; it does not relax the tree check.**
@@ -251,11 +253,11 @@ table in every fabrika skill, so one reader parses all of them.
 
 | Must exist | Why this skill needs it | When missing |
 | --- | --- | --- |
-| A GitHub repository reachable over `gh` REST, with a token carrying `issues: write` | the spike is an issue, its decision is a comment, and closing it is what makes the decision citable ([`contract.md`](contract.md), `spike open` / `spike capture`) | **fail-loud** — `11`, and no spike can be minted or captured, so nothing is provable; end `STOPPED` and name the repo |
-| The `prototyping:spike` label | `spike open` applies it in the create call, and it is what makes a spike findable and countable as a class rather than an ordinary issue ([`contract.md`](contract.md), `spike open`) | **bootstrap** — `fabrika status bootstrap issue-shape-markers` creates it; until it is run, `spike open` exits `7` naming the label rather than silently opening an unlabelled spike |
-| A git working tree — the repo root resolves and `git status` answers | `spike open` records the tree's state and `spike dispose` compares against it; that comparison is the check that turns "throwaway" from an intention into a property ([`contract.md`](contract.md), `spike open` / `spike dispose`) | **fail-loud** — `11`. A tree state that cannot be read is UNKNOWN, never "clean"; a spike whose leak into the tree is unprovable is the one thing this skill must not report as disposed |
-| A writable OS temp root outside the repo tree | the workspace lives there, keyed on the run nonce, so two concurrent spikes cannot collide and nothing the spike authors is inside the tree ([`contract.md`](contract.md), the workspace grammar) | **fail-loud** — `11` from `spike open`; there is no in-repo fallback, because an in-tree workspace is exactly the defect this skill is built against (`13`) |
-| Readable collaborator permissions — `repos/<repo>/collaborators/<login>/permission` | resolves the capture author against repository permissions before a decision is recorded ([`contract.md`](contract.md), `spike capture`) | **fail-loud** — `11`. A permission read that fails is UNKNOWN, never a grant |
+| A GitHub repository reachable over `gh` REST, with a token carrying `issues: write` | the spike is an issue, its decision is a comment, and closing it is what makes the decision citable (`fabrika wire doc-section --heading "spike open" < <skill-base>/contract.md`, likewise `--heading "spike capture"`) | **fail-loud** — `11`, and no spike can be minted or captured, so nothing is provable; end `STOPPED` and name the repo |
+| The `prototyping:spike` label | `spike open` applies it in the create call, and it is what makes a spike findable and countable as a class rather than an ordinary issue (`fabrika wire doc-section --heading "spike open" < <skill-base>/contract.md`) | **bootstrap** — `fabrika status bootstrap issue-shape-markers` creates it; until it is run, `spike open` exits `7` naming the label rather than silently opening an unlabelled spike |
+| A git working tree — the repo root resolves and `git status` answers | `spike open` records the tree's state and `spike dispose` compares against it; that comparison is the check that turns "throwaway" from an intention into a property (`fabrika wire doc-section --heading "spike open" < <skill-base>/contract.md`, likewise `--heading "spike dispose"`) | **fail-loud** — `11`. A tree state that cannot be read is UNKNOWN, never "clean"; a spike whose leak into the tree is unprovable is the one thing this skill must not report as disposed |
+| A writable OS temp root outside the repo tree | the workspace lives there, keyed on the run nonce, so two concurrent spikes cannot collide and nothing the spike authors is inside the tree (`fabrika wire doc-section --heading "The workspace grammar — canonical here" < <skill-base>/contract.md`) | **fail-loud** — `11` from `spike open`; there is no in-repo fallback, because an in-tree workspace is exactly the defect this skill is built against (`13`) |
+| Readable collaborator permissions — `repos/<repo>/collaborators/<login>/permission` | resolves the capture author against repository permissions before a decision is recorded (`fabrika wire doc-section --heading "spike capture" < <skill-base>/contract.md`) | **fail-loud** — `11`. A permission read that fails is UNKNOWN, never a grant |
 
 Nothing else is required. This skill reads no `.decisions/`, no `.patterns/`, no CODEOWNERS, no
 design manifest and no merge-queue configuration — it opens no pull request and gates no merge, so

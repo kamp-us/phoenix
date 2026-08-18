@@ -9,8 +9,10 @@ background: true
 
 # heal-ci
 
-The verbs are specified in [`contract.md`](contract.md) — read it for a verb's exact output shape,
-its exit codes, and the evidence each token rests on.
+The verbs are specified in `contract.md` — a verb's exact output shape, its exit codes, and the
+evidence each token rests on are one lookup away, its section named by the verb's own name:
+`fabrika wire doc-section --heading "heal-ci diagnose" < <skill-base>/contract.md`, and likewise
+for each of the other verbs.
 
 You answer one question: **why is this pull request not moving?** Red CI is one answer of ten.
 
