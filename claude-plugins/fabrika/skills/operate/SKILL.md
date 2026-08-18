@@ -386,6 +386,16 @@ artifact's verdicts — the PR's, or the child range's — until every derived n
 against what that artifact carries now, then record. No repair builder is
 ever spawned while any namespace at the head is non-terminal.
 
+**Re-reading terminates, because no reviewer may decline a derived namespace on a `FAIL` round.**
+ADR [0293](../../../../.decisions/0293-governance-fires-every-round.md) rules governance
+derived-required at every round and every head on a `harness: true` diff, FAIL rounds included —
+`review` §6 states it on both arms. So a governance verdict missing at a `harness: true` head is
+always a read still in flight or a reviewer that died mid-emit, never a licensed refusal, and the
+remedy above reaches a verdict instead of waiting on one nobody will write. If a re-read still
+shows the namespace empty after the reviewer's run has ended, that spawn is a dead spawn — re-spawn
+the reviewer at the current head rather than parking; the floor stays, and this row never holds a
+state where the `FAIL` cannot be recorded and the repair cannot be dispatched.
+
 `lane transition` exits are verdicts: `12` means the event was refused and the log left
 unappended — the machine holds no cell for it, so re-fold with `lane status` and route from the
 state that is actually there. `8` means the append did not land — the event is **not** recorded;
