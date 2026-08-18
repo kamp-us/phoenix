@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/kamp-us/phoenix/compare/pipeline-cli-v0.3.0...pipeline-cli-v0.3.1) (2026-08-18)
+
+
+### Bug Fixes
+
+* release-please has crashed on every run since 2026-08-17 05:58, so no release PR grooming or publishing happens ([#5950](https://github.com/kamp-us/phoenix/issues/5950)) ([65a4487](https://github.com/kamp-us/phoenix/commit/65a4487c44a1c31bba657dfb715097b2c74355b7))
+
 ## [0.3.0](https://github.com/kamp-us/phoenix/compare/pipeline-cli-v0.2.1...pipeline-cli-v0.3.0) (2026-08-16)
 
 

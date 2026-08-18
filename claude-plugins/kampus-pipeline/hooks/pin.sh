@@ -23,4 +23,4 @@
 # pipeline-cli bump rewrites this file inside the same Release PR. Do not move it off that line.
 
 KAMPUS_PIPELINE_CLI_PKG="@kampus/pipeline-cli"
-KAMPUS_PIPELINE_CLI_PIN="0.3.0" # x-release-please-version
+KAMPUS_PIPELINE_CLI_PIN="0.3.1" # x-release-please-version
