@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.3.0](https://github.com/kamp-us/phoenix/compare/fabrika-cli-v0.2.0...fabrika-cli-v0.3.0) (2026-08-18)
+
+
+### Features
+
+* **fabrika:** bind a child's range verdict to content, not its SHAs ([#5825](https://github.com/kamp-us/phoenix/issues/5825)) ([#5886](https://github.com/kamp-us/phoenix/issues/5886)) ([eb5d71f](https://github.com/kamp-us/phoenix/commit/eb5d71f4fccc971a8307666af24a088f6fafbd4e))
+* **fabrika:** epic child build-deviations disclose via a child marker comment ([#5936](https://github.com/kamp-us/phoenix/issues/5936)) ([#5962](https://github.com/kamp-us/phoenix/issues/5962)) ([d87f061](https://github.com/kamp-us/phoenix/commit/d87f0610c197196f7687ed77c81ec0bc02dfff12))
+* **fabrika:** governance/review post grow a range mode for epic children ([#5935](https://github.com/kamp-us/phoenix/issues/5935)) ([#5963](https://github.com/kamp-us/phoenix/issues/5963)) ([664eb9d](https://github.com/kamp-us/phoenix/commit/664eb9dcb8293994b2c70f5d24f115aaf380e9cb))
+* in-run merge collision is a routed machine state with a repair spawn, never a merge-queue ejection ([#5890](https://github.com/kamp-us/phoenix/issues/5890)) ([30b8059](https://github.com/kamp-us/phoenix/commit/30b805968c4de8de1d43e910cc4d11585d2c03b4))
+* lane brief speaks the one-PR epic shape: worktree and range briefs, a PR only at the epic tail ([#5891](https://github.com/kamp-us/phoenix/issues/5891)) ([300faa4](https://github.com/kamp-us/phoenix/commit/300faa48bee007db46adaa2141e6182ed3e5148b))
+* lane prove range arms: artifact proof for epic children without a per-child PR ([#5898](https://github.com/kamp-us/phoenix/issues/5898)) ([3a49e3c](https://github.com/kamp-us/phoenix/commit/3a49e3cccb9ddcc402e996312c1c6fdbc3b0e180))
+* **lane:** detect lanes nothing is driving with `lane stale` ([#5897](https://github.com/kamp-us/phoenix/issues/5897)) ([#5899](https://github.com/kamp-us/phoenix/issues/5899)) ([fc92bd7](https://github.com/kamp-us/phoenix/commit/fc92bd749d4680e594d80d37e23571ea8f680609))
+* **lane:** key a lane by chore name, with a chore workflow definition ([#5846](https://github.com/kamp-us/phoenix/issues/5846)) ([#5862](https://github.com/kamp-us/phoenix/issues/5862)) ([e6c36e5](https://github.com/kamp-us/phoenix/commit/e6c36e562d95bc6b1639c036ba17dc5084ff3e52))
+* **lane:** print the spawn prompt through `lane brief` instead of hand-writing it ([#5751](https://github.com/kamp-us/phoenix/issues/5751)) ([#5803](https://github.com/kamp-us/phoenix/issues/5803)) ([a2990b9](https://github.com/kamp-us/phoenix/commit/a2990b9481ed09c18869fed67a607bc9eb840032))
+* **lane:** reshape the epic machine to one PR — children land locally, an epic tail phase reviews and ships ([#5824](https://github.com/kamp-us/phoenix/issues/5824)) ([#5884](https://github.com/kamp-us/phoenix/issues/5884)) ([4a57b8f](https://github.com/kamp-us/phoenix/commit/4a57b8f6c332d4d32a728c0cee3943965c56f9cd))
+* **operate:** drive chore lanes through recipe verbs ([#5848](https://github.com/kamp-us/phoenix/issues/5848)) ([#5875](https://github.com/kamp-us/phoenix/issues/5875)) ([b7a6473](https://github.com/kamp-us/phoenix/commit/b7a64736e1f5c6fd4334c9f03ef56a5137989242))
+* **recipe:** add the known-park clear and governance-rerun verbs ([#5847](https://github.com/kamp-us/phoenix/issues/5847)) ([#5865](https://github.com/kamp-us/phoenix/issues/5865)) ([c328522](https://github.com/kamp-us/phoenix/commit/c328522c4988f1d562939553792b9bbd19c61dcf))
+* **status:** render the lane stale sweep as a fifth `status open` field ([#5908](https://github.com/kamp-us/phoenix/issues/5908)) ([#5978](https://github.com/kamp-us/phoenix/issues/5978)) ([6657151](https://github.com/kamp-us/phoenix/commit/6657151f9c0d9c930e35a59c973dd3260c37666a))
+* the plan gate flips the gated epic itself to ready-for:agent on a clean floor ([#5885](https://github.com/kamp-us/phoenix/issues/5885)) ([b076dd2](https://github.com/kamp-us/phoenix/commit/b076dd224ae9336695c92deb8609700522f6002e))
+
+
+### Bug Fixes
+
+* **build:** admit a repair claim on a decision issue's open PR ([#5914](https://github.com/kamp-us/phoenix/issues/5914)) ([#5939](https://github.com/kamp-us/phoenix/issues/5939)) ([955110c](https://github.com/kamp-us/phoenix/commit/955110cac5173142560127b82d761b672d45e483))
+* **fabrika-cli:** boot a closed child's lane region in a final state ([#5746](https://github.com/kamp-us/phoenix/issues/5746)) ([#5819](https://github.com/kamp-us/phoenix/issues/5819)) ([c600b9a](https://github.com/kamp-us/phoenix/commit/c600b9a74a9572807378dbc562920c712aa9f32b))
+* **fabrika-cli:** derive conventional PR titles from the served issue's type label ([#5771](https://github.com/kamp-us/phoenix/issues/5771)) ([#5822](https://github.com/kamp-us/phoenix/issues/5822)) ([59a056d](https://github.com/kamp-us/phoenix/commit/59a056d445396700b251b60a46530d0cea640c8e))
+* **fabrika-cli:** resolve a lane's PR off the closing-issue edge, not a body search ([#5805](https://github.com/kamp-us/phoenix/issues/5805)) ([#5850](https://github.com/kamp-us/phoenix/issues/5850)) ([fb41e4c](https://github.com/kamp-us/phoenix/commit/fb41e4c178c0d54889ae9c13f0586aca696b0e76))
+* **fabrika:** lane prove reads the §CP advisory carrier so a control-plane PASS proves ([#5871](https://github.com/kamp-us/phoenix/issues/5871)) ([#5974](https://github.com/kamp-us/phoenix/issues/5974)) ([17e6fe3](https://github.com/kamp-us/phoenix/commit/17e6fe3fe86011eeb455d13dc6d37edc273d4b49))
+* **fabrika:** register `deviations` as a wire format both sides read ([#5566](https://github.com/kamp-us/phoenix/issues/5566)) ([#5733](https://github.com/kamp-us/phoenix/issues/5733)) ([4668dc4](https://github.com/kamp-us/phoenix/commit/4668dc4bdb294615292964024423859b7d20c0bd))
+* release-please has crashed on every run since 2026-08-17 05:58, so no release PR grooming or publishing happens ([#5950](https://github.com/kamp-us/phoenix/issues/5950)) ([65a4487](https://github.com/kamp-us/phoenix/commit/65a4487c44a1c31bba657dfb715097b2c74355b7))
+* **review:** anchor append-criterion on the parser's own span ([#5716](https://github.com/kamp-us/phoenix/issues/5716)) ([#5864](https://github.com/kamp-us/phoenix/issues/5864)) ([89fee8b](https://github.com/kamp-us/phoenix/commit/89fee8b4ee6d2bfaa131bc8952e2da394ccefa2d))
+* **wire:** read acceptance criteria outside a `<details>` appendix ([#5852](https://github.com/kamp-us/phoenix/issues/5852)) ([#5873](https://github.com/kamp-us/phoenix/issues/5873)) ([d8d23de](https://github.com/kamp-us/phoenix/commit/d8d23de1e23f600e05cdc13c2bb8de9987f44007))
+
 ## [0.2.0](https://github.com/kamp-us/phoenix/compare/fabrika-cli-v0.1.0...fabrika-cli-v0.2.0) (2026-08-16)
 
 
