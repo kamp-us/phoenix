@@ -102,7 +102,8 @@ describe("CONTROL_PLANE_RE classifies the ADR-0174 boundary broadenings (#2761)"
 		expect(isControlPlane("apps/web/src/main.tsx")).toBe(false);
 		expect(isControlPlane("packages/some-other-pkg/src/index.ts")).toBe(false);
 		// A sibling package that is not gate machinery is NOT §CP (#3147, reverse of #3072): only
-		// the surfaces that perform/enforce merges & reviews stay §CP.
+		// the surfaces that perform/enforce merges & reviews stay §CP. fabrika-cli's `src/ci/` is
+		// the one exception, asserted in its own describe below.
 		expect(isControlPlane("packages/fabrika-cli/src/index.ts")).toBe(false);
 		expect(isControlPlane("packages/fabrika-cli/package.json")).toBe(false);
 		// biome-governance §CP (ADR 0193) is tightly anchored: some OTHER root config/file stays
@@ -307,6 +308,45 @@ describe("CONTROL_PLANE_RE narrows packages/pipeline-cli to its enforcement core
 	it("leaves the independent ^packages/ci-required/ branch byte-unchanged in effect", () => {
 		expect(isControlPlane("packages/ci-required/src/bin.ts")).toBe(true);
 		expect(CONTROL_PLANE_RE).toContain("^packages/ci-required/");
+	});
+});
+
+// ADR 0299 — the `ci-required` verdict core moved to `packages/fabrika-cli/src/ci/` (#6099) and the
+// §CP fence follows it there. Every path below classified NOT-control-plane before this branch, which
+// under a CODEOWNERS with no `*` catch-all and the ruleset at `required_approving_review_count: 0`
+// means the file deciding every merge's required check merged on ZERO approvals.
+describe("CONTROL_PLANE_RE covers fabrika-cli's CI-check core (ADR 0299)", () => {
+	const ci = "packages/fabrika-cli/src/ci";
+
+	it("classifies the relocated ci-required verdict core — the whole dir, any depth", () => {
+		for (const path of [
+			`${ci}/required.ts`, // the pass/fail logic itself
+			`${ci}/required-bin.ts`, // what .github/workflows/ci.yml's ci-required job runs
+			`${ci}/required.unit.test.ts`, // the pin on that logic — weakening it weakens the gate
+			`${ci}/README.md`, // non-`.ts`: the zero-approval hole a DIRECTORY unit closes
+			`${ci}/nested/helper.ts`,
+		]) {
+			expect(isControlPlane(path)).toBe(true);
+		}
+	});
+
+	it("does NOT over-widen: the rest of fabrika-cli stays ordinary (founder ruling on #6164)", () => {
+		// The narrowness IS the ruling — "i'm ok with it as long as it's scoped to the ci checks".
+		// The negative half is what keeps the approval load where the founder put it, so it is the
+		// assertion that would red on a future quiet widening to the whole package.
+		for (const path of [
+			"packages/fabrika-cli/src/bin.ts",
+			"packages/fabrika-cli/src/registry.ts",
+			"packages/fabrika-cli/src/ship/command.ts",
+			"packages/fabrika-cli/src/review/verdicts.ts",
+			"packages/fabrika-cli/package.json",
+			// the trailing `/` is load-bearing — a sibling whose name merely starts with `ci`
+			"packages/fabrika-cli/src/ci-notes.md",
+			// and it is anchored to fabrika-cli's own src/, not to any `src/ci/` anywhere
+			"packages/some-other-pkg/src/ci/required.ts",
+		]) {
+			expect(isControlPlane(path)).toBe(false);
+		}
 	});
 });
 
