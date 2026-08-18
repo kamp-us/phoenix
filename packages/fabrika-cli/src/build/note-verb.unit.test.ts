@@ -12,7 +12,7 @@ import {
 	WRITE_UNKNOWN,
 	ZERO_SCOPE,
 } from "./codes.ts";
-import {comments, HEAD, LANE_UUID, marker, pull} from "./fixtures.test-support.ts";
+import {comments, HEAD, LANE_TOKEN, LANE_UUID, marker, pull} from "./fixtures.test-support.ts";
 import {headStamp, runNote} from "./note-verb.ts";
 
 const IS_PULL = /^gh api repos\/o\/r\/issues\/4310 --jq \.pull_request/;
@@ -36,6 +36,7 @@ const POSTED = okOut(JSON.stringify({id: 512346, html_url: "https://github.com/o
 
 const options = {
 	number: 4310,
+	token: LANE_TOKEN,
 	repo: null,
 	env: {CLAUDE_PIPELINE_REPO: "o/r", CLAUDE_CODE_SESSION_ID: "s-9f2e"} as Record<
 		string,

@@ -390,6 +390,75 @@ describe("runCheck", () => {
 	});
 });
 
+// The #5687 divergence: `build check` asked `report/leaks.ts`'s ISSUE-BODY scanner about a file in a
+// diff, so it red on bytes `pipeline-cli leak-guard scan` — the gate it predicts — passes clean, and
+// the red was unclearable inside the lane that inherited it.
+describe("the prose leak scan predicts the committed-file gate, not the body guard", () => {
+	const CONFIG = "/repo/trees/lane-a/.fabrika.jsonc";
+	const LEAKY = "the Lineage bullets name ~/code/github.com/o/r on purpose\n";
+
+	it("greens a fenced regex literal quoting the home marker", async () => {
+		const out = await run(
+			[...LANE_OK, [DIFF, okOut("reports/snapshot.md\n")]],
+			{surface: "prose"},
+			{
+				"/repo/trees/lane-a/reports/snapshot.md":
+					"```bash\ngrep -nE '(~/|/Users/|/home/)' -- .\n```\n",
+			},
+		);
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).verdict).toBe("green");
+	});
+
+	it("greens a doc citing a scratch root — a temp root is a comment-surface rule", async () => {
+		const out = await run(
+			[...LANE_OK, [DIFF, okOut("reports/snapshot.md\n")]],
+			{surface: "prose"},
+			{"/repo/trees/lane-a/reports/snapshot.md": "scratch lands under /tmp/fabrika-build/x\n"},
+		);
+		expect(out.code).toBe(0);
+	});
+
+	it("greens a doc the repo declared exempt", async () => {
+		const out = await run(
+			[...LANE_OK, [DIFF, okOut("CLAUDE.md\n")]],
+			{surface: "prose"},
+			{[CONFIG]: '{"docLeakExempt": ["/CLAUDE.md"]}', "/repo/trees/lane-a/CLAUDE.md": LEAKY},
+		);
+		expect(out.code).toBe(0);
+	});
+
+	it("reds the same bytes in a doc the list does not name", async () => {
+		const out = await run(
+			[...LANE_OK, [DIFF, okOut("docs/guide.md\n")]],
+			{surface: "prose"},
+			{[CONFIG]: '{"docLeakExempt": ["/CLAUDE.md"]}', "/repo/trees/lane-a/docs/guide.md": LEAKY},
+		);
+		expect(out.code).toBe(VALIDATION_RED);
+	});
+
+	it("exempts nothing when the repo declares no list, and says so", async () => {
+		const out = await run(
+			[...LANE_OK, [DIFF, okOut("CLAUDE.md\n")]],
+			{surface: "prose"},
+			{"/repo/trees/lane-a/CLAUDE.md": LEAKY},
+		);
+		expect(out.code).toBe(VALIDATION_RED);
+		expect(out.stderr.some((line) => line.includes("nothing is leak-scan exempt"))).toBe(true);
+	});
+
+	it("refuses an unreadable config on 11 — which docs are exempt is UNKNOWN, never green", async () => {
+		const out = await run(
+			[...LANE_OK, [DIFF, okOut("docs/guide.md\n")]],
+			{surface: "prose"},
+			{[CONFIG]: "{}", "/repo/trees/lane-a/docs/guide.md": "fine\n"},
+			[CONFIG],
+		);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stdout).toBe("");
+	});
+});
+
 // The #5301 regression, one leg per surface. `["a.ts", "README.md"]` is the repo's most common diff
 // shape, and it had no invocation that opened the markdown: `code` never reads it, `plan` runs the
 // grammar check, and `prose` refused on 10 because a code file was present. The leak scan and the

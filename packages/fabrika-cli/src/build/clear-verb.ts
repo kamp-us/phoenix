@@ -33,7 +33,7 @@
 import type {FileSystem, Path} from "effect";
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import {effectiveCap, grantedRounds} from "../cap-clearance.ts";
+import {capNote, effectiveCap} from "../cap-clearance.ts";
 import {createComment, getComment, listComments} from "../io/issues.ts";
 import {viewerLogin} from "../io/pulls.ts";
 import {recordClearedRound} from "../lane/clearance.ts";
@@ -41,11 +41,9 @@ import {laneRef, parseKey} from "../lane/key.ts";
 import {CONFIG_PATH} from "../repo-config.ts";
 import {normalizeForReadback} from "../report/compose.ts";
 import {isBareAtReference, renderLeaks, scanBody} from "../report/leaks.ts";
-import {CAP_ROUND} from "../retry-budget.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import * as capClearance from "../wire/cap-clearance.ts";
 import {stampOf} from "../wire/grill-marker.ts";
-import {read as readMarker} from "../wire/verdict-marker.ts";
 import {
 	clearancesOn,
 	clearsWriteFloor,
@@ -65,7 +63,7 @@ import {
 	ZERO_SCOPE,
 } from "./codes.ts";
 import {closingTargets, proseOf} from "./pr-body.ts";
-import {countRounds} from "./rounds.ts";
+import {roundsOn} from "./rounds.ts";
 import {openPull, resolveTargetRepo} from "./target.ts";
 
 const VERB = "build clear";
@@ -157,14 +155,7 @@ export const runClear = <R = never>(
 				`${VERB}: cannot read the comments on #${pr}: ${listed.reason} — the round count is UNKNOWN. Nothing was posted.`,
 			);
 		}
-		const rounds = countRounds(
-			listed.value.flatMap((comment) => {
-				const parsed = readMarker(comment.body);
-				return parsed._tag === "Found" && parsed.value.polarity === "FAIL"
-					? [comment.createdAt]
-					: [];
-			}),
-		);
+		const rounds = roundsOn(listed.value);
 		const recorded = yield* clearancesOn(repo, baseRef, listed.value);
 		if (recorded._tag === "Unknown") {
 			return refuse(
@@ -174,7 +165,7 @@ export const runClear = <R = never>(
 		}
 		const granted = grantedFrom(recorded.rows);
 		const cap = effectiveCap(granted);
-		const scopeLine = `${VERB}: ${repo}#${pr} at ${rounds} round(s); cap ${cap} = ${CAP_ROUND} declared + ${grantedRounds(granted)} cleared.`;
+		const scopeLine = `${VERB}: ${repo}#${pr} at ${rounds} round(s); ${capNote(granted)}.`;
 		const held = recorded.rows.find((row) => row.honoured && row.round === rounds);
 		if (held === undefined && rounds < cap) {
 			return refuse(
