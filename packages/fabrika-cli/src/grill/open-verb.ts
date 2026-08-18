@@ -13,16 +13,24 @@
  * **Residual race, stated rather than closed.** Two runs interleaved between the same pair of
  * search-and-create calls still mint two sessions. `SESSION_AMBIGUOUS` catches that on the *next*
  * invocation rather than preventing it; a verb claiming to close it would be lying.
+ *
+ * **`--ticket` swaps the resume key, and that is the whole of it.** A session opened for a
+ * wayfinding frontier ticket records the ticket in its body (`../came-from.ts`) and later runs match
+ * on *that*, so the same ticket resumes the same session however either title was edited afterwards
+ * — the property a title match cannot hold, and without which a second run mints a duplicate and
+ * splits the record the map is waiting on (#5661). The number is provenance only: the ticket issue
+ * is read for its title and its existence, never for instruction.
  */
 
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
+import {cameFromSection, readCameFrom} from "../came-from.ts";
 import {
 	addLabels,
 	createUnlabelledIssue,
 	getIssue,
 	listLabels,
-	openIssuesWithLabel,
+	openIssuesWithLabelDetailed,
 	resolveRepo,
 } from "../io/issues.ts";
 import {normalizeForReadback} from "../report/compose.ts";
@@ -40,7 +48,9 @@ import {
 import {normalizeTopic, SESSION_LABEL} from "./session.ts";
 
 export interface OpenOptions {
-	readonly topic: string;
+	/** `null` only with a `--ticket` to take the title from; the two are never both absent. */
+	readonly topic: string | null;
+	readonly ticket: number | null;
 	readonly repo: string | null;
 	readonly env: Readonly<Record<string, string | undefined>>;
 }
@@ -48,29 +58,41 @@ export interface OpenOptions {
 const SESSION_BODY =
 	"A grilling session. Every round, agent answer and founder ruling is recorded as a comment on this issue.\n";
 
+/** The three refusals a title must survive, whether the caller typed it or a ticket supplied it. */
+const titleRefusal = (topic: string, source: string): VerbOutcome | null => {
+	if (topic === "")
+		return refuse(FAILED, `grill open: ${source} is empty — a session needs a subject.`);
+	if (isBareAtReference(topic)) {
+		return refuse(
+			BARE_AT_PATH,
+			`grill open: ${source} is a bare @ path reference — not redactable, refusing to open a session titled with it.`,
+		);
+	}
+	const scan = scanBody(topic);
+	const firstLeak = scan.leaks[0];
+	return firstLeak === undefined
+		? null
+		: refuse(
+				LEAKED_PATH,
+				`grill open: ${source} carries a machine-local path: ${firstLeak.text} — refusing to open a session titled with it.`,
+				renderLeaks(scan.leaks),
+			);
+};
+
 export const runOpen = (
 	options: OpenOptions,
 ): Effect.Effect<VerbOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
 	Effect.gen(function* () {
-		const topic = options.topic.trim();
-		if (topic === "") {
-			return refuse(FAILED, "grill open: --topic is empty — a session needs a subject.");
-		}
-
-		if (isBareAtReference(topic)) {
+		const given = options.topic === null ? null : options.topic.trim();
+		if (given === null && options.ticket === null) {
 			return refuse(
-				BARE_AT_PATH,
-				"grill open: --topic is a bare @ path reference — not redactable, refusing to open a session titled with it.",
+				FAILED,
+				"grill open: neither --topic nor --ticket was given — a session needs a subject, or a ticket to take one from.",
 			);
 		}
-		const scan = scanBody(topic);
-		const firstLeak = scan.leaks[0];
-		if (firstLeak !== undefined) {
-			return refuse(
-				LEAKED_PATH,
-				`grill open: --topic carries a machine-local path: ${firstLeak.text} — refusing to open a session titled with it.`,
-				renderLeaks(scan.leaks),
-			);
+		if (given !== null) {
+			const bad = titleRefusal(given, "--topic");
+			if (bad !== null) return bad;
 		}
 
 		const repoAttempt = yield* resolveRepo(options.repo, options.env);
@@ -96,7 +118,30 @@ export const runOpen = (
 			);
 		}
 
-		const open = yield* openIssuesWithLabel(repo, SESSION_LABEL);
+		let derived: string | null = null;
+		if (options.ticket !== null) {
+			const ticket = yield* getIssue(repo, options.ticket);
+			if (ticket._tag === "Unknown") {
+				return refuse(
+					PRECONDITION_UNKNOWN,
+					`grill open: cannot read #${options.ticket} in ${repo}: ${ticket.reason} — whether the ticket exists is UNKNOWN. Nothing was created.`,
+				);
+			}
+			if (ticket._tag === "Absent") {
+				return refuse(
+					NO_TARGET,
+					`grill open: #${options.ticket} does not exist in ${repo} — refusing to bind a session to an issue no later run will read.`,
+				);
+			}
+			derived = ticket.value.title.trim();
+		}
+		const topic = given ?? (derived as string);
+		if (given === null) {
+			const bad = titleRefusal(topic, `#${options.ticket}'s title`);
+			if (bad !== null) return bad;
+		}
+
+		const open = yield* openIssuesWithLabelDetailed(repo, SESSION_LABEL);
 		if (open._tag === "Failure") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
@@ -104,14 +149,20 @@ export const runOpen = (
 			);
 		}
 
+		// The key is the ticket whenever there is one: a title match cannot survive either title
+		// being edited, and a second session on one ticket is the split the map cannot see (#5661).
 		const wanted = normalizeTopic(topic);
-		const matches = open.value.filter((row) => normalizeTopic(row.title) === wanted);
-		const scopeLine = `grill open: ${repo}, ${open.value.length} open ${SESSION_LABEL} issue(s) scanned, ${matches.length} matching "${topic}".`;
+		const key = options.ticket === null ? `topic "${topic}"` : `ticket #${options.ticket}`;
+		const matches =
+			options.ticket === null
+				? open.value.filter((row) => normalizeTopic(row.title) === wanted)
+				: open.value.filter((row) => readCameFrom(row.body) === options.ticket);
+		const scopeLine = `grill open: ${repo}, ${open.value.length} open ${SESSION_LABEL} issue(s) scanned, ${matches.length} matching ${key}.`;
 
 		if (matches.length > 1) {
 			return refuse(
 				SESSION_AMBIGUOUS,
-				`grill open: ${matches.length} open sessions match topic "${topic}": ${matches
+				`grill open: ${matches.length} open sessions match ${key}: ${matches
 					.map((row) => `#${row.number}`)
 					.join(", ")} — refusing to guess which one is live.`,
 				[scopeLine],
@@ -136,12 +187,22 @@ export const runOpen = (
 				);
 			}
 			return answer(
-				JSON.stringify({session: resumed.number, topic, created: false, url: record.value.url}),
+				JSON.stringify({
+					session: resumed.number,
+					topic,
+					ticket: options.ticket,
+					created: false,
+					url: record.value.url,
+				}),
 				[scopeLine],
 			);
 		}
 
-		const created = yield* createUnlabelledIssue(repo, topic, SESSION_BODY);
+		const body =
+			options.ticket === null
+				? SESSION_BODY
+				: `${SESSION_BODY}\n${cameFromSection(options.ticket)}`;
+		const created = yield* createUnlabelledIssue(repo, topic, body);
 		if (created._tag === "Failure") {
 			return refuse(
 				WRITE_UNKNOWN,
@@ -180,6 +241,7 @@ export const runOpen = (
 			JSON.stringify({
 				session: created.value.number,
 				topic,
+				ticket: options.ticket,
 				created: true,
 				url: created.value.url,
 			}),

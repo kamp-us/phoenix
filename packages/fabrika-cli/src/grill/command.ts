@@ -67,19 +67,33 @@ const open = leafCommand(
 	"open",
 	{
 		topic: Flag.string("topic").pipe(
+			Flag.optional,
 			Flag.withDescription(
-				"the subject of the session; becomes the issue title and is matched against open grilling:session titles to resume rather than mint a duplicate",
+				"the subject of the session; becomes the issue title and is matched against open grilling:session titles to resume rather than mint a duplicate. Optional only with --ticket, whose title it then takes",
+			),
+		),
+		ticket: Flag.integer("ticket").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"the issue this session's questions came from, recorded on the session body as provenance and never read for instruction; it becomes the resume key, so the same ticket always resumes the same session",
 			),
 		),
 		repo: repoFlag,
 	},
-	Effect.fn(function* ({topic, repo}) {
-		yield* emit(yield* runOpen({topic, repo: Option.getOrNull(repo), env: process.env}));
+	Effect.fn(function* ({topic, ticket, repo}) {
+		yield* emit(
+			yield* runOpen({
+				topic: Option.getOrNull(topic),
+				ticket: Option.getOrNull(ticket),
+				repo: Option.getOrNull(repo),
+				env: process.env,
+			}),
+		);
 	}),
 ).pipe(
-	Command.withShortDescription("Open, or resume, the session issue for a topic."),
+	Command.withShortDescription("Open, or resume, the session issue for a topic or a ticket."),
 	Command.withDescription(
-		'Open, or resume, the session issue for a topic. Prints {"session":n,"topic":"…","created":true|false,"url":"…"}. Topic matching is exact under NFC + case folding + whitespace collapse, never fuzzy. Exits 5 (machine-local path in --topic), 6 (bare @ reference), 7 (the grilling:session label does not exist), 8 (the create or the label write failed — UNKNOWN), 9 (read-back mismatch), 11 (the search could not complete, so "none" is unproven), 16 (more than one open session matches). Example: fabrika grill open --topic "sozluk moderation model"',
+		'Open, or resume, the session issue for a topic. Prints {"session":n,"topic":"…","ticket":n|null,"created":true|false,"url":"…"}. With --ticket the session records that ticket and later runs resume on it; without one, topic matching is exact under NFC + case folding + whitespace collapse, never fuzzy. Exits 1 (neither --topic nor --ticket), 5 (machine-local path in the title), 6 (bare @ reference), 7 (the grilling:session label does not exist, or --ticket names no issue), 8 (the create or the label write failed — UNKNOWN), 9 (read-back mismatch), 11 (the search or the ticket read could not complete, so "none" is unproven), 16 (more than one open session matches). Example: fabrika grill open --ticket 5652',
 	),
 );
 

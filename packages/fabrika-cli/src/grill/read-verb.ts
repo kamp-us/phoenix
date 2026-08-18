@@ -25,6 +25,7 @@
 
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
+import {readCameFrom} from "../came-from.ts";
 import {type CommentRecord, listComments, resolveRepo} from "../io/issues.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import type {MarkerTime, QuestionId, RoundDigest} from "../wire/grill-marker.ts";
@@ -275,6 +276,7 @@ export const runRead = (
 		return answer(
 			JSON.stringify({
 				session,
+				ticket: readCameFrom(found.body),
 				frontier: frontierOf(questions),
 				questions,
 				disregarded,

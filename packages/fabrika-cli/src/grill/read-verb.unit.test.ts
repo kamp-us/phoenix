@@ -1,5 +1,6 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
+import {cameFromSection} from "../came-from.ts";
 import {errOut, fakeShell, okOut} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {NO_TARGET, PRECONDITION_UNKNOWN} from "./codes.ts";
@@ -31,6 +32,7 @@ const options = {
 
 interface ReadAnswer {
 	readonly session: number;
+	readonly ticket: number | null;
 	readonly frontier: string;
 	readonly questions: ReadonlyArray<Record<string, unknown>>;
 	readonly disregarded: ReadonlyArray<{comment: number; reason: string; detail: string}>;
@@ -54,6 +56,29 @@ const readSession = async (
 	);
 	return {code: out.code, answer: JSON.parse(out.stdout === "" ? "null" : out.stdout)};
 };
+
+describe("the answer names the ticket the session is bound to", () => {
+	const readBody = async (body: string) => {
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runRead(options),
+				fakeShell([
+					[ISSUE, okOut(sessionPayload(9412, {body}))],
+					[COMMENTS, okOut(commentsPayload([]))],
+				]).layer,
+			),
+		);
+		return JSON.parse(out.stdout) as ReadAnswer;
+	};
+
+	it("reports the frontier ticket a bound session carries", async () => {
+		expect(await readBody(cameFromSection(5652))).toMatchObject({ticket: 5652});
+	});
+
+	it("reports null for a session opened with no ticket", async () => {
+		expect(await readBody("A grilling session.\n")).toMatchObject({ticket: null});
+	});
+});
 
 describe("all four frontier tokens are answers at exit 0", () => {
 	it("reads a session with no comments as empty", async () => {

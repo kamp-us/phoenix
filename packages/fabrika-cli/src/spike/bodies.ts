@@ -17,6 +17,7 @@
  * no remedy (#5553).
  */
 
+import {CAME_FROM_HEADING, renderCameFrom} from "../came-from.ts";
 import type {CommentRecord} from "../io/issues.ts";
 import {scanBody} from "../report/leaks.ts";
 import type {EvidenceRecord, Kind} from "./workspace.ts";
@@ -57,9 +58,9 @@ export const issueBody = (fields: IssueBodyFields): string =>
 		"",
 		fields.nonce,
 		"",
-		"## Came from",
+		CAME_FROM_HEADING,
 		"",
-		fields.ticket === null ? "standalone" : `#${fields.ticket}`,
+		renderCameFrom(fields.ticket),
 		"",
 	].join("\n");
 

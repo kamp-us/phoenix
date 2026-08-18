@@ -43,7 +43,10 @@ export const BAD_SECTIONS = REPORT_BAD_SECTIONS;
 export const LEAKED_PATH = REPORT_LEAKED_PATH;
 /** The text is a bare `@` path reference — not redactable, so a second code. */
 export const BARE_AT_PATH = REPORT_BARE_AT_PATH;
-/** Proven: the session issue, or the `grilling:session` label, does not exist. */
+/**
+ * Proven: the session issue, the `grilling:session` label, or the issue `grill open --ticket` names,
+ * does not exist.
+ */
 export const NO_TARGET = REPORT_NO_TARGET;
 /** A write was attempted and its outcome could not be proven — UNKNOWN, deliberately not `1`. */
 export const WRITE_UNKNOWN = REPORT_WRITE_UNKNOWN;
