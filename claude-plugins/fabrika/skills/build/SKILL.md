@@ -50,9 +50,11 @@ fabrika build pick
 
 The pool is `status:triaged` + `ready-for:agent` + unassigned + inside the campaign in exclusive
 focus, p0 first. **An assigned issue is not yours whatever its labels** — assignment is how humans keep
-documents out of this pool. Read the `excluded` entries beside the pool: each names why an
-issue was left out (`out-of-focus`, `audience-not-agent`, `unreadable`), and `focus` says whether a
-focus is declared at all — an inert fence is a fact to report, not a shorter pool to explain.
+documents out of this pool. Read the `excluded` entries beside the pool: each names why an issue was
+left out — `out-of-focus`, `audience-not-agent` or `unreadable` from the admission test, or
+`no-acceptance-criteria`, this verb's own axis for a body carrying no criteria block to build
+against. `focus` says whether a focus is declared at all — an inert fence is a fact to report, not a
+shorter pool to explain.
 Two refusals before claiming: a `type:decision`'s deliverable is a recorded choice
 (`/adr`'s, not yours), and a rendered-visual deliverable is outside this skill's modality
 (`build-ui`'s) — **do not claim either**. This skill is not a router: on its own text surfaces
@@ -192,7 +194,8 @@ comment on the child issue instead: the line `build-deviations: #<n>` over the s
 through `fabrika wire emit --format build-deviations` and posted with `gh issue comment`. The
 epic-tail review reads every landed child's comment from there, so a child with nothing to disclose
 still posts the checked `None.` — an absent comment reads as "never considered it", not as
-"nothing to disclose".
+"nothing to disclose". A child that lands its commit and posts that comment ends on `BUILT-NO-PR`,
+below — not on a `SHIPPED-PR` naming a PR nobody opened.
 
 **State what changed and why, and stop.** Two things earn their lines: the summary, and
 `## Deviations` — deviations catch real defects, so state each plainly and never trim one for
@@ -218,7 +221,10 @@ fabrika build release $issue_or_pr_number --token <claim-token>
 
 **Terminal vocabulary** — end on exactly one: `SHIPPED-PR` (PR open, branch pushed);
 `SUCCESS-NO-PR` (a `type:investigation` answered by a diagnosis posted with `build note` — branch
-removed, findings filed via `/report`; closing the issue is triage's, not yours); `BACKED-OFF` (claim lost or blocked — branch removed, nothing written); `ESCALATED`
+removed, findings filed via `/report`; closing the issue is triage's, not yours); `BUILT-NO-PR` (an
+epic child under the epic rules — your commit landed on the branch you cut from the assembly branch
+and the `build-deviations` marker is posted on the child issue; branch left local, unpushed, for the
+epic driver to fold); `BACKED-OFF` (claim lost or blocked — branch removed, nothing written); `ESCALATED`
 (repair cap reached — branch left pushed at its last verified head, escalation note posted);
 `STOPPED` (isolation or verdict UNKNOWN — branch left local, state named). An empty pick pool is
 `BACKED-OFF` too — nothing to build, nothing written, and on a lost claim "branch removed" means
@@ -229,17 +235,21 @@ the receiver re-fetches from the artifact.
 
 **Record the terminal yourself, then print it.** When your spawn brief named a lane, your terminal
 step is the verb — pass back the `lane` and `root` its `## Task` section carries, and the token→event
-map is the verb's code; the event lands on the lane's own ledger with the PR as its evidence (#5736):
+map is the verb's code; the event lands on the lane's own ledger with the PR as its evidence (#5736).
+`<fabrika>` is that same section's `fabrika:` entrypoint, the one path this repo's verbs actually run
+from (#6012):
 
 ```bash
-node packages/fabrika-cli/src/bin.ts lane report <lane> --root <root> --token SHIPPED-PR --pr <pr-url>
+node <fabrika> lane report <lane> --root <root> --token SHIPPED-PR --pr <pr-url>
 ```
 
 `--pr` whenever the terminal names one; `--comment` for the diagnosis comment behind a
-`SUCCESS-NO-PR`. The verb refuses a token outside this vocabulary (exit `32`) rather than
+`SUCCESS-NO-PR`; a `BUILT-NO-PR` carries neither, because its evidence is the commits themselves.
+The verb refuses a token outside this vocabulary (exit `32`) rather than
 interpreting it — never respell one to get past it. It also **proves the event before it records**:
-your `SHIPPED-PR` lands only against an open PR the board shows linking the issue, and a
-`SUCCESS-NO-PR` only against the diagnosis comment you posted — so a refusal here is the board
+your `SHIPPED-PR` lands only against an open PR the board shows linking the issue, a
+`SUCCESS-NO-PR` only against the diagnosis comment you posted, and a `BUILT-NO-PR` only against a
+local branch in this tree whose commits name the child issue — so a refusal here is the board
 disagreeing with your terminal, never a token to change. On any refusal, print the token and name
 the exit code; the operator re-reads and routes. Then print the token as the last line either way;
 a run whose caller named no lane prints the token only and records nothing.
@@ -281,6 +291,14 @@ means your head **drops commits the PR already published** — `build branch --r
 rebuild on the published head, never `--drop-remote-commits`, which is for a rewrite you actually
 intend. The fold's `frozenCriteria` rows are the review-appended criteria past the freeze — note
 them, do not chase them.
+
+**When the whole fix is the PR body, the route is `fabrika build pr-body <pr>` and nothing else.**
+The recurring one is a FAIL reading `deviations malformed`: the head does not need to move, so a
+push is the wrong tool and a raw `gh` call runs none of the guards `build pr` runs on a create. This
+verb runs all of them over the rewrite — leak scan, the `## Deviations` shape, the closing-keyword
+target read off the PR's own head branch, the classification check — and reads the landed body back
+(#5618). Re-send the corrected body on stdin, then answer the finding in a `fabrika build note` and
+release; no commit, no `build check`, no `build push`.
 
 ## Expectations you hold but never recompute
 

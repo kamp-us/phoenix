@@ -30,7 +30,7 @@ import {runEligible} from "./eligible-verb.ts";
 import {runIssue} from "./issue-verb.ts";
 import {runNote} from "./note-verb.ts";
 import {runPick} from "./pick-verb.ts";
-import {runPr} from "./pr-verb.ts";
+import {runPr, runPrBody} from "./pr-verb.ts";
 import {runPush} from "./push-verb.ts";
 import {
 	ADMISSION_EXIT_CODES,
@@ -117,7 +117,7 @@ const pick = leafCommand(
 ).pipe(
 	Command.withShortDescription("The ranked pool of issues this lane may pick up."),
 	Command.withDescription(
-		'The ranked candidate pool: status:triaged + unassigned + admitted by the shared admission test (scope axis against the ROADMAP.md "## Focus" declaration, audience axis on ready-for:agent), every bucket paginated in full. Prints {"pool":[…],"excluded":[{"number","home","reason"}],"scanned":{"p0":n,"p1":n,"p2":n},"focus":{…}}; each excluded issue names which axis refused it, and an empty pool is a fact on exit 0, readable against the scanned counts. Exits 1 (--limit is not a positive integer), 4 (the "## Focus" declaration reads but does not parse — never read as "no focus"), 11 (any bucket read failed or came back truncated, or the declaration could not be read — the pool is UNKNOWN, never partial and never unfiltered). Example: fabrika build pick --limit 5',
+		'The ranked candidate pool: status:triaged + unassigned + admitted by the shared admission test (scope axis against the ROADMAP.md "## Focus" declaration, audience axis on ready-for:agent), then filtered by this verb\'s own acceptance-criteria axis — a body the wire reader does not answer Found on is excluded as no-acceptance-criteria, an axis the shared admission test does not carry because build claim reaches it over an epic. Every bucket paginated in full. Prints {"pool":[…],"excluded":[{"number","home","reason"}],"scanned":{"p0":n,"p1":n,"p2":n},"focus":{…}}; each excluded issue names which axis refused it, and an empty pool is a fact on exit 0, readable against the scanned counts. Exits 1 (--limit is not a positive integer), 4 (the "## Focus" declaration reads but does not parse — never read as "no focus"), 11 (any bucket read failed or came back truncated, or the declaration could not be read — the pool is UNKNOWN, never partial and never unfiltered). Example: fabrika build pick --limit 5',
 	),
 );
 
@@ -143,6 +143,12 @@ const claim = leafCommand(
 	"claim",
 	{
 		number: issueArg,
+		token: tokenFlag.pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"the token this lane already holds, when it is re-claiming — an already-held number then answers won with that same marker and writes nothing; omit it on a fresh claim",
+			),
+		),
 		purpose: Flag.string("purpose").pipe(
 			Flag.withDefault(DEFAULT_CLAIM_PURPOSE),
 			Flag.withDescription(
@@ -163,7 +169,7 @@ const claim = leafCommand(
 		),
 		repo: repoFlag,
 	},
-	Effect.fn(function* ({number, purpose, override, overrideLane, repo}) {
+	Effect.fn(function* ({number, token, purpose, override, overrideLane, repo}) {
 		yield* emit(
 			yield* runClaim({
 				number,
@@ -171,6 +177,7 @@ const claim = leafCommand(
 				env: process.env,
 				uuid: randomUUID(),
 				at: new Date().toISOString(),
+				token: Option.getOrNull(token),
 				purpose,
 				override: Option.getOrNull(override),
 				overrideLane: Option.getOrNull(overrideLane),
@@ -180,7 +187,7 @@ const claim = leafCommand(
 ).pipe(
 	Command.withShortDescription("Race the claim marker on an issue and win it or name the winner."),
 	Command.withDescription(
-		`Race the earliest AUTHORIZED claim marker on an issue: post this session's token (build:<CLAUDE_CODE_SESSION_ID>:<uuid>), re-read, and win or name the winner. Authorization is the author's repository permission (ADR 0055) — marker text confers nothing. The admission test runs FIRST, before any marker is written, so a refused claim leaves no trace to retract. --purpose says why this lane claims (${CLAIM_PURPOSES.join(" | ")}, default ${DEFAULT_CLAIM_PURPOSE}): the audience axis (${READY_FOR_AGENT}) binds a build claim only, because an epic earns that label AFTER it is planned and gated (#5175); the scope axis binds every purpose, and an off-enum --purpose refuses on 10 rather than falling back. --override "<reason>" admits a proven refusal and REQUIRES --override-lane "<lane>"; both are recorded on the marker, and an UNKNOWN admission is never overridable. Prints {"answer":"won","number":n,"token":"…","purpose":"…"}, plus "override":{"lane","reason"} when one was used. A lost race retracts this run's own marker and exits 15, never 0 — including when the winner is another lane of THIS session, since ownership turns on the whole token and never the session id (#6037); an unset CLAUDE_CODE_SESSION_ID, an empty --override reason, an --override with no lane, or an --override-lane with no override, is 1. Exits 7 (issue proven absent or closed), 8 (the marker write failed — UNKNOWN; run confirm), 9 (the marker landed but does not read back), 10 (--purpose is off-enum), 15 (proven lost), and from the admission test: ${admissionExits}. Example: fabrika build claim 4312 --purpose gate`,
+		`Race the earliest AUTHORIZED claim marker on an issue: post this session's token (build:<CLAUDE_CODE_SESSION_ID>:<uuid>), re-read, and win or name the winner. Authorization is the author's repository permission (ADR 0055) — marker text confers nothing. The admission test runs FIRST, before any marker is written, so a refused claim leaves no trace to retract. --purpose says why this lane claims (${CLAIM_PURPOSES.join(" | ")}, default ${DEFAULT_CLAIM_PURPOSE}): the audience axis (${READY_FOR_AGENT}) binds a build claim only, because an epic earns that label AFTER it is planned and gated (#5175); the scope axis binds every purpose, and an off-enum --purpose refuses on 10 rather than falling back. --override "<reason>" admits a proven refusal and REQUIRES --override-lane "<lane>"; both are recorded on the marker, and an UNKNOWN admission is never overridable. Prints {"answer":"won","number":n,"token":"…","purpose":"…"}, plus "override":{"lane","reason"} when one was used. --token makes the re-claim idempotent per LANE: handed the token this lane already holds, a number that lane already owns answers won with that same marker and writes nothing (#5782), while a same-session marker under another nonce is a sibling lane and races normally. A lost race retracts this run's own marker and exits 15, never 0 — including when the winner is another lane of THIS session, since ownership turns on the whole token and never the session id (#6037); an unset CLAUDE_CODE_SESSION_ID, a --token that is not a claim token of this session, an empty --override reason, an --override with no lane, or an --override-lane with no override, is 1. Exits 7 (issue proven absent or closed), 8 (the marker write failed — UNKNOWN; run confirm), 9 (the marker landed but does not read back), 10 (--purpose is off-enum), 15 (proven lost), and from the admission test: ${admissionExits}. Example: fabrika build claim 4312 --purpose gate`,
 	),
 );
 
@@ -412,6 +419,37 @@ const pr = leafCommand(
 	),
 );
 
+const prBody = leafCommand(
+	"pr-body",
+	{
+		pr: Argument.integer("pr").pipe(
+			Argument.withDescription("the open pull request whose body is replaced"),
+		),
+		partial: Flag.boolean("partial").pipe(
+			Flag.withDescription(
+				'the acceptance criteria are not all met: the body must say "Part of #<n>", not "Fixes #<n>" (default: false)',
+			),
+		),
+		repo: repoFlag,
+	},
+	Effect.fn(function* ({pr, partial, repo}) {
+		yield* emit(
+			yield* runPrBody({
+				pr,
+				partial,
+				repo: Option.getOrNull(repo),
+				env: process.env,
+				stdin: Effect.sync(readStdin),
+			}),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Replace an open PR's body from stdin, guarded and read back."),
+	Command.withDescription(
+		'Replace an open pull request\'s body with the one on STDIN, running the same pre-write guards `build pr` runs on a create — leak scan, "## Deviations" shape, closing-keyword target, classification claim — and reading the body back through normalizeForReadback. Nothing but the body moves: no commit, no push, no branch. This is the route for a review FAIL whose whole fix is a body edit. The issue the closing keyword must name is read off the PR\'s own head branch, never off the body. Prints {"answer":"updated","number":n,"url":"…"}. Exits 3 (stdin held nothing), 4 ("## Deviations" missing or empty, or the closing-keyword line is absent, duplicated, mistargeted, or contradicts --partial), 5 (machine-local path), 6 (bare @ reference), 7 (the PR is proven absent, closed or merged), 8 (the update failed — UNKNOWN; re-read the PR before retrying), 9 (replaced but does not read back), 10 (the body asserts a control-plane, type or priority classification), 11 (a precondition read failed), 14 (the PR\'s head is not a lane branch, or the checked-out branch does not serve this PR), 15 (this session does not hold the claim). Example: fabrika build pr-body 4318 < body.md',
+	),
+);
+
 const note = leafCommand(
 	"note",
 	{
@@ -526,6 +564,7 @@ export const buildCommand = Command.make("build").pipe(
 		check,
 		push,
 		pr,
+		prBody,
 		note,
 		verdicts,
 		clear,

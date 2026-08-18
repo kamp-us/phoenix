@@ -40,6 +40,12 @@ export type FloorAssertion =
 	| {readonly _tag: "InFlight"; readonly run: number}
 	/** A new attempt exists and is re-deriving `ship floor` against live comment state. */
 	| {readonly _tag: "Refired"; readonly run: number; readonly attempt: number}
+	/**
+	 * The re-fire took but GitHub has not published its attempt number yet: the run this verb read as
+	 * completed-and-red a moment ago is running again under the same id. That transition is proof from
+	 * run state, so it is a re-fire to wait on rather than an unread one to escalate (#5982).
+	 */
+	| {readonly _tag: "Restarting"; readonly run: number; readonly status: string}
 	/** The floor state could not be read or the re-fire could not be proven. Never a pass. */
 	| {readonly _tag: "Unknown"; readonly reason: string};
 
@@ -48,9 +54,11 @@ const unknown = (reason: string): FloorAssertion => ({_tag: "Unknown", reason});
 /**
  * Re-fire the red governance-floor run at `sha`, and prove a new attempt exists.
  *
- * The dispatch's 2xx is an acknowledgement and not a new attempt, so the run is re-read and
- * `run_attempt` must have increased — `heal-ci rerun` learned that the hard way, and reporting a
- * re-fire that never happened would leave the caller believing a red will clear itself.
+ * The dispatch's 2xx is an acknowledgement and not a new attempt, so the run is re-read and the
+ * re-fire is proven from run state — `heal-ci rerun` learned that the hard way, and reporting a
+ * re-fire that never happened would leave the caller believing a red will clear itself. Either
+ * signal proves it: `run_attempt` increased, or the completed-and-red run is running again under the
+ * same id while the counter catches up.
  */
 export const assertFloorAt = (repo: string, sha: string): Shell<FloorAssertion> =>
 	Effect.gen(function* () {
@@ -86,24 +94,37 @@ export const assertFloorAt = (repo: string, sha: string): Shell<FloorAssertion> 
 			);
 		}
 		if (after.value.runAttempt <= before.value.runAttempt) {
-			return unknown(
-				`the re-fire was requested and run ${latest.id} stayed at attempt ${after.value.runAttempt} — UNKNOWN whether it re-ran`,
-			);
+			// The attempt counter lags the dispatch, and reading its absence as UNKNOWN sent three agents
+			// to `heal-ci` over re-fires that had taken (#5982). A run this verb just read as
+			// completed-and-red that is running again under the same id can only be running because of
+			// this dispatch — that is proof from run state, which is the one thing the counter was here
+			// to supply. A still-`completed` run proves nothing and stays UNKNOWN.
+			return after.value.status === "completed"
+				? unknown(
+						`the re-fire was requested and run ${latest.id} stayed at attempt ${after.value.runAttempt}, still completed — UNKNOWN whether it re-ran`,
+					)
+				: {_tag: "Restarting", run: latest.id, status: after.value.status};
 		}
 		return {_tag: "Refired", run: latest.id, attempt: after.value.runAttempt};
 	});
 
 /** The one-token closed vocabulary a caller emits under `--json`. */
-export const floorToken = (assertion: FloorAssertion): string =>
-	assertion._tag === "NoRun"
-		? "no-run"
-		: assertion._tag === "Green"
-			? "green"
-			: assertion._tag === "InFlight"
-				? "in-flight"
-				: assertion._tag === "Refired"
-					? "refired"
-					: "unknown";
+export const floorToken = (assertion: FloorAssertion): string => {
+	switch (assertion._tag) {
+		case "NoRun":
+			return "no-run";
+		case "Green":
+			return "green";
+		case "InFlight":
+			return "in-flight";
+		case "Refired":
+			return "refired";
+		case "Restarting":
+			return "restarting";
+		case "Unknown":
+			return "unknown";
+	}
+};
 
 /** The stderr line, which states what the caller must do next when the floor is not asserted. */
 export const floorLine = (verb: string, assertion: FloorAssertion): string => {
@@ -116,6 +137,8 @@ export const floorLine = (verb: string, assertion: FloorAssertion): string => {
 			return `${verb}: ${FLOOR_WORKFLOW_NAME} run ${assertion.run} is still in flight, so it may judge comment state older than this verdict — re-read the check and re-post if it reds.`;
 		case "Refired":
 			return `${verb}: re-fired ${FLOOR_WORKFLOW_NAME} run ${assertion.run} at attempt ${assertion.attempt} — it re-derives \`ship floor\` against this verdict (#5585).`;
+		case "Restarting":
+			return `${verb}: re-fired ${FLOOR_WORKFLOW_NAME} run ${assertion.run} — it is ${assertion.status} again and GitHub has not published the new attempt number yet; wait and re-read run ${assertion.run}, there is nothing to escalate.`;
 		case "Unknown":
 			return `${verb}: the ${FLOOR_WORKFLOW_NAME} check could not be asserted at this head: ${assertion.reason} — the verdict landed; the check may still need a re-fire.`;
 	}

@@ -182,8 +182,11 @@ implementation, no review verdict, no flag flip. Every run ends as exactly one o
 **already-merged (idempotent success)** · **QUEUED — enqueued, awaiting the queue** (success
 without a merge observed) · **landed** · **refused — <reason>** (a successful decline: disarmed,
 noted, nothing mutated beyond the note) · **awaiting control-plane approval** · **routed to
-repair / heal-ci / review** · **UNRESOLVED at horizon** · **EJECTED — routed to repair** ·
-**UNKNOWN — a read failed** (never rendered as any of the above). A refusal is not a back-off:
+repair** · **routed to heal-ci** · **routed to review** · **UNRESOLVED at horizon** ·
+**EJECTED — routed to repair** ·
+**UNKNOWN — a read failed** (never rendered as any of the above). The three routings are three
+terminals, not one: repair is work this lane retries, heal-ci and review are waits it cannot, and
+a flat "routed" parked the lane on an approval nobody was waiting on (#6002). A refusal is not a back-off:
 it names what was proven; UNKNOWN names what was not. Branch disposition is always "untouched" —
 this skill owns no branch. If any disarm failed, the report carries `merge intent: NOT cleared`.
 A note that routes another lane opens with the fixed first line
@@ -192,12 +195,15 @@ branded reference, no steering prose; the receiver re-fetches from the PR itself
 
 **Record the terminal yourself, then print it.** When your spawn brief named a lane, your terminal
 step is the verb — pass back the `lane` and `root` its `## Task` section carries, one token per
-terminal above (`ALREADY-MERGED`, `QUEUED`, `LANDED`, `REFUSED`, `AWAITING-CP-APPROVAL`, `ROUTED`,
-`UNRESOLVED`, `EJECTED`, `UNKNOWN`), mapped to a lane event in its code, with the PR as the event's
-evidence (#5736):
+terminal above (`ALREADY-MERGED`, `QUEUED`, `LANDED`, `REFUSED`, `AWAITING-CP-APPROVAL`,
+`ROUTED-REPAIR`, `ROUTED-HEAL-CI`, `ROUTED-REVIEW`, `UNRESOLVED`, `EJECTED`, `UNKNOWN`), mapped to a
+lane event in its code, with the PR as the event's evidence (#5736). The routing token names the arm
+your note's first line already names — report the one you took, never a bare `ROUTED`, which is the
+reviewer's token and means something else. `<fabrika>` is that same section's `fabrika:` entrypoint,
+the one path this repo's verbs actually run from (#6012):
 
 ```bash
-node packages/fabrika-cli/src/bin.ts lane report <lane> --root <root> --token LANDED --pr <pr-url>
+node <fabrika> lane report <lane> --root <root> --token LANDED --pr <pr-url>
 ```
 
 The reason behind a `refused` stays in your note and report — the verb takes the bare token. It

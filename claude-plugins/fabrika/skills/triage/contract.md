@@ -30,7 +30,7 @@ makes the implementer guess ([#4734](https://github.com/kamp-us/phoenix/issues/4
 | `triage queue` | the claimable `status:needs-triage` queue, with the count it scanned | paginating a label query and separating a proven-empty queue from a failed read is mechanical; which issue to take is judgment |
 | `triage claim` | take a session-scoped claim on one issue, proven by read-back | a marker write plus an earliest-claim tiebreak is a protocol, not a decision |
 | `triage provenance` | was this issue reported by an agent or hand-typed by a human | a structural marker test over a fetched body, plus a membership test over the configured operator set — an empty body fails closed to `human`, an unreadable one refuses rather than guessing; what to *do* about a human filing stays in the skill |
-| `triage homes` | the assignable homes — open milestones joined to their ROADMAP rows, plus the standing lanes | the join and the open-milestone filter are mechanical; picking which home fits is judgment |
+| `triage homes` | the assignable homes — open milestones joined to their ROADMAP rows, plus the standing lanes, with the milestone in exclusive focus marked `running` | the join, the open-milestone filter and reading the focus declaration are mechanical; picking which home fits, and whether an exception applies, is judgment |
 | `triage split` | create one split child, once, keyed on the parent back-reference | idempotency keyed on a durable reference is mechanical; deciding a report *is* a bundle is judgment |
 | `triage enrich` | replace the body with your rewrite — or, for an epic, your pitch — over a preserved, leak-redacted original | envelope assembly, redaction and read-back are mechanical; what the rewrite says is judgment |
 | `triage apply` | apply the whole triaged transition — type, priority, audience, home — and read it back | closed-vocabulary validation and an atomic label envelope are mechanical; the classification is judgment |
@@ -159,6 +159,7 @@ or the search index could not be read
 | `12` | refused: the issue is human-filed | — | — | — | — | — | — | — | — | ✓ |
 | `13` | refused: agent-filed and close-eligible, but the kill is unconfirmed (ADR 0159) | — | — | — | — | — | — | — | — | ✓ |
 | `15` | refused: the body this verb composed carries an acceptance-criteria block its registered wire reader classifies `Malformed` (ADR 0288) | — | — | — | — | — | ✓ | — | — | — |
+| `16` | refused: `--ready-for agent` over a live body whose acceptance-criteria block the wire reader does not answer `Found` on — every type but `epic` | — | — | — | — | — | — | ✓ | — | — |
 | `127` | the verb never ran (unresolved binary) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 
 **This matrix owns what a code *means*; the per-verb tables own what *triggers* it.** Every verb in
@@ -660,6 +661,31 @@ machine-channel answer.
 With `--json`, an object with keys `outcome`, `milestones` (array of `{number, title, roadmapRow}`),
 `lanes` (array of `{label, meaning}`), and `scanned`.
 
+**The milestone in exclusive focus is marked `running`.** That campaign is closed to new intake
+unless the work is `p0` or blocks one of that milestone's own in-flight lanes, so its row carries a
+fourth tab-separated column, verbatim `running: p0/blocker only`, and its `--json` object carries
+`"running": "p0/blocker only"` as a fourth key. Every other row is unchanged on both channels — no
+fourth column, and no `running` key — so a reader written against the pre-marker shape still parses.
+The marked milestone is still listed: the two exceptions are real work, and a removed row cannot
+carry them. This verb states the subtraction and stops; where excluded work goes instead is the
+caller's by-fit judgement, and no output here names a destination.
+
+**Which milestone is running is data, never a literal in this spec or in the verb.** It is
+`ROADMAP.md`'s `## Focus` table — the same exclusive-focus declaration `build pick` fences on, read
+through the same parser, off the roadmap text this verb has already read for the arc join. Moving the
+focus to the next campaign is a `ROADMAP.md` edit and never a code or skill edit; `--roadmap` moves
+both reads together. The declaration's three states are the ones that declaration already has:
+
+| `## Focus` | Rows marked | stderr |
+|---|---|---|
+| declares a milestone | that milestone's row, if it is open | `triage homes: focus: milestone #<n>, declared <date>.` |
+| absent, or an empty section | none — the answer is exactly the pre-marker one | `triage homes: focus: none declared — scope fence inert.` |
+| reads but does not parse | none | `triage homes: focus: unreadable — <reason>.` |
+
+A malformed declaration is **never** rendered as "no milestone is running", and it does not refuse: a
+home list is still the right answer, and the stderr line is where the defect is named. A focus naming
+a milestone that is closed or absent from the open set marks no row and passes.
+
 **Only open milestones appear, and each is joined to its roadmap arc/campaign row.** `roadmapRow` is
 `null` for an open milestone no roadmap row pins, which is itself a signal worth seeing rather than a
 row to hide. The two standing lanes are fixed and are not read from the repo. There is no third, and
@@ -683,6 +709,10 @@ milestone titled `Sözlük — search and discovery`, and the two share no subst
 |---|---|
 | `7` | the repository has zero open milestones, **or the roadmap parsed to zero arc rows** — zero scope |
 | `11` | the milestone list or the roadmap file could not be read — the outcome is UNKNOWN |
+
+A malformed `## Focus` declaration is not on this table: it marks no row and names itself on stderr.
+The focus is an annotation on an answer this verb can give without it, so refusing over one would
+withhold the home list a triager needs.
 
 **Errors**
 
@@ -720,14 +750,14 @@ hands a byte-reading caller two rows and no token.
 $ fabrika triage homes
 homes
 milestone	47	Sözlük — search and discovery
-milestone	52	Merge-Gate Reliability
+milestone	52	Merge-Gate Reliability	running: p0/blocker only
 lane	wayfinder:backlog	fog — uncharted work upstream of any arc
 lane	axis:pipeline-hardening	the standing pipeline and reliability lane
 ```
 
 ```
 $ fabrika triage homes --json
-{"outcome":"homes","milestones":[{"number":47,"title":"Sözlük — search and discovery","roadmapRow":"Geçit"},{"number":52,"title":"Merge-Gate Reliability","roadmapRow":null}],"lanes":[{"label":"wayfinder:backlog","meaning":"fog — uncharted work upstream of any arc"},{"label":"axis:pipeline-hardening","meaning":"the standing pipeline and reliability lane"}],"scanned":2}
+{"outcome":"homes","milestones":[{"number":47,"title":"Sözlük — search and discovery","roadmapRow":"Geçit"},{"number":52,"title":"Merge-Gate Reliability","roadmapRow":null,"running":"p0/blocker only"}],"lanes":[{"label":"wayfinder:backlog","meaning":"fog — uncharted work upstream of any arc"},{"label":"axis:pipeline-hardening","meaning":"the standing pipeline and reliability lane"}],"scanned":2}
 ```
 
 **Grounding**
@@ -741,6 +771,10 @@ $ fabrika triage homes --json
   on-roadmap, so a closed milestone reports as a valid home. Offering only open, roadmap-joined
   milestones designs that mismatch out at the point of assignment rather than detecting it later.
 - ADR 0072 §3 — curating the milestone set is a human roadmap act, so no verb here creates one.
+- #6080 — a closing campaign kept taking every lane's follow-ups because nothing in this verb's
+  output said which milestone was running, so triagers homed by title match. The marker is only a
+  subtraction; enforcement is deliberately absent, since both exceptions are judgements a verb cannot
+  check and a guard blind to them would refuse exactly the work the rule allows.
 
 ---
 
@@ -1357,6 +1391,22 @@ would be a second answer to a gated question.
 **Every classification value is a closed enum decoded at the boundary**, not a free string checked in
 prose. `--priority 1` is refused before any write.
 
+**`--ready-for agent` asserts the acceptance-criteria block, and refuses on `16` before writing any
+label.** The live body is read through the same wire module every downstream grader reads
+(`packages/fabrika-cli/src/wire/acceptance-criteria.ts`), and anything it does not answer `Found` on
+is refused: `ready-for:agent` promises a builder can pick the issue up cold, and the block is what
+the promise is made of. The refusal names the reader's own reason and routes by arm — a `Malformed`
+block goes to `triage repair-criteria`, an `Absent` one has nothing to repair mechanically and goes
+back through `enrich`. Stamping over it instead defers the discovery to `review criteria`, after a
+branch, a build, a push, a PR and a CI run are spent (kamp-us/demlik#4 and its burned PR #12;
+[#6025](https://github.com/kamp-us/phoenix/issues/6025)).
+
+**`--type epic` is exempt, and the exemption is load-bearing.** A triaged epic carries a `## Pitch`
+and gets its criteria later, per child, from the plan ledger — #5979 and #5817 are both
+`type:epic status:triaged ready-for:agent` over a body with no block — so a blanket refusal would
+make an epic unstampable. `--ready-for human` is unaffected on every type: the promise the block
+backs is the one made to an agent.
+
 **Output** — machine channel. One tab-separated line: `triaged`, `<number>`, `<type>`, `<priority>`,
 `<ready-for>`, `<home>` — where `<home>` is the milestone number or the lane label. With `--json`, an
 object with those keys plus `removed` (the labels superseded) and `readBack`, an object of
@@ -1445,6 +1495,7 @@ for drift, not because they are currently absent.)
 | `9` | the writes landed but the read-back does not show the required end state |
 | `10` | an off-vocabulary enum value, or `--home` names a milestone that is not open |
 | `11` | the issue, the repository's label set, or its milestone set could not be read |
+| `16` | `--ready-for agent` over a live body the wire reader does not answer `Found` on — every type but `epic`; nothing was written |
 
 The issue being proven absent is `7` as well — the same zero-scope seat, since there is no issue to
 stamp.
@@ -1464,6 +1515,8 @@ stamp.
 | `triage apply: cannot read <what> in <repo>: <reason> — nothing was written; the transition is UNKNOWN.` | 11 | refusal |
 | `triage apply: write failed after <k> of <m> changes: <reason> — #<n> may be partially labelled; re-run this verb, which is idempotent.` | 8 | refusal |
 | `triage apply: read-back shows <observed> — expected exactly one type, one priority, status:triaged, one ready-for, and <the milestone / no milestone>.` | 9 | refusal |
+| `triage apply: #<n> carries no acceptance-criteria block — <the reader's reason>. ready-for:agent promises a builder can pick it up cold; an absent block has nothing to repair mechanically, so author one with \`triage enrich\`. Nothing was written.` | 16 | refusal |
+| `triage apply: #<n>'s acceptance-criteria block is malformed — <the reader's reason> (<its evidence>). Repair a level drift with \`triage repair-criteria <n>\`; anything else needs a hand. Nothing was written.` | 16 | refusal |
 
 **`milestone <n> is not open` moved off `1` and onto `10`.** Deciding it requires a network read of
 the repository's milestone set, so it is a verdict the verb *proved* — and rule 3 is explicit that a

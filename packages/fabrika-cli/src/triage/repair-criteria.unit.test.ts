@@ -20,7 +20,7 @@ describe("planRepair — the mechanical repair", () => {
 		expect(result._tag).toBe("Repaired");
 		if (result._tag !== "Repaired") return;
 		expect(result.body).toBe(enveloped(`Intro.\n\n### Acceptance criteria\n\n${ITEMS}`));
-		expect(result.fromLevel).toBe(2);
+		expect(result.repairs).toEqual([{_tag: "HeadingLevel", line: 3, fromLevel: 2}]);
 	});
 
 	it("leaves the preserved original's `##` heading and the marker byte for byte", () => {
@@ -52,7 +52,7 @@ describe("planRepair — the mechanical repair", () => {
 		const result = plan(enveloped(`#### Acceptance criteria\n\n${ITEMS}`));
 		expect(result._tag).toBe("Repaired");
 		if (result._tag !== "Repaired") return;
-		expect(result.fromLevel).toBe(4);
+		expect(result.repairs).toEqual([{_tag: "HeadingLevel", line: 1, fromLevel: 4}]);
 	});
 
 	it("answers AlreadyConforming on a level-3 body, touching nothing", () => {
@@ -97,6 +97,176 @@ describe("planRepair — the mechanical repair", () => {
 		expect(result._tag).toBe("Repaired");
 		if (result._tag !== "Repaired") return;
 		expect(result.body).toBe(`### Acceptance criteria\n\n${ITEMS}`);
+	});
+});
+
+describe("planRepair — the bullet conversion (#6001)", () => {
+	const BULLETS = "- The verb repairs one issue\n- The reader stays at level 3";
+	const CHECKED = "- [ ] The verb repairs one issue\n- [ ] The reader stays at level 3";
+
+	it("rewrites plain bullets under a conforming heading to unchecked checkboxes", () => {
+		const result = plan(enveloped(`Intro.\n\n### Acceptance criteria\n\n${BULLETS}`));
+		expect(result._tag).toBe("Repaired");
+		if (result._tag !== "Repaired") return;
+		expect(result.body).toBe(enveloped(`Intro.\n\n### Acceptance criteria\n\n${CHECKED}`));
+		expect(result.repairs).toEqual([{_tag: "BulletItems", lines: [5, 6]}]);
+	});
+
+	it("leaves each item's text byte for byte — only the marker is added", () => {
+		const result = plan(enveloped("### Acceptance criteria\n\n*   `emit` stays  spaced   oddly"));
+		expect(result._tag).toBe("Repaired");
+		if (result._tag !== "Repaired") return;
+		expect(result.body).toContain("*   [ ] `emit` stays  spaced   oddly");
+	});
+
+	it("folds a wrapped bullet's continuation line into the one criterion, unrewritten", () => {
+		const result = plan(
+			enveloped("### Acceptance criteria\n\n- The verb repairs\n  one wrapped criterion"),
+		);
+		expect(result._tag).toBe("Repaired");
+		if (result._tag !== "Repaired") return;
+		expect(result.body).toContain("- [ ] The verb repairs\n  one wrapped criterion");
+		expect(result.criteria.map(({text}) => text)).toEqual([
+			"The verb repairs one wrapped criterion",
+		]);
+	});
+
+	it("repairs a level drift and its bullets in one plan, heading first", () => {
+		const result = plan(enveloped(`## Acceptance criteria\n\n${BULLETS}`));
+		expect(result._tag).toBe("Repaired");
+		if (result._tag !== "Repaired") return;
+		expect(result.body).toBe(enveloped(`### Acceptance criteria\n\n${CHECKED}`));
+		expect(result.repairs.map(({_tag}) => _tag)).toEqual(["HeadingLevel", "BulletItems"]);
+	});
+
+	it("round-trips through `read`: every bullet becomes an open criterion, none checked", () => {
+		const result = plan(enveloped(`### Acceptance criteria\n\n${BULLETS}`));
+		expect(result._tag).toBe("Repaired");
+		if (result._tag !== "Repaired") return;
+		const back = read(result.body);
+		expect(back._tag).toBe("Found");
+		if (back._tag !== "Found") return;
+		expect(back.value).toEqual([
+			{text: "The verb repairs one issue", checked: false},
+			{text: "The reader stays at level 3", checked: false},
+		]);
+		expect(back.value).toEqual(result.criteria);
+	});
+
+	it("leaves a MIXED block alone: it already reads, so promoting its bullets would add criteria", () => {
+		// The reader answers `Found` over the checkbox items and drops the bullet, so there is a
+		// contract in force — widening it is a content decision, not a shape rewrite.
+		expect(plan(enveloped("### Acceptance criteria\n\n- [ ] a real one\n\n- a bullet"))._tag).toBe(
+			"AlreadyConforming",
+		);
+	});
+
+	it("repairs only the heading when the level fix alone makes a mixed block read", () => {
+		// The block states a criterion the moment it reads, so the bullet beside it is never promoted.
+		const result = plan(enveloped("## Acceptance criteria\n\n- a bullet\n- [ ] a real one"));
+		expect(result._tag).toBe("Repaired");
+		if (result._tag !== "Repaired") return;
+		expect(result.repairs.map(({_tag}) => _tag)).toEqual(["HeadingLevel"]);
+		expect(result.body).toContain("- a bullet\n- [ ] a real one");
+	});
+
+	it("refuses a mixed block that reaches the conversion — a checkbox means the block already speaks", () => {
+		const result = plan(enveloped("### Acceptance criteria\n\n- a bullet\n- [ ]   "));
+		expect(result._tag).toBe("Refused");
+		if (result._tag !== "Refused") return;
+		expect(result.reason).toContain("already a checkbox item");
+	});
+
+	it("refuses a prose paragraph standing between the list's items", () => {
+		const result = plan(
+			enveloped("### Acceptance criteria\n\n- one item\n\nSome prose.\n\n- another item"),
+		);
+		expect(result._tag).toBe("Refused");
+		if (result._tag !== "Refused") return;
+		expect(result.reason).toContain("is not one");
+		expect(result.reason).toContain("does not make the block readable");
+	});
+
+	it("leaves a preamble sentence above the list alone — the window is the list itself", () => {
+		const result = plan(enveloped(`### Acceptance criteria\n\nThe PR must:\n\n${BULLETS}`));
+		expect(result._tag).toBe("Repaired");
+		if (result._tag !== "Repaired") return;
+		expect(result.body).toContain(`The PR must:\n\n${CHECKED}`);
+	});
+
+	it("refuses an empty list item rather than composing a criterion with no text", () => {
+		const result = plan(enveloped("### Acceptance criteria\n\n- one real item\n-   "));
+		expect(result._tag).toBe("Refused");
+		if (result._tag !== "Refused") return;
+		expect(result.reason).toContain("carrying no text");
+	});
+
+	it("refuses a non-bullet block in the list — an ordered item the reader would drop", () => {
+		const result = plan(
+			enveloped("### Acceptance criteria\n\n- one item\n\n1. another\n\n- a third"),
+		);
+		expect(result._tag).toBe("Refused");
+		if (result._tag !== "Refused") return;
+		expect(result.reason).toContain('is not one ("1. another")');
+	});
+
+	it("refuses a non-bullet block sitting directly under a bullet, with no blank line to close it", () => {
+		// The refusal used to be gated on the open bullet, so this exact list converted and shipped
+		// "1. ordered" inside a block no grader reads (#6001, review round 1).
+		const result = plan(enveloped("### Acceptance criteria\n\n- one item\n1. ordered\n- a third"));
+		expect(result._tag).toBe("Refused");
+		if (result._tag !== "Refused") return;
+		expect(result.reason).toContain('is not one ("1. ordered")');
+	});
+
+	it("still folds a wrapped continuation directly under its bullet — only a block starter refuses", () => {
+		const result = plan(
+			enveloped("### Acceptance criteria\n\n- one item\n  wrapped on\n- a third"),
+		);
+		expect(result._tag).toBe("Repaired");
+		if (result._tag !== "Repaired") return;
+		expect(result.criteria.map(({text}) => text)).toEqual(["one item wrapped on", "a third"]);
+	});
+
+	it("refuses a mixed-marker block: the `+` item converts and the reader counts no criterion there", () => {
+		// The read-back answered `Found` off the surviving `-` item, so the PATCH landed a contract one
+		// criterion shorter than the author wrote (#6001, review round 1).
+		const result = plan(enveloped("### Acceptance criteria\n\n- one item\n+ two item"));
+		expect(result._tag).toBe("Refused");
+		if (result._tag !== "Refused") return;
+		expect(result.reason).toContain("the reader counts no criterion there");
+		expect(result.reason).toContain("rewrote line 4");
+	});
+
+	it("refuses the mixed-marker block from the other side too — the dropped item is the FIRST", () => {
+		const result = plan(enveloped("### Acceptance criteria\n\n+ one item\n- two item"));
+		expect(result._tag).toBe("Refused");
+		if (result._tag !== "Refused") return;
+		expect(result.reason).toContain("the reader counts no criterion there");
+		expect(result.reason).toContain("rewrote line 3");
+	});
+
+	it("converts a nested sub-bullet to its own criterion — the reader's own flattening", () => {
+		const result = plan(
+			enveloped("### Acceptance criteria\n\n- top item\n\n  - nested detail\n\n- second"),
+		);
+		expect(result._tag).toBe("Repaired");
+		if (result._tag !== "Repaired") return;
+		expect(result.criteria.map(({text}) => text)).toEqual(["top item", "nested detail", "second"]);
+	});
+
+	it("still refuses a drifted heading TEXT over plain bullets — the widening swallows nothing", () => {
+		const result = plan(enveloped(`## Acceptance criterias\n\n${BULLETS}`));
+		expect(result._tag).toBe("Refused");
+		if (result._tag !== "Refused") return;
+		expect(result.reason).toContain('heading text "Acceptance criterias"');
+	});
+
+	it("leaves the preserved original's bullets untouched — the appendix is not the contract", () => {
+		const result = plan(enveloped(`### Acceptance criteria\n\n${BULLETS}`));
+		expect(result._tag).toBe("Repaired");
+		if (result._tag !== "Repaired") return;
+		expect(result.body.endsWith(preservedBlock)).toBe(true);
 	});
 });
 

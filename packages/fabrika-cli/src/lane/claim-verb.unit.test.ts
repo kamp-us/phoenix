@@ -225,6 +225,7 @@ describe("a driver's claim and the builder it spawns", () => {
 					repo: null,
 					env: {CLAUDE_PIPELINE_REPO: "o/r", CLAUDE_CODE_SESSION_ID: "s-b1"},
 					uuid: OTHER_UUID,
+					token: null,
 					at: "2026-08-17T00:10:00Z",
 					purpose: "build",
 					override: null,

@@ -391,6 +391,21 @@ describe("emitMachine", () => {
 		expect(emitMachine(4300, "## Dependencies\n\n", CHILDREN)).toEqual({_tag: "NoTopology"});
 	});
 
+	it("refuses a childless issue whose body carries prose under the topology heading", () => {
+		const text = "## Dependencies\n\nNone blocking. PR #5899 merged, so this is buildable\n";
+		expect(emitMachine(5908, text, [])).toEqual({_tag: "NoTopology"});
+	});
+
+	it("refuses a childless issue whose body carries a well-formed topology", () => {
+		const text = "## Dependencies\n\n- phase 1: #4301\n";
+		expect(emitMachine(4300, text, [])).toEqual({_tag: "NoTopology"});
+	});
+
+	it("still refuses an unparseable line once the epic has children", () => {
+		const out = emitMachine(4300, "## Dependencies\n\n- phase one: #4301\n", CHILDREN);
+		expect(out).toMatchObject({_tag: "Unparseable", line: 3, text: "- phase one: #4301"});
+	});
+
 	it("refuses a phase member that is not a child of the epic, naming it", () => {
 		expect(emitMachine(4300, "## Dependencies\n\n- phase 1: #9999\n", CHILDREN)).toEqual({
 			_tag: "Foreign",

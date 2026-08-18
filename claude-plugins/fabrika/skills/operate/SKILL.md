@@ -25,15 +25,29 @@ merge a passing child into it, push it, and open the one draft PR (step 2's `int
 branch a spawned shell owns, never a verdict of your own, and never the merge into the default
 branch — that one is `ship`'s, once, at the tail.
 
-Every lane verb is invoked as a plain literal through the in-tree entrypoint:
+Every lane verb is invoked through this repo's own fabrika entrypoint, which `<fabrika>` stands for
+in every command below:
 
 ```bash
-node packages/fabrika-cli/src/bin.ts lane <verb> …
+node <fabrika> lane <verb> …
 ```
+
+`<fabrika>` is a placeholder you substitute textually, the same way you substitute `<verb>` — write
+the path itself into every command you run. Never a shell variable: shell state does not survive
+from one command to the next, so a `$name` you set expands to nothing on the command after it.
+Work out the path once, before your first verb, and it is one of exactly two:
+
+- **A checkout of fabrika's own repo** — the in-tree source, repo-relative:
+  `packages/fabrika-cli/src/bin.ts`. Relative on purpose, so each worktree runs its own copy.
+- **Any repo that installs fabrika** — the installed bin, absolute:
+  `<repo>/node_modules/@kampus/fabrika-cli/dist/bin.js`. Absolute on purpose, because a worktree
+  carries no `node_modules` of its own.
 
 **Never the bare `fabrika` binstub** — in a worktree it resolves to another checkout's code
 ([#5679](https://github.com/kamp-us/phoenix/issues/5679)), so its answer describes a tree you are
-not standing in. The same rule goes into every spawn prompt you write.
+not standing in. `lane brief` resolves the same two shapes itself and puts the answer in every spawn
+prompt's `fabrika:` field, so you never write the path into a prompt by hand
+([#6012](https://github.com/kamp-us/phoenix/issues/6012)).
 
 ## 1 — Claim the lane, then boot or resume
 
@@ -51,7 +65,7 @@ the collision until `build claim` caught it one level down
 ([#5761](https://github.com/kamp-us/phoenix/issues/5761)):
 
 ```bash
-node packages/fabrika-cli/src/bin.ts lane claim $lane_key
+node <fabrika> lane claim $lane_key
 ```
 
 Exit `0` is yours to drive — `won` on an issue lane, `unclaimable` on a `chore:<name>` key, which
@@ -67,14 +81,14 @@ two races that never see each other. You never read the other namespace and neve
 that is not this run's.
 
 ```bash
-node packages/fabrika-cli/src/bin.ts lane status $lane_key
+node <fabrika> lane status $lane_key
 ```
 
 Exit `0` is resume — the lane exists and its fold is the state; go to step 2. Exit `7` (no lane)
 is boot:
 
 ```bash
-node packages/fabrika-cli/src/bin.ts lane emit $lane_key
+node <fabrika> lane emit $lane_key
 ```
 
 `lane emit` generates an epic lane — one region per child, phase-sequenced — from the epic body's
@@ -84,7 +98,7 @@ refusal — and straight away on a `chore:<name>` key, which names no epic body 
 out of — boot from the committed template instead:
 
 ```bash
-node packages/fabrika-cli/src/bin.ts lane open $lane_key
+node <fabrika> lane open $lane_key
 ```
 
 `lane open` places the template the key selects — the coder workflow for an issue number, the chore
@@ -136,19 +150,20 @@ active phase** (future phases read `waiting`; leave them alone), route on the le
 **You never compose a spawn prompt.** The verb prints it:
 
 ```bash
-node packages/fabrika-cli/src/bin.ts lane brief $lane_key --task <name>
+node <fabrika> lane brief $lane_key --task <name>
 ```
 
 Its stdout is the whole prompt — send those bytes to the spawn verbatim and add nothing to them. It
 derives every value: the state from the same fold you just read, the shell from its own routing
 table (`build` → builder, `review` → reviewer, `ship` → shipper), the issue and PR URLs off the
 board, your lanes root resolved absolute so the shell's `lane report` addresses this ledger rather
-than its own worktree's (#5736), and its rules from byte-fixed text the `lane-brief` wire format owns
+than its own worktree's (#5736), the fabrika entrypoint resolved for this repo so the shell runs a
+path that exists there (#6012), and its rules from byte-fixed text the `lane-brief` wire format owns
 ([`packages/fabrika-cli/src/wire/lane-brief.ts`](../../../../packages/fabrika-cli/src/wire/lane-brief.ts)).
 Those rules are the three a driver used to carry in their own prose — the isolated worktree, URLs
-never restatements, and `node packages/fabrika-cli/src/bin.ts` for every fabrika verb rather than
-the bare binstub (#5679, now in the spawned tree). They are in the brief because a prompt written
-per dispatch is a prompt two drivers write differently.
+never restatements, and the brief's own `fabrika:` entrypoint for every verb rather than the bare
+binstub (#5679, now in the spawned tree). They are in the brief because a prompt written per
+dispatch is a prompt two drivers write differently.
 
 The spawn flag is still yours: **`isolation: worktree`, no exceptions** — a non-isolated subagent
 shares the primary checkout and can mutate its git state, and no bytes in a prompt can enforce that
@@ -158,8 +173,12 @@ from the inside.
 no shell, `19` is a task whose issue cannot be resolved or is absent, `20` is zero open PRs where
 the state needs one or several where one is required. It counts a PR only when the PR **declares it
 closes** the task's issue — GitHub's own closing-issue link, not a body mention — so a PR that
-quotes the number in prose never makes `20` fire (#5805). Each is a park naming what the verb named —
-never a prompt you write by hand instead. Parallel active tasks brief and spawn in parallel.
+quotes the number in prose never makes `20` fire (#5805). An epic child's `review` brief adds three
+more, because it resolves the child's range off this tree rather than printing one the spawned shell
+re-resolves (#6023): `22` is no branch here carrying the child's commits, `25` is several of them,
+and `11` is a ref this tree cannot read — the same three facts, and the same remedies, `lane prove`
+seats on those codes. Each is a park naming what the verb named — never a prompt you write by hand
+instead. Parallel active tasks brief and spawn in parallel.
 
 **An `integrate` state is the one thing you do with your own hands.** It routes to no shell —
 `lane brief` refuses it with exit `18` — because the merge *is* the assembly the run exists to
@@ -199,7 +218,7 @@ has something worth publishing. So after the merge and its checks pass, and befo
 `DONE`:
 
 ```bash
-node packages/fabrika-cli/src/bin.ts lane push $lane_key
+node <fabrika> lane push $lane_key
 ```
 
 The verb, not your own `git push`: it derives `epic/<n>` from the number rather than taking a branch
@@ -259,7 +278,7 @@ That is the last thing you do to the branch: the merge itself is the shipper's, 
 **A chore state routes to a verb, not to a shell**, and the routing is a verb's answer too:
 
 ```bash
-node packages/fabrika-cli/src/bin.ts recipe route <state>
+node <fabrika> recipe route <state>
 ```
 
 Exit `0` prints `{state, verb, target, summary}` — which recipe to run, and whether it is pointed at
@@ -272,7 +291,7 @@ chore is a verb and not a paragraph. Then run exactly what `route` named, with t
 caller gave you:
 
 ```bash
-node packages/fabrika-cli/src/bin.ts recipe unpark <target-lane-key>
+node <fabrika> recipe unpark <target-lane-key>
 ```
 
 Done when every active task has either a spawn in flight, a recipe run answered, a merge answered,
@@ -301,6 +320,27 @@ Two reads stay yours, because no shell can take them:
   machine (`FAIL` spends one; `frozen` is its answer), and you never re-spawn what the fold has not
   re-asked for. Record `BLOCKED`.
 
+**A dead spawn's residue is yours to clear** — the founder's ruling on
+[#5752](https://github.com/kamp-us/phoenix/issues/5752). `BLOCKED` records where the lane stands; it
+does not clean up after the shell that died, and what a dead spawn leaves behind is an incident
+nobody filed and a claim nobody can take. Three obligations, in this order:
+
+- **Read its final message.** What the spawn printed before it stopped is the only account of what
+  it was doing, and both the filing and the park comment come out of it.
+- **File what it could not file.** A dying agent cannot run `fabrika report file` itself, so the
+  incident reaches the board only if you file it — through [`report`](../report/SKILL.md), as the
+  spawn would have.
+- **Release the claim it stranded.** `node <fabrika> build release <issue>`
+  is the whole act: the spawn ran under your `CLAUDE_CODE_SESSION_ID`, so its marker resolves as
+  this session's and the verb that already exists retracts it. No new verb and no widened one — the
+  ruling rejected a lease, a TTL, supersession and steal outright, and eviction by inference from
+  absence stays banned (ADR
+  [0215](../../../../.decisions/0215-claim-identity-continuity-proof.md) §5).
+
+**A claim held by a different, gone session is not yours to release.** `build release` refuses it on
+exit `15`, proven-foreign, and that refusal is the guard rather than an obstacle to reason past.
+Name that claim in the park comment with its token and leave it to a human.
+
 **Every event is proven first — artifacts over self-reports.** A report is
 data; what moves the machine is the artifact behind it. The verb below is the read `lane report`
 already ran for the shell; on your own two records it is yours to run. The retired epic conductor held this rule
@@ -310,13 +350,13 @@ range-scoped verdict for an epic child, which opens no PR at all (ADR 0285). You
 it reads the shape off the machine. It runs **before** the event, never after:
 
 ```bash
-node packages/fabrika-cli/src/bin.ts lane prove $lane_key DONE
+node <fabrika> lane prove $lane_key DONE
 ```
 
 Record the proven event only on exit `0`:
 
 ```bash
-node packages/fabrika-cli/src/bin.ts lane transition $lane_key DONE
+node <fabrika> lane transition $lane_key DONE
 ```
 
 (On a multi-task lane, address both verbs with `--task <name>`, the name exactly as `lane status`
@@ -338,7 +378,8 @@ event and never skipped as an optimisation. Its refusals each name a different n
 A builder's `SUCCESS-NO-PR` is a proven `DONE`, not an unproven one: the verb takes the no-PR arm
 only for a `type:investigation`, and proves it from the diagnosis comment posted since the task
 entered `build` — the artifact the builder's terminal names, read off the issue rather than off
-the report.
+the report. An epic child's `BUILT-NO-PR` is the other proven `DONE` without a PR, and its artifact
+is the range's own commits — a child opens no PR to prove one against (#6019).
 
 **An `integrate` has no spawn to report**, so its row is the merge's own exit folded by the two
 rules step 2 named: a clean merge whose post-merge checks pass is `DONE`; a conflict, or a red
@@ -354,7 +395,7 @@ its exit is what decides.
 your own:
 
 ```bash
-node packages/fabrika-cli/src/bin.ts recipe route <state> --exit <code>
+node <fabrika> recipe route <state> --exit <code>
 ```
 
 Its `event` is the one to record and its `why` is the sentence to quote; the table it answers off is
@@ -383,13 +424,19 @@ namespace is still in flight, it orphans that namespace's verdict mid-write and 
 machine's retries on a verdict set nobody finished. A reviewer report carrying a `FAIL` beside a
 namespace with no verdict that still binds is an incomplete read, not an event: re-read the
 artifact's verdicts — the PR's, or the child range's — until every derived namespace is terminal
-against what that artifact carries now, then record. No repair builder is
+against what that artifact carries now, then record. **The re-read is bounded, not a hold**: it runs
+only while the reviewer's run is still in flight, and once that run has ended with the namespace
+still empty the outcome is the `BLOCKED` the next paragraph names — never an indefinite wait on a
+state that reads as active. No repair builder is
 ever spawned while any namespace at the head is non-terminal.
 
-**Re-reading terminates, because no reviewer may decline a derived namespace on a `FAIL` round.**
-ADR [0293](../../../../.decisions/0293-governance-fires-every-round.md) rules governance
+**Re-reading terminates, because no reviewer may decline a derived namespace on a `FAIL` round, and
+none may route one away either.** ADR
+[0293](../../../../.decisions/0293-governance-fires-every-round.md) rules governance
 derived-required at every round and every head on a `harness: true` diff, FAIL rounds included —
-`review` §6 states it on both arms. So a governance verdict missing at a `harness: true` head is
+`review` §6 states it on both arms, and that skill's `routed elsewhere` terminal covers `review-ui`
+and `check-epic-plan` only, so no reviewer terminal ends a run with governance un-fired (#5769). So a
+governance verdict missing at a `harness: true` head is
 always a read still in flight or a reviewer that died mid-emit, never a licensed refusal, and the
 remedy above reaches a verdict instead of waiting on one nobody will write. The floor stays, and no
 `harness: true` FAIL round holds the old deadlock — the state where the verdict is refused by rule,
@@ -411,7 +458,7 @@ comment or the transcript has landed, so a successor that wins the lane the mome
 the artifact already there:
 
 ```bash
-node packages/fabrika-cli/src/bin.ts lane release $lane_key
+node <fabrika> lane release $lane_key
 ```
 
 Exit `0` is released (or `inert` on a chore key, which was never claimable). `31` means this session
@@ -438,14 +485,33 @@ You cannot clear a park: post on the driven issue what is needed and from whom (
 spawn's report names both; for `human:cp-approval` it is a control-plane approval at the PR's
 current head), then end `LANE-PARKED`. One park class names its owner here, not off the spawn's
 report: **a wire defect on the driven issue's own body** — an acceptance-criteria heading a
-spawned shell fail-louds on, a criteria block that reads as no shape the verbs parse. It is a park
-you originate, so the order above binds: record `BLOCKED`, re-fold and confirm the state, then
-post the park comment — the step both #5643 and #5714 skipped, leaving parks the machine could
-not resume. The fix is `triage`'s: the surface that stamped the issue agent-ready owns its
-wire shape, so the park comment names the defective section and points at the verb that owns the
-repair — `triage repair-criteria`, whose `--help` is its interface — never restating what that
-verb does, never delegating both the what and the who to the parking spawn's report, and never
-editing the body yourself (you are type-blind, and a driven issue's body is not your artifact). Clearing a park is a
+spawned shell fail-louds on, a criteria block that reads as no shape the verbs parse.
+
+**You may try the repair before you originate that park**, and it is one call:
+
+```bash
+node packages/fabrika-cli/src/bin.ts triage repair-criteria <n>
+```
+
+The verb is the driven body's sanctioned owner and it is refusal-first: it rewrites shape and
+nothing else — a drifted heading level, plain list bullets to unchecked checkboxes — and refuses
+anything that is not a pure shape rewrite. So running it never makes you the one choosing what the
+body says, which is the whole reason the prohibition below does not reach it. On `repaired`,
+re-dispatch the shell that fail-louded and record **no** `BLOCKED`: nothing parked, so there is
+nothing for a human to clear. Five M46 lanes spent a human cycle each on this park in one night
+(#5736, #5807, #5823, #5718, #5761) for a defect this verb repairs (#6001).
+
+The permission is exactly that one call and stops there. **Never edit the body yourself** — you are
+type-blind, and a driven issue's body is not your artifact — so no hand-edit, no other section, and
+no second run after a refusal. A refusal is the verb's answer, not a prompt to retry.
+
+On any refusal the park is the one this section always described, and the order above binds:
+record `BLOCKED`, re-fold and confirm the state, then post the park comment — the step both #5643
+and #5714 skipped, leaving parks the machine could not resume. The fix is then `triage`'s: the
+surface that stamped the issue agent-ready owns its wire shape, so the park comment names the
+defective section and points at the verb that owns the repair — `triage repair-criteria`, whose
+`--help` is its interface — never restating what that verb does, and never delegating both the what
+and the who to the parking spawn's report. Clearing a park is a
 human's `UNBLOCKED`, recorded through the same `lane transition` verb — you never record
 `UNBLOCKED`. One exception, and it is still not yours: on a **known** park a recipe verb owns,
 `recipe unpark` records that lane's `UNBLOCKED` itself, and only after a re-fold proves the task
@@ -464,7 +530,7 @@ and ends `LANE-PARKED` again; the ledger, not your patience, decides when the la
 `swept`) ends the run with the transcript**, posted to the driven issue straight off the verbs:
 
 ```bash
-node packages/fabrika-cli/src/bin.ts lane print $lane_key | gh issue comment $lane_key --body-file -
+node <fabrika> lane print $lane_key | gh issue comment $lane_key --body-file -
 ```
 
 with `lane history $lane_key` appended the same way when the event log adds anything `print` does not
@@ -482,7 +548,7 @@ forever and nothing here can record the `BLOCKED` a dead spawn is owed — the d
 that would have to record it. What catches it is a driver-side sweep, not a driver's patience:
 
 ```bash
-node packages/fabrika-cli/src/bin.ts lane stale --older-than 60
+node <fabrika> lane stale --older-than 60
 ```
 
 Every `stale` row is a lane something is owed on that has not moved in the threshold; `parked`,
@@ -520,8 +586,8 @@ fabrika skill, so one reader parses all of them. No row here dead-ends on a bare
 
 | Must exist | Why this skill needs it | When missing |
 | --- | --- | --- |
-| The lane verb group — `packages/fabrika-cli/src/bin.ts` routing `lane status`/`transition`/`report` (#5736)/`prove` (#5747)/`history`/`print` plus `open`/`emit` (#5688), `brief` (#5751), `stale` (#5897) and `claim`/`release` (#5761) | Every state read, every proof, every event write, every spawn prompt, the dead-operator sweep and the driver's own exclusivity in this skill is one of these verbs; there is no other path to the ledger, none to a prompt, and none to knowing whether a second driver is already here | **fail-loud** — a verb that cannot be executed leaves the lane state UNKNOWN; the run ends `STOPPED` naming `packages/fabrika-cli/src/bin.ts` and points at front-door. |
-| The recipe verb group — `packages/fabrika-cli/src/bin.ts` routing `recipe route` plus the recipes it names (`unpark`, `rerun`), and the chore template at `packages/fabrika-cli/src/lane/templates/chore.workflow.json` | A chore drive routes and folds through `recipe route`, runs the recipe it names, and boots from that template; there is no other path to either answer | **fail-loud** — a chore drive whose routing verb cannot be executed knows neither what to run nor what an exit meant; the run ends `STOPPED` naming `packages/fabrika-cli/src/recipe/`, records no event, and points at front-door. An issue lane is unaffected. |
+| The lane verb group — `<fabrika>` routing `lane status`/`transition`/`report` (#5736)/`prove` (#5747)/`history`/`print` plus `open`/`emit` (#5688), `brief` (#5751), `stale` (#5897) and `claim`/`release` (#5761) | Every state read, every proof, every event write, every spawn prompt, the dead-operator sweep and the driver's own exclusivity in this skill is one of these verbs; there is no other path to the ledger, none to a prompt, and none to knowing whether a second driver is already here | **fail-loud** — a verb that cannot be executed leaves the lane state UNKNOWN; the run ends `STOPPED` naming the entrypoint it could not run and points at front-door. |
+| The recipe verb group — `<fabrika>` routing `recipe route` plus the recipes it names (`unpark`, `rerun`), and the chore template at `packages/fabrika-cli/src/lane/templates/chore.workflow.json` | A chore drive routes and folds through `recipe route`, runs the recipe it names, and boots from that template; there is no other path to either answer | **fail-loud** — a chore drive whose routing verb cannot be executed knows neither what to run nor what an exit meant; the run ends `STOPPED` naming `packages/fabrika-cli/src/recipe/`, records no event, and points at front-door. An issue lane is unaffected. |
 | The agent shells — `claude-plugins/fabrika/agents/builder.md`, `reviewer.md`, `shipper.md` | Step 2's routing table spawns exactly these three by their bare noun names | **fail-loud** — a route whose shell does not exist cannot spawn; the run ends `STOPPED` naming the absent shell file, and no event is recorded for a spawn that never started. |
 | The `package.json` scripts `typecheck` and `lint:worktree` | An epic run's `integrate` reads the semantic collision off them — two ranges that each passed alone and fail together show up as the merged assembly failing the checks, and a clean `git merge` alone cannot see that | **degrade** — a clean merge is then the whole `DONE` answer and a semantic collision only surfaces at the epic review; say so in the transcript comment and file the gap via `/report`. An epic run still drives; a single-issue lane is unaffected. |
 | `.gitignore` covering `.fabrika/` | The ledger is a disposable machine-local artifact, regenerable from the board — committed, it would smuggle one machine's lane state into every checkout | **degrade** — the verbs still work; state the uncovered `.fabrika/` in the park or transcript comment and file the gap via `/report`. |

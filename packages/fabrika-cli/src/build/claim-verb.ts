@@ -16,6 +16,16 @@
  * under the one it just minted, and `confirm`/`release` under the `--token` that `claim` handed back,
  * so a sibling lane of the same session is a co-racer here rather than the same claimant (#6037).
  *
+ * **One LANE leaves at most one marker on a thread** — #5782's fixed point, keyed on the lane rather
+ * than the session. `claim` takes an optional `--token`: handed the token it already holds, it reads
+ * ownership before writing and answers `won` with that same marker, posting nothing; handed none, it
+ * is a fresh lane and races. `release` sweeps every marker carrying THIS lane's token, not merely the
+ * winning one, and `claim` answers with `ownership.marker.token` — the token `requireClaim` will read.
+ * Without that, N claims left N markers, `claim` printed its own fresh nonce while every other verb
+ * read the earliest, and each `release` peeled one off a stack (#5782) — which is how
+ * `build branch --resume` cut a branch off a nonce the caller was never shown. Session-scoped, those
+ * same rules told a sibling lane it held its neighbour's claim (#6037), so the scope is the lane.
+ *
  * **`claim` runs the admission test before it writes anything; `confirm` and `release` never run it.**
  * The fence decides what may *start* (ADR 0245), so a focus row edited mid-lane must not strand a
  * running lane or block its release. Claiming is the one moment every path goes through — a number
@@ -27,13 +37,21 @@
  */
 import {Effect, type FileSystem} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import {createComment, deleteComment, getComment, type IssueRecord} from "../io/issues.ts";
+import {
+	createComment,
+	deleteComment,
+	getComment,
+	type IssueRecord,
+	listComments,
+} from "../io/issues.ts";
 import {normalizeForReadback} from "../report/compose.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {
+	BUILD_CLAIM,
 	type ClaimOverride,
 	composeMarker,
 	laneCaller,
+	markersIn,
 	readMarkerToken,
 	requireCallerToken,
 	requireSession,
@@ -46,7 +64,7 @@ import {
 	READBACK_MISMATCH,
 	WRITE_UNKNOWN,
 } from "./codes.ts";
-import {composeToken, nonceOf} from "./lane.ts";
+import {composeToken, nonceOf, parseToken} from "./lane.ts";
 import {
 	admissionOf,
 	admissionRefusal,
@@ -75,11 +93,18 @@ export interface ClaimOptions {
 	readonly override: string | null;
 	/** The lane an override is taken for — required with an override, refused without one. */
 	readonly overrideLane: string | null;
+	/**
+	 * The token this lane ALREADY holds, when it is re-claiming — `null` on a fresh claim.
+	 *
+	 * It is what makes the idempotent answer expressible per lane: without it, "already mine" could
+	 * only be asked of the session, which is exactly the question #6037 proved a lane must not ask.
+	 */
+	readonly token: string | null;
 }
 
 export type ProtocolOptions = Omit<
 	ClaimOptions,
-	"uuid" | "at" | "purpose" | "override" | "overrideLane"
+	"uuid" | "at" | "purpose" | "override" | "overrideLane" | "token"
 > & {
 	/** The token `build claim` handed this lane — the identity it is asking under (#6037). */
 	readonly token: string;
@@ -181,6 +206,27 @@ export const runClaim = (
 		const {repo, session} = ready;
 		const {number} = options;
 
+		// Already THIS LANE's: answer with the marker that owns it and write nothing. A second marker
+		// would leave `claim` printing one nonce while `confirm`/`requireClaim` read the earliest
+		// (#5782), and each `release` would then peel one marker off a stack instead of clearing it.
+		// Only a caller that named its own token can be answered this way — a same-session marker under
+		// another nonce belongs to a sibling lane, and races below like any other (#6037). The fence is
+		// not re-run for the same reason `confirm` and `release` never run it — it decides what may
+		// START, and this lane already started.
+		if (options.token !== null) {
+			const holding = requireCallerToken(CLAIM, session, options.token);
+			if (holding._tag === "Refused") return holding.outcome;
+			const prior = yield* resolveOwnership(repo, number, holding.caller);
+			if (prior.ownership._tag === "Mine") {
+				return answer(
+					JSON.stringify({answer: "won", number, token: prior.ownership.marker.token, purpose}),
+					[
+						`${CLAIM}: #${number} is already held by this lane (comment ${prior.ownership.marker.commentId}) — answered with the marker that owns it; nothing was written.`,
+					],
+				);
+			}
+		}
+
 		const read = yield* readDeclaredFocus();
 		if (read._tag === "Unreadable") {
 			return refuse(
@@ -277,6 +323,10 @@ export const runClaim = (
 			);
 		}
 		if (ownership._tag === "Mine") {
+			// The winner is the marker this run just posted: `Mine` turns on the whole token, so an older
+			// marker of this session under another nonce is a SIBLING lane and lands on the lose path
+			// below, where this run retracts its OWN marker. That is what keeps #5782's fixed point —
+			// one marker per lane on the thread — without the session-scoped retraction it shipped with.
 			return answer(
 				JSON.stringify({
 					answer: "won",
@@ -393,12 +443,39 @@ export const runRelease = (
 				notes,
 			);
 		}
-		const deleted = yield* deleteComment(repo, ownership.marker.commentId);
-		return deleted._tag === "Failure"
-			? refuse(
+		// Every marker carrying THIS LANE's token, not only the winner. A thread carrying duplicates —
+		// a write that landed after it reported UNKNOWN, then re-posted — would otherwise hand the next
+		// `confirm` the next-oldest one, so release/confirm would have no fixed point (#5782). The
+		// filter is the lane's token, never its session: a sibling lane's marker is another lane's
+		// claim, and sweeping it is the one write this protocol must never make (#6037).
+		const lane = asking.caller;
+		const listed = yield* listComments(repo, number);
+		if (listed._tag === "Failure") {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${RELEASE}: cannot re-read the markers on #${number}: ${listed.reason} — nothing was retracted; run "fabrika build release ${number}" again.`,
+				notes,
+			);
+		}
+		const ids = new Set([
+			ownership.marker.commentId,
+			...markersIn(listed.value)
+				.filter(
+					(held) =>
+						parseToken(held.token, BUILD_CLAIM.prefix)?.session === lane.session &&
+						nonceOf(held.token, BUILD_CLAIM.prefix) === lane.nonce,
+				)
+				.map((held) => held.commentId),
+		]);
+		for (const id of ids) {
+			const deleted = yield* deleteComment(repo, id);
+			if (deleted._tag === "Failure") {
+				return refuse(
 					WRITE_UNKNOWN,
 					`${RELEASE}: the retraction failed: ${deleted.reason} — whether the claim is still held is UNKNOWN; run "fabrika build confirm ${number} --token ${options.token.trim()}".`,
 					notes,
-				)
-			: answer(JSON.stringify({answer: "released", number}), notes);
+				);
+			}
+		}
+		return answer(JSON.stringify({answer: "released", number}), notes);
 	});

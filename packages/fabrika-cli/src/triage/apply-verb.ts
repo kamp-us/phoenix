@@ -13,7 +13,9 @@ import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {getIssue, listLabels, listOpenMilestones, resolveRepo} from "../io/issues.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
+import {read as readCriteria} from "../wire/acceptance-criteria.ts";
 import {
+	CRITERIA_REQUIRED,
 	OFF_VOCABULARY,
 	PRECONDITION_UNKNOWN,
 	READBACK_MISMATCH,
@@ -30,6 +32,8 @@ import {
 	STANDING_LANES,
 	type StandingLane,
 	shapeViolations,
+	type TriageAudience,
+	type TriageType,
 	TYPES,
 	triagedFacets,
 } from "./facets.ts";
@@ -52,6 +56,35 @@ const unreadable = (what: string, repo: string, reason: string): VerbOutcome =>
 		PRECONDITION_UNKNOWN,
 		`triage apply: cannot read ${what} in ${repo}: ${reason} — nothing was written; the transition is UNKNOWN.`,
 	);
+
+/**
+ * The audience stamp's precondition: `ready-for:agent` only over a body a builder can pick up cold.
+ *
+ * Read through the same wire module every downstream grader reads — `build issue` and
+ * `review criteria` refuse exactly what it refuses, so stamping over a body it will not answer
+ * `Found` on only defers the refusal to a lane that cannot repair it (#6025).
+ *
+ * **`--type epic` is exempt**, and that is the load-bearing carve-out: an epic's criteria arrive per
+ * child from the plan ledger rather than in its own body, so a blanket refusal would make a triaged
+ * epic unstampable. `--ready-for human` is exempt on every type — the promise the block backs is the
+ * one made to an agent.
+ */
+const criteriaRefusal = (
+	issue: number,
+	type: TriageType,
+	readyFor: TriageAudience,
+	body: string,
+): VerbOutcome | null => {
+	if (readyFor !== "agent" || type === "epic") return null;
+	const criteria = readCriteria(body);
+	if (criteria._tag === "Found") return null;
+	return refuse(
+		CRITERIA_REQUIRED,
+		criteria._tag === "Absent"
+			? `triage apply: #${issue} carries no acceptance-criteria block — ${criteria.reason}. ready-for:agent promises a builder can pick it up cold; an absent block has nothing to repair mechanically, so author one with \`triage enrich\`. Nothing was written.`
+			: `triage apply: #${issue}'s acceptance-criteria block is malformed — ${criteria.reason} (${criteria.evidence}). Repair a level drift with \`triage repair-criteria ${issue}\`; anything else needs a hand. Nothing was written.`,
+	);
+};
 
 export const runApply = (
 	options: ApplyOptions,
@@ -117,6 +150,9 @@ export const runApply = (
 		if (target._tag === "Unknown") {
 			return unreadable(`issue #${issue}`, repo, target.reason);
 		}
+
+		const refusal = criteriaRefusal(issue, type, readyFor, target.value.body);
+		if (refusal !== null) return refusal;
 
 		const vocabulary = yield* listLabels(repo);
 		if (vocabulary._tag === "Failure") return unreadable("the label set", repo, vocabulary.reason);

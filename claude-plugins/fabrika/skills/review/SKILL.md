@@ -148,7 +148,29 @@ undisclosed that this gate could see"* — never "no deviations exist".
   namespace holds a binding verdict, so a declined governance round strands the lane with the
   repair undispatchable. Fire it, and expect to fire it again at each repair head — the extra run
   is the accepted cost. Neither namespace discharges the other. You never emit governance's
-  namespace yourself.
+  namespace yourself. **And there is no route out of it**: the Terminal vocabulary's `routed
+  elsewhere` covers `review-ui` and `check-epic-plan` only, so this skill has no terminal that ends
+  a `harness: true` run with the governance namespace un-fired.
+- **On an epic child the governance verdict is range-scoped and lands on the child issue** —
+  nothing governance-shaped waits for the epic tail. An epic run opens one tail PR (ADR
+  [0285](../../../../.decisions/0285-epic-machine-ends-in-review.md)), so mid-run a child has no PR
+  a head could bind to, and `lane prove`'s child arm derives that child's namespaces from the
+  **range's own changed paths** through the same `touchesGovernanceRoot` floor it uses on a PR
+  ([`prove-verb.ts`](../../../../packages/fabrika-cli/src/lane/prove-verb.ts)) — a range touching a
+  governance root derives `governance` exactly as a PR diff does. So post every namespace the range
+  derives over that range, on the child issue, with `--base`/`--tip` in place of `--sha`: yours
+  through `fabrika review post <child-issue> --namespace <ns> --base <b> --tip <t>`, governance's
+  through the `governance` skill's own range form (its §5). What binds is content, not a head (ADR
+  [0276](../../../../.decisions/0276-verdict-binds-content-not-only-head.md)). Deferring the
+  namespace strands the lane whichever polarity you reached: a claimed `PASS` reds at `lane prove`
+  exit `23`, and a `FAIL` is recorded only once every derived namespace is terminal against the
+  range (`operate`'s `FAIL` row). The every-round rule above is unchanged here — a child's FAIL
+  round owes its governance verdict too.
+- **The tail's own review is a separate subject, so this is not a double post.** The tail PR's
+  namespaces are derived from the tail PR's own diff and its verdicts are head-bound on that PR; a
+  child's are derived from the child's range and are content-bound on the child issue. Posting on
+  the child discharges the child, never the tail, and re-posting a child's verdict onto the tail
+  discharges nothing — the two reads ask different scopes.
 - `self: true` (the diff touches `claude-plugins/fabrika/skills/review/`) ⇒ a PR must not review
   itself by its own new rules: re-read this `SKILL.md` and the rubrics at the **merge-base**
   revision (`git show` — a bytes read that loads no instructions) and judge by those.
@@ -176,17 +198,28 @@ repo-scoped token and **uses** four writes — verdict comments, AC appends, the
 escalation comment, and one append to the driver's lane ledger through `lane report` at the
 `--root` your brief carries, a path outside this checkout — no push, no merge, no label. Every run ends as exactly one of: **verdict PASS**
 · **verdict FAIL** · **UNKNOWN — the artifact could not be read** (never a verdict) · **prior marker
-Stale/Unbindable — re-review required** · **routed elsewhere** (governance / `review-ui` /
-`check-epic-plan`). Precedence: **an unseen input blocks PASS, never FAIL** — FAIL on what you did
+Stale/Unbindable — re-review required** · **routed elsewhere** (`review-ui` / `check-epic-plan`
+only). Precedence: **an unseen input blocks PASS, never FAIL** — FAIL on what you did
 see, naming the unread piece UNKNOWN; no namespace PASSes on an unseen input.
+
+**Governance is not one of the routes, and never was a legal way to end.** `routed elsewhere` carries
+the two modality handoffs and nothing else — `review-ui` for a rendered visual, `check-epic-plan` for
+a plan ledger — each a subject this skill cannot judge at all. Governance it can and must reach: §6
+makes the namespace derived-required at every round on a `harness: true` diff, so firing it and
+waiting happens **inside** this run, and no terminal above ends a run with that namespace un-fired.
+Routing it away instead is what stranded PR [#5738](https://github.com/kamp-us/phoenix/pull/5738) at
+head `7847ecf3` (#5769): `operate`'s `FAIL`-row floor correctly refused to record the FAIL while
+governance held no binding verdict, the machine had no state that could fire it, and the namespace
+filled only because an unrelated second driver happened to run governance on the same lane.
 
 **Record the terminal yourself, then print it.** When your spawn brief named a lane, your terminal
 step is the verb — pass back the `lane` and `root` its `## Task` section carries, one token per
 terminal above (`PASS`, `FAIL`, `UNKNOWN`, `STALE`, `UNBINDABLE`, `ROUTED`), mapped to a lane event
-in its code, with the PR as the event's evidence (#5736):
+in its code, with the PR as the event's evidence (#5736). `<fabrika>` is that same section's
+`fabrika:` entrypoint, the one path this repo's verbs actually run from (#6012):
 
 ```bash
-node packages/fabrika-cli/src/bin.ts lane report <lane> --root <root> --token PASS --pr <pr-url>
+node <fabrika> lane report <lane> --root <root> --token PASS --pr <pr-url>
 ```
 
 One guard is yours before a `FAIL`: record it **only when every derived namespace holds a verdict

@@ -69,7 +69,17 @@ export const truncatedComments = (
 	return okOut(whole.slice(0, whole.lastIndexOf("}")));
 };
 
-/** One paged `issues?labels=…` response, as the candidate pool reads it. */
+/** A body carrying the conforming block — what a triaged, agent-ready issue looks like. */
+export const CRITERIA_BODY =
+	"## Summary\n\ns\n\n### Acceptance criteria\n\n- [ ] the one criterion\n";
+
+/**
+ * One paged `issues?labels=…` response, as the candidate pool reads it.
+ *
+ * `body` defaults to {@link CRITERIA_BODY} because the pool's criteria axis reads it: a row that
+ * omitted it would be excluded, so every caller not testing that axis would have to restate the
+ * block. Pass `body: ""` for an issue with no contract.
+ */
 export const candidates = (
 	...rows: ReadonlyArray<{
 		number: number;
@@ -78,6 +88,7 @@ export const candidates = (
 		assignees?: ReadonlyArray<string>;
 		milestone?: number | null;
 		pull?: boolean;
+		body?: string;
 	}>
 ): ExecResult =>
 	okOut(
@@ -85,6 +96,7 @@ export const candidates = (
 			rows.map((row) => ({
 				number: row.number,
 				title: row.title ?? `issue ${row.number}`,
+				body: row.body ?? CRITERIA_BODY,
 				labels: row.labels.map((name) => ({name})),
 				assignees: (row.assignees ?? []).map((login) => ({login})),
 				milestone:
