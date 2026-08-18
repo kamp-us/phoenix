@@ -442,14 +442,33 @@ You cannot clear a park: post on the driven issue what is needed and from whom (
 spawn's report names both; for `human:cp-approval` it is a control-plane approval at the PR's
 current head), then end `LANE-PARKED`. One park class names its owner here, not off the spawn's
 report: **a wire defect on the driven issue's own body** — an acceptance-criteria heading a
-spawned shell fail-louds on, a criteria block that reads as no shape the verbs parse. It is a park
-you originate, so the order above binds: record `BLOCKED`, re-fold and confirm the state, then
-post the park comment — the step both #5643 and #5714 skipped, leaving parks the machine could
-not resume. The fix is `triage`'s: the surface that stamped the issue agent-ready owns its
-wire shape, so the park comment names the defective section and points at the verb that owns the
-repair — `triage repair-criteria`, whose `--help` is its interface — never restating what that
-verb does, never delegating both the what and the who to the parking spawn's report, and never
-editing the body yourself (you are type-blind, and a driven issue's body is not your artifact). Clearing a park is a
+spawned shell fail-louds on, a criteria block that reads as no shape the verbs parse.
+
+**You may try the repair before you originate that park**, and it is one call:
+
+```bash
+node packages/fabrika-cli/src/bin.ts triage repair-criteria <n>
+```
+
+The verb is the driven body's sanctioned owner and it is refusal-first: it rewrites shape and
+nothing else — a drifted heading level, plain list bullets to unchecked checkboxes — and refuses
+anything that is not a pure shape rewrite. So running it never makes you the one choosing what the
+body says, which is the whole reason the prohibition below does not reach it. On `repaired`,
+re-dispatch the shell that fail-louded and record **no** `BLOCKED`: nothing parked, so there is
+nothing for a human to clear. Five M46 lanes spent a human cycle each on this park in one night
+(#5736, #5807, #5823, #5718, #5761) for a defect this verb repairs (#6001).
+
+The permission is exactly that one call and stops there. **Never edit the body yourself** — you are
+type-blind, and a driven issue's body is not your artifact — so no hand-edit, no other section, and
+no second run after a refusal. A refusal is the verb's answer, not a prompt to retry.
+
+On any refusal the park is the one this section always described, and the order above binds:
+record `BLOCKED`, re-fold and confirm the state, then post the park comment — the step both #5643
+and #5714 skipped, leaving parks the machine could not resume. The fix is then `triage`'s: the
+surface that stamped the issue agent-ready owns its wire shape, so the park comment names the
+defective section and points at the verb that owns the repair — `triage repair-criteria`, whose
+`--help` is its interface — never restating what that verb does, and never delegating both the what
+and the who to the parking spawn's report. Clearing a park is a
 human's `UNBLOCKED`, recorded through the same `lane transition` verb — you never record
 `UNBLOCKED`. One exception, and it is still not yours: on a **known** park a recipe verb owns,
 `recipe unpark` records that lane's `UNBLOCKED` itself, and only after a re-fold proves the task

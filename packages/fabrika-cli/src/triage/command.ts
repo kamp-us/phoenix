@@ -380,11 +380,11 @@ const repairCriteria = leafCommand(
 	{
 		issue: Argument.integer("issue").pipe(
 			Argument.optional,
-			Argument.withDescription("the one issue whose drifted heading to repair"),
+			Argument.withDescription("the one issue whose criteria block to repair"),
 		),
 		sweep: Flag.boolean("sweep").pipe(
 			Flag.withDescription(
-				"repair every drifted open issue in one run instead of one issue, with a per-issue outcome line",
+				"repair every repairable open issue in one run instead of one issue, with a per-issue outcome line",
 			),
 		),
 		repo: repoFlag,
@@ -402,9 +402,9 @@ const repairCriteria = leafCommand(
 		);
 	}),
 ).pipe(
-	Command.withShortDescription("Repair a drifted acceptance-criteria heading, mechanically."),
+	Command.withShortDescription("Repair an acceptance-criteria block's shape, mechanically."),
 	Command.withDescription(
-		'Rewrite a level-drifted "## Acceptance criteria" heading to the conforming "### Acceptance criteria" — authored region only, preserved originals byte-for-byte untouched, the repair pre-verified through the wire read before anything is written. One issue by number, or --sweep for every open issue with one `<repaired|conforming|no-block|refused|moved>\\t<number>` line each; a sweep re-reads each issue immediately before its write and answers `moved` instead of writing when the body changed after the board snapshot. Only a pure level drift on the exact heading text is repaired; every other Malformed answer is refused, never guessed. Exits 7 (issue absent, closed, or a pull request), 8 (the PATCH failed — UNKNOWN), 9 (read-back mismatch), 11 (an issue or the open-issue list could not be read), 14 (not mechanically repairable — the refusal names what it read). Example: fabrika triage repair-criteria 5726',
+		'Rewrite an acceptance-criteria block\'s shape: a level-drifted "## Acceptance criteria" heading to the conforming "### Acceptance criteria", and — when the block carries no checkbox at all — its plain list bullets to unchecked checkboxes, each item\'s text byte-for-byte unchanged. Authored region only, preserved originals byte-for-byte untouched, the repair pre-verified through the wire read before anything is written. One issue by number, or --sweep for every open issue with one `<repaired|conforming|no-block|refused|moved>\\t<number>` line each; a sweep re-reads each issue immediately before its write and answers `moved` instead of writing when the body changed after the board snapshot. Only a pure shape rewrite on the exact heading text is repaired; a drifted heading text, a block mixing prose or another block into the list, an empty item, and a block that already carries a checkbox beside its bullets are all refused, never guessed. Exits 7 (issue absent, closed, or a pull request), 8 (the PATCH failed — UNKNOWN), 9 (read-back mismatch), 11 (an issue or the open-issue list could not be read), 14 (not mechanically repairable — the refusal names what it read). Example: fabrika triage repair-criteria 5726',
 	),
 );
 
