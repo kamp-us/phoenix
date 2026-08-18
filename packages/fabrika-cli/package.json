@@ -28,6 +28,9 @@
 	},
 	"publishConfig": {
 		"access": "public",
+		"engines": {
+			"node": ">=22.12"
+		},
 		"bin": {
 			"fabrika": "./dist/bin.js"
 		},
