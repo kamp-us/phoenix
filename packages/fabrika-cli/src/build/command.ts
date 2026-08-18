@@ -30,7 +30,7 @@ import {runEligible} from "./eligible-verb.ts";
 import {runIssue} from "./issue-verb.ts";
 import {runNote} from "./note-verb.ts";
 import {runPick} from "./pick-verb.ts";
-import {runPr} from "./pr-verb.ts";
+import {runPr, runPrBody} from "./pr-verb.ts";
 import {runPush} from "./push-verb.ts";
 import {
 	ADMISSION_EXIT_CODES,
@@ -400,6 +400,37 @@ const pr = leafCommand(
 	),
 );
 
+const prBody = leafCommand(
+	"pr-body",
+	{
+		pr: Argument.integer("pr").pipe(
+			Argument.withDescription("the open pull request whose body is replaced"),
+		),
+		partial: Flag.boolean("partial").pipe(
+			Flag.withDescription(
+				'the acceptance criteria are not all met: the body must say "Part of #<n>", not "Fixes #<n>" (default: false)',
+			),
+		),
+		repo: repoFlag,
+	},
+	Effect.fn(function* ({pr, partial, repo}) {
+		yield* emit(
+			yield* runPrBody({
+				pr,
+				partial,
+				repo: Option.getOrNull(repo),
+				env: process.env,
+				stdin: Effect.sync(readStdin),
+			}),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Replace an open PR's body from stdin, guarded and read back."),
+	Command.withDescription(
+		'Replace an open pull request\'s body with the one on STDIN, running the same pre-write guards `build pr` runs on a create — leak scan, "## Deviations" shape, closing-keyword target, classification claim — and reading the body back through normalizeForReadback. Nothing but the body moves: no commit, no push, no branch. This is the route for a review FAIL whose whole fix is a body edit. The issue the closing keyword must name is read off the PR\'s own head branch, never off the body. Prints {"answer":"updated","number":n,"url":"…"}. Exits 3 (stdin held nothing), 4 ("## Deviations" missing or empty, or the closing-keyword line is absent, duplicated, mistargeted, or contradicts --partial), 5 (machine-local path), 6 (bare @ reference), 7 (the PR is proven absent, closed or merged), 8 (the update failed — UNKNOWN; re-read the PR before retrying), 9 (replaced but does not read back), 10 (the body asserts a control-plane, type or priority classification), 11 (a precondition read failed), 14 (the PR\'s head is not a lane branch, or the checked-out branch does not serve this PR), 15 (this session does not hold the claim). Example: fabrika build pr-body 4318 < body.md',
+	),
+);
+
 const note = leafCommand(
 	"note",
 	{
@@ -512,6 +543,7 @@ export const buildCommand = Command.make("build").pipe(
 		check,
 		push,
 		pr,
+		prBody,
 		note,
 		verdicts,
 		clear,

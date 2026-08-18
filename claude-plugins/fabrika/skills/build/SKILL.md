@@ -286,6 +286,14 @@ rebuild on the published head, never `--drop-remote-commits`, which is for a rew
 intend. The fold's `frozenCriteria` rows are the review-appended criteria past the freeze — note
 them, do not chase them.
 
+**When the whole fix is the PR body, the route is `fabrika build pr-body <pr>` and nothing else.**
+The recurring one is a FAIL reading `deviations malformed`: the head does not need to move, so a
+push is the wrong tool and a raw `gh` call runs none of the guards `build pr` runs on a create. This
+verb runs all of them over the rewrite — leak scan, the `## Deviations` shape, the closing-keyword
+target read off the PR's own head branch, the classification check — and reads the landed body back
+(#5618). Re-send the corrected body on stdin, then answer the finding in a `fabrika build note` and
+release; no commit, no `build check`, no `build push`.
+
 ## Expectations you hold but never recompute
 
 - **Control-plane membership** — decided by CODEOWNERS at the merge gate. You never classify.
