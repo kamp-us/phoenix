@@ -83,11 +83,15 @@ jobs:
             # branch's remote-tracking ref, and `origin/main` can name nothing here. No
             # `--depth` either — a shallow main has no merge base for the three-dot below.
             git fetch --no-tags origin main
-            base=$(git rev-parse FETCH_HEAD)
-          fi
-          if [ -z "$base" ]; then
-            echo "::error::could not resolve a diff base — refusing to report a clean scan over a base of nothing."
-            exit 1
+            # `--verify`, and the resolution read inside an `if`: plain `git rev-parse` on an
+            # unresolvable ref prints the ref back on stdout and exits 128, so an
+            # emptiness test downstream would see a non-empty base and scan a diff against
+            # nothing. `--verify` refuses instead, and the `if` is what lets this step say so
+            # rather than take the runner's bare errexit abort.
+            if ! base=$(git rev-parse --verify FETCH_HEAD); then
+              echo "::error::could not resolve a diff base from origin/main — refusing to report a clean scan over a base of nothing."
+              exit 1
+            fi
           fi
           mapfile -t changed < <(git diff --name-only --diff-filter=ACMR "$base...HEAD")
           if [ "${#changed[@]}" -eq 0 ]; then

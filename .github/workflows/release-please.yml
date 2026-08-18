@@ -131,24 +131,80 @@ jobs:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
-      # Half one of #5718. The Release PR is the one PR in this repo whose checks nobody
+      # Half one of #5718, and it runs FIRST because an unpublished tag is the worse of the
+      # two failures: an npm version that never ships needs a human with a token, while a
+      # Release PR missing its checks is fixed by the next push. Ordering plus the kick
+      # step's `!cancelled()` below is what makes the two halves fail independently in both
+      # directions.
+      #
+      # `publish.yml` fires on `release: published`, and the releases above are created with
+      # `secrets.GITHUB_TOKEN`, so that event starts no run and the tag sits unpublished
+      # (`fabrika-cli-v0.2.0` / `pipeline-cli-v0.3.0`, until a human draft-cycled both).
+      # Dispatching at `ref: <tag>` reaches publish.yml's own tag-ref + grammar + version
+      # gate with the tagged tree checked out, so nothing about what may publish is widened
+      # — only what may START the run.
+      #
+      # Keyed on the PER-PATH outputs for the same reason every gate in this file is: a
+      # repo-wide `releases_created` would dispatch a publish for a package that did not
+      # release.
+      - name: Dispatch the npm publish for each tag this push released
+        if: ${{ steps.release.outputs['packages/pipeline-cli--release_created'] == 'true' || steps.release.outputs['packages/fabrika-cli--release_created'] == 'true' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PIPELINE_CLI_TAG: ${{ steps.release.outputs['packages/pipeline-cli--tag_name'] }}
+          FABRIKA_CLI_TAG: ${{ steps.release.outputs['packages/fabrika-cli--tag_name'] }}
+        run: |
+          # `-e` spelled out because the runner sets it for us: a `run:` block with no
+          # `shell:` key executes under `bash --noprofile --norc -eo pipefail`, and every
+          # guard below is written for that shell rather than for the repo's `-e`-free
+          # script shape (.patterns/skill-script-shell-shape.md), which governs sourced
+          # scripts and not workflow steps.
+          set -euo pipefail
+
+          tags=()
+          [ -n "${PIPELINE_CLI_TAG:-}" ] && tags+=("$PIPELINE_CLI_TAG")
+          [ -n "${FABRIKA_CLI_TAG:-}" ] && tags+=("$FABRIKA_CLI_TAG")
+
+          if [ "${#tags[@]}" -eq 0 ]; then
+            echo "::error::a per-path release_created output was true but neither tag_name is set — refusing to leave a release unpublished with nothing said about it"
+            exit 1
+          fi
+
+          for tag in "${tags[@]}"; do
+            if ! gh workflow run publish.yml --ref "$tag"; then
+              echo "::error::dispatching publish.yml at $tag failed — that release will not reach npm."
+              exit 1
+            fi
+            echo "::notice::dispatched publish.yml at $tag."
+          done
+
+      # Half two of #5718. The Release PR is the one PR in this repo whose checks nobody
       # re-reads before merging, and until now it carried whatever the last human
       # close/reopen happened to leave there — stale-but-green reads exactly like ready.
+      #
+      # `!cancelled()` and not the implicit `success()`: a failed publish dispatch above, or
+      # a release-please action that errored after grooming the branch, must not also cost
+      # the Release PR its checks. Cancellation is the one case that still skips, because a
+      # cancelled run's dispatches would race the run that replaces it.
       #
       # The `for entry in …` list below is workflow file → the required check-run name that
       # file produces, and it is the drift surface: the required set lives in the repo's
       # `main protection` ruleset, not here, so a check added there but not here would never run
       # on the Release PR. Two things make that loud rather than silent — the trigger
       # assertion (a mapped file that lost its `workflow_dispatch:` reds this run), and the
-      # dispatch-on-failure stance (any unreadable probe dispatches rather than skips).
+      # dispatch-on-failure stance (an unreadable check-run probe dispatches rather than skips).
       # `ci.yml` carries TWO required checks — `ci-required` and `validate skill frontmatter`
       # — from the same run, so probing the first covers both; one dispatch, one entry.
       - name: Kick the standing Release PR's required checks at its current head
+        if: ${{ !cancelled() }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_BRANCH: release-please--branches--main
         run: |
-          set -uo pipefail
+          # See the publish-dispatch step above for why `-e` is spelled out. Every read
+          # whose failure this step wants to HANDLE rather than abort on sits in an `if`
+          # condition, which is the only construct errexit exempts.
+          set -euo pipefail
 
           number=$(gh pr list --state open --head "$RELEASE_BRANCH" --json number --jq '.[0].number // empty')
           if [ -z "$number" ]; then
@@ -156,16 +212,13 @@ jobs:
             exit 0
           fi
 
-          head=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$number" --jq '.head.sha')
-          if [ -z "$head" ]; then
+          if ! head=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$number" --jq '.head.sha') || [ -z "$head" ]; then
             echo "::error::could not read Release PR #$number's head SHA — refusing to dispatch at a head this run cannot name."
             exit 1
           fi
 
-          reported=$(gh api "repos/$GITHUB_REPOSITORY/commits/$head/check-runs" --paginate --jq '.check_runs[].name')
-          status=$?
-          if [ "$status" -ne 0 ]; then
-            echo "::warning::the check-run lookup for $head exited $status — dispatching every mapped workflow, because a missed dispatch is the stale-green this step exists to end."
+          if ! reported=$(gh api "repos/$GITHUB_REPOSITORY/commits/$head/check-runs" --paginate --jq '.check_runs[].name'); then
+            echo "::warning::the check-run lookup for $head failed — dispatching every mapped workflow, because a missed dispatch is the stale-green this step exists to end."
             reported=""
           fi
 
@@ -191,42 +244,6 @@ jobs:
               exit 1
             fi
             echo "::notice::'$check' was missing at Release PR #$number's head $head — dispatched $file."
-          done
-
-      # Half two of #5718, same root cause: `publish.yml` fires on `release: published`, and
-      # the releases above are created with `secrets.GITHUB_TOKEN`, so that event starts no
-      # run and the tag sits unpublished (`fabrika-cli-v0.2.0` / `pipeline-cli-v0.3.0`, until
-      # a human draft-cycled both). Dispatching at `ref: <tag>` reaches publish.yml's own
-      # grammar + version gate with the tagged tree checked out, so nothing about what may
-      # publish is widened — only what may START the run.
-      #
-      # Keyed on the PER-PATH outputs for the same reason every gate in this file is: a
-      # repo-wide `releases_created` would dispatch a publish for a package that did not
-      # release.
-      - name: Dispatch the npm publish for each tag this push released
-        if: ${{ steps.release.outputs['packages/pipeline-cli--release_created'] == 'true' || steps.release.outputs['packages/fabrika-cli--release_created'] == 'true' }}
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PIPELINE_CLI_TAG: ${{ steps.release.outputs['packages/pipeline-cli--tag_name'] }}
-          FABRIKA_CLI_TAG: ${{ steps.release.outputs['packages/fabrika-cli--tag_name'] }}
-        run: |
-          set -uo pipefail
-
-          tags=()
-          [ -n "${PIPELINE_CLI_TAG:-}" ] && tags+=("$PIPELINE_CLI_TAG")
-          [ -n "${FABRIKA_CLI_TAG:-}" ] && tags+=("$FABRIKA_CLI_TAG")
-
-          if [ "${#tags[@]}" -eq 0 ]; then
-            echo "::error::a per-path release_created output was true but neither tag_name is set — refusing to leave a release unpublished with nothing said about it"
-            exit 1
-          fi
-
-          for tag in "${tags[@]}"; do
-            if ! gh workflow run publish.yml --ref "$tag"; then
-              echo "::error::dispatching publish.yml at $tag failed — that release will not reach npm."
-              exit 1
-            fi
-            echo "::notice::dispatched publish.yml at $tag."
           done
 
       # The one gate in this file, keyed on the PER-PATH outputs. `releases_created`

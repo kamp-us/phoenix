@@ -45,9 +45,12 @@ name: publish
 #
 #   The dispatch carries NO inputs on purpose: the tag is the dispatched REF, so the
 #   resolve step below reads it from `github.ref_name` and the checkout is the tagged tree
-#   either way. There is nothing an operator can type that widens what may publish — the
-#   grammar + version gate is the same one line of arms for both events, and a dispatch at
-#   a ref that is not a `<name>-v<version>` tag fails there before any credential is minted.
+#   either way. `github.ref_name` is the short name of a BRANCH just as readily as a tag,
+#   so the grammar + version gate alone would publish a branch called `fabrika-cli-v9.9.9`
+#   — the first step of the job therefore refuses any dispatch whose `github.ref` is not
+#   `refs/tags/…`, before the checkout and before any credential is minted. What may reach
+#   npm stays what it was: a tagged tree. What this trigger widens is only what may START
+#   the run.
 #
 #   npm Trusted Publishing binds to repo + workflow FILENAME (+ optional environment), not
 #   to the event that started the run, so adding this trigger leaves the registration
@@ -67,6 +70,21 @@ jobs:
     name: publish the tagged @kampus package to npm
     runs-on: ubuntu-latest
     steps:
+      # ADR 0239 binds this repo to publishing only what a human merged, and npm versions
+      # are immutable, so a publish from an unmerged tree cannot be taken back. The release
+      # event reaches this job only at `refs/tags/<tag>`; a dispatch reaches it at whatever
+      # ref the dispatcher named, and the grammar gate downstream reads a name, not a ref
+      # type. This is the step that reads the type. It runs BEFORE the checkout so the
+      # refused tree is never even fetched.
+      - name: Refuse a dispatch at anything but a tag ref
+        if: ${{ github.event_name == 'workflow_dispatch' && !startsWith(github.ref, 'refs/tags/') }}
+        env:
+          REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          echo "::error::publish.yml was dispatched at $REF, which is not a tag ref — only a released tag may publish."
+          exit 1
+
       # A bare checkout is the TAGGED tree, not a moving branch head: GitHub's
       # events-that-trigger-workflows reference gives the `release` event GITHUB_SHA
       # "Last commit in the tagged release" and GITHUB_REF `refs/tags/<tag_name>`. That
