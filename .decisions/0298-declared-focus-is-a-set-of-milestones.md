@@ -1,12 +1,12 @@
 ---
-id: 0295
+id: 0298
 title: The declared focus is a set of milestones, not one
 status: accepted
 date: 2026-08-18
 tags: [fabrika, pipeline, roadmap, adoption]
 ---
 
-# 0295 — The declared focus is a set of milestones, not one
+# 0298 — The declared focus is a set of milestones, not one
 
 **What this decides:** `ROADMAP.md`'s `## Focus` table carries N rows, and the fence admits an issue
 homed in **any** of them. Exclusive focus — one milestone, everything else off the table — is
@@ -95,7 +95,7 @@ predicate admits.
 
 Fixes [#6005](https://github.com/kamp-us/phoenix/issues/6005). Supersedes the exclusive-focus premise
 of ADR [0245](0245-campaign-scope-fence-binds-both-seams.md). 0245 carries the reciprocal
-`amended-in-part by [0295]` status-line pointer, written by `fabrika adr amend-in-part`; its body is
+`amended-in-part by [0298]` status-line pointer, written by `fabrika adr amend-in-part`; its body is
 untouched, because an accepted record's decision text is immutable.
 
 Vocabulary impact: **declared focus** changes from "the single milestone in exclusive focus" to "the

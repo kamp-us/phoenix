@@ -163,7 +163,7 @@ chosen.
   ```
 
   The table carries **N** data rows and the declared focus is the **set** of the milestones they
-  name — a repo running several streams at once declares a row each (ADR 0295). `Milestone` is
+  name — a repo running several streams at once declares a row each (ADR 0298). `Milestone` is
   `#<int>`, one focused milestone; `Declared` is the ISO `YYYY-MM-DD` date that row was declared. A
   **missing section and a present-but-empty table are the same well-formed default** — no focus is
   declared. A milestone cell that is not `#<int>`, a date that is not ISO, or a row without exactly
