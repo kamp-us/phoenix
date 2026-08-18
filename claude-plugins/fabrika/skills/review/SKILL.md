@@ -164,8 +164,9 @@ failing control-plane criterion posts the ordinary FAIL marker.
 ## Terminal vocabulary
 
 <!-- anchor: CAPABILITIES --> This skill opens no PR and mutates no branch; it holds a shell and a
-repo-scoped token and **uses** three writes — verdict comments, AC appends, the frozen-round
-escalation comment — no push, no merge, no label. Every run ends as exactly one of: **verdict PASS**
+repo-scoped token and **uses** four writes — verdict comments, AC appends, the frozen-round
+escalation comment, and one append to the driver's lane ledger through `lane report` at the
+`--root` your brief carries, a path outside this checkout — no push, no merge, no label. Every run ends as exactly one of: **verdict PASS**
 · **verdict FAIL** · **UNKNOWN — the artifact could not be read** (never a verdict) · **prior marker
 Stale/Unbindable — re-review required** · **routed elsewhere** (governance / `review-ui` /
 `check-epic-plan`). Precedence: **an unseen input blocks PASS, never FAIL** — FAIL on what you did

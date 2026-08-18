@@ -175,7 +175,9 @@ signal.**
 
 <!-- anchor: CAPABILITIES --> Capability set: a shell and a repo-scoped token; writes used —
 merge-queue enqueue/disarm, PR comments (`note`, thread rationale), thread resolution, the
-close→reopen nudge, one label (`status:awaiting-release`). No push, no local git mutation, no
+close→reopen nudge, one label (`status:awaiting-release`), and one append to the driver's lane
+ledger through `lane report` at the `--root` your brief carries, a path outside this checkout. No
+push, no local git mutation, no
 implementation, no review verdict, no flag flip. Every run ends as exactly one of:
 **already-merged (idempotent success)** · **QUEUED — enqueued, awaiting the queue** (success
 without a merge observed) · **landed** · **refused — <reason>** (a successful decline: disarmed,
