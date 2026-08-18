@@ -633,9 +633,15 @@ node packages/fabrika-cli/src/bin.ts guard readme-guard check
 | Verb | Answers |
 |---|---|
 | `guard readme-guard check` | whether every real `packages/*` workspace member carries a `README.md` |
+| `guard skill-lint check` | whether the `claude-plugins/` skill + agent corpus holds a GraphQL-path `gh` call, an unparseable frontmatter block, a bare `git push` in a runnable block, or a plugin path literal that only resolves inside this repo |
 
 Three things are shared by the group rather than rebuilt per guard, which is the point of it
 ([#6093](https://github.com/kamp-us/phoenix/issues/6093)):
+
+`skill-lint` also owns its own walk, and that is deliberate: in `pipeline-cli` the corpus walk, the
+zero-scope floor and the per-plugin coverage assertion lived in forty lines of workflow bash, which
+put four fail-closed decisions where no test could reach them and made a local repro a retyped
+`find`. They are verb code now ([#6098](https://github.com/kamp-us/phoenix/issues/6098)).
 
 - **Scope.** `members.ts` resolves real workspace members — a directory under a declared
   `pnpm-workspace.yaml` glob that carries a `package.json`. A dead-shell directory is not a member,

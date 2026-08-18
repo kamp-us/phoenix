@@ -46,13 +46,13 @@ are not interchangeable, and citing one for the other's job is a live mis-author
 
 | Rule | Scope | Enforcer |
 |---|---|---|
-| Rule 1's co-occurrence: `errexit` enabled **together with** an `EXIT` trap in one runnable shell unit | every shell surface the guard resolves | `pipeline-cli trap-status-guard check` (the `trap-status-guard.yml` job), fail-closed on zero scope per surface ([ADR 0092](../.decisions/0092-gates-fail-closed-on-zero-scope.md)) |
+| Rule 1's co-occurrence: `errexit` enabled **together with** an `EXIT` trap in one runnable shell unit | the extracted `scripts/*.sh` of `claude-plugins/kampus-pipeline/**` | **no CI job** since [#6098](https://github.com/kamp-us/phoenix/issues/6098): `trap-status-guard.yml` retired with the rest of `pipeline-cli`'s self-policing guards. `claude-plugins/fabrika/**` carries no `.sh` file and no extracted-script idiom, so the pair the guard reddened on cannot occur there; the v1 corpus it did cover retires with the plugin ([#5937](https://github.com/kamp-us/phoenix/issues/5937)). Check 6 below is what still runs. |
 | No cleanup `EXIT` trap **at all** in executable code | the extracted `scripts/*.sh` of the skill(s) the verifier is run over | [`claude-plugins/kampus-pipeline/skills/plan-epic/scripts/verify-extraction.sh`](../claude-plugins/kampus-pipeline/skills/plan-epic/scripts/verify-extraction.sh) check 6 ([#4476](https://github.com/kamp-us/phoenix/issues/4476), class [#4479](https://github.com/kamp-us/phoenix/issues/4479)) |
 
-`trap-status-guard` reds only on the *pair*: a cleanup trap without `errexit` is fine by it, which
-is correct — that combination keeps the abort's status (see the matrix below). Check 6 is stricter
-because an extracted script that later regains `-e` would silently re-enter the fail-open, so the
-trap is banned outright in that corpus. Neither enforces the sourced class's no-options shape;
+`trap-status-guard` red on the *pair* and nothing else: a cleanup trap without `errexit` was fine by
+it, which was correct — that combination keeps the abort's status (see the matrix below). Check 6 is
+stricter because an extracted script that later regains `-e` would silently re-enter the fail-open,
+so the trap is banned outright in that corpus. Neither enforces the sourced class's no-options shape;
 that one survives on the header idiom below.
 
 ## The two invocation classes — executed and sourced

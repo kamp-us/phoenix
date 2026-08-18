@@ -57,7 +57,8 @@
 		"@demlik/tea": "catalog:",
 		"@effect/platform-node": "catalog:",
 		"@playwright/test": "catalog:",
-		"effect": "catalog:"
+		"effect": "catalog:",
+		"yaml": "catalog:"
 	},
 	"devDependencies": {
 		"@effect/tsgo": "catalog:",
