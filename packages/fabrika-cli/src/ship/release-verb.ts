@@ -13,6 +13,7 @@ import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {addLabels, getIssue} from "../io/issues.ts";
 import {getPullDiff, listPullFiles} from "../io/pulls.ts";
+import {AWAITING_RELEASE} from "../labels.ts";
 import {linkedIssueOf} from "../review/classes.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {INCOMPLETE_SCAN, PRECONDITION_UNKNOWN, READBACK_MISMATCH, WRITE_UNKNOWN} from "./codes.ts";
@@ -21,7 +22,6 @@ import {readFileAtRef} from "./github.ts";
 import {badNumber, NULL_TOKEN, resolvePull, resolveTargetRepo, scannedLine} from "./target.ts";
 
 const VERB = "ship release";
-const AWAITING_RELEASE = "status:awaiting-release";
 
 export interface ReleaseOptions {
 	readonly pr: number;

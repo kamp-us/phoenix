@@ -32,6 +32,7 @@ import type {ChildProcessSpawner} from "effect/unstable/process";
 import {requireClaim, requireSession} from "../build/claim.ts";
 import {badNumber, resolveTargetRepo} from "../build/target.ts";
 import {addLabels, getIssue, listLabels, removeLabel} from "../io/issues.ts";
+import {PLANNED, TRIAGED} from "../labels.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {
 	FLOOR_DEFECTIVE,
@@ -55,8 +56,6 @@ import {
 
 const VERB = "plan flip";
 
-const PLANNED = "status:planned";
-const TRIAGED = "status:triaged";
 const AUDIENCE_AGENT = "ready-for:agent";
 const AUDIENCE_HUMAN = "ready-for:human";
 

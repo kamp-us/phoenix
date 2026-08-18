@@ -20,9 +20,10 @@ import {exists, readFile, writeFile} from "../io/fs.ts";
 import type {Attempt} from "../io/git.ts";
 import {createLabel, createUnlabelledIssue, listLabels, openIssuesTitled} from "../io/issues.ts";
 import type {StdinRead} from "../io/stdin.ts";
+import {STATUSES} from "../labels.ts";
 import {normalizeForReadback} from "../report/compose.ts";
 import {isBareAtReference, renderLeaks, scanBody} from "../report/leaks.ts";
-import {PRIORITIES} from "../triage/facets.ts";
+import {AUDIENCES, PRIORITIES, TYPES} from "../triage/facets.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {
 	BARE_AT_PATH,
@@ -49,11 +50,20 @@ export interface LabelSpec {
 /** The description every created taxonomy label carries, so its creator is on the record. */
 export const LABEL_DESCRIPTION = "created by fabrika status bootstrap label-taxonomy";
 
-/** The board label taxonomy this verb creates, in the order it reports it. */
+/**
+ * The board label taxonomy this verb creates, in the order it reports it.
+ *
+ * **Every name is derived, never restated.** v1 listed the two statuses and `PRIORITIES` and stopped,
+ * so a repo that ran the whole documented bootstrap still could not `triage apply`, `triage park`,
+ * `plan flip` or `ship release` — each refuses a label the repo lacks (#4285), correctly, over a gap
+ * this list left (#5772). Deriving from `STATUSES`, `TYPES` and `AUDIENCES` is what makes a seventh
+ * `TYPES` member widen the bootstrap with no second edit here.
+ */
 export const TAXONOMY: ReadonlyArray<LabelSpec> = [
-	"status:needs-triage",
-	"status:triaged",
+	...STATUSES,
 	...PRIORITIES,
+	...TYPES.map((type) => `type:${type}`),
+	...AUDIENCES.map((audience) => `ready-for:${audience}`),
 ].map((name) => ({name, description: LABEL_DESCRIPTION, color: null}));
 
 /**
