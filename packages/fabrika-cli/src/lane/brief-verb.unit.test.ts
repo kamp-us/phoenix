@@ -3,7 +3,7 @@ import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
 import {errOut, fakeFs, fakeShell, okOut} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
-import {EPIC_RULES, RULES, read as readBrief} from "../wire/lane-brief.ts";
+import {EPIC_RULES, EPIC_TAIL_RULES, RULES, read as readBrief} from "../wire/lane-brief.ts";
 import {runBrief} from "./brief-verb.ts";
 import {
 	ISSUE_UNRESOLVED,
@@ -428,9 +428,11 @@ describe("lane brief on an epic lane", () => {
 				state: "review",
 				shell: "reviewer",
 				issue: EPIC_URL,
-				ground: {_tag: "Pull", pr: PR_URL},
+				ground: {_tag: "Tail", pr: PR_URL, epic: EPIC_URL},
 			},
 		});
+		// The tail's brief names where each child's build-deviations disclosure lives (#5903).
+		expect(out.stdout).toContain(EPIC_TAIL_RULES);
 		expect(out.stdout).not.toContain(EPIC_RULES);
 	});
 

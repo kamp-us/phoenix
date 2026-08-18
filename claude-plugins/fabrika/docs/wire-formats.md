@@ -39,6 +39,7 @@ does not exist yet — rather than missing; check the registry before assuming a
 | --- | --- | --- | --- |
 | `acceptance-criteria` | [`packages/fabrika-cli/src/wire/acceptance-criteria.ts`](../../../packages/fabrika-cli/src/wire/acceptance-criteria.ts) | `triage` | `build`, `review` |
 | `deviations` | [`packages/fabrika-cli/src/wire/deviations.ts`](../../../packages/fabrika-cli/src/wire/deviations.ts) | `build`, `build-ui` | `review`, `review-ui` |
+| `build-deviations` | [`packages/fabrika-cli/src/wire/build-deviations.ts`](../../../packages/fabrika-cli/src/wire/build-deviations.ts) | `build` | `review` |
 | `verdict-marker` | [`packages/fabrika-cli/src/wire/verdict-marker.ts`](../../../packages/fabrika-cli/src/wire/verdict-marker.ts) | `review`, `check-epic-plan`, `governance` | `build`, `ship` |
 | `range-verdict-marker` | [`packages/fabrika-cli/src/wire/range-verdict-marker.ts`](../../../packages/fabrika-cli/src/wire/range-verdict-marker.ts) | `review` | `build`, `operate` |
 | `lane-brief` | [`packages/fabrika-cli/src/wire/lane-brief.ts`](../../../packages/fabrika-cli/src/wire/lane-brief.ts) | `operate` | `build`, `review`, `ship` |
@@ -83,6 +84,23 @@ carrying a tag of its own rather than an empty entry list. That is the load-bear
 and folding it into `Absent` is how "never considered it" comes to read as "nothing to disclose".
 An entry states all four fields. The label is a routing hint and stays optional, but a disclosure
 missing *Why* or *Disposition* states what changed without stating whether anyone accepted it.
+
+### `build-deviations`
+
+This is the deviations disclosure for a build that opens no PR — an epic run's child, which lands by
+merging into the assembly branch (ADR 0285) and so has no PR body to carry the `## Deviations`
+section above. Ruled on #5903: the disclosure lands as a marker comment on the child's own issue,
+`build-deviations: #<issue>` over the same `## Deviations` section a PR body carries, and the
+epic-tail review — the one gate the run's single PR passes — reads every landed child's comment from
+there. The producer is the child's build shell, at the moment it would have opened a PR; the
+consumer is the tail review, which reaches each comment through the PR body's closing references.
+The section's grammar is not restated here or in the module: everything under the marker line is
+delegated wholesale to the `deviations` owner module, because two readers of the four-field bullet
+is the disagreement that format exists to remove. What this format adds is the marker line binding
+the disclosure to the issue it sits on — a comment pasted onto the wrong issue reads as a mismatch,
+not a disclosure — and the Absent/Malformed split for comments: an ordinary comment is `Absent`,
+while a marker line whose promised section is missing or drifted is `Malformed`, so a tail reviewer
+cannot mistake a broken disclosure for a child with nothing to say.
 
 ### `verdict-marker`
 

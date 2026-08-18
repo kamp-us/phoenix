@@ -19,6 +19,7 @@
  * registered without them — which is what makes the totality law inherited rather than re-written.
  */
 import * as acceptanceCriteria from "./acceptance-criteria.ts";
+import * as buildDeviations from "./build-deviations.ts";
 import * as deviations from "./deviations.ts";
 import {brandWitnesses, type WireFormat} from "./format.ts";
 import * as governanceDigest from "./governance-digest.ts";
@@ -136,6 +137,74 @@ export const registeredFormats: ReadonlyArray<WireFormat> = [
 				{
 					drift: "the heading is present over an empty section",
 					artifact: "## Deviations\n\n## Testing\n\nran it\n",
+				},
+			],
+		},
+		brands: brandWitnesses<deviations.DeviationEntry>({
+			said: true,
+			did: true,
+			why: true,
+			disposition: true,
+		}),
+	},
+	{
+		key: "build-deviations",
+		purpose:
+			"an epic child's deviation disclosure, as a marker comment on its own issue — a child opens no PR, so the `## Deviations` section lands here and the epic-tail review reads it (#5903)",
+		module: "packages/fabrika-cli/src/wire/build-deviations.ts",
+		producers: ["build"],
+		consumers: ["review"],
+		emit: buildDeviations.emitFromFields,
+		read: buildDeviations.readToLines,
+		fixtures: {
+			roundTrip: {
+				fields:
+					"issue: 5828\n1\tthe child's contract names both surfaces.\tbuilt the reader only.\tthe writer is the next child's range.\tstated here.\n",
+				values: [
+					"5828",
+					"the child's contract names both surfaces.",
+					"built the reader only.",
+					"the writer is the next child's range.",
+					"stated here.",
+				],
+			},
+			found: [
+				{
+					shape:
+						"the comment as a child builder posts it — the marker line, then an entry authored across wrapped lines",
+					artifact:
+						"build-deviations: #5828\n\n## Deviations\n\n- **Scope narrowing** — **Said:** the child's contract names both surfaces.\n  **Did:** built the reader only.\n  **Why:** the writer is the next child's range.\n  **Disposition:** stated here.\n",
+					values: [
+						"5828",
+						"the child's contract names both surfaces.",
+						"built the reader only.",
+						"the writer is the next child's range.",
+						"stated here.",
+					],
+				},
+				{
+					shape: "the checked claim that the child has nothing to disclose",
+					artifact: "build-deviations: #5828\n\n## Deviations\n\nNone.\n",
+					values: ["5828", "none-declared"],
+				},
+			],
+			absent: "Landed on the assembly branch — over to the next child.\n",
+			malformed: [
+				{
+					drift: "the marker names no issue, so the disclosure binds to nothing",
+					artifact: "build-deviations:\n\n## Deviations\n\nNone.\n",
+				},
+				{
+					drift: "the marker promises a disclosure and no section follows",
+					artifact: "build-deviations: #5828\n\nEverything went to plan.\n",
+				},
+				{
+					drift: "an entry is prose, carrying none of the four fields",
+					artifact: "build-deviations: #5828\n\n## Deviations\n\n- narrowed the scope a bit\n",
+				},
+				{
+					drift: "the section's heading level drifted",
+					artifact: "build-deviations: #5828\n\n### Deviations\n\nNone.\n",
 				},
 			],
 		},
@@ -290,6 +359,17 @@ export const registeredFormats: ReadonlyArray<WireFormat> = [
 					values: ["5751", "build", "builder", "https://github.com/kamp-us/phoenix/issues/5751"],
 				},
 				{
+					shape:
+						"an epic run's tail review — the one PR, plus the epic whose children's build-deviations comments it reads",
+					artifact: `## Task\nlane: 5800\ntask: epic_5800\nstate: review\nshell: reviewer\n## Ground\nissue: https://github.com/kamp-us/phoenix/issues/5800\npr: https://github.com/kamp-us/phoenix/pull/5904\nepic: https://github.com/kamp-us/phoenix/issues/5800\n## Rules\n${laneBrief.RULES}\n${laneBrief.EPIC_TAIL_RULES}\n`,
+					values: [
+						"epic_5800",
+						"review",
+						"https://github.com/kamp-us/phoenix/pull/5904",
+						"https://github.com/kamp-us/phoenix/issues/5800",
+					],
+				},
+				{
 					shape: "an epic lane's child review — the range it judges, and no PR anywhere",
 					artifact: `## Task\nlane: 5800\ntask: issue_5828\nstate: review\nshell: reviewer\n## Ground\nissue: https://github.com/kamp-us/phoenix/issues/5828\nepic: https://github.com/kamp-us/phoenix/issues/5800\nbranch: epic/5800\nrange: epic/5800..HEAD\n## Rules\n${laneBrief.RULES}\n${laneBrief.EPIC_RULES}\n`,
 					values: [
@@ -332,6 +412,15 @@ export const registeredFormats: ReadonlyArray<WireFormat> = [
 				{
 					drift: "a child review names no range — the reviewer would have nothing scoped to judge",
 					artifact: `## Task\nlane: 5800\ntask: issue_5828\nstate: review\nshell: reviewer\n## Ground\nissue: https://github.com/kamp-us/phoenix/issues/5828\nepic: https://github.com/kamp-us/phoenix/issues/5800\nbranch: epic/5800\n## Rules\n${laneBrief.RULES}\n${laneBrief.EPIC_RULES}\n`,
+				},
+				{
+					drift:
+						"a tail brief carries only the single-issue rules, which never name where the children's disclosures live",
+					artifact: `## Task\nlane: 5800\ntask: epic_5800\nstate: review\nshell: reviewer\n## Ground\nissue: https://github.com/kamp-us/phoenix/issues/5800\npr: https://github.com/kamp-us/phoenix/pull/5904\nepic: https://github.com/kamp-us/phoenix/issues/5800\n## Rules\n${laneBrief.RULES}\n`,
+				},
+				{
+					drift: "a tail brief names no PR — the run's one PR is the thing its shells work over",
+					artifact: `## Task\nlane: 5800\ntask: epic_5800\nstate: review\nshell: reviewer\n## Ground\nissue: https://github.com/kamp-us/phoenix/issues/5800\nepic: https://github.com/kamp-us/phoenix/issues/5800\n## Rules\n${laneBrief.RULES}\n${laneBrief.EPIC_TAIL_RULES}\n`,
 				},
 				{
 					drift:

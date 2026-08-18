@@ -13,10 +13,11 @@
  * **`## Ground` carries URLs, git refs and no content.** A brief that summarised an issue would hand
  * the shell a stale contract to work from, and the shell has verbs that read the live one.
  *
- * Ground comes in two shapes because an epic run has one branch and one PR (ADR 0285): a child's
+ * Ground comes in three shapes because an epic run has one branch and one PR (ADR 0285): a child's
  * states have no PR at all — they build in a worktree and their review judges a commit range on the
- * epic branch — while every other state has one PR to read. {@link LaneGround} is that union, so a
- * brief carrying both a PR and an epic branch is not a value anyone can construct.
+ * epic branch — the epic's tail has that one PR plus the epic issue whose children's disclosures
+ * its review reads, and every other state has one PR to read. {@link LaneGround} is that union, so
+ * a brief carrying both a PR and an epic branch is not a value anyone can construct.
  */
 
 import type {NonEmptyReadonlyArray, WireEmit, WireRead, WireReadLines} from "./format.ts";
@@ -83,12 +84,15 @@ export const shellState = (raw: string): ShellState | null => {
 /**
  * What the shell works over.
  *
- * `Pull` is a single-issue lane's state and an epic lane's tail — one PR to read, `null` only on
- * `build`, where construction has none yet. `Epic` is a child's state on an epic lane: the epic
- * issue, the assembly branch its worktree is cut from, and no PR, because a child never opens one.
+ * `Pull` is a single-issue lane's state — one PR to read, `null` only on `build`, where
+ * construction has none yet. `Tail` is an epic lane's tail: the run's one PR, plus the epic issue
+ * whose children's `build-deviations` comments the tail review reads. `Epic` is a child's state on
+ * an epic lane: the epic issue, the assembly branch its worktree is cut from, and no PR, because a
+ * child never opens one.
  */
 export type LaneGround =
 	| {readonly _tag: "Pull"; readonly pr: ArtifactUrl | null}
+	| {readonly _tag: "Tail"; readonly pr: ArtifactUrl; readonly epic: ArtifactUrl}
 	| {readonly _tag: "Epic"; readonly epic: ArtifactUrl; readonly branch: GitRef};
 
 export interface LaneBrief {
@@ -126,9 +130,25 @@ describes a tree you are not standing in.`;
 export const EPIC_RULES = `This lane is one epic run: one shared branch and one pull request at its tail (ADR 0285). Build in
 your own worktree on a local branch cut from \`branch\`, and never push or open a pull request for a
 child state — the merge happens once, after the epic review.
+A child's build discloses its deviations — the section a PR body would carry — as a
+\`build-deviations\` marker comment on the child issue, composed through
+\`node packages/fabrika-cli/src/bin.ts wire emit --format build-deviations\`; the epic-tail review
+reads them from there (#5903).
 A child's review judges the \`range\` above and records its verdict on the child issue in the
 \`range-verdict-marker\` format, composed through
 \`node packages/fabrika-cli/src/bin.ts wire emit --format range-verdict-marker\`.`;
+
+/**
+ * The rules an epic run's tail adds — the counterpart of {@link EPIC_RULES}, appended when the
+ * ground is `Tail`. This is where the tail review is told where each child's deviation disclosure
+ * lives (#5903): the brief is the one artifact every tail shell provably reads.
+ */
+export const EPIC_TAIL_RULES = `This PR is one epic run's tail: its branch assembles every child's range (ADR 0285), and its
+\`## Deviations\` section covers only that assembly. Each landed child disclosed its own build
+deviations as a \`build-deviations\` marker comment on its child issue — the issues the PR body's
+closing references name. The tail review reads every one of them through
+\`node packages/fabrika-cli/src/bin.ts wire read --format build-deviations\` before forming its
+verdict.`;
 
 /** The section headings this format admits, in the order it emits them. */
 export const SECTIONS = ["Task", "Ground", "Rules"] as const;
@@ -138,6 +158,12 @@ const groundFields = (brief: LaneBrief): ReadonlyArray<readonly [string, string]
 	if (brief.ground._tag === "Pull") {
 		return brief.ground.pr === null ? [] : [["pr", brief.ground.pr]];
 	}
+	if (brief.ground._tag === "Tail") {
+		return [
+			["pr", brief.ground.pr],
+			["epic", brief.ground.epic],
+		];
+	}
 	const {epic, branch} = brief.ground;
 	return [
 		["epic", epic],
@@ -146,8 +172,10 @@ const groundFields = (brief: LaneBrief): ReadonlyArray<readonly [string, string]
 	];
 };
 
-const rulesFor = (ground: LaneGround): string =>
-	ground._tag === "Pull" ? RULES : `${RULES}\n${EPIC_RULES}`;
+const rulesFor = (ground: LaneGround): string => {
+	if (ground._tag === "Pull") return RULES;
+	return ground._tag === "Tail" ? `${RULES}\n${EPIC_TAIL_RULES}` : `${RULES}\n${EPIC_RULES}`;
+};
 
 export const emit = (brief: LaneBrief): string =>
 	[
@@ -252,14 +280,34 @@ const groundOf = (fields: ReadonlyMap<string, string>, state: ShellState): Groun
 		}
 		return {_tag: "Ground", ground: {_tag: "Pull", pr}};
 	}
+	const epic = artifactUrl(epicRaw);
+	if (epic === null) return bad(`"${epicRaw}" is not an epic issue URL`, "epic");
+	if (branchRaw === "" && rangeRaw === "") {
+		// The epic run's tail: one PR to judge or merge, plus the epic whose children's
+		// `build-deviations` comments the tail review reads.
+		const pr = artifactUrl(prRaw);
+		if (pr === null) {
+			return bad(
+				prRaw === ""
+					? "a tail brief carries the run's one PR — without it the shell has nothing to read"
+					: `"${prRaw}" is not a PR URL`,
+				"pr",
+			);
+		}
+		if (state === "build") {
+			return bad(
+				"an epic tail briefs review or ship — construction happens in the children",
+				"state",
+			);
+		}
+		return {_tag: "Ground", ground: {_tag: "Tail", pr, epic}};
+	}
 	if (prRaw !== "") {
 		return bad(
 			"an epic lane's child state has no PR — one run is one PR, merged at its tail",
 			"pr",
 		);
 	}
-	const epic = artifactUrl(epicRaw);
-	if (epic === null) return bad(`"${epicRaw}" is not an epic issue URL`, "epic");
 	const branch = gitRef(branchRaw);
 	if (branch === null) return bad(`"${branchRaw}" is not a branch name`, "branch");
 	if (state === "ship") {
