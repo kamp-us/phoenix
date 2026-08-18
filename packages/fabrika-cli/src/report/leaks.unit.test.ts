@@ -72,6 +72,30 @@ describe("scanBody", () => {
 		const body = "packages/fabrika-cli/src/report/leaks.ts and apps/web/worker/http/retry.ts";
 		expect(scanBody(body)).toEqual({leaks: [], redacted: body});
 	});
+
+	/**
+	 * #5687 moved `build check`'s COMMITTED-file scan off this function onto `build/doc-leaks.ts`,
+	 * which is deliberately looser on three shapes. This body surface is ungated — no CI stands
+	 * behind an issue body — so it keeps refusing all three, and these pin that it still does.
+	 */
+	describe("still refuses everything the committed-file scanner now lets through", () => {
+		it("takes a home marker inside a fenced code block", () => {
+			const body = ["```bash", "grep -nE '(~/|/Users/|/home/)' -- .", "```"].join("\n");
+			expect(scanBody(body).leaks).toEqual([
+				{line: 2, class: "home-relative", text: "~/|/Users/|/home"},
+			]);
+		});
+
+		it("takes a scratch root a doc may legitimately cite", () => {
+			expect(scanBody("scratch lands under /tmp/fabrika-build/x").leaks).toEqual([
+				{line: 1, class: "temp root", text: "/tmp/fabrika-build/x"},
+			]);
+		});
+
+		it("has no self-exempt list — the shapes are refused whoever writes them", () => {
+			expect(scanBody("the Lineage bullets name ~/code/github.com/o/r").leaks).toHaveLength(1);
+		});
+	});
 });
 
 describe("isBareAtReference", () => {
