@@ -19,6 +19,11 @@ export const SHELL_VOCABULARIES = {
 	builder: {
 		"SHIPPED-PR": "DONE",
 		"SUCCESS-NO-PR": "DONE",
+		// An epic child builds, commits and deliberately opens no PR (ADR 0285), so neither of the
+		// two terminals above fits and the token used to fall to the refusal — recording a clean
+		// build as BLOCKED (#6019). Its proof is already the child arm of `lane prove`: a DONE out
+		// of `build` in a child role stands on the range's commits, not on a PR.
+		"BUILT-NO-PR": "DONE",
 		"BACKED-OFF": "BLOCKED",
 		ESCALATED: "BLOCKED",
 		STOPPED: "BLOCKED",

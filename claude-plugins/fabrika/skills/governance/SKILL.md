@@ -182,12 +182,14 @@ one. Re-review, never re-bind.
 **`post` also re-fires the floor check at that head.** The `governance-floor` job runs on
 `pull_request`, so it judged the PR before your verdict existed and nothing else re-fires it. The verb
 re-runs that job, which re-derives `ship floor` against your verdict — it never writes a check-run, so
-the green is the job's own. Its last stderr line says which of `refired` / `green` / `in-flight` /
-`no-run` / `unknown` happened.
+the green is the job's own. Its last stderr line says which of `refired` / `restarting` / `green` /
+`in-flight` / `no-run` / `unknown` happened.
 
 **Done when** `post` prints `posted`, its read-back conformed, and you have read the floor line — an
 `in-flight` or `unknown` floor means the check may still red at this head, and clearing it is
-`heal-ci`'s, not a human's.
+`heal-ci`'s, not a human's. `restarting` is **not** one of those: the re-fire took and the run is
+going again under its own id, GitHub simply had not published the new attempt number yet — wait and
+re-read that run, and escalating it is how three agents burned an evening on a green (#5982).
 
 ### The range form — an epic child's verdict
 

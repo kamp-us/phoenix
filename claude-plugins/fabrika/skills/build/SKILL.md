@@ -191,7 +191,8 @@ comment on the child issue instead: the line `build-deviations: #<n>` over the s
 through `fabrika wire emit --format build-deviations` and posted with `gh issue comment`. The
 epic-tail review reads every landed child's comment from there, so a child with nothing to disclose
 still posts the checked `None.` — an absent comment reads as "never considered it", not as
-"nothing to disclose".
+"nothing to disclose". A child that lands its commit and posts that comment ends on `BUILT-NO-PR`,
+below — not on a `SHIPPED-PR` naming a PR nobody opened.
 
 **State what changed and why, and stop.** Two things earn their lines: the summary, and
 `## Deviations` — deviations catch real defects, so state each plainly and never trim one for
@@ -217,7 +218,10 @@ fabrika build release $issue_or_pr_number
 
 **Terminal vocabulary** — end on exactly one: `SHIPPED-PR` (PR open, branch pushed);
 `SUCCESS-NO-PR` (a `type:investigation` answered by a diagnosis posted with `build note` — branch
-removed, findings filed via `/report`; closing the issue is triage's, not yours); `BACKED-OFF` (claim lost or blocked — branch removed, nothing written); `ESCALATED`
+removed, findings filed via `/report`; closing the issue is triage's, not yours); `BUILT-NO-PR` (an
+epic child under the epic rules — your commit landed on the branch you cut from the assembly branch
+and the `build-deviations` marker is posted on the child issue; branch left local, unpushed, for the
+epic driver to fold); `BACKED-OFF` (claim lost or blocked — branch removed, nothing written); `ESCALATED`
 (repair cap reached — branch left pushed at its last verified head, escalation note posted);
 `STOPPED` (isolation or verdict UNKNOWN — branch left local, state named). An empty pick pool is
 `BACKED-OFF` too — nothing to build, nothing written, and on a lost claim "branch removed" means
@@ -235,10 +239,12 @@ node packages/fabrika-cli/src/bin.ts lane report <lane> --root <root> --token SH
 ```
 
 `--pr` whenever the terminal names one; `--comment` for the diagnosis comment behind a
-`SUCCESS-NO-PR`. The verb refuses a token outside this vocabulary (exit `32`) rather than
+`SUCCESS-NO-PR`; a `BUILT-NO-PR` carries neither, because its evidence is the commits themselves.
+The verb refuses a token outside this vocabulary (exit `32`) rather than
 interpreting it — never respell one to get past it. It also **proves the event before it records**:
-your `SHIPPED-PR` lands only against an open PR the board shows linking the issue, and a
-`SUCCESS-NO-PR` only against the diagnosis comment you posted — so a refusal here is the board
+your `SHIPPED-PR` lands only against an open PR the board shows linking the issue, a
+`SUCCESS-NO-PR` only against the diagnosis comment you posted, and a `BUILT-NO-PR` only against a
+local branch in this tree whose commits name the child issue — so a refusal here is the board
 disagreeing with your terminal, never a token to change. On any refusal, print the token and name
 the exit code; the operator re-reads and routes. Then print the token as the last line either way;
 a run whose caller named no lane prints the token only and records nothing.
