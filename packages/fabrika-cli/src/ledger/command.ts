@@ -120,7 +120,7 @@ const child = leafCommand(
 		milestone: Flag.string("milestone").pipe(
 			Flag.optional,
 			Flag.withDescription(
-				"the title of an open milestone; absent mints an unhomed child the repo's homing guard will red",
+				"the title of an open milestone; required unless --label carries a standing lane (#5969)",
 			),
 		),
 		label: Flag.string("label").pipe(
@@ -161,7 +161,7 @@ const child = leafCommand(
 ).pipe(
 	Command.withShortDescription("Mint one child issue with every birth attribute at once."),
 	Command.withDescription(
-		'Mint one child with EVERY birth attribute in the one POST — title, body, every label, milestone and assignee — record it in the run manifest, link it as a native sub-issue, then re-read and report the OBSERVED result. Prints {"answer":"minted","epic":n,"child":n,"linked":true,"observed":{…},"stories":[…],"containment":"…"}. Exits 3 (stdin held nothing), 4 (the composed body\'s fields or sections do not parse: a malformed **Stories:** value, absent or malformed acceptance criteria, or a type:feature child whose **Containment:** is missing, unset or none while the cycle doc is present), 5 (machine-local path), 6 (bare @ reference), 7 (the epic is proven absent or closed), 8 (the create was attempted and no re-read could prove it — UNKNOWN), 9 (created and it does not read back as sent), 10 (a label, --type, --priority, --milestone or --ready-for off its closed vocabulary; --ready-for absent; --ready-for human without --assignee; or not a type:epic), 11 (a precondition read failed — NOTHING was created), 15 (this session does not hold the claim), 23 (created and the sub-issue link could not be proven), 26 (created and the run manifest could not be written). Example: fabrika ledger child 4300 --title "queue view: fate loader" --type type:feature --priority p1 --ready-for agent < child.md',
+		'Mint one child with EVERY birth attribute in the one POST — title, body, every label, milestone and assignee — record it in the run manifest, link it as a native sub-issue, then re-read and report the OBSERVED result. Prints {"answer":"minted","epic":n,"child":n,"linked":true,"observed":{…},"stories":[…],"containment":"…"}. Exits 3 (stdin held nothing), 4 (the composed body\'s fields or sections do not parse: a malformed **Stories:** value, absent or malformed acceptance criteria, or a type:feature child whose **Containment:** is missing, unset or none while the cycle doc is present), 5 (machine-local path), 6 (bare @ reference), 7 (the epic is proven absent or closed), 8 (the create was attempted and no re-read could prove it — UNKNOWN), 9 (created and it does not read back as sent), 10 (a label, --type, --priority, --milestone or --ready-for off its closed vocabulary; --ready-for absent; --ready-for human without --assignee; neither --milestone nor a standing-lane --label, so the child would be born homeless; or not a type:epic), 11 (a precondition read failed — NOTHING was created), 15 (this session does not hold the claim), 23 (created and the sub-issue link could not be proven), 26 (created and the run manifest could not be written). Example: fabrika ledger child 4300 --title "queue view: fate loader" --type type:feature --priority p1 --ready-for agent < child.md',
 	),
 );
 
