@@ -18,7 +18,13 @@ import {Effect, type FileSystem, Path, Result} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {exists, readFile, writeFile} from "../io/fs.ts";
 import type {Attempt} from "../io/git.ts";
-import {createLabel, createUnlabelledIssue, listLabels, openIssuesTitled} from "../io/issues.ts";
+import {
+	createLabel,
+	createUnlabelledIssue,
+	getIssue,
+	listLabels,
+	openIssuesTitled,
+} from "../io/issues.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {STATUSES} from "../labels.ts";
 import {normalizeForReadback} from "../report/compose.ts";
@@ -303,6 +309,13 @@ const buildLabels = (
 		);
 	});
 
+/**
+ * **The pre-write probe and the read-back use different primitives, and the asymmetry is the point.**
+ * With no number in hand a title scan is the only probe there is; once `createUnlabelledIssue` has
+ * returned one, `getIssue` reads the issue's own resource. The issues *list* is eventually
+ * consistent, so re-scanning it spends `READBACK_MISMATCH` — the loudest code here — on a correct
+ * first creation whose row has not propagated yet (#5776).
+ */
 const buildArtifact = (
 	surface: Extract<BuildableSurface, {kind: "issue"}>,
 	input: BootstrapInput,
@@ -329,14 +342,18 @@ const buildArtifact = (
 			);
 		}
 		const target = `${repo}#${write.value.number}`;
-		const back = yield* openIssuesTitled(repo, ARTIFACT_TITLE);
-		if (back._tag === "Failure") {
+		const back = yield* getIssue(repo, write.value.number);
+		if (back._tag === "Unknown") {
 			return refuse(
 				WRITE_UNKNOWN,
 				`${VERB}: created ${target} and it could not be read back: ${back.reason} — the outcome is UNKNOWN.`,
 			);
 		}
-		if (!back.value.some((issue) => issue.number === write.value.number)) {
+		if (
+			back._tag === "Absent" ||
+			back.value.title !== ARTIFACT_TITLE ||
+			back.value.state !== "open"
+		) {
 			return refuse(
 				READBACK_MISMATCH,
 				`${VERB}: wrote ${target} and the read-back differs — it does not resolve open under that exact title.`,
