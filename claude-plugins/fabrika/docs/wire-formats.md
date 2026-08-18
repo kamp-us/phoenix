@@ -137,7 +137,15 @@ the whole interface between the machine and the work. Written per dispatch, two 
 same state send materially different instructions, and the rule that matters most — carry the URLs,
 never a restatement, because a restated spec is a stale spec — is enforced by nothing but the
 driver's care. So the format owns the rules text byte for byte and the state → shell routing table
-with it, and `lane brief` prints what it derives instead of composing anything. `## Ground` carries
+with it, and `lane brief` prints what it derives instead of composing anything. Both the section
+set and the field set are closed, and closing only the first is a hole this format shipped with: an
+appended `## Note from the driver` read back malformed, while the same sentence written as `note: …`
+inside `## Ground` parsed, was stored, and was never looked at again (#5809). So each field belongs
+to exactly one section — `## Task` owns `lane`, `root`, `fabrika`, `task`, `state` and `shell`,
+`## Ground` owns `issue`, `pr`, `epic`, `branch` and `range` — and an unknown key, a key under the
+wrong heading, or a key set twice under its own heading is malformed. The last two are the same
+defect as the first: the sections used to fold into one map, so a `state:` under `## Ground` quietly
+beat the one the driver's fold derived and re-routed the brief to a shell `## Task` never named. `## Ground` carries
 links and no content at all: the shell re-reads its own issue, PR and verdicts through its own
 verbs. A `review` or `ship` brief with no PR is malformed rather than dispatchable, because that
 shell would have nothing to read.

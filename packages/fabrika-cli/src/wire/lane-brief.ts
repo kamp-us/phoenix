@@ -230,6 +230,31 @@ verdict.`;
 /** The section headings this format admits, in the order it emits them. */
 export const SECTIONS = ["Task", "Ground", "Rules"] as const;
 
+export type SectionName = (typeof SECTIONS)[number];
+
+/**
+ * Which field each of the two field-carrying sections owns — the field set, closed the way
+ * {@link SECTIONS} closes the section set.
+ *
+ * Closing only one of the two left the driver's own instruction representable after all: the
+ * registry's malformed fixture for an appended `## Note from the driver` was defeated by writing the
+ * same sentence as `note: …` inside `## Ground`, where it parsed, was stored, and was never looked
+ * at again. Binding each key to one section closes the other half — both sections used to fold into
+ * one map, so a `state:` under the wrong heading, or repeated under its own, quietly beat the one
+ * the driver's fold derived and re-routed the brief to a shell `## Task` never named (#5809).
+ */
+const TASK_FIELDS = ["lane", "root", "fabrika", "task", "state", "shell"] as const;
+
+const GROUND_FIELDS = ["issue", "pr", "epic", "branch", "range"] as const;
+
+const OWNER: Readonly<Record<string, SectionName | undefined>> = {
+	...Object.fromEntries(TASK_FIELDS.map((key) => [key, "Task" as const])),
+	...Object.fromEntries(GROUND_FIELDS.map((key) => [key, "Ground" as const])),
+};
+
+/** Every key the format owns, for the producer-side parse, which sees no headings. */
+const OWNED_FIELDS: ReadonlySet<string> = new Set([...TASK_FIELDS, ...GROUND_FIELDS]);
+
 /** The `## Ground` fields a ground carries, after the `issue` every brief has. */
 const groundFields = (brief: LaneBrief): ReadonlyArray<readonly [string, string]> => {
 	if (brief.ground._tag === "Pull") {
@@ -287,6 +312,12 @@ interface Section {
 	readonly lines: ReadonlyArray<string>;
 }
 
+/** One field-carrying section, paired with the heading whose field set it is judged against. */
+interface FieldSection {
+	readonly name: SectionName;
+	readonly section: Section;
+}
+
 interface Scan {
 	readonly sections: ReadonlyArray<Section>;
 	/** The first non-blank line before any heading: text that instructs outside every section. */
@@ -320,16 +351,29 @@ const trimmed = (lines: ReadonlyArray<string>): ReadonlyArray<string> => {
 
 type FieldScan =
 	| {readonly _tag: "Fields"; readonly fields: ReadonlyMap<string, string>}
-	| {readonly _tag: "NotAField"; readonly line: string};
+	| {readonly _tag: "NotAField"; readonly line: string}
+	| {readonly _tag: "Unowned"; readonly key: string}
+	| {
+			readonly _tag: "Misplaced";
+			readonly key: string;
+			readonly owner: SectionName;
+			readonly at: SectionName;
+	  }
+	| {readonly _tag: "Repeated"; readonly key: string; readonly at: SectionName};
 
-const fieldsOf = (sections: ReadonlyArray<Section>): FieldScan => {
+const fieldsOf = (sections: ReadonlyArray<FieldSection>): FieldScan => {
 	const fields = new Map<string, string>();
-	for (const section of sections) {
+	for (const {name, section} of sections) {
 		for (const line of section.lines) {
 			if (line.trim() === "") continue;
 			const field = FIELD.exec(line.trim());
 			if (field?.[1] === undefined) return {_tag: "NotAField", line: line.trim()};
-			fields.set(field[1], field[2] ?? "");
+			const key = field[1];
+			const owner = OWNER[key];
+			if (owner === undefined) return {_tag: "Unowned", key};
+			if (owner !== name) return {_tag: "Misplaced", key, owner, at: name};
+			if (fields.has(key)) return {_tag: "Repeated", key, at: name};
+			fields.set(key, field[2] ?? "");
 		}
 	}
 	return {_tag: "Fields", fields};
@@ -448,9 +492,30 @@ export const read = (artifact: string): LaneBriefRead => {
 		);
 	}
 
-	const scan = fieldsOf([task, ground]);
+	const scan = fieldsOf([
+		{name: "Task", section: task},
+		{name: "Ground", section: ground},
+	]);
 	if (scan._tag === "NotAField") {
 		return malformed(`a section carries a line that is not a field: "${scan.line}"`, scan.line);
+	}
+	if (scan._tag === "Unowned") {
+		return malformed(
+			`"${scan.key}" is not a field of this format — a brief instructs only through the fields its sections own`,
+			scan.key,
+		);
+	}
+	if (scan._tag === "Misplaced") {
+		return malformed(
+			`"${scan.key}" is a "## ${scan.owner}" field and this brief carries it under "## ${scan.at}"`,
+			scan.key,
+		);
+	}
+	if (scan._tag === "Repeated") {
+		return malformed(
+			`"${scan.key}" is set twice under "## ${scan.at}" — the second would silently win`,
+			scan.key,
+		);
 	}
 	const fields = scan.fields;
 
@@ -548,6 +613,12 @@ export const parseFields = (fields: string): LaneBriefFields => {
 		const field = FIELD.exec(line);
 		if (field?.[1] === undefined) {
 			return {_tag: "Unusable", reason: `line ${index + 1} is not a "<field>: <value>" line`};
+		}
+		if (!OWNED_FIELDS.has(field[1])) {
+			return {
+				_tag: "Unusable",
+				reason: `line ${index + 1} names "${field[1]}", which this format does not own`,
+			};
 		}
 		values.set(field[1], field[2] ?? "");
 	}
