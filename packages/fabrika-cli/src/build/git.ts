@@ -225,15 +225,33 @@ export const mergeBase = (base: string): Shell<Attempt<string>> =>
 		return isObjectName(sha) ? ok(sha) : fail(`git named no merge base with ${base}`);
 	});
 
-/** Every path this tree changes against `base`, committed and working-tree alike. */
+const pathLines = (stdout: string): ReadonlyArray<string> =>
+	stdout
+		.split("\n")
+		.map((l) => l.trim())
+		.filter((l) => l !== "");
+
+/**
+ * Every path this tree changes against `base`: what `git diff` reports — commits plus tracked
+ * working-tree edits — unioned with the untracked, non-ignored paths `git ls-files --others` lists.
+ * Deduped and sorted, so a path listed by both sources appears once.
+ *
+ * Ignored files stay out; `--exclude-standard` is what keeps them out.
+ *
+ * The second source is the scar (#5823). `git diff` never reports an untracked path, so a
+ * brand-new file was absent from the list `build check` partitions — neither validated nor named in
+ * `unvalidated`, invisible instead of disclosed, while the verdict read green. The natural lane
+ * order is construct, check, then commit, which is exactly the window where a new file is untracked.
+ *
+ * Either source failing is a failure of the whole read: a short list here becomes a green that
+ * understates its own coverage, which is the fail-open direction.
+ */
 export const changedFiles = (base: string): Shell<Attempt<ReadonlyArray<string>>> =>
 	Effect.gen(function* () {
-		const r = yield* execCapture("git", ["diff", "--name-only", base]);
-		if (!r.ok) return fail(r.reason);
-		return ok(
-			r.stdout
-				.split("\n")
-				.map((l) => l.trim())
-				.filter((l) => l !== ""),
-		);
+		const tracked = yield* execCapture("git", ["diff", "--name-only", base]);
+		if (!tracked.ok) return fail(tracked.reason);
+		const untracked = yield* execCapture("git", ["ls-files", "--others", "--exclude-standard"]);
+		if (!untracked.ok) return fail(untracked.reason);
+		const union = new Set([...pathLines(tracked.stdout), ...pathLines(untracked.stdout)]);
+		return ok([...union].sort());
 	});
