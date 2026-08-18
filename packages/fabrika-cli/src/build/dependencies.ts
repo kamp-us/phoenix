@@ -15,6 +15,14 @@
  * **Any other non-blank line inside the section is unparseable, and unparseability refuses.** "No
  * parseable edges" is never read as "no edges" — a topology nobody could read is not a topology
  * proving nothing blocks (ADR 0092, #4104).
+ *
+ * **The section ends at the next ATX heading or at the first thematic break (`---`, `***`, `___`),
+ * whichever comes first** — this is the canonical statement of that boundary, and `plan/ledger.ts`
+ * reads its own sections through the `isThematicBreak` exported here rather than restating it. A
+ * filed body is amended by appending a dated block below the original, and that block is
+ * conventionally introduced by a bare `---`; with `## Dependencies` last, a heading-only boundary
+ * put that separator inside the section and refused the whole topology over a line that was never
+ * part of it (#5816).
  */
 
 /** A reference in the topology: a real issue, or an id local to the ledger. */
@@ -45,8 +53,15 @@ export type Topology =
 
 const HEADING_RE = /^##\s+Dependencies\s*$/;
 const ANY_HEADING_RE = /^#{1,6}\s+/;
+const THEMATIC_BREAK_RE = /^ {0,3}(?:(?:\*[ \t]*){3,}|(?:-[ \t]*){3,}|(?:_[ \t]*){3,})$/;
 const PHASE_RE = /^-\s*phase\s+(\d+)\s*:\s*(.+)$/i;
 const REQUIRES_RE = /^-\s*(\S+)\s+requires\s*:\s*(.+)$/i;
+
+/**
+ * A CommonMark thematic break: three or more `-`, `*` or `_`, optionally spaced, indented at most
+ * three. Tested against the raw line, because the indent is part of the rule.
+ */
+export const isThematicBreak = (line: string): boolean => THEMATIC_BREAK_RE.test(line);
 
 const parseRef = (raw: string): Ref | null => {
 	const text = raw.trim();
@@ -81,7 +96,7 @@ export const readTopology = (body: string): Topology => {
 		const raw = lines[i] ?? "";
 		const text = raw.trim();
 		if (text === "") continue;
-		if (ANY_HEADING_RE.test(text)) break;
+		if (ANY_HEADING_RE.test(text) || isThematicBreak(raw)) break;
 
 		const phase = PHASE_RE.exec(text);
 		if (phase?.[1] !== undefined && phase[2] !== undefined) {
