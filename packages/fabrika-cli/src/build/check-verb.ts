@@ -179,13 +179,6 @@ const leakDefects = (
 		(leak) => `${file}:${leak.line} carries a machine-local path (${leak.reason}): ${leak.matched}`,
 	);
 
-/**
- * Every in-repo link target a markdown file names.
- *
- * Absolute URLs and bare fragments are skipped: a link with a scheme is not this tree's to resolve,
- * and a fragment resolves within the page. A fabrika doc cited by a relative path is covered by the
- * same rule, so there is no second reference check to drift from this one.
- */
 /** Fold `.` and `..` out of an absolute path, so a link's target is compared in one spelling. */
 export const normalizePath = (path: string): string => {
 	const out: string[] = [];
@@ -197,9 +190,94 @@ export const normalizePath = (path: string): string => {
 	return `/${out.join("/")}`;
 };
 
+/** Every byte replaced by a space, newlines kept, so masking moves no offset and no line number. */
+const blank = (text: string): string => text.replace(/[^\n]/g, " ");
+
+const FENCE_RE = /^ {0,3}(`{3,}|~{3,})/;
+
+/**
+ * Blank out every code span in a fence-free region. A run of n backticks opens a span the next run
+ * of exactly n backticks closes; a run with no partner is literal text and masks nothing.
+ */
+const maskSpans = (text: string): string => {
+	let out = "";
+	let i = 0;
+	while (i < text.length) {
+		if (text[i] !== "`") {
+			out += text[i];
+			i += 1;
+			continue;
+		}
+		let open = i;
+		while (text[open] === "`") open += 1;
+		const run = open - i;
+		const closer = new RegExp(`(?<!\`)\`{${run}}(?!\`)`, "g");
+		closer.lastIndex = open;
+		const close = closer.exec(text);
+		if (close === null) {
+			out += text.slice(i, open);
+			i = open;
+			continue;
+		}
+		const end = close.index + run;
+		out += blank(text.slice(i, end));
+		i = end;
+	}
+	return out;
+};
+
+/**
+ * Blank out fenced blocks and code spans, so a markdown link written as an *illustration* is not
+ * extracted as a live one (#5639). The docs that state this repo's link convention are precisely
+ * the docs that spell a link out as an example, and they were the ones this predictor red.
+ *
+ * Masked bytes become spaces rather than being dropped: the link pattern cannot cross whitespace,
+ * so a masked example can never fuse with live text on either side of it.
+ */
+const maskCode = (text: string): string => {
+	const out: string[] = [];
+	let prose: string[] = [];
+	let fence: string | null = null;
+	const flush = () => {
+		if (prose.length > 0) out.push(maskSpans(prose.join("\n")));
+		prose = [];
+	};
+	for (const line of text.split("\n")) {
+		const marker = FENCE_RE.exec(line)?.[1];
+		if (fence !== null) {
+			out.push(blank(line));
+			if (marker !== undefined && marker[0] === fence[0] && marker.length >= fence.length) {
+				fence = null;
+			}
+			continue;
+		}
+		if (marker !== undefined) {
+			flush();
+			out.push(blank(line));
+			fence = marker;
+			continue;
+		}
+		prose.push(line);
+	}
+	flush();
+	return out.join("\n");
+};
+
+/**
+ * Every in-repo link target a markdown file names, ignoring the ones written as examples.
+ *
+ * Absolute URLs and bare fragments are skipped: a link with a scheme is not this tree's to resolve,
+ * and a fragment resolves within the page. A fabrika doc cited by a relative path is covered by the
+ * same rule, so there is no second reference check to drift from this one.
+ *
+ * The extractor stays a regex over masked text rather than moving to a markdown parser: fabrika is
+ * installed into repos it does not control (ADR 0273) on four runtime dependencies, and code-span
+ * plus fenced-block masking is the one property #2308 bought by retiring the CI gate's in-house
+ * extractor. Reference-style and HTML links stay out of scope here, as they always were.
+ */
 export const linkTargets = (text: string): ReadonlyArray<string> => {
 	const targets: string[] = [];
-	for (const match of text.matchAll(/\[[^\]]*\]\(([^)\s]+)[^)]*\)/g)) {
+	for (const match of maskCode(text).matchAll(/\[[^\]]*\]\(([^)\s]+)[^)]*\)/g)) {
 		const target = (match[1] ?? "").split("#")[0]?.trim() ?? "";
 		if (target === "" || /^[a-z][a-z0-9+.-]*:/i.test(target)) continue;
 		targets.push(target);
