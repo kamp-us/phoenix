@@ -98,7 +98,7 @@ Campaigns are bounded, milestone-backed pushes that run *concurrently* with the 
 | Flag Retirement (ADR 0136) | #34 | done |
 | Writing-Craft Import | #30 | done |
 | fabrika — kampus-pipeline v2 | #44 | done |
-| switching to fabrika | #45 | active |
+| switching to fabrika | #45 | done |
 | fabrika fast follows | #46 | active |
 
 **The table is a parsed contract.** It is the single source the campaign skill (which appends a row and flips its state) and the lifecycle guard (which reads it) both bind to, so the grammar is pinned here rather than re-derived at either end:
@@ -114,7 +114,7 @@ The one milestone in **exclusive focus**: the campaign an execution engine may o
 
 | Milestone | Declared |
 |-----------|----------|
-| #45 | 2026-08-14 |
+| #46 | 2026-08-18 |
 
 **The grammar.** Columns are `Milestone | Declared`, in that order. `Milestone` pins the focus **by number** (`#N`) — the same row→milestone-by-number binding `## Arcs` and `## Campaigns` use, and the one link to the operational projection. `Declared` is the ISO date (`YYYY-MM-DD`) the focus was declared. The table carries **at most one row**: exclusive focus admits exactly one milestone.
 
