@@ -22,5 +22,17 @@
 		"/skills/report/SKILL.md",
 		"/skills/review-doc/SKILL.md",
 		"/skills/triage/SKILL.md"
+	],
+
+	// The repo's own commands that machine-read `.github/workflows/**`, each an argv array.
+	// `fabrika build check --surface workflows` runs them over a workflows-touching diff, on top of
+	// `actionlint` when the tree has one (#5991). In phoenix these are the three CI guards that open
+	// a workflow file: the path-filter list, the change-detect wiring, and publish isolation. They
+	// run from the repo with no extra install, which is why they — not actionlint, a pinned tarball
+	// CI installs at job time — are what a local green stands on.
+	"workflowValidators": [
+		["node", "packages/pipeline-cli/src/bin.ts", "path-filter-guard", "check"],
+		["node", "packages/pipeline-cli/src/bin.ts", "change-detect-guard", "check"],
+		["node", "packages/pipeline-cli/src/bin.ts", "publish-isolation-guard", "check"]
 	]
 }

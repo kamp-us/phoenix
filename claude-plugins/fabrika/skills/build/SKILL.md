@@ -102,7 +102,8 @@ fabrika build issue $issue_or_pr_number
 That is the issue body and its acceptance criteria, off the verb, never off memory. Check any
 falsifiable claim the body makes against the source before building on it — a summary of a contract
 is not the contract. Name the surface you are on — **code** (compiled/tested text), **prose**
-(docs, ADRs, briefs), or **plan** (a ledger with topology) — and read the matching rubric file in
+(docs, ADRs, briefs), **plan** (a ledger with topology), or **workflows** (`.github/workflows/**`,
+which reads under [`code.md`](references/code.md)'s rubric) — and read the matching rubric file in
 [`references/`](references/) before writing. Done when every acceptance criterion maps to
 something you can point at.
 
@@ -134,7 +135,14 @@ Loop construct → check until green. `red` rows name the diagnostics; fix them 
 A green names the files it did not read in `unvalidated`. When that list holds a file class another
 surface validates, run `build check` again there: markdown beside your code — the common case — goes
 to `--surface prose`, or `--surface plan` if that markdown is an epic ledger, which runs the prose
-validators too. **One run per class present** is what leaves nothing in the diff unread.
+validators too, and a changed `.github/workflows/*.yml` goes to `--surface workflows`, which is also
+the only surface a workflows-only lane can green under. **One run per class present** is what leaves
+nothing in the diff unread.
+
+`--surface workflows` runs `actionlint` over the changed workflow files when this tree has one, plus
+the commands the repo declares under `workflowValidators`. It is UNKNOWN, never green, when neither
+can be executed — that is a verdict over files nothing opened, and CI's own workflow jobs supersede
+it either way.
 
 Commit through the verb, never a hand-rolled `git commit` — it is the only thing that reads the
 message back off the commit it just made:
@@ -336,4 +344,5 @@ fabrika skill, so one reader parses all of them. No row here dead-ends on a bare
 | The prose placement homes — `README`, `DEVELOPMENT.md`, `.decisions/`, `.patterns/`, `reports/`, `.glossary/LANGUAGE.md` | [`references/prose.md`](references/prose.md)'s one-home rule places every prose fact in exactly one of them | **degrade** — write into the homes that exist and disclose the substituted home in the PR's `## Deviations`; a home is never invented silently |
 | `.fabrika.jsonc` with a `capClearAuthors` array | It is the set `build clear` admits a round-clearance from, and `build verdicts` honours a recorded one against | **degrade** — an absent file, an absent key or an empty array all mean nobody may clear a round: `build clear` refuses on `25` and the cap stands at its declared value, which is the pre-clearance behaviour. A read that *failed* is exit `11`, never an empty set. |
 | `.fabrika.jsonc` with a `docLeakExempt` array | It names the docs whose subject IS path hygiene, which `build check --surface prose` skips its leak scan on — repo policy, since those docs differ repo by repo | **degrade** — an absent file, an absent key, an empty array or a malformed entry all mean *nothing is exempt*, so the scan stays strictest and a mis-declared exemption reads as a red, never a silent pass. A config that exists and cannot be read is exit `11`, never an empty list. |
+| `.fabrika.jsonc` with a `workflowValidators` array | It names the repo's own commands that machine-read `.github/workflows/**`, which is what `build check --surface workflows` runs beside `actionlint` | **degrade** — an absent file, an absent key, an empty array or a malformed entry all mean the repo declares none, and the surface then stands on `actionlint` alone. Where that is absent too, nothing opened a workflow file and the verdict is exit `11`, UNKNOWN, never green. A declared command that cannot be spawned is `11` as well, naming it. |
 | `.github/workflows/ci.yml` | It is the superseding authority over `build check`'s in-tree prediction (`fabrika wire doc-section --heading "build check" < <skill-base>/contract.md`) | **degrade** — with no CI gate to supersede it, `build check`'s green is the only evidence the PR carries, and the PR says so in its `## Deviations` |

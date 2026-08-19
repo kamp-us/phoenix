@@ -1,11 +1,13 @@
 /**
  * The repo's own fabrika configuration — `.fabrika.jsonc` at the repository root.
  *
- * It answers two questions. **Who may clear a repair round** (#5959, ruled 2026-08-18 — "'founder'
+ * It answers three questions. **Who may clear a repair round** (#5959, ruled 2026-08-18 — "'founder'
  * concept can change repo by repo, let's make it a configuration? it can be an array of github
- * usernames and github teams"), and **which docs are exempt from `build check`'s leak scan** —
+ * usernames and github teams"), **which docs are exempt from `build check`'s leak scan** —
  * repo policy for the same reason, since the docs whose subject is path hygiene differ repo by repo
- * and fabrika installs into repos that are not phoenix (ADR 0273). The file is the home epic #5631
+ * and fabrika installs into repos that are not phoenix (ADR 0273) — and **which of the repo's own
+ * commands validate its workflow YAML**, which is that repo's fleet of guards and nobody else's.
+ * The file is the home epic #5631
  * names for every value that is a literal in source today; this module opens it for the keys that
  * have a ruling and leaves the rest of the surface to that epic.
  *
@@ -26,6 +28,9 @@ export const CAP_CLEAR_AUTHORS = "capClearAuthors";
 
 /** The key naming the docs whose subject IS path hygiene, exempt from `build check`'s leak scan. */
 export const DOC_LEAK_EXEMPT = "docLeakExempt";
+
+/** The key naming the repo's own commands that machine-read `.github/workflows/**`. */
+export const WORKFLOW_VALIDATORS = "workflowValidators";
 
 /**
  * Strip line and block comments, leaving string literals untouched, so the bytes parse as JSON.
@@ -170,4 +175,58 @@ export const readDocLeakExempt = (text: string): ExemptRead => {
 	return paths.length === 0
 		? {_tag: "Unusable", reason: `\`${DOC_LEAK_EXEMPT}\` is empty — nothing is exempt`}
 		: {_tag: "Paths", paths};
+};
+
+/** An argv whose head is the binary, so a caller cannot spawn an empty command. */
+export type Argv = readonly [string, ...ReadonlyArray<string>];
+
+export type ValidatorsRead =
+	| {readonly _tag: "Validators"; readonly commands: ReadonlyArray<Argv>}
+	/** The bytes were read in full and hold no usable list — the repo declares no validator. */
+	| {readonly _tag: "Unusable"; readonly reason: string};
+
+/**
+ * The commands the repo declares as validators of its own workflow YAML, each an argv array.
+ *
+ * Declared rather than compiled in, because the commands that machine-read a repo's workflows are
+ * that repo's own — in phoenix three `pipeline-cli` guards — and fabrika installs into repos it does
+ * not control (ADR 0273). An argv array rather than a command line: fabrika spawns it directly, and
+ * splitting a string would put a quoting grammar between the config and the process.
+ *
+ * A malformed entry refuses the **whole** list, the way the other two keys do. Here that is the loud
+ * direction as well as the consistent one: `build check --surface workflows` refuses UNKNOWN when no
+ * validator ran at all, so a dropped entry surfaces as a refusal rather than as a green standing on
+ * fewer validators than the operator declared.
+ */
+export const readWorkflowValidators = (text: string): ValidatorsRead => {
+	const parsed = parseJson(stripJsonComments(text));
+	if (!isRecord(parsed)) {
+		return {_tag: "Unusable", reason: `${CONFIG_PATH} is not a JSON object with comments`};
+	}
+	const raw = parsed[WORKFLOW_VALIDATORS];
+	if (raw === undefined) {
+		return {_tag: "Unusable", reason: `${CONFIG_PATH} declares no \`${WORKFLOW_VALIDATORS}\``};
+	}
+	if (!Array.isArray(raw)) {
+		return {_tag: "Unusable", reason: `\`${WORKFLOW_VALIDATORS}\` is not an array`};
+	}
+	const malformed: ValidatorsRead = {
+		_tag: "Unusable",
+		reason: `\`${WORKFLOW_VALIDATORS}\` holds an entry that is not a non-empty array of strings — expected an argv, e.g. ["node", "tools/lint-workflows.js"]`,
+	};
+	const commands: Argv[] = [];
+	for (const entry of raw) {
+		if (!Array.isArray(entry)) return malformed;
+		const parts: string[] = [];
+		for (const part of entry) {
+			if (typeof part !== "string") return malformed;
+			parts.push(part);
+		}
+		const [binary, ...args] = parts;
+		if (binary === undefined) return malformed;
+		commands.push([binary, ...args]);
+	}
+	return commands.length === 0
+		? {_tag: "Unusable", reason: `\`${WORKFLOW_VALIDATORS}\` is empty — this repo declares none`}
+		: {_tag: "Validators", commands};
 };

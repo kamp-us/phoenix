@@ -16,14 +16,14 @@
  * provably contradicts.
  *
  * **Green means "the validators ran and passed", never "I could not tell."** See {@link classifyDiff}
- * for the third file class that keeps that distinction representable (#5229), and
+ * for the unvalidatable file class that keeps that distinction representable (#5229), and
  * {@link notCoveredBy} for the per-surface coverage the green's `unvalidated` list reports (#5288),
  * and {@link readMarkdown} for the file the verb could not open (#5304).
  */
 import {Effect, FileSystem} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import {execCapture} from "../io/exec.ts";
-import {CONFIG_PATH, readDocLeakExempt} from "../repo-config.ts";
+import {execCapture, execStatus} from "../io/exec.ts";
+import {type Argv, CONFIG_PATH, readDocLeakExempt, readWorkflowValidators} from "../repo-config.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {requireSession} from "./claim.ts";
 import {
@@ -42,11 +42,16 @@ import {resolveTargetRepo} from "./target.ts";
 
 const VERB = "build check";
 
-export const SURFACES = ["code", "prose", "plan"] as const;
+export const SURFACES = ["code", "prose", "plan", "workflows"] as const;
 export type Surface = (typeof SURFACES)[number];
 
 const CODE_RE = /\.(ts|tsx|js|jsx|mjs|cjs|json)$/;
 const MARKDOWN_RE = /\.mdx?$/;
+/** GitHub reads workflows from this directory and no deeper, so neither does the class. */
+const WORKFLOW_RE = /^\.github\/workflows\/[^/]+\.ya?ml$/;
+
+/** The workflow linter, run over the changed workflow files when the tree has one. */
+const ACTIONLINT = "actionlint";
 
 /** The exact CI commands, cache-bypassed. `--force` is turbo's; `lint:worktree` has no cache to hit. */
 const CODE_RUNNERS: ReadonlyArray<{readonly label: string; readonly argv: ReadonlyArray<string>}> =
@@ -62,12 +67,16 @@ export interface CheckOptions {
 }
 
 /**
- * The changed files split three ways, with `unvalidatable` the file class **no** surface validates.
+ * The changed files split by class, with `unvalidatable` the file class **no** surface validates.
  *
- * That third bucket is the point. Filtering with the two regexes and reading nothing off what fell
- * out of both made "matched neither" an absence, and an absence cannot be refused: a `.yml`/`.sh`
- * diff produced an empty markdown list, zero validator iterations and a green that had opened no
- * file (#5229). Named, it is a state the verb can act on.
+ * That last bucket is the point. Filtering with the extension patterns and reading nothing off what
+ * fell out of all of them made "matched none" an absence, and an absence cannot be refused: a
+ * `.yml`/`.sh` diff produced an empty markdown list, zero validator iterations and a green that had
+ * opened no file (#5229). Named, it is a state the verb can act on.
+ *
+ * `workflows` was carved out of it later (#5991): the files under `.github/workflows/` are where the
+ * repo's own gates live, they *do* have validators, and leaving them unvalidatable left a
+ * workflows-only lane with no invocation that could go green at all.
  *
  * `unvalidatable` is a property of the **tree** — no surface covers these files. Whether *this* run
  * covered a file is a narrower question, and {@link notCoveredBy} is the one that answers it; the two
@@ -77,13 +86,26 @@ export interface CheckOptions {
 export interface DiffClasses {
 	readonly code: ReadonlyArray<string>;
 	readonly markdown: ReadonlyArray<string>;
+	readonly workflows: ReadonlyArray<string>;
 	readonly unvalidatable: ReadonlyArray<string>;
 }
 
+/**
+ * Workflow YAML is its own class, not a widening of `code`: `pnpm typecheck` does not read it, and a
+ * class is only sound while every validator its surface claims actually opens it (#5229, #5991).
+ */
+const classOf = (file: string): keyof DiffClasses => {
+	if (WORKFLOW_RE.test(file)) return "workflows";
+	if (CODE_RE.test(file)) return "code";
+	if (MARKDOWN_RE.test(file)) return "markdown";
+	return "unvalidatable";
+};
+
 export const classifyDiff = (files: ReadonlyArray<string>): DiffClasses => ({
-	code: files.filter((f) => CODE_RE.test(f)),
-	markdown: files.filter((f) => MARKDOWN_RE.test(f)),
-	unvalidatable: files.filter((f) => !CODE_RE.test(f) && !MARKDOWN_RE.test(f)),
+	code: files.filter((f) => classOf(f) === "code"),
+	markdown: files.filter((f) => classOf(f) === "markdown"),
+	workflows: files.filter((f) => classOf(f) === "workflows"),
+	unvalidatable: files.filter((f) => classOf(f) === "unvalidatable"),
 });
 
 /**
@@ -100,6 +122,7 @@ const COVERS: Record<Surface, ReadonlyArray<keyof DiffClasses>> = {
 	code: ["code"],
 	prose: ["markdown"],
 	plan: ["markdown"],
+	workflows: ["workflows"],
 };
 
 /** Every markdown file gets these, under either markdown surface. */
@@ -136,8 +159,8 @@ export const notCoveredBy = (
  * sentence pointing at the wrong remedy (it invites `--surface prose`, the branch that greened).
  */
 export const unvalidatableDiff = (files: ReadonlyArray<string>): string | null => {
-	const {code, markdown, unvalidatable} = classifyDiff(files);
-	if (code.length > 0 || markdown.length > 0) return null;
+	const {code, markdown, workflows, unvalidatable} = classifyDiff(files);
+	if (code.length > 0 || markdown.length > 0 || workflows.length > 0) return null;
 	const shown = unvalidatable.slice(0, 5).join(", ");
 	const rest = unvalidatable.length > 5 ? `, +${unvalidatable.length - 5} more` : "";
 	return `no surface validates any of the ${unvalidatable.length} changed file(s) (${shown}${rest})`;
@@ -146,7 +169,7 @@ export const unvalidatableDiff = (files: ReadonlyArray<string>): string | null =
 /**
  * Why `--surface` provably contradicts the diff, or `null`.
  *
- * One rule for all three surfaces, read straight off {@link COVERS}: a surface is refused when the
+ * One rule for every surface, read straight off {@link COVERS}: a surface is refused when the
  * diff holds **none** of the file classes its validators open. `prose` used to refuse on the
  * *presence* of a code file instead, and that asymmetry left the repo's most common diff shape — one
  * `.ts` plus one `.md` — with no invocation that opened the markdown at all: `code` never reads it,
@@ -399,6 +422,141 @@ const readExemptScope = (
 		),
 	);
 
+/**
+ * A failed validator's captured output as refusal lines, bounded so one runaway linter cannot bury
+ * the verdict it belongs to. The truncation says so rather than trailing off silently.
+ */
+const DIAGNOSTIC_LINES = 40;
+
+const diagnostics = (output: string): ReadonlyArray<string> => {
+	const lines = output.split("\n").filter((line) => line.trim() !== "");
+	return lines.length <= DIAGNOSTIC_LINES
+		? lines
+		: [
+				...lines.slice(0, DIAGNOSTIC_LINES),
+				`… ${lines.length - DIAGNOSTIC_LINES} more line(s); re-run the command itself for the rest.`,
+			];
+};
+
+/** The declared workflow validators, or why there are none — `Unreadable` is the one UNKNOWN answer. */
+type ValidatorScope =
+	| {readonly _tag: "Scope"; readonly commands: ReadonlyArray<Argv>; readonly note: string}
+	| {readonly _tag: "Unreadable"; readonly reason: string};
+
+const readValidatorScope = (
+	fs: FileSystem.FileSystem,
+	root: string,
+): Effect.Effect<ValidatorScope, never> =>
+	fs.readFileString(`${root}/${CONFIG_PATH}`).pipe(
+		Effect.map((text): ValidatorScope => {
+			const read = readWorkflowValidators(text);
+			return read._tag === "Validators"
+				? {
+						_tag: "Scope",
+						commands: read.commands,
+						note: `${VERB}: ${read.commands.length} workflow validator(s) declared in ${CONFIG_PATH}.`,
+					}
+				: {
+						_tag: "Scope",
+						commands: [],
+						note: `${VERB}: no repo workflow validator is declared — ${read.reason}.`,
+					};
+		}),
+		Effect.catchTag("PlatformError", (error) =>
+			Effect.succeed<ValidatorScope>(
+				error.reason._tag === "NotFound"
+					? {
+							_tag: "Scope",
+							commands: [],
+							note: `${VERB}: no repo workflow validator is declared — this repo has no ${CONFIG_PATH}.`,
+						}
+					: {_tag: "Unreadable", reason: error.reason._tag},
+			),
+		),
+	);
+
+/**
+ * The `workflows` surface: `actionlint` over the changed workflow files, plus the repo's own
+ * declared workflow commands. A green requires that at least one of them actually ran.
+ *
+ * `actionlint` is not a repo dependency anywhere — in phoenix CI installs a pinned tarball at job
+ * time — so a tree that lacks it is the ordinary case, not a broken one. It is therefore run when
+ * present and **disclosed** when absent, which is the "degrade, stated" answer `SKILL.md`'s
+ * missing-surface table gives for an absent superseding authority: `ci.yml`'s `actionlint` job still
+ * decides. A declared validator is the other row of that table — it ships with the repo, so one that
+ * cannot be spawned is fail-loud, UNKNOWN, never green.
+ *
+ * What holds both readings honest is the last check: when *nothing* ran, the verb has opened no
+ * workflow file, and a green there would be exactly the unread-tree green the third file class was
+ * introduced to make refusable (#5229).
+ */
+const runWorkflowSurface = (
+	fs: FileSystem.FileSystem,
+	root: string,
+	workflows: ReadonlyArray<string>,
+	unvalidated: ReadonlyArray<string>,
+	noted: ReadonlyArray<string>,
+): Effect.Effect<VerbOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
+	Effect.gen(function* () {
+		const declared = yield* readValidatorScope(fs, root);
+		if (declared._tag === "Unreadable") {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: cannot read ${CONFIG_PATH} (${declared.reason}) — which commands validate this repo's workflows is UNKNOWN, never green.`,
+				noted,
+			);
+		}
+		const scoped = [...noted, declared.note];
+		const ran: string[] = [];
+		const lint = yield* execStatus(ACTIONLINT, workflows);
+		const notInstalled = lint._tag === "Unstartable" ? lint.reason : null;
+		if (lint._tag === "Ran") {
+			if (!lint.ok) {
+				return refuse(VALIDATION_RED, `${VERB}: red — ${ACTIONLINT} failed; diagnostics above.`, [
+					...scoped,
+					...diagnostics(lint.output),
+				]);
+			}
+			ran.push(ACTIONLINT);
+		}
+		for (const argv of declared.commands) {
+			const label = argv.join(" ");
+			const result = yield* execStatus(argv[0], argv.slice(1));
+			if (result._tag === "Unstartable") {
+				return refuse(
+					PRECONDITION_UNKNOWN,
+					`${VERB}: ${label} could not be executed: ${result.reason} — the verdict is UNKNOWN, never green.`,
+					scoped,
+				);
+			}
+			if (!result.ok) {
+				return refuse(VALIDATION_RED, `${VERB}: red — ${label} failed; diagnostics above.`, [
+					...scoped,
+					...diagnostics(result.output),
+				]);
+			}
+			ran.push(label);
+		}
+		if (ran.length === 0) {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: no workflow validator could be executed — ${ACTIONLINT} is not installed here (${notInstalled}) and this repo declares none — so no file was opened and the verdict is UNKNOWN, never green.`,
+				scoped,
+			);
+		}
+		const disclosed =
+			notInstalled === null
+				? scoped
+				: [
+						...scoped,
+						`${VERB}: ${ACTIONLINT} did NOT run (${notInstalled}) — ci.yml's actionlint job supersedes this verdict on workflow syntax.`,
+					];
+		return answer(
+			JSON.stringify({verdict: "green", surface: "workflows", tree: root, ran, unvalidated}),
+			disclosed,
+		);
+	});
+
 export const runCheck = (
 	options: CheckOptions,
 ): Effect.Effect<
@@ -502,6 +660,16 @@ export const runCheck = (
 		}
 
 		const fs = yield* FileSystem.FileSystem;
+		if (surface === "workflows") {
+			return yield* runWorkflowSurface(
+				fs,
+				lane.root,
+				classifyDiff(files).workflows,
+				unvalidated,
+				noted,
+			);
+		}
+
 		const exempt = yield* readExemptScope(fs, lane.root);
 		if (exempt._tag === "Unreadable") {
 			return refuse(

@@ -1,5 +1,10 @@
 import {describe, expect, it} from "vitest";
-import {readCapClearAuthors, readDocLeakExempt, stripJsonComments} from "./repo-config.ts";
+import {
+	readCapClearAuthors,
+	readDocLeakExempt,
+	readWorkflowValidators,
+	stripJsonComments,
+} from "./repo-config.ts";
 
 describe("readDocLeakExempt", () => {
 	it("reads the declared paths, trimmed, in declaration order", () => {
@@ -69,5 +74,32 @@ describe("readCapClearAuthors", () => {
 		{shape: "an entry naming a nested path", text: '{"capClearAuthors": ["@a/b/c"]}'},
 	])("refuses the whole set on $shape", ({text}) => {
 		expect(readCapClearAuthors(text)._tag).toBe("Unusable");
+	});
+});
+
+describe("readWorkflowValidators", () => {
+	it("reads each declared command as an argv, in declaration order", () => {
+		expect(
+			readWorkflowValidators(
+				'{"workflowValidators": [["node", "guards/bin.js", "check"], ["lint-workflows"]]}',
+			),
+		).toEqual({
+			_tag: "Validators",
+			commands: [["node", "guards/bin.js", "check"], ["lint-workflows"]],
+		});
+	});
+
+	/** Every one of these is "this repo declares none" — the surface then stands on actionlint alone. */
+	it.each([
+		{shape: "no file content at all", text: ""},
+		{shape: "a document that is not an object", text: "[]"},
+		{shape: "no key", text: '{"other": 1}'},
+		{shape: "a key that is not an array", text: '{"workflowValidators": "actionlint"}'},
+		{shape: "an empty array", text: '{"workflowValidators": []}'},
+		{shape: "an entry that is a bare string", text: '{"workflowValidators": ["actionlint"]}'},
+		{shape: "an empty argv", text: '{"workflowValidators": [[]]}'},
+		{shape: "an argv holding a non-string", text: '{"workflowValidators": [["node", 7]]}'},
+	])("refuses the whole list on $shape", ({text}) => {
+		expect(readWorkflowValidators(text)._tag).toBe("Unusable");
 	});
 });
