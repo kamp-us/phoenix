@@ -169,12 +169,13 @@ Your milestone should be in that list. Commit `ROADMAP.md`.
 ## 7. See what is still missing
 
 ```bash
-fabrika status settings
+fabrika status settings --surfaces
 ```
 
 One row per config key, with its resolved value and whether that value is yours or the shipped
-default. The `surfaceDispositions` row is the one to read here: it lists every repo surface fabrika
-reads and what happens when one is absent — `fail-loud`, `degrade` or `bootstrap`. A `created` from
+default. `--surfaces` is what you want here: it expands `surfaceDispositions` into one row per repo
+surface, each naming what the surface is and what happens when it is absent — `fail-loud`, `degrade`
+or `bootstrap`. Without the flag that key prints as one raw id-to-word value and none of the notes. A `created` from
 step 4 says one surface landed, not that the repo is ready.
 
 Plenty of surfaces will still be absent. That is fine for now — every one of them belongs to a skill

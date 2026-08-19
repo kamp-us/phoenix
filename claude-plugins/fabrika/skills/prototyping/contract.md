@@ -978,9 +978,6 @@ $ fabrika spike status --nonce 0badf00d
 - v1 scar: `packages/pipeline-cli/src/tools/wayfinder-map/command.ts:72-79` prints a malformed-map
   line and **returns normally**, so exit status cannot separate malformed from valid. Here malformed is `4`.
 
----
-
-
 ## Completeness self-test
 
 Per the [interface convention](../../docs/cli-interface-convention.md) Part 2: every flag carries a

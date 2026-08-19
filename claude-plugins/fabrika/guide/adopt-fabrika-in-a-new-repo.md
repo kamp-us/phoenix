@@ -31,11 +31,13 @@ non-obvious.
 ## 2. Find out what your repo is missing
 
 ```bash
-fabrika status settings
+fabrika status settings --surfaces
 ```
 
 Every key on the config surface, with what it resolves to here and whether that came from your file
-or the shipped default. **A `read-back conformed` from `status bootstrap` means one surface landed —
+or the shipped default. `--surfaces` is what expands `surfaceDispositions` into one row per repo
+surface with a note saying what each surface *is*; without it you get the raw id-to-word value,
+which does not tell you what you are missing. **A `read-back conformed` from `status bootstrap` means one surface landed —
 it does not mean the setup is finished**, and nothing in that verb's output says so
 ([#5772](https://github.com/kamp-us/phoenix/issues/5772)).
 
@@ -125,16 +127,23 @@ spelling reads as `exists`. Commit the change before running a lane
 
 **Write one even though the config calls it optional.** `roadmapFile` resolves to `ROADMAP.md`
 unless you say otherwise, and an absent file means no focus is declared and the scope fence is
-inert. But `triage homes` refuses `PRECONDITION_UNKNOWN` (exit 11) when the file is absent, because
-its read cannot tell an absent file from an unreadable one:
+inert.
+
+An absent roadmap no longer stops you: `triage homes` degrades on it
+([#5773](https://github.com/kamp-us/phoenix/issues/5773)). A file proven not to exist is a proven
+negative, so every open milestone lists with no arc name, the standing lanes list beside them, and
+stderr says so:
 
 ```
-triage homes: cannot read the roadmap at NO-SUCH-ROADMAP.md: NotFound: FileSystem.readFile (NO-SUCH-ROADMAP.md) — the home list is UNKNOWN, never empty.
+triage homes: no roadmap at ROADMAP.md — every milestone lists with no arc name.
 ```
 
-That is [#5773](https://github.com/kamp-us/phoenix/issues/5773), still open. Writing the file is the
-whole workaround — there is nothing to configure around it, and `triage homes` stands between a fresh
-repo and its first triaged issue.
+The campaigns fence reads the absent file as an empty document, so its scope line is
+`campaigns: none active — scope fence inert.` The two refusals that remain are narrower: a roadmap
+that *exists* and parses to zero arc rows is a grammar drift and refuses, and a filesystem probe or
+a read that could not be performed is exit `11`. Writing the file is still what you want — without
+it nothing is homed to an arc and the scope fence never fires — but it is a first-triage quality
+step, not a blocker.
 
 The file's grammar is a real parse contract, not a convention
 ([`packages/fabrika-cli/src/triage/roadmap.ts`](../../../packages/fabrika-cli/src/triage/roadmap.ts)):
@@ -209,8 +218,9 @@ created those two labels on your board.
 
 ## 9. Add the config file
 
-`.fabrika.jsonc` at your repo root carries the keys the CLI reads
-([`packages/fabrika-cli/src/repo-config.ts`](../../../packages/fabrika-cli/src/repo-config.ts)).
+`.fabrika.jsonc` at your repo root carries the keys the CLI reads — the whole surface is one
+`register(...)` line per key in
+([`packages/fabrika-cli/src/config/registry.ts`](../../../packages/fabrika-cli/src/config/registry.ts)).
 Every key is fail-closed: an absent file, an absent key, an empty array and a malformed entry all
 give the narrowest behaviour, never the permissive one.
 

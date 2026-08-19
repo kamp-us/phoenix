@@ -353,6 +353,35 @@ the milestone-relative p1 rule closed (#1936 / #2078). *Founder-override-open* �
 may later designate an `axis:*` (e.g. `axis:pipeline-hardening`) a p1-anchor; until relayed,
 this rule stands. (Extends the #2093 → #2095 milestone-governance convention.)
 
+### The config surface, a shipped default, and delete authority
+
+Three terms epic [#5631](https://github.com/kamp-us/phoenix/issues/5631) pinned while turning
+fabrika's repo-specific literals into `.fabrika.jsonc` keys (ADR
+[0273](../.decisions/0273-fabrika-ships-as-an-installed-plugin.md)). Shaped in
+[`.patterns/fabrika-config-key-groups.md`](../.patterns/fabrika-config-key-groups.md); named here so
+a doc, a skill and a verb use one word for each.
+
+**The config surface** is the *set of keys* `.fabrika.jsonc` may carry, each with its shipped
+default — `packages/fabrika-cli/src/config/registry.ts`. It is not the file: the file is one repo's
+instance of the surface, and a repo that ships no file still stands on the whole surface. `fabrika
+status settings` prints the surface, which is why it can answer for a repo that declared nothing.
+
+**A shipped default** is the value a key resolves to when the file or that key is **absent**. Two
+rules ride the term. It is never an empty set where empty would turn a gate off — an empty governed
+root list reads as "nothing is governed", so the default reproduces today's behaviour and an
+explicitly-declared empty is `Malformed`. And it is never what an **unreadable** file resolves to: a
+read that failed proves nothing about what the repo declared, so every key is UNKNOWN and the caller
+refuses. Absent and unreadable are opposite answers all the way down, and collapsing them is how a
+gate reports "this repo declared nothing" about a repo it never read.
+
+**Delete authority** is what a triage facet's `owns` pattern grants: every label the pattern matches
+and the keep set does not is removed. The term carries the [#4285](https://github.com/kamp-us/phoenix/issues/4285)
+incident — a declared lane no facet owned was written once and never superseded. This epic makes
+delete authority a property of **loaded data** rather than of source: it is composed in
+`packages/fabrika-cli/src/config/resolve-board.ts` from `triageFacets` joined against
+`boardVocabulary`, so a repo that renames a status cannot end up with a facet that deletes labels
+nobody declared.
+
 ---
 
 ## 3. Product / brand nouns (Turkish surface)

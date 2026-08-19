@@ -520,8 +520,11 @@ step 3 does. With the flag, `surface` rows are appended to the same answer, in r
 surface	<id>	<fail-loud|degrade|bootstrap>	<what the surface is, and the verb arm its disposition was read off>
 ```
 
-The disposition cell is the one **in force here**, so a declared override prints over the shipped
-word. The note cell is flattened to one line and **not** clamped: every other prose cell points at
+The disposition cell is the one this repo **resolves to** — a declared override prints over the
+shipped word. Resolving is all it does: nothing in the CLI branches on a disposition, and
+`status/settings-verb.ts` is its only reader. The cell says what this repo declared it wants, which
+is what an operator relays; whether a verb should read it is
+[#6412](https://github.com/kamp-us/phoenix/issues/6412). The note cell is flattened to one line and **not** clamped: every other prose cell points at
 something the reader can go and look at, while this one is the whole answer. There is no separate
 resolver — the rows come off the same `settingRows` read, which is what keeps "what does this repo
 have" on one path. Under `--json` the same rows are a `surfaces` array, present only when the flag
@@ -558,21 +561,26 @@ one parse of the file. No pagination: the scope is a registry, not a list read.
 
 **Examples**
 
+Every transcript below is from phoenix, where the registry holds **15** keys and the file declares
+**4** of them. Row sets are abridged to the ones the example is about; the counts on the header line
+are not.
+
 ```
 $ fabrika status settings
-settings	resolved	4	3	0	2026-08-18T22:50:20Z
-setting	capClearAuthors	declared	["@usirin","@notusirin"]	-	2026-08-18T22:50:20Z
-setting	docLeakExempt	declared	["/CLAUDE.md"]	-	2026-08-18T22:50:20Z
-setting	governedRoots	default	[".decisions/",".claude/",".github/","claude-plugins/",".fabrika.jsonc"]	.fabrika.jsonc declares no `governedRoots`	2026-08-18T22:50:20Z
-setting	workflowValidators	declared	[]	-	2026-08-18T22:50:20Z
+settings	resolved	15	4	0	2026-08-19T20:43:22Z
+setting	capClearAuthors	declared	["@usirin","@notusirin","@cansirin"]	-	2026-08-19T20:43:22Z
+setting	docLeakExempt	declared	["/CLAUDE.md",…]	-	2026-08-19T20:43:22Z
+setting	governedRoots	default	[".decisions/",".claude/",".github/","claude-plugins/",".fabrika.jsonc"]	.fabrika.jsonc declares no `governedRoots`	2026-08-19T20:43:22Z
+setting	unreadableCodeowners	declared	"refuse"	-	2026-08-19T20:43:22Z
+setting	workflowValidators	declared	[]	-	2026-08-19T20:43:22Z
 ```
 
 With `--surfaces`, the same rows plus one per repo surface (abridged — phoenix registers 38):
 
 ```
 $ fabrika status settings --surfaces
-settings	resolved	15	4	0	2026-08-19T18:48:11Z
-setting	surfaceDispositions	default	{"gh-rest":"fail-loud","git-worktree":"fail-loud",…}	.fabrika.jsonc declares no `surfaceDispositions`	2026-08-19T18:48:11Z
+settings	resolved	15	4	0	2026-08-19T20:43:22Z
+setting	surfaceDispositions	default	{"gh-rest":"fail-loud","git-worktree":"fail-loud",…}	.fabrika.jsonc declares no `surfaceDispositions`	2026-08-19T20:43:22Z
 surface	gh-rest	fail-loud	a GitHub repo reachable over `gh` REST with `issues: write`; every issue-writing verb exits 11 without it, and a run with no board is no answer rather than a narrower one
 surface	roadmap-focus	degrade	the `## Campaigns` table at `roadmapFile`, which declares the campaign in exclusive focus; an absent file and an absent table are the same well-formed default — nothing is active, so `build pick`'s and `build claim`'s fence is inert and admits every issue …
 ```
@@ -581,17 +589,17 @@ The same run under `--json` — the notice line stays on stderr, so stdout is th
 
 ```
 $ fabrika status settings --json
-{"outcome":"resolved","path":".fabrika.jsonc","keys":4,"declared":3,"unknown":0,"settings":[{"key":"capClearAuthors","provenance":"declared","value":["@usirin","@notusirin"],"detail":"-","asOf":"2026-08-18T22:50:20Z","asOfKind":"read-now"},{"key":"docLeakExempt","provenance":"declared","value":["/CLAUDE.md"],"detail":"-","asOf":"2026-08-18T22:50:20Z","asOfKind":"read-now"},{"key":"governedRoots","provenance":"default","value":[".decisions/",".claude/",".github/","claude-plugins/",".fabrika.jsonc"],"detail":".fabrika.jsonc declares no `governedRoots`","asOf":"2026-08-18T22:50:20Z","asOfKind":"read-now"},{"key":"workflowValidators","provenance":"declared","value":[],"detail":"-","asOf":"2026-08-18T22:50:20Z","asOfKind":"read-now"}]}
+{"outcome":"resolved","path":".fabrika.jsonc","keys":15,"declared":4,"unknown":0,"settings":[{"key":"capClearAuthors","provenance":"declared","value":["@usirin","@notusirin","@cansirin"],"detail":"-","asOf":"2026-08-19T20:43:22Z","asOfKind":"read-now"},…,{"key":"governedRoots","provenance":"default","value":[".decisions/",".claude/",".github/","claude-plugins/",".fabrika.jsonc"],"detail":".fabrika.jsonc declares no `governedRoots`","asOf":"2026-08-19T20:43:22Z","asOfKind":"read-now"},…,{"key":"workflowValidators","provenance":"declared","value":[],"detail":"-","asOf":"2026-08-19T20:43:22Z","asOfKind":"read-now"}]}
 ```
 
 ```
 $ fabrika status settings --root /srv/storefront
-status settings: could not read .fabrika.jsonc: /srv/storefront/.fabrika.jsonc: EISDIR: illegal operation on a directory; 4 key(s), 0 declared, 4 unknown.
-setting	capClearAuthors	unknown	UNKNOWN	/srv/storefront/.fabrika.jsonc: EISDIR: illegal operation on a directory	2026-08-18T22:51:02Z
-setting	docLeakExempt	unknown	UNKNOWN	/srv/storefront/.fabrika.jsonc: EISDIR: illegal operation on a directory	2026-08-18T22:51:02Z
-setting	governedRoots	unknown	UNKNOWN	/srv/storefront/.fabrika.jsonc: EISDIR: illegal operation on a directory	2026-08-18T22:51:02Z
-setting	workflowValidators	unknown	UNKNOWN	/srv/storefront/.fabrika.jsonc: EISDIR: illegal operation on a directory	2026-08-18T22:51:02Z
-status settings: 4 key(s) resolve UNKNOWN (capClearAuthors, docLeakExempt, governedRoots, workflowValidators) — what this repo runs on is unread, never the shipped default.
+status settings: could not read .fabrika.jsonc: /srv/storefront/.fabrika.jsonc: EISDIR: illegal operation on a directory; 15 key(s), 0 declared, 15 unknown.
+setting	capClearAuthors	unknown	UNKNOWN	/srv/storefront/.fabrika.jsonc: EISDIR: illegal operation on a directory	2026-08-19T20:51:02Z
+setting	docLeakExempt	unknown	UNKNOWN	/srv/storefront/.fabrika.jsonc: EISDIR: illegal operation on a directory	2026-08-19T20:51:02Z
+setting	governedRoots	unknown	UNKNOWN	/srv/storefront/.fabrika.jsonc: EISDIR: illegal operation on a directory	2026-08-19T20:51:02Z
+setting	workflowValidators	unknown	UNKNOWN	/srv/storefront/.fabrika.jsonc: EISDIR: illegal operation on a directory	2026-08-19T20:51:02Z
+status settings: 15 key(s) resolve UNKNOWN (boardVocabulary, capClearAuthors, ci, …, workflowValidators) — what this repo runs on is unread, never the shipped default.
 $ echo $?
 11
 ```
@@ -955,13 +963,13 @@ Creates **one** missing surface from this group's own registry and reads it back
 skill's judgement; the write, the collision guard and the read-back are this verb's.
 
 <a id="buildable-surfaces"></a>**The buildable-surface registry.** What this verb builds is fixed
-here, not inferred from any declaration ([why](#disposition-does-not-gate-bootstrap)). Six ids, and
+here, not inferred from any declaration. Six ids, and
 a seventh is a change to this table, not a new rule.
 
 | `<surface-id>` | Target | Content | Read-back predicate |
 |---|---|---|---|
 | `design-manifest` | `--path`, default `design-system-manifest.md` at the repo root | **stdin**, required — the skill's inferred draft | the file's bytes match stdin through `normalizeForReadback` |
-| `roadmap-focus` | `--path`, default `ROADMAP.md` at the repo root | **stdin**, required — to the [grammar below](#roadmap-grammar), which is not the drafting skill's judgement | same, plus the parsed row count in the notice ([why](#roadmap-grammar)) |
+| `roadmap-focus` | `--path`, default the `roadmapFile` this repo declares, itself defaulting to `ROADMAP.md` | **stdin**, required — to the [grammar below](#roadmap-grammar), which is not the drafting skill's judgement | same, plus the parsed row count in the notice ([why](#roadmap-grammar)) |
 | `gitignore-row` | `--path`, default `.gitignore` at the repo root | **none** — the two comment lines and the row `/.fabrika/`, fixed below, appended to whatever the file already holds | the re-read contains both the row and the whole of the pre-existing text, each through `normalizeForReadback` |
 | `label-taxonomy` | the repo's labels | **none** — the set is every imported `STATUSES` member (`status:needs-triage`, `status:triaged`, `status:needs-info`, `status:planned`, `status:awaiting-release`), every imported `PRIORITIES` member (`p0`, `p1`, `p2`), `type:` + every imported `TYPES` member, and `ready-for:` + every imported `AUDIENCES` member — sixteen today, each created with GitHub's default colour and a description naming this group as its creator | every label in the set resolves on a re-read |
 | `issue-shape-markers` | the repo's labels | **none** — three labels, each at colour `1D76DB`, with the descriptions fixed below | every label in the set resolves on a re-read |

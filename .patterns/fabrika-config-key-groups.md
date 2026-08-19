@@ -17,7 +17,9 @@ rather than a branch in fabrika's source (ADR 0273, epic
 | `registry.ts` | One `register(...)` line per key group |
 | `load.ts` | `loadConfig(source)` → a document every key resolves against, or a refusal; `resolveAll` for a reader over the whole registry |
 | `source.ts` | `readConfigSource(dir)` — opens the file off a directory and reports which of the three arms it found |
+| `entries.ts` | The shared decoders every list key builds on — one place a list's element shape is read |
 | `working-root.ts` | `loadRepoConfig(cwd)` — the working-tree opener, for a verb running against the checkout it stands in |
+| `unusable.ts` | `unusableReason(load)` — the one reason no value of this config may be used, which is what a gate keys on instead of the refusal arm |
 | `containment.ts` | The triage-facet containment invariant, checked over declared data |
 | `board.ts` | The board vocabulary's shape (`BoardVocabulary`, `StatusNames`) and how a facet's delete authority is composed from it — pure, so `triage/facets.ts` can build the shipped default off it |
 | `resolve-board.ts` | `resolveBoard(load, shipped)` — joins `boardVocabulary` and `triageFacets` into one table and re-runs containment over the join |
@@ -57,7 +59,7 @@ silently disables a gate.
 Nothing else is touched. That is the point — concurrent slices each add a key without serializing
 on one growing reader.
 
-## Three rules a new key must hold
+## Five rules a new key must hold
 
 **A shipped default is never an empty gate list.** An empty list of governed roots or of required
 labels reads as "nothing is governed" / "nothing is required" and turns the gate off. Pick the
@@ -157,10 +159,12 @@ where a repo says which files fabrika reads by name (#6296). Three things hold a
 `ROADMAP_FILE` and `ui/conventions.ts`'s `HARNESS_PATH` are now `export {…} from` the key module, so
 a caller that scaffolds the file and a caller that reads a repo's declared one cannot drift apart.
 
-**A reader that could not read is not a reader that read nothing.** `config/paths.ts` gives one
-function per key — `governedRootsOr`, `cycleDocOr`, `designHarnessOr`, `decisionsDirOr` — each
-answering the value plus a note naming where it came from, or the one refusal sentence its callers
-print. The exit code stays each verb's; only the sentence is shared, so seven verbs cannot word the
+**A reader that could not read is not a reader that read nothing.** `config/paths.ts` gives every
+path key a reader — `governedRootsOr`, `cycleDocOr`, `designHarnessOr`, `decisionsDirOr` and
+`readRoadmapFile` — each answering the value plus a note naming where it came from, or the one
+refusal sentence its callers print. `roadmapFile` is the exception to the shared sentence: it has no
+`…Or` form, exposing the raw `Read` as `readRoadmapFile`, and its four callers word their own
+refusal. The exit code stays each verb's; only the sentence is shared, so seven verbs cannot word the
 same fault seven ways. `Malformed` and `Unknown` both refuse there: falling back to the shipped
 default on a typo silently restores phoenix's own paths inside a repo that is not phoenix.
 

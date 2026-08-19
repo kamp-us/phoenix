@@ -195,7 +195,8 @@ nothing else: the issue still has to carry `ready-for:agent`, which triage stamp
 
 **The inputs, and where each is read.**
 
-- **The active campaigns** — the `## Campaigns` section of the repository's root `ROADMAP.md`. Its
+- **The active campaigns** — the `## Campaigns` section of the file this repo declares as
+  `roadmapFile` in `.fabrika.jsonc`, which defaults to `ROADMAP.md` at the repo root. Its
   grammar is canonical here, so an implementer needs no other document:
 
   ```

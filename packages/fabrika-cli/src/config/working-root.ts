@@ -16,6 +16,7 @@ import {discoverRepoRoot} from "../delegate/root.ts";
 import {exists, readFile} from "../io/fs.ts";
 import {CONFIG_PATH, type ConfigSource} from "./document.ts";
 import {type Load, loadConfig} from "./load.ts";
+import {readConfigSource} from "./source.ts";
 
 /**
  * The config at the repo root above `cwd`, loaded.
@@ -52,4 +53,28 @@ export const loadRepoConfig = (
 				: ({_tag: "Unreadable", reason: `${path}: ${read.failure.reason}`} as const);
 		});
 		return loadConfig(source);
+	});
+
+/**
+ * The config source at the repo root above `cwd` — the same discovery {@link loadRepoConfig} makes,
+ * for a reader that wants the arm rather than a loaded document.
+ *
+ * A discovery that *failed* is `Unreadable`, never a fall back to `cwd`: falling back would find no
+ * file there and answer `Absent`, which is the claim "this repo declared nothing" about a repo
+ * nobody located. A discovery that *succeeded and found nothing* still falls to `cwd` — that is a
+ * real directory with no config in it, and the answer is the same either way. Keeping those two
+ * apart is the whole reason `ConfigSource` has three arms.
+ */
+export const repoConfigSource = (
+	cwd: string,
+): Effect.Effect<ConfigSource, never, FileSystem.FileSystem | Path.Path> =>
+	Effect.gen(function* () {
+		const root = yield* Effect.result(discoverRepoRoot(cwd));
+		if (root._tag === "Failure") {
+			return {
+				_tag: "Unreadable" as const,
+				reason: `cannot resolve the repo root above ${cwd}: ${root.failure.reason}`,
+			};
+		}
+		return yield* readConfigSource(root.success ?? cwd);
 	});

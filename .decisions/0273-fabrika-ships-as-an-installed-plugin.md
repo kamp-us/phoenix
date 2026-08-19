@@ -158,8 +158,9 @@ fabrika's scope.
 is answerable by reading the skill and the repo — no judgement call about what counts as "specific":
 
 1. An input it requires cannot be satisfied by a repo that is not this one, opening only itself.
-2. It has no `## Required repo files` section. Undeclared is not satisfied — the front-door reader
-   emits a single `undeclared` row with presence `unknown`, never zero rows and never counted clean.
+2. A surface it reads has no entry on `surfaceDispositions` in `.fabrika.jsonc`. Undeclared is not
+   satisfied. (This item named each skill's own `## Required repo files` section until the
+   2026-08-19 amendment below moved the declaration to the config key; the property is unchanged.)
 3. A declared row's disposition is not one of `fail-loud` / `degrade` / `bootstrap`, or contradicts
    what the code does on the missing-surface path.
 4. A runnable fence or a command example names a specific repository.
@@ -167,8 +168,9 @@ is answerable by reading the skill and the repo — no judgement call about what
 
 **What a reviewer looks for**, concretely, in this order: enumerate the skill's inputs from its
 `SKILL.md` and its contract; for each, ask whether a repo that is not this one could obtain it by
-opening itself; check that the `## Required repo files` table lists exactly that set with a
-closed-set disposition per row; walk each `fail-loud` path and confirm it names the missing surface
+opening itself; check that `surfaceDispositions` carries exactly that set with a
+closed-set disposition per entry (the 2026-08-19 amendment below, which replaced the per-skill
+table this sentence used to name); walk each `fail-loud` path and confirm it names the missing surface
 rather than erroring bare; grep the runnable fences and examples for a repository literal. The
 enumeration is the review — a portability claim with no input list behind it is not one.
 
