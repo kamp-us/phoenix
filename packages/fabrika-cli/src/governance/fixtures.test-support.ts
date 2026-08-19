@@ -18,6 +18,7 @@ export {
 	comments,
 	HEAD,
 	OLD_HEAD,
+	PATHS_AT,
 	paths,
 	pull,
 } from "../review/fixtures.test-support.ts";
@@ -28,9 +29,18 @@ const DIFF_FLAGS = "--no-ext-diff --no-color --find-renames --src-prefix=a/ --ds
 export const STATUS_AT = (base: string = BASE, head: string = HEAD): RegExp =>
 	new RegExp(`^git diff ${DIFF_FLAGS} --name-status -z ${base}\\.\\.\\.${head}$`);
 
-/** `--name-status -z` output: a status field then a path field, both NUL-terminated. */
-export const statuses = (...rows: ReadonlyArray<readonly [string, string]>): ExecResult =>
-	okOut(rows.map(([status, path]) => `${status}\0${path}\0`).join(""));
+/**
+ * One `--name-status -z` record: the status field, then its path fields.
+ *
+ * A rename or copy carries two paths — source then destination — where every other change carries
+ * one, which is the three-field shape `parseNameStatus` walks statefully. A row type fixed at two
+ * fields cannot express it, so no test could reach that walk (#6064).
+ */
+export type StatusRow = readonly [status: string, ...paths: string[]];
+
+/** `--name-status -z` output: every field of every record, each NUL-terminated. */
+export const statuses = (...rows: ReadonlyArray<StatusRow>): ExecResult =>
+	okOut(rows.map((row) => row.map((field) => `${field}\0`).join("")).join(""));
 
 /** The recursive tree read this group resolves a skill root and root presence from. */
 export const TREE_AT = (sha: string = HEAD): RegExp =>
@@ -55,3 +65,12 @@ export const FULL_TREE: ReadonlyArray<string> = [
 
 /** The resolved skill root `FULL_TREE` yields. */
 export const SKILL_ROOT = "claude-plugins/fabrika/skills/governance/";
+
+/** An epic child's two ends, and the commit `git merge-base` names for them (#6064). */
+export const RANGE_BASE = "1a2b3c4d5e6f708192a3b4c5d6e7f80910111213";
+export const RANGE_TIP = "2b3c4d5e6f708192a3b4c5d6e7f8091011121314";
+export const RANGE_MERGE_BASE = "3c4d5e6f708192a3b4c5d6e7f809101112131415";
+
+/** The range's merge-base resolve: `git merge-base <base> <tip>`. */
+export const MERGE_BASE_OF = (base: string = RANGE_BASE, tip: string = RANGE_TIP): RegExp =>
+	new RegExp(`^git merge-base ${base} ${tip}$`);

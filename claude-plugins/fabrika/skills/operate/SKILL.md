@@ -71,9 +71,18 @@ node <fabrika> lane claim $lane_key
 Exit `0` is yours to drive — `won` on an issue lane, `unclaimable` on a `chore:<name>` key, which
 carries no board number for a marker to sit on and so races with nobody. Exit `31` is a **proven
 loss**: another driver holds this lane, its token is named on stderr, and this run ends `LANE-HELD`
-having emitted no ledger and spawned no shell. `1` (no `CLAUDE_CODE_SESSION_ID`), `8` (the marker
-write is UNKNOWN), `9` (it landed and does not read back) and `11` (the marker set could not be
-read) all end `STOPPED` naming the code — an unproven claim is never driven through.
+having emitted no ledger and spawned no shell. `1` (no `CLAUDE_CODE_SESSION_ID`, or a `--token` that
+is not a lane-claim token of this session), `8` (the marker write is UNKNOWN), `9` (it landed and
+does not read back) and `11` (the marker set could not be read) all end `STOPPED` naming the code —
+an unproven claim is never driven through.
+
+**Keep the `token` a `won` prints — it is this driver's name, and `lane release` takes it as
+`--token`.** One session routinely spawns several operators, so a release handed only the session id
+cannot tell a sibling driver's marker from yours, and used to delete it: an unrecoverable retraction
+that left the lane reading unclaimed ([#6060](https://github.com/kamp-us/phoenix/issues/6060)).
+Re-claiming with the token you already hold is the idempotent path — it answers `won` with the same
+marker and writes nothing, rather than stacking a second marker a single release cannot clear
+([#6087](https://github.com/kamp-us/phoenix/issues/6087)).
 
 The claim is the driver's own namespace, `lane-claim:`, not the builder's `build-claim:`. That is
 what lets the builder you spawn on this very number claim it and win: two markers on one thread,
@@ -115,19 +124,38 @@ A lane `lane emit` booted is an epic run, and an epic run is **one branch and on
 you read: the topology parsed, so children exist. Children build in parallel worktrees, each on its
 own local branch, and land by merging into a single **assembly branch** — `epic/<lane-key>`, the
 name `lane brief` hands every child shell and the base `lane prove` reads a child's range against.
-Create it before the first dispatch, off the repository's default branch. `origin/HEAD` is
-git's own pointer to that branch — no name resolution needed; the `set-head` call refreshes the
-pointer in a checkout where it was never set:
+
+**The assembly branch gets a working tree of its own, and the checkout you are standing in is never
+switched onto it.** One verb places it, before the first dispatch:
 
 ```bash
-git fetch origin
-git remote set-head origin --auto
-git switch --create epic/$lane_key origin/HEAD
+node <fabrika> lane assembly $lane_key
 ```
 
-An already-exists error is resume, like `lane open`'s: `git switch epic/$lane_key` instead. Its
-absence is not a soft failure — without it `lane prove` reads every child's range as UNKNOWN
-(exit `11`), so a run driven without it proves nothing it records.
+Its stdout is the absolute path of that worktree — `.claude/worktrees/epic-<lane-key>`, cut off the
+repository's default branch through git's own `origin/HEAD` pointer — and **every git write this run
+performs on the assembly branch happens there, addressed as `git -C <that path>`**. It is idempotent
+from either side: a later pass finding the tree still there resumes it and re-prints the same path,
+and a pass finding the branch alive with its tree gone — what `--remove` at a terminal leaves behind,
+and what a pruned tree or a crashed run leaves too — checks that branch out again as it stands,
+merges and all. A tree whose directory was deleted without `git worktree prune` counts as gone the
+same way: git still lists a record for it, the verb reads that record's `prunable` line, clears the
+registration and places the branch again, so the path it prints is always one you can `cd` into. So
+run it at the top of any pass that is about to integrate rather than carrying a path you remembered.
+
+The boot used to be `git switch --create epic/$lane_key` in whatever tree invoked this skill, which
+in practice is a human's working tree: it then sat on the epic branch for hours, every tool reading
+files there read the epic branch instead of the default one, and a second epic had no checkout left
+to assemble in ([#6163](https://github.com/kamp-us/phoenix/issues/6163)). Two epics now boot and
+integrate side by side, each in its own tree.
+
+The verb's refusals are all parks, not retries: `33` is `epic/<lane-key>` already checked out in the
+main working tree — switch that tree off it and run the verb again, never assemble there; `8` is a
+placement that ran and did not read back, UNKNOWN — a stale record git would not let go of reads as
+this too, since nothing can be placed over a registration that survives (an existing
+`epic/<lane-key>`, with or without its tree, is not this: it is the resume above, and the verb
+answers its path); `11` is working trees or an origin that could not be read. Placing it is not optional — without the branch `lane prove` reads every child's range as
+UNKNOWN (exit `11`), so a run driven without it proves nothing it records.
 
 Done when `lane status` folds and prints a `stateValue`.
 
@@ -188,11 +216,12 @@ the branch comes off the proof you just recorded, the merge's own exit is the ve
 machine owns what each verdict means.
 
 Take the branch off `lane prove`'s `PASS` evidence, which prints it as `evidence.branch` beside the
-range it judged — never off a name you compose. Then, standing on the assembly branch:
+range it judged — never off a name you compose. Then merge **in the assembly worktree**, addressing
+it by the path `lane assembly` just printed — never by switching the tree you are standing in:
 
 ```bash
-git switch epic/$lane_key
-git merge --no-ff <evidence.branch>
+node <fabrika> lane assembly $lane_key
+git -C <the path it printed> merge --no-ff <evidence.branch>
 ```
 
 `--no-ff` because each landing should be one commit a reader can name; a fast-forward would leave
@@ -202,10 +231,11 @@ resolves inside this run instead of at a merge queue. A clean merge is only half
 **semantic** collision is two ranges that each passed alone and do not hold together, and it reads
 as the merged tree failing the repo's own checks (`pnpm typecheck` and `pnpm lint:worktree` — the
 same two every child's `build check --surface code` ran in its worktree, now run once over the
-assembly). Non-zero there is the same `FAIL`.
+assembly, in the assembly worktree). Non-zero there is the same `FAIL`.
 
-**The assembly branch moves only on a `DONE`.** On either `FAIL`, put it back where it was —
-`git merge --abort` on a conflict, `git reset --hard ORIG_HEAD` on a clean merge the checks refused
+**The assembly branch moves only on a `DONE`.** On either `FAIL`, put it back where it was, in the
+same tree the merge happened in — `git -C <assembly path> merge --abort` on a conflict,
+`git -C <assembly path> reset --hard ORIG_HEAD` on a clean merge the checks refused
 — so the recorded `FAIL` names a branch that never carried the bad merge. The repair builder is
 then the machine's own route out of `build`, and `lane brief` hands it both ranges: the child's
 issue, and the assembly branch, which by now carries every sibling that landed before it. Nothing
@@ -218,9 +248,15 @@ write, which is the whole point of the local loop (ADR 0285); a landed child is 
 has something worth publishing. So after the merge and its checks pass, and before you record the
 `DONE`:
 
+Run it **from the assembly worktree**, which is the only tree it will push from:
+
 ```bash
-node <fabrika> lane push $lane_key
+cd <the path lane assembly printed> && node packages/fabrika-cli/src/bin.ts lane push $lane_key
 ```
+
+(The entrypoint there is the assembly worktree's own copy of this repo's source — the same
+repo-relative path `<fabrika>` resolves to in a checkout of fabrika's own repo. In a repo that
+installs fabrika it is that install's absolute bin, unchanged by the `cd`.)
 
 The verb, not your own `git push`: it derives `epic/<n>` from the number rather than taking a branch
 name, refuses any tree not standing on it, and then reads the ref back off the remote — so
@@ -229,6 +265,12 @@ bare push cannot say that, which is why the corpus forbids one ([#4213](https://
 and `build push` cannot serve here because the assembly branch carries no build claim's nonce. There
 is no force flag to reach for: the branch only ever grows, so exit `29` means fetch and re-merge, and
 exit `30` is a proven "the remote did not move" — never a `MOVED` you assume.
+
+**It is also the run's isolation gate, and it is fail-closed.** Invoked in the repository's main
+working tree it refuses on `33` and pushes nothing, whatever the branch says — so an assembly that
+drifted back into the driver's checkout is caught at the one step every publication passes through,
+rather than after the fact. The remedy is never a flag: place the run's worktree with
+`lane assembly` and push from there.
 
 **The first of those pushes also opens the run's one PR**, as a draft — a draft carries the CI
 signal and the board's view of the run without inviting a review the machine has not asked for.
@@ -458,16 +500,35 @@ Done when the fold reads a terminal state or a park.
 
 ## 4 — Park, or end with the transcript — then release
 
+**An epic run gives back its assembly worktree when the lane reaches a terminal fold**, before the
+release below — the run owned that tree, and a tree nobody owns is one a later driver has to reason
+about:
+
+```bash
+node <fabrika> lane assembly $lane_key --remove
+```
+
+It never forces, so a tree holding uncommitted work is refused rather than dropped. That refusal is
+exit `8`, and it carries git's own reason: uncommitted work sitting there is the usual one, a process
+still standing inside the tree (the `cd` in §3 is one) is the other. Read the reason it prints, name
+it in the transcript comment, and leave the tree. A park is not a terminal, so a `LANE-PARKED` run leaves the worktree in place for the
+successor that resumes the lane.
+
 Both ends of the loop release the claim, and it is the **last** thing the run does — after the park
 comment or the transcript has landed, so a successor that wins the lane the moment you let go finds
 the artifact already there:
 
 ```bash
-node <fabrika> lane release $lane_key
+node <fabrika> lane release $lane_key --token <lane-claim-token>
 ```
 
-Exit `0` is released (or `inert` on a chore key, which was never claimable). `31` means this session
-holds no claim — say so and stop; you never retract another driver's marker. `8` or `11` leaves
+The token is the one step 1's `won` printed — omit it on a board lane and the verb refuses on `1`
+rather than guessing which driver is releasing. A `chore:<name>` key needs none, having never been
+handed one.
+
+Exit `0` is released (or `inert` on a chore key, which was never claimable). `31` means this driver
+holds no claim — say so and stop; you never retract another driver's marker, including a sibling
+driver of your own session. `8` or `11` leaves
 whether the lane is still held UNKNOWN: name the code in your terminal line rather than reporting a
 release you cannot prove. A `STOPPED` run releases too — a claim outliving the driver that took it
 is the same lane nobody can pick up.
@@ -599,8 +660,9 @@ fabrika skill, so one reader parses all of them. No row here dead-ends on a bare
 
 | Must exist | Why this skill needs it | When missing |
 | --- | --- | --- |
-| The lane verb group — `<fabrika>` routing `lane status`/`transition`/`report` (#5736)/`prove` (#5747)/`history`/`print` plus `open`/`emit` (#5688), `brief` (#5751), `stale` (#5897) and `claim`/`release` (#5761) | Every state read, every proof, every event write, every spawn prompt, the dead-operator sweep and the driver's own exclusivity in this skill is one of these verbs; there is no other path to the ledger, none to a prompt, and none to knowing whether a second driver is already here | **fail-loud** — a verb that cannot be executed leaves the lane state UNKNOWN; the run ends `STOPPED` naming the entrypoint it could not run and points at front-door. |
+| The lane verb group — `<fabrika>` routing `lane status`/`transition`/`report` (#5736)/`prove` (#5747)/`history`/`print` plus `open`/`emit` (#5688), `brief` (#5751), `stale` (#5897), `assembly` (#6163) and `claim`/`release` (#5761) | Every state read, every proof, every event write, every spawn prompt, the dead-operator sweep and the driver's own exclusivity in this skill is one of these verbs; there is no other path to the ledger, none to a prompt, and none to knowing whether a second driver is already here | **fail-loud** — a verb that cannot be executed leaves the lane state UNKNOWN; the run ends `STOPPED` naming the entrypoint it could not run and points at front-door. |
 | The recipe verb group — `<fabrika>` routing `recipe route` plus the recipes it names (`unpark`, `rerun`), and the chore template at `packages/fabrika-cli/src/lane/templates/chore.workflow.json` | A chore drive routes and folds through `recipe route`, runs the recipe it names, and boots from that template; there is no other path to either answer | **fail-loud** — a chore drive whose routing verb cannot be executed knows neither what to run nor what an exit meant; the run ends `STOPPED` naming `packages/fabrika-cli/src/recipe/`, records no event, and points at front-door. An issue lane is unaffected. |
 | The agent shells — `claude-plugins/fabrika/agents/builder.md`, `reviewer.md`, `shipper.md` | Step 2's routing table spawns exactly these three by their bare noun names | **fail-loud** — a route whose shell does not exist cannot spawn; the run ends `STOPPED` naming the absent shell file, and no event is recorded for a spawn that never started. |
 | The `package.json` scripts `typecheck` and `lint:worktree` | An epic run's `integrate` reads the semantic collision off them — two ranges that each passed alone and fail together show up as the merged assembly failing the checks, and a clean `git merge` alone cannot see that | **degrade** — a clean merge is then the whole `DONE` answer and a semantic collision only surfaces at the epic review; say so in the transcript comment and file the gap via `/report`. An epic run still drives; a single-issue lane is unaffected. |
+| `git` 2.31 or newer, and a repository whose main working tree is not the assembly seat | An epic run assembles in a linked worktree, and the isolation guard reads `git rev-parse --path-format=absolute --git-dir --git-common-dir` to prove the tree it stands in is not the main one — that flag is 2.31's | **fail-loud** — an unreadable pair is UNKNOWN, so `lane assembly` refuses on `11` and `lane push` pushes nothing; the run ends `STOPPED` naming the git version it read. A single-issue lane is unaffected. |
 | `id:gitignore-row` `.gitignore` covering `.fabrika/` | The ledger is a disposable machine-local artifact, regenerable from the board — committed, it would smuggle one machine's lane state into every checkout | **bootstrap** — `fabrika status bootstrap gitignore-row` appends the row and reads it back; until then the verbs still work, so state the uncovered `.fabrika/` in the park or transcript comment. |

@@ -19,6 +19,7 @@ import {
 	epic,
 	issueRows,
 	subIssues,
+	TOKEN,
 } from "./fixtures.test-support.ts";
 import {runOpen} from "./open-verb.ts";
 import {manifestPath, parseManifest, parseRunRecord, runJsonPath} from "./run.ts";
@@ -58,7 +59,10 @@ const run = (
 	const shell = fakeShell(script);
 	const fs = fakeFs({files});
 	return Effect.runPromise(
-		Effect.provide(runOpen({number: 4300, repo: null, env}), Layer.mergeAll(shell.layer, fs.layer)),
+		Effect.provide(
+			runOpen({number: 4300, token: TOKEN, repo: null, env}),
+			Layer.mergeAll(shell.layer, fs.layer),
+		),
 	).then((outcome) => ({outcome, written: fs.written, calls: shell.calls}));
 };
 
@@ -218,7 +222,7 @@ describe("runOpen", () => {
 		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
 	});
 
-	it("refuses when this session does not hold the claim", async () => {
+	it("refuses when this lane does not hold the claim", async () => {
 		const {outcome} = await run([
 			[EPIC_READ, epic()],
 			[TREE, GIT_DIRS],
@@ -229,7 +233,7 @@ describe("runOpen", () => {
 			...CLEAN.slice(4),
 		]);
 		expect(outcome.code).toBe(CLAIM_NOT_MINE);
-		expect(outcome.stderr.at(-1)).toBe("ledger open: this session does not hold #4300's claim.");
+		expect(outcome.stderr.at(-1)).toBe("ledger open: this lane does not hold #4300's claim.");
 	});
 
 	/** An unreachable index is `indeterminate`; only a read that ran and matched nothing is `none`. */

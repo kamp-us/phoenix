@@ -10,12 +10,15 @@
  * holder's claim.
  *
  * The run directory is derived from the **claim nonce** here and nowhere else, which is what makes two
- * parallel planning lanes of one session independent (#4516, #4544, #4500).
+ * parallel planning lanes of one session independent (#4516, #4544, #4500). That independence is why
+ * the claim is proven against the `--token` this lane holds rather than against its session id: under
+ * the session-only rule a lane that had *lost* the epic's claim still read the holder's marker as its
+ * own, and derived the holder's run key from it, so both lanes wrote into one directory (#6060).
  */
 
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import {anySessionCaller, requireClaim, requireSession} from "../build/claim.ts";
+import {requireCallerToken, requireClaim, requireSession} from "../build/claim.ts";
 import {nonceOf} from "../build/lane.ts";
 import {badNumber, openIssue, resolveTargetRepo} from "../build/target.ts";
 import {assertGround} from "../build/tree.ts";
@@ -51,6 +54,8 @@ export type Opened =
 
 export interface OpenOptions {
 	readonly number: number;
+	/** The claim token `build claim <epic> --purpose plan` handed this lane — which lane is asking. */
+	readonly token: string;
 	readonly repo: string | null;
 	readonly env: Readonly<Record<string, string | undefined>>;
 }
@@ -71,6 +76,9 @@ export const openGround = (
 		const session = requireSession(verb, options.env);
 		if (session._tag === "Refused") return refused(session.outcome);
 
+		const asking = requireCallerToken(verb, session.id, options.token);
+		if (asking._tag === "Refused") return refused(asking.outcome);
+
 		const resolved = yield* resolveTargetRepo(verb, options.repo, options.env);
 		if (resolved._tag === "Refused") return refused(resolved.outcome);
 		const repo = resolved.repo;
@@ -86,14 +94,14 @@ export const openGround = (
 		const tree = yield* assertGround(verb, false);
 		if (tree._tag === "Refused") return refused(tree.outcome);
 
-		const held = yield* requireClaim(verb, repo, epicNumber, anySessionCaller(session.id));
+		const held = yield* requireClaim(verb, repo, epicNumber, asking.caller);
 		if (held._tag === "Refused") {
 			const outcome = held.outcome;
 			return refused(
 				outcome.code === CLAIM_NOT_MINE
 					? refuse(
 							CLAIM_NOT_MINE,
-							`${verb}: this session does not hold #${epicNumber}'s claim.`,
+							`${verb}: this lane does not hold #${epicNumber}'s claim.`,
 							outcome.stderr,
 						)
 					: outcome,

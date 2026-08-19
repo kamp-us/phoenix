@@ -1,6 +1,6 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {comments, LANE_UUID, marker} from "../build/fixtures.test-support.ts";
+import {comments, LANE_UUID, marker, LANE_TOKEN as TOKEN} from "../build/fixtures.test-support.ts";
 import {errOut, fakeShell, okOut, once} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {runCheck} from "./check-verb.ts";
@@ -93,7 +93,7 @@ const CLEAN_READ: ReadonlyArray<readonly [RegExp, ExecResult]> = [
 const run = (digest: string, script: ReadonlyArray<readonly [RegExp, ExecResult]>) => {
 	const shell = fakeShell(script);
 	return Effect.runPromise(
-		Effect.provide(runFlip({number: 4300, digest, repo: null, env}), shell.layer),
+		Effect.provide(runFlip({number: 4300, digest, token: TOKEN, repo: null, env}), shell.layer),
 	).then((outcome) => ({outcome, calls: shell.calls}));
 };
 

@@ -84,6 +84,17 @@ export const NUDGE_REOPEN_UNCONFIRMED = 17;
 export const GOVERNANCE_FLOOR_UNMET = 18;
 
 /**
+ * Refused: the repository permits **no** merge method at all — `ship merge` has nothing to land with.
+ *
+ * Its own seat rather than a fold into {@link PROVEN_NOT_IN_STATE}, which `ship merge` already
+ * spends on the queue-governed base: those two refusals route opposite ways. A queue-governed base
+ * sends the run onward to `ship enqueue`; a repository with squash, merge-commit and rebase all
+ * disabled sends it to a human with repository-settings access and ends the lane there. One code
+ * carrying both would make the caller parse a message to know which (#6018).
+ */
+export const NO_LANDING_METHOD = 19;
+
+/**
  * Refused: a label this run would POST is absent from the repository's taxonomy (#4285).
  *
  * `plan`'s seat, imported, under `plan`'s own rule — *import a code when two groups prove the same

@@ -12,7 +12,7 @@
 
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import {anySessionCaller, requireClaim, requireSession} from "../build/claim.ts";
+import {requireCallerToken, requireClaim, requireSession} from "../build/claim.ts";
 import {badNumber, resolveTargetRepo} from "../build/target.ts";
 import {createComment, getComment} from "../io/issues.ts";
 import type {StdinRead} from "../io/stdin.ts";
@@ -105,6 +105,8 @@ export const composeVerdict = (
 export interface VerdictOptions {
 	readonly number: number;
 	readonly digest: string;
+	/** The claim token `build claim <epic> --purpose gate` handed this lane — which lane is asking. */
+	readonly token: string;
 	readonly polarity: string | null;
 	readonly repo: string | null;
 	readonly env: Readonly<Record<string, string | undefined>>;
@@ -143,7 +145,10 @@ export const runVerdict = (
 		const target = yield* requireEpic(MESSAGES, repo, options.number);
 		if (target._tag === "Refused") return target.outcome;
 
-		const held = yield* requireClaim(VERB, repo, options.number, anySessionCaller(session.id));
+		const asking = requireCallerToken(VERB, session.id, options.token);
+		if (asking._tag === "Refused") return asking.outcome;
+
+		const held = yield* requireClaim(VERB, repo, options.number, asking.caller);
 		if (held._tag === "Refused") return held.outcome;
 
 		const read = yield* loadLedger(MESSAGES, repo, target.issue);

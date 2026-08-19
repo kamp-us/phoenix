@@ -53,7 +53,7 @@ lane's claim from yours (#6037).
 should pick the issue up to **build**, and an epic earns that label only *after* it has been planned
 and gated — at step 3, from this very run — so fencing this gate on it is circular, and the fence
 binds build-purpose claims only.
-A `gate` claim is admitted without the label; the scope axis still binds, so an out-of-focus epic is still exit
+A `gate` claim is admitted without the label; the scope axis still binds, so an out-of-scope epic is still exit
 `20`. Never reach for `--override` to get past the audience axis — that is the fail-open convention
 the purpose exists to remove.
 
@@ -63,7 +63,7 @@ the session identity from `CLAUDE_CODE_SESSION_ID`, and an unset one is exit `1`
 an identity is not a claim. **Any other non-zero here (`1`, `8`, `9`, `10`, `11`, `20`) ends
 `STOPPED` with no note**: you hold no claim, and `build note` requires one, so there is nothing
 postable — report the code in the terminal line instead. `10` is an off-enum `--purpose`, and `20`
-is a proven out-of-focus epic. Exit `21` is no longer reachable at this step, because a `gate` claim
+is a proven out-of-scope epic. Exit `21` is no longer reachable at this step, because a `gate` claim
 is not bound by the audience axis.
 
 ```bash
@@ -98,7 +98,7 @@ defective path is terminal here.** Re-planning is `plan-epic`'s lane; hand back 
 Only on a clean floor:
 
 ```bash
-fabrika plan flip $epic_number --digest 4d90e1bb27ac
+fabrika plan flip $epic_number --digest 4d90e1bb27ac --token <claim-token>
 ```
 
 The flip is **unconditional over every `status:planned` child** and not yours to narrow: there is
@@ -140,7 +140,7 @@ the check and the flip; nothing was written, so re-check rather than retry.
 ## 4 — Post the verdict, bound to the scope you scanned
 
 ```bash
-fabrika plan verdict $epic_number --digest 4d90e1bb27ac <<'EOF'
+fabrika plan verdict $epic_number --digest 4d90e1bb27ac --token <claim-token> <<'EOF'
 caveat: ac-not-checkable #<child> — "works well" states no observable outcome
 EOF
 ```
