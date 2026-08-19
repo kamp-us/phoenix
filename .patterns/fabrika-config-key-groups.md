@@ -15,7 +15,8 @@ rather than a branch in fabrika's source (ADR 0273, epic
 | `key-group.ts` | `KeyGroup<A>`, the four-arm `Resolution<A>`, `resolveKey`, and `register` |
 | `keys/<key>.ts` | One key group: its key name, its shipped default, its decoder |
 | `registry.ts` | One `register(...)` line per key group |
-| `load.ts` | `loadConfig(source)` → a document every key resolves against, or a refusal |
+| `load.ts` | `loadConfig(source)` → a document every key resolves against, or a refusal; `resolveAll` for a reader over the whole registry |
+| `source.ts` | `readConfigSource(dir)` — opens the file off a directory and reports which of the three arms it found |
 | `working-root.ts` | `loadRepoConfig(cwd)` — the working-tree opener, for a verb running against the checkout it stands in |
 | `containment.ts` | The triage-facet containment invariant, checked over declared data |
 
@@ -42,11 +43,12 @@ silently disables a gate.
 1. Write `keys/<your-key>.ts`: export the key name, a `decode`, and a `KeyGroup<A>` with a
    `shippedDefault`.
 2. Add one `register(yourKey)` line to `registry.ts`.
+3. Add a `render` **only if** the decoded shape is not the shape a repo writes (see below).
 
 Nothing else is touched. That is the point — concurrent slices each add a key without serializing
 on one growing reader.
 
-## Two rules a new key must hold
+## Three rules a new key must hold
 
 **A shipped default is never an empty gate list.** An empty list of governed roots or of required
 labels reads as "nothing is governed" / "nothing is required" and turns the gate off. Pick the
@@ -62,6 +64,13 @@ un-govern itself; and `triageFacets`, so a config declaring a facet value the fa
 cannot reconcile an issue into a shape nobody asked for (#4285). A convention could not hold either
 one, because the config is what the convention would be read from — and a check written at a call
 site is a check the next verb forgets.
+
+**A key whose decoded shape is not the file's shape carries a `render`.** `status settings` answers
+what a key resolves to so no skill document has to restate it, and a readout printing
+`{"_tag":"User","login":"…"}` where the file says `"@…"` hands back this package's internal shape and
+leaves the reader to reverse it. `render` is display only: `Registration.readout` applies it,
+`Registration.resolve` does not, so a caller computing with a value never gets the display form.
+`capClearAuthors` and `workflowValidators` carry one; a plain string array needs none.
 
 ## Reading a key at the working tree
 

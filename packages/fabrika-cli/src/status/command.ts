@@ -11,6 +11,7 @@
 import {fileURLToPath} from "node:url";
 import {Effect, type FileSystem, Option, type Path} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
+import {readConfigSource} from "../config/source.ts";
 import {discoverRepoRoot} from "../delegate/root.ts";
 import {leafCommand} from "../excess-operand.ts";
 import type {Attempt} from "../io/git.ts";
@@ -39,6 +40,7 @@ import {
 } from "./open-verb.ts";
 import {badIssueRefusal, issueNumberOf, readReadout, runReadout} from "./readout-verb.ts";
 import {type RosterSources, readRoster} from "./roster.ts";
+import {runSettings, settingRows} from "./settings-verb.ts";
 
 /** Write the outcome and exit on its code — stdout is the answer, everything else is stderr. */
 const emit = (outcome: VerbOutcome): Effect.Effect<void> =>
@@ -135,6 +137,36 @@ const config = leafCommand(
 	Command.withShortDescription("Which repo surfaces the landed skills need, and which exist."),
 	Command.withDescription(
 		"Report which repo surfaces every landed skill declares it needs and whether each is present here — the detection verb (#4952). First stdout line is `config\\t<satisfied|gaps|unknown>\\t<declared>\\t<missing>\\t<undeclared>\\t<off-vocabulary>`, then one `surface\\t…` line per declared row. A skill with no `## Required repo files` section emits one `undeclared` row, never zero. Exits 7 (an explicitly passed --skills-dir is proven absent), 11 (the roster or a SKILL.md inside it could not be read — the declaration set is UNKNOWN). Example: fabrika status config",
+	),
+);
+
+const settings = leafCommand(
+	"settings",
+	{
+		root: Flag.string("root").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"the directory holding .fabrika.jsonc (default: the repository root, else the cwd)",
+			),
+		),
+		json: jsonFlag,
+	},
+	Effect.fn(function* ({root, json}) {
+		const dir = Option.getOrNull(root) ?? (yield* repositoryRoot);
+		const source = yield* readConfigSource(dir);
+		yield* emit(
+			runSettings({
+				source,
+				rows: settingRows(source),
+				asOf: readNow(instant(new Date())),
+				json,
+			}),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("The resolved config surface, every key with its provenance."),
+	Command.withDescription(
+		"Print every key on the config surface with its resolved value and where that value came from — the one place a skill asks what `.fabrika.jsonc` resolves to, so no document has to restate a value. First stdout line is `settings\\t<resolved|unknown>\\t<keys>\\t<declared>\\t<unknown>\\t<as-of>`, then one `setting\\t<key>\\t<declared|default|unknown>\\t<value-as-json>\\t<detail>\\t<as-of>` line each. A repo with no `.fabrika.jsonc` prints the full shipped-default set at exit 0; a key whose value could not be established makes the whole readout a refusal that names each UNKNOWN key on stderr, never the default it did not resolve to. This verb writes nothing. Exits 7 (the config surface registers zero keys — ADR 0092), 11 (`.fabrika.jsonc` exists and could not be read, is not a JSON object, holds a value the surface refuses, or refused the whole load — UNKNOWN, never green). Example: fabrika status settings",
 	),
 );
 
@@ -328,6 +360,7 @@ export const statusCommand = Command.make("status").pipe(
 		// one. The comment is what keeps the formatter from collapsing the list back.
 		open,
 		config,
+		settings,
 		menu,
 		readout,
 		board,
@@ -335,6 +368,6 @@ export const statusCommand = Command.make("status").pipe(
 	]),
 	Command.withShortDescription("Answer what state the factory is in."),
 	Command.withDescription(
-		"Answer what state the factory is in — the composite front-door readout, the config-surface detection verb, the derived skill roster, the landed-decision digest, the board's bucket counts, and the one primitive that creates a missing surface",
+		"Answer what state the factory is in — the composite front-door readout, the repo-surface detection verb, the resolved `.fabrika.jsonc` config surface, the derived skill roster, the landed-decision digest, the board's bucket counts, and the one primitive that creates a missing surface",
 	),
 );
