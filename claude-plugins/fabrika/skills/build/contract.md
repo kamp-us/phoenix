@@ -425,7 +425,7 @@ fabrika build pick [--repo <owner/name>] [--limit <n>]
 | `--limit` | integer | no | `20` | maximum candidates to emit, after ranking |
 
 **Output** — machine. One JSON object:
-`{"pool": [...], "excluded": [...], "scanned": {"p0": n, "p1": n, "p2": n}, "campaigns": {...}}`.
+`{"pool": [...], "excluded": {...}, "scanned": {"p0": n, "p1": n, "p2": n}, "campaigns": {...}}`.
 Each pool entry: `{"number", "title", "priority", "type", "home"}` — `home` is the open
 milestone's number as a string, or the standing-lane label (`wayfinder:backlog` /
 `axis:pipeline-hardening`) for a lane-exempt issue. Ranked `p0` → `p1` → `p2`, milestone order
@@ -433,12 +433,17 @@ within a bucket. **An empty pool is a fact and prints `{"pool": [], ...}` on exi
 0** with the scanned counts proving what was searched — never an empty stdout (interface
 convention rule 2).
 
-**Each excluded issue is reported with its reason**, so a shortened or empty pool is auditable
-from the answer itself rather than only from the counts. Each `excluded` entry is
-`{"number", "home", "reason"}`, where `reason` is one of `out-of-scope` / `audience-not-agent` /
+**Every exclusion is reported with its reason**, so a shortened or empty pool is auditable
+from the answer itself rather than only from the counts. `excluded` is a **reason histogram** —
+`{"audience-not-agent": 155, "out-of-focus": 111}`, one key per reason that refused at least one
+issue, its value the count — keys ordered count-descending, ties on the reason, so the same board
+always prints the same bytes. A reason is one of `out-of-scope` / `audience-not-agent` /
 `unreadable` — the outcome set of the [admission test](#admission-test--scope-admission-and-the-audience-axis),
 one reason per outcome — or `no-acceptance-criteria` or `blocked`, this verb's own two axes (below).
-The scanned counts alone cannot tell a working fence from a broken one; the reasons can. `campaigns` is
+The scanned counts alone cannot tell a working fence from a broken one; the reasons can, and the
+reason vocabulary is the whole of what a reader acts on — no skill reads a per-issue row, so the
+rows collapse to counts under ADR 0308 (`excluded` is an evidence-array, `pool` the answer-array
+`--limit` caps). `campaigns` is
 `{"state": "declared", "milestones": ["44", "46"]}` or `{"state": "none"}`, the same fact the stderr
 scope line carries.
 
@@ -522,17 +527,17 @@ so an empty pool is auditable and a fence that is off is visible as off rather t
 
 ```
 $ fabrika build pick
-{"pool":[{"number":4312,"title":"Editor loses focus after save","priority":"p1","type":"bug","home":"44"},{"number":4488,"title":"Prune the dead lane stamps","priority":"p2","type":"chore","home":"axis:pipeline-hardening"}],"excluded":[{"number":4290,"home":"39","reason":"out-of-scope"},{"number":4301,"home":"44","reason":"audience-not-agent"}],"scanned":{"p0":0,"p1":3,"p2":41},"campaigns":{"state":"active","milestones":["44"]}}
+{"pool":[{"number":4312,"title":"Editor loses focus after save","priority":"p1","type":"bug","home":"44"},{"number":4488,"title":"Prune the dead lane stamps","priority":"p2","type":"chore","home":"axis:pipeline-hardening"}],"excluded":{"audience-not-agent":1,"out-of-scope":1},"scanned":{"p0":0,"p1":3,"p2":41},"campaigns":{"state":"active","milestones":["44"]}}
 ```
 
 The standing-lane row is the exemption at work: #4488 carries no milestone and is admitted anyway,
-while #4290 — homed in milestone 39 — is excluded. With no declaration the fence is inert, and both
-the answer and the scope line say so:
+while the issue homed in milestone 39 is the histogram's one `out-of-scope`. With no declaration the
+fence is inert, and both the answer and the scope line say so — the same #4290 is in the pool:
 
 ```
 $ fabrika build pick
 build pick: scanned p0=0 p1=3 p2=41 · campaigns: none active — scope fence inert
-{"pool":[{"number":4290,"title":"Retire the legacy importer","priority":"p2","type":"chore","home":"39"}],"excluded":[],"scanned":{"p0":0,"p1":3,"p2":41},"campaigns":{"state":"none"}}
+{"pool":[{"number":4290,"title":"Retire the legacy importer","priority":"p2","type":"chore","home":"39"}],"excluded":{},"scanned":{"p0":0,"p1":3,"p2":41},"campaigns":{"state":"none"}}
 ```
 
 ```

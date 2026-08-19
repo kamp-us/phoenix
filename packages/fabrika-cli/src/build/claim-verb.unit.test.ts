@@ -509,9 +509,7 @@ describe("runClaim — the admission test runs before any marker is written", ()
 			),
 		);
 		expect(JSON.parse(picked.stdout).pool).toEqual([]);
-		expect(JSON.parse(picked.stdout).excluded).toEqual([
-			{number: 4312, home: "39", reason: "out-of-scope"},
-		]);
+		expect(JSON.parse(picked.stdout).excluded).toEqual({"out-of-scope": 1});
 
 		// The same issue, handed straight to `claim` by number: the pool was bypassed, the fence is not.
 		const {out, shell} = await claimWith(OUT_OF_CAMPAIGN);
