@@ -3,11 +3,11 @@
  *
  * The bypass is the design, not an option. A cache hit from another checkout returned another tree's
  * green three times in one session (#4106) and recurred on the review side (#4887); re-running is
- * cheaper than trusting a key that has already lied. And the command set is the verb's, not the
- * agent's memory: v1 mandated the exact CI commands in prose with nothing enforcing it
- * (`SKILL.md:895-935`).
+ * cheaper than trusting a key that has already lied. And the command set is the repo's declaration
+ * read by the verb, not the agent's memory: v1 mandated the exact CI commands in prose with nothing
+ * enforcing it (`SKILL.md:895-935`).
  *
- * **This verb predicts; the gate decides.** `ci.yml` owns redness, and where the two disagree the
+ * **This verb predicts; the gate decides.** The repo's CI gate owns redness, and where they disagree the
  * gate's answer supersedes this one (interface convention rule 6). Nothing here re-reads CI.
  *
  * `--surface` is an **anchor, not a second classifier**: naming the surface is a judgement the skill
@@ -26,7 +26,16 @@
  */
 import {Effect, FileSystem} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import {execCapture, execStatus} from "../io/exec.ts";
+import type {Resolution} from "../config/key-group.ts";
+import {type CiSurface, ciKey} from "../config/keys/ci.ts";
+import {
+	CODE_VALIDATORS,
+	type CodeValidator,
+	codeValidatorsKey,
+} from "../config/keys/code-validators.ts";
+import {loadConfig, resolve} from "../config/load.ts";
+import {readConfigSource} from "../config/source.ts";
+import {execStatus} from "../io/exec.ts";
 import {
 	CONFIG_PATH,
 	readDocLeakExempt,
@@ -63,12 +72,16 @@ const WORKFLOW_RE = /^\.github\/workflows\/[^/]+\.ya?ml$/;
 /** The workflow linter, run over the changed workflow files when the tree has one. */
 const ACTIONLINT = "actionlint";
 
-/** The exact CI commands, cache-bypassed. `--force` is turbo's; `lint:worktree` has no cache to hit. */
-const CODE_RUNNERS: ReadonlyArray<{readonly label: string; readonly argv: ReadonlyArray<string>}> =
-	[
-		{label: "pnpm typecheck --force", argv: ["typecheck", "--force"]},
-		{label: "pnpm lint:worktree", argv: ["lint:worktree"]},
-	];
+/**
+ * The name of the workflow whose job supersedes this verb on workflow syntax, as the repo declares
+ * it under `ci.gateWorkflow` — phoenix's `ci.yml` when it declares nothing (#6026, #6298).
+ *
+ * A name, never an inspection: nothing here opens the file or matches a job inside it.
+ */
+const gateWorkflowName = (
+	root: string,
+): Effect.Effect<Resolution<CiSurface>, never, FileSystem.FileSystem> =>
+	Effect.map(readConfigSource(root), (source) => resolve(loadConfig(source), ciKey));
 
 export interface CheckOptions {
 	readonly surface: string;
@@ -457,6 +470,98 @@ const diagnostics = (output: string): ReadonlyArray<string> => {
 			];
 };
 
+/** The code validators to run, or why the answer is UNKNOWN. */
+type CodeScope =
+	| {
+			readonly _tag: "Scope";
+			readonly validators: ReadonlyArray<CodeValidator>;
+			readonly note: string;
+	  }
+	| {readonly _tag: "Unknown"; readonly reason: string};
+
+const readCodeScope = (root: string): Effect.Effect<CodeScope, never, FileSystem.FileSystem> =>
+	Effect.gen(function* () {
+		const resolved = resolve(loadConfig(yield* readConfigSource(root)), codeValidatorsKey);
+		switch (resolved._tag) {
+			case "Unknown":
+			case "Malformed":
+				return {_tag: "Unknown", reason: resolved.reason};
+			case "Declared":
+				return {
+					_tag: "Scope",
+					validators: resolved.value,
+					note: `${VERB}: ${resolved.value.length} code validator(s) declared in ${CONFIG_PATH}.`,
+				};
+			case "Default":
+				return {
+					_tag: "Scope",
+					validators: resolved.value,
+					note: `${VERB}: ${resolved.value.length} shipped code validator(s) — ${resolved.reason}.`,
+				};
+		}
+	});
+
+/**
+ * The `code` surface: the validators the repo **declares**, run in this tree with its own
+ * cache-bypass flags, or the shipped pair when it declares none.
+ *
+ * The three outcomes stay apart, and keeping them apart is the whole point (#6015, #6297). A
+ * validator that ran and failed is `VALIDATION_RED`. A validator that could not be spawned proves
+ * nothing about the code and refuses UNKNOWN naming it. A repo that declares an explicitly empty
+ * list has nothing to run at all, which is neither a red nor a green: reporting "no validator is
+ * present" as red says the code is broken, and reporting it as green says it was checked.
+ */
+const runCodeSurface = (
+	root: string,
+	unvalidated: ReadonlyArray<string>,
+	noted: ReadonlyArray<string>,
+): Effect.Effect<
+	VerbOutcome,
+	never,
+	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem
+> =>
+	Effect.gen(function* () {
+		const declared = yield* readCodeScope(root);
+		if (declared._tag === "Unknown") {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: cannot read \`${CODE_VALIDATORS}\` from ${CONFIG_PATH} (${declared.reason}) — which commands validate this repo's code is UNKNOWN, never green.`,
+				noted,
+			);
+		}
+		const scoped = [...noted, declared.note];
+		if (declared.validators.length === 0) {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: ${CONFIG_PATH} declares an empty \`${CODE_VALIDATORS}\` — no code validator is present here, so nothing ran and the verdict is UNKNOWN, never green and never red.`,
+				scoped,
+			);
+		}
+		const ran: string[] = [];
+		for (const {argv} of declared.validators) {
+			const label = argv.join(" ");
+			const result = yield* execStatus(argv[0], argv.slice(1));
+			if (result._tag === "Unstartable") {
+				return refuse(
+					PRECONDITION_UNKNOWN,
+					`${VERB}: ${label} could not be executed: ${result.reason} — the verdict is UNKNOWN, never green.`,
+					scoped,
+				);
+			}
+			ran.push(label);
+			if (!result.ok) {
+				return refuse(VALIDATION_RED, `${VERB}: red — ${label} failed; diagnostics above.`, [
+					...scoped,
+					...diagnostics(result.output),
+				]);
+			}
+		}
+		return answer(
+			JSON.stringify({verdict: "green", surface: "code", tree: root, ran, unvalidated}),
+			scoped,
+		);
+	});
+
 /** The declared workflow validators, or why there are none — `Unreadable` is the one UNKNOWN answer. */
 type ValidatorScope =
 	| {
@@ -506,7 +611,7 @@ const readValidatorScope = (
  * `actionlint` is not a repo dependency anywhere — in phoenix CI installs a pinned tarball at job
  * time — so a tree that lacks it is the ordinary case, not a broken one. It is therefore run when
  * present and **disclosed** when absent, which is the "degrade, stated" answer `SKILL.md`'s
- * missing-surface table gives for an absent superseding authority: `ci.yml`'s `actionlint` job still
+ * missing-surface table gives for an absent superseding authority: the gate workflow's `actionlint` job still
  * decides. A declared validator is the other row of that table — it ships with the repo, so one that
  * cannot be spawned is fail-loud, UNKNOWN, never green.
  *
@@ -523,7 +628,11 @@ const runWorkflowSurface = (
 	workflows: ReadonlyArray<string>,
 	unvalidated: ReadonlyArray<string>,
 	noted: ReadonlyArray<string>,
-): Effect.Effect<VerbOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
+): Effect.Effect<
+	VerbOutcome,
+	never,
+	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem
+> =>
 	Effect.gen(function* () {
 		const declared = yield* readValidatorScope(fs, root);
 		if (declared._tag === "Unreadable") {
@@ -533,6 +642,15 @@ const runWorkflowSurface = (
 				noted,
 			);
 		}
+		const gate = yield* gateWorkflowName(root);
+		if (gate._tag === "Malformed" || gate._tag === "Unknown") {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: cannot read \`ci\` from ${CONFIG_PATH} (${gate.reason}) — which workflow supersedes this verdict is UNKNOWN, never green.`,
+				noted,
+			);
+		}
+		const ciWorkflow = gate.value.gateWorkflow;
 		const scoped = [...noted, declared.note];
 		const ran: string[] = [];
 		const opened = new Set<string>();
@@ -587,7 +705,7 @@ const runWorkflowSurface = (
 			...(notInstalled === null
 				? []
 				: [
-						`${VERB}: ${ACTIONLINT} did NOT run (${notInstalled}) — ci.yml's actionlint job supersedes this verdict on workflow syntax.`,
+						`${VERB}: ${ACTIONLINT} did NOT run (${notInstalled}) — ${ciWorkflow}'s actionlint job supersedes this verdict on workflow syntax.`,
 					]),
 			...(unopened.length === 0
 				? []
@@ -690,26 +808,11 @@ export const runCheck = (
 						`${VERB}: ${unvalidated.length} changed file(s) --surface ${surface} does not validate — NOT covered by this verdict: ${unvalidated.join(", ")}.`,
 					];
 
+		const fs = yield* FileSystem.FileSystem;
 		if (surface === "code") {
-			const ran: string[] = [];
-			for (const runner of CODE_RUNNERS) {
-				const result = yield* execCapture("pnpm", runner.argv);
-				ran.push(runner.label);
-				if (!result.ok) {
-					return refuse(
-						VALIDATION_RED,
-						`${VERB}: red — ${runner.label} failed; diagnostics above.`,
-						[...noted, result.reason],
-					);
-				}
-			}
-			return answer(
-				JSON.stringify({verdict: "green", surface, tree: lane.root, ran, unvalidated}),
-				noted,
-			);
+			return yield* runCodeSurface(lane.root, unvalidated, noted);
 		}
 
-		const fs = yield* FileSystem.FileSystem;
 		if (surface === "workflows") {
 			return yield* runWorkflowSurface(
 				fs,

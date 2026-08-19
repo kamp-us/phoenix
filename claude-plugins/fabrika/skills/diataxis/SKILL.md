@@ -101,9 +101,3 @@ intrudes, and the **split** — which content moves to which surface. A page tha
 - **Structure, not language.** Mode is a property of reader-need and page shape. Product copy stays
   Turkish, technical surfaces stay English, and both classify identically
   ([`.glossary/LANGUAGE.md`](../../../../.glossary/LANGUAGE.md) is canonical).
-
-## Required repo files
-
-| Must exist | Why this skill needs it | When missing |
-| --- | --- | --- |
-| The prose homes the mode table names — `DEVELOPMENT.md`, `.decisions/`, `.patterns/`, `.glossary/` | A split needs a surface to move content to, and the table maps each mode to one | **degrade** — classify against the homes that exist and say in the report which mode has no home here, so the split becomes a placement question for the caller rather than an invented directory |

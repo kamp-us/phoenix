@@ -8,7 +8,10 @@
  * side of any run rather than as an injected `now` no verb accepts: {@link LIVE} cannot age out and
  * {@link EXPIRED} cannot come back.
  */
-import {type FakeShell, fakeShell, okOut} from "../fakes.test-support.ts";
+import {type FileSystem, Layer, type Path} from "effect";
+import type {ChildProcessSpawner} from "effect/unstable/process";
+import {CONFIG_PATH} from "../config/document.ts";
+import {type FakeShell, fakeFs, fakeShell, okOut} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {markerBody} from "./claim.ts";
 
@@ -57,3 +60,30 @@ export const UNCLAIMED: readonly [RegExp, ExecResult] = [COMMENTS, okOut("[]")];
  */
 export const guardedShell = (script: ReadonlyArray<readonly [RegExp, ExecResult]>): FakeShell =>
 	fakeShell([...script, UNCLAIMED]);
+
+/** The directory a triage verb under test is standing in. Its config is the one the load reads. */
+export const CWD = "/repo";
+
+/**
+ * How the fixture repo's `.fabrika.jsonc` reads: its bytes, or a file that is there and denied.
+ *
+ * The denied arm is its own case rather than an absent file, because that is the pair the whole
+ * config surface exists to keep apart — absent is a repo that declared nothing, denied is a repo
+ * whose declaration nobody has read.
+ */
+export type ConfigFixture = string | {readonly unreadable: true};
+
+/**
+ * The whole context a writing triage verb needs: the scripted shell, plus a filesystem carrying
+ * `config` as this repo's `.fabrika.jsonc` — or carrying no config at all, which is the shipped-
+ * defaults case every existing test runs in.
+ */
+export const triageContext = (
+	shell: FakeShell,
+	config?: ConfigFixture,
+): Layer.Layer<ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path> => {
+	const path = `${CWD}/${CONFIG_PATH}`;
+	const files = config === undefined ? {} : {[path]: typeof config === "string" ? config : ""};
+	const unreadable = config === undefined || typeof config === "string" ? [] : [path];
+	return Layer.merge(shell.layer, fakeFs({files, unreadable}).layer);
+};

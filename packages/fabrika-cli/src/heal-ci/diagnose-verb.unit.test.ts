@@ -1,6 +1,6 @@
-import {Effect} from "effect";
+import {Effect, type FileSystem, Layer, type Path} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeShell, okOut} from "../fakes.test-support.ts";
+import {errOut, fakeFs, fakeShell, okOut, unconfigured} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {INCOMPLETE_SCAN, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {runDiagnose} from "./diagnose-verb.ts";
@@ -48,6 +48,7 @@ const options = {
 	driftCommits: 10,
 	repo: null,
 	json: false,
+	cwd: "/repo",
 	env: ENV,
 	now: NOW,
 };
@@ -57,7 +58,23 @@ const run = (
 	overrides: Partial<typeof options> = {},
 ) =>
 	Effect.runPromise(
-		Effect.provide(runDiagnose({...options, ...overrides}), fakeShell(script).layer),
+		Effect.provide(
+			runDiagnose({...options, ...overrides}),
+			Layer.merge(fakeShell(script).layer, unconfigured),
+		),
+	);
+
+/** The same run against a repo that declared something — the config arm `unconfigured` cannot reach. */
+const runWith = (
+	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
+	config: Layer.Layer<FileSystem.FileSystem | Path.Path>,
+	overrides: Partial<typeof options> = {},
+) =>
+	Effect.runPromise(
+		Effect.provide(
+			runDiagnose({...options, ...overrides}),
+			Layer.merge(fakeShell(script).layer, config),
+		),
 	);
 
 const green = (name = "ci-required") => ({name, status: "completed", conclusion: "success"});
@@ -177,14 +194,45 @@ describe("runDiagnose answers", () => {
 			]),
 		);
 		expect(noRuns.stdout).toContain("ci\tno-runs\t0");
-		const noCi = await run(
+		const noCi = await runWith(
+			script([
+				[CHECK_RUNS, checkRuns(0, [])],
+				[WORKFLOWS, workflows()],
+				[RUN_COUNT, runsTotal(0)],
+			]),
+			fakeFs({files: {"/repo/.fabrika.jsonc": '{"ci": {"noProducer": "degrade"}}'}}).layer,
+		);
+		expect(noCi.stdout).toContain("ci\tnone\t0");
+	});
+
+	// The `none` token is the degrade answer, so a repo that never declared `ci.noProducer` may not
+	// be handed it — `review ci` and `ship checks` make the same repo declare the opt-out, and a
+	// third compiled-in reading here is how the three drift apart.
+	it("refuses zero workflows rather than reading `none` off a repo that declared nothing", async () => {
+		const out = await run(
 			script([
 				[CHECK_RUNS, checkRuns(0, [])],
 				[WORKFLOWS, workflows()],
 				[RUN_COUNT, runsTotal(0)],
 			]),
 		);
-		expect(noCi.stdout).toContain("ci\tnone\t0");
+		expect(out.code).toBe(ZERO_SCOPE);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.join("\n")).toContain("zero workflows");
+	});
+
+	it("refuses zero workflows as UNKNOWN when the config itself could not be decoded", async () => {
+		const out = await runWith(
+			script([
+				[CHECK_RUNS, checkRuns(0, [])],
+				[WORKFLOWS, workflows()],
+				[RUN_COUNT, runsTotal(0)],
+			]),
+			fakeFs({files: {"/repo/.fabrika.jsonc": '{"ci": {"noProducer": "maybe"}}'}}).layer,
+		);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.join("\n")).toContain("UNKNOWN, never green");
 	});
 });
 

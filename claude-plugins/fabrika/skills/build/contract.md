@@ -49,7 +49,7 @@ second answer to a gated question can contradict the gate (interface convention 
   *refuses a body that asserts the classification* (#4153) — it never computes one.
 - **A changed-files leak scanner.** `leak-guard.yml` reds it in CI. The writing verbs guard only
   the text this skill itself posts.
-- **A CI-rollup reader.** `ci.yml` owns redness; the review/ship stages read it. `build check` is
+- **A CI-rollup reader.** The repo's CI gate owns redness; the review/ship stages read it. `build check` is
   an in-tree *prediction*, not a second verdict over the gate's question.
 - **A trivial-diff classifier.** v1's ships dormant by design (ADR 0120); nothing here consumes it.
 - **Any opinion about where a lane runs.** No provisioner, no locker, no reaper — and no refusal
@@ -195,7 +195,8 @@ nothing else: the issue still has to carry `ready-for:agent`, which triage stamp
 
 **The inputs, and where each is read.**
 
-- **The active campaigns** — the `## Campaigns` section of the repository's root `ROADMAP.md`. Its
+- **The active campaigns** — the `## Campaigns` section of the file this repo declares as
+  `roadmapFile` in `.fabrika.jsonc`, which defaults to `ROADMAP.md` at the repo root. Its
   grammar is canonical here, so an implementer needs no other document:
 
   ```
@@ -1437,7 +1438,7 @@ fabrika build check --surface code
 | `--surface` | enum: `code` \| `prose` \| `plan` \| `workflows` | yes | — | the surface whose validators run; the skill names it, this verb anchors it |
 
 **Output** — machine. On green, one JSON object:
-`{"verdict": "green", "surface": "code", "tree": "<abs tree root>", "ran": ["pnpm typecheck", "pnpm lint:worktree"], "unvalidated": []}`.
+`{"verdict": "green", "surface": "code", "tree": "<abs tree root>", "ran": [<the commands that ran>], "unvalidated": []}`.
 Red and unknown produce no stdout (`18` / `11`), diagnostics on stderr verbatim from the runners.
 
 `unvalidated` is always present and lists the changed files **this verdict does not cover** —
@@ -1469,10 +1470,14 @@ the file-open level (#5304). Two facts hold that promise up:
 
 Per surface:
 
-- **code** — the exact CI commands (`pnpm typecheck`, `pnpm lint:worktree`), executed in this
-  tree **with the build cache bypassed** (turbo `--force`). A cache hit from another checkout
-  returned another tree's green three times in one session (#4106) and recurred on the review
-  side (#4887); bypassing is cheaper than trusting a key that has already lied.
+- **code** — every command the repo declares under `.fabrika.jsonc`'s `codeValidators`, executed in
+  this tree **with the build cache bypassed**. The cache bypass is the design — a cache hit from
+  another checkout returned another tree's green three times in one session (#4106) and recurred on
+  the review side (#4887) — but the flag expressing it is the repo's, since turbo's `--force` is a
+  hard error to a bare `tsc` (#6015). A repo declaring nothing gets the shipped pair, `pnpm
+  typecheck --force` and `pnpm lint:worktree`. A declared list that is **empty** has nothing to run,
+  which refuses `11`, UNKNOWN — never green, and never the `VALIDATION_RED` that says the code
+  failed.
 - **prose** — changed markdown files: every relative link resolves against this tree; no
   machine-local path (the imported `doc-leaks.ts` predicate); every fabrika-doc reference cited by
   id exists.
@@ -1574,15 +1579,15 @@ changed file into code, markdown, workflow YAML, or **none of them** — that la
 an absence. A diff that is *wholly* it (only `*.sh`, only `*.sql`) refuses on `22` under **every**
 surface: no validator covers those files, so any verdict would be a green over an unread tree. The
 remedy is to extend a validator to cover the class, never to rename the surface — widening the code
-pattern to swallow `.yml` was considered and rejected, because it would claim `pnpm typecheck`
-validated a shell script (#5229). "Split the diff" is not offered as a remedy anywhere here: a lane
+pattern to swallow `.yml` was considered and rejected, because it would claim a repo's code
+validators had validated a shell script (#5229). "Split the diff" is not offered as a remedy anywhere here: a lane
 cannot split a diff it has already written (#5301).
 
 **The workflow class is that remedy taken, not an exception to it** (#5991). `.github/workflows/**`
 sat in the unvalidatable bucket while CI validated it every run, so a lane whose whole diff was
 workflow YAML — the diff class where an unvalidated push costs the most, since the repo's own gates
 live there — could reach no green under any surface. It is a class of its own rather than part of
-`code` for the reason the rejected widening names: its validators are not `pnpm typecheck`.
+`code` for the reason the rejected widening names: its validators are not the code validators.
 
 Its validators are declared, not compiled in: `.fabrika.jsonc`'s `workflowValidators` holds one entry
 per command the repo runs over its own workflows, each an argv plus the `reads` list naming the
@@ -1591,8 +1596,10 @@ a gap: the commands here that machine-read a workflow all live in `pipeline-cli`
 forbids any fabrika verb from invoking, so this repo's workflow surface stands on `actionlint` alone
 and refuses `11` where that is absent too. `actionlint` runs on top when this tree has it — it is a pinned tarball CI installs at job time and
 no repo's dependency, so its absence is the ordinary case and is **disclosed** beside the green
-rather than skipped in silence; `ci.yml`'s own `actionlint` job is the superseding authority there,
-as it is for every verdict this verb prints. A declared command that cannot be spawned is the other
+rather than skipped in silence; the gate workflow's own `actionlint` job is the superseding authority
+there, as it is for every verdict this verb prints. That workflow is named by `ci.gateWorkflow` in
+`.fabrika.jsonc` — phoenix's `ci.yml` when a repo declares nothing, and a bare filename or the load
+is refused `11` (#6026, #6298). A declared command that cannot be spawned is the other
 polarity: it ships with the repo, so it is `11`, UNKNOWN, naming the command.
 
 What holds both honest is per-file coverage, not a count of what ran. A declared guard takes no path
@@ -1635,7 +1642,7 @@ Preconditions: a readable tree root (`11`), the lane's branch checked out (`14`)
 | `build check: no validator that ran opens <files> — reported in \`unvalidated\`, so this green claims nothing about them.` | 0 | scope note beside a green |
 | `build check: <n> workflow validator(s) declared in .fabrika.jsonc.` | 0 | scope note |
 | `build check: no repo workflow validator is declared — <reason>.` | 0 | scope note |
-| `build check: actionlint did NOT run (<reason>) — ci.yml's actionlint job supersedes this verdict on workflow syntax.` | 0 | scope note beside a green |
+| `build check: actionlint did NOT run (<reason>) — <ci.gateWorkflow>'s actionlint job supersedes this verdict on workflow syntax.` | 0 | scope note beside a green |
 | `build check: <n> leak-scan exemption(s) declared in .fabrika.jsonc.` | 0 | scope note |
 | `build check: nothing is leak-scan exempt — <reason>.` | 0 | scope note |
 | `build check: #<n> is held by <winning token>, not by the lane on nonce <nonce>.` | 15 | refusal |
@@ -1655,8 +1662,11 @@ surface that ran, so a file another surface would have read counts as uncovered 
 
 ```
 $ fabrika build check --surface code
-{"verdict":"green","surface":"code","tree":"/private/var/<redacted>/build-4312","ran":["pnpm typecheck","pnpm lint:worktree"],"unvalidated":["README.md","scripts/deploy.sh"]}
+{"verdict":"green","surface":"code","tree":"/private/var/<redacted>/build-4312","ran":["pnpm typecheck --force","pnpm lint:worktree"],"unvalidated":["README.md","scripts/deploy.sh"]}
 ```
+
+`ran` echoes whatever `codeValidators` resolved to, one `argv.join(" ")` per validator; the two
+above are **phoenix's** shipped pair, not a contract.
 
 **Grounding**
 
@@ -1681,7 +1691,7 @@ $ fabrika build check --surface code
 - v1's discipline was prose-only (`SKILL.md:895-935`, exact-CI-command mandate with no
   enforcement); here the command set is the verb's, not the agent's memory.
 - ADR 0092 — zero diff is a refusal, not a vacuous green.
-- The gate's own answer (`ci.yml`) supersedes this verdict wherever they disagree; this verb
+- The gate's own answer supersedes this verdict wherever they disagree; this verb
   predicts, the gate decides (interface convention rule 6).
 
 ---

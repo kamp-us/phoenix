@@ -18,8 +18,9 @@
  * the same three ways: unreadable is UNKNOWN, empty and provably short are refusals, and none of the
  * three is ever `not-required`.
  */
-import {Effect} from "effect";
+import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
+import {governedRootsOr} from "../config/paths.ts";
 import {
 	type ChangedPath,
 	type CommitRange,
@@ -27,7 +28,6 @@ import {
 	diffRangeStatuses,
 	listTreePaths,
 } from "../io/git.ts";
-import {GOVERNANCE_ROOTS} from "../review/classes.ts";
 import {rangeMergeBase, readRangeFlags} from "../review/range-flags.ts";
 import {badNumber, openPull, resolveTargetRepo} from "../review/target.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
@@ -61,6 +61,8 @@ export interface ScopeOptions {
 	readonly tip: string | null;
 	readonly repo: string | null;
 	readonly json: boolean;
+	/** Where to look for `.fabrika.jsonc` — the checkout this run stands in. */
+	readonly cwd: string;
 	readonly env: Readonly<Record<string, string | undefined>>;
 }
 
@@ -216,12 +218,26 @@ const rangeSubject = (
 
 export const runScope = (
 	options: ScopeOptions,
-): Effect.Effect<VerbOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
+): Effect.Effect<
+	VerbOutcome,
+	never,
+	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
+> =>
 	Effect.gen(function* () {
 		const {pr, json} = options;
 
 		const flags = readRangeFlags(VERB, {base: options.base, tip: options.tip, sha: options.sha});
 		if (flags._tag === "Refused") return withNotice(flags.outcome);
+
+		const governed = yield* governedRootsOr(
+			VERB,
+			options.cwd,
+			'the root set is UNKNOWN and the derivation is never "not-required".',
+		);
+		if (governed._tag === "Refused") {
+			return withNotice(refuse(PRECONDITION_UNKNOWN, governed.message));
+		}
+		const governedRoots = governed.roots;
 
 		let resolved: Resolved;
 		if (flags._tag === "Ranged") {
@@ -260,17 +276,20 @@ export const runScope = (
 			);
 		}
 
-		const result = deriveScope(changed, skillRootsIn(tree.value));
-		const present = GOVERNANCE_ROOTS.filter((root) =>
+		const result = deriveScope(changed, skillRootsIn(tree.value), governedRoots);
+		const present = governedRoots.filter((root) =>
 			tree.value.some((path) => path.startsWith(root)),
 		);
 		const diagnostics = [
 			bound,
-			...GOVERNANCE_ROOTS.filter((root) => !present.includes(root)).map(
-				(root) =>
-					`${VERB}: root ${root} is absent in this repository — the derivation covered ${present.length} of ${GOVERNANCE_ROOTS.length} roots.`,
-			),
-			`${VERB}: partitioned ${changed.length} of the ${declared} declared changed files at ${named} across ${GOVERNANCE_ROOTS.length} roots.`,
+			`${VERB}: root set is ${governed.note}.`,
+			...governedRoots
+				.filter((root) => !present.includes(root))
+				.map(
+					(root) =>
+						`${VERB}: root ${root} is absent in this repository — the derivation covered ${present.length} of ${governedRoots.length} roots.`,
+				),
+			`${VERB}: partitioned ${changed.length} of the ${declared} declared changed files at ${named} across ${governedRoots.length} roots.`,
 			NOT_CP_NOTICE,
 		];
 

@@ -162,6 +162,7 @@ or the search index could not be read
 | `15` | refused: the body this verb composed carries an acceptance-criteria block its registered wire reader classifies `Malformed` (ADR 0288) | — | — | — | — | — | ✓ | — | — | — |
 | `16` | refused: `--ready-for agent` over a live body whose acceptance-criteria block the wire reader does not answer `Found` on — every type but `epic` | — | — | — | — | — | — | ✓ | — | — |
 | `17` | refused: a live claim marker on the target names a session other than this one | — | — | — | — | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `18` | refused: no value of `.fabrika.jsonc` may be used — a key's load-time check refused it, it could not be read, or it did not decode | — | — | — | — | — | — | ✓ | ✓ | — |
 | `127` | the verb never ran (unresolved binary) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 
 **This matrix owns what a code *means*; the per-verb tables own what *triggers* it.** Every verb in
@@ -680,7 +681,7 @@ fabrika triage homes [--roadmap <path>] [--repo <owner/name>] [--json]
 
 | Flag | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `--roadmap` | string | no | `ROADMAP.md` at the repo root | the roadmap file whose `## Arcs` and `## Campaigns` tables the open milestones are joined to |
+| `--roadmap` | string | no | `roadmapFile` in `.fabrika.jsonc`, itself defaulting to `ROADMAP.md` | the roadmap file whose `## Arcs` and `## Campaigns` tables the open milestones are joined to. Unflagged, the verb resolves the declared path first; a `.fabrika.jsonc` it could not read refuses `11` rather than falling back to the shipped name |
 | `--repo` | string | no | resolved | the repository |
 | `--json` | boolean | no | `false` | emit the result object |
 
@@ -765,6 +766,7 @@ withhold the home list a triager needs.
 | Message (stderr) | Code | Kind |
 |---|---|---|
 | `triage homes: cannot read milestones in <repo>: <reason> — the home list is UNKNOWN, never empty.` | 11 | refusal |
+| `triage homes: cannot probe the roadmap at <path>: <reason> — the home list is UNKNOWN, never empty.` | 11 | refusal |
 | `triage homes: cannot read the roadmap at <path>: <reason> — the home list is UNKNOWN, never empty.` | 11 | refusal |
 | `triage homes: <repo> has 0 open milestones — refusing to answer, since "no home exists" routes to a kill (ADR 0092).` | 7 | refusal |
 | `triage homes: the roadmap at <path> parsed to 0 arc rows — the table grammar changed or the file is truncated; refusing to answer over an unjoinable roadmap.` | 7 | refusal |
@@ -778,6 +780,21 @@ look" will route work irreversibly on the second one.
 The grammar is a table this verb does not own, so a grammar change silently empties the join; reading
 that as "no homes exist" would route work to a kill. Zero *campaign* rows is a legitimate state and
 passes.
+
+**An ABSENT roadmap is an answer, not either refusal (#5773).** A file that is proven not to exist is
+a proven negative — the join is simply empty — so every open milestone lists with `roadmapRow: null`,
+the standing lanes list beside them, and stderr carries
+`triage homes: no roadmap at <path> — every milestone lists with no arc name.` The campaigns fence
+reads the absent file as the empty document, so its scope line says `campaigns: none active — scope
+fence inert.` The zero-arc-rows refusal above is reached only by a roadmap that *exists*, so the
+grammar-drift guard keeps its teeth. This is the degrade disposition the rest of the corpus already
+declares for `ROADMAP.md`; `homes` was the one reader treating it fail-loud.
+
+**Absent and unreadable are separated by a filesystem probe, never by the text of a read failure.**
+The verb asks `exists(<path>)` first: a probe that could not be *performed* refuses `11`, `false`
+takes the absent path above, and only on `true` does it read — a read that then fails is the `11`
+row. The `ReadFailed` this package raises flattens `NotFound` and `EACCES` into one `reason` string,
+so matching on that string would be a guess dressed as a discrimination.
 
 **Scope** — every open milestone in `--repo`, paginated, joined to the `## Arcs` and `## Campaigns`
 tables of the roadmap file, read from the repo root the delivery layer already sets as the process
@@ -1553,6 +1570,7 @@ for drift, not because they are currently absent.)
 | `11` | the issue, its comments, the claim on it, the repository's label set, or its milestone set could not be read |
 | `17` | a live claim marker on the issue names another session |
 | `16` | `--ready-for agent` over a live body the wire reader does not answer `Found` on — every type but `epic`; nothing was written |
+| `18` | `.fabrika.jsonc` yielded no usable value — a key's load-time check refused it (the containment invariant is one such check), the file could not be read, or a key did not decode; refused at load, before the issue is even read |
 
 The issue being proven absent is `7` as well — the same zero-scope seat, since there is no issue to
 stamp.
@@ -1573,6 +1591,7 @@ stamp.
 | `triage apply: cannot read #<n>'s comments in <repo>: <reason> — the claim on it is UNKNOWN; nothing was written.` | 11 | refusal |
 | `triage apply: cannot resolve the claim on #<n> in <repo>: <reason> — nothing was written.` | 11 | refusal |
 | `triage apply: #<n> is claimed by session <s> — refusing to mutate another session's issue. Run `fabrika triage claim <n>` and act only on `won`.` | 17 | refusal |
+| `triage apply: .fabrika.jsonc is refused — <reason>. Nothing was written; fix the config, because every label this verb would reconcile is judged against it.` | 18 | refusal |
 | `triage apply: cannot read <what> in <repo>: <reason> — nothing was written; the transition is UNKNOWN.` | 11 | refusal |
 | `triage apply: write failed after <k> of <m> changes: <reason> — #<n> may be partially labelled; re-run this verb, which is idempotent.` | 8 | refusal |
 | `triage apply: read-back shows <observed> — expected exactly one type, one priority, status:triaged, one ready-for, and <the milestone / no milestone>.` | 9 | refusal |
@@ -1717,6 +1736,7 @@ it.
 | `9` | the writes landed but the read-back does not match |
 | `11` | the issue, its comments, the claim on it, or the repository's label set could not be read |
 | `17` | a live claim marker on the issue names another session |
+| `18` | `.fabrika.jsonc` yielded no usable value — a key's load-time check refused it (the containment invariant is one such check), the file could not be read, or a key did not decode; refused at load, before the comment is posted |
 
 **Errors**
 
@@ -1728,6 +1748,7 @@ it.
 | `triage park: cannot read #<n>'s comments in <repo>: <reason> — the claim on it is UNKNOWN; nothing was written.` | 11 | refusal |
 | `triage park: cannot resolve the claim on #<n> in <repo>: <reason> — nothing was written.` | 11 | refusal |
 | `triage park: #<n> is claimed by session <s> — refusing to mutate another session's issue. Run `fabrika triage claim <n>` and act only on `won`.` | 17 | refusal |
+| `triage park: .fabrika.jsonc is refused — <reason>. Nothing was written; fix the config, because every label this verb would reconcile is judged against it.` | 18 | refusal |
 | `triage park: the questions text carries a machine-local path at line <k> (<class>) — rewrite it repo-relative.` | 5 | refusal |
 | `triage park: the questions text is a bare "@" path reference — the body never arrived. Send it on stdin.` | 6 | refusal |
 | `triage park: label status:needs-info does not exist in <repo> — refusing to write, because the API would create it (#4285).` | 7 | refusal |

@@ -1,4 +1,5 @@
 import {describe, expect, it} from "vitest";
+import {SHIPPED_CONTAINMENT_VOCABULARY} from "../config/keys/containment-vocabulary.ts";
 import {DEFECT_TYPES, type DefectType, deriveFloor, refsToProbe} from "./defects.ts";
 import type {LedgerScope} from "./digest.ts";
 import type {ChildLedger} from "./model.ts";
@@ -27,7 +28,11 @@ const scope = (overrides: Partial<LedgerScope> = {}): LedgerScope => ({
 });
 
 const floorOf = (overrides: Partial<LedgerScope> = {}, absent: ReadonlyArray<number> = []) =>
-	deriveFloor({ledger: scope(overrides), provenAbsent: new Set(absent)});
+	deriveFloor({
+		ledger: scope(overrides),
+		provenAbsent: new Set(absent),
+		vocabulary: SHIPPED_CONTAINMENT_VOCABULARY,
+	});
 
 const types = (overrides: Partial<LedgerScope> = {}, absent: ReadonlyArray<number> = []) =>
 	floorOf(overrides, absent).defects.map((defect) => defect.type);

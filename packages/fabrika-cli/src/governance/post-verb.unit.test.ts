@@ -1,6 +1,6 @@
-import {Effect} from "effect";
+import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeShell, okOut, once} from "../fakes.test-support.ts";
+import {errOut, fakeShell, okOut, once, unconfigured} from "../fakes.test-support.ts";
 import {runsAtHead, workflowRun} from "../heal-ci/fixtures.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import type {StdinRead} from "../io/stdin.ts";
@@ -43,6 +43,7 @@ const options = {
 	tip: null,
 	repo: null,
 	json: false,
+	cwd: "/repo",
 	env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,
 	stdin: Effect.succeed({_tag: "Text", text: BODY} as StdinRead),
 };
@@ -51,7 +52,12 @@ const run = (
 	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
 	overrides: Partial<typeof options> = {},
 ) =>
-	Effect.runPromise(Effect.provide(runPost({...options, ...overrides}), fakeShell(script).layer));
+	Effect.runPromise(
+		Effect.provide(
+			runPost({...options, ...overrides}),
+			Layer.merge(fakeShell(script).layer, unconfigured),
+		),
+	);
 
 const composed = (body = BODY, sha = HEAD): string =>
 	`governance: PASS @ ${sha} content:${CONTENT} — no contradiction, no weakening\n\n${body}`;
@@ -106,7 +112,9 @@ describe("runPost", () => {
 			[CREATE, created()],
 			[READ_BACK, okOut(JSON.stringify({body: composed()}))],
 		]);
-		const out = await Effect.runPromise(Effect.provide(runPost(options), shell.layer));
+		const out = await Effect.runPromise(
+			Effect.provide(runPost(options), Layer.merge(shell.layer, unconfigured)),
+		);
 		expect(out.code).toBe(0);
 		expect(out.stdout).toContain("\tcreated\t");
 		expect(shell.calls.some((call) => PATCH.test(call))).toBe(false);
@@ -131,7 +139,9 @@ describe("runPost", () => {
 			...binding(),
 			[PATHS_AT(), paths("src/cart.ts", "README.md")],
 		]);
-		const out = await Effect.runPromise(Effect.provide(runPost(options), fake.layer));
+		const out = await Effect.runPromise(
+			Effect.provide(runPost(options), Layer.merge(fake.layer, unconfigured)),
+		);
 		expect(out.code).toBe(NOT_HARNESS_TOUCHING);
 		expect(out.code).not.toBe(OFF_VOCABULARY);
 		expect(out.stdout).toBe("");
@@ -206,7 +216,9 @@ describe("runPost", () => {
 		const fake = fakeShell(
 			governing([once(CREATE), created()], [READ_BACK, okOut(JSON.stringify({body: composed()}))]),
 		);
-		await Effect.runPromise(Effect.provide(runPost(options), fake.layer));
+		await Effect.runPromise(
+			Effect.provide(runPost(options), Layer.merge(fake.layer, unconfigured)),
+		);
 		expect(fake.calls).toContain("gh api repos/o/r/issues/comments/91");
 	});
 });
@@ -233,7 +245,9 @@ describe("runPost asserts the governance floor at the head it posted to", () => 
 
 	it("re-fires the red floor run and names the new attempt on stderr", async () => {
 		const shell = fakeShell(landed(...floorRed()));
-		const out = await Effect.runPromise(Effect.provide(runPost(options), shell.layer));
+		const out = await Effect.runPromise(
+			Effect.provide(runPost(options), Layer.merge(shell.layer, unconfigured)),
+		);
 		expect(out.code).toBe(0);
 		expect(shell.calls.some((call) => RERUN.test(call))).toBe(true);
 		expect(out.stderr.at(-1)).toContain(`re-fired governance-floor run ${FLOOR} at attempt 2`);
@@ -255,7 +269,9 @@ describe("runPost asserts the governance floor at the head it posted to", () => 
 
 	it("asserts the floor only after the verdict has been read back", async () => {
 		const shell = fakeShell(landed(...floorRed()));
-		await Effect.runPromise(Effect.provide(runPost(options), shell.layer));
+		await Effect.runPromise(
+			Effect.provide(runPost(options), Layer.merge(shell.layer, unconfigured)),
+		);
 		const readBack = shell.calls.findIndex((call) => READ_BACK.test(call));
 		const refire = shell.calls.findIndex((call) => RERUN.test(call));
 		expect(readBack).toBeGreaterThanOrEqual(0);

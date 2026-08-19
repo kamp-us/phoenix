@@ -31,11 +31,15 @@ const run = (
 	script: ReadonlyArray<readonly [RegExp, ReturnType<typeof okOut>]>,
 	files: Record<string, string | null> = {"ROADMAP.md": ROADMAP},
 	overrides: Partial<typeof options> = {},
+	fs: {
+		readonly unreadable?: ReadonlyArray<string>;
+		readonly unprobeable?: ReadonlyArray<string>;
+	} = {},
 ) =>
 	Effect.runPromise(
 		Effect.provide(
 			runHomes({...options, ...overrides}),
-			Layer.merge(fakeShell(script).layer, fakeFs({files}).layer),
+			Layer.merge(fakeShell(script).layer, fakeFs({files, ...fs}).layer),
 		),
 	);
 
@@ -109,10 +113,60 @@ describe("runHomes", () => {
 		expect(out.stderr.at(-1)).toContain("never empty");
 	});
 
-	it("refuses an unreadable roadmap as UNKNOWN rather than answering unjoined", async () => {
-		const out = await run([twoMilestones], {"ROADMAP.md": null});
+	it("refuses a roadmap that EXISTS but cannot be read as UNKNOWN rather than answering unjoined", async () => {
+		const out = await run(
+			[twoMilestones],
+			{"ROADMAP.md": ROADMAP},
+			{},
+			{unreadable: ["ROADMAP.md"]},
+		);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toContain("cannot read the roadmap");
+	});
+
+	it("refuses a roadmap whose EXISTENCE could not be probed as UNKNOWN", async () => {
+		const out = await run([twoMilestones], {}, {}, {unprobeable: ["ROADMAP.md"]});
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toContain("cannot probe the roadmap");
+	});
+
+	it("ANSWERS over an absent roadmap — every milestone lists, unjoined, beside the standing lanes", async () => {
+		const out = await run([twoMilestones], {});
+		expect(out.code).toBe(ANSWER);
+		expect(out.stdout.trimEnd().split("\n")).toEqual([
+			"homes",
+			"milestone\t24\tSözlük — search and discovery",
+			"milestone\t44\tfabrika",
+			"lane\twayfinder:backlog\tfog — uncharted work upstream of any arc",
+			"lane\taxis:pipeline-hardening\tthe standing pipeline and reliability lane",
+		]);
+	});
+
+	it("says on stderr that no roadmap was found, so the empty join is visible rather than silent", async () => {
+		const out = await run([twoMilestones], {});
+		expect(out.stderr.join("\n")).toContain("no roadmap at ROADMAP.md");
+	});
+
+	it("names the flagged path in that notice, not a compiled-in default", async () => {
+		const out = await run([twoMilestones], {}, {roadmap: "docs/ROADMAP.md"});
+		expect(out.stderr.join("\n")).toContain("no roadmap at docs/ROADMAP.md");
+	});
+
+	it("carries the milestones with a null roadmapRow into valid --json on the absent path", async () => {
+		const out = await run([twoMilestones], {}, {json: true});
+		expect(out.code).toBe(ANSWER);
+		expect(JSON.parse(out.stdout).milestones).toEqual([
+			{number: 24, title: "Sözlük — search and discovery", roadmapRow: null},
+			{number: 44, title: "fabrika", roadmapRow: null},
+		]);
+	});
+
+	it("still refuses zero open milestones when the roadmap is absent — the two guards are independent", async () => {
+		const out = await run([[MILESTONES, okOut("")]], {});
+		expect(out.code).toBe(ZERO_SCOPE);
+		expect(out.stderr.join("\n")).toContain("0 open milestones");
 	});
 
 	it("REFUSES a roadmap that parsed to 0 arc rows — a grammar change empties the join silently", async () => {

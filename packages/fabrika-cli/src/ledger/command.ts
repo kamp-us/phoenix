@@ -64,7 +64,15 @@ const open = leafCommand(
 	"open",
 	{number: epicArg, token: tokenFlag, repo: repoFlag},
 	Effect.fn(function* ({number, token, repo}) {
-		yield* emit(yield* runOpen({number, token, repo: Option.getOrNull(repo), env: process.env}));
+		yield* emit(
+			yield* runOpen({
+				number,
+				token,
+				repo: Option.getOrNull(repo),
+				cwd: process.cwd(),
+				env: process.env,
+			}),
+		);
 	}),
 ).pipe(
 	Command.withShortDescription("Prove the ground and open the plan run for an epic."),
@@ -83,6 +91,7 @@ const draft = leafCommand(
 				bodyDigest,
 				token,
 				repo: Option.getOrNull(repo),
+				cwd: process.cwd(),
 				env: process.env,
 				stdin,
 			}),
@@ -163,6 +172,7 @@ const child = leafCommand(
 				labels: label,
 				token,
 				repo: Option.getOrNull(repo),
+				cwd: process.cwd(),
 				env: process.env,
 				stdin,
 			}),
@@ -171,7 +181,7 @@ const child = leafCommand(
 ).pipe(
 	Command.withShortDescription("Mint one child issue with every birth attribute at once."),
 	Command.withDescription(
-		'Mint one child with EVERY birth attribute in the one POST — title, body, every label, milestone and assignee — record it in the run manifest, link it as a native sub-issue, then re-read and report the OBSERVED result. Prints {"answer":"minted","epic":n,"child":n,"linked":true,"observed":{…},"stories":[…],"containment":"…"}. Exits 3 (stdin held nothing), 4 (the composed body\'s fields or sections do not parse: a malformed **Stories:** value, absent or malformed acceptance criteria, or a type:feature child whose **Containment:** is missing, unset or none while the cycle doc is present), 5 (machine-local path), 6 (bare @ reference), 7 (the epic is proven absent or closed), 8 (the create was attempted and no re-read could prove it — UNKNOWN), 9 (created and it does not read back as sent), 10 (a label, --type, --priority, --milestone or --ready-for off its closed vocabulary; --ready-for absent; --ready-for human without --assignee; neither --milestone nor a standing-lane --label, so the child would be born homeless; or not a type:epic), 11 (a precondition read failed — NOTHING was created), 15 (this LANE does not hold the epic\'s claim — --token says which lane is asking, #6060), 23 (created and the sub-issue link could not be proven), 26 (created and the run manifest could not be written). Example: fabrika ledger child 4300 --title "queue view: fate loader" --type type:feature --priority p1 --ready-for agent --token build:s-9f2e:c1a4d6f8-… < child.md',
+		'Mint one child with EVERY birth attribute in the one POST — title, body, every label, milestone and assignee — record it in the run manifest, link it as a native sub-issue, then re-read and report the OBSERVED result. Prints {"answer":"minted","epic":n,"child":n,"linked":true,"observed":{…},"stories":[…],"containment":"…"}. Exits 3 (stdin held nothing), 4 (the composed body\'s fields or sections do not parse: a malformed **Stories:** value, absent or malformed acceptance criteria, or a child of an asked type whose **Containment:** is off the vocabulary `.fabrika.jsonc`\'s containmentVocabulary resolves to, while the cycle doc is present), 5 (machine-local path), 6 (bare @ reference), 7 (the epic is proven absent or closed), 8 (the create was attempted and no re-read could prove it — UNKNOWN), 9 (created and it does not read back as sent), 10 (a label, --type, --priority, --milestone or --ready-for off its closed vocabulary; --ready-for absent; --ready-for human without --assignee; neither --milestone nor a standing-lane --label, so the child would be born homeless; or not a type:epic), 11 (a precondition read failed, or the config exists and its containmentVocabulary does not decode — NOTHING was created), 15 (this LANE does not hold the epic\'s claim — --token says which lane is asking, #6060), 23 (created and the sub-issue link could not be proven), 26 (created and the run manifest could not be written). Example: fabrika ledger child 4300 --title "queue view: fate loader" --type type:feature --priority p1 --ready-for agent --token build:s-9f2e:c1a4d6f8-… < child.md',
 	),
 );
 
@@ -180,7 +190,14 @@ const topology = leafCommand(
 	{number: epicArg, token: tokenFlag, repo: repoFlag},
 	Effect.fn(function* ({number, token, repo}) {
 		yield* emit(
-			yield* runTopology({number, token, repo: Option.getOrNull(repo), env: process.env, stdin}),
+			yield* runTopology({
+				number,
+				token,
+				repo: Option.getOrNull(repo),
+				cwd: process.cwd(),
+				env: process.env,
+				stdin,
+			}),
 		);
 	}),
 ).pipe(
@@ -195,7 +212,14 @@ const write = leafCommand(
 	{number: epicArg, bodyDigest: bodyDigestFlag, token: tokenFlag, repo: repoFlag},
 	Effect.fn(function* ({number, bodyDigest, token, repo}) {
 		yield* emit(
-			yield* runWrite({number, bodyDigest, token, repo: Option.getOrNull(repo), env: process.env}),
+			yield* runWrite({
+				number,
+				bodyDigest,
+				token,
+				repo: Option.getOrNull(repo),
+				cwd: process.cwd(),
+				env: process.env,
+			}),
 		);
 	}),
 ).pipe(
@@ -224,6 +248,7 @@ const supersede = leafCommand(
 				reason,
 				token,
 				repo: Option.getOrNull(repo),
+				cwd: process.cwd(),
 				env: process.env,
 			}),
 		);

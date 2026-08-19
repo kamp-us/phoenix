@@ -18,8 +18,9 @@
  * the ADR 0055 ACL gate and lands there too. Only a head-bound PASS from an authorized author is
  * satisfied.
  */
-import {Effect} from "effect";
+import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
+import {governedRootsOr} from "../config/paths.ts";
 import {isRecord, parseJson} from "../io/json.ts";
 import {listPullFiles} from "../io/pulls.ts";
 import {touchesGovernanceRoot} from "../review/classes.ts";
@@ -49,6 +50,8 @@ export interface FloorOptions {
 	readonly sha: string;
 	readonly repo: string | null;
 	readonly json: boolean;
+	/** Where to look for `.fabrika.jsonc` — the checkout this run stands in. */
+	readonly cwd: string;
 	readonly env: Readonly<Record<string, string | undefined>>;
 }
 
@@ -81,13 +84,24 @@ const governanceState = (stdout: string): string | null => {
 
 export const runFloor = (
 	options: FloorOptions,
-): Effect.Effect<VerbOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
+): Effect.Effect<
+	VerbOutcome,
+	never,
+	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
+> =>
 	Effect.gen(function* () {
 		const {pr, json} = options;
 		const bad = badNumber(VERB, "a pull-request number", pr);
 		if (bad !== null) return bad;
 		const bound = inspectedSha(VERB, options.sha);
 		if (typeof bound !== "string") return bound;
+
+		const governed = yield* governedRootsOr(
+			VERB,
+			options.cwd,
+			'whether the floor binds is UNKNOWN, never "n/a".',
+		);
+		if (governed._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, governed.message);
 
 		const resolved = yield* resolveTargetRepo(VERB, options.repo, options.env);
 		if (resolved._tag === "Refused") return resolved.outcome;
@@ -126,7 +140,7 @@ export const runFloor = (
 			);
 		}
 
-		if (!touchesGovernanceRoot(listed.value)) {
+		if (!touchesGovernanceRoot(listed.value, governed.roots)) {
 			const clear = `${VERB}: #${pr}'s diff touches no governance root, so the floor does not bind — this is an answer about the diff, not a discharged verdict.`;
 			return answer(
 				json
@@ -153,6 +167,7 @@ export const runFloor = (
 			cp: false,
 			repo,
 			json: true,
+			cwd: options.cwd,
 			env: options.env,
 		});
 		const relayed = [...scanned, ...gated.stderr];

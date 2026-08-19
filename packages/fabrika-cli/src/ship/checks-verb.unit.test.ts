@@ -1,6 +1,6 @@
-import {Effect} from "effect";
+import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeShell, okOut} from "../fakes.test-support.ts";
+import {errOut, fakeFs, fakeShell, okOut} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {rollupFor, runChecks} from "./checks-verb.ts";
 import {INCOMPLETE_SCAN, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
@@ -22,13 +22,22 @@ const options = {
 	repo: null,
 	json: false,
 	env: ENV,
+	cwd: "/repo",
 };
+
+const CONFIG = "/repo/.fabrika.jsonc";
 
 const run = (
 	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
 	overrides: Partial<typeof options> = {},
+	files: Readonly<Record<string, string | null>> = {},
 ) =>
-	Effect.runPromise(Effect.provide(runChecks({...options, ...overrides}), fakeShell(script).layer));
+	Effect.runPromise(
+		Effect.provide(
+			runChecks({...options, ...overrides}),
+			Layer.merge(fakeShell(script).layer, fakeFs({files}).layer),
+		),
+	);
 
 const noRun = (name: string, status: string, conclusion: string | null = null) => ({
 	name,
@@ -45,8 +54,12 @@ describe("rollupFor", () => {
 		expect(rollupFor({runs: [], workflows: 12, runCount: 0}, [])).toBe("no-runs");
 	});
 
-	it("is pending, never green, on the foreign-repo zero-workflow case", () => {
-		expect(rollupFor({runs: [], workflows: 0, runCount: 0}, [])).toBe("pending");
+	it("is no-producer on zero workflows, never collapsed into pending (#6298)", () => {
+		expect(rollupFor({runs: [], workflows: 0, runCount: 0}, [])).toBe("no-producer");
+	});
+
+	it("keeps no-producer apart from pending — the second waits on a run, the first never will", () => {
+		expect(rollupFor({runs: [], workflows: 1, runCount: 3}, [])).toBe("pending");
 	});
 });
 
@@ -150,5 +163,37 @@ describe("runChecks", () => {
 		]);
 		expect(out.code).toBe(ZERO_SCOPE);
 		expect(out.stderr.at(-1)).toBe(`ship checks: no commit ${HEAD} on PR #4321.`);
+	});
+});
+
+describe("the no-producer split", () => {
+	const noWorkflows: ReadonlyArray<readonly [RegExp, ExecResult]> = [
+		[PULL, pull()],
+		[COMMIT, okOut(HEAD)],
+		[RUNS, checkRuns(0, [])],
+		[WORKFLOWS, workflows()],
+		[RUN_COUNT, runsTotal(0)],
+	];
+
+	it("refuses zero workflows on 7 by default", async () => {
+		const out = await run(noWorkflows);
+		expect(out.code).toBe(ZERO_SCOPE);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toContain("zero workflows — no CI producer");
+	});
+
+	it("prints no-producer, never pending and never green, when the repo declares degrade", async () => {
+		const out = await run(noWorkflows, {}, {[CONFIG]: '{"ci": {"noProducer": "degrade"}}'});
+		expect(out.code).toBe(0);
+		expect(out.stdout).toBe(
+			[`checks\t${HEAD}\tno-producer`, "run\t0", "facts\tworkflows:0\truns:0", ""].join("\n"),
+		);
+		expect(out.stderr.at(-1)).toContain("no producer, so there is nothing to roll up");
+	});
+
+	it("refuses an off-vocabulary noProducer on 11 — never the shipped default", async () => {
+		const out = await run(noWorkflows, {}, {[CONFIG]: '{"ci": {"noProducer": "ignore"}}'});
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stderr.at(-1)).toContain("is not one of refuse, degrade");
 	});
 });

@@ -7,7 +7,9 @@
  *
  * A **proven-absent** CODEOWNERS (404) is an empty row set, which classifies as the `unknown` hold.
  * A **failed read** is neither — it is the caller's `11`, the distinction v1 collapsed when a failed
- * §CP read reported "awaiting approval" (#4223).
+ * §CP read reported "awaiting approval" (#4223). Neither answers `not-control-plane`: ADR 0220 §4
+ * names collapsing `unknown` → `not-control-plane` the recurring fail-open defect, and `unknown` is
+ * the state that holds the PR.
  */
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";

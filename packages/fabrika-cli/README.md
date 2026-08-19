@@ -947,7 +947,7 @@ What state the factory is in — the verbs the
 
 ```
 status open                       # the composite five-field readout the skill injects
-status config                     # which declared repo surfaces exist here — the detection verb
+status settings                   # every config key, its resolved value and where that came from
 status menu                       # the landed skill roster, derived from the skills tree
 status readout                    # the landed-decision digest, as published
 status board                      # counts of the board's decided buckets

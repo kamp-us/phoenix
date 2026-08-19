@@ -58,7 +58,9 @@ const read = leafCommand(
 	"read",
 	{number: epicArg, repo: repoFlag},
 	Effect.fn(function* ({number, repo}) {
-		yield* emit(yield* runRead({number, repo: Option.getOrNull(repo), env: process.env}));
+		yield* emit(
+			yield* runRead({number, repo: Option.getOrNull(repo), cwd: process.cwd(), env: process.env}),
+		);
 	}),
 ).pipe(
 	Command.withShortDescription("The epic, its children and its parsed ledger."),
@@ -71,7 +73,9 @@ const check = leafCommand(
 	"check",
 	{number: epicArg, repo: repoFlag},
 	Effect.fn(function* ({number, repo}) {
-		yield* emit(yield* runCheck({number, repo: Option.getOrNull(repo), env: process.env}));
+		yield* emit(
+			yield* runCheck({number, repo: Option.getOrNull(repo), cwd: process.cwd(), env: process.env}),
+		);
 	}),
 ).pipe(
 	Command.withShortDescription("The deterministic floor over the thirteen hard defect types."),
@@ -85,7 +89,14 @@ const flip = leafCommand(
 	{number: epicArg, digest: digestFlag, token: tokenFlag, repo: repoFlag},
 	Effect.fn(function* ({number, digest, token, repo}) {
 		yield* emit(
-			yield* runFlip({number, digest, token, repo: Option.getOrNull(repo), env: process.env}),
+			yield* runFlip({
+				number,
+				digest,
+				token,
+				repo: Option.getOrNull(repo),
+				cwd: process.cwd(),
+				env: process.env,
+			}),
 		);
 	}),
 ).pipe(
@@ -117,6 +128,7 @@ const verdict = leafCommand(
 				token,
 				polarity: Option.getOrNull(polarity),
 				repo: Option.getOrNull(repo),
+				cwd: process.cwd(),
 				env: process.env,
 				stdin: Effect.sync(readStdin),
 			}),

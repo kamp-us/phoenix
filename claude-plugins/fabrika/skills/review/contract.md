@@ -271,8 +271,9 @@ deliberately do **not** set it: they classify a foreign repo's skill text for th
 the `governance` skill; the flag only makes the seam mechanical.
 
 **`governance` is a fourth-root answer, and it is why `harness` must not be read as one.** The line
-is `touchesGovernanceRoot` over the same file list — `.decisions/` plus the three `harness` roots,
-the one derivation `governance scope` prints, imported rather than recomputed (#4730). So a
+is `touchesGovernanceRoot` over the same file list, against the **declared** governance roots
+(`governedRoots`, whose shipped value here is `.decisions/` plus the three `harness` roots) — the
+one derivation `governance scope` prints, imported rather than recomputed (#4730). So a
 `.decisions/`-only diff prints `harness\tfalse` and `governance\trequired`, which is exactly the
 pair a reviewer keying the governance obligation off `harness` got wrong on PR #5604: a clean PASS,
 then the ship gate blocking on `ns governance absent` with nobody told to fill it (#5607). The token
@@ -557,7 +558,7 @@ fabrika review ci 4321 [--sha <head>] [--repo <owner/name>] [--json]
 | `--repo` | string | no | resolved | the repository |
 | `--json` | boolean | no | `false` | emit the result object |
 
-**Output** — machine channel. First line: `ci\t<sha>\t<green|red|pending>`. Second line:
+**Output** — machine channel. First line: `ci\t<sha>\t<green|red|pending|no-producer>`. Second line:
 `check\t<count>` — the number of check-run lines that follow, so the line channel carries its
 own completeness proof. Then one line per check run —
 `<name>\t<success|failure|neutral|cancelled|skipped|timed_out|action_required|in_progress|queued>` —
@@ -573,6 +574,16 @@ each concluded `success`, `neutral` or `skipped` (the two conclusions GitHub def
 non-blocking). No status falls outside these three buckets; an unrecognized conclusion string
 is `red`, never silently dropped.
 
+**An empty enumeration asks one further question: does this repo produce CI at all?** The two
+facts are different and no longer share an answer — a repo whose checks have not reported yet is
+still going to report, and a repo with no Actions workflows never will. The evidence is the
+workflow *inventory* and nothing else: **existence is the whole test, and nothing inspects what a
+workflow does** (#5603, R17.1 — "only if workflows exist is fine dude"). Zero workflows refuses on
+`7`, unless the repo declares `ci.noProducer: "degrade"` in `.fabrika.jsonc`, which rolls up
+`no-producer` at exit `0` with `check\t0` — its own token, never `green` and never `pending`. The
+inventory is read only when the enumeration came back empty: a check run that reported already
+proves a producer.
+
 If `--sha` is given and does not prefix-match the PR's live head, a stderr notice names both —
 the caller is enumerating a head that has moved, which is a fact worth seeing at the read even
 though the `12` stale-refusal seat belongs to `review post`, the write seam.
@@ -581,8 +592,8 @@ though the `12` stale-refusal seat belongs to `review post`, the write seam.
 
 | Code | Trigger |
 |---|---|
-| `7` | the PR or the `--sha` is proven absent — no commit to enumerate; **or zero check runs are declared at the commit** — a vacuous green is the ADR 0092 fail-open and is refused |
-| `11` | the check-run read failed — CI state is UNKNOWN, never `green` |
+| `7` | the PR or the `--sha` is proven absent — no commit to enumerate; **or zero check runs are declared at the commit** — a vacuous green is the ADR 0092 fail-open and is refused; **or the repo has zero workflows** under the shipped `ci.noProducer: "refuse"` |
+| `11` | the check-run read, the workflow-inventory read, or `.fabrika.jsonc`'s `ci` key failed — CI state is UNKNOWN, never `green` |
 | `13` | entries received < declared `total_count` — the enumeration is provably incomplete and is never read as "no red checks" |
 
 **Errors**
@@ -592,7 +603,11 @@ though the `12` stale-refusal seat belongs to `review post`, the write seam.
 | `review ci: PR #<n> not found in <repo>.` | 7 | refusal |
 | `review ci: no commit <sha> on PR #<n> in <repo>.` | 7 | refusal |
 | `review ci: zero check runs declared at <sha> — refusing to report green over an empty enumeration (ADR 0092).` | 7 | refusal |
+| `review ci: <repo> has zero workflows — no CI producer, so no head can be evidenced (ADR 0092). A repo that runs no workflows declares \`ci.noProducer: "degrade"\`.` | 7 | refusal |
 | `review ci: cannot enumerate check runs at <sha>: <reason> — CI state is UNKNOWN, never green.` | 11 | refusal |
+| `review ci: cannot enumerate the workflow inventory of <repo>: <reason> — whether a producer exists is UNKNOWN, never green.` | 11 | refusal |
+| `review ci: cannot read \`ci\` from the repo config (<reason>) — whether <repo> produces CI is UNKNOWN, never green.` | 11 | refusal |
+| `review ci: <repo> declares \`ci.noProducer: degrade\` and has zero workflows — no producer, so there is nothing to roll up.` | 0 | notice |
 | `review ci: received <k> of <m> declared check runs at <sha> — refusing the partial enumeration (#3999).` | 13 | refusal |
 | `review ci: the live head is <live>, you are enumerating at <sha> — the head moved; a verdict still binds only what was inspected.` | 0 | notice |
 

@@ -17,20 +17,24 @@
 import {randomUUID} from "node:crypto";
 import {Effect, Option} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
+import {CONFIG_PATH} from "../config/document.ts";
+import {readRoadmapFile} from "../config/paths.ts";
 import {leafCommand} from "../excess-operand.ts";
 import {readStdin} from "../io/stdin.ts";
-import type {VerbOutcome} from "../verb.ts";
+import {refuse, type VerbOutcome} from "../verb.ts";
 import {runApply} from "./apply-verb.ts";
 import {runClaim} from "./claim-verb.ts";
+import {PRECONDITION_UNKNOWN} from "./codes.ts";
 import {runCodes} from "./codes-verb.ts";
 import {runEnrich} from "./enrich-verb.ts";
 import {AUDIENCES, PRIORITIES, STANDING_LANES, TYPES} from "./facets.ts";
-import {DEFAULT_ROADMAP, runHomes} from "./homes-verb.ts";
+import {runHomes} from "./homes-verb.ts";
 import {runKill} from "./kill-verb.ts";
 import {runPark} from "./park-verb.ts";
 import {runProvenance} from "./provenance-verb.ts";
 import {DEFAULT_QUEUE_LABEL, DEFAULT_QUEUE_LIMIT, runQueue} from "./queue-verb.ts";
 import {runRepairCriteria} from "./repair-criteria-verb.ts";
+import {ROADMAP_FILE} from "./roadmap.ts";
 import {runSplit} from "./split-verb.ts";
 
 /** Write the outcome and exit on its code — stdout is the answer, everything else is stderr. */
@@ -168,13 +172,17 @@ const apply = leafCommand(
 	{
 		issue: issueArg,
 		type: Flag.string("type").pipe(
-			Flag.withDescription(`the issue's type: one of ${TYPES.join(", ")}`),
+			Flag.withDescription(
+				`the issue's type; the default vocabulary is ${TYPES.join(", ")}, and boardVocabulary replaces it`,
+			),
 		),
 		priority: Flag.string("priority").pipe(
-			Flag.withDescription(`the priority bucket: one of ${PRIORITIES.join(", ")}`),
+			Flag.withDescription(
+				`the priority bucket; the default vocabulary is ${PRIORITIES.join(", ")}`,
+			),
 		),
 		readyFor: Flag.string("ready-for").pipe(
-			Flag.withDescription(`who picks it up: ${AUDIENCES.join(" or ")}`),
+			Flag.withDescription(`who picks it up; the default vocabulary is ${AUDIENCES.join(" or ")}`),
 		),
 		home: Flag.integer("home").pipe(
 			Flag.optional,
@@ -183,7 +191,7 @@ const apply = leafCommand(
 		lane: Flag.string("lane").pipe(
 			Flag.optional,
 			Flag.withDescription(
-				`a standing lane instead of a milestone: ${STANDING_LANES.join(" or ")}`,
+				`a standing lane instead of a milestone; this repo's own set, defaulting to ${STANDING_LANES.join(" or ")}`,
 			),
 		),
 		repo: repoFlag,
@@ -201,13 +209,14 @@ const apply = leafCommand(
 				repo: Option.getOrNull(repo),
 				json,
 				env: process.env,
+				cwd: process.cwd(),
 			}),
 		);
 	}),
 ).pipe(
 	Command.withShortDescription("Stamp the whole triaged transition as one reconcile."),
 	Command.withDescription(
-		"Stamp the whole triaged transition — type, priority, audience, status and home — as ONE owned-facet reconcile, then read the end state back positively. Exactly one of --home / --lane. Prints `triaged\\t<n>\\t<type>\\t<priority>\\t<ready-for>\\t<home>`. Exits 7 (no such issue, it is closed, or a label this run would write does not exist), 8 (a write failed — UNKNOWN), 9 (read-back mismatch), 10 (off-vocabulary value, or a non-open milestone), 11 (a precondition read failed, including the claim on the issue), 16 (--ready-for agent over a body with no readable acceptance-criteria block — every type but epic), 17 (a live claim marker on the issue names another session). Example: fabrika triage apply 4312 --type bug --priority p2 --ready-for agent --home 47",
+		"Stamp the whole triaged transition — type, priority, audience, status and home — as ONE owned-facet reconcile, then read the end state back positively. Exactly one of --home / --lane. Prints `triaged\\t<n>\\t<type>\\t<priority>\\t<ready-for>\\t<home>`. Exits 7 (no such issue, it is closed, or a label this run would write does not exist), 8 (a write failed — UNKNOWN), 9 (read-back mismatch), 10 (off-vocabulary value, or a non-open milestone), 11 (a precondition read failed, including the claim on the issue), 16 (--ready-for agent over a body with no readable acceptance-criteria block — every type but epic), 17 (a live claim marker on the issue names another session), 18 (.fabrika.jsonc yielded no usable value — refused by a key's load-time check, unreadable, or undecodable). Example: fabrika triage apply 4312 --type bug --priority p2 --ready-for agent --home 47",
 	),
 );
 
@@ -222,13 +231,14 @@ const park = leafCommand(
 				json,
 				env: process.env,
 				stdin: Effect.sync(readStdin),
+				cwd: process.cwd(),
 			}),
 		);
 	}),
 ).pipe(
 	Command.withShortDescription("Demote an issue to needs-info with the questions on stdin."),
 	Command.withDescription(
-		"Demote an issue to status:needs-info with the questions on STDIN, clearing every priced facet — type, priority, audience, lane and milestone. The comment is posted BEFORE the labels move. Prints `parked\\t<n>\\t<comment-url>`. Exits 3 (empty stdin), 5 (machine-local path), 6 (bare @ reference), 7 (no such issue, it is closed, or status:needs-info does not exist), 8 (a write failed — UNKNOWN), 9 (read-back mismatch), 11 (a precondition read failed, including the claim on the issue), 17 (a live claim marker on the issue names another session). Example: fabrika triage park 4290 < questions.md",
+		"Demote an issue to status:needs-info with the questions on STDIN, clearing every priced facet — type, priority, audience, lane and milestone. The comment is posted BEFORE the labels move. Prints `parked\\t<n>\\t<comment-url>`. Exits 3 (empty stdin), 5 (machine-local path), 6 (bare @ reference), 7 (no such issue, it is closed, or status:needs-info does not exist), 8 (a write failed — UNKNOWN), 9 (read-back mismatch), 11 (a precondition read failed, including the claim on the issue), 17 (a live claim marker on the issue names another session), 18 (.fabrika.jsonc yielded no usable value — refused by a key's load-time check, unreadable, or undecodable). Example: fabrika triage park 4290 < questions.md",
 	),
 );
 
@@ -321,21 +331,34 @@ const homes = leafCommand(
 	"homes",
 	{
 		roadmap: Flag.string("roadmap").pipe(
-			Flag.withDefault(DEFAULT_ROADMAP),
+			Flag.optional,
 			Flag.withDescription(
-				`the roadmap file whose ## Arcs and ## Campaigns tables the open milestones join to (default: ${DEFAULT_ROADMAP})`,
+				"the roadmap file whose ## Arcs and ## Campaigns tables the open milestones join to (default: `roadmapFile` in .fabrika.jsonc, itself defaulting to ROADMAP.md)",
 			),
 		),
 		repo: repoFlag,
 		json: jsonFlag,
 	},
 	Effect.fn(function* ({roadmap, repo, json}) {
-		yield* emit(yield* runHomes({roadmap, repo: Option.getOrNull(repo), json, env: process.env}));
+		const named = Option.getOrNull(roadmap);
+		const declared = named === null ? yield* readRoadmapFile(process.cwd()) : null;
+		if (declared !== null && declared._tag === "Refused") {
+			return yield* emit(
+				refuse(
+					PRECONDITION_UNKNOWN,
+					`triage homes: ${CONFIG_PATH} is refused — ${declared.reason.replace(/\.$/, "")}, so which file carries the arc table is unread; the homes list is UNKNOWN, never short.`,
+				),
+			);
+		}
+		const path = named ?? declared?.value ?? ROADMAP_FILE;
+		yield* emit(
+			yield* runHomes({roadmap: path, repo: Option.getOrNull(repo), json, env: process.env}),
+		);
 	}),
 ).pipe(
 	Command.withShortDescription("The assignable homes: open milestones and standing lanes."),
 	Command.withDescription(
-		"List the assignable homes: every OPEN milestone joined to its roadmap arc/campaign row by `#<number>`, plus the two standing lanes. First stdout line is `homes`, then one `<kind>\\t<key>\\t<label>` line per candidate; every `active` campaign's milestone carries a fourth column, `running: p0/blocker only` (a `running` field under `--json`) — such a campaign is closed to new intake unless the work is p0 or blocks one of its own in-flight lanes. Exits 7 (zero open milestones, or the roadmap parsed to 0 arc rows), 11 (the milestone list or the roadmap could not be read). Example: fabrika triage homes",
+		"List the assignable homes: every OPEN milestone joined to its roadmap arc/campaign row by `#<number>`, plus the two standing lanes. First stdout line is `homes`, then one `<kind>\\t<key>\\t<label>` line per candidate; every `active` campaign's milestone carries a fourth column, `running: p0/blocker only` (a `running` field under `--json`) — such a campaign is closed to new intake unless the work is p0 or blocks one of its own in-flight lanes. An ABSENT roadmap is not a refusal: every milestone lists with a null arc row and stderr says no roadmap was found. Exits 7 (zero open milestones, or a roadmap that exists and parsed to 0 arc rows), 11 (the milestone list could not be read, or a roadmap that exists could not be read or probed). Example: fabrika triage homes",
 	),
 );
 

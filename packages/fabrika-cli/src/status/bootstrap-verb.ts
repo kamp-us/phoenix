@@ -5,19 +5,23 @@
  * The content is the skill's judgement; the write, the collision guard and the read-back are this
  * verb's. That split is why file content arrives on stdin: *"/fabrika shows what's missing, then
  * runs the primitives to build the missing thing"* (#4952). A **line** surface is the exception and
- * carries its own row here: its text is what this group's own `status config` probe matches, so a
- * caller supplying it would let two repos spell one row two ways and each read the other's `missing`.
+ * carries its own row here: a caller supplying its text would let two repos spell one row two ways.
  *
- * **What this builds is fixed in {@link BUILDABLE_SURFACES}, never inferred from a declaration.** A
- * row's disposition says what *the declaring skill* does when a surface is missing — `build-ui`
- * declares `design-system-manifest.md` **fail-loud** *and* points at this verb — so reading
- * `fail-loud` as "unbuildable" would make the most important onboarding surface unreachable.
+ * **What this builds is fixed in {@link BUILDABLE_SURFACES}, never read off a disposition.** A
+ * surface's disposition in `surfaceDispositions` says what happens to a *run* that finds it missing —
+ * `design-manifest` is `fail-loud` and buildable here at once — so reading `fail-loud` as
+ * "unbuildable" would make the most important onboarding surface unreachable.
  *
  * **`exists` is an exit-`0` answer, not a refusal.** A target already there is a proven fact the
  * caller acts on, and a non-zero exit cannot carry it. Nothing is written and nothing is overwritten.
  */
 import {Effect, type FileSystem, Path, Result} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
+import {audienceLabel, type BoardVocabulary, statusList, typeLabel} from "../config/board.ts";
+import {CONFIG_PATH, type ConfigSource} from "../config/document.ts";
+import {loadConfig} from "../config/load.ts";
+import {type Read, readRoadmapFile} from "../config/paths.ts";
+import {resolveBoard} from "../config/resolve-board.ts";
 import {appendText, exists, readFile, writeFile} from "../io/fs.ts";
 import type {Attempt} from "../io/git.ts";
 import {
@@ -28,11 +32,10 @@ import {
 	openIssuesTitled,
 } from "../io/issues.ts";
 import type {StdinRead} from "../io/stdin.ts";
-import {STATUSES} from "../labels.ts";
 import {normalizeForReadback} from "../report/compose.ts";
 import {isBareAtReference, renderLeaks, scanBody} from "../report/leaks.ts";
-import {AUDIENCES, PRIORITIES, TYPES} from "../triage/facets.ts";
-import {parseRoadmap} from "../triage/roadmap.ts";
+import {DEFAULT_BOARD_VOCABULARY, FACET_VOCABULARY} from "../triage/facets.ts";
+import {parseRoadmap, ROADMAP_FILE} from "../triage/roadmap.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {
 	BARE_AT_PATH,
@@ -62,18 +65,23 @@ export const LABEL_DESCRIPTION = "created by fabrika status bootstrap label-taxo
 /**
  * The board label taxonomy this verb creates, in the order it reports it.
  *
- * **Every name is derived, never restated.** v1 listed the two statuses and `PRIORITIES` and stopped,
- * so a repo that ran the whole documented bootstrap still could not `triage apply`, `triage park`,
- * `plan flip` or `ship release` — each refuses a label the repo lacks (#4285), correctly, over a gap
- * this list left (#5772). Deriving from `STATUSES`, `TYPES` and `AUDIENCES` is what makes a seventh
- * `TYPES` member widen the bootstrap with no second edit here.
+ * **Every name is derived, never restated.** v1 listed the two statuses and the priorities and
+ * stopped, so a repo that ran the whole documented bootstrap still could not `triage apply`,
+ * `triage park`, `plan flip` or `ship release` — each refuses a label the repo lacks (#4285),
+ * correctly, over a gap that list left (#5772). Deriving it from the board vocabulary is what makes
+ * a seventh type widen the bootstrap with no second edit here — and what makes a repo that declared
+ * its own vocabulary get *its* labels rather than phoenix's (#6294).
  */
-export const TAXONOMY: ReadonlyArray<LabelSpec> = [
-	...STATUSES,
-	...PRIORITIES,
-	...TYPES.map((type) => `type:${type}`),
-	...AUDIENCES.map((audience) => `ready-for:${audience}`),
-].map((name) => ({name, description: LABEL_DESCRIPTION, color: null}));
+export const taxonomy = (board: BoardVocabulary): ReadonlyArray<LabelSpec> =>
+	[
+		...statusList(board.statuses),
+		...board.priorities,
+		...board.types.map(typeLabel),
+		...board.audiences.map(audienceLabel),
+	].map((name) => ({name, description: LABEL_DESCRIPTION, color: null}));
+
+/** The taxonomy a repo that declared no vocabulary gets — phoenix's own. */
+export const TAXONOMY: ReadonlyArray<LabelSpec> = taxonomy(DEFAULT_BOARD_VOCABULARY);
 
 /**
  * The colour every issue-shape marker carries. Fixed here rather than left to GitHub's random
@@ -147,8 +155,18 @@ export type BuildableSurface =
 	| {
 			readonly id: string;
 			readonly kind: "file";
-			/** The registry default write path. */
+			/** The registry default write path — where this lands in a repo that declares nothing. */
 			readonly defaultPath: string;
+			/**
+			 * How the repo names this file in `.fabrika.jsonc`, when it may name it at all.
+			 *
+			 * Absent means the path is fixed by convention and only `--path` moves it. Present means a
+			 * bootstrap must scaffold where the *readers* look: writing `ROADMAP.md` in a repo whose
+			 * fence reads `PLAN.md` leaves an inert file and no signal that it is inert.
+			 */
+			readonly declared?: (
+				root: string,
+			) => Effect.Effect<Read<string>, never, FileSystem.FileSystem | Path.Path>;
 			/**
 			 * Present only where the content is machine-read. Absent leaves the notice and the `--json`
 			 * object exactly as they were, which is what keeps the other surfaces byte-identical.
@@ -165,7 +183,16 @@ export type BuildableSurface =
 			/** The substring that decides `exists`, and the whole of the read-back. */
 			readonly marker: string;
 	  }
-	| {readonly id: string; readonly kind: "labels"; readonly labels: ReadonlyArray<LabelSpec>}
+	| {
+			readonly id: string;
+			readonly kind: "labels";
+			/**
+			 * Derived from the resolved board rather than fixed, so a repo that declared its own
+			 * vocabulary is bootstrapped into *its* taxonomy. The markers ignore the argument: what an
+			 * issue *is* is fabrika's vocabulary, not the host repo's.
+			 */
+			readonly labels: (board: BoardVocabulary) => ReadonlyArray<LabelSpec>;
+	  }
 	| {readonly id: string; readonly kind: "issue"};
 
 /** The `.gitignore` row that keeps `fabrika lane`'s per-checkout state out of shared history. */
@@ -178,7 +205,13 @@ ${FABRIKA_IGNORE_ROW}`;
 /** Six ids. A seventh is a change to this table, not a new rule. */
 export const BUILDABLE_SURFACES: ReadonlyArray<BuildableSurface> = [
 	{id: "design-manifest", kind: "file", defaultPath: "design-system-manifest.md"},
-	{id: "roadmap-focus", kind: "file", defaultPath: "ROADMAP.md", count: roadmapCount},
+	{
+		id: "roadmap-focus",
+		kind: "file",
+		defaultPath: ROADMAP_FILE,
+		declared: readRoadmapFile,
+		count: roadmapCount,
+	},
 	{
 		id: "gitignore-row",
 		kind: "line",
@@ -186,8 +219,8 @@ export const BUILDABLE_SURFACES: ReadonlyArray<BuildableSurface> = [
 		block: FABRIKA_IGNORE_BLOCK,
 		marker: FABRIKA_IGNORE_ROW,
 	},
-	{id: "label-taxonomy", kind: "labels", labels: TAXONOMY},
-	{id: "issue-shape-markers", kind: "labels", labels: ISSUE_SHAPE_MARKERS},
+	{id: "label-taxonomy", kind: "labels", labels: taxonomy},
+	{id: "issue-shape-markers", kind: "labels", labels: () => ISSUE_SHAPE_MARKERS},
 	{id: "readout-artifact", kind: "issue"},
 ];
 
@@ -201,6 +234,16 @@ export interface BootstrapInput {
 	readonly path: string | null;
 	readonly json: boolean;
 	readonly repoRoot: string;
+	/**
+	 * The config arm read at the repo root above the cwd, resolved by the caller.
+	 *
+	 * Separate from `repoRoot` because the two tolerate a failed discovery differently. `repoRoot`
+	 * may fall back to the cwd: a path probe rooted there answers about a real directory and reports
+	 * nothing present that was not found. A label *write* cannot take that fallback — reading no
+	 * config at an unlocated root resolves the shipped taxonomy and mints it into a repo that may
+	 * have declared another, so a failed discovery has to arrive here as `Unreadable`.
+	 */
+	readonly configSource: ConfigSource;
 	/** The resolved target repo, or the failure that makes the two non-file surfaces unanswerable. */
 	readonly repo: Attempt<string>;
 	readonly stdin: Effect.Effect<StdinRead>;
@@ -270,14 +313,37 @@ interface Target {
 	readonly absolute: string;
 }
 
-/** The write target of a path-taking surface, or the refusal a `--path` outside the repo owes. */
+/**
+ * The write target of a path-taking surface, or the refusal it owes.
+ *
+ * Three sources in one order: an explicit `--path`, else the repo's declared path for surfaces that
+ * have a key, else the registry default. A config that cannot be decoded refuses rather than falling
+ * through to the default — scaffolding phoenix's path into a repo that declared its own is the
+ * silent half of the same defect a wrong `--path` makes loud.
+ */
 const targetOf = (
-	defaultPath: string,
+	surface: {
+		readonly defaultPath: string;
+		readonly declared?: (
+			root: string,
+		) => Effect.Effect<Read<string>, never, FileSystem.FileSystem | Path.Path>;
+	},
 	input: BootstrapInput,
-): Effect.Effect<Target | VerbOutcome, never, Path.Path> =>
+): Effect.Effect<Target | VerbOutcome, never, FileSystem.FileSystem | Path.Path> =>
 	Effect.gen(function* () {
 		const path = yield* Path.Path;
-		const relative = input.path ?? defaultPath;
+		const declared =
+			input.path === null && surface.declared !== undefined
+				? yield* surface.declared(input.repoRoot)
+				: null;
+		if (declared !== null && declared._tag === "Refused") {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: ${CONFIG_PATH} is refused — ${declared.reason.replace(/\.$/, "")}, so where this surface belongs is unread. Nothing was written.`,
+			);
+		}
+		const relative =
+			input.path ?? (declared?._tag === "Value" ? declared.value : surface.defaultPath);
 		const absolute = path.resolve(input.repoRoot, relative);
 		// Containment is checked on the RESOLVED path, so `../` cannot walk out of the repository.
 		if (absolute !== input.repoRoot && !absolute.startsWith(`${input.repoRoot}${path.sep}`)) {
@@ -296,7 +362,7 @@ const buildFile = (
 	input: BootstrapInput,
 ): Effect.Effect<VerbOutcome, never, Requirements> =>
 	Effect.gen(function* () {
-		const target = yield* targetOf(surface.defaultPath, input);
+		const target = yield* targetOf(surface, input);
 		if (!isTarget(target)) return target;
 		const {relative, absolute} = target;
 		const probe = yield* Effect.result(exists(absolute));
@@ -356,7 +422,7 @@ const buildLine = (
 	input: BootstrapInput,
 ): Effect.Effect<VerbOutcome, never, Requirements> =>
 	Effect.gen(function* () {
-		const target = yield* targetOf(surface.defaultPath, input);
+		const target = yield* targetOf(surface, input);
 		if (!isTarget(target)) return target;
 		const {relative, absolute} = target;
 
@@ -426,7 +492,15 @@ const buildLabels = (
 	Effect.gen(function* () {
 		if (input.repo._tag === "Failure") return UNRESOLVED_REPO;
 		const repo = input.repo.value;
-		const wanted = surface.labels;
+
+		const board = resolveBoard(loadConfig(input.configSource), FACET_VOCABULARY);
+		if (board._tag === "Refused") {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: ${CONFIG_PATH} is refused — ${board.reason.replace(/\.$/, "")}. Nothing was written; what taxonomy this repo runs on is unread, never the shipped default.`,
+			);
+		}
+		const wanted = surface.labels(board.resolved.board);
 		const names = wanted.map((label) => label.name);
 
 		const before = yield* listLabels(repo);

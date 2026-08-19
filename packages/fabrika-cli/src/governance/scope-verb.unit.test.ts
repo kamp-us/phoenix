@@ -1,6 +1,6 @@
-import {Effect} from "effect";
+import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {errOut, fakeShell, okOut} from "../fakes.test-support.ts";
+import {errOut, fakeFs, fakeShell, okOut, unconfigured} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {
 	INCOMPLETE_SCAN,
@@ -41,6 +41,7 @@ const options = {
 	tip: null as string | null,
 	repo: null,
 	json: false,
+	cwd: "/repo",
 	env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,
 };
 
@@ -48,7 +49,12 @@ const run = (
 	script: ReadonlyArray<readonly [RegExp, ExecResult]>,
 	overrides: Partial<typeof options> = {},
 ) =>
-	Effect.runPromise(Effect.provide(runScope({...options, ...overrides}), fakeShell(script).layer));
+	Effect.runPromise(
+		Effect.provide(
+			runScope({...options, ...overrides}),
+			Layer.merge(fakeShell(script).layer, unconfigured),
+		),
+	);
 
 const happy = (
 	...rows: ReadonlyArray<readonly [string, string]>
@@ -63,6 +69,45 @@ const GOVERNING = happy(
 	["A", ".decisions/0240-only-landed-adrs-may-be-cited.md"],
 	["M", "claude-plugins/fabrika/skills/review/SKILL.md"],
 );
+
+describe("runScope over a foreign repo's declared roots (#6296)", () => {
+	const declaring = (config: unknown) =>
+		fakeFs({files: {"/repo/.fabrika.jsonc": JSON.stringify(config)}});
+
+	// `review scope` derives the same requirement over the same key. Both verbs read one list.
+	it("tallies the roots the config declares, not phoenix's", async () => {
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runScope({...options}),
+				Layer.merge(
+					fakeShell(happy(["M", "src/cart.ts"])).layer,
+					declaring({governedRoots: ["src/", ".fabrika.jsonc"]}).layer,
+				),
+			),
+		);
+		expect(out.stdout).toContain(`governance\trequired\t${HEAD}`);
+		expect(out.stdout).toContain("root\tsrc/\t1");
+		expect(out.stderr).toContain(
+			"governance scope: root set is `governedRoots` as declared in .fabrika.jsonc.",
+		);
+	});
+
+	it("refuses UNKNOWN on a config it cannot decode — never `not-required`", async () => {
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runScope({...options}),
+				Layer.merge(fakeShell(GOVERNING).layer, declaring({governedRoots: 7}).layer),
+			),
+		);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		// Nothing on stdout is the assertion: the answer line is where `not-required` would be, and
+		// the refusal below says in words that it is not one.
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-2)).toContain(
+			'the root set is UNKNOWN and the derivation is never "not-required"',
+		);
+	});
+});
 
 describe("runScope", () => {
 	it("prints the outcome, the head, each touched root, `self`, and each record", async () => {
@@ -120,7 +165,7 @@ describe("runScope", () => {
 			`governance scope: bound to ${HEAD} (base ${BASE}) — read from the object database, nothing checked out.`,
 		);
 		expect(out.stderr).toContain(
-			`governance scope: partitioned 2 of the 2 declared changed files at ${HEAD} across 4 roots.`,
+			`governance scope: partitioned 2 of the 2 declared changed files at ${HEAD} across 5 roots.`,
 		);
 	});
 
@@ -132,7 +177,7 @@ describe("runScope", () => {
 			[TREE_AT(), treeOf(".decisions/0240-x.md", "src/cart.ts")],
 		]);
 		expect(out.stderr).toContain(
-			"governance scope: root .claude/ is absent in this repository — the derivation covered 1 of 4 roots.",
+			"governance scope: root .claude/ is absent in this repository — the derivation covered 1 of 5 roots.",
 		);
 	});
 
@@ -359,7 +404,9 @@ describe("runScope over a range", () => {
 
 	it("reads only the object database — no PR is resolved and nothing is checked out", async () => {
 		const fake = fakeShell(overRange(["M", "src/cart.ts"]));
-		await Effect.runPromise(Effect.provide(runScope({...options, ...ranged}), fake.layer));
+		await Effect.runPromise(
+			Effect.provide(runScope({...options, ...ranged}), Layer.merge(fake.layer, unconfigured)),
+		);
 		expect(fake.calls.some((call) => call.startsWith("gh "))).toBe(false);
 		expect(fake.calls.some((call) => call.startsWith("git checkout"))).toBe(false);
 		expect(fake.calls).toContain(`git merge-base ${RANGE_BASE} ${RANGE_TIP}`);

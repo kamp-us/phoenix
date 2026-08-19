@@ -24,9 +24,12 @@
  * invoked through a relaying verb (the wrapper shape ADR 0238 bans). Only {@link readDispatch}
  * touches IO.
  */
-import {Effect, type FileSystem, Result} from "effect";
+import {Effect, type FileSystem, type Path, Result} from "effect";
+import {CONFIG_PATH} from "../config/document.ts";
+import {readRoadmapFile} from "../config/paths.ts";
 import {exists, type ReadFailed, readFile} from "../io/fs.ts";
 import {issueRefOf} from "../review/classes.ts";
+import {EPIC_TYPE_LABEL} from "../triage/facets.ts";
 import {refuse, type VerbOutcome} from "../verb.ts";
 import {
 	AUDIENCE_NOT_AGENT,
@@ -35,9 +38,6 @@ import {
 	PRECONDITION_UNKNOWN,
 	TYPE_NOT_BUILDABLE,
 } from "./codes.ts";
-
-/** The declaration's file, relative to the repository root. */
-export const DEFAULT_ROADMAP = "ROADMAP.md";
 
 /**
  * The labels that are a home in their own right (ADR 0208), admitted on the scope axis whatever the
@@ -67,8 +67,11 @@ const READY_FOR_PREFIX = "ready-for:";
  */
 export const DECISION_TYPE_LABEL = "type:decision";
 
-/** The type whose deliverable is a ledger of children rather than one pull request — `plan-epic`'s. */
-export const EPIC_TYPE_LABEL = "type:epic";
+/**
+ * The epic type label, re-exported at the seam that fences on it — defined once in
+ * `triage/facets.ts`, where the `--type` vocabulary it derives from lives.
+ */
+export {EPIC_TYPE_LABEL};
 
 /**
  * The four types an agent build lane may take — the type axis's whole vocabulary, declared once.
@@ -763,7 +766,7 @@ const unreadable = (path: string, failure: ReadFailed): DispatchRead => ({
  * that split: a probe that cannot be performed is itself UNKNOWN, never "absent".
  */
 export const readDispatch = (
-	path: string = DEFAULT_ROADMAP,
+	path: string,
 ): Effect.Effect<DispatchRead, never, FileSystem.FileSystem> =>
 	Effect.gen(function* () {
 		const probe = yield* Effect.result(exists(path));
@@ -773,4 +776,25 @@ export const readDispatch = (
 		return Result.isFailure(read)
 			? unreadable(path, read.failure)
 			: {_tag: "Read" as const, dispatch: readCampaigns(read.success)};
+	});
+
+/**
+ * The campaigns table at the roadmap file **this repo declares**, for a verb standing in a checkout.
+ *
+ * The two fence verbs read the roadmap through here rather than through {@link readDispatch}, whose
+ * path argument they would otherwise fill from a literal. A config nobody can decode is `Unreadable`
+ * exactly like a roadmap nobody can read: in both the fence is UNKNOWN, and the one thing it must
+ * never become is "nothing is active", which admits every issue.
+ */
+export const readDeclaredDispatch = (
+	cwd: string,
+): Effect.Effect<DispatchRead, never, FileSystem.FileSystem | Path.Path> =>
+	Effect.gen(function* () {
+		const declared = yield* readRoadmapFile(cwd);
+		return declared._tag === "Refused"
+			? {
+					_tag: "Unreadable" as const,
+					reason: `${CONFIG_PATH} is refused — ${declared.reason.replace(/\.$/, "")}, so where the campaigns table lives is unread`,
+				}
+			: yield* readDispatch(declared.value);
 	});

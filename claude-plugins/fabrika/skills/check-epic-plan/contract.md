@@ -139,9 +139,9 @@ reads as those ids; **no line at all reads as absent** (which is what `MISSING_S
 integer anywhere in the value, so `**Stories:** 1, 3 (see #4021)` silently claimed story 4021.
 
 **`**Containment:**` (child)** — the first such line outside a fence, with the same duplicate rule
-and the same `4`. Leading keyword only, from the closed set `flag` · `exempt` · `none`. Anything
-unrecognised reads as unset, which `MISSING_CONTAINMENT` treats identically to `none`; only `flag`
-and `exempt` satisfy it.
+and the same `4`. Leading keyword only, from the set the repo's `containmentVocabulary` declares
+plus the reserved `none` (phoenix declares `flag` · `exempt`). Anything unrecognised reads as unset,
+which `MISSING_CONTAINMENT` treats identically to `none`; only a declared value satisfies it.
 
 ## The floor — thirteen defect types
 
@@ -161,7 +161,7 @@ prose — the templates are the third column.
 | 7 | `ZERO_AC` | a child's acceptance-criteria read is not `Found`, or is `Found` with zero criteria | `acceptance criteria read as <absent\|malformed\|empty>` |
 | 8 | `MISSING_STORY` | the epic declares stories and the child's `**Stories:**` line is absent or non-conforming | `no **Stories:** line` / `**Stories:** value does not conform: "<value>"` |
 | 9 | `MISSING_LABEL` | a child lacks a `type:` label, a `status:` label, or one of `p0` / `p1` / `p2` | `missing a <type:\|status:\|priority> label` |
-| 10 | `MISSING_CONTAINMENT` | `cycleDoc` is `present`, the child is `type:feature`, and its containment is unset or `none` | `type:feature with containment <none\|unset>` |
+| 10 | `MISSING_CONTAINMENT` | `cycleDoc` is `present`, the child carries a type the repo's `containmentVocabulary` asks, and its containment is off that vocabulary's values | `<asked type> with containment <keyword\|unset>` |
 | 11 | `NEEDS_TRIAGE_LABEL` | a child still carries `status:needs-triage` | `still carries status:needs-triage` |
 | 12 | `UNVERIFIABLE_ASSIGNEE` | the child payload's `assignees` key was **not observed** — an unread field is UNKNOWN, never "unassigned is fine" | `the assignees field was not observed` |
 | 13 | `HELD_CHILD_UNASSIGNED` | a child carries `ready-for:human` and its observed assignee list is empty | `ready-for:human with an empty assignee slot` |
@@ -864,20 +864,6 @@ $ echo $?
 
 ---
 
-## Required repo files (verb-level)
-
-The skill's own table ([SKILL.md](SKILL.md)) carries the run-level rows; these are the reads and
-writes this contract's verbs make, so an implementer sees the dependency set in one place.
-Vocabulary: **fail-loud** / **degrade** / **bootstrap** (front-door, #4952).
-
-| Must exist | Why | When missing |
-| --- | --- | --- |
-| The epic issue: `type:epic`, native sub-issue links to its children | `plan read` derives the whole ledger from it | **fail-loud** — exit `7` / `10` naming the gap. |
-| A `## Dependencies` block in the epic body | the topology the three dependency defects rest on | **fail-loud**, two ways: *absent* is defect `MISSING_DEPS_SECTION` (a `defective` floor); *unparseable or duplicated* is `plan read`'s `4`. |
-| Child issues carrying `### Acceptance criteria` blocks | the imported wire read supplies `ZERO_AC`'s input | **fail-loud** — the read's `absent` / `malformed` token becomes a defect; no criterion is invented. |
-| Labels `status:planned`, `status:triaged`, `status:needs-triage`, `ready-for:human`, `type:*`, `p0`/`p1`/`p2` | the floor reads them; the flip writes two | **fail-loud** — `plan flip` exits `23` rather than creating a label (#4285); taxonomy creation is the front door's. |
-| `product-development-cycle.md` at the repo root | gates whether `MISSING_CONTAINMENT` is derived | **degrade** — an *absent* file derives the class and evaluates it false; an *unreadable* probe puts the class in `skipped`, named on the answer and in the marker. Never silently dropped. |
-| Repository permissions readable | `build claim`'s ACL-sourced ownership resolution (ADR 0055) | **fail-loud** — as declared in [`build`'s contract](../build/contract.md); an unreadable permission is `Unknown`, never a demotion. |
 
 ---
 

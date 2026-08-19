@@ -1,6 +1,7 @@
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
 import {GIT_DIRS} from "../build/fixtures.test-support.ts";
+import {CONFIG_PATH} from "../config/document.ts";
 import {errOut, fakeFs, fakeShell, okOut} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import type {StdinRead} from "../io/stdin.ts";
@@ -79,6 +80,7 @@ const options = {
 	token: TOKEN,
 	repo: null,
 	env,
+	cwd: DIR,
 };
 
 const run = (
@@ -249,6 +251,59 @@ describe("runChild", () => {
 		);
 		expect(outcome.code).toBe(BAD_SECTIONS);
 		expect(outcome.stderr.at(-1)).toContain("needs **Containment:** flag or exempt");
+	});
+
+	/**
+	 * Story 5 of #5631: phoenix's pair is the shipped default, and a repo that declares another gets
+	 * that one. The arm above is the bare-repo half — it writes no config at all.
+	 */
+	it("names the repo's own values in the refusal, off the resolved vocabulary", async () => {
+		const {outcome} = await run(
+			{},
+			HAPPY,
+			{
+				[runJsonPath(DIR)]: RUN_JSON(),
+				[`${DIR}/${CONFIG_PATH}`]:
+					'{"containmentVocabulary": {"values": ["unpublished", "exempt"]}}',
+			},
+			childBody({containment: null}),
+		);
+		expect(outcome.code).toBe(BAD_SECTIONS);
+		expect(outcome.stderr.at(-1)).toContain("needs **Containment:** unpublished or exempt");
+	});
+
+	it("admits a marker the repo's vocabulary carries and phoenix's does not", async () => {
+		const {outcome} = await run(
+			{},
+			HAPPY,
+			{
+				[runJsonPath(DIR)]: RUN_JSON(),
+				[`${DIR}/${CONFIG_PATH}`]: '{"containmentVocabulary": {"values": ["unpublished"]}}',
+			},
+			childBody({containment: "unpublished"}),
+		);
+		expect(outcome.code).toBe(0);
+	});
+
+	it("asks nothing of any child on an empty vocabulary", async () => {
+		const {outcome} = await run(
+			{},
+			HAPPY,
+			{
+				[runJsonPath(DIR)]: RUN_JSON(),
+				[`${DIR}/${CONFIG_PATH}`]: '{"containmentVocabulary": {"types": []}}',
+			},
+			childBody({containment: null}),
+		);
+		expect(outcome.code).toBe(0);
+	});
+
+	it("refuses on 11 when the config exists and its vocabulary does not decode", async () => {
+		const {outcome} = await run({}, HAPPY, {
+			[runJsonPath(DIR)]: RUN_JSON(),
+			[`${DIR}/${CONFIG_PATH}`]: '{"containmentVocabulary": {"values": ["none"]}}',
+		});
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
 	});
 
 	it("drops the containment line when the run's cycle-doc read is absent", async () => {

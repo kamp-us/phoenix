@@ -15,12 +15,14 @@
  * than emit the parser's generic message.
  */
 
-import {Effect, Option} from "effect";
+import {Effect, type FileSystem, Option, type Path} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
+import {decisionsDirOr} from "../config/paths.ts";
 import {leafCommand} from "../excess-operand.ts";
 import {readStdin} from "../io/stdin.ts";
-import type {VerbOutcome} from "../verb.ts";
+import {refuse, type VerbOutcome} from "../verb.ts";
 import {runBase} from "./base-verb.ts";
+import {PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {runDigest} from "./digest-verb.ts";
 import {runGuards} from "./guards-verb.ts";
 import {runPost} from "./post-verb.ts";
@@ -55,9 +57,45 @@ const jsonFlag = Flag.boolean("json").pipe(
 );
 
 const dirFlag = Flag.string("dir").pipe(
-	Flag.withDefault(".decisions"),
-	Flag.withDescription("the decision-record corpus to read"),
+	Flag.optional,
+	Flag.withDescription(
+		"the decision-record corpus to read (default: `decisionsDir` in .fabrika.jsonc, itself defaulting to .decisions)",
+	),
 );
+
+/**
+ * The corpus the two contradiction-half verbs read, or the refusal that ends the run.
+ *
+ * A repo that declines `decisionsDir` keeps no decision corpus, so there is no contradiction check
+ * to run over it — and this half must never answer `no-overlap` there, because that word reads as
+ * "checked, nothing found" (R11.1 on #5603). The verdict such a repo can still earn comes from
+ * `governance guards`, the weakens-a-guard half, which reads no corpus at all; the refusal says so.
+ */
+const corpusFor = (
+	verb: string,
+	declared: Option.Option<string>,
+): Effect.Effect<
+	| {readonly _tag: "Dir"; readonly dir: string}
+	| {readonly _tag: "Stop"; readonly outcome: VerbOutcome},
+	never,
+	FileSystem.FileSystem | Path.Path
+> =>
+	Effect.gen(function* () {
+		const read = yield* decisionsDirOr(
+			verb,
+			process.cwd(),
+			Option.getOrNull(declared),
+			"there is no contradiction check to run and this verb will not answer no-overlap over a corpus that does not exist — `governance guards`, the weakens-a-guard half, is the whole of what this repo's governance run can derive.",
+		);
+		switch (read._tag) {
+			case "Dir":
+				return {_tag: "Dir" as const, dir: read.dir};
+			case "Declined":
+				return {_tag: "Stop" as const, outcome: refuse(ZERO_SCOPE, read.message)};
+			case "Refused":
+				return {_tag: "Stop" as const, outcome: refuse(PRECONDITION_UNKNOWN, read.message)};
+		}
+	});
 
 const prArgument = Argument.integer("pr").pipe(Argument.withDescription("the pull-request number"));
 
@@ -101,6 +139,7 @@ const scope = leafCommand(
 				tip: Option.getOrNull(tip),
 				repo: Option.getOrNull(repo),
 				json,
+				cwd: process.cwd(),
 				env: process.env,
 			}),
 		);
@@ -141,13 +180,15 @@ const sweep = leafCommand(
 		json: jsonFlag,
 	},
 	Effect.fn(function* ({pr, record, landed, sha, dir, limit, repo, json}) {
+		const corpus = yield* corpusFor("governance sweep", dir);
+		if (corpus._tag === "Stop") return yield* emit(corpus.outcome);
 		yield* emit(
 			yield* runSweep({
 				pr: Option.getOrNull(pr),
 				record: Option.getOrNull(record),
 				landed: Option.getOrNull(landed),
 				sha: Option.getOrNull(sha),
-				dir,
+				dir: corpus.dir,
 				limit,
 				repo: Option.getOrNull(repo),
 				json,
@@ -259,6 +300,7 @@ const post = leafCommand(
 				base: Option.getOrNull(base),
 				tip: Option.getOrNull(tip),
 				repo: Option.getOrNull(repo),
+				cwd: process.cwd(),
 				json,
 				env: process.env,
 				stdin: Effect.sync(readStdin),
@@ -290,11 +332,13 @@ const digest = leafCommand(
 		json: jsonFlag,
 	},
 	Effect.fn(function* ({since, until, dir, base: ref, json}) {
+		const corpus = yield* corpusFor("governance digest", dir);
+		if (corpus._tag === "Stop") return yield* emit(corpus.outcome);
 		yield* emit(
 			yield* runDigest({
 				since,
 				until: Option.getOrNull(until),
-				dir,
+				dir: corpus.dir,
 				base: ref,
 				json,
 				now: Effect.sync(() => Date.now()),

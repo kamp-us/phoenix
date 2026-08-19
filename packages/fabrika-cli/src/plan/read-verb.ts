@@ -7,11 +7,19 @@
  * nobody can grade (ADR 0092).
  */
 
-import {Effect} from "effect";
+import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {badNumber, resolveTargetRepo} from "../build/target.ts";
-import {answer, type VerbOutcome} from "../verb.ts";
-import {loadLedger, type PlanMessages, requireEpic, scannedChildren} from "./load.ts";
+import {cycleDocOr} from "../config/paths.ts";
+import {answer, refuse, type VerbOutcome} from "../verb.ts";
+import {PRECONDITION_UNKNOWN} from "./codes.ts";
+import {
+	loadLedger,
+	type PlanMessages,
+	readContainmentVocabulary,
+	requireEpic,
+	scannedChildren,
+} from "./load.ts";
 import {renderTopology} from "./model.ts";
 
 const VERB = "plan read";
@@ -28,12 +36,18 @@ export const MESSAGES: PlanMessages = {
 export interface ReadOptions {
 	readonly number: number;
 	readonly repo: string | null;
+	/** Where to look for `.fabrika.jsonc` — the checkout this run stands in. */
+	readonly cwd: string;
 	readonly env: Readonly<Record<string, string | undefined>>;
 }
 
 export const runRead = (
 	options: ReadOptions,
-): Effect.Effect<VerbOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
+): Effect.Effect<
+	VerbOutcome,
+	never,
+	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
+> =>
 	Effect.gen(function* () {
 		const bad = badNumber(VERB, "an issue number", options.number);
 		if (bad !== null) return bad;
@@ -45,7 +59,17 @@ export const runRead = (
 		const target = yield* requireEpic(MESSAGES, repo, options.number);
 		if (target._tag === "Refused") return target.outcome;
 
-		const read = yield* loadLedger(MESSAGES, repo, target.issue);
+		const vocabulary = yield* readContainmentVocabulary(MESSAGES, options.cwd);
+		if (vocabulary._tag === "Refused") return vocabulary.outcome;
+
+		const cycle = yield* cycleDocOr(
+			VERB,
+			options.cwd,
+			"where the cycle doc lives is unread, so the containment class cannot be derived.",
+		);
+		if (cycle._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, cycle.message);
+
+		const read = yield* loadLedger(MESSAGES, repo, target.issue, cycle.path, vocabulary.vocabulary);
 		if (read._tag === "Refused") return read.outcome;
 		const ledger = read.ledger;
 

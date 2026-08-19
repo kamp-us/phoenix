@@ -10,15 +10,15 @@
  * `existsSync` reports an unreadable parent directory as absent, which is how a missing law comes to
  * look like a repo that never had one.
  */
-import {Effect, type FileSystem} from "effect";
+import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
+import {designHarnessOr} from "../config/paths.ts";
 import {exists} from "../io/fs.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {NO_MANIFEST, PRECONDITION_UNKNOWN} from "./codes.ts";
 import {
 	atRoot,
 	GOLDEN_POINTER_PATHS,
-	HARNESS_PATH,
 	INVENTORY_PATH,
 	MANIFEST_PATH,
 	REGISTRY_PATH,
@@ -68,11 +68,18 @@ export const MISSING_MANIFEST = `${VERB}: no design manifest at ${MANIFEST_PATH}
 export const runManifest = (): Effect.Effect<
 	VerbOutcome,
 	never,
-	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem
+	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
 > =>
 	Effect.gen(function* () {
 		const root = yield* resolveRoot(VERB);
 		if (root._tag === "Refused") return root.outcome;
+
+		const declared = yield* designHarnessOr(
+			VERB,
+			root.root,
+			'where this repo declares its render path is unread — presence is UNKNOWN, never "absent".',
+		);
+		if (declared._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, declared.message);
 
 		const manifest = yield* probe(root.root, MANIFEST_PATH);
 		if (manifest._tag === "Unknown") return unreadable(manifest, VERB);
@@ -84,7 +91,7 @@ export const runManifest = (): Effect.Effect<
 		if (inventory._tag === "Unknown") return unreadable(inventory, VERB);
 		const pointer = yield* probeOrder(root.root, GOLDEN_POINTER_PATHS);
 		if (pointer._tag === "Unknown") return unreadable(pointer, VERB);
-		const harness = yield* probe(root.root, HARNESS_PATH);
+		const harness = yield* probe(root.root, declared.path);
 		if (harness._tag === "Unknown") return unreadable(harness, VERB);
 
 		const pathOf = (found: Probe): string | null =>

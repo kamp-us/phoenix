@@ -400,26 +400,6 @@ at its cap escalates to the operator.
 
 - **Control-plane membership** — decided by CODEOWNERS at the merge gate. You never classify.
 - **Leak scanning of changed files** — `leak-guard.yml` in CI. Your verbs guard only what you post.
-- **CI redness** — `ci.yml` owns it. `build check` predicts it in-tree; the gate's answer wins.
+- **CI redness** — the repo's CI gate owns it. `build check` predicts it in-tree; the gate's answer wins.
 - Follow-up observations leave through `/report` the moment you see them — never through scope
   creep in this PR.
-
-## Required repo files
-
-fabrika installs into repos that are not phoenix, so every repo surface this skill leans on is
-declared here: what must exist, why this skill needs it, and the one named outcome when it is
-absent. The when-missing vocabulary is closed — **fail-loud** (stop, name the missing surface by
-its repo-relative path, point at front-door, **and file the gap**), **degrade** (continue with a
-narrower answer, stated), **bootstrap** (front-door creates it) — and it is the same table in every
-fabrika skill, so one reader parses all of them. No row here dead-ends on a bare error.
-
-| Must exist | Why this skill needs it | When missing |
-| --- | --- | --- |
-| The board label taxonomy — `status:triaged`, `ready-for:agent`, one of `type:feature`/`chore`/`bug`/`investigation`, `p0`–`p2`, plus an open milestone or a standing-lane label | `build pick` filters and ranks on exactly these, fail-closed on every axis (`fabrika wire doc-section --heading "build pick" < <skill-base>/contract.md`) | **bootstrap** — `build pick` prints an empty pool at exit `0` with its per-bucket scanned counts, never silence; the run ends `BACKED-OFF` naming the absent labels, and creating the taxonomy is front-door's. |
-| `ROADMAP.md` with a `## Campaigns` table | It is the declaration `build pick` and `build claim` judge campaign scope against — a row's `active` state cell is the dispatch permission (ADR 0304) (`fabrika wire doc-section --heading "The admission test — scope admission composed with the audience axis, one module, two seams" < <skill-base>/contract.md`) | **degrade** — an absent file, an absent or empty table, and a table whose every row is `paused` or `done` are the same well-formed default: nothing is active, the fence is inert, every issue is admitted, and both verbs print that on their scope line. A table that reads but does not parse is exit `4` and the run stops — malformed is never read as "nothing is active". |
-| The `package.json` scripts `typecheck` and `lint:worktree` | `build check --surface code` runs exactly `pnpm typecheck` and `pnpm lint:worktree` in this tree, cache bypassed | **fail-loud** — a validator that cannot be executed is exit `11`, UNKNOWN, never green; the run stops naming the absent `package.json` script and points at front-door. |
-| The prose placement homes — `README`, `DEVELOPMENT.md`, `.decisions/`, `.patterns/`, `reports/`, `.glossary/LANGUAGE.md` | [`references/prose.md`](references/prose.md)'s one-home rule places every prose fact in exactly one of them | **degrade** — write into the homes that exist and disclose the substituted home in the PR's `## Deviations`; a home is never invented silently |
-| `.fabrika.jsonc` with a `capClearAuthors` array | It is the set `build clear` admits a round-clearance from, and `build verdicts` honours a recorded one against | **degrade** — an absent file, an absent key or an empty array all mean nobody may clear a round: `build clear` refuses on `25` and the cap stands at its declared value, which is the pre-clearance behaviour. A read that *failed* is exit `11`, never an empty set. |
-| `.fabrika.jsonc` with a `docLeakExempt` array | It names the docs whose subject IS path hygiene, which `build check --surface prose` skips its leak scan on — repo policy, since those docs differ repo by repo | **degrade** — an absent file, an absent key, an empty array or a malformed entry all mean *nothing is exempt*, so the scan stays strictest and a mis-declared exemption reads as a red, never a silent pass. A config that exists and cannot be read is exit `11`, never an empty list. |
-| `.fabrika.jsonc` with a `workflowValidators` array, each entry a `command` argv plus the `reads` list of workflow files it opens | It names the repo's own commands that machine-read `.github/workflows/**`, which is what `build check --surface workflows` runs beside `actionlint`, and `reads` is what tells the verb which changed workflow a passing run actually covers | **degrade** — an absent file, an absent key, an empty array or a malformed entry all mean the repo declares none, and the surface then stands on `actionlint` alone. Where that is absent too, no changed workflow was opened and the verdict is exit `11`, UNKNOWN, never green — as it is whenever everything that ran reads other files. A declared command that cannot be spawned is `11` as well, naming it. |
-| `.github/workflows/ci.yml` | It is the superseding authority over `build check`'s in-tree prediction (`fabrika wire doc-section --heading "build check" < <skill-base>/contract.md`) | **degrade** — with no CI gate to supersede it, `build check`'s green is the only evidence the PR carries, and the PR says so in its `## Deviations` |

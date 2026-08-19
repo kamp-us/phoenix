@@ -263,23 +263,3 @@ merge-queue access. It
 does not open the pull request; the surrounding flow does, and the doc gate reviews it. Which
 namespaces and gates this group deliberately stays out of is its own section
 (`fabrika wire doc-section --heading "Namespaces and gates — what this group does not join" < <skill-base>/contract.md`).
-
-## Required repo files
-
-fabrika installs into repos that are not phoenix, so every surface this skill leans on is declared
-here. The when-missing vocabulary is closed and shared across fabrika — **fail-loud** (stop, name
-the surface by its repo-relative path, point at front-door), **degrade** (continue with a narrower
-answer, stated), **bootstrap** (front-door creates it). No row dead-ends on a bare error.
-
-| Must exist | Why this skill needs it | When missing |
-| --- | --- | --- |
-| `id:patterns-dir` — a `.patterns/` directory of flat `<slug>.md` docs | the surface this skill authors; `corpus`, `drift` and `anchor` all read it | **bootstrap** — `corpus` answers `absent` at exit `0`, a fact and never an error, and `new` creates the directory with the repo's first doc. A fresh repo is the normal case, not a misconfiguration. |
-| `id:patterns-index` — `.patterns/index.md`, carrying markdown tables whose first cell links each doc | `register` inserts the row there, and `corpus` reads registration from those rows | **fail-loud** — `register` exits `15`, and the run stops naming both the absent or unparseable index **and** the doc it had already written, then points at front-door. The doc is never lost; it is unregistered until an index exists. |
-| `id:admission-bar` — the *"When to add a new pattern doc here"* criteria inside that index | step 2's bar is read from it rather than restated here, so a repo can hold its own bar | **degrade** — with no stated bar the three default criteria in step 2 apply and the run says so in its report, so a reader can tell an inherited bar from a declared one. |
-| `id:git-history` — a git checkout with history for `.patterns/` and a resolvable base ref | `drift` needs the commit that last touched a doc and the commits touching its cited paths since | **fail-loud** — `drift` exits `11`, UNKNOWN; a doc whose history cannot be read is never reported `current`, and no unbound fallback to the working tree is taken. |
-| `id:doc-gates` — the repo's own link and leak checks over `.md` files | this skill deliberately computes no second verdict on either, so those gates are the only thing answering them | **degrade** — in a repo that runs neither, both questions go unanswered by anyone. Nothing here breaks, but the run says so plainly rather than letting a reader assume the doc was checked. |
-| `id:dep-manifest` — the workspace manifest that pins dependency versions | `anchor` resolves a doc's `Derived from` package against the live pin | **degrade** — `anchor` answers `unpinned` at exit `0` for a package the manifest does not carry; a doc anchored to a dependency this repo does not pin is a fact, not a mismatch. |
-
-**No board surface is read at all** — no label, no issue, no pull request — so no row above covers
-one and this skill needs no repository token. Stated here rather than as a table row, because the
-third column's vocabulary is closed and a row for it would have had to invent a fourth word.

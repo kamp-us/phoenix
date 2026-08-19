@@ -40,6 +40,8 @@ export interface ReportOptions extends LaneRef {
 	readonly comment: string | null;
 	/** The target repo the proof reads against, resolved exactly as `lane prove` resolves it. */
 	readonly repo: string | null;
+	/** Where to look for `.fabrika.jsonc` — the checkout this run stands in, not the ledger root. */
+	readonly cwd: string;
 	readonly env: Readonly<Record<string, string | undefined>>;
 }
 
@@ -73,6 +75,7 @@ export const runReport = <R>(
 			event: resolved.event,
 			task: task.taskId,
 			repo: options.repo,
+			cwd: options.cwd,
 			env: options.env,
 		});
 		if (proved.code !== ANSWER) {

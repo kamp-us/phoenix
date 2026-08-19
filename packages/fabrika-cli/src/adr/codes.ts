@@ -89,3 +89,15 @@ export const DUPLICATE_ID = 20;
  * record directory. Not `1`, which would fuse a missing remote with a bad flag.
  */
 export const ORIGIN_REPO_UNRESOLVABLE = 21;
+
+/**
+ * `.fabrika.jsonc` declines `decisionsDir`: this repo keeps no decision corpus, so there is nothing
+ * to read and nothing to write into.
+ *
+ * Its own seat rather than {@link DIR_UNREADABLE}'s, because the two are opposites a caller must
+ * route differently: `11` is "nobody could read the corpus", UNKNOWN and worth retrying, while this
+ * is a settled fact about the repo that no retry changes. Not `7`-shaped either — a declined key is
+ * not an empty directory, and #5254/#5297 already made "read and empty" an answer rather than a
+ * refusal.
+ */
+export const CORPUS_DECLINED = 22;

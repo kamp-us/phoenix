@@ -370,23 +370,3 @@ reimplements here rather than reaching for the v1 skill that has it.
 session per frontier ticket**, with resolutions summarized back to the map — the lane marker is what
 makes that checkable rather than remembered. The verb inventory and every grammar live in
 [`contract.md`](contract.md).
-
-## Required repo files
-
-fabrika installs into repos that are not phoenix. When-missing vocabulary is closed — **fail-loud**
-(stop, name the surface by its repo-relative path, point at front-door), **degrade** (continue with
-a narrower answer, stated), **bootstrap** (front-door creates it) — and it is the same table in
-every fabrika skill, so one reader parses all of them.
-
-| Must exist | Why this skill needs it | When missing |
-| --- | --- | --- |
-| A GitHub repository reachable over `gh` REST, with a token carrying `issues: write` | every map, ticket, lane and resolution is an issue, a comment or an edge ([`contract.md`](contract.md), all eight verbs) | **fail-loud** — no artifact can be written or read, so no state is provable; end `STOPPED` and name the repo |
-| The `wayfinding:map` label | `map open` applies it on mint and resumes on it; without it every run mints a map no later run can find (`fabrika wire doc-section --heading "map open" < <skill-base>/contract.md`) | **bootstrap** — `fabrika status bootstrap issue-shape-markers` creates it; until it is run, `map open` exits `7` naming the label rather than silently opening an unlabelled issue |
-| GitHub's native issue-dependency and sub-issue endpoints, enabled for the repository | the frontier's blocking edges and the ticket-to-map link live there, not in the body, and `map read` derives the whole frontier from them (`fabrika wire doc-section --heading "map ticket" < <skill-base>/contract.md`, likewise `--heading "map read"`) | **fail-loud** — `11`, and the frontier is UNKNOWN, never empty. Degrading to a prose topology would put the state back in a body no tool writes |
-| Readable collaborator permissions — `repos/<repo>/collaborators/<login>/permission` | resolves a lane claim's author (`fabrika wire doc-section --heading "map lane" < <skill-base>/contract.md`) | **fail-loud** — `11`. A permission read that fails is UNKNOWN, never a demotion that would free another run's lane |
-| The `wayfinder:backlog` label | where a destination `map open` refuses parks | **degrade** — the refusal already carries the verdict and names the label it could not apply; the routing is then yours to place |
-
-Nothing else is required. This skill reads no `.decisions/`, no `.patterns/`, no CODEOWNERS, no
-design manifest and no merge-queue configuration — it opens no pull request and gates no merge, so
-none of those surfaces bear on it. Stated explicitly, because an absent row reads as nobody checked.
-

@@ -55,6 +55,7 @@ const run = (
 				bodyDigest: options.digest ?? DIGEST,
 				token: TOKEN,
 				repo: null,
+				cwd: "/repo",
 				env,
 				stdin,
 			}),

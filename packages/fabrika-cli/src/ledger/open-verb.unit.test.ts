@@ -60,7 +60,7 @@ const run = (
 	const fs = fakeFs({files});
 	return Effect.runPromise(
 		Effect.provide(
-			runOpen({number: 4300, token: TOKEN, repo: null, env}),
+			runOpen({number: 4300, token: TOKEN, repo: null, cwd: "/repo", env}),
 			Layer.mergeAll(shell.layer, fs.layer),
 		),
 	).then((outcome) => ({outcome, written: fs.written, calls: shell.calls}));

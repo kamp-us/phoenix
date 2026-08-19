@@ -2,9 +2,9 @@
  * Where the skill roster lives, and what one `SKILL.md` says about itself.
  *
  * **The roster is the plugin's, not the target repo's.** fabrika installs into repos that are not
- * phoenix (#4776), so defaulting to a repo-relative path would make `status menu` and
- * `status config` empty on precisely the fresh repo this skill onboards. Resolution runs four
- * tiers and prints which one served, so a caller can re-run the read instead of adopting the render.
+ * phoenix (#4776), so defaulting to a repo-relative path would make `status menu` empty on
+ * precisely the fresh repo this skill onboards. Resolution runs four tiers and prints which one
+ * served, so a caller can re-run the read instead of adopting the render.
  *
  * **A roster that resolves and holds zero skills is a fact, not a failure**; a roster that could not
  * be read, or one `SKILL.md` inside it that could not be read, is UNKNOWN. A partial roster is not a
@@ -33,7 +33,6 @@ export interface RosterSkill {
 	readonly description: string;
 	/** Whether the frontmatter parsed. A `false` row still ships — a dropped row is a false absence. */
 	readonly frontmatterReadable: boolean;
-	/** The whole `SKILL.md`, so `status config` parses its declarations without a second read. */
 	readonly text: string;
 }
 

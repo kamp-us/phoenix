@@ -115,11 +115,3 @@ wanted:
    never approximate it from a scale, never carry it as a local constant.
 
 The same three steps apply to any colouring job with no row in the table.
-
-## Required repo files
-
-| Must exist | Why this skill needs it | When missing |
-| --- | --- | --- |
-| `design-system-manifest.md` at the repo root | Every role token, contrast floor, and prohibition cited above is read from it — this skill carries no colour law of its own | **fail-loud** — name the missing file, tell the user to run `/fabrika` for the bootstrap, and choose no colour; an improvised palette is the failure this skill exists to prevent. |
-| `design-system-inventory.md` at the repo root | Supplies which primitive already owns a colour treatment, so a hand-built equivalent is not re-coloured | **degrade** — the role table and rules still apply; say in the PR body that primitive selection went unchecked. |
-| A blessed golden for the surface | The visual reference a colour change is cross-checked against | **degrade** — an unblessed surface is a fact, not an error; the manifest's rules are then the only anchor. |

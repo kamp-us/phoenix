@@ -1,7 +1,7 @@
 import {describe, expect, it} from "vitest";
 import {
 	classOf,
-	GOVERNANCE_ROOTS,
+	SHIPPED_GOVERNED_ROOTS as GOVERNANCE_ROOTS,
 	issueRefOf,
 	linkedIssueOf,
 	namespacesOf,
@@ -84,21 +84,29 @@ describe("SHIP_NAMESPACES", () => {
 });
 
 describe("touchesGovernanceRoot", () => {
-	it("fires on each of the four roots, at any depth", () => {
-		expect(GOVERNANCE_ROOTS).toEqual([".decisions/", ".claude/", ".github/", "claude-plugins/"]);
+	it("fires on each shipped root, at any depth — the config file among them", () => {
+		expect(GOVERNANCE_ROOTS).toEqual([
+			".decisions/",
+			".claude/",
+			".github/",
+			"claude-plugins/",
+			".fabrika.jsonc",
+		]);
 		for (const root of GOVERNANCE_ROOTS) {
-			expect(touchesGovernanceRoot([`${root}deep/nested/file.txt`])).toBe(true);
+			expect(touchesGovernanceRoot([`${root}deep/nested/file.txt`], GOVERNANCE_ROOTS)).toBe(true);
 		}
 	});
 
 	it("is a prefix test, not a substring one", () => {
-		expect(touchesGovernanceRoot(["docs/.github/notes.md"])).toBe(false);
-		expect(touchesGovernanceRoot(["packages/fabrika-cli/src/review/classes.ts"])).toBe(false);
-		expect(touchesGovernanceRoot([])).toBe(false);
+		expect(touchesGovernanceRoot(["docs/.github/notes.md"], GOVERNANCE_ROOTS)).toBe(false);
+		expect(
+			touchesGovernanceRoot(["packages/fabrika-cli/src/review/classes.ts"], GOVERNANCE_ROOTS),
+		).toBe(false);
+		expect(touchesGovernanceRoot([], GOVERNANCE_ROOTS)).toBe(false);
 	});
 
 	it("covers the decision corpus, which the harness flag deliberately does not", () => {
-		expect(touchesGovernanceRoot([".decisions/0238-fabrika.md"])).toBe(true);
+		expect(touchesGovernanceRoot([".decisions/0238-fabrika.md"], GOVERNANCE_ROOTS)).toBe(true);
 		expect(partition([".decisions/0238-fabrika.md"]).harness).toBe(false);
 	});
 });
@@ -113,18 +121,21 @@ describe("shipNamespacesOf", () => {
 			["apps/web/src/App.tsx", "apps/web/src/App.test.tsx"],
 			["skills/deploy-notes/SKILL.md"],
 		]) {
-			const result = partitionWithUi(files);
+			const result = partitionWithUi(files, GOVERNANCE_ROOTS);
 			expect(result.governance).toBe(false);
 			expect(shipNamespacesOf(result)).toEqual(result.classes.map((c) => `review-${c.name}`));
 		}
 	});
 
 	it("appends governance — never replaces or reorders a review namespace", () => {
-		const result = partitionWithUi([
-			"claude-plugins/fabrika/skills/ship/contract.md",
-			"packages/fabrika-cli/src/ship/gate-verb.ts",
-			"apps/web/src/App.tsx",
-		]);
+		const result = partitionWithUi(
+			[
+				"claude-plugins/fabrika/skills/ship/contract.md",
+				"packages/fabrika-cli/src/ship/gate-verb.ts",
+				"apps/web/src/App.tsx",
+			],
+			GOVERNANCE_ROOTS,
+		);
 		expect(shipNamespacesOf(result)).toEqual([
 			"review-code",
 			"review-skill",
@@ -134,12 +145,15 @@ describe("shipNamespacesOf", () => {
 	});
 
 	it("derives governance off a decision-corpus edit no class map marks", () => {
-		const result = partitionWithUi([".decisions/0244-corpus-review.md"]);
+		const result = partitionWithUi([".decisions/0244-corpus-review.md"], GOVERNANCE_ROOTS);
 		expect(shipNamespacesOf(result)).toEqual(["review-doc", "governance"]);
 	});
 
 	it("only ever emits namespaces ship gate admits", () => {
-		const result = partitionWithUi([".github/workflows/ci.yml", "apps/web/src/App.tsx"]);
+		const result = partitionWithUi(
+			[".github/workflows/ci.yml", "apps/web/src/App.tsx"],
+			GOVERNANCE_ROOTS,
+		);
 		for (const namespace of shipNamespacesOf(result)) {
 			expect(SHIP_NAMESPACES).toContain(namespace);
 		}
