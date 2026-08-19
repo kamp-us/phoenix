@@ -2,7 +2,7 @@ import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {errOut, fakeShell, okOut} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
-import {readBlockedness} from "./blockedness.ts";
+import {gateOf, readBlockedness} from "./blockedness.ts";
 import {issue} from "./fixtures.test-support.ts";
 
 const EDGES =
@@ -66,6 +66,53 @@ describe("readBlockedness", () => {
 		expect(out._tag).toBe("Unknown");
 		expect(out).toMatchObject({
 			reason: "the blocked_by list for #4312 answered 404 for an issue already proven open",
+		});
+	});
+});
+
+describe("gateOf", () => {
+	it("is Clear over an empty edge list, and carries the count the claim was proven over", () => {
+		expect(gateOf({_tag: "Read", scanned: 0, open: [], unread: []})).toEqual({
+			_tag: "Clear",
+			scanned: 0,
+		});
+	});
+
+	it("is Blocked on a proven open edge, naming EVERY one rather than the first", () => {
+		const out = gateOf({_tag: "Read", scanned: 3, open: [210, 212], unread: []});
+		expect(out).toEqual({_tag: "Blocked", scanned: 3, open: [210, 212]});
+	});
+
+	it("stays Blocked when a blocker could not be read beside a proven open one", () => {
+		const out = gateOf({
+			_tag: "Read",
+			scanned: 2,
+			open: [211],
+			unread: [{number: 210, reason: "gh: Bad gateway (HTTP 502)"}],
+		});
+		expect(out).toEqual({_tag: "Blocked", scanned: 2, open: [211]});
+	});
+
+	it("is Unknown when nothing is proven open and a blocker could not be read — never Clear", () => {
+		const out = gateOf({
+			_tag: "Read",
+			scanned: 2,
+			open: [],
+			unread: [
+				{number: 210, reason: "gh: Bad gateway (HTTP 502)"},
+				{number: 211, reason: "gh: Bad gateway (HTTP 502)"},
+			],
+		});
+		expect(out).toEqual({
+			_tag: "Unknown",
+			reason: "blocker #210: gh: Bad gateway (HTTP 502); blocker #211: gh: Bad gateway (HTTP 502)",
+		});
+	});
+
+	it("carries an unreadable edge list straight through as Unknown", () => {
+		expect(gateOf({_tag: "Unknown", reason: "gh: Bad gateway (HTTP 502)"})).toEqual({
+			_tag: "Unknown",
+			reason: "gh: Bad gateway (HTTP 502)",
 		});
 	});
 });

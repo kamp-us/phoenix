@@ -4,7 +4,14 @@ import {errOut, fakeFs, fakeShell, okOut} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {FAILED} from "../verb.ts";
 import {BAD_SECTIONS, PRECONDITION_UNKNOWN} from "./codes.ts";
-import {CRITERIA_BODY, candidates, focusTable} from "./fixtures.test-support.ts";
+import {
+	blockedBy,
+	CRITERIA_BODY,
+	candidates,
+	focusTable,
+	issue,
+	NO_BLOCKERS,
+} from "./fixtures.test-support.ts";
 import {runPick} from "./pick-verb.ts";
 import {DEFAULT_ROADMAP} from "./scope-admission.ts";
 
@@ -36,7 +43,7 @@ const run = (
 	Effect.runPromise(
 		Effect.provide(
 			runPick({...options, ...overrides}),
-			Layer.merge(fakeShell(script).layer, fs.layer),
+			Layer.merge(fakeShell([...script, NO_BLOCKERS]).layer, fs.layer),
 		),
 	);
 
@@ -141,7 +148,7 @@ describe("runPick", () => {
 			[bucket("p2"), EMPTY],
 		]);
 		expect(out.stderr.join("\n")).toContain(
-			"0 candidate(s) survived the filter, 2 excluded — 1 by the admission test, 1 for no acceptance-criteria block.",
+			"0 candidate(s) survived the filter, 2 excluded — 1 by the admission test, 1 for no acceptance-criteria block, 0 on the blocked_by graph.",
 		);
 	});
 
@@ -365,5 +372,75 @@ describe("runPick", () => {
 			{limit: 1},
 		);
 		expect(pool(out).map((row) => row.number)).toEqual([1]);
+	});
+});
+
+/**
+ * The exclusion ADR 0301 gives the pool. The `status:blocked` label it replaces was dropped by
+ * accident — the two-`status:`-label hygiene test excluded those issues with no reason printed, and
+ * with the label retired that accident stops firing at all.
+ */
+describe("runPick — the blocked_by graph", () => {
+	const edges = (n: number) =>
+		new RegExp(`^gh api --paginate repos/o/r/issues/${n}/dependencies/blocked_by`);
+	const blocker = (n: number) => new RegExp(`^gh api repos/o/r/issues/${n}$`);
+
+	it("excludes a candidate with an open blocker, with `blocked` as its named reason", async () => {
+		const out = await run([
+			[bucket("p0"), candidates({number: 500, labels: [...TRIAGED, "p0"]})],
+			[bucket("p1"), EMPTY],
+			[bucket("p2"), EMPTY],
+			[edges(500), blockedBy(210)],
+			[blocker(210), issue({number: 210, state: "open"})],
+		]);
+		expect(out.code).toBe(0);
+		expect(pool(out)).toEqual([]);
+		expect(excluded(out)).toEqual([{number: 500, home: null, reason: "blocked"}]);
+		expect(out.stderr.join("\n")).toContain("#500 is blocked by #210");
+	});
+
+	it("keeps a candidate whose every blocker is closed", async () => {
+		const out = await run([
+			[bucket("p0"), candidates({number: 500, labels: [...TRIAGED, "p0"]})],
+			[bucket("p1"), EMPTY],
+			[bucket("p2"), EMPTY],
+			[edges(500), blockedBy(210)],
+			[blocker(210), issue({number: 210, state: "closed"})],
+		]);
+		expect(pool(out).map((row) => row.number)).toEqual([500]);
+		expect(excluded(out)).toEqual([]);
+	});
+
+	it("excludes a candidate whose edge list could not be read, naming why on stderr", async () => {
+		const out = await run([
+			[bucket("p0"), candidates({number: 500, labels: [...TRIAGED, "p0"]})],
+			[bucket("p1"), EMPTY],
+			[bucket("p2"), EMPTY],
+			[edges(500), errOut("gh: Bad gateway (HTTP 502)")],
+		]);
+		expect(out.code).toBe(0);
+		expect(pool(out)).toEqual([]);
+		expect(excluded(out)).toEqual([{number: 500, home: null, reason: "unreadable"}]);
+		expect(out.stderr.join("\n")).toContain("cannot read the blocked_by edges of #500");
+	});
+
+	/** The graph read is last because it is the only axis that costs a call — nothing else does. */
+	it("reads no edges for a candidate an earlier axis already excluded", async () => {
+		const shell = fakeShell([
+			[
+				bucket("p0"),
+				candidates(
+					{number: 500, labels: ["status:triaged", "type:bug", "p0"]},
+					{number: 501, labels: [...TRIAGED, "p0"], body: REPORT_BODY},
+				),
+			],
+			[bucket("p1"), EMPTY],
+			[bucket("p2"), EMPTY],
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(runPick(options), Layer.merge(shell.layer, NO_FOCUS.layer)),
+		);
+		expect(out.code).toBe(0);
+		expect(shell.calls.some((line) => /dependencies\/blocked_by/.test(line))).toBe(false);
 	});
 });

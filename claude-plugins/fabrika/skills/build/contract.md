@@ -147,10 +147,11 @@ from two separate questions, computed together and answered together:
 the work is for), from dependency eligibility (`build eligible` asks whether an issue's `blocked_by`
 blockers are done), from priority (a home confers no band, ADR 0219), and from the milestone pick-order
 tiebreaker (ADR 0072) — the same not-this list ADR 0245 draws. Among admitted issues the ranking is
-unchanged, and a scope refusal never reads as blocked — `16` is `build eligible`'s alone, and no
-scope outcome borrows it. This section is the term ADR 0245 asks this contract to carry, at exactly
-the width the ADR gives it; the composition with the audience axis is stated here so no reader has
-to infer that the coined term swallowed a second question.
+unchanged, and a scope refusal never reads as blocked: `16` belongs to blockedness at every seam
+that answers it — `build eligible`, and the gate `build claim` and `build pick` run *after* this
+test (ADR 0301) — and no scope outcome borrows it. This section is the term ADR 0245 asks this
+contract to carry, at exactly the width the ADR gives it; the composition with the audience axis is
+stated here so no reader has to infer that the coined term swallowed a second question.
 
 **One module, two call sites.** Both axes are evaluated in exactly one place —
 `packages/fabrika-cli/src/build/scope-admission.ts` — and that module is **imported** by `build pick`
@@ -306,7 +307,7 @@ range, exactly as `triage/codes.ts` itself states for `adr`.
 | `13` | proven: the tree was dirty at a `--require-clean` open |
 | `14` | proven: the checked-out branch does not belong to this lane's claim |
 | `15` | proven: this session does not hold the claim — lost, foreign, or none exists at all; the detail is on stderr |
-| `16` | proven: the issue is blocked — the open dependency edge is named on stderr |
+| `16` | proven: the issue is blocked — every open `blocked_by` edge is named on stderr |
 | `17` | proven: the push completed but the remote ref did not move |
 | `18` | proven: this tree's validation is red |
 | `19` | refused: the requested push is unsafe (detached HEAD, or a non-fast-forward without `--force-with-lease`) |
@@ -431,9 +432,10 @@ convention rule 2).
 from the answer itself rather than only from the counts. Each `excluded` entry is
 `{"number", "home", "reason"}`, where `reason` is one of `out-of-focus` / `audience-not-agent` /
 `unreadable` — the outcome set of the [admission test](#admission-test--scope-admission-and-the-audience-axis),
-one reason per outcome — or `no-acceptance-criteria`, this verb's own axis (below). The scanned
-counts alone cannot tell a working fence from a broken one; the reasons can. `focus` is `{"state": "declared", "milestones": ["44", "46"]}` or `{"state": "none"}`, the same
-fact the stderr scope line carries.
+one reason per outcome — or `no-acceptance-criteria` or `blocked`, this verb's own two axes (below).
+The scanned counts alone cannot tell a working fence from a broken one; the reasons can. `focus` is
+`{"state": "declared", "milestones": ["44", "46"]}` or `{"state": "none"}`, the same fact the stderr
+scope line carries.
 
 The filter, fail-closed on every axis:
 
@@ -470,6 +472,15 @@ The filter, fail-closed on every axis:
   epic, whose criteria arrive per child from the plan ledger
   ([#6025](https://github.com/kamp-us/phoenix/issues/6025)). The matching refusal at the stamp is
   `triage apply`'s `16`.
+- **no open `blocked_by` edge**, read off GitHub's native graph and nothing else (ADR 0301) through
+  the same `packages/fabrika-cli/src/build/blockedness.ts` reader `build eligible` uses. A candidate
+  with any blocker still open is excluded with reason `blocked`, and one whose edge list could not
+  be read is excluded with reason `unreadable` and the failure named on stderr — a candidate whose
+  blockedness is UNKNOWN is never offered. This axis runs **last**, because it is the only one that
+  costs a network call: the admission test and the criteria block are both answered off facts the
+  listing already returned, so a candidate they exclude is never paid for here. It replaces the
+  retired `status:blocked` label, which this filter only ever dropped as a side effect of the
+  one-`status:`-label rule above, printing no reason at all.
 - open, and not a pull request.
 
 **Every bucket read paginates, and a failed bucket read fails the verb.** v1's candidate pool
@@ -762,6 +773,19 @@ readable issue is `refused: no-served-issue` at `20`. A `refused: out-of-focus` 
 `11` and a malformed declaration is `4`, and neither ever proceeds. Nothing is written on any of the
 four: the issue carries no marker, so a refused claim leaves no trace to retract.
 
+**Then the blockedness gate, and only then the marker.** ADR
+[0301](../../../../.decisions/0301-blocked-by-graph-is-the-carrier.md) makes GitHub's native
+`blocked_by` graph the one carrier of "do not start this yet" — there is no `status:blocked` label,
+and a claim is where the refusal has teeth, because a number handed straight to a lane passes
+through no pool. After the admission test and before any marker, `claim` reads the graph through the
+same `packages/fabrika-cli/src/build/blockedness.ts` reader `build eligible` uses: any blocker still
+open is `16` naming **every** one of them, and an edge list — or a blocker's own state — that could
+not be read is `11`, never "not blocked". The order is the point: the two axes answer without IO, so
+a number the fence already refuses never costs the read. It is **not overridable**, because the
+remedy is neither an edit nor a re-label but waiting, and there is no unblock act — the edge stays,
+the blocker closes, and the next read answers unblocked. In repair `<number>` is a PR, which carries
+no edges of its own and names a lane that has already started, so the gate does not run.
+
 **The purpose decides whether the audience axis binds — it never enters either axis.** `--purpose`
 says why this lane claims: `build` (the default) is bound by both axes, while `plan` and `gate` are
 bound by the scope axis alone. The audience axis asks whether an agent should pick the issue up to
@@ -876,8 +900,9 @@ proven-foreign only; a missing session id is `1`; an unreadable marker set is `1
 | `8` | the marker write failed — it may or may not have landed; run `confirm` with the token named on stderr before anything else, and never re-run `claim` |
 | `9` | the marker landed but the read-back does not match |
 | `10` | `claim` only: `--purpose` is off the `plan` \| `gate` \| `build` enum — a refusal, never a fallback to `build` |
-| `11` | the marker set could not be read — ownership is UNKNOWN, never "unclaimed"; or, `claim` only, the focus declaration or the issue's home could not be read — scope admission is UNKNOWN, never admitted |
+| `11` | the marker set could not be read — ownership is UNKNOWN, never "unclaimed"; or, `claim` only, the focus declaration or the issue's home could not be read — scope admission is UNKNOWN, never admitted; or, `claim` against an issue only, its `blocked_by` list or a blocker's own state could not be read — blockedness is UNKNOWN, never "not blocked" |
 | `15` | proven: another lane's earlier authorized marker wins (`claim`), holds (`confirm`), or `release` was asked for a token this lane does not hold. `claim` also refuses here over a claim this lane has *adopted* — release it first |
+| `16` | `claim` against an **issue** only, proven: a `blocked_by` blocker is still open — every one is named on stderr, and no marker was written. Not overridable: the remedy is waiting, and the edge clears when the blocker closes |
 | `20` | `claim` only, proven: the issue's home is outside every declared focus row — no marker was written |
 | `21` | `claim --purpose build` only (the default), proven: the issue's audience is not an agent — no marker was written. Unreachable when the target is an open PR serving a `type:decision` issue (#5914) |
 | `30` | `claim --purpose build` against an **issue** only, proven: the issue is `type:decision` or `type:epic` — no marker was written. Not overridable: a decision opens it with `--cites <ruling-comment-url>`, an epic with `--purpose plan` or `--purpose gate` |
@@ -892,6 +917,8 @@ proven-foreign only; a missing session id is `1`; an unreadable marker set is `1
 | `build claim: type not buildable — this issue carries <label>, whose deliverable is not a pull request an agent build lane produces; <remedy>.` (`<remedy>` names `--cites` for a decision and `--purpose plan`/`--purpose gate` for an epic) | 30 | refusal |
 | `build claim: --cites <detail>; nothing was written.` — the URL is not an issue-comment URL, or names another repository or another issue | 1 | refusal |
 | `build claim: cannot read the "## Focus" declaration: <reason> — scope is UNKNOWN, never admitted; nothing was written.` | 11 | refusal |
+| `build claim: blocked by <n> open blocked_by edges: #<a>, #<b> — there is no unblock act, so the edge clears when the blocker closes; nothing was written.` — preceded by `build claim: scanned <n> blocked_by edges.` | 16 | refusal |
+| `build claim: cannot read the blocked_by edges of #<n>: <reason> — blockedness is UNKNOWN, never "not blocked"; nothing was written.` | 11 | refusal |
 | `build claim: the "## Focus" declaration does not parse: <detail> — a malformed declaration is never read as "no focus"; nothing was written.` | 4 | refusal |
 | `build claim: #<n> is already held by this lane (comment <id>) — answered with the marker that owns it; nothing was written.` — beside `{"answer":"won", …}` on exit 0, when `--token` names a lane that already holds `<n>` | 0 | answer |
 | `build claim: --token "<value>" is not a claim token (build:<session-id>:<uuid>) — which lane is asking is not stated.` | 1 | usage error |
@@ -924,7 +951,7 @@ action is identical. The same reading applies wherever a sibling verb's precondi
 "claim confirmed (`15`/`11`)": an unclaimed target refuses on `15` with the no-claim message.
 
 **Scope** — one issue's comment markers, paginated in full, plus — for `claim` — that issue's home
-and audience against the declared focus. An unauthorized author's marker is counted and reported on
+and audience against the declared focus, and its `blocked_by` edges with each blocker's state. An unauthorized author's marker is counted and reported on
 stderr but never wins: content is not authority. `claim`'s scope line names the declaration it judged
 against (`focus: milestone #44, declared 2026-08-09`, `focus: 2 milestones — #44 (declared
 2026-08-09), #46 (declared 2026-08-18)`, or `focus: none declared — scope fence inert`), so a

@@ -37,7 +37,14 @@
  * The fence decides what may *start* (ADR 0245), so a focus row edited mid-lane must not strand a
  * running lane or block its release. Claiming is the one moment every path goes through — a number
  * handed straight to `claim` passes through no pool — which is why the refusal has teeth here and is
- * advice at the pool. In repair the number is a **PR**, which carries no home and no audience of its
+ * advice at the pool.
+ *
+ * Blockedness rides the same moment but not the same module: ADR 0301 makes the native `blocked_by`
+ * graph the one carrier of "do not start this yet", and the gate reading it is composed AFTER the
+ * pure axes, since those answer without IO and an out-of-focus number should refuse on the cheaper
+ * fact.
+ *
+ * In repair the number is a **PR**, which carries no home and no audience of its
  * own, so the test runs over the issue that PR serves (#5562) — and when that issue is
  * `type:decision` the audience axis does not bind, because triage routes a decision to
  * `ready-for:human` by default and a repair lane would otherwise fail a fence it had no way to
@@ -56,6 +63,7 @@ import {
 } from "../io/issues.ts";
 import {normalizeForReadback} from "../report/compose.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
+import {readBlockedGate} from "./blockedness.ts";
 import {
 	BUILD_CLAIM,
 	type ClaimOverride,
@@ -70,6 +78,7 @@ import {
 	resolveOwnership,
 } from "./claim.ts";
 import {
+	BLOCKED,
 	CLAIM_NOT_MINE,
 	OFF_VOCABULARY,
 	PRECONDITION_UNKNOWN,
@@ -91,10 +100,11 @@ import {
 	parseClaimPurpose,
 	purposeScopeLine,
 	readDeclaredFocus,
+	scopeSubjectOf,
 	typeAxisOf,
 	typeScopeLine,
 } from "./scope-admission.ts";
-import {openIssue, resolveAdmissionSubject, resolveTargetRepo} from "./target.ts";
+import {openIssue, resolveAdmissionSubject, resolveTargetRepo, scannedLine} from "./target.ts";
 
 export interface ClaimOptions {
 	readonly number: number;
@@ -318,6 +328,32 @@ export const runClaim = (
 			};
 		}
 
+		// The blockedness gate, ordered AFTER the pure axes because they answer without IO: a number
+		// out of focus should be refused on the fact that cost no call (ADR 0301). It runs over the
+		// named target only when that target is an issue — a repair claim names a pull request, which
+		// carries no edges of its own, and a lane repairing an open PR has already started.
+		const gateNotes: string[] = [];
+		if (scopeSubjectOf(ready.issue)._tag === "Own") {
+			const gate = yield* readBlockedGate(repo, number);
+			if (gate._tag === "Unknown") {
+				return refuse(
+					PRECONDITION_UNKNOWN,
+					`${CLAIM}: cannot read the blocked_by edges of #${number}: ${gate.reason} — blockedness is UNKNOWN, never "not blocked"; nothing was written.`,
+					lines,
+				);
+			}
+			if (gate._tag === "Blocked") {
+				return refuse(
+					BLOCKED,
+					`${CLAIM}: blocked by ${gate.open.length} open blocked_by edge${
+						gate.open.length === 1 ? "" : "s"
+					}: ${gate.open.map((blocker) => `#${blocker}`).join(", ")} — there is no unblock act, so the edge clears when the blocker closes; nothing was written.`,
+					[...lines, scannedLine(CLAIM, gate.scanned, "blocked_by edge")],
+				);
+			}
+			gateNotes.push(scannedLine(CLAIM, gate.scanned, "blocked_by edge", "none open"));
+		}
+
 		const token = composeToken(session, options.uuid);
 		const nonce = nonceOf(token);
 		if (nonce === null) {
@@ -358,6 +394,7 @@ export const runClaim = (
 		);
 		const notes = [
 			...lines,
+			...gateNotes,
 			...unauthorized.map(
 				(marker) =>
 					`${CLAIM}: comment ${marker.commentId} carries a claim marker from "${marker.author}", who holds no write permission — counted, never a winner.`,
