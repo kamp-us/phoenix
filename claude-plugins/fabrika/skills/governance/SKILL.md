@@ -32,6 +32,22 @@ Never invent one nobody named.
 fabrika governance scope $pr_number
 ```
 
+**On an epic child there is no PR, and the subject is the range instead.** An epic run opens one
+tail PR (ADR [0285](../../../../.decisions/0285-epic-machine-ends-in-review.md)), so mid-run the
+child branch is all there is. A `claude-plugins/**` child sits under a governance root by
+construction, and this namespace is owed at every round on such a diff (ADR
+[0293](../../../../.decisions/0293-governance-fires-every-round.md)), so the range is the normal
+subject on a documentation epic, not an edge. Drop the positional and name the two ends your caller
+gave you; the answer is the same four fields, with `<base>..<tip>` where a head SHA would be:
+
+```bash
+fabrika governance scope --base 4f2a91c1 --tip 9b516363
+```
+
+Both ends or neither, both 7–40 lowercase hex, and no `--sha` beside them. The base the derivation
+reads across is `merge-base(base, tip)` — the same commit the range's own three-dot diff is taken
+from, which is the commit §4 then serves this skill's bytes at.
+
 <!-- anchor: DERIVED-NOT-ELECTED --> The requirement is a **total function of the changed-file list
 alone**, over four roots — `.decisions/`, `.claude/`, `.github/`, `claude-plugins/`. Four properties
 make that checkable:
@@ -68,7 +84,9 @@ question CODEOWNERS answers*.
 
 **Carry the printed head into every later verb** — `--sha` on `sweep` and `guards` — so the whole
 judgement is one tree. Each verb otherwise re-resolves the live head on its own, and three reads
-straddling a push produce a confident verdict over text nobody judged.
+straddling a push produce a confident verdict over text nobody judged. **On a range there is no head
+to carry, and `sweep` and `guards` have no range form yet** — §2 and §3 are read by hand on a child,
+and the verdict says which of them you ran that way.
 
 **Done when** the outcome token is read. `not-required` ends the run there.
 
@@ -154,10 +172,18 @@ diff edits this skill or its contract, and `base` serves this file's bytes at th
 fabrika governance base $pr_number
 ```
 
+On a child, hand it the same two ends §1 took — the merge base it serves at is `merge-base(base,
+tip)`, the commit §1 already read the changed files across:
+
+```bash
+fabrika governance base --base 4f2a91c1 --tip 9b516363
+```
+
 <!-- anchor: SELF-COVERING --> **Judge by those, not the head's** — a bytes read that loads no
-instructions. A PR must not wave itself through by its own new rules, and here that is not hygiene:
+instructions. A diff must not wave itself through by its own new rules, and here that is not hygiene:
 your own text is the guard under review. `self` changes which rules you judge by, never whether you
-judge.
+judge. This is the half a child had no substitute for: without the range form a child range editing
+this skill got judged by head rules, so the guard opened on exactly the diff that edits the guard.
 
 **Done when** either the verdict records `self false` and that this fence did not apply, or the rules
 you applied are the base revision's and the verdict says so.
@@ -197,9 +223,9 @@ re-read that run, and escalating it is how three agents burned an evening on a g
 
 An epic run opens one tail PR (ADR [0285](../../../../.decisions/0285-epic-machine-ends-in-review.md)),
 so mid-run a child has no PR and no head to bind to. Same verb, two ends instead of a head, and the
-positional is the **child issue**. §1's `scope` takes a PR and has no range form, so on a child the
-range comes from your caller and the derivation is re-run by `post` itself over that range — the
-`14` refusal below is the same fail-closed floor, asked of the range's paths:
+positional is the **child issue**. The range is the same one §1 and §4 took, and the derivation is
+re-run by `post` itself over it — the `14` refusal below is the same fail-closed floor, asked of the
+range's paths:
 
 ```bash
 fabrika governance post 6007 --polarity PASS --base 4f2a91c1 --tip 9b516363 --clause "no contradiction, no weakening" <<'EOF'

@@ -18,6 +18,7 @@ export {
 	comments,
 	HEAD,
 	OLD_HEAD,
+	PATHS_AT,
 	paths,
 	pull,
 } from "../review/fixtures.test-support.ts";
@@ -55,3 +56,12 @@ export const FULL_TREE: ReadonlyArray<string> = [
 
 /** The resolved skill root `FULL_TREE` yields. */
 export const SKILL_ROOT = "claude-plugins/fabrika/skills/governance/";
+
+/** An epic child's two ends, and the commit `git merge-base` names for them (#6064). */
+export const RANGE_BASE = "1a2b3c4d5e6f708192a3b4c5d6e7f80910111213";
+export const RANGE_TIP = "2b3c4d5e6f708192a3b4c5d6e7f8091011121314";
+export const RANGE_MERGE_BASE = "3c4d5e6f708192a3b4c5d6e7f809101112131415";
+
+/** The range's merge-base resolve: `git merge-base <base> <tip>`. */
+export const MERGE_BASE_OF = (base: string = RANGE_BASE, tip: string = RANGE_TIP): RegExp =>
+	new RegExp(`^git merge-base ${base} ${tip}$`);
