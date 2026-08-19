@@ -43,7 +43,7 @@ flowchart TD
 		camp_writing_craft_import["Writing-Craft Import"]:::done
 		camp_fabrika_kampus_pipeline_v2["fabrika — kampus-pipeline v2"]:::done
 		camp_switching_to_fabrika["switching to fabrika"]:::done
-		camp_fabrika_fast_follows["fabrika fast follows"]:::active
+		camp_fabrika_fast_follows["fabrika fast follows"]:::done
 		camp_fabrika_everywhere["fabrika everywhere"]:::active
 	end
 	ext_3642["#3642"]:::external
@@ -100,7 +100,7 @@ Campaigns are bounded, milestone-backed pushes that run *concurrently* with the 
 | Writing-Craft Import | #30 | done |
 | fabrika — kampus-pipeline v2 | #44 | done |
 | switching to fabrika | #45 | done |
-| fabrika fast follows | #46 | active |
+| fabrika fast follows | #46 | done |
 | fabrika everywhere | #47 | active |
 
 **The table is a parsed contract.** It is the single source whatever writes a campaign row (appending it `paused` and later flipping its state) and the lifecycle guard that reads it both bind to, so the grammar is pinned here rather than re-derived at either end:
