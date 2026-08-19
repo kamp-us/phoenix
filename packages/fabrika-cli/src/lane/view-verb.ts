@@ -1,27 +1,14 @@
 /**
- * `lane view` — every lane on disk, on one screen, sorted by what needs a person.
+ * `lane view` — every lane on disk, on one screen, sorted by what needs a person (#6131).
  *
- * `lane status` answers one lane and `lane stale` answers liveness across the fleet; neither
- * answers the question a driver actually opens a terminal to ask, which is WHICH OF THESE NEEDS ME.
- * A driver reading twelve `stateValue` blocks to find the one task a human has to unblock is doing
- * by hand what the fold already knows (#6131).
+ * The page and the derivation are `@demlik/tea/chart/lane/server`'s, shipped prebuilt. This verb
+ * supplies the two facts only fabrika knows: WHERE THE LANES ARE (the sweep `lane stale` does, over
+ * the same roots) and HOW AN EVENT IS RECORDED ({@link runTransition}).
  *
- * **The page is not ours and neither is the derivation.** `@demlik/tea/chart/lane/server` ships the
- * screen prebuilt — the attention ordering, what is stuck and why, each region drawn with the path
- * it walked, the scrubber over the history — and asks for the facts only this repo can know. This
- * verb supplies two of them:
- *
- *   WHERE THE LANES ARE — the same sweep `lane stale` does, over the same roots.
- *   HOW AN EVENT IS RECORDED — {@link runTransition}, unchanged and still the only writer.
- *
- * That second one is the whole reason this is safe to add. The page never touches `events.jsonl`:
- * it asks this verb, which asks `lane transition`, which validates against the folded state FIRST
- * and appends only an event the machine accepts. A refusal comes back as the transition verb's own
- * words and is displayed verbatim. There is no second writer and no second set of rules — the
- * screen cannot drift from the ledger because it cannot write to it.
- *
- * It serves on localhost and reads the disk it is started on. Nothing is uploaded and no lane
- * leaves the machine.
+ * That second one is why this is safe to add. The page never touches `events.jsonl` — it asks this
+ * verb, which asks `lane transition`, which validates against the folded state FIRST and appends
+ * only an event the machine accepts. One writer, one set of rules, exactly as before this verb
+ * existed: the screen cannot drift from the ledger because it cannot write to it.
  */
 import {serveLaneViewer, type TransitionRequest} from "@demlik/tea/chart/lane/server";
 import {Effect, type FileSystem, type Path, Result, Schema} from "effect";
@@ -48,8 +35,8 @@ export const DEFAULT_VIEW_PORT = 5411;
  * `PARK_SWEEP.WIP` are the same `WIP`, and the namespace is presentation.
  *
  * `UNBLOCKED` is a human and only a human — that is what parking is FOR. `DONE`/`PASS`/`FAIL` are
- * the work the lane dispatched answering back, which is a Cmd's result in every sense tea means it:
- * fabrika spawns a shell on entering a working state and the shell reports its terminal token.
+ * the dispatched work answering back: fabrika spawns a shell on entering a working state and the
+ * shell reports its terminal token.
  */
 const ORIGINS = {
 	from: {
@@ -63,9 +50,7 @@ const ORIGINS = {
 } as const;
 
 export interface ViewOptions {
-	/** The lanes root to serve. */
 	readonly root: string;
-	/** The port to listen on. */
 	readonly port: number;
 }
 
@@ -75,8 +60,7 @@ export const runView = (
 	Effect.gen(function* () {
 		const listing = yield* Effect.result(readDir(options.root));
 		if (Result.isFailure(listing)) {
-			// A root that is there and cannot be listed leaves the lane set UNKNOWN. Serving a short
-			// list would say "these are your lanes" about an answer that is missing some.
+			// Serving a short list would say "these are your lanes" about an answer missing some.
 			return refuse(
 				LANE_UNREADABLE,
 				`${VERB}: cannot list ${options.root}: ${listing.failure.reason} — the lane set is UNKNOWN, never a short list.`,
@@ -97,9 +81,8 @@ export const runView = (
 					event: req.event,
 					task: req.task ?? null,
 				}).pipe(
-					// The transition verb's own words, either way — a refusal it proved is a better
-					// sentence than anything this file could compose about it, and its answer line
-					// already names what it appended.
+					// The transition verb's own words, either way: a refusal it proved beats anything
+					// this file could compose, and its answer line already names what it appended.
 					Effect.map((out) => ({ok: out.code === 0, message: out.stderr.join(" ")})),
 				),
 			);
@@ -126,9 +109,7 @@ export const runView = (
 		}
 		const server = started.success;
 
-		// Serve until interrupted. The verb owns nothing about HTTP — the package creates the
-		// server, bridges the request and streams the response; this file supplies the two facts
-		// only fabrika knows.
+		// Serve until interrupted.
 		yield* Effect.callback<void>(() =>
 			Effect.tryPromise({
 				try: () => server.close(),

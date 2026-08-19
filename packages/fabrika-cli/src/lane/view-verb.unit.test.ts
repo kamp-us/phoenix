@@ -19,8 +19,6 @@ describe("lane view — what it refuses", () => {
 		const fs = fakeFs({files: {}, dirs: {}, directories: [ROOT], unreadable: [ROOT]});
 		const out = await Effect.runPromise(Effect.provide(runView({root: ROOT, port: 0}), fs.layer));
 
-		// the lane set is UNKNOWN; a page saying "these are your lanes" about a partial answer is
-		// worse than one that refuses to open
 		expect(out.code).toBe(LANE_UNREADABLE);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.join(" ")).toContain("UNKNOWN");
