@@ -28,6 +28,16 @@
 	// key is ever wired up again; what becomes of the key itself is the founder's to rule.
 	"unreadableCodeowners": "refuse",
 
+	// The repo's own commands that compile and lint its code. `fabrika build check --surface code`
+	// runs each one in the lane's tree, and both flags here are phoenix's: `--force` is turbo's
+	// cache-bypass (a bare `tsc` rejects it), and `lint:worktree` is a phoenix script name. Nothing
+	// is compiled into the CLI, so a repo declaring nothing gets a named refusal rather than these
+	// two commands (#6015).
+	"codeValidators": [
+		{ "command": ["pnpm", "typecheck", "--force"] },
+		{ "command": ["pnpm", "lint:worktree"] }
+	],
+
 	// The repo's own commands that machine-read `.github/workflows/**`. `fabrika build check
 	// --surface workflows` runs each one over a workflows-touching diff, on top of `actionlint` when
 	// the tree has one (#5991), and `reads` names the exact workflow files that command opens — the

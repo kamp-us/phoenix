@@ -29,7 +29,11 @@ export type Decoded<A> =
 
 export interface KeyGroup<A> {
 	readonly key: string;
-	/** What an absent file and an absent key both resolve to. Never an empty gate list. */
+	/**
+	 * What an absent file and an absent key both resolve to. Never a value that lets a gate pass on
+	 * less than it should — for a gate's scope that rules out an empty list; for a list of commands a
+	 * verb must run, empty is the strict arm, because nothing to run refuses rather than greens.
+	 */
 	readonly shippedDefault: A;
 	/** Decode a present value. Refuse the whole value rather than skipping a bad entry. */
 	readonly decode: (raw: unknown) => Decoded<A>;

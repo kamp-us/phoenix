@@ -66,8 +66,10 @@ on one growing reader.
 labels reads as "nothing is governed" / "nothing is required" and turns the gate off. Pick the
 value that reproduces today's behaviour, and make an explicitly-declared empty list `Malformed`
 where empty would disable something. The widen-only keys are the exception and say so in their own
-docblocks: for `capClearAuthors`, `docLeakExempt` and `workflowValidators`, empty **is** the strict
-answer.
+docblocks: for `capClearAuthors`, `docLeakExempt`, `workflowValidators` and `codeValidators`, empty
+**is** the strict answer — the last because a list of commands a verb must run is not a gate's
+scope: nothing to run refuses UNKNOWN, so an empty default withholds a verdict where a populated one
+would have run another repo's script names and called the failure that repo's code (#6015).
 
 `containmentVocabulary` is the other exception, and it is one on purpose: an explicitly-empty half
 turns the containment marker off, because a repo with no deployment story has nothing to contain and
@@ -182,13 +184,17 @@ a `null` path is the shape that gets `?? ".decisions"`-ed back into the default 
 
 ## An empty declared list is the caller's answer, not the decoder's
 
-A key whose shipped default is non-empty has a third state its decoder must not fold away: the repo
-declared the key, and declared it **empty**. That is well-formed data, so `decode` accepts it; what
-it means is the caller's to say. `codeValidators` is the worked example — an empty list means no
-code validator is present, and `build check --surface code` refuses UNKNOWN on it rather than
+A repo may declare a key and declare it **empty**. That is well-formed data, so `decode` accepts it;
+what it means is the caller's to say. `codeValidators` is the worked example — an empty list means
+no code validator is present, and `build check --surface code` refuses UNKNOWN on it rather than
 greening (nothing was checked) or redding (which claims the code failed, #6015). Deciding it in the
 decoder would put one verb's vocabulary in the config module and leave every other reader of the key
 stuck with it.
+
+The caller owes the resolution arm in its message even when both arms carry the same empty value.
+`build check` reads "declares an empty `codeValidators`" off `Declared` and "declares no
+`codeValidators`" off `Default`, because the fix differs: one repo wrote the wrong thing and the
+other wrote nothing.
 
 ## A key over a closed id set merges, and refuses an id it does not know
 

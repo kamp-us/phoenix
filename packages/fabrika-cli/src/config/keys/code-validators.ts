@@ -10,11 +10,13 @@
  * a declared guard opens a fixed set it names; a code validator is handed no paths and compiles the
  * tree, so a per-file list here would be a claim nothing could hold it to.
  *
- * **The shipped default is phoenix's current pair, and it is deliberately not empty.** An empty
- * default would mean an adopting repo greens without running anything. A repo that declares an
- * explicit empty list has nothing runnable, and `build check --surface code` refuses UNKNOWN on it
- * — never green, and never `VALIDATION_RED`, which stays reserved for a validator that ran and
- * failed.
+ * **The shipped default is empty, and phoenix declares its own pair like any other repo.** Emptiness
+ * costs nothing here that it costs a gate-scope key: an empty list has nothing runnable, so
+ * `build check --surface code` refuses UNKNOWN on it — never green, and never `VALIDATION_RED`,
+ * which stays reserved for a validator that ran and failed. Defaulting to phoenix's pair instead
+ * left an adopting repo running script names it never defined: demlik declared nothing, got
+ * `pnpm typecheck --force`, and `tsc` rejected the turbo flag outright — a red saying its code was
+ * broken when the truth was that no validator was present (#6015).
  */
 
 import {isRecord} from "../../io/json.ts";
@@ -48,11 +50,8 @@ const decode = (raw: unknown): Decoded<ReadonlyArray<CodeValidator>> => {
 	return {_tag: "Value", value: validators};
 };
 
-/** Phoenix's two CI commands, cache-bypassed — what a repo declaring nothing still gets. */
-export const SHIPPED_CODE_VALIDATORS: ReadonlyArray<CodeValidator> = [
-	{argv: ["pnpm", "typecheck", "--force"]},
-	{argv: ["pnpm", "lint:worktree"]},
-];
+/** A repo declaring nothing has no code validator — the refusal, not a guessed command line. */
+export const SHIPPED_CODE_VALIDATORS: ReadonlyArray<CodeValidator> = [];
 
 export const codeValidatorsKey: KeyGroup<ReadonlyArray<CodeValidator>> = {
 	key: CODE_VALIDATORS,
