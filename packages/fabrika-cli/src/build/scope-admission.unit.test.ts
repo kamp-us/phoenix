@@ -1,6 +1,7 @@
 import {Effect, FileSystem, Layer, Path, PlatformError} from "effect";
 import {describe, expect, it} from "vitest";
 import {fakeFs} from "../fakes.test-support.ts";
+import {ROADMAP_FILE} from "../triage/roadmap.ts";
 import {
 	AUDIENCE_NOT_AGENT,
 	BAD_SECTIONS,
@@ -22,7 +23,6 @@ import {
 	citationOpens,
 	DECISION_TYPE_LABEL,
 	DEFAULT_CLAIM_PURPOSE,
-	DEFAULT_ROADMAP,
 	EPIC_TYPE_LABEL,
 	exclusionReasonOf,
 	type Focus,
@@ -564,11 +564,11 @@ describe("admissionOf", () => {
 });
 
 describe("readDeclaredFocus", () => {
-	const read = (layer: Layer.Layer<FileSystem.FileSystem | Path.Path>, path = DEFAULT_ROADMAP) =>
+	const read = (layer: Layer.Layer<FileSystem.FileSystem | Path.Path>, path = ROADMAP_FILE) =>
 		Effect.runPromise(Effect.provide(readDeclaredFocus(path), layer));
 
 	it("reads the declaration off the roadmap", async () => {
-		const out = await read(fakeFs({files: {[DEFAULT_ROADMAP]: FOCUS_44}}).layer);
+		const out = await read(fakeFs({files: {[ROADMAP_FILE]: FOCUS_44}}).layer);
 		expect(out).toEqual({_tag: "Read", focus: declared});
 	});
 
@@ -578,7 +578,7 @@ describe("readDeclaredFocus", () => {
 	});
 
 	it("resolves an unprobeable roadmap to UNREADABLE, never to absent", async () => {
-		const out = await read(fakeFs({files: {}, unprobeable: [DEFAULT_ROADMAP]}).layer);
+		const out = await read(fakeFs({files: {}, unprobeable: [ROADMAP_FILE]}).layer);
 		expect(out._tag).toBe("Unreadable");
 	});
 
@@ -600,7 +600,7 @@ describe("readDeclaredFocus", () => {
 		);
 		const out = await read(layer);
 		expect(out._tag).toBe("Unreadable");
-		expect(out._tag === "Unreadable" && out.reason).toContain(DEFAULT_ROADMAP);
+		expect(out._tag === "Unreadable" && out.reason).toContain(ROADMAP_FILE);
 	});
 });
 

@@ -63,6 +63,14 @@ const WORKFLOW_RE = /^\.github\/workflows\/[^/]+\.ya?ml$/;
 /** The workflow linter, run over the changed workflow files when the tree has one. */
 const ACTIONLINT = "actionlint";
 
+/**
+ * The workflow whose job supersedes this verb on workflow syntax.
+ *
+ * It is phoenix's file name, not a fact about GitHub — a repo installing fabrika may call its gate
+ * anything (#6026). One home here so the name a message states can later become a config read.
+ */
+export const CI_WORKFLOW = "ci.yml";
+
 /** The exact CI commands, cache-bypassed. `--force` is turbo's; `lint:worktree` has no cache to hit. */
 const CODE_RUNNERS: ReadonlyArray<{readonly label: string; readonly argv: ReadonlyArray<string>}> =
 	[
@@ -587,7 +595,7 @@ const runWorkflowSurface = (
 			...(notInstalled === null
 				? []
 				: [
-						`${VERB}: ${ACTIONLINT} did NOT run (${notInstalled}) — ci.yml's actionlint job supersedes this verdict on workflow syntax.`,
+						`${VERB}: ${ACTIONLINT} did NOT run (${notInstalled}) — ${CI_WORKFLOW}'s actionlint job supersedes this verdict on workflow syntax.`,
 					]),
 			...(unopened.length === 0
 				? []

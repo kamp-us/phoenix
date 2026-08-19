@@ -2,6 +2,7 @@ import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
 import {errOut, fakeFs, fakeShell, okOut} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
+import {ROADMAP_FILE} from "../triage/roadmap.ts";
 import {FAILED} from "../verb.ts";
 import {BAD_SECTIONS, PRECONDITION_UNKNOWN} from "./codes.ts";
 import {
@@ -13,7 +14,6 @@ import {
 	NO_BLOCKERS,
 } from "./fixtures.test-support.ts";
 import {runPick} from "./pick-verb.ts";
-import {DEFAULT_ROADMAP} from "./scope-admission.ts";
 
 const bucket = (priority: string) =>
 	new RegExp(
@@ -276,7 +276,7 @@ describe("runPick", () => {
 				[bucket("p2"), EMPTY],
 			],
 			{},
-			fakeFs({files: {[DEFAULT_ROADMAP]: focusTable(44)}}),
+			fakeFs({files: {[ROADMAP_FILE]: focusTable(44)}}),
 		);
 		expect(out.code).toBe(0);
 		expect(pool(out).map((row) => row.number)).toEqual([500]);
@@ -299,7 +299,7 @@ describe("runPick", () => {
 				[bucket("p2"), EMPTY],
 			],
 			{},
-			fakeFs({files: {[DEFAULT_ROADMAP]: focusTable([44, 46])}}),
+			fakeFs({files: {[ROADMAP_FILE]: focusTable([44, 46])}}),
 		);
 		expect(out.code).toBe(0);
 		expect(pool(out).map((row) => row.number)).toEqual([500, 300]);
@@ -315,7 +315,7 @@ describe("runPick", () => {
 				[bucket("p2"), EMPTY],
 			],
 			{},
-			fakeFs({files: {[DEFAULT_ROADMAP]: focusTable(44)}}),
+			fakeFs({files: {[ROADMAP_FILE]: focusTable(44)}}),
 		);
 		expect(pool(out).map((row) => row.number)).toEqual([500]);
 		expect(excluded(out)).toEqual([]);
@@ -325,7 +325,7 @@ describe("runPick", () => {
 		const out = await run(
 			[[bucket("p0"), EMPTY]],
 			{},
-			fakeFs({files: {[DEFAULT_ROADMAP]: null}, unprobeable: [DEFAULT_ROADMAP]}),
+			fakeFs({files: {[ROADMAP_FILE]: null}, unprobeable: [ROADMAP_FILE]}),
 		);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stdout).toBe("");
@@ -336,7 +336,7 @@ describe("runPick", () => {
 		const out = await run(
 			[[bucket("p0"), EMPTY]],
 			{},
-			fakeFs({files: {[DEFAULT_ROADMAP]: focusTable(44).replace("#44", "forty-four")}}),
+			fakeFs({files: {[ROADMAP_FILE]: focusTable(44).replace("#44", "forty-four")}}),
 		);
 		expect(out.code).toBe(BAD_SECTIONS);
 		expect(out.stdout).toBe("");
@@ -351,7 +351,7 @@ describe("runPick", () => {
 				[bucket("p2"), EMPTY],
 			],
 			{},
-			fakeFs({files: {[DEFAULT_ROADMAP]: focusTable(44)}}),
+			fakeFs({files: {[ROADMAP_FILE]: focusTable(44)}}),
 		);
 		expect(out.stderr.at(-1)).toBe("build pick: focus: milestone #44, declared 2026-08-09.");
 	});

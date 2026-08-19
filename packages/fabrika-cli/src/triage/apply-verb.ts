@@ -12,6 +12,7 @@
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {getIssue, listLabels, listOpenMilestones, resolveRepo} from "../io/issues.ts";
+import {TRIAGED} from "../labels.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {read as readCriteria} from "../wire/acceptance-criteria.ts";
 import {
@@ -210,7 +211,7 @@ export const runApply = (
 			);
 		}
 
-		const expected = `expected exactly one type, one priority, status:triaged, one ready-for, and ${
+		const expected = `expected exactly one type, one priority, ${TRIAGED}, one ready-for, and ${
 			home === null ? "no milestone" : `milestone ${home}`
 		}`;
 		const back = yield* getIssue(repo, issue);

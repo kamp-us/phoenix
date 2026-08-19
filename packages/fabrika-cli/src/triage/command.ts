@@ -24,12 +24,13 @@ import {runClaim} from "./claim-verb.ts";
 import {runCodes} from "./codes-verb.ts";
 import {runEnrich} from "./enrich-verb.ts";
 import {AUDIENCES, PRIORITIES, STANDING_LANES, TYPES} from "./facets.ts";
-import {DEFAULT_ROADMAP, runHomes} from "./homes-verb.ts";
+import {runHomes} from "./homes-verb.ts";
 import {runKill} from "./kill-verb.ts";
 import {runPark} from "./park-verb.ts";
 import {runProvenance} from "./provenance-verb.ts";
 import {DEFAULT_QUEUE_LABEL, DEFAULT_QUEUE_LIMIT, runQueue} from "./queue-verb.ts";
 import {runRepairCriteria} from "./repair-criteria-verb.ts";
+import {ROADMAP_FILE} from "./roadmap.ts";
 import {runSplit} from "./split-verb.ts";
 
 /** Write the outcome and exit on its code — stdout is the answer, everything else is stderr. */
@@ -314,9 +315,9 @@ const homes = leafCommand(
 	"homes",
 	{
 		roadmap: Flag.string("roadmap").pipe(
-			Flag.withDefault(DEFAULT_ROADMAP),
+			Flag.withDefault(ROADMAP_FILE),
 			Flag.withDescription(
-				`the roadmap file whose ## Arcs and ## Campaigns tables the open milestones join to (default: ${DEFAULT_ROADMAP})`,
+				`the roadmap file whose ## Arcs and ## Campaigns tables the open milestones join to (default: ${ROADMAP_FILE})`,
 			),
 		),
 		repo: repoFlag,

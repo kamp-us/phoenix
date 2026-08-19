@@ -97,6 +97,9 @@ export type ShipClassName = (typeof SHIP_CLASS_NAMES)[number];
 export const isUiSurface = (path: string): boolean =>
 	path.startsWith("apps/web/src/") && !/\.(?:test|spec)\.tsx?$/.test(path);
 
+/** The decision corpus's root, named here because {@link GOVERNANCE_ROOTS} is what gives it force. */
+export const DECISIONS_ROOT = ".decisions/";
+
 /**
  * The four roots a diff derives the `governance` namespace over, per the root table in
  * `claude-plugins/fabrika/skills/governance/contract.md` — the source of truth for these values, so a
@@ -109,7 +112,7 @@ export const isUiSurface = (path: string): boolean =>
  * two answers to one question (#4730).
  */
 export const GOVERNANCE_ROOTS: ReadonlyArray<string> = [
-	".decisions/",
+	DECISIONS_ROOT,
 	".claude/",
 	".github/",
 	"claude-plugins/",

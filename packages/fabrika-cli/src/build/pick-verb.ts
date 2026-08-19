@@ -32,6 +32,7 @@
  */
 import {Effect, type FileSystem} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
+import {TRIAGED} from "../labels.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {read as readCriteria} from "../wire/acceptance-criteria.ts";
 import {readBlockedGate} from "./blockedness.ts";
@@ -112,7 +113,7 @@ interface ExclusionEntry {
 export const isCandidate = (issue: CandidateIssue): boolean => {
 	if (issue.isPullRequest || issue.assigned) return false;
 	const status = issue.labels.filter((label) => label.startsWith("status:"));
-	if (status.length !== 1 || status[0] !== "status:triaged") return false;
+	if (status.length !== 1 || status[0] !== TRIAGED) return false;
 	return typeAxisOf(issue)._tag === "Buildable";
 };
 
@@ -165,7 +166,7 @@ export const runPick = (
 		const blockedEdges: string[] = [];
 		const unreadableEdges: string[] = [];
 		for (const bucket of BUCKETS) {
-			const listed = yield* listLabelled(resolved.repo, ["status:triaged", bucket]);
+			const listed = yield* listLabelled(resolved.repo, [TRIAGED, bucket]);
 			if (listed._tag === "Failure") {
 				return refuse(
 					PRECONDITION_UNKNOWN,

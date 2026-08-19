@@ -32,7 +32,7 @@ import {STATUSES} from "../labels.ts";
 import {normalizeForReadback} from "../report/compose.ts";
 import {isBareAtReference, renderLeaks, scanBody} from "../report/leaks.ts";
 import {AUDIENCES, PRIORITIES, TYPES} from "../triage/facets.ts";
-import {parseRoadmap} from "../triage/roadmap.ts";
+import {parseRoadmap, ROADMAP_FILE} from "../triage/roadmap.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {
 	BARE_AT_PATH,
@@ -178,7 +178,7 @@ ${FABRIKA_IGNORE_ROW}`;
 /** Six ids. A seventh is a change to this table, not a new rule. */
 export const BUILDABLE_SURFACES: ReadonlyArray<BuildableSurface> = [
 	{id: "design-manifest", kind: "file", defaultPath: "design-system-manifest.md"},
-	{id: "roadmap-focus", kind: "file", defaultPath: "ROADMAP.md", count: roadmapCount},
+	{id: "roadmap-focus", kind: "file", defaultPath: ROADMAP_FILE, count: roadmapCount},
 	{
 		id: "gitignore-row",
 		kind: "line",
