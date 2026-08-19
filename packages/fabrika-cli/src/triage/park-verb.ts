@@ -12,7 +12,7 @@
  *
  * The demotion itself runs through the reconcile in `./facets.ts`, shared with `triage apply`.
  */
-import {Effect} from "effect";
+import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {createComment, getIssue, listLabels, resolveRepo} from "../io/issues.ts";
 import type {StdinRead} from "../io/stdin.ts";
@@ -20,6 +20,7 @@ import {NEEDS_INFO, NEEDS_TRIAGE} from "../labels.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {type AuthoredSurface, leakRefusal, readAuthored} from "./authored.ts";
 import {PRECONDITION_UNKNOWN, READBACK_MISMATCH, WRITE_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
+import {configRefusal} from "./config-guard.ts";
 import {applyChanges} from "./facet-writes.ts";
 import {parkedFacets, planReconcile, renderShape, shapeViolations} from "./facets.ts";
 import {scannedLine} from "./scope.ts";
@@ -37,6 +38,8 @@ export interface ParkOptions {
 	readonly json: boolean;
 	readonly env: Readonly<Record<string, string | undefined>>;
 	readonly stdin: Effect.Effect<StdinRead>;
+	/** Where the run stands. The repo root above it is where `.fabrika.jsonc` is read. */
+	readonly cwd: string;
 }
 
 const unreadable = (what: string, repo: string, reason: string): VerbOutcome =>
@@ -47,13 +50,20 @@ const unreadable = (what: string, repo: string, reason: string): VerbOutcome =>
 
 export const runPark = (
 	options: ParkOptions,
-): Effect.Effect<VerbOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
+): Effect.Effect<
+	VerbOutcome,
+	never,
+	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
+> =>
 	Effect.gen(function* () {
 		const {issue, json} = options;
 
 		if (!Number.isInteger(issue) || issue <= 0) {
 			return refuse(FAILED, `triage park: ${issue} is not an issue number.`);
 		}
+
+		const badConfig = yield* configRefusal("triage park", options.cwd);
+		if (badConfig !== null) return badConfig;
 
 		const repoAttempt = yield* resolveRepo(options.repo, options.env);
 		if (repoAttempt._tag === "Failure") {

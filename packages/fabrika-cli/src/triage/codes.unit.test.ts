@@ -97,7 +97,7 @@ describe("TRIAGE_EXIT_TABLE", () => {
 	});
 
 	it("carries every allocated code exactly once", () => {
-		expect(codes).toEqual([0, 1, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 126, 127]);
+		expect(codes).toEqual([0, 1, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 126, 127]);
 	});
 
 	it("gives every code a non-empty meaning", () => {

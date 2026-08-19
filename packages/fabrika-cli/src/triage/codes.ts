@@ -146,6 +146,20 @@ export const CRITERIA_REQUIRED = 16;
  * unclaimed issue is the ordinary first-triage case and stays mutable.
  */
 export const CLAIMED_ELSEWHERE = 17;
+/**
+ * Refused: `.fabrika.jsonc` loads but is refused, so no key's value may be used and nothing is
+ * written.
+ *
+ * The one that reaches triage is the containment invariant (`../config/containment.ts`): a facet is
+ * delete authority, so a config declaring a value its facet does not own — or an enumerated facet
+ * owning a label no value produces — reconciles an issue into a shape nobody asked for. #4285 is the
+ * incident, and it printed a success line while it happened.
+ *
+ * Its own seat rather than {@link OFF_VOCABULARY}'s: that one is a bad *argument*, fixed by re-running
+ * the verb with another value, and this one is a bad *repository*, fixed by editing a file — a caller
+ * that retried this code would loop forever.
+ */
+export const CONFIG_REFUSED = 18;
 
 /** The verb never ran (unresolved binary). The shell's, not this process's — no constant owns it. */
 const NEVER_RAN = 127;
@@ -204,6 +218,10 @@ export const TRIAGE_EXIT_TABLE: ReadonlyArray<ExitCodeRow> = [
 	{
 		code: CLAIMED_ELSEWHERE,
 		meaning: "refused: a live claim marker on the target names another session",
+	},
+	{
+		code: CONFIG_REFUSED,
+		meaning: "refused: .fabrika.jsonc is refused at load, so no value of it may be used",
 	},
 	{code: NO_IMPLEMENTATION, meaning: "no implementation could be resolved"},
 	{code: NEVER_RAN, meaning: "the verb never ran (unresolved binary)"},

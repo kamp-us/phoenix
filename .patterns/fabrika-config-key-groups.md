@@ -16,6 +16,8 @@ rather than a branch in fabrika's source (ADR 0273, epic
 | `keys/<key>.ts` | One key group: its key name, its shipped default, its decoder |
 | `registry.ts` | One `register(...)` line per key group |
 | `load.ts` | `loadConfig(source)` → a document every key resolves against, or a refusal |
+| `working-root.ts` | `loadRepoConfig(cwd)` — the working-tree opener, for a verb running against the checkout it stands in |
+| `containment.ts` | The triage-facet containment invariant, checked over declared data |
 
 Whoever opens the file says which of three things it found — `Absent`, `Text`, `Unreadable` — and
 hands that to `loadConfig`. A key module never sees a file, only the parsed record.
@@ -53,7 +55,19 @@ where empty would disable something. The widen-only keys are the exception and s
 docblocks: for `capClearAuthors`, `docLeakExempt` and `workflowValidators`, empty **is** the strict
 answer.
 
-**A key that can weaken the config's own governance is refused at load.** `refuseLoad` on a
-`KeyGroup` refuses the whole load, before any key's value is used — `governedRoots` uses it so a
-config whose roots do not cover `.fabrika.jsonc` cannot un-govern itself. A convention could not
-hold that, because the config is what the convention would be read from.
+**A key whose value could disable or widen a guard is refused at load.** `refuseLoad` on a
+`KeyGroup` refuses the whole load, before any key's value is used. Two keys use it, for the same
+reason in two shapes: `governedRoots`, so a config whose roots do not cover `.fabrika.jsonc` cannot
+un-govern itself; and `triageFacets`, so a config declaring a facet value the facet does not own
+cannot reconcile an issue into a shape nobody asked for (#4285). A convention could not hold either
+one, because the config is what the convention would be read from — and a check written at a call
+site is a check the next verb forgets.
+
+## Reading a key at the working tree
+
+A verb running against a base ref opens the bytes itself (`git show`) and hands `loadConfig` a
+`Text`. A verb running against the checkout it stands in calls `loadRepoConfig(cwd)`, which finds the
+repo root **above** `cwd` first: a config read only at the top level would resolve to the shipped
+defaults for every run from a subdirectory, which is a silent widening nothing reports. Take the
+`cwd` as an option off `command.ts` (`cwd: process.cwd()`) rather than reading it in the verb, so a
+unit test can point the load at a scripted filesystem.

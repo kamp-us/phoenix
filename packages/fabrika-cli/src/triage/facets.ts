@@ -15,6 +15,7 @@
  * change plan and the read-back assertion live here once and the verbs differ only in the facet table
  * they pass in.
  */
+import {type FacetVocabulary, ownsLabel} from "../config/containment.ts";
 import {NEEDS_INFO, NEEDS_TRIAGE, TRIAGED} from "../labels.ts";
 
 /**
@@ -69,8 +70,6 @@ export interface Facet {
 	readonly keep: ReadonlyArray<string>;
 }
 
-const ownsType = (label: string): boolean => label.startsWith("type:");
-const ownsPriority = (label: string): boolean => /^p\d+$/.test(label);
 /**
  * The status facet owns the three statuses triage itself moves between, and no more. `status:planned`
  * and `status:awaiting-release` are written by `plan`/`ledger` and `ship`, so triage preserves them
@@ -78,8 +77,40 @@ const ownsPriority = (label: string): boolean => /^p\d+$/.test(label);
  */
 export const TRIAGE_STATUSES: ReadonlyArray<string> = [NEEDS_TRIAGE, TRIAGED, NEEDS_INFO];
 
-const ownsStatus = (label: string): boolean => TRIAGE_STATUSES.includes(label);
-const ownsAudience = (label: string): boolean => label.startsWith("ready-for:");
+/**
+ * What each facet owns and every label an input can make it keep — the containment vocabulary, as
+ * data.
+ *
+ * The `owns` predicates below are *derived* from this table rather than written beside it, so the
+ * ownership a facet exercises and the ownership the containment check reads cannot drift apart. That
+ * is also what makes the check meaningful once the vocabulary is configuration: this array is the
+ * `triageFacets` key's shipped default (`../config/keys/triage-facets.ts`), so what a bare repo
+ * enforces and what a declaring repo enforces are one shape.
+ *
+ * The invariant itself lives at `../config/containment.ts`, which runs it at load.
+ */
+export const FACET_VOCABULARY: ReadonlyArray<FacetVocabulary> = [
+	{name: "type", owns: {_tag: "Pattern", source: "^type:"}, values: TYPES.map(typeLabel)},
+	{name: "priority", owns: {_tag: "Pattern", source: "^p\\d+$"}, values: [...PRIORITIES]},
+	{name: "status", owns: {_tag: "Set", labels: TRIAGE_STATUSES}, values: TRIAGE_STATUSES},
+	{
+		name: "audience",
+		owns: {_tag: "Pattern", source: "^ready-for:"},
+		values: AUDIENCES.map((audience) => `ready-for:${audience}`),
+	},
+	{name: "lane", owns: {_tag: "Set", labels: STANDING_LANES}, values: [...STANDING_LANES]},
+];
+
+const ownsIn = (name: string): ((label: string) => boolean) => {
+	const declared = FACET_VOCABULARY.find((facet) => facet.name === name);
+	if (declared === undefined) throw new Error(`no facet named ${name} in FACET_VOCABULARY`);
+	return ownsLabel(declared.owns);
+};
+
+const ownsType = ownsIn("type");
+const ownsPriority = ownsIn("priority");
+const ownsStatus = ownsIn("status");
+const ownsAudience = ownsIn("audience");
 
 /**
  * The facet table for the triaged transition.
@@ -88,7 +119,8 @@ const ownsAudience = (label: string): boolean => label.startsWith("ready-for:");
  * values an input can produce must be a subset of what its facet owns.** `PRIORITIES` ⊂ `/^p\d+$/`,
  * `TYPES` ⊂ `type:*`, `AUDIENCES` ⊂ `ready-for:*`, `STANDING_LANES` ⊂ itself. Widening a pattern past
  * its input — which is what v1 did — is what makes a correct value look superseded.
- * `facets.unit.test.ts` re-derives the containment rather than trusting this note.
+ * `facets.unit.test.ts` re-derives the containment rather than trusting this note, and
+ * {@link FACET_VOCABULARY} is what puts the same derivation on a loaded config.
  */
 export const triagedFacets = (input: {
 	readonly type: TriageType;
