@@ -135,6 +135,24 @@ fabrika status bootstrap design-manifest <<'EOF'
 EOF
 ```
 
+<!-- anchor: MACHINE-READ-SURFACE --> **`roadmap-focus` is the exception to "draft by inference".**
+`ROADMAP.md` is read by machine — `triage homes` joins the repo's open milestones to its `## Arcs`
+and `## Campaigns` rows by the `#<number>` in each row's **second** cell, never by the title — so a
+plausible-looking draft joins nothing. The content (which arcs, which campaigns) is still yours and
+the human's; the *shape* is not. Read the grammar before drafting — it is stated in full in the same
+section the registry lives in (`fabrika wire doc-section --heading "status bootstrap" <
+<skill-base>/contract.md`) — then read the row count back off the notice:
+
+```bash
+fabrika status bootstrap roadmap-focus <<'EOF'
+…the roadmap you and the human settled on…
+EOF
+# status bootstrap: created ROADMAP.md for roadmap-focus, read-back conformed — 1 arc, 0 campaigns.
+```
+
+`0 arcs` is written and conformed, and it is also a roadmap nothing can join — fix it now rather
+than leaving `triage homes` to refuse over it in some later session.
+
 <!-- anchor: DESIGN-LAW-IS-REPO-CONTENT --> **The design law is repo content, never skill content.**
 phoenix's manifest is one repo's instance. Write what *this* repo's evidence supports; a pillar
 carried in from somewhere else is a foreign opinion wearing local clothes.

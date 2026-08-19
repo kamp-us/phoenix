@@ -980,7 +980,7 @@ a seventh is a change to this table, not a new rule.
 | `<surface-id>` | Target | Content | Read-back predicate |
 |---|---|---|---|
 | `design-manifest` | `--path`, default `design-system-manifest.md` at the repo root | **stdin**, required — the skill's inferred draft | the file's bytes match stdin through `normalizeForReadback` |
-| `roadmap-focus` | `--path`, default `ROADMAP.md` at the repo root | **stdin**, required | same |
+| `roadmap-focus` | `--path`, default `ROADMAP.md` at the repo root | **stdin**, required — to the [grammar below](#roadmap-grammar), which is not the drafting skill's judgement | same, plus the parsed row count in the notice ([why](#roadmap-grammar)) |
 | `gitignore-row` | `--path`, default `.gitignore` at the repo root | **none** — the two comment lines and the row `/.fabrika/`, fixed below, appended to whatever the file already holds | the re-read contains both the row and the whole of the pre-existing text, each through `normalizeForReadback` |
 | `label-taxonomy` | the repo's labels | **none** — the set is every imported `STATUSES` member (`status:needs-triage`, `status:triaged`, `status:needs-info`, `status:planned`, `status:awaiting-release`), every imported `PRIORITIES` member (`p0`, `p1`, `p2`), `type:` + every imported `TYPES` member, and `ready-for:` + every imported `AUDIENCES` member — sixteen today, each created with GitHub's default colour and a description naming this group as its creator | every label in the set resolves on a re-read |
 | `issue-shape-markers` | the repo's labels | **none** — three labels, each at colour `1D76DB`, with the descriptions fixed below | every label in the set resolves on a re-read |
@@ -1014,6 +1014,40 @@ set would flip a settled `exists` back to `created` and make the earlier answer 
 covers all three markers rather than one each, because a fresh repo needs the whole set on day one —
 `graduate trail` dispatches on two of them at once — and three ids means three commands, of which the
 skipped one fails later in exactly the shape this registry exists to prevent.
+
+<a id="roadmap-grammar"></a>**`roadmap-focus` is the one file whose shape is not the skill's
+judgement.** Every other stdin surface is prose a human and the skill settle together; a `ROADMAP.md`
+is read by machine — `triage homes` joins the repo's open milestones to its rows — so a plausible
+draft that does not parse joins nothing. The grammar is stated here, in full, because the drafting
+session must not need a second file open:
+
+- The section headings are exactly `## Arcs` and `## Campaigns`. A section runs to the next `## `
+  heading. Any other spelling — `## Arcs (2026)`, `### Arcs` — is not the section.
+- Each row is `| <name> | #<number> | <state> |`, and it counts **only** when the *second* cell is
+  `#<number>` and the first is non-empty. That is what drops the header row and the `|---|`
+  separator without matching on their text.
+- **The join key is that number, never the title.** An arc named `Geçit` pins a milestone titled
+  `Sözlük — search and discovery`; the two share no substring, so a title cell joins nothing.
+- The `State` column is **not read**. It is for humans; nothing filters on it.
+
+```markdown
+## Arcs
+
+| Arc | Milestone | State |
+|---|---|---|
+| Geçit | #46 | active |
+```
+
+**So the write reports what parsed** — `status bootstrap roadmap-focus` runs the same parser over the
+bytes it just wrote and appends the counts to its notice: `read-back conformed — 3 arcs, 0
+campaigns`, singular at one (`1 arc`). `--json` carries them as the number fields `arcs` and
+`campaigns`. The tab-separated line does not change.
+
+**The count is reported, never enforced.** Zero arcs is still `created` at exit `0`, and the
+read-back predicate stays the byte match this table states — a count is not a second predicate.
+Refusing an unjoinable roadmap belongs to `triage homes`, whose exit `7` already fires at the point
+the rows are actually needed; gating here would block the write a human then has to fix by hand. A
+later reader tempted to "fix" this into a gate is looking at the design, not a gap.
 
 The `gitignore-row` block, fixed here so no clause defers to source. The last line is the row
 itself, and it is also the marker the collision guard and the read-back match on:
@@ -1076,7 +1110,8 @@ same name. Reconciling a hand-made label's colour is a hand fix.
 
 **The operation.** Resolve the id against the registry — not in it is `12`. Probe the target; already
 present is `exists` at `0`. For a stdin surface: read stdin, leak-scan the content (`5`, `6`), write,
-re-read and compare through `normalizeForReadback` (`9` on mismatch). For the [line
+re-read and compare through `normalizeForReadback` (`9` on mismatch), and for `roadmap-focus` parse
+the written bytes and [report the counts](#roadmap-grammar). For the [line
 surface](#line-surface) the probe is the marker rather than the path, the content is the registry's
 own block so no stdin is read and no leak scan is owed, and the read-back asserts the marker **and**
 the prior text. A write whose outcome cannot be
@@ -1116,6 +1151,7 @@ creating several would have to report a partial outcome, and a partial write rep
 | `status bootstrap: appended <marker> to <target> and the read-back differs — the outcome is UNKNOWN.` | 9 | refusal |
 | `status bootstrap: "<v>" is not a buildable surface. Known: design-manifest, roadmap-focus, gitignore-row, label-taxonomy, issue-shape-markers, readout-artifact.` | 12 | refusal |
 | `status bootstrap: created <target> for <surface-id>, read-back conformed.` | 0 | notice |
+| `status bootstrap: created <target> for roadmap-focus, read-back conformed — <n> arc(s), <n> campaign(s).` | 0 | notice |
 | `status bootstrap: appended <marker> to <target> for <surface-id>, read-back conformed.` | 0 | notice |
 
 **Scope** — the single write target named by `<surface-id>`.
@@ -1135,6 +1171,28 @@ bootstrap	created	design-manifest	design-system-manifest.md	ok
 $ fabrika status bootstrap readout-artifact
 bootstrap	created	readout-artifact	acme/storefront#9420	ok
 ```
+
+```
+$ fabrika status bootstrap roadmap-focus <<'EOF'
+# Roadmap
+## Arcs
+| Arc | Milestone | State |
+|---|---|---|
+| Storefront | #12 | active |
+EOF
+bootstrap	created	roadmap-focus	ROADMAP.md	ok
+status bootstrap: created ROADMAP.md for roadmap-focus, read-back conformed — 1 arc, 0 campaigns.
+```
+
+```
+$ fabrika status bootstrap roadmap-focus --json < inert-draft.md
+{"outcome":"created","surfaceId":"roadmap-focus","target":"ROADMAP.md","readback":"ok","arcs":0,"campaigns":0}
+$ echo $?
+0
+```
+
+The second is a draft whose milestone cells carry titles rather than `#<n>`: written, conformed, and
+joining nothing. It exits `0` — the count is the signal, not a gate.
 
 ```
 $ fabrika status bootstrap merge-queue
