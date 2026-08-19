@@ -914,8 +914,11 @@ exhaustion is the `budget-exhausted` settle token with the last rollup — an an
 
 **Scope** — the check runs and workflow inventory at one commit, paginated,
 count-verified. Zero *declared* check runs with zero workflows is `green`-ineligible and
-reads `no-runs`-ineligible too — it is the foreign-repo/no-Actions case, reported as
-`facts	workflows:0	runs:0` with rollup `pending`, which the skill treats per its own law.
+`no-runs`-ineligible too — it is the repo that produces no CI at all, and what it costs is
+`ci.noProducer`'s answer. Under the shipped `refuse` it is exit `7`: a head whose checks will
+never report is not a head to wait on. Where the repo declared `degrade` it is rollup
+`no-producer` at exit 0, printed with `facts	workflows:0	runs:0`. Neither arm greens, and
+neither prints `pending` — that collapse is what made this state read as *wait longer* forever.
 
 **Examples**
 
@@ -934,6 +937,13 @@ $ fabrika ship checks 4322 --sha 9fe12ab0
 checks	9fe12ab0	no-runs
 run	0
 facts	workflows:12	runs:0
+```
+
+```
+$ fabrika ship checks 4323 --sha 7c04ef19   # a repo declaring "ci": {"noProducer": "degrade"}
+checks	7c04ef19	no-producer
+run	0
+facts	workflows:0	runs:0
 ```
 
 ```
