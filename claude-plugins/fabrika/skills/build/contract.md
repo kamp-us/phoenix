@@ -49,7 +49,7 @@ second answer to a gated question can contradict the gate (interface convention 
   *refuses a body that asserts the classification* (#4153) — it never computes one.
 - **A changed-files leak scanner.** `leak-guard.yml` reds it in CI. The writing verbs guard only
   the text this skill itself posts.
-- **A CI-rollup reader.** `ci.yml` owns redness; the review/ship stages read it. `build check` is
+- **A CI-rollup reader.** The repo's CI gate owns redness; the review/ship stages read it. `build check` is
   an in-tree *prediction*, not a second verdict over the gate's question.
 - **A trivial-diff classifier.** v1's ships dormant by design (ADR 0120); nothing here consumes it.
 - **Any opinion about where a lane runs.** No provisioner, no locker, no reaper — and no refusal
@@ -1617,7 +1617,7 @@ $ fabrika build check --surface code
 - v1's discipline was prose-only (`SKILL.md:895-935`, exact-CI-command mandate with no
   enforcement); here the command set is the verb's, not the agent's memory.
 - ADR 0092 — zero diff is a refusal, not a vacuous green.
-- The gate's own answer (`ci.yml`) supersedes this verdict wherever they disagree; this verb
+- The gate's own answer supersedes this verdict wherever they disagree; this verb
   predicts, the gate decides (interface convention rule 6).
 
 ---

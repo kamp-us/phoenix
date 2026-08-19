@@ -371,7 +371,7 @@ release; no commit, no `build check`, no `build push`.
 
 - **Control-plane membership** — decided by CODEOWNERS at the merge gate. You never classify.
 - **Leak scanning of changed files** — `leak-guard.yml` in CI. Your verbs guard only what you post.
-- **CI redness** — `ci.yml` owns it. `build check` predicts it in-tree; the gate's answer wins.
+- **CI redness** — the repo's CI gate owns it. `build check` predicts it in-tree; the gate's answer wins.
 - Follow-up observations leave through `/report` the moment you see them — never through scope
   creep in this PR.
 

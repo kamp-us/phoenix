@@ -7,7 +7,7 @@
  * read by the verb, not the agent's memory: v1 mandated the exact CI commands in prose with nothing
  * enforcing it (`SKILL.md:895-935`).
  *
- * **This verb predicts; the gate decides.** `ci.yml` owns redness, and where the two disagree the
+ * **This verb predicts; the gate decides.** The repo's CI gate owns redness, and where they disagree the
  * gate's answer supersedes this one (interface convention rule 6). Nothing here re-reads CI.
  *
  * `--surface` is an **anchor, not a second classifier**: naming the surface is a judgement the skill
@@ -611,7 +611,7 @@ const readValidatorScope = (
  * `actionlint` is not a repo dependency anywhere — in phoenix CI installs a pinned tarball at job
  * time — so a tree that lacks it is the ordinary case, not a broken one. It is therefore run when
  * present and **disclosed** when absent, which is the "degrade, stated" answer `SKILL.md`'s
- * missing-surface table gives for an absent superseding authority: `ci.yml`'s `actionlint` job still
+ * missing-surface table gives for an absent superseding authority: the gate workflow's `actionlint` job still
  * decides. A declared validator is the other row of that table — it ships with the repo, so one that
  * cannot be spawned is fail-loud, UNKNOWN, never green.
  *
