@@ -199,7 +199,8 @@ not match `^#(\d+)$`.
 
 `triage homes` also prints a `lane` row per **standing lane** — a label that is a home in its own
 right, for work no milestone owns. You get one only where your repo both declares the lane and
-carries its label. In a fresh repo that is neither, so you get none, and stderr says so:
+carries its label. A fresh repo declares both — phoenix's pair is the shipped default — but carries
+neither label, so you get none, and stderr says so:
 
 ```
 triage homes: standing lanes: 0 of 2 declared carry a label in you/your-repo — not offered: wayfinder:backlog, axis:pipeline-hardening.
@@ -212,11 +213,16 @@ If you do want a standing lane: create the label on your board, then declare it 
 declared lane whose label does not exist is not offered, which is what stops `triage apply --lane`
 from failing a write at the end of a full triage run.
 
+If you want none at all, say so: `"standingLanes": []` under `boardVocabulary`. Then `triage homes`
+reads no labels, offers no lane, and prints `standing lanes: this repo declares none.` — every issue
+homes on a milestone, and `triage apply --lane` refuses. Leaving the key out is a different answer:
+it falls to phoenix's pair, which then gets filtered against your board.
+
 [ADR 0286](../../../.decisions/0286-standing-lanes-come-from-config.md) rules that lanes come from
 your repo, never from a CLI literal. `boardVocabulary.standingLanes` still ships phoenix's pair as
-its default, which 0286 says it should not; evicting that default is
-[#5785](https://github.com/kamp-us/phoenix/issues/5785). Until then the default reaches no board that
-has not created the labels.
+the default for an absent key, which 0286 says it should not; evicting that default is
+[#6469](https://github.com/kamp-us/phoenix/issues/6469). Until then the default reaches no board that
+has not created the labels, and the empty declaration is how you opt out of it entirely.
 
 ## 9. Add the config file
 

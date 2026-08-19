@@ -134,6 +134,15 @@ export const runApply = (
 		// gone and this decode against the resolved list is the whole refusal (#6294).
 		let lane: string | null = null;
 		if (options.lane !== null) {
+			// A repo that declares `standingLanes: []` runs none, so the enumerating message below
+			// would read `--lane must be  — got "x"` and send the caller looking for a value to
+			// type. There is none: the answer is a milestone (#6440).
+			if (standingLanes.length === 0) {
+				return refuse(
+					OFF_VOCABULARY,
+					`triage apply: this repo declares no standing lane — \`boardVocabulary.standingLanes\` in \`.fabrika.jsonc\` is empty, so every issue homes on a milestone. Got "${options.lane}".`,
+				);
+			}
 			lane = decodeMember(standingLanes, options.lane);
 			if (lane === null) {
 				return refuse(

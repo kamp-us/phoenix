@@ -325,6 +325,11 @@ describe("runHomes and the standing lanes the host repo carries", () => {
 		expect(out.stderr.at(-1)).toContain("which standing lanes this board accepts is UNKNOWN");
 	});
 
+	/*
+	 * The empty declared set an operator produces with `"standingLanes": []` — the config half is
+	 * `standing-lanes.unit.test.ts`'s "reads an explicitly empty declaration as zero lanes", and
+	 * `command.ts` passes what it read straight through (#6440).
+	 */
 	it("reads no labels at all when the repo declares no lanes — there is nothing to filter", async () => {
 		const shell = fakeShell([twoMilestones]);
 		await Effect.runPromise(

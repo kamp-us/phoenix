@@ -271,6 +271,25 @@ describe("runApply", () => {
 		expect(shell.calls).toEqual([]);
 	});
 
+	/**
+	 * A repo declaring `standingLanes: []` runs none, so the enumerating message would render
+	 * `--lane must be  — got "x"` and send the caller hunting for a value that does not exist
+	 * (#6440).
+	 */
+	it("refuses --lane over a repo that declares no lane, naming the empty key", async () => {
+		const shell = guardedShell(happy());
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runApply({...options, home: null, lane: "wayfinder:backlog"}),
+				triageContext(shell, JSON.stringify({boardVocabulary: {standingLanes: []}})),
+			),
+		);
+		expect(out.code).toBe(OFF_VOCABULARY);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toContain("this repo declares no standing lane");
+		expect(shell.calls).toEqual([]);
+	});
+
 	it("refuses a milestone that is not open, on the same code", async () => {
 		const out = await run(happy(), {home: 99});
 		expect(out.code).toBe(OFF_VOCABULARY);

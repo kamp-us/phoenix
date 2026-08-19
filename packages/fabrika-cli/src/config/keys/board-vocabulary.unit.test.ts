@@ -74,6 +74,15 @@ describe("a declared vocabulary", () => {
 		expect(resolved.reason).toContain("priorities");
 	});
 
+	/** Zero lanes disables no gate — it says every issue homes on a milestone (#6440). */
+	it("takes an empty standingLanes as a declaration, not as a disabled facet", () => {
+		const resolved = declared({standingLanes: []});
+		expect(resolved._tag).toBe("Declared");
+		if (resolved._tag !== "Declared") return;
+		expect(resolved.value.standingLanes).toEqual([]);
+		expect(resolved.value.priorities).toEqual(PRIORITIES);
+	});
+
 	it("refuses a sub-key nobody reads, rather than ignoring it", () => {
 		const resolved = declared({standingLane: ["team:infra"]});
 		expect(resolved._tag).toBe("Malformed");

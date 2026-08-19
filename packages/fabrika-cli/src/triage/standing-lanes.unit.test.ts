@@ -67,9 +67,20 @@ describe("readStandingLanes", () => {
 		expect(lanes).toMatchObject({_tag: "Value", value: ["lane:ops"]});
 	});
 
-	it("REFUSES a config it cannot decode — never a silent fall back to phoenix's lanes", async () => {
+	/**
+	 * The `declares none` arm has to be reachable from a config file, or `triage homes` documents a
+	 * state no operator can produce (#6440). An absent key is a different answer — the default.
+	 */
+	it("reads an explicitly empty declaration as zero lanes, not as the default", async () => {
 		const lanes = await read({
 			"/repo/.fabrika.jsonc": '{"boardVocabulary": {"standingLanes": []}}',
+		});
+		expect(lanes).toMatchObject({_tag: "Value", value: []});
+	});
+
+	it("REFUSES a config it cannot decode — never a silent fall back to phoenix's lanes", async () => {
+		const lanes = await read({
+			"/repo/.fabrika.jsonc": '{"boardVocabulary": {"standingLanes": ["lane:ops", ""]}}',
 		});
 		expect(lanes._tag).toBe("Refused");
 	});

@@ -682,11 +682,11 @@ fabrika triage homes [--roadmap <path>] [--repo <owner/name>] [--json]
 | Flag | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `--roadmap` | string | no | `roadmapFile` in `.fabrika.jsonc`, itself defaulting to `ROADMAP.md` | the roadmap file whose `## Arcs` and `## Campaigns` tables the open milestones are joined to. Unflagged, the verb resolves the declared path first; a `.fabrika.jsonc` it could not read refuses `11` rather than falling back to the shipped name |
+| `--repo` | string | no | resolved | the repository |
+| `--json` | boolean | no | `false` | emit the result object |
 
 There is no lane flag: the lane set is `boardVocabulary.standingLanes` in `.fabrika.jsonc`, and a
 config that could not be read or decoded refuses `11` on the same terms as `roadmapFile`.
-| `--repo` | string | no | resolved | the repository |
-| `--json` | boolean | no | `false` | emit the result object |
 
 **Output** — machine channel. The first line is the outcome token `homes`. Then one tab-separated
 line per candidate — `<kind>`, `<key>`, `<label-or-title>` — where `<kind>` is `milestone` or `lane`.
@@ -748,9 +748,15 @@ one, classified the whole issue, and only then hit a failed label write naming a
 the real cause (#6440). So the presence read is the same evidence the later `triage apply --lane`
 write depends on, taken before the menu is printed rather than after the work is done.
 
-A repo that declares no lanes reads no labels at all — there is nothing to filter — and prints no
-lane row. Neither case is a refusal: a home list over milestones alone is the right answer, and
-stderr carries which lanes were declared and which of them the board carries:
+**A repo declares no lanes by writing `"standingLanes": []`**, and then reads no labels at all —
+there is nothing to filter — and prints no lane row. The empty list is the one explicitly-empty
+`boardVocabulary` sub-key that decodes rather than refusing: the other four turn a gate off, while
+zero lanes turns nothing off and says every issue homes on a milestone. An **absent** key is not the
+same declaration — it falls to the shipped pair. `triage apply --lane` refuses over an empty set on
+`10`, naming the empty key rather than enumerating nothing.
+
+Neither case is a refusal: a home list over milestones alone is the right answer, and stderr carries
+which lanes were declared and which of them the board carries:
 
 | Declared set | stderr |
 |---|---|
@@ -768,10 +774,12 @@ no lanes from a repo it could not look at.
 
 This follows ADR 0286's ruling that lanes come from the repo, with one departure it names: 0286 puts
 them under a `lanes` key with **no** shipped default, and the key that exists today is
-`boardVocabulary.standingLanes`, which defaults to phoenix's pair. Evicting that default is
-[#5631](https://github.com/kamp-us/phoenix/issues/5631)/[#5785](https://github.com/kamp-us/phoenix/issues/5785)'s
-slice. Until it lands, the presence filter is what keeps the default from asserting anything about
-someone else's board.
+`boardVocabulary.standingLanes`, which defaults to phoenix's pair on an absent key. Evicting that
+default is [#6469](https://github.com/kamp-us/phoenix/issues/6469), which owns the whole move —
+0286's `lanes` key, the compiled-in label/meaning enumeration, and the readers that go with the set.
+Until it lands, two things contain the default: the presence filter, so it asserts nothing about a
+board that never created the labels, and the empty declaration, so a repo can say outright that it
+runs none.
 
 **The join, stated rather than left to the implementer** — this is the verb's whole split test, so it
 is the one thing that must not be inferred. `ROADMAP.md`'s `## Arcs` and `## Campaigns` tables are

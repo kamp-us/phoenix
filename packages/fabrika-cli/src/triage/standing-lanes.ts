@@ -10,9 +10,9 @@
  * declared set is a candidate list, never the answer — a lane is offered only once the board is
  * observed to carry its label, which is the same evidence the later write depends on.
  *
- * ADR 0286 rules the source is config with no shipped default; the default survives until the
- * `boardVocabulary` eviction lands (#5631/#5785), and the presence filter is what makes it harmless
- * in the meantime.
+ * ADR 0286 rules the source is config with no shipped default. The default survives until the
+ * `boardVocabulary` eviction lands, which is #6469's — the presence filter is what contains it in
+ * the meantime, and `"standingLanes": []` is how a repo says it runs none.
  */
 
 import {Effect, type FileSystem, type Path} from "effect";
