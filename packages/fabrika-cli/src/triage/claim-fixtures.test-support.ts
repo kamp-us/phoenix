@@ -20,9 +20,19 @@ export const LIVE = "2999-01-01T00:00:00Z";
 /** A `created_at` every TTL has passed. */
 export const EXPIRED = "2020-01-01T00:00:00Z";
 
-/** One comments page carrying a claim marker per `(session, createdAt)` pair. */
+/**
+ * One comments page carrying a claim marker per row.
+ *
+ * `lane` defaults to a per-row nonce rather than to the caller's: a fixture that silently handed
+ * every marker one lane would make a sibling-lane race look like a re-entry (#6132). A row naming a
+ * lane explicitly is how a test writes "this marker is that lane's".
+ */
 export const claimPage = (
-	...held: ReadonlyArray<{readonly session: string; readonly createdAt: string}>
+	...held: ReadonlyArray<{
+		readonly session: string;
+		readonly createdAt: string;
+		readonly lane?: string;
+	}>
 ): ExecResult =>
 	okOut(
 		JSON.stringify(
@@ -31,7 +41,7 @@ export const claimPage = (
 				user: {login: "agent"},
 				created_at: row.createdAt,
 				updated_at: row.createdAt,
-				body: markerBody(row.session),
+				body: markerBody({session: row.session, nonce: row.lane ?? `fixture${index}`}),
 			})),
 		),
 	);
