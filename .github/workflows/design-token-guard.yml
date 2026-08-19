@@ -5,10 +5,11 @@ name: design-token-guard
 # design-token seam — every var(--…) resolves to a declared/injected/grandfathered
 # property (no dead ref, the Toast #2167 class), no raw hex outside the raw-scale layer
 # tokens.css, and no raw px > 2px beyond each file's grandfathered ceiling (the 4px grid
-# sanctions only 1px/2px). It runs `pipeline-cli design-token-guard check` and fails
+# sanctions only 1px/2px). It runs `fabrika guard design-token-guard check` and fails
 # closed on zero CSS files or a malformed allow-list config (ADR 0092). The bounded
 # allow-lists (apps/web/src/styles/design-token-lint.config.json) grandfather the
-# pre-existing debt so the gate is green on main. The scan lives once in the tool.
+# pre-existing debt so the gate is green on main. The scan lives once in fabrika-cli's
+# `guard` group (#6093), which every ported guard shares.
 on:
   pull_request:
   push:
@@ -40,7 +41,11 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # Exit 1 on a dead var(--…) ref, a raw hex outside tokens.css, a raw-px regression
-      # over a file's ceiling, or zero CSS files in scope (fail-closed). Report on stderr.
+      # Non-zero on three distinct seats, so a red says which thing happened: 12 a dead
+      # var(--…) ref, a raw hex outside tokens.css or a raw-px regression over a file's
+      # ceiling, 7 zero scope (no CSS file, or a malformed allow-list config — fail-closed,
+      # ADR 0092), 11 a file could not be read so the verdict is UNKNOWN. The report is on
+      # stderr, with ::error annotations on each offending line. Reproduce locally with the
+      # same verb. See #2170.
       - name: Check the design-token seam holds
-        run: node packages/pipeline-cli/src/bin.ts design-token-guard check
+        run: node packages/fabrika-cli/src/bin.ts guard design-token-guard check

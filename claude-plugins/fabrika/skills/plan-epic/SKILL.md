@@ -85,12 +85,14 @@ back to `build`: you hold no claim, and `build note` requires one.
 ## 2 — Open the run
 
 ```bash
-fabrika ledger open $epic_number
+fabrika ledger open $epic_number --token <claim-token>
 ```
 
 This proves the ground fresh against `origin/main`, allocates the run directory keyed on the
-**claim nonce** — never the session, which every sibling subagent of one run shares — and reads
-what already exists.
+**claim nonce `--token` names** — never the session, which every sibling subagent of one run shares
+— and reads what already exists. That is why every `ledger` verb takes the token: handed only a
+session id, the claim check passed for a lane that had *lost* the epic's claim and then derived the
+holder's run key, so two planning lanes wrote into one directory (#6060).
 
 Done when you hold `run`, `mode` (`fresh` or `re-plan`), `children`, `cycleDoc`, `bodyDigest`, and
 `candidates`. Carry `bodyDigest` as `--body-digest` to `ledger draft` and `ledger write`; it is how
@@ -111,7 +113,7 @@ syncing and planning again is a fresh run from step 1, not a loop inside this on
 This is your work. Write the plan block and stage it:
 
 ```bash
-fabrika ledger draft $epic_number --body-digest 8f2c1a90b4d7 <<'EOF'
+fabrika ledger draft $epic_number --body-digest 8f2c1a90b4d7 --token <claim-token> <<'EOF'
 ## Plan (plan-epic)
 
 ### Summary
@@ -137,7 +139,8 @@ cannot say which story each slice serves is telling you the split is wrong.
 
 ```bash
 fabrika ledger child $epic_number --title "queue view: fate loader" \
-  --type type:feature --priority p1 --ready-for agent --milestone "fabrika campaign" <<'EOF'
+  --type type:feature --priority p1 --ready-for agent --milestone "fabrika campaign" \
+  --token <claim-token> <<'EOF'
 **Stories:** 1, 2
 **TDD:** yes
 **Containment:** flag (default-off)
@@ -181,7 +184,7 @@ parser that harvests every digit run reads `1, 3 (see #<other>)` as claiming a s
 On a `re-plan`, a child the new plan drops is retired rather than left dangling:
 
 ```bash
-fabrika ledger supersede $epic_number --child 4288 --reason "folded into the loader slice"
+fabrika ledger supersede $epic_number --child 4288 --reason "folded into the loader slice" --token <claim-token>
 ```
 
 It journals the reason, unlinks, then closes as not-planned — in that order, so a child is never
@@ -190,7 +193,7 @@ closed while still linked. It refuses a child that is not this epic's, and one t
 ## 5 — Declare the topology
 
 ```bash
-fabrika ledger topology $epic_number <<'EOF'
+fabrika ledger topology $epic_number --token <claim-token> <<'EOF'
 #<child-a> phase 1
 #<child-b> phase 1
 #<child-c> phase 2 requires #<child-a>
@@ -208,7 +211,7 @@ file plan; you can. Sequence them, or say in `### Task-split rationale` why they
 ## 6 — Write it into the epic
 
 ```bash
-fabrika ledger write $epic_number --body-digest 8f2c1a90b4d7
+fabrika ledger write $epic_number --body-digest 8f2c1a90b4d7 --token <claim-token>
 ```
 
 The staged plan and topology go into the epic body in one PATCH, re-read and compared byte for

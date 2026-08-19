@@ -3,7 +3,7 @@ name: homing-guard
 # CI gate for #3939 (ADR 0202 forward-motion doctrine + ADR 0208 standing-lane exemption):
 # every issue that leaves triage carries an arc/campaign milestone, or one of exactly two
 # standing-lane labels (`wayfinder:backlog`, `axis:pipeline-hardening`), or it was killed.
-# The check lives once in pipeline-cli (`homing-guard check`); this workflow wires it to the
+# The check lives once in fabrika-cli (`guard homing-guard check`); this workflow wires it to the
 # two surfaces where the invariant can break.
 #
 # There is deliberately NO `pull_request` trigger: homing is a property of the BACKLOG, not
@@ -58,16 +58,20 @@ jobs:
         run: |
           set -o pipefail
           if [ -n "$ISSUE" ]; then
-            node packages/pipeline-cli/src/bin.ts homing-guard check --issue "$ISSUE" 2>&1 | tee guard-output.txt
+            node packages/fabrika-cli/src/bin.ts guard homing-guard check --issue "$ISSUE" 2>&1 | tee guard-output.txt
           else
-            node packages/pipeline-cli/src/bin.ts homing-guard check 2>&1 | tee guard-output.txt
+            node packages/fabrika-cli/src/bin.ts guard homing-guard check 2>&1 | tee guard-output.txt
           fi
           echo "code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
 
-      # Scheduled red → file a status:needs-triage issue. No issue event and no PR to block on
+      # Scheduled drift → file a status:needs-triage issue. No issue event and no PR to block on
       # a schedule run, so the filed issue IS the signal.
+      #
+      # Keyed on `12` (a PROVEN violation), not on any non-zero: the guard group splits its
+      # refusals three ways (7 zero scope, 11 unreadable, 12 violation), and a `11` filed under
+      # this title would report drift the guard never saw. The other two red the job below.
       - name: File a status:needs-triage issue on scheduled drift
-        if: ${{ github.event_name == 'schedule' && steps.guard.outputs.code != '0' }}
+        if: ${{ github.event_name == 'schedule' && steps.guard.outputs.code == '12' }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -79,10 +83,11 @@ jobs:
             --label "status:needs-triage" \
             --body "$(printf 'The weekly homing-guard sweep found triaged issues that carry neither a milestone nor a standing-lane label, or that carry both. Give each one exactly one home per the triage rubric (ADR 0202/0208) — the guard output below names the remedy for each class.\n\nGuard output:\n\n```\n%s\n```\n' "$(cat guard-output.txt)")"
 
-      # Red the run for the blocking triggers (an issue event, a manual dispatch). On a
-      # schedule run the drift was already reported as an issue above.
-      - name: Fail the job on a homing violation (blocking triggers)
-        if: ${{ github.event_name != 'schedule' && steps.guard.outputs.code != '0' }}
+      # Red the run for the blocking triggers (an issue event, a manual dispatch), and on a
+      # schedule run too when the code is anything but the `12` already filed above — an
+      # unreadable board (11) or an empty scan (7) is an unanswered question, never a pass.
+      - name: Fail the job on a homing violation or an unanswered scan
+        if: ${{ steps.guard.outputs.code != '0' && !(github.event_name == 'schedule' && steps.guard.outputs.code == '12') }}
         run: |
-          echo "homing-guard: a triaged issue has no home, or claims two — see the check step output above." >&2
+          echo "homing-guard: exit ${{ steps.guard.outputs.code }} — 12 is a triaged issue with no home or two, 11 an unreadable board, 7 an empty scan. See the check step output above." >&2
           exit 1

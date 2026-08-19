@@ -7,6 +7,7 @@ import {
 	issue as buildIssue,
 	LANE_UUID,
 	NO_BLOCKERS,
+	SIBLING_UUID,
 	truncatedComments,
 } from "../build/fixtures.test-support.ts";
 import {fakeFs, fakeShell, okOut} from "../fakes.test-support.ts";
@@ -29,6 +30,11 @@ const laneMarker = (session: string, uuid: string): string =>
 
 const MINE = laneMarker("s-9f2e", LANE_UUID);
 const THEIRS = laneMarker("s-77aa", OTHER_UUID);
+/** A second driver of the SAME session — the two-lanes-one-session shape (#6060). */
+const SIBLING = laneMarker("s-9f2e", SIBLING_UUID);
+
+const MY_TOKEN = `lane:s-9f2e:${LANE_UUID}`;
+const SIBLING_TOKEN = `lane:s-9f2e:${SIBLING_UUID}`;
 
 const POSTED = okOut(JSON.stringify({id: 9001, html_url: "https://github.com/o/r/issues/5492#c"}));
 const ECHO = okOut(JSON.stringify({body: MINE}));
@@ -42,6 +48,7 @@ const key = (raw: string) => {
 const options = {
 	key: key("5492"),
 	lane: "5492",
+	token: null as string | null,
 	repo: null,
 	env: {CLAUDE_PIPELINE_REPO: "o/r", CLAUDE_CODE_SESSION_ID: "s-9f2e"} as Record<
 		string,
@@ -120,16 +127,53 @@ describe("runLaneClaim", () => {
 		expect(deletes).toEqual(["gh api --method DELETE repos/o/r/issues/comments/9001"]);
 	});
 
-	it("exits 11 on an unreadable marker set — UNKNOWN, never unclaimed", async () => {
-		const out = await run([
+	/**
+	 * A sibling driver of THIS session is a co-racer, not this run: ownership turns on the whole
+	 * token, so the older marker wins and this run retracts its own rather than reading the
+	 * neighbour's claim as its own (#6060).
+	 */
+	it("loses to a sibling driver of its own session, and says which one", async () => {
+		const shell = fakeShell([
+			[POST, POSTED],
+			[GET_COMMENT, ECHO],
+			[
+				COMMENTS,
+				buildComments(
+					{id: 8000, body: SIBLING, createdAt: "2026-08-16T00:00:00Z"},
+					{id: 9001, body: MINE, createdAt: "2026-08-17T00:00:00Z"},
+				),
+			],
+			[perm("agent"), okOut("write\n")],
+			[DELETE, okOut("")],
+		]);
+		const out = await Effect.runPromise(Effect.provide(runLaneClaim(options), shell.layer));
+		expect(out.code).toBe(CLAIM_NOT_MINE);
+		expect(out.stderr.join("\n")).toContain(SIBLING_TOKEN);
+		expect(shell.calls.filter((line) => DELETE.test(line))).toEqual([
+			"gh api --method DELETE repos/o/r/issues/comments/9001",
+		]);
+	});
+
+	/**
+	 * The UNKNOWN path retracts too. Its comment id is in hand and is provably this run's own write —
+	 * the one write a loser may always make — and leaving it stranded is a marker no later run can
+	 * resolve, on a namespace with no TTL to expire it (#6000).
+	 */
+	it("exits 11 on an unreadable marker set — UNKNOWN, never unclaimed — retracting its own", async () => {
+		const shell = fakeShell([
 			[POST, POSTED],
 			[GET_COMMENT, ECHO],
 			[COMMENTS, truncatedComments({id: 9001, body: MINE})],
 			[perm("agent"), okOut("write\n")],
+			[DELETE, okOut("")],
 		]);
+		const out = await Effect.runPromise(Effect.provide(runLaneClaim(options), shell.layer));
 		expect(out.code).toBe(LANE_UNREADABLE);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.join("\n")).toContain("UNKNOWN");
+		expect(shell.calls.filter((line) => DELETE.test(line))).toEqual([
+			"gh api --method DELETE repos/o/r/issues/comments/9001",
+		]);
 	});
 
 	it("exits 1 with no session id, and writes nothing", async () => {
@@ -177,7 +221,9 @@ describe("runLaneRelease", () => {
 			[perm("agent"), okOut("write\n")],
 			[DELETE, okOut("")],
 		]);
-		const out = await Effect.runPromise(Effect.provide(runLaneRelease(options), shell.layer));
+		const out = await Effect.runPromise(
+			Effect.provide(runLaneRelease({...options, token: MY_TOKEN}), shell.layer),
+		);
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout)).toEqual({answer: "released", lane: "5492", number: 5492});
 		expect(shell.calls).toContain("gh api --method DELETE repos/o/r/issues/comments/9001");
@@ -188,15 +234,154 @@ describe("runLaneRelease", () => {
 			[COMMENTS, buildComments({id: 8000, body: THEIRS})],
 			[perm("agent"), okOut("write\n")],
 		]);
-		const out = await Effect.runPromise(Effect.provide(runLaneRelease(options), shell.layer));
+		const out = await Effect.runPromise(
+			Effect.provide(runLaneRelease({...options, token: MY_TOKEN}), shell.layer),
+		);
 		expect(out.code).toBe(CLAIM_NOT_MINE);
 		expect(shell.calls.filter((line) => DELETE.test(line))).toEqual([]);
 	});
 
-	it("answers inert on a chore lane", async () => {
+	/**
+	 * The sharpest edge of the session-only rule: this release used to resolve `Mine` on a sibling
+	 * driver's marker and delete it, which is unrecoverable and leaves the issue reading unclaimed
+	 * (#6060). The refusal names the holding token so a reader can find the comment.
+	 */
+	it("refuses a sibling driver of its OWN session, naming the holding token", async () => {
+		const shell = fakeShell([
+			[COMMENTS, buildComments({id: 8000, body: SIBLING})],
+			[perm("agent"), okOut("write\n")],
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(runLaneRelease({...options, token: MY_TOKEN}), shell.layer),
+		);
+		expect(out.code).toBe(CLAIM_NOT_MINE);
+		expect(out.stderr.join("\n")).toContain(SIBLING_TOKEN);
+		expect(shell.calls.filter((line) => DELETE.test(line))).toEqual([]);
+	});
+
+	it("exits 1 with no --token on a board lane, and reads nothing", async () => {
+		const shell = fakeShell([]);
+		const out = await Effect.runPromise(Effect.provide(runLaneRelease(options), shell.layer));
+		expect(out.code).toBe(FAILED);
+		expect(shell.calls).toEqual([]);
+	});
+
+	/** A read that failed is UNKNOWN, and an UNKNOWN holding never authorizes a delete. */
+	it("exits 11 on an unreadable marker read, retracting nothing", async () => {
+		const shell = fakeShell([
+			[COMMENTS, truncatedComments({id: 9001, body: MINE})],
+			[perm("agent"), okOut("write\n")],
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(runLaneRelease({...options, token: MY_TOKEN}), shell.layer),
+		);
+		expect(out.code).toBe(LANE_UNREADABLE);
+		expect(out.stderr.join("\n")).toContain("UNKNOWN");
+		expect(shell.calls.filter((line) => DELETE.test(line))).toEqual([]);
+	});
+
+	it("exits 8 when the delete fails — whether the lane is still held is UNKNOWN", async () => {
+		const shell = fakeShell([
+			[COMMENTS, buildComments({id: 9001, body: MINE})],
+			[perm("agent"), okOut("write\n")],
+			[DELETE, {ok: false, stdout: "", reason: "502"}],
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(runLaneRelease({...options, token: MY_TOKEN}), shell.layer),
+		);
+		expect(out.code).toBe(APPEND_UNKNOWN);
+		expect(out.stderr.join("\n")).toContain("UNKNOWN");
+	});
+
+	it("answers inert on a chore lane, which was never handed a token", async () => {
 		const out = await release([], {key: key("chore:park-sweep"), lane: "chore:park-sweep"});
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout).answer).toBe("inert");
+	});
+});
+
+/**
+ * The protocol's fixed point: one DRIVER, one marker, one token (#6087, scoped per driver by #6060).
+ *
+ * Before the guard, N claims left N markers and each release peeled one off — and since nothing in
+ * this namespace expires a marker, the leftovers made the lane refuse on `31` for good.
+ */
+describe("one driver, one marker", () => {
+	const held = (...bodies: ReadonlyArray<readonly [number, string]>) =>
+		buildComments(...bodies.map(([id, body]) => ({id, body})));
+
+	it("posts no second marker on a re-claim, and answers with the owning token", async () => {
+		const shell = fakeShell([
+			[COMMENTS, held([9001, MINE])],
+			[perm("agent"), okOut("write\n")],
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(runLaneClaim({...options, token: MY_TOKEN}), shell.layer),
+		);
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toEqual({
+			answer: "won",
+			lane: "5492",
+			number: 5492,
+			token: MY_TOKEN,
+		});
+		expect(shell.calls.filter((line) => POST.test(line))).toEqual([]);
+	});
+
+	/** Claim, re-claim, release once: no marker of this driver survives for a later claim to lose to. */
+	it("leaves nothing behind after one release", async () => {
+		const shell = fakeShell([
+			[COMMENTS, held([9001, MINE])],
+			[perm("agent"), okOut("write\n")],
+			[DELETE, okOut("")],
+		]);
+		await Effect.runPromise(
+			Effect.provide(runLaneClaim({...options, token: MY_TOKEN}), shell.layer),
+		);
+		const out = await Effect.runPromise(
+			Effect.provide(runLaneRelease({...options, token: MY_TOKEN}), shell.layer),
+		);
+		expect(out.code).toBe(0);
+		expect(shell.calls.filter((line) => DELETE.test(line))).toEqual([
+			"gh api --method DELETE repos/o/r/issues/comments/9001",
+		]);
+	});
+
+	/** A thread that already carries duplicates — written before the guard — is swept, not crashed on. */
+	it("sweeps every marker carrying this driver's token, and only those", async () => {
+		const shell = fakeShell([
+			[COMMENTS, held([9001, MINE], [9002, MINE], [9003, THEIRS])],
+			[perm("agent"), okOut("write\n")],
+			[DELETE, okOut("")],
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(runLaneRelease({...options, token: MY_TOKEN}), shell.layer),
+		);
+		expect(out.code).toBe(0);
+		expect(shell.calls.filter((line) => DELETE.test(line))).toEqual([
+			"gh api --method DELETE repos/o/r/issues/comments/9001",
+			"gh api --method DELETE repos/o/r/issues/comments/9002",
+		]);
+	});
+
+	/** The claim and the release agree about the nonce, so neither can address the other's marker. */
+	it("hands back a token release resolves as its own", async () => {
+		const claimed = await run([
+			[POST, POSTED],
+			[GET_COMMENT, ECHO],
+			[COMMENTS, buildComments({id: 9001, body: MINE})],
+			[perm("agent"), okOut("write\n")],
+		]);
+		const token = JSON.parse(claimed.stdout).token as string;
+		const shell = fakeShell([
+			[COMMENTS, buildComments({id: 9001, body: MINE})],
+			[perm("agent"), okOut("write\n")],
+			[DELETE, okOut("")],
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(runLaneRelease({...options, token}), shell.layer),
+		);
+		expect(out.code).toBe(0);
 	});
 });
 

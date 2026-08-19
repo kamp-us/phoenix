@@ -29,7 +29,7 @@
 
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import {anySessionCaller, requireClaim, requireSession} from "../build/claim.ts";
+import {requireCallerToken, requireClaim, requireSession} from "../build/claim.ts";
 import {badNumber, resolveTargetRepo} from "../build/target.ts";
 import {addLabels, getIssue, listLabels, removeLabel} from "../io/issues.ts";
 import {PLANNED, TRIAGED} from "../labels.ts";
@@ -92,6 +92,8 @@ export const audienceSettled = (observed: ReadonlyArray<string>): boolean =>
 export interface FlipOptions {
 	readonly number: number;
 	readonly digest: string;
+	/** The claim token `build claim <epic> --purpose gate` handed this lane — which lane is asking. */
+	readonly token: string;
 	readonly repo: string | null;
 	readonly env: Readonly<Record<string, string | undefined>>;
 }
@@ -128,7 +130,10 @@ export const runFlip = (
 		const target = yield* requireEpic(MESSAGES, repo, options.number);
 		if (target._tag === "Refused") return target.outcome;
 
-		const held = yield* requireClaim(VERB, repo, options.number, anySessionCaller(session.id));
+		const asking = requireCallerToken(VERB, session.id, options.token);
+		if (asking._tag === "Refused") return asking.outcome;
+
+		const held = yield* requireClaim(VERB, repo, options.number, asking.caller);
 		if (held._tag === "Refused") return held.outcome;
 
 		const read = yield* loadLedger(MESSAGES, repo, target.issue);

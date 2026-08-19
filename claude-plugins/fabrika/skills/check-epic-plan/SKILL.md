@@ -98,7 +98,7 @@ defective path is terminal here.** Re-planning is `plan-epic`'s lane; hand back 
 Only on a clean floor:
 
 ```bash
-fabrika plan flip $epic_number --digest 4d90e1bb27ac
+fabrika plan flip $epic_number --digest 4d90e1bb27ac --token <claim-token>
 ```
 
 The flip is **unconditional over every `status:planned` child** and not yours to narrow: there is
@@ -140,7 +140,7 @@ the check and the flip; nothing was written, so re-check rather than retry.
 ## 4 — Post the verdict, bound to the scope you scanned
 
 ```bash
-fabrika plan verdict $epic_number --digest 4d90e1bb27ac <<'EOF'
+fabrika plan verdict $epic_number --digest 4d90e1bb27ac --token <claim-token> <<'EOF'
 caveat: ac-not-checkable #<child> — "works well" states no observable outcome
 EOF
 ```

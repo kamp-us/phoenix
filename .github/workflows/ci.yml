@@ -252,7 +252,8 @@ jobs:
       # `merge_group`/`push` paths never used the API (they always git-diff via
       # `getChangedFilesFromGit`, no token consumed) and are unaffected. A GENUINE git/detection
       # error still hard-fails this step (fail-closed) — only the API-HTML transient is removed,
-      # never the real gate signal. `pipeline-cli change-detect-guard check` (change-detect-guard.yml)
+      # never the real gate signal. `fabrika guard change-detect-guard check`
+      # (change-detect-guard.yml)
       # fails closed if this `token: ''` ever regresses back to the API mode.
       - uses: dorny/paths-filter@v3.0.2
         id: filter
@@ -296,7 +297,7 @@ jobs:
             # 10-min preview-comment poll time out and wedge `ci-required`. An edit to
             # THIS list MUST be mirrored into deploy.yml's `deploy:` filter (and vice
             # versa) — keep the two path sets identical. ENFORCED MECHANICALLY (issue
-            # #2372) by `pipeline-cli path-filter-guard check` (the path-filter-guard.yml
+            # #2372) by `fabrika guard path-filter-guard check` (the path-filter-guard.yml
             # job), which fails the build if this `e2e:` set and deploy.yml's `deploy:`
             # set drift apart — this comment documents the invariant; the guard defends it.
             #
@@ -496,14 +497,14 @@ jobs:
 
       # tsc has no `--reporter=github` equivalent, so the same inline-annotation win the biome
       # step gets above is done by mapping its `path(line,col): error TSxxxx:` diagnostics onto
-      # `::error` workflow commands (#3873). `tsc-annotate map` is a pass-through: it re-prints
+      # `::error` workflow commands (#3873). `ci annotate` is a pass-through: it re-prints
       # stdin verbatim (the log reads exactly as before) and always exits 0, so `pipefail` is
       # what keeps the step red — the pipeline's status is `pnpm typecheck`'s own exit code.
       # Local `pnpm typecheck` is untouched; the mapping lives here, like the biome reporter.
       - name: typecheck
         run: |
           set -o pipefail
-          pnpm typecheck | node packages/pipeline-cli/src/bin.ts tsc-annotate map
+          pnpm typecheck | node packages/fabrika-cli/src/bin.ts ci annotate
 
   unit:
     name: unit + client tests
@@ -1080,15 +1081,16 @@ jobs:
   # per job is EMITTED to the log (ADR 0092 §1 "emit what you scanned"), so a quietly
   # -skipped required job is visible in the run, not only in the exit code.
   #
-  # The verdict logic is the PURE, UNIT-TESTED `ci-required` core, inlined into
-  # pipeline-cli (#3802) — `node packages/pipeline-cli/src/tools/ci-required/bin.ts`
-  # reads the `needs.*` env below and exits 0/1. It is a ZERO-RUNTIME-DEPENDENCY plain-Node
-  # module (node strips the TS types natively), so this gate job runs only
-  # checkout + setup-node + node — NO `pnpm install` — keeping the always-on
-  # aggregator fast. Its full matrix (the 4 integration scenarios, the packages-tests
-  # required/legit-skip/fail cases, the fork skip, a genuine failure, and the
-  # changes-job-itself-failed fail-closed case) lives in ci-required.unit.test.ts,
-  # run by the `packages-tests` lane (which gates all `packages/**` suites, #760).
+  # The verdict logic is the PURE, UNIT-TESTED core in fabrika-cli (#6099) —
+  # `node packages/fabrika-cli/src/ci/required-bin.ts` reads the `env:` below and exits 0/1.
+  # That path is a ZERO-RUNTIME-DEPENDENCY plain-Node module (node strips the TS types
+  # natively) and imports no `effect`, so this gate job runs only checkout + setup-node +
+  # node — NO `pnpm install` — keeping the always-on aggregator fast. That constraint is why
+  # it is a bare bin rather than a `fabrika ci …` verb. Its full matrix (the 4 integration
+  # scenarios, the packages-tests required/legit-skip/fail cases, a genuine failure, the
+  # changes-job-itself-failed case and the unreadable-scope case) lives in
+  # packages/fabrika-cli/src/ci/required.unit.test.ts, run by the `packages-tests` lane
+  # (which gates all `packages/**` suites, #760).
   ci-required:
     name: ci-required
     needs: [changes, check, unit, packages-tests, actionlint, integration, e2e]
@@ -1103,19 +1105,25 @@ jobs:
 
       - name: Require should-have-run gating jobs to have passed (skip is legit only when not required)
         env:
-          # `check` and `unit` share the single-sourced `check_required`; integration
-          # and e2e read their own. Pair each job's should-run with its result so the
-          # helper reads required-ness and run-ness from ONE source per job.
+          # CI_REQUIRED_JOBS is the single declaration of the covered set — it must name exactly
+          # the `needs:` above minus `changes`, and the helper derives every row from it (#6099).
+          # Each job pairs `<NAME>_REQUIRED` (its single-sourced `changes` output, the SAME
+          # expression that gates the job's own `if:`) with `<NAME>_RESULT`, so required-ness and
+          # run-ness cannot drift. `check` and `unit` are two jobs behind one `check_required`
+          # output, which is why they carry two keys reading the one source. A declared job whose
+          # keys are absent reds rather than reading as not-required.
+          CI_REQUIRED_JOBS: check unit packages-tests actionlint integration e2e
           CHANGES_RESULT: ${{ needs.changes.result }}
           CHECK_REQUIRED: ${{ needs.changes.outputs.check_required }}
+          UNIT_REQUIRED: ${{ needs.changes.outputs.check_required }}
+          PACKAGES_TESTS_REQUIRED: ${{ needs.changes.outputs.packages_required }}
+          ACTIONLINT_REQUIRED: ${{ needs.changes.outputs.workflows_required }}
           INTEGRATION_REQUIRED: ${{ needs.changes.outputs.integration_required }}
           E2E_REQUIRED: ${{ needs.changes.outputs.e2e_required }}
-          PACKAGES_REQUIRED: ${{ needs.changes.outputs.packages_required }}
-          WORKFLOWS_REQUIRED: ${{ needs.changes.outputs.workflows_required }}
           CHECK_RESULT: ${{ needs.check.result }}
           UNIT_RESULT: ${{ needs.unit.result }}
-          PACKAGES_RESULT: ${{ needs.packages-tests.result }}
+          PACKAGES_TESTS_RESULT: ${{ needs.packages-tests.result }}
           ACTIONLINT_RESULT: ${{ needs.actionlint.result }}
           INTEGRATION_RESULT: ${{ needs.integration.result }}
           E2E_RESULT: ${{ needs.e2e.result }}
-        run: node packages/pipeline-cli/src/tools/ci-required/bin.ts
+        run: node packages/fabrika-cli/src/ci/required-bin.ts

@@ -9,6 +9,8 @@ import {foreignMarkers, guardTarget} from "./target-guard.ts";
 
 const MINE = "session-mine";
 const THEIRS = "session-theirs";
+/** This guard reads the session axis only, so which lane a marker names never changes its answer. */
+const LANE = "aaaaaaaa";
 
 const target = (over: Partial<IssueRecord> = {}): IssueRecord => ({
 	number: 4312,
@@ -22,6 +24,7 @@ const target = (over: Partial<IssueRecord> = {}): IssueRecord => ({
 	stateReason: null,
 	comments: 0,
 	isPullRequest: false,
+	isSubIssue: false,
 	...over,
 });
 
@@ -54,36 +57,37 @@ describe("foreignMarkers", () => {
 		markers: ReadonlyArray<{
 			readonly id: number;
 			readonly session: string;
+			readonly lane: string | null;
 			readonly createdAt: string;
 		}>,
 		session: string,
 	) => foreignMarkers({markers, session, now, ttlMinutes: DEFAULT_TTL_MINUTES});
 
 	it("counts a live marker of another session foreign", () => {
-		const scanned = scan([{id: 1, session: THEIRS, createdAt: LIVE}], MINE);
+		const scanned = scan([{id: 1, session: THEIRS, lane: LANE, createdAt: LIVE}], MINE);
 		expect(scanned._tag).toBe("Foreign");
 		expect(scanned._tag === "Foreign" && scanned.foreign.map((m) => m.session)).toEqual([THEIRS]);
 	});
 
 	it("counts this session's own live marker as not foreign", () => {
-		const scanned = scan([{id: 1, session: MINE, createdAt: LIVE}], MINE);
+		const scanned = scan([{id: 1, session: MINE, lane: LANE, createdAt: LIVE}], MINE);
 		expect(scanned._tag === "Foreign" && scanned.foreign).toEqual([]);
 	});
 
 	it("ages an expired foreign marker out", () => {
-		const scanned = scan([{id: 1, session: THEIRS, createdAt: EXPIRED}], MINE);
+		const scanned = scan([{id: 1, session: THEIRS, lane: LANE, createdAt: EXPIRED}], MINE);
 		expect(scanned._tag === "Foreign" && scanned.foreign).toEqual([]);
 	});
 
 	// An empty id matches no marker, so a session-blind filter would answer "nobody else holds it"
 	// over a set full of live competitors — the one direction this may not fail.
 	it("counts every live marker foreign when this session cannot be attributed", () => {
-		const scanned = scan([{id: 1, session: MINE, createdAt: LIVE}], "");
+		const scanned = scan([{id: 1, session: MINE, lane: LANE, createdAt: LIVE}], "");
 		expect(scanned._tag === "Foreign" && scanned.foreign).toHaveLength(1);
 	});
 
 	it("refuses to resolve a marker whose ordering key will not parse", () => {
-		const scanned = scan([{id: 1, session: THEIRS, createdAt: "whenever"}], MINE);
+		const scanned = scan([{id: 1, session: THEIRS, lane: LANE, createdAt: "whenever"}], MINE);
 		expect(scanned._tag).toBe("Unresolvable");
 	});
 });

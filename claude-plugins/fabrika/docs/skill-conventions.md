@@ -339,11 +339,12 @@ every copy can drift from while each author assumes some other copy is authorita
 
 **Where it is enforced today — stated so nobody assumes coverage it does not have.** The
 `skill-gh-lint` job ([`.github/workflows/skill-gh-lint.yml`](../../../.github/workflows/skill-gh-lint.yml),
-matchers in [`lint.ts`](../../../packages/pipeline-cli/src/tools/gh-phoenix/lint.ts)) reds on a
+matchers in [`skill-lint.ts`](../../../packages/fabrika-cli/src/guard/skill-lint.ts)) reds on a
 GraphQL-path `gh` invocation anywhere in the corpus it walks and fails closed on zero scope
-([ADR 0092](../../../.decisions/0092-gates-fail-closed-on-zero-scope.md)). That walk is rooted at
-the whole `claude-plugins/` tree (the workflow's `WALK_ROOT`), so **fabrika's own corpus is inside
-its scope** — the rule stated here is the same one that job machine-checks on every push.
+([ADR 0092](../../../.decisions/0092-gates-fail-closed-on-zero-scope.md)). The walk roots at
+`claude-plugins/`, every plugin dir under it, and reds if any of them contributed no scanned file
+([#5004](https://github.com/kamp-us/phoenix/issues/5004)) — so **fabrika's own corpus is inside its
+scope**, and the rule is machine-checked here rather than held by review.
 
 > Source: the org's Projects-classic constraint, carried through v1 as a per-skill standing
 > invariant. Five fabrika contracts each restated it before this section existed
