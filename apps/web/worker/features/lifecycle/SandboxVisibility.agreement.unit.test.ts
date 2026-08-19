@@ -65,11 +65,14 @@ const columnsForTag: Record<
 };
 
 const viewers = {
-	caylakAuthor: {viewerId: AUTHOR, canSeeSandboxed: false},
-	yazar: {viewerId: "a-yazar", canSeeSandboxed: false},
-	moderator: {viewerId: "a-mod", canSeeSandboxed: true},
-	otherMember: {viewerId: OTHER, canSeeSandboxed: false},
+	caylakAuthor: {viewerId: AUTHOR, canSeeSandboxed: false, seesSandboxedInPlace: false},
+	yazar: {viewerId: "a-yazar", canSeeSandboxed: false, seesSandboxedInPlace: false},
+	moderator: {viewerId: "a-mod", canSeeSandboxed: true, seesSandboxedInPlace: false},
+	otherMember: {viewerId: OTHER, canSeeSandboxed: false, seesSandboxedInPlace: false},
 	anonymous: L.anonymousViewer,
+	// The #6423 third class: the two encodings must agree for it in every cell too,
+	// including that it is still shut out of `Removed`.
+	inPlaceYazar: {viewerId: "opted-in-yazar", canSeeSandboxed: false, seesSandboxedInPlace: true},
 } satisfies Record<string, L.SandboxViewer>;
 
 const rowForTag = (tag: L.LifecycleTag, authorId: string): Row => {

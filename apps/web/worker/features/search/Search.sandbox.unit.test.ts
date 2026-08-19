@@ -95,10 +95,26 @@ const renderSearchSql = async (viewer: SandboxViewer, query = "yazilim"): Promis
 const countQuery = (sqls: string[]) => sqls.find((s) => /count\(\*\)/i.test(s));
 const keysetQuery = (sqls: string[]) => sqls.find((s) => /order by/i.test(s) && /limit/i.test(s));
 
-const anonymous: SandboxViewer = {viewerId: null, canSeeSandboxed: false};
-const otherMember: SandboxViewer = {viewerId: "member-other", canSeeSandboxed: false};
-const author: SandboxViewer = {viewerId: "caylak-author", canSeeSandboxed: false};
-const moderator: SandboxViewer = {viewerId: "mod-1", canSeeSandboxed: true};
+const anonymous: SandboxViewer = {
+	viewerId: null,
+	canSeeSandboxed: false,
+	seesSandboxedInPlace: false,
+};
+const otherMember: SandboxViewer = {
+	viewerId: "member-other",
+	canSeeSandboxed: false,
+	seesSandboxedInPlace: false,
+};
+const author: SandboxViewer = {
+	viewerId: "caylak-author",
+	canSeeSandboxed: false,
+	seesSandboxedInPlace: false,
+};
+const moderator: SandboxViewer = {
+	viewerId: "mod-1",
+	canSeeSandboxed: true,
+	seesSandboxedInPlace: false,
+};
 
 describe("searchPosts — sandbox read-mask wired into BOTH count and keyset (#1358)", () => {
 	it("anonymous/public: live-only — `sandboxed_at is null`, no author arm, on count AND keyset", async () => {

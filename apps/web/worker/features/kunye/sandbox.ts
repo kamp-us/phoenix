@@ -7,9 +7,10 @@
  *   - {@link sandboxedAtForAuthor} — the create-time decision: should a new piece
  *     of content by this author land sandboxed? Decided by tier (çaylak ⇒ sandboxed,
  *     yazar ⇒ live).
- *   - {@link currentSandboxViewer} — the read-time viewer: the signed-in id plus a
- *     non-throwing moderator probe of `Moderate.over(platform)`, resolved once per
- *     read and handed to the `SandboxVisibility` predicates.
+ *   - {@link currentSandboxViewer} — the read-time viewer: the signed-in id, a
+ *     non-throwing moderator probe of `Moderate.over(platform)`, and the flag-gated
+ *     in-place opt-in (#6423), resolved once per read and handed to the
+ *     `SandboxVisibility` predicates.
  *   - {@link PublishDecision} / {@link decidePublish} / {@link alwaysLive} — the
  *     create-time live-broadcast gate, type-level: a node broadcast to a public
  *     fate-live topic requires a `PublishDecision`, constructible only from the
@@ -21,6 +22,8 @@
 
 import {CurrentUser} from "@kampus/fate-effect";
 import {Brand, Effect} from "effect";
+import {CaylakVisibility} from "../caylak-visibility/CaylakVisibility.ts";
+import {caylakVisibilityOn} from "../caylak-visibility/gate.ts";
 import type {SandboxViewer} from "../lifecycle/EntityLifecycle.ts";
 import {Kunye} from "./Kunye.ts";
 import {requireModeration} from "./moderate.ts";
@@ -42,22 +45,42 @@ export const sandboxedAtForAuthor = (
 	});
 
 /**
+ * Whether this account is the #6423 in-place viewer: a yazar who opted in to seeing
+ * çaylak contributions in place. Four gates, cheapest first — anonymous, then the
+ * `phoenix-caylak-visibility` flag, then the yazar floor, then the stored preference.
+ *
+ * The tier check is belt-and-braces against the write gate in #6422: a çaylak (or a
+ * visitor) reads `false` even if a preference row somehow exists, so a demotion or a
+ * bypassed mutation cannot leave a non-yazar holding the widened read.
+ */
+const inPlaceVisibility = Effect.fn("kunye.inPlaceVisibility")(function* (viewerId: string | null) {
+	if (viewerId === null) return false;
+	if (!(yield* caylakVisibilityOn)) return false;
+	const kunye = yield* Kunye;
+	if ((yield* kunye.tierOf(viewerId)) !== "yazar") return false;
+	const caylakVisibility = yield* CaylakVisibility;
+	return (yield* caylakVisibility.read(viewerId)).optedIn;
+});
+
+/**
  * Resolve the sandbox viewer for the current request: the signed-in account id
- * (null = anonymous) plus whether they hold platform-moderation authority. The
- * moderator check is a non-throwing probe — `Moderate.over(platform)` discharges
- * to a `Grant` for a moderator and fails `Denied` otherwise; we collapse that to a
- * boolean so a non-moderator reads as `canSeeSandboxed: false` rather than erroring
- * the read.
+ * (null = anonymous), whether they hold platform-moderation authority, and whether
+ * they are an opted-in in-place viewer (#6423). The moderator check is a non-throwing
+ * probe — `Moderate.over(platform)` discharges to a `Grant` for a moderator and fails
+ * `Denied` otherwise; we collapse that to a boolean so a non-moderator reads as
+ * `canSeeSandboxed: false` rather than erroring the read.
  */
 export const currentSandboxViewer = Effect.gen(function* () {
 	const {user} = yield* CurrentUser;
+	const viewerId = user?.id ?? null;
 	// A non-throwing probe of the moderation gate: `requireModeration` discharges
 	// `Moderate.over(platform)` and fails `Denied` for a non-moderator, which we
 	// collapse to `false` rather than erroring the read.
 	const canSeeSandboxed = yield* requireModeration(Effect.succeed(true)).pipe(
 		Effect.catch(() => Effect.succeed(false)),
 	);
-	return {viewerId: user?.id ?? null, canSeeSandboxed} satisfies SandboxViewer;
+	const seesSandboxedInPlace = yield* inPlaceVisibility(viewerId);
+	return {viewerId, canSeeSandboxed, seesSandboxedInPlace} satisfies SandboxViewer;
 });
 
 /**

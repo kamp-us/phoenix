@@ -238,14 +238,27 @@ export const promote = (_sandboxed: Sandboxed): EntityLifecycle => Live();
  * authored. Deliberately a plain value, not a service: the visibility decision is
  * pure, so the resolver resolves the viewer once and the read layer + the matrix
  * test both apply the same rule.
+ *
+ * `seesSandboxedInPlace` is the third viewer class (#6423): a yazar who opted in to
+ * seeing çaylak contributions in place, resolved from the #6422 preference behind the
+ * `phoenix-caylak-visibility` flag. It is deliberately NOT a second way to set
+ * `canSeeSandboxed` — that boolean is the discharged moderator authority, and it is
+ * read by the moderator sandbox backlog and the divan queues as well as by
+ * `sandboxVisibleWhere`. Collapsing the two would hand every opted-in yazar the
+ * moderator review backlog along with the in-place read.
  */
 export interface SandboxViewer {
 	readonly viewerId: string | null;
 	readonly canSeeSandboxed: boolean;
+	readonly seesSandboxedInPlace: boolean;
 }
 
 /** An anonymous/public viewer — sees only `Live`. The safe default. */
-export const anonymousViewer: SandboxViewer = {viewerId: null, canSeeSandboxed: false};
+export const anonymousViewer: SandboxViewer = {
+	viewerId: null,
+	canSeeSandboxed: false,
+	seesSandboxedInPlace: false,
+};
 
 /**
  * The tag of an {@link EntityLifecycle} state — the closed discriminant both the
@@ -264,14 +277,15 @@ export type LifecycleTag = EntityLifecycle["_tag"];
  * - `Everyone` — the state is public (`Live`).
  * - `NoOne` — the state is hidden from content reads (`Removed`; moderators review it
  *   through a separate queue, not these reads).
- * - `AuthorOrModerator` — visible only to a moderator (`canSeeSandboxed`) or the
- *   authoring account (`Sandboxed`, the #1205 çaylak rule).
+ * - `AuthorOrModeratorOrInPlaceViewer` — visible to a moderator (`canSeeSandboxed`),
+ *   an opted-in in-place viewer (`seesSandboxedInPlace`, #6423), or the authoring
+ *   account (`Sandboxed`, the #1205 çaylak rule).
  *
  * Making the rule a value — not inline logic duplicated per encoding — is what lets
  * `isVisibleTo` (runtime) and `sandboxVisibleWhere` (SQL) both read it, so they cannot
  * silently diverge for a state.
  */
-export type LifecycleVisibilityRule = "Everyone" | "NoOne" | "AuthorOrModerator";
+export type LifecycleVisibilityRule = "Everyone" | "NoOne" | "AuthorOrModeratorOrInPlaceViewer";
 
 /**
  * The single source of the çaylak-sandbox visibility boundary (#1205, #2013): each
@@ -285,14 +299,15 @@ export type LifecycleVisibilityRule = "Everyone" | "NoOne" | "AuthorOrModerator"
 export const lifecycleVisibilityRule: Record<LifecycleTag, LifecycleVisibilityRule> = {
 	Live: "Everyone",
 	Removed: "NoOne",
-	Sandboxed: "AuthorOrModerator",
+	Sandboxed: "AuthorOrModeratorOrInPlaceViewer",
 };
 
 /**
  * Interpret a {@link LifecycleVisibilityRule} against a viewer + the content's author
  * — the one place a rule becomes a boolean, shared by {@link isVisibleTo} and (via the
- * SQL arm builder) the read-query predicate. `AuthorOrModerator` is visible to a
- * moderator (`canSeeSandboxed`) or the author (`viewerId === authorId`).
+ * SQL arm builder) the read-query predicate. `AuthorOrModeratorOrInPlaceViewer` is
+ * visible to a moderator (`canSeeSandboxed`), an opted-in in-place viewer
+ * (`seesSandboxedInPlace`), or the author (`viewerId === authorId`).
  */
 export const ruleVisibleTo = (
 	rule: LifecycleVisibilityRule,
@@ -304,8 +319,8 @@ export const ruleVisibleTo = (
 			return true;
 		case "NoOne":
 			return false;
-		case "AuthorOrModerator":
-			return viewer.canSeeSandboxed || viewer.viewerId === authorId;
+		case "AuthorOrModeratorOrInPlaceViewer":
+			return viewer.canSeeSandboxed || viewer.seesSandboxedInPlace || viewer.viewerId === authorId;
 	}
 };
 
@@ -319,9 +334,9 @@ export const ruleVisibleTo = (
  * - `Removed` (`NoOne`) — hidden from the content reads (the existing
  *   `removed_at IS NULL` guard, unchanged — moderators review removed content through a
  *   different queue).
- * - `Sandboxed` (`AuthorOrModerator`) — visible only to a moderator
- *   (`canSeeSandboxed`) or the author (`viewerId === authorId`); hidden from anonymous
- *   + every other member.
+ * - `Sandboxed` (`AuthorOrModeratorOrInPlaceViewer`) — visible to a moderator
+ *   (`canSeeSandboxed`), an opted-in in-place viewer (`seesSandboxedInPlace`), or the
+ *   author (`viewerId === authorId`); hidden from anonymous + every other member.
  *
  * Reads the rule off {@link lifecycleVisibilityRule} keyed by the lifecycle tag, so
  * this and the SQL encoding share ONE source of the rule.
