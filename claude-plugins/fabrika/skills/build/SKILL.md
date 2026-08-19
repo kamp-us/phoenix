@@ -52,8 +52,8 @@ The pool is `status:triaged` + `ready-for:agent` + unassigned + inside the campa
 focus, p0 first. **An assigned issue is not yours whatever its labels** — assignment is how humans keep
 documents out of this pool. Read the `excluded` entries beside the pool: each names why an issue was
 left out — `out-of-focus`, `audience-not-agent` or `unreadable` from the admission test, or
-`no-acceptance-criteria`, this verb's own axis for a body carrying no criteria block to build
-against. `focus` says whether a focus is declared at all — an inert fence is a fact to report, not a
+`no-acceptance-criteria` and `blocked`, this verb's own two axes: a body carrying no criteria block
+to build against, and an issue whose native `blocked_by` graph still names an open blocker. `focus` says whether a focus is declared at all — an inert fence is a fact to report, not a
 shorter pool to explain.
 Two refusals before claiming: a `type:decision`'s deliverable is a recorded choice
 (`/adr`'s, not yours), and a rendered-visual deliverable is outside this skill's modality
@@ -98,7 +98,9 @@ lane of this session holds the number, which is how two lanes both ran one repai
 names the winner — that lane is theirs, back off, including when the winner shares your session. Exit
 `20` (out of focus) or `21` (audience not agent) means the fence refused before writing any marker,
 including on a number handed straight to you: end the run naming the code, and **never override on
-your own authority**. `--override "<reason>" --override-lane "<lane>"` (both flags required) is the
+your own authority**. Exit `16` is the blockedness gate that runs after those two: the issue's
+native `blocked_by` graph still names an open blocker, every one of them is on stderr, and no
+override reaches it — end `BACKED-OFF` and take the next candidate. `--override "<reason>" --override-lane "<lane>"` (both flags required) is the
 operator's act, taken only when they ask for it in so many words, and the reason it records is
 theirs, not a rationale you compose.
 

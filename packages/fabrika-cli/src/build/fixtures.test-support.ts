@@ -82,6 +82,23 @@ export const truncatedComments = (
 	return okOut(whole.slice(0, whole.lastIndexOf("}")));
 };
 
+/**
+ * Every `blocked_by` edge list answering empty — the unblocked board, for a test about some other
+ * axis.
+ *
+ * {@link fakeShell} resolves by first match, so this belongs LAST in a script: a test that scripts a
+ * specific issue's edges wins over it. Without it every claim and every pool candidate reads an
+ * unscripted command, and the blockedness gate correctly seats that as UNKNOWN.
+ */
+export const NO_BLOCKERS: readonly [RegExp, ExecResult] = [
+	/^gh api --paginate repos\/[^ ]+\/issues\/\d+\/dependencies\/blocked_by/,
+	okOut("[]"),
+];
+
+/** The same edge list, naming one blocker — pair it with that blocker's own `issues/<n>` read. */
+export const blockedBy = (...blockers: ReadonlyArray<number>): ExecResult =>
+	okOut(JSON.stringify(blockers.map((number) => ({number, state: "open"}))));
+
 /** A body carrying the conforming block — what a triaged, agent-ready issue looks like. */
 export const CRITERIA_BODY =
 	"## Summary\n\ns\n\n### Acceptance criteria\n\n- [ ] the one criterion\n";

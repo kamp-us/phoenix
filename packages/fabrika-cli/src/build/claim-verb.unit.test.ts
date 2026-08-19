@@ -7,6 +7,7 @@ import {runAdopt, runClaim, runConfirm, runRelease} from "./claim-verb.ts";
 import {
 	AUDIENCE_NOT_AGENT,
 	BAD_SECTIONS,
+	BLOCKED,
 	CLAIM_NOT_MINE,
 	OFF_VOCABULARY,
 	OUT_OF_FOCUS,
@@ -18,6 +19,7 @@ import {
 } from "./codes.ts";
 import {
 	adoptMarker,
+	blockedBy,
 	candidates,
 	comments,
 	focusTable,
@@ -25,6 +27,7 @@ import {
 	LANE_TOKEN,
 	LANE_UUID,
 	marker,
+	NO_BLOCKERS,
 	SIBLING_TOKEN,
 	SIBLING_UUID,
 	truncatedComments,
@@ -75,6 +78,16 @@ const thread = (...states: ReadonlyArray<ExecResult>) =>
 /** No `ROADMAP.md`: no focus declared, so the scope axis admits and the fence reports itself inert. */
 const NO_FOCUS = fakeFs({files: {}});
 
+/**
+ * `fakeShell` with every `blocked_by` edge list answering empty.
+ *
+ * The claim seam reads the graph on the path to every marker (ADR 0301), so a script about any other
+ * axis would otherwise hit an unscripted read and refuse on `11`. A test about blockedness scripts
+ * those edges itself and wins on first match.
+ */
+const unblocked = (script: ReadonlyArray<readonly [RegExp, ExecResult]>) =>
+	fakeShell([...script, NO_BLOCKERS]);
+
 const options = {
 	number: 4312,
 	repo: null,
@@ -100,7 +113,7 @@ const run = (
 	Effect.runPromise(
 		Effect.provide(
 			verb({...options, ...overrides}),
-			Layer.merge(fakeShell(script).layer, fs.layer),
+			Layer.merge(unblocked(script).layer, fs.layer),
 		),
 	);
 
@@ -134,7 +147,7 @@ describe("runClaim", () => {
 		// The loser's own comment id is 9002, distinct from the winner's 9001, so the retraction
 		// assertion below discriminates "retracted its own marker" from "deleted the winner's".
 		const siblingMarker = marker("s-9f2e", SIBLING_UUID);
-		const shell = fakeShell([
+		const shell = unblocked([
 			[ISSUE, CLAIMABLE],
 			[POST, okOut(JSON.stringify({id: 9002, html_url: "https://github.com/o/r/issues/4312#c"}))],
 			[
@@ -162,7 +175,7 @@ describe("runClaim", () => {
 	});
 
 	it("re-reads AFTER posting — the checkpoint is what resolves a staggered race", async () => {
-		const shell = fakeShell([
+		const shell = unblocked([
 			[ISSUE, CLAIMABLE],
 			unclaimed(),
 			[POST, POSTED],
@@ -180,7 +193,7 @@ describe("runClaim", () => {
 	});
 
 	it("exits 15 on a lost race — NEVER 0 — names the winner and retracts its own marker", async () => {
-		const shell = fakeShell([
+		const shell = unblocked([
 			[ISSUE, CLAIMABLE],
 			unclaimed(),
 			[POST, POSTED],
@@ -266,7 +279,7 @@ describe("runClaim", () => {
 	});
 
 	it("refuses a TRUNCATED marker read on 11 and keeps its own marker — a short read is not a loss", async () => {
-		const shell = fakeShell([
+		const shell = unblocked([
 			[ISSUE, CLAIMABLE],
 			unclaimed(),
 			[POST, POSTED],
@@ -318,7 +331,7 @@ describe("runClaim — the admission test runs before any marker is written", ()
 	const FOCUSED = fakeFs({files: {[DEFAULT_ROADMAP]: focusTable(44)}});
 
 	const claimWith = (target: ExecResult, fs = FOCUSED, overrides: Partial<typeof options> = {}) => {
-		const shell = fakeShell([
+		const shell = unblocked([
 			[ISSUE, target],
 			unclaimed(),
 			[POST, POSTED],
@@ -477,7 +490,7 @@ describe("runClaim — the admission test runs before any marker is written", ()
 			Effect.provide(
 				runPick({repo: null, limit: 20, env: options.env}),
 				Layer.merge(
-					fakeShell([
+					unblocked([
 						[/labels=status%3Atriaged%2Cp0/, candidates(row)],
 						[/labels=status%3Atriaged%2Cp[12]/, okOut("[]")],
 					]).layer,
@@ -550,7 +563,7 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 		servedRecord: ExecResult,
 		overrides: Partial<typeof options> = {},
 	) => {
-		const shell = fakeShell([
+		const shell = unblocked([
 			[ISSUE, pull(body)],
 			[SERVED, servedRecord],
 			unclaimed(),
@@ -631,7 +644,7 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 	});
 
 	it("leaves an issue target reading its own record — the resolution never fires on one", async () => {
-		const shell = fakeShell([
+		const shell = unblocked([
 			[
 				ISSUE,
 				issue({milestone: {number: 44}, labels: labelled("status:triaged", "ready-for:agent")}),
@@ -650,7 +663,7 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 	});
 
 	it("admits an unresolvable PR while no focus is declared — an inert fence refuses nothing", async () => {
-		const shell = fakeShell([
+		const shell = unblocked([
 			[ISSUE, pull("No reference at all.\n")],
 			unclaimed(),
 			[POST, POSTED],
@@ -673,7 +686,7 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 	 */
 	describe("with no focus declared", () => {
 		const claimInert = (body: string, servedRecord: ExecResult | null) => {
-			const shell = fakeShell([
+			const shell = unblocked([
 				[ISSUE, pull(body)],
 				...(servedRecord === null
 					? []
@@ -747,7 +760,7 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 		// the direct claim is still refused, still writes nothing — but the reason it prints is now the
 		// objection an operator can act on rather than a label they could talk past.
 		it("refuses the very same issue on type when it is claimed directly, writing nothing", async () => {
-			const shell = fakeShell([
+			const shell = unblocked([
 				[ISSUE, issue({milestone: {number: 44}, labels: DECISION})],
 				unclaimed(),
 				[POST, POSTED],
@@ -764,7 +777,7 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 		});
 
 		it("leaves the audience fence standing — a cited ruling opens type, and only type", async () => {
-			const shell = fakeShell([
+			const shell = unblocked([
 				[ISSUE, issue({milestone: {number: 44}, labels: DECISION})],
 				unclaimed(),
 				[POST, POSTED],
@@ -788,7 +801,7 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 		});
 
 		it("takes the ruled decision once triage has stamped it for an agent", async () => {
-			const shell = fakeShell([
+			const shell = unblocked([
 				[
 					ISSUE,
 					issue({
@@ -812,7 +825,7 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 		});
 
 		it("refuses a citation recorded on some other issue, before any marker", async () => {
-			const shell = fakeShell([
+			const shell = unblocked([
 				[ISSUE, issue({milestone: {number: 44}, labels: DECISION})],
 				unclaimed(),
 				[POST, POSTED],
@@ -861,7 +874,7 @@ describe("runClaim — the purpose axis", () => {
 	const FOCUSED = fakeFs({files: {[DEFAULT_ROADMAP]: focusTable(44)}});
 
 	const claimWith = (target: ExecResult, overrides: Partial<typeof options> = {}) => {
-		const shell = fakeShell([
+		const shell = unblocked([
 			[ISSUE, target],
 			unclaimed(),
 			[POST, POSTED],
@@ -1004,7 +1017,7 @@ describe("runConfirm", () => {
 
 describe("runRelease", () => {
 	it("retracts this session's OWN marker and nothing else", async () => {
-		const shell = fakeShell([
+		const shell = unblocked([
 			[ISSUE, CLAIMABLE],
 			[COMMENTS, comments({id: 9001, body: MINE})],
 			[perm("agent"), okOut("write\n")],
@@ -1021,7 +1034,7 @@ describe("runRelease", () => {
 	});
 
 	it("refuses to release another lane's claim on 15, and deletes nothing", async () => {
-		const shell = fakeShell([
+		const shell = unblocked([
 			[ISSUE, CLAIMABLE],
 			[COMMENTS, comments({id: 8000, body: THEIRS})],
 			[perm("agent"), okOut("write\n")],
@@ -1037,7 +1050,7 @@ describe("runRelease", () => {
 	});
 
 	it("refuses a truncated read on 11 and deletes nothing", async () => {
-		const shell = fakeShell([
+		const shell = unblocked([
 			[ISSUE, CLAIMABLE],
 			[COMMENTS, truncatedComments({id: 9001, body: MINE})],
 			[perm("agent"), okOut("write\n")],
@@ -1088,7 +1101,7 @@ describe("the claim protocol", () => {
 	) => Effect.runPromise(Effect.provide(verb(options), Layer.merge(shell.layer, NO_FOCUS.layer)));
 
 	it("posts no second marker on a number THIS LANE already holds", async () => {
-		const shell = fakeShell(held());
+		const shell = unblocked(held());
 		const first = await on(shell, runClaim);
 		const second = await on(shell, runClaim);
 		expect(shell.calls.filter((line) => POST.test(line))).toHaveLength(1);
@@ -1104,7 +1117,7 @@ describe("the claim protocol", () => {
 	 * #5782's idempotence rather than through the race.
 	 */
 	it("does NOT short-circuit for a sibling lane's marker — it races it, and loses", async () => {
-		const shell = fakeShell([
+		const shell = unblocked([
 			[ISSUE, CLAIMABLE],
 			...thread(
 				comments({id: 9001, body: MINE}),
@@ -1132,7 +1145,7 @@ describe("the claim protocol", () => {
 	});
 
 	it("answers claim and confirm with the SAME token — the two can never disagree", async () => {
-		const shell = fakeShell(held());
+		const shell = unblocked(held());
 		const claimed = await on(shell, runClaim);
 		const confirmed = await on(shell, runConfirm);
 		expect(confirmed.code).toBe(0);
@@ -1149,7 +1162,7 @@ describe("the claim protocol", () => {
 			{id: 9002, body: MINE, createdAt: "2026-08-09T00:00:01Z"},
 			{id: 9003, body: SIBLING_MARKER, createdAt: "2026-08-09T00:00:02Z"},
 		);
-		const shell = fakeShell([
+		const shell = unblocked([
 			[ISSUE, CLAIMABLE],
 			...thread(dirty, dirty, dirty, comments({id: 9003, body: SIBLING_MARKER})),
 			[POST, POSTED],
@@ -1201,12 +1214,12 @@ describe("runAdopt / succession", () => {
 		Effect.runPromise(
 			Effect.provide(
 				runAdopt({...adoptOptions, ...overrides}),
-				Layer.merge(fakeShell(script).layer, NO_FOCUS.layer),
+				Layer.merge(unblocked(script).layer, NO_FOCUS.layer),
 			),
 		);
 
 	it("posts the adopt marker naming the dead session and this session's token", async () => {
-		const shell = fakeShell([
+		const shell = unblocked([
 			[ISSUE, CLAIMABLE],
 			[POST, POSTED],
 			[GET_COMMENT, okOut(JSON.stringify({body: ADOPT}))],
@@ -1225,7 +1238,7 @@ describe("runAdopt / succession", () => {
 	});
 
 	it("refuses an adopt naming this very session, and writes nothing", async () => {
-		const shell = fakeShell([[ISSUE, CLAIMABLE]]);
+		const shell = unblocked([[ISSUE, CLAIMABLE]]);
 		const out = await Effect.runPromise(
 			Effect.provide(
 				runAdopt({...adoptOptions, session: "s-9f2e"}),
@@ -1245,7 +1258,7 @@ describe("runAdopt / succession", () => {
 
 	it("refuses a --session carrying whitespace or the field separator, before the write", async () => {
 		for (const session of ["s-77aa dead", "s-77aa·2"]) {
-			const shell = fakeShell([[ISSUE, CLAIMABLE]]);
+			const shell = unblocked([[ISSUE, CLAIMABLE]]);
 			const out = await Effect.runPromise(
 				Effect.provide(
 					runAdopt({...adoptOptions, session}),
@@ -1259,7 +1272,7 @@ describe("runAdopt / succession", () => {
 	});
 
 	it("refuses a multi-line --reason rather than recording its first line only", async () => {
-		const shell = fakeShell([[ISSUE, CLAIMABLE]]);
+		const shell = unblocked([[ISSUE, CLAIMABLE]]);
 		const out = await Effect.runPromise(
 			Effect.provide(
 				runAdopt({...adoptOptions, reason: "outage\nand context loss"}),
@@ -1276,7 +1289,7 @@ describe("runAdopt / succession", () => {
 	// adopt names a lane that is not this run and ownership resolves `Foreign`. The lose path retracts
 	// this run's own marker, which is what leaves no orphan behind the release (AC 9).
 	it("claim on an adopted number loses and retracts its own marker — release comes first", async () => {
-		const shell = fakeShell([
+		const shell = unblocked([
 			[ISSUE, CLAIMABLE],
 			[POST, POSTED],
 			[GET_COMMENT, ECHO],
@@ -1306,7 +1319,7 @@ describe("runAdopt / succession", () => {
 	});
 
 	it("claim --token over an adopted claim refuses before writing anything", async () => {
-		const shell = fakeShell([
+		const shell = unblocked([
 			[ISSUE, CLAIMABLE],
 			[
 				COMMENTS,
@@ -1327,7 +1340,7 @@ describe("runAdopt / succession", () => {
 	});
 
 	it("release still refuses the dead session's claim while no adopt marker names it", async () => {
-		const shell = fakeShell([
+		const shell = unblocked([
 			[ISSUE, CLAIMABLE],
 			[COMMENTS, comments({id: 8000, body: THEIRS})],
 			[perm("agent"), okOut("write\n")],
@@ -1343,7 +1356,7 @@ describe("runAdopt / succession", () => {
 	});
 
 	it("release retracts BOTH markers once an authorized adopt names the dead session", async () => {
-		const shell = fakeShell([
+		const shell = unblocked([
 			[ISSUE, CLAIMABLE],
 			[
 				COMMENTS,
@@ -1370,7 +1383,7 @@ describe("runAdopt / succession", () => {
 	// caller threads onward. On a succession the winning marker is the DEAD session's, whose token
 	// `requireCallerToken` refuses on `1` — so the answer is the adopt's, this lane's own.
 	it("confirm on an adopted claim answers the adopt's token, never the dead session's", async () => {
-		const shell = fakeShell([
+		const shell = unblocked([
 			[ISSUE, CLAIMABLE],
 			[
 				COMMENTS,
@@ -1389,7 +1402,7 @@ describe("runAdopt / succession", () => {
 	});
 
 	it("ignores an adopt marker whose poster holds no write permission — content is not authority", async () => {
-		const shell = fakeShell([
+		const shell = unblocked([
 			[ISSUE, CLAIMABLE],
 			[
 				COMMENTS,
@@ -1416,7 +1429,7 @@ describe("runAdopt / succession", () => {
 		["a third session", "s-3rd", `build:s-3rd:${LANE_UUID}`],
 		["a sibling lane of the successor's session", "s-9f2e", SIBLING_TOKEN],
 	])("confers the claim on the named lane only — %s reads Foreign", async (_who, session, token) => {
-		const shell = fakeShell([
+		const shell = unblocked([
 			[ISSUE, CLAIMABLE],
 			[
 				COMMENTS,
@@ -1435,5 +1448,104 @@ describe("runAdopt / succession", () => {
 		);
 		expect(out.code).toBe(CLAIM_NOT_MINE);
 		expect(shell.calls.some((line) => DELETE.test(line))).toBe(false);
+	});
+});
+
+/**
+ * The precondition gate ADR 0301 puts on the claim seam: the native `blocked_by` graph is the one
+ * carrier of "do not start this yet", and a number handed straight to a lane passes through no pool,
+ * so this is where the refusal has teeth.
+ */
+describe("runClaim — the blockedness gate", () => {
+	const EDGES = /^gh api --paginate repos\/o\/r\/issues\/4312\/dependencies\/blocked_by/;
+	const blocker = (n: number) => new RegExp(`^gh api repos/o/r/issues/${n}$`);
+
+	const claimAgainst = (graph: ReadonlyArray<readonly [RegExp, ExecResult]>) => {
+		const shell = fakeShell([
+			[ISSUE, CLAIMABLE],
+			...graph,
+			unclaimed(),
+			[POST, POSTED],
+			[GET_COMMENT, ECHO],
+			[COMMENTS, comments({id: 9001, body: MINE})],
+			[perm("agent"), okOut("write\n")],
+		]);
+		return Effect.runPromise(
+			Effect.provide(runClaim(options), Layer.merge(shell.layer, NO_FOCUS.layer)),
+		).then((out) => ({out, shell}));
+	};
+
+	it("refuses a number with an open blocked_by edge on 16, and posts NOTHING", async () => {
+		const {out, shell} = await claimAgainst([
+			[EDGES, blockedBy(210)],
+			[blocker(210), issue({number: 210, state: "open"})],
+		]);
+		expect(out.code).toBe(BLOCKED);
+		expect(out.stdout).toBe("");
+		expect(shell.calls.some((line) => POST.test(line))).toBe(false);
+		expect(out.stderr.at(-1)).toContain("blocked by 1 open blocked_by edge: #210");
+		expect(out.stderr.at(-1)).toContain("nothing was written");
+	});
+
+	it("names EVERY open blocker, so one call tells the lane the whole wait", async () => {
+		const {out} = await claimAgainst([
+			[EDGES, blockedBy(210, 211, 212)],
+			[blocker(210), issue({number: 210, state: "open"})],
+			[blocker(211), issue({number: 211, state: "closed"})],
+			[blocker(212), issue({number: 212, state: "open"})],
+		]);
+		expect(out.code).toBe(BLOCKED);
+		expect(out.stderr.at(-1)).toContain("blocked by 2 open blocked_by edges: #210, #212");
+	});
+
+	it("admits a number whose every blocker is closed — unblocking is derived, never performed", async () => {
+		const {out} = await claimAgainst([
+			[EDGES, blockedBy(210)],
+			[blocker(210), issue({number: 210, state: "closed"})],
+		]);
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).answer).toBe("won");
+		expect(out.stderr.join("\n")).toContain("scanned 1 blocked_by edge; none open");
+	});
+
+	it('refuses an unreadable edge list on 11 — UNKNOWN is never "not blocked"', async () => {
+		const {out, shell} = await claimAgainst([[EDGES, errOut("gh: Bad gateway (HTTP 502)")]]);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stdout).toBe("");
+		expect(shell.calls.some((line) => POST.test(line))).toBe(false);
+		expect(out.stderr.at(-1)).toContain("cannot read the blocked_by edges of #4312");
+	});
+
+	it("refuses on 11 when a blocker's own state could not be read and nothing is proven open", async () => {
+		const {out} = await claimAgainst([
+			[EDGES, blockedBy(210)],
+			[blocker(210), errOut("gh: Bad gateway (HTTP 502)")],
+		]);
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stderr.at(-1)).toContain("blocker #210");
+	});
+
+	/**
+	 * The ordering ADR 0301 names: the two pure axes answer without IO, so a number the fence already
+	 * refuses must never cost the graph read. The proof is the absent call, not the exit code.
+	 */
+	it("reads no edges at all when a pure axis already refused", async () => {
+		const shell = fakeShell([
+			[
+				ISSUE,
+				issue({
+					milestone: {number: 39},
+					labels: labelled("type:bug", "p1", "status:triaged", "ready-for:agent"),
+				}),
+			],
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runClaim(options),
+				Layer.merge(shell.layer, fakeFs({files: {[DEFAULT_ROADMAP]: focusTable(44)}}).layer),
+			),
+		);
+		expect(out.code).toBe(OUT_OF_FOCUS);
+		expect(shell.calls.some((line) => EDGES.test(line))).toBe(false);
 	});
 });
