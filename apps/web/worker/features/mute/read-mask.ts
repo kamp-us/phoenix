@@ -45,7 +45,7 @@ export const mutedAuthorsWhere = (
 export const isMutedAuthor = (
 	authorId: string,
 	mutedIds: ReadonlySet<string> | undefined,
-): boolean => mutedIds != null && mutedIds.has(authorId);
+): boolean => mutedIds?.has(authorId) ?? false;
 
 /**
  * The muter's muted-id set for this request — the viewer-scoped mask the content

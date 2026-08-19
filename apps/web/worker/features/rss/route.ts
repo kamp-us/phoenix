@@ -14,6 +14,7 @@ import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import {anonymousViewer} from "../lifecycle/EntityLifecycle.ts";
 import {Pano} from "../pano/Pano.ts";
 import {type FeedChannel, type FeedItem, renderFeed} from "./feed.ts";
 
@@ -29,7 +30,14 @@ export const handleRss = Effect.gen(function* () {
 
 	const origin = new URL(raw.url).origin;
 
-	const page = yield* pano.listPostsConnection({sort: "new", first: FEED_SIZE});
+	const page = yield* pano.listPostsConnection({
+		sort: "new",
+		first: FEED_SIZE,
+		// A public syndication feed has no viewer, so pin the anonymous one rather than
+		// degrade into it by omission: the #6423 in-place class must never widen these
+		// bytes, and stating it here is what makes that a decision (#6424).
+		sandboxViewer: anonymousViewer,
+	});
 
 	const items: FeedItem[] = page.rows.map((row) => ({
 		id: row.id,
