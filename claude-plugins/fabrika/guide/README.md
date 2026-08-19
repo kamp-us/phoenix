@@ -9,8 +9,8 @@ These pages are written for a person. Each holds one Diátaxis mode.
 
 | Page | Mode | Answers |
 |---|---|---|
-| `getting-started.md` | tutorial | Walk me from nothing to a first working fabrika run. |
-| `adopt-fabrika-in-a-new-repo.md` | how-to | Wire fabrika into a repo I already have. |
+| [`getting-started.md`](getting-started.md) | tutorial | Walk me from nothing to a first working fabrika run. |
+| [`adopt-fabrika-in-a-new-repo.md`](adopt-fabrika-in-a-new-repo.md) | how-to | Wire fabrika into a repo I already have. |
 | [`delegation.md`](delegation.md) | reference | Which copy of fabrika serves this invocation, and why did it refuse? |
 | [`how-fabrika-works.md`](how-fabrika-works.md) | explanation | Why is fabrika shaped the way it is? |
 
